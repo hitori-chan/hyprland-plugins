@@ -1,6 +1,8 @@
 # Listeners run in plugin load order (= this file's order):
 #   hyprbar first — it must swallow strip clicks / open tray menus before
 #   anything treats them as window clicks;
+#   hyprnotify before hyprmax/hyprclick — a click on a notification card
+#   must never reach the window beneath it;
 #   hyprmax before hyprclick — the immovable-maximized swallow must win
 #   over click-to-raise.
 # No commit_pins: one Hyprland (the hitori-chan/Hyprland fork), so hyprpm
@@ -16,6 +18,13 @@ version     = "1.2.1"
 authors     = ["hitori"]
 output      = "hyprbar/hyprbar.so"
 build       = ["make -C hyprbar all"]
+
+[hyprnotify]
+description = "awesome's naughty: the compositor is the notification daemon — naughty-style cards, progress hints, image icons"
+version     = "1.0.0"
+authors     = ["hitori"]
+output      = "hyprnotify/hyprnotify.so"
+build       = ["make -C hyprnotify all"]
 
 [hyprmax]
 description = "awesome's per-window maximize: any number at once, immovable while maximized, windowed size remembered per app across closes and relogs"
