@@ -75,12 +75,10 @@ namespace NHyprsnap::Snap {
             return {CBox{Z.x, Z.y, Z.w, BW}, CBox{Z.x, Z.y + Z.h - BW, Z.w, BW}, CBox{Z.x, Z.y + BW, BW, Z.h - 2 * BW}, CBox{Z.x + Z.w - BW, Z.y + BW, BW, Z.h - 2 * BW}};
         }
 
-        // damage only the outline strips, not the whole monitor
         void damageZone() {
             if (!zoneBox)
                 return;
-            for (const auto& R : zoneStrips(*zoneBox))
-                g_pHyprRenderer->damageBox(CBox{R}.expand(2));
+            g_pHyprRenderer->damageBox(CBox{*zoneBox}.expand(2)); // fill + outline
         }
 
         // detect_screen_edges: the cursor against the WHOLE screen box
@@ -247,14 +245,16 @@ namespace NHyprsnap::Snap {
         // CHyprColor's integer ctor computes OkLab — convert once per value,
         // not once per armed frame
         static uint64_t   colRaw = ~0ull;
-        static CHyprColor col;
+        static CHyprColor col, fill;
         if (const auto RAW = (uint64_t)g_config.colFrame->value(); RAW != colRaw) {
             colRaw = RAW;
             col    = CHyprColor{RAW};
+            fill   = CHyprColor(col.r, col.g, col.b, 0.10); // a 1px ring alone gets lost over busy content
         }
 
         const auto toPhys = [&](const CBox& b) { return CBox{b}.translate(-MON->m_position).scale(MON->m_scale).round(); };
 
+        g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(CRectPassElement::SRectData{.box = toPhys(*zoneBox), .color = fill}));
         for (const auto& R : zoneStrips(*zoneBox))
             g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(CRectPassElement::SRectData{.box = toPhys(R), .color = col}));
     }
