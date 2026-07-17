@@ -36,7 +36,7 @@ Colors and font come from `theme.lua` via `hl.config { plugin = { hyprbar =
 | key | what | default |
 |---|---|---|
 | `plugin:hyprbar:height` | bar height in logical px (reserve it: monitor `reserved top`) | 26 |
-| `plugin:hyprbar:font_size` | text size in pt | 10 |
+| `plugin:hyprbar:font_size` | text size in logical px | 12 |
 | `plugin:hyprbar:tray_spacing` | px between tray icons | 10 |
 | `plugin:hyprbar:font` | font family | Fira Code |
 | `plugin:hyprbar:font_icon` | battery glyph font | Material Icons Round |
