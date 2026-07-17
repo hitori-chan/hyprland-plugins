@@ -71,7 +71,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     lKey     = EV.input.keyboard.key.listen([](IKeyboard::SKeyEvent, Event::SCallbackInfo&) { Snap::onInputEndingDrag(); });
     lRender  = EV.render.stage.listen([](eRenderStage stage) { Snap::onRenderStage(stage); });
 
-    return {"hyprsnap", "awesome's awful.mouse.snap: magnetic edge pull + aerosnap zones while dragging", "hitori", "1.1.0"};
+    return {"hyprsnap", "awesome's awful.mouse.snap: magnetic edge pull + aerosnap zones while dragging", "hitori", "1.2.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

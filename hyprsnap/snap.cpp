@@ -31,6 +31,8 @@
 
 #include "hyprsnap.hpp"
 
+#include <hyprland/src/config/ConfigValue.hpp>
+
 #include <array>
 
 namespace NHyprsnap::Snap {
@@ -197,10 +199,15 @@ namespace NHyprsnap::Snap {
                 return;
 
             // awesome's module.snap order: screen box, workarea, then every
-            // other visible client (later pulls override earlier ones)
-            const CBox CUR = T->position();
-            CBox       g   = snapInside(CUR, MON->logicalBox(), D);
-            g              = snapInside(g, MON->logicalBoxMinusReserved(), D);
+            // other visible client (later pulls override earlier ones).
+            // X11 geometry was border-inclusive: snap the BORDER flush, never
+            // swallow it offscreen — inflate, snap, deflate.
+            static auto  PBORDER = CConfigValue<Config::INTEGER>("general:border_size");
+            const double B       = std::max((double)*PBORDER, 0.0);
+            const CBox   CUR     = T->position();
+            CBox         g       = CBox{CUR.x - B, CUR.y - B, CUR.w + 2 * B, CUR.h + 2 * B};
+            g                    = snapInside(g, MON->logicalBox(), D);
+            g                    = snapInside(g, MON->logicalBoxMinusReserved(), D);
 
             const auto WS = MON->m_activeWorkspace;
             for (const auto& O : Desktop::windowState()->windows()) {
@@ -210,9 +217,12 @@ namespace NHyprsnap::Snap {
                     continue;
                 if (Fullscreen::controller()->isFullscreen(O))
                     continue;
-                g = snapOutside(g, O->m_target->position(), D);
+                const auto OB = O->m_target->position();
+                g             = snapOutside(g, CBox{OB.x - B, OB.y - B, OB.w + 2 * B, OB.h + 2 * B}, D);
             }
 
+            g.x += B;
+            g.y += B;
             if (g.x != CUR.x || g.y != CUR.y) {
                 T->setPositionGlobal(CBox{g.x, g.y, CUR.w, CUR.h});
                 T->warpPositionSize();
@@ -228,8 +238,12 @@ namespace NHyprsnap::Snap {
         if (!T)
             return;
         if (zoneBox && zoneMon.lock()) {
+            // the slot is the border box; the surface sits inside it, so the
+            // border stays on screen (maximize is the one full-bleed state)
+            static auto  PBORDER = CConfigValue<Config::INTEGER>("general:border_size");
+            const double B       = std::max((double)*PBORDER, 0.0);
             // dragEnd right after us commits the geometry we set here
-            T->setPositionGlobal(*zoneBox);
+            T->setPositionGlobal(CBox{zoneBox->x + B, zoneBox->y + B, zoneBox->w - 2 * B, zoneBox->h - 2 * B});
             T->warpPositionSize();
         }
         reset();
