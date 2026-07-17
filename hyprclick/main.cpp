@@ -10,6 +10,9 @@
 // 3. `hl.plugin.hyprclick.focus_prev_here()` — awesome's Mod+Tab: focus
 //    the previously focused window ON THE CURRENT WORKSPACE (the native
 //    focus({ last }) follows global history across workspaces).
+// 4. `hl.plugin.hyprclick.focus_next()/focus_prev()` — awesome's Mod+J/K
+//    (focus.byidx): cycle the workspace's windows in arrival order —
+//    the native cycle walks the z-order, which rule 2's raises rotate.
 //
 // Loads after hyprbar (which swallows its strip clicks) and hyprmax
 // (which swallows Super-grabs on maximized windows): a cancelled press
@@ -34,14 +37,22 @@
 
 #include <linux/input-event-codes.h>
 
+#include <algorithm>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 static HANDLE                                 PHANDLE = nullptr;
 
-static Hyprutils::Signal::CHyprSignalListener lButton, lActive;
+static Hyprutils::Signal::CHyprSignalListener lButton, lActive, lOpen, lDestroy;
 static UP<SEventLoopDoLaterLock>              pendingRaise, pendingFocus;
 
-static PHLWINDOW                              windowUnderCursor() {
+// arrival order for focus_next/focus_prev — the z-order list is useless as
+// a cycle order under click-to-raise (every focus rotates it)
+static std::unordered_map<void*, uint64_t> g_seq;
+static uint64_t                            g_seqNext = 0;
+
+static PHLWINDOW                           windowUnderCursor() {
     if (!g_pInputManager)
         return nullptr;
     return Desktop::viewState()->hitTest().windowAt(g_pInputManager->getMouseCoordsInternal(),
@@ -143,6 +154,57 @@ static int luaFocusPrevHere(lua_State*) {
     return 0;
 }
 
+// hl.plugin.hyprclick.focus_next/focus_prev() — awesome's Mod+J/K
+// (focus.byidx): cycle the workspace's windows in ARRIVAL order, wrapping.
+// The native cycle_next walks the z-order list, which raise-on-focus
+// rotates every press: forward still visits everything (the wrap always
+// lands on the lowest window), but backward reads the second-from-top and
+// bounces between the two newest raises.
+static void focusByIdx(bool next) {
+    const auto MON = Desktop::focusState()->monitor();
+    const auto WS  = MON ? MON->m_activeWorkspace : nullptr;
+    if (!WS)
+        return;
+
+    static std::vector<std::pair<uint64_t, PHLWINDOW>> wins; // reused; main thread only
+    wins.clear();
+    for (const auto& W : Desktop::windowState()->windows()) {
+        if (!W->m_isMapped || W->isHidden() || !W->m_workspace || W->m_workspace->m_id != WS->m_id)
+            continue;
+        const auto [IT, NEW] = g_seq.try_emplace(W.get(), g_seqNext);
+        if (NEW)
+            g_seqNext++;
+        wins.emplace_back(IT->second, W);
+    }
+    if (wins.empty())
+        return;
+    std::sort(wins.begin(), wins.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    const auto FOCUS = Desktop::focusState()->window();
+    const int  N     = (int)wins.size();
+    int        idx   = -1;
+    for (int i = 0; i < N; i++)
+        if (wins[i].second == FOCUS)
+            idx = i;
+    const int    TO = idx < 0 ? 0 : (idx + (next ? 1 : N - 1)) % N;
+
+    PHLWINDOWREF TARGET{wins[TO].second};
+    wins.clear(); // don't keep strong refs across calls
+    pendingFocus = g_pEventLoopManager->doLaterLock([TARGET]() {
+        if (const auto W = TARGET.lock(); W && W->m_isMapped)
+            Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_SWITCH_TO_WINDOW_HARD);
+    });
+}
+
+static int luaFocusNext(lua_State*) {
+    focusByIdx(true);
+    return 0;
+}
+static int luaFocusPrev(lua_State*) {
+    focusByIdx(false);
+    return 0;
+}
+
 // Do NOT change this function.
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
     return HYPRLAND_API_VERSION;
@@ -159,12 +221,19 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         throw std::runtime_error("[hyprclick] version mismatch");
     }
 
-    lButton = Event::bus()->m_events.input.mouse.button.listen([](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { onMouseButton(e, info); });
-    lActive = Event::bus()->m_events.window.active.listen([](PHLWINDOW w, Desktop::eFocusReason reason) { onWindowActive(w, reason); });
+    lButton  = Event::bus()->m_events.input.mouse.button.listen([](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { onMouseButton(e, info); });
+    lActive  = Event::bus()->m_events.window.active.listen([](PHLWINDOW w, Desktop::eFocusReason reason) { onWindowActive(w, reason); });
+    lOpen    = Event::bus()->m_events.window.open.listen([](PHLWINDOW w) {
+        if (w && g_seq.try_emplace(w.get(), g_seqNext).second)
+            g_seqNext++;
+    });
+    lDestroy = Event::bus()->m_events.window.destroy.listen([](PHLWINDOWREF wr) { g_seq.erase(wr.get()); });
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev_here", luaFocusPrevHere);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_next", luaFocusNext);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev", luaFocusPrev);
 
-    return {"hyprclick", "awesome click/focus policy: click-to-raise, keyboard focus raises, hover never does", "hitori", "1.0.1"};
+    return {"hyprclick", "awesome click/focus policy: click-to-raise, keyboard focus raises, hover never does", "hitori", "1.1.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
@@ -172,4 +241,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
     pendingFocus.reset();
     lButton.reset();
     lActive.reset();
+    lOpen.reset();
+    lDestroy.reset();
+    g_seq.clear();
 }
