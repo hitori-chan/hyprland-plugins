@@ -20,6 +20,10 @@ namespace NHyprbar {
     static uint64_t                          texGen        = 0;
     static constexpr uint64_t                TEX_CACHE_LIFE = 32; // warms an unused texture survives
 
+    // per monitor: a fingerprint of the task labels the strip shows — see
+    // the tasklist in renderBar
+    static std::unordered_map<uint64_t, size_t> lastTaskFp;
+
     // Built ONLY by the warm pass — see the texture rule in hyprbar.hpp. A miss
     // during a draw returns null (that one label is missing for one frame)
     // rather than building, which would paint nothing anyway AND swallow every
@@ -317,6 +321,7 @@ namespace NHyprbar {
 
         // -- tasklist: the active workspace's windows, in arrival order
         // (collected in the single window walk above) --
+        size_t taskFp = 0;
         {
             const double avail = right - 8 - x;
             if (!tasks.empty() && avail >= 40) {
@@ -351,7 +356,9 @@ namespace NHyprbar {
                     }
                     tx += ICON + 4;
 
-                    const auto TEX = textTex(taskLabel(W), fg, PT, (int)std::round((ITEMW - (tx - x) - 4) * SCALE));
+                    const auto LBL = taskLabel(W);
+                    taskFp         = taskFp * 1099511628211ULL + std::hash<std::string>{}(LBL);
+                    const auto TEX = textTex(LBL, fg, PT, (int)std::round((ITEMW - (tx - x) - 4) * SCALE));
                     if (TEX && TEX->m_texID != 0) {
                         const auto P = toPhys(CBox{tx, MB.y, 1, H});
                         CBox       b{P.x, P.y + (P.h - TEX->m_size.y) / 2.0, TEX->m_size.x, TEX->m_size.y};
@@ -367,6 +374,20 @@ namespace NHyprbar {
                 }
             }
         }
+        // A label can flip without any bar event or strip damage (pin damages
+        // only the window; the xdg maximized bit has no event at all): with
+        // every variant still cached the next draw is correct but scissored
+        // to the window's damage, so the strip on screen keeps the old text.
+        // A warm stamps what the paint it precedes will show; a draw that
+        // lays out anything else may have been clipped — repaint the strip.
+        auto& FP = lastTaskFp[mon->m_id];
+        if (warm)
+            FP = taskFp;
+        else if (FP != taskFp) {
+            FP       = taskFp;
+            texStale = true;
+        }
+
         tasks.clear(); // don't keep strong window refs across frames
 
         // -- the open menu, panel by panel: the client list is fixed at 250

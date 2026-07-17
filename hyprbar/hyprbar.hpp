@@ -139,7 +139,8 @@ namespace NHyprbar {
     // loop. These two flags make that structural rather than a thing every call
     // site has to remember:
     extern bool warming;  // warmBars() is building; the ONLY time a texture may be created
-    extern bool texStale; // a draw wanted a texture the warm hadn't built -> warm + repaint
+    extern bool texStale; // a draw ran ahead of the screen (texture never warmed, or labels
+                          // flipped under a scissored repaint) -> warm + repaint
 
     // Build every texture the next frame will paint. Safe to call from
     // anywhere: it no-ops inside a render, which is exactly where building

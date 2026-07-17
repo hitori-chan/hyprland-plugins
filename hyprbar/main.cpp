@@ -209,6 +209,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         damageAndWarm();
     }));
     lDamage.push_back(EV.window.urgent.listen([](PHLWINDOW) { damageAndWarm(); }));
+    lDamage.push_back(EV.window.pin.listen([](PHLWINDOW) { damageAndWarm(); }));    // the tasklist's ⌃ marker
+    lDamage.push_back(EV.window.class_.listen([](PHLWINDOW) { damageAndWarm(); })); // the task icon re-resolves
     lDamage.push_back(EV.window.fullscreen.listen([](PHLWINDOW) { damageAndWarm(); }));
     lDamage.push_back(EV.window.moveToWorkspace.listen([](PHLWINDOW, PHLWORKSPACE) { damageAndWarm(); }));
     lDamage.push_back(EV.workspace.active.listen([](PHLWORKSPACE) { damageAndWarm(); }));
@@ -229,7 +231,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor: kanji taglist, tasklist with icons, tray with menus, menubar launcher, battery, clock", "hitori", "1.0.2"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor: kanji taglist, tasklist with icons, tray with menus, menubar launcher, battery, clock", "hitori", "1.0.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
