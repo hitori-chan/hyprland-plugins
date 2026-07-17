@@ -14,7 +14,9 @@
 // dialogs anchored to a parent) keep it while it's free; X11
 // override-redirect surfaces are left alone; the result is clamped
 // on-screen (no_offscreen). Only the position is remembered — the size
-// is always the client's.
+// is always the client's. Maximized windows AND floats sized to the
+// whole workarea consume no free space; when the chosen spot already
+// holds a window, spawns cascade off it instead of stacking.
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
@@ -135,6 +137,14 @@ namespace NHyprplace {
             return std::ranges::find(STATES, XDG_TOPLEVEL_STATE_MAXIMIZED) != STATES.end();
         }
 
+        // a float sized to (or past) the whole workarea is maximized in all
+        // but state — it consumes no free space, and its close-spot is not a
+        // spot (a workarea-sized Firefox once blanked ALL free area, sending
+        // every spawn to the same center)
+        bool coversWorkarea(const CBox& b, const CBox& wa) {
+            return b.x <= wa.x && b.y <= wa.y && b.x + b.w >= wa.x + wa.w && b.y + b.h >= wa.y + wa.h;
+        }
+
         void placeWindow(PHLWINDOW w) {
             // X11 override-redirect surfaces (menus, tooltips) place themselves
             if (!w || !w->m_isMapped || !w->m_isFloating || w->isX11OverrideRedirect() || !w->m_target || Fullscreen::controller()->isFullscreen(w))
@@ -158,7 +168,10 @@ namespace NHyprplace {
                     continue;
                 if (Fullscreen::controller()->isFullscreen(O) || toldMaximized(O))
                     continue;
-                blockers.push_back(O->m_target->position());
+                const auto OB = O->m_target->position();
+                if (coversWorkarea(OB, WA))
+                    continue;
+                blockers.push_back(OB);
                 areaRemove(areas, blockers.back());
             }
 
@@ -206,12 +219,25 @@ namespace NHyprplace {
                             best = &R;
                 pos = best->pos() + best->size() / 2.0 - CUR.size() / 2.0;
             }
-            // no free rect at all (workarea fully covered): keep the
-            // pre-placed spot, like awesome keeps a geometry that intersects
-            // the workarea
+            // Cascade off any pile: with the workarea fully covered (no pos)
+            // or a too-small biggest hole picked deterministically, repeated
+            // spawns land on the SAME spot and hide each other — step off it
+            // diagonally instead, like macOS/Windows cascade.
+            Vector2D chosen = pos.value_or(CUR.pos());
+            for (int guard = 0; guard < 64; guard++) {
+                bool onPile = false;
+                for (const auto& B : blockers)
+                    if (std::abs(B.x - chosen.x) < 2.0 && std::abs(B.y - chosen.y) < 2.0) {
+                        onPile = true;
+                        break;
+                    }
+                if (!onPile)
+                    break;
+                chosen += Vector2D{26.0, 26.0};
+            }
 
             // no_offscreen: clamp into the workarea
-            double nx = pos.value_or(CUR.pos()).x, ny = pos.value_or(CUR.pos()).y;
+            double nx = chosen.x, ny = chosen.y;
             nx = std::clamp(nx, WA.x, std::max(WA.x, WA.x + WA.w - CUR.w));
             ny = std::clamp(ny, WA.y, std::max(WA.y, WA.y + WA.h - CUR.h));
 
@@ -241,6 +267,8 @@ namespace NHyprplace {
         if (!w || !w->m_isMapped || !w->m_isFloating || !w->m_target || w->m_isX11 || w->parent())
             return;
         if (toldMaximized(w) || Fullscreen::controller()->isFullscreen(w))
+            return;
+        if (const auto MON = w->m_monitor.lock(); MON && coversWorkarea(w->m_target->position(), MON->logicalBoxMinusReserved()))
             return;
         rememberSpot(w->m_initialClass, w->m_target->position().pos());
     }
@@ -273,7 +301,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     lOpen  = Event::bus()->m_events.window.open.listen([](PHLWINDOW w) { onWindowOpen(w); });
     lClose = Event::bus()->m_events.window.close.listen([](PHLWINDOW w) { onWindowClose(w); });
 
-    return {"hyprplace", "spawn placement: an app reopens at its last spot, else centered, else the largest gap — never glued to a border", "hitori", "1.0.0"};
+    return {"hyprplace", "spawn placement: an app reopens at its last spot, else centered, else the largest gap — never glued to a border", "hitori", "1.1.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

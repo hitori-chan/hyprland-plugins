@@ -40,7 +40,7 @@ build       = ["make -C hyprclick all"]
 
 [hyprplace]
 description = "spawn placement: an app reopens at its last spot, else centered, else the largest gap — never glued to a border"
-version     = "1.0.0"
+version     = "1.1.0"
 authors     = ["hitori"]
 output      = "hyprplace/hyprplace.so"
 build       = ["make -C hyprplace all"]
