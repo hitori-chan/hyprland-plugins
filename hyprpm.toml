@@ -28,7 +28,7 @@ build       = ["make -C hyprnotify all"]
 
 [hyprmax]
 description = "awesome's per-window maximize: any number at once, immovable while maximized, windowed size remembered per app across closes and relogs"
-version     = "1.0.0"
+version     = "1.0.1"
 authors     = ["hitori"]
 output      = "hyprmax/hyprmax.so"
 build       = ["make -C hyprmax all"]

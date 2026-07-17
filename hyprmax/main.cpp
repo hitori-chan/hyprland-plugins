@@ -108,6 +108,21 @@ static void saveWindowed() {
     std::filesystem::rename(TMP, PATH, ec);
 }
 
+// Coalesced: a logout mass-close must not storm the disk with one full
+// rewrite per window from inside each destroy emission (hyprplace's pattern).
+static bool                      saveQueued = false;
+static UP<SEventLoopDoLaterLock> pendingSave;
+
+static void                      queueSave() {
+    if (saveQueued || !g_pEventLoopManager)
+        return;
+    saveQueued  = true;
+    pendingSave = g_pEventLoopManager->doLaterLock([]() {
+        saveQueued = false;
+        saveWindowed();
+    });
+}
+
 static void rememberWindowed(const std::string& cls, const CBox& box) {
     if (cls.empty())
         return;
@@ -115,7 +130,7 @@ static void rememberWindowed(const std::string& cls, const CBox& box) {
     if (IT != g_lastWindowed.end() && IT->second == box)
         return;
     g_lastWindowed[cls] = box;
-    saveWindowed();
+    queueSave();
 }
 
 static bool pluginMaximized(PHLWINDOW w) {
@@ -268,7 +283,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         const auto IT = g_maximized.find(wr);
         if (IT == g_maximized.end())
             return;
-        if (const auto W = wr.lock())
+        // get(), never lock(): the emission runs inside ~CWindow, where the
+        // ref is already marked destroying — lock() can never succeed there,
+        // while the pointed-to members are still intact (destructor body).
+        if (const auto* W = wr.get())
             rememberWindowed(W->m_initialClass, IT->second);
         g_maximized.erase(IT);
     });
@@ -276,13 +294,19 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprmax", "toggle", luaToggle);
 
     return {"hyprmax", "awesome's per-window maximize: any number at once, immovable while maximized, windowed size remembered per app across closes and relogs", "hitori",
-            "1.0.0"};
+            "1.0.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
     pendingMax.reset();
+    pendingSave.reset();
+    if (saveQueued) { // the coalesced write must not die with the session
+        saveQueued = false;
+        saveWindowed();
+    }
     lButton.reset();
     lDestroy.reset();
     g_maximized.clear();
     g_lastWindowed.clear();
+    swallowedButtons = 0;
 }
