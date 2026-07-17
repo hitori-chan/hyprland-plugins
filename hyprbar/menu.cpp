@@ -232,6 +232,7 @@ namespace NHyprbar {
                         return; // that cascade closed while the reply was in flight
                     lvl->entries.clear();
                     lvl->hover = -1; // scrollTop stays: live updates must not yank a browsed list to its top
+                    SWarmToken WARM; // we resolve icon-name textures here, in a DBus reply — not a render
                     for (auto& CV : std::get<2>(root)) {
                         try {
                             auto  c = CV.get<LayoutItem>();
@@ -264,7 +265,7 @@ namespace NHyprbar {
                             en.display = en.label + (en.submenu ? "  ▸" : "");
                             if (en.icon && en.icon->m_texID != 0 && en.toggle != TG_NONE && en.toggleState == 1)
                                 en.display = (en.toggle == TG_RADIO ? "● " : "✓ ") + en.display;
-                            lvl->entries.push_back(en);
+                            lvl->entries.push_back(std::move(en));
                         } catch (...) { continue; }
                     }
                     lvl->width = 0;
@@ -367,7 +368,8 @@ namespace NHyprbar {
             if (ws.empty())
                 return;
             std::sort(ws.begin(), ws.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-            auto& L = levels.emplace_back();
+            auto&      L = levels.emplace_back();
+            SWarmToken WARM; // appIcon builds a texture, and we are in a deferred click, not a render
             for (const auto& [SEQ, W] : ws) {
                 std::string lbl;
                 taskLabel(W, lbl);

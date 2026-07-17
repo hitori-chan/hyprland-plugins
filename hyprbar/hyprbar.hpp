@@ -54,6 +54,9 @@
 #include <hyprland/src/config/supplementary/executor/Executor.hpp>
 
 #include <linux/input-event-codes.h>
+#include <poll.h>
+#include <libudev.h>
+#include <wayland-server-core.h>
 #include <xkbcommon/xkbcommon.h>
 #include <xkbcommon/xkbcommon-names.h>
 #include <sdbus-c++/sdbus-c++.h>
@@ -115,6 +118,7 @@ namespace NHyprbar {
     std::string        lower(std::string s);
     CHyprColor         color(const SP<Config::Values::CColorValue>& v);
     void               findBattery();
+    bool               hasBattery();   // a gauge to watch: false on desktops
     bool               refreshTexts(); // -> true when the clock/battery text changed
 
     // awesome's tasklist text: "⌃"/"+"/"✈" state markers, then the title.
@@ -143,6 +147,23 @@ namespace NHyprbar {
     extern bool warming;  // warmBars() is building; the ONLY time a texture may be created
     extern bool texStale; // a draw ran ahead of the screen (texture never warmed, or labels
                           // flipped under a scissored repaint) -> warm + repaint
+
+    // Some textures are resolved OUTSIDE the warm pass, from the event loop: a
+    // dbusmenu icon-name arrives in a reply, a client-list row is built in a
+    // deferred click. warming gates texture creation, but the real safety
+    // condition is "not inside a render" (inRenderBar) — which these contexts
+    // never are. This token grants the permission around such a resolve; the
+    // caller damages after, so the new icon gets its own frame. Never
+    // construct it inside a render.
+    struct SWarmToken {
+        bool prev = warming;
+        SWarmToken() {
+            warming = true;
+        }
+        ~SWarmToken() {
+            warming = prev;
+        }
+    };
 
     // Build every texture the next frame will paint. Safe to call from
     // anywhere: it no-ops inside a render, which is exactly where building

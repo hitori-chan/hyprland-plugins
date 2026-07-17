@@ -48,6 +48,10 @@ namespace NHyprbar {
 
     // ---- clock / battery ----
 
+    bool hasBattery() {
+        return !batteryDir.empty();
+    }
+
     void findBattery() {
         batteryDir.clear();
         mainsDir.clear();

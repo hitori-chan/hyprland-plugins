@@ -91,12 +91,14 @@
 // every window action. Icon name+pixmap are fetched serially and committed
 // as one change (separate replies = a mismatched intermediate frame on every
 // REAL fcitx idle<->unikey flip), and name-resolved tray textures are cached
-// so a flip never touches the disk. DBus is polled from a 50 ms main-thread
-// timer (fd integration would be nicer, but a readable-waiter can't be
-// unregistered and would outlive plugin unload = crash); every async send
-// pulls the next tick to 2 ms, so signal->fetch->commit chains settle in a
-// few ms instead of riding whole poll periods — a tray flip lands in the
-// same breath as the window event that caused it.
+// so a flip never touches the disk. DBus is event-driven: sd-bus's fds live
+// in the wayland event loop as removable sources (torn out before the
+// connection dies), so idle costs zero wakeups and a tray signal lands the
+// same loop iteration; a normally-disarmed timer carries only sd-bus's own
+// rare timeouts and the deferred post-send drain (dispatch is not
+// re-entrant). The clock re-arms to the minute it actually changes on, and
+// the battery gauge refreshes from power_supply udev uevents (plug/unplug is
+// instant) with the minute tick as a failsafe.
 //
 // The code is split by concern — see hyprbar.hpp for the module map.
 
@@ -132,6 +134,64 @@ static void damageAndWarm() {
         warmBars();
         damageBars();
     });
+}
+
+// The clock shows minutes, so it only needs to tick on the minute — arm to
+// the next boundary (+ a margin to land just past it) instead of every 10s.
+static std::chrono::milliseconds toNextMinute() {
+    const auto NOW = std::time(nullptr);
+    return std::chrono::milliseconds((60 - NOW % 60) * 1000 + 200);
+}
+
+// Battery is event-driven off power_supply udev uevents: plug/unplug and
+// capacity changes arrive as kernel events instead of a 10s poll (the minute
+// tick above is the failsafe read). Skipped on desktops (no gauge).
+static udev*            g_udev       = nullptr;
+static udev_monitor*    g_udevMon    = nullptr;
+static wl_event_source* g_batterySrc = nullptr;
+
+static int              onBatteryUevent(int, uint32_t, void*) {
+    if (g_udevMon)
+        while (auto* DEV = udev_monitor_receive_device(g_udevMon))
+            udev_device_unref(DEV);
+    if (refreshTexts())
+        damageAndWarm();
+    return 0;
+}
+
+static void batteryWatchInit() {
+    if (!hasBattery() || !g_pCompositor)
+        return;
+    g_udev = udev_new();
+    if (!g_udev)
+        return;
+    g_udevMon = udev_monitor_new_from_netlink(g_udev, "udev");
+    if (g_udevMon) {
+        udev_monitor_filter_add_match_subsystem_devtype(g_udevMon, "power_supply", nullptr);
+        udev_monitor_enable_receiving(g_udevMon);
+        const int FD = udev_monitor_get_fd(g_udevMon);
+        if (FD >= 0)
+            g_batterySrc = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, FD, WL_EVENT_READABLE, onBatteryUevent, nullptr);
+    }
+    if (!g_batterySrc) { // setup failed partway: the minute tick still refreshes
+        if (g_udevMon)
+            udev_monitor_unref(g_udevMon);
+        udev_unref(g_udev);
+        g_udevMon = nullptr;
+        g_udev    = nullptr;
+    }
+}
+
+static void batteryWatchExit() {
+    if (g_batterySrc)
+        wl_event_source_remove(g_batterySrc); // before the monitor that owns the fd
+    if (g_udevMon)
+        udev_monitor_unref(g_udevMon);
+    if (g_udev)
+        udev_unref(g_udev);
+    g_batterySrc = nullptr;
+    g_udevMon    = nullptr;
+    g_udev       = nullptr;
 }
 
 // hl.plugin.hyprbar.menubar() — awesome's Mod+P, the strip below the bar.
@@ -235,18 +295,19 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     lDamage.push_back(EV.monitor.layoutChanged.listen([]() { damageAndWarm(); }));
 
     timer = makeShared<CEventLoopTimer>(
-        std::chrono::seconds(10),
+        toNextMinute(),
         [](SP<CEventLoopTimer> self, void*) {
             if (refreshTexts())
                 damageAndWarm();
-            self->updateTimeout(std::chrono::seconds(10));
+            self->updateTimeout(toNextMinute());
         },
         nullptr);
     g_pEventLoopManager->addTimer(timer);
+    batteryWatchInit();
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor: kanji taglist, tasklist with icons, tray with menus, menubar launcher, battery, clock", "hitori", "1.2.1"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor: kanji taglist, tasklist with icons, tray with menus, menubar launcher, battery, clock", "hitori", "1.2.2"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
@@ -254,6 +315,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
     Menu::exit();
     Tray::exit();
     inputExit();
+    batteryWatchExit();
     if (timer && g_pEventLoopManager)
         g_pEventLoopManager->removeTimer(timer);
     timer.reset();

@@ -13,20 +13,75 @@ namespace NHyprbar {
         static std::unique_ptr<sdbus::IObject> watcher;
         static std::unique_ptr<sdbus::IProxy>  busProxy;
         std::vector<SP<SItem>>                 items;
-        static SP<CEventLoopTimer>             poll;
-        static bool                            pollBurst = false;
+        static SP<CEventLoopTimer>             poll; // sd-bus timeout carrier + deferred-drain kicker, normally disarmed
+        static wl_event_source*                busSrc    = nullptr;
+        static wl_event_source*                busEvtSrc = nullptr;
+        static UP<SEventLoopDoLaterLock>       pendingTeardown;
 
-        // A reply on the local bus is ~1ms away, but the next poll tick could be
-        // a full period out — and a NewIcon -> IconName -> IconPixmap chain used
-        // to ride THREE ticks, so a tray change landed visibly later than the
-        // window event that caused it (the "bar blinks when I close a window":
-        // the tasklist reflowed instantly, fcitx's icon swap straggled in up to
-        // ~750ms later, two separate repaints). After every send, pull the next
-        // tick close so the whole chain settles within a few ms.
+        // A drain must never run synchronously from here: sends happen inside
+        // signal/reply handlers, i.e. inside processPendingEvent, and sd-bus
+        // dispatch is not re-entrant. Park a near tick on the timer instead —
+        // it re-syncs the fd mask (a send may want POLLOUT the current mask
+        // predates) and drains whatever the send provoked.
         void pollSoon() {
-            pollBurst = true;
             if (poll)
                 poll->updateTimeout(std::chrono::milliseconds(2));
+        }
+
+        static void teardown() {
+            if (busSrc)
+                wl_event_source_remove(busSrc);
+            if (busEvtSrc)
+                wl_event_source_remove(busEvtSrc);
+            busSrc = busEvtSrc = nullptr;
+            if (poll)
+                poll->updateTimeout(std::nullopt);
+            if (!Menu::isLocal)
+                try {
+                    Menu::close(); // its proxy borrows conn; close it before conn dies
+                } catch (...) {}   // close() sends "closed" events — the bus may already be gone
+            items.clear();
+            busProxy.reset();
+            watcher.reset();
+            conn.reset();
+        }
+
+        // Drain the bus, then hand sd-bus's own poll needs to the event loop:
+        // fd mask from PollData::events, its (rare) internal timeout on the
+        // timer. Steady state: zero timers armed, wakeups only when the fd
+        // actually fires.
+        static void syncBus() {
+            if (!conn)
+                return;
+            try {
+                int n = 0;
+                while (n++ < 64 && conn->processPendingEvent()) {} // cap: a flooding client must not stall the frame
+                const auto PD = conn->getEventLoopPollData();
+                if (busSrc)
+                    wl_event_source_fd_update(busSrc, ((PD.events & POLLIN) ? WL_EVENT_READABLE : 0) | ((PD.events & POLLOUT) ? WL_EVENT_WRITABLE : 0));
+                const auto REL = PD.getRelativeTimeout();
+                if (n > 64) // cap hit: more queued, come back next tick
+                    poll->updateTimeout(std::chrono::milliseconds(2));
+                else if (REL == std::chrono::microseconds::max())
+                    poll->updateTimeout(std::nullopt);
+                else
+                    poll->updateTimeout(std::max(std::chrono::duration_cast<std::chrono::milliseconds>(REL), std::chrono::milliseconds(1)));
+            } catch (const std::exception& E) {
+                // the bus died under us (broker restart); an escape here would
+                // unwind through the event loop's C frames and kill the session
+                if (conn && g_pEventLoopManager && !pendingTeardown) {
+                    HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprbar] tray bus lost, tray disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
+                    pendingTeardown = g_pEventLoopManager->doLaterLock([]() {
+                        teardown();
+                        barChanged(); // the dead items just left the strip
+                    });
+                }
+            }
+        }
+
+        static int onBusFd(int, uint32_t, void*) {
+            syncBus();
+            return 0;
         }
 
         // Name and pixmap are fetched SERIALLY and committed as ONE change.
@@ -210,37 +265,31 @@ namespace NHyprbar {
 
                 watcher->emitSignal("StatusNotifierHostRegistered").onInterface(WIFACE);
 
-                // Main-thread polling: every DBus callback above may touch
-                // compositor state safely. (An fd readable-waiter would be
-                // event-driven, but it can't be unregistered on plugin unload.)
-                // 50ms keeps incoming signals near-immediate; sends made inside
-                // the drain re-arm a 2ms burst tick via pollSoon().
-                poll = makeShared<CEventLoopTimer>(
-                    std::chrono::milliseconds(50),
-                    [](SP<CEventLoopTimer> self, void*) {
-                        pollBurst = false;
-                        if (conn)
-                            while (conn->processPendingEvent()) {}
-                        self->updateTimeout(std::chrono::milliseconds(pollBurst ? 2 : 50));
-                    },
-                    nullptr);
+                // Event-driven bus: sd-bus's fd + eventFd live in the wayland
+                // event loop (removable sources — exit pulls them before the
+                // connection dies), so idle costs zero wakeups and an incoming
+                // signal lands the same loop iteration. The timer only carries
+                // sd-bus's own rare timeouts and the deferred pollSoon() drain;
+                // every callback still runs on the main thread.
+                poll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { syncBus(); }, nullptr);
                 g_pEventLoopManager->addTimer(poll);
+
+                const auto PD = conn->getEventLoopPollData();
+                busSrc        = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, PD.fd, WL_EVENT_READABLE, onBusFd, nullptr);
+                busEvtSrc     = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, PD.eventFd, WL_EVENT_READABLE, onBusFd, nullptr);
+                syncBus(); // drain anything queued during setup, set the initial mask/timeout
             } catch (const std::exception& E) {
                 HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprbar] tray disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
-                watcher.reset();
-                conn.reset();
+                teardown();
             }
         }
 
         void exit() {
+            pendingTeardown.reset();
+            teardown(); // fd sources out BEFORE the connection dies
             if (poll && g_pEventLoopManager)
                 g_pEventLoopManager->removeTimer(poll);
             poll.reset();
-            pollBurst = false;
-            items.clear();
-            busProxy.reset();
-            watcher.reset();
-            conn.reset();
         }
     }
 

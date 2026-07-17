@@ -1,9 +1,10 @@
-# sdbus-c++ (DBus tray) + librsvg (SVG icons): hyprbar links what Hyprland doesn't.
+# sdbus-c++ (DBus tray) + librsvg (SVG icons) + libudev (battery uevents):
+# hyprbar links what Hyprland doesn't.
 CXX      ?= g++
 CXXFLAGS ?= -O2
 CXXFLAGS += -std=c++26 -Wall -shared -fPIC -fno-gnu-unique \
-            $(shell pkg-config --cflags hyprland pixman-1 libdrm pangocairo librsvg-2.0)
-LDLIBS   := $(shell pkg-config --libs sdbus-c++ librsvg-2.0)
+            $(shell pkg-config --cflags hyprland pixman-1 libdrm pangocairo librsvg-2.0 libudev)
+LDLIBS   := $(shell pkg-config --libs sdbus-c++ librsvg-2.0 libudev)
 
 all: hyprbar.so
 
