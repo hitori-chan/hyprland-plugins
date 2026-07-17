@@ -144,10 +144,10 @@ namespace NHyprbar {
     //      unmaximized task carries it; it starts discriminating when
     //      other layouts arrive.
     //   ▴/▾/⬌/⬍ have no Hyprland analog.
-    std::string taskLabel(const PHLWINDOW& w) {
-        std::string s;
+    void taskLabel(const PHLWINDOW& w, std::string& out) {
+        out.clear();
         if (w->m_pinned)
-            s += "⌃";
+            out += "⌃";
         // maximized: the configured xdg state where it's honest (floating —
         // hyprmax's per-window maximize speaks xdg only), the fullscreen
         // chain otherwise (tiled windows are told maximized as the CSD lie).
@@ -158,11 +158,10 @@ namespace NHyprbar {
         else
             maximized = Fullscreen::controller()->getFullscreenModes(w).internal == Fullscreen::FSMODE_MAXIMIZED;
         if (maximized)
-            s += "+";
+            out += "+";
         else if (w->m_isFloating)
-            s += "✈";
-        s += w->m_title.empty() ? "<untitled>" : w->m_title;
-        return s;
+            out += "✈";
+        out += w->m_title.empty() ? "<untitled>" : w->m_title;
     }
 
 } // namespace NHyprbar

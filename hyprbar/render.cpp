@@ -29,16 +29,13 @@ namespace NHyprbar {
     // rather than building, which would paint nothing anyway AND swallow every
     // later draw in the element.
     SP<ITexture> textTex(const std::string& text, const CHyprColor& col, int pt, int maxWidth, const std::string& font) {
+        char               meta[48]; // the non-text key parts in one stack write — no to_string churn per call
+        const int          METALEN = std::snprintf(meta, sizeof(meta), "|%llx|%d|%d|", (unsigned long long)col.getAsHex(), pt, maxWidth);
+
         static std::string KEY; // reused; main thread only
         KEY.clear();
         KEY += text;
-        KEY += '|';
-        KEY += std::to_string(col.getAsHex());
-        KEY += '|';
-        KEY += std::to_string(pt);
-        KEY += '|';
-        KEY += std::to_string(maxWidth);
-        KEY += '|';
+        KEY.append(meta, METALEN > 0 ? (size_t)METALEN : 0);
         KEY += font;
 
         if (const auto IT = texCache.find(KEY); IT != texCache.end()) {
@@ -63,8 +60,10 @@ namespace NHyprbar {
     // (~/.config/hypr/icons/<name>.png).
     static const std::vector<const char*>                LAYOUTS = {"floating"};
     static std::unordered_map<WORKSPACEID, size_t>       wsLayout;
-    static std::unordered_map<std::string, SP<ITexture>> layoutTexs;
-    static std::unordered_set<std::string>               layoutTexTried;
+    // keyed by the LAYOUTS literals themselves — pointer identity, no
+    // per-frame string
+    static std::unordered_map<const char*, SP<ITexture>> layoutTexs;
+    static std::unordered_set<const char*>               layoutTexTried;
 
     static const char*                                   currentLayout(WORKSPACEID ws) {
         const auto IT = wsLayout.find(ws);
@@ -260,8 +259,8 @@ namespace NHyprbar {
         { // layoutbox: the active workspace's layout icon; click/wheel cycles
             // the registry — with its single entry it is still the static
             // floating indicator it always was
-            const std::string NAME = currentLayout(WS ? WS->m_id : WORKSPACE_INVALID);
-            auto&             TEX  = layoutTexs[NAME];
+            const char* NAME = currentLayout(WS ? WS->m_id : WORKSPACE_INVALID);
+            auto&       TEX  = layoutTexs[NAME];
             if (!TEX && !layoutTexTried.contains(NAME)) {
                 if (!warming)
                     texStale = true; // an icon is a texture too: warm builds it
@@ -390,7 +389,8 @@ namespace NHyprbar {
                     }
                     tx += ICON + 4;
 
-                    const auto LBL = taskLabel(W);
+                    static std::string LBL; // reused; main thread only
+                    taskLabel(W, LBL);
                     taskFp         = taskFp * 1099511628211ULL + std::hash<std::string>{}(LBL);
                     const auto TEX = textTex(LBL, fg, PT, (int)std::round((ITEMW - (tx - x) - 4) * SCALE));
                     if (TEX && TEX->m_texID != 0) {

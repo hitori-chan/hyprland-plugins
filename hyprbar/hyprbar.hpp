@@ -67,6 +67,7 @@
 
 #include <cctype>
 #include <chrono>
+#include <cstdio>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -116,8 +117,9 @@ namespace NHyprbar {
     void               findBattery();
     bool               refreshTexts(); // -> true when the clock/battery text changed
 
-    // awesome's tasklist text: "⌃"/"+"/"✈" state markers, then the title
-    std::string taskLabel(const PHLWINDOW& w);
+    // awesome's tasklist text: "⌃"/"+"/"✈" state markers, then the title.
+    // Fills a caller-owned buffer: it runs per task per frame.
+    void taskLabel(const PHLWINDOW& w, std::string& out);
 
     // Is this window a task of WS? By workspace ID, NEVER by pointer: while a
     // window closes, the monitor's active workspace and the windows' can

@@ -369,8 +369,9 @@ namespace NHyprbar {
             std::sort(ws.begin(), ws.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
             auto& L = levels.emplace_back();
             for (const auto& [SEQ, W] : ws) {
-                auto LBL = taskLabel(W);
-                L.entries.push_back({.label = LBL, .display = std::move(LBL), .win = W, .icon = appIcon(W->m_class)});
+                std::string lbl;
+                taskLabel(W, lbl);
+                L.entries.push_back({.label = lbl, .display = std::move(lbl), .win = W, .icon = appIcon(W->m_class)});
             }
             ws.clear(); // drop the strong refs now — entries hold weak ones
             anchorX = ax;
@@ -405,6 +406,10 @@ namespace NHyprbar {
             if (!isOpen || mon.lock() != PAINT.mon)
                 return;
 
+            // one palette fetch per render: color() memoizes but still hashes per call
+            const CHyprColor COLBG = color(cfg.colBg), COLACTIVEBG = color(cfg.colActiveBg), COLFG = color(cfg.colFg), COLEMPTY = color(cfg.colEmpty),
+                             COLURGENT = color(cfg.colUrgent), COLFOCUS = color(cfg.colFocus);
+
             const double ROWH = Menu::ROWH, SEPH = Menu::SEPH, PAD = Menu::PAD;
             const double MTOP = PAINT.mb.y + PAINT.h, MBOT = PAINT.mb.y + PAINT.mb.h - 2;
 
@@ -421,7 +426,7 @@ namespace NHyprbar {
                         for (const auto& E : L.entries) {
                             if (E.separator)
                                 continue;
-                            if (const auto T = textTex(E.label, color(cfg.colFg), PAINT.pt); T)
+                            if (const auto T = textTex(E.label, COLFG, PAINT.pt); T)
                                 mw = std::max(mw, T->m_size.x / PAINT.scale + 48);
                         }
                         mw = std::min(mw, 380.0);
@@ -462,11 +467,11 @@ namespace NHyprbar {
                 my0                 = std::clamp(my0, MTOP, MBOT - mh);
                 L.box               = CBox{mx, my0, mw, mh};
 
-                PAINT.rect(L.box, color(cfg.colBg));
-                PAINT.rect(CBox{mx, my0, mw, 1}, color(cfg.colActiveBg));
-                PAINT.rect(CBox{mx, my0 + mh - 1, mw, 1}, color(cfg.colActiveBg));
-                PAINT.rect(CBox{mx, my0, 1, mh}, color(cfg.colActiveBg));
-                PAINT.rect(CBox{mx + mw - 1, my0, 1, mh}, color(cfg.colActiveBg));
+                PAINT.rect(L.box, COLBG);
+                PAINT.rect(CBox{mx, my0, mw, 1}, COLACTIVEBG);
+                PAINT.rect(CBox{mx, my0 + mh - 1, mw, 1}, COLACTIVEBG);
+                PAINT.rect(CBox{mx, my0, 1, mh}, COLACTIVEBG);
+                PAINT.rect(CBox{mx + mw - 1, my0, 1, mh}, COLACTIVEBG);
 
                 // labels share one leading column when any row in this level
                 // has an icon or a check/radio state, ragged otherwise — how
@@ -504,7 +509,7 @@ namespace NHyprbar {
                 }
 
                 if (L.entries.empty())
-                    PAINT.texIn(textTex("…", color(cfg.colEmpty), PAINT.pt), CBox{mx, my, mw, ROWH});
+                    PAINT.texIn(textTex("…", COLEMPTY, PAINT.pt), CBox{mx, my, mw, ROWH});
 
                 bool moreBelow = false;
                 for (size_t i = L.scrollTop; i < L.entries.size(); i++) {
@@ -514,7 +519,7 @@ namespace NHyprbar {
                         break;
                     }
                     if (E.separator) {
-                        PAINT.rect(CBox{mx + 8, my + SEPH / 2, mw - 16, 1}, color(cfg.colActiveBg));
+                        PAINT.rect(CBox{mx + 8, my + SEPH / 2, mw - 16, 1}, COLACTIVEBG);
                         my += SEPH;
                         continue;
                     }
@@ -523,10 +528,10 @@ namespace NHyprbar {
                     // cascade hangs off stays lit while the cascade is open;
                     // disposition warning/alert rows take the urgent color
                     const bool OPENSUB = li + 1 < Menu::levels.size() && Menu::levels[li + 1].parentIdx == (int)i;
-                    CHyprColor fg      = !E.enabled ? color(cfg.colEmpty) : E.alert ? color(cfg.colUrgent) : color(cfg.colFg);
+                    CHyprColor fg      = !E.enabled ? COLEMPTY : E.alert ? COLURGENT : COLFG;
                     if (((int)i == L.hover || OPENSUB) && E.enabled) {
-                        PAINT.rect(ROW, color(cfg.colActiveBg));
-                        fg = color(cfg.colFocus);
+                        PAINT.rect(ROW, COLACTIVEBG);
+                        fg = COLFOCUS;
                     }
 
                     if (E.icon && E.icon->m_texID != 0) {
@@ -558,10 +563,10 @@ namespace NHyprbar {
                     // GTK's scroll arrows: full-width strips, dimmed at their
                     // end of the list, click steps like a wheel notch
                     const auto arrow = [&](const CBox& B, int id, bool on, const char* glyph) {
-                        CHyprColor fg = on ? color(cfg.colFg) : color(cfg.colEmpty);
+                        CHyprColor fg = on ? COLFG : COLEMPTY;
                         if (L.hover == id && on) {
-                            PAINT.rect(B, color(cfg.colActiveBg));
-                            fg = color(cfg.colFocus);
+                            PAINT.rect(B, COLACTIVEBG);
+                            fg = COLFOCUS;
                         }
                         PAINT.texIn(textTex(glyph, fg, PAINT.pt), B);
                         L.rows.push_back({B, id});

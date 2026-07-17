@@ -282,9 +282,16 @@ namespace NHyprbar {
                 return IT == counts.end() ? 0 : IT->second;
             };
 
+            static const std::vector<std::string> LCATS = [] {
+                std::vector<std::string> v;
+                for (int i = 0; i < NCATS; i++)
+                    v.push_back(lower(CATEGORIES[i].name));
+                return v;
+            }();
+
             if (currentCat < 0)
                 for (int i = 0; i < NCATS; i++) {
-                    const auto LN = lower(CATEGORIES[i].name);
+                    const auto& LN = LCATS[i];
                     if (LN.find(Q) == std::string::npos)
                         continue;
                     R.push_back({{.cat = i}, LN.starts_with(Q) ? 3 : 2, weightOf(CATEGORIES[i].name)});
@@ -695,8 +702,11 @@ namespace NHyprbar {
             if (!isOpen || mon.lock() != PAINT.mon)
                 return;
 
+            // one palette fetch per render: color() memoizes but still hashes per call
+            const CHyprColor COLBG = color(cfg.colBg), COLFG = color(cfg.colFg), COLACTIVEBG = color(cfg.colActiveBg), COLFOCUS = color(cfg.colFocus);
+
             const double MY = PAINT.mb.y + PAINT.h;
-            PAINT.rect(CBox{PAINT.mb.x, MY, PAINT.mb.w, PAINT.h}, color(cfg.colBg));
+            PAINT.rect(CBox{PAINT.mb.x, MY, PAINT.mb.w, PAINT.h}, COLBG);
 
             double px = PAINT.mb.x + 8;
 
@@ -704,7 +714,7 @@ namespace NHyprbar {
             // a ▏ glyph: renderText takes plain text only (no pango markup),
             // so awesome's inverse-video block cursor can't be drawn natively
             const std::string PLABEL = Menubar::currentCat >= 0 ? std::string{Menubar::CATEGORIES[Menubar::currentCat].name} + ": " : "Run: ";
-            const auto        PROMPT = textTex(PLABEL + Menubar::typed.substr(0, Menubar::cursor) + "▏" + Menubar::typed.substr(Menubar::cursor), color(cfg.colFg), PAINT.pt);
+            const auto        PROMPT = textTex(PLABEL + Menubar::typed.substr(0, Menubar::cursor) + "▏" + Menubar::typed.substr(Menubar::cursor), COLFG, PAINT.pt);
             const double      PW     = PROMPT ? PROMPT->m_size.x / PAINT.scale : 0;
             PAINT.texIn(PROMPT, CBox{px, MY, PW, PAINT.h});
             px += PW + 12;
@@ -737,7 +747,7 @@ namespace NHyprbar {
                 // entry: [8][icon][6][text][8], icon on the 3px-inset rhythm
                 const double ICON   = PAINT.h - 6;
                 const auto   entryW = [&](int i) {
-                    const auto T = textTex(entryName(i), color(cfg.colFg), PAINT.pt);
+                    const auto T = textTex(entryName(i), COLFG, PAINT.pt);
                     const auto I = entryIcon(i);
                     return 8 + (I && I->m_texID != 0 ? ICON + 6 : 0) + (T ? T->m_size.x / PAINT.scale : 0) + 8;
                 };
@@ -753,17 +763,17 @@ namespace NHyprbar {
                 for (int i = Menubar::first; i < (int)SH.size(); i++) {
                     const auto   NAME = entryName(i);
                     const auto   ITEX = entryIcon(i);
-                    const auto   WT   = textTex(NAME, color(cfg.colFg), PAINT.pt);
+                    const auto   WT   = textTex(NAME, COLFG, PAINT.pt);
                     const double W    = 8 + (ITEX && ITEX->m_texID != 0 ? ICON + 6 : 0) + (WT ? WT->m_size.x / PAINT.scale : 0) + 8;
                     if (px + W > PAINT.mb.x + PAINT.mb.w)
                         break;
 
                     // awesome's menubar item colors: fg_normal, the selected
                     // one fg_focus on bg_focus
-                    CHyprColor fg = color(cfg.colFg);
+                    CHyprColor fg = COLFG;
                     if (i == Menubar::sel) {
-                        PAINT.rect(CBox{px, MY, W, PAINT.h}, color(cfg.colActiveBg));
-                        fg = color(cfg.colFocus);
+                        PAINT.rect(CBox{px, MY, W, PAINT.h}, COLACTIVEBG);
+                        fg = COLFOCUS;
                     }
 
                     double tx = px + 8;

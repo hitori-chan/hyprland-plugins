@@ -194,9 +194,9 @@ namespace NHyprbar {
     }
 
     // class -> texture; nullptr is cached too (= use the letter fallback).
-    static std::map<std::string, SP<ITexture>> appIconCache;
+    static std::unordered_map<std::string, SP<ITexture>> appIconCache;
 
-    SP<ITexture>                               appIcon(const std::string& klass) {
+    SP<ITexture>                                         appIcon(const std::string& klass) {
         if (klass.empty())
             return nullptr;
         if (const auto IT = appIconCache.find(klass); IT != appIconCache.end())
@@ -217,9 +217,9 @@ namespace NHyprbar {
     }
 
     // icon name or absolute path (a .desktop Icon= value) -> texture; nullptr cached too
-    static std::map<std::string, SP<ITexture>> namedIconCache;
+    static std::unordered_map<std::string, SP<ITexture>> namedIconCache;
 
-    SP<ITexture>                               namedIcon(const std::string& name) {
+    SP<ITexture>                                         namedIcon(const std::string& name) {
         if (name.empty())
             return nullptr;
         if (const auto IT = namedIconCache.find(name); IT != namedIconCache.end())
@@ -240,9 +240,9 @@ namespace NHyprbar {
     // too. fcitx REALLY flips its icon on every IM toggle / input context
     // change — without this cache every flip re-resolved and re-rasterized the
     // file from disk inside the render pass.
-    static std::map<std::string, SP<ITexture>> trayIconCache;
+    static std::unordered_map<std::string, SP<ITexture>> trayIconCache;
 
-    SP<ITexture>                               trayIcon(const std::string& name, const std::string& themePath) {
+    SP<ITexture>                                         trayIcon(const std::string& name, const std::string& themePath) {
         const auto KEY = name + "|" + themePath;
         if (const auto IT = trayIconCache.find(KEY); IT != trayIconCache.end())
             return IT->second;
