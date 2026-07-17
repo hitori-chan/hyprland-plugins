@@ -697,7 +697,6 @@ namespace NHyprbar {
 
             const double MY = PAINT.mb.y + PAINT.h;
             PAINT.rect(CBox{PAINT.mb.x, MY, PAINT.mb.w, PAINT.h}, color(cfg.colBg));
-            PAINT.rect(CBox{PAINT.mb.x, MY + PAINT.h - 1, PAINT.mb.w, 1}, color(cfg.colActiveBg)); // hairline under the prompt strip
 
             double px = PAINT.mb.x + 8;
 
