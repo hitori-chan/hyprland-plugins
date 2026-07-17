@@ -15,7 +15,7 @@ or focus to a window underneath.
   corner square. Click views, `Mod+click` sends the focused window, wheel
   cycles.
 - **Tasklist** — the active workspace's windows in arrival order: app icon,
-  `⌃` pinned / `+` maximized markers. Click focuses + raises, right-click
+  `⌃` pinned / `+` maximized / `✈` floating markers. Click focuses + raises, right-click
   opens the all-clients menu, wheel walks focus.
 - **Tray** — in-compositor SNI host with a native dbusmenu renderer.
 - **Battery** — Material glyph + percent; hidden on desktops.

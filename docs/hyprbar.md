@@ -15,6 +15,9 @@ Arrival order, stable across raises. State markers prefix the title:
 - `⌃` — pinned (Hyprland's pin is ontop + sticky; presented as awesome's
   ontop marker, which `Super+T` toggled)
 - `+` — maximized
+- `✈` — floating, suppressed while maximized (awesome's rule); the
+  floating-only setup floats everything, so today it rides every
+  unmaximized task and starts discriminating when other layouts land
 
 The focused task is cyan text on the plain bar (`tasklist_bg_focus` =
 `bg_normal`), urgent tasks get the urgent background. Right-click opens the

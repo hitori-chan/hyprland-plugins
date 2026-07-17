@@ -116,7 +116,7 @@ namespace NHyprbar {
     void               findBattery();
     bool               refreshTexts(); // -> true when the clock/battery text changed
 
-    // awesome's tasklist text: "⌃"/"+" state markers, then the title
+    // awesome's tasklist text: "⌃"/"+"/"✈" state markers, then the title
     std::string taskLabel(const PHLWINDOW& w);
 
     // Is this window a task of WS? By workspace ID, NEVER by pointer: while a

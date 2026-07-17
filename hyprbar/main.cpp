@@ -13,8 +13,8 @@
 //   wheel views the next/previous tag (wrapping). viewtoggle/toggle_tag
 //   have no analog — a window sits on exactly one workspace.
 // - tasklist: every window on THIS monitor's active workspace in arrival
-//   order (stable across raises, like awesome), app icon + "⌃"/"+" state
-//   markers + title; the focused task is accent-colored text on the plain
+//   order (stable across raises, like awesome), app icon + "⌃"/"+"/"✈"
+//   state markers + title; the focused task is accent-colored text on the plain
 //   bar (their tasklist_bg_focus WAS the bar bg), urgent gets the urgent
 //   bg. Click focuses + raises (no minimize here, so the click-focused-
 //   to-minimize half of awesome's button is off), right-click opens the
@@ -209,8 +209,9 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         damageAndWarm();
     }));
     lDamage.push_back(EV.window.urgent.listen([](PHLWINDOW) { damageAndWarm(); }));
-    lDamage.push_back(EV.window.pin.listen([](PHLWINDOW) { damageAndWarm(); }));    // the tasklist's ⌃ marker
-    lDamage.push_back(EV.window.class_.listen([](PHLWINDOW) { damageAndWarm(); })); // the task icon re-resolves
+    lDamage.push_back(EV.window.pin.listen([](PHLWINDOW) { damageAndWarm(); }));      // the tasklist's ⌃ marker
+    lDamage.push_back(EV.window.floating.listen([](PHLWINDOW) { damageAndWarm(); })); // the ✈ marker
+    lDamage.push_back(EV.window.class_.listen([](PHLWINDOW) { damageAndWarm(); }));   // the task icon re-resolves
     lDamage.push_back(EV.window.fullscreen.listen([](PHLWINDOW) { damageAndWarm(); }));
     lDamage.push_back(EV.window.moveToWorkspace.listen([](PHLWINDOW, PHLWORKSPACE) { damageAndWarm(); }));
     lDamage.push_back(EV.workspace.active.listen([](PHLWORKSPACE) { damageAndWarm(); }));
@@ -231,7 +232,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor: kanji taglist, tasklist with icons, tray with menus, menubar launcher, battery, clock", "hitori", "1.0.3"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor: kanji taglist, tasklist with icons, tray with menus, menubar launcher, battery, clock", "hitori", "1.1.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

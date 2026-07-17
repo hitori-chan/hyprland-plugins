@@ -139,8 +139,11 @@ namespace NHyprbar {
     //      pin presents as the ontop it replaces — ▪ would read as wrong.
     //   +  maximized (awesome drew it bold; plain here — markup would need
     //      escaping every title).
-    //   ▴/▾/⬌/⬍ have no Hyprland analog; ✈ never applied (a floating
-    //   LAYOUT doesn't mark clients, and floating is the only layout).
+    //   ✈  floating, in maximized's else exactly like awesome. The
+    //      floating-only rule floats every window, so today every
+    //      unmaximized task carries it; it starts discriminating when
+    //      other layouts arrive.
+    //   ▴/▾/⬌/⬍ have no Hyprland analog.
     std::string taskLabel(const PHLWINDOW& w) {
         std::string s;
         if (w->m_pinned)
@@ -156,6 +159,8 @@ namespace NHyprbar {
             maximized = Fullscreen::controller()->getFullscreenModes(w).internal == Fullscreen::FSMODE_MAXIMIZED;
         if (maximized)
             s += "+";
+        else if (w->m_isFloating)
+            s += "✈";
         s += w->m_title.empty() ? "<untitled>" : w->m_title;
         return s;
     }
