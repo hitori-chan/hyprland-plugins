@@ -253,13 +253,19 @@ namespace NHyprnotify {
                                      const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout) {
             uint32_t id = replacesId;
             if (id == 0) {
-                id = nextId++;
-                if (nextId == 0)
-                    nextId = 1;
-            } else if (id >= nextId) {
-                nextId = id + 1; // the OSD scripts pin high replace ids — never hand them out again
-                if (nextId == 0)
-                    nextId = 1; // a replaces_id of UINT32_MAX must not make the next fresh id 0 ("no id")
+                // Fresh ids count up from a low counter and skip any that's
+                // still live, so they never collide with a displayed
+                // notification. Crucially the counter is NOT dragged up to a
+                // seen replaces_id (as it once was): the OSD scripts pin ids
+                // in the 9990s (osd.sh, touchpad-auto.sh, battery-watch.sh),
+                // and bumping past 9991 handed the next fresh notification
+                // 9992 — the brightness OSD's id — so a keypress hijacked it.
+                // Low fresh ids and the pinned range stay disjoint.
+                do {
+                    id = nextId++;
+                    if (nextId == 0)
+                        nextId = 1; // wrap: 0 means "no id"
+                } while (byId(id));
             }
 
             auto n = byId(id);
@@ -355,7 +361,7 @@ namespace NHyprnotify {
                                    return std::vector<std::string>{"actions", "body", "icon-static"};
                                }),
                                sdbus::registerMethod("GetServerInformation").withOutputParamNames("name", "vendor", "version", "spec_version").implementedAs([]() {
-                                   return std::tuple<std::string, std::string, std::string, std::string>{"hyprnotify", "hitori", "1.0.1", "1.2"};
+                                   return std::tuple<std::string, std::string, std::string, std::string>{"hyprnotify", "hitori", "1.0.2", "1.2"};
                                }),
                                sdbus::registerSignal("NotificationClosed").withParameters<uint32_t, uint32_t>("id", "reason"),
                                sdbus::registerSignal("ActionInvoked").withParameters<uint32_t, std::string>("id", "action_key"))
