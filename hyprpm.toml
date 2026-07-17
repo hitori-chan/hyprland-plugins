@@ -1,0 +1,46 @@
+# Listeners run in plugin load order (= this file's order):
+#   hyprbar first — it must swallow strip clicks / open tray menus before
+#   anything treats them as window clicks;
+#   hyprmax before hyprclick — the immovable-maximized swallow must win
+#   over click-to-raise.
+# No commit_pins: one Hyprland (the hitori-chan/Hyprland fork), so hyprpm
+# builds the default branch.
+
+[repository]
+name    = "hyprland-plugins"
+authors = ["hitori"]
+
+[hyprbar]
+description = "the awesome wibar, drawn by the compositor: kanji taglist, tasklist with icons, tray with menus, menubar launcher, battery, clock"
+version     = "1.0.0"
+authors     = ["hitori"]
+output      = "hyprbar/hyprbar.so"
+build       = ["make -C hyprbar all"]
+
+[hyprmax]
+description = "awesome's per-window maximize: any number at once, immovable while maximized, windowed size remembered per app across closes and relogs"
+version     = "1.0.0"
+authors     = ["hitori"]
+output      = "hyprmax/hyprmax.so"
+build       = ["make -C hyprmax all"]
+
+[hyprsnap]
+description = "awesome's awful.mouse.snap: magnetic edge pull + aerosnap zones while dragging"
+version     = "1.0.0"
+authors     = ["hitori"]
+output      = "hyprsnap/hyprsnap.so"
+build       = ["make -C hyprsnap all"]
+
+[hyprclick]
+description = "awesome click/focus policy: click-to-raise, keyboard focus raises, hover never does"
+version     = "1.0.0"
+authors     = ["hitori"]
+output      = "hyprclick/hyprclick.so"
+build       = ["make -C hyprclick all"]
+
+[hyprplace]
+description = "spawn placement: an app reopens at its last spot, else centered, else the largest gap — never glued to a border"
+version     = "1.0.0"
+authors     = ["hitori"]
+output      = "hyprplace/hyprplace.so"
+build       = ["make -C hyprplace all"]
