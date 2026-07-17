@@ -4,7 +4,7 @@
 
 namespace NHyprbar {
 
-    static const char*                         KANJI[9] = {"一", "二", "三", "四", "五", "六", "七", "八", "九"};
+    static const char* KANJI[9] = {"一", "二", "三", "四", "五", "六", "七", "八", "九"};
 
     // Each entry remembers the warm generation that last wanted it. Evicting
     // whatever the CURRENT layout doesn't name would thrash: sloppy focus
@@ -17,8 +17,8 @@ namespace NHyprbar {
         uint64_t     gen = 0;
     };
     static std::unordered_map<std::string, SCachedTex> texCache;
-    static uint64_t                          texGen        = 0;
-    static constexpr uint64_t                TEX_CACHE_LIFE = 32; // warms an unused texture survives
+    static uint64_t                                    texGen         = 0;
+    static constexpr uint64_t                          TEX_CACHE_LIFE = 32; // warms an unused texture survives
 
     // per monitor: a fingerprint of the task labels the strip shows — see
     // the tasklist in renderBar
@@ -58,8 +58,8 @@ namespace NHyprbar {
     // awesome's model. Future layouts append here and take real effect
     // wherever they get implemented; the bar carries the state and the icon
     // (~/.config/hypr/icons/<name>.png).
-    static const std::vector<const char*>                LAYOUTS = {"floating"};
-    static std::unordered_map<WORKSPACEID, size_t>       wsLayout;
+    static const std::vector<const char*>          LAYOUTS = {"floating"};
+    static std::unordered_map<WORKSPACEID, size_t> wsLayout;
     // keyed by the LAYOUTS literals themselves — pointer identity, no
     // per-frame string
     static std::unordered_map<const char*, SP<ITexture>> layoutTexs;
@@ -80,7 +80,7 @@ namespace NHyprbar {
         barChanged();
     }
 
-    static bool inRenderBar = false; // a render is on the stack: never build textures
+    static bool                      inRenderBar = false; // a render is on the stack: never build textures
 
     static UP<SEventLoopDoLaterLock> pendingRewarm;
 
@@ -170,8 +170,8 @@ namespace NHyprbar {
         // urgency + occupancy (taglist) and this workspace's tasks (tasklist,
         // in arrival order).
         static std::vector<std::pair<uint64_t, PHLWINDOW>> tasks; // reused; main thread only
-        bool                                              urgentWS[10]  = {};
-        int                                               wsWindows[10] = {};
+        bool                                               urgentWS[10]  = {};
+        int                                                wsWindows[10] = {};
         tasks.clear();
         for (const auto& W : Desktop::windowState()->windows()) {
             if (W->m_isMapped && W->m_workspace) {

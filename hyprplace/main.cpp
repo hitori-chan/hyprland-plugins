@@ -40,10 +40,10 @@
 namespace NHyprplace {
 
     namespace {
-        UP<SEventLoopDoLaterLock>                 pendingPlace;
-        UP<SEventLoopDoLaterLock>                 pendingSave;
-        std::vector<PHLWINDOWREF>                 placeQueue;
-        bool                                      saveQueued = false;
+        UP<SEventLoopDoLaterLock> pendingPlace;
+        UP<SEventLoopDoLaterLock> pendingSave;
+        std::vector<PHLWINDOWREF> placeQueue;
+        bool                      saveQueued = false;
 
         // where each app's last window closed, surviving relogs
         std::unordered_map<std::string, Vector2D> g_lastSpot;
@@ -144,8 +144,8 @@ namespace NHyprplace {
             if (!WS || !MON)
                 return;
 
-            const auto        WA  = MON->logicalBoxMinusReserved();
-            const auto        CUR = w->m_target->position();
+            const auto WA  = MON->logicalBoxMinusReserved();
+            const auto CUR = w->m_target->position();
 
             // the visible floating windows to stay clear of; maximized and
             // fullscreen ones cover no free space, as in awesome

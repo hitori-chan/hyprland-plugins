@@ -14,7 +14,7 @@
 #include <hyprland/src/config/ConfigValue.hpp>
 
 namespace NHyprsnap {
-    SConfig             g_config;
+    SConfig                    g_config;
 
     static SP<Layout::ITarget> floatingDragTarget(bool resize) {
         if (!g_layoutManager)

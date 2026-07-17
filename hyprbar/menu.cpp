@@ -400,7 +400,7 @@ namespace NHyprbar {
             Tray::pollSoon();
             close();
         }
-    
+
         // The open panels, cascade by cascade.
         void render(const SPaint& PAINT) {
             if (!isOpen || mon.lock() != PAINT.mon)
@@ -410,8 +410,8 @@ namespace NHyprbar {
             const CHyprColor COLBG = color(cfg.colBg), COLACTIVEBG = color(cfg.colActiveBg), COLFG = color(cfg.colFg), COLEMPTY = color(cfg.colEmpty),
                              COLURGENT = color(cfg.colUrgent), COLFOCUS = color(cfg.colFocus);
 
-            const double ROWH = Menu::ROWH, SEPH = Menu::SEPH, PAD = Menu::PAD;
-            const double MTOP = PAINT.mb.y + PAINT.h, MBOT = PAINT.mb.y + PAINT.mb.h - 2;
+            const double     ROWH = Menu::ROWH, SEPH = Menu::SEPH, PAD = Menu::PAD;
+            const double     MTOP = PAINT.mb.y + PAINT.h, MBOT = PAINT.mb.y + PAINT.mb.h - 2;
 
             for (size_t li = 0; li < Menu::levels.size(); li++) {
                 auto& L = Menu::levels[li];
@@ -576,7 +576,7 @@ namespace NHyprbar {
                 }
             }
         }
-}
+    }
 
     void Tray::onServiceDropped(const std::string& service) {
         if (Menu::item && Menu::item->service == service)

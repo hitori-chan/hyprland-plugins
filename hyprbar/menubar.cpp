@@ -694,7 +694,7 @@ namespace NHyprbar {
                 edited();
             }
         }
-    
+
         // The prompt strip, drawn right BELOW the bar so the bar stays visible —
         // awesome's menubar is a separate wibox at the workarea top, under the
         // wibar; it never replaced it.
@@ -705,7 +705,7 @@ namespace NHyprbar {
             // one palette fetch per render: color() memoizes but still hashes per call
             const CHyprColor COLBG = color(cfg.colBg), COLFG = color(cfg.colFg), COLACTIVEBG = color(cfg.colActiveBg), COLFOCUS = color(cfg.colFocus);
 
-            const double MY = PAINT.mb.y + PAINT.h;
+            const double     MY = PAINT.mb.y + PAINT.h;
             PAINT.rect(CBox{PAINT.mb.x, MY, PAINT.mb.w, PAINT.h}, COLBG);
 
             double px = PAINT.mb.x + 8;
@@ -793,7 +793,7 @@ namespace NHyprbar {
                 }
             }
         }
-}
+    }
 
     namespace Menubar {
         // hl.plugin.hyprbar.menubar(), deferred out of the Lua call

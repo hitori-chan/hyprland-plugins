@@ -213,14 +213,14 @@ namespace NHyprbar {
         std::vector<SHit>* hits  = nullptr; // clickable regions, appended as we go
         bool               warm  = false;
         double             scale = 1.0;
-        CBox               mb;         // the monitor's logical box
-        double             h  = 0;     // bar height
-        int                pt = 0;     // text size in pt, already scaled
+        CBox               mb;     // the monitor's logical box
+        double             h  = 0; // bar height
+        int                pt = 0; // text size in pt, already scaled
 
-        CBox               toPhys(const CBox& global) const;               // global logical -> monitor physical
+        CBox               toPhys(const CBox& global) const; // global logical -> monitor physical
         void               rect(const CBox& global, const CHyprColor& c) const;
-        void               tex(const SP<ITexture>& t, const CBox& physBox) const;  // pre-computed physical box
-        void               texIn(const SP<ITexture>& t, const CBox& cell) const;   // centered in a logical cell
+        void               tex(const SP<ITexture>& t, const CBox& physBox) const; // pre-computed physical box
+        void               texIn(const SP<ITexture>& t, const CBox& cell) const;  // centered in a logical cell
     };
 
     // Text -> cached GPU texture. Built ONLY by the warm pass; a miss during a
@@ -248,7 +248,7 @@ namespace NHyprbar {
     // ---- menu.cpp ----
 
     namespace Menu {
-        void render(const SPaint& P); // menu.cpp — the open panels, cascade by cascade
+        void                    render(const SPaint& P); // menu.cpp — the open panels, cascade by cascade
 
         inline constexpr double ROWH = 24, SEPH = 8, PAD = 4, ARROWH = 16;
 
@@ -279,7 +279,7 @@ namespace NHyprbar {
             int32_t                           parentId  = 0;  // dbusmenu id whose children this shows (0 = root)
             int                               parentIdx = -1; // the row in the previous level this cascades from
             std::vector<SEntry>               entries;
-            double                            width     = 0;  // measured at warm; 0 = remeasure
+            double                            width     = 0; // measured at warm; 0 = remeasure
             int                               widthPt   = 0;
             int                               hover     = -1;
             int                               scrollTop = 0;     // first visible entry when overflowing

@@ -63,9 +63,9 @@ static std::unordered_map<PHLWINDOWREF, CBox> g_maximized;
 
 // last windowed box per app class, surviving window closes and relogs: the
 // restore target when a window of that app is born maximized again.
-static std::unordered_map<std::string, CBox>  g_lastWindowed;
+static std::unordered_map<std::string, CBox> g_lastWindowed;
 
-static CBox                                   clampToWorkarea(CBox box, const CBox& wa) {
+static CBox                                  clampToWorkarea(CBox box, const CBox& wa) {
     box.x = std::clamp(box.x, wa.x, std::max(wa.x, wa.x + wa.w - box.w));
     box.y = std::clamp(box.y, wa.y, std::max(wa.y, wa.y + wa.h - box.h));
     return box;
@@ -275,7 +275,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprmax", "toggle", luaToggle);
 
-    return {"hyprmax", "awesome's per-window maximize: any number at once, immovable while maximized, windowed size remembered per app across closes and relogs", "hitori", "1.0.0"};
+    return {"hyprmax", "awesome's per-window maximize: any number at once, immovable while maximized, windowed size remembered per app across closes and relogs", "hitori",
+            "1.0.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

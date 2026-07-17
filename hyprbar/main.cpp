@@ -116,7 +116,7 @@ static SP<CEventLoopTimer>                                 timer;
 static Hyprutils::Signal::CHyprSignalListener              lRender, lButton, lMove, lAxis, lKey;
 static std::vector<Hyprutils::Signal::CHyprSignalListener> lDamage;
 
-static UP<SEventLoopDoLaterLock> pendingWarm;
+static UP<SEventLoopDoLaterLock>                           pendingWarm;
 
 // Anything that changes what the bar shows lands here. The textures are built
 // NOW, in the event loop, because a texture built during a frame cannot be

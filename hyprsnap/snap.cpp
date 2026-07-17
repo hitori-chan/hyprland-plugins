@@ -57,7 +57,7 @@ namespace NHyprsnap::Snap {
 
         // monitorState()->query().vec().run() allocates and RTTI-casts per
         // call; this runs per pointer motion, so mirror closestTo directly.
-        PHLMONITOR                monitorAt(const Vector2D& pos) {
+        PHLMONITOR monitorAt(const Vector2D& pos) {
             PHLMONITOR best;
             float      bestDist = 0.F;
             for (const auto& M : State::monitorState()->monitors()) {
