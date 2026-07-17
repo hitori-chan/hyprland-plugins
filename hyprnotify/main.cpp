@@ -33,13 +33,16 @@
 // the C++ defaults just mirror the theme (the old dunstrc hand-mirrored it;
 // this closes that loop).
 //
-// DBus is polled from a 50 ms main-thread timer (fd integration would be
-// nicer, but a readable-waiter can't be unregistered and would outlive
-// plugin unload = crash); every signal emit pulls the next tick to 2 ms.
-// Textures follow the texture rule (see hyprnotify.hpp): built one frame
-// ahead from the event loop, cached per card, and a replace only rebuilds
-// what actually changed — a volume sweep re-rasters one body line per step,
-// nothing else.
+// DBus is event-driven: sd-bus's fds live in the wayland event loop as
+// removable sources (EXIT pulls them before the connection dies), so idle
+// costs zero wakeups and a Notify lands the same loop iteration; a timer
+// carries only sd-bus's rare internal timeouts and the deferred post-emit
+// drain (sd-bus dispatch is not re-entrant — never drain synchronously
+// from an emit). Textures follow the texture rule (see hyprnotify.hpp):
+// built one frame ahead from the event loop, cached per card, and a
+// replace only rebuilds what actually changed — a volume sweep re-rasters
+// one body line per step, nothing else; image-data pixmaps are downscaled
+// once, hashed for dedup, and freed after upload.
 //
 // The code is split by concern — see hyprnotify.hpp for the module map.
 
@@ -99,15 +102,12 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     lButton = Event::bus()->m_events.input.mouse.button.listen([](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { onMouseButton(e, info); });
     lMove   = Event::bus()->m_events.input.mouse.move.listen([](Vector2D pos, Event::SCallbackInfo& info) { onMouseMove(pos, info); });
 
-    // The cards live on the FOCUSED monitor: when focus lands elsewhere the
-    // old column must clear and the new one warm. Every change from the bus
-    // side damages itself; these are the changes that come from the desktop.
+    // The cards live on the FOCUSED monitor: monitor.focused is the one
+    // desktop event layout depends on (rawMonitorFocus early-outs same-monitor
+    // flips, so sloppy focus costs nothing). It fires BEFORE m_focusMonitor is
+    // assigned — the warm must stay deferred, which notifChanged guarantees.
     auto& EV = Event::bus()->m_events;
-    lDamage.push_back(EV.window.active.listen([](PHLWINDOW, Desktop::eFocusReason) {
-        if (!notifs.empty())
-            notifChanged();
-    }));
-    lDamage.push_back(EV.workspace.active.listen([](PHLWORKSPACE) {
+    lDamage.push_back(EV.monitor.focused.listen([](PHLMONITOR) {
         if (!notifs.empty())
             notifChanged();
     }));
@@ -115,8 +115,12 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         if (!notifs.empty())
             notifChanged();
     }));
+    lDamage.push_back(EV.config.reloaded.listen([]() {
+        if (!notifs.empty())
+            notifChanged(); // a live theme reload re-keys the texture caches
+    }));
 
-    return {"hyprnotify", "awesome's naughty: the compositor is the notification daemon — naughty-style cards, progress hints, image icons", "hitori", "1.0.0"};
+    return {"hyprnotify", "awesome's naughty: the compositor is the notification daemon — naughty-style cards, progress hints, image icons", "hitori", "1.0.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

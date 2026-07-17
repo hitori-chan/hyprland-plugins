@@ -37,6 +37,8 @@
 #include <hyprland/src/config/values/types/StringValue.hpp>
 
 #include <linux/input-event-codes.h>
+#include <poll.h>
+#include <wayland-server-core.h>
 #include <sdbus-c++/sdbus-c++.h>
 #include <cairo/cairo.h>
 #include <pango/pangocairo.h>
@@ -90,9 +92,10 @@ namespace NHyprnotify {
         std::string          summary; // newlines flattened
         std::string          body;    // markup stripped (the server never advertises body-markup)
         uint8_t              urgency  = 1;
-        int                  progress = -1; // 0..100 from the "value" hint, -1 = none
-        std::string          image;         // resolved file path, "" = none
-        std::vector<uint8_t> pixels;        // image-data, premultiplied BGRA (DRM ARGB8888)
+        int                  progress = -1;     // 0..100 from the "value" hint, -1 = none
+        std::string          image;             // resolved file path, "" = none
+        std::vector<uint8_t> pixels;            // image-data, premultiplied BGRA (DRM ARGB8888); freed once uploaded
+        bool                 hasPixels = false; // the LAST Notify carried image-data (outlives the freed buffer)
         int                  pw = 0, ph = 0;
         std::string          defaultAction; // action key a left click invokes, "" = just dismiss
 
@@ -101,12 +104,13 @@ namespace NHyprnotify {
 
         // render cache — built ONLY by the warm pass (the texture rule). The
         // *For keys say what the texture was built from so a replace only
-        // rebuilds what actually changed (volume OSD keeps its title + icon).
-        SP<ITexture>         titleTex, bodyTex, iconTex;
-        std::string          titleFor, bodyFor, imageFor;
-        std::vector<uint8_t> pixelsFor;
-        int                  builtPt = 0, builtTextW = 0;
-        uint64_t             builtFg = 0;
+        // rebuilds what actually changed (volume OSD keeps its title + icon);
+        // pixels are hashed, not copied, and freed once uploaded.
+        SP<ITexture> titleTex, bodyTex, iconTex;
+        std::string  titleFor, bodyFor, imageFor;
+        uint64_t     pixelsFor = 0;
+        int          builtPt = 0, builtTextW = 0;
+        uint64_t     builtFg = 0;
     };
     extern std::vector<SP<SNotif>> notifs;
 
@@ -163,6 +167,7 @@ namespace NHyprnotify {
     void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info);
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info);
     void releasePointer();
+    void refreshPointerOwnership(); // the hovered card vanished under a still pointer
     void inputExit();
 
 } // namespace NHyprnotify

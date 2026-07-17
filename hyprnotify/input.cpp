@@ -105,6 +105,18 @@ namespace NHyprnotify {
         }
     }
 
+    // A card can vanish under a motionless pointer (expiry, CloseNotification,
+    // a sweep): without this the cursor override lingers and the window
+    // beneath keeps NO pointer focus until the next motion — dead hover UI. A
+    // real layer-surface daemon's unmap triggers the compositor's own refocus;
+    // match it. Runs from the notifChanged doLater, never an input emission.
+    void refreshPointerOwnership() {
+        if (!pointerOwned || cardAt(g_pInputManager->getMouseCoordsInternal()))
+            return;
+        releasePointer();
+        g_pInputManager->simulateMouseMovement(); // the window beneath gets its enter back
+    }
+
     void inputExit() {
         pendingHit.reset();
         swallowRelease = 0;

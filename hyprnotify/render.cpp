@@ -280,6 +280,7 @@ namespace NHyprnotify {
         pendingWarm = g_pEventLoopManager->doLaterLock([]() {
             warmNotifs();
             damageNotifs();
+            refreshPointerOwnership();
         });
     }
 
@@ -339,7 +340,9 @@ namespace NHyprnotify {
         if (stage != RENDER_POST_WINDOWS || notifs.empty())
             return;
         // never above the lockscreen (the built-in overlay leaks there; these
-        // are the user's notifications) — bus.cpp repaints at unlock
+        // are the user's notifications). No unlock watcher needed: textures
+        // stay warm through the lock, and the lock surface's unmap damages the
+        // whole output — that IS the survivors' repaint.
         if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
             return;
         const auto MON = g_pHyprRenderer->m_renderData.pMonitor.lock();

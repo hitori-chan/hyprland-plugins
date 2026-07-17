@@ -11,16 +11,66 @@ namespace NHyprnotify {
 
         static std::unique_ptr<sdbus::IConnection> conn;
         static std::unique_ptr<sdbus::IObject>     obj;
-        static SP<CEventLoopTimer>                 poll;
+        static SP<CEventLoopTimer>                 poll; // sd-bus timeout carrier + deferred-drain kicker, normally disarmed
         static SP<CEventLoopTimer>                 expiry;
-        static bool                                pollBurst = false;
-        static bool                                wasLocked = false;
-        static uint32_t                            nextId    = 1;
+        static wl_event_source*                    busSrc    = nullptr;
+        static wl_event_source*                    busEvtSrc = nullptr;
+        static UP<SEventLoopDoLaterLock>           pendingTeardown;
+        static uint32_t                            nextId = 1;
 
-        void                                       pollSoon() {
-            pollBurst = true;
+        // A drain must never run synchronously from here: emits happen inside
+        // method handlers, i.e. inside processPendingEvent, and sd-bus dispatch
+        // is not re-entrant. Park it on the timer instead.
+        void pollSoon() {
             if (poll)
                 poll->updateTimeout(std::chrono::milliseconds(2));
+        }
+
+        static void teardown() {
+            if (busSrc)
+                wl_event_source_remove(busSrc);
+            if (busEvtSrc)
+                wl_event_source_remove(busEvtSrc);
+            busSrc = busEvtSrc = nullptr;
+            if (poll)
+                poll->updateTimeout(std::nullopt);
+            obj.reset();
+            conn.reset();
+        }
+
+        // Drain the bus, then hand sd-bus's own poll needs to the event loop:
+        // fd mask from PollData::events, its (rare) internal timeout on the
+        // timer. Steady state: zero timers armed, wakeups only when the fd
+        // actually fires.
+        static void syncBus() {
+            if (!conn)
+                return;
+            try {
+                int n = 0;
+                while (n++ < 64 && conn->processPendingEvent()) {} // cap: a flooding client must not stall the frame
+                const auto PD = conn->getEventLoopPollData();
+                if (busSrc)
+                    wl_event_source_fd_update(busSrc, ((PD.events & POLLIN) ? WL_EVENT_READABLE : 0) | ((PD.events & POLLOUT) ? WL_EVENT_WRITABLE : 0));
+                const auto REL = PD.getRelativeTimeout();
+                if (n > 64) // cap hit: more queued, come back next tick
+                    poll->updateTimeout(std::chrono::milliseconds(2));
+                else if (REL == std::chrono::microseconds::max())
+                    poll->updateTimeout(std::nullopt);
+                else
+                    poll->updateTimeout(std::max(std::chrono::duration_cast<std::chrono::milliseconds>(REL), std::chrono::milliseconds(1)));
+            } catch (const std::exception& E) {
+                // the bus died under us (broker restart); an escape here would
+                // unwind through the event loop's C frames and kill the session
+                if (conn && g_pEventLoopManager) {
+                    HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprnotify] bus lost, notifications disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
+                    pendingTeardown = g_pEventLoopManager->doLaterLock([]() { teardown(); });
+                }
+            }
+        }
+
+        static int onBusFd(int, uint32_t, void*) {
+            syncBus();
+            return 0;
         }
 
         // ---- the model ----
@@ -53,7 +103,9 @@ namespace NHyprnotify {
         static void emitClosed(uint32_t id, uint32_t reason) {
             if (!obj)
                 return;
-            obj->emitSignal("NotificationClosed").onInterface(IFACE).withArguments(id, reason);
+            try {
+                obj->emitSignal("NotificationClosed").onInterface(IFACE).withArguments(id, reason);
+            } catch (...) {} // a dead bus must not unwind through the timer/doLater C frames
             pollSoon();
         }
 
@@ -80,29 +132,51 @@ namespace NHyprnotify {
         void invokeAction(uint32_t id, const std::string& key) {
             if (!obj)
                 return;
-            obj->emitSignal("ActionInvoked").onInterface(IFACE).withArguments(id, key);
+            try {
+                obj->emitSignal("ActionInvoked").onInterface(IFACE).withArguments(id, key);
+            } catch (...) {}
             pollSoon();
         }
 
         // ---- incoming payload massage ----
 
+        static void appendUtf8(std::string& out, uint32_t c) {
+            if (c < 0x80)
+                out += (char)c;
+            else if (c < 0x800) {
+                out += (char)(0xC0 | (c >> 6));
+                out += (char)(0x80 | (c & 0x3F));
+            } else if (c < 0x10000) {
+                out += (char)(0xE0 | (c >> 12));
+                out += (char)(0x80 | ((c >> 6) & 0x3F));
+                out += (char)(0x80 | (c & 0x3F));
+            } else {
+                out += (char)(0xF0 | (c >> 18));
+                out += (char)(0x80 | ((c >> 12) & 0x3F));
+                out += (char)(0x80 | ((c >> 6) & 0x3F));
+                out += (char)(0x80 | (c & 0x3F));
+            }
+        }
+
         // The server never advertises body-markup, so tags are decoration we
-        // must not render literally: strip them, unescape the entities.
+        // must not render literally: strip them, unescape the entities. But
+        // clients are entitled to send RAW text — a bare '<' or '&' that
+        // doesn't form a tag/entity is content and must survive verbatim.
         static std::string stripMarkup(const std::string& in) {
             std::string out;
             out.reserve(in.size());
             for (size_t i = 0; i < in.size();) {
                 if (in[i] == '<') {
                     const auto END = in.find('>', i);
-                    if (END == std::string::npos)
-                        break;
-                    i = END + 1;
-                    continue;
-                }
-                if (in[i] == '&') {
+                    if (END != std::string::npos) {
+                        i = END + 1;
+                        continue;
+                    }
+                } else if (in[i] == '&') {
                     const auto END = in.find(';', i);
-                    if (END != std::string::npos && END - i <= 6) {
-                        const auto E = in.substr(i + 1, END - i - 1);
+                    if (END != std::string::npos && END - i <= 10) {
+                        const auto E  = in.substr(i + 1, END - i - 1);
+                        bool       ok = true;
                         if (E == "amp")
                             out += '&';
                         else if (E == "lt")
@@ -113,13 +187,18 @@ namespace NHyprnotify {
                             out += '"';
                         else if (E == "apos")
                             out += '\'';
-                        else if (!E.empty() && E[0] == '#') {
-                            const long C = std::strtol(E.c_str() + 1, nullptr, 10);
-                            if (C > 0 && C < 128)
-                                out += (char)C;
+                        else if (E.size() > 1 && E[0] == '#') {
+                            const long C = E[1] == 'x' || E[1] == 'X' ? std::strtol(E.c_str() + 2, nullptr, 16) : std::strtol(E.c_str() + 1, nullptr, 10);
+                            if (C > 0 && C < 0x110000)
+                                appendUtf8(out, (uint32_t)C);
+                            else
+                                ok = false;
+                        } else
+                            ok = false;
+                        if (ok) {
+                            i = END + 1;
+                            continue;
                         }
-                        i = END + 1;
-                        continue;
                     }
                 }
                 if (in[i] != '\r')
@@ -165,8 +244,9 @@ namespace NHyprnotify {
                     out[x * 4 + 3] = A;
                 }
             }
-            n.pw = W;
-            n.ph = H;
+            n.pw        = W;
+            n.ph        = H;
+            n.hasPixels = true;
         }
 
         static uint32_t handleNotify(const std::string& appName, uint32_t replacesId, const std::string& appIcon, const std::string& summary, const std::string& body,
@@ -176,8 +256,11 @@ namespace NHyprnotify {
                 id = nextId++;
                 if (nextId == 0)
                     nextId = 1;
-            } else if (id >= nextId)
+            } else if (id >= nextId) {
                 nextId = id + 1; // the OSD scripts pin high replace ids — never hand them out again
+                if (nextId == 0)
+                    nextId = 1; // a replaces_id of UINT32_MAX must not make the next fresh id 0 ("no id")
+            }
 
             auto n = byId(id);
             if (!n) {
@@ -194,6 +277,7 @@ namespace NHyprnotify {
             n->progress = -1;
             n->image.clear();
             n->pixels.clear();
+            n->hasPixels = false;
             n->pw = n->ph = 0;
 
             if (const auto IT = hints.find("urgency"); IT != hints.end())
@@ -271,33 +355,19 @@ namespace NHyprnotify {
                                    return std::vector<std::string>{"actions", "body", "icon-static"};
                                }),
                                sdbus::registerMethod("GetServerInformation").withOutputParamNames("name", "vendor", "version", "spec_version").implementedAs([]() {
-                                   return std::tuple<std::string, std::string, std::string, std::string>{"hyprnotify", "hitori", "1.0.0", "1.2"};
+                                   return std::tuple<std::string, std::string, std::string, std::string>{"hyprnotify", "hitori", "1.0.1", "1.2"};
                                }),
                                sdbus::registerSignal("NotificationClosed").withParameters<uint32_t, uint32_t>("id", "reason"),
                                sdbus::registerSignal("ActionInvoked").withParameters<uint32_t, std::string>("id", "action_key"))
                     .forInterface(IFACE);
 
-                // Main-thread polling: every DBus callback above may touch
-                // compositor state safely. (An fd readable-waiter would be
-                // event-driven, but it can't be unregistered on plugin unload.)
-                // The tick doubles as the lock-state watcher: cards skip
-                // rendering under the lockscreen, and the ones still alive at
-                // unlock need a repaint nothing else would trigger.
-                poll = makeShared<CEventLoopTimer>(
-                    std::chrono::milliseconds(50),
-                    [](SP<CEventLoopTimer> self, void*) {
-                        pollBurst = false;
-                        if (conn)
-                            while (conn->processPendingEvent()) {}
-                        const bool LOCKED = g_pSessionLockManager && g_pSessionLockManager->isSessionLocked();
-                        if (wasLocked != LOCKED) {
-                            wasLocked = LOCKED;
-                            if (!LOCKED && !notifs.empty())
-                                notifChanged();
-                        }
-                        self->updateTimeout(std::chrono::milliseconds(pollBurst ? 2 : 50));
-                    },
-                    nullptr);
+                // Event-driven bus: sd-bus's fd + eventFd live in the wayland
+                // event loop (removable sources — EXIT pulls them before the
+                // connection dies), so idle costs zero wakeups and an incoming
+                // Notify lands the same loop iteration. The timer only carries
+                // sd-bus's own rare timeouts and the deferred pollSoon() drain;
+                // every callback still runs on the main thread.
+                poll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { syncBus(); }, nullptr);
                 g_pEventLoopManager->addTimer(poll);
 
                 expiry = makeShared<CEventLoopTimer>(
@@ -318,6 +388,11 @@ namespace NHyprnotify {
                     },
                     nullptr);
                 g_pEventLoopManager->addTimer(expiry);
+
+                const auto PD = conn->getEventLoopPollData();
+                busSrc        = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, PD.fd, WL_EVENT_READABLE, onBusFd, nullptr);
+                busEvtSrc     = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, PD.eventFd, WL_EVENT_READABLE, onBusFd, nullptr);
+                syncBus(); // drain anything queued during setup, set the initial mask/timeout
             } catch (const std::exception& E) {
                 // most likely another daemon owns the name (dunst still installed)
                 HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprnotify] disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
@@ -327,6 +402,8 @@ namespace NHyprnotify {
         }
 
         void exit() {
+            pendingTeardown.reset();
+            teardown(); // fd sources out BEFORE the connection dies
             if (g_pEventLoopManager) {
                 if (poll)
                     g_pEventLoopManager->removeTimer(poll);
@@ -335,11 +412,7 @@ namespace NHyprnotify {
             }
             poll.reset();
             expiry.reset();
-            pollBurst = false;
-            wasLocked = false;
             notifs.clear();
-            obj.reset();
-            conn.reset();
         }
     }
 
