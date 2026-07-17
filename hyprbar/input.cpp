@@ -72,6 +72,10 @@ namespace NHyprbar {
                 }
                 break;
             }
+            case SHit::LAYOUT:
+                // awesome's layoutbox buttons: left = next, right = previous
+                layoutInc(right ? -1 : 1);
+                break;
         }
     }
 
@@ -317,6 +321,8 @@ namespace NHyprbar {
                         .uponReplyInvoke([](std::optional<sdbus::Error>) {});
                     Tray::pollSoon();
                 }
+            } else if (HIT.kind == SHit::LAYOUT) {
+                pendingScroll = g_pEventLoopManager->doLaterLock([UP]() { layoutInc(UP ? 1 : -1); });
             }
             break;
         }

@@ -156,6 +156,11 @@ namespace NHyprbar {
         damageBars();
     }
 
+    // awesome's awful.layout.inc: cycle the focused monitor's active
+    // workspace through the layout registry (render.cpp — a single entry
+    // until other layouts get implemented; the bar only carries the state).
+    void layoutInc(int dir);
+
     // ---- icons.cpp ----
 
     SP<ITexture> loadPng(const std::string& path);
@@ -227,7 +232,8 @@ namespace NHyprbar {
         enum : uint8_t {
             TAG,
             TASK,
-            TRAY
+            TRAY,
+            LAYOUT
         } kind              = TAG;
         int             tag = 0;     // TAG: workspace id
         PHLWINDOWREF    window;      // TASK

@@ -39,9 +39,11 @@
 //   Alerts stay in scripts/battery-watch.sh.
 // - clock: "%a %b %d, %H:%M" (the awesome textclock default; the bar pads
 //   it with a real margin, not the format's literal spaces).
-// - layoutbox: rightmost like awesome; the old theme's floating.png from
-//   ~/.config/hypr/icons — floating is the only layout, so it's a static
-//   indicator with no click action.
+// - layoutbox: rightmost like awesome — the active workspace's layout
+//   icon (~/.config/hypr/icons/<name>.png), per-tag state like awesome's.
+//   awesome's buttons: click next, right-click previous, wheel both ways;
+//   Super+Space / Super+Shift+Space call layout_next()/layout_prev().
+//   The registry holds one layout (floating) until more are implemented.
 // - menubar: awesome's Mod+P launcher in its OWN strip right below the
 //   bar — the bar stays visible, exactly like awesome's menubar wibox at
 //   the workarea top (hl.plugin.hyprbar.menubar()): "Run: " prompt, the
@@ -138,6 +140,16 @@ static int luaMenubar(lua_State*) {
     return 0;
 }
 
+// hl.plugin.hyprbar.layout_next/layout_prev() — awesome's awful.layout.inc(±1).
+static int luaLayoutNext(lua_State*) {
+    layoutInc(1);
+    return 0;
+}
+static int luaLayoutPrev(lua_State*) {
+    layoutInc(-1);
+    return 0;
+}
+
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
     return HYPRLAND_API_VERSION;
 }
@@ -192,6 +204,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     lKey    = Event::bus()->m_events.input.keyboard.key.listen([](IKeyboard::SKeyEvent e, Event::SCallbackInfo& info) { Menubar::onKey(e, info); });
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprbar", "menubar", luaMenubar);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprbar", "layout_next", luaLayoutNext);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprbar", "layout_prev", luaLayoutPrev);
 
     // Anything that changes what the bar shows -> damage the strip.
     auto& EV = Event::bus()->m_events;
@@ -232,7 +246,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor: kanji taglist, tasklist with icons, tray with menus, menubar launcher, battery, clock", "hitori", "1.1.0"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor: kanji taglist, tasklist with icons, tray with menus, menubar launcher, battery, clock", "hitori", "1.2.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

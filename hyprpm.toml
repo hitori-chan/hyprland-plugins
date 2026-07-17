@@ -12,7 +12,7 @@ authors = ["hitori"]
 
 [hyprbar]
 description = "the awesome wibar, drawn by the compositor: kanji taglist, tasklist with icons, tray with menus, menubar launcher, battery, clock"
-version     = "1.1.0"
+version     = "1.2.0"
 authors     = ["hitori"]
 output      = "hyprbar/hyprbar.so"
 build       = ["make -C hyprbar all"]

@@ -56,9 +56,32 @@ namespace NHyprbar {
         return tex;
     }
 
-    static SP<ITexture>              layoutTex;
-    static bool                      layoutTexTried = false;
-    static bool                      inRenderBar    = false; // a render is on the stack: never build textures
+    // awesome's awful.layout: the ordered registry (order matters, like
+    // awful.layout.layouts) and each workspace's index — per tag, exactly
+    // awesome's model. Future layouts append here and take real effect
+    // wherever they get implemented; the bar carries the state and the icon
+    // (~/.config/hypr/icons/<name>.png).
+    static const std::vector<const char*>                LAYOUTS = {"floating"};
+    static std::unordered_map<WORKSPACEID, size_t>       wsLayout;
+    static std::unordered_map<std::string, SP<ITexture>> layoutTexs;
+    static std::unordered_set<std::string>               layoutTexTried;
+
+    static const char*                                   currentLayout(WORKSPACEID ws) {
+        const auto IT = wsLayout.find(ws);
+        return LAYOUTS[(IT == wsLayout.end() ? 0 : IT->second) % LAYOUTS.size()];
+    }
+
+    void layoutInc(int dir) {
+        const auto MON = Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr;
+        if (!MON || !MON->m_activeWorkspace)
+            return;
+        const int64_t N   = (int64_t)LAYOUTS.size();
+        auto&         IDX = wsLayout[MON->m_activeWorkspace->m_id];
+        IDX               = (size_t)(((int64_t)IDX + dir % N + N) % N);
+        barChanged();
+    }
+
+    static bool inRenderBar = false; // a render is on the stack: never build textures
 
     static UP<SEventLoopDoLaterLock> pendingRewarm;
 
@@ -234,22 +257,33 @@ namespace NHyprbar {
         // [systray][battery][clock][layoutbox], so the layoutbox sits last --
         double right = MB.x + MB.w;
 
-        { // layoutbox: the old theme's floating icon (the only layout — a pure
-            // indicator, no click action, exactly like the old bar effectively was)
-            if (!layoutTexTried) {
-                layoutTexTried = true;
-                if (const char* HOME = std::getenv("HOME"))
-                    layoutTex = loadPng(std::string{HOME} + "/.config/hypr/icons/floating.png");
+        { // layoutbox: the active workspace's layout icon; click/wheel cycles
+            // the registry — with its single entry it is still the static
+            // floating indicator it always was
+            const std::string NAME = currentLayout(WS ? WS->m_id : WORKSPACE_INVALID);
+            auto&             TEX  = layoutTexs[NAME];
+            if (!TEX && !layoutTexTried.contains(NAME)) {
+                if (!warming)
+                    texStale = true; // an icon is a texture too: warm builds it
+                else {
+                    layoutTexTried.insert(NAME);
+                    if (const char* HOME = std::getenv("HOME"))
+                        TEX = loadPng(std::string{HOME} + "/.config/hypr/icons/" + NAME + ".png");
+                }
             }
-            if (layoutTex && layoutTex->m_texID != 0) {
+            const CBox CELL{right - H, MB.y, H, H};
+            if (TEX && TEX->m_texID != 0) {
                 // 3px inset, the bar's icon rhythm
-                const CBox   CELL{right - H, MB.y, H, H};
                 const double S = std::round((H - 6) * SCALE);
                 const auto   P = toPhys(CELL);
                 CBox         b{P.x + (P.w - S) / 2.0, P.y + (P.h - S) / 2.0, S, S};
-                drawTex(layoutTex, b.round());
-                right -= H;
+                drawTex(TEX, b.round());
             }
+            SHit h;
+            h.box  = CELL;
+            h.kind = SHit::LAYOUT;
+            hits.push_back(h);
+            right -= H;
         }
 
         { // clock — 6px each side, the bar's text pad
@@ -491,8 +525,10 @@ namespace NHyprbar {
 
     void renderExit() {
         texCache.clear();
-        layoutTex.reset();
-        layoutTexTried = false;
+        lastTaskFp.clear();
+        layoutTexs.clear();
+        layoutTexTried.clear();
+        wsLayout.clear();
     }
 
 } // namespace NHyprbar

@@ -20,7 +20,8 @@ or focus to a window underneath.
 - **Tray** — in-compositor SNI host with a native dbusmenu renderer.
 - **Battery** — Material glyph + percent; hidden on desktops.
 - **Clock** — `%a %b %d, %H:%M`.
-- **Layoutbox** — static floating indicator, rightmost.
+- **Layoutbox** — the active workspace's layout, rightmost. Click/wheel
+  cycles like awesome (`Super+Space` too); one layout until more land.
 - **Menubar** (`Mod+P`, `hl.plugin.hyprbar.menubar()`) — awesome's launcher
   in its own strip below the bar: categories + `.desktop` apps filtered as
   you type, most-launched first, shell completion, history, readline

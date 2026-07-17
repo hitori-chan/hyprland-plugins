@@ -46,6 +46,23 @@ renderer.
 - nm-applet note: in indicator mode it merges its two X11 menus into one
   and implements no left-click action — upstream design.
 
+## Layoutbox
+
+The active workspace's layout icon (rightmost), from
+`~/.config/hypr/icons/<name>.png`. Per-workspace state, awesome's per-tag
+model. Cycling — awesome's buttons and chords:
+
+| input                  | action          |
+| ---------------------- | --------------- |
+| click / wheel up       | next layout     |
+| right-click / wheel dn | previous layout |
+| `Super+Space`          | next layout     |
+| `Super+Shift+Space`    | previous layout |
+
+The registry holds one layout (`floating`) until other layouts are
+implemented; cycling is a visible no-op until then, and the bar only
+carries the state — a future layout engine enforces it.
+
 ## The menubar (`Mod+P`)
 
 A "Run: " prompt, the awesome categories (`Enter` drills in,
