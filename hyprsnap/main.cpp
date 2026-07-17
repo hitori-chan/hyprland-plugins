@@ -16,7 +16,7 @@
 namespace NHyprsnap {
     SConfig             g_config;
 
-    SP<Layout::ITarget> draggedFloatingTarget() {
+    static SP<Layout::ITarget> floatingDragTarget(bool resize) {
         if (!g_layoutManager)
             return nullptr;
 
@@ -29,9 +29,17 @@ namespace NHyprsnap {
 
         const auto& DC = g_layoutManager->dragController();
         auto        t  = DC->target();
-        if (!t || DC->mode() != MBIND_MOVE || !(DC->dragThresholdReached() || *PDRAGTHRESHOLD <= 0) || DC->draggingTiled() || !t->floating())
+        if (!t || (resize ? DC->mode() < MBIND_RESIZE : DC->mode() != MBIND_MOVE) || !(DC->dragThresholdReached() || *PDRAGTHRESHOLD <= 0) || DC->draggingTiled() || !t->floating())
             return nullptr;
         return t;
+    }
+
+    SP<Layout::ITarget> draggedFloatingTarget() {
+        return floatingDragTarget(false);
+    }
+
+    SP<Layout::ITarget> resizingFloatingTarget() {
+        return floatingDragTarget(true);
     }
 }
 
@@ -71,7 +79,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     lKey     = EV.input.keyboard.key.listen([](IKeyboard::SKeyEvent, Event::SCallbackInfo&) { Snap::onInputEndingDrag(); });
     lRender  = EV.render.stage.listen([](eRenderStage stage) { Snap::onRenderStage(stage); });
 
-    return {"hyprsnap", "awesome's awful.mouse.snap: magnetic edge pull + aerosnap zones while dragging", "hitori", "1.2.0"};
+    return {"hyprsnap", "awesome's awful.mouse.snap: magnetic edge pull + aerosnap zones while dragging", "hitori", "1.3.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

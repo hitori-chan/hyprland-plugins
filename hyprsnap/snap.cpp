@@ -53,6 +53,7 @@ namespace NHyprsnap::Snap {
         PHLMONITORREF             zoneMon;
         UP<SEventLoopDoLaterLock> pendingMagnet;
         bool                      magnetQueued = false;
+        std::optional<CBox>       resizeStart; // resize-drag begin box: tells dragged edges from anchored
 
         // monitorState()->query().vec().run() allocates and RTTI-casts per
         // call; this runs per pointer motion, so mirror closestTo directly.
@@ -145,6 +146,112 @@ namespace NHyprsnap::Snap {
         zoneMon.reset();
         pendingMagnet.reset();
         magnetQueued = false;
+        resizeStart.reset();
+    }
+
+    // one deferred run per dispatch, applied after the DragController has
+    // positioned the window for this motion; the lambda reads live state
+    static void queueMagnet() {
+        if (magnetQueued || g_config.snapDist->value() <= 0)
+            return;
+        magnetQueued  = true;
+        pendingMagnet = g_pEventLoopManager->doLaterLock([]() {
+            magnetQueued   = false;
+            const double D = (double)g_config.snapDist->value();
+            if (D <= 0)
+                return;
+            const auto POS = g_pInputManager->getMouseCoordsInternal();
+            const auto MON = monitorAt(POS);
+            if (!MON)
+                return;
+
+            // X11 geometry was border-inclusive: snap the BORDER flush, never
+            // swallow it offscreen — inflate, snap, deflate.
+            static auto  PBORDER = CConfigValue<Config::INTEGER>("general:border_size");
+            const double B       = std::max((double)*PBORDER, 0.0);
+            const auto   WS      = MON->m_activeWorkspace;
+
+            const auto   othersOf = [&](SP<Layout::ITarget> self, auto&& per) {
+                for (const auto& O : Desktop::windowState()->windows()) {
+                    if (!O->m_isMapped || O->isHidden() || !O->m_isFloating || !O->m_target || O->m_target == self)
+                        continue;
+                    if (O->m_workspace != WS && !(O->m_pinned && O->m_monitor.lock() == MON))
+                        continue;
+                    if (Fullscreen::controller()->isFullscreen(O))
+                        continue;
+                    const auto OB = O->m_target->position();
+                    per(CBox{OB.x - B, OB.y - B, OB.w + 2 * B, OB.h + 2 * B});
+                }
+            };
+
+            if (const auto T = draggedFloatingTarget()) {
+                // move: the whole box pulls — screen, workarea, then every
+                // other visible client (later pulls override earlier ones)
+                const CBox CUR = T->position();
+                CBox       g   = CBox{CUR.x - B, CUR.y - B, CUR.w + 2 * B, CUR.h + 2 * B};
+                g              = snapInside(g, MON->logicalBox(), D);
+                g              = snapInside(g, MON->logicalBoxMinusReserved(), D);
+                othersOf(T, [&](const CBox& o) { g = snapOutside(g, o, D); });
+
+                g.x += B;
+                g.y += B;
+                if (g.x != CUR.x || g.y != CUR.y) {
+                    T->setPositionGlobal(CBox{g.x, g.y, CUR.w, CUR.h});
+                    T->warpPositionSize();
+                }
+                return;
+            }
+
+            const auto T = resizingFloatingTarget();
+            if (!T || !resizeStart)
+                return;
+
+            // resize: only the dragged edges pull, anchored edges hold
+            const CBox CUR = T->position();
+            const bool EL = CUR.x != resizeStart->x, ER = CUR.x + CUR.w != resizeStart->x + resizeStart->w;
+            const bool ET = CUR.y != resizeStart->y, EB = CUR.y + CUR.h != resizeStart->y + resizeStart->h;
+            if (!(EL || ER || ET || EB))
+                return;
+
+            CBox       g          = CBox{CUR.x - B, CUR.y - B, CUR.w + 2 * B, CUR.h + 2 * B};
+            const auto pullInside = [&](const CBox& sg) {
+                if (EL && std::abs(g.x - sg.x) < D) {
+                    g.w += g.x - sg.x;
+                    g.x = sg.x;
+                }
+                if (ER && std::abs((sg.x + sg.w) - (g.x + g.w)) < D)
+                    g.w = sg.x + sg.w - g.x;
+                if (ET && std::abs(g.y - sg.y) < D) {
+                    g.h += g.y - sg.y;
+                    g.y = sg.y;
+                }
+                if (EB && std::abs((sg.y + sg.h) - (g.y + g.h)) < D)
+                    g.h = sg.y + sg.h - g.y;
+            };
+            pullInside(MON->logicalBox());
+            pullInside(MON->logicalBoxMinusReserved());
+            othersOf(T, [&](const CBox& o) {
+                // abut the neighbor's opposite edge, like snap_outside
+                if (EL && std::abs(g.x - (o.x + o.w)) < D) {
+                    g.w += g.x - (o.x + o.w);
+                    g.x = o.x + o.w;
+                }
+                if (ER && std::abs(o.x - (g.x + g.w)) < D)
+                    g.w = o.x - g.x;
+                if (ET && std::abs(g.y - (o.y + o.h)) < D) {
+                    g.h += g.y - (o.y + o.h);
+                    g.y = o.y + o.h;
+                }
+                if (EB && std::abs(o.y - (g.y + g.h)) < D)
+                    g.h = o.y - g.y;
+            });
+
+            const CBox RES{g.x + B, g.y + B, g.w - 2 * B, g.h - 2 * B};
+            if (RES.x != CUR.x || RES.y != CUR.y || RES.w != CUR.w || RES.h != CUR.h) {
+                T->setPositionGlobal(RES);
+                T->warpPositionSize();
+            }
+        });
     }
 
     void onMouseMove() {
@@ -159,8 +266,17 @@ namespace NHyprsnap::Snap {
         if (!T) {
             if (zoneBox)
                 reset(); // the drag is gone, the preview must not linger
+
+            // resize drags magnetize too: the dragged edges alone
+            if (const auto RT = resizingFloatingTarget()) {
+                if (!resizeStart)
+                    resizeStart = RT->position(); // emission precedes this motion's resize
+                queueMagnet();
+            } else
+                resizeStart.reset();
             return;
         }
+        resizeStart.reset();
 
         const auto POS = g_pInputManager->getMouseCoordsInternal();
         const auto MON = monitorAt(POS);
@@ -179,55 +295,7 @@ namespace NHyprsnap::Snap {
             damageZone(); // and the incoming one's
         }
 
-        // -- client/screen magnetism, applied after the DragController has
-        // positioned the window for THIS motion. The lambda reads live state,
-        // so one queued run covers every motion of the dispatch --
-        if (magnetQueued || g_config.snapDist->value() <= 0)
-            return;
-        magnetQueued  = true;
-        pendingMagnet = g_pEventLoopManager->doLaterLock([]() {
-            magnetQueued = false;
-            const auto T = draggedFloatingTarget();
-            if (!T)
-                return;
-            const double D = (double)g_config.snapDist->value();
-            if (D <= 0)
-                return;
-            const auto POS = g_pInputManager->getMouseCoordsInternal();
-            const auto MON = monitorAt(POS);
-            if (!MON)
-                return;
-
-            // awesome's module.snap order: screen box, workarea, then every
-            // other visible client (later pulls override earlier ones).
-            // X11 geometry was border-inclusive: snap the BORDER flush, never
-            // swallow it offscreen — inflate, snap, deflate.
-            static auto  PBORDER = CConfigValue<Config::INTEGER>("general:border_size");
-            const double B       = std::max((double)*PBORDER, 0.0);
-            const CBox   CUR     = T->position();
-            CBox         g       = CBox{CUR.x - B, CUR.y - B, CUR.w + 2 * B, CUR.h + 2 * B};
-            g                    = snapInside(g, MON->logicalBox(), D);
-            g                    = snapInside(g, MON->logicalBoxMinusReserved(), D);
-
-            const auto WS = MON->m_activeWorkspace;
-            for (const auto& O : Desktop::windowState()->windows()) {
-                if (!O->m_isMapped || O->isHidden() || !O->m_isFloating || !O->m_target || O->m_target == T)
-                    continue;
-                if (O->m_workspace != WS && !(O->m_pinned && O->m_monitor.lock() == MON))
-                    continue;
-                if (Fullscreen::controller()->isFullscreen(O))
-                    continue;
-                const auto OB = O->m_target->position();
-                g             = snapOutside(g, CBox{OB.x - B, OB.y - B, OB.w + 2 * B, OB.h + 2 * B}, D);
-            }
-
-            g.x += B;
-            g.y += B;
-            if (g.x != CUR.x || g.y != CUR.y) {
-                T->setPositionGlobal(CBox{g.x, g.y, CUR.w, CUR.h});
-                T->warpPositionSize();
-            }
-        });
+        queueMagnet();
     }
 
     void onInputEndingDrag() {

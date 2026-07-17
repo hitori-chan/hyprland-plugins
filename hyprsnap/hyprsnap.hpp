@@ -43,6 +43,7 @@ namespace NHyprsnap {
     // drag. draggingTiled is excluded: those re-tile on drop, a snap would
     // lie.
     SP<Layout::ITarget> draggedFloatingTarget();
+    SP<Layout::ITarget> resizingFloatingTarget(); // any MBIND_RESIZE_* drag
 
     namespace Snap {
         void onMouseMove();       // magnetism + aerosnap arming/preview, per motion
