@@ -26,7 +26,7 @@ build       = ["make -C hyprmax all"]
 
 [hyprsnap]
 description = "awesome's awful.mouse.snap: magnetic edge pull + aerosnap zones while dragging"
-version     = "1.0.0"
+version     = "1.3.0"
 authors     = ["hitori"]
 output      = "hyprsnap/hyprsnap.so"
 build       = ["make -C hyprsnap all"]
