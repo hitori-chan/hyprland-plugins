@@ -117,6 +117,8 @@ static void onWindowActive(PHLWINDOW w, Desktop::eFocusReason reason) {
 
 // hl.plugin.hyprclick.focus_prev_here() — awesome's Mod+Tab: the most
 // recently focused OTHER window on the current workspace, focused + raised.
+// Each focus rewrites the history head, so repeated presses bounce between
+// the two most recent windows, like awful.client.focus.history.previous.
 static int luaFocusPrevHere(lua_State*) {
     const auto FOCUS = Desktop::focusState()->window();
     const auto MON   = Desktop::focusState()->monitor();
@@ -124,8 +126,10 @@ static int luaFocusPrevHere(lua_State*) {
     if (!WS)
         return 0;
 
-    for (const auto& WR : Desktop::History::windowTracker()->fullHistory()) {
-        const auto W = WR.lock();
+    // the tracker is ordered old -> new: the previous window is at the BACK
+    const auto& HIST = Desktop::History::windowTracker()->fullHistory();
+    for (auto it = HIST.rbegin(); it != HIST.rend(); ++it) {
+        const auto W = it->lock();
         if (!W || W == FOCUS || !W->m_isMapped || W->isHidden() || W->m_workspace != WS)
             continue;
 
@@ -160,7 +164,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev_here", luaFocusPrevHere);
 
-    return {"hyprclick", "awesome click/focus policy: click-to-raise, keyboard focus raises, hover never does", "hitori", "1.0.0"};
+    return {"hyprclick", "awesome click/focus policy: click-to-raise, keyboard focus raises, hover never does", "hitori", "1.0.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

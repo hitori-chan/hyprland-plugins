@@ -33,7 +33,7 @@ build       = ["make -C hyprsnap all"]
 
 [hyprclick]
 description = "awesome click/focus policy: click-to-raise, keyboard focus raises, hover never does"
-version     = "1.0.0"
+version     = "1.0.1"
 authors     = ["hitori"]
 output      = "hyprclick/hyprclick.so"
 build       = ["make -C hyprclick all"]
