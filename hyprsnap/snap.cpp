@@ -139,11 +139,16 @@ namespace NHyprsnap::Snap {
         }
     }
 
-    void reset() {
+    // The render listener exists only while a zone is armed: render.stage
+    // fires per window per frame, and zones are live a few seconds per drag.
+    static Hyprutils::Signal::CHyprSignalListener lRender;
+
+    void                                          reset() {
         if (zoneBox)
             damageZone();
         zoneBox.reset();
         zoneMon.reset();
+        lRender.reset();
         pendingMagnet.reset();
         magnetQueued = false;
         resizeStart.reset();
@@ -156,7 +161,11 @@ namespace NHyprsnap::Snap {
             return;
         magnetQueued  = true;
         pendingMagnet = g_pEventLoopManager->doLaterLock([]() {
-            magnetQueued   = false;
+            magnetQueued = false;
+            // the lock can engage between the motion emission and this run
+            // (idle timeout mid-drag): never move windows under the lockscreen
+            if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+                return;
             const double D = (double)g_config.snapDist->value();
             if (D <= 0)
                 return;
@@ -289,18 +298,27 @@ namespace NHyprsnap::Snap {
         const bool CHANGED =
             SLOT.has_value() != zoneBox.has_value() || (SLOT && zoneBox && (SLOT->x != zoneBox->x || SLOT->y != zoneBox->y || SLOT->w != zoneBox->w || SLOT->h != zoneBox->h));
         if (CHANGED) {
+            const bool HAD = zoneBox.has_value();
             damageZone(); // the outgoing outline's monitor
             zoneBox = SLOT;
             zoneMon = MON;
             damageZone(); // and the incoming one's
+            if (!HAD && zoneBox)
+                lRender = Event::bus()->m_events.render.stage.listen([](eRenderStage stage) { onRenderStage(stage); });
+            else if (HAD && !zoneBox)
+                lRender.reset();
         }
 
         queueMagnet();
     }
 
     void onInputEndingDrag() {
-        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+        // guard AND reset: armed zones must not survive into the locked
+        // session (they'd paint under session_lock_xray until a motion)
+        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked()) {
+            reset();
             return;
+        }
 
         const auto T = draggedFloatingTarget();
         if (!T)

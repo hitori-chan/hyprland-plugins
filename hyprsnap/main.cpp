@@ -47,7 +47,7 @@ using namespace NHyprsnap;
 
 static HANDLE                                 PHANDLE = nullptr;
 
-static Hyprutils::Signal::CHyprSignalListener lMove, lButton, lKey, lRender;
+static Hyprutils::Signal::CHyprSignalListener lMove, lButton, lKey;
 
 // Do NOT change this function.
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
@@ -77,15 +77,15 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     lMove    = EV.input.mouse.move.listen([](Vector2D, Event::SCallbackInfo&) { Snap::onMouseMove(); });
     lButton  = EV.input.mouse.button.listen([](IPointer::SButtonEvent, Event::SCallbackInfo&) { Snap::onInputEndingDrag(); });
     lKey     = EV.input.keyboard.key.listen([](IKeyboard::SKeyEvent, Event::SCallbackInfo&) { Snap::onInputEndingDrag(); });
-    lRender  = EV.render.stage.listen([](eRenderStage stage) { Snap::onRenderStage(stage); });
+    // no render.stage listener here: snap.cpp connects one only while a zone
+    // is armed — the signal fires per window per frame
 
-    return {"hyprsnap", "awesome's awful.mouse.snap: magnetic edge pull + aerosnap zones while dragging", "hitori", "1.3.0"};
+    return {"hyprsnap", "awesome's awful.mouse.snap: magnetic edge pull + aerosnap zones while dragging", "hitori", "1.3.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
     lMove.reset();
     lButton.reset();
     lKey.reset();
-    lRender.reset();
-    Snap::reset();
+    Snap::reset(); // also drops the zone-armed render listener
 }
