@@ -2,13 +2,13 @@
 //
 // awesome's Mod+M: maximized is a PER-WINDOW flag there, any number at
 // once. The compositor's internal maximize enforces one per workspace
-// (granting one steals the previous), and sync_fullscreen mirrors a
-// client-only mode back into that machinery — so this maximize never
-// enters compositor fullscreen state at all: the client is told (xdg
-// set_maximized) and the window is sized to the workarea, exactly
-// awesome's model. Windows the compositor itself maximized
-// (initial-maximize at map, app requests) unmaximize through the
-// controller — single holder, nothing to steal.
+// (granting one steals the previous, and a later fullscreen window EVICTS
+// a maximized holder), and sync_fullscreen mirrors a client-only mode
+// back into that machinery — so this maximize never enters compositor
+// fullscreen state at all: the client is told (xdg set_maximized) and the
+// window is sized to the workarea, exactly awesome's model. Maximize the
+// compositor granted on its own (initial-maximize at map, app requests)
+// is ADOPTED into this model on sight, for the same reason.
 //
 // The last windowed box is remembered per app class across window closes
 // AND relogs (persisted to $XDG_STATE_HOME/hyprmax): un-maximizing a
@@ -124,7 +124,7 @@ static void                      queueSave() {
 }
 
 static void rememberWindowed(const std::string& cls, const CBox& box) {
-    if (cls.empty())
+    if (cls.empty() || box.w <= 5 || box.h <= 5)
         return;
     const auto IT = g_lastWindowed.find(cls);
     if (IT != g_lastWindowed.end() && IT->second == box)
@@ -135,6 +135,57 @@ static void rememberWindowed(const std::string& cls, const CBox& box) {
 
 static bool pluginMaximized(PHLWINDOW w) {
     return g_maximized.contains(PHLWINDOWREF{w});
+}
+
+// Compositor-granted maximize (born-maximized at map, app request) holds
+// the workspace's single internal fullscreen slot: a later fullscreen
+// window evicts it, and it never comes back. Dissolve the grant into
+// plugin maximize instead — slot freed, told-state and workarea box kept.
+static void adoptCompositorMax(PHLWINDOW W) {
+    if (!W || !W->m_isMapped || !W->m_target || !W->m_isFloating || pluginMaximized(W))
+        return;
+    if (Fullscreen::controller()->getFullscreenModes(W).internal != Fullscreen::FSMODE_MAXIMIZED)
+        return;
+    const auto MON = W->m_monitor.lock();
+    if (!MON)
+        return;
+
+    Fullscreen::controller()->setFullscreenMode(W, Fullscreen::FSMODE_NONE, Fullscreen::FSMODE_NONE);
+    // the exit just granted the client the size choice — the box is ours
+    W->m_sizeFromClientSerial = 0;
+
+    const auto WA = MON->logicalBoxMinusReserved();
+    // empty restore box = no windowed geometry ever existed; un-maximizing
+    // hands the size choice to the client (see luaToggle)
+    CBox       restore{};
+    if (const auto IT = g_lastWindowed.find(W->m_initialClass); IT != g_lastWindowed.end())
+        restore = clampToWorkarea(IT->second, WA);
+    g_maximized[PHLWINDOWREF{W}] = restore;
+
+    if (!W->m_isX11 && W->m_xdgSurface && W->m_xdgSurface->m_toplevel)
+        W->m_xdgSurface->m_toplevel->setMaximized(true);
+    W->m_target->setPositionGlobal(WA);
+    W->m_target->warpPositionSize();
+}
+
+static std::vector<PHLWINDOWREF> g_adoptQueue;
+static bool                      adoptQueued = false;
+static UP<SEventLoopDoLaterLock> pendingAdopt;
+
+// queue+drain, never a lone doLaterLock: two born-maximized windows can
+// map in one dispatch, and overwriting the lock cancels the unfired one
+static void                      queueAdopt(PHLWINDOW w) {
+    g_adoptQueue.emplace_back(w);
+    if (adoptQueued || !g_pEventLoopManager)
+        return;
+    adoptQueued  = true;
+    pendingAdopt = g_pEventLoopManager->doLaterLock([]() {
+        adoptQueued = false;
+        const auto Q = std::move(g_adoptQueue);
+        g_adoptQueue.clear();
+        for (const auto& WR : Q)
+            adoptCompositorMax(WR.lock());
+    });
 }
 
 static bool maximizedAny(PHLWINDOW w) {
@@ -238,12 +289,19 @@ static int luaToggle(lua_State*) {
         const auto WA = MON->logicalBoxMinusReserved();
 
         if (const auto IT = g_maximized.find(WR); IT != g_maximized.end()) {
-            const CBox R = clampToWorkarea(IT->second, WA);
+            const CBox STORED = IT->second;
             g_maximized.erase(IT);
-            rememberWindowed(W->m_initialClass, R);
             setClientMaximized(false);
-            W->m_target->setPositionGlobal(R);
-            W->m_target->warpPositionSize();
+            if (STORED.w > 5 && STORED.h > 5) {
+                const CBox R = clampToWorkarea(STORED, WA);
+                rememberWindowed(W->m_initialClass, R);
+                W->m_target->setPositionGlobal(R);
+                W->m_target->warpPositionSize();
+            } else {
+                // adopted with no remembered box: the client picks its size
+                // (the 0x0 grant; the commit adoption recenters it)
+                W->requestClientSize();
+            }
         } else {
             const auto BOX = W->m_target->position();
             g_maximized.emplace(WR, BOX);
@@ -299,22 +357,34 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // unmaximized. The controller emits this event AFTER its sync, so
     // reasserting here wins, and both changes flush in one configure —
     // the client's belief never flickers.
+    //
+    // The same event announces a compositor-granted maximize (internal
+    // FSMODE_MAXIMIZED): adopt it, deferred — we are inside the
+    // controller's emission.
     lFullscreen = Event::bus()->m_events.window.fullscreen.listen([](PHLWINDOW w) {
-        if (!w || !pluginMaximized(w))
+        if (!w)
             return;
-        if (!w->m_isX11 && w->m_xdgSurface && w->m_xdgSurface->m_toplevel)
-            w->m_xdgSurface->m_toplevel->setMaximized(true);
+        if (pluginMaximized(w)) {
+            if (!w->m_isX11 && w->m_xdgSurface && w->m_xdgSurface->m_toplevel)
+                w->m_xdgSurface->m_toplevel->setMaximized(true);
+            return;
+        }
+        if (w->m_isFloating && Fullscreen::controller()->getFullscreenModes(w).internal == Fullscreen::FSMODE_MAXIMIZED)
+            queueAdopt(w);
     });
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprmax", "toggle", luaToggle);
 
     return {"hyprmax", "awesome's per-window maximize", "hitori",
-            "1.0.3"};
+            "1.1.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
     pendingMax.reset();
     pendingSave.reset();
+    pendingAdopt.reset();
+    adoptQueued = false;
+    g_adoptQueue.clear();
     if (saveQueued) { // the coalesced write must not die with the session
         saveQueued = false;
         saveWindowed();
