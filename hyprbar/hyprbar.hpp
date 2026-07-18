@@ -139,6 +139,10 @@ namespace NHyprbar {
     // matches nothing — the whole tasklist blanked for that frame.
     bool isTaskOn(const PHLWINDOW& w, const PHLWORKSPACE& ws);
 
+    // first UTF-8 character (never a split sequence), uppercased when ASCII —
+    // the icon-cell letter fallback
+    std::string letterOf(const std::string& s);
+
     // tasklist order: awesome lists clients in ARRIVAL order, stable across
     // raises — windowState()'s list is the Z-order, so the bar keeps its own
     // sequence

@@ -507,13 +507,23 @@ namespace NHyprbar {
         // modifier-safe — mods reach clients via the separate onKeyboardMod
         // path, never through these key events.
         void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
+            // emissions precede the compositor's lock handling: a locked
+            // session must never feed the prompt (typed keys would collect in
+            // `typed` and Return would launch() the line — under a LOCK)
+            if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked()) {
+                if (isOpen)
+                    close();
+                return;
+            }
+
             if (!isOpen)
                 return;
 
-            // the workspace can go fullscreen under us (the bar hides); never
-            // keep an invisible prompt grabbing the keyboard
+            // monitor gone: never keep an invisible prompt grabbing the
+            // keyboard. Fullscreen deliberately does NOT close it — render
+            // and pointer both keep the prompt alive above fullscreen.
             const auto M = mon.lock();
-            if (!M || (M->m_activeWorkspace && Fullscreen::controller()->getFullscreenModes(M->m_activeWorkspace).internal == Fullscreen::FSMODE_FULLSCREEN)) {
+            if (!M) {
                 close();
                 return;
             }
@@ -780,11 +790,8 @@ namespace NHyprbar {
                     if (ITEX && ITEX->m_texID != 0) {
                         const auto P = PAINT.toPhys(CBox{tx, MY + 3, ICON, ICON});
                         PAINT.tex(ITEX, P);
-                    } else {
-                        std::string L = NAME.empty() ? "?" : NAME.substr(0, 1);
-                        L[0]          = std::toupper((unsigned char)L[0]);
-                        PAINT.texIn(textTex(L, COLACTIVE, PAINT.pt), CBox{tx, MY, ICON, PAINT.h});
-                    }
+                    } else
+                        PAINT.texIn(textTex(letterOf(NAME), COLACTIVE, PAINT.pt), CBox{tx, MY, ICON, PAINT.h});
                     tx += ICON + 6;
 
                     const auto T = i == Menubar::sel ? textTex(NAME, fg, PAINT.pt) : WT;

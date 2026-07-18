@@ -427,11 +427,8 @@ namespace NHyprbar {
                 const auto   P = toPhys(CELL);
                 CBox         b{P.x + (P.w - S) / 2.0, P.y + (P.h - S) / 2.0, S, S};
                 drawTex(IT->tex, b.round());
-            } else {
-                std::string L = IT->iconName.empty() ? "?" : IT->iconName.substr(0, 1);
-                L[0]          = std::toupper((unsigned char)L[0]);
-                drawTexIn(textTex(L, color(cfg.colMuted), PT), CELL);
-            }
+            } else
+                drawTexIn(textTex(letterOf(IT->iconName), color(cfg.colMuted), PT), CELL);
 
             SHit h;
             h.box     = CELL;
@@ -473,11 +470,8 @@ namespace NHyprbar {
                     if (const auto ITEX = appIcon(W->m_class); ITEX && ITEX->m_texID != 0) {
                         const auto P = toPhys(CBox{tx, MB.y + 3, ICON, ICON});
                         drawTex(ITEX, P);
-                    } else {
-                        std::string L = W->m_class.empty() ? "?" : W->m_class.substr(0, 1);
-                        L[0]          = std::toupper((unsigned char)L[0]);
-                        drawTexIn(textTex(L, COLACTIVE, PT), CBox{tx, MB.y, ICON, H});
-                    }
+                    } else
+                        drawTexIn(textTex(letterOf(W->m_class), COLACTIVE, PT), CBox{tx, MB.y, ICON, H});
                     tx += ICON + 4;
 
                     static std::string LBL; // reused; main thread only

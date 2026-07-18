@@ -47,6 +47,18 @@ namespace NHyprbar {
         return w && ws && w->m_isMapped && !w->isHidden() && w->m_workspace && w->m_workspace->m_id == ws->m_id;
     }
 
+    std::string letterOf(const std::string& s) {
+        if (s.empty())
+            return "?";
+        size_t n = 1;
+        while (n < s.size() && (s[n] & 0xC0) == 0x80)
+            n++;
+        std::string L = s.substr(0, n);
+        if (n == 1)
+            L[0] = std::toupper((unsigned char)L[0]);
+        return L;
+    }
+
     // ---- clock / battery ----
 
     bool hasBattery() {
@@ -59,10 +71,16 @@ namespace NHyprbar {
         for (const auto& e : std::filesystem::directory_iterator("/sys/class/power_supply", ec)) {
             std::ifstream t(e.path() / "type");
             std::string   type;
-            if (t && std::getline(t, type) && type == "Battery") {
-                batteryDir = e.path();
-                break;
-            }
+            if (!t || !std::getline(t, type) || type != "Battery")
+                continue;
+            // peripheral batteries (HID mice, headsets) also read "Battery";
+            // their scope says "Device" — the system pack is "System" or none
+            std::ifstream sc(e.path() / "scope");
+            std::string   scope;
+            if (sc && std::getline(sc, scope) && scope == "Device")
+                continue;
+            batteryDir = e.path();
+            break;
         }
     }
 
@@ -133,13 +151,19 @@ namespace NHyprbar {
             Tray::notify("battery", 9990, "", summary, body, urgency, timeoutMs);
         };
 
-        if (!lastStatus.empty() && status != lastStatus) {
+        // ACPI transitions/resume report transient "Unknown" — it must not
+        // count as an edge (spurious AC cards) nor reset the latches (a
+        // duplicate low card, or a 3s transient replacing the sticky critical)
+        const bool KNOWN = status == "Charging" || status == "Discharging" || status == "Full" || status == "Not charging";
+
+        if (KNOWN && !lastStatus.empty() && status != lastStatus) {
             if (status == "Charging")
                 NOTIFY(0, 3000, "Battery", "AC connected — " + cap + "%");
             else if (status == "Discharging")
                 NOTIFY(0, 3000, "Battery", "AC disconnected — " + cap + "%");
         }
-        lastStatus = status;
+        if (KNOWN)
+            lastStatus = status;
 
         if (status == "Discharging") {
             if (capN <= CRIT && !critical) {
@@ -152,7 +176,7 @@ namespace NHyprbar {
                 NOTIFY(1, 6000, "Battery low", cap + "%");
                 warned = true;
             }
-        } else
+        } else if (KNOWN)
             warned = critical = false;
     }
 

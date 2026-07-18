@@ -206,10 +206,12 @@ namespace NHyprbar {
         static void menuEvent(int32_t id, const char* type) {
             if (!proxy)
                 return;
-            proxy->callMethodAsync("Event")
-                .onInterface(DBUSMENU)
-                .withArguments(id, std::string{type}, sdbus::Variant{(int32_t)0}, (uint32_t)0)
-                .uponReplyInvoke([](std::optional<sdbus::Error>) {});
+            try {
+                proxy->callMethodAsync("Event")
+                    .onInterface(DBUSMENU)
+                    .withArguments(id, std::string{type}, sdbus::Variant{(int32_t)0}, (uint32_t)0)
+                    .uponReplyInvoke([](std::optional<sdbus::Error>) {});
+            } catch (...) {} // dying bus: teardown is already pending
         }
 
         static void loadLevel(int32_t parentId) {
@@ -395,10 +397,12 @@ namespace NHyprbar {
             }
             if (!proxy)
                 return;
-            proxy->callMethodAsync("Event")
-                .onInterface(DBUSMENU)
-                .withArguments(en.id, std::string{"clicked"}, sdbus::Variant{(int32_t)0}, (uint32_t)0)
-                .uponReplyInvoke([](std::optional<sdbus::Error>) {});
+            try {
+                proxy->callMethodAsync("Event")
+                    .onInterface(DBUSMENU)
+                    .withArguments(en.id, std::string{"clicked"}, sdbus::Variant{(int32_t)0}, (uint32_t)0)
+                    .uponReplyInvoke([](std::optional<sdbus::Error>) {});
+            } catch (...) {} // dying bus: teardown is already pending
             Tray::pollSoon();
             close();
         }
