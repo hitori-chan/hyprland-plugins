@@ -17,17 +17,23 @@ or focus to a window underneath.
 - **Tasklist** — the active workspace's windows in arrival order: app icon,
   `⌃` pinned / `+` maximized / `✈` floating markers. Click focuses + raises, right-click
   opens the all-clients menu, wheel walks focus.
-- **Tray** — in-compositor SNI host with a native dbusmenu renderer.
-- **Battery** — Material glyph + percent; hidden on desktops. Alerts ride
-  along: AC plug/unplug, low at 15%, critical (sticky) at 7% — sent
-  through the notification daemon off the same udev uevents as the gauge.
+- **Tray** — in-compositor SNI host with a native dbusmenu renderer. Menus
+  wear the overlay language: 1px-rounded panel with a `col_frame` ring,
+  hover rows inset 4px with softened corners.
+- **Battery** — Android 16's unified pill (AOSP-exact geometry, drawn
+  natively): percent inside, terminal cap right, fill green on AC / amber
+  ≤ 20% / urgent ≤ 5% / `col_frame` idle; hidden on desktops. Alerts ride
+  along on Android's same lines: AC plug/unplug, low at 20%, critical
+  (sticky) at 5% — sent through the notification daemon off the same udev
+  uevents as the gauge.
 - **Clock** — `%a %b %d, %H:%M`.
 - **Layoutbox** — the active workspace's layout, rightmost. Click/wheel
   cycles like awesome (`Super+Space` too); one layout until more land.
 - **Menubar** (`Mod+P`, `hl.plugin.hyprbar.menubar()`) — awesome's launcher
   in its own strip below the bar: categories + `.desktop` apps filtered as
   you type, most-launched first, shell completion, history, readline
-  editing. Draws above fullscreen, like awesome's ontop wibox.
+  editing. Draws above fullscreen, like awesome's ontop wibox. Iconless
+  entries keep their cell with a letter fallback instead of collapsing.
 
 Details and the full menubar key reference: [docs/hyprbar.md](../docs/hyprbar.md).
 
@@ -42,7 +48,6 @@ Colors and font come from `theme.lua` via `hl.config { plugin = { hyprbar =
 | `plugin:hyprbar:font_size` | text size in logical px | 12 |
 | `plugin:hyprbar:tray_spacing` | px between tray icons | 10 |
 | `plugin:hyprbar:font` | font family | Fira Code |
-| `plugin:hyprbar:font_icon` | battery glyph font | Material Icons Round |
 | `plugin:hyprbar:terminal` | terminal for `Terminal=true` menubar entries | alacritty |
 | `plugin:hyprbar:col_bg` | bar background | `131313` |
 | `plugin:hyprbar:col_fg` | normal text | `aaaaaa` |
@@ -55,3 +60,6 @@ Colors and font come from `theme.lua` via `hl.config { plugin = { hyprbar =
 | `plugin:hyprbar:col_urgent_bg` | urgent background | `3f3f3f` |
 | `plugin:hyprbar:col_square_sel` | taglist square: tag holds the focused window | `f0dfaf` |
 | `plugin:hyprbar:col_square_unsel` | taglist square: occupied tag | `dcdccc` |
+| `plugin:hyprbar:col_frame` | menu frame + battery pill idle fill | `3f3f3f` |
+| `plugin:hyprbar:col_charging` | battery pill fill on AC | `75b14c` |
+| `plugin:hyprbar:col_low` | battery pill fill ≤ 20% | `d8a166` |

@@ -80,7 +80,82 @@ namespace NHyprbar {
         barChanged();
     }
 
-    static bool                      inRenderBar = false; // a render is on the stack: never build textures
+    // ---- the battery pill (Android 16's unified battery, drawn natively) ----
+    //
+    // Geometry lifted from AOSP SystemUI's unified battery (Apache-2.0:
+    // frameworks/base packages/SystemUI res/drawable/battery_unified_frame*.xml
+    // + src/.../battery/unified/*.kt), mirrored so the terminal cap sits on
+    // the right like the approved mocks. On the 24x14 canvas: frame stroke
+    // 1.5 on a centerline pill x0.75..21.25 / y0.75..13.25 with corner radii
+    // 3.25 far / 2.25 cap-side; cap x22.5..24, y3..11, outer corners r1; the
+    // fill spans x1.5..20.5 (far inset 1.5, cap-side 3.5) clipped to the
+    // frame's inner shape, anchored at the far end; percent digits bold at
+    // size 10 centered in the 18x10 inner canvas (x2..20) — AOSP's
+    // experimentally-nudged centering is ink-centering, which cairo gives
+    // directly.
+    static SP<ITexture> batteryPill(int percent, double hPx, const CHyprColor& fg, const CHyprColor& fill, const std::string& font) {
+        const double S = hPx / 14.0;
+        const int    W = (int)std::ceil(24.0 * S), H = (int)std::ceil(hPx);
+
+        auto*        SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
+        auto*        CR   = cairo_create(SURF);
+        cairo_scale(CR, S, S);
+
+        const auto pill = [&](double x0, double y0, double x1, double y1, double rFar, double rCap) {
+            cairo_new_sub_path(CR);
+            cairo_arc(CR, x1 - rCap, y0 + rCap, rCap, -M_PI / 2, 0);
+            cairo_arc(CR, x1 - rCap, y1 - rCap, rCap, 0, M_PI / 2);
+            cairo_arc(CR, x0 + rFar, y1 - rFar, rFar, M_PI / 2, M_PI);
+            cairo_arc(CR, x0 + rFar, y0 + rFar, rFar, M_PI, 3 * M_PI / 2);
+            cairo_close_path(CR);
+        };
+
+        if (percent > 0) {
+            cairo_save(CR);
+            pill(1.5, 1.5, 20.5, 12.5, 2.5, 1.5); // the frame's inner shape
+            cairo_clip(CR);
+            cairo_rectangle(CR, 1.5, 0, 19.0 * std::min(percent, 100) / 100.0, 14);
+            cairo_set_source_rgba(CR, fill.r, fill.g, fill.b, fill.a);
+            cairo_fill(CR);
+            cairo_restore(CR);
+        }
+
+        cairo_set_source_rgba(CR, fg.r, fg.g, fg.b, fg.a);
+        pill(0.75, 0.75, 21.25, 13.25, 3.25, 2.25);
+        cairo_set_line_width(CR, 1.5);
+        cairo_stroke(CR);
+
+        cairo_move_to(CR, 22.5, 3);
+        cairo_arc(CR, 23, 4, 1, -M_PI / 2, 0);
+        cairo_line_to(CR, 24, 10);
+        cairo_arc(CR, 23, 10, 1, 0, M_PI / 2);
+        cairo_line_to(CR, 22.5, 11);
+        cairo_close_path(CR);
+        cairo_fill(CR);
+
+        const auto TXT = std::to_string(std::clamp(percent, 0, 100));
+        cairo_select_font_face(CR, font.c_str(), CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+        cairo_set_font_size(CR, 10);
+        cairo_text_extents_t te;
+        cairo_text_extents(CR, TXT.c_str(), &te);
+        cairo_move_to(CR, 2 + (18 - te.width) / 2 - te.x_bearing, 7 - (te.y_bearing + te.height / 2));
+        cairo_show_text(CR, TXT.c_str());
+
+        cairo_surface_flush(SURF);
+        auto tex = g_pHyprRenderer->createTexture(SURF);
+        cairo_destroy(CR);
+        cairo_surface_destroy(SURF);
+        return tex;
+    }
+
+    // per physical height, so mixed-scale monitors don't evict each other
+    struct SPill {
+        SP<ITexture> tex;
+        uint64_t     key = 0;
+    };
+    static std::unordered_map<int, SPill> pillCache;
+
+    static bool                           inRenderBar = false; // a render is on the stack: never build textures
 
     static UP<SEventLoopDoLaterLock> pendingRewarm;
 
@@ -98,10 +173,16 @@ namespace NHyprbar {
         return CBox{global}.translate(-mon->m_position).scale(scale).round();
     }
 
-    void SPaint::rect(const CBox& global, const CHyprColor& c) const {
+    void SPaint::rect(const CBox& global, const CHyprColor& c, int round) const {
         if (warm)
             return;
-        g_pHyprOpenGL->renderRect(toPhys(global), c, {});
+        g_pHyprOpenGL->renderRect(toPhys(global), c, {.round = round});
+    }
+
+    void SPaint::border(const CBox& global, const CHyprColor& c, int round, int sizePx) const {
+        if (warm)
+            return;
+        g_pHyprOpenGL->renderBorder(toPhys(global), Config::CGradientValueData{c}, {.round = round, .borderSize = sizePx});
     }
 
     void SPaint::tex(const SP<ITexture>& t, const CBox& physBox) const {
@@ -292,15 +373,25 @@ namespace NHyprbar {
             right -= W;
         }
 
-        if (!batteryText.empty()) {                                           // Material glyph + percent, the old widget's look:
-            const int    GPT = std::max(6, (int)std::round(PT * 15.0 / 9.0)); // font_icon 15 vs font 9,
-            const auto   GT  = textTex(batteryGlyphText, COLFG, GPT, 0, cfg.fontIcon->value());
-            const auto   VT  = textTex(batteryText, COLFG, PT);
-            const double GW  = GT ? GT->m_size.x / SCALE : 0;
-            const double VW  = VT ? VT->m_size.x / SCALE : 0;
-            const double W   = 6 + GW + 2 + VW + 6; // breathing room off the tray
-            drawTexIn(GT, CBox{right - W + 6, MB.y, GW, H});
-            drawTexIn(VT, CBox{right - W + 6 + GW + 2, MB.y, VW, H});
+        if (batteryPercent >= 0) { // the Android pill: percent inside, the fill colored by state
+            const int        PH   = (int)std::round((H - 6) * SCALE); // the bar's 3px-inset icon rhythm
+            const CHyprColor FILL = batteryCharging          ? color(cfg.colCharging) :
+                batteryPercent <= 5                          ? COLURGENT :
+                batteryPercent <= 20                         ? color(cfg.colLow) :
+                                                               color(cfg.colFrame);
+            const uint64_t   KEY  = ((uint64_t)batteryPercent << 40) ^ (COLFG.getAsHex() * 0x9E3779B97F4A7C15ULL) ^ FILL.getAsHex();
+            auto&            PILL = pillCache[PH];
+            if (warm) {
+                if (!PILL.tex || PILL.key != KEY) {
+                    PILL.tex = batteryPill(batteryPercent, PH, COLFG, FILL, cfg.font->value());
+                    PILL.key = KEY;
+                }
+            } else if (!PILL.tex || PILL.key != KEY)
+                texStale = true; // level moved under a scissored repaint: warm + repaint
+
+            const double PW = PILL.tex ? PILL.tex->m_size.x / SCALE : (H - 6) * 24.0 / 14.0;
+            const double W  = 6 + PW + 6; // breathing room off the tray
+            drawTexIn(PILL.tex, CBox{right - W + 6, MB.y, PW, H});
             right -= W;
         }
 
@@ -530,6 +621,7 @@ namespace NHyprbar {
         layoutTexs.clear();
         layoutTexTried.clear();
         wsLayout.clear();
+        pillCache.clear();
     }
 
 } // namespace NHyprbar

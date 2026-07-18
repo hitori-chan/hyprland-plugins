@@ -6,9 +6,10 @@ namespace NHyprbar {
 
     bool               warming = false, texStale = false; // the texture rule — see hyprbar.hpp
 
-    std::string        clockText, batteryText, batteryGlyphText;
+    std::string        clockText;
+    int                batteryPercent  = -1;
+    bool               batteryCharging = false;
     static std::string batteryDir; // /sys/class/power_supply/BATx, empty = none
-    static std::string mainsDir;   // .../ACx — AC online switches the glyph, like the old widget
 
     // ---- helpers ----
 
@@ -54,40 +55,15 @@ namespace NHyprbar {
 
     void findBattery() {
         batteryDir.clear();
-        mainsDir.clear();
         std::error_code ec;
         for (const auto& e : std::filesystem::directory_iterator("/sys/class/power_supply", ec)) {
             std::ifstream t(e.path() / "type");
             std::string   type;
-            if (t && std::getline(t, type)) {
-                if (type == "Battery" && batteryDir.empty())
-                    batteryDir = e.path();
-                else if (type == "Mains" && mainsDir.empty())
-                    mainsDir = e.path();
+            if (t && std::getline(t, type) && type == "Battery") {
+                batteryDir = e.path();
+                break;
             }
         }
-    }
-
-    // The old awesome battery widget's glyphs: Material Icons Round, one
-    // charging bolt on AC, else a gauge in 12.5% steps.
-    static const char* batteryGlyph(int percent, bool ac) {
-        if (ac)
-            return "";
-        if (percent <= 12)
-            return "";
-        if (percent <= 25)
-            return "";
-        if (percent <= 37)
-            return "";
-        if (percent <= 50)
-            return "";
-        if (percent <= 62)
-            return "";
-        if (percent <= 75)
-            return "";
-        if (percent <= 87)
-            return "";
-        return "";
     }
 
     bool refreshTexts() {
@@ -103,29 +79,24 @@ namespace NHyprbar {
             changed   = true;
         }
 
-        std::string glyph, bat;
+        int  pc       = -1;
+        bool charging = false;
         if (!batteryDir.empty()) {
-            std::ifstream c(batteryDir + "/capacity");
-            std::string   cap;
-            if (c && std::getline(c, cap)) {
-                bool ac = false;
-                if (!mainsDir.empty()) {
-                    std::ifstream o(mainsDir + "/online");
-                    std::string   on;
-                    ac = o && std::getline(o, on) && on == "1";
-                }
-                int pc = 0;
+            std::ifstream cf(batteryDir + "/capacity"), sf(batteryDir + "/status");
+            std::string   cap, status;
+            if (cf && std::getline(cf, cap)) {
                 try {
-                    pc = std::stoi(cap);
+                    pc = std::clamp(std::stoi(cap), 0, 100);
                 } catch (...) {}
-                glyph = batteryGlyph(pc, ac);
-                bat   = cap + "%";
+                // every plugged state (Charging/Full/Not charging) colors the
+                // pill; only Discharging runs on the cell
+                charging = sf && std::getline(sf, status) && status != "Discharging";
             }
         }
-        if (batteryText != bat || batteryGlyphText != glyph) {
-            batteryText      = bat;
-            batteryGlyphText = glyph;
-            changed          = true;
+        if (batteryPercent != pc || batteryCharging != charging) {
+            batteryPercent  = pc;
+            batteryCharging = charging;
+            changed         = true;
         }
 
         return changed;
@@ -133,31 +104,9 @@ namespace NHyprbar {
 
     // ---- battery alerts (the old scripts/battery-watch.sh, folded in) ----
 
-    // The alerts' waifu: one random ~/pic/waifu image, sticky for the session
-    // (the per-tag waifu-icon.sh cache the script used, now just a static).
-    static const std::string& batteryWaifu() {
-        static const std::string ICON = []() -> std::string {
-            const char* HOME = std::getenv("HOME");
-            if (!HOME)
-                return "";
-            std::vector<std::string> found;
-            std::error_code          ec;
-            auto                     it = std::filesystem::recursive_directory_iterator(
-                std::string{HOME} + "/pic/waifu", std::filesystem::directory_options::follow_directory_symlink | std::filesystem::directory_options::skip_permission_denied, ec);
-            for (; !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
-                if (!it->is_regular_file(ec))
-                    continue;
-                const auto EXT = lower(it->path().extension().string());
-                if (EXT == ".png" || EXT == ".jpg" || EXT == ".jpeg" || EXT == ".gif" || EXT == ".webp" || EXT == ".bmp" || EXT == ".svg")
-                    found.push_back(it->path().string());
-            }
-            return found.empty() ? "" : found[std::random_device{}() % found.size()];
-        }();
-        return ICON;
-    }
-
-    // battery-watch.sh's exact alerts, edge-triggered off the same uevents as
-    // the gauge (the minute tick is the failsafe). Never called at INIT: the
+    // Edge-triggered off the same uevents as the gauge (the minute tick is
+    // the failsafe); thresholds are Android's lines (20 low / 5 critical),
+    // matching the pill's amber/crimson bands. Never called at INIT: the
     // first minute tick covers a login-low, after hyprnotify is up — hyprbar
     // loads before the notification daemon does.
     void checkBatteryAlerts() {
@@ -174,13 +123,14 @@ namespace NHyprbar {
             capN = std::stoi(cap);
         } catch (...) { return; }
 
-        constexpr int      WARN = 15, CRIT = 7;
+        constexpr int      WARN = 20, CRIT = 5;
         static std::string lastStatus;
         static bool        warned = false, critical = false;
 
-        // urgency 0/1/2; 9990 = the script's pinned replace-in-place id
+        // urgency 0/1/2; 9990 = the script's pinned replace-in-place id.
+        // No icon: the daemon's fallback_icon_dir rolls the card its face.
         const auto NOTIFY = [](uint8_t urgency, int32_t timeoutMs, const char* summary, const std::string& body) {
-            Tray::notify("battery", 9990, batteryWaifu(), summary, body, urgency, timeoutMs);
+            Tray::notify("battery", 9990, "", summary, body, urgency, timeoutMs);
         };
 
         if (!lastStatus.empty() && status != lastStatus) {

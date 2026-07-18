@@ -50,6 +50,7 @@
 #include <hyprland/src/config/values/types/IntValue.hpp>
 #include <hyprland/src/config/values/types/ColorValue.hpp>
 #include <hyprland/src/config/values/types/StringValue.hpp>
+#include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
 #include <hyprland/src/config/supplementary/executor/Executor.hpp>
 
@@ -95,7 +96,6 @@ namespace NHyprbar {
         SP<Config::Values::CIntValue>    fontSize;
         SP<Config::Values::CIntValue>    traySpacing; // awesome's systray_icon_spacing
         SP<Config::Values::CStringValue> font;
-        SP<Config::Values::CStringValue> fontIcon; // battery glyphs (awesome's font_icon)
         SP<Config::Values::CStringValue> terminal; // runs Terminal=true menubar entries
         SP<Config::Values::CColorValue>  colBg;
         SP<Config::Values::CColorValue>  colFg;          // normal text: tags, tasks, clock, battery
@@ -108,12 +108,17 @@ namespace NHyprbar {
         SP<Config::Values::CColorValue>  colUrgentBg;    // urgent bg (awesome bg_urgent)
         SP<Config::Values::CColorValue>  colSquareSel;   // taglist square: tag holds the focused window
         SP<Config::Values::CColorValue>  colSquareUnsel; // taglist square: occupied tag
+        SP<Config::Values::CColorValue>  colFrame;       // menu panel frame + the battery pill's idle fill
+        SP<Config::Values::CColorValue>  colCharging;    // battery pill fill on AC (Android's active green)
+        SP<Config::Values::CColorValue>  colLow;         // battery pill fill <= 20% (Android's warning amber)
     };
     extern SBarConfig cfg;
 
     // ---- util.cpp ----
 
-    extern std::string clockText, batteryText, batteryGlyphText;
+    extern std::string clockText;
+    extern int         batteryPercent;  // -1 = no battery
+    extern bool        batteryCharging; // any plugged state; only Discharging is false
 
     double             barHeight();
     void               damageBars(); // covers the menubar's prompt strip while it's open
@@ -245,9 +250,10 @@ namespace NHyprbar {
         int                pt = 0; // text size in pt, already scaled
 
         CBox               toPhys(const CBox& global) const; // global logical -> monitor physical
-        void               rect(const CBox& global, const CHyprColor& c) const;
-        void               tex(const SP<ITexture>& t, const CBox& physBox) const; // pre-computed physical box
-        void               texIn(const SP<ITexture>& t, const CBox& cell) const;  // centered in a logical cell
+        void               rect(const CBox& global, const CHyprColor& c, int round = 0) const;
+        void               border(const CBox& global, const CHyprColor& c, int round, int sizePx) const; // frame ring: one call, not four rects
+        void               tex(const SP<ITexture>& t, const CBox& physBox) const;                        // pre-computed physical box
+        void               texIn(const SP<ITexture>& t, const CBox& cell) const;                         // centered in a logical cell
     };
 
     // Text -> cached GPU texture. Built ONLY by the warm pass; a miss during a

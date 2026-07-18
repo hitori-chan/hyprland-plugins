@@ -14,8 +14,8 @@ name    = "hyprland-plugins"
 authors = ["hitori"]
 
 [hyprbar]
-description = "the awesome wibar, drawn by the compositor: kanji taglist, tasklist with icons, tray with menus, menubar launcher, battery, clock"
-version     = "1.3.0"
+description = "the awesome wibar, drawn by the compositor"
+version     = "1.4.0"
 authors     = ["hitori"]
 output      = "hyprbar/hyprbar.so"
 build       = ["make -C hyprbar all"]

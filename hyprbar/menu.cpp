@@ -410,7 +410,10 @@ namespace NHyprbar {
 
             // one palette fetch per render: color() memoizes but still hashes per call
             const CHyprColor COLBG = color(cfg.colBg), COLACTIVEBG = color(cfg.colActiveBg), COLFG = color(cfg.colFg), COLEMPTY = color(cfg.colEmpty),
-                             COLURGENT = color(cfg.colUrgent), COLFOCUS = color(cfg.colFocus);
+                             COLURGENT = color(cfg.colUrgent), COLFOCUS = color(cfg.colFocus), COLFRAME = color(cfg.colFrame);
+
+            // the overlay language: 1px rounding on the panel and its rows
+            const int ROUND = std::max(0, (int)std::lround(PAINT.scale));
 
             const double     ROWH = Menu::ROWH, SEPH = Menu::SEPH, PAD = Menu::PAD;
             const double     MTOP = PAINT.mb.y + PAINT.h, MBOT = PAINT.mb.y + PAINT.mb.h - 2;
@@ -469,11 +472,10 @@ namespace NHyprbar {
                 my0                 = std::clamp(my0, MTOP, MBOT - mh);
                 L.box               = CBox{mx, my0, mw, mh};
 
-                PAINT.rect(L.box, COLBG);
-                PAINT.rect(CBox{mx, my0, mw, 1}, COLACTIVEBG);
-                PAINT.rect(CBox{mx, my0 + mh - 1, mw, 1}, COLACTIVEBG);
-                PAINT.rect(CBox{mx, my0, 1, mh}, COLACTIVEBG);
-                PAINT.rect(CBox{mx + mw - 1, my0, 1, mh}, COLACTIVEBG);
+                // fill under the whole panel, frame ring over its edge: no
+                // corner seam, and 5 rects are 2 calls
+                PAINT.rect(L.box, COLBG, ROUND);
+                PAINT.border(L.box, COLFRAME, ROUND, std::max(1, (int)std::lround(PAINT.scale)));
 
                 // labels share one leading column when any row in this level
                 // has an icon or a check/radio state, ragged otherwise — how
@@ -532,7 +534,8 @@ namespace NHyprbar {
                     const bool OPENSUB = li + 1 < Menu::levels.size() && Menu::levels[li + 1].parentIdx == (int)i;
                     CHyprColor fg      = !E.enabled ? COLEMPTY : E.alert ? COLURGENT : COLFG;
                     if (((int)i == L.hover || OPENSUB) && E.enabled) {
-                        PAINT.rect(ROW, COLACTIVEBG);
+                        // the hover row floats off the frame: 4px inset, softened corners
+                        PAINT.rect(CBox{ROW.x + 4, ROW.y, ROW.w - 8, ROW.h}, COLACTIVEBG, ROUND);
                         fg = COLFOCUS;
                     }
 
@@ -567,7 +570,7 @@ namespace NHyprbar {
                     const auto arrow = [&](const CBox& B, int id, bool on, const char* glyph) {
                         CHyprColor fg = on ? COLFG : COLEMPTY;
                         if (L.hover == id && on) {
-                            PAINT.rect(B, COLACTIVEBG);
+                            PAINT.rect(CBox{B.x + 4, B.y, B.w - 8, B.h}, COLACTIVEBG, ROUND);
                             fg = COLFOCUS;
                         }
                         PAINT.texIn(textTex(glyph, fg, PAINT.pt), B);

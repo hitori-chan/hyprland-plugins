@@ -33,13 +33,15 @@
 //   the spec's update signals, check/radio state draws in a leading
 //   column, disposition warning/alert rows take the urgent color, labels
 //   honor the "__" escape.
-// - battery: the old awesome widget's face — a Material Icons Round glyph
-//   (plugin:hyprbar:font_icon, charging bolt on AC else a 12.5%-step
-//   gauge) + percent, from /sys/class/power_supply (hidden on desktops).
-//   The old battery-watch.sh alerts live here too: AC plug/unplug, low
-//   (15%) and critical (7%) — edge-triggered, riding the same udev uevents
-//   as the gauge, sent as direct Notify calls over the tray's bus
-//   connection (no fork; hyprnotify answers from the same process).
+// - battery: Android 16's unified pill, drawn natively in the warm pass
+//   (cairo; AOSP-exact geometry, see render.cpp) — percent inside, the
+//   fill colored by state: green on AC, amber at 20%, urgent at 5%, the
+//   frame color idle. State from /sys/class/power_supply (hidden on
+//   desktops). The old battery-watch.sh alerts live here too: AC
+//   plug/unplug, low (20%) and critical (5%, Android's lines) —
+//   edge-triggered, riding the same udev uevents as the gauge, sent as
+//   direct Notify calls over the tray's bus connection (no fork;
+//   hyprnotify answers from the same process).
 // - clock: "%a %b %d, %H:%M" (the awesome textclock default; the bar pads
 //   it with a real margin, not the format's literal spaces).
 // - layoutbox: rightmost like awesome — the active workspace's layout
@@ -60,10 +62,11 @@
 //   shell completion ($PATH for the command word, filenames after),
 //   Up/Down or C-p/C-n walk the prompt history, readline editing
 //   (C-a/e/b/f/d/h/u/w, M-b/f/d, C-BackSpace), Escape or any click
-//   closes. Entries show a theme icon when one resolves and plain text
-//   otherwise, like awesome (no letter fallback). Launch counts and
-//   history persist in ~/.cache/hyprbar/ (menu_count_file, history_menu),
-//   like awesome's.
+//   closes. Entries show a theme icon when one resolves, else the
+//   tasklist's letter fallback — the icon cell always reserved so rows
+//   keep their rhythm (a deliberate step past awesome's collapsing
+//   imagebox). Launch counts and history persist in ~/.cache/hyprbar/
+//   (menu_count_file, history_menu), like awesome's.
 // - The strip owns the pointer: hovering the bar never leaks the cursor
 //   shape or hover focus to a window poking underneath it.
 // - The bar hides while the workspace has a real fullscreen window
@@ -235,7 +238,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.fontSize       = makeShared<Config::Values::CIntValue>("plugin:hyprbar:font_size", "text size in logical px (monitor scale applies at raster time)", 12);
     cfg.traySpacing    = makeShared<Config::Values::CIntValue>("plugin:hyprbar:tray_spacing", "px between tray icons (awesome systray_icon_spacing)", 10);
     cfg.font           = makeShared<Config::Values::CStringValue>("plugin:hyprbar:font", "font family", "Fira Code");
-    cfg.fontIcon       = makeShared<Config::Values::CStringValue>("plugin:hyprbar:font_icon", "battery glyph font (awesome font_icon)", "Material Icons Round");
     cfg.terminal       = makeShared<Config::Values::CStringValue>("plugin:hyprbar:terminal", "terminal that runs Terminal=true menubar entries", "alacritty");
     cfg.colBg          = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_bg", "bar background", 0xff131313);
     cfg.colFg          = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_fg", "normal text", 0xffaaaaaa);
@@ -248,13 +250,16 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.colUrgentBg    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_urgent_bg", "urgent background (awesome bg_urgent)", 0xff3f3f3f);
     cfg.colSquareSel   = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_square_sel", "taglist square, tag holds the focused window", 0xfff0dfaf);
     cfg.colSquareUnsel = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_square_unsel", "taglist square, occupied tag", 0xffdcdccc);
+    cfg.colFrame       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_frame", "menu frame + battery pill idle fill", 0xff3f3f3f);
+    cfg.colCharging    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_charging", "battery pill fill on AC", 0xff75b14c);
+    cfg.colLow         = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_low", "battery pill fill at 20% and under", 0xffd8a166);
 
     for (const auto& V : {cfg.height, cfg.fontSize, cfg.traySpacing})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
-    for (const auto& V : {cfg.font, cfg.fontIcon, cfg.terminal})
+    for (const auto& V : {cfg.font, cfg.terminal})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
-    for (const auto& V :
-         {cfg.colBg, cfg.colFg, cfg.colMuted, cfg.colFocus, cfg.colActive, cfg.colActiveBg, cfg.colEmpty, cfg.colUrgent, cfg.colUrgentBg, cfg.colSquareSel, cfg.colSquareUnsel})
+    for (const auto& V : {cfg.colBg, cfg.colFg, cfg.colMuted, cfg.colFocus, cfg.colActive, cfg.colActiveBg, cfg.colEmpty, cfg.colUrgent, cfg.colUrgentBg, cfg.colSquareSel,
+                          cfg.colSquareUnsel, cfg.colFrame, cfg.colCharging, cfg.colLow})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
 
     buildIconDirs();
@@ -313,7 +318,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor: kanji taglist, tasklist with icons, tray with menus, menubar launcher, battery, clock", "hitori", "1.3.0"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "1.4.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

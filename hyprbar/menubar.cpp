@@ -703,7 +703,8 @@ namespace NHyprbar {
                 return;
 
             // one palette fetch per render: color() memoizes but still hashes per call
-            const CHyprColor COLBG = color(cfg.colBg), COLFG = color(cfg.colFg), COLACTIVEBG = color(cfg.colActiveBg), COLFOCUS = color(cfg.colFocus);
+            const CHyprColor COLBG = color(cfg.colBg), COLFG = color(cfg.colFg), COLACTIVEBG = color(cfg.colActiveBg), COLFOCUS = color(cfg.colFocus),
+                             COLACTIVE = color(cfg.colActive);
 
             const double     MY = PAINT.mb.y + PAINT.h;
             PAINT.rect(CBox{PAINT.mb.x, MY, PAINT.mb.w, PAINT.h}, COLBG);
@@ -733,9 +734,6 @@ namespace NHyprbar {
                         return Menubar::CATEGORIES[SH[i].cat].name;
                     return "Exec: " + Menubar::typed;
                 };
-                // awesome's menubar entry: the theme icon if one resolves,
-                // otherwise NOTHING — the imagebox just collapses. No letter
-                // fallback here.
                 const auto entryIcon = [&](int i) -> SP<ITexture> {
                     if (SH[i].app >= 0)
                         return namedIcon(Menubar::apps[SH[i].app].icon);
@@ -744,12 +742,14 @@ namespace NHyprbar {
                     return nullptr;
                 };
 
-                // entry: [8][icon][6][text][8], icon on the 3px-inset rhythm
+                // entry: [8][icon][6][text][8], icon on the 3px-inset rhythm;
+                // the cell is always reserved — an entry whose icon doesn't
+                // resolve gets the tasklist's letter fallback instead of
+                // collapsing (rows kept their rhythm, names never jumped)
                 const double ICON   = PAINT.h - 6;
                 const auto   entryW = [&](int i) {
                     const auto T = textTex(entryName(i), COLFG, PAINT.pt);
-                    const auto I = entryIcon(i);
-                    return 8 + (I && I->m_texID != 0 ? ICON + 6 : 0) + (T ? T->m_size.x / PAINT.scale : 0) + 8;
+                    return 8 + ICON + 6 + (T ? T->m_size.x / PAINT.scale : 0) + 8;
                 };
 
                 { // keep the selection on screen: page-jump to it when it won't fit
@@ -764,7 +764,7 @@ namespace NHyprbar {
                     const auto   NAME = entryName(i);
                     const auto   ITEX = entryIcon(i);
                     const auto   WT   = textTex(NAME, COLFG, PAINT.pt);
-                    const double W    = 8 + (ITEX && ITEX->m_texID != 0 ? ICON + 6 : 0) + (WT ? WT->m_size.x / PAINT.scale : 0) + 8;
+                    const double W    = 8 + ICON + 6 + (WT ? WT->m_size.x / PAINT.scale : 0) + 8;
                     if (px + W > PAINT.mb.x + PAINT.mb.w)
                         break;
 
@@ -780,8 +780,12 @@ namespace NHyprbar {
                     if (ITEX && ITEX->m_texID != 0) {
                         const auto P = PAINT.toPhys(CBox{tx, MY + 3, ICON, ICON});
                         PAINT.tex(ITEX, P);
-                        tx += ICON + 6;
+                    } else {
+                        std::string L = NAME.empty() ? "?" : NAME.substr(0, 1);
+                        L[0]          = std::toupper((unsigned char)L[0]);
+                        PAINT.texIn(textTex(L, COLACTIVE, PAINT.pt), CBox{tx, MY, ICON, PAINT.h});
                     }
+                    tx += ICON + 6;
 
                     const auto T = i == Menubar::sel ? textTex(NAME, fg, PAINT.pt) : WT;
                     if (T && T->m_texID != 0) {
