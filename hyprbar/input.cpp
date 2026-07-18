@@ -7,81 +7,13 @@ namespace NHyprbar {
     std::map<uint64_t, std::vector<SHit>> hitboxes;
     static uint32_t                       swallowRelease = 0; // bits: 1 left, 2 right, 4 middle, 8 other
 
-    // ---- click dispatch (deferred out of the input emission) ----
+    // ---- click dispatch ----
+    //
+    // What a cell does lives with its widget (IWidget::onHit/onScroll);
+    // this unit owns swallowing, the deferral out of the input emission,
+    // and the notch coalescing.
 
     static UP<SEventLoopDoLaterLock> pendingHit;
-
-    static void                      runHit(const SHit& hit, bool right, bool super) {
-        switch (hit.kind) {
-            case SHit::TAG:
-                // awesome's taglist buttons: click views the tag, Mod+click
-                // sends the focused window there without following. Right-click
-                // (viewtoggle) and Mod+right (toggle_tag) have no analog — a
-                // window sits on exactly one workspace here.
-                if (right)
-                    break;
-                if (super) {
-                    auto ws = State::workspaceState()->query().id(hit.tag).run();
-                    if (!ws)
-                        if (const auto M = Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr)
-                            ws = State::workspaceState()->create(hit.tag, M->m_id);
-                    if (ws)
-                        std::ignore = Config::Actions::moveToWorkspace(ws, true); // silent — move_to_tag never followed
-                } else
-                    std::ignore = Config::Actions::changeWorkspace(std::to_string(hit.tag));
-                break;
-            case SHit::TASK:
-                if (right) { // awesome: the all-clients menu
-                    Menu::openClients(hit.anchorX, hit.mon);
-                    break;
-                }
-                {
-                    if (const auto W = hit.window.lock(); W && W->m_isMapped) {
-                        // Not Actions::focus(): that goes through FocusState with
-                        // surface=nullptr, and its already-focused guard compares
-                        // (window, surface) == (m_focusWindow, m_focusSurface).
-                        // When a popup/layer that held the keyboard dies while the
-                        // pointer sits on the bar (moves swallowed = FFM can't
-                        // heal), m_focusSurface is left empty with m_focusWindow
-                        // still set — nullptr == empty matches, the guard returns
-                        // before the raise AND before keyboard focus, and the
-                        // click looks dead until some other window gets focused.
-                        // So: raise explicitly, then focus with the window's real
-                        // surface — the guard can never match a half-focused
-                        // window, and a focused-but-obscured one still raises.
-                        Desktop::windowState()->raise(W);
-                        Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW, W->wlSurface()->resource());
-                    }
-                }
-                break;
-            case SHit::TRAY: {
-                const auto IT = hit.tray.lock();
-                if (!IT || !IT->proxy)
-                    return;
-                const bool HASMENU = !IT->menuPath.empty();
-                if (!right && !(IT->itemIsMenu && HASMENU)) {
-                    try {
-                        IT->proxy->callMethodAsync("Activate").onInterface(Tray::SNI).withArguments((int32_t)0, (int32_t)0).uponReplyInvoke([](std::optional<sdbus::Error>) {});
-                    } catch (...) {}  // dying bus: teardown is already pending
-                    Tray::pollSoon(); // the activation usually flips the icon right back
-                    return;
-                }
-                if (HASMENU)
-                    Menu::openFor(IT, hit.anchorX, hit.mon);
-                else if (right) {
-                    try {
-                        IT->proxy->callMethodAsync("ContextMenu").onInterface(Tray::SNI).withArguments((int32_t)0, (int32_t)0).uponReplyInvoke([](std::optional<sdbus::Error>) {});
-                    } catch (...) {}
-                    Tray::pollSoon();
-                }
-                break;
-            }
-            case SHit::LAYOUT:
-                // awesome's layoutbox buttons: left = next, right = previous
-                layoutInc(right ? -1 : 1);
-                break;
-        }
-    }
 
     // ---- input ----
 
@@ -197,97 +129,44 @@ namespace NHyprbar {
         if (IT == hitboxes.end())
             return;
 
-        if (BIT == 4u) { // middle on a tray icon: the SNI SecondaryActivate call
-            for (const auto& HIT : IT->second) {
-                if (HIT.kind != SHit::TRAY || !HIT.box.containsPoint(POS))
-                    continue;
-                if (const auto TI = HIT.tray.lock(); TI && TI->proxy) {
-                    try {
-                        TI->proxy->callMethodAsync("SecondaryActivate")
-                            .onInterface(Tray::SNI)
-                            .withArguments((int32_t)0, (int32_t)0)
-                            .uponReplyInvoke([](std::optional<sdbus::Error>) {});
-                    } catch (...) {} // dying bus: teardown is already pending
-                    Tray::pollSoon();
-                }
-                break;
-            }
-            return;
-        }
-        if (BIT != 1u && BIT != 2u)
+        if (BIT == 8u)
             return; // no side-button actions on the bar
         const auto KB    = g_pSeatManager ? g_pSeatManager->m_keyboard.lock() : nullptr;
         const bool SUPER = KB && (KB->m_modifiersState.depressed & HL_MODIFIER_META);
         for (const auto& HIT : IT->second) {
             if (HIT.box.containsPoint(POS)) {
-                SHit hc = HIT;
-                hc.mon  = MON;
-                if (hc.kind == SHit::TASK)
-                    hc.anchorX = POS.x; // the client-list menu pops at the click
+                SHit hc   = HIT;
+                hc.mon    = MON;
+                hc.clickX = POS.x;
                 // Deferred out of the input emission: workspace/focus changes
                 // mid-button-event bite code that still holds pre-click state.
-                pendingHit = g_pEventLoopManager->doLaterLock([hc, right = BIT == 2u, SUPER]() { runHit(hc, right, SUPER); });
+                if (hc.widget)
+                    pendingHit = g_pEventLoopManager->doLaterLock([hc, BIT, SUPER]() { hc.widget->onHit(hc, BIT, SUPER); });
                 break;
             }
         }
     }
 
-    // awesome's wibar scroll bindings: on the taglist wheel-up/down view the
-    // next/previous tag (wrapping, like awful.tag.viewnext/viewprev); on a
-    // tasklist item they walk focus through the tasks (focus.byidx ±1,
-    // wrapping); a tray icon gets the SNI Scroll call (the XEmbed systray let
-    // apps see scroll too). The strip swallows every scroll it owns.
+    // awesome's wibar scroll bindings live with their widgets; the strip
+    // swallows every scroll it owns.
     static UP<SEventLoopDoLaterLock> pendingScroll;
 
     // Batched notches ACCUMULATE into one deferred hop: axis events can
     // arrive several per dispatch, and overwriting the doLaterLock cancels
     // the unfired hop — fast wheel spins were collapsing to a single step.
-    static int  scrollTag = 0, scrollTask = 0, scrollLayout = 0;
-    static bool scrollQueued = false;
+    static std::unordered_map<IWidget*, int> scrollAcc; // reused; main thread only
+    static bool                              scrollQueued = false;
 
-    static void queueScrollHop(PHLMONITOR mon) {
+    static void                              queueScrollHop(PHLMONITOR mon) {
         if (scrollQueued)
             return;
         scrollQueued  = true;
         pendingScroll = g_pEventLoopManager->doLaterLock([mon]() {
-            scrollQueued     = false;
-            const int TAGS   = std::exchange(scrollTag, 0);
-            const int TASKS  = std::exchange(scrollTask, 0);
-            const int LAYOUT = std::exchange(scrollLayout, 0);
-            if (LAYOUT)
-                layoutInc(LAYOUT);
-            if (TAGS) {
-                auto CUR = mon->m_activeWorkspace ? mon->m_activeWorkspace->m_id : 1;
-                if (CUR < 1 || CUR > 9)
-                    CUR = 1;
-                const int T = (int)((CUR - 1 + (TAGS % 9) + 9) % 9) + 1;
-                std::ignore = Config::Actions::changeWorkspace(std::to_string(T));
-            }
-            if (TASKS) {
-                const auto WS = mon->m_activeWorkspace;
-                if (!WS)
-                    return;
-                static std::vector<std::pair<uint64_t, PHLWINDOW>> tasks; // reused; main thread only
-                tasks.clear();
-                for (const auto& W : Desktop::windowState()->windows()) {
-                    if (isTaskOn(W, WS))
-                        if (const auto SEQ = winSeq.find(W.get()); SEQ != winSeq.end())
-                            tasks.emplace_back(SEQ->second, W);
-                }
-                if (tasks.empty())
-                    return;
-                std::sort(tasks.begin(), tasks.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-                const auto FOCUS = Desktop::focusState() ? Desktop::focusState()->window() : nullptr;
-                int        idx   = 0;
-                for (int i = 0; i < (int)tasks.size(); i++)
-                    if (tasks[i].second == FOCUS)
-                        idx = i;
-                const int  N = (int)tasks.size();
-                const auto W = tasks[((idx + TASKS) % N + N) % N].second;
-                tasks.clear(); // don't keep strong window refs across scrolls
-                Desktop::windowState()->raise(W);
-                Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW, W->wlSurface()->resource());
-            }
+            scrollQueued = false;
+            for (auto& [W, STEPS] : scrollAcc)
+                if (STEPS)
+                    W->onScrollSteps(STEPS, mon);
+            scrollAcc.clear();
         });
     }
 
@@ -345,26 +224,13 @@ namespace NHyprbar {
         for (const auto& HIT : IT->second) {
             if (!HIT.box.containsPoint(POS))
                 continue;
-            if (HIT.kind == SHit::TAG) {
-                scrollTag += UP ? 1 : -1;
+            if (!HIT.widget)
+                break;
+            if (HIT.widget->accumulatesScroll()) {
+                scrollAcc[HIT.widget] += UP ? 1 : -1;
                 queueScrollHop(MON);
-            } else if (HIT.kind == SHit::TASK) {
-                scrollTask += UP ? 1 : -1;
-                queueScrollHop(MON);
-            } else if (HIT.kind == SHit::TRAY) {
-                if (const auto TI = HIT.tray.lock(); TI && TI->proxy) {
-                    try {
-                        TI->proxy->callMethodAsync("Scroll")
-                            .onInterface(Tray::SNI)
-                            .withArguments((int32_t)(UP ? -120 : 120), std::string{"vertical"})
-                            .uponReplyInvoke([](std::optional<sdbus::Error>) {});
-                    } catch (...) {} // dying bus: teardown is already pending
-                    Tray::pollSoon();
-                }
-            } else if (HIT.kind == SHit::LAYOUT) {
-                scrollLayout += UP ? 1 : -1;
-                queueScrollHop(MON);
-            }
+            } else
+                HIT.widget->onScroll(HIT, UP ? 1 : -1);
             break;
         }
     }
@@ -462,8 +328,8 @@ namespace NHyprbar {
     void inputExit() {
         pendingHit.reset();
         pendingScroll.reset();
-        scrollTag = scrollTask = scrollLayout = 0;
-        scrollQueued                          = false;
+        scrollAcc.clear();
+        scrollQueued = false;
         hitboxes.clear();
         releasePointer();
     }

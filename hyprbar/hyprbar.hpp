@@ -3,21 +3,28 @@
 // The full picture lives at the top of main.cpp; per-module docs at the top
 // of each unit:
 //
-//   util.cpp     tiny shared helpers, damage, clock/battery state
-//   icons.cpp    icon loading + resolution (GTK theme dirs, PNG/SVG, caches)
-//   tray.cpp     StatusNotifierWatcher/Host (sdbus-c++)
-//   menu.cpp     the menu: dbusmenu for tray items + local client list, and
-//                its own painting (Menu::render)
-//   menubar.cpp  awesome's Mod+P launcher, and its own painting
-//                (Menubar::render)
-//   render.cpp   the bar itself (taglist, tasklist, tray, battery, clock),
-//                the text cache, the SPaint context, the pass element
-//   input.cpp    clicks, scrolls, pointer ownership
-//   main.cpp     plugin glue: config, listeners, init/exit
+//   render.cpp    the bar's SKELETON: the strip, the texture cache, the
+//                 SPaint context, the pass element, one window walk (SFrame)
+//                 and the widget slots — awesome's wibox
+//   taglist.cpp   the nine kanji tags               (widget)
+//   tasklist.cpp  arrival order, markers, the middle (widget)
+//   tray.cpp      StatusNotifierWatcher/Host (sdbus-c++) + its strip cells
+//   battery.cpp   gauge state, alerts, Android's pill (widget)
+//   clock.cpp     awesome's textclock               (widget)
+//   layoutbox.cpp the per-tag layout registry       (widget)
+//   icons.cpp     icon loading + resolution (GTK theme dirs, PNG/SVG, caches)
+//   menu.cpp      the menu: dbusmenu for tray items + local client list, and
+//                 its own painting (Menu::render)
+//   menubar.cpp   awesome's Mod+P launcher, and its own painting
+//                 (Menubar::render)
+//   util.cpp      tiny shared helpers: geometry, damage, colors, strings
+//   input.cpp     clicks, scrolls, pointer ownership — swallowing and
+//                 deferral here, what a cell DOES with its widget
+//   main.cpp      plugin glue: config, listeners, init/exit
 //
-// Each surface paints itself, next to the state it paints from: the bar's
-// renderer hands a SPaint to Menubar::render/Menu::render rather than reaching
-// into their internals.
+// Each surface paints itself, next to the state it paints from: the skeleton
+// hands a SPaint (and the widgets an SFrame) to everything that draws rather
+// than reaching into internals.
 //
 // Everything lives in NHyprbar so no symbol can collide with another
 // plugin's at dlopen time.
@@ -116,24 +123,10 @@ namespace NHyprbar {
 
     // ---- util.cpp ----
 
-    extern std::string clockText;
-    extern int         batteryPercent;  // -1 = no battery
-    extern bool        batteryCharging; // any plugged state; only Discharging is false
-    extern bool        batteryDefend;   // plugged but held at the charge limit (Android's defender)
-    extern bool        batterySave;     // platform_profile low-power (Android's power save)
-
-    double             barHeight();
-    void               damageBars(); // covers the menubar's prompt strip while it's open
-    std::string        lower(std::string s);
-    CHyprColor         color(const SP<Config::Values::CColorValue>& v);
-    void               findBattery();
-    bool               hasBattery();         // a gauge to watch: false on desktops
-    bool               refreshTexts();       // -> true when the clock/battery text changed
-    void               checkBatteryAlerts(); // battery-watch.sh folded in: edge-triggered plug/low/critical
-
-    // awesome's tasklist text: "⌃"/"+"/"✈" state markers, then the title.
-    // Fills a caller-owned buffer: it runs per task per frame.
-    void taskLabel(const PHLWINDOW& w, std::string& out);
+    double      barHeight();
+    void        damageBars(); // covers the menubar's prompt strip while it's open
+    std::string lower(std::string s);
+    CHyprColor  color(const SP<Config::Values::CColorValue>& v);
 
     // Is this window a task of WS? By workspace ID, NEVER by pointer: while a
     // window closes, the monitor's active workspace and the windows' can
@@ -145,11 +138,33 @@ namespace NHyprbar {
     // the icon-cell letter fallback
     std::string letterOf(const std::string& s);
 
-    // tasklist order: awesome lists clients in ARRIVAL order, stable across
-    // raises — windowState()'s list is the Z-order, so the bar keeps its own
-    // sequence
-    extern std::unordered_map<void*, uint64_t> winSeq;
-    extern uint64_t                            winSeqNext;
+    // ---- widget state entry points (each in its widget's unit) ----
+
+    namespace Clock {
+        bool refresh(); // -> true when the text changed
+        void exit();
+    }
+
+    namespace Battery {
+        void init(); // find the gauge, first read, arm the udev watch
+        bool refresh();
+        void alerts(); // battery-watch.sh folded in: edge-triggered plug/low/critical
+        void exit();
+    }
+
+    namespace Tasklist {
+        // awesome lists clients in ARRIVAL order, stable across raises —
+        // windowState()'s list is the Z-order, so the bar keeps its own
+        // sequence, fed by the skeleton's window walk
+        uint64_t seqOf(void* w);
+        // awesome's tasklist text: "\u2303"/"+"/"\u2708" state markers, then the
+        // title; fills a caller-owned buffer (it runs per task per frame)
+        void label(const PHLWINDOW& w, std::string& out);
+        void forget(void* w); // the window is gone
+        void exit();
+    }
+
+    void layoutboxExit();
 
     // ---- the texture rule (render.cpp explains the why) ----
     //
@@ -251,15 +266,17 @@ namespace NHyprbar {
         std::vector<SHit>* hits  = nullptr; // clickable regions, appended as we go
         bool               warm  = false;
         double             scale = 1.0;
-        CBox               mb;     // the monitor's logical box
-        double             h  = 0; // bar height
-        int                pt = 0; // text size in pt, already scaled
+        CBox               mb;           // the monitor's logical box
+        double             h  = 0;       // bar height
+        int                pt = 0;       // text size in pt, already scaled
+        size_t*            fp = nullptr; // frame fingerprint: widgets whose drawn content
+                                         // can change without damage fold a hash in here
 
-        CBox               toPhys(const CBox& global) const; // global logical -> monitor physical
-        void               rect(const CBox& global, const CHyprColor& c, int round = 0) const;
-        void               border(const CBox& global, const CHyprColor& c, int round, int sizePx) const; // frame ring: one call, not four rects
-        void               tex(const SP<ITexture>& t, const CBox& physBox) const;                        // pre-computed physical box
-        void               texIn(const SP<ITexture>& t, const CBox& cell) const;                         // centered in a logical cell
+        CBox toPhys(const CBox& global) const; // global logical -> monitor physical
+        void rect(const CBox& global, const CHyprColor& c, int round = 0) const;
+        void border(const CBox& global, const CHyprColor& c, int round, int sizePx) const; // frame ring: one call, not four rects
+        void tex(const SP<ITexture>& t, const CBox& physBox) const;                        // pre-computed physical box
+        void texIn(const SP<ITexture>& t, const CBox& cell) const;                         // centered in a logical cell
     };
 
     // Text -> cached GPU texture. Built ONLY by the warm pass; a miss during a
@@ -268,21 +285,73 @@ namespace NHyprbar {
 
     // ---- clickable regions, rebuilt each frame by render.cpp ----
 
+    struct IWidget;
     struct SHit {
-        CBox box; // global logical
-        enum : uint8_t {
-            TAG,
-            TASK,
-            TRAY,
-            LAYOUT
-        } kind              = TAG;
-        int             tag = 0;     // TAG: workspace id
-        PHLWINDOWREF    window;      // TASK
-        WP<Tray::SItem> tray;        // TRAY
-        double          anchorX = 0; // menu anchor
+        CBox            box;              // global logical
+        IWidget*        widget = nullptr; // owns what this cell does
+        int             tag    = 0;       // taglist: workspace id
+        PHLWINDOWREF    window;           // tasklist
+        WP<Tray::SItem> tray;             // tray
+        double          anchorX = 0;      // menu anchor (cell-fixed)
+        double          clickX  = 0;      // where the press landed (input.cpp fills it)
         PHLMONITORREF   mon;
     };
     extern std::map<uint64_t, std::vector<SHit>> hitboxes; // per monitor id
+
+    // ---- the widget model (awesome's wibar, compiled) ----
+    //
+    // The bar is a skeleton (render.cpp: the strip, the texture machinery,
+    // the pass element, ONE walk of the window list) hosting widgets in
+    // awesome's align layout: a left slot, the tasklist filling the middle,
+    // a right slot. Each widget lives in its own unit NEXT TO the state it
+    // paints from, and owns what its cells do on click and scroll; the
+    // skeleton owns geometry, damage and the texture rule.
+
+    // what the skeleton's single window walk found, shared by every widget
+    struct SFrame {
+        PHLWORKSPACE                                       ws;    // the monitor's active workspace
+        PHLWINDOW                                          focus; // frame-scoped strong refs: SFrame never outlives renderBar
+        WORKSPACEID                                        focusWs     = WORKSPACE_INVALID;
+        bool                                               urgent[10]  = {}; // workspaces 1..9
+        int                                                windows[10] = {};
+        const std::vector<std::pair<uint64_t, PHLWINDOW>>* tasks       = nullptr; // this workspace's tasks, arrival order
+        // the frame palette, fetched once — color() memoizes but still
+        // hashes per call, and the taglist alone makes dozens
+        CHyprColor fg, active, activeBg, urgentFg, urgentBg, squareSel, squareUnsel;
+    };
+
+    struct IWidget {
+        virtual ~IWidget() = default;
+        // width in logical px. Runs in both modes like draw — the warm pass
+        // builds the textures the width depends on. The tasklist fills the
+        // middle and returns 0 here.
+        virtual double fit(const SPaint& P, const SFrame& F) = 0;
+        // paint into the cell and push hits; the SPaint helpers no-op during
+        // warm, so one layout serves both modes (the texture rule)
+        virtual void draw(const SPaint& P, const SFrame& F, const CBox& box) = 0;
+        // a click on one of this widget's hits — input.cpp owns swallowing
+        // and defers this out of the input emission
+        virtual void onHit(const SHit& h, uint32_t bit, bool super) {}
+        // wheel. Step-widgets coalesce notches through input.cpp's single
+        // deferred hop (axis events arrive several per dispatch, and a lone
+        // overwritten doLaterLock loses steps)...
+        virtual bool accumulatesScroll() const {
+            return false;
+        }
+        virtual void onScrollSteps(int steps, PHLMONITOR mon) {}
+        // ...anything else acts immediately and must be async-safe: never a
+        // workspace/focus change inside the emission
+        virtual void onScroll(const SHit& h, int dir) {}
+    };
+
+    // the widget instances, one per unit (function-local statics: no
+    // cross-TU construction order, and a same-map reload re-enters clean)
+    IWidget& taglistWidget();   // taglist.cpp
+    IWidget& tasklistWidget();  // tasklist.cpp
+    IWidget& trayWidget();      // tray.cpp
+    IWidget& batteryWidget();   // battery.cpp
+    IWidget& clockWidget();     // clock.cpp
+    IWidget& layoutboxWidget(); // layoutbox.cpp
 
     // ---- menu.cpp ----
 

@@ -360,12 +360,8 @@ namespace NHyprbar {
             static std::vector<std::pair<uint64_t, PHLWINDOW>> ws; // reused; main thread only
             ws.clear();
             for (const auto& W : Desktop::windowState()->windows()) {
-                if (W->m_isMapped && !W->isHidden()) {
-                    const auto [SEQ, NEW] = winSeq.try_emplace(W.get(), winSeqNext);
-                    if (NEW)
-                        winSeqNext++;
-                    ws.emplace_back(SEQ->second, W);
-                }
+                if (W->m_isMapped && !W->isHidden())
+                    ws.emplace_back(Tasklist::seqOf(W.get()), W);
             }
             if (ws.empty())
                 return;
@@ -374,7 +370,7 @@ namespace NHyprbar {
             SWarmToken WARM; // appIcon builds a texture, and we are in a deferred click, not a render
             for (const auto& [SEQ, W] : ws) {
                 std::string lbl;
-                taskLabel(W, lbl);
+                Tasklist::label(W, lbl);
                 L.entries.push_back({.label = lbl, .display = std::move(lbl), .win = W, .icon = appIcon(W->m_class)});
             }
             ws.clear(); // drop the strong refs now — entries hold weak ones
@@ -417,10 +413,10 @@ namespace NHyprbar {
                              COLURGENT = color(cfg.colUrgent), COLFOCUS = color(cfg.colFocus), COLFRAME = color(cfg.colFrame);
 
             // the overlay language: 1px rounding on the panel and its rows
-            const int ROUND = std::max(0, (int)std::lround(PAINT.scale));
+            const int    ROUND = std::max(0, (int)std::lround(PAINT.scale));
 
-            const double     ROWH = Menu::ROWH, SEPH = Menu::SEPH, PAD = Menu::PAD;
-            const double     MTOP = PAINT.mb.y + PAINT.h, MBOT = PAINT.mb.y + PAINT.mb.h - 2;
+            const double ROWH = Menu::ROWH, SEPH = Menu::SEPH, PAD = Menu::PAD;
+            const double MTOP = PAINT.mb.y + PAINT.h, MBOT = PAINT.mb.y + PAINT.mb.h - 2;
 
             for (size_t li = 0; li < Menu::levels.size(); li++) {
                 auto& L = Menu::levels[li];

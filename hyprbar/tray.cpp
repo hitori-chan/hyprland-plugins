@@ -314,4 +314,118 @@ namespace NHyprbar {
         }
     }
 
+    // ---- the widget: the icon strip cells ----
+
+    namespace {
+        class CTrayWidget : public IWidget {
+          public:
+            double fit(const SPaint& P, const SFrame&) override {
+                int n = 0;
+                for (const auto& IT : Tray::items)
+                    if (IT->status != "Passive")
+                        n++;
+                return n ? n * P.h + (n - 1) * (double)cfg.traySpacing->value() : 0;
+            }
+
+            void draw(const SPaint& P, const SFrame&, const CBox& box) override {
+                // laid from the right edge inwards, spaced like awesome's
+                // systray_icon_spacing — the first item keeps the edge
+                double right = box.x + box.w;
+                bool   first = true;
+                for (const auto& IT : Tray::items) {
+                    if (IT->status == "Passive")
+                        continue; // SNI: Passive means don't show the item
+                    if (!first)
+                        right -= (double)cfg.traySpacing->value();
+                    first = false;
+                    // The pixmap is a texture too, so the rule applies: rebuild it on
+                    // the warm only. A dirty item reaching a draw keeps its old icon
+                    // for this frame and asks for a repaint.
+                    if (IT->dirty) {
+                        if (!warming)
+                            texStale = true;
+                        else {
+                            IT->dirty = false;
+                            IT->tex.reset();
+                            if (!IT->pixels.empty())
+                                IT->tex = g_pHyprRenderer->createTexture(DRM_FORMAT_ARGB8888, IT->pixels.data(), IT->pw * 4, Vector2D{(double)IT->pw, (double)IT->ph});
+                            if ((!IT->tex || IT->tex->m_texID == 0) && !IT->iconName.empty())
+                                IT->tex = trayIcon(IT->iconName, IT->themePath);
+                        }
+                    }
+
+                    const CBox CELL{right - P.h, box.y, P.h, P.h};
+                    if (IT->tex && IT->tex->m_texID != 0) {
+                        // 3px inset: SNI pixmaps lack the internal padding XEmbed
+                        // icons carried, full-bleed reads as cramped
+                        const double S = std::round((P.h - 6) * P.scale);
+                        const auto   B = P.toPhys(CELL);
+                        CBox         b{B.x + (B.w - S) / 2.0, B.y + (B.h - S) / 2.0, S, S};
+                        P.tex(IT->tex, b.round());
+                    } else
+                        P.texIn(textTex(letterOf(IT->iconName), color(cfg.colMuted), P.pt), CELL);
+
+                    SHit h;
+                    h.box     = CELL;
+                    h.widget  = this;
+                    h.tray    = IT;
+                    h.anchorX = CELL.x + P.h / 2.0;
+                    h.mon     = P.mon;
+                    P.hits->push_back(h);
+                    right -= P.h;
+                }
+            }
+
+            void onHit(const SHit& h, uint32_t bit, bool) override {
+                const auto IT = h.tray.lock();
+                if (!IT || !IT->proxy)
+                    return;
+                if (bit == 4u) { // middle: the SNI SecondaryActivate call
+                    try {
+                        IT->proxy->callMethodAsync("SecondaryActivate")
+                            .onInterface(Tray::SNI)
+                            .withArguments((int32_t)0, (int32_t)0)
+                            .uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                    } catch (...) {} // dying bus: teardown is already pending
+                    Tray::pollSoon();
+                    return;
+                }
+                const bool HASMENU = !IT->menuPath.empty();
+                if (bit == 1u && !(IT->itemIsMenu && HASMENU)) {
+                    try {
+                        IT->proxy->callMethodAsync("Activate").onInterface(Tray::SNI).withArguments((int32_t)0, (int32_t)0).uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                    } catch (...) {}  // dying bus: teardown is already pending
+                    Tray::pollSoon(); // the activation usually flips the icon right back
+                    return;
+                }
+                if (HASMENU)
+                    Menu::openFor(IT, h.anchorX, h.mon);
+                else if (bit == 2u) {
+                    try {
+                        IT->proxy->callMethodAsync("ContextMenu").onInterface(Tray::SNI).withArguments((int32_t)0, (int32_t)0).uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                    } catch (...) {}
+                    Tray::pollSoon();
+                }
+            }
+
+            void onScroll(const SHit& h, int dir) override {
+                // the SNI Scroll call (the XEmbed systray let apps see scroll too)
+                if (const auto TI = h.tray.lock(); TI && TI->proxy) {
+                    try {
+                        TI->proxy->callMethodAsync("Scroll")
+                            .onInterface(Tray::SNI)
+                            .withArguments((int32_t)(dir > 0 ? -120 : 120), std::string{"vertical"})
+                            .uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                    } catch (...) {} // dying bus: teardown is already pending
+                    Tray::pollSoon();
+                }
+            }
+        };
+    } // namespace
+
+    IWidget& trayWidget() {
+        static CTrayWidget W;
+        return W;
+    }
+
 } // namespace NHyprbar

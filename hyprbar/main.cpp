@@ -35,7 +35,7 @@
 //   honor the "__" escape.
 // - battery: Android's expressive battery (the Pixel pill), transcribed
 //   1:1 from SystemUI's Compose implementation and drawn natively in the
-//   warm pass (cairo; assets embedded verbatim, see render.cpp) — digits
+//   warm pass (cairo; assets embedded verbatim, see battery.cpp) — digits
 //   inside, Android's attribution ladder to the right (power-save plus >
 //   charge-limit shield > charging bolt > the D cap) and its fill colors:
 //   yellow in power save, green charging OR held at the charge limit,
@@ -79,7 +79,7 @@
 // Colors/fonts arrive from theme.lua via hl.config plugin values — the C++
 // defaults just mirror the theme.
 //
-// THE TEXTURE RULE, the one thing to know before touching render.cpp: a
+// THE TEXTURE RULE, the one thing to know before touching the bar or a widget: a
 // texture cannot be painted by the frame that created it, and creating one
 // mid-draw silently swallows every later draw in the same element. So
 // renderBar is one layout with two modes — warm builds every texture and
@@ -111,7 +111,8 @@
 // instant) with the minute tick as a failsafe; the plug/low/critical alerts
 // ride the same two paths.
 //
-// The code is split by concern — see hyprbar.hpp for the module map.
+// The code is split by concern — the skeleton hosts widgets, each in its own
+// unit next to the state it paints from; see hyprbar.hpp for the module map.
 
 #include "hyprbar.hpp"
 
@@ -152,58 +153,6 @@ static void damageAndWarm() {
 static std::chrono::milliseconds toNextMinute() {
     const auto NOW = std::time(nullptr);
     return std::chrono::milliseconds((60 - NOW % 60) * 1000 + 200);
-}
-
-// Battery is event-driven off power_supply udev uevents: plug/unplug and
-// capacity changes arrive as kernel events instead of a 10s poll (the minute
-// tick above is the failsafe read). Skipped on desktops (no gauge).
-static udev*            g_udev       = nullptr;
-static udev_monitor*    g_udevMon    = nullptr;
-static wl_event_source* g_batterySrc = nullptr;
-
-static int              onBatteryUevent(int, uint32_t, void*) {
-    if (g_udevMon)
-        while (auto* DEV = udev_monitor_receive_device(g_udevMon))
-            udev_device_unref(DEV);
-    if (refreshTexts())
-        damageAndWarm();
-    checkBatteryAlerts();
-    return 0;
-}
-
-static void batteryWatchInit() {
-    if (!hasBattery() || !g_pCompositor)
-        return;
-    g_udev = udev_new();
-    if (!g_udev)
-        return;
-    g_udevMon = udev_monitor_new_from_netlink(g_udev, "udev");
-    if (g_udevMon) {
-        udev_monitor_filter_add_match_subsystem_devtype(g_udevMon, "power_supply", nullptr);
-        udev_monitor_enable_receiving(g_udevMon);
-        const int FD = udev_monitor_get_fd(g_udevMon);
-        if (FD >= 0)
-            g_batterySrc = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, FD, WL_EVENT_READABLE, onBatteryUevent, nullptr);
-    }
-    if (!g_batterySrc) { // setup failed partway: the minute tick still refreshes
-        if (g_udevMon)
-            udev_monitor_unref(g_udevMon);
-        udev_unref(g_udev);
-        g_udevMon = nullptr;
-        g_udev    = nullptr;
-    }
-}
-
-static void batteryWatchExit() {
-    if (g_batterySrc)
-        wl_event_source_remove(g_batterySrc); // before the monitor that owns the fd
-    if (g_udevMon)
-        udev_monitor_unref(g_udevMon);
-    if (g_udev)
-        udev_unref(g_udev);
-    g_batterySrc = nullptr;
-    g_udevMon    = nullptr;
-    g_udev       = nullptr;
 }
 
 // hl.plugin.hyprbar.menubar() — awesome's Mod+P, the strip below the bar.
@@ -268,8 +217,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
 
     buildIconDirs();
-    findBattery();
-    refreshTexts();
+    Clock::refresh();
+    Battery::init();
     Tray::init();
 
     lRender = Event::bus()->m_events.render.stage.listen([](eRenderStage stage) { onRenderStage(stage); });
@@ -287,7 +236,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     lDamage.push_back(EV.window.open.listen([](PHLWINDOW) { damageAndWarm(); }));
     lDamage.push_back(EV.window.close.listen([](PHLWINDOW) { damageAndWarm(); }));
     lDamage.push_back(EV.window.destroy.listen([](PHLWINDOWREF w) {
-        winSeq.erase(w.get());
+        Tasklist::forget(w.get());
         damageAndWarm();
     }));
     lDamage.push_back(EV.window.active.listen([](PHLWINDOW, Desktop::eFocusReason) { damageAndWarm(); }));
@@ -312,18 +261,18 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     timer = makeShared<CEventLoopTimer>(
         toNextMinute(),
         [](SP<CEventLoopTimer> self, void*) {
-            if (refreshTexts())
+            const bool CLK = Clock::refresh(), BAT = Battery::refresh();
+            if (CLK || BAT)
                 damageAndWarm();
-            checkBatteryAlerts();
+            Battery::alerts();
             self->updateTimeout(toNextMinute());
         },
         nullptr);
     g_pEventLoopManager->addTimer(timer);
-    batteryWatchInit();
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "1.5.0"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "2.0.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
@@ -332,7 +281,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
     Menu::exit();
     Tray::exit();
     inputExit();
-    batteryWatchExit();
+    Battery::exit();
     if (timer && g_pEventLoopManager)
         g_pEventLoopManager->removeTimer(timer);
     timer.reset();
@@ -343,7 +292,9 @@ APICALL EXPORT void PLUGIN_EXIT() {
     lKey.reset();
     lDamage.clear();
     renderExit();
+    layoutboxExit();
+    Tasklist::exit();
+    Clock::exit();
     iconsExit();
-    winSeq.clear();
     damageBars();
 }
