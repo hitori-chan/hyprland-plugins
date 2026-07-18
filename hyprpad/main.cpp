@@ -21,9 +21,9 @@
 //   forgets appliedState and re-checks.
 // - Auto re-checks are change-detected against the last applied state: an
 //   unrelated hotplug re-checks but applies nothing.
-// - Feedback is one async D-Bus Notify (replaces-id 9991, the session-
-//   sticky random ~/pic/waifu icon) on the plugin's own event-loop-
-//   integrated session-bus connection — hyprbar's tray pattern; the
+// - Feedback is one async D-Bus Notify (replaces-id 9991, no icon: the
+//   daemon's fallback_icon_dir rolls the card a face) on the plugin's own
+//   event-loop-integrated session-bus connection — hyprbar's tray pattern; the
 //   notification daemon's API is the bus name, never its symbols. If the
 //   bus dies the cards stop; the flip keeps working.
 //
@@ -131,31 +131,6 @@ namespace NHyprpad {
         return 0;
     }
 
-    // The cards' waifu: one random ~/pic/waifu image, sticky for the session
-    // (the per-tag waifu-icon.sh cache the script used, now just a static).
-    static const std::string& waifu() {
-        static const std::string ICON = []() -> std::string {
-            const char* HOME = std::getenv("HOME");
-            if (!HOME)
-                return "";
-            std::vector<std::string> found;
-            std::error_code          ec;
-            auto                     it = std::filesystem::recursive_directory_iterator(
-                std::string{HOME} + "/pic/waifu", std::filesystem::directory_options::follow_directory_symlink | std::filesystem::directory_options::skip_permission_denied, ec);
-            for (; !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
-                if (!it->is_regular_file(ec))
-                    continue;
-                auto ext = it->path().extension().string();
-                for (auto& c : ext)
-                    c = std::tolower((unsigned char)c);
-                if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".webp" || ext == ".bmp" || ext == ".svg")
-                    found.push_back(it->path().string());
-            }
-            return found.empty() ? "" : found[std::random_device{}() % found.size()];
-        }();
-        return ICON;
-    }
-
     static void notify(const std::string& body, bool timed) {
         if (!conn)
             return;
@@ -164,7 +139,7 @@ namespace NHyprpad {
                 notifyProxy = sdbus::createProxy(*conn, sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
             notifyProxy->callMethodAsync("Notify")
                 .onInterface("org.freedesktop.Notifications")
-                .withArguments(std::string{"osd"}, uint32_t{9991}, waifu(), std::string{"Touchpad"}, body, std::vector<std::string>{},
+                .withArguments(std::string{"osd"}, uint32_t{9991}, std::string{}, std::string{"Touchpad"}, body, std::vector<std::string>{},
                                std::map<std::string, sdbus::Variant>{{"urgency", sdbus::Variant{uint8_t{0}}}}, timed ? 1500 : -1)
                 .uponReplyInvoke([](std::optional<sdbus::Error>, uint32_t) {});
             pollSoon(); // flush the send from the event loop, never from here
@@ -327,7 +302,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // device list is populated and the notification daemon is up
     settle->updateTimeout(SETTLE);
 
-    return {"hyprpad", "the awesome touchpad module", "hitori", "1.0.2"};
+    return {"hyprpad", "the awesome touchpad module", "hitori", "1.0.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

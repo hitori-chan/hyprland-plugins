@@ -57,7 +57,7 @@ build       = ["make -C hyprplace all"]
 
 [hyprpad]
 description = "the awesome touchpad module"
-version     = "1.0.2"
+version     = "1.0.3"
 authors     = ["hitori"]
 output      = "hyprpad/hyprpad.so"
 build       = ["make -C hyprpad all"]
