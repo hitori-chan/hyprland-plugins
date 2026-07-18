@@ -524,6 +524,7 @@ namespace NHyprbar {
     }
 
     void renderExit() {
+        pendingRewarm.reset(); // its barChanged would touch the caches cleared below
         texCache.clear();
         lastTaskFp.clear();
         layoutTexs.clear();

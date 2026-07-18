@@ -131,6 +131,81 @@ namespace NHyprbar {
         return changed;
     }
 
+    // ---- battery alerts (the old scripts/battery-watch.sh, folded in) ----
+
+    // The alerts' waifu: one random ~/pic/waifu image, sticky for the session
+    // (the per-tag waifu-icon.sh cache the script used, now just a static).
+    static const std::string& batteryWaifu() {
+        static const std::string ICON = []() -> std::string {
+            const char* HOME = std::getenv("HOME");
+            if (!HOME)
+                return "";
+            std::vector<std::string> found;
+            std::error_code          ec;
+            auto                     it = std::filesystem::recursive_directory_iterator(
+                std::string{HOME} + "/pic/waifu", std::filesystem::directory_options::follow_directory_symlink | std::filesystem::directory_options::skip_permission_denied, ec);
+            for (; !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
+                if (!it->is_regular_file(ec))
+                    continue;
+                const auto EXT = lower(it->path().extension().string());
+                if (EXT == ".png" || EXT == ".jpg" || EXT == ".jpeg" || EXT == ".gif" || EXT == ".webp" || EXT == ".bmp" || EXT == ".svg")
+                    found.push_back(it->path().string());
+            }
+            return found.empty() ? "" : found[std::random_device{}() % found.size()];
+        }();
+        return ICON;
+    }
+
+    // battery-watch.sh's exact alerts, edge-triggered off the same uevents as
+    // the gauge (the minute tick is the failsafe). Never called at INIT: the
+    // first minute tick covers a login-low, after hyprnotify is up — hyprbar
+    // loads before the notification daemon does.
+    void checkBatteryAlerts() {
+        if (batteryDir.empty())
+            return;
+
+        std::ifstream cf(batteryDir + "/capacity"), sf(batteryDir + "/status");
+        std::string   cap, status;
+        if (!cf || !std::getline(cf, cap) || !sf || !std::getline(sf, status))
+            return;
+
+        int capN = 0;
+        try {
+            capN = std::stoi(cap);
+        } catch (...) { return; }
+
+        constexpr int      WARN = 15, CRIT = 7;
+        static std::string lastStatus;
+        static bool        warned = false, critical = false;
+
+        // urgency 0/1/2; 9990 = the script's pinned replace-in-place id
+        const auto NOTIFY = [](uint8_t urgency, int32_t timeoutMs, const char* summary, const std::string& body) {
+            Tray::notify("battery", 9990, batteryWaifu(), summary, body, urgency, timeoutMs);
+        };
+
+        if (!lastStatus.empty() && status != lastStatus) {
+            if (status == "Charging")
+                NOTIFY(0, 3000, "Battery", "AC connected — " + cap + "%");
+            else if (status == "Discharging")
+                NOTIFY(0, 3000, "Battery", "AC disconnected — " + cap + "%");
+        }
+        lastStatus = status;
+
+        if (status == "Discharging") {
+            if (capN <= CRIT && !critical) {
+                NOTIFY(2, 0, "Battery critical", cap + "% — plug in now");
+                // warned latches too: landing straight in the critical band
+                // (login, resume) must not let the next tick's "Battery low"
+                // replace the sticky critical card — one pinned id
+                warned = critical = true;
+            } else if (capN <= WARN && !warned) {
+                NOTIFY(1, 6000, "Battery low", cap + "%");
+                warned = true;
+            }
+        } else
+            warned = critical = false;
+    }
+
     std::unordered_map<void*, uint64_t> winSeq;
     uint64_t                            winSeqNext = 0;
 

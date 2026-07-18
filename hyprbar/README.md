@@ -18,7 +18,9 @@ or focus to a window underneath.
   `⌃` pinned / `+` maximized / `✈` floating markers. Click focuses + raises, right-click
   opens the all-clients menu, wheel walks focus.
 - **Tray** — in-compositor SNI host with a native dbusmenu renderer.
-- **Battery** — Material glyph + percent; hidden on desktops.
+- **Battery** — Material glyph + percent; hidden on desktops. Alerts ride
+  along: AC plug/unplug, low at 15%, critical (sticky) at 7% — sent
+  through the notification daemon off the same udev uevents as the gauge.
 - **Clock** — `%a %b %d, %H:%M`.
 - **Layoutbox** — the active workspace's layout, rightmost. Click/wheel
   cycles like awesome (`Super+Space` too); one layout until more land.

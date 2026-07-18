@@ -12,6 +12,7 @@ namespace NHyprbar {
         std::unique_ptr<sdbus::IConnection>    conn;
         static std::unique_ptr<sdbus::IObject> watcher;
         static std::unique_ptr<sdbus::IProxy>  busProxy;
+        static std::unique_ptr<sdbus::IProxy>  notifyProxy; // the battery alerts' Notify sender
         std::vector<SP<SItem>>                 items;
         static SP<CEventLoopTimer>             poll; // sd-bus timeout carrier + deferred-drain kicker, normally disarmed
         static wl_event_source*                busSrc    = nullptr;
@@ -28,6 +29,25 @@ namespace NHyprbar {
                 poll->updateTimeout(std::chrono::milliseconds(2));
         }
 
+        // One Notify onto the session bus, over the tray's live connection —
+        // no fork, no shell. hyprnotify's API is the bus name, never its
+        // symbols (two independently-versioned .so files must not couple);
+        // whatever daemon owns the name receives it.
+        void notify(const std::string& app, uint32_t replacesId, const std::string& icon, const std::string& summary, const std::string& body, uint8_t urgency, int32_t timeoutMs) {
+            if (!conn)
+                return;
+            try {
+                if (!notifyProxy)
+                    notifyProxy = sdbus::createProxy(*conn, sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
+                notifyProxy->callMethodAsync("Notify")
+                    .onInterface("org.freedesktop.Notifications")
+                    .withArguments(app, replacesId, icon, summary, body, std::vector<std::string>{}, std::map<std::string, sdbus::Variant>{{"urgency", sdbus::Variant{urgency}}},
+                                   timeoutMs > 0 ? timeoutMs : -1)
+                    .uponReplyInvoke([](std::optional<sdbus::Error>, uint32_t) {});
+                pollSoon();  // flush the send from the event loop, never from here
+            } catch (...) {} // broker gone: teardown is already pending, drop the card
+        }
+
         static void teardown() {
             if (busSrc)
                 wl_event_source_remove(busSrc);
@@ -41,6 +61,7 @@ namespace NHyprbar {
                     Menu::close(); // its proxy borrows conn; close it before conn dies
                 } catch (...) {}   // close() sends "closed" events — the bus may already be gone
             items.clear();
+            notifyProxy.reset();
             busProxy.reset();
             watcher.reset();
             conn.reset();

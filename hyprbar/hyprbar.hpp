@@ -71,7 +71,9 @@
 #include <cctype>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
+#include <random>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -118,8 +120,9 @@ namespace NHyprbar {
     std::string        lower(std::string s);
     CHyprColor         color(const SP<Config::Values::CColorValue>& v);
     void               findBattery();
-    bool               hasBattery();   // a gauge to watch: false on desktops
-    bool               refreshTexts(); // -> true when the clock/battery text changed
+    bool               hasBattery();         // a gauge to watch: false on desktops
+    bool               refreshTexts();       // -> true when the clock/battery text changed
+    void               checkBatteryAlerts(); // battery-watch.sh folded in: edge-triggered plug/low/critical
 
     // awesome's tasklist text: "⌃"/"+"/"✈" state markers, then the title.
     // Fills a caller-owned buffer: it runs per task per frame.
@@ -217,9 +220,12 @@ namespace NHyprbar {
         extern std::vector<SP<SItem>>              items;
 
         void                                       pollSoon(); // pull the next DBus poll tick close after a send
-        void                                       init();
-        void                                       exit();
-        void                                       onServiceDropped(const std::string& service); // defined in menu.cpp
+        // fire a desktop notification over the tray's connection (urgency
+        // 0/1/2; timeoutMs 0 = the daemon's default — sticky for critical)
+        void notify(const std::string& app, uint32_t replacesId, const std::string& icon, const std::string& summary, const std::string& body, uint8_t urgency, int32_t timeoutMs);
+        void init();
+        void exit();
+        void onServiceDropped(const std::string& service); // defined in menu.cpp
     }
 
     // ---- painting a surface (render.cpp) ----

@@ -36,7 +36,10 @@
 // - battery: the old awesome widget's face — a Material Icons Round glyph
 //   (plugin:hyprbar:font_icon, charging bolt on AC else a 12.5%-step
 //   gauge) + percent, from /sys/class/power_supply (hidden on desktops).
-//   Alerts stay in scripts/battery-watch.sh.
+//   The old battery-watch.sh alerts live here too: AC plug/unplug, low
+//   (15%) and critical (7%) — edge-triggered, riding the same udev uevents
+//   as the gauge, sent as direct Notify calls over the tray's bus
+//   connection (no fork; hyprnotify answers from the same process).
 // - clock: "%a %b %d, %H:%M" (the awesome textclock default; the bar pads
 //   it with a real margin, not the format's literal spaces).
 // - layoutbox: rightmost like awesome — the active workspace's layout
@@ -98,7 +101,8 @@
 // rare timeouts and the deferred post-send drain (dispatch is not
 // re-entrant). The clock re-arms to the minute it actually changes on, and
 // the battery gauge refreshes from power_supply udev uevents (plug/unplug is
-// instant) with the minute tick as a failsafe.
+// instant) with the minute tick as a failsafe; the plug/low/critical alerts
+// ride the same two paths.
 //
 // The code is split by concern — see hyprbar.hpp for the module map.
 
@@ -156,6 +160,7 @@ static int              onBatteryUevent(int, uint32_t, void*) {
             udev_device_unref(DEV);
     if (refreshTexts())
         damageAndWarm();
+    checkBatteryAlerts();
     return 0;
 }
 
@@ -299,6 +304,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         [](SP<CEventLoopTimer> self, void*) {
             if (refreshTexts())
                 damageAndWarm();
+            checkBatteryAlerts();
             self->updateTimeout(toNextMinute());
         },
         nullptr);
@@ -307,10 +313,11 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor: kanji taglist, tasklist with icons, tray with menus, menubar launcher, battery, clock", "hitori", "1.2.2"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor: kanji taglist, tasklist with icons, tray with menus, menubar launcher, battery, clock", "hitori", "1.3.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
+    pendingWarm.reset(); // a queued warm across unload calls into dlclosed code
     Menubar::exit();
     Menu::exit();
     Tray::exit();
