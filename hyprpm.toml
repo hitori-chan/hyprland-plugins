@@ -57,7 +57,7 @@ build       = ["make -C hyprplace all"]
 
 [hyprpad]
 description = "the awesome touchpad module: touchpad off while an external mouse is present, XF86TouchpadToggle flips it by hand"
-version     = "1.0.0"
+version     = "1.0.1"
 authors     = ["hitori"]
 output      = "hyprpad/hyprpad.so"
 build       = ["make -C hyprpad all"]

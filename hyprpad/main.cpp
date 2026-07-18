@@ -218,7 +218,9 @@ namespace NHyprpad {
             notify("not found", false);
             return;
         }
-        const auto MGR = Config::Lua::mgr().lock();
+        // the manager lives in a unique pointer: its weak can NEVER lock()
+        // (hyprutils forbids promoting unique to shared) — use it in place
+        const auto MGR = Config::Lua::mgr();
         if (!MGR)
             return;
         if (const auto ERR = MGR->eval("hl.device({ name = \"" + luaq(NAME) + "\", enabled = " + (on ? "true" : "false") + " })")) {
@@ -325,7 +327,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // device list is populated and the notification daemon is up
     settle->updateTimeout(SETTLE);
 
-    return {"hyprpad", "the awesome touchpad module: touchpad off while an external mouse is present, XF86TouchpadToggle flips it by hand", "hitori", "1.0.0"};
+    return {"hyprpad", "the awesome touchpad module: touchpad off while an external mouse is present, XF86TouchpadToggle flips it by hand", "hitori", "1.0.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
