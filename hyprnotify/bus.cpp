@@ -2,6 +2,8 @@
 
 #include "hyprnotify.hpp"
 
+#include <hyprland/src/protocols/XDGActivation.hpp>
+
 namespace NHyprnotify {
 
     std::vector<SP<SNotif>> notifs;
@@ -16,7 +18,8 @@ namespace NHyprnotify {
         static wl_event_source*                    busSrc    = nullptr;
         static wl_event_source*                    busEvtSrc = nullptr;
         static UP<SEventLoopDoLaterLock>           pendingTeardown;
-        static uint32_t                            nextId = 1;
+        static uint32_t                            nextId    = 1;
+        static bool                                suspended = false; // DND
 
         // A drain must never run synchronously from here: emits happen inside
         // method handlers, i.e. inside processPendingEvent, and sd-bus dispatch
@@ -90,7 +93,7 @@ namespace NHyprnotify {
             const auto NOW  = Time::steadyNow();
             int64_t    next = -1;
             for (const auto& N : notifs) {
-                if (N->timeoutMs <= 0)
+                if (N->timeoutMs <= 0 || N->waiting)
                     continue;
                 const auto MS = std::chrono::duration_cast<std::chrono::milliseconds>(N->deadline - NOW).count();
                 if (next < 0 || MS < next)
@@ -122,11 +125,15 @@ namespace NHyprnotify {
         }
 
         void closeAll(uint32_t reason) {
-            if (notifs.empty())
-                return;
+            // the middle-click sweep clears what is on screen; cards the DND
+            // queue holds were never seen and stay for the resume
+            const auto BEFORE = notifs.size();
             for (const auto& N : notifs)
-                emitClosed(N->id, reason);
-            notifs.clear();
+                if (!N->waiting)
+                    emitClosed(N->id, reason);
+            std::erase_if(notifs, [](const auto& N) { return !N->waiting; });
+            if (notifs.size() == BEFORE)
+                return;
             notifChanged();
             rearmExpiry();
         }
@@ -135,9 +142,30 @@ namespace NHyprnotify {
             if (!obj)
                 return;
             try {
+                // spec 1.3: the token signal precedes the action, so the
+                // sender's xdg-activation request can actually raise it —
+                // tokenless activates only flag urgent
+                if (PROTO::activation)
+                    obj->emitSignal("ActivationToken").onInterface(IFACE).withArguments(id, PROTO::activation->mintToken());
                 obj->emitSignal("ActionInvoked").onInterface(IFACE).withArguments(id, key);
             } catch (...) {}
             pollSoon();
+        }
+
+        void toggleSuspend() {
+            suspended = !suspended;
+            if (suspended)
+                return; // visible cards live out their timeouts; new arrivals queue
+            const auto NOW = Time::steadyNow();
+            for (const auto& N : notifs) {
+                if (!N->waiting)
+                    continue;
+                N->waiting = false;
+                if (N->timeoutMs > 0)
+                    N->deadline = NOW + std::chrono::milliseconds((int64_t)N->timeoutMs);
+            }
+            notifChanged();
+            rearmExpiry();
         }
 
         // ---- incoming payload massage ----
@@ -251,11 +279,11 @@ namespace NHyprnotify {
             n.pw        = W;
             n.ph        = H;
             n.hasPixels = true;
-            // keep only what the icon box can ever paint: warm frees visible
-            // cards' buffers after upload, but an off-screen card would hold
-            // its full-size pixmap until it scrolls on. 3x maxIcon leaves
-            // headroom for any monitor scale; warm still scales exactly.
-            shrinkPixels(n, std::max(64, (int)cfg.maxIcon->value() * 3));
+            // keep only what a card can ever paint: warm frees visible cards'
+            // buffers after upload, but an off-screen card would hold its
+            // full-size pixmap until it scrolls on. 2x card width covers the
+            // hero layout at any monitor scale; warm still scales exactly.
+            shrinkPixels(n, std::max((int)cfg.width->value() * 2, (int)cfg.maxIcon->value() * 3));
         }
 
         static uint32_t handleNotify(const std::string& appName, uint32_t replacesId, const std::string& appIcon, const std::string& summary, const std::string& body,
@@ -279,9 +307,25 @@ namespace NHyprnotify {
 
             auto n = byId(id);
             if (!n) {
-                n     = makeShared<SNotif>();
-                n->id = id;
-                notifs.push_back(n);
+                n          = makeShared<SNotif>();
+                n->id      = id;
+                n->waiting = suspended; // DND: collect silently, the resume renders it
+                notifs.insert(notifs.begin(), n); // newest on top; a replace keeps its slot
+
+                const size_t CAP = std::max((int64_t)1, cfg.maxNotifs->value());
+                while (notifs.size() > CAP) {
+                    // oldest non-critical goes first; only an all-critical
+                    // stack starts losing its oldest critical
+                    auto victim = notifs.end() - 1;
+                    for (auto it = notifs.end() - 1; it != notifs.begin(); --it)
+                        if ((*it)->urgency < 2) {
+                            victim = it;
+                            break;
+                        }
+                    const auto VID = (*victim)->id;
+                    notifs.erase(victim);
+                    emitClosed(VID, R_UNDEFINED);
+                } // the newcomer always survives: the scan stops short of begin()
             }
 
             n->appName = appName;
@@ -344,7 +388,7 @@ namespace NHyprnotify {
                 n->timeoutMs = 0;
             else // -1: per-urgency defaults; critical stays until dismissed
                 n->timeoutMs = n->urgency >= 2 ? 0 : (float)(n->urgency == 0 ? cfg.timeoutLow->value() : cfg.timeoutNormal->value());
-            if (n->timeoutMs > 0)
+            if (n->timeoutMs > 0 && !n->waiting) // a queued card's clock starts at the resume
                 n->deadline = Time::steadyNow() + std::chrono::milliseconds((int64_t)n->timeoutMs);
 
             notifChanged();
@@ -370,10 +414,11 @@ namespace NHyprnotify {
                                    return std::vector<std::string>{"actions", "body", "icon-static"};
                                }),
                                sdbus::registerMethod("GetServerInformation").withOutputParamNames("name", "vendor", "version", "spec_version").implementedAs([]() {
-                                   return std::tuple<std::string, std::string, std::string, std::string>{"hyprnotify", "hitori", VERSION, "1.2"};
+                                   return std::tuple<std::string, std::string, std::string, std::string>{"hyprnotify", "hitori", VERSION, "1.3"};
                                }),
                                sdbus::registerSignal("NotificationClosed").withParameters<uint32_t, uint32_t>("id", "reason"),
-                               sdbus::registerSignal("ActionInvoked").withParameters<uint32_t, std::string>("id", "action_key"))
+                               sdbus::registerSignal("ActionInvoked").withParameters<uint32_t, std::string>("id", "action_key"),
+                               sdbus::registerSignal("ActivationToken").withParameters<uint32_t, std::string>("id", "activation_token"))
                     .forInterface(IFACE);
 
                 // Event-driven bus: sd-bus's fd + eventFd live in the wayland
@@ -391,7 +436,7 @@ namespace NHyprnotify {
                         const auto            NOW = Time::steadyNow();
                         std::vector<uint32_t> due;
                         for (const auto& N : notifs)
-                            if (N->timeoutMs > 0 && N->deadline <= NOW)
+                            if (N->timeoutMs > 0 && !N->waiting && N->deadline <= NOW)
                                 due.push_back(N->id);
                         for (const auto ID : due) {
                             std::erase_if(notifs, [&](const auto& N) { return N->id == ID; });
@@ -428,6 +473,7 @@ namespace NHyprnotify {
             poll.reset();
             expiry.reset();
             notifs.clear();
+            suspended = false;
         }
     }
 

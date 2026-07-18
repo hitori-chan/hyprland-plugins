@@ -35,6 +35,7 @@
 #include <hyprland/src/config/values/types/IntValue.hpp>
 #include <hyprland/src/config/values/types/ColorValue.hpp>
 #include <hyprland/src/config/values/types/StringValue.hpp>
+#include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 
 #include <linux/input-event-codes.h>
 #include <poll.h>
@@ -63,7 +64,10 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "1.0.2";
+    inline constexpr const char* VERSION = "2.0.0";
+
+    // wide images render card-width ("hero") instead of icon-boxed
+    inline constexpr double HERO_ASPECT = 1.5;
 
     // ---- config (defined in main.cpp, values arrive from theme.lua) ----
 
@@ -77,10 +81,15 @@ namespace NHyprnotify {
         SP<Config::Values::CIntValue>    offsetY;       // first card's distance from the monitor top (below the bar)
         SP<Config::Values::CIntValue>    timeoutLow;    // ms; urgency defaults when the client sends -1
         SP<Config::Values::CIntValue>    timeoutNormal; // ms; critical never times out
+        SP<Config::Values::CIntValue>    rounding;  // corner radius, logical px
+        SP<Config::Values::CIntValue>    maxNotifs; // model cap; overflow evicts oldest non-critical
+        SP<Config::Values::CStringValue> fallbackIconDir; // iconless cards draw a random image from here
         SP<Config::Values::CColorValue>  colBg;
-        SP<Config::Values::CColorValue>  colFg;
+        SP<Config::Values::CColorValue>  colFg;        // body text
+        SP<Config::Values::CColorValue>  colTitle;     // summary line
+        SP<Config::Values::CColorValue>  colKicker;    // app-name kicker + hovered frame
         SP<Config::Values::CColorValue>  colFrame;     // card frame
-        SP<Config::Values::CColorValue>  colUrgent;    // critical frame + critical progress
+        SP<Config::Values::CColorValue>  colUrgent;    // critical frame/kicker + critical progress
         SP<Config::Values::CColorValue>  colHighlight; // progress bar
     };
     extern SNotifyConfig cfg;
@@ -102,40 +111,51 @@ namespace NHyprnotify {
         int                  pw = 0, ph = 0;
         std::string          defaultAction; // action key a left click invokes, "" = just dismiss
 
+        std::string          fallbackPick;    // the card's rolled fallback image; survives in-place replaces
+        bool                 waiting = false; // arrived while suspended (DND): collected, not shown, timeout held
+
         float                timeoutMs = 0; // resolved; 0 = sticky
-        Time::steady_tp      deadline;      // meaningful when timeoutMs > 0
+        Time::steady_tp      deadline;      // meaningful when timeoutMs > 0 and not waiting
 
         // render cache — built ONLY by the warm pass (the texture rule). The
         // *For keys say what the texture was built from so a replace only
         // rebuilds what actually changed (volume OSD keeps its title + icon);
         // pixels are hashed, not copied, and freed once uploaded.
-        SP<ITexture> titleTex, bodyTex, iconTex;
-        std::string  titleFor, bodyFor, imageFor;
+        SP<ITexture> kickerTex, titleTex, bodyTex, iconTex;
+        std::string  kickerFor, titleFor, bodyFor, imageFor;
+        bool         heroTex = false; // iconTex was built for the hero layout
         uint64_t     pixelsFor = 0;
         int          builtPt = 0, builtTextW = 0;
         uint64_t     builtFg = 0;
+        bool         builtCrit = false; // criticality recolors the kicker
     };
     extern std::vector<SP<SNotif>> notifs;
 
     // ---- bus.cpp ----
 
     namespace Bus {
-        // NotificationClosed reasons (the spec's)
-        inline constexpr uint32_t R_EXPIRED = 1, R_DISMISSED = 2, R_CLOSED = 3;
+        // NotificationClosed reasons (the spec's); 4 = undefined, the eviction
+        inline constexpr uint32_t R_EXPIRED = 1, R_DISMISSED = 2, R_CLOSED = 3, R_UNDEFINED = 4;
 
         void                      pollSoon(); // pull the next DBus poll tick close after a send
         void                      init();
         void                      exit();
         void                      invokeAction(uint32_t id, const std::string& key);
         void                      closeOne(uint32_t id, uint32_t reason);
-        void                      closeAll(uint32_t reason);
+        void                      closeAll(uint32_t reason); // visible cards only: a sweep never kills the DND queue
         void                      rearmExpiry();
+        void                      toggleSuspend(); // naughty.suspend: resume renders the queue, fresh timeouts
     }
 
     // ---- icons.cpp ----
 
-    // (Re)build n.iconTex when its source changed; maxPx caps the raster.
-    void ensureIconTex(SNotif& n, int maxPx);
+    // (Re)build n.iconTex when its source changed. iconPx caps the icon-box
+    // raster; sources wider than HERO_ASPECT (and at least half the hero box)
+    // raster to heroWPx instead, cover-cropped to heroHCapPx, and set heroTex.
+    void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx);
+
+    // Forget the fallback_icon_dir listing (a config reload rescans).
+    void resetFallbackCache();
 
     // Downscale n.pixels in place when it exceeds maxPx (unpack-time cap).
     void shrinkPixels(SNotif& n, int maxPx);
@@ -167,6 +187,10 @@ namespace NHyprnotify {
     };
     extern std::vector<SCard> cards;
     extern PHLMONITORREF      cardsMon; // the monitor the cards were laid out on
+
+    // hover affordance: the frame under the pointer warms to the kicker color.
+    // 0 = none; a change damages the cards involved (no textures move).
+    void setHovered(uint32_t id);
 
     // ---- input.cpp ----
 

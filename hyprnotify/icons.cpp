@@ -3,8 +3,46 @@
 #include "hyprnotify.hpp"
 
 #include <cstring>
+#include <filesystem>
+#include <random>
 
 namespace NHyprnotify {
+
+    // ---- fallback_icon_dir: iconless cards get a face ----
+
+    static std::vector<std::string> fallbackFiles;
+    static bool                     fallbackScanned = false;
+
+    void                            resetFallbackCache() {
+        fallbackFiles.clear();
+        fallbackScanned = false;
+    }
+
+    // One roll per card (bus keeps the pick across in-place replaces). The
+    // listing is scanned once per config life, from the warm pass — never
+    // the render or a bus dispatch.
+    static std::string pickFallback() {
+        const auto DIR = cfg.fallbackIconDir->value();
+        if (DIR.empty())
+            return "";
+        if (!fallbackScanned) {
+            fallbackScanned = true;
+            std::error_code ec;
+            for (auto it = std::filesystem::recursive_directory_iterator(DIR, std::filesystem::directory_options::skip_permission_denied, ec); !ec && it != std::filesystem::end(it);
+                 it.increment(ec)) {
+                if (!it->is_regular_file(ec))
+                    continue;
+                auto ext = it->path().extension().string();
+                std::ranges::transform(ext, ext.begin(), [](unsigned char c) { return std::tolower(c); });
+                if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".webp" || ext == ".bmp" || ext == ".avif" || ext == ".jxl" || ext == ".svg")
+                    fallbackFiles.push_back(it->path().string());
+            }
+        }
+        if (fallbackFiles.empty())
+            return "";
+        static std::mt19937 rng{std::random_device{}()};
+        return fallbackFiles[std::uniform_int_distribution<size_t>{0, fallbackFiles.size() - 1}(rng)];
+    }
 
     // Anything bigger than the card's icon box is downscaled ONCE on the CPU
     // at load — a 4K pixmap kept full-size would hold megabytes of VRAM to
@@ -31,10 +69,37 @@ namespace NHyprnotify {
         return tex;
     }
 
+    // Scale into exactly W x H, covering the box: the overflowing axis is
+    // center-cropped (the hero treatment for previews). When the source
+    // aspect matches, cover == fit and nothing is lost.
+    static SP<ITexture> coverTex(cairo_surface_t* src, double sw, double sh, int W, int H) {
+        auto*        SMALL = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
+        auto*        CR    = cairo_create(SMALL);
+        const double S     = std::max(W / sw, H / sh);
+        cairo_translate(CR, (W - sw * S) / 2.0, (H - sh * S) / 2.0);
+        cairo_scale(CR, S, S);
+        cairo_set_source_surface(CR, src, 0, 0);
+        cairo_pattern_set_filter(cairo_get_source(CR), CAIRO_FILTER_GOOD);
+        cairo_paint(CR);
+        cairo_destroy(CR);
+        cairo_surface_flush(SMALL);
+
+        auto tex = g_pHyprRenderer->createTexture(SMALL);
+        cairo_surface_destroy(SMALL);
+        return tex;
+    }
+
+    // A source wide enough for the hero layout: HERO_ASPECT and at least
+    // half the hero box, so a tiny wide icon never blows up to card width.
+    static bool heroWorthy(double sw, double sh, int heroWPx) {
+        return heroWPx > 0 && sh > 0 && sw / sh >= HERO_ASPECT && sw * 2 >= heroWPx;
+    }
+
     // CImage's size hint only bounds SVG rasters; raster formats decode full
     // size transiently and get scaled here.
-    static SP<ITexture> fileTex(const std::string& path, int maxPx) {
-        Hyprgraphics::CImage image(path, Vector2D{(double)maxPx, (double)maxPx});
+    static SP<ITexture> fileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool& hero) {
+        const int            HINT = std::max(iconPx, heroWPx);
+        Hyprgraphics::CImage image(path, Vector2D{(double)HINT, (double)HINT});
         if (!image.success())
             return nullptr;
 
@@ -45,7 +110,11 @@ namespace NHyprnotify {
         const auto SZ = SURF->size();
         if (SZ.x <= 0 || SZ.y <= 0)
             return nullptr;
-        return scaledTex(SURF->cairo(), SZ.x, SZ.y, maxPx);
+
+        hero = heroWorthy(SZ.x, SZ.y, heroWPx);
+        if (hero)
+            return coverTex(SURF->cairo(), SZ.x, SZ.y, heroWPx, std::min((int)std::lround(heroWPx * SZ.y / SZ.x), heroHCapPx));
+        return scaledTex(SURF->cairo(), SZ.x, SZ.y, iconPx);
     }
 
     // CPU-side cap for image-data buffers at unpack time (bus.cpp) — same
@@ -95,7 +164,7 @@ namespace NHyprnotify {
         return h;
     }
 
-    void ensureIconTex(SNotif& n, int maxPx) {
+    void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx) {
         if (n.hasPixels) {
             if (n.pixels.empty())
                 return; // uploaded by an earlier warm; the texture carries it now
@@ -104,10 +173,16 @@ namespace NHyprnotify {
             h          = fnv1a(&n.pw, sizeof(n.pw), h);
             h          = fnv1a(&n.ph, sizeof(n.ph), h);
             if (!n.iconTex || n.pixelsFor != h) {
-                if (n.pw > maxPx || n.ph > maxPx) {
+                n.heroTex = heroWorthy(n.pw, n.ph, heroWPx);
+                if (n.heroTex || n.pw > iconPx || n.ph > iconPx) {
                     // stride pw*4 is how unpackImageData lays the buffer out
                     auto* SRC = cairo_image_surface_create_for_data(n.pixels.data(), CAIRO_FORMAT_ARGB32, n.pw, n.ph, n.pw * 4);
-                    n.iconTex = cairo_surface_status(SRC) == CAIRO_STATUS_SUCCESS ? scaledTex(SRC, n.pw, n.ph, maxPx) : nullptr;
+                    if (cairo_surface_status(SRC) != CAIRO_STATUS_SUCCESS)
+                        n.iconTex = nullptr;
+                    else if (n.heroTex)
+                        n.iconTex = coverTex(SRC, n.pw, n.ph, heroWPx, std::min((int)std::lround((double)heroWPx * n.ph / n.pw), heroHCapPx));
+                    else
+                        n.iconTex = scaledTex(SRC, n.pw, n.ph, iconPx);
                     cairo_surface_destroy(SRC);
                 } else
                     n.iconTex = g_pHyprRenderer->createTexture(DRM_FORMAT_ARGB8888, n.pixels.data(), n.pw * 4, Vector2D{(double)n.pw, (double)n.ph});
@@ -120,16 +195,33 @@ namespace NHyprnotify {
         }
 
         if (n.image.empty()) {
-            n.iconTex.reset();
-            n.imageFor.clear();
+            // no image sent: the card draws its rolled fallback face (icon
+            // treatment always — a wide waifu must not go hero)
+            if (n.fallbackPick.empty())
+                n.fallbackPick = pickFallback();
+            if (n.fallbackPick.empty()) {
+                n.iconTex.reset();
+                n.imageFor.clear();
+                n.pixelsFor = 0;
+                n.heroTex   = false;
+                return;
+            }
+            if (n.imageFor == n.fallbackPick)
+                return;
+            bool hero   = false;
+            n.iconTex   = fileTex(n.fallbackPick, iconPx, 0, 0, hero);
+            n.imageFor  = n.fallbackPick;
             n.pixelsFor = 0;
+            n.heroTex   = false;
             return;
         }
         if (n.imageFor == n.image) // also remembers a failed load: no disk retry per warm
             return;
-        n.iconTex   = fileTex(n.image, maxPx);
+        bool hero   = false;
+        n.iconTex   = fileTex(n.image, iconPx, heroWPx, heroHCapPx, hero);
         n.imageFor  = n.image;
         n.pixelsFor = 0;
+        n.heroTex   = hero;
     }
 
 } // namespace NHyprnotify

@@ -10,11 +10,13 @@ namespace NHyprnotify {
     PHLMONITORREF      cardsMon;
 
     // spacing is design freedom (the parity contract binds colors/structure)
-    static constexpr double          PADX = 10, PADY = 8, FRAME = 1, TITLE_GAP = 2, PROGRESS_H = 8, PROGRESS_GAP = 6;
+    static constexpr double          PADX = 14, PADY = 12, FRAME = 1, ICON_GAP = 12, KICKER_GAP = 3, TITLE_GAP = 4, PROGRESS_H = 4, PROGRESS_GAP = 8;
+    static constexpr double          HERO_TEXT_MIN = 60; // a hero never starves the text: ~kicker + title + a body line
 
     static CBox                      lastBox;            // last damaged card column, global logical
     static double                    lastStackH     = 0; // the column's height from the last layout, for the pass bounding box
     static bool                      inRenderNotifs = false;
+    static uint32_t                  hoveredId      = 0;
 
     static UP<SEventLoopDoLaterLock> pendingWarm, pendingRewarm;
 
@@ -40,11 +42,20 @@ namespace NHyprnotify {
 
     // ---- text textures ----
 
+    // the kicker line renders the app name, uppercased ASCII-only (UTF-8
+    // continuation bytes pass through untouched)
+    static std::string kickerCase(std::string s) {
+        for (auto& c : s)
+            c = (char)std::toupper((unsigned char)c);
+        return s;
+    }
+
     // renderText word-wraps nothing (maxWidth only ellipsizes), so the body
-    // rasters through its own pango layout: wrapped to the text column, height-
-    // capped with the tail line ellipsized — then the same premultiplied-ARGB32
-    // cairo -> createTexture path renderText itself uses.
-    static SP<ITexture> buildBodyTex(const std::string& text, const CHyprColor& col, int pt, int maxWidthPx, int maxHeightPx) {
+    // and the kicker raster through their own pango layout — then the same
+    // premultiplied-ARGB32 cairo -> createTexture path renderText uses.
+    // maxHeightPx > 0 caps pixels (tail line ellipsized); < 0 caps lines
+    // (pango's negative-height convention — the kicker passes -1).
+    static SP<ITexture> buildText(const std::string& text, const CHyprColor& col, int pt, int maxWidthPx, int maxHeightPx, double letterSpacingEm, float lineSpacing) {
         PangoFontMap*         fontMap = pango_cairo_font_map_get_default();
         PangoContext*         context = pango_font_map_create_context(fontMap);
         PangoLayout*          layout  = pango_layout_new(context);
@@ -58,8 +69,16 @@ namespace NHyprnotify {
         pango_layout_set_text(layout, text.c_str(), -1);
         pango_layout_set_width(layout, std::max(maxWidthPx, 1) * PANGO_SCALE);
         pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
-        pango_layout_set_height(layout, std::max(maxHeightPx, pt) * PANGO_SCALE);
+        pango_layout_set_height(layout, maxHeightPx < 0 ? maxHeightPx : std::max(maxHeightPx, pt) * PANGO_SCALE);
         pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
+        if (letterSpacingEm > 0) {
+            PangoAttrList* attrs = pango_attr_list_new();
+            pango_attr_list_insert(attrs, pango_attr_letter_spacing_new((int)std::lround(letterSpacingEm * pt * PANGO_SCALE)));
+            pango_layout_set_attributes(layout, attrs);
+            pango_attr_list_unref(attrs);
+        }
+        if (lineSpacing > 0)
+            pango_layout_set_line_spacing(layout, lineSpacing);
 
         PangoRectangle ink = {}, log = {};
         pango_layout_get_pixel_extents(layout, &ink, &log);
@@ -96,10 +115,16 @@ namespace NHyprnotify {
         CBox       toPhys(const CBox& global) const { // global logical -> monitor physical
             return CBox{global}.translate(-mon->m_position).scale(scale).round();
         }
-        void rect(const CBox& global, const CHyprColor& c) const {
+        void rect(const CBox& global, const CHyprColor& c, int round = 0) const {
             if (warm)
                 return;
-            g_pHyprOpenGL->renderRect(toPhys(global), c, {});
+            g_pHyprOpenGL->renderRect(toPhys(global), c, {.round = round});
+        }
+        // the frame: one border call instead of four rects
+        void border(const CBox& global, const CHyprColor& c, int round, int sizePx) const {
+            if (warm)
+                return;
+            g_pHyprOpenGL->renderBorder(toPhys(global), Config::CGradientValueData{c}, {.round = round, .borderSize = sizePx});
         }
         // text: native pixel size at a logical position, never scaled
         void tex(const SP<ITexture>& t, double gx, double gy) const {
@@ -109,10 +134,10 @@ namespace NHyprnotify {
             g_pHyprOpenGL->renderTexture(t, CBox{(double)P.x, (double)P.y, t->m_size.x, t->m_size.y}, {});
         }
         // images: scaled into a logical box
-        void texFit(const SP<ITexture>& t, const CBox& cell) const {
+        void texFit(const SP<ITexture>& t, const CBox& cell, int round = 0) const {
             if (warm || !t || t->m_texID == 0)
                 return;
-            g_pHyprOpenGL->renderTexture(t, toPhys(cell), {});
+            g_pHyprOpenGL->renderTexture(t, toPhys(cell), {.round = round});
         }
     };
 
@@ -125,14 +150,22 @@ namespace NHyprnotify {
             return;
 
         const SPaint P{mon, warm, mon->m_scale};
-        const int    PT      = std::max(1, (int)std::lround(cfg.fontSize->value() * P.scale));
-        const auto   MB      = mon->logicalBox();
+        const int    PT     = std::max(1, (int)std::lround(cfg.fontSize->value() * P.scale));
+        const int    KPT    = std::max(1, (int)std::lround((cfg.fontSize->value() - 2) * P.scale)); // the kicker's 10px against the body's 12
+        const int    TPT    = std::max(1, (int)std::lround((cfg.fontSize->value() + 1) * P.scale)); // the title's 13
+        const int    ROUNDP = std::max(0, (int)std::lround(cfg.rounding->value() * P.scale));
+        const int    FRAMEP = std::max(1, (int)std::lround(FRAME * P.scale));
+        const auto   MB     = mon->logicalBox();
         const double W       = std::max((double)cfg.width->value(), 60.0);
         const double MAXH    = std::max((double)cfg.maxHeight->value(), 40.0);
         const double GAP     = std::max((double)cfg.margin->value(), 0.0);
         const double MAXICON = std::clamp((double)cfg.maxIcon->value(), 8.0, MAXH - 2 * PADY);
+        const double HEROCAP = std::max(16.0, MAXH - 2 * PADY - HERO_TEXT_MIN);
 
-        const auto   COLBG = color(cfg.colBg), COLFG = color(cfg.colFg), COLFRAME = color(cfg.colFrame), COLURGENT = color(cfg.colUrgent), COLHL = color(cfg.colHighlight);
+        const auto   COLBG = color(cfg.colBg), COLFG = color(cfg.colFg), COLTITLE = color(cfg.colTitle), COLKICKER = color(cfg.colKicker), COLFRAME = color(cfg.colFrame),
+                   COLURGENT = color(cfg.colUrgent), COLHL = color(cfg.colHighlight);
+        // any text color moving under a config reload re-keys every raster
+        const uint64_t FGKEY = COLFG.getAsHex() ^ (COLTITLE.getAsHex() * 0x9E3779B97F4A7C15ULL) ^ (COLKICKER.getAsHex() * 0xC2B2AE3D27D4EB4FULL);
 
         cards.clear(); // capacity retained: no per-frame allocations
         cardsMon = mon;
@@ -141,75 +174,99 @@ namespace NHyprnotify {
         double       y = MB.y + (double)cfg.offsetY->value();
 
         for (const auto& N : notifs) {
+            if (N->waiting)
+                continue; // DND queue: collected, not shown
             if (y + 2 * PADY + FRAME * 2 > MB.y + MB.h)
                 break; // no room: the tail of the stack waits off-screen, timeouts still running
 
             if (warm)
-                ensureIconTex(*N, (int)std::lround(MAXICON * P.scale));
+                ensureIconTex(*N, (int)std::lround(MAXICON * P.scale), (int)std::lround((W - 2 * FRAME) * P.scale), (int)std::lround(HEROCAP * P.scale));
 
-            // icon fit, logical (image-data pixmaps arrive uncapped)
+            const bool   CRITICAL = N->urgency >= 2;
+            const bool   HERO     = N->iconTex && N->heroTex;
+            const double HEROH    = HERO ? N->iconTex->m_size.y / P.scale : 0;
+
+            // icon fit, logical (image-data pixmaps can arrive uncapped)
             double iw = 0, ih = 0;
-            if (N->iconTex) {
+            if (N->iconTex && !HERO) {
                 const auto   TS = N->iconTex->m_size / P.scale;
                 const double F  = std::min(1.0, std::min(MAXICON / TS.x, MAXICON / TS.y));
                 iw              = TS.x * F;
                 ih              = TS.y * F;
             }
 
-            const double TEXTW   = W - 2 * PADX - (iw > 0 ? iw + PADX : 0);
+            const double TEXTW   = W - 2 * PADX - (iw > 0 ? iw + ICON_GAP : 0);
             const int    TEXTWPX = std::max(1, (int)std::floor(TEXTW * P.scale));
 
             if (warm) {
                 // width/size/color are part of what the textures ARE — a replace
                 // that adds an icon narrows the column, a config reload recolors
-                if (N->builtPt != PT || N->builtFg != (uint64_t)COLFG.getAsHex() || N->builtTextW != TEXTWPX) {
+                if (N->builtPt != PT || N->builtFg != FGKEY || N->builtTextW != TEXTWPX) {
+                    N->kickerTex.reset();
                     N->titleTex.reset();
                     N->bodyTex.reset();
+                    N->kickerFor.clear();
                     N->titleFor.clear();
                     N->bodyFor.clear();
                     N->builtPt    = PT;
-                    N->builtFg    = (uint64_t)COLFG.getAsHex();
+                    N->builtFg    = FGKEY;
                     N->builtTextW = TEXTWPX;
+                }
+                if (N->builtCrit != CRITICAL) { // criticality recolors the kicker
+                    N->kickerTex.reset();
+                    N->kickerFor.clear();
+                    N->builtCrit = CRITICAL;
+                }
+                if (N->appName.empty())
+                    N->kickerTex.reset();
+                else if (!N->kickerTex || N->kickerFor != N->appName) {
+                    N->kickerTex = buildText(kickerCase(N->appName), CRITICAL ? COLURGENT : COLKICKER, KPT, TEXTWPX, -1, 0.08, 0);
+                    N->kickerFor = N->appName;
                 }
                 if (N->summary.empty())
                     N->titleTex.reset();
                 else if (!N->titleTex || N->titleFor != N->summary) {
-                    N->titleTex = g_pHyprRenderer->renderText(N->summary, COLFG, PT, false, cfg.font->value(), TEXTWPX, 700);
+                    N->titleTex = g_pHyprRenderer->renderText(N->summary, COLTITLE, TPT, false, cfg.font->value(), TEXTWPX, 700);
                     N->titleFor = N->summary;
                 }
                 if (N->body.empty())
                     N->bodyTex.reset();
                 else if (!N->bodyTex || N->bodyFor != N->body) {
-                    const int CAP = (int)std::floor((MAXH - 2 * PADY) * P.scale) - (N->titleTex ? (int)(N->titleTex->m_size.y + TITLE_GAP * P.scale) : 0) -
-                        (N->progress >= 0 ? (int)((PROGRESS_H + PROGRESS_GAP) * P.scale) : 0);
-                    N->bodyTex = buildBodyTex(N->body, COLFG, PT, TEXTWPX, CAP);
+                    const int CAP = (int)std::floor((MAXH - 2 * PADY - HEROH) * P.scale) - (N->kickerTex ? (int)(N->kickerTex->m_size.y + KICKER_GAP * P.scale) : 0) -
+                        (N->titleTex ? (int)(N->titleTex->m_size.y + TITLE_GAP * P.scale) : 0) - (N->progress >= 0 ? (int)((PROGRESS_H + PROGRESS_GAP) * P.scale) : 0);
+                    // 1.1 x pango's natural line ~= the design's 1.35em body leading
+                    N->bodyTex = buildText(N->body, COLFG, PT, TEXTWPX, CAP, 0, 1.1f);
                     N->bodyFor = N->body;
                 }
-            } else if ((!N->titleTex && !N->summary.empty()) || (!N->bodyTex && !N->body.empty()))
+            } else if ((!N->kickerTex && !N->appName.empty()) || (!N->titleTex && !N->summary.empty()) || (!N->bodyTex && !N->body.empty()))
                 texStale = true; // a draw ran ahead of the warm; rebuild + repaint after this frame
 
-            const double TITLEH = N->titleTex ? N->titleTex->m_size.y / P.scale : 0;
-            const double BODYH  = N->bodyTex ? N->bodyTex->m_size.y / P.scale : 0;
-            double       th     = TITLEH + (TITLEH > 0 && BODYH > 0 ? TITLE_GAP : 0) + BODYH;
+            const double KICKERH = N->kickerTex ? N->kickerTex->m_size.y / P.scale : 0;
+            const double TITLEH  = N->titleTex ? N->titleTex->m_size.y / P.scale : 0;
+            const double BODYH   = N->bodyTex ? N->bodyTex->m_size.y / P.scale : 0;
+            double       th      = KICKERH + (KICKERH > 0 && (TITLEH > 0 || BODYH > 0) ? KICKER_GAP : 0) + TITLEH + (TITLEH > 0 && BODYH > 0 ? TITLE_GAP : 0) + BODYH;
             if (N->progress >= 0)
                 th += (th > 0 ? PROGRESS_GAP : 0) + PROGRESS_H;
 
-            const double CH       = std::min(MAXH, std::max(ih, th) + 2 * PADY);
-            const bool   CRITICAL = N->urgency >= 2;
+            const double CH = HERO ? std::min(MAXH, FRAME + HEROH + PADY + th + PADY) : std::min(MAXH, std::max(ih, th) + 2 * PADY);
 
-            // frame: four 1px rects around the fill (the house idiom)
-            const auto& FC = CRITICAL ? COLURGENT : COLFRAME;
-            P.rect(CBox{X, y, W, FRAME}, FC);
-            P.rect(CBox{X, y + CH - FRAME, W, FRAME}, FC);
-            P.rect(CBox{X, y + FRAME, FRAME, CH - 2 * FRAME}, FC);
-            P.rect(CBox{X + W - FRAME, y + FRAME, FRAME, CH - 2 * FRAME}, FC);
-            P.rect(CBox{X + FRAME, y + FRAME, W - 2 * FRAME, CH - 2 * FRAME}, COLBG);
+            // fill under the whole card, frame ring over its outer edge: no
+            // corner seam, and 5 rects become 2 calls
+            const auto& FC = CRITICAL ? COLURGENT : (N->id == hoveredId ? COLKICKER : COLFRAME);
+            P.rect(CBox{X, y, W, CH}, COLBG, ROUNDP);
+            P.border(CBox{X, y, W, CH}, FC, ROUNDP, FRAMEP);
 
-            if (N->iconTex && iw > 0)
-                P.texFit(N->iconTex, CBox{X + PADX, y + (CH - ih) / 2, iw, ih});
+            if (HERO)
+                P.texFit(N->iconTex, CBox{X + FRAME, y + FRAME, W - 2 * FRAME, HEROH}, ROUNDP);
+            else if (N->iconTex && iw > 0)
+                P.texFit(N->iconTex, CBox{X + PADX, y + (CH - ih) / 2, iw, ih}, ROUNDP);
 
-            const double TX = X + PADX + (iw > 0 ? iw + PADX : 0);
-            double       ty = y + std::max(PADY, (CH - th) / 2); // the text block centers, like the old boxes
+            const double TX = X + PADX + (iw > 0 ? iw + ICON_GAP : 0);
+            double       ty = HERO ? y + FRAME + HEROH + PADY : y + std::max(PADY, (CH - th) / 2); // sans hero the text block centers, like the old boxes
+            if (N->kickerTex) {
+                P.tex(N->kickerTex, TX, ty);
+                ty += KICKERH + (TITLEH > 0 || BODYH > 0 ? KICKER_GAP : 0);
+            }
             if (N->titleTex) {
                 P.tex(N->titleTex, TX, ty);
                 ty += TITLEH + (BODYH > 0 ? TITLE_GAP : 0);
@@ -220,9 +277,10 @@ namespace NHyprnotify {
             }
             if (N->progress >= 0) {
                 ty += th > 0 ? PROGRESS_GAP : 0;
-                P.rect(CBox{TX, ty, TEXTW, PROGRESS_H}, COLFRAME);
-                if (N->progress > 0)
-                    P.rect(CBox{TX, ty, TEXTW * N->progress / 100.0, PROGRESS_H}, CRITICAL ? COLURGENT : COLHL);
+                const double FILLW = TEXTW * N->progress / 100.0;
+                P.rect(CBox{TX, ty, TEXTW, PROGRESS_H}, COLFRAME, ROUNDP);
+                if (N->progress > 0) // a sliver narrower than its corners renders square
+                    P.rect(CBox{TX, ty, FILLW, PROGRESS_H}, CRITICAL ? COLURGENT : COLHL, FILLW * P.scale >= 2 * ROUNDP ? ROUNDP : 0);
             }
 
             cards.push_back({CBox{X, y, W, CH}, N->id});
@@ -256,6 +314,18 @@ namespace NHyprnotify {
         if (CUR.w > 0)
             g_pHyprRenderer->damageBox(CUR);
         lastBox = CUR;
+    }
+
+    // the hover affordance repaints exactly the cards whose frame changed;
+    // no textures move, so no warm — plain damage from the motion listener
+    void setHovered(uint32_t id) {
+        if (id == hoveredId)
+            return;
+        if (g_pHyprRenderer)
+            for (const auto& C : cards)
+                if (C.id == hoveredId || C.id == id)
+                    g_pHyprRenderer->damageBox(C.box);
+        hoveredId = id;
     }
 
     // ---- warm ----
@@ -362,6 +432,7 @@ namespace NHyprnotify {
         lastStackH = 0;
         warming    = false;
         texStale   = false;
+        hoveredId  = 0;
     }
 
 } // namespace NHyprnotify

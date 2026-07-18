@@ -88,12 +88,14 @@ namespace NHyprnotify {
     // drags keep flowing, as they would over a real layer-surface daemon.
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info) {
         if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked()) {
+            setHovered(0);
             releasePointer();
             return;
         }
 
         // cheap first: almost every motion happens with no notification up
         if (cards.empty()) {
+            setHovered(0);
             releasePointer();
             return;
         }
@@ -101,11 +103,14 @@ namespace NHyprnotify {
         // info.cancelled: an earlier listener (hyprbar's strip or an open
         // menu) owns the point — claiming it would stomp the bar's cursor
         // override, which shares the SPECIAL_ACTION slot
-        if (info.cancelled || !cardAt(pos) || heldButtons > 0 || (g_layoutManager && g_layoutManager->dragController()->target())) {
+        const auto CARD = cardAt(pos);
+        if (info.cancelled || !CARD || heldButtons > 0 || (g_layoutManager && g_layoutManager->dragController()->target())) {
+            setHovered(0);
             releasePointer();
             return;
         }
 
+        setHovered(CARD->id);
         info.cancelled = true;
         if (!pointerOwned) {
             pointerOwned = true;
@@ -120,7 +125,9 @@ namespace NHyprnotify {
     // real layer-surface daemon's unmap triggers the compositor's own refocus;
     // match it. Runs from the notifChanged doLater, never an input emission.
     void refreshPointerOwnership() {
-        if (!pointerOwned || cardAt(g_pInputManager->getMouseCoordsInternal()))
+        const auto CARD = cardAt(g_pInputManager->getMouseCoordsInternal());
+        setHovered(CARD ? CARD->id : 0); // a reflow can slide another card under the still pointer
+        if (!pointerOwned || CARD)
             return;
         releasePointer();
         g_pInputManager->simulateMouseMovement(); // the window beneath gets its enter back
