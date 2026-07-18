@@ -28,36 +28,36 @@ output      = "hyprnotify/hyprnotify.so"
 build       = ["make -C hyprnotify all"]
 
 [hyprmax]
-description = "awesome's per-window maximize: any number at once, immovable while maximized, windowed size remembered per app across closes and relogs"
-version     = "1.0.1"
+description = "awesome's per-window maximize"
+version     = "1.0.2"
 authors     = ["hitori"]
 output      = "hyprmax/hyprmax.so"
 build       = ["make -C hyprmax all"]
 
 [hyprsnap]
-description = "awesome's awful.mouse.snap: magnetic edge pull + aerosnap zones while dragging"
-version     = "1.3.2"
+description = "awesome's awful.mouse.snap"
+version     = "1.3.3"
 authors     = ["hitori"]
 output      = "hyprsnap/hyprsnap.so"
 build       = ["make -C hyprsnap all"]
 
 [hyprclick]
-description = "awesome click/focus policy: click-to-raise, keyboard focus raises, hover never does"
-version     = "1.1.1"
+description = "awesome's click/focus policy"
+version     = "1.1.2"
 authors     = ["hitori"]
 output      = "hyprclick/hyprclick.so"
 build       = ["make -C hyprclick all"]
 
 [hyprplace]
-description = "spawn placement: an app reopens at its last spot, else centered, else the largest gap — never glued to a border"
-version     = "1.1.0"
+description = "spawn placement with position memory"
+version     = "1.1.1"
 authors     = ["hitori"]
 output      = "hyprplace/hyprplace.so"
 build       = ["make -C hyprplace all"]
 
 [hyprpad]
-description = "the awesome touchpad module: touchpad off while an external mouse is present, XF86TouchpadToggle flips it by hand"
-version     = "1.0.1"
+description = "the awesome touchpad module"
+version     = "1.0.2"
 authors     = ["hitori"]
 output      = "hyprpad/hyprpad.so"
 build       = ["make -C hyprpad all"]

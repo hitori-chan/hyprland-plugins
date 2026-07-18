@@ -327,7 +327,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // device list is populated and the notification daemon is up
     settle->updateTimeout(SETTLE);
 
-    return {"hyprpad", "the awesome touchpad module: touchpad off while an external mouse is present, XF86TouchpadToggle flips it by hand", "hitori", "1.0.1"};
+    return {"hyprpad", "the awesome touchpad module", "hitori", "1.0.2"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

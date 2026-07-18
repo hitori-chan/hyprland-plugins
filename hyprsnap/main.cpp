@@ -80,7 +80,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // no render.stage listener here: snap.cpp connects one only while a zone
     // is armed — the signal fires per window per frame
 
-    return {"hyprsnap", "awesome's awful.mouse.snap: magnetic edge pull + aerosnap zones while dragging", "hitori", "1.3.2"};
+    return {"hyprsnap", "awesome's awful.mouse.snap", "hitori", "1.3.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

@@ -301,7 +301,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     lOpen  = Event::bus()->m_events.window.open.listen([](PHLWINDOW w) { onWindowOpen(w); });
     lClose = Event::bus()->m_events.window.close.listen([](PHLWINDOW w) { onWindowClose(w); });
 
-    return {"hyprplace", "spawn placement: an app reopens at its last spot, else centered, else the largest gap — never glued to a border", "hitori", "1.1.0"};
+    return {"hyprplace", "spawn placement with position memory", "hitori", "1.1.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
