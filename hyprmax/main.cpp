@@ -55,7 +55,7 @@
 
 static HANDLE                                 PHANDLE = nullptr;
 
-static Hyprutils::Signal::CHyprSignalListener lButton, lDestroy;
+static Hyprutils::Signal::CHyprSignalListener lButton, lDestroy, lFullscreen;
 static UP<SEventLoopDoLaterLock>              pendingMax;
 
 // plugin-maximized windows and their restore geometry.
@@ -291,10 +291,25 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         g_maximized.erase(IT);
     });
 
+    // The compositor recomputes the client-facing maximized bit from ITS
+    // OWN fullscreen mode on every client-mode change
+    // (updateClientMaximizedState) — and this plugin's maximize lives
+    // outside that machinery, so a video entering/leaving fullscreen
+    // stripped the told-maximized state and Firefox came back
+    // unmaximized. The controller emits this event AFTER its sync, so
+    // reasserting here wins, and both changes flush in one configure —
+    // the client's belief never flickers.
+    lFullscreen = Event::bus()->m_events.window.fullscreen.listen([](PHLWINDOW w) {
+        if (!w || !pluginMaximized(w))
+            return;
+        if (!w->m_isX11 && w->m_xdgSurface && w->m_xdgSurface->m_toplevel)
+            w->m_xdgSurface->m_toplevel->setMaximized(true);
+    });
+
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprmax", "toggle", luaToggle);
 
     return {"hyprmax", "awesome's per-window maximize", "hitori",
-            "1.0.2"};
+            "1.0.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
@@ -306,6 +321,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
     }
     lButton.reset();
     lDestroy.reset();
+    lFullscreen.reset();
     g_maximized.clear();
     g_lastWindowed.clear();
     swallowedButtons = 0;
