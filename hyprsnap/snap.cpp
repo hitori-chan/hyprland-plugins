@@ -321,8 +321,13 @@ namespace NHyprsnap::Snap {
         }
 
         const auto T = draggedFloatingTarget();
-        if (!T)
+        if (!T) {
+            // the ended drag may have been a resize: without this a
+            // motionless click-click re-grab seeds the next resize with the
+            // previous drag's begin box (wrong dragged-edge classification)
+            resizeStart.reset();
             return;
+        }
         if (zoneBox && zoneMon.lock()) {
             // the slot is the border box; the surface sits inside it, so the
             // border stays on screen (maximize is the one full-bleed state)
