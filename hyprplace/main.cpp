@@ -24,6 +24,7 @@
 #include <hyprland/src/desktop/state/WindowState.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/layout/target/Target.hpp>
+#include <hyprland/src/layout/LayoutManager.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/output/Monitor.hpp>
@@ -243,7 +244,10 @@ namespace NHyprplace {
 
             if (nx == CUR.x && ny == CUR.y)
                 return;
-            w->m_target->setPositionGlobal(CBox{nx, ny, CUR.w, CUR.h});
+            // through the layout so the floating algorithm's lastBox tracking
+            // follows the placement (a raw target move leaves it stale and a
+            // fullscreen roundtrip would restore the pre-placement spot)
+            g_layoutManager->setTargetGeom(CBox{nx, ny, CUR.w, CUR.h}, w->m_target);
             w->m_target->warpPositionSize();
         }
     }
@@ -301,7 +305,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     lOpen  = Event::bus()->m_events.window.open.listen([](PHLWINDOW w) { onWindowOpen(w); });
     lClose = Event::bus()->m_events.window.close.listen([](PHLWINDOW w) { onWindowClose(w); });
 
-    return {"hyprplace", "spawn placement with position memory", "hitori", "1.1.1"};
+    return {"hyprplace", "spawn placement with position memory", "hitori", "1.1.2"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
