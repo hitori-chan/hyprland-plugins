@@ -166,6 +166,12 @@ static void adoptCompositorMax(PHLWINDOW W) {
         W->m_xdgSurface->m_toplevel->setMaximized(true);
     W->m_target->setPositionGlobal(WA);
     W->m_target->warpPositionSize();
+    // the exit's 0x0 grant configure already reached the client, but
+    // m_pendingReportedSize kept the real size — an unforced send dedups
+    // against it and stays silent, leaving the client maximized at 0x0
+    // with nothing to lay out: it never commits a frame (invisible
+    // window). Force the workarea configure out.
+    W->sendWindowSize(true);
 }
 
 static std::vector<PHLWINDOWREF> g_adoptQueue;
@@ -272,6 +278,10 @@ static int luaToggle(lua_State*) {
                 W->m_sizeFromClientSerial = 0;
                 g_layoutManager->setTargetGeom(clampToWorkarea(IT->second, MON->logicalBoxMinusReserved()), W->m_target);
                 W->m_target->warpPositionSize();
+                // same disarmed-grant flush as adoptCompositorMax: unforced
+                // sends dedup against m_pendingReportedSize and go silent
+                // when the remembered box matches it
+                W->sendWindowSize(true);
             }
             return;
         }
@@ -376,7 +386,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprmax", "toggle", luaToggle);
 
     return {"hyprmax", "awesome's per-window maximize", "hitori",
-            "1.1.0"};
+            "1.1.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
