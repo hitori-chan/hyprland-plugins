@@ -74,11 +74,19 @@ static SP<SHyprCtlCommand>                                 ctlCount;
 static UP<SEventLoopDoLaterLock>                           pendingSuspend;
 
 // hl.plugin.hyprnotify.suspend() — the DND chord. Deferred out of the bind's
-// input emission (the resume reflows and repaints the stack).
+// input emission (the resume reflows and repaints the stack). Presses
+// ACCUMULATE: overwriting the lock cancels the unfired toggle, and two
+// presses in one dispatch would net zero instead of two toggles.
+static int suspendPresses = 0;
 static int luaSuspend(lua_State*) {
     if (!g_pEventLoopManager)
         return 0;
-    pendingSuspend = g_pEventLoopManager->doLaterLock([]() { NHyprnotify::Bus::toggleSuspend(); });
+    if (++suspendPresses > 1)
+        return 0; // a drain is already queued
+    pendingSuspend = g_pEventLoopManager->doLaterLock([]() {
+        if (std::exchange(suspendPresses, 0) & 1)
+            NHyprnotify::Bus::toggleSuspend();
+    });
     return 0;
 }
 
@@ -164,6 +172,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
 APICALL EXPORT void PLUGIN_EXIT() {
     pendingSuspend.reset();
+    suspendPresses = 0;
     if (ctlCount)
         HyprlandAPI::unregisterHyprCtlCommand(PHANDLE, ctlCount);
     ctlCount.reset();

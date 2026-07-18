@@ -95,7 +95,9 @@ namespace NHyprnotify {
             for (const auto& N : notifs) {
                 if (N->timeoutMs <= 0 || N->waiting)
                     continue;
-                const auto MS = std::chrono::duration_cast<std::chrono::milliseconds>(N->deadline - NOW).count();
+                // clamp before comparing: -1 is the "none" sentinel, and an
+                // overdue card's negative remaining time must still win
+                const auto MS = std::max<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(N->deadline - NOW).count(), 1);
                 if (next < 0 || MS < next)
                     next = MS;
             }
@@ -196,7 +198,10 @@ namespace NHyprnotify {
             std::string out;
             out.reserve(in.size());
             for (size_t i = 0; i < in.size();) {
-                if (in[i] == '<') {
+                // only a tag-shaped '<' opens a tag: body-markup is never
+                // advertised, so "1 < 2 ... 80 > 70" is legal plain text and
+                // must survive verbatim
+                if (in[i] == '<' && i + 1 < in.size() && (std::isalpha((unsigned char)in[i + 1]) || in[i + 1] == '/' || in[i + 1] == '!')) {
                     const auto END = in.find('>', i);
                     if (END != std::string::npos) {
                         i = END + 1;
@@ -219,7 +224,7 @@ namespace NHyprnotify {
                             out += '\'';
                         else if (E.size() > 1 && E[0] == '#') {
                             const long C = E[1] == 'x' || E[1] == 'X' ? std::strtol(E.c_str() + 2, nullptr, 16) : std::strtol(E.c_str() + 1, nullptr, 10);
-                            if (C > 0 && C < 0x110000)
+                            if (C > 0 && C < 0x110000 && (C < 0xD800 || C > 0xDFFF)) // surrogates encode to invalid UTF-8
                                 appendUtf8(out, (uint32_t)C);
                             else
                                 ok = false;
@@ -302,7 +307,7 @@ namespace NHyprnotify {
                     id = nextId++;
                     if (nextId == 0)
                         nextId = 1; // wrap: 0 means "no id"
-                } while (byId(id));
+                } while (byId(id) || (id >= 9990 && id <= 9999)); // never mint into the pinned OSD band
             }
 
             auto n = byId(id);
@@ -391,7 +396,8 @@ namespace NHyprnotify {
             if (n->timeoutMs > 0 && !n->waiting) // a queued card's clock starts at the resume
                 n->deadline = Time::steadyNow() + std::chrono::milliseconds((int64_t)n->timeoutMs);
 
-            notifChanged();
+            if (!n->waiting) // a suspended arrival is invisible: no warm, no damage
+                notifChanged();
             rearmExpiry();
             return id;
         }

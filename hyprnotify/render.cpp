@@ -120,11 +120,18 @@ namespace NHyprnotify {
                 return;
             g_pHyprOpenGL->renderRect(toPhys(global), c, {.round = round});
         }
-        // the frame: one border call instead of four rects
+        // the frame: one border call instead of four rects. The gradient is
+        // memoized — its ctor heap-allocates and OkLab-converts, and this ran
+        // per card per frame for colors that only move on config reload
         void border(const CBox& global, const CHyprColor& c, int round, int sizePx) const {
             if (warm)
                 return;
-            g_pHyprOpenGL->renderBorder(toPhys(global), Config::CGradientValueData{c}, {.round = round, .borderSize = sizePx});
+            static std::unordered_map<uint64_t, Config::CGradientValueData> grads;
+            const auto                                                      KEY = c.getAsHex();
+            auto                                                            IT  = grads.find(KEY);
+            if (IT == grads.end())
+                IT = grads.emplace(KEY, Config::CGradientValueData{c}).first;
+            g_pHyprOpenGL->renderBorder(toPhys(global), IT->second, {.round = round, .borderSize = sizePx});
         }
         // text: native pixel size at a logical position, never scaled
         void tex(const SP<ITexture>& t, double gx, double gy) const {
@@ -217,28 +224,36 @@ namespace NHyprnotify {
                     N->kickerFor.clear();
                     N->builtCrit = CRITICAL;
                 }
-                if (N->appName.empty())
+                // staleness keys on the For fields ALONE, never texture
+                // presence: text that rasters to zero (a "\n" body) records a
+                // failed build as done — keying on the null texture retried
+                // every warm and the draw side re-flagged it, a repaint loop
+                // at frame rate for the card's whole life
+                if (N->appName.empty()) {
                     N->kickerTex.reset();
-                else if (!N->kickerTex || N->kickerFor != N->appName) {
+                    N->kickerFor.clear();
+                } else if (N->kickerFor != N->appName) {
                     N->kickerTex = buildText(kickerCase(N->appName), CRITICAL ? COLURGENT : COLKICKER, KPT, TEXTWPX, -1, 0.08, 0);
                     N->kickerFor = N->appName;
                 }
-                if (N->summary.empty())
+                if (N->summary.empty()) {
                     N->titleTex.reset();
-                else if (!N->titleTex || N->titleFor != N->summary) {
+                    N->titleFor.clear();
+                } else if (N->titleFor != N->summary) {
                     N->titleTex = g_pHyprRenderer->renderText(N->summary, COLTITLE, TPT, false, cfg.font->value(), TEXTWPX, 700);
                     N->titleFor = N->summary;
                 }
-                if (N->body.empty())
+                if (N->body.empty()) {
                     N->bodyTex.reset();
-                else if (!N->bodyTex || N->bodyFor != N->body) {
+                    N->bodyFor.clear();
+                } else if (N->bodyFor != N->body) {
                     const int CAP = (int)std::floor((MAXH - 2 * PADY - HEROH) * P.scale) - (N->kickerTex ? (int)(N->kickerTex->m_size.y + KICKER_GAP * P.scale) : 0) -
                         (N->titleTex ? (int)(N->titleTex->m_size.y + TITLE_GAP * P.scale) : 0) - (N->progress >= 0 ? (int)((PROGRESS_H + PROGRESS_GAP) * P.scale) : 0);
                     // 1.1 x pango's natural line ~= the design's 1.35em body leading
                     N->bodyTex = buildText(N->body, COLFG, PT, TEXTWPX, CAP, 0, 1.1f);
                     N->bodyFor = N->body;
                 }
-            } else if ((!N->kickerTex && !N->appName.empty()) || (!N->titleTex && !N->summary.empty()) || (!N->bodyTex && !N->body.empty()))
+            } else if (N->kickerFor != N->appName || N->titleFor != N->summary || N->bodyFor != N->body)
                 texStale = true; // a draw ran ahead of the warm; rebuild + repaint after this frame
 
             const double KICKERH = N->kickerTex ? N->kickerTex->m_size.y / P.scale : 0;
@@ -333,12 +348,15 @@ namespace NHyprnotify {
     void warmNotifs() {
         if (warming || inRenderNotifs || !g_pCompositor)
             return;
-        warming = true;
-        if (notifs.empty()) {
+        warming        = true;
+        const auto MON = notifs.empty() ? nullptr : focusedMon();
+        if (!MON) {
+            // no cards — or no monitor (disconnect transition): stale boxes
+            // must not linger to swallow clicks over nothing
             cards.clear();
             lastStackH = 0;
         } else
-            renderCards(focusedMon(), true);
+            renderCards(MON, true);
         warming  = false;
         texStale = false;
     }

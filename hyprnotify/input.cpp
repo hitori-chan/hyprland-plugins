@@ -37,7 +37,7 @@ namespace NHyprnotify {
             if (BIT && (swallowRelease & BIT)) {
                 swallowRelease &= ~BIT;
                 info.cancelled = true;
-            } else
+            } else if (!info.cancelled) // a release hyprbar swallowed ends a press we never counted
                 heldButtons = std::max(0, heldButtons - 1);
             return;
         }
@@ -101,10 +101,17 @@ namespace NHyprnotify {
         }
 
         // info.cancelled: an earlier listener (hyprbar's strip or an open
-        // menu) owns the point — claiming it would stomp the bar's cursor
-        // override, which shares the SPECIAL_ACTION slot
+        // menu) owns the point — and just set the shared SPECIAL_ACTION
+        // cursor slot. Drop ownership WITHOUT unsetting it: releasePointer's
+        // unset would strip the bar's override for its whole visit.
+        if (info.cancelled) {
+            setHovered(0);
+            pointerOwned = false;
+            return;
+        }
+
         const auto CARD = cardAt(pos);
-        if (info.cancelled || !CARD || heldButtons > 0 || (g_layoutManager && g_layoutManager->dragController()->target())) {
+        if (!CARD || heldButtons > 0 || (g_layoutManager && g_layoutManager->dragController()->target())) {
             setHovered(0);
             releasePointer();
             return;
