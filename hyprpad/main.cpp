@@ -48,13 +48,9 @@
 #include <sdbus-c++/sdbus-c++.h>
 #include <wayland-server-core.h>
 
-#include <cctype>
 #include <chrono>
-#include <cstdlib>
-#include <filesystem>
 #include <map>
 #include <memory>
-#include <random>
 #include <string>
 #include <vector>
 
@@ -70,7 +66,7 @@ namespace NHyprpad {
     static std::vector<Hyprutils::Signal::CHyprSignalListener> lDestroy; // one per live pointer
 
     // the last state this plugin applied; -1 = unknown, the next check applies
-    static int                                 appliedState = -1;
+    static int appliedState = -1;
 
     // ---- the feedback cards' bus link (hyprbar's tray pattern, send-only) ----
 
@@ -142,7 +138,7 @@ namespace NHyprpad {
                 .withArguments(std::string{"osd"}, uint32_t{9991}, std::string{}, std::string{"Touchpad"}, body, std::vector<std::string>{},
                                std::map<std::string, sdbus::Variant>{{"urgency", sdbus::Variant{uint8_t{0}}}}, timed ? 1500 : -1)
                 .uponReplyInvoke([](std::optional<sdbus::Error>, uint32_t) {});
-            pollSoon(); // flush the send from the event loop, never from here
+            pollSoon();  // flush the send from the event loop, never from here
         } catch (...) {} // broker gone: teardown is already pending, drop the card
     }
 
@@ -261,8 +257,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     }
 
     try {
-        conn          = sdbus::createSessionBusConnection();
-        busPoll       = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { syncBus(); }, nullptr);
+        conn    = sdbus::createSessionBusConnection();
+        busPoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { syncBus(); }, nullptr);
         g_pEventLoopManager->addTimer(busPoll);
         const auto PD = conn->getEventLoopPollData();
         busSrc        = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, PD.fd, WL_EVENT_READABLE, onBusFd, nullptr);
@@ -302,7 +298,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // device list is populated and the notification daemon is up
     settle->updateTimeout(SETTLE);
 
-    return {"hyprpad", "the awesome touchpad module", "hitori", "1.0.3"};
+    return {"hyprpad", "the awesome touchpad module", "hitori", "1.0.4"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

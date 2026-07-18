@@ -9,7 +9,6 @@
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
-#include <hyprland/src/desktop/Workspace.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
@@ -29,7 +28,6 @@
 
 #include <algorithm>
 #include <optional>
-#include <vector>
 
 namespace NHyprsnap {
     struct SConfig {

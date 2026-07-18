@@ -47,6 +47,12 @@ namespace NHyprbar {
         return w && ws && w->m_isMapped && !w->isHidden() && w->m_workspace && w->m_workspace->m_id == ws->m_id;
     }
 
+    std::string lower(std::string s) {
+        for (auto& c : s)
+            c = std::tolower((unsigned char)c);
+        return s;
+    }
+
     std::string letterOf(const std::string& s) {
         if (s.empty())
             return "?";

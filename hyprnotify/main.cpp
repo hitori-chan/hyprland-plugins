@@ -106,13 +106,13 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     }
 
     // Defaults mirror theme.lua; the config overwrites them from the theme.
-    cfg.font          = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:font", "font family", "Fira Code");
-    cfg.fontSize      = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:font_size", "text size in logical px (monitor scale applies at raster time)", 12);
-    cfg.width         = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:width", "card width in logical px", 340);
-    cfg.maxHeight     = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_height", "card height cap in logical px", 260);
-    cfg.maxIcon       = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_icon", "image box cap in logical px (the old naughty icon_size)", 100);
-    cfg.margin        = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:margin", "screen-edge and inter-card gap in logical px", 4);
-    cfg.offsetY       = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:offset_y", "first card's distance from the monitor top (clear the bar)", 30);
+    cfg.font            = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:font", "font family", "Fira Code");
+    cfg.fontSize        = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:font_size", "text size in logical px (monitor scale applies at raster time)", 12);
+    cfg.width           = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:width", "card width in logical px", 340);
+    cfg.maxHeight       = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_height", "card height cap in logical px", 260);
+    cfg.maxIcon         = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_icon", "image box cap in logical px (the old naughty icon_size)", 64);
+    cfg.margin          = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:margin", "screen-edge and inter-card gap in logical px", 4);
+    cfg.offsetY         = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:offset_y", "first card's distance from the monitor top (clear the bar)", 30);
     cfg.timeoutLow      = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:timeout_low", "low-urgency timeout in ms", 4000);
     cfg.timeoutNormal   = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:timeout_normal", "normal-urgency timeout in ms (critical never expires)", 8000);
     cfg.rounding        = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:rounding", "corner radius in logical px", 1);
@@ -136,12 +136,12 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     Bus::init();
 
     // the lockscreen bell reads this: every pending card, DND queue included
-    ctlCount = HyprlandAPI::registerHyprCtlCommand(
-        PHANDLE, SHyprCtlCommand{.name = "hyprnotify", .exact = false, .fn = [](eHyprCtlOutputFormat, std::string request) -> std::string {
-                     if (request.ends_with("count"))
-                         return std::to_string(notifs.size());
-                     return "unknown request";
-                 }});
+    ctlCount =
+        HyprlandAPI::registerHyprCtlCommand(PHANDLE, SHyprCtlCommand{.name = "hyprnotify", .exact = false, .fn = [](eHyprCtlOutputFormat, std::string request) -> std::string {
+                                                                         if (request.ends_with("count"))
+                                                                             return std::to_string(notifs.size());
+                                                                         return "unknown request";
+                                                                     }});
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprnotify", "suspend", luaSuspend);
 
     lRender = Event::bus()->m_events.render.stage.listen([](eRenderStage stage) { onRenderStage(stage); });

@@ -120,7 +120,7 @@ namespace NHyprbar {
     SBarConfig cfg;
 }
 
-// the 10s clock/battery refresh
+// the minute tick: clock text + battery failsafe read
 static SP<CEventLoopTimer>                                 timer;
 
 static Hyprutils::Signal::CHyprSignalListener              lRender, lButton, lMove, lAxis, lKey;
@@ -319,7 +319,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "1.4.5"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "1.4.6"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

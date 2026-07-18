@@ -20,7 +20,6 @@
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
-#include <hyprland/src/desktop/Workspace.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/layout/target/Target.hpp>
@@ -284,7 +283,6 @@ static HANDLE                                 PHANDLE = nullptr;
 
 static Hyprutils::Signal::CHyprSignalListener lOpen, lClose;
 
-// Do NOT change this function.
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
     return HYPRLAND_API_VERSION;
 }
@@ -305,7 +303,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     lOpen  = Event::bus()->m_events.window.open.listen([](PHLWINDOW w) { onWindowOpen(w); });
     lClose = Event::bus()->m_events.window.close.listen([](PHLWINDOW w) { onWindowClose(w); });
 
-    return {"hyprplace", "spawn placement with position memory", "hitori", "1.1.2"};
+    return {"hyprplace", "spawn placement with position memory", "hitori", "1.1.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

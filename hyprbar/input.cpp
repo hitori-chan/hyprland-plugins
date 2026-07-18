@@ -5,7 +5,7 @@
 namespace NHyprbar {
 
     std::map<uint64_t, std::vector<SHit>> hitboxes;
-    static uint32_t                       swallowRelease = 0; // bit 1 = left, 2 = right
+    static uint32_t                       swallowRelease = 0; // bits: 1 left, 2 right, 4 middle, 8 other
 
     // ---- click dispatch (deferred out of the input emission) ----
 
@@ -62,7 +62,7 @@ namespace NHyprbar {
                 if (!right && !(IT->itemIsMenu && HASMENU)) {
                     try {
                         IT->proxy->callMethodAsync("Activate").onInterface(Tray::SNI).withArguments((int32_t)0, (int32_t)0).uponReplyInvoke([](std::optional<sdbus::Error>) {});
-                    } catch (...) {} // dying bus: teardown is already pending
+                    } catch (...) {}  // dying bus: teardown is already pending
                     Tray::pollSoon(); // the activation usually flips the icon right back
                     return;
                 }
@@ -203,8 +203,10 @@ namespace NHyprbar {
                     continue;
                 if (const auto TI = HIT.tray.lock(); TI && TI->proxy) {
                     try {
-                        TI->proxy->callMethodAsync("SecondaryActivate").onInterface(Tray::SNI).withArguments((int32_t)0, (int32_t)0).uponReplyInvoke([](std::optional<sdbus::Error>) {
-                        });
+                        TI->proxy->callMethodAsync("SecondaryActivate")
+                            .onInterface(Tray::SNI)
+                            .withArguments((int32_t)0, (int32_t)0)
+                            .uponReplyInvoke([](std::optional<sdbus::Error>) {});
                     } catch (...) {} // dying bus: teardown is already pending
                     Tray::pollSoon();
                 }
@@ -461,7 +463,7 @@ namespace NHyprbar {
         pendingHit.reset();
         pendingScroll.reset();
         scrollTag = scrollTask = scrollLayout = 0;
-        scrollQueued           = false;
+        scrollQueued                          = false;
         hitboxes.clear();
         releasePointer();
     }

@@ -46,12 +46,6 @@ namespace NHyprbar {
         return tex;
     }
 
-    std::string lower(std::string s) {
-        for (auto& c : s)
-            c = std::tolower((unsigned char)c);
-        return s;
-    }
-
     // SVG -> texture via librsvg (alacritty ships nothing but an SVG; tray icon
     // names like input-keyboard-symbolic only exist as theme SVGs). Rasterized
     // bigger than any bar cell; GL scales down. Symbolic icons are a pure alpha
@@ -193,12 +187,17 @@ namespace NHyprbar {
         return "";
     }
 
+    // symbolic SVGs bake col_fg into their pixels (loadIcon), so a foreground
+    // change invalidates every icon cache — checked at the caches' entrances
+    static void dropStaleTint();
+
     // class -> texture; nullptr is cached too (= use the letter fallback).
     static std::unordered_map<std::string, SP<ITexture>> appIconCache;
 
     SP<ITexture>                                         appIcon(const std::string& klass) {
         if (klass.empty())
             return nullptr;
+        dropStaleTint();
         if (const auto IT = appIconCache.find(klass); IT != appIconCache.end())
             return IT->second;
 
@@ -222,6 +221,7 @@ namespace NHyprbar {
     SP<ITexture>                                         namedIcon(const std::string& name) {
         if (name.empty())
             return nullptr;
+        dropStaleTint();
         if (const auto IT = namedIconCache.find(name); IT != namedIconCache.end())
             return IT->second;
 
@@ -242,8 +242,20 @@ namespace NHyprbar {
     // file from disk inside the render pass.
     static std::unordered_map<std::string, SP<ITexture>> trayIconCache;
 
-    SP<ITexture>                                         trayIcon(const std::string& name, const std::string& themePath) {
+    static void                                          dropStaleTint() {
+        static uint64_t lastFg = 0;
+        const auto      FG     = (uint64_t)cfg.colFg->value();
+        if (FG == lastFg)
+            return;
+        lastFg = FG;
+        appIconCache.clear();
+        namedIconCache.clear();
+        trayIconCache.clear();
+    }
+
+    SP<ITexture> trayIcon(const std::string& name, const std::string& themePath) {
         const auto KEY = name + "|" + themePath;
+        dropStaleTint();
         if (const auto IT = trayIconCache.find(KEY); IT != trayIconCache.end())
             return IT->second;
 

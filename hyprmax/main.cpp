@@ -25,7 +25,6 @@
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
-#include <hyprland/src/desktop/Workspace.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/desktop/state/ViewState.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>
@@ -157,7 +156,7 @@ static void adoptCompositorMax(PHLWINDOW W) {
     const auto WA = MON->logicalBoxMinusReserved();
     // empty restore box = no windowed geometry ever existed; un-maximizing
     // hands the size choice to the client (see luaToggle)
-    CBox       restore{};
+    CBox restore{};
     if (const auto IT = g_lastWindowed.find(W->m_initialClass); IT != g_lastWindowed.end())
         restore = clampToWorkarea(IT->second, WA);
     g_maximized[PHLWINDOWREF{W}] = restore;
@@ -184,13 +183,13 @@ static UP<SEventLoopDoLaterLock> pendingAdopt;
 
 // queue+drain, never a lone doLaterLock: two born-maximized windows can
 // map in one dispatch, and overwriting the lock cancels the unfired one
-static void                      queueAdopt(PHLWINDOW w) {
+static void queueAdopt(PHLWINDOW w) {
     g_adoptQueue.emplace_back(w);
     if (adoptQueued || !g_pEventLoopManager)
         return;
     adoptQueued  = true;
     pendingAdopt = g_pEventLoopManager->doLaterLock([]() {
-        adoptQueued = false;
+        adoptQueued  = false;
         const auto Q = std::move(g_adoptQueue);
         g_adoptQueue.clear();
         for (const auto& WR : Q)
@@ -389,8 +388,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprmax", "toggle", luaToggle);
 
-    return {"hyprmax", "awesome's per-window maximize", "hitori",
-            "1.1.2"};
+    return {"hyprmax", "awesome's per-window maximize", "hitori", "1.1.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
