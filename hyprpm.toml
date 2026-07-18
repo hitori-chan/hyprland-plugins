@@ -5,7 +5,7 @@
 #   must never reach the window beneath it;
 #   hyprmax before hyprclick — the immovable-maximized swallow must win
 #   over click-to-raise;
-#   hyprpad last — it listens to no input, order free.
+#   hyprpad and hyprosd last — they listen to no input, order free.
 # No commit_pins: one Hyprland (the hitori-chan/Hyprland fork), so hyprpm
 # builds the default branch.
 
@@ -61,3 +61,10 @@ version     = "1.0.3"
 authors     = ["hitori"]
 output      = "hyprpad/hyprpad.so"
 build       = ["make -C hyprpad all"]
+
+[hyprosd]
+description = "the awesome volume/brightness OSD"
+version     = "1.0.0"
+authors     = ["hitori"]
+output      = "hyprosd/hyprosd.so"
+build       = ["make -C hyprosd all"]

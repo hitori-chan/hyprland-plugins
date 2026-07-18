@@ -12,12 +12,13 @@ Built and loaded with [`hyprpm`](https://wiki.hypr.land/Plugins/Using-Plugins/).
 | `hyprsnap`   | awesome's `awful.mouse.snap`: magnetic edge pull + aerosnap halves/quarters while dragging |
 | `hyprplace`  | spawn placement: last spot per app, else centered, else the largest gap |
 | `hyprpad`    | the awesome touchpad module: touchpad off while an external mouse is present, XF86TouchpadToggle by hand |
+| `hyprosd`    | the awesome volume/brightness OSD: XF86 keys → value-bar cards; sysfs+logind brightness, wpctl volume off the hot paths |
 
 ## Install
 
 ```sh
 hyprpm add https://github.com/hitori-chan/hyprland-plugins
-for p in hyprbar hyprnotify hyprmax hyprclick hyprsnap hyprplace hyprpad; do hyprpm enable $p; done
+for p in hyprbar hyprnotify hyprmax hyprclick hyprsnap hyprplace hyprpad hyprosd; do hyprpm enable $p; done
 ```
 
 Load order = `hyprpm.toml` order, and it matters: `hyprbar` first (it
