@@ -164,7 +164,11 @@ static void adoptCompositorMax(PHLWINDOW W) {
 
     if (!W->m_isX11 && W->m_xdgSurface && W->m_xdgSurface->m_toplevel)
         W->m_xdgSurface->m_toplevel->setMaximized(true);
-    W->m_target->setPositionGlobal(WA);
+    // through the layout, never the raw target: the floating algorithm's
+    // fullscreen-exit recenter restores ITS tracked lastBox — a raw
+    // setPositionGlobal leaves that stale at the pre-maximize box, and the
+    // window "un-maximizes" on any later fullscreen roundtrip
+    g_layoutManager->setTargetGeom(WA, W->m_target);
     W->m_target->warpPositionSize();
     // the exit's 0x0 grant configure already reached the client, but
     // m_pendingReportedSize kept the real size — an unforced send dedups
@@ -305,7 +309,7 @@ static int luaToggle(lua_State*) {
             if (STORED.w > 5 && STORED.h > 5) {
                 const CBox R = clampToWorkarea(STORED, WA);
                 rememberWindowed(W->m_initialClass, R);
-                W->m_target->setPositionGlobal(R);
+                g_layoutManager->setTargetGeom(R, W->m_target);
                 W->m_target->warpPositionSize();
             } else {
                 // adopted with no remembered box: the client picks its size
@@ -317,7 +321,7 @@ static int luaToggle(lua_State*) {
             g_maximized.emplace(WR, BOX);
             rememberWindowed(W->m_initialClass, BOX);
             setClientMaximized(true);
-            W->m_target->setPositionGlobal(WA);
+            g_layoutManager->setTargetGeom(WA, W->m_target);
             W->m_target->warpPositionSize();
             Desktop::windowState()->raise(W);
         }
@@ -386,7 +390,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprmax", "toggle", luaToggle);
 
     return {"hyprmax", "awesome's per-window maximize", "hitori",
-            "1.1.1"};
+            "1.1.2"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
