@@ -123,8 +123,8 @@ namespace NHyprbar {
     // ---- battery alerts (the old scripts/battery-watch.sh, folded in) ----
 
     // Edge-triggered off the same uevents as the gauge (the minute tick is
-    // the failsafe); thresholds are Android's lines (20 low / 5 critical),
-    // matching the pill's amber/crimson bands. Never called at INIT: the
+    // the failsafe); thresholds are Android's lines (20 low / 5 critical —
+    // the pill's error red shares the 20 line). Never called at INIT: the
     // first minute tick covers a login-low, after hyprnotify is up — hyprbar
     // loads before the notification daemon does.
     void checkBatteryAlerts() {

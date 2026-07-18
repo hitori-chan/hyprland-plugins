@@ -20,14 +20,16 @@ or focus to a window underneath.
 - **Tray** — in-compositor SNI host with a native dbusmenu renderer. Menus
   wear the overlay language: 1px-rounded panel with a `col_frame` ring,
   hover rows inset 4px with softened corners.
-- **Battery** — Android's unified battery, a 1:1 transcription of AOSP
-  SystemUI's `BatteryLayersDrawable` and its vector assets: outlined body
-  with the cap on the left, right-anchored fill draining toward it, percent
-  inside (bold digits in `col_fg`), and while charging the space-sharing
-  layout — smaller digits plus the bolt. Fill green on AC / red ≤ 20% /
-  GM Gray 700 idle; hidden on desktops. Alerts ride along on Android's
-  same lines: AC plug/unplug, low at 20%, critical (sticky) at 5% — sent
-  through the notification daemon off the same udev uevents as the gauge.
+- **Battery** — Android's expressive battery (the Pixel pill of Android 16
+  QPR2/17), a 1:1 transcription of SystemUI's Compose implementation with
+  its vector assets embedded verbatim, bespoke digit glyphs included:
+  borderless pill on a translucent track, left-anchored fill, D cap right
+  — the charging bolt replaces it — digits punched in black. Fill white
+  idle / green on AC / red ≤ 20%; sized 13:14 against the bar font, the
+  proportion Android gives it against status bar text; hidden on desktops.
+  Alerts ride along on Android's same lines: AC plug/unplug, low at 20%,
+  critical (sticky) at 5% — sent through the notification daemon off the
+  same udev uevents as the gauge.
 - **Clock** — `%a %b %d, %H:%M`.
 - **Layoutbox** — the active workspace's layout, rightmost. Click/wheel
   cycles like awesome (`Super+Space` too); one layout until more land.
@@ -63,5 +65,5 @@ Colors and font come from `theme.lua` via `hl.config { plugin = { hyprbar =
 | `plugin:hyprbar:col_square_sel` | taglist square: tag holds the focused window | `f0dfaf` |
 | `plugin:hyprbar:col_square_unsel` | taglist square: occupied tag | `dcdccc` |
 | `plugin:hyprbar:col_frame` | menu panel frame | `3f3f3f` |
-| `plugin:hyprbar:col_charging` | battery fill on AC (Android's active green) | `188038` |
-| `plugin:hyprbar:col_low` | battery fill ≤ 20% (Android's error red) | `c5221f` |
+| `plugin:hyprbar:col_charging` | battery fill on AC (Android's charging green) | `18cc47` |
+| `plugin:hyprbar:col_low` | battery fill ≤ 20% (Android's error red) | `ff0e01` |

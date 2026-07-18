@@ -98,7 +98,7 @@ namespace NHyprbar {
         SP<Config::Values::CStringValue> font;
         SP<Config::Values::CStringValue> terminal; // runs Terminal=true menubar entries
         SP<Config::Values::CColorValue>  colBg;
-        SP<Config::Values::CColorValue>  colFg;          // normal text: tags, tasks, clock, battery
+        SP<Config::Values::CColorValue>  colFg;          // normal text: tags, tasks, clock
         SP<Config::Values::CColorValue>  colMuted;       // tray letter fallback
         SP<Config::Values::CColorValue>  colFocus;       // selected menubar entry fg (awesome fg_focus)
         SP<Config::Values::CColorValue>  colActive;      // active tag / focused task fg
@@ -109,7 +109,7 @@ namespace NHyprbar {
         SP<Config::Values::CColorValue>  colSquareSel;   // taglist square: tag holds the focused window
         SP<Config::Values::CColorValue>  colSquareUnsel; // taglist square: occupied tag
         SP<Config::Values::CColorValue>  colFrame;       // menu panel frame
-        SP<Config::Values::CColorValue>  colCharging;    // battery fill on AC (Android's active green)
+        SP<Config::Values::CColorValue>  colCharging;    // battery fill on AC (Android's charging green)
         SP<Config::Values::CColorValue>  colLow;         // battery fill <= 20% (Android's error red)
     };
     extern SBarConfig cfg;

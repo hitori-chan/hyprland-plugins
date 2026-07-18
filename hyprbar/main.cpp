@@ -33,11 +33,12 @@
 //   the spec's update signals, check/radio state draws in a leading
 //   column, disposition warning/alert rows take the urgent color, labels
 //   honor the "__" escape.
-// - battery: Android 16's unified pill, drawn natively in the warm pass
-//   (cairo; AOSP-exact geometry, see render.cpp) — percent inside, the
-//   fill colored by state: green on AC, amber at 20%, urgent at 5%, the
-//   frame color idle. State from /sys/class/power_supply (hidden on
-//   desktops). The old battery-watch.sh alerts live here too: AC
+// - battery: Android's expressive battery (the Pixel pill), transcribed
+//   1:1 from SystemUI's Compose implementation and drawn natively in the
+//   warm pass (cairo; assets embedded verbatim, see render.cpp) — digits
+//   inside, the fill colored by state: green on AC, error red at 20%
+//   discharging, white otherwise. State from /sys/class/power_supply
+//   (hidden on desktops). The old battery-watch.sh alerts live here too: AC
 //   plug/unplug, low (20%) and critical (5%, Android's lines) —
 //   edge-triggered, riding the same udev uevents as the gauge, sent as
 //   direct Notify calls over the tray's bus connection (no fork;
@@ -251,8 +252,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.colSquareSel   = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_square_sel", "taglist square, tag holds the focused window", 0xfff0dfaf);
     cfg.colSquareUnsel = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_square_unsel", "taglist square, occupied tag", 0xffdcdccc);
     cfg.colFrame       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_frame", "menu panel frame", 0xff3f3f3f);
-    cfg.colCharging    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_charging", "battery fill on AC (Android's active green)", 0xff188038);
-    cfg.colLow         = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_low", "battery fill at 20% and under (Android's error red)", 0xffc5221f);
+    cfg.colCharging    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_charging", "battery fill on AC (Android's charging green)", 0xff18cc47);
+    cfg.colLow         = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_low", "battery fill at 20% and under (Android's error red)", 0xffff0e01);
 
     for (const auto& V : {cfg.height, cfg.fontSize, cfg.traySpacing})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
@@ -318,7 +319,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "1.4.4"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "1.4.5"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
