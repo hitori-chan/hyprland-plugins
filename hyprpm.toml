@@ -4,7 +4,8 @@
 #   hyprnotify before hyprmax/hyprclick — a click on a notification card
 #   must never reach the window beneath it;
 #   hyprmax before hyprclick — the immovable-maximized swallow must win
-#   over click-to-raise.
+#   over click-to-raise;
+#   hyprpad last — it listens to no input, order free.
 # No commit_pins: one Hyprland (the hitori-chan/Hyprland fork), so hyprpm
 # builds the default branch.
 
@@ -53,3 +54,10 @@ version     = "1.1.0"
 authors     = ["hitori"]
 output      = "hyprplace/hyprplace.so"
 build       = ["make -C hyprplace all"]
+
+[hyprpad]
+description = "the awesome touchpad module: touchpad off while an external mouse is present, XF86TouchpadToggle flips it by hand"
+version     = "1.0.0"
+authors     = ["hitori"]
+output      = "hyprpad/hyprpad.so"
+build       = ["make -C hyprpad all"]
