@@ -250,9 +250,9 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.colUrgentBg    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_urgent_bg", "urgent background (awesome bg_urgent)", 0xff3f3f3f);
     cfg.colSquareSel   = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_square_sel", "taglist square, tag holds the focused window", 0xfff0dfaf);
     cfg.colSquareUnsel = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_square_unsel", "taglist square, occupied tag", 0xffdcdccc);
-    cfg.colFrame       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_frame", "menu frame + battery pill idle fill", 0xff3f3f3f);
-    cfg.colCharging    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_charging", "battery pill fill on AC", 0xff75b14c);
-    cfg.colLow         = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_low", "battery pill fill at 20% and under", 0xffd8a166);
+    cfg.colFrame       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_frame", "menu panel frame", 0xff3f3f3f);
+    cfg.colCharging    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_charging", "battery fill on AC (Android's active green)", 0xff188038);
+    cfg.colLow         = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_low", "battery fill at 20% and under (Android's error red)", 0xffc5221f);
 
     for (const auto& V : {cfg.height, cfg.fontSize, cfg.traySpacing})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
@@ -318,7 +318,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "1.4.3"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "1.4.4"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

@@ -108,9 +108,9 @@ namespace NHyprbar {
         SP<Config::Values::CColorValue>  colUrgentBg;    // urgent bg (awesome bg_urgent)
         SP<Config::Values::CColorValue>  colSquareSel;   // taglist square: tag holds the focused window
         SP<Config::Values::CColorValue>  colSquareUnsel; // taglist square: occupied tag
-        SP<Config::Values::CColorValue>  colFrame;       // menu panel frame + the battery pill's idle fill
-        SP<Config::Values::CColorValue>  colCharging;    // battery pill fill on AC (Android's active green)
-        SP<Config::Values::CColorValue>  colLow;         // battery pill fill <= 20% (Android's warning amber)
+        SP<Config::Values::CColorValue>  colFrame;       // menu panel frame
+        SP<Config::Values::CColorValue>  colCharging;    // battery fill on AC (Android's active green)
+        SP<Config::Values::CColorValue>  colLow;         // battery fill <= 20% (Android's error red)
     };
     extern SBarConfig cfg;
 

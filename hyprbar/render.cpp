@@ -80,86 +80,107 @@ namespace NHyprbar {
         barChanged();
     }
 
-    // ---- the battery pill (Android 16's unified battery, drawn natively) ----
+    // ---- the battery (Android's unified battery, drawn natively) ----
     //
-    // Geometry measured off Android 16 QPR's expressive battery, two
-    // reference renders (pixel ratios of body height h): borderless body
-    // 1.72h x h with symmetric corner radius 0.31h; a translucent track (fg
-    // at 0.28) under the left-anchored straight-edged fill; percent digits
-    // in the bar's background color, ink height 0.67h, ink-centered in the
-    // body; the cap is a half-ellipse "D" 0.19h deep x 0.46h tall (fg at
-    // 0.45) with its flat side 0.08h off the body — replaced while charging
-    // by a bolt in fg (Material bolt outline, Apache-2.0) 0.59h x 0.68h,
-    // a 0.12h gap off the body. The canvas is always the widest (bolt)
-    // state so the body never shifts when charging flips.
-    static SP<ITexture> batteryPill(int percent, bool charging, double hPx, const CHyprColor& fg, const CHyprColor& fill, const CHyprColor& ink) {
-        const double H  = hPx;
-        const double BW = 1.72 * H, R = 0.31 * H;
-        const int    CW = (int)std::ceil(2.43 * H), CH = (int)std::ceil(H);
+    // A 1:1 transcription of AOSP SystemUI's BatteryLayersDrawable stack
+    // (frameworks/base packages/SystemUI battery/unified + res, Apache-2.0),
+    // the status bar battery Android 16/17 ships. All constants below are
+    // that asset's own, on its 24x14 viewport: body outline stroked 1.5
+    // with the cap on the LEFT, frame bg at black 18%, right-anchored fill
+    // over [3.5,22.5] trimmed by a CLEAR re-stroke (fill drains toward the
+    // cap), percent in google-sans bold — Roboto Bold is AOSP's own
+    // fallback — and while charging the space-sharing layout: smaller
+    // digits plus the bolt fit into the 6x6 right canvas.
+    static SP<ITexture> batteryPill(int percent, bool charging, double hPx, const CHyprColor& fg, const CHyprColor& fill) {
+        const double S  = hPx / 14.0; // one viewport unit
+        const int    CW = (int)std::ceil(24.0 * S), CH = (int)std::ceil(14.0 * S);
 
         auto*        SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, CW, CH);
         auto*        CR   = cairo_create(SURF);
 
+        // battery_unified_frame_path_string (the stroke centerline)
         const auto   body = [&]() {
-            cairo_new_sub_path(CR);
-            cairo_arc(CR, BW - R, R, R, -M_PI / 2, 0);
-            cairo_arc(CR, BW - R, H - R, R, 0, M_PI / 2);
-            cairo_arc(CR, R, H - R, R, M_PI / 2, M_PI);
-            cairo_arc(CR, R, R, R, M_PI, 3 * M_PI / 2);
+            cairo_move_to(CR, 2.75 * S, 3 * S);
+            cairo_curve_to(CR, 2.75 * S, 1.757 * S, 3.757 * S, 0.75 * S, 5 * S, 0.75 * S);
+            cairo_line_to(CR, 20 * S, 0.75 * S);
+            cairo_curve_to(CR, 21.795 * S, 0.75 * S, 23.25 * S, 2.205 * S, 23.25 * S, 4 * S);
+            cairo_line_to(CR, 23.25 * S, 10 * S);
+            cairo_curve_to(CR, 23.25 * S, 11.795 * S, 21.795 * S, 13.25 * S, 20 * S, 13.25 * S);
+            cairo_line_to(CR, 5 * S, 13.25 * S);
+            cairo_curve_to(CR, 3.757 * S, 13.25 * S, 2.75 * S, 12.243 * S, 2.75 * S, 11 * S);
             cairo_close_path(CR);
         };
 
-        cairo_set_source_rgba(CR, fg.r, fg.g, fg.b, 0.28 * fg.a);
+        cairo_set_source_rgba(CR, 0, 0, 0, 0.18); // DarkThemeColors.bg
         body();
         cairo_fill(CR);
 
-        if (percent > 0) {
+        cairo_set_source_rgba(CR, fg.r, fg.g, fg.b, fg.a);
+        body();
+        cairo_set_line_width(CR, 1.5 * S);
+        cairo_stroke(CR);
+
+        // the cap, battery_unified_frame's second path
+        cairo_move_to(CR, 0, 4 * S);
+        cairo_curve_to(CR, 0, 3.448 * S, 0.448 * S, 3 * S, 1 * S, 3 * S);
+        cairo_line_to(CR, 1.5 * S, 3 * S);
+        cairo_line_to(CR, 1.5 * S, 11 * S);
+        cairo_line_to(CR, 1 * S, 11 * S);
+        cairo_curve_to(CR, 0.448 * S, 11 * S, 0, 10.552 * S, 0, 10 * S);
+        cairo_close_path(CR);
+        cairo_fill(CR);
+
+        if (percent > 0) { // BatteryFillDrawable: the group is its saveLayer,
+                           // so the CLEAR trim can't punch through the frame
+            const double EMPTY = percent >= 100 ? 0.0 : std::floor(19.0 * S * (1.0 - percent / 100.0));
+            cairo_push_group(CR);
             cairo_save(CR);
             body();
             cairo_clip(CR);
             cairo_set_source_rgba(CR, fill.r, fill.g, fill.b, fill.a);
-            cairo_rectangle(CR, 0, 0, BW * std::min(percent, 100) / 100.0, H);
+            cairo_rectangle(CR, 3.5 * S + EMPTY, 0, 19.0 * S - EMPTY, 14 * S);
             cairo_fill(CR);
             cairo_restore(CR);
+            cairo_save(CR);
+            cairo_set_operator(CR, CAIRO_OPERATOR_CLEAR);
+            body();
+            cairo_set_line_width(CR, 1.5 * S);
+            cairo_stroke(CR);
+            cairo_restore(CR);
+            cairo_pop_group_to_source(CR);
+            cairo_paint(CR);
         }
 
         const auto TXT = std::to_string(std::clamp(percent, 0, 100));
-        // Roboto, Android's own face — the digits are part of the icon
         cairo_select_font_face(CR, "Roboto", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+        cairo_set_source_rgba(CR, fg.r, fg.g, fg.b, fg.a);
         cairo_text_extents_t te;
-        cairo_set_font_size(CR, H); // measure once, then scale to the target ink height
-        cairo_text_extents(CR, TXT.c_str(), &te);
-        if (te.height > 0) {
-            cairo_set_font_size(CR, H * 0.67 * H / te.height);
+        if (!charging) {
+            // BatteryPercentTextOnlyDrawable: 18x10 canvas at (4,2), size 10,
+            // nudged up 1.5; centered on the advance, like Paint.measureText
+            cairo_set_font_size(CR, 10.0 * S);
             cairo_text_extents(CR, TXT.c_str(), &te);
-        }
-        cairo_set_source_rgba(CR, ink.r, ink.g, ink.b, ink.a);
-        cairo_move_to(CR, (BW - te.width) / 2.0 - te.x_bearing, H / 2.0 - (te.y_bearing + te.height / 2.0));
-        cairo_show_text(CR, TXT.c_str());
-
-        cairo_set_source_rgba(CR, fg.r, fg.g, fg.b, charging ? fg.a : 0.45 * fg.a);
-        if (!charging) { // the "D" cap: half-ellipse, flat side toward the body
-            cairo_save(CR);
-            cairo_translate(CR, BW + 0.08 * H, H / 2.0);
-            cairo_scale(CR, 0.19 * H, 0.23 * H);
-            cairo_arc(CR, 0, 0, 1.0, -M_PI / 2, M_PI / 2);
-            cairo_close_path(CR);
-            cairo_restore(CR);
-            cairo_fill(CR);
+            cairo_move_to(CR, 4 * S + (18 * S - te.x_advance) / 2.0, 10.5 * S);
+            cairo_show_text(CR, TXT.c_str());
         } else {
-            // Material bolt polygon (its 24-grid: x5.5..15.5, y3..21),
-            // widened 1.4x to the measured 0.87 aspect; the round-joined
-            // stroke is the expressive chunk
-            static const double P[][2] = {{13, 3}, {5.5, 14.5}, {8, 14.5}, {8, 21}, {15.5, 9.5}, {13, 9.5}};
-            const double        SY = (0.68 * H - 0.05 * H) / 18.0, SX = 1.4 * SY;
-            const double        OX = BW + 0.12 * H + 0.025 * H - 5.5 * SX, OY = (H - 0.68 * H) / 2.0 + 0.025 * H - 3 * SY;
-            cairo_move_to(CR, OX + P[0][0] * SX, OY + P[0][1] * SY);
-            for (int i = 1; i < 6; i++)
-                cairo_line_to(CR, OX + P[i][0] * SX, OY + P[i][1] * SY);
+            // BatterySpaceSharingPercentTextDrawable: 12x10 canvas at (4,2);
+            // 3 digits -> size 6 nudge 1, fewer -> size 9 nudge 1.25
+            const bool   THREE = TXT.size() == 3;
+            const double SIZE = (THREE ? 6.0 : 9.0) * S, NUDGE = (THREE ? 1.0 : 1.25) * S;
+            cairo_set_font_size(CR, SIZE);
+            cairo_text_extents(CR, TXT.c_str(), &te);
+            cairo_move_to(CR, 4 * S + (12 * S - te.x_advance) / 2.0, 2 * S + (10 * S + SIZE) / 2.0 - NUDGE);
+            cairo_show_text(CR, TXT.c_str());
+
+            // battery_unified_attr_charging (16x20 viewport, 8x10 intrinsic)
+            // fit-center left-aligned into the 6x6 right canvas at (16,4):
+            // 4.8x6 -> a flat 0.3 scale
+            static const double P[][2] = {{4, 20}, {5, 13}, {0, 13}, {9, 0}, {11, 0}, {10, 8}, {16, 8}, {6, 20}};
+            const double        BS = 0.3 * S, BX = 16.0 * S, BY = 4.0 * S;
+            cairo_move_to(CR, BX + P[0][0] * BS, BY + P[0][1] * BS);
+            for (int i = 1; i < 8; i++)
+                cairo_line_to(CR, BX + P[i][0] * BS, BY + P[i][1] * BS);
             cairo_close_path(CR);
-            cairo_set_line_join(CR, CAIRO_LINE_JOIN_ROUND);
-            cairo_set_line_width(CR, 0.05 * H);
-            cairo_stroke_preserve(CR);
             cairo_fill(CR);
         }
 
@@ -395,25 +416,24 @@ namespace NHyprbar {
             right -= W;
         }
 
-        if (batteryPercent >= 0) { // the Android pill: percent inside, the fill colored by state
+        if (batteryPercent >= 0) { // Android's unified battery: percent inside, the fill colored by state
             const int        PH   = (int)std::round((H - 6) * SCALE); // the bar's 3px-inset icon rhythm
+            // AOSP's ladder: charging -> active green, <= 20 discharging ->
+            // error red, else the dark-theme fill (GM Gray 700)
             const CHyprColor FILL = batteryCharging          ? color(cfg.colCharging) :
-                batteryPercent <= 5                          ? COLURGENT :
                 batteryPercent <= 20                         ? color(cfg.colLow) :
-                                                               color(cfg.colFrame);
-            const CHyprColor INK  = color(cfg.colBg); // digits punch through to the bar ground
-            const uint64_t   KEY  = ((uint64_t)batteryPercent << 40) ^ (batteryCharging ? 1ull << 47 : 0) ^ (COLFG.getAsHex() * 0x9E3779B97F4A7C15ULL) ^
-                (INK.getAsHex() * 0xC2B2AE3D27D4EB4FULL) ^ FILL.getAsHex();
-            auto& PILL = pillCache[PH];
+                                                               CHyprColor{0xff5f6368};
+            const uint64_t   KEY  = ((uint64_t)batteryPercent << 40) ^ (batteryCharging ? 1ull << 47 : 0) ^ (COLFG.getAsHex() * 0x9E3779B97F4A7C15ULL) ^ FILL.getAsHex();
+            auto&            PILL = pillCache[PH];
             if (warm) {
                 if (!PILL.tex || PILL.key != KEY) {
-                    PILL.tex = batteryPill(batteryPercent, batteryCharging, PH, COLFG, FILL, INK);
+                    PILL.tex = batteryPill(batteryPercent, batteryCharging, PH, COLFG, FILL);
                     PILL.key = KEY;
                 }
             } else if (!PILL.tex || PILL.key != KEY)
                 texStale = true; // level moved under a scissored repaint: warm + repaint
 
-            const double PW = PILL.tex ? PILL.tex->m_size.x / SCALE : (H - 6) * 2.43;
+            const double PW = PILL.tex ? PILL.tex->m_size.x / SCALE : (H - 6) * 24.0 / 14.0;
             const double W  = 6 + PW + 6; // breathing room off the tray
             drawTexIn(PILL.tex, CBox{right - W + 6, MB.y, PW, H});
             right -= W;
