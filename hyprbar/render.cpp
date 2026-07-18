@@ -82,19 +82,20 @@ namespace NHyprbar {
 
     // ---- the battery pill (Android 16's unified battery, drawn natively) ----
     //
-    // Geometry measured off Android 16 QPR's expressive status-bar battery
-    // (pixel ratios of body height h): borderless body 1.82h x h with
-    // symmetric corner radius 0.35h; a translucent track (fg at 0.28) under
-    // the left-anchored straight-edged fill; percent digits in the bar's
-    // background color, ink height 0.68h, ink-centered in the body; a
-    // detached cap 0.118h x 0.47h (fg at 0.45), replaced while charging by a
-    // bolt in fg (Material flash_on outline, Apache-2.0) whose left edge
-    // sits 0.09h inside the body's right edge. The canvas is always the
-    // widest (bolt) state so the body never shifts when charging flips.
-    static SP<ITexture> batteryPill(int percent, bool charging, double hPx, const CHyprColor& fg, const CHyprColor& fill, const CHyprColor& ink, const std::string& font) {
+    // Geometry measured off Android 16 QPR's expressive battery, two
+    // reference renders (pixel ratios of body height h): borderless body
+    // 1.72h x h with symmetric corner radius 0.31h; a translucent track (fg
+    // at 0.28) under the left-anchored straight-edged fill; percent digits
+    // in the bar's background color, ink height 0.67h, ink-centered in the
+    // body; the cap is a half-ellipse "D" 0.19h deep x 0.46h tall (fg at
+    // 0.45) with its flat side 0.08h off the body — replaced while charging
+    // by a bolt in fg (Material bolt outline, Apache-2.0) 0.59h x 0.68h,
+    // a 0.12h gap off the body. The canvas is always the widest (bolt)
+    // state so the body never shifts when charging flips.
+    static SP<ITexture> batteryPill(int percent, bool charging, double hPx, const CHyprColor& fg, const CHyprColor& fill, const CHyprColor& ink) {
         const double H  = hPx;
-        const double BW = 1.82 * H, R = 0.35 * H;
-        const int    CW = (int)std::ceil(2.26 * H), CH = (int)std::ceil(H);
+        const double BW = 1.72 * H, R = 0.31 * H;
+        const int    CW = (int)std::ceil(2.43 * H), CH = (int)std::ceil(H);
 
         auto*        SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, CW, CH);
         auto*        CR   = cairo_create(SURF);
@@ -123,12 +124,13 @@ namespace NHyprbar {
         }
 
         const auto TXT = std::to_string(std::clamp(percent, 0, 100));
-        cairo_select_font_face(CR, font.c_str(), CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+        // Roboto, Android's own face — the digits are part of the icon
+        cairo_select_font_face(CR, "Roboto", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
         cairo_text_extents_t te;
         cairo_set_font_size(CR, H); // measure once, then scale to the target ink height
         cairo_text_extents(CR, TXT.c_str(), &te);
         if (te.height > 0) {
-            cairo_set_font_size(CR, H * 0.68 * H / te.height);
+            cairo_set_font_size(CR, H * 0.67 * H / te.height);
             cairo_text_extents(CR, TXT.c_str(), &te);
         }
         cairo_set_source_rgba(CR, ink.r, ink.g, ink.b, ink.a);
@@ -136,26 +138,27 @@ namespace NHyprbar {
         cairo_show_text(CR, TXT.c_str());
 
         cairo_set_source_rgba(CR, fg.r, fg.g, fg.b, charging ? fg.a : 0.45 * fg.a);
-        if (!charging) {
-            const double W2 = 0.118 * H, CH2 = 0.47 * H, CX = BW + W2, CY = (H - CH2) / 2.0;
-            cairo_new_sub_path(CR);
-            cairo_arc(CR, CX + W2 / 2, CY + W2 / 2, W2 / 2, M_PI, 2 * M_PI);
-            cairo_arc(CR, CX + W2 / 2, CY + CH2 - W2 / 2, W2 / 2, 0, M_PI);
+        if (!charging) { // the "D" cap: half-ellipse, flat side toward the body
+            cairo_save(CR);
+            cairo_translate(CR, BW + 0.08 * H, H / 2.0);
+            cairo_scale(CR, 0.19 * H, 0.23 * H);
+            cairo_arc(CR, 0, 0, 1.0, -M_PI / 2, M_PI / 2);
             cairo_close_path(CR);
+            cairo_restore(CR);
             cairo_fill(CR);
         } else {
-            // flash_on's polygon (its 24-grid: x7..17, y2..22), widened 1.45x
-            // to the reference bolt's 0.8 aspect; the round-joined stroke is
-            // the expressive chunk
-            static const double P[][2] = {{7, 2}, {7, 13}, {10, 13}, {10, 22}, {17, 10}, {13, 10}, {17, 2}};
-            const double        S = 0.65 * H / 20.0, SX = 1.45 * S;
-            const double        OX = BW - 0.09 * H - 7 * SX, OY = (H - 0.65 * H) / 2.0 - 2 * S;
-            cairo_move_to(CR, OX + P[0][0] * SX, OY + P[0][1] * S);
-            for (int i = 1; i < 7; i++)
-                cairo_line_to(CR, OX + P[i][0] * SX, OY + P[i][1] * S);
+            // Material bolt polygon (its 24-grid: x5.5..15.5, y3..21),
+            // widened 1.4x to the measured 0.87 aspect; the round-joined
+            // stroke is the expressive chunk
+            static const double P[][2] = {{13, 3}, {5.5, 14.5}, {8, 14.5}, {8, 21}, {15.5, 9.5}, {13, 9.5}};
+            const double        SY = (0.68 * H - 0.05 * H) / 18.0, SX = 1.4 * SY;
+            const double        OX = BW + 0.12 * H + 0.025 * H - 5.5 * SX, OY = (H - 0.68 * H) / 2.0 + 0.025 * H - 3 * SY;
+            cairo_move_to(CR, OX + P[0][0] * SX, OY + P[0][1] * SY);
+            for (int i = 1; i < 6; i++)
+                cairo_line_to(CR, OX + P[i][0] * SX, OY + P[i][1] * SY);
             cairo_close_path(CR);
             cairo_set_line_join(CR, CAIRO_LINE_JOIN_ROUND);
-            cairo_set_line_width(CR, 0.09 * H);
+            cairo_set_line_width(CR, 0.05 * H);
             cairo_stroke_preserve(CR);
             cairo_fill(CR);
         }
@@ -404,13 +407,13 @@ namespace NHyprbar {
             auto& PILL = pillCache[PH];
             if (warm) {
                 if (!PILL.tex || PILL.key != KEY) {
-                    PILL.tex = batteryPill(batteryPercent, batteryCharging, PH, COLFG, FILL, INK, cfg.font->value());
+                    PILL.tex = batteryPill(batteryPercent, batteryCharging, PH, COLFG, FILL, INK);
                     PILL.key = KEY;
                 }
             } else if (!PILL.tex || PILL.key != KEY)
                 texStale = true; // level moved under a scissored repaint: warm + repaint
 
-            const double PW = PILL.tex ? PILL.tex->m_size.x / SCALE : (H - 6) * 2.26;
+            const double PW = PILL.tex ? PILL.tex->m_size.x / SCALE : (H - 6) * 2.43;
             const double W  = 6 + PW + 6; // breathing room off the tray
             drawTexIn(PILL.tex, CBox{right - W + 6, MB.y, PW, H});
             right -= W;
