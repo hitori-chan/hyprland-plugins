@@ -62,6 +62,9 @@ extern HANDLE PHANDLE;
 
 namespace NHyprnotify {
 
+    // one working number: PLUGIN_INIT and GetServerInformation both return it
+    inline constexpr const char* VERSION = "1.0.2";
+
     // ---- config (defined in main.cpp, values arrive from theme.lua) ----
 
     struct SNotifyConfig {
@@ -133,6 +136,9 @@ namespace NHyprnotify {
 
     // (Re)build n.iconTex when its source changed; maxPx caps the raster.
     void ensureIconTex(SNotif& n, int maxPx);
+
+    // Downscale n.pixels in place when it exceeds maxPx (unpack-time cap).
+    void shrinkPixels(SNotif& n, int maxPx);
 
     // ---- the texture rule (see hyprbar) ----
     //

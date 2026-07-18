@@ -2,6 +2,8 @@
 
 #include "hyprnotify.hpp"
 
+#include <cstring>
+
 namespace NHyprnotify {
 
     // Anything bigger than the card's icon box is downscaled ONCE on the CPU
@@ -44,6 +46,46 @@ namespace NHyprnotify {
         if (SZ.x <= 0 || SZ.y <= 0)
             return nullptr;
         return scaledTex(SURF->cairo(), SZ.x, SZ.y, maxPx);
+    }
+
+    // CPU-side cap for image-data buffers at unpack time (bus.cpp) — same
+    // premultiplied-BGRA layout in and out, so warm's hash/upload path is
+    // untouched. Row-copied out: cairo's stride is its own business.
+    void shrinkPixels(SNotif& n, int maxPx) {
+        if (n.pixels.empty() || (n.pw <= maxPx && n.ph <= maxPx))
+            return;
+
+        auto* SRC = cairo_image_surface_create_for_data(n.pixels.data(), CAIRO_FORMAT_ARGB32, n.pw, n.ph, n.pw * 4);
+        if (cairo_surface_status(SRC) != CAIRO_STATUS_SUCCESS) {
+            cairo_surface_destroy(SRC);
+            return;
+        }
+
+        const double SCALE = std::min((double)maxPx / n.pw, (double)maxPx / n.ph);
+        const int    W     = std::max(1, (int)std::lround(n.pw * SCALE));
+        const int    H     = std::max(1, (int)std::lround(n.ph * SCALE));
+
+        auto*        DST = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
+        auto*        CR  = cairo_create(DST);
+        cairo_scale(CR, (double)W / n.pw, (double)H / n.ph);
+        cairo_set_source_surface(CR, SRC, 0, 0);
+        cairo_pattern_set_filter(cairo_get_source(CR), CAIRO_FILTER_GOOD);
+        cairo_paint(CR);
+        cairo_destroy(CR);
+        cairo_surface_flush(DST);
+        cairo_surface_destroy(SRC);
+
+        if (cairo_surface_status(DST) == CAIRO_STATUS_SUCCESS) {
+            const int   STRIDE = cairo_image_surface_get_stride(DST);
+            const auto* DATA   = cairo_image_surface_get_data(DST);
+            std::vector<uint8_t> out((size_t)W * H * 4);
+            for (int y = 0; y < H; y++)
+                std::memcpy(out.data() + (size_t)y * W * 4, DATA + (size_t)y * STRIDE, (size_t)W * 4);
+            n.pixels = std::move(out);
+            n.pw     = W;
+            n.ph     = H;
+        }
+        cairo_surface_destroy(DST);
     }
 
     static uint64_t fnv1a(const void* data, size_t len, uint64_t h) {

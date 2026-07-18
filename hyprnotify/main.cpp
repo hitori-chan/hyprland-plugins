@@ -120,7 +120,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             notifChanged(); // a live theme reload re-keys the texture caches
     }));
 
-    return {"hyprnotify", "awesome's naughty: the compositor is the notification daemon — naughty-style cards, progress hints, image icons", "hitori", "1.0.1"};
+    return {"hyprnotify", "awesome's naughty: the compositor is the notification daemon — naughty-style cards, progress hints, image icons", "hitori", VERSION};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

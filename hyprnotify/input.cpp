@@ -42,6 +42,12 @@ namespace NHyprnotify {
             return;
         }
 
+        // hyprbar runs first: a press it swallowed (strip click, open tray
+        // menu over the card region) was never ours — and never reached an
+        // app, so there is no grab to count
+        if (info.cancelled)
+            return;
+
         const auto CARD = BIT ? cardAt(g_pInputManager->getMouseCoordsInternal()) : nullptr;
         if (!CARD) {
             heldButtons++;
@@ -92,7 +98,10 @@ namespace NHyprnotify {
             return;
         }
 
-        if (!cardAt(pos) || heldButtons > 0 || (g_layoutManager && g_layoutManager->dragController()->target())) {
+        // info.cancelled: an earlier listener (hyprbar's strip or an open
+        // menu) owns the point — claiming it would stomp the bar's cursor
+        // override, which shares the SPECIAL_ACTION slot
+        if (info.cancelled || !cardAt(pos) || heldButtons > 0 || (g_layoutManager && g_layoutManager->dragController()->target())) {
             releasePointer();
             return;
         }

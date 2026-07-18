@@ -60,8 +60,10 @@ namespace NHyprnotify {
                     poll->updateTimeout(std::max(std::chrono::duration_cast<std::chrono::milliseconds>(REL), std::chrono::milliseconds(1)));
             } catch (const std::exception& E) {
                 // the bus died under us (broker restart); an escape here would
-                // unwind through the event loop's C frames and kill the session
-                if (conn && g_pEventLoopManager) {
+                // unwind through the event loop's C frames and kill the session.
+                // Both fd sources can be ready in one dispatch batch: only the
+                // first failure notifies and schedules the teardown.
+                if (conn && g_pEventLoopManager && !pendingTeardown) {
                     HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprnotify] bus lost, notifications disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
                     pendingTeardown = g_pEventLoopManager->doLaterLock([]() { teardown(); });
                 }
@@ -230,7 +232,9 @@ namespace NHyprnotify {
         static void unpackImageData(SNotif& n, const ImageData& d) {
             const int32_t W = std::get<0>(d), H = std::get<1>(d), STRIDE = std::get<2>(d), BPS = std::get<4>(d), CH = std::get<5>(d);
             const auto&   DATA = std::get<6>(d);
-            if (W <= 0 || H <= 0 || BPS != 8 || (CH != 3 && CH != 4) || DATA.size() < (size_t)STRIDE * (H - 1) + (size_t)W * CH)
+            // STRIDE must cover a row: a lying stride (0) would let a tiny
+            // message claim gigapixel W*H and the resize below map it all
+            if (W <= 0 || H <= 0 || BPS != 8 || (CH != 3 && CH != 4) || (int64_t)STRIDE < (int64_t)W * CH || DATA.size() < (size_t)STRIDE * (H - 1) + (size_t)W * CH)
                 return;
             n.pixels.resize((size_t)W * H * 4);
             for (int32_t y = 0; y < H; y++) {
@@ -247,6 +251,11 @@ namespace NHyprnotify {
             n.pw        = W;
             n.ph        = H;
             n.hasPixels = true;
+            // keep only what the icon box can ever paint: warm frees visible
+            // cards' buffers after upload, but an off-screen card would hold
+            // its full-size pixmap until it scrolls on. 3x maxIcon leaves
+            // headroom for any monitor scale; warm still scales exactly.
+            shrinkPixels(n, std::max(64, (int)cfg.maxIcon->value() * 3));
         }
 
         static uint32_t handleNotify(const std::string& appName, uint32_t replacesId, const std::string& appIcon, const std::string& summary, const std::string& body,
@@ -361,7 +370,7 @@ namespace NHyprnotify {
                                    return std::vector<std::string>{"actions", "body", "icon-static"};
                                }),
                                sdbus::registerMethod("GetServerInformation").withOutputParamNames("name", "vendor", "version", "spec_version").implementedAs([]() {
-                                   return std::tuple<std::string, std::string, std::string, std::string>{"hyprnotify", "hitori", "1.0.2", "1.2"};
+                                   return std::tuple<std::string, std::string, std::string, std::string>{"hyprnotify", "hitori", VERSION, "1.2"};
                                }),
                                sdbus::registerSignal("NotificationClosed").withParameters<uint32_t, uint32_t>("id", "reason"),
                                sdbus::registerSignal("ActionInvoked").withParameters<uint32_t, std::string>("id", "action_key"))
