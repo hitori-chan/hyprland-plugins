@@ -290,15 +290,23 @@ namespace NHyprosd {
             break;        // EOF or error: the child is done talking
         }
 
-        // wpctl get-volume: "Volume: 0.65" or "Volume: 0.65 [MUTED]"
+        // wpctl get-volume: "Volume: 0.65" or "Volume: 0.65 [MUTED]" —
+        // formatted through the user locale, so a comma decimal must parse too
         const bool MUTED = c->out.find("[MUTED]") != std::string::npos;
         int        pct   = -1;
-        if (const auto P = c->out.find(':'); P != std::string::npos)
-            pct = (int)std::lround(std::strtod(c->out.c_str() + P + 1, nullptr) * 100.0);
+        if (const auto P = c->out.find(':'); P != std::string::npos) {
+            auto num = c->out.substr(P + 1);
+            if (const auto CM = num.find(','); CM != std::string::npos)
+                num[CM] = '.';
+            pct = (int)std::lround(std::strtod(num.c_str(), nullptr) * 100.0);
+        }
 
-        if (c->mic)
-            notify(9995, "Microphone", MUTED ? "muted" : "live", -1);
-        else if (MUTED)
+        // no parseable readback (no default device, wpctl error): no card —
+        // asserting "live"/a percent for a state that never changed lies
+        if (c->mic) {
+            if (MUTED || pct >= 0)
+                notify(9995, "Microphone", MUTED ? "muted" : "live", -1);
+        } else if (MUTED)
             notify(9993, "Volume", "muted", -1);
         else if (pct >= 0)
             notify(9993, "Volume", std::to_string(pct) + "%", std::min(pct, 100));
@@ -362,7 +370,9 @@ namespace NHyprosd {
         c->setPid = PID;
         c->pidFd  = (int)syscall(SYS_pidfd_open, PID, 0);
         if (c->pidFd < 0) {
-            waitpid(PID, nullptr, 0); // no pidfd (ancient kernel): reap inline, skip the card
+            // no pidfd (EMFILE, ancient kernel): never block the loop on a
+            // reap — the orphan list re-reaps it; the card is skipped
+            orphans.push_back(PID);
             return;
         }
         c->pidSrc = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, c->pidFd, WL_EVENT_READABLE, onSetDone, c.get());
@@ -448,7 +458,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_up", luaBrightnessUp);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_down", luaBrightnessDown);
 
-    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.0.0"};
+    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.0.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
