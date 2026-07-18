@@ -106,8 +106,15 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
     if (e.button != BTN_LEFT && !(e.button == BTN_RIGHT && superHeld()))
         return;
 
-    if (const auto W = windowUnderCursor())
-        raiseWindow(W);
+    // deferred out of the button emission, like the focus raise below — the
+    // compositor's own press handling still walks the stack we'd reorder
+    if (const auto W = windowUnderCursor()) {
+        PHLWINDOWREF WR{W};
+        pendingRaise = g_pEventLoopManager->doLaterLock([WR]() {
+            if (const auto W = WR.lock(); W && W->m_isMapped)
+                raiseWindow(W);
+        });
+    }
 }
 
 // Keyboard focus raises, hover focus doesn't. The raise is deferred out of
@@ -233,7 +240,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_next", luaFocusNext);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev", luaFocusPrev);
 
-    return {"hyprclick", "awesome click/focus policy: click-to-raise, keyboard focus raises, hover never does", "hitori", "1.1.0"};
+    return {"hyprclick", "awesome click/focus policy: click-to-raise, keyboard focus raises, hover never does", "hitori", "1.1.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
