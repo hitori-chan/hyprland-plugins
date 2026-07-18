@@ -9,6 +9,8 @@ namespace NHyprbar {
     std::string        clockText;
     int                batteryPercent  = -1;
     bool               batteryCharging = false;
+    bool               batteryDefend   = false;
+    bool               batterySave     = false;
     static std::string batteryDir; // /sys/class/power_supply/BATx, empty = none
 
     // ---- helpers ----
@@ -104,7 +106,7 @@ namespace NHyprbar {
         }
 
         int  pc       = -1;
-        bool charging = false;
+        bool charging = false, defend = false, save = false;
         if (!batteryDir.empty()) {
             std::ifstream cf(batteryDir + "/capacity"), sf(batteryDir + "/status");
             std::string   cap, status;
@@ -115,11 +117,35 @@ namespace NHyprbar {
                 // every plugged state (Charging/Full/Not charging) colors the
                 // pill; only Discharging runs on the cell
                 charging = sf && std::getline(sf, status) && status != "Discharging";
+
+                // Android's defender = plugged but deliberately not charging.
+                // A charge_control_end_threshold below 100 turns "Not
+                // charging" from a transient (thermal, top-off) into the
+                // limiter's hold state — including the start/end hysteresis
+                // band, where capacity sits below the threshold.
+                if (status == "Not charging") {
+                    std::ifstream tf(batteryDir + "/charge_control_end_threshold");
+                    std::string   lim;
+                    if (tf && std::getline(tf, lim)) {
+                        try {
+                            defend = std::stoi(lim) < 100;
+                        } catch (...) {}
+                    }
+                }
+
+                // Android's power save, mapped to the firmware profile (the
+                // file only exists where ACPI offers profiles). No uevent
+                // fires on a flip: the minute tick bounds the lag.
+                std::ifstream pf("/sys/firmware/acpi/platform_profile");
+                std::string   prof;
+                save = pf && std::getline(pf, prof) && prof == "low-power";
             }
         }
-        if (batteryPercent != pc || batteryCharging != charging) {
+        if (batteryPercent != pc || batteryCharging != charging || batteryDefend != defend || batterySave != save) {
             batteryPercent  = pc;
             batteryCharging = charging;
+            batteryDefend   = defend;
+            batterySave     = save;
             changed         = true;
         }
 

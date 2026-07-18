@@ -36,8 +36,11 @@
 // - battery: Android's expressive battery (the Pixel pill), transcribed
 //   1:1 from SystemUI's Compose implementation and drawn natively in the
 //   warm pass (cairo; assets embedded verbatim, see render.cpp) — digits
-//   inside, the fill colored by state: green on AC, error red at 20%
-//   discharging, white otherwise. State from /sys/class/power_supply
+//   inside, Android's attribution ladder to the right (power-save plus >
+//   charge-limit shield > charging bolt > the D cap) and its fill colors:
+//   yellow in power save, green charging OR held at the charge limit,
+//   error red at 20% discharging, white otherwise. State from
+//   /sys/class/power_supply + /sys/firmware/acpi/platform_profile
 //   (hidden on desktops). The old battery-watch.sh alerts live here too: AC
 //   plug/unplug, low (20%) and critical (5%, Android's lines) —
 //   edge-triggered, riding the same udev uevents as the gauge, sent as
@@ -252,15 +255,16 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.colSquareSel   = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_square_sel", "taglist square, tag holds the focused window", 0xfff0dfaf);
     cfg.colSquareUnsel = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_square_unsel", "taglist square, occupied tag", 0xffdcdccc);
     cfg.colFrame       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_frame", "menu panel frame", 0xff3f3f3f);
-    cfg.colCharging    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_charging", "battery fill on AC (Android's charging green)", 0xff18cc47);
+    cfg.colCharging    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_charging", "battery fill charging/defending (Android's charging green)", 0xff18cc47);
     cfg.colLow         = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_low", "battery fill at 20% and under (Android's error red)", 0xffff0e01);
+    cfg.colSave        = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_powersave", "battery fill in power save (Android's warning yellow)", 0xffffc917);
 
     for (const auto& V : {cfg.height, cfg.fontSize, cfg.traySpacing})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
     for (const auto& V : {cfg.font, cfg.terminal})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
     for (const auto& V : {cfg.colBg, cfg.colFg, cfg.colMuted, cfg.colFocus, cfg.colActive, cfg.colActiveBg, cfg.colEmpty, cfg.colUrgent, cfg.colUrgentBg, cfg.colSquareSel,
-                          cfg.colSquareUnsel, cfg.colFrame, cfg.colCharging, cfg.colLow})
+                          cfg.colSquareUnsel, cfg.colFrame, cfg.colCharging, cfg.colLow, cfg.colSave})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
 
     buildIconDirs();
@@ -319,7 +323,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "1.4.6"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "1.5.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

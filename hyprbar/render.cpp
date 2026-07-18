@@ -96,10 +96,12 @@ namespace NHyprbar {
     // a LEFT-anchored fill clipped to ceil(level*24/100) units, digit
     // GLYPHS (bespoke vector paths, not a font) in black 0.75 centered as a
     // row with 0.8 gaps, and to the right either the D cap (1 unit off, in
-    // the track color) or, while charging, the bolt overlapping the body by
-    // 20% of its width — white over a 2-unit black stroke. At 100% the whole
-    // body takes the fill color. The canvas is always the widest (bolt)
-    // state so the body never shifts when charging flips.
+    // the track color) or an attribution glyph — the charging bolt, the
+    // defender shield (held at the charge limit) or the power-save plus —
+    // overlapping the body by 20% of its width, white over a 2-unit black
+    // stroke. At 100% the whole body takes the fill color. The canvas is
+    // always the widest (plus) state so the body never shifts when the
+    // state flips.
     struct SGlyphPath {
         double      w, h;
         const char* d;
@@ -208,6 +210,27 @@ namespace NHyprbar {
         "0.335,5.625L3.705,5.625L2.969,8.438C2.895,8.719 3.097,9 3.374,9C3.492,9 3.609,8.944 3.684,8.854L7.917,3.949C8.109,3.724 7.96,3.375 7.672,3.375Z"};
     static const SGlyphPath BATT_CAP{1.5, 6.03,
                                      "M0.3333,-0.0037L0,-0.0037L0,6.0234L0.3333,6.0234C0.9777,6.0234 1.5,5.5011 1.5,4.8567L1.5,1.163C1.5,0.5187 0.9777,-0.0037 0.3333,-0.0037Z"};
+    // BatteryGlyph Defend (the charge-limit shield) and Plus (power save), verbatim
+    static const SGlyphPath BATT_DEFEND{
+        8.0, 9.0,
+        "M-0.004,2.337C-0.004,2.09 0.145,1.865 0.373,1.787C1.048,1.551 2.487,0.989 3.642,0.124C3.745,0.045 3.87,0 3.996,0C4.122,0 4.247,0.045 "
+        "4.35,0.124C5.504,0.989 6.944,1.551 7.619,1.787C7.859,1.865 8.007,2.09 7.996,2.337C7.801,7.461 4.236,9 3.996,9C3.756,9 0.191,7.461 "
+        "-0.004,2.337ZM3.996,7.449C4.259,7.285 4.605,7.024 4.956,6.643C5.616,5.927 6.335,4.749 6.526,2.885C5.841,2.614 4.892,2.187 3.996,1.602L3.996,7.449Z"};
+    static const SGlyphPath BATT_PLUS{
+        8.5, 8.5,
+        "M4.248,0C4.745,0 5.148,0.403 5.148,0.9V3.35H7.6C8.097,3.35 8.5,3.753 8.5,4.25C8.5,4.747 8.097,5.149 7.6,5.149H5.148V7.6C5.148,8.097 4.745,8.5 "
+        "4.248,8.5C3.751,8.5 3.349,8.097 3.349,7.6V5.149H0.9C0.403,5.149 0,4.747 0,4.25C0,3.753 0.403,3.35 0.9,3.35H3.349V0.9C3.349,0.403 3.751,0 4.248,0Z"};
+
+    // Android's attribution ladder (BatteryInteractor): PowerSave > Defend >
+    // Charging; the fill follows it (BatteryViewModel$_colorProfile$1) —
+    // Defend shares the CHARGING color, only PowerSave takes the yellow, and
+    // the error red exists solely in the no-attribution state.
+    enum eBattAttr : uint8_t {
+        BATT_ATTR_NONE = 0,
+        BATT_ATTR_CHARGING,
+        BATT_ATTR_DEFEND,
+        BATT_ATTR_SAVE,
+    };
 
     // just enough SVG for the paths above: absolute M/L/H/V/C/Z
     static void playPath(cairo_t* CR, const char* d) {
@@ -264,16 +287,18 @@ namespace NHyprbar {
         }
     }
 
-    static SP<ITexture> batteryPill(int percent, bool charging, double hPx, const CHyprColor& fill) {
+    static SP<ITexture> batteryPill(int percent, eBattAttr attr, double hPx, const CHyprColor& fill) {
         const double S    = hPx / 13.0; // one viewport unit
         const int    LVL  = std::clamp(percent, 0, 100);
         const bool   FULL = LVL >= 100;
-        const int    CW = (int)std::ceil(30.4 * S), CH = (int)std::ceil(13.0 * S);
+        // canvas fixed at the widest attribution (Plus: 24 + 0.8*8.5) so the
+        // body never shifts when the state flips
+        const int  CW = (int)std::ceil(30.8 * S), CH = (int)std::ceil(13.0 * S);
 
-        auto*        SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, CW, CH);
-        auto*        CR   = cairo_create(SURF);
+        auto*      SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, CW, CH);
+        auto*      CR   = cairo_create(SURF);
 
-        const auto   body = [&]() { // bodyPathSpec: RoundRect 24x13 r=4
+        const auto body = [&]() { // bodyPathSpec: RoundRect 24x13 r=4
             cairo_new_sub_path(CR);
             cairo_arc(CR, 20 * S, 4 * S, 4 * S, -M_PI / 2, 0);
             cairo_arc(CR, 20 * S, 9 * S, 4 * S, 0, M_PI / 2);
@@ -325,13 +350,15 @@ namespace NHyprbar {
             }
         }
 
-        if (!charging) { // the D cap, 1 unit off the body, in the track color
+        if (attr == BATT_ATTR_NONE) { // the D cap, 1 unit off the body, in the track color
             trackColor();
             glyphAt(BATT_CAP, 24.0 + std::round(S) / S, (13.0 - BATT_CAP.h) / 2.0);
             cairo_fill(CR);
-        } else { // the bolt, overlapping the body by 20% of its width: white
-                 // over a 2-unit black stroke so it reads on any fill
-            glyphAt(BATT_BOLT, 24.0 - 0.2 * BATT_BOLT.w, (13.0 - BATT_BOLT.h) / 2.0);
+        } else { // the attribution glyph, overlapping the body by 20% of its
+                 // width (the measure policy's 0.8 extension is glyph-generic):
+                 // white over a 2-unit black stroke so it reads on any fill
+            const SGlyphPath& G = attr == BATT_ATTR_CHARGING ? BATT_BOLT : attr == BATT_ATTR_DEFEND ? BATT_DEFEND : BATT_PLUS;
+            glyphAt(G, 24.0 - 0.2 * G.w, (13.0 - G.h) / 2.0);
             cairo_set_source_rgba(CR, 0, 0, 0, 1);
             cairo_set_line_width(CR, 2.0 * S);
             cairo_stroke_preserve(CR);
@@ -576,20 +603,25 @@ namespace NHyprbar {
             // the bar's font size, not the icon rhythm — the pill is meant
             // to read as text-line furniture, not as an icon
             const int PH = std::max(8, (int)std::round(PT * 13.0 / 14.0));
-            // its ladder: charging -> green, <= 20 discharging -> error red,
-            // else white (the DarkTheme Default fill)
-            const CHyprColor FILL = batteryCharging ? color(cfg.colCharging) : batteryPercent <= 20 ? color(cfg.colLow) : CHyprColor{1.f, 1.f, 1.f, 1.f};
-            const uint64_t   KEY  = ((uint64_t)batteryPercent << 40) ^ (batteryCharging ? 1ull << 47 : 0) ^ FILL.getAsHex();
+            // Android's ladder (see eBattAttr): power save > defend >
+            // charging for the attribution; defend shares the charging fill,
+            // the error red exists only in the bare state
+            const eBattAttr  ATTR = batterySave ? BATT_ATTR_SAVE : batteryDefend ? BATT_ATTR_DEFEND : batteryCharging ? BATT_ATTR_CHARGING : BATT_ATTR_NONE;
+            const CHyprColor FILL = ATTR == BATT_ATTR_SAVE ? color(cfg.colSave) :
+                ATTR != BATT_ATTR_NONE                     ? color(cfg.colCharging) :
+                batteryPercent <= 20                       ? color(cfg.colLow) :
+                                                             CHyprColor{1.f, 1.f, 1.f, 1.f};
+            const uint64_t   KEY  = ((uint64_t)batteryPercent << 40) ^ ((uint64_t)ATTR << 48) ^ FILL.getAsHex();
             auto&            PILL = pillCache[PH];
             if (warm) {
                 if (!PILL.tex || PILL.key != KEY) {
-                    PILL.tex = batteryPill(batteryPercent, batteryCharging, PH, FILL);
+                    PILL.tex = batteryPill(batteryPercent, ATTR, PH, FILL);
                     PILL.key = KEY;
                 }
             } else if (!PILL.tex || PILL.key != KEY)
                 texStale = true; // level moved under a scissored repaint: warm + repaint
 
-            const double PW = PILL.tex ? PILL.tex->m_size.x / SCALE : PT * 13.0 / 14.0 * 30.4 / 13.0;
+            const double PW = PILL.tex ? PILL.tex->m_size.x / SCALE : PT * 13.0 / 14.0 * 30.8 / 13.0;
             const double W  = 6 + PW + 6; // breathing room off the tray
             drawTexIn(PILL.tex, CBox{right - W + 6, MB.y, PW, H});
             right -= W;

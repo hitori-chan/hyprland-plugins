@@ -24,9 +24,12 @@ or focus to a window underneath.
   QPR2/17), a 1:1 transcription of SystemUI's Compose implementation with
   its vector assets embedded verbatim, bespoke digit glyphs included:
   borderless pill on a translucent track, left-anchored fill, D cap right
-  — the charging bolt replaces it — digits punched in black. Fill white
-  idle / green on AC / red ≤ 20%; sized 13:14 against the bar font, the
-  proportion Android gives it against status bar text; hidden on desktops.
+  — replaced by Android's attribution ladder: the power-save plus (ACPI
+  platform profile `low-power`), the defender shield (plugged but held at
+  `charge_control_end_threshold`), or the charging bolt — digits punched
+  in black. Fill white idle / yellow in power save / green charging or
+  defending / red ≤ 20%; sized 13:14 against the bar font, the proportion
+  Android gives it against status bar text; hidden on desktops.
   Alerts ride along on Android's same lines: AC plug/unplug, low at 20%,
   critical (sticky) at 5% — sent through the notification daemon off the
   same udev uevents as the gauge.
@@ -65,5 +68,6 @@ Colors and font come from `theme.lua` via `hl.config { plugin = { hyprbar =
 | `plugin:hyprbar:col_square_sel` | taglist square: tag holds the focused window | `f0dfaf` |
 | `plugin:hyprbar:col_square_unsel` | taglist square: occupied tag | `dcdccc` |
 | `plugin:hyprbar:col_frame` | menu panel frame | `3f3f3f` |
-| `plugin:hyprbar:col_charging` | battery fill on AC (Android's charging green) | `18cc47` |
+| `plugin:hyprbar:col_charging` | battery fill charging/defending (Android's charging green) | `18cc47` |
 | `plugin:hyprbar:col_low` | battery fill ≤ 20% (Android's error red) | `ff0e01` |
+| `plugin:hyprbar:col_powersave` | battery fill in power save (Android's warning yellow) | `ffc917` |

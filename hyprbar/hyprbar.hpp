@@ -108,8 +108,9 @@ namespace NHyprbar {
         SP<Config::Values::CColorValue>  colSquareSel;   // taglist square: tag holds the focused window
         SP<Config::Values::CColorValue>  colSquareUnsel; // taglist square: occupied tag
         SP<Config::Values::CColorValue>  colFrame;       // menu panel frame
-        SP<Config::Values::CColorValue>  colCharging;    // battery fill on AC (Android's charging green)
+        SP<Config::Values::CColorValue>  colCharging;    // battery fill charging/defending (Android's charging green)
         SP<Config::Values::CColorValue>  colLow;         // battery fill <= 20% (Android's error red)
+        SP<Config::Values::CColorValue>  colSave;        // battery fill in power save (Android's warning yellow)
     };
     extern SBarConfig cfg;
 
@@ -118,6 +119,8 @@ namespace NHyprbar {
     extern std::string clockText;
     extern int         batteryPercent;  // -1 = no battery
     extern bool        batteryCharging; // any plugged state; only Discharging is false
+    extern bool        batteryDefend;   // plugged but held at the charge limit (Android's defender)
+    extern bool        batterySave;     // platform_profile low-power (Android's power save)
 
     double             barHeight();
     void               damageBars(); // covers the menubar's prompt strip while it's open
