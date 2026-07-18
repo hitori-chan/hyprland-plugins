@@ -82,64 +82,83 @@ namespace NHyprbar {
 
     // ---- the battery pill (Android 16's unified battery, drawn natively) ----
     //
-    // Geometry lifted from AOSP SystemUI's unified battery (Apache-2.0:
-    // frameworks/base packages/SystemUI res/drawable/battery_unified_frame*.xml
-    // + src/.../battery/unified/*.kt), mirrored so the terminal cap sits on
-    // the right like the approved mocks. On the 24x14 canvas: frame stroke
-    // 1.5 on a centerline pill x0.75..21.25 / y0.75..13.25 with corner radii
-    // 3.25 far / 2.25 cap-side; cap x22.5..24, y3..11, outer corners r1; the
-    // fill spans x1.5..20.5 (far inset 1.5, cap-side 3.5) clipped to the
-    // frame's inner shape, anchored at the far end; percent digits bold at
-    // size 10 centered in the 18x10 inner canvas (x2..20) — AOSP's
-    // experimentally-nudged centering is ink-centering, which cairo gives
-    // directly.
-    static SP<ITexture> batteryPill(int percent, double hPx, const CHyprColor& fg, const CHyprColor& fill, const std::string& font) {
-        const double S = hPx / 14.0;
-        const int    W = (int)std::ceil(24.0 * S), H = (int)std::ceil(hPx);
+    // Geometry measured off Android 16 QPR's expressive status-bar battery
+    // (pixel ratios of body height h): borderless body 1.82h x h with
+    // symmetric corner radius 0.35h; a translucent track (fg at 0.28) under
+    // the left-anchored straight-edged fill; percent digits in the bar's
+    // background color, ink height 0.68h, ink-centered in the body; a
+    // detached cap 0.118h x 0.47h (fg at 0.45), replaced while charging by a
+    // bolt in fg (Material flash_on outline, Apache-2.0) whose left edge
+    // sits 0.09h inside the body's right edge. The canvas is always the
+    // widest (bolt) state so the body never shifts when charging flips.
+    static SP<ITexture> batteryPill(int percent, bool charging, double hPx, const CHyprColor& fg, const CHyprColor& fill, const CHyprColor& ink, const std::string& font) {
+        const double H  = hPx;
+        const double BW = 1.82 * H, R = 0.35 * H;
+        const int    CW = (int)std::ceil(2.26 * H), CH = (int)std::ceil(H);
 
-        auto*        SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
+        auto*        SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, CW, CH);
         auto*        CR   = cairo_create(SURF);
-        cairo_scale(CR, S, S);
 
-        const auto pill = [&](double x0, double y0, double x1, double y1, double rFar, double rCap) {
+        const auto   body = [&]() {
             cairo_new_sub_path(CR);
-            cairo_arc(CR, x1 - rCap, y0 + rCap, rCap, -M_PI / 2, 0);
-            cairo_arc(CR, x1 - rCap, y1 - rCap, rCap, 0, M_PI / 2);
-            cairo_arc(CR, x0 + rFar, y1 - rFar, rFar, M_PI / 2, M_PI);
-            cairo_arc(CR, x0 + rFar, y0 + rFar, rFar, M_PI, 3 * M_PI / 2);
+            cairo_arc(CR, BW - R, R, R, -M_PI / 2, 0);
+            cairo_arc(CR, BW - R, H - R, R, 0, M_PI / 2);
+            cairo_arc(CR, R, H - R, R, M_PI / 2, M_PI);
+            cairo_arc(CR, R, R, R, M_PI, 3 * M_PI / 2);
             cairo_close_path(CR);
         };
 
+        cairo_set_source_rgba(CR, fg.r, fg.g, fg.b, 0.28 * fg.a);
+        body();
+        cairo_fill(CR);
+
         if (percent > 0) {
             cairo_save(CR);
-            pill(1.5, 1.5, 20.5, 12.5, 2.5, 1.5); // the frame's inner shape
+            body();
             cairo_clip(CR);
-            cairo_rectangle(CR, 1.5, 0, 19.0 * std::min(percent, 100) / 100.0, 14);
             cairo_set_source_rgba(CR, fill.r, fill.g, fill.b, fill.a);
+            cairo_rectangle(CR, 0, 0, BW * std::min(percent, 100) / 100.0, H);
             cairo_fill(CR);
             cairo_restore(CR);
         }
 
-        cairo_set_source_rgba(CR, fg.r, fg.g, fg.b, fg.a);
-        pill(0.75, 0.75, 21.25, 13.25, 3.25, 2.25);
-        cairo_set_line_width(CR, 1.5);
-        cairo_stroke(CR);
-
-        cairo_move_to(CR, 22.5, 3);
-        cairo_arc(CR, 23, 4, 1, -M_PI / 2, 0);
-        cairo_line_to(CR, 24, 10);
-        cairo_arc(CR, 23, 10, 1, 0, M_PI / 2);
-        cairo_line_to(CR, 22.5, 11);
-        cairo_close_path(CR);
-        cairo_fill(CR);
-
         const auto TXT = std::to_string(std::clamp(percent, 0, 100));
         cairo_select_font_face(CR, font.c_str(), CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-        cairo_set_font_size(CR, 10);
         cairo_text_extents_t te;
+        cairo_set_font_size(CR, H); // measure once, then scale to the target ink height
         cairo_text_extents(CR, TXT.c_str(), &te);
-        cairo_move_to(CR, 2 + (18 - te.width) / 2 - te.x_bearing, 7 - (te.y_bearing + te.height / 2));
+        if (te.height > 0) {
+            cairo_set_font_size(CR, H * 0.68 * H / te.height);
+            cairo_text_extents(CR, TXT.c_str(), &te);
+        }
+        cairo_set_source_rgba(CR, ink.r, ink.g, ink.b, ink.a);
+        cairo_move_to(CR, (BW - te.width) / 2.0 - te.x_bearing, H / 2.0 - (te.y_bearing + te.height / 2.0));
         cairo_show_text(CR, TXT.c_str());
+
+        cairo_set_source_rgba(CR, fg.r, fg.g, fg.b, charging ? fg.a : 0.45 * fg.a);
+        if (!charging) {
+            const double W2 = 0.118 * H, CH2 = 0.47 * H, CX = BW + W2, CY = (H - CH2) / 2.0;
+            cairo_new_sub_path(CR);
+            cairo_arc(CR, CX + W2 / 2, CY + W2 / 2, W2 / 2, M_PI, 2 * M_PI);
+            cairo_arc(CR, CX + W2 / 2, CY + CH2 - W2 / 2, W2 / 2, 0, M_PI);
+            cairo_close_path(CR);
+            cairo_fill(CR);
+        } else {
+            // flash_on's polygon (its 24-grid: x7..17, y2..22), widened 1.45x
+            // to the reference bolt's 0.8 aspect; the round-joined stroke is
+            // the expressive chunk
+            static const double P[][2] = {{7, 2}, {7, 13}, {10, 13}, {10, 22}, {17, 10}, {13, 10}, {17, 2}};
+            const double        S = 0.65 * H / 20.0, SX = 1.45 * S;
+            const double        OX = BW - 0.09 * H - 7 * SX, OY = (H - 0.65 * H) / 2.0 - 2 * S;
+            cairo_move_to(CR, OX + P[0][0] * SX, OY + P[0][1] * S);
+            for (int i = 1; i < 7; i++)
+                cairo_line_to(CR, OX + P[i][0] * SX, OY + P[i][1] * S);
+            cairo_close_path(CR);
+            cairo_set_line_join(CR, CAIRO_LINE_JOIN_ROUND);
+            cairo_set_line_width(CR, 0.09 * H);
+            cairo_stroke_preserve(CR);
+            cairo_fill(CR);
+        }
 
         cairo_surface_flush(SURF);
         auto tex = g_pHyprRenderer->createTexture(SURF);
@@ -379,17 +398,19 @@ namespace NHyprbar {
                 batteryPercent <= 5                          ? COLURGENT :
                 batteryPercent <= 20                         ? color(cfg.colLow) :
                                                                color(cfg.colFrame);
-            const uint64_t   KEY  = ((uint64_t)batteryPercent << 40) ^ (COLFG.getAsHex() * 0x9E3779B97F4A7C15ULL) ^ FILL.getAsHex();
-            auto&            PILL = pillCache[PH];
+            const CHyprColor INK  = color(cfg.colBg); // digits punch through to the bar ground
+            const uint64_t   KEY  = ((uint64_t)batteryPercent << 40) ^ (batteryCharging ? 1ull << 47 : 0) ^ (COLFG.getAsHex() * 0x9E3779B97F4A7C15ULL) ^
+                (INK.getAsHex() * 0xC2B2AE3D27D4EB4FULL) ^ FILL.getAsHex();
+            auto& PILL = pillCache[PH];
             if (warm) {
                 if (!PILL.tex || PILL.key != KEY) {
-                    PILL.tex = batteryPill(batteryPercent, PH, COLFG, FILL, cfg.font->value());
+                    PILL.tex = batteryPill(batteryPercent, batteryCharging, PH, COLFG, FILL, INK, cfg.font->value());
                     PILL.key = KEY;
                 }
             } else if (!PILL.tex || PILL.key != KEY)
                 texStale = true; // level moved under a scissored repaint: warm + repaint
 
-            const double PW = PILL.tex ? PILL.tex->m_size.x / SCALE : (H - 6) * 24.0 / 14.0;
+            const double PW = PILL.tex ? PILL.tex->m_size.x / SCALE : (H - 6) * 2.26;
             const double W  = 6 + PW + 6; // breathing room off the tray
             drawTexIn(PILL.tex, CBox{right - W + 6, MB.y, PW, H});
             right -= W;
