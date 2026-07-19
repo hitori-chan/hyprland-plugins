@@ -736,6 +736,21 @@ namespace NHyprnotify {
             warmNotifs();
             damageNotifs();
             refreshPointerOwnership();
+            // A card arriving over a solitary/scanned-out fullscreen window
+            // (mpv under direct_scanout): the monitor presents the client's
+            // buffer directly, so the per-card damageBox may not schedule a
+            // compositor frame at all — and onRenderPreChecks, which drops the
+            // scanout/solitary latch, only runs from renderMonitor. Force a
+            // whole-monitor frame so renderMonitor runs and the card
+            // composites. Full-monitor (not the card box) so it can't be
+            // occlusion-culled behind the fullscreen surface; a no-op cost when
+            // the monitor isn't latched.
+            if (const auto MON = focusedMon(); MON && g_pHyprRenderer && (MON->m_directScanoutIsActive || !MON->m_solitaryClient.expired()))
+                for (const auto& N : notifs)
+                    if (!N->waiting) {
+                        g_pHyprRenderer->damageMonitor(MON);
+                        break;
+                    }
         });
     }
 
