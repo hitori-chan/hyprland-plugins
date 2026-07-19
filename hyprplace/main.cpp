@@ -13,10 +13,14 @@
 // awful.placement's corner packing. Windows that chose their spot (X11,
 // dialogs anchored to a parent) keep it while it's free; X11
 // override-redirect surfaces are left alone; the result is clamped
-// on-screen (no_offscreen). Only the position is remembered — the size
-// is always the client's. Maximized windows AND floats sized to the
-// whole workarea consume no free space; when the chosen spot already
-// holds a window, spawns cascade off it instead of stacking.
+// on-screen (no_offscreen). Position is always remembered; a genuinely
+// resizable app's last size is remembered too and reimposed at spawn
+// (KWin's "Remember" — the compositor owns the configure, so the client's
+// own size memory can't fight it and a content-sizer like mpv can't drift
+// back to its video size), while fixed-size dialogs (min == max) keep the
+// client's size and are never resized. Maximized windows AND floats sized
+// to the whole workarea consume no free space; when the chosen spot
+// already holds a window, spawns cascade off it instead of stacking.
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
@@ -47,8 +51,8 @@ namespace NHyprplace {
         std::vector<PHLWINDOWREF> placeQueue;
         bool                      saveQueued = false;
 
-        // where each app's last window closed, surviving relogs
-        std::unordered_map<std::string, Vector2D> g_lastSpot;
+        // each app's last window box (position + size), surviving relogs
+        std::unordered_map<std::string, CBox> g_lastSpot;
 
         std::filesystem::path                     statePath() {
             const char* XDG  = std::getenv("XDG_STATE_HOME");
@@ -57,16 +61,38 @@ namespace NHyprplace {
             return BASE / "hyprplace" / "lastspot.tsv";
         }
 
-        // x y class — class last so any app_id parses.
+        // x y w h class — class last so any app_id parses. Legacy rows are
+        // x y class (position only): size is left zero and stays the
+        // client's until the app closes once and a size is recorded.
         void loadSpots() {
             std::ifstream f(statePath());
             std::string   line;
             while (std::getline(f, line)) {
-                std::istringstream is(line);
-                Vector2D           pos;
-                std::string        cls;
-                if (is >> pos.x >> pos.y && is.get() == '\t' && std::getline(is, cls) && !cls.empty())
-                    g_lastSpot[cls] = pos;
+                std::vector<std::string> parts;
+                std::string              field;
+                std::istringstream       is(line);
+                while (std::getline(is, field, '\t'))
+                    parts.push_back(field);
+
+                CBox        box;
+                std::string cls;
+                try {
+                    if (parts.size() == 3) {
+                        box.x = std::stod(parts[0]);
+                        box.y = std::stod(parts[1]);
+                        cls   = parts[2];
+                    } else if (parts.size() == 5) {
+                        box.x = std::stod(parts[0]);
+                        box.y = std::stod(parts[1]);
+                        box.w = std::stod(parts[2]);
+                        box.h = std::stod(parts[3]);
+                        cls   = parts[4];
+                    } else
+                        continue;
+                } catch (...) { continue; }
+
+                if (!cls.empty())
+                    g_lastSpot[cls] = box;
             }
         }
 
@@ -81,19 +107,19 @@ namespace NHyprplace {
                 std::ofstream f(TMP, std::ios::trunc);
                 if (!f)
                     return;
-                for (const auto& [CLS, P] : g_lastSpot)
-                    f << std::llround(P.x) << '\t' << std::llround(P.y) << '\t' << CLS << '\n';
+                for (const auto& [CLS, B] : g_lastSpot)
+                    f << std::llround(B.x) << '\t' << std::llround(B.y) << '\t' << std::llround(B.w) << '\t' << std::llround(B.h) << '\t' << CLS << '\n';
             }
             std::filesystem::rename(TMP, PATH, ec);
         }
 
-        void rememberSpot(const std::string& cls, const Vector2D& pos) {
+        void rememberSpot(const std::string& cls, const CBox& box) {
             if (cls.empty())
                 return;
             const auto IT = g_lastSpot.find(cls);
-            if (IT != g_lastSpot.end() && IT->second == pos)
+            if (IT != g_lastSpot.end() && IT->second == box)
                 return;
-            g_lastSpot[cls] = pos;
+            g_lastSpot[cls] = box;
 
             // coalesce: a mass close (logout) must not storm the disk with
             // one full rewrite per window
@@ -145,6 +171,21 @@ namespace NHyprplace {
             return b.x <= wa.x && b.y <= wa.y && b.x + b.w >= wa.x + wa.w && b.y + b.h >= wa.y + wa.h;
         }
 
+        // A genuinely user-resizable toplevel — its last size is worth
+        // restoring (mpv, terminals, browsers). A fixed-size dialog pins
+        // min == max in both axes; its size stays the client's, never
+        // reimposed (that would blink it — awesome never did). No toplevel
+        // (X11, unmapped) = can't tell = treat as fixed.
+        bool resizable(PHLWINDOW w) {
+            if (w->m_isX11 || !w->m_xdgSurface || !w->m_xdgSurface->m_toplevel)
+                return false;
+            const auto MIN      = w->m_xdgSurface->m_toplevel->layoutMinSize();
+            const auto MAX      = w->m_xdgSurface->m_toplevel->layoutMaxSize();
+            const bool PINNED_X = MAX.x > 1 && MIN.x >= MAX.x;
+            const bool PINNED_Y = MAX.y > 1 && MIN.y >= MAX.y;
+            return !(PINNED_X && PINNED_Y);
+        }
+
         void placeWindow(PHLWINDOW w) {
             // X11 override-redirect surfaces (menus, tooltips) place themselves
             if (!w || !w->m_isMapped || !w->m_isFloating || w->isX11OverrideRedirect() || !w->m_target || Fullscreen::controller()->isFullscreen(w))
@@ -184,24 +225,41 @@ namespace NHyprplace {
                 return true;
             };
 
+            // The size the window spawns at: the client's own, unless this
+            // app is resizable and a real size was remembered for it. Then
+            // reimpose the remembered size and own the configure, so a
+            // content-sizer (mpv) can't drift back to its video size and an
+            // app that self-remembers its size (Firefox) can't fight ours.
+            const bool          RESIZABLE = resizable(w);
+            std::optional<CBox> stored;
+            if (!w->m_isX11 && !w->parent()) {
+                if (const auto IT = g_lastSpot.find(w->m_initialClass); IT != g_lastSpot.end())
+                    stored = IT->second;
+            }
+            Vector2D size      = CUR.size();
+            bool     forceSize = false;
+            if (RESIZABLE && stored && stored->w > 5 && stored->h > 5) {
+                size      = stored->size();
+                forceSize = true;
+            }
+
             std::optional<Vector2D> pos;
 
             if (w->m_isX11 || w->parent()) {
                 // the window chose this spot (X11 geometry, parent-anchored
                 // dialog): keep it while it's free
-                if (fits(CUR))
+                if (fits(CBox{CUR.pos(), size}))
                     return;
             } else {
-                // 1: where this app's last window closed
-                if (const auto IT = g_lastSpot.find(w->m_initialClass); IT != g_lastSpot.end()) {
-                    if (fits(CBox{IT->second, CUR.size()}))
-                        pos = IT->second;
-                }
+                // 1: where — and, for a resizable app, how big — this app's
+                // last window closed
+                if (stored && fits(CBox{stored->pos(), size}))
+                    pos = stored->pos();
 
                 // 2: the workarea center
                 if (!pos) {
-                    const auto CENTERED = WA.pos() + WA.size() / 2.0 - CUR.size() / 2.0;
-                    if (fits(CBox{CENTERED, CUR.size()}))
+                    const auto CENTERED = WA.pos() + WA.size() / 2.0 - size / 2.0;
+                    if (fits(CBox{CENTERED, size}))
                         pos = CENTERED;
                 }
             }
@@ -211,13 +269,13 @@ namespace NHyprplace {
             if (!pos && !areas.empty()) {
                 const CBox* best = nullptr;
                 for (const auto& R : areas)
-                    if (R.w >= CUR.w && R.h >= CUR.h && (!best || R.w * R.h > best->w * best->h))
+                    if (R.w >= size.x && R.h >= size.y && (!best || R.w * R.h > best->w * best->h))
                         best = &R;
                 if (!best)
                     for (const auto& R : areas)
                         if (!best || R.w * R.h > best->w * best->h)
                             best = &R;
-                pos = best->pos() + best->size() / 2.0 - CUR.size() / 2.0;
+                pos = best->pos() + best->size() / 2.0 - size / 2.0;
             }
             // Cascade off any pile: with the workarea fully covered (no pos)
             // or a too-small biggest hole picked deterministically, repeated
@@ -238,16 +296,22 @@ namespace NHyprplace {
 
             // no_offscreen: clamp into the workarea
             double nx = chosen.x, ny = chosen.y;
-            nx = std::clamp(nx, WA.x, std::max(WA.x, WA.x + WA.w - CUR.w));
-            ny = std::clamp(ny, WA.y, std::max(WA.y, WA.y + WA.h - CUR.h));
+            nx = std::clamp(nx, WA.x, std::max(WA.x, WA.x + WA.w - size.x));
+            ny = std::clamp(ny, WA.y, std::max(WA.y, WA.y + WA.h - size.y));
 
-            if (nx == CUR.x && ny == CUR.y)
+            if (nx == CUR.x && ny == CUR.y && !forceSize)
                 return;
             // through the layout so the floating algorithm's lastBox tracking
             // follows the placement (a raw target move leaves it stale and a
-            // fullscreen roundtrip would restore the pre-placement spot)
-            g_layoutManager->setTargetGeom(CBox{nx, ny, CUR.w, CUR.h}, w->m_target);
+            // fullscreen roundtrip would restore the pre-placement spot). For
+            // a remembered size, take the size choice from the client and
+            // force the configure out — adoptCompositorMax's proven sequence.
+            if (forceSize)
+                w->m_sizeFromClientSerial = 0;
+            g_layoutManager->setTargetGeom(CBox{nx, ny, size.x, size.y}, w->m_target);
             w->m_target->warpPositionSize();
+            if (forceSize)
+                w->sendWindowSize(true);
         }
     }
 
@@ -273,7 +337,7 @@ namespace NHyprplace {
             return;
         if (const auto MON = w->m_monitor.lock(); MON && coversWorkarea(w->m_target->position(), MON->logicalBoxMinusReserved()))
             return;
-        rememberSpot(w->m_initialClass, w->m_target->position().pos());
+        rememberSpot(w->m_initialClass, w->m_target->position());
     }
 }
 
@@ -303,7 +367,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     lOpen  = Event::bus()->m_events.window.open.listen([](PHLWINDOW w) { onWindowOpen(w); });
     lClose = Event::bus()->m_events.window.close.listen([](PHLWINDOW w) { onWindowClose(w); });
 
-    return {"hyprplace", "spawn placement with position memory", "hitori", "1.1.3"};
+    return {"hyprplace", "spawn placement with geometry memory", "hitori", "1.2.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
