@@ -63,7 +63,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "2.0.2";
+    inline constexpr const char* VERSION = "2.0.3";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -177,6 +177,9 @@ namespace NHyprnotify {
     void notifChanged();
 
     void onRenderStage(eRenderStage stage);
+    // render.preChecks: keep a visible card compositing over a solitary
+    // fullscreen window (else scanout/solitary-render skips the notify pass)
+    void onRenderPreChecks(PHLMONITOR mon);
     void renderExit();
 
     // card boxes of the last layout, global logical — input hit-tests these

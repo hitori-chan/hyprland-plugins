@@ -424,6 +424,37 @@ namespace NHyprnotify {
         PHLMONITORREF m_mon;
     };
 
+    // A solitary fullscreen client (mpv) makes the compositor skip the whole
+    // workspace render for its monitor — direct scanout, or a solitary-only
+    // renderWindow — so RENDER_POST_WINDOWS never fires and the card is
+    // invisible. naughty notifications are ontop, so while a VISIBLE card is up
+    // we drop the monitor's solitary latch here, at preChecks (which fires per
+    // monitor BEFORE the scanout decision): the normal render path then runs and
+    // composites the card over the fullscreen window. Self-healing — once the
+    // last card clears, the compositor re-latches solitary and scanout
+    // re-engages, so this costs compositing only while a card shows.
+    void onRenderPreChecks(PHLMONITOR mon) {
+        if (!mon || notifs.empty() || mon != focusedMon())
+            return;
+        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+            return; // never force a card to float over the lockscreen
+        bool visible = false;
+        for (const auto& N : notifs)
+            if (!N->waiting) { // all-waiting = suspended (DND): nothing shown, don't inhibit
+                visible = true;
+                break;
+            }
+        if (!visible)
+            return;
+        mon->m_solitaryClient.reset(); // open the solitary gate -> renderWorkspace -> RENDER_POST_WINDOWS
+        // resetting solitary alone would SEGV on the transition frame:
+        // canAttemptDirectScanoutFast() stays true off m_lastScanout and
+        // attemptDirectScanout() then derefs the now-null candidate. Leaving any
+        // active scanout clears that latch so the scanout branch is skipped.
+        if (!mon->m_lastScanout.expired() || mon->m_directScanoutIsActive)
+            mon->handleDSleave();
+    }
+
     void onRenderStage(eRenderStage stage) {
         if (stage != RENDER_POST_WINDOWS || notifs.empty())
             return;

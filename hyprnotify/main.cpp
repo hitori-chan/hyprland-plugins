@@ -68,7 +68,7 @@ namespace NHyprnotify {
     SNotifyConfig cfg;
 }
 
-static Hyprutils::Signal::CHyprSignalListener              lRender, lButton, lMove;
+static Hyprutils::Signal::CHyprSignalListener              lRender, lPreChecks, lButton, lMove;
 static std::vector<Hyprutils::Signal::CHyprSignalListener> lDamage;
 static SP<SHyprCtlCommand>                                 ctlCount;
 static UP<SEventLoopDoLaterLock>                           pendingSuspend;
@@ -144,7 +144,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                                                                      }});
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprnotify", "suspend", luaSuspend);
 
-    lRender = Event::bus()->m_events.render.stage.listen([](eRenderStage stage) { onRenderStage(stage); });
+    lRender    = Event::bus()->m_events.render.stage.listen([](eRenderStage stage) { onRenderStage(stage); });
+    lPreChecks = Event::bus()->m_events.render.preChecks.listen([](PHLMONITOR mon) { onRenderPreChecks(mon); });
     lButton = Event::bus()->m_events.input.mouse.button.listen([](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { onMouseButton(e, info); });
     lMove   = Event::bus()->m_events.input.mouse.move.listen([](Vector2D pos, Event::SCallbackInfo& info) { onMouseMove(pos, info); });
 
@@ -179,6 +180,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
     Bus::exit(); // closes the model; its textures die with it
     inputExit();
     lRender.reset();
+    lPreChecks.reset();
     lButton.reset();
     lMove.reset();
     lDamage.clear();
