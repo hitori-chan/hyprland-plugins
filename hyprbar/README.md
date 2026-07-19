@@ -15,8 +15,13 @@ or focus to a window underneath.
   corner square. Click views, `Mod+click` sends the focused window, wheel
   cycles.
 - **Tasklist** — the active workspace's windows in arrival order: app icon,
-  `⌃` pinned / `+` maximized / `✈` floating markers. Click focuses + raises, right-click
-  opens the all-clients menu, wheel walks focus.
+  `⌃` pinned / `+` maximized / `✈` floating markers; minimized windows keep
+  their row, muted (awesome's `fg_minimize`). Click the focused task to
+  minimize it, click any other (minimized included) to restore + focus;
+  right-click opens the all-clients menu, wheel walks focus (skipping
+  minimized). `Mod+N` / `Mod+Ctrl+N` minimize / restore-last
+  (`hl.plugin.hyprbar.minimize()` / `.restore()`); a client's own minimize
+  request (a CSD button, X11 `IconicState`) is honored too.
 - **Tray** — in-compositor SNI host with a native dbusmenu renderer. Menus
   wear the overlay language: 1px-rounded panel with a `col_frame` ring,
   hover rows inset 4px with softened corners.

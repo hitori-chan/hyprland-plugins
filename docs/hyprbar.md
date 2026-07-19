@@ -24,6 +24,18 @@ The focused task is cyan text on the plain bar (`tasklist_bg_focus` =
 all-clients menu (`awful.menu.client_list`): icons + titles, click jumps to
 a window on any workspace.
 
+**Minimize** is awesome's `client.minimized`, which the compositor has no
+flag for: the plugin hides the window (a tiled window is dropped from the
+layout; any fullscreen/maximize mode is held and re-entered on restore) and
+tracks it in a stack. Minimized tasks stay in the list, muted
+(`fg_minimize`), and the focus wheel skips them. Click the focused task to
+minimize it; click any other task — minimized included — to restore + focus
+it. `Mod+N` minimizes the focused window, `Mod+Ctrl+N` restores the most
+recently minimized (`hl.plugin.hyprbar.minimize()` / `.restore()`). A
+client's own minimize request — a CSD titlebar button (xdg `set_minimized`)
+or X11 `IconicState` — is honored as the same action. A minimized floating
+window's vacated box is force-repainted so its last frame can't linger.
+
 Icons resolve from the GTK icon theme + hicolor + pixmaps, PNG or SVG;
 `*-symbolic` SVGs are repainted with the bar foreground.
 
