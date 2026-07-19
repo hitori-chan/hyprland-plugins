@@ -5,3 +5,7 @@
 # local agent instructions
 CLAUDE.md
 HANDOFF.md
+.claude/
+
+# local dev tooling (nested-Hyprland test harness; not a plugin)
+devtools/
