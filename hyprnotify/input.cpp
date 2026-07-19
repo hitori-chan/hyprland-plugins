@@ -7,6 +7,7 @@ namespace NHyprnotify {
     static uint32_t                  swallowRelease = 0; // bit 1 = left, 2 = right, 4 = middle
     static int                       heldButtons    = 0; // presses that reached apps: an implicit grab may be live
     static bool                      pointerOwned   = false;
+    static bool                      cursorHand     = false; // the override currently shows the link hand
 
     // clicks accumulate into one drain: two card-clicks in a single dispatch
     // would otherwise clobber the lock and lose the first's action + dismiss
@@ -139,6 +140,7 @@ namespace NHyprnotify {
         if (!pointerOwned)
             return;
         pointerOwned = false;
+        cursorHand   = false;
         Pointer::Cursor::overrideController->unsetOverride(Pointer::Cursor::CURSOR_OVERRIDE_SPECIAL_ACTION);
     }
 
@@ -177,12 +179,21 @@ namespace NHyprnotify {
             return;
         }
 
-        setHovered(CARD->id, buttonAt(*CARD, pos));
+        const int  BTN    = buttonAt(*CARD, pos);
+        const bool ONLINK = BTN < 0 && linkAt(*CARD, pos) >= 0; // a hyperlink shows the hand; a button keeps the arrow (GTK convention)
+        setHovered(CARD->id, BTN);
         info.cancelled = true;
-        if (!pointerOwned) {
+
+        const bool ENTERING = !pointerOwned;
+        if (ENTERING) {
             pointerOwned = true;
             g_pSeatManager->setPointerFocus(nullptr, {}); // the app under the card gets its leave
-            Pointer::Cursor::overrideController->setOverride("left_ptr", Pointer::Cursor::CURSOR_OVERRIDE_SPECIAL_ACTION);
+        }
+        // set the shape on entry, and re-set only when it flips (a still stream
+        // of motion must not re-assert the override every event)
+        if (ENTERING || cursorHand != ONLINK) {
+            Pointer::Cursor::overrideController->setOverride(ONLINK ? "pointer" : "left_ptr", Pointer::Cursor::CURSOR_OVERRIDE_SPECIAL_ACTION);
+            cursorHand = ONLINK;
         }
     }
 
