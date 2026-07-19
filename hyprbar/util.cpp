@@ -39,7 +39,9 @@ namespace NHyprbar {
     }
 
     bool isTaskOn(const PHLWINDOW& w, const PHLWORKSPACE& ws) {
-        return w && ws && w->m_isMapped && !w->isHidden() && w->m_workspace && w->m_workspace->m_id == ws->m_id;
+        // minimized windows are hidden but still belong to their tag, like
+        // awesome — keep their row; other hidden windows (swallowed) stay out.
+        return w && ws && w->m_isMapped && w->m_workspace && w->m_workspace->m_id == ws->m_id && (!w->isHidden() || Tasklist::isMinimized(w));
     }
 
     std::string lower(std::string s) {

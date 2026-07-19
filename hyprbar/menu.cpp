@@ -368,7 +368,9 @@ namespace NHyprbar {
             static std::vector<std::pair<uint64_t, PHLWINDOW>> ws; // reused; main thread only
             ws.clear();
             for (const auto& W : Desktop::windowState()->windows()) {
-                if (W->m_isMapped && !W->isHidden())
+                // minimized windows stay listed (awesome's client_list un-minimizes) —
+                // mirror isTaskOn; only genuinely-hidden (swallowed) ones drop out
+                if (W->m_isMapped && (!W->isHidden() || Tasklist::isMinimized(W)))
                     ws.emplace_back(Tasklist::seqOf(W.get()), W);
             }
             if (ws.empty())
@@ -394,8 +396,15 @@ namespace NHyprbar {
             if (const auto W = en.win.lock(); W && W->m_isMapped) { // client-list row: jump to it
                 if (W->m_workspace && !W->m_workspace->isVisible())
                     std::ignore = Config::Actions::changeWorkspace(W->m_workspace);
-                Desktop::windowState()->raise(W);
-                Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW, W->wlSurface()->resource());
+                // a minimized target must be un-minimized, not focused while
+                // hidden — restore() unhides, re-tiles, raises, focuses and
+                // re-enters any fullscreen it held
+                if (Tasklist::isMinimized(W))
+                    Tasklist::restore(W);
+                else {
+                    Desktop::windowState()->raise(W);
+                    Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW, W->wlSurface()->resource());
+                }
                 close();
                 return;
             }

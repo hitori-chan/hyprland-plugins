@@ -162,6 +162,18 @@ namespace NHyprbar {
         void label(const PHLWINDOW& w, std::string& out);
         void forget(void* w); // the window is gone
         void exit();
+
+        // awesome's client.minimized — a per-window flag the compositor lacks.
+        // minimize() hides the window (setHidden: unrendered, xdg-suspended, no
+        // frame callbacks) and, if tiled, frees its layout slot; the window
+        // stays on its workspace and keeps its tasklist row (drawn muted).
+        // restore() reverses it in place. isMinimized gates isTaskOn (util.cpp)
+        // so hidden-by-us windows still list, unlike swallowed ones.
+        bool isMinimized(const PHLWINDOW& w);
+        void minimize(const PHLWINDOW& w);
+        void restore(const PHLWINDOW& w);
+        void minimizeFocused(); // Mod+N: minimize the focused window
+        void restoreLast();     // Mod+Ctrl+N: awful.client.restore — last minimized on a viewed tag
     }
 
     void layoutboxExit();
@@ -317,7 +329,7 @@ namespace NHyprbar {
         const std::vector<std::pair<uint64_t, PHLWINDOW>>* tasks       = nullptr; // this workspace's tasks, arrival order
         // the frame palette, fetched once — color() memoizes but still
         // hashes per call, and the taglist alone makes dozens
-        CHyprColor fg, active, activeBg, urgentFg, urgentBg, squareSel, squareUnsel;
+        CHyprColor fg, active, activeBg, urgentFg, urgentBg, squareSel, squareUnsel, minimized;
     };
 
     struct IWidget {

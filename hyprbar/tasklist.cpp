@@ -11,6 +11,52 @@ namespace NHyprbar {
     static std::unordered_map<void*, uint64_t> winSeq;
     static uint64_t                            winSeqNext = 0;
 
+    // awesome's client.minimized, which the compositor has no flag for. The
+    // window's raw pointer is the identity key (like winSeq), dropped in
+    // forget() on destroy before the pointer can be reused. `tiled` records
+    // whether restore must re-add a layout slot: a floating window (the
+    // floating-only rule = all of them today) reserves none, so hiding alone
+    // suffices and its box stays untouched — routing it through the layout
+    // would risk the float-recenter (see hyprmax). `fs` is the compositor
+    // fullscreen/maximize mode held at minimize: a hidden window can't keep
+    // the workspace's one FS slot without stranding it, so the mode is
+    // dropped before hiding and re-entered on restore — awesome keeps a
+    // minimized client's fullscreen flag, this reproduces it. hyprmax's
+    // told-maximize is a plain floating window (internal FSMODE_NONE), holds
+    // no slot, and passes through here untouched.
+    struct SMinimized {
+        PHLWINDOWREF                w;
+        void*                       key   = nullptr;
+        bool                        tiled = false;
+        Fullscreen::SFullscreenMode fs{};
+    };
+    static std::vector<SMinimized> minStack; // most-recently minimized last
+
+    // After hiding a window, commit focus to the next task. Two compositor
+    // quirks shape this: setHidden's own focus reset only fires for the swallow
+    // path (the swallowee is never focused), so minimizing the FOCUSED window
+    // leaves focus on it; and a plain fullWindowFocus won't move focus off a
+    // just-hidden window here. refocus() at the successor's own center is the
+    // authoritative input path and lands right regardless of where the real
+    // cursor sits (a click leaves it on the bar). m_windows is bottom-first, so
+    // walk it reversed to pick the topmost task.
+    static void focusNextAfterMinimize(const PHLWINDOW& gone, const PHLWORKSPACE& ws) {
+        if (!ws || !g_pInputManager)
+            return;
+        const auto& WINS = Desktop::windowState()->windows();
+        for (size_t i = WINS.size(); i-- > 0;) {
+            const auto& W = WINS[i];
+            if (W == gone || !W || !W->m_isMapped || W->isHidden() || !W->m_workspace || W->m_workspace->m_id != ws->m_id)
+                continue;
+            g_pInputManager->refocus(W->middle());
+            return;
+        }
+        // nothing left on the workspace: clear focus so it isn't stranded on the
+        // hidden window.
+        if (Desktop::focusState())
+            Desktop::focusState()->fullWindowFocus(nullptr, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW);
+    }
+
     namespace Tasklist {
         uint64_t seqOf(void* w) {
             const auto [SEQ, NEW] = winSeq.try_emplace(w, winSeqNext);
@@ -19,12 +65,90 @@ namespace NHyprbar {
             return SEQ->second;
         }
 
+        bool isMinimized(const PHLWINDOW& w) {
+            if (!w)
+                return false;
+            for (const auto& M : minStack)
+                if (M.key == w.get())
+                    return true;
+            return false;
+        }
+
+        void minimize(const PHLWINDOW& w) {
+            if (!w || !w->m_isMapped || w->isHidden())
+                return; // already hidden — minimized, or swallowed
+            // Drop the workspace's single FS slot before hiding: a fullscreen
+            // or compositor-maximized window that goes hidden strands the slot
+            // (black workspace, bar gone). Remember the mode; restore()
+            // re-enters it. hyprmax's told-maximize reports internal
+            // FSMODE_NONE and is left alone — its box and told-state survive
+            // the hide untouched.
+            const auto FS = Fullscreen::controller()->getFullscreenModes(w);
+            if (FS.internal != Fullscreen::FSMODE_NONE)
+                Fullscreen::controller()->setFullscreenMode(w, Fullscreen::FSMODE_NONE, Fullscreen::FSMODE_NONE);
+            const bool TILED = !w->m_isFloating;
+            const auto WS    = w->m_workspace;
+            if (TILED && g_layoutManager)
+                g_layoutManager->removeTarget(w->layoutTarget());
+            w->setHidden(true); // unrendered, xdg-suspended, no frame callbacks
+            focusNextAfterMinimize(w, WS);
+            minStack.push_back({PHLWINDOWREF{w}, w.get(), TILED, FS});
+            barChanged();
+        }
+
+        void restore(const PHLWINDOW& w) {
+            if (!w)
+                return;
+            bool                        tiled = false, found = false;
+            Fullscreen::SFullscreenMode fs{};
+            for (auto it = minStack.begin(); it != minStack.end(); ++it)
+                if (it->key == w.get()) {
+                    tiled = it->tiled;
+                    fs    = it->fs;
+                    minStack.erase(it);
+                    found = true;
+                    break;
+                }
+            if (!found || !w->m_isMapped)
+                return;
+            w->setHidden(false);
+            if (tiled && g_layoutManager && w->m_workspace)
+                g_layoutManager->newTarget(w->layoutTarget(), w->m_workspace->m_space);
+            Desktop::windowState()->raise(w);
+            if (Desktop::focusState())
+                Desktop::focusState()->fullWindowFocus(w, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW, w->wlSurface()->resource());
+            // re-enter the fullscreen/maximize the window held when minimized,
+            // after focus — the compositor fullscreens the active window.
+            if (fs.internal != Fullscreen::FSMODE_NONE)
+                Fullscreen::controller()->setFullscreenMode(w, fs.internal, fs.client);
+            barChanged();
+        }
+
+        void minimizeFocused() {
+            if (const auto W = Desktop::focusState() ? Desktop::focusState()->window() : nullptr)
+                minimize(W);
+        }
+
+        void restoreLast() {
+            // awful.client.restore: the most-recently minimized window whose tag
+            // is currently viewed (isVisible), so it returns where you are.
+            for (size_t i = minStack.size(); i-- > 0;) {
+                const auto W = minStack[i].w.lock();
+                if (W && W->m_isMapped && W->m_workspace && W->m_workspace->isVisible()) {
+                    restore(W);
+                    return;
+                }
+            }
+        }
+
         void forget(void* w) {
             winSeq.erase(w);
+            std::erase_if(minStack, [w](const SMinimized& m) { return m.key == w || m.w.expired(); });
         }
 
         void exit() {
             winSeq.clear();
+            minStack.clear();
         }
     } // namespace Tasklist
 
@@ -85,6 +209,8 @@ namespace NHyprbar {
                     CHyprColor fg = F.fg;
                     if (W == F.focus)
                         fg = F.active;
+                    else if (Tasklist::isMinimized(W))
+                        fg = F.minimized; // awesome's fg_minimize: muted, no bg (can't be focused)
                     else if (W->m_isUrgent) {
                         P.rect(CELL, F.urgentBg);
                         fg = F.urgentFg;
@@ -128,22 +254,36 @@ namespace NHyprbar {
                 }
                 if (bit != 1u)
                     return;
-                if (const auto W = h.window.lock(); W && W->m_isMapped) {
-                    // Not Actions::focus(): that goes through FocusState with
-                    // surface=nullptr, and its already-focused guard compares
-                    // (window, surface) == (m_focusWindow, m_focusSurface).
-                    // When a popup/layer that held the keyboard dies while the
-                    // pointer sits on the bar (moves swallowed = FFM can't
-                    // heal), m_focusSurface is left empty with m_focusWindow
-                    // still set — nullptr == empty matches, the guard returns
-                    // before the raise AND before keyboard focus, and the
-                    // click looks dead until some other window gets focused.
-                    // So: raise explicitly, then focus with the window's real
-                    // surface — the guard can never match a half-focused
-                    // window, and a focused-but-obscured one still raises.
-                    Desktop::windowState()->raise(W);
-                    Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW, W->wlSurface()->resource());
+                const auto W = h.window.lock();
+                if (!W || !W->m_isMapped)
+                    return;
+
+                // awesome's tasklist button 1: clicking the focused task
+                // minimizes it; clicking any other task (minimized included)
+                // restores + focuses it.
+                if (W == (Desktop::focusState() ? Desktop::focusState()->window() : nullptr)) {
+                    Tasklist::minimize(W);
+                    return;
                 }
+                if (Tasklist::isMinimized(W)) {
+                    Tasklist::restore(W);
+                    return;
+                }
+
+                // Not Actions::focus(): that goes through FocusState with
+                // surface=nullptr, and its already-focused guard compares
+                // (window, surface) == (m_focusWindow, m_focusSurface).
+                // When a popup/layer that held the keyboard dies while the
+                // pointer sits on the bar (moves swallowed = FFM can't
+                // heal), m_focusSurface is left empty with m_focusWindow
+                // still set — nullptr == empty matches, the guard returns
+                // before the raise AND before keyboard focus, and the
+                // click looks dead until some other window gets focused.
+                // So: raise explicitly, then focus with the window's real
+                // surface — the guard can never match a half-focused
+                // window, and a focused-but-obscured one still raises.
+                Desktop::windowState()->raise(W);
+                Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW, W->wlSurface()->resource());
             }
 
             bool accumulatesScroll() const override {
@@ -157,7 +297,7 @@ namespace NHyprbar {
                 static std::vector<std::pair<uint64_t, PHLWINDOW>> tasks; // reused; main thread only
                 tasks.clear();
                 for (const auto& W : Desktop::windowState()->windows()) {
-                    if (isTaskOn(W, WS))
+                    if (isTaskOn(W, WS) && !Tasklist::isMinimized(W)) // scroll walks focusable tasks, not minimized
                         if (const auto SEQ = winSeq.find(W.get()); SEQ != winSeq.end())
                             tasks.emplace_back(SEQ->second, W);
                 }

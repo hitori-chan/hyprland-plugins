@@ -16,11 +16,13 @@
 //   order (stable across raises, like awesome), app icon + "⌃"/"+"/"✈"
 //   state markers + title; the focused task is accent-colored text on the plain
 //   bar (their tasklist_bg_focus WAS the bar bg), urgent gets the urgent
-//   bg. Click focuses + raises (no minimize here, so the click-focused-
-//   to-minimize half of awesome's button is off), right-click opens the
-//   all-clients menu (awful.menu.client_list: icons + titles, click jumps
-//   to the window, its workspace included), wheel walks focus through the
-//   tasks. Icons resolve from the GTK icon theme + hicolor + pixmaps, PNG
+//   bg; minimized tasks are muted (awesome's fg_minimize) but keep their
+//   row. Click the focused task to minimize it, click any other (minimized
+//   included) to restore + focus (awesome's tasklist button, both halves);
+//   right-click opens the all-clients menu (awful.menu.client_list: icons +
+//   titles, click jumps to the window, its workspace included), wheel walks
+//   focus through the tasks (skipping minimized). Icons resolve from the GTK
+//   icon theme + hicolor + pixmaps, PNG
 //   or SVG (librsvg); *-symbolic SVGs are repainted with the bar
 //   foreground.
 // - tray: an in-compositor StatusNotifierWatcher/Host (sdbus-c++), with a
@@ -171,6 +173,22 @@ static int luaLayoutPrev(lua_State*) {
     return 0;
 }
 
+// hl.plugin.hyprbar.minimize()/restore() — awesome's client.minimized (Mod+N)
+// and awful.client.restore (Mod+Ctrl+N). Deferred out of the keybind emission:
+// both change focus + layout, which must never run synchronously inside an
+// input emission; the pending hops are reset in PLUGIN_EXIT.
+static UP<SEventLoopDoLaterLock> pendingMinimize, pendingRestore;
+static int                       luaMinimize(lua_State*) {
+    if (g_pEventLoopManager)
+        pendingMinimize = g_pEventLoopManager->doLaterLock([]() { Tasklist::minimizeFocused(); });
+    return 0;
+}
+static int luaRestore(lua_State*) {
+    if (g_pEventLoopManager)
+        pendingRestore = g_pEventLoopManager->doLaterLock([]() { Tasklist::restoreLast(); });
+    return 0;
+}
+
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
     return HYPRLAND_API_VERSION;
 }
@@ -230,6 +248,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprbar", "menubar", luaMenubar);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprbar", "layout_next", luaLayoutNext);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprbar", "layout_prev", luaLayoutPrev);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprbar", "minimize", luaMinimize);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprbar", "restore", luaRestore);
 
     // Anything that changes what the bar shows -> damage the strip.
     auto& EV = Event::bus()->m_events;
@@ -272,11 +292,13 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "2.0.1"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "2.1.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
     pendingWarm.reset(); // a queued warm across unload calls into dlclosed code
+    pendingMinimize.reset();
+    pendingRestore.reset();
     Menubar::exit();
     Menu::exit();
     Tray::exit();

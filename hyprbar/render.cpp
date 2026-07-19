@@ -187,6 +187,7 @@ namespace NHyprbar {
         F.urgentBg    = color(cfg.colUrgentBg);
         F.squareSel   = color(cfg.colSquareSel);
         F.squareUnsel = color(cfg.colSquareUnsel);
+        F.minimized   = color(cfg.colEmpty); // awesome's tasklist_fg_minimize: muted
 
         // awesome's align layout: the left slot, the tasklist filling the
         // middle, the right slot laid from the edge inwards (awesome's order
