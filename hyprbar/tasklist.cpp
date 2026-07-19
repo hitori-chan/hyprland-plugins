@@ -113,6 +113,13 @@ namespace NHyprbar {
             if (TILED && g_layoutManager)
                 g_layoutManager->removeTarget(w->layoutTarget());
             w->setHidden(true); // unrendered, xdg-suspended, no frame callbacks
+            // setHidden issues NO damage. A tiled window's removeTarget reflow
+            // repaints the vacated area for free, but a floating window leaves
+            // its last frame stale on screen until something else damages it —
+            // so its box flickers back under the cursor's motion damage. Force
+            // the vacated area to repaint once here.
+            if (g_pHyprRenderer)
+                g_pHyprRenderer->damageWindow(w, true);
             if (WASFOCUSED)
                 focusNextAfterMinimize(w, WS);
             minStack.push_back({PHLWINDOWREF{w}, w.get(), TILED, FS});
