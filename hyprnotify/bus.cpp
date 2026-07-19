@@ -87,6 +87,40 @@ namespace NHyprnotify {
             return nullptr;
         }
 
+        // ---- history (persistence): closed notifications kept for recall ----
+
+        static std::vector<SNotif> history; // content snapshots; textures/pixels not carried
+
+        static SNotif              snapshot(const SNotif& n) {
+            SNotif s;
+            s.appName       = n.appName;
+            s.summary       = n.summary; // already sanitized markup: re-displays verbatim
+            s.body          = n.body;
+            s.image         = n.image;
+            s.defaultAction = n.defaultAction;
+            s.urgency       = n.urgency;
+            s.actionIcons   = n.actionIcons;
+            s.resident      = n.resident;
+            for (const auto& A : n.actions)
+                s.actions.push_back(SAction{.id = A.id, .label = A.label});
+            for (const auto& IM : n.bodyImages)
+                s.bodyImages.push_back({IM.src});
+            return s;
+        }
+
+        // A card leaving the model is retained for recall — except progress/OSD
+        // cards (a volume blip is not history) and transients (the hint opts out).
+        static void retire(const SP<SNotif>& n) {
+            if (!n || n->transient || n->progress >= 0)
+                return;
+            const size_t CAP = std::max<int64_t>(0, cfg.maxHistory->value());
+            if (CAP == 0)
+                return;
+            history.push_back(snapshot(*n));
+            while (history.size() > CAP)
+                history.erase(history.begin());
+        }
+
         void rearmExpiry() {
             if (!expiry)
                 return;
@@ -117,6 +151,8 @@ namespace NHyprnotify {
         }
 
         void closeOne(uint32_t id, uint32_t reason) {
+            if (const auto N = byId(id))
+                retire(N);
             const auto BEFORE = notifs.size();
             std::erase_if(notifs, [&](const auto& N) { return N->id == id; });
             if (notifs.size() == BEFORE)
@@ -131,8 +167,10 @@ namespace NHyprnotify {
             // queue holds were never seen and stay for the resume
             const auto BEFORE = notifs.size();
             for (const auto& N : notifs)
-                if (!N->waiting)
+                if (!N->waiting) {
                     emitClosed(N->id, reason);
+                    retire(N);
+                }
             std::erase_if(notifs, [](const auto& N) { return !N->waiting; });
             if (notifs.size() == BEFORE)
                 return;
@@ -170,74 +208,104 @@ namespace NHyprnotify {
             rearmExpiry();
         }
 
-        // ---- incoming payload massage ----
+        // Pop the most recently retained card back onto the stack as a fresh
+        // notification (naughty/dunst history-pop): new id, fresh timeout.
+        void recall() {
+            if (history.empty())
+                return;
+            auto n = makeShared<SNotif>(std::move(history.back()));
+            history.pop_back();
+            n->waiting = false;
+            do {
+                n->id = nextId++;
+                if (nextId == 0)
+                    nextId = 1;
+            } while (byId(n->id) || (n->id >= 9990 && n->id <= 9999));
+            n->timeoutMs = n->urgency >= 2 ? 0 : (float)(n->urgency == 0 ? cfg.timeoutLow->value() : cfg.timeoutNormal->value());
+            if (n->timeoutMs > 0)
+                n->deadline = Time::steadyNow() + std::chrono::milliseconds((int64_t)n->timeoutMs);
+            notifs.insert(notifs.begin(), n);
 
-        static void appendUtf8(std::string& out, uint32_t c) {
-            if (c < 0x80)
-                out += (char)c;
-            else if (c < 0x800) {
-                out += (char)(0xC0 | (c >> 6));
-                out += (char)(0x80 | (c & 0x3F));
-            } else if (c < 0x10000) {
-                out += (char)(0xE0 | (c >> 12));
-                out += (char)(0x80 | ((c >> 6) & 0x3F));
-                out += (char)(0x80 | (c & 0x3F));
-            } else {
-                out += (char)(0xF0 | (c >> 18));
-                out += (char)(0x80 | ((c >> 12) & 0x3F));
-                out += (char)(0x80 | ((c >> 6) & 0x3F));
-                out += (char)(0x80 | (c & 0x3F));
+            const size_t CAP = std::max((int64_t)1, cfg.maxNotifs->value());
+            while (notifs.size() > CAP) {
+                auto victim = notifs.end() - 1;
+                for (auto it = notifs.end() - 1; it != notifs.begin(); --it)
+                    if ((*it)->urgency < 2) {
+                        victim = it;
+                        break;
+                    }
+                const auto VID = (*victim)->id;
+                notifs.erase(victim);
+                emitClosed(VID, R_UNDEFINED);
             }
+            notifChanged();
+            rearmExpiry();
         }
 
-        // The server never advertises body-markup, so tags are decoration we
-        // must not render literally: strip them, unescape the entities. But
-        // clients are entitled to send RAW text — a bare '<' or '&' that
-        // doesn't form a tag/entity is content and must survive verbatim.
-        static std::string stripMarkup(const std::string& in) {
+        size_t historySize() {
+            return history.size();
+        }
+
+        // ---- incoming payload massage ----
+
+        // We advertise body-markup, so the whitelisted Pango tags pass through
+        // live; everything else is neutralized into content. Two client dialects
+        // must both come out right: a markup-aware client escapes its reserved
+        // chars ("a &amp;amp; b"), a naive one sends them raw ("a & b") — a bare
+        // '&'/'<' that forms no entity/tag is escaped so Pango renders it
+        // verbatim either way. Disallowed tags are dropped (spec: "filter them
+        // out"); ALLOW_LINKS adds <a> (hyperlinks phase). <img> never reaches
+        // here — it is extracted before sanitizing (body-images phase).
+        static bool allowedTag(const std::string& name, bool allowLinks) {
+            return name == "b" || name == "i" || name == "u" || name == "span" || name == "br" || (allowLinks && name == "a");
+        }
+
+        static std::string sanitizeMarkup(const std::string& in, bool allowLinks = false) {
             std::string out;
-            out.reserve(in.size());
+            out.reserve(in.size() + 16);
             for (size_t i = 0; i < in.size();) {
-                // only a tag-shaped '<' opens a tag: body-markup is never
-                // advertised, so "1 < 2 ... 80 > 70" is legal plain text and
-                // must survive verbatim
-                if (in[i] == '<' && i + 1 < in.size() && (std::isalpha((unsigned char)in[i + 1]) || in[i + 1] == '/' || in[i + 1] == '!')) {
-                    const auto END = in.find('>', i);
-                    if (END != std::string::npos) {
-                        i = END + 1;
-                        continue;
-                    }
-                } else if (in[i] == '&') {
-                    const auto END = in.find(';', i);
-                    if (END != std::string::npos && END - i <= 10) {
-                        const auto E  = in.substr(i + 1, END - i - 1);
-                        bool       ok = true;
-                        if (E == "amp")
-                            out += '&';
-                        else if (E == "lt")
-                            out += '<';
-                        else if (E == "gt")
-                            out += '>';
-                        else if (E == "quot")
-                            out += '"';
-                        else if (E == "apos")
-                            out += '\'';
-                        else if (E.size() > 1 && E[0] == '#') {
-                            const long C = E[1] == 'x' || E[1] == 'X' ? std::strtol(E.c_str() + 2, nullptr, 16) : std::strtol(E.c_str() + 1, nullptr, 10);
-                            if (C > 0 && C < 0x110000 && (C < 0xD800 || C > 0xDFFF)) // surrogates encode to invalid UTF-8
-                                appendUtf8(out, (uint32_t)C);
-                            else
-                                ok = false;
-                        } else
-                            ok = false;
-                        if (ok) {
+                const char CH = in[i];
+                if (CH == '<') {
+                    size_t j = i + 1;
+                    if (j < in.size() && in[j] == '/')
+                        j++;
+                    const size_t NS = j;
+                    while (j < in.size() && std::isalpha((unsigned char)in[j]))
+                        j++;
+                    if (j > NS) {
+                        const auto END = in.find('>', j);
+                        if (END != std::string::npos) {
+                            std::string name = in.substr(NS, j - NS);
+                            std::ranges::transform(name, name.begin(), [](unsigned char c) { return std::tolower(c); });
+                            if (name == "br")
+                                out += '\n'; // a line break, whatever the card does with it
+                            else if (allowedTag(name, allowLinks))
+                                out += in.substr(i, END - i + 1); // live tag, verbatim (Pango validates attrs)
+                            // else: disallowed tag, dropped
                             i = END + 1;
                             continue;
                         }
                     }
+                    out += "&lt;"; // a bare '<' that forms no tag: literal
+                    i++;
+                    continue;
                 }
-                if (in[i] != '\r')
-                    out += in[i];
+                if (CH == '&') {
+                    const auto END = in.find(';', i);
+                    if (END != std::string::npos && END - i <= 10) {
+                        const auto E = in.substr(i + 1, END - i - 1);
+                        if (E == "amp" || E == "lt" || E == "gt" || E == "quot" || E == "apos" || (E.size() > 1 && E[0] == '#')) {
+                            out += in.substr(i, END - i + 1); // a real entity: Pango decodes it
+                            i = END + 1;
+                            continue;
+                        }
+                    }
+                    out += "&amp;"; // a bare '&': literal
+                    i++;
+                    continue;
+                }
+                if (CH != '\r')
+                    out += CH;
                 i++;
             }
             return out;
@@ -250,12 +318,56 @@ namespace NHyprnotify {
             return s;
         }
 
-        // notify-send sends file paths and file:// URIs; bare theme names have
-        // no analog here (naughty took paths) and resolve to no image.
-        static std::string imagePath(std::string s) {
+        // A path (file:// or absolute) is taken verbatim; anything else is a
+        // freedesktop icon NAME resolved against the theme (dunst/mako do this,
+        // and so should a compositor daemon). "" = nothing usable.
+        static std::string resolveImage(std::string s, int sizePx) {
+            if (s.empty())
+                return "";
             if (s.starts_with("file://"))
                 s.erase(0, 7);
-            return s.starts_with('/') ? s : "";
+            if (s.starts_with('/'))
+                return s;
+            return resolveIconName(s, sizePx);
+        }
+
+        // <img src="..."> is not a Pango tag; pull it from the body before the
+        // markup sanitizer would drop it, resolve each src (path or themed name),
+        // and return the thumbnails — removing the tags from the text. http(s)
+        // and data: srcs aren't fetched, so they're skipped.
+        static std::vector<std::string> extractImages(std::string& body, int sizePx) {
+            std::vector<std::string> out;
+            for (size_t i = 0; i < body.size();) {
+                if (body[i] != '<') {
+                    i++;
+                    continue;
+                }
+                size_t j = i + 1;
+                while (j < body.size() && std::isalpha((unsigned char)body[j]))
+                    j++;
+                std::string name = body.substr(i + 1, j - i - 1);
+                std::ranges::transform(name, name.begin(), [](unsigned char c) { return std::tolower(c); });
+                if (name != "img") {
+                    i++;
+                    continue;
+                }
+                const auto END = body.find('>', j);
+                if (END == std::string::npos)
+                    break;
+                const auto  TAG = body.substr(i, END - i + 1);
+                std::string tl  = TAG; // case-insensitive attr search, same offsets as TAG
+                std::ranges::transform(tl, tl.begin(), [](unsigned char c) { return std::tolower(c); });
+                std::string src;
+                if (const auto SP = tl.find("src"); SP != std::string::npos)
+                    if (const auto Q = TAG.find_first_of("\"'", SP); Q != std::string::npos)
+                        if (const auto Q2 = TAG.find(TAG[Q], Q + 1); Q2 != std::string::npos)
+                            src = TAG.substr(Q + 1, Q2 - Q - 1);
+                if (!src.empty() && !src.starts_with("http") && !src.starts_with("data:"))
+                    if (const auto P = resolveImage(src, sizePx); !P.empty())
+                        out.push_back(P);
+                body.erase(i, END - i + 1); // drop the tag from the text
+            }
+            return out;
         }
 
         // the spec's image-data: width, height, rowstride, has_alpha,
@@ -328,14 +440,19 @@ namespace NHyprnotify {
                             break;
                         }
                     const auto VID = (*victim)->id;
+                    retire(*victim);
                     notifs.erase(victim);
                     emitClosed(VID, R_UNDEFINED);
                 } // the newcomer always survives: the scan stops short of begin()
             }
 
             n->appName = appName;
-            n->summary = oneLine(stripMarkup(summary));
-            n->body    = stripMarkup(body);
+            n->summary = oneLine(sanitizeMarkup(summary));
+            std::string bodyText = body;
+            n->bodyImages.clear();
+            for (const auto& P : extractImages(bodyText, std::max(64, (int)cfg.maxIcon->value() * 2)))
+                n->bodyImages.push_back({P});
+            n->body = sanitizeMarkup(bodyText, /*allowLinks=*/true);
 
             n->urgency  = 1;
             n->progress = -1;
@@ -368,24 +485,56 @@ namespace NHyprnotify {
                         unpackImageData(*n, IT->second.get<ImageData>());
                     } catch (...) {}
             if (n->pixels.empty()) {
+                // precedence: image-path hint, then the app_icon param, then
+                // the desktop-entry hint (its .desktop id doubles as an icon
+                // name for most apps) — each a path OR a themed name
+                const int   ICONPX = std::max(8, (int)cfg.maxIcon->value());
+                std::string cand;
                 for (const auto* KEY : {"image-path", "image_path"})
-                    if (const auto IT = hints.find(KEY); IT != hints.end() && n->image.empty())
+                    if (const auto IT = hints.find(KEY); IT != hints.end() && cand.empty())
                         try {
-                            n->image = imagePath(IT->second.get<std::string>());
+                            cand = IT->second.get<std::string>();
                         } catch (...) {}
+                n->image = resolveImage(cand, ICONPX);
                 if (n->image.empty())
-                    n->image = imagePath(appIcon);
+                    n->image = resolveImage(appIcon, ICONPX);
+                if (n->image.empty())
+                    if (const auto IT = hints.find("desktop-entry"); IT != hints.end())
+                        try {
+                            n->image = resolveImage(IT->second.get<std::string>(), ICONPX);
+                        } catch (...) {}
             }
 
-            // "default" is what a left click invokes; a sole action counts too
+            // actions arrive as [id0,label0, id1,label1, ...]. "default" is the
+            // body-click target (no button of its own); every other pair becomes
+            // a button. A lone named action also doubles as the body-click
+            // default, so a one-action card fires by clicking anywhere.
             n->defaultAction.clear();
-            for (size_t i = 0; i + 1 < actions.size(); i += 2)
-                if (actions[i] == "default") {
+            n->actions.clear();
+            for (size_t i = 0; i + 1 < actions.size(); i += 2) {
+                if (actions[i] == "default")
                     n->defaultAction = actions[i];
-                    break;
-                }
-            if (n->defaultAction.empty() && actions.size() == 2)
-                n->defaultAction = actions[0];
+                else if (!actions[i + 1].empty()) // an empty label has no button to draw
+                    n->actions.push_back(SAction{.id = actions[i], .label = actions[i + 1]});
+            }
+            if (n->defaultAction.empty() && n->actions.size() == 1)
+                n->defaultAction = n->actions.front().id;
+
+            n->resident = false;
+            if (const auto IT = hints.find("resident"); IT != hints.end())
+                try {
+                    n->resident = IT->second.get<bool>();
+                } catch (...) {}
+            n->actionIcons = false;
+            if (const auto IT = hints.find("action-icons"); IT != hints.end())
+                try {
+                    n->actionIcons = IT->second.get<bool>();
+                } catch (...) {}
+            n->transient = false;
+            if (const auto IT = hints.find("transient"); IT != hints.end())
+                try {
+                    n->transient = IT->second.get<bool>();
+                } catch (...) {}
 
             if (expireTimeout > 0)
                 n->timeoutMs = expireTimeout;
@@ -398,6 +547,36 @@ namespace NHyprnotify {
 
             if (!n->waiting) // a suspended arrival is invisible: no warm, no damage
                 notifChanged();
+
+            // sound: a shown arrival plays sound-file/sound-name through the
+            // libcanberra player unless the client suppresses it. DND-queued
+            // (waiting) arrivals stay silent; the resume doesn't replay.
+            if (!n->waiting) {
+                bool        suppress = false;
+                std::string soundFile, soundName;
+                if (const auto IT = hints.find("suppress-sound"); IT != hints.end())
+                    try {
+                        suppress = IT->second.get<bool>();
+                    } catch (...) {}
+                if (const auto IT = hints.find("sound-file"); IT != hints.end())
+                    try {
+                        soundFile = IT->second.get<std::string>();
+                    } catch (...) {}
+                if (const auto IT = hints.find("sound-name"); IT != hints.end())
+                    try {
+                        soundName = IT->second.get<std::string>();
+                    } catch (...) {}
+                if (soundFile.starts_with("file://"))
+                    soundFile.erase(0, 7);
+                const std::string CMD = cfg.soundCommand->value();
+                if (!suppress && !CMD.empty()) {
+                    if (!soundFile.empty())
+                        spawnDetached({CMD.c_str(), "-f", soundFile.c_str(), nullptr});
+                    else if (!soundName.empty())
+                        spawnDetached({CMD.c_str(), "-i", soundName.c_str(), nullptr});
+                }
+            }
+
             rearmExpiry();
             return id;
         }
@@ -417,7 +596,7 @@ namespace NHyprnotify {
                                                      int32_t expireTimeout) { return handleNotify(appName, replacesId, appIcon, summary, body, actions, hints, expireTimeout); }),
                                sdbus::registerMethod("CloseNotification").withInputParamNames("id").implementedAs([](uint32_t id) { closeOne(id, R_CLOSED); }),
                                sdbus::registerMethod("GetCapabilities").withOutputParamNames("capabilities").implementedAs([]() {
-                                   return std::vector<std::string>{"actions", "body", "icon-static"};
+                                   return std::vector<std::string>{"actions", "action-icons", "body", "body-markup", "body-hyperlinks", "body-images", "icon-static", "persistence", "sound"};
                                }),
                                sdbus::registerMethod("GetServerInformation").withOutputParamNames("name", "vendor", "version", "spec_version").implementedAs([]() {
                                    return std::tuple<std::string, std::string, std::string, std::string>{"hyprnotify", "hitori", VERSION, "1.3"};
@@ -445,6 +624,8 @@ namespace NHyprnotify {
                             if (N->timeoutMs > 0 && !N->waiting && N->deadline <= NOW)
                                 due.push_back(N->id);
                         for (const auto ID : due) {
+                            if (const auto N = byId(ID))
+                                retire(N);
                             std::erase_if(notifs, [&](const auto& N) { return N->id == ID; });
                             emitClosed(ID, R_EXPIRED);
                         }
@@ -479,6 +660,7 @@ namespace NHyprnotify {
             poll.reset();
             expiry.reset();
             notifs.clear();
+            history.clear();
             suspended = false;
         }
     }

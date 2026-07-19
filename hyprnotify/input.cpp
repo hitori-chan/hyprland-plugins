@@ -10,9 +10,15 @@ namespace NHyprnotify {
 
     // clicks accumulate into one drain: two card-clicks in a single dispatch
     // would otherwise clobber the lock and lose the first's action + dismiss
-    static std::vector<std::pair<uint32_t, uint32_t>> hitQueue; // (card id, button bit)
-    static bool                                       hitQueued = false;
-    static UP<SEventLoopDoLaterLock>                  pendingHit;
+    struct SHit {
+        uint32_t    id;
+        uint32_t    bit;
+        std::string action; // non-empty: a specific action button was clicked
+        std::string href;   // non-empty: a body hyperlink was clicked
+    };
+    static std::vector<SHit>         hitQueue;
+    static bool                      hitQueued = false;
+    static UP<SEventLoopDoLaterLock> pendingHit;
 
     static const SCard*              cardAt(const Vector2D& pos) {
         if (cards.empty())
@@ -24,6 +30,20 @@ namespace NHyprnotify {
             if (C.box.containsPoint(pos))
                 return &C;
         return nullptr;
+    }
+
+    static int buttonAt(const SCard& c, const Vector2D& pos) {
+        for (size_t i = 0; i < c.buttons.size(); i++)
+            if (c.buttons[i].box.containsPoint(pos))
+                return (int)i;
+        return -1;
+    }
+
+    static int linkAt(const SCard& c, const Vector2D& pos) {
+        for (size_t i = 0; i < c.links.size(); i++)
+            if (c.links[i].box.containsPoint(pos))
+                return (int)i;
+        return -1;
     }
 
     void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
@@ -52,7 +72,8 @@ namespace NHyprnotify {
         if (info.cancelled)
             return;
 
-        const auto CARD = BIT ? cardAt(g_pInputManager->getMouseCoordsInternal()) : nullptr;
+        const auto COORDS = g_pInputManager->getMouseCoordsInternal();
+        const auto CARD   = BIT ? cardAt(COORDS) : nullptr;
         if (!CARD) {
             heldButtons++;
             return;
@@ -61,10 +82,21 @@ namespace NHyprnotify {
         info.cancelled = true; // the card is ours: the press must not reach the window beneath
         swallowRelease |= BIT;
 
+        // a left click on a specific action button invokes that action, on a
+        // body hyperlink opens it; the body (or any right/middle) falls through
+        // to the default/dismiss/sweep logic
+        std::string action, href;
+        if (BIT == 1u) {
+            if (const int B = buttonAt(*CARD, COORDS); B >= 0)
+                action = CARD->buttons[B].id;
+            else if (const int L = linkAt(*CARD, COORDS); L >= 0)
+                href = CARD->links[L].href;
+        }
+
         // Deferred out of the input emission: the close reflows the stack and
         // an action can make the client focus/raise itself. Queue+drain so two
         // clicks in one dispatch both land instead of the second clobbering the first.
-        hitQueue.emplace_back(CARD->id, BIT);
+        hitQueue.push_back({CARD->id, BIT, action, href});
         if (hitQueued || !g_pEventLoopManager)
             return;
         hitQueued  = true;
@@ -72,19 +104,33 @@ namespace NHyprnotify {
             hitQueued    = false;
             const auto Q = std::move(hitQueue);
             hitQueue.clear();
-            for (const auto& [ID, BIT] : Q) {
-                if (BIT == 4u) { // middle sweeps the stack, like the old mouse binding
+            for (const auto& H : Q) {
+                if (H.bit == 4u) { // middle sweeps the stack, like the old mouse binding
                     Bus::closeAll(Bus::R_DISMISSED);
                     break; // the rest reference now-dismissed cards
                 }
-                if (BIT == 1u) // left invokes the default action when the client sent one
-                    for (const auto& N : notifs)
-                        if (N->id == ID) {
-                            if (!N->defaultAction.empty())
-                                Bus::invokeAction(ID, N->defaultAction);
-                            break;
-                        }
-                Bus::closeOne(ID, Bus::R_DISMISSED);
+                if (H.bit == 2u) { // right dismisses, no action
+                    Bus::closeOne(H.id, Bus::R_DISMISSED);
+                    continue;
+                }
+                if (!H.href.empty()) { // left on a hyperlink: open it, keep the card up
+                    spawnDetached({"xdg-open", H.href.c_str(), nullptr});
+                    continue;
+                }
+                // left: a specific button (H.action) or the body's default action
+                std::string action   = H.action;
+                bool        resident = false;
+                for (const auto& N : notifs)
+                    if (N->id == H.id) {
+                        if (action.empty())
+                            action = N->defaultAction;
+                        resident = N->resident;
+                        break;
+                    }
+                if (!action.empty())
+                    Bus::invokeAction(H.id, action);
+                if (!(resident && !action.empty())) // resident keeps the card once an action fired
+                    Bus::closeOne(H.id, Bus::R_DISMISSED);
             }
         });
     }
@@ -131,7 +177,7 @@ namespace NHyprnotify {
             return;
         }
 
-        setHovered(CARD->id);
+        setHovered(CARD->id, buttonAt(*CARD, pos));
         info.cancelled = true;
         if (!pointerOwned) {
             pointerOwned = true;
@@ -146,8 +192,9 @@ namespace NHyprnotify {
     // real layer-surface daemon's unmap triggers the compositor's own refocus;
     // match it. Runs from the notifChanged doLater, never an input emission.
     void refreshPointerOwnership() {
-        const auto CARD = cardAt(g_pInputManager->getMouseCoordsInternal());
-        setHovered(CARD ? CARD->id : 0); // a reflow can slide another card under the still pointer
+        const auto COORDS = g_pInputManager->getMouseCoordsInternal();
+        const auto CARD   = cardAt(COORDS);
+        setHovered(CARD ? CARD->id : 0, CARD ? buttonAt(*CARD, COORDS) : -1); // a reflow can slide another card under the still pointer
         if (!pointerOwned || CARD)
             return;
         releasePointer();

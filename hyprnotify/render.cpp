@@ -2,6 +2,8 @@
 
 #include "hyprnotify.hpp"
 
+#include <format>
+
 namespace NHyprnotify {
 
     bool               warming = false, texStale = false; // the texture rule — see hyprnotify.hpp
@@ -11,12 +13,15 @@ namespace NHyprnotify {
 
     // spacing is design freedom (the parity contract binds colors/structure)
     static constexpr double          PADX = 14, PADY = 12, FRAME = 1, ICON_GAP = 12, KICKER_GAP = 3, TITLE_GAP = 4, PROGRESS_H = 4, PROGRESS_GAP = 8;
-    static constexpr double          HERO_TEXT_MIN = 60; // a hero never starves the text: ~kicker + title + a body line
+    static constexpr double          HERO_TEXT_MIN = 60;                                                          // a hero never starves the text: ~kicker + title + a body line
+    static constexpr double          BTN_H = 24, BTN_PADX = 10, BTN_GAP = 6, BTN_ROW_GAP = 8, BTN_ICON = 15, BTN_ICON_GAP = 5; // action-button metrics
+    static constexpr double          BODYIMG_H = 96, IMG_GAP = 6, IMG_ROW_GAP = 8;                                             // body <img> thumbnail metrics
 
     static CBox                      lastBox;            // last damaged card column, global logical
     static double                    lastStackH     = 0; // the column's height from the last layout, for the pass bounding box
     static bool                      inRenderNotifs = false;
     static uint32_t                  hoveredId      = 0;
+    static int                       hoveredBtn     = -1; // action button under the pointer within hoveredId, -1 = the frame
 
     static UP<SEventLoopDoLaterLock> pendingWarm, pendingRewarm;
 
@@ -50,12 +55,184 @@ namespace NHyprnotify {
         return s;
     }
 
+    // ---- hyperlinks (<a href>) ----
+
+    static int cpToUtf8(uint32_t c, char buf[4]) {
+        if (c < 0x80) {
+            buf[0] = (char)c;
+            return 1;
+        }
+        if (c < 0x800) {
+            buf[0] = (char)(0xC0 | (c >> 6));
+            buf[1] = (char)(0x80 | (c & 0x3F));
+            return 2;
+        }
+        if (c < 0x10000) {
+            buf[0] = (char)(0xE0 | (c >> 12));
+            buf[1] = (char)(0x80 | ((c >> 6) & 0x3F));
+            buf[2] = (char)(0x80 | (c & 0x3F));
+            return 3;
+        }
+        buf[0] = (char)(0xF0 | (c >> 18));
+        buf[1] = (char)(0x80 | ((c >> 12) & 0x3F));
+        buf[2] = (char)(0x80 | ((c >> 6) & 0x3F));
+        buf[3] = (char)(0x80 | (c & 0x3F));
+        return 4;
+    }
+
+    static uint32_t parseCp(const std::string& e) { // "#960" or "#x3C0"
+        if (e.size() < 2 || e[0] != '#')
+            return 0;
+        return e[1] == 'x' || e[1] == 'X' ? (uint32_t)std::strtol(e.c_str() + 2, nullptr, 16) : (uint32_t)std::strtol(e.c_str() + 1, nullptr, 10);
+    }
+
+    // Byte length an entity decodes to — must match Pango's stripping so link
+    // offsets into the stripped text stay aligned.
+    static int entityBytes(const std::string& e) {
+        if (e == "amp" || e == "lt" || e == "gt" || e == "quot" || e == "apos")
+            return 1;
+        if (e.size() > 1 && e[0] == '#') {
+            const uint32_t C = parseCp(e);
+            char           b[4];
+            if (C == 0 || C > 0x10FFFF || (C >= 0xD800 && C <= 0xDFFF))
+                return 0;
+            return cpToUtf8(C, b);
+        }
+        return 0;
+    }
+
+    static std::string decodeEntities(const std::string& s) { // for the href handed to xdg-open
+        std::string out;
+        out.reserve(s.size());
+        for (size_t i = 0; i < s.size();) {
+            if (s[i] == '&') {
+                const auto END = s.find(';', i);
+                if (END != std::string::npos && END - i <= 10) {
+                    const auto E = s.substr(i + 1, END - i - 1);
+                    if (E == "amp" || E == "lt" || E == "gt" || E == "quot" || E == "apos") {
+                        out += E == "amp" ? '&' : E == "lt" ? '<' : E == "gt" ? '>' : E == "quot" ? '"' : '\'';
+                        i = END + 1;
+                        continue;
+                    }
+                    if (E.size() > 1 && E[0] == '#') {
+                        char           b[4];
+                        const uint32_t C = parseCp(E);
+                        if (C > 0 && C <= 0x10FFFF && !(C >= 0xD800 && C <= 0xDFFF)) {
+                            out.append(b, cpToUtf8(C, b));
+                            i = END + 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+            out += s[i];
+            i++;
+        }
+        return out;
+    }
+
+    // The clean fallback when markup won't parse (a client's unbalanced or
+    // malformed tags): drop every tag, decode the entities. Never leaks tag
+    // syntax to the user the way set_text on the raw markup would.
+    static std::string stripMarkupTags(const std::string& s) {
+        std::string out;
+        out.reserve(s.size());
+        for (size_t i = 0; i < s.size();) {
+            if (s[i] == '<') {
+                if (const auto END = s.find('>', i); END != std::string::npos) {
+                    i = END + 1;
+                    continue;
+                }
+            }
+            out += s[i++];
+        }
+        return decodeEntities(out);
+    }
+
+    struct SLinkSpan {
+        std::string href;
+        int         start = 0, len = 0; // byte range in the STRIPPED text
+    };
+
+    // Rewrite the sanitizer's live <a href> into a styled <span> Pango renders,
+    // tracking each link's byte span in the stripped text for later hit-testing.
+    // The input is already sanitized, so every '<' opens a whitelisted tag and
+    // every '&' is a valid entity.
+    static std::string convertLinks(const std::string& in, const std::string& colHex, std::vector<SLinkSpan>& out) {
+        std::string md;
+        md.reserve(in.size() + 32);
+        int       plain = 0;
+        SLinkSpan cur;
+        bool      inLink = false;
+        for (size_t i = 0; i < in.size();) {
+            if (in[i] == '<') {
+                const auto END = in.find('>', i);
+                if (END == std::string::npos) {
+                    md += in[i++];
+                    continue;
+                }
+                size_t j = i + 1;
+                bool   close = false;
+                if (j < END && in[j] == '/') {
+                    close = true;
+                    j++;
+                }
+                size_t ns = j;
+                while (j < END && std::isalpha((unsigned char)in[j]))
+                    j++;
+                std::string name = in.substr(ns, j - ns);
+                std::ranges::transform(name, name.begin(), [](unsigned char c) { return std::tolower(c); });
+                if (name == "a") {
+                    if (close) {
+                        md += "</span>";
+                        if (inLink) {
+                            cur.len = plain - cur.start;
+                            out.push_back(cur);
+                            inLink = false;
+                        }
+                    } else {
+                        std::string href;
+                        const auto  TAG = in.substr(i, END - i + 1);
+                        std::string tl  = TAG; // case-insensitive attr search, same offsets as TAG
+                        std::ranges::transform(tl, tl.begin(), [](unsigned char c) { return std::tolower(c); });
+                        if (const auto HP = tl.find("href"); HP != std::string::npos)
+                            if (const auto Q = TAG.find_first_of("\"'", HP); Q != std::string::npos)
+                                if (const auto Q2 = TAG.find(TAG[Q], Q + 1); Q2 != std::string::npos)
+                                    href = decodeEntities(TAG.substr(Q + 1, Q2 - Q - 1));
+                        md += "<span foreground=\"" + colHex + "\" underline=\"single\">";
+                        cur    = SLinkSpan{href, plain, 0};
+                        inLink = true;
+                    }
+                } else
+                    md += in.substr(i, END - i + 1); // other tag verbatim, 0 plain bytes
+                i = END + 1;
+                continue;
+            }
+            if (in[i] == '&') {
+                const auto END = in.find(';', i);
+                if (END != std::string::npos) {
+                    md += in.substr(i, END - i + 1);
+                    plain += entityBytes(in.substr(i + 1, END - i - 1));
+                    i = END + 1;
+                    continue;
+                }
+            }
+            md += in[i];
+            plain++;
+            i++;
+        }
+        return md;
+    }
+
     // renderText word-wraps nothing (maxWidth only ellipsizes), so the body
     // and the kicker raster through their own pango layout — then the same
     // premultiplied-ARGB32 cairo -> createTexture path renderText uses.
     // maxHeightPx > 0 caps pixels (tail line ellipsized); < 0 caps lines
     // (pango's negative-height convention — the kicker passes -1).
-    static SP<ITexture> buildText(const std::string& text, const CHyprColor& col, int pt, int maxWidthPx, int maxHeightPx, double letterSpacingEm, float lineSpacing) {
+    // outLinks (body only): the <a href> hit rects, physical px relative to the
+    // text origin.
+    static SP<ITexture> buildText(const std::string& text, const CHyprColor& col, int pt, int maxWidthPx, int maxHeightPx, double letterSpacingEm, float lineSpacing, bool markup = false,
+                                  int weight = 400, const CHyprColor* linkCol = nullptr, std::vector<std::pair<std::string, CBox>>* outLinks = nullptr) {
         PangoFontMap*         fontMap = pango_cairo_font_map_get_default();
         PangoContext*         context = pango_font_map_create_context(fontMap);
         PangoLayout*          layout  = pango_layout_new(context);
@@ -65,15 +242,48 @@ namespace NHyprnotify {
         const auto FAMILY = cfg.font->value();
         pango_font_description_set_family_static(fd, FAMILY.c_str());
         pango_font_description_set_absolute_size(fd, pt * PANGO_SCALE);
+        if (weight != 400)
+            pango_font_description_set_weight(fd, (PangoWeight)weight);
         pango_layout_set_font_description(layout, fd);
-        pango_layout_set_text(layout, text.c_str(), -1);
+
+        // markup: the body/title carry the whitelisted Pango tags (bus sanitizes
+        // them). parse_markup splits attrs from text and validates; a malformed
+        // run fails soft to the raw string instead of erroring the whole card.
+        // For the body, <a href> is first rewritten to a styled <span> and its
+        // stripped-text byte span recorded for hit-testing.
+        PangoAttrList*         attrs = nullptr;
+        std::vector<SLinkSpan> linkSpans;
+        if (markup) {
+            std::string md = text;
+            if (outLinks && linkCol) {
+                const auto HEX = std::format("#{:02x}{:02x}{:02x}", (int)std::lround(linkCol->r * 255), (int)std::lround(linkCol->g * 255), (int)std::lround(linkCol->b * 255));
+                md             = convertLinks(text, HEX, linkSpans);
+            }
+            char*   stripped = nullptr;
+            GError* err      = nullptr;
+            if (pango_parse_markup(md.c_str(), -1, 0, &attrs, &stripped, nullptr, &err)) {
+                pango_layout_set_text(layout, stripped, -1);
+                g_free(stripped);
+            } else {
+                if (err)
+                    g_error_free(err);
+                const std::string PLAIN = stripMarkupTags(text); // never show raw <span>/<a> syntax
+                pango_layout_set_text(layout, PLAIN.c_str(), -1);
+                linkSpans.clear(); // offsets are meaningless if the markup didn't parse
+            }
+        } else
+            pango_layout_set_text(layout, text.c_str(), -1);
+
         pango_layout_set_width(layout, std::max(maxWidthPx, 1) * PANGO_SCALE);
         pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
         pango_layout_set_height(layout, maxHeightPx < 0 ? maxHeightPx : std::max(maxHeightPx, pt) * PANGO_SCALE);
         pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
         if (letterSpacingEm > 0) {
-            PangoAttrList* attrs = pango_attr_list_new();
+            if (!attrs)
+                attrs = pango_attr_list_new();
             pango_attr_list_insert(attrs, pango_attr_letter_spacing_new((int)std::lround(letterSpacingEm * pt * PANGO_SCALE)));
+        }
+        if (attrs) {
             pango_layout_set_attributes(layout, attrs);
             pango_attr_list_unref(attrs);
         }
@@ -88,6 +298,23 @@ namespace NHyprnotify {
             g_object_unref(layout);
             return nullptr;
         }
+
+        // probe the laid-out layout for each link's hit rect (physical px)
+        if (outLinks && !linkSpans.empty())
+            for (const auto& L : linkSpans) {
+                if (L.len <= 0)
+                    continue;
+                PangoRectangle a, b;
+                pango_layout_index_to_pos(layout, L.start, &a);
+                pango_layout_index_to_pos(layout, L.start + L.len, &b);
+                const double X0 = a.x / (double)PANGO_SCALE, Y0 = a.y / (double)PANGO_SCALE;
+                double       x1 = b.x / (double)PANGO_SCALE, h = a.height / (double)PANGO_SCALE;
+                if (b.y != a.y) { // the link wrapped a line: cover to the right edge and down
+                    x1 = (double)W;
+                    h  = (b.y + b.height) / (double)PANGO_SCALE - Y0;
+                }
+                outLinks->push_back({L.href, CBox{std::min(X0, x1), Y0, std::abs(x1 - X0), h}});
+            }
 
         auto* SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
         auto* CR   = cairo_create(SURF);
@@ -170,10 +397,49 @@ namespace NHyprnotify {
         const double HEROCAP = std::max(16.0, MAXH - 2 * PADY - HERO_TEXT_MIN);
 
         const auto   COLBG = color(cfg.colBg), COLFG = color(cfg.colFg), COLTITLE = color(cfg.colTitle), COLKICKER = color(cfg.colKicker), COLFRAME = color(cfg.colFrame),
-                   COLURGENT = color(cfg.colUrgent), COLHL = color(cfg.colHighlight);
+                   COLURGENT = color(cfg.colUrgent), COLHL = color(cfg.colHighlight), COLLINK = color(cfg.colLink);
         // any text color moving under a config reload re-keys every raster
         const uint64_t FGKEY = COLFG.getAsHex() ^ (COLTITLE.getAsHex() * 0x9E3779B97F4A7C15ULL) ^ (COLKICKER.getAsHex() * 0xC2B2AE3D27D4EB4FULL) ^
-            (COLURGENT.getAsHex() * 0xD6E8FEB86659FD93ULL); // a critical card's kicker rasters in COLURGENT
+            (COLURGENT.getAsHex() * 0xD6E8FEB86659FD93ULL) ^ (COLLINK.getAsHex() * 0x8CB92BA72F3D8DD7ULL); // critical kicker + link color re-key the body
+
+        // pack action buttons into rows within maxW (logical); fills `out` with
+        // each button box relative to the button area's top-left and returns the
+        // block height. A button is icon+label+padding, capped at the full width.
+        auto layoutButtons = [&P](const SNotif& n, double maxW, std::vector<CBox>& out) -> double {
+            out.clear();
+            double x = 0, rowY = 0;
+            for (const auto& A : n.actions) {
+                const double LW    = A.tex ? A.tex->m_size.x / P.scale : 0;
+                const double ICONW = (n.actionIcons && A.iconTex) ? BTN_ICON + BTN_ICON_GAP : 0;
+                const double BW    = std::min(maxW, ICONW + LW + 2 * BTN_PADX);
+                if (x > 0 && x + BW > maxW + 0.5) { // wrap to a new row
+                    x = 0;
+                    rowY += BTN_H + BTN_GAP;
+                }
+                out.push_back(CBox{x, rowY, BW, BTN_H});
+                x += BW + BTN_GAP;
+            }
+            return out.empty() ? 0 : rowY + BTN_H;
+        };
+
+        // same row packing for body <img> thumbnails, each scaled to BODYIMG_H
+        auto layoutImages = [&P](const SNotif& n, double maxW, std::vector<CBox>& out) -> double {
+            out.clear();
+            double x = 0, rowY = 0;
+            for (const auto& IM : n.bodyImages) {
+                if (!IM.tex)
+                    continue;
+                const double AR = IM.tex->m_size.y > 0 ? IM.tex->m_size.x / IM.tex->m_size.y : 1.0;
+                const double WD = std::min(maxW, AR * BODYIMG_H);
+                if (x > 0 && x + WD > maxW + 0.5) {
+                    x = 0;
+                    rowY += BODYIMG_H + IMG_GAP;
+                }
+                out.push_back(CBox{x, rowY, WD, BODYIMG_H});
+                x += WD + IMG_GAP;
+            }
+            return out.empty() ? 0 : rowY + BODYIMG_H;
+        };
 
         cards.clear(); // capacity retained: no per-frame allocations
         cardsMon = mon;
@@ -205,6 +471,36 @@ namespace NHyprnotify {
 
             const double TEXTW   = W - 2 * PADX - (iw > 0 ? iw + ICON_GAP : 0);
             const int    TEXTWPX = std::max(1, (int)std::floor(TEXTW * P.scale));
+
+            // action-button label (+ icon) textures — built one step ahead of the
+            // body so the body's height cap can leave room for the button row
+            if (warm) {
+                const bool BRESET = N->builtPt != PT || N->builtFg != FGKEY || N->builtTextW != TEXTWPX;
+                const int  BLW    = std::max(1, (int)std::floor((TEXTW - 2 * BTN_PADX) * P.scale));
+                for (auto& A : N->actions) {
+                    if (BRESET || A.label.empty()) {
+                        A.tex.reset();
+                        A.builtFor.clear();
+                    }
+                    if (!A.label.empty() && A.builtFor != A.label) {
+                        A.tex      = buildText(A.label, COLTITLE, PT, BLW, -1, 0, 0);
+                        A.builtFor = A.label;
+                    }
+                    ensureActionIcon(*N, A, (int)std::lround(BTN_ICON * P.scale));
+                }
+            }
+            std::vector<CBox> btnBoxes;
+            const double      BUTTONSH  = N->actions.empty() ? 0 : layoutButtons(*N, TEXTW, btnBoxes);
+            const double      BTN_BLOCK = BUTTONSH > 0 ? BTN_ROW_GAP + BUTTONSH : 0;
+
+            // body <img> thumbnails — same pre-body treatment so the body cap
+            // leaves room for them too
+            if (warm)
+                for (auto& IM : N->bodyImages)
+                    ensureBodyImage(IM, (int)std::lround(BODYIMG_H * P.scale));
+            std::vector<CBox> imgBoxes;
+            const double      IMAGESH   = N->bodyImages.empty() ? 0 : layoutImages(*N, TEXTW, imgBoxes);
+            const double      IMG_BLOCK = IMAGESH > 0 ? IMG_ROW_GAP + IMAGESH : 0;
 
             if (warm) {
                 // width/size/color are part of what the textures ARE — a replace
@@ -241,36 +537,55 @@ namespace NHyprnotify {
                     N->titleTex.reset();
                     N->titleFor.clear();
                 } else if (N->titleFor != N->summary) {
-                    N->titleTex = g_pHyprRenderer->renderText(N->summary, COLTITLE, TPT, false, cfg.font->value(), TEXTWPX, 700);
+                    N->titleTex = buildText(N->summary, COLTITLE, TPT, TEXTWPX, -1, 0, 0, true, 700);
                     N->titleFor = N->summary;
                 }
                 if (N->body.empty()) {
                     N->bodyTex.reset();
                     N->bodyFor.clear();
+                    N->links.clear();
                 } else if (N->bodyFor != N->body) {
                     const int CAP = (int)std::floor((MAXH - 2 * PADY - HEROH) * P.scale) - (N->kickerTex ? (int)(N->kickerTex->m_size.y + KICKER_GAP * P.scale) : 0) -
-                        (N->titleTex ? (int)(N->titleTex->m_size.y + TITLE_GAP * P.scale) : 0) - (N->progress >= 0 ? (int)((PROGRESS_H + PROGRESS_GAP) * P.scale) : 0);
+                        (N->titleTex ? (int)(N->titleTex->m_size.y + TITLE_GAP * P.scale) : 0) - (N->progress >= 0 ? (int)((PROGRESS_H + PROGRESS_GAP) * P.scale) : 0) -
+                        (int)std::floor((BTN_BLOCK + IMG_BLOCK) * P.scale); // buttons + images claim their room; the body ellipsizes to fit
                     // 1.1 x pango's natural line ~= the design's 1.35em body leading.
                     // clamp CAP >0: a tiny max_height makes it negative, which pango
                     // reads as a LINE count (kicker's -1 convention) and overflows the card
-                    N->bodyTex = buildText(N->body, COLFG, PT, TEXTWPX, std::max(CAP, PT), 0, 1.1f);
+                    std::vector<std::pair<std::string, CBox>> lrects;
+                    N->bodyTex = buildText(N->body, COLFG, PT, TEXTWPX, std::max(CAP, PT), 0, 1.1f, true, 400, &COLLINK, &lrects);
                     N->bodyFor = N->body;
+                    N->links.clear();
+                    for (auto& [HREF, R] : lrects)
+                        N->links.push_back({HREF, CBox{R.x / P.scale, R.y / P.scale, R.w / P.scale, R.h / P.scale}}); // physical -> logical, relative to body origin
                 }
-            } else if (N->kickerFor != N->appName || N->titleFor != N->summary || N->bodyFor != N->body)
-                texStale = true; // a draw ran ahead of the warm; rebuild + repaint after this frame
+            } else {
+                // a draw ran ahead of the warm: flag it if ANY texture the card
+                // paints is unbuilt (text, an action label, or a body image),
+                // so the rewarm+repaint catches a replace that changed only
+                // actions/images, not just text
+                bool stale = N->kickerFor != N->appName || N->titleFor != N->summary || N->bodyFor != N->body;
+                for (const auto& A : N->actions)
+                    stale = stale || (!A.label.empty() && A.builtFor != A.label);
+                for (const auto& IM : N->bodyImages)
+                    stale = stale || (!IM.src.empty() && IM.builtFor != IM.src);
+                if (stale)
+                    texStale = true;
+            }
 
             const double KICKERH = N->kickerTex ? N->kickerTex->m_size.y / P.scale : 0;
             const double TITLEH  = N->titleTex ? N->titleTex->m_size.y / P.scale : 0;
             const double BODYH   = N->bodyTex ? N->bodyTex->m_size.y / P.scale : 0;
             double       th      = KICKERH + (KICKERH > 0 && (TITLEH > 0 || BODYH > 0) ? KICKER_GAP : 0) + TITLEH + (TITLEH > 0 && BODYH > 0 ? TITLE_GAP : 0) + BODYH;
+            th += IMG_BLOCK;
             if (N->progress >= 0)
                 th += (th > 0 ? PROGRESS_GAP : 0) + PROGRESS_H;
+            th += BTN_BLOCK;
 
             const double CH = HERO ? std::min(MAXH, FRAME + HEROH + PADY + th + PADY) : std::min(MAXH, std::max(ih, th) + 2 * PADY);
 
             // fill under the whole card, frame ring over its outer edge: no
             // corner seam, and 5 rects become 2 calls
-            const auto& FC = CRITICAL ? COLURGENT : (N->id == hoveredId ? COLKICKER : COLFRAME);
+            const auto& FC = CRITICAL ? COLURGENT : (N->id == hoveredId && hoveredBtn < 0 ? COLKICKER : COLFRAME);
             P.rect(CBox{X, y, W, CH}, COLBG, ROUNDP);
             P.border(CBox{X, y, W, CH}, FC, ROUNDP, FRAMEP);
 
@@ -279,8 +594,9 @@ namespace NHyprnotify {
             else if (N->iconTex && iw > 0)
                 P.texFit(N->iconTex, CBox{X + PADX, y + (CH - ih) / 2, iw, ih}, ROUNDP);
 
-            const double TX = X + PADX + (iw > 0 ? iw + ICON_GAP : 0);
-            double       ty = HERO ? y + FRAME + HEROH + PADY : y + std::max(PADY, (CH - th) / 2); // sans hero the text block centers, like the old boxes
+            const double                 TX = X + PADX + (iw > 0 ? iw + ICON_GAP : 0);
+            double                       ty = HERO ? y + FRAME + HEROH + PADY : y + std::max(PADY, (CH - th) / 2); // sans hero the text block centers, like the old boxes
+            std::vector<SCard::SLinkHit> cardLinks;
             if (N->kickerTex) {
                 P.tex(N->kickerTex, TX, ty);
                 ty += KICKERH + (TITLEH > 0 || BODYH > 0 ? KICKER_GAP : 0);
@@ -291,7 +607,19 @@ namespace NHyprnotify {
             }
             if (N->bodyTex) {
                 P.tex(N->bodyTex, TX, ty);
+                for (const auto& L : N->links) // link hit rects, body-relative -> global logical
+                    cardLinks.push_back({CBox{TX + L.rel.x, ty + L.rel.y, L.rel.w, L.rel.h}, L.href});
                 ty += BODYH;
+            }
+            if (!imgBoxes.empty()) {
+                ty += IMG_ROW_GAP;
+                size_t bi = 0;
+                for (const auto& IM : N->bodyImages)
+                    if (IM.tex && bi < imgBoxes.size()) {
+                        const auto& B = imgBoxes[bi++];
+                        P.texFit(IM.tex, CBox{TX + B.x, ty + B.y, B.w, B.h}, ROUNDP);
+                    }
+                ty += IMAGESH;
             }
             if (N->progress >= 0) {
                 ty += th > 0 ? PROGRESS_GAP : 0;
@@ -299,9 +627,36 @@ namespace NHyprnotify {
                 P.rect(CBox{TX, ty, TEXTW, PROGRESS_H}, COLFRAME, ROUNDP);
                 if (N->progress > 0) // a sliver narrower than its corners renders square
                     P.rect(CBox{TX, ty, FILLW, PROGRESS_H}, CRITICAL ? COLURGENT : COLHL, FILLW * P.scale >= 2 * ROUNDP ? ROUNDP : 0);
+                ty += PROGRESS_H;
             }
 
-            cards.push_back({CBox{X, y, W, CH}, N->id});
+            // action buttons: bordered pills below the content, label (+ icon)
+            // centered; the hovered one warms like the card frame does
+            std::vector<SCard::SBtn> cardBtns;
+            if (!btnBoxes.empty()) {
+                ty += BTN_ROW_GAP;
+                const auto& BFC = CRITICAL ? COLURGENT : COLFRAME;
+                for (size_t i = 0; i < btnBoxes.size(); i++) {
+                    const auto& A    = N->actions[i];
+                    const CBox  BOX{TX + btnBoxes[i].x, ty + btnBoxes[i].y, btnBoxes[i].w, btnBoxes[i].h};
+                    const bool  BHOV = N->id == hoveredId && (int)i == hoveredBtn;
+                    if (BHOV)
+                        P.rect(BOX, COLKICKER.modifyA(0.16F), ROUNDP);
+                    P.border(BOX, BHOV ? COLKICKER : BFC, ROUNDP, FRAMEP);
+                    const double ICONW = (N->actionIcons && A.iconTex) ? BTN_ICON + BTN_ICON_GAP : 0;
+                    const double LW    = A.tex ? A.tex->m_size.x / P.scale : 0;
+                    double       cx    = BOX.x + std::max(BTN_PADX, (BOX.w - ICONW - LW) / 2);
+                    if (N->actionIcons && A.iconTex) {
+                        P.texFit(A.iconTex, CBox{cx, BOX.y + (BOX.h - BTN_ICON) / 2, BTN_ICON, BTN_ICON}, 0);
+                        cx += BTN_ICON + BTN_ICON_GAP;
+                    }
+                    if (A.tex)
+                        P.tex(A.tex, cx, BOX.y + (BOX.h - A.tex->m_size.y / P.scale) / 2);
+                    cardBtns.push_back({BOX, A.id});
+                }
+            }
+
+            cards.push_back({CBox{X, y, W, CH}, N->id, std::move(cardBtns), std::move(cardLinks)});
             y += CH + GAP;
         }
 
@@ -341,8 +696,8 @@ namespace NHyprnotify {
 
     // the hover affordance repaints exactly the cards whose frame changed;
     // no textures move, so no warm — plain damage from the motion listener
-    void setHovered(uint32_t id) {
-        if (id == hoveredId)
+    void setHovered(uint32_t id, int btn) {
+        if (id == hoveredId && btn == hoveredBtn)
             return;
         if (g_pHyprRenderer) {
             const auto   M      = cardsMon.lock();
@@ -351,7 +706,8 @@ namespace NHyprnotify {
                 if (C.id == hoveredId || C.id == id)
                     g_pHyprRenderer->damageBox(CBox{C.box}.expand(MARGIN));
         }
-        hoveredId = id;
+        hoveredId  = id;
+        hoveredBtn = btn;
     }
 
     // ---- warm ----
@@ -493,6 +849,7 @@ namespace NHyprnotify {
         warming    = false;
         texStale   = false;
         hoveredId  = 0;
+        hoveredBtn = -1;
     }
 
 } // namespace NHyprnotify

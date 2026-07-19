@@ -63,7 +63,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "2.0.4";
+    inline constexpr const char* VERSION = "3.0.0";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -81,7 +81,8 @@ namespace NHyprnotify {
         SP<Config::Values::CIntValue>    timeoutLow;    // ms; urgency defaults when the client sends -1
         SP<Config::Values::CIntValue>    timeoutNormal; // ms; critical never times out
         SP<Config::Values::CIntValue>    rounding;  // corner radius, logical px
-        SP<Config::Values::CIntValue>    maxNotifs; // model cap; overflow evicts oldest non-critical
+        SP<Config::Values::CIntValue>    maxNotifs;  // model cap; overflow evicts oldest non-critical
+        SP<Config::Values::CIntValue>    maxHistory; // retained-for-recall cap; 0 disables history
         SP<Config::Values::CStringValue> fallbackIconDir; // iconless cards draw a random image from here
         SP<Config::Values::CColorValue>  colBg;
         SP<Config::Values::CColorValue>  colFg;        // body text
@@ -90,25 +91,60 @@ namespace NHyprnotify {
         SP<Config::Values::CColorValue>  colFrame;     // card frame
         SP<Config::Values::CColorValue>  colUrgent;    // critical frame/kicker + critical progress
         SP<Config::Values::CColorValue>  colHighlight; // progress bar
+        SP<Config::Values::CColorValue>  colLink;      // body hyperlinks
+        SP<Config::Values::CStringValue> soundCommand; // libcanberra player; "" disables sound
     };
     extern SNotifyConfig cfg;
 
     CHyprColor           color(const SP<Config::Values::CColorValue>& v);
 
+    // Fire-and-forget a child, reaped via pidfd off the event loop (used for
+    // hyperlink opening and notification sounds); never blocks render/input.
+    void spawnDetached(std::vector<const char*> argv);
+
     // ---- the model (bus.cpp) ----
+
+    // a non-"default" action: a clickable button on the card
+    struct SAction {
+        std::string  id;    // ActionInvoked key; also the icon name under action-icons
+        std::string  label; // localized button text
+        SP<ITexture> tex;      // rendered label (warm)
+        SP<ITexture> iconTex;  // resolved action-icon (warm; action-icons only)
+        std::string  builtFor; // staleness: label the tex was built from
+        std::string  iconFor;  // staleness: the id the icon was resolved from
+    };
+
+    // a body hyperlink (<a href>): a clickable region opening its URL
+    struct SLink {
+        std::string href;
+        CBox        rel; // logical rect relative to the body texture's top-left (built by warm)
+    };
+
+    // a body <img src>: a thumbnail rendered below the text
+    struct SBodyImage {
+        std::string  src;      // resolved file path
+        SP<ITexture> tex;      // built by warm
+        std::string  builtFor; // staleness: the src the tex was built from
+    };
 
     struct SNotif {
         uint32_t             id = 0;
         std::string          appName;
-        std::string          summary; // newlines flattened
-        std::string          body;    // markup stripped (the server never advertises body-markup)
+        std::string          summary; // newlines flattened, whitelisted markup
+        std::string          body;    // whitelisted markup (Pango subset)
         uint8_t              urgency  = 1;
         int                  progress = -1;     // 0..100 from the "value" hint, -1 = none
         std::string          image;             // resolved file path, "" = none
         std::vector<uint8_t> pixels;            // image-data, premultiplied BGRA (DRM ARGB8888); freed once uploaded
         bool                 hasPixels = false; // the LAST Notify carried image-data (outlives the freed buffer)
         int                  pw = 0, ph = 0;
-        std::string          defaultAction; // action key a left click invokes, "" = just dismiss
+        std::string          defaultAction; // action key a body click invokes, "" = just dismiss
+        std::vector<SAction>    actions;          // non-default actions -> buttons, in Notify order
+        std::vector<SLink>      links;            // body <a href> hit regions (relative; built by warm)
+        std::vector<SBodyImage> bodyImages;       // body <img src> thumbnails
+        bool                    actionIcons = false; // the action-icons hint: button ids are icon names
+        bool                    resident    = false; // the resident hint: an action keeps the card
+        bool                    transient   = false; // the transient hint: bypass history on close
 
         std::string          fallbackPick;    // the card's rolled fallback image; survives in-place replaces
         bool                 waiting = false; // arrived while suspended (DND): collected, not shown, timeout held
@@ -144,6 +180,8 @@ namespace NHyprnotify {
         void                      closeAll(uint32_t reason); // visible cards only: a sweep never kills the DND queue
         void                      rearmExpiry();
         void                      toggleSuspend(); // naughty.suspend: resume renders the queue, fresh timeouts
+        void                      recall();        // re-display the most recently closed retained notification
+        size_t                    historySize();   // retained (recallable) notifications
     }
 
     // ---- icons.cpp ----
@@ -153,8 +191,22 @@ namespace NHyprnotify {
     // raster to heroWPx instead, cover-cropped to heroHCapPx, and set heroTex.
     void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx);
 
+    // (Re)build an action button's icon when action-icons is set and its id (an
+    // icon name or a path) changed; clears it when the hint is off.
+    void ensureActionIcon(SNotif& n, SAction& a, int iconPx);
+
+    // (Re)build a body <img> thumbnail when its src changed. maxPx caps the
+    // decoded raster.
+    void ensureBodyImage(SBodyImage& im, int maxPx);
+
     // Forget the fallback_icon_dir listing (a config reload rescans).
     void resetFallbackCache();
+
+    // Resolve a freedesktop icon NAME (app_icon / image-path / desktop-entry /
+    // an action key) to a file path via themed lookup; "" if unresolved or if
+    // the string is already a path. Cached per name. A config reload clears it.
+    std::string resolveIconName(const std::string& name, int sizePx);
+    void        resetIconThemeCache();
 
     // Downscale n.pixels in place when it exceeds maxPx (unpack-time cap).
     void shrinkPixels(SNotif& n, int maxPx);
@@ -186,13 +238,25 @@ namespace NHyprnotify {
     struct SCard {
         CBox     box;
         uint32_t id = 0;
+        struct SBtn {
+            CBox        box;
+            std::string id;
+        };
+        std::vector<SBtn> buttons; // action-button hit rects (global logical)
+        struct SLinkHit {
+            CBox        box;
+            std::string href;
+        };
+        std::vector<SLinkHit> links; // body-hyperlink hit rects (global logical)
     };
     extern std::vector<SCard> cards;
     extern PHLMONITORREF      cardsMon; // the monitor the cards were laid out on
 
-    // hover affordance: the frame under the pointer warms to the kicker color.
-    // 0 = none; a change damages the cards involved (no textures move).
-    void setHovered(uint32_t id);
+    // hover affordance: the frame under the pointer warms to the kicker color,
+    // or a specific action button highlights. id 0 = none; btn -1 = the frame,
+    // >=0 = that button index. A change damages the cards involved (no textures
+    // move).
+    void setHovered(uint32_t id, int btn = -1);
 
     // ---- input.cpp ----
 
