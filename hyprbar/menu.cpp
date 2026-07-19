@@ -38,12 +38,20 @@ namespace NHyprbar {
             warmBars(mon.lock());
             if (!g_pHyprRenderer)
                 return;
+            // renderBorder draws the frame ring OUTSIDE L.box (it grows the box
+            // by the border width on every side), so damaging only L.box leaves
+            // that ring untouched: unpainted on open until an unrelated damage
+            // sweeps it, and stranded when the panel closes — the level-0 ring
+            // lands up on the bar strip. Cover it on every panel, old and new.
+            const auto   M      = mon.lock();
+            const double MARGIN = (M ? std::ceil(M->m_scale) : 1.0) + 1.0;
+
             static std::vector<CBox> last; // the previous panels: a close/resize must damage them too
-            for (const auto& B : last)
-                g_pHyprRenderer->damageBox(B);
+            for (auto B : last)
+                g_pHyprRenderer->damageBox(B.expand(MARGIN));
             last.clear();
             for (const auto& L : levels) {
-                g_pHyprRenderer->damageBox(L.box);
+                g_pHyprRenderer->damageBox(CBox{L.box}.expand(MARGIN));
                 last.push_back(L.box);
             }
         }

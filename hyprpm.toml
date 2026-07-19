@@ -15,7 +15,7 @@ authors = ["hitori"]
 
 [hyprbar]
 description = "the awesome wibar, drawn by the compositor"
-version     = "2.0.0"
+version     = "2.0.1"
 authors     = ["hitori"]
 output      = "hyprbar/hyprbar.so"
 build       = ["make -C hyprbar all"]
