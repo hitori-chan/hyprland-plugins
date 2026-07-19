@@ -57,6 +57,24 @@ namespace NHyprbar {
             Desktop::focusState()->fullWindowFocus(nullptr, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW);
     }
 
+    // awesome honored a client minimizing ITSELF — X11's WM_CHANGE_STATE ->
+    // IconicState, and on Wayland a CSD minimize button's xdg set_minimized.
+    // Hyprland's onUpdateState ignores requestsMinimize, so the button is dead;
+    // hyprbar routes it into client.minimized. The request is a per-window
+    // stateChanged signal carrying a VOLATILE requestsMinimize (the compositor
+    // resets it right after the emit), so it's read synchronously in the signal
+    // and the client.minimized change is deferred out of the request.
+    static std::unordered_map<void*, CHyprSignalListener> minReqListeners;
+    static std::vector<std::pair<PHLWINDOWREF, bool>>     minReqQueue; // (window, minimize?)
+    static bool                                           minReqQueued = false;
+    static UP<SEventLoopDoLaterLock>                      pendingMinReq;
+
+    static std::optional<bool>                            minimizeRequestOf(const PHLWINDOW& w) {
+        if (w->m_xdgSurface && w->m_xdgSurface->m_toplevel)
+            return w->m_xdgSurface->m_toplevel->m_state.requestsMinimize;
+        return std::nullopt; // XWayland self-minimize would need XSurface.hpp
+    }
+
     namespace Tasklist {
         uint64_t seqOf(void* w) {
             const auto [SEQ, NEW] = winSeq.try_emplace(w, winSeqNext);
@@ -77,6 +95,10 @@ namespace NHyprbar {
         void minimize(const PHLWINDOW& w) {
             if (!w || !w->m_isMapped || w->isHidden())
                 return; // already hidden — minimized, or swallowed
+            // Only the focused window pulls focus to a neighbor on hide; an app
+            // minimizing a BACKGROUND window (its own set_minimized) must not
+            // yank focus from wherever it currently sits.
+            const bool WASFOCUSED = Desktop::focusState() && Desktop::focusState()->window() == w;
             // Drop the workspace's single FS slot before hiding: a fullscreen
             // or compositor-maximized window that goes hidden strands the slot
             // (black workspace, bar gone). Remember the mode; restore()
@@ -91,7 +113,8 @@ namespace NHyprbar {
             if (TILED && g_layoutManager)
                 g_layoutManager->removeTarget(w->layoutTarget());
             w->setHidden(true); // unrendered, xdg-suspended, no frame callbacks
-            focusNextAfterMinimize(w, WS);
+            if (WASFOCUSED)
+                focusNextAfterMinimize(w, WS);
             minStack.push_back({PHLWINDOWREF{w}, w.get(), TILED, FS});
             barChanged();
         }
@@ -124,6 +147,41 @@ namespace NHyprbar {
             barChanged();
         }
 
+        // Attach the self-minimize listener to a freshly-opened window (from
+        // window.open). The listener is dropped in forget() on destroy / exit().
+        void watchMinimize(const PHLWINDOW& w) {
+            if (!w || !w->m_xdgSurface || !w->m_xdgSurface->m_toplevel)
+                return;
+            minReqListeners[w.get()] = w->m_xdgSurface->m_toplevel->m_events.stateChanged.listen([wr = PHLWINDOWREF{w}]() {
+                const auto W = wr.lock();
+                if (!W)
+                    return;
+                const auto REQ = minimizeRequestOf(W);
+                if (!REQ.has_value())
+                    return; // this stateChanged carried a fs/maximize change, not a minimize
+                minReqQueue.emplace_back(wr, *REQ);
+                if (minReqQueued || !g_pEventLoopManager)
+                    return; // one drain coalesces a burst — overwriting the lock would cancel it
+                minReqQueued  = true;
+                pendingMinReq = g_pEventLoopManager->doLaterLock([]() {
+                    minReqQueued = false;
+                    const auto Q = std::move(minReqQueue);
+                    minReqQueue.clear();
+                    if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+                        return; // never hide/reorder windows under the lockscreen
+                    for (const auto& [WR, MIN] : Q) {
+                        const auto WW = WR.lock();
+                        if (!WW)
+                            continue;
+                        if (MIN)
+                            minimize(WW);
+                        else
+                            restore(WW);
+                    }
+                });
+            });
+        }
+
         void minimizeFocused() {
             if (const auto W = Desktop::focusState() ? Desktop::focusState()->window() : nullptr)
                 minimize(W);
@@ -143,12 +201,17 @@ namespace NHyprbar {
 
         void forget(void* w) {
             winSeq.erase(w);
+            minReqListeners.erase(w);
             std::erase_if(minStack, [w](const SMinimized& m) { return m.key == w || m.w.expired(); });
         }
 
         void exit() {
             winSeq.clear();
             minStack.clear();
+            pendingMinReq.reset();
+            minReqQueued = false;
+            minReqQueue.clear();
+            minReqListeners.clear();
         }
     } // namespace Tasklist
 

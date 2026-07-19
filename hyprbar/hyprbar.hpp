@@ -174,6 +174,9 @@ namespace NHyprbar {
         void restore(const PHLWINDOW& w);
         void minimizeFocused(); // Mod+N: minimize the focused window
         void restoreLast();     // Mod+Ctrl+N: awful.client.restore — last minimized on a viewed tag
+        // honor a client minimizing itself (xdg set_minimized, e.g. a CSD
+        // minimize button) — attached per window from window.open
+        void watchMinimize(const PHLWINDOW& w);
     }
 
     void layoutboxExit();
