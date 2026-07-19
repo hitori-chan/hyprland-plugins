@@ -522,14 +522,15 @@ namespace NHyprbar {
                 const uint64_t   KEY  = ((uint64_t)batteryPercent << 40) ^ ((uint64_t)ATTR << 48) ^ FILL.getAsHex();
                 auto&            PILL = pillCache[PH];
                 if (P.warm) {
-                    if (!PILL.tex || PILL.key != KEY) {
+                    if (PILL.key != KEY) {
                         PILL.tex = batteryPill(batteryPercent, ATTR, PH, FILL);
-                        PILL.key = KEY;
+                        PILL.key = KEY; // stamp even if the build returns null, so a persistent null can't rewarm-storm
                     }
-                } else if (!PILL.tex || PILL.key != KEY)
+                } else if (PILL.key != KEY)
                     texStale = true; // level moved under a scissored repaint: warm + repaint
 
-                const double PW = PILL.tex ? PILL.tex->m_size.x / P.scale : P.pt * 13.0 / 14.0 * 30.8 / 13.0;
+                // P.pt is already scale-multiplied, and the tex branch returns logical px — so /scale here too
+                const double PW = PILL.tex ? PILL.tex->m_size.x / P.scale : P.pt * 13.0 / 14.0 * 30.8 / 13.0 / P.scale;
                 return 6 + PW + 6; // breathing room off the tray
             }
 

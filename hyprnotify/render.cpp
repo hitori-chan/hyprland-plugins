@@ -172,7 +172,8 @@ namespace NHyprnotify {
         const auto   COLBG = color(cfg.colBg), COLFG = color(cfg.colFg), COLTITLE = color(cfg.colTitle), COLKICKER = color(cfg.colKicker), COLFRAME = color(cfg.colFrame),
                    COLURGENT = color(cfg.colUrgent), COLHL = color(cfg.colHighlight);
         // any text color moving under a config reload re-keys every raster
-        const uint64_t FGKEY = COLFG.getAsHex() ^ (COLTITLE.getAsHex() * 0x9E3779B97F4A7C15ULL) ^ (COLKICKER.getAsHex() * 0xC2B2AE3D27D4EB4FULL);
+        const uint64_t FGKEY = COLFG.getAsHex() ^ (COLTITLE.getAsHex() * 0x9E3779B97F4A7C15ULL) ^ (COLKICKER.getAsHex() * 0xC2B2AE3D27D4EB4FULL) ^
+            (COLURGENT.getAsHex() * 0xD6E8FEB86659FD93ULL); // a critical card's kicker rasters in COLURGENT
 
         cards.clear(); // capacity retained: no per-frame allocations
         cardsMon = mon;
@@ -249,8 +250,10 @@ namespace NHyprnotify {
                 } else if (N->bodyFor != N->body) {
                     const int CAP = (int)std::floor((MAXH - 2 * PADY - HEROH) * P.scale) - (N->kickerTex ? (int)(N->kickerTex->m_size.y + KICKER_GAP * P.scale) : 0) -
                         (N->titleTex ? (int)(N->titleTex->m_size.y + TITLE_GAP * P.scale) : 0) - (N->progress >= 0 ? (int)((PROGRESS_H + PROGRESS_GAP) * P.scale) : 0);
-                    // 1.1 x pango's natural line ~= the design's 1.35em body leading
-                    N->bodyTex = buildText(N->body, COLFG, PT, TEXTWPX, CAP, 0, 1.1f);
+                    // 1.1 x pango's natural line ~= the design's 1.35em body leading.
+                    // clamp CAP >0: a tiny max_height makes it negative, which pango
+                    // reads as a LINE count (kicker's -1 convention) and overflows the card
+                    N->bodyTex = buildText(N->body, COLFG, PT, TEXTWPX, std::max(CAP, PT), 0, 1.1f);
                     N->bodyFor = N->body;
                 }
             } else if (N->kickerFor != N->appName || N->titleFor != N->summary || N->bodyFor != N->body)
@@ -323,12 +326,17 @@ namespace NHyprnotify {
     void damageNotifs() {
         if (!g_pHyprRenderer)
             return;
-        const auto CUR = columnBox();
+        // renderBorder paints the frame ring OUTSIDE the fill box, so the damage
+        // must grow by the ring width or it strands on appear/close (see c2e7c47)
+        const auto   M      = cardsMon.lock();
+        const double MARGIN = (M ? std::ceil(M->m_scale) : 1.0) + 1.0;
+        const auto   CUR    = columnBox();
+        const CBox   NEW    = CUR.w > 0 ? CBox{CUR}.expand(MARGIN) : CBox{};
         if (lastBox.w > 0)
-            g_pHyprRenderer->damageBox(lastBox);
-        if (CUR.w > 0)
-            g_pHyprRenderer->damageBox(CUR);
-        lastBox = CUR;
+            g_pHyprRenderer->damageBox(lastBox); // stored already expanded
+        if (NEW.w > 0)
+            g_pHyprRenderer->damageBox(NEW);
+        lastBox = NEW;
     }
 
     // the hover affordance repaints exactly the cards whose frame changed;
@@ -336,10 +344,13 @@ namespace NHyprnotify {
     void setHovered(uint32_t id) {
         if (id == hoveredId)
             return;
-        if (g_pHyprRenderer)
+        if (g_pHyprRenderer) {
+            const auto   M      = cardsMon.lock();
+            const double MARGIN = (M ? std::ceil(M->m_scale) : 1.0) + 1.0; // the frame ring lands outside C.box
             for (const auto& C : cards)
                 if (C.id == hoveredId || C.id == id)
-                    g_pHyprRenderer->damageBox(C.box);
+                    g_pHyprRenderer->damageBox(CBox{C.box}.expand(MARGIN));
+        }
         hoveredId = id;
     }
 

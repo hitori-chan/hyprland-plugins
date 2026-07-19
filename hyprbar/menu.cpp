@@ -464,7 +464,8 @@ namespace NHyprbar {
                 // off, flipped to the left when the right edge won't fit
                 double mx, my0;
                 if (li == 0) {
-                    mx  = std::clamp(Menu::anchorX - mw / 2, PAINT.mb.x + 2.0, PAINT.mb.x + PAINT.mb.w - mw - 2);
+                    // not std::clamp: lo > hi (UB) once a panel is wider than the monitor (< ~384px logical)
+                    mx  = std::max(PAINT.mb.x + 2.0, std::min(Menu::anchorX - mw / 2, PAINT.mb.x + PAINT.mb.w - mw - 2));
                     my0 = MTOP;
                 } else {
                     const auto& P = Menu::levels[li - 1];

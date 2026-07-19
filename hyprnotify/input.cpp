@@ -8,7 +8,11 @@ namespace NHyprnotify {
     static int                       heldButtons    = 0; // presses that reached apps: an implicit grab may be live
     static bool                      pointerOwned   = false;
 
-    static UP<SEventLoopDoLaterLock> pendingHit;
+    // clicks accumulate into one drain: two card-clicks in a single dispatch
+    // would otherwise clobber the lock and lose the first's action + dismiss
+    static std::vector<std::pair<uint32_t, uint32_t>> hitQueue; // (card id, button bit)
+    static bool                                       hitQueued = false;
+    static UP<SEventLoopDoLaterLock>                  pendingHit;
 
     static const SCard*              cardAt(const Vector2D& pos) {
         if (cards.empty())
@@ -58,20 +62,30 @@ namespace NHyprnotify {
         swallowRelease |= BIT;
 
         // Deferred out of the input emission: the close reflows the stack and
-        // an action can make the client focus/raise itself.
-        pendingHit = g_pEventLoopManager->doLaterLock([ID = CARD->id, BIT]() {
-            if (BIT == 4u) { // middle sweeps the stack, like the old mouse binding
-                Bus::closeAll(Bus::R_DISMISSED);
-                return;
+        // an action can make the client focus/raise itself. Queue+drain so two
+        // clicks in one dispatch both land instead of the second clobbering the first.
+        hitQueue.emplace_back(CARD->id, BIT);
+        if (hitQueued || !g_pEventLoopManager)
+            return;
+        hitQueued  = true;
+        pendingHit = g_pEventLoopManager->doLaterLock([]() {
+            hitQueued    = false;
+            const auto Q = std::move(hitQueue);
+            hitQueue.clear();
+            for (const auto& [ID, BIT] : Q) {
+                if (BIT == 4u) { // middle sweeps the stack, like the old mouse binding
+                    Bus::closeAll(Bus::R_DISMISSED);
+                    break; // the rest reference now-dismissed cards
+                }
+                if (BIT == 1u) // left invokes the default action when the client sent one
+                    for (const auto& N : notifs)
+                        if (N->id == ID) {
+                            if (!N->defaultAction.empty())
+                                Bus::invokeAction(ID, N->defaultAction);
+                            break;
+                        }
+                Bus::closeOne(ID, Bus::R_DISMISSED);
             }
-            if (BIT == 1u) // left invokes the default action when the client sent one
-                for (const auto& N : notifs)
-                    if (N->id == ID) {
-                        if (!N->defaultAction.empty())
-                            Bus::invokeAction(ID, N->defaultAction);
-                        break;
-                    }
-            Bus::closeOne(ID, Bus::R_DISMISSED);
         });
     }
 
@@ -142,6 +156,8 @@ namespace NHyprnotify {
 
     void inputExit() {
         pendingHit.reset();
+        hitQueued = false;
+        hitQueue.clear();
         swallowRelease = 0;
         heldButtons    = 0;
         releasePointer();

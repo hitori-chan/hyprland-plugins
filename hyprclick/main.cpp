@@ -111,6 +111,8 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
     if (const auto W = windowUnderCursor()) {
         PHLWINDOWREF WR{W};
         pendingRaise = g_pEventLoopManager->doLaterLock([WR]() {
+            if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+                return; // the lock can engage between the emission and this run
             if (const auto W = WR.lock(); W && W->m_isMapped)
                 raiseWindow(W);
         });
@@ -128,6 +130,8 @@ static void onWindowActive(PHLWINDOW w, Desktop::eFocusReason reason) {
 
     PHLWINDOWREF WR{w};
     pendingRaise = g_pEventLoopManager->doLaterLock([WR]() {
+        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+            return; // the lock can engage between the emission and this run
         if (const auto W = WR.lock(); W && W->m_isMapped)
             raiseWindow(W);
     });
@@ -153,6 +157,8 @@ static int luaFocusPrevHere(lua_State*) {
 
         PHLWINDOWREF TARGET{W};
         pendingFocus = g_pEventLoopManager->doLaterLock([TARGET]() {
+            if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+                return; // the lock can engage between the emission and this run
             if (const auto W = TARGET.lock())
                 Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_SWITCH_TO_WINDOW_HARD);
         });
@@ -198,6 +204,8 @@ static void focusByIdx(bool next) {
     PHLWINDOWREF TARGET{wins[TO].second};
     wins.clear(); // don't keep strong refs across calls
     pendingFocus = g_pEventLoopManager->doLaterLock([TARGET]() {
+        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+            return; // the lock can engage between the emission and this run
         if (const auto W = TARGET.lock(); W && W->m_isMapped)
             Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_SWITCH_TO_WINDOW_HARD);
     });
@@ -240,7 +248,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_next", luaFocusNext);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev", luaFocusPrev);
 
-    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.1.2"};
+    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.1.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

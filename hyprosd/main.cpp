@@ -216,6 +216,8 @@ namespace NHyprosd {
                 .uponReplyInvoke([PCT](std::optional<sdbus::Error> err) {
                     if (!err)
                         notify(9992, "Brightness", std::to_string(PCT) + "%", PCT);
+                    else
+                        lastSetRaw = -1; // logind refused: drop the trust window so the next press re-reads sysfs
                 });
             pollSoon(systemBus);
         } catch (...) { return; }
@@ -458,7 +460,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_up", luaBrightnessUp);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_down", luaBrightnessDown);
 
-    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.0.1"};
+    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.0.2"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

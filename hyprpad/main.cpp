@@ -203,6 +203,9 @@ namespace NHyprpad {
     }
 
     static void autoApply() {
+        if (touchpadName().empty())
+            return; // nothing to auto-manage — the "not found" card belongs to the manual toggle,
+                    // else every mouse hotplug re-spams it (WANT is 0/1, appliedState stuck at -1)
         const int WANT = externalMousePresent() ? 0 : 1;
         if (WANT != appliedState)
             applyEnabled(WANT == 1);
@@ -298,7 +301,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // device list is populated and the notification daemon is up
     settle->updateTimeout(SETTLE);
 
-    return {"hyprpad", "the awesome touchpad module", "hitori", "1.0.4"};
+    return {"hyprpad", "the awesome touchpad module", "hitori", "1.0.5"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
