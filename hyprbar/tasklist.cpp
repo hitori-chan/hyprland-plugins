@@ -126,6 +126,20 @@ namespace NHyprbar {
             barChanged();
         }
 
+        // awesome's check_focus (awful.permissions): focus must never rest on a
+        // minimized — invisible — window. In X11 a minimized client is unmapped
+        // and simply can't take focus; Hyprland's focus fallback (e.g. closing
+        // the last visible window) doesn't know a hidden window is "minimized"
+        // and lands focus on it. Bounce it to the most-recent visible window on
+        // the workspace (or clear focus), like awful.focus.history.get skipping
+        // minimized. Called deferred from the window.active hook.
+        void focusAwayFromHidden(const PHLWINDOW& w) {
+            if (!w || !w->isHidden() || !isMinimized(w) || !w->m_workspace)
+                return;
+            if (Desktop::focusState() && Desktop::focusState()->window() == w)
+                focusNextAfterMinimize(w, w->m_workspace);
+        }
+
         void restore(const PHLWINDOW& w) {
             if (!w)
                 return;
@@ -277,10 +291,13 @@ namespace NHyprbar {
                     // bar (tasklist_bg_focus = bg_normal, no box); urgent gets
                     // the urgent bg — and focus wins over urgent, like awesome
                     CHyprColor fg = F.fg;
-                    if (W == F.focus)
+                    // minimized wins over focus: a minimized window is never
+                    // truly focused, but the compositor's focus fallback can
+                    // leave focus on a hidden one — it must still read muted.
+                    if (Tasklist::isMinimized(W))
+                        fg = F.minimized; // awesome's fg_minimize: muted, no bg
+                    else if (W == F.focus)
                         fg = F.active;
-                    else if (Tasklist::isMinimized(W))
-                        fg = F.minimized; // awesome's fg_minimize: muted, no bg (can't be focused)
                     else if (W->m_isUrgent) {
                         P.rect(CELL, F.urgentBg);
                         fg = F.urgentFg;
@@ -330,13 +347,17 @@ namespace NHyprbar {
 
                 // awesome's tasklist button 1: clicking the focused task
                 // minimizes it; clicking any other task (minimized included)
-                // restores + focuses it.
-                if (W == (Desktop::focusState() ? Desktop::focusState()->window() : nullptr)) {
-                    Tasklist::minimize(W);
-                    return;
-                }
+                // restores + focuses it. Test minimized FIRST: closing the
+                // last visible window lands the compositor's focus fallback on
+                // a hidden one, and "click the focused task to minimize" would
+                // then no-op on it (minimize() bails on an already-hidden
+                // window) — the click looks dead.
                 if (Tasklist::isMinimized(W)) {
                     Tasklist::restore(W);
+                    return;
+                }
+                if (W == (Desktop::focusState() ? Desktop::focusState()->window() : nullptr)) {
+                    Tasklist::minimize(W);
                     return;
                 }
 

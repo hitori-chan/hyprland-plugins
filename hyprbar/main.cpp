@@ -177,7 +177,7 @@ static int luaLayoutPrev(lua_State*) {
 // and awful.client.restore (Mod+Ctrl+N). Deferred out of the keybind emission:
 // both change focus + layout, which must never run synchronously inside an
 // input emission; the pending hops are reset in PLUGIN_EXIT.
-static UP<SEventLoopDoLaterLock> pendingMinimize, pendingRestore;
+static UP<SEventLoopDoLaterLock> pendingMinimize, pendingRestore, pendingUnfocusHidden;
 static int                       luaMinimize(lua_State*) {
     if (g_pEventLoopManager)
         pendingMinimize = g_pEventLoopManager->doLaterLock([]() { Tasklist::minimizeFocused(); });
@@ -262,7 +262,20 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         Tasklist::forget(w.get());
         damageAndWarm();
     }));
-    lDamage.push_back(EV.window.active.listen([](PHLWINDOW, Desktop::eFocusReason) { damageAndWarm(); }));
+    lDamage.push_back(EV.window.active.listen([](PHLWINDOW w, Desktop::eFocusReason) {
+        damageAndWarm();
+        // awesome's check_focus: focus must never rest on a minimized window.
+        // The compositor's focus fallback (closing the last visible window)
+        // lands focus on a hidden one; bounce it off, deferred out of the focus
+        // emission (refocusing inside it reenters the focus machinery).
+        if (w && w->isHidden() && Tasklist::isMinimized(w)) {
+            PHLWINDOWREF WR{w};
+            pendingUnfocusHidden = g_pEventLoopManager->doLaterLock([WR]() {
+                if (const auto W = WR.lock())
+                    Tasklist::focusAwayFromHidden(W);
+            });
+        }
+    }));
     lDamage.push_back(EV.window.title.listen([](PHLWINDOW w) {
         // a hidden workspace's titles render nowhere; workspace.active re-warms the switch
         if (w && w->m_workspace && !w->m_workspace->isVisible())
@@ -295,13 +308,14 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "2.2.2"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "2.2.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
     pendingWarm.reset(); // a queued warm across unload calls into dlclosed code
     pendingMinimize.reset();
     pendingRestore.reset();
+    pendingUnfocusHidden.reset();
     Menubar::exit();
     Menu::exit();
     Tray::exit();
