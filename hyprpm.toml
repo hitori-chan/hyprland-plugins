@@ -36,7 +36,7 @@ build       = ["make -C hyprmax all"]
 
 [hyprsnap]
 description = "awesome's awful.mouse.snap"
-version     = "1.3.4"
+version     = "1.3.5"
 authors     = ["hitori"]
 output      = "hyprsnap/hyprsnap.so"
 build       = ["make -C hyprsnap all"]

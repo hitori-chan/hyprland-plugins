@@ -343,6 +343,11 @@ namespace NHyprsnap::Snap {
     void onRenderStage(eRenderStage stage) {
         if (stage != RENDER_POST_WINDOWS || !zoneBox)
             return;
+        // the input listeners reset on lock, but a lock engaging mid-drag is
+        // not an input event — don't paint the zone over the lockscreen; the
+        // first post-unlock motion re-arms it
+        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+            return;
         const auto MON = g_pHyprRenderer->m_renderData.pMonitor.lock();
         if (!MON || MON != zoneMon.lock())
             return;
