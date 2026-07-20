@@ -64,7 +64,7 @@ build       = ["make -C hyprpad all"]
 
 [hyprosd]
 description = "the awesome volume/brightness OSD"
-version     = "1.0.3"
+version     = "1.0.4"
 authors     = ["hitori"]
 output      = "hyprosd/hyprosd.so"
 build       = ["make -C hyprosd all"]
