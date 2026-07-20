@@ -9,6 +9,8 @@
 //   plugin:hyprsnap:snap_distance  px of magnetic pull (8, awesome's default_distance)
 //   plugin:hyprsnap:col_frame      the armed zone's outline color
 
+#include "common/lifecycle.hpp"
+
 #include "hyprsnap.hpp"
 
 #include <hyprland/src/config/ConfigValue.hpp>
@@ -47,7 +49,7 @@ using namespace NHyprsnap;
 
 static HANDLE                                 PHANDLE = nullptr;
 
-static Hyprutils::Signal::CHyprSignalListener lMove, lButton, lKey;
+static NHyprCommon::CLifecycle g_lifecycle;
 
 // Do NOT change this function.
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
@@ -74,9 +76,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addConfigValueV2(PHANDLE, g_config.colFrame);
 
     auto& EV = Event::bus()->m_events;
-    lMove    = EV.input.mouse.move.listen([](Vector2D, Event::SCallbackInfo&) { Snap::onMouseMove(); });
-    lButton  = EV.input.mouse.button.listen([](IPointer::SButtonEvent, Event::SCallbackInfo&) { Snap::onInputEndingDrag(); });
-    lKey     = EV.input.keyboard.key.listen([](IKeyboard::SKeyEvent, Event::SCallbackInfo&) { Snap::onInputEndingDrag(); });
+    g_lifecycle.init();
+    g_lifecycle.listen(EV.input.mouse.move, [](Vector2D, Event::SCallbackInfo&) { Snap::onMouseMove(); });
+    g_lifecycle.listen(EV.input.mouse.button, [](IPointer::SButtonEvent, Event::SCallbackInfo&) { Snap::onInputEndingDrag(); });
+    g_lifecycle.listen(EV.input.keyboard.key, [](IKeyboard::SKeyEvent, Event::SCallbackInfo&) { Snap::onInputEndingDrag(); });
     // no render.stage listener here: snap.cpp connects one only while a zone
     // is armed — the signal fires per window per frame
 
@@ -84,8 +87,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
-    lMove.reset();
-    lButton.reset();
-    lKey.reset();
-    Snap::reset(); // also drops the zone-armed render listener
+    g_lifecycle.resetAll(); // listeners first, then every hop
+    Snap::reset();          // also drops the zone-armed render listener
 }

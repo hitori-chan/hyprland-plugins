@@ -30,6 +30,8 @@
 // Everything lives in NHyprpad so no symbol can collide with another
 // plugin's at dlopen time.
 
+#include "common/lifecycle.hpp"
+
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/event/EventBus.hpp>
@@ -61,9 +63,11 @@ namespace NHyprpad {
     constexpr auto                                             SETTLE = std::chrono::milliseconds(400);
 
     static SP<CEventLoopTimer>                                 settle;
-    static UP<SEventLoopDoLaterLock>                           pendingToggle;
-    static Hyprutils::Signal::CHyprSignalListener              lReload, lNewPointer;
-    static std::vector<Hyprutils::Signal::CHyprSignalListener> lDestroy; // one per live pointer
+    static NHyprCommon::CHop                                   pendingToggle;
+    static NHyprCommon::CLifecycle                             g_lifecycle;
+    // per live pointer, rebuilt on every device re-check — dynamic lifetime,
+    // deliberately not in the lifecycle bundle
+    static std::vector<Hyprutils::Signal::CHyprSignalListener> lDestroy;
 
     // the last state this plugin applied; -1 = unknown, the next check applies
     static int appliedState = -1;
@@ -75,7 +79,7 @@ namespace NHyprpad {
     static SP<CEventLoopTimer>                 busPoll; // sd-bus timeout carrier + deferred-drain kicker, normally disarmed
     static wl_event_source*                    busSrc    = nullptr;
     static wl_event_source*                    busEvtSrc = nullptr;
-    static UP<SEventLoopDoLaterLock>           pendingBusDrop;
+    static NHyprCommon::CHop                   pendingBusDrop;
 
     // sd-bus dispatch is not re-entrant: never drain from a send site, park
     // a near tick on the timer instead
@@ -115,9 +119,9 @@ namespace NHyprpad {
         } catch (const std::exception& E) {
             // the bus died under us; an escape would unwind through the event
             // loop's C frames. Only the first failing source tears down.
-            if (conn && g_pEventLoopManager && !pendingBusDrop) {
+            if (conn && g_pEventLoopManager && !pendingBusDrop.armed()) {
                 HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprpad] bus lost, feedback cards off: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
-                pendingBusDrop = g_pEventLoopManager->doLaterLock([]() { busTeardown(); });
+                pendingBusDrop.arm([]() { busTeardown(); });
             }
         }
     }
@@ -230,9 +234,7 @@ namespace NHyprpad {
     // bind's input emission; the manual flip also cancels a pending auto
     // re-check so it isn't overridden a beat later.
     static int luaToggle(lua_State*) {
-        if (!g_pEventLoopManager)
-            return 0;
-        pendingToggle = g_pEventLoopManager->doLaterLock([]() {
+        pendingToggle.arm([]() {
             if (settle)
                 settle->updateTimeout(std::nullopt);
             applyEnabled(appliedState == 0);
@@ -281,15 +283,16 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         nullptr);
     g_pEventLoopManager->addTimer(settle);
 
+    g_lifecycle.init();
     if (g_pCompositor && g_pCompositor->m_aqBackend)
-        lNewPointer = g_pCompositor->m_aqBackend->events.newPointer.listen([](const SP<Aquamarine::IPointer>&) {
+        g_lifecycle.listen(g_pCompositor->m_aqBackend->events.newPointer, [](const SP<Aquamarine::IPointer>&) {
             if (settle)
                 settle->updateTimeout(SETTLE);
         });
 
     // a reload wiped the runtime hl.device state: forget what was applied
     // and re-check (replaces the old core.lua config.reloaded hook)
-    lReload = Event::bus()->m_events.config.reloaded.listen([]() {
+    g_lifecycle.listen(Event::bus()->m_events.config.reloaded, []() {
         appliedState = -1;
         if (settle)
             settle->updateTimeout(SETTLE);
@@ -305,10 +308,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
-    pendingToggle.reset(); // a pending doLater across unload calls into dlclosed code
-    pendingBusDrop.reset();
-    lReload.reset();
-    lNewPointer.reset();
+    g_lifecycle.resetAll(); // listeners first, then every hop
     lDestroy.clear();
     busTeardown(); // fd sources out BEFORE the connection dies
     if (g_pEventLoopManager) {

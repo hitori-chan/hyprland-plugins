@@ -26,6 +26,8 @@
 // Everything lives in NHyprosd so no symbol can collide with another
 // plugin's at dlopen time.
 
+#include "common/lifecycle.hpp"
+
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
@@ -65,11 +67,13 @@ namespace NHyprosd {
         SP<CEventLoopTimer>                 poll; // sd-bus timeout carrier + deferred-drain kicker, normally disarmed
         wl_event_source*                    src    = nullptr;
         wl_event_source*                    evtSrc = nullptr;
-        UP<SEventLoopDoLaterLock>           pendingDrop;
+        NHyprCommon::CHop                   pendingDrop;
         const char*                         label = "";
     };
     static SBusLink                            sessionBus{.label = "session"};
     static SBusLink                            systemBus{.label = "system"};
+
+    static NHyprCommon::CLifecycle             g_lifecycle; // no bus listeners here — it owns the hops
 
     static std::unique_ptr<sdbus::IProxy>      notifyProxy; // on sessionBus
     static std::unique_ptr<sdbus::IProxy>      logindProxy; // on systemBus
@@ -115,9 +119,9 @@ namespace NHyprosd {
         } catch (const std::exception& E) {
             // the bus died under us; an escape would unwind through the event
             // loop's C frames. Only the first failing source tears down.
-            if (L.conn && g_pEventLoopManager && !L.pendingDrop) {
+            if (L.conn && g_pEventLoopManager && !L.pendingDrop.armed()) {
                 HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprosd] "} + L.label + " bus lost: " + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
-                L.pendingDrop = g_pEventLoopManager->doLaterLock([&L]() { busTeardown(L); });
+                L.pendingDrop.arm([&L]() { busTeardown(L); });
             }
         }
     }
@@ -390,14 +394,14 @@ namespace NHyprosd {
     // Actions queue and drain from the event loop, never inside the bind's
     // input emission; a queue rather than one deferred slot so a key-repeat
     // burst never coalesces two steps into one.
-    static std::vector<uint8_t>      queued;
-    static UP<SEventLoopDoLaterLock> pendingDrain;
+    static std::vector<uint8_t> queued;
+    static NHyprCommon::CHop    pendingDrain;
 
-    static void                      enqueue(eAction a) {
+    static void                 enqueue(eAction a) {
         if (!g_pEventLoopManager)
-            return;
+            return; // an unarmable drain must not let the queue grow
         queued.push_back(a);
-        pendingDrain = g_pEventLoopManager->doLaterLock([]() {
+        pendingDrain.arm([]() {
             reapOrphans();
             for (const auto A : queued) {
                 if (A == BRI_UP || A == BRI_DOWN)
@@ -453,6 +457,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         throw std::runtime_error("[hyprosd] version mismatch");
     }
 
+    g_lifecycle.init();
+
     busInit(sessionBus, false);
     busInit(systemBus, true);
     findBacklight();
@@ -468,10 +474,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
-    pendingDrain.reset(); // a pending doLater across unload calls into dlclosed code
+    g_lifecycle.resetAll(); // every hop, in one place
     queued.clear();
-    sessionBus.pendingDrop.reset();
-    systemBus.pendingDrop.reset();
     while (!chains.empty())
         chainDone(chains.back().get()); // sources out, fds closed, children reaped as far as WNOHANG goes
     reapOrphans();

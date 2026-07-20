@@ -2,6 +2,8 @@
 // paint context, the pass element and the widget slots (each widget lives in
 // its own unit — see the module map in hyprbar.hpp)
 
+#include "common/lifecycle.hpp"
+
 #include "hyprbar.hpp"
 
 namespace NHyprbar {
@@ -60,14 +62,12 @@ namespace NHyprbar {
 
     static bool                      inRenderBar = false; // a render is on the stack: never build textures
 
-    static UP<SEventLoopDoLaterLock> pendingRewarm;
+    static NHyprCommon::CHop         pendingRewarm;
 
     // Back out to the event loop to build what a draw found missing, then
     // repaint. Deferred because we are inside the render when we notice.
     static void scheduleWarmRepaint() {
-        if (!g_pEventLoopManager)
-            return;
-        pendingRewarm = g_pEventLoopManager->doLaterLock([]() { barChanged(); });
+        pendingRewarm.arm([]() { barChanged(); });
     }
 
     // ---- the paint context (hyprbar.hpp) ----

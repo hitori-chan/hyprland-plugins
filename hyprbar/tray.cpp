@@ -1,5 +1,7 @@
 // hyprbar/tray.cpp — the in-compositor StatusNotifierWatcher/Host and its items
 
+#include "common/lifecycle.hpp"
+
 #include "hyprbar.hpp"
 
 namespace NHyprbar {
@@ -17,7 +19,7 @@ namespace NHyprbar {
         static SP<CEventLoopTimer>             poll; // sd-bus timeout carrier + deferred-drain kicker, normally disarmed
         static wl_event_source*                busSrc    = nullptr;
         static wl_event_source*                busEvtSrc = nullptr;
-        static UP<SEventLoopDoLaterLock>       pendingTeardown;
+        static NHyprCommon::CHop               pendingTeardown;
 
         // A drain must never run synchronously from here: sends happen inside
         // signal/reply handlers, i.e. inside processPendingEvent, and sd-bus
@@ -92,9 +94,9 @@ namespace NHyprbar {
             } catch (const std::exception& E) {
                 // the bus died under us (broker restart); an escape here would
                 // unwind through the event loop's C frames and kill the session
-                if (conn && g_pEventLoopManager && !pendingTeardown) {
+                if (conn && g_pEventLoopManager && !pendingTeardown.armed()) {
                     HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprbar] tray bus lost, tray disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
-                    pendingTeardown = g_pEventLoopManager->doLaterLock([]() {
+                    pendingTeardown.arm([]() {
                         teardown();
                         barChanged(); // the dead items just left the strip
                     });

@@ -29,6 +29,8 @@
 // premature commit self-corrects: the next motion recomputes the position
 // from the drag anchor anyway.
 
+#include "common/lifecycle.hpp"
+
 #include "hyprsnap.hpp"
 
 #include <hyprland/src/config/ConfigValue.hpp>
@@ -51,7 +53,7 @@ namespace NHyprsnap::Snap {
 
         std::optional<CBox>       zoneBox; // the armed aerosnap slot, global logical
         PHLMONITORREF             zoneMon;
-        UP<SEventLoopDoLaterLock> pendingMagnet;
+        NHyprCommon::CHop         pendingMagnet;
         bool                      magnetQueued = false;
         std::optional<CBox>       resizeStart; // resize-drag begin box: tells dragged edges from anchored
 
@@ -159,8 +161,8 @@ namespace NHyprsnap::Snap {
     static void queueMagnet() {
         if (magnetQueued || g_config.snapDist->value() <= 0)
             return;
-        magnetQueued  = true;
-        pendingMagnet = g_pEventLoopManager->doLaterLock([]() {
+        magnetQueued = true;
+        pendingMagnet.arm([]() {
             magnetQueued = false;
             // the lock can engage between the motion emission and this run
             // (idle timeout mid-drag): never move windows under the lockscreen

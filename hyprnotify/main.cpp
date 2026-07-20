@@ -67,6 +67,8 @@
 //
 // The code is split by concern — see hyprnotify.hpp for the module map.
 
+#include "common/lifecycle.hpp"
+
 #include "hyprnotify.hpp"
 
 #include <spawn.h>
@@ -144,10 +146,9 @@ namespace NHyprnotify {
     }
 }
 
-static Hyprutils::Signal::CHyprSignalListener              lRender, lPreChecks, lButton, lMove;
-static std::vector<Hyprutils::Signal::CHyprSignalListener> lDamage;
-static SP<SHyprCtlCommand>                                 ctlCount;
-static UP<SEventLoopDoLaterLock>                           pendingSuspend;
+static NHyprCommon::CLifecycle g_lifecycle;
+static SP<SHyprCtlCommand>     ctlCount;
+static NHyprCommon::CHop       pendingSuspend;
 
 // hl.plugin.hyprnotify.suspend() — the DND chord. Deferred out of the bind's
 // input emission (the resume reflows and repaints the stack). Presses
@@ -156,10 +157,10 @@ static UP<SEventLoopDoLaterLock>                           pendingSuspend;
 static int suspendPresses = 0;
 static int luaSuspend(lua_State*) {
     if (!g_pEventLoopManager)
-        return 0;
+        return 0; // presses must not accumulate with no drain to run them
     if (++suspendPresses > 1)
         return 0; // a drain is already queued
-    pendingSuspend = g_pEventLoopManager->doLaterLock([]() {
+    pendingSuspend.arm([]() {
         if (std::exchange(suspendPresses, 0) & 1)
             NHyprnotify::Bus::toggleSuspend();
     });
@@ -169,14 +170,14 @@ static int luaSuspend(lua_State*) {
 // hl.plugin.hyprnotify.recall() / `hyprctl hyprnotify recall` — history-pop.
 // Deferred like suspend (a keybind or hyprctl dispatch must not reflow the
 // model inline); presses accumulate so a burst pops that many.
-static int                       recallPresses = 0;
-static UP<SEventLoopDoLaterLock> pendingRecall;
-static void                      queueRecall() {
+static int               recallPresses = 0;
+static NHyprCommon::CHop pendingRecall;
+static void              queueRecall() {
     if (!g_pEventLoopManager)
-        return;
+        return; // as luaSuspend
     if (++recallPresses > 1)
         return;
-    pendingRecall = g_pEventLoopManager->doLaterLock([]() {
+    pendingRecall.arm([]() {
         for (int i = std::exchange(recallPresses, 0); i > 0; i--)
             NHyprnotify::Bus::recall();
     });
@@ -250,46 +251,39 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprnotify", "suspend", luaSuspend);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprnotify", "recall", luaRecall);
 
-    lRender    = Event::bus()->m_events.render.stage.listen([](eRenderStage stage) { onRenderStage(stage); });
-    lPreChecks = Event::bus()->m_events.render.preChecks.listen([](PHLMONITOR mon) { onRenderPreChecks(mon); });
-    lButton = Event::bus()->m_events.input.mouse.button.listen([](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { onMouseButton(e, info); });
-    lMove   = Event::bus()->m_events.input.mouse.move.listen([](Vector2D pos, Event::SCallbackInfo& info) { onMouseMove(pos, info); });
+    g_lifecycle.init();
+    g_lifecycle.listen(Event::bus()->m_events.render.stage, [](eRenderStage stage) { onRenderStage(stage); });
+    g_lifecycle.listen(Event::bus()->m_events.render.preChecks, [](PHLMONITOR mon) { onRenderPreChecks(mon); });
+    g_lifecycle.listen(Event::bus()->m_events.input.mouse.button, [](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { onMouseButton(e, info); });
+    g_lifecycle.listen(Event::bus()->m_events.input.mouse.move, [](Vector2D pos, Event::SCallbackInfo& info) { onMouseMove(pos, info); });
 
     // The cards live on the FOCUSED monitor: monitor.focused is the one
     // desktop event layout depends on (rawMonitorFocus early-outs same-monitor
     // flips, so sloppy focus costs nothing). It fires BEFORE m_focusMonitor is
     // assigned — the warm must stay deferred, which notifChanged guarantees.
     auto& EV = Event::bus()->m_events;
-    lDamage.push_back(EV.monitor.focused.listen([](PHLMONITOR) {
+    g_lifecycle.listen(EV.monitor.focused, [](PHLMONITOR) {
         if (!notifs.empty())
             notifChanged();
-    }));
-    lDamage.push_back(EV.monitor.layoutChanged.listen([]() {
+    });
+    g_lifecycle.listen(EV.monitor.layoutChanged, []() {
         if (!notifs.empty())
             notifChanged();
-    }));
-    lDamage.push_back(EV.config.reloaded.listen([]() {
+    });
+    g_lifecycle.listen(EV.config.reloaded, []() {
         resetFallbackCache();
         resetIconThemeCache();
         if (!notifs.empty())
             notifChanged(); // a live theme reload re-keys the texture caches
-    }));
+    });
 
     return {"hyprnotify", "awesome's naughty: notifications drawn by the compositor", "hitori", VERSION};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
-    // listeners before the deferred hops they arm: an event firing
-    // mid-teardown must not re-queue a hop that would then outlive the .so
-    lRender.reset();
-    lPreChecks.reset();
-    lButton.reset();
-    lMove.reset();
-    lDamage.clear();
-    pendingSuspend.reset();
+    g_lifecycle.resetAll(); // listeners first, then every hop
     suspendPresses = 0;
-    pendingRecall.reset();
-    recallPresses = 0;
+    recallPresses  = 0;
     if (ctlCount)
         HyprlandAPI::unregisterHyprCtlCommand(PHANDLE, ctlCount);
     ctlCount.reset();

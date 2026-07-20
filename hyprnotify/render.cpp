@@ -1,5 +1,7 @@
 // hyprnotify/render.cpp — the cards, their textures, the pass element, damage
 
+#include "common/lifecycle.hpp"
+
 #include "hyprnotify.hpp"
 
 #include <format>
@@ -23,7 +25,7 @@ namespace NHyprnotify {
     static uint32_t                  hoveredId      = 0;
     static int                       hoveredBtn     = -1; // action button under the pointer within hoveredId, -1 = the frame
 
-    static UP<SEventLoopDoLaterLock> pendingWarm, pendingRewarm;
+    static NHyprCommon::CHop         pendingWarm, pendingRewarm;
 
     CHyprColor                       color(const SP<Config::Values::CColorValue>& v) {
         struct SMemo {
@@ -731,10 +733,8 @@ namespace NHyprnotify {
     }
 
     void notifChanged() {
-        if (!g_pEventLoopManager)
-            return;
         // one lock: bursts (an OSD volume sweep, a batch of closes) coalesce
-        pendingWarm = g_pEventLoopManager->doLaterLock([]() {
+        pendingWarm.arm([]() {
             warmNotifs();
             damageNotifs();
             refreshPointerOwnership();
@@ -759,9 +759,7 @@ namespace NHyprnotify {
     // Back out to the event loop to build what a draw found missing, then
     // repaint. Deferred because we are inside the render when we notice.
     static void scheduleWarmRepaint() {
-        if (!g_pEventLoopManager)
-            return;
-        pendingRewarm = g_pEventLoopManager->doLaterLock([]() {
+        pendingRewarm.arm([]() {
             warmNotifs();
             damageNotifs();
         });

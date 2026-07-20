@@ -23,6 +23,8 @@
 //
 // hl.plugin.hyprmax.toggle() — the Mod+M bind target. No config.
 
+#include "common/lifecycle.hpp"
+
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
@@ -54,8 +56,8 @@
 
 static HANDLE                                 PHANDLE = nullptr;
 
-static Hyprutils::Signal::CHyprSignalListener lButton, lDestroy, lFullscreen;
-static UP<SEventLoopDoLaterLock>              pendingMax;
+static NHyprCommon::CLifecycle g_lifecycle;
+static NHyprCommon::CHop       pendingMax;
 
 // plugin-maximized windows and their restore geometry.
 static std::unordered_map<PHLWINDOWREF, CBox> g_maximized;
@@ -109,14 +111,14 @@ static void saveWindowed() {
 
 // Coalesced: a logout mass-close must not storm the disk with one full
 // rewrite per window from inside each destroy emission (hyprplace's pattern).
-static bool                      saveQueued = false;
-static UP<SEventLoopDoLaterLock> pendingSave;
+static bool              saveQueued = false;
+static NHyprCommon::CHop pendingSave;
 
-static void                      queueSave() {
-    if (saveQueued || !g_pEventLoopManager)
+static void              queueSave() {
+    if (saveQueued)
         return;
-    saveQueued  = true;
-    pendingSave = g_pEventLoopManager->doLaterLock([]() {
+    saveQueued = true;
+    pendingSave.arm([]() {
         saveQueued = false;
         saveWindowed();
     });
@@ -178,17 +180,17 @@ static void adoptCompositorMax(PHLWINDOW W) {
 }
 
 static std::vector<PHLWINDOWREF> g_adoptQueue;
-static bool                      adoptQueued = false;
-static UP<SEventLoopDoLaterLock> pendingAdopt;
+static bool              adoptQueued = false;
+static NHyprCommon::CHop pendingAdopt;
 
 // queue+drain, never a lone doLaterLock: two born-maximized windows can
 // map in one dispatch, and overwriting the lock cancels the unfired one
 static void queueAdopt(PHLWINDOW w) {
     g_adoptQueue.emplace_back(w);
-    if (adoptQueued || !g_pEventLoopManager)
+    if (adoptQueued)
         return;
-    adoptQueued  = true;
-    pendingAdopt = g_pEventLoopManager->doLaterLock([]() {
+    adoptQueued = true;
+    pendingAdopt.arm([]() {
         adoptQueued  = false;
         const auto Q = std::move(g_adoptQueue);
         g_adoptQueue.clear();
@@ -260,7 +262,7 @@ static int luaToggle(lua_State*) {
         return 0;
 
     PHLWINDOWREF WR{FOCUS};
-    pendingMax = g_pEventLoopManager->doLaterLock([WR]() {
+    pendingMax.arm([WR]() {
         const auto W = WR.lock();
         if (!W || !W->m_isMapped || !W->m_target)
             return;
@@ -357,11 +359,12 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     loadWindowed();
 
-    lButton = Event::bus()->m_events.input.mouse.button.listen([](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { onMouseButton(e, info); });
+    g_lifecycle.init();
+    g_lifecycle.listen(Event::bus()->m_events.input.mouse.button, [](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { onMouseButton(e, info); });
 
     // A window closed while plugin-maximized: keep its windowed box as the
     // app's remembered size (the window ref itself is about to expire).
-    lDestroy = Event::bus()->m_events.window.destroy.listen([](PHLWINDOWREF wr) {
+    g_lifecycle.listen(Event::bus()->m_events.window.destroy, [](PHLWINDOWREF wr) {
         const auto IT = g_maximized.find(wr);
         if (IT == g_maximized.end())
             return;
@@ -385,7 +388,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // The same event announces a compositor-granted maximize (internal
     // FSMODE_MAXIMIZED): adopt it, deferred — we are inside the
     // controller's emission.
-    lFullscreen = Event::bus()->m_events.window.fullscreen.listen([](PHLWINDOW w) {
+    g_lifecycle.listen(Event::bus()->m_events.window.fullscreen, [](PHLWINDOW w) {
         if (!w)
             return;
         if (pluginMaximized(w)) {
@@ -403,14 +406,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
-    // listeners before the deferred hops they arm: an event firing
-    // mid-teardown must not re-queue a hop that would then outlive the .so
-    lButton.reset();
-    lDestroy.reset();
-    lFullscreen.reset();
-    pendingMax.reset();
-    pendingSave.reset();
-    pendingAdopt.reset();
+    g_lifecycle.resetAll(); // listeners first, then every hop
     adoptQueued = false;
     g_adoptQueue.clear();
     if (saveQueued) { // the coalesced write must not die with the session

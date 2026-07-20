@@ -18,6 +18,8 @@
 // (which swallows Super-grabs on maximized windows): a cancelled press
 // never raises. No config.
 
+#include "common/lifecycle.hpp"
+
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/Workspace.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
@@ -44,8 +46,8 @@
 
 static HANDLE                                 PHANDLE = nullptr;
 
-static Hyprutils::Signal::CHyprSignalListener lButton, lActive, lOpen, lDestroy;
-static UP<SEventLoopDoLaterLock>              pendingRaise, pendingFocus;
+static NHyprCommon::CLifecycle g_lifecycle;
+static NHyprCommon::CHop       pendingRaise, pendingFocus;
 
 // arrival order for focus_next/focus_prev — the z-order list is useless as
 // a cycle order under click-to-raise (every focus rotates it)
@@ -114,7 +116,7 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
     // compositor's own press handling still walks the stack we'd reorder
     if (const auto W = windowUnderCursor()) {
         PHLWINDOWREF WR{W};
-        pendingRaise = g_pEventLoopManager->doLaterLock([WR]() {
+        pendingRaise.arm([WR]() {
             if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
                 return; // the lock can engage between the emission and this run
             if (const auto W = WR.lock(); W && W->m_isMapped)
@@ -133,7 +135,7 @@ static void onWindowActive(PHLWINDOW w, Desktop::eFocusReason reason) {
         return;
 
     PHLWINDOWREF WR{w};
-    pendingRaise = g_pEventLoopManager->doLaterLock([WR]() {
+    pendingRaise.arm([WR]() {
         if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
             return; // the lock can engage between the emission and this run
         if (const auto W = WR.lock(); W && W->m_isMapped)
@@ -160,7 +162,7 @@ static int luaFocusPrevHere(lua_State*) {
             continue;
 
         PHLWINDOWREF TARGET{W};
-        pendingFocus = g_pEventLoopManager->doLaterLock([TARGET]() {
+        pendingFocus.arm([TARGET]() {
             if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
                 return; // the lock can engage between the emission and this run
             if (const auto W = TARGET.lock())
@@ -207,7 +209,7 @@ static void focusByIdx(bool next) {
 
     PHLWINDOWREF TARGET{wins[TO].second};
     wins.clear(); // don't keep strong refs across calls
-    pendingFocus = g_pEventLoopManager->doLaterLock([TARGET]() {
+    pendingFocus.arm([TARGET]() {
         if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
             return; // the lock can engage between the emission and this run
         if (const auto W = TARGET.lock(); W && W->m_isMapped)
@@ -240,13 +242,14 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         throw std::runtime_error("[hyprclick] version mismatch");
     }
 
-    lButton  = Event::bus()->m_events.input.mouse.button.listen([](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { onMouseButton(e, info); });
-    lActive  = Event::bus()->m_events.window.active.listen([](PHLWINDOW w, Desktop::eFocusReason reason) { onWindowActive(w, reason); });
-    lOpen    = Event::bus()->m_events.window.open.listen([](PHLWINDOW w) {
+    g_lifecycle.init();
+    g_lifecycle.listen(Event::bus()->m_events.input.mouse.button, [](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { onMouseButton(e, info); });
+    g_lifecycle.listen(Event::bus()->m_events.window.active, [](PHLWINDOW w, Desktop::eFocusReason reason) { onWindowActive(w, reason); });
+    g_lifecycle.listen(Event::bus()->m_events.window.open, [](PHLWINDOW w) {
         if (w && g_seq.try_emplace(w.get(), g_seqNext).second)
             g_seqNext++;
     });
-    lDestroy = Event::bus()->m_events.window.destroy.listen([](PHLWINDOWREF wr) { g_seq.erase(wr.get()); });
+    g_lifecycle.listen(Event::bus()->m_events.window.destroy, [](PHLWINDOWREF wr) { g_seq.erase(wr.get()); });
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev_here", luaFocusPrevHere);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_next", luaFocusNext);
@@ -256,13 +259,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
-    // listeners first, then the deferred work they arm: no new callback can be
-    // queued while we cancel the outstanding ones (as hyprplace does).
-    lButton.reset();
-    lActive.reset();
-    lOpen.reset();
-    lDestroy.reset();
-    pendingRaise.reset();
-    pendingFocus.reset();
+    g_lifecycle.resetAll(); // listeners first, then every hop
     g_seq.clear();
 }

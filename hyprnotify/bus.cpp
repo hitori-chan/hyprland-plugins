@@ -1,5 +1,7 @@
 // hyprnotify/bus.cpp — the org.freedesktop.Notifications daemon and the model
 
+#include "common/lifecycle.hpp"
+
 #include "hyprnotify.hpp"
 
 #include <hyprland/src/protocols/XDGActivation.hpp>
@@ -17,7 +19,7 @@ namespace NHyprnotify {
         static SP<CEventLoopTimer>                 expiry;
         static wl_event_source*                    busSrc    = nullptr;
         static wl_event_source*                    busEvtSrc = nullptr;
-        static UP<SEventLoopDoLaterLock>           pendingTeardown;
+        static NHyprCommon::CHop                   pendingTeardown;
         static uint32_t                            nextId    = 1;
         static bool                                suspended = false; // DND
 
@@ -66,9 +68,9 @@ namespace NHyprnotify {
                 // unwind through the event loop's C frames and kill the session.
                 // Both fd sources can be ready in one dispatch batch: only the
                 // first failure notifies and schedules the teardown.
-                if (conn && g_pEventLoopManager && !pendingTeardown) {
+                if (conn && g_pEventLoopManager && !pendingTeardown.armed()) {
                     HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprnotify] bus lost, notifications disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
-                    pendingTeardown = g_pEventLoopManager->doLaterLock([]() { teardown(); });
+                    pendingTeardown.arm([]() { teardown(); });
                 }
             }
         }

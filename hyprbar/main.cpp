@@ -116,6 +116,8 @@
 // The code is split by concern — the skeleton hosts widgets, each in its own
 // unit next to the state it paints from; see hyprbar.hpp for the module map.
 
+#include "common/lifecycle.hpp"
+
 #include "hyprbar.hpp"
 
 using namespace NHyprbar;
@@ -129,10 +131,9 @@ namespace NHyprbar {
 // the minute tick: clock text + battery failsafe read
 static SP<CEventLoopTimer>                                 timer;
 
-static Hyprutils::Signal::CHyprSignalListener              lRender, lButton, lMove, lAxis, lKey;
-static std::vector<Hyprutils::Signal::CHyprSignalListener> lDamage;
+static NHyprCommon::CLifecycle g_lifecycle;
 
-static UP<SEventLoopDoLaterLock>                           pendingWarm;
+static NHyprCommon::CHop       pendingWarm;
 
 // Anything that changes what the bar shows lands here. The textures are built
 // NOW, in the event loop, because a texture built during a frame cannot be
@@ -144,7 +145,7 @@ static void damageAndWarm() {
         damageBars();
         return;
     }
-    pendingWarm = g_pEventLoopManager->doLaterLock([]() {
+    pendingWarm.arm([]() {
         warmBars();
         damageBars();
     });
@@ -177,15 +178,13 @@ static int luaLayoutPrev(lua_State*) {
 // and awful.client.restore (Mod+Ctrl+N). Deferred out of the keybind emission:
 // both change focus + layout, which must never run synchronously inside an
 // input emission; the pending hops are reset in PLUGIN_EXIT.
-static UP<SEventLoopDoLaterLock> pendingMinimize, pendingRestore, pendingUnfocusHidden;
-static int                       luaMinimize(lua_State*) {
-    if (g_pEventLoopManager)
-        pendingMinimize = g_pEventLoopManager->doLaterLock([]() { Tasklist::minimizeFocused(); });
+static NHyprCommon::CHop pendingMinimize, pendingRestore, pendingUnfocusHidden;
+static int               luaMinimize(lua_State*) {
+    pendingMinimize.arm([]() { Tasklist::minimizeFocused(); });
     return 0;
 }
 static int luaRestore(lua_State*) {
-    if (g_pEventLoopManager)
-        pendingRestore = g_pEventLoopManager->doLaterLock([]() { Tasklist::restoreLast(); });
+    pendingRestore.arm([]() { Tasklist::restoreLast(); });
     return 0;
 }
 
@@ -239,11 +238,12 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     Battery::init();
     Tray::init();
 
-    lRender = Event::bus()->m_events.render.stage.listen([](eRenderStage stage) { onRenderStage(stage); });
-    lButton = Event::bus()->m_events.input.mouse.button.listen([](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { onMouseButton(e, info); });
-    lMove   = Event::bus()->m_events.input.mouse.move.listen([](Vector2D pos, Event::SCallbackInfo& info) { onMouseMove(pos, info); });
-    lAxis   = Event::bus()->m_events.input.mouse.axis.listen([](IPointer::SAxisEvent e, Event::SCallbackInfo& info) { onMouseAxis(e, info); });
-    lKey    = Event::bus()->m_events.input.keyboard.key.listen([](IKeyboard::SKeyEvent e, Event::SCallbackInfo& info) { Menubar::onKey(e, info); });
+    g_lifecycle.init();
+    g_lifecycle.listen(Event::bus()->m_events.render.stage, [](eRenderStage stage) { onRenderStage(stage); });
+    g_lifecycle.listen(Event::bus()->m_events.input.mouse.button, [](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { onMouseButton(e, info); });
+    g_lifecycle.listen(Event::bus()->m_events.input.mouse.move, [](Vector2D pos, Event::SCallbackInfo& info) { onMouseMove(pos, info); });
+    g_lifecycle.listen(Event::bus()->m_events.input.mouse.axis, [](IPointer::SAxisEvent e, Event::SCallbackInfo& info) { onMouseAxis(e, info); });
+    g_lifecycle.listen(Event::bus()->m_events.input.keyboard.key, [](IKeyboard::SKeyEvent e, Event::SCallbackInfo& info) { Menubar::onKey(e, info); });
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprbar", "menubar", luaMenubar);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprbar", "layout_next", luaLayoutNext);
@@ -253,46 +253,46 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     // Anything that changes what the bar shows -> damage the strip.
     auto& EV = Event::bus()->m_events;
-    lDamage.push_back(EV.window.open.listen([](PHLWINDOW w) {
+    g_lifecycle.listen(EV.window.open, [](PHLWINDOW w) {
         Tasklist::watchMinimize(w); // honor the client's own set_minimized
         damageAndWarm();
-    }));
-    lDamage.push_back(EV.window.close.listen([](PHLWINDOW) { damageAndWarm(); }));
-    lDamage.push_back(EV.window.destroy.listen([](PHLWINDOWREF w) {
+    });
+    g_lifecycle.listen(EV.window.close, [](PHLWINDOW) { damageAndWarm(); });
+    g_lifecycle.listen(EV.window.destroy, [](PHLWINDOWREF w) {
         Tasklist::forget(w.get());
         damageAndWarm();
-    }));
-    lDamage.push_back(EV.window.active.listen([](PHLWINDOW w, Desktop::eFocusReason) {
+    });
+    g_lifecycle.listen(EV.window.active, [](PHLWINDOW w, Desktop::eFocusReason) {
         damageAndWarm();
         // awesome's check_focus: focus must never rest on a minimized window.
         // The compositor's focus fallback (closing the last visible window)
         // lands focus on a hidden one; bounce it off, deferred out of the focus
         // emission (refocusing inside it reenters the focus machinery).
-        if (w && w->isHidden() && Tasklist::isMinimized(w) && g_pEventLoopManager) {
+        if (w && w->isHidden() && Tasklist::isMinimized(w)) {
             PHLWINDOWREF WR{w};
-            pendingUnfocusHidden = g_pEventLoopManager->doLaterLock([WR]() {
+            pendingUnfocusHidden.arm([WR]() {
                 if (const auto W = WR.lock())
                     Tasklist::focusAwayFromHidden(W);
             });
         }
-    }));
-    lDamage.push_back(EV.window.title.listen([](PHLWINDOW w) {
+    });
+    g_lifecycle.listen(EV.window.title, [](PHLWINDOW w) {
         // a hidden workspace's titles render nowhere; workspace.active re-warms the switch
         if (w && w->m_workspace && !w->m_workspace->isVisible())
             return;
         damageAndWarm();
-    }));
-    lDamage.push_back(EV.window.urgent.listen([](PHLWINDOW) { damageAndWarm(); }));
-    lDamage.push_back(EV.window.pin.listen([](PHLWINDOW) { damageAndWarm(); }));      // the tasklist's ⌃ marker
-    lDamage.push_back(EV.window.floating.listen([](PHLWINDOW) { damageAndWarm(); })); // the ✈ marker
-    lDamage.push_back(EV.window.class_.listen([](PHLWINDOW) { damageAndWarm(); }));   // the task icon re-resolves
-    lDamage.push_back(EV.window.fullscreen.listen([](PHLWINDOW) { damageAndWarm(); }));
-    lDamage.push_back(EV.window.moveToWorkspace.listen([](PHLWINDOW, PHLWORKSPACE) { damageAndWarm(); }));
-    lDamage.push_back(EV.workspace.active.listen([](PHLWORKSPACE) { damageAndWarm(); }));
-    lDamage.push_back(EV.workspace.created.listen([](PHLWORKSPACEREF) { damageAndWarm(); }));
-    lDamage.push_back(EV.workspace.removed.listen([](PHLWORKSPACEREF) { damageAndWarm(); }));
-    lDamage.push_back(EV.workspace.moveToMonitor.listen([](PHLWORKSPACE, PHLMONITOR) { damageAndWarm(); }));
-    lDamage.push_back(EV.monitor.layoutChanged.listen([]() { damageAndWarm(); }));
+    });
+    g_lifecycle.listen(EV.window.urgent, [](PHLWINDOW) { damageAndWarm(); });
+    g_lifecycle.listen(EV.window.pin, [](PHLWINDOW) { damageAndWarm(); });      // the tasklist's ⌃ marker
+    g_lifecycle.listen(EV.window.floating, [](PHLWINDOW) { damageAndWarm(); }); // the ✈ marker
+    g_lifecycle.listen(EV.window.class_, [](PHLWINDOW) { damageAndWarm(); });   // the task icon re-resolves
+    g_lifecycle.listen(EV.window.fullscreen, [](PHLWINDOW) { damageAndWarm(); });
+    g_lifecycle.listen(EV.window.moveToWorkspace, [](PHLWINDOW, PHLWORKSPACE) { damageAndWarm(); });
+    g_lifecycle.listen(EV.workspace.active, [](PHLWORKSPACE) { damageAndWarm(); });
+    g_lifecycle.listen(EV.workspace.created, [](PHLWORKSPACEREF) { damageAndWarm(); });
+    g_lifecycle.listen(EV.workspace.removed, [](PHLWORKSPACEREF) { damageAndWarm(); });
+    g_lifecycle.listen(EV.workspace.moveToMonitor, [](PHLWORKSPACE, PHLMONITOR) { damageAndWarm(); });
+    g_lifecycle.listen(EV.monitor.layoutChanged, []() { damageAndWarm(); });
 
     timer = makeShared<CEventLoopTimer>(
         toNextMinute(),
@@ -312,18 +312,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
-    // listeners before the deferred hops they arm: an event firing
-    // mid-teardown must not re-queue a hop that would then outlive the .so
-    lRender.reset();
-    lButton.reset();
-    lMove.reset();
-    lAxis.reset();
-    lKey.reset();
-    lDamage.clear();
-    pendingWarm.reset(); // a queued warm across unload calls into dlclosed code
-    pendingMinimize.reset();
-    pendingRestore.reset();
-    pendingUnfocusHidden.reset();
+    g_lifecycle.resetAll(); // listeners first, then every hop, .so-wide
     Menubar::exit();
     Menu::exit();
     Tray::exit();

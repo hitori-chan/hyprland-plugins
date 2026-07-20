@@ -1,5 +1,7 @@
 // hyprbar/menubar.cpp — awesome's Mod+P launcher: .desktop apps, categories, prompt, completion, history
 
+#include "common/lifecycle.hpp"
+
 #include "hyprbar.hpp"
 
 namespace NHyprbar {
@@ -35,7 +37,7 @@ namespace NHyprbar {
         int                              sel = 0, first = 0;
         PHLMONITORREF                    mon;
 
-        static UP<SEventLoopDoLaterLock> pendingExec, pendingOpen;
+        static NHyprCommon::CHop         pendingExec, pendingOpen;
 
         // launch counts + prompt history, persisted like awesome's
         // ~/.cache/awesome/{menu_count_file,history_menu}
@@ -383,7 +385,7 @@ namespace NHyprbar {
             if (S.app >= 0)
                 counts[apps[S.app].name]++;
             // the disk writes ride the deferred hop with the spawn, off the key emission
-            pendingExec = g_pEventLoopManager->doLaterLock([cmd, hist = typed]() {
+            pendingExec.arm([cmd, hist = typed]() {
                 saveCounts();
                 historyAdd(hist);
                 std::ignore = Config::Supplementary::executor()->spawn(cmd);
@@ -813,7 +815,7 @@ namespace NHyprbar {
     namespace Menubar {
         // hl.plugin.hyprbar.menubar(), deferred out of the Lua call
         void toggleDeferred() {
-            pendingOpen = g_pEventLoopManager->doLaterLock([]() {
+            pendingOpen.arm([]() {
                 if (isOpen)
                     close();
                 else

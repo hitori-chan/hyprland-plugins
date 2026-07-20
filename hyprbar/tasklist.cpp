@@ -1,6 +1,8 @@
 // hyprbar/tasklist.cpp — awesome's tasklist: arrival-order bookkeeping, the
 // state-marker labels and the widget filling the bar's middle
 
+#include "common/lifecycle.hpp"
+
 #include "hyprbar.hpp"
 
 namespace NHyprbar {
@@ -67,7 +69,7 @@ namespace NHyprbar {
     static std::unordered_map<void*, CHyprSignalListener> minReqListeners;
     static std::vector<std::pair<PHLWINDOWREF, bool>>     minReqQueue; // (window, minimize?)
     static bool                                           minReqQueued = false;
-    static UP<SEventLoopDoLaterLock>                      pendingMinReq;
+    static NHyprCommon::CHop                              pendingMinReq;
 
     static std::optional<bool>                            minimizeRequestOf(const PHLWINDOW& w) {
         if (w->m_xdgSurface && w->m_xdgSurface->m_toplevel)
@@ -196,10 +198,10 @@ namespace NHyprbar {
                 if (!REQ.has_value())
                     return; // this stateChanged carried a fs/maximize change, not a minimize
                 minReqQueue.emplace_back(wr, *REQ);
-                if (minReqQueued || !g_pEventLoopManager)
+                if (minReqQueued)
                     return; // one drain coalesces a burst — overwriting the lock would cancel it
-                minReqQueued  = true;
-                pendingMinReq = g_pEventLoopManager->doLaterLock([]() {
+                minReqQueued = true;
+                pendingMinReq.arm([]() {
                     minReqQueued = false;
                     const auto Q = std::move(minReqQueue);
                     minReqQueue.clear();

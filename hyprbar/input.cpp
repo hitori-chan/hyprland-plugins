@@ -1,5 +1,7 @@
 // hyprbar/input.cpp — clicks, scrolls and pointer ownership over the strip
 
+#include "common/lifecycle.hpp"
+
 #include "hyprbar.hpp"
 
 namespace NHyprbar {
@@ -13,7 +15,7 @@ namespace NHyprbar {
     // this unit owns swallowing, the deferral out of the input emission,
     // and the notch coalescing.
 
-    static UP<SEventLoopDoLaterLock> pendingHit;
+    static NHyprCommon::CHop         pendingHit;
 
     // ---- input ----
 
@@ -94,7 +96,7 @@ namespace NHyprbar {
                         }
                         if ((BIT == 1u || BIT == 2u) && (size_t)IDX < L.entries.size() && L.entries[IDX].enabled && !L.entries[IDX].separator) {
                             if (L.entries[IDX].submenu) { // a click cascades too, like GTK
-                                pendingHit = g_pEventLoopManager->doLaterLock([li, IDX]() {
+                                pendingHit.arm([li, IDX]() {
                                     if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
                                         return; // the lock can engage between the click and this hop
                                     Menu::openSub(li, IDX);
@@ -102,7 +104,7 @@ namespace NHyprbar {
                                 return;
                             }
                             const auto EN = L.entries[IDX];
-                            pendingHit    = g_pEventLoopManager->doLaterLock([EN]() {
+                            pendingHit.arm([EN]() {
                                 if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
                                     return;
                                 Menu::activate(EN);
@@ -149,7 +151,7 @@ namespace NHyprbar {
                 // Deferred out of the input emission: workspace/focus changes
                 // mid-button-event bite code that still holds pre-click state.
                 if (hc.widget)
-                    pendingHit = g_pEventLoopManager->doLaterLock([hc, BIT, SUPER]() {
+                    pendingHit.arm([hc, BIT, SUPER]() {
                         if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
                             return; // a widget onHit can change workspace/focus — never under a lock
                         hc.widget->onHit(hc, BIT, SUPER);
@@ -161,7 +163,7 @@ namespace NHyprbar {
 
     // awesome's wibar scroll bindings live with their widgets; the strip
     // swallows every scroll it owns.
-    static UP<SEventLoopDoLaterLock> pendingScroll;
+    static NHyprCommon::CHop         pendingScroll;
 
     // Batched notches ACCUMULATE into one deferred hop: axis events can
     // arrive several per dispatch, and overwriting the doLaterLock cancels
@@ -173,7 +175,7 @@ namespace NHyprbar {
         if (scrollQueued)
             return;
         scrollQueued  = true;
-        pendingScroll = g_pEventLoopManager->doLaterLock([mon]() {
+        pendingScroll.arm([mon]() {
             scrollQueued = false;
             if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked()) {
                 scrollAcc.clear(); // reset the half-tracked accumulator, act on nothing

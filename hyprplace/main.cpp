@@ -30,6 +30,8 @@
 // free space; the placement scan then puts a new window where it overlaps
 // them the least.
 
+#include "common/lifecycle.hpp"
+
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>
@@ -54,8 +56,8 @@
 namespace NHyprplace {
 
     namespace {
-        UP<SEventLoopDoLaterLock> pendingPlace;
-        UP<SEventLoopDoLaterLock> pendingSave;
+        NHyprCommon::CHop         pendingPlace;
+        NHyprCommon::CHop         pendingSave;
         std::vector<PHLWINDOWREF> placeQueue;
         bool                      saveQueued = false;
 
@@ -133,8 +135,8 @@ namespace NHyprplace {
             // one full rewrite per window
             if (saveQueued)
                 return;
-            saveQueued  = true;
-            pendingSave = g_pEventLoopManager->doLaterLock([]() {
+            saveQueued = true;
+            pendingSave.arm([]() {
                 saveQueued = false;
                 saveSpots();
             });
@@ -376,7 +378,7 @@ namespace NHyprplace {
         // and drain once: re-arming the lock cancels the previous callback,
         // the queue survives.
         placeQueue.emplace_back(w);
-        pendingPlace = g_pEventLoopManager->doLaterLock([]() {
+        pendingPlace.arm([]() {
             for (const auto& REF : placeQueue)
                 placeWindow(REF.lock());
             placeQueue.clear();
@@ -398,9 +400,9 @@ namespace NHyprplace {
 
 using namespace NHyprplace;
 
-static HANDLE                                 PHANDLE = nullptr;
+static HANDLE                  PHANDLE = nullptr;
 
-static Hyprutils::Signal::CHyprSignalListener lOpen, lClose, lPredict;
+static NHyprCommon::CLifecycle g_lifecycle;
 
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
     return HYPRLAND_API_VERSION;
@@ -419,20 +421,17 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     loadSpots();
 
-    lOpen    = Event::bus()->m_events.window.open.listen([](PHLWINDOW w) { onWindowOpen(w); });
-    lClose   = Event::bus()->m_events.window.close.listen([](PHLWINDOW w) { onWindowClose(w); });
-    lPredict = Event::bus()->m_events.window.predictSize.listen([](PHLWINDOW w, Vector2D& size) { onPredictSize(w, size); });
+    g_lifecycle.init();
+    g_lifecycle.listen(Event::bus()->m_events.window.open, [](PHLWINDOW w) { onWindowOpen(w); });
+    g_lifecycle.listen(Event::bus()->m_events.window.close, [](PHLWINDOW w) { onWindowClose(w); });
+    g_lifecycle.listen(Event::bus()->m_events.window.predictSize, [](PHLWINDOW w, Vector2D& size) { onPredictSize(w, size); });
 
     return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.0.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
-    lOpen.reset();
-    lClose.reset();
-    lPredict.reset();
-    pendingPlace.reset();
-    pendingSave.reset();
-    if (saveQueued) // the deferred flush never runs at compositor exit
+    g_lifecycle.resetAll(); // listeners first, then every hop
+    if (saveQueued)         // the deferred flush never runs at compositor exit
         saveSpots();
     saveQueued = false;
     placeQueue.clear();

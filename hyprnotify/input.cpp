@@ -1,5 +1,7 @@
 // hyprnotify/input.cpp — clicks and pointer ownership over the cards
 
+#include "common/lifecycle.hpp"
+
 #include "hyprnotify.hpp"
 
 namespace NHyprnotify {
@@ -17,9 +19,9 @@ namespace NHyprnotify {
         std::string action; // non-empty: a specific action button was clicked
         std::string href;   // non-empty: a body hyperlink was clicked
     };
-    static std::vector<SHit>         hitQueue;
-    static bool                      hitQueued = false;
-    static UP<SEventLoopDoLaterLock> pendingHit;
+    static std::vector<SHit> hitQueue;
+    static bool              hitQueued = false;
+    static NHyprCommon::CHop pendingHit;
 
     static const SCard*              cardAt(const Vector2D& pos) {
         if (cards.empty())
@@ -98,10 +100,10 @@ namespace NHyprnotify {
         // an action can make the client focus/raise itself. Queue+drain so two
         // clicks in one dispatch both land instead of the second clobbering the first.
         hitQueue.push_back({CARD->id, BIT, action, href});
-        if (hitQueued || !g_pEventLoopManager)
+        if (hitQueued)
             return;
-        hitQueued  = true;
-        pendingHit = g_pEventLoopManager->doLaterLock([]() {
+        hitQueued = true;
+        pendingHit.arm([]() {
             hitQueued    = false;
             const auto Q = std::move(hitQueue);
             hitQueue.clear();
