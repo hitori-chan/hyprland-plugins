@@ -255,7 +255,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_next", luaFocusNext);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev", luaFocusPrev);
 
-    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.1.5"};
+    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.1.6"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

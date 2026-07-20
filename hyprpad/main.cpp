@@ -250,7 +250,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // device list is populated and the notification daemon is up
     settle->updateTimeout(SETTLE);
 
-    return {"hyprpad", "the awesome touchpad module", "hitori", "1.0.5"};
+    return {"hyprpad", "the awesome touchpad module", "hitori", "1.0.6"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

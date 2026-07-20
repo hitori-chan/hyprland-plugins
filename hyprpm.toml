@@ -15,56 +15,56 @@ authors = ["hitori"]
 
 [hyprbar]
 description = "the awesome wibar, drawn by the compositor"
-version     = "2.2.5"
+version     = "2.2.6"
 authors     = ["hitori"]
 output      = "hyprbar/hyprbar.so"
 build       = ["make -C hyprbar all"]
 
 [hyprnotify]
 description = "awesome's naughty: notifications drawn by the compositor"
-version     = "3.0.4"
+version     = "3.0.5"
 authors     = ["hitori"]
 output      = "hyprnotify/hyprnotify.so"
 build       = ["make -C hyprnotify all"]
 
 [hyprmax]
 description = "awesome's per-window maximize"
-version     = "1.1.5"
+version     = "1.1.6"
 authors     = ["hitori"]
 output      = "hyprmax/hyprmax.so"
 build       = ["make -C hyprmax all"]
 
 [hyprsnap]
 description = "awesome's awful.mouse.snap"
-version     = "1.3.5"
+version     = "1.3.6"
 authors     = ["hitori"]
 output      = "hyprsnap/hyprsnap.so"
 build       = ["make -C hyprsnap all"]
 
 [hyprclick]
 description = "awesome's click/focus policy"
-version     = "1.1.5"
+version     = "1.1.6"
 authors     = ["hitori"]
 output      = "hyprclick/hyprclick.so"
 build       = ["make -C hyprclick all"]
 
 [hyprplace]
 description = "spawn placement with geometry memory"
-version     = "2.0.0"
+version     = "2.0.1"
 authors     = ["hitori"]
 output      = "hyprplace/hyprplace.so"
 build       = ["make -C hyprplace all"]
 
 [hyprpad]
 description = "the awesome touchpad module"
-version     = "1.0.5"
+version     = "1.0.6"
 authors     = ["hitori"]
 output      = "hyprpad/hyprpad.so"
 build       = ["make -C hyprpad all"]
 
 [hyprosd]
 description = "the awesome volume/brightness OSD"
-version     = "1.0.4"
+version     = "1.0.5"
 authors     = ["hitori"]
 output      = "hyprosd/hyprosd.so"
 build       = ["make -C hyprosd all"]
