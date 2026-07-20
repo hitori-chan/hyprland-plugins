@@ -279,6 +279,13 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
+    // listeners before the deferred hops they arm: an event firing
+    // mid-teardown must not re-queue a hop that would then outlive the .so
+    lRender.reset();
+    lPreChecks.reset();
+    lButton.reset();
+    lMove.reset();
+    lDamage.clear();
     pendingSuspend.reset();
     suspendPresses = 0;
     pendingRecall.reset();
@@ -289,10 +296,5 @@ APICALL EXPORT void PLUGIN_EXIT() {
     Bus::exit(); // closes the model; its textures die with it
     inputExit();
     reapChildren();
-    lRender.reset();
-    lPreChecks.reset();
-    lButton.reset();
-    lMove.reset();
-    lDamage.clear();
     renderExit();
 }

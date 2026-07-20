@@ -208,6 +208,32 @@ namespace NHyprnotify {
             rearmExpiry();
         }
 
+        // the client sent -1 (or a recall re-arms): per-urgency defaults;
+        // critical stays until dismissed
+        static float defaultTimeout(uint8_t urgency) {
+            return urgency >= 2 ? 0.f : (float)(urgency == 0 ? cfg.timeoutLow->value() : cfg.timeoutNormal->value());
+        }
+
+        // Cap the stack: the oldest non-critical goes first; only an
+        // all-critical stack starts losing its oldest critical. The newest
+        // card at begin() always survives (the scan stops short of it), and
+        // an evicted card stays recallable from history (retire).
+        static void evictOverflow() {
+            const size_t CAP = std::max((int64_t)1, cfg.maxNotifs->value());
+            while (notifs.size() > CAP) {
+                auto victim = notifs.end() - 1;
+                for (auto it = notifs.end() - 1; it != notifs.begin(); --it)
+                    if ((*it)->urgency < 2) {
+                        victim = it;
+                        break;
+                    }
+                const auto VID = (*victim)->id;
+                retire(*victim);
+                notifs.erase(victim);
+                emitClosed(VID, R_UNDEFINED);
+            }
+        }
+
         // Pop the most recently retained card back onto the stack as a fresh
         // notification (naughty/dunst history-pop): new id, fresh timeout.
         void recall() {
@@ -221,24 +247,11 @@ namespace NHyprnotify {
                 if (nextId == 0)
                     nextId = 1;
             } while (byId(n->id) || (n->id >= 9990 && n->id <= 9999));
-            n->timeoutMs = n->urgency >= 2 ? 0 : (float)(n->urgency == 0 ? cfg.timeoutLow->value() : cfg.timeoutNormal->value());
+            n->timeoutMs = defaultTimeout(n->urgency);
             if (n->timeoutMs > 0)
                 n->deadline = Time::steadyNow() + std::chrono::milliseconds((int64_t)n->timeoutMs);
             notifs.insert(notifs.begin(), n);
-
-            const size_t CAP = std::max((int64_t)1, cfg.maxNotifs->value());
-            while (notifs.size() > CAP) {
-                auto victim = notifs.end() - 1;
-                for (auto it = notifs.end() - 1; it != notifs.begin(); --it)
-                    if ((*it)->urgency < 2) {
-                        victim = it;
-                        break;
-                    }
-                const auto VID = (*victim)->id;
-                retire(*victim); // same as handleNotify: a card pushed off the
-                notifs.erase(victim); // bottom stays recallable from history
-                emitClosed(VID, R_UNDEFINED);
-            }
+            evictOverflow();
             notifChanged();
             rearmExpiry();
         }
@@ -431,22 +444,7 @@ namespace NHyprnotify {
                 n->id      = id;
                 n->waiting = suspended; // DND: collect silently, the resume renders it
                 notifs.insert(notifs.begin(), n); // newest on top; a replace keeps its slot
-
-                const size_t CAP = std::max((int64_t)1, cfg.maxNotifs->value());
-                while (notifs.size() > CAP) {
-                    // oldest non-critical goes first; only an all-critical
-                    // stack starts losing its oldest critical
-                    auto victim = notifs.end() - 1;
-                    for (auto it = notifs.end() - 1; it != notifs.begin(); --it)
-                        if ((*it)->urgency < 2) {
-                            victim = it;
-                            break;
-                        }
-                    const auto VID = (*victim)->id;
-                    retire(*victim);
-                    notifs.erase(victim);
-                    emitClosed(VID, R_UNDEFINED);
-                } // the newcomer always survives: the scan stops short of begin()
+                evictOverflow();
             }
 
             n->appName = appName;
@@ -543,8 +541,8 @@ namespace NHyprnotify {
                 n->timeoutMs = expireTimeout;
             else if (expireTimeout == 0)
                 n->timeoutMs = 0;
-            else // -1: per-urgency defaults; critical stays until dismissed
-                n->timeoutMs = n->urgency >= 2 ? 0 : (float)(n->urgency == 0 ? cfg.timeoutLow->value() : cfg.timeoutNormal->value());
+            else // -1: the client leaves it to us
+                n->timeoutMs = defaultTimeout(n->urgency);
             if (n->timeoutMs > 0 && !n->waiting) // a queued card's clock starts at the resume
                 n->deadline = Time::steadyNow() + std::chrono::milliseconds((int64_t)n->timeoutMs);
 
