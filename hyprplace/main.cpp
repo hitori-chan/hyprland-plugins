@@ -376,9 +376,16 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_lifecycle.init();
     g_lifecycle.listen(Event::bus()->m_events.window.open, [](PHLWINDOW w) { onWindowOpen(w); });
     g_lifecycle.listen(Event::bus()->m_events.window.close, [](PHLWINDOW w) { onWindowClose(w); });
-    g_lifecycle.listen(Event::bus()->m_events.window.predictSize, [](PHLWINDOW w, Vector2D& size) { onPredictSize(w, size); });
+    // window.predictSize is the fork's born-at-size hook; against headers
+    // that predate it, compile the listener out and the map-time pass covers
+    // (one ordinary configure instead of the initial one). A missing event
+    // must degrade, not brick the whole hyprpm update.
+    [](auto& events) {
+        if constexpr (requires { events.window.predictSize; })
+            g_lifecycle.listen(events.window.predictSize, [](PHLWINDOW w, Vector2D& size) { onPredictSize(w, size); });
+    }(Event::bus()->m_events);
 
-    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.0.1"};
+    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.0.2"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
