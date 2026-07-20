@@ -1,0 +1,8 @@
+/* Localize the plugin's own namespace symbols (every plugin namespace is
+   NHypr<name>): they are the dlopen collision surface and nothing outside
+   the .so may bind to them. Everything else keeps default visibility on
+   purpose — Hyprland's globals are C++ inline variables in headers, and the
+   plugin's copy must stay exported so the dynamic linker unifies it with
+   the compositor's definition (a hidden copy is a fresh null pointer and a
+   SEGV at first use; -fvisibility=hidden is therefore unusable here). */
+{ local: *NHypr*; };
