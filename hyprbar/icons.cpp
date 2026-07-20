@@ -201,10 +201,8 @@ namespace NHyprbar {
         if (const auto IT = appIconCache.find(klass); IT != appIconCache.end())
             return IT->second;
 
-        if (!warming) { // the texture rule (hyprbar.hpp): only the warm builds
-            texStale = true;
+        if (!warmGate.mayBuild()) // the texture rule: only the warm builds
             return nullptr;
-        }
 
         auto path = resolveIconPath(klass);
         if (path.empty())
@@ -225,10 +223,8 @@ namespace NHyprbar {
         if (const auto IT = namedIconCache.find(name); IT != namedIconCache.end())
             return IT->second;
 
-        if (!warming) { // the texture rule (hyprbar.hpp): only the warm builds
-            texStale = true;
+        if (!warmGate.mayBuild()) // the texture rule: only the warm builds
             return nullptr;
-        }
 
         const auto   path    = resolveIconPath(name);
         SP<ITexture> tex     = path.empty() ? nullptr : loadIcon(path);
@@ -259,10 +255,8 @@ namespace NHyprbar {
         if (const auto IT = trayIconCache.find(KEY); IT != trayIconCache.end())
             return IT->second;
 
-        if (!warming) { // the texture rule (hyprbar.hpp): only the warm builds
-            texStale = true;
+        if (!warmGate.mayBuild()) // the texture rule: only the warm builds
             return nullptr;
-        }
 
         const auto   path  = resolveIconPath(name, themePath);
         SP<ITexture> tex   = path.empty() ? nullptr : loadIcon(path);

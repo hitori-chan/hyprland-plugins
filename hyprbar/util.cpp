@@ -4,8 +4,6 @@
 
 namespace NHyprbar {
 
-    bool warming = false, texStale = false; // the texture rule — see hyprbar.hpp
-
     // ---- helpers ----
 
     double barHeight() {

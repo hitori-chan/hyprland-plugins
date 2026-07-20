@@ -2,6 +2,7 @@
 
 #include "common/lifecycle.hpp"
 #include "common/queries.hpp"
+#include "common/texcache.hpp"
 
 #include "hyprnotify.hpp"
 
@@ -9,7 +10,8 @@
 
 namespace NHyprnotify {
 
-    bool               warming = false, texStale = false; // the texture rule — see hyprnotify.hpp
+    // the texture rule's warm/draw state machine — common/texcache.hpp
+    static NHyprCommon::CWarmGate warmGate;
 
     std::vector<SCard> cards;
     PHLMONITORREF      cardsMon;
@@ -22,11 +24,10 @@ namespace NHyprnotify {
 
     static CBox                      lastBox;            // last damaged card column, global logical
     static double                    lastStackH     = 0; // the column's height from the last layout, for the pass bounding box
-    static bool                      inRenderNotifs = false;
     static uint32_t                  hoveredId      = 0;
     static int                       hoveredBtn     = -1; // action button under the pointer within hoveredId, -1 = the frame
 
-    static NHyprCommon::CHop         pendingWarm, pendingRewarm;
+    static NHyprCommon::CHop         pendingWarm;
 
     CHyprColor                       color(const SP<Config::Values::CColorValue>& v) {
         struct SMemo {
@@ -574,7 +575,7 @@ namespace NHyprnotify {
                 for (const auto& IM : N->bodyImages)
                     stale = stale || (!IM.src.empty() && IM.builtFor != IM.src);
                 if (stale)
-                    texStale = true;
+                    warmGate.texStale = true;
             }
 
             const double KICKERH = N->kickerTex ? N->kickerTex->m_size.y / P.scale : 0;
@@ -718,9 +719,8 @@ namespace NHyprnotify {
     // ---- warm ----
 
     void warmNotifs() {
-        if (warming || inRenderNotifs || !g_pCompositor)
+        if (!warmGate.beginWarm())
             return;
-        warming        = true;
         const auto MON = notifs.empty() ? nullptr : focusedMon();
         if (!MON) {
             // no cards — or no monitor (disconnect transition): stale boxes
@@ -729,8 +729,7 @@ namespace NHyprnotify {
             lastStackH = 0;
         } else
             renderCards(MON, true);
-        warming  = false;
-        texStale = false;
+        warmGate.endWarm();
     }
 
     void notifChanged() {
@@ -757,15 +756,6 @@ namespace NHyprnotify {
         });
     }
 
-    // Back out to the event loop to build what a draw found missing, then
-    // repaint. Deferred because we are inside the render when we notice.
-    static void scheduleWarmRepaint() {
-        pendingRewarm.arm([]() {
-            warmNotifs();
-            damageNotifs();
-        });
-    }
-
     // ---- pass element ----
 
     class CNotifyPassElement : public IPassElement {
@@ -774,11 +764,13 @@ namespace NHyprnotify {
         virtual ~CNotifyPassElement() = default;
 
         virtual std::vector<UP<IPassElement>> draw() override {
-            inRenderNotifs = true;
+            warmGate.inRender = true;
             renderCards(m_mon.lock(), false);
-            inRenderNotifs = false;
-            if (texStale)
-                scheduleWarmRepaint();
+            warmGate.inRender = false;
+            warmGate.rewarmIfStale([]() {
+                warmNotifs();
+                damageNotifs();
+            });
             return {};
         }
         virtual bool needsLiveBlur() override {
@@ -855,16 +847,15 @@ namespace NHyprnotify {
 
     void renderExit() {
         pendingWarm.reset();
-        pendingRewarm.reset();
         if (lastBox.w > 0 && g_pHyprRenderer)
             g_pHyprRenderer->damageBox(lastBox);
         lastBox = {};
         cards.clear();
         cardsMon.reset();
         lastStackH = 0;
-        warming    = false;
-        texStale   = false;
-        hoveredId  = 0;
+        warmGate.warming  = false;
+        warmGate.texStale = false;
+        hoveredId         = 0;
         hoveredBtn = -1;
     }
 

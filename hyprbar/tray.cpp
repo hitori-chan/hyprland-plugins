@@ -290,17 +290,13 @@ namespace NHyprbar {
                     // The pixmap is a texture too, so the rule applies: rebuild it on
                     // the warm only. A dirty item reaching a draw keeps its old icon
                     // for this frame and asks for a repaint.
-                    if (IT->dirty) {
-                        if (!warming)
-                            texStale = true;
-                        else {
-                            IT->dirty = false;
-                            IT->tex.reset();
-                            if (!IT->pixels.empty())
-                                IT->tex = g_pHyprRenderer->createTexture(DRM_FORMAT_ARGB8888, IT->pixels.data(), IT->pw * 4, Vector2D{(double)IT->pw, (double)IT->ph});
-                            if ((!IT->tex || IT->tex->m_texID == 0) && !IT->iconName.empty())
-                                IT->tex = trayIcon(IT->iconName, IT->themePath);
-                        }
+                    if (IT->dirty && warmGate.mayBuild()) {
+                        IT->dirty = false;
+                        IT->tex.reset();
+                        if (!IT->pixels.empty())
+                            IT->tex = g_pHyprRenderer->createTexture(DRM_FORMAT_ARGB8888, IT->pixels.data(), IT->pw * 4, Vector2D{(double)IT->pw, (double)IT->ph});
+                        if ((!IT->tex || IT->tex->m_texID == 0) && !IT->iconName.empty())
+                            IT->tex = trayIcon(IT->iconName, IT->themePath);
                     }
 
                     const CBox CELL{right - P.h, box.y, P.h, P.h};

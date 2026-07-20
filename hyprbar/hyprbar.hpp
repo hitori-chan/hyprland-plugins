@@ -31,6 +31,8 @@
 
 #include "common/busclient.hpp"
 
+#include "common/texcache.hpp"
+
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/Workspace.hpp>
@@ -187,28 +189,13 @@ namespace NHyprbar {
     //
     // A texture cannot be painted by the frame that created it, and creating
     // one mid-draw silently swallows every later draw in the same element. So
-    // textures are built ONLY by the warm pass, one frame ahead, from the event
-    // loop. These two flags make that structural rather than a thing every call
-    // site has to remember:
-    extern bool warming;  // warmBars() is building; the ONLY time a texture may be created
-    extern bool texStale; // a draw ran ahead of the screen (texture never warmed, or labels
-                          // flipped under a scissored repaint) -> warm + repaint
+    // textures are built ONLY by the warm pass, one frame ahead, from the
+    // event loop — the state machine lives in common/texcache.hpp
+    inline NHyprCommon::CWarmGate warmGate;
 
-    // Some textures are resolved OUTSIDE the warm pass, from the event loop: a
-    // dbusmenu icon-name arrives in a reply, a client-list row is built in a
-    // deferred click. warming gates texture creation, but the real safety
-    // condition is "not inside a render" (inRenderBar) — which these contexts
-    // never are. This token grants the permission around such a resolve; the
-    // caller damages after, so the new icon gets its own frame. Never
-    // construct it inside a render.
-    struct SWarmToken {
-        bool prev = warming;
-        SWarmToken() {
-            warming = true;
-        }
-        ~SWarmToken() {
-            warming = prev;
-        }
+    // resolve-outside-warm permission (see CWarmGate::SToken)
+    struct SWarmToken : NHyprCommon::CWarmGate::SToken {
+        SWarmToken() : SToken(warmGate) {}
     };
 
     // Build every texture the next frame will paint. Safe to call from

@@ -50,14 +50,11 @@ namespace NHyprbar {
                 // floating indicator it always was
                 const char* NAME = currentLayout(F.ws ? F.ws->m_id : WORKSPACE_INVALID);
                 auto&       TEX  = layoutTexs[NAME];
-                if (!TEX && !layoutTexTried.contains(NAME)) {
-                    if (!warming)
-                        texStale = true; // an icon is a texture too: warm builds it
-                    else {
-                        layoutTexTried.insert(NAME);
-                        if (const char* HOME = std::getenv("HOME"))
-                            TEX = loadPng(std::string{HOME} + "/.config/hypr/icons/" + NAME + ".png");
-                    }
+                // an icon is a texture too: only the warm builds it
+                if (!TEX && !layoutTexTried.contains(NAME) && warmGate.mayBuild()) {
+                    layoutTexTried.insert(NAME);
+                    if (const char* HOME = std::getenv("HOME"))
+                        TEX = loadPng(std::string{HOME} + "/.config/hypr/icons/" + NAME + ".png");
                 }
                 if (TEX && TEX->m_texID != 0) {
                     // 3px inset, the bar's icon rhythm

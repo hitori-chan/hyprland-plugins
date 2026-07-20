@@ -211,12 +211,6 @@ namespace NHyprnotify {
     void shrinkPixels(SNotif& n, int maxPx);
 
     // ---- the texture rule (see hyprbar) ----
-    //
-    // A texture cannot be painted by the frame that created it, and creating
-    // one mid-draw silently swallows every later draw in the same element.
-    // Textures are built ONLY by the warm pass, from the event loop:
-    extern bool warming;  // warmNotifs() is building; the ONLY time a texture may be created
-    extern bool texStale; // a draw ran ahead of the screen -> warm + repaint
 
     // ---- render.cpp ----
 

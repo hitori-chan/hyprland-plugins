@@ -51,24 +51,12 @@ namespace NHyprbar {
             return IT->second.tex;
         }
 
-        if (!warming) {
-            texStale = true;
+        if (!warmGate.mayBuild())
             return nullptr;
-        }
 
         auto tex      = g_pHyprRenderer->renderText(text, col, pt, false, F, maxWidth);
         texCache[KEY] = {tex, texGen};
         return tex;
-    }
-
-    static bool                      inRenderBar = false; // a render is on the stack: never build textures
-
-    static NHyprCommon::CHop         pendingRewarm;
-
-    // Back out to the event loop to build what a draw found missing, then
-    // repaint. Deferred because we are inside the render when we notice.
-    static void scheduleWarmRepaint() {
-        pendingRewarm.arm([]() { barChanged(); });
     }
 
     // ---- the paint context (hyprbar.hpp) ----
@@ -227,8 +215,8 @@ namespace NHyprbar {
         if (warm)
             FP = frameFp;
         else if (FP != frameFp) {
-            FP       = frameFp;
-            texStale = true;
+            FP            = frameFp;
+            warmGate.texStale = true;
         }
 
         tasks.clear(); // don't keep strong window refs across frames
@@ -248,15 +236,14 @@ namespace NHyprbar {
         virtual ~CBarPassElement() = default;
 
         virtual std::vector<UP<IPassElement>> draw() override {
-            inRenderBar = true;
+            warmGate.inRender = true;
             renderBar(m_mon.lock(), false);
-            inRenderBar = false;
+            warmGate.inRender = false;
 
             // Something changed without warming first (a texture the warm never
             // enumerated). One label is missing for one frame; build it and
             // repaint. Never build here — that is the bug this all guards.
-            if (texStale)
-                scheduleWarmRepaint();
+            warmGate.rewarmIfStale([]() { barChanged(); });
 
             return {};
         }
@@ -300,10 +287,9 @@ namespace NHyprbar {
     // damages, and renderBar itself can close the menu when a window goes
     // fullscreen.
     void warmBars(PHLMONITOR only) {
-        if (warming || inRenderBar || !g_pCompositor)
+        if (!warmGate.beginWarm())
             return;
 
-        warming = true;
         if (!only)
             texGen++;
 
@@ -319,8 +305,7 @@ namespace NHyprbar {
         if (!only && texGen > TEX_CACHE_LIFE)
             std::erase_if(texCache, [](const auto& E) { return E.second.gen + TEX_CACHE_LIFE < texGen; });
 
-        warming  = false;
-        texStale = false;
+        warmGate.endWarm();
     }
 
     void onRenderStage(eRenderStage stage) {
@@ -333,7 +318,8 @@ namespace NHyprbar {
     }
 
     void renderExit() {
-        pendingRewarm.reset(); // its barChanged would touch the caches cleared below
+        // the gate's rewarm hop is already down: PLUGIN_EXIT's resetAll runs
+        // before this, and its barChanged would touch the caches cleared below
         texCache.clear();
         lastTaskFp.clear();
     }

@@ -527,7 +527,7 @@ namespace NHyprbar {
                         PILL.key = KEY; // stamp even if the build returns null, so a persistent null can't rewarm-storm
                     }
                 } else if (PILL.key != KEY)
-                    texStale = true; // level moved under a scissored repaint: warm + repaint
+                    warmGate.texStale = true; // level moved under a scissored repaint: warm + repaint
 
                 // P.pt is already scale-multiplied, and the tex branch returns logical px — so /scale here too
                 const double PW = PILL.tex ? PILL.tex->m_size.x / P.scale : P.pt * 13.0 / 14.0 * 30.8 / 13.0 / P.scale;
