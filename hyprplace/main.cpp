@@ -2,25 +2,26 @@
 //
 //   1. an app reopens where its last window closed (per class, persisted
 //      across relogs), when that spot is free
-//   2. otherwise the workarea center, when free
-//   3. otherwise the middle of the largest free rectangle that fits it —
-//      of the biggest hole when nothing does. Open space, never a border.
+//   2. otherwise the spot that overlaps the other windows the least —
+//      KWin's default. A lone window keeps the compositor's centered spot
+//      (nothing to overlap), a busy screen fills the gaps, and a full one
+//      lands where it hides the least. No cascade, no center pile.
 //
 // Memory-first is what desktops converge on (macOS window restoration,
 // Windows SetWindowPlacement); on X11 the apps did it themselves and
-// Wayland toplevels can't, so the compositor remembers for them. The gap
-// step keeps awesome's spread-into-free-space feel without
-// awful.placement's corner packing. Windows that chose their spot (X11,
-// dialogs anchored to a parent) keep it while it's free; X11
-// override-redirect surfaces are left alone; the result is clamped
-// on-screen (no_offscreen). Position is always remembered; a genuinely
-// resizable app's last size is remembered too and reimposed at spawn
-// (KWin's "Remember" — the compositor owns the configure, so the client's
-// own size memory can't fight it and a content-sizer like mpv can't drift
-// back to its video size), while fixed-size dialogs (min == max) keep the
-// client's size and are never resized. Maximized windows AND floats sized
-// to the whole workarea consume no free space; when the chosen spot
-// already holds a window, spawns cascade off it instead of stacking.
+// Wayland toplevels can't, so the compositor remembers for them. The
+// least-overlap fallback is KWin's default: it fills free space and, when
+// the screen is full, minimizes how much windows cover each other. Windows
+// that chose their spot (X11, dialogs anchored to a parent) keep it while
+// it's free; X11 override-redirect surfaces are left alone; the result is
+// clamped on-screen (no_offscreen). Position is always remembered; a
+// genuinely resizable app's last size is remembered too and reimposed at
+// spawn (KWin's "Remember" — the compositor owns the configure, so the
+// client's own size memory can't fight it and a content-sizer like mpv
+// can't drift back to its video size), while fixed-size dialogs (min == max)
+// keep the client's size and are never resized. Maximized windows AND floats
+// sized to the whole workarea consume no free space; the placement scan then
+// puts a new window where it overlaps them the least.
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
@@ -132,28 +133,6 @@ namespace NHyprplace {
             });
         }
 
-        // gears.geometry.rectangle.area_remove: cut a box out of the
-        // free-rect list, splitting every rect it intersects into up to 4
-        // slivers around it.
-        void areaRemove(std::vector<CBox>& areas, const CBox& elem) {
-            for (int i = (int)areas.size() - 1; i >= 0; i--) {
-                const CBox R = areas[i];
-                if (!(elem.x < R.x + R.w && elem.x + elem.w > R.x && elem.y < R.y + R.h && elem.y + elem.h > R.y))
-                    continue;
-                areas.erase(areas.begin() + i);
-                const double IX = std::max(R.x, elem.x), IY = std::max(R.y, elem.y);
-                const double IX2 = std::min(R.x + R.w, elem.x + elem.w), IY2 = std::min(R.y + R.h, elem.y + elem.h);
-                if (IX > R.x)
-                    areas.push_back(CBox{R.x, R.y, IX - R.x, R.h});
-                if (IY > R.y)
-                    areas.push_back(CBox{R.x, R.y, R.w, IY - R.y});
-                if (IX2 < R.x + R.w)
-                    areas.push_back(CBox{IX2, R.y, R.x + R.w - IX2, R.h});
-                if (IY2 < R.y + R.h)
-                    areas.push_back(CBox{R.x, IY2, R.w, R.y + R.h - IY2});
-            }
-        }
-
         // maximize is client-only state here (hyprmax never enters compositor
         // fullscreen), so read back what the toplevel was last told.
         bool toldMaximized(PHLWINDOW w) {
@@ -201,7 +180,6 @@ namespace NHyprplace {
             // the visible floating windows to stay clear of; maximized and
             // fullscreen ones cover no free space, as in awesome
             std::vector<CBox> blockers;
-            std::vector<CBox> areas{WA};
             for (const auto& O : Desktop::windowState()->windows()) {
                 if (O == w || !O->m_isMapped || O->isHidden() || !O->m_isFloating || !O->m_target)
                     continue;
@@ -213,7 +191,6 @@ namespace NHyprplace {
                 if (coversWorkarea(OB, WA))
                     continue;
                 blockers.push_back(OB);
-                areaRemove(areas, blockers.back());
             }
 
             const auto fits = [&](const CBox& b) {
@@ -243,6 +220,14 @@ namespace NHyprplace {
                 forceSize = true;
             }
 
+            // no_offscreen: a position nudged until the window sits fully in
+            // the workarea. Used both for the remembered spot and the final
+            // placement, so a window dragged partly past an edge before close
+            // reopens clamped against that edge, never discarded to center.
+            const auto clampToWA = [&](const Vector2D& p) {
+                return Vector2D{std::clamp(p.x, WA.x, std::max(WA.x, WA.x + WA.w - size.x)), std::clamp(p.y, WA.y, std::max(WA.y, WA.y + WA.h - size.y))};
+            };
+
             std::optional<Vector2D> pos;
 
             if (w->m_isX11 || w->parent()) {
@@ -252,52 +237,69 @@ namespace NHyprplace {
                     return;
             } else {
                 // 1: where — and, for a resizable app, how big — this app's
-                // last window closed
-                if (stored && fits(CBox{stored->pos(), size}))
-                    pos = stored->pos();
-
-                // 2: the workarea center
-                if (!pos) {
-                    const auto CENTERED = WA.pos() + WA.size() / 2.0 - size / 2.0;
-                    if (fits(CBox{CENTERED, size}))
-                        pos = CENTERED;
+                // last window closed, clamped on-screen so a spot that ran
+                // past an edge is honored (against the edge) rather than lost
+                if (stored) {
+                    const auto P = clampToWA(stored->pos());
+                    if (fits(CBox{P, size}))
+                        pos = P;
                 }
             }
 
-            // 3: the middle of the largest free rect that fits — of the
-            // biggest hole when nothing does
-            if (!pos && !areas.empty()) {
-                const CBox* best = nullptr;
-                for (const auto& R : areas)
-                    if (R.w >= size.x && R.h >= size.y && (!best || R.w * R.h > best->w * best->h))
-                        best = &R;
-                if (!best)
-                    for (const auto& R : areas)
-                        if (!best || R.w * R.h > best->w * best->h)
-                            best = &R;
-                pos = best->pos() + best->size() / 2.0 - size / 2.0;
-            }
-            // Cascade off any pile: with the workarea fully covered (no pos)
-            // or a too-small biggest hole picked deterministically, repeated
-            // spawns land on the SAME spot and hide each other — step off it
-            // diagonally instead, like macOS/Windows cascade.
-            Vector2D chosen = pos.value_or(CUR.pos());
-            for (int guard = 0; guard < 64; guard++) {
-                bool onPile = false;
-                for (const auto& B : blockers)
-                    if (std::abs(B.x - chosen.x) < 2.0 && std::abs(B.y - chosen.y) < 2.0) {
-                        onPile = true;
-                        break;
+            // Memory missed (or its spot is taken): least-overlap placement,
+            // KWin's default. A least-overlap top-left always sits at a grid
+            // point of the windows' own edges (and the workarea corner), so
+            // score the window there and keep the clearest — starting from,
+            // and so preferring, its current centered spot. A lone window
+            // stays centered, a busy screen fills the gaps top-left first, a
+            // full one hides where it can (windows wider than the free space
+            // have no gap and settle into the corners). One pass, no cascade,
+            // no center pile.
+            if (!pos) {
+                const auto overlapAt = [&](const Vector2D& p) {
+                    double sum = 0.0;
+                    for (const auto& B : blockers) {
+                        const double ix = std::min(p.x + size.x, B.x + B.w) - std::max(p.x, B.x);
+                        const double iy = std::min(p.y + size.y, B.y + B.h) - std::max(p.y, B.y);
+                        if (ix > 0 && iy > 0)
+                            sum += ix * iy;
                     }
-                if (!onPile)
-                    break;
-                chosen += Vector2D{26.0, 26.0};
+                    return sum;
+                };
+
+                // dedup so an aligned grid of windows stays a few coordinates
+                std::vector<double> xs{WA.x}, ys{WA.y};
+                for (const auto& B : blockers) {
+                    xs.insert(xs.end(), {B.x, B.x + B.w});
+                    ys.insert(ys.end(), {B.y, B.y + B.h});
+                }
+                std::sort(xs.begin(), xs.end());
+                std::sort(ys.begin(), ys.end());
+                xs.erase(std::unique(xs.begin(), xs.end()), xs.end());
+                ys.erase(std::unique(ys.begin(), ys.end()), ys.end());
+
+                Vector2D best   = clampToWA(CUR.pos());
+                double   bestOv = overlapAt(best);
+                for (const double X : xs) {
+                    if (bestOv <= 1.0) // a zero-overlap gap — nothing beats it
+                        break;
+                    for (const double Y : ys) {
+                        const Vector2D P  = clampToWA(Vector2D{X, Y});
+                        const double   OV = overlapAt(P);
+                        if (OV < bestOv - 1.0) {
+                            bestOv = OV;
+                            best   = P;
+                        }
+                    }
+                }
+                pos = best;
             }
 
+            const Vector2D chosen = pos.value_or(CUR.pos());
+
             // no_offscreen: clamp into the workarea
-            double nx = chosen.x, ny = chosen.y;
-            nx = std::clamp(nx, WA.x, std::max(WA.x, WA.x + WA.w - size.x));
-            ny = std::clamp(ny, WA.y, std::max(WA.y, WA.y + WA.h - size.y));
+            const auto   FINAL = clampToWA(chosen);
+            const double nx = FINAL.x, ny = FINAL.y;
 
             if (nx == CUR.x && ny == CUR.y && !forceSize)
                 return;
@@ -367,7 +369,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     lOpen  = Event::bus()->m_events.window.open.listen([](PHLWINDOW w) { onWindowOpen(w); });
     lClose = Event::bus()->m_events.window.close.listen([](PHLWINDOW w) { onWindowClose(w); });
 
-    return {"hyprplace", "spawn placement with geometry memory", "hitori", "1.2.0"};
+    return {"hyprplace", "spawn placement with geometry memory", "hitori", "1.3.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
