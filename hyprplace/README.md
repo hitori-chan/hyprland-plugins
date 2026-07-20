@@ -22,10 +22,13 @@ free; X11 override-redirect surfaces are left alone.
 
 ## Size
 
-A genuinely **resizable** app (mpv, terminals, browsers) also reopens at
-its last size, applied **once** at spawn as the initial geometry: one
-ordinary configure the client follows, nothing owned or re-asserted.
-Unlike the force path used before 1.4.0 (client-serial stomp + forced
+A genuinely **resizable** app (mpv, terminals, browsers) is **born** at
+its last size: the compositor's `window.predictSize` hook fills the
+*initial* configure, so the client's first buffer is already the
+remembered size — no post-map resize, no second configure. A client
+whose class or resizability isn't readable that early falls back to one
+ordinary configure at map. Nothing is owned or re-asserted either way:
+unlike the force path used before 1.4.0 (client-serial stomp + forced
 configure), a client-size grant in flight — a born-fullscreen or
 born-maximized window picking its own restore size — still wins, and the
 client's own later resizes are never fought. A **fixed-size dialog**

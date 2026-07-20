@@ -17,15 +17,18 @@
 // it's free; X11 override-redirect surfaces are left alone; the result is
 // clamped fully on-screen, border included (no_offscreen), unless the
 // window is too big to fit. The whole close-box is remembered, and a
-// genuinely resizable app reopens at its remembered size too, applied ONCE
-// at spawn as the initial geometry: one ordinary configure the client
-// follows, nothing owned or re-asserted — unlike the old force path
-// (client-serial stomp + forced configure), a grant in flight
-// (born-fullscreen/maximized) keeps winning and the client's own later
-// resizes are never fought. Fixed-size dialogs (min == max) keep the
-// client's size and are never resized. Maximized windows AND floats sized
-// to the whole workarea consume no free space; the placement scan then
-// puts a new window where it overlaps them the least.
+// genuinely resizable app is BORN at its remembered size: the
+// window.predictSize hook fills the initial configure, so the client's
+// first buffer is already the remembered size — no post-map resize, no
+// second configure, nothing owned or re-asserted. A client whose
+// resizability can't be read that early falls back to one ordinary
+// configure at map. Unlike the old force path (client-serial stomp +
+// forced configure), a grant in flight (born-fullscreen/maximized) keeps
+// winning and the client's own later resizes are never fought. Fixed-size
+// dialogs (min == max) keep the client's size and are never resized.
+// Maximized windows AND floats sized to the whole workarea consume no
+// free space; the placement scan then puts a new window where it overlaps
+// them the least.
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
@@ -167,6 +170,27 @@ namespace NHyprplace {
             const bool PINNED_X = MAX.x > 1 && MIN.x >= MAX.x;
             const bool PINNED_Y = MAX.y > 1 && MIN.y >= MAX.y;
             return !(PINNED_X && PINNED_Y);
+        }
+
+        // Fill the initial configure with the remembered size (the
+        // window.predictSize emission at the initial commit): the client's
+        // first buffer is then already right and the map-time pass only
+        // positions. Guards mirror placeWindow's size selection;
+        // m_initialClass isn't captured that early, so the class comes off
+        // the toplevel state directly (applied before this emission).
+        void onPredictSize(PHLWINDOW w, Vector2D& size) {
+            if (!w || w->parent() || !resizable(w))
+                return;
+            const auto CLS = w->fetchClass();
+            if (CLS.empty())
+                return;
+            const auto IT = g_lastSpot.find(CLS);
+            if (IT == g_lastSpot.end() || IT->second.w <= 5 || IT->second.h <= 5)
+                return;
+            for (const auto& O : Desktop::windowState()->windows())
+                if (O != w && O->m_isMapped && !O->isHidden() && O->m_initialClass == CLS)
+                    return; // a sibling is on screen: place fresh (see placeWindow)
+            size = IT->second.size();
         }
 
         void placeWindow(PHLWINDOW w) {
@@ -376,7 +400,7 @@ using namespace NHyprplace;
 
 static HANDLE                                 PHANDLE = nullptr;
 
-static Hyprutils::Signal::CHyprSignalListener lOpen, lClose;
+static Hyprutils::Signal::CHyprSignalListener lOpen, lClose, lPredict;
 
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
     return HYPRLAND_API_VERSION;
@@ -395,15 +419,17 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     loadSpots();
 
-    lOpen  = Event::bus()->m_events.window.open.listen([](PHLWINDOW w) { onWindowOpen(w); });
-    lClose = Event::bus()->m_events.window.close.listen([](PHLWINDOW w) { onWindowClose(w); });
+    lOpen    = Event::bus()->m_events.window.open.listen([](PHLWINDOW w) { onWindowOpen(w); });
+    lClose   = Event::bus()->m_events.window.close.listen([](PHLWINDOW w) { onWindowClose(w); });
+    lPredict = Event::bus()->m_events.window.predictSize.listen([](PHLWINDOW w, Vector2D& size) { onPredictSize(w, size); });
 
-    return {"hyprplace", "spawn placement with geometry memory", "hitori", "1.5.0"};
+    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.0.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
     lOpen.reset();
     lClose.reset();
+    lPredict.reset();
     pendingPlace.reset();
     pendingSave.reset();
     if (saveQueued) // the deferred flush never runs at compositor exit
