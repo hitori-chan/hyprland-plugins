@@ -69,14 +69,18 @@ static void raiseWindow(PHLWINDOW w) {
         // "raising" the fullscreen/maximized window = tucking the floaters
         // back behind it (lower() clears their allowed-over flag). Two
         // phases: raise/lower rotate the window list, never mutate
-        // mid-iteration.
+        // mid-iteration. windows() runs bottom->top and lower() drops each to
+        // the very bottom, so lowering in that order would REVERSE the
+        // floaters among themselves (the topmost lands lowest) — a second
+        // window behind the fullscreen one ends up under the first. Lower
+        // top->bottom instead: relative order preserved, as awesome does.
         std::vector<PHLWINDOW> demote;
         for (const auto& OW : Desktop::windowState()->windows()) {
             if (OW != w && OW->m_isMapped && OW->m_workspace == w->m_workspace && OW->m_allowedOverFullscreen)
                 demote.push_back(OW);
         }
-        for (const auto& OW : demote)
-            Desktop::windowState()->lower(OW);
+        for (auto it = demote.rbegin(); it != demote.rend(); ++it)
+            Desktop::windowState()->lower(*it);
     } else if (w->m_isFloating)
         Desktop::windowState()->raise(w);
 }
@@ -248,7 +252,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_next", luaFocusNext);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev", luaFocusPrev);
 
-    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.1.3"};
+    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.1.4"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
