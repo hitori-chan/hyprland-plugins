@@ -1,6 +1,7 @@
 // hyprbar/input.cpp — clicks, scrolls and pointer ownership over the strip
 
 #include "common/lifecycle.hpp"
+#include "common/queries.hpp"
 
 #include "hyprbar.hpp"
 
@@ -34,7 +35,7 @@ namespace NHyprbar {
     void       onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
         // emissions precede the compositor's own lock handling: locked input
         // belongs to the lockscreen, and half-tracked state must not survive it
-        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked()) {
+        if (NHyprCommon::sessionLocked()) {
             swallowRelease = 0;
             heldButtons    = 0;
             return;
@@ -97,7 +98,7 @@ namespace NHyprbar {
                         if ((BIT == 1u || BIT == 2u) && (size_t)IDX < L.entries.size() && L.entries[IDX].enabled && !L.entries[IDX].separator) {
                             if (L.entries[IDX].submenu) { // a click cascades too, like GTK
                                 pendingHit.arm([li, IDX]() {
-                                    if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+                                    if (NHyprCommon::sessionLocked())
                                         return; // the lock can engage between the click and this hop
                                     Menu::openSub(li, IDX);
                                 });
@@ -105,7 +106,7 @@ namespace NHyprbar {
                             }
                             const auto EN = L.entries[IDX];
                             pendingHit.arm([EN]() {
-                                if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+                                if (NHyprCommon::sessionLocked())
                                     return;
                                 Menu::activate(EN);
                             });
@@ -152,7 +153,7 @@ namespace NHyprbar {
                 // mid-button-event bite code that still holds pre-click state.
                 if (hc.widget)
                     pendingHit.arm([hc, BIT, SUPER]() {
-                        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+                        if (NHyprCommon::sessionLocked())
                             return; // a widget onHit can change workspace/focus — never under a lock
                         hc.widget->onHit(hc, BIT, SUPER);
                     });
@@ -177,7 +178,7 @@ namespace NHyprbar {
         scrollQueued  = true;
         pendingScroll.arm([mon]() {
             scrollQueued = false;
-            if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked()) {
+            if (NHyprCommon::sessionLocked()) {
                 scrollAcc.clear(); // reset the half-tracked accumulator, act on nothing
                 return;
             }
@@ -189,7 +190,7 @@ namespace NHyprbar {
     }
 
     void onMouseAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
-        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+        if (NHyprCommon::sessionLocked())
             return;
 
         const auto POS = g_pInputManager->getMouseCoordsInternal();
@@ -297,7 +298,7 @@ namespace NHyprbar {
     }
 
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info) {
-        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked()) {
+        if (NHyprCommon::sessionLocked()) {
             releasePointer(); // no cursor pinned over an invisible strip
             return;
         }

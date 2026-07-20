@@ -24,6 +24,8 @@
 // hl.plugin.hyprmax.toggle() — the Mod+M bind target. No config.
 
 #include "common/lifecycle.hpp"
+#include "common/persist.hpp"
+#include "common/queries.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
@@ -37,7 +39,6 @@
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/managers/SeatManager.hpp>
-#include <hyprland/src/managers/SessionLockManager.hpp>
 #include <hyprland/src/protocols/XDGShell.hpp>
 #include <hyprland/src/layout/target/Target.hpp>
 #include <hyprland/src/layout/LayoutManager.hpp>
@@ -72,16 +73,9 @@ static CBox                                  clampToWorkarea(CBox box, const CBo
     return box;
 }
 
-static std::filesystem::path statePath() {
-    const char* XDG  = std::getenv("XDG_STATE_HOME");
-    const char* HOME = std::getenv("HOME");
-    const auto  BASE = XDG && *XDG ? std::filesystem::path{XDG} : std::filesystem::path{HOME ? HOME : ""} / ".local/state";
-    return BASE / "hyprmax" / "windowed.tsv";
-}
-
 // x y w h class — class last so any app_id parses.
 static void loadWindowed() {
-    std::ifstream f(statePath());
+    std::ifstream f(NHyprCommon::statePath("hyprmax", "windowed.tsv"));
     std::string   line;
     while (std::getline(f, line)) {
         std::istringstream is(line);
@@ -93,36 +87,13 @@ static void loadWindowed() {
 }
 
 static void saveWindowed() {
-    const auto      PATH = statePath();
-    std::error_code ec;
-    std::filesystem::create_directories(PATH.parent_path(), ec);
-
-    // temp + rename: a crash mid-write must not eat the whole store
-    const auto TMP = PATH.string() + ".tmp";
-    {
-        std::ofstream f(TMP, std::ios::trunc);
-        if (!f)
-            return;
-        for (const auto& [CLS, B] : g_lastWindowed)
-            f << std::llround(B.x) << '\t' << std::llround(B.y) << '\t' << std::llround(B.w) << '\t' << std::llround(B.h) << '\t' << CLS << '\n';
-    }
-    std::filesystem::rename(TMP, PATH, ec);
+    std::ostringstream out;
+    for (const auto& [CLS, B] : g_lastWindowed)
+        out << std::llround(B.x) << '\t' << std::llround(B.y) << '\t' << std::llround(B.w) << '\t' << std::llround(B.h) << '\t' << CLS << '\n';
+    NHyprCommon::writeAtomic(NHyprCommon::statePath("hyprmax", "windowed.tsv"), out.str());
 }
 
-// Coalesced: a logout mass-close must not storm the disk with one full
-// rewrite per window from inside each destroy emission (hyprplace's pattern).
-static bool              saveQueued = false;
-static NHyprCommon::CHop pendingSave;
-
-static void              queueSave() {
-    if (saveQueued)
-        return;
-    saveQueued = true;
-    pendingSave.arm([]() {
-        saveQueued = false;
-        saveWindowed();
-    });
-}
+static NHyprCommon::CSaver g_saver{saveWindowed};
 
 static void rememberWindowed(const std::string& cls, const CBox& box) {
     if (cls.empty() || box.w <= 5 || box.h <= 5)
@@ -131,7 +102,7 @@ static void rememberWindowed(const std::string& cls, const CBox& box) {
     if (IT != g_lastWindowed.end() && IT->second == box)
         return;
     g_lastWindowed[cls] = box;
-    queueSave();
+    g_saver.dirty();
 }
 
 static bool pluginMaximized(PHLWINDOW w) {
@@ -222,7 +193,7 @@ static uint32_t swallowedButtons = 0;
 static void     onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
     // emissions precede the compositor's lock handling: locked input belongs
     // to the lockscreen
-    if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked()) {
+    if (NHyprCommon::sessionLocked()) {
         swallowedButtons = 0;
         return;
     }
@@ -267,7 +238,7 @@ static int luaToggle(lua_State*) {
         if (!W || !W->m_isMapped || !W->m_target)
             return;
         // the lock can engage between the keypress and this deferred run
-        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+        if (NHyprCommon::sessionLocked())
             return;
 
         std::erase_if(g_maximized, [](const auto& E) { return E.first.expired(); });
@@ -409,10 +380,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
     g_lifecycle.resetAll(); // listeners first, then every hop
     adoptQueued = false;
     g_adoptQueue.clear();
-    if (saveQueued) { // the coalesced write must not die with the session
-        saveQueued = false;
-        saveWindowed();
-    }
+    g_saver.flush(); // the coalesced write must not die with the session
     g_maximized.clear();
     g_lastWindowed.clear();
     swallowedButtons = 0;

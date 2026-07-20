@@ -31,6 +31,8 @@
 // them the least.
 
 #include "common/lifecycle.hpp"
+#include "common/persist.hpp"
+#include "common/queries.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
@@ -57,25 +59,16 @@ namespace NHyprplace {
 
     namespace {
         NHyprCommon::CHop         pendingPlace;
-        NHyprCommon::CHop         pendingSave;
         std::vector<PHLWINDOWREF> placeQueue;
-        bool                      saveQueued = false;
 
         // each app's last window box (position + size), surviving relogs
         std::unordered_map<std::string, CBox> g_lastSpot;
-
-        std::filesystem::path                     statePath() {
-            const char* XDG  = std::getenv("XDG_STATE_HOME");
-            const char* HOME = std::getenv("HOME");
-            const auto  BASE = XDG && *XDG ? std::filesystem::path{XDG} : std::filesystem::path{HOME ? HOME : ""} / ".local/state";
-            return BASE / "hyprplace" / "lastspot.tsv";
-        }
 
         // x y w h class — class last so any app_id parses. Legacy rows are
         // x y class (position only): size stays zero until the app closes
         // once and a full box is recorded.
         void loadSpots() {
-            std::ifstream f(statePath());
+            std::ifstream f(NHyprCommon::statePath("hyprplace", "lastspot.tsv"));
             std::string   line;
             while (std::getline(f, line)) {
                 std::vector<std::string> parts;
@@ -107,21 +100,13 @@ namespace NHyprplace {
         }
 
         void saveSpots() {
-            const auto      PATH = statePath();
-            std::error_code ec;
-            std::filesystem::create_directories(PATH.parent_path(), ec);
-
-            // temp + rename: a crash mid-write must not eat the whole store
-            const auto TMP = PATH.string() + ".tmp";
-            {
-                std::ofstream f(TMP, std::ios::trunc);
-                if (!f)
-                    return;
-                for (const auto& [CLS, B] : g_lastSpot)
-                    f << std::llround(B.x) << '\t' << std::llround(B.y) << '\t' << std::llround(B.w) << '\t' << std::llround(B.h) << '\t' << CLS << '\n';
-            }
-            std::filesystem::rename(TMP, PATH, ec);
+            std::ostringstream out;
+            for (const auto& [CLS, B] : g_lastSpot)
+                out << std::llround(B.x) << '\t' << std::llround(B.y) << '\t' << std::llround(B.w) << '\t' << std::llround(B.h) << '\t' << CLS << '\n';
+            NHyprCommon::writeAtomic(NHyprCommon::statePath("hyprplace", "lastspot.tsv"), out.str());
         }
+
+        NHyprCommon::CSaver g_saver{saveSpots};
 
         void rememberSpot(const std::string& cls, const CBox& box) {
             if (cls.empty())
@@ -130,25 +115,7 @@ namespace NHyprplace {
             if (IT != g_lastSpot.end() && IT->second == box)
                 return;
             g_lastSpot[cls] = box;
-
-            // coalesce: a mass close (logout) must not storm the disk with
-            // one full rewrite per window
-            if (saveQueued)
-                return;
-            saveQueued = true;
-            pendingSave.arm([]() {
-                saveQueued = false;
-                saveSpots();
-            });
-        }
-
-        // maximize is client-only state here (hyprmax never enters compositor
-        // fullscreen), so read back what the toplevel was last told.
-        bool toldMaximized(PHLWINDOW w) {
-            if (w->m_isX11 || !w->m_xdgSurface || !w->m_xdgSurface->m_toplevel)
-                return false;
-            const auto& STATES = w->m_xdgSurface->m_toplevel->m_pendingApply.states;
-            return std::ranges::find(STATES, XDG_TOPLEVEL_STATE_MAXIMIZED) != STATES.end();
+            g_saver.dirty();
         }
 
         // a float sized to (or past) the whole workarea is maximized in all
@@ -159,21 +126,6 @@ namespace NHyprplace {
             return b.x <= wa.x && b.y <= wa.y && b.x + b.w >= wa.x + wa.w && b.y + b.h >= wa.y + wa.h;
         }
 
-        // A genuinely user-resizable toplevel — its last size is worth
-        // restoring (mpv, terminals, browsers). A fixed-size dialog pins
-        // min == max in both axes; its size stays the client's, never
-        // reimposed (that would blink it — awesome never did). No toplevel
-        // (X11, unmapped) = can't tell = treat as fixed.
-        bool resizable(PHLWINDOW w) {
-            if (w->m_isX11 || !w->m_xdgSurface || !w->m_xdgSurface->m_toplevel)
-                return false;
-            const auto MIN      = w->m_xdgSurface->m_toplevel->layoutMinSize();
-            const auto MAX      = w->m_xdgSurface->m_toplevel->layoutMaxSize();
-            const bool PINNED_X = MAX.x > 1 && MIN.x >= MAX.x;
-            const bool PINNED_Y = MAX.y > 1 && MIN.y >= MAX.y;
-            return !(PINNED_X && PINNED_Y);
-        }
-
         // Fill the initial configure with the remembered size (the
         // window.predictSize emission at the initial commit): the client's
         // first buffer is then already right and the map-time pass only
@@ -181,7 +133,7 @@ namespace NHyprplace {
         // m_initialClass isn't captured that early, so the class comes off
         // the toplevel state directly (applied before this emission).
         void onPredictSize(PHLWINDOW w, Vector2D& size) {
-            if (!w || w->parent() || !resizable(w))
+            if (!w || w->parent() || !NHyprCommon::resizable(w))
                 return;
             const auto CLS = w->fetchClass();
             if (CLS.empty())
@@ -212,7 +164,7 @@ namespace NHyprplace {
             // this we reimpose a born-maximized app's old windowed box and
             // silently un-maximize it (isFullscreen alone misses it: hyprmax's
             // maximize never enters compositor fullscreen).
-            if (toldMaximized(w) || coversWorkarea(CUR, WA))
+            if (NHyprCommon::toldMaximized(w) || coversWorkarea(CUR, WA))
                 return;
 
             // the visible floating windows to stay clear of; maximized and
@@ -223,7 +175,7 @@ namespace NHyprplace {
                     continue;
                 if (O->m_workspace != WS && !(O->m_pinned && O->m_monitor.lock() == MON))
                     continue;
-                if (Fullscreen::controller()->isFullscreen(O) || toldMaximized(O))
+                if (Fullscreen::controller()->isFullscreen(O) || NHyprCommon::toldMaximized(O))
                     continue;
                 const auto OB = O->m_target->position();
                 if (coversWorkarea(OB, WA))
@@ -248,7 +200,7 @@ namespace NHyprplace {
             // window's class — Telegram's Instant View is
             // org.telegram.desktop too — would inherit a box that clips it):
             // with a sibling of this class visible, place fresh.
-            const bool          RESIZABLE = resizable(w);
+            const bool          RESIZABLE = NHyprCommon::resizable(w);
             std::optional<CBox> stored;
             if (!w->m_isX11 && !w->parent()) {
                 bool sibling = false;
@@ -390,7 +342,7 @@ namespace NHyprplace {
         // windows and dialogs place themselves and never consult the memory
         if (!w || !w->m_isMapped || !w->m_isFloating || !w->m_target || w->m_isX11 || w->parent())
             return;
-        if (toldMaximized(w) || Fullscreen::controller()->isFullscreen(w))
+        if (NHyprCommon::toldMaximized(w) || Fullscreen::controller()->isFullscreen(w))
             return;
         if (const auto MON = w->m_monitor.lock(); MON && coversWorkarea(w->m_target->position(), MON->logicalBoxMinusReserved()))
             return;
@@ -431,9 +383,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
 APICALL EXPORT void PLUGIN_EXIT() {
     g_lifecycle.resetAll(); // listeners first, then every hop
-    if (saveQueued)         // the deferred flush never runs at compositor exit
-        saveSpots();
-    saveQueued = false;
+    g_saver.flush();        // the deferred flush never runs at compositor exit
     placeQueue.clear();
     g_lastSpot.clear();
 }

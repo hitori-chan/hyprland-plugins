@@ -1,6 +1,7 @@
 // hyprnotify/render.cpp — the cards, their textures, the pass element, damage
 
 #include "common/lifecycle.hpp"
+#include "common/queries.hpp"
 
 #include "hyprnotify.hpp"
 
@@ -818,7 +819,7 @@ namespace NHyprnotify {
     void onRenderPreChecks(PHLMONITOR mon) {
         if (!mon || notifs.empty() || mon != focusedMon())
             return;
-        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+        if (NHyprCommon::sessionLocked())
             return; // never force a card to float over the lockscreen
         bool visible = false;
         for (const auto& N : notifs)
@@ -844,7 +845,7 @@ namespace NHyprnotify {
         // are the user's notifications). No unlock watcher needed: textures
         // stay warm through the lock, and the lock surface's unmap damages the
         // whole output — that IS the survivors' repaint.
-        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+        if (NHyprCommon::sessionLocked())
             return;
         const auto MON = g_pHyprRenderer->m_renderData.pMonitor.lock();
         if (!MON || MON != focusedMon())

@@ -1,6 +1,7 @@
 // hyprnotify/input.cpp — clicks and pointer ownership over the cards
 
 #include "common/lifecycle.hpp"
+#include "common/queries.hpp"
 
 #include "hyprnotify.hpp"
 
@@ -52,7 +53,7 @@ namespace NHyprnotify {
     void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
         // emissions precede the compositor's own lock handling: locked input
         // belongs to the lockscreen, and half-tracked state must not survive it
-        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked()) {
+        if (NHyprCommon::sessionLocked()) {
             swallowRelease = 0;
             heldButtons    = 0;
             return;
@@ -151,7 +152,7 @@ namespace NHyprnotify {
     // Hands off while a button is held or a drag is live — implicit grabs and
     // drags keep flowing, as they would over a real layer-surface daemon.
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info) {
-        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked()) {
+        if (NHyprCommon::sessionLocked()) {
             setHovered(0);
             releasePointer();
             return;

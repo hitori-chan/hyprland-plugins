@@ -30,6 +30,7 @@
 // from the drag anchor anyway.
 
 #include "common/lifecycle.hpp"
+#include "common/queries.hpp"
 
 #include "hyprsnap.hpp"
 
@@ -166,7 +167,7 @@ namespace NHyprsnap::Snap {
             magnetQueued = false;
             // the lock can engage between the motion emission and this run
             // (idle timeout mid-drag): never move windows under the lockscreen
-            if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+            if (NHyprCommon::sessionLocked())
                 return;
             const double D = (double)g_config.snapDist->value();
             if (D <= 0)
@@ -268,7 +269,7 @@ namespace NHyprsnap::Snap {
     void onMouseMove() {
         // emissions precede the compositor's lock handling: locked input
         // belongs to the lockscreen
-        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked()) {
+        if (NHyprCommon::sessionLocked()) {
             reset();
             return;
         }
@@ -317,7 +318,7 @@ namespace NHyprsnap::Snap {
     void onInputEndingDrag() {
         // guard AND reset: armed zones must not survive into the locked
         // session (they'd paint under session_lock_xray until a motion)
-        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked()) {
+        if (NHyprCommon::sessionLocked()) {
             reset();
             return;
         }
@@ -348,7 +349,7 @@ namespace NHyprsnap::Snap {
         // the input listeners reset on lock, but a lock engaging mid-drag is
         // not an input event — don't paint the zone over the lockscreen; the
         // first post-unlock motion re-arms it
-        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+        if (NHyprCommon::sessionLocked())
             return;
         const auto MON = g_pHyprRenderer->m_renderData.pMonitor.lock();
         if (!MON || MON != zoneMon.lock())

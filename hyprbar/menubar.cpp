@@ -1,6 +1,7 @@
 // hyprbar/menubar.cpp — awesome's Mod+P launcher: .desktop apps, categories, prompt, completion, history
 
 #include "common/lifecycle.hpp"
+#include "common/queries.hpp"
 
 #include "hyprbar.hpp"
 
@@ -516,7 +517,7 @@ namespace NHyprbar {
             // emissions precede the compositor's lock handling: a locked
             // session must never feed the prompt (typed keys would collect in
             // `typed` and Return would launch() the line — under a LOCK)
-            if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked()) {
+            if (NHyprCommon::sessionLocked()) {
                 if (isOpen)
                     close();
                 return;

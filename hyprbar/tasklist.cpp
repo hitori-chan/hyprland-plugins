@@ -2,6 +2,7 @@
 // state-marker labels and the widget filling the bar's middle
 
 #include "common/lifecycle.hpp"
+#include "common/queries.hpp"
 
 #include "hyprbar.hpp"
 
@@ -205,7 +206,7 @@ namespace NHyprbar {
                     minReqQueued = false;
                     const auto Q = std::move(minReqQueue);
                     minReqQueue.clear();
-                    if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+                    if (NHyprCommon::sessionLocked())
                         return; // never hide/reorder windows under the lockscreen
                     for (const auto& [WR, MIN] : Q) {
                         const auto WW = WR.lock();
@@ -277,7 +278,7 @@ namespace NHyprbar {
         // This runs per task per frame; the chain is a dozen virtual calls.
         bool maximized;
         if (!w->m_isX11 && w->m_isFloating && w->m_xdgSurface && w->m_xdgSurface->m_toplevel)
-            maximized = std::ranges::contains(w->m_xdgSurface->m_toplevel->m_pendingApply.states, XDG_TOPLEVEL_STATE_MAXIMIZED);
+            maximized = NHyprCommon::toldMaximized(w);
         else
             maximized = Fullscreen::controller()->getFullscreenModes(w).internal == Fullscreen::FSMODE_MAXIMIZED;
         if (maximized)

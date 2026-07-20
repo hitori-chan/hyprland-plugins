@@ -19,6 +19,7 @@
 // never raises. No config.
 
 #include "common/lifecycle.hpp"
+#include "common/queries.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/Workspace.hpp>
@@ -34,7 +35,6 @@
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/managers/SeatManager.hpp>
-#include <hyprland/src/managers/SessionLockManager.hpp>
 #include <hyprland/src/helpers/memory/Memory.hpp>
 
 #include <linux/input-event-codes.h>
@@ -93,7 +93,7 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
 
     // emissions precede the compositor's lock handling: a click on the
     // lockscreen must not reorder the windows beneath it
-    if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+    if (NHyprCommon::sessionLocked())
         return;
 
     // Already swallowed by an earlier listener — hyprbar cancels clicks on
@@ -117,7 +117,7 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
     if (const auto W = windowUnderCursor()) {
         PHLWINDOWREF WR{W};
         pendingRaise.arm([WR]() {
-            if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+            if (NHyprCommon::sessionLocked())
                 return; // the lock can engage between the emission and this run
             if (const auto W = WR.lock(); W && W->m_isMapped)
                 raiseWindow(W);
@@ -136,7 +136,7 @@ static void onWindowActive(PHLWINDOW w, Desktop::eFocusReason reason) {
 
     PHLWINDOWREF WR{w};
     pendingRaise.arm([WR]() {
-        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+        if (NHyprCommon::sessionLocked())
             return; // the lock can engage between the emission and this run
         if (const auto W = WR.lock(); W && W->m_isMapped)
             raiseWindow(W);
@@ -163,7 +163,7 @@ static int luaFocusPrevHere(lua_State*) {
 
         PHLWINDOWREF TARGET{W};
         pendingFocus.arm([TARGET]() {
-            if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+            if (NHyprCommon::sessionLocked())
                 return; // the lock can engage between the emission and this run
             if (const auto W = TARGET.lock())
                 Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_SWITCH_TO_WINDOW_HARD);
@@ -210,7 +210,7 @@ static void focusByIdx(bool next) {
     PHLWINDOWREF TARGET{wins[TO].second};
     wins.clear(); // don't keep strong refs across calls
     pendingFocus.arm([TARGET]() {
-        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+        if (NHyprCommon::sessionLocked())
             return; // the lock can engage between the emission and this run
         if (const auto W = TARGET.lock(); W && W->m_isMapped)
             Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_SWITCH_TO_WINDOW_HARD);
