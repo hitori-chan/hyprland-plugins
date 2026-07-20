@@ -123,6 +123,12 @@ namespace NHyprbar {
         auto& hits = hitboxes[mon->m_id];
         hits.clear(); // capacity retained: no per-frame allocations
 
+        // the strip stays visible while locked (clock/battery/tray), but an
+        // open tray menu must not float over the lockscreen — close it here,
+        // like the fullscreen path below, so it's gone on unlock
+        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked() && Menu::isOpen && Menu::mon.lock() == mon)
+            Menu::close();
+
         const auto WS = mon->m_activeWorkspace;
         if (WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN && !(Menubar::isOpen && Menubar::mon.lock() == mon)) {
             if (Menu::isOpen && Menu::mon.lock() == mon)

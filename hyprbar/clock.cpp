@@ -10,9 +10,12 @@ namespace NHyprbar {
         bool refresh() {
             char       buf[64];
             const auto NOW = std::time(nullptr);
+            const auto* TM = std::localtime(&NOW);
+            if (!TM)
+                return false;
             // awesome's default format, trimmed — padding is the widget's
             // explicit margin, not spaces baked into the text
-            std::strftime(buf, sizeof(buf), "%a %b %d, %H:%M", std::localtime(&NOW));
+            std::strftime(buf, sizeof(buf), "%a %b %d, %H:%M", TM);
             if (clockText == buf)
                 return false;
             clockText = buf;

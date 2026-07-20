@@ -94,11 +94,19 @@ namespace NHyprbar {
                         }
                         if ((BIT == 1u || BIT == 2u) && (size_t)IDX < L.entries.size() && L.entries[IDX].enabled && !L.entries[IDX].separator) {
                             if (L.entries[IDX].submenu) { // a click cascades too, like GTK
-                                pendingHit = g_pEventLoopManager->doLaterLock([li, IDX]() { Menu::openSub(li, IDX); });
+                                pendingHit = g_pEventLoopManager->doLaterLock([li, IDX]() {
+                                    if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+                                        return; // the lock can engage between the click and this hop
+                                    Menu::openSub(li, IDX);
+                                });
                                 return;
                             }
                             const auto EN = L.entries[IDX];
-                            pendingHit    = g_pEventLoopManager->doLaterLock([EN]() { Menu::activate(EN); });
+                            pendingHit    = g_pEventLoopManager->doLaterLock([EN]() {
+                                if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+                                    return;
+                                Menu::activate(EN);
+                            });
                         }
                         return;
                     }
@@ -141,7 +149,11 @@ namespace NHyprbar {
                 // Deferred out of the input emission: workspace/focus changes
                 // mid-button-event bite code that still holds pre-click state.
                 if (hc.widget)
-                    pendingHit = g_pEventLoopManager->doLaterLock([hc, BIT, SUPER]() { hc.widget->onHit(hc, BIT, SUPER); });
+                    pendingHit = g_pEventLoopManager->doLaterLock([hc, BIT, SUPER]() {
+                        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+                            return; // a widget onHit can change workspace/focus — never under a lock
+                        hc.widget->onHit(hc, BIT, SUPER);
+                    });
                 break;
             }
         }
@@ -163,6 +175,10 @@ namespace NHyprbar {
         scrollQueued  = true;
         pendingScroll = g_pEventLoopManager->doLaterLock([mon]() {
             scrollQueued = false;
+            if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked()) {
+                scrollAcc.clear(); // reset the half-tracked accumulator, act on nothing
+                return;
+            }
             for (auto& [W, STEPS] : scrollAcc)
                 if (STEPS)
                     W->onScrollSteps(STEPS, mon);

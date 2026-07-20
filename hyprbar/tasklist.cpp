@@ -318,7 +318,7 @@ namespace NHyprbar {
                     Tasklist::label(W, LBL);
                     if (P.fp)
                         *P.fp = *P.fp * 1099511628211ULL + std::hash<std::string>{}(LBL);
-                    const auto TEX = textTex(LBL, fg, P.pt, (int)std::round((ITEMW - (tx - x) - 4) * P.scale));
+                    const auto TEX = textTex(LBL, fg, P.pt, std::max(1, (int)std::round((ITEMW - (tx - x) - 4) * P.scale))); // floor >0: a non-positive width disables ellipsization and overflows the cell
                     if (TEX && TEX->m_texID != 0) {
                         const auto B = P.toPhys(CBox{tx, box.y, 1, P.h});
                         CBox       b{B.x, B.y + (B.h - TEX->m_size.y) / 2.0, TEX->m_size.x, TEX->m_size.y};

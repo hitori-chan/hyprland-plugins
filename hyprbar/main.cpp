@@ -308,7 +308,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "2.2.3"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "2.2.4"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

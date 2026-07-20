@@ -379,11 +379,13 @@ namespace NHyprbar {
                 return;
             if ((S.app >= 0 && apps[S.app].terminal) || forceTerminal)
                 cmd = cfg.terminal->value() + " -e " + cmd;
-            counts[name]++; // most-launched sorts first next time
-            saveCounts();
-            historyAdd(typed);
-            // deferred out of the key emission, like every other action here
-            pendingExec = g_pEventLoopManager->doLaterLock([cmd]() { std::ignore = Config::Supplementary::executor()->spawn(cmd); });
+            counts[name]++; // most-launched sorts first next time (in-memory, immediate)
+            // the disk writes ride the deferred hop with the spawn, off the key emission
+            pendingExec = g_pEventLoopManager->doLaterLock([cmd, hist = typed]() {
+                saveCounts();
+                historyAdd(hist);
+                std::ignore = Config::Supplementary::executor()->spawn(cmd);
+            });
         }
 
         // cursor movement over typed: byte offsets on UTF-8 boundaries

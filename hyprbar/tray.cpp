@@ -60,6 +60,8 @@ namespace NHyprbar {
                 try {
                     Menu::close(); // its proxy borrows conn; close it before conn dies
                 } catch (...) {}   // close() sends "closed" events — the bus may already be gone
+            for (auto& I : items)
+                I->proxy.reset(); // break the item<->handler cycle before dropping the vector's ref (and before conn dies)
             items.clear();
             notifyProxy.reset();
             busProxy.reset();
@@ -225,7 +227,7 @@ namespace NHyprbar {
             it->service = service;
             it->path    = path;
             it->proxy   = sdbus::createProxy(*conn, sdbus::ServiceName{service}, sdbus::ObjectPath{path});
-            it->proxy->uponSignal("NewIcon").onInterface(SNI).call([it]() { fetchProps(it); });
+            it->proxy->uponSignal("NewIcon").onInterface(SNI).call([it]() { fetchIcon(it); }); // NewIcon changes only the icon (SNI); Menu/Status don't
             it->proxy->uponSignal("NewAttentionIcon").onInterface(SNI).call([it]() { fetchIcon(it); });
             it->proxy->uponSignal("NewStatus").onInterface(SNI).call([it](std::string st) {
                 if (st != it->status) {
@@ -242,7 +244,12 @@ namespace NHyprbar {
 
         static void dropService(const std::string& service) {
             const auto BEFORE = items.size();
-            std::erase_if(items, [&](const auto& I) { return I->service == service; });
+            std::erase_if(items, [&](const auto& I) {
+                if (I->service != service)
+                    return false;
+                I->proxy.reset(); // the signal handlers hold a strong ref back to the item; drop them or it (and its texture) never frees
+                return true;
+            });
             if (items.size() != BEFORE) {
                 onServiceDropped(service);
                 if (watcher)
