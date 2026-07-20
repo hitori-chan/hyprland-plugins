@@ -264,11 +264,22 @@ static int luaToggle(lua_State*) {
         const auto W = WR.lock();
         if (!W || !W->m_isMapped || !W->m_target)
             return;
+        // the lock can engage between the keypress and this deferred run
+        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+            return;
 
         std::erase_if(g_maximized, [](const auto& E) { return E.first.expired(); });
 
+        const auto FSMODE = Fullscreen::controller()->getFullscreenModes(W).internal;
+
+        // awesome keeps maximized and fullscreen independent: Mod+M toggles
+        // maximized and must never drop a genuinely-fullscreen window (nor
+        // plugin-maximize one — its fullscreen box is not a windowed size).
+        if (FSMODE == Fullscreen::FSMODE_FULLSCREEN)
+            return;
+
         // Compositor-maximized (born maximized, app request): native unmax.
-        if (Fullscreen::controller()->isFullscreen(W)) {
+        if (FSMODE == Fullscreen::FSMODE_MAXIMIZED) {
             Fullscreen::controller()->setFullscreenMode(W, Fullscreen::FSMODE_NONE, Fullscreen::FSMODE_NONE);
 
             // Born maximized: the compositor just granted the client the size
@@ -388,7 +399,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprmax", "toggle", luaToggle);
 
-    return {"hyprmax", "awesome's per-window maximize", "hitori", "1.1.3"};
+    return {"hyprmax", "awesome's per-window maximize", "hitori", "1.1.4"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
