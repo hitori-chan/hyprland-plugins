@@ -1,5 +1,6 @@
 // hyprnotify/bus.cpp — the org.freedesktop.Notifications daemon and the model
 
+#include "common/busclient.hpp"
 #include "common/lifecycle.hpp"
 
 #include "hyprnotify.hpp"
@@ -13,71 +14,17 @@ namespace NHyprnotify {
     namespace Bus {
         static const sdbus::InterfaceName          IFACE{"org.freedesktop.Notifications"};
 
-        static std::unique_ptr<sdbus::IConnection> conn;
-        static std::unique_ptr<sdbus::IObject>     obj;
-        static SP<CEventLoopTimer>                 poll; // sd-bus timeout carrier + deferred-drain kicker, normally disarmed
-        static SP<CEventLoopTimer>                 expiry;
-        static wl_event_source*                    busSrc    = nullptr;
-        static wl_event_source*                    busEvtSrc = nullptr;
-        static NHyprCommon::CHop                   pendingTeardown;
-        static uint32_t                            nextId    = 1;
-        static bool                                suspended = false; // DND
+        static std::unique_ptr<sdbus::IObject> obj;
+        static NHyprCommon::CBusLink           g_bus;
+        static SP<CEventLoopTimer>             expiry;
+        static uint32_t                        nextId    = 1;
+        static bool                            suspended = false; // DND
 
         // A drain must never run synchronously from here: emits happen inside
         // method handlers, i.e. inside processPendingEvent, and sd-bus dispatch
-        // is not re-entrant. Park it on the timer instead.
+        // is not re-entrant. Park it on the link's timer instead.
         void pollSoon() {
-            if (poll)
-                poll->updateTimeout(std::chrono::milliseconds(2));
-        }
-
-        static void teardown() {
-            if (busSrc)
-                wl_event_source_remove(busSrc);
-            if (busEvtSrc)
-                wl_event_source_remove(busEvtSrc);
-            busSrc = busEvtSrc = nullptr;
-            if (poll)
-                poll->updateTimeout(std::nullopt);
-            obj.reset();
-            conn.reset();
-        }
-
-        // Drain the bus, then hand sd-bus's own poll needs to the event loop:
-        // fd mask from PollData::events, its (rare) internal timeout on the
-        // timer. Steady state: zero timers armed, wakeups only when the fd
-        // actually fires.
-        static void syncBus() {
-            if (!conn)
-                return;
-            try {
-                int n = 0;
-                while (n++ < 64 && conn->processPendingEvent()) {} // cap: a flooding client must not stall the frame
-                const auto PD = conn->getEventLoopPollData();
-                if (busSrc)
-                    wl_event_source_fd_update(busSrc, ((PD.events & POLLIN) ? WL_EVENT_READABLE : 0) | ((PD.events & POLLOUT) ? WL_EVENT_WRITABLE : 0));
-                const auto REL = PD.getRelativeTimeout();
-                if (n > 64) // cap hit: more queued, come back next tick
-                    poll->updateTimeout(std::chrono::milliseconds(2));
-                else if (REL == std::chrono::microseconds::max())
-                    poll->updateTimeout(std::nullopt);
-                else
-                    poll->updateTimeout(std::max(std::chrono::duration_cast<std::chrono::milliseconds>(REL), std::chrono::milliseconds(1)));
-            } catch (const std::exception& E) {
-                // the bus died under us (broker restart); an escape here would
-                // unwind through the event loop's C frames and kill the session.
-                // Both fd sources can be ready in one dispatch batch: only the
-                // first failure notifies and schedules the teardown.
-                if (conn && g_pEventLoopManager && !pendingTeardown.armed()) {
-                    HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprnotify] bus lost, notifications disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
-                    pendingTeardown.arm([]() { teardown(); });
-                }
-            }
-        }
-
-        static int onBusFd(int, uint32_t, void*) {
-            syncBus();
-            return 0;
+            g_bus.pollSoon();
         }
 
         // ---- the model ----
@@ -587,9 +534,13 @@ namespace NHyprnotify {
         // ---- the daemon ----
 
         void init() {
+            g_bus.onLost = [](const std::string& err) {
+                HyprlandAPI::addNotification(PHANDLE, "[hyprnotify] bus lost, notifications disabled: " + err, CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
+            };
+            g_bus.dropOwned = []() { obj.reset(); };
             try {
-                conn = sdbus::createSessionBusConnection(sdbus::ServiceName{"org.freedesktop.Notifications"});
-                obj  = sdbus::createObject(*conn, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
+                g_bus.open(false, "org.freedesktop.Notifications");
+                obj = sdbus::createObject(*g_bus.conn(), sdbus::ObjectPath{"/org/freedesktop/Notifications"});
 
                 obj->addVTable(sdbus::registerMethod("Notify")
                                    .withInputParamNames("app_name", "replaces_id", "app_icon", "summary", "body", "actions", "hints", "expire_timeout")
@@ -608,15 +559,6 @@ namespace NHyprnotify {
                                sdbus::registerSignal("ActionInvoked").withParameters<uint32_t, std::string>("id", "action_key"),
                                sdbus::registerSignal("ActivationToken").withParameters<uint32_t, std::string>("id", "activation_token"))
                     .forInterface(IFACE);
-
-                // Event-driven bus: sd-bus's fd + eventFd live in the wayland
-                // event loop (removable sources — EXIT pulls them before the
-                // connection dies), so idle costs zero wakeups and an incoming
-                // Notify lands the same loop iteration. The timer only carries
-                // sd-bus's own rare timeouts and the deferred pollSoon() drain;
-                // every callback still runs on the main thread.
-                poll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { syncBus(); }, nullptr);
-                g_pEventLoopManager->addTimer(poll);
 
                 expiry = makeShared<CEventLoopTimer>(
                     std::nullopt,
@@ -639,28 +581,19 @@ namespace NHyprnotify {
                     nullptr);
                 g_pEventLoopManager->addTimer(expiry);
 
-                const auto PD = conn->getEventLoopPollData();
-                busSrc        = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, PD.fd, WL_EVENT_READABLE, onBusFd, nullptr);
-                busEvtSrc     = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, PD.eventFd, WL_EVENT_READABLE, onBusFd, nullptr);
-                syncBus(); // drain anything queued during setup, set the initial mask/timeout
+                g_bus.sync(); // drain anything queued during setup — the vtable is registered, nothing dispatches early
             } catch (const std::exception& E) {
                 // most likely another daemon owns the name (dunst still installed)
                 HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprnotify] disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
                 obj.reset();
-                conn.reset();
+                g_bus.close();
             }
         }
 
         void exit() {
-            pendingTeardown.reset();
-            teardown(); // fd sources out BEFORE the connection dies
-            if (g_pEventLoopManager) {
-                if (poll)
-                    g_pEventLoopManager->removeTimer(poll);
-                if (expiry)
-                    g_pEventLoopManager->removeTimer(expiry);
-            }
-            poll.reset();
+            g_bus.close(); // fd sources out BEFORE the connection dies
+            if (expiry && g_pEventLoopManager)
+                g_pEventLoopManager->removeTimer(expiry);
             expiry.reset();
             notifs.clear();
             history.clear();

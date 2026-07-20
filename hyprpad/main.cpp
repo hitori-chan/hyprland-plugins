@@ -30,6 +30,7 @@
 // Everything lives in NHyprpad so no symbol can collide with another
 // plugin's at dlopen time.
 
+#include "common/busclient.hpp"
 #include "common/lifecycle.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
@@ -74,75 +75,21 @@ namespace NHyprpad {
 
     // ---- the feedback cards' bus link (hyprbar's tray pattern, send-only) ----
 
-    static std::unique_ptr<sdbus::IConnection> conn;
-    static std::unique_ptr<sdbus::IProxy>      notifyProxy;
-    static SP<CEventLoopTimer>                 busPoll; // sd-bus timeout carrier + deferred-drain kicker, normally disarmed
-    static wl_event_source*                    busSrc    = nullptr;
-    static wl_event_source*                    busEvtSrc = nullptr;
-    static NHyprCommon::CHop                   pendingBusDrop;
-
-    // sd-bus dispatch is not re-entrant: never drain from a send site, park
-    // a near tick on the timer instead
-    static void pollSoon() {
-        if (busPoll)
-            busPoll->updateTimeout(std::chrono::milliseconds(2));
-    }
-
-    static void busTeardown() {
-        if (busSrc)
-            wl_event_source_remove(busSrc);
-        if (busEvtSrc)
-            wl_event_source_remove(busEvtSrc);
-        busSrc = busEvtSrc = nullptr;
-        if (busPoll)
-            busPoll->updateTimeout(std::nullopt);
-        notifyProxy.reset();
-        conn.reset();
-    }
-
-    static void syncBus() {
-        if (!conn)
-            return;
-        try {
-            int n = 0;
-            while (n++ < 64 && conn->processPendingEvent()) {}
-            const auto PD = conn->getEventLoopPollData();
-            if (busSrc)
-                wl_event_source_fd_update(busSrc, ((PD.events & POLLIN) ? WL_EVENT_READABLE : 0) | ((PD.events & POLLOUT) ? WL_EVENT_WRITABLE : 0));
-            const auto REL = PD.getRelativeTimeout();
-            if (n > 64)
-                busPoll->updateTimeout(std::chrono::milliseconds(2));
-            else if (REL == std::chrono::microseconds::max())
-                busPoll->updateTimeout(std::nullopt);
-            else
-                busPoll->updateTimeout(std::max(std::chrono::duration_cast<std::chrono::milliseconds>(REL), std::chrono::milliseconds(1)));
-        } catch (const std::exception& E) {
-            // the bus died under us; an escape would unwind through the event
-            // loop's C frames. Only the first failing source tears down.
-            if (conn && g_pEventLoopManager && !pendingBusDrop.armed()) {
-                HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprpad] bus lost, feedback cards off: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
-                pendingBusDrop.arm([]() { busTeardown(); });
-            }
-        }
-    }
-
-    static int onBusFd(int, uint32_t, void*) {
-        syncBus();
-        return 0;
-    }
+    static std::unique_ptr<sdbus::IProxy> notifyProxy;
+    static NHyprCommon::CBusLink          g_bus; // feedback cards' session-bus link
 
     static void notify(const std::string& body, bool timed) {
-        if (!conn)
+        if (!g_bus.conn())
             return;
         try {
             if (!notifyProxy)
-                notifyProxy = sdbus::createProxy(*conn, sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
+                notifyProxy = sdbus::createProxy(*g_bus.conn(), sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
             notifyProxy->callMethodAsync("Notify")
                 .onInterface("org.freedesktop.Notifications")
                 .withArguments(std::string{"osd"}, uint32_t{9991}, std::string{}, std::string{"Touchpad"}, body, std::vector<std::string>{},
                                std::map<std::string, sdbus::Variant>{{"urgency", sdbus::Variant{uint8_t{0}}}}, timed ? 1500 : -1)
                 .uponReplyInvoke([](std::optional<sdbus::Error>, uint32_t) {});
-            pollSoon();  // flush the send from the event loop, never from here
+            g_bus.pollSoon(); // flush the send from the event loop, never from here
         } catch (...) {} // broker gone: teardown is already pending, drop the card
     }
 
@@ -261,17 +208,16 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         throw std::runtime_error("[hyprpad] version mismatch");
     }
 
+    g_bus.onLost    = [](const std::string& err) {
+        HyprlandAPI::addNotification(PHANDLE, "[hyprpad] bus lost, feedback cards off: " + err, CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
+    };
+    g_bus.dropOwned = []() { notifyProxy.reset(); };
     try {
-        conn    = sdbus::createSessionBusConnection();
-        busPoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { syncBus(); }, nullptr);
-        g_pEventLoopManager->addTimer(busPoll);
-        const auto PD = conn->getEventLoopPollData();
-        busSrc        = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, PD.fd, WL_EVENT_READABLE, onBusFd, nullptr);
-        busEvtSrc     = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, PD.eventFd, WL_EVENT_READABLE, onBusFd, nullptr);
-        syncBus(); // set the initial mask/timeout
+        g_bus.open(false);
+        g_bus.sync(); // set the initial mask/timeout
     } catch (const std::exception& E) {
         HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprpad] no session bus, feedback cards off: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
-        busTeardown();
+        g_bus.teardown();
     }
 
     settle = makeShared<CEventLoopTimer>(
@@ -310,13 +256,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 APICALL EXPORT void PLUGIN_EXIT() {
     g_lifecycle.resetAll(); // listeners first, then every hop
     lDestroy.clear();
-    busTeardown(); // fd sources out BEFORE the connection dies
-    if (g_pEventLoopManager) {
-        if (settle)
-            g_pEventLoopManager->removeTimer(settle);
-        if (busPoll)
-            g_pEventLoopManager->removeTimer(busPoll);
-    }
+    g_bus.close(); // fd sources out BEFORE the connection dies
+    if (settle && g_pEventLoopManager)
+        g_pEventLoopManager->removeTimer(settle);
     settle.reset();
-    busPoll.reset();
 }

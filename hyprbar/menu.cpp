@@ -285,7 +285,7 @@ namespace NHyprbar {
         }
 
         void openFor(SP<Tray::SItem> it, double ax, PHLMONITORREF m) {
-            if (!it || it->menuPath.empty() || !Tray::conn)
+            if (!it || it->menuPath.empty() || !Tray::bus.conn())
                 return;
             close();
             item    = it;
@@ -293,7 +293,7 @@ namespace NHyprbar {
             mon     = m;
             isOpen  = true;
             levels.emplace_back(); // the root panel (parentId 0)
-            proxy = sdbus::createProxy(*Tray::conn, sdbus::ServiceName{it->service}, sdbus::ObjectPath{it->menuPath});
+            proxy = sdbus::createProxy(*Tray::bus.conn(), sdbus::ServiceName{it->service}, sdbus::ObjectPath{it->menuPath});
 
             // apps mutate their menu while it's up (scans, state flips) —
             // reload any open level the update signals touch

@@ -29,6 +29,8 @@
 // Everything lives in NHyprbar so no symbol can collide with another
 // plugin's at dlopen time.
 
+#include "common/busclient.hpp"
+
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/Workspace.hpp>
@@ -257,7 +259,7 @@ namespace NHyprbar {
             bool                           dirty = true;
         };
 
-        extern std::unique_ptr<sdbus::IConnection> conn;
+        extern NHyprCommon::CBusLink bus; // the tray's session-bus link (menu.cpp borrows the connection)
         extern std::vector<SP<SItem>>              items;
 
         void                                       pollSoon(); // pull the next DBus poll tick close after a send

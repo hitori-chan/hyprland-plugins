@@ -11,36 +11,23 @@ namespace NHyprbar {
     namespace Tray {
         static const sdbus::InterfaceName      WIFACE{"org.kde.StatusNotifierWatcher"};
 
-        std::unique_ptr<sdbus::IConnection>    conn;
+        NHyprCommon::CBusLink                  bus; // menu.cpp borrows the connection for its dbusmenu proxies
         static std::unique_ptr<sdbus::IObject> watcher;
         static std::unique_ptr<sdbus::IProxy>  busProxy;
         static std::unique_ptr<sdbus::IProxy>  notifyProxy; // the battery alerts' Notify sender
         std::vector<SP<SItem>>                 items;
-        static SP<CEventLoopTimer>             poll; // sd-bus timeout carrier + deferred-drain kicker, normally disarmed
-        static wl_event_source*                busSrc    = nullptr;
-        static wl_event_source*                busEvtSrc = nullptr;
-        static NHyprCommon::CHop               pendingTeardown;
 
-        // A drain must never run synchronously from here: sends happen inside
-        // signal/reply handlers, i.e. inside processPendingEvent, and sd-bus
-        // dispatch is not re-entrant. Park a near tick on the timer instead —
-        // it re-syncs the fd mask (a send may want POLLOUT the current mask
-        // predates) and drains whatever the send provoked.
-        void pollSoon() {
-            if (poll)
-                poll->updateTimeout(std::chrono::milliseconds(2));
-        }
 
         // One Notify onto the session bus, over the tray's live connection —
         // no fork, no shell. hyprnotify's API is the bus name, never its
         // symbols (two independently-versioned .so files must not couple);
         // whatever daemon owns the name receives it.
         void notify(const std::string& app, uint32_t replacesId, const std::string& icon, const std::string& summary, const std::string& body, uint8_t urgency, int32_t timeoutMs) {
-            if (!conn)
+            if (!bus.conn())
                 return;
             try {
                 if (!notifyProxy)
-                    notifyProxy = sdbus::createProxy(*conn, sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
+                    notifyProxy = sdbus::createProxy(*bus.conn(), sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
                 notifyProxy->callMethodAsync("Notify")
                     .onInterface("org.freedesktop.Notifications")
                     .withArguments(app, replacesId, icon, summary, body, std::vector<std::string>{}, std::map<std::string, sdbus::Variant>{{"urgency", sdbus::Variant{urgency}}},
@@ -50,63 +37,26 @@ namespace NHyprbar {
             } catch (...) {} // broker gone: teardown is already pending, drop the card
         }
 
-        static void teardown() {
-            if (busSrc)
-                wl_event_source_remove(busSrc);
-            if (busEvtSrc)
-                wl_event_source_remove(busEvtSrc);
-            busSrc = busEvtSrc = nullptr;
-            if (poll)
-                poll->updateTimeout(std::nullopt);
+        // A drain must never run synchronously from a send site: sends happen
+        // inside signal/reply handlers, i.e. inside processPendingEvent, and
+        // sd-bus dispatch is not re-entrant — park a near tick on the link's
+        // timer instead.
+        void pollSoon() {
+            bus.pollSoon();
+        }
+
+        // owned objects borrow the connection — reset them before it dies
+        static void dropOwnedObjects() {
             if (!Menu::isLocal)
                 try {
-                    Menu::close(); // its proxy borrows conn; close it before conn dies
+                    Menu::close(); // its proxy borrows the connection; close it first
                 } catch (...) {}   // close() sends "closed" events — the bus may already be gone
             for (auto& I : items)
-                I->proxy.reset(); // break the item<->handler cycle before dropping the vector's ref (and before conn dies)
+                I->proxy.reset(); // break the item<->handler cycle before dropping the vector's ref
             items.clear();
             notifyProxy.reset();
             busProxy.reset();
             watcher.reset();
-            conn.reset();
-        }
-
-        // Drain the bus, then hand sd-bus's own poll needs to the event loop:
-        // fd mask from PollData::events, its (rare) internal timeout on the
-        // timer. Steady state: zero timers armed, wakeups only when the fd
-        // actually fires.
-        static void syncBus() {
-            if (!conn)
-                return;
-            try {
-                int n = 0;
-                while (n++ < 64 && conn->processPendingEvent()) {} // cap: a flooding client must not stall the frame
-                const auto PD = conn->getEventLoopPollData();
-                if (busSrc)
-                    wl_event_source_fd_update(busSrc, ((PD.events & POLLIN) ? WL_EVENT_READABLE : 0) | ((PD.events & POLLOUT) ? WL_EVENT_WRITABLE : 0));
-                const auto REL = PD.getRelativeTimeout();
-                if (n > 64) // cap hit: more queued, come back next tick
-                    poll->updateTimeout(std::chrono::milliseconds(2));
-                else if (REL == std::chrono::microseconds::max())
-                    poll->updateTimeout(std::nullopt);
-                else
-                    poll->updateTimeout(std::max(std::chrono::duration_cast<std::chrono::milliseconds>(REL), std::chrono::milliseconds(1)));
-            } catch (const std::exception& E) {
-                // the bus died under us (broker restart); an escape here would
-                // unwind through the event loop's C frames and kill the session
-                if (conn && g_pEventLoopManager && !pendingTeardown.armed()) {
-                    HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprbar] tray bus lost, tray disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
-                    pendingTeardown.arm([]() {
-                        teardown();
-                        barChanged(); // the dead items just left the strip
-                    });
-                }
-            }
-        }
-
-        static int onBusFd(int, uint32_t, void*) {
-            syncBus();
-            return 0;
         }
 
         // Name and pixmap are fetched SERIALLY and committed as ONE change.
@@ -228,7 +178,7 @@ namespace NHyprbar {
             auto it     = makeShared<SItem>();
             it->service = service;
             it->path    = path;
-            it->proxy   = sdbus::createProxy(*conn, sdbus::ServiceName{service}, sdbus::ObjectPath{path});
+            it->proxy   = sdbus::createProxy(*bus.conn(), sdbus::ServiceName{service}, sdbus::ObjectPath{path});
             it->proxy->uponSignal("NewIcon").onInterface(SNI).call([it]() { fetchIcon(it); }); // NewIcon changes only the icon (SNI); Menu/Status don't
             it->proxy->uponSignal("NewAttentionIcon").onInterface(SNI).call([it]() { fetchIcon(it); });
             it->proxy->uponSignal("NewStatus").onInterface(SNI).call([it](std::string st) {
@@ -261,9 +211,14 @@ namespace NHyprbar {
         }
 
         void init() {
+            bus.onLost = [](const std::string& err) {
+                HyprlandAPI::addNotification(PHANDLE, "[hyprbar] tray bus lost, tray disabled: " + err, CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
+            };
+            bus.dropOwned     = []() { dropOwnedObjects(); };
+            bus.afterTeardown = []() { barChanged(); }; // the dead items just left the strip
             try {
-                conn    = sdbus::createSessionBusConnection(sdbus::ServiceName{"org.kde.StatusNotifierWatcher"});
-                watcher = sdbus::createObject(*conn, sdbus::ObjectPath{"/StatusNotifierWatcher"});
+                bus.open(false, "org.kde.StatusNotifierWatcher");
+                watcher = sdbus::createObject(*bus.conn(), sdbus::ObjectPath{"/StatusNotifierWatcher"});
 
                 watcher
                     ->addVTable(sdbus::registerMethod("RegisterStatusNotifierItem").withInputParamNames("service").implementedAs([](std::string arg) {
@@ -287,7 +242,7 @@ namespace NHyprbar {
                                 sdbus::registerSignal("StatusNotifierHostRegistered"))
                     .forInterface(WIFACE);
 
-                busProxy = sdbus::createProxy(*conn, sdbus::ServiceName{"org.freedesktop.DBus"}, sdbus::ObjectPath{"/org/freedesktop/DBus"});
+                busProxy = sdbus::createProxy(*bus.conn(), sdbus::ServiceName{"org.freedesktop.DBus"}, sdbus::ObjectPath{"/org/freedesktop/DBus"});
                 busProxy->uponSignal("NameOwnerChanged").onInterface("org.freedesktop.DBus").call([](std::string name, std::string oldOwner, std::string newOwner) {
                     if (!oldOwner.empty() && newOwner.empty())
                         dropService(name);
@@ -295,31 +250,16 @@ namespace NHyprbar {
 
                 watcher->emitSignal("StatusNotifierHostRegistered").onInterface(WIFACE);
 
-                // Event-driven bus: sd-bus's fd + eventFd live in the wayland
-                // event loop (removable sources — exit pulls them before the
-                // connection dies), so idle costs zero wakeups and an incoming
-                // signal lands the same loop iteration. The timer only carries
-                // sd-bus's own rare timeouts and the deferred pollSoon() drain;
-                // every callback still runs on the main thread.
-                poll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { syncBus(); }, nullptr);
-                g_pEventLoopManager->addTimer(poll);
-
-                const auto PD = conn->getEventLoopPollData();
-                busSrc        = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, PD.fd, WL_EVENT_READABLE, onBusFd, nullptr);
-                busEvtSrc     = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, PD.eventFd, WL_EVENT_READABLE, onBusFd, nullptr);
-                syncBus(); // drain anything queued during setup, set the initial mask/timeout
+                bus.sync(); // drain anything queued during setup — the vtable is registered, nothing dispatches early
             } catch (const std::exception& E) {
                 HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprbar] tray disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
-                teardown();
+                dropOwnedObjects();
+                bus.close();
             }
         }
 
         void exit() {
-            pendingTeardown.reset();
-            teardown(); // fd sources out BEFORE the connection dies
-            if (poll && g_pEventLoopManager)
-                g_pEventLoopManager->removeTimer(poll);
-            poll.reset();
+            bus.close(); // fd sources out BEFORE the connection dies
         }
     }
 

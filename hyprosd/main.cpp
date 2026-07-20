@@ -26,6 +26,7 @@
 // Everything lives in NHyprosd so no symbol can collide with another
 // plugin's at dlopen time.
 
+#include "common/busclient.hpp"
 #include "common/lifecycle.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
@@ -62,100 +63,40 @@ namespace NHyprosd {
 
     // ---- bus links (hyprpad's chassis, one per bus) ----
 
-    struct SBusLink {
-        std::unique_ptr<sdbus::IConnection> conn;
-        SP<CEventLoopTimer>                 poll; // sd-bus timeout carrier + deferred-drain kicker, normally disarmed
-        wl_event_source*                    src    = nullptr;
-        wl_event_source*                    evtSrc = nullptr;
-        NHyprCommon::CHop                   pendingDrop;
-        const char*                         label = "";
-    };
-    static SBusLink                            sessionBus{.label = "session"};
-    static SBusLink                            systemBus{.label = "system"};
+    static NHyprCommon::CBusLink               sessionBus; // the cards' Notify sender
+    static NHyprCommon::CBusLink               systemBus;  // logind SetBrightness
 
     static NHyprCommon::CLifecycle             g_lifecycle; // no bus listeners here — it owns the hops
 
     static std::unique_ptr<sdbus::IProxy>      notifyProxy; // on sessionBus
     static std::unique_ptr<sdbus::IProxy>      logindProxy; // on systemBus
 
-    // sd-bus dispatch is not re-entrant: never drain from a send site, park
-    // a near tick on the timer instead
-    static void pollSoon(SBusLink& L) {
-        if (L.poll)
-            L.poll->updateTimeout(std::chrono::milliseconds(2));
-    }
-
-    static void busTeardown(SBusLink& L) {
-        if (L.src)
-            wl_event_source_remove(L.src);
-        if (L.evtSrc)
-            wl_event_source_remove(L.evtSrc);
-        L.src = L.evtSrc = nullptr;
-        if (L.poll)
-            L.poll->updateTimeout(std::nullopt);
-        if (&L == &sessionBus)
-            notifyProxy.reset();
-        else
-            logindProxy.reset();
-        L.conn.reset();
-    }
-
-    static void syncBus(SBusLink& L) {
-        if (!L.conn)
-            return;
-        try {
-            int n = 0;
-            while (n++ < 64 && L.conn->processPendingEvent()) {}
-            const auto PD = L.conn->getEventLoopPollData();
-            if (L.src)
-                wl_event_source_fd_update(L.src, ((PD.events & POLLIN) ? WL_EVENT_READABLE : 0) | ((PD.events & POLLOUT) ? WL_EVENT_WRITABLE : 0));
-            const auto REL = PD.getRelativeTimeout();
-            if (n > 64)
-                L.poll->updateTimeout(std::chrono::milliseconds(2));
-            else if (REL == std::chrono::microseconds::max())
-                L.poll->updateTimeout(std::nullopt);
+    static void busInit(NHyprCommon::CBusLink& L, bool system, const char* label) {
+        L.onLost = [label](const std::string& err) {
+            HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprosd] "} + label + " bus lost: " + err, CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
+        };
+        L.dropOwned = [&L]() {
+            if (&L == &sessionBus)
+                notifyProxy.reset();
             else
-                L.poll->updateTimeout(std::max(std::chrono::duration_cast<std::chrono::milliseconds>(REL), std::chrono::milliseconds(1)));
-        } catch (const std::exception& E) {
-            // the bus died under us; an escape would unwind through the event
-            // loop's C frames. Only the first failing source tears down.
-            if (L.conn && g_pEventLoopManager && !L.pendingDrop.armed()) {
-                HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprosd] "} + L.label + " bus lost: " + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
-                L.pendingDrop.arm([&L]() { busTeardown(L); });
-            }
-        }
-    }
-
-    static int onBusFd(int, uint32_t, void* data) {
-        syncBus(*(SBusLink*)data);
-        return 0;
-    }
-
-    static bool busInit(SBusLink& L, bool system) {
+                logindProxy.reset();
+        };
         try {
-            L.conn = system ? sdbus::createSystemBusConnection() : sdbus::createSessionBusConnection();
-            L.poll = makeShared<CEventLoopTimer>(std::nullopt, [&L](SP<CEventLoopTimer>, void*) { syncBus(L); }, nullptr);
-            g_pEventLoopManager->addTimer(L.poll);
-            const auto PD = L.conn->getEventLoopPollData();
-            L.src         = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, PD.fd, WL_EVENT_READABLE, onBusFd, &L);
-            L.evtSrc      = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, PD.eventFd, WL_EVENT_READABLE, onBusFd, &L);
-            syncBus(L); // set the initial mask/timeout
-            return true;
+            L.open(system);
+            L.sync(); // set the initial mask/timeout
         } catch (const std::exception& E) {
-            HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprosd] no "} + L.label + " bus: " + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
-            busTeardown(L);
-            return false;
+            HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprosd] no "} + label + " bus: " + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
         }
     }
 
     // ---- the cards ----
 
     static void notify(uint32_t id, const char* summary, const std::string& body, int value) {
-        if (!sessionBus.conn)
+        if (!sessionBus.conn())
             return;
         try {
             if (!notifyProxy)
-                notifyProxy = sdbus::createProxy(*sessionBus.conn, sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
+                notifyProxy = sdbus::createProxy(*sessionBus.conn(), sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
             std::map<std::string, sdbus::Variant> hints{{"urgency", sdbus::Variant{uint8_t{0}}}};
             if (value >= 0)
                 hints.emplace("value", sdbus::Variant{int32_t{value}});
@@ -163,7 +104,7 @@ namespace NHyprosd {
                 .onInterface("org.freedesktop.Notifications")
                 .withArguments(std::string{"osd"}, id, std::string{}, std::string{summary}, body, std::vector<std::string>{}, hints, 1200)
                 .uponReplyInvoke([](std::optional<sdbus::Error>, uint32_t) {});
-            pollSoon(sessionBus); // flush the send from the event loop, never from here
+            sessionBus.pollSoon(); // flush the send from the event loop, never from here
         } catch (...) {} // broker gone: teardown is already pending, drop the card
     }
 
@@ -191,7 +132,7 @@ namespace NHyprosd {
     static Time::steady_tp lastSetAt;
 
     static void            brightnessStep(int dir) {
-        if (backlightDev.empty() || !systemBus.conn)
+        if (backlightDev.empty() || !systemBus.conn())
             return;
 
         int raw = -1;
@@ -210,7 +151,7 @@ namespace NHyprosd {
         const int PCT = (int)std::lround(100.0 * raw / backlightMax);
         try {
             if (!logindProxy)
-                logindProxy = sdbus::createProxy(*systemBus.conn, sdbus::ServiceName{"org.freedesktop.login1"}, sdbus::ObjectPath{"/org/freedesktop/login1/session/auto"});
+                logindProxy = sdbus::createProxy(*systemBus.conn(), sdbus::ServiceName{"org.freedesktop.login1"}, sdbus::ObjectPath{"/org/freedesktop/login1/session/auto"});
             // the card waits for logind's ack: a refused write must not
             // flash a percent that never applied (the reply lands on this
             // event loop; sending from a dispatch callback is fine, only
@@ -224,7 +165,7 @@ namespace NHyprosd {
                     else
                         lastSetRaw = -1; // logind refused: drop the trust window so the next press re-reads sysfs
                 });
-            pollSoon(systemBus);
+            systemBus.pollSoon();
         } catch (...) { return; }
 
         lastSetRaw = raw;
@@ -459,8 +400,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     g_lifecycle.init();
 
-    busInit(sessionBus, false);
-    busInit(systemBus, true);
+    busInit(sessionBus, false, "session");
+    busInit(systemBus, true, "system");
     findBacklight();
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "volume_up", luaVolumeUp);
@@ -480,14 +421,6 @@ APICALL EXPORT void PLUGIN_EXIT() {
         chainDone(chains.back().get()); // sources out, fds closed, children reaped as far as WNOHANG goes
     reapOrphans();
     orphans.clear();
-    busTeardown(sessionBus); // fd sources out BEFORE the connections die
-    busTeardown(systemBus);
-    if (g_pEventLoopManager) {
-        if (sessionBus.poll)
-            g_pEventLoopManager->removeTimer(sessionBus.poll);
-        if (systemBus.poll)
-            g_pEventLoopManager->removeTimer(systemBus.poll);
-    }
-    sessionBus.poll.reset();
-    systemBus.poll.reset();
+    sessionBus.close(); // fd sources out BEFORE the connections die
+    systemBus.close();
 }
