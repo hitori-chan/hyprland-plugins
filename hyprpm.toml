@@ -22,7 +22,7 @@ build       = ["make -C hyprbar all"]
 
 [hyprnotify]
 description = "awesome's naughty: notifications drawn by the compositor"
-version     = "3.0.2"
+version     = "3.0.3"
 authors     = ["hitori"]
 output      = "hyprnotify/hyprnotify.so"
 build       = ["make -C hyprnotify all"]

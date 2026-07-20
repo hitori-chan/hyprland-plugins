@@ -447,6 +447,8 @@ namespace NHyprnotify {
         const double X = MB.x + MB.w - GAP - W;
         double       y = MB.y + (double)cfg.offsetY->value();
 
+        std::vector<CBox> btnBoxes, imgBoxes; // per-card scratch, cleared each iteration: capacity retained across the stack
+
         for (const auto& N : notifs) {
             if (N->waiting)
                 continue; // DND queue: collected, not shown
@@ -489,7 +491,7 @@ namespace NHyprnotify {
                     ensureActionIcon(*N, A, (int)std::lround(BTN_ICON * P.scale));
                 }
             }
-            std::vector<CBox> btnBoxes;
+            btnBoxes.clear(); // unconditional: a no-action card must not inherit the previous card's boxes
             const double      BUTTONSH  = N->actions.empty() ? 0 : layoutButtons(*N, TEXTW, btnBoxes);
             const double      BTN_BLOCK = BUTTONSH > 0 ? BTN_ROW_GAP + BUTTONSH : 0;
 
@@ -498,7 +500,7 @@ namespace NHyprnotify {
             if (warm)
                 for (auto& IM : N->bodyImages)
                     ensureBodyImage(IM, (int)std::lround(BODYIMG_H * P.scale));
-            std::vector<CBox> imgBoxes;
+            imgBoxes.clear();
             const double      IMAGESH   = N->bodyImages.empty() ? 0 : layoutImages(*N, TEXTW, imgBoxes);
             const double      IMG_BLOCK = IMAGESH > 0 ? IMG_ROW_GAP + IMAGESH : 0;
 

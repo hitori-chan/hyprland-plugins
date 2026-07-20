@@ -235,7 +235,8 @@ namespace NHyprnotify {
                         break;
                     }
                 const auto VID = (*victim)->id;
-                notifs.erase(victim);
+                retire(*victim); // same as handleNotify: a card pushed off the
+                notifs.erase(victim); // bottom stays recallable from history
                 emitClosed(VID, R_UNDEFINED);
             }
             notifChanged();
@@ -378,8 +379,10 @@ namespace NHyprnotify {
             const int32_t W = std::get<0>(d), H = std::get<1>(d), STRIDE = std::get<2>(d), BPS = std::get<4>(d), CH = std::get<5>(d);
             const auto&   DATA = std::get<6>(d);
             // STRIDE must cover a row: a lying stride (0) would let a tiny
-            // message claim gigapixel W*H and the resize below map it all
-            if (W <= 0 || H <= 0 || BPS != 8 || (CH != 3 && CH != 4) || (int64_t)STRIDE < (int64_t)W * CH || DATA.size() < (size_t)STRIDE * (H - 1) + (size_t)W * CH)
+            // message claim gigapixel W*H and the resize below map it all.
+            // The 16 MP cap bounds a genuine ~128 MB image-data (the D-Bus
+            // message max) that would otherwise map + premultiply in full.
+            if (W <= 0 || H <= 0 || (int64_t)W * H > (16 << 20) || BPS != 8 || (CH != 3 && CH != 4) || (int64_t)STRIDE < (int64_t)W * CH || DATA.size() < (size_t)STRIDE * (H - 1) + (size_t)W * CH)
                 return;
             n.pixels.resize((size_t)W * H * 4);
             for (int32_t y = 0; y < H; y++) {

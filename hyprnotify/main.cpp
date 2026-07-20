@@ -91,6 +91,7 @@ namespace NHyprnotify {
         wl_event_source* src = nullptr;
     };
     static std::vector<UP<SChild>> children;
+    static std::vector<pid_t>      spawnOrphans; // couldn't-watch children (no pidfd/loop); WNOHANG-swept on the next spawn
 
     static int                     onChildExit(int, uint32_t, void* data) {
         auto* c = (SChild*)data;
@@ -104,6 +105,7 @@ namespace NHyprnotify {
     void spawnDetached(std::vector<const char*> argv) {
         if (argv.empty() || !argv[0])
             return;
+        std::erase_if(spawnOrphans, [](pid_t p) { return waitpid(p, nullptr, WNOHANG) != 0; });
         if (argv.back())
             argv.push_back(nullptr); // execv needs the null terminator
 
@@ -113,7 +115,10 @@ namespace NHyprnotify {
 
         const int FD = (int)syscall(SYS_pidfd_open, pid, 0);
         if (FD < 0 || !g_pCompositor) {
-            waitpid(pid, nullptr, WNOHANG); // no pidfd/loop: best-effort reap now
+            // no pidfd/loop to watch it: reap now, or hand a not-yet-exited
+            // child to the sweep above rather than leak a zombie
+            if (waitpid(pid, nullptr, WNOHANG) == 0)
+                spawnOrphans.push_back(pid);
             return;
         }
         auto c = makeUnique<SChild>();
@@ -133,6 +138,9 @@ namespace NHyprnotify {
                 waitpid(c->pid, nullptr, WNOHANG);
         }
         children.clear();
+        for (pid_t p : spawnOrphans)
+            waitpid(p, nullptr, WNOHANG);
+        spawnOrphans.clear();
     }
 }
 
