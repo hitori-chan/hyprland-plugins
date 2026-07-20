@@ -264,10 +264,12 @@ namespace NHyprosd {
             close(c->pidFd);
         if (c->outFd >= 0)
             close(c->outFd);
-        if (c->setPid > 0)
-            waitpid(c->setPid, nullptr, WNOHANG);
-        if (c->getPid > 0)
-            waitpid(c->getPid, nullptr, WNOHANG);
+        // a child that closed its stdout a hair before exiting isn't a zombie
+        // yet; hand it to the orphan list to re-reap rather than leak it
+        if (c->setPid > 0 && waitpid(c->setPid, nullptr, WNOHANG) == 0)
+            orphans.push_back(c->setPid);
+        if (c->getPid > 0 && waitpid(c->getPid, nullptr, WNOHANG) == 0)
+            orphans.push_back(c->getPid);
         std::erase_if(chains, [&](const auto& U) { return U.get() == c; });
     }
 
@@ -377,6 +379,7 @@ namespace NHyprosd {
             orphans.push_back(PID);
             return;
         }
+        fcntl(c->pidFd, F_SETFD, FD_CLOEXEC); // SYS_pidfd_open takes no CLOEXEC flag; keep it out of concurrent spawns
         c->pidSrc = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, c->pidFd, WL_EVENT_READABLE, onSetDone, c.get());
         chains.push_back(std::move(c));
     }
@@ -460,7 +463,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_up", luaBrightnessUp);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_down", luaBrightnessDown);
 
-    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.0.2"};
+    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.0.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
