@@ -268,7 +268,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         // The compositor's focus fallback (closing the last visible window)
         // lands focus on a hidden one; bounce it off, deferred out of the focus
         // emission (refocusing inside it reenters the focus machinery).
-        if (w && w->isHidden() && Tasklist::isMinimized(w)) {
+        if (w && w->isHidden() && Tasklist::isMinimized(w) && g_pEventLoopManager) {
             PHLWINDOWREF WR{w};
             pendingUnfocusHidden = g_pEventLoopManager->doLaterLock([WR]() {
                 if (const auto W = WR.lock())
@@ -308,10 +308,18 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "2.2.4"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "2.2.5"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
+    // listeners before the deferred hops they arm: an event firing
+    // mid-teardown must not re-queue a hop that would then outlive the .so
+    lRender.reset();
+    lButton.reset();
+    lMove.reset();
+    lAxis.reset();
+    lKey.reset();
+    lDamage.clear();
     pendingWarm.reset(); // a queued warm across unload calls into dlclosed code
     pendingMinimize.reset();
     pendingRestore.reset();
@@ -324,12 +332,6 @@ APICALL EXPORT void PLUGIN_EXIT() {
     if (timer && g_pEventLoopManager)
         g_pEventLoopManager->removeTimer(timer);
     timer.reset();
-    lRender.reset();
-    lButton.reset();
-    lMove.reset();
-    lAxis.reset();
-    lKey.reset();
-    lDamage.clear();
     renderExit();
     layoutboxExit();
     Tasklist::exit();

@@ -44,7 +44,7 @@ namespace NHyprbar {
         const uint32_t BIT = e.button == BTN_LEFT ? 1u : e.button == BTN_RIGHT ? 2u : e.button == BTN_MIDDLE ? 4u : 8u;
 
         if (e.state == WL_POINTER_BUTTON_STATE_RELEASED) {
-            if (BIT && (swallowRelease & BIT)) {
+            if (swallowRelease & BIT) {
                 swallowRelease &= ~BIT;
                 info.cancelled = true;
             } else

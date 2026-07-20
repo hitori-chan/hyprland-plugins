@@ -140,6 +140,23 @@ namespace NHyprbar {
                 focusNextAfterMinimize(w, w->m_workspace);
         }
 
+        // Raise, then focus with the window's REAL surface — not
+        // Actions::focus(): that goes through FocusState with surface=nullptr,
+        // and its already-focused guard compares (window, surface) ==
+        // (m_focusWindow, m_focusSurface). When a popup/layer that held the
+        // keyboard dies while the pointer sits on the bar (moves swallowed =
+        // FFM can't heal), m_focusSurface is left empty with m_focusWindow
+        // still set — nullptr == empty matches, the guard returns before the
+        // raise AND before keyboard focus, and the click looks dead until some
+        // other window gets focused. With the real surface the guard can never
+        // match a half-focused window, and a focused-but-obscured one still
+        // raises.
+        static void raiseAndFocus(const PHLWINDOW& w) {
+            Desktop::windowState()->raise(w);
+            if (Desktop::focusState())
+                Desktop::focusState()->fullWindowFocus(w, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW, w->wlSurface()->resource());
+        }
+
         void restore(const PHLWINDOW& w) {
             if (!w)
                 return;
@@ -158,9 +175,7 @@ namespace NHyprbar {
             w->setHidden(false);
             if (tiled && g_layoutManager && w->m_workspace)
                 g_layoutManager->newTarget(w->layoutTarget(), w->m_workspace->m_space);
-            Desktop::windowState()->raise(w);
-            if (Desktop::focusState())
-                Desktop::focusState()->fullWindowFocus(w, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW, w->wlSurface()->resource());
+            raiseAndFocus(w);
             // re-enter the fullscreen/maximize the window held when minimized,
             // after focus — the compositor fullscreens the active window.
             if (fs.internal != Fullscreen::FSMODE_NONE)
@@ -361,20 +376,7 @@ namespace NHyprbar {
                     return;
                 }
 
-                // Not Actions::focus(): that goes through FocusState with
-                // surface=nullptr, and its already-focused guard compares
-                // (window, surface) == (m_focusWindow, m_focusSurface).
-                // When a popup/layer that held the keyboard dies while the
-                // pointer sits on the bar (moves swallowed = FFM can't
-                // heal), m_focusSurface is left empty with m_focusWindow
-                // still set — nullptr == empty matches, the guard returns
-                // before the raise AND before keyboard focus, and the
-                // click looks dead until some other window gets focused.
-                // So: raise explicitly, then focus with the window's real
-                // surface — the guard can never match a half-focused
-                // window, and a focused-but-obscured one still raises.
-                Desktop::windowState()->raise(W);
-                Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW, W->wlSurface()->resource());
+                Tasklist::raiseAndFocus(W);
             }
 
             bool accumulatesScroll() const override {
@@ -403,8 +405,7 @@ namespace NHyprbar {
                 const int  N = (int)tasks.size();
                 const auto W = tasks[((idx + steps) % N + N) % N].second;
                 tasks.clear(); // don't keep strong window refs across scrolls
-                Desktop::windowState()->raise(W);
-                Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW, W->wlSurface()->resource());
+                Tasklist::raiseAndFocus(W);
             }
         };
     } // namespace
