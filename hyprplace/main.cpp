@@ -178,6 +178,14 @@ namespace NHyprplace {
             const auto WA  = MON->logicalBoxMinusReserved();
             const auto CUR = w->m_target->position();
 
+            // a client-maximized (hyprmax) or workarea-filling window is not
+            // ours to place or resize — symmetric with onWindowClose. Without
+            // this the forceSize path reimposes a born-maximized app's old
+            // windowed box and silently un-maximizes it (isFullscreen alone
+            // misses it: hyprmax's maximize never enters compositor fullscreen).
+            if (toldMaximized(w) || coversWorkarea(CUR, WA))
+                return;
+
             // the visible floating windows to stay clear of; maximized and
             // fullscreen ones cover no free space, as in awesome
             std::vector<CBox> blockers;
@@ -380,7 +388,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     lOpen  = Event::bus()->m_events.window.open.listen([](PHLWINDOW w) { onWindowOpen(w); });
     lClose = Event::bus()->m_events.window.close.listen([](PHLWINDOW w) { onWindowClose(w); });
 
-    return {"hyprplace", "spawn placement with geometry memory", "hitori", "1.3.1"};
+    return {"hyprplace", "spawn placement with geometry memory", "hitori", "1.3.2"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
