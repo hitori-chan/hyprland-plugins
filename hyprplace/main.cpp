@@ -14,7 +14,8 @@
 // the screen is full, minimizes how much windows cover each other. Windows
 // that chose their spot (X11, dialogs anchored to a parent) keep it while
 // it's free; X11 override-redirect surfaces are left alone; the result is
-// clamped on-screen (no_offscreen). Position is always remembered; a
+// clamped fully on-screen, border included (no_offscreen), unless the
+// window is too big to fit. Position is always remembered; a
 // genuinely resizable app's last size is remembered too and reimposed at
 // spawn (KWin's "Remember" — the compositor owns the configure, so the
 // client's own size memory can't fight it and a content-sizer like mpv
@@ -220,12 +221,22 @@ namespace NHyprplace {
                 forceSize = true;
             }
 
-            // no_offscreen: a position nudged until the window sits fully in
-            // the workarea. Used both for the remembered spot and the final
-            // placement, so a window dragged partly past an edge before close
-            // reopens clamped against that edge, never discarded to center.
-            const auto clampToWA = [&](const Vector2D& p) {
-                return Vector2D{std::clamp(p.x, WA.x, std::max(WA.x, WA.x + WA.w - size.x)), std::clamp(p.y, WA.y, std::max(WA.y, WA.y + WA.h - size.y))};
+            // no_offscreen: nudge the box fully into the workarea AND leave a
+            // border's width of margin — the border is drawn outside the box,
+            // so a box flush to the workarea edge clips it. Used for the
+            // remembered spot and the final placement alike, so a window
+            // dragged against an edge before close reopens against it, border
+            // shown, never discarded to center. A window too big to fit even
+            // without the margin drops it on that axis rather than going
+            // off-screen — and a maximized/workarea-filling window, wider than
+            // the margin allows, is left exactly where it is.
+            const double BORDER    = std::max(0, w->getRealBorderSize());
+            const auto   clampToWA = [&](const Vector2D& p) {
+                const double mx  = size.x + 2 * BORDER <= WA.w ? BORDER : 0;
+                const double my  = size.y + 2 * BORDER <= WA.h ? BORDER : 0;
+                const double loX = WA.x + mx, hiX = WA.x + WA.w - mx - size.x;
+                const double loY = WA.y + my, hiY = WA.y + WA.h - my - size.y;
+                return Vector2D{std::clamp(p.x, loX, std::max(loX, hiX)), std::clamp(p.y, loY, std::max(loY, hiY))};
             };
 
             std::optional<Vector2D> pos;
@@ -369,7 +380,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     lOpen  = Event::bus()->m_events.window.open.listen([](PHLWINDOW w) { onWindowOpen(w); });
     lClose = Event::bus()->m_events.window.close.listen([](PHLWINDOW w) { onWindowClose(w); });
 
-    return {"hyprplace", "spawn placement with geometry memory", "hitori", "1.3.0"};
+    return {"hyprplace", "spawn placement with geometry memory", "hitori", "1.3.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
