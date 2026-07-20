@@ -399,10 +399,15 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprmax", "toggle", luaToggle);
 
-    return {"hyprmax", "awesome's per-window maximize", "hitori", "1.1.4"};
+    return {"hyprmax", "awesome's per-window maximize", "hitori", "1.1.5"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
+    // listeners before the deferred hops they arm: an event firing
+    // mid-teardown must not re-queue a hop that would then outlive the .so
+    lButton.reset();
+    lDestroy.reset();
+    lFullscreen.reset();
     pendingMax.reset();
     pendingSave.reset();
     pendingAdopt.reset();
@@ -412,9 +417,6 @@ APICALL EXPORT void PLUGIN_EXIT() {
         saveQueued = false;
         saveWindowed();
     }
-    lButton.reset();
-    lDestroy.reset();
-    lFullscreen.reset();
     g_maximized.clear();
     g_lastWindowed.clear();
     swallowedButtons = 0;
