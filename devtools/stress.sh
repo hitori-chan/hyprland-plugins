@@ -72,8 +72,21 @@ done
 
 # ---- build + launch -----------------------------------------------------
 kill_nested
-bash "$HARNESS/build.sh" >/dev/null || { echo "plugin build FAILED"; exit 1; }
-ok "all 8 plugins build"
+# deploy rehearsal FIRST: hyprpm builds against ITS cached headers (the
+# system-default pkg-config resolution), not this run's scratch set — a
+# plugin that cannot build there bricks the whole hyprpm swap (hyprplace
+# 2.0.1 did). These throwaway builds are overwritten just below.
+dep_ok=1
+for p in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd; do
+	env -u PKG_CONFIG_PATH make -B -C "$REPO/$p" >/dev/null 2>&1 || { dep_ok=0; echo "  deploy-build broke: $p"; }
+done
+[[ $dep_ok == 1 ]] && ok "deploy rehearsal: all 8 build against the installed header cache" || bad "deploy rehearsal build"
+# now the real builds for this run's compositor (caller's PKG_CONFIG_PATH)
+build_ok=1
+for p in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd; do
+	make -B -C "$REPO/$p" >/dev/null 2>&1 || { build_ok=0; echo "  build broke: $p"; }
+done
+[[ $build_ok == 1 ]] && ok "all 8 plugins build" || { echo "plugin build FAILED"; exit 1; }
 rm -rf "$STATE"; mkdir -p "$STATE/hyprplace"
 printf '100\t100\t500\t400\tfoot\n200\t80\tlegacyfoot\n' > "$STATE/hyprplace/lastspot.tsv"
 { cat "$HARNESS/nested.lua"; echo 'hl.window_rule({ match = { class = "foot|mpv" }, float = true })'; } > "$CFG"
