@@ -252,15 +252,17 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_next", luaFocusNext);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev", luaFocusPrev);
 
-    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.1.4"};
+    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.1.5"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
-    pendingRaise.reset();
-    pendingFocus.reset();
+    // listeners first, then the deferred work they arm: no new callback can be
+    // queued while we cancel the outstanding ones (as hyprplace does).
     lButton.reset();
     lActive.reset();
     lOpen.reset();
     lDestroy.reset();
+    pendingRaise.reset();
+    pendingFocus.reset();
     g_seq.clear();
 }
