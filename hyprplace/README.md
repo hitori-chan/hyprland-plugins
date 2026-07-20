@@ -22,15 +22,18 @@ free; X11 override-redirect surfaces are left alone.
 
 ## Size
 
-Floating size is the client's own, always — as in awesome. The close-box
-is remembered whole (position + size land in `lastspot.tsv`; rows written
-before 1.2.0 hold position only) but only the position is ever applied: a
-self-remembering app (Firefox) restores its size itself, a content-sizer
-(mpv) opens at its content's size, and a fixed-size dialog is never
-touched. Reimposing the remembered size was tried and dropped — a Wayland
-client obeys any sized configure, so even an unforced one dictates, and a
-class-shared memory row then clips same-class webviews to the main
-window's box.
+A genuinely **resizable** app (mpv, terminals, browsers) also reopens at
+its last size, applied **once** at spawn as the initial geometry: one
+ordinary configure the client follows, nothing owned or re-asserted.
+Unlike the force path used before 1.4.0 (client-serial stomp + forced
+configure), a client-size grant in flight — a born-fullscreen or
+born-maximized window picking its own restore size — still wins, and the
+client's own later resizes are never fought. A **fixed-size dialog**
+(`min == max`) keeps the client's size and is never resized, so nothing
+blinks. Resizability is read from the xdg-toplevel min/max hints; X11
+windows manage their own geometry. The size lands in `lastspot.tsv`
+alongside the position (rows written before 1.2.0 hold position only,
+and warm up to full geometry after the app closes once).
 
 Maximized windows, fullscreen windows, and floats sized to the whole
 workarea cover no free space (and a workarea-covering close leaves no

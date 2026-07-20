@@ -16,16 +16,16 @@
 // that chose their spot (X11, dialogs anchored to a parent) keep it while
 // it's free; X11 override-redirect surfaces are left alone; the result is
 // clamped fully on-screen, border included (no_offscreen), unless the
-// window is too big to fit. The whole close-box is remembered (position +
-// size in the state file) but only the position is ever applied: floating
-// size stays the client's own, as in awesome — a self-remembering app
-// (Firefox) restores its size itself, a content-sizer (mpv) opens at its
-// content's size. (The remembered size used to be reimposed here; a Wayland
-// client obeys any sized configure, so even an unforced one dictates — and
-// a class-shared memory row then clipped same-class webviews to the main
-// window's box.) Maximized windows AND floats sized to the whole workarea
-// consume no free space; the placement scan then puts a new window where
-// it overlaps them the least.
+// window is too big to fit. The whole close-box is remembered, and a
+// genuinely resizable app reopens at its remembered size too, applied ONCE
+// at spawn as the initial geometry: one ordinary configure the client
+// follows, nothing owned or re-asserted — unlike the old force path
+// (client-serial stomp + forced configure), a grant in flight
+// (born-fullscreen/maximized) keeps winning and the client's own later
+// resizes are never fought. Fixed-size dialogs (min == max) keep the
+// client's size and are never resized. Maximized windows AND floats sized
+// to the whole workarea consume no free space; the placement scan then
+// puts a new window where it overlaps them the least.
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
@@ -154,6 +154,21 @@ namespace NHyprplace {
             return b.x <= wa.x && b.y <= wa.y && b.x + b.w >= wa.x + wa.w && b.y + b.h >= wa.y + wa.h;
         }
 
+        // A genuinely user-resizable toplevel — its last size is worth
+        // restoring (mpv, terminals, browsers). A fixed-size dialog pins
+        // min == max in both axes; its size stays the client's, never
+        // reimposed (that would blink it — awesome never did). No toplevel
+        // (X11, unmapped) = can't tell = treat as fixed.
+        bool resizable(PHLWINDOW w) {
+            if (w->m_isX11 || !w->m_xdgSurface || !w->m_xdgSurface->m_toplevel)
+                return false;
+            const auto MIN      = w->m_xdgSurface->m_toplevel->layoutMinSize();
+            const auto MAX      = w->m_xdgSurface->m_toplevel->layoutMaxSize();
+            const bool PINNED_X = MAX.x > 1 && MIN.x >= MAX.x;
+            const bool PINNED_Y = MAX.y > 1 && MIN.y >= MAX.y;
+            return !(PINNED_X && PINNED_Y);
+        }
+
         void placeWindow(PHLWINDOW w) {
             // X11 override-redirect surfaces (menus, tooltips) place themselves
             if (!w || !w->m_isMapped || !w->m_isFloating || w->isX11OverrideRedirect() || !w->m_target || Fullscreen::controller()->isFullscreen(w))
@@ -199,12 +214,15 @@ namespace NHyprplace {
                 return true;
             };
 
-            // The size is the client's own, always — only the position is
-            // placed. The remembered spot is for an app coming back, not for
-            // a second window of an app already on screen (a dialog or
-            // webview sharing the main window's class — Telegram's Instant
-            // View is org.telegram.desktop too — would stack exactly onto
-            // it): with a sibling of this class visible, place fresh.
+            // The size the window spawns at: the client's own, unless this
+            // app is resizable and a real size was remembered — then the
+            // remembered box is applied whole, once. The remembered spot is
+            // for an app coming back, not for a second window of an app
+            // already on screen (a dialog or webview sharing the main
+            // window's class — Telegram's Instant View is
+            // org.telegram.desktop too — would inherit a box that clips it):
+            // with a sibling of this class visible, place fresh.
+            const bool          RESIZABLE = resizable(w);
             std::optional<CBox> stored;
             if (!w->m_isX11 && !w->parent()) {
                 bool sibling = false;
@@ -218,7 +236,9 @@ namespace NHyprplace {
                     if (const auto IT = g_lastSpot.find(w->m_initialClass); IT != g_lastSpot.end())
                         stored = IT->second;
             }
-            const Vector2D size = CUR.size();
+            Vector2D size = CUR.size();
+            if (RESIZABLE && stored && stored->w > 5 && stored->h > 5)
+                size = stored->size();
 
             // no_offscreen: nudge the box fully into the workarea AND leave a
             // border's width of margin — the border is drawn outside the box,
@@ -246,9 +266,9 @@ namespace NHyprplace {
                 if (fits(CBox{CUR.pos(), size}))
                     return;
             } else {
-                // 1: where this app's last window closed, clamped on-screen
-                // so a spot that ran past an edge is honored (against the
-                // edge) rather than lost
+                // 1: where — and, for a resizable app, how big — this app's
+                // last window closed, clamped on-screen so a spot that ran
+                // past an edge is honored (against the edge) rather than lost
                 if (stored) {
                     const auto P = clampToWA(stored->pos());
                     if (fits(CBox{P, size}))
@@ -311,13 +331,18 @@ namespace NHyprplace {
             const auto   FINAL = clampToWA(chosen);
             const double nx = FINAL.x, ny = FINAL.y;
 
-            if (nx == CUR.x && ny == CUR.y)
+            if (nx == CUR.x && ny == CUR.y && size == CUR.size())
                 return;
             // through the layout so the floating algorithm's lastBox tracking
             // follows the placement (a raw target move leaves it stale and a
-            // fullscreen roundtrip would restore the pre-placement spot)
+            // fullscreen roundtrip would restore the pre-placement spot). The
+            // size change goes out as one ordinary configure — no serial
+            // ownership, no force: a client-size grant in flight still wins,
+            // and the client's own later resizes are never fought.
             g_layoutManager->setTargetGeom(CBox{nx, ny, size.x, size.y}, w->m_target);
             w->m_target->warpPositionSize();
+            if (size != CUR.size())
+                w->sendWindowSize();
         }
     }
 
@@ -373,7 +398,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     lOpen  = Event::bus()->m_events.window.open.listen([](PHLWINDOW w) { onWindowOpen(w); });
     lClose = Event::bus()->m_events.window.close.listen([](PHLWINDOW w) { onWindowClose(w); });
 
-    return {"hyprplace", "spawn placement with geometry memory", "hitori", "1.4.0"};
+    return {"hyprplace", "spawn placement with geometry memory", "hitori", "1.5.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
