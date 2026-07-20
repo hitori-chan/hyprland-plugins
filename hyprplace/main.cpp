@@ -1,7 +1,8 @@
 // hyprplace — spawn placement for floating windows:
 //
 //   1. an app reopens where its last window closed (per class, persisted
-//      across relogs), when that spot is free
+//      across relogs), when that spot is free — the app coming back, not a
+//      second window of one already on screen (that places fresh, step 2)
 //   2. otherwise the spot that overlaps the other windows the least —
 //      KWin's default. A lone window keeps the compositor's centered spot
 //      (nothing to overlap), a busy screen fills the gaps, and a full one
@@ -219,8 +220,24 @@ namespace NHyprplace {
             const bool          RESIZABLE = resizable(w);
             std::optional<CBox> stored;
             if (!w->m_isX11 && !w->parent()) {
-                if (const auto IT = g_lastSpot.find(w->m_initialClass); IT != g_lastSpot.end())
-                    stored = IT->second;
+                // "reopen where it last closed" is for an app coming back, not
+                // for a second window of an app already on screen. A dialog or
+                // webview (Telegram's Instant View shares the main window's
+                // org.telegram.desktop class) handed the main window's
+                // remembered geometry — and forced to its size — clips its
+                // content. If a sibling of this class is already visible, place
+                // fresh and let the client size itself (floating size is the
+                // client's).
+                bool sibling = false;
+                for (const auto& O : Desktop::windowState()->windows()) {
+                    if (O != w && O->m_isMapped && !O->isHidden() && O->m_initialClass == w->m_initialClass) {
+                        sibling = true;
+                        break;
+                    }
+                }
+                if (!sibling)
+                    if (const auto IT = g_lastSpot.find(w->m_initialClass); IT != g_lastSpot.end())
+                        stored = IT->second;
             }
             Vector2D size      = CUR.size();
             bool     forceSize = false;
@@ -388,7 +405,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     lOpen  = Event::bus()->m_events.window.open.listen([](PHLWINDOW w) { onWindowOpen(w); });
     lClose = Event::bus()->m_events.window.close.listen([](PHLWINDOW w) { onWindowClose(w); });
 
-    return {"hyprplace", "spawn placement with geometry memory", "hitori", "1.3.2"};
+    return {"hyprplace", "spawn placement with geometry memory", "hitori", "1.3.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
