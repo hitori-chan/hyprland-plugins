@@ -371,15 +371,17 @@ namespace NHyprbar {
 
         // run a shown entry, or the raw query for the Exec one
         static void launch(const SShown& S, bool forceTerminal) {
-            std::string cmd  = S.app >= 0 ? apps[S.app].exec : typed;
-            std::string name = S.app >= 0 ? apps[S.app].name : "Exec: " + typed;
+            std::string cmd = S.app >= 0 ? apps[S.app].exec : typed;
             while (!cmd.empty() && cmd.back() == ' ')
                 cmd.pop_back();
             if (cmd.empty())
                 return;
             if ((S.app >= 0 && apps[S.app].terminal) || forceTerminal)
                 cmd = cfg.terminal->value() + " -e " + cmd;
-            counts[name]++; // most-launched sorts first next time (in-memory, immediate)
+            // most-launched sorts first next time (in-memory, immediate); raw
+            // Exec one-offs are not counted — they'd grow the file unbounded
+            if (S.app >= 0)
+                counts[apps[S.app].name]++;
             // the disk writes ride the deferred hop with the spawn, off the key emission
             pendingExec = g_pEventLoopManager->doLaterLock([cmd, hist = typed]() {
                 saveCounts();
