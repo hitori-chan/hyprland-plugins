@@ -7,5 +7,8 @@ CLAUDE.md
 HANDOFF.md
 .claude/
 
-# local dev tooling (nested-Hyprland test harness; not a plugin)
-devtools/
+# devtools — nested-Hyprland test tooling: track the sources, not the
+# build artifacts (the vptr binary + the wayland-scanner protocol glue)
+devtools/vptr
+devtools/vptr-proto.c
+devtools/vptr-proto.h
