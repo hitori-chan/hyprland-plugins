@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # devtools/stress.sh — the pre-deploy regression gate. Boots the full plugin
 # stack in the nested harness and drives it through the storm battery:
-# placement memory, sibling freshness, spawn/close storms, the notification
+# placement memory, sibling geometry, spawn/close storms, the notification
 # cap, state churn round-trips, hostile state files and a real-input storm
 # (vptr). Every assertion is exact; any failure fails the run.
 #
@@ -102,15 +102,26 @@ dsp "hl.dsp.exec_cmd('foot --window-size-pixels=600x300')"; sleep 2
 expect "size memory: remembered 500x400 beats requested 600x300 at (100,100)" \
 	"any(c['class']=='foot' and c['at']==[100,100] and c['size']==[500,400] for c in cs)"
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=600x300')"; sleep 2
-expect "sibling places fresh at its own 600x300, off the memory spot" \
-	"any(c['class']=='foot' and c['size']==[600,300] and c['at']!=[100,100] for c in cs)"
-expect "no exact stacking between the two" \
+expect "sibling is born at the remembered 500x400 too" \
+	"sum(1 for c in cs if c['class']=='foot' and c['size']==[500,400])==2"
+expect "sibling lands off the taken spot — no exact stacking" \
 	"len(set(tuple(c['at']) for c in cs if c['class']=='foot'))==2"
+# the spot is occupied, not retired: free it and the next sibling takes it
+A="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot' and c['at']==[100,100]), ''))")"
+dsp "hl.dsp.window.close({window=\"address:$A\"})"; sleep 1
+dsp "hl.dsp.exec_cmd('foot --window-size-pixels=600x300')"; sleep 2
+expect "freed spot reclaimed: next sibling lands at (100,100) 500x400" \
+	"any(c['class']=='foot' and c['at']==[100,100] and c['size']==[500,400] for c in cs)"
 
-# fullscreen roundtrip on the focused (second) foot
+# fullscreen roundtrip on the focused (newest) foot
+feet() { clients | python3 -c "
+import json,sys
+print(sorted((c['at'],c['size']) for c in json.load(sys.stdin) if c['class']=='foot'))"; }
+FEET="$(feet)"
 dsp "hl.dsp.window.fullscreen()"; sleep 0.7; dsp "hl.dsp.window.fullscreen()"; sleep 0.9
-expect "fullscreen roundtrip restores the exact box" \
-	"any(c['class']=='foot' and c['size']==[600,300] and c['fullscreen']==0 for c in cs)"
+chk "fullscreen roundtrip restores the exact boxes" test "$(feet)" = "$FEET"
 
 # ---- close storm + memory update ---------------------------------------
 for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in json.load(sys.stdin) if c['class']=='foot']"); do

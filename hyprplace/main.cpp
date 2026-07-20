@@ -1,8 +1,9 @@
 // hyprplace — spawn placement for floating windows:
 //
 //   1. an app reopens where its last window closed (per class, persisted
-//      across relogs), when that spot is free — the app coming back, not a
-//      second window of one already on screen (that places fresh, step 2)
+//      across relogs): every new window of the class is born at the
+//      remembered size, and the remembered spot lands when it's free — a
+//      sibling sitting on it sends the newcomer to step 2 instead
 //   2. otherwise the spot that overlaps the other windows the least —
 //      KWin's default. A lone window keeps the compositor's centered spot
 //      (nothing to overlap), a busy screen fills the gaps, and a full one
@@ -141,9 +142,6 @@ namespace NHyprplace {
             const auto IT = g_lastSpot.find(CLS);
             if (IT == g_lastSpot.end() || IT->second.w <= 5 || IT->second.h <= 5)
                 return;
-            for (const auto& O : Desktop::windowState()->windows())
-                if (O != w && O->m_isMapped && !O->isHidden() && O->m_initialClass == CLS)
-                    return; // a sibling is on screen: place fresh (see placeWindow)
             size = IT->second.size();
         }
 
@@ -194,26 +192,16 @@ namespace NHyprplace {
 
             // The size the window spawns at: the client's own, unless this
             // app is resizable and a real size was remembered — then the
-            // remembered box is applied whole, once. The remembered spot is
-            // for an app coming back, not for a second window of an app
-            // already on screen (a dialog or webview sharing the main
-            // window's class — Telegram's Instant View is
-            // org.telegram.desktop too — would inherit a box that clips it):
-            // with a sibling of this class visible, place fresh.
+            // remembered box is applied whole, once. Every new window of the
+            // class gets the size (a second terminal is born like the
+            // first); the spot only lands when free (fits() below), so a
+            // sibling sitting on it sends the newcomer to least-overlap,
+            // never onto an exact stack.
             const bool          RESIZABLE = NHyprCommon::resizable(w);
             std::optional<CBox> stored;
-            if (!w->m_isX11 && !w->parent()) {
-                bool sibling = false;
-                for (const auto& O : Desktop::windowState()->windows()) {
-                    if (O != w && O->m_isMapped && !O->isHidden() && O->m_initialClass == w->m_initialClass) {
-                        sibling = true;
-                        break;
-                    }
-                }
-                if (!sibling)
-                    if (const auto IT = g_lastSpot.find(w->m_initialClass); IT != g_lastSpot.end())
-                        stored = IT->second;
-            }
+            if (!w->m_isX11 && !w->parent())
+                if (const auto IT = g_lastSpot.find(w->m_initialClass); IT != g_lastSpot.end())
+                    stored = IT->second;
             Vector2D size = CUR.size();
             if (RESIZABLE && stored && stored->w > 5 && stored->h > 5)
                 size = stored->size();
@@ -385,7 +373,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             g_lifecycle.listen(events.window.predictSize, [](PHLWINDOW w, Vector2D& size) { onPredictSize(w, size); });
     }(Event::bus()->m_events);
 
-    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.0.2"};
+    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.1.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
