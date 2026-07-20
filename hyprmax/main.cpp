@@ -24,6 +24,7 @@
 // hl.plugin.hyprmax.toggle() — the Mod+M bind target. No config.
 
 #include "common/lifecycle.hpp"
+#include "common/order.hpp"
 #include "common/persist.hpp"
 #include "common/queries.hpp"
 
@@ -327,6 +328,9 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         HyprlandAPI::addNotification(PHANDLE, "[hyprmax] Version mismatch: rebuild the plugin against the running Hyprland", CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
         throw std::runtime_error("[hyprmax] version mismatch");
     }
+
+    // the immovable-maximized swallow must win over click-to-raise
+    NHyprCommon::mustLoadBefore(PHANDLE, "hyprmax", {"hyprclick"});
 
     loadWindowed();
 

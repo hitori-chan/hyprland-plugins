@@ -68,6 +68,7 @@
 // The code is split by concern — see hyprnotify.hpp for the module map.
 
 #include "common/lifecycle.hpp"
+#include "common/order.hpp"
 
 #include "hyprnotify.hpp"
 
@@ -201,6 +202,9 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         HyprlandAPI::addNotification(PHANDLE, "[hyprnotify] Version mismatch: rebuild the plugin against the running Hyprland", CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
         throw std::runtime_error("[hyprnotify] version mismatch");
     }
+
+    // a notification-card click must never reach the window beneath it
+    NHyprCommon::mustLoadBefore(PHANDLE, "hyprnotify", {"hyprmax", "hyprclick"});
 
     // Defaults mirror theme.lua; the config overwrites them from the theme.
     cfg.font            = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:font", "font family", "Fira Code");

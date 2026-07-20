@@ -117,6 +117,7 @@
 // unit next to the state it paints from; see hyprbar.hpp for the module map.
 
 #include "common/lifecycle.hpp"
+#include "common/order.hpp"
 
 #include "hyprbar.hpp"
 
@@ -202,6 +203,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         HyprlandAPI::addNotification(PHANDLE, "[hyprbar] Version mismatch: rebuild the plugin against the running Hyprland", CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
         throw std::runtime_error("[hyprbar] version mismatch");
     }
+
+    // the bar swallows its strip clicks and opens tray menus before they
+    // count as window clicks anywhere else
+    NHyprCommon::mustLoadBefore(PHANDLE, "hyprbar", {"hyprnotify", "hyprmax", "hyprclick"});
 
     // Defaults mirror theme.lua; the config overwrites them from the theme.
     cfg.height         = makeShared<Config::Values::CIntValue>("plugin:hyprbar:height", "bar height in logical px (reserve it: monitor reserved top)", 26);
