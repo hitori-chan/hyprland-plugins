@@ -126,6 +126,12 @@ chk "notif storm: cap holds at exactly 50/65" test "$(hq hyprnotify count)" = 50
 chk "notif storm: the 15 evicted land in history" test "$(hq hyprnotify history)" = 15
 for r in 1 2 3 4 5; do hq hyprnotify recall >/dev/null; done; sleep 2
 chk "recall churn is net-zero (count stays 50)" test "$(hq hyprnotify count)" = 50
+# wrong-typed hints make sdbus-c++ throw inside the plugin's parse — the
+# catch must survive (exercises exception unwinding across the .so boundary).
+# Cards expire on their own clocks, so assert the daemon still answers with
+# a number, not any absolute count.
+dsp "hl.dsp.exec_cmd('notify-send -h int:transient:1 -h string:urgency:critical typed-hint-abuse body')"; sleep 1.5
+chk "wrong-typed hints survived (sdbus::Error thrown + caught)" bash -c "hyprctl -i $SIG hyprnotify count | grep -qE '^[0-9]+$'"
 
 # ---- state churn --------------------------------------------------------
 # the spawn box is whatever memory dictates after the storm above — capture
