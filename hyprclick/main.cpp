@@ -13,6 +13,10 @@
 // 4. `hl.plugin.hyprclick.focus_next()/focus_prev()` — awesome's Mod+J/K
 //    (focus.byidx): cycle the workspace's windows in arrival order —
 //    the native cycle walks the z-order, which rule 2's raises rotate.
+// 5. A click gesture aimed at a window that died under it never retargets:
+//    the tail of a fast double-click on a click-to-close surface (an image
+//    viewer's backdrop) is swallowed instead of focusing and raising
+//    whatever sat beneath.
 //
 // Loads after hyprbar (which swallows its strip clicks) and hyprmax
 // (which swallows Super-grabs on maximized windows): a cancelled press
@@ -40,6 +44,7 @@
 #include <linux/input-event-codes.h>
 
 #include <algorithm>
+#include <chrono>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -53,6 +58,19 @@ static NHyprCommon::CHop       pendingRaise, pendingFocus;
 // a cycle order under click-to-raise (every focus rotates it)
 static std::unordered_map<void*, uint64_t> g_seq;
 static uint64_t                            g_seqNext = 0;
+
+// Corpse-guard gesture timing: a close this soon after a press on the
+// window reads as click-to-close, and a re-press this soon after that
+// close is the tail of the same double-click gesture (Qt and GTK both
+// default the double-click interval to 400ms).
+constexpr auto                               CLICK_KILL = std::chrono::milliseconds(500);
+constexpr auto                               GESTURE    = std::chrono::milliseconds(400);
+
+static PHLWINDOWREF                          g_pressWindow; // who took the last press, and when
+static std::chrono::steady_clock::time_point g_pressAt{};
+static uint32_t                              g_swallowRelease = 0;
+static CBox                                  g_corpseBox; // where the window the press killed last stood
+static std::chrono::steady_clock::time_point g_corpseUntil{};
 
 static PHLWINDOW                           windowUnderCursor() {
     if (!g_pInputManager)
@@ -88,13 +106,27 @@ static void raiseWindow(PHLWINDOW w) {
 }
 
 static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
-    if (e.state != WL_POINTER_BUTTON_STATE_PRESSED)
-        return;
-
     // emissions precede the compositor's lock handling: a click on the
-    // lockscreen must not reorder the windows beneath it
-    if (NHyprCommon::sessionLocked())
+    // lockscreen must not reorder the windows beneath it, and half-tracked
+    // swallow state must not survive into the lock
+    if (NHyprCommon::sessionLocked()) {
+        g_swallowRelease = 0;
+        g_corpseUntil    = {};
+        g_pressWindow.reset();
         return;
+    }
+
+    const uint32_t BIT = e.button == BTN_LEFT ? 1u : e.button == BTN_RIGHT ? 2u : e.button == BTN_MIDDLE ? 4u : 8u;
+
+    if (e.state == WL_POINTER_BUTTON_STATE_RELEASED) {
+        // the release of a press swallowed below: swallow it too, or the
+        // window under the cursor gets a release it never saw pressed
+        if (g_swallowRelease & BIT) {
+            g_swallowRelease &= ~BIT;
+            info.cancelled = true;
+        }
+        return;
+    }
 
     // Already swallowed by an earlier listener — hyprbar cancels clicks on
     // its strip and open tray menus, hyprmax cancels Super-grabs on
@@ -107,6 +139,25 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
     if (g_pInputManager->m_lastFocusOnLS)
         return;
 
+    const auto NOW = std::chrono::steady_clock::now();
+
+    // The corpse guard: a press inside the box of the window the previous
+    // press just killed is the tail of the same gesture — a fast double
+    // click on a click-to-close surface (an image viewer's backdrop),
+    // aimed at a window that died faster than the hand can abort. Left
+    // through, the compositor would focus — and the raise below would
+    // lift — whatever sat beneath. Cancelling here stops focus, raise and
+    // delivery at once: this emission precedes all compositor handling.
+    if (NOW < g_corpseUntil && g_corpseBox.containsPoint(g_pInputManager->getMouseCoordsInternal())) {
+        info.cancelled = true;
+        g_swallowRelease |= BIT;
+        return;
+    }
+
+    const auto W  = windowUnderCursor();
+    g_pressWindow = W;
+    g_pressAt     = NOW;
+
     // awesome's click-to-raise. A Super+left/right press raises too —
     // grabbing a window raised in awesome as well.
     if (e.button != BTN_LEFT && !(e.button == BTN_RIGHT && superHeld()))
@@ -114,7 +165,7 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
 
     // deferred out of the button emission, like the focus raise below — the
     // compositor's own press handling still walks the stack we'd reorder
-    if (const auto W = windowUnderCursor()) {
+    if (W) {
         PHLWINDOWREF WR{W};
         pendingRaise.arm([WR]() {
             if (NHyprCommon::sessionLocked())
@@ -250,15 +301,31 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             g_seqNext++;
     });
     g_lifecycle.listen(Event::bus()->m_events.window.destroy, [](PHLWINDOWREF wr) { g_seq.erase(wr.get()); });
+    g_lifecycle.listen(Event::bus()->m_events.window.close, [](PHLWINDOW w) {
+        // the pressed window died right after the press: click-to-close.
+        // Arm the corpse guard over where the user last saw it (a
+        // fullscreen viewer's corpse is the whole screen).
+        if (!w || w != g_pressWindow.lock())
+            return;
+        g_pressWindow.reset();
+        const auto NOW = std::chrono::steady_clock::now();
+        if (NOW - g_pressAt > CLICK_KILL)
+            return;
+        g_corpseBox   = w->geometricBox(Desktop::View::IGeometric::GEOMETRIC_CURRENT);
+        g_corpseUntil = NOW + GESTURE;
+    });
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev_here", luaFocusPrevHere);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_next", luaFocusNext);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev", luaFocusPrev);
 
-    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.1.6"};
+    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.2.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
     g_lifecycle.resetAll(); // listeners first, then every hop
     g_seq.clear();
+    g_swallowRelease = 0;
+    g_corpseUntil    = {};
+    g_pressWindow.reset();
 }

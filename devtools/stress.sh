@@ -2,8 +2,9 @@
 # devtools/stress.sh — the pre-deploy regression gate. Boots the full plugin
 # stack in the nested harness and drives it through the storm battery:
 # placement memory, sibling geometry, spawn/close storms, the notification
-# cap, state churn round-trips, hostile state files and a real-input storm
-# (vptr). Every assertion is exact; any failure fails the run.
+# cap, state churn round-trips, hostile state files, a real-input storm
+# (vptr) and the click-corpse guard. Every assertion is exact; any failure
+# fails the run.
 #
 #   stress.sh [HYPR_BIN]     default /usr/local/bin/Hyprland — pass a fork
 #                            build (e.g. ~/repo/Hyprland/build/Hyprland) to
@@ -89,7 +90,7 @@ done
 [[ $build_ok == 1 ]] && ok "all 8 plugins build" || { echo "plugin build FAILED"; exit 1; }
 rm -rf "$STATE"; mkdir -p "$STATE/hyprplace"
 printf '100\t100\t500\t400\tfoot\n200\t80\tlegacyfoot\n' > "$STATE/hyprplace/lastspot.tsv"
-{ cat "$HARNESS/nested.lua"; echo 'hl.window_rule({ match = { class = "foot|mpv" }, float = true })'; } > "$CFG"
+{ cat "$HARNESS/nested.lua"; echo 'hl.window_rule({ match = { class = "foot|mpv|corpseA|corpseB" }, float = true })'; } > "$CFG"
 HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" bash "$HARNESS/launch.sh" >/dev/null 2>&1 || { echo "nested launch FAILED"; exit 1; }
 SIG="$(cat "$HARNESS/nested.sig")"
 LOG="$HARNESS/nested.log"
@@ -206,6 +207,38 @@ printf 'move 250 200\nsleep 50\npress 272\nsleep 40\nrelease 272\nsleep 100\n' |
 sleep 0.8
 expect "post-storm click still raises + focuses (no stuck swallow)" \
 	"cs[-1]['class']=='foot' if cs else False"
+
+# ---- corpse guard (hyprclick) -------------------------------------------
+# the tail of a fast double-click on a click-to-close window (Telegram's
+# image viewer backdrop) lands after the unmap: it must be swallowed, not
+# focus-and-raise whatever sat beneath (it flipped the live stack).
+dsp "hl.dsp.exec_cmd('foot -a corpseA')"; sleep 1.6
+dsp "hl.dsp.exec_cmd('foot -a corpseB')"; sleep 1.6
+dsp "hl.dsp.exec_cmd('foot -a corpseB -F')"; sleep 1.6
+# a point over corpseA that corpseB doesn't cover: the press that must die
+P="$(clients | python3 -c "
+import json,sys
+cs=json.load(sys.stdin)
+A=next(c for c in cs if c['class']=='corpseA')
+B=next(c for c in cs if c['class']=='corpseB' and c['fullscreen']==0)
+def inside(p,c): return c['at'][0]<=p[0]<c['at'][0]+c['size'][0] and c['at'][1]<=p[1]<c['at'][1]+c['size'][1]
+pts=[(A['at'][0]+dx,A['at'][1]+dy) for dx in (30,A['size'][0]-30) for dy in (30,A['size'][1]-30)]
+x,y=next(p for p in pts if not inside(p,B))
+print(x,y)")"
+V="$(clients | python3 -c "
+import json,sys
+print(next(c['address'] for c in json.load(sys.stdin) if c['fullscreen']==2))")"
+( printf "move ${P% *} ${P#* }\nsleep 30\npress 272\nsleep 40\nrelease 272\nsleep 120\npress 272\nsleep 40\nrelease 272\nsleep 60\n" | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1 ) &
+sleep 0.12; dsp "hl.dsp.window.close({window=\"address:$V\"})"
+wait; sleep 0.9
+expect "corpse guard: double-click through a dying viewer keeps the stack" \
+	"cs[-1]['class']=='corpseB'"
+chk "corpse guard: focus stayed with the viewer's app" bash -c \
+	"hyprctl -i $SIG activewindow -j | python3 -c 'import json,sys;sys.exit(0 if json.load(sys.stdin)[\"class\"]==\"corpseB\" else 1)'"
+for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in json.load(sys.stdin) if c['class'] in ('corpseA','corpseB')]"); do
+	dsp "hl.dsp.window.close({window=\"address:$a\"})"
+done
+sleep 0.8
 
 # ---- log hygiene --------------------------------------------------------
 chk "log clean (only known-benign lines)" bash -c \
