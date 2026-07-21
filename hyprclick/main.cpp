@@ -40,6 +40,7 @@
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/managers/SeatManager.hpp>
 #include <hyprland/src/helpers/memory/Memory.hpp>
+#include <hyprland/src/state/MonitorState.hpp>
 
 #include <linux/input-event-codes.h>
 
@@ -70,7 +71,27 @@ static PHLWINDOWREF                          g_pressWindow; // who took the last
 static std::chrono::steady_clock::time_point g_pressAt{};
 static uint32_t                              g_swallowRelease = 0;
 static CBox                                  g_corpseBox; // where the window the press killed last stood
+static PHLWINDOWREF                          g_corpseOwner; // while it lives, presses resolving to it pass
+static WORKSPACEID                           g_corpseWs = WORKSPACE_INVALID;
 static std::chrono::steady_clock::time_point g_corpseUntil{};
+
+// Arm (or grow) the corpse over `box` if the press on `w` was recent
+// enough to have caused its state change. A second arming inside a live
+// gesture (fullscreen exit, then the unmap) must never shrink the guarded
+// area, so an active corpse unions instead of being replaced.
+static void                                  armCorpse(PHLWINDOW w, const CBox& box) {
+    const auto NOW = std::chrono::steady_clock::now();
+    if (NOW - g_pressAt > CLICK_KILL)
+        return;
+    if (NOW < g_corpseUntil) {
+        const double X = std::min(g_corpseBox.x, box.x), Y = std::min(g_corpseBox.y, box.y);
+        g_corpseBox = CBox{X, Y, std::max(g_corpseBox.x + g_corpseBox.w, box.x + box.w) - X, std::max(g_corpseBox.y + g_corpseBox.h, box.y + box.h) - Y};
+    } else
+        g_corpseBox = box;
+    g_corpseOwner = w;
+    g_corpseWs    = w->workspaceID();
+    g_corpseUntil = NOW + GESTURE;
+}
 
 static PHLWINDOW                           windowUnderCursor() {
     if (!g_pInputManager)
@@ -112,6 +133,7 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
     if (NHyprCommon::sessionLocked()) {
         g_swallowRelease = 0;
         g_corpseUntil    = {};
+        g_corpseOwner.reset();
         g_pressWindow.reset();
         return;
     }
@@ -140,21 +162,30 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
         return;
 
     const auto NOW = std::chrono::steady_clock::now();
+    const auto POS = g_pInputManager->getMouseCoordsInternal();
+    const auto W   = windowUnderCursor();
 
     // The corpse guard: a press inside the box of the window the previous
-    // press just killed is the tail of the same gesture — a fast double
-    // click on a click-to-close surface (an image viewer's backdrop),
+    // press just killed is the tail of the same gesture — a fast click
+    // burst on a click-to-close surface (an image viewer's backdrop),
     // aimed at a window that died faster than the hand can abort. Left
     // through, the compositor would focus — and the raise below would
     // lift — whatever sat beneath. Cancelling here stops focus, raise and
     // delivery at once: this emission precedes all compositor handling.
-    if (NOW < g_corpseUntil && g_corpseBox.containsPoint(g_pInputManager->getMouseCoordsInternal())) {
-        info.cancelled = true;
-        g_swallowRelease |= BIT;
-        return;
+    // Each swallowed press extends the guard (a burst is one gesture); a
+    // press resolving to the corpse's still-living owner passes — that is
+    // a click ON the window, not through where it used to be; a workspace
+    // switch ends the gesture's claim on those coordinates.
+    if (NOW < g_corpseUntil && g_corpseBox.containsPoint(POS) && (!W || W != g_corpseOwner.lock())) {
+        const auto MON = State::monitorState()->query().vec(POS).run();
+        if (MON && MON->activeWorkspaceID() == g_corpseWs) {
+            info.cancelled = true;
+            g_swallowRelease |= BIT;
+            g_corpseUntil = NOW + GESTURE;
+            return;
+        }
     }
 
-    const auto W  = windowUnderCursor();
     g_pressWindow = W;
     g_pressAt     = NOW;
 
@@ -304,22 +335,30 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_lifecycle.listen(Event::bus()->m_events.window.close, [](PHLWINDOW w) {
         // the pressed window died right after the press: click-to-close.
         // Arm the corpse guard over where the user last saw it (a
-        // fullscreen viewer's corpse is the whole screen).
+        // fullscreen viewer's corpse is the whole screen — this fires
+        // before the unmap resets fullscreen state).
         if (!w || w != g_pressWindow.lock())
             return;
         g_pressWindow.reset();
-        const auto NOW = std::chrono::steady_clock::now();
-        if (NOW - g_pressAt > CLICK_KILL)
+        armCorpse(w, w->geometricBox(Desktop::View::IGeometric::GEOMETRIC_CURRENT));
+    });
+    g_lifecycle.listen(Event::bus()->m_events.window.fullscreen, [](PHLWINDOW w) {
+        // the pressed window leaving fullscreen right after the press is
+        // the click-to-close family too: some viewers exit fullscreen
+        // before unmapping, and in that gap the restored box no longer
+        // covers what the screen still shows. Guard the monitor box it
+        // vacated; the owner lives, so presses resolving to it still pass.
+        if (!w || w != g_pressWindow.lock() || Fullscreen::controller()->isFullscreen(w))
             return;
-        g_corpseBox   = w->geometricBox(Desktop::View::IGeometric::GEOMETRIC_CURRENT);
-        g_corpseUntil = NOW + GESTURE;
+        if (const auto MON = w->m_monitor.lock())
+            armCorpse(w, MON->logicalBox());
     });
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev_here", luaFocusPrevHere);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_next", luaFocusNext);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev", luaFocusPrev);
 
-    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.2.0"};
+    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.2.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
@@ -327,5 +366,6 @@ APICALL EXPORT void PLUGIN_EXIT() {
     g_seq.clear();
     g_swallowRelease = 0;
     g_corpseUntil    = {};
+    g_corpseOwner.reset();
     g_pressWindow.reset();
 }

@@ -228,10 +228,12 @@ print(x,y)")"
 V="$(clients | python3 -c "
 import json,sys
 print(next(c['address'] for c in json.load(sys.stdin) if c['fullscreen']==2))")"
-( printf "move ${P% *} ${P#* }\nsleep 30\npress 272\nsleep 40\nrelease 272\nsleep 120\npress 272\nsleep 40\nrelease 272\nsleep 60\n" | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1 ) &
+# a 5-press burst spanning ~700ms: the tail outlives a fixed 400ms corpse,
+# so this also asserts each swallowed press extends the gesture
+( { printf "move ${P% *} ${P#* }\nsleep 30\n"; for i in 1 2 3 4 5; do printf "press 272\nsleep 40\nrelease 272\nsleep 110\n"; done; } | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1 ) &
 sleep 0.12; dsp "hl.dsp.window.close({window=\"address:$V\"})"
 wait; sleep 0.9
-expect "corpse guard: double-click through a dying viewer keeps the stack" \
+expect "corpse guard: click burst through a dying viewer keeps the stack" \
 	"cs[-1]['class']=='corpseB'"
 chk "corpse guard: focus stayed with the viewer's app" bash -c \
 	"hyprctl -i $SIG activewindow -j | python3 -c 'import json,sys;sys.exit(0 if json.load(sys.stdin)[\"class\"]==\"corpseB\" else 1)'"
