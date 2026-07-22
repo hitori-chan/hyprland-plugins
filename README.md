@@ -1,6 +1,7 @@
 # hyprland-plugins
 
-Native Hyprland plugins reproducing the AwesomeWM feel, one behavior each.
+Native Hyprland plugins, AwesomeWM-inspired, one behavior each — built for
+native Hyprland/Wayland design, performance and efficiency.
 Built and loaded with [`hyprpm`](https://wiki.hypr.land/Plugins/Using-Plugins/).
 
 | plugin       | what it does |
@@ -40,7 +41,11 @@ hyprpm update --hl-url https://github.com/hitori-chan/Hyprland
 
 ## Layout
 
-One directory per plugin, each Makefile builds its `.so` in place;
-[`hyprpm.toml`](hyprpm.toml) is the manifest. `hyprbar` additionally links
-`sdbus-c++`, `librsvg` and `libudev`; `hyprnotify` links `sdbus-c++` and
-`hyprgraphics`; `hyprpad` links `sdbus-c++` and `libinput`.
+One directory per plugin, each Makefile builds its `.so` in place through
+the shared build in [`common/common.mk`](common/common.mk);
+[`hyprpm.toml`](hyprpm.toml) is the manifest. `common/` holds the shared
+machinery (lifecycle, queries, persistence, bus link, texture cache,
+load-order asserts); `devtools/` holds the test tooling. `hyprbar`
+additionally links `sdbus-c++`, `librsvg` and `libudev`; `hyprnotify` links
+`sdbus-c++` and `hyprgraphics`; `hyprpad` links `sdbus-c++` and `libinput`;
+`hyprosd` links `sdbus-c++`.

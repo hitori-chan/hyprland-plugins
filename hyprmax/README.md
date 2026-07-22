@@ -6,6 +6,10 @@ Awesome's per-window maximize. No config.
   fullscreen state: the client is told (xdg `set_maximized`) and sized to
   the workarea. Compositor-maximized windows (initial-maximize, app
   requests) unmaximize through the native controller.
+- **Adopts compositor-granted maximize on sight** — a window the compositor
+  maximized (a born-maximized app, a maximize request) is converted to the
+  plugin's per-window flag, freeing the workspace's single fullscreen slot
+  so a later fullscreen window can't evict it.
 - **Immovable while maximized** — Super+click drags on a maximized window
   are swallowed. Loads before `hyprclick` so the swallow wins.
 - **Windowed size remembered per app** — across closes and relogs

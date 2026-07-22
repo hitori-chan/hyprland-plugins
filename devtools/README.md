@@ -1,10 +1,26 @@
 # devtools
 
 Dev tooling for exercising the plugins in the nested Hyprland
-(`~/.local/share/hypr-nested/`). Not plugins (not in hyprpm.toml). Only the
-sources are tracked — `vptr.c`, the `Makefile`, and this README; the `vptr`
-binary and the `vptr-proto.{c,h}` wayland-scanner glue are build artifacts
-that `make` regenerates.
+(`~/.local/share/hypr-nested/`). Not plugins (not in hyprpm.toml). Tracked:
+`stress.sh`, `vptr.c`, the `Makefile`, and this README; the `vptr` binary
+and the `vptr-proto.{c,h}` wayland-scanner glue are build artifacts that
+`make` regenerates.
+
+## stress.sh — the pre-deploy regression gate
+
+Exact assertions over the nested harness + `vptr`: placement memory,
+spawn/close storms, the notification cap, churn round-trips, hostile state
+files, an input storm, log hygiene. Check #1 refuses to run when the
+installed headers' `version.h` hash doesn't match the running binary. Run
+it before every deploy; it must end `ALL CHECKS PASSED`.
+
+```
+./stress.sh                        # gate the installed compositor
+PKG_CONFIG_PATH=$SCRATCH/share/pkgconfig \
+  ./stress.sh ~/repo/Hyprland/build/Hyprland   # gate an uninstalled fork build
+```
+
+Needs the nested harness at `~/.local/share/hypr-nested`.
 
 ## vptr — virtual-pointer injector
 
