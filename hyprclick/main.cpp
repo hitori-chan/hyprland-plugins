@@ -3,7 +3,10 @@
 // 1. Click-to-raise: a plain left click brings the clicked window to the
 //    top — over a maximized window too; clicking a fullscreen/maximized
 //    window tucks the floaters back behind it. (Focus itself is native
-//    follow_mouse; Hyprland never raises on click by itself.)
+//    follow_mouse. The compositor raises the seat's pointer-focus window
+//    on every press; the raise here resolves a FRESH hit test and runs
+//    after it, so a stale pointer focus — a map or unmap under a still
+//    cursor — gets corrected, not compounded.)
 // 2. Keyboard focus raises, hover focus doesn't (awesome's rule): focus
 //    changes from binds and dispatchers bring the window to the top;
 //    sloppy focus never does.
@@ -108,20 +111,21 @@ static bool superHeld() {
 static void raiseWindow(PHLWINDOW w) {
     if (Fullscreen::controller()->isFullscreen(w)) {
         // "raising" the fullscreen/maximized window = tucking the floaters
-        // back behind it (lower() clears their allowed-over flag). Two
-        // phases: raise/lower rotate the window list, never mutate
-        // mid-iteration. windows() runs bottom->top and lower() drops each to
-        // the very bottom, so lowering in that order would REVERSE the
-        // floaters among themselves (the topmost lands lowest) — a second
-        // window behind the fullscreen one ends up under the first. Lower
-        // top->bottom instead: relative order preserved, as awesome does.
-        std::vector<PHLWINDOW> demote;
+        // back behind it. Clear ONLY the allowed-over flag (under a
+        // fullscreen window the compositor shows floaters by flag, not
+        // stack position) — never lower(): the re-stack outlives a
+        // transient fullscreen viewer, and the chat window it was opened
+        // from ended buried under every maximized window on the workspace
+        // (the flag appears mid-viewer through the compositor's
+        // pointer-focus raise on press; reproduced live). Pinned windows
+        // stay above fullscreen by design, like awesome's ontop.
         for (const auto& OW : Desktop::windowState()->windows()) {
-            if (OW != w && OW->m_isMapped && OW->m_workspace == w->m_workspace && OW->m_allowedOverFullscreen)
-                demote.push_back(OW);
+            if (OW == w || !OW->m_isMapped || OW->m_workspace != w->m_workspace || !OW->m_allowedOverFullscreen || OW->m_pinned)
+                continue;
+            OW->m_allowedOverFullscreen = false;
+            OW->updateFullscreenInputState();
+            *OW->alpha(Desktop::View::WINDOW_ALPHA_FULLSCREEN) = OW->isBlockedByFullscreen() ? 0.F : 1.F;
         }
-        for (auto it = demote.rbegin(); it != demote.rend(); ++it)
-            Desktop::windowState()->lower(*it);
     } else if (w->m_isFloating)
         Desktop::windowState()->raise(w);
 }
@@ -174,11 +178,14 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
     // delivery at once: this emission precedes all compositor handling.
     // Each swallowed press extends the guard (a burst is one gesture); a
     // press resolving to the corpse's still-living owner passes — that is
-    // a click ON the window, not through where it used to be; a workspace
-    // switch ends the gesture's claim on those coordinates.
+    // a click ON the window, not through where it used to be; and the
+    // gesture's claim ends off the corpse's workspace, judged by the
+    // window the press would land on (a special-workspace window over the
+    // corpse box is not the corpse's).
     if (NOW < g_corpseUntil && g_corpseBox.containsPoint(POS) && (!W || W != g_corpseOwner.lock())) {
-        const auto MON = State::monitorState()->query().vec(POS).run();
-        if (MON && MON->activeWorkspaceID() == g_corpseWs) {
+        const auto MON          = State::monitorState()->query().vec(POS).run();
+        const bool ON_CORPSE_WS = W ? W->workspaceID() == g_corpseWs : MON && MON->activeWorkspaceID() == g_corpseWs;
+        if (ON_CORPSE_WS) {
             info.cancelled = true;
             g_swallowRelease |= BIT;
             g_corpseUntil = NOW + GESTURE;
@@ -358,7 +365,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_next", luaFocusNext);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev", luaFocusPrev);
 
-    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.2.1"};
+    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.2.2"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

@@ -43,7 +43,7 @@ build       = ["make -C hyprsnap all"]
 
 [hyprclick]
 description = "awesome's click/focus policy"
-version     = "1.2.1"
+version     = "1.2.2"
 authors     = ["hitori"]
 output      = "hyprclick/hyprclick.so"
 build       = ["make -C hyprclick all"]

@@ -3,8 +3,8 @@
 # stack in the nested harness and drives it through the storm battery:
 # placement memory, sibling geometry, spawn/close storms, the notification
 # cap, state churn round-trips, hostile state files, a real-input storm
-# (vptr) and the click-corpse guard. Every assertion is exact; any failure
-# fails the run.
+# (vptr), the click-corpse guard and the fullscreen tuck. Every assertion
+# is exact; any failure fails the run.
 #
 #   stress.sh [HYPR_BIN]     default /usr/local/bin/Hyprland — pass a fork
 #                            build (e.g. ~/repo/Hyprland/build/Hyprland) to
@@ -90,7 +90,7 @@ done
 [[ $build_ok == 1 ]] && ok "all 8 plugins build" || { echo "plugin build FAILED"; exit 1; }
 rm -rf "$STATE"; mkdir -p "$STATE/hyprplace"
 printf '100\t100\t500\t400\tfoot\n200\t80\tlegacyfoot\n' > "$STATE/hyprplace/lastspot.tsv"
-{ cat "$HARNESS/nested.lua"; echo 'hl.window_rule({ match = { class = "foot|mpv|corpseA|corpseB" }, float = true })'; } > "$CFG"
+{ cat "$HARNESS/nested.lua"; echo 'hl.window_rule({ match = { class = "foot|mpv|corpseA|corpseB|tuckmax|tuckfloat|tuckfs" }, float = true })'; } > "$CFG"
 HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" bash "$HARNESS/launch.sh" >/dev/null 2>&1 || { echo "nested launch FAILED"; exit 1; }
 SIG="$(cat "$HARNESS/nested.sig")"
 LOG="$HARNESS/nested.log"
@@ -238,6 +238,42 @@ expect "corpse guard: click burst through a dying viewer keeps the stack" \
 chk "corpse guard: focus stayed with the viewer's app" bash -c \
 	"hyprctl -i $SIG activewindow -j | python3 -c 'import json,sys;sys.exit(0 if json.load(sys.stdin)[\"class\"]==\"corpseB\" else 1)'"
 for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in json.load(sys.stdin) if c['class'] in ('corpseA','corpseB')]"); do
+	dsp "hl.dsp.window.close({window=\"address:$a\"})"
+done
+sleep 0.8
+
+# ---- fullscreen tuck (hyprclick) ----------------------------------------
+# clicking a fullscreen window tucks a floater flagged above it (the
+# compositor's pointer-focus raise sets that flag mid-viewer) back behind —
+# by FLAG ONLY: its stack position must survive the viewer, or it comes
+# back buried under every maximized window (reproduced live).
+dsp "hl.dsp.exec_cmd('foot -a tuckmax')"; sleep 1.6
+dsp "hl.plugin.hyprmax.toggle()"; sleep 0.5
+dsp "hl.dsp.exec_cmd('foot -a tuckfloat')"; sleep 1.6
+dsp "hl.dsp.window.move({x=500, y=300})"; dsp "hl.dsp.window.resize({x=500, y=300})"; sleep 0.4
+dsp "hl.dsp.exec_cmd('foot -a tuckfs -F')"; sleep 1.6
+TF="$(clients | python3 -c "
+import json,sys
+print(next(c['address'] for c in json.load(sys.stdin) if c['class']=='tuckfloat'))")"
+V="$(clients | python3 -c "
+import json,sys
+print(next(c['address'] for c in json.load(sys.stdin) if c['fullscreen']==2))")"
+dsp "hl.dsp.window.alter_zorder({mode=\"top\", window=\"address:$TF\"})"; sleep 0.3
+# a point the floater does not cover: the raise-click must resolve to the
+# fullscreen window and fire the tuck
+P="$(clients | python3 -c "
+import json,sys
+F=next(c for c in json.load(sys.stdin) if c['class']=='tuckfloat')
+x = F['at'][0]-80 if F['at'][0] >= 110 else F['at'][0]+F['size'][0]+80
+print(int(x), int(F['at'][1]+50))")"
+printf "move ${P% *} ${P#* }\nsleep 30\npress 272\nsleep 40\nrelease 272\nsleep 60\n" | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1
+sleep 0.6
+dsp "hl.dsp.window.close({window=\"address:$V\"})"; sleep 0.9
+expect "fullscreen tuck: the flagged floater survives the viewer on top" \
+	"[c['class'] for c in cs if c['class'].startswith('tuck')][-1]=='tuckfloat'"
+chk "fullscreen tuck: floater focused after the viewer closes" bash -c \
+	"hyprctl -i $SIG activewindow -j | python3 -c 'import json,sys;sys.exit(0 if json.load(sys.stdin)[\"class\"]==\"tuckfloat\" else 1)'"
+for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in json.load(sys.stdin) if c['class'].startswith('tuck')]"); do
 	dsp "hl.dsp.window.close({window=\"address:$a\"})"
 done
 sleep 0.8
