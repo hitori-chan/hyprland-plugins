@@ -63,6 +63,20 @@ echo "== stress: $BIN =="
 # ---- preflight ----------------------------------------------------------
 [[ -x "$BIN" ]] || { echo "no such compositor binary: $BIN"; exit 1; }
 [[ -x "$REPO/devtools/vptr" ]] || make -C "$REPO/devtools" >/dev/null
+# the headers pkg-config resolves must belong to the gated binary — a
+# scratch hyprland.pc keeps its absolute /usr/local prefix (not
+# relocatable), silently falls back to the installed tree, and every
+# plugin embeds the wrong hash: all 8 mismatch-throw at load. Rewrite the
+# scratch pc's prefix= to its own include/ before gating a fork build.
+HDR_ROOT="$(pkg-config --cflags hyprland 2>/dev/null | tr ' ' '\n' | grep '^-I' | head -1 | sed 's/^-I//')"
+HDR_HASH="$(grep -h GIT_COMMIT_HASH "$HDR_ROOT/hyprland/src/version.h" 2>/dev/null | grep -oE '[0-9a-f]{40}')"
+BIN_HASH="$("$BIN" --version 2>/dev/null | grep -oE 'commit [0-9a-f]{40}' | cut -d' ' -f2)"
+if [[ -n "$HDR_HASH" && "$HDR_HASH" == "$BIN_HASH" ]]; then
+	ok "headers match the gated binary (${BIN_HASH:0:8})"
+else
+	bad "headers match the gated binary (headers ${HDR_HASH:0:8} vs binary ${BIN_HASH:0:8})"
+	echo "   header root: $HDR_ROOT"; echo "   refusing to run a gate that mismatches at load"; exit 1
+fi
 vsync_ok=1
 for p in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd; do
 	TOML=$(grep -A2 "^\[$p\]" "$REPO/hyprpm.toml" | grep version | grep -o '[0-9.]*')
