@@ -7,13 +7,19 @@
 //               model, residency, history, append, the state interface
 //   icons.cpp   notification images: content avatars, identity icons,
 //               raw image-data
-//   render.cpp  the popups, the two-view center, textures, the pass
-//               element, damage
+//   text.cpp    the pango rasterizer + the keyed text cache + markup helpers
+//   paint.cpp   the paint context, shared card recipes, type scale, motion
+//   popups.cpp  the banner column (the one-card anatomy, hover-✕, springs)
+//   center.cpp  the two-view center: shade/history, rows, 3-state groups
+//   render.cpp  the render skeleton: warm/draw, damage, ticks, the pass
+//               element (surface machinery shared through ui.hpp)
 //   input.cpp   clicks, wheel paging, esc, pointer ownership
 //   main.cpp    plugin glue: config, listeners, init/exit
 //
 // Everything lives in NHyprnotify so no symbol can collide with another
 // plugin's at dlopen time.
+
+#include "common/glass.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/Compositor.hpp>
@@ -67,7 +73,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "4.0.2";
+    inline constexpr const char* VERSION = "4.0.3";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -108,7 +114,7 @@ namespace NHyprnotify {
     };
     extern SNotifyConfig cfg;
 
-    CHyprColor           color(const SP<Config::Values::CColorValue>& v);
+    using NHyprCommon::color; // the memoized config-color fetch (common/glass.hpp)
 
     // Fire-and-forget a child, reaped via pidfd off the event loop (used for
     // hyperlink opening and notification sounds); never blocks render/input.
@@ -152,7 +158,6 @@ namespace NHyprnotify {
         int                  pw = 0, ph = 0;
         std::string          defaultAction; // action key a body click invokes, "" = just dismiss
         std::vector<SAction>    actions;    // non-default actions -> buttons, in Notify order
-        std::vector<SLink>      links;      // popup body <a href> hit regions (relative; built by warm)
         std::vector<SBodyImage> bodyImages; // body <img src> thumbnails
         bool                    actionIcons = false; // the action-icons hint: button ids are icon names
         bool                    resident    = false; // the resident hint: an action keeps the card
@@ -244,8 +249,6 @@ namespace NHyprnotify {
     void centerPage(int dir);     // wheel: >0 towards older rows
     void centerToggleGroup(const std::string& appKey, bool hist);
     void centerToggleRow(uint32_t id, uint64_t hseq); // a chevron: live or history/child
-    // fold state helpers input needs for click semantics
-    bool centerRowOpen(uint32_t id, uint64_t hseq);
 
     void onRenderStage(eRenderStage stage);
     // render.preChecks: keep a visible card compositing over a solitary

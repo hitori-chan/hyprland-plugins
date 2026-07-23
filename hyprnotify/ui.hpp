@@ -9,33 +9,21 @@
 // that preceded it — request textures UNCONDITIONALLY in layout code, gate
 // only the painting on P.warm.
 
+#include "common/glass.hpp"
 #include "common/texcache.hpp"
-#include "common/theme.hpp"
 
 #include "hyprnotify.hpp"
 
 namespace NHyprnotify {
 
     namespace Theme = NHyprCommon::Theme; // the glass·ink tokens
-
-    // CHyprColor's uint64 ctor OkLab-converts — never construct theme
-    // constants per draw call; these memoize once (constants never move)
-    inline const CHyprColor& tFill() {
-        static const CHyprColor C{Theme::FILL};
-        return C;
-    }
-    inline const CHyprColor& tFill2() {
-        static const CHyprColor C{Theme::FILL2};
-        return C;
-    }
-    inline const CHyprColor& tAccentDim() {
-        static const CHyprColor C{Theme::ACCENT_DIM};
-        return C;
-    }
-    inline const CHyprColor& tOnAccent() {
-        static const CHyprColor C{Theme::ON_ACCENT};
-        return C;
-    }
+    using NHyprCommon::animationsOn;      // and their runtime side (glass.hpp)
+    using NHyprCommon::blurOn;
+    using NHyprCommon::blurRadius;
+    using NHyprCommon::tAccentDim;
+    using NHyprCommon::tFill;
+    using NHyprCommon::tFill2;
+    using NHyprCommon::tOnAccent;
 
     // the warm/draw state machine — common/texcache.hpp
     inline NHyprCommon::CWarmGate warmGate;
@@ -86,10 +74,14 @@ namespace NHyprnotify {
         void       texFit(const SP<ITexture>& t, const CBox& cell, int round = 0, float rp = 2.f) const;
     };
 
-    bool   animationsOn(); // animations=0 is the motion kill switch
-    bool   blurOn();
-    double blurRadius();   // px the glass grows damage by
     double damageMargin(PHLMONITOR m);
+
+    // shared card recipes — the progress pill and the content-first icon
+    // column (lead avatar wearing the identity corner badge); layout code
+    // computes presence itself via hasLeadIcon
+    bool   hasLeadIcon(const SNotif& n);
+    void   paintProgress(const SPaint& P, double x, double y, double w, int pct, bool critical);
+    void   paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool withBadge, float rp);
 
     float  easeOutCubic(float t);
     float  easeOutBack(float t); // the spatial overshoot
@@ -118,7 +110,6 @@ namespace NHyprnotify {
     void               textCacheClear();
 
     // small shared helpers
-    std::string        esc(const std::string& raw); // RAW string -> markup-safe (app names)
     std::string        hexOf(const CHyprColor& c);
     std::string        lastLine(const std::string& body); // the collapsed one-liner: the newest message
     std::string        ageString(const Time::steady_tp& t); // bucketed: "now", "5m", "2h", "3d"

@@ -45,15 +45,6 @@ namespace NHyprnotify {
         }
     }
 
-    // escape a RAW string (app names) for insertion into pango markup;
-    // summary/body are already sanitized markup and embed verbatim
-    std::string esc(const std::string& raw) {
-        std::string out;
-        out.reserve(raw.size());
-        appendEsc(out, raw);
-        return out;
-    }
-
     // the collapsed row's one-liner: the LAST non-empty line — a joined
     // conversation shows its newest message, like Android's collapsed card
     std::string lastLine(const std::string& body) {

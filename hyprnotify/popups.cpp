@@ -52,12 +52,9 @@ namespace NHyprnotify {
 
             // the icon column: content avatar first (identity as the corner
             // badge when both exist and differ), identity alone otherwise,
-            // none = text-only
-            const bool   HASCONTENT = N->iconTex && !HERO;
-            const bool   HASIDENT   = N->identTex && N->identTex->m_texID != 0;
-            const bool   LEADICON   = HASCONTENT || HASIDENT;
-            const bool   WITHBADGE  = HASCONTENT && HASIDENT && (N->hasPixels || N->image != N->identity);
-            const double ICONW      = LEADICON ? MAXICON : 0;
+            // none = text-only (paint.cpp's shared recipe)
+            const bool   LEADICON = !HERO && hasLeadIcon(*N);
+            const double ICONW    = LEADICON ? MAXICON : 0;
 
             const double TEXTW   = W - 2 * PADX - (ICONW > 0 ? ICONW + ICON_GAP : 0);
             const int    TEXTWPX = std::max(1, (int)std::floor(TEXTW * P.scale));
@@ -162,17 +159,8 @@ namespace NHyprnotify {
 
             if (HERO)
                 CP.texFit(N->iconTex, CBox{X, y, W, HEROH}, ROUND, RP);
-            else if (LEADICON) {
-                const auto& LEAD = HASCONTENT ? N->iconTex : N->identTex;
-                const CBox  IB{X + PADX, y + PADY, ICONW, ICONW};
-                const int   IR = (int)std::lround(ICONW * 10.0 / 44.0 * P.scale);
-                CP.texFit(LEAD, IB, IR, RP);
-                if (WITHBADGE) { // the identity corner badge, bottom-right, ringed in the glass color
-                    const CBox BB{IB.x + IB.w - BADGE + 2, IB.y + IB.h - BADGE + 2, BADGE, BADGE};
-                    CP.rect(CBox{BB}.expand(1.5), COLBG.modifyA(1.0), (int)std::lround((BADGE / 2 + 1.5) * P.scale), 2.f);
-                    CP.texFit(N->identTex, BB, (int)std::lround(BADGE / 2 * P.scale), 2.f);
-                }
-            }
+            else if (LEADICON)
+                paintIconColumn(CP, *N, CBox{X + PADX, y + PADY, ICONW, ICONW}, true, RP);
 
             const double                 TX = X + PADX + (ICONW > 0 ? ICONW + ICON_GAP : 0);
             double                       ty = HERO ? y + HEROH + PADY : y + PADY;
@@ -201,11 +189,7 @@ namespace NHyprnotify {
             }
             if (N->progress >= 0) {
                 ty += th > 0 ? PROGRESS_GAP : 0;
-                const double FILLW = TEXTW * N->progress / 100.0;
-                const int    PR    = (int)std::lround(PROGRESS_H / 2 * P.scale);
-                CP.rect(CBox{TX, ty, TEXTW, PROGRESS_H}, tFill2(), PR);
-                if (N->progress > 0)
-                    CP.rect(CBox{TX, ty, std::max(FILLW, PROGRESS_H), PROGRESS_H}, CRITICAL ? COLURGENT : COLACC, PR);
+                paintProgress(CP, TX, ty, TEXTW, N->progress, CRITICAL);
                 ty += PROGRESS_H;
             }
 

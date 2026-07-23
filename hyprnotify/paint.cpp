@@ -1,45 +1,10 @@
 // hyprnotify/paint.cpp — the paint context (glass, shadow, textures), the
-// type scale, the motion curves and the compositor-config gates.
+// shared card recipes, the type scale and the motion curves. The config
+// gates and color memos live in common/glass.hpp.
 
 #include "ui.hpp"
 
-#include <hyprland/src/config/ConfigValue.hpp>
-
 namespace NHyprnotify {
-
-    CHyprColor color(const SP<Config::Values::CColorValue>& v) {
-        struct SMemo {
-            uint64_t   raw = 0;
-            bool       set = false;
-            CHyprColor col;
-        };
-        static std::unordered_map<const void*, SMemo> memo; // main thread only
-        auto&                                         M = memo[v.get()];
-        if (!M.set || M.raw != (uint64_t)v->value()) {
-            M.raw = (uint64_t)v->value();
-            M.set = true;
-            M.col = CHyprColor{M.raw};
-        }
-        return M.col;
-    }
-
-    // ---- compositor-config gates ----
-
-    bool animationsOn() {
-        static auto V = CConfigValue<Config::INTEGER>("animations:enabled");
-        return *V != 0;
-    }
-    bool blurOn() {
-        static auto V = CConfigValue<Config::INTEGER>("decoration:blur:enabled");
-        return *V != 0;
-    }
-    double blurRadius() {
-        if (!blurOn())
-            return 0;
-        static auto SIZE   = CConfigValue<Config::INTEGER>("decoration:blur:size");
-        static auto PASSES = CConfigValue<Config::INTEGER>("decoration:blur:passes");
-        return (double)*SIZE * (1 << std::clamp((int)*PASSES, 1, 6));
-    }
 
     double damageMargin(PHLMONITOR m) {
         // hairlines ride outside boxes, glass grows by the blur radius, and
@@ -120,6 +85,37 @@ namespace NHyprnotify {
         if (warm || !t || t->m_texID == 0)
             return;
         g_pHyprOpenGL->renderTexture(t, toPhys(cell), {.a = alpha, .round = round, .roundingPower = rp});
+    }
+
+    // ---- shared card recipes (popups and center rows drifted apart once —
+    //      the badge and the progress pill draw from ONE place now) ----
+
+    bool hasLeadIcon(const SNotif& n) {
+        return (n.iconTex && !n.heroTex) || (n.identTex && n.identTex->m_texID != 0);
+    }
+
+    void paintProgress(const SPaint& P, double x, double y, double w, int pct, bool critical) {
+        const int PR = (int)std::lround(PROGRESS_H / 2 * P.scale);
+        P.rect(CBox{x, y, w, PROGRESS_H}, tFill2(), PR);
+        if (pct > 0)
+            P.rect(CBox{x, y, std::max(w * pct / 100.0, PROGRESS_H), PROGRESS_H}, critical ? color(cfg.colUrgent) : color(cfg.colHighlight), PR);
+    }
+
+    // the content-first icon column: the content avatar leads wearing the
+    // identity's corner badge (when both exist and differ); identity alone
+    // otherwise. Callers gate on hasLeadIcon for their layout.
+    void paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool withBadge, float rp) {
+        const bool  HASCONTENT = n.iconTex && !n.heroTex;
+        const auto& LEAD       = HASCONTENT ? n.iconTex : n.identTex;
+        if (!LEAD || LEAD->m_texID == 0)
+            return;
+        P.texFit(LEAD, cell, (int)std::lround(cell.w * 10.0 / 44.0 * P.scale), rp);
+        const bool HASIDENT = n.identTex && n.identTex->m_texID != 0;
+        if (withBadge && HASCONTENT && HASIDENT && (n.hasPixels || n.image != n.identity)) {
+            const CBox BB{cell.x + cell.w - BADGE + 2, cell.y + cell.h - BADGE + 2, BADGE, BADGE};
+            P.rect(CBox{BB}.expand(1.5), color(cfg.colBg).modifyA(1.0), (int)std::lround((BADGE / 2 + 1.5) * P.scale), 2.f);
+            P.texFit(n.identTex, BB, (int)std::lround(BADGE / 2 * P.scale), 2.f);
+        }
     }
 
 } // namespace NHyprnotify

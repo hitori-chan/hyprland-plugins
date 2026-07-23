@@ -49,7 +49,7 @@ namespace NHyprnotify {
         return s_openedLive.contains(n->id) || (n->banner && !s_foldedLive.contains(n->id));
     }
 
-    bool centerRowOpen(uint32_t id, uint64_t hseq) {
+    static bool centerRowOpen(uint32_t id, uint64_t hseq) {
         if (hseq)
             return s_histOpen.contains(hseq);
         for (const auto& N : notifs)
@@ -172,13 +172,8 @@ namespace NHyprnotify {
         if (P.warm)
             ensureIconTex(*N, (int)std::lround(std::max(ST.iconPx, (double)cfg.maxIcon->value()) * P.scale), 0, 0);
 
-        const bool   HASCONTENT = N->iconTex && !N->heroTex;
-        const bool   HASIDENT   = N->identTex && N->identTex->m_texID != 0;
-        const auto&  LEAD       = HASCONTENT ? N->iconTex : N->identTex;
-        const bool   LEADICON   = HASCONTENT || HASIDENT;
-        const bool   WITHBADGE  = ST.withBadge && HASCONTENT && HASIDENT && (N->hasPixels || N->image != N->identity);
-
-        const double ICONW   = LEADICON ? ST.iconPx : 0;
+        const bool   LEADICON = hasLeadIcon(*N);
+        const double ICONW    = LEADICON ? ST.iconPx : 0;
         const double TX      = box.x + ROW_PADX + (ICONW > 0 ? ICONW + ROW_ICON_GAP : 0);
         const double TEXTW   = box.x + box.w - ROW_PADX - CHEV - 8 - TX;
         const int    TEXTWPX = std::max(1, (int)std::floor(TEXTW * P.scale));
@@ -209,10 +204,7 @@ namespace NHyprnotify {
                 }
                 if (N->progress >= 0) {
                     yy += PROGRESS_GAP;
-                    const int PR = (int)std::lround(PROGRESS_H / 2 * P.scale);
-                    P.rect(CBox{TX, yy, TEXTW, PROGRESS_H}, tFill2(), PR);
-                    if (N->progress > 0)
-                        P.rect(CBox{TX, yy, std::max(TEXTW * N->progress / 100.0, PROGRESS_H), PROGRESS_H}, N->urgency >= 2 ? COLURGENT : COLACC, PR);
+                    paintProgress(P, TX, yy, TEXTW, N->progress, N->urgency >= 2);
                 }
             }
         } else {
@@ -268,12 +260,7 @@ namespace NHyprnotify {
             yy += BH;
             if (N->progress >= 0) {
                 yy += PROGRESS_GAP;
-                if (!P.warm) {
-                    const int PR = (int)std::lround(PROGRESS_H / 2 * P.scale);
-                    P.rect(CBox{TX, yy, TEXTW, PROGRESS_H}, tFill2(), PR);
-                    if (N->progress > 0)
-                        P.rect(CBox{TX, yy, std::max(TEXTW * N->progress / 100.0, PROGRESS_H), PROGRESS_H}, N->urgency >= 2 ? COLURGENT : COLACC, PR);
-                }
+                paintProgress(P, TX, yy, TEXTW, N->progress, N->urgency >= 2);
                 yy += PROGRESS_H;
             }
             if (btnH > 0) {
@@ -298,13 +285,7 @@ namespace NHyprnotify {
         if (!P.warm && LEADICON) {
             // collapsed rows center the icon; expanded top-pin it
             const double IY = open ? box.y + ROW_PADT : box.y + (ROWH - ICONW) / 2;
-            const CBox   IB{box.x + ROW_PADX, IY, ICONW, ICONW};
-            P.texFit(LEAD, IB, (int)std::lround(ICONW * 10.0 / 44.0 * P.scale), RP);
-            if (WITHBADGE) {
-                const CBox BB{IB.x + IB.w - BADGE + 2, IB.y + IB.h - BADGE + 2, BADGE, BADGE};
-                P.rect(CBox{BB}.expand(1.5), color(cfg.colBg).modifyA(1.0), (int)std::lround((BADGE / 2 + 1.5) * P.scale), 2.f);
-                P.texFit(N->identTex, BB, (int)std::lround(BADGE / 2 * P.scale), 2.f);
-            }
+            paintIconColumn(P, *N, CBox{box.x + ROW_PADX, IY, ICONW, ICONW}, ST.withBadge, RP);
         }
 
         // the chevron circle: collapsed centers, expanded pins to the top
