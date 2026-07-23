@@ -398,13 +398,20 @@ namespace NHyprbar {
     };
 
     // hover affordance over the strip's cells: input tracks it, widgets read
-    // it to draw their fills. Identity = the same fields hits carry.
+    // it to draw their fills. Identity = the same fields hits carry; the box
+    // rides along so a hover change damages exactly the two cells involved,
+    // never the whole band (a full-band damage re-blurs every island per
+    // pointer step).
     struct SBarHover {
-        IWidget* widget = nullptr;
-        int      tag    = 0;
-        void*    win    = nullptr;
-        void*    tray   = nullptr;
-        bool     operator==(const SBarHover&) const = default;
+        IWidget*      widget = nullptr;
+        int           tag    = 0;
+        void*         win    = nullptr;
+        void*         tray   = nullptr;
+        CBox          box; // not part of identity
+        PHLMONITORREF mon;
+        bool          operator==(const SBarHover& o) const {
+            return widget == o.widget && tag == o.tag && win == o.win && tray == o.tray;
+        }
     };
     extern SBarHover barHover;
 

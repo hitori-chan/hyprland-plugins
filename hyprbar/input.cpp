@@ -298,19 +298,32 @@ namespace NHyprbar {
     }
 
     // the hover affordance over cells (tags, chips, tray, bell): track the
-    // hovered hit, repaint the band when it moves — no textures change
-    static void setBarHover(const SHit* hit) {
+    // hovered hit and damage exactly the outgoing and incoming cells — a
+    // full-band damage here would re-blur every island per pointer step
+    static void setBarHover(const SHit* hit, PHLMONITOR mon = nullptr) {
         SBarHover h;
         if (hit) {
             h.widget = hit->widget;
             h.tag    = hit->tag;
             h.win    = hit->window.lock().get();
             h.tray   = hit->tray.lock().get();
+            h.box    = hit->box;
+            h.mon    = mon;
         }
         if (h == barHover)
             return;
+        if (g_pHyprRenderer) {
+            const auto dmg = [](const SBarHover& v) {
+                if (!v.widget)
+                    return;
+                const auto   M      = v.mon.lock();
+                const double MARGIN = (M ? std::ceil(M->m_scale) : 1.0) + 1.0;
+                g_pHyprRenderer->damageBox(CBox{v.box}.expand(MARGIN));
+            };
+            dmg(barHover);
+            dmg(h);
+        }
         barHover = h;
-        damageBars();
     }
 
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info) {
@@ -356,14 +369,17 @@ namespace NHyprbar {
 
         // resolve the hovered cell for the widgets' fills
         const SHit* under = nullptr;
-        if (const auto MON = monAt(pos))
+        PHLMONITOR  underMon;
+        if (const auto MON = monAt(pos)) {
             if (const auto IT = hitboxes.find(MON->m_id); IT != hitboxes.end())
                 for (const auto& HIT : IT->second)
                     if (HIT.box.containsPoint(pos)) {
-                        under = &HIT;
+                        under    = &HIT;
+                        underMon = MON;
                         break;
                     }
-        setBarHover(under);
+        }
+        setBarHover(under, underMon);
 
         info.cancelled = true;
         if (!pointerOwned) {

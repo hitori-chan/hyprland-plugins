@@ -306,7 +306,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the compact-islands shell bar", "hitori", "3.0.1"};
+    return {"hyprbar", "the compact-islands shell bar", "hitori", "3.0.2"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

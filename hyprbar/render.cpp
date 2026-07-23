@@ -343,6 +343,13 @@ namespace NHyprbar {
         const auto MON = g_pHyprRenderer->m_renderData.pMonitor.lock();
         if (!MON)
             return;
+        // real fullscreen hides the band (renderBar early-outs): adding the
+        // element anyway claimed a live-blur region every frame for nothing.
+        // The open menubar is the one surface that floats above fullscreen.
+        const auto WS = MON->m_activeWorkspace;
+        if (WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN && !(Menubar::isOpen && Menubar::mon.lock() == MON) &&
+            !(Menu::isOpen && Menu::mon.lock() == MON))
+            return;
         g_pHyprRenderer->m_renderPass.add(makeUnique<CBarPassElement>(MON));
     }
 
