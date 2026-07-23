@@ -200,9 +200,10 @@ namespace NHyprbar {
             leftEnd = ISL.x + ISL.w;
         }
 
-        // RIGHT: the status island — layout chip · tray · bell · wifi ·
-        // battery · time, gap 7, no separators
-        IWidget* const STATUS[] = {&kbdWidget(), &trayWidget(), &bellWidget(), &wifiWidget(), &batteryWidget(), &clockWidget()};
+        // RIGHT: the status island — layout chip · tray · bell · battery ·
+        // time, gap 7, no separators (wifi lives in the tray: nm-applet's
+        // own SNI icon carries the strength — a second wedge said it twice)
+        IWidget* const STATUS[] = {&kbdWidget(), &trayWidget(), &bellWidget(), &batteryWidget(), &clockWidget()};
         constexpr double SGAP = 7, SPAD = 10;
         double           sw[std::size(STATUS)];
         double           total = 0;

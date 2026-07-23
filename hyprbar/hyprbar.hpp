@@ -10,7 +10,6 @@
 //   tasklist.cpp  arrival order, markers, the chips  (the middle)
 //   tray.cpp      StatusNotifierWatcher/Host (sdbus-c++) + its cells
 //   bell.cpp      the notification bell + badge (hyprnotify over the bus)
-//   wifi.cpp      the Android segmented wifi wedge (/proc/net/wireless)
 //   kbdlayout.cpp the keyboard-layout chip
 //   battery.cpp   gauge state, alerts, Android's pill (status island)
 //   clock.cpp     the bold HH:MM                     (status island)
@@ -169,11 +168,6 @@ namespace NHyprbar {
     namespace Bell {
         void init();     // proxy hyprnotify's org.hitori.hyprnotify face over the tray's bus
         void daemonUp(); // the Notifications name gained an owner: (re)subscribe + read state
-        void exit();
-    }
-
-    namespace Wifi {
-        bool refresh(); // /proc/net/wireless -> level 0..3 / off; true when the drawn state moved
         void exit();
     }
 
@@ -406,7 +400,6 @@ namespace NHyprbar {
     IWidget& tasklistWidget();  // tasklist.cpp — the middle chips
     IWidget& trayWidget();      // tray.cpp — status island
     IWidget& bellWidget();      // bell.cpp — status island
-    IWidget& wifiWidget();      // wifi.cpp — status island
     IWidget& kbdWidget();       // kbdlayout.cpp — status island
     IWidget& batteryWidget();   // battery.cpp — status island
     IWidget& clockWidget();     // clock.cpp — status island

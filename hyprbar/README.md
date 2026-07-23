@@ -10,7 +10,7 @@ glass·ink (`common/theme.hpp`): live-blur islands, IBM Plex Sans,
 superellipse corners.
 
 ```
-( 一..九 )  (chip) (chip) (chip)            ( en  tray  bell  wifi  batt  14:32 )
+( 一..九 )  (chip) (chip) (chip)            ( en  tray  bell  batt  14:32 )
 ```
 
 - **Taglist** (left island) — the nine kanji. Active = accent on an
@@ -24,8 +24,9 @@ superellipse corners.
   keeps its chip, muted. Left = focus (focused again = minimize), middle =
   close, wheel cycles focus. `Mod+N` / `Mod+Ctrl+N` minimize/restore-last;
   a client's own minimize request is honored.
-- **Status island** (right), the decided order — layout chip · tray →
-  bell → wifi → battery → time, gap 7, no separators, glyphs full ink:
+- **Status island** (right) — layout chip · tray → bell → battery →
+  time, gap 7, no separators, glyphs full ink. (No wifi wedge: nm-applet's
+  SNI icon in the tray already carries the strength.)
   - **layout chip** — the active keyboard layout, two letters (`en`, `vi`).
   - **tray** — SNI host, 24×24 cells with 15px icons; left `Activate`,
     middle `SecondaryActivate`, right the dbusmenu as a glass panel
@@ -35,9 +36,6 @@ superellipse corners.
     zero; 15px accent circle). A click toggles hyprnotify's center over
     the bus (`org.hitori.hyprnotify`). DND has NO bar presence — that
     state lives in the center's ⊖ only.
-  - **wifi** — the Android segmented wedge (dot + two stroked arcs);
-    partial strength dims segments to 25%, off adds the slash. An
-    indicator only; hidden without wireless hardware.
   - **battery** — Android's expressive pill, unchanged: digits inside,
     the attribution ladder (power-save plus / defender shield / charging
     bolt / D cap), fill ink · accent charging · urgent ≤20% · gold in

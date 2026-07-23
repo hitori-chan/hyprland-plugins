@@ -23,9 +23,10 @@
 //   wheel walks focus (skipping minimized). Minimize is the in-place
 //   awesome model (hidden window, layout slot freed, FS mode held);
 //   a client's own minimize request is honored.
-// - the status island (right), the decided order — keyboard-layout chip ·
-//   tray · bell · wifi · battery · time; gap 7, no separators, glyphs full
-//   ink with state alone recoloring:
+// - the status island (right) — keyboard-layout chip · tray · bell ·
+//   battery · time; gap 7, no separators, glyphs full ink with state alone
+//   recoloring. (No wifi wedge: nm-applet's SNI icon in the tray already
+//   carries the strength — user call 2026-07-23.)
 //   - kbd chip: the active layout's two letters, off the keyboard.layout
 //     event. An indicator.
 //   - tray: StatusNotifierWatcher/Host (sdbus-c++), 24px cells with 15px
@@ -37,10 +38,6 @@
 //   - bell: Material's filled shape + the live+kept badge (hides at 0).
 //     A click calls Toggle on hyprnotify's org.hitori.hyprnotify bus face;
 //     the badge rides its State signal. DND has NO bar presence.
-//   - wifi: the Android segmented wedge (dot + two arcs, dimmed to 25%
-//     for partial strength, slash when down). Strength via a spawned
-//     `iw` on the minute tick (/proc/net/wireless is header-only on some
-//     drivers); hidden without wireless hardware. An indicator.
 //   - battery: Android's expressive pill, transcribed 1:1 from SystemUI
 //     (battery.cpp) — digits inside, the attribution ladder (defend >
 //     charging > save-on-the-cell; Android disables saver on AC), fill
@@ -108,7 +105,7 @@ namespace NHyprbar {
     SBarConfig cfg;
 }
 
-// the minute tick: clock text + battery failsafe read + wifi strength
+// the minute tick: clock text + battery failsafe read
 static SP<CEventLoopTimer>                                 timer;
 
 static NHyprCommon::CLifecycle g_lifecycle;
@@ -220,7 +217,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
 
     Clock::refresh();
-    Wifi::refresh();
     Battery::init();
     Tray::init();
     Bell::init(); // rides the tray's bus link
@@ -294,8 +290,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     timer = makeShared<CEventLoopTimer>(
         toNextMinute(),
         [](SP<CEventLoopTimer> self, void*) {
-            const bool CLK = Clock::refresh(), BAT = Battery::refresh(), WIFI = Wifi::refresh();
-            if (CLK || BAT || WIFI)
+            const bool CLK = Clock::refresh(), BAT = Battery::refresh();
+            if (CLK || BAT)
                 damageAndWarm();
             Battery::alerts();
             self->updateTimeout(toNextMinute());
@@ -305,7 +301,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the compact-islands shell bar", "hitori", "3.0.3"};
+    return {"hyprbar", "the compact-islands shell bar", "hitori", "3.0.4"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
@@ -316,7 +312,6 @@ APICALL EXPORT void PLUGIN_EXIT() {
     Tray::exit();
     inputExit();
     Battery::exit();
-    Wifi::exit();
     Kbd::exit();
     if (timer && g_pEventLoopManager)
         g_pEventLoopManager->removeTimer(timer);

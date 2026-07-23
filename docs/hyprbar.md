@@ -44,9 +44,10 @@ re-entered on restore) and tracks it in a stack. `Mod+N` minimizes,
 
 ## The status island
 
-Left → right (the decided order): layout chip · tray → bell → wifi →
-battery → time. Gap 7, no separators; every glyph full ink — state alone
-recolors.
+Left → right: layout chip · tray → bell → battery → time. Gap 7, no
+separators; every glyph full ink — state alone recolors. There is no wifi
+wedge: nm-applet's SNI icon in the tray already carries the strength
+(user call 2026-07-23), so a second glyph would say it twice.
 
 - **Layout chip** — the active keyboard layout's two letters (`en`, `vi`),
   updated by the `keyboard.layout` event. An indicator (layouts switch by
@@ -63,11 +64,6 @@ recolors.
   calls `Toggle` on hyprnotify's `org.hitori.hyprnotify` bus face; the
   badge rides its `State` signal. DND has no bar presence — the center's
   ⊖ owns that state.
-- **Wifi** — the Android segmented wedge: a bottom dot + two 3px-stroke
-  arcs with real gaps; partial strength dims segments to 25% (the
-  silhouette never changes width), off adds the slash. Level from
-  `/proc/net/wireless` on the minute tick; hidden without wireless
-  hardware. An indicator only.
 - **Battery** — Android's expressive pill, kept exactly as shipped
   (transcribed 1:1 from SystemUI): digits inside, the attribution ladder
   (power-save plus > defender shield > charging bolt > the D cap), fill
@@ -114,8 +110,6 @@ until more are implemented — a future layout engine enforces it.
   renderer takes plain text, no pango markup.
 - The tray is mouse-only beyond esc-to-close: no tooltips, overlay icons or
   menu keyboard navigation. SVG-only themed icons fall back to a letter.
-- The wifi wedge reads link quality on the minute tick — a fast-moving
-  signal lags up to a minute.
 - Over a direct-scanout fullscreen game the menubar cannot draw: scanout
   (`render:direct_scanout`) hands the plane to the client and bypasses
   compositing. Composited fullscreen (video, browser) is fine.
