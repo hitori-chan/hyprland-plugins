@@ -26,6 +26,8 @@ corners (`rounding_power`).
 - The shell face: `org.hitori.hyprnotify` on the same object carries
   `Toggle` (the center), `State` (method + signal: live, kept, dnd,
   center) — hyprbar's bell rides it; the channel is the bus, never symbols.
+  The counts are the shade's: `live` = bannered popups, `kept` = resident
+  cards; history, the DND queue and the OSD band never count.
 
 ## Residency (the Android model)
 

@@ -22,7 +22,7 @@ build       = ["make -C hyprbar all"]
 
 [hyprnotify]
 description = "Android's notification shade for Hyprland"
-version     = "4.0.3"
+version     = "4.0.4"
 authors     = ["hitori"]
 output      = "hyprnotify/hyprnotify.so"
 build       = ["make -C hyprnotify all"]

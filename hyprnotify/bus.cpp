@@ -103,13 +103,28 @@ namespace NHyprnotify {
                 " dnd:" + std::to_string(suspended ? 1 : 0);
         }
 
+        // the badge's truth is the shade: bannered popups + resident cards.
+        // Never history (that lives behind the clock), never the DND queue
+        // (invisible until the resume), never the OSD band (a volume card
+        // is an OSD, not a notification).
+        static std::pair<uint32_t, uint32_t> badgeCounts() {
+            uint32_t live = 0, kept = 0;
+            for (const auto& N : notifs) {
+                if (N->waiting || inOsdBand(N->id))
+                    continue;
+                (N->banner ? live : kept)++;
+            }
+            return {live, kept};
+        }
+
         // the bar's bell: live + kept + dnd + center, coalesced per model change
         void emitStateSoon() {
             pendingState.arm([]() {
                 if (!obj)
                     return;
                 try {
-                    obj->emitSignal("State").onInterface(CIFACE).withArguments((uint32_t)notifs.size(), (uint32_t)history.size(), suspended, centerVisible());
+                    const auto [LIVE, KEPT] = badgeCounts();
+                    obj->emitSignal("State").onInterface(CIFACE).withArguments(LIVE, KEPT, suspended, centerVisible());
                 } catch (...) {}
                 pollSoon();
             });
@@ -719,7 +734,8 @@ namespace NHyprnotify {
                 // the badge counts here
                 obj->addVTable(sdbus::registerMethod("Toggle").implementedAs([]() { queueCenterToggle(); }),
                                sdbus::registerMethod("State").withOutputParamNames("live", "kept", "dnd", "center").implementedAs([]() {
-                                   return std::tuple<uint32_t, uint32_t, bool, bool>{(uint32_t)notifs.size(), (uint32_t)history.size(), suspended, centerVisible()};
+                                   const auto [LIVE, KEPT] = badgeCounts();
+                                   return std::tuple<uint32_t, uint32_t, bool, bool>{LIVE, KEPT, suspended, centerVisible()};
                                }),
                                sdbus::registerSignal("State").withParameters<uint32_t, uint32_t, bool, bool>("live", "kept", "dnd", "center"))
                     .forInterface(CIFACE);

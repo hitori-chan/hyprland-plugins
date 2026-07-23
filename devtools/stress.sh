@@ -174,6 +174,13 @@ chk "wrong-typed hints survived (sdbus::Error thrown + caught)" bash -c "hyprctl
 #      history, DND, the center ------------------------------------------
 WL0="$(cat "$HARNESS/nested.wl")"
 nstate() { hq hyprnotify state; }
+# the org.hitori.hyprnotify State tuple, exactly as the bar's bell reads it
+bellq() {
+	rm -f "$STATE/bell.out"
+	dsp "hl.dsp.exec_cmd('gdbus call --session --dest org.freedesktop.Notifications --object-path /org/freedesktop/Notifications --method org.hitori.hyprnotify.State > $STATE/bell.out')"
+	sleep 0.7
+	cat "$STATE/bell.out" 2>/dev/null
+}
 hq hyprnotify clear >/dev/null; sleep 0.8
 chk "shade reset: exact state line" test "$(nstate)" = "center:0 live:0 hist:0 dnd:0"
 
@@ -204,6 +211,15 @@ dsp "hl.dsp.exec_cmd('notify-send -r 4242 -a closer ToClose body')"; sleep 1
 dsp "hl.dsp.exec_cmd('gdbus call --session --dest org.freedesktop.Notifications --object-path /org/freedesktop/Notifications --method org.freedesktop.Notifications.CloseNotification 4242')"
 sleep 1
 chk "CloseNotification (knob off) retires the card into history" test "$(nstate)" = "center:0 live:2 hist:1 dnd:0"
+# the bell face (what the bar's badge reads): shade counts only — the two
+# resident cards are kept, the history entry and a live OSD card never count.
+# The append storm re-bannered convo (a replace re-alerts, 8s): outwait it
+# so both cards are provably resident.
+sleep 3
+chk "bell face: history never counts into the badge" test "$(bellq)" = "(uint32 0, uint32 2, false, false)"
+dsp "hl.dsp.exec_cmd('notify-send -r 9995 -t 3000 -a osd -h int:value:50 Volume 50%')"; sleep 0.5
+chk "bell face: a live OSD card never counts" test "$(bellq)" = "(uint32 0, uint32 2, false, false)"
+sleep 3 # the OSD card's expiry removes it before the recall check
 # recall pops it back live: fresh id, history consumed
 hq hyprnotify recall >/dev/null; sleep 1
 chk "recall: history entry returns to the shade" test "$(nstate)" = "center:0 live:3 hist:0 dnd:0"
@@ -234,6 +250,15 @@ dsp "hl.plugin.hyprnotify.suspend()"; sleep 0.6
 chk "DND resume: the queued card survives, dnd off" bash -c "hyprctl -i $SIG hyprnotify state | grep -q 'dnd:0'"
 hq hyprnotify clear >/dev/null; sleep 0.8
 chk "clear sweeps live + history" test "$(nstate)" = "center:0 live:0 hist:0 dnd:0"
+
+# the DND queue is invisible to the badge until the resume surfaces it
+dsp "hl.plugin.hyprnotify.suspend()"; sleep 0.6
+dsp "hl.dsp.exec_cmd('notify-send -a queued2 quiet two')"; sleep 1
+chk "bell face: a DND-queued card never counts" test "$(bellq)" = "(uint32 0, uint32 0, true, false)"
+dsp "hl.plugin.hyprnotify.suspend()"; sleep 0.6
+chk "bell face: the resume surfaces it live" test "$(bellq)" = "(uint32 1, uint32 0, false, false)"
+hq hyprnotify clear >/dev/null; sleep 0.8
+chk "bell-face slate: clear zeroes the badge" test "$(bellq)" = "(uint32 0, uint32 0, false, false)"
 
 # ---- the weird-scenario battery ------------------------------------------
 # hostile payloads: an empty card, a markup bomb (unbalanced tags, bogus

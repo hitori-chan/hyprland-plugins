@@ -52,7 +52,8 @@ Grouping keys on app identity (`desktop-entry`, else the app name).
 
 The bar's bell talks over the bus: the `org.hitori.hyprnotify` interface on
 the Notifications object carries `Toggle` (the center) and a `State` signal
-(live/kept/dnd/center — the badge). `hyprctl hyprnotify
+(live/kept/dnd/center — the badge counts the shade, never history, the DND
+queue or the OSD band). `hyprctl hyprnotify
 {count,history,recall,center,state,clear}`; `hl.plugin.hyprnotify.
 {suspend,recall,center}()`.
 

@@ -73,7 +73,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "4.0.3";
+    inline constexpr const char* VERSION = "4.0.4";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -209,8 +209,8 @@ namespace NHyprnotify {
         void                      clearHistory();
         const std::vector<SP<SNotif>>& historyView(); // retained cards, oldest first
         size_t                    historySize();
-        std::string               stateString(); // "center:N live:N hist:N dnd:N"
-        void                      emitStateSoon(); // coalesced org.hitori.hyprnotify State signal (the bar's bell)
+        std::string               stateString(); // "center:N live:N hist:N dnd:N" — raw model counts, the debug line
+        void                      emitStateSoon(); // coalesced org.hitori.hyprnotify State signal (the bar's bell: shade counts)
     }
 
     // ---- icons.cpp ----
