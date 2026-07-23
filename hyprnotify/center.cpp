@@ -23,6 +23,16 @@ namespace NHyprnotify {
     static Time::steady_tp       s_openedAt;
     static bool                  s_animating = false;
 
+    // the warm-measured layout cache (see renderCenter); dropped on close so
+    // no strong SNotif refs (and their textures) outlive the visit
+    struct SDisp {
+        std::vector<SP<SNotif>> items; // newest first; 1 = a bare row
+        std::string             key;   // the app key (groups)
+    };
+    static std::vector<SDisp>               s_disp;
+    static std::vector<double>              s_itemH;
+    static std::vector<std::vector<double>> s_childH;
+
     bool                         centerVisible() {
         return s_on;
     }
@@ -98,6 +108,9 @@ namespace NHyprnotify {
             s_foldedLive.clear();
             s_histOpen.clear();
             s_animating = false;
+            s_disp.clear(); // strong refs must not outlive the visit
+            s_itemH.clear();
+            s_childH.clear();
         } else if (animationsOn()) {
             s_openedAt  = Time::steadyNow();
             s_animating = true;
@@ -107,11 +120,6 @@ namespace NHyprnotify {
     }
 
     // ---- the display list (both views share the grouping model) ----
-
-    struct SDisp {
-        std::vector<SP<SNotif>> items; // newest first; 1 = a bare row
-        std::string             key;   // the app key (groups)
-    };
 
     static void buildDisplay(std::vector<SDisp>& out, bool hist) {
         out.clear();
@@ -158,7 +166,7 @@ namespace NHyprnotify {
         const auto COLFG = color(cfg.colFg), COLTITLE = color(cfg.colTitle), COLSUB = color(cfg.colKicker), COLACC = color(cfg.colHighlight), COLURGENT = color(cfg.colUrgent);
         const CHyprColor COLBODY = COLFG.modifyA(COLFG.a * 0.92);
         const auto       AGE     = ageString(N->arrived);
-        const auto       SUBHEX  = hexOf(COLSUB);
+        const auto&      SUBHEX  = hexOfCached(COLSUB);
         const float      RP      = (float)cfg.roundingPower->value();
 
         if (P.warm)
@@ -180,7 +188,14 @@ namespace NHyprnotify {
 
         if (!open) {
             // collapsed: bold "title • age" + the newest body line (+progress)
-            const auto LINE = cachedText(N->summary + " <span foreground=\"" + SUBHEX + "\">• " + AGE + "</span>", COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
+            auto& SB = scratch();
+            SB += N->summary;
+            SB += " <span foreground=\"";
+            SB += SUBHEX;
+            SB += "\">• ";
+            SB += AGE;
+            SB += "</span>";
+            const auto LINE = cachedText(SB, COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
             const auto B1S  = lastLine(N->body);
             const auto B1   = B1S.empty() ? nullptr : cachedText(B1S, COLBODY, T.body, TEXTWPX, -1, 0, true, 400);
             th              = texH(LINE, P.scale) + (B1 ? 2 + texH(B1, P.scale) : 0) + (N->progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0);
@@ -203,7 +218,13 @@ namespace NHyprnotify {
         } else {
             // expanded: age/header line, title, 4-line body, progress, the
             // card's ORIGINAL actions — live and history alike
-            const auto KICK  = cachedText(ST.headerHasApp ? esc(N->appName) + " • " + AGE : AGE, COLSUB, T.header, TEXTWPX, -1, 0, true, 500);
+            auto& KB = scratch();
+            if (ST.headerHasApp) {
+                appendEsc(KB, N->appName);
+                KB += " • ";
+            }
+            KB += AGE;
+            const auto KICK  = cachedText(KB, COLSUB, T.header, TEXTWPX, -1, 0, true, 500);
             const auto TITLE = N->summary.empty() ? nullptr : cachedText(N->summary, COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
             const int  CAP4  = (int)std::lround(T.body * 1.35 * 4);
             const auto BODY  = N->body.empty() ? nullptr : cachedText(N->body, COLBODY, T.body, TEXTWPX, CAP4, 1.1f, true, 400);
@@ -216,7 +237,9 @@ namespace NHyprnotify {
             {
                 double bx = 0, rowY = 0;
                 for (const auto& A : N->actions) {
-                    const auto   LBL = cachedText(esc(A.label), COLACC, T.action, TEXTWPX, -1, 0, true, 600);
+                    auto& LB = scratch();
+                    appendEsc(LB, A.label);
+                    const auto   LBL = cachedText(LB, COLACC, T.action, TEXTWPX, -1, 0, true, 600);
                     const double BW  = std::min(TEXTW, texW(LBL, P.scale) + 2 * BTN_PADX);
                     if (bx > 0 && bx + BW > TEXTW + 0.5) {
                         bx = 0;
@@ -337,15 +360,10 @@ namespace NHyprnotify {
 
         const auto  COLBG = color(cfg.colBg), COLFG = color(cfg.colFg), COLTITLE = color(cfg.colTitle), COLSUB = color(cfg.colKicker), COLACC = color(cfg.colHighlight),
                    COLURGENT = color(cfg.colUrgent);
-        const auto SUBHEX    = hexOf(COLSUB);
+        const auto& SUBHEX   = hexOfCached(COLSUB);
 
         const double X  = MB.x + MB.w - EDGE - CENTER_W;
         const double Y0 = MB.y + (double)cfg.offsetY->value();
-
-        static std::vector<SDisp> disp; // reused; main thread only
-        buildDisplay(disp, s_viewHist);
-        s_items = disp.size();
-        s_skip  = disp.empty() ? 0 : std::min(s_skip, disp.size() - 1);
 
         const double CONTENT_X = X + BODY_PADX, CONTENT_W = CENTER_W - 2 * BODY_PADX;
 
@@ -356,20 +374,40 @@ namespace NHyprnotify {
         const auto&  OPENSET = s_viewHist ? s_openHist : s_openShade;
         const auto   itemOpen = [&](const SP<SNotif>& N) { return s_viewHist ? s_histOpen.contains(N->hseq) : liveRowOpen(N); };
 
-        const auto   measureItem = [&](const SDisp& D) -> double {
-            if (D.items.size() < 2)
-                return measureRow(P, T, D.items.front(), CONTENT_W, itemOpen(D.items.front()), s_viewHist, ROW_SINGLE);
-            if (!OPENSET.contains(D.key)) { // digest: icon line + <=2 preview lines
-                double       h    = ROW_PADT + std::max(ROW_ICON, (double)T.title / P.scale + 2);
-                const size_t PREV = std::min<size_t>(2, D.items.size());
-                h += PREV * ((double)T.body / P.scale * 1.35 + 3) + ROW_PADB;
-                return h;
+        // The display list and every height are measured once per WARM and
+        // reused by the draws between warms: hover fills change nothing the
+        // measure depends on, and every model/fold/view change warms first
+        // (notifChanged). The draw side thus lays out without composing or
+        // measuring a single row twice.
+        if (P.warm) {
+            buildDisplay(s_disp, s_viewHist);
+            s_itemH.assign(s_disp.size(), 0.0);
+            s_childH.assign(s_disp.size(), {});
+            for (size_t i = 0; i < s_disp.size(); i++) {
+                const auto& D = s_disp[i];
+                if (D.items.size() < 2) {
+                    s_itemH[i] = measureRow(P, T, D.items.front(), CONTENT_W, itemOpen(D.items.front()), s_viewHist, ROW_SINGLE);
+                    continue;
+                }
+                if (!OPENSET.contains(D.key)) { // digest: icon line + <=2 preview lines
+                    double       h    = ROW_PADT + std::max(ROW_ICON, (double)T.title / P.scale + 2);
+                    const size_t PREV = std::min<size_t>(2, D.items.size());
+                    s_itemH[i]        = h + PREV * ((double)T.body / P.scale * 1.35 + 3) + ROW_PADB;
+                    continue;
+                }
+                double h = ROW_PADT + CHILD_ICON + ROW_PADB; // the header row
+                s_childH[i].reserve(D.items.size());
+                for (const auto& N : D.items) {
+                    const double CH2 = measureRow(P, T, N, CONTENT_W, itemOpen(N), s_viewHist, ROW_CHILD);
+                    s_childH[i].push_back(CH2);
+                    h += CHILD_GAP + CH2;
+                }
+                s_itemH[i] = h;
             }
-            double h = ROW_PADT + CHILD_ICON + ROW_PADB; // the header row
-            for (const auto& N : D.items)
-                h += CHILD_GAP + measureRow(P, T, N, CONTENT_W, itemOpen(N), s_viewHist, ROW_CHILD);
-            return h;
-        };
+        }
+        const auto& disp = s_disp;
+        s_items          = disp.size();
+        s_skip           = disp.empty() ? 0 : std::min(s_skip, disp.size() - 1);
 
         struct SPlaced {
             size_t idx;
@@ -378,8 +416,8 @@ namespace NHyprnotify {
         static std::vector<SPlaced> placed; // reused
         placed.clear();
         double usedH = 0;
-        for (size_t i = s_skip; i < disp.size(); i++) {
-            const double H = measureItem(disp[i]);
+        for (size_t i = s_skip; i < disp.size() && i < s_itemH.size(); i++) {
+            const double H = s_itemH[i];
             if (!placed.empty() && usedH + ROW_GAP + H > BODYCAP)
                 break;
             usedH += (placed.empty() ? 0 : ROW_GAP) + H;
@@ -456,9 +494,16 @@ namespace NHyprnotify {
                         P.tex(PILL->tex, PB.x + (PB.w - PILL->tex->m_size.x / P.scale) / 2, PB.y + (PB.h - PILL->tex->m_size.y / P.scale) / 2);
                 }
 
-                const auto SUMLINE = cachedText(esc(NEWEST->appName) + " <span foreground=\"" + SUBHEX + "\">• " + std::to_string(D.items.size()) +
-                                                    (s_viewHist ? " kept • " : " • ") + ageString(NEWEST->arrived) + "</span>",
-                                                COLTITLE, T.title, std::max(1, (int)((PB.x - 8 - TX) * P.scale)), -1, 0, true, 600);
+                auto& DB = scratch();
+                appendEsc(DB, NEWEST->appName);
+                DB += " <span foreground=\"";
+                DB += SUBHEX;
+                DB += "\">• ";
+                DB += std::to_string(D.items.size());
+                DB += s_viewHist ? " kept • " : " • ";
+                DB += ageString(NEWEST->arrived);
+                DB += "</span>";
+                const auto SUMLINE = cachedText(DB, COLTITLE, T.title, std::max(1, (int)((PB.x - 8 - TX) * P.scale)), -1, 0, true, 600);
                 if (!P.warm && SUMLINE)
                     P.tex(SUMLINE->tex, TX, y + ROW_PADT + (ROW_ICON - texH(SUMLINE, P.scale)) / 2);
 
@@ -476,7 +521,15 @@ namespace NHyprnotify {
                         P.texFit(N->iconTex, CBox{px, py + (LH - PREV_ICON) / 2, PREV_ICON, PREV_ICON}, (int)std::lround(PREV_ICON / 2 * P.scale), 2.f);
                         px += PREV_ICON + 6;
                     }
-                    const auto LN = cachedText("<b>" + N->summary + "</b>  <span foreground=\"" + SUBHEX + "\">" + lastLine(N->body) + "</span>", COLFG, T.body,
+                    auto& PBUF = scratch();
+                    PBUF += "<b>";
+                    PBUF += N->summary;
+                    PBUF += "</b>  <span foreground=\"";
+                    PBUF += SUBHEX;
+                    PBUF += "\">";
+                    PBUF += lastLine(N->body);
+                    PBUF += "</span>";
+                    const auto LN = cachedText(PBUF, COLFG, T.body,
                                                std::max(1, (int)((CONTENT_X + CONTENT_W - ROW_PADX - px) * P.scale)), -1, 0, true, 400);
                     if (!P.warm && LN)
                         P.tex(LN->tex, px, py + (LH - texH(LN, P.scale)) / 2);
@@ -522,9 +575,16 @@ namespace NHyprnotify {
                 }
 
                 const double TX = CONTENT_X + ROW_PADX + CHILD_ICON + ROW_ICON_GAP;
-                const auto   HL = cachedText(esc(NEWEST->appName) + " <span foreground=\"" + SUBHEX + "\">• " + std::to_string(D.items.size()) +
-                                                 (s_viewHist ? " kept • " : " • ") + ageString(NEWEST->arrived) + "</span>",
-                                             COLTITLE, T.title, std::max(1, (int)((PB.x - 8 - TX) * P.scale)), -1, 0, true, 600);
+                auto& HB = scratch();
+                appendEsc(HB, NEWEST->appName);
+                HB += " <span foreground=\"";
+                HB += SUBHEX;
+                HB += "\">• ";
+                HB += std::to_string(D.items.size());
+                HB += s_viewHist ? " kept • " : " • ";
+                HB += ageString(NEWEST->arrived);
+                HB += "</span>";
+                const auto   HL = cachedText(HB, COLTITLE, T.title, std::max(1, (int)((PB.x - 8 - TX) * P.scale)), -1, 0, true, 600);
                 if (!P.warm && HL)
                     P.tex(HL->tex, TX, y + ROW_PADT + (CHILD_ICON - texH(HL, P.scale)) / 2);
 
@@ -540,9 +600,11 @@ namespace NHyprnotify {
 
                 // states 2/3: the 1-line children, each its own two-state card
                 double cy = y + HEADRH;
-                for (const auto& N : D.items) {
+                for (size_t k = 0; k < D.items.size(); k++) {
+                    const auto& N = D.items[k];
                     cy += CHILD_GAP;
-                    const double CH2  = measureRow(P, T, N, CONTENT_W, itemOpen(N), s_viewHist, ROW_CHILD);
+                    const double CH2  = IDX < s_childH.size() && k < s_childH[IDX].size() ? s_childH[IDX][k]
+                                                                                          : measureRow(P, T, N, CONTENT_W, itemOpen(N), s_viewHist, ROW_CHILD);
                     const bool   CHOV = hovered.kind == SCard::CHILD && hovered.id == (N->hseq ? 0 : N->id) && hovered.hseq == N->hseq && hovered.btn < 0 && hovered.part == 0;
                     const int    RIN  = (int)std::lround(5 * P.scale);
                     P.rect(CBox{CONTENT_X, cy, CONTENT_W, CH2}, CHOV ? tAccentDim() : tFill(), RIN, RP);

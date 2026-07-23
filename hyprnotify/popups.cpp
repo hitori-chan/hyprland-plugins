@@ -63,8 +63,15 @@ namespace NHyprnotify {
             const int    TEXTWPX = std::max(1, (int)std::floor(TEXTW * P.scale));
 
             // text pieces (cache-keyed; ages re-key on bucket moves); the
-            // body is rastered LAST — its cap subtracts every other block
-            const auto HEADER = cachedText(esc(N->appName) + " • " + AGE, COLSUB, T.header, TEXTWPX, -1, 0, true, 500);
+            // body is rastered LAST — its cap subtracts every other block.
+            // Compositions build into the reused scratch buffer: this runs
+            // per card per layout pass, and fresh strings here were the
+            // hottest allocation on the path.
+            auto& SB = scratch();
+            appendEsc(SB, N->appName);
+            SB += " • ";
+            SB += AGE;
+            const auto HEADER = cachedText(SB, COLSUB, T.header, TEXTWPX, -1, 0, true, 500);
             const auto TITLE  = N->summary.empty() ? nullptr : cachedText(N->summary, COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
 
             // action labels + icons
@@ -77,7 +84,9 @@ namespace NHyprnotify {
             {
                 double bx = 0, rowY = 0;
                 for (const auto& A : N->actions) {
-                    const auto   LBL = cachedText(esc(A.label), COLACC, T.action, TEXTWPX, -1, 0, true, 600);
+                    auto& LB = scratch();
+                    appendEsc(LB, A.label);
+                    const auto   LBL = cachedText(LB, COLACC, T.action, TEXTWPX, -1, 0, true, 600);
                     const double LW  = texW(LBL, P.scale);
                     const double IW  = (N->actionIcons && A.iconTex) ? BTN_ICON + BTN_ICON_GAP : 0;
                     const double BW  = std::min(TEXTW, IW + LW + 2 * BTN_PADX);
@@ -217,7 +226,9 @@ namespace NHyprnotify {
                         CP.texFit(A.iconTex, CBox{cx, BOX.y + (BOX.h - BTN_ICON) / 2, BTN_ICON, BTN_ICON}, 0);
                         cx += BTN_ICON + BTN_ICON_GAP;
                     }
-                    const auto LBL = cachedText(esc(A.label), COLACC, T.action, TEXTWPX, -1, 0, true, 600);
+                    auto& LB = scratch();
+                    appendEsc(LB, A.label);
+                    const auto LBL = cachedText(LB, COLACC, T.action, TEXTWPX, -1, 0, true, 600);
                     if (LBL && LBL->tex)
                         CP.tex(LBL->tex, cx, BOX.y + (BOX.h - LBL->tex->m_size.y / P.scale) / 2);
                     cardBtns.push_back({BOX, A.id});

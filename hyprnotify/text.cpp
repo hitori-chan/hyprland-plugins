@@ -18,21 +18,39 @@ namespace NHyprnotify {
         return std::format("#{:02x}{:02x}{:02x}", (int)std::lround(c.r * 255), (int)std::lround(c.g * 255), (int)std::lround(c.b * 255));
     }
 
+    const std::string& hexOfCached(const CHyprColor& c) {
+        static std::unordered_map<uint64_t, std::string> memo; // main thread only; a handful of theme colors
+        auto&                                            S = memo[c.getAsHex()];
+        if (S.empty())
+            S = hexOf(c);
+        return S;
+    }
+
+    std::string& scratch() {
+        static std::string S; // main thread only; capacity retained across frames
+        S.clear();
+        return S;
+    }
+
+    void appendEsc(std::string& dst, const std::string& raw) {
+        for (const char C : raw) {
+            if (C == '&')
+                dst += "&amp;";
+            else if (C == '<')
+                dst += "&lt;";
+            else if (C == '>')
+                dst += "&gt;";
+            else
+                dst += C;
+        }
+    }
+
     // escape a RAW string (app names) for insertion into pango markup;
     // summary/body are already sanitized markup and embed verbatim
     std::string esc(const std::string& raw) {
         std::string out;
         out.reserve(raw.size());
-        for (const char C : raw) {
-            if (C == '&')
-                out += "&amp;";
-            else if (C == '<')
-                out += "&lt;";
-            else if (C == '>')
-                out += "&gt;";
-            else
-                out += C;
-        }
+        appendEsc(out, raw);
         return out;
     }
 

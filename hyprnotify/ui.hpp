@@ -123,6 +123,13 @@ namespace NHyprnotify {
     std::string        lastLine(const std::string& body); // the collapsed one-liner: the newest message
     std::string        ageString(const Time::steady_tp& t); // bucketed: "now", "5m", "2h", "3d"
 
+    // the layout passes compose row strings per frame: build them into a
+    // reused buffer (capacity retained; ONE composition live at a time) and
+    // memoize the markup color hex — cachedText copies only on a cache miss
+    std::string&       scratch();
+    void               appendEsc(std::string& dst, const std::string& raw);
+    const std::string& hexOfCached(const CHyprColor& c);
+
     // ---- render.cpp: frame state the drawing units read ----
 
     extern SHover hovered;      // current hover, for fills and reveals

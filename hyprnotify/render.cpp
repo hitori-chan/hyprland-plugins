@@ -25,6 +25,19 @@ namespace NHyprnotify {
         return Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr;
     }
 
+    // Residency keeps quiet cards in the model with NOTHING on screen: only
+    // the open center or a live banner actually draws. Everything frame-rate
+    // gates on this — the pass element, the scanout inhibit, the age tick —
+    // or two resident cards would composite fullscreen video forever.
+    static bool anythingToDraw() {
+        if (centerVisible())
+            return true;
+        for (const auto& N : notifs)
+            if (!N->waiting && N->banner)
+                return true;
+        return false;
+    }
+
     // ---- the frame: one layout, two modes ----
 
     static void renderAll(PHLMONITOR mon, bool warm) {
@@ -100,8 +113,9 @@ namespace NHyprnotify {
     static void armAgeTick() {
         if (!ageTick)
             return;
-        const bool WANT = centerVisible() || std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting; });
-        ageTick->updateTimeout(WANT ? std::optional{std::chrono::seconds(30)} : std::nullopt);
+        // ages only matter where they SHOW — an all-resident model with the
+        // center closed must tick nothing
+        ageTick->updateTimeout(anythingToDraw() ? std::optional{std::chrono::seconds(30)} : std::nullopt);
     }
 
     static void armMotionTick() {
@@ -116,7 +130,7 @@ namespace NHyprnotify {
     void warmNotifs() {
         if (!warmGate.beginWarm())
             return;
-        const auto MON = (notifs.empty() && !centerVisible()) ? nullptr : focusedMon();
+        const auto MON = anythingToDraw() ? focusedMon() : nullptr;
         if (!MON) {
             // no content — or no monitor (disconnect transition): stale boxes
             // must not linger to swallow clicks over nothing
@@ -148,16 +162,9 @@ namespace NHyprnotify {
             // composites. Full-monitor (not the card box) so it can't be
             // occlusion-culled behind the fullscreen surface; a no-op cost when
             // the monitor isn't latched.
-            if (const auto MON = focusedMon(); MON && g_pHyprRenderer && (MON->m_directScanoutIsActive || !MON->m_solitaryClient.expired())) {
-                bool visible = centerVisible();
-                for (const auto& N : notifs)
-                    if (!N->waiting) {
-                        visible = true;
-                        break;
-                    }
-                if (visible)
+            if (const auto MON = focusedMon(); MON && g_pHyprRenderer && (MON->m_directScanoutIsActive || !MON->m_solitaryClient.expired()))
+                if (anythingToDraw())
                     g_pHyprRenderer->damageMonitor(MON);
-            }
         });
     }
 
@@ -215,18 +222,15 @@ namespace NHyprnotify {
     // fullscreen window. Self-healing — once the last card clears, the
     // compositor re-latches solitary and scanout re-engages.
     void onRenderPreChecks(PHLMONITOR mon) {
+        // the cheap gate first: this runs per monitor per frame, and a
+        // resident-only model (nothing drawn) must NOT inhibit scanout —
+        // two quiet shade cards would composite fullscreen video forever
+        if (!anythingToDraw())
+            return;
         if (!mon || mon != focusedMon())
             return;
         if (NHyprCommon::sessionLocked())
             return; // never force a card to float over the lockscreen
-        bool visible = centerVisible();
-        for (const auto& N : notifs)
-            if (!N->waiting) { // all-waiting = suspended (DND): nothing shown, don't inhibit
-                visible = true;
-                break;
-            }
-        if (!visible)
-            return;
         mon->m_solitaryClient.reset(); // open the solitary gate -> renderWorkspace -> RENDER_POST_WINDOWS
         // resetting solitary alone would SEGV on the transition frame:
         // canAttemptDirectScanoutFast() stays true off m_lastScanout and
@@ -237,7 +241,7 @@ namespace NHyprnotify {
     }
 
     void onRenderStage(eRenderStage stage) {
-        if (stage != RENDER_POST_WINDOWS || (notifs.empty() && !centerVisible()))
+        if (stage != RENDER_POST_WINDOWS || !anythingToDraw())
             return;
         // never above the lockscreen (the built-in overlay leaks there; these
         // are the user's notifications). No unlock watcher needed: textures
