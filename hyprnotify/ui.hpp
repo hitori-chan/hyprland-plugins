@@ -18,6 +18,25 @@ namespace NHyprnotify {
 
     namespace Theme = NHyprCommon::Theme; // the glass·ink tokens
 
+    // CHyprColor's uint64 ctor OkLab-converts — never construct theme
+    // constants per draw call; these memoize once (constants never move)
+    inline const CHyprColor& tFill() {
+        static const CHyprColor C{Theme::FILL};
+        return C;
+    }
+    inline const CHyprColor& tFill2() {
+        static const CHyprColor C{Theme::FILL2};
+        return C;
+    }
+    inline const CHyprColor& tAccentDim() {
+        static const CHyprColor C{Theme::ACCENT_DIM};
+        return C;
+    }
+    inline const CHyprColor& tOnAccent() {
+        static const CHyprColor C{Theme::ON_ACCENT};
+        return C;
+    }
+
     // the warm/draw state machine — common/texcache.hpp
     inline NHyprCommon::CWarmGate warmGate;
 

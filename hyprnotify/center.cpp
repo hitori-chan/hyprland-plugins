@@ -195,7 +195,7 @@ namespace NHyprnotify {
                 if (N->progress >= 0) {
                     yy += PROGRESS_GAP;
                     const int PR = (int)std::lround(PROGRESS_H / 2 * P.scale);
-                    P.rect(CBox{TX, yy, TEXTW, PROGRESS_H}, CHyprColor{Theme::FILL2}, PR);
+                    P.rect(CBox{TX, yy, TEXTW, PROGRESS_H}, tFill2(), PR);
                     if (N->progress > 0)
                         P.rect(CBox{TX, yy, std::max(TEXTW * N->progress / 100.0, PROGRESS_H), PROGRESS_H}, N->urgency >= 2 ? COLURGENT : COLACC, PR);
                 }
@@ -247,7 +247,7 @@ namespace NHyprnotify {
                 yy += PROGRESS_GAP;
                 if (!P.warm) {
                     const int PR = (int)std::lround(PROGRESS_H / 2 * P.scale);
-                    P.rect(CBox{TX, yy, TEXTW, PROGRESS_H}, CHyprColor{Theme::FILL2}, PR);
+                    P.rect(CBox{TX, yy, TEXTW, PROGRESS_H}, tFill2(), PR);
                     if (N->progress > 0)
                         P.rect(CBox{TX, yy, std::max(TEXTW * N->progress / 100.0, PROGRESS_H), PROGRESS_H}, N->urgency >= 2 ? COLURGENT : COLACC, PR);
                 }
@@ -261,7 +261,7 @@ namespace NHyprnotify {
                     if (!P.warm) {
                         const bool BHOV = hovered.id == (N->hseq ? 0 : N->id) && hovered.hseq == N->hseq && hovered.btn == (int)i;
                         if (BHOV)
-                            P.rect(BOX, CHyprColor{Theme::ACCENT_DIM}, (int)std::lround(BTN_H / 2 * P.scale));
+                            P.rect(BOX, tAccentDim(), (int)std::lround(BTN_H / 2 * P.scale));
                         if (btnLbls[i] && btnLbls[i]->tex)
                             P.tex(btnLbls[i]->tex, BOX.x + BTN_PADX, BOX.y + (BOX.h - btnLbls[i]->tex->m_size.y / P.scale) / 2);
                     }
@@ -291,7 +291,7 @@ namespace NHyprnotify {
             const auto   G = cachedText(open ? "˄" : "˅", COLFG, T.small, 64, -1, 0, false, 600); // built in BOTH modes
             if (!P.warm) {
                 const bool CHOV = hovered.id == (N->hseq ? 0 : N->id) && hovered.hseq == N->hseq && hovered.part == 1 && hovered.btn < 0;
-                P.rect(CB, CHOV ? CHyprColor{Theme::ACCENT_DIM} : CHyprColor{Theme::FILL2}, (int)std::lround(CHEV / 2 * P.scale));
+                P.rect(CB, CHOV ? tAccentDim() : tFill2(), (int)std::lround(CHEV / 2 * P.scale));
                 if (G && G->tex)
                     P.tex(G->tex, CB.x + (CB.w - G->tex->m_size.x / P.scale) / 2, CB.y + (CB.h - G->tex->m_size.y / P.scale) / 2);
             }
@@ -421,7 +421,7 @@ namespace NHyprnotify {
 
         // glyphs the bottom bar and group headers reuse — request every warm
         const auto XG    = cachedText("✕", COLFG, T.small, 64, -1, 0, false, 600);
-        const auto XGHOT = cachedText("✕", CHyprColor{Theme::ON_ACCENT}, T.small, 64, -1, 0, false, 600);
+        const auto XGHOT = cachedText("✕", tOnAccent(), T.small, 64, -1, 0, false, 600);
 
         for (const auto& [IDX, IH] : placed) {
             const auto& D = disp[IDX];
@@ -430,7 +430,7 @@ namespace NHyprnotify {
                 // ---- a bare row ----
                 const auto& N   = D.items.front();
                 const bool  HOV = hovered.kind == SCard::ROW && hovered.id == (N->hseq ? 0 : N->id) && hovered.hseq == N->hseq && hovered.btn < 0 && hovered.part == 0;
-                P.rect(CBox{CONTENT_X, y, CONTENT_W, IH}, HOV ? CHyprColor{Theme::ACCENT_DIM} : CHyprColor{Theme::FILL}, RROW, RP);
+                P.rect(CBox{CONTENT_X, y, CONTENT_W, IH}, HOV ? tAccentDim() : tFill(), RROW, RP);
                 SCard card;
                 renderRow(P, T, N, CBox{CONTENT_X, y, CONTENT_W, 0}, itemOpen(N), s_viewHist, ROW_SINGLE, card, false);
                 cards.push_back(std::move(card));
@@ -438,7 +438,7 @@ namespace NHyprnotify {
                 // ---- state 1: the digest card ----
                 const auto& NEWEST = D.items.front();
                 const bool  HOV    = hovered.kind == SCard::DIGEST && hovered.group == D.key;
-                P.rect(CBox{CONTENT_X, y, CONTENT_W, IH}, HOV ? CHyprColor{Theme::ACCENT_DIM} : CHyprColor{Theme::FILL}, RROW, RP);
+                P.rect(CBox{CONTENT_X, y, CONTENT_W, IH}, HOV ? tAccentDim() : tFill(), RROW, RP);
 
                 if (P.warm)
                     ensureIconTex(*NEWEST, (int)std::lround(cfg.maxIcon->value() * P.scale), 0, 0);
@@ -451,7 +451,7 @@ namespace NHyprnotify {
                 const double PILLW = texW(PILL, P.scale) + 14;
                 const CBox   PB{CONTENT_X + CONTENT_W - ROW_PADX - PILLW, y + ROW_PADT + (ROW_ICON - PILL_H) / 2, PILLW, PILL_H};
                 if (!P.warm) {
-                    P.rect(PB, HOV ? CHyprColor{Theme::ACCENT_DIM} : CHyprColor{Theme::FILL2}, (int)std::lround(PILL_H / 2 * P.scale));
+                    P.rect(PB, HOV ? tAccentDim() : tFill2(), (int)std::lround(PILL_H / 2 * P.scale));
                     if (PILL && PILL->tex)
                         P.tex(PILL->tex, PB.x + (PB.w - PILL->tex->m_size.x / P.scale) / 2, PB.y + (PB.h - PILL->tex->m_size.y / P.scale) / 2);
                 }
@@ -494,7 +494,7 @@ namespace NHyprnotify {
                 const auto&  NEWEST = D.items.front();
                 const bool   HHOV   = hovered.kind == SCard::GHEAD && hovered.group == D.key;
                 const double HEADRH = ROW_PADT + CHILD_ICON + ROW_PADB;
-                P.rect(CBox{CONTENT_X, y, CONTENT_W, HEADRH}, HHOV ? CHyprColor{Theme::ACCENT_DIM} : CHyprColor{Theme::FILL}, RROW, RP);
+                P.rect(CBox{CONTENT_X, y, CONTENT_W, HEADRH}, HHOV ? tAccentDim() : tFill(), RROW, RP);
 
                 if (P.warm)
                     ensureIconTex(*NEWEST, (int)std::lround(cfg.maxIcon->value() * P.scale), 0, 0);
@@ -506,7 +506,7 @@ namespace NHyprnotify {
                 const CBox XB{CONTENT_X + CONTENT_W - ROW_PADX - XCIRC, y + ROW_PADT + (CHILD_ICON - XCIRC) / 2, XCIRC, XCIRC};
                 const bool XHOV = HHOV && hovered.part == 2;
                 if (!P.warm) {
-                    P.rect(XB, XHOV ? COLURGENT : CHyprColor{Theme::FILL2}, (int)std::lround(XCIRC / 2 * P.scale));
+                    P.rect(XB, XHOV ? COLURGENT : tFill2(), (int)std::lround(XCIRC / 2 * P.scale));
                     const auto* G = XHOV ? XGHOT : XG;
                     if (G && G->tex)
                         P.tex(G->tex, XB.x + (XB.w - G->tex->m_size.x / P.scale) / 2, XB.y + (XB.h - G->tex->m_size.y / P.scale) / 2);
@@ -516,7 +516,7 @@ namespace NHyprnotify {
                 const double PILLW = texW(PILL, P.scale) + 14;
                 const CBox   PB{XB.x - 6 - PILLW, y + ROW_PADT + (CHILD_ICON - PILL_H) / 2, PILLW, PILL_H};
                 if (!P.warm) {
-                    P.rect(PB, CHyprColor{Theme::FILL2}, (int)std::lround(PILL_H / 2 * P.scale));
+                    P.rect(PB, tFill2(), (int)std::lround(PILL_H / 2 * P.scale));
                     if (PILL && PILL->tex)
                         P.tex(PILL->tex, PB.x + (PB.w - PILL->tex->m_size.x / P.scale) / 2, PB.y + (PB.h - PILL->tex->m_size.y / P.scale) / 2);
                 }
@@ -545,7 +545,7 @@ namespace NHyprnotify {
                     const double CH2  = measureRow(P, T, N, CONTENT_W, itemOpen(N), s_viewHist, ROW_CHILD);
                     const bool   CHOV = hovered.kind == SCard::CHILD && hovered.id == (N->hseq ? 0 : N->id) && hovered.hseq == N->hseq && hovered.btn < 0 && hovered.part == 0;
                     const int    RIN  = (int)std::lround(5 * P.scale);
-                    P.rect(CBox{CONTENT_X, cy, CONTENT_W, CH2}, CHOV ? CHyprColor{Theme::ACCENT_DIM} : CHyprColor{Theme::FILL}, RIN, RP);
+                    P.rect(CBox{CONTENT_X, cy, CONTENT_W, CH2}, CHOV ? tAccentDim() : tFill(), RIN, RP);
                     SCard card;
                     card.group = D.key;
                     renderRow(P, T, N, CBox{CONTENT_X, cy, CONTENT_W, 0}, itemOpen(N), s_viewHist, ROW_CHILD, card, true);
@@ -562,10 +562,10 @@ namespace NHyprnotify {
 
         const auto   circle = [&](const char* glyph, bool lit, SCard::eKind kind) {
             const CBox B{bx, BARY, BAR_BTN, BAR_BTN};
-            const auto G = cachedText(glyph, lit ? CHyprColor{Theme::ON_ACCENT} : COLFG, T.bar, 64, -1, 0, false, 600);
+            const auto G = cachedText(glyph, lit ? tOnAccent() : COLFG, T.bar, 64, -1, 0, false, 600);
             if (!P.warm) {
                 const bool HOV = hovered.kind == kind;
-                P.rect(B, lit ? COLACC : HOV ? CHyprColor{Theme::ACCENT_DIM} : CHyprColor{Theme::FILL2}, (int)std::lround(BAR_BTN / 2 * P.scale));
+                P.rect(B, lit ? COLACC : HOV ? tAccentDim() : tFill2(), (int)std::lround(BAR_BTN / 2 * P.scale));
                 if (G && G->tex)
                     P.tex(G->tex, B.x + (B.w - G->tex->m_size.x / P.scale) / 2, B.y + (B.h - G->tex->m_size.y / P.scale) / 2);
             }
@@ -585,7 +585,7 @@ namespace NHyprnotify {
             const auto   L = cachedText(s_viewHist ? "Clear history" : "Clear all", TARGET ? COLFG : COLSUB.modifyA(0.35f), T.bar, (int)(CW * P.scale), -1, 0, false, 600);
             if (!P.warm) {
                 const bool HOV = hovered.kind == SCard::BTN_CLEAR;
-                P.rect(B, HOV && TARGET ? CHyprColor{Theme::ACCENT_DIM} : CHyprColor{Theme::FILL2}.modifyA(TARGET ? 0.09f : 0.035f), (int)std::lround(BAR_BTN / 2 * P.scale));
+                P.rect(B, HOV && TARGET ? tAccentDim() : tFill2().modifyA(TARGET ? 0.09f : 0.035f), (int)std::lround(BAR_BTN / 2 * P.scale));
                 if (L && L->tex)
                     P.tex(L->tex, B.x + (B.w - L->tex->m_size.x / P.scale) / 2, B.y + (B.h - L->tex->m_size.y / P.scale) / 2);
             }

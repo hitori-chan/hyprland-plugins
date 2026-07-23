@@ -62,11 +62,10 @@ namespace NHyprnotify {
             const double TEXTW   = W - 2 * PADX - (ICONW > 0 ? ICONW + ICON_GAP : 0);
             const int    TEXTWPX = std::max(1, (int)std::floor(TEXTW * P.scale));
 
-            // text pieces (cache-keyed; ages re-key on bucket moves)
-            const auto HEADER  = cachedText(esc(N->appName) + " • " + AGE, COLSUB, T.header, TEXTWPX, -1, 0, true, 500);
-            const auto TITLE   = N->summary.empty() ? nullptr : cachedText(N->summary, COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
-            const int  BODYCAP = (int)std::lround(T.body * 1.35 * 8); // ~8 lines
-            const auto BODY    = N->body.empty() ? nullptr : cachedText(N->body, COLBODY, T.body, TEXTWPX, BODYCAP, 1.1f, true, 400, &COLLINK);
+            // text pieces (cache-keyed; ages re-key on bucket moves); the
+            // body is rastered LAST — its cap subtracts every other block
+            const auto HEADER = cachedText(esc(N->appName) + " • " + AGE, COLSUB, T.header, TEXTWPX, -1, 0, true, 500);
+            const auto TITLE  = N->summary.empty() ? nullptr : cachedText(N->summary, COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
 
             // action labels + icons
             if (P.warm)
@@ -117,7 +116,18 @@ namespace NHyprnotify {
             }
             const double IMG_BLOCK = imgH > 0 ? IMG_ROW_GAP + imgH : 0;
 
-            const double HH = texH(HEADER, P.scale), TH = texH(TITLE, P.scale), BH = texH(BODY, P.scale);
+            // the body cap: at most ~8 lines, and never past what max_height
+            // leaves after the other blocks — an uncapped body painted
+            // OUTSIDE the glass once actions and thumbnails stacked up (the
+            // 02359ed lesson; a one-line floor keeps hostile configs sane)
+            const double HH = texH(HEADER, P.scale), TH = texH(TITLE, P.scale);
+            const double AVAIL = MAXH - 2 * PADY - (HERO ? HEROH : 0) - HH - (HH > 0 ? HEAD_GAP : 0) - TH - TITLE_GAP - (N->progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0) -
+                BTN_BLOCK - IMG_BLOCK;
+            const int  LINEPX  = (int)std::lround(T.body * 1.35);
+            const int  BODYCAP = std::max(LINEPX, std::min(LINEPX * 8, (int)std::floor(AVAIL * P.scale)));
+            const auto BODY    = N->body.empty() ? nullptr : cachedText(N->body, COLBODY, T.body, TEXTWPX, BODYCAP, 1.1f, true, 400, &COLLINK);
+
+            const double BH = texH(BODY, P.scale);
             double       th = HH + (HH > 0 ? HEAD_GAP : 0) + TH + (TH > 0 && BH > 0 ? TITLE_GAP : 0) + BH + IMG_BLOCK;
             if (N->progress >= 0)
                 th += (th > 0 ? PROGRESS_GAP : 0) + PROGRESS_H;
@@ -184,7 +194,7 @@ namespace NHyprnotify {
                 ty += th > 0 ? PROGRESS_GAP : 0;
                 const double FILLW = TEXTW * N->progress / 100.0;
                 const int    PR    = (int)std::lround(PROGRESS_H / 2 * P.scale);
-                CP.rect(CBox{TX, ty, TEXTW, PROGRESS_H}, CHyprColor{Theme::FILL2}, PR);
+                CP.rect(CBox{TX, ty, TEXTW, PROGRESS_H}, tFill2(), PR);
                 if (N->progress > 0)
                     CP.rect(CBox{TX, ty, std::max(FILLW, PROGRESS_H), PROGRESS_H}, CRITICAL ? COLURGENT : COLACC, PR);
                 ty += PROGRESS_H;
@@ -201,7 +211,7 @@ namespace NHyprnotify {
                     const CBox  BOX{BX0 + btnBoxes[i].x, ty + btnBoxes[i].y, btnBoxes[i].w, btnBoxes[i].h};
                     const bool  BHOV = hovered.kind == SCard::POPUP && hovered.id == N->id && hovered.btn == (int)i;
                     if (BHOV)
-                        CP.rect(BOX, CHyprColor{Theme::ACCENT_DIM}, (int)std::lround(BTN_H / 2 * P.scale));
+                        CP.rect(BOX, tAccentDim(), (int)std::lround(BTN_H / 2 * P.scale));
                     double cx = BOX.x + BTN_PADX;
                     if (N->actionIcons && A.iconTex) {
                         CP.texFit(A.iconTex, CBox{cx, BOX.y + (BOX.h - BTN_ICON) / 2, BTN_ICON, BTN_ICON}, 0);
@@ -224,12 +234,12 @@ namespace NHyprnotify {
             // the hover-✕ (the desktop analog of swipe), revealed while the
             // pointer is on the card; its glyph builds in both modes
             const auto XG      = cachedText("✕", COLFG, T.small, 64, -1, 0, false, 600);
-            const auto XGHOT   = cachedText("✕", CHyprColor{Theme::ON_ACCENT}, T.small, 64, -1, 0, false, 600);
+            const auto XGHOT   = cachedText("✕", tOnAccent(), T.small, 64, -1, 0, false, 600);
             const bool CARDHOV = hovered.kind == SCard::POPUP && hovered.id == N->id;
             if (CARDHOV) {
                 const CBox XB{X + W - XCIRC - 8, y + 8, XCIRC, XCIRC};
                 const bool XHOV = hovered.part == 2;
-                CP.rect(XB, XHOV ? COLURGENT : CHyprColor{Theme::FILL2}, (int)std::lround(XCIRC / 2 * P.scale));
+                CP.rect(XB, XHOV ? COLURGENT : tFill2(), (int)std::lround(XCIRC / 2 * P.scale));
                 const auto* G = XHOV ? XGHOT : XG;
                 if (G && G->tex)
                     CP.tex(G->tex, XB.x + (XB.w - G->tex->m_size.x / P.scale) / 2, XB.y + (XB.h - G->tex->m_size.y / P.scale) / 2);
