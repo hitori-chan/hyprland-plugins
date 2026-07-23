@@ -39,13 +39,13 @@ namespace NHyprbar {
             warmBars(mon.lock());
             if (!g_pHyprRenderer)
                 return;
-            // renderBorder draws the frame ring OUTSIDE L.box (it grows the box
-            // by the border width on every side), so damaging only L.box leaves
-            // that ring untouched: unpainted on open until an unrelated damage
-            // sweeps it, and stranded when the panel closes — the level-0 ring
-            // lands up on the bar strip. Cover it on every panel, old and new.
+            // The glass paints OUTSIDE L.box — its soft shadow reaches 10
+            // logical px and the blur grows the sampled region further (the
+            // c2e7c47 ring lesson, reborn for glass): damaging only the box
+            // strands the shadow when the panel closes. Cover the full reach
+            // on every panel, old and new.
             const auto   M      = mon.lock();
-            const double MARGIN = (M ? std::ceil(M->m_scale) : 1.0) + 1.0;
+            const double MARGIN = (M ? std::ceil(M->m_scale) : 1.0) + 11.0 + (M ? barBlurRadius() / M->m_scale : 0.0);
 
             static std::vector<CBox> last; // the previous panels: a close/resize must damage them too
             for (auto B : last)

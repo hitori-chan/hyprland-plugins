@@ -129,9 +129,28 @@ namespace NHyprbar {
     // ---- util.cpp ----
 
     double      barHeight();
-    void        damageBars(); // covers the menubar's prompt strip while it's open
+    void        damageBars(); // covers the menubar's floating pill while it's open
     std::string lower(std::string s);
     CHyprColor  color(const SP<Config::Values::CColorValue>& v);
+
+    // CHyprColor's uint64 ctor OkLab-converts — never construct theme
+    // constants per draw call; these memoize once (constants never move)
+    inline const CHyprColor& tFill() {
+        static const CHyprColor C{NHyprCommon::Theme::FILL};
+        return C;
+    }
+    inline const CHyprColor& tFill2() {
+        static const CHyprColor C{NHyprCommon::Theme::FILL2};
+        return C;
+    }
+    inline const CHyprColor& tAccentDim() {
+        static const CHyprColor C{NHyprCommon::Theme::ACCENT_DIM};
+        return C;
+    }
+    inline const CHyprColor& tOnAccent() {
+        static const CHyprColor C{NHyprCommon::Theme::ON_ACCENT};
+        return C;
+    }
 
     // Is this window a task of WS? By workspace ID, NEVER by pointer: while a
     // window closes, the monitor's active workspace and the windows' can

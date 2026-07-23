@@ -336,7 +336,7 @@ namespace NHyprbar {
                     else if (!MINIMIZED && W->m_isUrgent)
                         P.rect(CELL, F.urgentBg, RCHIP);
                     else
-                        P.rect(CELL, CHyprColor{HOV ? NHyprCommon::Theme::FILL2 : NHyprCommon::Theme::FILL}, RCHIP);
+                        P.rect(CELL, (HOV ? tFill2() : tFill()), RCHIP);
 
                     double tx = x + CHIP_PADX;
                     if (const auto ITEX = appIcon(W->m_class); ITEX && ITEX->m_texID != 0) {

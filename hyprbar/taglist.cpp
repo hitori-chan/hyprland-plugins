@@ -78,7 +78,7 @@ namespace NHyprbar {
                     if (C.fill)
                         P.rect(CELL, F.activeBg, RCELL);
                     else if (barHover.widget == this && barHover.tag == i)
-                        P.rect(CELL, CHyprColor{NHyprCommon::Theme::FILL2}, RCELL);
+                        P.rect(CELL, tFill2(), RCELL);
 
                     P.texIn(TEX, CELL);
 

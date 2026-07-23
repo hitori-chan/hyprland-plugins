@@ -205,7 +205,7 @@ namespace NHyprbar {
 
                 const bool HOV = barHover.widget == this;
                 if (HOV)
-                    P.rect(CBox{box.x - 2, box.y + (box.h - 24) / 2, box.w + 4, 24}, CHyprColor{NHyprCommon::Theme::FILL2}, (int)std::lround(8 * P.scale));
+                    P.rect(CBox{box.x - 2, box.y + (box.h - 24) / 2, box.w + 4, 24}, tFill2(), (int)std::lround(8 * P.scale));
 
                 if (CACHE.tex && CACHE.tex->m_texID != 0) {
                     const auto B = P.toPhys(box);
@@ -221,7 +221,7 @@ namespace NHyprbar {
                 if (COUNT > 0) {
                     const auto   TXT  = COUNT > 99 ? std::string{"99+"} : std::to_string(COUNT);
                     const auto   BPT  = std::max(6, (int)std::round(9.0 * P.scale));
-                    const auto   TT   = textTex(TXT, CHyprColor{NHyprCommon::Theme::ON_ACCENT}, BPT, 0, "", 700);
+                    const auto   TT   = textTex(TXT, tOnAccent(), BPT, 0, "", 700);
                     const double TW   = TT ? TT->m_size.x / P.scale : 6;
                     const double BW   = std::max(15.0, TW + 6);
                     const CBox   BB{box.x + box.w / 2 + GLYPH / 2 - 3, box.y + (box.h - 24) / 2 - 4 + 3, BW, 15};

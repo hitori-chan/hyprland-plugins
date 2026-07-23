@@ -1,85 +1,64 @@
-// hyprbar — the AwesomeWM wibar as a native Hyprland plugin.
+// hyprbar — the compact-islands shell bar, drawn by the compositor.
 //
-// A flat bar drawn by the compositor itself in each monitor's reserved top
-// strip (the config reserves it: hl.monitor reserved = { top = <height> }).
+// ONE state (the redesign's decision): a 30px transparent band in each
+// monitor's reserved top strip (hl.monitor reserved = { top = <height> })
+// holding 26px frosted-glass pills — identical maximized or not, nothing
+// ever relayouts. Real fullscreen hides the band; the open menubar floats
+// above even that. The skin is glass·ink (common/theme.hpp): live-blur
+// islands, IBM Plex Sans, superellipse corners.
 //
-//   [taglist 一..九] [tasklist of the active workspace ...] [tray] [bat] [clock] [layoutbox]
+//   ( 一..九 )  (chip) (chip)…      ( kbd  tray  bell  wifi  battery  HH:MM )
 //
-// - taglist: kanji buttons, awesome's exact state matrix — the viewed tag
-//   gets the focus colors, urgent ones the urgent colors, everything else
-//   the plain text color with occupancy shown as the little corner square
-//   (filled = the tag holds the focused window, hollow = occupied).
-//   Click views a tag, Mod+click sends the focused window there (silent),
-//   wheel views the next/previous tag (wrapping). viewtoggle/toggle_tag
-//   have no analog — a window sits on exactly one workspace.
-// - tasklist: every window on THIS monitor's active workspace in arrival
-//   order (stable across raises, like awesome), app icon + "⌃"/"+"/"✈"
-//   state markers + title; the focused task is accent-colored text on the plain
-//   bar (their tasklist_bg_focus WAS the bar bg), urgent gets the urgent
-//   bg; minimized tasks are muted (awesome's fg_minimize) but keep their
-//   row. Click the focused task to minimize it, click any other (minimized
-//   included) to restore + focus (awesome's tasklist button, both halves);
-//   right-click opens the all-clients menu (awful.menu.client_list: icons +
-//   titles, click jumps to the window, its workspace included), wheel walks
-//   focus through the tasks (skipping minimized). Icons resolve from the GTK
-//   icon theme + hicolor + pixmaps, PNG
-//   or SVG (librsvg); *-symbolic SVGs are repainted with the bar
-//   foreground.
-// - tray: an in-compositor StatusNotifierWatcher/Host (sdbus-c++), with a
-//   native dbusmenu renderer. Left click Activates (or opens the menu for
-//   menu-only items), middle SecondaryActivates, right always opens the
-//   menu. SNI Status is honored: Passive hides, NeedsAttention swaps the
-//   icon set. Menus behave like the GTK ones these were under X11 —
-//   submenus cascade beside their parent on hover (225ms popup delay) or
-//   click, over-tall panels scroll (wheel / ▴▾ strips), open levels track
-//   the spec's update signals, check/radio state draws in a leading
-//   column, disposition warning/alert rows take the urgent color, labels
-//   honor the "__" escape.
-// - battery: Android's expressive battery (the Pixel pill), transcribed
-//   1:1 from SystemUI's Compose implementation and drawn natively in the
-//   warm pass (cairo; assets embedded verbatim, see battery.cpp) — digits
-//   inside, Android's attribution ladder to the right (power-save plus >
-//   charge-limit shield > charging bolt > the D cap) and its fill colors:
-//   yellow in power save, green charging OR held at the charge limit,
-//   error red at 20% discharging, white otherwise. State from
-//   /sys/class/power_supply + /sys/firmware/acpi/platform_profile
-//   (hidden on desktops). The old battery-watch.sh alerts live here too: AC
-//   plug/unplug, low (20%) and critical (5%, Android's lines) —
-//   edge-triggered, riding the same udev uevents as the gauge, sent as
-//   direct Notify calls over the tray's bus connection (no fork;
-//   hyprnotify answers from the same process).
-// - clock: "%a %b %d, %H:%M" (the awesome textclock default; the bar pads
-//   it with a real margin, not the format's literal spaces).
-// - layoutbox: rightmost like awesome — the active workspace's layout
-//   icon (~/.config/hypr/icons/<name>.png), per-tag state like awesome's.
-//   awesome's buttons: click next, right-click previous, wheel both ways;
-//   Super+Space / Super+Shift+Space call layout_next()/layout_prev().
-//   The registry holds one layout (floating) until more are implemented.
-// - menubar: awesome's Mod+P launcher in its OWN strip right below the
-//   bar — the bar stays visible, exactly like awesome's menubar wibox at
-//   the workarea top (hl.plugin.hyprbar.menubar()): "Run: " prompt, the
-//   11 awesome categories (Enter drills in, BackSpace/Escape on empty
-//   backs out) and the .desktop apps, filtered as you type — name or
-//   command line, substring, prefix matches and most-launched entries
-//   first — plus a trailing "Exec: <query>" entry that runs whatever was
-//   typed. Left/Right or C-j/C-k select, Home/End jump, Enter runs
-//   (Terminal=true entries in plugin:hyprbar:terminal), C-Return runs the
-//   raw query, C-M-Return runs it in the terminal, Tab/Shift-Tab cycle
-//   shell completion ($PATH for the command word, filenames after),
-//   Up/Down or C-p/C-n walk the prompt history, readline editing
-//   (C-a/e/b/f/d/h/u/w, M-b/f/d, C-BackSpace), Escape or any click
-//   closes. Entries show a theme icon when one resolves, else the
-//   tasklist's letter fallback — the icon cell always reserved so rows
-//   keep their rhythm (a deliberate step past awesome's collapsing
-//   imagebox). Launch counts and history persist in ~/.cache/hyprbar/
-//   (menu_count_file, history_menu), like awesome's.
-// - The strip owns the pointer: hovering the bar never leaks the cursor
-//   shape or hover focus to a window poking underneath it.
-// - The bar hides while the workspace has a real fullscreen window
-//   (maximized windows respect the reserved strip and keep it visible).
+// - taglist (left island): the nine kanji. Viewed = accent on an
+//   accent-dim fill; urgent = the kanji in the urgent color and nothing
+//   else (viewing the tag clears it, tracked bar-side); occupied = ink;
+//   empty = muted. Click views, Mod+click sends the focused window
+//   (silent), wheel cycles wrapping.
+// - task chips (the middle): one pill per window of the active workspace,
+//   arrival order (stable across raises) — 15px themed app icon (75% at
+//   rest, full ink on focus; resolver in common/icons.hpp) + "⌃"/"+"/"✈"
+//   markers + title, max-w 220, chips shrink together when the strip runs
+//   out. Focused chip fills accent-dim; urgent tints; minimized chips
+//   stay, muted. Left = focus (focused again = minimize), middle = close,
+//   wheel walks focus (skipping minimized). Minimize is the in-place
+//   awesome model (hidden window, layout slot freed, FS mode held);
+//   a client's own minimize request is honored.
+// - the status island (right), the decided order — keyboard-layout chip ·
+//   tray · bell · wifi · battery · time; gap 7, no separators, glyphs full
+//   ink with state alone recoloring:
+//   - kbd chip: the active layout's two letters, off the keyboard.layout
+//     event. An indicator.
+//   - tray: StatusNotifierWatcher/Host (sdbus-c++), 24px cells with 15px
+//     icons. Left Activates (menu-only items open their menu), middle
+//     SecondaryActivates, right opens the dbusmenu — a glass panel now
+//     (radius 12, h26 rows, accent-dim hover), closing on pick, outside
+//     click, or esc; submenus cascade on GTK's 225ms delay, over-tall
+//     panels scroll, live updates tracked, "__" labels honored.
+//   - bell: Material's filled shape + the live+kept badge (hides at 0).
+//     A click calls Toggle on hyprnotify's org.hitori.hyprnotify bus face;
+//     the badge rides its State signal. DND has NO bar presence.
+//   - wifi: the Android segmented wedge (dot + two arcs, dimmed to 25%
+//     for partial strength, slash when down). Strength via a spawned
+//     `iw` on the minute tick (/proc/net/wireless is header-only on some
+//     drivers); hidden without wireless hardware. An indicator.
+//   - battery: Android's expressive pill, transcribed 1:1 from SystemUI
+//     (battery.cpp) — digits inside, the attribution ladder (defend >
+//     charging > save-on-the-cell; Android disables saver on AC), fill
+//     ink · accent charging/defending · urgent ≤20% · gold in power save.
+//     The plug/low/critical alerts ride the same udev uevents, sent as
+//     Notify calls over the tray's bus connection.
+//   - time: the bold HH:MM, nothing else.
+// - menubar (hl.plugin.hyprbar.menubar()): the launcher in a floating
+//   glass pill below the band — "run:" prompt over a right hairline, then
+//   category/app chips (selected = accent fill), the keyboard hint at the
+//   right edge. Filtering, completion, history and readline editing are
+//   unchanged; counts/history persist in ~/.cache/hyprbar/.
+// - The band owns the pointer: hovering it never leaks the cursor shape or
+//   hover focus to a window poking underneath. A hover cell is tracked so
+//   tags/chips/tray light their fills.
 //
 // Colors/fonts arrive from theme.lua via hl.config plugin values — the C++
-// defaults just mirror the theme.
+// defaults ARE the glass·ink tokens.
 //
 // THE TEXTURE RULE, the one thing to know before touching the bar or a widget: a
 // texture cannot be painted by the frame that created it, and creating one
@@ -129,7 +108,7 @@ namespace NHyprbar {
     SBarConfig cfg;
 }
 
-// the minute tick: clock text + battery failsafe read
+// the minute tick: clock text + battery failsafe read + wifi strength
 static SP<CEventLoopTimer>                                 timer;
 
 static NHyprCommon::CLifecycle g_lifecycle;
@@ -327,7 +306,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the compact-islands shell bar", "hitori", "3.0.0"};
+    return {"hyprbar", "the compact-islands shell bar", "hitori", "3.0.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

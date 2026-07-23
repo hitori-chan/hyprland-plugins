@@ -302,7 +302,7 @@ namespace NHyprbar {
 
                     const CBox CELL{x, box.y + (box.h - CELLSZ) / 2, CELLSZ, CELLSZ};
                     if (barHover.widget == this && barHover.tray == IT.get())
-                        P.rect(CELL, CHyprColor{NHyprCommon::Theme::FILL2}, (int)std::lround(6 * P.scale));
+                        P.rect(CELL, tFill2(), (int)std::lround(6 * P.scale));
 
                     if (IT->tex && IT->tex->m_texID != 0) {
                         const double S = std::round(ICONSZ * P.scale);

@@ -15,7 +15,7 @@ authors = ["hitori"]
 
 [hyprbar]
 description = "the compact-islands shell bar"
-version     = "3.0.0"
+version     = "3.0.1"
 authors     = ["hitori"]
 output      = "hyprbar/hyprbar.so"
 build       = ["make -C hyprbar all"]
