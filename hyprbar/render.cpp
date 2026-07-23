@@ -13,6 +13,8 @@
 
 #include "hyprbar.hpp"
 
+#include <random>
+
 namespace NHyprbar {
 
     SBarHover barHover;
@@ -86,6 +88,66 @@ namespace NHyprbar {
         static Config::CGradientValueData SHADOW{CHyprColor{NHyprCommon::Theme::SHADOW}};
         g_pHyprOpenGL->renderRoundedShadow(toPhys(global), round, RP, (int)std::lround(10 * scale), SHADOW, 1.f);
         g_pHyprOpenGL->renderRect(toPhys(global), color(cfg.colBg), {.round = round, .roundingPower = RP, .blur = blurOn()});
+    }
+
+    // the strip material: a square frosted band — flat color, live blur, the
+    // soft under-shadow for depth. No hairlines, no gradients (decided).
+    void SPaint::band(const CBox& global, const CHyprColor& c) const {
+        if (warm)
+            return;
+        static Config::CGradientValueData SHADOW{CHyprColor{NHyprCommon::Theme::SHADOW}};
+        g_pHyprOpenGL->renderRoundedShadow(toPhys(global), 0, (float)cfg.roundingPower->value(), (int)std::lround(10 * scale), SHADOW, 1.f);
+        g_pHyprOpenGL->renderRect(toPhys(global), c, {.round = 0, .blur = blurOn()});
+    }
+
+    // ---- the strip's grain (one tile per monitor, band-row sized) ----
+
+    struct SGrainTex {
+        SP<ITexture> tex;
+        int          w = 0, h = 0;
+    };
+    static std::unordered_map<uint64_t, SGrainTex> grainTex;
+
+    // Built by the warm pass (the texture rule). Fixed seed: the tile is a
+    // material constant, not per-frame noise — static grain, no shimmer.
+    static void ensureGrain(PHLMONITOR mon) {
+        const int W = std::max(1, (int)std::lround(mon->logicalBox().w * mon->m_scale));
+        const int H = std::max(1, (int)std::lround(barHeight() * mon->m_scale));
+        auto&     G = grainTex[mon->m_id];
+        if (G.tex && G.w == W && G.h == H)
+            return;
+        if (!warmGate.mayBuild())
+            return;
+        auto* SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
+        if (cairo_surface_status(SURF) != CAIRO_STATUS_SUCCESS) {
+            cairo_surface_destroy(SURF);
+            return;
+        }
+        auto*        D      = cairo_image_surface_get_data(SURF);
+        const int    STRIDE = cairo_image_surface_get_stride(SURF);
+        std::minstd_rand rng{0x9e0f1218u};
+        for (int y = 0; y < H; y++) {
+            auto* row = D + (size_t)y * STRIDE;
+            for (int x = 0; x < W; x++) {
+                // premultiplied white at alpha 0..9/255 — ~1.5% mean grain
+                const uint8_t A = (uint8_t)(rng() % 10);
+                row[x * 4] = row[x * 4 + 1] = row[x * 4 + 2] = row[x * 4 + 3] = A;
+            }
+        }
+        cairo_surface_mark_dirty(SURF);
+        G.tex = g_pHyprRenderer->createTexture(SURF);
+        G.w   = W;
+        G.h   = H;
+        cairo_surface_destroy(SURF);
+    }
+
+    void stripGrain(const SPaint& P, const CBox& row) {
+        if (P.warm)
+            return;
+        const auto IT = grainTex.find(P.mon->m_id);
+        if (IT == grainTex.end() || !IT->second.tex || IT->second.tex->m_texID == 0)
+            return; // first frame after a resize: the band is grainless once
+        P.tex(IT->second.tex, P.toPhys(row));
     }
 
     void SPaint::border(const CBox& global, const CHyprColor& c, int round, int sizePx) const {
@@ -185,22 +247,37 @@ namespace NHyprbar {
         F.urgentBg  = color(cfg.colUrgentBg);
         F.minimized = color(cfg.colEmpty);
 
-        // -- the compact islands: 26px pills on the 30px band --
-        const double IH    = H - 4;
-        const double IY    = MB.y + 2;
-        const int    RPILL = (int)std::lround(IH / 2 * SCALE);
+        // -- the band: 26px pills on a transparent 30px band (islands), or
+        // one full-bleed frosted strip whose cells run the full height and
+        // reach y=0 and both corners (strip — the letterbox/Fitts mode) --
+        const bool   STRIP = stripMode();
+        const double IH    = STRIP ? H : H - 4;
+        const double IY    = STRIP ? MB.y : MB.y + 2;
+        const int    RPILL = STRIP ? 0 : (int)std::lround(IH / 2 * SCALE);
 
-        // LEFT: the taglist island
+        if (STRIP) {
+            if (warm)
+                ensureGrain(mon);
+            const CBox BAND{MB.x, MB.y, MB.w, H};
+            auto       BC = color(cfg.colBg); // col_bg's RGB at the strip's own alpha
+            BC.a          = std::clamp((float)cfg.barAlpha->value(), 0.f, 1.f);
+            P.band(BAND, BC);
+            stripGrain(P, BAND);
+        }
+
+        // LEFT: the taglist — flush to the corner in strip (the top-left
+        // throw lands on 一), a glass island otherwise
         const double TAGW = taglistWidget().fit(P, F);
-        double       leftEnd = MB.x + 6;
+        double       leftEnd = MB.x + (STRIP ? 0 : 6);
         if (TAGW > 0) {
-            const CBox ISL{MB.x + 6, IY, TAGW, IH};
-            P.glass(ISL, RPILL);
+            const CBox ISL{leftEnd, IY, TAGW, IH};
+            if (!STRIP)
+                P.glass(ISL, RPILL);
             taglistWidget().draw(P, F, ISL);
             leftEnd = ISL.x + ISL.w;
         }
 
-        // RIGHT: the status island — layout chip · tray · bell · battery ·
+        // RIGHT: the status cluster — layout chip · tray · bell · battery ·
         // time, gap 7, no separators (wifi lives in the tray: nm-applet's
         // own SNI icon carries the strength — a second wedge said it twice)
         IWidget* const STATUS[] = {&kbdWidget(), &trayWidget(), &bellWidget(), &batteryWidget(), &clockWidget()};
@@ -215,12 +292,16 @@ namespace NHyprbar {
                 shown++;
             }
         }
-        double rightStart = MB.x + MB.w - 6;
+        double rightStart = MB.x + MB.w - (STRIP ? 0 : 6);
         if (shown > 0) {
-            const double ISLW = total + (shown - 1) * SGAP + 2 * SPAD;
-            const CBox   ISL{MB.x + MB.w - 6 - ISLW, IY, ISLW, IH};
-            P.glass(ISL, RPILL);
-            double x = ISL.x + SPAD;
+            // strip: cells ride the band itself — text keeps an 8px edge
+            // clearance, the band swallows the corner pixels regardless
+            const double PADL = STRIP ? 0 : SPAD, PADR = STRIP ? 8 : SPAD;
+            const double ISLW = total + (shown - 1) * SGAP + PADL + PADR;
+            const CBox   ISL{MB.x + MB.w - (STRIP ? 0 : 6) - ISLW, IY, ISLW, IH};
+            if (!STRIP)
+                P.glass(ISL, RPILL);
+            double x = ISL.x + PADL;
             for (size_t i = 0; i < std::size(STATUS); i++) {
                 if (sw[i] <= 0)
                     continue;
@@ -231,7 +312,8 @@ namespace NHyprbar {
         }
 
         // MIDDLE: the task chips fill what's left
-        tasklistWidget().draw(P, F, CBox{leftEnd + 6, IY, rightStart - 6 - (leftEnd + 6), IH});
+        const double MIDGAP = STRIP ? 8 : 6;
+        tasklistWidget().draw(P, F, CBox{leftEnd + MIDGAP, IY, rightStart - MIDGAP - (leftEnd + MIDGAP), IH});
 
         auto& FP = lastTaskFp[mon->m_id];
         if (warm)
@@ -276,10 +358,10 @@ namespace NHyprbar {
             const auto MON = m_mon.lock();
             if (!MON)
                 return std::nullopt;
-            const double PAD = blurRadius() + 12; // island shadows reach below the band
+            const double PAD = blurRadius() + 12; // island/band shadows reach below the band
             double       h   = barHeight() + PAD;
             if (Menubar::isOpen && Menubar::mon.lock() == MON)
-                h = barHeight() + 4 + barHeight() + PAD; // the floating strip below the bar
+                h = barHeight() * 2 + (stripMode() ? 0 : 4) + PAD; // the open menubar below the bar (docked in strip)
             if (Menu::isOpen && Menu::mon.lock() == MON)
                 h = MON->logicalBox().h; // cascades anchor anywhere below the bar — cover it all
             // monitor-local LOGICAL px — the pass scales by m_scale itself
@@ -345,6 +427,7 @@ namespace NHyprbar {
         // before this, and its barChanged would touch the caches cleared below
         texCache.clear();
         lastTaskFp.clear();
+        grainTex.clear();
         barHover = {};
     }
 

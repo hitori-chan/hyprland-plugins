@@ -55,29 +55,35 @@ namespace NHyprbar {
             }
 
             double fit(const SPaint& P, const SFrame& F) override {
-                // min-w 26 cells, gap 2, 6px island padding each side — the
-                // warm builds exactly the color variants the draw will paint
-                double w = 6;
+                // min-w 26 cells; islands pad 6 each side with gap-2 pills,
+                // strip runs contiguous full-height cells from the corner —
+                // the warm builds exactly the color variants the draw will paint
+                const bool STRIP = stripMode();
+                double     w     = STRIP ? 0 : 6;
                 for (int i = 1; i <= 9; i++) {
                     const auto   TEX = textTex(KANJI[i - 1], cell(F, i).fg, P.pt);
                     const double TW  = TEX ? TEX->m_size.x / P.scale : P.h;
-                    w += std::max(26.0, TW + 8) + (i < 9 ? 2 : 0);
+                    w += std::max(26.0, TW + 8) + (!STRIP && i < 9 ? 2 : 0);
                 }
-                return w + 6;
+                return w + (STRIP ? 0 : 6);
             }
 
             void draw(const SPaint& P, const SFrame& F, const CBox& box) override {
-                double     x     = box.x + 6;
-                const auto RCELL = (int)std::lround(8 * P.scale);
+                const bool STRIP = stripMode();
+                double     x     = box.x + (STRIP ? 0 : 6);
+                const auto RCELL = STRIP ? 0 : (int)std::lround(8 * P.scale);
                 for (int i = 1; i <= 9; i++) {
                     const auto   C   = cell(F, i);
                     const auto   TEX = textTex(KANJI[i - 1], C.fg, P.pt);
                     const double TW  = TEX ? TEX->m_size.x / P.scale : P.h;
-                    const CBox   CELL{x, box.y + (box.h - 24) / 2, std::max(26.0, TW + 8), 24};
+                    const double CW  = std::max(26.0, TW + 8);
+                    const CBox   CELL = STRIP ? CBox{x, box.y, CW, box.h} : CBox{x, box.y + (box.h - 24) / 2, CW, 24};
 
-                    if (C.fill)
+                    if (C.fill) {
                         P.rect(CELL, F.activeBg, RCELL);
-                    else if (barHover.widget == this && barHover.tag == i)
+                        if (STRIP) // the active pill retires: full-height wash + a 2px accent baseline
+                            P.rect(CBox{CELL.x, CELL.y + CELL.h - 2, CELL.w, 2}, F.active);
+                    } else if (barHover.widget == this && barHover.tag == i)
                         P.rect(CELL, tFill2(), RCELL);
 
                     P.texIn(TEX, CELL);
@@ -87,7 +93,7 @@ namespace NHyprbar {
                     h.widget = this;
                     h.tag    = i;
                     P.hits->push_back(h);
-                    x += CELL.w + 2;
+                    x += CELL.w + (STRIP ? 0 : 2);
                 }
             }
 

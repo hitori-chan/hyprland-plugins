@@ -298,12 +298,15 @@ namespace NHyprbar {
             void draw(const SPaint& P, const SFrame& F, const CBox& box) override {
                 if (!F.tasks || F.tasks->empty() || box.w < 40)
                     return;
-                // the compact islands: one chip per task — h 24, pad-x 10,
-                // gap 6, max-w 220, 15px themed app icon; the focused chip
-                // fills accent-dim, urgent fills its own tint, minimized dims
-                constexpr double CHIP_H = 24, CHIP_PADX = 10, CHIP_GAP = 6, CHIP_MAXW = 220, ICON = 15, ICON_GAP = 5;
-                const int        RCHIP = (int)std::lround(CHIP_H / 2 * P.scale);
-                const double     CY    = box.y + (box.h - CHIP_H) / 2;
+                // one chip per task — pad-x 10, max-w 220, 15px themed app
+                // icon; the focused chip fills accent-dim, urgent fills its
+                // own tint, minimized dims. Islands: 24px pills, gap 6.
+                // Strip: full-height square segments, 1px apart.
+                const bool       STRIP = stripMode();
+                constexpr double CHIP_PADX = 10, CHIP_MAXW = 220, ICON = 15, ICON_GAP = 5;
+                const double     CHIP_H = STRIP ? box.h : 24, CHIP_GAP = STRIP ? 1 : 6;
+                const int        RCHIP = STRIP ? 0 : (int)std::lround(CHIP_H / 2 * P.scale);
+                const double     CY    = STRIP ? box.y : box.y + (box.h - CHIP_H) / 2;
 
                 // chips shrink together when the strip runs out of room
                 const double N     = (double)F.tasks->size();

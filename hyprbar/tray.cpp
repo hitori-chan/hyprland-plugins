@@ -300,9 +300,16 @@ namespace NHyprbar {
                             IT->tex = trayIcon(IT->iconName, IT->themePath);
                     }
 
+                    const bool STRIP = stripMode();
                     const CBox CELL{x, box.y + (box.h - CELLSZ) / 2, CELLSZ, CELLSZ};
-                    if (barHover.widget == this && barHover.tray == IT.get())
-                        P.rect(CELL, tFill2(), (int)std::lround(6 * P.scale));
+                    // strip: the wash and the hit run the full band height
+                    const CBox HITCELL = STRIP ? CBox{x, box.y, CELLSZ, box.h} : CELL;
+                    if (barHover.widget == this && barHover.tray == IT.get()) {
+                        if (STRIP)
+                            P.rect(HITCELL, tFill2());
+                        else
+                            P.rect(CELL, tFill2(), (int)std::lround(6 * P.scale));
+                    }
 
                     if (IT->tex && IT->tex->m_texID != 0) {
                         const double S = std::round(ICONSZ * P.scale);
@@ -314,7 +321,7 @@ namespace NHyprbar {
                         P.texIn(textTex(letterOf(IT->iconName), color(cfg.colMuted), P.pt), CELL);
 
                     SHit h;
-                    h.box     = CELL;
+                    h.box     = HITCELL;
                     h.widget  = this;
                     h.tray    = IT;
                     h.anchorX = CELL.x + CELLSZ / 2.0;

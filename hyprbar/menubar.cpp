@@ -712,8 +712,11 @@ namespace NHyprbar {
             }
         }
 
-        // The launcher strip, a floating glass pill below the bar — synced to
-        // the compact islands (h 30, inset 6, below-bar offset 34, pill).
+        // The launcher strip. Islands: a floating glass pill below the bar
+        // (h 30, inset 6, below-bar offset 34, pill). Strip: DOCKED — a
+        // second full-width band row sliding straight out of the strip, the
+        // same frost one tone up (col_bar_menubar), no gap, no radius, no
+        // float, no hairlines.
         CBox stripBox;
 
         void render(const SPaint& PAINT) {
@@ -724,9 +727,15 @@ namespace NHyprbar {
             const CHyprColor COLFG = color(cfg.colFg), COLACTIVEBG = color(cfg.colActiveBg), COLFOCUS = color(cfg.colFocus), COLACTIVE = color(cfg.colActive),
                              COLMUTED = color(cfg.colMuted);
 
-            const CBox STRIP{PAINT.mb.x + 6, PAINT.mb.y + PAINT.h + 4, PAINT.mb.w - 12, PAINT.h};
+            const bool STRIPMODE = stripMode();
+            const CBox STRIP     = STRIPMODE ? CBox{PAINT.mb.x, PAINT.mb.y + PAINT.h, PAINT.mb.w, PAINT.h} //
+                                             : CBox{PAINT.mb.x + 6, PAINT.mb.y + PAINT.h + 4, PAINT.mb.w - 12, PAINT.h};
             stripBox = STRIP;
-            PAINT.glass(STRIP, (int)std::lround(STRIP.h / 2 * PAINT.scale));
+            if (STRIPMODE) {
+                PAINT.band(STRIP, color(cfg.colBarMenubar));
+                stripGrain(PAINT, STRIP);
+            } else
+                PAINT.glass(STRIP, (int)std::lround(STRIP.h / 2 * PAINT.scale));
 
             double px = STRIP.x + 12;
 
@@ -738,8 +747,11 @@ namespace NHyprbar {
             const double      PW     = PROMPT ? PROMPT->m_size.x / PAINT.scale : 0;
             PAINT.texIn(PROMPT, CBox{px, STRIP.y, PW, STRIP.h});
             px += PW + 8;
-            PAINT.rect(CBox{px, STRIP.y + 7, 1, STRIP.h - 14}, color(cfg.colFrame)); // the prompt's right hairline
-            px += 9;
+            if (!STRIPMODE) { // the prompt's right hairline — islands only, the strip draws no lines
+                PAINT.rect(CBox{px, STRIP.y + 7, 1, STRIP.h - 14}, color(cfg.colFrame));
+                px += 9;
+            } else
+                px += 4;
 
             // the keyboard hint, right-aligned, out of the chips' way
             const auto HINT  = textTex("type to filter · ←→ · ⏎ run · esc", COLMUTED, std::max(6, (int)std::round(10.0 * PAINT.scale)));
@@ -769,12 +781,15 @@ namespace NHyprbar {
                     return nullptr;
                 };
 
-                // app chips: h 24, pad-x 11, 15px icon, gap 5; the icon cell is
-                // always reserved — an entry whose icon doesn't resolve gets the
-                // letter fallback instead of collapsing (rows keep their rhythm)
-                constexpr double CHIP_H = 24, CHIP_PADX = 11, CHIP_GAP = 5, ICON = 15, ICON_GAP = 5;
-                const double     CY     = STRIP.y + (STRIP.h - CHIP_H) / 2;
-                const int        RCHIP  = (int)std::lround(CHIP_H / 2 * PAINT.scale);
+                // app chips: pad-x 11, 15px icon; the icon cell is always
+                // reserved — an entry whose icon doesn't resolve gets the
+                // letter fallback instead of collapsing (rows keep their
+                // rhythm). Islands: 24px pills, gap 5. Strip: full-height
+                // square segments 1px apart, resting on a faint fill.
+                constexpr double CHIP_PADX = 11, ICON = 15, ICON_GAP = 5;
+                const double     CHIP_H = STRIPMODE ? STRIP.h : 24, CHIP_GAP = STRIPMODE ? 1 : 5;
+                const double     CY     = STRIPMODE ? STRIP.y : STRIP.y + (STRIP.h - CHIP_H) / 2;
+                const int        RCHIP  = STRIPMODE ? 0 : (int)std::lround(CHIP_H / 2 * PAINT.scale);
                 const auto       entryW = [&](int i) {
                     const auto T = textTex(entryName(i), COLFG, PAINT.pt);
                     return CHIP_PADX + ICON + ICON_GAP + (T ? T->m_size.x / PAINT.scale : 0) + CHIP_PADX + CHIP_GAP;
@@ -798,16 +813,22 @@ namespace NHyprbar {
 
                     CHyprColor fg = COLFG;
                     if (i == Menubar::sel) {
-                        PAINT.rect(CBox{px, CY, W, CHIP_H}, COLACTIVEBG, RCHIP);
-                        fg = COLFOCUS;
-                    }
+                        if (STRIPMODE) { // the selected entry goes SOLID accent, ink inverts
+                            PAINT.rect(CBox{px, CY, W, CHIP_H}, COLACTIVE);
+                            fg = tOnAccent();
+                        } else {
+                            PAINT.rect(CBox{px, CY, W, CHIP_H}, COLACTIVEBG, RCHIP);
+                            fg = COLFOCUS;
+                        }
+                    } else if (STRIPMODE)
+                        PAINT.rect(CBox{px, CY, W, CHIP_H}, tFill());
 
                     double tx = px + CHIP_PADX;
                     if (ITEX && ITEX->m_texID != 0) {
                         const auto P = PAINT.toPhys(CBox{tx, CY + (CHIP_H - ICON) / 2, ICON, ICON});
                         PAINT.tex(ITEX, P);
                     } else
-                        PAINT.texIn(textTex(letterOf(NAME), COLACTIVE, PAINT.pt), CBox{tx, CY, ICON, CHIP_H});
+                        PAINT.texIn(textTex(letterOf(NAME), i == Menubar::sel && STRIPMODE ? tOnAccent() : COLACTIVE, PAINT.pt), CBox{tx, CY, ICON, CHIP_H});
                     tx += ICON + ICON_GAP;
 
                     const auto T = i == Menubar::sel ? textTex(NAME, fg, PAINT.pt) : WT;

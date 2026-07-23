@@ -2,13 +2,21 @@
 
 ## The band
 
-One state (decided with the redesign): a 30px transparent band, 26px glass
-islands inside — the taglist pill left, the task chips filling the middle,
-the status island right. Nothing relayouts when a window maximizes; real
-fullscreen hides the band (the open menubar still floats above it). The
-islands are glass·ink: `col_bg`'s alpha is the frost, blur rides the
-compositor's `decoration:blur` (the pass element declares live blur), each
-island paints its own soft shadow.
+Two modes on one machinery (`plugin:hyprbar:mode`), in a 30px band — the
+taglist left, the task chips filling the middle, the status cluster right:
+
+- **islands** (default): 26px glass pills on a transparent band. `col_bg`'s
+  alpha is the frost, blur rides the compositor's `decoration:blur` (the
+  pass element declares live blur), each island paints its own soft shadow.
+- **strip**: one full-bleed frosted band — `col_bg`'s RGB at `bar_alpha`
+  (default 0.62, the same glass), flat with no hairlines or gradients,
+  ~1.5% grain baked into the material (one cached tile per monitor, built
+  by the warm pass) and a soft under-shadow. Cells run the full band
+  height: y=0 and both corners are live targets — the top-left throw lands
+  tag 一. One blur region instead of 3+N.
+
+Nothing relayouts when a window maximizes; real fullscreen hides the band
+(the open menubar still floats above it).
 
 ## Taglist
 
@@ -70,17 +78,24 @@ wedge: nm-applet's SNI icon in the tray already carries the strength
   ink · accent charging/defending · urgent ≤20% · gold in power save.
   The AC plug/unplug, low (20%) and critical (5%, sticky) alerts ride the
   same udev uevents, sent through the notification daemon.
-- **Time** — the bold `HH:MM` (Android 16's bold status clock), nothing
-  else. No date, no click action.
+- **Time** — the bold clock (Android 16's bold status weight), text from
+  `plugin:hyprbar:clock_format` (strftime). It ticks per minute — `%S`
+  would go stale — and re-derives on config reload. Default `%H:%M`;
+  awesome's stock textclock is `%a %b %d, %H:%M`. No click action.
 
 ## The menubar (`Mod+P`)
 
-The launcher in a floating glass pill below the band (inset 6, below-bar
-offset 34, full pill radius): a `run:` prompt over a right hairline, then
-category/app chips (h24, pad-x 11, 15px icons, gap 5; the selected chip
-fills accent-dim with accent text), the keyboard hint right-aligned.
-Filtering is unchanged — name or command line, substring, prefix matches
-and most-launched first, plus the trailing `Exec: <query>` entry.
+The launcher below the band. Islands: a floating glass pill (inset 6,
+below-bar offset 34, full pill radius), a `run:` prompt over a right
+hairline, then category/app chips (h24, pad-x 11, 15px icons, gap 5; the
+selected chip fills accent-dim with accent text). Strip: DOCKED — a second
+full-width band row sliding straight out of the strip, the same frost one
+tone up (`col_bar_menubar`), no gap, no radius, no float, no hairlines;
+chips are full-height square segments 1px apart resting on a faint fill,
+and the selected one goes solid accent with inverted ink. The keyboard
+hint is right-aligned in both. Filtering is unchanged — name or command
+line, substring, prefix matches and most-launched first, plus the trailing
+`Exec: <query>` entry.
 
 | keys | action |
 |---|---|

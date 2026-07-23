@@ -1,11 +1,15 @@
-// hyprbar — the compact-islands shell bar, drawn by the compositor.
+// hyprbar — the shell bar, drawn by the compositor.
 //
-// ONE state (the redesign's decision): a 30px transparent band in each
-// monitor's reserved top strip (hl.monitor reserved = { top = <height> })
-// holding 26px frosted-glass pills — identical maximized or not, nothing
-// ever relayouts. Real fullscreen hides the band; the open menubar floats
-// above even that. The skin is glass·ink (common/theme.hpp): live-blur
-// islands, IBM Plex Sans, superellipse corners.
+// TWO modes, one machinery (plugin:hyprbar:mode): the compact ISLANDS — a
+// 30px transparent band in each monitor's reserved top strip (hl.monitor
+// reserved = { top = <height> }) holding 26px frosted-glass pills — and the
+// STRIP: one full-bleed frosted band (col_bg's RGB at bar_alpha, flat, no
+// hairlines, grain + under-shadow) whose cells run the full height, so y=0
+// and both corners are live click targets and the menubar docks as a second
+// band row. Identical maximized or not, nothing ever relayouts. Real
+// fullscreen hides the band; the open menubar floats above even that. The
+// skin is glass·ink (common/theme.hpp): live blur, superellipse corners
+// (islands — the strip is square).
 //
 //   ( 一..九 )  (chip) (chip)…      ( kbd  tray  bell  wifi  battery  HH:MM )
 //
@@ -44,12 +48,14 @@
 //     ink · accent charging/defending · urgent ≤20% · gold in power save.
 //     The plug/low/critical alerts ride the same udev uevents, sent as
 //     Notify calls over the tray's bus connection.
-//   - time: the bold HH:MM, nothing else.
-// - menubar (hl.plugin.hyprbar.menubar()): the launcher in a floating
-//   glass pill below the band — "run:" prompt over a right hairline, then
-//   category/app chips (selected = accent fill), the keyboard hint at the
-//   right edge. Filtering, completion, history and readline editing are
-//   unchanged; counts/history persist in ~/.cache/hyprbar/.
+//   - time: the bold clock — plugin:hyprbar:clock_format (strftime, ticks
+//     per minute; the user runs awesome's stock "%a %b %d, %H:%M").
+// - menubar (hl.plugin.hyprbar.menubar()): the launcher below the band — a
+//   floating glass pill in islands ("run:" prompt over a right hairline,
+//   pill chips, selected = accent-dim), DOCKED in strip: a second full-width
+//   band row, one tone up (col_bar_menubar), square full-height chips,
+//   selected = SOLID accent. Filtering, completion, history and readline
+//   editing are identical in both; counts/history persist in ~/.cache/hyprbar/.
 // - The band owns the pointer: hovering it never leaks the cursor shape or
 //   hover focus to a window poking underneath. A hover cell is tracked so
 //   tags/chips/tray light their fills.
@@ -191,7 +197,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.fontSize      = makeShared<Config::Values::CIntValue>("plugin:hyprbar:font_size", "text size in logical px (monitor scale applies at raster time)", 12);
     cfg.traySpacing   = makeShared<Config::Values::CIntValue>("plugin:hyprbar:tray_spacing", "px between tray icons", 3);
     cfg.roundingPower = makeShared<Config::Values::CFloatValue>("plugin:hyprbar:rounding_power", "corner superellipse exponent", (float)Th::ROUNDING_POWER);
+    cfg.barAlpha      = makeShared<Config::Values::CFloatValue>("plugin:hyprbar:bar_alpha", "strip mode: the band's glass alpha over col_bg's RGB", 0.62f);
+    cfg.mode          = makeShared<Config::Values::CStringValue>("plugin:hyprbar:mode", "islands | strip (strip: one full-bleed frosted band, full-height hitboxes, docked menubar)", "islands");
     cfg.font          = makeShared<Config::Values::CStringValue>("plugin:hyprbar:font", "font family", Th::FONT);
+    cfg.clockFormat   = makeShared<Config::Values::CStringValue>("plugin:hyprbar:clock_format", "strftime clock text (the clock ticks per minute)", "%H:%M");
     cfg.terminal      = makeShared<Config::Values::CStringValue>("plugin:hyprbar:terminal", "terminal that runs Terminal=true menubar entries", "foot");
     cfg.colBg         = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_bg", "island glass (alpha is the glass)", Th::GLASS);
     cfg.colFg         = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_fg", "full-ink text and status glyphs", Th::INK);
@@ -203,17 +212,19 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.colUrgent     = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_urgent", "urgent text (the urgent kanji)", Th::URGENT);
     cfg.colUrgentBg   = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_urgent_bg", "urgent chip fill", 0x29ff8a5c);
     cfg.colFrame      = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_frame", "hairlines", Th::LINE);
+    cfg.colBarMenubar = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_bar_menubar", "strip mode: the docked menubar row (one tone up)", 0xa8181d26);
     cfg.colCharging   = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_charging", "battery fill charging/defending (the accent)", Th::ACCENT);
     cfg.colLow        = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_low", "battery fill at 20% and under (urgent)", Th::URGENT);
     cfg.colSave       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_powersave", "battery fill in power save (gold)", 0xffffc917);
 
     for (const auto& V : {cfg.height, cfg.fontSize, cfg.traySpacing})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
-    HyprlandAPI::addConfigValueV2(PHANDLE, cfg.roundingPower);
-    for (const auto& V : {cfg.font, cfg.terminal})
+    for (const auto& V : {cfg.roundingPower, cfg.barAlpha})
+        HyprlandAPI::addConfigValueV2(PHANDLE, V);
+    for (const auto& V : {cfg.mode, cfg.font, cfg.clockFormat, cfg.terminal})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
     for (const auto& V : {cfg.colBg, cfg.colFg, cfg.colMuted, cfg.colFocus, cfg.colActive, cfg.colActiveBg, cfg.colEmpty, cfg.colUrgent, cfg.colUrgentBg, cfg.colFrame,
-                          cfg.colCharging, cfg.colLow, cfg.colSave})
+                          cfg.colBarMenubar, cfg.colCharging, cfg.colLow, cfg.colSave})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
 
     Clock::refresh();
@@ -286,6 +297,13 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_lifecycle.listen(EV.workspace.removed, [](PHLWORKSPACEREF) { damageAndWarm(); });
     g_lifecycle.listen(EV.workspace.moveToMonitor, [](PHLWORKSPACE, PHLMONITOR) { damageAndWarm(); });
     g_lifecycle.listen(EV.monitor.layoutChanged, []() { damageAndWarm(); });
+    // plugin values land on the reparse AFTER load (and on every manual
+    // reload): re-derive the clock text — its format is config — and repaint
+    // with the fresh palette/mode rather than waiting out the minute tick
+    g_lifecycle.listen(EV.config.reloaded, []() {
+        Clock::refresh();
+        damageAndWarm();
+    });
 
     timer = makeShared<CEventLoopTimer>(
         toNextMinute(),
@@ -301,7 +319,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the compact-islands shell bar", "hitori", "3.0.4"};
+    return {"hyprbar", "the shell bar: compact islands or the full-bleed strip", "hitori", "3.1.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

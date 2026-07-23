@@ -442,6 +442,47 @@ for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in j
 done
 sleep 0.8
 
+# ---- strip mode (hyprbar) -------------------------------------------------
+# the deployed config runs mode=strip: one full-bleed frosted band whose
+# cells run the FULL height — y=0 and the corners are live targets — and the
+# menubar docks as a second band row instead of floating. Relaunched last so
+# the log-hygiene check below covers a strip instance too.
+kill_nested
+echo 'hl.config({ plugin = { hyprbar = { mode = "strip" } } })' >> "$CFG"
+HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" bash "$HARNESS/launch.sh" >/dev/null 2>&1 || { echo "strip relaunch FAILED"; exit 1; }
+SIG="$(cat "$HARNESS/nested.sig")"
+WL="$(cat "$HARNESS/nested.wl")"
+chk "strip: all 8 plugins load" test "$(hq plugin list | grep -c Plugin)" = 8
+dsp "hl.dsp.window.close()"; sleep 0.5 # the donate/updated screen, when present
+dsp "hl.dsp.exec_cmd('foot')"; sleep 1.8
+dsp "hl.dsp.focus({workspace=\"3\"})"; sleep 0.6
+# the two easiest pixels on screen: the top-left corner throw lands tag 一...
+printf 'move 1 0\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 150\n' | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1
+sleep 0.8
+chk "strip: the corner click lands tag 1" bash -c "hyprctl -i $SIG activeworkspace -j | python3 -c 'import json,sys;sys.exit(0 if json.load(sys.stdin)[\"id\"]==1 else 1)'"
+# ...and y=0 is live across the band (islands left a 2px dead inset there)
+dsp "hl.dsp.focus({workspace=\"5\"})"; sleep 0.6
+printf 'move 39 0\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 150\n' | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1
+sleep 0.8
+chk "strip: a y=0 click lands tag 2" bash -c "hyprctl -i $SIG activeworkspace -j | python3 -c 'import json,sys;sys.exit(0 if json.load(sys.stdin)[\"id\"]==2 else 1)'"
+# empty band swallows without touching focus (the strip is the shell's)
+dsp "hl.dsp.focus({workspace=\"1\"})"; sleep 0.8
+FOC="$(hq activewindow -j | python3 -c 'import json,sys;print(json.load(sys.stdin).get("class",""))' 2>/dev/null)"
+printf 'move 600 15\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 100\n' | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1
+sleep 0.8
+chk "strip: an empty-band click swallows, focus untouched" test \
+	"$(hq activewindow -j | python3 -c 'import json,sys;print(json.load(sys.stdin).get("class",""))' 2>/dev/null)" = "$FOC"
+# the docked menubar: opens as a second band row; a press on the row closes
+# it swallowed (never reaching anything beneath); plugins survive the cycle
+dsp "hl.plugin.hyprbar.menubar()"; sleep 0.8
+printf 'move 600 45\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 100\n' | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1
+sleep 0.8
+chk "strip: a docked-menubar click swallows, focus untouched" test \
+	"$(hq activewindow -j | python3 -c 'import json,sys;print(json.load(sys.stdin).get("class",""))' 2>/dev/null)" = "$FOC"
+dsp "hl.plugin.hyprbar.menubar()"; sleep 0.6
+dsp "hl.plugin.hyprbar.menubar()"; sleep 0.6
+chk "strip: menubar toggle cycle leaves all 8 alive" test "$(hq plugin list | grep -c Plugin)" = 8
+
 # ---- log hygiene --------------------------------------------------------
 chk "log clean (only known-benign lines)" bash -c \
 	"! grep -iE 'error|assert|segv|abort' '$LOG' | grep -vE 'Creating the Error Overlay|xkbcomp' | grep -q ."

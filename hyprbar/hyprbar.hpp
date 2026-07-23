@@ -107,8 +107,11 @@ namespace NHyprbar {
         SP<Config::Values::CIntValue>    fontSize;
         SP<Config::Values::CIntValue>    traySpacing; // px between tray icons
         SP<Config::Values::CFloatValue>  roundingPower;
+        SP<Config::Values::CFloatValue>  barAlpha; // strip: the band's glass alpha over col_bg's RGB
+        SP<Config::Values::CStringValue> mode;     // islands | strip
         SP<Config::Values::CStringValue> font;
-        SP<Config::Values::CStringValue> terminal; // runs Terminal=true menubar entries
+        SP<Config::Values::CStringValue> clockFormat; // strftime; the clock ticks per minute
+        SP<Config::Values::CStringValue> terminal;    // runs Terminal=true menubar entries
         SP<Config::Values::CColorValue>  colBg;       // island glass (alpha = the glass)
         SP<Config::Values::CColorValue>  colFg;       // full-ink text and status glyphs
         SP<Config::Values::CColorValue>  colMuted;    // secondary text, letter fallbacks
@@ -118,16 +121,18 @@ namespace NHyprbar {
         SP<Config::Values::CColorValue>  colEmpty;    // empty tags, disabled text
         SP<Config::Values::CColorValue>  colUrgent;   // urgent fg (the urgent kanji)
         SP<Config::Values::CColorValue>  colUrgentBg; // urgent chip fill
-        SP<Config::Values::CColorValue>  colFrame;    // hairlines
-        SP<Config::Values::CColorValue>  colCharging; // battery fill charging/defending (accent)
-        SP<Config::Values::CColorValue>  colLow;      // battery fill <= 20% (urgent)
-        SP<Config::Values::CColorValue>  colSave;     // battery fill in power save (gold)
+        SP<Config::Values::CColorValue>  colFrame;      // hairlines
+        SP<Config::Values::CColorValue>  colBarMenubar; // strip: the docked menubar row, one tone up
+        SP<Config::Values::CColorValue>  colCharging;   // battery fill charging/defending (accent)
+        SP<Config::Values::CColorValue>  colLow;        // battery fill <= 20% (urgent)
+        SP<Config::Values::CColorValue>  colSave;       // battery fill in power save (gold)
     };
     extern SBarConfig cfg;
 
     // ---- util.cpp ----
 
     double      barHeight();
+    bool        stripMode(); // plugin:hyprbar:mode == "strip": one full-bleed frosted band
     void        damageBars(); // covers the menubar's floating pill while it's open
     std::string lower(std::string s);
 
@@ -307,6 +312,7 @@ namespace NHyprbar {
         CBox toPhys(const CBox& global) const; // global logical -> monitor physical
         void rect(const CBox& global, const CHyprColor& c, int round = 0) const;
         void glass(const CBox& global, int round) const; // the island material: col_bg + live blur + shadow
+        void band(const CBox& global, const CHyprColor& c) const; // the strip material: square frost + under-shadow, no lines
         void border(const CBox& global, const CHyprColor& c, int round, int sizePx) const; // frame ring: one call, not four rects
         void tex(const SP<ITexture>& t, const CBox& physBox) const;                        // pre-computed physical box
         void texIn(const SP<ITexture>& t, const CBox& cell) const;                         // centered in a logical cell
@@ -509,6 +515,10 @@ namespace NHyprbar {
 
     void onRenderStage(eRenderStage stage);
     void renderExit();
+    // strip mode's grain: ~1.5% noise baked into the band material (frost
+    // texture; kills banding on the flat fill). One cached tile per monitor,
+    // built by the warm pass; drawing with a missing tile is a silent skip.
+    void stripGrain(const SPaint& P, const CBox& row);
 
     // ---- input.cpp ----
 

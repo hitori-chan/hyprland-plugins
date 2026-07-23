@@ -14,8 +14,8 @@ name    = "hyprland-plugins"
 authors = ["hitori"]
 
 [hyprbar]
-description = "the compact-islands shell bar"
-version     = "3.0.4"
+description = "the shell bar: compact islands or the full-bleed strip"
+version     = "3.1.0"
 authors     = ["hitori"]
 output      = "hyprbar/hyprbar.so"
 build       = ["make -C hyprbar all"]

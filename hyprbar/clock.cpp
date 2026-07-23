@@ -1,5 +1,7 @@
-// hyprbar/clock.cpp — the bold HH:MM (Android 16's bold status clock; the
-// date left the bar with the redesign)
+// hyprbar/clock.cpp — the bold clock. The text is plugin:hyprbar:clock_format
+// (strftime; default the bare %H:%M) — the user's awesome bar ran the stock
+// textclock "%a %b %d, %H:%M", and the format ticks per MINUTE: seconds
+// would go stale between refreshes.
 
 #include "hyprbar.hpp"
 
@@ -9,12 +11,14 @@ namespace NHyprbar {
 
     namespace Clock {
         bool refresh() {
-            char       buf[16];
+            char       buf[64];
             const auto NOW = std::time(nullptr);
             const auto* TM = std::localtime(&NOW);
             if (!TM)
                 return false;
-            std::strftime(buf, sizeof(buf), "%H:%M", TM);
+            const std::string FMT = cfg.clockFormat ? cfg.clockFormat->value() : std::string{};
+            if (std::strftime(buf, sizeof(buf), FMT.empty() ? "%H:%M" : FMT.c_str(), TM) == 0)
+                std::snprintf(buf, sizeof(buf), "--:--"); // format overflowed the cell — show SOMETHING
             if (clockText == buf)
                 return false;
             clockText = buf;

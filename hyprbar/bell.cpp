@@ -204,8 +204,12 @@ namespace NHyprbar {
                 }
 
                 const bool HOV = barHover.widget == this;
-                if (HOV)
-                    P.rect(CBox{box.x - 2, box.y + (box.h - 24) / 2, box.w + 4, 24}, tFill2(), (int)std::lround(8 * P.scale));
+                if (HOV) {
+                    if (stripMode()) // full-height wash, like every strip cell
+                        P.rect(CBox{box.x - 2, box.y, box.w + 4, box.h}, tFill2());
+                    else
+                        P.rect(CBox{box.x - 2, box.y + (box.h - 24) / 2, box.w + 4, 24}, tFill2(), (int)std::lround(8 * P.scale));
+                }
 
                 if (CACHE.tex && CACHE.tex->m_texID != 0) {
                     const auto B = P.toPhys(box);
