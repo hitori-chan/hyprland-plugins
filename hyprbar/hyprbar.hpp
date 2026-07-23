@@ -3,22 +3,23 @@
 // The full picture lives at the top of main.cpp; per-module docs at the top
 // of each unit:
 //
-//   render.cpp    the bar's SKELETON: the strip, the texture cache, the
-//                 SPaint context, the pass element, one window walk (SFrame)
-//                 and the widget slots — awesome's wibox
-//   taglist.cpp   the nine kanji tags               (widget)
-//   tasklist.cpp  arrival order, markers, the middle (widget)
-//   tray.cpp      StatusNotifierWatcher/Host (sdbus-c++) + its strip cells
-//   battery.cpp   gauge state, alerts, Android's pill (widget)
-//   clock.cpp     awesome's textclock               (widget)
-//   layoutbox.cpp the per-tag layout registry       (widget)
+//   render.cpp    the bar's SKELETON: the compact islands, the texture
+//                 cache, the SPaint context, the pass element, one window
+//                 walk (SFrame) and the widget slots
+//   taglist.cpp   the nine kanji tags                (left island)
+//   tasklist.cpp  arrival order, markers, the chips  (the middle)
+//   tray.cpp      StatusNotifierWatcher/Host (sdbus-c++) + its cells
+//   bell.cpp      the notification bell + badge (hyprnotify over the bus)
+//   wifi.cpp      the Android segmented wifi wedge (/proc/net/wireless)
+//   kbdlayout.cpp the keyboard-layout chip
+//   battery.cpp   gauge state, alerts, Android's pill (status island)
+//   clock.cpp     the bold HH:MM                     (status island)
+//   layoutbox.cpp the per-tag layout registry (Lua-only; no bar cell)
 //   icons.cpp     icon loading + resolution (GTK theme dirs, PNG/SVG, caches)
-//   menu.cpp      the menu: dbusmenu for tray items + local client list, and
-//                 its own painting (Menu::render)
-//   menubar.cpp   awesome's Mod+P launcher, and its own painting
-//                 (Menubar::render)
+//   menu.cpp      the tray dbusmenu, drawn as the glass panel (Menu::render)
+//   menubar.cpp   the launcher strip below the bar (Menubar::render)
 //   util.cpp      tiny shared helpers: geometry, damage, colors, strings
-//   input.cpp     clicks, scrolls, pointer ownership — swallowing and
+//   input.cpp     clicks, scrolls, esc, pointer ownership — swallowing and
 //                 deferral here, what a cell DOES with its widget
 //   main.cpp      plugin glue: config, listeners, init/exit
 //
@@ -32,6 +33,7 @@
 #include "common/busclient.hpp"
 
 #include "common/texcache.hpp"
+#include "common/theme.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/Compositor.hpp>
@@ -58,6 +60,7 @@
 #include <hyprland/src/render/Texture.hpp>
 #include <hyprland/src/render/pass/PassElement.hpp>
 #include <hyprland/src/config/values/types/IntValue.hpp>
+#include <hyprland/src/config/values/types/FloatValue.hpp>
 #include <hyprland/src/config/values/types/ColorValue.hpp>
 #include <hyprland/src/config/values/types/StringValue.hpp>
 #include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
@@ -101,26 +104,25 @@ namespace NHyprbar {
     // ---- config (defined in main.cpp, values arrive from theme.lua) ----
 
     struct SBarConfig {
-        SP<Config::Values::CIntValue>    height;
+        SP<Config::Values::CIntValue>    height;      // the band; islands are height-4
         SP<Config::Values::CIntValue>    fontSize;
-        SP<Config::Values::CIntValue>    traySpacing; // awesome's systray_icon_spacing
+        SP<Config::Values::CIntValue>    traySpacing; // px between tray icons
+        SP<Config::Values::CFloatValue>  roundingPower;
         SP<Config::Values::CStringValue> font;
         SP<Config::Values::CStringValue> terminal; // runs Terminal=true menubar entries
-        SP<Config::Values::CColorValue>  colBg;
-        SP<Config::Values::CColorValue>  colFg;          // normal text: tags, tasks, clock
-        SP<Config::Values::CColorValue>  colMuted;       // tray letter fallback
-        SP<Config::Values::CColorValue>  colFocus;       // selected menubar entry fg (awesome fg_focus)
-        SP<Config::Values::CColorValue>  colActive;      // active tag / focused task fg
-        SP<Config::Values::CColorValue>  colActiveBg;    // active tag bg
-        SP<Config::Values::CColorValue>  colEmpty;       // disabled/placeholder text
-        SP<Config::Values::CColorValue>  colUrgent;      // urgent fg
-        SP<Config::Values::CColorValue>  colUrgentBg;    // urgent bg (awesome bg_urgent)
-        SP<Config::Values::CColorValue>  colSquareSel;   // taglist square: tag holds the focused window
-        SP<Config::Values::CColorValue>  colSquareUnsel; // taglist square: occupied tag
-        SP<Config::Values::CColorValue>  colFrame;       // menu panel frame
-        SP<Config::Values::CColorValue>  colCharging;    // battery fill charging/defending (Android's charging green)
-        SP<Config::Values::CColorValue>  colLow;         // battery fill <= 20% (Android's error red)
-        SP<Config::Values::CColorValue>  colSave;        // battery fill in power save (Android's warning yellow)
+        SP<Config::Values::CColorValue>  colBg;       // island glass (alpha = the glass)
+        SP<Config::Values::CColorValue>  colFg;       // full-ink text and status glyphs
+        SP<Config::Values::CColorValue>  colMuted;    // secondary text, letter fallbacks
+        SP<Config::Values::CColorValue>  colFocus;    // selected menubar entry fg
+        SP<Config::Values::CColorValue>  colActive;   // active tag / focused task fg (the accent)
+        SP<Config::Values::CColorValue>  colActiveBg; // active/selected fills (accent-dim)
+        SP<Config::Values::CColorValue>  colEmpty;    // empty tags, disabled text
+        SP<Config::Values::CColorValue>  colUrgent;   // urgent fg (the urgent kanji)
+        SP<Config::Values::CColorValue>  colUrgentBg; // urgent chip fill
+        SP<Config::Values::CColorValue>  colFrame;    // hairlines
+        SP<Config::Values::CColorValue>  colCharging; // battery fill charging/defending (accent)
+        SP<Config::Values::CColorValue>  colLow;      // battery fill <= 20% (urgent)
+        SP<Config::Values::CColorValue>  colSave;     // battery fill in power save (gold)
     };
     extern SBarConfig cfg;
 
@@ -152,6 +154,30 @@ namespace NHyprbar {
         void init(); // find the gauge, first read, arm the udev watch
         bool refresh();
         void alerts(); // battery-watch.sh folded in: edge-triggered plug/low/critical
+        void exit();
+    }
+
+    namespace Bell {
+        void init();     // proxy hyprnotify's org.hitori.hyprnotify face over the tray's bus
+        void daemonUp(); // the Notifications name gained an owner: (re)subscribe + read state
+        void exit();
+    }
+
+    namespace Wifi {
+        bool refresh(); // /proc/net/wireless -> level 0..3 / off; true when the drawn state moved
+        void exit();
+    }
+
+    namespace Kbd {
+        void onLayout(const std::string& layoutName); // the keyboard.layout event
+        void init();                                  // first read off the seat keyboard
+        void exit();
+    }
+
+    namespace Taglist {
+        void noteViewed(const PHLWORKSPACE& ws); // Android's "viewing clears the urgent tag"
+        bool seen(void* w);                      // urgency the user has already viewed
+        void forget(void* w);
         void exit();
     }
 
@@ -271,21 +297,25 @@ namespace NHyprbar {
         bool               warm  = false;
         double             scale = 1.0;
         CBox               mb;           // the monitor's logical box
-        double             h  = 0;       // bar height
+        double             h  = 0;       // band height; islands are h-4
         int                pt = 0;       // text size in pt, already scaled
         size_t*            fp = nullptr; // frame fingerprint: widgets whose drawn content
                                          // can change without damage fold a hash in here
 
         CBox toPhys(const CBox& global) const; // global logical -> monitor physical
         void rect(const CBox& global, const CHyprColor& c, int round = 0) const;
+        void glass(const CBox& global, int round) const; // the island material: col_bg + live blur + shadow
         void border(const CBox& global, const CHyprColor& c, int round, int sizePx) const; // frame ring: one call, not four rects
         void tex(const SP<ITexture>& t, const CBox& physBox) const;                        // pre-computed physical box
         void texIn(const SP<ITexture>& t, const CBox& cell) const;                         // centered in a logical cell
     };
 
+    bool barBlurOn(); // decoration:blur:enabled gates the islands' glass
+    double barBlurRadius();
+
     // Text -> cached GPU texture. Built ONLY by the warm pass; a miss during a
     // draw returns null rather than building (the texture rule).
-    SP<ITexture> textTex(const std::string& text, const CHyprColor& col, int pt, int maxWidth = 0, const std::string& font = "");
+    SP<ITexture> textTex(const std::string& text, const CHyprColor& col, int pt, int maxWidth = 0, const std::string& font = "", int weight = 400);
 
     // ---- clickable regions, rebuilt each frame by render.cpp ----
 
@@ -321,7 +351,7 @@ namespace NHyprbar {
         const std::vector<std::pair<uint64_t, PHLWINDOW>>* tasks       = nullptr; // this workspace's tasks, arrival order
         // the frame palette, fetched once — color() memoizes but still
         // hashes per call, and the taglist alone makes dozens
-        CHyprColor fg, active, activeBg, urgentFg, urgentBg, squareSel, squareUnsel, minimized;
+        CHyprColor fg, active, activeBg, urgentFg, urgentBg, minimized;
     };
 
     struct IWidget {
@@ -348,21 +378,34 @@ namespace NHyprbar {
         virtual void onScroll(const SHit& h, int dir) {}
     };
 
+    // hover affordance over the strip's cells: input tracks it, widgets read
+    // it to draw their fills. Identity = the same fields hits carry.
+    struct SBarHover {
+        IWidget* widget = nullptr;
+        int      tag    = 0;
+        void*    win    = nullptr;
+        void*    tray   = nullptr;
+        bool     operator==(const SBarHover&) const = default;
+    };
+    extern SBarHover barHover;
+
     // the widget instances, one per unit (function-local statics: no
     // cross-TU construction order, and a same-map reload re-enters clean)
-    IWidget& taglistWidget();   // taglist.cpp
-    IWidget& tasklistWidget();  // tasklist.cpp
-    IWidget& trayWidget();      // tray.cpp
-    IWidget& batteryWidget();   // battery.cpp
-    IWidget& clockWidget();     // clock.cpp
-    IWidget& layoutboxWidget(); // layoutbox.cpp
+    IWidget& taglistWidget();   // taglist.cpp — the left island
+    IWidget& tasklistWidget();  // tasklist.cpp — the middle chips
+    IWidget& trayWidget();      // tray.cpp — status island
+    IWidget& bellWidget();      // bell.cpp — status island
+    IWidget& wifiWidget();      // wifi.cpp — status island
+    IWidget& kbdWidget();       // kbdlayout.cpp — status island
+    IWidget& batteryWidget();   // battery.cpp — status island
+    IWidget& clockWidget();     // clock.cpp — status island
 
     // ---- menu.cpp ----
 
     namespace Menu {
         void                    render(const SPaint& P); // menu.cpp — the open panels, cascade by cascade
 
-        inline constexpr double ROWH = 24, SEPH = 8, PAD = 4, ARROWH = 16;
+        inline constexpr double ROWH = 26, SEPH = 9, PAD = 4, ARROWH = 16, MINW = 156;
 
         // per-level rows sentinel indices for the scroll arrows of an overflowing panel
         inline constexpr int SCROLL_UP = -2, SCROLL_DOWN = -3;
@@ -382,8 +425,7 @@ namespace NHyprbar {
             uint8_t      toggle      = TG_NONE;
             int32_t      toggleState = 0;     // 0 off, 1 on, anything else indeterminate
             bool         alert       = false; // disposition warning/alert
-            PHLWINDOWREF win;                 // client-list mode: the window this row jumps to
-            SP<ITexture> icon;                // client-list app icon / dbusmenu icon-name or icon-data
+            SP<ITexture> icon;                // dbusmenu icon-name or icon-data
         };
 
         // one open panel; a submenu cascades out as the next level, GTK-style
@@ -402,7 +444,6 @@ namespace NHyprbar {
         };
 
         extern bool                isOpen;
-        extern bool                isLocal; // client list, no dbus behind it
         extern std::vector<SLevel> levels;
         extern double              anchorX;
         extern PHLMONITORREF       mon;
@@ -412,7 +453,6 @@ namespace NHyprbar {
         void                       close();
         void                       exit(); // close + tear the hover timer out of the event loop
         void                       openFor(SP<Tray::SItem> it, double ax, PHLMONITORREF m);
-        void                       openClients(double ax, PHLMONITORREF m);
         void                       openSub(size_t level, int entryIdx); // cascade that row's children
         void                       closeDeeperThan(size_t level);
         void                       hoverIntent(size_t level, int row); // GTK's popup delay: open/close cascades
@@ -452,6 +492,7 @@ namespace NHyprbar {
         extern int                 currentCat; // >= 0: drilled into CATEGORIES[i]
         extern int                 sel, first;
         extern PHLMONITORREF       mon;
+        extern CBox                stripBox; // the floating pill's box, set at render — input hit-tests it
 
         void                       open();
         void                       close();
@@ -470,6 +511,9 @@ namespace NHyprbar {
     void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info);
     void onMouseAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info);
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info);
+    // esc closes the open tray menu (the topmost-peel's first link); returns
+    // true when it swallowed the press — the menubar's onKey runs after it
+    bool onBarKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info);
     void releasePointer();
     void inputExit();
 

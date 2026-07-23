@@ -1,4 +1,5 @@
-// hyprbar/clock.cpp — awesome's textclock: the state (one string) and its widget
+// hyprbar/clock.cpp — the bold HH:MM (Android 16's bold status clock; the
+// date left the bar with the redesign)
 
 #include "hyprbar.hpp"
 
@@ -8,14 +9,12 @@ namespace NHyprbar {
 
     namespace Clock {
         bool refresh() {
-            char       buf[64];
+            char       buf[16];
             const auto NOW = std::time(nullptr);
             const auto* TM = std::localtime(&NOW);
             if (!TM)
                 return false;
-            // awesome's default format, trimmed — padding is the widget's
-            // explicit margin, not spaces baked into the text
-            std::strftime(buf, sizeof(buf), "%a %b %d, %H:%M", TM);
+            std::strftime(buf, sizeof(buf), "%H:%M", TM);
             if (clockText == buf)
                 return false;
             clockText = buf;
@@ -31,12 +30,11 @@ namespace NHyprbar {
         class CClockWidget : public IWidget {
           public:
             double fit(const SPaint& P, const SFrame& F) override {
-                // 6px each side, the bar's text pad
-                const auto TEX = textTex(clockText, F.fg, P.pt);
-                return TEX ? TEX->m_size.x / P.scale + 12 : 0;
+                const auto TEX = textTex(clockText, F.fg, P.pt, 0, "", 700);
+                return TEX ? TEX->m_size.x / P.scale : 0;
             }
             void draw(const SPaint& P, const SFrame& F, const CBox& box) override {
-                P.texIn(textTex(clockText, F.fg, P.pt), box);
+                P.texIn(textTex(clockText, F.fg, P.pt, 0, "", 700), box);
             }
         };
     } // namespace

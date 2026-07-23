@@ -1,13 +1,23 @@
-// hyprbar/render.cpp — the bar's skeleton: the strip, the text cache, the
-// paint context, the pass element and the widget slots (each widget lives in
-// its own unit — see the module map in hyprbar.hpp)
+// hyprbar/render.cpp — the bar's skeleton: the compact islands, the text
+// cache, the paint context, the pass element and the widget slots (each
+// widget lives in its own unit — see the module map in hyprbar.hpp).
+//
+// The ONE bar state (decided): a 30px transparent band holding 26px glass
+// pills — the taglist island left, the task chips filling the middle, the
+// status island right (layout chip · tray · bell · wifi · battery · time).
+// Identical maximized or not; reserved-top is always the band.
 
 #include "common/lifecycle.hpp"
 #include "common/queries.hpp"
+#include "common/theme.hpp"
 
 #include "hyprbar.hpp"
 
+#include <hyprland/src/config/ConfigValue.hpp>
+
 namespace NHyprbar {
+
+    SBarHover barHover;
 
     // Each entry remembers the warm generation that last wanted it. Evicting
     // whatever the CURRENT layout doesn't name would thrash: sloppy focus
@@ -23,22 +33,34 @@ namespace NHyprbar {
     static uint64_t                                    texGen         = 0;
     static constexpr uint64_t                          TEX_CACHE_LIFE = 32; // warms an unused texture survives
 
-    // per monitor: a fingerprint of the task labels the strip shows — see
+    // per monitor: a fingerprint of the labels the strip shows — see
     // the tasklist in renderBar
     static std::unordered_map<uint64_t, size_t> lastTaskFp;
+
+    bool                                        barBlurOn() {
+        static auto V = CConfigValue<Config::INTEGER>("decoration:blur:enabled");
+        return *V != 0;
+    }
+    double barBlurRadius() {
+        if (!barBlurOn())
+            return 0;
+        static auto SIZE   = CConfigValue<Config::INTEGER>("decoration:blur:size");
+        static auto PASSES = CConfigValue<Config::INTEGER>("decoration:blur:passes");
+        return (double)*SIZE * (1 << std::clamp((int)*PASSES, 1, 6));
+    }
 
     // Built ONLY by the warm pass — see the texture rule in hyprbar.hpp. A miss
     // during a draw returns null (that one label is missing for one frame)
     // rather than building, which would paint nothing anyway AND swallow every
     // later draw in the element.
-    SP<ITexture> textTex(const std::string& text, const CHyprColor& col, int pt, int maxWidth, const std::string& font) {
+    SP<ITexture> textTex(const std::string& text, const CHyprColor& col, int pt, int maxWidth, const std::string& font, int weight) {
         // key on the RESOLVED font: every caller passes "", and keying the
         // empty string made old-font textures permanent hits across a
         // plugin:hyprbar:font change
         const std::string& F = font.empty() ? cfg.font->value() : font;
 
-        char               meta[48]; // the non-text key parts in one stack write — no to_string churn per call
-        const int          METALEN = std::snprintf(meta, sizeof(meta), "|%llx|%d|%d|", (unsigned long long)col.getAsHex(), pt, maxWidth);
+        char               meta[56]; // the non-text key parts in one stack write — no to_string churn per call
+        const int          METALEN = std::snprintf(meta, sizeof(meta), "|%llx|%d|%d|%d|", (unsigned long long)col.getAsHex(), pt, maxWidth, weight);
 
         static std::string KEY; // reused; main thread only
         KEY.clear();
@@ -54,7 +76,7 @@ namespace NHyprbar {
         if (!warmGate.mayBuild())
             return nullptr;
 
-        auto tex      = g_pHyprRenderer->renderText(text, col, pt, false, F, maxWidth);
+        auto tex      = g_pHyprRenderer->renderText(text, col, pt, false, F, maxWidth, weight);
         texCache[KEY] = {tex, texGen};
         return tex;
     }
@@ -68,13 +90,22 @@ namespace NHyprbar {
     void SPaint::rect(const CBox& global, const CHyprColor& c, int round) const {
         if (warm)
             return;
-        g_pHyprOpenGL->renderRect(toPhys(global), c, {.round = round});
+        g_pHyprOpenGL->renderRect(toPhys(global), c, {.round = round, .roundingPower = (float)cfg.roundingPower->value()});
+    }
+
+    void SPaint::glass(const CBox& global, int round) const {
+        if (warm)
+            return;
+        const float RP = (float)cfg.roundingPower->value();
+        static Config::CGradientValueData SHADOW{CHyprColor{NHyprCommon::Theme::SHADOW}};
+        g_pHyprOpenGL->renderRoundedShadow(toPhys(global), round, RP, (int)std::lround(10 * scale), SHADOW, 1.f);
+        g_pHyprOpenGL->renderRect(toPhys(global), color(cfg.colBg), {.round = round, .roundingPower = RP, .blur = barBlurOn()});
     }
 
     void SPaint::border(const CBox& global, const CHyprColor& c, int round, int sizePx) const {
         if (warm)
             return;
-        g_pHyprOpenGL->renderBorder(toPhys(global), Config::CGradientValueData{c}, {.round = round, .borderSize = sizePx});
+        g_pHyprOpenGL->renderBorder(toPhys(global), Config::CGradientValueData{c}, {.round = round, .roundingPower = (float)cfg.roundingPower->value(), .borderSize = sizePx});
     }
 
     void SPaint::tex(const SP<ITexture>& t, const CBox& physBox) const {
@@ -94,17 +125,7 @@ namespace NHyprbar {
     // ---- rendering ----
 
     // One layout, two modes. WARM builds every texture and paints nothing;
-    // DRAW paints and must never build.
-    //
-    // A texture returned by renderText()/createTexture() cannot be painted by
-    // the frame that created it — wherever in that frame it was created — and
-    // the miss silently swallows everything drawn after it too. Building them
-    // lazily mid-draw therefore blanked the strip from the first miss onward
-    // for exactly one frame. Since itemw is part of the texture cache key, one
-    // window closing re-keys every task label at once: the whole tasklist
-    // vanished on every open/close ("the bar blinks when I close a window").
-    // So warmBars() runs this same layout from the EVENT LOOP, a frame ahead;
-    // by the time draw() runs, everything is a cache hit.
+    // DRAW paints and must never build (the texture rule — see hyprbar.hpp).
     static void renderBar(PHLMONITOR mon, bool warm) {
         if (!mon)
             return;
@@ -112,7 +133,7 @@ namespace NHyprbar {
         auto& hits = hitboxes[mon->m_id];
         hits.clear(); // capacity retained: no per-frame allocations
 
-        // the strip stays visible while locked (clock/battery/tray), but an
+        // the islands stay visible while locked (clock/battery/tray), but an
         // open tray menu must not float over the lockscreen — close it here,
         // like the fullscreen path below, so it's gone on unlock
         if (NHyprCommon::sessionLocked() && Menu::isOpen && Menu::mon.lock() == mon)
@@ -122,8 +143,8 @@ namespace NHyprbar {
         if (WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN && !(Menubar::isOpen && Menubar::mon.lock() == mon)) {
             if (Menu::isOpen && Menu::mon.lock() == mon)
                 Menu::close();
-            return; // real fullscreen owns the whole output, like awesome —
-                    // except the open menubar: awesome's is an ontop wibox
+            return; // real fullscreen owns the whole output — except the open
+                    // menubar, which floats above it
         }
 
         const double SCALE = mon->m_scale;
@@ -142,11 +163,7 @@ namespace NHyprbar {
 
         const SPaint P{.mon = mon, .hits = &hits, .warm = warm, .scale = SCALE, .mb = MB, .h = H, .pt = PT, .fp = &frameFp};
 
-        P.rect(CBox{MB.x, MB.y, MB.w, H}, color(cfg.colBg));
-
-        // -- the menubar: its own strip right BELOW the bar, the bar stays
-        // visible (awesome's menubar is a separate wibox at the workarea top,
-        // which sits under the wibar — it never replaced it) --
+        // -- the menubar: its own floating pill below the bar --
         Menubar::render(P);
 
         // ONE walk of the window list for all its consumers: per-workspace
@@ -161,7 +178,7 @@ namespace NHyprbar {
                 const auto ID = W->m_workspace->m_id;
                 if (ID >= 1 && ID <= 9) {
                     F.windows[ID]++;
-                    if (W->m_isUrgent)
+                    if (W->m_isUrgent && !Taglist::seen(W.get())) // viewing cleared it
                         F.urgent[ID] = true;
                 }
             }
@@ -175,56 +192,71 @@ namespace NHyprbar {
 
         // one palette fetch per frame: color() memoizes the conversion but
         // still hashes per call, and the widgets make dozens
-        F.fg          = color(cfg.colFg);
-        F.active      = color(cfg.colActive);
-        F.activeBg    = color(cfg.colActiveBg);
-        F.urgentFg    = color(cfg.colUrgent);
-        F.urgentBg    = color(cfg.colUrgentBg);
-        F.squareSel   = color(cfg.colSquareSel);
-        F.squareUnsel = color(cfg.colSquareUnsel);
-        F.minimized   = color(cfg.colEmpty); // awesome's tasklist_fg_minimize: muted
+        F.fg        = color(cfg.colFg);
+        F.active    = color(cfg.colActive);
+        F.activeBg  = color(cfg.colActiveBg);
+        F.urgentFg  = color(cfg.colUrgent);
+        F.urgentBg  = color(cfg.colUrgentBg);
+        F.minimized = color(cfg.colEmpty);
 
-        // awesome's align layout: the left slot, the tasklist filling the
-        // middle, the right slot laid from the edge inwards (awesome's order
-        // is [systray][battery][clock][layoutbox], so the layoutbox sits
-        // last). Widgets whose fit comes back 0 are hidden this frame.
-        IWidget* const LEFT[]  = {&taglistWidget()};
-        IWidget* const RIGHT[] = {&trayWidget(), &batteryWidget(), &clockWidget(), &layoutboxWidget()};
+        // -- the compact islands: 26px pills on the 30px band --
+        const double IH    = H - 4;
+        const double IY    = MB.y + 2;
+        const int    RPILL = (int)std::lround(IH / 2 * SCALE);
 
-        double         x = MB.x;
-        for (auto* const W : LEFT) {
-            const double WD = W->fit(P, F);
-            if (WD > 0)
-                W->draw(P, F, CBox{x, MB.y, WD, H});
-            x += WD;
+        // LEFT: the taglist island
+        const double TAGW = taglistWidget().fit(P, F);
+        double       leftEnd = MB.x + 6;
+        if (TAGW > 0) {
+            const CBox ISL{MB.x + 6, IY, TAGW, IH};
+            P.glass(ISL, RPILL);
+            taglistWidget().draw(P, F, ISL);
+            leftEnd = ISL.x + ISL.w;
         }
 
-        double right = MB.x + MB.w;
-        for (size_t i = std::size(RIGHT); i-- > 0;) {
-            const double WD = RIGHT[i]->fit(P, F);
-            if (WD > 0) {
-                right -= WD;
-                RIGHT[i]->draw(P, F, CBox{right, MB.y, WD, H});
+        // RIGHT: the status island — layout chip · tray · bell · wifi ·
+        // battery · time, gap 7, no separators
+        IWidget* const STATUS[] = {&kbdWidget(), &trayWidget(), &bellWidget(), &wifiWidget(), &batteryWidget(), &clockWidget()};
+        constexpr double SGAP = 7, SPAD = 10;
+        double           sw[std::size(STATUS)];
+        double           total = 0;
+        int              shown = 0;
+        for (size_t i = 0; i < std::size(STATUS); i++) {
+            sw[i] = STATUS[i]->fit(P, F);
+            if (sw[i] > 0) {
+                total += sw[i];
+                shown++;
             }
         }
+        double rightStart = MB.x + MB.w - 6;
+        if (shown > 0) {
+            const double ISLW = total + (shown - 1) * SGAP + 2 * SPAD;
+            const CBox   ISL{MB.x + MB.w - 6 - ISLW, IY, ISLW, IH};
+            P.glass(ISL, RPILL);
+            double x = ISL.x + SPAD;
+            for (size_t i = 0; i < std::size(STATUS); i++) {
+                if (sw[i] <= 0)
+                    continue;
+                STATUS[i]->draw(P, F, CBox{x, IY, sw[i], IH});
+                x += sw[i] + SGAP;
+            }
+            rightStart = ISL.x;
+        }
 
-        // the tasklist splits the whole leftover strip, 8px off the right slot
-        tasklistWidget().draw(P, F, CBox{x, MB.y, right - 8 - x, H});
+        // MIDDLE: the task chips fill what's left
+        tasklistWidget().draw(P, F, CBox{leftEnd + 6, IY, rightStart - 6 - (leftEnd + 6), IH});
 
         auto& FP = lastTaskFp[mon->m_id];
         if (warm)
             FP = frameFp;
         else if (FP != frameFp) {
-            FP            = frameFp;
+            FP                = frameFp;
             warmGate.texStale = true;
         }
 
         tasks.clear(); // don't keep strong window refs across frames
 
-        // -- the open menu, panel by panel: the client list is fixed at 250
-        // wide (the old rc's client_list width); dbusmenu levels size
-        // themselves, and submenus cascade out beside their parent — like
-        // the GTK menus these were under X11 --
+        // -- the open tray menu, panel by panel --
         Menu::render(P);
     }
 
@@ -248,7 +280,7 @@ namespace NHyprbar {
             return {};
         }
         virtual bool needsLiveBlur() override {
-            return false;
+            return barBlurOn(); // the islands' glass samples what's beneath
         }
         virtual bool needsPrecomputeBlur() override {
             return false;
@@ -257,14 +289,13 @@ namespace NHyprbar {
             const auto MON = m_mon.lock();
             if (!MON)
                 return std::nullopt;
-            double h = barHeight();
+            const double PAD = barBlurRadius() + 12; // island shadows reach below the band
+            double       h   = barHeight() + PAD;
             if (Menubar::isOpen && Menubar::mon.lock() == MON)
-                h += barHeight(); // the prompt strip below the bar
+                h = barHeight() + 4 + barHeight() + PAD; // the floating strip below the bar
             if (Menu::isOpen && Menu::mon.lock() == MON)
-                h = MON->logicalBox().h; // cascades anchor anywhere below the bar — cover it all, an undersized box clips
+                h = MON->logicalBox().h; // cascades anchor anywhere below the bar — cover it all
             // monitor-local LOGICAL px — the pass scales by m_scale itself
-            // (stock elements divide their physical boxes back down; see
-            // CRenderPass::simplify)
             return CBox{0, 0, MON->logicalBox().w, h};
         }
         virtual const char* passName() override {
@@ -298,9 +329,7 @@ namespace NHyprbar {
                 renderBar(M, true);
 
         // Bound the cache against title churn, but only drop what no warm has
-        // wanted for a while — see SCachedTex. (The old size-capped full flush
-        // is survivable now that a draw can never build, but it still meant one
-        // warm rebuilding everything at once.) A scoped warm never enumerates
+        // wanted for a while — see SCachedTex. A scoped warm never enumerates
         // every monitor's textures, so it must not age or evict.
         if (!only && texGen > TEX_CACHE_LIFE)
             std::erase_if(texCache, [](const auto& E) { return E.second.gen + TEX_CACHE_LIFE < texGen; });
@@ -322,6 +351,7 @@ namespace NHyprbar {
         // before this, and its barChanged would touch the caches cleared below
         texCache.clear();
         lastTaskFp.clear();
+        barHover = {};
     }
 
 } // namespace NHyprbar

@@ -14,8 +14,8 @@ name    = "hyprland-plugins"
 authors = ["hitori"]
 
 [hyprbar]
-description = "the awesome wibar, drawn by the compositor"
-version     = "2.2.6"
+description = "the compact-islands shell bar"
+version     = "3.0.0"
 authors     = ["hitori"]
 output      = "hyprbar/hyprbar.so"
 build       = ["make -C hyprbar all"]

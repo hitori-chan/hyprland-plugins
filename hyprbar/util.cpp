@@ -13,7 +13,10 @@ namespace NHyprbar {
     void damageBars() {
         if (!g_pHyprRenderer)
             return;
-        const double H = Menubar::isOpen ? barHeight() * 2 : barHeight();
+        // island shadows and glass blur reach past the band; the menubar's
+        // floating pill sits below it
+        const double PAD = barBlurRadius() + 12;
+        const double H   = (Menubar::isOpen ? barHeight() * 2 + 4 : barHeight()) + PAD;
         for (const auto& M : State::monitorState()->monitors()) {
             const auto MB = M->logicalBox();
             g_pHyprRenderer->damageBox(CBox{MB.x, MB.y, MB.w, H});

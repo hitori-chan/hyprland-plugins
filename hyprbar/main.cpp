@@ -208,47 +208,57 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // count as window clicks anywhere else
     NHyprCommon::mustLoadBefore(PHANDLE, "hyprbar", {"hyprnotify", "hyprmax", "hyprclick"});
 
-    // Defaults mirror theme.lua; the config overwrites them from the theme.
-    cfg.height         = makeShared<Config::Values::CIntValue>("plugin:hyprbar:height", "bar height in logical px (reserve it: monitor reserved top)", 26);
-    cfg.fontSize       = makeShared<Config::Values::CIntValue>("plugin:hyprbar:font_size", "text size in logical px (monitor scale applies at raster time)", 12);
-    cfg.traySpacing    = makeShared<Config::Values::CIntValue>("plugin:hyprbar:tray_spacing", "px between tray icons (awesome systray_icon_spacing)", 10);
-    cfg.font           = makeShared<Config::Values::CStringValue>("plugin:hyprbar:font", "font family", "Fira Code");
-    cfg.terminal       = makeShared<Config::Values::CStringValue>("plugin:hyprbar:terminal", "terminal that runs Terminal=true menubar entries", "alacritty");
-    cfg.colBg          = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_bg", "bar background", 0xff131313);
-    cfg.colFg          = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_fg", "normal text", 0xffaaaaaa);
-    cfg.colMuted       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_muted", "tray letter fallback", 0xff8a97a8);
-    cfg.colFocus       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_focus", "selected menubar entry text (awesome fg_focus)", 0xff32d6ff);
-    cfg.colActive      = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_active", "active tag / focused task text", 0xff00ccff);
-    cfg.colActiveBg    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_active_bg", "active tag background", 0xff1e2320);
-    cfg.colEmpty       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_empty", "disabled/placeholder text", 0xff565e6b);
-    cfg.colUrgent      = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_urgent", "urgent text", 0xffc83f11);
-    cfg.colUrgentBg    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_urgent_bg", "urgent background (awesome bg_urgent)", 0xff3f3f3f);
-    cfg.colSquareSel   = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_square_sel", "taglist square, tag holds the focused window", 0xfff0dfaf);
-    cfg.colSquareUnsel = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_square_unsel", "taglist square, occupied tag", 0xffdcdccc);
-    cfg.colFrame       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_frame", "menu panel frame", 0xff3f3f3f);
-    cfg.colCharging    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_charging", "battery fill charging/defending (Android's charging green)", 0xff18cc47);
-    cfg.colLow         = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_low", "battery fill at 20% and under (Android's error red)", 0xffff0e01);
-    cfg.colSave        = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_powersave", "battery fill in power save (Android's warning yellow)", 0xffffc917);
+    // Defaults are the glass·ink tokens (common/theme.hpp); theme.lua
+    // overrides them through the same values as always.
+    namespace Th = NHyprCommon::Theme;
+    cfg.height        = makeShared<Config::Values::CIntValue>("plugin:hyprbar:height", "band height in logical px (islands are height-4; reserve it: monitor reserved top)", 30);
+    cfg.fontSize      = makeShared<Config::Values::CIntValue>("plugin:hyprbar:font_size", "text size in logical px (monitor scale applies at raster time)", 12);
+    cfg.traySpacing   = makeShared<Config::Values::CIntValue>("plugin:hyprbar:tray_spacing", "px between tray icons", 3);
+    cfg.roundingPower = makeShared<Config::Values::CFloatValue>("plugin:hyprbar:rounding_power", "corner superellipse exponent", (float)Th::ROUNDING_POWER);
+    cfg.font          = makeShared<Config::Values::CStringValue>("plugin:hyprbar:font", "font family", Th::FONT);
+    cfg.terminal      = makeShared<Config::Values::CStringValue>("plugin:hyprbar:terminal", "terminal that runs Terminal=true menubar entries", "foot");
+    cfg.colBg         = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_bg", "island glass (alpha is the glass)", Th::GLASS);
+    cfg.colFg         = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_fg", "full-ink text and status glyphs", Th::INK);
+    cfg.colMuted      = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_muted", "secondary text, letter fallbacks", Th::SUB);
+    cfg.colFocus      = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_focus", "selected menubar entry text", Th::ACCENT);
+    cfg.colActive     = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_active", "active tag / focused task text (the accent)", Th::ACCENT);
+    cfg.colActiveBg   = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_active_bg", "active/selected fills (accent-dim)", Th::ACCENT_DIM);
+    cfg.colEmpty      = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_empty", "empty tags, disabled text", 0x8098a2ac);
+    cfg.colUrgent     = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_urgent", "urgent text (the urgent kanji)", Th::URGENT);
+    cfg.colUrgentBg   = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_urgent_bg", "urgent chip fill", 0x29ff8a5c);
+    cfg.colFrame      = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_frame", "hairlines", Th::LINE);
+    cfg.colCharging   = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_charging", "battery fill charging/defending (the accent)", Th::ACCENT);
+    cfg.colLow        = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_low", "battery fill at 20% and under (urgent)", Th::URGENT);
+    cfg.colSave       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_powersave", "battery fill in power save (gold)", 0xffffc917);
 
     for (const auto& V : {cfg.height, cfg.fontSize, cfg.traySpacing})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
+    HyprlandAPI::addConfigValueV2(PHANDLE, cfg.roundingPower);
     for (const auto& V : {cfg.font, cfg.terminal})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
-    for (const auto& V : {cfg.colBg, cfg.colFg, cfg.colMuted, cfg.colFocus, cfg.colActive, cfg.colActiveBg, cfg.colEmpty, cfg.colUrgent, cfg.colUrgentBg, cfg.colSquareSel,
-                          cfg.colSquareUnsel, cfg.colFrame, cfg.colCharging, cfg.colLow, cfg.colSave})
+    for (const auto& V : {cfg.colBg, cfg.colFg, cfg.colMuted, cfg.colFocus, cfg.colActive, cfg.colActiveBg, cfg.colEmpty, cfg.colUrgent, cfg.colUrgentBg, cfg.colFrame,
+                          cfg.colCharging, cfg.colLow, cfg.colSave})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
 
     buildIconDirs();
     Clock::refresh();
+    Wifi::refresh();
     Battery::init();
     Tray::init();
+    Bell::init(); // rides the tray's bus link
+    Kbd::init();
 
     g_lifecycle.init();
     g_lifecycle.listen(Event::bus()->m_events.render.stage, [](eRenderStage stage) { onRenderStage(stage); });
     g_lifecycle.listen(Event::bus()->m_events.input.mouse.button, [](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { onMouseButton(e, info); });
     g_lifecycle.listen(Event::bus()->m_events.input.mouse.move, [](Vector2D pos, Event::SCallbackInfo& info) { onMouseMove(pos, info); });
     g_lifecycle.listen(Event::bus()->m_events.input.mouse.axis, [](IPointer::SAxisEvent e, Event::SCallbackInfo& info) { onMouseAxis(e, info); });
-    g_lifecycle.listen(Event::bus()->m_events.input.keyboard.key, [](IKeyboard::SKeyEvent e, Event::SCallbackInfo& info) { Menubar::onKey(e, info); });
+    g_lifecycle.listen(Event::bus()->m_events.input.keyboard.key, [](IKeyboard::SKeyEvent e, Event::SCallbackInfo& info) {
+        if (onBarKey(e, info)) // esc peels the tray menu first
+            return;
+        Menubar::onKey(e, info);
+    });
+    g_lifecycle.listen(Event::bus()->m_events.input.keyboard.layout, [](SP<IKeyboard>, const std::string& name) { Kbd::onLayout(name); });
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprbar", "menubar", luaMenubar);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprbar", "layout_next", luaLayoutNext);
@@ -265,6 +275,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_lifecycle.listen(EV.window.close, [](PHLWINDOW) { damageAndWarm(); });
     g_lifecycle.listen(EV.window.destroy, [](PHLWINDOWREF w) {
         Tasklist::forget(w.get());
+        Taglist::forget(w.get());
         damageAndWarm();
     });
     g_lifecycle.listen(EV.window.active, [](PHLWINDOW w, Desktop::eFocusReason) {
@@ -293,7 +304,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_lifecycle.listen(EV.window.class_, [](PHLWINDOW) { damageAndWarm(); });   // the task icon re-resolves
     g_lifecycle.listen(EV.window.fullscreen, [](PHLWINDOW) { damageAndWarm(); });
     g_lifecycle.listen(EV.window.moveToWorkspace, [](PHLWINDOW, PHLWORKSPACE) { damageAndWarm(); });
-    g_lifecycle.listen(EV.workspace.active, [](PHLWORKSPACE) { damageAndWarm(); });
+    g_lifecycle.listen(EV.workspace.active, [](PHLWORKSPACE ws) {
+        Taglist::noteViewed(ws); // Android's "viewing clears the urgent tag"
+        damageAndWarm();
+    });
     g_lifecycle.listen(EV.workspace.created, [](PHLWORKSPACEREF) { damageAndWarm(); });
     g_lifecycle.listen(EV.workspace.removed, [](PHLWORKSPACEREF) { damageAndWarm(); });
     g_lifecycle.listen(EV.workspace.moveToMonitor, [](PHLWORKSPACE, PHLMONITOR) { damageAndWarm(); });
@@ -302,8 +316,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     timer = makeShared<CEventLoopTimer>(
         toNextMinute(),
         [](SP<CEventLoopTimer> self, void*) {
-            const bool CLK = Clock::refresh(), BAT = Battery::refresh();
-            if (CLK || BAT)
+            const bool CLK = Clock::refresh(), BAT = Battery::refresh(), WIFI = Wifi::refresh();
+            if (CLK || BAT || WIFI)
                 damageAndWarm();
             Battery::alerts();
             self->updateTimeout(toNextMinute());
@@ -313,22 +327,26 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "2.2.6"};
+    return {"hyprbar", "the compact-islands shell bar", "hitori", "3.0.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
     g_lifecycle.resetAll(); // listeners first, then every hop, .so-wide
     Menubar::exit();
     Menu::exit();
+    Bell::exit(); // its proxy borrows the tray's connection — before Tray::exit
     Tray::exit();
     inputExit();
     Battery::exit();
+    Wifi::exit();
+    Kbd::exit();
     if (timer && g_pEventLoopManager)
         g_pEventLoopManager->removeTimer(timer);
     timer.reset();
     renderExit();
     layoutboxExit();
     Tasklist::exit();
+    Taglist::exit();
     Clock::exit();
     iconsExit();
     damageBars();
