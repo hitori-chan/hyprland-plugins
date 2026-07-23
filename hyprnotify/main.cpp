@@ -1,74 +1,43 @@
-// hyprnotify — awesome's naughty as a native Hyprland plugin.
+// hyprnotify — Android's notification system on the freedesktop spec, drawn
+// natively by the compositor.
 //
 // The compositor itself is the org.freedesktop.Notifications daemon: no
-// external process, no layer surface — notification cards are drawn by the
-// renderer in the top-right of the focused monitor, styled like the old
-// naughty boxes (flat dark cards, thin frame, big icons).
+// external process, no layer surface. Two surfaces share one card model:
 //
-// - Notify/CloseNotification/GetCapabilities/GetServerInformation (spec
-//   1.3) plus the NotificationClosed, ActionInvoked and ActivationToken
-//   signals. Capabilities: actions, action-icons, body, body-markup,
-//   body-hyperlinks, body-images, icon-static, persistence, sound. New
-//   cards stack newest-on-top; a replace keeps its slot; the model caps at
-//   max_notifs — overflow evicts the oldest non-critical card (critical
-//   last) with NotificationClosed.
-// - Markup: body and title render the whitelisted Pango subset (b, i, u,
-//   span, br); other tags are dropped, a stray '<'/'&' survives literally,
-//   and malformed markup falls back to plain text.
-// - Images: image-data/image_data/icon_data pixmaps, image-path/app_icon/
-//   desktop-entry as file paths (file:// too) OR freedesktop icon NAMES
-//   resolved against the GTK theme (then hicolor, then pixmaps) — decoded
-//   by hyprgraphics (PNG/JPEG/WEBP/BMP/AVIF/JXL + SVG), downscaled once.
-//   Wide images render card-width as a hero; iconless cards draw a random
-//   face from fallback_icon_dir; <img src> in the body renders as a
-//   thumbnail row.
-// - The "value" hint draws a progress bar (the volume/brightness OSD);
-//   replaces_id updates a card in place, keeping its stack slot.
-// - Urgency: low/normal use the timeout defaults below, critical never
-//   expires and takes the urgent frame + progress color. An explicit
-//   expire_timeout wins; 0 means sticky.
-// - Actions: non-default actions render as clickable buttons (icons under
-//   the action-icons hint); a click emits ActionInvoked and dismisses
-//   unless the resident hint holds the card. <a href> body links open via
-//   xdg-open. Clicks: left invokes the action / opens the link / fires the
-//   default then dismisses (minting an ActivationToken so the sender can
-//   raise itself); right dismisses; middle sweeps the visible stack. The
-//   cards own the pointer over them — hover never leaks to the window
-//   beneath, and the hovered frame/button warms as the click affordance.
-// - Sound: sound-file/sound-name play through a libcanberra player
-//   (sound_command, empty disables); suppress-sound mutes one arrival.
-// - DND (naughty.suspend): hl.plugin.hyprnotify.suspend() toggles; cards
-//   collect silently with timeouts held, resume renders the queue with
-//   fresh timeouts, newest first. `hyprctl hyprnotify count` answers the
-//   pending total (the lockscreen bell).
-// - History (persistence): a closed card is retained (max_history) unless
-//   it is transient or a progress/OSD card; hl.plugin.hyprnotify.recall()
-//   (or `hyprctl hyprnotify recall`) pops the most recent back onto the
-//   stack with a fresh timeout; `hyprctl hyprnotify history` counts them.
-// - Session lock: cards never render above the lockscreen (the built-in
-//   overlay does — these are the user's notifications, not the
-//   compositor's), input listeners guard-and-reset first, and whatever
-//   outlives the lock repaints at unlock.
+// - POPUPS (banners): glass cards top-right on the focused monitor. The
+//   anatomy is Android's — an icon column (content avatar wearing the
+//   identity's 13px corner badge; identity alone otherwise; nothing =
+//   text-only), an "App • age" header, title, body, progress, and the
+//   card's actions as tinted text buttons. Hovering reveals the ✕.
+// - THE CENTER (F12 / the bar's bell / `hyprctl hyprnotify center`): two
+//   views, like Android. The SHADE holds RESIDENT live cards — a banner
+//   timeout emits reason 1 EXPIRED once and hides only the popup; the card
+//   stays as a shade row until dismissed or acted on. HISTORY (behind ⏱)
+//   holds dismissed/app-closed entries only. Every row is the same
+//   two-state card (the chevron folds; live arrives expanded and auto-folds
+//   with its banner; expanded rows show the notification's ORIGINAL actions
+//   — history included, best-effort with the original id, entry consumed;
+//   recall = left-click, delete = right-click). ≥2 same-app rows fold into
+//   the three-state group model in both views. The bottom bar is
+//   ⏱ · a context-sensitive Clear button · ⊖ DND.
 //
-// Colors/fonts/metrics arrive from theme.lua via hl.config plugin values —
-// the C++ defaults just mirror the theme (the old dunstrc hand-mirrored it;
-// this closes that loop).
+// Model rules: x-canonical-append joins same app+summary into one growing
+// conversation card (~8KB cap, oldest lines drop); the OSD id band
+// 9990-9999 replaces in place and never appends, groups, or retires;
+// critical bypasses DND; ignore_dbusclose gates only the bus
+// CloseNotification path; transient/progress cards vanish entirely on
+// expiry. `hyprctl hyprnotify state` reports center/live/hist/dnd; the
+// org.hitori.hyprnotify bus interface carries Toggle/State for the bar's
+// bell (the sanctioned cross-plugin channel — the bus, never symbols).
 //
-// DBus is event-driven: sd-bus's fds live in the wayland event loop as
-// removable sources (EXIT pulls them before the connection dies), so idle
-// costs zero wakeups and a Notify lands the same loop iteration; a timer
-// carries only sd-bus's rare internal timeouts and the deferred post-emit
-// drain (sd-bus dispatch is not re-entrant — never drain synchronously
-// from an emit). Textures follow the texture rule (see hyprnotify.hpp):
-// built one frame ahead from the event loop, cached per card, and a
-// replace only rebuilds what actually changed — a volume sweep re-rasters
-// one body line per step, nothing else; image-data pixmaps are downscaled
-// once, hashed for dedup, and freed after upload.
-//
-// The code is split by concern — see hyprnotify.hpp for the module map.
+// Everything follows the texture rule (warm/draw split, see ui.hpp), spends
+// zero wakeups idle, and defers every input-driven mutation off the
+// emission. The code is split by concern — see hyprnotify.hpp's module map.
 
+#include "common/icons.hpp"
 #include "common/lifecycle.hpp"
 #include "common/order.hpp"
+#include "common/theme.hpp"
 
 #include "hyprnotify.hpp"
 
@@ -148,15 +117,15 @@ namespace NHyprnotify {
 }
 
 static NHyprCommon::CLifecycle g_lifecycle;
-static SP<SHyprCtlCommand>     ctlCount;
-static NHyprCommon::CHop       pendingSuspend;
+static SP<SHyprCtlCommand>     ctlCmd;
 
 // hl.plugin.hyprnotify.suspend() — the DND chord. Deferred out of the bind's
-// input emission (the resume reflows and repaints the stack). Presses
-// ACCUMULATE: overwriting the lock cancels the unfired toggle, and two
-// presses in one dispatch would net zero instead of two toggles.
-static int suspendPresses = 0;
-static int luaSuspend(lua_State*) {
+// input emission (the resume reflows and repaints). Presses ACCUMULATE:
+// overwriting the lock cancels the unfired toggle, and two presses in one
+// dispatch would net zero instead of two toggles.
+static NHyprCommon::CHop pendingSuspend;
+static int               suspendPresses = 0;
+static int               luaSuspend(lua_State*) {
     if (!g_pEventLoopManager)
         return 0; // presses must not accumulate with no drain to run them
     if (++suspendPresses > 1)
@@ -169,8 +138,6 @@ static int luaSuspend(lua_State*) {
 }
 
 // hl.plugin.hyprnotify.recall() / `hyprctl hyprnotify recall` — history-pop.
-// Deferred like suspend (a keybind or hyprctl dispatch must not reflow the
-// model inline); presses accumulate so a burst pops that many.
 static int               recallPresses = 0;
 static NHyprCommon::CHop pendingRecall;
 static void              queueRecall() {
@@ -185,6 +152,30 @@ static void              queueRecall() {
 }
 static int luaRecall(lua_State*) {
     queueRecall();
+    return 0;
+}
+
+// The center toggle: F12's user bind (hl.plugin.hyprnotify.center()), the
+// bar's bell over the bus, and `hyprctl hyprnotify center` all funnel here —
+// deferred and accumulating like suspend.
+static int               centerPresses = 0;
+static NHyprCommon::CHop pendingCenter;
+
+namespace NHyprnotify {
+    void queueCenterToggle() {
+        if (!g_pEventLoopManager)
+            return;
+        if (++centerPresses > 1)
+            return;
+        pendingCenter.arm([]() {
+            if (std::exchange(centerPresses, 0) & 1)
+                setCenter(!centerVisible());
+        });
+    }
+}
+
+static int luaCenter(lua_State*) {
+    queueCenterToggle();
     return 0;
 }
 
@@ -206,41 +197,47 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // a notification-card click must never reach the window beneath it
     NHyprCommon::mustLoadBefore(PHANDLE, "hyprnotify", {"hyprmax", "hyprclick"});
 
-    // Defaults mirror theme.lua; the config overwrites them from the theme.
-    cfg.font            = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:font", "font family", "Fira Code");
-    cfg.fontSize        = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:font_size", "text size in logical px (monitor scale applies at raster time)", 12);
-    cfg.width           = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:width", "card width in logical px", 340);
-    cfg.maxHeight       = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_height", "card height cap in logical px", 260);
-    cfg.maxIcon         = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_icon", "image box cap in logical px (the old naughty icon_size)", 64);
-    cfg.margin          = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:margin", "screen-edge and inter-card gap in logical px", 4);
-    cfg.offsetY         = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:offset_y", "first card's distance from the monitor top (clear the bar)", 30);
-    cfg.timeoutLow      = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:timeout_low", "low-urgency timeout in ms", 4000);
-    cfg.timeoutNormal   = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:timeout_normal", "normal-urgency timeout in ms (critical never expires)", 8000);
-    cfg.rounding        = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:rounding", "corner radius in logical px", 1);
+    // Defaults are the glass·ink tokens (common/theme.hpp); theme.lua
+    // overrides them through the same values as always.
+    namespace Th = NHyprCommon::Theme;
+    cfg.font            = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:font", "font family", Th::FONT);
+    cfg.fontSize        = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:font_size", "body text size in logical px (the type roles derive from it)", 12);
+    cfg.width           = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:width", "popup card width in logical px", 348);
+    cfg.maxHeight       = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_height", "popup card height cap in logical px", 300);
+    cfg.maxIcon         = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_icon", "popup icon column in logical px", 44);
+    cfg.margin          = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:margin", "inter-card gap in logical px", 6);
+    cfg.offsetY         = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:offset_y", "popups' and the center's distance from the monitor top", 34);
+    cfg.timeoutLow      = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:timeout_low", "low-urgency banner timeout in ms", 4000);
+    cfg.timeoutNormal   = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:timeout_normal", "normal-urgency banner timeout in ms (critical never expires)", 8000);
+    cfg.rounding        = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:rounding", "card radius in logical px (panel +6 and rows -2 derive)", Th::RAD_CARD);
+    cfg.roundingPower   = makeShared<Config::Values::CFloatValue>("plugin:hyprnotify:rounding_power", "corner superellipse exponent", (float)Th::ROUNDING_POWER);
     cfg.maxNotifs       = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_notifs", "model cap; overflow evicts the oldest non-critical card", 50);
-    cfg.maxHistory      = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_history", "retained-for-recall cap; 0 disables history", 20);
-    cfg.fallbackIconDir = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:fallback_icon_dir", "iconless cards draw a random image from this directory", "");
-    cfg.colBg           = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_bg", "card background", 0xff131313);
-    cfg.colFg           = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_fg", "body text", 0xffaaaaaa);
-    cfg.colTitle        = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_title", "summary line", 0xffdcdccc);
-    cfg.colKicker       = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_kicker", "app-name kicker + hovered frame", 0xff8a97a8);
-    cfg.colFrame        = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_frame", "card frame + progress trough", 0xff3f3f3f);
-    cfg.colUrgent       = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_urgent", "critical frame/kicker + critical progress", 0xffc83f11);
-    cfg.colHighlight    = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_highlight", "progress bar fill", 0xff32d6ff);
-    cfg.colLink         = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_link", "body hyperlinks", 0xff5e9fef);
+    cfg.maxHistory      = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_history", "history cap; 0 disables history", 20);
+    cfg.ignoreDbusClose = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:ignore_dbusclose", "ignore app-initiated CloseNotification (dunst's knob)", 0);
+    cfg.colBg           = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_bg", "glass fill (alpha is the glass)", Th::GLASS);
+    cfg.colFg           = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_fg", "body text", Th::INK);
+    cfg.colTitle        = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_title", "card titles", Th::TITLE);
+    cfg.colKicker       = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_kicker", "header/age/secondary text", Th::SUB);
+    cfg.colFrame        = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_frame", "hairlines", Th::LINE);
+    cfg.colUrgent       = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_urgent", "critical ring/progress/urgent fills", Th::URGENT);
+    cfg.colHighlight    = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_highlight", "the accent: progress, actions, selections", Th::ACCENT);
+    cfg.colLink         = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_link", "body hyperlinks", Th::LINK);
     cfg.soundCommand    = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:sound_command", "libcanberra player for sound hints; empty disables", "canberra-gtk-play");
 
-    for (const auto& V : {cfg.fontSize, cfg.width, cfg.maxHeight, cfg.maxIcon, cfg.margin, cfg.offsetY, cfg.timeoutLow, cfg.timeoutNormal, cfg.rounding, cfg.maxNotifs, cfg.maxHistory})
+    for (const auto& V : {cfg.fontSize, cfg.width, cfg.maxHeight, cfg.maxIcon, cfg.margin, cfg.offsetY, cfg.timeoutLow, cfg.timeoutNormal, cfg.rounding, cfg.maxNotifs,
+                          cfg.maxHistory, cfg.ignoreDbusClose})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
-    for (const auto& V : {cfg.font, cfg.fallbackIconDir, cfg.soundCommand})
+    HyprlandAPI::addConfigValueV2(PHANDLE, cfg.roundingPower);
+    for (const auto& V : {cfg.font, cfg.soundCommand})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
     for (const auto& V : {cfg.colBg, cfg.colFg, cfg.colTitle, cfg.colKicker, cfg.colFrame, cfg.colUrgent, cfg.colHighlight, cfg.colLink})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
 
     Bus::init();
+    renderInit();
 
-    // the lockscreen bell reads this: every pending card, DND queue included
-    ctlCount =
+    // the lockscreen bell reads count; the stress gate reads state
+    ctlCmd =
         HyprlandAPI::registerHyprCtlCommand(PHANDLE, SHyprCtlCommand{.name = "hyprnotify", .exact = false, .fn = [](eHyprCtlOutputFormat, std::string request) -> std::string {
                                                                          if (request.ends_with("count"))
                                                                              return std::to_string(notifs.size());
@@ -250,47 +247,64 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                                                                              queueRecall();
                                                                              return "ok";
                                                                          }
+                                                                         if (request.ends_with("center")) {
+                                                                             queueCenterToggle();
+                                                                             return "ok";
+                                                                         }
+                                                                         if (request.ends_with("state"))
+                                                                             return Bus::stateString();
+                                                                         if (request.ends_with("clear")) { // dismiss + wipe: the scripted reset
+                                                                             static NHyprCommon::CHop pendingClear;
+                                                                             pendingClear.arm([]() {
+                                                                                 Bus::dismissAllLive();
+                                                                                 Bus::clearHistory();
+                                                                             });
+                                                                             return "ok";
+                                                                         }
                                                                          return "unknown request";
                                                                      }});
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprnotify", "suspend", luaSuspend);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprnotify", "recall", luaRecall);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprnotify", "center", luaCenter); // F12 is the reserved bind
 
     g_lifecycle.init();
     g_lifecycle.listen(Event::bus()->m_events.render.stage, [](eRenderStage stage) { onRenderStage(stage); });
     g_lifecycle.listen(Event::bus()->m_events.render.preChecks, [](PHLMONITOR mon) { onRenderPreChecks(mon); });
     g_lifecycle.listen(Event::bus()->m_events.input.mouse.button, [](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { onMouseButton(e, info); });
     g_lifecycle.listen(Event::bus()->m_events.input.mouse.move, [](Vector2D pos, Event::SCallbackInfo& info) { onMouseMove(pos, info); });
+    g_lifecycle.listen(Event::bus()->m_events.input.mouse.axis, [](IPointer::SAxisEvent e, Event::SCallbackInfo& info) { onMouseAxis(e, info); });
+    g_lifecycle.listen(Event::bus()->m_events.input.keyboard.key, [](IKeyboard::SKeyEvent e, Event::SCallbackInfo& info) { onKey(e, info); });
 
-    // The cards live on the FOCUSED monitor: monitor.focused is the one
+    // Everything lives on the FOCUSED monitor: monitor.focused is the one
     // desktop event layout depends on (rawMonitorFocus early-outs same-monitor
     // flips, so sloppy focus costs nothing). It fires BEFORE m_focusMonitor is
     // assigned — the warm must stay deferred, which notifChanged guarantees.
     auto& EV = Event::bus()->m_events;
     g_lifecycle.listen(EV.monitor.focused, [](PHLMONITOR) {
-        if (!notifs.empty())
+        if (!notifs.empty() || centerVisible())
             notifChanged();
     });
     g_lifecycle.listen(EV.monitor.layoutChanged, []() {
-        if (!notifs.empty())
+        if (!notifs.empty() || centerVisible())
             notifChanged();
     });
     g_lifecycle.listen(EV.config.reloaded, []() {
-        resetFallbackCache();
-        resetIconThemeCache();
-        if (!notifs.empty())
+        NHyprCommon::resetIconNameCache();
+        if (!notifs.empty() || centerVisible())
             notifChanged(); // a live theme reload re-keys the texture caches
     });
 
-    return {"hyprnotify", "awesome's naughty: notifications drawn by the compositor", "hitori", VERSION};
+    return {"hyprnotify", "Android's notification shade for Hyprland", "hitori", VERSION};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
     g_lifecycle.resetAll(); // listeners first, then every hop
     suspendPresses = 0;
     recallPresses  = 0;
-    if (ctlCount)
-        HyprlandAPI::unregisterHyprCtlCommand(PHANDLE, ctlCount);
-    ctlCount.reset();
+    centerPresses  = 0;
+    if (ctlCmd)
+        HyprlandAPI::unregisterHyprCtlCommand(PHANDLE, ctlCmd);
+    ctlCmd.reset();
     Bus::exit(); // closes the model; its textures die with it
     inputExit();
     reapChildren();

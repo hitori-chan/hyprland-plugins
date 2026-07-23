@@ -1,175 +1,14 @@
-// hyprnotify/icons.cpp — notification images: files via hyprgraphics, raw image-data
+// hyprnotify/icons.cpp — notification images: content avatars and identity
+// icons via hyprgraphics, raw image-data pixmaps
+
+#include "common/icons.hpp"
 
 #include "hyprnotify.hpp"
 
 #include <cstring>
 #include <filesystem>
-#include <fstream>
-#include <random>
 
 namespace NHyprnotify {
-
-    // ---- fallback_icon_dir: iconless cards get a face ----
-
-    static std::vector<std::string> fallbackFiles;
-    static bool                     fallbackScanned = false;
-
-    void                            resetFallbackCache() {
-        fallbackFiles.clear();
-        fallbackScanned = false;
-    }
-
-    // One roll per card (bus keeps the pick across in-place replaces). The
-    // listing is scanned once per config life, from the warm pass — never
-    // the render or a bus dispatch.
-    static std::string pickFallback() {
-        const auto DIR = cfg.fallbackIconDir->value();
-        if (DIR.empty())
-            return "";
-        if (!fallbackScanned) {
-            fallbackScanned = true;
-            std::error_code ec;
-            for (auto it = std::filesystem::recursive_directory_iterator(DIR, std::filesystem::directory_options::skip_permission_denied, ec); !ec && it != std::filesystem::end(it);
-                 it.increment(ec)) {
-                if (!it->is_regular_file(ec))
-                    continue;
-                auto ext = it->path().extension().string();
-                std::ranges::transform(ext, ext.begin(), [](unsigned char c) { return std::tolower(c); });
-                if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".webp" || ext == ".bmp" || ext == ".avif" || ext == ".jxl" || ext == ".svg")
-                    fallbackFiles.push_back(it->path().string());
-            }
-        }
-        if (fallbackFiles.empty())
-            return "";
-        static std::mt19937 rng{std::random_device{}()};
-        return fallbackFiles[std::uniform_int_distribution<size_t>{0, fallbackFiles.size() - 1}(rng)];
-    }
-
-    // ---- freedesktop icon-name resolution ----
-
-    // A name -> path map. A miss is cached too (empty string) so a nonexistent
-    // name never rescans the theme every warm. Cleared on config reload.
-    static std::unordered_map<std::string, std::string> iconPathCache;
-
-    void                                                resetIconThemeCache() {
-        iconPathCache.clear();
-    }
-
-    // The GTK icon theme is this system's source of truth (Qt follows it). Read
-    // gtk-icon-theme-name from settings.ini once; fall back to hicolor.
-    static std::string gtkIconTheme() {
-        static std::string theme;
-        static bool        done = false;
-        if (done)
-            return theme;
-        done = true;
-
-        std::string cfgHome;
-        if (const char* X = getenv("XDG_CONFIG_HOME"); X && *X)
-            cfgHome = X;
-        else if (const char* H = getenv("HOME"); H && *H)
-            cfgHome = std::string(H) + "/.config";
-        if (!cfgHome.empty()) {
-            std::ifstream f(cfgHome + "/gtk-3.0/settings.ini");
-            std::string   line;
-            while (std::getline(f, line))
-                if (const auto P = line.find("gtk-icon-theme-name"); P == 0) {
-                    if (const auto EQ = line.find('='); EQ != std::string::npos) {
-                        theme = line.substr(EQ + 1);
-                        theme.erase(0, theme.find_first_not_of(" \t"));
-                        theme.erase(theme.find_last_not_of(" \t\r\n") + 1);
-                    }
-                    break;
-                }
-        }
-        return theme;
-    }
-
-    // Look for <dir>/name.ext directly and one category level down
-    // (<dir>/<cat>/name.ext) — the freedesktop size dirs hold either.
-    static std::string findInDir(const std::string& dir, const std::string& name) {
-        static const char* EXT[] = {".svg", ".png", ".xpm"};
-        std::error_code    ec;
-        for (const char* e : EXT)
-            if (std::filesystem::exists(dir + "/" + name + e, ec))
-                return dir + "/" + name + e;
-        for (auto it = std::filesystem::directory_iterator(dir, ec); !ec && it != std::filesystem::end(it); it.increment(ec)) {
-            if (!it->is_directory(ec))
-                continue;
-            for (const char* e : EXT)
-                if (std::filesystem::exists(it->path().string() + "/" + name + e, ec))
-                    return it->path().string() + "/" + name + e;
-        }
-        return "";
-    }
-
-    // Not a full index.theme engine: it scans the GTK theme's size dirs
-    // (scalable first, then a size-proximity order), then hicolor, then flat
-    // pixmaps. Inheritance beyond hicolor isn't followed — app icons live in
-    // hicolor in practice, so that fallback covers the common miss.
-    std::string resolveIconName(const std::string& name, int sizePx) {
-        if (name.empty() || name.find('/') != std::string::npos)
-            return ""; // already a path, or nothing to resolve
-        if (const auto IT = iconPathCache.find(name); IT != iconPathCache.end())
-            return IT->second;
-
-        std::vector<std::string> bases;
-        if (const char* X = getenv("XDG_DATA_HOME"); X && *X)
-            bases.push_back(std::string(X) + "/icons");
-        else if (const char* H = getenv("HOME"); H && *H)
-            bases.push_back(std::string(H) + "/.local/share/icons");
-        if (const char* H = getenv("HOME"); H && *H)
-            bases.push_back(std::string(H) + "/.icons");
-        std::string dataDirs = "/usr/local/share:/usr/share";
-        if (const char* X = getenv("XDG_DATA_DIRS"); X && *X)
-            dataDirs = X;
-        for (size_t p = 0; p < dataDirs.size();) {
-            const auto E = dataDirs.find(':', p);
-            const auto D = dataDirs.substr(p, E == std::string::npos ? E : E - p);
-            if (!D.empty())
-                bases.push_back(D + "/icons");
-            if (E == std::string::npos)
-                break;
-            p = E + 1;
-        }
-
-        std::vector<std::string> themes;
-        if (const auto GT = gtkIconTheme(); !GT.empty())
-            themes.push_back(GT);
-        themes.push_back("hicolor");
-
-        std::vector<std::string> sizeDirs = {"scalable"};
-        for (const int S : {sizePx, 64, 48, 96, 128, 256, 72, 32, 24, 16})
-            sizeDirs.push_back(std::to_string(S) + "x" + std::to_string(S));
-
-        std::string found;
-        for (const auto& THEME : themes) {
-            for (const auto& BASE : bases) {
-                const auto      TDIR = BASE + "/" + THEME;
-                std::error_code ec;
-                if (!std::filesystem::is_directory(TDIR, ec))
-                    continue;
-                for (const auto& SD : sizeDirs)
-                    if (found = findInDir(TDIR + "/" + SD, name); !found.empty())
-                        break;
-                if (!found.empty())
-                    break;
-            }
-            if (!found.empty())
-                break;
-        }
-        if (found.empty())
-            for (const char* e : {".svg", ".png", ".xpm"}) {
-                std::error_code ec;
-                if (std::filesystem::exists(std::string("/usr/share/pixmaps/") + name + e, ec)) {
-                    found = std::string("/usr/share/pixmaps/") + name + e;
-                    break;
-                }
-            }
-
-        iconPathCache[name] = found;
-        return found;
-    }
 
     // Anything bigger than the card's icon box is downscaled ONCE on the CPU
     // at load — a 4K pixmap kept full-size would hold megabytes of VRAM to
@@ -291,7 +130,22 @@ namespace NHyprnotify {
         return h;
     }
 
+    // The icon anatomy: n.iconTex carries the CONTENT (image-data pixmap or
+    // image-path file, hero-capable), n.identTex the IDENTITY (app_icon /
+    // desktop-entry, icon-box only). The render decides which leads and
+    // whether the identity rides as the corner badge.
     void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx) {
+        // identity: one raster per source, drawn at every size it appears
+        // (lead icon, group header, the 13px badge)
+        if (n.identity.empty()) {
+            n.identTex.reset();
+            n.identFor.clear();
+        } else if (n.identFor != n.identity) { // remembers a failed load too: no disk retry per warm
+            bool hero  = false;
+            n.identTex = fileTex(n.identity, iconPx, 0, 0, hero);
+            n.identFor = n.identity;
+        }
+
         if (n.hasPixels) {
             if (n.pixels.empty())
                 return; // uploaded by an earlier warm; the texture carries it now
@@ -322,22 +176,10 @@ namespace NHyprnotify {
         }
 
         if (n.image.empty()) {
-            // no image sent: the card draws its rolled fallback face (icon
-            // treatment always — a wide waifu must not go hero)
-            if (n.fallbackPick.empty())
-                n.fallbackPick = pickFallback();
-            if (n.fallbackPick.empty()) {
-                n.iconTex.reset();
-                n.imageFor.clear();
-                n.pixelsFor = 0;
-                n.heroTex   = false;
-                return;
-            }
-            if (n.imageFor == n.fallbackPick)
-                return;
-            bool hero   = false;
-            n.iconTex   = fileTex(n.fallbackPick, iconPx, 0, 0, hero);
-            n.imageFor  = n.fallbackPick;
+            // no content image: the identity leads alone (render side), or
+            // the card is text-only — never a rolled fallback (retired 4.0.0)
+            n.iconTex.reset();
+            n.imageFor.clear();
             n.pixelsFor = 0;
             n.heroTex   = false;
             return;
@@ -366,7 +208,7 @@ namespace NHyprnotify {
         if (path.starts_with("file://"))
             path.erase(0, 7);
         if (!path.starts_with('/'))
-            path = resolveIconName(a.id, iconPx);
+            path = NHyprCommon::resolveIconName(a.id, iconPx);
         if (path.empty())
             return;
         bool hero = false;

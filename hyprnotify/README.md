@@ -1,58 +1,64 @@
 # hyprnotify
 
-Awesome's `naughty`, native: the compositor is the
-`org.freedesktop.Notifications` daemon (spec 1.3). No external process, no
-layer surface — the renderer draws the cards top-right on the focused
-monitor. Capabilities advertised: `actions`, `action-icons`, `body`,
-`body-markup`, `body-hyperlinks`, `body-images`, `icon-static`,
-`persistence`, `sound`.
+Android's notification system on the freedesktop spec, drawn natively: the
+compositor is the `org.freedesktop.Notifications` daemon (spec 1.3) — no
+external process, no layer surface. Capabilities: `actions`, `action-icons`,
+`body`, `body-markup`, `body-hyperlinks`, `body-images`, `icon-static`,
+`persistence`, `sound`. The skin is glass·ink (`common/theme.hpp`): frosted
+graphite cards with live blur, IBM Plex Sans, superellipse corners.
 
-1. **Cards** — `#131313` under a 1px frame with 1px rounding; app-name
-   kicker in muted letterspaced caps, bold title, body, a 4px value bar
-   for the `value` hint (the volume/brightness OSD), icons capped at
-   64px. Newest on top; `replaces_id` updates a card in place, keeping
-   its slot. The frame warms under the pointer; critical cards take the
-   urgent color and never expire.
-2. **Markup** — body and title render the whitelisted Pango subset
-   (`<b> <i> <u> <span> <br>`); other tags are dropped and a stray `<`/`&`
-   survives as literal text, so a markup-aware sender and a naive one both
-   come out right. Malformed markup falls back to plain text.
-3. **Images** — `image-data` pixmaps and file paths (`file://` too), plus
-   freedesktop icon **names** for `app_icon` / `image-path` /
-   `desktop-entry`, resolved against the GTK icon theme (then hicolor,
-   then pixmaps). Decoded by hyprgraphics. Wide images (aspect ≥ 1.5)
-   render card-width as a cover-cropped hero. Iconless cards draw a random
-   face from `fallback_icon_dir`. `<img src>` in the body renders as a
-   thumbnail row below the text.
-4. **Actions** — non-`default` actions render as a clickable button row; a
-   left click emits `ActionInvoked` and dismisses the card unless the
-   `resident` hint is set. Under the `action-icons` hint the action ids
-   are freedesktop icon names drawn on the buttons. The `default` action
-   (and a lone action) fire on a body left click; `ActivationToken`
-   precedes each invoke so the sender can raise itself.
-5. **Hyperlinks** — `<a href>` renders underlined in the link color; a
-   click opens the URL via `xdg-open` and leaves the card up.
-6. **Clicks** — left invokes the action / opens the link / fires the
-   default, then dismisses; right dismisses; middle sweeps the visible
-   stack. The cards own the pointer over them — hover never leaks to the
-   window beneath.
-7. **Sound** — `sound-file` / `sound-name` play through a libcanberra
-   player (`sound_command`, empty disables); `suppress-sound` mutes a
-   single notification. The compositor has no audio backend, so this
-   shells out, reaped off the event loop.
-8. **DND** — `hl.plugin.hyprnotify.suspend()` toggles naughty.suspend
-   parity: arrivals collect silently with timeouts held; resume renders
-   the queue newest-first on fresh timeouts.
-9. **History** — a closed card is retained (bounded by `max_history`)
-   unless it is `transient` or a progress/OSD card;
-   `hl.plugin.hyprnotify.recall()` (or `hyprctl hyprnotify recall`) pops
-   the most recent back onto the stack with a fresh timeout.
-   `hyprctl hyprnotify {count,history}` answer the live and retained
-   totals (the lockscreen bell reads `count`).
-10. **Bounds** — `max_notifs` caps the model: overflow evicts the oldest
-    non-critical card with `NotificationClosed`, critical only when
-    nothing else is left.
+Two surfaces share one card model:
 
-Cards never render above the lockscreen, and input listeners guard and
-reset there first. Colors, fonts and metrics arrive from theme.lua via
-`plugin:hyprnotify:*` values; the C++ defaults mirror the theme.
+1. **Popups (banners)** — glass cards top-right on the focused monitor, the
+   Android anatomy: an icon column (the CONTENT avatar wearing the
+   identity's 13px corner badge when both exist; identity alone otherwise;
+   nothing = text-only), an "App • age" header, bold title, body, a
+   progress pill for the `value` hint, and the card's actions as tinted
+   text buttons. Hovering reveals the ✕; critical cards ring urgent and
+   never expire. Wide images (aspect ≥ 1.5) render as a cover-cropped hero.
+2. **The center** (F12, the bar's bell, `hyprctl hyprnotify center`) — two
+   views, like Android:
+   - The **shade** holds RESIDENT live cards, unlabeled: a banner timeout
+     emits `NotificationClosed` reason 1 exactly once and hides only the
+     popup — the card stays as a shade row until dismissed or acted on.
+     Empty state: "You're all caught up!".
+   - **History** behind the ⏱ button holds dismissed/app-closed entries
+     only ("No history" when empty).
+   - Every row is the same two-state card: collapsed = icon + bold
+     "title • age" + the newest body line (+ progress) + a 24Ø chevron;
+     expanded = header/age line, title, 4-line body, progress, and the
+     notification's ORIGINAL actions — history included (best-effort
+     `ActionInvoked` with the original id; the entry is consumed). Live
+     arrives expanded and auto-folds with its banner; recall = left click,
+     delete = right click, always gestures.
+   - ≥2 same-app rows fold into the three-state group model in BOTH views:
+     digest (identity icon · "App • N • age" · count pill · ≤2 indented
+     preview lines) → segmented 1-line children → per-child full expand.
+     Fold state resets when the center closes.
+   - The bottom bar: ⏱ (accent-lit in history) · a context-sensitive
+     Clear button ("Clear all" dismisses the shade into history; "Clear
+     history" wipes it; greys when its target is empty) · ⊖ DND
+     (accent-lit while on). The wheel pages the list — captured only
+     inside the panel; esc closes.
+
+Model rules: `x-canonical-append` joins same app+summary into one growing
+conversation card (~8KB, oldest lines drop; one history entry per
+conversation); the OSD id band 9990-9999 replaces in place and never
+appends, groups, or retires; critical bypasses DND; `ignore_dbusclose`
+gates only the bus `CloseNotification` path (user dismissals and expiry are
+untouched); `transient` and progress cards vanish entirely on expiry;
+`max_notifs` overflow evicts the oldest non-critical into history.
+Grouping keys on app identity (`desktop-entry`, else the app name).
+
+The bar's bell talks over the bus: the `org.hitori.hyprnotify` interface on
+the Notifications object carries `Toggle` (the center) and a `State` signal
+(live/kept/dnd/center — the badge). `hyprctl hyprnotify
+{count,history,recall,center,state,clear}`; `hl.plugin.hyprnotify.
+{suspend,recall,center}()`.
+
+Markup stays the whitelisted Pango subset with the literal-`<`/`&` rescue;
+`<a href>` opens via `xdg-open`; `<img src>` renders a thumbnail row;
+`sound-file`/`sound-name` play through `sound_command`. Cards never render
+above the lockscreen, and input listeners guard and reset there first.
+Colors, fonts and metrics arrive from theme.lua via `plugin:hyprnotify:*`;
+the C++ defaults ARE the glass·ink tokens.
