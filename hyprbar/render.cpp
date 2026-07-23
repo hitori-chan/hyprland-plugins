@@ -13,8 +13,6 @@
 
 #include "hyprbar.hpp"
 
-#include <hyprland/src/config/ConfigValue.hpp>
-
 namespace NHyprbar {
 
     SBarHover barHover;
@@ -36,18 +34,6 @@ namespace NHyprbar {
     // per monitor: a fingerprint of the labels the strip shows — see
     // the tasklist in renderBar
     static std::unordered_map<uint64_t, size_t> lastTaskFp;
-
-    bool                                        barBlurOn() {
-        static auto V = CConfigValue<Config::INTEGER>("decoration:blur:enabled");
-        return *V != 0;
-    }
-    double barBlurRadius() {
-        if (!barBlurOn())
-            return 0;
-        static auto SIZE   = CConfigValue<Config::INTEGER>("decoration:blur:size");
-        static auto PASSES = CConfigValue<Config::INTEGER>("decoration:blur:passes");
-        return (double)*SIZE * (1 << std::clamp((int)*PASSES, 1, 6));
-    }
 
     // Built ONLY by the warm pass — see the texture rule in hyprbar.hpp. A miss
     // during a draw returns null (that one label is missing for one frame)
@@ -99,7 +85,7 @@ namespace NHyprbar {
         const float RP = (float)cfg.roundingPower->value();
         static Config::CGradientValueData SHADOW{CHyprColor{NHyprCommon::Theme::SHADOW}};
         g_pHyprOpenGL->renderRoundedShadow(toPhys(global), round, RP, (int)std::lround(10 * scale), SHADOW, 1.f);
-        g_pHyprOpenGL->renderRect(toPhys(global), color(cfg.colBg), {.round = round, .roundingPower = RP, .blur = barBlurOn()});
+        g_pHyprOpenGL->renderRect(toPhys(global), color(cfg.colBg), {.round = round, .roundingPower = RP, .blur = blurOn()});
     }
 
     void SPaint::border(const CBox& global, const CHyprColor& c, int round, int sizePx) const {
@@ -280,7 +266,7 @@ namespace NHyprbar {
             return {};
         }
         virtual bool needsLiveBlur() override {
-            return barBlurOn(); // the islands' glass samples what's beneath
+            return blurOn(); // the islands' glass samples what's beneath
         }
         virtual bool needsPrecomputeBlur() override {
             return false;
@@ -289,7 +275,7 @@ namespace NHyprbar {
             const auto MON = m_mon.lock();
             if (!MON)
                 return std::nullopt;
-            const double PAD = barBlurRadius() + 12; // island shadows reach below the band
+            const double PAD = blurRadius() + 12; // island shadows reach below the band
             double       h   = barHeight() + PAD;
             if (Menubar::isOpen && Menubar::mon.lock() == MON)
                 h = barHeight() + 4 + barHeight() + PAD; // the floating strip below the bar

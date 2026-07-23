@@ -45,7 +45,7 @@ namespace NHyprbar {
             // strands the shadow when the panel closes. Cover the full reach
             // on every panel, old and new.
             const auto   M      = mon.lock();
-            const double MARGIN = (M ? std::ceil(M->m_scale) : 1.0) + 11.0 + (M ? barBlurRadius() / M->m_scale : 0.0);
+            const double MARGIN = (M ? std::ceil(M->m_scale) : 1.0) + 11.0 + (M ? blurRadius() / M->m_scale : 0.0);
 
             static std::vector<CBox> last; // the previous panels: a close/resize must damage them too
             for (auto B : last)

@@ -219,7 +219,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                           cfg.colCharging, cfg.colLow, cfg.colSave})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
 
-    buildIconDirs();
     Clock::refresh();
     Wifi::refresh();
     Battery::init();
@@ -306,7 +305,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the compact-islands shell bar", "hitori", "3.0.2"};
+    return {"hyprbar", "the compact-islands shell bar", "hitori", "3.0.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

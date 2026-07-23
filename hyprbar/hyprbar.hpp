@@ -32,8 +32,8 @@
 
 #include "common/busclient.hpp"
 
+#include "common/glass.hpp"
 #include "common/texcache.hpp"
-#include "common/theme.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/Compositor.hpp>
@@ -131,26 +131,16 @@ namespace NHyprbar {
     double      barHeight();
     void        damageBars(); // covers the menubar's floating pill while it's open
     std::string lower(std::string s);
-    CHyprColor  color(const SP<Config::Values::CColorValue>& v);
 
-    // CHyprColor's uint64 ctor OkLab-converts — never construct theme
-    // constants per draw call; these memoize once (constants never move)
-    inline const CHyprColor& tFill() {
-        static const CHyprColor C{NHyprCommon::Theme::FILL};
-        return C;
-    }
-    inline const CHyprColor& tFill2() {
-        static const CHyprColor C{NHyprCommon::Theme::FILL2};
-        return C;
-    }
-    inline const CHyprColor& tAccentDim() {
-        static const CHyprColor C{NHyprCommon::Theme::ACCENT_DIM};
-        return C;
-    }
-    inline const CHyprColor& tOnAccent() {
-        static const CHyprColor C{NHyprCommon::Theme::ON_ACCENT};
-        return C;
-    }
+    // the memoized config-color fetch, theme fills and compositor gates —
+    // common/glass.hpp, shared with hyprnotify
+    using NHyprCommon::blurOn;
+    using NHyprCommon::blurRadius;
+    using NHyprCommon::color;
+    using NHyprCommon::tAccentDim;
+    using NHyprCommon::tFill;
+    using NHyprCommon::tFill2;
+    using NHyprCommon::tOnAccent;
 
     // Is this window a task of WS? By workspace ID, NEVER by pointer: while a
     // window closes, the monitor's active workspace and the windows' can
@@ -267,7 +257,6 @@ namespace NHyprbar {
     SP<ITexture> loadPng(const std::string& path);
     SP<ITexture> loadPngBytes(const std::vector<uint8_t>& data); // dbusmenu icon-data blobs
     std::string  resolveIconPath(const std::string& name, const std::string& extraDir = "");
-    void         buildIconDirs();
     SP<ITexture> appIcon(const std::string& klass);                           // window class -> texture
     SP<ITexture> namedIcon(const std::string& name);                          // icon name/path -> texture
     SP<ITexture> trayIcon(const std::string& name, const std::string& theme); // + the item's own theme dir
@@ -329,9 +318,6 @@ namespace NHyprbar {
         void texIn(const SP<ITexture>& t, const CBox& cell) const;                         // centered in a logical cell
     };
 
-    bool barBlurOn(); // decoration:blur:enabled gates the islands' glass
-    double barBlurRadius();
-
     // Text -> cached GPU texture. Built ONLY by the warm pass; a miss during a
     // draw returns null rather than building (the texture rule).
     SP<ITexture> textTex(const std::string& text, const CHyprColor& col, int pt, int maxWidth = 0, const std::string& font = "", int weight = 400);
@@ -346,7 +332,6 @@ namespace NHyprbar {
         PHLWINDOWREF    window;           // tasklist
         WP<Tray::SItem> tray;             // tray
         double          anchorX = 0;      // menu anchor (cell-fixed)
-        double          clickX  = 0;      // where the press landed (input.cpp fills it)
         PHLMONITORREF   mon;
     };
     extern std::map<uint64_t, std::vector<SHit>> hitboxes; // per monitor id

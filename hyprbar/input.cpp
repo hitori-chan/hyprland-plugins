@@ -146,9 +146,8 @@ namespace NHyprbar {
         const bool SUPER = KB && (KB->m_modifiersState.depressed & HL_MODIFIER_META);
         for (const auto& HIT : IT->second) {
             if (HIT.box.containsPoint(POS)) {
-                SHit hc   = HIT;
-                hc.mon    = MON;
-                hc.clickX = POS.x;
+                SHit hc = HIT;
+                hc.mon  = MON;
                 // Deferred out of the input emission: workspace/focus changes
                 // mid-button-event bite code that still holds pre-click state.
                 if (hc.widget)
