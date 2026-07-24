@@ -157,10 +157,17 @@ namespace NHyprnotify {
             rearmExpiry();
         }
 
-        // the client sent -1 (or a recall re-arms): per-urgency defaults;
-        // critical stays until dismissed
-        static float defaultTimeout(uint8_t urgency) {
-            return urgency >= 2 ? 0.f : (float)(urgency == 0 ? cfg.timeoutLow->value() : cfg.timeoutNormal->value());
+        // The client sent -1 (or a recall re-arms): critical always sticks,
+        // and normal sticks by default too (timeout_normal 0) — a message
+        // waits to be read. Only cards that declare themselves ephemeral
+        // run the low clock: low urgency, the transient hint, progress/OSD
+        // blips. An explicit expire_timeout never lands here.
+        static float defaultTimeout(const SNotif& n) {
+            if (n.urgency >= 2)
+                return 0.f;
+            if (n.urgency == 0 || n.transient || n.progress >= 0)
+                return (float)cfg.timeoutLow->value();
+            return (float)cfg.timeoutNormal->value();
         }
 
         // Cap the stack: the oldest non-critical goes first; only an
@@ -196,7 +203,7 @@ namespace NHyprnotify {
                 if (nextId == 0)
                     nextId = 1;
             } while (byId(n->id) || (n->id >= 9990 && n->id <= 9999));
-            n->timeoutMs = defaultTimeout(n->urgency);
+            n->timeoutMs = defaultTimeout(*n);
             if (n->timeoutMs > 0)
                 n->deadline = Time::steadyNow() + std::chrono::milliseconds((int64_t)n->timeoutMs);
             notifs.insert(notifs.begin(), n);
@@ -491,7 +498,7 @@ namespace NHyprnotify {
             else if (expireTimeout == 0)
                 n->timeoutMs = 0;
             else // -1: the client leaves it to us
-                n->timeoutMs = defaultTimeout(n->urgency);
+                n->timeoutMs = defaultTimeout(*n);
             if (n->timeoutMs > 0 && !n->waiting) // a queued card's clock starts at the resume
                 n->deadline = Time::steadyNow() + std::chrono::milliseconds((int64_t)n->timeoutMs);
 

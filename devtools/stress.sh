@@ -203,6 +203,27 @@ dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x300')"; sleep 2
 expect "far-off-screen seed: stored size applied, clamped to (879,499)" \
 	"any(c['class']=='foot' and c['at']==[879,499] and c['size']==[400,300] for c in cs)"
 
+# ---- expiry policy ------------------------------------------------------
+# a server-decides (-1) card sticks until dismissed: a message waits to be
+# read. Self-declared ephemerals keep their clocks — explicit timeouts
+# (hyprosd says 1200ms itself), the transient hint, low urgency.
+dsp "hl.dsp.exec_cmd('notify-send \"sticky msg\" body')"
+dsp "hl.dsp.exec_cmd('notify-send -t 700 ephemeral body')"
+sleep 2
+chk "expiry: the 700ms card died, the -1 card holds" test "$(hq hyprnotify count)" = 1
+dsp "hl.dsp.exec_cmd('notify-send -e blip body')"
+dsp "hl.dsp.exec_cmd('notify-send -u low lowkey body')"
+sleep 2
+chk "expiry: transient + low visible on their clocks" test "$(hq hyprnotify count)" = 3
+sleep 3.5
+chk "expiry: transient + low expired at timeout_low" test "$(hq hyprnotify count)" = 1
+sleep 3
+chk "expiry: the -1 card outlives every old clock" test "$(hq hyprnotify count)" = 1
+WL="$(cat "$HARNESS/nested.wl")"
+printf 'move 1100 45\nsleep 40\npress 273\nsleep 40\nrelease 273\nsleep 80\n' | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1
+sleep 0.8
+chk "expiry: right-click dismisses the sticky card" test "$(hq hyprnotify count)" = 0
+
 # ---- real-input storm ---------------------------------------------------
 WL="$(cat "$HARNESS/nested.wl")"
 {

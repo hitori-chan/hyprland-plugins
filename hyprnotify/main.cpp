@@ -24,9 +24,11 @@
 //   thumbnail row.
 // - The "value" hint draws a progress bar (the volume/brightness OSD);
 //   replaces_id updates a card in place, keeping its stack slot.
-// - Urgency: low/normal use the timeout defaults below, critical never
-//   expires and takes the urgent frame + progress color. An explicit
-//   expire_timeout wins; 0 means sticky.
+// - Timeouts: an explicit expire_timeout wins (0 means sticky). On -1 the
+//   server decides: normal and critical cards stick until dismissed — a
+//   message waits to be read — while self-declared ephemerals (low
+//   urgency, the transient hint, progress/OSD cards) run timeout_low.
+//   Critical also takes the urgent frame + progress color.
 // - Actions: non-default actions render as clickable buttons (icons under
 //   the action-icons hint); a click emits ActionInvoked and dismisses
 //   unless the resident hint holds the card. <a href> body links open via
@@ -214,8 +216,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.maxIcon         = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_icon", "image box cap in logical px (the old naughty icon_size)", 64);
     cfg.margin          = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:margin", "screen-edge and inter-card gap in logical px", 4);
     cfg.offsetY         = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:offset_y", "first card's distance from the monitor top (clear the bar)", 30);
-    cfg.timeoutLow      = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:timeout_low", "low-urgency timeout in ms", 4000);
-    cfg.timeoutNormal   = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:timeout_normal", "normal-urgency timeout in ms (critical never expires)", 8000);
+    cfg.timeoutLow      = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:timeout_low", "ephemeral timeout in ms (low urgency, transient, progress cards)", 4000);
+    cfg.timeoutNormal   = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:timeout_normal", "normal-urgency timeout in ms, 0 = sticky until dismissed", 0);
     cfg.rounding        = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:rounding", "corner radius in logical px", 1);
     cfg.maxNotifs       = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_notifs", "model cap; overflow evicts the oldest non-critical card", 50);
     cfg.maxHistory      = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_history", "retained-for-recall cap; 0 disables history", 20);

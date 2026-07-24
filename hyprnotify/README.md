@@ -12,7 +12,10 @@ monitor. Capabilities advertised: `actions`, `action-icons`, `body`,
    for the `value` hint (the volume/brightness OSD), icons capped at
    64px. Newest on top; `replaces_id` updates a card in place, keeping
    its slot. The frame warms under the pointer; critical cards take the
-   urgent color and never expire.
+   urgent color. Without an explicit `expire_timeout` a card sticks until
+   dismissed — a message waits to be read — unless it declares itself
+   ephemeral (low urgency, `transient`, a `value` card): those run
+   `timeout_low`.
 2. **Markup** — body and title render the whitelisted Pango subset
    (`<b> <i> <u> <span> <br>`); other tags are dropped and a stray `<`/`&`
    survives as literal text, so a markup-aware sender and a naive one both

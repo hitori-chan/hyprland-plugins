@@ -62,7 +62,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "5.0.0";
+    inline constexpr const char* VERSION = "5.1.0";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -77,8 +77,8 @@ namespace NHyprnotify {
         SP<Config::Values::CIntValue>    maxIcon;       // image box cap (the old naughty icon_size)
         SP<Config::Values::CIntValue>    margin;        // screen-edge gap AND inter-card gap
         SP<Config::Values::CIntValue>    offsetY;       // first card's distance from the monitor top (below the bar)
-        SP<Config::Values::CIntValue>    timeoutLow;    // ms; urgency defaults when the client sends -1
-        SP<Config::Values::CIntValue>    timeoutNormal; // ms; critical never times out
+        SP<Config::Values::CIntValue>    timeoutLow;    // ms; the -1 fallback for ephemerals (low/transient/progress)
+        SP<Config::Values::CIntValue>    timeoutNormal; // ms; the -1 fallback otherwise; 0 (default) = sticky
         SP<Config::Values::CIntValue>    rounding;  // corner radius, logical px
         SP<Config::Values::CIntValue>    maxNotifs;  // model cap; overflow evicts oldest non-critical
         SP<Config::Values::CIntValue>    maxHistory; // retained-for-recall cap; 0 disables history

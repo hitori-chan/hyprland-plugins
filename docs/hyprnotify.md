@@ -15,8 +15,10 @@ icons).
 - `replaces_id` updates a card in place, keeping its stack slot; an unknown
   id creates the card under that id (the OSD scripts pin fixed ids in the
   9990s, which fresh ids never mint into).
-- `expire_timeout`: −1 → per-urgency defaults (`timeout_low`,
-  `timeout_normal`; critical is sticky), 0 → sticky, >0 → ms.
+- `expire_timeout`: 0 → sticky, >0 → ms. −1 (server decides) → normal and
+  critical cards are sticky until dismissed — a message waits to be read;
+  self-declared ephemerals (low urgency, `transient`, `value` cards) run
+  `timeout_low`. `timeout_normal` > 0 restores a clock for the rest.
 - Hints honored: `urgency`; `value` (0–100) draws the progress bar (the
   volume/brightness OSD); `image-data`/`image_data`/`icon_data` raw pixmaps;
   `image-path`/`image_path`; `desktop-entry`; `action-icons`; `resident`;
@@ -95,8 +97,9 @@ icons).
 
 `plugin:hyprnotify:*` — `font`, `font_size` (12), `width` (340),
 `max_height` (260), `max_icon` (64), `margin` (4, screen edge + inter-card),
-`offset_y` (30, clears the bar), `timeout_low` (4000), `timeout_normal`
-(8000), `rounding` (1), `max_notifs` (50), `max_history` (20),
+`offset_y` (30, clears the bar), `timeout_low` (4000, the ephemerals'
+clock), `timeout_normal` (0 = sticky until dismissed), `rounding` (1),
+`max_notifs` (50), `max_history` (20),
 `fallback_icon_dir`, `sound_command` (`canberra-gtk-play`), `col_bg`,
 `col_fg`, `col_title`, `col_kicker`, `col_frame`, `col_urgent`,
 `col_highlight`, `col_link`. Colors and fonts arrive from `theme.lua`; the
