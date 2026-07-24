@@ -25,6 +25,7 @@
 // (which swallows Super-grabs on maximized windows): a cancelled press
 // never raises. No config.
 
+#include "common/arrival.hpp"
 #include "common/lifecycle.hpp"
 #include "common/queries.hpp"
 
@@ -53,15 +54,15 @@
 #include <utility>
 #include <vector>
 
-static HANDLE                                 PHANDLE = nullptr;
+static HANDLE                  PHANDLE = nullptr;
 
 static NHyprCommon::CLifecycle g_lifecycle;
 static NHyprCommon::CHop       pendingRaise, pendingFocus;
 
 // arrival order for focus_next/focus_prev — the z-order list is useless as
 // a cycle order under click-to-raise (every focus rotates it)
-static std::unordered_map<void*, uint64_t> g_seq;
-static uint64_t                            g_seqNext = 0;
+// (common/arrival.hpp; this .so's own instance)
+static NHyprCommon::CArrivalOrder g_order;
 
 // Corpse-guard gesture timing: a close this soon after a press on the
 // window reads as click-to-close, and a re-press this soon after that
@@ -73,7 +74,7 @@ constexpr auto                               GESTURE    = std::chrono::milliseco
 static PHLWINDOWREF                          g_pressWindow; // who took the last press, and when
 static std::chrono::steady_clock::time_point g_pressAt{};
 static uint32_t                              g_swallowRelease = 0;
-static CBox                                  g_corpseBox; // where the window the press killed last stood
+static CBox                                  g_corpseBox;   // where the window the press killed last stood
 static PHLWINDOWREF                          g_corpseOwner; // while it lives, presses resolving to it pass
 static WORKSPACEID                           g_corpseWs = WORKSPACE_INVALID;
 static std::chrono::steady_clock::time_point g_corpseUntil{};
@@ -82,7 +83,7 @@ static std::chrono::steady_clock::time_point g_corpseUntil{};
 // enough to have caused its state change. A second arming inside a live
 // gesture (fullscreen exit, then the unmap) must never shrink the guarded
 // area, so an active corpse unions instead of being replaced.
-static void                                  armCorpse(PHLWINDOW w, const CBox& box) {
+static void armCorpse(PHLWINDOW w, const CBox& box) {
     const auto NOW = std::chrono::steady_clock::now();
     if (NOW - g_pressAt > CLICK_KILL)
         return;
@@ -96,7 +97,7 @@ static void                                  armCorpse(PHLWINDOW w, const CBox& 
     g_corpseUntil = NOW + GESTURE;
 }
 
-static PHLWINDOW                           windowUnderCursor() {
+static PHLWINDOW windowUnderCursor() {
     if (!g_pInputManager)
         return nullptr;
     return Desktop::viewState()->hitTest().windowAt(g_pInputManager->getMouseCoordsInternal(),
@@ -183,7 +184,7 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
     // window the press would land on (a special-workspace window over the
     // corpse box is not the corpse's).
     if (NOW < g_corpseUntil && g_corpseBox.containsPoint(POS) && (!W || W != g_corpseOwner.lock())) {
-        const auto MON          = State::monitorState()->query().vec(POS).run();
+        const auto MON          = NHyprCommon::monitorAt(POS);
         const bool ON_CORPSE_WS = W ? W->workspaceID() == g_corpseWs : MON && MON->activeWorkspaceID() == g_corpseWs;
         if (ON_CORPSE_WS) {
             info.cancelled = true;
@@ -274,30 +275,12 @@ static void focusByIdx(bool next) {
     if (!WS)
         return;
 
-    static std::vector<std::pair<uint64_t, PHLWINDOW>> wins; // reused; main thread only
-    wins.clear();
-    for (const auto& W : Desktop::windowState()->windows()) {
-        if (!W->m_isMapped || W->isHidden() || !W->m_workspace || W->m_workspace->m_id != WS->m_id)
-            continue;
-        const auto [IT, NEW] = g_seq.try_emplace(W.get(), g_seqNext);
-        if (NEW)
-            g_seqNext++;
-        wins.emplace_back(IT->second, W);
-    }
-    if (wins.empty())
+    const auto WINS = g_order.onWorkspace(WS);
+    const auto NEXT = NHyprCommon::CArrivalOrder::step(WINS, Desktop::focusState()->window(), next ? 1 : -1);
+    if (!NEXT)
         return;
-    std::sort(wins.begin(), wins.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
 
-    const auto FOCUS = Desktop::focusState()->window();
-    const int  N     = (int)wins.size();
-    int        idx   = -1;
-    for (int i = 0; i < N; i++)
-        if (wins[i].second == FOCUS)
-            idx = i;
-    const int    TO = idx < 0 ? 0 : (idx + (next ? 1 : N - 1)) % N;
-
-    PHLWINDOWREF TARGET{wins[TO].second};
-    wins.clear(); // don't keep strong refs across calls
+    PHLWINDOWREF TARGET{NEXT};
     pendingFocus.arm([TARGET]() {
         if (NHyprCommon::sessionLocked())
             return; // the lock can engage between the emission and this run
@@ -335,10 +318,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_lifecycle.listen(Event::bus()->m_events.input.mouse.button, [](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { onMouseButton(e, info); });
     g_lifecycle.listen(Event::bus()->m_events.window.active, [](PHLWINDOW w, Desktop::eFocusReason reason) { onWindowActive(w, reason); });
     g_lifecycle.listen(Event::bus()->m_events.window.open, [](PHLWINDOW w) {
-        if (w && g_seq.try_emplace(w.get(), g_seqNext).second)
-            g_seqNext++;
+        if (w)
+            g_order.seqOf(w.get()); // stamp arrival at map, not at first cycle
     });
-    g_lifecycle.listen(Event::bus()->m_events.window.destroy, [](PHLWINDOWREF wr) { g_seq.erase(wr.get()); });
+    g_lifecycle.listen(Event::bus()->m_events.window.destroy, [](PHLWINDOWREF wr) { g_order.forget(wr.get()); });
     g_lifecycle.listen(Event::bus()->m_events.window.close, [](PHLWINDOW w) {
         // the pressed window died right after the press: click-to-close.
         // Arm the corpse guard over where the user last saw it (a
@@ -365,12 +348,12 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_next", luaFocusNext);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev", luaFocusPrev);
 
-    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.2.2"};
+    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.2.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
     g_lifecycle.resetAll(); // listeners first, then every hop
-    g_seq.clear();
+    g_order.clear();
     g_swallowRelease = 0;
     g_corpseUntil    = {};
     g_corpseOwner.reset();

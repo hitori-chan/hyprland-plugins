@@ -1,6 +1,7 @@
 // hyprbar/tasklist.cpp — awesome's tasklist: arrival-order bookkeeping, the
 // state-marker labels and the widget filling the bar's middle
 
+#include "common/arrival.hpp"
 #include "common/lifecycle.hpp"
 #include "common/queries.hpp"
 
@@ -10,12 +11,11 @@ namespace NHyprbar {
 
     // tasklist order: awesome lists clients in ARRIVAL order, stable across
     // raises — windowState()'s list is the Z-order, so the bar keeps its own
-    // sequence
-    static std::unordered_map<void*, uint64_t> winSeq;
-    static uint64_t                            winSeqNext = 0;
+    // sequence (common/arrival.hpp; this .so's own instance)
+    static NHyprCommon::CArrivalOrder winOrder;
 
     // awesome's client.minimized, which the compositor has no flag for. The
-    // window's raw pointer is the identity key (like winSeq), dropped in
+    // window's raw pointer is the identity key (like the arrival order), dropped in
     // forget() on destroy before the pointer can be reused. `tiled` records
     // whether restore must re-add a layout slot: a floating window (the
     // floating-only rule = all of them today) reserves none, so hiding alone
@@ -80,10 +80,7 @@ namespace NHyprbar {
 
     namespace Tasklist {
         uint64_t seqOf(void* w) {
-            const auto [SEQ, NEW] = winSeq.try_emplace(w, winSeqNext);
-            if (NEW)
-                winSeqNext++;
-            return SEQ->second;
+            return winOrder.seqOf(w);
         }
 
         bool isMinimized(const PHLWINDOW& w) {
@@ -239,13 +236,13 @@ namespace NHyprbar {
         }
 
         void forget(void* w) {
-            winSeq.erase(w);
+            winOrder.forget(w);
             minReqListeners.erase(w);
             std::erase_if(minStack, [w](const SMinimized& m) { return m.key == w || m.w.expired(); });
         }
 
         void exit() {
-            winSeq.clear();
+            winOrder.clear();
             minStack.clear();
             pendingMinReq.reset();
             minReqQueued = false;
@@ -386,28 +383,11 @@ namespace NHyprbar {
             }
             void onScrollSteps(int steps, PHLMONITOR mon) override {
                 // focus.byidx ±steps, wrapping through this workspace's tasks
-                const auto WS = mon->m_activeWorkspace;
-                if (!WS)
-                    return;
-                static std::vector<std::pair<uint64_t, PHLWINDOW>> tasks; // reused; main thread only
-                tasks.clear();
-                for (const auto& W : Desktop::windowState()->windows()) {
-                    if (isTaskOn(W, WS) && !Tasklist::isMinimized(W)) // scroll walks focusable tasks, not minimized
-                        if (const auto SEQ = winSeq.find(W.get()); SEQ != winSeq.end())
-                            tasks.emplace_back(SEQ->second, W);
-                }
-                if (tasks.empty())
-                    return;
-                std::sort(tasks.begin(), tasks.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+                // (the focusable ones: a minimized row is listed, not walked)
+                const auto TASKS = winOrder.onWorkspace(mon->m_activeWorkspace, [](const PHLWINDOW& w) { return !Tasklist::isMinimized(w); });
                 const auto FOCUS = Desktop::focusState() ? Desktop::focusState()->window() : nullptr;
-                int        idx   = 0;
-                for (int i = 0; i < (int)tasks.size(); i++)
-                    if (tasks[i].second == FOCUS)
-                        idx = i;
-                const int  N = (int)tasks.size();
-                const auto W = tasks[((idx + steps) % N + N) % N].second;
-                tasks.clear(); // don't keep strong window refs across scrolls
-                Tasklist::raiseAndFocus(W);
+                if (const auto W = NHyprCommon::CArrivalOrder::step(TASKS, FOCUS, steps))
+                    Tasklist::raiseAndFocus(W);
             }
         };
     } // namespace
