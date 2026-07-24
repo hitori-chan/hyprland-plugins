@@ -20,22 +20,6 @@ namespace NHyprbar {
         }
     }
 
-    CHyprColor color(const SP<Config::Values::CColorValue>& v) {
-        struct SMemo {
-            uint64_t   raw = 0;
-            bool       set = false;
-            CHyprColor col;
-        };
-        static std::unordered_map<const void*, SMemo> memo; // main thread only
-        auto&                                         M = memo[v.get()];
-        if (!M.set || M.raw != (uint64_t)v->value()) {
-            M.raw = (uint64_t)v->value();
-            M.set = true;
-            M.col = CHyprColor{M.raw};
-        }
-        return M.col;
-    }
-
     bool isTaskOn(const PHLWINDOW& w, const PHLWORKSPACE& ws) {
         // minimized windows are hidden but still belong to their tag, like
         // awesome — keep their row; other hidden windows (swallowed) stay out.

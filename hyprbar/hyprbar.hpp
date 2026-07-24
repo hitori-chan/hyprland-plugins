@@ -131,7 +131,11 @@ namespace NHyprbar {
     double      barHeight();
     void        damageBars(); // covers the menubar's prompt strip while it's open
     std::string lower(std::string s);
-    CHyprColor  color(const SP<Config::Values::CColorValue>& v);
+
+    // the config-color fetch, memoized per value change — common/glass.hpp
+    // (CHyprColor's uint64 ctor OkLab-converts, so constructing one per draw
+    // call is never free); used unqualified all over the bar
+    using NHyprCommon::color;
 
     // Is this window a task of WS? By workspace ID, NEVER by pointer: while a
     // window closes, the monitor's active workspace and the windows' can
