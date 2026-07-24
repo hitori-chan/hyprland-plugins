@@ -48,12 +48,8 @@
 #include <hyprland/src/helpers/memory/Memory.hpp>
 
 #include <algorithm>
-#include <cstdlib>
 #include <filesystem>
-#include <fstream>
-#include <sstream>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace NHyprplace {
@@ -62,54 +58,26 @@ namespace NHyprplace {
         NHyprCommon::CHop         pendingPlace;
         std::vector<PHLWINDOWREF> placeQueue;
 
-        // each app's last window box (position + size), surviving relogs
-        std::unordered_map<std::string, CBox> g_lastSpot;
+        // each app's last window box (position + size), surviving relogs; the
+        // legacy position-only rows load with a zero size, which stays until
+        // the app closes once and a full box is recorded
+        NHyprCommon::SBoxStore g_lastSpot;
 
-        // x y w h class — class last so any app_id parses. Legacy rows are
-        // x y class (position only): size stays zero until the app closes
-        // once and a full box is recorded.
+        std::filesystem::path  storePath() {
+            return NHyprCommon::statePath("hyprplace", "lastspot.tsv");
+        }
+
         void loadSpots() {
-            std::ifstream f(NHyprCommon::statePath("hyprplace", "lastspot.tsv"));
-            std::string   line;
-            while (std::getline(f, line)) {
-                std::vector<std::string> parts;
-                std::string              field;
-                std::istringstream       is(line);
-                while (std::getline(is, field, '\t'))
-                    parts.push_back(field);
-
-                CBox        box;
-                std::string cls;
-                try {
-                    if (parts.size() == 3) {
-                        box.x = std::stod(parts[0]);
-                        box.y = std::stod(parts[1]);
-                        cls   = parts[2];
-                    } else if (parts.size() == 5) {
-                        box.x = std::stod(parts[0]);
-                        box.y = std::stod(parts[1]);
-                        box.w = std::stod(parts[2]);
-                        box.h = std::stod(parts[3]);
-                        cls   = parts[4];
-                    } else
-                        continue;
-                } catch (...) { continue; }
-
-                if (!cls.empty())
-                    g_lastSpot[cls] = box;
-            }
+            g_lastSpot = NHyprCommon::readBoxTsv(storePath());
         }
 
         void saveSpots() {
-            std::ostringstream out;
-            for (const auto& [CLS, B] : g_lastSpot)
-                out << std::llround(B.x) << '\t' << std::llround(B.y) << '\t' << std::llround(B.w) << '\t' << std::llround(B.h) << '\t' << CLS << '\n';
-            NHyprCommon::writeAtomic(NHyprCommon::statePath("hyprplace", "lastspot.tsv"), out.str());
+            NHyprCommon::writeBoxTsv(storePath(), g_lastSpot);
         }
 
         NHyprCommon::CSaver g_saver{saveSpots};
 
-        void rememberSpot(const std::string& cls, const CBox& box) {
+        void                rememberSpot(const std::string& cls, const CBox& box) {
             if (cls.empty())
                 return;
             const auto IT = g_lastSpot.find(cls);
@@ -373,7 +341,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             g_lifecycle.listen(events.window.predictSize, [](PHLWINDOW w, Vector2D& size) { onPredictSize(w, size); });
     }(Event::bus()->m_events);
 
-    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.1.0"};
+    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.1.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

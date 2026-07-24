@@ -48,15 +48,11 @@
 #include <linux/input-event-codes.h>
 
 #include <algorithm>
-#include <cmath>
-#include <cstdlib>
 #include <filesystem>
-#include <fstream>
-#include <sstream>
 #include <string>
 #include <unordered_map>
 
-static HANDLE                                 PHANDLE = nullptr;
+static HANDLE                  PHANDLE = nullptr;
 
 static NHyprCommon::CLifecycle g_lifecycle;
 static NHyprCommon::CHop       pendingMax;
@@ -66,37 +62,32 @@ static std::unordered_map<PHLWINDOWREF, CBox> g_maximized;
 
 // last windowed box per app class, surviving window closes and relogs: the
 // restore target when a window of that app is born maximized again.
-static std::unordered_map<std::string, CBox> g_lastWindowed;
+static NHyprCommon::SBoxStore g_lastWindowed;
 
-static CBox                                  clampToWorkarea(CBox box, const CBox& wa) {
+static CBox                   clampToWorkarea(CBox box, const CBox& wa) {
     box.x = std::clamp(box.x, wa.x, std::max(wa.x, wa.x + wa.w - box.w));
     box.y = std::clamp(box.y, wa.y, std::max(wa.y, wa.y + wa.h - box.h));
     return box;
 }
 
-// x y w h class — class last so any app_id parses.
+static std::filesystem::path storePath() {
+    return NHyprCommon::statePath("hyprmax", "windowed.tsv");
+}
+
 static void loadWindowed() {
-    std::ifstream f(NHyprCommon::statePath("hyprmax", "windowed.tsv"));
-    std::string   line;
-    while (std::getline(f, line)) {
-        std::istringstream is(line);
-        CBox               box;
-        std::string        cls;
-        if (is >> box.x >> box.y >> box.w >> box.h && is.get() == '\t' && std::getline(is, cls) && !cls.empty() && box.w > 5 && box.h > 5)
-            g_lastWindowed[cls] = box;
-    }
+    g_lastWindowed = NHyprCommon::readBoxTsv(storePath());
+    // only a real windowed size is a restore target (a legacy position-only
+    // row carries none)
+    std::erase_if(g_lastWindowed, [](const auto& E) { return E.second.w <= 5 || E.second.h <= 5; });
 }
 
 static void saveWindowed() {
-    std::ostringstream out;
-    for (const auto& [CLS, B] : g_lastWindowed)
-        out << std::llround(B.x) << '\t' << std::llround(B.y) << '\t' << std::llround(B.w) << '\t' << std::llround(B.h) << '\t' << CLS << '\n';
-    NHyprCommon::writeAtomic(NHyprCommon::statePath("hyprmax", "windowed.tsv"), out.str());
+    NHyprCommon::writeBoxTsv(storePath(), g_lastWindowed);
 }
 
 static NHyprCommon::CSaver g_saver{saveWindowed};
 
-static void rememberWindowed(const std::string& cls, const CBox& box) {
+static void                rememberWindowed(const std::string& cls, const CBox& box) {
     if (cls.empty() || box.w <= 5 || box.h <= 5)
         return;
     const auto IT = g_lastWindowed.find(cls);
@@ -152,8 +143,8 @@ static void adoptCompositorMax(PHLWINDOW W) {
 }
 
 static std::vector<PHLWINDOWREF> g_adoptQueue;
-static bool              adoptQueued = false;
-static NHyprCommon::CHop pendingAdopt;
+static bool                      adoptQueued = false;
+static NHyprCommon::CHop         pendingAdopt;
 
 // queue+drain, never a lone doLaterLock: two born-maximized windows can
 // map in one dispatch, and overwriting the lock cancels the unfired one
@@ -377,7 +368,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprmax", "toggle", luaToggle);
 
-    return {"hyprmax", "awesome's per-window maximize", "hitori", "1.1.6"};
+    return {"hyprmax", "awesome's per-window maximize", "hitori", "1.1.7"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

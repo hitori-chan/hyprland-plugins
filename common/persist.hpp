@@ -7,11 +7,16 @@
 
 #include "lifecycle.hpp"
 
+#include <hyprland/src/helpers/math/Math.hpp>
+
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <sstream>
 #include <string>
+#include <unordered_map>
 
 namespace NHyprCommon {
 
@@ -35,6 +40,48 @@ namespace NHyprCommon {
         }
         std::filesystem::rename(TMP, path, ec);
         return !ec;
+    }
+
+    // ---- the per-class geometry stores (hyprplace's spots, hyprmax's
+    // windowed boxes) ----
+    //
+    // One row per app class: "x y w h class", TAB separated, the class LAST so
+    // any app_id parses (they contain spaces and colons, never tabs). Rows of
+    // three fields are the legacy position-only form and load with a zero
+    // size. Unparseable rows are skipped, never fatal: the file is user-facing
+    // state and a hostile one must not take the session down.
+    using SBoxStore = std::unordered_map<std::string, CBox>;
+
+    inline SBoxStore readBoxTsv(const std::filesystem::path& path) {
+        SBoxStore     out;
+        std::ifstream f(path);
+        std::string   line;
+        while (std::getline(f, line)) {
+            // take the leading tab-terminated numbers; whatever follows is the
+            // class, so a class starting with a digit ("0ad") can't be eaten
+            double      v[4] = {};
+            int         n    = 0;
+            const char* p    = line.c_str();
+            while (n < 4) {
+                char*        e   = nullptr;
+                const double NUM = std::strtod(p, &e);
+                if (e == p || *e != '\t')
+                    break;
+                v[n++] = NUM;
+                p      = e + 1;
+            }
+            if ((n != 2 && n != 4) || !*p)
+                continue; // neither form, or no class
+            out[p] = n == 4 ? CBox{v[0], v[1], v[2], v[3]} : CBox{v[0], v[1], 0, 0};
+        }
+        return out;
+    }
+
+    inline bool writeBoxTsv(const std::filesystem::path& path, const SBoxStore& store) {
+        std::ostringstream out;
+        for (const auto& [CLS, B] : store)
+            out << std::llround(B.x) << '\t' << std::llround(B.y) << '\t' << std::llround(B.w) << '\t' << std::llround(B.h) << '\t' << CLS << '\n';
+        return writeAtomic(path, out.str());
     }
 
     // Many dirty marks, one deferred write. PLUGIN_EXIT calls flush() after
