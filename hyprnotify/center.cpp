@@ -385,8 +385,14 @@ namespace NHyprnotify {
 
         const double CONTENT_X = X + BODY_PADX, CONTENT_W = CENTER_W - 2 * BODY_PADX;
 
-        const double BAR_H   = BAR_PADT + BAR_BTN + BAR_PADB;
-        const double BODYCAP = CENTER_MAXH - BAR_H - BODY_PADT - BODY_PADB;
+        const double BAR_H = BAR_PADT + BAR_BTN + BAR_PADB;
+        // The panel never runs off the bottom: cap the content at CENTER_MAXH
+        // AND at what the monitor leaves below offset_y (a margin of air).
+        // Overflow past this becomes wheel paging, not off-screen bleed — and
+        // since renderRow caps a row's body at 4 lines, no single row can
+        // exceed the cap, so the always-place-the-first-row rule can't spill.
+        const double AVAILH  = MB.h - (double)cfg.offsetY->value() - (double)cfg.margin->value();
+        const double BODYCAP = std::max(ROW_ICON, std::min(CENTER_MAXH, AVAILH) - BAR_H - BODY_PADT - BODY_PADB);
 
         // The display list and every height are measured once per WARM and
         // reused by the draws between warms: hover fills change nothing the
@@ -712,6 +718,33 @@ namespace NHyprnotify {
             c.kind = SCard::BTN_CLEAR;
             c.box  = B;
             cards.push_back(c);
+        }
+
+        // Paging cues: a wheel-scroll is invisible otherwise. "▴" when rows
+        // sit above the fold, a "▾ N" chip when N notifications sit below —
+        // informational only, the wheel (input.cpp) does the scrolling. Both
+        // live inside the already-damaged panel box, so no extra damage.
+        if (!EMPTY) {
+            size_t below = 0;
+            for (size_t i = (placed.empty() ? 0 : placed.back().idx + 1); i < disp.size(); i++)
+                below += disp[i].items.size();
+            if (s_skip > 0) {
+                const auto U = cachedText("▴", COLSUB, T.small, 64, -1, 0, false, 500);
+                if (!P.warm && U && U->tex)
+                    P.tex(U->tex, X + (CENTER_W - U->tex->m_size.x / P.scale) / 2, Y0 + 2);
+            }
+            if (below > 0) {
+                auto& DB = scratch();
+                DB += "▾ ";
+                DB += std::to_string(below);
+                const auto D2 = cachedText(DB, COLSUB, T.small, 128, -1, 0, false, 500);
+                if (!P.warm && D2 && D2->tex) {
+                    const double cw = D2->tex->m_size.x / P.scale, ch = D2->tex->m_size.y / P.scale;
+                    const double cx = X + (CENTER_W - cw) / 2, cy = BARY - ch - 3;
+                    P.rect(CBox{cx - 8, cy - 2, cw + 16, ch + 4}, tFill2(), (int)std::lround((ch / 2 + 2) * P.scale));
+                    P.tex(D2->tex, cx, cy);
+                }
+            }
         }
 
         lastContentH = PANELH;
