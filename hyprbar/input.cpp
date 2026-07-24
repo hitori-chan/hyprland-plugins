@@ -20,12 +20,7 @@ namespace NHyprbar {
 
     // ---- input ----
 
-    static PHLMONITOR monAt(const Vector2D& pos) {
-        for (const auto& M : State::monitorState()->monitors())
-            if (M->logicalBox().containsPoint(pos))
-                return M;
-        return State::monitorState()->query().vec(pos).run(); // off every monitor: the query's nearest-match
-    }
+    using NHyprCommon::monitorAt; // common/queries.hpp: allocation-free, runs per pointer motion
 
     // Presses that reached apps (nothing swallowed them) — while one is held an
     // implicit grab may be live, and the strip must not steal the pointer from
@@ -56,7 +51,7 @@ namespace NHyprbar {
         }
 
         const auto POS = g_pInputManager->getMouseCoordsInternal();
-        const auto MON = monAt(POS);
+        const auto MON = monitorAt(POS);
         if (!MON) {
             heldButtons++;
             return;
@@ -194,7 +189,7 @@ namespace NHyprbar {
             return;
 
         const auto POS = g_pInputManager->getMouseCoordsInternal();
-        const auto MON = monAt(POS);
+        const auto MON = monitorAt(POS);
         if (!MON)
             return;
 
@@ -266,7 +261,7 @@ namespace NHyprbar {
     static bool pointerOwned = false;
 
     static bool barOwnsPoint(const Vector2D& pos) {
-        const auto MON = monAt(pos);
+        const auto MON = monitorAt(pos);
         if (!MON)
             return false;
 
@@ -331,7 +326,10 @@ namespace NHyprbar {
             Menu::hoverIntent(pl, pr); // open/close cascades on GTK's popup delay
         }
 
-        if (!barOwnsPoint(pos) || heldButtons > 0 || (g_layoutManager && g_layoutManager->dragController()->target())) {
+        // the held-button / live-drag gates first: they are two loads, while
+        // barOwnsPoint walks the monitors and fetches the bar height — and a
+        // drag sweeping across the screen emits motion the whole way
+        if (heldButtons > 0 || (g_layoutManager && g_layoutManager->dragController()->target()) || !barOwnsPoint(pos)) {
             releasePointer();
             return;
         }
