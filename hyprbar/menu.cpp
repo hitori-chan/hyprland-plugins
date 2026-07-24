@@ -426,11 +426,16 @@ namespace NHyprbar {
                 return;
 
             // one palette fetch per render: color() memoizes but still hashes per call
-            const CHyprColor COLBG = color(cfg.colBg), COLACTIVEBG = color(cfg.colActiveBg), COLFG = color(cfg.colFg), COLEMPTY = color(cfg.colEmpty),
-                             COLURGENT = color(cfg.colUrgent), COLFOCUS = color(cfg.colFocus), COLFRAME = color(cfg.colFrame);
+            const CHyprColor COLBG = color(cfg.colBg), COLFG = color(cfg.colFg), COLEMPTY = color(cfg.colEmpty), COLURGENT = color(cfg.colUrgent),
+                             COLFOCUS = color(cfg.colFocus), COLFRAME = color(cfg.colFrame);
 
-            // the overlay language: 1px rounding on the panel and its rows
-            const int    ROUND = std::max(0, (int)std::lround(PAINT.scale));
+            // the shell's glass geometry (theme.hpp): a card-radius panel with
+            // row-radius hover pills and superellipse corners — the frosted
+            // band and the notification cards wear the same material
+            namespace Th       = NHyprCommon::Theme;
+            const int   RPANEL = Th::RAD_CARD, RROW = Th::RAD_ROW;
+            const float RP     = (float)Th::ROUNDING_POWER;
+            const int   BORDER = std::max(1, (int)std::lround(PAINT.scale));
 
             const double ROWH = Menu::ROWH, SEPH = Menu::SEPH, PAD = Menu::PAD;
             const double MTOP = PAINT.mb.y + PAINT.h, MBOT = PAINT.mb.y + PAINT.mb.h - 2;
@@ -492,8 +497,8 @@ namespace NHyprbar {
 
                 // fill under the whole panel, frame ring over its edge: no
                 // corner seam, and 5 rects are 2 calls
-                PAINT.glass(L.box, COLBG, ROUND);
-                PAINT.border(L.box, COLFRAME, ROUND, std::max(1, (int)std::lround(PAINT.scale)));
+                PAINT.glass(L.box, COLBG, RPANEL, RP);
+                PAINT.border(L.box, COLFRAME, RPANEL, BORDER, RP);
 
                 // labels share one leading column when any row in this level
                 // has an icon or a check/radio state, ragged otherwise — how
@@ -541,7 +546,7 @@ namespace NHyprbar {
                         break;
                     }
                     if (E.separator) {
-                        PAINT.rect(CBox{mx + 8, my + SEPH / 2, mw - 16, 1}, COLACTIVEBG);
+                        PAINT.rect(CBox{mx + 8, my + SEPH / 2, mw - 16, 1}, NHyprCommon::tLine());
                         my += SEPH;
                         continue;
                     }
@@ -552,8 +557,9 @@ namespace NHyprbar {
                     const bool OPENSUB = li + 1 < Menu::levels.size() && Menu::levels[li + 1].parentIdx == (int)i;
                     CHyprColor fg      = !E.enabled ? COLEMPTY : E.alert ? COLURGENT : COLFG;
                     if (((int)i == L.hover || OPENSUB) && E.enabled) {
-                        // the hover row floats off the frame: 4px inset, softened corners
-                        PAINT.rect(CBox{ROW.x + 4, ROW.y, ROW.w - 8, ROW.h}, COLACTIVEBG, ROUND);
+                        // the hover row floats off the frame: 4px inset, the
+                        // shell's accent-dim fill (the center rows wear it too)
+                        PAINT.rect(CBox{ROW.x + 4, ROW.y, ROW.w - 8, ROW.h}, NHyprCommon::tAccentDim(), RROW, RP);
                         fg = COLFOCUS;
                     }
 
@@ -588,7 +594,7 @@ namespace NHyprbar {
                     const auto arrow = [&](const CBox& B, int id, bool on, const char* glyph) {
                         CHyprColor fg = on ? COLFG : COLEMPTY;
                         if (L.hover == id && on) {
-                            PAINT.rect(CBox{B.x + 4, B.y, B.w - 8, B.h}, COLACTIVEBG, ROUND);
+                            PAINT.rect(CBox{B.x + 4, B.y, B.w - 8, B.h}, NHyprCommon::tAccentDim(), RROW, RP);
                             fg = COLFOCUS;
                         }
                         PAINT.texIn(textTex(glyph, fg, PAINT.pt), B);

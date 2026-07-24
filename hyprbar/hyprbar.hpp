@@ -286,9 +286,9 @@ namespace NHyprbar {
                                          // can change without damage fold a hash in here
 
         CBox toPhys(const CBox& global) const; // global logical -> monitor physical
-        void rect(const CBox& global, const CHyprColor& c, int round = 0) const;
-        void glass(const CBox& global, const CHyprColor& c, int round = 0) const; // translucent fill + live blur (the frosted band/menus)
-        void border(const CBox& global, const CHyprColor& c, int round, int sizePx) const; // frame ring: one call, not four rects
+        void rect(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f) const;
+        void glass(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f) const; // translucent fill + live blur (the frosted band/menus)
+        void border(const CBox& global, const CHyprColor& c, int round, int sizePx, float rp = 2.f) const; // frame ring: one call, not four rects
         void tex(const SP<ITexture>& t, const CBox& physBox) const;                        // pre-computed physical box
         void texIn(const SP<ITexture>& t, const CBox& cell) const;                         // centered in a logical cell
     };

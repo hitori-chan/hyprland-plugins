@@ -65,24 +65,24 @@ namespace NHyprbar {
         return CBox{global}.translate(-mon->m_position).scale(scale).round();
     }
 
-    void SPaint::rect(const CBox& global, const CHyprColor& c, int round) const {
+    void SPaint::rect(const CBox& global, const CHyprColor& c, int round, float rp) const {
         if (warm)
             return;
-        g_pHyprOpenGL->renderRect(toPhys(global), c, {.round = round});
+        g_pHyprOpenGL->renderRect(toPhys(global), c, {.round = round, .roundingPower = rp});
     }
 
     // the frosted material: a translucent fill (col_bg's alpha is the glass)
     // over a live blur of whatever it covers — the band and the menu panels
-    void SPaint::glass(const CBox& global, const CHyprColor& c, int round) const {
+    void SPaint::glass(const CBox& global, const CHyprColor& c, int round, float rp) const {
         if (warm)
             return;
-        g_pHyprOpenGL->renderRect(toPhys(global), c, {.round = round, .blur = NHyprCommon::blurOn()});
+        g_pHyprOpenGL->renderRect(toPhys(global), c, {.round = round, .roundingPower = rp, .blur = NHyprCommon::blurOn()});
     }
 
-    void SPaint::border(const CBox& global, const CHyprColor& c, int round, int sizePx) const {
+    void SPaint::border(const CBox& global, const CHyprColor& c, int round, int sizePx, float rp) const {
         if (warm)
             return;
-        g_pHyprOpenGL->renderBorder(toPhys(global), Config::CGradientValueData{c}, {.round = round, .borderSize = sizePx});
+        g_pHyprOpenGL->renderBorder(toPhys(global), Config::CGradientValueData{c}, {.round = round, .roundingPower = rp, .borderSize = sizePx});
     }
 
     void SPaint::tex(const SP<ITexture>& t, const CBox& physBox) const {

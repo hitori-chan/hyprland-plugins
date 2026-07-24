@@ -48,6 +48,10 @@ namespace NHyprCommon {
         static const CHyprColor C{Theme::ACCENT_DIM};
         return C;
     }
+    inline const CHyprColor& tLine() {
+        static const CHyprColor C{Theme::LINE};
+        return C;
+    }
     inline const CHyprColor& tOnAccent() {
         static const CHyprColor C{Theme::ON_ACCENT};
         return C;

@@ -25,8 +25,9 @@ compositor's blur is on; the widgets riding them stay opaque.
   (`hl.plugin.hyprbar.minimize()` / `.restore()`); a client's own minimize
   request (a CSD button, X11 `IconicState`) is honored too.
 - **Tray** — in-compositor SNI host with a native dbusmenu renderer. Menus
-  wear the overlay language: 1px-rounded panel with a `col_frame` ring,
-  hover rows inset 4px with softened corners.
+  wear the glass·ink material: a frosted, card-radius panel with a `col_frame`
+  ring, accent-dim hover pills inset 4px, hairline separators — the same
+  language as the notification cards.
 - **Bell** — the notification bell + unread badge, riding the tray's bus
   link to hyprnotify (`org.hitori.hyprnotify`). The badge counts the shade
   (popped + waiting) and hides at zero; a left click toggles the
