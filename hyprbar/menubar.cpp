@@ -724,7 +724,7 @@ namespace NHyprbar {
                              COLACTIVE = color(cfg.colActive);
 
             const double     MY = PAINT.mb.y + PAINT.h;
-            PAINT.rect(CBox{PAINT.mb.x, MY, PAINT.mb.w, PAINT.h}, COLBG);
+            PAINT.glass(CBox{PAINT.mb.x, MY, PAINT.mb.w, PAINT.h}, COLBG);
 
             double px = PAINT.mb.x + 8;
 

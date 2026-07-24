@@ -242,6 +242,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     Clock::refresh();
     Battery::init();
     Tray::init();
+    Bell::init(); // after Tray: the bell rides the tray's session-bus link
 
     g_lifecycle.init();
     g_lifecycle.listen(Event::bus()->m_events.render.stage, [](eRenderStage stage) { onRenderStage(stage); });
@@ -313,7 +314,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.0.0"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.1.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

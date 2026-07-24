@@ -5,10 +5,12 @@ reserved top strip (`reserved = { top = 26 }`, matching
 `plugin:hyprbar:height`); hides under real fullscreen — except while the
 menubar is open, which floats above even that; maximized windows keep it
 visible. The strip owns its pointer — hovering it never leaks cursor shape
-or focus to a window underneath.
+or focus to a window underneath. The band, the menubar strip and the tray
+menus are frosted glass — a translucent `col_bg` over a live blur — when the
+compositor's blur is on; the widgets riding them stay opaque.
 
 ```
-[taglist 一..九] [tasklist of the active workspace ...] [tray] [battery] [clock] [layoutbox]
+[taglist 一..九] [tasklist of the active workspace ...] [tray] [bell] [battery] [clock] [layoutbox]
 ```
 
 - **Taglist** — kanji buttons, awesome's state matrix; occupancy as the
@@ -25,6 +27,11 @@ or focus to a window underneath.
 - **Tray** — in-compositor SNI host with a native dbusmenu renderer. Menus
   wear the overlay language: 1px-rounded panel with a `col_frame` ring,
   hover rows inset 4px with softened corners.
+- **Bell** — the notification bell + unread badge, riding the tray's bus
+  link to hyprnotify (`org.hitori.hyprnotify`). The badge counts the shade
+  (popped + waiting) and hides at zero; a left click toggles the
+  notification center. DND has no bar presence — that lives in the center's
+  ⊖ only.
 - **Battery** — Android's expressive battery (the Pixel pill of Android 16
   QPR2/17), a 1:1 transcription of SystemUI's Compose implementation with
   its vector assets embedded verbatim, bespoke digit glyphs included:

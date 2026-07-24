@@ -71,6 +71,14 @@ namespace NHyprbar {
         g_pHyprOpenGL->renderRect(toPhys(global), c, {.round = round});
     }
 
+    // the frosted material: a translucent fill (col_bg's alpha is the glass)
+    // over a live blur of whatever it covers — the band and the menu panels
+    void SPaint::glass(const CBox& global, const CHyprColor& c, int round) const {
+        if (warm)
+            return;
+        g_pHyprOpenGL->renderRect(toPhys(global), c, {.round = round, .blur = NHyprCommon::blurOn()});
+    }
+
     void SPaint::border(const CBox& global, const CHyprColor& c, int round, int sizePx) const {
         if (warm)
             return;
@@ -105,6 +113,16 @@ namespace NHyprbar {
     // vanished on every open/close ("the bar blinks when I close a window").
     // So warmBars() runs this same layout from the EVENT LOOP, a frame ahead;
     // by the time draw() runs, everything is a cache hit.
+    // the bar yields the whole output to a real fullscreen window (except an
+    // open menubar — awesome's ontop wibox): renderBar early-returns, so the
+    // pass must not claim a live blur of a strip it never paints
+    static bool barHidden(PHLMONITOR mon) {
+        if (!mon)
+            return true;
+        const auto WS = mon->m_activeWorkspace;
+        return WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN && !(Menubar::isOpen && Menubar::mon.lock() == mon);
+    }
+
     static void renderBar(PHLMONITOR mon, bool warm) {
         if (!mon)
             return;
@@ -119,7 +137,7 @@ namespace NHyprbar {
             Menu::close();
 
         const auto WS = mon->m_activeWorkspace;
-        if (WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN && !(Menubar::isOpen && Menubar::mon.lock() == mon)) {
+        if (barHidden(mon)) {
             if (Menu::isOpen && Menu::mon.lock() == mon)
                 Menu::close();
             return; // real fullscreen owns the whole output, like awesome —
@@ -142,7 +160,7 @@ namespace NHyprbar {
 
         const SPaint P{.mon = mon, .hits = &hits, .warm = warm, .scale = SCALE, .mb = MB, .h = H, .pt = PT, .fp = &frameFp};
 
-        P.rect(CBox{MB.x, MB.y, MB.w, H}, color(cfg.colBg));
+        P.glass(CBox{MB.x, MB.y, MB.w, H}, color(cfg.colBg));
 
         // -- the menubar: its own strip right BELOW the bar, the bar stays
         // visible (awesome's menubar is a separate wibox at the workarea top,
@@ -189,7 +207,7 @@ namespace NHyprbar {
         // is [systray][battery][clock][layoutbox], so the layoutbox sits
         // last). Widgets whose fit comes back 0 are hidden this frame.
         IWidget* const LEFT[]  = {&taglistWidget()};
-        IWidget* const RIGHT[] = {&trayWidget(), &batteryWidget(), &clockWidget(), &layoutboxWidget()};
+        IWidget* const RIGHT[] = {&trayWidget(), &bellWidget(), &batteryWidget(), &clockWidget(), &layoutboxWidget()};
 
         double         x = MB.x;
         for (auto* const W : LEFT) {
@@ -248,7 +266,9 @@ namespace NHyprbar {
             return {};
         }
         virtual bool needsLiveBlur() override {
-            return false;
+            // only while the band actually paints — never claim a live blur of
+            // a strip that is hidden under a fullscreen window (blur for nothing)
+            return NHyprCommon::blurOn() && !barHidden(m_mon.lock());
         }
         virtual bool needsPrecomputeBlur() override {
             return false;

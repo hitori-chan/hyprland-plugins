@@ -47,6 +47,7 @@ namespace NHyprbar {
 
         // owned objects borrow the connection — reset them before it dies
         static void dropOwnedObjects() {
+            Bell::exit(); // the bell's proxy borrows this connection — drop it first
             if (!Menu::isLocal)
                 try {
                     Menu::close(); // its proxy borrows the connection; close it first
@@ -246,6 +247,8 @@ namespace NHyprbar {
                 busProxy->uponSignal("NameOwnerChanged").onInterface("org.freedesktop.DBus").call([](std::string name, std::string oldOwner, std::string newOwner) {
                     if (!oldOwner.empty() && newOwner.empty())
                         dropService(name);
+                    if (name == "org.freedesktop.Notifications" && oldOwner.empty() && !newOwner.empty())
+                        Bell::daemonUp(); // hyprnotify (re)appeared: re-read the badge counts
                 });
 
                 watcher->emitSignal("StatusNotifierHostRegistered").onInterface(WIFACE);

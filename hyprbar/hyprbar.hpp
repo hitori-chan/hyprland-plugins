@@ -31,6 +31,8 @@
 
 #include "common/busclient.hpp"
 
+#include "common/glass.hpp" // the frosted material: blurOn/blurRadius + memoized tokens
+
 #include "common/texcache.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
@@ -258,6 +260,13 @@ namespace NHyprbar {
         void onServiceDropped(const std::string& service); // defined in menu.cpp
     }
 
+    // ---- bell.cpp: the notification bell, riding the tray's bus link ----
+    namespace Bell {
+        void init();     // subscribe to org.hitori.hyprnotify State (needs Tray::bus up)
+        void daemonUp(); // hyprnotify (re)appeared: re-read the badge counts
+        void exit();     // drop the proxy before the tray connection dies
+    }
+
     // ---- painting a surface (render.cpp) ----
     //
     // Handed to each surface's own renderer so the bar, the menubar strip and
@@ -278,6 +287,7 @@ namespace NHyprbar {
 
         CBox toPhys(const CBox& global) const; // global logical -> monitor physical
         void rect(const CBox& global, const CHyprColor& c, int round = 0) const;
+        void glass(const CBox& global, const CHyprColor& c, int round = 0) const; // translucent fill + live blur (the frosted band/menus)
         void border(const CBox& global, const CHyprColor& c, int round, int sizePx) const; // frame ring: one call, not four rects
         void tex(const SP<ITexture>& t, const CBox& physBox) const;                        // pre-computed physical box
         void texIn(const SP<ITexture>& t, const CBox& cell) const;                         // centered in a logical cell
@@ -353,6 +363,7 @@ namespace NHyprbar {
     IWidget& taglistWidget();   // taglist.cpp
     IWidget& tasklistWidget();  // tasklist.cpp
     IWidget& trayWidget();      // tray.cpp
+    IWidget& bellWidget();      // bell.cpp
     IWidget& batteryWidget();   // battery.cpp
     IWidget& clockWidget();     // clock.cpp
     IWidget& layoutboxWidget(); // layoutbox.cpp

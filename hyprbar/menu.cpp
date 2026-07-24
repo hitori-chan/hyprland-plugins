@@ -492,7 +492,7 @@ namespace NHyprbar {
 
                 // fill under the whole panel, frame ring over its edge: no
                 // corner seam, and 5 rects are 2 calls
-                PAINT.rect(L.box, COLBG, ROUND);
+                PAINT.glass(L.box, COLBG, ROUND);
                 PAINT.border(L.box, COLFRAME, ROUND, std::max(1, (int)std::lround(PAINT.scale)));
 
                 // labels share one leading column when any row in this level
