@@ -4,8 +4,11 @@
 #pragma once
 
 #include <hyprland/src/desktop/view/Window.hpp>
+#include <hyprland/src/helpers/MiscFunctions.hpp>
 #include <hyprland/src/managers/SessionLockManager.hpp>
+#include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/protocols/XDGShell.hpp>
+#include <hyprland/src/state/MonitorState.hpp>
 
 #include <algorithm>
 
@@ -17,6 +20,26 @@ namespace NHyprCommon {
     // it trips.
     inline bool sessionLocked() {
         return g_pSessionLockManager && g_pSessionLockManager->isSessionLocked();
+    }
+
+    // The monitor a point belongs to, nearest one if it lands off every
+    // output. monitorState()->query().vec().run() allocates and RTTI-casts
+    // per call and the input listeners call this per pointer motion, so
+    // mirror closestTo directly instead.
+    inline PHLMONITOR monitorAt(const Vector2D& pos) {
+        PHLMONITOR best;
+        float      bestDist = 0.F;
+        for (const auto& M : State::monitorState()->monitors()) {
+            const auto BOX = M->logicalBox();
+            if (BOX.containsPoint(pos))
+                return M;
+            const float DIST = vecToRectDistanceSquared(pos, BOX.pos(), BOX.pos() + BOX.size());
+            if (!best || DIST < bestDist) {
+                best     = M;
+                bestDist = DIST;
+            }
+        }
+        return best;
     }
 
     // Maximize can be client-only state (hyprmax's maximize never enters

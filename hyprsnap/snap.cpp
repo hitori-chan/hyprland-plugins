@@ -52,29 +52,13 @@ namespace NHyprsnap::Snap {
             H_RIGHT
         };
 
-        std::optional<CBox>       zoneBox; // the armed aerosnap slot, global logical
-        PHLMONITORREF             zoneMon;
-        NHyprCommon::CHop         pendingMagnet;
-        bool                      magnetQueued = false;
-        std::optional<CBox>       resizeStart; // resize-drag begin box: tells dragged edges from anchored
+        std::optional<CBox> zoneBox; // the armed aerosnap slot, global logical
+        PHLMONITORREF       zoneMon;
+        NHyprCommon::CHop   pendingMagnet;
+        bool                magnetQueued = false;
+        std::optional<CBox> resizeStart; // resize-drag begin box: tells dragged edges from anchored
 
-        // monitorState()->query().vec().run() allocates and RTTI-casts per
-        // call; this runs per pointer motion, so mirror closestTo directly.
-        PHLMONITOR monitorAt(const Vector2D& pos) {
-            PHLMONITOR best;
-            float      bestDist = 0.F;
-            for (const auto& M : State::monitorState()->monitors()) {
-                const auto BOX = M->logicalBox();
-                if (BOX.containsPoint(pos))
-                    return M;
-                const float DIST = vecToRectDistanceSquared(pos, BOX.pos(), BOX.pos() + BOX.size());
-                if (!best || DIST < bestDist) {
-                    best     = M;
-                    bestDist = DIST;
-                }
-            }
-            return best;
-        }
+        using NHyprCommon::monitorAt; // the allocation-free per-motion lookup
 
         std::array<CBox, 4> zoneStrips(const CBox& Z) {
             constexpr double BW = 1;
