@@ -1,6 +1,7 @@
 // hyprnotify/bus.cpp — the org.freedesktop.Notifications daemon and the model
 
 #include "common/busclient.hpp"
+#include "common/icons.hpp"
 #include "common/lifecycle.hpp"
 
 #include "hyprnotify.hpp"
@@ -12,13 +13,18 @@ namespace NHyprnotify {
     std::vector<SP<SNotif>> notifs;
 
     namespace Bus {
-        static const sdbus::InterfaceName          IFACE{"org.freedesktop.Notifications"};
+        static const sdbus::InterfaceName     IFACE{"org.freedesktop.Notifications"};
+        // the shell's own face on the same object (dunst does the same with
+        // org.dunstproject.cmd0): the bar's bell reads State and calls Toggle
+        // over the bus — the sanctioned cross-plugin channel, never symbols
+        static const sdbus::InterfaceName     CIFACE{"org.hitori.hyprnotify"};
 
         static std::unique_ptr<sdbus::IObject> obj;
         static NHyprCommon::CBusLink           g_bus;
         static SP<CEventLoopTimer>             expiry;
         static uint32_t                        nextId    = 1;
         static bool                            suspended = false; // DND
+        static NHyprCommon::CHop               pendingState;
 
         // A drain must never run synchronously from here: emits happen inside
         // method handlers, i.e. inside processPendingEvent, and sd-bus dispatch
@@ -36,36 +42,29 @@ namespace NHyprnotify {
             return nullptr;
         }
 
-        // ---- history (persistence): closed notifications kept for recall ----
+        // ---- history: dismissed/app-closed cards, kept whole for the
+        //      center's history view and for recall ----
 
-        static std::vector<SNotif> history; // content snapshots; textures/pixels not carried
+        static std::vector<SP<SNotif>> history; // oldest first, newest at back
+        static uint64_t                histSeq = 0;
 
-        static SNotif              snapshot(const SNotif& n) {
-            SNotif s;
-            s.appName       = n.appName;
-            s.summary       = n.summary; // already sanitized markup: re-displays verbatim
-            s.body          = n.body;
-            s.image         = n.image;
-            s.defaultAction = n.defaultAction;
-            s.urgency       = n.urgency;
-            s.actionIcons   = n.actionIcons;
-            s.resident      = n.resident;
-            for (const auto& A : n.actions)
-                s.actions.push_back(SAction{.id = A.id, .label = A.label});
-            for (const auto& IM : n.bodyImages)
-                s.bodyImages.push_back({IM.src});
-            return s;
-        }
-
-        // A card leaving the model is retained for recall — except progress/OSD
-        // cards (a volume blip is not history) and transients (the hint opts out).
+        // A card leaving the model is retained — except OSD-band and
+        // progress cards (a volume blip is not history) and transients (the
+        // hint opts out). The object moves whole: content and decoded image
+        // textures stay (a pixel-built avatar's buffer was freed at upload —
+        // the texture is the only copy left); text rasters live in render's
+        // keyed cache and age out on their own.
         static void retire(const SP<SNotif>& n) {
-            if (!n || n->transient || n->progress >= 0)
+            if (!n || n->transient || n->progress >= 0 || inOsdBand(n->id))
                 return;
             const size_t CAP = std::max<int64_t>(0, cfg.maxHistory->value());
             if (CAP == 0)
                 return;
-            history.push_back(snapshot(*n));
+            n->waiting   = false;
+            n->banner    = false;
+            n->timeoutMs = 0;
+            n->hseq      = ++histSeq;
+            history.push_back(n);
             while (history.size() > CAP)
                 history.erase(history.begin());
         }
@@ -76,7 +75,7 @@ namespace NHyprnotify {
             const auto NOW  = Time::steadyNow();
             int64_t    next = -1;
             for (const auto& N : notifs) {
-                if (N->timeoutMs <= 0 || N->waiting)
+                if (!N->banner || N->timeoutMs <= 0 || N->waiting)
                     continue;
                 // clamp before comparing: -1 is the "none" sentinel, and an
                 // overdue card's negative remaining time must still win
@@ -99,6 +98,38 @@ namespace NHyprnotify {
             pollSoon();
         }
 
+        std::string stateString() {
+            return "center:" + std::to_string(centerVisible() ? 1 : 0) + " live:" + std::to_string(notifs.size()) + " hist:" + std::to_string(history.size()) +
+                " dnd:" + std::to_string(suspended ? 1 : 0);
+        }
+
+        // the badge's truth is the shade: bannered popups + resident cards.
+        // Never history (that lives behind the clock), never the DND queue
+        // (invisible until the resume), never the OSD band (a volume card
+        // is an OSD, not a notification).
+        static std::pair<uint32_t, uint32_t> badgeCounts() {
+            uint32_t live = 0, kept = 0;
+            for (const auto& N : notifs) {
+                if (N->waiting || inOsdBand(N->id))
+                    continue;
+                (N->banner ? live : kept)++;
+            }
+            return {live, kept};
+        }
+
+        // the bar's bell: live + kept + dnd + center, coalesced per model change
+        void emitStateSoon() {
+            pendingState.arm([]() {
+                if (!obj)
+                    return;
+                try {
+                    const auto [LIVE, KEPT] = badgeCounts();
+                    obj->emitSignal("State").onInterface(CIFACE).withArguments(LIVE, KEPT, suspended, centerVisible());
+                } catch (...) {}
+                pollSoon();
+            });
+        }
+
         void closeOne(uint32_t id, uint32_t reason) {
             if (const auto N = byId(id))
                 retire(N);
@@ -111,13 +142,14 @@ namespace NHyprnotify {
             rearmExpiry();
         }
 
-        void closeAll(uint32_t reason) {
-            // the middle-click sweep clears what is on screen; cards the DND
-            // queue holds were never seen and stay for the resume
+        void dismissAllLive() {
+            // the sweep clears what the user can see (banners AND resident
+            // shade cards); cards the DND queue holds were never seen and
+            // stay for the resume
             const auto BEFORE = notifs.size();
             for (const auto& N : notifs)
                 if (!N->waiting) {
-                    emitClosed(N->id, reason);
+                    emitClosed(N->id, R_DISMISSED);
                     retire(N);
                 }
             std::erase_if(notifs, [](const auto& N) { return !N->waiting; });
@@ -125,6 +157,66 @@ namespace NHyprnotify {
                 return;
             notifChanged();
             rearmExpiry();
+        }
+
+        void dismissApp(const std::string& appKey) {
+            const auto BEFORE = notifs.size();
+            for (const auto& N : notifs)
+                if (!N->waiting && N->appKey == appKey) {
+                    emitClosed(N->id, R_DISMISSED);
+                    retire(N);
+                }
+            std::erase_if(notifs, [&](const auto& N) { return !N->waiting && N->appKey == appKey; });
+            if (notifs.size() == BEFORE)
+                return;
+            notifChanged();
+            rearmExpiry();
+        }
+
+        // A section header's ✕. Urgent (critical) and Waiting (the rest) sweep
+        // their live cards into history like the middle-sweep does; Earlier
+        // just wipes. The OSD band and the DND queue are not shade sections.
+        void dismissSection(int sec) {
+            if (sec == SEC_EARLIER) {
+                clearHistory();
+                return;
+            }
+            const bool CRIT = sec == SEC_URGENT;
+            const auto PRED = [&](const SP<SNotif>& N) { return !N->waiting && !inOsdBand(N->id) && (N->urgency >= 2) == CRIT; };
+            const auto BEFORE = notifs.size();
+            for (const auto& N : notifs)
+                if (PRED(N)) {
+                    emitClosed(N->id, R_DISMISSED);
+                    retire(N);
+                }
+            std::erase_if(notifs, PRED);
+            if (notifs.size() == BEFORE)
+                return;
+            notifChanged();
+            rearmExpiry();
+        }
+
+        // Opening the center absorbs the popped stack: every bannered card
+        // stands down into a parked shade row, so closing the center never
+        // re-pops it. The unread count is unchanged (popped + parked both
+        // count) — only the on-screen banners go. Ephemerals (transient,
+        // progress/OSD) keep their banners so the expiry timer still vanishes
+        // them on their own clocks; nothing here emits a close (the cards are
+        // parked, not dismissed).
+        void absorbPopped() {
+            bool changed = false;
+            for (const auto& N : notifs) {
+                if (!N->banner || N->waiting)
+                    continue;
+                if (N->transient || N->progress >= 0 || inOsdBand(N->id))
+                    continue;
+                N->banner = false;
+                changed   = true;
+            }
+            if (changed) {
+                notifChanged();
+                emitStateSoon();
+            }
         }
 
         void invokeAction(uint32_t id, const std::string& key) {
@@ -141,15 +233,31 @@ namespace NHyprnotify {
             pollSoon();
         }
 
+        // Android shade semantics for history rows: the ORIGINAL action list
+        // stays live. Invoking emits ActionInvoked with the ORIGINAL id —
+        // best effort, apps still tracking it react (Telegram's mark-as-read
+        // does) — and the entry is consumed.
+        void invokeHistoryAction(uint64_t hseq, const std::string& key) {
+            const auto IT = std::ranges::find_if(history, [&](const auto& H) { return H->hseq == hseq; });
+            if (IT == history.end())
+                return;
+            invokeAction((*IT)->id, key);
+            history.erase(IT);
+            notifChanged();
+        }
+
         void toggleSuspend() {
             suspended = !suspended;
-            if (suspended)
-                return; // visible cards live out their timeouts; new arrivals queue
+            if (suspended) {
+                notifChanged(); // the center's ⊖ lights up
+                return;         // visible cards live out their timeouts; new arrivals queue
+            }
             const auto NOW = Time::steadyNow();
             for (const auto& N : notifs) {
                 if (!N->waiting)
                     continue;
                 N->waiting = false;
+                N->banner  = true; // never seen: the resume shows the banner
                 if (N->timeoutMs > 0)
                     N->deadline = NOW + std::chrono::milliseconds((int64_t)N->timeoutMs);
             }
@@ -157,11 +265,15 @@ namespace NHyprnotify {
             rearmExpiry();
         }
 
+        bool suspendedNow() {
+            return suspended;
+        }
+
         // The client sent -1 (or a recall re-arms): critical always sticks,
         // and normal sticks by default too (timeout_normal 0) — a message
-        // waits to be read. Only cards that declare themselves ephemeral
-        // run the low clock: low urgency, the transient hint, progress/OSD
-        // blips. An explicit expire_timeout never lands here.
+        // waits to be read. Only cards that declare themselves ephemeral run
+        // the low clock: low urgency, the transient hint, progress/OSD blips.
+        // An explicit expire_timeout never lands here.
         static float defaultTimeout(const SNotif& n) {
             if (n.urgency >= 2)
                 return 0.f;
@@ -190,19 +302,23 @@ namespace NHyprnotify {
             }
         }
 
-        // Pop the most recently retained card back onto the stack as a fresh
-        // notification (naughty/dunst history-pop): new id, fresh timeout.
-        void recall() {
-            if (history.empty())
-                return;
-            auto n = makeShared<SNotif>(std::move(history.back()));
-            history.pop_back();
+        // Pop a retained card back onto the stack as a fresh notification
+        // (naughty/dunst history-pop): new id, fresh timeout; the arrival
+        // stamp stays original, so its age line keeps telling the truth.
+        bool recallAt(uint64_t hseq) {
+            const auto IT = std::ranges::find_if(history, [&](const auto& H) { return H->hseq == hseq; });
+            if (IT == history.end())
+                return false;
+            auto n = *IT;
+            history.erase(IT);
+            n->hseq    = 0;
             n->waiting = false;
+            n->banner  = true;
             do {
                 n->id = nextId++;
                 if (nextId == 0)
                     nextId = 1;
-            } while (byId(n->id) || (n->id >= 9990 && n->id <= 9999));
+            } while (byId(n->id) || inOsdBand(n->id));
             n->timeoutMs = defaultTimeout(*n);
             if (n->timeoutMs > 0)
                 n->deadline = Time::steadyNow() + std::chrono::milliseconds((int64_t)n->timeoutMs);
@@ -210,6 +326,33 @@ namespace NHyprnotify {
             evictOverflow();
             notifChanged();
             rearmExpiry();
+            return true;
+        }
+
+        void recall() {
+            if (!history.empty())
+                recallAt(history.back()->hseq);
+        }
+
+        void eraseHistory(uint64_t hseq) {
+            if (std::erase_if(history, [&](const auto& H) { return H->hseq == hseq; }))
+                notifChanged();
+        }
+
+        void eraseHistoryApp(const std::string& appKey) {
+            if (std::erase_if(history, [&](const auto& H) { return H->appKey == appKey; }))
+                notifChanged();
+        }
+
+        void clearHistory() {
+            if (history.empty())
+                return;
+            history.clear();
+            notifChanged();
+        }
+
+        const std::vector<SP<SNotif>>& historyView() {
+            return history;
         }
 
         size_t historySize() {
@@ -298,7 +441,7 @@ namespace NHyprnotify {
                 s.erase(0, 7);
             if (s.starts_with('/'))
                 return s;
-            return resolveIconName(s, sizePx);
+            return NHyprCommon::resolveIconName(s, sizePx);
         }
 
         // <img src="..."> is not a Pango tag; pull it from the body before the
@@ -375,34 +518,87 @@ namespace NHyprnotify {
             shrinkPixels(n, std::max((int)cfg.width->value() * 2, (int)cfg.maxIcon->value() * 3));
         }
 
+        // Join an appended conversation body under the cap: newest lines
+        // append at the back, oldest lines drop off the front whole.
+        static std::string joinAppend(const std::string& oldBody, const std::string& add) {
+            std::string joined = oldBody.empty() ? add : oldBody + "\n" + add;
+            constexpr size_t CAP = 8192;
+            while (joined.size() > CAP) {
+                const auto NL = joined.find('\n');
+                if (NL == std::string::npos) {
+                    joined.erase(0, joined.size() - CAP);
+                    break;
+                }
+                joined.erase(0, NL + 1);
+            }
+            return joined;
+        }
+
         static uint32_t handleNotify(const std::string& appName, uint32_t replacesId, const std::string& appIcon, const std::string& summary, const std::string& body,
                                      const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout) {
             uint32_t id = replacesId;
+
+            // x-canonical-append (notify-osd's extension; Telegram sends it on
+            // every message): a fresh Notify matching a live card's app +
+            // summary rides the replace path with the bodies joined — one
+            // conversation, one growing card, one history entry at retire.
+            // The OSD band never appends.
+            std::string appendOnto;
+            if (id == 0) {
+                bool append = false;
+                if (const auto IT = hints.find("x-canonical-append"); IT != hints.end())
+                    try {
+                        append = IT->second.get<bool>();
+                    } catch (...) {
+                        try {
+                            const auto S = IT->second.get<std::string>();
+                            append       = !S.empty() && S != "false" && S != "0";
+                        } catch (...) {
+                            try {
+                                append = IT->second.get<uint8_t>() != 0;
+                            } catch (...) {}
+                        }
+                    }
+                if (append) {
+                    const auto SUM = oneLine(sanitizeMarkup(summary));
+                    for (const auto& N : notifs)
+                        if (!inOsdBand(N->id) && N->appName == appName && N->summary == SUM) {
+                            id         = N->id;
+                            appendOnto = N->body;
+                            break;
+                        }
+                }
+            }
+
             if (id == 0) {
                 // Fresh ids count up from a low counter and skip any that's
                 // still live, so they never collide with a displayed
                 // notification. Crucially the counter is NOT dragged up to a
                 // seen replaces_id (as it once was): the OSD scripts pin ids
-                // in the 9990s (osd.sh, touchpad-auto.sh, battery-watch.sh),
-                // and bumping past 9991 handed the next fresh notification
-                // 9992 — the brightness OSD's id — so a keypress hijacked it.
-                // Low fresh ids and the pinned range stay disjoint.
+                // in the 9990s, and bumping past 9991 handed the next fresh
+                // notification 9992 — the brightness OSD's id — so a keypress
+                // hijacked it. Low fresh ids and the pinned band stay disjoint.
                 do {
                     id = nextId++;
                     if (nextId == 0)
                         nextId = 1; // wrap: 0 means "no id"
-                } while (byId(id) || (id >= 9990 && id <= 9999)); // never mint into the pinned OSD band
+                } while (byId(id) || inOsdBand(id));
             }
 
             auto n = byId(id);
             if (!n) {
-                n          = makeShared<SNotif>();
-                n->id      = id;
-                n->waiting = suspended; // DND: collect silently, the resume renders it
+                n = makeShared<SNotif>();
+                n->id = id;
+                n->born = Time::steadyNow(); // the arrival spring keys here, never on `arrived`
+                // DND collects silently — except critical, which punches
+                // through (the urgency parse below lifts it back out)
+                n->waiting = suspended;
                 notifs.insert(notifs.begin(), n); // newest on top; a replace keeps its slot
                 evictOverflow();
             }
 
+            n->arrived = Time::steadyNow(); // a replace refreshes the age, like a new arrival would
+            n->banner  = true;              // a replace re-alerts (the OSD sweep relies on it)
             n->appName = appName;
             n->summary = oneLine(sanitizeMarkup(summary));
             std::string bodyText = body;
@@ -410,10 +606,13 @@ namespace NHyprnotify {
             for (const auto& P : extractImages(bodyText, std::max(64, (int)cfg.maxIcon->value() * 2)))
                 n->bodyImages.push_back({P});
             n->body = sanitizeMarkup(bodyText, /*allowLinks=*/true);
+            if (!appendOnto.empty())
+                n->body = joinAppend(appendOnto, n->body);
 
             n->urgency  = 1;
             n->progress = -1;
             n->image.clear();
+            n->identity.clear();
             n->pixels.clear();
             n->hasPixels = false;
             n->pw = n->ph = 0;
@@ -426,6 +625,8 @@ namespace NHyprnotify {
                         n->urgency = (uint8_t)std::clamp(IT->second.get<int32_t>(), 0, 2);
                     } catch (...) {}
                 }
+            if (n->waiting && n->urgency >= 2)
+                n->waiting = false; // critical bypasses DND
             if (const auto IT = hints.find("value"); IT != hints.end())
                 try {
                     n->progress = std::clamp(IT->second.get<int32_t>(), 0, 100);
@@ -435,17 +636,18 @@ namespace NHyprnotify {
                     } catch (...) {}
                 }
 
-            // image precedence per spec: image-data, then image-path, then app_icon
+            // The icon anatomy (Android's, per the design contract): the
+            // CONTENT image (image-data / image-path) owns the icon column;
+            // the IDENTITY (app_icon param, else the desktop-entry hint)
+            // rides it as a corner badge — or leads alone when there is no
+            // content. Nothing at all = a text-only card.
+            const int ICONPX = std::max(8, (int)cfg.maxIcon->value());
             for (const auto* KEY : {"image-data", "image_data", "icon_data"})
                 if (const auto IT = hints.find(KEY); IT != hints.end() && n->pixels.empty())
                     try {
                         unpackImageData(*n, IT->second.get<ImageData>());
                     } catch (...) {}
             if (n->pixels.empty()) {
-                // precedence: image-path hint, then the app_icon param, then
-                // the desktop-entry hint (its .desktop id doubles as an icon
-                // name for most apps) — each a path OR a themed name
-                const int   ICONPX = std::max(8, (int)cfg.maxIcon->value());
                 std::string cand;
                 for (const auto* KEY : {"image-path", "image_path"})
                     if (const auto IT = hints.find(KEY); IT != hints.end() && cand.empty())
@@ -453,14 +655,17 @@ namespace NHyprnotify {
                             cand = IT->second.get<std::string>();
                         } catch (...) {}
                 n->image = resolveImage(cand, ICONPX);
-                if (n->image.empty())
-                    n->image = resolveImage(appIcon, ICONPX);
-                if (n->image.empty())
-                    if (const auto IT = hints.find("desktop-entry"); IT != hints.end())
-                        try {
-                            n->image = resolveImage(IT->second.get<std::string>(), ICONPX);
-                        } catch (...) {}
             }
+            std::string desktopEntry;
+            if (const auto IT = hints.find("desktop-entry"); IT != hints.end())
+                try {
+                    desktopEntry = IT->second.get<std::string>();
+                } catch (...) {}
+            n->identity = resolveImage(appIcon, ICONPX);
+            if (n->identity.empty() && !desktopEntry.empty())
+                n->identity = resolveImage(desktopEntry, ICONPX);
+            // grouping keys on app identity: the desktop-entry id, else the name
+            n->appKey = !desktopEntry.empty() ? desktopEntry : appName;
 
             // actions arrive as [id0,label0, id1,label1, ...]. "default" is the
             // body-click target (no button of its own); every other pair becomes
@@ -491,6 +696,15 @@ namespace NHyprnotify {
             if (const auto IT = hints.find("transient"); IT != hints.end())
                 try {
                     n->transient = IT->second.get<bool>();
+                } catch (...) {}
+
+            // fd.o category: conversations (im.*/call.*) sort atop Waiting.
+            // Ordering only — no per-app casing.
+            n->conversation = false;
+            if (const auto IT = hints.find("category"); IT != hints.end())
+                try {
+                    const auto CAT  = IT->second.get<std::string>();
+                    n->conversation = CAT.starts_with("im.") || CAT == "im" || CAT.starts_with("call.") || CAT == "call";
                 } catch (...) {}
 
             if (expireTimeout > 0)
@@ -535,6 +749,7 @@ namespace NHyprnotify {
             }
 
             rearmExpiry();
+            emitStateSoon();
             return id;
         }
 
@@ -555,7 +770,17 @@ namespace NHyprnotify {
                                    .implementedAs([](std::string appName, uint32_t replacesId, std::string appIcon, std::string summary, std::string body,
                                                      std::vector<std::string> actions, std::map<std::string, sdbus::Variant> hints,
                                                      int32_t expireTimeout) { return handleNotify(appName, replacesId, appIcon, summary, body, actions, hints, expireTimeout); }),
-                               sdbus::registerMethod("CloseNotification").withInputParamNames("id").implementedAs([](uint32_t id) { closeOne(id, R_CLOSED); }),
+                               // ignore_dbusclose (dunst's knob): an app revoking its
+                               // own notification (Telegram on read-elsewhere) is
+                               // ignored — the card lives out its banner and still
+                               // retires into history on dismissal. Only the bus path
+                               // is gated; user dismissals and expiry are untouched.
+                               sdbus::registerMethod("CloseNotification").withInputParamNames("id").implementedAs([](uint32_t id) {
+                                   if (cfg.ignoreDbusClose->value())
+                                       return;
+                                   closeOne(id, R_CLOSED);
+                                   emitStateSoon();
+                               }),
                                sdbus::registerMethod("GetCapabilities").withOutputParamNames("capabilities").implementedAs([]() {
                                    return std::vector<std::string>{"actions", "action-icons", "body", "body-markup", "body-hyperlinks", "body-images", "icon-static", "persistence", "sound"};
                                }),
@@ -567,22 +792,45 @@ namespace NHyprnotify {
                                sdbus::registerSignal("ActivationToken").withParameters<uint32_t, std::string>("id", "activation_token"))
                     .forInterface(IFACE);
 
+                // the shell face: the bar's bell toggles the center and reads
+                // the badge counts here
+                obj->addVTable(sdbus::registerMethod("Toggle").implementedAs([]() { queueCenterToggle(); }),
+                               sdbus::registerMethod("State").withOutputParamNames("live", "kept", "dnd", "center").implementedAs([]() {
+                                   const auto [LIVE, KEPT] = badgeCounts();
+                                   return std::tuple<uint32_t, uint32_t, bool, bool>{LIVE, KEPT, suspended, centerVisible()};
+                               }),
+                               sdbus::registerSignal("State").withParameters<uint32_t, uint32_t, bool, bool>("live", "kept", "dnd", "center"))
+                    .forInterface(CIFACE);
+
                 expiry = makeShared<CEventLoopTimer>(
                     std::nullopt,
                     [](SP<CEventLoopTimer>, void*) {
-                        const auto            NOW = Time::steadyNow();
-                        std::vector<uint32_t> due;
-                        for (const auto& N : notifs)
-                            if (N->timeoutMs > 0 && !N->waiting && N->deadline <= NOW)
-                                due.push_back(N->id);
-                        for (const auto ID : due) {
-                            if (const auto N = byId(ID))
-                                retire(N);
+                        // RESIDENCY: a due banner emits reason 1 EXPIRED once
+                        // and hides only the popup — the card stays in the
+                        // shade until dismissed/acted. Transient and progress
+                        // (OSD) cards vanish entirely.
+                        const auto NOW     = Time::steadyNow();
+                        bool       changed = false;
+                        std::vector<uint32_t> gone;
+                        for (const auto& N : notifs) {
+                            if (!N->banner || N->timeoutMs <= 0 || N->waiting || N->deadline > NOW)
+                                continue;
+                            if (N->transient || N->progress >= 0 || inOsdBand(N->id)) {
+                                gone.push_back(N->id);
+                                continue;
+                            }
+                            N->banner = false;
+                            emitClosed(N->id, R_EXPIRED);
+                            changed = true;
+                        }
+                        for (const auto ID : gone) {
                             std::erase_if(notifs, [&](const auto& N) { return N->id == ID; });
                             emitClosed(ID, R_EXPIRED);
                         }
-                        if (!due.empty())
+                        if (changed || !gone.empty()) {
                             notifChanged();
+                            emitStateSoon();
+                        }
                         rearmExpiry();
                     },
                     nullptr);

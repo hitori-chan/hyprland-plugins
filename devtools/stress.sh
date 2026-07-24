@@ -203,26 +203,35 @@ dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x300')"; sleep 2
 expect "far-off-screen seed: stored size applied, clamped to (879,499)" \
 	"any(c['class']=='foot' and c['at']==[879,499] and c['size']==[400,300] for c in cs)"
 
-# ---- expiry policy ------------------------------------------------------
-# a server-decides (-1) card sticks until dismissed: a message waits to be
-# read. Self-declared ephemerals keep their clocks — explicit timeouts
-# (hyprosd says 1200ms itself), the transient hint, low urgency.
-dsp "hl.dsp.exec_cmd('notify-send \"sticky msg\" body')"
-dsp "hl.dsp.exec_cmd('notify-send -t 700 ephemeral body')"
-sleep 2
-chk "expiry: the 700ms card died, the -1 card holds" test "$(hq hyprnotify count)" = 1
-dsp "hl.dsp.exec_cmd('notify-send -e blip body')"
-dsp "hl.dsp.exec_cmd('notify-send -u low lowkey body')"
-sleep 2
-chk "expiry: transient + low visible on their clocks" test "$(hq hyprnotify count)" = 3
-sleep 3.5
-chk "expiry: transient + low expired at timeout_low" test "$(hq hyprnotify count)" = 1
-sleep 3
-chk "expiry: the -1 card outlives every old clock" test "$(hq hyprnotify count)" = 1
-WL="$(cat "$HARNESS/nested.wl")"
-printf 'move 1100 45\nsleep 40\npress 273\nsleep 40\nrelease 273\nsleep 80\n' | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1
-sleep 0.8
-chk "expiry: right-click dismisses the sticky card" test "$(hq hyprnotify count)" = 0
+# ---- expiry, residency & the center ------------------------------------
+# The 5.2.0 model: a default (-1) card is sticky — it stands as a banner
+# until dismissed (a message waits to be read). An explicit timeout expires
+# the BANNER only: the card stays a resident shade row (still `live`),
+# Android residency. Cards that declare themselves ephemeral vanish outright
+# — transient and progress/OSD — while a low-urgency card runs timeout_low
+# then parks resident like any normal card. Opening the center ABSORBS the
+# banners into the shade (still live, no re-pop on close); Clear all sweeps
+# live AND history together. Asserted on the whole state line.
+st() { hq hyprnotify state; }
+chk "notif reset: clean state line" test "$(st)" = "center:0 live:0 hist:0 dnd:0"
+dsp "hl.dsp.exec_cmd('notify-send \"sticky\" body')" # default -1 normal: a sticky banner
+sleep 1
+chk "sticky: the -1 card stands as a banner" test "$(st)" = "center:0 live:1 hist:0 dnd:0"
+dsp "hl.dsp.exec_cmd('notify-send -t 500 blip body')" # explicit timeout: banner expires to a resident row
+sleep 1.5
+chk "residency: an explicit-timeout card expires to a shade row, still live" test "$(st)" = "center:0 live:2 hist:0 dnd:0"
+dsp "hl.dsp.exec_cmd('notify-send -u low lowcard body')" # low urgency -> timeout_low, then resident
+dsp "hl.dsp.exec_cmd('notify-send -e trans body')"       # transient -> timeout_low, then VANISH
+sleep 1
+chk "ephemerals arrive on their clocks" test "$(st)" = "center:0 live:4 hist:0 dnd:0"
+sleep 4.5
+chk "transient vanished, low parked resident, the -1 banner outlives all" test "$(st)" = "center:0 live:3 hist:0 dnd:0"
+hq hyprnotify center >/dev/null; sleep 0.5
+chk "center: opening absorbs the banners, dismisses nothing" test "$(st)" = "center:1 live:3 hist:0 dnd:0"
+hq hyprnotify center >/dev/null; sleep 0.5
+chk "center: closing neither re-pops nor drops a card" test "$(st)" = "center:0 live:3 hist:0 dnd:0"
+hq hyprnotify clear >/dev/null; sleep 0.8
+chk "center: Clear all sweeps live and history together" test "$(st)" = "center:0 live:0 hist:0 dnd:0"
 
 # ---- real-input storm ---------------------------------------------------
 WL="$(cat "$HARNESS/nested.wl")"
