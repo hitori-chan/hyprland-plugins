@@ -204,34 +204,61 @@ expect "far-off-screen seed: stored size applied, clamped to (879,499)" \
 	"any(c['class']=='foot' and c['at']==[879,499] and c['size']==[400,300] for c in cs)"
 
 # ---- expiry, residency & the center ------------------------------------
-# The 5.2.0 model: a default (-1) card is sticky — it stands as a banner
-# until dismissed (a message waits to be read). An explicit timeout expires
-# the BANNER only: the card stays a resident shade row (still `live`),
-# Android residency. Cards that declare themselves ephemeral vanish outright
-# — transient and progress/OSD — while a low-urgency card runs timeout_low
-# then parks resident like any normal card. Opening the center ABSORBS the
-# banners into the shade (still live, no re-pop on close); Clear all sweeps
-# live AND history together. Asserted on the whole state line.
+# The 5.3.0 model: a normal banner runs its clock, then RETREATS to a
+# resident shade row — still in the model (the center is the safety net),
+# just no longer a popup. Critical (urgency>=2) is the only sticky banner.
+# Ephemerals vanish outright: transient and progress/OSD. The `state` line
+# counts residents as `live` (raw model size, blind to the popup/shade
+# split); the `badge` verb reads that split — "banners:N resident:N".
+# Distinct -a apps here so popup coalescing (tested below) can't interfere.
 st() { hq hyprnotify state; }
+bd() { hq hyprnotify badge; }
 chk "notif reset: clean state line" test "$(st)" = "center:0 live:0 hist:0 dnd:0"
-dsp "hl.dsp.exec_cmd('notify-send \"sticky\" body')" # default -1 normal: a sticky banner
+dsp "hl.dsp.exec_cmd('notify-send -a crit -u critical \"urgent\" body')" # no -t: critical sticks
 sleep 1
-chk "sticky: the -1 card stands as a banner" test "$(st)" = "center:0 live:1 hist:0 dnd:0"
-dsp "hl.dsp.exec_cmd('notify-send -t 500 blip body')" # explicit timeout: banner expires to a resident row
-sleep 1.5
-chk "residency: an explicit-timeout card expires to a shade row, still live" test "$(st)" = "center:0 live:2 hist:0 dnd:0"
-dsp "hl.dsp.exec_cmd('notify-send -u low lowcard body')" # low urgency -> timeout_low, then resident
-dsp "hl.dsp.exec_cmd('notify-send -e trans body')"       # transient -> timeout_low, then VANISH
-sleep 1
-chk "ephemerals arrive on their clocks" test "$(st)" = "center:0 live:4 hist:0 dnd:0"
-sleep 4.5
-chk "transient vanished, low parked resident, the -1 banner outlives all" test "$(st)" = "center:0 live:3 hist:0 dnd:0"
+chk "critical: a sticky banner, nothing kept yet" test "$(bd)" = "banners:1 resident:0"
+dsp "hl.dsp.exec_cmd('notify-send -a norm -t 600 normal body')" # explicit clock; retreats fast for the test
+sleep 1.2
+chk "residency: the expired normal banner retreated to a resident row" test "$(bd)" = "banners:1 resident:1"
+chk "residency: the retreated card stays in the model, not lost" test "$(st)" = "center:0 live:2 hist:0 dnd:0"
+dsp "hl.dsp.exec_cmd('notify-send -a low -u low -t 600 lowcard body')" # low: retreats like a normal card
+dsp "hl.dsp.exec_cmd('notify-send -a tran -e -t 600 trans body')"       # transient: VANISHES
+sleep 1.2
+chk "ephemerals: transient vanished, low parked resident" test "$(st)" = "center:0 live:3 hist:0 dnd:0"
+chk "ephemerals: only the critical banner is still up" test "$(bd)" = "banners:1 resident:2"
 hq hyprnotify center >/dev/null; sleep 0.5
-chk "center: opening absorbs the banners, dismisses nothing" test "$(st)" = "center:1 live:3 hist:0 dnd:0"
+chk "center: opening absorbs the banner into the shade" test "$(bd)" = "banners:0 resident:3"
+chk "center: opening dismisses nothing" test "$(st)" = "center:1 live:3 hist:0 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.5
 chk "center: closing neither re-pops nor drops a card" test "$(st)" = "center:0 live:3 hist:0 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.8
 chk "center: Clear all sweeps live and history together" test "$(st)" = "center:0 live:0 hist:0 dnd:0"
+# THE 5.3.0 default: a plain (-1) normal card is no longer sticky — it runs
+# timeout_normal (5s) and retreats to the shade on its own, unattended.
+dsp "hl.dsp.exec_cmd('notify-send \"default normal\" body')"
+sleep 1
+chk "default normal: pops as a banner" test "$(bd)" = "banners:1 resident:0"
+sleep 5
+chk "default normal: retreated to the shade after timeout_normal" test "$(bd)" = "banners:0 resident:1"
+chk "default normal: the card is kept, not lost" test "$(st)" = "center:0 live:1 hist:0 dnd:0"
+hq hyprnotify clear >/dev/null; sleep 0.8
+
+# ---- popup coalescing: one live banner per app -------------------------
+# spam control (coalesce_popups, default on): while an app shows a banner,
+# further NON-CRITICAL same-app arrivals are born resident — one popup, the
+# rest silent in the shade's fold. `badge` sees the split, `state` counts
+# them all. Critical punches through; a different app gets its own banner.
+dsp "hl.dsp.exec_cmd('notify-send -a chatty -t 30000 first body')"; sleep 1
+chk "coalesce: the first same-app arrival pops a banner" test "$(bd)" = "banners:1 resident:0"
+dsp "hl.dsp.exec_cmd('notify-send -a chatty second body')"
+dsp "hl.dsp.exec_cmd('notify-send -a chatty third body')"; sleep 1
+chk "coalesce: the same-app burst lands resident, one banner stands" test "$(bd)" = "banners:1 resident:2"
+chk "coalesce: every card is kept and counted" test "$(st)" = "center:0 live:3 hist:0 dnd:0"
+dsp "hl.dsp.exec_cmd('notify-send -a chatty -u critical urgent body')"; sleep 1
+chk "coalesce: a critical from the same app punches through" test "$(bd)" = "banners:2 resident:2"
+dsp "hl.dsp.exec_cmd('notify-send -a other elsewhere body')"; sleep 1
+chk "coalesce: a different app gets its own banner" test "$(bd)" = "banners:3 resident:2"
+hq hyprnotify clear >/dev/null; sleep 0.8
 
 # ---- hardening: sections, absorb, DND, hostile hints -------------------
 # a section header's ✕ sweeps ONLY that section to Earlier (the one verb
@@ -257,13 +284,17 @@ chk "absorb: three toggles leave the two cards intact" bash -c "hyprctl -i $SIG 
 hq hyprnotify center >/dev/null; sleep 0.35 # off
 hq hyprnotify clear >/dev/null; sleep 0.8
 
-# DND queues an arrival silently; the resume keeps it (I did not touch the
-# waiting logic — this guards the buildDisplay/absorb changes against it)
+# DND queues arrivals silently; the resume keeps them AND applies the same
+# one-per-app cap (the resume banner assignment is now coalesce-aware — this
+# guards it alongside the buildDisplay/absorb changes)
 dsp "hl.plugin.hyprnotify.suspend()"; sleep 0.5
 chk "DND arms" bash -c "hyprctl -i $SIG hyprnotify state | grep -q 'dnd:1'"
-dsp "hl.dsp.exec_cmd('notify-send \"quiet\" body')"; sleep 0.8
-dsp "hl.plugin.hyprnotify.suspend()"; sleep 0.5
-chk "DND resume: dnd off, the queued card survived" bash -c "hyprctl -i $SIG hyprnotify state | grep -qE '^center:0 live:1 hist:0 dnd:0$'"
+dsp "hl.dsp.exec_cmd('notify-send -a q one body')"
+dsp "hl.dsp.exec_cmd('notify-send -a q two body')"; sleep 0.8
+chk "DND: two same-app arrivals queued, none shown" test "$(bd)" = "banners:0 resident:0"
+dsp "hl.plugin.hyprnotify.suspend()"; sleep 0.6
+chk "DND resume: one popped, the sibling resumed resident (one per app)" test "$(bd)" = "banners:1 resident:1"
+chk "DND resume: dnd off, both cards kept" bash -c "hyprctl -i $SIG hyprnotify state | grep -qE '^center:0 live:2 hist:0 dnd:0$'"
 hq hyprnotify clear >/dev/null; sleep 0.8
 
 # hostile hints on the new field: a wrong-typed category must not crash the
