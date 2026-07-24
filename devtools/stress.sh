@@ -233,6 +233,46 @@ chk "center: closing neither re-pops nor drops a card" test "$(st)" = "center:0 
 hq hyprnotify clear >/dev/null; sleep 0.8
 chk "center: Clear all sweeps live and history together" test "$(st)" = "center:0 live:0 hist:0 dnd:0"
 
+# ---- hardening: sections, absorb, DND, hostile hints -------------------
+# a section header's ✕ sweeps ONLY that section to Earlier (the one verb
+# with no model-level path — driven through the real hit box via vptr). At
+# 1280x800@1 with offset_y 34 the Urgent header's ✕ sits at ~(1251,56);
+# hit boxes are final-position, so the open spring does not move it.
+dsp "hl.dsp.exec_cmd('notify-send -u critical \"urgent one\" body')"; sleep 1
+chk "sections: a critical card fills Urgent" test "$(st)" = "center:0 live:1 hist:0 dnd:0"
+hq hyprnotify center >/dev/null; sleep 0.6
+WL="$(cat "$HARNESS/nested.wl")"
+printf 'move 1251 56\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1
+sleep 0.8
+chk "sections: the Urgent header ✕ sweeps just that section to Earlier" test "$(st)" = "center:1 live:0 hist:1 dnd:0"
+hq hyprnotify center >/dev/null; sleep 0.4
+hq hyprnotify clear >/dev/null; sleep 0.8
+chk "hardening: reset after the section sweep" test "$(st)" = "center:0 live:0 hist:0 dnd:0"
+
+# absorb is idempotent: toggling the center never loses or dupes a card
+dsp "hl.dsp.exec_cmd('notify-send \"keep one\" body')"
+dsp "hl.dsp.exec_cmd('notify-send \"keep two\" body')"; sleep 1
+for i in 1 2 3; do hq hyprnotify center >/dev/null; sleep 0.35; done # on, off, on
+chk "absorb: three toggles leave the two cards intact" bash -c "hyprctl -i $SIG hyprnotify state | grep -qE '^center:1 live:2 '"
+hq hyprnotify center >/dev/null; sleep 0.35 # off
+hq hyprnotify clear >/dev/null; sleep 0.8
+
+# DND queues an arrival silently; the resume keeps it (I did not touch the
+# waiting logic — this guards the buildDisplay/absorb changes against it)
+dsp "hl.plugin.hyprnotify.suspend()"; sleep 0.5
+chk "DND arms" bash -c "hyprctl -i $SIG hyprnotify state | grep -q 'dnd:1'"
+dsp "hl.dsp.exec_cmd('notify-send \"quiet\" body')"; sleep 0.8
+dsp "hl.plugin.hyprnotify.suspend()"; sleep 0.5
+chk "DND resume: dnd off, the queued card survived" bash -c "hyprctl -i $SIG hyprnotify state | grep -qE '^center:0 live:1 hist:0 dnd:0$'"
+hq hyprnotify clear >/dev/null; sleep 0.8
+
+# hostile hints on the new field: a wrong-typed category must not crash the
+# parse (sdbus::Error thrown + caught), the card still lands
+dsp "hl.dsp.exec_cmd('notify-send -h int:category:5 \"badcat\" body')"
+dsp "hl.dsp.exec_cmd('notify-send -h string:category:im.received \"convo\" body')"; sleep 1
+chk "hostile: wrong-typed category survived, both cards landed" test "$(st)" = "center:0 live:2 hist:0 dnd:0"
+hq hyprnotify clear >/dev/null; sleep 0.8
+
 # ---- real-input storm ---------------------------------------------------
 WL="$(cat "$HARNESS/nested.wl")"
 {
