@@ -1,5 +1,7 @@
 // hyprbar/icons.cpp — icon loading and resolution: GTK theme dirs, PNG/SVG, per-use caches
 
+#include "common/icons.hpp" // the shared XDG walk + the GTK theme name
+
 #include "hyprbar.hpp"
 
 namespace NHyprbar {
@@ -95,53 +97,47 @@ namespace NHyprbar {
     }
 
     // Where icons live, probed once at init (existing dirs only). Not a full
-    // xdg icon-theme implementation — a fixed, ordered list: the user's GTK
-    // theme (both dir layouts), hicolor, pixmaps, Adwaita's symbolic set as
-    // the last resort for freedesktop names like input-keyboard-symbolic.
+    // xdg icon-theme implementation — a fixed, ordered list of the dirs that
+    // actually exist, so a lookup is a bounded stat walk instead of a theme
+    // traversal: the user's GTK theme (both dir layouts), hicolor, pixmaps,
+    // Adwaita's symbolic set as the last resort for freedesktop names like
+    // input-keyboard-symbolic. Every tier walks the XDG bases in precedence
+    // order — a theme (or an app icon) installed under ~/.local/share/icons
+    // is as real as a packaged one.
     static std::vector<std::string> iconDirs;
 
-    static std::string              gtkIconTheme() {
-        const char* HOME = std::getenv("HOME");
-        if (!HOME)
-            return "";
-        std::ifstream F(std::string{HOME} + "/.config/gtk-3.0/settings.ini");
-        std::string   line;
-        while (F && std::getline(F, line)) {
-            if (line.starts_with("gtk-icon-theme-name=")) {
-                auto v = line.substr(20);
-                while (!v.empty() && (v.back() == '\r' || v.back() == ' '))
-                    v.pop_back();
-                return v;
-            }
-        }
-        return "";
-    }
-
-    void buildIconDirs() {
+    void                            buildIconDirs() {
         iconDirs.clear();
         std::error_code ec;
         const auto      add = [&](const std::string& d) {
             if (std::filesystem::is_directory(d, ec))
                 iconDirs.push_back(d);
         };
+        const auto BASES = NHyprCommon::xdgIconBases();
 
-        if (const auto THEME = gtkIconTheme(); !THEME.empty() && THEME != "hicolor") {
-            const auto BASE = "/usr/share/icons/" + THEME + "/";
-            for (const char* CTX : {"apps", "status", "devices", "categories"}) {
-                for (const char* SZ : {"48", "32", "24", "22", "16"}) {
-                    add(BASE + CTX + "/" + SZ);            // breeze layout
-                    add(BASE + SZ + "x" + SZ + "/" + CTX); // classic layout
+        // the GTK theme (Qt follows it) across every base, both layouts
+        if (const auto THEME = NHyprCommon::gtkIconThemeName(); !THEME.empty() && THEME != "hicolor")
+            for (const auto& B : BASES) {
+                const auto TDIR = B + "/" + THEME + "/";
+                for (const char* CTX : {"apps", "status", "devices", "categories"}) {
+                    for (const char* SZ : {"48", "32", "24", "22", "16"}) {
+                        add(TDIR + CTX + "/" + SZ);            // breeze layout
+                        add(TDIR + SZ + "x" + SZ + "/" + CTX); // classic layout
+                    }
+                    add(TDIR + "scalable/" + CTX);
+                    add(TDIR + "symbolic/" + CTX);
                 }
-                add(BASE + "scalable/" + CTX);
-                add(BASE + "symbolic/" + CTX);
             }
+        for (const auto& B : BASES) {
+            for (const char* SZ : {"48x48", "64x64", "128x128", "32x32", "24x24", "22x22", "16x16"})
+                add(B + "/hicolor/" + SZ + "/apps");
+            add(B + "/hicolor/scalable/apps");
         }
-        for (const char* SZ : {"48x48", "64x64", "128x128", "32x32", "24x24", "22x22", "16x16"})
-            add(std::string{"/usr/share/icons/hicolor/"} + SZ + "/apps");
-        add("/usr/share/icons/hicolor/scalable/apps");
-        add("/usr/share/pixmaps");
-        for (const char* CTX : {"devices", "status", "apps", "legacy"})
-            add(std::string{"/usr/share/icons/Adwaita/symbolic/"} + CTX);
+        for (const auto& D : NHyprCommon::xdgDataDirs())
+            add(D + "/pixmaps");
+        for (const auto& B : BASES)
+            for (const char* CTX : {"devices", "status", "apps", "legacy"})
+                add(B + "/Adwaita/symbolic/" + CTX);
     }
 
     // Icon name (or absolute path) -> a file on disk, PNG or SVG.
@@ -175,23 +171,9 @@ namespace NHyprbar {
     // Application dirs in XDG order: per-user first (it overrides system),
     // then the data dirs (Flatpak/system exports).
     static std::vector<std::string> appDirs() {
-        std::vector<std::string> dirs;
-        if (const char* X = std::getenv("XDG_DATA_HOME"); X && *X)
-            dirs.push_back(std::string{X} + "/applications");
-        else if (const char* H = std::getenv("HOME"); H && *H)
-            dirs.push_back(std::string{H} + "/.local/share/applications");
-        std::string data = "/usr/local/share:/usr/share";
-        if (const char* X = std::getenv("XDG_DATA_DIRS"); X && *X)
-            data = X;
-        for (size_t p = 0; p < data.size();) {
-            const auto E = data.find(':', p);
-            const auto D = data.substr(p, E == std::string::npos ? E : E - p);
-            if (!D.empty())
-                dirs.push_back(D + "/applications");
-            if (E == std::string::npos)
-                break;
-            p = E + 1;
-        }
+        auto dirs = NHyprCommon::xdgDataDirs();
+        for (auto& D : dirs)
+            D += "/applications";
         return dirs;
     }
 
