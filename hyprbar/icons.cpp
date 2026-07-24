@@ -172,18 +172,78 @@ namespace NHyprbar {
         return "";
     }
 
-    // Window class -> Icon= from the app's .desktop file.
-    static std::string desktopIconName(const std::string& klass) {
-        for (const auto& N : {klass, lower(klass)}) {
-            std::ifstream F("/usr/share/applications/" + N + ".desktop");
-            if (!F)
-                continue;
-            std::string line;
-            while (std::getline(F, line)) {
-                if (line.starts_with("Icon="))
-                    return line.substr(5);
-            }
+    // Application dirs in XDG order: per-user first (it overrides system),
+    // then the data dirs (Flatpak/system exports).
+    static std::vector<std::string> appDirs() {
+        std::vector<std::string> dirs;
+        if (const char* X = std::getenv("XDG_DATA_HOME"); X && *X)
+            dirs.push_back(std::string{X} + "/applications");
+        else if (const char* H = std::getenv("HOME"); H && *H)
+            dirs.push_back(std::string{H} + "/.local/share/applications");
+        std::string data = "/usr/local/share:/usr/share";
+        if (const char* X = std::getenv("XDG_DATA_DIRS"); X && *X)
+            data = X;
+        for (size_t p = 0; p < data.size();) {
+            const auto E = data.find(':', p);
+            const auto D = data.substr(p, E == std::string::npos ? E : E - p);
+            if (!D.empty())
+                dirs.push_back(D + "/applications");
+            if (E == std::string::npos)
+                break;
+            p = E + 1;
         }
+        return dirs;
+    }
+
+    // Read Icon= and StartupWMClass= from a desktop file in one pass.
+    static void readDesktopEntry(const std::string& path, std::string& icon, std::string& wmClass) {
+        std::ifstream F(path);
+        if (!F)
+            return;
+        const auto grab = [](const std::string& l, size_t off) {
+            auto v = l.substr(off);
+            while (!v.empty() && (v.back() == '\r' || v.back() == ' ' || v.back() == '\t'))
+                v.pop_back();
+            return v;
+        };
+        std::string line;
+        while (std::getline(F, line)) {
+            if (icon.empty() && line.starts_with("Icon="))
+                icon = grab(line, 5);
+            else if (wmClass.empty() && line.starts_with("StartupWMClass="))
+                wmClass = grab(line, 15);
+            if (!icon.empty() && !wmClass.empty())
+                break;
+        }
+    }
+
+    // Window class -> Icon= from the app's .desktop file. A window's class
+    // rarely equals its desktop-file basename (ente's class is "ente" but it
+    // ships ente-desktop.desktop; qBittorrent's is "qbittorrent" under
+    // org.qbittorrent.qBittorrent.desktop) — the spec's StartupWMClass field
+    // is the canonical association, so scan for it when the basename misses.
+    static std::string desktopIconName(const std::string& klass) {
+        const auto dirs = appDirs();
+
+        for (const auto& D : dirs)
+            for (const auto& N : {klass, lower(klass)}) {
+                std::string icon, wm;
+                readDesktopEntry(D + "/" + N + ".desktop", icon, wm);
+                if (!icon.empty())
+                    return icon;
+            }
+
+        std::error_code ec;
+        const auto      LK = lower(klass);
+        for (const auto& D : dirs)
+            for (auto it = std::filesystem::directory_iterator(D, ec); !ec && it != std::filesystem::end(it); it.increment(ec)) {
+                if (it->path().extension() != ".desktop")
+                    continue;
+                std::string icon, wm;
+                readDesktopEntry(it->path().string(), icon, wm);
+                if (!icon.empty() && !wm.empty() && (wm == klass || lower(wm) == LK))
+                    return icon;
+            }
         return "";
     }
 
