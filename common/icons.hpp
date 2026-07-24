@@ -18,6 +18,47 @@
 
 namespace NHyprCommon {
 
+    // The XDG data dirs in precedence order: the per-user one first (it
+    // overrides), then $XDG_DATA_DIRS. Every freedesktop lookup a plugin
+    // does — icon themes, .desktop entries, pixmaps — walks this list.
+    inline std::vector<std::string> xdgDataDirs() {
+        std::vector<std::string> dirs;
+        if (const char* X = getenv("XDG_DATA_HOME"); X && *X)
+            dirs.push_back(X);
+        else if (const char* H = getenv("HOME"); H && *H)
+            dirs.push_back(std::string(H) + "/.local/share");
+        std::string data = "/usr/local/share:/usr/share";
+        if (const char* X = getenv("XDG_DATA_DIRS"); X && *X)
+            data = X;
+        for (size_t p = 0; p < data.size();) {
+            const auto E = data.find(':', p);
+            auto       D = data.substr(p, E == std::string::npos ? E : E - p);
+            while (D.size() > 1 && D.back() == '/')
+                D.pop_back();
+            if (!D.empty())
+                dirs.push_back(std::move(D));
+            if (E == std::string::npos)
+                break;
+            p = E + 1;
+        }
+        return dirs;
+    }
+
+    // Where icon THEMES live: the data dirs' icons/ plus the legacy ~/.icons
+    // (second, right after the per-user data dir — the spec's order).
+    inline std::vector<std::string> xdgIconBases() {
+        const auto               DATA = xdgDataDirs();
+        std::vector<std::string> bases;
+        bases.reserve(DATA.size() + 1);
+        if (!DATA.empty())
+            bases.push_back(DATA.front() + "/icons");
+        if (const char* H = getenv("HOME"); H && *H)
+            bases.push_back(std::string(H) + "/.icons");
+        for (size_t i = 1; i < DATA.size(); i++)
+            bases.push_back(DATA[i] + "/icons");
+        return bases;
+    }
+
     inline std::unordered_map<std::string, std::string>& iconNameCache() {
         static std::unordered_map<std::string, std::string> C;
         return C;
@@ -84,25 +125,7 @@ namespace NHyprCommon {
         if (const auto IT = CACHE.find(name); IT != CACHE.end())
             return IT->second;
 
-        std::vector<std::string> bases;
-        if (const char* X = getenv("XDG_DATA_HOME"); X && *X)
-            bases.push_back(std::string(X) + "/icons");
-        else if (const char* H = getenv("HOME"); H && *H)
-            bases.push_back(std::string(H) + "/.local/share/icons");
-        if (const char* H = getenv("HOME"); H && *H)
-            bases.push_back(std::string(H) + "/.icons");
-        std::string dataDirs = "/usr/local/share:/usr/share";
-        if (const char* X = getenv("XDG_DATA_DIRS"); X && *X)
-            dataDirs = X;
-        for (size_t p = 0; p < dataDirs.size();) {
-            const auto E = dataDirs.find(':', p);
-            const auto D = dataDirs.substr(p, E == std::string::npos ? E : E - p);
-            if (!D.empty())
-                bases.push_back(D + "/icons");
-            if (E == std::string::npos)
-                break;
-            p = E + 1;
-        }
+        const auto               bases = xdgIconBases();
 
         std::vector<std::string> themes;
         if (const auto GT = gtkIconThemeName(); !GT.empty()) {
@@ -123,7 +146,7 @@ namespace NHyprCommon {
 
         // breeze (and KDE themes generally) lay out <context>/<size> instead
         // of <size>x<size>/<context> — probe the common contexts too
-        static const char* CTXS[]  = {"status", "apps", "devices", "actions", "categories", "mimetypes", "legacy", "symbolic"};
+        static const char*       CTXS[]   = {"status", "apps", "devices", "actions", "categories", "mimetypes", "legacy", "symbolic"};
         std::vector<std::string> ctxSizes = {"symbolic", "scalable"};
         for (const int S : {sizePx, 64, 48, 32, 24, 22, 16})
             ctxSizes.push_back(std::to_string(S));
@@ -161,12 +184,15 @@ namespace NHyprCommon {
                 break;
         }
         if (found.empty())
-            for (const char* e : {".svg", ".png", ".xpm"}) {
+            for (const auto& D : xdgDataDirs()) { // flat pixmaps, the pre-theme layout
                 std::error_code ec;
-                if (std::filesystem::exists(std::string("/usr/share/pixmaps/") + name + e, ec)) {
-                    found = std::string("/usr/share/pixmaps/") + name + e;
+                for (const char* e : {".svg", ".png", ".xpm"})
+                    if (const auto P = D + "/pixmaps/" + name + e; std::filesystem::exists(P, ec)) {
+                        found = P;
+                        break;
+                    }
+                if (!found.empty())
                     break;
-                }
             }
 
         CACHE[name] = found;
