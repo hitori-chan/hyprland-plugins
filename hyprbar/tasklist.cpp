@@ -298,62 +298,47 @@ namespace NHyprbar {
             void draw(const SPaint& P, const SFrame& F, const CBox& box) override {
                 if (!F.tasks || F.tasks->empty() || box.w < 40)
                     return;
-                // one chip per task — pad-x 10, max-w 220, 15px themed app
-                // icon; the focused chip fills accent-dim, urgent fills its
-                // own tint, minimized dims. Islands: 24px pills, gap 6.
-                // Strip: full-height square segments, 1px apart.
-                const bool       STRIP = stripMode();
-                constexpr double CHIP_PADX = 10, CHIP_MAXW = 220, ICON = 15, ICON_GAP = 5;
-                const double     CHIP_H = STRIP ? box.h : 24, CHIP_GAP = STRIP ? 1 : 6;
-                const int        RCHIP = STRIP ? 0 : (int)std::lround(CHIP_H / 2 * P.scale);
-                const double     CY    = STRIP ? box.y : box.y + (box.h - CHIP_H) / 2;
+                // awesome tasklist behavior: the windows split the WHOLE free
+                // strip between taglist and tray — one window = one huge item
+                const double ITEMW = box.w / (double)F.tasks->size();
 
-                // chips shrink together when the strip runs out of room
-                const double N     = (double)F.tasks->size();
-                const double AVAIL = (box.w - (N - 1) * CHIP_GAP) / N;
-                const double CAPW  = std::clamp(AVAIL, 48.0, CHIP_MAXW);
-
-                double x = box.x;
+                double       x = box.x;
                 for (const auto& [SEQ, W] : *F.tasks) {
-                    const bool MINIMIZED = Tasklist::isMinimized(W);
-                    const bool FOCUSED   = !MINIMIZED && W == F.focus;
-                    CHyprColor fg        = MINIMIZED ? F.minimized : FOCUSED ? F.active : F.fg;
-                    if (!MINIMIZED && !FOCUSED && W->m_isUrgent)
+                    const CBox CELL{x, box.y, ITEMW, P.h};
+                    // the old theme: the focused task is cyan TEXT on the plain
+                    // bar (tasklist_bg_focus = bg_normal, no box); urgent gets
+                    // the urgent bg — and focus wins over urgent, like awesome
+                    CHyprColor fg = F.fg;
+                    // minimized wins over focus: a minimized window is never
+                    // truly focused, but the compositor's focus fallback can
+                    // leave focus on a hidden one — it must still read muted.
+                    if (Tasklist::isMinimized(W))
+                        fg = F.minimized; // awesome's fg_minimize: muted, no bg
+                    else if (W == F.focus)
+                        fg = F.active;
+                    else if (W->m_isUrgent) {
+                        P.rect(CELL, F.urgentBg);
                         fg = F.urgentFg;
+                    }
+
+                    // [4][icon][4][title] — awesome's item margins, icon on
+                    // the bar's 3px-inset rhythm
+                    const double ICON = P.h - 6;
+                    double       tx   = x + 4;
+                    if (const auto ITEX = appIcon(W->m_class); ITEX && ITEX->m_texID != 0) {
+                        const auto B = P.toPhys(CBox{tx, box.y + 3, ICON, ICON});
+                        P.tex(ITEX, B);
+                    } else
+                        P.texIn(textTex(letterOf(W->m_class), F.active, P.pt), CBox{tx, box.y, ICON, P.h});
+                    tx += ICON + 4;
 
                     static std::string LBL; // reused; main thread only
                     Tasklist::label(W, LBL);
                     if (P.fp)
                         *P.fp = *P.fp * 1099511628211ULL + std::hash<std::string>{}(LBL);
-
-                    const auto   TEX   = textTex(LBL, fg, P.pt, std::max(1, (int)std::round((CAPW - 2 * CHIP_PADX - ICON - ICON_GAP) * P.scale)));
-                    const double LW    = TEX ? TEX->m_size.x / P.scale : 0;
-                    const double CHIPW = std::min(CAPW, 2 * CHIP_PADX + ICON + ICON_GAP + LW);
-                    const CBox   CELL{x, CY, CHIPW, CHIP_H};
-                    if (CELL.x + CELL.w > box.x + box.w + 0.5)
-                        break; // out of strip: the tail waits for a wider monitor
-
-                    const bool HOV = barHover.widget == this && barHover.win == W.get();
-                    if (FOCUSED)
-                        P.rect(CELL, F.activeBg, RCHIP);
-                    else if (!MINIMIZED && W->m_isUrgent)
-                        P.rect(CELL, F.urgentBg, RCHIP);
-                    else
-                        P.rect(CELL, (HOV ? tFill2() : tFill()), RCHIP);
-
-                    double tx = x + CHIP_PADX;
-                    if (const auto ITEX = appIcon(W->m_class); ITEX && ITEX->m_texID != 0) {
-                        if (!P.warm) {
-                            // 75% at rest, full ink on the focused chip
-                            g_pHyprOpenGL->renderTexture(ITEX, P.toPhys(CBox{tx, CY + (CHIP_H - ICON) / 2, ICON, ICON}),
-                                                         {.a = FOCUSED ? 1.f : 0.75f, .round = (int)std::lround(4 * P.scale)});
-                        }
-                    } else
-                        P.texIn(textTex(letterOf(W->m_class), F.active, P.pt), CBox{tx, CY, ICON, CHIP_H});
-                    tx += ICON + ICON_GAP;
-
+                    const auto TEX = textTex(LBL, fg, P.pt, std::max(1, (int)std::round((ITEMW - (tx - x) - 4) * P.scale))); // floor >0: a non-positive width disables ellipsization and overflows the cell
                     if (TEX && TEX->m_texID != 0) {
-                        const auto B = P.toPhys(CBox{tx, CY, 1, CHIP_H});
+                        const auto B = P.toPhys(CBox{tx, box.y, 1, P.h});
                         CBox       b{B.x, B.y + (B.h - TEX->m_size.y) / 2.0, TEX->m_size.x, TEX->m_size.y};
                         P.tex(TEX, b.round());
                     }
@@ -363,26 +348,28 @@ namespace NHyprbar {
                     h.widget = this;
                     h.window = W;
                     P.hits->push_back(h);
-                    x += CHIPW + CHIP_GAP;
+                    x += ITEMW;
                 }
             }
 
             void onHit(const SHit& h, uint32_t bit, bool) override {
-                const auto W = h.window.lock();
-                if (!W || !W->m_isMapped)
-                    return;
-                if (bit == 4u) { // middle closes the client (the map's contract)
-                    std::ignore = Config::Actions::closeWindow(W);
+                if (bit == 2u) { // awesome: the all-clients menu, popped at the click
+                    Menu::openClients(h.clickX, h.mon);
                     return;
                 }
                 if (bit != 1u)
                     return;
+                const auto W = h.window.lock();
+                if (!W || !W->m_isMapped)
+                    return;
 
-                // left: the focused chip minimizes, any other (minimized
-                // included) restores + focuses. Test minimized FIRST: closing
-                // the last visible window lands the compositor's focus
-                // fallback on a hidden one, and "click the focused task to
-                // minimize" would then no-op on it — the click looks dead.
+                // awesome's tasklist button 1: clicking the focused task
+                // minimizes it; clicking any other task (minimized included)
+                // restores + focuses it. Test minimized FIRST: closing the
+                // last visible window lands the compositor's focus fallback on
+                // a hidden one, and "click the focused task to minimize" would
+                // then no-op on it (minimize() bails on an already-hidden
+                // window) — the click looks dead.
                 if (Tasklist::isMinimized(W)) {
                     Tasklist::restore(W);
                     return;

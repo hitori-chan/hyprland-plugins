@@ -712,52 +712,30 @@ namespace NHyprbar {
             }
         }
 
-        // The launcher strip. Islands: a floating glass pill below the bar
-        // (h 30, inset 6, below-bar offset 34, pill). Strip: DOCKED — a
-        // second full-width band row sliding straight out of the strip, the
-        // same frost one tone up (col_bar_menubar), no gap, no radius, no
-        // float, no hairlines.
-        CBox stripBox;
-
+        // The prompt strip, drawn right BELOW the bar so the bar stays visible —
+        // awesome's menubar is a separate wibox at the workarea top, under the
+        // wibar; it never replaced it.
         void render(const SPaint& PAINT) {
             if (!isOpen || mon.lock() != PAINT.mon)
                 return;
 
             // one palette fetch per render: color() memoizes but still hashes per call
-            const CHyprColor COLFG = color(cfg.colFg), COLACTIVEBG = color(cfg.colActiveBg), COLFOCUS = color(cfg.colFocus), COLACTIVE = color(cfg.colActive),
-                             COLMUTED = color(cfg.colMuted);
+            const CHyprColor COLBG = color(cfg.colBg), COLFG = color(cfg.colFg), COLACTIVEBG = color(cfg.colActiveBg), COLFOCUS = color(cfg.colFocus),
+                             COLACTIVE = color(cfg.colActive);
 
-            const bool STRIPMODE = stripMode();
-            const CBox STRIP     = STRIPMODE ? CBox{PAINT.mb.x, PAINT.mb.y + PAINT.h, PAINT.mb.w, PAINT.h} //
-                                             : CBox{PAINT.mb.x + 6, PAINT.mb.y + PAINT.h + 4, PAINT.mb.w - 12, PAINT.h};
-            stripBox = STRIP;
-            if (STRIPMODE) {
-                PAINT.band(STRIP, color(cfg.colBarMenubar));
-                stripGrain(PAINT, STRIP);
-            } else
-                PAINT.glass(STRIP, (int)std::lround(STRIP.h / 2 * PAINT.scale));
+            const double     MY = PAINT.mb.y + PAINT.h;
+            PAINT.rect(CBox{PAINT.mb.x, MY, PAINT.mb.w, PAINT.h}, COLBG);
 
-            double px = STRIP.x + 12;
+            double px = PAINT.mb.x + 8;
 
-            // "run: " (or the drilled-into category) with the cursor in place —
+            // "Run: " (or the drilled-into category) with the cursor in place —
             // a ▏ glyph: renderText takes plain text only (no pango markup),
-            // so an inverse-video block cursor can't be drawn natively
-            const std::string PLABEL = Menubar::currentCat >= 0 ? std::string{Menubar::CATEGORIES[Menubar::currentCat].name} + ": " : "run: ";
+            // so awesome's inverse-video block cursor can't be drawn natively
+            const std::string PLABEL = Menubar::currentCat >= 0 ? std::string{Menubar::CATEGORIES[Menubar::currentCat].name} + ": " : "Run: ";
             const auto        PROMPT = textTex(PLABEL + Menubar::typed.substr(0, Menubar::cursor) + "▏" + Menubar::typed.substr(Menubar::cursor), COLFG, PAINT.pt);
             const double      PW     = PROMPT ? PROMPT->m_size.x / PAINT.scale : 0;
-            PAINT.texIn(PROMPT, CBox{px, STRIP.y, PW, STRIP.h});
-            px += PW + 8;
-            if (!STRIPMODE) { // the prompt's right hairline — islands only, the strip draws no lines
-                PAINT.rect(CBox{px, STRIP.y + 7, 1, STRIP.h - 14}, color(cfg.colFrame));
-                px += 9;
-            } else
-                px += 4;
-
-            // the keyboard hint, right-aligned, out of the chips' way
-            const auto HINT  = textTex("type to filter · ←→ · ⏎ run · esc", COLMUTED, std::max(6, (int)std::round(10.0 * PAINT.scale)));
-            const double HW  = HINT ? HINT->m_size.x / PAINT.scale : 0;
-            const double PXE = STRIP.x + STRIP.w - HW - 12 - 8;
-            PAINT.texIn(HINT, CBox{STRIP.x + STRIP.w - HW - 12, STRIP.y, HW, STRIP.h});
+            PAINT.texIn(PROMPT, CBox{px, MY, PW, PAINT.h});
+            px += PW + 12;
 
             auto& SH = Menubar::shown;
             if (!SH.empty()) {
@@ -781,25 +759,21 @@ namespace NHyprbar {
                     return nullptr;
                 };
 
-                // app chips: pad-x 11, 15px icon; the icon cell is always
-                // reserved — an entry whose icon doesn't resolve gets the
-                // letter fallback instead of collapsing (rows keep their
-                // rhythm). Islands: 24px pills, gap 5. Strip: full-height
-                // square segments 1px apart, resting on a faint fill.
-                constexpr double CHIP_PADX = 11, ICON = 15, ICON_GAP = 5;
-                const double     CHIP_H = STRIPMODE ? STRIP.h : 24, CHIP_GAP = STRIPMODE ? 1 : 5;
-                const double     CY     = STRIPMODE ? STRIP.y : STRIP.y + (STRIP.h - CHIP_H) / 2;
-                const int        RCHIP  = STRIPMODE ? 0 : (int)std::lround(CHIP_H / 2 * PAINT.scale);
-                const auto       entryW = [&](int i) {
+                // entry: [8][icon][6][text][8], icon on the 3px-inset rhythm;
+                // the cell is always reserved — an entry whose icon doesn't
+                // resolve gets the tasklist's letter fallback instead of
+                // collapsing (rows kept their rhythm, names never jumped)
+                const double ICON   = PAINT.h - 6;
+                const auto   entryW = [&](int i) {
                     const auto T = textTex(entryName(i), COLFG, PAINT.pt);
-                    return CHIP_PADX + ICON + ICON_GAP + (T ? T->m_size.x / PAINT.scale : 0) + CHIP_PADX + CHIP_GAP;
+                    return 8 + ICON + 6 + (T ? T->m_size.x / PAINT.scale : 0) + 8;
                 };
 
                 { // keep the selection on screen: page-jump to it when it won't fit
                     double w = 0;
                     for (int i = Menubar::first; i <= Menubar::sel; i++)
                         w += entryW(i);
-                    if (px + w > PXE)
+                    if (px + w > PAINT.mb.x + PAINT.mb.w)
                         Menubar::first = Menubar::sel;
                 }
 
@@ -807,37 +781,33 @@ namespace NHyprbar {
                     const auto   NAME = entryName(i);
                     const auto   ITEX = entryIcon(i);
                     const auto   WT   = textTex(NAME, COLFG, PAINT.pt);
-                    const double W    = CHIP_PADX + ICON + ICON_GAP + (WT ? WT->m_size.x / PAINT.scale : 0) + CHIP_PADX;
-                    if (px + W > PXE)
+                    const double W    = 8 + ICON + 6 + (WT ? WT->m_size.x / PAINT.scale : 0) + 8;
+                    if (px + W > PAINT.mb.x + PAINT.mb.w)
                         break;
 
+                    // awesome's menubar item colors: fg_normal, the selected
+                    // one fg_focus on bg_focus
                     CHyprColor fg = COLFG;
                     if (i == Menubar::sel) {
-                        if (STRIPMODE) { // the selected entry goes SOLID accent, ink inverts
-                            PAINT.rect(CBox{px, CY, W, CHIP_H}, COLACTIVE);
-                            fg = tOnAccent();
-                        } else {
-                            PAINT.rect(CBox{px, CY, W, CHIP_H}, COLACTIVEBG, RCHIP);
-                            fg = COLFOCUS;
-                        }
-                    } else if (STRIPMODE)
-                        PAINT.rect(CBox{px, CY, W, CHIP_H}, tFill());
+                        PAINT.rect(CBox{px, MY, W, PAINT.h}, COLACTIVEBG);
+                        fg = COLFOCUS;
+                    }
 
-                    double tx = px + CHIP_PADX;
+                    double tx = px + 8;
                     if (ITEX && ITEX->m_texID != 0) {
-                        const auto P = PAINT.toPhys(CBox{tx, CY + (CHIP_H - ICON) / 2, ICON, ICON});
+                        const auto P = PAINT.toPhys(CBox{tx, MY + 3, ICON, ICON});
                         PAINT.tex(ITEX, P);
                     } else
-                        PAINT.texIn(textTex(letterOf(NAME), i == Menubar::sel && STRIPMODE ? tOnAccent() : COLACTIVE, PAINT.pt), CBox{tx, CY, ICON, CHIP_H});
-                    tx += ICON + ICON_GAP;
+                        PAINT.texIn(textTex(letterOf(NAME), COLACTIVE, PAINT.pt), CBox{tx, MY, ICON, PAINT.h});
+                    tx += ICON + 6;
 
                     const auto T = i == Menubar::sel ? textTex(NAME, fg, PAINT.pt) : WT;
                     if (T && T->m_texID != 0) {
-                        const auto P = PAINT.toPhys(CBox{tx, CY, 1, CHIP_H});
+                        const auto P = PAINT.toPhys(CBox{tx, MY, 1, PAINT.h});
                         CBox       b{P.x, P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y};
                         PAINT.tex(T, b.round());
                     }
-                    px += W + CHIP_GAP;
+                    px += W;
                 }
             }
         }

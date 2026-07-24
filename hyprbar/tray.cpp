@@ -47,10 +47,10 @@ namespace NHyprbar {
 
         // owned objects borrow the connection — reset them before it dies
         static void dropOwnedObjects() {
-            try {
-                Menu::close(); // its proxy borrows the connection; close it first
-            } catch (...) {}   // close() sends "closed" events — the bus may already be gone
-            Bell::exit();          // the bell's proxy borrows this connection too
+            if (!Menu::isLocal)
+                try {
+                    Menu::close(); // its proxy borrows the connection; close it first
+                } catch (...) {}   // close() sends "closed" events — the bus may already be gone
             for (auto& I : items)
                 I->proxy.reset(); // break the item<->handler cycle before dropping the vector's ref
             items.clear();
@@ -246,10 +246,6 @@ namespace NHyprbar {
                 busProxy->uponSignal("NameOwnerChanged").onInterface("org.freedesktop.DBus").call([](std::string name, std::string oldOwner, std::string newOwner) {
                     if (!oldOwner.empty() && newOwner.empty())
                         dropService(name);
-                    // hyprnotify loads AFTER the bar: refresh the bell's badge
-                    // snapshot whenever the daemon (re)appears
-                    if (name == "org.freedesktop.Notifications" && !newOwner.empty())
-                        Bell::daemonUp();
                 });
 
                 watcher->emitSignal("StatusNotifierHostRegistered").onInterface(WIFACE);
@@ -272,22 +268,25 @@ namespace NHyprbar {
     namespace {
         class CTrayWidget : public IWidget {
           public:
-            // the spec's cells: 24 x 24 hit targets, 15px icons, gap 3
-            static constexpr double CELLSZ = 24, ICONSZ = 15;
-
-            double fit(const SPaint&, const SFrame&) override {
+            double fit(const SPaint& P, const SFrame&) override {
                 int n = 0;
                 for (const auto& IT : Tray::items)
                     if (IT->status != "Passive")
                         n++;
-                return n ? n * CELLSZ + (n - 1) * (double)cfg.traySpacing->value() : 0;
+                return n ? n * P.h + (n - 1) * (double)cfg.traySpacing->value() : 0;
             }
 
             void draw(const SPaint& P, const SFrame&, const CBox& box) override {
-                double x = box.x;
+                // laid from the right edge inwards, spaced like awesome's
+                // systray_icon_spacing — the first item keeps the edge
+                double right = box.x + box.w;
+                bool   first = true;
                 for (const auto& IT : Tray::items) {
                     if (IT->status == "Passive")
                         continue; // SNI: Passive means don't show the item
+                    if (!first)
+                        right -= (double)cfg.traySpacing->value();
+                    first = false;
                     // The pixmap is a texture too, so the rule applies: rebuild it on
                     // the warm only. A dirty item reaching a draw keeps its old icon
                     // for this frame and asks for a repaint.
@@ -300,34 +299,25 @@ namespace NHyprbar {
                             IT->tex = trayIcon(IT->iconName, IT->themePath);
                     }
 
-                    const bool STRIP = stripMode();
-                    const CBox CELL{x, box.y + (box.h - CELLSZ) / 2, CELLSZ, CELLSZ};
-                    // strip: the wash and the hit run the full band height
-                    const CBox HITCELL = STRIP ? CBox{x, box.y, CELLSZ, box.h} : CELL;
-                    if (barHover.widget == this && barHover.tray == IT.get()) {
-                        if (STRIP)
-                            P.rect(HITCELL, tFill2());
-                        else
-                            P.rect(CELL, tFill2(), (int)std::lround(6 * P.scale));
-                    }
-
+                    const CBox CELL{right - P.h, box.y, P.h, P.h};
                     if (IT->tex && IT->tex->m_texID != 0) {
-                        const double S = std::round(ICONSZ * P.scale);
+                        // 3px inset: SNI pixmaps lack the internal padding XEmbed
+                        // icons carried, full-bleed reads as cramped
+                        const double S = std::round((P.h - 6) * P.scale);
                         const auto   B = P.toPhys(CELL);
                         CBox         b{B.x + (B.w - S) / 2.0, B.y + (B.h - S) / 2.0, S, S};
-                        if (!P.warm)
-                            g_pHyprOpenGL->renderTexture(IT->tex, b.round(), {.round = (int)std::lround(4 * P.scale)});
+                        P.tex(IT->tex, b.round());
                     } else
                         P.texIn(textTex(letterOf(IT->iconName), color(cfg.colMuted), P.pt), CELL);
 
                     SHit h;
-                    h.box     = HITCELL;
+                    h.box     = CELL;
                     h.widget  = this;
                     h.tray    = IT;
-                    h.anchorX = CELL.x + CELLSZ / 2.0;
+                    h.anchorX = CELL.x + P.h / 2.0;
                     h.mon     = P.mon;
                     P.hits->push_back(h);
-                    x += CELLSZ + (double)cfg.traySpacing->value();
+                    right -= P.h;
                 }
             }
 

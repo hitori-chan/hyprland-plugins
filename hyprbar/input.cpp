@@ -62,12 +62,12 @@ namespace NHyprbar {
             return;
         }
 
-        // the menubar prompt closes on any press, like clicking away; a press
-        // ON its floating pill must not fall through to the window beneath it
+        // the menubar prompt closes on any press, like clicking away in awesome;
+        // a press ON its strip must not fall through to the window beneath it
         if (Menubar::isOpen) {
             const auto MBM = Menubar::mon.lock();
             Menubar::close();
-            if (MBM == MON && Menubar::stripBox.containsPoint(POS)) {
+            if (MBM == MON && POS.y > MON->logicalBox().y + barHeight() && POS.y <= MON->logicalBox().y + barHeight() * 2) {
                 info.cancelled = true;
                 swallowRelease |= BIT;
                 return;
@@ -146,8 +146,9 @@ namespace NHyprbar {
         const bool SUPER = KB && (KB->m_modifiersState.depressed & HL_MODIFIER_META);
         for (const auto& HIT : IT->second) {
             if (HIT.box.containsPoint(POS)) {
-                SHit hc = HIT;
-                hc.mon  = MON;
+                SHit hc   = HIT;
+                hc.mon    = MON;
+                hc.clickX = POS.x;
                 // Deferred out of the input emission: workspace/focus changes
                 // mid-button-event bite code that still holds pre-click state.
                 if (hc.widget)
@@ -218,7 +219,7 @@ namespace NHyprbar {
                 return;
             }
         }
-        if (Menubar::isOpen && Menubar::mon.lock() == MON && Menubar::stripBox.containsPoint(POS)) {
+        if (Menubar::isOpen && Menubar::mon.lock() == MON && POS.y <= MON->logicalBox().y + barHeight() * 2) {
             info.cancelled = true; // the prompt strip swallows scroll, no action
             return;
         }
@@ -278,8 +279,8 @@ namespace NHyprbar {
                     over = true;
                     break;
                 }
-        if (!over && Menubar::isOpen && Menubar::mon.lock() == MON && Menubar::stripBox.containsPoint(pos))
-            over = true; // the floating pill below the bar is ours too
+        if (!over && Menubar::isOpen && Menubar::mon.lock() == MON && pos.y <= MON->logicalBox().y + barHeight() * 2)
+            over = true; // the prompt strip below the bar is ours too
         if (!over)
             return false;
 
@@ -296,38 +297,8 @@ namespace NHyprbar {
         Pointer::Cursor::overrideController->unsetOverride(Pointer::Cursor::CURSOR_OVERRIDE_SPECIAL_ACTION);
     }
 
-    // the hover affordance over cells (tags, chips, tray, bell): track the
-    // hovered hit and damage exactly the outgoing and incoming cells — a
-    // full-band damage here would re-blur every island per pointer step
-    static void setBarHover(const SHit* hit, PHLMONITOR mon = nullptr) {
-        SBarHover h;
-        if (hit) {
-            h.widget = hit->widget;
-            h.tag    = hit->tag;
-            h.win    = hit->window.lock().get();
-            h.tray   = hit->tray.lock().get();
-            h.box    = hit->box;
-            h.mon    = mon;
-        }
-        if (h == barHover)
-            return;
-        if (g_pHyprRenderer) {
-            const auto dmg = [](const SBarHover& v) {
-                if (!v.widget)
-                    return;
-                const auto   M      = v.mon.lock();
-                const double MARGIN = (M ? std::ceil(M->m_scale) : 1.0) + 1.0;
-                g_pHyprRenderer->damageBox(CBox{v.box}.expand(MARGIN));
-            };
-            dmg(barHover);
-            dmg(h);
-        }
-        barHover = h;
-    }
-
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info) {
         if (NHyprCommon::sessionLocked()) {
-            setBarHover(nullptr);
             releasePointer(); // no cursor pinned over an invisible strip
             return;
         }
@@ -361,24 +332,9 @@ namespace NHyprbar {
         }
 
         if (!barOwnsPoint(pos) || heldButtons > 0 || (g_layoutManager && g_layoutManager->dragController()->target())) {
-            setBarHover(nullptr);
             releasePointer();
             return;
         }
-
-        // resolve the hovered cell for the widgets' fills
-        const SHit* under = nullptr;
-        PHLMONITOR  underMon;
-        if (const auto MON = monAt(pos)) {
-            if (const auto IT = hitboxes.find(MON->m_id); IT != hitboxes.end())
-                for (const auto& HIT : IT->second)
-                    if (HIT.box.containsPoint(pos)) {
-                        under    = &HIT;
-                        underMon = MON;
-                        break;
-                    }
-        }
-        setBarHover(under, underMon);
 
         info.cancelled = true;
         if (!pointerOwned) {
@@ -388,31 +344,12 @@ namespace NHyprbar {
         }
     }
 
-    // esc closes the open tray menu before anything else sees the press —
-    // the topmost-peel's first link (center and menubar handle their own)
-    bool onBarKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
-        if (NHyprCommon::sessionLocked() || !Menu::isOpen || info.cancelled)
-            return false;
-        // releases pass untouched (crash class 3: never cancel key releases)
-        if (e.state != WL_KEYBOARD_KEY_STATE_PRESSED)
-            return false;
-        const auto KB = g_pSeatManager ? g_pSeatManager->m_keyboard.lock() : nullptr;
-        if (!KB || !KB->m_xkbState)
-            return false;
-        if (xkb_state_key_get_one_sym(KB->m_xkbState, e.keycode + 8) != XKB_KEY_Escape)
-            return false;
-        info.cancelled = true;
-        pendingHit.arm([]() { Menu::close(); }); // deferred: close damages + repaints
-        return true;
-    }
-
     void inputExit() {
         pendingHit.reset();
         pendingScroll.reset();
         scrollAcc.clear();
         scrollQueued = false;
         hitboxes.clear();
-        barHover = {};
         releasePointer();
     }
 

@@ -10,22 +10,30 @@ namespace NHyprbar {
         return std::max((double)cfg.height->value(), 8.0);
     }
 
-    bool stripMode() {
-        return cfg.mode->value() == "strip";
-    }
-
     void damageBars() {
         if (!g_pHyprRenderer)
             return;
-        // island/band shadows (10 logical px, painted at scale) and glass blur
-        // reach past the band; the open menubar sits below it (docked row in
-        // strip mode, floating pill + 4px gap in islands)
+        const double H = Menubar::isOpen ? barHeight() * 2 : barHeight();
         for (const auto& M : State::monitorState()->monitors()) {
-            const double PAD = blurRadius() / M->m_scale + 10 + std::ceil(M->m_scale);
-            const double H   = (Menubar::isOpen ? barHeight() * 2 + (stripMode() ? 0 : 4) : barHeight()) + PAD;
-            const auto   MB  = M->logicalBox();
+            const auto MB = M->logicalBox();
             g_pHyprRenderer->damageBox(CBox{MB.x, MB.y, MB.w, H});
         }
+    }
+
+    CHyprColor color(const SP<Config::Values::CColorValue>& v) {
+        struct SMemo {
+            uint64_t   raw = 0;
+            bool       set = false;
+            CHyprColor col;
+        };
+        static std::unordered_map<const void*, SMemo> memo; // main thread only
+        auto&                                         M = memo[v.get()];
+        if (!M.set || M.raw != (uint64_t)v->value()) {
+            M.raw = (uint64_t)v->value();
+            M.set = true;
+            M.col = CHyprColor{M.raw};
+        }
+        return M.col;
     }
 
     bool isTaskOn(const PHLWINDOW& w, const PHLWORKSPACE& ws) {

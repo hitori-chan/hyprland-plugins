@@ -511,15 +511,10 @@ namespace NHyprbar {
                 // the bar's font size, not the icon rhythm — the pill is meant
                 // to read as text-line furniture, not as an icon
                 const int PH = ph(P);
-                // The attribution ladder, as Android PRESENTS it: battery
-                // saver auto-disables while charging there, so a plugged
-                // state always beats the save glyph — this machine's firmware
-                // low-power profile CAN coexist with AC, and showing the
-                // saver plus while held at the charge limit reads wrong.
-                // Among plugged states defend beats charging; save only shows
-                // on the cell. Defend shares the charging fill, the error red
-                // exists only in the bare state.
-                const eBattAttr  ATTR = batteryDefend ? BATT_ATTR_DEFEND : batteryCharging ? BATT_ATTR_CHARGING : batterySave ? BATT_ATTR_SAVE : BATT_ATTR_NONE;
+                // Android's ladder (see eBattAttr): power save > defend >
+                // charging for the attribution; defend shares the charging fill,
+                // the error red exists only in the bare state
+                const eBattAttr  ATTR = batterySave ? BATT_ATTR_SAVE : batteryDefend ? BATT_ATTR_DEFEND : batteryCharging ? BATT_ATTR_CHARGING : BATT_ATTR_NONE;
                 const CHyprColor FILL = ATTR == BATT_ATTR_SAVE ? color(cfg.colSave) :
                     ATTR != BATT_ATTR_NONE                     ? color(cfg.colCharging) :
                     batteryPercent <= 20                       ? color(cfg.colLow) :

@@ -1,6 +1,4 @@
-// hyprbar/menu.cpp — the tray dbusmenu, drawn as the glass panel
-
-#include "common/theme.hpp"
+// hyprbar/menu.cpp — the menu renderer: dbusmenu for tray items, local mode for the client list
 
 #include "hyprbar.hpp"
 
@@ -12,6 +10,7 @@ namespace NHyprbar {
         constexpr const char*                 DBUSMENU = "com.canonical.dbusmenu";
 
         bool                                  isOpen  = false;
+        bool                                  isLocal = false;
         static SP<Tray::SItem>                item;
         static std::unique_ptr<sdbus::IProxy> proxy;
         std::vector<SLevel>                   levels;
@@ -39,13 +38,13 @@ namespace NHyprbar {
             warmBars(mon.lock());
             if (!g_pHyprRenderer)
                 return;
-            // The glass paints OUTSIDE L.box — its soft shadow reaches 10
-            // logical px and the blur grows the sampled region further (the
-            // c2e7c47 ring lesson, reborn for glass): damaging only the box
-            // strands the shadow when the panel closes. Cover the full reach
-            // on every panel, old and new.
+            // renderBorder draws the frame ring OUTSIDE L.box (it grows the box
+            // by the border width on every side), so damaging only L.box leaves
+            // that ring untouched: unpainted on open until an unrelated damage
+            // sweeps it, and stranded when the panel closes — the level-0 ring
+            // lands up on the bar strip. Cover it on every panel, old and new.
             const auto   M      = mon.lock();
-            const double MARGIN = (M ? std::ceil(M->m_scale) : 1.0) + 11.0 + (M ? blurRadius() / M->m_scale : 0.0);
+            const double MARGIN = (M ? std::ceil(M->m_scale) : 1.0) + 1.0;
 
             static std::vector<CBox> last; // the previous panels: a close/resize must damage them too
             for (auto B : last)
@@ -145,7 +144,7 @@ namespace NHyprbar {
             } else
                 glideStop();
 
-            if (!isOpen || level >= levels.size() || row < 0 || (size_t)row >= levels[level].entries.size()) {
+            if (!isOpen || isLocal || level >= levels.size() || row < 0 || (size_t)row >= levels[level].entries.size()) {
                 disarm();
                 return;
             }
@@ -171,7 +170,8 @@ namespace NHyprbar {
         void close() {
             if (!isOpen)
                 return;
-            isOpen = false;
+            isOpen  = false;
+            isLocal = false;
             disarm();
             glideStop();
             for (const auto& L : levels)
@@ -340,7 +340,7 @@ namespace NHyprbar {
         // its children out into a new panel beside the parent, like the GTK
         // menus these were under X11.
         void openSub(size_t level, int entryIdx) {
-            if (!isOpen || !proxy || level >= levels.size())
+            if (!isOpen || isLocal || !proxy || level >= levels.size())
                 return;
             auto& L = levels[level];
             if (entryIdx < 0 || (size_t)entryIdx >= L.entries.size() || !L.entries[entryIdx].submenu || !L.entries[entryIdx].enabled)
@@ -360,8 +360,54 @@ namespace NHyprbar {
             damageMenu();
         }
 
+        // right-click on a task, awesome's awful.menu.client_list: every mapped
+        // window on every workspace, in the same stable arrival order; a click
+        // jumps to it (view its workspace, then focus + raise).
+        void openClients(double ax, PHLMONITORREF m) {
+            close();
+            static std::vector<std::pair<uint64_t, PHLWINDOW>> ws; // reused; main thread only
+            ws.clear();
+            for (const auto& W : Desktop::windowState()->windows()) {
+                // minimized windows stay listed (awesome's client_list un-minimizes) —
+                // mirror isTaskOn; only genuinely-hidden (swallowed) ones drop out
+                if (W->m_isMapped && (!W->isHidden() || Tasklist::isMinimized(W)))
+                    ws.emplace_back(Tasklist::seqOf(W.get()), W);
+            }
+            if (ws.empty())
+                return;
+            std::sort(ws.begin(), ws.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+            auto&      L = levels.emplace_back();
+            SWarmToken WARM; // appIcon builds a texture, and we are in a deferred click, not a render
+            for (const auto& [SEQ, W] : ws) {
+                std::string lbl;
+                Tasklist::label(W, lbl);
+                L.entries.push_back({.label = lbl, .display = std::move(lbl), .win = W, .icon = appIcon(W->m_class)});
+            }
+            ws.clear(); // drop the strong refs now — entries hold weak ones
+            anchorX = ax;
+            mon     = m;
+            isOpen  = true;
+            isLocal = true;
+            damageMenu();
+        }
+
         // leaf rows only — submenu rows cascade via openSub (hover or click)
         void activate(const SEntry& en) {
+            if (const auto W = en.win.lock(); W && W->m_isMapped) { // client-list row: jump to it
+                if (W->m_workspace && !W->m_workspace->isVisible())
+                    std::ignore = Config::Actions::changeWorkspace(W->m_workspace);
+                // a minimized target must be un-minimized, not focused while
+                // hidden — restore() unhides, re-tiles, raises, focuses and
+                // re-enters any fullscreen it held
+                if (Tasklist::isMinimized(W))
+                    Tasklist::restore(W);
+                else {
+                    Desktop::windowState()->raise(W);
+                    Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW, W->wlSurface()->resource());
+                }
+                close();
+                return;
+            }
             if (!proxy)
                 return;
             try {
@@ -374,39 +420,42 @@ namespace NHyprbar {
             close();
         }
 
-        // The open panels, cascade by cascade — glass, like every shell surface.
+        // The open panels, cascade by cascade.
         void render(const SPaint& PAINT) {
             if (!isOpen || mon.lock() != PAINT.mon)
                 return;
 
             // one palette fetch per render: color() memoizes but still hashes per call
-            const CHyprColor COLACTIVEBG = color(cfg.colActiveBg), COLFG = color(cfg.colFg), COLEMPTY = color(cfg.colEmpty), COLURGENT = color(cfg.colUrgent),
-                             COLFOCUS = color(cfg.colFocus);
+            const CHyprColor COLBG = color(cfg.colBg), COLACTIVEBG = color(cfg.colActiveBg), COLFG = color(cfg.colFg), COLEMPTY = color(cfg.colEmpty),
+                             COLURGENT = color(cfg.colUrgent), COLFOCUS = color(cfg.colFocus), COLFRAME = color(cfg.colFrame);
 
-            const int    RPANEL = (int)std::lround(12 * PAINT.scale);
-            const int    RROW   = (int)std::lround(8 * PAINT.scale);
+            // the overlay language: 1px rounding on the panel and its rows
+            const int    ROUND = std::max(0, (int)std::lround(PAINT.scale));
 
             const double ROWH = Menu::ROWH, SEPH = Menu::SEPH, PAD = Menu::PAD;
-            const double MTOP = PAINT.mb.y + PAINT.h + 4, MBOT = PAINT.mb.y + PAINT.mb.h - 2;
+            const double MTOP = PAINT.mb.y + PAINT.h, MBOT = PAINT.mb.y + PAINT.mb.h - 2;
 
             for (size_t li = 0; li < Menu::levels.size(); li++) {
                 auto& L = Menu::levels[li];
                 L.rows.clear();
 
-                double mw = Menu::MINW;
-                if (L.width > 0 && L.widthPt == PAINT.pt)
-                    mw = L.width;
-                else {
-                    for (const auto& E : L.entries) {
-                        if (E.separator)
-                            continue;
-                        if (const auto T = textTex(E.label, COLFG, PAINT.pt); T)
-                            mw = std::max(mw, T->m_size.x / PAINT.scale + 48);
-                    }
-                    mw = std::min(mw, 380.0);
-                    if (PAINT.warm) { // a draw can hit texture misses -> a short measure
-                        L.width   = mw;
-                        L.widthPt = PAINT.pt;
+                double mw = 250;
+                if (!Menu::isLocal) {
+                    if (L.width > 0 && L.widthPt == PAINT.pt)
+                        mw = L.width;
+                    else {
+                        mw = 180;
+                        for (const auto& E : L.entries) {
+                            if (E.separator)
+                                continue;
+                            if (const auto T = textTex(E.label, COLFG, PAINT.pt); T)
+                                mw = std::max(mw, T->m_size.x / PAINT.scale + 48);
+                        }
+                        mw = std::min(mw, 380.0);
+                        if (PAINT.warm) { // a draw can hit texture misses -> a short measure
+                            L.width   = mw;
+                            L.widthPt = PAINT.pt;
+                        }
                     }
                 }
 
@@ -441,7 +490,10 @@ namespace NHyprbar {
                 my0                 = std::clamp(my0, MTOP, MBOT - mh);
                 L.box               = CBox{mx, my0, mw, mh};
 
-                PAINT.glass(L.box, RPANEL);
+                // fill under the whole panel, frame ring over its edge: no
+                // corner seam, and 5 rects are 2 calls
+                PAINT.rect(L.box, COLBG, ROUND);
+                PAINT.border(L.box, COLFRAME, ROUND, std::max(1, (int)std::lround(PAINT.scale)));
 
                 // labels share one leading column when any row in this level
                 // has an icon or a check/radio state, ragged otherwise — how
@@ -489,18 +541,19 @@ namespace NHyprbar {
                         break;
                     }
                     if (E.separator) {
-                        PAINT.rect(CBox{mx + 6, my + SEPH / 2, mw - 12, 1}, color(cfg.colFrame));
+                        PAINT.rect(CBox{mx + 8, my + SEPH / 2, mw - 16, 1}, COLACTIVEBG);
                         my += SEPH;
                         continue;
                     }
                     const CBox ROW{mx, my, mw, ROWH};
-                    // the hovered row (and the row a cascade hangs off) fills
-                    // accent-dim; disposition warning/alert rows take the
-                    // urgent color
+                    // awful.menu item_enter: fg_focus on bg_focus; the row a
+                    // cascade hangs off stays lit while the cascade is open;
+                    // disposition warning/alert rows take the urgent color
                     const bool OPENSUB = li + 1 < Menu::levels.size() && Menu::levels[li + 1].parentIdx == (int)i;
                     CHyprColor fg      = !E.enabled ? COLEMPTY : E.alert ? COLURGENT : COLFG;
                     if (((int)i == L.hover || OPENSUB) && E.enabled) {
-                        PAINT.rect(CBox{ROW.x + 4, ROW.y, ROW.w - 8, ROW.h}, COLACTIVEBG, RROW);
+                        // the hover row floats off the frame: 4px inset, softened corners
+                        PAINT.rect(CBox{ROW.x + 4, ROW.y, ROW.w - 8, ROW.h}, COLACTIVEBG, ROUND);
                         fg = COLFOCUS;
                     }
 
@@ -535,7 +588,7 @@ namespace NHyprbar {
                     const auto arrow = [&](const CBox& B, int id, bool on, const char* glyph) {
                         CHyprColor fg = on ? COLFG : COLEMPTY;
                         if (L.hover == id && on) {
-                            PAINT.rect(CBox{B.x + 4, B.y, B.w - 8, B.h}, COLACTIVEBG, RROW);
+                            PAINT.rect(CBox{B.x + 4, B.y, B.w - 8, B.h}, COLACTIVEBG, ROUND);
                             fg = COLFOCUS;
                         }
                         PAINT.texIn(textTex(glyph, fg, PAINT.pt), B);

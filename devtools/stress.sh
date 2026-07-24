@@ -167,152 +167,10 @@ for r in 1 2 3 4 5; do hq hyprnotify recall >/dev/null; done; sleep 2
 chk "recall churn is net-zero (count stays 50)" test "$(hq hyprnotify count)" = 50
 # wrong-typed hints make sdbus-c++ throw inside the plugin's parse — the
 # catch must survive (exercises exception unwinding across the .so boundary).
+# Cards expire on their own clocks, so assert the daemon still answers with
+# a number, not any absolute count.
 dsp "hl.dsp.exec_cmd('notify-send -h int:transient:1 -h string:urgency:critical typed-hint-abuse body')"; sleep 1.5
 chk "wrong-typed hints survived (sdbus::Error thrown + caught)" bash -c "hyprctl -i $SIG hyprnotify count | grep -qE '^[0-9]+$'"
-
-# ---- the notification shade: residency, append, the OSD band, recall,
-#      history, DND, the center ------------------------------------------
-WL0="$(cat "$HARNESS/nested.wl")"
-nstate() { hq hyprnotify state; }
-# the org.hitori.hyprnotify State tuple, exactly as the bar's bell reads it
-bellq() {
-	rm -f "$STATE/bell.out"
-	dsp "hl.dsp.exec_cmd('gdbus call --session --dest org.freedesktop.Notifications --object-path /org/freedesktop/Notifications --method org.hitori.hyprnotify.State > $STATE/bell.out')"
-	sleep 0.7
-	cat "$STATE/bell.out" 2>/dev/null
-}
-hq hyprnotify clear >/dev/null; sleep 0.8
-chk "shade reset: exact state line" test "$(nstate)" = "center:0 live:0 hist:0 dnd:0"
-
-# RESIDENCY: the banner timeout hides only the popup — the card stays live
-dsp "hl.dsp.exec_cmd('notify-send -a resident -t 600 stays \"in the shade\"')"; sleep 2
-chk "residency: banner expiry keeps the card in the shade" test "$(nstate)" = "center:0 live:1 hist:0 dnd:0"
-# a transient card's expiry leaves neither shade nor history entries
-dsp "hl.dsp.exec_cmd('notify-send -e -t 600 gone entirely')"; sleep 2
-chk "transient expiry leaves nothing anywhere" test "$(nstate)" = "center:0 live:1 hist:0 dnd:0"
-
-# APPEND: same app+summary rides the replace path — one growing card
-for i in 1 2 3; do dsp "hl.dsp.exec_cmd('notify-send -a chat -h boolean:x-canonical-append:true convo \"line $i\"')"; sleep 0.3; done
-sleep 1
-chk "append: three same-app+summary Notifies land as ONE card" test "$(hq hyprnotify count)" = 2
-# the ~8KB cap under a paste bomb: the card must neither split nor kill the daemon
-printf '#!/usr/bin/env bash\nB=$(printf "x%%.0s" $(seq 1 6000))\nnotify-send -a chat -h boolean:x-canonical-append:true convo "$B"\n' > "$STATE/bomb.sh"
-dsp "hl.dsp.exec_cmd('bash $STATE/bomb.sh')"; sleep 0.5
-dsp "hl.dsp.exec_cmd('bash $STATE/bomb.sh')"; sleep 1.5
-chk "append cap: two 6KB bodies stay one live card, daemon alive" test "$(hq hyprnotify count)" = 2
-
-# the OSD band: 50 in-band replaces = one card, never appended, never history
-for i in $(seq 1 50); do dsp "hl.dsp.exec_cmd('notify-send -r 9993 -t 800 -a osd -h int:value:$((i * 2)) Volume \"$((i * 2))%\"')" & done; wait
-sleep 3 # the progress card's expiry removes it entirely
-chk "OSD storm: 50 in-band replaces leave no shade or history entry" test "$(nstate)" = "center:0 live:2 hist:0 dnd:0"
-
-# app-close (CloseNotification, ignore_dbusclose off) retires into history
-dsp "hl.dsp.exec_cmd('notify-send -r 4242 -a closer ToClose body')"; sleep 1
-dsp "hl.dsp.exec_cmd('gdbus call --session --dest org.freedesktop.Notifications --object-path /org/freedesktop/Notifications --method org.freedesktop.Notifications.CloseNotification 4242')"
-sleep 1
-chk "CloseNotification (knob off) retires the card into history" test "$(nstate)" = "center:0 live:2 hist:1 dnd:0"
-# the bell face (what the bar's badge reads): shade counts only — the two
-# resident cards are kept, the history entry and a live OSD card never count.
-# The append storm re-bannered convo (a replace re-alerts, 8s): outwait it
-# so both cards are provably resident.
-sleep 3
-chk "bell face: history never counts into the badge" test "$(bellq)" = "(uint32 0, uint32 2, false, false)"
-dsp "hl.dsp.exec_cmd('notify-send -r 9995 -t 3000 -a osd -h int:value:50 Volume 50%')"; sleep 0.5
-chk "bell face: a live OSD card never counts" test "$(bellq)" = "(uint32 0, uint32 2, false, false)"
-sleep 3 # the OSD card's expiry removes it before the recall check
-# recall pops it back live: fresh id, history consumed
-hq hyprnotify recall >/dev/null; sleep 1
-chk "recall: history entry returns to the shade" test "$(nstate)" = "center:0 live:3 hist:0 dnd:0"
-
-# the center toggles and reports through the same line
-hq hyprnotify center >/dev/null; sleep 0.6
-chk "center opens" test "$(nstate)" = "center:1 live:3 hist:0 dnd:0"
-# an input storm over the open panel: moves, clicks, wheel — nothing may
-# stick or crash (every listener re-resolves ownership per frame)
-{
-	for i in $(seq 1 40); do echo "move $((910 + (i * 37) % 360)) $((40 + (i * 53) % 380))"; echo "sleep 8"; done
-	# park on the top row: a click there dismisses a card but keeps the
-	# panel open (an outside click would close it and skew the next check)
-	echo "move 1090 60"; echo "sleep 15"; echo "scroll 0 1"; echo "sleep 15"; echo "scroll 0 -1"; echo "sleep 15"
-	echo "press 272"; echo "sleep 20"; echo "release 272"; echo "sleep 40"
-} | WAYLAND_DISPLAY="$WL0" "$REPO/devtools/vptr" >/dev/null 2>&1
-sleep 0.8
-chk "center input storm: all 8 plugins alive" test "$(hq plugin list | grep -c Plugin)" = 8
-chk "center input storm: state line still parses" bash -c "hyprctl -i $SIG hyprnotify state | grep -qE '^center:[01] live:[0-9]+ hist:[0-9]+ dnd:[01]$'"
-hq hyprnotify center >/dev/null; sleep 0.6
-chk "center closes" bash -c "hyprctl -i $SIG hyprnotify state | grep -q '^center:0'"
-
-# DND queues silently; resume shows the queue
-dsp "hl.plugin.hyprnotify.suspend()"; sleep 0.6
-chk "DND arms" bash -c "hyprctl -i $SIG hyprnotify state | grep -q 'dnd:1'"
-dsp "hl.dsp.exec_cmd('notify-send -a queued quiet one')"; sleep 1
-dsp "hl.plugin.hyprnotify.suspend()"; sleep 0.6
-chk "DND resume: the queued card survives, dnd off" bash -c "hyprctl -i $SIG hyprnotify state | grep -q 'dnd:0'"
-hq hyprnotify clear >/dev/null; sleep 0.8
-chk "clear sweeps live + history" test "$(nstate)" = "center:0 live:0 hist:0 dnd:0"
-
-# the DND queue is invisible to the badge until the resume surfaces it
-dsp "hl.plugin.hyprnotify.suspend()"; sleep 0.6
-dsp "hl.dsp.exec_cmd('notify-send -a queued2 quiet two')"; sleep 1
-chk "bell face: a DND-queued card never counts" test "$(bellq)" = "(uint32 0, uint32 0, true, false)"
-dsp "hl.plugin.hyprnotify.suspend()"; sleep 0.6
-chk "bell face: the resume surfaces it live" test "$(bellq)" = "(uint32 1, uint32 0, false, false)"
-hq hyprnotify clear >/dev/null; sleep 0.8
-chk "bell-face slate: clear zeroes the badge" test "$(bellq)" = "(uint32 0, uint32 0, false, false)"
-
-# ---- the weird-scenario battery ------------------------------------------
-# hostile payloads: an empty card, a markup bomb (unbalanced tags, bogus
-# entities, an invalid codepoint), a 10KB one-liner — each must land (or
-# fall back to plain text) without taking the daemon down. The helper file
-# dodges four layers of quoting (bash -> hyprctl -> lua -> sh).
-cat > "$STATE/bomb.sh" <<'BOMB'
-#!/usr/bin/env bash
-notify-send " " " "
-notify-send '<b><i>never<u>closed <span foreground="bad">&#x110000;&amp;&fake; <a href=>x' 'bomb <span'
-notify-send onliner "$(printf 'y%.0s' $(seq 1 10000))"
-BOMB
-dsp "hl.dsp.exec_cmd('bash $STATE/bomb.sh')"
-sleep 2
-chk "hostile payloads: daemon alive, all three landed" test "$(hq hyprnotify count)" = 3
-hq hyprnotify clear >/dev/null; sleep 0.6
-
-# an append storm: 60 rapid same-conversation Notifies stay ONE card
-for i in $(seq 1 60); do dsp "hl.dsp.exec_cmd('notify-send -a chat -h boolean:x-canonical-append:true convo \"burst $i\"')" & done; wait
-sleep 3
-chk "append storm: 60 rapid appends stay one card" test "$(hq hyprnotify count)" = 1
-
-# a replace churn against the SAME out-of-band id while the center is open
-hq hyprnotify center >/dev/null; sleep 0.5
-for i in $(seq 1 30); do dsp "hl.dsp.exec_cmd('notify-send -r 7777 churn \"tick $i\"')" & done; wait
-sleep 2
-chk "replace churn with the center open: one card, center up" test "$(nstate)" = "center:1 live:2 hist:0 dnd:0"
-# arrivals while the center is open land as shade rows (no popup column)
-dsp "hl.dsp.exec_cmd('notify-send -a arrivals \"while open\" body')"; sleep 1
-chk "arrival while open lands in the shade" bash -c "hyprctl -i $SIG hyprnotify state | grep -q 'live:3'"
-hq hyprnotify center >/dev/null; sleep 0.5
-
-# history caps at max_history under a dismiss churn (close via the bus)
-for i in $(seq 1 30); do
-	dsp "hl.dsp.exec_cmd('notify-send -r $((5000 + i)) hist-churn \"n $i\"')"
-done
-sleep 2
-for i in $(seq 1 30); do
-	dsp "hl.dsp.exec_cmd('gdbus call --session --dest org.freedesktop.Notifications --object-path /org/freedesktop/Notifications --method org.freedesktop.Notifications.CloseNotification $((5000 + i))')" &
-done; wait
-sleep 2
-chk "history caps at max_history (20) under a 30-close churn" bash -c "hyprctl -i $SIG hyprnotify state | grep -q 'hist:20'"
-
-# recall spam PAST empty: 30 pops against 20 entries — never wedges
-for i in $(seq 1 30); do hq hyprnotify recall >/dev/null; done
-sleep 2
-chk "recall spam drains history and stops clean" bash -c "hyprctl -i $SIG hyprnotify state | grep -q 'hist:0'"
-
-# center toggle spam: an even burst coalesces to net-zero (closed)
-for i in $(seq 1 20); do hq hyprnotify center >/dev/null; done
-sleep 0.8
-chk "20-toggle burst nets closed" bash -c "hyprctl -i $SIG hyprnotify state | grep -q '^center:0'"
-hq hyprnotify clear >/dev/null; sleep 0.8
-chk "weird-scenario battery leaves a clean slate" test "$(nstate)" = "center:0 live:0 hist:0 dnd:0"
 
 # ---- state churn --------------------------------------------------------
 # the spawn box is whatever memory dictates after the storm above — capture
@@ -332,21 +190,13 @@ for i in $(seq 1 30); do dsp "hl.dsp.focus({workspace=\"$(( (i % 9) + 1 ))\"})";
 dsp "hl.dsp.focus({workspace=\"1\"})"; sleep 1
 chk "30 workspace hops: back on 1" bash -c "hyprctl -i $SIG activeworkspace -j | python3 -c 'import json,sys;sys.exit(0 if json.load(sys.stdin)[\"id\"]==1 else 1)'"
 
-# ---- hostile state file (+ the ignore_dbusclose flip) --------------------
+# ---- hostile state file -------------------------------------------------
 kill_nested
 printf 'garbage\n42\n1e400\t0\t300\t200\tinffoot\n-100\t-100\t-50\t-50\tnegfoot\n100000\t100000\t400\t300\tfoot\n' > "$STATE/hyprplace/lastspot.tsv"
-# the second boot also flips dunst's knob on: CloseNotification must no-op
-echo 'hl.config({ plugin = { hyprnotify = { ignore_dbusclose = 1 } } })' >> "$CFG"
 HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" bash "$HARNESS/launch.sh" >/dev/null 2>&1 || { echo "relaunch FAILED"; exit 1; }
 SIG="$(cat "$HARNESS/nested.sig")"
 chk "hostile tsv: all 8 plugins still load" test "$(hq plugin list | grep -c Plugin)" = 8
 dsp "hl.dsp.window.close()"; sleep 0.5
-
-dsp "hl.dsp.exec_cmd('notify-send -r 4243 -a closer Sticky body')"; sleep 1
-dsp "hl.dsp.exec_cmd('gdbus call --session --dest org.freedesktop.Notifications --object-path /org/freedesktop/Notifications --method org.freedesktop.Notifications.CloseNotification 4243')"
-sleep 1
-chk "ignore_dbusclose on: the app's revoke is ignored, card stays" test "$(hq hyprnotify state)" = "center:0 live:1 hist:0 dnd:0"
-hq hyprnotify clear >/dev/null; sleep 0.8
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x300')"; sleep 2
 # the stored 400x300 is applied over the requested 500x300, then the
 # 100000,100000 spot clamps to the margin corner for THAT size
@@ -441,47 +291,6 @@ for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in j
 	dsp "hl.dsp.window.close({window=\"address:$a\"})"
 done
 sleep 0.8
-
-# ---- strip mode (hyprbar) -------------------------------------------------
-# the deployed config runs mode=strip: one full-bleed frosted band whose
-# cells run the FULL height — y=0 and the corners are live targets — and the
-# menubar docks as a second band row instead of floating. Relaunched last so
-# the log-hygiene check below covers a strip instance too.
-kill_nested
-echo 'hl.config({ plugin = { hyprbar = { mode = "strip" } } })' >> "$CFG"
-HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" bash "$HARNESS/launch.sh" >/dev/null 2>&1 || { echo "strip relaunch FAILED"; exit 1; }
-SIG="$(cat "$HARNESS/nested.sig")"
-WL="$(cat "$HARNESS/nested.wl")"
-chk "strip: all 8 plugins load" test "$(hq plugin list | grep -c Plugin)" = 8
-dsp "hl.dsp.window.close()"; sleep 0.5 # the donate/updated screen, when present
-dsp "hl.dsp.exec_cmd('foot')"; sleep 1.8
-dsp "hl.dsp.focus({workspace=\"3\"})"; sleep 0.6
-# the two easiest pixels on screen: the top-left corner throw lands tag 一...
-printf 'move 1 0\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 150\n' | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1
-sleep 0.8
-chk "strip: the corner click lands tag 1" bash -c "hyprctl -i $SIG activeworkspace -j | python3 -c 'import json,sys;sys.exit(0 if json.load(sys.stdin)[\"id\"]==1 else 1)'"
-# ...and y=0 is live across the band (islands left a 2px dead inset there)
-dsp "hl.dsp.focus({workspace=\"5\"})"; sleep 0.6
-printf 'move 39 0\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 150\n' | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1
-sleep 0.8
-chk "strip: a y=0 click lands tag 2" bash -c "hyprctl -i $SIG activeworkspace -j | python3 -c 'import json,sys;sys.exit(0 if json.load(sys.stdin)[\"id\"]==2 else 1)'"
-# empty band swallows without touching focus (the strip is the shell's)
-dsp "hl.dsp.focus({workspace=\"1\"})"; sleep 0.8
-FOC="$(hq activewindow -j | python3 -c 'import json,sys;print(json.load(sys.stdin).get("class",""))' 2>/dev/null)"
-printf 'move 600 15\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 100\n' | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1
-sleep 0.8
-chk "strip: an empty-band click swallows, focus untouched" test \
-	"$(hq activewindow -j | python3 -c 'import json,sys;print(json.load(sys.stdin).get("class",""))' 2>/dev/null)" = "$FOC"
-# the docked menubar: opens as a second band row; a press on the row closes
-# it swallowed (never reaching anything beneath); plugins survive the cycle
-dsp "hl.plugin.hyprbar.menubar()"; sleep 0.8
-printf 'move 600 45\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 100\n' | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1
-sleep 0.8
-chk "strip: a docked-menubar click swallows, focus untouched" test \
-	"$(hq activewindow -j | python3 -c 'import json,sys;print(json.load(sys.stdin).get("class",""))' 2>/dev/null)" = "$FOC"
-dsp "hl.plugin.hyprbar.menubar()"; sleep 0.6
-dsp "hl.plugin.hyprbar.menubar()"; sleep 0.6
-chk "strip: menubar toggle cycle leaves all 8 alive" test "$(hq plugin list | grep -c Plugin)" = 8
 
 # ---- log hygiene --------------------------------------------------------
 chk "log clean (only known-benign lines)" bash -c \

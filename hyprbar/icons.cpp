@@ -1,7 +1,5 @@
 // hyprbar/icons.cpp — icon loading and resolution: GTK theme dirs, PNG/SVG, per-use caches
 
-#include "common/icons.hpp"
-
 #include "hyprbar.hpp"
 
 namespace NHyprbar {
@@ -96,11 +94,57 @@ namespace NHyprbar {
         return loadPng(path);
     }
 
-    // Icon name (or absolute path) -> a file on disk. The freedesktop
-    // name walk lives in common/icons.hpp (shared with hyprnotify's cards);
-    // this wrapper adds what the bar needs on top: a tray item's own
-    // IconThemePath dir first, and a lowercase retry for window classes
-    // that don't match their icon name's case.
+    // Where icons live, probed once at init (existing dirs only). Not a full
+    // xdg icon-theme implementation — a fixed, ordered list: the user's GTK
+    // theme (both dir layouts), hicolor, pixmaps, Adwaita's symbolic set as
+    // the last resort for freedesktop names like input-keyboard-symbolic.
+    static std::vector<std::string> iconDirs;
+
+    static std::string              gtkIconTheme() {
+        const char* HOME = std::getenv("HOME");
+        if (!HOME)
+            return "";
+        std::ifstream F(std::string{HOME} + "/.config/gtk-3.0/settings.ini");
+        std::string   line;
+        while (F && std::getline(F, line)) {
+            if (line.starts_with("gtk-icon-theme-name=")) {
+                auto v = line.substr(20);
+                while (!v.empty() && (v.back() == '\r' || v.back() == ' '))
+                    v.pop_back();
+                return v;
+            }
+        }
+        return "";
+    }
+
+    void buildIconDirs() {
+        iconDirs.clear();
+        std::error_code ec;
+        const auto      add = [&](const std::string& d) {
+            if (std::filesystem::is_directory(d, ec))
+                iconDirs.push_back(d);
+        };
+
+        if (const auto THEME = gtkIconTheme(); !THEME.empty() && THEME != "hicolor") {
+            const auto BASE = "/usr/share/icons/" + THEME + "/";
+            for (const char* CTX : {"apps", "status", "devices", "categories"}) {
+                for (const char* SZ : {"48", "32", "24", "22", "16"}) {
+                    add(BASE + CTX + "/" + SZ);            // breeze layout
+                    add(BASE + SZ + "x" + SZ + "/" + CTX); // classic layout
+                }
+                add(BASE + "scalable/" + CTX);
+                add(BASE + "symbolic/" + CTX);
+            }
+        }
+        for (const char* SZ : {"48x48", "64x64", "128x128", "32x32", "24x24", "22x22", "16x16"})
+            add(std::string{"/usr/share/icons/hicolor/"} + SZ + "/apps");
+        add("/usr/share/icons/hicolor/scalable/apps");
+        add("/usr/share/pixmaps");
+        for (const char* CTX : {"devices", "status", "apps", "legacy"})
+            add(std::string{"/usr/share/icons/Adwaita/symbolic/"} + CTX);
+    }
+
+    // Icon name (or absolute path) -> a file on disk, PNG or SVG.
     std::string resolveIconPath(const std::string& name, const std::string& extraDir) {
         if (name.empty())
             return "";
@@ -108,17 +152,24 @@ namespace NHyprbar {
         if (name.front() == '/')
             return std::filesystem::exists(name, ec) ? name : "";
 
-        if (!extraDir.empty())
-            for (const auto& N : {name, lower(name)})
+        const auto tryDir = [&](const std::string& D) -> std::string {
+            for (const auto& N : {name, lower(name)}) {
                 for (const char* EXT : {".png", ".svg"}) {
-                    const auto P = extraDir + "/" + N + EXT;
+                    const auto P = D + "/" + N + EXT;
                     if (std::filesystem::exists(P, ec))
                         return P;
                 }
+            }
+            return "";
+        };
 
-        if (auto P = NHyprCommon::resolveIconName(name, 48); !P.empty())
-            return P;
-        return NHyprCommon::resolveIconName(lower(name), 48);
+        if (!extraDir.empty())
+            if (auto P = tryDir(extraDir); !P.empty())
+                return P;
+        for (const auto& D : iconDirs)
+            if (auto P = tryDir(D); !P.empty())
+                return P;
+        return "";
     }
 
     // Window class -> Icon= from the app's .desktop file.
@@ -217,6 +268,7 @@ namespace NHyprbar {
         appIconCache.clear();
         namedIconCache.clear();
         trayIconCache.clear();
+        iconDirs.clear();
     }
 
 } // namespace NHyprbar
