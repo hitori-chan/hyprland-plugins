@@ -260,6 +260,16 @@ dsp "hl.dsp.exec_cmd('notify-send -a other elsewhere body')"; sleep 1
 chk "coalesce: a different app gets its own banner" test "$(bd)" = "banners:3 resident:2"
 hq hyprnotify clear >/dev/null; sleep 0.8
 
+# center overflow: more rows than the screen-capped panel holds must PAGE,
+# not bleed off the bottom. 15 distinct-app cards -> a 15-row center; drawing
+# it (the placement break + the "▾ N" paging cue) must not crash and must
+# keep every card.
+for i in $(seq 1 15); do dsp "hl.dsp.exec_cmd('notify-send -a ovf$i -t 30000 \"row $i\" body')"; done; sleep 1.5
+hq hyprnotify center >/dev/null; sleep 0.6
+chk "overflow: a 15-item center renders paged, keeps every card" test "$(st)" = "center:1 live:15 hist:0 dnd:0"
+hq hyprnotify center >/dev/null; sleep 0.4
+hq hyprnotify clear >/dev/null; sleep 0.8
+
 # ---- hardening: sections, absorb, DND, hostile hints -------------------
 # a section header's ✕ sweeps ONLY that section to Earlier (the one verb
 # with no model-level path — driven through the real hit box via vptr). At
