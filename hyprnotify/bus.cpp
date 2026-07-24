@@ -48,6 +48,15 @@ namespace NHyprnotify {
         static std::vector<SP<SNotif>> history; // oldest first, newest at back
         static uint64_t                histSeq = 0;
 
+        // Cards that OPT OUT of residency: they vanish on expiry and never
+        // park as a shade row or land in history. So they must never coalesce
+        // either — a suppressed banner would strand them, since the expiry
+        // sweep only touches banners. transient hint, progress/value, the OSD
+        // band. This set MUST stay identical to what the expiry timer vanishes.
+        static bool vanishes(const SP<SNotif>& n) {
+            return n->transient || n->progress >= 0 || inOsdBand(n->id);
+        }
+
         // A card leaving the model is retained — except OSD-band and
         // progress cards (a volume blip is not history) and transients (the
         // hint opts out). The object moves whole: content and decoded image
@@ -55,7 +64,7 @@ namespace NHyprnotify {
         // the texture is the only copy left); text rasters live in render's
         // keyed cache and age out on their own.
         static void retire(const SP<SNotif>& n) {
-            if (!n || n->transient || n->progress >= 0 || inOsdBand(n->id))
+            if (!n || vanishes(n))
                 return;
             const size_t CAP = std::max<int64_t>(0, cfg.maxHistory->value());
             if (CAP == 0)
@@ -115,6 +124,22 @@ namespace NHyprnotify {
                 (N->banner ? live : kept)++;
             }
             return {live, kept};
+        }
+
+        std::string badgeString() {
+            const auto [LIVE, KEPT] = badgeCounts();
+            return "banners:" + std::to_string(LIVE) + " resident:" + std::to_string(KEPT);
+        }
+
+        // one live popup per app: does another card already hold a banner for
+        // this app? A new same-app arrival then lands resident instead of
+        // stacking a second popup — the shade folds the extras, the badge
+        // counts them (the banner's own timeout is the cooldown window).
+        static bool appHasBanner(const SP<SNotif>& self) {
+            for (const auto& O : notifs)
+                if (O != self && !O->waiting && O->banner && !vanishes(O) && O->appKey == self->appKey)
+                    return true;
+            return false;
         }
 
         // the bar's bell: live + kept + dnd + center, coalesced per model change
@@ -208,7 +233,7 @@ namespace NHyprnotify {
             for (const auto& N : notifs) {
                 if (!N->banner || N->waiting)
                     continue;
-                if (N->transient || N->progress >= 0 || inOsdBand(N->id))
+                if (vanishes(N))
                     continue;
                 N->banner = false;
                 changed   = true;
@@ -253,12 +278,15 @@ namespace NHyprnotify {
                 return;         // visible cards live out their timeouts; new arrivals queue
             }
             const auto NOW = Time::steadyNow();
+            // newest-first, so the freshest per app takes the one popup slot
+            // and the rest resume resident — the same one-per-app cap the live
+            // arrival path applies, so DND-off never floods the screen
             for (const auto& N : notifs) {
                 if (!N->waiting)
                     continue;
                 N->waiting = false;
-                N->banner  = true; // never seen: the resume shows the banner
-                if (N->timeoutMs > 0)
+                N->banner  = !(cfg.coalescePopups->value() && N->urgency < 2 && !vanishes(N) && appHasBanner(N)); // never seen: resume shows one banner per app
+                if (N->banner && N->timeoutMs > 0)
                     N->deadline = NOW + std::chrono::milliseconds((int64_t)N->timeoutMs);
             }
             notifChanged();
@@ -269,10 +297,12 @@ namespace NHyprnotify {
             return suspended;
         }
 
-        // The client sent -1 (or a recall re-arms): critical always sticks,
-        // and normal sticks by default too (timeout_normal 0) — a message
-        // waits to be read. Only cards that declare themselves ephemeral run
-        // the low clock: low urgency, the transient hint, progress/OSD blips.
+        // The client sent -1 (or a recall re-arms): critical always sticks
+        // (a message that demands an answer waits on screen). Everything else
+        // runs a clock and then retreats to the shade — the center is the
+        // safety net now, so a normal banner need not linger. Ephemerals (low
+        // urgency, the transient hint, progress/OSD blips) run the short low
+        // clock; normal urgency runs timeout_normal.
         // An explicit expire_timeout never lands here.
         static float defaultTimeout(const SNotif& n) {
             if (n.urgency >= 2)
@@ -716,6 +746,15 @@ namespace NHyprnotify {
             if (n->timeoutMs > 0 && !n->waiting) // a queued card's clock starts at the resume
                 n->deadline = Time::steadyNow() + std::chrono::milliseconds((int64_t)n->timeoutMs);
 
+            // one live popup per app: while this app already shows a banner, a
+            // new non-critical arrival is born resident — it lands silently in
+            // the shade (folded, badge-counted), no second popup, no repeat
+            // sound. A replace re-alerting its own live card is not a second
+            // banner (appHasBanner skips self). Critical always punches through.
+            const bool coalesced = cfg.coalescePopups->value() && !n->waiting && n->urgency < 2 && !vanishes(n) && appHasBanner(n);
+            if (coalesced)
+                n->banner = false;
+
             if (!n->waiting) // a suspended arrival is invisible: no warm, no damage
                 notifChanged();
 
@@ -723,7 +762,7 @@ namespace NHyprnotify {
             // libcanberra player unless the client suppresses it. DND-queued
             // (waiting) arrivals stay silent; the resume doesn't replay.
             if (!n->waiting) {
-                bool        suppress = false;
+                bool        suppress = coalesced; // a coalesced arrival is silent, like its banner is gone
                 std::string soundFile, soundName;
                 if (const auto IT = hints.find("suppress-sound"); IT != hints.end())
                     try {
@@ -815,7 +854,7 @@ namespace NHyprnotify {
                         for (const auto& N : notifs) {
                             if (!N->banner || N->timeoutMs <= 0 || N->waiting || N->deadline > NOW)
                                 continue;
-                            if (N->transient || N->progress >= 0 || inOsdBand(N->id)) {
+                            if (vanishes(N)) {
                                 gone.push_back(N->id);
                                 continue;
                             }

@@ -73,7 +73,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "5.2.0";
+    inline constexpr const char* VERSION = "5.3.0";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -96,7 +96,8 @@ namespace NHyprnotify {
         SP<Config::Values::CIntValue>    margin;        // screen-edge gap AND inter-card gap
         SP<Config::Values::CIntValue>    offsetY;       // popups' and the center's distance from the monitor top
         SP<Config::Values::CIntValue>    timeoutLow;    // ms; the -1 fallback for ephemerals (low/transient/progress)
-        SP<Config::Values::CIntValue>    timeoutNormal; // ms; the -1 fallback otherwise; 0 (default) = sticky
+        SP<Config::Values::CIntValue>    timeoutNormal; // ms; the -1 fallback for normal urgency, then it retreats to the shade; 0 = sticky (critical always is)
+        SP<Config::Values::CIntValue>    coalescePopups; // 1 = at most one live popup per app; same-app extras land resident + silent
         SP<Config::Values::CIntValue>    rounding;      // card radius; the panel (+6) and rows (-2) derive from it
         SP<Config::Values::CFloatValue>  roundingPower; // superellipse exponent, the compositor's rounding_power
         SP<Config::Values::CIntValue>    maxNotifs;     // model cap; overflow evicts oldest non-critical
@@ -215,6 +216,7 @@ namespace NHyprnotify {
         const std::vector<SP<SNotif>>& historyView(); // retained cards, oldest first
         size_t                    historySize();
         std::string               stateString(); // "center:N live:N hist:N dnd:N" — raw model counts, the debug line
+        std::string               badgeString(); // "banners:N resident:N" — the popup/shade split the bell reads (state's `live` can't see it)
         void                      emitStateSoon(); // coalesced org.hitori.hyprnotify State signal (the bar's bell: shade counts)
     }
 

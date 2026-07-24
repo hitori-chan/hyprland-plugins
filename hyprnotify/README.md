@@ -16,9 +16,15 @@ Two surfaces share one card model:
    1.5) goes hero, full-width — then an "App • age" header, bold title,
    body, a progress pill for the `value` hint, and the card's actions as
    tinted text buttons. Hovering reveals the ✕; critical cards ring urgent.
-   Without an explicit `expire_timeout` a card sticks until dismissed — a
-   message waits to be read — unless it declares itself ephemeral (low
-   urgency, `transient`, a `value` card): those run `timeout_low`.
+   Without an explicit `expire_timeout` a normal card runs `timeout_normal`
+   (5s) and then RETREATS to the center — the popup goes, the card stays,
+   the center is the safety net. Critical cards are the exception: they stick
+   as a banner until dismissed. Ephemerals (low urgency, `transient`, a
+   `value` card) run the shorter `timeout_low`. To keep a chatty app from
+   stacking the screen, `coalesce_popups` (on by default) holds it to ONE
+   live banner: while its popup is up, further non-critical arrivals from it
+   land silent and resident in the center (folded, badge-counted), and the
+   next one pops fresh once that banner retreats — critical always shows.
 2. **The center** (F12, the bar's bell, `hyprctl hyprnotify center`) — one
    scroll, three lifecycle sections drawn top to bottom, each only when
    non-empty:

@@ -209,9 +209,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.margin          = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:margin", "inter-card gap in logical px", 6);
     cfg.offsetY         = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:offset_y", "popups' and the center's distance from the monitor top", 34);
     cfg.timeoutLow      = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:timeout_low", "ephemeral timeout in ms (low urgency, transient, progress cards)", 4000);
-    cfg.timeoutNormal   = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:timeout_normal", "normal-urgency timeout in ms, 0 = sticky until dismissed", 0);
+    cfg.timeoutNormal   = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:timeout_normal", "normal-urgency banner timeout in ms, then it retreats to the center; 0 = sticky (critical always sticks)", 5000);
     cfg.rounding        = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:rounding", "card radius in logical px (panel +6 and rows -2 derive)", Th::RAD_CARD);
     cfg.roundingPower   = makeShared<Config::Values::CFloatValue>("plugin:hyprnotify:rounding_power", "corner superellipse exponent", (float)Th::ROUNDING_POWER);
+    cfg.coalescePopups  = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:coalesce_popups", "1 = at most one live popup per app; same-app extras land silent in the center (0 = a banner per message)", 1);
     cfg.maxNotifs       = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_notifs", "model cap; overflow evicts the oldest non-critical card", 50);
     cfg.maxHistory      = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_history", "history cap; 0 disables history", 20);
     cfg.ignoreDbusClose = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:ignore_dbusclose", "ignore app-initiated CloseNotification (dunst's knob)", 0);
@@ -226,8 +227,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.soundCommand    = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:sound_command", "libcanberra player for sound hints; empty disables", "canberra-gtk-play");
     cfg.fallbackIconDir = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:fallback_icon_dir", "iconless cards draw a random identity face from this directory", "");
 
-    for (const auto& V : {cfg.fontSize, cfg.width, cfg.maxHeight, cfg.maxIcon, cfg.margin, cfg.offsetY, cfg.timeoutLow, cfg.timeoutNormal, cfg.rounding, cfg.maxNotifs,
-                          cfg.maxHistory, cfg.ignoreDbusClose})
+    for (const auto& V : {cfg.fontSize, cfg.width, cfg.maxHeight, cfg.maxIcon, cfg.margin, cfg.offsetY, cfg.timeoutLow, cfg.timeoutNormal, cfg.coalescePopups, cfg.rounding,
+                          cfg.maxNotifs, cfg.maxHistory, cfg.ignoreDbusClose})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
     HyprlandAPI::addConfigValueV2(PHANDLE, cfg.roundingPower);
     for (const auto& V : {cfg.font, cfg.fallbackIconDir, cfg.soundCommand})
@@ -255,6 +256,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                                                                          }
                                                                          if (request.ends_with("state"))
                                                                              return Bus::stateString();
+                                                                         if (request.ends_with("badge"))
+                                                                             return Bus::badgeString();
                                                                          if (request.ends_with("clear")) { // dismiss + wipe: the scripted reset
                                                                              static NHyprCommon::CHop pendingClear;
                                                                              pendingClear.arm([]() {
