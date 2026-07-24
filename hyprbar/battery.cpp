@@ -5,11 +5,16 @@
 
 namespace NHyprbar {
 
-    static int         batteryPercent  = -1;    // -1 = no battery: the widget hides
+    static int         batteryPercent  = -1;    // -1 = no battery (or an unreadable gauge): the widget hides
     static bool        batteryCharging = false; // any plugged state; only Discharging is false
     static bool        batteryDefend   = false; // plugged but held at the charge limit (Android's defender)
     static bool        batterySave     = false; // platform_profile low-power (Android's power save)
     static std::string batteryDir;              // /sys/class/power_supply/BATx, empty = none
+    // the gauge is read ONCE per event (uevent or minute tick) and both
+    // consumers — the pill's display state and the alerts' edge detection —
+    // read the result: the raw status string is what the alerts key off, and
+    // reading it twice meant four sysfs opens per event for one sample
+    static std::string batteryStatus;
 
     static bool        hasBattery() {
         return !batteryDir.empty();
@@ -335,6 +340,7 @@ namespace NHyprbar {
         bool refresh() {
             int  pc       = -1;
             bool charging = false, defend = false, save = false;
+            batteryStatus.clear();
             if (!batteryDir.empty()) {
                 std::ifstream cf(batteryDir + "/capacity"), sf(batteryDir + "/status");
                 std::string   cap, status;
@@ -345,6 +351,8 @@ namespace NHyprbar {
                     // every plugged state (Charging/Full/Not charging) colors the
                     // pill; only Discharging runs on the cell
                     charging = sf && std::getline(sf, status) && status != "Discharging";
+                    if (pc >= 0)
+                        batteryStatus = status;
 
                     // Android's defender = plugged but deliberately not charging.
                     // A charge_control_end_threshold below 100 turns "Not
@@ -384,18 +392,14 @@ namespace NHyprbar {
         // first minute tick covers a login-low, after hyprnotify is up — hyprbar
         // loads before the notification daemon does.
         void alerts() {
-            if (batteryDir.empty())
+            // refresh() runs first at both call sites (the uevent and the
+            // minute tick) and leaves this sample behind
+            if (batteryPercent < 0 || batteryStatus.empty())
                 return;
 
-            std::ifstream cf(batteryDir + "/capacity"), sf(batteryDir + "/status");
-            std::string   cap, status;
-            if (!cf || !std::getline(cf, cap) || !sf || !std::getline(sf, status))
-                return;
-
-            int capN = 0;
-            try {
-                capN = std::stoi(cap);
-            } catch (...) { return; }
+            const auto&        status = batteryStatus;
+            const int          capN   = batteryPercent;
+            const std::string  cap    = std::to_string(capN);
 
             constexpr int      WARN = 20, CRIT = 5;
             static std::string lastStatus;
@@ -496,6 +500,7 @@ namespace NHyprbar {
             batteryPercent  = -1;
             batteryCharging = batteryDefend = batterySave = false;
             batteryDir.clear();
+            batteryStatus.clear();
         }
     } // namespace Battery
 
