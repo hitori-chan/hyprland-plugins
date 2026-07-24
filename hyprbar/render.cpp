@@ -99,6 +99,22 @@ namespace NHyprbar {
         g_pHyprOpenGL->renderTexture(t, b.round(), {});
     }
 
+    // Contain-fit: scale to fill the cell as far as aspect allows, centered.
+    // renderTexture stretches to its box, so a non-square icon handed a square
+    // cell comes out squashed — fit keeps the icon's proportions instead.
+    void SPaint::texFit(const SP<ITexture>& t, const CBox& cell) const {
+        if (warm || !t || t->m_texID == 0)
+            return;
+        const double TW = t->m_size.x, TH = t->m_size.y;
+        if (TW <= 0 || TH <= 0)
+            return;
+        const auto   B = toPhys(cell);
+        const double S = std::min(B.w / TW, B.h / TH);
+        const double W = TW * S, H = TH * S;
+        CBox         b{B.x + (B.w - W) / 2.0, B.y + (B.h - H) / 2.0, W, H};
+        g_pHyprOpenGL->renderTexture(t, b.round(), {});
+    }
+
     // ---- rendering ----
 
     // One layout, two modes. WARM builds every texture and paints nothing;

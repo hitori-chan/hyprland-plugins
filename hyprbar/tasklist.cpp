@@ -325,10 +325,9 @@ namespace NHyprbar {
                     // the bar's 3px-inset rhythm
                     const double ICON = P.h - 6;
                     double       tx   = x + 4;
-                    if (const auto ITEX = appIcon(W->m_class); ITEX && ITEX->m_texID != 0) {
-                        const auto B = P.toPhys(CBox{tx, box.y + 3, ICON, ICON});
-                        P.tex(ITEX, B);
-                    } else
+                    if (const auto ITEX = appIcon(W->m_class); ITEX && ITEX->m_texID != 0)
+                        P.texFit(ITEX, CBox{tx, box.y + 3, ICON, ICON});
+                    else
                         P.texIn(textTex(letterOf(W->m_class), F.active, P.pt), CBox{tx, box.y, ICON, P.h});
                     tx += ICON + 4;
 

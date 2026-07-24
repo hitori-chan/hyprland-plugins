@@ -303,14 +303,12 @@ namespace NHyprbar {
                     }
 
                     const CBox CELL{right - P.h, box.y, P.h, P.h};
-                    if (IT->tex && IT->tex->m_texID != 0) {
+                    if (IT->tex && IT->tex->m_texID != 0)
                         // 3px inset: SNI pixmaps lack the internal padding XEmbed
-                        // icons carried, full-bleed reads as cramped
-                        const double S = std::round((P.h - 6) * P.scale);
-                        const auto   B = P.toPhys(CELL);
-                        CBox         b{B.x + (B.w - S) / 2.0, B.y + (B.h - S) / 2.0, S, S};
-                        P.tex(IT->tex, b.round());
-                    } else
+                        // icons carried, full-bleed reads as cramped. Fit, not
+                        // stretch — a non-square pixmap keeps its proportions.
+                        P.texFit(IT->tex, CBox{CELL.x + 3, CELL.y + 3, P.h - 6, P.h - 6});
+                    else
                         P.texIn(textTex(letterOf(IT->iconName), color(cfg.colMuted), P.pt), CELL);
 
                     SHit h;

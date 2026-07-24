@@ -290,7 +290,8 @@ namespace NHyprbar {
         void glass(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f) const; // translucent fill + live blur (the frosted band/menus)
         void border(const CBox& global, const CHyprColor& c, int round, int sizePx, float rp = 2.f) const; // frame ring: one call, not four rects
         void tex(const SP<ITexture>& t, const CBox& physBox) const;                        // pre-computed physical box
-        void texIn(const SP<ITexture>& t, const CBox& cell) const;                         // centered in a logical cell
+        void texIn(const SP<ITexture>& t, const CBox& cell) const;                         // centered in a logical cell, native size
+        void texFit(const SP<ITexture>& t, const CBox& cell) const;                        // aspect-preserving contain, centered in a logical cell
     };
 
     // Text -> cached GPU texture. Built ONLY by the warm pass; a miss during a
