@@ -731,9 +731,18 @@ namespace NHyprbar {
             // "Run: " (or the drilled-into category) with the cursor in place —
             // a ▏ glyph: renderText takes plain text only (no pango markup),
             // so awesome's inverse-video block cursor can't be drawn natively
-            const std::string PLABEL = Menubar::currentCat >= 0 ? std::string{Menubar::CATEGORIES[Menubar::currentCat].name} + ": " : "Run: ";
-            const auto        PROMPT = textTex(PLABEL + Menubar::typed.substr(0, Menubar::cursor) + "▏" + Menubar::typed.substr(Menubar::cursor), COLFG, PAINT.pt);
-            const double      PW     = PROMPT ? PROMPT->m_size.x / PAINT.scale : 0;
+            static std::string PROMPTBUF; // reused; the strip renders on the main thread only
+            PROMPTBUF.clear();
+            if (Menubar::currentCat >= 0) {
+                PROMPTBUF += Menubar::CATEGORIES[Menubar::currentCat].name;
+                PROMPTBUF += ": ";
+            } else
+                PROMPTBUF += "Run: ";
+            PROMPTBUF.append(Menubar::typed, 0, Menubar::cursor);
+            PROMPTBUF += "▏";
+            PROMPTBUF.append(Menubar::typed, Menubar::cursor);
+            const auto   PROMPT = textTex(PROMPTBUF, COLFG, PAINT.pt);
+            const double PW     = PROMPT ? PROMPT->m_size.x / PAINT.scale : 0;
             PAINT.texIn(PROMPT, CBox{px, MY, PW, PAINT.h});
             px += PW + 12;
 
@@ -744,12 +753,24 @@ namespace NHyprbar {
                 if (Menubar::first > Menubar::sel)
                     Menubar::first = Menubar::sel;
 
-                const auto entryName = [&](int i) -> std::string {
+                // by reference: the row labels are already stored strings, and
+                // this runs per visible row per frame (warm AND draw) — copying
+                // them out was a handful of allocations per frame for nothing.
+                // Only the trailing Exec row composes, into a reused buffer.
+                static const std::vector<std::string> CATNAMES = [] {
+                    std::vector<std::string> v;
+                    for (int i = 0; i < NCATS; i++)
+                        v.emplace_back(CATEGORIES[i].name);
+                    return v;
+                }();
+                static std::string EXECNAME;
+                const auto         entryName = [&](int i) -> const std::string& {
                     if (SH[i].app >= 0)
                         return Menubar::apps[SH[i].app].name;
                     if (SH[i].cat >= 0)
-                        return Menubar::CATEGORIES[SH[i].cat].name;
-                    return "Exec: " + Menubar::typed;
+                        return CATNAMES[SH[i].cat];
+                    EXECNAME.assign("Exec: ").append(Menubar::typed);
+                    return EXECNAME;
                 };
                 const auto entryIcon = [&](int i) -> SP<ITexture> {
                     if (SH[i].app >= 0)
@@ -763,25 +784,22 @@ namespace NHyprbar {
                 // the cell is always reserved — an entry whose icon doesn't
                 // resolve gets the tasklist's letter fallback instead of
                 // collapsing (rows kept their rhythm, names never jumped)
-                const double ICON   = PAINT.h - 6;
-                const auto   entryW = [&](int i) {
-                    const auto T = textTex(entryName(i), COLFG, PAINT.pt);
-                    return 8 + ICON + 6 + (T ? T->m_size.x / PAINT.scale : 0) + 8;
-                };
+                const double ICON  = PAINT.h - 6;
+                const auto   cellW = [&](const SP<ITexture>& t) { return 8 + ICON + 6 + (t ? t->m_size.x / PAINT.scale : 0) + 8; };
 
                 { // keep the selection on screen: page-jump to it when it won't fit
                     double w = 0;
                     for (int i = Menubar::first; i <= Menubar::sel; i++)
-                        w += entryW(i);
+                        w += cellW(textTex(entryName(i), COLFG, PAINT.pt));
                     if (px + w > PAINT.mb.x + PAINT.mb.w)
                         Menubar::first = Menubar::sel;
                 }
 
                 for (int i = Menubar::first; i < (int)SH.size(); i++) {
-                    const auto   NAME = entryName(i);
+                    const auto&  NAME = entryName(i);
                     const auto   ITEX = entryIcon(i);
                     const auto   WT   = textTex(NAME, COLFG, PAINT.pt);
-                    const double W    = 8 + ICON + 6 + (WT ? WT->m_size.x / PAINT.scale : 0) + 8;
+                    const double W    = cellW(WT);
                     if (px + W > PAINT.mb.x + PAINT.mb.w)
                         break;
 
