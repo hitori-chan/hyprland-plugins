@@ -4,13 +4,13 @@
 // of each unit:
 //
 //   bus.cpp     the org.freedesktop.Notifications daemon (sdbus-c++), the
-//               model, residency, history, append, the state interface
+//               model, residency, conversation merging, the state interface
 //   icons.cpp   notification images: content avatars, identity icons,
 //               raw image-data
 //   text.cpp    the pango rasterizer + the keyed text cache + markup helpers
 //   paint.cpp   the paint context, shared card recipes, type scale, motion
 //   popups.cpp  the banner column (the one-card anatomy, hover-✕, springs)
-//   center.cpp  the two-view center: shade/history, rows, 3-state groups
+//   center.cpp  the shade: one list, app bundles, the expansion budget
 //   render.cpp  the render skeleton: warm/draw, damage, ticks, the pass
 //               element (surface machinery shared through ui.hpp)
 //   input.cpp   clicks, wheel paging, esc, pointer ownership
@@ -73,7 +73,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "5.3.2";
+    inline constexpr const char* VERSION = "6.0.0";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -101,7 +101,6 @@ namespace NHyprnotify {
         SP<Config::Values::CIntValue>    rounding;      // card radius; the panel (+6) and rows (-2) derive from it
         SP<Config::Values::CFloatValue>  roundingPower; // superellipse exponent, the compositor's rounding_power
         SP<Config::Values::CIntValue>    maxNotifs;     // model cap; overflow evicts oldest non-critical
-        SP<Config::Values::CIntValue>    maxHistory;    // retained cap; 0 disables history
         SP<Config::Values::CIntValue>    ignoreDbusClose; // ignore app-initiated CloseNotification (dunst's knob)
         SP<Config::Values::CColorValue>  colBg;         // glass fill (alpha = the glass)
         SP<Config::Values::CColorValue>  colFg;         // body text
@@ -158,7 +157,8 @@ namespace NHyprnotify {
         std::vector<uint8_t> pixels;   // image-data, premultiplied BGRA (DRM ARGB8888); freed once uploaded
         bool                 hasPixels = false; // the LAST Notify carried image-data (outlives the freed buffer)
         int                  pw = 0, ph = 0;
-        std::string          defaultAction; // action key a body click invokes, "" = just dismiss
+        std::string          defaultAction; // the "default" action key, "" = none
+        std::string          defaultLabel;  // its label; the open row draws it as the lead button
         std::vector<SAction>    actions;    // non-default actions -> buttons, in Notify order
         std::vector<SBodyImage> bodyImages; // body <img src> thumbnails
         bool                    actionIcons = false; // the action-icons hint: button ids are icon names
@@ -174,7 +174,6 @@ namespace NHyprnotify {
         Time::steady_tp      deadline;      // meaningful when banner && timeoutMs > 0 and not waiting
         Time::steady_tp      arrived;       // Notify arrival (a replace refreshes it); the age lines
         Time::steady_tp      born;          // creation only (a replace keeps it); the arrival spring's key
-        uint64_t             hseq = 0;      // history identity while retired; 0 = live
 
         // image textures — built ONLY by the warm pass (the texture rule).
         // Text rasters live in render.cpp's keyed cache; only the decoded
@@ -197,25 +196,14 @@ namespace NHyprnotify {
         void                      init();
         void                      exit();
         void                      invokeAction(uint32_t id, const std::string& key);
-        // best-effort invoke on a retired card: ActionInvoked with the
-        // ORIGINAL id (apps still tracking it react), the entry is consumed
-        void                      invokeHistoryAction(uint64_t hseq, const std::string& key);
         void                      closeOne(uint32_t id, uint32_t reason);
-        void                      dismissAllLive(); // sweep/Clear all: every visible card -> history; the DND queue stays
-        void                      dismissApp(const std::string& appKey); // a shade group's right-click
-        void                      dismissSection(int sec); // a section header's ✕: urgent/waiting -> history, earlier wipes
-        void                      absorbPopped(); // opening the center parks the popped stack into the shade (no re-pop on close)
+        void                      dismissAllLive(); // "Clear all": every visible card goes; the DND queue stays
+        void                      dismissApp(const std::string& appKey); // a bundle's right-click
+        void                      absorbPopped(); // opening the shade parks the popped stack (no re-pop on close)
         void                      rearmExpiry();
         void                      toggleSuspend(); // DND; resume renders the queue, fresh timeouts
         bool                      suspendedNow();
-        void                      recall();                // re-display the most recently retired card
-        bool                      recallAt(uint64_t hseq); // re-display one specific retained card
-        void                      eraseHistory(uint64_t hseq);
-        void                      eraseHistoryApp(const std::string& appKey); // a history group's delete
-        void                      clearHistory();
-        const std::vector<SP<SNotif>>& historyView(); // retained cards, oldest first
-        size_t                    historySize();
-        std::string               stateString(); // "center:N live:N hist:N dnd:N" — raw model counts, the debug line
+        std::string               stateString(); // "center:N live:N dnd:N" — raw model counts, the debug line
         std::string               badgeString(); // "banners:N resident:N" — the popup/shade split the bell reads (state's `live` can't see it)
         void                      emitStateSoon(); // coalesced org.hitori.hyprnotify State signal (the bar's bell: shade counts)
     }
@@ -249,13 +237,12 @@ namespace NHyprnotify {
     // loop; bursts (an OSD volume sweep) coalesce into one warm.
     void notifChanged();
 
-    // the one-scroll center: three lifecycle sections (Urgent / Waiting /
-    // Earlier), each drawn only when non-empty
+    // the shade: ONE list of live cards, newest first, no lifecycle sections
     bool centerVisible();
-    void setCenter(bool on);      // event-loop only (input/hyprctl defer through main.cpp's queue)
-    void centerPage(int dir);     // wheel: >0 towards older rows
-    void centerToggleGroup(int sec, const std::string& appKey);
-    void centerToggleRow(uint32_t id, uint64_t hseq); // a chevron: live or history/child
+    void setCenter(bool on);  // event-loop only (input/hyprctl defer through main.cpp's queue)
+    void centerPage(int dir); // wheel: >0 towards older rows
+    void centerToggleGroup(const std::string& appKey);
+    void centerToggleRow(uint32_t id);
 
     void onRenderStage(eRenderStage stage);
     // render.preChecks: keep a visible card compositing over a solitary
@@ -264,29 +251,23 @@ namespace NHyprnotify {
     void renderInit(); // the age/motion tick timers
     void renderExit();
 
-    // the center's three lifecycle sections, top to bottom
-    enum eSection : uint8_t { SEC_URGENT = 0, SEC_WAITING, SEC_EARLIER };
-
     // hit rects of the last layout, global logical — input hit-tests these
     struct SCard {
         enum eKind : uint8_t {
             POPUP = 0,
-            ROW,       // a center row: live (id) or history (hseq)
-            DIGEST,    // a folded group card (group = app key)
-            GHEAD,     // an expanded group's header row
-            CHILD,     // a group child row: live (id) or history (hseq)
-            SEC_CLEAR, // a section header's ✕: clears that section
-            BTN_CLEAR, // footer "Clear all": the global sweep (live + history)
+            ROW,       // a shade row
+            DIGEST,    // a folded app bundle (group = app key)
+            GHEAD,     // an expanded bundle's header row
+            CHILD,     // a bundle child row
+            BTN_CLEAR, // footer "Clear all": the global sweep
             BTN_DND,   // footer ⊖ (do-not-disturb)
-            PANEL,     // the center panel body: swallows clicks, owns the wheel
+            PANEL,     // the shade panel body: swallows clicks, owns the wheel
         };
         eKind       kind = POPUP;
         CBox        box;
         uint32_t    id   = 0; // live identity
-        uint64_t    hseq = 0; // history identity
         std::string group;    // DIGEST/GHEAD/CHILD: the app key
-        eSection    sec  = SEC_WAITING; // the section the card sits in
-        CBox        chevron;      // ROW/CHILD: the 24Ø circle; w = 0 -> none
+        CBox        chevron;      // ROW: the 24Ø fold indicator; w = 0 -> none
         CBox        close;        // POPUP hover-✕ / GHEAD ✕; w = 0 -> none
         struct SBtn {
             CBox        box;
@@ -306,14 +287,12 @@ namespace NHyprnotify {
     // surface itself, >= 0 = that action button; `part` distinguishes the
     // chevron/✕ corners. A change damages only the boxes involved.
     struct SHover {
-        uint32_t    id   = 0;
-        uint64_t    hseq = 0;
-        std::string group;
+        uint32_t     id = 0;
+        std::string  group;
         SCard::eKind kind = SCard::POPUP;
-        eSection    sec  = SEC_WAITING; // disambiguates a same-app group across sections
-        int         btn  = -1;
-        uint8_t     part = 0; // 0 body, 1 chevron, 2 close
-        bool        operator==(const SHover&) const = default;
+        int          btn  = -1;
+        uint8_t      part = 0; // 0 body, 1 chevron, 2 close
+        bool         operator==(const SHover&) const = default;
     };
     void setHovered(const SHover& h);
 

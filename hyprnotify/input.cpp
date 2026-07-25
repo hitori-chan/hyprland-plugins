@@ -1,19 +1,19 @@
 // hyprnotify/input.cpp — clicks, wheel paging, esc and pointer ownership
-// over the popups and the center. Implements the interaction map exactly:
+// over the popups and the shade. Implements the interaction map exactly:
 //
 //   popup    left = action/link/default → dismiss · right = dismiss ·
 //            middle = park the stack into the shade · hover reveals ✕
-//   live row left = default action → dismiss · chevron folds · right =
-//            dismiss → Earlier · middle = sweep the live cards → Earlier
-//   earlier  left = recall (fresh id, original age) · buttons = original
-//            actions (best-effort, entry consumed) · right = delete ·
-//            middle = clear history
-//   digest   left expands · right dismisses/deletes the app's group
-//   section  the header ✕ clears that section (urgent/waiting → Earlier,
-//            earlier wipes)
-//   footer   ⊖ = DND · "Clear all" = the global sweep (live + history)
-//   wheel    pages the center — captured only inside the panel box
-//   esc      closes the center (the topmost-peel's middle link)
+//   row      LEFT READS: anywhere on the row (the chevron included) folds it
+//            open ⇄ shut and nothing else — the shade's most common intent
+//            gets its biggest target, and none of it is destructive. A
+//            button acts (the primary included) → dismiss unless resident ·
+//            right = dismiss · middle = Clear all
+//   child    a bundle child is already open: only its buttons and right act
+//   digest   left expands the app's bundle · right dismisses it
+//   ghead    left collapses · the ✕ / right dismisses the bundle
+//   footer   ⊖ = DND · "Clear all" = the global sweep
+//   wheel    pages the shade — captured only inside the panel box
+//   esc      closes the shade (the topmost-peel's middle link)
 //
 // Every mutation lands via the hit queue + CHop drain, never synchronously
 // inside the emission (crash class 6); every listener gates on
@@ -38,14 +38,12 @@ namespace NHyprnotify {
     struct SHit {
         SCard::eKind kind;
         uint32_t     id;
-        uint64_t     hseq;
         std::string  group;
-        eSection     sec = SEC_WAITING;
         uint32_t     bit;
         uint8_t      part;   // 0 body, 1 chevron, 2 close
         std::string  action; // non-empty: a specific action button
         std::string  href;   // non-empty: a body hyperlink
-        bool         outside = false; // the click fell outside every surface (closes the center)
+        bool         outside = false; // the click fell outside every surface (closes the shade)
     };
     static std::vector<SHit> hitQueue;
     static bool              hitQueued = false;
@@ -133,94 +131,59 @@ namespace NHyprnotify {
                 }
                 case SCard::ROW:
                 case SCard::CHILD: {
-                    if (H.part == 1 && H.bit == 1u) { // the chevron folds a single
-                        centerToggleRow(H.id, H.hseq);
-                        continue;
-                    }
-                    if (H.part == 2) { // the hover-✕: dismiss → Earlier (Earlier erases)
-                        if (H.hseq)
-                            Bus::eraseHistory(H.hseq);
-                        else
-                            Bus::closeOne(H.id, Bus::R_DISMISSED);
-                        continue;
-                    }
-                    if (H.hseq) { // an Earlier row
-                        if (H.bit == 4u) {
-                            Bus::clearHistory();
-                            continue;
-                        }
-                        if (H.bit == 2u) {
-                            Bus::eraseHistory(H.hseq);
-                            continue;
-                        }
-                        if (!H.action.empty()) { // the original action, best effort; entry consumed
-                            Bus::invokeHistoryAction(H.hseq, H.action);
-                            continue;
-                        }
-                        Bus::recallAt(H.hseq); // left on the body: recall — fresh id, original age
-                        continue;
-                    }
-                    // a live row (Urgent / Waiting)
                     if (H.bit == 4u) {
                         Bus::dismissAllLive();
-                        return;
+                        return; // the rest of the queue references swept cards
                     }
                     if (H.bit == 2u) {
                         Bus::closeOne(H.id, Bus::R_DISMISSED);
                         continue;
                     }
-                    invokeLive(H.id, H.action);
+                    if (H.bit != 1u)
+                        continue;
+                    if (!H.action.empty()) { // a button — the primary included
+                        invokeLive(H.id, H.action);
+                        continue;
+                    }
+                    // left on the body or the chevron: read it. A bundle child
+                    // is already open, so there is nothing to reveal.
+                    if (H.kind == SCard::ROW)
+                        centerToggleRow(H.id);
                     continue;
                 }
                 case SCard::DIGEST: {
-                    if (H.bit == 1u) { // left expands the group
-                        centerToggleGroup((int)H.sec, H.group);
+                    if (H.bit == 1u) { // left expands the app's bundle
+                        centerToggleGroup(H.group);
                         continue;
                     }
-                    if (H.bit == 2u) { // right: the whole app's group goes
-                        if (H.sec == SEC_EARLIER)
-                            Bus::eraseHistoryApp(H.group);
-                        else
-                            Bus::dismissApp(H.group);
+                    if (H.bit == 2u) { // right: the whole bundle goes
+                        Bus::dismissApp(H.group);
                         continue;
                     }
                     if (H.bit == 4u) {
-                        if (H.sec == SEC_EARLIER)
-                            Bus::clearHistory();
-                        else
-                            Bus::dismissAllLive();
+                        Bus::dismissAllLive();
+                        return;
                     }
                     continue;
                 }
                 case SCard::GHEAD: {
-                    if (H.part == 2 || H.bit == 2u) { // the static ✕ / right: the whole group goes
-                        if (H.sec == SEC_EARLIER)
-                            Bus::eraseHistoryApp(H.group);
-                        else
-                            Bus::dismissApp(H.group);
+                    if (H.part == 2 || H.bit == 2u) { // the static ✕ / right: the whole bundle goes
+                        Bus::dismissApp(H.group);
                         continue;
                     }
                     if (H.bit == 1u) {
-                        centerToggleGroup((int)H.sec, H.group); // collapse
+                        centerToggleGroup(H.group); // collapse
                         continue;
                     }
                     if (H.bit == 4u) {
-                        if (H.sec == SEC_EARLIER)
-                            Bus::clearHistory();
-                        else
-                            Bus::dismissAllLive();
+                        Bus::dismissAllLive();
+                        return;
                     }
                     continue;
                 }
-                case SCard::SEC_CLEAR: // a section header's ✕ clears that section
+                case SCard::BTN_CLEAR: // the footer: the global sweep
                     if (H.bit == 1u)
-                        Bus::dismissSection((int)H.sec);
-                    continue;
-                case SCard::BTN_CLEAR: // the footer: the global sweep (live + history)
-                    if (H.bit == 1u) {
                         Bus::dismissAllLive();
-                        Bus::clearHistory();
-                    }
                     continue;
                 case SCard::BTN_DND:
                     if (H.bit == 1u)
@@ -283,9 +246,7 @@ namespace NHyprnotify {
         SHit h;
         h.kind  = CARD->kind;
         h.id    = CARD->id;
-        h.hseq  = CARD->hseq;
         h.group = CARD->group;
-        h.sec   = CARD->sec;
         h.bit   = BIT;
         h.part  = partAt(*CARD, COORDS);
         if (BIT == 1u && h.part == 0) {
@@ -398,9 +359,7 @@ namespace NHyprnotify {
         SHover h;
         h.kind  = CARD->kind;
         h.id    = CARD->id;
-        h.hseq  = CARD->hseq;
         h.group = CARD->group;
-        h.sec   = CARD->sec;
         h.btn   = buttonAt(*CARD, pos);
         h.part  = h.btn >= 0 ? 0 : partAt(*CARD, pos);
         setHovered(h);
@@ -434,9 +393,7 @@ namespace NHyprnotify {
             SHover h;
             h.kind  = CARD->kind;
             h.id    = CARD->id;
-            h.hseq  = CARD->hseq;
             h.group = CARD->group;
-            h.sec   = CARD->sec;
             h.btn   = buttonAt(*CARD, COORDS);
             h.part  = h.btn >= 0 ? 0 : partAt(*CARD, COORDS);
             setHovered(h);

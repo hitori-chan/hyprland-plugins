@@ -181,9 +181,10 @@ for i in $(seq 1 65); do
 	dsp "hl.dsp.exec_cmd('notify-send -u $u \"stress $i\" body')" &
 done; wait; sleep 5
 chk "notif storm: cap holds at exactly 50/65" test "$(hq hyprnotify count)" = 50
-chk "notif storm: the 15 evicted land in history" test "$(hq hyprnotify history)" = 15
-for r in 1 2 3 4 5; do hq hyprnotify recall >/dev/null; done; sleep 2
-chk "recall churn is net-zero (count stays 50)" test "$(hq hyprnotify count)" = 50
+# the shade has no history: the 15 evicted are gone, and the verbs that used
+# to resurrect them are gone with it (6.0.0)
+chk "no history verb survives the model removal" test "$(hq hyprnotify history)" = "unknown request"
+chk "no recall verb survives the model removal" test "$(hq hyprnotify recall)" = "unknown request"
 # wrong-typed hints make sdbus-c++ throw inside the plugin's parse — the
 # catch must survive (exercises exception unwinding across the .so boundary).
 # Cards expire on their own clocks, so assert the daemon still answers with
@@ -218,7 +219,7 @@ chk "hostile tsv: all 8 plugins still load" test "$(hq plugin list | grep -c Plu
 dsp "hl.dsp.window.close()"; sleep 0.5
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x300')"; sleep 2
 # the stored 400x300 is applied over the requested 500x300, then the
-# 100000,100000 spot clamps to the margin corner for THAT size
+# 100000,100000 spot clamps to the bottom-right margin corner for THAT size
 expect "far-off-screen seed: stored size applied, clamped to ($((MON_W-401)),$((MON_H-301)))" \
 	"any(c['class']=='foot' and c['at']==[$((MON_W-401)),$((MON_H-301))] and c['size']==[400,300] for c in cs)"
 
@@ -232,26 +233,26 @@ expect "far-off-screen seed: stored size applied, clamped to ($((MON_W-401)),$((
 # Distinct -a apps here so popup coalescing (tested below) can't interfere.
 st() { hq hyprnotify state; }
 bd() { hq hyprnotify badge; }
-chk "notif reset: clean state line" test "$(st)" = "center:0 live:0 hist:0 dnd:0"
+chk "notif reset: clean state line" test "$(st)" = "center:0 live:0 dnd:0"
 dsp "hl.dsp.exec_cmd('notify-send -a crit -u critical \"urgent\" body')" # no -t: critical sticks
 sleep 1
 chk "critical: a sticky banner, nothing kept yet" test "$(bd)" = "banners:1 resident:0"
 dsp "hl.dsp.exec_cmd('notify-send -a norm -t 600 normal body')" # explicit clock; retreats fast for the test
 sleep 1.2
 chk "residency: the expired normal banner retreated to a resident row" test "$(bd)" = "banners:1 resident:1"
-chk "residency: the retreated card stays in the model, not lost" test "$(st)" = "center:0 live:2 hist:0 dnd:0"
+chk "residency: the retreated card stays in the model, not lost" test "$(st)" = "center:0 live:2 dnd:0"
 dsp "hl.dsp.exec_cmd('notify-send -a low -u low -t 600 lowcard body')" # low: retreats like a normal card
 dsp "hl.dsp.exec_cmd('notify-send -a tran -e -t 600 trans body')"       # transient: VANISHES
 sleep 1.2
-chk "ephemerals: transient vanished, low parked resident" test "$(st)" = "center:0 live:3 hist:0 dnd:0"
+chk "ephemerals: transient vanished, low parked resident" test "$(st)" = "center:0 live:3 dnd:0"
 chk "ephemerals: only the critical banner is still up" test "$(bd)" = "banners:1 resident:2"
 hq hyprnotify center >/dev/null; sleep 0.5
 chk "center: opening absorbs the banner into the shade" test "$(bd)" = "banners:0 resident:3"
-chk "center: opening dismisses nothing" test "$(st)" = "center:1 live:3 hist:0 dnd:0"
+chk "center: opening dismisses nothing" test "$(st)" = "center:1 live:3 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.5
-chk "center: closing neither re-pops nor drops a card" test "$(st)" = "center:0 live:3 hist:0 dnd:0"
+chk "center: closing neither re-pops nor drops a card" test "$(st)" = "center:0 live:3 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.8
-chk "center: Clear all sweeps live and history together" test "$(st)" = "center:0 live:0 hist:0 dnd:0"
+chk "center: Clear all sweeps every visible card" test "$(st)" = "center:0 live:0 dnd:0"
 # THE 5.3.0 default: a plain (-1) normal card is no longer sticky — it runs
 # timeout_normal (5s) and retreats to the shade on its own, unattended.
 dsp "hl.dsp.exec_cmd('notify-send \"default normal\" body')"
@@ -259,7 +260,7 @@ sleep 1
 chk "default normal: pops as a banner" test "$(bd)" = "banners:1 resident:0"
 sleep 5
 chk "default normal: retreated to the shade after timeout_normal" test "$(bd)" = "banners:0 resident:1"
-chk "default normal: the card is kept, not lost" test "$(st)" = "center:0 live:1 hist:0 dnd:0"
+chk "default normal: the card is kept, not lost" test "$(st)" = "center:0 live:1 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.8
 
 # ---- popup coalescing: one live banner per app -------------------------
@@ -272,38 +273,68 @@ chk "coalesce: the first same-app arrival pops a banner" test "$(bd)" = "banners
 dsp "hl.dsp.exec_cmd('notify-send -a chatty second body')"
 dsp "hl.dsp.exec_cmd('notify-send -a chatty third body')"; sleep 1
 chk "coalesce: the same-app burst lands resident, one banner stands" test "$(bd)" = "banners:1 resident:2"
-chk "coalesce: every card is kept and counted" test "$(st)" = "center:0 live:3 hist:0 dnd:0"
+chk "coalesce: every card is kept and counted" test "$(st)" = "center:0 live:3 dnd:0"
 dsp "hl.dsp.exec_cmd('notify-send -a chatty -u critical urgent body')"; sleep 1
 chk "coalesce: a critical from the same app punches through" test "$(bd)" = "banners:2 resident:2"
 dsp "hl.dsp.exec_cmd('notify-send -a other elsewhere body')"; sleep 1
 chk "coalesce: a different app gets its own banner" test "$(bd)" = "banners:3 resident:2"
 hq hyprnotify clear >/dev/null; sleep 0.8
 
-# center overflow: more rows than the screen-capped panel holds must PAGE,
-# not bleed off the bottom. 15 distinct-app cards -> a 15-row center; drawing
-# it (the placement break + the "▾ N" paging cue) must not crash and must
-# keep every card.
+# ---- the conversation merge (Android's MessagingStyle) ------------------
+# one chat is ONE card however many messages arrive: a fresh Notify whose
+# app + summary matches a live card is joined onto it. The fd.o conversation
+# categories are the trigger (the summary is the sender), so a plain card
+# from the same app must NOT be swallowed.
+for m in one two three; do dsp "hl.dsp.exec_cmd('notify-send -a tg -c im.received -t 30000 Alice \"$m\"')"; sleep 0.4; done
+sleep 0.8
+chk "merge: 3 messages from one sender collapse to 1 card" test "$(st)" = "center:0 live:1 dnd:0"
+dsp "hl.dsp.exec_cmd('notify-send -a tg -c im.received -t 30000 Bob hello')"; sleep 1
+chk "merge: a different sender keeps its own card" test "$(st)" = "center:0 live:2 dnd:0"
+dsp "hl.dsp.exec_cmd('notify-send -a tg -t 30000 \"plain one\" body')"
+dsp "hl.dsp.exec_cmd('notify-send -a tg -t 30000 \"plain two\" body')"; sleep 1
+chk "merge: no category, no merging — same app still stacks" test "$(st)" = "center:0 live:4 dnd:0"
+hq hyprnotify clear >/dev/null; sleep 0.8
+
+# shade overflow: more rows than the monitor-tall panel holds must PAGE, not
+# bleed off the bottom. 15 distinct-app cards -> 15 rows (one app each, so
+# nothing bundles); the expansion budget opens what fits and folds the rest.
+# Drawing it (the placement break + the "▾ N" paging cue) must not crash and
+# must keep every card.
 for i in $(seq 1 15); do dsp "hl.dsp.exec_cmd('notify-send -a ovf$i -t 30000 \"row $i\" body')"; done; sleep 1.5
 hq hyprnotify center >/dev/null; sleep 0.6
-chk "overflow: a 15-item center renders paged, keeps every card" test "$(st)" = "center:1 live:15 hist:0 dnd:0"
+chk "overflow: a 15-item center renders paged, keeps every card" test "$(st)" = "center:1 live:15 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.4
 hq hyprnotify clear >/dev/null; sleep 0.8
 
-# ---- hardening: sections, absorb, DND, hostile hints -------------------
-# a section header's ✕ sweeps ONLY that section to Earlier (the one verb
-# with no model-level path — driven through the real hit box via vptr). At
-# the panel hangs off the monitor's right edge, so the Urgent header's ✕ is
-# a fixed inset from the top-right corner; hit boxes are final-position, so
-# the open spring does not move it.
-dsp "hl.dsp.exec_cmd('notify-send -u critical \"urgent one\" body')"; sleep 1
-chk "sections: a critical card fills Urgent" test "$(st)" = "center:0 live:1 hist:0 dnd:0"
+# ---- hardening: the shade's click model, absorb, DND, hostile hints -----
+# 6.0.0 inverted the row verbs: LEFT READS (fold open ⇄ shut, never
+# destructive) and only right dismisses. Driven through the real hit boxes
+# via vptr — the fold has no model-level path, so the assertion is that a
+# left click changes NOTHING while a right click on the same pixel clears
+# the card. The panel hangs off the monitor's right edge (EDGE 10 +
+# CENTER_W 360) below offset_y 34, so the first row's body is a fixed inset
+# from the top-right corner, clear of the fold chevron that rides the row's
+# right end. Hit boxes are final-position, so the open spring cannot move
+# them out from under the click.
+dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"read me\" body')"; sleep 1
+chk "shade: one card waiting" test "$(st)" = "center:0 live:1 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.6
-printf 'move %s 56\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' "$((MON_W - 29))" | vp
-sleep 0.8
-chk "sections: the Urgent header ✕ sweeps just that section to Earlier" test "$(st)" = "center:1 live:0 hist:1 dnd:0"
+click() { # click <x> <y> <button-code>
+	printf 'move %s %s\nsleep 40\npress %s\nsleep 40\nrelease %s\nsleep 80\n' "$1" "$2" "$3" "$3" |
+		vp
+	sleep 0.8
+}
+ROWX=$((MON_W - 10 - 360 + 10 + 80)) # panel x + body pad + into the text column
+ROWY=64                              # offset_y + body pad + into the first row
+click $ROWX $ROWY 272
+chk "shade: left on a row READS — nothing invoked, nothing dismissed" test "$(st)" = "center:1 live:1 dnd:0"
+click $ROWX $ROWY 272
+chk "shade: left again folds back, still nothing dismissed" test "$(st)" = "center:1 live:1 dnd:0"
+click $ROWX $ROWY 273
+chk "shade: right on a row dismisses it" test "$(st)" = "center:1 live:0 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.4
 hq hyprnotify clear >/dev/null; sleep 0.8
-chk "hardening: reset after the section sweep" test "$(st)" = "center:0 live:0 hist:0 dnd:0"
+chk "hardening: reset after the shade click battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # absorb is idempotent: toggling the center never loses or dupes a card
 dsp "hl.dsp.exec_cmd('notify-send \"keep one\" body')"
@@ -323,14 +354,14 @@ dsp "hl.dsp.exec_cmd('notify-send -a q two body')"; sleep 0.8
 chk "DND: two same-app arrivals queued, none shown" test "$(bd)" = "banners:0 resident:0"
 dsp "hl.plugin.hyprnotify.suspend()"; sleep 0.6
 chk "DND resume: one popped, the sibling resumed resident (one per app)" test "$(bd)" = "banners:1 resident:1"
-chk "DND resume: dnd off, both cards kept" bash -c "hyprctl -i $SIG hyprnotify state | grep -qE '^center:0 live:2 hist:0 dnd:0$'"
+chk "DND resume: dnd off, both cards kept" bash -c "hyprctl -i $SIG hyprnotify state | grep -qE '^center:0 live:2 dnd:0$'"
 hq hyprnotify clear >/dev/null; sleep 0.8
 
 # hostile hints on the new field: a wrong-typed category must not crash the
 # parse (sdbus::Error thrown + caught), the card still lands
 dsp "hl.dsp.exec_cmd('notify-send -h int:category:5 \"badcat\" body')"
 dsp "hl.dsp.exec_cmd('notify-send -h string:category:im.received \"convo\" body')"; sleep 1
-chk "hostile: wrong-typed category survived, both cards landed" test "$(st)" = "center:0 live:2 hist:0 dnd:0"
+chk "hostile: wrong-typed category survived, both cards landed" test "$(st)" = "center:0 live:2 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.8
 
 # ---- real-input storm ---------------------------------------------------

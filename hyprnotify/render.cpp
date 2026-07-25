@@ -97,8 +97,8 @@ namespace NHyprnotify {
             const auto   M      = cardsMon.lock();
             const double MARGIN = (M ? std::ceil(M->m_scale) : 1.0) + 1.0;
             for (const auto& C : cards) {
-                const bool WAS = C.kind == hovered.kind && C.id == hovered.id && C.hseq == hovered.hseq && C.group == hovered.group;
-                const bool IS  = C.kind == h.kind && C.id == h.id && C.hseq == h.hseq && C.group == h.group;
+                const bool WAS = C.kind == hovered.kind && C.id == hovered.id && C.group == hovered.group;
+                const bool IS  = C.kind == h.kind && C.id == h.id && C.group == h.group;
                 // popups repaint on any enter/leave (the ✕ reveals)
                 const bool POPHOV = C.kind == SCard::POPUP && (C.id == hovered.id || C.id == h.id);
                 if (WAS || IS || POPHOV)

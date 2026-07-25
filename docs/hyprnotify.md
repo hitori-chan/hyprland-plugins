@@ -54,16 +54,22 @@ icons).
   `ActionInvoked` and dismisses the card unless the `resident` hint holds it.
   Under the `action-icons` hint each action id is a freedesktop icon name
   drawn on the button.
-- The `default` action (and a lone action) fire on a body left click.
-  `ActivationToken` precedes each invoke (a compositor-minted xdg-activation
-  token) so the sender can raise itself.
+- The `default` action (and a lone action) fire on a POPUP body left click.
+  In the shade nothing acts without a button, so `default` is drawn as the
+  open row's lead button (its label, or "Open" when the sender left it
+  empty). `ActivationToken` precedes each invoke (a compositor-minted
+  xdg-activation token) so the sender can raise itself.
 
 ## Behavior
 
-- Clicks: left invokes the action / opens the link / fires the default, then
-  dismisses; right dismisses; middle sweeps the visible stack. The cards own
-  the pointer over them — hover never leaks to the window beneath (sloppy
-  focus would flip focus under every popup).
+- Popup clicks: left invokes the action / opens the link / fires the default,
+  then dismisses; right dismisses; middle parks the stack into the shade. The
+  cards own the pointer over them — hover never leaks to the window beneath
+  (sloppy focus would flip focus under every popup).
+- Shade clicks: LEFT READS — anywhere on a row (the chevron included) folds
+  it open ⇄ shut and nothing else; buttons act (and dismiss unless
+  `resident`); right dismisses; middle is "Clear all". On an app bundle left
+  expands and right (or the header ✕) dismisses the whole app.
 - Critical: urgent-colored frame and progress fill, never expires.
 - Sound: `sound-file`/`sound-name` play through a libcanberra player
   (`sound_command`, empty disables); `suppress-sound` mutes one arrival. The
@@ -71,11 +77,17 @@ icons).
   loop.
 - DND (`hl.plugin.hyprnotify.suspend()`): arrivals collect silently with
   timeouts held; resume renders the queue newest-first on fresh timeouts.
-- History (`persistence`): a closed card is retained (`max_history`) unless
-  it is `transient` or a progress/OSD card; `hl.plugin.hyprnotify.recall()`
-  (or `hyprctl hyprnotify recall`) pops the most recent back with a fresh
-  timeout. `hyprctl hyprnotify {count,history}` answer the live and retained
-  totals (the lockscreen bell reads `count`).
+- Residency (`persistence`): an expired banner RETREATS into the shade
+  rather than closing, and waits there until dismissed or acted on — the
+  shade is the safety net. There is no history and no recall: a dismissed
+  card is gone, as on Android. `hyprctl hyprnotify count` answers the live
+  total (the lockscreen bell reads it).
+- The conversation merge (Android's MessagingStyle): a fresh `Notify` whose
+  app identity + summary matches a live card is joined onto it, bodies
+  appended under an 8KB cap — so one chat is one growing card however many
+  messages arrive. Triggered by the fd.o conversation categories
+  (`im.*`/`call.*`, where the summary is the sender or the room) or by the
+  `x-canonical-append` hint. Cards that vanish on expiry never merge.
 - Fullscreen: while a card is up over a solitary fullscreen window, the
   monitor's scanout/solitary latch is dropped so the card composites over
   it; self-heals once the last card clears.
@@ -99,8 +111,7 @@ icons).
 `max_height` (260), `max_icon` (64), `margin` (4, screen edge + inter-card),
 `offset_y` (30, clears the bar), `timeout_low` (4000, the ephemerals'
 clock), `timeout_normal` (0 = sticky until dismissed), `rounding` (1),
-`max_notifs` (50), `max_history` (20),
-`fallback_icon_dir`, `sound_command` (`canberra-gtk-play`), `col_bg`,
+`max_notifs` (50), `fallback_icon_dir`, `sound_command` (`canberra-gtk-play`), `col_bg`,
 `col_fg`, `col_title`, `col_kicker`, `col_frame`, `col_urgent`,
 `col_highlight`, `col_link`. Colors and fonts arrive from `theme.lua`; the
 C++ defaults mirror it.

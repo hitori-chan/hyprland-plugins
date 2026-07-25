@@ -3,6 +3,9 @@
 // (popups.cpp, center.cpp, render.cpp). Private to the plugin: the public
 // module map lives in hyprnotify.hpp.
 //
+// "center" throughout the drawing code means the SHADE: one list of live
+// cards, Android's notification shade.
+//
 // The texture rule (crash class 4) runs through everything here: cachedText
 // builds only while the warm gate allows it, SPaint paints only outside the
 // warm, and every glyph a draw needs must have been requested by the warm
@@ -40,17 +43,15 @@ namespace NHyprnotify {
     inline constexpr double XCIRC = 20; // the hover-✕ / group-✕ circle
     inline constexpr double BADGE = 13; // the identity corner badge
 
-    inline constexpr double CENTER_W = 360, CENTER_MAXH = 430;
+    inline constexpr double CENTER_W = 360; // the shade's height is the monitor's (see renderCenter)
     inline constexpr double ROW_PADT = 9, ROW_PADX = 12, ROW_PADB = 10, ROW_ICON = 34, ROW_ICON_GAP = 10, ROW_GAP = 8;
-    inline constexpr double CHEV = 24;                      // the chevron circle
+    inline constexpr double CHEV = 24;                      // the fold chevron circle
     inline constexpr double CHILD_ICON = 28, CHILD_GAP = 2; // segmented group children
     inline constexpr double PREV_ICON = 16;                 // digest preview avatars
     inline constexpr double PILL_H = 20;                    // the count pill
     inline constexpr double BAR_BTN = 34, BAR_PADT = 4, BAR_PADX = 10, BAR_PADB = 12, BAR_GAP = 8;
     inline constexpr double BODY_PADT = 10, BODY_PADX = 10, BODY_PADB = 10;
-    // 3-section shade: the section header row, the gap between sections, the
-    // merged-card joint gap within a section, the header's clear-✕
-    inline constexpr double SEC_HEAD_H = 24, SEC_GAP = 12, STACK_GAP = 3, SEC_XCIRC = 18;
+    inline constexpr double STACK_GAP = 3; // the joint gap that merges the rows into one column
 
     // ---- paint.cpp: context, type scale, motion, config gates ----
 
@@ -135,6 +136,6 @@ namespace NHyprnotify {
     void renderCenter(const SPaint& P, const SType& T);
     bool popupsAnimating(); // any arrival spring still running
     bool centerAnimating(); // the open spring still running
-    // center.cpp owns the fold/view state; render.cpp resets it via setCenter
+    // center.cpp owns the fold/paging state; render.cpp resets it via setCenter
 
 } // namespace NHyprnotify

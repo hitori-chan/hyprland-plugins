@@ -1,27 +1,40 @@
-// hyprnotify/center.cpp — the one-scroll notification center: a single
-// scrolling shade partitioned into three lifecycle sections drawn top to
-// bottom and only when non-empty — URGENT (live critical, pinned), WAITING
-// (live normal, still alive and counting unread) and EARLIER (history,
-// dimmed). Opening the center absorbs the popped banners into WAITING, so
-// closing never re-pops them. Every card folds two ways: a single row is
-// collapsed ⇄ open; ≥2 same-app cards fold digest ⇄ open (children fully
-// readable). The footer is ⊖ DND · a global "Clear all".
+// hyprnotify/center.cpp — the shade: ONE list of live cards, newest first,
+// Android's notification shade drawn by the compositor. There are no
+// lifecycle sections and no history view: what you can see is what the model
+// holds, and a dismissed card is gone (Android's shade has no recall either).
 //
-// This unit owns the center's transient state (paging, every fold) — all of
-// it resets when the center closes, Android-style.
+// RANKING — Android's, without the dividers: critical, then conversations,
+// then normal, then silent; newest first inside each tier. An app's cards
+// BUNDLE into one digest only once it has AUTOGROUP_AT of them (Android's
+// GroupHelper.AUTOGROUP_AT_COUNT); below that every card stands alone.
+// Conversations never bundle — each chat keeps its own card, and the bus
+// merges that chat's messages into it.
+//
+// THE EXPANSION BUDGET — rows open by DEFAULT, not on demand. The walk starts
+// at the top of the page and opens each row while the panel still has room,
+// so the shade is readable the instant it appears instead of costing a click
+// per card. Android expands only its top card; a desktop shade is far taller,
+// so we keep going and fold only what would overflow. A row whose open form
+// shows nothing the collapsed one doesn't gets no chevron at all.
+//
+// This unit owns the shade's transient state (paging, every fold override) —
+// all of it resets when the shade closes, Android-style.
 
 #include "ui.hpp"
 
 namespace NHyprnotify {
+
+    // Android's GroupHelper.AUTOGROUP_AT_COUNT: an app's notifications
+    // auto-bundle at four, not at two.
+    inline constexpr size_t AUTOGROUP_AT = 4;
 
     // ---- state ----
 
     static bool                  s_on    = false;
     static size_t                s_skip  = 0; // wheel paging: top-level items skipped
     static size_t                s_items = 0; // items the last layout had (clamps paging)
-    static std::set<std::string> s_openGroups;             // expanded groups, keyed section+appKey
-    static std::set<uint32_t>    s_openedLive, s_foldedLive; // chevron overrides for live rows
-    static std::set<uint64_t>    s_histOpen;                 // expanded history rows
+    static std::set<uint32_t>    s_openedRow, s_foldedRow;       // user overrides of the budget
+    static std::set<std::string> s_openedGroup, s_foldedGroup;   // ditto, per app key
     static Time::steady_tp       s_openedAt;
     static bool                  s_animating = false;
 
@@ -29,67 +42,46 @@ namespace NHyprnotify {
     // no strong SNotif refs (and their textures) outlive the visit
     struct SDisp {
         std::vector<SP<SNotif>> items; // newest first; 1 = a bare row
-        std::string             key;   // the app key (groups)
-        eSection                sec = SEC_WAITING;
+        std::string             key;   // the app key (bundles)
     };
     static std::vector<SDisp>               s_disp;
     static std::vector<double>              s_itemH;
+    static std::vector<uint8_t>             s_itemOpen; // the budget's verdict, per display item
+    static std::vector<uint8_t>             s_itemMore; // the open form shows more than the collapsed one
     static std::vector<std::vector<double>> s_childH;
+    // resolved open state from the last warm, keyed by identity: the click
+    // handlers flip THIS, so a toggle means the same thing the eye just saw
+    static std::unordered_map<uint32_t, bool>    s_rowState;
+    static std::unordered_map<std::string, bool> s_groupState;
 
-    bool                         centerVisible() {
+    bool                                         centerVisible() {
         return s_on;
     }
     bool centerAnimating() {
         return s_animating;
     }
 
-    // group open-state is keyed by section AND app key: the same app can hold
-    // a group in Waiting and another in Earlier, folded independently
-    static std::string openId(eSection sec, const std::string& key) {
-        return std::string(1, (char)('0' + (int)sec)) + key;
-    }
-
-    static bool liveRowOpen(const SP<SNotif>& n) {
-        // live arrives expanded and auto-folds when its banner expires; the
-        // chevron overrides both ways
-        return s_openedLive.contains(n->id) || (n->banner && !s_foldedLive.contains(n->id));
-    }
-
-    // a single row's open state: history opts in per hseq, live follows the
-    // banner/override rule
-    static bool itemOpen(const SP<SNotif>& n) {
-        return n->hseq ? s_histOpen.contains(n->hseq) : liveRowOpen(n);
-    }
-
-    static bool centerRowOpen(uint32_t id, uint64_t hseq) {
-        if (hseq)
-            return s_histOpen.contains(hseq);
-        for (const auto& N : notifs)
-            if (N->id == id)
-                return liveRowOpen(N);
-        return false;
-    }
-
-    void centerToggleRow(uint32_t id, uint64_t hseq) {
-        if (hseq) {
-            if (!s_histOpen.erase(hseq))
-                s_histOpen.insert(hseq);
+    void centerToggleRow(uint32_t id) {
+        const auto IT = s_rowState.find(id);
+        if (IT != s_rowState.end() && IT->second) {
+            s_openedRow.erase(id);
+            s_foldedRow.insert(id);
         } else {
-            if (centerRowOpen(id, 0)) {
-                s_openedLive.erase(id);
-                s_foldedLive.insert(id);
-            } else {
-                s_foldedLive.erase(id);
-                s_openedLive.insert(id);
-            }
+            s_foldedRow.erase(id);
+            s_openedRow.insert(id);
         }
         notifChanged();
     }
 
-    void centerToggleGroup(int sec, const std::string& appKey) {
-        const auto K = openId((eSection)sec, appKey);
-        if (!s_openGroups.erase(K))
-            s_openGroups.insert(K);
+    void centerToggleGroup(const std::string& appKey) {
+        const auto IT = s_groupState.find(appKey);
+        if (IT != s_groupState.end() && IT->second) {
+            s_openedGroup.erase(appKey);
+            s_foldedGroup.insert(appKey);
+        } else {
+            s_foldedGroup.erase(appKey);
+            s_openedGroup.insert(appKey);
+        }
         notifChanged();
     }
 
@@ -107,17 +99,21 @@ namespace NHyprnotify {
         if (!on) {
             // Android parity: paging and every fold reset on close
             s_skip = 0;
-            s_openGroups.clear();
-            s_openedLive.clear();
-            s_foldedLive.clear();
-            s_histOpen.clear();
+            s_openedRow.clear();
+            s_foldedRow.clear();
+            s_openedGroup.clear();
+            s_foldedGroup.clear();
+            s_rowState.clear();
+            s_groupState.clear();
             s_animating = false;
             s_disp.clear(); // strong refs must not outlive the visit
             s_itemH.clear();
+            s_itemOpen.clear();
+            s_itemMore.clear();
             s_childH.clear();
         } else {
-            // opening absorbs the popped stack into the shade — the banners
-            // stand down into parked Waiting rows, so closing never re-pops
+            // opening absorbs the popped stack — the banners stand down into
+            // parked shade rows, so closing never re-pops them
             Bus::absorbPopped();
             if (animationsOn()) {
                 s_openedAt  = Time::steadyNow();
@@ -128,68 +124,62 @@ namespace NHyprnotify {
         Bus::emitStateSoon();
     }
 
-    // ---- the display list: three sections, each folded independently ----
+    // ---- the display list: one ranked list, apps bundled at four ----
+
+    // Android's shade ranking, minus the visible dividers: urgent things,
+    // then the people, then the rest, then the silent ones.
+    static int tier(const SP<SNotif>& n) {
+        if (n->urgency >= 2)
+            return 0;
+        if (n->conversation)
+            return 1;
+        return n->urgency == 0 ? 3 : 2;
+    }
 
     static void buildDisplay(std::vector<SDisp>& out) {
         out.clear();
         std::vector<SP<SNotif>> src;
+        for (const auto& N : notifs)
+            if (!N->waiting && !inOsdBand(N->id))
+                src.push_back(N);
+        // notifs is newest-first; a STABLE sort by tier keeps that inside each
+        std::ranges::stable_sort(src, [](const auto& a, const auto& b) { return tier(a) < tier(b); });
 
-        // fold >= 2 same-app entries within a section; the OSD band never groups
-        const auto emit = [&](eSection sec) {
-            std::map<std::string, size_t> firstOf; // app key -> out index, this section only
-            for (const auto& N : src) {
-                if (!inOsdBand(N->id) && !N->appKey.empty()) {
-                    if (const auto IT = firstOf.find(N->appKey); IT != firstOf.end()) {
-                        out[IT->second].items.push_back(N);
-                        continue;
-                    }
-                    firstOf[N->appKey] = out.size();
+        // how many bundleable cards each app holds (conversations never bundle)
+        std::map<std::string, size_t> owned;
+        for (const auto& N : src)
+            if (!N->conversation && !N->appKey.empty())
+                owned[N->appKey]++;
+
+        std::map<std::string, size_t> firstOf; // app key -> out index
+        for (const auto& N : src) {
+            if (!N->conversation && !N->appKey.empty() && owned[N->appKey] >= AUTOGROUP_AT) {
+                if (const auto IT = firstOf.find(N->appKey); IT != firstOf.end()) {
+                    out[IT->second].items.push_back(N);
+                    continue;
                 }
-                out.push_back(SDisp{.items = {N}, .key = N->appKey, .sec = sec});
+                firstOf[N->appKey] = out.size();
             }
-        };
-
-        // URGENT — live critical, newest first, pinned to the top
-        src.clear();
-        for (const auto& N : notifs)
-            if (!N->waiting && !inOsdBand(N->id) && N->urgency >= 2)
-                src.push_back(N);
-        emit(SEC_URGENT);
-
-        // WAITING — live normal; conversations (im.*/call.*) sort atop, order only
-        src.clear();
-        for (const auto& N : notifs)
-            if (!N->waiting && !inOsdBand(N->id) && N->urgency < 2)
-                src.push_back(N);
-        std::stable_sort(src.begin(), src.end(), [](const auto& a, const auto& b) { return a->conversation && !b->conversation; });
-        emit(SEC_WAITING);
-
-        // EARLIER — history, newest first
-        src.clear();
-        const auto& H = Bus::historyView(); // oldest first
-        for (size_t i = H.size(); i-- > 0;)
-            src.push_back(H[i]);
-        emit(SEC_EARLIER);
+            out.push_back(SDisp{.items = {N}, .key = N->appKey});
+        }
     }
 
-    static bool groupOpen(const SDisp& D) {
-        return s_openGroups.contains(openId(D.sec, D.key));
-    }
-
-    // ---- one row, two states (singles and group children share it) ----
+    // ---- one row, two states (singles and bundle children share it) ----
 
     struct SRowStyle {
         double iconPx;       // 34 rows, 28 children
         bool   withBadge;    // children ride plain avatars — the header owns identity
         bool   headerHasApp; // singles: "App • age"; children: age only
-        bool   hasChevron;   // singles fold; expanded-group children are always open
+        bool   hasChevron;   // singles fold; expanded-bundle children are always open
     };
     static constexpr SRowStyle ROW_SINGLE{ROW_ICON, true, true, true};
     static constexpr SRowStyle ROW_CHILD{CHILD_ICON, false, false, false};
 
     // Lays out (and in draw mode paints) one row at box.x/box.y with box.w;
-    // returns the row height and fills the card's hit boxes.
-    static double renderRow(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box, bool open, eSection sec, const SRowStyle& ST, SCard& card, bool child) {
+    // returns the row height and fills the card's hit boxes. `more` drives the
+    // chevron: an open row can always be folded, a collapsed one only offers
+    // the affordance when there is something behind it.
+    static double renderRow(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box, bool open, bool more, const SRowStyle& ST, SCard& card, bool child) {
         const auto COLFG = color(cfg.colFg), COLTITLE = color(cfg.colTitle), COLSUB = color(cfg.colKicker), COLACC = color(cfg.colHighlight);
         const CHyprColor COLBODY = COLFG.modifyA(COLFG.a * 0.92);
         const auto       AGE     = ageString(N->arrived);
@@ -205,7 +195,8 @@ namespace NHyprnotify {
         const bool   RTHUMB   = N->iconTex && N->iconTex->m_texID != 0 && !N->heroTex && HASIDENT; // content rides the right
         const double THUMBW   = RTHUMB ? ST.iconPx : 0;
         const double TX       = box.x + ROW_PADX + (ICONW > 0 ? ICONW + ROW_ICON_GAP : 0);
-        const double RTRIM    = ST.hasChevron ? CHEV + 8 : 0;
+        const bool   CHEVRON  = ST.hasChevron && (open || more);
+        const double RTRIM    = CHEVRON ? CHEV + 8 : 0;
         const double TEXTW    = box.x + box.w - ROW_PADX - RTRIM - (THUMBW > 0 ? THUMBW + ROW_ICON_GAP : 0) - TX;
         const int    TEXTWPX  = std::max(1, (int)std::floor(TEXTW * P.scale));
 
@@ -239,8 +230,9 @@ namespace NHyprnotify {
                 }
             }
         } else {
-            // expanded: age/header line, title, 4-line body, progress, the
-            // card's ORIGINAL actions — live and history alike
+            // expanded: age/header line, title, 4-line body, progress, then the
+            // buttons — the card's PRIMARY first (nothing in the shade acts
+            // without hitting a button), then its own actions in Notify order
             auto& KB = scratch();
             if (ST.headerHasApp) {
                 appendEsc(KB, N->appName);
@@ -252,6 +244,11 @@ namespace NHyprnotify {
             const int  CAP4  = (int)std::lround(T.body * 1.35 * 4);
             const auto BODY  = N->body.empty() ? nullptr : cachedText(N->body, COLBODY, T.body, TEXTWPX, CAP4, 1.1f, true, 400);
 
+            const bool   LEADBTN = !N->defaultLabel.empty();
+            const size_t NBTN    = N->actions.size() + (LEADBTN ? 1 : 0);
+            const auto   BTNID   = [&](size_t k) -> const std::string& { return LEADBTN && k == 0 ? N->defaultAction : N->actions[k - (LEADBTN ? 1 : 0)].id; };
+            const auto   BTNLBL  = [&](size_t k) -> const std::string& { return LEADBTN && k == 0 ? N->defaultLabel : N->actions[k - (LEADBTN ? 1 : 0)].label; };
+
             static std::vector<CBox>               btnBoxes; // reused; main thread only
             static std::vector<const SCachedText*> btnLbls;
             btnBoxes.clear();
@@ -259,9 +256,9 @@ namespace NHyprnotify {
             double btnH = 0;
             {
                 double bx = 0, rowY = 0;
-                for (const auto& A : N->actions) {
+                for (size_t k = 0; k < NBTN; k++) {
                     auto& LB = scratch();
-                    appendEsc(LB, A.label);
+                    appendEsc(LB, BTNLBL(k));
                     const auto   LBL = cachedText(LB, COLACC, T.action, TEXTWPX, -1, 0, true, 600);
                     const double BW  = std::min(TEXTW, texW(LBL, P.scale) + 2 * BTN_PADX);
                     if (bx > 0 && bx + BW > TEXTW + 0.5) {
@@ -300,13 +297,17 @@ namespace NHyprnotify {
                 for (size_t i = 0; i < btnBoxes.size(); i++) {
                     const CBox BOX{BX0 + btnBoxes[i].x, yy + btnBoxes[i].y, btnBoxes[i].w, btnBoxes[i].h};
                     if (!P.warm) {
-                        const bool BHOV = hovered.id == (N->hseq ? 0 : N->id) && hovered.hseq == N->hseq && hovered.btn == (int)i;
+                        const bool BHOV = hovered.id == N->id && hovered.btn == (int)i;
+                        // the primary wears a standing pill: it inherits the
+                        // whole-row click the body used to carry
                         if (BHOV)
                             P.rect(BOX, tAccentDim(), (int)std::lround(BTN_H / 2 * P.scale));
+                        else if (LEADBTN && i == 0)
+                            P.rect(BOX, tFill2(), (int)std::lround(BTN_H / 2 * P.scale));
                         if (btnLbls[i] && btnLbls[i]->tex)
                             P.tex(btnLbls[i]->tex, BOX.x + BTN_PADX, BOX.y + (BOX.h - btnLbls[i]->tex->m_size.y / P.scale) / 2);
                     }
-                    card.buttons.push_back({BOX, N->actions[i].id});
+                    card.buttons.push_back({BOX, BTNID(i)});
                 }
             }
         }
@@ -324,13 +325,14 @@ namespace NHyprnotify {
             P.texFit(N->iconTex, CBox{TXR, TYR, THUMBW, THUMBW}, (int)std::lround(THUMBW * 10.0 / 44.0 * P.scale), RP);
         }
 
-        // the chevron circle (singles only): collapsed centers, expanded pins
-        if (ST.hasChevron) {
+        // the chevron circle: an INDICATOR that the row folds, and a second
+        // hit target for it — the whole row is the first one
+        if (CHEVRON) {
             const double CY = open ? box.y + ROW_PADT : box.y + (ROWH - CHEV) / 2;
             const CBox   CB{box.x + box.w - ROW_PADX - CHEV, CY, CHEV, CHEV};
             const auto   G = cachedText(open ? "˄" : "˅", COLFG, T.small, 64, -1, 0, false, 600); // built in BOTH modes
             if (!P.warm) {
-                const bool CHOV = hovered.id == (N->hseq ? 0 : N->id) && hovered.hseq == N->hseq && hovered.part == 1 && hovered.btn < 0;
+                const bool CHOV = hovered.id == N->id && hovered.part == 1 && hovered.btn < 0;
                 P.rect(CB, CHOV ? tAccentDim() : tFill2(), (int)std::lround(CHEV / 2 * P.scale));
                 if (G && G->tex)
                     P.tex(G->tex, CB.x + (CB.w - G->tex->m_size.x / P.scale) / 2, CB.y + (CB.h - G->tex->m_size.y / P.scale) / 2);
@@ -339,20 +341,18 @@ namespace NHyprnotify {
         }
 
         card.box  = CBox{box.x, box.y, box.w, ROWH};
-        card.id   = N->hseq ? 0 : N->id;
-        card.hseq = N->hseq;
-        card.sec  = sec;
+        card.id   = N->id;
         card.kind = child ? SCard::CHILD : SCard::ROW;
         return ROWH;
     }
 
     // measure without painting: same code, a paint context that draws nothing
     // (cachedText still resolves through the real warm gate)
-    static double measureRow(const SPaint& P, const SType& T, const SP<SNotif>& N, double w, bool open, eSection sec, const SRowStyle& ST) {
+    static double measureRow(const SPaint& P, const SType& T, const SP<SNotif>& N, double w, bool open, const SRowStyle& ST) {
         SPaint MP = P;
         MP.warm   = true;
         SCard scratch;
-        return renderRow(MP, T, N, CBox{0, 0, w, 0}, open, sec, ST, scratch, false);
+        return renderRow(MP, T, N, CBox{0, 0, w, 0}, open, true, ST, scratch, false);
     }
 
     // ---- the panel ----
@@ -386,72 +386,106 @@ namespace NHyprnotify {
         const double CONTENT_X = X + BODY_PADX, CONTENT_W = CENTER_W - 2 * BODY_PADX;
 
         const double BAR_H = BAR_PADT + BAR_BTN + BAR_PADB;
-        // The panel never runs off the bottom: cap the content at CENTER_MAXH
-        // AND at what the monitor leaves below offset_y (a margin of air).
-        // Overflow past this becomes wheel paging, not off-screen bleed — and
-        // since renderRow caps a row's body at 4 lines, no single row can
-        // exceed the cap, so the always-place-the-first-row rule can't spill.
+        // The shade runs to what the monitor leaves below offset_y (a margin of
+        // air) — Android's shade is the screen, and the expansion budget spends
+        // exactly this. Overflow past it becomes wheel paging, never off-screen
+        // bleed; renderRow caps a row's body at 4 lines, so no single row can
+        // exceed the cap and the always-place-the-first-row rule can't spill.
         const double AVAILH  = MB.h - (double)cfg.offsetY->value() - (double)cfg.margin->value();
-        const double BODYCAP = std::max(ROW_ICON, std::min(CENTER_MAXH, AVAILH) - BAR_H - BODY_PADT - BODY_PADB);
+        const double BODYCAP = std::max(ROW_ICON, AVAILH - BAR_H - BODY_PADT - BODY_PADB);
 
-        // The display list and every height are measured once per WARM and
-        // reused by the draws between warms: hover fills change nothing the
-        // measure depends on, and every model/fold change warms first
-        // (notifChanged). The draw side lays out without measuring a row twice.
+        // The display list, every height AND every fold verdict are decided
+        // once per WARM and reused by the draws between warms: hover fills
+        // change nothing they depend on, and every model/fold change warms
+        // first (notifChanged). The draw side lays out without measuring twice.
         if (P.warm) {
             buildDisplay(s_disp);
+            s_skip = s_disp.empty() ? 0 : std::min(s_skip, s_disp.size() - 1);
             s_itemH.assign(s_disp.size(), 0.0);
+            s_itemOpen.assign(s_disp.size(), 0);
+            s_itemMore.assign(s_disp.size(), 0);
             s_childH.assign(s_disp.size(), {});
-            for (size_t i = 0; i < s_disp.size(); i++) {
-                const auto& D = s_disp[i];
+            s_rowState.clear();
+            s_groupState.clear();
+
+            // THE EXPANSION BUDGET. Walks the page from its top row down,
+            // opening what still fits. The top row always opens (Android's one
+            // guarantee); a user override wins over the budget in both
+            // directions. Rows past the fold are only measured COLLAPSED —
+            // their open form would raster text no frame can show.
+            double used = 0;
+            for (size_t i = s_skip; i < s_disp.size(); i++) {
+                const auto&  D    = s_disp[i];
+                const double LEAD = i == s_skip ? 0 : STACK_GAP;
+                const bool   TOP  = i == s_skip;
+
                 if (D.items.size() < 2) {
-                    s_itemH[i] = measureRow(P, T, D.items.front(), CONTENT_W, itemOpen(D.items.front()), D.sec, ROW_SINGLE);
-                    continue;
-                }
-                if (!groupOpen(D)) { // digest: icon line + <=2 preview lines
-                    double       h    = ROW_PADT + std::max(ROW_ICON, (double)T.title / P.scale + 2);
+                    const auto&  N          = D.items.front();
+                    const double CH         = measureRow(P, T, N, CONTENT_W, false, ROW_SINGLE);
+                    const bool   FORCE_OPEN = s_openedRow.contains(N->id), FORCE_FOLD = s_foldedRow.contains(N->id);
+                    bool         open = false, more = true;
+                    double       h = CH;
+                    if (!FORCE_FOLD && (FORCE_OPEN || TOP || used + LEAD + CH < BODYCAP)) {
+                        const double OH = measureRow(P, T, N, CONTENT_W, true, ROW_SINGLE);
+                        more            = OH > CH + 0.5;
+                        open            = more && (FORCE_OPEN || TOP || used + LEAD + OH <= BODYCAP);
+                        if (open)
+                            h = OH;
+                    }
+                    s_itemH[i]        = h;
+                    s_itemOpen[i]     = open;
+                    s_itemMore[i]     = more;
+                    s_rowState[N->id] = open;
+                } else {
+                    // a bundle: the digest card, or a header + readable children
+                    double       dh   = ROW_PADT + std::max(ROW_ICON, (double)T.title / P.scale + 2);
                     const size_t PREV = std::min<size_t>(2, D.items.size());
-                    s_itemH[i]        = h + PREV * ((double)T.body / P.scale * 1.35 + 3) + ROW_PADB;
-                    continue;
+                    dh += PREV * ((double)T.body / P.scale * 1.35 + 3) + ROW_PADB;
+
+                    const bool FORCE_OPEN = s_openedGroup.contains(D.key), FORCE_FOLD = s_foldedGroup.contains(D.key);
+                    bool       open = false;
+                    double     h    = dh;
+                    if (!FORCE_FOLD && (FORCE_OPEN || TOP || used + LEAD + dh < BODYCAP)) {
+                        double              oh = ROW_PADT + CHILD_ICON + ROW_PADB; // the header row
+                        std::vector<double> ch;
+                        ch.reserve(D.items.size());
+                        for (const auto& N : D.items) {
+                            const double C = measureRow(P, T, N, CONTENT_W, true, ROW_CHILD); // expanded children are always open
+                            ch.push_back(C);
+                            oh += CHILD_GAP + C;
+                        }
+                        if (FORCE_OPEN || used + LEAD + oh <= BODYCAP) {
+                            open        = true;
+                            h           = oh;
+                            s_childH[i] = std::move(ch);
+                        }
+                    }
+                    s_itemH[i]          = h;
+                    s_itemOpen[i]       = open;
+                    s_itemMore[i]       = 1;
+                    s_groupState[D.key] = open;
                 }
-                double h = ROW_PADT + CHILD_ICON + ROW_PADB; // the header row
-                s_childH[i].reserve(D.items.size());
-                for (const auto& N : D.items) {
-                    const double CH2 = measureRow(P, T, N, CONTENT_W, true, D.sec, ROW_CHILD); // expanded children are always open
-                    s_childH[i].push_back(CH2);
-                    h += CHILD_GAP + CH2;
-                }
-                s_itemH[i] = h;
+                used += LEAD + s_itemH[i];
             }
         }
         const auto& disp = s_disp;
         s_items          = disp.size();
         s_skip           = disp.empty() ? 0 : std::min(s_skip, disp.size() - 1);
 
-        // per-section totals for the header counts
-        size_t secCount[3] = {0, 0, 0};
-        for (const auto& D : disp)
-            secCount[(int)D.sec] += D.items.size();
-
-        // place the items that fit, accounting for a section header wherever
-        // the section changes (STACK_GAP joins cards in a section, SEC_GAP
-        // separates sections)
+        // place the items that fit; STACK_GAP joins the cards into one column
         struct SPlaced {
             size_t idx;
             double h;
         };
         static std::vector<SPlaced> placed; // reused
         placed.clear();
-        double   usedH   = 0;
-        eSection lastSec = SEC_URGENT;
+        double usedH = 0;
         for (size_t i = s_skip; i < disp.size() && i < s_itemH.size(); i++) {
-            const bool   NEWSEC = placed.empty() || disp[i].sec != lastSec;
-            const double LEAD   = NEWSEC ? (placed.empty() ? 0 : SEC_GAP) + SEC_HEAD_H + STACK_GAP : STACK_GAP;
+            const double LEAD = placed.empty() ? 0 : STACK_GAP;
             if (!placed.empty() && usedH + LEAD + s_itemH[i] > BODYCAP)
                 break;
             usedH += LEAD + s_itemH[i];
             placed.push_back({i, s_itemH[i]});
-            lastSec = disp[i].sec;
         }
 
         const bool   EMPTY  = disp.empty();
@@ -469,12 +503,10 @@ namespace NHyprnotify {
             cards.push_back(pc);
         }
 
-        // glyphs the section headers reuse — request every warm
         const auto XG    = cachedText("✕", COLFG, T.small, 64, -1, 0, false, 600);
-        const auto XGDIM = cachedText("✕", COLSUB, T.small, 64, -1, 0, false, 600);
         const auto XGHOT = cachedText("✕", tOnAccent(), T.small, 64, -1, 0, false, 600);
 
-        double y = Y0 + BODY_PADT;
+        double     y = Y0 + BODY_PADT;
 
         if (EMPTY) {
             const auto E = cachedText("You're all caught up!", COLSUB, T.body, (int)(CENTER_W * P.scale), -1, 0, false, 500);
@@ -483,65 +515,27 @@ namespace NHyprnotify {
             y += EMPTYH;
         }
 
-        // ---- the section header: LABEL · count · dim-until-hover ✕ ----
-        static const char* LABEL[3] = {"URGENT", "WAITING", "EARLIER"};
-        const auto          drawSecHead = [&](eSection sec, double yy) {
-            auto& HB = scratch();
-            HB += LABEL[(int)sec];
-            if (secCount[(int)sec] > 1) {
-                HB += "  <span foreground=\"";
-                HB += SUBHEX;
-                HB += "\">";
-                HB += std::to_string(secCount[(int)sec]);
-                HB += "</span>";
-            }
-            const auto L = cachedText(HB, COLSUB, T.small, (int)(CONTENT_W * P.scale), -1, 0, true, 700);
-            if (!P.warm && L && L->tex)
-                P.tex(L->tex, CONTENT_X + 4, yy + (SEC_HEAD_H - texH(L, P.scale)) / 2);
-
-            const CBox XB{CONTENT_X + CONTENT_W - SEC_XCIRC, yy + (SEC_HEAD_H - SEC_XCIRC) / 2, SEC_XCIRC, SEC_XCIRC};
-            const bool XHOV = hovered.kind == SCard::SEC_CLEAR && hovered.sec == sec;
-            if (!P.warm) {
-                if (XHOV)
-                    P.rect(XB, sec == SEC_EARLIER ? COLURGENT : tAccentDim(), (int)std::lround(SEC_XCIRC / 2 * P.scale));
-                const auto* G = XHOV ? (sec == SEC_EARLIER ? XGHOT : XG) : XGDIM;
-                if (G && G->tex)
-                    P.tex(G->tex, XB.x + (XB.w - G->tex->m_size.x / P.scale) / 2, XB.y + (XB.h - G->tex->m_size.y / P.scale) / 2);
-            }
-            SCard c;
-            c.kind = SCard::SEC_CLEAR;
-            c.sec  = sec;
-            c.box  = XB;
-            cards.push_back(c);
-        };
-
-        eSection curSec = SEC_URGENT;
-        bool     first  = true;
+        bool first = true;
         for (const auto& [IDX, IH] : placed) {
-            const auto& D = disp[IDX];
-
-            if (first || D.sec != curSec) {
-                if (!first)
-                    y += SEC_GAP;
-                drawSecHead(D.sec, y);
-                y += SEC_HEAD_H + STACK_GAP;
-                curSec = D.sec;
-                first  = false;
-            } else
+            const auto& D    = disp[IDX];
+            const bool  OPEN = IDX < s_itemOpen.size() && s_itemOpen[IDX];
+            const bool  MORE = IDX < s_itemMore.size() && s_itemMore[IDX];
+            if (!first)
                 y += STACK_GAP;
+            first = false;
 
             if (D.items.size() < 2) {
                 // ---- a bare row ----
                 const auto& N   = D.items.front();
-                const bool  HOV = hovered.kind == SCard::ROW && hovered.id == (N->hseq ? 0 : N->id) && hovered.hseq == N->hseq && hovered.btn < 0 && hovered.part == 0;
+                const bool  HOV = hovered.kind == SCard::ROW && hovered.id == N->id && hovered.btn < 0 && hovered.part == 0;
                 P.rect(CBox{CONTENT_X, y, CONTENT_W, IH}, HOV ? tAccentDim() : tFill(), RROW, RP);
                 SCard card;
-                renderRow(P, T, N, CBox{CONTENT_X, y, CONTENT_W, 0}, itemOpen(N), D.sec, ROW_SINGLE, card, false);
+                renderRow(P, T, N, CBox{CONTENT_X, y, CONTENT_W, 0}, OPEN, MORE, ROW_SINGLE, card, false);
                 cards.push_back(std::move(card));
-            } else if (!groupOpen(D)) {
-                // ---- digest: the folded group card ----
+            } else if (!OPEN) {
+                // ---- digest: the folded app bundle ----
                 const auto& NEWEST = D.items.front();
-                const bool  HOV    = hovered.kind == SCard::DIGEST && hovered.group == D.key && hovered.sec == D.sec;
+                const bool  HOV    = hovered.kind == SCard::DIGEST && hovered.group == D.key;
                 P.rect(CBox{CONTENT_X, y, CONTENT_W, IH}, HOV ? tAccentDim() : tFill(), RROW, RP);
 
                 if (P.warm)
@@ -606,12 +600,11 @@ namespace NHyprnotify {
                 card.kind  = SCard::DIGEST;
                 card.box   = CBox{CONTENT_X, y, CONTENT_W, IH};
                 card.group = D.key;
-                card.sec   = D.sec;
                 cards.push_back(std::move(card));
             } else {
-                // ---- open group: the header + fully-readable children ----
+                // ---- open bundle: the header + fully-readable children ----
                 const auto&  NEWEST = D.items.front();
-                const bool   HHOV   = hovered.kind == SCard::GHEAD && hovered.group == D.key && hovered.sec == D.sec;
+                const bool   HHOV   = hovered.kind == SCard::GHEAD && hovered.group == D.key;
                 const double HEADRH = ROW_PADT + CHILD_ICON + ROW_PADB;
                 P.rect(CBox{CONTENT_X, y, CONTENT_W, HEADRH}, HHOV ? tAccentDim() : tFill(), RROW, RP);
 
@@ -621,7 +614,7 @@ namespace NHyprnotify {
                 if (IDT)
                     P.texFit(IDT, CBox{CONTENT_X + ROW_PADX, y + ROW_PADT, CHILD_ICON, CHILD_ICON}, (int)std::lround(CHILD_ICON * 10.0 / 44.0 * P.scale), RP);
 
-                // the static ✕ (dismiss/delete the whole group)
+                // the static ✕ (dismiss the whole app's bundle)
                 const CBox XB{CONTENT_X + CONTENT_W - ROW_PADX - XCIRC, y + ROW_PADT + (CHILD_ICON - XCIRC) / 2, XCIRC, XCIRC};
                 const bool XHOV = HHOV && hovered.part == 2;
                 if (!P.warm) {
@@ -659,7 +652,6 @@ namespace NHyprnotify {
                     card.kind  = SCard::GHEAD;
                     card.box   = CBox{CONTENT_X, y, CONTENT_W, HEADRH};
                     card.group = D.key;
-                    card.sec   = D.sec;
                     card.close = XB;
                     cards.push_back(std::move(card));
                 }
@@ -669,12 +661,12 @@ namespace NHyprnotify {
                 for (size_t k = 0; k < D.items.size(); k++) {
                     const auto& N = D.items[k];
                     cy += CHILD_GAP;
-                    const double CH2  = IDX < s_childH.size() && k < s_childH[IDX].size() ? s_childH[IDX][k] : measureRow(P, T, N, CONTENT_W, true, D.sec, ROW_CHILD);
-                    const bool   CHOV = hovered.kind == SCard::CHILD && hovered.id == (N->hseq ? 0 : N->id) && hovered.hseq == N->hseq && hovered.btn < 0 && hovered.part == 0;
+                    const double CH2  = IDX < s_childH.size() && k < s_childH[IDX].size() ? s_childH[IDX][k] : measureRow(P, T, N, CONTENT_W, true, ROW_CHILD);
+                    const bool   CHOV = hovered.kind == SCard::CHILD && hovered.id == N->id && hovered.btn < 0 && hovered.part == 0;
                     P.rect(CBox{CONTENT_X, cy, CONTENT_W, CH2}, CHOV ? tAccentDim() : tFill(), RIN, RP);
                     SCard card;
                     card.group = D.key;
-                    renderRow(P, T, N, CBox{CONTENT_X, cy, CONTENT_W, 0}, true, D.sec, ROW_CHILD, card, true);
+                    renderRow(P, T, N, CBox{CONTENT_X, cy, CONTENT_W, 0}, true, false, ROW_CHILD, card, true);
                     cards.push_back(std::move(card));
                     cy += CH2;
                 }
@@ -703,10 +695,10 @@ namespace NHyprnotify {
             bx += BAR_BTN + BAR_GAP;
         }
 
-        { // "Clear all" — the global sweep (live + history); greys when both empty
+        { // "Clear all" — the global sweep; greys when the shade is empty
             const double CW     = X + CENTER_W - BAR_PADX - bx;
             const CBox   B{bx, BARY, CW, BAR_BTN};
-            const bool   TARGET = !Bus::historyView().empty() || std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && !inOsdBand(N->id); });
+            const bool   TARGET = std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && !inOsdBand(N->id); });
             const auto   L      = cachedText("Clear all", TARGET ? COLFG : COLSUB.modifyA(0.35f), T.bar, (int)(CW * P.scale), -1, 0, false, 600);
             if (!P.warm) {
                 const bool HOV = hovered.kind == SCard::BTN_CLEAR;

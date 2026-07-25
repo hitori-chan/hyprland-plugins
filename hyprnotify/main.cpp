@@ -10,24 +10,25 @@
 //   rides the RIGHT thumbnail (a wide one goes hero, full-width), then the
 //   "App • age" header, title, body, progress, and the card's actions as
 //   tinted text buttons. Hovering reveals the ✕.
-// - THE CENTER (F12 / the bar's bell / `hyprctl hyprnotify center`): one
-//   scroll, three lifecycle sections drawn top to bottom and only when
-//   non-empty — URGENT (live critical, pinned), WAITING (live normal, alive
-//   and counting unread) and EARLIER (history, dimmed). Opening the center
-//   absorbs the popped banners into WAITING, so closing never re-pops. Every
-//   card folds two ways: a single row is collapsed ⇄ open (the chevron; live
-//   arrives expanded and auto-folds with its banner); ≥2 same-app cards fold
-//   digest ⇄ open (children fully readable). Expanded rows show the ORIGINAL
-//   actions — Earlier included, best-effort with the original id, entry
-//   consumed (left on an Earlier body recalls, right deletes). A section
-//   header's ✕ clears that section; the footer is ⊖ DND · a global "Clear all".
+// - THE SHADE (F12 / the bar's bell / `hyprctl hyprnotify center`): ONE list
+//   of live cards, Android's notification shade. No lifecycle sections and no
+//   history — a dismissed card is gone. Ranking is Android's without the
+//   dividers (critical, conversations, normal, silent; newest first inside
+//   each), an app's cards bundle into a digest only at four or more
+//   (GroupHelper's AUTOGROUP_AT_COUNT) and conversations never bundle.
+//   Rows open by DEFAULT: an expansion budget walks the page and opens each
+//   row while the panel has room, so the shade is readable with no clicks at
+//   all. LEFT CLICK READS — anywhere on a row folds it open ⇄ shut; the
+//   card's primary action moves into the open row as its lead button, so
+//   nothing acts or dismisses without hitting a button. Right dismisses,
+//   middle sweeps; the footer is ⊖ DND · a global "Clear all".
 //
-// Model rules: x-canonical-append joins same app+summary into one growing
-// conversation card (~8KB cap, oldest lines drop); the OSD id band
-// 9990-9999 replaces in place and never appends, groups, or retires;
-// critical bypasses DND; ignore_dbusclose gates only the bus
-// CloseNotification path; transient/progress cards vanish entirely on
-// expiry. `hyprctl hyprnotify state` reports center/live/hist/dnd; the
+// Model rules: the conversation merge joins one chat's messages into one
+// growing card (~8KB cap, oldest lines drop) — fd.o's im.*/call.* categories,
+// or x-canonical-append; the OSD id band 9990-9999 replaces in place and
+// never appends or groups; critical bypasses DND; ignore_dbusclose gates only
+// the bus CloseNotification path; transient/progress cards vanish entirely on
+// expiry. `hyprctl hyprnotify state` reports center/live/dnd; the
 // org.hitori.hyprnotify bus interface carries Toggle/State for the bar's
 // bell (the sanctioned cross-plugin channel — the bus, never symbols).
 //
@@ -138,25 +139,7 @@ static int               luaSuspend(lua_State*) {
     return 0;
 }
 
-// hl.plugin.hyprnotify.recall() / `hyprctl hyprnotify recall` — history-pop.
-static int               recallPresses = 0;
-static NHyprCommon::CHop pendingRecall;
-static void              queueRecall() {
-    if (!g_pEventLoopManager)
-        return; // as luaSuspend
-    if (++recallPresses > 1)
-        return;
-    pendingRecall.arm([]() {
-        for (int i = std::exchange(recallPresses, 0); i > 0; i--)
-            NHyprnotify::Bus::recall();
-    });
-}
-static int luaRecall(lua_State*) {
-    queueRecall();
-    return 0;
-}
-
-// The center toggle: F12's user bind (hl.plugin.hyprnotify.center()), the
+// The shade toggle: F12's user bind (hl.plugin.hyprnotify.center()), the
 // bar's bell over the bus, and `hyprctl hyprnotify center` all funnel here —
 // deferred and accumulating like suspend.
 static int               centerPresses = 0;
@@ -214,7 +197,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.roundingPower   = makeShared<Config::Values::CFloatValue>("plugin:hyprnotify:rounding_power", "corner superellipse exponent", (float)Th::ROUNDING_POWER);
     cfg.coalescePopups  = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:coalesce_popups", "1 = at most one live popup per app; same-app extras land silent in the center (0 = a banner per message)", 1);
     cfg.maxNotifs       = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_notifs", "model cap; overflow evicts the oldest non-critical card", 50);
-    cfg.maxHistory      = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:max_history", "history cap; 0 disables history", 20);
     cfg.ignoreDbusClose = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:ignore_dbusclose", "ignore app-initiated CloseNotification (dunst's knob)", 0);
     cfg.colBg           = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_bg", "glass fill (alpha is the glass)", Th::GLASS);
     cfg.colFg           = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_fg", "body text", Th::INK);
@@ -228,7 +210,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.fallbackIconDir = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:fallback_icon_dir", "iconless cards draw a random identity face from this directory", "");
 
     for (const auto& V : {cfg.fontSize, cfg.width, cfg.maxHeight, cfg.maxIcon, cfg.margin, cfg.offsetY, cfg.timeoutLow, cfg.timeoutNormal, cfg.coalescePopups, cfg.rounding,
-                          cfg.maxNotifs, cfg.maxHistory, cfg.ignoreDbusClose})
+                          cfg.maxNotifs, cfg.ignoreDbusClose})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
     HyprlandAPI::addConfigValueV2(PHANDLE, cfg.roundingPower);
     for (const auto& V : {cfg.font, cfg.fallbackIconDir, cfg.soundCommand})
@@ -244,12 +226,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         HyprlandAPI::registerHyprCtlCommand(PHANDLE, SHyprCtlCommand{.name = "hyprnotify", .exact = false, .fn = [](eHyprCtlOutputFormat, std::string request) -> std::string {
                                                                          if (request.ends_with("count"))
                                                                              return std::to_string(notifs.size());
-                                                                         if (request.ends_with("history"))
-                                                                             return std::to_string(Bus::historySize());
-                                                                         if (request.ends_with("recall")) {
-                                                                             queueRecall();
-                                                                             return "ok";
-                                                                         }
                                                                          if (request.ends_with("center")) {
                                                                              queueCenterToggle();
                                                                              return "ok";
@@ -258,18 +234,14 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                                                                              return Bus::stateString();
                                                                          if (request.ends_with("badge"))
                                                                              return Bus::badgeString();
-                                                                         if (request.ends_with("clear")) { // dismiss + wipe: the scripted reset
+                                                                         if (request.ends_with("clear")) { // the scripted reset
                                                                              static NHyprCommon::CHop pendingClear;
-                                                                             pendingClear.arm([]() {
-                                                                                 Bus::dismissAllLive();
-                                                                                 Bus::clearHistory();
-                                                                             });
+                                                                             pendingClear.arm([]() { Bus::dismissAllLive(); });
                                                                              return "ok";
                                                                          }
                                                                          return "unknown request";
                                                                      }});
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprnotify", "suspend", luaSuspend);
-    HyprlandAPI::addLuaFunction(PHANDLE, "hyprnotify", "recall", luaRecall);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprnotify", "center", luaCenter); // F12 is the reserved bind
 
     g_lifecycle.init();
@@ -306,7 +278,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 APICALL EXPORT void PLUGIN_EXIT() {
     g_lifecycle.resetAll(); // listeners first, then every hop
     suspendPresses = 0;
-    recallPresses  = 0;
     centerPresses  = 0;
     if (ctlCmd)
         HyprlandAPI::unregisterHyprCtlCommand(PHANDLE, ctlCmd);

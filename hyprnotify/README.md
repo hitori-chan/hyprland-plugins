@@ -17,54 +17,60 @@ Two surfaces share one card model:
    body, a progress pill for the `value` hint, and the card's actions as
    tinted text buttons. Hovering reveals the ✕; critical cards ring urgent.
    Without an explicit `expire_timeout` a normal card runs `timeout_normal`
-   (5s) and then RETREATS to the center — the popup goes, the card stays,
-   the center is the safety net. Critical cards are the exception: they stick
+   (5s) and then RETREATS to the shade — the popup goes, the card stays,
+   the shade is the safety net. Critical cards are the exception: they stick
    as a banner until dismissed. Ephemerals (low urgency, `transient`, a
    `value` card) run the shorter `timeout_low`. To keep a chatty app from
    stacking the screen, `coalesce_popups` (on by default) holds it to ONE
    live banner: while its popup is up, further non-critical arrivals from it
    land silent and resident in the center (folded, badge-counted), and the
    next one pops fresh once that banner retreats — critical always shows.
-2. **The center** (F12, the bar's bell, `hyprctl hyprnotify center`) — one
-   scroll, three lifecycle sections drawn top to bottom, each only when
-   non-empty:
-   - **Urgent** — live critical cards, pinned to the top.
-   - **Waiting** — live normal cards, still alive and counting unread;
-     conversations (fd.o category `im.*`/`call.*`) sort atop.
-   - **Earlier** — history: dismissed / app-closed / expired entries, dimmed.
-   Opening the center ABSORBS the popped banners into Waiting (they park as
-   shade rows, no dismiss), so closing never re-pops them; the empty shade
-   says "You're all caught up!". Every card folds two ways: a single row is
-   collapsed (icon + bold "title • age" + the newest body line + a 24Ø
-   chevron) ⇄ open (header/age, title, body, progress, and the
-   notification's ORIGINAL actions — Earlier included, best-effort
-   `ActionInvoked` with the original id, the entry consumed). ≥2 same-app
-   cards fold digest (identity icon · "App • N • age" · count pill · ≤2
-   preview lines) ⇄ open (every child fully readable). Fold state resets
-   when the center closes.
-   - Verbs: left acts (default action → dismiss); right dismisses → Earlier
-     (Earlier deletes); the chevron folds a single; a section header's ✕
-     clears that section (Urgent/Waiting → Earlier, Earlier wipes). A left
-     click on an Earlier body recalls it (fresh id, original age). The
-     footer is ⊖ DND (accent-lit while on) and "Clear all" — the global
-     sweep of live AND history (greys when both are empty). The wheel pages
-     the list — captured only inside the panel; esc closes.
+2. **The shade** (F12, the bar's bell, `hyprctl hyprnotify center`) — ONE
+   list of live cards, no lifecycle sections and no history view: a
+   dismissed card is gone, exactly as on Android, and there is no recall.
+   Opening it ABSORBS the popped banners (they park as shade rows, no
+   dismiss), so closing never re-pops them; empty, it says "You're all
+   caught up!".
+   - **Ranking** is Android's, minus the dividers: critical, then
+     conversations (fd.o category `im.*`/`call.*`), then normal, then
+     silent — newest first inside each tier.
+   - **Bundling** follows `GroupHelper.AUTOGROUP_AT_COUNT`: an app's cards
+     collapse into one digest (identity icon · "App • N • age" · count pill
+     · ≤2 preview lines) only at FOUR or more; below that every card stands
+     alone. Conversations never bundle — each chat keeps its own card.
+   - **Rows open by default.** An expansion budget walks the page from the
+     top and opens each row while the panel still has room (the top row
+     always opens — Android's one guarantee; the desktop shade is taller, so
+     we keep going), then folds the overflow. A row whose open form shows
+     nothing new gets no chevron at all. The panel runs to the height the
+     monitor leaves below `offset_y`; what still overflows becomes wheel
+     paging, with "▴" / "▾ N" cues.
+   - **Verbs — left reads.** A left click anywhere on a row (the chevron
+     included) folds it open ⇄ shut and does nothing else, so the most
+     common intent has the biggest target and no gesture is destructive by
+     accident. The card's primary action moves INTO the open row as its lead
+     button, beside its other actions; a button acts and dismisses (unless
+     `resident`). Right dismisses, middle sweeps. On a bundle: left expands,
+     right (or the header ✕) dismisses the whole app. The footer is ⊖ DND
+     (accent-lit while on) and "Clear all". Esc closes; a click outside
+     closes. Fold state resets when the shade closes.
 
-Model rules: `x-canonical-append` joins same app+summary into one growing
-conversation card (~8KB, oldest lines drop; one history entry per
-conversation); the OSD id band 9990-9999 replaces in place and never
-appends, groups, or retires; critical bypasses DND; `ignore_dbusclose`
-gates only the bus `CloseNotification` path (user dismissals and expiry are
-untouched); `transient` and progress cards vanish entirely on expiry;
-`max_notifs` overflow evicts the oldest non-critical into history.
-Grouping keys on app identity (`desktop-entry`, else the app name).
+Model rules: the **conversation merge** (Android's MessagingStyle) joins one
+chat's messages into one growing card (~8KB, oldest lines drop) — a fresh
+Notify whose app + summary matches a live card rides the replace path with
+the bodies joined, triggered by the `im.*`/`call.*` categories or by
+`x-canonical-append`; the OSD id band 9990-9999 replaces in place and never
+appends or groups; critical bypasses DND; `ignore_dbusclose` gates only the
+bus `CloseNotification` path (user dismissals and expiry are untouched);
+`transient` and progress cards vanish entirely on expiry; `max_notifs`
+overflow evicts the oldest non-critical. Grouping keys on app identity
+(`desktop-entry`, else the app name).
 
 The bar's bell talks over the bus: the `org.hitori.hyprnotify` interface on
-the Notifications object carries `Toggle` (the center) and a `State` signal
-(live/kept/dnd/center — the badge counts the shade, never history, the DND
-queue or the OSD band). `hyprctl hyprnotify
-{count,history,recall,center,state,clear}`; `hl.plugin.hyprnotify.
-{suspend,recall,center}()`.
+the Notifications object carries `Toggle` (the shade) and a `State` signal
+(live/kept/dnd/center — the badge counts the shade, never the DND queue or
+the OSD band). `hyprctl hyprnotify {count,center,state,badge,clear}`;
+`hl.plugin.hyprnotify.{suspend,center}()`.
 
 Markup stays the whitelisted Pango subset with the literal-`<`/`&` rescue;
 `<a href>` opens via `xdg-open`; `<img src>` renders a thumbnail row;
