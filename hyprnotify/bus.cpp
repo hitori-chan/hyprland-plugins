@@ -735,6 +735,7 @@ namespace NHyprnotify {
                 // the shell face: the bar's bell toggles the center and reads
                 // the badge counts here
                 obj->addVTable(sdbus::registerMethod("Toggle").implementedAs([]() { queueCenterToggle(); }),
+                               sdbus::registerMethod("Peek").withInputParamNames("on_bell").implementedAs([](bool on) { queueCenterPeek(on); }),
                                sdbus::registerMethod("State").withOutputParamNames("live", "kept", "dnd", "center").implementedAs([]() {
                                    const auto [LIVE, KEPT] = badgeCounts();
                                    return std::tuple<uint32_t, uint32_t, bool, bool>{LIVE, KEPT, suspended, centerVisible()};

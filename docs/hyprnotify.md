@@ -88,6 +88,12 @@ icons).
   selection (an accent hairline; the page follows it), Space folds, Enter
   fires the primary, Delete dismisses. Modified chords pass through as user
   binds, and the action keys pass through while nothing is selected.
+- Bell hover-peek: `Peek(on_bell)` from the bar opens the shade UNPINNED
+  after `hyprbar:bell_peek_ms`. A peek does not absorb the popped banners
+  (a pointer crossing the bell must not swallow unread ones), and it closes
+  on a grace timer once the pointer is on neither the bell nor the panel —
+  both surfaces cancel that timer, which is what lets the pointer travel
+  from the bell down into the shade. Any click pins it.
 - Critical: urgent-colored frame and progress fill, never expires.
 - Sound: `sound-file`/`sound-name` play through a libcanberra player
   (`sound_command`, empty disables); `suppress-sound` mutes one arrival. The
@@ -125,11 +131,13 @@ icons).
 
 ## Config
 
-`plugin:hyprnotify:*` — `font`, `font_size` (12), `width` (340),
-`max_height` (260), `max_icon` (64), `margin` (4, screen edge + inter-card),
-`offset_y` (30, clears the bar), `timeout_low` (4000, the ephemerals'
-clock), `timeout_normal` (0 = sticky until dismissed), `rounding` (1),
-`max_notifs` (50), `fallback_icon_dir`, `sound_command` (`canberra-gtk-play`), `col_bg`,
-`col_fg`, `col_title`, `col_kicker`, `col_frame`, `col_urgent`,
-`col_highlight`, `col_link`. Colors and fonts arrive from `theme.lua`; the
-C++ defaults mirror it.
+`plugin:hyprnotify:*` — `font`, `font_size` (12), `width` (348),
+`max_height` (300), `max_icon` (44), `margin` (6, screen edge +
+inter-card), `offset_y` (34, clears the bar), `timeout_low` (4000, the
+ephemerals' clock), `timeout_normal` (5000, then the banner retreats to the
+shade; 0 = sticky), `coalesce_popups` (1), `rounding`, `rounding_power`,
+`max_notifs`, `ignore_dbusclose`, `fallback_icon_dir`, `sound_command`
+(`canberra-gtk-play`), `col_bg`, `col_fg`, `col_title`, `col_kicker`,
+`col_frame`, `col_urgent`, `col_highlight`, `col_link`. The peek's delay is
+the bar's (`plugin:hyprbar:bell_peek_ms`, 350; 0 = off). Colors and fonts
+arrive from `theme.lua`; the C++ defaults mirror it.

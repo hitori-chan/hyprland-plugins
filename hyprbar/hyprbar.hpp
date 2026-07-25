@@ -106,6 +106,7 @@ namespace NHyprbar {
         SP<Config::Values::CIntValue>    height;
         SP<Config::Values::CIntValue>    fontSize;
         SP<Config::Values::CIntValue>    traySpacing; // awesome's systray_icon_spacing
+        SP<Config::Values::CIntValue>    bellPeekMs;  // hover-intent delay before the bell peeks the shade open; 0 = off
         SP<Config::Values::CStringValue> font;
         SP<Config::Values::CStringValue> terminal; // runs Terminal=true menubar entries
         SP<Config::Values::CColorValue>  colBg;
@@ -351,6 +352,11 @@ namespace NHyprbar {
         // a click on one of this widget's hits — input.cpp owns swallowing
         // and defers this out of the input emission
         virtual void onHit(const SHit& h, uint32_t bit, bool super) {}
+        // the pointer entered or left this widget's cells. Called on the
+        // CHANGE only, never per motion event, and always paired — a leave
+        // arrives before the next widget's enter. Must be async-safe: this
+        // runs inside the motion emission (no workspace/focus changes).
+        virtual void onHover(bool in) {}
         // wheel. Step-widgets coalesce notches through input.cpp's single
         // deferred hop (axis events arrive several per dispatch, and a lone
         // overwritten doLaterLock loses steps)...

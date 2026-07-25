@@ -260,10 +260,12 @@ namespace NHyprbar {
     // as they would over a real layer-surface bar.
     static bool pointerOwned = false;
 
-    static bool barOwnsPoint(const Vector2D& pos) {
+    // the monitor whose strip owns this point, null when none does (the caller
+    // needs the monitor anyway, and finding it walks every one of them)
+    static PHLMONITOR barOwnsPoint(const Vector2D& pos) {
         const auto MON = monitorAt(pos);
         if (!MON)
-            return false;
+            return nullptr;
 
         // the cheap geometry first: this runs per pointer motion, and almost
         // every motion is far below the strip
@@ -277,12 +279,29 @@ namespace NHyprbar {
         if (!over && Menubar::isOpen && Menubar::mon.lock() == MON && pos.y <= MON->logicalBox().y + barHeight() * 2)
             over = true; // the prompt strip below the bar is ours too
         if (!over)
-            return false;
+            return nullptr;
 
         const auto WS = MON->m_activeWorkspace;
         if (WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN)
-            return Menubar::isOpen && Menubar::mon.lock() == MON; // hidden bar — only the open menubar floats above fullscreen
-        return true;
+            return Menubar::isOpen && Menubar::mon.lock() == MON ? MON : nullptr; // hidden bar — only the open menubar floats above fullscreen
+        return MON;
+    }
+
+    // ---- cell hover ----
+    //
+    // Widgets that want it get enter/leave on their cells (the bell peeks the
+    // shade open on one). Tracked per WIDGET, not per hit: moving between two
+    // of the same widget's cells is not a leave.
+    static IWidget* hoverWidget = nullptr;
+
+    static void     setHoverWidget(IWidget* w) {
+        if (w == hoverWidget)
+            return;
+        if (hoverWidget)
+            hoverWidget->onHover(false);
+        hoverWidget = w;
+        if (hoverWidget)
+            hoverWidget->onHover(true);
     }
 
     void releasePointer() {
@@ -295,6 +314,7 @@ namespace NHyprbar {
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info) {
         if (NHyprCommon::sessionLocked()) {
             releasePointer(); // no cursor pinned over an invisible strip
+            setHoverWidget(nullptr);
             return;
         }
 
@@ -329,10 +349,21 @@ namespace NHyprbar {
         // the held-button / live-drag gates first: they are two loads, while
         // barOwnsPoint walks the monitors and fetches the bar height — and a
         // drag sweeping across the screen emits motion the whole way
-        if (heldButtons > 0 || (g_layoutManager && g_layoutManager->dragController()->target()) || !barOwnsPoint(pos)) {
+        const auto MON = heldButtons > 0 || (g_layoutManager && g_layoutManager->dragController()->target()) ? nullptr : barOwnsPoint(pos);
+        if (!MON) {
             releasePointer();
+            setHoverWidget(nullptr);
             return;
         }
+
+        IWidget* over = nullptr;
+        if (const auto IT = hitboxes.find(MON->m_id); IT != hitboxes.end())
+            for (const auto& HIT : IT->second)
+                if (HIT.box.containsPoint(pos)) {
+                    over = HIT.widget;
+                    break;
+                }
+        setHoverWidget(over);
 
         info.cancelled = true;
         if (!pointerOwned) {
@@ -343,6 +374,7 @@ namespace NHyprbar {
     }
 
     void inputExit() {
+        setHoverWidget(nullptr); // the peek must not outlive the bar
         pendingHit.reset();
         pendingScroll.reset();
         scrollAcc.clear();

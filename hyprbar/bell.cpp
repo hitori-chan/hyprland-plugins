@@ -17,6 +17,8 @@ namespace NHyprbar {
 
     static uint32_t                       bellLive = 0, bellKept = 0;
     static std::unique_ptr<sdbus::IProxy> proxy; // on the tray's session-bus link
+    static SP<CEventLoopTimer>            peekIn;           // hover intent: a pointer CROSSING the bell must not open anything
+    static bool                           peeking = false;
 
     static void                           applyState(uint32_t live, uint32_t kept) {
         if (live == bellLive && kept == bellKept)
@@ -28,6 +30,20 @@ namespace NHyprbar {
 
     namespace Bell {
         static constexpr const char* CIFACE = "org.hitori.hyprnotify";
+
+        // The hover-peek: hyprnotify opens the shade unpinned and decides for
+        // itself when to drop it (the pointer may travel from here down into
+        // the panel). All the bar owes it is "the pointer is / is not on the
+        // bell" — the shade owns the policy, we own the intent delay.
+        static void                  sendPeek(bool on) {
+            if (!proxy || peeking == on)
+                return;
+            peeking = on;
+            try {
+                proxy->callMethodAsync("Peek").onInterface(CIFACE).withArguments(on).uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                Tray::pollSoon();
+            } catch (...) {} // no daemon: the hover is a no-op
+        }
 
         void                         daemonUp() {
             // (re)read the counts — the daemon (re)appeared after us; the
@@ -45,6 +61,10 @@ namespace NHyprbar {
         }
 
         void init() {
+            peekIn = makeShared<CEventLoopTimer>(
+                std::nullopt, [](SP<CEventLoopTimer>, void*) { sendPeek(true); }, nullptr);
+            g_pEventLoopManager->addTimer(peekIn);
+
             if (!Tray::bus.conn())
                 return; // no session bus: no bell state, glyph still draws
             try {
@@ -57,6 +77,10 @@ namespace NHyprbar {
         }
 
         void exit() {
+            if (peekIn && g_pEventLoopManager)
+                g_pEventLoopManager->removeTimer(peekIn);
+            peekIn.reset();
+            peeking = false;
             proxy.reset(); // before the tray's connection dies (tray.cpp calls this from dropOwned)
             bellLive = bellKept = 0;
         }
@@ -231,9 +255,25 @@ namespace NHyprbar {
                 P.hits->push_back(h);
             }
 
+            void onHover(bool in) override {
+                if (!peekIn)
+                    return;
+                const int MS = cfg.bellPeekMs->value();
+                if (in) {
+                    if (MS > 0)
+                        peekIn->updateTimeout(std::chrono::milliseconds(MS));
+                    return;
+                }
+                peekIn->updateTimeout(std::nullopt);
+                Bell::sendPeek(false); // unconditional: the knob can go to 0 mid-hover
+            }
+
             void onHit(const SHit&, uint32_t bit, bool) override {
                 if (bit != 1u || !proxy)
                     return;
+                // the click pins whatever the hover opened; hyprnotify's Toggle
+                // reads its own peek state to tell the two apart
+                Bell::sendPeek(false);
                 try {
                     proxy->callMethodAsync("Toggle").onInterface(Bell::CIFACE).uponReplyInvoke([](std::optional<sdbus::Error>) {});
                     Tray::pollSoon();

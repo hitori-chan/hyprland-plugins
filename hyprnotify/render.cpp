@@ -94,6 +94,7 @@ namespace NHyprnotify {
         if (h == hovered)
             return;
         Bus::holdBanner(h.kind == SCard::POPUP ? h.id : 0); // reading a banner stops its clock
+        centerPeekPointer(!(h == SHover{}));                // and staying on the shade keeps a peek alive
         if (g_pHyprRenderer) {
             const auto   M      = cardsMon.lock();
             const double MARGIN = (M ? std::ceil(M->m_scale) : 1.0) + 1.0;
