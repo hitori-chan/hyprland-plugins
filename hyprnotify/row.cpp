@@ -408,11 +408,14 @@ namespace NHyprnotify {
         // the static ✕ (dismiss the whole app's bundle)
         const CBox XB{box.x + box.w - ROW_PADX - XCIRC, box.y + ROW_PADT + (CHILD_ICON - XCIRC) / 2, XCIRC, XCIRC};
         const bool XHOV = HHOV && hovered.part == 2;
-        const auto XG   = cachedText("✕", XHOV ? tOnAccent() : COLFG, T.small, 64, -1, 0, false, 600);
+        // BOTH colours, every pass: hover flips without a rewarm, so keying
+        // this raster on the hover state would miss the cache for a frame
+        const auto XG    = cachedText("✕", COLFG, T.small, 64, -1, 0, false, 600);
+        const auto XGHOT = cachedText("✕", tOnAccent(), T.small, 64, -1, 0, false, 600);
         if (!P.warm) {
             P.rect(XB, XHOV ? COLURGENT : tFill2(), (int)std::lround(XCIRC / 2 * P.scale));
-            if (XG && XG->tex)
-                P.tex(XG->tex, XB.x + (XB.w - XG->tex->m_size.x / P.scale) / 2, XB.y + (XB.h - XG->tex->m_size.y / P.scale) / 2);
+            if (const auto* G = XHOV ? XGHOT : XG; G && G->tex)
+                P.tex(G->tex, XB.x + (XB.w - G->tex->m_size.x / P.scale) / 2, XB.y + (XB.h - G->tex->m_size.y / P.scale) / 2);
         }
 
         // the header is chrome, so its controls stand rather than hide — the

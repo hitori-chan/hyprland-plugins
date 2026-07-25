@@ -109,13 +109,17 @@ namespace NHyprnotify::Policy {
         if (appKey.empty() || sender.empty())
             return;
         const auto KEY = convKey(appKey, sender);
-        if (const auto IT = s_priority.find(KEY); IT != s_priority.end())
-            s_priority.erase(IT);
-        else
+        const auto IT  = s_priority.find(KEY);
+        const bool ON  = IT == s_priority.end();
+        if (ON)
             s_priority.insert(KEY);
-        for (const auto& N : notifs) // the paint reads the flag, not the store
+        else
+            s_priority.erase(IT);
+        // the paint reads the flag, not the store — ASSIGN it rather than
+        // flipping, so a card whose flag ever drifted lands back in step
+        for (const auto& N : notifs)
             if (N->appKey == appKey && N->summary == sender)
-                N->priority = !N->priority;
+                N->priority = ON;
         s_saver.dirty();
         notifChanged();
         Bus::emitStateSoon();
