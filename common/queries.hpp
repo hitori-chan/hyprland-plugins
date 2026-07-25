@@ -6,6 +6,8 @@
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/helpers/MiscFunctions.hpp>
 #include <hyprland/src/managers/SessionLockManager.hpp>
+#include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
+#include <hyprland/src/desktop/Workspace.hpp>
 #include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/protocols/XDGShell.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
@@ -20,6 +22,17 @@ namespace NHyprCommon {
     // it trips.
     inline bool sessionLocked() {
         return g_pSessionLockManager && g_pSessionLockManager->isSessionLocked();
+    }
+
+    // A REAL fullscreen window owns this monitor's active workspace (a
+    // maximized one respects the reserved strip and does not count). The bar
+    // hides for it and the notification daemon holds its banners back —
+    // presenting, gaming and watching are all the same ask.
+    inline bool fullscreenOn(PHLMONITOR mon) {
+        if (!mon || !Fullscreen::controller())
+            return false;
+        const auto WS = mon->m_activeWorkspace;
+        return WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN;
     }
 
     // The monitor a point belongs to, nearest one if it lands off every

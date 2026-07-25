@@ -74,7 +74,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.3.0";
+    inline constexpr const char* VERSION = "6.4.0";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -99,6 +99,7 @@ namespace NHyprnotify {
         SP<Config::Values::CIntValue>    timeoutLow;    // ms; the -1 fallback for ephemerals (low/transient/progress)
         SP<Config::Values::CIntValue>    timeoutNormal; // ms; the -1 fallback for normal urgency, then it retreats to the shade; 0 = sticky (critical always is)
         SP<Config::Values::CIntValue>    coalescePopups; // 1 = at most one live popup per app; same-app extras land resident + silent
+        SP<Config::Values::CIntValue>    quietFullscreen; // 1 = hold banners back while a real fullscreen window owns the monitor
         SP<Config::Values::CIntValue>    rounding;      // card radius; the panel (+6) and rows (-2) derive from it
         SP<Config::Values::CFloatValue>  roundingPower; // superellipse exponent, the compositor's rounding_power
         SP<Config::Values::CIntValue>    maxNotifs;     // model cap; overflow evicts oldest non-critical

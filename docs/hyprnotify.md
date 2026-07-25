@@ -108,6 +108,10 @@ icons).
   on a grace timer once the pointer is on neither the bell nor the panel —
   both surfaces cancel that timer, which is what lets the pointer travel
   from the bell down into the shade. Any click pins it.
+- Quiet while fullscreen (`quiet_fullscreen`, on): a real fullscreen window
+  on the focused monitor holds banners back — presenting, gaming and
+  watching are the same ask — and the card lands resident in the shade
+  instead. Critical bypasses it; a maximized window is not fullscreen.
 - Critical: urgent-colored frame and progress fill, never expires.
 - Sound: `sound-file`/`sound-name` play through a libcanberra player
   (`sound_command`, empty disables); `suppress-sound` mutes one arrival. The
@@ -150,7 +154,8 @@ icons).
 inter-card), `offset_y` (34, clears the bar), `timeout_low` (4000, the
 ephemerals' clock), `timeout_normal` (5000, then the banner retreats to the
 shade; 0 = sticky), `coalesce_popups` (1), `rounding`, `rounding_power`,
-`max_notifs`, `ignore_dbusclose`, `fallback_icon_dir`, `sound_command`
+`max_notifs`, `ignore_dbusclose`, `quiet_fullscreen` (1),
+`fallback_icon_dir`, `sound_command`
 (`canberra-gtk-play`), `col_bg`, `col_fg`, `col_title`, `col_kicker`,
 `col_frame`, `col_urgent`, `col_highlight`, `col_link`. The peek's delay is
 the bar's (`plugin:hyprbar:bell_peek_ms`, 350; 0 = off). Colors and fonts

@@ -32,6 +32,11 @@ Two surfaces share one card model:
    live banner: while its popup is up, further non-critical arrivals from it
    land silent and resident in the center (folded, badge-counted), and the
    next one pops fresh once that banner retreats — critical always shows.
+   `quiet_fullscreen` (on by default) does the same for a screen that is
+   spoken for: while a REAL fullscreen window owns the monitor, banners are
+   held back and the card lands straight in the shade. Nothing is lost —
+   residency is that safety net — and critical punches through, as through
+   DND. A merely maximized window does not count.
 2. **The shade** (F12, the bar's bell, `hyprctl hyprnotify center`) — ONE
    list of live cards, no lifecycle sections and no history view: a
    dismissed card is gone, exactly as on Android, and there is no recall.

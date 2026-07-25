@@ -416,6 +416,24 @@ chk "keys: enter fires the primary and the card goes" test "$(st)" = "center:1 l
 tap esc
 chk "keys: esc closes the shade" test "$(st)" = "center:0 live:0 dnd:0"
 
+# ---- quiet while fullscreen -------------------------------------------------
+# A real fullscreen window owns the screen, so the banner is held back and the
+# card lands straight in the shade (residency is the safety net, so nothing is
+# lost). Critical still punches through, exactly as it does through DND.
+dsp "hl.dsp.exec_cmd('foot --window-size-pixels=600x400')"; sleep 2
+dsp "hl.dsp.window.fullscreen()"; sleep 1
+# mode 2 is FSMODE_FULLSCREEN; 1 is merely maximized and must NOT count
+expect "quiet-fs: a window really is fullscreen" "any(c['fullscreen'] == 2 for c in cs)"
+dsp "hl.dsp.exec_cmd('notify-send -a q1 -t 30000 quiet body')"; sleep 1.2
+chk "quiet-fs: the card landed silent, no banner" test "$(bd)" = "banners:0 resident:1"
+dsp "hl.dsp.exec_cmd('notify-send -a q2 -u critical \"loud\" body')"; sleep 1.2
+chk "quiet-fs: critical still punches through" test "$(bd)" = "banners:1 resident:1"
+hq hyprnotify clear >/dev/null; sleep 0.5
+dsp "hl.dsp.window.fullscreen()"; sleep 1
+dsp "hl.dsp.exec_cmd('notify-send -a q3 -t 30000 loudagain body')"; sleep 1.2
+chk "quiet-fs: out of fullscreen, banners are back" test "$(bd)" = "banners:1 resident:0"
+hq hyprnotify clear >/dev/null; dsp "hl.dsp.window.close()"; sleep 1
+
 # ---- inline reply -----------------------------------------------------------
 # The protocol the Linux chat apps speak: a sender only offers a reply when the
 # server advertises the capability, so the capability IS the feature. Driven

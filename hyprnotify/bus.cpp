@@ -3,6 +3,7 @@
 #include "common/busclient.hpp"
 #include "common/icons.hpp"
 #include "common/lifecycle.hpp"
+#include "common/queries.hpp"
 
 #include "hyprnotify.hpp"
 
@@ -685,8 +686,15 @@ namespace NHyprnotify {
             // the shade (folded, badge-counted), no second popup, no repeat
             // sound. A replace re-alerting its own live card is not a second
             // banner (appHasBanner skips self). Critical always punches through.
+            // Presenting, gaming, watching: a real fullscreen window means the
+            // screen is spoken for, so the banner is held back and the card
+            // lands straight in the shade instead. Nothing is lost — residency
+            // is exactly that safety net — and critical still punches through,
+            // as it does through DND.
+            const bool fsQuiet = cfg.quietFullscreen->value() && !n->waiting && n->urgency < 2 && !vanishes(n) &&
+                NHyprCommon::fullscreenOn(Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr);
             const bool coalesced = cfg.coalescePopups->value() && !n->waiting && n->urgency < 2 && !vanishes(n) && appHasBanner(n);
-            if (coalesced)
+            if (coalesced || fsQuiet)
                 n->banner = false;
 
             if (!n->waiting) // a suspended arrival is invisible: no warm, no damage
