@@ -118,7 +118,7 @@ namespace NHyprnotify {
         if (!action.empty())
             Bus::invokeAction(id, action);
         if (!(resident && !action.empty())) // resident keeps the card once an action fired
-            Bus::closeOne(id, Bus::R_DISMISSED);
+            Model::closeOne(id, Model::R_DISMISSED);
     }
 
     static void drainHits() {
@@ -134,11 +134,11 @@ namespace NHyprnotify {
             switch (H.kind) {
                 case SCard::POPUP: {
                     if (H.bit == 4u) {
-                        Bus::absorbPopped(); // middle: park the stack into the shade (no dismiss)
+                        Model::absorbPopped(); // middle: park the stack into the shade (no dismiss)
                         return;              // the rest reference now-parked cards
                     }
                     if (H.bit == 2u || H.part == 2) {
-                        Bus::closeOne(H.id, Bus::R_DISMISSED);
+                        Model::closeOne(H.id, Model::R_DISMISSED);
                         continue;
                     }
                     if (!H.href.empty()) { // left on a hyperlink: open it, keep the card up
@@ -151,11 +151,11 @@ namespace NHyprnotify {
                 case SCard::ROW:
                 case SCard::CHILD: {
                     if (H.bit == 4u) {
-                        Bus::dismissAllLive();
+                        Model::dismissAllLive();
                         return; // the rest of the queue references swept cards
                     }
                     if (H.bit == 2u) {
-                        Bus::closeOne(H.id, Bus::R_DISMISSED);
+                        Model::closeOne(H.id, Model::R_DISMISSED);
                         continue;
                     }
                     if (H.bit != 1u)
@@ -193,18 +193,18 @@ namespace NHyprnotify {
                         continue;
                     }
                     if (H.bit == 2u) { // right: the whole bundle goes
-                        Bus::dismissApp(H.group);
+                        Model::dismissApp(H.group);
                         continue;
                     }
                     if (H.bit == 4u) {
-                        Bus::dismissAllLive();
+                        Model::dismissAllLive();
                         return;
                     }
                     continue;
                 }
                 case SCard::GHEAD: {
                     if (H.part == 2 || H.bit == 2u) { // the static ✕ / right: the whole bundle goes
-                        Bus::dismissApp(H.group);
+                        Model::dismissApp(H.group);
                         continue;
                     }
                     if (H.bit == 1u) {
@@ -212,18 +212,18 @@ namespace NHyprnotify {
                         continue;
                     }
                     if (H.bit == 4u) {
-                        Bus::dismissAllLive();
+                        Model::dismissAllLive();
                         return;
                     }
                     continue;
                 }
                 case SCard::BTN_CLEAR: // the footer: the global sweep
                     if (H.bit == 1u)
-                        Bus::dismissAllLive();
+                        Model::dismissAllLive();
                     continue;
                 case SCard::BTN_DND:
                     if (H.bit == 1u)
-                        Bus::toggleSuspend();
+                        Model::toggleSuspend();
                     continue;
                 case SCard::PANEL: continue; // dead panel space swallows silently
             }
@@ -357,9 +357,9 @@ namespace NHyprnotify {
                 invokeLive(A.id, ""); // enter on a card: its primary, the body click's twin
             else if (A.verb == 3) {
                 if (GROUP)
-                    Bus::dismissApp(A.group);
+                    Model::dismissApp(A.group);
                 else
-                    Bus::closeOne(A.id, Bus::R_DISMISSED);
+                    Model::closeOne(A.id, Model::R_DISMISSED);
             }
         }
     }

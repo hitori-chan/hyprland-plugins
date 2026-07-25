@@ -139,7 +139,7 @@ static int               luaSuspend(lua_State*) {
         return 0; // a drain is already queued
     pendingSuspend.arm([]() {
         if (std::exchange(suspendPresses, 0) & 1)
-            NHyprnotify::Bus::toggleSuspend();
+            NHyprnotify::Model::toggleSuspend();
     });
     return 0;
 }
@@ -242,6 +242,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     for (const auto& V : {cfg.colBg, cfg.colFg, cfg.colTitle, cfg.colKicker, cfg.colFrame, cfg.colUrgent, cfg.colHighlight, cfg.colLink})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
 
+    Model::init(); // the expiry timer stands before anything can arrive
     Bus::init();
     renderInit();
     centerInit();
@@ -256,12 +257,12 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                                                                              return "ok";
                                                                          }
                                                                          if (request.ends_with("state"))
-                                                                             return Bus::stateString();
+                                                                             return Model::stateString();
                                                                          if (request.ends_with("badge"))
-                                                                             return Bus::badgeString();
+                                                                             return Model::badgeString();
                                                                          if (request.ends_with("clear")) { // the scripted reset
                                                                              static NHyprCommon::CHop pendingClear;
-                                                                             pendingClear.arm([]() { Bus::dismissAllLive(); });
+                                                                             pendingClear.arm([]() { Model::dismissAllLive(); });
                                                                              return "ok";
                                                                          }
                                                                          return "unknown request";
@@ -308,7 +309,8 @@ APICALL EXPORT void PLUGIN_EXIT() {
     if (ctlCmd)
         HyprlandAPI::unregisterHyprCtlCommand(PHANDLE, ctlCmd);
     ctlCmd.reset();
-    Bus::exit(); // closes the model; its textures die with it
+    Bus::exit();   // the connection first: nothing may arrive mid-teardown
+    Model::exit(); // then the cards, and their textures with them
     inputExit();
     replyExit();
     reapChildren();

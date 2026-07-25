@@ -93,7 +93,7 @@ namespace NHyprnotify {
     void setHovered(const SHover& h) {
         if (h == hovered)
             return;
-        Bus::holdBanner(h.kind == SCard::POPUP ? h.id : 0); // reading a banner stops its clock
+        Model::holdBanner(h.kind == SCard::POPUP ? h.id : 0); // reading a banner stops its clock
         centerPeekPointer(!(h == SHover{}));                // and staying on the shade keeps a peek alive
         if (g_pHyprRenderer) {
             const auto   M      = cardsMon.lock();

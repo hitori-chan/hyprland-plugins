@@ -84,6 +84,14 @@ namespace NHyprnotify {
 
     double damageMargin(PHLMONITOR m);
 
+    // The radius family. ONE configured card radius; the panel that wraps the
+    // rows is rounder, a row inside it is tighter, and the joint that merges
+    // stacked children is tighter still. Physical px, so they take the scale.
+    float  rPow();
+    int    rPanel(double scale);
+    int    rRow(double scale);
+    int    rJoint(double scale);
+
     // shared card recipes — the progress pill and the content-first icon
     // column (lead avatar wearing the identity corner badge); layout code
     // computes presence itself via hasLeadIcon
@@ -134,6 +142,42 @@ namespace NHyprnotify {
     extern SHover hovered;      // current hover, for fills and reveals
     extern double lastContentH; // popup column / panel extents, for the pass bounding box
     extern double lastContentW;
+
+    // ---- row.cpp: one shade row, and the two faces of an app bundle ----
+
+    // a display item: one card, or an app's bundle of them (newest first)
+    struct SDisp {
+        std::vector<SP<SNotif>> items;
+        std::string             key; // the app key (bundles)
+    };
+
+    // Singles and bundle children are the same row in different clothes.
+    struct SRowStyle {
+        double iconPx;       // 40 rows, 28 children
+        bool   withBadge;    // children ride plain avatars — the header owns identity
+        bool   headerHasApp; // singles: "App • age"; children: age only
+        bool   hasChevron;   // singles fold; expanded-bundle children are always open
+        bool   canReply;     // the inline-reply field; conversations never bundle, so children never need it
+    };
+    inline constexpr SRowStyle ROW_SINGLE{ROW_ICON, true, true, true, true};
+    inline constexpr SRowStyle ROW_CHILD{CHILD_ICON, false, false, false, false};
+
+    // Lays out (and outside the warm paints) one row; returns its height and
+    // fills the card's hit boxes. `more` drives the chevron: an open row can
+    // always be folded, a collapsed one only offers it when there is
+    // something behind it.
+    double renderRow(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box, bool open, bool more, const SRowStyle& ST, SCard& card, bool child);
+    // the same code with a context that draws nothing — the budget's ruler
+    double measureRow(const SPaint& P, const SType& T, const SP<SNotif>& N, double w, bool open, const SRowStyle& ST);
+
+    // the three things the placement pass can put in a slot; each paints its
+    // own fill and pushes its own hit card
+    void   paintSingle(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box, bool open, bool more);
+    void   paintDigest(const SPaint& P, const SType& T, const SDisp& D, const CBox& box);
+    void   paintGroup(const SPaint& P, const SType& T, const SDisp& D, const CBox& box, const std::vector<double>& childH);
+
+    double digestH(const SType& T, size_t count, double scale); // the folded bundle's height
+    double groupHeadH();                                        // an expanded bundle's header row
 
     // ---- popups.cpp / center.cpp: the two surfaces ----
 

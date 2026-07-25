@@ -1,842 +1,153 @@
-// hyprnotify/bus.cpp — the org.freedesktop.Notifications daemon and the model
+// hyprnotify/bus.cpp — the org.freedesktop.Notifications connection: the
+// object, its two vtables, the signals we emit and the name we own. It holds
+// no cards; every method here is a thin translation between the wire and
+// model.cpp, and every signal is something the model asked to send.
 
 #include "common/busclient.hpp"
-#include "common/icons.hpp"
 #include "common/lifecycle.hpp"
-#include "common/queries.hpp"
 
 #include "hyprnotify.hpp"
 
 #include <hyprland/src/protocols/XDGActivation.hpp>
 
-namespace NHyprnotify {
+namespace NHyprnotify::Bus {
 
-    std::vector<SP<SNotif>> notifs;
+    static const sdbus::InterfaceName IFACE{"org.freedesktop.Notifications"};
+    // the shell's own face on the same object (dunst does the same with
+    // org.dunstproject.cmd0): the bar's bell reads State and calls Toggle
+    // over the bus — the sanctioned cross-plugin channel, never symbols
+    static const sdbus::InterfaceName CIFACE{"org.hitori.hyprnotify"};
 
-    namespace Bus {
-        static const sdbus::InterfaceName     IFACE{"org.freedesktop.Notifications"};
-        // the shell's own face on the same object (dunst does the same with
-        // org.dunstproject.cmd0): the bar's bell reads State and calls Toggle
-        // over the bus — the sanctioned cross-plugin channel, never symbols
-        static const sdbus::InterfaceName     CIFACE{"org.hitori.hyprnotify"};
+    static std::unique_ptr<sdbus::IObject> obj;
+    static NHyprCommon::CBusLink           g_bus;
+    static NHyprCommon::CHop               pendingState;
 
-        static std::unique_ptr<sdbus::IObject> obj;
-        static NHyprCommon::CBusLink           g_bus;
-        static SP<CEventLoopTimer>             expiry;
-        static uint32_t                        nextId    = 1;
-        static bool                            suspended  = false; // DND
-        static uint32_t                        heldBanner = 0;     // the popup under the pointer: its countdown is paused
-        static NHyprCommon::CHop               pendingState;
+    // A drain must never run synchronously from here: emits happen inside
+    // method handlers, i.e. inside processPendingEvent, and sd-bus dispatch
+    // is not re-entrant. Park it on the link's timer instead.
+    void pollSoon() {
+        g_bus.pollSoon();
+    }
 
-        // A drain must never run synchronously from here: emits happen inside
-        // method handlers, i.e. inside processPendingEvent, and sd-bus dispatch
-        // is not re-entrant. Park it on the link's timer instead.
-        void pollSoon() {
-            g_bus.pollSoon();
-        }
+    void emitClosed(uint32_t id, uint32_t reason) {
+        if (!obj)
+            return;
+        try {
+            obj->emitSignal("NotificationClosed").onInterface(IFACE).withArguments(id, reason);
+        } catch (...) {} // a dead bus must not unwind through the timer/doLater C frames
+        pollSoon();
+    }
 
-        // ---- the model ----
-
-        static SP<SNotif> byId(uint32_t id) {
-            for (const auto& N : notifs)
-                if (N->id == id)
-                    return N;
-            return nullptr;
-        }
-
-        // Cards that OPT OUT of residency: they vanish on expiry and never
-        // park as a shade row. So they must never coalesce either — a
-        // suppressed banner would strand them, since the expiry sweep only
-        // touches banners. transient hint, progress/value, the OSD band.
-        // This set MUST stay identical to what the expiry timer vanishes.
-        static bool vanishes(const SP<SNotif>& n) {
-            return n->transient || n->progress >= 0 || inOsdBand(n->id);
-        }
-
-        void rearmExpiry() {
-            if (!expiry)
-                return;
-            const auto NOW  = Time::steadyNow();
-            int64_t    next = -1;
-            for (const auto& N : notifs) {
-                if (!N->banner || N->timeoutMs <= 0 || N->waiting || N->id == heldBanner)
-                    continue;
-                // clamp before comparing: -1 is the "none" sentinel, and an
-                // overdue card's negative remaining time must still win
-                const auto MS = std::max<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(N->deadline - NOW).count(), 1);
-                if (next < 0 || MS < next)
-                    next = MS;
-            }
-            if (next < 0)
-                expiry->updateTimeout(std::nullopt);
-            else
-                expiry->updateTimeout(std::chrono::milliseconds(std::max<int64_t>(next, 1)));
-        }
-
-        // A banner must not expire out from under the pointer reading it. The
-        // hovered card's clock stops (the sweep and the rearm both skip it),
-        // and leaving RESTARTS it rather than resuming the sliver that was
-        // left — Android's heads-up does the same when a touch ends: you get
-        // the whole read window back, not the tail of it.
-        void holdBanner(uint32_t id) {
-            if (heldBanner == id)
-                return;
-            const auto PREV = heldBanner;
-            heldBanner      = id;
-            if (const auto N = PREV ? byId(PREV) : nullptr; N && N->banner && N->timeoutMs > 0 && !N->waiting)
-                N->deadline = Time::steadyNow() + std::chrono::milliseconds((int64_t)N->timeoutMs);
-            rearmExpiry();
-        }
-
-        static void emitClosed(uint32_t id, uint32_t reason) {
+    // the bar's bell: live + kept + dnd + center, coalesced per model change
+    void emitStateSoon() {
+        pendingState.arm([]() {
             if (!obj)
                 return;
             try {
-                obj->emitSignal("NotificationClosed").onInterface(IFACE).withArguments(id, reason);
-            } catch (...) {} // a dead bus must not unwind through the timer/doLater C frames
+                const auto [LIVE, KEPT] = Model::badgeCounts();
+                obj->emitSignal("State").onInterface(CIFACE).withArguments(LIVE, KEPT, Model::suspendedNow(), centerVisible());
+            } catch (...) {}
             pollSoon();
-        }
+        });
+    }
 
-        std::string stateString() {
-            return "center:" + std::to_string(centerVisible() ? 1 : 0) + " live:" + std::to_string(notifs.size()) + " dnd:" + std::to_string(suspended ? 1 : 0);
-        }
+    void invokeAction(uint32_t id, const std::string& key) {
+        if (!obj)
+            return;
+        try {
+            // spec 1.3: the token signal precedes the action, so the
+            // sender's xdg-activation request can actually raise it —
+            // tokenless activates only flag urgent
+            if (PROTO::activation)
+                obj->emitSignal("ActivationToken").onInterface(IFACE).withArguments(id, PROTO::activation->mintToken());
+            obj->emitSignal("ActionInvoked").onInterface(IFACE).withArguments(id, key);
+        } catch (...) {}
+        pollSoon();
+    }
 
-        // the badge's truth is the shade: bannered popups + resident cards.
-        // Never the DND queue (invisible until the resume), never the OSD
-        // band (a volume card is an OSD, not a notification).
-        static std::pair<uint32_t, uint32_t> badgeCounts() {
-            uint32_t live = 0, kept = 0;
-            for (const auto& N : notifs) {
-                if (N->waiting || inOsdBand(N->id))
-                    continue;
-                (N->banner ? live : kept)++;
-            }
-            return {live, kept};
-        }
-
-        std::string badgeString() {
-            const auto [LIVE, KEPT] = badgeCounts();
-            return "banners:" + std::to_string(LIVE) + " resident:" + std::to_string(KEPT);
-        }
-
-        // one live popup per app: does another card already hold a banner for
-        // this app? A new same-app arrival then lands resident instead of
-        // stacking a second popup — the shade folds the extras, the badge
-        // counts them (the banner's own timeout is the cooldown window).
-        static bool appHasBanner(const SP<SNotif>& self) {
-            for (const auto& O : notifs)
-                if (O != self && !O->waiting && O->banner && !vanishes(O) && O->appKey == self->appKey)
-                    return true;
-            return false;
-        }
-
-        // the bar's bell: live + kept + dnd + center, coalesced per model change
-        void emitStateSoon() {
-            pendingState.arm([]() {
-                if (!obj)
-                    return;
-                try {
-                    const auto [LIVE, KEPT] = badgeCounts();
-                    obj->emitSignal("State").onInterface(CIFACE).withArguments(LIVE, KEPT, suspended, centerVisible());
-                } catch (...) {}
-                pollSoon();
-            });
-        }
-
-        void closeOne(uint32_t id, uint32_t reason) {
-            const auto BEFORE = notifs.size();
-            std::erase_if(notifs, [&](const auto& N) { return N->id == id; });
-            if (notifs.size() == BEFORE)
-                return;
-            emitClosed(id, reason);
-            notifChanged();
-            rearmExpiry();
-        }
-
-        void dismissAllLive() {
-            // the sweep clears what the user can see (banners AND resident
-            // shade cards); cards the DND queue holds were never seen and
-            // stay for the resume
-            const auto BEFORE = notifs.size();
-            for (const auto& N : notifs)
-                if (!N->waiting)
-                    emitClosed(N->id, R_DISMISSED);
-            std::erase_if(notifs, [](const auto& N) { return !N->waiting; });
-            if (notifs.size() == BEFORE)
-                return;
-            notifChanged();
-            rearmExpiry();
-        }
-
-        void dismissApp(const std::string& appKey) {
-            const auto BEFORE = notifs.size();
-            for (const auto& N : notifs)
-                if (!N->waiting && N->appKey == appKey)
-                    emitClosed(N->id, R_DISMISSED);
-            std::erase_if(notifs, [&](const auto& N) { return !N->waiting && N->appKey == appKey; });
-            if (notifs.size() == BEFORE)
-                return;
-            notifChanged();
-            rearmExpiry();
-        }
-
-        // Opening the center absorbs the popped stack: every bannered card
-        // stands down into a parked shade row, so closing the center never
-        // re-pops it. The unread count is unchanged (popped + parked both
-        // count) — only the on-screen banners go. Ephemerals (transient,
-        // progress/OSD) keep their banners so the expiry timer still vanishes
-        // them on their own clocks; nothing here emits a close (the cards are
-        // parked, not dismissed).
-        void absorbPopped() {
-            bool changed = false;
-            for (const auto& N : notifs) {
-                if (!N->banner || N->waiting)
-                    continue;
-                if (vanishes(N))
-                    continue;
-                N->banner = false;
-                changed   = true;
-            }
-            if (changed) {
-                notifChanged();
-                emitStateSoon();
-            }
-        }
-
-        void invokeAction(uint32_t id, const std::string& key) {
-            if (!obj)
-                return;
+    // The user typed a reply: hand it back and close the card, the same
+    // way an invoked action does — the sender will post its own follow-up
+    // if the conversation continues. `resident` holds the card, as ever.
+    void sendReply(uint32_t id, const std::string& text) {
+        if (text.empty())
+            return;
+        const auto N = Model::byId(id);
+        if (!N || !N->canReply)
+            return;
+        if (obj) {
             try {
-                // spec 1.3: the token signal precedes the action, so the
-                // sender's xdg-activation request can actually raise it —
-                // tokenless activates only flag urgent
                 if (PROTO::activation)
                     obj->emitSignal("ActivationToken").onInterface(IFACE).withArguments(id, PROTO::activation->mintToken());
-                obj->emitSignal("ActionInvoked").onInterface(IFACE).withArguments(id, key);
+                obj->emitSignal("NotificationReplied").onInterface(IFACE).withArguments(id, text);
             } catch (...) {}
             pollSoon();
         }
-
-        // The user typed a reply: hand it back and close the card, the same
-        // way an invoked action does — the sender will post its own follow-up
-        // if the conversation continues. `resident` holds the card, as ever.
-        void sendReply(uint32_t id, const std::string& text) {
-            if (text.empty())
-                return;
-            const auto N = byId(id);
-            if (!N || !N->canReply)
-                return;
-            if (obj) {
-                try {
-                    if (PROTO::activation)
-                        obj->emitSignal("ActivationToken").onInterface(IFACE).withArguments(id, PROTO::activation->mintToken());
-                    obj->emitSignal("NotificationReplied").onInterface(IFACE).withArguments(id, text);
-                } catch (...) {}
-                pollSoon();
-            }
-            if (!N->resident)
-                closeOne(id, R_DISMISSED);
-            else
-                notifChanged();
-        }
-
-        void toggleSuspend() {
-            suspended = !suspended;
-            if (suspended) {
-                notifChanged(); // the center's ⊖ lights up
-                return;         // visible cards live out their timeouts; new arrivals queue
-            }
-            const auto NOW = Time::steadyNow();
-            // newest-first, so the freshest per app takes the one popup slot
-            // and the rest resume resident — the same one-per-app cap the live
-            // arrival path applies, so DND-off never floods the screen
-            for (const auto& N : notifs) {
-                if (!N->waiting)
-                    continue;
-                N->waiting = false;
-                N->banner  = !(cfg.coalescePopups->value() && N->urgency < 2 && !vanishes(N) && appHasBanner(N)); // never seen: resume shows one banner per app
-                if (N->banner && N->timeoutMs > 0)
-                    N->deadline = NOW + std::chrono::milliseconds((int64_t)N->timeoutMs);
-            }
+        if (!N->resident)
+            Model::closeOne(id, Model::R_DISMISSED);
+        else
             notifChanged();
-            rearmExpiry();
-        }
+    }
 
-        bool suspendedNow() {
-            return suspended;
-        }
+    void init() {
+        g_bus.onLost = [](const std::string& err) {
+            HyprlandAPI::addNotification(PHANDLE, "[hyprnotify] bus lost, notifications disabled: " + err, CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
+        };
+        g_bus.dropOwned = []() { obj.reset(); };
+        try {
+            g_bus.open(false, "org.freedesktop.Notifications");
+            obj = sdbus::createObject(*g_bus.conn(), sdbus::ObjectPath{"/org/freedesktop/Notifications"});
 
-        // The client sent -1: critical always sticks
-        // (a message that demands an answer waits on screen). Everything else
-        // runs a clock and then retreats to the shade — the center is the
-        // safety net now, so a normal banner need not linger. Ephemerals (low
-        // urgency, the transient hint, progress/OSD blips) run the short low
-        // clock; normal urgency runs timeout_normal.
-        // An explicit expire_timeout never lands here.
-        static float defaultTimeout(const SNotif& n) {
-            if (n.urgency >= 2)
-                return 0.f;
-            if (n.urgency == 0 || n.transient || n.progress >= 0)
-                return (float)cfg.timeoutLow->value();
-            return (float)cfg.timeoutNormal->value();
-        }
+            obj->addVTable(sdbus::registerMethod("Notify")
+                               .withInputParamNames("app_name", "replaces_id", "app_icon", "summary", "body", "actions", "hints", "expire_timeout")
+                               .withOutputParamNames("id")
+                               .implementedAs([](std::string appName, uint32_t replacesId, std::string appIcon, std::string summary, std::string body,
+                                                 std::vector<std::string> actions, std::map<std::string, sdbus::Variant> hints,
+                                                 int32_t expireTimeout) { return Model::arrive(appName, replacesId, appIcon, summary, body, actions, hints, expireTimeout); }),
+                           // ignore_dbusclose (dunst's knob): an app revoking its
+                           // own notification (Telegram on read-elsewhere) is
+                           // ignored — the card lives out its banner and waits in
+                           // the shade. Only the bus path is gated; user
+                           // dismissals and expiry are untouched.
+                           sdbus::registerMethod("CloseNotification").withInputParamNames("id").implementedAs([](uint32_t id) {
+                               if (cfg.ignoreDbusClose->value())
+                                   return;
+                               Model::closeOne(id, Model::R_CLOSED);
+                               emitStateSoon();
+                           }),
+                           sdbus::registerMethod("GetCapabilities").withOutputParamNames("capabilities").implementedAs([]() {
+                               return std::vector<std::string>{"actions", "action-icons", "body", "body-markup", "body-hyperlinks", "body-images", "icon-static", "inline-reply", "persistence", "sound"};
+                           }),
+                           sdbus::registerMethod("GetServerInformation").withOutputParamNames("name", "vendor", "version", "spec_version").implementedAs([]() {
+                               return std::tuple<std::string, std::string, std::string, std::string>{"hyprnotify", "hitori", VERSION, "1.3"};
+                           }),
+                           sdbus::registerSignal("NotificationClosed").withParameters<uint32_t, uint32_t>("id", "reason"),
+                           sdbus::registerSignal("ActionInvoked").withParameters<uint32_t, std::string>("id", "action_key"),
+                           sdbus::registerSignal("ActivationToken").withParameters<uint32_t, std::string>("id", "activation_token"),
+                           sdbus::registerSignal("NotificationReplied").withParameters<uint32_t, std::string>("id", "text"))
+                .forInterface(IFACE);
 
-        // Cap the stack: the oldest non-critical goes first; only an
-        // all-critical stack starts losing its oldest critical. The newest
-        // card at begin() always survives (the scan stops short of it).
-        static void evictOverflow() {
-            const size_t CAP = std::max((int64_t)1, cfg.maxNotifs->value());
-            while (notifs.size() > CAP) {
-                auto victim = notifs.end() - 1;
-                for (auto it = notifs.end() - 1; it != notifs.begin(); --it)
-                    if ((*it)->urgency < 2) {
-                        victim = it;
-                        break;
-                    }
-                const auto VID = (*victim)->id;
-                notifs.erase(victim);
-                emitClosed(VID, R_UNDEFINED);
-            }
-        }
+            // the shell face: the bar's bell toggles the center and reads
+            // the badge counts here
+            obj->addVTable(sdbus::registerMethod("Toggle").implementedAs([]() { queueCenterToggle(); }),
+                           sdbus::registerMethod("Peek").withInputParamNames("on_bell").implementedAs([](bool on) { queueCenterPeek(on); }),
+                           sdbus::registerMethod("State").withOutputParamNames("live", "kept", "dnd", "center").implementedAs([]() {
+                               const auto [LIVE, KEPT] = Model::badgeCounts();
+                               return std::tuple<uint32_t, uint32_t, bool, bool>{LIVE, KEPT, Model::suspendedNow(), centerVisible()};
+                           }),
+                           sdbus::registerSignal("State").withParameters<uint32_t, uint32_t, bool, bool>("live", "kept", "dnd", "center"))
+                .forInterface(CIFACE);
 
-        // ---- incoming payload massage ----
-
-        // We advertise body-markup, so the whitelisted Pango tags pass through
-        // live; everything else is neutralized into content. Two client dialects
-        // must both come out right: a markup-aware client escapes its reserved
-        // chars ("a &amp;amp; b"), a naive one sends them raw ("a & b") — a bare
-        // '&'/'<' that forms no entity/tag is escaped so Pango renders it
-        // verbatim either way. Disallowed tags are dropped (spec: "filter them
-        // out"); ALLOW_LINKS adds <a> (hyperlinks phase). <img> never reaches
-        // here — it is extracted before sanitizing (body-images phase).
-        static bool allowedTag(const std::string& name, bool allowLinks) {
-            return name == "b" || name == "i" || name == "u" || name == "span" || name == "br" || (allowLinks && name == "a");
-        }
-
-        static std::string sanitizeMarkup(const std::string& in, bool allowLinks = false) {
-            std::string out;
-            out.reserve(in.size() + 16);
-            for (size_t i = 0; i < in.size();) {
-                const char CH = in[i];
-                if (CH == '<') {
-                    size_t j = i + 1;
-                    if (j < in.size() && in[j] == '/')
-                        j++;
-                    const size_t NS = j;
-                    while (j < in.size() && std::isalpha((unsigned char)in[j]))
-                        j++;
-                    if (j > NS) {
-                        const auto END = in.find('>', j);
-                        if (END != std::string::npos) {
-                            std::string name = in.substr(NS, j - NS);
-                            std::ranges::transform(name, name.begin(), [](unsigned char c) { return std::tolower(c); });
-                            if (name == "br")
-                                out += '\n'; // a line break, whatever the card does with it
-                            else if (allowedTag(name, allowLinks))
-                                out += in.substr(i, END - i + 1); // live tag, verbatim (Pango validates attrs)
-                            // else: disallowed tag, dropped
-                            i = END + 1;
-                            continue;
-                        }
-                    }
-                    out += "&lt;"; // a bare '<' that forms no tag: literal
-                    i++;
-                    continue;
-                }
-                if (CH == '&') {
-                    const auto END = in.find(';', i);
-                    if (END != std::string::npos && END - i <= 10) {
-                        const auto E = in.substr(i + 1, END - i - 1);
-                        if (E == "amp" || E == "lt" || E == "gt" || E == "quot" || E == "apos" || (E.size() > 1 && E[0] == '#')) {
-                            out += in.substr(i, END - i + 1); // a real entity: Pango decodes it
-                            i = END + 1;
-                            continue;
-                        }
-                    }
-                    out += "&amp;"; // a bare '&': literal
-                    i++;
-                    continue;
-                }
-                if (CH != '\r')
-                    out += CH;
-                i++;
-            }
-            return out;
-        }
-
-        static std::string oneLine(std::string s) {
-            for (auto& c : s)
-                if (c == '\n')
-                    c = ' ';
-            return s;
-        }
-
-        // A path (file:// or absolute) is taken verbatim; anything else is a
-        // freedesktop icon NAME resolved against the theme (dunst/mako do this,
-        // and so should a compositor daemon). "" = nothing usable.
-        static std::string resolveImage(std::string s, int sizePx) {
-            if (s.empty())
-                return "";
-            if (s.starts_with("file://"))
-                s.erase(0, 7);
-            if (s.starts_with('/'))
-                return s;
-            return NHyprCommon::resolveIconName(s, sizePx);
-        }
-
-        // <img src="..."> is not a Pango tag; pull it from the body before the
-        // markup sanitizer would drop it, resolve each src (path or themed name),
-        // and return the thumbnails — removing the tags from the text. http(s)
-        // and data: srcs aren't fetched, so they're skipped.
-        static std::vector<std::string> extractImages(std::string& body, int sizePx) {
-            std::vector<std::string> out;
-            for (size_t i = 0; i < body.size();) {
-                if (body[i] != '<') {
-                    i++;
-                    continue;
-                }
-                size_t j = i + 1;
-                while (j < body.size() && std::isalpha((unsigned char)body[j]))
-                    j++;
-                std::string name = body.substr(i + 1, j - i - 1);
-                std::ranges::transform(name, name.begin(), [](unsigned char c) { return std::tolower(c); });
-                if (name != "img") {
-                    i++;
-                    continue;
-                }
-                const auto END = body.find('>', j);
-                if (END == std::string::npos)
-                    break;
-                const auto  TAG = body.substr(i, END - i + 1);
-                std::string tl  = TAG; // case-insensitive attr search, same offsets as TAG
-                std::ranges::transform(tl, tl.begin(), [](unsigned char c) { return std::tolower(c); });
-                std::string src;
-                if (const auto SP = tl.find("src"); SP != std::string::npos)
-                    if (const auto Q = TAG.find_first_of("\"'", SP); Q != std::string::npos)
-                        if (const auto Q2 = TAG.find(TAG[Q], Q + 1); Q2 != std::string::npos)
-                            src = TAG.substr(Q + 1, Q2 - Q - 1);
-                if (!src.empty() && !src.starts_with("http") && !src.starts_with("data:"))
-                    if (const auto P = resolveImage(src, sizePx); !P.empty())
-                        out.push_back(P);
-                body.erase(i, END - i + 1); // drop the tag from the text
-            }
-            return out;
-        }
-
-        // the spec's image-data: width, height, rowstride, has_alpha,
-        // bits_per_sample, channels, RGB(A) bytes -> premultiplied BGRA
-        using ImageData = sdbus::Struct<int32_t, int32_t, int32_t, bool, int32_t, int32_t, std::vector<uint8_t>>;
-
-        static void unpackImageData(SNotif& n, const ImageData& d) {
-            const int32_t W = std::get<0>(d), H = std::get<1>(d), STRIDE = std::get<2>(d), BPS = std::get<4>(d), CH = std::get<5>(d);
-            const auto&   DATA = std::get<6>(d);
-            // STRIDE must cover a row: a lying stride (0) would let a tiny
-            // message claim gigapixel W*H and the resize below map it all.
-            // The 16 MP cap bounds a genuine ~128 MB image-data (the D-Bus
-            // message max) that would otherwise map + premultiply in full.
-            if (W <= 0 || H <= 0 || (int64_t)W * H > (16 << 20) || BPS != 8 || (CH != 3 && CH != 4) || (int64_t)STRIDE < (int64_t)W * CH || DATA.size() < (size_t)STRIDE * (H - 1) + (size_t)W * CH)
-                return;
-            n.pixels.resize((size_t)W * H * 4);
-            for (int32_t y = 0; y < H; y++) {
-                const uint8_t* row = DATA.data() + (size_t)y * STRIDE;
-                uint8_t*       out = n.pixels.data() + (size_t)y * W * 4;
-                for (int32_t x = 0; x < W; x++) {
-                    const uint8_t R = row[x * CH], G = row[x * CH + 1], B = row[x * CH + 2], A = CH == 4 ? row[x * CH + 3] : 255;
-                    out[x * 4]     = (uint8_t)(B * A / 255);
-                    out[x * 4 + 1] = (uint8_t)(G * A / 255);
-                    out[x * 4 + 2] = (uint8_t)(R * A / 255);
-                    out[x * 4 + 3] = A;
-                }
-            }
-            n.pw        = W;
-            n.ph        = H;
-            n.hasPixels = true;
-            // keep only what a card can ever paint: warm frees visible cards'
-            // buffers after upload, but an off-screen card would hold its
-            // full-size pixmap until it scrolls on. 2x card width covers the
-            // hero layout at any monitor scale; warm still scales exactly.
-            shrinkPixels(n, std::max((int)cfg.width->value() * 2, (int)cfg.maxIcon->value() * 3));
-        }
-
-        // Join an appended conversation body under the cap: newest lines
-        // append at the back, oldest lines drop off the front whole.
-        static std::string joinAppend(const std::string& oldBody, const std::string& add) {
-            std::string joined = oldBody.empty() ? add : oldBody + "\n" + add;
-            constexpr size_t CAP = 8192;
-            while (joined.size() > CAP) {
-                const auto NL = joined.find('\n');
-                if (NL == std::string::npos) {
-                    joined.erase(0, joined.size() - CAP);
-                    break;
-                }
-                joined.erase(0, NL + 1);
-            }
-            return joined;
-        }
-
-        static uint32_t handleNotify(const std::string& appName, uint32_t replacesId, const std::string& appIcon, const std::string& summary, const std::string& body,
-                                     const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout) {
-            uint32_t id = replacesId;
-
-            // Two hints are read before the main parse: the merge decision
-            // below needs the grouping key and the category before there is
-            // a card to hang them on.
-            const auto strHint = [&](const char* key) -> std::string {
-                if (const auto IT = hints.find(key); IT != hints.end())
-                    try {
-                        return IT->second.get<std::string>();
-                    } catch (...) {}
-                return "";
-            };
-            const std::string DESKTOP = strHint("desktop-entry");
-            const std::string APPKEY  = !DESKTOP.empty() ? DESKTOP : appName; // grouping identity
-            const std::string CAT     = strHint("category");
-            const bool CONVERSATION   = CAT.starts_with("im.") || CAT == "im" || CAT.starts_with("call.") || CAT == "call";
-
-            // THE CONVERSATION MERGE (Android's MessagingStyle): every message
-            // of one chat is ONE card. A fresh Notify whose app + summary
-            // matches a live card rides the replace path with the bodies
-            // joined, so a chatty sender grows a single card instead of
-            // stacking a row per message. Two triggers: the fd.o conversation
-            // categories (im.*/call.* — the summary IS the sender or the room),
-            // and x-canonical-append (notify-osd's extension) for apps that ask
-            // for it without a category. Cards that vanish never merge (a
-            // suppressed banner would strand them), nor does the OSD band.
-            std::string appendOnto;
-            if (id == 0) {
-                bool append = CONVERSATION;
-                if (const auto IT = hints.find("x-canonical-append"); !append && IT != hints.end())
-                    try {
-                        append = IT->second.get<bool>();
-                    } catch (...) {
-                        try {
-                            const auto S = IT->second.get<std::string>();
-                            append       = !S.empty() && S != "false" && S != "0";
-                        } catch (...) {
-                            try {
-                                append = IT->second.get<uint8_t>() != 0;
-                            } catch (...) {}
-                        }
-                    }
-                if (append) {
-                    const auto SUM = oneLine(sanitizeMarkup(summary));
-                    for (const auto& N : notifs)
-                        if (!inOsdBand(N->id) && !vanishes(N) && N->appKey == APPKEY && N->summary == SUM) {
-                            id         = N->id;
-                            appendOnto = N->body;
-                            break;
-                        }
-                }
-            }
-
-            if (id == 0) {
-                // Fresh ids count up from a low counter and skip any that's
-                // still live, so they never collide with a displayed
-                // notification. Crucially the counter is NOT dragged up to a
-                // seen replaces_id (as it once was): the OSD scripts pin ids
-                // in the 9990s, and bumping past 9991 handed the next fresh
-                // notification 9992 — the brightness OSD's id — so a keypress
-                // hijacked it. Low fresh ids and the pinned band stay disjoint.
-                do {
-                    id = nextId++;
-                    if (nextId == 0)
-                        nextId = 1; // wrap: 0 means "no id"
-                } while (byId(id) || inOsdBand(id));
-            }
-
-            auto n = byId(id);
-            if (!n) {
-                n = makeShared<SNotif>();
-                n->id = id;
-                n->born = Time::steadyNow(); // the arrival spring keys here, never on `arrived`
-                // DND collects silently — except critical, which punches
-                // through (the urgency parse below lifts it back out)
-                n->waiting = suspended;
-                notifs.insert(notifs.begin(), n); // newest on top; a replace keeps its slot
-                evictOverflow();
-            }
-
-            n->arrived = Time::steadyNow(); // a replace refreshes the age, like a new arrival would
-            n->banner  = true;              // a replace re-alerts (the OSD sweep relies on it)
-            n->appName = appName;
-            n->summary = oneLine(sanitizeMarkup(summary));
-            std::string bodyText = body;
-            n->bodyImages.clear();
-            for (const auto& P : extractImages(bodyText, std::max(64, (int)cfg.maxIcon->value() * 2)))
-                n->bodyImages.push_back({P});
-            n->body = sanitizeMarkup(bodyText, /*allowLinks=*/true);
-            if (!appendOnto.empty())
-                n->body = joinAppend(appendOnto, n->body);
-
-            n->urgency  = 1;
-            n->progress = -1;
-            n->image.clear();
-            n->identity.clear();
-            n->pixels.clear();
-            n->hasPixels = false;
-            n->pw = n->ph = 0;
-
-            if (const auto IT = hints.find("urgency"); IT != hints.end())
-                try {
-                    n->urgency = IT->second.get<uint8_t>();
-                } catch (...) {
-                    try {
-                        n->urgency = (uint8_t)std::clamp(IT->second.get<int32_t>(), 0, 2);
-                    } catch (...) {}
-                }
-            if (n->waiting && n->urgency >= 2)
-                n->waiting = false; // critical bypasses DND
-            if (const auto IT = hints.find("value"); IT != hints.end())
-                try {
-                    n->progress = std::clamp(IT->second.get<int32_t>(), 0, 100);
-                } catch (...) {
-                    try {
-                        n->progress = (int)std::min(IT->second.get<uint32_t>(), 100u);
-                    } catch (...) {}
-                }
-
-            // The icon anatomy (Android's, per the design contract): the
-            // CONTENT image (image-data / image-path) owns the icon column;
-            // the IDENTITY (app_icon param, else the desktop-entry hint)
-            // rides it as a corner badge — or leads alone when there is no
-            // content. Nothing at all = a text-only card.
-            const int ICONPX = std::max(8, (int)cfg.maxIcon->value());
-            for (const auto* KEY : {"image-data", "image_data", "icon_data"})
-                if (const auto IT = hints.find(KEY); IT != hints.end() && n->pixels.empty())
-                    try {
-                        unpackImageData(*n, IT->second.get<ImageData>());
-                    } catch (...) {}
-            if (n->pixels.empty()) {
-                std::string cand;
-                for (const auto* KEY : {"image-path", "image_path"})
-                    if (const auto IT = hints.find(KEY); IT != hints.end() && cand.empty())
-                        try {
-                            cand = IT->second.get<std::string>();
-                        } catch (...) {}
-                n->image = resolveImage(cand, ICONPX);
-            }
-            n->identity = resolveImage(appIcon, ICONPX);
-            if (n->identity.empty() && !DESKTOP.empty())
-                n->identity = resolveImage(DESKTOP, ICONPX);
-            n->appKey = APPKEY;
-
-            // The inline-reply protocol (KDE's, which Telegram/Fractal speak):
-            // the sender adds an action keyed "inline-reply" only when the
-            // server advertises the capability, and expects NotificationReplied
-            // back. It is NOT a button — it opens the row's reply field.
-            n->canReply         = false;
-            n->replyPlaceholder = strHint("x-kde-reply-placeholder-text");
-            n->replySubmitText  = strHint("x-kde-reply-submit-button-text");
-
-            // actions arrive as [id0,label0, id1,label1, ...]. Every named pair
-            // becomes a button; "default" is the card's primary and gets NO
-            // button on either surface — the spec defines it as "the default
-            // action (usually invoked by clicking the notification)" and says
-            // implementations are free not to display it, so a body click is
-            // what fires it and a button would only duplicate that.
-            n->defaultAction.clear();
-            n->actions.clear();
-            for (size_t i = 0; i + 1 < actions.size(); i += 2) {
-                if (actions[i] == "default")
-                    n->defaultAction = actions[i];
-                else if (actions[i] == "inline-reply") {
-                    n->canReply = true;
-                    if (n->replySubmitText.empty())
-                        n->replySubmitText = actions[i + 1]; // the sender's own "Reply" label
-                } else if (!actions[i + 1].empty()) // an empty label has no button to draw
-                    n->actions.push_back(SAction{.id = actions[i], .label = actions[i + 1]});
-            }
-            // a lone named action doubles as the body-click default; it keeps
-            // its own button too, since it was given a label to show
-            if (n->defaultAction.empty() && n->actions.size() == 1)
-                n->defaultAction = n->actions.front().id;
-
-            n->resident = false;
-            if (const auto IT = hints.find("resident"); IT != hints.end())
-                try {
-                    n->resident = IT->second.get<bool>();
-                } catch (...) {}
-            n->actionIcons = false;
-            if (const auto IT = hints.find("action-icons"); IT != hints.end())
-                try {
-                    n->actionIcons = IT->second.get<bool>();
-                } catch (...) {}
-            n->transient = false;
-            if (const auto IT = hints.find("transient"); IT != hints.end())
-                try {
-                    n->transient = IT->second.get<bool>();
-                } catch (...) {}
-
-            // fd.o category: conversations rank high in the shade and never
-            // bundle into an app digest (Android keeps every chat its own
-            // card). Ordering and merging only — no per-app casing.
-            n->conversation = CONVERSATION;
-
-            if (expireTimeout > 0)
-                n->timeoutMs = expireTimeout;
-            else if (expireTimeout == 0)
-                n->timeoutMs = 0;
-            else // -1: the client leaves it to us
-                n->timeoutMs = defaultTimeout(*n);
-            if (n->timeoutMs > 0 && !n->waiting) // a queued card's clock starts at the resume
-                n->deadline = Time::steadyNow() + std::chrono::milliseconds((int64_t)n->timeoutMs);
-
-            // one live popup per app: while this app already shows a banner, a
-            // new non-critical arrival is born resident — it lands silently in
-            // the shade (folded, badge-counted), no second popup, no repeat
-            // sound. A replace re-alerting its own live card is not a second
-            // banner (appHasBanner skips self). Critical always punches through.
-            // Presenting, gaming, watching: a real fullscreen window means the
-            // screen is spoken for, so the banner is held back and the card
-            // lands straight in the shade instead. Nothing is lost — residency
-            // is exactly that safety net — and critical still punches through,
-            // as it does through DND.
-            const bool fsQuiet = cfg.quietFullscreen->value() && !n->waiting && n->urgency < 2 && !vanishes(n) &&
-                NHyprCommon::fullscreenOn(Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr);
-            const bool coalesced = cfg.coalescePopups->value() && !n->waiting && n->urgency < 2 && !vanishes(n) && appHasBanner(n);
-            if (coalesced || fsQuiet)
-                n->banner = false;
-
-            if (!n->waiting) // a suspended arrival is invisible: no warm, no damage
-                notifChanged();
-
-            // sound: a shown arrival plays sound-file/sound-name through the
-            // libcanberra player unless the client suppresses it. DND-queued
-            // (waiting) arrivals stay silent; the resume doesn't replay.
-            if (!n->waiting) {
-                bool        suppress = coalesced; // a coalesced arrival is silent, like its banner is gone
-                std::string soundFile, soundName;
-                if (const auto IT = hints.find("suppress-sound"); IT != hints.end())
-                    try {
-                        suppress = IT->second.get<bool>();
-                    } catch (...) {}
-                if (const auto IT = hints.find("sound-file"); IT != hints.end())
-                    try {
-                        soundFile = IT->second.get<std::string>();
-                    } catch (...) {}
-                if (const auto IT = hints.find("sound-name"); IT != hints.end())
-                    try {
-                        soundName = IT->second.get<std::string>();
-                    } catch (...) {}
-                if (soundFile.starts_with("file://"))
-                    soundFile.erase(0, 7);
-                const std::string CMD = cfg.soundCommand->value();
-                if (!suppress && !CMD.empty()) {
-                    if (!soundFile.empty())
-                        spawnDetached({CMD.c_str(), "-f", soundFile.c_str(), nullptr});
-                    else if (!soundName.empty())
-                        spawnDetached({CMD.c_str(), "-i", soundName.c_str(), nullptr});
-                }
-            }
-
-            rearmExpiry();
-            emitStateSoon();
-            return id;
-        }
-
-        // ---- the daemon ----
-
-        void init() {
-            g_bus.onLost = [](const std::string& err) {
-                HyprlandAPI::addNotification(PHANDLE, "[hyprnotify] bus lost, notifications disabled: " + err, CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
-            };
-            g_bus.dropOwned = []() { obj.reset(); };
-            try {
-                g_bus.open(false, "org.freedesktop.Notifications");
-                obj = sdbus::createObject(*g_bus.conn(), sdbus::ObjectPath{"/org/freedesktop/Notifications"});
-
-                obj->addVTable(sdbus::registerMethod("Notify")
-                                   .withInputParamNames("app_name", "replaces_id", "app_icon", "summary", "body", "actions", "hints", "expire_timeout")
-                                   .withOutputParamNames("id")
-                                   .implementedAs([](std::string appName, uint32_t replacesId, std::string appIcon, std::string summary, std::string body,
-                                                     std::vector<std::string> actions, std::map<std::string, sdbus::Variant> hints,
-                                                     int32_t expireTimeout) { return handleNotify(appName, replacesId, appIcon, summary, body, actions, hints, expireTimeout); }),
-                               // ignore_dbusclose (dunst's knob): an app revoking its
-                               // own notification (Telegram on read-elsewhere) is
-                               // ignored — the card lives out its banner and waits in
-                               // the shade. Only the bus path is gated; user
-                               // dismissals and expiry are untouched.
-                               sdbus::registerMethod("CloseNotification").withInputParamNames("id").implementedAs([](uint32_t id) {
-                                   if (cfg.ignoreDbusClose->value())
-                                       return;
-                                   closeOne(id, R_CLOSED);
-                                   emitStateSoon();
-                               }),
-                               sdbus::registerMethod("GetCapabilities").withOutputParamNames("capabilities").implementedAs([]() {
-                                   return std::vector<std::string>{"actions", "action-icons", "body", "body-markup", "body-hyperlinks", "body-images", "icon-static", "inline-reply", "persistence", "sound"};
-                               }),
-                               sdbus::registerMethod("GetServerInformation").withOutputParamNames("name", "vendor", "version", "spec_version").implementedAs([]() {
-                                   return std::tuple<std::string, std::string, std::string, std::string>{"hyprnotify", "hitori", VERSION, "1.3"};
-                               }),
-                               sdbus::registerSignal("NotificationClosed").withParameters<uint32_t, uint32_t>("id", "reason"),
-                               sdbus::registerSignal("ActionInvoked").withParameters<uint32_t, std::string>("id", "action_key"),
-                               sdbus::registerSignal("ActivationToken").withParameters<uint32_t, std::string>("id", "activation_token"),
-                               sdbus::registerSignal("NotificationReplied").withParameters<uint32_t, std::string>("id", "text"))
-                    .forInterface(IFACE);
-
-                // the shell face: the bar's bell toggles the center and reads
-                // the badge counts here
-                obj->addVTable(sdbus::registerMethod("Toggle").implementedAs([]() { queueCenterToggle(); }),
-                               sdbus::registerMethod("Peek").withInputParamNames("on_bell").implementedAs([](bool on) { queueCenterPeek(on); }),
-                               sdbus::registerMethod("State").withOutputParamNames("live", "kept", "dnd", "center").implementedAs([]() {
-                                   const auto [LIVE, KEPT] = badgeCounts();
-                                   return std::tuple<uint32_t, uint32_t, bool, bool>{LIVE, KEPT, suspended, centerVisible()};
-                               }),
-                               sdbus::registerSignal("State").withParameters<uint32_t, uint32_t, bool, bool>("live", "kept", "dnd", "center"))
-                    .forInterface(CIFACE);
-
-                expiry = makeShared<CEventLoopTimer>(
-                    std::nullopt,
-                    [](SP<CEventLoopTimer>, void*) {
-                        // RESIDENCY: a due banner emits reason 1 EXPIRED once
-                        // and hides only the popup — the card stays in the
-                        // shade until dismissed/acted. Transient and progress
-                        // (OSD) cards vanish entirely.
-                        const auto NOW     = Time::steadyNow();
-                        bool       changed = false;
-                        std::vector<uint32_t> gone;
-                        for (const auto& N : notifs) {
-                            if (!N->banner || N->timeoutMs <= 0 || N->waiting || N->id == heldBanner || N->deadline > NOW)
-                                continue;
-                            if (vanishes(N)) {
-                                gone.push_back(N->id);
-                                continue;
-                            }
-                            N->banner = false;
-                            emitClosed(N->id, R_EXPIRED);
-                            changed = true;
-                        }
-                        for (const auto ID : gone) {
-                            std::erase_if(notifs, [&](const auto& N) { return N->id == ID; });
-                            emitClosed(ID, R_EXPIRED);
-                        }
-                        if (changed || !gone.empty()) {
-                            notifChanged();
-                            emitStateSoon();
-                        }
-                        rearmExpiry();
-                    },
-                    nullptr);
-                g_pEventLoopManager->addTimer(expiry);
-
-                g_bus.sync(); // drain anything queued during setup — the vtable is registered, nothing dispatches early
-            } catch (const std::exception& E) {
-                // most likely another daemon owns the name (dunst still installed)
-                HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprnotify] disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
-                obj.reset();
-                g_bus.close();
-            }
-        }
-
-        void exit() {
-            g_bus.close(); // fd sources out BEFORE the connection dies
-            if (expiry && g_pEventLoopManager)
-                g_pEventLoopManager->removeTimer(expiry);
-            expiry.reset();
-            notifs.clear();
-            suspended  = false;
-            heldBanner = 0;
+            g_bus.sync(); // drain anything queued during setup — the vtable is registered, nothing dispatches early
+        } catch (const std::exception& E) {
+            // most likely another daemon owns the name (dunst still installed)
+            HyprlandAPI::addNotification(PHANDLE, std::string{"[hyprnotify] disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
+            obj.reset();
+            g_bus.close();
         }
     }
 
-} // namespace NHyprnotify
+    void exit() {
+        g_bus.close(); // fd sources out BEFORE the connection dies
+    }
+
+} // namespace NHyprnotify::Bus

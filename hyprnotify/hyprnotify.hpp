@@ -3,14 +3,17 @@
 // The full picture lives at the top of main.cpp; per-module docs at the top
 // of each unit:
 //
-//   bus.cpp     the org.freedesktop.Notifications daemon (sdbus-c++), the
-//               model, residency, conversation merging, the state interface
+//   bus.cpp     the org.freedesktop.Notifications connection: the object,
+//               the vtables, the signals, the name
+//   parse.cpp   the untrusted payload: markup, images, appended bodies
+//   model.cpp   the cards: arrival, residency, merging, DND, the expiry
 //   icons.cpp   notification images: content avatars, identity icons,
 //               raw image-data
 //   text.cpp    the pango rasterizer + the keyed text cache + markup helpers
 //   paint.cpp   the paint context, shared card recipes, type scale, motion
 //   popups.cpp  the banner column (the one-card anatomy, hover-✕, springs)
-//   center.cpp  the shade: one list, app bundles, the expansion budget
+//   row.cpp     one shade row in its two states, and the bundle recipes
+//   center.cpp  the shade: the display list, the expansion budget, the panel
 //   render.cpp  the render skeleton: warm/draw, damage, ticks, the pass
 //               element (surface machinery shared through ui.hpp)
 //   input.cpp   clicks, wheel paging, esc, pointer ownership
@@ -123,7 +126,7 @@ namespace NHyprnotify {
     // hyperlink opening and notification sounds); never blocks render/input.
     void spawnDetached(std::vector<const char*> argv);
 
-    // ---- the model (bus.cpp) ----
+    // ---- the model (model.cpp) ----
 
     // a non-"default" action: a clickable text button on the card
     struct SAction {
@@ -190,28 +193,59 @@ namespace NHyprnotify {
     };
     extern std::vector<SP<SNotif>> notifs;
 
-    // ---- bus.cpp ----
+    // ---- parse.cpp: the untrusted payload -> values a card can hold ----
 
-    namespace Bus {
+    namespace Parse {
+        // the spec's image-data: width, height, rowstride, has_alpha,
+        // bits_per_sample, channels, RGB(A) bytes
+        using ImageData = sdbus::Struct<int32_t, int32_t, int32_t, bool, int32_t, int32_t, std::vector<uint8_t>>;
+
+        std::string              sanitizeMarkup(const std::string& in, bool allowLinks = false);
+        std::string              oneLine(std::string s);
+        std::string              resolveImage(std::string s, int sizePx); // path, file://, or a themed icon NAME
+        std::vector<std::string> extractImages(std::string& body, int sizePx); // pulls <img src> out of the body
+        void                     unpackImageData(SNotif& n, const ImageData& d, int capPx); // -> premultiplied BGRA
+        std::string              joinAppend(const std::string& oldBody, const std::string& add);
+    }
+
+    // ---- model.cpp: the cards and their lifetimes ----
+
+    namespace Model {
         // NotificationClosed reasons (the spec's); 4 = undefined, the eviction
         inline constexpr uint32_t R_EXPIRED = 1, R_DISMISSED = 2, R_CLOSED = 3, R_UNDEFINED = 4;
 
-        void                      pollSoon(); // pull the next DBus poll tick close after a send
-        void                      init();
-        void                      exit();
-        void                      invokeAction(uint32_t id, const std::string& key);
-        void                      sendReply(uint32_t id, const std::string& text); // NotificationReplied, then close unless resident
-        void                      closeOne(uint32_t id, uint32_t reason);
-        void                      dismissAllLive(); // "Clear all": every visible card goes; the DND queue stays
-        void                      dismissApp(const std::string& appKey); // a bundle's right-click
-        void                      absorbPopped(); // opening the shade parks the popped stack (no re-pop on close)
-        void                      rearmExpiry();
-        void                      holdBanner(uint32_t id); // the hovered popup's countdown pauses; 0 releases (and restarts it)
-        void                      toggleSuspend(); // DND; resume renders the queue, fresh timeouts
-        bool                      suspendedNow();
-        std::string               stateString(); // "center:N live:N dnd:N" — raw model counts, the debug line
-        std::string               badgeString(); // "banners:N resident:N" — the popup/shade split the bell reads (state's `live` can't see it)
-        void                      emitStateSoon(); // coalesced org.hitori.hyprnotify State signal (the bar's bell: shade counts)
+        void       init();
+        void       exit();
+        SP<SNotif> byId(uint32_t id);
+        bool       vanishes(const SP<SNotif>& n); // opts out of residency: expiry takes the whole card
+
+        // a Notify payload becomes (or refreshes) a card; returns its id
+        uint32_t arrive(const std::string& appName, uint32_t replacesId, const std::string& appIcon, const std::string& summary, const std::string& body,
+                        const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout);
+
+        void                          closeOne(uint32_t id, uint32_t reason);
+        void                          dismissAllLive();                      // "Clear all": every visible card goes; the DND queue stays
+        void                          dismissApp(const std::string& appKey); // a bundle's right-click
+        void                          absorbPopped();                        // opening the shade parks the popped stack (no re-pop on close)
+        void                          rearmExpiry();
+        void                          holdBanner(uint32_t id); // the hovered popup's countdown pauses; 0 releases (and restarts it)
+        void                          toggleSuspend();         // DND; resume renders the queue, fresh timeouts
+        bool                          suspendedNow();
+        std::pair<uint32_t, uint32_t> badgeCounts(); // {bannered, resident} — the bell's two numbers
+        std::string                   stateString(); // "center:N live:N dnd:N" — raw model counts, the debug line
+        std::string                   badgeString(); // "banners:N resident:N" — the popup/shade split the bell reads (state's `live` can't see it)
+    }
+
+    // ---- bus.cpp: the connection ----
+
+    namespace Bus {
+        void pollSoon(); // pull the next DBus poll tick close after a send
+        void init();
+        void exit();
+        void invokeAction(uint32_t id, const std::string& key);
+        void sendReply(uint32_t id, const std::string& text); // NotificationReplied, then close unless resident
+        void emitClosed(uint32_t id, uint32_t reason);        // the model's outbound half of a card's death
+        void emitStateSoon(); // coalesced org.hitori.hyprnotify State signal (the bar's bell: shade counts)
     }
 
     // ---- icons.cpp ----

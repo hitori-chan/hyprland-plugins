@@ -12,6 +12,21 @@ namespace NHyprnotify {
         return (m ? std::ceil(m->m_scale) : 1.0) + 1.0 + std::max(blurRadius(), 26.0);
     }
 
+    // ---- the radius family ----
+
+    float rPow() {
+        return (float)cfg.roundingPower->value();
+    }
+    int rPanel(double scale) {
+        return (int)std::lround((std::max(0, (int)cfg.rounding->value()) + 6) * scale);
+    }
+    int rRow(double scale) {
+        return std::max(0, (int)std::lround((std::max(0, (int)cfg.rounding->value()) - 2) * scale));
+    }
+    int rJoint(double scale) {
+        return (int)std::lround(STACK_GAP * scale);
+    }
+
     // ---- motion ----
 
     float easeOutCubic(float t) {
