@@ -59,8 +59,13 @@ Two surfaces share one card model:
      button, beside its other actions; a button acts and dismisses (unless
      `resident`). Right dismisses, middle sweeps. On a bundle: left expands,
      right (or the header ✕) dismisses the whole app. The footer is ⊖ DND
-     (accent-lit while on) and "Clear all". Esc closes; a click outside
-     closes. Fold state resets when the shade closes.
+     (accent-lit while on) and "Clear all". A click outside closes.
+   - **Keys.** While the shade is open it owns exactly the nav set and
+     nothing else: Esc closes, ↑/↓ move a selection (an accent hairline,
+     paging to stay on screen), Space folds it, Enter fires the primary,
+     Delete dismisses. A chord with ctrl/alt/super is a user bind passing
+     through, and Space/Enter/Delete with nothing selected still belong to
+     whatever holds focus. Selection and fold state reset on close.
 
 Model rules: the **conversation merge** (Android's MessagingStyle) joins one
 chat's messages into one growing card (~8KB, oldest lines drop) — a fresh

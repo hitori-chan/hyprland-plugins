@@ -11,7 +11,7 @@
 //   badged on its bottom-right corner; a wide content image goes hero,
 //   full-width, instead. Then the "App • age" header, title, body,
 //   progress, and the card's actions as tinted text buttons. Hovering
-//   reveals the ✕.
+//   reveals the ✕ and HOLDS the timeout.
 // - THE SHADE (F12 / the bar's bell / `hyprctl hyprnotify center`): ONE list
 //   of live cards, Android's notification shade. No lifecycle sections and no
 //   history — a dismissed card is gone. Ranking is Android's without the
@@ -23,7 +23,9 @@
 //   all. LEFT CLICK READS — anywhere on a row folds it open ⇄ shut; the
 //   card's primary action moves into the open row as its lead button, so
 //   nothing acts or dismisses without hitting a button. Right dismisses,
-//   middle sweeps; the footer is ⊖ DND · a global "Clear all".
+//   middle sweeps; the footer is ⊖ DND · a global "Clear all". While it is
+//   open it owns the nav keys (↑↓ select, space folds, enter fires the
+//   primary, delete dismisses, esc closes) and nothing else.
 //
 // Model rules: the conversation merge joins one chat's messages into one
 // growing card (~8KB cap, oldest lines drop) — fd.o's im.*/call.* categories,

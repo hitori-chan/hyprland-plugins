@@ -84,6 +84,10 @@ icons).
   it open ⇄ shut and nothing else; buttons act (and dismiss unless
   `resident`); right dismisses; middle is "Clear all". On an app bundle left
   expands and right (or the header ✕) dismisses the whole app.
+- Shade keys, while it is open and only then: Esc closes, ↑/↓ move a
+  selection (an accent hairline; the page follows it), Space folds, Enter
+  fires the primary, Delete dismisses. Modified chords pass through as user
+  binds, and the action keys pass through while nothing is selected.
 - Critical: urgent-colored frame and progress fill, never expires.
 - Sound: `sound-file`/`sound-name` play through a libcanberra player
   (`sound_command`, empty disables); `suppress-sound` mutes one arrival. The

@@ -244,6 +244,8 @@ namespace NHyprnotify {
     void centerPage(int dir); // wheel: >0 towards older rows
     void centerToggleGroup(const std::string& appKey);
     void centerToggleRow(uint32_t id);
+    void centerSelectMove(int dir);                         // ↑/↓: move the keyboard selection, paging to keep it on screen
+    bool centerSelection(uint32_t& id, std::string& group); // the selected item; group non-empty = a bundle. false = none
 
     void onRenderStage(eRenderStage stage);
     // render.preChecks: keep a visible card compositing over a solitary
@@ -302,7 +304,7 @@ namespace NHyprnotify {
     void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info);
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info);
     void onMouseAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info);
-    void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info); // esc peels the center
+    void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info); // esc peels the center; ↑↓ space enter delete drive it
     void releasePointer();
     void refreshPointerOwnership(); // the hovered card vanished under a still pointer
     void inputExit();

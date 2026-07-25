@@ -38,6 +38,12 @@ namespace NHyprnotify {
     static Time::steady_tp       s_openedAt;
     static bool                  s_animating = false;
 
+    // keyboard navigation: an index into s_disp, -1 until an arrow key claims
+    // the shade (so a mouse-only visit shows no selection at all). s_lastVis
+    // is the last item the placement fitted — the paging keys work off it.
+    static int                   s_sel     = -1;
+    static size_t                s_lastVis = 0;
+
     // the warm-measured layout cache (see renderCenter); dropped on close so
     // no strong SNotif refs (and their textures) outlive the visit
     struct SDisp {
@@ -92,6 +98,34 @@ namespace NHyprnotify {
         notifChanged();
     }
 
+    void centerSelectMove(int dir) {
+        if (s_disp.empty()) {
+            s_sel = -1;
+            return;
+        }
+        const int LAST = (int)s_disp.size() - 1;
+        if (s_sel < 0) // the first arrow enters the page, it does not jump
+            s_sel = dir > 0 ? std::min((int)s_skip, LAST) : std::min((int)s_lastVis, LAST);
+        else
+            s_sel = std::clamp(s_sel + dir, 0, LAST);
+        // page just far enough to keep the selection on screen; the next warm
+        // re-fits the page around the new s_skip
+        if (s_sel < (int)s_skip)
+            s_skip = (size_t)s_sel;
+        else if (s_sel > (int)s_lastVis)
+            s_skip += (size_t)s_sel - s_lastVis;
+        notifChanged();
+    }
+
+    bool centerSelection(uint32_t& id, std::string& group) {
+        if (s_sel < 0 || (size_t)s_sel >= s_disp.size())
+            return false;
+        const auto& D = s_disp[s_sel];
+        group         = D.items.size() > 1 ? D.key : "";
+        id            = D.items.front()->id;
+        return true;
+    }
+
     void setCenter(bool on) {
         if (on == s_on)
             return;
@@ -106,6 +140,8 @@ namespace NHyprnotify {
             s_rowState.clear();
             s_groupState.clear();
             s_animating = false;
+            s_sel       = -1;
+            s_lastVis   = 0;
             s_disp.clear(); // strong refs must not outlive the visit
             s_itemH.clear();
             s_itemOpen.clear();
@@ -394,6 +430,10 @@ namespace NHyprnotify {
         if (P.warm) {
             buildDisplay(s_disp);
             s_skip = s_disp.empty() ? 0 : std::min(s_skip, s_disp.size() - 1);
+            // a dismissal shrinks the list under the selection: keeping the
+            // INDEX lands it on the card that took the dismissed one's place
+            if (s_sel >= (int)s_disp.size())
+                s_sel = s_disp.empty() ? -1 : (int)s_disp.size() - 1;
             s_itemH.assign(s_disp.size(), 0.0);
             s_itemOpen.assign(s_disp.size(), 0);
             s_itemMore.assign(s_disp.size(), 0);
@@ -480,6 +520,7 @@ namespace NHyprnotify {
             usedH += LEAD + s_itemH[i];
             placed.push_back({i, s_itemH[i]});
         }
+        s_lastVis = placed.empty() ? s_skip : placed.back().idx;
 
         const bool   EMPTY  = disp.empty();
         const double EMPTYH = 46;
@@ -667,6 +708,12 @@ namespace NHyprnotify {
                     cy += CH2;
                 }
             }
+
+            // the keyboard selection: a hairline in the accent, drawn over the
+            // whole item (an open bundle's header and children together) so it
+            // never reads as a hover, which is a fill
+            if ((int)IDX == s_sel)
+                P.ring(CBox{CONTENT_X, y, CONTENT_W, IH}, COLACC, RROW, RP);
             y += IH;
         }
 

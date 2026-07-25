@@ -13,7 +13,13 @@
 //   ghead    left collapses · the ✕ / right dismisses the bundle
 //   footer   ⊖ = DND · "Clear all" = the global sweep
 //   wheel    pages the shade — captured only inside the panel box
-//   esc      closes the shade (the topmost-peel's middle link)
+//   keys     while the shade is open it owns the nav set and nothing else:
+//            esc closes (the topmost-peel's middle link) · ↑/↓ move the
+//            selection · space folds it (the click's twin) · enter fires the
+//            primary · delete dismisses. A chord with ctrl/alt/super is the
+//            user's bind, and space/enter/delete with NOTHING selected still
+//            belong to whatever holds focus — the shade never grabs a key it
+//            has no use for.
 //
 // Every mutation lands via the hit queue + CHop drain, never synchronously
 // inside the emission (crash class 6); every listener gates on
@@ -25,6 +31,7 @@
 #include "ui.hpp"
 
 #include <xkbcommon/xkbcommon-keysyms.h>
+#include <xkbcommon/xkbcommon-names.h>
 
 namespace NHyprnotify {
 
@@ -291,8 +298,42 @@ namespace NHyprnotify {
         }
     }
 
-    // ---- esc peels the center (tray menu > center > menubar: load order
-    //      puts hyprbar's menu first, we're next) ----
+    // ---- keys: esc peels the center (tray menu > center > menubar: load
+    //      order puts hyprbar's menu first, we're next), and the shade drives
+    //      its selection ----
+
+    // Same shape as the click queue, and for the same reason: an action can
+    // make the client focus itself, so nothing runs inside the emission.
+    struct SKeyAct {
+        int         verb = 0; // 1 fold, 2 the primary, 3 dismiss
+        uint32_t    id   = 0;
+        std::string group; // non-empty: a bundle
+    };
+    static std::vector<SKeyAct> keyQueue;
+    static bool                 keyQueued = false;
+    static NHyprCommon::CHop    pendingKey;
+
+    static void                 drainKeys() {
+        keyQueued    = false;
+        const auto Q = std::move(keyQueue);
+        keyQueue.clear();
+        for (const auto& A : Q) {
+            const bool GROUP = !A.group.empty();
+            if (A.verb == 1 || (A.verb == 2 && GROUP)) { // space, and enter on a bundle: fold
+                if (GROUP)
+                    centerToggleGroup(A.group);
+                else
+                    centerToggleRow(A.id);
+            } else if (A.verb == 2)
+                invokeLive(A.id, ""); // enter on a card: its primary, exactly as the lead button
+            else if (A.verb == 3) {
+                if (GROUP)
+                    Bus::dismissApp(A.group);
+                else
+                    Bus::closeOne(A.id, Bus::R_DISMISSED);
+            }
+        }
+    }
 
     void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
         if (NHyprCommon::sessionLocked())
@@ -305,10 +346,42 @@ namespace NHyprnotify {
         const auto KB = g_pSeatManager ? g_pSeatManager->m_keyboard.lock() : nullptr;
         if (!KB || !KB->m_xkbState)
             return;
-        if (xkb_state_key_get_one_sym(KB->m_xkbState, e.keycode + 8) != XKB_KEY_Escape)
+        // a modified chord is a user bind passing through, never the shade's
+        for (const char* M : {XKB_MOD_NAME_CTRL, XKB_MOD_NAME_ALT, XKB_MOD_NAME_LOGO})
+            if (xkb_state_mod_name_is_active(KB->m_xkbState, M, XKB_STATE_MODS_EFFECTIVE) > 0)
+                return;
+
+        const auto SYM = xkb_state_key_get_one_sym(KB->m_xkbState, e.keycode + 8);
+        if (SYM == XKB_KEY_Escape) {
+            info.cancelled = true;
+            pendingEsc.arm([]() { setCenter(false); }); // deferred: the close reflows and refocuses
             return;
+        }
+        if (SYM == XKB_KEY_Up || SYM == XKB_KEY_Down) {
+            info.cancelled = true;
+            centerSelectMove(SYM == XKB_KEY_Down ? 1 : -1); // local state + a deferred warm: safe here
+            return;
+        }
+
+        SKeyAct a;
+        switch (SYM) {
+            case XKB_KEY_space: a.verb = 1; break;
+            case XKB_KEY_Return:
+            case XKB_KEY_KP_Enter: a.verb = 2; break;
+            case XKB_KEY_Delete: a.verb = 3; break;
+            default: return;
+        }
+        // nothing selected: the shade has not taken the keyboard, so a bare
+        // space still belongs to whatever holds focus
+        if (!centerSelection(a.id, a.group))
+            return;
+
         info.cancelled = true;
-        pendingEsc.arm([]() { setCenter(false); }); // deferred: the close reflows and refocuses
+        keyQueue.push_back(std::move(a));
+        if (keyQueued)
+            return;
+        keyQueued = true;
+        pendingKey.arm(drainKeys);
     }
 
     // ---- pointer ownership ----
@@ -408,8 +481,10 @@ namespace NHyprnotify {
     void inputExit() {
         pendingHit.reset();
         pendingEsc.reset();
-        hitQueued = false;
+        pendingKey.reset();
+        hitQueued = keyQueued = false;
         hitQueue.clear();
+        keyQueue.clear();
         swallowRelease = 0;
         heldButtons    = 0;
         scrollAcc      = 0;
