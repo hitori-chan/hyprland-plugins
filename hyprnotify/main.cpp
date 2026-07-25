@@ -242,7 +242,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     for (const auto& V : {cfg.colBg, cfg.colFg, cfg.colTitle, cfg.colKicker, cfg.colFrame, cfg.colUrgent, cfg.colHighlight, cfg.colLink})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
 
-    Model::init(); // the expiry timer stands before anything can arrive
+    Policy::init(); // the user's rules load before the first arrival is judged
+    Model::init();  // and the expiry timer stands before anything can arrive
     Bus::init();
     renderInit();
     centerInit();
@@ -260,6 +261,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                                                                              return Model::stateString();
                                                                          if (request.ends_with("badge"))
                                                                              return Model::badgeString();
+                                                                         if (request.ends_with("policy"))
+                                                                             return Policy::stateString();
                                                                          if (request.ends_with("clear")) { // the scripted reset
                                                                              static NHyprCommon::CHop pendingClear;
                                                                              pendingClear.arm([]() { Model::dismissAllLive(); });
@@ -309,8 +312,9 @@ APICALL EXPORT void PLUGIN_EXIT() {
     if (ctlCmd)
         HyprlandAPI::unregisterHyprCtlCommand(PHANDLE, ctlCmd);
     ctlCmd.reset();
-    Bus::exit();   // the connection first: nothing may arrive mid-teardown
-    Model::exit(); // then the cards, and their textures with them
+    Bus::exit();    // the connection first: nothing may arrive mid-teardown
+    Model::exit();  // then the cards, and their textures with them
+    Policy::exit(); // the rules outlive all of it, so they flush last
     inputExit();
     replyExit();
     reapChildren();

@@ -7,6 +7,7 @@
 //               the vtables, the signals, the name
 //   parse.cpp   the untrusted payload: markup, images, appended bodies
 //   model.cpp   the cards: arrival, residency, merging, DND, the expiry
+//   policy.cpp  the user's own rules: silenced apps, priority chats
 //   icons.cpp   notification images: content avatars, identity icons,
 //               raw image-data
 //   text.cpp    the pango rasterizer + the keyed text cache + markup helpers
@@ -77,7 +78,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.4.0";
+    inline constexpr const char* VERSION = "6.5.0";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -172,6 +173,7 @@ namespace NHyprnotify {
         bool                    resident    = false; // the resident hint: an action keeps the card
         bool                    transient   = false; // the transient hint: bypass history AND residency
         bool                    conversation = false; // fd.o category im.*/call.*: sorts atop Waiting
+        bool                    priority     = false; // the user marked this chat: ranks first, the badge wears the ring
         std::string             fallbackPick;         // the rolled identity face; survives in-place replaces
 
         bool                 waiting = false; // arrived while suspended (DND): collected, not shown, timeout held
@@ -234,6 +236,18 @@ namespace NHyprnotify {
         std::pair<uint32_t, uint32_t> badgeCounts(); // {bannered, resident} — the bell's two numbers
         std::string                   stateString(); // "center:N live:N dnd:N" — raw model counts, the debug line
         std::string                   badgeString(); // "banners:N resident:N" — the popup/shade split the bell reads (state's `live` can't see it)
+    }
+
+    // ---- policy.cpp: the user's rules, persisted ----
+
+    namespace Policy {
+        void        init();
+        void        exit();
+        bool        silenced(const std::string& appKey);                            // no banner, no sound, ranked quiet
+        bool        priority(const std::string& appKey, const std::string& sender); // this chat outranks everything but critical
+        void        toggleSilence(const std::string& appKey);
+        void        togglePriority(const std::string& appKey, const std::string& sender);
+        std::string stateString(); // the debug line, and what the gate reads
     }
 
     // ---- bus.cpp: the connection ----
@@ -322,6 +336,13 @@ namespace NHyprnotify {
         CBox        close;        // POPUP hover-✕ / GHEAD ✕; w = 0 -> none
         CBox        replyField;   // ROW: the armed inline-reply box (swallows, never acts)
         CBox        replySend;    // ROW: its send pill
+        // the hover-revealed manage strip (silence, priority, …): one rect
+        // per part code, so another verb costs an entry and not a member
+        struct SManage {
+            CBox    box;
+            uint8_t part;
+        };
+        std::vector<SManage> manage;
         struct SBtn {
             CBox        box;
             std::string id;
@@ -344,7 +365,7 @@ namespace NHyprnotify {
         std::string  group;
         SCard::eKind kind = SCard::POPUP;
         int          btn  = -1;
-        uint8_t      part = 0; // 0 body, 1 chevron, 2 close, 3 reply field, 4 send
+        uint8_t      part = 0; // 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 5 silence, 6 priority
         bool         operator==(const SHover&) const = default;
     };
     void setHovered(const SHover& h);

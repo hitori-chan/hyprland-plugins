@@ -433,6 +433,7 @@ namespace NHyprnotify {
             // bundle into an app digest (Android keeps every chat its own
             // card). Ordering and merging only — no per-app casing.
             n->conversation = CONVERSATION;
+            n->priority     = CONVERSATION && Policy::priority(APPKEY, n->summary);
 
             if (expireTimeout > 0)
                 n->timeoutMs = expireTimeout;
@@ -453,10 +454,13 @@ namespace NHyprnotify {
             // lands straight in the shade instead. Nothing is lost — residency
             // is exactly that safety net — and critical still punches through,
             // as it does through DND.
+            // And a silenced app asked for exactly this, permanently: its
+            // cards land in the shade without ever taking the screen.
             const bool SOFT      = !n->waiting && n->urgency < 2 && !vanishes(n);
             const bool FSQUIET   = SOFT && cfg.quietFullscreen->value() && NHyprCommon::fullscreenOn(Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr);
             const bool COALESCED = SOFT && cfg.coalescePopups->value() && appHasBanner(n);
-            if (COALESCED || FSQUIET)
+            const bool SILENCED  = SOFT && Policy::silenced(n->appKey);
+            if (COALESCED || FSQUIET || SILENCED)
                 n->banner = false;
 
             if (!n->waiting) // a suspended arrival is invisible: no warm, no damage
@@ -466,7 +470,7 @@ namespace NHyprnotify {
             // libcanberra player unless the client suppresses it. DND-queued
             // (waiting) arrivals stay silent; the resume doesn't replay.
             if (!n->waiting) {
-                bool        suppress = COALESCED; // a coalesced arrival is silent, like its banner is gone
+                bool        suppress = COALESCED || SILENCED; // both mean "this one does not announce itself"
                 std::string soundFile, soundName;
                 if (const auto IT = hints.find("suppress-sound"); IT != hints.end())
                     try {

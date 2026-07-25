@@ -47,9 +47,10 @@ Two surfaces share one card model:
    does NOT absorb the banners, and it closes again once the pointer is on
    neither the bell nor the panel. Any click pins it, and a pinned shade is
    an ordinary one.
-   - **Ranking** is Android's, minus the dividers: critical, then
-     conversations (fd.o category `im.*`/`call.*`), then normal, then
-     silent — newest first inside each tier.
+   - **Ranking** is Android's, minus the dividers: critical, then marked
+     conversations, then the rest of the conversations (fd.o category
+     `im.*`/`call.*`), then normal, then silent — newest first inside each
+     tier. A silenced app ranks with the silent ones.
    - **Bundling** follows `GroupHelper.AUTOGROUP_AT_COUNT`: an app's cards
      collapse into one digest (identity icon · "App • N • age" · count pill
      · ≤2 preview lines, each wearing its own sender's face) only at FOUR or
@@ -74,6 +75,18 @@ Two surfaces share one card model:
      bundle: left expands, right (or the header ✕) dismisses the whole app.
      The footer is ⊖ DND (accent-lit while on) and "Clear all". A click
      outside closes.
+   - **Per-app rules** — what Android hides behind a long-press, and the
+     thing one global DND could never say. An open row reveals a strip
+     beside its chevron on hover: **⊘** silences the app (no banner, no
+     sound, straight to the shade, ranked with the quiet ones — critical
+     still punches through, exactly as through DND) and **★** marks the
+     sender, which sorts that chat above everything but a critical card and
+     lights the ring AOSP keeps hidden on the badge until you mark someone.
+     A bundle's ⊘ sits by its count pill. Both rules persist across relogs
+     in `$XDG_STATE_HOME/hyprnotify/policy.tsv`, both are retroactive (the
+     cards already in the shade re-rank under them), and silence keys on the
+     app while a mark keys on app + sender — one chat app carries many
+     people.
    - **Inline reply.** A sender that sees the `inline-reply` capability
      adds an action keyed `inline-reply` and waits for a
      `NotificationReplied(id, text)` signal — it is how Telegram, Fractal
@@ -87,10 +100,11 @@ Two surfaces share one card model:
    - **Keys.** While the shade is open it owns exactly the nav set and
      nothing else: Esc closes, ↑/↓ move a selection (an accent hairline,
      paging to stay on screen), Space folds it, Enter fires the primary,
-     Tab opens a reply, Delete dismisses. A chord with ctrl/alt/super is a
-     user bind passing through, and Space/Enter/Delete with nothing
-     selected still belong to
-     whatever holds focus. Selection and fold state reset on close.
+     Tab opens a reply, Delete dismisses, `m` silences the app, `p` marks
+     the sender. A chord with ctrl/alt/super is a user bind passing
+     through, and a nav key with nothing selected — or nothing to do, like
+     `p` on a card that is not a chat — still belongs to whatever holds
+     focus. Selection and fold state reset on close.
 
 Model rules: the **conversation merge** (Android's MessagingStyle) joins one
 chat's messages into one growing card (~8KB, oldest lines drop) — a fresh
@@ -107,7 +121,7 @@ The bar's bell talks over the bus: the `org.hitori.hyprnotify` interface on
 the Notifications object carries `Toggle` (the shade), `Peek(on_bell)` (the
 hover) and a `State` signal (live/kept/dnd/center — the badge counts the
 shade, never the DND queue or the OSD band).
-`hyprctl hyprnotify {count,center,state,badge,clear}`;
+`hyprctl hyprnotify {count,center,state,badge,policy,clear}`;
 `hl.plugin.hyprnotify.{suspend,center}()`.
 
 Markup stays the whitelisted Pango subset with the literal-`<`/`&` rescue;

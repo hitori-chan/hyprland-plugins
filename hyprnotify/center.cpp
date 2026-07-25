@@ -235,13 +235,17 @@ namespace NHyprnotify {
     // ---- the display list: one ranked list, apps bundled at four ----
 
     // Android's shade ranking, minus the visible dividers: urgent things,
-    // then the people, then the rest, then the silent ones.
+    // then the people you marked, then the rest of the people, then
+    // everything else, then the quiet ones. A silenced app ranks with the
+    // quiet ones — that IS what silencing it asked for.
     static int tier(const SP<SNotif>& n) {
         if (n->urgency >= 2)
             return 0;
+        if (n->urgency == 0 || Policy::silenced(n->appKey))
+            return 4;
         if (n->conversation)
-            return 1;
-        return n->urgency == 0 ? 3 : 2;
+            return n->priority ? 1 : 2;
+        return 3;
     }
 
     static void buildDisplay(std::vector<SDisp>& out) {

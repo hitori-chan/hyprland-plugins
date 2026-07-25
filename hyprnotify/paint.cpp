@@ -135,8 +135,13 @@ namespace NHyprnotify {
         const double R = AVATAR && n.conversation ? cell.w / 2 : cell.w * 10.0 / 44.0;
         P.texFit(LEAD, cell, (int)std::lround(R * P.scale), rp);
 
-        if (!withBadge || !AVATAR || !HASIDENT)
+        if (!withBadge || !AVATAR || !HASIDENT) {
+            // no badge to ring: a marked chat with no face wears it on the
+            // icon it does have
+            if (n.priority)
+                P.ring(cell, color(cfg.colHighlight), (int)std::lround(R * P.scale), rp);
             return;
+        }
         const double D = cell.w * BADGE_D, IN = D * BADGE_INSET;
         const CBox   BB{cell.x + cell.w * (1 + BADGE_PROT) - D, cell.y + cell.h * (1 + BADGE_PROT) - D, D, D};
         // AOSP's conversation_badge_background is a solid WHITE oval, and the
@@ -145,6 +150,10 @@ namespace NHyprnotify {
         // here just made a black coin nobody could see.
         P.rect(BB, CHyprColor{Theme::BADGE_RIM}, (int)std::lround(D / 2 * P.scale), rp);
         P.texFit(n.identTex, CBox{BB.x + IN, BB.y + IN, D - 2 * IN, D - 2 * IN}, (int)std::lround((D / 2 - IN) * P.scale), rp);
+        // conversation_icon_badge_ring — the one AOSP ships with
+        // visibility=gone and shows only once you mark the conversation.
+        if (n.priority)
+            P.ring(CBox{BB.x - 1.5, BB.y - 1.5, D + 3, D + 3}, color(cfg.colHighlight), (int)std::lround((D / 2 + 1.5) * P.scale), rp);
     }
 
 } // namespace NHyprnotify

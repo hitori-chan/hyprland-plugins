@@ -222,9 +222,14 @@ chk "30 workspace hops: back on 1" bash -c "hyprctl -i $SIG activeworkspace -j |
 # ---- hostile state file -------------------------------------------------
 kill_nested
 printf 'garbage\n42\n1e400\t0\t300\t200\tinffoot\n-100\t-100\t-50\t-50\tnegfoot\n100000\t100000\t400\t300\tfoot\n' > "$STATE/hyprplace/lastspot.tsv"
+# the policy store is the other user-editable file: a verb-less line, an
+# empty key and an unknown verb must all be skipped, not fatal
+mkdir -p "$STATE/hyprnotify"
+printf 'garbage\ns\n s\tx\nz\tnope\ns\t\ns\tkeepme\n' > "$STATE/hyprnotify/policy.tsv"
 HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" bash "$HARNESS/launch.sh" >/dev/null 2>&1 || { echo "relaunch FAILED"; exit 1; }
 retarget
 chk "hostile tsv: all 8 plugins still load" test "$(hq plugin list | grep -c Plugin)" = 8
+chk "hostile policy: only the well-formed rule loaded" test "$(hq hyprnotify policy)" = "silenced:1 s=keepme priority:0"
 dsp "hl.dsp.window.close()"; sleep 0.5
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x300')"; sleep 2
 # the stored 400x300 is applied over the requested 500x300, then the
@@ -469,6 +474,74 @@ chk "reply: enter sent it and the card went" test "$(st)" = "center:1 live:0 dnd
 chk "reply: NotificationReplied carried the typed text" grep -q 'STRING "hi"' "$REPLIED"
 hq hyprnotify center >/dev/null; sleep 0.4
 hq hyprnotify clear >/dev/null; sleep 0.8
+
+# ---- per-app policy: silenced apps, marked conversations --------------------
+# DND on/off was the whole vocabulary, and "never this app" and "this person
+# first" are neither of its two answers. Both rules persist, so every
+# assertion is made twice: once on the live behaviour, once on the store.
+# The Notify calls go over the bus with an explicit desktop-entry — the app
+# key must not depend on how notify-send happens to fill the hint.
+POLFILE="$STATE/hyprnotify/policy.tsv"
+pol()   { hq hyprnotify policy; }
+psend() { nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
+	Notify susssasa\{sv\}i "$1" 0 "" "$2" body 0 2 desktop-entry s "$1" category s "$3" 30000 >/dev/null 2>&1; }
+pcrit() { nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
+	Notify susssasa\{sv\}i "$1" 0 "" "$2" body 0 2 desktop-entry s "$1" urgency y 2 30000 >/dev/null 2>&1; }
+ptran() { nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
+	Notify susssasa\{sv\}i "$1" 0 "" "$2" body 0 3 desktop-entry s "$1" category s im.received transient b true 30000 >/dev/null 2>&1; }
+# the rule the hostile-file battery left behind is a REAL one, written before
+# this instance existed: it is the end-to-end proof that a rule outlives the
+# session that made it
+chk "policy: the rule from disk survived the relaunch" test "$(pol)" = "silenced:1 s=keepme priority:0"
+psend keepme "quiet please" ""; sleep 1.2
+chk "policy: the persisted rule silences a fresh arrival" test "$(bd)" = "banners:0 resident:1"
+hq hyprnotify center >/dev/null; sleep 0.7
+tap down
+tap 50 # m
+chk "policy: m lifted the persisted rule" test "$(pol)" = "silenced:0 priority:0"
+tap esc; hq hyprnotify clear >/dev/null; sleep 0.6
+psend spammer "noise one" ""; sleep 1
+hq hyprnotify center >/dev/null; sleep 0.7
+tap down
+tap 50 # m
+chk "policy: m silenced the app" test "$(pol)" = "silenced:1 s=spammer priority:0"
+chk "policy: the rule reached the disk" grep -qxF "$(printf 's\tspammer')" "$POLFILE"
+tap esc; hq hyprnotify clear >/dev/null; sleep 0.6
+psend spammer "noise two" ""; sleep 1.2
+chk "policy: a silenced app's card lands with no banner" test "$(bd)" = "banners:0 resident:1"
+pcrit spammer "alarm"; sleep 1.2
+chk "policy: critical still punches through a silenced app" test "$(bd)" = "banners:1 resident:1"
+hq hyprnotify clear >/dev/null; sleep 0.6
+psend spammer "noise three" ""; sleep 1
+hq hyprnotify center >/dev/null; sleep 0.7
+tap down
+tap 50
+chk "policy: m again lifts the silence" test "$(pol)" = "silenced:0 priority:0"
+chk "policy: the store emptied with it" test ! -s "$POLFILE"
+tap esc; hq hyprnotify clear >/dev/null; sleep 0.6
+psend spammer "noise four" ""; sleep 1.2
+chk "policy: the app banners again" test "$(bd)" = "banners:1 resident:0"
+hq hyprnotify clear >/dev/null; sleep 0.6
+# marking a conversation: the key is app + sender, because one chat app
+# carries many people
+psend chatapp Alice im.received; sleep 1
+hq hyprnotify center >/dev/null; sleep 0.7
+tap down
+tap 25 # p
+chk "policy: p marked the sender, not the app" test "$(pol)" = "silenced:0 priority:1 p=chatapp/Alice"
+tap esc; sleep 0.5
+# and the mark outranks a NEWER chat from someone else. The newcomer is
+# transient so it keeps its banner through the absorb — that is what tells
+# the two apart in the badge after the top row is deleted.
+ptran chatapp2 Bob; sleep 1.2
+hq hyprnotify center >/dev/null; sleep 0.7
+chk "policy: the marked chat and a newer transient one" test "$(bd)" = "banners:1 resident:1"
+tap down
+tap delete
+chk "policy: the TOP row was the marked chat, not the newer one" test "$(bd)" = "banners:1 resident:0"
+chk "policy: the mark outlives the card it was set on" test "$(pol)" = "silenced:0 priority:1 p=chatapp/Alice"
+tap esc; hq hyprnotify clear >/dev/null; sleep 0.8
+chk "policy: reset after the policy battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # Ranking: a critical sorts to the top however late the others arrived. The
 # two cards are made TELLABLE APART in the badge — a transient one opts out of

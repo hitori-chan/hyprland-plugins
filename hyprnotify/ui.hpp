@@ -50,7 +50,8 @@ namespace NHyprnotify {
 
     inline constexpr double CENTER_W = 360; // the shade's height is the monitor's (see renderCenter)
     inline constexpr double ROW_PADT = 9, ROW_PADX = 12, ROW_PADB = 10, ROW_ICON = 40, ROW_ICON_GAP = 10, ROW_GAP = 8;
-    inline constexpr double CHEV = 24;                      // the fold chevron circle
+    inline constexpr double CHEV = 24;                       // the fold chevron circle
+    inline constexpr double MANAGE_D = 20, MANAGE_GAP = 4;   // the hover-revealed manage strip, beside the chevron
     inline constexpr double CHILD_ICON = 28, CHILD_GAP = 2; // segmented group children
     inline constexpr double PREV_ICON = 16;                 // digest preview avatars
     inline constexpr double PILL_H = 20;                    // the count pill
@@ -158,9 +159,10 @@ namespace NHyprnotify {
         bool   headerHasApp; // singles: "App • age"; children: age only
         bool   hasChevron;   // singles fold; expanded-bundle children are always open
         bool   canReply;     // the inline-reply field; conversations never bundle, so children never need it
+        bool   manage;       // the silence/priority strip; a child's app is managed from its bundle header
     };
-    inline constexpr SRowStyle ROW_SINGLE{ROW_ICON, true, true, true, true};
-    inline constexpr SRowStyle ROW_CHILD{CHILD_ICON, false, false, false, false};
+    inline constexpr SRowStyle ROW_SINGLE{ROW_ICON, true, true, true, true, true};
+    inline constexpr SRowStyle ROW_CHILD{CHILD_ICON, false, false, false, false, false};
 
     // Lays out (and outside the warm paints) one row; returns its height and
     // fills the card's hit boxes. `more` drives the chevron: an open row can

@@ -8,21 +8,23 @@
 //            same as the popup — rows open by default, so the click is
 //            spent on acting rather than on revealing. The CHEVRON is the
 //            only fold target · a link opens · a button acts · right =
-//            dismiss · middle = Clear all
+//            dismiss · middle = Clear all · the hover-revealed strip beside
+//            the chevron holds ⊘ (silence the app) and ★ (mark the sender)
 //   child    a bundle child is a row without the fold: body, links, buttons
-//   digest   left expands the app's bundle · right dismisses it
-//   ghead    left collapses · the ✕ / right dismisses the bundle
+//   digest   left expands the app's bundle · its ⊘ silences · right dismisses
+//   ghead    left collapses · ⊘ silences · the ✕ / right dismisses the bundle
 //   footer   ⊖ = DND · "Clear all" = the global sweep
 //   wheel    pages the shade — captured only inside the panel box
 //   keys     while the shade is open it owns the nav set and nothing else:
 //            esc closes (the topmost-peel's middle link) · ↑/↓ move the
 //            selection · space folds it (the click's twin) · enter fires the
-//            primary · delete dismisses · tab opens the selected card's
-//            reply field, and while one is armed EVERY key is the field's
-//            (reply.cpp). A chord with ctrl/alt/super is the user's bind, and
-//            space/enter/delete with NOTHING selected still belong to
-//            whatever holds focus — the shade never grabs a key it has no
-//            use for.
+//            primary · delete dismisses · m silences the app · p marks the
+//            sender · tab opens the selected card's reply field, and while
+//            one is armed EVERY key is the field's (reply.cpp). A chord with
+//            ctrl/alt/super is the user's bind, and a nav key with NOTHING
+//            selected (or nothing to do — p on a card that is not a chat)
+//            still belongs to whatever holds focus: the shade never grabs a
+//            key it has no use for.
 //
 // Every mutation lands via the hit queue + CHop drain, never synchronously
 // inside the emission (crash class 6); every listener gates on
@@ -92,6 +94,9 @@ namespace NHyprnotify {
     }
 
     static uint8_t partAt(const SCard& c, const Vector2D& pos) {
+        for (const auto& M : c.manage)
+            if (M.box.containsPoint(pos))
+                return M.part;
         if (c.chevron.w > 0 && c.chevron.containsPoint(pos))
             return 1;
         if (c.close.w > 0 && c.close.containsPoint(pos))
@@ -119,6 +124,19 @@ namespace NHyprnotify {
             Bus::invokeAction(id, action);
         if (!(resident && !action.empty())) // resident keeps the card once an action fired
             Model::closeOne(id, Model::R_DISMISSED);
+    }
+
+    // the manage strip: silence the card's app, or mark its sender. Both are
+    // per-key rules, so the card only supplies the key.
+    static void manageCard(uint32_t id, uint8_t part) {
+        for (const auto& N : notifs)
+            if (N->id == id) {
+                if (part == 5)
+                    Policy::toggleSilence(N->appKey);
+                else if (part == 6)
+                    Policy::togglePriority(N->appKey, N->summary);
+                return;
+            }
     }
 
     static void drainHits() {
@@ -164,6 +182,10 @@ namespace NHyprnotify {
                         centerToggleRow(H.id);
                         continue;
                     }
+                    if (H.part == 5 || H.part == 6) {
+                        manageCard(H.id, H.part);
+                        continue;
+                    }
                     if (H.part == 3) // inside the armed field: keep typing
                         continue;
                     if (H.part == 4) { // its send pill
@@ -188,6 +210,10 @@ namespace NHyprnotify {
                     continue;
                 }
                 case SCard::DIGEST: {
+                    if (H.bit == 1u && H.part == 5) { // the ⊘ silences the app, it does not expand
+                        Policy::toggleSilence(H.group);
+                        continue;
+                    }
                     if (H.bit == 1u) { // left expands the app's bundle
                         centerToggleGroup(H.group);
                         continue;
@@ -205,6 +231,10 @@ namespace NHyprnotify {
                 case SCard::GHEAD: {
                     if (H.part == 2 || H.bit == 2u) { // the static ✕ / right: the whole bundle goes
                         Model::dismissApp(H.group);
+                        continue;
+                    }
+                    if (H.bit == 1u && H.part == 5) {
+                        Policy::toggleSilence(H.group);
                         continue;
                     }
                     if (H.bit == 1u) {
@@ -334,7 +364,7 @@ namespace NHyprnotify {
     // Same shape as the click queue, and for the same reason: an action can
     // make the client focus itself, so nothing runs inside the emission.
     struct SKeyAct {
-        int         verb = 0; // 1 fold, 2 the primary, 3 dismiss
+        int         verb = 0; // 1 fold, 2 the primary, 3 dismiss, 4 silence, 5 mark
         uint32_t    id   = 0;
         std::string group; // non-empty: a bundle
     };
@@ -360,7 +390,13 @@ namespace NHyprnotify {
                     Model::dismissApp(A.group);
                 else
                     Model::closeOne(A.id, Model::R_DISMISSED);
-            }
+            } else if (A.verb == 4) {
+                if (GROUP)
+                    Policy::toggleSilence(A.group);
+                else
+                    manageCard(A.id, 5);
+            } else if (A.verb == 5)
+                manageCard(A.id, 6);
         }
     }
 
@@ -427,12 +463,27 @@ namespace NHyprnotify {
             case XKB_KEY_Return:
             case XKB_KEY_KP_Enter: a.verb = 2; break;
             case XKB_KEY_Delete: a.verb = 3; break;
+            case XKB_KEY_m: a.verb = 4; break; // mute the app
+            case XKB_KEY_p: a.verb = 5; break; // mark the sender
             default: return;
         }
         // nothing selected: the shade has not taken the keyboard, so a bare
         // space still belongs to whatever holds focus
         if (!centerSelection(a.id, a.group))
             return;
+        // and a bare letter with nothing to do belongs to focus too: a bundle
+        // has no one sender to mark, and neither does a card that is not a chat
+        if (a.verb == 5) {
+            bool conv = false;
+            if (a.group.empty())
+                for (const auto& N : notifs)
+                    if (N->id == a.id) {
+                        conv = N->conversation;
+                        break;
+                    }
+            if (!conv)
+                return;
+        }
 
         info.cancelled = true;
         keyQueue.push_back(std::move(a));

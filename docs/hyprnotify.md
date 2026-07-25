@@ -100,8 +100,20 @@ icons).
 - Shade keys, while it is open and only then: Esc closes, ↑/↓ move a
   selection (an accent hairline; the page follows it), Space folds, Enter
   fires the primary, Tab arms the selected card's reply field, Delete
-  dismisses. Modified chords pass through as user
-  binds, and the action keys pass through while nothing is selected.
+  dismisses, `m` silences the app, `p` marks the sender. Modified chords
+  pass through as user binds, and so does any key with nothing to act on —
+  nothing selected, or `p` on a card that is not a chat.
+- Per-app rules (`policy.cpp`, persisted to
+  `$XDG_STATE_HOME/hyprnotify/policy.tsv`): SILENCED apps get no banner and
+  no sound and rank with the quiet ones — Android's "Silent", dunst's
+  `skip_display` — while MARKED conversations rank above everything but a
+  critical card and wear AOSP's `conversation_icon_badge_ring`, the one it
+  ships with `visibility=gone` until you mark someone. Critical bypasses a
+  silence exactly as it bypasses DND. Set from the strip an open row reveals
+  on hover (⊘, ★) or from the bundle header; both rules are retroactive, so
+  the cards already in the shade re-rank under them. Silence keys on the app
+  identity, a mark on app + sender: one chat app carries many people. This
+  is state the user typed with a click, never a per-app branch in code.
 - Bell hover-peek: `Peek(on_bell)` from the bar opens the shade UNPINNED
   after `hyprbar:bell_peek_ms`. A peek does not absorb the popped banners
   (a pointer crossing the bell must not swallow unread ones), and it closes
