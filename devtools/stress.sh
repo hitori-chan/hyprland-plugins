@@ -37,6 +37,24 @@ chk() { # chk <name> <command...> — command's exit code decides
 hq()      { hyprctl -i "$SIG" "$@"; }
 dsp()     { hq dispatch "$1" >/dev/null 2>&1; }
 clients() { hq clients -j 2>/dev/null; }
+
+# Nothing here may hard-code the nested monitor's size: it is whatever window
+# the wayland backend gets, and it HAS changed under us (the 1280x800 these
+# coordinates assumed is now 1920x1200). retarget re-reads the instance after
+# every launch and vp injects through vptr with that real extent — vptr maps
+# `move X Y` as X/extent onto the output, so a wrong extent silently lands
+# every scripted click somewhere else and the assertion passes or fails on
+# whatever happened to be under it.
+WL=""; MON_W=0; MON_H=0
+retarget() {
+	SIG="$(cat "$HARNESS/nested.sig")"
+	WL="$(cat "$HARNESS/nested.wl")"
+	read -r MON_W MON_H < <(hq monitors -j | python3 -c "
+import json,sys
+m=json.load(sys.stdin)[0]
+print(int(m['width']/m['scale']), int(m['height']/m['scale']))")
+}
+vp() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" "$MON_W" "$MON_H" >/dev/null 2>&1; }
 # pyc <python-expr-over-cs> — cs = client list; truthy stdout "1" = pass
 pyc() { clients | python3 -c "
 import json,sys
@@ -106,8 +124,9 @@ rm -rf "$STATE"; mkdir -p "$STATE/hyprplace"
 printf '100\t100\t500\t400\tfoot\n200\t80\tlegacyfoot\n' > "$STATE/hyprplace/lastspot.tsv"
 { cat "$HARNESS/nested.lua"; echo 'hl.window_rule({ match = { class = "foot|mpv|corpseA|corpseB|tuckmax|tuckfloat|tuckfs" }, float = true })'; } > "$CFG"
 HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" bash "$HARNESS/launch.sh" >/dev/null 2>&1 || { echo "nested launch FAILED"; exit 1; }
-SIG="$(cat "$HARNESS/nested.sig")"
+retarget
 LOG="$HARNESS/nested.log"
+ok "nested monitor is ${MON_W}x${MON_H} (every coordinate below derives from it)"
 chk "8 plugins loaded" test "$(hq plugin list | grep -c Plugin)" = 8
 dsp "hl.dsp.window.close()" # the donate/updated screen, when present
 sleep 0.5
@@ -151,7 +170,7 @@ for i in $(seq 1 12); do
 	dsp "hl.dsp.exec_cmd('foot --window-size-pixels=$((400 + (i % 4) * 80))x$((250 + (i % 3) * 60))')" &
 done; wait; sleep 4
 expect "spawn storm: all 12 up, fully inside the workarea" \
-	"sum(1 for c in cs if c['class']=='foot')==12 and all(c['at'][0]>=0 and c['at'][1]>=26 and c['at'][0]+c['size'][0]<=1280 and c['at'][1]+c['size'][1]<=800 for c in cs if c['class']=='foot')"
+	"sum(1 for c in cs if c['class']=='foot')==12 and all(c['at'][0]>=0 and c['at'][1]>=26 and c['at'][0]+c['size'][0]<=$MON_W and c['at'][1]+c['size'][1]<=$MON_H for c in cs if c['class']=='foot')"
 for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in json.load(sys.stdin) if c['class']=='foot']"); do
 	dsp "hl.dsp.window.close({window=\"address:$a\"})" &
 done; wait; sleep 2
@@ -194,14 +213,14 @@ chk "30 workspace hops: back on 1" bash -c "hyprctl -i $SIG activeworkspace -j |
 kill_nested
 printf 'garbage\n42\n1e400\t0\t300\t200\tinffoot\n-100\t-100\t-50\t-50\tnegfoot\n100000\t100000\t400\t300\tfoot\n' > "$STATE/hyprplace/lastspot.tsv"
 HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" bash "$HARNESS/launch.sh" >/dev/null 2>&1 || { echo "relaunch FAILED"; exit 1; }
-SIG="$(cat "$HARNESS/nested.sig")"
+retarget
 chk "hostile tsv: all 8 plugins still load" test "$(hq plugin list | grep -c Plugin)" = 8
 dsp "hl.dsp.window.close()"; sleep 0.5
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x300')"; sleep 2
 # the stored 400x300 is applied over the requested 500x300, then the
 # 100000,100000 spot clamps to the margin corner for THAT size
-expect "far-off-screen seed: stored size applied, clamped to (879,499)" \
-	"any(c['class']=='foot' and c['at']==[879,499] and c['size']==[400,300] for c in cs)"
+expect "far-off-screen seed: stored size applied, clamped to ($((MON_W-401)),$((MON_H-301)))" \
+	"any(c['class']=='foot' and c['at']==[$((MON_W-401)),$((MON_H-301))] and c['size']==[400,300] for c in cs)"
 
 # ---- expiry, residency & the center ------------------------------------
 # The 5.3.0 model: a normal banner runs its clock, then RETREATS to a
@@ -273,13 +292,13 @@ hq hyprnotify clear >/dev/null; sleep 0.8
 # ---- hardening: sections, absorb, DND, hostile hints -------------------
 # a section header's ✕ sweeps ONLY that section to Earlier (the one verb
 # with no model-level path — driven through the real hit box via vptr). At
-# 1280x800@1 with offset_y 34 the Urgent header's ✕ sits at ~(1251,56);
-# hit boxes are final-position, so the open spring does not move it.
+# the panel hangs off the monitor's right edge, so the Urgent header's ✕ is
+# a fixed inset from the top-right corner; hit boxes are final-position, so
+# the open spring does not move it.
 dsp "hl.dsp.exec_cmd('notify-send -u critical \"urgent one\" body')"; sleep 1
 chk "sections: a critical card fills Urgent" test "$(st)" = "center:0 live:1 hist:0 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.6
-WL="$(cat "$HARNESS/nested.wl")"
-printf 'move 1251 56\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1
+printf 'move %s 56\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' "$((MON_W - 29))" | vp
 sleep 0.8
 chk "sections: the Urgent header ✕ sweeps just that section to Earlier" test "$(st)" = "center:1 live:0 hist:1 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.4
@@ -315,20 +334,19 @@ chk "hostile: wrong-typed category survived, both cards landed" test "$(st)" = "
 hq hyprnotify clear >/dev/null; sleep 0.8
 
 # ---- real-input storm ---------------------------------------------------
-WL="$(cat "$HARNESS/nested.wl")"
 {
-	for i in $(seq 1 60); do echo "move $(( (i * 97) % 1280 )) $(( 30 + (i * 61) % 760 ))"; echo "sleep 10"; done
+	for i in $(seq 1 60); do echo "move $(( (i * 97) % MON_W )) $(( 30 + (i * 61) % (MON_H - 40) ))"; echo "sleep 10"; done
 	for i in $(seq 1 15); do echo "move 500 13"; echo "sleep 15"; echo "scroll 0 1"; echo "sleep 25"; done
 	for i in $(seq 1 10); do
 		echo "move 34 13"; echo "sleep 15"; echo "press 272"; echo "sleep 20"; echo "release 272"; echo "sleep 35"
 		echo "move 59 13"; echo "sleep 15"; echo "press 272"; echo "sleep 20"; echo "release 272"; echo "sleep 35"
 	done
 	echo "move 12 13"; echo "sleep 30"; echo "press 272"; echo "sleep 30"; echo "release 272"; echo "sleep 100"
-} | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1
+} | vp
 sleep 1
 chk "input storm: all 8 plugins alive" test "$(hq plugin list | grep -c Plugin)" = 8
 chk "input storm: the final taglist click registered (ws 1)" bash -c "hyprctl -i $SIG activeworkspace -j | python3 -c 'import json,sys;sys.exit(0 if json.load(sys.stdin)[\"id\"]==1 else 1)'"
-printf 'move 250 200\nsleep 50\npress 272\nsleep 40\nrelease 272\nsleep 100\n' | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1
+printf 'move 250 200\nsleep 50\npress 272\nsleep 40\nrelease 272\nsleep 100\n' | vp
 sleep 0.8
 expect "post-storm click still raises + focuses (no stuck swallow)" \
 	"cs[-1]['class']=='foot' if cs else False"
@@ -355,7 +373,7 @@ import json,sys
 print(next(c['address'] for c in json.load(sys.stdin) if c['fullscreen']==2))")"
 # a 5-press burst spanning ~700ms: the tail outlives a fixed 400ms corpse,
 # so this also asserts each swallowed press extends the gesture
-( { printf "move ${P% *} ${P#* }\nsleep 30\n"; for i in 1 2 3 4 5; do printf "press 272\nsleep 40\nrelease 272\nsleep 110\n"; done; } | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1 ) &
+( { printf "move ${P% *} ${P#* }\nsleep 30\n"; for i in 1 2 3 4 5; do printf "press 272\nsleep 40\nrelease 272\nsleep 110\n"; done; } | vp ) &
 sleep 0.12; dsp "hl.dsp.window.close({window=\"address:$V\"})"
 wait; sleep 0.9
 expect "corpse guard: click burst through a dying viewer keeps the stack" \
@@ -391,7 +409,7 @@ import json,sys
 F=next(c for c in json.load(sys.stdin) if c['class']=='tuckfloat')
 x = F['at'][0]-80 if F['at'][0] >= 110 else F['at'][0]+F['size'][0]+80
 print(int(x), int(F['at'][1]+50))")"
-printf "move ${P% *} ${P#* }\nsleep 30\npress 272\nsleep 40\nrelease 272\nsleep 60\n" | WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" >/dev/null 2>&1
+printf "move ${P% *} ${P#* }\nsleep 30\npress 272\nsleep 40\nrelease 272\nsleep 60\n" | vp
 sleep 0.6
 dsp "hl.dsp.window.close({window=\"address:$V\"})"; sleep 0.9
 expect "fullscreen tuck: the flagged floater survives the viewer on top" \
