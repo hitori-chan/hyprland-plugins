@@ -201,6 +201,7 @@ namespace NHyprnotify {
         void                      dismissApp(const std::string& appKey); // a bundle's right-click
         void                      absorbPopped(); // opening the shade parks the popped stack (no re-pop on close)
         void                      rearmExpiry();
+        void                      holdBanner(uint32_t id); // the hovered popup's countdown pauses; 0 releases (and restarts it)
         void                      toggleSuspend(); // DND; resume renders the queue, fresh timeouts
         bool                      suspendedNow();
         std::string               stateString(); // "center:N live:N dnd:N" — raw model counts, the debug line

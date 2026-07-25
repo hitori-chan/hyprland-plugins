@@ -23,7 +23,8 @@ namespace NHyprnotify {
         static NHyprCommon::CBusLink           g_bus;
         static SP<CEventLoopTimer>             expiry;
         static uint32_t                        nextId    = 1;
-        static bool                            suspended = false; // DND
+        static bool                            suspended  = false; // DND
+        static uint32_t                        heldBanner = 0;     // the popup under the pointer: its countdown is paused
         static NHyprCommon::CHop               pendingState;
 
         // A drain must never run synchronously from here: emits happen inside
@@ -57,7 +58,7 @@ namespace NHyprnotify {
             const auto NOW  = Time::steadyNow();
             int64_t    next = -1;
             for (const auto& N : notifs) {
-                if (!N->banner || N->timeoutMs <= 0 || N->waiting)
+                if (!N->banner || N->timeoutMs <= 0 || N->waiting || N->id == heldBanner)
                     continue;
                 // clamp before comparing: -1 is the "none" sentinel, and an
                 // overdue card's negative remaining time must still win
@@ -69,6 +70,21 @@ namespace NHyprnotify {
                 expiry->updateTimeout(std::nullopt);
             else
                 expiry->updateTimeout(std::chrono::milliseconds(std::max<int64_t>(next, 1)));
+        }
+
+        // A banner must not expire out from under the pointer reading it. The
+        // hovered card's clock stops (the sweep and the rearm both skip it),
+        // and leaving RESTARTS it rather than resuming the sliver that was
+        // left — Android's heads-up does the same when a touch ends: you get
+        // the whole read window back, not the tail of it.
+        void holdBanner(uint32_t id) {
+            if (heldBanner == id)
+                return;
+            const auto PREV = heldBanner;
+            heldBanner      = id;
+            if (const auto N = PREV ? byId(PREV) : nullptr; N && N->banner && N->timeoutMs > 0 && !N->waiting)
+                N->deadline = Time::steadyNow() + std::chrono::milliseconds((int64_t)N->timeoutMs);
+            rearmExpiry();
         }
 
         static void emitClosed(uint32_t id, uint32_t reason) {
@@ -737,7 +753,7 @@ namespace NHyprnotify {
                         bool       changed = false;
                         std::vector<uint32_t> gone;
                         for (const auto& N : notifs) {
-                            if (!N->banner || N->timeoutMs <= 0 || N->waiting || N->deadline > NOW)
+                            if (!N->banner || N->timeoutMs <= 0 || N->waiting || N->id == heldBanner || N->deadline > NOW)
                                 continue;
                             if (vanishes(N)) {
                                 gone.push_back(N->id);
@@ -775,7 +791,8 @@ namespace NHyprnotify {
                 g_pEventLoopManager->removeTimer(expiry);
             expiry.reset();
             notifs.clear();
-            suspended = false;
+            suspended  = false;
+            heldBanner = 0;
         }
     }
 

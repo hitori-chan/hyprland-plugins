@@ -18,7 +18,9 @@ Two surfaces share one card model:
    carried it. A wide content image (aspect ≥ 1.5) goes hero, full-width
    instead. Then an "App • age" header, bold title, body, a progress pill
    for the `value` hint, and the card's actions as tinted text buttons.
-   Hovering reveals the ✕; critical cards ring urgent.
+   Hovering reveals the ✕ **and holds the timeout** — a banner never expires
+   out from under the pointer reading it, and the clock restarts when the
+   pointer leaves. Critical cards ring urgent.
    Without an explicit `expire_timeout` a normal card runs `timeout_normal`
    (5s) and then RETREATS to the shade — the popup goes, the card stays,
    the shade is the safety net. Critical cards are the exception: they stick

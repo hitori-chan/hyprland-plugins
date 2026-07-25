@@ -76,6 +76,10 @@ icons).
   then dismisses; right dismisses; middle parks the stack into the shade. The
   cards own the pointer over them — hover never leaks to the window beneath
   (sloppy focus would flip focus under every popup).
+- Popup hover HOLDS the timeout: the card under the pointer stops counting
+  down, and leaving restarts its full clock rather than resuming the sliver
+  that was left (Android's heads-up does the same when a touch ends). Only
+  one card can be held, because only one can be hovered.
 - Shade clicks: LEFT READS — anywhere on a row (the chevron included) folds
   it open ⇄ shut and nothing else; buttons act (and dismiss unless
   `resident`); right dismisses; middle is "Clear all". On an app bundle left
