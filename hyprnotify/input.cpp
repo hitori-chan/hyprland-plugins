@@ -17,10 +17,12 @@
 //   keys     while the shade is open it owns the nav set and nothing else:
 //            esc closes (the topmost-peel's middle link) · ↑/↓ move the
 //            selection · space folds it (the click's twin) · enter fires the
-//            primary · delete dismisses. A chord with ctrl/alt/super is the
-//            user's bind, and space/enter/delete with NOTHING selected still
-//            belong to whatever holds focus — the shade never grabs a key it
-//            has no use for.
+//            primary · delete dismisses · tab opens the selected card's
+//            reply field, and while one is armed EVERY key is the field's
+//            (reply.cpp). A chord with ctrl/alt/super is the user's bind, and
+//            space/enter/delete with NOTHING selected still belong to
+//            whatever holds focus — the shade never grabs a key it has no
+//            use for.
 //
 // Every mutation lands via the hit queue + CHop drain, never synchronously
 // inside the emission (crash class 6); every listener gates on
@@ -94,6 +96,10 @@ namespace NHyprnotify {
             return 1;
         if (c.close.w > 0 && c.close.containsPoint(pos))
             return 2;
+        if (c.replySend.w > 0 && c.replySend.containsPoint(pos))
+            return 4;
+        if (c.replyField.w > 0 && c.replyField.containsPoint(pos))
+            return 3;
         return 0;
     }
 
@@ -156,6 +162,18 @@ namespace NHyprnotify {
                         continue;
                     if (H.part == 1) { // the chevron, and only it, folds
                         centerToggleRow(H.id);
+                        continue;
+                    }
+                    if (H.part == 3) // inside the armed field: keep typing
+                        continue;
+                    if (H.part == 4) { // its send pill
+                        const auto TX = replyText();
+                        replyClose();
+                        Bus::sendReply(H.id, TX);
+                        continue;
+                    }
+                    if (H.action == "inline-reply") { // the chip arms the field
+                        replyOpen(H.id);
                         continue;
                     }
                     if (!H.action.empty()) {
@@ -357,6 +375,15 @@ namespace NHyprnotify {
         const auto KB = g_pSeatManager ? g_pSeatManager->m_keyboard.lock() : nullptr;
         if (!KB || !KB->m_xkbState)
             return;
+
+        // An armed reply field owns the keyboard first: the user is typing a
+        // sentence, and every nav key below would otherwise steal a letter.
+        if (replyArmed()) {
+            if (replyKey(KB->m_xkbState, e.keycode + 8))
+                info.cancelled = true;
+            return;
+        }
+
         // a modified chord is a user bind passing through, never the shade's
         for (const char* M : {XKB_MOD_NAME_CTRL, XKB_MOD_NAME_ALT, XKB_MOD_NAME_LOGO})
             if (xkb_state_mod_name_is_active(KB->m_xkbState, M, XKB_STATE_MODS_EFFECTIVE) > 0)
@@ -366,6 +393,26 @@ namespace NHyprnotify {
         if (SYM == XKB_KEY_Escape) {
             info.cancelled = true;
             pendingEsc.arm([]() { setCenter(false); }); // deferred: the close reflows and refocuses
+            return;
+        }
+        // Tab moves into the selected card's reply field, the way Tab moves
+        // into any other control — the pointer has the chip, the keyboard
+        // needs a way in that is not one of the acting keys.
+        if (SYM == XKB_KEY_Tab) {
+            uint32_t    id = 0;
+            std::string group;
+            if (!centerSelection(id, group) || !group.empty())
+                return;
+            bool can = false;
+            for (const auto& N : notifs)
+                if (N->id == id) {
+                    can = N->canReply;
+                    break;
+                }
+            if (!can)
+                return;
+            info.cancelled = true;
+            replyOpen(id);
             return;
         }
         if (SYM == XKB_KEY_Up || SYM == XKB_KEY_Down) {

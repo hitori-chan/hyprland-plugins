@@ -4,8 +4,9 @@ Android's notification system on the freedesktop spec, drawn natively: the
 compositor is the `org.freedesktop.Notifications` daemon (spec 1.3) — no
 external process, no layer surface. Capabilities: `actions`, `action-icons`,
 `body`, `body-markup`, `body-hyperlinks`, `body-images`, `icon-static`,
-`persistence`, `sound`. The skin is glass·ink (`common/theme.hpp`): frosted
-graphite cards with live blur, IBM Plex Sans, superellipse corners.
+`inline-reply`, `persistence`, `sound`. The skin is glass·ink
+(`common/theme.hpp`): frosted graphite cards with live blur, IBM Plex Sans,
+superellipse corners.
 
 Two surfaces share one card model:
 
@@ -68,11 +69,22 @@ Two surfaces share one card model:
      bundle: left expands, right (or the header ✕) dismisses the whole app.
      The footer is ⊖ DND (accent-lit while on) and "Clear all". A click
      outside closes.
+   - **Inline reply.** A sender that sees the `inline-reply` capability
+     adds an action keyed `inline-reply` and waits for a
+     `NotificationReplied(id, text)` signal — it is how Telegram, Fractal
+     and the rest offer a reply box, and a server without the capability
+     gets no reply affordance offered at all. An open row with one grows a
+     **Reply** chip; clicking it (or Tab on the selected row) arms a text
+     field, Enter sends, Esc drops it. While a field is armed it owns EVERY
+     key, because there is no keyboard focus to hand it — the same grab
+     hyprbar's menubar prompt takes. Editing is append-and-backspace plus
+     C-u / C-w; the field is shade-only, not on banners.
    - **Keys.** While the shade is open it owns exactly the nav set and
      nothing else: Esc closes, ↑/↓ move a selection (an accent hairline,
      paging to stay on screen), Space folds it, Enter fires the primary,
-     Delete dismisses. A chord with ctrl/alt/super is a user bind passing
-     through, and Space/Enter/Delete with nothing selected still belong to
+     Tab opens a reply, Delete dismisses. A chord with ctrl/alt/super is a
+     user bind passing through, and Space/Enter/Delete with nothing
+     selected still belong to
      whatever holds focus. Selection and fold state reset on close.
 
 Model rules: the **conversation merge** (Android's MessagingStyle) joins one

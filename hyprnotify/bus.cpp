@@ -216,6 +216,29 @@ namespace NHyprnotify {
             pollSoon();
         }
 
+        // The user typed a reply: hand it back and close the card, the same
+        // way an invoked action does — the sender will post its own follow-up
+        // if the conversation continues. `resident` holds the card, as ever.
+        void sendReply(uint32_t id, const std::string& text) {
+            if (text.empty())
+                return;
+            const auto N = byId(id);
+            if (!N || !N->canReply)
+                return;
+            if (obj) {
+                try {
+                    if (PROTO::activation)
+                        obj->emitSignal("ActivationToken").onInterface(IFACE).withArguments(id, PROTO::activation->mintToken());
+                    obj->emitSignal("NotificationReplied").onInterface(IFACE).withArguments(id, text);
+                } catch (...) {}
+                pollSoon();
+            }
+            if (!N->resident)
+                closeOne(id, R_DISMISSED);
+            else
+                notifChanged();
+        }
+
         void toggleSuspend() {
             suspended = !suspended;
             if (suspended) {
@@ -596,6 +619,14 @@ namespace NHyprnotify {
                 n->identity = resolveImage(DESKTOP, ICONPX);
             n->appKey = APPKEY;
 
+            // The inline-reply protocol (KDE's, which Telegram/Fractal speak):
+            // the sender adds an action keyed "inline-reply" only when the
+            // server advertises the capability, and expects NotificationReplied
+            // back. It is NOT a button — it opens the row's reply field.
+            n->canReply         = false;
+            n->replyPlaceholder = strHint("x-kde-reply-placeholder-text");
+            n->replySubmitText  = strHint("x-kde-reply-submit-button-text");
+
             // actions arrive as [id0,label0, id1,label1, ...]. Every named pair
             // becomes a button; "default" is the card's primary and gets NO
             // button on either surface — the spec defines it as "the default
@@ -607,7 +638,11 @@ namespace NHyprnotify {
             for (size_t i = 0; i + 1 < actions.size(); i += 2) {
                 if (actions[i] == "default")
                     n->defaultAction = actions[i];
-                else if (!actions[i + 1].empty()) // an empty label has no button to draw
+                else if (actions[i] == "inline-reply") {
+                    n->canReply = true;
+                    if (n->replySubmitText.empty())
+                        n->replySubmitText = actions[i + 1]; // the sender's own "Reply" label
+                } else if (!actions[i + 1].empty()) // an empty label has no button to draw
                     n->actions.push_back(SAction{.id = actions[i], .label = actions[i + 1]});
             }
             // a lone named action doubles as the body-click default; it keeps
@@ -720,14 +755,15 @@ namespace NHyprnotify {
                                    emitStateSoon();
                                }),
                                sdbus::registerMethod("GetCapabilities").withOutputParamNames("capabilities").implementedAs([]() {
-                                   return std::vector<std::string>{"actions", "action-icons", "body", "body-markup", "body-hyperlinks", "body-images", "icon-static", "persistence", "sound"};
+                                   return std::vector<std::string>{"actions", "action-icons", "body", "body-markup", "body-hyperlinks", "body-images", "icon-static", "inline-reply", "persistence", "sound"};
                                }),
                                sdbus::registerMethod("GetServerInformation").withOutputParamNames("name", "vendor", "version", "spec_version").implementedAs([]() {
                                    return std::tuple<std::string, std::string, std::string, std::string>{"hyprnotify", "hitori", VERSION, "1.3"};
                                }),
                                sdbus::registerSignal("NotificationClosed").withParameters<uint32_t, uint32_t>("id", "reason"),
                                sdbus::registerSignal("ActionInvoked").withParameters<uint32_t, std::string>("id", "action_key"),
-                               sdbus::registerSignal("ActivationToken").withParameters<uint32_t, std::string>("id", "activation_token"))
+                               sdbus::registerSignal("ActivationToken").withParameters<uint32_t, std::string>("id", "activation_token"),
+                               sdbus::registerSignal("NotificationReplied").withParameters<uint32_t, std::string>("id", "text"))
                     .forInterface(IFACE);
 
                 // the shell face: the bar's bell toggles the center and reads

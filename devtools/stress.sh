@@ -416,6 +416,42 @@ chk "keys: enter fires the primary and the card goes" test "$(st)" = "center:1 l
 tap esc
 chk "keys: esc closes the shade" test "$(st)" = "center:0 live:0 dnd:0"
 
+# ---- inline reply -----------------------------------------------------------
+# The protocol the Linux chat apps speak: a sender only offers a reply when the
+# server advertises the capability, so the capability IS the feature. Driven
+# entirely from the keyboard (tab arms the selected card's field, letters type,
+# enter sends) and asserted on the WIRE — a card closing proves nothing on its
+# own, since firing its primary closes it too.
+chk "reply: the capability is advertised" \
+	bash -c "nbus() { DBUS_SESSION_BUS_ADDRESS='$NBUS' busctl --user \"\$@\"; }; nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications GetCapabilities | grep -q inline-reply"
+chk "reply: NotificationReplied is on the interface" \
+	bash -c "nbus() { DBUS_SESSION_BUS_ADDRESS='$NBUS' busctl --user \"\$@\"; }; nbus introspect org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications | grep -q NotificationReplied"
+REPLIED="$STATE/replied.log"
+rm -f "$REPLIED"
+( DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 40 busctl --user monitor --match "type='signal',member='NotificationReplied'" >"$REPLIED" 2>&1 & )
+sleep 0.5
+nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
+	Notify susssasa\{sv\}i "Telegram" 0 "" "Alice" "are you around?" 2 "inline-reply" "Reply" 1 "category" s "im.received" 60000 >/dev/null 2>&1
+sleep 1
+hq hyprnotify center >/dev/null; sleep 0.7
+chk "reply: the chat card is in the shade" test "$(st)" = "center:1 live:1 dnd:0"
+tap down
+tap tab
+tap 35 # h
+tap 23 # i
+chk "reply: typing into the field neither acts nor dismisses" test "$(st)" = "center:1 live:1 dnd:0"
+tap esc
+chk "reply: esc drops the field and NOT the shade" test "$(st)" = "center:1 live:1 dnd:0"
+tap tab
+tap 35
+tap 23
+tap enter
+sleep 0.6
+chk "reply: enter sent it and the card went" test "$(st)" = "center:1 live:0 dnd:0"
+chk "reply: NotificationReplied carried the typed text" grep -q 'STRING "hi"' "$REPLIED"
+hq hyprnotify center >/dev/null; sleep 0.4
+hq hyprnotify clear >/dev/null; sleep 0.8
+
 # Ranking: a critical sorts to the top however late the others arrived. The
 # two cards are made TELLABLE APART in the badge — a transient one opts out of
 # residency, so opening the shade absorbs the critical and leaves it a banner

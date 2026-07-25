@@ -14,6 +14,7 @@
 //   render.cpp  the render skeleton: warm/draw, damage, ticks, the pass
 //               element (surface machinery shared through ui.hpp)
 //   input.cpp   clicks, wheel paging, esc, pointer ownership
+//   reply.cpp   the inline-reply field: its state, its keys, its drawing
 //   main.cpp    plugin glue: config, listeners, init/exit
 //
 // Everything lives in NHyprnotify so no symbol can collide with another
@@ -73,7 +74,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.2.0";
+    inline constexpr const char* VERSION = "6.3.0";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -158,6 +159,9 @@ namespace NHyprnotify {
         bool                 hasPixels = false; // the LAST Notify carried image-data (outlives the freed buffer)
         int                  pw = 0, ph = 0;
         std::string          defaultAction; // the "default" action key, "" = none; a body click fires it, never a button
+        bool                 canReply = false;   // the sender offered an "inline-reply" action
+        std::string          replyPlaceholder;   // x-kde-reply-placeholder-text
+        std::string          replySubmitText;    // x-kde-reply-submit-button-text, else the action's own label
         std::vector<SAction>    actions;    // non-default actions -> buttons, in Notify order
         std::vector<SBodyImage> bodyImages; // body <img src> thumbnails
         bool                    actionIcons = false; // the action-icons hint: button ids are icon names
@@ -195,6 +199,7 @@ namespace NHyprnotify {
         void                      init();
         void                      exit();
         void                      invokeAction(uint32_t id, const std::string& key);
+        void                      sendReply(uint32_t id, const std::string& text); // NotificationReplied, then close unless resident
         void                      closeOne(uint32_t id, uint32_t reason);
         void                      dismissAllLive(); // "Clear all": every visible card goes; the DND queue stays
         void                      dismissApp(const std::string& appKey); // a bundle's right-click
@@ -280,6 +285,8 @@ namespace NHyprnotify {
         std::string group;    // DIGEST/GHEAD/CHILD: the app key
         CBox        chevron;      // ROW: the 24Ø fold indicator; w = 0 -> none
         CBox        close;        // POPUP hover-✕ / GHEAD ✕; w = 0 -> none
+        CBox        replyField;   // ROW: the armed inline-reply box (swallows, never acts)
+        CBox        replySend;    // ROW: its send pill
         struct SBtn {
             CBox        box;
             std::string id;
@@ -302,10 +309,27 @@ namespace NHyprnotify {
         std::string  group;
         SCard::eKind kind = SCard::POPUP;
         int          btn  = -1;
-        uint8_t      part = 0; // 0 body, 1 chevron, 2 close
+        uint8_t      part = 0; // 0 body, 1 chevron, 2 close, 3 reply field, 4 send
         bool         operator==(const SHover&) const = default;
     };
     void setHovered(const SHover& h);
+
+    // ---- reply.cpp: the inline-reply field ----
+    //
+    // A card whose sender offered "inline-reply" grows a text field in its
+    // open shade row. While one is armed the shade owns EVERY key (the same
+    // grab hyprbar's menubar prompt takes) — there is no keyboard focus to
+    // hand it, so it takes the keys and gives back what it does not use.
+
+    bool               replyArmedOn(uint32_t id); // this card's field is the armed one
+    bool               replyArmed();
+    uint32_t           replyTarget();
+    void               replyOpen(uint32_t id);
+    void               replyClose();
+    const std::string& replyText();
+    // a key while armed. Returns false when the key is not ours to eat.
+    bool               replyKey(xkb_state* state, uint32_t keycode);
+    void               replyExit();
 
     // ---- input.cpp ----
 

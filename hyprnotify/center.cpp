@@ -212,6 +212,7 @@ namespace NHyprnotify {
             s_lastVis   = 0;
             s_peek = s_peekBell = false; // a closed shade is never a peeked one
             armPeekOut(false);
+            replyExit(); // a field cannot outlive the panel it was drawn in
             s_disp.clear(); // strong refs must not outlive the visit
             s_itemH.clear();
             s_itemOpen.clear();
@@ -280,9 +281,10 @@ namespace NHyprnotify {
         bool   withBadge;    // children ride plain avatars — the header owns identity
         bool   headerHasApp; // singles: "App • age"; children: age only
         bool   hasChevron;   // singles fold; expanded-bundle children are always open
+        bool   canReply;     // the inline-reply field; conversations never bundle, so children never need it
     };
-    static constexpr SRowStyle ROW_SINGLE{ROW_ICON, true, true, true};
-    static constexpr SRowStyle ROW_CHILD{CHILD_ICON, false, false, false};
+    static constexpr SRowStyle ROW_SINGLE{ROW_ICON, true, true, true, true};
+    static constexpr SRowStyle ROW_CHILD{CHILD_ICON, false, false, false, false};
 
     // Lays out (and in draw mode paints) one row at box.x/box.y with box.w;
     // returns the row height and fills the card's hit boxes. `more` drives the
@@ -355,6 +357,17 @@ namespace NHyprnotify {
             const auto COLLINK = color(cfg.colLink);
             const auto BODY    = N->body.empty() ? nullptr : cachedText(N->body, COLBODY, T.body, TEXTWPX, CAPL, 1.1f, true, 400, &COLLINK);
 
+            // The reply affordance is a chip among the buttons until it is
+            // armed, and then the field takes a row of its own instead.
+            const bool                 ARMED = ST.canReply && replyArmedOn(N->id);
+            static const std::string   REPLY_ID = "inline-reply", REPLY_LBL = "Reply";
+            static std::vector<std::pair<const std::string*, const std::string*>> btnSrc; // reused
+            btnSrc.clear();
+            if (ST.canReply && N->canReply && !ARMED)
+                btnSrc.emplace_back(&REPLY_ID, N->replySubmitText.empty() ? &REPLY_LBL : &N->replySubmitText);
+            for (const auto& A : N->actions)
+                btnSrc.emplace_back(&A.id, &A.label);
+
             static std::vector<CBox>               btnBoxes; // reused; main thread only
             static std::vector<const SCachedText*> btnLbls;
             btnBoxes.clear();
@@ -362,9 +375,9 @@ namespace NHyprnotify {
             double btnH = 0;
             {
                 double bx = 0, rowY = 0;
-                for (const auto& A : N->actions) {
+                for (const auto& [BID, BLBL] : btnSrc) {
                     auto& LB = scratch();
-                    appendEsc(LB, A.label);
+                    appendEsc(LB, *BLBL);
                     const auto   LBL = cachedText(LB, COLACC, T.action, TEXTWPX, -1, 0, true, 600);
                     const double BW  = std::min(TEXTW, texW(LBL, P.scale) + 2 * BTN_PADX);
                     if (bx > 0 && bx + BW > TEXTW + 0.5) {
@@ -380,7 +393,7 @@ namespace NHyprnotify {
 
             const double KH = texH(KICK, P.scale), TH = texH(TITLE, P.scale), BH = texH(BODY, P.scale);
             th = KH + (KH > 0 ? HEAD_GAP : 0) + TH + (TH > 0 && BH > 0 ? TITLE_GAP : 0) + BH + (N->progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0) +
-                (btnH > 0 ? BTN_ROW_GAP + btnH : 0);
+                (btnH > 0 ? BTN_ROW_GAP + btnH : 0) + (ARMED ? BTN_ROW_GAP + BTN_H : 0);
 
             double yy = TY;
             if (!P.warm && KICK)
@@ -411,8 +424,46 @@ namespace NHyprnotify {
                         if (btnLbls[i] && btnLbls[i]->tex)
                             P.tex(btnLbls[i]->tex, BOX.x + BTN_PADX, BOX.y + (BOX.h - btnLbls[i]->tex->m_size.y / P.scale) / 2);
                     }
-                    card.buttons.push_back({BOX, N->actions[i].id});
+                    card.buttons.push_back({BOX, *btnSrc[i].first});
                 }
+            }
+
+            // ---- the armed inline-reply field ----
+            if (ARMED) {
+                yy += BTN_ROW_GAP;
+                const auto&  TXT   = replyText();
+                const auto   SLBL  = cachedText(N->replySubmitText.empty() ? "Send" : N->replySubmitText, tOnAccent(), T.action, TEXTWPX, -1, 0, false, 600);
+                const double SENDW = std::min(TEXTW / 2, texW(SLBL, P.scale) + 2 * BTN_PADX);
+                const CBox   FB{TX, yy, std::max(40.0, TEXTW - SENDW - BTN_GAP), BTN_H};
+                const CBox   SB{TX + TEXTW - SENDW, yy, SENDW, BTN_H};
+                const int    RB = (int)std::lround(BTN_H / 2 * P.scale);
+
+                // the typed text, or the sender's placeholder while it is empty
+                const auto ENT = TXT.empty() ? nullptr : cachedText(TXT, COLFG, T.action, std::max(1, (int)((FB.w - 2 * BTN_PADX) * P.scale)), -1, 0, false, 400);
+                const auto PH  = TXT.empty() ? cachedText(N->replyPlaceholder.empty() ? "Type a reply…" : N->replyPlaceholder, COLSUB, T.action,
+                                                         std::max(1, (int)((FB.w - 2 * BTN_PADX) * P.scale)), -1, 0, false, 400) :
+                                               nullptr;
+                if (!P.warm) {
+                    P.rect(FB, tFill2(), RB);
+                    P.ring(FB, COLACC, RB, RP); // armed: the field wears the accent
+                    const auto* SHOW = ENT ? ENT : PH;
+                    double      cx   = FB.x + BTN_PADX;
+                    if (SHOW && SHOW->tex) {
+                        P.tex(SHOW->tex, cx, FB.y + (FB.h - SHOW->tex->m_size.y / P.scale) / 2);
+                        if (ENT)
+                            cx += texW(ENT, P.scale);
+                    }
+                    // the caret sits at the end: editing is append + backspace
+                    P.rect(CBox{std::min(cx + 1, FB.x + FB.w - 3), FB.y + 5, 1.5, FB.h - 10}, COLACC, 0);
+
+                    const bool SHOV = hovered.id == N->id && hovered.part == 4;
+                    P.rect(SB, TXT.empty() ? tFill2() : SHOV ? color(cfg.colHighlight) : tAccentDim(), RB);
+                    if (SLBL && SLBL->tex)
+                        P.tex(SLBL->tex, SB.x + (SB.w - SLBL->tex->m_size.x / P.scale) / 2, SB.y + (SB.h - SLBL->tex->m_size.y / P.scale) / 2);
+                }
+                card.replyField = FB;
+                card.replySend  = SB;
+                yy += BTN_H;
             }
         }
 

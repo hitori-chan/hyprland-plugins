@@ -9,9 +9,10 @@ icons).
 
 - Methods: `Notify`, `CloseNotification`, `GetCapabilities`,
   `GetServerInformation` (spec 1.3). Signals: `NotificationClosed`,
-  `ActionInvoked`, `ActivationToken`.
+  `ActionInvoked`, `ActivationToken`, `NotificationReplied`.
 - Capabilities: `actions`, `action-icons`, `body`, `body-markup`,
-  `body-hyperlinks`, `body-images`, `icon-static`, `persistence`, `sound`.
+  `body-hyperlinks`, `body-images`, `icon-static`, `inline-reply`,
+  `persistence`, `sound`.
 - `replaces_id` updates a card in place, keeping its stack slot; an unknown
   id creates the card under that id (the OSD scripts pin fixed ids in the
   9990s, which fresh ids never mint into).
@@ -89,9 +90,17 @@ icons).
   revealing; the CHEVRON is the only fold target. Right dismisses; middle is
   "Clear all". On an app bundle left expands and right (or the header ✕)
   dismisses the whole app.
+- Inline reply (KDE's protocol, which Telegram Desktop speaks): an action
+  keyed `inline-reply` is not a button — it grows a reply field in the open
+  shade row, and sending emits `NotificationReplied(id, text)` and closes
+  the card unless `resident`. `x-kde-reply-placeholder-text` and
+  `x-kde-reply-submit-button-text` are honored. The field takes the whole
+  keyboard while armed (there is no focus to give it); editing is
+  append-and-backspace plus C-u / C-w. Banners have no field.
 - Shade keys, while it is open and only then: Esc closes, ↑/↓ move a
   selection (an accent hairline; the page follows it), Space folds, Enter
-  fires the primary, Delete dismisses. Modified chords pass through as user
+  fires the primary, Tab arms the selected card's reply field, Delete
+  dismisses. Modified chords pass through as user
   binds, and the action keys pass through while nothing is selected.
 - Bell hover-peek: `Peek(on_bell)` from the bar opens the shade UNPINNED
   after `hyprbar:bell_peek_ms`. A peek does not absorb the popped banners
@@ -130,7 +139,7 @@ icons).
 ## Limitations
 
 - GIF images don't decode (hyprgraphics has no GIF codec).
-- No animated icons (`icon-multi`) and no inline-reply.
+- No animated icons (`icon-multi`).
 - Icon-theme resolution is a pragmatic scan (GTK theme → hicolor →
   pixmaps), not a full `index.theme` inheritance engine.
 

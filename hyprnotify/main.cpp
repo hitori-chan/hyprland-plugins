@@ -309,6 +309,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
     ctlCmd.reset();
     Bus::exit(); // closes the model; its textures die with it
     inputExit();
+    replyExit();
     reapChildren();
     centerExit();
     renderExit();
