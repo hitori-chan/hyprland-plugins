@@ -2,17 +2,25 @@
 
 Dev tooling for exercising the plugins in the nested Hyprland
 (`~/.local/share/hypr-nested/`). Not plugins (not in hyprpm.toml). Tracked:
-`stress.sh`, `vptr.c`, the `Makefile`, and this README; the `vptr` binary
-and the `vptr-proto.{c,h}` wayland-scanner glue are build artifacts that
-`make` regenerates.
+`stress.sh`, `vptr.c`, `vkbd.c`, the `Makefile`, and this README; the
+binaries and the `*-proto.{c,h}` wayland-scanner glue are build artifacts
+that `make` regenerates.
 
 ## stress.sh — the pre-deploy regression gate
 
-Exact assertions over the nested harness + `vptr`: placement memory,
-spawn/close storms, the notification cap, churn round-trips, hostile state
-files, an input storm, log hygiene. Check #1 refuses to run when the
-installed headers' `version.h` hash doesn't match the running binary. Run
-it before every deploy; it must end `ALL CHECKS PASSED`.
+Exact assertions over the nested harness + `vptr` + `vkbd`: placement
+memory, spawn/close storms, the notification cap, churn round-trips,
+hostile state files, an input storm, the shade's click/key verbs, the bell
+peek, log hygiene. Check #1 refuses to run when the installed headers'
+`version.h` hash doesn't match the running binary. Run it before every
+deploy; it must end `ALL CHECKS PASSED`.
+
+Two traps it now guards against, both of which once made assertions pass
+for the wrong reason: nothing may hard-code the nested monitor's size
+(`retarget()` re-reads it, and `vptr` is given that extent), and nothing
+may reach the nested daemon over the LOGIN session bus — `launch.sh` runs
+the instance under its own `dbus-run-session`, and the host's own
+hyprnotify answers to the same well-known name.
 
 ```
 ./stress.sh                        # gate the installed compositor
@@ -64,6 +72,31 @@ The nested tiles by default and has no move bind, so the throwaway config
   `binds = { drag_threshold = 0 }`. Then a plain middle-drag starts the move
   and hyprsnap snaps.
 
+## vkbd — virtual-keyboard injector
+
+`vptr`'s twin for keys (`zwp_virtual_keyboard_v1`), so paths with no pointer
+at all — the shade's nav set — ride the same emission a physical key does.
+It compiles the default xkb keymap itself and hands it over before the first
+key, as the protocol demands.
+
+```
+make                       # also needs xkbcommon
+WAYLAND_DISPLAY=<nested-wl> ./vkbd <<'EOF'
+tap down
+tap delete
+sleep 200
+EOF
+```
+
+- stdin script, one command per line; the keyboard dies with the process,
+  which is what keeps a stuck modifier from outliving a test:
+  - `tap KEY` — press + release
+  - `press KEY` / `release KEY`
+  - `sleep MS`
+- `KEY` = `esc`, `enter`, `space`, `up`, `down`, `delete`, `tab`, `a`, or a
+  raw linux evdev code.
+- Same **SAFETY** rule as `vptr`: point it at the nested socket only.
+
+Still unbuilt: modifier chords (`vkbd` sends `modifiers` once, as zero), so
 Super-gated paths (taglist `Mod+click`, hyprmax's immovable Super+drag
-swallow) and keyboard paths (menubar) need a virtual **keyboard** — not built
-yet.
+swallow) and the menubar's readline editing are still untested.

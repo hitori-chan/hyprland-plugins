@@ -12,3 +12,6 @@ HANDOFF.md
 devtools/vptr
 devtools/vptr-proto.c
 devtools/vptr-proto.h
+devtools/vkbd
+devtools/vkbd-proto.c
+devtools/vkbd-proto.h
