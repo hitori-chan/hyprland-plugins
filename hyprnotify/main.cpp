@@ -15,8 +15,8 @@
 // - THE SHADE (F12 / the bar's bell / `hyprctl hyprnotify center`): ONE list
 //   of live cards, Android's notification shade. No lifecycle sections and no
 //   history — a dismissed card is gone. Ranking is Android's without the
-//   dividers (critical, conversations, normal, silent; newest first inside
-//   each), an app's cards bundle into a digest only at four or more
+//   dividers (critical, marked conversations, the rest of them, normal,
+//   silent; newest first inside each), an app's cards bundle at four or more
 //   (GroupHelper's AUTOGROUP_AT_COUNT) and conversations never bundle.
 //   Rows open by DEFAULT: an expansion budget walks the page and opens each
 //   row while the panel has room, so the shade is readable with no clicks at
@@ -25,8 +25,10 @@
 //   popup does. The chevron is the only fold target. Right dismisses,
 //   middle sweeps; the footer is ⊖ DND · a global "Clear all". While it is
 //   open it owns the nav keys (↑↓ select, space folds, enter fires the
-//   primary, delete dismisses, esc closes) and nothing else. Hovering the
-//   bar's bell PEEKS it open unpinned, so a glance costs no click.
+//   primary, delete dismisses, m/s/p manage, esc closes) and nothing else.
+//   Hovering the bar's bell PEEKS it open unpinned, so a glance costs no
+//   click. A row reveals ⊘ ◷ ★ on hover: silence the app, put the card away
+//   for a while, mark the sender — the two rules persist across relogs.
 //
 // Model rules: the conversation merge joins one chat's messages into one
 // growing card (~8KB cap, oldest lines drop) — fd.o's im.*/call.* categories,
@@ -217,6 +219,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.timeoutLow      = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:timeout_low", "ephemeral timeout in ms (low urgency, transient, progress cards)", 4000);
     cfg.timeoutNormal   = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:timeout_normal", "normal-urgency banner timeout in ms, then it retreats to the center; 0 = sticky (critical always sticks)", 5000);
     cfg.quietFullscreen = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:quiet_fullscreen", "hold banners back while a fullscreen window owns the monitor; the card still lands in the shade", 1);
+    cfg.snoozeSeconds   = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:snooze_seconds", "how long a snoozed card stays out of sight before it alerts again", 900);
     cfg.rounding        = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:rounding", "card radius in logical px (panel +6 and rows -2 derive)", Th::RAD_CARD);
     cfg.roundingPower   = makeShared<Config::Values::CFloatValue>("plugin:hyprnotify:rounding_power", "corner superellipse exponent", (float)Th::ROUNDING_POWER);
     cfg.coalescePopups  = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:coalesce_popups", "1 = at most one live popup per app; same-app extras land silent in the center (0 = a banner per message)", 1);
@@ -233,7 +236,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.soundCommand    = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:sound_command", "libcanberra player for sound hints; empty disables", "canberra-gtk-play");
     cfg.fallbackIconDir = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:fallback_icon_dir", "iconless cards draw a random identity face from this directory", "");
 
-    for (const auto& V : {cfg.fontSize, cfg.width, cfg.maxHeight, cfg.maxIcon, cfg.margin, cfg.offsetY, cfg.timeoutLow, cfg.timeoutNormal, cfg.coalescePopups, cfg.quietFullscreen, cfg.rounding,
+    for (const auto& V : {cfg.fontSize, cfg.width, cfg.maxHeight, cfg.maxIcon, cfg.margin, cfg.offsetY, cfg.timeoutLow, cfg.timeoutNormal, cfg.coalescePopups, cfg.quietFullscreen, cfg.snoozeSeconds, cfg.rounding,
                           cfg.maxNotifs, cfg.ignoreDbusClose})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
     HyprlandAPI::addConfigValueV2(PHANDLE, cfg.roundingPower);
@@ -263,6 +266,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                                                                              return Model::badgeString();
                                                                          if (request.ends_with("policy"))
                                                                              return Policy::stateString();
+                                                                         if (request.ends_with("snoozed"))
+                                                                             return std::to_string(Model::snoozedCount());
                                                                          if (request.ends_with("clear")) { // the scripted reset
                                                                              static NHyprCommon::CHop pendingClear;
                                                                              pendingClear.arm([]() { Model::dismissAllLive(); });

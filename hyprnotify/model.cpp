@@ -46,17 +46,21 @@ namespace NHyprnotify {
             return n->transient || n->progress >= 0 || inOsdBand(n->id);
         }
 
+        // The one timer serves two clocks: a banner running out, and a
+        // snoozed card coming back. Both are deadlines on the same list, so
+        // the next wakeup is simply the nearest of either kind.
         void rearmExpiry() {
             if (!expiry)
                 return;
             const auto NOW  = Time::steadyNow();
             int64_t    next = -1;
             for (const auto& N : notifs) {
-                if (!N->banner || N->timeoutMs <= 0 || N->waiting || N->id == heldBanner)
+                const bool WAKE = N->snoozed;
+                if (!WAKE && (!N->banner || N->timeoutMs <= 0 || N->waiting || N->id == heldBanner))
                     continue;
                 // clamp before comparing: -1 is the "none" sentinel, and an
                 // overdue card's negative remaining time must still win
-                const auto MS = std::max<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(N->deadline - NOW).count(), 1);
+                const auto MS = std::max<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>((WAKE ? N->snoozeUntil : N->deadline) - NOW).count(), 1);
                 if (next < 0 || MS < next)
                     next = MS;
             }
@@ -91,11 +95,34 @@ namespace NHyprnotify {
         std::pair<uint32_t, uint32_t> badgeCounts() {
             uint32_t live = 0, kept = 0;
             for (const auto& N : notifs) {
-                if (N->waiting || inOsdBand(N->id))
+                if (N->waiting || N->snoozed || inOsdBand(N->id))
                     continue;
                 (N->banner ? live : kept)++;
             }
             return {live, kept};
+        }
+
+        uint32_t snoozedCount() {
+            return (uint32_t)std::ranges::count_if(notifs, [](const auto& N) { return N->snoozed; });
+        }
+
+        // "Remind me." Android's snooze: the card leaves the shade outright
+        // — no section, no strikethrough, nothing to scroll past — and comes
+        // back later alerting, which is the whole point of asking. There is
+        // no un-snooze because there is nothing left to click; a mis-snooze
+        // costs the interval, exactly as it does on the phone. Ephemerals
+        // are refused: a transient or progress card has nothing to come back
+        // to, since expiry takes the card and not just its banner.
+        void snooze(uint32_t id) {
+            const auto N = byId(id);
+            if (!N || N->snoozed || N->waiting || vanishes(N))
+                return;
+            N->snoozed     = true;
+            N->banner      = false;
+            N->snoozeUntil = Time::steadyNow() + std::chrono::seconds(std::max<int64_t>(cfg.snoozeSeconds->value(), 0));
+            notifChanged();
+            rearmExpiry();
+            Bus::emitStateSoon();
         }
 
         std::string badgeString() {
@@ -124,15 +151,19 @@ namespace NHyprnotify {
             rearmExpiry();
         }
 
+        // Only what the user can SEE is sweepable. The DND queue was never
+        // shown, and a snoozed card was deliberately put away — clearing the
+        // shade must not quietly cancel a reminder the user asked for.
+        static bool visible(const SP<SNotif>& n) {
+            return !n->waiting && !n->snoozed;
+        }
+
         void dismissAllLive() {
-            // the sweep clears what the user can see (banners AND resident
-            // shade cards); cards the DND queue holds were never seen and
-            // stay for the resume
             const auto BEFORE = notifs.size();
             for (const auto& N : notifs)
-                if (!N->waiting)
+                if (visible(N))
                     Bus::emitClosed(N->id, R_DISMISSED);
-            std::erase_if(notifs, [](const auto& N) { return !N->waiting; });
+            std::erase_if(notifs, [](const auto& N) { return visible(N); });
             if (notifs.size() == BEFORE)
                 return;
             notifChanged();
@@ -142,9 +173,9 @@ namespace NHyprnotify {
         void dismissApp(const std::string& appKey) {
             const auto BEFORE = notifs.size();
             for (const auto& N : notifs)
-                if (!N->waiting && N->appKey == appKey)
+                if (visible(N) && N->appKey == appKey)
                     Bus::emitClosed(N->id, R_DISMISSED);
-            std::erase_if(notifs, [&](const auto& N) { return !N->waiting && N->appKey == appKey; });
+            std::erase_if(notifs, [&](const auto& N) { return visible(N) && N->appKey == appKey; });
             if (notifs.size() == BEFORE)
                 return;
             notifChanged();
@@ -514,6 +545,22 @@ namespace NHyprnotify {
                     bool                  changed = false;
                     std::vector<uint32_t> gone;
                     for (const auto& N : notifs) {
+                        if (N->snoozed) { // the other clock: a card coming back
+                            if (N->snoozeUntil > NOW)
+                                continue;
+                            N->snoozed = false;
+                            // it alerts again — that IS the reminder — unless
+                            // the app has since been silenced. `arrived` is
+                            // left alone (the age line tells the truth about
+                            // when it came); `born` re-keys the arrival spring
+                            // so the banner slides in rather than blinking on.
+                            N->banner = !(Policy::silenced(N->appKey) && N->urgency < 2);
+                            N->born   = NOW;
+                            if (N->banner && N->timeoutMs > 0)
+                                N->deadline = NOW + std::chrono::milliseconds((int64_t)N->timeoutMs);
+                            changed = true;
+                            continue;
+                        }
                         if (!N->banner || N->timeoutMs <= 0 || N->waiting || N->id == heldBanner || N->deadline > NOW)
                             continue;
                         if (vanishes(N)) {

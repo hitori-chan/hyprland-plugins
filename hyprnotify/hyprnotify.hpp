@@ -78,7 +78,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.5.0";
+    inline constexpr const char* VERSION = "6.6.0";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -104,6 +104,7 @@ namespace NHyprnotify {
         SP<Config::Values::CIntValue>    timeoutNormal; // ms; the -1 fallback for normal urgency, then it retreats to the shade; 0 = sticky (critical always is)
         SP<Config::Values::CIntValue>    coalescePopups; // 1 = at most one live popup per app; same-app extras land resident + silent
         SP<Config::Values::CIntValue>    quietFullscreen; // 1 = hold banners back while a real fullscreen window owns the monitor
+        SP<Config::Values::CIntValue>    snoozeSeconds;   // how long a snoozed card stays out of sight before it alerts again
         SP<Config::Values::CIntValue>    rounding;      // card radius; the panel (+6) and rows (-2) derive from it
         SP<Config::Values::CFloatValue>  roundingPower; // superellipse exponent, the compositor's rounding_power
         SP<Config::Values::CIntValue>    maxNotifs;     // model cap; overflow evicts oldest non-critical
@@ -178,6 +179,8 @@ namespace NHyprnotify {
 
         bool                 waiting = false; // arrived while suspended (DND): collected, not shown, timeout held
         bool                 banner  = true;  // the popup is up; expiry drops only this — the card stays resident
+        bool                 snoozed = false; // "remind me": out of sight until snoozeUntil, then it alerts again
+        Time::steady_tp      snoozeUntil;
 
         float                timeoutMs = 0; // resolved; 0 = sticky
         Time::steady_tp      deadline;      // meaningful when banner && timeoutMs > 0 and not waiting
@@ -230,6 +233,8 @@ namespace NHyprnotify {
         void                          dismissApp(const std::string& appKey); // a bundle's right-click
         void                          absorbPopped();                        // opening the shade parks the popped stack (no re-pop on close)
         void                          rearmExpiry();
+        void                          snooze(uint32_t id); // out of sight, then back with a fresh banner
+        uint32_t                      snoozedCount();
         void                          holdBanner(uint32_t id); // the hovered popup's countdown pauses; 0 releases (and restarts it)
         void                          toggleSuspend();         // DND; resume renders the queue, fresh timeouts
         bool                          suspendedNow();

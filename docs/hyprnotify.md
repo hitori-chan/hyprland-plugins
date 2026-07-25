@@ -100,9 +100,10 @@ icons).
 - Shade keys, while it is open and only then: Esc closes, ↑/↓ move a
   selection (an accent hairline; the page follows it), Space folds, Enter
   fires the primary, Tab arms the selected card's reply field, Delete
-  dismisses, `m` silences the app, `p` marks the sender. Modified chords
-  pass through as user binds, and so does any key with nothing to act on —
-  nothing selected, or `p` on a card that is not a chat.
+  dismisses, `m` silences the app, `s` snoozes the card, `p` marks the
+  sender. Modified chords pass through as user binds, and so does any key
+  with nothing to act on — nothing selected, or `p` on a card that is not a
+  chat.
 - Per-app rules (`policy.cpp`, persisted to
   `$XDG_STATE_HOME/hyprnotify/policy.tsv`): SILENCED apps get no banner and
   no sound and rank with the quiet ones — Android's "Silent", dunst's
@@ -114,6 +115,15 @@ icons).
   the cards already in the shade re-rank under them. Silence keys on the app
   identity, a mark on app + sender: one chat app carries many people. This
   is state the user typed with a click, never a per-app branch in code.
+- Snooze (◷ / `s`, `snooze_seconds`, 900): the card leaves the shade and
+  comes back alerting — Android's snooze, without the section or the undo
+  snackbar. It stays in the model while away, so `state` counts it while the
+  badge does not, and "Clear all" leaves it alone. The wake re-keys the
+  arrival spring but not `arrived`: the age line still tells the truth about
+  when the card came. One event-loop timer serves both clocks, banner expiry
+  and wake, since both are deadlines on the same list. Ephemerals are
+  refused — expiry takes those cards whole, so there is nothing to come back
+  to.
 - Bell hover-peek: `Peek(on_bell)` from the bar opens the shade UNPINNED
   after `hyprbar:bell_peek_ms`. A peek does not absorb the popped banners
   (a pointer crossing the bell must not swallow unread ones), and it closes

@@ -74,7 +74,7 @@ namespace NHyprnotify {
             // the row body fires it, exactly as the banner does.
             // the manage strip rides the header line; the kicker gives up
             // exactly its width so the two can never collide, hover or not
-            const int    NMANAGE = ST.manage ? (N->conversation ? 2 : 1) : 0;
+            const int    NMANAGE = ST.manage ? (N->conversation ? 3 : 2) : 0;
             const double MANAGEW = NMANAGE > 0 ? NMANAGE * MANAGE_D + (NMANAGE - 1) * MANAGE_GAP + 8 : 0;
             const int    KICKWPX = std::max(1, (int)std::floor((TEXTW - MANAGEW) * P.scale));
 
@@ -212,24 +212,28 @@ namespace NHyprnotify {
             // would re-key every raster under the pointer.
             if (NMANAGE > 0) {
                 const bool SHOWN = hovered.id == N->id && (hovered.kind == SCard::ROW || hovered.kind == SCard::CHILD);
-                const bool MUTED = Policy::silenced(N->appKey);
                 const int  RM    = (int)std::lround(MANAGE_D / 2 * P.scale);
-                double       mx  = box.x + box.w - ROW_PADX - RTRIM - MANAGE_D;
-                const double MY  = box.y + ROW_PADT + (CHEV - MANAGE_D) / 2;
-                // rightmost first, walking left: silence, then the star
+                // rightmost first, walking left: silence the app, put the
+                // card away, mark the sender. Only a chat has a sender.
+                struct SBtn {
+                    const char* glyph;
+                    uint8_t     part;
+                    bool        lit;
+                };
+                const SBtn BTNS[3]{{"⊘", 5, Policy::silenced(N->appKey)}, {"◷", 7, false}, {"★", 6, N->priority}};
+                double       mx = box.x + box.w - ROW_PADX - RTRIM - MANAGE_D;
+                const double MY = box.y + ROW_PADT + (CHEV - MANAGE_D) / 2;
                 for (int i = 0; i < NMANAGE; i++) {
-                    const bool     STAR = i == 1;
-                    const uint8_t  PART = STAR ? 6 : 5;
-                    const bool     LIT  = STAR ? N->priority : MUTED;
-                    const bool     HOV  = SHOWN && hovered.part == PART;
-                    const CBox     MB{mx, MY, MANAGE_D, MANAGE_D};
-                    const auto     G = cachedText(STAR ? "★" : "⊘", LIT ? tOnAccent() : COLSUB, T.small, 64, -1, 0, false, 600);
+                    const auto& B   = BTNS[i];
+                    const bool  HOV = SHOWN && hovered.part == B.part;
+                    const CBox  MB{mx, MY, MANAGE_D, MANAGE_D};
+                    const auto  G = cachedText(B.glyph, B.lit ? tOnAccent() : COLSUB, T.small, 64, -1, 0, false, 600);
                     if (!P.warm && SHOWN) {
-                        P.rect(MB, LIT ? COLACC : HOV ? tAccentDim() : tFill2(), RM);
+                        P.rect(MB, B.lit ? COLACC : HOV ? tAccentDim() : tFill2(), RM);
                         if (G && G->tex)
                             P.tex(G->tex, MB.x + (MB.w - G->tex->m_size.x / P.scale) / 2, MB.y + (MB.h - G->tex->m_size.y / P.scale) / 2);
                     }
-                    card.manage.push_back({MB, PART});
+                    card.manage.push_back({MB, B.part});
                     mx -= MANAGE_D + MANAGE_GAP;
                 }
             }

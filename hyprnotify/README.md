@@ -87,6 +87,15 @@ Two surfaces share one card model:
      cards already in the shade re-rank under them), and silence keys on the
      app while a mark keys on app + sender — one chat app carries many
      people.
+   - **Snooze** (**◷** in the same strip, or `s`) is Android's, and it is a
+     verb on one card rather than a rule: the card leaves the shade
+     outright — no section, nothing to scroll past — and comes back
+     ALERTING after `snooze_seconds` (15min), which is the whole point of
+     asking. It stays in the model the entire time, so "Clear all" cannot
+     quietly cancel a reminder, and there is no un-snooze because there is
+     nothing left to click: a mis-snooze costs the interval, exactly as it
+     does on the phone. Ephemerals (`transient`, progress) are refused —
+     expiry takes those cards whole, so they have nothing to come back to.
    - **Inline reply.** A sender that sees the `inline-reply` capability
      adds an action keyed `inline-reply` and waits for a
      `NotificationReplied(id, text)` signal — it is how Telegram, Fractal
@@ -100,11 +109,11 @@ Two surfaces share one card model:
    - **Keys.** While the shade is open it owns exactly the nav set and
      nothing else: Esc closes, ↑/↓ move a selection (an accent hairline,
      paging to stay on screen), Space folds it, Enter fires the primary,
-     Tab opens a reply, Delete dismisses, `m` silences the app, `p` marks
-     the sender. A chord with ctrl/alt/super is a user bind passing
-     through, and a nav key with nothing selected — or nothing to do, like
-     `p` on a card that is not a chat — still belongs to whatever holds
-     focus. Selection and fold state reset on close.
+     Tab opens a reply, Delete dismisses, `m` silences the app, `s` snoozes
+     the card, `p` marks the sender. A chord with ctrl/alt/super is a user
+     bind passing through, and a nav key with nothing selected — or nothing
+     to do, like `p` on a card that is not a chat — still belongs to
+     whatever holds focus. Selection and fold state reset on close.
 
 Model rules: the **conversation merge** (Android's MessagingStyle) joins one
 chat's messages into one growing card (~8KB, oldest lines drop) — a fresh
@@ -121,7 +130,7 @@ The bar's bell talks over the bus: the `org.hitori.hyprnotify` interface on
 the Notifications object carries `Toggle` (the shade), `Peek(on_bell)` (the
 hover) and a `State` signal (live/kept/dnd/center — the badge counts the
 shade, never the DND queue or the OSD band).
-`hyprctl hyprnotify {count,center,state,badge,policy,clear}`;
+`hyprctl hyprnotify {count,center,state,badge,policy,snoozed,clear}`;
 `hl.plugin.hyprnotify.{suspend,center}()`.
 
 Markup stays the whitelisted Pango subset with the literal-`<`/`&` rescue;

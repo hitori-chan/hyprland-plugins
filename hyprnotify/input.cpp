@@ -9,7 +9,8 @@
 //            spent on acting rather than on revealing. The CHEVRON is the
 //            only fold target · a link opens · a button acts · right =
 //            dismiss · middle = Clear all · the hover-revealed strip beside
-//            the chevron holds ⊘ (silence the app) and ★ (mark the sender)
+//            the chevron holds ⊘ (silence the app), ◷ (snooze the card)
+//            and ★ (mark the sender)
 //   child    a bundle child is a row without the fold: body, links, buttons
 //   digest   left expands the app's bundle · its ⊘ silences · right dismisses
 //   ghead    left collapses · ⊘ silences · the ✕ / right dismisses the bundle
@@ -18,8 +19,8 @@
 //   keys     while the shade is open it owns the nav set and nothing else:
 //            esc closes (the topmost-peel's middle link) · ↑/↓ move the
 //            selection · space folds it (the click's twin) · enter fires the
-//            primary · delete dismisses · m silences the app · p marks the
-//            sender · tab opens the selected card's reply field, and while
+//            primary · delete dismisses · m silences the app · s snoozes
+//            the card · p marks the sender · tab opens its reply field, and while
 //            one is armed EVERY key is the field's (reply.cpp). A chord with
 //            ctrl/alt/super is the user's bind, and a nav key with NOTHING
 //            selected (or nothing to do — p on a card that is not a chat)
@@ -129,6 +130,10 @@ namespace NHyprnotify {
     // the manage strip: silence the card's app, or mark its sender. Both are
     // per-key rules, so the card only supplies the key.
     static void manageCard(uint32_t id, uint8_t part) {
+        if (part == 7) { // snooze is the card's own verb, not a rule
+            Model::snooze(id);
+            return;
+        }
         for (const auto& N : notifs)
             if (N->id == id) {
                 if (part == 5)
@@ -182,7 +187,7 @@ namespace NHyprnotify {
                         centerToggleRow(H.id);
                         continue;
                     }
-                    if (H.part == 5 || H.part == 6) {
+                    if (H.part >= 5) {
                         manageCard(H.id, H.part);
                         continue;
                     }
@@ -364,7 +369,7 @@ namespace NHyprnotify {
     // Same shape as the click queue, and for the same reason: an action can
     // make the client focus itself, so nothing runs inside the emission.
     struct SKeyAct {
-        int         verb = 0; // 1 fold, 2 the primary, 3 dismiss, 4 silence, 5 mark
+        int         verb = 0; // 1 fold, 2 the primary, 3 dismiss, 4 silence, 5 mark, 6 snooze
         uint32_t    id   = 0;
         std::string group; // non-empty: a bundle
     };
@@ -397,6 +402,8 @@ namespace NHyprnotify {
                     manageCard(A.id, 5);
             } else if (A.verb == 5)
                 manageCard(A.id, 6);
+            else if (A.verb == 6 && !GROUP)
+                manageCard(A.id, 7);
         }
     }
 
@@ -465,6 +472,7 @@ namespace NHyprnotify {
             case XKB_KEY_Delete: a.verb = 3; break;
             case XKB_KEY_m: a.verb = 4; break; // mute the app
             case XKB_KEY_p: a.verb = 5; break; // mark the sender
+            case XKB_KEY_s: a.verb = 6; break; // snooze the card
             default: return;
         }
         // nothing selected: the shade has not taken the keyboard, so a bare
@@ -472,7 +480,10 @@ namespace NHyprnotify {
         if (!centerSelection(a.id, a.group))
             return;
         // and a bare letter with nothing to do belongs to focus too: a bundle
-        // has no one sender to mark, and neither does a card that is not a chat
+        // has no one sender to mark and no one card to put away, and neither
+        // does a card that is not a chat
+        if (a.verb == 6 && !a.group.empty())
+            return;
         if (a.verb == 5) {
             bool conv = false;
             if (a.group.empty())

@@ -543,6 +543,33 @@ chk "policy: the mark outlives the card it was set on" test "$(pol)" = "silenced
 tap esc; hq hyprnotify clear >/dev/null; sleep 0.8
 chk "policy: reset after the policy battery" test "$(st)" = "center:0 live:0 dnd:0"
 
+# ---- snooze -----------------------------------------------------------------
+# "Remind me": the card leaves the shade outright (Android's snooze — no
+# section, nothing to scroll past) and comes back ALERTING. It is still in the
+# model the whole time, which is exactly what tells a snooze apart from a
+# dismissal: `state` counts it, the badge does not. snooze_seconds is turned
+# down to 2 so the wake is testable at all.
+sz() { hq hyprnotify snoozed; }
+# `hyprctl keyword` is refused by the Lua parser ("use eval"), so the knob is
+# turned the way the live config would turn it
+hq eval 'hl.config({ plugin = { hyprnotify = { snooze_seconds = 2 } } })' >/dev/null; sleep 0.4
+dsp "hl.dsp.exec_cmd('notify-send -a later -t 60000 \"read this eventually\" body')"; sleep 1
+hq hyprnotify center >/dev/null; sleep 0.7
+chk "snooze: the card is up and in the shade" test "$(bd)" = "banners:0 resident:1"
+tap down
+tap 31 # s
+chk "snooze: it left the shade" test "$(bd)" = "banners:0 resident:0"
+chk "snooze: but it is still in the model, not dismissed" test "$(st)" = "center:1 live:1 dnd:0"
+chk "snooze: and it counts as snoozed" test "$(sz)" = 1
+hq hyprnotify clear >/dev/null; sleep 0.5
+chk "snooze: Clear all does not cancel a reminder" test "$(sz)" = 1
+sleep 2.5
+chk "snooze: it came back" test "$(sz)" = 0
+chk "snooze: and it came back ALERTING, not merely parked" test "$(bd)" = "banners:1 resident:0"
+tap esc; hq eval 'hl.config({ plugin = { hyprnotify = { snooze_seconds = 900 } } })' >/dev/null
+hq hyprnotify clear >/dev/null; sleep 0.8
+chk "snooze: reset after the snooze battery" test "$(st)" = "center:0 live:0 dnd:0"
+
 # Ranking: a critical sorts to the top however late the others arrived. The
 # two cards are made TELLABLE APART in the badge — a transient one opts out of
 # residency, so opening the shade absorbs the critical and leaves it a banner
