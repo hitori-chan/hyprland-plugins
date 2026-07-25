@@ -336,9 +336,9 @@ namespace NHyprnotify {
                 }
             }
         } else {
-            // expanded: age/header line, title, 4-line body, progress, then the
-            // buttons — the card's PRIMARY first (nothing in the shade acts
-            // without hitting a button), then its own actions in Notify order
+            // expanded: age/header line, title, body, progress, then the card's
+            // own actions in Notify order. The PRIMARY gets no button here —
+            // the row body fires it, exactly as the banner does.
             auto& KB = scratch();
             if (ST.headerHasApp) {
                 appendEsc(KB, N->appName);
@@ -350,12 +350,10 @@ namespace NHyprnotify {
             // a merged chat is a transcript, so it gets Android's MessagingStyle
             // depth (~7 messages) where an ordinary card gets four lines
             const int  CAPL = (int)std::lround(T.body * 1.35 * (N->conversation ? 7 : 4));
-            const auto BODY = N->body.empty() ? nullptr : cachedText(N->body, COLBODY, T.body, TEXTWPX, CAPL, 1.1f, true, 400);
-
-            const bool   LEADBTN = !N->defaultLabel.empty();
-            const size_t NBTN    = N->actions.size() + (LEADBTN ? 1 : 0);
-            const auto   BTNID   = [&](size_t k) -> const std::string& { return LEADBTN && k == 0 ? N->defaultAction : N->actions[k - (LEADBTN ? 1 : 0)].id; };
-            const auto   BTNLBL  = [&](size_t k) -> const std::string& { return LEADBTN && k == 0 ? N->defaultLabel : N->actions[k - (LEADBTN ? 1 : 0)].label; };
+            // linkCol collects the <a href> rects: without them a body click
+            // meant for a URL would fire the card's primary instead
+            const auto COLLINK = color(cfg.colLink);
+            const auto BODY    = N->body.empty() ? nullptr : cachedText(N->body, COLBODY, T.body, TEXTWPX, CAPL, 1.1f, true, 400, &COLLINK);
 
             static std::vector<CBox>               btnBoxes; // reused; main thread only
             static std::vector<const SCachedText*> btnLbls;
@@ -364,9 +362,9 @@ namespace NHyprnotify {
             double btnH = 0;
             {
                 double bx = 0, rowY = 0;
-                for (size_t k = 0; k < NBTN; k++) {
+                for (const auto& A : N->actions) {
                     auto& LB = scratch();
-                    appendEsc(LB, BTNLBL(k));
+                    appendEsc(LB, A.label);
                     const auto   LBL = cachedText(LB, COLACC, T.action, TEXTWPX, -1, 0, true, 600);
                     const double BW  = std::min(TEXTW, texW(LBL, P.scale) + 2 * BTN_PADX);
                     if (bx > 0 && bx + BW > TEXTW + 0.5) {
@@ -393,6 +391,9 @@ namespace NHyprnotify {
             yy += TH + (TH > 0 && BH > 0 ? TITLE_GAP : 0);
             if (!P.warm && BODY)
                 P.tex(BODY->tex, TX, yy);
+            if (BODY) // hit rects in both modes, like the buttons: physical -> global logical
+                for (const auto& L : BODY->links)
+                    card.links.push_back({CBox{TX + L.rel.x / P.scale, yy + L.rel.y / P.scale, L.rel.w / P.scale, L.rel.h / P.scale}, L.href});
             yy += BH;
             if (N->progress >= 0) {
                 yy += PROGRESS_GAP;
@@ -405,17 +406,12 @@ namespace NHyprnotify {
                 for (size_t i = 0; i < btnBoxes.size(); i++) {
                     const CBox BOX{BX0 + btnBoxes[i].x, yy + btnBoxes[i].y, btnBoxes[i].w, btnBoxes[i].h};
                     if (!P.warm) {
-                        const bool BHOV = hovered.id == N->id && hovered.btn == (int)i;
-                        // the primary wears a standing pill: it inherits the
-                        // whole-row click the body used to carry
-                        if (BHOV)
+                        if (hovered.id == N->id && hovered.btn == (int)i)
                             P.rect(BOX, tAccentDim(), (int)std::lround(BTN_H / 2 * P.scale));
-                        else if (LEADBTN && i == 0)
-                            P.rect(BOX, tFill2(), (int)std::lround(BTN_H / 2 * P.scale));
                         if (btnLbls[i] && btnLbls[i]->tex)
                             P.tex(btnLbls[i]->tex, BOX.x + BTN_PADX, BOX.y + (BOX.h - btnLbls[i]->tex->m_size.y / P.scale) / 2);
                     }
-                    card.buttons.push_back({BOX, BTNID(i)});
+                    card.buttons.push_back({BOX, N->actions[i].id});
                 }
             }
         }

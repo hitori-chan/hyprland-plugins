@@ -3,12 +3,13 @@
 //
 //   popup    left = action/link/default → dismiss · right = dismiss ·
 //            middle = park the stack into the shade · hover reveals ✕
-//   row      LEFT READS: anywhere on the row (the chevron included) folds it
-//            open ⇄ shut and nothing else — the shade's most common intent
-//            gets its biggest target, and none of it is destructive. A
-//            button acts (the primary included) → dismiss unless resident ·
-//            right = dismiss · middle = Clear all
-//   child    a bundle child is already open: only its buttons and right act
+//   row      a shade row IS its banner: left on the body fires the card's
+//            primary (the fd.o `default`) and dismisses unless resident,
+//            same as the popup — rows open by default, so the click is
+//            spent on acting rather than on revealing. The CHEVRON is the
+//            only fold target · a link opens · a button acts · right =
+//            dismiss · middle = Clear all
+//   child    a bundle child is a row without the fold: body, links, buttons
 //   digest   left expands the app's bundle · right dismisses it
 //   ghead    left collapses · the ✕ / right dismisses the bundle
 //   footer   ⊖ = DND · "Clear all" = the global sweep
@@ -153,14 +154,19 @@ namespace NHyprnotify {
                     }
                     if (H.bit != 1u)
                         continue;
-                    if (!H.action.empty()) { // a button — the primary included
+                    if (H.part == 1) { // the chevron, and only it, folds
+                        centerToggleRow(H.id);
+                        continue;
+                    }
+                    if (!H.action.empty()) {
                         invokeLive(H.id, H.action);
                         continue;
                     }
-                    // left on the body or the chevron: read it. A bundle child
-                    // is already open, so there is nothing to reveal.
-                    if (H.kind == SCard::ROW)
-                        centerToggleRow(H.id);
+                    if (!H.href.empty()) { // a link in the body: open it, keep the card
+                        spawnDetached({"xdg-open", H.href.c_str(), nullptr});
+                        continue;
+                    }
+                    invokeLive(H.id, ""); // the body IS the card's primary, as on the banner
                     continue;
                 }
                 case SCard::DIGEST: {
@@ -330,7 +336,7 @@ namespace NHyprnotify {
                 else
                     centerToggleRow(A.id);
             } else if (A.verb == 2)
-                invokeLive(A.id, ""); // enter on a card: its primary, exactly as the lead button
+                invokeLive(A.id, ""); // enter on a card: its primary, the body click's twin
             else if (A.verb == 3) {
                 if (GROUP)
                     Bus::dismissApp(A.group);

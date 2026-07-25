@@ -316,15 +316,15 @@ hq hyprnotify center >/dev/null; sleep 0.4
 hq hyprnotify clear >/dev/null; sleep 0.8
 
 # ---- hardening: the shade's click model, absorb, DND, hostile hints -----
-# 6.0.0 inverted the row verbs: LEFT READS (fold open ⇄ shut, never
-# destructive) and only right dismisses. Driven through the real hit boxes
-# via vptr — the fold has no model-level path, so the assertion is that a
-# left click changes NOTHING while a right click on the same pixel clears
-# the card. The panel hangs off the monitor's right edge (EDGE 10 +
-# CENTER_W 360) below offset_y 34, so the first row's body is a fixed inset
-# from the top-right corner, clear of the fold chevron that rides the row's
-# right end. Hit boxes are final-position, so the open spring cannot move
-# them out from under the click.
+# A shade row IS its banner: left on the BODY fires the card's primary and
+# dismisses it, and the CHEVRON is the only fold target. Driven through the
+# real hit boxes via vptr. The panel hangs off the monitor's right edge
+# (EDGE 10 + CENTER_W 360) below offset_y 34, so the first row's body is a
+# fixed inset from the top-right corner, and the chevron rides the row's
+# right end (ROW_PADX 12 + CHEV 24). Hit boxes are final-position, so the
+# open spring cannot move them out from under the click. The fold has no
+# model-level path, hence the shape of these assertions: the chevron must
+# change NOTHING in the model, while the body clears the card.
 dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"read me\" body')"; sleep 1
 chk "shade: one card waiting" test "$(st)" = "center:0 live:1 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.6
@@ -335,10 +335,14 @@ click() { # click <x> <y> <button-code>
 }
 ROWX=$((MON_W - 10 - 360 + 10 + 80)) # panel x + body pad + into the text column
 ROWY=64                              # offset_y + body pad + into the first row
+CHVX=$((MON_W - 10 - 10 - 12 - 12))  # panel right edge - body pad - ROW_PADX - half CHEV
+click $CHVX $ROWY 272
+chk "shade: the chevron only folds — nothing invoked, nothing dismissed" test "$(st)" = "center:1 live:1 dnd:0"
+click $CHVX $ROWY 272
+chk "shade: the chevron unfolds again, still nothing dismissed" test "$(st)" = "center:1 live:1 dnd:0"
 click $ROWX $ROWY 272
-chk "shade: left on a row READS — nothing invoked, nothing dismissed" test "$(st)" = "center:1 live:1 dnd:0"
-click $ROWX $ROWY 272
-chk "shade: left again folds back, still nothing dismissed" test "$(st)" = "center:1 live:1 dnd:0"
+chk "shade: left on the BODY fires the card and it goes, as on the banner" test "$(st)" = "center:1 live:0 dnd:0"
+dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"right me\" body')"; sleep 1
 click $ROWX $ROWY 273
 chk "shade: right on a row dismisses it" test "$(st)" = "center:1 live:0 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.4

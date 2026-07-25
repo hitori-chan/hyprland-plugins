@@ -597,23 +597,21 @@ namespace NHyprnotify {
             n->appKey = APPKEY;
 
             // actions arrive as [id0,label0, id1,label1, ...]. Every named pair
-            // becomes a button; "default" is the card's primary — a popup body
-            // click fires it, and an open shade row draws it as the LEAD button
-            // (nothing in the shade acts without hitting a button, so the
-            // primary needs one). The spec allows an empty default label and an
-            // unnamed button is unclickable, so it gets a name.
+            // becomes a button; "default" is the card's primary and gets NO
+            // button on either surface — the spec defines it as "the default
+            // action (usually invoked by clicking the notification)" and says
+            // implementations are free not to display it, so a body click is
+            // what fires it and a button would only duplicate that.
             n->defaultAction.clear();
-            n->defaultLabel.clear();
             n->actions.clear();
             for (size_t i = 0; i + 1 < actions.size(); i += 2) {
-                if (actions[i] == "default") {
+                if (actions[i] == "default")
                     n->defaultAction = actions[i];
-                    n->defaultLabel  = actions[i + 1].empty() ? "Open" : actions[i + 1];
-                } else if (!actions[i + 1].empty()) // an empty label has no button to draw
+                else if (!actions[i + 1].empty()) // an empty label has no button to draw
                     n->actions.push_back(SAction{.id = actions[i], .label = actions[i + 1]});
             }
-            // a lone named action doubles as the popup's body-click default; it
-            // already has its own button, so no lead button is minted for it
+            // a lone named action doubles as the body-click default; it keeps
+            // its own button too, since it was given a label to show
             if (n->defaultAction.empty() && n->actions.size() == 1)
                 n->defaultAction = n->actions.front().id;
 

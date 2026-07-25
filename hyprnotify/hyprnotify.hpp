@@ -73,7 +73,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.1.0";
+    inline constexpr const char* VERSION = "6.2.0";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -157,8 +157,7 @@ namespace NHyprnotify {
         std::vector<uint8_t> pixels;   // image-data, premultiplied BGRA (DRM ARGB8888); freed once uploaded
         bool                 hasPixels = false; // the LAST Notify carried image-data (outlives the freed buffer)
         int                  pw = 0, ph = 0;
-        std::string          defaultAction; // the "default" action key, "" = none
-        std::string          defaultLabel;  // its label; the open row draws it as the lead button
+        std::string          defaultAction; // the "default" action key, "" = none; a body click fires it, never a button
         std::vector<SAction>    actions;    // non-default actions -> buttons, in Notify order
         std::vector<SBodyImage> bodyImages; // body <img src> thumbnails
         bool                    actionIcons = false; // the action-icons hint: button ids are icon names
@@ -290,7 +289,7 @@ namespace NHyprnotify {
             CBox        box;
             std::string href;
         };
-        std::vector<SLinkHit> links; // body-hyperlink hit rects (POPUP only)
+        std::vector<SLinkHit> links; // body-hyperlink hit rects (popups and open shade rows)
     };
     extern std::vector<SCard> cards;
     extern PHLMONITORREF      cardsMon; // the monitor the layout ran on

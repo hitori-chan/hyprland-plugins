@@ -15,8 +15,9 @@ Two surfaces share one card model:
    is the sender's face; a rolled fallback face from `fallback_icon_dir`
    when a card is iconless) and the app IDENTITY rides its bottom-right
    corner as a badge on a white rim disc (AOSP's badge background), so one
-   column says both who sent it and which app carried it. A wide content image (aspect ≥ 1.5) goes hero, full-width
-   instead. Then an "App • age" header, bold title, body, a progress pill
+   column says both who sent it and which app carried it. A wide content
+   image (aspect ≥ 1.5) goes hero, full-width instead. Then an "App • age"
+   header, bold title, body, a progress pill
    for the `value` hint, and the card's actions as tinted text buttons.
    Hovering reveals the ✕ **and holds the timeout** — a banner never expires
    out from under the pointer reading it, and the clock restarts when the
@@ -56,14 +57,17 @@ Two surfaces share one card model:
      nothing new gets no chevron at all. The panel runs to the height the
      monitor leaves below `offset_y`; what still overflows becomes wheel
      paging, with "▴" / "▾ N" cues.
-   - **Verbs — left reads.** A left click anywhere on a row (the chevron
-     included) folds it open ⇄ shut and does nothing else, so the most
-     common intent has the biggest target and no gesture is destructive by
-     accident. The card's primary action moves INTO the open row as its lead
-     button, beside its other actions; a button acts and dismisses (unless
-     `resident`). Right dismisses, middle sweeps. On a bundle: left expands,
-     right (or the header ✕) dismisses the whole app. The footer is ⊖ DND
-     (accent-lit while on) and "Clear all". A click outside closes.
+   - **Verbs — a row is its banner.** Because rows open by default, the
+     left click is spent ACTING rather than revealing: clicking a row's body
+     fires the card's primary (the fd.o `default`) and dismisses it unless
+     `resident` — the same verb the popup has always had, and what every
+     other shade does. Links open, action buttons act, and the CHEVRON is
+     the only fold target. The primary is never drawn as a button: the spec
+     says implementations are free not to display `default`, and a button
+     would only duplicate the click. Right dismisses, middle sweeps. On a
+     bundle: left expands, right (or the header ✕) dismisses the whole app.
+     The footer is ⊖ DND (accent-lit while on) and "Clear all". A click
+     outside closes.
    - **Keys.** While the shade is open it owns exactly the nav set and
      nothing else: Esc closes, ↑/↓ move a selection (an accent hairline,
      paging to stay on screen), Space folds it, Enter fires the primary,
@@ -85,7 +89,8 @@ overflow evicts the oldest non-critical. Grouping keys on app identity
 The bar's bell talks over the bus: the `org.hitori.hyprnotify` interface on
 the Notifications object carries `Toggle` (the shade), `Peek(on_bell)` (the
 hover) and a `State` signal (live/kept/dnd/center — the badge counts the
-shade, never the DND queue or the OSD band). `hyprctl hyprnotify {count,center,state,badge,clear}`;
+shade, never the DND queue or the OSD band).
+`hyprctl hyprnotify {count,center,state,badge,clear}`;
 `hl.plugin.hyprnotify.{suspend,center}()`.
 
 Markup stays the whitelisted Pango subset with the literal-`<`/`&` rescue;

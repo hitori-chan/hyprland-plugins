@@ -20,9 +20,9 @@
 //   (GroupHelper's AUTOGROUP_AT_COUNT) and conversations never bundle.
 //   Rows open by DEFAULT: an expansion budget walks the page and opens each
 //   row while the panel has room, so the shade is readable with no clicks at
-//   all. LEFT CLICK READS — anywhere on a row folds it open ⇄ shut; the
-//   card's primary action moves into the open row as its lead button, so
-//   nothing acts or dismisses without hitting a button. Right dismisses,
+//   all — so the left click is spent ACTING, not revealing: a row IS its
+//   banner, and clicking its body fires the card's primary exactly as the
+//   popup does. The chevron is the only fold target. Right dismisses,
 //   middle sweeps; the footer is ⊖ DND · a global "Clear all". While it is
 //   open it owns the nav keys (↑↓ select, space folds, enter fires the
 //   primary, delete dismisses, esc closes) and nothing else. Hovering the

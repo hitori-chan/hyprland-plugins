@@ -65,10 +65,12 @@ icons).
   `ActionInvoked` and dismisses the card unless the `resident` hint holds it.
   Under the `action-icons` hint each action id is a freedesktop icon name
   drawn on the button.
-- The `default` action (and a lone action) fire on a POPUP body left click.
-  In the shade nothing acts without a button, so `default` is drawn as the
-  open row's lead button (its label, or "Open" when the sender left it
-  empty). `ActivationToken` precedes each invoke (a compositor-minted
+- The `default` action (and a lone action) fire on a body left click, on
+  BOTH surfaces, and are never drawn as a button. The spec defines it as
+  "the default action (usually invoked by clicking the notification)" and
+  says implementations are free not to display it; Material Design likewise
+  says action buttons must not duplicate the tap action.
+  `ActivationToken` precedes each invoke (a compositor-minted
   xdg-activation token) so the sender can raise itself.
 
 ## Behavior
@@ -81,10 +83,12 @@ icons).
   down, and leaving restarts its full clock rather than resuming the sliver
   that was left (Android's heads-up does the same when a touch ends). Only
   one card can be held, because only one can be hovered.
-- Shade clicks: LEFT READS — anywhere on a row (the chevron included) folds
-  it open ⇄ shut and nothing else; buttons act (and dismiss unless
-  `resident`); right dismisses; middle is "Clear all". On an app bundle left
-  expands and right (or the header ✕) dismisses the whole app.
+- Shade clicks: a row behaves as its banner did — left on the body fires the
+  card's primary and dismisses unless `resident`, a link opens, a button
+  acts. Rows open by default, so the click is spent acting rather than
+  revealing; the CHEVRON is the only fold target. Right dismisses; middle is
+  "Clear all". On an app bundle left expands and right (or the header ✕)
+  dismisses the whole app.
 - Shade keys, while it is open and only then: Esc closes, ↑/↓ move a
   selection (an accent hairline; the page follows it), Space folds, Enter
   fires the primary, Delete dismisses. Modified chords pass through as user
