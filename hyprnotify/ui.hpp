@@ -41,10 +41,15 @@ namespace NHyprnotify {
     inline constexpr double BTN_H = 26, BTN_PADX = 10, BTN_GAP = 4, BTN_ROW_GAP = 6, BTN_ICON = 15, BTN_ICON_GAP = 5;
     inline constexpr double BODYIMG_H = 96, IMG_GAP = 6, IMG_ROW_GAP = 8;
     inline constexpr double XCIRC = 20; // the hover-✕ / group-✕ circle
-    inline constexpr double BADGE = 13; // the identity corner badge
+
+    // The identity badge, as ratios of the avatar box it rides. AOSP's
+    // notification_template_conversation_icon_container.xml: a 48dp avatar
+    // wearing a 20dp badge that protrudes 4dp past its right and bottom
+    // edges, with the app glyph 12dp inside that badge.
+    inline constexpr double BADGE_D = 20.0 / 48.0, BADGE_PROT = 4.0 / 48.0, BADGE_INSET = 4.0 / 20.0;
 
     inline constexpr double CENTER_W = 360; // the shade's height is the monitor's (see renderCenter)
-    inline constexpr double ROW_PADT = 9, ROW_PADX = 12, ROW_PADB = 10, ROW_ICON = 34, ROW_ICON_GAP = 10, ROW_GAP = 8;
+    inline constexpr double ROW_PADT = 9, ROW_PADX = 12, ROW_PADB = 10, ROW_ICON = 40, ROW_ICON_GAP = 10, ROW_GAP = 8;
     inline constexpr double CHEV = 24;                      // the fold chevron circle
     inline constexpr double CHILD_ICON = 28, CHILD_GAP = 2; // segmented group children
     inline constexpr double PREV_ICON = 16;                 // digest preview avatars

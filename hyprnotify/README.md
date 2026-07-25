@@ -10,12 +10,15 @@ graphite cards with live blur, IBM Plex Sans, superellipse corners.
 Two surfaces share one card model:
 
 1. **Popups (banners)** — glass cards top-right on the focused monitor, the
-   Android anatomy: the sender/app IDENTITY leads on the LEFT (a rolled
-   fallback face from `fallback_icon_dir` when a card is iconless), a
-   distinct CONTENT image rides the RIGHT thumbnail — a wide one (aspect ≥
-   1.5) goes hero, full-width — then an "App • age" header, bold title,
-   body, a progress pill for the `value` hint, and the card's actions as
-   tinted text buttons. Hovering reveals the ✕; critical cards ring urgent.
+   Android anatomy: ONE icon column on the left, Android's conversation
+   container — the AVATAR leads (the card's content image, which for a chat
+   is the sender's face; a rolled fallback face from `fallback_icon_dir`
+   when a card is iconless) and the app IDENTITY rides its bottom-right
+   corner as a badge, so one column says both who sent it and which app
+   carried it. A wide content image (aspect ≥ 1.5) goes hero, full-width
+   instead. Then an "App • age" header, bold title, body, a progress pill
+   for the `value` hint, and the card's actions as tinted text buttons.
+   Hovering reveals the ✕; critical cards ring urgent.
    Without an explicit `expire_timeout` a normal card runs `timeout_normal`
    (5s) and then RETREATS to the shade — the popup goes, the card stays,
    the shade is the safety net. Critical cards are the exception: they stick
@@ -36,8 +39,10 @@ Two surfaces share one card model:
      silent — newest first inside each tier.
    - **Bundling** follows `GroupHelper.AUTOGROUP_AT_COUNT`: an app's cards
      collapse into one digest (identity icon · "App • N • age" · count pill
-     · ≤2 preview lines) only at FOUR or more; below that every card stands
-     alone. Conversations never bundle — each chat keeps its own card.
+     · ≤2 preview lines, each wearing its own sender's face) only at FOUR or
+     more; below that every card stands alone. Conversations never bundle —
+     each chat keeps its own card, and its open row runs to Android's
+     MessagingStyle depth (~7 messages) where an ordinary card gets four.
    - **Rows open by default.** An expansion budget walks the page from the
      top and opens each row while the panel still has room (the top row
      always opens — Android's one guarantee; the desktop shade is taller, so

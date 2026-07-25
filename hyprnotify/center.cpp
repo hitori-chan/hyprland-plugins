@@ -191,13 +191,10 @@ namespace NHyprnotify {
 
         const bool   LEADICON = hasLeadIcon(*N);
         const double ICONW    = LEADICON ? ST.iconPx : 0;
-        const bool   HASIDENT = N->identTex && N->identTex->m_texID != 0;
-        const bool   RTHUMB   = N->iconTex && N->iconTex->m_texID != 0 && !N->heroTex && HASIDENT; // content rides the right
-        const double THUMBW   = RTHUMB ? ST.iconPx : 0;
         const double TX       = box.x + ROW_PADX + (ICONW > 0 ? ICONW + ROW_ICON_GAP : 0);
         const bool   CHEVRON  = ST.hasChevron && (open || more);
         const double RTRIM    = CHEVRON ? CHEV + 8 : 0;
-        const double TEXTW    = box.x + box.w - ROW_PADX - RTRIM - (THUMBW > 0 ? THUMBW + ROW_ICON_GAP : 0) - TX;
+        const double TEXTW    = box.x + box.w - ROW_PADX - RTRIM - TX;
         const int    TEXTWPX  = std::max(1, (int)std::floor(TEXTW * P.scale));
 
         double       th = 0;
@@ -241,8 +238,10 @@ namespace NHyprnotify {
             KB += AGE;
             const auto KICK  = cachedText(KB, COLSUB, T.header, TEXTWPX, -1, 0, true, 500);
             const auto TITLE = N->summary.empty() ? nullptr : cachedText(N->summary, COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
-            const int  CAP4  = (int)std::lround(T.body * 1.35 * 4);
-            const auto BODY  = N->body.empty() ? nullptr : cachedText(N->body, COLBODY, T.body, TEXTWPX, CAP4, 1.1f, true, 400);
+            // a merged chat is a transcript, so it gets Android's MessagingStyle
+            // depth (~7 messages) where an ordinary card gets four lines
+            const int  CAPL = (int)std::lround(T.body * 1.35 * (N->conversation ? 7 : 4));
+            const auto BODY = N->body.empty() ? nullptr : cachedText(N->body, COLBODY, T.body, TEXTWPX, CAPL, 1.1f, true, 400);
 
             const bool   LEADBTN = !N->defaultLabel.empty();
             const size_t NBTN    = N->actions.size() + (LEADBTN ? 1 : 0);
@@ -319,12 +318,6 @@ namespace NHyprnotify {
             const double IY = open ? box.y + ROW_PADT : box.y + (ROWH - ICONW) / 2;
             paintIconColumn(P, *N, CBox{box.x + ROW_PADX, IY, ICONW, ICONW}, ST.withBadge, RP);
         }
-        if (!P.warm && RTHUMB) { // the content photo/screenshot, right of the text
-            const double TXR = box.x + box.w - ROW_PADX - RTRIM - THUMBW;
-            const double TYR = open ? box.y + ROW_PADT : box.y + (ROWH - THUMBW) / 2;
-            P.texFit(N->iconTex, CBox{TXR, TYR, THUMBW, THUMBW}, (int)std::lround(THUMBW * 10.0 / 44.0 * P.scale), RP);
-        }
-
         // the chevron circle: an INDICATOR that the row folds, and a second
         // hit target for it — the whole row is the first one
         if (CHEVRON) {
@@ -389,7 +382,7 @@ namespace NHyprnotify {
         // The shade runs to what the monitor leaves below offset_y (a margin of
         // air) — Android's shade is the screen, and the expansion budget spends
         // exactly this. Overflow past it becomes wheel paging, never off-screen
-        // bleed; renderRow caps a row's body at 4 lines, so no single row can
+        // bleed; renderRow caps a row's body at 4 lines (7 for a chat), so no single row can
         // exceed the cap and the always-place-the-first-row rule can't spill.
         const double AVAILH  = MB.h - (double)cfg.offsetY->value() - (double)cfg.margin->value();
         const double BODYCAP = std::max(ROW_ICON, AVAILH - BAR_H - BODY_PADT - BODY_PADB);
@@ -577,7 +570,10 @@ namespace NHyprnotify {
                     const double LH = (double)T.body / P.scale * 1.35;
                     py += 3;
                     double             px = TX;
-                    const SP<ITexture> PV = (N->identTex && N->identTex->m_texID) ? N->identTex : (!N->heroTex ? N->iconTex : nullptr); // sender face first
+                    // each child's OWN face: a bundle's children all share one
+                    // app icon, so leading with the identity drew the same
+                    // glyph on every preview line
+                    const SP<ITexture> PV = (N->iconTex && N->iconTex->m_texID && !N->heroTex) ? N->iconTex : N->identTex;
                     if (PV && PV->m_texID) {
                         P.texFit(PV, CBox{px, py + (LH - PREV_ICON) / 2, PREV_ICON, PREV_ICON}, (int)std::lround(PREV_ICON / 2 * P.scale), 2.f);
                         px += PREV_ICON + 6;

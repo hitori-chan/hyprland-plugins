@@ -101,17 +101,34 @@ namespace NHyprnotify {
             P.rect(CBox{x, y, std::max(w * pct / 100.0, PROGRESS_H), PROGRESS_H}, critical ? color(cfg.colUrgent) : color(cfg.colHighlight), PR);
     }
 
-    // the identity-first icon column (Android): the IDENTITY leads on the
-    // left (sender/app icon, or the rolled fallback face). The content image
-    // rides the right thumbnail slot the row/popup lays out — a wide one goes
-    // hero instead. Only a card with content but no identity leads with
-    // content. Callers gate on hasLeadIcon for their layout.
-    void paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool, float rp) {
+    // Android's conversation icon container: the AVATAR leads — the content
+    // image, which for a chat is the sender's face — and the app IDENTITY
+    // rides its bottom-right corner as a badge. ONE column says both who sent
+    // it and which app carried it; two icons side by side said it twice, and
+    // said the app twice over for every card of the same app. A card with no
+    // content image leads with its identity (or the rolled fallback face) and
+    // wears no badge — there would be nothing to distinguish it from.
+    // Callers gate their layout on hasLeadIcon.
+    void paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool withBadge, float rp) {
         const bool  HASIDENT = n.identTex && n.identTex->m_texID != 0;
-        const auto& LEAD     = HASIDENT ? n.identTex : n.iconTex;
+        const bool  AVATAR   = n.iconTex && n.iconTex->m_texID != 0 && !n.heroTex;
+        const auto& LEAD     = AVATAR ? n.iconTex : n.identTex;
         if (!LEAD || LEAD->m_texID == 0)
             return;
-        P.texFit(LEAD, cell, (int)std::lround(cell.w * 10.0 / 44.0 * P.scale), rp);
+
+        // faces are round, app icons are squircles — Android draws the same split
+        const double R = AVATAR && n.conversation ? cell.w / 2 : cell.w * 10.0 / 44.0;
+        P.texFit(LEAD, cell, (int)std::lround(R * P.scale), rp);
+
+        if (!withBadge || !AVATAR || !HASIDENT)
+            return;
+        const double D = cell.w * BADGE_D, IN = D * BADGE_INSET;
+        const CBox   BB{cell.x + cell.w * (1 + BADGE_PROT) - D, cell.y + cell.h * (1 + BADGE_PROT) - D, D, D};
+        // AOSP's conversation_badge_background: an opaque disc of the card's
+        // own color, so the badge reads as a hole punched in the avatar rather
+        // than a sticker sitting on it
+        P.rect(BB, color(cfg.colBg).modifyA(1.f), (int)std::lround(D / 2 * P.scale), rp);
+        P.texFit(n.identTex, CBox{BB.x + IN, BB.y + IN, D - 2 * IN, D - 2 * IN}, (int)std::lround((D / 2 - IN) * P.scale), rp);
     }
 
 } // namespace NHyprnotify

@@ -5,11 +5,13 @@
 // external process, no layer surface. Two surfaces share one card model:
 //
 // - POPUPS (banners): glass cards top-right on the focused monitor. The
-//   anatomy is Android's — the sender/app identity leads on the LEFT (a
-//   rolled fallback face when a card is iconless), a distinct content image
-//   rides the RIGHT thumbnail (a wide one goes hero, full-width), then the
-//   "App • age" header, title, body, progress, and the card's actions as
-//   tinted text buttons. Hovering reveals the ✕.
+//   anatomy is Android's conversation container — ONE icon column, the
+//   avatar leading (the content image; for a chat, the sender's face — a
+//   rolled fallback face when a card is iconless) with the app identity
+//   badged on its bottom-right corner; a wide content image goes hero,
+//   full-width, instead. Then the "App • age" header, title, body,
+//   progress, and the card's actions as tinted text buttons. Hovering
+//   reveals the ✕.
 // - THE SHADE (F12 / the bar's bell / `hyprctl hyprnotify center`): ONE list
 //   of live cards, Android's notification shade. No lifecycle sections and no
 //   history — a dismissed card is gone. Ranking is Android's without the

@@ -50,16 +50,12 @@ namespace NHyprnotify {
             const bool   HERO  = N->iconTex && N->heroTex;
             const double HEROH = HERO ? N->iconTex->m_size.y / P.scale : 0;
 
-            // the icon column (Android): the IDENTITY leads on the left
-            // (sender/app icon or the rolled fallback face); a distinct content
-            // image rides the right thumbnail, a wide one goes hero instead
-            const bool   HASIDENT = N->identTex && N->identTex->m_texID != 0;
+            // ONE icon column (paintIconColumn): the avatar leads and the app
+            // identity badges its corner. A wide content image goes hero instead.
             const bool   LEADICON = !HERO && hasLeadIcon(*N);
             const double ICONW    = LEADICON ? MAXICON : 0;
-            const bool   RTHUMB   = !HERO && N->iconTex && N->iconTex->m_texID != 0 && !N->heroTex && HASIDENT;
-            const double THUMBW   = RTHUMB ? MAXICON : 0;
 
-            const double TEXTW   = W - 2 * PADX - (ICONW > 0 ? ICONW + ICON_GAP : 0) - (THUMBW > 0 ? THUMBW + ICON_GAP : 0);
+            const double TEXTW   = W - 2 * PADX - (ICONW > 0 ? ICONW + ICON_GAP : 0);
             const int    TEXTWPX = std::max(1, (int)std::floor(TEXTW * P.scale));
 
             // text pieces (cache-keyed; ages re-key on bucket moves); the
@@ -164,8 +160,6 @@ namespace NHyprnotify {
                 CP.texFit(N->iconTex, CBox{X, y, W, HEROH}, ROUND, RP);
             else if (LEADICON)
                 paintIconColumn(CP, *N, CBox{X + PADX, y + PADY, ICONW, ICONW}, true, RP);
-            if (RTHUMB) // the content photo/screenshot, top-right
-                CP.texFit(N->iconTex, CBox{X + W - PADX - THUMBW, y + PADY, THUMBW, THUMBW}, (int)std::lround(THUMBW * 10.0 / 44.0 * P.scale), RP);
 
             const double                 TX = X + PADX + (ICONW > 0 ? ICONW + ICON_GAP : 0);
             double                       ty = HERO ? y + HEROH + PADY : y + PADY;
