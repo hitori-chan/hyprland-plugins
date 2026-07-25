@@ -3,8 +3,9 @@
 # stack in the nested harness and drives it through the storm battery:
 # placement memory, sibling geometry, spawn/close storms, the notification
 # cap, state churn round-trips, hostile state files, a real-input storm
-# (vptr), the click-corpse guard and the fullscreen tuck. Every assertion
-# is exact; any failure fails the run.
+# (vptr), the shade's click and key verbs (vkbd), the bell's hover-peek, the
+# click-corpse guard and the fullscreen tuck. Every assertion is exact; any
+# failure fails the run.
 #
 #   stress.sh [HYPR_BIN]     default /usr/local/bin/Hyprland — pass a fork
 #                            build (e.g. ~/repo/Hyprland/build/Hyprland) to
@@ -45,16 +46,24 @@ clients() { hq clients -j 2>/dev/null; }
 # `move X Y` as X/extent onto the output, so a wrong extent silently lands
 # every scripted click somewhere else and the assertion passes or fails on
 # whatever happened to be under it.
-WL=""; MON_W=0; MON_H=0
+WL=""; MON_W=0; MON_H=0; NBUS=""
 retarget() {
 	SIG="$(cat "$HARNESS/nested.sig")"
 	WL="$(cat "$HARNESS/nested.wl")"
+	# launch.sh isolates the nested instance under its OWN dbus-run-session,
+	# so anything driving the nested daemon over the bus must use THAT
+	# address: the login session's bus is owned by the host's hyprnotify,
+	# which answers happily and makes the assertion vacuous.
+	local pid
+	pid="$(head -1 "$RUNDIR/$SIG/hyprland.lock" 2>/dev/null)"
+	NBUS="$(tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p')"
 	read -r MON_W MON_H < <(hq monitors -j | python3 -c "
 import json,sys
 m=json.load(sys.stdin)[0]
 print(int(m['width']/m['scale']), int(m['height']/m['scale']))")
 }
 vp() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" "$MON_W" "$MON_H" >/dev/null 2>&1; }
+vk() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vkbd" >/dev/null 2>&1; } # keys need no extent
 # pyc <python-expr-over-cs> — cs = client list; truthy stdout "1" = pass
 pyc() { clients | python3 -c "
 import json,sys
@@ -80,7 +89,7 @@ echo "== stress: $BIN =="
 
 # ---- preflight ----------------------------------------------------------
 [[ -x "$BIN" ]] || { echo "no such compositor binary: $BIN"; exit 1; }
-[[ -x "$REPO/devtools/vptr" ]] || make -C "$REPO/devtools" >/dev/null
+{ [[ -x "$REPO/devtools/vptr" ]] && [[ -x "$REPO/devtools/vkbd" ]]; } || make -C "$REPO/devtools" >/dev/null
 # the headers pkg-config resolves must belong to the gated binary — a
 # scratch hyprland.pc keeps its absolute /usr/local prefix (not
 # relocatable), silently falls back to the installed tree, and every
@@ -335,6 +344,88 @@ chk "shade: right on a row dismisses it" test "$(st)" = "center:1 live:0 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.4
 hq hyprnotify clear >/dev/null; sleep 0.8
 chk "hardening: reset after the shade click battery" test "$(st)" = "center:0 live:0 dnd:0"
+
+# ---- hover holds a banner's clock ------------------------------------------
+# A card must not expire out from under the pointer reading it. The pointer
+# parks on the popup (top-right: EDGE 10 + width 348, below offset_y 34) for
+# longer than the card's own timeout, then leaves — which RESTARTS the full
+# clock rather than resuming the sliver that was left.
+POPX=$((MON_W - 10 - 348 / 2))
+dsp "hl.dsp.exec_cmd('notify-send -t 1200 \"hold me\" body')"; sleep 0.4
+printf 'move %s 64\nsleep 2400\n' "$POPX" | vp
+chk "hover: the pointer holds the banner past its own clock" test "$(bd)" = "banners:1 resident:0"
+printf 'move %s %s\nsleep 150\n' "$((MON_W / 2))" "$((MON_H / 2))" | vp
+sleep 0.4
+chk "hover: leaving restarts the clock, it has not expired yet" test "$(bd)" = "banners:1 resident:0"
+sleep 1.4
+chk "hover: once the restarted clock runs out it retreats" test "$(bd)" = "banners:0 resident:1"
+hq hyprnotify clear >/dev/null; sleep 0.8
+
+# ---- the bell's hover-peek --------------------------------------------------
+# Driven over the very bus verb hyprbar's bell calls. A peek opens the shade
+# UNPINNED and must NOT absorb: a pointer crossing the bell cannot be allowed
+# to swallow banners the user never read. Leaving closes it again after the
+# grace; a toggle (the bell's click) pins instead of closing.
+nbus() { DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user "$@"; }
+peek() { nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.hitori.hyprnotify Peek b "$1" >/dev/null 2>&1; }
+# guard the whole battery against passing vacuously: if the call lands on the
+# WRONG daemon (or none), every "the shade stayed shut" assertion below is
+# true for the wrong reason
+chk "peek: the nested daemon is the one answering, and it has Peek" \
+	bash -c "nbus() { DBUS_SESSION_BUS_ADDRESS='$NBUS' busctl --user \"\$@\"; }; nbus introspect org.freedesktop.Notifications /org/freedesktop/Notifications org.hitori.hyprnotify | grep -q '\.Peek'"
+dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"peek me\" body')"; sleep 1
+chk "peek: a banner is up and the shade is shut" test "$(st)" = "center:0 live:1 dnd:0"
+peek true; sleep 0.6
+chk "peek: hovering the bell opens the shade" test "$(st)" = "center:1 live:1 dnd:0"
+chk "peek: a peek does NOT absorb the banner" test "$(bd)" = "banners:1 resident:0"
+peek false; sleep 1.2 # > the 400ms grace
+chk "peek: leaving the bell closes it again" test "$(st)" = "center:0 live:1 dnd:0"
+peek true; sleep 0.6
+hq hyprnotify center >/dev/null; sleep 0.5
+chk "peek: the bell's click PINS rather than closing" test "$(st)" = "center:1 live:1 dnd:0"
+chk "peek: pinning absorbs what the peek left alone" test "$(bd)" = "banners:0 resident:1"
+peek false; sleep 1.2
+chk "peek: a pinned shade ignores the pointer leaving" test "$(st)" = "center:1 live:1 dnd:0"
+hq hyprnotify center >/dev/null; sleep 0.4
+hq hyprnotify clear >/dev/null; sleep 0.8
+chk "peek: reset after the peek battery" test "$(st)" = "center:0 live:0 dnd:0"
+
+# ---- the shade's keyboard nav ----------------------------------------------
+# The one surface with no pointer path at all. Injected through a REAL virtual
+# keyboard so it rides the same emission a physical key does. The list is
+# newest-first, so ↓ lands on "key two" and the card carrying the primary is
+# behind it. The destructive steps are positive assertions on purpose: a dead
+# injector would make every "nothing changed" line pass for the wrong reason.
+tap() { printf 'tap %s\nsleep 250\n' "$1" | vk; sleep 0.6; }
+dsp "hl.dsp.exec_cmd('notify-send -t 60000 -A default=Open \"key one\" body')"; sleep 0.6
+dsp "hl.dsp.exec_cmd('notify-send -t 60000 \"key two\" body')"; sleep 1
+hq hyprnotify center >/dev/null; sleep 0.7
+chk "keys: two rows with the shade open" test "$(st)" = "center:1 live:2 dnd:0"
+tap down
+chk "keys: down only SELECTS — nothing acted, nothing dismissed" test "$(st)" = "center:1 live:2 dnd:0"
+tap space
+chk "keys: space only folds" test "$(st)" = "center:1 live:2 dnd:0"
+tap delete
+chk "keys: delete dismisses the selected row" test "$(st)" = "center:1 live:1 dnd:0"
+tap enter
+chk "keys: enter fires the primary and the card goes" test "$(st)" = "center:1 live:0 dnd:0"
+tap esc
+chk "keys: esc closes the shade" test "$(st)" = "center:0 live:0 dnd:0"
+
+# Ranking: a critical sorts to the top however late the others arrived. The
+# two cards are made TELLABLE APART in the badge — a transient one opts out of
+# residency, so opening the shade absorbs the critical and leaves it a banner
+# — and the keyboard deletes whatever the top row is. Both wrong answers
+# (older-first, or an injector that did nothing) read differently.
+dsp "hl.dsp.exec_cmd('notify-send -e -t 60000 -a chat \"an ordinary card\" body')"; sleep 0.6
+dsp "hl.dsp.exec_cmd('notify-send -a alarm -u critical \"disk failing\" body')"; sleep 1
+hq hyprnotify center >/dev/null; sleep 0.7
+chk "ranking: an absorbed critical beside an unabsorbed transient" test "$(bd)" = "banners:1 resident:1"
+tap down
+tap delete
+chk "ranking: the TOP row was the critical, not the card that came first" test "$(bd)" = "banners:1 resident:0"
+hq hyprnotify center >/dev/null; sleep 0.4
+hq hyprnotify clear >/dev/null; sleep 0.8
 
 # absorb is idempotent: toggling the center never loses or dupes a card
 dsp "hl.dsp.exec_cmd('notify-send \"keep one\" body')"
