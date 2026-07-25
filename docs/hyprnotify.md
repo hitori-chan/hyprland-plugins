@@ -53,8 +53,9 @@ icons).
   otherwise — and the IDENTITY (`app_icon`/`desktop-entry`) rides its
   bottom-right corner as a badge, sized by AOSP's ratios off the 48dp
   avatar: a 20dp badge protruding 4dp past the avatar's right and bottom
-  edges, the app glyph 12dp inside it, over an opaque disc of the card
-  color that reads as a hole punched in the avatar. A card with no content
+  edges, the app glyph 12dp inside it, over a solid WHITE disc — AOSP's
+  conversation_badge_background is literally `#ffffff`, and the 4dp of it
+  showing around the glyph is the badge's rim. A card with no content
   image leads with its identity and wears no badge. There is no second
   icon: one column says both who sent it and which app carried it.
 

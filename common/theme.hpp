@@ -28,6 +28,7 @@ namespace NHyprCommon::Theme {
     inline constexpr uint64_t FILL2      = 0x17ffffff; // white @9%: hover / raised chips
     inline constexpr uint64_t LINE       = 0x17dcebff; // hairlines @9%
     inline constexpr uint64_t SHADOW     = 0x73000000; // card shadow ink @45%
+    inline constexpr uint64_t BADGE_RIM  = 0xfff4f6f8; // the identity badge's disc (AOSP's white conversation_badge_background)
 
     // ---- type -----------------------------------------------------------
     inline constexpr const char* FONT = "IBM Plex Sans"; // shell UI; Fira Code stays in terminals

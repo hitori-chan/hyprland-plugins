@@ -124,10 +124,11 @@ namespace NHyprnotify {
             return;
         const double D = cell.w * BADGE_D, IN = D * BADGE_INSET;
         const CBox   BB{cell.x + cell.w * (1 + BADGE_PROT) - D, cell.y + cell.h * (1 + BADGE_PROT) - D, D, D};
-        // AOSP's conversation_badge_background: an opaque disc of the card's
-        // own color, so the badge reads as a hole punched in the avatar rather
-        // than a sticker sitting on it
-        P.rect(BB, color(cfg.colBg).modifyA(1.f), (int)std::lround(D / 2 * P.scale), rp);
+        // AOSP's conversation_badge_background is a solid WHITE oval, and the
+        // 4dp of it left showing around the glyph is the badge's rim. It reads
+        // against a dark avatar and a dark card alike — the card's own colour
+        // here just made a black coin nobody could see.
+        P.rect(BB, CHyprColor{Theme::BADGE_RIM}, (int)std::lround(D / 2 * P.scale), rp);
         P.texFit(n.identTex, CBox{BB.x + IN, BB.y + IN, D - 2 * IN, D - 2 * IN}, (int)std::lround((D / 2 - IN) * P.scale), rp);
     }
 

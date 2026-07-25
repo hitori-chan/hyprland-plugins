@@ -14,8 +14,8 @@ Two surfaces share one card model:
    container — the AVATAR leads (the card's content image, which for a chat
    is the sender's face; a rolled fallback face from `fallback_icon_dir`
    when a card is iconless) and the app IDENTITY rides its bottom-right
-   corner as a badge, so one column says both who sent it and which app
-   carried it. A wide content image (aspect ≥ 1.5) goes hero, full-width
+   corner as a badge on a white rim disc (AOSP's badge background), so one
+   column says both who sent it and which app carried it. A wide content image (aspect ≥ 1.5) goes hero, full-width
    instead. Then an "App • age" header, bold title, body, a progress pill
    for the `value` hint, and the card's actions as tinted text buttons.
    Hovering reveals the ✕ **and holds the timeout** — a banner never expires
