@@ -126,11 +126,37 @@ namespace NHyprnotify {
         g_pEventLoopManager->addTimer(s_peekOut);
     }
 
+    // Everything one visit accumulates. The close resets it (Android parity:
+    // paging and every fold start over), and so must PLUGIN_EXIT — s_disp
+    // holds STRONG card refs, so a session that exits with the shade open
+    // would otherwise carry them past Model::exit and destroy them, textures
+    // and all, at static-destruction time with the renderer already gone.
+    static void resetVisit() {
+        s_skip = s_items = 0;
+        s_openedRow.clear();
+        s_foldedRow.clear();
+        s_openedGroup.clear();
+        s_foldedGroup.clear();
+        s_rowState.clear();
+        s_groupState.clear();
+        s_animating = false;
+        s_sel       = -1;
+        s_lastVis   = 0;
+        s_peek = s_peekBell = false; // a closed shade is never a peeked one
+        armPeekOut(false);
+        s_disp.clear();
+        s_itemH.clear();
+        s_itemOpen.clear();
+        s_itemMore.clear();
+        s_childH.clear();
+    }
+
     void centerExit() {
         if (s_peekOut && g_pEventLoopManager)
             g_pEventLoopManager->removeTimer(s_peekOut);
         s_peekOut.reset();
-        s_peek = s_peekBell = false;
+        s_on = false;
+        resetVisit();
     }
 
     void centerToggleRow(uint32_t id) {
@@ -197,25 +223,8 @@ namespace NHyprnotify {
             return;
         s_on = on;
         if (!on) {
-            // Android parity: paging and every fold reset on close
-            s_skip = 0;
-            s_openedRow.clear();
-            s_foldedRow.clear();
-            s_openedGroup.clear();
-            s_foldedGroup.clear();
-            s_rowState.clear();
-            s_groupState.clear();
-            s_animating = false;
-            s_sel       = -1;
-            s_lastVis   = 0;
-            s_peek = s_peekBell = false; // a closed shade is never a peeked one
-            armPeekOut(false);
-            replyExit();    // a field cannot outlive the panel it was drawn in
-            s_disp.clear(); // strong refs must not outlive the visit
-            s_itemH.clear();
-            s_itemOpen.clear();
-            s_itemMore.clear();
-            s_childH.clear();
+            resetVisit();
+            replyExit(); // a field cannot outlive the panel it was drawn in
         } else {
             // Opening absorbs the popped stack — the banners stand down into
             // parked shade rows, so closing never re-pops them. A PEEK does
