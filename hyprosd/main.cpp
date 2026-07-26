@@ -411,7 +411,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_up", luaBrightnessUp);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_down", luaBrightnessDown);
 
-    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.2.0"};
+    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.2.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
@@ -421,6 +421,9 @@ APICALL EXPORT void PLUGIN_EXIT() {
         chainDone(chains.back().get()); // sources out, fds closed, children reaped as far as WNOHANG goes
     reapOrphans();
     orphans.clear();
+    backlightDev.clear();
+    backlightMax = 0;
+    lastSetRaw   = -1;
     sessionBus.close(); // fd sources out BEFORE the connections die
     systemBus.close();
 }
