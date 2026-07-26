@@ -4,9 +4,13 @@
 #pragma once
 
 #include <hyprland/src/desktop/view/Window.hpp>
+#include <hyprland/src/desktop/state/ViewState.hpp>
+#include <hyprland/src/devices/IKeyboard.hpp>
 #include <hyprland/src/helpers/MiscFunctions.hpp>
+#include <hyprland/src/managers/SeatManager.hpp>
 #include <hyprland/src/managers/SessionLockManager.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
+#include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/desktop/Workspace.hpp>
 #include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/protocols/XDGShell.hpp>
@@ -53,6 +57,24 @@ namespace NHyprCommon {
             }
         }
         return best;
+    }
+
+    // The window under the pointer, hit-tested FRESH — never the seat's
+    // pointer focus, which a map or unmap under a still cursor leaves stale.
+    // Reserved and input extents count: a click on a window's shadow or CSD
+    // border is a click on that window.
+    inline PHLWINDOW windowUnderCursor() {
+        if (!g_pInputManager)
+            return nullptr;
+        return Desktop::viewState()->hitTest().windowAt(g_pInputManager->getMouseCoordsInternal(),
+                                                        Desktop::View::ALLOW_FLOATING | Desktop::View::RESERVED_EXTENTS | Desktop::View::INPUT_EXTENTS);
+    }
+
+    // Super/Meta down on the seat's keyboard — the modifier every grab chord
+    // in the shell is built on.
+    inline bool superHeld() {
+        const auto KB = g_pSeatManager ? g_pSeatManager->m_keyboard.lock() : nullptr;
+        return KB && (KB->m_modifiersState.depressed & HL_MODIFIER_META);
     }
 
     // Maximize can be client-only state (hyprmax's maximize never enters

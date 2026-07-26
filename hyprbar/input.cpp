@@ -137,8 +137,7 @@ namespace NHyprbar {
 
         if (BIT == 8u)
             return; // no side-button actions on the bar
-        const auto KB    = g_pSeatManager ? g_pSeatManager->m_keyboard.lock() : nullptr;
-        const bool SUPER = KB && (KB->m_modifiersState.depressed & HL_MODIFIER_META);
+        const bool SUPER = NHyprCommon::superHeld();
         for (const auto& HIT : IT->second) {
             if (HIT.box.containsPoint(POS)) {
                 SHit hc   = HIT;

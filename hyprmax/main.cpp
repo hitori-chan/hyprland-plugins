@@ -166,17 +166,8 @@ static bool maximizedAny(PHLWINDOW w) {
     return pluginMaximized(w) || Fullscreen::controller()->isFullscreen(w);
 }
 
-static PHLWINDOW windowUnderCursor() {
-    if (!g_pInputManager)
-        return nullptr;
-    return Desktop::viewState()->hitTest().windowAt(g_pInputManager->getMouseCoordsInternal(),
-                                                    Desktop::View::ALLOW_FLOATING | Desktop::View::RESERVED_EXTENTS | Desktop::View::INPUT_EXTENTS);
-}
-
-static bool superHeld() {
-    const auto KB = g_pSeatManager ? g_pSeatManager->m_keyboard.lock() : nullptr;
-    return KB && (KB->m_modifiersState.depressed & HL_MODIFIER_META);
-}
+using NHyprCommon::superHeld;
+using NHyprCommon::windowUnderCursor;
 
 // Buttons whose press we swallowed; their release must be swallowed too so
 // nothing downstream sees half a click.
@@ -368,7 +359,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprmax", "toggle", luaToggle);
 
-    return {"hyprmax", "awesome's per-window maximize", "hitori", "1.1.7"};
+    return {"hyprmax", "awesome's per-window maximize", "hitori", "1.1.8"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

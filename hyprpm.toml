@@ -15,7 +15,7 @@ authors = ["hitori"]
 
 [hyprbar]
 description = "the awesome wibar, drawn by the compositor"
-version     = "4.3.0"
+version     = "4.3.1"
 authors     = ["hitori"]
 output      = "hyprbar/hyprbar.so"
 build       = ["make -C hyprbar all"]
@@ -29,7 +29,7 @@ build       = ["make -C hyprnotify all"]
 
 [hyprmax]
 description = "awesome's per-window maximize"
-version     = "1.1.7"
+version     = "1.1.8"
 authors     = ["hitori"]
 output      = "hyprmax/hyprmax.so"
 build       = ["make -C hyprmax all"]
@@ -43,7 +43,7 @@ build       = ["make -C hyprsnap all"]
 
 [hyprclick]
 description = "awesome's click/focus policy"
-version     = "1.2.3"
+version     = "1.2.4"
 authors     = ["hitori"]
 output      = "hyprclick/hyprclick.so"
 build       = ["make -C hyprclick all"]

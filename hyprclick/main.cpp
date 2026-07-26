@@ -97,17 +97,8 @@ static void armCorpse(PHLWINDOW w, const CBox& box) {
     g_corpseUntil = NOW + GESTURE;
 }
 
-static PHLWINDOW windowUnderCursor() {
-    if (!g_pInputManager)
-        return nullptr;
-    return Desktop::viewState()->hitTest().windowAt(g_pInputManager->getMouseCoordsInternal(),
-                                                    Desktop::View::ALLOW_FLOATING | Desktop::View::RESERVED_EXTENTS | Desktop::View::INPUT_EXTENTS);
-}
-
-static bool superHeld() {
-    const auto KB = g_pSeatManager ? g_pSeatManager->m_keyboard.lock() : nullptr;
-    return KB && (KB->m_modifiersState.depressed & HL_MODIFIER_META);
-}
+using NHyprCommon::superHeld;
+using NHyprCommon::windowUnderCursor;
 
 static void raiseWindow(PHLWINDOW w) {
     if (Fullscreen::controller()->isFullscreen(w)) {
@@ -348,7 +339,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_next", luaFocusNext);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev", luaFocusPrev);
 
-    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.2.3"};
+    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.2.4"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
