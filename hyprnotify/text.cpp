@@ -342,14 +342,19 @@ namespace NHyprnotify {
                                   const CHyprColor* linkCol) {
         if (text.empty())
             return nullptr;
-        char      meta[80];
+        // wide enough for every conversion at ITS widest (two 16-digit hex,
+        // six 11-char signed decimals, the separators): snprintf reports what
+        // it WOULD have written, so a buffer the key outgrew would be read
+        // past its end — and a truncated key would alias two styles onto one
+        // texture. The append clamps anyway, for the next field added here.
+        char      meta[112];
         const int METALEN = std::snprintf(meta, sizeof(meta), "|%llx|%d|%d|%d|%d|%d|%d|%llx", (unsigned long long)col.getAsHex(), pt, maxWpx, maxHpx, (int)(lineSp * 100), markup,
                                           weight, linkCol ? (unsigned long long)linkCol->getAsHex() : 0ULL);
 
         static std::string KEY; // reused; main thread only
         KEY.clear();
         KEY += text;
-        KEY.append(meta, METALEN > 0 ? (size_t)METALEN : 0);
+        KEY.append(meta, std::min<size_t>(METALEN > 0 ? (size_t)METALEN : 0, sizeof(meta) - 1));
 
         if (const auto IT = texCache.find(KEY); IT != texCache.end()) {
             IT->second.gen = texGen;
