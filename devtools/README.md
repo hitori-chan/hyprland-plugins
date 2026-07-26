@@ -11,7 +11,7 @@ that `make` regenerates.
 Exact assertions over the nested harness + `vptr` + `vkbd`: placement
 memory, spawn/close storms, the notification cap, churn round-trips,
 hostile state files, an input storm, the shade's click/key verbs, the bell
-peek, log hygiene. Check #1 refuses to run when the installed headers'
+peek, a config reload, log hygiene. Check #1 refuses to run when the installed headers'
 `version.h` hash doesn't match the running binary. Run it before every
 deploy; it must end `ALL CHECKS PASSED`.
 

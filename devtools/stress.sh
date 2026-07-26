@@ -4,8 +4,8 @@
 # placement memory, sibling geometry, spawn/close storms, the notification
 # cap, state churn round-trips, hostile state files, a real-input storm
 # (vptr), the shade's click and key verbs (vkbd), the bell's hover-peek, the
-# click-corpse guard and the fullscreen tuck. Every assertion is exact; any
-# failure fails the run.
+# click-corpse guard, the fullscreen tuck and a config reload. Every
+# assertion is exact; any failure fails the run.
 #
 #   stress.sh [HYPR_BIN]     default /usr/local/bin/Hyprland — pass a fork
 #                            build (e.g. ~/repo/Hyprland/build/Hyprland) to
@@ -38,6 +38,7 @@ chk() { # chk <name> <command...> — command's exit code decides
 hq()      { hyprctl -i "$SIG" "$@"; }
 dsp()     { hq dispatch "$1" >/dev/null 2>&1; }
 clients() { hq clients -j 2>/dev/null; }
+ws()      { hq activeworkspace -j | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])'; }
 
 # Nothing here may hard-code the nested monitor's size: it is whatever window
 # the wayland backend gets, and it HAS changed under us (the 1280x800 these
@@ -721,6 +722,29 @@ for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in j
 	dsp "hl.dsp.window.close({window=\"address:$a\"})"
 done
 sleep 0.8
+
+# ---- config reload ------------------------------------------------------
+# hyprbar and hyprnotify both re-resolve their disk-loaded icons from
+# config.reloaded: the bar re-probes its icon dirs, drops every resolved
+# texture, marks the live tray items dirty and warms again. Nothing may
+# wedge, and the strip must still take a click afterwards.
+#
+# retarget FIRST, and not for the signature: the wayland backend hands the
+# instance whatever window size it gets (1920x1200 here), and the reload is
+# when nested.lua's own monitor line finally applies — the output resizes to
+# 1280x800 under us. vptr maps `move X Y` as X/extent, so every coordinate
+# below is off by that ratio until the extent is re-read. This cost an hour:
+# the taglist looked like it had re-laid itself out, and the bar had not
+# moved a pixel.
+chk "reload: the config re-applies" bash -c "hyprctl -i $SIG reload | grep -q ok"
+sleep 1.2
+retarget
+chk "reload: all 8 plugins alive" test "$(hq plugin list | grep -c Plugin)" = 8
+chk "reload: hyprnotify still answers" bash -c "hyprctl -i $SIG hyprnotify state | grep -q '^center:'"
+printf "move 59 13\nsleep 30\npress 272\nsleep 30\nrelease 272\nsleep 120\n" | vp; sleep 0.6
+chk "reload: the strip still takes a click (tag 3)" test "$(ws)" = 3
+printf "move 12 13\nsleep 30\npress 272\nsleep 30\nrelease 272\nsleep 120\n" | vp; sleep 0.6
+chk "reload: and back on tag 1" test "$(ws)" = 1
 
 # ---- log hygiene --------------------------------------------------------
 chk "log clean (only known-benign lines)" bash -c \
