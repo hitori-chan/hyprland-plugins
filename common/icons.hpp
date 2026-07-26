@@ -117,12 +117,17 @@ namespace NHyprCommon {
     }
 
     // Resolve a freedesktop icon NAME to a file path via themed lookup; "" if
-    // unresolved or if the string is already a path. Cached per name.
+    // unresolved or if the string is already a path. Cached per name AND
+    // size: the requested size leads sizeDirs below, so in a PNG-only theme
+    // it CHOOSES the file — keyed on the name alone, whichever caller asked
+    // first pinned the size for every later one (hyprnotify wants a card
+    // icon at max_icon and an action icon at ~15px).
     inline std::string resolveIconName(const std::string& name, int sizePx) {
         if (name.empty() || name.find('/') != std::string::npos)
             return ""; // already a path, or nothing to resolve
-        auto& CACHE = iconNameCache();
-        if (const auto IT = CACHE.find(name); IT != CACHE.end())
+        auto&      CACHE = iconNameCache();
+        const auto KEY   = name + "\x1f" + std::to_string(sizePx);
+        if (const auto IT = CACHE.find(KEY); IT != CACHE.end())
             return IT->second;
 
         const auto               bases = xdgIconBases();
@@ -195,7 +200,7 @@ namespace NHyprCommon {
                     break;
             }
 
-        CACHE[name] = found;
+        CACHE[KEY] = found;
         return found;
     }
 
