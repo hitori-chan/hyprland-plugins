@@ -28,7 +28,10 @@ namespace NHyprnotify {
         const auto&      SUBHEX  = hexOfCached(COLSUB);
         const float      RP      = rPow();
 
-        if (P.warm)
+        // warmGate.warming, not P.warm: measureRow runs this whole function with
+        // P.warm forced on to suppress painting, and a build there would be a
+        // build inside a render (crash class 4). Only the real warm may create.
+        if (warmGate.warming)
             ensureIconTex(*N, (int)std::lround(std::max(ST.iconPx, (double)cfg.maxIcon->value()) * P.scale), 0, 0);
 
         const bool   LEADICON = hasLeadIcon(*N);
@@ -271,7 +274,7 @@ namespace NHyprnotify {
     // (cachedText still resolves through the real warm gate)
     double measureRow(const SPaint& P, const SType& T, const SP<SNotif>& N, double w, bool open, const SRowStyle& ST) {
         SPaint MP = P;
-        MP.warm   = true;
+        MP.warm   = true; // paints nothing; it does NOT license a texture build
         SCard scratch;
         return renderRow(MP, T, N, CBox{0, 0, w, 0}, open, true, ST, scratch, false);
     }
@@ -305,7 +308,7 @@ namespace NHyprnotify {
         const bool  HOV    = hovered.kind == SCard::DIGEST && hovered.group == D.key;
         P.rect(box, HOV ? tAccentDim() : tFill(), rRow(P.scale), RP);
 
-        if (P.warm)
+        if (warmGate.warming)
             ensureIconTex(*NEWEST, (int)std::lround(cfg.maxIcon->value() * P.scale), 0, 0);
         const auto& IDT = NEWEST->identTex && NEWEST->identTex->m_texID ? NEWEST->identTex : NEWEST->iconTex;
         if (IDT)
@@ -352,7 +355,7 @@ namespace NHyprnotify {
         const size_t PREV = std::min<size_t>(2, D.items.size());
         for (size_t i = 0; i < PREV; i++) {
             const auto& N = D.items[i];
-            if (P.warm)
+            if (warmGate.warming)
                 ensureIconTex(*N, (int)std::lround(cfg.maxIcon->value() * P.scale), 0, 0);
             const double LH = (double)T.body / P.scale * 1.35;
             py += 3;
@@ -399,7 +402,7 @@ namespace NHyprnotify {
         const double HEADRH = groupHeadH();
         P.rect(CBox{box.x, box.y, box.w, HEADRH}, HHOV ? tAccentDim() : tFill(), rRow(P.scale), RP);
 
-        if (P.warm)
+        if (warmGate.warming)
             ensureIconTex(*NEWEST, (int)std::lround(cfg.maxIcon->value() * P.scale), 0, 0);
         const auto& IDT = NEWEST->identTex && NEWEST->identTex->m_texID ? NEWEST->identTex : NEWEST->iconTex;
         if (IDT)

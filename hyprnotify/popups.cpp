@@ -44,7 +44,9 @@ namespace NHyprnotify {
             const bool CRITICAL = N->urgency >= 2;
             const auto AGE      = ageString(N->arrived);
 
-            if (P.warm)
+            // every build in the drawing units gates on warmGate.warming, never
+            // on P.warm — a measuring pass forces P.warm on to paint nothing
+            if (warmGate.warming)
                 ensureIconTex(*N, (int)std::lround(MAXICON * P.scale), (int)std::lround(W * P.scale), (int)std::lround(HERO_CAP * P.scale));
 
             const bool   HERO  = N->iconTex && N->heroTex;
@@ -71,7 +73,7 @@ namespace NHyprnotify {
             const auto TITLE  = N->summary.empty() ? nullptr : cachedText(N->summary, COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
 
             // action labels + icons
-            if (P.warm)
+            if (warmGate.warming)
                 for (auto& A : N->actions)
                     ensureActionIcon(*N, A, (int)std::lround(BTN_ICON * P.scale));
             static std::vector<CBox> btnBoxes; // reused; main thread only
@@ -97,7 +99,7 @@ namespace NHyprnotify {
             }
             const double BTN_BLOCK = btnH > 0 ? BTN_ROW_GAP + btnH : 0;
 
-            if (P.warm)
+            if (warmGate.warming)
                 for (auto& IM : N->bodyImages)
                     ensureBodyImage(IM, (int)std::lround(BODYIMG_H * P.scale));
             static std::vector<CBox> imgBoxes; // reused; main thread only
