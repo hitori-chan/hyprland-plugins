@@ -526,13 +526,15 @@ namespace NHyprbar {
                                                                  CHyprColor{1.f, 1.f, 1.f, 1.f};
                 const uint64_t   KEY  = ((uint64_t)batteryPercent << 40) ^ ((uint64_t)ATTR << 48) ^ FILL.getAsHex();
                 auto&            PILL = pillCache[PH];
-                if (P.warm) {
-                    if (PILL.key != KEY) {
-                        PILL.tex = batteryPill(batteryPercent, ATTR, PH, FILL);
-                        PILL.key = KEY; // stamp even if the build returns null, so a persistent null can't rewarm-storm
-                    }
-                } else if (PILL.key != KEY)
-                    warmGate.texStale = true; // level moved under a scissored repaint: warm + repaint
+                // the gate, not P.warm: "this pass paints nothing" and "this
+                // pass may create a texture" are different questions, and only
+                // the gate answers the second one (mayBuild flags texStale when
+                // it refuses — a level that moved under a scissored repaint
+                // gets its warm and its repaint from that).
+                if (PILL.key != KEY && warmGate.mayBuild()) {
+                    PILL.tex = batteryPill(batteryPercent, ATTR, PH, FILL);
+                    PILL.key = KEY; // stamp even if the build returns null, so a persistent null can't rewarm-storm
+                }
 
                 // P.pt is already scale-multiplied, and the tex branch returns logical px — so /scale here too
                 const double PW = PILL.tex ? PILL.tex->m_size.x / P.scale : P.pt * 13.0 / 14.0 * 30.8 / 13.0 / P.scale;
