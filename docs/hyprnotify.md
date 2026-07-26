@@ -49,16 +49,22 @@ icons).
   render card-width as a cover-cropped hero. Iconless cards draw a random
   face from `fallback_icon_dir`.
 - The icon column is Android's conversation container
-  (`notification_template_conversation_icon_container.xml`): the CONTENT
-  image leads as the avatar — round for a conversation, a squircle
+  (`notification_2025_conversation_icon_container.xml`): the CONTENT image
+  leads as the avatar — a true circle for a conversation, a squircle
   otherwise — and the IDENTITY (`app_icon`/`desktop-entry`) rides its
-  bottom-right corner as a badge, sized by AOSP's ratios off the 48dp
-  avatar: a 20dp badge protruding 4dp past the avatar's right and bottom
-  edges, the app glyph 12dp inside it, over a solid WHITE disc — AOSP's
-  conversation_badge_background is literally `#ffffff`, and the 4dp of it
-  showing around the glyph is the badge's rim. A card with no content
-  image leads with its identity and wears no badge. There is no second
-  icon: one column says both who sent it and which app carried it.
+  bottom-right corner as a badge, sized by AOSP's ratios off the 40dp
+  avatar: a 20dp badge of which **16dp is the app glyph and 2dp on each
+  side is the rim**, placed so the glyph sits flush with the avatar's
+  bottom-right corner (AOSP spells that margin out as 40 − 16 − 2 = 22dp)
+  and only the rim protrudes. The 2021 template we took these from spent
+  4dp on the rim and left 12dp for the glyph; at a 40px icon that is a 10px
+  app icon inside a 3px ring, and AOSP itself halved the rim and grew the
+  glyph. The disc is a near-white `BADGE_RIM`: AOSP tints its (white) badge
+  drawable to the notification's background colour so the rim reads as a
+  gap, but a glass card has no one colour to borrow, and near-white
+  separates the glyph from a light avatar and a dark one alike. A card with
+  no content image leads with its identity and wears no badge. There is no
+  second icon: one column says both who sent it and which app carried it.
 
 ## Actions
 
@@ -109,7 +115,11 @@ icons).
   no sound and rank with the quiet ones — Android's "Silent", dunst's
   `skip_display` — while MARKED conversations rank above everything but a
   critical card and wear AOSP's `conversation_icon_badge_ring`, the one it
-  ships with `visibility=gone` until you mark someone. Critical bypasses a
+  ships with `visibility=gone` until you mark someone — drawn at the badge's
+  own diameter with the rim's width for a stroke
+  (`importance_ring_size`/`importance_ring_stroke_width`), so marking a chat
+  recolours that band instead of hanging a second circle outside it and
+  making a marked badge bigger than an unmarked one. Critical bypasses a
   silence exactly as it bypasses DND. Set from the strip an open row reveals
   on hover (⊘, ★) or from the bundle header; both rules are retroactive, so
   the cards already in the shade re-rank under them. Silence keys on the app

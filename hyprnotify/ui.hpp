@@ -42,11 +42,15 @@ namespace NHyprnotify {
     inline constexpr double BODYIMG_H = 96, IMG_GAP = 6, IMG_ROW_GAP = 8;
     inline constexpr double XCIRC = 20; // the hover-✕ / group-✕ circle
 
-    // The identity badge, as ratios of the avatar box it rides. AOSP's
-    // notification_template_conversation_icon_container.xml: a 48dp avatar
-    // wearing a 20dp badge that protrudes 4dp past its right and bottom
-    // edges, with the app glyph 12dp inside that badge.
-    inline constexpr double BADGE_D = 20.0 / 48.0, BADGE_PROT = 4.0 / 48.0, BADGE_INSET = 4.0 / 20.0;
+    // The identity badge, as ratios of the avatar box it rides — AOSP's 2025
+    // notification_2025_conversation_icon_container.xml: a 40dp avatar wearing
+    // a 20dp badge, of which 16dp is the app glyph and 2dp on each side is the
+    // rim, positioned so the GLYPH sits flush with the avatar's bottom-right
+    // corner (AOSP writes that margin out as 40 - 16 - 2 = 22dp) and only the
+    // rim protrudes. The 2021 template these were taken from spent 4dp on the
+    // rim and left 12dp for the glyph; at our 40-44px icons that was a 10px
+    // app icon inside a 3px ring. AOSP halved the rim and grew the glyph.
+    inline constexpr double BADGE_D = 20.0 / 40.0, BADGE_PROT = 2.0 / 40.0, BADGE_INSET = 2.0 / 20.0;
 
     inline constexpr double CENTER_W = 360; // the shade's height is the monitor's (see renderCenter)
     inline constexpr double ROW_PADT = 9, ROW_PADX = 12, ROW_PADB = 10, ROW_ICON = 40, ROW_ICON_GAP = 10, ROW_GAP = 8;
@@ -78,7 +82,7 @@ namespace NHyprnotify {
         void       rect(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f) const;
         void       glass(const CBox& global, const CHyprColor& c, int round, float rp) const; // translucent + live blur
         void       shadow(const CBox& global, int round, float rp, int range) const;
-        void       ring(const CBox& global, const CHyprColor& c, int round, float rp) const; // 1px hairline border
+        void       ring(const CBox& global, const CHyprColor& c, int round, float rp, double px = 1.0) const; // border, px logical thick
         void       tex(const SP<ITexture>& t, double gx, double gy) const;                   // native px at a logical pos
         void       texFit(const SP<ITexture>& t, const CBox& cell, int round = 0, float rp = 2.f) const;
     };

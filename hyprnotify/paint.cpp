@@ -77,7 +77,7 @@ namespace NHyprnotify {
         g_pHyprOpenGL->renderRoundedShadow(toPhys(global), round, rp, (int)std::lround(range * scale), GRAD, alpha);
     }
 
-    void SPaint::ring(const CBox& global, const CHyprColor& c, int round, float rp) const {
+    void SPaint::ring(const CBox& global, const CHyprColor& c, int round, float rp, double px) const {
         if (warm)
             return;
         // the gradient ctor heap-allocates and OkLab-converts — memoize per color
@@ -86,7 +86,7 @@ namespace NHyprnotify {
         auto                                                            IT  = grads.find(KEY);
         if (IT == grads.end())
             IT = grads.emplace(KEY, Config::CGradientValueData{c}).first;
-        g_pHyprOpenGL->renderBorder(toPhys(global), IT->second, {.round = round, .roundingPower = rp, .borderSize = std::max(1, (int)std::lround(scale)), .a = alpha});
+        g_pHyprOpenGL->renderBorder(toPhys(global), IT->second, {.round = round, .roundingPower = rp, .borderSize = std::max(1, (int)std::lround(px * scale)), .a = alpha});
     }
 
     void SPaint::tex(const SP<ITexture>& t, double gx, double gy) const {
@@ -131,29 +131,46 @@ namespace NHyprnotify {
         if (!LEAD || LEAD->m_texID == 0)
             return;
 
-        // faces are round, app icons are squircles — Android draws the same split
-        const double R = AVATAR && n.conversation ? cell.w / 2 : cell.w * 10.0 / 44.0;
-        P.texFit(LEAD, cell, (int)std::lround(R * P.scale), rp);
+        // faces are round, app icons are squircles — Android draws the same
+        // split. A radius of half the box means CIRCLE, so it takes rounding
+        // power 2 (the shell exponent is for card corners; every other circle
+        // in the shade — chevron, ✕, pills — is drawn at the rect default).
+        const bool   ROUNDFACE = AVATAR && n.conversation;
+        const double R         = ROUNDFACE ? cell.w / 2 : cell.w * 10.0 / 44.0;
+        const float  LRP       = ROUNDFACE ? 2.f : rp;
+        P.texFit(LEAD, cell, (int)std::lround(R * P.scale), LRP);
+
+        // renderBorder grows OUTWARD from the box it is given, so every ring
+        // here is drawn on a box inset by its own stroke: the band then lands
+        // inside the shape's edge instead of making a marked icon bigger than
+        // an unmarked one.
+        const double RINGPX = cell.w * BADGE_D * BADGE_INSET;
+        const auto   INSET  = [&](const CBox& b) { return CBox{b.x + RINGPX, b.y + RINGPX, b.w - 2 * RINGPX, b.h - 2 * RINGPX}; };
 
         if (!withBadge || !AVATAR || !HASIDENT) {
             // no badge to ring: a marked chat with no face wears it on the
             // icon it does have
             if (n.priority)
-                P.ring(cell, color(cfg.colHighlight), (int)std::lround(R * P.scale), rp);
+                P.ring(INSET(cell), color(cfg.colHighlight), (int)std::lround((R - RINGPX) * P.scale), LRP, RINGPX);
             return;
         }
         const double D = cell.w * BADGE_D, IN = D * BADGE_INSET;
         const CBox   BB{cell.x + cell.w * (1 + BADGE_PROT) - D, cell.y + cell.h * (1 + BADGE_PROT) - D, D, D};
-        // AOSP's conversation_badge_background is a solid WHITE oval, and the
-        // 4dp of it left showing around the glyph is the badge's rim. It reads
-        // against a dark avatar and a dark card alike — the card's own colour
-        // here just made a black coin nobody could see.
-        P.rect(BB, CHyprColor{Theme::BADGE_RIM}, (int)std::lround(D / 2 * P.scale), rp);
-        P.texFit(n.identTex, CBox{BB.x + IN, BB.y + IN, D - 2 * IN, D - 2 * IN}, (int)std::lround((D / 2 - IN) * P.scale), rp);
+        // The rim's job is to cut the app glyph free of the avatar it sits on.
+        // AOSP tints conversation_badge_background (a white oval in the
+        // drawable) to the notification's own background colour, so on a phone
+        // the rim reads as a gap; our card is glass over whatever is beneath
+        // it, and has no one colour to borrow — a near-white disc separates the
+        // glyph against a light avatar and a dark one alike.
+        P.rect(BB, CHyprColor{Theme::BADGE_RIM}, (int)std::lround(D / 2 * P.scale), 2.f);
+        P.texFit(n.identTex, CBox{BB.x + IN, BB.y + IN, D - 2 * IN, D - 2 * IN}, (int)std::lround((D / 2 - IN) * P.scale), 2.f);
         // conversation_icon_badge_ring — the one AOSP ships with
-        // visibility=gone and shows only once you mark the conversation.
+        // visibility=gone and shows only once you mark the conversation. Its
+        // stroke IS the rim's width at the rim's place (importance_ring_size
+        // is the badge's own 20dp), so marking a chat recolours that band
+        // rather than hanging a second circle off the outside of it.
         if (n.priority)
-            P.ring(CBox{BB.x - 1.5, BB.y - 1.5, D + 3, D + 3}, color(cfg.colHighlight), (int)std::lround((D / 2 + 1.5) * P.scale), rp);
+            P.ring(INSET(BB), color(cfg.colHighlight), (int)std::lround((D / 2 - RINGPX) * P.scale), 2.f, RINGPX);
     }
 
 } // namespace NHyprnotify
