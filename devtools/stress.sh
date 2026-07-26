@@ -570,6 +570,27 @@ tap esc; hq eval 'hl.config({ plugin = { hyprnotify = { snooze_seconds = 900 } }
 hq hyprnotify clear >/dev/null; sleep 0.8
 chk "snooze: reset after the snooze battery" test "$(st)" = "center:0 live:0 dnd:0"
 
+# A snoozed chat whose sender keeps talking must STAY away. The conversation
+# merge deliberately aims a chat's new messages at the one card that holds it,
+# and a replace re-alerts by design — so without an explicit exception the
+# snooze ended at the next thing the sender said, which is the one case it
+# exists for. The card must take the message and no banner with it.
+hq eval 'hl.config({ plugin = { hyprnotify = { snooze_seconds = 5 } } })' >/dev/null; sleep 0.4
+dsp "hl.dsp.exec_cmd('notify-send -a tgz -c im.received -t 60000 Zoe first')"; sleep 1
+hq hyprnotify center >/dev/null; sleep 0.7
+tap down
+tap 31 # s
+chk "snooze/merge: the chat card is away" test "$(sz)" = 1
+dsp "hl.dsp.exec_cmd('notify-send -a tgz -c im.received -t 60000 Zoe second')"; sleep 1.2
+chk "snooze/merge: a new message does not wake it" test "$(sz)" = 1
+chk "snooze/merge: and it took no banner" test "$(bd)" = "banners:0 resident:0"
+chk "snooze/merge: still one card, not two" test "$(st)" = "center:1 live:1 dnd:0"
+sleep 6
+chk "snooze/merge: the wake still arrives on its own clock" test "$(bd)" = "banners:1 resident:0"
+tap esc; hq eval 'hl.config({ plugin = { hyprnotify = { snooze_seconds = 900 } } })' >/dev/null
+hq hyprnotify clear >/dev/null; sleep 0.8
+chk "snooze/merge: reset after the battery" test "$(st)" = "center:0 live:0 dnd:0"
+
 # Ranking: a critical sorts to the top however late the others arrived. The
 # two cards are made TELLABLE APART in the badge — a transient one opts out of
 # residency, so opening the shade absorbs the critical and leaves it a banner

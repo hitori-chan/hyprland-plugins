@@ -349,7 +349,12 @@ namespace NHyprnotify {
             }
 
             n->arrived = Time::steadyNow(); // a replace refreshes the age, like a new arrival would
-            n->banner  = true;              // a replace re-alerts (the OSD sweep relies on it)
+            // A replace re-alerts (the OSD sweep relies on it) — unless the
+            // card is SNOOZED. The merge above deliberately keeps aiming a
+            // chat's new messages at the card that holds it, snoozed or not,
+            // so that one card stays the whole conversation; without this the
+            // snooze would last precisely until the sender next said anything.
+            n->banner  = !n->snoozed;
             n->appName = appName;
             n->summary = Parse::oneLine(Parse::sanitizeMarkup(summary));
             std::string bodyText = body;
@@ -501,7 +506,7 @@ namespace NHyprnotify {
             // libcanberra player unless the client suppresses it. DND-queued
             // (waiting) arrivals stay silent; the resume doesn't replay.
             if (!n->waiting) {
-                bool        suppress = COALESCED || SILENCED; // both mean "this one does not announce itself"
+                bool        suppress = COALESCED || SILENCED || n->snoozed; // none of these announces itself
                 std::string soundFile, soundName;
                 if (const auto IT = hints.find("suppress-sound"); IT != hints.end())
                     try {
