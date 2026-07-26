@@ -6,7 +6,9 @@
 //
 // Pure name -> path; rasterizing stays per plugin (each has its own texture
 // rules and caches). Misses are cached too, so a nonexistent name never
-// rescans the theme. Call resetIconNameCache() on config reload.
+// rescans the theme. Call resetIconNameCache() on config reload — it forgets
+// the memoized GTK theme name along with the paths, since a theme switch is
+// exactly what makes the old resolutions wrong.
 #pragma once
 
 #include <cstdlib>
@@ -64,18 +66,27 @@ namespace NHyprCommon {
         return C;
     }
 
+    struct SThemeName {
+        std::string value;
+        bool        read = false;
+    };
+    inline SThemeName& iconThemeName() {
+        static SThemeName T;
+        return T;
+    }
+
     inline void resetIconNameCache() {
         iconNameCache().clear();
+        iconThemeName() = {};
     }
 
     // The GTK icon theme is this system's source of truth (Qt follows it). Read
     // gtk-icon-theme-name from settings.ini once; fall back to hicolor.
     inline std::string gtkIconThemeName() {
-        static std::string theme;
-        static bool        done = false;
-        if (done)
-            return theme;
-        done = true;
+        auto& T = iconThemeName();
+        if (T.read)
+            return T.value;
+        T.read = true;
 
         std::string cfgHome;
         if (const char* X = getenv("XDG_CONFIG_HOME"); X && *X)
@@ -88,14 +99,14 @@ namespace NHyprCommon {
             while (std::getline(f, line))
                 if (const auto P = line.find("gtk-icon-theme-name"); P == 0) {
                     if (const auto EQ = line.find('='); EQ != std::string::npos) {
-                        theme = line.substr(EQ + 1);
-                        theme.erase(0, theme.find_first_not_of(" \t"));
-                        theme.erase(theme.find_last_not_of(" \t\r\n") + 1);
+                        T.value = line.substr(EQ + 1);
+                        T.value.erase(0, T.value.find_first_not_of(" \t"));
+                        T.value.erase(T.value.find_last_not_of(" \t\r\n") + 1);
                     }
                     break;
                 }
         }
-        return theme;
+        return T.value;
     }
 
     // Look for <dir>/name.ext directly and one category level down
