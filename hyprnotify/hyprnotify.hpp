@@ -78,7 +78,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.6.0";
+    inline constexpr const char* VERSION = "6.6.1";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -95,9 +95,9 @@ namespace NHyprnotify {
     struct SNotifyConfig {
         SP<Config::Values::CStringValue> font;
         SP<Config::Values::CIntValue>    fontSize;      // body size, logical px; monitor scale applies at raster time
-        SP<Config::Values::CIntValue>    width;         // popup card width, logical px (the center panel is width+12)
+        SP<Config::Values::CIntValue>    width;         // popup card width, logical px (the shade has its own CENTER_W)
         SP<Config::Values::CIntValue>    maxHeight;     // popup card height cap
-        SP<Config::Values::CIntValue>    maxIcon;       // popup icon column (center rows derive 34/28 from it)
+        SP<Config::Values::CIntValue>    maxIcon;       // popup icon column; shade rows are fixed (ROW_ICON/CHILD_ICON) and only raster at this cap
         SP<Config::Values::CIntValue>    margin;        // screen-edge gap AND inter-card gap
         SP<Config::Values::CIntValue>    offsetY;       // popups' and the center's distance from the monitor top
         SP<Config::Values::CIntValue>    timeoutLow;    // ms; the -1 fallback for ephemerals (low/transient/progress)
@@ -173,7 +173,7 @@ namespace NHyprnotify {
         bool                    actionIcons = false; // the action-icons hint: button ids are icon names
         bool                    resident    = false; // the resident hint: an action keeps the card
         bool                    transient   = false; // the transient hint: bypass history AND residency
-        bool                    conversation = false; // fd.o category im.*/call.*: sorts atop Waiting
+        bool                    conversation = false; // fd.o category im.*/call.*: outranks ordinary cards, never bundles, merges by sender
         bool                    priority     = false; // the user marked this chat: ranks first, the badge wears the ring
         std::string             fallbackPick;         // the rolled identity face; survives in-place replaces
 
@@ -370,7 +370,7 @@ namespace NHyprnotify {
         std::string  group;
         SCard::eKind kind = SCard::POPUP;
         int          btn  = -1;
-        uint8_t      part = 0; // 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 5 silence, 6 priority
+        uint8_t      part = 0; // 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 5 silence, 6 priority, 7 snooze
         bool         operator==(const SHover&) const = default;
     };
     void setHovered(const SHover& h);

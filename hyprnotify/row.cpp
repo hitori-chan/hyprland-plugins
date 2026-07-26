@@ -214,7 +214,7 @@ namespace NHyprnotify {
             // not — a strip that appeared on hover and reflowed the header
             // would re-key every raster under the pointer.
             if (NMANAGE > 0) {
-                const bool SHOWN = hovered.id == N->id && (hovered.kind == SCard::ROW || hovered.kind == SCard::CHILD);
+                const bool SHOWN = hovered.kind == SCard::ROW && hovered.id == N->id; // only ROW_SINGLE carries a strip
                 const int  RM    = (int)std::lround(MANAGE_D / 2 * P.scale);
                 // rightmost first, walking left: silence the app, put the
                 // card away, mark the sender. Only a chat has a sender.

@@ -53,7 +53,7 @@ namespace NHyprnotify {
         uint32_t     id;
         std::string  group;
         uint32_t     bit;
-        uint8_t      part;   // 0 body, 1 chevron, 2 close
+        uint8_t      part;   // the SHover part codes: 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 5 silence, 6 priority, 7 snooze
         std::string  action; // non-empty: a specific action button
         std::string  href;   // non-empty: a body hyperlink
         bool         outside = false; // the click fell outside every surface (closes the shade)
