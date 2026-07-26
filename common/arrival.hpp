@@ -11,6 +11,12 @@
 // own state): cross-plugin state travels over protocol state, never shared
 // symbols. Windows are keyed by raw pointer, dropped in forget() from
 // window.destroy before the address can be reused.
+//
+// CALL seqOf FROM window.open. A number is minted on first sight, so whatever
+// looks first defines the order: stamp at map and the sequence is arrival, let
+// a render walk or onWorkspace's comparator mint them and it is whatever order
+// that walk happened to visit — which for a batch seen at once is the Z-order
+// this class exists to avoid, frozen permanently.
 #pragma once
 
 #include <hyprland/src/desktop/Workspace.hpp>

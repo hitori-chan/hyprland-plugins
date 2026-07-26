@@ -261,7 +261,9 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // Anything that changes what the bar shows -> damage the strip.
     auto& EV = Event::bus()->m_events;
     g_lifecycle.listen(EV.window.open, [](PHLWINDOW w) {
-        Tasklist::watchMinimize(w); // honor the client's own set_minimized
+        if (w)
+            Tasklist::seqOf(w.get()); // stamp arrival at MAP, not at first walk
+        Tasklist::watchMinimize(w);   // honor the client's own set_minimized
         damageAndWarm();
     });
     g_lifecycle.listen(EV.window.close, [](PHLWINDOW) { damageAndWarm(); });
@@ -315,7 +317,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.2.0"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.2.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
