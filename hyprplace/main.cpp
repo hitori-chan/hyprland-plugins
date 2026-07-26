@@ -341,7 +341,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             g_lifecycle.listen(events.window.predictSize, [](PHLWINDOW w, Vector2D& size) { onPredictSize(w, size); });
     }(Event::bus()->m_events);
 
-    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.1.1"};
+    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.1.2"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

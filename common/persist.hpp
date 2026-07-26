@@ -37,9 +37,22 @@ namespace NHyprCommon {
             if (!f)
                 return false;
             f << contents;
+            f.close(); // flush BEFORE the check: the stream reports a short
+                       // write (a full disk) only once it has tried to make it
+            if (!f) {
+                // the temp exists precisely so a failure leaves the store
+                // alone — renaming half a file over it is the one outcome
+                // this function is here to prevent
+                std::filesystem::remove(TMP, ec);
+                return false;
+            }
         }
         std::filesystem::rename(TMP, path, ec);
-        return !ec;
+        if (!ec)
+            return true;
+        std::error_code rm;
+        std::filesystem::remove(TMP, rm); // no orphan beside the store
+        return false;
     }
 
     // ---- the per-class geometry stores (hyprplace's spots, hyprmax's
