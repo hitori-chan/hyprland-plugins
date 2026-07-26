@@ -250,12 +250,13 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // device list is populated and the notification daemon is up
     settle->updateTimeout(SETTLE);
 
-    return {"hyprpad", "the awesome touchpad module", "hitori", "1.0.6"};
+    return {"hyprpad", "the awesome touchpad module", "hitori", "1.0.7"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
     g_lifecycle.resetAll(); // listeners first, then every hop
     lDestroy.clear();
+    appliedState = -1;
     g_bus.close(); // fd sources out BEFORE the connection dies
     if (settle && g_pEventLoopManager)
         g_pEventLoopManager->removeTimer(settle);
