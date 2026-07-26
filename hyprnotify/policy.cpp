@@ -72,18 +72,27 @@ namespace NHyprnotify::Policy {
 
     static NHyprCommon::CSaver s_saver{save};
 
-    // the sender's own line in the store; a tab would split the row, and the
-    // summary is the one key half that arrives from the wire
-    static std::string convKey(const std::string& appKey, const std::string& sender) {
-        std::string k = appKey + "\x1f" + sender;
+    // The format spends exactly two characters: a tab between the verb and
+    // its key, a newline between rows. EVERY key here arrives from the wire
+    // — an app name, the desktop-entry hint, a chat's title — so one holding
+    // either would write rows load() reads back as rules the user never set
+    // (an app named "x\np\tsomeone" marks a conversation on its own). Scrub
+    // on the way in and on the way out alike, or a stored rule would stop
+    // matching the app it was set on.
+    static std::string storeKey(std::string k) {
         for (auto& c : k)
-            if (c == '\t' || c == '\n')
+            if (c == '\t' || c == '\n' || c == '\r')
                 c = ' ';
         return k;
     }
 
+    // the sender's own line in the store; US separates the two halves
+    static std::string convKey(const std::string& appKey, const std::string& sender) {
+        return storeKey(appKey + "\x1f" + sender);
+    }
+
     bool silenced(const std::string& appKey) {
-        return !appKey.empty() && s_silenced.contains(appKey);
+        return !appKey.empty() && s_silenced.contains(storeKey(appKey));
     }
 
     bool priority(const std::string& appKey, const std::string& sender) {
@@ -96,10 +105,11 @@ namespace NHyprnotify::Policy {
     void toggleSilence(const std::string& appKey) {
         if (appKey.empty())
             return;
-        if (const auto IT = s_silenced.find(appKey); IT != s_silenced.end())
+        const auto KEY = storeKey(appKey);
+        if (const auto IT = s_silenced.find(KEY); IT != s_silenced.end())
             s_silenced.erase(IT);
         else
-            s_silenced.insert(appKey);
+            s_silenced.insert(KEY);
         s_saver.dirty();
         notifChanged();
         Bus::emitStateSoon();
