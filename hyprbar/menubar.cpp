@@ -845,6 +845,8 @@ namespace NHyprbar {
         void exit() {
             close();
             apps.clear();
+            shown.clear(); // its entries index into apps
+            desktops.clear();
             parsed = false;
             counts.clear();
             history.clear();

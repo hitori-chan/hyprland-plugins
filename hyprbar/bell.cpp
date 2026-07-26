@@ -20,6 +20,13 @@ namespace NHyprbar {
     static SP<CEventLoopTimer>            peekIn;           // hover intent: a pointer CROSSING the bell must not open anything
     static bool                           peeking = false;
 
+    // the drawn glyph, per physical height (the widget below builds it)
+    struct SBellTex {
+        SP<ITexture> tex;
+        uint64_t     key = 0;
+    };
+    static std::unordered_map<int, SBellTex> bellCache;
+
     static void                           applyState(uint32_t live, uint32_t kept) {
         if (live == bellLive && kept == bellKept)
             return;
@@ -83,6 +90,7 @@ namespace NHyprbar {
             peeking = false;
             proxy.reset(); // before the tray's connection dies (tray.cpp calls this from dropOwned)
             bellLive = bellKept = 0;
+            bellCache.clear();
         }
     } // namespace Bell
 
@@ -185,13 +193,7 @@ namespace NHyprbar {
     static constexpr const char* BELL_PATH = "M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.63-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 "
                                              "1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z";
 
-    struct SBellTex {
-        SP<ITexture> tex;
-        uint64_t     key = 0;
-    };
-    static std::unordered_map<int, SBellTex> bellCache; // per physical height
-
-    static SP<ITexture>                      bellGlyph(double hPx, const CHyprColor& ink) {
+    static SP<ITexture> bellGlyph(double hPx, const CHyprColor& ink) {
         const int PX = std::max(8, (int)std::lround(hPx));
         auto*     SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, PX, PX);
         auto*     CR   = cairo_create(SURF);

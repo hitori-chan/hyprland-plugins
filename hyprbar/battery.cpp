@@ -15,6 +15,10 @@ namespace NHyprbar {
     // read the result: the raw status string is what the alerts key off, and
     // reading it twice meant four sysfs opens per event for one sample
     static std::string batteryStatus;
+    // the alerts' edge state (alerts() below): out here with the rest of the
+    // battery's state so exit() leaves nothing latched
+    static std::string alertLastStatus;
+    static bool        alertWarned = false, alertCritical = false;
 
     static bool        hasBattery() {
         return !batteryDir.empty();
@@ -401,9 +405,7 @@ namespace NHyprbar {
             const int          capN   = batteryPercent;
             const std::string  cap    = std::to_string(capN);
 
-            constexpr int      WARN = 20, CRIT = 5;
-            static std::string lastStatus;
-            static bool        warned = false, critical = false;
+            constexpr int WARN = 20, CRIT = 5;
 
             // urgency 0/1/2; 9990 = the script's pinned replace-in-place id.
             // No icon: the daemon's fallback_icon_dir rolls the card its face.
@@ -416,28 +418,28 @@ namespace NHyprbar {
             // duplicate low card, or a 3s transient replacing the sticky critical)
             const bool KNOWN = status == "Charging" || status == "Discharging" || status == "Full" || status == "Not charging";
 
-            if (KNOWN && !lastStatus.empty() && status != lastStatus) {
+            if (KNOWN && !alertLastStatus.empty() && status != alertLastStatus) {
                 if (status == "Charging")
                     NOTIFY(0, 3000, "Battery", "AC connected — " + cap + "%");
                 else if (status == "Discharging")
                     NOTIFY(0, 3000, "Battery", "AC disconnected — " + cap + "%");
             }
             if (KNOWN)
-                lastStatus = status;
+                alertLastStatus = status;
 
             if (status == "Discharging") {
-                if (capN <= CRIT && !critical) {
+                if (capN <= CRIT && !alertCritical) {
                     NOTIFY(2, 0, "Battery critical", cap + "% — plug in now");
                     // warned latches too: landing straight in the critical band
                     // (login, resume) must not let the next tick's "Battery low"
                     // replace the sticky critical card — one pinned id
-                    warned = critical = true;
-                } else if (capN <= WARN && !warned) {
+                    alertWarned = alertCritical = true;
+                } else if (capN <= WARN && !alertWarned) {
                     NOTIFY(1, 6000, "Battery low", cap + "%");
-                    warned = true;
+                    alertWarned = true;
                 }
             } else if (KNOWN)
-                warned = critical = false;
+                alertWarned = alertCritical = false;
         }
     } // namespace Battery
 
@@ -501,6 +503,8 @@ namespace NHyprbar {
             batteryCharging = batteryDefend = batterySave = false;
             batteryDir.clear();
             batteryStatus.clear();
+            alertLastStatus.clear();
+            alertWarned = alertCritical = false;
         }
     } // namespace Battery
 
