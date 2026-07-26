@@ -306,6 +306,19 @@ namespace NHyprbar {
         return tex;
     }
 
+    // A reload may follow a GTK theme switch, and everything above was
+    // resolved against the old one: the dir list is probed once at init from
+    // the theme name, and the caches hold the files it found. Re-probe and
+    // drop them; the next warm resolves again. (resetIconNameCache forgets
+    // the memoized theme name — common/icons.hpp.)
+    void iconsReload() {
+        NHyprCommon::resetIconNameCache();
+        appIconCache.clear();
+        namedIconCache.clear();
+        trayIconCache.clear();
+        buildIconDirs();
+    }
+
     void iconsExit() {
         appIconCache.clear();
         namedIconCache.clear();

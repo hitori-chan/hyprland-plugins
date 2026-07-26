@@ -32,6 +32,14 @@ namespace NHyprbar {
         barChanged();
     }
 
+    // the icon is loaded once and a miss is remembered so a draw never
+    // re-stats it; a reload is when to look again (the per-tag state stays —
+    // it is the user's, not the config's)
+    void layoutboxReload() {
+        layoutTexs.clear();
+        layoutTexTried.clear();
+    }
+
     void layoutboxExit() {
         wsLayout.clear();
         layoutTexs.clear();

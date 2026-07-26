@@ -102,6 +102,15 @@ awesome. Launch counts and history persist in `~/.cache/hyprbar/`
 This is the only launcher: fuzzel and the `Mod+R`/`Mod+X`/`Mod+S` prompts
 were dropped by choice.
 
+## Config reload
+
+Colors and fonts are part of every texture's cache key, so a changed value
+misses the cache and rebuilds on its own. Everything resolved from DISK at
+init does not: `config.reloaded` re-probes the icon dirs (they come from the
+GTK theme name, read once), drops every resolved app/tray/menu icon and the
+layoutbox's, and repaints. The `.desktop` scan behind the menubar is NOT
+redone — those apps aren't config, and the walk is a few hundred file reads.
+
 ## Limitations
 
 - The menubar's cursor is a `▏` bar, not awesome's inverse-video block —

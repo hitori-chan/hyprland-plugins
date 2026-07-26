@@ -190,6 +190,7 @@ namespace NHyprbar {
         void watchMinimize(const PHLWINDOW& w);
     }
 
+    void layoutboxReload(); // config reload: look for the layout icon again
     void layoutboxExit();
 
     // ---- the texture rule (render.cpp explains the why) ----
@@ -233,6 +234,7 @@ namespace NHyprbar {
     SP<ITexture> appIcon(const std::string& klass);                           // window class -> texture
     SP<ITexture> namedIcon(const std::string& name);                          // icon name/path -> texture
     SP<ITexture> trayIcon(const std::string& name, const std::string& theme); // + the item's own theme dir
+    void         iconsReload();                                               // config reload: re-probe the dirs, drop every resolved icon
     void         iconsExit();
 
     // ---- tray.cpp ----

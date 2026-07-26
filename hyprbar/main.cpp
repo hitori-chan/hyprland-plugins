@@ -303,6 +303,20 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_lifecycle.listen(EV.workspace.moveToMonitor, [](PHLWORKSPACE, PHLMONITOR) { damageAndWarm(); });
     g_lifecycle.listen(EV.monitor.layoutChanged, []() { damageAndWarm(); });
 
+    // Colors and fonts heal themselves — they are part of every texture's
+    // cache key, so a changed value simply misses and rebuilds. What doesn't
+    // is anything resolved from DISK at init: the icon dirs (probed once from
+    // the GTK theme name) and the files found in them. The .desktop scan is
+    // deliberately not redone — those apps aren't config, and the walk is a
+    // few hundred file reads.
+    g_lifecycle.listen(EV.config.reloaded, []() {
+        iconsReload();
+        layoutboxReload();
+        for (const auto& I : Tray::items)
+            I->dirty = true; // their textures came out of the theme we just dropped
+        damageAndWarm();
+    });
+
     timer = makeShared<CEventLoopTimer>(
         toNextMinute(),
         [](SP<CEventLoopTimer> self, void*) {
@@ -317,7 +331,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.2.1"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.3.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
