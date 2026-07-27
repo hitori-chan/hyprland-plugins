@@ -23,9 +23,10 @@ namespace NHyprCommon {
 
     class CWarmGate {
       public:
-        bool warming  = false; // the warm pass is building: the ONLY time a texture may be created
+        bool warming  = false; // building a texture is PERMITTED (a warm pass, or a token)
         bool texStale = false; // a draw ran ahead of the screen -> warm + repaint
         bool inRender = false; // a draw is on the stack: never build, never warm
+        bool inPass   = false; // a warm PASS is on the stack — the re-entry guard
 
         // a draw-side texture miss: no build (that would paint nothing anyway
         // AND swallow every later draw in the element), remember to rewarm
@@ -36,16 +37,28 @@ namespace NHyprCommon {
             return false;
         }
 
-        // the warm bracket; begin refuses re-entry and mid-render calls so
-        // callers never have to check
+        // The warm bracket; begin refuses re-entry and mid-render calls so
+        // callers never have to check.
+        //
+        // A TOKEN IS NOT RE-ENTRY. It only says "building is allowed here", and
+        // a warm inside one must still run: hyprbar's tray menu damages — and
+        // so warms — from inside the token its dbusmenu reply holds, and while
+        // that counted as re-entry the warm silently no-opped. The layout never
+        // ran, so the menu was damaged at the box it had BEFORE its rows
+        // arrived (measured: 180x32 for a panel that draws 460x490), and the
+        // rows painted only inside that sliver until an unrelated damage swept
+        // them. Hence the separate pass flag, and the saved permission below.
         bool beginWarm() {
-            if (warming || inRender || !g_pCompositor)
+            if (inPass || inRender || !g_pCompositor)
                 return false;
-            warming = true;
+            inPass          = true;
+            m_tokenPermit   = warming;
+            warming         = true;
             return true;
         }
         void endWarm() {
-            warming  = false;
+            inPass   = false;
+            warming  = m_tokenPermit; // hand the grant back to a token still in scope
             texStale = false;
         }
 
@@ -63,7 +76,9 @@ namespace NHyprCommon {
         // condition is "not inside a render" — which those contexts never
         // are. The token grants the permission around such a resolve; the
         // caller damages after, so the new texture gets its own frame.
-        // Never construct one inside a render.
+        // Never construct one inside a render. Warming from inside a token IS
+        // fine (beginWarm above) — that is the usual shape, since the damage
+        // that follows the resolve has to lay the surface out first.
         struct SToken {
             CWarmGate& g;
             bool       prev;
@@ -76,6 +91,7 @@ namespace NHyprCommon {
         };
 
       private:
+        bool m_tokenPermit = false; // warming as it stood when this pass began
         CHop m_rewarm;
     };
 
