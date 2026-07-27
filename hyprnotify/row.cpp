@@ -297,6 +297,61 @@ namespace NHyprnotify {
         return ROW_PADT + CHILD_ICON + ROW_PADB;
     }
 
+    double snoozeRowH() {
+        return SNOOZE_H;
+    }
+
+    // The undo row — Android's "Snoozed for 1 hour ▾ · Undo", in the slot the
+    // card just held. It is the whole reason the ◷ stopped being irreversible:
+    // the card has not gone anywhere yet, so there is still something to click.
+    // Both controls STAND rather than hide: a control you have seconds to find
+    // must not also have to be discovered.
+    void paintSnoozeRow(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box) {
+        const auto  COLSUB = color(cfg.colKicker), COLACC = color(cfg.colHighlight);
+        const float RP     = rPow();
+        P.rect(box, tFill(), rRow(P.scale), RP);
+
+        SCard card;
+        card.kind = SCard::SNOOZE;
+        card.id   = N->id;
+        card.box  = box;
+
+        const double CY = box.y + (SNOOZE_H - MANAGE_D) / 2;
+
+        // right edge, walking left: Undo, then the duration ▾
+        const auto   UND  = cachedText("Undo", COLACC, T.action, 96, -1, 0, false, 600);
+        const double UNDW = texW(UND, P.scale) + 2 * BTN_PADX;
+        const CBox   UB{box.x + box.w - ROW_PADX - UNDW, box.y + (SNOOZE_H - BTN_H) / 2, UNDW, BTN_H};
+        const bool   UHOV = hovered.kind == SCard::SNOOZE && hovered.id == N->id && hovered.part == 8;
+        if (!P.warm) {
+            if (UHOV)
+                P.rect(UB, tAccentDim(), (int)std::lround(BTN_H / 2 * P.scale));
+            if (UND && UND->tex)
+                P.tex(UND->tex, UB.x + BTN_PADX, UB.y + (UB.h - UND->tex->m_size.y / P.scale) / 2);
+        }
+        card.manage.push_back({UB, 8});
+
+        const CBox DB{UB.x - MANAGE_GAP - MANAGE_D, CY, MANAGE_D, MANAGE_D};
+        const bool DHOV = hovered.kind == SCard::SNOOZE && hovered.id == N->id && hovered.part == 9;
+        const auto DG   = cachedText("˅", COLSUB, T.small, 64, -1, 0, false, 600);
+        if (!P.warm) {
+            P.rect(DB, DHOV ? tAccentDim() : tFill2(), (int)std::lround(MANAGE_D / 2 * P.scale));
+            if (DG && DG->tex)
+                P.tex(DG->tex, DB.x + (DB.w - DG->tex->m_size.x / P.scale) / 2, DB.y + (DB.h - DG->tex->m_size.y / P.scale) / 2);
+        }
+        card.manage.push_back({DB, 9});
+
+        auto& LB = scratch();
+        LB += "◷ Snoozed ";
+        appendEsc(LB, Model::snoozeLabel(N));
+        const int  LW  = std::max(1, (int)std::floor((DB.x - MANAGE_GAP - box.x - ROW_PADX) * P.scale));
+        const auto LBL = cachedText(LB, COLSUB, T.body, LW, -1, 0, true, 500);
+        if (!P.warm && LBL && LBL->tex)
+            P.tex(LBL->tex, box.x + ROW_PADX, box.y + (SNOOZE_H - LBL->tex->m_size.y / P.scale) / 2);
+
+        cards.push_back(std::move(card));
+    }
+
     // The folded bundle: the app's identity, a count pill, and the two newest
     // cards previewed a line each — enough to decide whether to open it.
     void paintDigest(const SPaint& P, const SType& T, const SDisp& D, const CBox& box) {

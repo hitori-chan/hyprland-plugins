@@ -17,6 +17,8 @@
 //            a dismissal, a fold, the manage strip, DND, Clear all, and a
 //            `resident` card's actions, which is the spec's own way of
 //            saying the action does not take you away.
+//   snooze   the undo row a ◷ leaves behind: left on "Undo" puts the card
+//            back, left on ˅ cycles the duration, right dismisses for good
 //   child    a bundle child is a row without the fold: body, links, buttons
 //   digest   left expands the app's bundle · its ⊘ silences · right dismisses
 //   ghead    left collapses · ⊘ silences · the ✕ / right dismisses the bundle
@@ -26,7 +28,9 @@
 //            esc closes (the topmost-peel's middle link) · ↑/↓ move the
 //            selection · space folds it (the click's twin) · enter fires the
 //            primary · delete dismisses · m silences the app · s snoozes
-//            the card · p marks the sender · tab opens its reply field, and while
+//            the card (and re-picks the duration while its undo row is up) ·
+//            u takes that snooze back · p marks the sender · tab opens its
+//            reply field, and while
 //            one is armed EVERY key is the field's (reply.cpp). A chord with
 //            ctrl/alt/super is the user's bind, and a nav key with NOTHING
 //            selected (or nothing to do — p on a card that is not a chat)
@@ -59,7 +63,7 @@ namespace NHyprnotify {
         uint32_t     id;
         std::string  group;
         uint32_t     bit;
-        uint8_t      part;   // the SHover part codes: 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 5 silence, 6 priority, 7 snooze
+        uint8_t      part;   // the SHover part codes: 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 5 silence, 6 priority, 7 snooze, 8 undo, 9 duration
         std::string  action; // non-empty: a specific action button
         std::string  href;   // non-empty: a body hyperlink
         bool         outside = false; // the click fell outside every surface (closes the shade)
@@ -280,6 +284,22 @@ namespace NHyprnotify {
                     }
                     continue;
                 }
+                case SCard::SNOOZE: {
+                    // the undo window. Its two verbs both KEEP you here, so
+                    // neither closes the shade; right still dismisses, which
+                    // is how you say "no, actually go away for good".
+                    if (H.bit == 2u) {
+                        Model::closeOne(H.id, Model::R_DISMISSED);
+                        continue;
+                    }
+                    if (H.bit != 1u)
+                        continue;
+                    if (H.part == 8)
+                        Model::snoozeUndo(H.id);
+                    else if (H.part == 9)
+                        Model::snoozeCycle(H.id);
+                    continue;
+                }
                 case SCard::BTN_CLEAR: // the footer: the global sweep
                     if (H.bit == 1u)
                         Model::dismissAllLive();
@@ -397,7 +417,7 @@ namespace NHyprnotify {
     // Same shape as the click queue, and for the same reason: an action can
     // make the client focus itself, so nothing runs inside the emission.
     struct SKeyAct {
-        int         verb = 0; // 1 fold, 2 the primary, 3 dismiss, 4 silence, 5 mark, 6 snooze
+        int         verb = 0; // 1 fold, 2 the primary, 3 dismiss, 4 silence, 5 mark, 6 snooze, 7 undo, 8 re-pick the duration
         uint32_t    id   = 0;
         std::string group; // non-empty: a bundle
     };
@@ -432,6 +452,10 @@ namespace NHyprnotify {
                 manageCard(A.id, 6);
             else if (A.verb == 6 && !GROUP)
                 manageCard(A.id, 7);
+            else if (A.verb == 7)
+                Model::snoozeUndo(A.id);
+            else if (A.verb == 8)
+                Model::snoozeCycle(A.id);
         }
     }
 
@@ -501,12 +525,28 @@ namespace NHyprnotify {
             case XKB_KEY_m: a.verb = 4; break; // mute the app
             case XKB_KEY_p: a.verb = 5; break; // mark the sender
             case XKB_KEY_s: a.verb = 6; break; // snooze the card
+            case XKB_KEY_u: a.verb = 7; break; // take a snooze back, while its row is up
             default: return;
         }
         // nothing selected: the shade has not taken the keyboard, so a bare
         // space still belongs to whatever holds focus
         if (!centerSelection(a.id, a.group))
             return;
+
+        // An undo row is a different keyboard surface with two verbs: u takes
+        // the card back, s re-picks the duration (there is nothing left to
+        // snooze). It has no fold and no primary, so those keys stay with
+        // whatever holds focus; delete still means "go, and for good".
+        const auto SEL     = a.group.empty() ? Model::byId(a.id) : nullptr;
+        const bool UNDOROW = SEL && Model::snoozeConfirming(SEL);
+        if (a.verb == 7 && !UNDOROW)
+            return;
+        if (UNDOROW) {
+            if (a.verb == 1 || a.verb == 2)
+                return;
+            if (a.verb == 6)
+                a.verb = 8;
+        }
         // and a bare letter with nothing to do belongs to focus too: a bundle
         // has no one sender to mark and no one card to put away, and neither
         // does a card that is not a chat

@@ -132,6 +132,7 @@ namespace NHyprnotify {
     // would otherwise carry them past Model::exit and destroy them, textures
     // and all, at static-destruction time with the renderer already gone.
     static void resetVisit() {
+        Model::snoozeEndConfirm(); // the undo rows had exactly this surface
         s_skip = s_items = 0;
         s_openedRow.clear();
         s_foldedRow.clear();
@@ -257,11 +258,20 @@ namespace NHyprnotify {
         return 3;
     }
 
+    // a snoozed card still holding its slot for the undo window: it shows as a
+    // one-line confirmation row, and bundles with nothing
+    static bool confirming(const SP<SNotif>& n) {
+        return n->snoozed && Model::snoozeConfirming(n);
+    }
+    static bool bundleable(const SP<SNotif>& n) {
+        return !n->conversation && !n->snoozed && !n->appKey.empty();
+    }
+
     static void buildDisplay(std::vector<SDisp>& out) {
         out.clear();
         std::vector<SP<SNotif>> src;
         for (const auto& N : notifs)
-            if (!N->waiting && !N->snoozed && !inOsdBand(N->id))
+            if (!N->waiting && !inOsdBand(N->id) && (!N->snoozed || confirming(N)))
                 src.push_back(N);
         // notifs is newest-first; a STABLE sort by tier keeps that inside each
         std::ranges::stable_sort(src, [](const auto& a, const auto& b) { return tier(a) < tier(b); });
@@ -269,12 +279,12 @@ namespace NHyprnotify {
         // how many bundleable cards each app holds (conversations never bundle)
         std::map<std::string, size_t> owned;
         for (const auto& N : src)
-            if (!N->conversation && !N->appKey.empty())
+            if (bundleable(N))
                 owned[N->appKey]++;
 
         std::map<std::string, size_t> firstOf; // app key -> out index
         for (const auto& N : src) {
-            if (!N->conversation && !N->appKey.empty() && owned[N->appKey] >= AUTOGROUP_AT) {
+            if (bundleable(N) && owned[N->appKey] >= AUTOGROUP_AT) {
                 if (const auto IT = firstOf.find(N->appKey); IT != firstOf.end()) {
                     out[IT->second].items.push_back(N);
                     continue;
@@ -298,7 +308,12 @@ namespace NHyprnotify {
             const double LEAD = i == s_skip ? 0 : STACK_GAP;
             const bool   TOP  = i == s_skip;
 
-            if (D.items.size() < 2) {
+            if (D.items.size() < 2 && confirming(D.items.front())) {
+                // fixed, and never folded: an undo row has one state
+                s_itemH[i]    = snoozeRowH();
+                s_itemOpen[i] = 0;
+                s_itemMore[i] = 0;
+            } else if (D.items.size() < 2) {
                 const auto&  N          = D.items.front();
                 const double CH         = measureRow(P, T, N, contentW, false, ROW_SINGLE);
                 const bool   FORCE_OPEN = s_openedRow.contains(N->id), FORCE_FOLD = s_foldedRow.contains(N->id);
@@ -454,7 +469,9 @@ namespace NHyprnotify {
             first = false;
 
             const CBox SLOT{CONTENT_X, y, CONTENT_W, IH};
-            if (D.items.size() < 2)
+            if (D.items.size() < 2 && confirming(D.items.front()))
+                paintSnoozeRow(P, T, D.items.front(), SLOT);
+            else if (D.items.size() < 2)
                 paintSingle(P, T, D.items.front(), SLOT, OPEN, MORE);
             else if (!OPEN)
                 paintDigest(P, T, D, SLOT);

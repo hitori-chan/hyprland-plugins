@@ -46,23 +46,31 @@ namespace NHyprnotify {
             return n->transient || n->progress >= 0 || inOsdBand(n->id);
         }
 
-        // The one timer serves two clocks: a banner running out, and a
-        // snoozed card coming back. Both are deadlines on the same list, so
-        // the next wakeup is simply the nearest of either kind.
+        // The one timer serves three clocks: a banner running out, a snoozed
+        // card coming back, and an undo window closing. All are deadlines on
+        // the same list, so the next wakeup is simply the nearest of any kind.
         void rearmExpiry() {
             if (!expiry)
                 return;
             const auto NOW  = Time::steadyNow();
             int64_t    next = -1;
-            for (const auto& N : notifs) {
-                const bool WAKE = N->snoozed;
-                if (!WAKE && (!N->banner || N->timeoutMs <= 0 || N->waiting || N->id == heldBanner))
-                    continue;
+            const auto CONSIDER = [&](const Time::steady_tp& when) {
                 // clamp before comparing: -1 is the "none" sentinel, and an
                 // overdue card's negative remaining time must still win
-                const auto MS = std::max<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>((WAKE ? N->snoozeUntil : N->deadline) - NOW).count(), 1);
+                const auto MS = std::max<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(when - NOW).count(), 1);
                 if (next < 0 || MS < next)
                     next = MS;
+            };
+            for (const auto& N : notifs) {
+                if (N->snoozed) {
+                    CONSIDER(N->snoozeUntil);
+                    if (N->snoozeConfirmUntil != Time::steady_tp{})
+                        CONSIDER(N->snoozeConfirmUntil); // the row must leave on its own
+                    continue;
+                }
+                if (!N->banner || N->timeoutMs <= 0 || N->waiting || N->id == heldBanner)
+                    continue;
+                CONSIDER(N->deadline);
             }
             if (next < 0)
                 expiry->updateTimeout(std::nullopt);
@@ -106,23 +114,106 @@ namespace NHyprnotify {
             return (uint32_t)std::ranges::count_if(notifs, [](const auto& N) { return N->snoozed; });
         }
 
-        // "Remind me." Android's snooze: the card leaves the shade outright
-        // — no section, no strikethrough, nothing to scroll past — and comes
-        // back later alerting, which is the whole point of asking. There is
-        // no un-snooze because there is nothing left to click; a mis-snooze
-        // costs the interval, exactly as it does on the phone. Ephemerals
+        // "Remind me." Android's snooze: the card goes out of sight and comes
+        // back later alerting, which is the whole point of asking. Ephemerals
         // are refused: a transient or progress card has nothing to come back
         // to, since expiry takes the card and not just its banner.
+        //
+        // It does NOT leave at the click. Android replaces the notification in
+        // place with "Snoozed for 1 hour ▾ · Undo" and only then lets it go —
+        // which is the whole answer to "there is nothing left to click". For
+        // CONFIRM_MS the card holds its slot as a one-line undo row, so the
+        // only irreversible verb in the shell stops being irreversible. This
+        // is not history: the card never left, and once the window passes it
+        // is gone the same way it always was.
+        inline constexpr int64_t CONFIRM_MS = 6000;
+
+        // The ▾ ladder, Android's own durations. Rung -1 is snooze_seconds,
+        // so the configured default keeps its meaning and the ladder only adds
+        // choices; a rung equal to it is skipped rather than offered twice.
+        inline constexpr int64_t RUNGS[]   = {900, 1800, 3600, 7200};
+        inline constexpr size_t  NRUNGS    = sizeof(RUNGS) / sizeof(RUNGS[0]);
+
+        static int64_t           rungSecs(const SP<SNotif>& n) {
+            return n->snoozeRung < 0 ? std::max<int64_t>(cfg.snoozeSeconds->value(), 0) : RUNGS[n->snoozeRung];
+        }
+
+        std::string snoozeLabel(const SP<SNotif>& n) {
+            const int64_t S = rungSecs(n);
+            if (S < 3600) {
+                const int64_t M = std::max<int64_t>(S / 60, 1);
+                return std::to_string(M) + " min";
+            }
+            const int64_t H = S / 3600;
+            return std::to_string(H) + (H == 1 ? " hour" : " hours");
+        }
+
+        bool snoozeConfirming(const SP<SNotif>& n) {
+            return n->snoozed && n->snoozeConfirmUntil > Time::steadyNow();
+        }
+
+        // both clocks restart together: the undo window is a fresh read of the
+        // duration, not a countdown that survived the change
+        static void armSnooze(const SP<SNotif>& n) {
+            const auto NOW        = Time::steadyNow();
+            n->snoozeUntil        = NOW + std::chrono::seconds(rungSecs(n));
+            n->snoozeConfirmUntil = NOW + std::chrono::milliseconds(CONFIRM_MS);
+        }
+
         void snooze(uint32_t id) {
             const auto N = byId(id);
             if (!N || N->snoozed || N->waiting || vanishes(N))
                 return;
-            N->snoozed     = true;
-            N->banner      = false;
-            N->snoozeUntil = Time::steadyNow() + std::chrono::seconds(std::max<int64_t>(cfg.snoozeSeconds->value(), 0));
+            N->snoozed    = true;
+            N->banner     = false;
+            N->snoozeRung = -1;
+            armSnooze(N);
             notifChanged();
             rearmExpiry();
             Bus::emitStateSoon();
+        }
+
+        // Only inside the window — past it the row is gone and there is
+        // nothing to have clicked.
+        void snoozeUndo(uint32_t id) {
+            const auto N = byId(id);
+            if (!N || !snoozeConfirming(N))
+                return;
+            N->snoozed            = false;
+            N->snoozeConfirmUntil = {};
+            // it never went, so it does not come back alerting either: the
+            // card resumes as the resident shade row the ◷ found it as
+            notifChanged();
+            rearmExpiry();
+            Bus::emitStateSoon();
+        }
+
+        void snoozeCycle(uint32_t id) {
+            const auto N = byId(id);
+            if (!N || !snoozeConfirming(N))
+                return;
+            const int64_t DEFAULT = std::max<int64_t>(cfg.snoozeSeconds->value(), 0);
+            for (size_t step = 0; step < NRUNGS + 1; step++) {
+                N->snoozeRung = N->snoozeRung + 1 >= (int)NRUNGS ? -1 : N->snoozeRung + 1;
+                if (N->snoozeRung < 0 || RUNGS[N->snoozeRung] != DEFAULT)
+                    break;
+            }
+            armSnooze(N);
+            notifChanged();
+            rearmExpiry();
+        }
+
+        // The shade is the undo row's only surface: leaving it commits every
+        // pending snooze rather than stranding a window nobody can see.
+        void snoozeEndConfirm() {
+            bool any = false;
+            for (const auto& N : notifs)
+                if (N->snoozed && N->snoozeConfirmUntil != Time::steady_tp{}) {
+                    N->snoozeConfirmUntil = {};
+                    any                   = true;
+                }
+            if (any)
+                rearmExpiry();
         }
 
         std::string badgeString() {
@@ -550,10 +641,15 @@ namespace NHyprnotify {
                     bool                  changed = false;
                     std::vector<uint32_t> gone;
                     for (const auto& N : notifs) {
-                        if (N->snoozed) { // the other clock: a card coming back
+                        if (N->snoozed) { // the other clocks: an undo window, then a card coming back
+                            if (N->snoozeConfirmUntil != Time::steady_tp{} && N->snoozeConfirmUntil <= NOW) {
+                                N->snoozeConfirmUntil = {}; // the undo row retires; the snooze itself runs on
+                                changed               = true;
+                            }
                             if (N->snoozeUntil > NOW)
                                 continue;
-                            N->snoozed = false;
+                            N->snoozed            = false;
+                            N->snoozeConfirmUntil = {};
                             // it alerts again — that IS the reminder — unless
                             // the app has since been silenced. `arrived` is
                             // left alone (the age line tells the truth about

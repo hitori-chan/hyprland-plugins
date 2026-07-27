@@ -59,6 +59,7 @@ namespace NHyprnotify {
     inline constexpr double CHILD_ICON = 28, CHILD_GAP = 2; // segmented group children
     inline constexpr double PREV_ICON = 16;                 // digest preview avatars
     inline constexpr double PILL_H = 20;                    // the count pill
+    inline constexpr double SNOOZE_H = 38;                  // the undo row, one line of chrome
     inline constexpr double BAR_BTN = 34, BAR_PADT = 4, BAR_PADX = 10, BAR_PADB = 12, BAR_GAP = 8;
     inline constexpr double BODY_PADT = 10, BODY_PADX = 10, BODY_PADB = 10;
     inline constexpr double STACK_GAP = 3; // the joint gap that merges the rows into one column
@@ -181,9 +182,12 @@ namespace NHyprnotify {
     void   paintSingle(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box, bool open, bool more);
     void   paintDigest(const SPaint& P, const SType& T, const SDisp& D, const CBox& box);
     void   paintGroup(const SPaint& P, const SType& T, const SDisp& D, const CBox& box, const std::vector<double>& childH);
+    // a snoozed card's undo row, in the slot the card held
+    void   paintSnoozeRow(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box);
 
     double digestH(const SType& T, size_t count, double scale); // the folded bundle's height
     double groupHeadH();                                        // an expanded bundle's header row
+    double snoozeRowH();                                        // the undo row: one line, fixed
 
     // ---- popups.cpp / center.cpp: the two surfaces ----
 

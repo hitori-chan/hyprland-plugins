@@ -78,7 +78,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.7.1";
+    inline constexpr const char* VERSION = "6.8.0";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -181,6 +181,13 @@ namespace NHyprnotify {
         bool                 banner  = true;  // the popup is up; expiry drops only this — the card stays resident
         bool                 snoozed = false; // "remind me": out of sight until snoozeUntil, then it alerts again
         Time::steady_tp      snoozeUntil;
+        // The undo window. A snoozed card does not leave the shade at the
+        // click: it collapses to a confirmation row until this passes (or the
+        // shade closes), which is the only thing that gives the undo something
+        // to be clicked ON. -1 = the configured default duration, 0..n = a rung
+        // of the ladder the ▾ cycles.
+        Time::steady_tp      snoozeConfirmUntil;
+        int                  snoozeRung = -1;
 
         float                timeoutMs = 0; // resolved; 0 = sticky
         Time::steady_tp      deadline;      // meaningful when banner && timeoutMs > 0 and not waiting
@@ -234,6 +241,11 @@ namespace NHyprnotify {
         void                          absorbPopped();                        // opening the shade parks the popped stack (no re-pop on close)
         void                          rearmExpiry();
         void                          snooze(uint32_t id); // out of sight, then back with a fresh banner
+        void                          snoozeUndo(uint32_t id);  // inside the undo window: as if it never happened
+        void                          snoozeCycle(uint32_t id); // the ▾: next rung of the duration ladder
+        void                          snoozeEndConfirm();       // the shade closed; every confirmation row goes
+        bool                          snoozeConfirming(const SP<SNotif>& n); // still showing its undo row
+        std::string                   snoozeLabel(const SP<SNotif>& n);      // "15 min", "2 hours"
         uint32_t                      snoozedCount();
         void                          holdBanner(uint32_t id); // the hovered popup's countdown pauses; 0 releases (and restarts it)
         void                          toggleSuspend();         // DND; resume renders the queue, fresh timeouts
@@ -329,6 +341,7 @@ namespace NHyprnotify {
             DIGEST,    // a folded app bundle (group = app key)
             GHEAD,     // an expanded bundle's header row
             CHILD,     // a bundle child row
+            SNOOZE,    // a snoozed card's undo row, in the slot the card held
             BTN_CLEAR, // footer "Clear all": the global sweep
             BTN_DND,   // footer ⊖ (do-not-disturb)
             PANEL,     // the shade panel body: swallows clicks, owns the wheel
@@ -370,7 +383,7 @@ namespace NHyprnotify {
         std::string  group;
         SCard::eKind kind = SCard::POPUP;
         int          btn  = -1;
-        uint8_t      part = 0; // 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 5 silence, 6 priority, 7 snooze
+        uint8_t      part = 0; // 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 5 silence, 6 priority, 7 snooze, 8 undo, 9 duration
         bool         operator==(const SHover&) const = default;
     };
     void setHovered(const SHover& h);
