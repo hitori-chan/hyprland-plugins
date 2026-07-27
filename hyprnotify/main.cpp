@@ -27,8 +27,9 @@
 //   open it owns the nav keys (↑↓ select, space folds, enter fires the
 //   primary, delete dismisses, m/s/p manage, esc closes) and nothing else.
 //   Hovering the bar's bell PEEKS it open unpinned, so a glance costs no
-//   click. A row reveals ⊘ ◷ ★ on hover: silence the app, put the card away
-//   for a while, mark the sender — the two rules persist across relogs.
+//   click. A row's ⋮ turns it into a manage panel: snooze durations, mute
+//   durations, mark the sender — every verb named, the rules persist across
+//   relogs, and the footer's ⊘ N never lets a standing one hide.
 //
 // Model rules: the conversation merge joins one chat's messages into one
 // growing card (~8KB cap, oldest lines drop) — fd.o's im.*/call.* categories,

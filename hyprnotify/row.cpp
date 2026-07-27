@@ -77,8 +77,7 @@ namespace NHyprnotify {
             // the row body fires it, exactly as the banner does.
             // the manage strip rides the header line; the kicker gives up
             // exactly its width so the two can never collide, hover or not
-            const int    NMANAGE = ST.manage ? (N->conversation ? 3 : 2) : 0;
-            const double MANAGEW = NMANAGE > 0 ? NMANAGE * MANAGE_D + (NMANAGE - 1) * MANAGE_GAP + 8 : 0;
+            const double MANAGEW = ST.manage ? OVER_D + OVER_GAP + 4 : 0;
             const int    KICKWPX = std::max(1, (int)std::floor((TEXTW - MANAGEW) * P.scale));
 
             auto& KB = scratch();
@@ -206,39 +205,30 @@ namespace NHyprnotify {
                 yy += BTN_H;
             }
 
-            // ---- the manage strip: what Android's long-press menu holds ----
+            // ---- the ⋮: the way into the manage panel ----
             //
-            // Hover-revealed, like the banner's ✕, and hit-registered always:
-            // reaching one means the pointer is already on the row, which is
-            // what reveals them. Their width is reserved whether they show or
-            // not — a strip that appeared on hover and reflowed the header
-            // would re-key every raster under the pointer.
-            if (NMANAGE > 0) {
-                const bool SHOWN = hovered.kind == SCard::ROW && hovered.id == N->id; // only ROW_SINGLE carries a strip
-                const int  RM    = (int)std::lround(MANAGE_D / 2 * P.scale);
-                // rightmost first, walking left: silence the app, put the
-                // card away, mark the sender. Only a chat has a sender.
-                struct SBtn {
-                    const char* glyph;
-                    uint8_t     part;
-                    bool        lit;
-                };
-                const SBtn BTNS[3]{{"⊘", 5, Policy::silenced(N->appKey)}, {"◷", 7, false}, {"★", 6, N->priority}};
-                double       mx = box.x + box.w - ROW_PADX - RTRIM - MANAGE_D;
-                const double MY = box.y + ROW_PADT + (CHEV - MANAGE_D) / 2;
-                for (int i = 0; i < NMANAGE; i++) {
-                    const auto& B   = BTNS[i];
-                    const bool  HOV = SHOWN && hovered.part == B.part;
-                    const CBox  MB{mx, MY, MANAGE_D, MANAGE_D};
-                    const auto  G = cachedText(B.glyph, B.lit ? tOnAccent() : COLSUB, T.small, 64, -1, 0, false, 600);
-                    if (!P.warm && SHOWN) {
-                        P.rect(MB, B.lit ? COLACC : HOV ? tAccentDim() : tFill2(), RM);
-                        if (G && G->tex)
-                            P.tex(G->tex, MB.x + (MB.w - G->tex->m_size.x / P.scale) / 2, MB.y + (MB.h - G->tex->m_size.y / P.scale) / 2);
-                    }
-                    card.manage.push_back({MB, B.part});
-                    mx -= MANAGE_D + MANAGE_GAP;
+            // This used to be three 20px glyphs at 4px separation, hover-only
+            // and unlabelled, with the one irreversible verb in the middle.
+            // Now it is one 24px target that names everything it opens. Its
+            // width is reserved whether it shows or not — a control that
+            // appeared on hover and reflowed the header would re-key every
+            // raster under the pointer.
+            //
+            // It shows for the KEYBOARD too, not just the pointer: arrowing to
+            // a row used to reveal nothing at all, so the verbs behind m/s/p
+            // had no affordance anywhere.
+            if (ST.manage) {
+                const bool SHOWN = (hovered.kind == SCard::ROW && hovered.id == N->id) || selectedRow() == N->id;
+                const bool HOV   = hovered.kind == SCard::ROW && hovered.id == N->id && hovered.part == 10;
+                const bool LIT   = Policy::silenced(N->appKey) || N->priority; // a rule is in force behind it
+                const CBox MB{box.x + box.w - ROW_PADX - RTRIM - OVER_D, box.y + ROW_PADT + (CHEV - OVER_D) / 2, OVER_D, OVER_D};
+                const auto G = cachedText("⋮", LIT ? tOnAccent() : COLSUB, T.small, 64, -1, 0, false, 600);
+                if (!P.warm && (SHOWN || LIT)) {
+                    P.rect(MB, LIT ? COLACC : HOV ? tAccentDim() : tFill2(), (int)std::lround(OVER_D / 2 * P.scale));
+                    if (G && G->tex)
+                        P.tex(G->tex, MB.x + (MB.w - G->tex->m_size.x / P.scale) / 2, MB.y + (MB.h - G->tex->m_size.y / P.scale) / 2);
                 }
+                card.manage.push_back({MB, 10});
             }
         }
 
@@ -299,6 +289,97 @@ namespace NHyprnotify {
 
     double snoozeRowH() {
         return SNOOZE_H;
+    }
+
+    // ---- the manage panel ----
+    //
+    // Every verb the strip used to hide behind a symbol, named, at row width,
+    // with the key that does the same thing in the right column. The mute
+    // durations are iOS's ("Mute for 1 Hour", "Mute for Today"): permanent is
+    // still here, but it stops being the only thing a click can mean — it is
+    // the choice people regret, and its rule then sits in a file nobody reads.
+    std::vector<SMenuEntry> menuEntries(const SP<SNotif>& N) {
+        std::vector<SMenuEntry> out;
+        out.push_back({"◷", "Snooze 15 min", "s", 1, 900});
+        out.push_back({"◷", "Snooze 1 hour", "", 1, 3600});
+
+        const std::string APP = N->appName.empty() ? N->appKey : N->appName;
+        if (Policy::silenced(N->appKey))
+            out.push_back({"⊘", "Unmute " + APP, "m", 3, 0, true});
+        else {
+            out.push_back({"⊘", "Mute " + APP + " for 1 hour", "", 2, 3600});
+            out.push_back({"⊘", "Mute " + APP + " today", "", 2, -1});
+            out.push_back({"⊘", "Mute " + APP + " always", "m", 2, 0});
+        }
+        if (N->conversation)
+            out.push_back({"★", N->priority ? "Unmark this conversation" : "Priority conversation", "p", 4, 0, N->priority});
+        out.push_back({"✕", "Dismiss", "del", 5, 0});
+        return out;
+    }
+
+    double managePanelH(const SP<SNotif>& N) {
+        return ROW_PADT + CHILD_ICON + (double)menuEntries(N).size() * MENU_ROW_H + ROW_PADB;
+    }
+
+    void paintManagePanel(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box) {
+        const auto  COLFG = color(cfg.colFg), COLSUB = color(cfg.colKicker), COLACC = color(cfg.colHighlight);
+        const float RP = rPow();
+        P.rect(box, tFill(), rRow(P.scale), RP);
+
+        SCard card;
+        card.kind = SCard::MANAGE;
+        card.id   = N->id;
+        card.box  = box;
+
+        // the header keeps the row identifiable while its body is gone, and
+        // carries the ⋮ back out — the panel must not be a one-way door
+        if (warmGate.warming)
+            ensureIconTex(*N, (int)std::lround(cfg.maxIcon->value() * P.scale), 0, 0);
+        const auto& IDT = N->identTex && N->identTex->m_texID ? N->identTex : N->iconTex;
+        if (!P.warm && IDT)
+            P.texFit(IDT, CBox{box.x + ROW_PADX, box.y + ROW_PADT, CHILD_ICON, CHILD_ICON}, (int)std::lround(CHILD_ICON * 10.0 / 44.0 * P.scale), RP);
+
+        const double TX  = box.x + ROW_PADX + CHILD_ICON + ROW_ICON_GAP;
+        const CBox   OB{box.x + box.w - ROW_PADX - OVER_D, box.y + ROW_PADT + (CHILD_ICON - OVER_D) / 2, OVER_D, OVER_D};
+        const auto   HEAD = cachedText(N->appName.empty() ? "Notification" : N->appName, COLSUB, T.header, std::max(1, (int)((OB.x - 6 - TX) * P.scale)), -1, 0, false, 500);
+        if (!P.warm && HEAD && HEAD->tex)
+            P.tex(HEAD->tex, TX, box.y + ROW_PADT + (CHILD_ICON - HEAD->tex->m_size.y / P.scale) / 2);
+
+        const bool OHOV = hovered.kind == SCard::MANAGE && hovered.id == N->id && hovered.part == 10;
+        const auto OG   = cachedText("⋮", COLACC, T.small, 64, -1, 0, false, 600);
+        if (!P.warm) {
+            P.rect(OB, OHOV ? tAccentDim() : tFill2(), (int)std::lround(OVER_D / 2 * P.scale));
+            if (OG && OG->tex)
+                P.tex(OG->tex, OB.x + (OB.w - OG->tex->m_size.x / P.scale) / 2, OB.y + (OB.h - OG->tex->m_size.y / P.scale) / 2);
+        }
+        card.manage.push_back({OB, 10});
+
+        double     y  = box.y + ROW_PADT + CHILD_ICON;
+        const auto EN = menuEntries(N);
+        for (size_t i = 0; i < EN.size(); i++) {
+            const auto& E = EN[i];
+            const CBox  RB{box.x + ROW_PADX / 2, y, box.w - ROW_PADX, MENU_ROW_H};
+            // part codes 16.. address the entries: one rect per row, so a new
+            // verb costs an entry and not a member
+            const bool HOV = hovered.kind == SCard::MANAGE && hovered.id == N->id && hovered.part == (uint8_t)(16 + i);
+            const auto G   = cachedText(E.glyph, E.lit ? COLACC : COLSUB, T.small, 64, -1, 0, false, 600);
+            const auto L   = cachedText(E.label, E.lit ? COLACC : COLFG, T.body, std::max(1, (int)((RB.w - MENU_GLYPH_W - 40) * P.scale)), -1, 0, false, 500);
+            const auto H   = E.hint[0] ? cachedText(E.hint, COLSUB.modifyA(0.5f), T.small, 64, -1, 0, false, 500) : nullptr;
+            if (!P.warm) {
+                if (HOV)
+                    P.rect(RB, tAccentDim(), (int)std::lround(6 * P.scale), RP);
+                if (G && G->tex)
+                    P.tex(G->tex, RB.x + (MENU_GLYPH_W - G->tex->m_size.x / P.scale) / 2, RB.y + (MENU_ROW_H - G->tex->m_size.y / P.scale) / 2);
+                if (L && L->tex)
+                    P.tex(L->tex, RB.x + MENU_GLYPH_W, RB.y + (MENU_ROW_H - L->tex->m_size.y / P.scale) / 2);
+                if (H && H->tex)
+                    P.tex(H->tex, RB.x + RB.w - 8 - H->tex->m_size.x / P.scale, RB.y + (MENU_ROW_H - H->tex->m_size.y / P.scale) / 2);
+            }
+            card.manage.push_back({RB, (uint8_t)(16 + i)});
+            y += MENU_ROW_H;
+        }
+
+        cards.push_back(std::move(card));
     }
 
     // The undo row — Android's "Snoozed for 1 hour ▾ · Undo", in the slot the

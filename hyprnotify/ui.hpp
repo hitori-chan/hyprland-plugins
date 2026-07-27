@@ -55,7 +55,9 @@ namespace NHyprnotify {
     inline constexpr double CENTER_W = 360; // the shade's height is the monitor's (see renderCenter)
     inline constexpr double ROW_PADT = 9, ROW_PADX = 12, ROW_PADB = 10, ROW_ICON = 40, ROW_ICON_GAP = 10, ROW_GAP = 8;
     inline constexpr double CHEV = 24;                       // the fold chevron circle
-    inline constexpr double MANAGE_D = 20, MANAGE_GAP = 4;   // the hover-revealed manage strip, beside the chevron
+    inline constexpr double MANAGE_D = 20, MANAGE_GAP = 4;   // the ⊘ a bundle header/digest carries
+    inline constexpr double OVER_D = 24, OVER_GAP = 6;       // the row's ⋮, beside the chevron
+    inline constexpr double MENU_ROW_H = 28, MENU_GLYPH_W = 22; // the manage panel's own rows
     inline constexpr double CHILD_ICON = 28, CHILD_GAP = 2; // segmented group children
     inline constexpr double PREV_ICON = 16;                 // digest preview avatars
     inline constexpr double PILL_H = 20;                    // the count pill
@@ -184,6 +186,25 @@ namespace NHyprnotify {
     void   paintGroup(const SPaint& P, const SType& T, const SDisp& D, const CBox& box, const std::vector<double>& childH);
     // a snoozed card's undo row, in the slot the card held
     void   paintSnoozeRow(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box);
+
+    // ---- the manage panel: what Android's long-press holds, as a row state ----
+    //
+    // The ⋮ turns a row into this instead of opening a floating menu. Same
+    // ergonomics — full-width labelled targets, every verb named and carrying
+    // its key — with none of a second surface's cost: no z-order, no outside
+    // -click grab, no damage region of its own, and it rides the fold
+    // machinery that already exists. Only one row is ever in this state.
+    struct SMenuEntry {
+        const char* glyph;
+        std::string label;
+        const char* hint;      // the key that does the same thing
+        int         verb;      // 1 snooze, 2 mute, 3 unmute, 4 priority, 5 dismiss
+        int64_t     arg = 0;   // verb 1/2: seconds, 0 = always
+        bool        lit = false;
+    };
+    std::vector<SMenuEntry> menuEntries(const SP<SNotif>& N);
+    double                  managePanelH(const SP<SNotif>& N);
+    void                    paintManagePanel(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box);
 
     double digestH(const SType& T, size_t count, double scale); // the folded bundle's height
     double groupHeadH();                                        // an expanded bundle's header row

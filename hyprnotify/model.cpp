@@ -128,18 +128,15 @@ namespace NHyprnotify {
         // is gone the same way it always was.
         inline constexpr int64_t CONFIRM_MS = 6000;
 
-        // The ▾ ladder, Android's own durations. Rung -1 is snooze_seconds,
-        // so the configured default keeps its meaning and the ladder only adds
-        // choices; a rung equal to it is skipped rather than offered twice.
-        inline constexpr int64_t RUNGS[]   = {900, 1800, 3600, 7200};
-        inline constexpr size_t  NRUNGS    = sizeof(RUNGS) / sizeof(RUNGS[0]);
+        // The ˅ ladder, Android's own durations. snooze_seconds keeps its
+        // meaning as the duration a bare ◷ takes; the ladder is where the ˅
+        // goes next, so a configured default that is not on it is still the
+        // starting point.
+        inline constexpr int64_t RUNGS[] = {900, 1800, 3600, 7200};
+        inline constexpr size_t  NRUNGS  = sizeof(RUNGS) / sizeof(RUNGS[0]);
 
-        static int64_t           rungSecs(const SP<SNotif>& n) {
-            return n->snoozeRung < 0 ? std::max<int64_t>(cfg.snoozeSeconds->value(), 0) : RUNGS[n->snoozeRung];
-        }
-
-        std::string snoozeLabel(const SP<SNotif>& n) {
-            const int64_t S = rungSecs(n);
+        std::string              snoozeLabel(const SP<SNotif>& n) {
+            const int64_t S = n->snoozeSecs;
             if (S < 3600) {
                 const int64_t M = std::max<int64_t>(S / 60, 1);
                 return std::to_string(M) + " min";
@@ -156,21 +153,28 @@ namespace NHyprnotify {
         // duration, not a countdown that survived the change
         static void armSnooze(const SP<SNotif>& n) {
             const auto NOW        = Time::steadyNow();
-            n->snoozeUntil        = NOW + std::chrono::seconds(rungSecs(n));
+            n->snoozeUntil        = NOW + std::chrono::seconds(n->snoozeSecs);
             n->snoozeConfirmUntil = NOW + std::chrono::milliseconds(CONFIRM_MS);
         }
 
-        void snooze(uint32_t id) {
+        void snoozeFor(uint32_t id, int64_t seconds) {
             const auto N = byId(id);
-            if (!N || N->snoozed || N->waiting || vanishes(N))
+            if (!N || N->waiting || vanishes(N))
                 return;
             N->snoozed    = true;
             N->banner     = false;
-            N->snoozeRung = -1;
+            N->snoozeSecs = std::max<int64_t>(seconds, 0);
             armSnooze(N);
             notifChanged();
             rearmExpiry();
             Bus::emitStateSoon();
+        }
+
+        void snooze(uint32_t id) {
+            const auto N = byId(id);
+            if (!N || N->snoozed)
+                return;
+            snoozeFor(id, std::max<int64_t>(cfg.snoozeSeconds->value(), 0));
         }
 
         // Only inside the window — past it the row is gone and there is
@@ -188,16 +192,20 @@ namespace NHyprnotify {
             Bus::emitStateSoon();
         }
 
+        // the next rung ABOVE what is in force, wrapping — so a duration the
+        // ladder does not hold (a configured 10 min, the panel's own) still
+        // has an obvious next step
         void snoozeCycle(uint32_t id) {
             const auto N = byId(id);
             if (!N || !snoozeConfirming(N))
                 return;
-            const int64_t DEFAULT = std::max<int64_t>(cfg.snoozeSeconds->value(), 0);
-            for (size_t step = 0; step < NRUNGS + 1; step++) {
-                N->snoozeRung = N->snoozeRung + 1 >= (int)NRUNGS ? -1 : N->snoozeRung + 1;
-                if (N->snoozeRung < 0 || RUNGS[N->snoozeRung] != DEFAULT)
+            const int64_t CUR = N->snoozeSecs;
+            N->snoozeSecs     = RUNGS[0]; // nothing above it: wrap to the bottom
+            for (size_t i = 0; i < NRUNGS; i++)
+                if (RUNGS[i] > CUR) {
+                    N->snoozeSecs = RUNGS[i];
                     break;
-            }
+                }
             armSnooze(N);
             notifChanged();
             rearmExpiry();

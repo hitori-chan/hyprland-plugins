@@ -82,27 +82,44 @@ Two surfaces share one card model:
      keeps you here keeps it: dismissing, folding, the manage strip, DND,
      "Clear all", the reply field, and a `resident` card's actions — the
      spec's own way of saying the action does not take you away.
-   - **Per-app rules** — what Android hides behind a long-press, and the
-     thing one global DND could never say. An open row reveals a strip
-     beside its chevron on hover: **⊘** silences the app (no banner, no
-     sound, straight to the shade, ranked with the quiet ones — critical
-     still punches through, exactly as through DND) and **★** marks the
-     sender, which sorts that chat above everything but a critical card and
-     lights the ring AOSP keeps hidden on the badge until you mark someone.
-     A bundle's ⊘ sits by its count pill. Both rules persist across relogs
-     in `$XDG_STATE_HOME/hyprnotify/policy.tsv`, both are retroactive (the
-     cards already in the shade re-rank under them), and silence keys on the
-     app while a mark keys on app + sender — one chat app carries many
-     people.
-   - **Snooze** (**◷** in the same strip, or `s`) is Android's, and it is a
-     verb on one card rather than a rule: the card leaves the shade
-     outright — no section, nothing to scroll past — and comes back
-     ALERTING after `snooze_seconds` (15min), which is the whole point of
-     asking. It stays in the model the entire time, so "Clear all" cannot
-     quietly cancel a reminder, and there is no un-snooze because there is
-     nothing left to click: a mis-snooze costs the interval, exactly as it
-     does on the phone. Ephemerals (`transient`, progress) are refused —
-     expiry takes those cards whole, so they have nothing to come back to.
+   - **The manage panel** — what Android hides behind a long-press, and the
+     thing one global DND could never say. An open row carries a **⋮**
+     beside its chevron; it turns the row into a panel of its verbs, each
+     one named at panel width with the key that does the same thing in the
+     right column. Acting on one leaves the panel; the ⋮, right-click and
+     Esc all close it, and Esc peels the panel before it peels the shade.
+     It shows for the keyboard selection too, not only the pointer.
+     (This replaced a hover-revealed strip of three 20px glyphs at 4px
+     separation, unlabelled, with the one irreversible verb in the middle.)
+   - **Per-app rules** live in that panel. **Mute** comes in iOS's three
+     lengths — for 1 hour, today (until tomorrow morning, not a rolling 24h),
+     or always: no banner, no sound, straight to the shade, ranked with the
+     quiet ones, and critical still punches through exactly as through DND.
+     **★ Priority conversation** sorts that chat above everything but a
+     critical card and lights the ring AOSP keeps hidden on the badge until
+     you mark someone. A bundle's ⊘ still sits by its count pill as a
+     straight always-toggle. Rules persist across relogs in
+     `$XDG_STATE_HOME/hyprnotify/policy.tsv` (a silence carries its expiry
+     as a third field; 0 never lifts, and a rule that lapsed while you were
+     away never loads), all are retroactive, and silence keys on the app
+     while a mark keys on app + sender — one chat app carries many people.
+     Whenever any silence is in force the footer says so: **⊘ N** stands
+     beside ⊖, and clicking it lifts every one. A rule you set once is never
+     invisible again.
+   - **Snooze** (in the panel, or `s`) is Android's, and it is a verb on one
+     card rather than a rule: the card goes out of sight and comes back
+     ALERTING, which is the whole point of asking. It stays in the model the
+     entire time, so "Clear all" cannot quietly cancel a reminder.
+     It does not leave at the click. Android replaces the notification in
+     place with "Snoozed for 1 hour ▾ · Undo", so for six seconds the card
+     holds its slot as a one-line undo row: **Undo** (or `u`) puts it back,
+     the **˅** (or `s` again) cycles Android's ladder — 15m / 30m / 1h / 2h,
+     with `snooze_seconds` as the duration a bare snooze takes. Closing the
+     shade commits it, since the shade is the row's only surface. This is
+     not history and not recall: the card never left, and past the window it
+     is gone exactly as before. Ephemerals (`transient`, progress) are
+     refused — expiry takes those cards whole, so they have nothing to come
+     back to.
    - **Inline reply.** A sender that sees the `inline-reply` capability
      adds an action keyed `inline-reply` and waits for a
      `NotificationReplied(id, text)` signal — it is how Telegram, Fractal
@@ -117,10 +134,16 @@ Two surfaces share one card model:
      nothing else: Esc closes, ↑/↓ move a selection (an accent hairline,
      paging to stay on screen), Space folds it, Enter fires the primary,
      Tab opens a reply, Delete dismisses, `m` silences the app, `s` snoozes
-     the card, `p` marks the sender. A chord with ctrl/alt/super is a user
-     bind passing through, and a nav key with nothing selected — or nothing
-     to do, like `p` on a card that is not a chat — still belongs to
-     whatever holds focus. Selection and fold state reset on close.
+     the card, `p` marks the sender, `u` takes a snooze back while its undo
+     row is up (and `s` there re-picks the duration instead). A chord with
+     ctrl/alt/super is a user bind passing through, and a nav key with
+     nothing selected — or nothing to do, like `p` on a card that is not a
+     chat — still belongs to whatever holds focus. Selection, fold state and
+     the open manage panel all reset on close.
+   - **Swipe.** A horizontal wheel on a row is the phone gesture: away
+     dismisses it, back opens its manage panel. Strictly an addition on top
+     of the pointer path — a mouse without a horizontal wheel never reaches
+     it and loses no verb, so neither gesture is the only way to do its job.
 
 Model rules: the **conversation merge** (Android's MessagingStyle) joins one
 chat's messages into one growing card (~8KB, oldest lines drop) — a fresh

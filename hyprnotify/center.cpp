@@ -43,8 +43,9 @@ namespace NHyprnotify {
     // keyboard navigation: an index into s_disp, -1 until an arrow key claims
     // the shade (so a mouse-only visit shows no selection at all). s_lastVis
     // is the last item the placement fitted — the paging keys work off it.
-    static int    s_sel     = -1;
-    static size_t s_lastVis = 0;
+    static int      s_sel     = -1;
+    static size_t   s_lastVis = 0;
+    static uint32_t s_manageRow = 0; // the row wearing its manage panel, 0 = none
 
     // the warm-measured layout cache (see renderCenter); dropped on close so
     // no strong SNotif refs (and their textures) outlive the visit
@@ -143,6 +144,7 @@ namespace NHyprnotify {
         s_animating = false;
         s_sel       = -1;
         s_lastVis   = 0;
+        s_manageRow = 0;
         s_peek = s_peekBell = false; // a closed shade is never a peeked one
         armPeekOut(false);
         s_disp.clear();
@@ -158,6 +160,25 @@ namespace NHyprnotify {
         s_peekOut.reset();
         s_on = false;
         resetVisit();
+    }
+
+    // Only one row wears the panel: two open at once would be two menus, and
+    // the shade would stop being a list of notifications.
+    void centerToggleManage(uint32_t id) {
+        s_manageRow = s_manageRow == id ? 0 : id;
+        notifChanged();
+    }
+    uint32_t centerManageRow() {
+        return s_manageRow;
+    }
+
+    // the selected item's card id — the ⋮ shows for the keyboard too, and a
+    // bundle has no one card to manage
+    uint32_t selectedRow() {
+        if (s_sel < 0 || (size_t)s_sel >= s_disp.size())
+            return 0;
+        const auto& D = s_disp[s_sel];
+        return D.items.size() == 1 ? D.items.front()->id : 0;
     }
 
     void centerToggleRow(uint32_t id) {
@@ -311,6 +332,10 @@ namespace NHyprnotify {
             if (D.items.size() < 2 && confirming(D.items.front())) {
                 // fixed, and never folded: an undo row has one state
                 s_itemH[i]    = snoozeRowH();
+                s_itemOpen[i] = 0;
+                s_itemMore[i] = 0;
+            } else if (D.items.size() < 2 && D.items.front()->id == s_manageRow) {
+                s_itemH[i]    = managePanelH(D.items.front());
                 s_itemOpen[i] = 0;
                 s_itemMore[i] = 0;
             } else if (D.items.size() < 2) {
@@ -471,6 +496,8 @@ namespace NHyprnotify {
             const CBox SLOT{CONTENT_X, y, CONTENT_W, IH};
             if (D.items.size() < 2 && confirming(D.items.front()))
                 paintSnoozeRow(P, T, D.items.front(), SLOT);
+            else if (D.items.size() < 2 && D.items.front()->id == s_manageRow)
+                paintManagePanel(P, T, D.items.front(), SLOT);
             else if (D.items.size() < 2)
                 paintSingle(P, T, D.items.front(), SLOT, OPEN, MORE);
             else if (!OPEN)
@@ -505,6 +532,37 @@ namespace NHyprnotify {
             c.box  = B;
             cards.push_back(c);
             bx += BAR_BTN + BAR_GAP;
+        }
+
+        // A silence used to be invisible once set: the only places it showed
+        // were a lit glyph on a card from the very app it was suppressing, and
+        // `hyprctl hyprnotify policy`. You could mute something and lose it for
+        // a month. The count stands in the footer whenever a rule is in force,
+        // and names them on hover — the shade always admits what it is holding
+        // back.
+        const size_t MUTED = Policy::silencedCount();
+        if (MUTED > 0) {
+            // BOTH labels every pass: hover flips without a rewarm, so keying
+            // this raster on the hover state would miss the cache for a frame
+            auto& SB = scratch();
+            SB += "⊘ ";
+            SB += std::to_string(MUTED);
+            const auto REST = cachedText(SB, COLSUB, T.bar, 64, -1, 0, false, 600);
+            const auto HOT  = cachedText("Unmute all", COLFG, T.bar, 200, -1, 0, false, 600);
+            const bool HOV  = hovered.kind == SCard::BTN_RULES;
+            // the wider of the two: the chip must not resize under the pointer
+            const double CW = std::max(texW(REST, P.scale), texW(HOT, P.scale)) + 18;
+            const CBox   B{bx, BARY, CW, BAR_BTN};
+            if (!P.warm) {
+                P.rect(B, HOV ? tAccentDim() : tFill2(), (int)std::lround(BAR_BTN / 2 * P.scale));
+                if (const auto* L = HOV ? HOT : REST; L && L->tex)
+                    P.tex(L->tex, B.x + (B.w - L->tex->m_size.x / P.scale) / 2, B.y + (B.h - L->tex->m_size.y / P.scale) / 2);
+            }
+            SCard c;
+            c.kind = SCard::BTN_RULES;
+            c.box  = B;
+            cards.push_back(c);
+            bx += CW + BAR_GAP;
         }
 
         { // "Clear all" — the global sweep; greys when the shade is empty

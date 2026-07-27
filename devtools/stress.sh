@@ -551,7 +551,8 @@ hq hyprnotify center >/dev/null; sleep 0.7
 tap down
 tap 50 # m
 chk "policy: m silenced the app" test "$(pol)" = "silenced:1 s=spammer priority:0"
-chk "policy: the rule reached the disk" grep -qxF "$(printf 's\tspammer')" "$POLFILE"
+# a silence carries its expiry as a third field; 0 is the one that never lifts
+chk "policy: the rule reached the disk" grep -qxF "$(printf 's\tspammer\t0')" "$POLFILE"
 tap esc; hq hyprnotify clear >/dev/null; sleep 0.6
 psend spammer "noise two" ""; sleep 1.2
 chk "policy: a silenced app's card lands with no banner" test "$(bd)" = "banners:0 resident:1"
@@ -588,6 +589,90 @@ chk "policy: the TOP row was the marked chat, not the newer one" test "$(bd)" = 
 chk "policy: the mark outlives the card it was set on" test "$(pol)" = "silenced:0 priority:1 p=chatapp/Alice"
 tap esc; hq hyprnotify clear >/dev/null; sleep 0.8
 chk "policy: reset after the policy battery" test "$(st)" = "center:0 live:0 dnd:0"
+
+# ---- the manage panel, timed mutes, the rule count --------------------------
+# The ⋮ replaced a three-glyph hover strip (20px targets at 4px separation,
+# unlabelled, the irreversible verb in the middle). Everything it used to hide
+# is now a named row at panel width. Driven through the REAL hit boxes: the ⋮
+# rides where the strip did (panel right edge - ROW_PADX - RTRIM - OVER_D/2),
+# and the entries stack from below the panel's own header at MENU_ROW_H each.
+OVX=$((MON_W - 20 - 12 - 32 - 12))               # panel right edge - ROW_PADX - RTRIM - OVER_D/2
+ent() { echo $((44 + 9 + 28 + $1 * 28 + 14)); }  # ent <index> -> that entry's centre y
+ENTX=$((MON_W - 200))                            # anywhere in the entry's width
+# the battery above deliberately leaves a MARK standing (it outlives its card),
+# so these read the silence half alone rather than the whole line
+polsil() { hq hyprnotify policy | sed 's/ priority:.*//'; }
+psend mgr "manage me" ""; sleep 1.2
+hq hyprnotify center >/dev/null; sleep 0.7
+click $OVX 64 272
+chk "manage: the ⋮ opened the panel — nothing acted, nothing dismissed" test "$(st)" = "center:1 live:1 dnd:0"
+chk "manage: opening it set no rule" test "$(polsil)" = "silenced:0"
+click $ENTX "$(ent 2)" 272 # "Mute mgr for 1 hour"
+# A timed rule prints its seconds remaining, and that is a clock read — assert
+# the SHAPE (timed at all, and near the hour asked for), never the exact value.
+chk "manage: a timed mute landed WITH an expiry" bash -c "[[ '$(polsil)' == silenced:1\ s=mgr+35[0-9][0-9] ]]"
+chk "manage: the expiry reached the disk" grep -qE "^s	mgr	[0-9]{10}$" "$POLFILE"
+psend mgr "still muted" ""; sleep 1.2
+chk "manage: a timed rule silences an arrival exactly as a permanent one does" test "$(bd)" = "banners:0 resident:2"
+# and the way back out: silenced, the panel offers Unmute where the three
+# durations were, so a rule is never one you cannot find the end of
+click $OVX 64 272
+click $ENTX "$(ent 2)" 272 # "Unmute mgr"
+chk "manage: the panel lifted the rule" test "$(polsil)" = "silenced:0"
+chk "manage: and no silence is left on disk" bash -c "! grep -q '^s	' '$POLFILE'"
+tap esc; hq hyprnotify clear >/dev/null; sleep 0.8
+chk "manage: reset after the manage battery" test "$(st)" = "center:0 live:0 dnd:0"
+
+# ---- the undo window behind a snooze ----------------------------------------
+# The ◷ used to be the one verb with no recourse. The card now holds its slot
+# as an undo row for a few seconds, so `snoozed` goes up and comes back DOWN
+# without the card ever having left the model.
+sz() { hq hyprnotify snoozed; }
+# 12s: comfortably past the 6s undo window so the lapse is testable without
+# racing the wake (8s left under a second of margin, and the key injection
+# alone spends most of that), yet short enough that the card wakes and can be
+# swept before the next battery. A snoozed card is unreachable by design —
+# Clear all does not cancel a reminder — so letting it wake is the ONLY way to
+# leave this battery clean.
+hq eval 'hl.config({ plugin = { hyprnotify = { snooze_seconds = 12 } } })' >/dev/null; sleep 0.4
+psend undoer "take it back" ""; sleep 1.2
+hq hyprnotify center >/dev/null; sleep 0.7
+tap down
+tap 31 # s
+chk "undo: s snoozed the card" test "$(sz)" = 1
+tap 22 # u
+chk "undo: u took the snooze back" test "$(sz)" = 0
+chk "undo: and the card never left the model" test "$(st)" = "center:1 live:1 dnd:0"
+tap 31 # s again — and this time let the window lapse
+chk "undo: snoozed again" test "$(sz)" = 1
+sleep 7
+chk "undo: the window lapsed and the snooze stands" test "$(sz)" = 1
+tap 22 # u past the window is not an undo — there is no row to have clicked
+chk "undo: u past the window does nothing" test "$(sz)" = 1
+sleep 6
+chk "undo: and it still woke on its own clock" test "$(sz)" = 0
+tap esc; hq eval 'hl.config({ plugin = { hyprnotify = { snooze_seconds = 900 } } })' >/dev/null
+hq hyprnotify clear >/dev/null; sleep 0.8
+chk "undo: reset after the undo battery" test "$(st)" = "center:0 live:0 dnd:0"
+
+# ---- swipe: the horizontal wheel on a row -----------------------------------
+# An ADDITION on top of the pointer path — a mouse without a horizontal wheel
+# must lose no verb — so this asserts the gesture works, not that it is the
+# only way. Away dismisses; back opens the manage panel.
+swipe() { printf 'move %s %s\nsleep 60\nscroll 1 %s\nsleep 30\nscroll 1 %s\nsleep 30\nscroll 1 %s\nsleep 200\n' "$1" "$2" "$3" "$3" "$3" | vp; sleep 0.9; }
+psend swiper "flick me" ""; sleep 1.2
+hq hyprnotify center >/dev/null; sleep 0.7
+chk "swipe: a card in an open shade" test "$(st)" = "center:1 live:1 dnd:0"
+swipe 1700 64 -25
+chk "swipe: back opened the manage panel, it did not dismiss" test "$(st)" = "center:1 live:1 dnd:0"
+# esc peels the panel, not the shade — the panel's own ⋮ sits further right
+# than a row's, so this is also the assertion that the peel order is right
+tap esc
+chk "swipe: esc peeled the panel and left the shade up" test "$(st)" = "center:1 live:1 dnd:0"
+swipe 1700 64 25
+chk "swipe: away dismissed the row" test "$(st)" = "center:1 live:0 dnd:0"
+tap esc; hq hyprnotify clear >/dev/null; sleep 0.8
+chk "swipe: reset after the swipe battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- snooze -----------------------------------------------------------------
 # "Remind me": the card leaves the shade outright (Android's snooze — no
