@@ -145,4 +145,39 @@ Markup stays the whitelisted Pango subset with the literal-`<`/`&` rescue;
 `sound-file`/`sound-name` play through `sound_command`. Cards never render
 above the lockscreen, and input listeners guard and reset there first.
 Colors, fonts and metrics arrive from theme.lua via `plugin:hyprnotify:*`;
-the C++ defaults ARE the glass·ink tokens.
+the C++ defaults ARE the glass·ink tokens (`common/theme.hpp`), so an
+unset shell inherits the whole material rather than a fallback.
+
+Details — the model, the ranking, the icon anatomy, the hostile-input
+surface: [docs/hyprnotify.md](../docs/hyprnotify.md).
+
+## Config
+
+| key | what | default |
+|---|---|---|
+| `plugin:hyprnotify:font` | font family | `IBM Plex Sans` |
+| `plugin:hyprnotify:font_size` | body text size in logical px (the type roles derive from it) | 12 |
+| `plugin:hyprnotify:width` | popup card width in logical px | 348 |
+| `plugin:hyprnotify:max_height` | popup card height cap in logical px | 300 |
+| `plugin:hyprnotify:max_icon` | popup icon column in logical px (shade rows are fixed and only raster at this cap) | 44 |
+| `plugin:hyprnotify:margin` | inter-card gap in logical px | 6 |
+| `plugin:hyprnotify:offset_y` | popups' and the shade's distance from the monitor top | 34 |
+| `plugin:hyprnotify:timeout_low` | ephemeral timeout in ms (low urgency, `transient`, progress cards) | 4000 |
+| `plugin:hyprnotify:timeout_normal` | normal-urgency banner timeout in ms, then it retreats to the shade; 0 = sticky (critical always sticks) | 5000 |
+| `plugin:hyprnotify:quiet_fullscreen` | hold banners back while a fullscreen window owns the monitor; the card still lands in the shade | 1 |
+| `plugin:hyprnotify:snooze_seconds` | how long a snoozed card stays out of sight before it alerts again | 900 |
+| `plugin:hyprnotify:coalesce_popups` | 1 = at most one live popup per app; same-app extras land silent in the shade (0 = a banner per message) | 1 |
+| `plugin:hyprnotify:max_notifs` | model cap; overflow evicts the oldest non-critical card | 50 |
+| `plugin:hyprnotify:ignore_dbusclose` | ignore app-initiated `CloseNotification` (dunst's knob) | 0 |
+| `plugin:hyprnotify:rounding` | card radius in logical px (panel +6 and rows -2 derive) | 16 |
+| `plugin:hyprnotify:rounding_power` | corner superellipse exponent | 3.0 |
+| `plugin:hyprnotify:sound_command` | libcanberra player for `sound-file`/`sound-name`; empty disables | `canberra-gtk-play` |
+| `plugin:hyprnotify:fallback_icon_dir` | iconless cards draw a random identity face from this directory | *(unset)* |
+| `plugin:hyprnotify:col_bg` | glass fill (the alpha IS the glass) | `9e0f1218` |
+| `plugin:hyprnotify:col_fg` | body text | `e4e8ee` |
+| `plugin:hyprnotify:col_title` | card titles | `eef1f5` |
+| `plugin:hyprnotify:col_kicker` | header/age/secondary text | `98a2ac` |
+| `plugin:hyprnotify:col_frame` | hairlines | `17dcebff` |
+| `plugin:hyprnotify:col_urgent` | critical ring/progress/urgent fills | `ff8a5c` |
+| `plugin:hyprnotify:col_highlight` | the accent: progress, actions, selections | `32d6ff` |
+| `plugin:hyprnotify:col_link` | body hyperlinks | `7db4ff` |
