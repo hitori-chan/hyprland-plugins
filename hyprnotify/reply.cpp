@@ -46,9 +46,6 @@ namespace NHyprnotify {
     bool replyArmedOn(uint32_t id) {
         return s_id != 0 && s_id == id;
     }
-    uint32_t replyTarget() {
-        return s_id;
-    }
     const std::string& replyText() {
         return s_text;
     }

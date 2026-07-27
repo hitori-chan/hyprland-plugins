@@ -78,7 +78,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.7.0";
+    inline constexpr const char* VERSION = "6.7.1";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -384,7 +384,6 @@ namespace NHyprnotify {
 
     bool               replyArmedOn(uint32_t id); // this card's field is the armed one
     bool               replyArmed();
-    uint32_t           replyTarget();
     void               replyOpen(uint32_t id);
     void               replyClose();
     const std::string& replyText();
