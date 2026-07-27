@@ -4,7 +4,8 @@
 # placement memory, sibling geometry, spawn/close storms, the notification
 # cap, state churn round-trips, hostile state files, a real-input storm
 # (vptr), the shade's click and key verbs (vkbd), the bell's hover-peek, the
-# click-corpse guard, the fullscreen tuck and a config reload. Every
+# click-corpse guard, acting-closes-the-shade, the fullscreen tuck and a
+# config reload. Every
 # assertion is exact; any failure fails the run.
 #
 #   stress.sh [HYPR_BIN]     default /usr/local/bin/Hyprland — pass a fork
@@ -347,13 +348,50 @@ chk "shade: the chevron only folds — nothing invoked, nothing dismissed" test 
 click $CHVX $ROWY 272
 chk "shade: the chevron unfolds again, still nothing dismissed" test "$(st)" = "center:1 live:1 dnd:0"
 click $ROWX $ROWY 272
-chk "shade: left on the BODY fires the card and it goes, as on the banner" test "$(st)" = "center:1 live:0 dnd:0"
+# notify-send carries no actions, so this card has nothing to fire: the body
+# click is a pure DISMISSAL, and dismissing never closes the shade (center
+# stays 1). The battery below is the other half — a card that does fire.
+chk "shade: left on an actionless BODY dismisses it, shade stays" test "$(st)" = "center:1 live:0 dnd:0"
 dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"right me\" body')"; sleep 1
 click $ROWX $ROWY 273
 chk "shade: right on a row dismisses it" test "$(st)" = "center:1 live:0 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.4
 hq hyprnotify clear >/dev/null; sleep 0.8
 chk "hardening: reset after the shade click battery" test "$(st)" = "center:0 live:0 dnd:0"
+
+# ---- acting CLOSES the shade (Android's collapse-on-click) ------------------
+# Firing a card's primary raises the sender over the very panel the click was
+# made in, so the panel leaves with it — AOSP collapses the shade on a
+# content-intent click, swaync ships the same as hide-on-action. `resident`
+# is the fd.o way of saying the action does NOT take you away, and it holds
+# the shade exactly as it holds the card. The actionless card above is the
+# third case: nothing fired, so that click was only a dismissal.
+#
+# NOT notify-send, even though -A can send the action: notify-send WAITS for
+# its action and EXITS the moment one fires, and libnotify closes the
+# notification on the way out. The card then dies down the bus
+# CloseNotification path rather than from the click, so "did the click keep
+# the card?" would be measuring notify-send. busctl's call returns and
+# leaves nothing behind — the card's whole life is hyprnotify's.
+nfy() { # nfy <summary> <a{sv} hints...> — a card carrying a real `default`
+	local sum="$1"; shift
+	DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user call org.freedesktop.Notifications \
+		/org/freedesktop/Notifications org.freedesktop.Notifications \
+		Notify susssasa{sv}i gatechat 0 "" "$sum" body 2 default Open "$@" 30000 >/dev/null
+}
+nfy "open me" 0; sleep 1
+hq hyprnotify center >/dev/null; sleep 0.6
+chk "close-on-act: the shade is open with the firing card in it" test "$(st)" = "center:1 live:1 dnd:0"
+click $ROWX $ROWY 272
+chk "close-on-act: the primary took the card AND the shade with it" test "$(st)" = "center:0 live:0 dnd:0"
+nfy "stay me" 1 resident b true; sleep 1
+hq hyprnotify center >/dev/null; sleep 0.6
+chk "close-on-act: the resident card is in an open shade" test "$(st)" = "center:1 live:1 dnd:0"
+click $ROWX $ROWY 272
+chk "close-on-act: a resident card's action keeps card and shade both" test "$(st)" = "center:1 live:1 dnd:0"
+hq hyprnotify center >/dev/null; sleep 0.4
+hq hyprnotify clear >/dev/null; sleep 0.8
+chk "close-on-act: reset after the battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- hover holds a banner's clock ------------------------------------------
 # A card must not expire out from under the pointer reading it. The pointer
@@ -418,7 +456,14 @@ chk "keys: space only folds" test "$(st)" = "center:1 live:2 dnd:0"
 tap delete
 chk "keys: delete dismisses the selected row" test "$(st)" = "center:1 live:1 dnd:0"
 tap enter
-chk "keys: enter fires the primary and the card goes" test "$(st)" = "center:1 live:0 dnd:0"
+# enter is the body click's twin, so it collapses for the same reason: "key
+# one" carries a real -A default, and firing it raises the sender over the
+# panel. The card goes AND the shade goes with it.
+chk "keys: enter fires the primary, taking the card and the shade" test "$(st)" = "center:0 live:0 dnd:0"
+# which leaves esc nothing to close — give it its own shade, or the line
+# below passes on a shade that was already gone
+hq hyprnotify center >/dev/null; sleep 0.5
+chk "keys: a fresh shade for esc to close" test "$(st)" = "center:1 live:0 dnd:0"
 tap esc
 chk "keys: esc closes the shade" test "$(st)" = "center:0 live:0 dnd:0"
 

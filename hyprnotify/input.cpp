@@ -11,6 +11,12 @@
 //            dismiss · middle = Clear all · the hover-revealed strip beside
 //            the chevron holds ⊘ (silence the app), ◷ (snooze the card)
 //            and ★ (mark the sender)
+//   leaving  anything that RAISES something else closes the shade with it —
+//            the primary, an action button, a link (invokeLive below has
+//            the AOSP citation). Everything that keeps you here does not:
+//            a dismissal, a fold, the manage strip, DND, Clear all, and a
+//            `resident` card's actions, which is the spec's own way of
+//            saying the action does not take you away.
 //   child    a bundle child is a row without the fold: body, links, buttons
 //   digest   left expands the app's bundle · its ⊘ silences · right dismisses
 //   ghead    left collapses · ⊘ silences · the ✕ / right dismisses the bundle
@@ -111,8 +117,24 @@ namespace NHyprnotify {
 
     // ---- the deferred drain: what each surface DOES ----
 
+    // Firing a card's primary (or one of its buttons) LEAVES: the sender
+    // raises itself over the very shade the click was made in, so the shade
+    // must get out of the way. Android does exactly this —
+    // StatusBarNotificationActivityStarter collapses the shade on a
+    // content-intent click, and handleRemoteViewClick closes it for any
+    // action that starts an activity ("close the shade if it was open and
+    // maybe wait for activity start") — and swaync ships the same as
+    // hide-on-action, default on.
+    //
+    // An action that does NOT start an activity leaves Android's shade
+    // standing. fd.o has no isActivity, but it has `resident`: "the server
+    // will not automatically remove the notification when an action has been
+    // invoked" — the spec's way of saying this action keeps you here. So the
+    // shade goes exactly when the card does. A card with no action at all
+    // launches nothing: that click is a dismissal, and dismissing never
+    // closes the shade, here or on a phone.
     static void invokeLive(uint32_t id, const std::string& actionOverride) {
-        std::string action = actionOverride;
+        std::string action   = actionOverride;
         bool        resident = false;
         for (const auto& N : notifs)
             if (N->id == id) {
@@ -121,10 +143,15 @@ namespace NHyprnotify {
                 resident = N->resident;
                 break;
             }
-        if (!action.empty())
-            Bus::invokeAction(id, action);
-        if (!(resident && !action.empty())) // resident keeps the card once an action fired
+        if (action.empty()) { // nothing to fire: the body click is a dismissal
             Model::closeOne(id, Model::R_DISMISSED);
+            return;
+        }
+        Bus::invokeAction(id, action);
+        if (resident)
+            return; // the card stays, and so does the shade behind it
+        setCenter(false);
+        Model::closeOne(id, Model::R_DISMISSED);
     }
 
     // the manage strip: silence the card's app, or mark its sender. Both are
@@ -209,6 +236,7 @@ namespace NHyprnotify {
                     }
                     if (!H.href.empty()) { // a link in the body: open it, keep the card
                         spawnDetached({"xdg-open", H.href.c_str(), nullptr});
+                        setCenter(false); // but not the shade: a browser is coming up over it
                         continue;
                     }
                     invokeLive(H.id, ""); // the body IS the card's primary, as on the banner

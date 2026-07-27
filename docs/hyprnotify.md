@@ -33,8 +33,9 @@ icons).
   come out right. Malformed markup falls back to plain text.
 - `<a href>` in the body is a hyperlink (Pango has no `<a>` tag, so it is
   rewritten to a styled span and hit-tested by its stripped-text byte
-  offset); a click opens the URL via `xdg-open` and leaves the card up. The
-  pointer shows the hand over a link.
+  offset); a click opens the URL via `xdg-open` and leaves the card up — but
+  not the shade, since a browser is about to cover it. The pointer shows the
+  hand over a link.
 - `<img src>` in the body renders as a thumbnail row below the text.
 
 ## Images / icons
@@ -96,6 +97,20 @@ icons).
   revealing; the CHEVRON is the only fold target. Right dismisses; middle is
   "Clear all". On an app bundle left expands and right (or the header ✕)
   dismisses the whole app.
+- Acting CLOSES the shade. Firing a card's primary, pressing one of its
+  buttons or opening a body link all raise something over the panel the
+  click was made in, so the panel gets out of the way. This is Android's
+  rule, split the same way: `StatusBarNotificationActivityStarter`
+  collapses the shade on a content-intent click, and `handleRemoteViewClick`
+  closes it for any action that starts an activity — but an action that
+  does not start one leaves the shade standing. fd.o has no `isActivity`,
+  and `resident` is the nearest thing it does have ("the server will not
+  automatically remove the notification when an action has been invoked"),
+  so the shade goes exactly when the card goes. Everything that keeps you
+  here keeps the shade: a dismissal, a fold, the manage strip, DND, "Clear
+  all", the reply field, and a card with no action to fire (that click is
+  only a dismissal). swaync draws the same line with `hide-on-action`
+  (default on) versus `hide-on-clear` (default off).
 - Inline reply (KDE's protocol, which Telegram Desktop speaks): an action
   keyed `inline-reply` is not a button — it grows a reply field in the open
   shade row, and sending emits `NotificationReplied(id, text)` and closes

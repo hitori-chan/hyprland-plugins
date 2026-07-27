@@ -76,6 +76,12 @@ Two surfaces share one card model:
      bundle: left expands, right (or the header ✕) dismisses the whole app.
      The footer is ⊖ DND (accent-lit while on) and "Clear all". A click
      outside closes.
+   - **Acting closes the shade**, exactly as it collapses Android's. The
+     primary, an action button and a body link all raise something over the
+     panel you clicked in, so the panel leaves with them. Everything that
+     keeps you here keeps it: dismissing, folding, the manage strip, DND,
+     "Clear all", the reply field, and a `resident` card's actions — the
+     spec's own way of saying the action does not take you away.
    - **Per-app rules** — what Android hides behind a long-press, and the
      thing one global DND could never say. An open row reveals a strip
      beside its chevron on hover: **⊘** silences the app (no banner, no
