@@ -35,6 +35,12 @@
 //   the spec's update signals, check/radio state draws in a leading
 //   column, disposition warning/alert rows take the urgent color, labels
 //   honor the "__" escape.
+// - bell: the notification bell and its unread badge, sitting between the
+//   tray and the battery and riding the tray's own bus link. The one
+//   widget whose state lives in ANOTHER plugin: it reads counts from
+//   hyprnotify's org.hitori.hyprnotify face — State in, Toggle/Peek out —
+//   never from a shared symbol. Left click toggles the shade; hovering it
+//   PEEKS the shade open unpinned after bell_peek_ms.
 // - battery: Android's expressive battery (the Pixel pill), transcribed
 //   1:1 from SystemUI's Compose implementation and drawn natively in the
 //   warm pass (cairo; assets embedded verbatim, see battery.cpp) — digits

@@ -69,6 +69,31 @@ renderer.
 - nm-applet note: in indicator mode it merges its two X11 menus into one
   and implements no left-click action — upstream design.
 
+## Bell
+
+The notification bell sits between the tray and the battery and is the one
+widget whose state lives in another plugin. It reads hyprnotify over the
+bus and never through a shared symbol — `org.hitori.hyprnotify` on the
+`/org/freedesktop/Notifications` object, the sanctioned cross-plugin
+channel.
+
+- The badge is `live + kept` (bannered popups plus resident shade cards)
+  and hides at zero. It arrives two ways: a `State` signal hyprnotify emits
+  on every model change, and one `State` call at init so a bar that starts
+  after the daemon is not blank until the next notification. Both land in
+  the same change-detected setter, so an unchanged count costs no repaint.
+- Left click calls `Toggle`. hyprbar never tracks whether the shade is
+  open — hyprnotify owns that, and a click on a shade the pointer only
+  peeked open pins it rather than closing it.
+- Hovering calls `Peek(true)` after `bell_peek_ms` (350; 0 = off), so a
+  glance costs no click. The delay is hover INTENT: a pointer merely
+  crossing the bell on its way elsewhere must not open anything. Leaving
+  sends `Peek(false)`, and hyprnotify — not the bar — decides what that
+  means, because the pointer may be travelling down into the panel; it
+  runs a grace timer that both surfaces cancel.
+- The link is the tray's own connection (`Bell::init()` runs after
+  `Tray::init()`), so the bell costs no second bus.
+
 ## Layoutbox
 
 The active workspace's layout icon (rightmost), from

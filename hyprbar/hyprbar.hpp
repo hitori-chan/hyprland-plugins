@@ -9,6 +9,9 @@
 //   taglist.cpp   the nine kanji tags               (widget)
 //   tasklist.cpp  arrival order, markers, the middle (widget)
 //   tray.cpp      StatusNotifierWatcher/Host (sdbus-c++) + its strip cells
+//   bell.cpp      the notification bell + its badge, on hyprnotify's bus
+//                 face (org.hitori.hyprnotify) — the only cross-plugin
+//                 widget                          (widget)
 //   battery.cpp   gauge state, alerts, Android's pill (widget)
 //   clock.cpp     awesome's textclock               (widget)
 //   layoutbox.cpp the per-tag layout registry       (widget)
