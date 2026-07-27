@@ -19,7 +19,7 @@
 //   leaving  anything that RAISES something else closes the shade with it —
 //            the primary, an action button, a link (invokeLive below has
 //            the AOSP citation). Everything that keeps you here does not:
-//            a dismissal, a fold, the manage strip, DND, Clear all, and a
+//            a dismissal, a fold, the manage panel, DND, Clear all, and a
 //            `resident` card's actions, which is the spec's own way of
 //            saying the action does not take you away.
 //   snooze   the undo row a ◷ leaves behind: left on "Undo" puts the card
@@ -167,8 +167,9 @@ namespace NHyprnotify {
         Model::closeOne(id, Model::R_DISMISSED);
     }
 
-    // the manage verbs: silence the card's app, or mark its sender. Both are
-    // per-key rules, so the card only supplies the key.
+    // The manage verbs behind the KEYS m/s/p — the pointer reaches all three
+    // through the panel instead, so the part codes here never arrive from a
+    // row hit any more. Both rules are per-key, so the card only supplies it.
     static void manageCard(uint32_t id, uint8_t part) {
         if (part == 7) { // snooze is the card's own verb, not a rule
             Model::snooze(id);
@@ -274,10 +275,6 @@ namespace NHyprnotify {
                     }
                     if (H.part == 10) { // the ⋮ turns the row into its manage panel
                         centerToggleManage(H.id);
-                        continue;
-                    }
-                    if (H.part >= 5 && H.part <= 7) {
-                        manageCard(H.id, H.part);
                         continue;
                     }
                     if (H.part == 3) // inside the armed field: keep typing

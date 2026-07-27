@@ -1,10 +1,9 @@
 // hyprnotify/text.cpp — the pango rasterizer, the keyed text cache, and the
 // markup/link/age helpers every drawing unit shares.
 //
-// Everything text becomes a texture here, keyed on content + style + width:
-// staleness needs no bookkeeping — a replace or an age-bucket move simply
-// misses to a new key, and a grace-generation sweep bounds the map (evicting
-// only what no recent warm wanted — the hyprbar pattern).
+// Everything text becomes a texture here, keyed on content + style + width
+// into common/texcache.hpp's CGenCache — see there for why the key needs no
+// staleness bookkeeping and why the bound is a grace generation.
 
 #include "ui.hpp"
 
@@ -334,9 +333,9 @@ namespace NHyprnotify {
 
     // ---- the keyed cache ----
 
-    static std::unordered_map<std::string, SCachedText> texCache;
-    static uint64_t                                     texGen         = 0;
-    static constexpr uint64_t                           TEX_CACHE_LIFE = 24;
+    // 24 warms of grace — the shade warms only when its model changes, so
+    // this is a longer wall-clock reprieve than the same number gives the bar
+    static NHyprCommon::CGenCache<SCachedText, 24> texCache;
 
     const SCachedText* cachedText(const std::string& text, const CHyprColor& col, int pt, int maxWpx, int maxHpx, float lineSp, bool markup, int weight,
                                   const CHyprColor* linkCol) {
@@ -356,15 +355,12 @@ namespace NHyprnotify {
         KEY += text;
         KEY.append(meta, std::min<size_t>(METALEN > 0 ? (size_t)METALEN : 0, sizeof(meta) - 1));
 
-        if (const auto IT = texCache.find(KEY); IT != texCache.end()) {
-            IT->second.gen = texGen;
-            return &IT->second;
-        }
+        if (const auto* HIT = texCache.find(KEY))
+            return HIT;
         if (!warmGate.mayBuild())
             return nullptr;
 
         SCachedText entry;
-        entry.gen = texGen;
         if (linkCol) {
             std::vector<std::pair<std::string, CBox>> lrects;
             entry.tex = buildText(text, col, pt, maxWpx, maxHpx, lineSp, markup, weight, linkCol, &lrects);
@@ -372,7 +368,7 @@ namespace NHyprnotify {
                 entry.links.push_back({HREF, R}); // physical px; the drawing unit descales
         } else
             entry.tex = buildText(text, col, pt, maxWpx, maxHpx, lineSp, markup, weight);
-        return &texCache.emplace(KEY, std::move(entry)).first->second;
+        return texCache.insert(KEY, std::move(entry));
     }
 
     double texH(const SCachedText* e, double scale) {
@@ -383,11 +379,10 @@ namespace NHyprnotify {
     }
 
     void textCacheTick() {
-        texGen++;
+        texCache.tick();
     }
     void textCacheSweep() {
-        if (texGen > TEX_CACHE_LIFE)
-            std::erase_if(texCache, [](const auto& E) { return E.second.gen + TEX_CACHE_LIFE < texGen; });
+        texCache.sweep();
     }
     void textCacheClear() {
         texCache.clear();

@@ -78,7 +78,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.9.0";
+    inline constexpr const char* VERSION = "6.9.1";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -364,8 +364,9 @@ namespace NHyprnotify {
         CBox        close;        // POPUP hover-✕ / GHEAD ✕; w = 0 -> none
         CBox        replyField;   // ROW: the armed inline-reply box (swallows, never acts)
         CBox        replySend;    // ROW: its send pill
-        // the hover-revealed manage strip (silence, priority, …): one rect
-        // per part code, so another verb costs an entry and not a member
+        // every small control the surface carries — the ⋮, the undo row's two,
+        // a manage panel's entries — as one rect per part code, so another
+        // verb costs an entry here and not a member
         struct SManage {
             CBox    box;
             uint8_t part;

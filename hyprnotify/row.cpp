@@ -75,8 +75,8 @@ namespace NHyprnotify {
             // expanded: age/header line, title, body, progress, then the card's
             // own actions in Notify order. The PRIMARY gets no button here —
             // the row body fires it, exactly as the banner does.
-            // the manage strip rides the header line; the kicker gives up
-            // exactly its width so the two can never collide, hover or not
+            // the ⋮ rides the header line; the kicker gives up exactly its
+            // width so the two can never collide, shown or not
             const double MANAGEW = ST.manage ? OVER_D + OVER_GAP + 4 : 0;
             const int    KICKWPX = std::max(1, (int)std::floor((TEXTW - MANAGEW) * P.scale));
 

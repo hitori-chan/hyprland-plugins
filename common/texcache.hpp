@@ -8,9 +8,10 @@
 // one frame ahead; the draw pass paints cache hits and never builds. A draw
 // that finds a texture missing flags the gate, and the pass element backs
 // out to the event loop to warm and repaint (every shown state needs its
-// own damage). CWarmGate is that state machine; the rasterizers and caches
-// stay per plugin (the bar keys a generation cache over the compositor's
-// renderText, the cards raster their own wrapped/markup pango layouts).
+// own damage). CWarmGate is that state machine, and CGenCache below is what
+// both plugins key their rasters into. The RASTERIZERS stay per plugin: the
+// bar hands short labels to the compositor's renderText, the cards build
+// their own wrapped/markup pango layouts.
 #pragma once
 
 #include "lifecycle.hpp"
@@ -18,6 +19,8 @@
 #include <hyprland/src/Compositor.hpp>
 
 #include <functional>
+#include <string>
+#include <unordered_map>
 
 namespace NHyprCommon {
 
@@ -93,6 +96,61 @@ namespace NHyprCommon {
       private:
         bool m_tokenPermit = false; // warming as it stood when this pass began
         CHop m_rewarm;
+    };
+
+    // The keyed raster cache. Staleness needs no bookkeeping at all: content
+    // plus style IS the key, so a retitled window or an age bucket ticking
+    // over simply misses to a new one. What does need bounding is the MAP —
+    // title churn would grow it without limit — and the bound is a grace
+    // generation rather than a size cap: evict only what no recent warm asked
+    // for, so no single warm is ever left rebuilding everything at once.
+    //
+    // LIFE is how many warms an untouched entry survives. It differs by
+    // surface, which is the only reason it is a parameter: the bar warms on
+    // every clock tick and wants a longer grace than the shade, which warms
+    // only when its model changes.
+    template <typename TValue, uint64_t LIFE = 32>
+    class CGenCache {
+      public:
+        // the entry if present, TOUCHED so this generation's sweep spares it
+        TValue* find(const std::string& key) {
+            const auto IT = m_map.find(key);
+            if (IT == m_map.end())
+                return nullptr;
+            IT->second.gen = m_gen;
+            return &IT->second.val;
+        }
+
+        TValue* insert(const std::string& key, TValue&& val) {
+            auto& E = m_map[key];
+            E.val   = std::move(val);
+            E.gen   = m_gen;
+            return &E.val;
+        }
+
+        void tick() {
+            m_gen++;
+        }
+
+        // Call ONLY from a warm that enumerated every surface: a scoped warm
+        // (one monitor, one menu) never asks for the textures it left alone,
+        // so ageing on one would evict them for having been skipped.
+        void sweep() {
+            if (m_gen > LIFE)
+                std::erase_if(m_map, [this](const auto& E) { return E.second.gen + LIFE < m_gen; });
+        }
+
+        void clear() {
+            m_map.clear();
+        }
+
+      private:
+        struct SEntry {
+            TValue   val;
+            uint64_t gen = 0;
+        };
+        std::unordered_map<std::string, SEntry> m_map;
+        uint64_t                                m_gen = 0;
     };
 
 } // namespace NHyprCommon

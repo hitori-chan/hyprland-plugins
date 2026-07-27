@@ -107,7 +107,7 @@ icons).
   and `resident` is the nearest thing it does have ("the server will not
   automatically remove the notification when an action has been invoked"),
   so the shade goes exactly when the card goes. Everything that keeps you
-  here keeps the shade: a dismissal, a fold, the manage strip, DND, "Clear
+  here keeps the shade: a dismissal, a fold, the manage panel, DND, "Clear
   all", the reply field, and a card with no action to fire (that click is
   only a dismissal). swaync draws the same line with `hide-on-action`
   (default on) versus `hide-on-clear` (default off).
@@ -118,13 +118,16 @@ icons).
   `x-kde-reply-submit-button-text` are honored. The field takes the whole
   keyboard while armed (there is no focus to give it); editing is
   append-and-backspace plus C-u / C-w. Banners have no field.
-- Shade keys, while it is open and only then: Esc closes, ↑/↓ move a
-  selection (an accent hairline; the page follows it), Space folds, Enter
-  fires the primary, Tab arms the selected card's reply field, Delete
-  dismisses, `m` silences the app, `s` snoozes the card, `p` marks the
-  sender. Modified chords pass through as user binds, and so does any key
-  with nothing to act on — nothing selected, or `p` on a card that is not a
-  chat.
+- Shade keys, while it is open and only then: Esc peels (an open manage panel
+  first, then the shade), ↑/↓ move a selection (an accent hairline; the page
+  follows it), Space folds, Enter fires the primary, Tab arms the selected
+  card's reply field, Delete dismisses, `m` silences the app, `s` snoozes the
+  card, `p` marks the sender, `u` takes a snooze back while its undo row is
+  up. An undo row is its own keyboard surface: `s` there re-picks the
+  duration, and Space/Enter belong to focus since the row has neither a fold
+  nor a primary. Modified chords pass through as user binds, and so does any
+  key with nothing to act on — nothing selected, or `p` on a card that is not
+  a chat.
 - Per-app rules (`policy.cpp`, persisted to
   `$XDG_STATE_HOME/hyprnotify/policy.tsv`): SILENCED apps get no banner and
   no sound and rank with the quiet ones — Android's "Silent", dunst's

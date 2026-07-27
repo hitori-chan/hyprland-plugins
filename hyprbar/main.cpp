@@ -224,7 +224,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.colBg          = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_bg", "bar background", 0xff131313);
     cfg.colFg          = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_fg", "normal text", 0xffaaaaaa);
     cfg.colMuted       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_muted", "tray letter fallback", 0xff8a97a8);
-    cfg.colFocus       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_focus", "selected menubar entry text (awesome fg_focus)", 0xff32d6ff);
+    // the ONE colour the bar shares with the shell material — awesome's
+    // fg_focus slot, filled by the glass·ink accent. Everything around it is
+    // deliberately awesome's own palette, so this is the exception.
+    cfg.colFocus       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_focus", "selected menubar entry text (awesome fg_focus)", NHyprCommon::Theme::ACCENT);
     cfg.colActive      = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_active", "active tag / focused task text", 0xff00ccff);
     cfg.colActiveBg    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_active_bg", "active tag background", 0xff1e2320);
     cfg.colEmpty       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_empty", "disabled/placeholder text", 0xff565e6b);
@@ -361,7 +364,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.4.1"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.4.2"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

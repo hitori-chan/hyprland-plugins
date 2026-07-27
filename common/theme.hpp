@@ -1,12 +1,18 @@
-// common/theme.hpp — the glass·ink token block, the ONE theme every drawing
-// plugin sources (hyprbar + hyprnotify fully, hyprsnap its accent). These are
-// the C++ config DEFAULTS; theme.lua overrides them at runtime through the
-// same plugin config values as always. A future re-theme is a swap of this
-// block, never a code path.
+// common/theme.hpp — the glass·ink token block: the C++ config DEFAULTS for
+// the MATERIAL, which theme.lua then overrides at runtime through the usual
+// plugin config values. A re-theme is a swap of this block, never a code
+// path.
+//
+// Who actually sources it, so the next reader does not go looking for more:
+// hyprnotify takes its whole palette from here; hyprbar takes the shared
+// FILLS and gates through glass.hpp plus two menu radii, while its own
+// colour defaults stay the AWESOME palette in its main.cpp — the shell is
+// the awesome LAYOUT wearing this MATERIAL, and the bar is where the layout
+// half shows. Nothing else reads it.
 //
 // Values are the decided contract (2026-07-23): graphite frosted glass
-// #0f1218 @ 62%, accent #32d6ff, urgent #ff8a5c, IBM Plex Sans, radii
-// panel 22 / card 16 / row 14, rounding power 3.
+// #0f1218 @ 62%, accent #32d6ff, urgent #ff8a5c, IBM Plex Sans, card radius
+// 16, rounding power 3.
 #pragma once
 
 #include <cstdint>
@@ -34,18 +40,16 @@ namespace NHyprCommon::Theme {
     inline constexpr const char* FONT = "IBM Plex Sans"; // shell UI; Fira Code stays in terminals
 
     // ---- radii (logical px) ----------------------------------------------
-    inline constexpr int    RAD_PANEL      = 22; // center panel
-    inline constexpr int    RAD_CARD       = 16; // popup cards
-    inline constexpr int    RAD_ROW        = 14; // center rows
-    inline constexpr int    RAD_ICON_POPUP = 10; // 44px icon column
-    inline constexpr int    RAD_ICON_ROW   = 8;  // 34px row icon
-    inline constexpr int    RAD_INNER      = 5;  // segmented group children
+    // ONE radius is a token. The rest of hyprnotify's family DERIVES from it
+    // at runtime (paint.cpp: panel = card + 6, row = card - 2, icons as
+    // ratios of their box), so panel 22 / row 14 are facts about the default,
+    // not knobs — a second constant holding 22 would be a copy that goes
+    // stale the moment plugin:hyprnotify:rounding is set.
+    inline constexpr int    RAD_CARD       = 16;
+    inline constexpr int    RAD_ROW        = 14; // hyprbar's menu rows, which take no rounding config
     inline constexpr double ROUNDING_POWER = 3.0;
 
     // ---- motion (ms; every plugin honors animations=0 as the kill switch) -
     inline constexpr int MOTION_SPATIAL = 320; // panel open/close, card arrival
-    inline constexpr int MOTION_FAST    = 170; // morphs, folds
-    inline constexpr int MOTION_EFFECT  = 150; // color/hover — never overshoots
-    inline constexpr int MOTION_DETACH  = 260; // dismiss exit
 
 } // namespace NHyprCommon::Theme

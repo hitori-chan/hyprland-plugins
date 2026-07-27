@@ -15,13 +15,7 @@ namespace NHyprbar {
     // crosses, so the variant it just left would be rebuilt on the way back —
     // a pango render + upload each time. A grace window keeps those hot and
     // still bounds the map against title churn.
-    struct SCachedTex {
-        SP<ITexture> tex;
-        uint64_t     gen = 0;
-    };
-    static std::unordered_map<std::string, SCachedTex> texCache;
-    static uint64_t                                    texGen         = 0;
-    static constexpr uint64_t                          TEX_CACHE_LIFE = 32; // warms an unused texture survives
+    static NHyprCommon::CGenCache<SP<ITexture>> texCache;
 
     // per monitor: a fingerprint of the task labels the strip shows — see
     // the tasklist in renderBar
@@ -46,17 +40,13 @@ namespace NHyprbar {
         KEY.append(meta, METALEN > 0 ? (size_t)METALEN : 0);
         KEY += F;
 
-        if (const auto IT = texCache.find(KEY); IT != texCache.end()) {
-            IT->second.gen = texGen;
-            return IT->second.tex;
-        }
+        if (const auto* HIT = texCache.find(KEY))
+            return *HIT;
 
         if (!warmGate.mayBuild())
             return nullptr;
 
-        auto tex      = g_pHyprRenderer->renderText(text, col, pt, false, F, maxWidth);
-        texCache[KEY] = {tex, texGen};
-        return tex;
+        return *texCache.insert(KEY, g_pHyprRenderer->renderText(text, col, pt, false, F, maxWidth));
     }
 
     // ---- the paint context (hyprbar.hpp) ----
@@ -327,19 +317,16 @@ namespace NHyprbar {
             return;
 
         if (!only)
-            texGen++;
+            texCache.tick();
 
         for (const auto& M : State::monitorState()->monitors())
             if (!only || M == only)
                 renderBar(M, true);
 
-        // Bound the cache against title churn, but only drop what no warm has
-        // wanted for a while — see SCachedTex. (The old size-capped full flush
-        // is survivable now that a draw can never build, but it still meant one
-        // warm rebuilding everything at once.) A scoped warm never enumerates
-        // every monitor's textures, so it must not age or evict.
-        if (!only && texGen > TEX_CACHE_LIFE)
-            std::erase_if(texCache, [](const auto& E) { return E.second.gen + TEX_CACHE_LIFE < texGen; });
+        // A scoped warm renders one monitor, so it neither ages nor evicts —
+        // the textures it skipped were not unwanted, just not enumerated.
+        if (!only)
+            texCache.sweep();
 
         warmGate.endWarm();
     }

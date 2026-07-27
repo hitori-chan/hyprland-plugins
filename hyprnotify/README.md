@@ -79,7 +79,7 @@ Two surfaces share one card model:
    - **Acting closes the shade**, exactly as it collapses Android's. The
      primary, an action button and a body link all raise something over the
      panel you clicked in, so the panel leaves with them. Everything that
-     keeps you here keeps it: dismissing, folding, the manage strip, DND,
+     keeps you here keeps it: dismissing, folding, the manage panel, DND,
      "Clear all", the reply field, and a `resident` card's actions — the
      spec's own way of saying the action does not take you away.
    - **The manage panel** — what Android hides behind a long-press, and the

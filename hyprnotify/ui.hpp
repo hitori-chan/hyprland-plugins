@@ -53,7 +53,7 @@ namespace NHyprnotify {
     inline constexpr double BADGE_D = 20.0 / 40.0, BADGE_PROT = 2.0 / 40.0, BADGE_INSET = 2.0 / 20.0;
 
     inline constexpr double CENTER_W = 360; // the shade's height is the monitor's (see renderCenter)
-    inline constexpr double ROW_PADT = 9, ROW_PADX = 12, ROW_PADB = 10, ROW_ICON = 40, ROW_ICON_GAP = 10, ROW_GAP = 8;
+    inline constexpr double ROW_PADT = 9, ROW_PADX = 12, ROW_PADB = 10, ROW_ICON = 40, ROW_ICON_GAP = 10;
     inline constexpr double CHEV = 24;                       // the fold chevron circle
     inline constexpr double MANAGE_D = 20, MANAGE_GAP = 4;   // the ⊘ a bundle header/digest carries
     inline constexpr double OVER_D = 24, OVER_GAP = 6;       // the row's ⋮, beside the chevron
@@ -114,9 +114,8 @@ namespace NHyprnotify {
     // ---- text.cpp: the keyed raster cache ----
 
     struct SCachedText {
-        SP<ITexture>       tex; // null = rastered to nothing; still a cached result
+        SP<ITexture>       tex;   // null = rastered to nothing; still a cached result
         std::vector<SLink> links; // physical px rel rects (body markup only)
-        uint64_t           gen = 0;
     };
 
     // Content + style + width IS the key: a replace or an age-bucket move
