@@ -36,6 +36,17 @@ client's own minimize request — a CSD titlebar button (xdg `set_minimized`)
 or X11 `IconicState` — is honored as the same action. A minimized floating
 window's vacated box is force-repainted so its last frame can't linger.
 
+An **activation request restores it**. Clicking a notification, a browser's
+"switch to tab", any xdg-activation: the compositor's `CWindow::activate()`
+raises and focuses the window but cannot un-hide it, because hiding it was
+this plugin's doing and the compositor has no minimize state to reverse.
+Left alone the focus lands on an unrendered window and the check_focus guard
+bounces straight off it, so the click appears to do nothing. The plugin
+restores it from `window.urgent`, which `activate()` emits before its own
+`misc:focus_on_activate` gate — and reads that same option, because with it
+off the user has asked that activation never steal focus, and un-minimizing
+a window is exactly that. With it off, the chip's urgent tint is the answer.
+
 Icons resolve from the GTK icon theme + hicolor + pixmaps, PNG or SVG;
 `*-symbolic` SVGs are repainted with the bar foreground.
 

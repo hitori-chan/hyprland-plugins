@@ -179,7 +179,7 @@ static int luaLayoutPrev(lua_State*) {
 // and awful.client.restore (Mod+Ctrl+N). Deferred out of the keybind emission:
 // both change focus + layout, which must never run synchronously inside an
 // input emission; the pending hops are reset in PLUGIN_EXIT.
-static NHyprCommon::CHop pendingMinimize, pendingRestore, pendingUnfocusHidden;
+static NHyprCommon::CHop pendingMinimize, pendingRestore, pendingUnfocusHidden, pendingActivate;
 static int               luaMinimize(lua_State*) {
     pendingMinimize.arm([]() { Tasklist::minimizeFocused(); });
     return 0;
@@ -291,7 +291,31 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             return;
         damageAndWarm();
     });
-    g_lifecycle.listen(EV.window.urgent, [](PHLWINDOW) { damageAndWarm(); });
+    // An activation request — a notification click, a browser's "switch to
+    // tab", any xdg-activation — reaches a MINIMIZED window and dies there.
+    // CWindow::activate() raises and focuses, but the window is setHidden and
+    // activate() has no idea how to un-hide it: minimize is OUR invention (the
+    // compositor has no such state), so the restore is ours too. Without this
+    // the focus lands on an unrendered window and the check_focus guard below
+    // bounces straight back off it — the click does nothing at all.
+    //
+    // urgent fires from activate() BEFORE its focus_on_activate gate, so read
+    // the same value the compositor is about to read: with it off the user has
+    // asked that activation never steal focus, and un-minimizing a window is
+    // exactly that theft — the chip's urgent tint is the whole answer then.
+    // Deferred like every other restore path; we are inside the emission whose
+    // caller is about to run the compositor's own focus.
+    g_lifecycle.listen(EV.window.urgent, [](PHLWINDOW w) {
+        damageAndWarm();
+        static auto FOCUS_ON_ACTIVATE = CConfigValue<Config::INTEGER>("misc:focus_on_activate");
+        if (!w || !*FOCUS_ON_ACTIVATE || !w->isHidden() || !Tasklist::isMinimized(w))
+            return;
+        PHLWINDOWREF WR{w};
+        pendingActivate.arm([WR]() {
+            if (const auto W = WR.lock(); W && W->m_isMapped && Tasklist::isMinimized(W))
+                Tasklist::restore(W); // un-hides, re-slots if tiled, raises and focuses
+        });
+    });
     g_lifecycle.listen(EV.window.pin, [](PHLWINDOW) { damageAndWarm(); });      // the tasklist's ⌃ marker
     g_lifecycle.listen(EV.window.floating, [](PHLWINDOW) { damageAndWarm(); }); // the ✈ marker
     g_lifecycle.listen(EV.window.class_, [](PHLWINDOW) { damageAndWarm(); });   // the task icon re-resolves
@@ -331,7 +355,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.3.1"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.4.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
