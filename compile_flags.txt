@@ -1,4 +1,5 @@
 -std=c++26
+-I.
 -I/usr/local/include/hyprland/protocols
 -I/usr/local/include/hyprland
 -I/usr/local/include/hyprland/src
