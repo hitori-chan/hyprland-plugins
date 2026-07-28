@@ -198,7 +198,7 @@ namespace NHyprnotify {
         std::string label;
         const char* hint;      // the key that does the same thing
         int         verb;      // 1 snooze, 2 mute, 3 unmute, 4 priority, 5 dismiss
-        int64_t     arg = 0;   // verb 1/2: seconds, 0 = always
+        int64_t     arg = 0;   // verb 1/2: seconds, 0 = always, < 0 = today (Policy::silenceFor)
         bool        lit = false;
     };
     std::vector<SMenuEntry> menuEntries(const SP<SNotif>& N);

@@ -78,7 +78,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.9.1";
+    inline constexpr const char* VERSION = "6.9.2";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -212,6 +212,7 @@ namespace NHyprnotify {
         using ImageData = sdbus::Struct<int32_t, int32_t, int32_t, bool, int32_t, int32_t, std::vector<uint8_t>>;
 
         std::string              sanitizeMarkup(const std::string& in, bool allowLinks = false);
+        std::string              attrValue(const std::string& tag, const std::string& attr); // one quoted attr, case-insensitive name
         std::string              oneLine(std::string s);
         std::string              resolveImage(std::string s, int sizePx); // path, file://, or a themed icon NAME
         std::vector<std::string> extractImages(std::string& body, int sizePx); // pulls <img src> out of the body
@@ -263,13 +264,12 @@ namespace NHyprnotify {
         bool        silenced(const std::string& appKey);                            // no banner, no sound, ranked quiet
         bool        priority(const std::string& appKey, const std::string& sender); // this chat outranks everything but critical
         void        toggleSilence(const std::string& appKey);                       // the quick toggle: always, or not at all
-        void        silenceFor(const std::string& appKey, int64_t seconds);         // 0 = always; iOS's "Mute for 1 Hour"
+        void        silenceFor(const std::string& appKey, int64_t seconds);         // iOS's "Mute for 1 Hour"; 0 = always, < 0 = today
         void        unsilence(const std::string& appKey);
         void        unsilenceAll(); // the footer chip: one click out of every standing rule
         void        togglePriority(const std::string& appKey, const std::string& sender);
-        size_t      silencedCount();                                    // rules in force — the footer never lets one hide
-        std::vector<std::pair<std::string, int64_t>> silencedRules();   // {app key, epoch expiry; 0 = always}
-        std::string stateString(); // the debug line, and what the gate reads
+        size_t      silencedCount(); // rules in force — the footer never lets one hide
+        std::string stateString();   // the debug line, and what the gate reads
     }
 
     // ---- bus.cpp: the connection ----

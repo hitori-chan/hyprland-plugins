@@ -167,33 +167,16 @@ namespace NHyprnotify {
         Model::closeOne(id, Model::R_DISMISSED);
     }
 
-    // The manage verbs behind the KEYS m/s/p — the pointer reaches all three
-    // through the panel instead, so the part codes here never arrive from a
-    // row hit any more. Both rules are per-key, so the card only supplies it.
-    static void manageCard(uint32_t id, uint8_t part) {
-        if (part == 7) { // snooze is the card's own verb, not a rule
-            Model::snooze(id);
-            return;
-        }
-        for (const auto& N : notifs)
-            if (N->id == id) {
-                if (part == 5)
-                    Policy::toggleSilence(N->appKey);
-                else if (part == 6)
-                    Policy::togglePriority(N->appKey, N->summary);
-                return;
-            }
+    // The two per-app rules behind the KEYS m and p — the pointer reaches them
+    // through the row's manage panel instead. Both are keyed on something the
+    // card carries, so the selected card is only here to supply the key.
+    static void muteApp(uint32_t id) {
+        if (const auto N = Model::byId(id))
+            Policy::toggleSilence(N->appKey);
     }
-
-    // "today" is not a duration, it is a time of day: iOS's "Mute for Today"
-    // lasts until tomorrow morning, not for a rolling 24 hours.
-    static int64_t untilTomorrow() {
-        const auto NOW = std::chrono::system_clock::now();
-        const auto T   = std::chrono::system_clock::to_time_t(NOW);
-        std::tm    lt{};
-        localtime_r(&T, &lt);
-        const int64_t ELAPSED = (int64_t)lt.tm_hour * 3600 + lt.tm_min * 60 + lt.tm_sec;
-        return std::max<int64_t>(86400 - ELAPSED, 60);
+    static void markSender(uint32_t id) {
+        if (const auto N = Model::byId(id))
+            Policy::togglePriority(N->appKey, N->summary);
     }
 
     // one entry of a row's manage panel, by the index its hit rect carried
@@ -207,7 +190,7 @@ namespace NHyprnotify {
         const auto& E = EN[idx];
         switch (E.verb) {
             case 1: Model::snoozeFor(id, E.arg); break;
-            case 2: Policy::silenceFor(N->appKey, E.arg < 0 ? untilTomorrow() : E.arg); break;
+            case 2: Policy::silenceFor(N->appKey, E.arg); break;
             case 3: Policy::unsilence(N->appKey); break;
             case 4: Policy::togglePriority(N->appKey, N->summary); break;
             case 5: Model::closeOne(id, Model::R_DISMISSED); return; // the card is gone; so is its panel
@@ -551,11 +534,11 @@ namespace NHyprnotify {
                 if (GROUP)
                     Policy::toggleSilence(A.group);
                 else
-                    manageCard(A.id, 5);
+                    muteApp(A.id);
             } else if (A.verb == 5)
-                manageCard(A.id, 6);
+                markSender(A.id);
             else if (A.verb == 6 && !GROUP)
-                manageCard(A.id, 7);
+                Model::snooze(A.id);
             else if (A.verb == 7)
                 Model::snoozeUndo(A.id);
             else if (A.verb == 8)

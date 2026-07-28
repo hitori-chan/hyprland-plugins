@@ -44,6 +44,15 @@ namespace NHyprnotify::Policy {
     static bool expired(int64_t until) {
         return until != 0 && until <= nowEpoch();
     }
+    // "today" is not a duration, it is a time of day: iOS's "Mute for Today"
+    // lasts until tomorrow morning, not for a rolling 24 hours.
+    static int64_t untilTomorrow() {
+        const auto T = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        std::tm    lt{};
+        localtime_r(&T, &lt);
+        const int64_t ELAPSED = (int64_t)lt.tm_hour * 3600 + lt.tm_min * 60 + lt.tm_sec;
+        return std::max<int64_t>(86400 - ELAPSED, 60);
+    }
 
     static std::filesystem::path storePath() {
         return NHyprCommon::statePath("hyprnotify", "policy.tsv");
@@ -144,14 +153,6 @@ namespace NHyprnotify::Policy {
         return s_silenced.size();
     }
 
-    std::vector<std::pair<std::string, int64_t>> silencedRules() {
-        std::vector<std::pair<std::string, int64_t>> out;
-        for (const auto& [K, UNTIL] : s_silenced)
-            if (!expired(UNTIL))
-                out.emplace_back(K, UNTIL);
-        return out;
-    }
-
     bool priority(const std::string& appKey, const std::string& sender) {
         return !appKey.empty() && s_priority.contains(convKey(appKey, sender));
     }
@@ -175,11 +176,13 @@ namespace NHyprnotify::Policy {
     // The timed variants iOS puts first: "Mute for 1 Hour", "Mute for Today".
     // Permanent is still available, but it stops being the only thing a click
     // can mean — it is the choice people regret, and the one whose rule then
-    // sits in a file nobody looks at. seconds 0 = always; a re-silence
-    // replaces the standing rule rather than stacking beside it.
+    // sits in a file nobody looks at. seconds 0 = always, < 0 = today; a
+    // re-silence replaces the standing rule rather than stacking beside it.
     void silenceFor(const std::string& appKey, int64_t seconds) {
         if (appKey.empty())
             return;
+        if (seconds < 0)
+            seconds = untilTomorrow();
         s_silenced[storeKey(appKey)] = seconds > 0 ? nowEpoch() + seconds : 0;
         s_saver.dirty();
         notifChanged();

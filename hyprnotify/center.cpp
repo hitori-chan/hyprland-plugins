@@ -288,29 +288,51 @@ namespace NHyprnotify {
         return !n->conversation && !n->snoozed && !n->appKey.empty();
     }
 
+    // How many bundleable cards one app holds, and where its digest landed.
+    // Even at the model cap the distinct app keys are a handful, so one linear
+    // scan beats the two string-keyed trees this used to build from scratch on
+    // every warm AND every draw.
+    struct SOwner {
+        const std::string* key;
+        size_t             count = 0;
+        size_t             first = (size_t)-1; // index in out, once one is placed
+    };
+
     static void buildDisplay(std::vector<SDisp>& out) {
         out.clear();
-        std::vector<SP<SNotif>> src;
+        static std::vector<SP<SNotif>> src;    // reused; main thread only
+        static std::vector<SOwner>     owners; // ditto
+        src.clear();
+        owners.clear();
         for (const auto& N : notifs)
             if (!N->waiting && !inOsdBand(N->id) && (!N->snoozed || confirming(N)))
                 src.push_back(N);
         // notifs is newest-first; a STABLE sort by tier keeps that inside each
         std::ranges::stable_sort(src, [](const auto& a, const auto& b) { return tier(a) < tier(b); });
 
-        // how many bundleable cards each app holds (conversations never bundle)
-        std::map<std::string, size_t> owned;
-        for (const auto& N : src)
-            if (bundleable(N))
-                owned[N->appKey]++;
+        // the keys point into src's notifications, which outlive this call
+        const auto ownerOf = [](const std::string& k) {
+            for (size_t i = 0; i < owners.size(); i++)
+                if (*owners[i].key == k)
+                    return i;
+            owners.push_back({.key = &k});
+            return owners.size() - 1;
+        };
 
-        std::map<std::string, size_t> firstOf; // app key -> out index
+        for (const auto& N : src) // conversations never bundle
+            if (bundleable(N))
+                owners[ownerOf(N->appKey)].count++;
+
         for (const auto& N : src) {
-            if (bundleable(N) && owned[N->appKey] >= AUTOGROUP_AT) {
-                if (const auto IT = firstOf.find(N->appKey); IT != firstOf.end()) {
-                    out[IT->second].items.push_back(N);
-                    continue;
+            if (bundleable(N)) {
+                auto& O = owners[ownerOf(N->appKey)];
+                if (O.count >= AUTOGROUP_AT) {
+                    if (O.first != (size_t)-1) {
+                        out[O.first].items.push_back(N);
+                        continue;
+                    }
+                    O.first = out.size();
                 }
-                firstOf[N->appKey] = out.size();
             }
             out.push_back(SDisp{.items = {N}, .key = N->appKey});
         }

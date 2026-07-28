@@ -203,14 +203,7 @@ namespace NHyprnotify {
                             inLink = false;
                         }
                     } else {
-                        std::string href;
-                        const auto  TAG = in.substr(i, END - i + 1);
-                        std::string tl  = TAG; // case-insensitive attr search, same offsets as TAG
-                        std::ranges::transform(tl, tl.begin(), [](unsigned char c) { return std::tolower(c); });
-                        if (const auto HP = tl.find("href"); HP != std::string::npos)
-                            if (const auto Q = TAG.find_first_of("\"'", HP); Q != std::string::npos)
-                                if (const auto Q2 = TAG.find(TAG[Q], Q + 1); Q2 != std::string::npos)
-                                    href = decodeEntities(TAG.substr(Q + 1, Q2 - Q - 1));
+                        const auto href = decodeEntities(Parse::attrValue(in.substr(i, END - i + 1), "href"));
                         md += "<span foreground=\"" + colHex + "\" underline=\"single\">";
                         cur    = SLinkSpan{href, plain, 0};
                         inLink = true;
