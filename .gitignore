@@ -1,6 +1,7 @@
 # built plugin artifacts — hyprpm builds these in its own cache on `hyprpm update`
 *.so
 *.tmp
+.build/
 
 # local agent instructions
 CLAUDE.md

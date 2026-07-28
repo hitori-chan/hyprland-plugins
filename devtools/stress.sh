@@ -92,13 +92,24 @@ echo "== stress: $BIN =="
 # ---- preflight ----------------------------------------------------------
 [[ -x "$BIN" ]] || { echo "no such compositor binary: $BIN"; exit 1; }
 { [[ -x "$REPO/devtools/vptr" ]] && [[ -x "$REPO/devtools/vkbd" ]]; } || make -C "$REPO/devtools" >/dev/null
-# the headers pkg-config resolves must belong to the gated binary — a
-# scratch hyprland.pc keeps its absolute /usr/local prefix (not
-# relocatable), silently falls back to the installed tree, and every
-# plugin embeds the wrong hash: all 8 mismatch-throw at load. Rewrite the
-# scratch pc's prefix= to its own include/ before gating a fork build.
-HDR_ROOT="$(pkg-config --cflags hyprland 2>/dev/null | tr ' ' '\n' | grep '^-I' | head -1 | sed 's/^-I//')"
-HDR_HASH="$(grep -h GIT_COMMIT_HASH "$HDR_ROOT/hyprland/src/version.h" 2>/dev/null | grep -oE '[0-9a-f]{40}')"
+# The headers the plugins compile against must belong to the gated binary —
+# a scratch hyprland.pc keeps its absolute /usr/local prefix (not
+# relocatable), silently falls back to the installed tree, and every plugin
+# embeds the wrong hash: all 8 mismatch-throw at load. Rewrite the scratch
+# pc's prefix= to its own include/ before gating a fork build.
+#
+# The flags come from common.mk, not from a pkg-config call of our own:
+# resolving it here separately is how this check ends up vouching for a tree
+# nothing was built against (a distro hyprland package in /usr next to the
+# fork in /usr/local is enough).
+HDR_VER=""
+for d in $(make -s -C "$REPO/hyprnotify" print-hl-cflags 2>/dev/null | tr ' ' '\n' | sed -n 's/^-I//p'); do
+	for v in "$d/hyprland/src/version.h" "$d/src/version.h"; do
+		[[ -f "$v" ]] && { HDR_VER="$v"; break 2; }
+	done
+done
+HDR_ROOT="${HDR_VER%/hyprland/src/version.h}"
+HDR_HASH="$(grep -h GIT_COMMIT_HASH "$HDR_VER" 2>/dev/null | grep -oE '[0-9a-f]{40}')"
 BIN_HASH="$("$BIN" --version 2>/dev/null | grep -oE 'commit [0-9a-f]{40}' | cut -d' ' -f2)"
 if [[ -n "$HDR_HASH" && "$HDR_HASH" == "$BIN_HASH" ]]; then
 	ok "headers match the gated binary (${BIN_HASH:0:8})"
@@ -116,19 +127,21 @@ done
 
 # ---- build + launch -----------------------------------------------------
 kill_nested
-# deploy rehearsal FIRST: hyprpm builds against ITS cached headers (the
-# system-default pkg-config resolution), not this run's scratch set — a
-# plugin that cannot build there bricks the whole hyprpm swap (hyprplace
-# 2.0.1 did). These throwaway builds are overwritten just below.
+# deploy rehearsal FIRST: hyprpm builds against ITS OWN cached headers, not
+# this run's scratch set — a plugin that cannot build there bricks the whole
+# hyprpm swap (hyprplace 2.0.1 did). Dropping PKG_CONFIG_PATH leaves
+# common.mk's own default, the installed compositor's headers. These
+# throwaway builds are overwritten just below.
+J="-j$(nproc)"
 dep_ok=1
 for p in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd; do
-	env -u PKG_CONFIG_PATH make -B -C "$REPO/$p" >/dev/null 2>&1 || { dep_ok=0; echo "  deploy-build broke: $p"; }
+	env -u PKG_CONFIG_PATH make -B $J -C "$REPO/$p" >/dev/null 2>&1 || { dep_ok=0; echo "  deploy-build broke: $p"; }
 done
 [[ $dep_ok == 1 ]] && ok "deploy rehearsal: all 8 build against the installed header cache" || bad "deploy rehearsal build"
 # now the real builds for this run's compositor (caller's PKG_CONFIG_PATH)
 build_ok=1
 for p in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd; do
-	make -B -C "$REPO/$p" >/dev/null 2>&1 || { build_ok=0; echo "  build broke: $p"; }
+	make -B $J -C "$REPO/$p" >/dev/null 2>&1 || { build_ok=0; echo "  build broke: $p"; }
 done
 [[ $build_ok == 1 ]] && ok "all 8 plugins build" || { echo "plugin build FAILED"; exit 1; }
 rm -rf "$STATE"; mkdir -p "$STATE/hyprplace"
