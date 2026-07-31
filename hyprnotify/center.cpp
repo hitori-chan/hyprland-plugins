@@ -66,67 +66,6 @@ namespace NHyprnotify {
         return s_animating;
     }
 
-    // ---- peek: the bell's hover opens the shade UNPINNED ----
-    //
-    // Summoning the shade cost a click for a glance. Hovering the bell opens
-    // it on GTK's popup delay instead — but a hover-opened shade must not
-    // outstay the pointer, and it must survive the trip from the bell down
-    // into the panel. So the close is a grace timer that BOTH surfaces cancel:
-    // the bar while the pointer is on the bell, the panel's own hover while it
-    // is on a card. Any click pins the shade, and a pinned shade is an
-    // ordinary one — hover never takes anything away.
-    inline constexpr int64_t   PEEK_GRACE_MS = 400;
-    static bool                s_peek = false, s_peekBell = false;
-    static SP<CEventLoopTimer> s_peekOut;
-
-    static void                armPeekOut(bool on) {
-        if (s_peekOut)
-            s_peekOut->updateTimeout(on ? std::optional{std::chrono::milliseconds(PEEK_GRACE_MS)} : std::nullopt);
-    }
-
-    bool centerPeeking() {
-        return s_peek;
-    }
-
-    void centerPin() {
-        if (!s_peek)
-            return;
-        s_peek = s_peekBell = false;
-        armPeekOut(false);
-        Model::absorbPopped(); // the peek deferred this; the shade is a real one now
-        notifChanged();
-    }
-
-    void centerPeek(bool onBell) {
-        s_peekBell = onBell;
-        if (onBell) {
-            armPeekOut(false);
-            if (s_on)
-                return; // already up (pinned, or peeked): hover adds nothing
-            s_peek = true;
-            setCenter(true);
-            return;
-        }
-        if (s_peek)
-            armPeekOut(!pointerOverCards()); // the pointer may already be in the panel
-    }
-
-    void centerPeekPointer(bool onCard) {
-        if (s_peek)
-            armPeekOut(!onCard && !s_peekBell);
-    }
-
-    void centerInit() {
-        s_peekOut = makeShared<CEventLoopTimer>(
-            std::nullopt,
-            [](SP<CEventLoopTimer>, void*) {
-                if (s_peek && !s_peekBell && !pointerOverCards())
-                    setCenter(false);
-            },
-            nullptr);
-        g_pEventLoopManager->addTimer(s_peekOut);
-    }
-
     // Everything one visit accumulates. The close resets it (Android parity:
     // paging and every fold start over), and so must PLUGIN_EXIT — s_disp
     // holds STRONG card refs, so a session that exits with the shade open
@@ -145,8 +84,6 @@ namespace NHyprnotify {
         s_sel       = -1;
         s_lastVis   = 0;
         s_manageRow = 0;
-        s_peek = s_peekBell = false; // a closed shade is never a peeked one
-        armPeekOut(false);
         s_disp.clear();
         s_itemH.clear();
         s_itemOpen.clear();
@@ -155,9 +92,6 @@ namespace NHyprnotify {
     }
 
     void centerExit() {
-        if (s_peekOut && g_pEventLoopManager)
-            g_pEventLoopManager->removeTimer(s_peekOut);
-        s_peekOut.reset();
         s_on = false;
         resetVisit();
     }
@@ -248,12 +182,9 @@ namespace NHyprnotify {
             resetVisit();
             replyExit(); // a field cannot outlive the panel it was drawn in
         } else {
-            // Opening absorbs the popped stack — the banners stand down into
-            // parked shade rows, so closing never re-pops them. A PEEK does
-            // not: a pointer crossing the bell must not silently swallow
-            // banners the user never read (centerPin absorbs instead).
-            if (!s_peek)
-                Model::absorbPopped();
+            // Opening absorbs the popped stack so closing never re-pops
+            // banners the user has now chosen to view.
+            Model::absorbPopped();
             if (animationsOn()) {
                 s_openedAt  = Time::steadyNow();
                 s_animating = true;

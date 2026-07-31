@@ -184,12 +184,6 @@ icons).
   emission (crash class 6) — a swipe is an alias for a click that already
   exists. Strictly an addition: a mouse with no horizontal wheel never
   reaches it, so neither gesture may be the only way to reach its verb.
-- Bell hover-peek: `Peek(on_bell)` from the bar opens the shade UNPINNED
-  after `hyprbar:bell_peek_ms`. A peek does not absorb the popped banners
-  (a pointer crossing the bell must not swallow unread ones), and it closes
-  on a grace timer once the pointer is on neither the bell nor the panel —
-  both surfaces cancel that timer, which is what lets the pointer travel
-  from the bell down into the shade. Any click pins it.
 - Native layer-shell precedence: cards and the shade are compositor-drawn,
   so their pointer ownership is subordinate to the fork's fresh native hit
   test for exclusive layers, layer popups, overlay layers, IME popups, and top
@@ -249,6 +243,5 @@ shade; 0 = sticky), `coalesce_popups` (1), `rounding`, `rounding_power`,
 `max_notifs`, `ignore_dbusclose`, `quiet_fullscreen` (1),
 `fallback_icon_dir`, `sound_command`
 (`canberra-gtk-play`), `col_bg`, `col_fg`, `col_title`, `col_kicker`,
-`col_frame`, `col_urgent`, `col_highlight`, `col_link`. The peek's delay is
-the bar's (`plugin:hyprbar:bell_peek_ms`, 350; 0 = off). Colors and fonts
+`col_frame`, `col_urgent`, `col_highlight`, `col_link`. Colors and fonts
 arrive from `theme.lua`; the C++ defaults mirror it.

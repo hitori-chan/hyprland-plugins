@@ -31,9 +31,7 @@ compositor's blur is on; the widgets riding them stay opaque.
 - **Bell** — the notification bell + unread badge, riding the tray's bus
   link to hyprnotify (`org.hitori.hyprnotify`). The badge counts the shade
   (popped + waiting) and hides at zero; a left click toggles the
-  notification center, and HOVERING it for `bell_peek_ms` peeks the shade
-  open without a click (`Peek`; hyprnotify decides when to drop it, since
-  the pointer may travel from here down into the panel — a click pins it).
+  notification center. Hovering the bell has no notification-center action.
   DND has no bar presence — that lives in the center's ⊖ only.
 - **Battery** — Android's expressive battery (the Pixel pill of Android 16
   QPR2/17), a 1:1 transcription of SystemUI's Compose implementation with
@@ -69,7 +67,6 @@ Colors and font come from `theme.lua` via `hl.config { plugin = { hyprbar =
 | `plugin:hyprbar:height` | bar height in logical px (reserve it: monitor `reserved top`) | 26 |
 | `plugin:hyprbar:font_size` | text size in logical px | 12 |
 | `plugin:hyprbar:tray_spacing` | px between tray icons | 10 |
-| `plugin:hyprbar:bell_peek_ms` | hover the bell this long to peek the shade open; 0 = off | 350 |
 | `plugin:hyprbar:font` | font family | Fira Code |
 | `plugin:hyprbar:terminal` | terminal for `Terminal=true` menubar entries | alacritty |
 | `plugin:hyprbar:col_bg` | bar background | `131313` |

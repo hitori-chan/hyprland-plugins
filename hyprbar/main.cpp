@@ -38,9 +38,8 @@
 // - bell: the notification bell and its unread badge, sitting between the
 //   tray and the battery and riding the tray's own bus link. The one
 //   widget whose state lives in ANOTHER plugin: it reads counts from
-//   hyprnotify's org.hitori.hyprnotify face — State in, Toggle/Peek out —
-//   never from a shared symbol. Left click toggles the shade; hovering it
-//   PEEKS the shade open unpinned after bell_peek_ms.
+//   hyprnotify's org.hitori.hyprnotify face — State in, Toggle out — never
+//   from a shared symbol. Left click toggles the shade.
 // - battery: Android's expressive battery (the Pixel pill), transcribed
 //   1:1 from SystemUI's Compose implementation and drawn natively in the
 //   warm pass (cairo; assets embedded verbatim, see battery.cpp) — digits
@@ -217,7 +216,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.height         = makeShared<Config::Values::CIntValue>("plugin:hyprbar:height", "bar height in logical px (reserve it: monitor reserved top)", 26);
     cfg.fontSize       = makeShared<Config::Values::CIntValue>("plugin:hyprbar:font_size", "text size in logical px (monitor scale applies at raster time)", 12);
     cfg.traySpacing    = makeShared<Config::Values::CIntValue>("plugin:hyprbar:tray_spacing", "px between tray icons (awesome systray_icon_spacing)", 10);
-    cfg.bellPeekMs     = makeShared<Config::Values::CIntValue>("plugin:hyprbar:bell_peek_ms", "hover the bell this long to peek the shade open; 0 = off", 350);
     cfg.font           = makeShared<Config::Values::CStringValue>("plugin:hyprbar:font", "font family", "Fira Code");
     cfg.terminal       = makeShared<Config::Values::CStringValue>("plugin:hyprbar:terminal", "terminal that runs Terminal=true menubar entries", "alacritty");
     cfg.colBg          = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_bg", "bar background", 0xff131313);
@@ -239,7 +237,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.colLow         = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_low", "battery fill at 20% and under (Android's error red)", 0xffff0e01);
     cfg.colSave        = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_powersave", "battery fill in power save (Android's warning yellow)", 0xffffc917);
 
-    for (const auto& V : {cfg.height, cfg.fontSize, cfg.traySpacing, cfg.bellPeekMs})
+    for (const auto& V : {cfg.height, cfg.fontSize, cfg.traySpacing})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
     for (const auto& V : {cfg.font, cfg.terminal})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);

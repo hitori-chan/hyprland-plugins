@@ -325,13 +325,6 @@ namespace NHyprnotify {
     void centerSelectMove(int dir);                         // ↑/↓: move the keyboard selection, paging to keep it on screen
     bool centerSelection(uint32_t& id, std::string& group); // the selected item; group non-empty = a bundle. false = none
 
-    // the bell's hover-peek: open unpinned, close when the pointer is on
-    // neither the bell nor the panel, pin on any click
-    void centerPeek(bool onBell);
-    void centerPeekPointer(bool onCard); // the pointer entered/left one of our cards
-    void centerPin();
-    bool centerPeeking();
-    void centerInit(); // the peek's grace timer
     void centerExit();
 
     void onRenderStage(eRenderStage stage);
@@ -427,12 +420,10 @@ namespace NHyprnotify {
     void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info); // esc peels the center; ↑↓ space enter delete drive it
     void releasePointer();
     void refreshPointerOwnership(); // the hovered card vanished under a still pointer
-    bool pointerOverCards();        // the pointer is on one of our surfaces (the peek's other cancel)
     void inputExit();
 
     // main.cpp: the deferred center toggle every entry point funnels through
     // (bell click over the bus, hyprctl, Lua, F12's user bind)
     void queueCenterToggle();
-    void queueCenterPeek(bool onBell); // the bar's bell hover, over the bus
 
 } // namespace NHyprnotify

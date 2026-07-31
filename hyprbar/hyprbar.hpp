@@ -110,7 +110,6 @@ namespace NHyprbar {
         SP<Config::Values::CIntValue>    height;
         SP<Config::Values::CIntValue>    fontSize;
         SP<Config::Values::CIntValue>    traySpacing; // awesome's systray_icon_spacing
-        SP<Config::Values::CIntValue>    bellPeekMs;  // hover-intent delay before the bell peeks the shade open; 0 = off
         SP<Config::Values::CStringValue> font;
         SP<Config::Values::CStringValue> terminal; // runs Terminal=true menubar entries
         SP<Config::Values::CColorValue>  colBg;

@@ -3,7 +3,7 @@
 # stack in the nested harness and drives it through the storm battery:
 # placement memory, sibling geometry, spawn/close storms, the notification
 # cap, state churn round-trips, hostile state files, a real-input storm
-# (vptr), the shade's click and key verbs (vkbd), the bell's hover-peek, the
+# (vptr), the shade's click and key verbs (vkbd), the bell's click path, the
 # click-corpse guard, acting-closes-the-shade, the fullscreen tuck and a
 # config reload. Every
 # assertion is exact; any failure fails the run.
@@ -511,34 +511,22 @@ sleep 1.4
 chk "hover: once the restarted clock runs out it retreats" test "$(bd)" = "banners:0 resident:1"
 hq hyprnotify clear >/dev/null; sleep 0.8
 
-# ---- the bell's hover-peek --------------------------------------------------
-# Driven over the very bus verb hyprbar's bell calls. A peek opens the shade
-# UNPINNED and must NOT absorb: a pointer crossing the bell cannot be allowed
-# to swallow banners the user never read. Leaving closes it again after the
-# grace; a toggle (the bell's click) pins instead of closing.
+# ---- the bell's click path --------------------------------------------------
+# The bell has no hover action. Its private bus interface exposes only the
+# click-equivalent Toggle, which opens a real shade and absorbs the popped
+# banner like any other explicit center open.
 nbus() { DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user "$@"; }
-peek() { nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.hitori.hyprnotify Peek b "$1" >/dev/null 2>&1; }
-# guard the whole battery against passing vacuously: if the call lands on the
-# WRONG daemon (or none), every "the shade stayed shut" assertion below is
-# true for the wrong reason
-chk "peek: the nested daemon is the one answering, and it has Peek" \
-	bash -c "nbus() { DBUS_SESSION_BUS_ADDRESS='$NBUS' busctl --user \"\$@\"; }; nbus introspect org.freedesktop.Notifications /org/freedesktop/Notifications org.hitori.hyprnotify | grep -q '\.Peek'"
-dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"peek me\" body')"; sleep 1
-chk "peek: a banner is up and the shade is shut" test "$(st)" = "center:0 live:1 dnd:0"
-peek true; sleep 0.6
-chk "peek: hovering the bell opens the shade" test "$(st)" = "center:1 live:1 dnd:0"
-chk "peek: a peek does NOT absorb the banner" test "$(bd)" = "banners:1 resident:0"
-peek false; sleep 1.2 # > the 400ms grace
-chk "peek: leaving the bell closes it again" test "$(st)" = "center:0 live:1 dnd:0"
-peek true; sleep 0.6
-hq hyprnotify center >/dev/null; sleep 0.5
-chk "peek: the bell's click PINS rather than closing" test "$(st)" = "center:1 live:1 dnd:0"
-chk "peek: pinning absorbs what the peek left alone" test "$(bd)" = "banners:0 resident:1"
-peek false; sleep 1.2
-chk "peek: a pinned shade ignores the pointer leaving" test "$(st)" = "center:1 live:1 dnd:0"
-hq hyprnotify center >/dev/null; sleep 0.4
+chk "bell: the removed hover method is absent" \
+	bash -c "nbus() { DBUS_SESSION_BUS_ADDRESS='$NBUS' busctl --user \"\$@\"; }; ! nbus introspect org.freedesktop.Notifications /org/freedesktop/Notifications org.hitori.hyprnotify | grep -q '\.Peek'"
+dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"bell click\" body')"; sleep 1
+chk "bell: a banner is up and the shade is shut" test "$(st)" = "center:0 live:1 dnd:0"
+nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.hitori.hyprnotify Toggle >/dev/null 2>&1; sleep 0.5
+chk "bell: click opens the shade" test "$(st)" = "center:1 live:1 dnd:0"
+chk "bell: click absorbs the banner" test "$(bd)" = "banners:0 resident:1"
+nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.hitori.hyprnotify Toggle >/dev/null 2>&1; sleep 0.4
+chk "bell: second click closes the shade" test "$(st)" = "center:0 live:1 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.8
-chk "peek: reset after the peek battery" test "$(st)" = "center:0 live:0 dnd:0"
+chk "bell: reset after the click battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- the shade's keyboard nav ----------------------------------------------
 # The one surface with no pointer path at all. Injected through a REAL virtual

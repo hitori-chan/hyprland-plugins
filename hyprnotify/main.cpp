@@ -26,8 +26,7 @@
 //   middle sweeps; the footer is ⊖ DND · a global "Clear all". While it is
 //   open it owns the nav keys (↑↓ select, space folds, enter fires the
 //   primary, delete dismisses, m/s/p manage, esc closes) and nothing else.
-//   Hovering the bar's bell PEEKS it open unpinned, so a glance costs no
-//   click. A row's ⋮ turns it into a manage panel: snooze durations, mute
+//   A row's ⋮ turns it into a manage panel: snooze durations, mute
 //   durations, mark the sender — every verb named, the rules persist across
 //   relogs, and the footer's ⊘ N never lets a standing one hide.
 //
@@ -37,7 +36,7 @@
 // never appends or groups; critical bypasses DND; ignore_dbusclose gates only
 // the bus CloseNotification path; transient/progress cards vanish entirely on
 // expiry. `hyprctl hyprnotify state` reports center/live/dnd; the
-// org.hitori.hyprnotify bus interface carries Toggle/Peek/State for the
+// org.hitori.hyprnotify bus interface carries Toggle/State for the
 // bar's bell (the sanctioned cross-plugin channel — the bus, never symbols).
 //
 // Everything follows the texture rule (warm/draw split, see ui.hpp), spends
@@ -187,9 +186,6 @@ static int               luaSuspend(lua_State*) {
 static int               centerPresses = 0;
 static NHyprCommon::CHop pendingCenter;
 
-static NHyprCommon::CHop pendingPeek;
-static int               peekWant = -1; // the latest bell hover state, -1 = nothing pending
-
 namespace NHyprnotify {
     void queueCenterToggle() {
         if (!g_pEventLoopManager)
@@ -199,21 +195,7 @@ namespace NHyprnotify {
         pendingCenter.arm([]() {
             if (!(std::exchange(centerPresses, 0) & 1))
                 return;
-            // a click on a shade the pointer PEEKED open keeps it, rather than
-            // closing what the user has not chosen to open yet
-            if (centerPeeking())
-                centerPin();
-            else
-                setCenter(!centerVisible());
-        });
-    }
-
-    // the bell's hover; only the newest state matters, so re-arming overwrites
-    void queueCenterPeek(bool onBell) {
-        peekWant = onBell ? 1 : 0;
-        pendingPeek.arm([]() {
-            if (const int W = std::exchange(peekWant, -1); W >= 0)
-                centerPeek(W != 0);
+            setCenter(!centerVisible());
         });
     }
 }
@@ -286,8 +268,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     orphanTick = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { reapOrphans(); }, nullptr);
     g_pEventLoopManager->addTimer(orphanTick);
     renderInit();
-    centerInit();
-
     // the lockscreen bell reads count; the stress gate reads state
     ctlCmd =
         HyprlandAPI::registerHyprCtlCommand(PHANDLE, SHyprCtlCommand{.name = "hyprnotify", .exact = false, .fn = [](eHyprCtlOutputFormat, std::string request) -> std::string {
@@ -350,7 +330,6 @@ APICALL EXPORT void PLUGIN_EXIT() {
     g_lifecycle.resetAll(); // listeners first, then every hop
     suspendPresses = 0;
     centerPresses  = 0;
-    peekWant       = -1;
     if (ctlCmd)
         HyprlandAPI::unregisterHyprCtlCommand(PHANDLE, ctlCmd);
     ctlCmd.reset();

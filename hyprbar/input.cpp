@@ -316,9 +316,8 @@ namespace NHyprbar {
 
     // ---- cell hover ----
     //
-    // Widgets that want it get enter/leave on their cells (the bell peeks the
-    // shade open on one). Tracked per WIDGET, not per hit: moving between two
-    // of the same widget's cells is not a leave.
+    // Widgets that want it get enter/leave on their cells. Tracked per WIDGET,
+    // not per hit: moving between two of the same widget's cells is not a leave.
     static IWidget* hoverWidget = nullptr;
 
     static void     setHoverWidget(IWidget* w) {
@@ -408,7 +407,7 @@ namespace NHyprbar {
     }
 
     void inputExit() {
-        setHoverWidget(nullptr); // the peek must not outlive the bar
+        setHoverWidget(nullptr);
         pendingHit.reset();
         pendingScroll.reset();
         scrollAcc.clear();
