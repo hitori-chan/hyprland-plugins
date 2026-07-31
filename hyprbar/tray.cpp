@@ -10,6 +10,11 @@ namespace NHyprbar {
 
     namespace Tray {
         static const sdbus::InterfaceName      WIFACE{"org.kde.StatusNotifierWatcher"};
+        // SNI pixmaps are untrusted D-Bus payloads. The tray only paints a
+        // small status icon, so reject malformed or pathological dimensions
+        // before multiplying or allocating anything.
+        constexpr int      MAX_PIXMAP_DIM    = 1024;
+        constexpr uint64_t MAX_PIXMAP_PIXELS = 4ull << 20;
 
         NHyprCommon::CBusLink                  bus; // menu.cpp borrows the connection for its dbusmenu proxies
         static std::unique_ptr<sdbus::IObject> watcher;
@@ -105,7 +110,9 @@ namespace NHyprbar {
                             int                         bw = 0, bh = 0;
                             for (const auto& P : pixmaps) {
                                 const int W = std::get<0>(P), H = std::get<1>(P);
-                                if (W <= 0 || H <= 0 || std::get<2>(P).size() < (size_t)W * H * 4)
+                                const auto& DATA = std::get<2>(P);
+                                const uint64_t AREA = (W > 0 && H > 0) ? (uint64_t)W * (uint64_t)H : 0;
+                                if (W <= 0 || H <= 0 || W > MAX_PIXMAP_DIM || H > MAX_PIXMAP_DIM || AREA > MAX_PIXMAP_PIXELS || DATA.size() != AREA * 4)
                                     continue;
                                 if (!best || (bw < 22 && W > bw) || (W >= 22 && bw >= 22 && W < bw) || (W >= 22 && bw < 22)) {
                                     best = &std::get<2>(P);
@@ -315,24 +322,32 @@ namespace NHyprbar {
         class CTrayWidget : public IWidget {
           public:
             double fit(const SPaint& P, const SFrame&) override {
+                const double SPACING = std::max(0.0, (double)cfg.traySpacing->value());
                 int n = 0;
                 for (const auto& IT : Tray::items)
                     if (IT->status != "Passive")
                         n++;
-                return n ? n * P.h + (n - 1) * (double)cfg.traySpacing->value() : 0;
+                return n ? n * P.h + (n - 1) * SPACING : 0;
             }
 
             void draw(const SPaint& P, const SFrame&, const CBox& box) override {
                 // laid from the right edge inwards, spaced like awesome's
                 // systray_icon_spacing — the first item keeps the edge
-                double right = box.x + box.w;
+                const double SPACING = std::max(0.0, (double)cfg.traySpacing->value());
+                double       right   = box.x + box.w;
                 bool   first = true;
                 for (const auto& IT : Tray::items) {
                     if (IT->status == "Passive")
                         continue; // SNI: Passive means don't show the item
                     if (!first)
-                        right -= (double)cfg.traySpacing->value();
+                        right -= SPACING;
                     first = false;
+                    // The right-side slot can be clipped on a narrow output.
+                    // Keep the cell and hitbox wholly inside the width the
+                    // layout assigned to this widget; an SNI item must never
+                    // paint over the tasklist or another right-side widget.
+                    if (right - P.h < box.x)
+                        break;
                     // The pixmap is a texture too, so the rule applies: rebuild it on
                     // the warm only. A dirty item reaching a draw keeps its old icon
                     // for this frame and asks for a repaint.

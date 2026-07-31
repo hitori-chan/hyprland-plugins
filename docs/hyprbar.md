@@ -8,6 +8,11 @@ the little corner square — filled when the tag holds the focused window,
 hollow when merely occupied. viewtoggle/toggle_tag have no analog: a window
 sits on exactly one workspace.
 
+The bar carries the monitor that owns each hitbox. A click or wheel cycle on
+one output therefore changes that output's local tag and never redirects focus
+to a same-numbered workspace on another output; `Mod+click` still moves the
+focused window without following it.
+
 ## Tasklist
 
 Arrival order, stable across raises. State markers prefix the title:
@@ -68,6 +73,8 @@ renderer.
   color.
 - nm-applet note: in indicator mode it merges its two X11 menus into one
   and implements no left-click action — upstream design.
+- The tray is width-safe: on a narrow output it drops cells that cannot fit
+  inside the assigned slot rather than painting over the tasklist.
 - D-Bus method construction from tray input and render-triggered menu cleanup
   is posted to the shared event-loop bus queue. The queue keeps at most 256
   pending sends, drains at most 64 per idle turn, and drops pending work before

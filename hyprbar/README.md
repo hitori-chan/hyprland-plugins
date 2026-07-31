@@ -14,8 +14,8 @@ compositor's blur is on; the widgets riding them stay opaque.
 ```
 
 - **Taglist** — kanji buttons, awesome's state matrix; occupancy as the
-  corner square. Click views, `Mod+click` sends the focused window, wheel
-  cycles.
+  corner square. Clicks and wheel cycles stay on the bar's monitor, while
+  `Mod+click` sends the focused window without following it.
 - **Tasklist** — the active workspace's windows in arrival order: app icon,
   `⌃` pinned / `+` maximized / `✈` floating markers; minimized windows keep
   their row, muted (awesome's `fg_minimize`). Click the focused task to
@@ -27,7 +27,8 @@ compositor's blur is on; the widgets riding them stay opaque.
 - **Tray** — in-compositor SNI host with a native dbusmenu renderer. Menus
   wear the glass·ink material: a frosted, card-radius panel with a `col_frame`
   ring, accent-dim hover pills inset 4px, hairline separators — the same
-  language as the notification cards.
+  language as the notification cards. On a narrow output, only cells that fit
+  the tray slot are drawn; an icon never overlaps the tasklist.
 - **Bell** — the notification bell + unread badge, riding the tray's bus
   link to hyprnotify (`org.hitori.hyprnotify`). The badge counts the shade
   (popped + waiting) and hides at zero; a left click toggles the

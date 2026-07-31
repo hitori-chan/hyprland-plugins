@@ -83,6 +83,15 @@ namespace NHyprCommon {
         return best;
     }
 
+    // A containing output is different from monitorAt(): edge-triggered UI
+    // must not arm on the nearest output while the pointer is in a gap.
+    inline PHLMONITOR monitorContaining(const Vector2D& pos) {
+        for (const auto& M : State::monitorState()->monitors())
+            if (M->logicalBox().containsPoint(pos))
+                return M;
+        return nullptr;
+    }
+
     // The window under the pointer, hit-tested FRESH — never the seat's
     // pointer focus, which a map or unmap under a still cursor leaves stale.
     // Reserved and input extents count: a click on a window's shadow or CSD

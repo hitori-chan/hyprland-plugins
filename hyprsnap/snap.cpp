@@ -58,7 +58,8 @@ namespace NHyprsnap::Snap {
         bool                magnetQueued = false;
         std::optional<CBox> resizeStart; // resize-drag begin box: tells dragged edges from anchored
 
-        using NHyprCommon::monitorAt; // the allocation-free per-motion lookup
+        using NHyprCommon::monitorAt;         // nearest output for magnetism
+        using NHyprCommon::monitorContaining; // edge zones need actual containment
 
         std::array<CBox, 4> zoneStrips(const CBox& Z) {
             constexpr double BW = 1;
@@ -279,9 +280,13 @@ namespace NHyprsnap::Snap {
         resizeStart.reset();
 
         const auto POS = g_pInputManager->getMouseCoordsInternal();
-        const auto MON = monitorAt(POS);
-        if (!MON)
+        const auto MON = monitorContaining(POS);
+        if (!MON) {
+            if (zoneBox)
+                reset();
+            queueMagnet();
             return;
+        }
 
         // -- aerosnap arming + preview --
         const auto [V, HZ] = screenEdges(MON->logicalBox(), POS, std::max((double)g_config.edge->value(), 1.0));

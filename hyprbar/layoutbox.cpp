@@ -22,8 +22,7 @@ namespace NHyprbar {
         return LAYOUTS[(IT == wsLayout.end() ? 0 : IT->second) % LAYOUTS.size()];
     }
 
-    void layoutInc(int dir) {
-        const auto MON = Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr;
+    void layoutInc(int dir, PHLMONITOR MON) {
         if (!MON || !MON->m_activeWorkspace)
             return;
         const int64_t N   = (int64_t)LAYOUTS.size();
@@ -76,16 +75,16 @@ namespace NHyprbar {
                 h.widget = this;
                 P.hits->push_back(h);
             }
-            void onHit(const SHit&, uint32_t bit, bool) override {
+            void onHit(const SHit& h, uint32_t bit, bool) override {
                 // awesome's layoutbox buttons: left = next, right = previous
                 if (bit == 1u || bit == 2u)
-                    layoutInc(bit == 2u ? -1 : 1);
+                    layoutInc(bit == 2u ? -1 : 1, h.mon.lock());
             }
             bool accumulatesScroll() const override {
                 return true;
             }
-            void onScrollSteps(int steps, PHLMONITOR) override {
-                layoutInc(steps);
+            void onScrollSteps(int steps, PHLMONITOR mon) override {
+                layoutInc(steps, mon);
             }
         };
     } // namespace

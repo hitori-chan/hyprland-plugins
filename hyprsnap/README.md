@@ -7,7 +7,9 @@ move-drag. (Spawn placement lives in `hyprplace`.)
   the other windows when within `snap_distance`.
 - **Aerosnap** — the cursor at a screen edge arms that half; at two edges,
   that corner's quarter — outline preview, committed on drop. Either
-  release order works: the button, or Super first.
+  release order works: the button, or Super first. A pointer in a gap between
+  outputs cannot arm a zone, although magnetic snapping still uses the nearest
+  output.
 
 Keep the native `general:snap` off: two magnets pull to different spots.
 

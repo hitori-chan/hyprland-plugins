@@ -15,6 +15,9 @@ Awesome's per-window maximize. No config.
 - **Windowed size remembered per app** — across closes and relogs
   (`$XDG_STATE_HOME/hyprmax/windowed.tsv`): un-maximizing a born-maximized
   window restores the app's last real windowed box.
+- **Tracks native geometry changes** — a plugin-maximized window follows its
+  workspace to another output and re-fills the current workarea after
+  workspace activation or monitor layout changes.
 
 ## Lua
 

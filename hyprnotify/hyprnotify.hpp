@@ -79,7 +79,7 @@ namespace NHyprnotify {
     extern HANDLE PHANDLE;
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.9.2";
+    inline constexpr const char* VERSION = "6.9.3";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -300,9 +300,6 @@ namespace NHyprnotify {
     // (Re)build a body <img> thumbnail when its src changed. maxPx caps the
     // decoded raster.
     void ensureBodyImage(SBodyImage& im, int maxPx);
-
-    // Downscale n.pixels in place when it exceeds maxPx (unpack-time cap).
-    void shrinkPixels(SNotif& n, int maxPx);
 
     // ---- render.cpp ----
 

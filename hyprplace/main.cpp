@@ -45,6 +45,7 @@
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/protocols/XDGShell.hpp>
+#include <hyprland/src/xwayland/XSurface.hpp>
 #include <hyprland/src/helpers/memory/Memory.hpp>
 
 #include <algorithm>
@@ -95,6 +96,40 @@ namespace NHyprplace {
             return b.x <= wa.x && b.y <= wa.y && b.x + b.w >= wa.x + wa.w && b.y + b.h >= wa.y + wa.h;
         }
 
+        // The open emission precedes Hyprland's initial fullscreen/maximize
+        // application. Do not place or resize a float while any grant is
+        // still pending, and do not mistake a compositor mode for a normal
+        // client-chosen geometry. This mirrors the target's map-time state
+        // sources instead of trying to infer them from a placeholder box.
+        bool hasFullscreenOrMaximizeGrant(PHLWINDOW w) {
+            if (!w)
+                return false;
+            if (w->m_wantsInitialFullscreen || w->m_wantsInitialMaximize)
+                return true;
+
+            if (w->m_xdgSurface && w->m_xdgSurface->m_toplevel) {
+                const auto& TOP = w->m_xdgSurface->m_toplevel;
+                if (TOP->m_state.requestsFullscreen.value_or(false) || TOP->m_state.requestsMaximize.value_or(false) ||
+                    std::ranges::contains(TOP->m_pendingApply.states, XDG_TOPLEVEL_STATE_FULLSCREEN) ||
+                    std::ranges::contains(TOP->m_pendingApply.states, XDG_TOPLEVEL_STATE_MAXIMIZED))
+                    return true;
+            }
+
+            if (w->m_xwaylandSurface && (w->m_xwaylandSurface->m_fullscreen || w->m_xwaylandSurface->m_maximized ||
+                                         w->m_xwaylandSurface->m_state.requestsFullscreen.value_or(false) || w->m_xwaylandSurface->m_state.requestsMaximize.value_or(false)))
+                return true;
+
+            if (w->m_ruleApplicator) {
+                const auto& STATIC = w->m_ruleApplicator->static_;
+                if (STATIC.fullscreen.value_or(false) || STATIC.maximize.value_or(false) || STATIC.fullscreenStateInternal.value_or(0) != 0 ||
+                    STATIC.fullscreenStateClient.value_or(0) != 0)
+                    return true;
+            }
+
+            const auto MODES = Fullscreen::controller()->getFullscreenModes(w);
+            return MODES.internal != Fullscreen::FSMODE_NONE || MODES.client != Fullscreen::FSMODE_NONE;
+        }
+
         // Fill the initial configure with the remembered size (the
         // window.predictSize emission at the initial commit): the client's
         // first buffer is then already right and the map-time pass only
@@ -116,6 +151,8 @@ namespace NHyprplace {
         void placeWindow(PHLWINDOW w) {
             // X11 override-redirect surfaces (menus, tooltips) place themselves
             if (!w || !w->m_isMapped || !w->m_isFloating || w->isX11OverrideRedirect() || !w->m_target || Fullscreen::controller()->isFullscreen(w))
+                return;
+            if (hasFullscreenOrMaximizeGrant(w))
                 return;
             const auto WS  = w->m_workspace;
             const auto MON = w->m_monitor.lock();
@@ -341,7 +378,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             g_lifecycle.listen(events.window.predictSize, [](PHLWINDOW w, Vector2D& size) { onPredictSize(w, size); });
     }(Event::bus()->m_events);
 
-    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.1.2"};
+    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.1.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

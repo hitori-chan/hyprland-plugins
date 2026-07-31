@@ -29,9 +29,12 @@ remembered size — no post-map resize, no second configure. A client
 whose class or resizability isn't readable that early falls back to one
 ordinary configure at map. Nothing is owned or re-asserted either way:
 unlike the force path used before 1.4.0 (client-serial stomp + forced
-configure), a client-size grant in flight — a born-fullscreen or
-born-maximized window picking its own restore size — still wins, and the
-client's own later resizes are never fought. A **fixed-size dialog**
+configure), initial fullscreen/maximize grants, pending XDG requests,
+`fullscreen`/`maximize`/`fullscreen_state` window rules, and current
+compositor modes always win; the plugin leaves those windows alone. A
+client-size grant in flight — a born-fullscreen or born-maximized window
+picking its own restore size — still wins, and the client's own later
+resizes are never fought. A **fixed-size dialog**
 (`min == max`) keeps the client's size and is never resized, so nothing
 blinks. Resizability is read from the xdg-toplevel min/max hints; X11
 windows manage their own geometry. The size lands in `lastspot.tsv`

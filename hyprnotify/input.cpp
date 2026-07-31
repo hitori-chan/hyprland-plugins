@@ -801,6 +801,7 @@ namespace NHyprnotify {
         swallowRelease = 0;
         heldButtons    = 0;
         scrollAcc      = 0;
+        swipeAcc       = 0;
         swipeOn        = 0;
         releasePointer();
     }

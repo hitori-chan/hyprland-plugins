@@ -240,6 +240,30 @@ namespace NHyprnotify {
             return false;
         }
 
+        // Every path that can make a card visible uses the same policy: DND
+        // and snooze stay silent, critical cards bypass quiet/coalescing
+        // policy, and ordinary cards respect the current focused monitor and
+        // the app's persisted silence rule. Keeping this in one predicate
+        // prevents a queued or snoozed card from waking under different rules
+        // than a live arrival.
+        static bool bannerEligible(const SP<SNotif>& n) {
+            if (!n || n->waiting || n->snoozed)
+                return false;
+            // Ephemeral cards are still allowed to announce; unlike resident
+            // cards they disappear on expiry instead of retreating to the
+            // shade, so coalescing or policy suppression would strand their
+            // intended short-lived surface.
+            if (vanishes(n))
+                return true;
+            if (n->urgency >= 2)
+                return true;
+            if (cfg.quietFullscreen->value() && NHyprCommon::fullscreenOn(Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr))
+                return false;
+            if (cfg.coalescePopups->value() && appHasBanner(n))
+                return false;
+            return !Policy::silenced(n->appKey);
+        }
+
         void closeOne(uint32_t id, uint32_t reason) {
             const auto BEFORE = notifs.size();
             std::erase_if(notifs, [&](const auto& N) { return N->id == id; });
@@ -318,7 +342,7 @@ namespace NHyprnotify {
                 if (!N->waiting)
                     continue;
                 N->waiting = false;
-                N->banner  = !(cfg.coalescePopups->value() && N->urgency < 2 && !vanishes(N) && appHasBanner(N)); // never seen: resume shows one banner per app
+                N->banner  = bannerEligible(N); // never seen: resume applies the live policy
                 if (N->banner && N->timeoutMs > 0)
                     N->deadline = NOW + std::chrono::milliseconds((int64_t)N->timeoutMs);
             }
@@ -591,12 +615,7 @@ namespace NHyprnotify {
             // as it does through DND.
             // And a silenced app asked for exactly this, permanently: its
             // cards land in the shade without ever taking the screen.
-            const bool SOFT      = !n->waiting && n->urgency < 2 && !vanishes(n);
-            const bool FSQUIET   = SOFT && cfg.quietFullscreen->value() && NHyprCommon::fullscreenOn(Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr);
-            const bool COALESCED = SOFT && cfg.coalescePopups->value() && appHasBanner(n);
-            const bool SILENCED  = SOFT && Policy::silenced(n->appKey);
-            if (COALESCED || FSQUIET || SILENCED)
-                n->banner = false;
+            n->banner = bannerEligible(n);
 
             if (!n->waiting) // a suspended arrival is invisible: no warm, no damage
                 notifChanged();
@@ -605,7 +624,7 @@ namespace NHyprnotify {
             // libcanberra player unless the client suppresses it. DND-queued
             // (waiting) arrivals stay silent; the resume doesn't replay.
             if (!n->waiting) {
-                bool        suppress = COALESCED || SILENCED || n->snoozed; // none of these announces itself
+                bool        suppress = !n->banner || n->snoozed; // held-back cards do not announce themselves
                 std::string soundFile, soundName;
                 if (const auto IT = hints.find("suppress-sound"); IT != hints.end())
                     try {
@@ -663,7 +682,7 @@ namespace NHyprnotify {
                             // left alone (the age line tells the truth about
                             // when it came); `born` re-keys the arrival spring
                             // so the banner slides in rather than blinking on.
-                            N->banner = !(Policy::silenced(N->appKey) && N->urgency < 2);
+                            N->banner = bannerEligible(N);
                             N->born   = NOW;
                             if (N->banner && N->timeoutMs > 0)
                                 N->deadline = NOW + std::chrono::milliseconds((int64_t)N->timeoutMs);

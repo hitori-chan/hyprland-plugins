@@ -37,7 +37,9 @@ Two surfaces share one card model:
    spoken for: while a REAL fullscreen window owns the monitor, banners are
    held back and the card lands straight in the shade. Nothing is lost —
    residency is that safety net — and critical punches through, as through
-   DND. A merely maximized window does not count.
+   DND. The same eligibility check is applied when DND resumes and when a
+   snoozed card wakes, so a still-silent, coalesced, or fullscreen-held card
+   does not unexpectedly announce. A merely maximized window does not count.
 2. **The shade** (F12, the bar's bell, `hyprctl hyprnotify center`) — ONE
    list of live cards, no lifecycle sections and no history view: a
    dismissed card is gone, exactly as on Android, and there is no recall.

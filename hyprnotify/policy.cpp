@@ -149,7 +149,10 @@ namespace NHyprnotify::Policy {
     // how many rules are in force — the footer's count, so a silence you set
     // once is never invisible again
     size_t silencedCount() {
+        const auto BEFORE = s_silenced.size();
         std::erase_if(s_silenced, [](const auto& E) { return expired(E.second); });
+        if (s_silenced.size() != BEFORE)
+            s_saver.dirty();
         return s_silenced.size();
     }
 

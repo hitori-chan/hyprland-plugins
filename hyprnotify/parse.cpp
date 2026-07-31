@@ -10,6 +10,8 @@
 
 #include "hyprnotify.hpp"
 
+#include <cmath>
+
 namespace NHyprnotify::Parse {
 
     // We advertise body-markup, so the whitelisted Pango tags pass through
@@ -136,26 +138,60 @@ namespace NHyprnotify::Parse {
         // message max) that would otherwise map + premultiply in full.
         if (W <= 0 || H <= 0 || (int64_t)W * H > (16 << 20) || BPS != 8 || (CH != 3 && CH != 4) || (int64_t)STRIDE < (int64_t)W * CH || DATA.size() < (size_t)STRIDE * (H - 1) + (size_t)W * CH)
             return;
-        n.pixels.resize((size_t)W * H * 4);
-        for (int32_t y = 0; y < H; y++) {
-            const uint8_t* row = DATA.data() + (size_t)y * STRIDE;
-            uint8_t*       out = n.pixels.data() + (size_t)y * W * 4;
-            for (int32_t x = 0; x < W; x++) {
-                const uint8_t R = row[x * CH], G = row[x * CH + 1], B = row[x * CH + 2], A = CH == 4 ? row[x * CH + 3] : 255;
-                out[x * 4]     = (uint8_t)(B * A / 255);
-                out[x * 4 + 1] = (uint8_t)(G * A / 255);
-                out[x * 4 + 2] = (uint8_t)(R * A / 255);
-                out[x * 4 + 3] = A;
+        const int CAP = std::max(capPx, 1);
+        const double SCALE = std::min({1.0, (double)CAP / W, (double)CAP / H});
+        const int OUTW = std::max(1, (int)std::lround(W * SCALE));
+        const int OUTH = std::max(1, (int)std::lround(H * SCALE));
+
+        n.pixels.resize((size_t)OUTW * OUTH * 4);
+
+        // Keep the common, already-small path integer-only. Large hostile
+        // pixmaps go through the bounded bilinear path below without ever
+        // allocating a full-size intermediate image.
+        if (OUTW == W && OUTH == H) {
+            for (int32_t y = 0; y < H; y++) {
+                const uint8_t* row = DATA.data() + (size_t)y * STRIDE;
+                uint8_t*       out = n.pixels.data() + (size_t)y * W * 4;
+                for (int32_t x = 0; x < W; x++) {
+                    const uint8_t R = row[x * CH], G = row[x * CH + 1], B = row[x * CH + 2], A = CH == 4 ? row[x * CH + 3] : 255;
+                    out[x * 4]     = (uint8_t)(B * A / 255);
+                    out[x * 4 + 1] = (uint8_t)(G * A / 255);
+                    out[x * 4 + 2] = (uint8_t)(R * A / 255);
+                    out[x * 4 + 3] = A;
+                }
+            }
+        } else {
+            const auto sample = [&](int x, int y, int channel) {
+                const auto* ROW = DATA.data() + (size_t)y * STRIDE;
+                const uint8_t R = ROW[x * CH], G = ROW[x * CH + 1], B = ROW[x * CH + 2], A = CH == 4 ? ROW[x * CH + 3] : 255;
+                if (channel == 3)
+                    return (double)A;
+                const uint8_t VALUE = channel == 0 ? B : channel == 1 ? G : R;
+                return (double)VALUE * A / 255.0; // premultiplied BGRA
+            };
+
+            for (int y = 0; y < OUTH; y++) {
+                const double SY = ((double)y + 0.5) * H / OUTH - 0.5;
+                const int    Y0 = std::clamp((int)std::floor(SY), 0, H - 1);
+                const int    Y1 = std::clamp(Y0 + 1, 0, H - 1);
+                const double FY = std::clamp(SY - Y0, 0.0, 1.0);
+                for (int x = 0; x < OUTW; x++) {
+                    const double SX = ((double)x + 0.5) * W / OUTW - 0.5;
+                    const int    X0 = std::clamp((int)std::floor(SX), 0, W - 1);
+                    const int    X1 = std::clamp(X0 + 1, 0, W - 1);
+                    const double FX = std::clamp(SX - X0, 0.0, 1.0);
+                    uint8_t*     OUT = n.pixels.data() + ((size_t)y * OUTW + x) * 4;
+                    for (int c = 0; c < 4; c++) {
+                        const double TOP = sample(X0, Y0, c) * (1.0 - FX) + sample(X1, Y0, c) * FX;
+                        const double BOT = sample(X0, Y1, c) * (1.0 - FX) + sample(X1, Y1, c) * FX;
+                        OUT[c]           = (uint8_t)std::clamp(std::lround(TOP * (1.0 - FY) + BOT * FY), 0L, 255L);
+                    }
+                }
             }
         }
-        n.pw        = W;
-        n.ph        = H;
+        n.pw        = OUTW;
+        n.ph        = OUTH;
         n.hasPixels = true;
-        // keep only what a card can ever paint: warm frees visible cards'
-        // buffers after upload, but an off-screen card would hold its
-        // full-size pixmap until it scrolls on. The caller's cap covers the
-        // hero layout at any monitor scale; warm still scales exactly.
-        shrinkPixels(n, capPx);
     }
 
     // Join an appended conversation body under the cap: newest lines

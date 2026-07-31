@@ -194,7 +194,10 @@ namespace NHyprbar {
         }
         std::sort(tasks.begin(), tasks.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
         F.tasks   = &tasks;
-        F.focus   = Desktop::focusState() ? Desktop::focusState()->window() : nullptr;
+        const auto GLOBALFOCUS = Desktop::focusState() ? Desktop::focusState()->window() : nullptr;
+        // Focus is global, but the bar is rendered once per output. A window
+        // focused on another output must not mark this monitor's tag/task.
+        F.focus   = GLOBALFOCUS && GLOBALFOCUS->m_monitor.lock() == mon ? GLOBALFOCUS : nullptr;
         F.focusWs = F.focus && F.focus->m_workspace ? F.focus->m_workspace->m_id : WORKSPACE_INVALID;
 
         // one palette fetch per frame: color() memoizes the conversion but
@@ -217,7 +220,7 @@ namespace NHyprbar {
 
         double         x = MB.x;
         for (auto* const W : LEFT) {
-            const double WD = W->fit(P, F);
+            const double WD = std::min(W->fit(P, F), std::max(0.0, MB.x + MB.w - x));
             if (WD > 0)
                 W->draw(P, F, CBox{x, MB.y, WD, H});
             x += WD;
@@ -225,7 +228,10 @@ namespace NHyprbar {
 
         double right = MB.x + MB.w;
         for (size_t i = std::size(RIGHT); i-- > 0;) {
-            const double WD = RIGHT[i]->fit(P, F);
+            // Keep the right slot inside the space left by the taglist. If a
+            // narrow output cannot fit every widget, leftmost right-side
+            // widgets yield first and no cell can overlap the tasklist.
+            const double WD = std::min(RIGHT[i]->fit(P, F), std::max(0.0, right - x - 8.0));
             if (WD > 0) {
                 right -= WD;
                 RIGHT[i]->draw(P, F, CBox{right, MB.y, WD, H});
@@ -233,7 +239,8 @@ namespace NHyprbar {
         }
 
         // the tasklist splits the whole leftover strip, 8px off the right slot
-        tasklistWidget().draw(P, F, CBox{x, MB.y, right - 8 - x, H});
+        if (const double TASKW = std::max(0.0, right - 8.0 - x); TASKW > 0)
+            tasklistWidget().draw(P, F, CBox{x, MB.y, TASKW, H});
 
         auto& FP = lastTaskFp[mon->m_id];
         if (warm)

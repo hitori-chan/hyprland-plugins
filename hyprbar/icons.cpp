@@ -23,6 +23,12 @@ namespace NHyprbar {
     // per-network signal-strength icons at runtime — they exist nowhere on
     // disk, so a theme lookup can never find them).
     SP<ITexture> loadPngBytes(const std::vector<uint8_t>& data) {
+        constexpr size_t MAX_ENCODED = 4u << 20;
+        constexpr int    MAX_DIM     = 2048;
+        constexpr size_t MAX_PIXELS  = 4u << 20;
+        if (data.empty() || data.size() > MAX_ENCODED)
+            return nullptr;
+
         struct SCursor {
             const uint8_t* p;
             size_t         left;
@@ -40,6 +46,11 @@ namespace NHyprbar {
 
         auto* SURF = cairo_image_surface_create_from_png_stream(READ, &cur);
         if (cairo_surface_status(SURF) != CAIRO_STATUS_SUCCESS) {
+            cairo_surface_destroy(SURF);
+            return nullptr;
+        }
+        const int W = cairo_image_surface_get_width(SURF), H = cairo_image_surface_get_height(SURF);
+        if (W <= 0 || H <= 0 || W > MAX_DIM || H > MAX_DIM || (size_t)W * (size_t)H > MAX_PIXELS) {
             cairo_surface_destroy(SURF);
             return nullptr;
         }

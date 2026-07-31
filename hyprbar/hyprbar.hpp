@@ -226,7 +226,7 @@ namespace NHyprbar {
     // awesome's awful.layout.inc: cycle the focused monitor's active
     // workspace through the layout registry (render.cpp — a single entry
     // until other layouts get implemented; the bar only carries the state).
-    void layoutInc(int dir);
+    void layoutInc(int dir, PHLMONITOR mon);
 
     // ---- icons.cpp ----
 

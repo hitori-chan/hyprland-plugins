@@ -46,9 +46,10 @@ icons).
   (`file://` too) OR a freedesktop icon NAME, resolved against the GTK icon
   theme, then hicolor, then `/usr/share/pixmaps`.
 - Decoding is hyprgraphics: PNG/JPEG/WEBP/BMP/AVIF/JXL + SVG (no GIF); big
-  images downscale once at load, not per frame. Wide images (aspect ≥ 1.5)
-  render card-width as a cover-cropped hero. Iconless cards draw a random
-  face from `fallback_icon_dir`.
+  images downscale once at load, not per frame. Raw `image-data` is downscaled
+  directly into its bounded output buffer, without a full-size decoded copy.
+  Wide images (aspect ≥ 1.5) render card-width as a cover-cropped hero.
+  Iconless cards draw a random face from `fallback_icon_dir`.
 - The icon column is Android's conversation container
   (`notification_2025_conversation_icon_container.xml`): the CONTENT image
   leads as the avatar — a true circle for a conversation, a squircle
@@ -203,7 +204,9 @@ icons).
   compositor has no audio backend, so this shells out, reaped off the event
   loop.
 - DND (`hl.plugin.hyprnotify.suspend()`): arrivals collect silently with
-  timeouts held; resume renders the queue newest-first on fresh timeouts.
+  timeouts held; resume renders the queue newest-first on fresh timeouts and
+  reuses the live banner eligibility policy. Snooze wake does the same, so
+  fullscreen quiet, app silence, and one-popup coalescing still apply.
 - Residency (`persistence`): an expired banner RETREATS into the shade
   rather than closing, and waits there until dismissed or acted on — the
   shade is the safety net. There is no history and no recall: a dismissed
