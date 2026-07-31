@@ -75,24 +75,6 @@ namespace NHyprnotify::Parse {
         return out;
     }
 
-    // One quoted attribute out of one tag — the fiddly part of reading a tag a
-    // stranger wrote, so both readers (the <img> src here, the <a> href in
-    // text.cpp) share it rather than each getting it nearly right. The name is
-    // matched case-insensitively against a lowered COPY, whose offsets still
-    // line up with the original the value is cut from. "" if absent.
-    std::string attrValue(const std::string& tag, const std::string& attr) {
-        std::string lower = tag;
-        std::ranges::transform(lower, lower.begin(), [](unsigned char c) { return std::tolower(c); });
-        const auto AT = lower.find(attr);
-        if (AT == std::string::npos)
-            return "";
-        const auto Q = tag.find_first_of("\"'", AT);
-        if (Q == std::string::npos)
-            return "";
-        const auto END = tag.find(tag[Q], Q + 1);
-        return END == std::string::npos ? "" : tag.substr(Q + 1, END - Q - 1);
-    }
-
     std::string oneLine(std::string s) {
         for (auto& c : s)
             if (c == '\n')

@@ -57,9 +57,9 @@
 #include <string>
 #include <vector>
 
-HANDLE PHANDLE = nullptr;
-
 namespace NHyprpad {
+
+    HANDLE PHANDLE = nullptr;
 
     constexpr auto                                             SETTLE = std::chrono::milliseconds(400);
 

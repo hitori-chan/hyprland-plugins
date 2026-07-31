@@ -190,6 +190,15 @@ icons).
   on a grace timer once the pointer is on neither the bell nor the panel —
   both surfaces cancel that timer, which is what lets the pointer travel
   from the bell down into the shade. Any click pins it.
+- Native layer-shell precedence: cards and the shade are compositor-drawn,
+  so their pointer ownership is subordinate to the fork's fresh native hit
+  test for exclusive layers, layer popups, overlay layers, IME popups, and top
+  layers, including the native fullscreen filter for top layers that are not
+  marked `aboveFullscreen`. Client implicit pointer grabs and native seat grabs
+  (`xdg_popup` and focus-grab surfaces) also remain untouched, even with no
+  button held. While `hyprland-input-capture-v1` is active, the capture client
+  owns buttons, axes, keys, and pointer warps before these plugin surfaces;
+  notification input passes through and partial swallow state is reset.
 - Quiet while fullscreen (`quiet_fullscreen`, on): a real fullscreen window
   on the focused monitor holds banners back — presenting, gaming and
   watching are the same ask — and the card lands resident in the shade
@@ -213,8 +222,9 @@ icons).
   (`im.*`/`call.*`, where the summary is the sender or the room) or by the
   `x-canonical-append` hint. Cards that vanish on expiry never merge.
 - Fullscreen: while a card is up over a solitary fullscreen window, the
-  monitor's scanout/solitary latch is dropped so the card composites over
-  it; self-heals once the last card clears.
+  compositor's `render.preChecks` hook requests a normal monitor render so
+  the card composites over it. When the last card clears, the normal render
+  path re-latches solitary rendering and scanout.
 - Session lock: cards never render above the lockscreen (the built-in
   `hyprctl notify` overlay does; these are the user's notifications). Input
   listeners guard-and-reset first; whatever survives the lock repaints at

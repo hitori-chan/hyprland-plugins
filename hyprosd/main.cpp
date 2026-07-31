@@ -28,6 +28,7 @@
 
 #include "common/busclient.hpp"
 #include "common/lifecycle.hpp"
+#include "common/process.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/Compositor.hpp>
@@ -42,13 +43,13 @@
 #include <sdbus-c++/sdbus-c++.h>
 #include <spawn.h>
 #include <sys/syscall.h>
-#include <sys/wait.h>
 #include <unistd.h>
 #include <wayland-server-core.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cerrno>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -57,9 +58,9 @@
 
 extern char** environ;
 
-HANDLE        PHANDLE = nullptr;
-
 namespace NHyprosd {
+
+    HANDLE        PHANDLE = nullptr;
 
     // ---- bus links (hyprpad's chassis, one per bus) ----
 
@@ -193,15 +194,29 @@ namespace NHyprosd {
         wl_event_source* pidSrc = nullptr;
         wl_event_source* outSrc = nullptr;
         std::string      out;
+        bool             outputTruncated = false;
     };
     static std::vector<UP<SChain>> chains;
-    static std::vector<pid_t>      orphans; // capped-burst children still owed a waitpid
+    static std::vector<pid_t>      orphans; // children without a live event source
+    static SP<CEventLoopTimer>     orphanTick;
 
-    static void                    reapOrphans() {
-        std::erase_if(orphans, [](pid_t p) { return waitpid(p, nullptr, WNOHANG) != 0; });
+    static void                    reapOrphans(bool block = false) {
+        std::erase_if(orphans, [block](pid_t p) {
+            const pid_t RESULT = NHyprCommon::waitPid(p, block);
+            return RESULT > 0 || (RESULT < 0 && errno == ECHILD);
+        });
+        if (!block && orphanTick && g_pEventLoopManager)
+            orphanTick->updateTimeout(orphans.empty() ? std::nullopt : std::optional{std::chrono::milliseconds(100)});
     }
 
-    static void                    chainDone(SChain* c) {
+    static void                    rememberOrphan(pid_t pid) {
+        if (pid <= 0 || std::find(orphans.begin(), orphans.end(), pid) != orphans.end())
+            return;
+        orphans.push_back(pid);
+        reapOrphans();
+    }
+
+    static void                    chainDone(SChain* c, bool block = false) {
         if (c->pidSrc)
             wl_event_source_remove(c->pidSrc);
         if (c->outSrc)
@@ -212,10 +227,16 @@ namespace NHyprosd {
             close(c->outFd);
         // a child that closed its stdout a hair before exiting isn't a zombie
         // yet; hand it to the orphan list to re-reap rather than leak it
-        if (c->setPid > 0 && waitpid(c->setPid, nullptr, WNOHANG) == 0)
-            orphans.push_back(c->setPid);
-        if (c->getPid > 0 && waitpid(c->getPid, nullptr, WNOHANG) == 0)
-            orphans.push_back(c->getPid);
+        if (!block && c->setPid > 0 && NHyprCommon::waitPid(c->setPid, false) == 0)
+            rememberOrphan(c->setPid);
+        if (!block && c->getPid > 0 && NHyprCommon::waitPid(c->getPid, false) == 0)
+            rememberOrphan(c->getPid);
+        if (block) {
+            if (c->setPid > 0)
+                NHyprCommon::waitPid(c->setPid, true);
+            if (c->getPid > 0)
+                NHyprCommon::waitPid(c->getPid, true);
+        }
         std::erase_if(chains, [&](const auto& U) { return U.get() == c; });
     }
 
@@ -232,12 +253,22 @@ namespace NHyprosd {
         for (;;) {
             const auto N = read(fd, buf, sizeof(buf));
             if (N > 0) {
-                c->out.append(buf, N);
+                constexpr size_t CAP = 4096;
+                const size_t      KEEP = c->out.size() < CAP ? std::min<size_t>((size_t)N, CAP - c->out.size()) : 0;
+                if (KEEP)
+                    c->out.append(buf, KEEP);
+                if (KEEP != (size_t)N)
+                    c->outputTruncated = true;
                 continue;
             }
             if (N < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
                 return 0; // more later
             break;        // EOF or error: the child is done talking
+        }
+
+        if (c->outputTruncated) {
+            chainDone(c);
+            return 0;
         }
 
         // wpctl get-volume: "Volume: 0.65" or "Volume: 0.65 [MUTED]" —
@@ -271,7 +302,8 @@ namespace NHyprosd {
         c->pidSrc = nullptr;
         close(c->pidFd);
         c->pidFd = -1;
-        waitpid(c->setPid, nullptr, WNOHANG);
+        if (NHyprCommon::waitPid(c->setPid, false) == 0)
+            rememberOrphan(c->setPid);
         c->setPid = -1;
 
         int pfd[2];
@@ -292,6 +324,14 @@ namespace NHyprosd {
         }
         c->outFd  = pfd[0];
         c->outSrc = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, c->outFd, WL_EVENT_READABLE, onGetOut, c);
+        if (!c->outSrc) {
+            close(c->outFd);
+            c->outFd = -1;
+            if (NHyprCommon::waitPid(c->getPid, false) == 0)
+                rememberOrphan(c->getPid);
+            c->getPid = -1;
+            chainDone(c);
+        }
         return 0;
     }
 
@@ -311,7 +351,7 @@ namespace NHyprosd {
         // the orphan list re-reaps them (never waitpid(-1): the Executor's
         // children are not ours to steal)
         if (chains.size() >= 16) {
-            orphans.push_back(PID);
+            rememberOrphan(PID);
             return;
         }
 
@@ -322,11 +362,18 @@ namespace NHyprosd {
         if (c->pidFd < 0) {
             // no pidfd (EMFILE, ancient kernel): never block the loop on a
             // reap — the orphan list re-reaps it; the card is skipped
-            orphans.push_back(PID);
+            rememberOrphan(PID);
             return;
         }
         fcntl(c->pidFd, F_SETFD, FD_CLOEXEC); // SYS_pidfd_open takes no CLOEXEC flag; keep it out of concurrent spawns
         c->pidSrc = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, c->pidFd, WL_EVENT_READABLE, onSetDone, c.get());
+        if (!c->pidSrc) {
+            close(c->pidFd);
+            c->pidFd = -1;
+            if (NHyprCommon::waitPid(PID, false) == 0)
+                rememberOrphan(PID);
+            return;
+        }
         chains.push_back(std::move(c));
     }
 
@@ -402,6 +449,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     busInit(sessionBus, false, "session");
     busInit(systemBus, true, "system");
+    orphanTick = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { reapOrphans(); }, nullptr);
+    g_pEventLoopManager->addTimer(orphanTick);
     findBacklight();
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "volume_up", luaVolumeUp);
@@ -418,9 +467,11 @@ APICALL EXPORT void PLUGIN_EXIT() {
     g_lifecycle.resetAll(); // every hop, in one place
     queued.clear();
     while (!chains.empty())
-        chainDone(chains.back().get()); // sources out, fds closed, children reaped as far as WNOHANG goes
-    reapOrphans();
-    orphans.clear();
+        chainDone(chains.back().get(), true); // plugin exit owns the helpers; reap before its code can unload
+    reapOrphans(true);
+    if (orphanTick && g_pEventLoopManager)
+        g_pEventLoopManager->removeTimer(orphanTick);
+    orphanTick.reset();
     backlightDev.clear();
     backlightMax = 0;
     lastSetRaw   = -1;

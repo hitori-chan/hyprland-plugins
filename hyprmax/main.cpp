@@ -23,6 +23,7 @@
 //
 // hl.plugin.hyprmax.toggle() — the Mod+M bind target. No config.
 
+#include "common/input.hpp"
 #include "common/lifecycle.hpp"
 #include "common/order.hpp"
 #include "common/persist.hpp"
@@ -180,8 +181,12 @@ static void     onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackI
         swallowedButtons = 0;
         return;
     }
+    if (NHyprCommon::nativeInputCaptureActive()) {
+        swallowedButtons = 0;
+        return;
+    }
 
-    const uint32_t BIT = e.button == BTN_LEFT ? 1u : e.button == BTN_RIGHT ? 2u : 0u;
+    const uint32_t BIT = NHyprCommon::trackedPointerButtonBit(e.button) & 3u;
 
     if (e.state == WL_POINTER_BUTTON_STATE_PRESSED) {
         if (!BIT || info.cancelled)
@@ -189,7 +194,7 @@ static void     onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackI
 
         // the bar owns clicks on layer surfaces; only a Super-grab can move
         // a window, so only that needs swallowing
-        if (g_pInputManager->m_lastFocusOnLS || !superHeld())
+        if (NHyprCommon::nativePointerGrabActive() || NHyprCommon::nativeLayerOwnsPointer() || !superHeld())
             return;
 
         const auto W = windowUnderCursor();

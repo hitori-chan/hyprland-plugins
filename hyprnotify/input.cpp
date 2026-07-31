@@ -50,6 +50,7 @@
 // inside the emission (crash class 6); every listener gates on
 // sessionLocked() first and resets its half-tracked state there (class 7).
 
+#include "common/input.hpp"
 #include "common/lifecycle.hpp"
 #include "common/queries.hpp"
 
@@ -379,8 +380,13 @@ namespace NHyprnotify {
             heldButtons    = 0;
             return;
         }
+        if (NHyprCommon::nativeInputCaptureActive()) {
+            swallowRelease = 0;
+            heldButtons    = 0;
+            return;
+        }
 
-        const uint32_t BIT = e.button == BTN_LEFT ? 1u : e.button == BTN_RIGHT ? 2u : e.button == BTN_MIDDLE ? 4u : 0u;
+        const uint32_t BIT = NHyprCommon::trackedPointerButtonBit(e.button);
 
         if (e.state == WL_POINTER_BUTTON_STATE_RELEASED) {
             if (BIT && (swallowRelease & BIT)) {
@@ -391,10 +397,23 @@ namespace NHyprnotify {
             return;
         }
 
+        // Buttons without a notification action remain native app input.
+        if (!BIT) {
+            heldButtons++;
+            return;
+        }
+
         // hyprbar runs first: a press it swallowed (strip click, open tray
         // menu over the card region) was never ours — and never reached an
         // app, so there is no grab to count
         if (info.cancelled)
+            return;
+
+        if (heldButtons > 0 || NHyprCommon::nativePointerGrabActive()) {
+            heldButtons++;
+            return;
+        }
+        if (NHyprCommon::nativeLayerOwnsPointer())
             return;
 
         const auto COORDS = g_pInputManager->getMouseCoordsInternal();
@@ -443,7 +462,12 @@ namespace NHyprnotify {
             swipeOn              = 0;
             return;
         }
-        if (!centerVisible() || cards.empty() || info.cancelled)
+        if (NHyprCommon::nativeInputCaptureActive()) {
+            scrollAcc = swipeAcc = 0;
+            swipeOn              = 0;
+            return;
+        }
+        if (!centerVisible() || cards.empty() || info.cancelled || heldButtons > 0 || NHyprCommon::nativePointerGrabActive() || NHyprCommon::nativeLayerOwnsPointer())
             return;
         const auto POS  = g_pInputManager->getMouseCoordsInternal();
         const auto CARD = cardAt(POS);
@@ -548,6 +572,8 @@ namespace NHyprnotify {
 
     void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
         if (NHyprCommon::sessionLocked())
+            return;
+        if (NHyprCommon::nativeInputCaptureActive())
             return;
         if (!centerVisible() || info.cancelled)
             return;
@@ -685,6 +711,11 @@ namespace NHyprnotify {
             releasePointer();
             return;
         }
+        if (NHyprCommon::nativeInputCaptureActive()) {
+            setHovered({});
+            releasePointer();
+            return;
+        }
 
         // cheap first: almost every motion happens with nothing shown
         if (cards.empty()) {
@@ -704,7 +735,13 @@ namespace NHyprnotify {
         }
 
         const auto CARD = cardAt(pos);
-        if (!CARD || heldButtons > 0 || (g_layoutManager && g_layoutManager->dragController()->target())) {
+        if (!CARD || heldButtons > 0 || NHyprCommon::nativePointerGrabActive() || (g_layoutManager && g_layoutManager->dragController()->target())) {
+            setHovered({});
+            releasePointer();
+            return;
+        }
+
+        if (NHyprCommon::nativeLayerOwnsPointer()) {
             setHovered({});
             releasePointer();
             return;
@@ -769,6 +806,7 @@ namespace NHyprnotify {
         swallowRelease = 0;
         heldButtons    = 0;
         scrollAcc      = 0;
+        swipeOn        = 0;
         releasePointer();
     }
 

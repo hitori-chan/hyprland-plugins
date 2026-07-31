@@ -7,17 +7,23 @@
 HL      ?= $(HOME)/repo/Hyprland
 XML     := $(HL)/protocols/wlr-virtual-pointer-unstable-v1.xml
 KXML    := $(HL)/protocols/virtual-keyboard-unstable-v1.xml
+CXML    := $(HL)/subprojects/hyprland-protocols/protocols/hyprland-input-capture-v1.xml
 CFLAGS  += -O2 -Wall $(shell pkg-config --cflags wayland-client)
 LDLIBS  += $(shell pkg-config --libs wayland-client)
 KLIBS   := $(shell pkg-config --libs xkbcommon)
+EICFLAGS := $(shell pkg-config --cflags libei-1.0)
+EILIBS   := $(shell pkg-config --libs libei-1.0)
 
-all: vptr vkbd
+all: vptr vkbd input-capture
 
 vptr: vptr.c vptr-proto.c vptr-proto.h
 	$(CC) $(CFLAGS) vptr.c vptr-proto.c -o $@ $(LDLIBS)
 
 vkbd: vkbd.c vkbd-proto.c vkbd-proto.h
 	$(CC) $(CFLAGS) vkbd.c vkbd-proto.c -o $@ $(LDLIBS) $(KLIBS)
+
+input-capture: input-capture.c input-capture-proto.c input-capture-proto.h
+	$(CC) $(CFLAGS) $(EICFLAGS) input-capture.c input-capture-proto.c -o $@ $(LDLIBS) $(EILIBS)
 
 vptr-proto.h: $(XML)
 	wayland-scanner client-header $< $@
@@ -27,8 +33,12 @@ vkbd-proto.h: $(KXML)
 	wayland-scanner client-header $< $@
 vkbd-proto.c: $(KXML)
 	wayland-scanner private-code $< $@
+input-capture-proto.h: $(CXML)
+	wayland-scanner client-header $< $@
+input-capture-proto.c: $(CXML)
+	wayland-scanner private-code $< $@
 
 clean:
-	rm -f vptr vkbd vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c
+	rm -f vptr vkbd input-capture vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c
 
 .PHONY: all clean

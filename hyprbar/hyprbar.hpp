@@ -86,6 +86,7 @@
 
 #include <cctype>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -99,9 +100,9 @@
 using namespace Render;
 using namespace Render::GL;
 
-extern HANDLE PHANDLE;
-
 namespace NHyprbar {
+
+    extern HANDLE PHANDLE;
 
     // ---- config (defined in main.cpp, values arrive from theme.lua) ----
 
@@ -248,6 +249,10 @@ namespace NHyprbar {
         struct SItem {
             std::string                    service, path;
             std::unique_ptr<sdbus::IProxy> proxy;
+            bool                           active = true;
+            uint64_t                       propertyRequest = 0;
+            uint64_t                       statusRequest   = 0;
+            uint64_t                       iconRequest     = 0;
             std::string                    iconName, themePath;
             std::string                    menuPath; // dbusmenu object path, "" = none
             std::string                    status;   // SNI Status: Passive hides the icon, NeedsAttention swaps the icon set
@@ -262,6 +267,7 @@ namespace NHyprbar {
         extern std::vector<SP<SItem>>              items;
 
         void                                       pollSoon(); // pull the next DBus poll tick close after a send
+        void                                       post(std::function<void()> fn); // defer send work out of input/render callbacks
         // fire a desktop notification over the tray's connection (urgency
         // 0/1/2; timeoutMs 0 = the daemon's default — sticky for critical)
         void notify(const std::string& app, uint32_t replacesId, const std::string& icon, const std::string& summary, const std::string& body, uint8_t urgency, int32_t timeoutMs);
@@ -420,6 +426,7 @@ namespace NHyprbar {
             std::vector<SEntry>               entries;
             double                            width     = 0; // measured at warm; 0 = remeasure
             int                               widthPt   = 0;
+            uint64_t                          loadRequest = 0;
             int                               hover     = -1;
             int                               scrollTop = 0;     // first visible entry when overflowing
             int                               maxScroll = 0;     // set at render: the last scrollTop that still fills the panel

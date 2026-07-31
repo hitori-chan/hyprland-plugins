@@ -24,8 +24,10 @@ HARNESS="${HYPR_HARNESS:-$HOME/.local/share/hypr-nested}"
 BIN="${1:-${HYPR_BIN:-/usr/local/bin/Hyprland}}"
 STATE="$HARNESS/stress-state"
 CFG="$HARNESS/stress.lua"
+CAPTURE_LOG="$HARNESS/input-capture.log"
 RUNDIR="${XDG_RUNTIME_DIR:?}/hypr"
 SIG=""
+CAPTURE_PID=""
 
 PASS=0
 FAILED=()
@@ -36,18 +38,49 @@ chk() { # chk <name> <command...> — command's exit code decides
 	if "$@" >/dev/null 2>&1; then ok "$name"; else bad "$name"; fi
 }
 
+normalize_target_pkgconfig() {
+	local pkg_path=${HYPR_DEPLOY_PKG_CONFIG_PATH:-}
+	[[ -n "$pkg_path" ]] || return 0
+
+	# The deploy path is intentionally one disposable package set. A colon
+	# list could make pkg-config select a different hyprland.pc than the one
+	# normalized here.
+	if [[ "$pkg_path" == *:* ]]; then
+		echo "HYPR_DEPLOY_PKG_CONFIG_PATH must name one pkg-config directory" >&2
+		return 1
+	fi
+
+	local pc="$pkg_path/hyprland.pc"
+	[[ -f "$pc" ]] || {
+		echo "missing hyprland.pc under HYPR_DEPLOY_PKG_CONFIG_PATH: $pkg_path" >&2
+		return 1
+	}
+
+	local prefix
+	prefix="$(cd "$pkg_path/../.." 2>/dev/null && pwd)/include" || return 1
+	[[ -d "$prefix/hyprland" ]] || {
+		echo "missing target headers beside HYPR_DEPLOY_PKG_CONFIG_PATH: $prefix" >&2
+		return 1
+	}
+
+	# CMake writes the configured install prefix into hyprland.pc even when
+	# cmake --install is redirected to a disposable --prefix. Fix that one
+	# generated line before common.mk resolves the plugin flags.
+	sed -i "s|^prefix=.*|prefix=$prefix|" "$pc"
+}
+
 hq()      { hyprctl -i "$SIG" "$@"; }
 dsp()     { hq dispatch "$1" >/dev/null 2>&1; }
 clients() { hq clients -j 2>/dev/null; }
 ws()      { hq activeworkspace -j | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])'; }
 
 # Nothing here may hard-code the nested monitor's size: it is whatever window
-# the wayland backend gets, and it HAS changed under us (the 1280x800 these
-# coordinates assumed is now 1920x1200). retarget re-reads the instance after
-# every launch and vp injects through vptr with that real extent — vptr maps
-# `move X Y` as X/extent onto the output, so a wrong extent silently lands
-# every scripted click somewhere else and the assertion passes or fails on
-# whatever happened to be under it.
+# the Wayland backend gets, and it can change when the nested config or its
+# host surface is applied. retarget re-reads the instance after every launch
+# and vp injects through vptr with that real extent — vptr maps coordinates as
+# X/extent onto the output, so a stale extent silently lands every scripted
+# click somewhere else and the assertion passes or fails on whatever happened
+# to be under it.
 WL=""; MON_W=0; MON_H=0; NBUS=""
 retarget() {
 	SIG="$(cat "$HARNESS/nested.sig")"
@@ -75,7 +108,16 @@ expect() { # expect <name> <python-expr-over-cs>
 	[[ "$(pyc "$2")" == "1" ]] && ok "$1" || bad "$1"
 }
 
+stop_capture() {
+	if [[ -n "$CAPTURE_PID" ]]; then
+		kill "$CAPTURE_PID" 2>/dev/null || true
+		wait "$CAPTURE_PID" 2>/dev/null || true
+		CAPTURE_PID=""
+	fi
+}
+
 kill_nested() { # kill any non-live instance running one of the harness cfgs
+	stop_capture
 	for s in "$RUNDIR"/*/; do
 		local sig pid
 		sig="$(basename "$s")"
@@ -91,17 +133,22 @@ echo "== stress: $BIN =="
 
 # ---- preflight ----------------------------------------------------------
 [[ -x "$BIN" ]] || { echo "no such compositor binary: $BIN"; exit 1; }
-{ [[ -x "$REPO/devtools/vptr" ]] && [[ -x "$REPO/devtools/vkbd" ]]; } || make -C "$REPO/devtools" >/dev/null
+{ [[ -x "$REPO/devtools/vptr" ]] && [[ -x "$REPO/devtools/vkbd" ]] && [[ -x "$REPO/devtools/input-capture" ]]; } || make -C "$REPO/devtools" >/dev/null
 # The headers the plugins compile against must belong to the gated binary —
 # a scratch hyprland.pc keeps its absolute /usr/local prefix (not
 # relocatable), silently falls back to the installed tree, and every plugin
-# embeds the wrong hash: all 8 mismatch-throw at load. Rewrite the scratch
+# embeds the wrong hash: all 8 mismatch-throw at load. Normalize the scratch
 # pc's prefix= to its own include/ before gating a fork build.
 #
 # The flags come from common.mk, not from a pkg-config call of our own:
 # resolving it here separately is how this check ends up vouching for a tree
 # nothing was built against (a distro hyprland package in /usr next to the
 # fork in /usr/local is enough).
+normalize_target_pkgconfig || exit 1
+if [[ -n "${HYPR_DEPLOY_PKG_CONFIG_PATH:-}" && "${PKG_CONFIG_PATH:-}" != "$HYPR_DEPLOY_PKG_CONFIG_PATH" ]]; then
+	echo "PKG_CONFIG_PATH and HYPR_DEPLOY_PKG_CONFIG_PATH must name the same target package set" >&2
+	exit 1
+fi
 HDR_VER=""
 for d in $(make -s -C "$REPO/hyprnotify" print-hl-cflags 2>/dev/null | tr ' ' '\n' | sed -n 's/^-I//p'); do
 	for v in "$d/hyprland/src/version.h" "$d/src/version.h"; do
@@ -130,23 +177,39 @@ kill_nested
 # deploy rehearsal FIRST: hyprpm builds against ITS OWN cached headers, not
 # this run's scratch set — a plugin that cannot build there bricks the whole
 # hyprpm swap (hyprplace 2.0.1 did). Dropping PKG_CONFIG_PATH leaves
-# common.mk's own default, the installed compositor's headers. These
-# throwaway builds are overwritten just below.
+# common.mk's own default, the installed compositor's headers. For an
+# uninstalled fork, HYPR_DEPLOY_PKG_CONFIG_PATH points at the fork's disposable
+# scratch package set so this rehearsal checks the target that will actually
+# run. These throwaway builds are overwritten just below.
 J="-j$(nproc)"
 dep_ok=1
+if [[ -n "${HYPR_DEPLOY_PKG_CONFIG_PATH:-}" ]]; then
+	DEPLOY_ENV=(env PKG_CONFIG_PATH="$HYPR_DEPLOY_PKG_CONFIG_PATH")
+	DEPLOY_HEADERS="the explicit target pkg-config path"
+else
+	DEPLOY_ENV=(env -u PKG_CONFIG_PATH)
+	DEPLOY_HEADERS="the installed header cache"
+fi
 for p in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd; do
-	env -u PKG_CONFIG_PATH make -B $J -C "$REPO/$p" >/dev/null 2>&1 || { dep_ok=0; echo "  deploy-build broke: $p"; }
+	"${DEPLOY_ENV[@]}" make -B "$J" -C "$REPO/$p" >/dev/null 2>&1 || { dep_ok=0; echo "  deploy-build broke: $p"; }
 done
-[[ $dep_ok == 1 ]] && ok "deploy rehearsal: all 8 build against the installed header cache" || bad "deploy rehearsal build"
+[[ $dep_ok == 1 ]] && ok "deploy rehearsal: all 8 build against $DEPLOY_HEADERS" || bad "deploy rehearsal build"
 # now the real builds for this run's compositor (caller's PKG_CONFIG_PATH)
 build_ok=1
 for p in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd; do
-	make -B $J -C "$REPO/$p" >/dev/null 2>&1 || { build_ok=0; echo "  build broke: $p"; }
+	make -B "$J" -C "$REPO/$p" >/dev/null 2>&1 || { build_ok=0; echo "  build broke: $p"; }
 done
 [[ $build_ok == 1 ]] && ok "all 8 plugins build" || { echo "plugin build FAILED"; exit 1; }
 rm -rf "$STATE"; mkdir -p "$STATE/hyprplace"
 printf '100\t100\t500\t400\tfoot\n200\t80\tlegacyfoot\n' > "$STATE/hyprplace/lastspot.tsv"
-{ cat "$HARNESS/nested.lua"; echo 'hl.window_rule({ match = { class = "foot|mpv|corpseA|corpseB|tuckmax|tuckfloat|tuckfs" }, float = true })'; } > "$CFG"
+{
+	echo 'hl.config({ ecosystem = { enforce_permissions = true } })'
+	echo 'hl.permission(".*hyprland-plugins/.*", "plugin", "allow")'
+	echo 'hl.permission(".*input-capture$", "input-capture", "allow")'
+	echo 'hl.permission(".*vkbd$", "keyboard", "allow")'
+	cat "$HARNESS/nested.lua"
+	echo 'hl.window_rule({ match = { class = "foot|mpv|corpseA|corpseB|tuckmax|tuckfloat|tuckfs" }, float = true })'
+} > "$CFG"
 HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" bash "$HARNESS/launch.sh" >/dev/null 2>&1 || { echo "nested launch FAILED"; exit 1; }
 retarget
 LOG="$HARNESS/nested.log"
@@ -164,14 +227,40 @@ expect "sibling is born at the remembered 500x400 too" \
 	"sum(1 for c in cs if c['class']=='foot' and c['size']==[500,400])==2"
 expect "sibling lands off the taken spot — no exact stacking" \
 	"len(set(tuple(c['at']) for c in cs if c['class']=='foot'))==2"
-# the spot is occupied, not retired: free it and the next sibling takes it
+# The spot is occupied, not retired: free it and check the next sibling's
+# result. On a small nested output the remaining 500x400 sibling may still
+# overlap the remembered box; in that case the least-overlap fallback is the
+# correct result, and the test must not demand an impossible free placement.
+B="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot' and c['at'] != [100,100]), ''))")"
 A="$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot' and c['at']==[100,100]), ''))")"
-dsp "hl.dsp.window.close({window=\"address:$A\"})"; sleep 1
+dsp "hl.dsp.window.close({window=\"address:$A\"})"
+# The close dispatch is asynchronous. Do not let the next spawn race the
+# unmap and mistake the still-mapped owner for a permanently occupied spot.
+for _ in $(seq 1 30); do
+	LEFT="$(clients | python3 -c "
+import json,sys
+address = sys.argv[1]
+print(any(c['address'] == address for c in json.load(sys.stdin)))" "$A")"
+	[[ "$LEFT" != 1 ]] && break
+	sleep 0.1
+done
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=600x300')"; sleep 2
-expect "freed spot reclaimed: next sibling lands at (100,100) 500x400" \
-	"any(c['class']=='foot' and c['at']==[100,100] and c['size']==[500,400] for c in cs)"
+placementReclaim() {
+	clients | python3 -c "
+import json,sys
+cs = json.load(sys.stdin)
+b = next((c for c in cs if c['address'] == '$B'), None)
+def overlaps(c):
+    return c['at'][0] < 600 and c['at'][0] + c['size'][0] > 100 and c['at'][1] < 500 and c['at'][1] + c['size'][1] > 100
+on_spot = any(c['class'] == 'foot' and c['at'] == [100,100] and c['size'] == [500,400] for c in cs)
+positions = {tuple(c['at']) for c in cs if c['class'] == 'foot'}
+print(1 if b and len(positions) == 2 and ((not overlaps(b) and on_spot) or (overlaps(b) and not on_spot)) else 0)"
+}
+chk "freed spot reuse respects remaining sibling geometry" test "$(placementReclaim)" = 1
 
 # fullscreen roundtrip on the focused (newest) foot
 feet() { clients | python3 -c "
@@ -623,7 +712,7 @@ chk "manage: opening it set no rule" test "$(polsil)" = "silenced:0"
 click $ENTX "$(ent 2)" 272 # "Mute mgr for 1 hour"
 # A timed rule prints its seconds remaining, and that is a clock read — assert
 # the SHAPE (timed at all, and near the hour asked for), never the exact value.
-chk "manage: a timed mute landed WITH an expiry" bash -c "[[ '$(polsil)' == silenced:1\ s=mgr+35[0-9][0-9] ]]"
+chk "manage: a timed mute landed WITH an expiry" bash -c "[[ '$(polsil)' =~ ^silenced:1[[:space:]]s=mgr\\+(35[0-9]{2}|3600)$ ]]"
 chk "manage: the expiry reached the disk" grep -qE "^s	mgr	[0-9]{10}$" "$POLFILE"
 psend mgr "still muted" ""; sleep 1.2
 chk "manage: a timed rule silences an arrival exactly as a permanent one does" test "$(bd)" = "banners:0 resident:2"
@@ -676,13 +765,13 @@ swipe() { printf 'move %s %s\nsleep 60\nscroll 1 %s\nsleep 30\nscroll 1 %s\nslee
 psend swiper "flick me" ""; sleep 1.2
 hq hyprnotify center >/dev/null; sleep 0.7
 chk "swipe: a card in an open shade" test "$(st)" = "center:1 live:1 dnd:0"
-swipe 1700 64 -25
+swipe "$ROWX" "$ROWY" -25
 chk "swipe: back opened the manage panel, it did not dismiss" test "$(st)" = "center:1 live:1 dnd:0"
 # esc peels the panel, not the shade — the panel's own ⋮ sits further right
 # than a row's, so this is also the assertion that the peel order is right
 tap esc
 chk "swipe: esc peeled the panel and left the shade up" test "$(st)" = "center:1 live:1 dnd:0"
-swipe 1700 64 25
+swipe "$ROWX" "$ROWY" 25
 chk "swipe: away dismissed the row" test "$(st)" = "center:1 live:0 dnd:0"
 tap esc; hq hyprnotify clear >/dev/null; sleep 0.8
 chk "swipe: reset after the swipe battery" test "$(st)" = "center:0 live:0 dnd:0"
@@ -778,6 +867,50 @@ dsp "hl.dsp.exec_cmd('notify-send -h string:category:im.received \"convo\" body'
 chk "hostile: wrong-typed category survived, both cards landed" test "$(st)" = "center:0 live:2 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.8
 
+# ---- native input capture ------------------------------------------------
+# The protocol is fed after plugin input listeners emit. A receiver that gets
+# all three event classes proves the bar, shade, click, max, and snap gates
+# did not cancel or swallow an event owned by an active capture session.
+CAPTURE_READY=0
+WAYLAND_DISPLAY="$WL" timeout 12s "$REPO/devtools/input-capture" "$MON_W" "$MON_H" >"$CAPTURE_LOG" 2>&1 &
+CAPTURE_PID=$!
+for _ in $(seq 1 50); do
+	if grep -qx 'READY' "$CAPTURE_LOG" 2>/dev/null; then
+		CAPTURE_READY=1
+		break
+	fi
+	if ! kill -0 "$CAPTURE_PID" 2>/dev/null; then
+		break
+	fi
+	sleep 0.1
+done
+chk "input capture: receiver reached READY" test "$CAPTURE_READY" = 1
+if [[ $CAPTURE_READY == 1 ]]; then
+	{
+		echo "move $((MON_W / 2)) $((MON_H / 2))"
+		echo "sleep 60"
+		# Absolute motion is a warp and does not cross input-capture barriers;
+		# use native relative motion for the edge crossing.
+		echo "rel 0 -$((MON_H / 2 + 40))"
+		echo "sleep 120"
+		echo "move $((MON_W / 2 + 40)) $((MON_H / 2))"
+		echo "sleep 80"
+		echo "press 272"
+		echo "sleep 40"
+		echo "release 272"
+		echo "sleep 80"
+	} | vp
+	# Creating vkbd after activation replaces the compositor's active keymap;
+	# this exercises the fork's EIS keyboard-device restart while captured.
+	printf 'tap a\nsleep 100\n' | vk
+	wait "$CAPTURE_PID"; CAPTURE_STATUS=$?
+	CAPTURE_PID=""
+	chk "input capture: motion, button, and key events reached EIS" test "$CAPTURE_STATUS" = 0
+else
+	stop_capture
+fi
+sleep 0.5
+
 # ---- real-input storm ---------------------------------------------------
 {
 	for i in $(seq 1 60); do echo "move $(( (i * 97) % MON_W )) $(( 30 + (i * 61) % (MON_H - 40) ))"; echo "sleep 10"; done
@@ -801,7 +934,12 @@ expect "post-storm click still raises + focuses (no stuck swallow)" \
 # image viewer backdrop) lands after the unmap: it must be swallowed, not
 # focus-and-raise whatever sat beneath (it flipped the live stack).
 dsp "hl.dsp.exec_cmd('foot -a corpseA')"; sleep 1.6
+# The placement store intentionally remembers the same class geometry. Move
+# these two viewers apart after spawn so the dying viewer always has an
+# exposed corner to receive the tail of the click burst.
+dsp "hl.dsp.window.move({x=$((MON_W / 10)), y=$((MON_H / 6))})"; sleep 0.4
 dsp "hl.dsp.exec_cmd('foot -a corpseB')"; sleep 1.6
+dsp "hl.dsp.window.move({x=$((MON_W / 2)), y=$((MON_H / 8))})"; sleep 0.4
 dsp "hl.dsp.exec_cmd('foot -a corpseB -F')"; sleep 1.6
 # a point over corpseA that corpseB doesn't cover: the press that must die
 P="$(clients | python3 -c "
@@ -872,13 +1010,10 @@ sleep 0.8
 # texture, marks the live tray items dirty and warms again. Nothing may
 # wedge, and the strip must still take a click afterwards.
 #
-# retarget FIRST, and not for the signature: the wayland backend hands the
-# instance whatever window size it gets (1920x1200 here), and the reload is
-# when nested.lua's own monitor line finally applies — the output resizes to
-# 1280x800 under us. vptr maps `move X Y` as X/extent, so every coordinate
-# below is off by that ratio until the extent is re-read. This cost an hour:
-# the taglist looked like it had re-laid itself out, and the bar had not
-# moved a pixel.
+# retarget FIRST, and not only for the signature: the Wayland backend can hand
+# the instance a different window size before nested.lua's monitor line and a
+# reload can apply another output size. vptr maps `move X Y` as X/extent, so
+# every coordinate below is off by that ratio until the extent is re-read.
 chk "reload: the config re-applies" bash -c "hyprctl -i $SIG reload | grep -q ok"
 sleep 1.2
 retarget

@@ -16,7 +16,7 @@ namespace NHyprbar {
     // ---- the state hyprnotify pushes ----
 
     static uint32_t                       bellLive = 0, bellKept = 0;
-    static std::unique_ptr<sdbus::IProxy> proxy; // on the tray's session-bus link
+    static std::shared_ptr<sdbus::IProxy>  proxy; // on the tray's session-bus link
     static SP<CEventLoopTimer>            peekIn;           // hover intent: a pointer CROSSING the bell must not open anything
     static bool                           peeking = false;
 
@@ -46,10 +46,15 @@ namespace NHyprbar {
             if (!proxy || peeking == on)
                 return;
             peeking = on;
-            try {
-                proxy->callMethodAsync("Peek").onInterface(CIFACE).withArguments(on).uponReplyInvoke([](std::optional<sdbus::Error>) {});
-                Tray::pollSoon();
-            } catch (...) {} // no daemon: the hover is a no-op
+            const auto P = proxy;
+            Tray::post([P, on]() {
+                if (!P)
+                    return;
+                try {
+                    P->callMethodAsync("Peek").onInterface(CIFACE).withArguments(on).uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                    Tray::pollSoon();
+                } catch (...) {} // no daemon: the hover is a no-op
+            });
         }
 
         void                         daemonUp() {
@@ -75,7 +80,7 @@ namespace NHyprbar {
             if (!Tray::bus.conn())
                 return; // no session bus: no bell state, glyph still draws
             try {
-                proxy = sdbus::createProxy(*Tray::bus.conn(), sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
+                proxy.reset(sdbus::createProxy(*Tray::bus.conn(), sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"}).release());
                 proxy->uponSignal("State").onInterface(CIFACE).call([](uint32_t live, uint32_t kept, bool, bool) { applyState(live, kept); });
                 daemonUp();
             } catch (...) {
@@ -276,10 +281,15 @@ namespace NHyprbar {
                 // the click pins whatever the hover opened; hyprnotify's Toggle
                 // reads its own peek state to tell the two apart
                 Bell::sendPeek(false);
-                try {
-                    proxy->callMethodAsync("Toggle").onInterface(Bell::CIFACE).uponReplyInvoke([](std::optional<sdbus::Error>) {});
-                    Tray::pollSoon();
-                } catch (...) {} // no daemon: the click is a no-op
+                const auto P = proxy;
+                Tray::post([P]() {
+                    if (!P)
+                        return;
+                    try {
+                        P->callMethodAsync("Toggle").onInterface(Bell::CIFACE).uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                        Tray::pollSoon();
+                    } catch (...) {} // no daemon: the click is a no-op
+                });
             }
         };
     } // namespace

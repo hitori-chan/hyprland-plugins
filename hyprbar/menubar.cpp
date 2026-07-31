@@ -1,8 +1,10 @@
 // hyprbar/menubar.cpp — awesome's Mod+P launcher: .desktop apps, categories, prompt, completion, history
 
 #include "common/lifecycle.hpp"
+#include "common/persist.hpp"
 #include "common/queries.hpp"
 
+#include "desktop_exec.hpp"
 #include "hyprbar.hpp"
 
 namespace NHyprbar {
@@ -100,11 +102,10 @@ namespace NHyprbar {
         }
 
         static void saveCounts() {
-            std::error_code ec;
-            std::filesystem::create_directories(cacheDir(), ec);
-            std::ofstream F(cacheDir() / "menu_count_file", std::ios::trunc);
+            std::ostringstream out;
             for (const auto& [N, C] : counts)
-                F << N << ';' << C << '\n';
+                out << N << ';' << C << '\n';
+            NHyprCommon::writeAtomic(cacheDir() / "menu_count_file", out.str());
         }
 
         static void historyAdd(const std::string& q) {
@@ -114,37 +115,10 @@ namespace NHyprbar {
             history.push_back(q);
             if (history.size() > HISTORY_MAX)
                 history.erase(history.begin());
-            std::error_code ec;
-            std::filesystem::create_directories(cacheDir(), ec);
-            std::ofstream F(cacheDir() / "history_menu", std::ios::trunc);
+            std::ostringstream out;
             for (const auto& H : history)
-                F << H << '\n';
-        }
-
-        // Exec= field codes: %c = the app name, %k = the .desktop path, %i =
-        // "--icon <path>"; the file/url ones (%f/%u/...) a launcher has nothing
-        // for and drops. "%%" is a literal percent.
-        static std::string substFieldCodes(const std::string& exec, const std::string& name, const std::string& file, const std::string& iconPath) {
-            std::string out;
-            for (size_t i = 0; i < exec.size(); i++) {
-                if (exec[i] != '%' || i + 1 >= exec.size()) {
-                    out += exec[i];
-                    continue;
-                }
-                switch (exec[++i]) {
-                    case '%': out += '%'; break;
-                    case 'c': out += name; break;
-                    case 'k': out += file; break;
-                    case 'i':
-                        if (!iconPath.empty())
-                            out += "--icon " + iconPath;
-                        break;
-                    default: break; // %f/%u/%F/%U and the deprecated codes: dropped
-                }
-            }
-            while (!out.empty() && out.back() == ' ')
-                out.pop_back();
-            return out;
+                out << H << '\n';
+            NHyprCommon::writeAtomic(cacheDir() / "history_menu", out.str());
         }
 
         static std::vector<std::string> desktops; // XDG_CURRENT_DESKTOP entries, for OnlyShowIn/NotShowIn
@@ -218,10 +192,10 @@ namespace NHyprbar {
                     break;
             }
 
-            const std::string ICONPATH = rawExec.find("%i") != std::string::npos ? resolveIconPath(app.icon) : "";
-            app.exec                   = substFieldCodes(rawExec, app.name, path.string(), ICONPATH);
-            if (app.exec.empty())
+            const auto WORDS = DesktopExec::expand(rawExec, app.name, path.string(), app.icon);
+            if (!WORDS)
                 return;
+            app.exec = DesktopExec::shellCommand(*WORDS);
             app.lname = lower(app.name);
             // matched like awesome: against the name AND the launch command line
             app.lexec = lower(app.terminal ? cfg.terminal->value() + " -e " + app.exec : app.exec);
@@ -522,6 +496,8 @@ namespace NHyprbar {
                     close();
                 return;
             }
+            if (NHyprCommon::nativeInputCaptureActive())
+                return;
 
             if (!isOpen)
                 return;

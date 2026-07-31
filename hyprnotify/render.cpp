@@ -156,17 +156,12 @@ namespace NHyprnotify {
             armMotionTick();
             Bus::emitStateSoon();
             // A card arriving over a solitary/scanned-out fullscreen window
-            // (mpv under direct_scanout): the monitor presents the client's
-            // buffer directly, so the per-card damageBox may not schedule a
-            // compositor frame at all — and onRenderPreChecks, which drops the
-            // scanout/solitary latch, only runs from renderMonitor. Force a
-            // whole-monitor frame so renderMonitor runs and the card
-            // composites. Full-monitor (not the card box) so it can't be
-            // occlusion-culled behind the fullscreen surface; a no-op cost when
-            // the monitor isn't latched.
-            if (const auto MON = focusedMon(); MON && g_pHyprRenderer && (MON->m_directScanoutIsActive || !MON->m_solitaryClient.expired()))
-                if (anythingToDraw())
-                    g_pHyprRenderer->damageMonitor(MON);
+            // may not schedule a frame from its own damage box. Damage the
+            // focused monitor once on every visible-state change so the
+            // compositor reaches render.preChecks, where requestFullRender()
+            // exits the native solitary/direct-scanout path for this frame.
+            if (const auto MON = focusedMon(); MON && g_pHyprRenderer && anythingToDraw() && MON->canAttemptDirectScanoutFast())
+                g_pHyprRenderer->damageMonitor(MON);
         });
     }
 
@@ -218,11 +213,9 @@ namespace NHyprnotify {
     // workspace render for its monitor — direct scanout, or a solitary-only
     // renderWindow — so RENDER_POST_WINDOWS never fires and the card is
     // invisible. Notifications are ontop, so while a VISIBLE card (or the
-    // open center) is up we drop the monitor's solitary latch here, at
-    // preChecks (which fires per monitor BEFORE the scanout decision): the
-    // normal render path then runs and composites the card over the
-    // fullscreen window. Self-healing — once the last card clears, the
-    // compositor re-latches solitary and scanout re-engages.
+    // open center) is up the compositor-owned hook requests the normal render
+    // path at preChecks, before direct scanout is selected. Once the last card
+    // clears, the scheduler's normal solitary recheck restores the fast path.
     void onRenderPreChecks(PHLMONITOR mon) {
         // the cheap gate first: this runs per monitor per frame, and a
         // resident-only model (nothing drawn) must NOT inhibit scanout —
@@ -233,13 +226,7 @@ namespace NHyprnotify {
             return;
         if (NHyprCommon::sessionLocked())
             return; // never force a card to float over the lockscreen
-        mon->m_solitaryClient.reset(); // open the solitary gate -> renderWorkspace -> RENDER_POST_WINDOWS
-        // resetting solitary alone would SEGV on the transition frame:
-        // canAttemptDirectScanoutFast() stays true off m_lastScanout and
-        // attemptDirectScanout() then derefs the now-null candidate. Leaving any
-        // active scanout clears that latch so the scanout branch is skipped.
-        if (!mon->m_lastScanout.expired() || mon->m_directScanoutIsActive)
-            mon->handleDSleave();
+        mon->requestFullRender();
     }
 
     void onRenderStage(eRenderStage stage) {
@@ -254,7 +241,7 @@ namespace NHyprnotify {
         const auto MON = g_pHyprRenderer->m_renderData.pMonitor.lock();
         if (!MON || MON != focusedMon())
             return;
-        g_pHyprRenderer->m_renderPass.add(makeUnique<CNotifyPassElement>(MON));
+        g_pHyprRenderer->addPassElement(makeUnique<CNotifyPassElement>(MON));
     }
 
     void renderInit() {

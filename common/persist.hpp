@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -65,6 +66,12 @@ namespace NHyprCommon {
     // state and a hostile one must not take the session down.
     using SBoxStore = std::unordered_map<std::string, CBox>;
 
+    inline bool validBoxNumber(double value) {
+        // writeBoxTsv uses llround; stay strictly inside its representable
+        // domain instead of letting hostile state invoke undefined behavior.
+        return std::isfinite(value) && value > (double)std::numeric_limits<long long>::min() && value < (double)std::numeric_limits<long long>::max();
+    }
+
     inline SBoxStore readBoxTsv(const std::filesystem::path& path) {
         SBoxStore     out;
         std::ifstream f(path);
@@ -85,6 +92,11 @@ namespace NHyprCommon {
             }
             if ((n != 2 && n != 4) || !*p)
                 continue; // neither form, or no class
+            bool valid = true;
+            for (int i = 0; i < n; i++)
+                valid = valid && validBoxNumber(v[i]);
+            if (!valid || (n == 4 && (v[2] < 0 || v[3] < 0)))
+                continue; // non-finite, unroundable, or negative dimensions
             out[p] = n == 4 ? CBox{v[0], v[1], v[2], v[3]} : CBox{v[0], v[1], 0, 0};
         }
         return out;
@@ -92,8 +104,11 @@ namespace NHyprCommon {
 
     inline bool writeBoxTsv(const std::filesystem::path& path, const SBoxStore& store) {
         std::ostringstream out;
-        for (const auto& [CLS, B] : store)
+        for (const auto& [CLS, B] : store) {
+            if (!validBoxNumber(B.x) || !validBoxNumber(B.y) || !validBoxNumber(B.w) || !validBoxNumber(B.h) || B.w < 0 || B.h < 0 || CLS.empty())
+                continue;
             out << std::llround(B.x) << '\t' << std::llround(B.y) << '\t' << std::llround(B.w) << '\t' << std::llround(B.h) << '\t' << CLS << '\n';
+        }
         return writeAtomic(path, out.str());
     }
 

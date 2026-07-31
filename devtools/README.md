@@ -2,16 +2,17 @@
 
 Dev tooling for exercising the plugins in the nested Hyprland
 (`~/.local/share/hypr-nested/`). Not plugins (not in hyprpm.toml). Tracked:
-`stress.sh`, `vptr.c`, `vkbd.c`, the `Makefile`, and this README; the
+`stress.sh`, `vptr.c`, `vkbd.c`, `input-capture.c`, the `Makefile`, and this README; the
 binaries and the `*-proto.{c,h}` wayland-scanner glue are build artifacts
 that `make` regenerates.
 
 ## stress.sh — the pre-deploy regression gate
 
-Exact assertions over the nested harness + `vptr` + `vkbd`: placement
+Exact assertions over the nested harness + `vptr` + `vkbd` + `input-capture`: placement
 memory, spawn/close storms, the notification cap, churn round-trips,
-hostile state files, an input storm, the shade's click/key verbs,
-acting-closes-the-shade, the bell peek, a config reload, log hygiene.
+hostile state files, an input storm, a native `hyprland-input-capture-v1`
+session, the shade's click/key verbs, acting-closes-the-shade, the bell peek,
+a config reload, log hygiene.
 Check #1 refuses to run when the installed headers'
 `version.h` hash doesn't match the running binary. Run it before every
 deploy; it must end `ALL CHECKS PASSED`.
@@ -26,8 +27,17 @@ hyprnotify answers to the same well-known name.
 ```
 ./stress.sh                        # gate the installed compositor
 PKG_CONFIG_PATH=$SCRATCH/share/pkgconfig \
+  HYPR_DEPLOY_PKG_CONFIG_PATH=$SCRATCH/share/pkgconfig \
   ./stress.sh ~/repo/Hyprland/build/Hyprland   # gate an uninstalled fork build
 ```
+
+For an uninstalled fork, both variables must name the same disposable package
+set. The first builds and hashes the plugins used by the nested compositor;
+the second makes the deploy rehearsal check that fork instead of a stale
+installed header cache. `stress.sh` repairs the generated `hyprland.pc`
+prefix when `cmake --install --prefix` left it at `/usr/local`, and refuses to
+run when the two paths differ. Never point either variable at the live
+session's mapped plugin or compositor files.
 
 Needs the nested harness at `~/.local/share/hypr-nested`.
 
@@ -52,6 +62,7 @@ EOF
 - stdin gesture script, one command per line — a whole press/move/release
   must be one invocation (the virtual pointer dies with the process):
   - `move X Y`      — absolute motion to a pixel
+  - `rel DX DY`     — relative motion in compositor-space pixels
   - `press BTN` / `release BTN` — `BTN` = linux code: 272 left, 273 right, 274 middle
   - `scroll AXIS V` — `AXIS` 0 vertical / 1 horizontal
   - `sleep MS`      — pause (flushes first)
@@ -101,3 +112,19 @@ EOF
 Still unbuilt: modifier chords (`vkbd` sends `modifiers` once, as zero), so
 Super-gated paths (taglist `Mod+click`, hyprmax's immovable Super+drag
 swallow) and the menubar's readline editing are still untested.
+
+## input-capture - native capture receiver
+
+`input-capture` binds the fork's `hyprland-input-capture-v1` manager, creates a
+full-width top-edge barrier, consumes the passed EIS fd with libei, and waits
+for a captured motion, left-button press/release, and key press/release. The
+stress gate starts it only on the nested socket, then drives the barrier with
+`vptr` and the key path with `vkbd`. The nested throwaway config grants the
+receiver `input-capture` permission and the injector `keyboard` permission
+without opening a dialog. The client is generated from the exact fork XML, so
+this test is ABI/protocol-local to the target fork. The relative move crosses
+past the barrier rather than ending on it; the fork's segment test treats an
+endpoint as a boundary case. Starting `vkbd` after activation intentionally
+replaces the compositor keymap and exercises EIS keyboard-device recovery.
+The target fork keeps the active EIS emulation sequence across a recreated
+device and a late capability bind.

@@ -47,20 +47,18 @@
 #include "common/icons.hpp"
 #include "common/lifecycle.hpp"
 #include "common/order.hpp"
+#include "common/process.hpp"
 #include "common/theme.hpp"
 
 #include "hyprnotify.hpp"
 
+#include <cerrno>
 #include <spawn.h>
 #include <sys/syscall.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
-using namespace NHyprnotify;
-
-HANDLE PHANDLE = nullptr;
-
 namespace NHyprnotify {
+    HANDLE PHANDLE = nullptr;
     SNotifyConfig cfg;
 
     // ---- detached child spawning (hyperlink open, notification sound) ----
@@ -73,11 +71,27 @@ namespace NHyprnotify {
         wl_event_source* src = nullptr;
     };
     static std::vector<UP<SChild>> children;
-    static std::vector<pid_t>      spawnOrphans; // couldn't-watch children (no pidfd/loop); WNOHANG-swept on the next spawn
+    static std::vector<pid_t>      spawnOrphans; // couldn't-watch children; polled only while non-empty
+    static SP<CEventLoopTimer>     orphanTick;
+
+    static void armOrphanTick() {
+        if (!orphanTick || !g_pEventLoopManager)
+            return;
+        orphanTick->updateTimeout(spawnOrphans.empty() ? std::nullopt : std::optional{std::chrono::milliseconds(100)});
+    }
+
+    static void rememberOrphan(pid_t pid) {
+        if (pid <= 0 || std::ranges::find(spawnOrphans, pid) != spawnOrphans.end())
+            return;
+        spawnOrphans.push_back(pid);
+        armOrphanTick();
+    }
+
+    static void reapOrphans(bool block = false);
 
     static int                     onChildExit(int, uint32_t, void* data) {
         auto* c = (SChild*)data;
-        waitpid(c->pid, nullptr, WNOHANG);
+        NHyprCommon::waitPid(c->pid, true);
         wl_event_source_remove(c->src);
         close(c->fd);
         std::erase_if(children, [&](const auto& U) { return U.get() == c; });
@@ -87,7 +101,7 @@ namespace NHyprnotify {
     void spawnDetached(std::vector<const char*> argv) {
         if (argv.empty() || !argv[0])
             return;
-        std::erase_if(spawnOrphans, [](pid_t p) { return waitpid(p, nullptr, WNOHANG) != 0; });
+        reapOrphans();
         if (argv.back())
             argv.push_back(nullptr); // execv needs the null terminator
 
@@ -97,34 +111,54 @@ namespace NHyprnotify {
 
         const int FD = (int)syscall(SYS_pidfd_open, pid, 0);
         if (FD < 0 || !g_pCompositor) {
-            // no pidfd/loop to watch it: reap now, or hand a not-yet-exited
-            // child to the sweep above rather than leak a zombie
-            if (waitpid(pid, nullptr, WNOHANG) == 0)
-                spawnOrphans.push_back(pid);
+            // no pidfd/loop to watch it: close the descriptor if one was
+            // opened, then keep ownership until a non-blocking reap wins
+            if (FD >= 0)
+                close(FD);
+            if (NHyprCommon::waitPid(pid, false) == 0)
+                rememberOrphan(pid);
             return;
         }
         auto c = makeUnique<SChild>();
         c->pid = pid;
         c->fd  = FD;
         c->src = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, FD, WL_EVENT_READABLE, onChildExit, c.get());
+        if (!c->src) {
+            close(FD);
+            if (NHyprCommon::waitPid(pid, false) == 0)
+                rememberOrphan(pid);
+            return;
+        }
         children.push_back(std::move(c));
     }
 
-    static void reapChildren() {
+    static void reapOrphans(bool block) {
+        std::erase_if(spawnOrphans, [block](pid_t p) {
+            const pid_t RESULT = NHyprCommon::waitPid(p, block);
+            return RESULT > 0 || (RESULT < 0 && errno == ECHILD);
+        });
+        if (!block)
+            armOrphanTick();
+    }
+
+    static void reapChildren(bool block = false) {
         for (auto& c : children) {
             if (c->src)
                 wl_event_source_remove(c->src);
             if (c->fd >= 0)
                 close(c->fd);
-            if (c->pid > 0)
-                waitpid(c->pid, nullptr, WNOHANG);
+            if (c->pid > 0) {
+                const pid_t RESULT = NHyprCommon::waitPid(c->pid, block);
+                if (!block && RESULT == 0)
+                    rememberOrphan(c->pid);
+            }
         }
         children.clear();
-        for (pid_t p : spawnOrphans)
-            waitpid(p, nullptr, WNOHANG);
-        spawnOrphans.clear();
+        reapOrphans(block);
     }
 }
+
+using namespace NHyprnotify;
 
 static NHyprCommon::CLifecycle g_lifecycle;
 static SP<SHyprCtlCommand>     ctlCmd;
@@ -249,6 +283,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     Policy::init(); // the user's rules load before the first arrival is judged
     Model::init();  // and the expiry timer stands before anything can arrive
     Bus::init();
+    orphanTick = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { reapOrphans(); }, nullptr);
+    g_pEventLoopManager->addTimer(orphanTick);
     renderInit();
     centerInit();
 
@@ -323,7 +359,10 @@ APICALL EXPORT void PLUGIN_EXIT() {
     Policy::exit(); // the rules outlive all of it, so they flush last
     inputExit();
     replyExit();
-    reapChildren();
+    reapChildren(true); // plugin exit owns the helpers; reap before its code can unload
+    if (orphanTick && g_pEventLoopManager)
+        g_pEventLoopManager->removeTimer(orphanTick);
+    orphanTick.reset();
     centerExit();
     renderExit();
 }

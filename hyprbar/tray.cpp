@@ -37,12 +37,16 @@ namespace NHyprbar {
             } catch (...) {} // broker gone: teardown is already pending, drop the card
         }
 
-        // A drain must never run synchronously from a send site: sends happen
-        // inside signal/reply handlers, i.e. inside processPendingEvent, and
-        // sd-bus dispatch is not re-entrant — park a near tick on the link's
-        // timer instead.
+        // A drain must never run synchronously from a send site. Input/render
+        // callers enqueue message construction on the link's idle queue;
+        // signal/reply handlers can still use the non-blocking API directly,
+        // and the link parks sd-bus dispatch on its normal poll timer.
         void pollSoon() {
             bus.pollSoon();
+        }
+
+        void post(std::function<void()> fn) {
+            bus.post(std::move(fn));
         }
 
         // owned objects borrow the connection — reset them before it dies
@@ -52,8 +56,13 @@ namespace NHyprbar {
                 try {
                     Menu::close(); // its proxy borrows the connection; close it first
                 } catch (...) {}   // close() sends "closed" events — the bus may already be gone
-            for (auto& I : items)
+            for (auto& I : items) {
+                I->active = false;
+                ++I->propertyRequest;
+                ++I->statusRequest;
+                ++I->iconRequest;
                 I->proxy.reset(); // break the item<->handler cycle before dropping the vector's ref
+            }
             items.clear();
             notifyProxy.reset();
             busProxy.reset();
@@ -67,17 +76,24 @@ namespace NHyprbar {
         // from the theme file, then the item's own pixmap — a visible
         // double-blink on the tray per window action.
         static void fetchIcon(SP<SItem> it) {
+            if (!it || !it->active || !it->proxy)
+                return;
             // a NeedsAttention item shows its attention icon set (SNI spec)
-            const bool  ATTN  = it->status == "NeedsAttention";
-            const char* PNAME = ATTN ? "AttentionIconName" : "IconName";
-            const char* PPIX  = ATTN ? "AttentionIconPixmap" : "IconPixmap";
-            it->proxy->getPropertyAsync(PNAME).onInterface(SNI).uponReplyInvoke([it, PPIX](std::optional<sdbus::Error> eN, sdbus::Variant vN) {
+            const bool     ATTN    = it->status == "NeedsAttention";
+            const char*    PNAME   = ATTN ? "AttentionIconName" : "IconName";
+            const char*    PPIX    = ATTN ? "AttentionIconPixmap" : "IconPixmap";
+            const uint64_t REQUEST = ++it->iconRequest;
+            it->proxy->getPropertyAsync(PNAME).onInterface(SNI).uponReplyInvoke([it, PPIX, ATTN, REQUEST](std::optional<sdbus::Error> eN, sdbus::Variant vN) {
+                if (!it->active || !it->proxy || it->iconRequest != REQUEST || (it->status == "NeedsAttention") != ATTN)
+                    return;
                 auto name = it->iconName; // an errored reply keeps the current name
                 if (!eN)
                     try {
                         name = vN.get<std::string>();
                     } catch (...) {}
-                it->proxy->getPropertyAsync(PPIX).onInterface(SNI).uponReplyInvoke([it, name](std::optional<sdbus::Error> e, sdbus::Variant v) {
+                it->proxy->getPropertyAsync(PPIX).onInterface(SNI).uponReplyInvoke([it, name, ATTN, REQUEST](std::optional<sdbus::Error> e, sdbus::Variant v) {
+                    if (!it->active || !it->proxy || it->iconRequest != REQUEST || (it->status == "NeedsAttention") != ATTN)
+                        return;
                     std::vector<uint8_t> px;
                     int                  pw = 0, ph = 0;
                     if (!e) {
@@ -132,23 +148,38 @@ namespace NHyprbar {
         }
 
         static void fetchProps(SP<SItem> it) {
+            if (!it || !it->active || !it->proxy)
+                return;
+            const uint64_t REQUEST = ++it->propertyRequest;
+            const uint64_t STATUS_REQUEST = it->statusRequest;
             // Every reply is change-detected: fcitx fires NewIcon on every input
             // context change (= every window focus), and rebuilding textures +
             // redrawing the bar for identical content made the bar flicker like
             // it was reloading during any window action.
-            it->proxy->getPropertyAsync("IconThemePath").onInterface(SNI).uponReplyInvoke([it](std::optional<sdbus::Error> e, sdbus::Variant v) {
+            it->proxy->getPropertyAsync("IconThemePath").onInterface(SNI).uponReplyInvoke([it, REQUEST](std::optional<sdbus::Error> e, sdbus::Variant v) {
+                if (!it->active || !it->proxy || it->propertyRequest != REQUEST)
+                    return;
                 if (!e)
                     try {
-                        it->themePath = v.get<std::string>();
+                        const auto THEME = v.get<std::string>();
+                        if (THEME != it->themePath) {
+                            it->themePath = THEME;
+                            it->dirty = true;
+                            barChanged();
+                        }
                     } catch (...) {}
             });
-            it->proxy->getPropertyAsync("Menu").onInterface(SNI).uponReplyInvoke([it](std::optional<sdbus::Error> e, sdbus::Variant v) {
+            it->proxy->getPropertyAsync("Menu").onInterface(SNI).uponReplyInvoke([it, REQUEST](std::optional<sdbus::Error> e, sdbus::Variant v) {
+                if (!it->active || !it->proxy || it->propertyRequest != REQUEST)
+                    return;
                 if (!e)
                     try {
                         it->menuPath = v.get<sdbus::ObjectPath>();
                     } catch (...) {}
             });
-            it->proxy->getPropertyAsync("ItemIsMenu").onInterface(SNI).uponReplyInvoke([it](std::optional<sdbus::Error> e, sdbus::Variant v) {
+            it->proxy->getPropertyAsync("ItemIsMenu").onInterface(SNI).uponReplyInvoke([it, REQUEST](std::optional<sdbus::Error> e, sdbus::Variant v) {
+                if (!it->active || !it->proxy || it->propertyRequest != REQUEST)
+                    return;
                 if (!e)
                     try {
                         it->itemIsMenu = v.get<bool>();
@@ -156,7 +187,9 @@ namespace NHyprbar {
             });
             // Status decides which icon set to read, so the icon chain hangs
             // off its reply.
-            it->proxy->getPropertyAsync("Status").onInterface(SNI).uponReplyInvoke([it](std::optional<sdbus::Error> e, sdbus::Variant v) {
+            it->proxy->getPropertyAsync("Status").onInterface(SNI).uponReplyInvoke([it, REQUEST, STATUS_REQUEST](std::optional<sdbus::Error> e, sdbus::Variant v) {
+                if (!it->active || !it->proxy || it->propertyRequest != REQUEST || it->statusRequest != STATUS_REQUEST)
+                    return;
                 std::string st = it->status; // an errored reply keeps the current status
                 if (!e)
                     try {
@@ -183,6 +216,9 @@ namespace NHyprbar {
             it->proxy->uponSignal("NewIcon").onInterface(SNI).call([it]() { fetchIcon(it); }); // NewIcon changes only the icon (SNI); Menu/Status don't
             it->proxy->uponSignal("NewAttentionIcon").onInterface(SNI).call([it]() { fetchIcon(it); });
             it->proxy->uponSignal("NewStatus").onInterface(SNI).call([it](std::string st) {
+                if (!it->active || !it->proxy)
+                    return;
+                ++it->statusRequest; // invalidate only the initial Status reply
                 if (st != it->status) {
                     it->status = st;
                     barChanged(); // Passive <-> shown, NeedsAttention swaps the icon set
@@ -200,6 +236,10 @@ namespace NHyprbar {
             std::erase_if(items, [&](const auto& I) {
                 if (I->service != service)
                     return false;
+                I->active = false;
+                ++I->propertyRequest;
+                ++I->statusRequest;
+                ++I->iconRequest;
                 I->proxy.reset(); // the signal handlers hold a strong ref back to the item; drop them or it (and its texture) never frees
                 return true;
             });
@@ -245,7 +285,10 @@ namespace NHyprbar {
 
                 busProxy = sdbus::createProxy(*bus.conn(), sdbus::ServiceName{"org.freedesktop.DBus"}, sdbus::ObjectPath{"/org/freedesktop/DBus"});
                 busProxy->uponSignal("NameOwnerChanged").onInterface("org.freedesktop.DBus").call([](std::string name, std::string oldOwner, std::string newOwner) {
-                    if (!oldOwner.empty() && newOwner.empty())
+                    // A service restart may replace its unique owner without
+                    // first losing the well-known name. Treat both that case
+                    // and a disappearance as a new item owner.
+                    if (!oldOwner.empty() && oldOwner != newOwner)
                         dropService(name);
                     if (name == "org.freedesktop.Notifications" && oldOwner.empty() && !newOwner.empty())
                         Bell::daemonUp(); // hyprnotify (re)appeared: re-read the badge counts
@@ -327,43 +370,65 @@ namespace NHyprbar {
                 if (!IT || !IT->proxy)
                     return;
                 if (bit == 4u) { // middle: the SNI SecondaryActivate call
-                    try {
-                        IT->proxy->callMethodAsync("SecondaryActivate")
-                            .onInterface(Tray::SNI)
-                            .withArguments((int32_t)0, (int32_t)0)
-                            .uponReplyInvoke([](std::optional<sdbus::Error>) {});
-                    } catch (...) {} // dying bus: teardown is already pending
-                    Tray::pollSoon();
+                    Tray::post([IT]() {
+                        if (!IT->active || !IT->proxy)
+                            return;
+                        try {
+                            IT->proxy->callMethodAsync("SecondaryActivate")
+                                .onInterface(Tray::SNI)
+                                .withArguments((int32_t)0, (int32_t)0)
+                                .uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                            Tray::pollSoon();
+                        } catch (...) {} // dying bus: teardown is already pending
+                    });
                     return;
                 }
                 const bool HASMENU = !IT->menuPath.empty();
                 if (bit == 1u && !(IT->itemIsMenu && HASMENU)) {
-                    try {
-                        IT->proxy->callMethodAsync("Activate").onInterface(Tray::SNI).withArguments((int32_t)0, (int32_t)0).uponReplyInvoke([](std::optional<sdbus::Error>) {});
-                    } catch (...) {}  // dying bus: teardown is already pending
-                    Tray::pollSoon(); // the activation usually flips the icon right back
+                    Tray::post([IT]() {
+                        if (!IT->active || !IT->proxy)
+                            return;
+                        try {
+                            IT->proxy->callMethodAsync("Activate")
+                                .onInterface(Tray::SNI)
+                                .withArguments((int32_t)0, (int32_t)0)
+                                .uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                            Tray::pollSoon(); // the activation usually flips the icon right back
+                        } catch (...) {} // dying bus: teardown is already pending
+                    });
                     return;
                 }
                 if (HASMENU)
                     Menu::openFor(IT, h.anchorX, h.mon);
                 else if (bit == 2u) {
-                    try {
-                        IT->proxy->callMethodAsync("ContextMenu").onInterface(Tray::SNI).withArguments((int32_t)0, (int32_t)0).uponReplyInvoke([](std::optional<sdbus::Error>) {});
-                    } catch (...) {}
-                    Tray::pollSoon();
+                    Tray::post([IT]() {
+                        if (!IT->active || !IT->proxy)
+                            return;
+                        try {
+                            IT->proxy->callMethodAsync("ContextMenu")
+                                .onInterface(Tray::SNI)
+                                .withArguments((int32_t)0, (int32_t)0)
+                                .uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                            Tray::pollSoon();
+                        } catch (...) {}
+                    });
                 }
             }
 
             void onScroll(const SHit& h, int dir) override {
                 // the SNI Scroll call (the XEmbed systray let apps see scroll too)
                 if (const auto TI = h.tray.lock(); TI && TI->proxy) {
-                    try {
-                        TI->proxy->callMethodAsync("Scroll")
-                            .onInterface(Tray::SNI)
-                            .withArguments((int32_t)(dir > 0 ? -120 : 120), std::string{"vertical"})
-                            .uponReplyInvoke([](std::optional<sdbus::Error>) {});
-                    } catch (...) {} // dying bus: teardown is already pending
-                    Tray::pollSoon();
+                    Tray::post([TI, dir]() {
+                        if (!TI->active || !TI->proxy)
+                            return;
+                        try {
+                            TI->proxy->callMethodAsync("Scroll")
+                                .onInterface(Tray::SNI)
+                                .withArguments((int32_t)(dir > 0 ? -120 : 120), std::string{"vertical"})
+                                .uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                            Tray::pollSoon();
+                        } catch (...) {} // dying bus: teardown is already pending
+                    });
                 }
             }
         };

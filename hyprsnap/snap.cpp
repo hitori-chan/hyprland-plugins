@@ -257,6 +257,10 @@ namespace NHyprsnap::Snap {
             reset();
             return;
         }
+        if (NHyprCommon::nativeInputCaptureActive()) {
+            reset();
+            return;
+        }
 
         const auto T = draggedFloatingTarget();
         if (!T) {
@@ -306,6 +310,10 @@ namespace NHyprsnap::Snap {
             reset();
             return;
         }
+        if (NHyprCommon::nativeInputCaptureActive()) {
+            reset();
+            return;
+        }
 
         const auto T = draggedFloatingTarget();
         if (!T) {
@@ -351,8 +359,8 @@ namespace NHyprsnap::Snap {
 
         const auto toPhys = [&](const CBox& b) { return CBox{b}.translate(-MON->m_position).scale(MON->m_scale).round(); };
 
-        g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(CRectPassElement::SRectData{.box = toPhys(*zoneBox), .color = fill}));
+        g_pHyprRenderer->addPassElement(makeUnique<CRectPassElement>(CRectPassElement::SRectData{.box = toPhys(*zoneBox), .color = fill}));
         for (const auto& R : zoneStrips(*zoneBox))
-            g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(CRectPassElement::SRectData{.box = toPhys(R), .color = col}));
+            g_pHyprRenderer->addPassElement(makeUnique<CRectPassElement>(CRectPassElement::SRectData{.box = toPhys(R), .color = col}));
     }
 }

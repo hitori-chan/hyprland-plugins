@@ -337,7 +337,7 @@ namespace NHyprbar {
         const auto MON = g_pHyprRenderer->m_renderData.pMonitor.lock();
         if (!MON)
             return;
-        g_pHyprRenderer->m_renderPass.add(makeUnique<CBarPassElement>(MON));
+        g_pHyprRenderer->addPassElement(makeUnique<CBarPassElement>(MON));
     }
 
     void renderExit() {

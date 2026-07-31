@@ -12,12 +12,25 @@ namespace NHyprbar {
         bool                                  isOpen  = false;
         bool                                  isLocal = false;
         static SP<Tray::SItem>                item;
-        static std::unique_ptr<sdbus::IProxy> proxy;
+        static std::shared_ptr<sdbus::IProxy>  proxy;
         std::vector<SLevel>                   levels;
         double                                anchorX = 0;
         PHLMONITORREF                         mon;
+        static uint64_t                       menuSession = 0;
+        static uint64_t                       requestSerial = 0;
 
         static void                           menuEvent(int32_t id, const char* type); // "opened"/"closed" notifications
+
+        static bool sessionActive(uint64_t session) {
+            return isOpen && !isLocal && proxy && session == menuSession;
+        }
+
+        static SLevel* findLevel(int32_t parentId) {
+            for (auto it = levels.rbegin(); it != levels.rend(); ++it)
+                if (it->parentId == parentId)
+                    return &*it;
+            return nullptr;
+        }
 
         // Logical panel height, the same layout math renderBar uses.
         double levelHeight(const SLevel& l) {
@@ -168,8 +181,13 @@ namespace NHyprbar {
         }
 
         void close() {
+            ++menuSession; // invalidate every reply from the old owner/session
             if (!isOpen)
+            {
+                proxy.reset();
+                item.reset();
                 return;
+            }
             isOpen  = false;
             isLocal = false;
             disarm();
@@ -214,125 +232,167 @@ namespace NHyprbar {
         static void menuEvent(int32_t id, const char* type) {
             if (!proxy)
                 return;
+            const auto P    = proxy;
+            const auto TYPE = std::string{type};
+            Tray::post([P, id, TYPE]() {
+                if (!P)
+                    return;
+                try {
+                    P->callMethodAsync("Event")
+                        .onInterface(DBUSMENU)
+                        .withArguments(id, TYPE, sdbus::Variant{(int32_t)0}, (uint32_t)0)
+                        .uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                    Tray::pollSoon();
+                } catch (...) {} // dying bus: teardown is already pending
+            });
+        }
+
+        static void loadLevelNow(int32_t parentId, uint64_t session) {
+            if (!sessionActive(session))
+                return;
+            using LayoutItem = sdbus::Struct<int32_t, std::map<std::string, sdbus::Variant>, std::vector<sdbus::Variant>>;
+            auto* const level = findLevel(parentId);
+            if (!level)
+                return;
+            const uint64_t REQUEST = ++requestSerial;
+            level->loadRequest = REQUEST;
             try {
-                proxy->callMethodAsync("Event")
+                proxy->callMethodAsync("GetLayout")
                     .onInterface(DBUSMENU)
-                    .withArguments(id, std::string{type}, sdbus::Variant{(int32_t)0}, (uint32_t)0)
-                    .uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                    .withArguments(parentId, (int32_t)1, std::vector<std::string>{})
+                    .uponReplyInvoke([parentId, session, REQUEST](std::optional<sdbus::Error> e, uint32_t, LayoutItem root) {
+                        if (e || !sessionActive(session))
+                            return;
+                        auto* const lvl = findLevel(parentId);
+                        if (!lvl || lvl->loadRequest != REQUEST)
+                            return; // that cascade closed while the reply was in flight
+                        lvl->entries.clear();
+                        lvl->hover = -1; // scrollTop stays: live updates must not yank a browsed list to its top
+                        SWarmToken WARM; // we resolve icon-name textures here, in a DBus reply — not a render
+                        for (auto& CV : std::get<2>(root)) {
+                            try {
+                                auto  c = CV.get<LayoutItem>();
+                                auto& P = std::get<1>(c);
+
+                                if (auto it = P.find("visible"); it != P.end() && !it->second.get<bool>())
+                                    continue;
+
+                                SEntry en;
+                                en.id = std::get<0>(c);
+                                if (auto it = P.find("type"); it != P.end() && it->second.get<std::string>() == "separator")
+                                    en.separator = true;
+                                if (auto it = P.find("label"); it != P.end())
+                                    en.label = cleanLabel(it->second.get<std::string>());
+                                if (auto it = P.find("enabled"); it != P.end())
+                                    en.enabled = it->second.get<bool>();
+                                if (auto it = P.find("children-display"); it != P.end() && it->second.get<std::string>() == "submenu")
+                                    en.submenu = true;
+                                if (auto it = P.find("toggle-type"); it != P.end())
+                                    en.toggle = it->second.get<std::string>() == "checkmark" ? TG_CHECK : it->second.get<std::string>() == "radio" ? TG_RADIO : TG_NONE;
+                                if (auto it = P.find("toggle-state"); it != P.end())
+                                    en.toggleState = it->second.get<int32_t>();
+                                if (auto it = P.find("disposition"); it != P.end())
+                                    en.alert = it->second.get<std::string>() == "warning" || it->second.get<std::string>() == "alert";
+                                if (auto it = P.find("icon-name"); it != P.end())
+                                    en.icon = namedIcon(it->second.get<std::string>());
+                                if (!en.icon) // nm-applet ships its signal-strength icons inline
+                                    if (auto it = P.find("icon-data"); it != P.end())
+                                        en.icon = loadPngBytes(it->second.get<std::vector<uint8_t>>());
+                                en.display = en.label + (en.submenu ? "  ▸" : "");
+                                if (en.icon && en.icon->m_texID != 0 && en.toggle != TG_NONE && en.toggleState == 1)
+                                    en.display = (en.toggle == TG_RADIO ? "● " : "✓ ") + en.display;
+                                lvl->entries.push_back(std::move(en));
+                            } catch (...) { continue; }
+                        }
+                        lvl->width = 0;
+                        damageMenu();
+                    });
+                Tray::pollSoon(); // don't leave the layout reply waiting on a poll tick
             } catch (...) {} // dying bus: teardown is already pending
         }
 
-        static void loadLevel(int32_t parentId) {
-            if (!proxy)
+        static void loadLevel(int32_t parentId, uint64_t session) {
+            if (!sessionActive(session))
                 return;
-            using LayoutItem = sdbus::Struct<int32_t, std::map<std::string, sdbus::Variant>, std::vector<sdbus::Variant>>;
-            proxy->callMethodAsync("GetLayout")
-                .onInterface(DBUSMENU)
-                .withArguments(parentId, (int32_t)1, std::vector<std::string>{})
-                .uponReplyInvoke([parentId](std::optional<sdbus::Error> e, uint32_t, LayoutItem root) {
-                    if (e || !isOpen)
-                        return;
-                    SLevel* lvl = nullptr; // deepest match wins
-                    for (auto it = levels.rbegin(); it != levels.rend(); ++it)
-                        if (it->parentId == parentId) {
-                            lvl = &*it;
-                            break;
-                        }
-                    if (!lvl)
-                        return; // that cascade closed while the reply was in flight
-                    lvl->entries.clear();
-                    lvl->hover = -1; // scrollTop stays: live updates must not yank a browsed list to its top
-                    SWarmToken WARM; // we resolve icon-name textures here, in a DBus reply — not a render
-                    for (auto& CV : std::get<2>(root)) {
-                        try {
-                            auto  c = CV.get<LayoutItem>();
-                            auto& P = std::get<1>(c);
+            Tray::post([parentId, session]() { loadLevelNow(parentId, session); });
+        }
 
-                            if (auto it = P.find("visible"); it != P.end() && !it->second.get<bool>())
-                                continue;
-
-                            SEntry en;
-                            en.id = std::get<0>(c);
-                            if (auto it = P.find("type"); it != P.end() && it->second.get<std::string>() == "separator")
-                                en.separator = true;
-                            if (auto it = P.find("label"); it != P.end())
-                                en.label = cleanLabel(it->second.get<std::string>());
-                            if (auto it = P.find("enabled"); it != P.end())
-                                en.enabled = it->second.get<bool>();
-                            if (auto it = P.find("children-display"); it != P.end() && it->second.get<std::string>() == "submenu")
-                                en.submenu = true;
-                            if (auto it = P.find("toggle-type"); it != P.end())
-                                en.toggle = it->second.get<std::string>() == "checkmark" ? TG_CHECK : it->second.get<std::string>() == "radio" ? TG_RADIO : TG_NONE;
-                            if (auto it = P.find("toggle-state"); it != P.end())
-                                en.toggleState = it->second.get<int32_t>();
-                            if (auto it = P.find("disposition"); it != P.end())
-                                en.alert = it->second.get<std::string>() == "warning" || it->second.get<std::string>() == "alert";
-                            if (auto it = P.find("icon-name"); it != P.end())
-                                en.icon = namedIcon(it->second.get<std::string>());
-                            if (!en.icon) // nm-applet ships its signal-strength icons inline
-                                if (auto it = P.find("icon-data"); it != P.end())
-                                    en.icon = loadPngBytes(it->second.get<std::vector<uint8_t>>());
-                            en.display = en.label + (en.submenu ? "  ▸" : "");
-                            if (en.icon && en.icon->m_texID != 0 && en.toggle != TG_NONE && en.toggleState == 1)
-                                en.display = (en.toggle == TG_RADIO ? "● " : "✓ ") + en.display;
-                            lvl->entries.push_back(std::move(en));
-                        } catch (...) { continue; }
-                    }
-                    lvl->width = 0;
-                    damageMenu();
-                });
-            Tray::pollSoon(); // don't leave the layout reply waiting on a poll tick
+        static void aboutToShow(int32_t id, uint64_t session) {
+            if (!sessionActive(session))
+                return;
+            Tray::post([id, session]() {
+                if (!sessionActive(session))
+                    return;
+                try {
+                    proxy->callMethodAsync("AboutToShow")
+                        .onInterface(DBUSMENU)
+                        .withArguments(id)
+                        .uponReplyInvoke([id, session](std::optional<sdbus::Error>, bool) { loadLevel(id, session); });
+                    Tray::pollSoon();
+                } catch (...) {} // dying bus: teardown is already pending
+            });
         }
 
         void openFor(SP<Tray::SItem> it, double ax, PHLMONITORREF m) {
-            if (!it || it->menuPath.empty() || !Tray::bus.conn())
+            if (!it || !it->active || !it->proxy || it->menuPath.empty() || !Tray::bus.conn())
                 return;
             close();
+            const uint64_t SESSION = ++menuSession;
             item    = it;
             anchorX = ax;
             mon     = m;
             isOpen  = true;
             levels.emplace_back(); // the root panel (parentId 0)
-            proxy = sdbus::createProxy(*Tray::bus.conn(), sdbus::ServiceName{it->service}, sdbus::ObjectPath{it->menuPath});
+            try {
+                proxy.reset(sdbus::createProxy(*Tray::bus.conn(), sdbus::ServiceName{it->service}, sdbus::ObjectPath{it->menuPath}).release());
+            } catch (...) {
+                close();
+                return;
+            }
 
-            // apps mutate their menu while it's up (scans, state flips) —
-            // reload any open level the update signals touch
-            proxy->uponSignal("LayoutUpdated").onInterface(DBUSMENU).call([](uint32_t, int32_t parent) {
-                if (!isOpen)
+            const auto P = proxy;
+            Tray::post([P, SESSION]() {
+                if (!P || !sessionActive(SESSION) || proxy != P)
                     return;
-                for (const auto& L : levels)
-                    if (L.parentId == parent) {
-                        loadLevel(parent);
-                        break;
-                    }
+
+                // apps mutate their menu while it's up (scans, state flips) —
+                // reload any open level the update signals touch
+                P->uponSignal("LayoutUpdated").onInterface(DBUSMENU).call([SESSION](uint32_t, int32_t parent) {
+                    if (!sessionActive(SESSION))
+                        return;
+                    for (const auto& L : levels)
+                        if (L.parentId == parent) {
+                            loadLevel(parent, SESSION);
+                            break;
+                        }
+                });
+                P->uponSignal("ItemsPropertiesUpdated")
+                    .onInterface(DBUSMENU)
+                    .call(
+                        [SESSION](std::vector<sdbus::Struct<int32_t, std::map<std::string, sdbus::Variant>>> changed, std::vector<sdbus::Struct<int32_t, std::vector<std::string>>> removed) {
+                            if (!sessionActive(SESSION))
+                                return;
+                            std::unordered_set<int32_t> ids;
+                            for (const auto& C : changed)
+                                ids.insert(std::get<0>(C));
+                            for (const auto& R : removed)
+                                ids.insert(std::get<0>(R));
+                            std::unordered_set<int32_t> reload; // affected levels, deduped
+                            for (const auto& L : levels)
+                                for (const auto& E : L.entries)
+                                    if (ids.contains(E.id)) {
+                                        reload.insert(L.parentId);
+                                        break;
+                                    }
+                            for (const auto PARENT : reload)
+                                loadLevel(PARENT, SESSION);
+                        });
             });
-            proxy->uponSignal("ItemsPropertiesUpdated")
-                .onInterface(DBUSMENU)
-                .call(
-                    [](std::vector<sdbus::Struct<int32_t, std::map<std::string, sdbus::Variant>>> changed, std::vector<sdbus::Struct<int32_t, std::vector<std::string>>> removed) {
-                        if (!isOpen)
-                            return;
-                        std::unordered_set<int32_t> ids;
-                        for (const auto& C : changed)
-                            ids.insert(std::get<0>(C));
-                        for (const auto& R : removed)
-                            ids.insert(std::get<0>(R));
-                        std::unordered_set<int32_t> reload; // affected levels, deduped
-                        for (const auto& L : levels)
-                            for (const auto& E : L.entries)
-                                if (ids.contains(E.id)) {
-                                    reload.insert(L.parentId);
-                                    break;
-                                }
-                        for (const auto P : reload)
-                            loadLevel(P);
-                    });
 
             // AboutToShow lets lazy apps (nm-applet) populate; load either way.
             menuEvent(0, "opened");
-            proxy->callMethodAsync("AboutToShow").onInterface(DBUSMENU).withArguments((int32_t)0).uponReplyInvoke([](std::optional<sdbus::Error>, bool) { loadLevel(0); });
-            loadLevel(0);
-            Tray::pollSoon();
+            aboutToShow(0, SESSION);
+            loadLevel(0, SESSION);
             damageMenu();
         }
 
@@ -348,15 +408,15 @@ namespace NHyprbar {
             if (level + 1 < levels.size() && levels[level + 1].parentIdx == entryIdx)
                 return;                                // already open
             const int32_t ID = L.entries[entryIdx].id; // before emplace_back can move the vector
+            const uint64_t SESSION = menuSession;
             disarm();
             closeDeeperThan(level);
             auto& N     = levels.emplace_back();
             N.parentId  = ID;
             N.parentIdx = entryIdx;
             menuEvent(ID, "opened");
-            proxy->callMethodAsync("AboutToShow").onInterface(DBUSMENU).withArguments(ID).uponReplyInvoke([ID](std::optional<sdbus::Error>, bool) { loadLevel(ID); });
-            loadLevel(ID);
-            Tray::pollSoon();
+            aboutToShow(ID, SESSION);
+            loadLevel(ID, SESSION);
             damageMenu();
         }
 
@@ -410,13 +470,18 @@ namespace NHyprbar {
             }
             if (!proxy)
                 return;
-            try {
-                proxy->callMethodAsync("Event")
-                    .onInterface(DBUSMENU)
-                    .withArguments(en.id, std::string{"clicked"}, sdbus::Variant{(int32_t)0}, (uint32_t)0)
-                    .uponReplyInvoke([](std::optional<sdbus::Error>) {});
-            } catch (...) {} // dying bus: teardown is already pending
-            Tray::pollSoon();
+            const auto P = proxy;
+            Tray::post([P, id = en.id]() {
+                if (!P)
+                    return;
+                try {
+                    P->callMethodAsync("Event")
+                        .onInterface(DBUSMENU)
+                        .withArguments(id, std::string{"clicked"}, sdbus::Variant{(int32_t)0}, (uint32_t)0)
+                        .uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                    Tray::pollSoon();
+                } catch (...) {} // dying bus: teardown is already pending
+            });
             close();
         }
 

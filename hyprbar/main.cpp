@@ -113,8 +113,8 @@
 // in the wayland event loop as removable sources (torn out before the
 // connection dies), so idle costs zero wakeups and a tray signal lands the
 // same loop iteration; a normally-disarmed timer carries only sd-bus's own
-// rare timeouts and the deferred post-send drain (dispatch is not
-// re-entrant). The clock re-arms to the minute it actually changes on, and
+// rare timeouts, the bounded idle send queue, and the deferred post-send drain
+// (dispatch is not re-entrant). The clock re-arms to the minute it actually changes on, and
 // the battery gauge refreshes from power_supply udev uevents (plug/unplug is
 // instant) with the minute tick as a failsafe; the plug/low/critical alerts
 // ride the same two paths.
@@ -127,13 +127,12 @@
 
 #include "hyprbar.hpp"
 
-using namespace NHyprbar;
-
-HANDLE PHANDLE = nullptr;
-
 namespace NHyprbar {
+    HANDLE PHANDLE = nullptr;
     SBarConfig cfg;
 }
+
+using namespace NHyprbar;
 
 // the minute tick: clock text + battery failsafe read
 static SP<CEventLoopTimer>                                 timer;

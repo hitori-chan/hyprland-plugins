@@ -26,6 +26,7 @@
 // never raises. No config.
 
 #include "common/arrival.hpp"
+#include "common/input.hpp"
 #include "common/lifecycle.hpp"
 #include "common/queries.hpp"
 
@@ -133,8 +134,15 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
         g_pressWindow.reset();
         return;
     }
+    if (NHyprCommon::nativeInputCaptureActive()) {
+        g_swallowRelease = 0;
+        g_corpseUntil    = {};
+        g_corpseOwner.reset();
+        g_pressWindow.reset();
+        return;
+    }
 
-    const uint32_t BIT = e.button == BTN_LEFT ? 1u : e.button == BTN_RIGHT ? 2u : e.button == BTN_MIDDLE ? 4u : 8u;
+    const uint32_t BIT = NHyprCommon::trackedPointerButtonBit(e.button);
 
     if (e.state == WL_POINTER_BUTTON_STATE_RELEASED) {
         // the release of a press swallowed below: swallow it too, or the
@@ -146,6 +154,10 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
         return;
     }
 
+    // Buttons outside the shell's policy pass through untouched.
+    if (!BIT)
+        return;
+
     // Already swallowed by an earlier listener — hyprbar cancels clicks on
     // its strip and open tray menus, hyprmax cancels Super-grabs on
     // maximized windows. Those are never raise clicks.
@@ -154,7 +166,7 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
 
     // The pointer is on a layer surface (a bar): that click is the bar's,
     // never reach through it to the window underneath.
-    if (g_pInputManager->m_lastFocusOnLS)
+    if (NHyprCommon::nativePointerGrabActive() || NHyprCommon::nativeLayerOwnsPointer())
         return;
 
     const auto NOW = std::chrono::steady_clock::now();
@@ -193,14 +205,16 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
     if (e.button != BTN_LEFT && !(e.button == BTN_RIGHT && superHeld()))
         return;
 
-    // deferred out of the button emission, like the focus raise below — the
-    // compositor's own press handling still walks the stack we'd reorder
+    // Fullscreen needs the plugin's special allowed-over cleanup. Ordinary
+    // floating windows are raised synchronously by Hyprland's native
+    // hit-tested press path, so scheduling a second raise only adds work and
+    // can reapply stack state after another input event.
     if (W) {
         PHLWINDOWREF WR{W};
         pendingRaise.arm([WR]() {
             if (NHyprCommon::sessionLocked())
                 return; // the lock can engage between the emission and this run
-            if (const auto W = WR.lock(); W && W->m_isMapped)
+            if (const auto W = WR.lock(); W && W->m_isMapped && Fullscreen::controller()->isFullscreen(W))
                 raiseWindow(W);
         });
     }

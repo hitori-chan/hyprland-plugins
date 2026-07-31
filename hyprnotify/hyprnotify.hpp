@@ -25,6 +25,7 @@
 // plugin's at dlopen time.
 
 #include "common/glass.hpp"
+#include "markup_attr.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/Compositor.hpp>
@@ -73,9 +74,9 @@
 using namespace Render;
 using namespace Render::GL;
 
-extern HANDLE PHANDLE;
-
 namespace NHyprnotify {
+
+    extern HANDLE PHANDLE;
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
     inline constexpr const char* VERSION = "6.9.2";
@@ -212,7 +213,6 @@ namespace NHyprnotify {
         using ImageData = sdbus::Struct<int32_t, int32_t, int32_t, bool, int32_t, int32_t, std::vector<uint8_t>>;
 
         std::string              sanitizeMarkup(const std::string& in, bool allowLinks = false);
-        std::string              attrValue(const std::string& tag, const std::string& attr); // one quoted attr, case-insensitive name
         std::string              oneLine(std::string s);
         std::string              resolveImage(std::string s, int sizePx); // path, file://, or a themed icon NAME
         std::vector<std::string> extractImages(std::string& body, int sizePx); // pulls <img src> out of the body
@@ -335,8 +335,9 @@ namespace NHyprnotify {
     void centerExit();
 
     void onRenderStage(eRenderStage stage);
-    // render.preChecks: keep a visible card compositing over a solitary
-    // fullscreen window (else scanout/solitary-render skips the notify pass)
+    // render.preChecks: ask the target monitor to keep a visible card
+    // composited over a solitary fullscreen window (else scanout/solitary
+    // render skips the notify pass)
     void onRenderPreChecks(PHLMONITOR mon);
     void renderInit(); // the age/motion tick timers
     void renderExit();

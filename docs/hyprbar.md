@@ -68,6 +68,11 @@ renderer.
   color.
 - nm-applet note: in indicator mode it merges its two X11 menus into one
   and implements no left-click action — upstream design.
+- D-Bus method construction from tray input and render-triggered menu cleanup
+  is posted to the shared event-loop bus queue. The queue keeps at most 256
+  pending sends, drains at most 64 per idle turn, and drops pending work before
+  owned proxies or the connection are torn down; input never performs an
+  inline bus drain.
 
 ## Bell
 
@@ -92,7 +97,23 @@ channel.
   means, because the pointer may be travelling down into the panel; it
   runs a grace timer that both surfaces cancel.
 - The link is the tray's own connection (`Bell::init()` runs after
-  `Tray::init()`), so the bell costs no second bus.
+  `Tray::init()`), so the bell costs no second bus. Peek/toggle calls are
+  posted through that link rather than serialised in pointer motion/button
+  callbacks.
+
+## Native input precedence
+
+The bar, menubar, and tray menus are compositor-drawn regions rather than
+Wayland layer surfaces. Before claiming a click, scroll, or hover, the plugin
+asks the target fork's native input manager for a fresh hit test of exclusive
+layers, layer popups, overlay layers, IME popups, and top layers. A real native
+surface wins that stack even when the last pointer motion was intercepted by
+the bar; the helper applies Hyprland's exclusive-fullscreen filter to top
+layers as well. Existing client implicit pointer grabs and native seat grabs
+(`xdg_popup` and focus-grab surfaces) remain authoritative, including while no
+button is held. An active `hyprland-input-capture-v1` session owns the physical
+event stream, so the plugin passes button, axis, key, and warp events through
+without cancelling them and clears only partial shell swallow state.
 
 ## Layoutbox
 
@@ -133,7 +154,9 @@ runs whatever was typed.
 
 Entries show a theme icon when one resolves and plain text otherwise, like
 awesome. Launch counts and history persist in `~/.cache/hyprbar/`
-(`menu_count_file`, `history_menu`).
+(`menu_count_file`, `history_menu`); each cache rewrite is atomic. Desktop
+`Exec=` values use freedesktop quoting and field-code rules, then retain their
+argument boundaries when handed to Hyprland's executor.
 
 This is the only launcher: fuzzel and the `Mod+R`/`Mod+X`/`Mod+S` prompts
 were dropped by choice.

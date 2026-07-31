@@ -44,8 +44,8 @@ hyprpm update --hl-url https://github.com/hitori-chan/Hyprland
 One directory per plugin, each Makefile builds its `.so` in place through
 the shared build in [`common/common.mk`](common/common.mk);
 [`hyprpm.toml`](hyprpm.toml) is the manifest. `common/` holds the shared
-machinery (lifecycle, queries, persistence, bus link, texture cache,
-load-order asserts); `devtools/` holds the test tooling. `hyprbar`
+machinery (lifecycle, queries, persistence, event-loop bus link/send queue,
+child ownership, texture cache, load-order asserts); `devtools/` holds the test tooling. `hyprbar`
 additionally links `sdbus-c++`, `librsvg` and `libudev`; `hyprnotify` links
 `sdbus-c++` and `hyprgraphics`; `hyprpad` links `sdbus-c++` and `libinput`;
 `hyprosd` links `sdbus-c++`.

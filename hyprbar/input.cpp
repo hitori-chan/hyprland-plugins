@@ -1,5 +1,6 @@
 // hyprbar/input.cpp — clicks, scrolls and pointer ownership over the strip
 
+#include "common/input.hpp"
 #include "common/lifecycle.hpp"
 #include "common/queries.hpp"
 
@@ -8,7 +9,7 @@
 namespace NHyprbar {
 
     std::map<uint64_t, std::vector<SHit>> hitboxes;
-    static uint32_t                       swallowRelease = 0; // bits: 1 left, 2 right, 4 middle, 8 other
+    static uint32_t                       swallowRelease = 0; // bits: 1 left, 2 right, 4 middle
 
     // ---- click dispatch ----
     //
@@ -35,11 +36,13 @@ namespace NHyprbar {
             heldButtons    = 0;
             return;
         }
+        if (NHyprCommon::nativeInputCaptureActive()) {
+            swallowRelease = 0;
+            heldButtons    = 0;
+            return;
+        }
 
-        // untracked buttons (BTN_SIDE...) share a catch-all bit: their
-        // swallowed presses must round-trip through swallowRelease too, or
-        // the release decrements heldButtons for a press that never counted
-        const uint32_t BIT = e.button == BTN_LEFT ? 1u : e.button == BTN_RIGHT ? 2u : e.button == BTN_MIDDLE ? 4u : 8u;
+        const uint32_t BIT = NHyprCommon::trackedPointerButtonBit(e.button);
 
         if (e.state == WL_POINTER_BUTTON_STATE_RELEASED) {
             if (swallowRelease & BIT) {
@@ -49,6 +52,22 @@ namespace NHyprbar {
                 heldButtons = std::max(0, heldButtons - 1); // a press the apps saw ends
             return;
         }
+
+        // Side/extra buttons have no shell action. Pass them through as native
+        // application input instead of making one catch-all swallow bit.
+        if (!BIT) {
+            heldButtons++;
+            return;
+        }
+
+        // An application implicit grab remains authoritative until all of its
+        // buttons are released, even if the pointer crosses the strip.
+        if (heldButtons > 0 || NHyprCommon::nativePointerGrabActive()) {
+            heldButtons++;
+            return;
+        }
+        if (NHyprCommon::nativeLayerOwnsPointer())
+            return;
 
         const auto POS = g_pInputManager->getMouseCoordsInternal();
         const auto MON = monitorAt(POS);
@@ -135,8 +154,6 @@ namespace NHyprbar {
         if (IT == hitboxes.end())
             return;
 
-        if (BIT == 8u)
-            return; // no side-button actions on the bar
         const bool SUPER = NHyprCommon::superHeld();
         for (const auto& HIT : IT->second) {
             if (HIT.box.containsPoint(POS)) {
@@ -185,6 +202,14 @@ namespace NHyprbar {
 
     void onMouseAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
         if (NHyprCommon::sessionLocked())
+            return;
+        if (NHyprCommon::nativeInputCaptureActive()) {
+            scrollAcc.clear();
+            scrollQueued = false;
+            pendingScroll.reset();
+            return;
+        }
+        if (heldButtons > 0 || NHyprCommon::nativePointerGrabActive() || NHyprCommon::nativeLayerOwnsPointer())
             return;
 
         const auto POS = g_pInputManager->getMouseCoordsInternal();
@@ -280,6 +305,9 @@ namespace NHyprbar {
         if (!over)
             return nullptr;
 
+        if (NHyprCommon::nativeLayerOwnsPointer())
+            return nullptr;
+
         const auto WS = MON->m_activeWorkspace;
         if (WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN)
             return Menubar::isOpen && Menubar::mon.lock() == MON ? MON : nullptr; // hidden bar — only the open menubar floats above fullscreen
@@ -316,6 +344,13 @@ namespace NHyprbar {
             setHoverWidget(nullptr);
             return;
         }
+        if (NHyprCommon::nativeInputCaptureActive()) {
+            releasePointer();
+            setHoverWidget(nullptr);
+            return;
+        }
+
+        const bool GRABBED = heldButtons > 0 || NHyprCommon::nativePointerGrabActive() || (g_layoutManager && g_layoutManager->dragController()->target());
 
         if (Menu::isOpen) {
             // the pointer's (level, row), deepest panel first
@@ -348,7 +383,7 @@ namespace NHyprbar {
         // the held-button / live-drag gates first: they are two loads, while
         // barOwnsPoint walks the monitors and fetches the bar height — and a
         // drag sweeping across the screen emits motion the whole way
-        const auto MON = heldButtons > 0 || (g_layoutManager && g_layoutManager->dragController()->target()) ? nullptr : barOwnsPoint(pos);
+        const auto MON = GRABBED ? nullptr : barOwnsPoint(pos);
         if (!MON) {
             releasePointer();
             setHoverWidget(nullptr);
@@ -379,6 +414,8 @@ namespace NHyprbar {
         scrollAcc.clear();
         scrollQueued = false;
         hitboxes.clear();
+        swallowRelease = 0;
+        heldButtons    = 0;
         releasePointer();
     }
 

@@ -1,7 +1,7 @@
 // vptr — a wlr-virtual-pointer injector. Reads a gesture script on stdin so a
 // whole press/move/release lives in one process (the pointer dies with it).
 //   argv: W H   (extent = monitor size in px; default 1280 800)
-//   stdin lines: move X Y | press BTN | release BTN | scroll AXIS VAL | sleep MS
+//   stdin lines: move X Y | rel DX DY | press BTN | release BTN | scroll AXIS VAL | sleep MS
 //   BTN = linux code (272 left, 273 right, 274 middle); AXIS 0=vert 1=horiz
 #define _POSIX_C_SOURCE 200809L
 #include <wayland-client.h>
@@ -49,6 +49,7 @@ int main(int argc, char **argv) {
         if (sscanf(line, "%31s %ld %ld", cmd, &a, &b) < 1) continue;
         uint32_t t = ms();
         if (!strcmp(cmd, "move"))         { zwlr_virtual_pointer_v1_motion_absolute(p, t, (uint32_t)a, (uint32_t)b, W, H); zwlr_virtual_pointer_v1_frame(p); }
+        else if (!strcmp(cmd, "rel"))     { zwlr_virtual_pointer_v1_motion(p, t, wl_fixed_from_int((int)a), wl_fixed_from_int((int)b)); zwlr_virtual_pointer_v1_frame(p); }
         else if (!strcmp(cmd, "press"))   { zwlr_virtual_pointer_v1_button(p, t, (uint32_t)a, 1); zwlr_virtual_pointer_v1_frame(p); }
         else if (!strcmp(cmd, "release")) { zwlr_virtual_pointer_v1_button(p, t, (uint32_t)a, 0); zwlr_virtual_pointer_v1_frame(p); }
         else if (!strcmp(cmd, "scroll"))  { zwlr_virtual_pointer_v1_axis(p, t, (uint32_t)a, wl_fixed_from_int((int)b)); zwlr_virtual_pointer_v1_frame(p); }

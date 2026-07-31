@@ -28,6 +28,30 @@ namespace NHyprCommon {
         return g_pSessionLockManager && g_pSessionLockManager->isSessionLocked();
     }
 
+    // A compositor-drawn overlay may cancel mouse motion before Hyprland can
+    // refresh m_lastFocusOnLS. Resolve the native stack at the event point so
+    // it cannot swallow input belonging to a priority window, layer surface,
+    // or IME popup.
+    inline bool nativeLayerOwnsPointer() {
+        return g_pInputManager && g_pInputManager->pointerHitIsNativeSurface();
+    }
+
+    // Input listeners run before CInputManager records the current press, so
+    // the held-button half covers an existing client implicit grab. A native
+    // seat grab covers xdg-popups and focus-grab surfaces even with no button
+    // held; both must beat compositor-drawn plugin surfaces.
+    inline bool nativePointerGrabActive() {
+        return (g_pInputManager && g_pInputManager->hasHeldButtons()) ||
+            (g_pSeatManager && g_pSeatManager->m_seatGrab && g_pSeatManager->m_seatGrab->m_pointer);
+    }
+
+    // Input-capture-v1 is fed after plugin emissions. A capture client owns
+    // the physical event stream, so compositor-drawn plugin surfaces must not
+    // cancel a button, axis, key, or warp event before it reaches that client.
+    inline bool nativeInputCaptureActive() {
+        return g_pInputManager && g_pInputManager->inputCaptureActive();
+    }
+
     // A REAL fullscreen window owns this monitor's active workspace (a
     // maximized one respects the reserved strip and does not count). The bar
     // hides for it and the notification daemon holds its banners back —
