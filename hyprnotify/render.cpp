@@ -52,12 +52,16 @@ namespace NHyprnotify {
         cards.clear(); // capacity retained: no per-frame allocations
         cardsMon = mon;
 
-        // the center and popups never coexist: opening the center folds the
-        // live cards into the panel (same textures, different layout)
-        if (centerVisible())
+        // Ordinary banners yield to the center when it opens. OSD cards are a
+        // separate transient surface: brightness, volume, battery, and
+        // touchpad feedback must remain visible over the panel that is already
+        // on screen, or the feedback disappears exactly when the user needs it.
+        if (centerVisible()) {
             renderCenter(P, T);
-        else
+            renderPopups(P, T, true);
+        } else {
             renderPopups(P, T);
+        }
     }
 
     // ---- damage ----
@@ -122,7 +126,7 @@ namespace NHyprnotify {
     static void armMotionTick() {
         if (!motionTick)
             return;
-        const bool WANT = animationsOn() && (centerAnimating() || (!centerVisible() && popupsAnimating()));
+        const bool WANT = animationsOn() && (centerAnimating() || (!centerVisible() && popupsAnimating()) || (centerVisible() && popupsAnimating(true)));
         motionTick->updateTimeout(WANT ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
     }
 

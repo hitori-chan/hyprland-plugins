@@ -3,23 +3,24 @@
 // original actions), the hover-✕, the arrival spring.
 //
 // Only cards whose banner is up show here (residency hides expired banners
-// into the center's shade); while the center is open the column yields to
-// the panel entirely — render.cpp picks the surface.
+// into the center's shade). Ordinary banners yield to the panel while it is
+// open; OSD-band cards remain a topmost transient overlay so feedback from a
+// keypress is not hidden by the shade.
 
 #include "ui.hpp"
 
 namespace NHyprnotify {
 
-    bool popupsAnimating() {
+    bool popupsAnimating(bool osdOnly) {
         if (!animationsOn())
             return false;
         for (const auto& N : notifs)
-            if (!N->waiting && N->banner && animT(N->born, Theme::MOTION_SPATIAL) < 1.f)
+            if ((!osdOnly || inOsdBand(N->id)) && !N->waiting && N->banner && animT(N->born, Theme::MOTION_SPATIAL) < 1.f)
                 return true;
         return false;
     }
 
-    void renderPopups(const SPaint& P, const SType& T) {
+    void renderPopups(const SPaint& P, const SType& T, bool osdOnly) {
         const auto   MB      = P.mon->logicalBox();
         const double W       = std::max((double)cfg.width->value(), 120.0);
         const double MAXH    = std::max((double)cfg.maxHeight->value(), 60.0);
@@ -36,6 +37,8 @@ namespace NHyprnotify {
         double           y = MB.y + (double)cfg.offsetY->value();
 
         for (const auto& N : notifs) {
+            if (osdOnly && !inOsdBand(N->id))
+                continue;
             if (N->waiting || !N->banner)
                 continue; // residency: only banners show as popups
             if (y + 2 * PADY > MB.y + MB.h)
@@ -246,8 +249,11 @@ namespace NHyprnotify {
             y += CH + GAP;
         }
 
-        lastContentH = std::max(0.0, y - GAP - (MB.y + (double)cfg.offsetY->value()));
-        lastContentW = W;
+        const double CONTENTH = std::max(0.0, y - GAP - (MB.y + (double)cfg.offsetY->value()));
+        // A center warm/draw runs before the OSD overlay. Preserve the panel's
+        // extents so the pass bounding box and damage cover both surfaces.
+        lastContentH = osdOnly ? std::max(lastContentH, CONTENTH) : CONTENTH;
+        lastContentW = osdOnly ? std::max(lastContentW, W) : W;
     }
 
 } // namespace NHyprnotify

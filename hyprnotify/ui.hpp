@@ -211,9 +211,11 @@ namespace NHyprnotify {
 
     // ---- popups.cpp / center.cpp: the two surfaces ----
 
-    void renderPopups(const SPaint& P, const SType& T);
+    // Ordinary banners yield to the shade. OSD-band cards are also rendered
+    // here when the shade is open, as a transient topmost overlay.
+    void renderPopups(const SPaint& P, const SType& T, bool osdOnly = false);
     void renderCenter(const SPaint& P, const SType& T);
-    bool popupsAnimating(); // any arrival spring still running
+    bool popupsAnimating(bool osdOnly = false); // any arrival spring still running
     bool centerAnimating(); // the open spring still running
     // center.cpp owns the fold/paging state; render.cpp resets it via setCenter
 
