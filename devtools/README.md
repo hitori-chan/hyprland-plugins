@@ -2,9 +2,19 @@
 
 Dev tooling for exercising the plugins in the nested Hyprland
 (`~/.local/share/hypr-nested/`). Not plugins (not in hyprpm.toml). Tracked:
-`stress.sh`, `vptr.c`, `vkbd.c`, `input-capture.c`, the `Makefile`, and this README; the
+`stress.sh`, `vptr.c`, `vkbd.c`, `input-capture.c`, `desktop_exec_test.cpp`, the `Makefile`, and this README; the
 binaries and the `*-proto.{c,h}` wayland-scanner glue are build artifacts
 that `make` regenerates.
+
+## desktop_exec_test.cpp
+
+The standalone C++26 conformance matrix for the hyprbar launcher’s Desktop
+Entry string/list decoding and `Exec=` parser. It does not start a compositor
+or touch the session:
+
+```
+make test-desktop-exec
+```
 
 ## stress.sh — the pre-deploy regression gate
 

@@ -20,3 +20,4 @@ devtools/vkbd-proto.h
 devtools/input-capture
 devtools/input-capture-proto.c
 devtools/input-capture-proto.h
+devtools/desktop-exec-test

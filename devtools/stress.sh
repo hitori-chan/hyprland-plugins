@@ -536,7 +536,7 @@ chk "bell: reset after the click battery" test "$(st)" = "center:0 live:0 dnd:0"
 # the shade open; a hidden card leaves the OSD in the model or hits the panel.
 hq hyprnotify center >/dev/null; sleep 0.5
 nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
-	Notify susssasa\{sv\}i osd 9992 "" Brightness 72% 0 2 value i 72 urgency y 0 1200 >/dev/null 2>&1
+	Notify susssasa\{sv\}i osd 9992 "" Brightness 72% 0 3 value i 72 urgency y 0 x-hitori-osd b true 1200 >/dev/null 2>&1
 sleep 0.35
 chk "center OSD: brightness card is active" test "$(st)" = "center:1 live:1 dnd:0"
 chk "center OSD: fixed card remains outside shade accounting" test "$(bd)" = "banners:0 resident:0"
@@ -873,6 +873,20 @@ hq hyprnotify clear >/dev/null; sleep 0.8
 dsp "hl.dsp.exec_cmd('notify-send -h int:category:5 \"badcat\" body')"
 dsp "hl.dsp.exec_cmd('notify-send -h string:category:im.received \"convo\" body')"; sleep 1
 chk "hostile: wrong-typed category survived, both cards landed" test "$(st)" = "center:0 live:2 dnd:0"
+hq hyprnotify clear >/dev/null; sleep 0.8
+
+# Retained notification state is deliberately bounded. The transport has
+# already copied this payload, but the model must parse only its first body
+# cap, retain four thumbnails and twelve action pairs, and stay responsive.
+FLOOD="$({ for i in $(seq 1 32); do printf '<img src="/no-such-image/%s" alt="image">&' "$i"; done; head -c 20000 /dev/zero | tr '\0' '&'; })"
+FLOOD_ACTIONS=()
+for i in $(seq 1 24); do
+	FLOOD_ACTIONS+=("action-$i" "Action $i")
+done
+nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
+	Notify susssasa\{sv\}i flood 0 "" flood "$FLOOD" "${#FLOOD_ACTIONS[@]}" "${FLOOD_ACTIONS[@]}" 0 30000 >/dev/null 2>&1
+sleep 1
+chk "admission: hostile markup/actions/images leave one responsive card" test "$(st)" = "center:0 live:1 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.8
 
 # ---- native input capture ------------------------------------------------
