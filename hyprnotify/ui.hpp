@@ -149,6 +149,7 @@ namespace NHyprnotify {
     extern SHover hovered;      // current hover, for fills and reveals
     extern double lastContentH; // popup column / panel extents, for the pass bounding box
     extern double lastContentW;
+    extern double centerOsdReserve; // logical height reserved below an open shade for OSD cards
 
     // ---- row.cpp: one shade row, and the two faces of an app bundle ----
 
@@ -211,9 +212,9 @@ namespace NHyprnotify {
 
     // ---- popups.cpp / center.cpp: the two surfaces ----
 
-    // Ordinary banners yield to the shade. OSD-band cards are also rendered
-    // here when the shade is open, as a transient topmost overlay.
-    void renderPopups(const SPaint& P, const SType& T, bool osdOnly = false);
+    // Ordinary banners yield to the shade. OSD-band cards render below an open
+    // shade, using the same popup card geometry and a measured gap.
+    double renderPopups(const SPaint& P, const SType& T, bool osdOnly = false, std::optional<double> startY = std::nullopt, bool measureOnly = false);
     void renderCenter(const SPaint& P, const SType& T);
     bool popupsAnimating(bool osdOnly = false); // any arrival spring still running
     bool centerAnimating(); // the open spring still running

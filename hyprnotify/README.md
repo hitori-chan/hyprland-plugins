@@ -144,18 +144,19 @@ Two surfaces share one card model:
      it and loses no verb, so neither gesture is the only way to do its job.
 
    OSD-band cards (battery, touchpad, brightness, volume, and microphone
-   feedback) remain transient overlays above an already-open shade. They are
-   still excluded from shade ranking, the bell badge, and "Clear all", and
-   expire on their short clocks; opening the shade no longer hides feedback
-   from a key pressed while it is open.
+   feedback) remain transient notification cards below an already-open shade,
+   separated by the configured margin. They are still excluded from shade
+   ranking, the bell badge, and "Clear all", and expire on their short clocks;
+   opening the shade no longer hides feedback from a key pressed while it is
+   open.
 
 Model rules: the **conversation merge** (Android's MessagingStyle) joins one
 chat's messages into one growing card (~8KB, oldest lines drop) — a fresh
 Notify whose app + summary matches a live card rides the replace path with
 the bodies joined, triggered by the `im.*`/`call.*` categories or by
 `x-canonical-append`; the OSD id band 9990-9999 replaces in place, never
-appears as a shade row, and renders as a topmost overlay while the shade is
-open; critical bypasses DND; `ignore_dbusclose` gates only the
+appears as a shade row, and renders below the open shade using the same popup
+card geometry; critical bypasses DND; `ignore_dbusclose` gates only the
 bus `CloseNotification` path (user dismissals and expiry are untouched);
 `transient` and progress cards vanish entirely on expiry; `max_notifs`
 overflow evicts the oldest non-critical. Grouping keys on app identity

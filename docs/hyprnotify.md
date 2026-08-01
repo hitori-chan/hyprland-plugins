@@ -198,12 +198,12 @@ icons).
   on the focused monitor holds banners back — presenting, gaming and
   watching are the same ask — and the card lands resident in the shade
   instead. Critical bypasses it; a maximized window is not fullscreen.
-- OSD overlays: the reserved 9990-9999 band is still replace-in-place and
+- OSD cards: the reserved 9990-9999 band is still replace-in-place and
   ephemeral, never a shade row, bell count, or "Clear all" target. When the
   shade is already open, its active battery, touchpad, brightness, volume, or
-  microphone card is drawn above the panel until its normal short timeout;
-  feedback therefore cannot disappear behind the surface that was open when
-  the key was pressed.
+  microphone card uses the normal popup-card geometry below the panel with the
+  configured margin; the shade reserves that space, so the two surfaces do not
+  overlap while feedback remains visible until its normal short timeout.
 - Critical: urgent-colored frame and progress fill, never expires.
 - Sound: `sound-file`/`sound-name` play through a libcanberra player
   (`sound_command`, empty disables); `suppress-sound` mutes one arrival. The

@@ -4,8 +4,8 @@
 //
 // Only cards whose banner is up show here (residency hides expired banners
 // into the center's shade). Ordinary banners yield to the panel while it is
-// open; OSD-band cards remain a topmost transient overlay so feedback from a
-// keypress is not hidden by the shade.
+// open; OSD-band cards keep this same card anatomy and are placed below the
+// open shade with the configured inter-card gap.
 
 #include "ui.hpp"
 
@@ -20,7 +20,7 @@ namespace NHyprnotify {
         return false;
     }
 
-    void renderPopups(const SPaint& P, const SType& T, bool osdOnly) {
+    double renderPopups(const SPaint& P, const SType& T, bool osdOnly, std::optional<double> startY, bool measureOnly) {
         const auto   MB      = P.mon->logicalBox();
         const double W       = std::max((double)cfg.width->value(), 120.0);
         const double MAXH    = std::max((double)cfg.maxHeight->value(), 60.0);
@@ -33,15 +33,16 @@ namespace NHyprnotify {
                    COLACC = color(cfg.colHighlight), COLLINK = color(cfg.colLink);
         const CHyprColor COLBODY = COLFG.modifyA(COLFG.a * 0.92);
 
-        const double     X = MB.x + MB.w - EDGE - W;
-        double           y = MB.y + (double)cfg.offsetY->value();
+        const double X     = MB.x + MB.w - EDGE - W;
+        const double START = startY.value_or(MB.y + (double)cfg.offsetY->value());
+        double       y     = START;
 
         for (const auto& N : notifs) {
             if (osdOnly && !inOsdBand(N->id))
                 continue;
             if (N->waiting || !N->banner)
                 continue; // residency: only banners show as popups
-            if (y + 2 * PADY > MB.y + MB.h)
+            if (!measureOnly && y + 2 * PADY > MB.y + MB.h)
                 break; // no room: the tail waits off-screen, timeouts running
 
             const bool CRITICAL = N->urgency >= 2;
@@ -152,7 +153,11 @@ namespace NHyprnotify {
             const float AT = animationsOn() && N->banner ? animT(N->born, Theme::MOTION_SPATIAL) : 1.f;
             if (AT < 1.f) {
                 CP.alpha = P.alpha * easeOutCubic(AT);
-                CP.dy    = P.dy - (1.0 - easeOutBack(AT)) * 8.0;
+                const double DROP = (1.0 - easeOutBack(AT)) * 8.0;
+                // A below-shade card must not animate through the panel. Keep
+                // the normal spring for ordinary banners, but cap its upward
+                // excursion at the gap reserved by the placement.
+                CP.dy = P.dy - (startY ? std::min(DROP, GAP) : DROP);
             }
 
             const CBox CARD{X, y, W, CH};
@@ -245,15 +250,23 @@ namespace NHyprnotify {
                 card.close = XB;
             }
 
-            cards.push_back(std::move(card));
+            if (!measureOnly)
+                cards.push_back(std::move(card));
             y += CH + GAP;
         }
 
-        const double CONTENTH = std::max(0.0, y - GAP - (MB.y + (double)cfg.offsetY->value()));
-        // A center warm/draw runs before the OSD overlay. Preserve the panel's
-        // extents so the pass bounding box and damage cover both surfaces.
-        lastContentH = osdOnly ? std::max(lastContentH, CONTENTH) : CONTENTH;
-        lastContentW = osdOnly ? std::max(lastContentW, W) : W;
+        const double CONTENTH = std::max(0.0, y - GAP - START);
+        if (osdOnly) {
+            // The pass box starts at offset_y. Include the shade and the OSD
+            // stack below it so the renderer damages both regions together.
+            const double BASE = MB.y + (double)cfg.offsetY->value();
+            lastContentH       = std::max(lastContentH, std::max(0.0, START + CONTENTH - BASE));
+            lastContentW       = std::max(lastContentW, W);
+        } else {
+            lastContentH = CONTENTH;
+            lastContentW = W;
+        }
+        return CONTENTH;
     }
 
 } // namespace NHyprnotify

@@ -469,7 +469,7 @@ namespace NHyprnotify {
         if (!CARD)
             return; // outside the panel: windows scroll normally
         if (CARD->kind == SCard::POPUP) {
-            // An OSD popup can sit over the open shade. Keep its wheel from
+            // An OSD popup sits below the open shade. Keep its wheel from
             // paging the panel underneath; popup cards have no wheel verb.
             info.cancelled = true;
             scrollAcc = swipeAcc = 0;

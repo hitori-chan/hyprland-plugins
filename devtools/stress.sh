@@ -4,7 +4,7 @@
 # placement memory, sibling geometry, spawn/close storms, the notification
 # cap, state churn round-trips, hostile state files, a real-input storm
 # (vptr), the shade's click and key verbs (vkbd), the bell's click path, the
-# OSD overlay hitbox while the shade is open, the click-corpse guard,
+# below-shade OSD hitbox while the shade is open, the click-corpse guard,
 # acting-closes-the-shade, the fullscreen tuck and a config reload. Every
 # assertion is exact; any failure fails the run.
 #
@@ -528,20 +528,22 @@ chk "bell: second click closes the shade" test "$(st)" = "center:0 live:1 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.8
 chk "bell: reset after the click battery" test "$(st)" = "center:0 live:0 dnd:0"
 
-# ---- OSD over an open shade -----------------------------------------------
+# ---- OSD below an open shade ----------------------------------------------
 # OSD-band cards are deliberately absent from shade rows and the bell badge,
-# but their active surface must remain above a shade that was already open.
-# Send the same fixed-id/value shape as hyprosd's brightness path, then click
-# its popup hitbox. A working overlay dismisses the OSD card and leaves the
-# shade open; a hidden card leaves the OSD in the model or hits the panel.
+# but their active surface must remain visible below a shade that was already
+# open. Send the same fixed-id/value shape as hyprosd's brightness path, then
+# click its popup hitbox. A working below-shade card dismisses while leaving
+# the shade open; a hidden card leaves the OSD in the model or hits the panel.
 hq hyprnotify center >/dev/null; sleep 0.5
 nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
 	Notify susssasa\{sv\}i osd 9992 "" Brightness 72% 0 2 value i 72 urgency y 0 1200 >/dev/null 2>&1
 sleep 0.35
 chk "center OSD: brightness card is active" test "$(st)" = "center:1 live:1 dnd:0"
 chk "center OSD: fixed card remains outside shade accounting" test "$(bd)" = "banners:0 resident:0"
-click "$((MON_W - 10 - 348 / 2))" 64 272
-chk "center OSD: popup hitbox dismisses the card above the shade" test "$(st)" = "center:1 live:0 dnd:0"
+OSD_PANEL_H=$((10 + 46 + 10 + 4 + 34 + 12))
+OSD_Y=$((34 + OSD_PANEL_H + 6 + 14))
+click "$((MON_W - 10 - 348 / 2))" "$OSD_Y" 272
+chk "center OSD: below-shade popup hitbox dismisses the card" test "$(st)" = "center:1 live:0 dnd:0"
 sleep 1.4
 chk "center OSD: card expires without closing the shade" test "$(st)" = "center:1 live:0 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.4

@@ -370,7 +370,7 @@ namespace NHyprnotify {
         // bleed; renderRow caps a row's body at 4 lines (7 for a chat), so no
         // single row can exceed the cap and the always-place-the-first-row rule
         // can't spill.
-        const double AVAILH  = MB.h - (double)cfg.offsetY->value() - (double)cfg.margin->value();
+        const double AVAILH  = MB.h - (double)cfg.offsetY->value() - (double)cfg.margin->value() - centerOsdReserve;
         const double BODYCAP = std::max(ROW_ICON, AVAILH - BAR_H - BODY_PADT - BODY_PADB);
 
         // The display list, every height AND every fold verdict are decided

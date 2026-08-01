@@ -15,6 +15,7 @@ namespace NHyprnotify {
     SHover             hovered;
     double             lastContentH = 0;
     double             lastContentW = 0;
+    double             centerOsdReserve = 0;
 
     static CBox                lastBox; // last damaged layout, global logical (already expanded)
     static SP<CEventLoopTimer> ageTick;    // 30s: re-buckets the age lines
@@ -52,14 +53,22 @@ namespace NHyprnotify {
         cards.clear(); // capacity retained: no per-frame allocations
         cardsMon = mon;
 
-        // Ordinary banners yield to the center when it opens. OSD cards are a
-        // separate transient surface: brightness, volume, battery, and
-        // touchpad feedback must remain visible over the panel that is already
-        // on screen, or the feedback disappears exactly when the user needs it.
+        // Ordinary banners yield to the center when it opens. OSD cards keep
+        // the normal popup anatomy but move below the panel. Measure them
+        // before the center budget is chosen so a full shade never grows into
+        // the OSD area.
         if (centerVisible()) {
+            SPaint      MEASURE = P;
+            MEASURE.warm       = true; // layout only: never paint in the probe
+            const double GAP   = std::max((double)cfg.margin->value(), 0.0);
+            const double OSDH  = renderPopups(MEASURE, T, true, std::nullopt, true);
+            centerOsdReserve   = OSDH > 0 ? OSDH + GAP : 0;
             renderCenter(P, T);
-            renderPopups(P, T, true);
+            const auto   MB     = mon->logicalBox();
+            const double STARTY = MB.y + (double)cfg.offsetY->value() + lastContentH + GAP;
+            renderPopups(P, T, true, STARTY);
         } else {
+            centerOsdReserve = 0;
             renderPopups(P, T);
         }
     }
@@ -282,6 +291,7 @@ namespace NHyprnotify {
         textCacheClear();
         lastContentH      = 0;
         lastContentW      = 0;
+        centerOsdReserve  = 0;
         warmGate.warming  = false;
         warmGate.texStale = false;
         hovered           = {};
