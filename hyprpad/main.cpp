@@ -54,6 +54,7 @@
 #include <chrono>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -87,7 +88,7 @@ namespace NHyprpad {
             notifyProxy->callMethodAsync("Notify")
                 .onInterface("org.freedesktop.Notifications")
                 .withArguments(std::string{"osd"}, uint32_t{9991}, std::string{}, std::string{"Touchpad"}, body, std::vector<std::string>{},
-                               std::map<std::string, sdbus::Variant>{{"urgency", sdbus::Variant{uint8_t{0}}}}, timed ? 1500 : -1)
+                               std::map<std::string, sdbus::Variant>{{"urgency", sdbus::Variant{uint8_t{0}}}, {"x-hitori-osd", sdbus::Variant{true}}}, timed ? 1500 : -1)
                 .uponReplyInvoke([](std::optional<sdbus::Error>, uint32_t) {});
             g_bus.pollSoon(); // flush the send from the event loop, never from here
         } catch (...) {} // broker gone: teardown is already pending, drop the card
@@ -114,6 +115,19 @@ namespace NHyprpad {
             if (P->m_isTouchpad)
                 return P->m_hlName;
         return "";
+    }
+
+    // m_connected is the compositor's actual pointer attachment state. It is
+    // updated together with libinput's send-events mode by setPointerConfigs,
+    // so a manual toggle can read the live state even when no automatic pass
+    // has populated appliedState yet.
+    static std::optional<bool> touchpadEnabled() {
+        if (!g_pInputManager)
+            return std::nullopt;
+        for (const auto& P : g_pInputManager->m_pointers)
+            if (P->m_isTouchpad)
+                return P->m_connected;
+        return std::nullopt;
     }
 
     static bool externalMousePresent() {
@@ -184,7 +198,8 @@ namespace NHyprpad {
         pendingToggle.arm([]() {
             if (settle)
                 settle->updateTimeout(std::nullopt);
-            applyEnabled(appliedState == 0);
+            const bool CURRENT = touchpadEnabled().value_or(appliedState == 1);
+            applyEnabled(!CURRENT);
         });
         return 0;
     }
@@ -250,7 +265,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // device list is populated and the notification daemon is up
     settle->updateTimeout(SETTLE);
 
-    return {"hyprpad", "the awesome touchpad module", "hitori", "1.0.7"};
+    return {"hyprpad", "the awesome touchpad module", "hitori", "1.0.8"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

@@ -197,13 +197,17 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
         }
     }
 
-    g_pressWindow = W;
-    g_pressAt     = NOW;
-
     // awesome's click-to-raise. A Super+left/right press raises too —
     // grabbing a window raised in awesome as well.
     if (e.button != BTN_LEFT && !(e.button == BTN_RIGHT && superHeld()))
         return;
+
+    // Only a press that can invoke this plugin's raise policy can cause the
+    // pressed window to arm corpse protection on its close/fullscreen event.
+    // Middle and ordinary right clicks must never leave a later press
+    // guarded as if they had been click-to-close gestures.
+    g_pressWindow = W;
+    g_pressAt     = NOW;
 
     // Fullscreen needs the plugin's special allowed-over cleanup. Ordinary
     // floating windows are raised synchronously by Hyprland's native
@@ -353,7 +357,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_next", luaFocusNext);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev", luaFocusPrev);
 
-    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.2.4"};
+    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.2.5"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
