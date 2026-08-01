@@ -8,6 +8,15 @@ namespace NHyprbar {
 
     namespace Menu {
         constexpr const char*                 DBUSMENU = "com.canonical.dbusmenu";
+        // A tray menu is untrusted D-Bus UI state. Keep one pathological item
+        // from consuming the compositor's retained menu memory or building an
+        // arbitrarily deep cascade.
+        constexpr size_t                      MAX_LEVELS          = 16;
+        constexpr size_t                      MAX_ENTRIES         = 512;
+        constexpr size_t                      MAX_TOTAL_ENTRIES   = 4096;
+        constexpr size_t                      MAX_PROPERTY_UPDATES = 1024;
+        constexpr size_t                      MAX_LABEL_BYTES     = 4096;
+        constexpr size_t                      MAX_ICON_BYTES      = 2u << 20;
 
         bool                                  isOpen  = false;
         bool                                  isLocal = false;
@@ -269,7 +278,14 @@ namespace NHyprbar {
                         lvl->entries.clear();
                         lvl->hover = -1; // scrollTop stays: live updates must not yank a browsed list to its top
                         SWarmToken WARM; // we resolve icon-name textures here, in a DBus reply — not a render
+                        size_t retained = 0;
+                        for (const auto& L : levels)
+                            if (&L != lvl)
+                                retained += L.entries.size();
+                        const size_t entryLimit = retained >= MAX_TOTAL_ENTRIES ? 0 : std::min(MAX_ENTRIES, MAX_TOTAL_ENTRIES - retained);
                         for (auto& CV : std::get<2>(root)) {
+                            if (lvl->entries.size() >= entryLimit)
+                                break;
                             try {
                                 auto  c = CV.get<LayoutItem>();
                                 auto& P = std::get<1>(c);
@@ -281,8 +297,12 @@ namespace NHyprbar {
                                 en.id = std::get<0>(c);
                                 if (auto it = P.find("type"); it != P.end() && it->second.get<std::string>() == "separator")
                                     en.separator = true;
-                                if (auto it = P.find("label"); it != P.end())
-                                    en.label = cleanLabel(it->second.get<std::string>());
+                                if (auto it = P.find("label"); it != P.end()) {
+                                    const auto LABEL = it->second.get<std::string>();
+                                    if (LABEL.size() > MAX_LABEL_BYTES)
+                                        continue;
+                                    en.label = cleanLabel(LABEL);
+                                }
                                 if (auto it = P.find("enabled"); it != P.end())
                                     en.enabled = it->second.get<bool>();
                                 if (auto it = P.find("children-display"); it != P.end() && it->second.get<std::string>() == "submenu")
@@ -293,11 +313,15 @@ namespace NHyprbar {
                                     en.toggleState = it->second.get<int32_t>();
                                 if (auto it = P.find("disposition"); it != P.end())
                                     en.alert = it->second.get<std::string>() == "warning" || it->second.get<std::string>() == "alert";
-                                if (auto it = P.find("icon-name"); it != P.end())
-                                    en.icon = namedIcon(it->second.get<std::string>());
+                                if (auto it = P.find("icon-name"); it != P.end()) {
+                                    const auto NAME = it->second.get<std::string>();
+                                    if (NAME.size() <= MAX_LABEL_BYTES)
+                                        en.icon = namedIcon(NAME);
+                                }
                                 if (!en.icon) // nm-applet ships its signal-strength icons inline
                                     if (auto it = P.find("icon-data"); it != P.end())
-                                        en.icon = loadPngBytes(it->second.get<std::vector<uint8_t>>());
+                                        if (const auto DATA = it->second.get<std::vector<uint8_t>>(); DATA.size() <= MAX_ICON_BYTES)
+                                            en.icon = loadPngBytes(DATA);
                                 en.display = en.label + (en.submenu ? "  ▸" : "");
                                 if (en.icon && en.icon->m_texID != 0 && en.toggle != TG_NONE && en.toggleState == 1)
                                     en.display = (en.toggle == TG_RADIO ? "● " : "✓ ") + en.display;
@@ -373,10 +397,16 @@ namespace NHyprbar {
                             if (!sessionActive(SESSION))
                                 return;
                             std::unordered_set<int32_t> ids;
-                            for (const auto& C : changed)
+                            for (const auto& C : changed) {
+                                if (ids.size() >= MAX_PROPERTY_UPDATES)
+                                    break;
                                 ids.insert(std::get<0>(C));
-                            for (const auto& R : removed)
+                            }
+                            for (const auto& R : removed) {
+                                if (ids.size() >= MAX_PROPERTY_UPDATES)
+                                    break;
                                 ids.insert(std::get<0>(R));
+                            }
                             std::unordered_set<int32_t> reload; // affected levels, deduped
                             for (const auto& L : levels)
                                 for (const auto& E : L.entries)
@@ -401,6 +431,8 @@ namespace NHyprbar {
         // menus these were under X11.
         void openSub(size_t level, int entryIdx) {
             if (!isOpen || isLocal || !proxy || level >= levels.size())
+                return;
+            if (levels.size() >= MAX_LEVELS)
                 return;
             auto& L = levels[level];
             if (entryIdx < 0 || (size_t)entryIdx >= L.entries.size() || !L.entries[entryIdx].submenu || !L.entries[entryIdx].enabled)
@@ -528,6 +560,10 @@ namespace NHyprbar {
                         }
                     }
                 }
+                // A narrow output must shrink the panel before anchoring it;
+                // clamping only the x coordinate leaves the right edge past
+                // the output and steals the tasklist's input region.
+                mw = std::min(mw, std::max(1.0, PAINT.mb.w - 4.0));
 
                 // level 0 opens under the bar at the click; a cascade sits
                 // beside its parent panel, top-aligned with the row it hangs
@@ -554,10 +590,10 @@ namespace NHyprbar {
                 // scroll between ▴/▾ arrow strips, as GTK did under X11;
                 // shorter panels shift up instead until they fit
                 const double fullH  = Menu::levelHeight(L);
-                const double mh     = std::min(fullH, MBOT - MTOP);
+                const double mh     = std::min(fullH, std::max(1.0, MBOT - MTOP));
                 const bool   SCROLL = mh < fullH;
                 L.overflow          = SCROLL;
-                my0                 = std::clamp(my0, MTOP, MBOT - mh);
+                my0                 = std::clamp(my0, MTOP, std::max(MTOP, MBOT - mh));
                 L.box               = CBox{mx, my0, mw, mh};
 
                 // fill under the whole panel, frame ring over its edge: no

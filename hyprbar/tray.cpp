@@ -4,6 +4,10 @@
 
 #include "hyprbar.hpp"
 
+#include <cmath>
+#include <limits>
+#include <unistd.h>
+
 namespace NHyprbar {
 
     // ---- tray: StatusNotifierWatcher + Host, in-compositor ----
@@ -21,21 +25,61 @@ namespace NHyprbar {
         static std::unique_ptr<sdbus::IProxy>  busProxy;
         static std::unique_ptr<sdbus::IProxy>  notifyProxy; // the battery alerts' Notify sender
         std::vector<SP<SItem>>                 items;
+        static std::unordered_map<std::string, std::string> hosts; // service -> unique owner
+        static std::string                                  hostService;
+        static bool                                          hostNameOwned = false;
+
+        constexpr size_t MAX_ITEMS            = 256;
+        constexpr size_t MAX_ITEMS_PER_SERVICE = 32;
+
+        static int32_t sniCoord(double value) {
+            if (!std::isfinite(value))
+                return 0;
+            value = std::clamp(value, (double)std::numeric_limits<int32_t>::min(), (double)std::numeric_limits<int32_t>::max());
+            return (int32_t)std::llround(value);
+        }
+
+        static void registerHost(const std::string& requested, const std::string& owner) {
+            if (owner.empty())
+                return;
+            const std::string service = requested.empty() ? owner : requested;
+            if (service.empty())
+                return;
+            const bool inserted = hosts.insert_or_assign(service, owner).second;
+            if (inserted && watcher)
+                watcher->emitSignal("StatusNotifierHostRegistered").onInterface(WIFACE);
+        }
+
+        static void dropHostName(const std::string& name, const std::string& oldOwner, const std::string& newOwner) {
+            if (name.empty() || oldOwner == newOwner)
+                return;
+            for (auto it = hosts.begin(); it != hosts.end();) {
+                const bool SERVICE_GONE = it->first == name && !oldOwner.empty() && it->second == oldOwner;
+                const bool OWNER_GONE   = it->second == name && newOwner.empty();
+                if (SERVICE_GONE || OWNER_GONE)
+                    it = hosts.erase(it);
+                else
+                    ++it;
+            }
+        }
 
 
         // One Notify onto the session bus, over the tray's live connection —
         // no fork, no shell. hyprnotify's API is the bus name, never its
         // symbols (two independently-versioned .so files must not couple);
         // whatever daemon owns the name receives it.
-        void notify(const std::string& app, uint32_t replacesId, const std::string& icon, const std::string& summary, const std::string& body, uint8_t urgency, int32_t timeoutMs) {
+        void notify(const std::string& app, uint32_t replacesId, const std::string& icon, const std::string& summary, const std::string& body, uint8_t urgency, int32_t timeoutMs, bool osd) {
             if (!bus.conn())
                 return;
             try {
                 if (!notifyProxy)
                     notifyProxy = sdbus::createProxy(*bus.conn(), sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
+                std::map<std::string, sdbus::Variant> hints{{"urgency", sdbus::Variant{urgency}}};
+                if (osd)
+                    hints.emplace("x-hitori-osd", sdbus::Variant{true});
                 notifyProxy->callMethodAsync("Notify")
                     .onInterface("org.freedesktop.Notifications")
-                    .withArguments(app, replacesId, icon, summary, body, std::vector<std::string>{}, std::map<std::string, sdbus::Variant>{{"urgency", sdbus::Variant{urgency}}},
+                    .withArguments(app, replacesId, icon, summary, body, std::vector<std::string>{}, hints,
                                    timeoutMs > 0 ? timeoutMs : -1)
                     .uponReplyInvoke([](std::optional<sdbus::Error>, uint32_t) {});
                 pollSoon();  // flush the send from the event loop, never from here
@@ -69,6 +113,14 @@ namespace NHyprbar {
                 I->proxy.reset(); // break the item<->handler cycle before dropping the vector's ref
             }
             items.clear();
+            hosts.clear();
+            if (hostNameOwned && bus.conn()) {
+                try {
+                    bus.conn()->releaseName(sdbus::ServiceName{hostService});
+                } catch (...) {}
+            }
+            hostService.clear();
+            hostNameOwned = false;
             notifyProxy.reset();
             busProxy.reset();
             watcher.reset();
@@ -212,9 +264,13 @@ namespace NHyprbar {
         }
 
         static void addItem(const std::string& service, const std::string& path) {
+            if (service.empty() || path.empty() || items.size() >= MAX_ITEMS)
+                return;
             for (const auto& I : items)
                 if (I->service == service && I->path == path)
                     return;
+            if (std::ranges::count_if(items, [&](const auto& I) { return I->service == service; }) >= (int)MAX_ITEMS_PER_SERVICE)
+                return;
 
             auto it     = makeShared<SItem>();
             it->service = service;
@@ -276,14 +332,37 @@ namespace NHyprbar {
                         else
                             addItem(arg.empty() ? SENDER : arg, "/StatusNotifierItem");
                     }),
-                                sdbus::registerMethod("RegisterStatusNotifierHost").withInputParamNames("service").implementedAs([](std::string) {}),
+                                sdbus::registerMethod("RegisterStatusNotifierHost").withInputParamNames("service").implementedAs([](std::string service) {
+                                    if (!watcher)
+                                        return;
+                                    const std::string SENDER = watcher->getCurrentlyProcessedMessage().getSender();
+                                    if (service.empty() || service == SENDER) {
+                                        registerHost(service, SENDER);
+                                        return;
+                                    }
+                                    // The argument is a well-known host name.
+                                    // Confirm that the caller owns it before it
+                                    // affects the host-presence property.
+                                    if (!busProxy)
+                                        return;
+                                    try {
+                                        busProxy->callMethodAsync("GetNameOwner")
+                                            .onInterface("org.freedesktop.DBus")
+                                            .withArguments(service)
+                                            .uponReplyInvoke([service, SENDER](std::optional<sdbus::Error> e, std::string owner) {
+                                                if (!e && owner == SENDER)
+                                                    registerHost(service, SENDER);
+                                            });
+                                        pollSoon();
+                                    } catch (...) {}
+                                }),
                                 sdbus::registerProperty("RegisteredStatusNotifierItems").withGetter([]() {
                                     std::vector<std::string> v;
                                     for (const auto& I : items)
                                         v.push_back(I->service + I->path);
                                     return v;
                                 }),
-                                sdbus::registerProperty("IsStatusNotifierHostRegistered").withGetter([]() { return true; }),
+                                sdbus::registerProperty("IsStatusNotifierHostRegistered").withGetter([]() { return !hosts.empty(); }),
                                 sdbus::registerProperty("ProtocolVersion").withGetter([]() { return (int32_t)0; }),
                                 sdbus::registerSignal("StatusNotifierItemRegistered").withParameters<std::string>("service"),
                                 sdbus::registerSignal("StatusNotifierItemUnregistered").withParameters<std::string>("service"),
@@ -297,11 +376,15 @@ namespace NHyprbar {
                     // and a disappearance as a new item owner.
                     if (!oldOwner.empty() && oldOwner != newOwner)
                         dropService(name);
+                    dropHostName(name, oldOwner, newOwner);
                     if (name == "org.freedesktop.Notifications" && oldOwner.empty() && !newOwner.empty())
                         Bell::daemonUp(); // hyprnotify (re)appeared: re-read the badge counts
                 });
 
-                watcher->emitSignal("StatusNotifierHostRegistered").onInterface(WIFACE);
+                hostService = "org.freedesktop.StatusNotifierHost-" + std::to_string((long long)getpid());
+                bus.conn()->requestName(sdbus::ServiceName{hostService});
+                hostNameOwned = true;
+                registerHost(hostService, bus.conn()->getUniqueName());
 
                 bus.sync(); // drain anything queued during setup — the vtable is registered, nothing dispatches early
             } catch (const std::exception& E) {
@@ -384,14 +467,15 @@ namespace NHyprbar {
                 const auto IT = h.tray.lock();
                 if (!IT || !IT->proxy)
                     return;
+                const int32_t X = Tray::sniCoord(h.clickX), Y = Tray::sniCoord(h.clickY);
                 if (bit == 4u) { // middle: the SNI SecondaryActivate call
-                    Tray::post([IT]() {
+                    Tray::post([IT, X, Y]() {
                         if (!IT->active || !IT->proxy)
                             return;
                         try {
                             IT->proxy->callMethodAsync("SecondaryActivate")
                                 .onInterface(Tray::SNI)
-                                .withArguments((int32_t)0, (int32_t)0)
+                                .withArguments(X, Y)
                                 .uponReplyInvoke([](std::optional<sdbus::Error>) {});
                             Tray::pollSoon();
                         } catch (...) {} // dying bus: teardown is already pending
@@ -400,13 +484,13 @@ namespace NHyprbar {
                 }
                 const bool HASMENU = !IT->menuPath.empty();
                 if (bit == 1u && !(IT->itemIsMenu && HASMENU)) {
-                    Tray::post([IT]() {
+                    Tray::post([IT, X, Y]() {
                         if (!IT->active || !IT->proxy)
                             return;
                         try {
                             IT->proxy->callMethodAsync("Activate")
                                 .onInterface(Tray::SNI)
-                                .withArguments((int32_t)0, (int32_t)0)
+                                .withArguments(X, Y)
                                 .uponReplyInvoke([](std::optional<sdbus::Error>) {});
                             Tray::pollSoon(); // the activation usually flips the icon right back
                         } catch (...) {} // dying bus: teardown is already pending
@@ -416,13 +500,13 @@ namespace NHyprbar {
                 if (HASMENU)
                     Menu::openFor(IT, h.anchorX, h.mon);
                 else if (bit == 2u) {
-                    Tray::post([IT]() {
+                    Tray::post([IT, X, Y]() {
                         if (!IT->active || !IT->proxy)
                             return;
                         try {
                             IT->proxy->callMethodAsync("ContextMenu")
                                 .onInterface(Tray::SNI)
-                                .withArguments((int32_t)0, (int32_t)0)
+                                .withArguments(X, Y)
                                 .uponReplyInvoke([](std::optional<sdbus::Error>) {});
                             Tray::pollSoon();
                         } catch (...) {}

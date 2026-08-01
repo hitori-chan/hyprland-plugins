@@ -137,7 +137,9 @@ A "Run: " prompt, the awesome categories (`Enter` drills in,
 `BackSpace`/`Escape` on empty backs out) and the `.desktop` apps, filtered
 as you type — name or command line, substring, prefix matches and
 most-launched entries first — plus a trailing `Exec: <query>` entry that
-runs whatever was typed.
+runs whatever was typed. Opening the prompt never blocks on discovery: its
+catalogue and window-class icon associations arrive in bounded worker batches,
+and the prompt refilters as they become available.
 
 | keys | action |
 |---|---|
@@ -154,8 +156,13 @@ runs whatever was typed.
 Entries show a theme icon when one resolves and plain text otherwise, like
 awesome. Launch counts and history persist in `~/.cache/hyprbar/`
 (`menu_count_file`, `history_menu`); each cache rewrite is atomic. Desktop
-`Exec=` values use freedesktop quoting and field-code rules, then retain their
-argument boundaries when handed to Hyprland's executor.
+Entry string/list values decode their freedesktop escapes before names, icons,
+categories, and desktop visibility are used. `Exec=` keeps its separate
+quoting grammar until field-code expansion, then retains its argument
+boundaries when handed to Hyprland's executor; malformed entries are skipped.
+Completion enumeration is likewise worker-owned and cancellable, so the first
+Tab may wait briefly for its first matching batch without stalling keyboard
+dispatch.
 
 This is the only launcher: fuzzel and the `Mod+R`/`Mod+X`/`Mod+S` prompts
 were dropped by choice.
@@ -166,8 +173,9 @@ Colors and fonts are part of every texture's cache key, so a changed value
 misses the cache and rebuilds on its own. Everything resolved from DISK at
 init does not: `config.reloaded` re-probes the icon dirs (they come from the
 GTK theme name, read once), drops every resolved app/tray/menu icon and the
-layoutbox's, and repaints. The `.desktop` scan behind the menubar is NOT
-redone — those apps aren't config, and the walk is a few hundred file reads.
+layoutbox's, and repaints. Desktop discovery and WM-class icon association are
+independent bounded session indexes, so a theme reload does not restart their
+filesystem walk.
 
 ## Limitations
 

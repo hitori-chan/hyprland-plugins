@@ -160,6 +160,7 @@ namespace NHyprbar {
                 SHit hc   = HIT;
                 hc.mon    = MON;
                 hc.clickX = POS.x;
+                hc.clickY = POS.y;
                 // Deferred out of the input emission: workspace/focus changes
                 // mid-button-event bite code that still holds pre-click state.
                 if (hc.widget)

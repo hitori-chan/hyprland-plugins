@@ -234,6 +234,7 @@ namespace NHyprbar {
     SP<ITexture> loadPngBytes(const std::vector<uint8_t>& data); // dbusmenu icon-data blobs
     std::string  resolveIconPath(const std::string& name, const std::string& extraDir = "");
     void         buildIconDirs();
+    void         iconsInit();
     SP<ITexture> appIcon(const std::string& klass);                           // window class -> texture
     SP<ITexture> namedIcon(const std::string& name);                          // icon name/path -> texture
     SP<ITexture> trayIcon(const std::string& name, const std::string& theme); // + the item's own theme dir
@@ -269,7 +270,7 @@ namespace NHyprbar {
         void                                       post(std::function<void()> fn); // defer send work out of input/render callbacks
         // fire a desktop notification over the tray's connection (urgency
         // 0/1/2; timeoutMs 0 = the daemon's default — sticky for critical)
-        void notify(const std::string& app, uint32_t replacesId, const std::string& icon, const std::string& summary, const std::string& body, uint8_t urgency, int32_t timeoutMs);
+        void notify(const std::string& app, uint32_t replacesId, const std::string& icon, const std::string& summary, const std::string& body, uint8_t urgency, int32_t timeoutMs, bool osd = false);
         void init();
         void exit();
         void onServiceDropped(const std::string& service); // defined in menu.cpp
@@ -324,6 +325,7 @@ namespace NHyprbar {
         WP<Tray::SItem> tray;             // tray
         double          anchorX = 0;      // menu anchor (cell-fixed)
         double          clickX  = 0;      // where the press landed (input.cpp fills it)
+        double          clickY  = 0;      // screen-coordinate hint for SNI activation
         PHLMONITORREF   mon;
     };
     extern std::map<uint64_t, std::vector<SHit>> hitboxes; // per monitor id
@@ -466,9 +468,9 @@ namespace NHyprbar {
         extern const int       NCATS;
 
         struct SApp {
-            std::string name, lname, exec, lexec, icon;
+            std::string name, lname, exec, lexec, icon, desktopId;
             int         category = -1; // index into CATEGORIES, -1 = none
-            bool        terminal = false;
+            bool        terminal = false, dbusActivatable = false;
         };
 
         // the filtered list: categories, then apps, then the trailing
@@ -486,6 +488,7 @@ namespace NHyprbar {
         extern int                 sel, first;
         extern PHLMONITORREF       mon;
 
+        void                       init();
         void                       open();
         void                       close();
         void                       toggleDeferred(); // hl.plugin.hyprbar.menubar(), deferred out of the call

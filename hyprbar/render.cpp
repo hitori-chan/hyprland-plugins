@@ -7,6 +7,9 @@
 
 #include "hyprbar.hpp"
 
+#include <cmath>
+#include <limits>
+
 namespace NHyprbar {
 
     // Each entry remembers the warm generation that last wanted it. Evicting
@@ -15,7 +18,14 @@ namespace NHyprbar {
     // crosses, so the variant it just left would be rebuilt on the way back —
     // a pango render + upload each time. A grace window keeps those hot and
     // still bounds the map against title churn.
-    static NHyprCommon::CGenCache<SP<ITexture>> texCache;
+    static size_t textureBytes(const SP<ITexture>& texture) {
+        if (!texture || !std::isfinite(texture->m_size.x) || !std::isfinite(texture->m_size.y) || texture->m_size.x <= 0 || texture->m_size.y <= 0)
+            return 0;
+        const long double BYTES = (long double)texture->m_size.x * (long double)texture->m_size.y * 4.0L;
+        return BYTES >= (long double)std::numeric_limits<size_t>::max() ? std::numeric_limits<size_t>::max() : (size_t)BYTES;
+    }
+
+    static NHyprCommon::CGenCache<SP<ITexture>> texCache{64ull << 20, textureBytes};
 
     // per monitor: a fingerprint of the task labels the strip shows — see
     // the tasklist in renderBar
@@ -46,7 +56,9 @@ namespace NHyprbar {
         if (!warmGate.mayBuild())
             return nullptr;
 
-        return *texCache.insert(KEY, g_pHyprRenderer->renderText(text, col, pt, false, F, maxWidth));
+        if (const auto* ENTRY = texCache.insert(KEY, g_pHyprRenderer->renderText(text, col, pt, false, F, maxWidth)))
+            return *ENTRY;
+        return nullptr;
     }
 
     // ---- the paint context (hyprbar.hpp) ----

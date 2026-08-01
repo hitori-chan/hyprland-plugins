@@ -410,7 +410,7 @@ namespace NHyprbar {
             // urgency 0/1/2; 9990 = the script's pinned replace-in-place id.
             // No icon: the daemon's fallback_icon_dir rolls the card its face.
             const auto NOTIFY = [](uint8_t urgency, int32_t timeoutMs, const char* summary, const std::string& body) {
-                Tray::notify("battery", 9990, "", summary, body, urgency, timeoutMs);
+                Tray::notify("battery", 9990, "", summary, body, urgency, timeoutMs, true);
             };
 
             // ACPI transitions/resume report transient "Unknown" — it must not

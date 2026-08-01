@@ -246,10 +246,12 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
 
     buildIconDirs();
+    iconsInit();
     Clock::refresh();
     Battery::init();
     Tray::init();
     Bell::init(); // after Tray: the bell rides the tray's session-bus link
+    Menubar::init();
 
     g_lifecycle.init();
     g_lifecycle.listen(Event::bus()->m_events.render.stage, [](eRenderStage stage) { onRenderStage(stage); });
@@ -336,9 +338,9 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // Colors and fonts heal themselves — they are part of every texture's
     // cache key, so a changed value simply misses and rebuilds. What doesn't
     // is anything resolved from DISK at init: the icon dirs (probed once from
-    // the GTK theme name) and the files found in them. The .desktop scan is
-    // deliberately not redone — those apps aren't config, and the walk is a
-    // few hundred file reads.
+    // the GTK theme name) and the files found in them. Desktop discovery is
+    // worker-owned and independent of the theme, so a config reload does not
+    // restart it.
     g_lifecycle.listen(EV.config.reloaded, []() {
         iconsReload();
         layoutboxReload();
@@ -361,7 +363,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.4.3"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.4.4"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
