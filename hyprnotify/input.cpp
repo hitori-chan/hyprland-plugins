@@ -82,6 +82,7 @@ namespace NHyprnotify {
     static bool              hitQueued = false;
     static NHyprCommon::CHop pendingHit;
     static NHyprCommon::CHop pendingEsc;
+    constexpr size_t         MAX_HIT_QUEUE = 128;
 
     // most-specific-first: rows/buttons are pushed after the panel they sit on
     static const SCard* cardAt(const Vector2D& pos) {
@@ -202,12 +203,15 @@ namespace NHyprnotify {
     // action can make the client focus/raise itself. Queue+drain so two
     // clicks in one dispatch both land.
     static void drainHits();
-    static void queueHit(SHit h) {
+    static bool queueHit(SHit h) {
+        if (hitQueue.size() >= MAX_HIT_QUEUE)
+            return false;
         hitQueue.push_back(std::move(h));
         if (hitQueued)
-            return;
+            return true;
         hitQueued = true;
         pendingHit.arm(drainHits);
+        return true;
     }
 
     static void drainHits() {
@@ -418,17 +422,17 @@ namespace NHyprnotify {
             // Android closes the shade on an outside tap; the closing click
             // is swallowed, like the tray menu's
             if (centerVisible() && BIT) {
+                if (!queueHit({.outside = true})) {
+                    heldButtons++;
+                    return;
+                }
                 info.cancelled = true;
                 swallowRelease |= BIT;
-                queueHit({.outside = true});
                 return;
             }
             heldButtons++;
             return;
         }
-
-        info.cancelled = true; // the surface is ours: the press must not reach the window beneath
-        swallowRelease |= BIT;
 
         SHit h;
         h.kind  = CARD->kind;
@@ -443,7 +447,12 @@ namespace NHyprnotify {
                 h.href = CARD->links[L].href;
         }
 
-        queueHit(std::move(h));
+        if (!queueHit(std::move(h))) {
+            heldButtons++; // overload falls back to the native implicit grab
+            return;
+        }
+        info.cancelled = true; // the surface is ours: the press must not reach the window beneath
+        swallowRelease |= BIT;
     }
 
     // ---- wheel: page the center, only inside the panel box ----
@@ -510,7 +519,8 @@ namespace NHyprnotify {
                 h.id   = CARD->id;
                 h.bit  = AWAY ? 2u : 1u;  // right-swipe IS the right-click
                 h.part = AWAY ? 0 : 10;   // the other way opens the ⋮'s panel
-                queueHit(std::move(h));
+                if (!queueHit(std::move(h)))
+                    info.cancelled = false; // overload leaves the wheel native
             }
             return;
         }
@@ -538,6 +548,7 @@ namespace NHyprnotify {
     static std::vector<SKeyAct> keyQueue;
     static bool                 keyQueued = false;
     static NHyprCommon::CHop    pendingKey;
+    constexpr size_t            MAX_KEY_QUEUE = 128;
 
     static void                 drainKeys() {
         keyQueued    = false;
@@ -686,6 +697,8 @@ namespace NHyprnotify {
                 return;
         }
 
+        if (keyQueue.size() >= MAX_KEY_QUEUE)
+            return; // a key-repeat storm remains native input under overload
         info.cancelled = true;
         keyQueue.push_back(std::move(a));
         if (keyQueued)

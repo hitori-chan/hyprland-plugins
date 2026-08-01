@@ -276,6 +276,8 @@ namespace NHyprnotify {
     // the budget in both directions. Rows past the fold are only measured
     // COLLAPSED — their open form would raster text no frame can show.
     static void runBudget(const SPaint& P, const SType& T, double contentW, double bodyCap) {
+        if (bodyCap <= 0)
+            return;
         double used = 0;
         for (size_t i = s_skip; i < s_disp.size(); i++) {
             const auto&  D    = s_disp[i];
@@ -358,20 +360,24 @@ namespace NHyprnotify {
 
         const auto  COLBG = color(cfg.colBg), COLFG = color(cfg.colFg), COLSUB = color(cfg.colKicker), COLACC = color(cfg.colHighlight);
 
-        const double X  = MB.x + MB.w - EDGE - CENTER_W;
-        const double Y0 = MB.y + (double)cfg.offsetY->value();
+        const double BAR_H     = BAR_PADT + BAR_BTN + BAR_PADB;
+        const double MIN_PANEL = BODY_PADT + BODY_PADB + BAR_H;
+        const double OFFSET    = std::clamp((double)cfg.offsetY->value(), 0.0, std::max(0.0, MB.h - MIN_PANEL));
+        const double PANEL_W   = std::max(1.0, std::min(CENTER_W, MB.w - 2 * EDGE));
+        const double X         = MB.x + MB.w - PANEL_W;
+        const double Y0        = MB.y + OFFSET;
 
-        const double CONTENT_X = X + BODY_PADX, CONTENT_W = CENTER_W - 2 * BODY_PADX;
+        const double CONTENT_W = std::max(1.0, PANEL_W - 2 * BODY_PADX);
+        const double CONTENT_X = X + (PANEL_W - CONTENT_W) / 2;
 
-        const double BAR_H = BAR_PADT + BAR_BTN + BAR_PADB;
         // The shade runs to what the monitor leaves below offset_y (a margin of
         // air) — Android's shade is the screen, and the expansion budget spends
         // exactly this. Overflow past it becomes wheel paging, never off-screen
         // bleed; renderRow caps a row's body at 4 lines (7 for a chat), so no
         // single row can exceed the cap and the always-place-the-first-row rule
         // can't spill.
-        const double AVAILH  = MB.h - (double)cfg.offsetY->value() - (double)cfg.margin->value() - centerOsdReserve;
-        const double BODYCAP = std::max(ROW_ICON, AVAILH - BAR_H - BODY_PADT - BODY_PADB);
+        const double AVAILH  = std::max(0.0, MB.y + MB.h - Y0 - std::max((double)cfg.margin->value(), 0.0) - centerOsdReserve);
+        const double BODYCAP = std::max(0.0, AVAILH - BAR_H - BODY_PADT - BODY_PADB);
 
         // The display list, every height AND every fold verdict are decided
         // once per WARM and reused by the draws between warms: hover fills
@@ -406,6 +412,8 @@ namespace NHyprnotify {
         double usedH = 0;
         for (size_t i = s_skip; i < disp.size() && i < s_itemH.size(); i++) {
             const double LEAD = placed.empty() ? 0 : STACK_GAP;
+            if (s_itemH[i] > BODYCAP)
+                break;
             if (!placed.empty() && usedH + LEAD + s_itemH[i] > BODYCAP)
                 break;
             usedH += LEAD + s_itemH[i];
@@ -415,9 +423,9 @@ namespace NHyprnotify {
 
         const bool   EMPTY  = disp.empty();
         const double EMPTYH = 46;
-        const double BODYH  = EMPTY ? EMPTYH : usedH;
-        const double PANELH = BODY_PADT + BODYH + BODY_PADB + BAR_H;
-        const CBox   PANEL{X, Y0, CENTER_W, PANELH};
+        const double BODYH  = EMPTY ? std::min(EMPTYH, BODYCAP) : usedH;
+        const double PANELH = std::min(MB.y + MB.h - Y0 - centerOsdReserve, BODY_PADT + BODYH + BODY_PADB + BAR_H);
+        const CBox   PANEL{X, Y0, PANEL_W, std::max(0.0, PANELH)};
 
         P.shadow(PANEL, RPANEL, RP, 22);
         P.glass(PANEL, COLBG, RPANEL, RP);
@@ -431,9 +439,9 @@ namespace NHyprnotify {
         double y = Y0 + BODY_PADT;
 
         if (EMPTY) {
-            const auto E = cachedText("You're all caught up!", COLSUB, T.body, (int)(CENTER_W * P.scale), -1, 0, false, 500);
+            const auto E = cachedText("You're all caught up!", COLSUB, T.body, (int)(PANEL_W * P.scale), -1, 0, false, 500);
             if (!P.warm && E && E->tex)
-                P.tex(E->tex, X + (CENTER_W - E->tex->m_size.x / P.scale) / 2, y + (EMPTYH - E->tex->m_size.y / P.scale) / 2);
+                P.tex(E->tex, X + (PANEL_W - E->tex->m_size.x / P.scale) / 2, y + (EMPTYH - E->tex->m_size.y / P.scale) / 2);
             y += EMPTYH;
         }
 
@@ -519,7 +527,7 @@ namespace NHyprnotify {
         }
 
         { // "Clear all" — the global sweep; greys when the shade is empty
-            const double CW = X + CENTER_W - BAR_PADX - bx;
+            const double CW = X + PANEL_W - BAR_PADX - bx;
             const CBox   B{bx, BARY, CW, BAR_BTN};
             const bool   TARGET = std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && !N->snoozed && !inOsdBand(N->id); });
             const auto   L      = cachedText("Clear all", TARGET ? COLFG : COLSUB.modifyA(0.35f), T.bar, (int)(CW * P.scale), -1, 0, false, 600);
@@ -546,7 +554,7 @@ namespace NHyprnotify {
             if (s_skip > 0) {
                 const auto U = cachedText("▴", COLSUB, T.small, 64, -1, 0, false, 500);
                 if (!P.warm && U && U->tex)
-                    P.tex(U->tex, X + (CENTER_W - U->tex->m_size.x / P.scale) / 2, Y0 + 2);
+                    P.tex(U->tex, X + (PANEL_W - U->tex->m_size.x / P.scale) / 2, Y0 + 2);
             }
             if (below > 0) {
                 auto& DB = scratch();
@@ -555,7 +563,7 @@ namespace NHyprnotify {
                 const auto D2 = cachedText(DB, COLSUB, T.small, 128, -1, 0, false, 500);
                 if (!P.warm && D2 && D2->tex) {
                     const double cw = D2->tex->m_size.x / P.scale, ch = D2->tex->m_size.y / P.scale;
-                    const double cx = X + (CENTER_W - cw) / 2, cy = BARY - ch - 3;
+                    const double cx = X + (PANEL_W - cw) / 2, cy = BARY - ch - 3;
                     P.rect(CBox{cx - 8, cy - 2, cw + 16, ch + 4}, tFill2(), (int)std::lround((ch / 2 + 2) * P.scale));
                     P.tex(D2->tex, cx, cy);
                 }
@@ -563,7 +571,7 @@ namespace NHyprnotify {
         }
 
         lastContentH = PANELH;
-        lastContentW = CENTER_W;
+        lastContentW = PANEL_W;
     }
 
 } // namespace NHyprnotify

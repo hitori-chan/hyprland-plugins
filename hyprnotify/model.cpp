@@ -257,6 +257,8 @@ namespace NHyprnotify {
                 return true;
             if (n->urgency >= 2)
                 return true;
+            if (suspended)
+                return false;
             if (cfg.quietFullscreen->value() && NHyprCommon::fullscreenOn(Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr))
                 return false;
             if (cfg.coalescePopups->value() && appHasBanner(n))
@@ -264,14 +266,15 @@ namespace NHyprnotify {
             return !Policy::silenced(n->appKey);
         }
 
-        void closeOne(uint32_t id, uint32_t reason) {
+        bool closeOne(uint32_t id, uint32_t reason) {
             const auto BEFORE = notifs.size();
             std::erase_if(notifs, [&](const auto& N) { return N->id == id; });
             if (notifs.size() == BEFORE)
-                return;
+                return false;
             Bus::emitClosed(id, reason);
             notifChanged();
             rearmExpiry();
+            return true;
         }
 
         // Only what the user can SEE is sweepable. The DND queue was never
@@ -393,19 +396,25 @@ namespace NHyprnotify {
                         const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout) {
             uint32_t id = replacesId;
 
+            const std::string APP_NAME = Parse::clipUtf8(appName, Parse::MAX_APP_NAME_BYTES);
+            const std::string APP_ICON = Parse::boundedOpaque(appIcon, Parse::MAX_SOURCE_BYTES);
+            const std::string SUMMARY  = Parse::clipUtf8(summary, Parse::MAX_SUMMARY_BYTES);
+            const std::string BODY     = Parse::clipUtf8(body, Parse::MAX_BODY_BYTES);
+
             // Two hints are read before the main parse: the merge decision
             // below needs the grouping key and the category before there is
             // a card to hang them on.
-            const auto strHint = [&](const char* key) -> std::string {
+            const auto strHint = [&](const char* key, const size_t cap, bool opaque = false) -> std::string {
                 if (const auto IT = hints.find(key); IT != hints.end())
                     try {
-                        return IT->second.get<std::string>();
+                        const auto value = IT->second.get<std::string>();
+                        return opaque ? Parse::boundedOpaque(value, cap) : Parse::clipUtf8(value, cap);
                     } catch (...) {}
                 return "";
             };
-            const std::string DESKTOP = strHint("desktop-entry");
-            const std::string APPKEY  = !DESKTOP.empty() ? DESKTOP : appName; // grouping identity
-            const std::string CAT     = strHint("category");
+            const std::string DESKTOP = strHint("desktop-entry", Parse::MAX_SOURCE_BYTES, true);
+            const std::string APPKEY  = !DESKTOP.empty() ? DESKTOP : APP_NAME; // grouping identity
+            const std::string CAT     = strHint("category", Parse::MAX_HINT_TEXT_BYTES, true);
             const bool CONVERSATION   = CAT.starts_with("im.") || CAT == "im" || CAT.starts_with("call.") || CAT == "call";
 
             // THE CONVERSATION MERGE (Android's MessagingStyle): every message
@@ -434,7 +443,7 @@ namespace NHyprnotify {
                         }
                     }
                 if (append) {
-                    const auto SUM = Parse::oneLine(Parse::sanitizeMarkup(summary));
+                    const auto SUM = Parse::oneLine(Parse::sanitizeMarkup(SUMMARY));
                     for (const auto& N : notifs)
                         if (!inOsdBand(N->id) && !vanishes(N) && N->appKey == APPKEY && N->summary == SUM) {
                             id         = N->id;
@@ -443,6 +452,19 @@ namespace NHyprnotify {
                         }
                 }
             }
+
+            // replaces_id names an existing server-owned notification. The
+            // first use of one of our private OSD ids is the one exception:
+            // in-tree OSD senders mark it explicitly, so an ordinary client
+            // cannot enter the reserved band merely by choosing 9990..9999.
+            bool PRIVATE_OSD = false;
+            if (inOsdBand(id))
+                if (const auto IT = hints.find("x-hitori-osd"); IT != hints.end())
+                    try {
+                        PRIVATE_OSD = IT->second.get<bool>();
+                    } catch (...) {}
+            if (id != 0 && !byId(id) && !PRIVATE_OSD)
+                id = 0;
 
             if (id == 0) {
                 // Fresh ids count up from a low counter and skip any that's
@@ -478,12 +500,12 @@ namespace NHyprnotify {
             // so that one card stays the whole conversation; without this the
             // snooze would last precisely until the sender next said anything.
             n->banner  = !n->snoozed;
-            n->appName = appName;
-            n->summary = Parse::oneLine(Parse::sanitizeMarkup(summary));
-            std::string bodyText = body;
+            n->appName = APP_NAME;
+            n->summary = Parse::oneLine(Parse::sanitizeMarkup(SUMMARY));
+            std::string bodyText = BODY;
             n->bodyImages.clear();
-            for (const auto& P : Parse::extractImages(bodyText, std::max(64, (int)cfg.maxIcon->value() * 2)))
-                n->bodyImages.push_back({P});
+            for (auto P : Parse::extractImages(bodyText, std::max(64, (int)cfg.maxIcon->value() * 2)))
+                n->bodyImages.push_back(std::move(P));
             n->body = Parse::sanitizeMarkup(bodyText, /*allowLinks=*/true);
             if (!appendOnto.empty())
                 n->body = Parse::joinAppend(appendOnto, n->body);
@@ -532,11 +554,11 @@ namespace NHyprnotify {
                 for (const auto* KEY : {"image-path", "image_path"})
                     if (const auto IT = hints.find(KEY); IT != hints.end() && cand.empty())
                         try {
-                            cand = IT->second.get<std::string>();
+                            cand = Parse::boundedOpaque(IT->second.get<std::string>(), Parse::MAX_SOURCE_BYTES);
                         } catch (...) {}
                 n->image = Parse::resolveImage(cand, ICONPX);
             }
-            n->identity = Parse::resolveImage(appIcon, ICONPX);
+            n->identity = Parse::resolveImage(APP_ICON, ICONPX);
             if (n->identity.empty() && !DESKTOP.empty())
                 n->identity = Parse::resolveImage(DESKTOP, ICONPX);
             n->appKey = APPKEY;
@@ -546,8 +568,8 @@ namespace NHyprnotify {
             // server advertises the capability, and expects NotificationReplied
             // back. It is NOT a button — it opens the row's reply field.
             n->canReply         = false;
-            n->replyPlaceholder = strHint("x-kde-reply-placeholder-text");
-            n->replySubmitText  = strHint("x-kde-reply-submit-button-text");
+            n->replyPlaceholder = strHint("x-kde-reply-placeholder-text", Parse::MAX_HINT_TEXT_BYTES);
+            n->replySubmitText  = strHint("x-kde-reply-submit-button-text", Parse::MAX_HINT_TEXT_BYTES);
 
             // actions arrive as [id0,label0, id1,label1, ...]. Every named pair
             // becomes a button; "default" is the card's primary and gets NO
@@ -557,21 +579,20 @@ namespace NHyprnotify {
             // what fires it and a button would only duplicate that.
             n->defaultAction.clear();
             n->actions.clear();
-            for (size_t i = 0; i + 1 < actions.size(); i += 2) {
-                if (actions[i] == "default")
-                    n->defaultAction = actions[i];
-                else if (actions[i] == "inline-reply") {
+            for (size_t i = 0, pairs = 0; i + 1 < actions.size() && pairs < Parse::MAX_ACTION_PAIRS; i += 2, pairs++) {
+                const auto ID    = Parse::boundedOpaque(actions[i], Parse::MAX_ACTION_ID_BYTES);
+                const auto LABEL = Parse::clipUtf8(actions[i + 1], Parse::MAX_ACTION_LABEL_BYTES);
+                if (ID.empty())
+                    continue;
+                if (ID == "default")
+                    n->defaultAction = ID;
+                else if (ID == "inline-reply") {
                     n->canReply = true;
                     if (n->replySubmitText.empty())
-                        n->replySubmitText = actions[i + 1]; // the sender's own "Reply" label
-                } else if (!actions[i + 1].empty()) // an empty label has no button to draw
-                    n->actions.push_back(SAction{.id = actions[i], .label = actions[i + 1]});
+                        n->replySubmitText = LABEL; // the sender's own "Reply" label
+                } else if (!LABEL.empty()) // an empty label has no button to draw
+                    n->actions.push_back(SAction{.id = ID, .label = LABEL});
             }
-            // a lone named action doubles as the body-click default; it keeps
-            // its own button too, since it was given a label to show
-            if (n->defaultAction.empty() && n->actions.size() == 1)
-                n->defaultAction = n->actions.front().id;
-
             n->resident = false;
             if (const auto IT = hints.find("resident"); IT != hints.end())
                 try {
@@ -632,11 +653,11 @@ namespace NHyprnotify {
                     } catch (...) {}
                 if (const auto IT = hints.find("sound-file"); IT != hints.end())
                     try {
-                        soundFile = IT->second.get<std::string>();
+                        soundFile = Parse::boundedOpaque(IT->second.get<std::string>(), Parse::MAX_SOURCE_BYTES);
                     } catch (...) {}
                 if (const auto IT = hints.find("sound-name"); IT != hints.end())
                     try {
-                        soundName = IT->second.get<std::string>();
+                        soundName = Parse::boundedOpaque(IT->second.get<std::string>(), Parse::MAX_HINT_TEXT_BYTES);
                     } catch (...) {}
                 if (soundFile.starts_with("file://"))
                     soundFile.erase(0, 7);

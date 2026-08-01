@@ -37,14 +37,16 @@ namespace NHyprnotify {
             return false;
         if (centerVisible())
             for (const auto& N : notifs)
-                if (N->id == s_id)
+                if (N->id == s_id && N->canReply)
                     return true;
         s_id = 0;
         s_text.clear();
         return false;
     }
     bool replyArmedOn(uint32_t id) {
-        return s_id != 0 && s_id == id;
+        if (s_id == 0 || s_id != id)
+            return false;
+        return std::ranges::any_of(notifs, [id](const auto& N) { return N->id == id && N->canReply; });
     }
     const std::string& replyText() {
         return s_text;

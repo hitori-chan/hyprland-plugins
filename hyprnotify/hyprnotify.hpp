@@ -41,6 +41,7 @@
 #include <hyprland/src/helpers/memory/Memory.hpp>
 #include <hyprland/src/helpers/time/Time.hpp>
 #include <hyprland/src/render/Renderer.hpp>
+#include <hyprland/src/render/AsyncResourceGatherer.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/Texture.hpp>
 #include <hyprland/src/render/pass/PassElement.hpp>
@@ -67,6 +68,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -79,7 +81,7 @@ namespace NHyprnotify {
     extern HANDLE PHANDLE;
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.10.0";
+    inline constexpr const char* VERSION = "6.10.2";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -137,6 +139,8 @@ namespace NHyprnotify {
         std::string  label;   // localized button text
         SP<ITexture> iconTex; // resolved action-icon (warm; action-icons only)
         std::string  iconFor; // staleness: the id the icon was resolved from
+        int          iconPx = 0;
+        bool         iconSettled = false; // current request decoded or failed
     };
 
     // a body hyperlink (<a href>): a clickable region opening its URL
@@ -148,8 +152,11 @@ namespace NHyprnotify {
     // a body <img src>: a thumbnail rendered below the text
     struct SBodyImage {
         std::string  src;      // resolved file path
+        std::string  alt;      // alt text kept as body fallback when image load fails
         SP<ITexture> tex;      // built by warm
-        std::string  builtFor; // staleness: the src the tex was built from
+        std::string  builtFor; // staleness: the source + target cap
+        int          builtPx = 0;
+        bool         settled = false; // current request decoded or failed
     };
 
     struct SNotif {
@@ -200,25 +207,46 @@ namespace NHyprnotify {
         SP<ITexture> iconTex;  // content avatar (or hero)
         SP<ITexture> identTex; // identity icon: the corner badge, or the lead icon when no content
         std::string  imageFor, identFor;
+        int          imageIconPx = 0, imageHeroWPx = 0, imageHeroHCapPx = 0;
+        int          identIconPx = 0;
+        bool         imageSettled = false, identSettled = false;
         bool         heroTex   = false; // iconTex was built for the hero layout
         uint64_t     pixelsFor = 0;
+        int          pixelsIconPx = 0, pixelsHeroWPx = 0, pixelsHeroHCapPx = 0;
     };
     extern std::vector<SP<SNotif>> notifs;
 
     // ---- parse.cpp: the untrusted payload -> values a card can hold ----
 
     namespace Parse {
+        // The D-Bus transport has already accepted a Notify before this code
+        // runs. These limits bound the work and state the compositor retains.
+        inline constexpr size_t MAX_APP_NAME_BYTES     = 256;
+        inline constexpr size_t MAX_SUMMARY_BYTES      = 2048;
+        inline constexpr size_t MAX_BODY_BYTES         = 8192;
+        inline constexpr size_t MAX_HINT_TEXT_BYTES    = 1024;
+        inline constexpr size_t MAX_SOURCE_BYTES       = 4096;
+        inline constexpr size_t MAX_ACTION_ID_BYTES    = 256;
+        inline constexpr size_t MAX_ACTION_LABEL_BYTES = 1024;
+        inline constexpr size_t MAX_ACTION_PAIRS       = 12;
+        inline constexpr size_t MAX_BODY_IMAGES        = 4;
+        inline constexpr size_t MAX_MARKUP_TAG_BYTES   = 1024;
+
         // the spec's image-data: width, height, rowstride, has_alpha,
         // bits_per_sample, channels, RGB(A) bytes
         using ImageData = sdbus::Struct<int32_t, int32_t, int32_t, bool, int32_t, int32_t, std::vector<uint8_t>>;
 
-        std::string              sanitizeMarkup(const std::string& in, bool allowLinks = false);
+        std::string              clipUtf8(std::string_view in, size_t maxBytes);
+        std::string              boundedOpaque(std::string_view in, size_t maxBytes);
+        std::string              sanitizeMarkup(std::string_view in, bool allowLinks = false);
         std::string              oneLine(std::string s);
         std::string              resolveImage(std::string s, int sizePx); // path, file://, or a themed icon NAME
-        std::vector<std::string> extractImages(std::string& body, int sizePx); // pulls <img src> out of the body
+        std::vector<SBodyImage>  extractImages(std::string& body, int sizePx); // pulls <img src alt> out of the body
         void                     unpackImageData(SNotif& n, const ImageData& d, int capPx); // -> premultiplied BGRA
         std::string              joinAppend(const std::string& oldBody, const std::string& add);
     }
+
+    void textCacheClear();
 
     // ---- model.cpp: the cards and their lifetimes ----
 
@@ -235,7 +263,7 @@ namespace NHyprnotify {
         uint32_t arrive(const std::string& appName, uint32_t replacesId, const std::string& appIcon, const std::string& summary, const std::string& body,
                         const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout);
 
-        void                          closeOne(uint32_t id, uint32_t reason);
+        bool                          closeOne(uint32_t id, uint32_t reason);
         void                          dismissAllLive();                      // "Clear all": every visible card goes; the DND queue stays
         void                          dismissApp(const std::string& appKey); // a bundle's right-click
         void                          absorbPopped();                        // opening the shade parks the popped stack (no re-pop on close)
@@ -290,6 +318,8 @@ namespace NHyprnotify {
     // sources changed. iconPx caps the icon-box raster; content sources wider
     // than HERO_ASPECT (and at least half the hero box) raster to heroWPx
     // instead, cover-cropped to heroHCapPx, and set heroTex.
+    void iconsInit();
+    void iconsExit();
     void resetFallbackCache(); // forget the fallback_icon_dir listing (a config reload rescans)
     void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx);
 
@@ -300,6 +330,12 @@ namespace NHyprnotify {
     // (Re)build a body <img> thumbnail when its src changed. maxPx caps the
     // decoded raster.
     void ensureBodyImage(SBodyImage& im, int maxPx);
+
+    // Mark ready asynchronous sources for this warm, then release the ones
+    // consumed or superseded by it. True means a queue slot opened for a
+    // deferred visible request and a follow-up warm is needed.
+    void iconsWarmBegin();
+    bool iconsWarmEnd();
 
     // ---- render.cpp ----
 

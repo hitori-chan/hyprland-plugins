@@ -136,6 +136,7 @@ namespace NHyprnotify {
     std::string        hexOf(const CHyprColor& c);
     std::string        lastLine(const std::string& body); // the collapsed one-liner: the newest message
     std::string        ageString(const Time::steady_tp& t); // bucketed: "now", "5m", "2h", "3d"
+    const std::string& bodyForDisplay(const SNotif& n); // image alt text after a failed local decode
 
     // the layout passes compose row strings per frame: build them into a
     // reused buffer (capacity retained; ONE composition live at a time) and

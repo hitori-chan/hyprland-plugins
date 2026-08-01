@@ -22,7 +22,7 @@ namespace NHyprnotify {
 
     double renderPopups(const SPaint& P, const SType& T, bool osdOnly, std::optional<double> startY, bool measureOnly) {
         const auto   MB      = P.mon->logicalBox();
-        const double W       = std::max((double)cfg.width->value(), 120.0);
+        const double W       = std::max(1.0, std::min(std::max((double)cfg.width->value(), 120.0), std::max(1.0, MB.w - 2 * EDGE)));
         const double MAXH    = std::max((double)cfg.maxHeight->value(), 60.0);
         const double GAP     = std::max((double)cfg.margin->value(), 0.0);
         const double MAXICON = std::clamp((double)cfg.maxIcon->value(), 16.0, 64.0);
@@ -34,7 +34,7 @@ namespace NHyprnotify {
         const CHyprColor COLBODY = COLFG.modifyA(COLFG.a * 0.92);
 
         const double X     = MB.x + MB.w - EDGE - W;
-        const double START = startY.value_or(MB.y + (double)cfg.offsetY->value());
+        const double START = startY.value_or(MB.y + std::clamp((double)cfg.offsetY->value(), 0.0, std::max(0.0, MB.h - 2 * PADY)));
         double       y     = START;
 
         for (const auto& N : notifs) {
@@ -42,8 +42,9 @@ namespace NHyprnotify {
                 continue;
             if (N->waiting || !N->banner)
                 continue; // residency: only banners show as popups
-            if (!measureOnly && y + 2 * PADY > MB.y + MB.h)
+            if (y + 2 * PADY > MB.y + MB.h)
                 break; // no room: the tail waits off-screen, timeouts running
+            const double CARDH = std::min(MAXH, std::max(2 * PADY, MB.y + MB.h - y - 2 * PADY));
 
             const bool CRITICAL = N->urgency >= 2;
             const auto AGE      = ageString(N->arrived);
@@ -54,7 +55,7 @@ namespace NHyprnotify {
                 ensureIconTex(*N, (int)std::lround(MAXICON * P.scale), (int)std::lround(W * P.scale), (int)std::lround(HERO_CAP * P.scale));
 
             const bool   HERO  = N->iconTex && N->heroTex;
-            const double HEROH = HERO ? N->iconTex->m_size.y / P.scale : 0;
+            const double HEROH = HERO ? std::min(N->iconTex->m_size.y / P.scale, std::max(0.0, CARDH - 2 * PADY)) : 0;
 
             // ONE icon column (paintIconColumn): the avatar leads and the app
             // identity badges its corner. A wide content image goes hero instead.
@@ -132,11 +133,12 @@ namespace NHyprnotify {
             // OUTSIDE the glass once actions and thumbnails stacked up (the
             // 02359ed lesson; a one-line floor keeps hostile configs sane)
             const double HH = texH(HEADER, P.scale), TH = texH(TITLE, P.scale);
-            const double AVAIL = MAXH - 2 * PADY - (HERO ? HEROH : 0) - HH - (HH > 0 ? HEAD_GAP : 0) - TH - TITLE_GAP - (N->progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0) -
+            const double AVAIL = CARDH - 2 * PADY - (HERO ? HEROH : 0) - HH - (HH > 0 ? HEAD_GAP : 0) - TH - TITLE_GAP - (N->progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0) -
                 BTN_BLOCK - IMG_BLOCK;
             const int  LINEPX  = (int)std::lround(T.body * 1.35);
-            const int  BODYCAP = std::max(LINEPX, std::min(LINEPX * 8, (int)std::floor(AVAIL * P.scale)));
-            const auto BODY    = N->body.empty() ? nullptr : cachedText(N->body, COLBODY, T.body, TEXTWPX, BODYCAP, 1.1f, true, 400, &COLLINK);
+            const int  BODYCAP  = std::min(LINEPX * 8, std::max(0, (int)std::floor(AVAIL * P.scale)));
+            const auto& BODYTEXT = bodyForDisplay(*N);
+            const auto BODY     = BODYTEXT.empty() || BODYCAP < LINEPX ? nullptr : cachedText(BODYTEXT, COLBODY, T.body, TEXTWPX, BODYCAP, 1.1f, true, 400, &COLLINK);
 
             const double BH = texH(BODY, P.scale);
             double       th = HH + (HH > 0 ? HEAD_GAP : 0) + TH + (TH > 0 && BH > 0 ? TITLE_GAP : 0) + BH + IMG_BLOCK;
@@ -144,7 +146,7 @@ namespace NHyprnotify {
                 th += (th > 0 ? PROGRESS_GAP : 0) + PROGRESS_H;
             th += BTN_BLOCK;
 
-            const double CH = HERO ? HEROH + PADY + std::min(th, MAXH - HERO_TEXT_MIN) + PADY : std::min(MAXH, std::max(ICONW, th) + 2 * PADY);
+            const double CH = HERO ? HEROH + PADY + std::min(th, std::max(0.0, CARDH - HERO_TEXT_MIN)) + PADY : std::min(CARDH, std::max(ICONW, th) + 2 * PADY);
 
             // per-card arrival motion: fade + an 8px drop. Keyed on `born`,
             // never `arrived` — an OSD replace refreshes arrived every step

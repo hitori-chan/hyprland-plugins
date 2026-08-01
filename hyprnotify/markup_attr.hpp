@@ -9,7 +9,7 @@ namespace NHyprnotify::Parse {
 
     // Attribute names are tokens, not substrings: src must not match data-src
     // or srcset. Only quoted values are accepted by the markup subset.
-    inline std::string attrValue(const std::string& tag, const std::string& attr) {
+    inline std::string attrValue(std::string_view tag, std::string_view attr) {
         if (tag.empty() || tag.front() != '<')
             return "";
 
@@ -74,7 +74,7 @@ namespace NHyprnotify::Parse {
             if (VALUE_END == std::string::npos || tag.find('>', VALUE_START) < VALUE_END)
                 return "";
             if (equalName(NAME, attr))
-                return tag.substr(VALUE_START, VALUE_END - VALUE_START);
+                return std::string{tag.substr(VALUE_START, VALUE_END - VALUE_START)};
             pos = VALUE_END + 1;
         }
         return "";

@@ -8,6 +8,14 @@ external process, no layer surface. Capabilities: `actions`, `action-icons`,
 (`common/theme.hpp`): frosted graphite cards with live blur, IBM Plex Sans,
 superellipse corners.
 
+Incoming notification text, paths, actions, and body images have explicit
+retention limits; malformed markup is scanned once within the body cap.
+File-backed images decode asynchronously through Hyprland's native resource
+gatherer and upload only from a later warm pass. See
+[`docs/hyprnotify.md`](../docs/hyprnotify.md#input-bounds) for the limits.
+`fallback_icon_dir` discovery follows the same off-thread, bounded handoff
+model.
+
 Two surfaces share one card model:
 
 1. **Popups (banners)** — glass cards top-right on the focused monitor, the

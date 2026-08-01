@@ -62,10 +62,13 @@ namespace NHyprnotify {
             MEASURE.warm       = true; // layout only: never paint in the probe
             const double GAP   = std::max((double)cfg.margin->value(), 0.0);
             const double OSDH  = renderPopups(MEASURE, T, true, std::nullopt, true);
-            centerOsdReserve   = OSDH > 0 ? OSDH + GAP : 0;
+            const auto     MB  = mon->logicalBox();
+            const double   MIN = BODY_PADT + BODY_PADB + BAR_PADT + BAR_BTN + BAR_PADB;
+            const double   OFF = std::clamp((double)cfg.offsetY->value(), 0.0, std::max(0.0, MB.h - MIN));
+            const double   ROOM = std::max(0.0, MB.h - OFF - MIN - GAP);
+            centerOsdReserve   = std::min(OSDH > 0 ? OSDH + GAP : 0.0, ROOM);
             renderCenter(P, T);
-            const auto   MB     = mon->logicalBox();
-            const double STARTY = MB.y + (double)cfg.offsetY->value() + lastContentH + GAP;
+            const double STARTY = MB.y + std::clamp((double)cfg.offsetY->value(), 0.0, std::max(0.0, MB.h - MIN)) + lastContentH + GAP;
             renderPopups(P, T, true, STARTY);
         } else {
             centerOsdReserve = 0;
@@ -144,6 +147,7 @@ namespace NHyprnotify {
     void warmNotifs() {
         if (!warmGate.beginWarm())
             return;
+        iconsWarmBegin();
         const auto MON = anythingToDraw() ? focusedMon() : nullptr;
         if (!MON) {
             // no content — or no monitor (disconnect transition): stale boxes
@@ -155,7 +159,10 @@ namespace NHyprnotify {
             renderAll(MON, true);
             textCacheSweep();
         }
+        const bool REWARM = iconsWarmEnd();
         warmGate.endWarm();
+        if (REWARM)
+            notifChanged();
     }
 
     void notifChanged() {

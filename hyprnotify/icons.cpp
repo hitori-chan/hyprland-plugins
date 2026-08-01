@@ -1,6 +1,7 @@
 // hyprnotify/icons.cpp — notification images: content avatars and identity
 // icons via hyprgraphics, raw image-data pixmaps
 
+#include "common/fileindex.hpp"
 #include "common/icons.hpp"
 
 #include "hyprnotify.hpp"
@@ -10,35 +11,179 @@
 
 namespace NHyprnotify {
 
-    // ---- fallback_icon_dir: iconless cards wear a face (the left identity) ----
+    namespace {
+        // The gatherer owns one worker for the compositor. Keep this plugin's
+        // contribution finite, including replaced/deleted cards whose decode
+        // cannot be cancelled after enqueue.
+        constexpr size_t MAX_PENDING_IMAGE_RESOURCES = 24;
+        constexpr size_t MAX_IMAGE_FILE_BYTES        = 32 * 1024 * 1024;
+        constexpr double MAX_DECODED_IMAGE_PIXELS    = 16.0 * 1024 * 1024;
 
-    static std::vector<std::string> fallbackFiles;
-    static bool                     fallbackScanned = false;
+        struct SDecodeJob {
+            std::string                            source;
+            ASP<Hyprgraphics::CImageResource>      resource;
+            bool                                   rejected          = false;
+            bool                                   readyAtWarmStart = false;
+            bool                                   usedThisWarm     = false;
+        };
+
+        struct SFileTexResult {
+            SP<ITexture> texture;
+            bool         settled = false;
+            bool         hero    = false;
+        };
+
+        std::vector<SDecodeJob>   decodeJobs;
+        SP<CEventLoopTimer>       decodePoll;
+        bool                      waitedForDecodeSlot = false;
+
+        constexpr size_t          MAX_FALLBACK_FILES   = 2048;
+        constexpr size_t          MAX_FALLBACK_VISITED = 65536;
+        NHyprCommon::CAsyncFileIndex fallbackIndex;
+        std::vector<std::string>    fallbackFiles;
+        uint64_t                    fallbackGeneration = 0;
+        bool                        fallbackScanning   = false;
+        std::string                 fallbackDirectory;
+
+        static bool resourceReady(const SDecodeJob& job) {
+            return job.rejected || (job.resource && job.resource->m_ready.load(std::memory_order_acquire));
+        }
+
+        static bool admissibleImageFile(const std::string& source) {
+            std::error_code ec;
+            const auto      status = std::filesystem::status(source, ec);
+            if (ec || !std::filesystem::is_regular_file(status))
+                return false;
+            const auto bytes = std::filesystem::file_size(source, ec);
+            return !ec && bytes <= MAX_IMAGE_FILE_BYTES;
+        }
+
+        static void armDecodePoll() {
+            if (!decodePoll)
+                return;
+            const bool PENDING = fallbackScanning || std::ranges::any_of(decodeJobs, [](const auto& job) { return !resourceReady(job); });
+            decodePoll->updateTimeout(PENDING ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
+        }
+
+        static void pollDecodeJobs() {
+            bool becameReady = false;
+            for (auto& job : decodeJobs) {
+                const bool READY = resourceReady(job);
+                becameReady |= READY && !job.readyAtWarmStart;
+                job.readyAtWarmStart |= READY;
+            }
+            if (fallbackScanning) {
+                std::vector<NHyprCommon::CAsyncFileIndex::SEntry> found;
+                const bool COMPLETE = fallbackIndex.poll(fallbackGeneration, found, 32);
+                for (const auto& entry : found)
+                    fallbackFiles.push_back(entry.path.string());
+                fallbackScanning = !COMPLETE;
+                becameReady |= !found.empty();
+            }
+            armDecodePoll();
+            if (becameReady)
+                notifChanged();
+        }
+
+        static SDecodeJob* decodeJobFor(const std::string& source) {
+            if (const auto it = std::ranges::find(decodeJobs, source, &SDecodeJob::source); it != decodeJobs.end())
+                return &*it;
+            if (decodeJobs.size() >= MAX_PENDING_IMAGE_RESOURCES) {
+                waitedForDecodeSlot = true;
+                return nullptr;
+            }
+            if (!g_pAsyncResourceGatherer)
+                return nullptr;
+            if (!admissibleImageFile(source)) {
+                decodeJobs.push_back(SDecodeJob{.source = source, .rejected = true});
+                return &decodeJobs.back();
+            }
+
+            auto resource = makeAtomicShared<Hyprgraphics::CImageResource>(source);
+            g_pAsyncResourceGatherer->enqueue(resource);
+            decodeJobs.emplace_back(source, std::move(resource));
+            armDecodePoll();
+            return &decodeJobs.back();
+        }
+    }
+
+    void iconsInit() {
+        decodeJobs.clear();
+        decodeJobs.reserve(MAX_PENDING_IMAGE_RESOURCES);
+        if (!g_pEventLoopManager)
+            return;
+        decodePoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { pollDecodeJobs(); }, nullptr);
+        g_pEventLoopManager->addTimer(decodePoll);
+    }
+
+    void iconsExit() {
+        if (decodePoll && g_pEventLoopManager)
+            g_pEventLoopManager->removeTimer(decodePoll);
+        decodePoll.reset();
+        decodeJobs.clear();
+        fallbackIndex.exit();
+        fallbackFiles.clear();
+        fallbackDirectory.clear();
+        fallbackScanning = false;
+        waitedForDecodeSlot = false;
+    }
+
+    void iconsWarmBegin() {
+        waitedForDecodeSlot = false;
+        for (auto& job : decodeJobs) {
+            job.readyAtWarmStart = resourceReady(job);
+            job.usedThisWarm     = false;
+        }
+    }
+
+    bool iconsWarmEnd() {
+        bool becameReadyDuringWarm = false;
+        bool released              = false;
+        std::erase_if(decodeJobs, [&](const auto& job) {
+            const bool READY = resourceReady(job);
+            becameReadyDuringWarm |= READY && !job.readyAtWarmStart;
+            const bool DROP = READY && (job.readyAtWarmStart || job.usedThisWarm);
+            released |= DROP;
+            return DROP;
+        });
+        armDecodePoll();
+        return becameReadyDuringWarm || (released && waitedForDecodeSlot);
+    }
+
+    // ---- fallback_icon_dir: iconless cards wear a face (the left identity) ----
 
     void                            resetFallbackCache() {
         fallbackFiles.clear();
-        fallbackScanned = false;
+        fallbackDirectory.clear();
+        fallbackScanning = false;
+        fallbackIndex.cancel(++fallbackGeneration);
+        for (const auto& N : notifs) {
+            N->fallbackPick.clear();
+            N->identFor.clear();
+            N->identIconPx = 0;
+            N->identSettled = false;
+            N->identTex.reset();
+        }
     }
 
     // One roll per card (bus keeps the pick across in-place replaces). The
-    // listing is scanned once per config life, from the warm pass — never
-    // the render or a bus dispatch.
+    // scan starts from warm but its bounded file walk stays off the compositor
+    // thread; the timer above only adopts ready path batches.
     static std::string pickFallback() {
         const auto DIR = cfg.fallbackIconDir->value();
         if (DIR.empty())
             return "";
-        if (!fallbackScanned) {
-            fallbackScanned = true;
-            std::error_code ec;
-            for (auto it = std::filesystem::recursive_directory_iterator(DIR, std::filesystem::directory_options::skip_permission_denied, ec); !ec && it != std::filesystem::end(it);
-                 it.increment(ec)) {
-                if (!it->is_regular_file(ec))
-                    continue;
-                auto ext = it->path().extension().string();
-                std::ranges::transform(ext, ext.begin(), [](unsigned char c) { return std::tolower(c); });
-                if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".webp" || ext == ".bmp" || ext == ".avif" || ext == ".jxl" || ext == ".svg")
-                    fallbackFiles.push_back(it->path().string());
-            }
+        if (fallbackDirectory != DIR) {
+            fallbackFiles.clear();
+            fallbackDirectory = DIR;
+            fallbackScanning = true;
+            fallbackIndex.request({.generation = ++fallbackGeneration,
+                                   .roots = {DIR},
+                                   .extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".avif", ".jxl", ".svg"},
+                                   .maxEntries = MAX_FALLBACK_FILES,
+                                   .maxVisited = MAX_FALLBACK_VISITED,
+                                   .recursive = true});
+            armDecodePoll();
         }
         if (fallbackFiles.empty())
             return "";
@@ -97,26 +242,31 @@ namespace NHyprnotify {
         return heroWPx > 0 && sh > 0 && sw / sh >= HERO_ASPECT && sw * 2 >= heroWPx;
     }
 
-    // CImage's size hint only bounds SVG rasters; raster formats decode full
-    // size transiently and get scaled here.
-    static SP<ITexture> fileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool& hero) {
-        const int            HINT = std::max(iconPx, heroWPx);
-        Hyprgraphics::CImage image(path, Vector2D{(double)HINT, (double)HINT});
-        if (!image.success())
-            return nullptr;
+    // CImageResource decodes on the compositor-owned gatherer. The warm pass
+    // only scales the ready bounded result and uploads its texture.
+    static SFileTexResult fileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx) {
+        const auto JOB = decodeJobFor(path);
+        if (!JOB || !resourceReady(*JOB))
+            return {};
+        JOB->usedThisWarm = true;
 
-        const auto SURF = image.cairoSurface();
+        SFileTexResult result{.settled = true};
+        if (JOB->rejected)
+            return result;
+        const auto     SURF = JOB->resource->m_asset.cairoSurface;
         if (!SURF || SURF->status() != CAIRO_STATUS_SUCCESS)
-            return nullptr;
+            return result;
 
         const auto SZ = SURF->size();
-        if (SZ.x <= 0 || SZ.y <= 0)
-            return nullptr;
+        if (SZ.x <= 0 || SZ.y <= 0 || SZ.x * SZ.y > MAX_DECODED_IMAGE_PIXELS)
+            return result;
 
-        hero = heroWorthy(SZ.x, SZ.y, heroWPx);
-        if (hero)
-            return coverTex(SURF->cairo(), SZ.x, SZ.y, heroWPx, std::min((int)std::lround(heroWPx * SZ.y / SZ.x), heroHCapPx));
-        return scaledTex(SURF->cairo(), SZ.x, SZ.y, iconPx);
+        result.hero = heroWorthy(SZ.x, SZ.y, heroWPx);
+        if (result.hero)
+            result.texture = coverTex(SURF->cairo(), SZ.x, SZ.y, heroWPx, std::min((int)std::lround(heroWPx * SZ.y / SZ.x), heroHCapPx));
+        else
+            result.texture = scaledTex(SURF->cairo(), SZ.x, SZ.y, iconPx);
+        return result;
     }
 
     static uint64_t fnv1a(const void* data, size_t len, uint64_t h) {
@@ -138,10 +288,18 @@ namespace NHyprnotify {
         // identity is icon-box only — a wide waifu never goes hero.
         if (!n.identity.empty()) {
             n.fallbackPick.clear();
-            if (n.identFor != n.identity) { // remembers a failed load too: no disk retry per warm
-                bool hero  = false;
-                n.identTex = fileTex(n.identity, iconPx, 0, 0, hero);
+            if (n.identFor != n.identity || n.identIconPx != iconPx) {
+                n.identTex.reset();
                 n.identFor = n.identity;
+                n.identIconPx = iconPx;
+                n.identSettled = false;
+            }
+            if (!n.identSettled) {
+                const auto TEX = fileTex(n.identity, iconPx, 0, 0);
+                if (TEX.settled) {
+                    n.identTex = TEX.texture;
+                    n.identSettled = true;
+                }
             }
         } else {
             if (n.fallbackPick.empty())
@@ -149,21 +307,35 @@ namespace NHyprnotify {
             if (n.fallbackPick.empty()) {
                 n.identTex.reset();
                 n.identFor.clear();
+                n.identIconPx = 0;
+                n.identSettled = true;
             } else if (n.identFor != n.fallbackPick) {
-                bool hero  = false;
-                n.identTex = fileTex(n.fallbackPick, iconPx, 0, 0, hero);
+                n.identTex.reset();
                 n.identFor = n.fallbackPick;
+                n.identIconPx = iconPx;
+                n.identSettled = false;
+            } else if (n.identIconPx != iconPx) {
+                n.identTex.reset();
+                n.identIconPx = iconPx;
+                n.identSettled = false;
+            }
+            if (!n.identSettled) {
+                const auto TEX = fileTex(n.fallbackPick, iconPx, 0, 0);
+                if (TEX.settled) {
+                    n.identTex = TEX.texture;
+                    n.identSettled = true;
+                }
             }
         }
 
         if (n.hasPixels) {
             if (n.pixels.empty())
-                return; // uploaded by an earlier warm; the texture carries it now
+                return; // malformed input was rejected before a source was retained
 
             uint64_t h = fnv1a(n.pixels.data(), n.pixels.size(), 0xcbf29ce484222325ULL);
             h          = fnv1a(&n.pw, sizeof(n.pw), h);
             h          = fnv1a(&n.ph, sizeof(n.ph), h);
-            if (!n.iconTex || n.pixelsFor != h) {
+            if (!n.iconTex || n.pixelsFor != h || n.pixelsIconPx != iconPx || n.pixelsHeroWPx != heroWPx || n.pixelsHeroHCapPx != heroHCapPx) {
                 n.heroTex = heroWorthy(n.pw, n.ph, heroWPx);
                 if (n.heroTex || n.pw > iconPx || n.ph > iconPx) {
                     // stride pw*4 is how unpackImageData lays the buffer out
@@ -178,8 +350,15 @@ namespace NHyprnotify {
                 } else
                     n.iconTex = g_pHyprRenderer->createTexture(DRM_FORMAT_ARGB8888, n.pixels.data(), n.pw * 4, Vector2D{(double)n.pw, (double)n.ph});
                 n.pixelsFor = h;
+                n.pixelsIconPx = iconPx;
+                n.pixelsHeroWPx = heroWPx;
+                n.pixelsHeroHCapPx = heroHCapPx;
                 n.imageFor.clear();
+                n.imageSettled = false;
             }
+            // The GPU texture owns the uploaded result now. Retaining the
+            // D-Bus-sized source buffer across warms defeats the admission
+            // bound and keeps the last raw image alive until replacement.
             n.pixels.clear();
             n.pixels.shrink_to_fit();
             return;
@@ -191,51 +370,83 @@ namespace NHyprnotify {
             n.iconTex.reset();
             n.imageFor.clear();
             n.pixelsFor = 0;
+            n.pixelsIconPx = n.pixelsHeroWPx = n.pixelsHeroHCapPx = 0;
+            n.imageSettled = true;
             n.heroTex   = false;
             return;
         }
-        if (n.imageFor == n.image) // also remembers a failed load: no disk retry per warm
-            return;
-        bool hero   = false;
-        n.iconTex   = fileTex(n.image, iconPx, heroWPx, heroHCapPx, hero);
-        n.imageFor  = n.image;
-        n.pixelsFor = 0;
-        n.heroTex   = hero;
+        if (n.imageFor != n.image || n.imageIconPx != iconPx || n.imageHeroWPx != heroWPx || n.imageHeroHCapPx != heroHCapPx) {
+            n.iconTex.reset();
+            n.imageFor  = n.image;
+            n.pixelsFor = 0;
+            n.imageIconPx = iconPx;
+            n.imageHeroWPx = heroWPx;
+            n.imageHeroHCapPx = heroHCapPx;
+            n.imageSettled = false;
+            n.heroTex = false;
+        }
+        if (!n.imageSettled) {
+            const auto TEX = fileTex(n.image, iconPx, heroWPx, heroHCapPx);
+            if (TEX.settled) {
+                n.iconTex = TEX.texture;
+                n.heroTex = TEX.hero;
+                n.imageSettled = true;
+            }
+        }
     }
 
     void ensureActionIcon(SNotif& n, SAction& a, int iconPx) {
         if (!n.actionIcons) {
             a.iconTex.reset();
             a.iconFor.clear(); // so re-enabling the hint rebuilds
+            a.iconSettled = false;
             return;
         }
-        if (a.iconFor == a.id) // also remembers a failed resolve: no rescan per warm
+        if (a.iconFor != a.id || a.iconPx != iconPx) {
+            a.iconFor = a.id;
+            a.iconPx = iconPx;
+            a.iconTex.reset();
+            a.iconSettled = false;
+        }
+        if (a.iconSettled)
             return;
-        a.iconFor = a.id;
-        a.iconTex.reset();
 
         std::string path = a.id;
         if (path.starts_with("file://"))
             path.erase(0, 7);
         if (!path.starts_with('/'))
             path = NHyprCommon::resolveIconName(a.id, iconPx);
-        if (path.empty())
+        if (path.empty()) {
+            a.iconSettled = true;
             return;
-        bool hero = false;
-        a.iconTex = fileTex(path, iconPx, 0, 0, hero); // icon box only, never hero
+        }
+        const auto TEX = fileTex(path, iconPx, 0, 0); // icon box only, never hero
+        if (TEX.settled) {
+            a.iconTex = TEX.texture;
+            a.iconSettled = true;
+        }
     }
 
     void ensureBodyImage(SBodyImage& im, int maxPx) {
         if (im.src.empty()) {
             im.tex.reset();
             im.builtFor.clear();
+            im.settled = false;
             return;
         }
-        if (im.builtFor == im.src) // remembers a failed load too: no disk retry per warm
+        if (im.builtFor != im.src || im.builtPx != maxPx) {
+            im.builtFor = im.src;
+            im.builtPx = maxPx;
+            im.tex.reset();
+            im.settled = false;
+        }
+        if (im.settled)
             return;
-        im.builtFor = im.src;
-        bool hero   = false;
-        im.tex      = fileTex(im.src, maxPx, 0, 0, hero); // fit a box, never hero
+        const auto TEX = fileTex(im.src, maxPx, 0, 0); // fit a box, never hero
+        if (TEX.settled) {
+            im.tex = TEX.texture;
+            im.settled = true;
+        }
     }
 
 } // namespace NHyprnotify

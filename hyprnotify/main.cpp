@@ -72,6 +72,11 @@ namespace NHyprnotify {
     static std::vector<UP<SChild>> children;
     static std::vector<pid_t>      spawnOrphans; // couldn't-watch children; polled only while non-empty
     static SP<CEventLoopTimer>     orphanTick;
+    constexpr size_t               MAX_CHILDREN = 64;
+
+    static size_t trackedChildren() {
+        return children.size() + spawnOrphans.size();
+    }
 
     static void armOrphanTick() {
         if (!orphanTick || !g_pEventLoopManager)
@@ -101,6 +106,8 @@ namespace NHyprnotify {
         if (argv.empty() || !argv[0])
             return;
         reapOrphans();
+        if (trackedChildren() >= MAX_CHILDREN)
+            return; // bounded admission: do not create an unowned child
         if (argv.back())
             argv.push_back(nullptr); // execv needs the null terminator
 
@@ -265,6 +272,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     Policy::init(); // the user's rules load before the first arrival is judged
     Model::init();  // and the expiry timer stands before anything can arrive
     Bus::init();
+    iconsInit();
     orphanTick = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { reapOrphans(); }, nullptr);
     g_pEventLoopManager->addTimer(orphanTick);
     renderInit();
@@ -319,6 +327,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_lifecycle.listen(EV.config.reloaded, []() {
         NHyprCommon::resetIconNameCache();
         resetFallbackCache();
+        textCacheClear();
         if (!notifs.empty() || centerVisible())
             notifChanged(); // a live theme reload re-keys the texture caches
     });
@@ -334,6 +343,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
         HyprlandAPI::unregisterHyprCtlCommand(PHANDLE, ctlCmd);
     ctlCmd.reset();
     Bus::exit();    // the connection first: nothing may arrive mid-teardown
+    iconsExit();    // no timer or retained worker resource may outlive us
     Model::exit();  // then the cards, and their textures with them
     Policy::exit(); // the rules outlive all of it, so they flush last
     inputExit();

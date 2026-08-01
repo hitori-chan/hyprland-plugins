@@ -33,6 +33,9 @@ namespace NHyprnotify {
         // build inside a render (crash class 4). Only the real warm may create.
         if (warmGate.warming)
             ensureIconTex(*N, (int)std::lround(std::max(ST.iconPx, (double)cfg.maxIcon->value()) * P.scale), 0, 0);
+        if (warmGate.warming)
+            for (auto& IM : N->bodyImages)
+                ensureBodyImage(IM, (int)std::lround(BODYIMG_H * P.scale));
 
         const bool   LEADICON = hasLeadIcon(*N);
         const double ICONW    = LEADICON ? ST.iconPx : 0;
@@ -55,7 +58,7 @@ namespace NHyprnotify {
             SB += AGE;
             SB += "</span>";
             const auto LINE = cachedText(SB, COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
-            const auto B1S  = lastLine(N->body);
+            const auto B1S  = lastLine(bodyForDisplay(*N));
             const auto B1   = B1S.empty() ? nullptr : cachedText(B1S, COLBODY, T.body, TEXTWPX, -1, 0, true, 400);
             th              = texH(LINE, P.scale) + (B1 ? 2 + texH(B1, P.scale) : 0) + (N->progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0);
             if (!P.warm) {
@@ -94,7 +97,8 @@ namespace NHyprnotify {
             // linkCol collects the <a href> rects: without them a body click
             // meant for a URL would fire the card's primary instead
             const auto COLLINK = color(cfg.colLink);
-            const auto BODY    = N->body.empty() ? nullptr : cachedText(N->body, COLBODY, T.body, TEXTWPX, CAPL, 1.1f, true, 400, &COLLINK);
+            const auto& BODYTEXT = bodyForDisplay(*N);
+            const auto BODY    = BODYTEXT.empty() ? nullptr : cachedText(BODYTEXT, COLBODY, T.body, TEXTWPX, CAPL, 1.1f, true, 400, &COLLINK);
 
             // The reply affordance is a chip among the buttons until it is
             // armed, and then the field takes a row of its own instead.

@@ -127,7 +127,8 @@ namespace NHyprnotify::Bus {
                            sdbus::registerMethod("CloseNotification").withInputParamNames("id").implementedAs([](uint32_t id) {
                                if (cfg.ignoreDbusClose->value())
                                    return;
-                               Model::closeOne(id, Model::R_CLOSED);
+                               if (!Model::closeOne(id, Model::R_CLOSED))
+                                   throw sdbus::Error{sdbus::Error::Name{"org.freedesktop.Notifications.Error"}, "Unknown notification ID"};
                                emitStateSoon();
                            }),
                            sdbus::registerMethod("GetCapabilities").withOutputParamNames("capabilities").implementedAs([]() {

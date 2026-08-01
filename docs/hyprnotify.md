@@ -27,16 +27,30 @@ icons).
 
 ## Markup
 
-- Body and title render the whitelisted Pango subset: `<b> <i> <u> <span>
-  <br>`. Other tags are dropped; a stray `<`/`&` that forms no tag or entity
-  survives as literal text, so a markup-aware sender and a naive one both
-  come out right. Malformed markup falls back to plain text.
+- Body and title render the whitelisted subset: `<b> <i> <u> <br>`, plus
+  body-only `<a href>`. Other tags and attributes are dropped; a stray
+  `<`/`&` that forms no tag or entity survives as literal text, so a
+  markup-aware sender and a naive one both come out right. Malformed markup
+  falls back to plain text.
 - `<a href>` in the body is a hyperlink (Pango has no `<a>` tag, so it is
   rewritten to a styled span and hit-tested by its stripped-text byte
   offset); a click opens the URL via `xdg-open` and leaves the card up — but
   not the shade, since a browser is about to cover it. The pointer shows the
   hand over a link.
 - `<img src>` in the body renders as a thumbnail row below the text.
+
+## Input bounds
+
+- The daemon retains at most 256 bytes of app name, 2 KiB of summary, 8 KiB
+  of body input, 1 KiB of display hints/action labels, and 4 KiB opaque
+  sources such as icon paths. Display text truncates only at UTF-8 boundaries;
+  oversized opaque sources are ignored rather than turned into a different
+  path or action id.
+- A card accepts the first 12 action pairs and first four body-image
+  thumbnails. Later pairs/images fall back to their text or are ignored.
+- Markup tags are limited to 1 KiB and body markup/image scans are single-pass
+  over bounded input, keeping malformed notification payloads off the render
+  and input hot paths.
 
 ## Images / icons
 
@@ -46,10 +60,19 @@ icons).
   (`file://` too) OR a freedesktop icon NAME, resolved against the GTK icon
   theme, then hicolor, then `/usr/share/pixmaps`.
 - Decoding is hyprgraphics: PNG/JPEG/WEBP/BMP/AVIF/JXL + SVG (no GIF); big
-  images downscale once at load, not per frame. Raw `image-data` is downscaled
-  directly into its bounded output buffer, without a full-size decoded copy.
+  file-backed images decode through Hyprland's asynchronous resource gatherer,
+  with at most 24 pending sources shared across content, identities, action
+  icons, and body thumbnails. Regular files larger than 32 MiB are rejected,
+  and a decoded surface above 16 MP is not uploaded. Completion is polled on
+  the compositor event loop; no worker callback reaches plugin code, and the
+  ready surface becomes a GPU texture only in the next warm pass. Big images
+  downscale once at that warm pass, not per frame. Raw `image-data` is
+  downscaled directly into its bounded output buffer, without a full-size
+  decoded copy.
   Wide images (aspect ≥ 1.5) render card-width as a cover-cropped hero.
-  Iconless cards draw a random face from `fallback_icon_dir`.
+  Iconless cards draw a random face from `fallback_icon_dir`. That directory
+  is indexed off the compositor thread (at most 2,048 image paths across
+  65,536 visited entries) and adopted in 32-path event-loop batches.
 - The icon column is Android's conversation container
   (`notification_2025_conversation_icon_container.xml`): the CONTENT image
   leads as the avatar — a true circle for a conversation, a squircle
@@ -74,11 +97,11 @@ icons).
   `ActionInvoked` and dismisses the card unless the `resident` hint holds it.
   Under the `action-icons` hint each action id is a freedesktop icon name
   drawn on the button.
-- The `default` action (and a lone action) fire on a body left click, on
-  BOTH surfaces, and are never drawn as a button. The spec defines it as
-  "the default action (usually invoked by clicking the notification)" and
-  says implementations are free not to display it; Material Design likewise
-  says action buttons must not duplicate the tap action.
+- Only the explicit `default` action fires on a body left click, on BOTH
+  surfaces, and is never drawn as a button. The spec defines it as "the
+  default action (usually invoked by clicking the notification)" and says
+  implementations are free not to display it; Material Design likewise says
+  action buttons must not duplicate the tap action.
   `ActivationToken` precedes each invoke (a compositor-minted
   xdg-activation token) so the sender can raise itself.
 
@@ -203,7 +226,10 @@ icons).
   shade is already open, its active battery, touchpad, brightness, volume, or
   microphone card uses the normal popup-card geometry below the panel with the
   configured margin; the shade reserves that space, so the two surfaces do not
-  overlap while feedback remains visible until its normal short timeout.
+  overlap while feedback remains visible until its normal short timeout. The
+  first use of a reserved id carries the private `x-hitori-osd=true` hint;
+  ordinary notification traffic cannot claim the OSD band by choosing a fixed
+  `replaces_id`.
 - Critical: urgent-colored frame and progress fill, never expires.
 - Sound: `sound-file`/`sound-name` play through a libcanberra player
   (`sound_command`, empty disables); `suppress-sound` mutes one arrival. The
