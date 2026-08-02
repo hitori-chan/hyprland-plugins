@@ -4,9 +4,9 @@
 # placement memory, sibling geometry, spawn/close storms, the notification
 # cap, state churn round-trips, hostile state files, a real-input storm
 # (vptr), the shade's click and key verbs (vkbd), the bell's click path, the
-# below-shade OSD hitbox while the shade is open, the click-corpse guard,
-# acting-closes-the-shade, the fullscreen tuck and a config reload. Every
-# assertion is exact; any failure fails the run.
+# below-shade OSD hitbox while the shade is open, hyprosd's wpctl process
+# sequence, the click-corpse guard, acting-closes-the-shade, the fullscreen
+# tuck and a config reload. Every assertion is exact; any failure fails the run.
 #
 #   stress.sh [HYPR_BIN]     default /usr/local/bin/Hyprland — pass a fork
 #                            build (e.g. ~/repo/Hyprland/build/Hyprland) to
@@ -129,6 +129,12 @@ kill_nested() { # kill any non-live instance running one of the harness cfgs
 	sleep 0.6
 }
 
+launch_nested() {
+	PATH="$REPO/devtools/fakes:$PATH" HYPROSD_WPCTL_LOG="$STATE/wpctl.log" \
+		HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" \
+		bash "$HARNESS/launch.sh" >/dev/null 2>&1
+}
+
 echo "== stress: $BIN =="
 
 # ---- preflight ----------------------------------------------------------
@@ -210,7 +216,7 @@ printf '100\t100\t500\t400\tfoot\n200\t80\tlegacyfoot\n' > "$STATE/hyprplace/las
 	cat "$HARNESS/nested.lua"
 	echo 'hl.window_rule({ match = { class = "foot|mpv|corpseA|corpseB|tuckmax|tuckfloat|tuckfs" }, float = true })'
 } > "$CFG"
-HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" bash "$HARNESS/launch.sh" >/dev/null 2>&1 || { echo "nested launch FAILED"; exit 1; }
+launch_nested || { echo "nested launch FAILED"; exit 1; }
 retarget
 LOG="$HARNESS/nested.log"
 ok "nested monitor is ${MON_W}x${MON_H} (every coordinate below derives from it)"
@@ -330,7 +336,7 @@ printf 'garbage\n42\n1e400\t0\t300\t200\tinffoot\n-100\t-100\t-50\t-50\tnegfoot\
 # empty key and an unknown verb must all be skipped, not fatal
 mkdir -p "$STATE/hyprnotify"
 printf 'garbage\ns\n s\tx\nz\tnope\ns\t\ns\tkeepme\n' > "$STATE/hyprnotify/policy.tsv"
-HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" bash "$HARNESS/launch.sh" >/dev/null 2>&1 || { echo "relaunch FAILED"; exit 1; }
+launch_nested || { echo "relaunch FAILED"; exit 1; }
 retarget
 chk "hostile tsv: all 8 plugins still load" test "$(hq plugin list | grep -c Plugin)" = 8
 chk "hostile policy: only the well-formed rule loaded" test "$(hq hyprnotify policy)" = "silenced:1 s=keepme priority:0"
@@ -527,6 +533,28 @@ nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.hitor
 chk "bell: second click closes the shade" test "$(st)" = "center:0 live:1 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.8
 chk "bell: reset after the click battery" test "$(st)" = "center:0 live:0 dnd:0"
+
+# ---- hyprosd wpctl process path -------------------------------------------
+# The nested compositor shadows only wpctl, so this reaches the real Lua,
+# deferred queue, pidfd, pipe readback, and notification paths without changing
+# the live PipeWire sink. The fake validates argv and emits real wpctl output.
+: > "$STATE/wpctl.log"
+dsp "hl.plugin.hyprosd.volume_up()"; sleep 0.4
+chk "hyprosd: volume up uses the capped relative wpctl command" grep -Fxq "set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+" "$STATE/wpctl.log"
+chk "hyprosd: volume up readback produces an OSD card" test "$(st)" = "center:0 live:1 dnd:0"
+nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications CloseNotification u 9993 >/dev/null 2>&1; sleep 0.2
+
+: > "$STATE/wpctl.log"
+dsp "hl.plugin.hyprosd.volume_down()"; sleep 0.4
+chk "hyprosd: volume down uses the relative wpctl command" grep -Fxq "set-volume @DEFAULT_AUDIO_SINK@ 5%-" "$STATE/wpctl.log"
+chk "hyprosd: volume down readback produces an OSD card" test "$(st)" = "center:0 live:1 dnd:0"
+nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications CloseNotification u 9993 >/dev/null 2>&1; sleep 0.2
+
+: > "$STATE/wpctl.log"
+dsp "(function() for _ = 1, 32 do hl.plugin.hyprosd.volume_up() end return hl.dsp.no_op() end)()"; sleep 0.8
+chk "hyprosd: repeat backpressure caps active chains" test "$(grep -c '^set-volume ' "$STATE/wpctl.log")" = 16
+chk "hyprosd: repeat backpressure preserves admitted feedback" test "$(st)" = "center:0 live:1 dnd:0"
+nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications CloseNotification u 9993 >/dev/null 2>&1; sleep 0.2
 
 # ---- OSD below an open shade ----------------------------------------------
 # OSD-band cards are deliberately absent from shade rows and the bell badge,

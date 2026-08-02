@@ -29,6 +29,7 @@
 #include "common/busclient.hpp"
 #include "common/lifecycle.hpp"
 #include "common/process.hpp"
+#include "wpctl.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/Compositor.hpp>
@@ -142,6 +143,8 @@ namespace NHyprosd {
     static uint64_t        brightnessGeneration = 0;
     static uint64_t        volumeGeneration     = 0;
     static uint64_t        micGeneration        = 0;
+    static uint64_t        volumeFeedback       = 0;
+    static uint64_t        micFeedback          = 0;
 
     static void            brightnessStep(int dir) {
         const uint64_t GENERATION = ++brightnessGeneration;
@@ -299,62 +302,22 @@ namespace NHyprosd {
             return 0;
         }
 
-        // wpctl get-volume: "Volume: 0.65" or "Volume: 0.65 [MUTED]".
-        // Keep the parser strict: strtod's prefix behavior otherwise turns
-        // diagnostics, NaN, and trailing garbage into a plausible percent.
-        struct SReadback {
-            double value = 0;
-            bool   muted = false;
-        };
-        const auto parse = [](const std::string& output) -> std::optional<SReadback> {
-            std::string value = output;
-            const auto  BEGIN = value.find_first_not_of(" \t\r\n");
-            if (BEGIN == std::string::npos || value.compare(BEGIN, 7, "Volume:") != 0)
-                return std::nullopt;
-            value.erase(0, BEGIN + 7);
-
-            const auto TOKEN_END = value.find_first_of(" \t\r\n[");
-            std::string token = value.substr(0, TOKEN_END);
-            if (token.empty())
-                return std::nullopt;
-            if (token.find('.') == std::string::npos && std::ranges::count(token, ',') == 1)
-                token[std::ranges::find(token, ',') - token.begin()] = '.';
-
-            errno = 0;
-            char* END = nullptr;
-            const double NUMBER = std::strtod(token.c_str(), &END);
-            if (END == token.c_str() || *END != '\0' || errno == ERANGE || !std::isfinite(NUMBER) || NUMBER < 0)
-                return std::nullopt;
-
-            std::string rest = value.substr(TOKEN_END == std::string::npos ? value.size() : TOKEN_END);
-            const auto REST_BEGIN = rest.find_first_not_of(" \t\r\n");
-            if (REST_BEGIN == std::string::npos)
-                return SReadback{NUMBER, false};
-            rest.erase(0, REST_BEGIN);
-            bool muted = false;
-            if (rest.starts_with("[MUTED]")) {
-                muted = true;
-                rest.erase(0, 7);
-                if (const auto TRAIL = rest.find_first_not_of(" \t\r\n"); TRAIL != std::string::npos)
-                    return std::nullopt;
-            } else
-                return std::nullopt;
-            return SReadback{NUMBER, muted};
-        };
-
-        const auto READBACK = parse(c->out);
+        const auto READBACK = Wpctl::parseReadback(c->out);
         const bool MUTED    = READBACK && READBACK->muted;
         const int  PCT      = READBACK ? (READBACK->value >= 1.0 ? 100 : (int)std::lround(READBACK->value * 100.0)) : -1;
-        const bool CURRENT  = c->mic ? c->generation == micGeneration : c->generation == volumeGeneration;
+        uint64_t&  FEEDBACK = c->mic ? micFeedback : volumeFeedback;
+        const bool NEWER    = READBACK && c->generation > FEEDBACK;
 
         // no parseable readback (no default device, wpctl error): no card —
         // asserting "live"/a percent for a state that never changed lies
-        if (CURRENT && c->mic) {
+        if (NEWER)
+            FEEDBACK = c->generation;
+        if (NEWER && c->mic) {
             if (MUTED || PCT >= 0)
                 notify(9995, "Microphone", MUTED ? "muted" : "live", -1);
-        } else if (CURRENT && MUTED)
+        } else if (NEWER && MUTED)
             notify(9993, "Volume", "muted", -1);
-        else if (CURRENT && PCT >= 0)
+        else if (NEWER && PCT >= 0)
             notify(9993, "Volume", std::to_string(PCT) + "%", std::min(PCT, 100));
 
         chainDone(c);
@@ -367,8 +330,9 @@ namespace NHyprosd {
         c->pidSrc = nullptr;
         close(c->pidFd);
         c->pidFd = -1;
-        if (NHyprCommon::waitPid(c->setPid, false) == 0)
-            rememberOrphan(c->setPid);
+        // Hyprland installs SA_NOCLDWAIT, so no child exit status remains to
+        // reap. The pidfd is the completion signal; the following readback is
+        // the authoritative state exposed to the user.
         c->setPid = -1;
 
         if (!canTrackChild(false)) {
@@ -413,10 +377,6 @@ namespace NHyprosd {
             {"wpctl", "set-mute", "@DEFAULT_AUDIO_SOURCE@", "toggle", nullptr},
         };
 
-        const bool     MIC        = a == MIC_MUTE;
-        uint64_t&      GENERATION = MIC ? micGeneration : volumeGeneration;
-        const uint64_t REQUEST    = ++GENERATION;
-
         if (!canTrackChild())
             return;
 
@@ -424,9 +384,10 @@ namespace NHyprosd {
         if (PID < 0)
             return;
 
-        auto c    = makeUnique<SChain>();
-        c->mic    = MIC;
-        c->generation = REQUEST;
+        const bool MIC = a == MIC_MUTE;
+        auto c         = makeUnique<SChain>();
+        c->mic         = MIC;
+        c->generation  = ++(MIC ? micGeneration : volumeGeneration);
         c->setPid = PID;
         c->pidFd  = (int)syscall(SYS_pidfd_open, PID, 0);
         if (c->pidFd < 0) {
@@ -532,7 +493,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_up", luaBrightnessUp);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_down", luaBrightnessDown);
 
-    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.2.2"};
+    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.2.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
@@ -550,6 +511,8 @@ APICALL EXPORT void PLUGIN_EXIT() {
     brightnessGeneration = 0;
     volumeGeneration     = 0;
     micGeneration        = 0;
+    volumeFeedback       = 0;
+    micFeedback          = 0;
     sessionBus.close(); // fd sources out BEFORE the connections die
     systemBus.close();
 }

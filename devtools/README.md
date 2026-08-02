@@ -2,7 +2,8 @@
 
 Dev tooling for exercising the plugins in the nested Hyprland
 (`~/.local/share/hypr-nested/`). Not plugins (not in hyprpm.toml). Tracked:
-`stress.sh`, `vptr.c`, `vkbd.c`, `input-capture.c`, `desktop_exec_test.cpp`, the `Makefile`, and this README; the
+`stress.sh`, `vptr.c`, `vkbd.c`, `input-capture.c`, `desktop_exec_test.cpp`,
+`hyprosd_readback_test.cpp`, `fakes/wpctl`, the `Makefile`, and this README; the
 binaries and the `*-proto.{c,h}` wayland-scanner glue are build artifacts
 that `make` regenerates.
 
@@ -16,13 +17,23 @@ or touch the session:
 make test-desktop-exec
 ```
 
+## hyprosd_readback_test.cpp
+
+The standalone C++26 parser regression for the exact output emitted by
+`wpctl get-volume`, including mute and comma-decimal forms:
+
+```
+make test-hyprosd
+```
+
 ## stress.sh — the pre-deploy regression gate
 
 Exact assertions over the nested harness + `vptr` + `vkbd` + `input-capture`: placement
 memory, spawn/close storms, the notification cap, churn round-trips,
 hostile state files, an input storm, a native `hyprland-input-capture-v1`
 session, the shade's click/key verbs, acting-closes-the-shade, the bell click,
-the OSD card below an open shade, a config reload, log hygiene.
+hyprosd's fake-`wpctl` process/readback path, the OSD card below an open shade,
+a config reload, log hygiene. The fake changes no live PipeWire state.
 Check #1 refuses to run when the installed headers'
 `version.h` hash doesn't match the running binary. Run it before every
 deploy; it must end `ALL CHECKS PASSED`.

@@ -16,8 +16,9 @@ place like the old scripts pinned them. No config. Replaces
    process: the set spawns, its pidfd tells the event loop when it is
    done, then the get spawns with stdout on a pipe the event loop
    drains. Two short forks per keypress instead of the script's shell
-   pipeline; render/input never wait on anything. Volume caps at 100%,
-   mute shows `muted`, the mic card says `live`/`muted`.
+   pipeline; render/input never wait on anything. Readback is parsed strictly,
+   and admitted feedback survives repeat-queue backpressure. Volume caps at
+   100%, mute shows `muted`, the mic card says `live`/`muted`.
 3. **Cards** — urgency low, 1200 ms, `value` hint for the daemon's 4px
    bar, no icon (the daemon's `fallback_icon_dir` rolls each card its
    face), sent async on the plugin's own event-loop-integrated

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -u
+
+LOG=${HYPROSD_WPCTL_LOG:?}
+printf '%s\n' "$*" >> "$LOG"
+
+case "${1:-}" in
+set-volume)
+	case "$*" in
+	"set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"|"set-volume @DEFAULT_AUDIO_SINK@ 5%-") ;;
+	*) exit 64 ;;
+	esac
+	sleep 0.05
+	;;
+set-mute)
+	case "$*" in
+	"set-mute @DEFAULT_AUDIO_SINK@ toggle"|"set-mute @DEFAULT_AUDIO_SOURCE@ toggle") ;;
+	*) exit 64 ;;
+	esac
+	;;
+get-volume)
+	case "${2:-}" in
+	"@DEFAULT_AUDIO_SINK@") printf 'Volume: 0.56\n' ;;
+	"@DEFAULT_AUDIO_SOURCE@") printf 'Volume: 1.00 [MUTED]\n' ;;
+	*) exit 64 ;;
+	esac
+	;;
+*) exit 64 ;;
+esac

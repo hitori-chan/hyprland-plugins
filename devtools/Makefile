@@ -22,6 +22,12 @@ desktop-exec-test: desktop_exec_test.cpp ../hyprbar/desktop_exec.hpp ../common/f
 test-desktop-exec: desktop-exec-test
 	./desktop-exec-test
 
+hyprosd-readback-test: hyprosd_readback_test.cpp ../hyprosd/wpctl.hpp
+	$(CXX) -std=c++26 -O2 -Wall -Wextra -Wpedantic -Werror -I.. $< -o $@
+
+test-hyprosd: hyprosd-readback-test
+	./hyprosd-readback-test
+
 vptr: vptr.c vptr-proto.c vptr-proto.h
 	$(CC) $(CFLAGS) vptr.c vptr-proto.c -o $@ $(LDLIBS)
 
@@ -45,6 +51,6 @@ input-capture-proto.c: $(CXML)
 	wayland-scanner private-code $< $@
 
 clean:
-	rm -f vptr vkbd input-capture desktop-exec-test vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c
+	rm -f vptr vkbd input-capture desktop-exec-test hyprosd-readback-test vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c
 
-.PHONY: all clean test-desktop-exec
+.PHONY: all clean test-desktop-exec test-hyprosd
