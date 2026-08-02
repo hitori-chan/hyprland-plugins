@@ -9,6 +9,9 @@ AGENTS.md
 HANDOFF.md
 .claude/
 
+# local audit ledger
+docs/audit-tracking.md
+
 # devtools — nested-Hyprland test tooling: track the sources, not the
 # build artifacts (the vptr binary + the wayland-scanner protocol glue)
 devtools/vptr
@@ -21,3 +24,4 @@ devtools/input-capture
 devtools/input-capture-proto.c
 devtools/input-capture-proto.h
 devtools/desktop-exec-test
+devtools/hyprosd-readback-test
