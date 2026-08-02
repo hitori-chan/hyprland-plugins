@@ -53,8 +53,9 @@ compositor's blur is on; the widgets riding them stay opaque.
 - **Menubar** (`Mod+P`, `hl.plugin.hyprbar.menubar()`) — awesome's launcher
   in its own strip below the bar: categories + `.desktop` apps filtered as
   you type, most-launched first, shell completion, history, readline
-  editing. Draws above fullscreen, like awesome's ontop wibox. Iconless
-  entries keep their cell with a letter fallback instead of collapsing.
+  editing. Draws above fullscreen, like awesome's ontop wibox. The raw command
+  entry uses the theme's run icon; unresolved entries keep an empty reserved
+  icon cell instead of substituting a character or shifting their text.
 
 Details and the full menubar key reference: [docs/hyprbar.md](../docs/hyprbar.md).
 
@@ -72,7 +73,6 @@ Colors and font come from `theme.lua` via `hl.config { plugin = { hyprbar =
 | `plugin:hyprbar:terminal` | terminal for `Terminal=true` menubar entries | alacritty |
 | `plugin:hyprbar:col_bg` | bar background | `131313` |
 | `plugin:hyprbar:col_fg` | normal text | `aaaaaa` |
-| `plugin:hyprbar:col_muted` | tray letter fallback | `8a97a8` |
 | `plugin:hyprbar:col_focus` | selected menubar entry text | `32d6ff` |
 | `plugin:hyprbar:col_active` | active tag / focused task text | `00ccff` |
 | `plugin:hyprbar:col_active_bg` | active tag background | `1e2320` |

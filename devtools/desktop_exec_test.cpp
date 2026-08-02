@@ -1,14 +1,22 @@
+#include "common/fileindex.hpp"
+#include "common/icons.hpp"
 #include "hyprbar/desktop_exec.hpp"
 
+#include <chrono>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
 
     using NHyprbar::DesktopExec::expand;
+    using NHyprbar::DesktopExec::MAX_DESKTOP_FILE_BYTES;
     using NHyprbar::DesktopExec::unescapeList;
     using NHyprbar::DesktopExec::unescapeString;
 
@@ -29,6 +37,47 @@ namespace {
         expect(value && *value == expected, name);
     }
 
+    void expectLocalizedDesktopAdmission() {
+        const auto STAMP = std::chrono::steady_clock::now().time_since_epoch().count();
+        const auto DIR   = std::filesystem::temp_directory_path() / ("hyprbar-desktop-index-" + std::to_string(STAMP));
+        std::filesystem::create_directory(DIR);
+        struct SCleanup {
+            std::filesystem::path path;
+            ~SCleanup() {
+                std::error_code error;
+                std::filesystem::remove_all(path, error);
+            }
+        } cleanup{DIR};
+
+        std::string firefox = "[Desktop Entry]\nType=Application\nExec=/usr/lib/firefox/firefox %u\nName=Firefox\n";
+        firefox.append(96 * 1024, '#');
+        std::ofstream{DIR / "firefox.desktop", std::ios::binary} << firefox;
+
+        std::string oversized(MAX_DESKTOP_FILE_BYTES + 1, '#');
+        std::ofstream{DIR / "oversized.desktop", std::ios::binary} << oversized;
+
+        NHyprCommon::CAsyncFileIndex index;
+        NHyprCommon::CAsyncFileIndex::SRequest request;
+        request.generation   = 1;
+        request.roots        = {DIR};
+        request.extensions   = {".desktop"};
+        request.maxEntries   = 8;
+        request.maxVisited   = 16;
+        request.maxFileBytes = MAX_DESKTOP_FILE_BYTES;
+        index.request(std::move(request));
+
+        std::vector<NHyprCommon::CAsyncFileIndex::SEntry> entries;
+        bool complete = false;
+        for (const auto DEADLINE = std::chrono::steady_clock::now() + std::chrono::seconds(2); std::chrono::steady_clock::now() < DEADLINE && !complete;) {
+            complete = index.poll(1, entries, 8);
+            if (!complete)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        expect(complete, "desktop index completes");
+        expect(entries.size() == 1 && entries.front().path.filename() == "firefox.desktop" && entries.front().contents.size() == firefox.size(),
+               "localized desktop file admitted and oversized file rejected");
+    }
+
 } // namespace
 
 int main() {
@@ -45,6 +94,8 @@ int main() {
                 {"client", "--title", "two words", "Name With Space", "%", "/tmp/example.desktop"}, "valid quoted arguments and scalar fields");
     expectWords(expand(R"(client %i)", "Name", "/tmp/example.desktop", "example-icon"), {"client", "--icon", "example-icon"}, "standalone icon field");
     expectWords(expand(R"(client %F)", "Name", "/tmp/example.desktop", ""), {"client"}, "empty supplied input field");
+    expectWords(expand("/usr/lib/firefox/firefox %u", "Firefox", "/usr/share/applications/firefox.desktop", "firefox"), {"/usr/lib/firefox/firefox"},
+                "Firefox URL field without supplied URL");
     expectWords(expand(R"(client \%c)", "Name", "/tmp/example.desktop", ""), {"client", "%c"}, "escaped field literal");
 
     expect(!expand(R"(client "%c")", "Name", "/tmp/example.desktop", ""), "field in quoted argument");
@@ -54,6 +105,11 @@ int main() {
     expect(!expand(R"(client %z)", "Name", "/tmp/example.desktop", ""), "unknown field is invalid");
     expect(!expand(R"(client "bad\q")", "Name", "/tmp/example.desktop", ""), "invalid quoted exec escape");
     expect(!expand(R"(%c client)", "Name", "/tmp/example.desktop", ""), "field code cannot be executable");
+
+    expect(NHyprCommon::iconIdentityPrefixMatch("ente_status_icon_1", "ente"), "separator-bound SNI identity prefix");
+    expect(!NHyprCommon::iconIdentityPrefixMatch("enterprise_status_icon_1", "ente"), "partial SNI identity prefix rejected");
+
+    expectLocalizedDesktopAdmission();
 
     if (failures != 0)
         return EXIT_FAILURE;

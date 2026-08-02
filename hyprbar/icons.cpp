@@ -119,6 +119,7 @@ namespace NHyprbar {
     // is as real as a packaged one.
     static std::vector<std::string> iconDirs;
     static std::unordered_map<std::string, SP<ITexture>> appIconCache;
+    static std::unordered_map<std::string, SP<ITexture>> namedIconCache, trayIconCache;
     static NHyprCommon::CAsyncFileIndex                  desktopIndex;
     static SP<CEventLoopTimer>                           desktopPoll;
     static std::unordered_map<std::string, std::string>  desktopIcons;
@@ -239,7 +240,7 @@ namespace NHyprbar {
         request.extensions   = {".desktop"};
         request.maxEntries   = 4096;
         request.maxVisited   = 16384;
-        request.maxFileBytes = 16 * 1024;
+        request.maxFileBytes = DesktopExec::MAX_DESKTOP_FILE_BYTES;
         for (const auto& directory : appDirs())
             request.roots.emplace_back(directory);
         desktopIndex.request(std::move(request));
@@ -258,6 +259,10 @@ namespace NHyprbar {
         desktopScanning = !COMPLETE;
         if (desktopIcons.size() != BEFORE) {
             appIconCache.clear();
+            trayIconCache.clear();
+            for (const auto& item : Tray::items)
+                if (item->pixels.empty() && (!item->tex || item->tex->m_texID == 0))
+                    item->dirty = true;
             barChanged();
         }
         if (desktopPoll)
@@ -269,17 +274,31 @@ namespace NHyprbar {
     // ships ente-desktop.desktop; qBittorrent's is "qbittorrent" under
     // org.qbittorrent.qBittorrent.desktop) — the spec's StartupWMClass field
     // is the canonical association, so scan for it when the basename misses.
-    static std::string desktopIconName(const std::string& klass) {
-        if (const auto it = desktopIcons.find(lower(klass)); it != desktopIcons.end())
+    static std::string desktopIconName(const std::string& identifier) {
+        const auto ID = lower(identifier);
+        if (const auto it = desktopIcons.find(ID); it != desktopIcons.end())
             return it->second;
-        return "";
+
+        // SNI Id is stable but not required to be a desktop-file id. Accept a
+        // mapped desktop identity only at an explicit suffix boundary, so an
+        // id such as app_status_icon can recover "app" without letting "app"
+        // match an unrelated "application" id.
+        const std::string* best = nullptr;
+        size_t             bestLength = 0;
+        for (const auto& [key, icon] : desktopIcons) {
+            if (key.size() <= bestLength || !NHyprCommon::iconIdentityPrefixMatch(ID, key))
+                continue;
+            best       = &icon;
+            bestLength = key.size();
+        }
+        return best ? *best : "";
     }
 
     // symbolic SVGs bake col_fg into their pixels (loadIcon), so a foreground
     // change invalidates every icon cache — checked at the caches' entrances
     static void dropStaleTint();
 
-    // class -> texture; nullptr is cached too (= use the letter fallback).
+    // class -> texture; nullptr is cached too (= leave the icon cell empty).
     SP<ITexture>                                         appIcon(const std::string& klass) {
         if (klass.empty())
             return nullptr;
@@ -300,8 +319,6 @@ namespace NHyprbar {
     }
 
     // icon name or absolute path (a .desktop Icon= value) -> texture; nullptr cached too
-    static std::unordered_map<std::string, SP<ITexture>> namedIconCache;
-
     SP<ITexture>                                         namedIcon(const std::string& name) {
         if (name.empty())
             return nullptr;
@@ -322,8 +339,6 @@ namespace NHyprbar {
     // too. fcitx REALLY flips its icon on every IM toggle / input context
     // change — without this cache every flip re-resolved and re-rasterized the
     // file from disk inside the render pass.
-    static std::unordered_map<std::string, SP<ITexture>> trayIconCache;
-
     static void                                          dropStaleTint() {
         static uint64_t lastFg = 0;
         const auto      FG     = (uint64_t)cfg.colFg->value();
@@ -335,8 +350,8 @@ namespace NHyprbar {
         trayIconCache.clear();
     }
 
-    SP<ITexture> trayIcon(const std::string& name, const std::string& themePath) {
-        const auto KEY = name + "|" + themePath;
+    SP<ITexture> trayIcon(const std::string& name, const std::string& themePath, const std::string& id) {
+        const auto KEY = name + "|" + themePath + "|" + id;
         dropStaleTint();
         if (const auto IT = trayIconCache.find(KEY); IT != trayIconCache.end())
             return IT->second;
@@ -344,7 +359,13 @@ namespace NHyprbar {
         if (!warmGate.mayBuild()) // the texture rule: only the warm builds
             return nullptr;
 
-        const auto   path  = resolveIconPath(name, themePath);
+        auto path = resolveIconPath(name, themePath);
+        if (path.empty())
+            path = resolveIconPath(desktopIconName(name), themePath);
+        if (path.empty())
+            path = resolveIconPath(id, themePath);
+        if (path.empty())
+            path = resolveIconPath(desktopIconName(id), themePath);
         SP<ITexture> tex   = path.empty() ? nullptr : loadIcon(path);
         trayIconCache[KEY] = tex;
         return tex;

@@ -114,7 +114,7 @@ namespace NHyprbar {
         SP<Config::Values::CStringValue> terminal; // runs Terminal=true menubar entries
         SP<Config::Values::CColorValue>  colBg;
         SP<Config::Values::CColorValue>  colFg;          // normal text: tags, tasks, clock
-        SP<Config::Values::CColorValue>  colMuted;       // tray letter fallback
+        SP<Config::Values::CColorValue>  colMuted;       // accepted for compatibility; character icon fallbacks were removed
         SP<Config::Values::CColorValue>  colFocus;       // selected menubar entry fg (awesome fg_focus)
         SP<Config::Values::CColorValue>  colActive;      // active tag / focused task fg
         SP<Config::Values::CColorValue>  colActiveBg;    // active tag bg
@@ -146,10 +146,6 @@ namespace NHyprbar {
     // briefly be two different objects sharing one id, and a pointer test then
     // matches nothing — the whole tasklist blanked for that frame.
     bool isTaskOn(const PHLWINDOW& w, const PHLWORKSPACE& ws);
-
-    // first UTF-8 character (never a split sequence), uppercased when ASCII —
-    // the icon-cell letter fallback
-    std::string letterOf(const std::string& s);
 
     // ---- widget state entry points (each in its widget's unit) ----
 
@@ -237,7 +233,7 @@ namespace NHyprbar {
     void         iconsInit();
     SP<ITexture> appIcon(const std::string& klass);                           // window class -> texture
     SP<ITexture> namedIcon(const std::string& name);                          // icon name/path -> texture
-    SP<ITexture> trayIcon(const std::string& name, const std::string& theme); // + the item's own theme dir
+    SP<ITexture> trayIcon(const std::string& name, const std::string& theme, const std::string& id = ""); // + theme dir and SNI identity fallback
     void         iconsReload();                                               // config reload: re-probe the dirs, drop every resolved icon
     void         iconsExit();
 
@@ -253,7 +249,7 @@ namespace NHyprbar {
             uint64_t                       propertyRequest = 0;
             uint64_t                       statusRequest   = 0;
             uint64_t                       iconRequest     = 0;
-            std::string                    iconName, themePath;
+            std::string                    id, iconName, themePath;
             std::string                    menuPath; // dbusmenu object path, "" = none
             std::string                    status;   // SNI Status: Passive hides the icon, NeedsAttention swaps the icon set
             bool                           itemIsMenu = false;

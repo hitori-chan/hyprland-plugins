@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -9,6 +10,10 @@
 #include <vector>
 
 namespace NHyprbar::DesktopExec {
+
+    // Localized desktop entries commonly exceed 16 KiB (Firefox and Thunar
+    // do), while the asynchronous handoff still needs a firm memory bound.
+    inline constexpr size_t MAX_DESKTOP_FILE_BYTES = 128 * 1024;
 
     inline std::optional<char> unescapeChar(char value, bool list) {
         switch (value) {

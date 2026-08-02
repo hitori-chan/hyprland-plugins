@@ -73,9 +73,9 @@
 //   shell completion ($PATH for the command word, filenames after),
 //   Up/Down or C-p/C-n walk the prompt history, readline editing
 //   (C-a/e/b/f/d/h/u/w, M-b/f/d, C-BackSpace), Escape or any click
-//   closes. Entries show a theme icon when one resolves, else the
-//   tasklist's letter fallback — the icon cell always reserved so rows
-//   keep their rhythm (a deliberate step past awesome's collapsing
+//   closes. Entries show a theme icon when one resolves; an unresolved
+//   icon leaves its reserved cell empty so rows keep their rhythm without
+//   substituting a character (a deliberate step past awesome's collapsing
 //   imagebox). Launch counts and history persist in ~/.cache/hyprbar/
 //   (menu_count_file, history_menu), like awesome's.
 // - The strip owns the pointer: hovering the bar never leaks the cursor
@@ -220,7 +220,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.terminal       = makeShared<Config::Values::CStringValue>("plugin:hyprbar:terminal", "terminal that runs Terminal=true menubar entries", "alacritty");
     cfg.colBg          = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_bg", "bar background", 0xff131313);
     cfg.colFg          = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_fg", "normal text", 0xffaaaaaa);
-    cfg.colMuted       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_muted", "tray letter fallback", 0xff8a97a8);
+    cfg.colMuted       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_muted", "legacy fallback color retained for config compatibility", 0xff8a97a8);
     // the ONE colour the bar shares with the shell material — awesome's
     // fg_focus slot, filled by the glass·ink accent. Everything around it is
     // deliberately awesome's own palette, so this is the exception.
@@ -363,7 +363,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.4.4"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.4.5"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

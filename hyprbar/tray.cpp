@@ -211,6 +211,18 @@ namespace NHyprbar {
                 return;
             const uint64_t REQUEST = ++it->propertyRequest;
             const uint64_t STATUS_REQUEST = it->statusRequest;
+            it->proxy->getPropertyAsync("Id").onInterface(SNI).uponReplyInvoke([it, REQUEST](std::optional<sdbus::Error> e, sdbus::Variant v) {
+                if (!it->active || !it->proxy || it->propertyRequest != REQUEST || e)
+                    return;
+                try {
+                    const auto ID = v.get<std::string>();
+                    if (ID != it->id) {
+                        it->id    = ID;
+                        it->dirty = true;
+                        barChanged();
+                    }
+                } catch (...) {}
+            });
             // Every reply is change-detected: fcitx fires NewIcon on every input
             // context change (= every window focus), and rebuilding textures +
             // redrawing the bar for identical content made the bar flicker like
@@ -439,8 +451,8 @@ namespace NHyprbar {
                         IT->tex.reset();
                         if (!IT->pixels.empty())
                             IT->tex = g_pHyprRenderer->createTexture(DRM_FORMAT_ARGB8888, IT->pixels.data(), IT->pw * 4, Vector2D{(double)IT->pw, (double)IT->ph});
-                        if ((!IT->tex || IT->tex->m_texID == 0) && !IT->iconName.empty())
-                            IT->tex = trayIcon(IT->iconName, IT->themePath);
+                        if ((!IT->tex || IT->tex->m_texID == 0) && (!IT->iconName.empty() || !IT->id.empty()))
+                            IT->tex = trayIcon(IT->iconName, IT->themePath, IT->id);
                     }
 
                     const CBox CELL{right - P.h, box.y, P.h, P.h};
@@ -449,9 +461,6 @@ namespace NHyprbar {
                         // icons carried, full-bleed reads as cramped. Fit, not
                         // stretch — a non-square pixmap keeps its proportions.
                         P.texFit(IT->tex, CBox{CELL.x + 3, CELL.y + 3, P.h - 6, P.h - 6});
-                    else
-                        P.texIn(textTex(letterOf(IT->iconName), color(cfg.colMuted), P.pt), CELL);
-
                     SHit h;
                     h.box     = CELL;
                     h.widget  = this;

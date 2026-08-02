@@ -289,7 +289,7 @@ namespace NHyprbar {
             request.extensions   = {".desktop"};
             request.maxEntries   = 4096;
             request.maxVisited   = 65536;
-            request.maxFileBytes = 16 * 1024;
+            request.maxFileBytes = DesktopExec::MAX_DESKTOP_FILE_BYTES;
             request.recursive    = true;
             for (const auto& directory : dirs)
                 request.roots.emplace_back(directory);
@@ -863,8 +863,7 @@ namespace NHyprbar {
                 return;
 
             // one palette fetch per render: color() memoizes but still hashes per call
-            const CHyprColor COLBG = color(cfg.colBg), COLFG = color(cfg.colFg), COLACTIVEBG = color(cfg.colActiveBg), COLFOCUS = color(cfg.colFocus),
-                             COLACTIVE = color(cfg.colActive);
+            const CHyprColor COLBG = color(cfg.colBg), COLFG = color(cfg.colFg), COLACTIVEBG = color(cfg.colActiveBg), COLFOCUS = color(cfg.colFocus);
 
             const double     MY = PAINT.mb.y + PAINT.h;
             PAINT.glass(CBox{PAINT.mb.x, MY, PAINT.mb.w, PAINT.h}, COLBG);
@@ -920,13 +919,12 @@ namespace NHyprbar {
                         return namedIcon(Menubar::apps[SH[i].app].icon);
                     if (SH[i].cat >= 0)
                         return namedIcon(Menubar::CATEGORIES[SH[i].cat].icon);
-                    return nullptr;
+                    return namedIcon("system-run");
                 };
 
                 // entry: [8][icon][6][text][8], icon on the 3px-inset rhythm;
-                // the cell is always reserved — an entry whose icon doesn't
-                // resolve gets the tasklist's letter fallback instead of
-                // collapsing (rows kept their rhythm, names never jumped)
+                // the cell is always reserved, even when no icon resolves, so
+                // row geometry stays stable and names never jump.
                 const double ICON  = PAINT.h - 6;
                 const auto   cellW = [&](const SP<ITexture>& t) { return 8 + ICON + 6 + (t ? t->m_size.x / PAINT.scale : 0) + 8; };
 
@@ -958,8 +956,7 @@ namespace NHyprbar {
                     if (ITEX && ITEX->m_texID != 0) {
                         const auto P = PAINT.toPhys(CBox{tx, MY + 3, ICON, ICON});
                         PAINT.tex(ITEX, P);
-                    } else
-                        PAINT.texIn(textTex(letterOf(NAME), COLACTIVE, PAINT.pt), CBox{tx, MY, ICON, PAINT.h});
+                    }
                     tx += ICON + 6;
 
                     const auto T = i == Menubar::sel ? textTex(NAME, fg, PAINT.pt) : WT;

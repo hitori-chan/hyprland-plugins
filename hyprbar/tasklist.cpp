@@ -324,8 +324,6 @@ namespace NHyprbar {
                     double       tx   = x + 4;
                     if (const auto ITEX = appIcon(W->m_class); ITEX && ITEX->m_texID != 0)
                         P.texFit(ITEX, CBox{tx, box.y + 3, ICON, ICON});
-                    else
-                        P.texIn(textTex(letterOf(W->m_class), F.active, P.pt), CBox{tx, box.y, ICON, P.h});
                     tx += ICON + 4;
 
                     static std::string LBL; // reused; main thread only

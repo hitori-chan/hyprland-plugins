@@ -193,7 +193,7 @@ namespace NHyprCommon {
                             return true;
                     }
 
-                    SEntry entry{.path = candidate.path(), .relative = candidate.path().lexically_relative(root), .directory = directory};
+                    SEntry entry{.path = candidate.path(), .relative = candidate.path().lexically_relative(root), .contents = {}, .directory = directory};
                     if (!directory && !readContents(entry.path, request.maxFileBytes, entry.contents))
                         return true;
                     if (!emit(request.generation, std::move(entry), stop))

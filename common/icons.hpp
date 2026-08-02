@@ -15,10 +15,18 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
 namespace NHyprCommon {
+
+    inline bool iconIdentityPrefixMatch(std::string_view identifier, std::string_view candidate) {
+        if (candidate.size() < 3 || candidate.size() >= identifier.size() || !identifier.starts_with(candidate))
+            return false;
+        const char boundary = identifier[candidate.size()];
+        return boundary == '_' || boundary == '-';
+    }
 
     // The XDG data dirs in precedence order: the per-user one first (it
     // overrides), then $XDG_DATA_DIRS. Every freedesktop lookup a plugin

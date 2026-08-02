@@ -153,8 +153,9 @@ and the prompt refilters as they become available.
 | `C-a/e/b/f/d/h/u/w`, `M-b/f/d`, `C-BackSpace` | readline editing |
 | `Escape`, any click | close |
 
-Entries show a theme icon when one resolves and plain text otherwise, like
-awesome. Launch counts and history persist in `~/.cache/hyprbar/`
+Entries show a theme icon when one resolves and an empty reserved icon cell
+otherwise; the raw command row uses the theme's `system-run` icon. Launch
+counts and history persist in `~/.cache/hyprbar/`
 (`menu_count_file`, `history_menu`); each cache rewrite is atomic. Desktop
 Entry string/list values decode their freedesktop escapes before names, icons,
 categories, and desktop visibility are used. `Exec=` keeps its separate
@@ -182,7 +183,8 @@ filesystem walk.
 - The menubar's cursor is a `▏` bar, not awesome's inverse-video block —
   the text renderer takes plain text, no pango markup.
 - The tray is mouse-only: no tooltips, overlay icons or menu keyboard
-  navigation. SVG-only themed icons fall back to a letter.
+  navigation. An item with no usable pixmap or themed icon keeps an empty
+  clickable cell; the bar does not substitute a character.
 - Over a direct-scanout fullscreen game the menubar cannot draw: scanout
   (`render:direct_scanout`) hands the plane to the client and bypasses
   compositing. Composited fullscreen (video, browser) is fine.

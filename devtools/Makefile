@@ -16,8 +16,8 @@ EILIBS   := $(shell pkg-config --libs libei-1.0)
 
 all: vptr vkbd input-capture
 
-desktop-exec-test: desktop_exec_test.cpp ../hyprbar/desktop_exec.hpp
-	$(CXX) -std=c++26 -O2 -Wall -Wextra -Wpedantic -Werror -I.. $< -o $@
+desktop-exec-test: desktop_exec_test.cpp ../hyprbar/desktop_exec.hpp ../common/fileindex.hpp ../common/icons.hpp
+	$(CXX) -std=c++26 -O2 -Wall -Wextra -Wpedantic -Werror -pthread -I.. $< -o $@
 
 test-desktop-exec: desktop-exec-test
 	./desktop-exec-test
