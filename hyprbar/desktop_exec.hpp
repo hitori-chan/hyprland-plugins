@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <cctype>
 #include <cstddef>
 #include <optional>
@@ -141,16 +140,44 @@ namespace NHyprbar::DesktopExec {
         return out;
     }
 
-    inline bool isNoInputField(const std::string& word) {
-        return word == "%f" || word == "%F" || word == "%u" || word == "%U" || word == "%d" || word == "%D" || word == "%n" || word == "%N" || word == "%v" || word == "%m";
-    }
+    enum class EFieldKind {
+        LITERAL,
+        SCALAR,
+        SINGLE_INPUT,
+        LIST_INPUT,
+        ICON,
+        DEPRECATED_EMPTY,
+    };
 
-    inline bool isKnownField(char code) {
-        return code == '%' || code == 'f' || code == 'F' || code == 'u' || code == 'U' || code == 'i' || code == 'c' || code == 'k' || code == 'd' || code == 'D' || code == 'n' || code == 'N' || code == 'v' || code == 'm';
-    }
+    enum class EScalarSource {
+        NONE,
+        NAME,
+        DESKTOP_FILE,
+    };
 
-    inline bool isInputField(char code) {
-        return code == 'f' || code == 'F' || code == 'u' || code == 'U';
+    struct SFieldSemantics {
+        EFieldKind    kind;
+        EScalarSource scalarSource;
+    };
+
+    inline constexpr std::optional<SFieldSemantics> classifyField(char code) {
+        switch (code) {
+            case '%': return SFieldSemantics{EFieldKind::LITERAL, EScalarSource::NONE};
+            case 'c': return SFieldSemantics{EFieldKind::SCALAR, EScalarSource::NAME};
+            case 'k': return SFieldSemantics{EFieldKind::SCALAR, EScalarSource::DESKTOP_FILE};
+            case 'f':
+            case 'u': return SFieldSemantics{EFieldKind::SINGLE_INPUT, EScalarSource::NONE};
+            case 'F':
+            case 'U': return SFieldSemantics{EFieldKind::LIST_INPUT, EScalarSource::NONE};
+            case 'i': return SFieldSemantics{EFieldKind::ICON, EScalarSource::NONE};
+            case 'd':
+            case 'D':
+            case 'n':
+            case 'N':
+            case 'v':
+            case 'm': return SFieldSemantics{EFieldKind::DEPRECATED_EMPTY, EScalarSource::NONE};
+            default: return std::nullopt;
+        }
     }
 
     inline std::optional<std::vector<std::string>> expand(const std::string& exec, const std::string& name, const std::string& file, const std::string& icon) {
@@ -158,78 +185,67 @@ namespace NHyprbar::DesktopExec {
         if (!WORDS || WORDS->empty())
             return std::nullopt;
 
+        std::vector<std::string> out;
+        out.reserve(WORDS->size() + 1);
         size_t inputFields = 0;
         for (size_t wi = 0; wi < WORDS->size(); wi++) {
             const auto& T = (*WORDS)[wi];
-            for (size_t i = 0; i < T.value.size(); i++) {
-                if (T.value[i] != '%' || T.escaped[i])
-                    continue;
-                if (++i >= T.value.size())
-                    return std::nullopt;
-                const char CODE = T.value[i];
-                if (!isKnownField(CODE))
-                    return std::nullopt;
-                if (CODE != '%' && (T.quoted[i - 1] || T.quoted[i]))
-                    return std::nullopt;
-                if (isInputField(CODE) && ++inputFields > 1)
-                    return std::nullopt;
-                if ((CODE == 'F' || CODE == 'U' || CODE == 'i') && T.value.size() != 2)
-                    return std::nullopt;
-                if (CODE == 'i' && wi == 0)
-                    return std::nullopt; // the executable itself cannot be %i
-            }
-            // The executable slot cannot be a file, URL, icon, or deprecated
-            // field code: those expand to no executable in this launcher.
-            if (wi == 0 && T.value.find('%') != std::string::npos && T.value != "%%") {
-                bool hasField = false;
-                for (size_t i = 0; i < T.value.size(); i++)
-                    if (T.value[i] == '%' && !T.escaped[i] && i + 1 < T.value.size() && T.value[i + 1] != '%')
-                        hasField = true;
-                if (hasField)
-                    return std::nullopt;
-            }
-        }
-
-        std::vector<std::string> out;
-        for (const auto& T : *WORDS) {
-            if (T.value == "%i" && !T.escaped[0] && !T.escaped[1]) {
-                if (!icon.empty()) {
-                    out.emplace_back("--icon");
-                    out.push_back(icon);
-                }
-                continue;
-            }
-
             std::string value;
+            value.reserve(T.value.size());
+            bool omitArgument = false;
+
             for (size_t i = 0; i < T.value.size(); i++) {
                 if (T.value[i] != '%' || T.escaped[i]) {
                     value += T.value[i];
                     continue;
                 }
+
+                const size_t FIELD_START = i;
                 if (++i >= T.value.size())
                     return std::nullopt;
-                switch (T.value[i]) {
-                    case '%': value += '%'; break;
-                    case 'c': value += name; break;
-                    case 'k': value += file; break;
-                    // This launcher supplies no files or URLs. Deprecated
-                    // field codes likewise have no value at launch time.
-                    case 'f':
-                    case 'F':
-                    case 'u':
-                    case 'U':
-                    case 'd':
-                    case 'D':
-                    case 'n':
-                    case 'N':
-                    case 'v':
-                    case 'm': break;
-                    case 'i': return std::nullopt; // %i must be a whole word
-                    default: return std::nullopt;
+
+                const auto FIELD = classifyField(T.value[i]);
+                if (!FIELD)
+                    return std::nullopt;
+                if (FIELD->kind != EFieldKind::LITERAL && (T.quoted[FIELD_START] || T.quoted[i]))
+                    return std::nullopt;
+                // Only a literal percent can participate in the executable
+                // token. Every other field can expand to empty or user-facing
+                // metadata and therefore cannot name the process safely.
+                if (wi == 0 && FIELD->kind != EFieldKind::LITERAL)
+                    return std::nullopt;
+
+                const bool WHOLE_ARGUMENT = FIELD_START == 0 && T.value.size() == 2;
+                switch (FIELD->kind) {
+                    case EFieldKind::LITERAL: value += '%'; break;
+                    case EFieldKind::SCALAR:
+                        value += FIELD->scalarSource == EScalarSource::NAME ? name : file;
+                        break;
+                    case EFieldKind::SINGLE_INPUT:
+                    case EFieldKind::LIST_INPUT:
+                        if (++inputFields > 1)
+                            return std::nullopt;
+                        // The menubar launches applications without files or
+                        // URLs. A lone empty field removes its argv element;
+                        // an embedded one preserves the surrounding option.
+                        omitArgument = WHOLE_ARGUMENT;
+                        break;
+                    case EFieldKind::ICON:
+                        if (!WHOLE_ARGUMENT)
+                            return std::nullopt;
+                        if (!icon.empty()) {
+                            out.emplace_back("--icon");
+                            out.push_back(icon);
+                        }
+                        omitArgument = true;
+                        break;
+                    case EFieldKind::DEPRECATED_EMPTY:
+                        omitArgument = WHOLE_ARGUMENT;
+                        break;
                 }
             }
-            const bool RAW_NO_INPUT = isNoInputField(T.value) && std::ranges::none_of(T.escaped, [](bool escaped) { return escaped; });
-            if (value.empty() && RAW_NO_INPUT)
+
+            if (omitArgument)
                 continue;
             out.push_back(std::move(value));
         }

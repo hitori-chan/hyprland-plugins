@@ -161,6 +161,10 @@ Entry string/list values decode their freedesktop escapes before names, icons,
 categories, and desktop visibility are used. `Exec=` keeps its separate
 quoting grammar until field-code expansion, then retains its argument
 boundaries when handed to Hyprland's executor; malformed entries are skipped.
+Field codes are classified once for validation and expansion. The menubar
+supplies no files or URLs, so standalone file/URL fields remove their argument
+while embedded fields retain the surrounding text; malformed placement and
+unknown or ambiguous fields still reject the entry.
 Completion enumeration is likewise worker-owned and cancellable, so the first
 Tab may wait briefly for its first matching batch without stalling keyboard
 dispatch.
