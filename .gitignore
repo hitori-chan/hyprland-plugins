@@ -25,3 +25,6 @@ devtools/input-capture-proto.c
 devtools/input-capture-proto.h
 devtools/desktop-exec-test
 devtools/hyprosd-readback-test
+devtools/persist-test
+devtools/hyprsnap-geometry-test
+devtools/hyprmax-geometry-test

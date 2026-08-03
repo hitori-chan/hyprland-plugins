@@ -181,6 +181,9 @@ Markup stays the whitelisted Pango subset with the literal-`<`/`&` rescue;
 `<a href>` opens via `xdg-open`; `<img src>` renders a thumbnail row;
 `sound-file`/`sound-name` play through `sound_command`. Cards never render
 above the lockscreen, and input listeners guard and reset there first.
+Detached link and sound helpers have fixed admission limits. Plugin shutdown
+removes their callbacks and descriptors without waiting for a stuck command;
+the target compositor's `SA_NOCLDWAIT` policy owns any later process exit.
 Colors, fonts and metrics arrive from theme.lua via `plugin:hyprnotify:*`;
 the C++ defaults ARE the glass·ink tokens (`common/theme.hpp`), so an
 unset shell inherits the whole material rather than a fallback.

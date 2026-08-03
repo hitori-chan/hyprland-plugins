@@ -64,6 +64,9 @@ namespace NHyprnotify {
     //
     // A child per pidfd, reaped by an event-loop source when it dies: no
     // blocking, no zombies, and EXIT pulls the sources before the loop goes.
+    // The target compositor installs SA_NOCLDWAIT, so exit can release an
+    // already-execed helper after removing its callback instead of waiting
+    // indefinitely for a broken xdg-open or sound command.
     struct SChild {
         pid_t            pid = -1;
         int              fd  = -1;
@@ -91,11 +94,11 @@ namespace NHyprnotify {
         armOrphanTick();
     }
 
-    static void reapOrphans(bool block = false);
+    static void reapOrphans();
 
     static int                     onChildExit(int, uint32_t, void* data) {
         auto* c = (SChild*)data;
-        NHyprCommon::waitPid(c->pid, true);
+        NHyprCommon::reapPid(c->pid); // pidfd readiness is authoritative
         wl_event_source_remove(c->src);
         close(c->fd);
         std::erase_if(children, [&](const auto& U) { return U.get() == c; });
@@ -121,7 +124,7 @@ namespace NHyprnotify {
             // opened, then keep ownership until a non-blocking reap wins
             if (FD >= 0)
                 close(FD);
-            if (NHyprCommon::waitPid(pid, false) == 0)
+            if (NHyprCommon::reapPid(pid) == 0)
                 rememberOrphan(pid);
             return;
         }
@@ -131,36 +134,36 @@ namespace NHyprnotify {
         c->src = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, FD, WL_EVENT_READABLE, onChildExit, c.get());
         if (!c->src) {
             close(FD);
-            if (NHyprCommon::waitPid(pid, false) == 0)
+            if (NHyprCommon::reapPid(pid) == 0)
                 rememberOrphan(pid);
             return;
         }
         children.push_back(std::move(c));
     }
 
-    static void reapOrphans(bool block) {
-        std::erase_if(spawnOrphans, [block](pid_t p) {
-            const pid_t RESULT = NHyprCommon::waitPid(p, block);
+    static void reapOrphans() {
+        std::erase_if(spawnOrphans, [](pid_t p) {
+            const pid_t RESULT = NHyprCommon::reapPid(p);
             return RESULT > 0 || (RESULT < 0 && errno == ECHILD);
         });
-        if (!block)
-            armOrphanTick();
+        armOrphanTick();
     }
 
-    static void reapChildren(bool block = false) {
+    static void releaseChildren() {
         for (auto& c : children) {
             if (c->src)
                 wl_event_source_remove(c->src);
             if (c->fd >= 0)
                 close(c->fd);
-            if (c->pid > 0) {
-                const pid_t RESULT = NHyprCommon::waitPid(c->pid, block);
-                if (!block && RESULT == 0)
-                    rememberOrphan(c->pid);
-            }
+            if (c->pid > 0)
+                NHyprCommon::reapPid(c->pid);
         }
         children.clear();
-        reapOrphans(block);
+        reapOrphans();
+        // No callback can reference these helpers now. SA_NOCLDWAIT lets the
+        // compositor reap a later exit without retaining plugin code.
+        spawnOrphans.clear();
+        armOrphanTick();
     }
 }
 
@@ -348,7 +351,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
     Policy::exit(); // the rules outlive all of it, so they flush last
     inputExit();
     replyExit();
-    reapChildren(true); // plugin exit owns the helpers; reap before its code can unload
+    releaseChildren(); // remove callbacks without waiting on external helpers
     if (orphanTick && g_pEventLoopManager)
         g_pEventLoopManager->removeTimer(orphanTick);
     orphanTick.reset();

@@ -6,11 +6,11 @@
 
 namespace NHyprCommon {
 
-    inline pid_t waitPid(pid_t pid, bool block) noexcept {
+    inline pid_t reapPid(pid_t pid) noexcept {
         if (pid <= 0)
             return -1;
         for (;;) {
-            const pid_t RESULT = waitpid(pid, nullptr, block ? 0 : WNOHANG);
+            const pid_t RESULT = waitpid(pid, nullptr, WNOHANG);
             if (RESULT < 0 && errno == EINTR)
                 continue;
             return RESULT;

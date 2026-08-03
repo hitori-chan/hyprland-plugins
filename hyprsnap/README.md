@@ -9,7 +9,8 @@ move-drag. (Spawn placement lives in `hyprplace`.)
   that corner's quarter — outline preview, committed on drop. Either
   release order works: the button, or Super first. A pointer in a gap between
   outputs cannot arm a zone, although magnetic snapping still uses the nearest
-  output.
+  output. Preview and commit both honor the client's current minimum and
+  maximum size while preserving the selected edge or corner.
 
 Keep the native `general:snap` off: two magnets pull to different spots.
 

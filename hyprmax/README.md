@@ -14,10 +14,12 @@ Awesome's per-window maximize. No config.
   are swallowed. Loads before `hyprclick` so the swallow wins.
 - **Windowed size remembered per app** — across closes and relogs
   (`$XDG_STATE_HOME/hyprmax/windowed.tsv`): un-maximizing a born-maximized
-  window restores the app's last real windowed box.
+  window restores the app's last real windowed box, constrained by its current
+  size hints and the current workarea.
 - **Tracks native geometry changes** — a plugin-maximized window follows its
   workspace to another output and re-fills the current workarea after
-  workspace activation or monitor layout changes.
+  workspace activation, monitor layout changes, or a native reserved-area
+  change such as a layer surface changing its exclusive zone.
 
 ## Lua
 

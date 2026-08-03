@@ -25,6 +25,11 @@ place like the old scripts pinned them. No config. Replaces
    session-bus connection. Bus death turns the cards off; the keys keep
    working.
 
+Set/readback chains and fallback children have fixed admission limits. Plugin
+shutdown removes their callbacks and descriptors without waiting for a stuck
+external command; the target compositor's `SA_NOCLDWAIT` policy owns any
+later process exit.
+
 Functions: `volume_up`, `volume_down`, `mute`, `mic_mute`,
 `brightness_up`, `brightness_down` — bind them nil-guarded:
 

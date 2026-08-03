@@ -9,7 +9,8 @@ monitor, no spawned processes.
    destroy); a 400ms settle timer coalesces the burst one plug produces.
    External = a non-virtual, non-touchpad pointer with libinput bus type
    USB/Bluetooth; the touchpad is the compositor's own `m_isTouchpad`
-   entry, not a name match.
+   entry, not a name match. Replacing that device reapplies the current policy
+   once even when the desired enabled state did not change.
 2. **`hl.plugin.hyprpad.toggle()`** — manual flip (XF86TouchpadToggle).
    Holds until the next hotplug or config reload re-checks.
 3. The flip is an in-process `hl.device({...})` eval — the same code

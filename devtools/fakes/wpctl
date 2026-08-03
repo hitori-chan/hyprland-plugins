@@ -3,6 +3,10 @@ set -u
 
 LOG=${HYPROSD_WPCTL_LOG:?}
 printf '%s\n' "$*" >> "$LOG"
+if [[ -n "${HYPROSD_WPCTL_HANG_FILE:-}" && -e "$HYPROSD_WPCTL_HANG_FILE" ]]; then
+	printf '%s\n' "$$" > "${HYPROSD_WPCTL_HANG_FILE}.pid"
+	exec sleep 30
+fi
 
 case "${1:-}" in
 set-volume)

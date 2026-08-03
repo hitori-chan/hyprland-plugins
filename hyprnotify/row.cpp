@@ -206,7 +206,6 @@ namespace NHyprnotify {
                 }
                 card.replyField = FB;
                 card.replySend  = SB;
-                yy += BTN_H;
             }
 
             // ---- the ⋮: the way into the manage panel ----

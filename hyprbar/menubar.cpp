@@ -279,7 +279,8 @@ namespace NHyprbar {
                 addDir(std::string{HOME} + "/.local/share/applications");
             if (HOME)
                 addDir(std::string{HOME} + "/.local/share/flatpak/exports/share/applications");
-            for (const auto& D : splitList(std::getenv("XDG_DATA_DIRS") ? std::getenv("XDG_DATA_DIRS") : "/usr/local/share:/usr/share", ':'))
+            const char* DATA_DIRS = std::getenv("XDG_DATA_DIRS");
+            for (const auto& D : splitList(DATA_DIRS && *DATA_DIRS ? DATA_DIRS : "/usr/local/share:/usr/share", ':'))
                 addDir(D + (D.back() == '/' ? "applications" : "/applications"));
             addDir("/var/lib/flatpak/exports/share/applications");
 
@@ -595,7 +596,8 @@ namespace NHyprbar {
             request.maxEntries = 512;
             request.maxVisited = 8192;
             if (typed.find_first_not_of(' ') >= start) { // the command word
-                for (const auto& dir : splitList(std::getenv("PATH") ? std::getenv("PATH") : "", ':'))
+                const char* PATH = std::getenv("PATH");
+                for (const auto& dir : splitList(PATH ? PATH : "", ':'))
                     request.roots.emplace_back(dir);
                 request.namePrefix = STEM;
                 request.executable = true;

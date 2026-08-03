@@ -33,6 +33,7 @@
 #include "common/queries.hpp"
 
 #include "hyprsnap.hpp"
+#include "geometry.hpp"
 
 #include <hyprland/src/config/ConfigValue.hpp>
 
@@ -56,8 +57,10 @@ namespace NHyprsnap::Snap {
             H_RIGHT
         };
 
-        std::optional<CBox> zoneBox; // the armed aerosnap slot, global logical
+        std::optional<CBox> zoneBox; // constrained aerosnap border box, global logical
         PHLMONITORREF       zoneMon;
+        eEdgeV              zoneV = V_NONE;
+        eEdgeH              zoneH = H_NONE;
         NHyprCommon::CHop   pendingMagnet;
         bool                magnetQueued = false;
         std::optional<CBox> resizeStart; // resize-drag begin box: tells dragged edges from anchored
@@ -102,6 +105,21 @@ namespace NHyprsnap::Snap {
             if (v != V_NONE)
                 return CBox{WA.x, v == V_TOP ? WA.y : WA.y + hh, WA.w, hh};
             return std::nullopt;
+        }
+
+        std::optional<CBox> constrainedZone(const SP<Layout::ITarget>& target, const PHLMONITOR& monitor, eEdgeV v, eEdgeH h) {
+            if (!target || !monitor)
+                return std::nullopt;
+            const auto WA   = monitor->logicalBoxMinusReserved();
+            const auto SLOT = slotFor(v, h, WA);
+            if (!SLOT)
+                return std::nullopt;
+
+            static auto PBORDER = CConfigValue<Config::INTEGER>("general:border_size");
+            const auto  HA = h == H_LEFT ? Geometry::EHorizontalAnchor::LEFT :
+                h == H_RIGHT ? Geometry::EHorizontalAnchor::RIGHT : Geometry::EHorizontalAnchor::CENTER;
+            const auto VA = v == V_TOP ? Geometry::EVerticalAnchor::TOP : v == V_BOTTOM ? Geometry::EVerticalAnchor::BOTTOM : Geometry::EVerticalAnchor::CENTER;
+            return Geometry::constrainedSlot(*SLOT, target->minSize(), target->maxSize(), std::max((double)*PBORDER, 0.0), HA, VA);
         }
 
         struct SNearest {
@@ -200,6 +218,8 @@ namespace NHyprsnap::Snap {
             damageZone();
         zoneBox.reset();
         zoneMon.reset();
+        zoneV = V_NONE;
+        zoneH = H_NONE;
         lRender.reset();
         pendingMagnet.reset();
         magnetQueued = false;
@@ -355,14 +375,16 @@ namespace NHyprsnap::Snap {
 
         // -- aerosnap arming + preview --
         const auto [V, HZ] = screenEdges(MON->logicalBox(), POS, std::max((double)g_config.edge->value(), 1.0));
-        const auto SLOT    = slotFor(V, HZ, MON->logicalBoxMinusReserved());
-        const bool CHANGED =
-            SLOT.has_value() != zoneBox.has_value() || (SLOT && zoneBox && (SLOT->x != zoneBox->x || SLOT->y != zoneBox->y || SLOT->w != zoneBox->w || SLOT->h != zoneBox->h));
+        const auto SLOT    = constrainedZone(T, MON, V, HZ);
+        const bool CHANGED = V != zoneV || HZ != zoneH || SLOT.has_value() != zoneBox.has_value() ||
+            (SLOT && zoneBox && (SLOT->x != zoneBox->x || SLOT->y != zoneBox->y || SLOT->w != zoneBox->w || SLOT->h != zoneBox->h));
         if (CHANGED) {
             const bool HAD = zoneBox.has_value();
             damageZone(); // the outgoing outline's monitor
             zoneBox = SLOT;
             zoneMon = MON;
+            zoneV   = V;
+            zoneH   = HZ;
             damageZone(); // and the incoming one's
             if (!HAD && zoneBox)
                 lRender = Event::bus()->m_events.render.stage.listen([](eRenderStage stage) { onRenderStage(stage); });
@@ -393,14 +415,20 @@ namespace NHyprsnap::Snap {
             resizeStart.reset();
             return;
         }
-        if (zoneBox && zoneMon.lock()) {
+        if (zoneBox) {
             // the slot is the border box; the surface sits inside it, so the
             // border stays on screen (maximize is the one full-bleed state)
             static auto  PBORDER = CConfigValue<Config::INTEGER>("general:border_size");
             const double B       = std::max((double)*PBORDER, 0.0);
-            // dragEnd right after us commits the geometry we set here
-            T->setPositionGlobal(CBox{zoneBox->x + B, zoneBox->y + B, zoneBox->w - 2 * B, zoneBox->h - 2 * B});
-            T->warpPositionSize();
+            // Re-read workarea and client constraints at drop: either can
+            // change after the last pointer motion.
+            if (const auto MON = zoneMon.lock(); MON) {
+                if (const auto FINAL = constrainedZone(T, MON, zoneV, zoneH); FINAL) {
+                    // dragEnd right after us commits the geometry we set here
+                    T->setPositionGlobal(CBox{FINAL->x + B, FINAL->y + B, FINAL->w - 2 * B, FINAL->h - 2 * B});
+                    T->warpPositionSize();
+                }
+            }
         }
         reset();
     }

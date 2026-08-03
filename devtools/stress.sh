@@ -73,6 +73,7 @@ hq()      { hyprctl -i "$SIG" "$@"; }
 dsp()     { hq dispatch "$1" >/dev/null 2>&1; }
 clients() { hq clients -j 2>/dev/null; }
 ws()      { hq activeworkspace -j | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])'; }
+reserved() { hq monitors -j | python3 -c 'import json,sys;print(",".join(map(str,json.load(sys.stdin)[0]["reserved"])))'; }
 
 # Nothing here may hard-code the nested monitor's size: it is whatever window
 # the Wayland backend gets, and it can change when the nested config or its
@@ -131,6 +132,7 @@ kill_nested() { # kill any non-live instance running one of the harness cfgs
 
 launch_nested() {
 	PATH="$REPO/devtools/fakes:$PATH" HYPROSD_WPCTL_LOG="$STATE/wpctl.log" \
+		HYPROSD_WPCTL_HANG_FILE="$STATE/hang-wpctl" HYPRNOTIFY_SOUND_HANG_FILE="$STATE/hang-sound" \
 		HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" \
 		bash "$HARNESS/launch.sh" >/dev/null 2>&1
 }
@@ -321,6 +323,45 @@ f=[ (c['at'],c['size']) for c in json.load(sys.stdin) if c['class']=='foot' ]
 print(f[0] if f else 'none')"; }
 REF="$(box)"
 chk "churn probe up" test "$REF" != none
+# A plugin-maximized window lives outside the compositor fullscreen model.
+# Changing a native reserved area must therefore reach hyprmax explicitly.
+dsp "hl.plugin.hyprmax.toggle()"; sleep 0.5
+MAX_BEFORE="$(box)"
+RESERVED_BEFORE="$(reserved)"
+hq seterror 'rgba(ff3030ff)' reserved-area-probe >/dev/null 2>&1
+for _ in $(seq 1 30); do
+	RESERVED_WITH_ERROR="$(reserved)"
+	[[ "$RESERVED_WITH_ERROR" != "$RESERVED_BEFORE" ]] && break
+	sleep 0.1
+done
+if [[ "$RESERVED_WITH_ERROR" != "$RESERVED_BEFORE" ]]; then
+	ok "fork: error overlay changes native reserved area"
+else
+	bad "fork: error overlay changes native reserved area"
+fi
+for _ in $(seq 1 30); do
+	MAX_WITH_ERROR="$(box)"
+	[[ "$MAX_WITH_ERROR" != "$MAX_BEFORE" ]] && break
+	sleep 0.1
+done
+if [[ "$MAX_WITH_ERROR" != "$MAX_BEFORE" ]]; then
+	ok "hyprmax: native reserved-area change reflows maximized geometry"
+else
+	bad "hyprmax: native reserved-area change reflows maximized geometry"
+fi
+hq seterror disable >/dev/null 2>&1
+for _ in $(seq 1 30); do
+	[[ "$(reserved)" == "$RESERVED_BEFORE" ]] && break
+	sleep 0.1
+done
+chk "fork: disabling error overlay restores native reserved area" test "$(reserved)" = "$RESERVED_BEFORE"
+for _ in $(seq 1 30); do
+	[[ "$(box)" == "$MAX_BEFORE" ]] && break
+	sleep 0.1
+done
+chk "hyprmax: removing native reservation restores maximized workarea" test "$(box)" = "$MAX_BEFORE"
+dsp "hl.plugin.hyprmax.toggle()"; sleep 0.5
+chk "hyprmax: reserved-area roundtrip preserves windowed restore" test "$(box)" = "$REF"
 for i in $(seq 1 20); do dsp "hl.plugin.hyprmax.toggle()"; done; sleep 1
 chk "20 maximize toggles round-trip losslessly" test "$(box)" = "$REF"
 for i in $(seq 1 10); do dsp "hl.plugin.hyprbar.minimize()"; dsp "hl.plugin.hyprbar.restore()"; done; sleep 1
@@ -1079,7 +1120,38 @@ chk "log clean (only known-benign lines)" bash -c \
 	"! grep -iE 'error|assert|segv|abort' '$LOG' | grep -vE 'Creating the Error Overlay|xkbcomp' | grep -q ."
 
 # ---- teardown -----------------------------------------------------------
+# A mapped plugin cannot retain callbacks into its code after unload, but an
+# external helper also cannot be allowed to hold compositor exit hostage.
+# Start one helper through each owner, require bounded shutdown, then remove
+# the deliberately hung fixtures owned by this test.
+: > "$STATE/hang-wpctl"
+: > "$STATE/hang-sound"
+dsp "hl.plugin.hyprosd.volume_up()"
+nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
+	Notify susssasa\{sv\}i teardown 0 "" "hung sound" body 0 1 sound-name s gate 30000 >/dev/null 2>&1
+for _ in $(seq 1 30); do
+	[[ -s "$STATE/hang-wpctl.pid" && -s "$STATE/hang-sound.pid" ]] && break
+	sleep 0.1
+done
+chk "teardown: hyprosd owns an active helper" test -s "$STATE/hang-wpctl.pid"
+chk "teardown: hyprnotify owns an active helper" test -s "$STATE/hang-sound.pid"
+NESTED_PID="$(head -1 "$RUNDIR/$SIG/hyprland.lock" 2>/dev/null)"
+chk "teardown: nested compositor pid is known" test -n "$NESTED_PID"
 kill_nested
+for _ in $(seq 1 30); do
+	! kill -0 "$NESTED_PID" 2>/dev/null && break
+	sleep 0.1
+done
+if [[ -n "$NESTED_PID" ]] && ! kill -0 "$NESTED_PID" 2>/dev/null; then
+	ok "teardown: active helpers do not block compositor exit"
+else
+	bad "teardown: active helpers do not block compositor exit"
+	[[ -n "$NESTED_PID" ]] && kill -KILL "$NESTED_PID" 2>/dev/null || true
+fi
+for marker in "$STATE/hang-wpctl" "$STATE/hang-sound"; do
+	pid="$(cat "${marker}.pid" 2>/dev/null)"
+	[[ -n "$pid" ]] && kill "$pid" 2>/dev/null || true
+done
 rm -rf "$STATE" "$CFG"
 hyprctl output remove nested-dev >/dev/null 2>&1
 rm -f "$HARNESS/nested.sig" "$HARNESS/nested.wl"

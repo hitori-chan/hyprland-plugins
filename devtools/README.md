@@ -3,7 +3,8 @@
 Dev tooling for exercising the plugins in the nested Hyprland
 (`~/.local/share/hypr-nested/`). Not plugins (not in hyprpm.toml). Tracked:
 `stress.sh`, `vptr.c`, `vkbd.c`, `input-capture.c`, `desktop_exec_test.cpp`,
-`hyprosd_readback_test.cpp`, `fakes/wpctl`, the `Makefile`, and this README; the
+`hyprosd_readback_test.cpp`, the geometry/persistence tests, the nested helper
+fakes, the `Makefile`, and this README; the
 binaries and the `*-proto.{c,h}` wayland-scanner glue are build artifacts
 that `make` regenerates.
 
@@ -26,6 +27,36 @@ The standalone C++26 parser regression for the exact output emitted by
 make test-hyprosd
 ```
 
+## persist_test.cpp
+
+The standalone C++26 regression for shared geometry-state admission. It
+checks ordinary and legacy TSV rows plus file, line, row, class, and retained
+entry limits without starting a compositor or touching live state:
+
+```
+make test-persist
+```
+
+## hyprsnap_geometry_test.cpp
+
+The standalone C++26 regression for constrained aerosnap boxes. It covers
+edge/corner anchoring, borders, fixed-size clients, maximums below a slot, and
+client minimums larger than the usable output:
+
+```
+make test-hyprsnap-geometry
+```
+
+## hyprmax_geometry_test.cpp
+
+The standalone C++26 regression for remembered maximize restore geometry. It
+checks current workarea bounds, client minimums and maximums, hostile persisted
+dimensions, and minimums larger than the usable output:
+
+```
+make test-hyprmax-geometry
+```
+
 ## stress.sh — the pre-deploy regression gate
 
 Exact assertions over the nested harness + `vptr` + `vkbd` + `input-capture`: placement
@@ -33,7 +64,9 @@ memory, spawn/close storms, the notification cap, churn round-trips,
 hostile state files, an input storm, a native `hyprland-input-capture-v1`
 session, the shade's click/key verbs, acting-closes-the-shade, the bell click,
 hyprosd's fake-`wpctl` process/readback path, the OSD card below an open shade,
-a config reload, log hygiene. The fake changes no live PipeWire state.
+a config reload, log hygiene, and bounded shutdown with deliberately hung
+helpers. The fakes change no live PipeWire state, and the gate kills its hung
+helper fixtures after the shutdown assertion.
 Check #1 refuses to run when the installed headers'
 `version.h` hash doesn't match the running binary. Run it before every
 deploy; it must end `ALL CHECKS PASSED`.

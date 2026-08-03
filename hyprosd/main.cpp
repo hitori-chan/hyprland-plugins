@@ -227,12 +227,12 @@ namespace NHyprosd {
         return (!newChain || chains.size() < MAX_ACTIVE_CHAINS) && orphans.size() < MAX_ORPHANS && trackedChildren() < MAX_TRACKED_CHILDREN;
     }
 
-    static void                    reapOrphans(bool block = false) {
-        std::erase_if(orphans, [block](pid_t p) {
-            const pid_t RESULT = NHyprCommon::waitPid(p, block);
+    static void                    reapOrphans() {
+        std::erase_if(orphans, [](pid_t p) {
+            const pid_t RESULT = NHyprCommon::reapPid(p);
             return RESULT > 0 || (RESULT < 0 && errno == ECHILD);
         });
-        if (!block && orphanTick && g_pEventLoopManager)
+        if (orphanTick && g_pEventLoopManager)
             orphanTick->updateTimeout(orphans.empty() ? std::nullopt : std::optional{std::chrono::milliseconds(100)});
     }
 
@@ -247,7 +247,7 @@ namespace NHyprosd {
         reapOrphans();
     }
 
-    static void                    chainDone(SChain* c, bool block = false) {
+    static void                    chainDone(SChain* c) {
         if (c->pidSrc)
             wl_event_source_remove(c->pidSrc);
         if (c->outSrc)
@@ -258,12 +258,12 @@ namespace NHyprosd {
             close(c->outFd);
         // a child that closed its stdout a hair before exiting isn't a zombie
         // yet; hand it to the orphan list to re-reap rather than leak it
-        const auto detach = [block](pid_t& pid) {
+        const auto detach = [](pid_t& pid) {
             if (pid <= 0)
                 return;
             const pid_t CHILD = std::exchange(pid, -1);
-            const pid_t RESULT = NHyprCommon::waitPid(CHILD, block);
-            if (!block && RESULT == 0)
+            const pid_t RESULT = NHyprCommon::reapPid(CHILD);
+            if (RESULT == 0)
                 rememberOrphan(CHILD);
         };
         detach(c->setPid);
@@ -361,7 +361,7 @@ namespace NHyprosd {
         if (!c->outSrc) {
             close(c->outFd);
             c->outFd = -1;
-            if (NHyprCommon::waitPid(c->getPid, false) == 0)
+            if (NHyprCommon::reapPid(c->getPid) == 0)
                 rememberOrphan(c->getPid);
             c->getPid = -1;
             chainDone(c);
@@ -401,7 +401,7 @@ namespace NHyprosd {
         if (!c->pidSrc) {
             close(c->pidFd);
             c->pidFd = -1;
-            if (NHyprCommon::waitPid(PID, false) == 0)
+            if (NHyprCommon::reapPid(PID) == 0)
                 rememberOrphan(PID);
             return;
         }
@@ -493,15 +493,19 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_up", luaBrightnessUp);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_down", luaBrightnessDown);
 
-    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.2.3"};
+    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.2.4"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
     g_lifecycle.resetAll(); // every hop, in one place
     queued.clear();
     while (!chains.empty())
-        chainDone(chains.back().get(), true); // plugin exit owns the helpers; reap before its code can unload
-    reapOrphans(true);
+        chainDone(chains.back().get());
+    reapOrphans();
+    // Event sources and descriptors are gone. The exact target installs
+    // SA_NOCLDWAIT, so a helper that exits later cannot become a zombie and
+    // must not hold compositor teardown hostage.
+    orphans.clear();
     if (orphanTick && g_pEventLoopManager)
         g_pEventLoopManager->removeTimer(orphanTick);
     orphanTick.reset();

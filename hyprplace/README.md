@@ -20,6 +20,10 @@ fit, which drops the margin on that axis. Windows that chose their own
 spot (X11 geometry, dialogs anchored to a parent) keep it while it's
 free; X11 override-redirect surfaces are left alone.
 
+The persisted geometry store has fixed file, row, class-key, and retained-entry
+limits. Malformed or oversized state is ignored instead of delaying plugin
+startup.
+
 ## Size
 
 A genuinely **resizable** app (mpv, terminals, browsers) is **born** at

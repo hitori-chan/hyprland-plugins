@@ -13,6 +13,7 @@ LDLIBS  += $(shell pkg-config --libs wayland-client)
 KLIBS   := $(shell pkg-config --libs xkbcommon)
 EICFLAGS := $(shell pkg-config --cflags libei-1.0)
 EILIBS   := $(shell pkg-config --libs libei-1.0)
+HYPR_CFLAGS := $(shell pkg-config --cflags hyprland)
 
 all: vptr vkbd input-capture
 
@@ -27,6 +28,24 @@ hyprosd-readback-test: hyprosd_readback_test.cpp ../hyprosd/wpctl.hpp
 
 test-hyprosd: hyprosd-readback-test
 	./hyprosd-readback-test
+
+persist-test: persist_test.cpp ../common/persist.hpp ../common/lifecycle.hpp
+	$(CXX) -std=c++26 -O2 -Wall -Wextra -Wpedantic -Werror -I.. $(HYPR_CFLAGS) $< -o $@
+
+test-persist: persist-test
+	./persist-test
+
+hyprsnap-geometry-test: hyprsnap_geometry_test.cpp ../hyprsnap/geometry.hpp
+	$(CXX) -std=c++26 -O2 -Wall -Wextra -Wpedantic -Werror -I.. $(HYPR_CFLAGS) $< -o $@
+
+test-hyprsnap-geometry: hyprsnap-geometry-test
+	./hyprsnap-geometry-test
+
+hyprmax-geometry-test: hyprmax_geometry_test.cpp ../hyprmax/geometry.hpp
+	$(CXX) -std=c++26 -O2 -Wall -Wextra -Wpedantic -Werror -I.. $(HYPR_CFLAGS) $< -o $@
+
+test-hyprmax-geometry: hyprmax-geometry-test
+	./hyprmax-geometry-test
 
 vptr: vptr.c vptr-proto.c vptr-proto.h
 	$(CC) $(CFLAGS) vptr.c vptr-proto.c -o $@ $(LDLIBS)
@@ -51,6 +70,6 @@ input-capture-proto.c: $(CXML)
 	wayland-scanner private-code $< $@
 
 clean:
-	rm -f vptr vkbd input-capture desktop-exec-test hyprosd-readback-test vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c
+	rm -f vptr vkbd input-capture desktop-exec-test hyprosd-readback-test persist-test hyprsnap-geometry-test hyprmax-geometry-test vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c
 
-.PHONY: all clean test-desktop-exec test-hyprosd
+.PHONY: all clean test-desktop-exec test-hyprosd test-persist test-hyprsnap-geometry test-hyprmax-geometry
