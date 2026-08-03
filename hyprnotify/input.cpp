@@ -3,11 +3,10 @@
 //
 //   popup    left = action/link/default → dismiss · right = dismiss ·
 //            middle = park the stack into the shade · hover reveals ✕
-//   row      a shade row IS its banner: left on the body fires the card's
-//            primary (the fd.o `default`) and dismisses unless resident,
-//            same as the popup — rows open by default, so the click is
-//            spent on acting rather than on revealing. The CHEVRON is the
-//            only fold target · a link opens · a button acts · right =
+//   row      a compact row whose open form reveals more expands on a body
+//            click; once open, the body fires the card's primary (the fd.o
+//            `default`) and dismisses unless resident, same as the popup.
+//            The CHEVRON toggles either state · a link opens · a button acts · right =
 //            dismiss · middle = Clear all · the ⋮ beside the chevron turns
 //            the row into its manage panel
 //   manage   the row's verbs, named and at row width: snooze durations, mute
@@ -73,10 +72,12 @@ namespace NHyprnotify {
         uint32_t     id;
         std::string  group;
         uint32_t     bit;
-        uint8_t      part;   // the SHover part codes: 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 5 silence, 6 priority, 7 snooze, 8 undo, 9 duration
-        std::string  action; // non-empty: a specific action button
-        std::string  href;   // non-empty: a body hyperlink
-        bool         outside = false; // the click fell outside every surface (closes the shade)
+        uint8_t      part;               // the SHover part codes: 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 5 silence, 6 priority, 7 snooze, 8 undo, 9 duration
+        std::string  action;             // non-empty: a specific action button
+        std::string  href;               // non-empty: a body hyperlink
+        bool         expanded   = false; // exact ROW state from the painted hit record
+        bool         expandable = false;
+        bool         outside    = false; // the click fell outside every surface (closes the shade)
     };
     static std::vector<SHit> hitQueue;
     static bool              hitQueued = false;
@@ -281,6 +282,10 @@ namespace NHyprnotify {
                         setCenter(false); // but not the shade: a browser is coming up over it
                         continue;
                     }
+                    if (H.kind == SCard::ROW && H.expandable && !H.expanded) {
+                        centerToggleRow(H.id); // reveal hidden content before the body can act
+                        continue;
+                    }
                     invokeLive(H.id, ""); // the body IS the card's primary, as on the banner
                     continue;
                 }
@@ -435,11 +440,13 @@ namespace NHyprnotify {
         }
 
         SHit h;
-        h.kind  = CARD->kind;
-        h.id    = CARD->id;
-        h.group = CARD->group;
-        h.bit   = BIT;
-        h.part  = partAt(*CARD, COORDS);
+        h.kind       = CARD->kind;
+        h.id         = CARD->id;
+        h.group      = CARD->group;
+        h.bit        = BIT;
+        h.part       = partAt(*CARD, COORDS);
+        h.expanded   = CARD->expanded;
+        h.expandable = CARD->expandable;
         if (BIT == 1u && h.part == 0) {
             if (const int B = buttonAt(*CARD, COORDS); B >= 0)
                 h.action = CARD->buttons[B].id;

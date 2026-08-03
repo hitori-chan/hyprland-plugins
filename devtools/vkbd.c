@@ -18,12 +18,18 @@ static struct zwp_virtual_keyboard_manager_v1* mgr;
 static struct wl_seat*                         seat;
 
 static void                                    g_add(void* d, struct wl_registry* r, uint32_t name, const char* iface, uint32_t ver) {
+    (void)d;
+    (void)ver;
     if (!strcmp(iface, zwp_virtual_keyboard_manager_v1_interface.name))
         mgr = wl_registry_bind(r, name, &zwp_virtual_keyboard_manager_v1_interface, 1);
     else if (!strcmp(iface, wl_seat_interface.name))
         seat = wl_registry_bind(r, name, &wl_seat_interface, 1);
 }
-static void                            g_rem(void* d, struct wl_registry* r, uint32_t name) {}
+static void                            g_rem(void* d, struct wl_registry* r, uint32_t name) {
+    (void)d;
+    (void)r;
+    (void)name;
+}
 static const struct wl_registry_listener RL = {g_add, g_rem};
 
 static uint32_t                          ms(void) {

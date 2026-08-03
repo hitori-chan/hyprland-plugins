@@ -242,8 +242,8 @@ namespace NHyprnotify {
             const double IY = open ? box.y + ROW_PADT : box.y + (ROWH - ICONW) / 2;
             paintIconColumn(P, *N, CBox{box.x + ROW_PADX, IY, ICONW, ICONW}, ST.withBadge, RP);
         }
-        // the chevron circle: an INDICATOR that the row folds, and a second
-        // hit target for it — the whole row is the first one
+        // The chevron is the direct toggle. A compact row's body is the larger
+        // expand target; once open, that same body resumes its primary action.
         if (CHEVRON) {
             const double CY = open ? box.y + ROW_PADT : box.y + (ROWH - CHEV) / 2;
             const CBox   CB{box.x + box.w - ROW_PADX - CHEV, CY, CHEV, CHEV};
@@ -257,9 +257,11 @@ namespace NHyprnotify {
             card.chevron = CB;
         }
 
-        card.box  = CBox{box.x, box.y, box.w, ROWH};
-        card.id   = N->id;
-        card.kind = child ? SCard::CHILD : SCard::ROW;
+        card.box        = CBox{box.x, box.y, box.w, ROWH};
+        card.id         = N->id;
+        card.kind       = child ? SCard::CHILD : SCard::ROW;
+        card.expanded   = open;
+        card.expandable = CHEVRON;
         return ROWH;
     }
 

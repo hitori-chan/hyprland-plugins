@@ -62,7 +62,8 @@ make test-hyprmax-geometry
 Exact assertions over the nested harness + `vptr` + `vkbd` + `input-capture`: placement
 memory, spawn/close storms, the notification cap, churn round-trips,
 hostile state files, an input storm, a native `hyprland-input-capture-v1`
-session, the shade's click/key verbs, acting-closes-the-shade, the bell click,
+session, the shade's compact merged-row and click/key verbs,
+acting-closes-the-shade, the bell click,
 hyprosd's fake-`wpctl` process/readback path, the OSD card below an open shade,
 a config reload, log hygiene, and bounded shutdown with deliberately hung
 helpers. The fakes change no live PipeWire state, and the gate kills its hung

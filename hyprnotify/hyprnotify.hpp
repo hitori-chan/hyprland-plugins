@@ -81,7 +81,7 @@ namespace NHyprnotify {
     extern HANDLE PHANDLE;
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.10.3";
+    inline constexpr const char* VERSION = "6.10.4";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -385,12 +385,14 @@ namespace NHyprnotify {
         };
         eKind       kind = POPUP;
         CBox        box;
-        uint32_t    id   = 0; // live identity
-        std::string group;    // DIGEST/GHEAD/CHILD: the app key
-        CBox        chevron;      // ROW: the 24Ø fold indicator; w = 0 -> none
-        CBox        close;        // POPUP hover-✕ / GHEAD ✕; w = 0 -> none
-        CBox        replyField;   // ROW: the armed inline-reply box (swallows, never acts)
-        CBox        replySend;    // ROW: its send pill
+        uint32_t    id = 0;             // live identity
+        std::string group;              // DIGEST/GHEAD/CHILD: the app key
+        bool        expanded   = false; // ROW: exact state painted into this hit record
+        bool        expandable = false; // ROW: open form reveals hidden compact content
+        CBox        chevron;            // ROW: the 24Ø fold indicator; w = 0 -> none
+        CBox        close;              // POPUP hover-✕ / GHEAD ✕; w = 0 -> none
+        CBox        replyField;         // ROW: the armed inline-reply box (swallows, never acts)
+        CBox        replySend;          // ROW: its send pill
         // every small control the surface carries — the ⋮, the undo row's two,
         // a manage panel's entries — as one rect per part code, so another
         // verb costs an entry here and not a member

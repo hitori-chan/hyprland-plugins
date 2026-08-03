@@ -71,12 +71,13 @@ Two surfaces share one card model:
      nothing new gets no chevron at all. The panel runs to the height the
      monitor leaves below `offset_y`; what still overflows becomes wheel
      paging, with "▴" / "▾ N" cues.
-   - **Verbs — a row is its banner.** Because rows open by default, the
-     left click is spent ACTING rather than revealing: clicking a row's body
+   - **Verbs — reveal before acting.** A compact row whose open form contains
+     more content expands when its body is clicked, so merged chat lines are
+     never activated or dismissed while still hidden. Once open, the body
      fires the card's primary (the fd.o `default`) and dismisses it unless
-     `resident` — the same verb the popup has always had, and what every
-     other shade does. Links open, action buttons act, and the CHEVRON is
-     the only fold target. The primary is never drawn as a button: the spec
+     `resident` — the same verb the popup has always had. Links open, action
+     buttons act, and the CHEVRON toggles either state directly. The primary
+     is never drawn as a button: the spec
      says implementations are free not to display `default`, and a button
      would only duplicate the click. Right dismisses, middle sweeps. On a
      bundle: left expands, right (or the header ✕) dismisses the whole app.

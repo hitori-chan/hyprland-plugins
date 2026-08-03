@@ -115,10 +115,11 @@ icons).
   down, and leaving restarts its full clock rather than resuming the sliver
   that was left (Android's heads-up does the same when a touch ends). Only
   one card can be held, because only one can be hovered.
-- Shade clicks: a row behaves as its banner did — left on the body fires the
-  card's primary and dismisses unless `resident`, a link opens, a button
-  acts. Rows open by default, so the click is spent acting rather than
-  revealing; the CHEVRON is the only fold target. Right dismisses; middle is
+- Shade clicks: a compact row whose open form reveals more expands from a
+  body left click before it can act, so folded merged messages remain
+  readable. Once open, the row behaves as its banner did: the body fires the
+  card's primary and dismisses unless `resident`, a link opens, and a button
+  acts. The CHEVRON toggles either state directly. Right dismisses; middle is
   "Clear all". On an app bundle left expands and right (or the header ✕)
   dismisses the whole app.
 - Acting CLOSES the shade. Firing a card's primary, pressing one of its
