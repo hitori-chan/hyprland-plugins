@@ -45,7 +45,8 @@ namespace NHyprnotify {
     // is the last item the placement fitted — the paging keys work off it.
     static int      s_sel     = -1;
     static size_t   s_lastVis = 0;
-    static uint32_t s_manageRow = 0; // the row wearing its manage panel, 0 = none
+    static uint32_t    s_manageRow   = 0; // singleton wearing its manage panel
+    static std::string s_manageGroup;    // bundle wearing its manage panel
 
     // the warm-measured layout cache (see renderCenter); dropped on close so
     // no strong SNotif refs (and their textures) outlive the visit
@@ -84,6 +85,7 @@ namespace NHyprnotify {
         s_sel       = -1;
         s_lastVis   = 0;
         s_manageRow = 0;
+        s_manageGroup.clear();
         s_disp.clear();
         s_itemH.clear();
         s_itemOpen.clear();
@@ -93,21 +95,54 @@ namespace NHyprnotify {
 
     void centerExit() {
         s_on = false;
+        inputCancelLongPress();
         resetVisit();
     }
 
-    // Only one row wears the panel: two open at once would be two menus, and
-    // the shade would stop being a list of notifications.
+    // Only one target wears the panel: two open at once would be two menus,
+    // and the shade would stop being a list of notifications.
     void centerToggleManage(uint32_t id) {
-        s_manageRow = s_manageRow == id ? 0 : id;
+        if (s_manageRow == id)
+            s_manageRow = 0;
+        else {
+            s_manageRow = id;
+            s_manageGroup.clear();
+        }
+        notifChanged();
+    }
+    void centerToggleManageGroup(const std::string& appKey) {
+        if (appKey.empty())
+            return;
+        if (s_manageGroup == appKey)
+            s_manageGroup.clear();
+        else {
+            s_manageGroup = appKey;
+            s_manageRow   = 0;
+        }
         notifChanged();
     }
     uint32_t centerManageRow() {
         return s_manageRow;
     }
+    bool centerManageTarget(uint32_t& id, std::string& group) {
+        if (s_manageRow) {
+            const auto N = Model::byId(s_manageRow);
+            if (!N || N->waiting || N->snoozed)
+                s_manageRow = 0;
+        }
+        if (!s_manageGroup.empty()) {
+            const size_t COUNT = std::ranges::count_if(notifs, [&](const auto& N) { return !N->waiting && !N->snoozed && !N->conversation && N->appKey == s_manageGroup; });
+            if (COUNT < AUTOGROUP_AT)
+                s_manageGroup.clear();
+        }
+        id    = s_manageRow;
+        group = s_manageGroup;
+        return id != 0 || !group.empty();
+    }
 
-    // the selected item's card id — the ⋮ shows for the keyboard too, and a
-    // bundle has no one card to manage
+    // The selected item's card id is still useful to keyboard navigation, but
+    // management itself is pointer-long-press or gesture driven; a bundle has
+    // no one card to manage.
     uint32_t selectedRow() {
         if (s_sel < 0 || (size_t)s_sel >= s_disp.size())
             return 0;
@@ -124,6 +159,19 @@ namespace NHyprnotify {
             s_foldedRow.erase(id);
             s_openedRow.insert(id);
         }
+        notifChanged();
+    }
+
+    bool centerRowExpanded(uint32_t id) {
+        const auto IT = s_rowState.find(id);
+        return IT != s_rowState.end() && IT->second;
+    }
+
+    void centerEnsureRowOpen(uint32_t id) {
+        if (centerRowExpanded(id))
+            return;
+        s_foldedRow.erase(id);
+        s_openedRow.insert(id);
         notifChanged();
     }
 
@@ -179,6 +227,7 @@ namespace NHyprnotify {
             return;
         s_on = on;
         if (!on) {
+            inputCancelLongPress();
             resetVisit();
             replyExit(); // a field cannot outlive the panel it was drawn in
         } else {
@@ -291,6 +340,10 @@ namespace NHyprnotify {
                 s_itemMore[i] = 0;
             } else if (D.items.size() < 2 && D.items.front()->id == s_manageRow) {
                 s_itemH[i]    = managePanelH(D.items.front());
+                s_itemOpen[i] = 0;
+                s_itemMore[i] = 0;
+            } else if (D.items.size() >= 2 && D.key == s_manageGroup) {
+                s_itemH[i]    = managePanelH(D.items.front(), D.key);
                 s_itemOpen[i] = 0;
                 s_itemMore[i] = 0;
             } else if (D.items.size() < 2) {
@@ -459,6 +512,8 @@ namespace NHyprnotify {
                 paintSnoozeRow(P, T, D.items.front(), SLOT);
             else if (D.items.size() < 2 && D.items.front()->id == s_manageRow)
                 paintManagePanel(P, T, D.items.front(), SLOT);
+            else if (D.items.size() >= 2 && D.key == s_manageGroup)
+                paintManagePanel(P, T, D.items.front(), SLOT, D.key);
             else if (D.items.size() < 2)
                 paintSingle(P, T, D.items.front(), SLOT, OPEN, MORE);
             else if (!OPEN)
@@ -474,19 +529,19 @@ namespace NHyprnotify {
             y += IH;
         }
 
-        // ---- the footer: ⊖ DND · a global "Clear all" ----
+        // ---- the footer: DND control · a global "Clear all" ----
         const double BARY = Y0 + PANELH - BAR_PADB - BAR_BTN;
         double       bx   = X + BAR_PADX;
 
-        { // ⊖ do-not-disturb
+        { // do-not-disturb
             const CBox B{bx, BARY, BAR_BTN, BAR_BTN};
             const bool LIT = Model::suspendedNow();
-            const auto G   = cachedText("⊖", LIT ? tOnAccent() : COLFG, T.bar, 64, -1, 0, false, 600);
+            const auto G   = controlIcon(eControlIcon::DO_NOT_DISTURB, (int)std::lround(BAR_BTN * P.scale), LIT ? tOnAccent() : COLFG);
             if (!P.warm) {
                 const bool HOV = hovered.kind == SCard::BTN_DND;
                 P.rect(B, LIT ? COLACC : HOV ? tAccentDim() : tFill2(), (int)std::lround(BAR_BTN / 2 * P.scale));
-                if (G && G->tex)
-                    P.tex(G->tex, B.x + (B.w - G->tex->m_size.x / P.scale) / 2, B.y + (B.h - G->tex->m_size.y / P.scale) / 2);
+                if (G)
+                    P.texFit(G, B, 0, 2.f);
             }
             SCard c;
             c.kind = SCard::BTN_DND;
@@ -505,19 +560,24 @@ namespace NHyprnotify {
         if (MUTED > 0) {
             // BOTH labels every pass: hover flips without a rewarm, so keying
             // this raster on the hover state would miss the cache for a frame
-            auto& SB = scratch();
-            SB += "⊘ ";
-            SB += std::to_string(MUTED);
-            const auto REST = cachedText(SB, COLSUB, T.bar, 64, -1, 0, false, 600);
+            const auto REST = cachedText(std::to_string(MUTED), COLSUB, T.bar, 64, -1, 0, false, 600);
             const auto HOT  = cachedText("Unmute all", COLFG, T.bar, 200, -1, 0, false, 600);
+            const auto MUTE = controlIcon(eControlIcon::NOTIFICATIONS_OFF, (int)std::lround(16 * P.scale), COLSUB);
             const bool HOV  = hovered.kind == SCard::BTN_RULES;
             // the wider of the two: the chip must not resize under the pointer
-            const double CW = std::max(texW(REST, P.scale), texW(HOT, P.scale)) + 18;
+            const double CW = std::max(texW(REST, P.scale) + 16 + 8, texW(HOT, P.scale)) + 18;
             const CBox   B{bx, BARY, CW, BAR_BTN};
             if (!P.warm) {
                 P.rect(B, HOV ? tAccentDim() : tFill2(), (int)std::lround(BAR_BTN / 2 * P.scale));
-                if (const auto* L = HOV ? HOT : REST; L && L->tex)
-                    P.tex(L->tex, B.x + (B.w - L->tex->m_size.x / P.scale) / 2, B.y + (B.h - L->tex->m_size.y / P.scale) / 2);
+                if (HOV) {
+                    if (HOT && HOT->tex)
+                        P.tex(HOT->tex, B.x + (B.w - HOT->tex->m_size.x / P.scale) / 2, B.y + (B.h - HOT->tex->m_size.y / P.scale) / 2);
+                } else {
+                    if (MUTE)
+                        P.texFit(MUTE, CBox{B.x + 8, B.y + (B.h - 16) / 2, 16, 16}, 0, 2.f);
+                    if (REST && REST->tex)
+                        P.tex(REST->tex, B.x + 8 + 16 + 8, B.y + (B.h - REST->tex->m_size.y / P.scale) / 2);
+                }
             }
             SCard c;
             c.kind = SCard::BTN_RULES;
@@ -543,29 +603,31 @@ namespace NHyprnotify {
             cards.push_back(c);
         }
 
-        // Paging cues: a wheel-scroll is invisible otherwise. "▴" when rows
-        // sit above the fold, a "▾ N" chip when N notifications sit below —
-        // informational only, the wheel (input.cpp) does the scrolling. Both
+        // Paging cues: a wheel-scroll is invisible otherwise. An up chevron
+        // marks rows above the fold, and a down-chevron/count chip marks rows
+        // below. They are informational; input.cpp owns the scrolling. Both
         // live inside the already-damaged panel box, so no extra damage.
         if (!EMPTY) {
             size_t below = 0;
             for (size_t i = (placed.empty() ? 0 : placed.back().idx + 1); i < disp.size(); i++)
                 below += disp[i].items.size();
             if (s_skip > 0) {
-                const auto U = cachedText("▴", COLSUB, T.small, 64, -1, 0, false, 500);
-                if (!P.warm && U && U->tex)
-                    P.tex(U->tex, X + (PANEL_W - U->tex->m_size.x / P.scale) / 2, Y0 + 2);
+                const auto U = controlIcon(eControlIcon::CHEVRON_UP, (int)std::lround(18 * P.scale), COLSUB);
+                if (!P.warm && U)
+                    P.texFit(U, CBox{X + (PANEL_W - 18) / 2, Y0 + 2, 18, 18}, 0, 2.f);
             }
             if (below > 0) {
                 auto& DB = scratch();
-                DB += "▾ ";
                 DB += std::to_string(below);
                 const auto D2 = cachedText(DB, COLSUB, T.small, 128, -1, 0, false, 500);
+                const auto DN = controlIcon(eControlIcon::CHEVRON_DOWN, (int)std::lround(16 * P.scale), COLSUB);
                 if (!P.warm && D2 && D2->tex) {
                     const double cw = D2->tex->m_size.x / P.scale, ch = D2->tex->m_size.y / P.scale;
-                    const double cx = X + (PANEL_W - cw) / 2, cy = BARY - ch - 3;
-                    P.rect(CBox{cx - 8, cy - 2, cw + 16, ch + 4}, tFill2(), (int)std::lround((ch / 2 + 2) * P.scale));
-                    P.tex(D2->tex, cx, cy);
+                    const double cw2 = cw + 16 + 6, cx = X + (PANEL_W - cw2) / 2, cy = BARY - std::max(ch, 16.0) - 3;
+                    P.rect(CBox{cx - 8, cy - 2, cw2 + 16, std::max(ch, 16.0) + 4}, tFill2(), (int)std::lround((std::max(ch, 16.0) / 2 + 2) * P.scale));
+                    if (DN)
+                        P.texFit(DN, CBox{cx, cy, 16, 16}, 0, 2.f);
+                    P.tex(D2->tex, cx + 16 + 6, cy + (std::max(16.0, ch) - ch) / 2);
                 }
             }
         }

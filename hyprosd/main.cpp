@@ -16,8 +16,8 @@
 //   get spawns with its stdout on a pipe the event loop drains — two
 //   short forks per keypress instead of the script's shell pipeline, and
 //   render/input never wait on any of it.
-// - Cards carry the `value` hint (the daemon's 4px bar) and no icon: the
-//   daemon's fallback_icon_dir rolls each card its face.
+// - Cards carry the `value` hint (the daemon's 4px bar) and no explicit icon:
+//   hyprnotify supplies its deterministic generic app mark.
 // - Feedback rides the plugin's own event-loop-integrated session-bus
 //   connection (hyprbar's tray pattern; the daemon's API is the bus name,
 //   never its symbols). Bus death turns the cards off; the keys keep

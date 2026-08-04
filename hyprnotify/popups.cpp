@@ -1,6 +1,6 @@
 // hyprnotify/popups.cpp — the banner column: glass cards top-right on the
 // focused monitor, the one-card anatomy (icon column + header/title/body +
-// original actions), the hover-✕, the arrival spring.
+// original actions), the hover-close control, the arrival spring.
 //
 // Only cards whose banner is up show here (residency hides expired banners
 // into the center's shade). Ordinary banners yield to the panel while it is
@@ -171,7 +171,7 @@ namespace NHyprnotify {
             if (HERO)
                 CP.texFit(N->iconTex, CBox{X, y, W, HEROH}, ROUND, RP);
             else if (LEADICON)
-                paintIconColumn(CP, *N, CBox{X + PADX, y + PADY, ICONW, ICONW}, true, RP);
+                paintIconColumn(CP, *N, CBox{X + PADX, y + PADY, ICONW, ICONW}, N->conversation, RP);
 
             const double                 TX = X + PADX + (ICONW > 0 ? ICONW + ICON_GAP : 0);
             double                       ty = HERO ? y + HEROH + PADY : y + PADY;
@@ -237,18 +237,19 @@ namespace NHyprnotify {
             card.buttons = std::move(cardBtns);
             card.links   = std::move(cardLinks);
 
-            // the hover-✕ (the desktop analog of swipe), revealed while the
-            // pointer is on the card; its glyph builds in both modes
-            const auto XG      = cachedText("✕", COLFG, T.small, 64, -1, 0, false, 600);
-            const auto XGHOT   = cachedText("✕", tOnAccent(), T.small, 64, -1, 0, false, 600);
+            // the hover-close (the desktop analog of swipe), revealed while
+            // the pointer is on the card. Request both variants on every warm
+            // so a hover repaint never needs to build a texture in draw.
+            const auto XG    = controlIcon(eControlIcon::CLOSE, (int)std::lround(XCIRC * P.scale), COLFG);
+            const auto XGHOT = controlIcon(eControlIcon::CLOSE, (int)std::lround(XCIRC * P.scale), tOnAccent());
             const bool CARDHOV = hovered.kind == SCard::POPUP && hovered.id == N->id;
             if (CARDHOV) {
                 const CBox XB{X + W - XCIRC - 8, y + 8, XCIRC, XCIRC};
                 const bool XHOV = hovered.part == 2;
                 CP.rect(XB, XHOV ? COLURGENT : tFill2(), (int)std::lround(XCIRC / 2 * P.scale));
-                const auto* G = XHOV ? XGHOT : XG;
-                if (G && G->tex)
-                    CP.tex(G->tex, XB.x + (XB.w - G->tex->m_size.x / P.scale) / 2, XB.y + (XB.h - G->tex->m_size.y / P.scale) / 2);
+                const auto* G = XHOV ? &XGHOT : &XG;
+                if (*G)
+                    CP.texFit(*G, XB, 0, 2.f);
                 card.close = XB;
             }
 

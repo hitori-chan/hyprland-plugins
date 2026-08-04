@@ -13,23 +13,25 @@ retention limits; malformed markup is scanned once within the body cap.
 File-backed images decode asynchronously through Hyprland's native resource
 gatherer and upload only from a later warm pass. See
 [`docs/hyprnotify.md`](../docs/hyprnotify.md#input-bounds) for the limits.
-`fallback_icon_dir` discovery follows the same off-thread, bounded handoff
-model.
+Application identity icons resolve from bounded asynchronous `.desktop` entry
+discovery. Missing or invalid identity sources use a deterministic generic
+AOSP-style app mark; notification content images never become application
+identity art.
 
 Two surfaces share one card model:
 
 1. **Popups (banners)** — glass cards top-right on the focused monitor, the
-   Android anatomy: ONE icon column on the left, Android's conversation
-   container — the AVATAR leads (the card's content image, which for a chat
-   is the sender's face; a rolled fallback face from `fallback_icon_dir`
-   when a card is iconless) and the app IDENTITY rides its bottom-right
-   corner as a badge — AOSP's 2025 ratios off a 40dp avatar, so the app
-   glyph is 16dp of the 20dp badge and the rim only 2dp — so one column
-   says both who sent it and which app carried it. A wide content
-   image (aspect ≥ 1.5) goes hero, full-width instead. Then an "App • age"
+   Android anatomy: ONE icon column on the left. Conversation cards use
+   Android's conversation container: the content image leads as the sender
+   avatar and the app identity rides its bottom-right corner as a badge,
+   using AOSP's 2025 ratios off a 40dp avatar. Ordinary notifications keep
+   the standard single-icon treatment and never receive the conversation
+   badge. Missing or invalid app identity uses the deterministic generic app
+   mark. A wide content image (aspect ≥ 1.5) goes hero, full-width instead.
+   Then an "App • age"
    header, bold title, body, a progress pill
    for the `value` hint, and the card's actions as tinted text buttons.
-   Hovering reveals the ✕ **and holds the timeout** — a banner never expires
+   Hovering reveals the close control **and holds the timeout** — a banner never expires
    out from under the pointer reading it, and the clock restarts when the
    pointer leaves. Critical cards ring urgent.
    Without an explicit `expire_timeout` a normal card runs `timeout_normal`
@@ -70,7 +72,7 @@ Two surfaces share one card model:
      we keep going), then folds the overflow. A row whose open form shows
      nothing new gets no chevron at all. The panel runs to the height the
      monitor leaves below `offset_y`; what still overflows becomes wheel
-     paging, with "▴" / "▾ N" cues.
+     paging, with cached up/down chevrons and a count cue.
    - **Verbs — reveal before acting.** A compact row whose open form contains
      more content expands when its body is clicked, so merged chat lines are
      never activated or dismissed while still hidden. Once open, the body
@@ -79,9 +81,11 @@ Two surfaces share one card model:
      buttons act, and the CHEVRON toggles either state directly. The primary
      is never drawn as a button: the spec
      says implementations are free not to display `default`, and a button
-     would only duplicate the click. Right dismisses, middle sweeps. On a
-     bundle: left expands, right (or the header ✕) dismisses the whole app.
-     The footer is ⊖ DND (accent-lit while on) and "Clear all". A click
+     would only duplicate the click. Right dismisses. Middle-click passes
+     through shade rows to native desktop semantics; on a popup it parks the
+     banner stack in the shade. On a bundle: left expands, right (or the
+     header close control) dismisses the whole app. The footer is the DND icon
+     (accent-lit while on) and "Clear all". A click
      outside closes.
    - **Acting closes the shade**, exactly as it collapses Android's. The
      primary, an action button and a body link all raise something over the
@@ -89,38 +93,38 @@ Two surfaces share one card model:
      keeps you here keeps it: dismissing, folding, the manage panel, DND,
      "Clear all", the reply field, and a `resident` card's actions — the
      spec's own way of saying the action does not take you away.
-   - **The manage panel** — what Android hides behind a long-press, and the
-     thing one global DND could never say. An open row carries a **⋮**
-     beside its chevron; it turns the row into a panel of its verbs, each
-     one named at panel width with the key that does the same thing in the
-     right column. Acting on one leaves the panel; the ⋮, right-click and
-     Esc all close it, and Esc peels the panel before it peels the shade.
-     It shows for the keyboard selection too, not only the pointer.
-     (This replaced a hover-revealed strip of three 20px glyphs at 4px
-     separation, unlabelled, with the one irreversible verb in the middle.)
+   - **The manage panel** — what Android hides behind a press-and-hold, and
+     the thing one global DND could never say. Hold the body of an open row for
+     500ms to turn it into a panel of its verbs, even when the row is
+     collapsed. Each verb is named at panel width
+     with the key that does the same thing in the right column. The expansion
+     chevron remains expansion-only; there is no second menu control. Acting
+     on one leaves the panel; the held target, right-click and Esc all close
+     it, and Esc peels the panel before it peels the shade. Keyboard users can
+     use the named manage actions through the navigation keys.
    - **Per-app rules** live in that panel. **Mute** comes in iOS's three
      lengths — for 1 hour, today (until tomorrow morning, not a rolling 24h),
      or always: no banner, no sound, straight to the shade, ranked with the
      quiet ones, and critical still punches through exactly as through DND.
-     **★ Priority conversation** sorts that chat above everything but a
+     **Priority conversation** sorts that chat above everything but a
      critical card and lights the ring AOSP keeps hidden on the badge until
-     you mark someone. A bundle's ⊘ still sits by its count pill as a
-     straight always-toggle. Rules persist across relogs in
+     you mark someone. A bundle exposes the same mute-duration choices as a
+     singleton. Rules persist across relogs in
      `$XDG_STATE_HOME/hyprnotify/policy.tsv` (a silence carries its expiry
      as a third field; 0 never lifts, and a rule that lapsed while you were
      away never loads), all are retroactive, and silence keys on the app
      while a mark keys on app + sender — one chat app carries many people.
-     Whenever any silence is in force the footer says so: **⊘ N** stands
-     beside ⊖, and clicking it lifts every one. A rule you set once is never
+     Whenever any silence is in force the footer says so: a muted-count control
+     stands beside DND, and clicking it lifts every one. A rule you set once is never
      invisible again.
    - **Snooze** (in the panel, or `s`) is Android's, and it is a verb on one
      card rather than a rule: the card goes out of sight and comes back
      ALERTING, which is the whole point of asking. It stays in the model the
      entire time, so "Clear all" cannot quietly cancel a reminder.
      It does not leave at the click. Android replaces the notification in
-     place with "Snoozed for 1 hour ▾ · Undo", so for six seconds the card
+     place with a duration control and **Undo**, so for six seconds the card
      holds its slot as a one-line undo row: **Undo** (or `u`) puts it back,
-     the **˅** (or `s` again) cycles Android's ladder — 15m / 30m / 1h / 2h,
+     the duration control (or `s` again) cycles Android's ladder — 15m / 30m / 1h / 2h,
      with `snooze_seconds` as the duration a bare snooze takes. Closing the
      shade commits it, since the shade is the row's only surface. This is
      not history and not recall: the card never left, and past the window it
@@ -213,7 +217,6 @@ surface: [docs/hyprnotify.md](../docs/hyprnotify.md).
 | `plugin:hyprnotify:rounding` | card radius in logical px (panel +6 and rows -2 derive) | 16 |
 | `plugin:hyprnotify:rounding_power` | corner superellipse exponent | 3.0 |
 | `plugin:hyprnotify:sound_command` | libcanberra player for `sound-file`/`sound-name`; empty disables | `canberra-gtk-play` |
-| `plugin:hyprnotify:fallback_icon_dir` | iconless cards draw a random identity face from this directory | *(unset)* |
 | `plugin:hyprnotify:col_bg` | glass fill (the alpha IS the glass) | `9e0f1218` |
 | `plugin:hyprnotify:col_fg` | body text | `e4e8ee` |
 | `plugin:hyprnotify:col_title` | card titles | `eef1f5` |

@@ -54,11 +54,20 @@ icons).
 
 ## Images / icons
 
-- Precedence: `image-data` beats `image-path` beats `app_icon` beats
-  `desktop-entry`.
-- Each of `app_icon` / `image-path` / `desktop-entry` may be a file path
-  (`file://` too) OR a freedesktop icon NAME, resolved against the GTK icon
-  theme, then hicolor, then `/usr/share/pixmaps`.
+- Content and identity stay separate. `image-data` wins over `image-path` for
+  the content/avatar; `app_icon` is the explicit application identity, and
+  `desktop-entry` supplies identity only when `app_icon` did not resolve.
+  Content images never become an application badge.
+- `desktop-entry` is the basename of the sender's `.desktop` file. The plugin
+  indexes bounded, recursive application directories off the compositor
+  thread, reads that file's `Icon=` key, and then resolves the resulting icon
+  name or path through the GTK icon theme, hicolor, and
+  `/usr/share/pixmaps`. The index admits at most 4,096 desktop files and
+  16,384 visited entries; config/theme reloads invalidate it.
+- `app_icon`, `image-path`, and the resolved `Icon=` value may be a file path
+  (`file://` too) or a freedesktop icon name. Missing or invalid identity
+  sources use one deterministic generic AOSP-style app mark; there is no
+  directory fallback.
 - Decoding is hyprgraphics: PNG/JPEG/WEBP/BMP/AVIF/JXL + SVG (no GIF); big
   file-backed images decode through Hyprland's asynchronous resource gatherer,
   with at most 24 pending sources shared across content, identities, action
@@ -70,10 +79,8 @@ icons).
   downscaled directly into its bounded output buffer, without a full-size
   decoded copy.
   Wide images (aspect ≥ 1.5) render card-width as a cover-cropped hero.
-  Iconless cards draw a random face from `fallback_icon_dir`. That directory
-  is indexed off the compositor thread (at most 2,048 image paths across
-  65,536 visited entries) and adopted in 32-path event-loop batches.
-- The icon column is Android's conversation container
+  Ordinary notifications use one identity/content icon with no conversation
+  badge. Conversation notifications use Android's conversation container
   (`notification_2025_conversation_icon_container.xml`): the CONTENT image
   leads as the avatar — a true circle for a conversation, a squircle
   otherwise — and the IDENTITY (`app_icon`/`desktop-entry`) rides its
@@ -119,9 +126,10 @@ icons).
   body left click before it can act, so folded merged messages remain
   readable. Once open, the row behaves as its banner did: the body fires the
   card's primary and dismisses unless `resident`, a link opens, and a button
-  acts. The CHEVRON toggles either state directly. Right dismisses; middle is
-  "Clear all". On an app bundle left expands and right (or the header ✕)
-  dismisses the whole app.
+  acts. The expansion chevron toggles either state directly. Right
+  dismisses; middle-click passes through to native desktop semantics. On an
+  app bundle left expands and right (or the header close control) dismisses
+  the whole app.
 - Acting CLOSES the shade. Firing a card's primary, pressing one of its
   buttons or opening a body link all raise something over the panel the
   click was made in, so the panel gets out of the way. This is Android's
@@ -176,16 +184,15 @@ icons).
   against the hour. Expiry is lazy — a lapsed rule is dropped the next time
   anyone asks, which is every arrival and every paint, and nothing has to
   HAPPEN at the moment a silence lifts. A rule that lapsed while the session
-  was down never loads. The footer's `⊘ N` is the other half: the shade
-  admits what it is holding back, and one click lifts every rule.
-- The manage panel: the ⋮ turns a row into its own verbs rather than opening
-  a floating menu. Same ergonomics as Android's long-press panel — full-width
-  labelled targets, each with its key in the right column — with none of a
-  second surface's cost: no z-order, no outside-click grab, no damage region
-  of its own, and it rides the fold machinery that already exists. One row
-  wears it at a time. Esc peels it before the shade. It replaced three 20px
-  glyphs at 4px separation, hover-only and unlabelled, with the irreversible
-  verb in the middle slot.
+  was down never loads. The footer's muted-count control is the other half:
+  the shade admits what it is holding back, and one click lifts every rule.
+- The manage panel: press and hold a notification row's body for 500ms to turn
+  it into its own verbs rather than opening a floating menu, even when the row
+  is collapsed. This follows Android's long-press model with full-width
+  labelled targets, each with its key in the right column. The expansion chevron remains expansion-only and
+  there is no redundant menu control. One singleton or bundle wears the panel at a
+  time; the held target, right-click, or Esc closes it, and Esc peels it before
+  the shade.
 - Snooze (`s` or the panel, `snooze_seconds`, 900): the card goes out of
   sight and comes back alerting — Android's snooze. It stays in the model
   while away, so `state` counts it while the badge does not, and "Clear all"
@@ -196,9 +203,9 @@ icons).
 
   It does NOT leave at the click, which is what stopped it being the one
   irreversible verb in the shell. Android replaces the notification in place
-  with "Snoozed for 1 hour ▾ · Undo" and lets it go afterwards; so does this.
+  with a duration control and Undo and lets it go afterwards; so does this.
   For CONFIRM_MS (6s) the card holds its slot as a one-line undo row — Undo
-  or `u` restores it, the ˅ or `s` cycles Android's 15m/30m/1h/2h ladder, and
+  or `u` restores it, the duration control or `s` cycles Android's 15m/30m/1h/2h ladder, and
   each change re-arms both clocks. Closing the shade commits every pending
   snooze rather than stranding a window nobody can see. Not history and not
   recall: the card never left. ONE event-loop timer serves all three clocks —
@@ -276,8 +283,7 @@ icons).
 inter-card), `offset_y` (34, clears the bar), `timeout_low` (4000, the
 ephemerals' clock), `timeout_normal` (5000, then the banner retreats to the
 shade; 0 = sticky), `coalesce_popups` (1), `rounding`, `rounding_power`,
-`max_notifs`, `ignore_dbusclose`, `quiet_fullscreen` (1),
-`fallback_icon_dir`, `sound_command`
+`max_notifs`, `ignore_dbusclose`, `quiet_fullscreen` (1), `sound_command`
 (`canberra-gtk-play`), `col_bg`, `col_fg`, `col_title`, `col_kicker`,
 `col_frame`, `col_urgent`, `col_highlight`, `col_link`. Colors and fonts
 arrive from `theme.lua`; the C++ defaults mirror it.

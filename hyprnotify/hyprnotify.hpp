@@ -12,7 +12,7 @@
 //               raw image-data
 //   text.cpp    the pango rasterizer + the keyed text cache + markup helpers
 //   paint.cpp   the paint context, shared card recipes, type scale, motion
-//   popups.cpp  the banner column (the one-card anatomy, hover-✕, springs)
+//   popups.cpp  the banner column (the one-card anatomy, hover-close, springs)
 //   row.cpp     one shade row in its two states, and the bundle recipes
 //   center.cpp  the shade: the display list, the expansion budget, the panel
 //   render.cpp  the render skeleton: warm/draw, damage, ticks, the pass
@@ -81,7 +81,7 @@ namespace NHyprnotify {
     extern HANDLE PHANDLE;
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.10.4";
+    inline constexpr const char* VERSION = "6.11.0";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -121,7 +121,6 @@ namespace NHyprnotify {
         SP<Config::Values::CColorValue>  colHighlight;  // the accent: progress, actions, selections
         SP<Config::Values::CColorValue>  colLink;       // body hyperlinks
         SP<Config::Values::CStringValue> soundCommand;  // libcanberra player; "" disables sound
-        SP<Config::Values::CStringValue> fallbackIconDir; // iconless cards draw a random identity face from here
     };
     extern SNotifyConfig cfg;
 
@@ -163,6 +162,7 @@ namespace NHyprnotify {
         uint32_t             id = 0;
         std::string          appName;
         std::string          appKey;  // grouping identity: desktop-entry, else the app name
+        std::string          desktopEntry; // raw freedesktop desktop-entry identity
         std::string          summary; // newlines flattened, whitelisted markup
         std::string          body;    // whitelisted markup (Pango subset)
         uint8_t              urgency  = 1;
@@ -183,7 +183,7 @@ namespace NHyprnotify {
         bool                    transient   = false; // the transient hint: bypass history AND residency
         bool                    conversation = false; // fd.o category im.*/call.*: outranks ordinary cards, never bundles, merges by sender
         bool                    priority     = false; // the user marked this chat: ranks first, the badge wears the ring
-        std::string             fallbackPick;         // the rolled identity face; survives in-place replaces
+        bool                    identityFromDesktop = false; // desktop-entry Icon= resolved asynchronously
 
         bool                 waiting = false; // arrived while suspended (DND): collected, not shown, timeout held
         bool                 banner  = true;  // the popup is up; expiry drops only this — the card stays resident
@@ -194,7 +194,7 @@ namespace NHyprnotify {
         // shade closes), which is the only thing that gives the undo something
         // to be clicked ON.
         Time::steady_tp      snoozeConfirmUntil;
-        int64_t              snoozeSecs = 0; // the duration in force, for the row's label and the ˅
+        int64_t              snoozeSecs = 0; // the duration in force for the row label/control
 
         float                timeoutMs = 0; // resolved; 0 = sticky
         Time::steady_tp      deadline;      // meaningful when banner && timeoutMs > 0 and not waiting
@@ -271,7 +271,7 @@ namespace NHyprnotify {
         void                          snooze(uint32_t id);                        // out of sight, then back with a fresh banner
         void                          snoozeFor(uint32_t id, int64_t seconds);    // the panel's explicit durations
         void                          snoozeUndo(uint32_t id);  // inside the undo window: as if it never happened
-        void                          snoozeCycle(uint32_t id); // the ▾: next rung of the duration ladder
+        void                          snoozeCycle(uint32_t id); // duration control: next rung of the ladder
         void                          snoozeEndConfirm();       // the shade closed; every confirmation row goes
         bool                          snoozeConfirming(const SP<SNotif>& n); // still showing its undo row
         std::string                   snoozeLabel(const SP<SNotif>& n);      // "15 min", "2 hours"
@@ -320,7 +320,8 @@ namespace NHyprnotify {
     // instead, cover-cropped to heroHCapPx, and set heroTex.
     void iconsInit();
     void iconsExit();
-    void resetFallbackCache(); // forget the fallback_icon_dir listing (a config reload rescans)
+    void resetDesktopIconCache(); // forget the bounded desktop-entry index on theme/config reload
+    std::string resolveDesktopEntryIcon(const std::string& entry, int sizePx);
     void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx);
 
     // (Re)build an action button's icon when action-icons is set and its id (an
@@ -352,8 +353,12 @@ namespace NHyprnotify {
     void centerPage(int dir); // wheel: >0 towards older rows
     void centerToggleGroup(const std::string& appKey);
     void centerToggleRow(uint32_t id);
-    void     centerToggleManage(uint32_t id); // the ⋮: one row at a time wears its manage panel
+    void     centerToggleManage(uint32_t id); // long-press: one row at a time wears its manage panel
+    void     centerToggleManageGroup(const std::string& appKey);
     uint32_t centerManageRow();
+    bool     centerManageTarget(uint32_t& id, std::string& group);
+    bool     centerRowExpanded(uint32_t id);
+    void     centerEnsureRowOpen(uint32_t id);
     uint32_t selectedRow(); // the keyboard selection's card id, 0 = none/a bundle
     void centerSelectMove(int dir);                         // ↑/↓: move the keyboard selection, paging to keep it on screen
     bool centerSelection(uint32_t& id, std::string& group); // the selected item; group non-empty = a bundle. false = none
@@ -377,10 +382,10 @@ namespace NHyprnotify {
             GHEAD,     // an expanded bundle's header row
             CHILD,     // a bundle child row
             SNOOZE,    // a snoozed card's undo row, in the slot the card held
-            MANAGE,    // a row turned into its manage panel by the ⋮
-            BTN_RULES, // footer "⊘ N": the silences in force, and the way out of them
+            MANAGE,    // a row turned into its manage panel by a long-press
+            BTN_RULES, // footer muted-count control: the silences in force and the way out
             BTN_CLEAR, // footer "Clear all": the global sweep
-            BTN_DND,   // footer ⊖ (do-not-disturb)
+            BTN_DND,   // footer DND control
             PANEL,     // the shade panel body: swallows clicks, owns the wheel
         };
         eKind       kind = POPUP;
@@ -390,12 +395,12 @@ namespace NHyprnotify {
         bool        expanded   = false; // ROW: exact state painted into this hit record
         bool        expandable = false; // ROW: open form reveals hidden compact content
         CBox        chevron;            // ROW: the 24Ø fold indicator; w = 0 -> none
-        CBox        close;              // POPUP hover-✕ / GHEAD ✕; w = 0 -> none
+        CBox        close;              // popup hover-close / group close; w = 0 -> none
         CBox        replyField;         // ROW: the armed inline-reply box (swallows, never acts)
         CBox        replySend;          // ROW: its send pill
-        // every small control the surface carries — the ⋮, the undo row's two,
-        // a manage panel's entries — as one rect per part code, so another
-        // verb costs an entry here and not a member
+        // every small control the surface carries — the undo row's two and a
+        // manage panel's entries — as one rect per part code, so another verb
+        // costs an entry here and not a member
         struct SManage {
             CBox    box;
             uint8_t part;
@@ -417,15 +422,14 @@ namespace NHyprnotify {
 
     // hover affordance: rows/buttons warm under the pointer. `btn` -1 = the
     // surface itself, >= 0 = that action button; `part` distinguishes the
-    // chevron/✕ corners. A change damages only the boxes involved.
+    // chevron/close corners. A change damages only the boxes involved.
     struct SHover {
         uint32_t     id = 0;
         std::string  group;
         SCard::eKind kind = SCard::POPUP;
         int          btn  = -1;
-        // 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 5 silence,
-        // 6 priority, 7 snooze, 8 undo, 9 duration, 10 the ⋮, 16+n a manage
-        // panel entry
+        // 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 8 undo,
+        // 9 duration, 16+n a manage panel entry
         uint8_t      part = 0;
         bool         operator==(const SHover&) const = default;
     };
@@ -455,6 +459,7 @@ namespace NHyprnotify {
     void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info); // esc peels the center; ↑↓ space enter delete drive it
     void releasePointer();
     void refreshPointerOwnership(); // the hovered card vanished under a still pointer
+    void inputCancelLongPress();
     void inputExit();
 
     // main.cpp: the deferred center toggle every entry point funnels through

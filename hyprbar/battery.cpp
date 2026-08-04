@@ -408,7 +408,7 @@ namespace NHyprbar {
             constexpr int WARN = 20, CRIT = 5;
 
             // urgency 0/1/2; 9990 = the script's pinned replace-in-place id.
-            // No icon: the daemon's fallback_icon_dir rolls the card its face.
+            // No explicit icon: hyprnotify supplies its deterministic generic app mark.
             const auto NOTIFY = [](uint8_t urgency, int32_t timeoutMs, const char* summary, const std::string& body) {
                 Tray::notify("battery", 9990, "", summary, body, urgency, timeoutMs, true);
             };

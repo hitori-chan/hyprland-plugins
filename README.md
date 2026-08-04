@@ -7,7 +7,7 @@ Built and loaded with [`hyprpm`](https://wiki.hypr.land/Plugins/Using-Plugins/).
 | plugin       | what it does |
 |--------------|--------------|
 | `hyprbar`    | the awesome wibar: kanji taglist, per-workspace tasklist, tray with menus, menubar launcher, battery, clock |
-| `hyprnotify` | awesome's `naughty`: the compositor is the `org.freedesktop.Notifications` daemon — cards with kickers and image icons, waifu fallback, hero previews, DND, click-to-raise |
+| `hyprnotify` | awesome's `naughty`: the compositor is the `org.freedesktop.Notifications` daemon — Android-style cards, deterministic app icons, hero previews, DND, click-to-raise |
 | `hyprmax`    | awesome's per-window maximize: any number at once, immovable while maximized, windowed size remembered per app |
 | `hyprclick`  | awesome's click/focus policy: click-to-raise, keyboard focus raises, hover never does |
 | `hyprsnap`   | awesome's `awful.mouse.snap`: magnetic edge pull + aerosnap halves/quarters while dragging |

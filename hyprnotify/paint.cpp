@@ -4,7 +4,118 @@
 
 #include "ui.hpp"
 
+#include <cairo/cairo.h>
+
 namespace NHyprnotify {
+
+    namespace {
+        std::unordered_map<uint64_t, SP<ITexture>> controlIcons;
+
+        uint64_t controlIconKey(eControlIcon icon, int px, const CHyprColor& color) {
+            return ((uint64_t)icon << 56) ^ ((uint64_t)(uint32_t)px << 32) ^ color.getAsHex();
+        }
+
+        void strokeIcon(cairo_t* cr, eControlIcon icon, double px) {
+            const double S = px / 24.0;
+            cairo_set_line_width(cr, std::max(1.0, 2.0 * S));
+            cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+            cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+
+            switch (icon) {
+                case eControlIcon::CHEVRON_UP:
+                    cairo_move_to(cr, 5.0 * S, 14.5 * S);
+                    cairo_line_to(cr, 12.0 * S, 7.5 * S);
+                    cairo_line_to(cr, 19.0 * S, 14.5 * S);
+                    cairo_stroke(cr);
+                    break;
+                case eControlIcon::CHEVRON_DOWN:
+                    cairo_move_to(cr, 5.0 * S, 9.5 * S);
+                    cairo_line_to(cr, 12.0 * S, 16.5 * S);
+                    cairo_line_to(cr, 19.0 * S, 9.5 * S);
+                    cairo_stroke(cr);
+                    break;
+                case eControlIcon::CLOSE:
+                    cairo_move_to(cr, 7.0 * S, 7.0 * S);
+                    cairo_line_to(cr, 17.0 * S, 17.0 * S);
+                    cairo_move_to(cr, 17.0 * S, 7.0 * S);
+                    cairo_line_to(cr, 7.0 * S, 17.0 * S);
+                    cairo_stroke(cr);
+                    break;
+                case eControlIcon::SCHEDULE:
+                    cairo_arc(cr, 12.0 * S, 12.0 * S, 7.5 * S, 0, 2 * M_PI);
+                    cairo_move_to(cr, 12.0 * S, 7.5 * S);
+                    cairo_line_to(cr, 12.0 * S, 12.0 * S);
+                    cairo_line_to(cr, 15.5 * S, 14.0 * S);
+                    cairo_stroke(cr);
+                    break;
+                case eControlIcon::NOTIFICATIONS_OFF:
+                    cairo_move_to(cr, 8.0 * S, 17.0 * S);
+                    cairo_line_to(cr, 6.0 * S, 17.0 * S);
+                    cairo_curve_to(cr, 8.0 * S, 14.5 * S, 8.0 * S, 13.0 * S, 8.0 * S, 10.5 * S);
+                    cairo_curve_to(cr, 8.0 * S, 7.0 * S, 10.0 * S, 5.0 * S, 12.0 * S, 5.0 * S);
+                    cairo_curve_to(cr, 14.0 * S, 5.0 * S, 16.0 * S, 7.0 * S, 16.0 * S, 10.5 * S);
+                    cairo_curve_to(cr, 16.0 * S, 13.0 * S, 16.0 * S, 14.5 * S, 18.0 * S, 17.0 * S);
+                    cairo_line_to(cr, 15.5 * S, 17.0 * S);
+                    cairo_move_to(cr, 10.0 * S, 19.0 * S);
+                    cairo_curve_to(cr, 10.8 * S, 20.0 * S, 13.2 * S, 20.0 * S, 14.0 * S, 19.0 * S);
+                    cairo_stroke(cr);
+                    cairo_move_to(cr, 5.0 * S, 5.0 * S);
+                    cairo_line_to(cr, 19.0 * S, 19.0 * S);
+                    cairo_stroke(cr);
+                    break;
+                case eControlIcon::DO_NOT_DISTURB:
+                    cairo_arc(cr, 12.0 * S, 12.0 * S, 8.0 * S, 0, 2 * M_PI);
+                    cairo_move_to(cr, 7.5 * S, 12.0 * S);
+                    cairo_line_to(cr, 16.5 * S, 12.0 * S);
+                    cairo_stroke(cr);
+                    break;
+                case eControlIcon::STAR:
+                    cairo_move_to(cr, 12.0 * S, 4.5 * S);
+                    for (int i = 1; i < 10; i++) {
+                        const double A = -M_PI / 2 + i * M_PI / 5;
+                        const double R = i % 2 ? 7.8 : 3.6;
+                        cairo_line_to(cr, (12.0 + std::cos(A) * R) * S, (12.0 + std::sin(A) * R) * S);
+                    }
+                    cairo_close_path(cr);
+                    cairo_stroke(cr);
+                    break;
+                case eControlIcon::APPS:
+                    for (int y = 0; y < 3; y++)
+                        for (int x = 0; x < 3; x++)
+                            cairo_rectangle(cr, (5.0 + x * 6.0) * S, (5.0 + y * 6.0) * S, 3.0 * S, 3.0 * S);
+                    cairo_fill(cr);
+                    break;
+            }
+        }
+    }
+
+    SP<ITexture> controlIcon(eControlIcon icon, int physicalPx, const CHyprColor& color) {
+        const int PX = std::clamp(physicalPx, 8, 256);
+        const auto KEY = controlIconKey(icon, PX, color);
+        if (const auto IT = controlIcons.find(KEY); IT != controlIcons.end())
+            return IT->second;
+        if (!warmGate.mayBuild() || !g_pHyprRenderer)
+            return {};
+
+        auto* SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, PX, PX);
+        auto* CR   = cairo_create(SURF);
+        cairo_set_source_rgba(CR, color.r, color.g, color.b, color.a);
+        strokeIcon(CR, icon, PX);
+        cairo_destroy(CR);
+        cairo_surface_flush(SURF);
+        auto TEX = g_pHyprRenderer->createTexture(SURF);
+        cairo_surface_destroy(SURF);
+        if (!TEX)
+            return {};
+        if (controlIcons.size() >= 128)
+            controlIcons.erase(controlIcons.begin());
+        controlIcons.emplace(KEY, TEX);
+        return TEX;
+    }
+
+    void controlIconCacheClear() {
+        controlIcons.clear();
+    }
 
     double damageMargin(PHLMONITOR m) {
         // hairlines ride outside boxes, glass grows by the blur radius, and
@@ -121,8 +232,8 @@ namespace NHyprnotify {
     // rides its bottom-right corner as a badge. ONE column says both who sent
     // it and which app carried it; two icons side by side said it twice, and
     // said the app twice over for every card of the same app. A card with no
-    // content image leads with its identity (or the rolled fallback face) and
-    // wears no badge — there would be nothing to distinguish it from.
+    // content image leads with its identity only for conversation cards; an
+    // ordinary notification keeps the standard single-icon anatomy.
     // Callers gate their layout on hasLeadIcon.
     void paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool withBadge, float rp) {
         const bool  HASIDENT = n.identTex && n.identTex->m_texID != 0;
@@ -131,10 +242,8 @@ namespace NHyprnotify {
         if (!LEAD || LEAD->m_texID == 0)
             return;
 
-        // faces are round, app icons are squircles — Android draws the same
-        // split. A radius of half the box means CIRCLE, so it takes rounding
-        // power 2 (the shell exponent is for card corners; every other circle
-        // in the shade — chevron, ✕, pills — is drawn at the rect default).
+        // Faces are round and app icons are squircles. The control geometry is
+        // supplied by the warm-pass AOSP recipes, independent of this radius.
         const bool   ROUNDFACE = AVATAR && n.conversation;
         const double R         = ROUNDFACE ? cell.w / 2 : cell.w * 10.0 / 44.0;
         const float  LRP       = ROUNDFACE ? 2.f : rp;

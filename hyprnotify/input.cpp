@@ -2,17 +2,17 @@
 // over the popups and the shade. Implements the interaction map exactly:
 //
 //   popup    left = action/link/default → dismiss · right = dismiss ·
-//            middle = park the stack into the shade · hover reveals ✕
+//            middle = park the stack into the shade · hover reveals close
 //   row      a compact row whose open form reveals more expands on a body
 //            click; once open, the body fires the card's primary (the fd.o
 //            `default`) and dismisses unless resident, same as the popup.
 //            The CHEVRON toggles either state · a link opens · a button acts · right =
-//            dismiss · middle = Clear all · the ⋮ beside the chevron turns
-//            the row into its manage panel
+//            dismiss · middle passes through natively · long-press manages
 //   manage   the row's verbs, named and at row width: snooze durations, mute
 //            durations (iOS's "for 1 hour" / "today" / "always"), priority on
-//            a chat, dismiss. Acting on one leaves the panel; the ⋮, right and
-//            esc all close it. This replaced a three-glyph hover strip whose
+//            a chat, dismiss. Acting on one leaves the panel; the long-press
+//            target, right and Esc all close it. This replaced a three-glyph
+//            hover strip whose
 //            targets were 20px at 4px separation, unlabelled, with the one
 //            irreversible verb in the middle.
 //   leaving  anything that RAISES something else closes the shade with it —
@@ -21,12 +21,13 @@
 //            a dismissal, a fold, the manage panel, DND, Clear all, and a
 //            `resident` card's actions, which is the spec's own way of
 //            saying the action does not take you away.
-//   snooze   the undo row a ◷ leaves behind: left on "Undo" puts the card
-//            back, left on ˅ cycles the duration, right dismisses for good
+//   snooze   the undo row a schedule action leaves behind: left on "Undo" puts
+//            the card back, left on the duration control cycles the choice,
+//            right dismisses for good
 //   child    a bundle child is a row without the fold: body, links, buttons
-//   digest   left expands the app's bundle · its ⊘ silences · right dismisses
-//   ghead    left collapses · ⊘ silences · the ✕ / right dismisses the bundle
-//   footer   ⊖ = DND · "⊘ N" = the silences in force, and one click out of
+//   digest   left expands the app's bundle · right dismisses · long-press manages
+//   ghead    left collapses · close control / right dismisses the bundle · long-press manages
+//   footer   DND control · muted count = the silences in force, and one click out of
 //            all of them · "Clear all" = the global sweep
 //   wheel    vertical pages the shade — captured only inside the panel box.
 //            HORIZONTAL on a row is the phone gesture: away dismisses, back
@@ -72,18 +73,32 @@ namespace NHyprnotify {
         uint32_t     id;
         std::string  group;
         uint32_t     bit;
-        uint8_t      part;               // the SHover part codes: 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 5 silence, 6 priority, 7 snooze, 8 undo, 9 duration
+        uint8_t      part;               // 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 8 undo, 9 duration, 10 gesture-manage
         std::string  action;             // non-empty: a specific action button
         std::string  href;               // non-empty: a body hyperlink
         bool         expanded   = false; // exact ROW state from the painted hit record
         bool         expandable = false;
         bool         outside    = false; // the click fell outside every surface (closes the shade)
     };
+
+    struct SLongPress {
+        bool     active = false;
+        bool     fired  = false;
+        SHit     click{};
+        Vector2D origin;
+    };
     static std::vector<SHit> hitQueue;
     static bool              hitQueued = false;
     static NHyprCommon::CHop pendingHit;
     static NHyprCommon::CHop pendingEsc;
+    static SLongPress        longPress;
+    static SP<CEventLoopTimer> longPressTimer;
     constexpr size_t         MAX_HIT_QUEUE = 128;
+    constexpr int64_t         LONG_PRESS_MS = 500;
+    constexpr double          LONG_PRESS_MOVE = 8.0;
+
+    static void drainHits();
+    static bool queueHit(SHit h);
 
     // most-specific-first: rows/buttons are pushed after the panel they sit on
     static const SCard* cardAt(const Vector2D& pos) {
@@ -125,6 +140,80 @@ namespace NHyprnotify {
         if (c.replyField.w > 0 && c.replyField.containsPoint(pos))
             return 3;
         return 0;
+    }
+
+    static bool longPressKind(SCard::eKind kind) {
+        return kind == SCard::ROW || kind == SCard::CHILD || kind == SCard::DIGEST || kind == SCard::GHEAD;
+    }
+
+    static bool longPressTargetAlive(const SHit& h) {
+        if (!h.group.empty())
+            return std::ranges::any_of(notifs, [&](const auto& N) { return !N->waiting && !N->snoozed && N->appKey == h.group; });
+        const auto N = h.id != 0 ? Model::byId(h.id) : nullptr;
+        return N && !N->waiting && !N->snoozed;
+    }
+
+    static void cancelLongPress() {
+        longPress.active = false;
+        longPress.fired  = false;
+        longPress.click  = {};
+        if (longPressTimer)
+            longPressTimer->updateTimeout(std::nullopt);
+    }
+
+    void inputCancelLongPress() {
+        cancelLongPress();
+    }
+
+    static void fireLongPress() {
+        if (!longPress.active || !centerVisible() || NHyprCommon::sessionLocked() || NHyprCommon::nativeInputCaptureActive() || NHyprCommon::nativePointerGrabActive() ||
+            NHyprCommon::nativeLayerOwnsPointer() || !longPressTargetAlive(longPress.click)) {
+            cancelLongPress();
+            return;
+        }
+        const auto POS  = g_pInputManager ? g_pInputManager->getMouseCoordsInternal() : Vector2D{};
+        const auto CARD = cardAt(POS);
+        if (!CARD || CARD->kind != longPress.click.kind || CARD->id != longPress.click.id || CARD->group != longPress.click.group) {
+            cancelLongPress();
+            return;
+        }
+        const auto H = longPress.click;
+        longPress.active = false;
+        longPress.fired  = true;
+        if (longPressTimer)
+            longPressTimer->updateTimeout(std::nullopt);
+        if (!H.group.empty())
+            centerToggleManageGroup(H.group);
+        else
+            centerToggleManage(H.id);
+    }
+
+    static bool armLongPress(SHit click, const Vector2D& origin) {
+        if (!g_pEventLoopManager)
+            return false;
+        if (!longPressTimer) {
+            longPressTimer = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { fireLongPress(); }, nullptr);
+            g_pEventLoopManager->addTimer(longPressTimer);
+        }
+        longPress.active = true;
+        longPress.fired  = false;
+        longPress.click  = std::move(click);
+        longPress.origin = origin;
+        longPressTimer->updateTimeout(std::chrono::milliseconds(LONG_PRESS_MS));
+        return true;
+    }
+
+    static void releaseLongPress() {
+        if (!longPress.active && !longPress.fired)
+            return;
+        const bool FIRED = longPress.fired;
+        const auto H     = longPress.click;
+        cancelLongPress();
+        // A short, stationary press is still the normal click. A management
+        // long press consumes the release, and a card that vanished cannot be
+        // safely replayed against a stale layout.
+        if (!FIRED && centerVisible() && longPressTargetAlive(H))
+            queueHit(H);
     }
 
     // ---- the deferred drain: what each surface DOES ----
@@ -179,11 +268,12 @@ namespace NHyprnotify {
     }
 
     // one entry of a row's manage panel, by the index its hit rect carried
-    static void manageEntry(uint32_t id, size_t idx) {
+    static void manageEntry(uint32_t id, size_t idx, const std::string& group) {
         const auto N = Model::byId(id);
         if (!N)
             return;
-        const auto EN = menuEntries(N);
+        const bool BUNDLE = !group.empty();
+        const auto EN = menuEntries(N, BUNDLE);
         if (idx >= EN.size())
             return;
         const auto& E = EN[idx];
@@ -192,12 +282,20 @@ namespace NHyprnotify {
             case 2: Policy::silenceFor(N->appKey, E.arg); break;
             case 3: Policy::unsilence(N->appKey); break;
             case 4: Policy::togglePriority(N->appKey, N->summary); break;
-            case 5: Model::closeOne(id, Model::R_DISMISSED); return; // the card is gone; so is its panel
+            case 5:
+                if (BUNDLE)
+                    Model::dismissApp(group);
+                else
+                    Model::closeOne(id, Model::R_DISMISSED);
+                return; // the card or bundle is gone; so is its panel
         }
         // Acting on a rule LEAVES the panel — you came for one verb. The
         // dismissal above never gets here, and a snooze hands the slot to its
         // own undo row.
-        centerToggleManage(id);
+        if (BUNDLE)
+            centerToggleManageGroup(group);
+        else
+            centerToggleManage(id);
     }
 
     // Deferred out of the input emission: closes reflow the layout and an
@@ -243,10 +341,6 @@ namespace NHyprnotify {
                 }
                 case SCard::ROW:
                 case SCard::CHILD: {
-                    if (H.bit == 4u) {
-                        Model::dismissAllLive();
-                        return; // the rest of the queue references swept cards
-                    }
                     if (H.bit == 2u) {
                         Model::closeOne(H.id, Model::R_DISMISSED);
                         continue;
@@ -257,8 +351,11 @@ namespace NHyprnotify {
                         centerToggleRow(H.id);
                         continue;
                     }
-                    if (H.part == 10) { // the ⋮ turns the row into its manage panel
-                        centerToggleManage(H.id);
+                    if (H.part == 10) { // the horizontal gesture opens management
+                        if (!H.group.empty())
+                            centerToggleManageGroup(H.group);
+                        else
+                            centerToggleManage(H.id);
                         continue;
                     }
                     if (H.part == 3) // inside the armed field: keep typing
@@ -290,10 +387,6 @@ namespace NHyprnotify {
                     continue;
                 }
                 case SCard::DIGEST: {
-                    if (H.bit == 1u && H.part == 5) { // the ⊘ silences the app, it does not expand
-                        Policy::toggleSilence(H.group);
-                        continue;
-                    }
                     if (H.bit == 1u) { // left expands the app's bundle
                         centerToggleGroup(H.group);
                         continue;
@@ -309,12 +402,8 @@ namespace NHyprnotify {
                     continue;
                 }
                 case SCard::GHEAD: {
-                    if (H.part == 2 || H.bit == 2u) { // the static ✕ / right: the whole bundle goes
+                    if (H.part == 2 || H.bit == 2u) { // the static close / right: the whole bundle goes
                         Model::dismissApp(H.group);
-                        continue;
-                    }
-                    if (H.bit == 1u && H.part == 5) {
-                        Policy::toggleSilence(H.group);
                         continue;
                     }
                     if (H.bit == 1u) {
@@ -332,15 +421,27 @@ namespace NHyprnotify {
                     // you are looking at a menu, and the card's own Dismiss is
                     // one of the rows in front of you
                     if (H.bit == 2u) {
-                        centerToggleManage(H.id);
+                        if (!H.group.empty())
+                            centerToggleManageGroup(H.group);
+                        else
+                            centerToggleManage(H.id);
                         continue;
                     }
                     if (H.bit != 1u)
                         continue;
-                    if (H.part == 10)
-                        centerToggleManage(H.id);
+                    if (H.part == 2) {
+                        if (!H.group.empty())
+                            centerToggleManageGroup(H.group);
+                        else
+                            centerToggleManage(H.id);
+                    } else if (H.part == 10) {
+                        if (!H.group.empty())
+                            centerToggleManageGroup(H.group);
+                        else
+                            centerToggleManage(H.id);
+                    }
                     else if (H.part >= 16)
-                        manageEntry(H.id, H.part - 16);
+                        manageEntry(H.id, H.part - 16, H.group);
                     continue;
                 }
                 case SCard::SNOOZE: {
@@ -380,11 +481,13 @@ namespace NHyprnotify {
         // emissions precede the compositor's own lock handling: locked input
         // belongs to the lockscreen, and half-tracked state must not survive it
         if (NHyprCommon::sessionLocked()) {
+            cancelLongPress();
             swallowRelease = 0;
             heldButtons    = 0;
             return;
         }
         if (NHyprCommon::nativeInputCaptureActive()) {
+            cancelLongPress();
             swallowRelease = 0;
             heldButtons    = 0;
             return;
@@ -395,6 +498,8 @@ namespace NHyprnotify {
         if (e.state == WL_POINTER_BUTTON_STATE_RELEASED) {
             if (BIT && (swallowRelease & BIT)) {
                 swallowRelease &= ~BIT;
+                if (BIT == 1u)
+                    releaseLongPress();
                 info.cancelled = true;
             } else if (!info.cancelled) // a release hyprbar swallowed ends a press we never counted
                 heldButtons = std::max(0, heldButtons - 1);
@@ -403,9 +508,13 @@ namespace NHyprnotify {
 
         // Buttons without a notification action remain native app input.
         if (!BIT) {
+            cancelLongPress();
             heldButtons++;
             return;
         }
+
+        if (BIT != 1u)
+            cancelLongPress();
 
         // hyprbar runs first: a press it swallowed (strip click, open tray
         // menu over the card region) was never ours — and never reached an
@@ -439,6 +548,20 @@ namespace NHyprnotify {
             return;
         }
 
+        // Middle-click remains a native desktop gesture over all shade
+        // content. The popup exception deliberately parks banners in the
+        // shade, preserving its existing Android-style shortcut.
+        if (BIT == 4u && CARD->kind != SCard::POPUP) {
+            heldButtons++;
+            setHovered({});
+            releasePointer();
+            // The shade clears native pointer focus while it owns hover. Put
+            // it back before the compositor processes this native button.
+            if (g_pInputManager)
+                g_pInputManager->simulateMouseMovement();
+            return;
+        }
+
         SHit h;
         h.kind       = CARD->kind;
         h.id         = CARD->id;
@@ -452,6 +575,19 @@ namespace NHyprnotify {
                 h.action = CARD->buttons[B].id;
             else if (const int L = linkAt(*CARD, COORDS); L >= 0)
                 h.href = CARD->links[L].href;
+        }
+
+        const bool LONG_BODY = BIT == 1u && h.part == 0 && h.action.empty() && h.href.empty() && longPressKind(h.kind);
+        if (LONG_BODY) {
+            if (!armLongPress(h, COORDS)) {
+                if (!queueHit(std::move(h))) {
+                    heldButtons++;
+                    return;
+                }
+            }
+            info.cancelled = true;
+            swallowRelease |= BIT;
+            return;
         }
 
         if (!queueHit(std::move(h))) {
@@ -469,15 +605,22 @@ namespace NHyprnotify {
 
     void            onMouseAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
         if (NHyprCommon::sessionLocked()) {
+            cancelLongPress();
             scrollAcc = swipeAcc = 0;
             swipeOn              = 0;
             return;
         }
         if (NHyprCommon::nativeInputCaptureActive()) {
+            cancelLongPress();
             scrollAcc = swipeAcc = 0;
             swipeOn              = 0;
             return;
         }
+        // A long press is a stationary pointer gesture. Any axis event means
+        // the user is doing something else, even when the current button
+        // state would otherwise make the wheel a no-op.
+        if (longPress.active)
+            cancelLongPress();
         if (!centerVisible() || cards.empty() || info.cancelled || heldButtons > 0 || NHyprCommon::nativePointerGrabActive() || NHyprCommon::nativeLayerOwnsPointer())
             return;
         const auto POS  = g_pInputManager->getMouseCoordsInternal();
@@ -524,8 +667,9 @@ namespace NHyprnotify {
                 SHit h;
                 h.kind = CARD->kind;
                 h.id   = CARD->id;
+                h.group = CARD->group;
                 h.bit  = AWAY ? 2u : 1u;  // right-swipe IS the right-click
-                h.part = AWAY ? 0 : 10;   // the other way opens the ⋮'s panel
+                h.part = AWAY ? 0 : 10;   // the other way opens the manage panel
                 if (!queueHit(std::move(h)))
                     info.cancelled = false; // overload leaves the wheel native
             }
@@ -623,8 +767,13 @@ namespace NHyprnotify {
             info.cancelled = true;
             // one more peel before the shade itself: an open manage panel is a
             // menu, and esc closes the innermost thing first
-            if (const auto MID = centerManageRow(); MID != 0) {
-                pendingEsc.arm([MID]() { centerToggleManage(MID); });
+            uint32_t    MID = 0;
+            std::string MGRP;
+            if (centerManageTarget(MID, MGRP)) {
+                if (!MGRP.empty())
+                    pendingEsc.arm([MGRP = std::move(MGRP)]() { centerToggleManageGroup(MGRP); });
+                else
+                    pendingEsc.arm([MID]() { centerToggleManage(MID); });
                 return;
             }
             pendingEsc.arm([]() { setCenter(false); }); // deferred: the close reflows and refocuses
@@ -647,6 +796,7 @@ namespace NHyprnotify {
             if (!can)
                 return;
             info.cancelled = true;
+            centerEnsureRowOpen(id);
             replyOpen(id);
             return;
         }
@@ -730,14 +880,23 @@ namespace NHyprnotify {
     // drags keep flowing, as they would over a real layer-surface daemon.
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info) {
         if (NHyprCommon::sessionLocked()) {
+            cancelLongPress();
             setHovered({});
             releasePointer();
             return;
         }
         if (NHyprCommon::nativeInputCaptureActive()) {
+            cancelLongPress();
             setHovered({});
             releasePointer();
             return;
+        }
+
+        if (longPress.active) {
+            const double DX = pos.x - longPress.origin.x;
+            const double DY = pos.y - longPress.origin.y;
+            if (DX * DX + DY * DY > LONG_PRESS_MOVE * LONG_PRESS_MOVE || info.cancelled || NHyprCommon::nativePointerGrabActive() || NHyprCommon::nativeLayerOwnsPointer())
+                cancelLongPress();
         }
 
         // cheap first: almost every motion happens with nothing shown
@@ -803,6 +962,8 @@ namespace NHyprnotify {
     void refreshPointerOwnership() {
         const auto COORDS = g_pInputManager->getMouseCoordsInternal();
         const auto CARD   = cardAt(COORDS);
+        if (!centerVisible() || !CARD || (longPress.active && (!longPressTargetAlive(longPress.click) || longPress.click.kind != CARD->kind || longPress.click.id != CARD->id || longPress.click.group != CARD->group)))
+            cancelLongPress();
         if (CARD) { // a reflow can slide another surface under the still pointer
             SHover h;
             h.kind  = CARD->kind;
@@ -820,6 +981,10 @@ namespace NHyprnotify {
     }
 
     void inputExit() {
+        cancelLongPress();
+        if (longPressTimer && g_pEventLoopManager)
+            g_pEventLoopManager->removeTimer(longPressTimer);
+        longPressTimer.reset();
         pendingHit.reset();
         pendingEsc.reset();
         pendingKey.reset();

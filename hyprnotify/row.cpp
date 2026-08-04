@@ -9,7 +9,7 @@
 //
 // A BUNDLE has two faces made of the same parts: the DIGEST (folded — one
 // app row with a count pill and two preview lines) and the GROUP (expanded —
-// a header row with a ✕, then every child as a full row). Children are rows
+// a header row with a close control, then every child as a full row). Children are rows
 // with the chevron and the badge taken off: the header already says which
 // app, so repeating its icon per child said it four times over.
 //
@@ -78,10 +78,7 @@ namespace NHyprnotify {
             // expanded: age/header line, title, body, progress, then the card's
             // own actions in Notify order. The PRIMARY gets no button here —
             // the row body fires it, exactly as the banner does.
-            // the ⋮ rides the header line; the kicker gives up exactly its
-            // width so the two can never collide, shown or not
-            const double MANAGEW = ST.manage ? OVER_D + OVER_GAP + 4 : 0;
-            const int    KICKWPX = std::max(1, (int)std::floor((TEXTW - MANAGEW) * P.scale));
+            const int KICKWPX = std::max(1, (int)std::floor(TEXTW * P.scale));
 
             auto& KB = scratch();
             if (ST.headerHasApp) {
@@ -183,7 +180,7 @@ namespace NHyprnotify {
 
                 // the typed text, or the sender's placeholder while it is empty
                 const auto ENT = TXT.empty() ? nullptr : cachedText(TXT, COLFG, T.action, std::max(1, (int)((FB.w - 2 * BTN_PADX) * P.scale)), -1, 0, false, 400);
-                const auto PH  = TXT.empty() ? cachedText(N->replyPlaceholder.empty() ? "Type a reply…" : N->replyPlaceholder, COLSUB, T.action,
+                const auto PH  = TXT.empty() ? cachedText(N->replyPlaceholder.empty() ? "Type a reply..." : N->replyPlaceholder, COLSUB, T.action,
                                                          std::max(1, (int)((FB.w - 2 * BTN_PADX) * P.scale)), -1, 0, false, 400) :
                                                nullptr;
                 if (!P.warm) {
@@ -208,31 +205,6 @@ namespace NHyprnotify {
                 card.replySend  = SB;
             }
 
-            // ---- the ⋮: the way into the manage panel ----
-            //
-            // This used to be three 20px glyphs at 4px separation, hover-only
-            // and unlabelled, with the one irreversible verb in the middle.
-            // Now it is one 24px target that names everything it opens. Its
-            // width is reserved whether it shows or not — a control that
-            // appeared on hover and reflowed the header would re-key every
-            // raster under the pointer.
-            //
-            // It shows for the KEYBOARD too, not just the pointer: arrowing to
-            // a row used to reveal nothing at all, so the verbs behind m/s/p
-            // had no affordance anywhere.
-            if (ST.manage) {
-                const bool SHOWN = (hovered.kind == SCard::ROW && hovered.id == N->id) || selectedRow() == N->id;
-                const bool HOV   = hovered.kind == SCard::ROW && hovered.id == N->id && hovered.part == 10;
-                const bool LIT   = Policy::silenced(N->appKey) || N->priority; // a rule is in force behind it
-                const CBox MB{box.x + box.w - ROW_PADX - RTRIM - OVER_D, box.y + ROW_PADT + (CHEV - OVER_D) / 2, OVER_D, OVER_D};
-                const auto G = cachedText("⋮", LIT ? tOnAccent() : COLSUB, T.small, 64, -1, 0, false, 600);
-                if (!P.warm && (SHOWN || LIT)) {
-                    P.rect(MB, LIT ? COLACC : HOV ? tAccentDim() : tFill2(), (int)std::lround(OVER_D / 2 * P.scale));
-                    if (G && G->tex)
-                        P.tex(G->tex, MB.x + (MB.w - G->tex->m_size.x / P.scale) / 2, MB.y + (MB.h - G->tex->m_size.y / P.scale) / 2);
-                }
-                card.manage.push_back({MB, 10});
-            }
         }
 
         const double ROWH = std::max(th, ICONW) + ROW_PADT + ROW_PADB;
@@ -240,19 +212,19 @@ namespace NHyprnotify {
         if (!P.warm && LEADICON) {
             // collapsed rows center the icon; expanded top-pin it
             const double IY = open ? box.y + ROW_PADT : box.y + (ROWH - ICONW) / 2;
-            paintIconColumn(P, *N, CBox{box.x + ROW_PADX, IY, ICONW, ICONW}, ST.withBadge, RP);
+            paintIconColumn(P, *N, CBox{box.x + ROW_PADX, IY, ICONW, ICONW}, ST.withBadge && N->conversation, RP);
         }
         // The chevron is the direct toggle. A compact row's body is the larger
         // expand target; once open, that same body resumes its primary action.
         if (CHEVRON) {
             const double CY = open ? box.y + ROW_PADT : box.y + (ROWH - CHEV) / 2;
             const CBox   CB{box.x + box.w - ROW_PADX - CHEV, CY, CHEV, CHEV};
-            const auto   G = cachedText(open ? "˄" : "˅", COLFG, T.small, 64, -1, 0, false, 600); // built in BOTH modes
+            const auto   G = controlIcon(open ? eControlIcon::CHEVRON_UP : eControlIcon::CHEVRON_DOWN, (int)std::lround(CHEV * P.scale), COLFG);
             if (!P.warm) {
                 const bool CHOV = hovered.id == N->id && hovered.part == 1 && hovered.btn < 0;
                 P.rect(CB, CHOV ? tAccentDim() : tFill2(), (int)std::lround(CHEV / 2 * P.scale));
-                if (G && G->tex)
-                    P.tex(G->tex, CB.x + (CB.w - G->tex->m_size.x / P.scale) / 2, CB.y + (CB.h - G->tex->m_size.y / P.scale) / 2);
+                if (G)
+                    P.texFit(G, CB, 0, 2.f);
             }
             card.chevron = CB;
         }
@@ -303,30 +275,31 @@ namespace NHyprnotify {
     // durations are iOS's ("Mute for 1 Hour", "Mute for Today"): permanent is
     // still here, but it stops being the only thing a click can mean — it is
     // the choice people regret, and its rule then sits in a file nobody reads.
-    std::vector<SMenuEntry> menuEntries(const SP<SNotif>& N) {
+    std::vector<SMenuEntry> menuEntries(const SP<SNotif>& N, bool bundle) {
         std::vector<SMenuEntry> out;
-        out.push_back({"◷", "Snooze 15 min", "s", 1, 900});
-        out.push_back({"◷", "Snooze 1 hour", "", 1, 3600});
-
         const std::string APP = N->appName.empty() ? N->appKey : N->appName;
-        if (Policy::silenced(N->appKey))
-            out.push_back({"⊘", "Unmute " + APP, "m", 3, 0, true});
-        else {
-            out.push_back({"⊘", "Mute " + APP + " for 1 hour", "", 2, 3600});
-            out.push_back({"⊘", "Mute " + APP + " today", "", 2, -1});
-            out.push_back({"⊘", "Mute " + APP + " always", "m", 2, 0});
+        if (!bundle) {
+            out.push_back({(uint8_t)eControlIcon::SCHEDULE, "Snooze 15 min", "s", 1, 900});
+            out.push_back({(uint8_t)eControlIcon::SCHEDULE, "Snooze 1 hour", "", 1, 3600});
         }
-        if (N->conversation)
-            out.push_back({"★", N->priority ? "Unmark this conversation" : "Priority conversation", "p", 4, 0, N->priority});
-        out.push_back({"✕", "Dismiss", "del", 5, 0});
+        if (Policy::silenced(N->appKey))
+            out.push_back({(uint8_t)eControlIcon::NOTIFICATIONS_OFF, "Unmute " + APP, "m", 3, 0, true});
+        else {
+            out.push_back({(uint8_t)eControlIcon::NOTIFICATIONS_OFF, "Mute " + APP + " for 1 hour", "", 2, 3600});
+            out.push_back({(uint8_t)eControlIcon::NOTIFICATIONS_OFF, "Mute " + APP + " today", "", 2, -1});
+            out.push_back({(uint8_t)eControlIcon::NOTIFICATIONS_OFF, "Mute " + APP + " always", "m", 2, 0});
+        }
+        if (!bundle && N->conversation)
+            out.push_back({(uint8_t)eControlIcon::STAR, N->priority ? "Unmark this conversation" : "Priority conversation", "p", 4, 0, N->priority});
+        out.push_back({(uint8_t)eControlIcon::CLOSE, bundle ? "Dismiss " + APP : "Dismiss", "del", 5, 0});
         return out;
     }
 
-    double managePanelH(const SP<SNotif>& N) {
-        return ROW_PADT + CHILD_ICON + (double)menuEntries(N).size() * MENU_ROW_H + ROW_PADB;
+    double managePanelH(const SP<SNotif>& N, const std::string& group) {
+        return ROW_PADT + CHILD_ICON + (double)menuEntries(N, !group.empty()).size() * MENU_ROW_H + ROW_PADB;
     }
 
-    void paintManagePanel(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box) {
+    void paintManagePanel(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box, const std::string& group) {
         const auto  COLFG = color(cfg.colFg), COLSUB = color(cfg.colKicker), COLACC = color(cfg.colHighlight);
         const float RP = rPow();
         P.rect(box, tFill(), rRow(P.scale), RP);
@@ -335,9 +308,11 @@ namespace NHyprnotify {
         card.kind = SCard::MANAGE;
         card.id   = N->id;
         card.box  = box;
+        card.group = group;
 
-        // the header keeps the row identifiable while its body is gone, and
-        // carries the ⋮ back out — the panel must not be a one-way door
+        // The header keeps the target identifiable while its body is gone. A
+        // visible close control is the only extra affordance; long-pressing
+        // the target opens this panel again.
         if (warmGate.warming)
             ensureIconTex(*N, (int)std::lround(cfg.maxIcon->value() * P.scale), 0, 0);
         const auto& IDT = N->identTex && N->identTex->m_texID ? N->identTex : N->iconTex;
@@ -350,31 +325,32 @@ namespace NHyprnotify {
         if (!P.warm && HEAD && HEAD->tex)
             P.tex(HEAD->tex, TX, box.y + ROW_PADT + (CHILD_ICON - HEAD->tex->m_size.y / P.scale) / 2);
 
-        const bool OHOV = hovered.kind == SCard::MANAGE && hovered.id == N->id && hovered.part == 10;
-        const auto OG   = cachedText("⋮", COLACC, T.small, 64, -1, 0, false, 600);
+        const bool OHOV = hovered.kind == SCard::MANAGE && hovered.id == N->id && hovered.part == 2;
+        const auto   XG    = controlIcon(eControlIcon::CLOSE, (int)std::lround(OVER_D * P.scale), COLFG);
+        const auto   XGHOT = controlIcon(eControlIcon::CLOSE, (int)std::lround(OVER_D * P.scale), tOnAccent());
         if (!P.warm) {
             P.rect(OB, OHOV ? tAccentDim() : tFill2(), (int)std::lround(OVER_D / 2 * P.scale));
-            if (OG && OG->tex)
-                P.tex(OG->tex, OB.x + (OB.w - OG->tex->m_size.x / P.scale) / 2, OB.y + (OB.h - OG->tex->m_size.y / P.scale) / 2);
+            if (const auto* G = OHOV ? &XGHOT : &XG; *G)
+                P.texFit(*G, OB, 0, 2.f);
         }
-        card.manage.push_back({OB, 10});
+        card.close = OB;
 
         double     y  = box.y + ROW_PADT + CHILD_ICON;
-        const auto EN = menuEntries(N);
+        const auto EN = menuEntries(N, !group.empty());
         for (size_t i = 0; i < EN.size(); i++) {
             const auto& E = EN[i];
             const CBox  RB{box.x + ROW_PADX / 2, y, box.w - ROW_PADX, MENU_ROW_H};
             // part codes 16.. address the entries: one rect per row, so a new
             // verb costs an entry and not a member
             const bool HOV = hovered.kind == SCard::MANAGE && hovered.id == N->id && hovered.part == (uint8_t)(16 + i);
-            const auto G   = cachedText(E.glyph, E.lit ? COLACC : COLSUB, T.small, 64, -1, 0, false, 600);
+            const auto G   = controlIcon((eControlIcon)E.icon, (int)std::lround(MENU_GLYPH_W * P.scale), E.lit ? COLACC : COLSUB);
             const auto L   = cachedText(E.label, E.lit ? COLACC : COLFG, T.body, std::max(1, (int)((RB.w - MENU_GLYPH_W - 40) * P.scale)), -1, 0, false, 500);
             const auto H   = E.hint[0] ? cachedText(E.hint, COLSUB.modifyA(0.5f), T.small, 64, -1, 0, false, 500) : nullptr;
             if (!P.warm) {
                 if (HOV)
                     P.rect(RB, tAccentDim(), (int)std::lround(6 * P.scale), RP);
-                if (G && G->tex)
-                    P.tex(G->tex, RB.x + (MENU_GLYPH_W - G->tex->m_size.x / P.scale) / 2, RB.y + (MENU_ROW_H - G->tex->m_size.y / P.scale) / 2);
+                if (G)
+                    P.texFit(G, CBox{RB.x, RB.y, MENU_GLYPH_W, MENU_ROW_H}, 0, 2.f);
                 if (L && L->tex)
                     P.tex(L->tex, RB.x + MENU_GLYPH_W, RB.y + (MENU_ROW_H - L->tex->m_size.y / P.scale) / 2);
                 if (H && H->tex)
@@ -387,8 +363,8 @@ namespace NHyprnotify {
         cards.push_back(std::move(card));
     }
 
-    // The undo row — Android's "Snoozed for 1 hour ▾ · Undo", in the slot the
-    // card just held. It is the whole reason the ◷ stopped being irreversible:
+    // The undo row — Android's "Snoozed for 1 hour · Undo", in the slot the
+    // card just held. It is the whole reason the schedule action stopped being irreversible:
     // the card has not gone anywhere yet, so there is still something to click.
     // Both controls STAND rather than hide: a control you have seconds to find
     // must not also have to be discovered.
@@ -404,7 +380,7 @@ namespace NHyprnotify {
 
         const double CY = box.y + (SNOOZE_H - MANAGE_D) / 2;
 
-        // right edge, walking left: Undo, then the duration ▾
+        // right edge, walking left: Undo, then the duration control
         const auto   UND  = cachedText("Undo", COLACC, T.action, 96, -1, 0, false, 600);
         const double UNDW = texW(UND, P.scale) + 2 * BTN_PADX;
         const CBox   UB{box.x + box.w - ROW_PADX - UNDW, box.y + (SNOOZE_H - BTN_H) / 2, UNDW, BTN_H};
@@ -419,21 +395,26 @@ namespace NHyprnotify {
 
         const CBox DB{UB.x - MANAGE_GAP - MANAGE_D, CY, MANAGE_D, MANAGE_D};
         const bool DHOV = hovered.kind == SCard::SNOOZE && hovered.id == N->id && hovered.part == 9;
-        const auto DG   = cachedText("˅", COLSUB, T.small, 64, -1, 0, false, 600);
+        const auto DG   = controlIcon(eControlIcon::CHEVRON_DOWN, (int)std::lround(MANAGE_D * P.scale), COLSUB);
         if (!P.warm) {
             P.rect(DB, DHOV ? tAccentDim() : tFill2(), (int)std::lround(MANAGE_D / 2 * P.scale));
-            if (DG && DG->tex)
-                P.tex(DG->tex, DB.x + (DB.w - DG->tex->m_size.x / P.scale) / 2, DB.y + (DB.h - DG->tex->m_size.y / P.scale) / 2);
+            if (DG)
+                P.texFit(DG, DB, 0, 2.f);
         }
         card.manage.push_back({DB, 9});
 
         auto& LB = scratch();
-        LB += "◷ Snoozed ";
+        LB += "Snoozed ";
         appendEsc(LB, Model::snoozeLabel(N));
-        const int  LW  = std::max(1, (int)std::floor((DB.x - MANAGE_GAP - box.x - ROW_PADX) * P.scale));
+        const auto SG  = controlIcon(eControlIcon::SCHEDULE, (int)std::lround(MANAGE_D * P.scale), COLSUB);
+        const int  LW  = std::max(1, (int)std::floor((DB.x - MANAGE_GAP - box.x - ROW_PADX - MANAGE_D - MANAGE_GAP) * P.scale));
         const auto LBL = cachedText(LB, COLSUB, T.body, LW, -1, 0, true, 500);
-        if (!P.warm && LBL && LBL->tex)
-            P.tex(LBL->tex, box.x + ROW_PADX, box.y + (SNOOZE_H - LBL->tex->m_size.y / P.scale) / 2);
+        if (!P.warm) {
+            if (SG)
+                P.texFit(SG, CBox{box.x + ROW_PADX, box.y + (SNOOZE_H - MANAGE_D) / 2, MANAGE_D, MANAGE_D}, 0, 2.f);
+            if (LBL && LBL->tex)
+                P.tex(LBL->tex, box.x + ROW_PADX + MANAGE_D + MANAGE_GAP, box.y + (SNOOZE_H - LBL->tex->m_size.y / P.scale) / 2);
+        }
 
         cards.push_back(std::move(card));
     }
@@ -456,26 +437,16 @@ namespace NHyprnotify {
             P.texFit(IDT, CBox{box.x + ROW_PADX, box.y + ROW_PADT, ROW_ICON, ROW_ICON}, (int)std::lround(ROW_ICON * 10.0 / 44.0 * P.scale), RP);
 
         const double TX    = box.x + ROW_PADX + ROW_ICON + ROW_ICON_GAP;
-        const auto   PILL  = cachedText(std::to_string(D.items.size()) + " ˅", COLFG, T.small, 64, -1, 0, false, 600);
-        const double PILLW = texW(PILL, P.scale) + 14;
+        const auto   PILL  = cachedText(std::to_string(D.items.size()), COLFG, T.small, 64, -1, 0, false, 600);
+        const double PILLW = texW(PILL, P.scale) + 14 + 16;
         const CBox   PB{box.x + box.w - ROW_PADX - PILLW, box.y + ROW_PADT + (ROW_ICON - PILL_H) / 2, PILLW, PILL_H};
+        const auto   ARROW = controlIcon(eControlIcon::CHEVRON_DOWN, (int)std::lround(14 * P.scale), COLFG);
         if (!P.warm) {
             P.rect(PB, HOV ? tAccentDim() : tFill2(), (int)std::lround(PILL_H / 2 * P.scale));
             if (PILL && PILL->tex)
-                P.tex(PILL->tex, PB.x + (PB.w - PILL->tex->m_size.x / P.scale) / 2, PB.y + (PB.h - PILL->tex->m_size.y / P.scale) / 2);
-        }
-
-        // a folded bundle is where an app most obviously earns a silencing,
-        // so the strip reaches here too — revealed on hover, as on a row
-        const bool MUTED = Policy::silenced(D.key);
-        const CBox MB{PB.x - 6 - MANAGE_D, box.y + ROW_PADT + (ROW_ICON - MANAGE_D) / 2, MANAGE_D, MANAGE_D};
-        {
-            const auto G = cachedText("⊘", MUTED ? tOnAccent() : COLSUB, T.small, 64, -1, 0, false, 600);
-            if (!P.warm && HOV) {
-                P.rect(MB, MUTED ? color(cfg.colHighlight) : hovered.part == 5 ? tAccentDim() : tFill2(), (int)std::lround(MANAGE_D / 2 * P.scale));
-                if (G && G->tex)
-                    P.tex(G->tex, MB.x + (MB.w - G->tex->m_size.x / P.scale) / 2, MB.y + (MB.h - G->tex->m_size.y / P.scale) / 2);
-            }
+                P.tex(PILL->tex, PB.x + 7, PB.y + (PB.h - PILL->tex->m_size.y / P.scale) / 2);
+            if (ARROW)
+                P.texFit(ARROW, CBox{PB.x + PB.w - 19, PB.y + 3, 14, PB.h - 6}, 0, 2.f);
         }
 
         auto& DB = scratch();
@@ -487,7 +458,7 @@ namespace NHyprnotify {
         DB += " • ";
         DB += ageString(NEWEST->arrived);
         DB += "</span>";
-        const auto SUMLINE = cachedText(DB, COLTITLE, T.title, std::max(1, (int)((MB.x - 8 - TX) * P.scale)), -1, 0, true, 600);
+        const auto SUMLINE = cachedText(DB, COLTITLE, T.title, std::max(1, (int)((PB.x - 8 - TX) * P.scale)), -1, 0, true, 600);
         if (!P.warm && SUMLINE)
             P.tex(SUMLINE->tex, TX, box.y + ROW_PADT + (ROW_ICON - texH(SUMLINE, P.scale)) / 2);
 
@@ -527,12 +498,11 @@ namespace NHyprnotify {
         card.kind  = SCard::DIGEST;
         card.box   = box;
         card.group = D.key;
-        card.manage.push_back({MB, 5});
         cards.push_back(std::move(card));
     }
 
     // The expanded bundle: a header that owns the app's identity, its count
-    // and the ✕ that dismisses the lot, then every child as a full row.
+    // and the close control that dismisses the lot, then every child as a full row.
     void paintGroup(const SPaint& P, const SType& T, const SDisp& D, const CBox& box, const std::vector<double>& childH) {
         const auto  COLFG = color(cfg.colFg), COLTITLE = color(cfg.colTitle), COLSUB = color(cfg.colKicker), COLURGENT = color(cfg.colUrgent);
         const auto& SUBHEX = hexOfCached(COLSUB);
@@ -549,36 +519,22 @@ namespace NHyprnotify {
         if (IDT)
             P.texFit(IDT, CBox{box.x + ROW_PADX, box.y + ROW_PADT, CHILD_ICON, CHILD_ICON}, (int)std::lround(CHILD_ICON * 10.0 / 44.0 * P.scale), RP);
 
-        // the static ✕ (dismiss the whole app's bundle)
+        // the static close control (dismiss the whole app's bundle)
         const CBox XB{box.x + box.w - ROW_PADX - XCIRC, box.y + ROW_PADT + (CHILD_ICON - XCIRC) / 2, XCIRC, XCIRC};
         const bool XHOV = HHOV && hovered.part == 2;
-        // BOTH colours, every pass: hover flips without a rewarm, so keying
-        // this raster on the hover state would miss the cache for a frame
-        const auto XG    = cachedText("✕", COLFG, T.small, 64, -1, 0, false, 600);
-        const auto XGHOT = cachedText("✕", tOnAccent(), T.small, 64, -1, 0, false, 600);
+        // BOTH colours, every pass: hover flips without a rewarm, so both
+        // stable icon variants must be requested before the draw.
+        const auto XG    = controlIcon(eControlIcon::CLOSE, (int)std::lround(XCIRC * P.scale), COLFG);
+        const auto XGHOT = controlIcon(eControlIcon::CLOSE, (int)std::lround(XCIRC * P.scale), tOnAccent());
         if (!P.warm) {
             P.rect(XB, XHOV ? COLURGENT : tFill2(), (int)std::lround(XCIRC / 2 * P.scale));
-            if (const auto* G = XHOV ? XGHOT : XG; G && G->tex)
-                P.tex(G->tex, XB.x + (XB.w - G->tex->m_size.x / P.scale) / 2, XB.y + (XB.h - G->tex->m_size.y / P.scale) / 2);
+            if (const auto* G = XHOV ? &XGHOT : &XG; *G)
+                P.texFit(*G, XB, 0, 2.f);
         }
 
-        // the header is chrome, so its controls stand rather than hide — the
-        // ✕ already does, and the ⊘ beside it manages the whole bundle's app
-        const bool MUTED = Policy::silenced(D.key);
-        const CBox MB{XB.x - 6 - MANAGE_D, box.y + ROW_PADT + (CHILD_ICON - MANAGE_D) / 2, MANAGE_D, MANAGE_D};
-        {
-            const bool MHOV = HHOV && hovered.part == 5;
-            const auto G    = cachedText("⊘", MUTED ? tOnAccent() : COLSUB, T.small, 64, -1, 0, false, 600);
-            if (!P.warm) {
-                P.rect(MB, MUTED ? color(cfg.colHighlight) : MHOV ? tAccentDim() : tFill2(), (int)std::lround(MANAGE_D / 2 * P.scale));
-                if (G && G->tex)
-                    P.tex(G->tex, MB.x + (MB.w - G->tex->m_size.x / P.scale) / 2, MB.y + (MB.h - G->tex->m_size.y / P.scale) / 2);
-            }
-        }
-
-        const auto   PILL  = cachedText(std::to_string(D.items.size()) + " ˄", COLFG, T.small, 64, -1, 0, false, 600);
+        const auto   PILL  = cachedText(std::to_string(D.items.size()), COLFG, T.small, 64, -1, 0, false, 600);
         const double PILLW = texW(PILL, P.scale) + 14;
-        const CBox   PB{MB.x - 6 - PILLW, box.y + ROW_PADT + (CHILD_ICON - PILL_H) / 2, PILLW, PILL_H};
+        const CBox   PB{XB.x - 6 - PILLW, box.y + ROW_PADT + (CHILD_ICON - PILL_H) / 2, PILLW, PILL_H};
         if (!P.warm) {
             P.rect(PB, tFill2(), (int)std::lround(PILL_H / 2 * P.scale));
             if (PILL && PILL->tex)
@@ -605,7 +561,6 @@ namespace NHyprnotify {
             card.box   = CBox{box.x, box.y, box.w, HEADRH};
             card.group = D.key;
             card.close = XB;
-            card.manage.push_back({MB, 5});
             cards.push_back(std::move(card));
         }
 

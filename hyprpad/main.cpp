@@ -21,8 +21,8 @@
 //   forgets appliedState and re-checks.
 // - Auto re-checks are change-detected against the last applied state: an
 //   unrelated hotplug re-checks but applies nothing.
-// - Feedback is one async D-Bus Notify (replaces-id 9991, no icon: the
-//   daemon's fallback_icon_dir rolls the card a face) on the plugin's own
+// - Feedback is one async D-Bus Notify (replaces-id 9991, no explicit icon:
+//   hyprnotify supplies its deterministic generic app mark) on the plugin's own
 //   event-loop-integrated session-bus connection — hyprbar's tray pattern; the
 //   notification daemon's API is the bus name, never its symbols. If the
 //   bus dies the cards stop; the flip keeps working.

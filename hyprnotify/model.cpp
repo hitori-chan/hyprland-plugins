@@ -120,7 +120,7 @@ namespace NHyprnotify {
         // to, since expiry takes the card and not just its banner.
         //
         // It does NOT leave at the click. Android replaces the notification in
-        // place with "Snoozed for 1 hour ▾ · Undo" and only then lets it go —
+        // place with a duration control and Undo and only then lets it go —
         // which is the whole answer to "there is nothing left to click". For
         // CONFIRM_MS the card holds its slot as a one-line undo row, so the
         // only irreversible verb in the shell stops being irreversible. This
@@ -128,8 +128,8 @@ namespace NHyprnotify {
         // is gone the same way it always was.
         inline constexpr int64_t CONFIRM_MS = 6000;
 
-        // The ˅ ladder, Android's own durations. snooze_seconds keeps its
-        // meaning as the duration a bare ◷ takes; the ladder is where the ˅
+        // The duration ladder is Android's own. snooze_seconds keeps its
+        // meaning as the duration a bare schedule action takes; the ladder is
         // goes next, so a configured default that is not on it is still the
         // starting point.
         inline constexpr int64_t RUNGS[] = {900, 1800, 3600, 7200};
@@ -186,7 +186,7 @@ namespace NHyprnotify {
             N->snoozed            = false;
             N->snoozeConfirmUntil = {};
             // it never went, so it does not come back alerting either: the
-            // card resumes as the resident shade row the ◷ found it as
+            // card resumes as the resident shade row the schedule action found it as
             notifChanged();
             rearmExpiry();
             Bus::emitStateSoon();
@@ -334,7 +334,7 @@ namespace NHyprnotify {
         void toggleSuspend() {
             suspended = !suspended;
             if (suspended) {
-                notifChanged(); // the center's ⊖ lights up
+                notifChanged(); // the center's DND control lights up
                 return;         // visible cards live out their timeouts; new arrivals queue
             }
             const auto NOW = Time::steadyNow();
@@ -501,6 +501,7 @@ namespace NHyprnotify {
             // snooze would last precisely until the sender next said anything.
             n->banner  = !n->snoozed;
             n->appName = APP_NAME;
+            n->desktopEntry = DESKTOP;
             n->summary = Parse::oneLine(Parse::sanitizeMarkup(SUMMARY));
             std::string bodyText = BODY;
             n->bodyImages.clear();
@@ -539,9 +540,8 @@ namespace NHyprnotify {
 
             // The icon anatomy (Android's, per the design contract): the
             // CONTENT image (image-data / image-path) owns the icon column;
-            // the IDENTITY (app_icon param, else the desktop-entry hint)
-            // rides it as a corner badge — or leads alone when there is no
-            // content. Nothing at all = a text-only card.
+            // the IDENTITY (app_icon, else the desktop-entry Icon= value) is
+            // resolved separately. Nothing at all = a text-only card.
             const int ICONPX = std::max(8, (int)cfg.maxIcon->value());
             const int PIXCAP = std::max((int)cfg.width->value() * 2, (int)cfg.maxIcon->value() * 3);
             for (const auto* KEY : {"image-data", "image_data", "icon_data"})
@@ -559,8 +559,9 @@ namespace NHyprnotify {
                 n->image = Parse::resolveImage(cand, ICONPX);
             }
             n->identity = Parse::resolveImage(APP_ICON, ICONPX);
-            if (n->identity.empty() && !DESKTOP.empty())
-                n->identity = Parse::resolveImage(DESKTOP, ICONPX);
+            n->identityFromDesktop = n->identity.empty() && !DESKTOP.empty();
+            if (n->identityFromDesktop)
+                n->identity = resolveDesktopEntryIcon(DESKTOP, ICONPX);
             n->appKey = APPKEY;
 
             // The inline-reply protocol (KDE's, which Telegram/Fractal speak):

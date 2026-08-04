@@ -3,11 +3,12 @@
 
 #include "common/fileindex.hpp"
 #include "common/icons.hpp"
+#include "hyprbar/desktop_exec.hpp"
 
-#include "hyprnotify.hpp"
+#include "ui.hpp"
 
 #include <filesystem>
-#include <random>
+#include <sstream>
 
 namespace NHyprnotify {
 
@@ -37,13 +38,98 @@ namespace NHyprnotify {
         SP<CEventLoopTimer>       decodePoll;
         bool                      waitedForDecodeSlot = false;
 
-        constexpr size_t          MAX_FALLBACK_FILES   = 2048;
-        constexpr size_t          MAX_FALLBACK_VISITED = 65536;
-        NHyprCommon::CAsyncFileIndex fallbackIndex;
-        std::vector<std::string>    fallbackFiles;
-        uint64_t                    fallbackGeneration = 0;
-        bool                        fallbackScanning   = false;
-        std::string                 fallbackDirectory;
+        constexpr size_t MAX_DESKTOP_FILES   = 4096;
+        constexpr size_t MAX_DESKTOP_VISITED = 16384;
+        NHyprCommon::CAsyncFileIndex desktopIndex;
+        SP<CEventLoopTimer>          desktopPoll;
+        std::unordered_map<std::string, std::string> desktopIcons;
+        uint64_t                     desktopGeneration = 0;
+        bool                         desktopScanning   = false;
+
+        static std::string desktopKey(std::string value) {
+            if (value.ends_with(".desktop"))
+                value.erase(value.size() - 8);
+            std::ranges::transform(value, value.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+            return value;
+        }
+
+        static std::vector<std::string> desktopDirs() {
+            std::vector<std::string> dirs;
+            for (const auto& data : NHyprCommon::xdgDataDirs())
+                dirs.push_back(data + "/applications");
+            return dirs;
+        }
+
+        static void indexDesktopEntry(const NHyprCommon::CAsyncFileIndex::SEntry& entry) {
+            std::istringstream file(entry.contents);
+            std::string        icon, line;
+            bool               inDesktopEntry = false;
+            while (std::getline(file, line)) {
+                if (!line.empty() && line.back() == '\r')
+                    line.pop_back();
+                if (!line.empty() && line.front() == '[') {
+                    if (inDesktopEntry)
+                        break;
+                    inDesktopEntry = line == "[Desktop Entry]";
+                    continue;
+                }
+                if (!inDesktopEntry || !line.starts_with("Icon="))
+                    continue;
+                if (const auto value = NHyprbar::DesktopExec::unescapeString(std::string_view{line}.substr(5)); value && !value->empty())
+                    icon = *value;
+                break;
+            }
+            if (!icon.empty())
+                desktopIcons.try_emplace(desktopKey(entry.path.stem().string()), std::move(icon));
+        }
+
+        static void startDesktopIndex() {
+            desktopIcons.clear();
+            desktopScanning = true;
+            NHyprCommon::CAsyncFileIndex::SRequest request;
+            request.generation   = ++desktopGeneration;
+            request.extensions   = {".desktop"};
+            request.maxEntries   = MAX_DESKTOP_FILES;
+            request.maxVisited   = MAX_DESKTOP_VISITED;
+            request.maxFileBytes = NHyprbar::DesktopExec::MAX_DESKTOP_FILE_BYTES;
+            request.recursive    = true;
+            request.roots        = std::ranges::to<std::vector<std::filesystem::path>>(desktopDirs());
+            desktopIndex.request(std::move(request));
+            if (desktopPoll)
+                desktopPoll->updateTimeout(std::chrono::milliseconds(2));
+        }
+
+        static void pollDesktopIndex() {
+            if (!desktopScanning)
+                return;
+            std::vector<NHyprCommon::CAsyncFileIndex::SEntry> entries;
+            const bool COMPLETE = desktopIndex.poll(desktopGeneration, entries, 8);
+            const bool FINISHED = COMPLETE;
+            for (const auto& entry : entries)
+                indexDesktopEntry(entry);
+
+            bool identityChanged = false;
+            const int ICONPX = std::max(8, (int)cfg.maxIcon->value());
+            for (const auto& N : notifs) {
+                if (!N->identityFromDesktop)
+                    continue;
+                const auto ICON = resolveDesktopEntryIcon(N->desktopEntry, ICONPX);
+                if (ICON == N->identity)
+                    continue;
+                N->identity = ICON;
+                N->identTex.reset();
+                N->identFor.clear();
+                N->identIconPx = 0;
+                N->identSettled = false;
+                identityChanged = true;
+            }
+
+            desktopScanning = !COMPLETE;
+            if (desktopPoll)
+                desktopPoll->updateTimeout(desktopScanning ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
+            if ((identityChanged || FINISHED) && !notifs.empty())
+                notifChanged();
+        }
 
         static bool resourceReady(const SDecodeJob& job) {
             return job.rejected || (job.resource && job.resource->m_ready.load(std::memory_order_acquire));
@@ -61,7 +147,7 @@ namespace NHyprnotify {
         static void armDecodePoll() {
             if (!decodePoll)
                 return;
-            const bool PENDING = fallbackScanning || std::ranges::any_of(decodeJobs, [](const auto& job) { return !resourceReady(job); });
+            const bool PENDING = desktopScanning || std::ranges::any_of(decodeJobs, [](const auto& job) { return !resourceReady(job); });
             decodePoll->updateTimeout(PENDING ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
         }
 
@@ -71,14 +157,6 @@ namespace NHyprnotify {
                 const bool READY = resourceReady(job);
                 becameReady |= READY && !job.readyAtWarmStart;
                 job.readyAtWarmStart |= READY;
-            }
-            if (fallbackScanning) {
-                std::vector<NHyprCommon::CAsyncFileIndex::SEntry> found;
-                const bool COMPLETE = fallbackIndex.poll(fallbackGeneration, found, 32);
-                for (const auto& entry : found)
-                    fallbackFiles.push_back(entry.path.string());
-                fallbackScanning = !COMPLETE;
-                becameReady |= !found.empty();
             }
             armDecodePoll();
             if (becameReady)
@@ -114,18 +192,24 @@ namespace NHyprnotify {
             return;
         decodePoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { pollDecodeJobs(); }, nullptr);
         g_pEventLoopManager->addTimer(decodePoll);
+        desktopPoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { pollDesktopIndex(); }, nullptr);
+        g_pEventLoopManager->addTimer(desktopPoll);
+        startDesktopIndex();
     }
 
     void iconsExit() {
         if (decodePoll && g_pEventLoopManager)
             g_pEventLoopManager->removeTimer(decodePoll);
         decodePoll.reset();
+        if (desktopPoll && g_pEventLoopManager)
+            g_pEventLoopManager->removeTimer(desktopPoll);
+        desktopPoll.reset();
         decodeJobs.clear();
-        fallbackIndex.exit();
-        fallbackFiles.clear();
-        fallbackDirectory.clear();
-        fallbackScanning = false;
+        desktopIndex.exit();
+        desktopIcons.clear();
+        desktopScanning = false;
         waitedForDecodeSlot = false;
+        controlIconCacheClear();
     }
 
     void iconsWarmBegin() {
@@ -150,45 +234,28 @@ namespace NHyprnotify {
         return becameReadyDuringWarm || (released && waitedForDecodeSlot);
     }
 
-    // ---- fallback_icon_dir: iconless cards wear a face (the left identity) ----
-
-    void                            resetFallbackCache() {
-        fallbackFiles.clear();
-        fallbackDirectory.clear();
-        fallbackScanning = false;
-        fallbackIndex.cancel(++fallbackGeneration);
+    void resetDesktopIconCache() {
+        desktopIndex.cancel(++desktopGeneration);
+        desktopIcons.clear();
+        desktopScanning = false;
         for (const auto& N : notifs) {
-            N->fallbackPick.clear();
+            if (!N->identityFromDesktop)
+                continue;
+            N->identity.clear();
             N->identFor.clear();
             N->identIconPx = 0;
             N->identSettled = false;
             N->identTex.reset();
         }
+        if (desktopPoll)
+            startDesktopIndex();
+        if (!notifs.empty())
+            notifChanged();
     }
 
-    // One roll per card (bus keeps the pick across in-place replaces). The
-    // scan starts from warm but its bounded file walk stays off the compositor
-    // thread; the timer above only adopts ready path batches.
-    static std::string pickFallback() {
-        const auto DIR = cfg.fallbackIconDir->value();
-        if (DIR.empty())
-            return "";
-        if (fallbackDirectory != DIR) {
-            fallbackFiles.clear();
-            fallbackDirectory = DIR;
-            fallbackScanning = true;
-            fallbackIndex.request({.generation = ++fallbackGeneration,
-                                   .roots = {DIR},
-                                   .extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".avif", ".jxl", ".svg"},
-                                   .maxEntries = MAX_FALLBACK_FILES,
-                                   .maxVisited = MAX_FALLBACK_VISITED,
-                                   .recursive = true});
-            armDecodePoll();
-        }
-        if (fallbackFiles.empty())
-            return "";
-        static std::mt19937 rng{std::random_device{}()};
-        return fallbackFiles[std::uniform_int_distribution<size_t>{0, fallbackFiles.size() - 1}(rng)];
+    std::string resolveDesktopEntryIcon(const std::string& entry, int sizePx) {
+        const auto IT = desktopIcons.find(desktopKey(entry));
+        return IT == desktopIcons.end() ? "" : Parse::resolveImage(IT->second, sizePx);
     }
 
     // Anything bigger than the card's icon box is downscaled ONCE on the CPU
@@ -281,13 +348,27 @@ namespace NHyprnotify {
     // desktop-entry, icon-box only). The render decides which leads and
     // whether the identity rides as the corner badge.
     void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx) {
-        // IDENTITY (the left lead): the app_icon/desktop-entry, drawn at every
-        // size it appears (lead avatar, group header). An iconless card rolls a
-        // face from fallback_icon_dir so a sender is never faceless; the roll
-        // is kept in fallbackPick across in-place replaces. heroWPx 0: an
-        // identity is icon-box only — a wide waifu never goes hero.
+        constexpr std::string_view GENERIC = "__hyprnotify_aosp_generic_app__";
+        const auto                  genericIdentity = [&]() {
+            // A missing or unusable app identity gets one deterministic,
+            // neutral application mark. It is never content art or a scan of
+            // a user-provided directory.
+            if (n.identFor != GENERIC || n.identIconPx != iconPx) {
+                n.identTex.reset();
+                n.identFor     = GENERIC;
+                n.identIconPx  = iconPx;
+                n.identSettled = false;
+            }
+            if (!n.identSettled) {
+                n.identTex     = controlIcon(eControlIcon::APPS, iconPx, CHyprColor{Theme::INK});
+                n.identSettled = n.identTex != nullptr;
+            }
+        };
+
+        // IDENTITY (the left lead): app_icon or the Icon= value resolved from
+        // desktop-entry, drawn at every size it appears. heroWPx 0: an
+        // identity is icon-box only.
         if (!n.identity.empty()) {
-            n.fallbackPick.clear();
             if (n.identFor != n.identity || n.identIconPx != iconPx) {
                 n.identTex.reset();
                 n.identFor = n.identity;
@@ -299,34 +380,20 @@ namespace NHyprnotify {
                 if (TEX.settled) {
                     n.identTex = TEX.texture;
                     n.identSettled = true;
-                }
-            }
-        } else {
-            if (n.fallbackPick.empty())
-                n.fallbackPick = pickFallback();
-            if (n.fallbackPick.empty()) {
-                n.identTex.reset();
-                n.identFor.clear();
-                n.identIconPx = 0;
-                n.identSettled = true;
-            } else if (n.identFor != n.fallbackPick) {
-                n.identTex.reset();
-                n.identFor = n.fallbackPick;
-                n.identIconPx = iconPx;
-                n.identSettled = false;
-            } else if (n.identIconPx != iconPx) {
-                n.identTex.reset();
-                n.identIconPx = iconPx;
-                n.identSettled = false;
-            }
-            if (!n.identSettled) {
-                const auto TEX = fileTex(n.fallbackPick, iconPx, 0, 0);
-                if (TEX.settled) {
-                    n.identTex = TEX.texture;
-                    n.identSettled = true;
+                    if (!n.identTex) {
+                        // A resolved path can disappear or fail to decode.
+                        // Settle it once, then use the generic mark instead of
+                        // retrying a known-bad source on every warm.
+                        n.identity.clear();
+                        n.identFor.clear();
+                        n.identIconPx = 0;
+                        n.identSettled = false;
+                    }
                 }
             }
         }
+        if (n.identity.empty())
+            genericIdentity();
 
         if (n.hasPixels) {
             if (n.pixels.empty())
@@ -365,8 +432,7 @@ namespace NHyprnotify {
         }
 
         if (n.image.empty()) {
-            // no content image: the card shows its identity (or the rolled
-            // fallback face) alone — content has no fallback of its own
+            // no content image: the deterministic app identity leads alone
             n.iconTex.reset();
             n.imageFor.clear();
             n.pixelsFor = 0;

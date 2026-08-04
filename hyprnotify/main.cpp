@@ -6,12 +6,12 @@
 //
 // - POPUPS (banners): glass cards top-right on the focused monitor. The
 //   anatomy is Android's conversation container — ONE icon column, the
-//   avatar leading (the content image; for a chat, the sender's face — a
-//   rolled fallback face when a card is iconless) with the app identity
+//   avatar leading (the content image; for a chat, the sender's face) with the
+//   app identity
 //   badged on its bottom-right corner; a wide content image goes hero,
 //   full-width, instead. Then the "App • age" header, title, body,
 //   progress, and the card's actions as tinted text buttons. Hovering
-//   reveals the ✕ and HOLDS the timeout.
+//   reveals the cached close control and HOLDS the timeout.
 // - THE SHADE (F12 / the bar's bell / `hyprctl hyprnotify center`): ONE list
 //   of live cards, Android's notification shade. No lifecycle sections and no
 //   history — a dismissed card is gone. Ranking is Android's without the
@@ -23,12 +23,12 @@
 //   hidden content can be acted on; once open, a row IS its banner and the
 //   body fires the card's primary exactly as the popup does. The chevron
 //   toggles either state. Right dismisses,
-//   middle sweeps; the footer is ⊖ DND · a global "Clear all". While it is
+//   middle parks the stack; the footer is the DND icon and a global "Clear all". While it is
 //   open it owns the nav keys (↑↓ select, space folds, enter fires the
 //   primary, delete dismisses, m/s/p manage, esc closes) and nothing else.
-//   A row's ⋮ turns it into a manage panel: snooze durations, mute
+//   A row's long-press turns it into a manage panel: snooze durations, mute
 //   durations, mark the sender — every verb named, the rules persist across
-//   relogs, and the footer's ⊘ N never lets a standing one hide.
+//   relogs, and the footer's muted-count control never lets a standing rule hide.
 //
 // Model rules: the conversation merge joins one chat's messages into one
 // growing card (~8KB cap, oldest lines drop) — fd.o's im.*/call.* categories,
@@ -261,13 +261,12 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.colHighlight    = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_highlight", "the accent: progress, actions, selections", Th::ACCENT);
     cfg.colLink         = makeShared<Config::Values::CColorValue>("plugin:hyprnotify:col_link", "body hyperlinks", Th::LINK);
     cfg.soundCommand    = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:sound_command", "libcanberra player for sound hints; empty disables", "canberra-gtk-play");
-    cfg.fallbackIconDir = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:fallback_icon_dir", "iconless cards draw a random identity face from this directory", "");
 
     for (const auto& V : {cfg.fontSize, cfg.width, cfg.maxHeight, cfg.maxIcon, cfg.margin, cfg.offsetY, cfg.timeoutLow, cfg.timeoutNormal, cfg.coalescePopups, cfg.quietFullscreen, cfg.snoozeSeconds, cfg.rounding,
                           cfg.maxNotifs, cfg.ignoreDbusClose})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
     HyprlandAPI::addConfigValueV2(PHANDLE, cfg.roundingPower);
-    for (const auto& V : {cfg.font, cfg.fallbackIconDir, cfg.soundCommand})
+    for (const auto& V : {cfg.font, cfg.soundCommand})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
     for (const auto& V : {cfg.colBg, cfg.colFg, cfg.colTitle, cfg.colKicker, cfg.colFrame, cfg.colUrgent, cfg.colHighlight, cfg.colLink})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
@@ -329,7 +328,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     });
     g_lifecycle.listen(EV.config.reloaded, []() {
         NHyprCommon::resetIconNameCache();
-        resetFallbackCache();
+        resetDesktopIconCache();
         textCacheClear();
         if (!notifs.empty() || centerVisible())
             notifChanged(); // a live theme reload re-keys the texture caches

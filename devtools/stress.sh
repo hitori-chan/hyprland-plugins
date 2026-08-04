@@ -467,7 +467,7 @@ hq hyprnotify clear >/dev/null; sleep 0.8
 # shade overflow: more rows than the monitor-tall panel holds must PAGE, not
 # bleed off the bottom. 15 distinct-app cards -> 15 rows (one app each, so
 # nothing bundles); the expansion budget opens what fits and folds the rest.
-# Drawing it (the placement break + the "▾ N" paging cue) must not crash and
+# Drawing it (the placement break plus the paging cue) must not crash and
 # must keep every card.
 for i in $(seq 1 15); do dsp "hl.dsp.exec_cmd('notify-send -a ovf$i -t 30000 \"row $i\" body')"; done; sleep 1.5
 hq hyprnotify center >/dev/null; sleep 0.6
@@ -494,11 +494,16 @@ done
 sleep 0.8
 chk "shade: Telegram-style messages merge into one card" test "$(st)" = "center:0 live:1 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.6
-click() { # click <x> <y> <button-code>
-	printf 'move %s %s\nsleep 40\npress %s\nsleep 40\nrelease %s\nsleep 80\n' "$1" "$2" "$3" "$3" |
-		vp
-	sleep 0.8
-}
+	click() { # click <x> <y> <button-code>
+		printf 'move %s %s\nsleep 40\npress %s\nsleep 40\nrelease %s\nsleep 80\n' "$1" "$2" "$3" "$3" |
+			vp
+		sleep 0.8
+	}
+	longpress() { # longpress <x> <y> <button-code>
+		printf 'move %s %s\nsleep 80\npress %s\nsleep 650\nrelease %s\nsleep 120\n' "$1" "$2" "$3" "$3" |
+			vp
+		sleep 0.8
+	}
 ROWX=$((MON_W - 10 - 360 + 10 + 80)) # panel x + body pad + into the text column
 ROWY=64                              # offset_y + body pad + into the first row
 CHVX=$((MON_W - 10 - 10 - 12 - 12))  # panel right edge - body pad - ROW_PADX - half CHEV
@@ -780,12 +785,11 @@ tap esc; hq hyprnotify clear >/dev/null; sleep 0.8
 chk "policy: reset after the policy battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- the manage panel, timed mutes, the rule count --------------------------
-# The ⋮ replaced a three-glyph hover strip (20px targets at 4px separation,
-# unlabelled, the irreversible verb in the middle). Everything it used to hide
-# is now a named row at panel width. Driven through the REAL hit boxes: the ⋮
-# rides where the strip did (panel right edge - ROW_PADX - RTRIM - OVER_D/2),
-# and the entries stack from below the panel's own header at MENU_ROW_H each.
-OVX=$((MON_W - 20 - 12 - 32 - 12))               # panel right edge - ROW_PADX - RTRIM - OVER_D/2
+# Android exposes notification management through a press-and-hold gesture. The
+# shade keeps the chevron solely for expansion; long-press turns the target into
+# a full-width labelled manage panel. Driven through REAL hit boxes: the press
+# starts on the row/digest body, and entries stack below the panel header at
+# MENU_ROW_H each.
 ent() { echo $((44 + 9 + 28 + $1 * 28 + 14)); }  # ent <index> -> that entry's centre y
 ENTX=$((MON_W - 200))                            # anywhere in the entry's width
 # the battery above deliberately leaves a MARK standing (it outlives its card),
@@ -793,8 +797,8 @@ ENTX=$((MON_W - 200))                            # anywhere in the entry's width
 polsil() { hq hyprnotify policy | sed 's/ priority:.*//'; }
 psend mgr "manage me" ""; sleep 1.2
 hq hyprnotify center >/dev/null; sleep 0.7
-click $OVX 64 272
-chk "manage: the ⋮ opened the panel — nothing acted, nothing dismissed" test "$(st)" = "center:1 live:1 dnd:0"
+longpress $ROWX $ROWY 272
+chk "manage: long-press opened the panel — nothing acted, nothing dismissed" test "$(st)" = "center:1 live:1 dnd:0"
 chk "manage: opening it set no rule" test "$(polsil)" = "silenced:0"
 click $ENTX "$(ent 2)" 272 # "Mute mgr for 1 hour"
 # A timed rule prints its seconds remaining, and that is a clock read — assert
@@ -805,15 +809,27 @@ psend mgr "still muted" ""; sleep 1.2
 chk "manage: a timed rule silences an arrival exactly as a permanent one does" test "$(bd)" = "banners:0 resident:2"
 # and the way back out: silenced, the panel offers Unmute where the three
 # durations were, so a rule is never one you cannot find the end of
-click $OVX 64 272
+longpress $ROWX $ROWY 272
 click $ENTX "$(ent 2)" 272 # "Unmute mgr"
 chk "manage: the panel lifted the rule" test "$(polsil)" = "silenced:0"
 chk "manage: and no silence is left on disk" bash -c "! grep -q '^s	' '$POLFILE'"
+tap esc
+hq hyprnotify clear >/dev/null; sleep 0.8
+for i in 1 2 3 4; do psend bundle "bundle $i" ""; sleep 0.2; done; sleep 1
+hq hyprnotify center >/dev/null; sleep 0.7
+chk "manage/group: four same-app cards form one digest" test "$(st)" = "center:1 live:4 dnd:0"
+longpress $ROWX $ROWY 272
+chk "manage/group: long-press opened the bundle panel" test "$(st)" = "center:1 live:4 dnd:0"
+click $ENTX "$(ent 0)" 272 # "Mute bundle for 1 hour"
+chk "manage/group: timed bundle mute landed WITH an expiry" bash -c "[[ '$(polsil)' =~ ^silenced:1[[:space:]]s=bundle\+(35[0-9]{2}|3600)$ ]]"
+longpress $ROWX $ROWY 272
+click $ENTX "$(ent 0)" 272 # "Unmute bundle"
+chk "manage/group: bundle panel lifted the rule" test "$(polsil)" = "silenced:0"
 tap esc; hq hyprnotify clear >/dev/null; sleep 0.8
 chk "manage: reset after the manage battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- the undo window behind a snooze ----------------------------------------
-# The ◷ used to be the one verb with no recourse. The card now holds its slot
+# Snooze used to be the one verb with no recourse. The card now holds its slot
 # as an undo row for a few seconds, so `snoozed` goes up and comes back DOWN
 # without the card ever having left the model.
 sz() { hq hyprnotify snoozed; }
@@ -854,8 +870,8 @@ hq hyprnotify center >/dev/null; sleep 0.7
 chk "swipe: a card in an open shade" test "$(st)" = "center:1 live:1 dnd:0"
 swipe "$ROWX" "$ROWY" -25
 chk "swipe: back opened the manage panel, it did not dismiss" test "$(st)" = "center:1 live:1 dnd:0"
-# esc peels the panel, not the shade — the panel's own ⋮ sits further right
-# than a row's, so this is also the assertion that the peel order is right
+# esc peels the panel, not the shade. This is the assertion that the peel
+# order is right even though the panel was gesture-opened.
 tap esc
 chk "swipe: esc peeled the panel and left the shade up" test "$(st)" = "center:1 live:1 dnd:0"
 swipe "$ROWX" "$ROWY" 25
