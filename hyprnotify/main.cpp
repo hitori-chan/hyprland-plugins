@@ -21,12 +21,11 @@
 //   Rows open by DEFAULT: an expansion budget walks the page and opens each
 //   row while the panel has room. A compact row expands from its body before
 //   hidden content can be acted on; once open, a row IS its banner and the
-//   body fires the card's primary exactly as the popup does. The chevron
-//   toggles either state. Right dismisses,
-//   middle parks the stack; the footer is the DND icon and a global "Clear all". While it is
-//   open it owns the nav keys (↑↓ select, space folds, enter fires the
-//   primary, delete dismisses, m/s/p manage, esc closes) and nothing else.
-//   A row's long-press turns it into a manage panel: snooze durations, mute
+//   body fires the card's primary exactly as the popup does. Right dismisses,
+//   middle parks the stack; the footer is compact DND and a global "Clear all".
+//   The shade leaves keyboard input to the focused client, except for a Reply
+//   field explicitly armed by pointer click. A row's long-press turns it into
+//   a manage panel: snooze durations, mute
 //   durations, mark the sender — every verb named, the rules persist across
 //   relogs, and the footer's muted-count control never lets a standing rule hide.
 //

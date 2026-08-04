@@ -22,61 +22,11 @@ namespace NHyprnotify {
             cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
 
             switch (icon) {
-                case eControlIcon::CHEVRON_UP:
-                    cairo_move_to(cr, 5.0 * S, 14.5 * S);
-                    cairo_line_to(cr, 12.0 * S, 7.5 * S);
-                    cairo_line_to(cr, 19.0 * S, 14.5 * S);
-                    cairo_stroke(cr);
-                    break;
-                case eControlIcon::CHEVRON_DOWN:
-                    cairo_move_to(cr, 5.0 * S, 9.5 * S);
-                    cairo_line_to(cr, 12.0 * S, 16.5 * S);
-                    cairo_line_to(cr, 19.0 * S, 9.5 * S);
-                    cairo_stroke(cr);
-                    break;
                 case eControlIcon::CLOSE:
                     cairo_move_to(cr, 7.0 * S, 7.0 * S);
                     cairo_line_to(cr, 17.0 * S, 17.0 * S);
                     cairo_move_to(cr, 17.0 * S, 7.0 * S);
                     cairo_line_to(cr, 7.0 * S, 17.0 * S);
-                    cairo_stroke(cr);
-                    break;
-                case eControlIcon::SCHEDULE:
-                    cairo_arc(cr, 12.0 * S, 12.0 * S, 7.5 * S, 0, 2 * M_PI);
-                    cairo_move_to(cr, 12.0 * S, 7.5 * S);
-                    cairo_line_to(cr, 12.0 * S, 12.0 * S);
-                    cairo_line_to(cr, 15.5 * S, 14.0 * S);
-                    cairo_stroke(cr);
-                    break;
-                case eControlIcon::NOTIFICATIONS_OFF:
-                    cairo_move_to(cr, 8.0 * S, 17.0 * S);
-                    cairo_line_to(cr, 6.0 * S, 17.0 * S);
-                    cairo_curve_to(cr, 8.0 * S, 14.5 * S, 8.0 * S, 13.0 * S, 8.0 * S, 10.5 * S);
-                    cairo_curve_to(cr, 8.0 * S, 7.0 * S, 10.0 * S, 5.0 * S, 12.0 * S, 5.0 * S);
-                    cairo_curve_to(cr, 14.0 * S, 5.0 * S, 16.0 * S, 7.0 * S, 16.0 * S, 10.5 * S);
-                    cairo_curve_to(cr, 16.0 * S, 13.0 * S, 16.0 * S, 14.5 * S, 18.0 * S, 17.0 * S);
-                    cairo_line_to(cr, 15.5 * S, 17.0 * S);
-                    cairo_move_to(cr, 10.0 * S, 19.0 * S);
-                    cairo_curve_to(cr, 10.8 * S, 20.0 * S, 13.2 * S, 20.0 * S, 14.0 * S, 19.0 * S);
-                    cairo_stroke(cr);
-                    cairo_move_to(cr, 5.0 * S, 5.0 * S);
-                    cairo_line_to(cr, 19.0 * S, 19.0 * S);
-                    cairo_stroke(cr);
-                    break;
-                case eControlIcon::DO_NOT_DISTURB:
-                    cairo_arc(cr, 12.0 * S, 12.0 * S, 8.0 * S, 0, 2 * M_PI);
-                    cairo_move_to(cr, 7.5 * S, 12.0 * S);
-                    cairo_line_to(cr, 16.5 * S, 12.0 * S);
-                    cairo_stroke(cr);
-                    break;
-                case eControlIcon::STAR:
-                    cairo_move_to(cr, 12.0 * S, 4.5 * S);
-                    for (int i = 1; i < 10; i++) {
-                        const double A = -M_PI / 2 + i * M_PI / 5;
-                        const double R = i % 2 ? 7.8 : 3.6;
-                        cairo_line_to(cr, (12.0 + std::cos(A) * R) * S, (12.0 + std::sin(A) * R) * S);
-                    }
-                    cairo_close_path(cr);
                     cairo_stroke(cr);
                     break;
                 case eControlIcon::APPS:

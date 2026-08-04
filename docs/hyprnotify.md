@@ -126,7 +126,7 @@ icons).
   body left click before it can act, so folded merged messages remain
   readable. Once open, the row behaves as its banner did: the body fires the
   card's primary and dismisses unless `resident`, a link opens, and a button
-  acts. The expansion chevron toggles either state directly. Right
+  acts. The row body toggles between compact and open before it can act. Right
   dismisses; middle-click passes through to native desktop semantics. On an
   app bundle left expands and right (or the header close control) dismisses
   the whole app.
@@ -151,16 +151,10 @@ icons).
   `x-kde-reply-submit-button-text` are honored. The field takes the whole
   keyboard while armed (there is no focus to give it); editing is
   append-and-backspace plus C-u / C-w. Banners have no field.
-- Shade keys, while it is open and only then: Esc peels (an open manage panel
-  first, then the shade), ↑/↓ move a selection (an accent hairline; the page
-  follows it), Space folds, Enter fires the primary, Tab arms the selected
-  card's reply field, Delete dismisses, `m` silences the app, `s` snoozes the
-  card, `p` marks the sender, `u` takes a snooze back while its undo row is
-  up. An undo row is its own keyboard surface: `s` there re-picks the
-  duration, and Space/Enter belong to focus since the row has neither a fold
-  nor a primary. Modified chords pass through as user binds, and so does any
-  key with nothing to act on — nothing selected, or `p` on a card that is not
-  a chat.
+- The shade does not claim keyboard navigation or notification actions. Its
+  body, header, footer, close, long-press, and horizontal gesture surfaces are
+  pointer-driven. Clicking an inline Reply chip arms its field; only then does
+  the field consume keyboard input for typing, Enter-to-send, and Esc-to-drop.
 - Per-app rules (`policy.cpp`, persisted to
   `$XDG_STATE_HOME/hyprnotify/policy.tsv`): SILENCED apps get no banner and
   no sound and rank with the quiet ones — Android's "Silent", dunst's
@@ -189,11 +183,12 @@ icons).
 - The manage panel: press and hold a notification row's body for 500ms to turn
   it into its own verbs rather than opening a floating menu, even when the row
   is collapsed. This follows Android's long-press model with full-width
-  labelled targets, each with its key in the right column. The expansion chevron remains expansion-only and
-  there is no redundant menu control. One singleton or bundle wears the panel at a
-  time; the held target, right-click, or Esc closes it, and Esc peels it before
-  the shade.
-- Snooze (`s` or the panel, `snooze_seconds`, 900): the card goes out of
+  labelled targets with no shortcut column. Expansion is performed by the row
+  body and bundle header; there is no separate expansion or menu control.
+  One singleton or bundle wears the panel at a
+  time; the held target or right-click closes it while the shade remains open.
+- Snooze (the panel, `snooze_seconds`, 900): the configured value is the
+  first labelled panel duration. The card goes out of
   sight and comes back alerting — Android's snooze. It stays in the model
   while away, so `state` counts it while the badge does not, and "Clear all"
   leaves it alone. The wake re-keys the arrival spring but not `arrived`: the
@@ -205,7 +200,7 @@ icons).
   irreversible verb in the shell. Android replaces the notification in place
   with a duration control and Undo and lets it go afterwards; so does this.
   For CONFIRM_MS (6s) the card holds its slot as a one-line undo row — Undo
-  or `u` restores it, the duration control or `s` cycles Android's 15m/30m/1h/2h ladder, and
+  restores it, and the duration control cycles Android's 15m/30m/1h/2h ladder, and
   each change re-arms both clocks. Closing the shade commits every pending
   snooze rather than stranding a window nobody can see. Not history and not
   recall: the card never left. ONE event-loop timer serves all three clocks —

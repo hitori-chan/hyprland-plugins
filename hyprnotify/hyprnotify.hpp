@@ -81,7 +81,7 @@ namespace NHyprnotify {
     extern HANDLE PHANDLE;
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.11.0";
+    inline constexpr const char* VERSION = "6.12.0";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -355,13 +355,6 @@ namespace NHyprnotify {
     void centerToggleRow(uint32_t id);
     void     centerToggleManage(uint32_t id); // long-press: one row at a time wears its manage panel
     void     centerToggleManageGroup(const std::string& appKey);
-    uint32_t centerManageRow();
-    bool     centerManageTarget(uint32_t& id, std::string& group);
-    bool     centerRowExpanded(uint32_t id);
-    void     centerEnsureRowOpen(uint32_t id);
-    uint32_t selectedRow(); // the keyboard selection's card id, 0 = none/a bundle
-    void centerSelectMove(int dir);                         // ↑/↓: move the keyboard selection, paging to keep it on screen
-    bool centerSelection(uint32_t& id, std::string& group); // the selected item; group non-empty = a bundle. false = none
 
     void centerExit();
 
@@ -394,7 +387,6 @@ namespace NHyprnotify {
         std::string group;              // DIGEST/GHEAD/CHILD: the app key
         bool        expanded   = false; // ROW: exact state painted into this hit record
         bool        expandable = false; // ROW: open form reveals hidden compact content
-        CBox        chevron;            // ROW: the 24Ø fold indicator; w = 0 -> none
         CBox        close;              // popup hover-close / group close; w = 0 -> none
         CBox        replyField;         // ROW: the armed inline-reply box (swallows, never acts)
         CBox        replySend;          // ROW: its send pill
@@ -422,13 +414,13 @@ namespace NHyprnotify {
 
     // hover affordance: rows/buttons warm under the pointer. `btn` -1 = the
     // surface itself, >= 0 = that action button; `part` distinguishes the
-    // chevron/close corners. A change damages only the boxes involved.
+    // close corners. A change damages only the boxes involved.
     struct SHover {
         uint32_t     id = 0;
         std::string  group;
         SCard::eKind kind = SCard::POPUP;
         int          btn  = -1;
-        // 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 8 undo,
+        // 0 body, 2 close, 3 reply field, 4 send, 8 undo,
         // 9 duration, 16+n a manage panel entry
         uint8_t      part = 0;
         bool         operator==(const SHover&) const = default;
@@ -456,7 +448,7 @@ namespace NHyprnotify {
     void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info);
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info);
     void onMouseAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info);
-    void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info); // esc peels the center; ↑↓ space enter delete drive it
+    void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info); // only an armed inline-reply field owns keys
     void releasePointer();
     void refreshPointerOwnership(); // the hovered card vanished under a still pointer
     void inputCancelLongPress();

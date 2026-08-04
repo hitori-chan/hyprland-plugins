@@ -21,8 +21,8 @@
 //   forgets appliedState and re-checks.
 // - Auto re-checks are change-detected against the last applied state: an
 //   unrelated hotplug re-checks but applies nothing.
-// - Feedback is one async D-Bus Notify (replaces-id 9991, no explicit icon:
-//   hyprnotify supplies its deterministic generic app mark) on the plugin's own
+// - Feedback is one async D-Bus Notify (replaces-id 9991, with explicit
+//   touchpad identities) on the plugin's own
 //   event-loop-integrated session-bus connection — hyprbar's tray pattern; the
 //   notification daemon's API is the bus name, never its symbols. If the
 //   bus dies the cards stop; the flip keeps working.
@@ -81,7 +81,7 @@ namespace NHyprpad {
     static std::unique_ptr<sdbus::IProxy> notifyProxy;
     static NHyprCommon::CBusLink          g_bus; // feedback cards' session-bus link
 
-    static void notify(const std::string& body, bool timed) {
+    static void notify(const char* icon, const std::string& body, bool timed) {
         if (!g_bus.conn())
             return;
         try {
@@ -89,7 +89,7 @@ namespace NHyprpad {
                 notifyProxy = sdbus::createProxy(*g_bus.conn(), sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
             notifyProxy->callMethodAsync("Notify")
                 .onInterface("org.freedesktop.Notifications")
-                .withArguments(std::string{"osd"}, uint32_t{9991}, std::string{}, std::string{"Touchpad"}, body, std::vector<std::string>{},
+                .withArguments(std::string{"osd"}, uint32_t{9991}, std::string{icon}, std::string{"Touchpad"}, body, std::vector<std::string>{},
                                std::map<std::string, sdbus::Variant>{{"urgency", sdbus::Variant{uint8_t{0}}}, {"x-hitori-osd", sdbus::Variant{true}}}, timed ? 1500 : -1)
                 .uponReplyInvoke([](std::optional<sdbus::Error>, uint32_t) {});
             g_bus.pollSoon(); // flush the send from the event loop, never from here
@@ -151,7 +151,7 @@ namespace NHyprpad {
         if (!target) {
             appliedState = -1;
             appliedTouchpad.reset();
-            notify("not found", false);
+            notify("input-touchpad", "not found", false);
             return;
         }
         // the manager lives in a unique pointer: its weak can NEVER lock()
@@ -165,7 +165,7 @@ namespace NHyprpad {
         }
         appliedState    = on ? 1 : 0;
         appliedTouchpad = target;
-        notify(on ? "enabled" : "disabled", true);
+        notify(on ? "input-touchpad" : "touchpad-disabled", on ? "enabled" : "disabled", true);
     }
 
     static void autoApply() {
@@ -271,7 +271,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // device list is populated and the notification daemon is up
     settle->updateTimeout(SETTLE);
 
-    return {"hyprpad", "the awesome touchpad module", "hitori", "1.0.9"};
+    return {"hyprpad", "the awesome touchpad module", "hitori", "1.1.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

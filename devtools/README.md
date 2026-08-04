@@ -62,7 +62,7 @@ make test-hyprmax-geometry
 Exact assertions over the nested harness + `vptr` + `vkbd` + `input-capture`: placement
 memory, spawn/close storms, the notification cap, churn round-trips,
 hostile state files, an input storm, a native `hyprland-input-capture-v1`
-session, the shade's compact merged-row and click/key verbs,
+session, the shade's compact merged-row and pointer verbs,
 acting-closes-the-shade, the bell click,
 hyprosd's fake-`wpctl` process/readback path, the OSD card below an open shade,
 a config reload, log hygiene, and bounded shutdown with deliberately hung
@@ -141,16 +141,16 @@ The nested tiles by default and has no move bind, so the throwaway config
 
 ## vkbd — virtual-keyboard injector
 
-`vptr`'s twin for keys (`zwp_virtual_keyboard_v1`), so paths with no pointer
-at all — the shade's nav set — ride the same emission a physical key does.
+`vptr`'s twin for keys (`zwp_virtual_keyboard_v1`), used for inline-reply text
+entry and the native input-capture battery. The notification shade itself has
+no keyboard navigation or action map.
 It compiles the default xkb keymap itself and hands it over before the first
 key, as the protocol demands.
 
 ```
 make                       # also needs xkbcommon
 WAYLAND_DISPLAY=<nested-wl> ./vkbd <<'EOF'
-tap down
-tap delete
+tap a
 sleep 200
 EOF
 ```

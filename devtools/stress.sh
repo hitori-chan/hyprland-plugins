@@ -3,7 +3,7 @@
 # stack in the nested harness and drives it through the storm battery:
 # placement memory, sibling geometry, spawn/close storms, the notification
 # cap, state churn round-trips, hostile state files, a real-input storm
-# (vptr), the shade's click and key verbs (vkbd), the bell's click path, the
+# (vptr), the shade's pointer verbs, the bell's click path, the
 # below-shade OSD hitbox while the shade is open, hyprosd's wpctl process
 # sequence, the click-corpse guard, acting-closes-the-shade, the fullscreen
 # tuck and a config reload. Every assertion is exact; any failure fails the run.
@@ -481,12 +481,10 @@ hq hyprnotify clear >/dev/null; sleep 0.8
 # exact merged-chat case through the real hit boxes via vptr. The panel hangs
 # off the monitor's right edge
 # (EDGE 10 + CENTER_W 360) below offset_y 34, so the first row's body is a
-# fixed inset from the top-right corner, and the chevron rides the row's
-# right end (ROW_PADX 12 + CHEV 24). Hit boxes are final-position, so the
+# fixed inset from the top-right corner. Hit boxes are final-position, so the
 # open spring cannot move them out from under the click. Three Telegram-style
-# messages merge into one row: after the chevron compacts it, the first body
-# click must expand and preserve it; only the second, now-open body click may
-# dismiss the actionless card.
+# messages merge into one row: the first body click must expand and preserve
+# it; only the second, now-open body click may dismiss the actionless card.
 for m in first second third; do
 	dsp "hl.dsp.exec_cmd('notify-send -a Telegram -c im.received -t 30000 Alice \"$m\"')"
 	sleep 0.3
@@ -504,17 +502,16 @@ hq hyprnotify center >/dev/null; sleep 0.6
 			vp
 		sleep 0.8
 	}
+	ent() { echo $((44 + 9 + 28 + $1 * 28 + 14)); } # manage entry center
+ENTX=$((MON_W - 200))
+outside_click() { click "$((MON_W / 2))" "$((MON_H / 2))" 272; }
 ROWX=$((MON_W - 10 - 360 + 10 + 80)) # panel x + body pad + into the text column
 ROWY=64                              # offset_y + body pad + into the first row
-CHVX=$((MON_W - 10 - 10 - 12 - 12))  # panel right edge - body pad - ROW_PADX - half CHEV
-click $CHVX $ROWY 272
-chk "shade: the chevron compacts the merged card without acting" test "$(st)" = "center:1 live:1 dnd:0"
+# The top row is opened by the shade's budget. With no expansion control, its
+# body is immediately the primary surface; an actionless body click dismisses
+# it without closing the shade. Compact-row reveal remains covered by the
+# source invariant and the overflow layout battery above.
 click $ROWX $ROWY 272
-chk "shade: compact merged-card body expands before acting" test "$(st)" = "center:1 live:1 dnd:0"
-click $ROWX $ROWY 272
-# notify-send carries no actions, so the now-open body click is a pure
-# DISMISSAL, and dismissing never closes the shade (center stays 1). The
-# battery below is the other half: a card that does fire.
 chk "shade: open actionless BODY dismisses it, shade stays" test "$(st)" = "center:1 live:0 dnd:0"
 dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"right me\" body')"; sleep 1
 click $ROWX $ROWY 273
@@ -632,34 +629,23 @@ sleep 1.4
 chk "center OSD: card expires without closing the shade" test "$(st)" = "center:1 live:0 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.4
 
-# ---- the shade's keyboard nav ----------------------------------------------
-# The one surface with no pointer path at all. Injected through a REAL virtual
-# keyboard so it rides the same emission a physical key does. The list is
-# newest-first, so ↓ lands on "key two" and the card carrying the primary is
-# behind it. The destructive steps are positive assertions on purpose: a dead
-# injector would make every "nothing changed" line pass for the wrong reason.
-tap() { printf 'tap %s\nsleep 250\n' "$1" | vk; sleep 0.6; }
-dsp "hl.dsp.exec_cmd('notify-send -t 60000 -A default=Open \"key one\" body')"; sleep 0.6
-dsp "hl.dsp.exec_cmd('notify-send -t 60000 \"key two\" body')"; sleep 1
+# ---- pointer-only shade ownership -------------------------------------------
+# The center has no keyboard navigation or notification action map. Its close
+# paths are pointer-visible: an outside click closes the shade without
+# dismissing the card, while a right-click on an open manage panel closes only
+# that panel and leaves the shade standing.
+dsp "hl.dsp.exec_cmd('notify-send -t 60000 \"pointer center\" body')"; sleep 1
 hq hyprnotify center >/dev/null; sleep 0.7
-chk "keys: two rows with the shade open" test "$(st)" = "center:1 live:2 dnd:0"
-tap down
-chk "keys: down only SELECTS — nothing acted, nothing dismissed" test "$(st)" = "center:1 live:2 dnd:0"
-tap space
-chk "keys: space only folds" test "$(st)" = "center:1 live:2 dnd:0"
-tap delete
-chk "keys: delete dismisses the selected row" test "$(st)" = "center:1 live:1 dnd:0"
-tap enter
-# enter is the body click's twin, so it collapses for the same reason: "key
-# one" carries a real -A default, and firing it raises the sender over the
-# panel. The card goes AND the shade goes with it.
-chk "keys: enter fires the primary, taking the card and the shade" test "$(st)" = "center:0 live:0 dnd:0"
-# which leaves esc nothing to close — give it its own shade, or the line
-# below passes on a shade that was already gone
+outside_click
+chk "center pointer: outside click closes the shade" test "$(st)" = "center:0 live:1 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.5
-chk "keys: a fresh shade for esc to close" test "$(st)" = "center:1 live:0 dnd:0"
-tap esc
-chk "keys: esc closes the shade" test "$(st)" = "center:0 live:0 dnd:0"
+longpress "$ROWX" "$ROWY" 272
+chk "center pointer: long-press opens management" test "$(st)" = "center:1 live:1 dnd:0"
+click "$ENTX" "$(ent 0)" 273
+chk "center pointer: right-click closes management only" test "$(st)" = "center:1 live:1 dnd:0"
+outside_click
+chk "center pointer: outside click closes the remaining shade" test "$(st)" = "center:0 live:1 dnd:0"
+hq hyprnotify clear >/dev/null; sleep 0.8
 
 # ---- quiet while fullscreen -------------------------------------------------
 # A real fullscreen window owns the screen, so the banner is held back and the
@@ -682,9 +668,9 @@ hq hyprnotify clear >/dev/null; dsp "hl.dsp.window.close()"; sleep 1
 # ---- inline reply -----------------------------------------------------------
 # The protocol the Linux chat apps speak: a sender only offers a reply when the
 # server advertises the capability, so the capability IS the feature. Driven
-# entirely from the keyboard (tab arms the selected card's field, letters type,
-# enter sends) and asserted on the WIRE — a card closing proves nothing on its
-# own, since firing its primary closes it too.
+# The visible Reply chip is pointer-armed first; only the resulting field owns
+# the keyboard for text entry. Assert the reply signal on the wire — a card
+# closing proves nothing on its own, since firing its primary closes it too.
 chk "reply: the capability is advertised" \
 	bash -c "nbus() { DBUS_SESSION_BUS_ADDRESS='$NBUS' busctl --user \"\$@\"; }; nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications GetCapabilities | grep -q inline-reply"
 chk "reply: NotificationReplied is on the interface" \
@@ -698,17 +684,18 @@ nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freed
 sleep 1
 hq hyprnotify center >/dev/null; sleep 0.7
 chk "reply: the chat card is in the shade" test "$(st)" = "center:1 live:1 dnd:0"
-tap down
-tap tab
-tap 35 # h
-tap 23 # i
+REPLY_Y=$((ROWY + 57))
+click "$ROWX" "$REPLY_Y" 272
+reply_type() { printf 'tap %s\nsleep 250\n' "$1" | vk; sleep 0.6; }
+reply_type 35 # h
+reply_type 23 # i
 chk "reply: typing into the field neither acts nor dismisses" test "$(st)" = "center:1 live:1 dnd:0"
-tap esc
+reply_type esc
 chk "reply: esc drops the field and NOT the shade" test "$(st)" = "center:1 live:1 dnd:0"
-tap tab
-tap 35
-tap 23
-tap enter
+click "$ROWX" "$REPLY_Y" 272
+reply_type 35
+reply_type 23
+reply_type enter
 sleep 0.6
 chk "reply: enter sent it and the card went" test "$(st)" = "center:1 live:0 dnd:0"
 chk "reply: NotificationReplied carried the typed text" grep -q 'STRING "hi"' "$REPLIED"
@@ -736,18 +723,18 @@ chk "policy: the rule from disk survived the relaunch" test "$(pol)" = "silenced
 psend keepme "quiet please" ""; sleep 1.2
 chk "policy: the persisted rule silences a fresh arrival" test "$(bd)" = "banners:0 resident:1"
 hq hyprnotify center >/dev/null; sleep 0.7
-tap down
-tap 50 # m
+longpress "$ROWX" "$ROWY" 272
+click "$ENTX" "$(ent 2)" 272 # Unmute keepme
 chk "policy: m lifted the persisted rule" test "$(pol)" = "silenced:0 priority:0"
-tap esc; hq hyprnotify clear >/dev/null; sleep 0.6
+outside_click; hq hyprnotify clear >/dev/null; sleep 0.6
 psend spammer "noise one" ""; sleep 1
 hq hyprnotify center >/dev/null; sleep 0.7
-tap down
-tap 50 # m
+longpress "$ROWX" "$ROWY" 272
+click "$ENTX" "$(ent 4)" 272 # Mute spammer always
 chk "policy: m silenced the app" test "$(pol)" = "silenced:1 s=spammer priority:0"
 # a silence carries its expiry as a third field; 0 is the one that never lifts
 chk "policy: the rule reached the disk" grep -qxF "$(printf 's\tspammer\t0')" "$POLFILE"
-tap esc; hq hyprnotify clear >/dev/null; sleep 0.6
+outside_click; hq hyprnotify clear >/dev/null; sleep 0.6
 psend spammer "noise two" ""; sleep 1.2
 chk "policy: a silenced app's card lands with no banner" test "$(bd)" = "banners:0 resident:1"
 pcrit spammer "alarm"; sleep 1.2
@@ -755,11 +742,11 @@ chk "policy: critical still punches through a silenced app" test "$(bd)" = "bann
 hq hyprnotify clear >/dev/null; sleep 0.6
 psend spammer "noise three" ""; sleep 1
 hq hyprnotify center >/dev/null; sleep 0.7
-tap down
-tap 50
+longpress "$ROWX" "$ROWY" 272
+click "$ENTX" "$(ent 2)" 272 # Unmute spammer
 chk "policy: m again lifts the silence" test "$(pol)" = "silenced:0 priority:0"
 chk "policy: the store emptied with it" test ! -s "$POLFILE"
-tap esc; hq hyprnotify clear >/dev/null; sleep 0.6
+outside_click; hq hyprnotify clear >/dev/null; sleep 0.6
 psend spammer "noise four" ""; sleep 1.2
 chk "policy: the app banners again" test "$(bd)" = "banners:1 resident:0"
 hq hyprnotify clear >/dev/null; sleep 0.6
@@ -767,31 +754,28 @@ hq hyprnotify clear >/dev/null; sleep 0.6
 # carries many people
 psend chatapp Alice im.received; sleep 1
 hq hyprnotify center >/dev/null; sleep 0.7
-tap down
-tap 25 # p
+longpress "$ROWX" "$ROWY" 272
+click "$ENTX" "$(ent 5)" 272 # Priority conversation
 chk "policy: p marked the sender, not the app" test "$(pol)" = "silenced:0 priority:1 p=chatapp/Alice"
-tap esc; sleep 0.5
+outside_click; sleep 0.5
 # and the mark outranks a NEWER chat from someone else. The newcomer is
 # transient so it keeps its banner through the absorb — that is what tells
 # the two apart in the badge after the top row is deleted.
 ptran chatapp2 Bob; sleep 1.2
 hq hyprnotify center >/dev/null; sleep 0.7
 chk "policy: the marked chat and a newer transient one" test "$(bd)" = "banners:1 resident:1"
-tap down
-tap delete
+click "$ROWX" "$ROWY" 273
 chk "policy: the TOP row was the marked chat, not the newer one" test "$(bd)" = "banners:1 resident:0"
 chk "policy: the mark outlives the card it was set on" test "$(pol)" = "silenced:0 priority:1 p=chatapp/Alice"
-tap esc; hq hyprnotify clear >/dev/null; sleep 0.8
+outside_click; hq hyprnotify clear >/dev/null; sleep 0.8
 chk "policy: reset after the policy battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- the manage panel, timed mutes, the rule count --------------------------
-# Android exposes notification management through a press-and-hold gesture. The
-# shade keeps the chevron solely for expansion; long-press turns the target into
-# a full-width labelled manage panel. Driven through REAL hit boxes: the press
+# Android exposes notification management through a press-and-hold gesture.
+# Long-press turns the target into a full-width labelled manage panel. Driven
+# through REAL hit boxes: the press
 # starts on the row/digest body, and entries stack below the panel header at
 # MENU_ROW_H each.
-ent() { echo $((44 + 9 + 28 + $1 * 28 + 14)); }  # ent <index> -> that entry's centre y
-ENTX=$((MON_W - 200))                            # anywhere in the entry's width
 # the battery above deliberately leaves a MARK standing (it outlives its card),
 # so these read the silence half alone rather than the whole line
 polsil() { hq hyprnotify policy | sed 's/ priority:.*//'; }
@@ -813,7 +797,7 @@ longpress $ROWX $ROWY 272
 click $ENTX "$(ent 2)" 272 # "Unmute mgr"
 chk "manage: the panel lifted the rule" test "$(polsil)" = "silenced:0"
 chk "manage: and no silence is left on disk" bash -c "! grep -q '^s	' '$POLFILE'"
-tap esc
+outside_click
 hq hyprnotify clear >/dev/null; sleep 0.8
 for i in 1 2 3 4; do psend bundle "bundle $i" ""; sleep 0.2; done; sleep 1
 hq hyprnotify center >/dev/null; sleep 0.7
@@ -825,7 +809,7 @@ chk "manage/group: timed bundle mute landed WITH an expiry" bash -c "[[ '$(polsi
 longpress $ROWX $ROWY 272
 click $ENTX "$(ent 0)" 272 # "Unmute bundle"
 chk "manage/group: bundle panel lifted the rule" test "$(polsil)" = "silenced:0"
-tap esc; hq hyprnotify clear >/dev/null; sleep 0.8
+outside_click; hq hyprnotify clear >/dev/null; sleep 0.8
 chk "manage: reset after the manage battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- the undo window behind a snooze ----------------------------------------
@@ -842,21 +826,26 @@ sz() { hq hyprnotify snoozed; }
 hq eval 'hl.config({ plugin = { hyprnotify = { snooze_seconds = 12 } } })' >/dev/null; sleep 0.4
 psend undoer "take it back" ""; sleep 1.2
 hq hyprnotify center >/dev/null; sleep 0.7
-tap down
-tap 31 # s
-chk "undo: s snoozed the card" test "$(sz)" = 1
-tap 22 # u
-chk "undo: u took the snooze back" test "$(sz)" = 0
+longpress "$ROWX" "$ROWY" 272
+click "$ENTX" "$(ent 0)" 272 # configured 12-second snooze
+chk "undo: the manage panel snoozed the card" test "$(sz)" = 1
+UNDOX=$((MON_W - 48))
+DURX=$((MON_W - 92))
+click "$DURX" "$ROWY" 272
+chk "undo: duration control cycles with a pointer click" test "$(sz)" = 1
+click "$UNDOX" "$ROWY" 272
+chk "undo: the pointer Undo control restored the card" test "$(sz)" = 0
 chk "undo: and the card never left the model" test "$(st)" = "center:1 live:1 dnd:0"
-tap 31 # s again — and this time let the window lapse
+longpress "$ROWX" "$ROWY" 272
+click "$ENTX" "$(ent 0)" 272 # configured 12-second snooze again
 chk "undo: snoozed again" test "$(sz)" = 1
 sleep 7
 chk "undo: the window lapsed and the snooze stands" test "$(sz)" = 1
-tap 22 # u past the window is not an undo — there is no row to have clicked
-chk "undo: u past the window does nothing" test "$(sz)" = 1
+click "$UNDOX" "$ROWY" 272 # past the window there is no undo hitbox
+chk "undo: a late Undo click does nothing" test "$(sz)" = 1
 sleep 6
 chk "undo: and it still woke on its own clock" test "$(sz)" = 0
-tap esc; hq eval 'hl.config({ plugin = { hyprnotify = { snooze_seconds = 900 } } })' >/dev/null
+outside_click; hq eval 'hl.config({ plugin = { hyprnotify = { snooze_seconds = 900 } } })' >/dev/null
 hq hyprnotify clear >/dev/null; sleep 0.8
 chk "undo: reset after the undo battery" test "$(st)" = "center:0 live:0 dnd:0"
 
@@ -870,13 +859,12 @@ hq hyprnotify center >/dev/null; sleep 0.7
 chk "swipe: a card in an open shade" test "$(st)" = "center:1 live:1 dnd:0"
 swipe "$ROWX" "$ROWY" -25
 chk "swipe: back opened the manage panel, it did not dismiss" test "$(st)" = "center:1 live:1 dnd:0"
-# esc peels the panel, not the shade. This is the assertion that the peel
-# order is right even though the panel was gesture-opened.
-tap esc
-chk "swipe: esc peeled the panel and left the shade up" test "$(st)" = "center:1 live:1 dnd:0"
+# A right-click closes the gesture-opened panel while leaving the shade up.
+click "$ENTX" "$(ent 0)" 273
+chk "swipe: right-click peeled the panel and left the shade up" test "$(st)" = "center:1 live:1 dnd:0"
 swipe "$ROWX" "$ROWY" 25
 chk "swipe: away dismissed the row" test "$(st)" = "center:1 live:0 dnd:0"
-tap esc; hq hyprnotify clear >/dev/null; sleep 0.8
+outside_click; hq hyprnotify clear >/dev/null; sleep 0.8
 chk "swipe: reset after the swipe battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- snooze -----------------------------------------------------------------
@@ -892,8 +880,8 @@ hq eval 'hl.config({ plugin = { hyprnotify = { snooze_seconds = 2 } } })' >/dev/
 dsp "hl.dsp.exec_cmd('notify-send -a later -t 60000 \"read this eventually\" body')"; sleep 1
 hq hyprnotify center >/dev/null; sleep 0.7
 chk "snooze: the card is up and in the shade" test "$(bd)" = "banners:0 resident:1"
-tap down
-tap 31 # s
+longpress "$ROWX" "$ROWY" 272
+click "$ENTX" "$(ent 0)" 272 # configured 2-second snooze
 chk "snooze: it left the shade" test "$(bd)" = "banners:0 resident:0"
 chk "snooze: but it is still in the model, not dismissed" test "$(st)" = "center:1 live:1 dnd:0"
 chk "snooze: and it counts as snoozed" test "$(sz)" = 1
@@ -902,7 +890,7 @@ chk "snooze: Clear all does not cancel a reminder" test "$(sz)" = 1
 sleep 2.5
 chk "snooze: it came back" test "$(sz)" = 0
 chk "snooze: and it came back ALERTING, not merely parked" test "$(bd)" = "banners:1 resident:0"
-tap esc; hq eval 'hl.config({ plugin = { hyprnotify = { snooze_seconds = 900 } } })' >/dev/null
+outside_click; hq eval 'hl.config({ plugin = { hyprnotify = { snooze_seconds = 900 } } })' >/dev/null
 hq hyprnotify clear >/dev/null; sleep 0.8
 chk "snooze: reset after the snooze battery" test "$(st)" = "center:0 live:0 dnd:0"
 
@@ -914,8 +902,8 @@ chk "snooze: reset after the snooze battery" test "$(st)" = "center:0 live:0 dnd
 hq eval 'hl.config({ plugin = { hyprnotify = { snooze_seconds = 5 } } })' >/dev/null; sleep 0.4
 dsp "hl.dsp.exec_cmd('notify-send -a tgz -c im.received -t 60000 Zoe first')"; sleep 1
 hq hyprnotify center >/dev/null; sleep 0.7
-tap down
-tap 31 # s
+longpress "$ROWX" "$ROWY" 272
+click "$ENTX" "$(ent 0)" 272 # configured 5-second snooze
 chk "snooze/merge: the chat card is away" test "$(sz)" = 1
 dsp "hl.dsp.exec_cmd('notify-send -a tgz -c im.received -t 60000 Zoe second')"; sleep 1.2
 chk "snooze/merge: a new message does not wake it" test "$(sz)" = 1
@@ -923,21 +911,20 @@ chk "snooze/merge: and it took no banner" test "$(bd)" = "banners:0 resident:0"
 chk "snooze/merge: still one card, not two" test "$(st)" = "center:1 live:1 dnd:0"
 sleep 6
 chk "snooze/merge: the wake still arrives on its own clock" test "$(bd)" = "banners:1 resident:0"
-tap esc; hq eval 'hl.config({ plugin = { hyprnotify = { snooze_seconds = 900 } } })' >/dev/null
+outside_click; hq eval 'hl.config({ plugin = { hyprnotify = { snooze_seconds = 900 } } })' >/dev/null
 hq hyprnotify clear >/dev/null; sleep 0.8
 chk "snooze/merge: reset after the battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # Ranking: a critical sorts to the top however late the others arrived. The
 # two cards are made TELLABLE APART in the badge — a transient one opts out of
-# residency, so opening the shade absorbs the critical and leaves it a banner
-# — and the keyboard deletes whatever the top row is. Both wrong answers
-# (older-first, or an injector that did nothing) read differently.
+# residency, so opening the shade absorbs the critical and leaves it a banner.
+# A pointer right-click deletes the top row. Both wrong answers (older-first or
+# an input path that did nothing) read differently.
 dsp "hl.dsp.exec_cmd('notify-send -e -t 60000 -a chat \"an ordinary card\" body')"; sleep 0.6
 dsp "hl.dsp.exec_cmd('notify-send -a alarm -u critical \"disk failing\" body')"; sleep 1
 hq hyprnotify center >/dev/null; sleep 0.7
 chk "ranking: an absorbed critical beside an unabsorbed transient" test "$(bd)" = "banners:1 resident:1"
-tap down
-tap delete
+click "$ROWX" "$ROWY" 273
 chk "ranking: the TOP row was the critical, not the card that came first" test "$(bd)" = "banners:1 resident:0"
 hq hyprnotify center >/dev/null; sleep 0.4
 hq hyprnotify clear >/dev/null; sleep 0.8

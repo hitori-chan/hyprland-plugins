@@ -42,18 +42,12 @@ namespace NHyprnotify {
     inline constexpr double BODYIMG_H = 96, IMG_GAP = 6, IMG_ROW_GAP = 8;
     inline constexpr double XCIRC = 20; // the hover-close / group-close circle
 
-    // Monochrome controls are rendered from these AOSP-style 24dp recipes in
-    // the warm pass. Keeping the shape out of the configured font makes the
-    // hit target and visual affordance stable across Wayland themes.
+    // Texture-backed marks are reserved for the deterministic generic app
+    // identity and popup close control. Center controls retain their compact
+    // established glyphs.
     enum class eControlIcon : uint8_t {
-        CHEVRON_UP,
-        CHEVRON_DOWN,
         CLOSE,
-        SCHEDULE,
-        NOTIFICATIONS_OFF,
-        DO_NOT_DISTURB,
         APPS,
-        STAR,
     };
 
     // The identity badge, as ratios of the avatar box it rides — AOSP's 2025
@@ -68,7 +62,6 @@ namespace NHyprnotify {
 
     inline constexpr double CENTER_W = 360; // the shade's height is the monitor's (see renderCenter)
     inline constexpr double ROW_PADT = 9, ROW_PADX = 12, ROW_PADB = 10, ROW_ICON = 40, ROW_ICON_GAP = 10;
-    inline constexpr double CHEV = 24;                       // the fold chevron circle
     inline constexpr double MANAGE_D = 20, MANAGE_GAP = 4;   // snooze duration control
     inline constexpr double OVER_D = 24;                      // manage-panel close control
     inline constexpr double MENU_ROW_H = 28, MENU_GLYPH_W = 22; // the manage panel's own rows
@@ -181,17 +174,14 @@ namespace NHyprnotify {
         double iconPx;       // 40 rows, 28 children
         bool   withBadge;    // children ride plain avatars — the header owns identity
         bool   headerHasApp; // singles: "App • age"; children: age only
-        bool   hasChevron;   // singles fold; expanded-bundle children are always open
         bool   canReply;     // the inline-reply field; conversations never bundle, so children never need it
-        bool   manage;       // retained for layout ABI; management is long-press only
     };
-    inline constexpr SRowStyle ROW_SINGLE{ROW_ICON, true, true, true, true, false};
-    inline constexpr SRowStyle ROW_CHILD{CHILD_ICON, false, false, false, false, false};
+    inline constexpr SRowStyle ROW_SINGLE{ROW_ICON, true, true, true};
+    inline constexpr SRowStyle ROW_CHILD{CHILD_ICON, false, false, false};
 
     // Lays out (and outside the warm paints) one row; returns its height and
-    // fills the card's hit boxes. `more` drives the chevron: an open row can
-    // always be folded, a collapsed one only offers it when there is
-    // something behind it.
+    // fills the card's hit boxes. `more` records whether a compact body click
+    // has hidden content to reveal; there is no separate expansion control.
     double renderRow(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box, bool open, bool more, const SRowStyle& ST, SCard& card, bool child);
     // the same code with a context that draws nothing — the budget's ruler
     double measureRow(const SPaint& P, const SType& T, const SP<SNotif>& N, double w, bool open, const SRowStyle& ST);
@@ -207,14 +197,13 @@ namespace NHyprnotify {
     // ---- the manage panel: what Android's long-press holds, as a row state ----
     //
     // A long press turns a row into this instead of opening a floating menu. Same
-    // ergonomics — full-width labelled targets, every verb named and carrying
-    // its key — with none of a second surface's cost: no z-order, no outside
+    // ergonomics — full-width labelled targets, every verb named — with none
+    // of a second surface's cost: no z-order, no outside
     // -click grab, no damage region of its own, and it rides the fold
     // machinery that already exists. Only one row is ever in this state.
     struct SMenuEntry {
-        uint8_t     icon;       // eControlIcon value
+        const char* glyph;
         std::string label;
-        const char* hint;      // the key that does the same thing
         int         verb;      // 1 snooze, 2 mute, 3 unmute, 4 priority, 5 dismiss
         int64_t     arg = 0;   // verb 1/2: seconds, 0 = always, < 0 = today (Policy::silenceFor)
         bool        lit = false;

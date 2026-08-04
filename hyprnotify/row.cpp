@@ -10,7 +10,7 @@
 // A BUNDLE has two faces made of the same parts: the DIGEST (folded — one
 // app row with a count pill and two preview lines) and the GROUP (expanded —
 // a header row with a close control, then every child as a full row). Children are rows
-// with the chevron and the badge taken off: the header already says which
+// with the badge taken off: the header already says which
 // app, so repeating its icon per child said it four times over.
 //
 // Everything here obeys the texture rule (crash class 4): cachedText is
@@ -40,9 +40,7 @@ namespace NHyprnotify {
         const bool   LEADICON = hasLeadIcon(*N);
         const double ICONW    = LEADICON ? ST.iconPx : 0;
         const double TX       = box.x + ROW_PADX + (ICONW > 0 ? ICONW + ROW_ICON_GAP : 0);
-        const bool   CHEVRON  = ST.hasChevron && (open || more);
-        const double RTRIM    = CHEVRON ? CHEV + 8 : 0;
-        const double TEXTW    = box.x + box.w - ROW_PADX - RTRIM - TX;
+        const double TEXTW    = box.x + box.w - ROW_PADX - TX;
         const int    TEXTWPX  = std::max(1, (int)std::floor(TEXTW * P.scale));
 
         double       th = 0;
@@ -214,26 +212,11 @@ namespace NHyprnotify {
             const double IY = open ? box.y + ROW_PADT : box.y + (ROWH - ICONW) / 2;
             paintIconColumn(P, *N, CBox{box.x + ROW_PADX, IY, ICONW, ICONW}, ST.withBadge && N->conversation, RP);
         }
-        // The chevron is the direct toggle. A compact row's body is the larger
-        // expand target; once open, that same body resumes its primary action.
-        if (CHEVRON) {
-            const double CY = open ? box.y + ROW_PADT : box.y + (ROWH - CHEV) / 2;
-            const CBox   CB{box.x + box.w - ROW_PADX - CHEV, CY, CHEV, CHEV};
-            const auto   G = controlIcon(open ? eControlIcon::CHEVRON_UP : eControlIcon::CHEVRON_DOWN, (int)std::lround(CHEV * P.scale), COLFG);
-            if (!P.warm) {
-                const bool CHOV = hovered.id == N->id && hovered.part == 1 && hovered.btn < 0;
-                P.rect(CB, CHOV ? tAccentDim() : tFill2(), (int)std::lround(CHEV / 2 * P.scale));
-                if (G)
-                    P.texFit(G, CB, 0, 2.f);
-            }
-            card.chevron = CB;
-        }
-
         card.box        = CBox{box.x, box.y, box.w, ROWH};
         card.id         = N->id;
         card.kind       = child ? SCard::CHILD : SCard::ROW;
         card.expanded   = open;
-        card.expandable = CHEVRON;
+        card.expandable = more;
         return ROWH;
     }
 
@@ -270,28 +253,45 @@ namespace NHyprnotify {
 
     // ---- the manage panel ----
     //
-    // Every verb the strip used to hide behind a symbol, named, at row width,
-    // with the key that does the same thing in the right column. The mute
+    // Every verb the strip used to hide behind a symbol, named, at row width.
+    // The mute
     // durations are iOS's ("Mute for 1 Hour", "Mute for Today"): permanent is
     // still here, but it stops being the only thing a click can mean — it is
     // the choice people regret, and its rule then sits in a file nobody reads.
+    static std::string snoozeDurationLabel(int64_t seconds) {
+        seconds = std::max<int64_t>(seconds, 0);
+        if (seconds == 0)
+            return "now";
+        if (seconds % 3600 == 0) {
+            const auto HOURS = seconds / 3600;
+            return std::to_string(HOURS) + (HOURS == 1 ? " hour" : " hours");
+        }
+        if (seconds % 60 == 0) {
+            const auto MINUTES = seconds / 60;
+            return std::to_string(MINUTES) + " min";
+        }
+        return std::to_string(seconds) + " sec";
+    }
+
     std::vector<SMenuEntry> menuEntries(const SP<SNotif>& N, bool bundle) {
         std::vector<SMenuEntry> out;
         const std::string APP = N->appName.empty() ? N->appKey : N->appName;
         if (!bundle) {
-            out.push_back({(uint8_t)eControlIcon::SCHEDULE, "Snooze 15 min", "s", 1, 900});
-            out.push_back({(uint8_t)eControlIcon::SCHEDULE, "Snooze 1 hour", "", 1, 3600});
+            const int64_t SNOOZE = std::max<int64_t>(cfg.snoozeSeconds->value(), 0);
+            out.push_back({"◷", "Snooze " + snoozeDurationLabel(SNOOZE), 1, SNOOZE});
+            if (SNOOZE != 3600)
+                out.push_back({"◷", "Snooze 1 hour", 1, 3600});
         }
         if (Policy::silenced(N->appKey))
-            out.push_back({(uint8_t)eControlIcon::NOTIFICATIONS_OFF, "Unmute " + APP, "m", 3, 0, true});
+            out.push_back({"⊘", "Unmute " + APP, 3, 0, true});
         else {
-            out.push_back({(uint8_t)eControlIcon::NOTIFICATIONS_OFF, "Mute " + APP + " for 1 hour", "", 2, 3600});
-            out.push_back({(uint8_t)eControlIcon::NOTIFICATIONS_OFF, "Mute " + APP + " today", "", 2, -1});
-            out.push_back({(uint8_t)eControlIcon::NOTIFICATIONS_OFF, "Mute " + APP + " always", "m", 2, 0});
+            out.push_back({"⊘", "Mute " + APP + " for 1 hour", 2, 3600});
+            out.push_back({"⊘", "Mute " + APP + " today", 2, -1});
+            out.push_back({"⊘", "Mute " + APP + " always", 2, 0});
         }
         if (!bundle && N->conversation)
-            out.push_back({(uint8_t)eControlIcon::STAR, N->priority ? "Unmark this conversation" : "Priority conversation", "p", 4, 0, N->priority});
-        out.push_back({(uint8_t)eControlIcon::CLOSE, bundle ? "Dismiss " + APP : "Dismiss", "del", 5, 0});
+            out.push_back({"★", N->priority ? "Unmark this conversation" : "Priority conversation", 4, 0, N->priority});
+        out.push_back({"✕", bundle ? "Dismiss " + APP : "Dismiss", 5, 0});
         return out;
     }
 
@@ -326,12 +326,13 @@ namespace NHyprnotify {
             P.tex(HEAD->tex, TX, box.y + ROW_PADT + (CHILD_ICON - HEAD->tex->m_size.y / P.scale) / 2);
 
         const bool OHOV = hovered.kind == SCard::MANAGE && hovered.id == N->id && hovered.part == 2;
-        const auto   XG    = controlIcon(eControlIcon::CLOSE, (int)std::lround(OVER_D * P.scale), COLFG);
-        const auto   XGHOT = controlIcon(eControlIcon::CLOSE, (int)std::lround(OVER_D * P.scale), tOnAccent());
+        const auto   XGN = cachedText("✕", COLFG, T.small, 64, -1, 0, false, 600);
+        const auto   XGH = cachedText("✕", tOnAccent(), T.small, 64, -1, 0, false, 600);
         if (!P.warm) {
             P.rect(OB, OHOV ? tAccentDim() : tFill2(), (int)std::lround(OVER_D / 2 * P.scale));
-            if (const auto* G = OHOV ? &XGHOT : &XG; *G)
-                P.texFit(*G, OB, 0, 2.f);
+            const auto* XG = OHOV ? XGH : XGN;
+            if (XG && XG->tex)
+                P.tex(XG->tex, OB.x + (OB.w - XG->tex->m_size.x / P.scale) / 2, OB.y + (OB.h - XG->tex->m_size.y / P.scale) / 2);
         }
         card.close = OB;
 
@@ -343,18 +344,15 @@ namespace NHyprnotify {
             // part codes 16.. address the entries: one rect per row, so a new
             // verb costs an entry and not a member
             const bool HOV = hovered.kind == SCard::MANAGE && hovered.id == N->id && hovered.part == (uint8_t)(16 + i);
-            const auto G   = controlIcon((eControlIcon)E.icon, (int)std::lround(MENU_GLYPH_W * P.scale), E.lit ? COLACC : COLSUB);
-            const auto L   = cachedText(E.label, E.lit ? COLACC : COLFG, T.body, std::max(1, (int)((RB.w - MENU_GLYPH_W - 40) * P.scale)), -1, 0, false, 500);
-            const auto H   = E.hint[0] ? cachedText(E.hint, COLSUB.modifyA(0.5f), T.small, 64, -1, 0, false, 500) : nullptr;
+            const auto G   = cachedText(E.glyph, E.lit ? COLACC : COLSUB, T.small, 64, -1, 0, false, 600);
+            const auto L   = cachedText(E.label, E.lit ? COLACC : COLFG, T.body, std::max(1, (int)((RB.w - MENU_GLYPH_W) * P.scale)), -1, 0, false, 500);
             if (!P.warm) {
                 if (HOV)
                     P.rect(RB, tAccentDim(), (int)std::lround(6 * P.scale), RP);
-                if (G)
-                    P.texFit(G, CBox{RB.x, RB.y, MENU_GLYPH_W, MENU_ROW_H}, 0, 2.f);
+                if (G && G->tex)
+                    P.tex(G->tex, RB.x + (MENU_GLYPH_W - G->tex->m_size.x / P.scale) / 2, RB.y + (MENU_ROW_H - G->tex->m_size.y / P.scale) / 2);
                 if (L && L->tex)
                     P.tex(L->tex, RB.x + MENU_GLYPH_W, RB.y + (MENU_ROW_H - L->tex->m_size.y / P.scale) / 2);
-                if (H && H->tex)
-                    P.tex(H->tex, RB.x + RB.w - 8 - H->tex->m_size.x / P.scale, RB.y + (MENU_ROW_H - H->tex->m_size.y / P.scale) / 2);
             }
             card.manage.push_back({RB, (uint8_t)(16 + i)});
             y += MENU_ROW_H;
@@ -395,25 +393,22 @@ namespace NHyprnotify {
 
         const CBox DB{UB.x - MANAGE_GAP - MANAGE_D, CY, MANAGE_D, MANAGE_D};
         const bool DHOV = hovered.kind == SCard::SNOOZE && hovered.id == N->id && hovered.part == 9;
-        const auto DG   = controlIcon(eControlIcon::CHEVRON_DOWN, (int)std::lround(MANAGE_D * P.scale), COLSUB);
+        const auto DG   = cachedText("◷", COLSUB, T.small, 64, -1, 0, false, 600);
         if (!P.warm) {
             P.rect(DB, DHOV ? tAccentDim() : tFill2(), (int)std::lround(MANAGE_D / 2 * P.scale));
-            if (DG)
-                P.texFit(DG, DB, 0, 2.f);
+            if (DG && DG->tex)
+                P.tex(DG->tex, DB.x + (DB.w - DG->tex->m_size.x / P.scale) / 2, DB.y + (DB.h - DG->tex->m_size.y / P.scale) / 2);
         }
         card.manage.push_back({DB, 9});
 
         auto& LB = scratch();
-        LB += "Snoozed ";
+        LB += "◷ Snoozed ";
         appendEsc(LB, Model::snoozeLabel(N));
-        const auto SG  = controlIcon(eControlIcon::SCHEDULE, (int)std::lround(MANAGE_D * P.scale), COLSUB);
-        const int  LW  = std::max(1, (int)std::floor((DB.x - MANAGE_GAP - box.x - ROW_PADX - MANAGE_D - MANAGE_GAP) * P.scale));
+        const int  LW  = std::max(1, (int)std::floor((DB.x - MANAGE_GAP - box.x - ROW_PADX) * P.scale));
         const auto LBL = cachedText(LB, COLSUB, T.body, LW, -1, 0, true, 500);
         if (!P.warm) {
-            if (SG)
-                P.texFit(SG, CBox{box.x + ROW_PADX, box.y + (SNOOZE_H - MANAGE_D) / 2, MANAGE_D, MANAGE_D}, 0, 2.f);
             if (LBL && LBL->tex)
-                P.tex(LBL->tex, box.x + ROW_PADX + MANAGE_D + MANAGE_GAP, box.y + (SNOOZE_H - LBL->tex->m_size.y / P.scale) / 2);
+                P.tex(LBL->tex, box.x + ROW_PADX, box.y + (SNOOZE_H - LBL->tex->m_size.y / P.scale) / 2);
         }
 
         cards.push_back(std::move(card));
@@ -438,15 +433,12 @@ namespace NHyprnotify {
 
         const double TX    = box.x + ROW_PADX + ROW_ICON + ROW_ICON_GAP;
         const auto   PILL  = cachedText(std::to_string(D.items.size()), COLFG, T.small, 64, -1, 0, false, 600);
-        const double PILLW = texW(PILL, P.scale) + 14 + 16;
+        const double PILLW = texW(PILL, P.scale) + 14;
         const CBox   PB{box.x + box.w - ROW_PADX - PILLW, box.y + ROW_PADT + (ROW_ICON - PILL_H) / 2, PILLW, PILL_H};
-        const auto   ARROW = controlIcon(eControlIcon::CHEVRON_DOWN, (int)std::lround(14 * P.scale), COLFG);
         if (!P.warm) {
             P.rect(PB, HOV ? tAccentDim() : tFill2(), (int)std::lround(PILL_H / 2 * P.scale));
             if (PILL && PILL->tex)
-                P.tex(PILL->tex, PB.x + 7, PB.y + (PB.h - PILL->tex->m_size.y / P.scale) / 2);
-            if (ARROW)
-                P.texFit(ARROW, CBox{PB.x + PB.w - 19, PB.y + 3, 14, PB.h - 6}, 0, 2.f);
+                P.tex(PILL->tex, PB.x + (PB.w - PILL->tex->m_size.x / P.scale) / 2, PB.y + (PB.h - PILL->tex->m_size.y / P.scale) / 2);
         }
 
         auto& DB = scratch();

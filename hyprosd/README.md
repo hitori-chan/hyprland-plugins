@@ -20,8 +20,8 @@ place like the old scripts pinned them. No config. Replaces
    and admitted feedback survives repeat-queue backpressure. Volume caps at
    100%, mute shows `muted`, the mic card says `live`/`muted`.
 3. **Cards** — urgency low, 1200 ms, `value` hint for the daemon's 4px
-   bar, no explicit icon (hyprnotify supplies its deterministic generic app
-   mark), sent async on the plugin's own event-loop-integrated
+   bar, and explicit freedesktop/AOSP identities: brightness, volume
+   level/mute, and microphone live/mute. They are sent async on the plugin's own event-loop-integrated
    session-bus connection. Bus death turns the cards off; the keys keep
    working.
 

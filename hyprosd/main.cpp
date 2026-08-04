@@ -16,8 +16,8 @@
 //   get spawns with its stdout on a pipe the event loop drains — two
 //   short forks per keypress instead of the script's shell pipeline, and
 //   render/input never wait on any of it.
-// - Cards carry the `value` hint (the daemon's 4px bar) and no explicit icon:
-//   hyprnotify supplies its deterministic generic app mark.
+// - Cards carry the `value` hint (the daemon's 4px bar) and an explicit
+//   freedesktop/AOSP identity icon so the OSD does not look like a random app.
 // - Feedback rides the plugin's own event-loop-integrated session-bus
 //   connection (hyprbar's tray pattern; the daemon's API is the bus name,
 //   never its symbols). Bus death turns the cards off; the keys keep
@@ -101,7 +101,7 @@ namespace NHyprosd {
 
     // ---- the cards ----
 
-    static void notify(uint32_t id, const char* summary, const std::string& body, int value) {
+    static void notify(uint32_t id, const char* icon, const char* summary, const std::string& body, int value) {
         if (!sessionBus.conn())
             return;
         try {
@@ -112,7 +112,7 @@ namespace NHyprosd {
                 hints.emplace("value", sdbus::Variant{int32_t{value}});
             notifyProxy->callMethodAsync("Notify")
                 .onInterface("org.freedesktop.Notifications")
-                .withArguments(std::string{"osd"}, id, std::string{}, std::string{summary}, body, std::vector<std::string>{}, hints, 1200)
+                .withArguments(std::string{"osd"}, id, std::string{icon}, std::string{summary}, body, std::vector<std::string>{}, hints, 1200)
                 .uponReplyInvoke([](std::optional<sdbus::Error>, uint32_t) {});
             sessionBus.pollSoon(); // flush the send from the event loop, never from here
         } catch (...) {} // broker gone: teardown is already pending, drop the card
@@ -146,6 +146,14 @@ namespace NHyprosd {
     static uint64_t        volumeFeedback       = 0;
     static uint64_t        micFeedback          = 0;
 
+    static const char* volumeIcon(int pct) {
+        if (pct <= 33)
+            return "audio-volume-low";
+        if (pct <= 66)
+            return "audio-volume-medium";
+        return "audio-volume-high";
+    }
+
     static void            brightnessStep(int dir) {
         const uint64_t GENERATION = ++brightnessGeneration;
         if (backlightDev.empty() || !systemBus.conn())
@@ -177,7 +185,7 @@ namespace NHyprosd {
                 .withArguments(std::string{"backlight"}, backlightDev, (uint32_t)raw)
                 .uponReplyInvoke([PCT, GENERATION](std::optional<sdbus::Error> err) {
                     if (!err && GENERATION == brightnessGeneration)
-                        notify(9992, "Brightness", std::to_string(PCT) + "%", PCT);
+                        notify(9992, "display-brightness-symbolic", "Brightness", std::to_string(PCT) + "%", PCT);
                     else if (GENERATION == brightnessGeneration)
                         lastSetRaw = -1; // logind refused: drop the trust window so the next press re-reads sysfs
                 });
@@ -314,11 +322,11 @@ namespace NHyprosd {
             FEEDBACK = c->generation;
         if (NEWER && c->mic) {
             if (MUTED || PCT >= 0)
-                notify(9995, "Microphone", MUTED ? "muted" : "live", -1);
+                notify(9995, MUTED ? "microphone-sensitivity-muted" : "microphone-sensitivity-high", "Microphone", MUTED ? "muted" : "live", -1);
         } else if (NEWER && MUTED)
-            notify(9993, "Volume", "muted", -1);
+            notify(9993, "audio-volume-muted", "Volume", "muted", -1);
         else if (NEWER && PCT >= 0)
-            notify(9993, "Volume", std::to_string(PCT) + "%", std::min(PCT, 100));
+            notify(9993, volumeIcon(PCT), "Volume", std::to_string(PCT) + "%", std::min(PCT, 100));
 
         chainDone(c);
         return 0;
@@ -493,7 +501,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_up", luaBrightnessUp);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_down", luaBrightnessDown);
 
-    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.2.4"};
+    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.3.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

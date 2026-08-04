@@ -1,4 +1,4 @@
-// hyprnotify/input.cpp — clicks, wheel paging, esc and pointer ownership
+// hyprnotify/input.cpp — clicks, wheel paging, and pointer ownership
 // over the popups and the shade. Implements the interaction map exactly:
 //
 //   popup    left = action/link/default → dismiss · right = dismiss ·
@@ -6,12 +6,12 @@
 //   row      a compact row whose open form reveals more expands on a body
 //            click; once open, the body fires the card's primary (the fd.o
 //            `default`) and dismisses unless resident, same as the popup.
-//            The CHEVRON toggles either state · a link opens · a button acts · right =
-//            dismiss · middle passes through natively · long-press manages
+//            a link opens · a button acts · right = dismiss · middle passes
+//            through natively · long-press manages
 //   manage   the row's verbs, named and at row width: snooze durations, mute
 //            durations (iOS's "for 1 hour" / "today" / "always"), priority on
 //            a chat, dismiss. Acting on one leaves the panel; the long-press
-//            target, right and Esc all close it. This replaced a three-glyph
+//            target and right-click close it. This replaced a three-glyph
 //            hover strip whose
 //            targets were 20px at 4px separation, unlabelled, with the one
 //            irreversible verb in the middle.
@@ -33,18 +33,9 @@
 //            HORIZONTAL on a row is the phone gesture: away dismisses, back
 //            opens the manage panel. Strictly an addition — a mouse without a
 //            horizontal wheel never reaches it and loses no verb.
-//   keys     while the shade is open it owns the nav set and nothing else:
-//            esc closes (the topmost-peel's middle link) · ↑/↓ move the
-//            selection · space folds it (the click's twin) · enter fires the
-//            primary · delete dismisses · m silences the app · s snoozes
-//            the card (and re-picks the duration while its undo row is up) ·
-//            u takes that snooze back · p marks the sender · tab opens its
-//            reply field, and while
-//            one is armed EVERY key is the field's (reply.cpp). A chord with
-//            ctrl/alt/super is the user's bind, and a nav key with NOTHING
-//            selected (or nothing to do — p on a card that is not a chat)
-//            still belongs to whatever holds focus: the shade never grabs a
-//            key it has no use for.
+//   keys     the shade never claims keyboard navigation or actions. Only a
+//            Reply field explicitly armed by a pointer click receives key
+//            events; while it is armed EVERY key is the field's (reply.cpp).
 //
 // Every mutation lands via the hit queue + CHop drain, never synchronously
 // inside the emission (crash class 6); every listener gates on
@@ -55,9 +46,6 @@
 #include "common/queries.hpp"
 
 #include "ui.hpp"
-
-#include <xkbcommon/xkbcommon-keysyms.h>
-#include <xkbcommon/xkbcommon-names.h>
 
 namespace NHyprnotify {
 
@@ -73,7 +61,7 @@ namespace NHyprnotify {
         uint32_t     id;
         std::string  group;
         uint32_t     bit;
-        uint8_t      part;               // 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 8 undo, 9 duration, 10 gesture-manage
+        uint8_t      part;               // 0 body, 2 close, 3 reply field, 4 send, 8 undo, 9 duration, 10 gesture-manage
         std::string  action;             // non-empty: a specific action button
         std::string  href;               // non-empty: a body hyperlink
         bool         expanded   = false; // exact ROW state from the painted hit record
@@ -90,7 +78,6 @@ namespace NHyprnotify {
     static std::vector<SHit> hitQueue;
     static bool              hitQueued = false;
     static NHyprCommon::CHop pendingHit;
-    static NHyprCommon::CHop pendingEsc;
     static SLongPress        longPress;
     static SP<CEventLoopTimer> longPressTimer;
     constexpr size_t         MAX_HIT_QUEUE = 128;
@@ -131,8 +118,6 @@ namespace NHyprnotify {
         for (const auto& M : c.manage)
             if (M.box.containsPoint(pos))
                 return M.part;
-        if (c.chevron.w > 0 && c.chevron.containsPoint(pos))
-            return 1;
         if (c.close.w > 0 && c.close.containsPoint(pos))
             return 2;
         if (c.replySend.w > 0 && c.replySend.containsPoint(pos))
@@ -255,18 +240,6 @@ namespace NHyprnotify {
         Model::closeOne(id, Model::R_DISMISSED);
     }
 
-    // The two per-app rules behind the KEYS m and p — the pointer reaches them
-    // through the row's manage panel instead. Both are keyed on something the
-    // card carries, so the selected card is only here to supply the key.
-    static void muteApp(uint32_t id) {
-        if (const auto N = Model::byId(id))
-            Policy::toggleSilence(N->appKey);
-    }
-    static void markSender(uint32_t id) {
-        if (const auto N = Model::byId(id))
-            Policy::togglePriority(N->appKey, N->summary);
-    }
-
     // one entry of a row's manage panel, by the index its hit rect carried
     static void manageEntry(uint32_t id, size_t idx, const std::string& group) {
         const auto N = Model::byId(id);
@@ -347,10 +320,6 @@ namespace NHyprnotify {
                     }
                     if (H.bit != 1u)
                         continue;
-                    if (H.part == 1) { // the chevron, and only it, folds
-                        centerToggleRow(H.id);
-                        continue;
-                    }
                     if (H.part == 10) { // the horizontal gesture opens management
                         if (!H.group.empty())
                             centerToggleManageGroup(H.group);
@@ -685,62 +654,12 @@ namespace NHyprnotify {
         }
     }
 
-    // ---- keys: esc peels the center (tray menu > center > menubar: load
-    //      order puts hyprbar's menu first, we're next), and the shade drives
-    //      its selection ----
-
-    // Same shape as the click queue, and for the same reason: an action can
-    // make the client focus itself, so nothing runs inside the emission.
-    struct SKeyAct {
-        int         verb = 0; // 1 fold, 2 the primary, 3 dismiss, 4 silence, 5 mark, 6 snooze, 7 undo, 8 re-pick the duration
-        uint32_t    id   = 0;
-        std::string group; // non-empty: a bundle
-    };
-    static std::vector<SKeyAct> keyQueue;
-    static bool                 keyQueued = false;
-    static NHyprCommon::CHop    pendingKey;
-    constexpr size_t            MAX_KEY_QUEUE = 128;
-
-    static void                 drainKeys() {
-        keyQueued    = false;
-        const auto Q = std::move(keyQueue);
-        keyQueue.clear();
-        for (const auto& A : Q) {
-            const bool GROUP = !A.group.empty();
-            if (A.verb == 1 || (A.verb == 2 && GROUP)) { // space, and enter on a bundle: fold
-                if (GROUP)
-                    centerToggleGroup(A.group);
-                else
-                    centerToggleRow(A.id);
-            } else if (A.verb == 2)
-                invokeLive(A.id, ""); // enter on a card: its primary, the body click's twin
-            else if (A.verb == 3) {
-                if (GROUP)
-                    Model::dismissApp(A.group);
-                else
-                    Model::closeOne(A.id, Model::R_DISMISSED);
-            } else if (A.verb == 4) {
-                if (GROUP)
-                    Policy::toggleSilence(A.group);
-                else
-                    muteApp(A.id);
-            } else if (A.verb == 5)
-                markSender(A.id);
-            else if (A.verb == 6 && !GROUP)
-                Model::snooze(A.id);
-            else if (A.verb == 7)
-                Model::snoozeUndo(A.id);
-            else if (A.verb == 8)
-                Model::snoozeCycle(A.id);
-        }
-    }
-
     void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
         if (NHyprCommon::sessionLocked())
             return;
         if (NHyprCommon::nativeInputCaptureActive())
             return;
-        if (!centerVisible() || info.cancelled)
+        if (info.cancelled || !centerVisible() || !replyArmed())
             return;
         // releases pass untouched (crash class 3: never cancel key releases)
         if (e.state != WL_KEYBOARD_KEY_STATE_PRESSED)
@@ -749,119 +668,11 @@ namespace NHyprnotify {
         if (!KB || !KB->m_xkbState)
             return;
 
-        // An armed reply field owns the keyboard first: the user is typing a
-        // sentence, and every nav key below would otherwise steal a letter.
-        if (replyArmed()) {
-            if (replyKey(KB->m_xkbState, e.keycode + 8))
-                info.cancelled = true;
-            return;
-        }
-
-        // a modified chord is a user bind passing through, never the shade's
-        for (const char* M : {XKB_MOD_NAME_CTRL, XKB_MOD_NAME_ALT, XKB_MOD_NAME_LOGO})
-            if (xkb_state_mod_name_is_active(KB->m_xkbState, M, XKB_STATE_MODS_EFFECTIVE) > 0)
-                return;
-
-        const auto SYM = xkb_state_key_get_one_sym(KB->m_xkbState, e.keycode + 8);
-        if (SYM == XKB_KEY_Escape) {
+        // Keyboard input is intentionally armed only by the visible Reply chip.
+        // The center itself has no navigation or action key map, so all other
+        // keys continue through to compositor bindings and the focused client.
+        if (replyKey(KB->m_xkbState, e.keycode + 8))
             info.cancelled = true;
-            // one more peel before the shade itself: an open manage panel is a
-            // menu, and esc closes the innermost thing first
-            uint32_t    MID = 0;
-            std::string MGRP;
-            if (centerManageTarget(MID, MGRP)) {
-                if (!MGRP.empty())
-                    pendingEsc.arm([MGRP = std::move(MGRP)]() { centerToggleManageGroup(MGRP); });
-                else
-                    pendingEsc.arm([MID]() { centerToggleManage(MID); });
-                return;
-            }
-            pendingEsc.arm([]() { setCenter(false); }); // deferred: the close reflows and refocuses
-            return;
-        }
-        // Tab moves into the selected card's reply field, the way Tab moves
-        // into any other control — the pointer has the chip, the keyboard
-        // needs a way in that is not one of the acting keys.
-        if (SYM == XKB_KEY_Tab) {
-            uint32_t    id = 0;
-            std::string group;
-            if (!centerSelection(id, group) || !group.empty())
-                return;
-            bool can = false;
-            for (const auto& N : notifs)
-                if (N->id == id) {
-                    can = N->canReply;
-                    break;
-                }
-            if (!can)
-                return;
-            info.cancelled = true;
-            centerEnsureRowOpen(id);
-            replyOpen(id);
-            return;
-        }
-        if (SYM == XKB_KEY_Up || SYM == XKB_KEY_Down) {
-            info.cancelled = true;
-            centerSelectMove(SYM == XKB_KEY_Down ? 1 : -1); // local state + a deferred warm: safe here
-            return;
-        }
-
-        SKeyAct a;
-        switch (SYM) {
-            case XKB_KEY_space: a.verb = 1; break;
-            case XKB_KEY_Return:
-            case XKB_KEY_KP_Enter: a.verb = 2; break;
-            case XKB_KEY_Delete: a.verb = 3; break;
-            case XKB_KEY_m: a.verb = 4; break; // mute the app
-            case XKB_KEY_p: a.verb = 5; break; // mark the sender
-            case XKB_KEY_s: a.verb = 6; break; // snooze the card
-            case XKB_KEY_u: a.verb = 7; break; // take a snooze back, while its row is up
-            default: return;
-        }
-        // nothing selected: the shade has not taken the keyboard, so a bare
-        // space still belongs to whatever holds focus
-        if (!centerSelection(a.id, a.group))
-            return;
-
-        // An undo row is a different keyboard surface with two verbs: u takes
-        // the card back, s re-picks the duration (there is nothing left to
-        // snooze). It has no fold and no primary, so those keys stay with
-        // whatever holds focus; delete still means "go, and for good".
-        const auto SEL     = a.group.empty() ? Model::byId(a.id) : nullptr;
-        const bool UNDOROW = SEL && Model::snoozeConfirming(SEL);
-        if (a.verb == 7 && !UNDOROW)
-            return;
-        if (UNDOROW) {
-            if (a.verb == 1 || a.verb == 2)
-                return;
-            if (a.verb == 6)
-                a.verb = 8;
-        }
-        // and a bare letter with nothing to do belongs to focus too: a bundle
-        // has no one sender to mark and no one card to put away, and neither
-        // does a card that is not a chat
-        if (a.verb == 6 && !a.group.empty())
-            return;
-        if (a.verb == 5) {
-            bool conv = false;
-            if (a.group.empty())
-                for (const auto& N : notifs)
-                    if (N->id == a.id) {
-                        conv = N->conversation;
-                        break;
-                    }
-            if (!conv)
-                return;
-        }
-
-        if (keyQueue.size() >= MAX_KEY_QUEUE)
-            return; // a key-repeat storm remains native input under overload
-        info.cancelled = true;
-        keyQueue.push_back(std::move(a));
-        if (keyQueued)
-            return;
-        keyQueued = true;
-        pendingKey.arm(drainKeys);
     }
 
     // ---- pointer ownership ----
@@ -986,11 +797,8 @@ namespace NHyprnotify {
             g_pEventLoopManager->removeTimer(longPressTimer);
         longPressTimer.reset();
         pendingHit.reset();
-        pendingEsc.reset();
-        pendingKey.reset();
-        hitQueued = keyQueued = false;
+        hitQueued = false;
         hitQueue.clear();
-        keyQueue.clear();
         swallowRelease = 0;
         heldButtons    = 0;
         scrollAcc      = 0;

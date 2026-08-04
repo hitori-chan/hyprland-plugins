@@ -69,16 +69,16 @@ Two surfaces share one card model:
    - **Rows open by default.** An expansion budget walks the page from the
      top and opens each row while the panel still has room (the top row
      always opens — Android's one guarantee; the desktop shade is taller, so
-     we keep going), then folds the overflow. A row whose open form shows
-     nothing new gets no chevron at all. The panel runs to the height the
-     monitor leaves below `offset_y`; what still overflows becomes wheel
-     paging, with cached up/down chevrons and a count cue.
+     we keep going), then folds the overflow. A compact row expands from its
+     body only when its open form has more content. The panel runs to the
+     height the monitor leaves below `offset_y`; what still overflows becomes
+     wheel paging, with compact up/down paging marks and a count cue.
    - **Verbs — reveal before acting.** A compact row whose open form contains
      more content expands when its body is clicked, so merged chat lines are
      never activated or dismissed while still hidden. Once open, the body
      fires the card's primary (the fd.o `default`) and dismisses it unless
      `resident` — the same verb the popup has always had. Links open, action
-     buttons act, and the CHEVRON toggles either state directly. The primary
+     buttons act. The body is the only expansion/action surface for a row. The primary
      is never drawn as a button: the spec
      says implementations are free not to display `default`, and a button
      would only duplicate the click. Right dismisses. Middle-click passes
@@ -97,11 +97,10 @@ Two surfaces share one card model:
      the thing one global DND could never say. Hold the body of an open row for
      500ms to turn it into a panel of its verbs, even when the row is
      collapsed. Each verb is named at panel width
-     with the key that does the same thing in the right column. The expansion
-     chevron remains expansion-only; there is no second menu control. Acting
-     on one leaves the panel; the held target, right-click and Esc all close
-     it, and Esc peels the panel before it peels the shade. Keyboard users can
-     use the named manage actions through the navigation keys.
+     with no keyboard shortcut column. Acting on one leaves the panel; the
+     held target and right-click close it. Management is available through
+     the stationary hold or the horizontal back-swipe; there is no kebab or
+     separate menu button.
    - **Per-app rules** live in that panel. **Mute** comes in iOS's three
      lengths — for 1 hour, today (until tomorrow morning, not a rolling 24h),
      or always: no banner, no sound, straight to the shade, ranked with the
@@ -117,15 +116,15 @@ Two surfaces share one card model:
      Whenever any silence is in force the footer says so: a muted-count control
      stands beside DND, and clicking it lifts every one. A rule you set once is never
      invisible again.
-   - **Snooze** (in the panel, or `s`) is Android's, and it is a verb on one
+   - **Snooze** in the panel is Android's, and it is a verb on one
      card rather than a rule: the card goes out of sight and comes back
      ALERTING, which is the whole point of asking. It stays in the model the
      entire time, so "Clear all" cannot quietly cancel a reminder.
      It does not leave at the click. Android replaces the notification in
      place with a duration control and **Undo**, so for six seconds the card
-     holds its slot as a one-line undo row: **Undo** (or `u`) puts it back,
-     the duration control (or `s` again) cycles Android's ladder — 15m / 30m / 1h / 2h,
-     with `snooze_seconds` as the duration a bare snooze takes. Closing the
+     holds its slot as a one-line undo row: **Undo** puts it back, and the
+     duration control cycles Android's ladder — 15m / 30m / 1h / 2h.
+     `snooze_seconds` sets the first labelled panel duration. Closing the
      shade commits it, since the shade is the row's only surface. This is
      not history and not recall: the card never left, and past the window it
      is gone exactly as before. Ephemerals (`transient`, progress) are
@@ -136,21 +135,11 @@ Two surfaces share one card model:
      `NotificationReplied(id, text)` signal — it is how Telegram, Fractal
      and the rest offer a reply box, and a server without the capability
      gets no reply affordance offered at all. An open row with one grows a
-     **Reply** chip; clicking it (or Tab on the selected row) arms a text
-     field, Enter sends, Esc drops it. While a field is armed it owns EVERY
-     key, because there is no keyboard focus to hand it — the same grab
-     hyprbar's menubar prompt takes. Editing is append-and-backspace plus
-     C-u / C-w; the field is shade-only, not on banners.
-   - **Keys.** While the shade is open it owns exactly the nav set and
-     nothing else: Esc closes, ↑/↓ move a selection (an accent hairline,
-     paging to stay on screen), Space folds it, Enter fires the primary,
-     Tab opens a reply, Delete dismisses, `m` silences the app, `s` snoozes
-     the card, `p` marks the sender, `u` takes a snooze back while its undo
-     row is up (and `s` there re-picks the duration instead). A chord with
-     ctrl/alt/super is a user bind passing through, and a nav key with
-     nothing selected — or nothing to do, like `p` on a card that is not a
-     chat — still belongs to whatever holds focus. Selection, fold state and
-     the open manage panel all reset on close.
+     **Reply** chip; clicking it arms a text field. While a field is armed it
+     owns keyboard input because there is no keyboard focus to hand it;
+     Enter sends, Esc drops it, and editing is append-and-backspace plus C-u /
+     C-w. The field is shade-only, not on banners. The shade itself claims no
+     keyboard navigation or notification actions.
    - **Swipe.** A horizontal wheel on a row is the phone gesture: away
      dismisses it, back opens its manage panel. Strictly an addition on top
      of the pointer path — a mouse without a horizontal wheel never reaches
@@ -160,7 +149,7 @@ Two surfaces share one card model:
    feedback) remain transient notification cards below an already-open shade,
    separated by the configured margin. They are still excluded from shade
    ranking, the bell badge, and "Clear all", and expire on their short clocks;
-   opening the shade no longer hides feedback from a key pressed while it is
+   opening the shade no longer hides feedback from an OSD key press while it is
    open.
 
 Model rules: the **conversation merge** (Android's MessagingStyle) joins one

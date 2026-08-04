@@ -17,6 +17,6 @@ monitor, no spawned processes.
    `hyprctl eval` reaches, minus the fork and socket round-trip. It writes
    the per-device config store; a reload wipes that runtime state, which
    the plugin catches via `config.reloaded`.
-4. Feedback is one async D-Bus Notify (replaces-id 9991, in place) on the
-   plugin's own session-bus connection: `enabled` / `disabled` /
-   `not found`.
+4. Feedback is one async D-Bus Notify (replaces-id 9991, in place) with the
+   `input-touchpad` or `touchpad-disabled` identity on the plugin's own
+   session-bus connection: `enabled` / `disabled` / `not found`.
