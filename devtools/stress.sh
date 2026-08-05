@@ -326,14 +326,17 @@ f=[ (c['at'],c['size']) for c in json.load(sys.stdin) if c['class']=='foot' ]
 print(f[0] if f else 'none')"; }
 REF="$(box)"
 chk "churn probe up" test "$REF" != none
+# Plugin/config startup can leave an error overlay already reserving this
+# edge. Clear it inside the nested instance before taking the baseline; a
+# replacement of similar wrapped height is not evidence that reservation
+# creation failed.
+hq seterror disable >/dev/null 2>&1
+sleep 1
 # A plugin-maximized window lives outside the compositor fullscreen model.
 # Changing a native reserved area must therefore reach hyprmax explicitly.
 dsp "hl.plugin.hyprmax.toggle()"; sleep 0.5
 MAX_BEFORE="$(box)"
 RESERVED_BEFORE="$(reserved)"
-# The Wayland backend can queue a startup overlay before this probe. Force a
-# wrapped replacement so creation changes the reservation even when an error
-# bar already exists at the same output edge.
 ERROR_MESSAGE="reserved-area-probe $(printf 'wrapped-message-with-enough-width-to-force-a-second-line %.0s' {1..6})"
 hq seterror 'rgba(ff3030ff)' "$ERROR_MESSAGE" >/dev/null 2>&1
 for _ in $(seq 1 30); do
@@ -357,11 +360,18 @@ else
 	bad "hyprmax: native reserved-area change reflows maximized geometry"
 fi
 hq seterror disable >/dev/null 2>&1
+RESERVED_AFTER_ERROR=""
 for _ in $(seq 1 30); do
-	[[ "$(reserved)" == "$RESERVED_BEFORE" ]] && break
+	RESERVED_AFTER_ERROR="$(reserved)"
+	[[ "$RESERVED_AFTER_ERROR" == "$RESERVED_BEFORE" ]] && break
 	sleep 0.1
 done
-chk "fork: disabling error overlay restores native reserved area" test "$(reserved)" = "$RESERVED_BEFORE"
+if [[ "$RESERVED_AFTER_ERROR" == "$RESERVED_BEFORE" ]]; then
+	ok "fork: disabling error overlay restores native reserved area"
+else
+	bad "fork: disabling error overlay restores native reserved area"
+	printf '      expected reserved=%s, got=%s\n' "$RESERVED_BEFORE" "$RESERVED_AFTER_ERROR"
+fi
 for _ in $(seq 1 30); do
 	[[ "$(box)" == "$MAX_BEFORE" ]] && break
 	sleep 0.1
