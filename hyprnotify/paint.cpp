@@ -6,6 +6,9 @@
 
 #include <cairo/cairo.h>
 
+#include <cmath>
+#include <numbers>
+
 namespace NHyprnotify {
 
     namespace {
@@ -17,9 +20,67 @@ namespace NHyprnotify {
 
         void strokeIcon(cairo_t* cr, eControlIcon icon, double px) {
             const double S = px / 24.0;
+            const double PI = std::numbers::pi;
             cairo_set_line_width(cr, std::max(1.0, 2.0 * S));
             cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
             cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+
+            // AOSP HEAD SystemUI's current 24dp OSD marks:
+            // ic_brightness_full, ic_volume_media(_mute), ic_mic_26dp/off.
+            const auto mediaVolume = [&]() {
+                cairo_move_to(cr, 12.0 * S, 3.0 * S);
+                cairo_line_to(cr, 12.01 * S, 13.55 * S);
+                cairo_curve_to(cr, 11.42 * S, 13.21 * S, 10.74 * S, 13.0 * S, 10.01 * S, 13.0 * S);
+                cairo_curve_to(cr, 7.79 * S, 13.0 * S, 6.0 * S, 14.79 * S, 6.0 * S, 17.0 * S);
+                cairo_curve_to(cr, 6.0 * S, 19.21 * S, 7.79 * S, 21.0 * S, 10.01 * S, 21.0 * S);
+                cairo_curve_to(cr, 12.22 * S, 21.0 * S, 14.0 * S, 19.21 * S, 14.0 * S, 17.0 * S);
+                cairo_line_to(cr, 14.0 * S, 7.0 * S);
+                cairo_line_to(cr, 18.0 * S, 7.0 * S);
+                cairo_line_to(cr, 18.0 * S, 3.0 * S);
+                cairo_close_path(cr);
+                cairo_fill(cr);
+            };
+            const auto strike = [&]() {
+                cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
+                cairo_set_line_width(cr, std::max(2.0, 4.0 * S));
+                cairo_move_to(cr, 3.0 * S, 3.0 * S);
+                cairo_line_to(cr, 21.0 * S, 21.0 * S);
+                cairo_stroke(cr);
+                cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+                cairo_set_line_width(cr, std::max(1.0, 2.0 * S));
+                cairo_move_to(cr, 2.8 * S, 2.8 * S);
+                cairo_line_to(cr, 21.2 * S, 21.2 * S);
+                cairo_stroke(cr);
+            };
+            const auto mic = [&]() {
+                cairo_arc(cr, 12.0 * S, 5.0 * S, 3.0 * S, PI, 0);
+                cairo_line_to(cr, 15.0 * S, 11.0 * S);
+                cairo_arc(cr, 12.0 * S, 11.0 * S, 3.0 * S, 0, PI);
+                cairo_close_path(cr);
+                cairo_fill(cr);
+                cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
+                cairo_set_line_width(cr, std::max(1.0, 2.0 * S));
+                cairo_move_to(cr, 12.0 * S, 5.0 * S);
+                cairo_line_to(cr, 12.0 * S, 11.0 * S);
+                cairo_stroke(cr);
+                cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+                cairo_arc(cr, 12.0 * S, 11.0 * S, 6.0 * S, 0, PI);
+                cairo_move_to(cr, 6.0 * S, 11.0 * S);
+                cairo_curve_to(cr, 6.0 * S, 14.31 * S, 8.69 * S, 17.0 * S, 12.0 * S, 17.0 * S);
+                cairo_curve_to(cr, 15.31 * S, 17.0 * S, 18.0 * S, 14.31 * S, 18.0 * S, 11.0 * S);
+                cairo_move_to(cr, 12.0 * S, 17.0 * S);
+                cairo_line_to(cr, 12.0 * S, 21.0 * S);
+                cairo_move_to(cr, 9.0 * S, 21.0 * S);
+                cairo_line_to(cr, 15.0 * S, 21.0 * S);
+                cairo_stroke(cr);
+            };
+            const auto touchpad = [&]() {
+                cairo_rectangle(cr, 4.0 * S, 4.0 * S, 16.0 * S, 16.0 * S);
+                cairo_stroke(cr);
+                cairo_move_to(cr, 4.0 * S, 15.5 * S);
+                cairo_line_to(cr, 20.0 * S, 15.5 * S);
+                cairo_stroke(cr);
+            };
 
             switch (icon) {
                 case eControlIcon::CLOSE:
@@ -34,6 +95,70 @@ namespace NHyprnotify {
                         for (int x = 0; x < 3; x++)
                             cairo_rectangle(cr, (5.0 + x * 6.0) * S, (5.0 + y * 6.0) * S, 3.0 * S, 3.0 * S);
                     cairo_fill(cr);
+                    break;
+                case eControlIcon::BRIGHTNESS:
+                    cairo_set_fill_rule(cr, CAIRO_FILL_RULE_EVEN_ODD);
+                    cairo_move_to(cr, 18.667 * S, 9.241 * S);
+                    cairo_line_to(cr, 18.667 * S, 5.333 * S);
+                    cairo_line_to(cr, 14.759 * S, 5.333 * S);
+                    cairo_line_to(cr, 12.0 * S, 2.575 * S);
+                    cairo_line_to(cr, 9.242 * S, 5.333 * S);
+                    cairo_line_to(cr, 5.334 * S, 5.333 * S);
+                    cairo_line_to(cr, 5.334 * S, 9.241 * S);
+                    cairo_line_to(cr, 2.575 * S, 12.0 * S);
+                    cairo_line_to(cr, 5.334 * S, 14.758 * S);
+                    cairo_line_to(cr, 5.334 * S, 18.666 * S);
+                    cairo_line_to(cr, 9.242 * S, 18.666 * S);
+                    cairo_line_to(cr, 12.0 * S, 21.425 * S);
+                    cairo_line_to(cr, 14.759 * S, 18.666 * S);
+                    cairo_line_to(cr, 18.667 * S, 18.666 * S);
+                    cairo_line_to(cr, 18.667 * S, 14.758 * S);
+                    cairo_line_to(cr, 21.425 * S, 12.0 * S);
+                    cairo_close_path(cr);
+                    cairo_move_to(cr, 17.0 * S, 14.066 * S);
+                    cairo_line_to(cr, 17.0 * S, 17.0 * S);
+                    cairo_line_to(cr, 14.067 * S, 17.0 * S);
+                    cairo_line_to(cr, 12.0 * S, 19.066 * S);
+                    cairo_line_to(cr, 9.934 * S, 17.0 * S);
+                    cairo_line_to(cr, 7.0 * S, 17.0 * S);
+                    cairo_line_to(cr, 7.0 * S, 14.066 * S);
+                    cairo_line_to(cr, 4.934 * S, 12.0 * S);
+                    cairo_line_to(cr, 7.0 * S, 9.933 * S);
+                    cairo_line_to(cr, 7.0 * S, 7.0 * S);
+                    cairo_line_to(cr, 9.934 * S, 7.0 * S);
+                    cairo_line_to(cr, 12.0 * S, 4.933 * S);
+                    cairo_line_to(cr, 14.067 * S, 7.0 * S);
+                    cairo_line_to(cr, 17.0 * S, 7.0 * S);
+                    cairo_line_to(cr, 17.0 * S, 9.933 * S);
+                    cairo_line_to(cr, 19.067 * S, 12.0 * S);
+                    cairo_close_path(cr);
+                    cairo_fill(cr);
+                    cairo_set_fill_rule(cr, CAIRO_FILL_RULE_WINDING);
+                    cairo_arc(cr, 12.0 * S, 12.0 * S, 3.25 * S, 0, 2 * PI);
+                    cairo_fill(cr);
+                    break;
+                case eControlIcon::VOLUME:
+                    mediaVolume();
+                    break;
+                case eControlIcon::VOLUME_MUTED:
+                    mediaVolume();
+                    strike();
+                    break;
+                case eControlIcon::MICROPHONE:
+                    mic();
+                    break;
+                case eControlIcon::MICROPHONE_MUTED:
+                    mic();
+                    strike();
+                    break;
+                case eControlIcon::TOUCHPAD:
+                    touchpad();
+                    break;
+                case eControlIcon::TOUCHPAD_DISABLED:
+                    touchpad();
+                    cairo_move_to(cr, 4.0 * S, 4.0 * S);
+                    cairo_line_to(cr, 20.0 * S, 20.0 * S);
+                    cairo_stroke(cr);
                     break;
             }
         }

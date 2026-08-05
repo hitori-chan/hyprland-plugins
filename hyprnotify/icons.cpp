@@ -303,6 +303,33 @@ namespace NHyprnotify {
         return tex;
     }
 
+        // In-tree OSD senders name the state that just changed. These are
+        // system controls, not an app's visual identity, so pin them to
+        // stable native marks instead of whichever icon theme happens to be
+        // installed. Keep this strictly inside the private OSD id band.
+    static std::optional<eControlIcon> osdIcon(const SNotif& n) {
+        if (!inOsdBand(n.id))
+            return std::nullopt;
+        const auto named = [](std::string_view value, std::string_view bare) {
+            return value == bare || (value.starts_with(bare) && value.substr(bare.size()) == "-symbolic");
+        };
+        if (named(n.appIcon, "display-brightness"))
+            return eControlIcon::BRIGHTNESS;
+        if (named(n.appIcon, "audio-volume-muted"))
+            return eControlIcon::VOLUME_MUTED;
+        if (named(n.appIcon, "audio-volume-low") || named(n.appIcon, "audio-volume-medium") || named(n.appIcon, "audio-volume-high"))
+            return eControlIcon::VOLUME;
+        if (named(n.appIcon, "microphone-sensitivity-high"))
+            return eControlIcon::MICROPHONE;
+        if (named(n.appIcon, "microphone-sensitivity-muted"))
+            return eControlIcon::MICROPHONE_MUTED;
+        if (named(n.appIcon, "input-touchpad"))
+            return eControlIcon::TOUCHPAD;
+        if (named(n.appIcon, "touchpad-disabled"))
+            return eControlIcon::TOUCHPAD_DISABLED;
+        return std::nullopt;
+    }
+
     // A source wide enough for the hero layout: HERO_ASPECT and at least
     // half the hero box, so a tiny wide icon never blows up to card width.
     static bool heroWorthy(double sw, double sh, int heroWPx) {
@@ -365,10 +392,26 @@ namespace NHyprnotify {
             }
         };
 
-        // IDENTITY (the left lead): app_icon or the Icon= value resolved from
-        // desktop-entry, drawn at every size it appears. heroWPx 0: an
-        // identity is icon-box only.
-        if (!n.identity.empty()) {
+        // OSD cards are the one app_icon class that has an explicit semantic
+        // contract. Its icon changes on a fixed-id replacement, so its cache
+        // key names the mark rather than retaining the previous texture.
+        const auto OSD = osdIcon(n);
+        if (OSD) {
+            const std::string KEY = "__hyprnotify_osd_" + std::to_string((uint8_t)*OSD);
+            if (n.identFor != KEY || n.identIconPx != iconPx) {
+                n.identTex.reset();
+                n.identFor     = KEY;
+                n.identIconPx  = iconPx;
+                n.identSettled = false;
+            }
+            if (!n.identSettled) {
+                n.identTex     = controlIcon(*OSD, iconPx, CHyprColor{Theme::INK});
+                n.identSettled = n.identTex != nullptr;
+            }
+        } else if (!n.identity.empty()) {
+            // IDENTITY (the left lead): app_icon or the Icon= value resolved
+            // from desktop-entry, drawn at every size it appears. heroWPx 0:
+            // an identity is icon-box only.
             if (n.identFor != n.identity || n.identIconPx != iconPx) {
                 n.identTex.reset();
                 n.identFor = n.identity;
@@ -392,7 +435,7 @@ namespace NHyprnotify {
                 }
             }
         }
-        if (n.identity.empty())
+        if (!OSD && n.identity.empty())
             genericIdentity();
 
         if (n.hasPixels) {

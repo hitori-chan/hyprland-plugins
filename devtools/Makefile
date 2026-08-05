@@ -17,6 +17,12 @@ HYPR_CFLAGS := $(shell pkg-config --cflags hyprland)
 
 all: vptr vkbd input-capture
 
+icon-resolver-test: icon_resolver_test.cpp ../common/icons.hpp
+	$(CXX) -std=c++26 -O2 -Wall -Wextra -Wpedantic -Werror -I.. $< -o $@
+
+test-icon-resolver: icon-resolver-test
+	./icon-resolver-test
+
 desktop-exec-test: desktop_exec_test.cpp ../hyprbar/desktop_exec.hpp ../common/fileindex.hpp ../common/icons.hpp
 	$(CXX) -std=c++26 -O2 -Wall -Wextra -Wpedantic -Werror -pthread -I.. $< -o $@
 
@@ -70,6 +76,6 @@ input-capture-proto.c: $(CXML)
 	wayland-scanner private-code $< $@
 
 clean:
-	rm -f vptr vkbd input-capture desktop-exec-test hyprosd-readback-test persist-test hyprsnap-geometry-test hyprmax-geometry-test vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c
+	rm -f vptr vkbd input-capture icon-resolver-test desktop-exec-test hyprosd-readback-test persist-test hyprsnap-geometry-test hyprmax-geometry-test vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c
 
-.PHONY: all clean test-desktop-exec test-hyprosd test-persist test-hyprsnap-geometry test-hyprmax-geometry
+.PHONY: all clean test-icon-resolver test-desktop-exec test-hyprosd test-persist test-hyprsnap-geometry test-hyprmax-geometry

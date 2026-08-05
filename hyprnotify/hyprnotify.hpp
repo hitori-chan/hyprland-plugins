@@ -81,7 +81,7 @@ namespace NHyprnotify {
     extern HANDLE PHANDLE;
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.12.0";
+    inline constexpr const char* VERSION = "6.12.1";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -169,6 +169,7 @@ namespace NHyprnotify {
         int                  progress = -1; // 0..100 from the "value" hint, -1 = none
         std::string          image;    // CONTENT source (image-path), resolved file path, "" = none
         std::string          identity; // IDENTITY source (app_icon/desktop-entry), resolved path, "" = none
+        std::string          appIcon;  // raw app_icon; trusted OSD names select stable semantic marks
         std::vector<uint8_t> pixels;   // image-data, premultiplied BGRA (DRM ARGB8888); freed once uploaded
         bool                 hasPixels = false; // the LAST Notify carried image-data (outlives the freed buffer)
         int                  pw = 0, ph = 0;

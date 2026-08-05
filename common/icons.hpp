@@ -164,7 +164,11 @@ namespace NHyprCommon {
         themes.push_back("Adwaita"); // the freedesktop-name last resorts
         themes.push_back("AdwaitaLegacy");
 
-        std::vector<std::string> sizeDirs = {"scalable"};
+        // Adwaita stores symbolic marks as symbolic/<context>/name.svg,
+        // unlike themes that use scalable/<context>/ or size/<context>/.
+        // Treat symbolic as a size directory so findIconInDir also probes the
+        // context below it.
+        std::vector<std::string> sizeDirs = {"scalable", "symbolic"};
         for (const int S : {sizePx, 64, 48, 96, 128, 256, 72, 32, 24, 16})
             sizeDirs.push_back(std::to_string(S) + "x" + std::to_string(S));
 

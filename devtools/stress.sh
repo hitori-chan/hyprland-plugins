@@ -142,6 +142,7 @@ echo "== stress: $BIN =="
 # ---- preflight ----------------------------------------------------------
 [[ -x "$BIN" ]] || { echo "no such compositor binary: $BIN"; exit 1; }
 { [[ -x "$REPO/devtools/vptr" ]] && [[ -x "$REPO/devtools/vkbd" ]] && [[ -x "$REPO/devtools/input-capture" ]]; } || make -C "$REPO/devtools" >/dev/null
+make -C "$REPO/devtools" test-icon-resolver >/dev/null || { echo "icon resolver test FAILED"; exit 1; }
 # The headers the plugins compile against must belong to the gated binary —
 # a scratch hyprland.pc keeps its absolute /usr/local prefix (not
 # relocatable), silently falls back to the installed tree, and every plugin
@@ -215,6 +216,7 @@ printf '100\t100\t500\t400\tfoot\n200\t80\tlegacyfoot\n' > "$STATE/hyprplace/las
 	echo 'hl.permission(".*hyprland-plugins/.*", "plugin", "allow")'
 	echo 'hl.permission(".*input-capture$", "input-capture", "allow")'
 	echo 'hl.permission(".*vkbd$", "keyboard", "allow")'
+	echo 'hl.permission(".*grim$", "screencopy", "allow")'
 	cat "$HARNESS/nested.lua"
 	echo 'hl.window_rule({ match = { class = "foot|mpv|corpseA|corpseB|tuckmax|tuckfloat|tuckfs" }, float = true })'
 } > "$CFG"
@@ -609,6 +611,33 @@ chk "hyprosd: repeat backpressure caps active chains" test "$(grep -c '^set-volu
 chk "hyprosd: repeat backpressure preserves admitted feedback" test "$(st)" = "center:0 live:1 dnd:0"
 nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications CloseNotification u 9993 >/dev/null 2>&1; sleep 0.2
 
+# ---- semantic OSD icons ----------------------------------------------------
+# A fixed OSD id is replaced throughout a key sweep. Capture the actual icon
+# cell after each semantic state; equal crops would mean a stale texture or a
+# theme-resolution fallback has collapsed the controls back to one glyph.
+osd_notify() {
+	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
+		Notify susssasa\{sv\}i osd 9992 "$1" OSD "" 0 2 urgency y 0 x-hitori-osd b true 5000 >/dev/null 2>&1
+}
+osd_icon_hash() {
+	local out="$STATE/osd-$1.png"
+	timeout 8 env WAYLAND_DISPLAY="$WL" grim "$out" >/dev/null 2>&1 || return 1
+	magick "$out" -crop "44x44+$((MON_W - 10 - 348 + 14))+$((34 + 11))" +repage -depth 8 rgba:- 2>/dev/null | sha256sum | cut -d' ' -f1
+}
+osd_notify display-brightness-symbolic; sleep 0.5
+BRIGHT_ICON="$(osd_icon_hash brightness)"
+osd_notify audio-volume-high; sleep 0.5
+VOLUME_ICON="$(osd_icon_hash volume)"
+osd_notify touchpad-disabled; sleep 0.5
+TOUCHPAD_ICON="$(osd_icon_hash touchpad)"
+if [[ -n "$BRIGHT_ICON" && -n "$VOLUME_ICON" && -n "$TOUCHPAD_ICON" && "$BRIGHT_ICON" != "$VOLUME_ICON" && "$BRIGHT_ICON" != "$TOUCHPAD_ICON" && "$VOLUME_ICON" != "$TOUCHPAD_ICON" ]]; then
+	ok "OSD icons: fixed-id brightness, volume, and touchpad pixels differ"
+else
+	bad "OSD icons: fixed-id brightness, volume, and touchpad pixels differ"
+fi
+chk "OSD icons: fixed-id replacements retain one live card" test "$(st)" = "center:0 live:1 dnd:0"
+nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications CloseNotification u 9992 >/dev/null 2>&1; sleep 0.3
+
 # ---- OSD below an open shade ----------------------------------------------
 # OSD-band cards are deliberately absent from shade rows and the bell badge,
 # but their active surface must remain visible below a shade that was already
@@ -617,7 +646,7 @@ nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freed
 # the shade open; a hidden card leaves the OSD in the model or hits the panel.
 hq hyprnotify center >/dev/null; sleep 0.5
 nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
-	Notify susssasa\{sv\}i osd 9992 "" Brightness 72% 0 3 value i 72 urgency y 0 x-hitori-osd b true 1200 >/dev/null 2>&1
+	Notify susssasa\{sv\}i osd 9992 display-brightness-symbolic Brightness 72% 0 3 value i 72 urgency y 0 x-hitori-osd b true 1200 >/dev/null 2>&1
 sleep 0.35
 chk "center OSD: brightness card is active" test "$(st)" = "center:1 live:1 dnd:0"
 chk "center OSD: fixed card remains outside shade accounting" test "$(bd)" = "banners:0 resident:0"

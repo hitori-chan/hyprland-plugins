@@ -42,12 +42,19 @@ namespace NHyprnotify {
     inline constexpr double BODYIMG_H = 96, IMG_GAP = 6, IMG_ROW_GAP = 8;
     inline constexpr double XCIRC = 20; // the hover-close / group-close circle
 
-    // Texture-backed marks are reserved for the deterministic generic app
-    // identity and popup close control. Center controls retain their compact
-    // established glyphs.
+    // Texture-backed marks cover the deterministic generic identity, popup
+    // close control, and the trusted system OSD semantics. Center controls
+    // retain their compact established glyphs.
     enum class eControlIcon : uint8_t {
         CLOSE,
         APPS,
+        BRIGHTNESS,
+        VOLUME,
+        VOLUME_MUTED,
+        MICROPHONE,
+        MICROPHONE_MUTED,
+        TOUCHPAD,
+        TOUCHPAD_DISABLED,
     };
 
     // The identity badge, as ratios of the avatar box it rides — AOSP's 2025

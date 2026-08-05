@@ -8,6 +8,16 @@ fakes, the `Makefile`, and this README; the
 binaries and the `*-proto.{c,h}` wayland-scanner glue are build artifacts
 that `make` regenerates.
 
+## icon_resolver_test.cpp
+
+The standalone C++26 regression for freedesktop themed-icon resolution. It
+creates a private temporary Adwaita-shaped tree and verifies the symbolic
+`symbolic/<context>/` layout used by brightness and disabled-touchpad marks:
+
+```
+make test-icon-resolver
+```
+
 ## desktop_exec_test.cpp
 
 The standalone C++26 conformance matrix for the hyprbar launcher’s Desktop
@@ -68,6 +78,12 @@ hyprosd's fake-`wpctl` process/readback path, the OSD card below an open shade,
 a config reload, log hygiene, and bounded shutdown with deliberately hung
 helpers. The fakes change no live PipeWire state, and the gate kills its hung
 helper fixtures after the shutdown assertion.
+It also captures the nested output only and compares the 44 px OSD icon cell
+across brightness, volume, and disabled-touchpad fixed-ID replacements; a
+generic/stale icon cannot satisfy that pixel-difference assertion.
+The throwaway config grants `grim` screencopy permission only inside that
+nested compositor, so the capture cannot pause on an interactive permission
+dialog or target the live output.
 Check #1 refuses to run when the installed headers'
 `version.h` hash doesn't match the running binary. Run it before every
 deploy; it must end `ALL CHECKS PASSED`.

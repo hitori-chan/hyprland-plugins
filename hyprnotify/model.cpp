@@ -515,6 +515,7 @@ namespace NHyprnotify {
             n->progress = -1;
             n->image.clear();
             n->identity.clear();
+            n->appIcon = APP_ICON;
             n->pixels.clear();
             n->hasPixels = false;
             n->pw = n->ph = 0;

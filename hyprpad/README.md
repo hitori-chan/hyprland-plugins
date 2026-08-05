@@ -19,4 +19,6 @@ monitor, no spawned processes.
    the plugin catches via `config.reloaded`.
 4. Feedback is one async D-Bus Notify (replaces-id 9991, in place) with the
    `input-touchpad` or `touchpad-disabled` identity on the plugin's own
-   session-bus connection: `enabled` / `disabled` / `not found`.
+   session-bus connection: `enabled` / `disabled` / `not found`. The reserved
+   OSD path renders the corresponding native Android touchpad mark, independent
+   of desktop-theme coverage.

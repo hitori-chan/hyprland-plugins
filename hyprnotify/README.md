@@ -150,7 +150,10 @@ Two surfaces share one card model:
    separated by the configured margin. They are still excluded from shade
    ranking, the bell badge, and "Clear all", and expire on their short clocks;
    opening the shade no longer hides feedback from an OSD key press while it is
-   open.
+   open. The in-tree OSD names select native AOSP SystemUI brightness, media
+   volume/mute, and microphone/mute marks plus Android's touchpad mark. They do
+   not collapse to the generic application identity when a desktop theme lacks
+   one of those freedesktop names.
 
 Model rules: the **conversation merge** (Android's MessagingStyle) joins one
 chat's messages into one growing card (~8KB, oldest lines drop) — a fresh

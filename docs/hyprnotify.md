@@ -67,7 +67,8 @@ icons).
 - `app_icon`, `image-path`, and the resolved `Icon=` value may be a file path
   (`file://` too) or a freedesktop icon name. Missing or invalid identity
   sources use one deterministic generic AOSP-style app mark; there is no
-  directory fallback.
+  directory fallback. The resolver covers both conventional
+  `<size>/<context>` themes and Adwaita's `symbolic/<context>` layout.
 - Decoding is hyprgraphics: PNG/JPEG/WEBP/BMP/AVIF/JXL + SVG (no GIF); big
   file-backed images decode through Hyprland's asynchronous resource gatherer,
   with at most 24 pending sources shared across content, identities, action
@@ -232,7 +233,11 @@ icons).
   overlap while feedback remains visible until its normal short timeout. The
   first use of a reserved id carries the private `x-hitori-osd=true` hint;
   ordinary notification traffic cannot claim the OSD band by choosing a fixed
-  `replaces_id`.
+  `replaces_id`. In-tree OSD identity names bypass desktop-theme artwork and
+  select stable native marks: AOSP SystemUI `ic_brightness_full`,
+  `ic_volume_media`/mute, and `ic_mic_26dp`/off semantics, plus Android's
+  standard touchpad enabled/disabled frame. The semantic mark is part of the
+  fixed-ID texture key, so state replacement cannot retain the previous icon.
 - Critical: urgent-colored frame and progress fill, never expires.
 - Sound: `sound-file`/`sound-name` play through a libcanberra player
   (`sound_command`, empty disables); `suppress-sound` mutes one arrival. The
