@@ -22,6 +22,7 @@ namespace NHyprnotify {
 
         struct SDecodeJob {
             std::string                            source;
+            int                                    svgPx            = 0;
             ASP<Hyprgraphics::CImageResource>      resource;
             bool                                   rejected          = false;
             bool                                   readyAtWarmStart = false;
@@ -163,8 +164,9 @@ namespace NHyprnotify {
                 notifChanged();
         }
 
-        static SDecodeJob* decodeJobFor(const std::string& source) {
-            if (const auto it = std::ranges::find(decodeJobs, source, &SDecodeJob::source); it != decodeJobs.end())
+        static SDecodeJob* decodeJobFor(const std::string& source, int svgPx) {
+            const int SVG_PX = NHyprCommon::isSvgIconPath(source) ? std::clamp(svgPx, 1, 256) : 0;
+            if (const auto it = std::ranges::find_if(decodeJobs, [&](const auto& job) { return job.source == source && job.svgPx == SVG_PX; }); it != decodeJobs.end())
                 return &*it;
             if (decodeJobs.size() >= MAX_PENDING_IMAGE_RESOURCES) {
                 waitedForDecodeSlot = true;
@@ -177,9 +179,13 @@ namespace NHyprnotify {
                 return &decodeJobs.back();
             }
 
-            auto resource = makeAtomicShared<Hyprgraphics::CImageResource>(source);
+            // hyprgraphics needs an explicit viewport for SVG files. Without
+            // it the path constructor settles with "invalid size", which
+            // used to turn valid app badges such as qBittorrent into the
+            // generic application mark. Raster files ignore this viewport.
+            auto resource = SVG_PX > 0 ? makeAtomicShared<Hyprgraphics::CImageResource>(source, Vector2D{(double)SVG_PX, (double)SVG_PX}) : makeAtomicShared<Hyprgraphics::CImageResource>(source);
             g_pAsyncResourceGatherer->enqueue(resource);
-            decodeJobs.emplace_back(source, std::move(resource));
+            decodeJobs.push_back(SDecodeJob{.source = source, .svgPx = SVG_PX, .resource = std::move(resource)});
             armDecodePoll();
             return &decodeJobs.back();
         }
@@ -339,7 +345,7 @@ namespace NHyprnotify {
     // CImageResource decodes on the compositor-owned gatherer. The warm pass
     // only scales the ready bounded result and uploads its texture.
     static SFileTexResult fileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx) {
-        const auto JOB = decodeJobFor(path);
+        const auto JOB = decodeJobFor(path, iconPx);
         if (!JOB || !resourceReady(*JOB))
             return {};
         JOB->usedThisWarm = true;

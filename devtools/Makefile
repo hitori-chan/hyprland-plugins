@@ -18,7 +18,7 @@ HYPR_CFLAGS := $(shell pkg-config --cflags hyprland)
 all: vptr vkbd input-capture
 
 icon-resolver-test: icon_resolver_test.cpp ../common/icons.hpp
-	$(CXX) -std=c++26 -O2 -Wall -Wextra -Wpedantic -Werror -I.. $< -o $@
+	$(CXX) -std=c++26 -O2 -Wall -Wextra -Wpedantic -Werror -I.. $< -o $@ $(shell pkg-config --libs hyprgraphics)
 
 test-icon-resolver: icon-resolver-test
 	./icon-resolver-test

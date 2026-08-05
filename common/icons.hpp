@@ -28,6 +28,14 @@ namespace NHyprCommon {
         return boundary == '_' || boundary == '-';
     }
 
+    inline bool isSvgIconPath(std::string_view source) {
+        if (source.size() < 4)
+            return false;
+        const auto ext = source.substr(source.size() - 4);
+        const auto eq  = [](char value, char lower) { return value == lower || value == lower - ('a' - 'A'); };
+        return ext[0] == '.' && eq(ext[1], 's') && eq(ext[2], 'v') && eq(ext[3], 'g');
+    }
+
     // The XDG data dirs in precedence order: the per-user one first (it
     // overrides), then $XDG_DATA_DIRS. Every freedesktop lookup a plugin
     // does — icon themes, .desktop entries, pixmaps — walks this list.

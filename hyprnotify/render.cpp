@@ -116,9 +116,7 @@ namespace NHyprnotify {
             for (const auto& C : cards) {
                 const bool WAS = C.kind == hovered.kind && C.id == hovered.id && C.group == hovered.group;
                 const bool IS  = C.kind == h.kind && C.id == h.id && C.group == h.group;
-                // popups repaint on any enter/leave (the close control reveals)
-                const bool POPHOV = C.kind == SCard::POPUP && (C.id == hovered.id || C.id == h.id);
-                if (WAS || IS || POPHOV)
+                if (WAS || IS)
                     g_pHyprRenderer->damageBox(CBox{C.box}.expand(MARGIN));
             }
         }

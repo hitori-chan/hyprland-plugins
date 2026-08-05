@@ -16,8 +16,8 @@ generic app mark. Content images never become random application badges.
 - Conversation notifications may use the sender avatar plus application badge;
   ordinary notifications keep one standard identity/content icon. Wide images
   become full-width hero media.
-- Hover reveals close and restarts the timeout when the pointer leaves. Normal
-  banners retreat into the center after `timeout_normal`; critical cards stay
+- Hovering a card restarts its timeout when the pointer leaves. Normal banners
+  retreat into the center after `timeout_normal`; critical cards stay
   until dismissed. Transient, low-urgency, and progress cards use
   `timeout_low` and disappear completely.
 - `coalesce_popups` limits an app to one non-critical banner. Extra cards remain

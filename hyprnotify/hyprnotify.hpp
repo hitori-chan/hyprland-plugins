@@ -12,7 +12,7 @@
 //               raw image-data
 //   text.cpp    the pango rasterizer + the keyed text cache + markup helpers
 //   paint.cpp   the paint context, shared card recipes, type scale, motion
-//   popups.cpp  the banner column (the one-card anatomy, hover-close, springs)
+//   popups.cpp  the banner column (the one-card anatomy, springs)
 //   row.cpp     one shade row in its two states, and the bundle recipes
 //   center.cpp  the shade: the display list, the expansion budget, the panel
 //   render.cpp  the render skeleton: warm/draw, damage, ticks, the pass
@@ -81,7 +81,7 @@ namespace NHyprnotify {
     extern HANDLE PHANDLE;
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.13.0";
+    inline constexpr const char* VERSION = "6.13.1";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -388,7 +388,7 @@ namespace NHyprnotify {
         std::string group;              // DIGEST/GHEAD/CHILD: the app key
         bool        expanded   = false; // ROW: exact state painted into this hit record
         bool        expandable = false; // ROW: open form reveals hidden compact content
-        CBox        close;              // popup hover-close / group close; w = 0 -> none
+        CBox        close;              // group/manage close; w = 0 -> none
         CBox        replyField;         // ROW: the armed inline-reply box (swallows, never acts)
         CBox        replySend;          // ROW: its send pill
         // every small control the surface carries — the undo row's two and a
@@ -415,7 +415,7 @@ namespace NHyprnotify {
 
     // hover affordance: rows/buttons warm under the pointer. `btn` -1 = the
     // surface itself, >= 0 = that action button; `part` distinguishes the
-    // close corners. A change damages only the boxes involved.
+    // group/manage close corners. A change damages only the boxes involved.
     struct SHover {
         uint32_t     id = 0;
         std::string  group;

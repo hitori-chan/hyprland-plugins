@@ -40,7 +40,7 @@ namespace NHyprnotify {
     inline constexpr double HERO_CAP = 110, HERO_TEXT_MIN = 60;
     inline constexpr double BTN_H = 26, BTN_PADX = 10, BTN_GAP = 4, BTN_ROW_GAP = 6, BTN_ICON = 15, BTN_ICON_GAP = 5;
     inline constexpr double BODYIMG_H = 96, IMG_GAP = 6, IMG_ROW_GAP = 8;
-    inline constexpr double XCIRC = 20; // the hover-close / group-close circle
+    inline constexpr double XCIRC = 20; // the group-close circle
 
     // Texture-backed marks cover the deterministic generic identity, popup
     // close control, and the trusted system OSD semantics. Center controls

@@ -2,7 +2,7 @@
 // over the popups and the shade. Implements the interaction map exactly:
 //
 //   popup    left = action/link/default → dismiss · right = dismiss ·
-//            middle = park the stack into the shade · hover reveals close
+//            middle = park the stack into the shade
 //   row      a compact row whose open form reveals more expands on a body
 //            click; once open, the body fires the card's primary (the fd.o
 //            `default`) and dismisses unless resident, same as the popup.

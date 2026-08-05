@@ -1,5 +1,9 @@
 #include "common/icons.hpp"
 
+#include <hyprgraphics/resource/AsyncResourceGatherer.hpp>
+#include <hyprgraphics/resource/resources/ImageResource.hpp>
+#include <hyprutils/memory/SharedPtr.hpp>
+
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -22,6 +26,14 @@ namespace {
         file << "<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
     }
 
+    bool loadSvgAtSize(const std::filesystem::path& path, int px) {
+        Hyprgraphics::CAsyncResourceGatherer gatherer;
+        auto resource = Hyprutils::Memory::makeAtomicShared<Hyprgraphics::CImageResource>(path.string(), Hyprutils::Math::Vector2D{(double)px, (double)px});
+        gatherer.enqueue(resource);
+        gatherer.await(resource);
+        return resource->m_ready.load() && resource->m_asset.cairoSurface && resource->m_asset.pixelSize.x == px && resource->m_asset.pixelSize.y == px;
+    }
+
 }
 
 int main() {
@@ -32,6 +44,7 @@ int main() {
     fs::remove_all(root, ec);
     touch(root / "icons/Adwaita/symbolic/status/display-brightness-symbolic.svg");
     touch(root / "icons/Adwaita/symbolic/devices/touchpad-disabled-symbolic.svg");
+    touch(root / "icons/hicolor/scalable/apps/qbittorrent.svg");
 
     const std::string data = root.string();
     const std::string cfg  = (root / "config").string();
@@ -47,6 +60,11 @@ int main() {
     ok &= check(NHyprCommon::resolveIconName("touchpad-disabled-symbolic", 44) ==
                     (root / "icons/Adwaita/symbolic/devices/touchpad-disabled-symbolic.svg").string(),
                 "Adwaita symbolic device icon resolves");
+    const auto qbit = NHyprCommon::resolveIconName("qbittorrent", 44);
+    ok &= check(qbit == (root / "icons/hicolor/scalable/apps/qbittorrent.svg").string(), "qBittorrent app icon resolves");
+    ok &= check(NHyprCommon::isSvgIconPath(qbit) && NHyprCommon::isSvgIconPath("ICON.SVG") && !NHyprCommon::isSvgIconPath("icon.svgz"),
+                "SVG path detection is exact and case-insensitive");
+    ok &= check(loadSvgAtSize(qbit, 44), "themed SVG app icon loads with an explicit viewport");
 
     fs::remove_all(root, ec);
     if (!ok)

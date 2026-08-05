@@ -68,7 +68,9 @@ Content and application identity are separate:
 4. Missing identity uses one deterministic generic app mark.
 
 Resolution covers file paths, `file://`, the active GTK theme, hicolor,
-pixmaps, and Adwaita's symbolic context layout. It is intentionally not a full
+pixmaps, and Adwaita's symbolic context layout. SVG sources receive an explicit
+bounded icon viewport before the asynchronous graphics decode; this is required
+by the target hyprgraphics path loader. It is intentionally not a full
 `index.theme` inheritance engine.
 
 File-backed PNG, JPEG, WEBP, BMP, AVIF, JXL, and SVG decode asynchronously

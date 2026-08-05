@@ -1,6 +1,6 @@
 // hyprnotify/popups.cpp — the banner column: glass cards top-right on the
 // focused monitor, the one-card anatomy (icon column + header/title/body +
-// original actions), the hover-close control, the arrival spring.
+// original actions), the arrival spring.
 //
 // Only cards whose banner is up show here (residency hides expired banners
 // into the center's shade). Ordinary banners yield to the panel while it is
@@ -236,22 +236,6 @@ namespace NHyprnotify {
             card.id      = N->id;
             card.buttons = std::move(cardBtns);
             card.links   = std::move(cardLinks);
-
-            // the hover-close (the desktop analog of swipe), revealed while
-            // the pointer is on the card. Request both variants on every warm
-            // so a hover repaint never needs to build a texture in draw.
-            const auto XG    = controlIcon(eControlIcon::CLOSE, (int)std::lround(XCIRC * P.scale), COLFG);
-            const auto XGHOT = controlIcon(eControlIcon::CLOSE, (int)std::lround(XCIRC * P.scale), tOnAccent());
-            const bool CARDHOV = hovered.kind == SCard::POPUP && hovered.id == N->id;
-            if (CARDHOV) {
-                const CBox XB{X + W - XCIRC - 8, y + 8, XCIRC, XCIRC};
-                const bool XHOV = hovered.part == 2;
-                CP.rect(XB, XHOV ? COLURGENT : tFill2(), (int)std::lround(XCIRC / 2 * P.scale));
-                const auto* G = XHOV ? &XGHOT : &XG;
-                if (*G)
-                    CP.texFit(*G, XB, 0, 2.f);
-                card.close = XB;
-            }
 
             if (!measureOnly)
                 cards.push_back(std::move(card));

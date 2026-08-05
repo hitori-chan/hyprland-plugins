@@ -10,8 +10,8 @@
 //   app identity
 //   badged on its bottom-right corner; a wide content image goes hero,
 //   full-width, instead. Then the "App • age" header, title, body,
-//   progress, and the card's actions as tinted text buttons. Hovering
-//   reveals the cached close control and HOLDS the timeout.
+//   progress, and the card's actions as tinted text buttons. Hovering a card
+//   HOLDS its timeout while the pointer remains over it.
 // - THE SHADE (the bar's bell / `hyprctl hyprnotify center`): ONE list
 //   of live cards, Android's notification shade. No lifecycle sections and no
 //   history — a dismissed card is gone. Ranking is Android's without the
