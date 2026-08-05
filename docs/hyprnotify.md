@@ -156,6 +156,8 @@ icons).
   body, header, footer, close, long-press, and horizontal gesture surfaces are
   pointer-driven. Clicking an inline Reply chip arms its field; only then does
   the field consume keyboard input for typing, Enter-to-send, and Esc-to-drop.
+- Opening the shade has no keyboard binding or plugin Lua action. Use the bar
+  bell or the explicit `hyprctl hyprnotify center` control command.
 - Per-app rules (`policy.cpp`, persisted to
   `$XDG_STATE_HOME/hyprnotify/policy.tsv`): SILENCED apps get no banner and
   no sound and rank with the quiet ones — Android's "Silent", dunst's

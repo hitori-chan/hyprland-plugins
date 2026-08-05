@@ -81,7 +81,7 @@ namespace NHyprnotify {
     extern HANDLE PHANDLE;
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.12.1";
+    inline constexpr const char* VERSION = "6.13.0";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -455,8 +455,7 @@ namespace NHyprnotify {
     void inputCancelLongPress();
     void inputExit();
 
-    // main.cpp: the deferred center toggle every entry point funnels through
-    // (bell click over the bus, hyprctl, Lua, F12's user bind)
+    // main.cpp: the deferred center toggle used by the bar bus and hyprctl
     void queueCenterToggle();
 
 } // namespace NHyprnotify

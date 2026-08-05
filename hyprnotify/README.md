@@ -50,12 +50,13 @@ Two surfaces share one card model:
    DND. The same eligibility check is applied when DND resumes and when a
    snoozed card wakes, so a still-silent, coalesced, or fullscreen-held card
    does not unexpectedly announce. A merely maximized window does not count.
-2. **The shade** (F12, the bar's bell, `hyprctl hyprnotify center`) — ONE
+2. **The shade** (the bar's bell, `hyprctl hyprnotify center`) — ONE
    list of live cards, no lifecycle sections and no history view: a
    dismissed card is gone, exactly as on Android, and there is no recall.
    Opening it ABSORBS the popped banners (they park as shade rows, no
    dismiss), so closing never re-pops them; empty, it says "You're all
-   caught up!". The bar bell opens it on click.
+   caught up!". The bar bell opens it on click. There is no keyboard shortcut
+   or Lua center action; shade launch is pointer/control driven.
    - **Ranking** is Android's, minus the dividers: critical, then marked
      conversations, then the rest of the conversations (fd.o category
      `im.*`/`call.*`), then normal, then silent — newest first inside each
@@ -172,7 +173,7 @@ the Notifications object carries `Toggle` (the shade) and a `State` signal
 (live/kept/dnd/center — the badge counts the shade, never the DND queue or
 the OSD band).
 `hyprctl hyprnotify {count,center,state,badge,policy,snoozed,clear}`;
-`hl.plugin.hyprnotify.{suspend,center}()`.
+`hl.plugin.hyprnotify.suspend()`.
 
 Markup stays the whitelisted Pango subset with the literal-`<`/`&` rescue;
 `<a href>` opens via `xdg-open`; `<img src>` renders a thumbnail row;

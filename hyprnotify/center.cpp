@@ -510,27 +510,31 @@ namespace NHyprnotify {
             cards.push_back(c);
         }
 
-        // Paging cues: a wheel-scroll is invisible otherwise. Compact text
-        // marks rows above and below the fold. They are informational; input.cpp owns the scrolling. Both
-        // live inside the already-damaged panel box, so no extra damage.
+        // Paging counts keep wheel-scroll state visible without reintroducing
+        // an expansion affordance. They are informational; input.cpp owns the
+        // scrolling. Both live inside the already-damaged panel box.
         if (!EMPTY) {
-            size_t below = 0;
+            size_t above = 0, below = 0;
+            for (size_t i = 0; i < s_skip; i++)
+                above += disp[i].items.size();
             for (size_t i = (placed.empty() ? 0 : placed.back().idx + 1); i < disp.size(); i++)
                 below += disp[i].items.size();
-            if (s_skip > 0) {
-                const auto U = cachedText("▴", COLSUB, T.small, 64, -1, 0, false, 500);
+            if (above > 0) {
+                auto& UB = scratch();
+                UB += std::to_string(above);
+                UB += " earlier";
+                const auto U = cachedText(UB, COLSUB, T.small, 128, -1, 0, false, 500);
                 if (!P.warm && U && U->tex)
                     P.tex(U->tex, X + (PANEL_W - U->tex->m_size.x / P.scale) / 2, Y0 + 2);
             }
             if (below > 0) {
                 auto& DB = scratch();
-                DB += "▾ ";
                 DB += std::to_string(below);
+                DB += " more";
                 const auto D2 = cachedText(DB, COLSUB, T.small, 128, -1, 0, false, 500);
                 if (!P.warm && D2 && D2->tex) {
                     const double cw = D2->tex->m_size.x / P.scale, ch = D2->tex->m_size.y / P.scale;
                     const double cx = X + (PANEL_W - cw) / 2, cy = BARY - ch - 3;
-                    P.rect(CBox{cx - 8, cy - 2, cw + 16, ch + 4}, tFill2(), (int)std::lround((ch / 2 + 2) * P.scale));
                     P.tex(D2->tex, cx, cy);
                 }
             }

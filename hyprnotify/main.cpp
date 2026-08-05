@@ -12,7 +12,7 @@
 //   full-width, instead. Then the "App • age" header, title, body,
 //   progress, and the card's actions as tinted text buttons. Hovering
 //   reveals the cached close control and HOLDS the timeout.
-// - THE SHADE (F12 / the bar's bell / `hyprctl hyprnotify center`): ONE list
+// - THE SHADE (the bar's bell / `hyprctl hyprnotify center`): ONE list
 //   of live cards, Android's notification shade. No lifecycle sections and no
 //   history — a dismissed card is gone. Ranking is Android's without the
 //   dividers (critical, marked conversations, the rest of them, normal,
@@ -189,9 +189,9 @@ static int               luaSuspend(lua_State*) {
     return 0;
 }
 
-// The shade toggle: F12's user bind (hl.plugin.hyprnotify.center()), the
-// bar's bell over the bus, and `hyprctl hyprnotify center` all funnel here —
-// deferred and accumulating like suspend.
+// The shade toggle: the bar's bell over the bus and
+// `hyprctl hyprnotify center` both funnel here, deferred and accumulating
+// like suspend.
 static int               centerPresses = 0;
 static NHyprCommon::CHop pendingCenter;
 
@@ -207,11 +207,6 @@ namespace NHyprnotify {
             setCenter(!centerVisible());
         });
     }
-}
-
-static int luaCenter(lua_State*) {
-    queueCenterToggle();
-    return 0;
 }
 
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
@@ -302,7 +297,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                                                                          return "unknown request";
                                                                      }});
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprnotify", "suspend", luaSuspend);
-    HyprlandAPI::addLuaFunction(PHANDLE, "hyprnotify", "center", luaCenter); // F12 is the reserved bind
 
     g_lifecycle.init();
     g_lifecycle.listen(Event::bus()->m_events.render.stage, [](eRenderStage stage) { onRenderStage(stage); });
