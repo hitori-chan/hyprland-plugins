@@ -1,51 +1,47 @@
 # hyprland-plugins
 
-Native Hyprland plugins, AwesomeWM-inspired, one behavior each — built for
-native Hyprland/Wayland design, performance and efficiency.
-Built and loaded with [`hyprpm`](https://wiki.hypr.land/Plugins/Using-Plugins/).
+Native C++26 Hyprland plugins inspired by AwesomeWM and built for the exact
+[`hitori-chan/Hyprland`](https://github.com/hitori-chan/Hyprland) fork ABI.
 
-| plugin       | what it does |
-|--------------|--------------|
-| `hyprbar`    | the awesome wibar: kanji taglist, per-workspace tasklist, tray with menus, menubar launcher, battery, clock |
-| `hyprnotify` | awesome's `naughty`: the compositor is the `org.freedesktop.Notifications` daemon — Android-style cards, deterministic app icons, hero previews, DND, click-to-raise |
-| `hyprmax`    | awesome's per-window maximize: any number at once, immovable while maximized, windowed size remembered per app |
-| `hyprclick`  | awesome's click/focus policy: click-to-raise, keyboard focus raises, hover never does |
-| `hyprsnap`   | awesome's `awful.mouse.snap`: magnetic edge pull + aerosnap halves/quarters while dragging |
-| `hyprplace`  | spawn placement: last spot per app, else centered, else the largest gap |
-| `hyprpad`    | the awesome touchpad module: touchpad off while an external mouse is present, XF86TouchpadToggle by hand |
-| `hyprosd`    | the awesome volume/brightness OSD: XF86 keys → value-bar cards; sysfs+logind brightness, wpctl volume off the hot paths |
+| Plugin | Purpose |
+|---|---|
+| `hyprbar` | Compositor-drawn wibar: tags, tasks, tray, launcher, notifications, battery, clock, layout |
+| `hyprnotify` | Freedesktop notification daemon with Android-style banners, center, DND, policy, and replies |
+| `hyprmax` | Per-window maximize with remembered windowed geometry |
+| `hyprsnap` | Magnetic edge snapping and aerosnap halves/quarters |
+| `hyprclick` | Click-to-raise; focused windows raise |
+| `hyprplace` | Per-app spawn memory with least-overlap fallback |
+| `hyprpad` | Touchpad auto-disable and manual toggle policy |
+| `hyprosd` | Asynchronous volume and brightness OSD feedback through `hyprnotify` |
 
 ## Install
 
 ```sh
 hyprpm add https://github.com/hitori-chan/hyprland-plugins
-for p in hyprbar hyprnotify hyprmax hyprclick hyprsnap hyprplace hyprpad hyprosd; do hyprpm enable $p; done
+for p in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd; do hyprpm enable "$p"; done
 ```
 
-Load order = `hyprpm.toml` order, and it matters: `hyprbar` first (it
-swallows bar clicks before `hyprclick` sees them), `hyprnotify` before
-`hyprmax`/`hyprclick` (a card click never reaches the window beneath),
-`hyprmax` before `hyprclick` (the immovable-maximized swallow wins over
-click-to-raise). Load at login with `hyprpm reload -n` in the autostart.
-`hyprnotify` replaces any external daemon (dunst, mako): nothing else may
-own `org.freedesktop.Notifications`.
+Load order follows [`hyprpm.toml`](hyprpm.toml) and is behavioral: bar and
+notification input must win before window policy, and maximize must win before
+click-to-raise. `hyprnotify` owns `org.freedesktop.Notifications`, so disable
+other notification daemons such as dunst or mako.
 
-## Building against a Hyprland fork
+## Fork Build
 
-hyprpm compiles plugins against the running compositor's headers. For a
-fork, point it at the fork's repo — the running commit must be pushed:
+`hyprpm` must compile against the headers of the compositor that will load the
+plugins. Point it at the pushed fork before updating:
 
 ```sh
 hyprpm update --hl-url https://github.com/hitori-chan/Hyprland
 ```
 
-## Layout
+## Repository
 
-One directory per plugin, each Makefile builds its `.so` in place through
-the shared build in [`common/common.mk`](common/common.mk);
-[`hyprpm.toml`](hyprpm.toml) is the manifest. `common/` holds the shared
-machinery (lifecycle, queries, persistence, event-loop bus link/send queue,
-child ownership, texture cache, load-order asserts); `devtools/` holds the test tooling. `hyprbar`
-additionally links `sdbus-c++`, `librsvg` and `libudev`; `hyprnotify` links
-`sdbus-c++` and `hyprgraphics`; `hyprpad` links `sdbus-c++` and `libinput`;
-`hyprosd` links `sdbus-c++`.
+- One directory and README per plugin.
+- [`common/`](common/) owns shared lifecycle, input, persistence, bus, process,
+  icon, theme, and texture helpers.
+- [`devtools/`](devtools/) contains standalone regressions and the required
+  nested-compositor gate.
+- [`docs/hyprbar.md`](docs/hyprbar.md) and
+  [`docs/hyprnotify.md`](docs/hyprnotify.md) document implementation contracts
+  that do not belong in user-facing plugin READMEs.

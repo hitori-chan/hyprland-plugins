@@ -1,215 +1,119 @@
 # devtools
 
-Dev tooling for exercising the plugins in the nested Hyprland
-(`~/.local/share/hypr-nested/`). Not plugins (not in hyprpm.toml). Tracked:
-`stress.sh`, `vptr.c`, `vkbd.c`, `input-capture.c`,
-`icon_resolver_test.cpp`, `battery_state_test.cpp`, `desktop_exec_test.cpp`,
-`hyprosd_readback_test.cpp`, the geometry/persistence tests, the nested helper
-fakes, the `Makefile`, and this README; the
-binaries and the `*-proto.{c,h}` wayland-scanner glue are build artifacts
-that `make` regenerates.
+Standalone regressions and the controlled nested-compositor gate. Sources are
+tracked; binaries and generated Wayland protocol glue are build artifacts.
 
-## icon_resolver_test.cpp
+## Standalone Tests
 
-The standalone C++26 regression for freedesktop themed-icon resolution. It
-creates a private temporary Adwaita-shaped tree and verifies the symbolic
-`symbolic/<context>/` layout used by brightness and disabled-touchpad marks:
+| Target | Coverage |
+|---|---|
+| `test-icon-resolver` | freedesktop, symbolic, and Adwaita icon lookup |
+| `test-battery-state` | Pixel battery state, color, precedence, and measurement |
+| `test-desktop-exec` | Desktop Entry decoding and `Exec=` parsing |
+| `test-hyprosd` | exact `wpctl get-volume` parsing |
+| `test-persist` | bounded geometry-state admission |
+| `test-hyprsnap-geometry` | constrained snap boxes |
+| `test-hyprmax-geometry` | constrained maximize restore boxes |
 
-```
-make test-icon-resolver
-```
+Run one target or the full set:
 
-## battery_state_test.cpp
-
-The standalone C++26 state matrix for the Pixel SystemUI battery pill. It
-proves that ACPI `low-power` never selects the power-save plus, while the
-explicit power-profiles `power-saver` profile does. It also covers Pixel's
-unknown > power-save > defender > charging precedence, yellow Battery Saver
-while plugged, low-battery red only without attribution, and unreadable-level
-handling:
-
-```
-make test-battery-state
+```sh
+make -C devtools test-battery-state
+make -C devtools test-icon-resolver test-battery-state test-desktop-exec \
+  test-hyprosd test-persist test-hyprsnap-geometry test-hyprmax-geometry
 ```
 
-## desktop_exec_test.cpp
+## Nested Gate
 
-The standalone C++26 conformance matrix for the hyprbar launcher’s Desktop
-Entry string/list decoding and `Exec=` parser. It does not start a compositor
-or touch the session:
+`stress.sh` is the required pre-deploy gate. It builds all eight plugins and
+exercises the nested compositor at `~/.local/share/hypr-nested/`, including:
 
-```
-make test-desktop-exec
-```
+- plugin load order, exact version/header matching, and deploy rehearsal;
+- placement, persistence, maximize, snap, close/spawn storms, and hostile data;
+- banners, center, pointer management, replies, DND, snooze, policy, and OSDs;
+- distinct brightness, volume, and touchpad OSD pixel crops;
+- native input capture, virtual input storms, fullscreen, reload, log hygiene;
+- bounded teardown with deliberately stuck helper processes.
 
-## hyprosd_readback_test.cpp
+The run is successful only when its final line is `ALL CHECKS PASSED`.
 
-The standalone C++26 parser regression for the exact output emitted by
-`wpctl get-volume`, including mute and comma-decimal forms:
-
-```
-make test-hyprosd
-```
-
-## persist_test.cpp
-
-The standalone C++26 regression for shared geometry-state admission. It
-checks ordinary and legacy TSV rows plus file, line, row, class, and retained
-entry limits without starting a compositor or touching live state:
-
-```
-make test-persist
+```sh
+./devtools/stress.sh
 ```
 
-## hyprsnap_geometry_test.cpp
+For an uninstalled fork, install its build to a disposable prefix and pass the
+same package directory through both variables:
 
-The standalone C++26 regression for constrained aerosnap boxes. It covers
-edge/corner anchoring, borders, fixed-size clients, maximums below a slot, and
-client minimums larger than the usable output:
-
-```
-make test-hyprsnap-geometry
-```
-
-## hyprmax_geometry_test.cpp
-
-The standalone C++26 regression for remembered maximize restore geometry. It
-checks current workarea bounds, client minimums and maximums, hostile persisted
-dimensions, and minimums larger than the usable output:
-
-```
-make test-hyprmax-geometry
-```
-
-## stress.sh — the pre-deploy regression gate
-
-Exact assertions over the nested harness + `vptr` + `vkbd` + `input-capture`: placement
-memory, spawn/close storms, the notification cap, churn round-trips,
-hostile state files, an input storm, a native `hyprland-input-capture-v1`
-session, the shade's compact merged-row and pointer verbs,
-acting-closes-the-shade, the bell click,
-hyprosd's fake-`wpctl` process/readback path, the OSD card below an open shade,
-a config reload, log hygiene, and bounded shutdown with deliberately hung
-helpers. The fakes change no live PipeWire state, and the gate kills its hung
-helper fixtures after the shutdown assertion.
-It also captures the nested output only and compares the 44 px OSD icon cell
-across brightness, volume, and disabled-touchpad fixed-ID replacements; a
-generic/stale icon cannot satisfy that pixel-difference assertion.
-The throwaway config grants `grim` screencopy permission only inside that
-nested compositor, so the capture cannot pause on an interactive permission
-dialog or target the live output.
-Check #1 refuses to run when the installed headers'
-`version.h` hash doesn't match the running binary. Run it before every
-deploy; it must end `ALL CHECKS PASSED`.
-
-Two traps it now guards against, both of which once made assertions pass
-for the wrong reason: nothing may hard-code the nested monitor's size
-(`retarget()` re-reads it, and `vptr` is given that extent), and nothing
-may reach the nested daemon over the LOGIN session bus — `launch.sh` runs
-the instance under its own `dbus-run-session`, and the host's own
-hyprnotify answers to the same well-known name.
-
-```
-./stress.sh                        # gate the installed compositor
+```sh
 PKG_CONFIG_PATH=$SCRATCH/share/pkgconfig \
-  HYPR_DEPLOY_PKG_CONFIG_PATH=$SCRATCH/share/pkgconfig \
-  ./stress.sh ~/repo/Hyprland/build/Hyprland   # gate an uninstalled fork build
+HYPR_DEPLOY_PKG_CONFIG_PATH=$SCRATCH/share/pkgconfig \
+./devtools/stress.sh /path/to/Hyprland/build/Hyprland
 ```
 
-For an uninstalled fork, both variables must name the same disposable package
-set. The first builds and hashes the plugins used by the nested compositor;
-the second makes the deploy rehearsal check that fork instead of a stale
-installed header cache. `stress.sh` repairs the generated `hyprland.pc`
-prefix when `cmake --install --prefix` left it at `/usr/local`, and refuses to
-run when the two paths differ. Never point either variable at the live
-session's mapped plugin or compositor files.
+The gate rejects different package paths and repairs the generated
+`hyprland.pc` prefix when `cmake --install --prefix` leaves `/usr/local` in the
+file. The installed `version.h`, plugin compiler flags, and gated binary must
+identify the same commit.
 
-Needs the nested harness at `~/.local/share/hypr-nested`.
+Safety rules:
 
-## vptr — virtual-pointer injector
+- The socket, runtime directory, config, and D-Bus session must belong to the
+  nested compositor.
+- Never leave `WAYLAND_DISPLAY` unset for an injector and never point it at the
+  live socket.
+- Do not rebuild a plugin while the nested compositor maps its `.so`.
+- The throwaway config grants screencopy, keyboard, and input-capture permission
+  only inside the nested session. Fakes do not modify live PipeWire state.
 
-Injects real pointer input (`zwlr_virtual_pointer_v1`) into a compositor so
-the plugins' `input.mouse.button` / `.move` listeners actually fire —
-click-to-raise (hyprclick), snap-drag (hyprsnap), and every hyprbar click
-(taglist / tasklist / tray / layoutbox). A `movecursor` dispatch only warps
-the cursor; it does not emit the input events the plugins listen for.
+## Input Helpers
 
+Build the helper clients against the target fork protocol XML:
+
+```sh
+make -C devtools HL=/path/to/Hyprland
 ```
-make                       # needs wayland-scanner + wayland-client; HL=~/repo/Hyprland for the XML
-WAYLAND_DISPLAY=<nested-wl> ./vptr <W> <H> <<'EOF'
+
+### vptr
+
+`vptr` injects virtual pointer motion, buttons, and axes. One process owns one
+gesture, so press/move/release must be sent in the same invocation.
+
+```sh
+WAYLAND_DISPLAY=$NESTED_WL ./devtools/vptr "$NESTED_WIDTH" "$NESTED_HEIGHT" <<'EOF'
 move 640 400
 press 272
 release 272
 EOF
 ```
 
-- `argv`: monitor size in px (extent for absolute motion; default `1280 800`).
-- stdin gesture script, one command per line — a whole press/move/release
-  must be one invocation (the virtual pointer dies with the process):
-  - `move X Y`      — absolute motion to a pixel
-  - `rel DX DY`     — relative motion in compositor-space pixels
-  - `press BTN` / `release BTN` — `BTN` = linux code: 272 left, 273 right, 274 middle
-  - `scroll AXIS V` — `AXIS` 0 vertical / 1 horizontal
-  - `sleep MS`      — pause (flushes first)
+Commands: `move X Y`, `rel DX DY`, `press BTN`, `release BTN`,
+`scroll AXIS VALUE`, and `sleep MS`. Button codes 272/273/274 are left/right/
+middle. The width and height are the current nested output extent, not constants
+to copy into tests.
 
-**SAFETY:** point it at the nested only. Run with
-`WAYLAND_DISPLAY=$(cat ~/.local/share/hypr-nested/nested.wl)`; never leave it
-unset or equal to the live socket, or it moves the real cursor and clicks the
-real desktop. Guard `[ "$WL" != "$WAYLAND_DISPLAY" ]` before every run.
+Manual snap testing also needs the nested float-all rule, a middle-button window
+drag bind, and zero drag threshold. `stress.sh` creates its own throwaway config.
 
-### nested config needed
+### vkbd
 
-The nested tiles by default and has no move bind, so the throwaway config
-(`HYPR_CFG`) must add:
+`vkbd` installs an xkb keymap, injects keys, and exits without leaving held
+state behind.
 
-- a float-all rule (copy `rules.lua`'s `floating-only`) — hyprplace/hyprsnap
-  only act on floats;
-- for hyprsnap, a keyboard-free interactive move —
-  `hl.bind("mouse:274", hl.dsp.window.drag(), { mouse = true })` plus
-  `binds = { drag_threshold = 0 }`. Then a plain middle-drag starts the move
-  and hyprsnap snaps.
-
-## vkbd — virtual-keyboard injector
-
-`vptr`'s twin for keys (`zwp_virtual_keyboard_v1`), used for inline-reply text
-entry and the native input-capture battery. The notification shade itself has
-no keyboard navigation or action map.
-It compiles the default xkb keymap itself and hands it over before the first
-key, as the protocol demands.
-
-```
-make                       # also needs xkbcommon
-WAYLAND_DISPLAY=<nested-wl> ./vkbd <<'EOF'
+```sh
+WAYLAND_DISPLAY=$NESTED_WL ./devtools/vkbd <<'EOF'
 tap a
 sleep 200
 EOF
 ```
 
-- stdin script, one command per line; the keyboard dies with the process,
-  which is what keeps a stuck modifier from outliving a test:
-  - `tap KEY` — press + release
-  - `press KEY` / `release KEY`
-  - `sleep MS`
-- `KEY` = `esc`, `enter`, `space`, `up`, `down`, `delete`, `tab`, `a`, or a
-  raw linux evdev code.
-- Same **SAFETY** rule as `vptr`: point it at the nested socket only.
+Commands: `tap KEY`, `press KEY`, `release KEY`, and `sleep MS`. Named keys are
+`esc`, `enter`, `space`, `up`, `down`, `delete`, `tab`, and `a`; raw evdev codes
+are accepted. Modifier chords are not implemented.
 
-Still unbuilt: modifier chords (`vkbd` sends `modifiers` once, as zero), so
-Super-gated paths (taglist `Mod+click`, hyprmax's immovable Super+drag
-swallow) and the menubar's readline editing are still untested.
+### input-capture
 
-## input-capture - native capture receiver
-
-`input-capture` binds the fork's `hyprland-input-capture-v1` manager, creates a
-full-width top-edge barrier, consumes the passed EIS fd with libei, and waits
-for a captured motion, left-button press/release, and key press/release. The
-stress gate starts it only on the nested socket, then drives the barrier with
-`vptr` and the key path with `vkbd`. The nested throwaway config grants the
-receiver `input-capture` permission and the injector `keyboard` permission
-without opening a dialog. The client is generated from the exact fork XML, so
-this test is ABI/protocol-local to the target fork. The relative move crosses
-past the barrier rather than ending on it; the fork's segment test treats an
-endpoint as a boundary case. Starting `vkbd` after activation intentionally
-replaces the compositor keymap and exercises EIS keyboard-device recovery.
-The target fork keeps the active EIS emulation sequence across a recreated
-device and a late capability bind.
+`input-capture` binds the fork's `hyprland-input-capture-v1`, creates a top-edge
+barrier, consumes the EIS fd with libei, and verifies captured motion, button,
+and key delivery. Starting `vkbd` after activation intentionally recreates the
+keyboard device and tests EIS recovery. The client must be generated from the
+same fork XML as the compositor under test.

@@ -1,220 +1,106 @@
 # hyprnotify
 
-Android's notification system on the freedesktop spec, drawn natively: the
-compositor is the `org.freedesktop.Notifications` daemon (spec 1.3) — no
-external process, no layer surface. Capabilities: `actions`, `action-icons`,
-`body`, `body-markup`, `body-hyperlinks`, `body-images`, `icon-static`,
-`inline-reply`, `persistence`, `sound`. The skin is glass·ink
-(`common/theme.hpp`): frosted graphite cards with live blur, IBM Plex Sans,
-superellipse corners.
+A compositor-native `org.freedesktop.Notifications` 1.3 daemon with Android
+inspired banners and notification center. It replaces external daemons such as
+dunst or mako and renders no layer surface or helper window.
 
-Incoming notification text, paths, actions, and body images have explicit
-retention limits; malformed markup is scanned once within the body cap.
-File-backed images decode asynchronously through Hyprland's native resource
-gatherer and upload only from a later warm pass. See
-[`docs/hyprnotify.md`](../docs/hyprnotify.md#input-bounds) for the limits.
-Application identity icons resolve from bounded asynchronous `.desktop` entry
-discovery. Missing or invalid identity sources use a deterministic generic
-AOSP-style app mark; notification content images never become application
-identity art.
+Supported capabilities include actions, action icons, markup, hyperlinks, body
+images, inline reply, persistence, and sound. Application identity comes from
+`app_icon` or the sender's desktop entry; missing identity uses one deterministic
+generic app mark. Content images never become random application badges.
 
-Two surfaces share one card model:
+## Banners
 
-1. **Popups (banners)** — glass cards top-right on the focused monitor, the
-   Android anatomy: ONE icon column on the left. Conversation cards use
-   Android's conversation container: the content image leads as the sender
-   avatar and the app identity rides its bottom-right corner as a badge,
-   using AOSP's 2025 ratios off a 40dp avatar. Ordinary notifications keep
-   the standard single-icon treatment and never receive the conversation
-   badge. Missing or invalid app identity uses the deterministic generic app
-   mark. A wide content image (aspect ≥ 1.5) goes hero, full-width instead.
-   Then an "App • age"
-   header, bold title, body, a progress pill
-   for the `value` hint, and the card's actions as tinted text buttons.
-   Hovering reveals the close control **and holds the timeout** — a banner never expires
-   out from under the pointer reading it, and the clock restarts when the
-   pointer leaves. Critical cards ring urgent.
-   Without an explicit `expire_timeout` a normal card runs `timeout_normal`
-   (5s) and then RETREATS to the shade — the popup goes, the card stays,
-   the shade is the safety net. Critical cards are the exception: they stick
-   as a banner until dismissed. Ephemerals (low urgency, `transient`, a
-   `value` card) run the shorter `timeout_low`. To keep a chatty app from
-   stacking the screen, `coalesce_popups` (on by default) holds it to ONE
-   live banner: while its popup is up, further non-critical arrivals from it
-   land silent and resident in the center (folded, badge-counted), and the
-   next one pops fresh once that banner retreats — critical always shows.
-   `quiet_fullscreen` (on by default) does the same for a screen that is
-   spoken for: while a REAL fullscreen window owns the monitor, banners are
-   held back and the card lands straight in the shade. Nothing is lost —
-   residency is that safety net — and critical punches through, as through
-   DND. The same eligibility check is applied when DND resumes and when a
-   snoozed card wakes, so a still-silent, coalesced, or fullscreen-held card
-   does not unexpectedly announce. A merely maximized window does not count.
-2. **The shade** (the bar's bell, `hyprctl hyprnotify center`) — ONE
-   list of live cards, no lifecycle sections and no history view: a
-   dismissed card is gone, exactly as on Android, and there is no recall.
-   Opening it ABSORBS the popped banners (they park as shade rows, no
-   dismiss), so closing never re-pops them; empty, it says "You're all
-   caught up!". The bar bell opens it on click. There is no keyboard shortcut
-   or Lua center action; shade launch is pointer/control driven.
-   - **Ranking** is Android's, minus the dividers: critical, then marked
-     conversations, then the rest of the conversations (fd.o category
-     `im.*`/`call.*`), then normal, then silent — newest first inside each
-     tier. A silenced app ranks with the silent ones.
-   - **Bundling** follows `GroupHelper.AUTOGROUP_AT_COUNT`: an app's cards
-     collapse into one digest (identity icon · "App • N • age" · count pill
-     · ≤2 preview lines, each wearing its own sender's face) only at FOUR or
-     more; below that every card stands alone. Conversations never bundle —
-     each chat keeps its own card, and its open row runs to Android's
-     MessagingStyle depth (~7 messages) where an ordinary card gets four.
-   - **Rows open by default.** An expansion budget walks the page from the
-     top and opens each row while the panel still has room (the top row
-     always opens — Android's one guarantee; the desktop shade is taller, so
-     we keep going), then folds the overflow. A compact row expands from its
-     body only when its open form has more content. The panel runs to the
-     height the monitor leaves below `offset_y`; what still overflows becomes
-     wheel paging, with compact up/down paging marks and a count cue.
-   - **Verbs — reveal before acting.** A compact row whose open form contains
-     more content expands when its body is clicked, so merged chat lines are
-     never activated or dismissed while still hidden. Once open, the body
-     fires the card's primary (the fd.o `default`) and dismisses it unless
-     `resident` — the same verb the popup has always had. Links open, action
-     buttons act. The body is the only expansion/action surface for a row. The primary
-     is never drawn as a button: the spec
-     says implementations are free not to display `default`, and a button
-     would only duplicate the click. Right dismisses. Middle-click passes
-     through shade rows to native desktop semantics; on a popup it parks the
-     banner stack in the shade. On a bundle: left expands, right (or the
-     header close control) dismisses the whole app. The footer is the DND icon
-     (accent-lit while on) and "Clear all". A click
-     outside closes.
-   - **Acting closes the shade**, exactly as it collapses Android's. The
-     primary, an action button and a body link all raise something over the
-     panel you clicked in, so the panel leaves with them. Everything that
-     keeps you here keeps it: dismissing, folding, the manage panel, DND,
-     "Clear all", the reply field, and a `resident` card's actions — the
-     spec's own way of saying the action does not take you away.
-   - **The manage panel** — what Android hides behind a press-and-hold, and
-     the thing one global DND could never say. Hold the body of an open row for
-     500ms to turn it into a panel of its verbs, even when the row is
-     collapsed. Each verb is named at panel width
-     with no keyboard shortcut column. Acting on one leaves the panel; the
-     held target and right-click close it. Management is available through
-     the stationary hold or the horizontal back-swipe; there is no kebab or
-     separate menu button.
-   - **Per-app rules** live in that panel. **Mute** comes in iOS's three
-     lengths — for 1 hour, today (until tomorrow morning, not a rolling 24h),
-     or always: no banner, no sound, straight to the shade, ranked with the
-     quiet ones, and critical still punches through exactly as through DND.
-     **Priority conversation** sorts that chat above everything but a
-     critical card and lights the ring AOSP keeps hidden on the badge until
-     you mark someone. A bundle exposes the same mute-duration choices as a
-     singleton. Rules persist across relogs in
-     `$XDG_STATE_HOME/hyprnotify/policy.tsv` (a silence carries its expiry
-     as a third field; 0 never lifts, and a rule that lapsed while you were
-     away never loads), all are retroactive, and silence keys on the app
-     while a mark keys on app + sender — one chat app carries many people.
-     Whenever any silence is in force the footer says so: a muted-count control
-     stands beside DND, and clicking it lifts every one. A rule you set once is never
-     invisible again.
-   - **Snooze** in the panel is Android's, and it is a verb on one
-     card rather than a rule: the card goes out of sight and comes back
-     ALERTING, which is the whole point of asking. It stays in the model the
-     entire time, so "Clear all" cannot quietly cancel a reminder.
-     It does not leave at the click. Android replaces the notification in
-     place with a duration control and **Undo**, so for six seconds the card
-     holds its slot as a one-line undo row: **Undo** puts it back, and the
-     duration control cycles Android's ladder — 15m / 30m / 1h / 2h.
-     `snooze_seconds` sets the first labelled panel duration. Closing the
-     shade commits it, since the shade is the row's only surface. This is
-     not history and not recall: the card never left, and past the window it
-     is gone exactly as before. Ephemerals (`transient`, progress) are
-     refused — expiry takes those cards whole, so they have nothing to come
-     back to.
-   - **Inline reply.** A sender that sees the `inline-reply` capability
-     adds an action keyed `inline-reply` and waits for a
-     `NotificationReplied(id, text)` signal — it is how Telegram, Fractal
-     and the rest offer a reply box, and a server without the capability
-     gets no reply affordance offered at all. An open row with one grows a
-     **Reply** chip; clicking it arms a text field. While a field is armed it
-     owns keyboard input because there is no keyboard focus to hand it;
-     Enter sends, Esc drops it, and editing is append-and-backspace plus C-u /
-     C-w. The field is shade-only, not on banners. The shade itself claims no
-     keyboard navigation or notification actions.
-   - **Swipe.** A horizontal wheel on a row is the phone gesture: away
-     dismisses it, back opens its manage panel. Strictly an addition on top
-     of the pointer path — a mouse without a horizontal wheel never reaches
-     it and loses no verb, so neither gesture is the only way to do its job.
+- Cards appear at the focused monitor's top-right with app identity, age,
+  title, body, progress, image, and actions as available.
+- Conversation notifications may use the sender avatar plus application badge;
+  ordinary notifications keep one standard identity/content icon. Wide images
+  become full-width hero media.
+- Hover reveals close and restarts the timeout when the pointer leaves. Normal
+  banners retreat into the center after `timeout_normal`; critical cards stay
+  until dismissed. Transient, low-urgency, and progress cards use
+  `timeout_low` and disappear completely.
+- `coalesce_popups` limits an app to one non-critical banner. Extra cards remain
+  resident in the center. `quiet_fullscreen` applies the same treatment while a
+  real fullscreen window owns the monitor. Critical cards bypass both, app
+  silence, and DND.
+- Left click invokes a link/default action, right click dismisses, and middle
+  click parks the banner stack in the center.
 
-   OSD-band cards (battery, touchpad, brightness, volume, and microphone
-   feedback) remain transient notification cards below an already-open shade,
-   separated by the configured margin. They are still excluded from shade
-   ranking, the bell badge, and "Clear all", and expire on their short clocks;
-   opening the shade no longer hides feedback from an OSD key press while it is
-   open. The in-tree OSD names select native AOSP SystemUI brightness, media
-   volume/mute, and microphone/mute marks plus Android's touchpad mark. They do
-   not collapse to the generic application identity when a desktop theme lacks
-   one of those freedesktop names.
+## Notification Center
 
-Model rules: the **conversation merge** (Android's MessagingStyle) joins one
-chat's messages into one growing card (~8KB, oldest lines drop) — a fresh
-Notify whose app + summary matches a live card rides the replace path with
-the bodies joined, triggered by the `im.*`/`call.*` categories or by
-`x-canonical-append`; the OSD id band 9990-9999 replaces in place, never
-appears as a shade row, and renders below the open shade using the same popup
-card geometry; critical bypasses DND; `ignore_dbusclose` gates only the
-bus `CloseNotification` path (user dismissals and expiry are untouched);
-`transient` and progress cards vanish entirely on expiry; `max_notifs`
-overflow evicts the oldest non-critical. Grouping keys on app identity
-(`desktop-entry`, else the app name).
+The bar bell or `hyprctl hyprnotify center` toggles one list of live cards.
+Opening absorbs visible banners; dismissed cards are gone and there is no
+history or recall. The center has no keyboard shortcut, Lua action, keyboard
+navigation, chevron, or kebab menu.
 
-The bar's bell talks over the bus: the `org.hitori.hyprnotify` interface on
-the Notifications object carries `Toggle` (the shade) and a `State` signal
-(live/kept/dnd/center — the badge counts the shade, never the DND queue or
-the OSD band).
-`hyprctl hyprnotify {count,center,state,badge,policy,snoozed,clear}`;
-`hl.plugin.hyprnotify.suspend()`.
+- Ranking is critical, marked conversations, other conversations, normal, then
+  silent; newest first within each tier.
+- Four or more cards from one app form a bundle. Conversations remain separate
+  and matching conversation arrivals merge into one growing card.
+- Rows open while the panel has room. A compact row expands from its body before
+  any hidden action can fire. Wheel paging handles remaining rows.
+- Once open, body click invokes the default action when present and otherwise
+  dismisses; links and buttons act, right-click dismisses, and an outside click
+  closes the center. Acting closes it unless `resident` keeps the card in place.
+- Hold a row body for 500 ms, or use the horizontal back gesture, to open its
+  full-width management panel. Management never uses a separate menu button.
+- Mute supports one hour, today, or always. Priority marks one conversation.
+  Rules persist under `$XDG_STATE_HOME/hyprnotify/policy.tsv`; critical cards
+  still bypass silence.
+- Snooze replaces the row with a six-second Undo state. Its duration control
+  cycles 15m, 30m, 1h, and 2h; `snooze_seconds` supplies the first panel value.
+  Snoozed cards remain in the model and return alerting.
+- An open row with an `inline-reply` action shows a Reply chip. Clicking it arms
+  the only keyboard-owning surface in the center: Enter sends, Esc cancels,
+  Backspace edits, and `C-u`/`C-w` erase.
+- The footer owns compact DND, muted-rule reset, and Clear all controls.
 
-Markup stays the whitelisted Pango subset with the literal-`<`/`&` rescue;
-`<a href>` opens via `xdg-open`; `<img src>` renders a thumbnail row;
-`sound-file`/`sound-name` play through `sound_command`. Cards never render
-above the lockscreen, and input listeners guard and reset there first.
-Detached link and sound helpers have fixed admission limits. Plugin shutdown
-removes their callbacks and descriptors without waiting for a stuck command;
-the target compositor's `SA_NOCLDWAIT` policy owns any later process exit.
-Colors, fonts and metrics arrive from theme.lua via `plugin:hyprnotify:*`;
-the C++ defaults ARE the glass·ink tokens (`common/theme.hpp`), so an
-unset shell inherits the whole material rather than a fallback.
+## OSD And Control
 
-Details — the model, the ranking, the icon anatomy, the hostile-input
-surface: [docs/hyprnotify.md](../docs/hyprnotify.md).
+Reserved IDs 9990-9999 are private transient OSD cards. Battery, touchpad,
+brightness, volume, and microphone feedback cards replace in place, stay
+outside center ranking, badges, and Clear all, and render below an open center.
+The in-tree names select stable native AOSP/Android semantic marks rather than
+theme fallback artwork.
+
+```text
+hyprctl hyprnotify {count,center,state,badge,policy,snoozed,clear}
+hl.plugin.hyprnotify.suspend()
+```
+
+Protocol, admission limits, image precedence, lifecycle, and compositor input
+contracts are documented in [docs/hyprnotify.md](../docs/hyprnotify.md).
 
 ## Config
 
-| key | what | default |
+| Key | Purpose | Default |
 |---|---|---|
 | `plugin:hyprnotify:font` | font family | `IBM Plex Sans` |
-| `plugin:hyprnotify:font_size` | body text size in logical px (the type roles derive from it) | 12 |
-| `plugin:hyprnotify:width` | popup card width in logical px | 348 |
-| `plugin:hyprnotify:max_height` | popup card height cap in logical px | 300 |
-| `plugin:hyprnotify:max_icon` | popup icon column in logical px (shade rows are fixed and only raster at this cap) | 44 |
-| `plugin:hyprnotify:margin` | inter-card gap in logical px | 6 |
-| `plugin:hyprnotify:offset_y` | popups' and the shade's distance from the monitor top | 34 |
-| `plugin:hyprnotify:timeout_low` | ephemeral timeout in ms (low urgency, `transient`, progress cards) | 4000 |
-| `plugin:hyprnotify:timeout_normal` | normal-urgency banner timeout in ms, then it retreats to the shade; 0 = sticky (critical always sticks) | 5000 |
-| `plugin:hyprnotify:quiet_fullscreen` | hold banners back while a fullscreen window owns the monitor; the card still lands in the shade | 1 |
-| `plugin:hyprnotify:snooze_seconds` | how long a snoozed card stays out of sight before it alerts again | 900 |
-| `plugin:hyprnotify:coalesce_popups` | 1 = at most one live popup per app; same-app extras land silent in the shade (0 = a banner per message) | 1 |
-| `plugin:hyprnotify:max_notifs` | model cap; overflow evicts the oldest non-critical card | 50 |
-| `plugin:hyprnotify:ignore_dbusclose` | ignore app-initiated `CloseNotification` (dunst's knob) | 0 |
-| `plugin:hyprnotify:rounding` | card radius in logical px (panel +6 and rows -2 derive) | 16 |
+| `plugin:hyprnotify:font_size` | body text size | 12 |
+| `plugin:hyprnotify:width` | popup width | 348 |
+| `plugin:hyprnotify:max_height` | popup height cap | 300 |
+| `plugin:hyprnotify:max_icon` | popup icon cap | 44 |
+| `plugin:hyprnotify:margin` | screen/card gap | 6 |
+| `plugin:hyprnotify:offset_y` | distance from monitor top | 34 |
+| `plugin:hyprnotify:timeout_low` | ephemeral timeout in ms | 4000 |
+| `plugin:hyprnotify:timeout_normal` | normal banner timeout; 0 is sticky | 5000 |
+| `plugin:hyprnotify:quiet_fullscreen` | suppress non-critical fullscreen banners | 1 |
+| `plugin:hyprnotify:snooze_seconds` | first snooze duration | 900 |
+| `plugin:hyprnotify:coalesce_popups` | one live non-critical popup per app | 1 |
+| `plugin:hyprnotify:max_notifs` | model cap | 50 |
+| `plugin:hyprnotify:ignore_dbusclose` | ignore app `CloseNotification` calls | 0 |
+| `plugin:hyprnotify:rounding` | card radius | 16 |
 | `plugin:hyprnotify:rounding_power` | corner superellipse exponent | 3.0 |
-| `plugin:hyprnotify:sound_command` | libcanberra player for `sound-file`/`sound-name`; empty disables | `canberra-gtk-play` |
-| `plugin:hyprnotify:col_bg` | glass fill (the alpha IS the glass) | `9e0f1218` |
+| `plugin:hyprnotify:sound_command` | player for sound hints; empty disables | `canberra-gtk-play` |
+| `plugin:hyprnotify:col_bg` | glass fill | `9e0f1218` |
 | `plugin:hyprnotify:col_fg` | body text | `e4e8ee` |
-| `plugin:hyprnotify:col_title` | card titles | `eef1f5` |
+| `plugin:hyprnotify:col_title` | titles | `eef1f5` |
 | `plugin:hyprnotify:col_kicker` | header/age/secondary text | `98a2ac` |
 | `plugin:hyprnotify:col_frame` | hairlines | `17dcebff` |
-| `plugin:hyprnotify:col_urgent` | critical ring/progress/urgent fills | `ff8a5c` |
-| `plugin:hyprnotify:col_highlight` | the accent: progress, actions, selections | `32d6ff` |
-| `plugin:hyprnotify:col_link` | body hyperlinks | `7db4ff` |
+| `plugin:hyprnotify:col_urgent` | critical/progress color | `ff8a5c` |
+| `plugin:hyprnotify:col_highlight` | actions/selections | `32d6ff` |
+| `plugin:hyprnotify:col_link` | hyperlinks | `7db4ff` |
+
+Colors, fonts, and metrics normally come from `theme.lua`; these are the C++
+defaults.

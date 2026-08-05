@@ -1,91 +1,61 @@
 # hyprbar
 
-The AwesomeWM wibar, drawn by the compositor. Renders in each monitor's
-reserved top strip (`reserved = { top = 26 }`, matching
-`plugin:hyprbar:height`); hides under real fullscreen — except while the
-menubar is open, which floats above even that; maximized windows keep it
-visible. The strip owns its pointer — hovering it never leaks cursor shape
-or focus to a window underneath. The band, the menubar strip and the tray
-menus are frosted glass — a translucent `col_bg` over a live blur — when the
-compositor's blur is on; the widgets riding them stay opaque.
+An AwesomeWM-style wibar drawn by the compositor in each monitor's reserved top
+strip. It stays visible for maximized windows, hides under fullscreen, and
+temporarily draws above composited fullscreen while the menubar is open.
 
-```
-[taglist 一..九] [tasklist of the active workspace ...] [tray] [bell] [battery] [clock] [layoutbox]
+```text
+[tags] [tasks................................] [tray] [bell] [battery] [clock] [layout]
 ```
 
-- **Taglist** — kanji buttons, awesome's state matrix; occupancy as the
-  corner square. Clicks and wheel cycles stay on the bar's monitor, while
-  `Mod+click` sends the focused window without following it.
-- **Tasklist** — the active workspace's windows in arrival order: app icon,
-  `⌃` pinned / `+` maximized / `✈` floating markers; minimized windows keep
-  their row, muted (awesome's `fg_minimize`). Click the focused task to
-  minimize it, click any other (minimized included) to restore + focus;
-  right-click opens the all-clients menu, wheel walks focus (skipping
-  minimized). `Mod+N` / `Mod+Ctrl+N` minimize / restore-last
-  (`hl.plugin.hyprbar.minimize()` / `.restore()`); a client's own minimize
-  request (a CSD button, X11 `IconicState`) is honored too.
-- **Tray** — in-compositor SNI host with a native dbusmenu renderer. Menus
-  wear the glass·ink material: a frosted, card-radius panel with a `col_frame`
-  ring, accent-dim hover pills inset 4px, hairline separators — the same
-  language as the notification cards. On a narrow output, only cells that fit
-  the tray slot are drawn; an icon never overlaps the tasklist.
-- **Bell** — the notification bell + unread badge, riding the tray's bus
-  link to hyprnotify (`org.hitori.hyprnotify`). The badge counts the shade
-  (popped + waiting) and hides at zero; a left click toggles the
-  notification center. Hovering the bell has no notification-center action.
-  DND has no bar presence — that lives in the center's ⊖ only.
-- **Battery** — Google Pixel's expressive battery from SystemUI build
-  `CP2A.260705.006`, transcribed from the factory image's Compose
-  implementation with every frame, digit, cap, bolt, shield, plus, and
-  question path embedded verbatim. The renderer also follows Pixel's child
-  rounding, cap spacing, attribution overlap, level clipping, and state order:
-  unknown question > Battery Saver plus > defender shield > charging bolt > D
-  cap. Fill is white idle/unknown, yellow whenever Battery Saver is active,
-  green charging or defending, and red at 20% or below only when no
-  attribution is active. Linux Battery Saver follows the explicit
-  `net.hadess.PowerProfiles` `power-saver` profile; ACPI `platform_profile`
-  `low-power` is only a hardware tuning profile and never adds the plus.
-  Defender maps a plugged `Not charging` pack held below a configured
-  `charge_control_end_threshold`. The icon is sized 13:14 against the bar font
-  and hidden only when no system battery exists.
-  Alerts ride along on Android's same lines: AC plug/unplug, low at 20%,
-  critical (sticky) at 5% — sent through the notification daemon off the
-  same udev uevents as the gauge.
-- **Clock** — `%a %b %d, %H:%M`.
-- **Layoutbox** — the active workspace's layout, rightmost. Click/wheel
-  cycles like awesome (`Super+Space` too); one layout until more land.
-- **Menubar** (`Mod+P`, `hl.plugin.hyprbar.menubar()`) — awesome's launcher
-  in its own strip below the bar: categories + `.desktop` apps filtered as
-  you type, most-launched first, shell completion, history, readline
-  editing. Draws above fullscreen, like awesome's ontop wibox. The raw command
-  entry uses the theme's run icon; unresolved entries keep an empty reserved
-  icon cell instead of substituting a character or shifting their text.
+- **Tags:** monitor-local kanji workspace buttons with focused, occupied, and
+  urgent states. Click or wheel changes that monitor's workspace;
+  `Mod+click` moves the focused window without following it.
+- **Tasks:** active-workspace windows in arrival order with app icon and state
+  markers. Click the focused task to minimize it; click another to restore and
+  focus it. Right-click opens the client list; wheel walks non-minimized tasks.
+- **Tray:** native StatusNotifier host and dbusmenu renderer. Passive items hide,
+  attention icons update, and narrow outputs drop cells that do not fit.
+- **Bell:** shows the `hyprnotify` center count and toggles the notification
+  center on left click. DND remains in the center.
+- **Battery:** Pixel SystemUI `CP2A.260705.006` geometry, glyphs, rounding,
+  clipping, and state order. The question, Battery Saver plus, defender shield,
+  charging bolt, and cap use Pixel's exact paths. Only
+  `net.hadess.PowerProfiles` `power-saver` selects the yellow plus; ACPI
+  `platform_profile=low-power` does not. Charging/defender is green, an
+  unattributed level at or below 20% is red, and alerts fire at 20% and 5%.
+- **Clock/layout:** fixed clock text and per-workspace layout state. Click or
+  wheel the layout icon to cycle the registry.
+- **Menubar:** `Mod+P` or `hl.plugin.hyprbar.menubar()` opens the application and
+  command launcher below the bar. It supports desktop entries, categories,
+  history, completion, and readline-style editing.
 
-Details and the full menubar key reference: [docs/hyprbar.md](../docs/hyprbar.md).
+Tasklist lifecycle, tray/bus behavior, native input precedence, and the complete
+menubar key map are in [docs/hyprbar.md](../docs/hyprbar.md).
 
 ## Config
 
-Colors and font come from `theme.lua` via `hl.config { plugin = { hyprbar =
-… } }`; the C++ defaults mirror the theme.
+Colors and fonts normally come from `theme.lua`; these are the C++ defaults.
 
-| key | what | default |
+| Key | Purpose | Default |
 |---|---|---|
-| `plugin:hyprbar:height` | bar height in logical px (reserve it: monitor `reserved top`) | 26 |
-| `plugin:hyprbar:font_size` | text size in logical px | 12 |
-| `plugin:hyprbar:tray_spacing` | px between tray icons | 10 |
+| `plugin:hyprbar:height` | bar height in logical px; reserve the same monitor top area | 26 |
+| `plugin:hyprbar:font_size` | text size | 12 |
+| `plugin:hyprbar:tray_spacing` | spacing between tray icons | 10 |
 | `plugin:hyprbar:font` | font family | Fira Code |
-| `plugin:hyprbar:terminal` | terminal for `Terminal=true` menubar entries | alacritty |
+| `plugin:hyprbar:terminal` | terminal for launcher entries | alacritty |
 | `plugin:hyprbar:col_bg` | bar background | `131313` |
 | `plugin:hyprbar:col_fg` | normal text | `aaaaaa` |
-| `plugin:hyprbar:col_focus` | selected menubar entry text | `32d6ff` |
-| `plugin:hyprbar:col_active` | active tag / focused task text | `00ccff` |
+| `plugin:hyprbar:col_muted` | legacy compatibility fallback | `8a97a8` |
+| `plugin:hyprbar:col_focus` | selected launcher text | `32d6ff` |
+| `plugin:hyprbar:col_active` | active tag/focused task | `00ccff` |
 | `plugin:hyprbar:col_active_bg` | active tag background | `1e2320` |
 | `plugin:hyprbar:col_empty` | disabled/placeholder text | `565e6b` |
 | `plugin:hyprbar:col_urgent` | urgent text | `c83f11` |
 | `plugin:hyprbar:col_urgent_bg` | urgent background | `3f3f3f` |
-| `plugin:hyprbar:col_square_sel` | taglist square: tag holds the focused window | `f0dfaf` |
-| `plugin:hyprbar:col_square_unsel` | taglist square: occupied tag | `dcdccc` |
-| `plugin:hyprbar:col_frame` | menu panel frame | `3f3f3f` |
-| `plugin:hyprbar:col_charging` | battery fill charging/defending (Android's charging green) | `18cc47` |
-| `plugin:hyprbar:col_low` | battery fill ≤ 20% (Android's error red) | `ff0e01` |
-| `plugin:hyprbar:col_powersave` | battery fill in power save (Android's warning yellow) | `ffc917` |
+| `plugin:hyprbar:col_square_sel` | focused-window tag marker | `f0dfaf` |
+| `plugin:hyprbar:col_square_unsel` | occupied tag marker | `dcdccc` |
+| `plugin:hyprbar:col_frame` | menu frame | `3f3f3f` |
+| `plugin:hyprbar:col_charging` | charging/defender fill | `18cc47` |
+| `plugin:hyprbar:col_low` | battery fill at or below 20% | `ff0e01` |
+| `plugin:hyprbar:col_powersave` | Battery Saver fill | `ffc917` |
