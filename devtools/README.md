@@ -2,7 +2,8 @@
 
 Dev tooling for exercising the plugins in the nested Hyprland
 (`~/.local/share/hypr-nested/`). Not plugins (not in hyprpm.toml). Tracked:
-`stress.sh`, `vptr.c`, `vkbd.c`, `input-capture.c`, `desktop_exec_test.cpp`,
+`stress.sh`, `vptr.c`, `vkbd.c`, `input-capture.c`,
+`icon_resolver_test.cpp`, `battery_state_test.cpp`, `desktop_exec_test.cpp`,
 `hyprosd_readback_test.cpp`, the geometry/persistence tests, the nested helper
 fakes, the `Makefile`, and this README; the
 binaries and the `*-proto.{c,h}` wayland-scanner glue are build artifacts
@@ -16,6 +17,19 @@ creates a private temporary Adwaita-shaped tree and verifies the symbolic
 
 ```
 make test-icon-resolver
+```
+
+## battery_state_test.cpp
+
+The standalone C++26 state matrix for the Pixel SystemUI battery pill. It
+proves that ACPI `low-power` never selects the power-save plus, while the
+explicit power-profiles `power-saver` profile does. It also covers Pixel's
+unknown > power-save > defender > charging precedence, yellow Battery Saver
+while plugged, low-battery red only without attribution, and unreadable-level
+handling:
+
+```
+make test-battery-state
 ```
 
 ## desktop_exec_test.cpp

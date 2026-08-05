@@ -34,16 +34,20 @@ compositor's blur is on; the widgets riding them stay opaque.
   (popped + waiting) and hides at zero; a left click toggles the
   notification center. Hovering the bell has no notification-center action.
   DND has no bar presence — that lives in the center's ⊖ only.
-- **Battery** — Android's expressive battery (the Pixel pill of Android 16
-  QPR2/17), a 1:1 transcription of SystemUI's Compose implementation with
-  its vector assets embedded verbatim, bespoke digit glyphs included:
-  borderless pill on a translucent track, left-anchored fill, D cap right
-  — replaced by Android's attribution ladder: the power-save plus (ACPI
-  platform profile `low-power`), the defender shield (plugged but held at
-  `charge_control_end_threshold`), or the charging bolt — digits punched
-  in black. Fill white idle / yellow in power save / green charging or
-  defending / red ≤ 20%; sized 13:14 against the bar font, the proportion
-  Android gives it against status bar text; hidden on desktops.
+- **Battery** — Google Pixel's expressive battery from SystemUI build
+  `CP2A.260705.006`, transcribed from the factory image's Compose
+  implementation with every frame, digit, cap, bolt, shield, plus, and
+  question path embedded verbatim. The renderer also follows Pixel's child
+  rounding, cap spacing, attribution overlap, level clipping, and state order:
+  unknown question > Battery Saver plus > defender shield > charging bolt > D
+  cap. Fill is white idle/unknown, yellow whenever Battery Saver is active,
+  green charging or defending, and red at 20% or below only when no
+  attribution is active. Linux Battery Saver follows the explicit
+  `net.hadess.PowerProfiles` `power-saver` profile; ACPI `platform_profile`
+  `low-power` is only a hardware tuning profile and never adds the plus.
+  Defender maps a plugged `Not charging` pack held below a configured
+  `charge_control_end_threshold`. The icon is sized 13:14 against the bar font
+  and hidden only when no system battery exists.
   Alerts ride along on Android's same lines: AC plug/unplug, low at 20%,
   critical (sticky) at 5% — sent through the notification daemon off the
   same udev uevents as the gauge.

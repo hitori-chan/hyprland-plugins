@@ -40,15 +40,16 @@
 //   widget whose state lives in ANOTHER plugin: it reads counts from
 //   hyprnotify's org.hitori.hyprnotify face — State in, Toggle out — never
 //   from a shared symbol. Left click toggles the shade.
-// - battery: Android's expressive battery (the Pixel pill), transcribed
-//   1:1 from SystemUI's Compose implementation and drawn natively in the
-//   warm pass (cairo; assets embedded verbatim, see battery.cpp) — digits
-//   inside, Android's attribution ladder to the right (power-save plus >
-//   charge-limit shield > charging bolt > the D cap) and its fill colors:
-//   yellow in power save, green charging OR held at the charge limit,
-//   error red at 20% discharging, white otherwise. State from
-//   /sys/class/power_supply + /sys/firmware/acpi/platform_profile
-//   (hidden on desktops). The old battery-watch.sh alerts live here too: AC
+// - battery: Google Pixel's expressive battery, transcribed from SystemUI
+//   CP2A.260705.006 and drawn natively in the warm pass (cairo; assets
+//   embedded verbatim, see battery.cpp) — exact child rounding, digits inside,
+//   and Pixel's attribution ladder to the right (unknown question > power-save
+//   plus > charge-limit shield > charging bolt > D cap). Yellow belongs to
+//   Battery Saver even while plugged, green to charging/defender, error red to
+//   a bare level <=20%, and white otherwise. Gauge state comes from
+//   /sys/class/power_supply; explicit Linux Battery Saver comes from
+//   net.hadess.PowerProfiles, never ACPI platform_profile (hidden on desktops).
+//   The old battery-watch.sh alerts live here too: AC
 //   plug/unplug, low (20%) and critical (5%, Android's lines) —
 //   edge-triggered, riding the same udev uevents as the gauge, sent as
 //   direct Notify calls over the tray's bus connection (no fork;
@@ -363,7 +364,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.4.8"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.4.9"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

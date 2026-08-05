@@ -143,6 +143,7 @@ echo "== stress: $BIN =="
 [[ -x "$BIN" ]] || { echo "no such compositor binary: $BIN"; exit 1; }
 { [[ -x "$REPO/devtools/vptr" ]] && [[ -x "$REPO/devtools/vkbd" ]] && [[ -x "$REPO/devtools/input-capture" ]]; } || make -C "$REPO/devtools" >/dev/null
 make -C "$REPO/devtools" test-icon-resolver >/dev/null || { echo "icon resolver test FAILED"; exit 1; }
+make -C "$REPO/devtools" test-battery-state >/dev/null || { echo "battery state test FAILED"; exit 1; }
 # The headers the plugins compile against must belong to the gated binary —
 # a scratch hyprland.pc keeps its absolute /usr/local prefix (not
 # relocatable), silently falls back to the installed tree, and every plugin
