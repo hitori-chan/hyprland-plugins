@@ -69,11 +69,40 @@ normalize_target_pkgconfig() {
 	sed -i "s|^prefix=.*|prefix=$prefix|" "$pc"
 }
 
-hq()      { hyprctl -i "$SIG" "$@"; }
+validated_nested_pid() {
+	[[ -n "$SIG" ]] || { echo "refusing hyprctl: nested signature is empty" >&2; return 1; }
+	[[ "$SIG" =~ ^[[:alnum:]_.-]+$ ]] || { echo "refusing hyprctl: invalid nested signature" >&2; return 1; }
+	[[ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" || "$SIG" != "$HYPRLAND_INSTANCE_SIGNATURE" ]] || {
+		echo "refusing hyprctl: nested signature resolves to the live compositor" >&2
+		return 1
+	}
+	[[ -S "$RUNDIR/$SIG/.socket.sock" ]] || { echo "refusing hyprctl: nested control socket is missing" >&2; return 1; }
+
+	local pid
+	pid="$(head -n 1 "$RUNDIR/$SIG/hyprland.lock" 2>/dev/null)"
+	[[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null || {
+		echo "refusing hyprctl: nested lock does not identify a live process" >&2
+		return 1
+	}
+	grep -Fzxq -- "$CFG" "/proc/$pid/cmdline" 2>/dev/null || {
+		echo "refusing hyprctl: target process does not own the stress harness config" >&2
+		return 1
+	}
+	printf '%s\n' "$pid"
+}
+
+hq() {
+	validated_nested_pid >/dev/null || return 1
+	hyprctl -i "$SIG" "$@"
+}
 dsp()     { hq dispatch "$1" >/dev/null 2>&1; }
 clients() { hq clients -j 2>/dev/null; }
 ws()      { hq activeworkspace -j | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])'; }
 reserved() { hq monitors -j | python3 -c 'import json,sys;print(",".join(map(str,json.load(sys.stdin)[0]["reserved"])))'; }
+hq_matches() { local pattern=$1; shift; hq "$@" | grep -qE "$pattern"; }
+active_window_class_is() {
+	hq activewindow -j | python3 -c 'import json,sys;sys.exit(0 if json.load(sys.stdin)["class"] == sys.argv[1] else 1)' "$1"
+}
 
 # Nothing here may hard-code the nested monitor's size: it is whatever window
 # the Wayland backend gets, and it can change when the nested config or its
@@ -84,19 +113,36 @@ reserved() { hq monitors -j | python3 -c 'import json,sys;print(",".join(map(str
 # to be under it.
 WL=""; MON_W=0; MON_H=0; NBUS=""
 retarget() {
-	SIG="$(cat "$HARNESS/nested.sig")"
-	WL="$(cat "$HARNESS/nested.wl")"
+	SIG=""; WL=""; MON_W=0; MON_H=0; NBUS=""
+	IFS= read -r SIG <"$HARNESS/nested.sig" 2>/dev/null || {
+		echo "retarget: nested signature is unavailable" >&2
+		return 1
+	}
+	IFS= read -r WL <"$HARNESS/nested.wl" 2>/dev/null || {
+		echo "retarget: nested Wayland display is unavailable" >&2
+		return 1
+	}
+	[[ -n "$WL" && "$WL" != */* ]] || {
+		echo "retarget: nested Wayland display is invalid" >&2
+		return 1
+	}
+	local pid dimensions
+	pid="$(validated_nested_pid)" || return 1
 	# launch.sh isolates the nested instance under its OWN dbus-run-session,
 	# so anything driving the nested daemon over the bus must use THAT
 	# address: the login session's bus is owned by the host's hyprnotify,
 	# which answers happily and makes the assertion vacuous.
-	local pid
-	pid="$(head -1 "$RUNDIR/$SIG/hyprland.lock" 2>/dev/null)"
 	NBUS="$(tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p')"
-	read -r MON_W MON_H < <(hq monitors -j | python3 -c "
+	[[ -n "$NBUS" ]] || { echo "retarget: nested D-Bus address is unavailable" >&2; return 1; }
+	dimensions="$(hq monitors -j | python3 -c "
 import json,sys
 m=json.load(sys.stdin)[0]
-print(int(m['width']/m['scale']), int(m['height']/m['scale']))")
+print(int(m['width']/m['scale']), int(m['height']/m['scale']))")" || return 1
+	read -r MON_W MON_H <<<"$dimensions"
+	[[ "$MON_W" =~ ^[1-9][0-9]*$ && "$MON_H" =~ ^[1-9][0-9]*$ ]] || {
+		echo "retarget: nested monitor geometry is invalid" >&2
+		return 1
+	}
 }
 vp() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" "$MON_W" "$MON_H" >/dev/null 2>&1; }
 vk() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vkbd" >/dev/null 2>&1; } # keys need no extent
@@ -222,7 +268,7 @@ printf '100\t100\t500\t400\tfoot\n200\t80\tlegacyfoot\n' > "$STATE/hyprplace/las
 	echo 'hl.window_rule({ match = { class = "foot|mpv|corpseA|corpseB|tuckmax|tuckfloat|tuckfs" }, float = true })'
 } > "$CFG"
 launch_nested || { echo "nested launch FAILED"; exit 1; }
-retarget
+retarget || { echo "nested retarget FAILED"; exit 1; }
 LOG="$HARNESS/nested.log"
 ok "nested monitor is ${MON_W}x${MON_H} (every coordinate below derives from it)"
 chk "8 plugins loaded" test "$(hq plugin list | grep -c Plugin)" = 8
@@ -314,7 +360,7 @@ chk "no recall verb survives the model removal" test "$(hq hyprnotify recall)" =
 # Cards expire on their own clocks, so assert the daemon still answers with
 # a number, not any absolute count.
 dsp "hl.dsp.exec_cmd('notify-send -h int:transient:1 -h string:urgency:critical typed-hint-abuse body')"; sleep 1.5
-chk "wrong-typed hints survived (sdbus::Error thrown + caught)" bash -c "hyprctl -i $SIG hyprnotify count | grep -qE '^[0-9]+$'"
+chk "wrong-typed hints survived (sdbus::Error thrown + caught)" hq_matches '^[0-9]+$' hyprnotify count
 
 # ---- state churn --------------------------------------------------------
 # the spawn box is whatever memory dictates after the storm above — capture
@@ -385,7 +431,7 @@ for i in $(seq 1 10); do dsp "hl.plugin.hyprbar.minimize()"; dsp "hl.plugin.hypr
 chk "10 minimize/restore cycles round-trip" test "$(box)" = "$REF"
 for i in $(seq 1 30); do dsp "hl.dsp.focus({workspace=\"$(( (i % 9) + 1 ))\"})"; done
 dsp "hl.dsp.focus({workspace=\"1\"})"; sleep 1
-chk "30 workspace hops: back on 1" bash -c "hyprctl -i $SIG activeworkspace -j | python3 -c 'import json,sys;sys.exit(0 if json.load(sys.stdin)[\"id\"]==1 else 1)'"
+chk "30 workspace hops: back on 1" test "$(ws)" = 1
 
 # ---- hostile state file -------------------------------------------------
 kill_nested
@@ -395,7 +441,7 @@ printf 'garbage\n42\n1e400\t0\t300\t200\tinffoot\n-100\t-100\t-50\t-50\tnegfoot\
 mkdir -p "$STATE/hyprnotify"
 printf 'garbage\ns\n s\tx\nz\tnope\ns\t\ns\tkeepme\n' > "$STATE/hyprnotify/policy.tsv"
 launch_nested || { echo "relaunch FAILED"; exit 1; }
-retarget
+retarget || { echo "nested retarget FAILED after relaunch"; exit 1; }
 chk "hostile tsv: all 8 plugins still load" test "$(hq plugin list | grep -c Plugin)" = 8
 chk "hostile policy: only the well-formed rule loaded" test "$(hq hyprnotify policy)" = "silenced:1 s=keepme priority:0"
 dsp "hl.dsp.window.close()"; sleep 0.5
@@ -973,7 +1019,7 @@ hq hyprnotify clear >/dev/null; sleep 0.8
 dsp "hl.dsp.exec_cmd('notify-send \"keep one\" body')"
 dsp "hl.dsp.exec_cmd('notify-send \"keep two\" body')"; sleep 1
 for i in 1 2 3; do hq hyprnotify center >/dev/null; sleep 0.35; done # on, off, on
-chk "absorb: three toggles leave the two cards intact" bash -c "hyprctl -i $SIG hyprnotify state | grep -qE '^center:1 live:2 '"
+chk "absorb: three toggles leave the two cards intact" hq_matches '^center:1 live:2 ' hyprnotify state
 hq hyprnotify center >/dev/null; sleep 0.35 # off
 hq hyprnotify clear >/dev/null; sleep 0.8
 
@@ -981,13 +1027,13 @@ hq hyprnotify clear >/dev/null; sleep 0.8
 # one-per-app cap (the resume banner assignment is now coalesce-aware — this
 # guards it alongside the buildDisplay/absorb changes)
 dsp "hl.plugin.hyprnotify.suspend()"; sleep 0.5
-chk "DND arms" bash -c "hyprctl -i $SIG hyprnotify state | grep -q 'dnd:1'"
+chk "DND arms" hq_matches 'dnd:1' hyprnotify state
 dsp "hl.dsp.exec_cmd('notify-send -a q one body')"
 dsp "hl.dsp.exec_cmd('notify-send -a q two body')"; sleep 0.8
 chk "DND: two same-app arrivals queued, none shown" test "$(bd)" = "banners:0 resident:0"
 dsp "hl.plugin.hyprnotify.suspend()"; sleep 0.6
 chk "DND resume: one popped, the sibling resumed resident (one per app)" test "$(bd)" = "banners:1 resident:1"
-chk "DND resume: dnd off, both cards kept" bash -c "hyprctl -i $SIG hyprnotify state | grep -qE '^center:0 live:2 dnd:0$'"
+chk "DND resume: dnd off, both cards kept" hq_matches '^center:0 live:2 dnd:0$' hyprnotify state
 hq hyprnotify clear >/dev/null; sleep 0.8
 
 # hostile hints on the new field: a wrong-typed category must not crash the
@@ -1067,7 +1113,7 @@ sleep 0.5
 } | vp
 sleep 1
 chk "input storm: all 8 plugins alive" test "$(hq plugin list | grep -c Plugin)" = 8
-chk "input storm: the final taglist click registered (ws 1)" bash -c "hyprctl -i $SIG activeworkspace -j | python3 -c 'import json,sys;sys.exit(0 if json.load(sys.stdin)[\"id\"]==1 else 1)'"
+chk "input storm: the final taglist click registered (ws 1)" test "$(ws)" = 1
 printf 'move 250 200\nsleep 50\npress 272\nsleep 40\nrelease 272\nsleep 100\n' | vp
 sleep 0.8
 expect "post-storm click still raises + focuses (no stuck swallow)" \
@@ -1105,8 +1151,7 @@ sleep 0.12; dsp "hl.dsp.window.close({window=\"address:$V\"})"
 wait; sleep 0.9
 expect "corpse guard: click burst through a dying viewer keeps the stack" \
 	"cs[-1]['class']=='corpseB'"
-chk "corpse guard: focus stayed with the viewer's app" bash -c \
-	"hyprctl -i $SIG activewindow -j | python3 -c 'import json,sys;sys.exit(0 if json.load(sys.stdin)[\"class\"]==\"corpseB\" else 1)'"
+chk "corpse guard: focus stayed with the viewer's app" active_window_class_is corpseB
 for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in json.load(sys.stdin) if c['class'] in ('corpseA','corpseB')]"); do
 	dsp "hl.dsp.window.close({window=\"address:$a\"})"
 done
@@ -1141,8 +1186,7 @@ sleep 0.6
 dsp "hl.dsp.window.close({window=\"address:$V\"})"; sleep 0.9
 expect "fullscreen tuck: the flagged floater survives the viewer on top" \
 	"[c['class'] for c in cs if c['class'].startswith('tuck')][-1]=='tuckfloat'"
-chk "fullscreen tuck: floater focused after the viewer closes" bash -c \
-	"hyprctl -i $SIG activewindow -j | python3 -c 'import json,sys;sys.exit(0 if json.load(sys.stdin)[\"class\"]==\"tuckfloat\" else 1)'"
+chk "fullscreen tuck: floater focused after the viewer closes" active_window_class_is tuckfloat
 for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in json.load(sys.stdin) if c['class'].startswith('tuck')]"); do
 	dsp "hl.dsp.window.close({window=\"address:$a\"})"
 done
@@ -1158,11 +1202,11 @@ sleep 0.8
 # the instance a different window size before nested.lua's monitor line and a
 # reload can apply another output size. vptr maps `move X Y` as X/extent, so
 # every coordinate below is off by that ratio until the extent is re-read.
-chk "reload: the config re-applies" bash -c "hyprctl -i $SIG reload | grep -q ok"
+chk "reload: the config re-applies" hq_matches 'ok' reload
 sleep 1.2
-retarget
+retarget || { echo "nested retarget FAILED after reload"; exit 1; }
 chk "reload: all 8 plugins alive" test "$(hq plugin list | grep -c Plugin)" = 8
-chk "reload: hyprnotify still answers" bash -c "hyprctl -i $SIG hyprnotify state | grep -q '^center:'"
+chk "reload: hyprnotify still answers" hq_matches '^center:' hyprnotify state
 printf "move 59 13\nsleep 30\npress 272\nsleep 30\nrelease 272\nsleep 120\n" | vp; sleep 0.6
 chk "reload: the strip still takes a click (tag 3)" test "$(ws)" = 3
 printf "move 12 13\nsleep 30\npress 272\nsleep 30\nrelease 272\nsleep 120\n" | vp; sleep 0.6
@@ -1188,7 +1232,7 @@ for _ in $(seq 1 30); do
 done
 chk "teardown: hyprosd owns an active helper" test -s "$STATE/hang-wpctl.pid"
 chk "teardown: hyprnotify owns an active helper" test -s "$STATE/hang-sound.pid"
-NESTED_PID="$(head -1 "$RUNDIR/$SIG/hyprland.lock" 2>/dev/null)"
+NESTED_PID="$(validated_nested_pid 2>/dev/null)"
 chk "teardown: nested compositor pid is known" test -n "$NESTED_PID"
 kill_nested
 for _ in $(seq 1 30); do

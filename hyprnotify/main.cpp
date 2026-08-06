@@ -168,8 +168,8 @@ namespace NHyprnotify {
 
 using namespace NHyprnotify;
 
-static NHyprCommon::CLifecycle g_lifecycle;
-static SP<SHyprCtlCommand>     ctlCmd;
+static NHyprCommon::CLifecycle    g_lifecycle;
+static SP<IPC::Socket1::SCommand> ctlCmd;
 
 // hl.plugin.hyprnotify.suspend() — the DND chord. Deferred out of the bind's
 // input emission (the resume reflows and repaints). Presses ACCUMULATE:
@@ -274,28 +274,29 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     renderInit();
     // the lockscreen bell reads count; the stress gate reads state
     ctlCmd =
-        HyprlandAPI::registerHyprCtlCommand(PHANDLE, SHyprCtlCommand{.name = "hyprnotify", .exact = false, .fn = [](eHyprCtlOutputFormat, std::string request) -> std::string {
-                                                                         if (request.ends_with("count"))
-                                                                             return std::to_string(notifs.size());
-                                                                         if (request.ends_with("center")) {
-                                                                             queueCenterToggle();
-                                                                             return "ok";
-                                                                         }
-                                                                         if (request.ends_with("state"))
-                                                                             return Model::stateString();
-                                                                         if (request.ends_with("badge"))
-                                                                             return Model::badgeString();
-                                                                         if (request.ends_with("policy"))
-                                                                             return Policy::stateString();
-                                                                         if (request.ends_with("snoozed"))
-                                                                             return std::to_string(Model::snoozedCount());
-                                                                         if (request.ends_with("clear")) { // the scripted reset
-                                                                             static NHyprCommon::CHop pendingClear;
-                                                                             pendingClear.arm([]() { Model::dismissAllLive(); });
-                                                                             return "ok";
-                                                                         }
-                                                                         return "unknown request";
-                                                                     }});
+        HyprlandAPI::registerHyprCtlCommand(PHANDLE, IPC::Socket1::SCommand{.name = "hyprnotify", .match = IPC::Socket1::COMMAND_MATCH_PREFIX, .handler = [](const IPC::Socket1::SRequest& request) {
+            const auto& COMMAND = request.command;
+            if (COMMAND.ends_with("count"))
+                return IPC::Socket1::SResponse{std::to_string(notifs.size())};
+            if (COMMAND.ends_with("center")) {
+                queueCenterToggle();
+                return IPC::Socket1::SResponse{"ok"};
+            }
+            if (COMMAND.ends_with("state"))
+                return IPC::Socket1::SResponse{Model::stateString()};
+            if (COMMAND.ends_with("badge"))
+                return IPC::Socket1::SResponse{Model::badgeString()};
+            if (COMMAND.ends_with("policy"))
+                return IPC::Socket1::SResponse{Policy::stateString()};
+            if (COMMAND.ends_with("snoozed"))
+                return IPC::Socket1::SResponse{std::to_string(Model::snoozedCount())};
+            if (COMMAND.ends_with("clear")) { // the scripted reset
+                static NHyprCommon::CHop pendingClear;
+                pendingClear.arm([]() { Model::dismissAllLive(); });
+                return IPC::Socket1::SResponse{"ok"};
+            }
+            return IPC::Socket1::SResponse{"unknown request"};
+        }});
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprnotify", "suspend", luaSuspend);
 
     g_lifecycle.init();

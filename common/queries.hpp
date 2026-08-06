@@ -107,7 +107,7 @@ namespace NHyprCommon {
     // in the shell is built on.
     inline bool superHeld() {
         const auto KB = g_pSeatManager ? g_pSeatManager->m_keyboard.lock() : nullptr;
-        return KB && (KB->m_modifiersState.depressed & HL_MODIFIER_META);
+        return KB && (KB->getModifiers() & Input::HL_MODIFIER_META) != Input::HL_MODIFIER_NONE;
     }
 
     // Maximize can be client-only state (hyprmax's maximize never enters

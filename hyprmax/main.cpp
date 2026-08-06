@@ -408,7 +408,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprmax", "toggle", luaToggle);
 
-    return {"hyprmax", "awesome's per-window maximize", "hitori", "1.1.10"};
+    return {"hyprmax", "awesome's per-window maximize", "hitori", "1.1.11"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
