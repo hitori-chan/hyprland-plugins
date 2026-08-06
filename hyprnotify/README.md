@@ -62,7 +62,7 @@ Reserved IDs 9990-9999 are private transient OSD cards. Battery, touchpad,
 brightness, volume, and microphone feedback cards replace in place, stay
 outside center ranking, badges, and Clear all, and render below an open center.
 The in-tree names select stable native AOSP/Android semantic marks rather than
-theme fallback artwork.
+theme fallback artwork, including the battery identity used by hyprbar alerts.
 
 ```text
 hyprctl hyprnotify {count,center,state,badge,policy,snoozed,clear}

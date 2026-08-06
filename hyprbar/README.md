@@ -24,6 +24,7 @@ temporarily draws above composited fullscreen while the menubar is open.
   `net.hadess.PowerProfiles` `power-saver` selects the yellow plus; ACPI
   `platform_profile=low-power` does not. Charging/defender is green, an
   unattributed level at or below 20% is red, and alerts fire at 20% and 5%.
+  Battery alert popups use the native battery identity icon.
 - **Clock/layout:** fixed clock text and per-workspace layout state. Click or
   wheel the layout icon to cycle the registry.
 - **Menubar:** `Mod+P` or `hl.plugin.hyprbar.menubar()` opens the application and

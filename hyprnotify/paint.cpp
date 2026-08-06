@@ -81,6 +81,17 @@ namespace NHyprnotify {
                 cairo_line_to(cr, 20.0 * S, 15.5 * S);
                 cairo_stroke(cr);
             };
+            const auto battery = [&]() {
+                cairo_new_sub_path(cr);
+                cairo_arc(cr, 17.0 * S, 7.0 * S, 2.0 * S, -PI / 2, 0);
+                cairo_arc(cr, 17.0 * S, 17.0 * S, 2.0 * S, 0, PI / 2);
+                cairo_arc(cr, 6.0 * S, 17.0 * S, 2.0 * S, PI / 2, PI);
+                cairo_arc(cr, 6.0 * S, 7.0 * S, 2.0 * S, PI, 3 * PI / 2);
+                cairo_close_path(cr);
+                cairo_stroke(cr);
+                cairo_rectangle(cr, 19.0 * S, 9.0 * S, 2.5 * S, 6.0 * S);
+                cairo_fill(cr);
+            };
 
             switch (icon) {
                 case eControlIcon::CLOSE:
@@ -95,6 +106,9 @@ namespace NHyprnotify {
                         for (int x = 0; x < 3; x++)
                             cairo_rectangle(cr, (5.0 + x * 6.0) * S, (5.0 + y * 6.0) * S, 3.0 * S, 3.0 * S);
                     cairo_fill(cr);
+                    break;
+                case eControlIcon::BATTERY:
+                    battery();
                     break;
                 case eControlIcon::BRIGHTNESS:
                     cairo_set_fill_rule(cr, CAIRO_FILL_RULE_EVEN_ODD);

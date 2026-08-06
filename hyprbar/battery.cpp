@@ -499,9 +499,10 @@ namespace NHyprbar {
             constexpr int WARN = 20, CRIT = 5;
 
             // urgency 0/1/2; 9990 = the script's pinned replace-in-place id.
-            // No explicit icon: hyprnotify supplies its deterministic generic app mark.
+            // The semantic icon name keeps this fixed-id card on the native
+            // battery mark instead of falling through to the generic app grid.
             const auto NOTIFY = [](uint8_t urgency, int32_t timeoutMs, const char* summary, const std::string& body) {
-                Tray::notify("battery", 9990, "", summary, body, urgency, timeoutMs, true);
+                Tray::notify("battery", 9990, "battery-symbolic", summary, body, urgency, timeoutMs, true);
             };
 
             // ACPI transitions/resume report transient "Unknown" — it must not

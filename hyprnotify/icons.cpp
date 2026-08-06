@@ -319,6 +319,8 @@ namespace NHyprnotify {
         const auto named = [](std::string_view value, std::string_view bare) {
             return value == bare || (value.starts_with(bare) && value.substr(bare.size()) == "-symbolic");
         };
+        if (named(n.appIcon, "battery"))
+            return eControlIcon::BATTERY;
         if (named(n.appIcon, "display-brightness"))
             return eControlIcon::BRIGHTNESS;
         if (named(n.appIcon, "audio-volume-muted"))

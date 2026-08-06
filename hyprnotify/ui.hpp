@@ -48,6 +48,7 @@ namespace NHyprnotify {
     enum class eControlIcon : uint8_t {
         CLOSE,
         APPS,
+        BATTERY,
         BRIGHTNESS,
         VOLUME,
         VOLUME_MUTED,

@@ -114,8 +114,9 @@ so suspend and relog consume the requested interval.
 
 Cards, the center, and OSDs use stable geometry, damage/scissor, and the shared
 warm/draw texture gate. A texture is never painted in the frame that creates
-it. Hover damage does not rewarm. OSD semantic identity participates in the
-fixed-ID texture key, preventing replacement from retaining a stale icon.
+it. Hover damage does not rewarm. OSD semantic identity, including battery,
+participates in the fixed-ID texture key, preventing replacement from retaining
+a stale icon.
 
 Before claiming input, the plugin rechecks native exclusive layers, popups,
 overlays, IME surfaces, top layers, client implicit grabs, native seat grabs,
