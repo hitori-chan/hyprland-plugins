@@ -37,7 +37,7 @@ namespace NHyprnotify {
     inline constexpr double PADX = 14, PADY = 11, ICON_GAP = 12; // popup card padding
     inline constexpr double HEAD_GAP = 3, TITLE_GAP = 4;         // header -> title -> body
     inline constexpr double PROGRESS_H = 5, PROGRESS_GAP = 8;
-    inline constexpr double HERO_CAP = 110, HERO_TEXT_MIN = 60;
+    inline constexpr double HERO_CAP = 110, HERO_TEXT_MIN = 60, HERO_GAP = 10;
     inline constexpr double BTN_H = 26, BTN_PADX = 10, BTN_GAP = 4, BTN_ROW_GAP = 6, BTN_ICON = 15, BTN_ICON_GAP = 5;
     inline constexpr double BODYIMG_H = 96, IMG_GAP = 6, IMG_ROW_GAP = 8;
     inline constexpr double XCIRC = 20; // the group-close circle

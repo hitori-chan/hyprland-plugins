@@ -31,12 +31,17 @@ namespace NHyprnotify {
         // warmGate.warming, not P.warm: measureRow runs this whole function with
         // P.warm forced on to suppress painting, and a build there would be a
         // build inside a render (crash class 4). Only the real warm may create.
+        const double CONTENTW = std::max(1.0, box.w - 2 * ROW_PADX);
         if (warmGate.warming)
-            ensureIconTex(*N, (int)std::lround(std::max(ST.iconPx, (double)cfg.maxIcon->value()) * P.scale), 0, 0);
+            ensureIconTex(*N, (int)std::lround(std::max(ST.iconPx, (double)cfg.maxIcon->value()) * P.scale), (int)std::lround(CONTENTW * P.scale),
+                          (int)std::lround(HERO_CAP * P.scale));
         if (warmGate.warming)
             for (auto& IM : N->bodyImages)
                 ensureBodyImage(IM, (int)std::lround(BODYIMG_H * P.scale));
 
+        const bool   WIDE     = N->iconTex && N->iconTex->m_texID != 0 && N->heroTex;
+        const bool   HERO     = open && WIDE;
+        const double HEROH    = HERO ? std::min(N->iconTex->m_size.y / P.scale, HERO_CAP) : 0;
         const bool   HASIDENT = N->identTex && N->identTex->m_texID != 0;
         const bool   CONTENT  = N->iconTex && N->iconTex->m_texID != 0 && !N->heroTex;
         // The bundle header already owns application identity. A child may
@@ -49,6 +54,11 @@ namespace NHyprnotify {
         const double TX       = box.x + ROW_PADX + (ICONW > 0 ? ICONW + ROW_ICON_GAP : 0);
         const double TEXTW    = box.x + box.w - ROW_PADX - (THUMBW > 0 ? THUMBW + ROW_ICON_GAP : 0) - TX;
         const int    TEXTWPX  = std::max(1, (int)std::floor(TEXTW * P.scale));
+        const double HEADW    = HERO ? std::max(1.0, CONTENTW - (ICONW > 0 ? ICONW + ROW_ICON_GAP : 0)) : TEXTW;
+        const double BODYX    = HERO ? box.x + ROW_PADX : TX;
+        const double BODYW    = HERO ? CONTENTW : TEXTW;
+        const int    HEADWPX  = std::max(1, (int)std::floor(HEADW * P.scale));
+        const int    BODYWPX  = std::max(1, (int)std::floor(BODYW * P.scale));
 
         double       th = 0;
         const double TY = box.y + ROW_PADT;
@@ -83,7 +93,7 @@ namespace NHyprnotify {
             // expanded: age/header line, title, body, progress, then the card's
             // own actions in Notify order. The PRIMARY gets no button here —
             // the row body fires it, exactly as the banner does.
-            const int KICKWPX = std::max(1, (int)std::floor(TEXTW * P.scale));
+            const int KICKWPX = HEADWPX;
 
             auto& KB = scratch();
             if (ST.headerHasApp) {
@@ -92,7 +102,7 @@ namespace NHyprnotify {
             }
             KB += AGE;
             const auto KICK  = cachedText(KB, COLSUB, T.header, KICKWPX, -1, 0, true, 500);
-            const auto TITLE = N->summary.empty() ? nullptr : cachedText(N->summary, COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
+            const auto TITLE = N->summary.empty() ? nullptr : cachedText(N->summary, COLTITLE, T.title, HEADWPX, -1, 0, true, 600);
             // a merged chat is a transcript, so it gets Android's MessagingStyle
             // depth (~7 messages) where an ordinary card gets four lines
             const int  CAPL = (int)std::lround(T.body * 1.35 * (N->conversation ? 7 : 4));
@@ -100,7 +110,7 @@ namespace NHyprnotify {
             // meant for a URL would fire the card's primary instead
             const auto COLLINK = color(cfg.colLink);
             const auto& BODYTEXT = bodyForDisplay(*N);
-            const auto BODY    = BODYTEXT.empty() ? nullptr : cachedText(BODYTEXT, COLBODY, T.body, TEXTWPX, CAPL, 1.1f, true, 400, &COLLINK);
+            const auto BODY    = BODYTEXT.empty() ? nullptr : cachedText(BODYTEXT, COLBODY, T.body, BODYWPX, CAPL, 1.1f, true, 400, &COLLINK);
 
             // The reply affordance is a chip among the buttons until it is
             // armed, and then the field takes a row of its own instead.
@@ -123,9 +133,9 @@ namespace NHyprnotify {
                 for (const auto& [BID, BLBL] : btnSrc) {
                     auto& LB = scratch();
                     appendEsc(LB, *BLBL);
-                    const auto   LBL = cachedText(LB, COLACC, T.action, TEXTWPX, -1, 0, true, 600);
-                    const double BW  = std::min(TEXTW, texW(LBL, P.scale) + 2 * BTN_PADX);
-                    if (bx > 0 && bx + BW > TEXTW + 0.5) {
+                    const auto   LBL = cachedText(LB, COLACC, T.action, BODYWPX, -1, 0, true, 600);
+                    const double BW  = std::min(BODYW, texW(LBL, P.scale) + 2 * BTN_PADX);
+                    if (bx > 0 && bx + BW > BODYW + 0.5) {
                         bx = 0;
                         rowY += BTN_H + BTN_GAP;
                     }
@@ -137,7 +147,8 @@ namespace NHyprnotify {
             }
 
             const double KH = texH(KICK, P.scale), TH = texH(TITLE, P.scale), BH = texH(BODY, P.scale);
-            th = KH + (KH > 0 ? HEAD_GAP : 0) + TH + (TH > 0 && BH > 0 ? TITLE_GAP : 0) + BH + (N->progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0) +
+            const double MEDIA = HERO ? HERO_GAP + HEROH + (BH > 0 ? HERO_GAP : 0) : (TH > 0 && BH > 0 ? TITLE_GAP : 0);
+            th = KH + (KH > 0 ? HEAD_GAP : 0) + TH + MEDIA + BH + (N->progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0) +
                 (btnH > 0 ? BTN_ROW_GAP + btnH : 0) + (ARMED ? BTN_ROW_GAP + BTN_H : 0);
 
             double yy = TY;
@@ -146,21 +157,31 @@ namespace NHyprnotify {
             yy += KH + (KH > 0 ? HEAD_GAP : 0);
             if (!P.warm && TITLE)
                 P.tex(TITLE->tex, TX, yy);
-            yy += TH + (TH > 0 && BH > 0 ? TITLE_GAP : 0);
+            yy += TH;
+            if (HERO) {
+                yy += HERO_GAP;
+                if (!P.warm)
+                    P.texFit(N->iconTex, CBox{box.x + ROW_PADX, yy, CONTENTW, HEROH}, rRow(P.scale), RP);
+                yy += HEROH;
+                if (BH > 0)
+                    yy += HERO_GAP;
+            } else if (TH > 0 && BH > 0) {
+                yy += TITLE_GAP;
+            }
             if (!P.warm && BODY)
-                P.tex(BODY->tex, TX, yy);
+                P.tex(BODY->tex, BODYX, yy);
             if (BODY) // hit rects in both modes, like the buttons: physical -> global logical
                 for (const auto& L : BODY->links)
-                    card.links.push_back({CBox{TX + L.rel.x / P.scale, yy + L.rel.y / P.scale, L.rel.w / P.scale, L.rel.h / P.scale}, L.href});
+                    card.links.push_back({CBox{BODYX + L.rel.x / P.scale, yy + L.rel.y / P.scale, L.rel.w / P.scale, L.rel.h / P.scale}, L.href});
             yy += BH;
             if (N->progress >= 0) {
                 yy += PROGRESS_GAP;
-                paintProgress(P, TX, yy, TEXTW, N->progress, N->urgency >= 2);
+                paintProgress(P, BODYX, yy, BODYW, N->progress, N->urgency >= 2);
                 yy += PROGRESS_H;
             }
             if (btnH > 0) {
                 yy += BTN_ROW_GAP;
-                const double BX0 = TX - BTN_PADX; // optical: labels align to the content column
+                const double BX0 = BODYX - BTN_PADX; // optical: labels align to the content column
                 for (size_t i = 0; i < btnBoxes.size(); i++) {
                     const CBox BOX{BX0 + btnBoxes[i].x, yy + btnBoxes[i].y, btnBoxes[i].w, btnBoxes[i].h};
                     if (!P.warm) {
@@ -177,10 +198,10 @@ namespace NHyprnotify {
             if (ARMED) {
                 yy += BTN_ROW_GAP;
                 const auto&  TXT   = replyText();
-                const auto   SLBL  = cachedText(N->replySubmitText.empty() ? "Send" : N->replySubmitText, tOnAccent(), T.action, TEXTWPX, -1, 0, false, 600);
-                const double SENDW = std::min(TEXTW / 2, texW(SLBL, P.scale) + 2 * BTN_PADX);
-                const CBox   FB{TX, yy, std::max(40.0, TEXTW - SENDW - BTN_GAP), BTN_H};
-                const CBox   SB{TX + TEXTW - SENDW, yy, SENDW, BTN_H};
+                const auto   SLBL  = cachedText(N->replySubmitText.empty() ? "Send" : N->replySubmitText, tOnAccent(), T.action, BODYWPX, -1, 0, false, 600);
+                const double SENDW = std::min(BODYW / 2, texW(SLBL, P.scale) + 2 * BTN_PADX);
+                const CBox   FB{BODYX, yy, std::max(40.0, BODYW - SENDW - BTN_GAP), BTN_H};
+                const CBox   SB{BODYX + BODYW - SENDW, yy, SENDW, BTN_H};
                 const int    RB = (int)std::lround(BTN_H / 2 * P.scale);
 
                 // the typed text, or the sender's placeholder while it is empty

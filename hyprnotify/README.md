@@ -40,7 +40,8 @@ navigation, chevron, or kebab menu.
 - Four or more cards from one app form a bundle. Conversations remain separate
   and matching conversation arrivals merge into one growing card.
 - Rows open while the panel has room. A compact row expands from its body before
-  any hidden action can fire. Wheel paging handles remaining rows.
+  any hidden action can fire. Wide content uses the same full-width hero media
+  anatomy as banners once the row is open. Wheel paging handles remaining rows.
 - Once open, body click invokes the default action when present and otherwise
   dismisses; links and buttons act, right-click dismisses, and an outside click
   closes the center. Acting closes it unless `resident` keeps the card in place.

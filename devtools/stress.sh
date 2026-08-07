@@ -662,6 +662,7 @@ chk "bell: reset after the click battery" test "$(st)" = "center:0 live:0 dnd:0"
 # neither card rounding nor text can affect the result.
 PREVIEW_IMAGE="$STATE/screenshot-preview.png"
 PREVIEW_FRAME="$STATE/screenshot-popup.png"
+PREVIEW_CENTER_FRAME="$STATE/screenshot-center.png"
 magick -size 640x240 canvas:'#e935ff' "$PREVIEW_IMAGE"
 nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
 	Notify susssasa\{sv\}i screenshot 0 "" "Screenshot preview" "" 0 1 image-path s "$PREVIEW_IMAGE" 30000 >/dev/null 2>&1
@@ -680,6 +681,22 @@ for _ in $(seq 1 8); do
 	sleep 0.2
 done
 chk "screenshot: wide image-path uses the hero preview" test "$PREVIEW_HERO" = 1
+hq hyprnotify center >/dev/null; sleep 0.4
+chk "screenshot: wide image-path opens in the center" test "$(st)" = "center:1 live:1 dnd:0"
+CENTER_HERO=0
+for _ in $(seq 1 8); do
+	if capture_nested "$PREVIEW_CENTER_FRAME"; then
+		CENTER_HERO_RGB="$(magick "$PREVIEW_CENTER_FRAME" -crop "16x16+$((MON_W - 360 + 10 + 340 / 2 - 8))+$((34 + 10 + 9 + 18 + 3 + 18 + 10 + 55 - 8))" +repage -colorspace sRGB \
+			-format '%[fx:mean.r] %[fx:mean.g] %[fx:mean.b]' info: 2>/dev/null)"
+		if awk '{ exit !($1 > 0.70 && $2 < 0.35 && $3 > 0.70) }' <<<"$CENTER_HERO_RGB"; then
+			CENTER_HERO=1
+			break
+		fi
+	fi
+	sleep 0.2
+done
+chk "screenshot: center uses the wide hero layout" test "$CENTER_HERO" = 1
+hq hyprnotify center >/dev/null; sleep 0.4
 hq hyprnotify clear >/dev/null; sleep 0.8
 
 # A portrait/square content image is not application identity. Keep the app

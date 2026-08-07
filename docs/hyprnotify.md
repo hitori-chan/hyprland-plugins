@@ -81,7 +81,8 @@ warm pass. Raw image data downscales directly into its bounded output buffer.
 Ordinary cards keep application identity in the left icon column. A distinct
 non-wide `image-data`/`image-path` source renders as a separate right-side
 preview on both popup cards and singleton center rows; it is never promoted to
-application identity. Wide content uses the dedicated full-width hero layout.
+application identity. Wide content uses the dedicated full-width hero layout
+in banners and expanded center rows.
 Conversation cards may instead use Android's 40dp-avatar/20dp-badge container,
 with a 16dp app glyph and 2dp rim. Bundle children use their own content as a
 small lead when available because the group header already owns app identity.
