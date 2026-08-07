@@ -57,12 +57,18 @@ namespace NHyprnotify {
             const bool   HERO  = N->iconTex && N->heroTex;
             const double HEROH = HERO ? std::min(N->iconTex->m_size.y / P.scale, std::max(0.0, CARDH - 2 * PADY)) : 0;
 
-            // ONE icon column (paintIconColumn): the avatar leads and the app
-            // identity badges its corner. A wide content image goes hero instead.
+            // Conversations use one avatar-plus-badge column. Ordinary cards
+            // keep app identity on the left and distinct non-wide content in a
+            // right preview; wide content keeps the dedicated hero layout.
+            const bool   HASIDENT = N->identTex && N->identTex->m_texID != 0;
+            const bool   CONTENT  = N->iconTex && N->iconTex->m_texID != 0 && !N->heroTex;
             const bool   LEADICON = !HERO && hasLeadIcon(*N);
             const double ICONW    = LEADICON ? MAXICON : 0;
+            const double PREVIEWCAP = W - 2 * PADX - ICONW - 2 * ICON_GAP - 80;
+            const bool   RTHUMB     = !HERO && !N->conversation && CONTENT && HASIDENT && PREVIEWCAP >= 16;
+            const double THUMBW     = RTHUMB ? std::min(MAXICON, PREVIEWCAP) : 0;
 
-            const double TEXTW   = W - 2 * PADX - (ICONW > 0 ? ICONW + ICON_GAP : 0);
+            const double TEXTW   = W - 2 * PADX - (ICONW > 0 ? ICONW + ICON_GAP : 0) - (THUMBW > 0 ? THUMBW + ICON_GAP : 0);
             const int    TEXTWPX = std::max(1, (int)std::floor(TEXTW * P.scale));
 
             // text pieces (cache-keyed; ages re-key on bucket moves); the
@@ -172,6 +178,8 @@ namespace NHyprnotify {
                 CP.texFit(N->iconTex, CBox{X, y, W, HEROH}, ROUND, RP);
             else if (LEADICON)
                 paintIconColumn(CP, *N, CBox{X + PADX, y + PADY, ICONW, ICONW}, N->conversation, RP);
+            if (RTHUMB)
+                CP.texFit(N->iconTex, CBox{X + W - PADX - THUMBW, y + PADY, THUMBW, THUMBW}, (int)std::lround(THUMBW * 10.0 / 44.0 * P.scale), RP);
 
             const double                 TX = X + PADX + (ICONW > 0 ? ICONW + ICON_GAP : 0);
             double                       ty = HERO ? y + HEROH + PADY : y + PADY;

@@ -115,9 +115,9 @@ namespace NHyprnotify {
     int    rRow(double scale);
     int    rJoint(double scale);
 
-    // shared card recipes — the progress pill and the content-first icon
-    // column (lead avatar wearing the identity corner badge); layout code
-    // computes presence itself via hasLeadIcon
+    // shared card recipes — the progress pill and the semantic icon column:
+    // identity for ordinary cards, avatar plus identity badge for conversations.
+    // Layout code owns separate ordinary content previews and hero media.
     bool   hasLeadIcon(const SNotif& n);
     void   paintProgress(const SPaint& P, double x, double y, double w, int pct, bool critical);
     void   paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool withBadge, float rp);

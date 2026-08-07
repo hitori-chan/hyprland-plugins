@@ -14,8 +14,9 @@ generic app mark. Content images never become random application badges.
 - Cards appear at the focused monitor's top-right with app identity, age,
   title, body, progress, image, and actions as available.
 - Conversation notifications may use the sender avatar plus application badge;
-  ordinary notifications keep one standard identity/content icon. Wide images
-  become full-width hero media.
+  ordinary notifications keep the application identity on the left and show a
+  separate content preview on the right. Wide images become full-width hero
+  media.
 - Hovering a card restarts its timeout when the pointer leaves. Normal banners
   retreat into the center after `timeout_normal`; critical cards stay
   until dismissed. Transient, low-urgency, and progress cards use

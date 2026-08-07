@@ -316,18 +316,16 @@ namespace NHyprnotify {
             P.rect(CBox{x, y, std::max(w * pct / 100.0, PROGRESS_H), PROGRESS_H}, critical ? color(cfg.colUrgent) : color(cfg.colHighlight), PR);
     }
 
-    // Android's conversation icon container: the AVATAR leads — the content
-    // image, which for a chat is the sender's face — and the app IDENTITY
-    // rides its bottom-right corner as a badge. ONE column says both who sent
-    // it and which app carried it; two icons side by side said it twice, and
-    // said the app twice over for every card of the same app. A card with no
-    // content image leads with its identity only for conversation cards; an
-    // ordinary notification keeps the standard single-icon anatomy.
+    // Android's conversation icon container: content is the sender AVATAR and
+    // the app IDENTITY rides its bottom-right corner as a badge. Ordinary
+    // notifications keep identity in this column; their distinct content is
+    // laid out separately by the caller as hero media or a preview thumbnail.
     // Callers gate their layout on hasLeadIcon.
     void paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool withBadge, float rp) {
         const bool  HASIDENT = n.identTex && n.identTex->m_texID != 0;
-        const bool  AVATAR   = n.iconTex && n.iconTex->m_texID != 0 && !n.heroTex;
-        const auto& LEAD     = AVATAR ? n.iconTex : n.identTex;
+        const bool  CONTENT  = n.iconTex && n.iconTex->m_texID != 0 && !n.heroTex;
+        const bool  AVATAR   = n.conversation && CONTENT;
+        const auto& LEAD     = AVATAR ? n.iconTex : HASIDENT ? n.identTex : n.iconTex;
         if (!LEAD || LEAD->m_texID == 0)
             return;
 

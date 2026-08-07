@@ -37,10 +37,17 @@ namespace NHyprnotify {
             for (auto& IM : N->bodyImages)
                 ensureBodyImage(IM, (int)std::lround(BODYIMG_H * P.scale));
 
-        const bool   LEADICON = hasLeadIcon(*N);
+        const bool   HASIDENT = N->identTex && N->identTex->m_texID != 0;
+        const bool   CONTENT  = N->iconTex && N->iconTex->m_texID != 0 && !N->heroTex;
+        // The bundle header already owns application identity. A child may
+        // lead with its own content, but never repeats the shared app glyph.
+        const bool   LEADICON = child ? CONTENT : hasLeadIcon(*N);
         const double ICONW    = LEADICON ? ST.iconPx : 0;
+        const double PREVIEWCAP = box.w - 2 * ROW_PADX - ICONW - 2 * ROW_ICON_GAP - 80;
+        const bool   RTHUMB     = !child && !N->conversation && CONTENT && HASIDENT && PREVIEWCAP >= 16;
+        const double THUMBW     = RTHUMB ? std::min(ST.iconPx, PREVIEWCAP) : 0;
         const double TX       = box.x + ROW_PADX + (ICONW > 0 ? ICONW + ROW_ICON_GAP : 0);
-        const double TEXTW    = box.x + box.w - ROW_PADX - TX;
+        const double TEXTW    = box.x + box.w - ROW_PADX - (THUMBW > 0 ? THUMBW + ROW_ICON_GAP : 0) - TX;
         const int    TEXTWPX  = std::max(1, (int)std::floor(TEXTW * P.scale));
 
         double       th = 0;
@@ -205,12 +212,20 @@ namespace NHyprnotify {
 
         }
 
-        const double ROWH = std::max(th, ICONW) + ROW_PADT + ROW_PADB;
+        const double ROWH = std::max({th, ICONW, THUMBW}) + ROW_PADT + ROW_PADB;
 
         if (!P.warm && LEADICON) {
             // collapsed rows center the icon; expanded top-pin it
             const double IY = open ? box.y + ROW_PADT : box.y + (ROWH - ICONW) / 2;
-            paintIconColumn(P, *N, CBox{box.x + ROW_PADX, IY, ICONW, ICONW}, ST.withBadge && N->conversation, RP);
+            if (child)
+                P.texFit(N->iconTex, CBox{box.x + ROW_PADX, IY, ICONW, ICONW}, (int)std::lround(ICONW * 10.0 / 44.0 * P.scale), RP);
+            else
+                paintIconColumn(P, *N, CBox{box.x + ROW_PADX, IY, ICONW, ICONW}, ST.withBadge && N->conversation, RP);
+        }
+        if (!P.warm && RTHUMB) {
+            const double TXR = box.x + box.w - ROW_PADX - THUMBW;
+            const double TYR = open ? box.y + ROW_PADT : box.y + (ROWH - THUMBW) / 2;
+            P.texFit(N->iconTex, CBox{TXR, TYR, THUMBW, THUMBW}, (int)std::lround(THUMBW * 10.0 / 44.0 * P.scale), RP);
         }
         card.box        = CBox{box.x, box.y, box.w, ROWH};
         card.id         = N->id;

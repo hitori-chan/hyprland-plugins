@@ -146,6 +146,14 @@ print(int(m['width']/m['scale']), int(m['height']/m['scale']))")" || return 1
 }
 vp() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" "$MON_W" "$MON_H" >/dev/null 2>&1; }
 vk() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vkbd" >/dev/null 2>&1; } # keys need no extent
+capture_nested() { # capture_nested <output>: tolerate a transient screencopy denial
+	local out=$1
+	for _ in 1 2 3; do
+		timeout 8 env WAYLAND_DISPLAY="$WL" grim "$out" >/dev/null 2>&1 && return 0
+		sleep 0.2
+	done
+	return 1
+}
 # pyc <python-expr-over-cs> — cs = client list; truthy stdout "1" = pass
 pyc() { clients | python3 -c "
 import json,sys
@@ -646,6 +654,69 @@ chk "bell: second click closes the shade" test "$(st)" = "center:0 live:1 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.8
 chk "bell: reset after the click battery" test "$(st)" = "center:0 live:0 dnd:0"
 
+# ---- screenshot big-picture preview ---------------------------------------
+# A wide image-path hint must take the dedicated hero layout across the popup
+# instead of being reduced to the ordinary 44px icon column. Poll for the
+# asynchronous decode and following warm rather than sampling an arbitrary
+# compositor frame. The sample sits in the middle of the media area, where
+# neither card rounding nor text can affect the result.
+PREVIEW_IMAGE="$STATE/screenshot-preview.png"
+PREVIEW_FRAME="$STATE/screenshot-popup.png"
+magick -size 640x240 canvas:'#e935ff' "$PREVIEW_IMAGE"
+nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
+	Notify susssasa\{sv\}i screenshot 0 "" "Screenshot preview" "" 0 1 image-path s "$PREVIEW_IMAGE" 30000 >/dev/null 2>&1
+sleep 0.2
+chk "screenshot: big-picture notification is active" test "$(st)" = "center:0 live:1 dnd:0"
+PREVIEW_HERO=0
+for _ in $(seq 1 8); do
+	if capture_nested "$PREVIEW_FRAME"; then
+		PREVIEW_RGB="$(magick "$PREVIEW_FRAME" -crop "16x16+$((MON_W - 10 - 348 / 2 - 8))+$((34 + 32))" +repage -colorspace sRGB \
+			-format '%[fx:mean.r] %[fx:mean.g] %[fx:mean.b]' info: 2>/dev/null)"
+		if awk '{ exit !($1 > 0.70 && $2 < 0.35 && $3 > 0.70) }' <<<"$PREVIEW_RGB"; then
+			PREVIEW_HERO=1
+			break
+		fi
+	fi
+	sleep 0.2
+done
+chk "screenshot: wide image-path uses the hero preview" test "$PREVIEW_HERO" = 1
+hq hyprnotify clear >/dev/null; sleep 0.8
+
+# A portrait/square content image is not application identity. Keep the app
+# mark on the left and render content in the dedicated right preview on both
+# notification surfaces. The direct Notify call supplies both sources without
+# relying on a toolkit's app_icon/image-path translation.
+IDENTITY_IMAGE="$STATE/preview-identity.png"
+CONTENT_IMAGE="$STATE/preview-content.png"
+PORTRAIT_POPUP="$STATE/portrait-popup.png"
+PORTRAIT_CENTER="$STATE/portrait-center.png"
+magick -size 64x64 canvas:'#11dfe8' "$IDENTITY_IMAGE"
+magick -size 96x160 canvas:'#e935ff' "$CONTENT_IMAGE"
+nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
+	Notify susssasa\{sv\}i preview 0 "$IDENTITY_IMAGE" "Screenshot preview" "Portrait content" 0 1 image-path s "$CONTENT_IMAGE" 30000 >/dev/null 2>&1
+sleep 1
+capture_nested "$PORTRAIT_POPUP"
+POP_IDENT_RGB="$(magick "$PORTRAIT_POPUP" -crop "12x12+$((MON_W - 322 - 6))+$((67 - 6))" +repage -colorspace sRGB \
+	-format '%[fx:mean.r] %[fx:mean.g] %[fx:mean.b]' info: 2>/dev/null)"
+POP_MEDIA_RGB="$(magick "$PORTRAIT_POPUP" -crop "12x12+$((MON_W - 46 - 6))+$((67 - 6))" +repage -colorspace sRGB \
+	-format '%[fx:mean.r] %[fx:mean.g] %[fx:mean.b]' info: 2>/dev/null)"
+chk "screenshot: popup keeps application identity on the left" awk \
+	'{ exit !($1 < 0.25 && $2 > 0.65 && $3 > 0.65) }' <<<"$POP_IDENT_RGB"
+chk "screenshot: popup keeps portrait content in the right preview" awk \
+	'{ exit !($1 > 0.65 && $2 < 0.40 && $3 > 0.65) }' <<<"$POP_MEDIA_RGB"
+hq hyprnotify center >/dev/null; sleep 0.6
+capture_nested "$PORTRAIT_CENTER"
+CENTER_IDENT_RGB="$(magick "$PORTRAIT_CENTER" -crop "12x12+$((MON_W - 318 - 6))+$((73 - 6))" +repage -colorspace sRGB \
+	-format '%[fx:mean.r] %[fx:mean.g] %[fx:mean.b]' info: 2>/dev/null)"
+CENTER_MEDIA_RGB="$(magick "$PORTRAIT_CENTER" -crop "12x12+$((MON_W - 42 - 6))+$((73 - 6))" +repage -colorspace sRGB \
+	-format '%[fx:mean.r] %[fx:mean.g] %[fx:mean.b]' info: 2>/dev/null)"
+chk "screenshot: center keeps application identity on the left" awk \
+	'{ exit !($1 < 0.25 && $2 > 0.65 && $3 > 0.65) }' <<<"$CENTER_IDENT_RGB"
+chk "screenshot: center keeps portrait content in the right preview" awk \
+	'{ exit !($1 > 0.65 && $2 < 0.40 && $3 > 0.65) }' <<<"$CENTER_MEDIA_RGB"
+hq hyprnotify center >/dev/null; sleep 0.4
+hq hyprnotify clear >/dev/null; sleep 0.8
+
 # ---- hyprosd wpctl process path -------------------------------------------
 # The nested compositor shadows only wpctl, so this reaches the real Lua,
 # deferred queue, pidfd, pipe readback, and notification paths without changing
@@ -678,7 +749,7 @@ osd_notify() {
 }
 osd_icon_hash() {
 	local out="$STATE/osd-$1.png"
-	timeout 8 env WAYLAND_DISPLAY="$WL" grim "$out" >/dev/null 2>&1 || return 1
+	capture_nested "$out" || return 1
 	magick "$out" -crop "44x44+$((MON_W - 10 - 348 + 14))+$((34 + 11))" +repage -depth 8 rgba:- 2>/dev/null | sha256sum | cut -d' ' -f1
 }
 osd_notify display-brightness-symbolic; sleep 0.5
