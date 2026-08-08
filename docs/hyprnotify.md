@@ -109,7 +109,8 @@ policy, reply, process, and menu callbacks carry generation or ownership checks
 so late work cannot mutate replaced or destroyed state.
 
 `ignore_dbusclose` affects only the bus `CloseNotification` path. User actions,
-expiry, Clear all, and overflow retain their normal close semantics.
+expiry, Clear all, and overflow retain their normal close semantics. Clear all
+does not target private OSD-band cards, DND-queued cards, or snoozed reminders.
 
 Policy state is atomically stored in
 `$XDG_STATE_HOME/hyprnotify/policy.tsv`. Silence keys on application identity;
@@ -122,7 +123,9 @@ Cards, the center, and OSDs use stable geometry, damage/scissor, and the shared
 warm/draw texture gate. A texture is never painted in the frame that creates
 it. Hover damage does not rewarm. OSD semantic identity, including battery,
 participates in the fixed-ID texture key, preventing replacement from retaining
-a stale icon.
+a stale icon. DND and snooze footer controls use cached native recipes: the DND
+mark is a 12dp equivalent in the 34dp desktop control, and snooze uses the
+ROM-derived `drawable/ic_snooze.xml` geometry rather than a font glyph.
 
 Before claiming input, the plugin rechecks native exclusive layers, popups,
 overlays, IME surfaces, top layers, client implicit grabs, native seat grabs,
@@ -132,8 +135,9 @@ changes.
 
 Long-press and horizontal gestures enqueue the same deferred verbs used by
 pointer clicks; they never mutate the model during input emission. Inline reply
-owns keys only after a visible Reply chip is clicked. Center paging and all
-other notification-center actions are pointer-driven.
+owns keys only after a visible Reply chip is clicked and while its field remains
+visible; empty Enter/Send is consumed without closing or emitting a reply.
+Center paging and all other notification-center actions are pointer-driven.
 
 While cards are visible over solitary fullscreen, the fork's public full-render
 request path exits scanout long enough to composite them. Clearing the final

@@ -42,6 +42,8 @@ navigation, chevron, or kebab menu.
 - Rows open while the panel has room. A compact row expands from its body before
   any hidden action can fire. Wide content uses the same full-width hero media
   anatomy as banners once the row is open. Wheel paging handles remaining rows.
+- Reply and other action labels, including their hit targets, start at the
+  notification body's content column; they never reach left into the icon area.
 - Once open, body click invokes the default action when present and otherwise
   dismisses; links and buttons act, right-click dismisses, and an outside click
   closes the center. Acting closes it unless `resident` keeps the card in place.
@@ -52,19 +54,27 @@ navigation, chevron, or kebab menu.
   still bypass silence.
 - Snooze replaces the row with a six-second Undo state. Its duration control
   cycles 15m, 30m, 1h, and 2h; `snooze_seconds` supplies the first panel value.
-  Snoozed cards remain in the model and return alerting.
+  The visible snooze mark is the ROM-derived Pixel/AOSP mark. Snoozed cards
+  remain in the model and return alerting.
 - An open row with an `inline-reply` action shows a Reply chip. Clicking it arms
   the only keyboard-owning surface in the center: Enter sends, Esc cancels,
-  Backspace edits, and `C-u`/`C-w` erase.
-- The footer owns compact DND, muted-rule reset, and Clear all controls.
+  Backspace edits, and `C-u`/`C-w` erase. The submit label is `Send` unless
+  KDE's submit-button hint supplies another label; an empty Send/Enter is a
+  no-op and keeps the draft open. Keyboard ownership ends when the field is
+  hidden, the center pages, or the center closes.
+- The footer owns a compact semantic DND control, muted-rule reset, and a
+  compact Clear all control. Clear all excludes DND-queued, snoozed, and
+  private OSD cards.
 
 ## OSD And Control
 
 Reserved IDs 9990-9999 are private transient OSD cards. Battery, touchpad,
 brightness, volume, and microphone feedback cards replace in place, stay
 outside center ranking, badges, and Clear all, and render below an open center.
-The in-tree names select stable native AOSP/Android semantic marks rather than
-theme fallback artwork, including the battery identity used by hyprbar alerts.
+They use the same popup surface/anatomy as ordinary banners; only their
+semantic identity and transient placement differ. The in-tree names select
+stable native AOSP/Android semantic marks rather than theme fallback artwork,
+including the battery identity used by hyprbar alerts.
 
 ```text
 hyprctl hyprnotify {count,center,state,badge,policy,snoozed,clear}

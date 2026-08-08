@@ -281,7 +281,7 @@ namespace NHyprnotify {
         // shown, and a snoozed card was deliberately put away — clearing the
         // shade must not quietly cancel a reminder the user asked for.
         static bool visible(const SP<SNotif>& n) {
-            return !n->waiting && !n->snoozed;
+            return !n->waiting && !n->snoozed && !inOsdBand(n->id);
         }
 
         void dismissAllLive() {
@@ -570,6 +570,7 @@ namespace NHyprnotify {
             // server advertises the capability, and expects NotificationReplied
             // back. It is NOT a button — it opens the row's reply field.
             n->canReply         = false;
+            n->replyActionText  = {};
             n->replyPlaceholder = strHint("x-kde-reply-placeholder-text", Parse::MAX_HINT_TEXT_BYTES);
             n->replySubmitText  = strHint("x-kde-reply-submit-button-text", Parse::MAX_HINT_TEXT_BYTES);
 
@@ -590,8 +591,7 @@ namespace NHyprnotify {
                     n->defaultAction = ID;
                 else if (ID == "inline-reply") {
                     n->canReply = true;
-                    if (n->replySubmitText.empty())
-                        n->replySubmitText = LABEL; // the sender's own "Reply" label
+                    n->replyActionText = LABEL;
                 } else if (!LABEL.empty()) // an empty label has no button to draw
                     n->actions.push_back(SAction{.id = ID, .label = LABEL});
             }

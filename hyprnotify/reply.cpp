@@ -35,10 +35,14 @@ namespace NHyprnotify {
     bool               replyArmed() {
         if (!s_id)
             return false;
-        if (centerVisible())
-            for (const auto& N : notifs)
-                if (N->id == s_id && N->canReply)
-                    return true;
+        if (centerVisible()) {
+            const bool MODEL_ALIVE = std::ranges::any_of(notifs, [](const auto& N) { return N->id == s_id && N->canReply; });
+            const bool FIELD_VISIBLE = std::ranges::any_of(cards, [](const auto& C) {
+                return (C.kind == SCard::ROW || C.kind == SCard::CHILD) && C.id == s_id && C.replyField.w > 0;
+            });
+            if (MODEL_ALIVE && FIELD_VISIBLE)
+                return true;
+        }
         s_id = 0;
         s_text.clear();
         return false;
@@ -73,19 +77,14 @@ namespace NHyprnotify {
         s_text.clear();
     }
 
-    // A key press while the field is armed. False means "not ours" — the
-    // caller passes it on, so a chord the user bound still works.
+    // A key press while the field is armed. The center has no general keyboard
+    // map; once this field is visible it owns the complete pressed-key stream.
     bool replyKey(xkb_state* state, uint32_t keycode) {
         if (!s_id || !state)
             return false;
 
         const auto SYM = xkb_state_key_get_one_sym(state, keycode);
         const bool CTRL = xkb_state_mod_name_is_active(state, XKB_MOD_NAME_CTRL, XKB_STATE_MODS_EFFECTIVE) > 0;
-        const bool ALT  = xkb_state_mod_name_is_active(state, XKB_MOD_NAME_ALT, XKB_STATE_MODS_EFFECTIVE) > 0;
-        const bool LOGO = xkb_state_mod_name_is_active(state, XKB_MOD_NAME_LOGO, XKB_STATE_MODS_EFFECTIVE) > 0;
-
-        if (LOGO || ALT)
-            return false; // window-management chords are never the field's
 
         if (CTRL) {
             switch (SYM) {
@@ -103,7 +102,7 @@ namespace NHyprnotify {
                     notifChanged();
                     return true;
                 }
-                default: return false; // every other Ctrl chord belongs to the user
+                default: return true; // an armed reply owns the complete key stream
             }
         }
 
@@ -113,6 +112,8 @@ namespace NHyprnotify {
                 return true;
             case XKB_KEY_Return:
             case XKB_KEY_KP_Enter: {
+                if (s_text.empty())
+                    return true; // the disabled Send state keeps the draft open
                 const auto ID = s_id;
                 auto       TX = s_text; // replyClose wipes the buffer under us
                 replyClose();
@@ -140,9 +141,9 @@ namespace NHyprnotify {
             notifChanged();
             return true;
         }
-        // a key with no character and no meaning here (F-keys, arrows): the
-        // field swallows it rather than letting it act on the window beneath,
-        // because the user is typing, not driving the desktop
+        // A key with no character and no meaning here (F-keys, arrows, or a
+        // modifier chord) is still consumed while the field is armed. This
+        // prevents a desktop binding from firing through the reply surface.
         return true;
     }
 

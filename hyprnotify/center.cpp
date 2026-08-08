@@ -95,6 +95,7 @@ namespace NHyprnotify {
     // Only one target wears the panel: two open at once would be two menus,
     // and the shade would stop being a list of notifications.
     void centerToggleManage(uint32_t id) {
+        replyClose();
         if (s_manageRow == id)
             s_manageRow = 0;
         else {
@@ -106,6 +107,7 @@ namespace NHyprnotify {
     void centerToggleManageGroup(const std::string& appKey) {
         if (appKey.empty())
             return;
+        replyClose();
         if (s_manageGroup == appKey)
             s_manageGroup.clear();
         else {
@@ -115,6 +117,7 @@ namespace NHyprnotify {
         notifChanged();
     }
     void centerToggleRow(uint32_t id) {
+        replyClose();
         const auto IT = s_rowState.find(id);
         if (IT != s_rowState.end() && IT->second) {
             s_openedRow.erase(id);
@@ -127,6 +130,7 @@ namespace NHyprnotify {
     }
 
     void centerToggleGroup(const std::string& appKey) {
+        replyClose();
         const auto IT = s_groupState.find(appKey);
         if (IT != s_groupState.end() && IT->second) {
             s_openedGroup.erase(appKey);
@@ -141,6 +145,7 @@ namespace NHyprnotify {
     void centerPage(int dir) {
         if (s_items <= 1)
             return;
+        replyClose();
         s_skip = (size_t)std::clamp((int64_t)s_skip + dir, (int64_t)0, (int64_t)(s_items - 1));
         notifChanged();
     }
@@ -445,15 +450,17 @@ namespace NHyprnotify {
         const double BARY = Y0 + PANELH - BAR_PADB - BAR_BTN;
         double       bx   = X + BAR_PADX;
 
+        const bool TARGET = std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && !N->snoozed && !inOsdBand(N->id); });
+
         { // do-not-disturb
             const CBox B{bx, BARY, BAR_BTN, BAR_BTN};
             const bool LIT = Model::suspendedNow();
-            const auto G   = cachedText("⊖", LIT ? tOnAccent() : COLFG, T.bar, 64, -1, 0, false, 600);
+            const auto G   = controlIcon(eControlIcon::DO_NOT_DISTURB, (int)std::lround(BAR_ICON * P.scale), LIT ? tOnAccent() : COLFG);
             if (!P.warm) {
                 const bool HOV = hovered.kind == SCard::BTN_DND;
                 P.rect(B, LIT ? COLACC : HOV ? tAccentDim() : tFill2(), (int)std::lround(BAR_BTN / 2 * P.scale));
-                if (G && G->tex)
-                    P.tex(G->tex, B.x + (B.w - G->tex->m_size.x / P.scale) / 2, B.y + (B.h - G->tex->m_size.y / P.scale) / 2);
+                if (G)
+                    P.texFit(G, CBox{B.x + (B.w - BAR_ICON) / 2, B.y + (B.h - BAR_ICON) / 2, BAR_ICON, BAR_ICON}, 0, 2.f);
             }
             SCard c;
             c.kind = SCard::BTN_DND;
@@ -494,10 +501,10 @@ namespace NHyprnotify {
         }
 
         { // "Clear all" — the global sweep; greys when the shade is empty
-            const double CW = X + PANEL_W - BAR_PADX - bx;
-            const CBox   B{bx, BARY, CW, BAR_BTN};
-            const bool   TARGET = std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && !N->snoozed && !inOsdBand(N->id); });
-            const auto   L      = cachedText("Clear all", TARGET ? COLFG : COLSUB.modifyA(0.35f), T.bar, (int)(CW * P.scale), -1, 0, false, 600);
+            const double REMAIN = std::max(0.0, X + PANEL_W - BAR_PADX - bx);
+            const auto   L      = cachedText("Clear all", TARGET ? COLFG : COLSUB.modifyA(0.35f), T.bar, (int)(std::max(1.0, REMAIN) * P.scale), -1, 0, false, 600);
+            const double CLEAR_W = std::min(REMAIN, std::max(CLEAR_MIN_W, texW(L, P.scale) + 2 * CLEAR_PADX));
+            const CBox   B{bx + std::max(0.0, (REMAIN - CLEAR_W) / 2), BARY, CLEAR_W, BAR_BTN};
             if (!P.warm) {
                 const bool HOV = hovered.kind == SCard::BTN_CLEAR;
                 P.rect(B, HOV && TARGET ? tAccentDim() : tFill2().modifyA(TARGET ? 0.09f : 0.035f), (int)std::lround(BAR_BTN / 2 * P.scale));

@@ -31,6 +31,8 @@ exercises the nested compositor at `~/.local/share/hypr-nested/`, including:
 - plugin load order, exact version/header matching, and deploy rehearsal;
 - placement, persistence, maximize, snap, close/spawn storms, and hostile data;
 - banners, center, pointer management, replies, DND, snooze, policy, and OSDs;
+- reply empty-submit ownership, OSD-safe Clear all, and semantic footer/snooze
+  source checks;
 - distinct brightness, volume, and touchpad OSD pixel crops;
 - native input capture, virtual input storms, fullscreen, reload, log hygiene;
 - bounded teardown with deliberately stuck helper processes.

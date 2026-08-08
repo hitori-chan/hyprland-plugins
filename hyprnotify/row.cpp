@@ -119,7 +119,7 @@ namespace NHyprnotify {
             static std::vector<std::pair<const std::string*, const std::string*>> btnSrc; // reused
             btnSrc.clear();
             if (ST.canReply && N->canReply && !ARMED)
-                btnSrc.emplace_back(&REPLY_ID, N->replySubmitText.empty() ? &REPLY_LBL : &N->replySubmitText);
+                btnSrc.emplace_back(&REPLY_ID, N->replyActionText.empty() ? &REPLY_LBL : &N->replyActionText);
             for (const auto& A : N->actions)
                 btnSrc.emplace_back(&A.id, &A.label);
 
@@ -181,14 +181,17 @@ namespace NHyprnotify {
             }
             if (btnH > 0) {
                 yy += BTN_ROW_GAP;
-                const double BX0 = BODYX - BTN_PADX; // optical: labels align to the content column
+                // The target starts at the same x as the body. Keep the
+                // extra width on the trailing edge so a hover/click never
+                // reaches into the icon column.
+                const double BX0 = BODYX;
                 for (size_t i = 0; i < btnBoxes.size(); i++) {
                     const CBox BOX{BX0 + btnBoxes[i].x, yy + btnBoxes[i].y, btnBoxes[i].w, btnBoxes[i].h};
                     if (!P.warm) {
                         if (hovered.id == N->id && hovered.btn == (int)i)
                             P.rect(BOX, tAccentDim(), (int)std::lround(BTN_H / 2 * P.scale));
                         if (btnLbls[i] && btnLbls[i]->tex)
-                            P.tex(btnLbls[i]->tex, BOX.x + BTN_PADX, BOX.y + (BOX.h - btnLbls[i]->tex->m_size.y / P.scale) / 2);
+                            P.tex(btnLbls[i]->tex, BOX.x, BOX.y + (BOX.h - btnLbls[i]->tex->m_size.y / P.scale) / 2);
                     }
                     card.buttons.push_back({BOX, *btnSrc[i].first});
                 }
@@ -429,22 +432,25 @@ namespace NHyprnotify {
 
         const CBox DB{UB.x - MANAGE_GAP - MANAGE_D, CY, MANAGE_D, MANAGE_D};
         const bool DHOV = hovered.kind == SCard::SNOOZE && hovered.id == N->id && hovered.part == 9;
-        const auto DG   = cachedText("◷", COLSUB, T.small, 64, -1, 0, false, 600);
+        const auto DG   = controlIcon(eControlIcon::SNOOZE, (int)std::lround(MANAGE_D * P.scale), COLSUB);
         if (!P.warm) {
             P.rect(DB, DHOV ? tAccentDim() : tFill2(), (int)std::lround(MANAGE_D / 2 * P.scale));
-            if (DG && DG->tex)
-                P.tex(DG->tex, DB.x + (DB.w - DG->tex->m_size.x / P.scale) / 2, DB.y + (DB.h - DG->tex->m_size.y / P.scale) / 2);
+            if (DG)
+                P.texFit(DG, DB, 0, 2.f);
         }
         card.manage.push_back({DB, 9});
 
         auto& LB = scratch();
-        LB += "◷ Snoozed ";
+        LB += "Snoozed ";
         appendEsc(LB, Model::snoozeLabel(N));
-        const int  LW  = std::max(1, (int)std::floor((DB.x - MANAGE_GAP - box.x - ROW_PADX) * P.scale));
+        const int  LW  = std::max(1, (int)std::floor((DB.x - MANAGE_GAP - box.x - ROW_PADX - MANAGE_D - MANAGE_GAP) * P.scale));
+        const auto SG  = controlIcon(eControlIcon::SNOOZE, (int)std::lround(MANAGE_D * P.scale), COLSUB);
         const auto LBL = cachedText(LB, COLSUB, T.body, LW, -1, 0, true, 500);
         if (!P.warm) {
+            if (SG)
+                P.texFit(SG, CBox{box.x + ROW_PADX, box.y + (SNOOZE_H - MANAGE_D) / 2, MANAGE_D, MANAGE_D}, 0, 2.f);
             if (LBL && LBL->tex)
-                P.tex(LBL->tex, box.x + ROW_PADX, box.y + (SNOOZE_H - LBL->tex->m_size.y / P.scale) / 2);
+                P.tex(LBL->tex, box.x + ROW_PADX + MANAGE_D + MANAGE_GAP, box.y + (SNOOZE_H - LBL->tex->m_size.y / P.scale) / 2);
         }
 
         cards.push_back(std::move(card));

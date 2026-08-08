@@ -781,6 +781,9 @@ else
 	bad "OSD icons: fixed-id brightness, volume, and touchpad pixels differ"
 fi
 chk "OSD icons: fixed-id replacements retain one live card" test "$(st)" = "center:0 live:1 dnd:0"
+osd_notify audio-volume-high; sleep 0.3
+hq hyprnotify clear >/dev/null; sleep 0.4
+chk "Clear all: private OSD feedback is not dismissible" test "$(st)" = "center:0 live:1 dnd:0"
 nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications CloseNotification u 9992 >/dev/null 2>&1; sleep 0.3
 
 # ---- OSD below an open shade ----------------------------------------------
@@ -861,6 +864,8 @@ chk "reply: the chat card is in the shade" test "$(st)" = "center:1 live:1 dnd:0
 REPLY_Y=$((ROWY + 57))
 click "$ROWX" "$REPLY_Y" 272
 reply_type() { printf 'tap %s\nsleep 250\n' "$1" | vk; sleep 0.6; }
+reply_type enter
+chk "reply: empty Enter keeps the field armed" test "$(st)" = "center:1 live:1 dnd:0"
 reply_type 35 # h
 reply_type 23 # i
 chk "reply: typing into the field neither acts nor dismisses" test "$(st)" = "center:1 live:1 dnd:0"

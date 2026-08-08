@@ -43,8 +43,9 @@ namespace NHyprnotify {
     inline constexpr double XCIRC = 20; // the group-close circle
 
     // Texture-backed marks cover the deterministic generic identity, popup
-    // close control, and the trusted system OSD semantics. Center controls
-    // retain their compact established glyphs.
+    // close control, trusted system OSD semantics, and the two Pixel footer /
+    // snooze marks. The long-press management rows retain their compact
+    // established glyphs by design.
     enum class eControlIcon : uint8_t {
         CLOSE,
         APPS,
@@ -56,6 +57,8 @@ namespace NHyprnotify {
         MICROPHONE_MUTED,
         TOUCHPAD,
         TOUCHPAD_DISABLED,
+        DO_NOT_DISTURB,
+        SNOOZE,
     };
 
     // The identity badge, as ratios of the avatar box it rides — AOSP's 2025
@@ -78,6 +81,7 @@ namespace NHyprnotify {
     inline constexpr double PILL_H = 20;                    // the count pill
     inline constexpr double SNOOZE_H = 38;                  // the undo row, one line of chrome
     inline constexpr double BAR_BTN = 34, BAR_PADT = 4, BAR_PADX = 10, BAR_PADB = 12, BAR_GAP = 8;
+    inline constexpr double BAR_ICON = 12, CLEAR_MIN_W = 96, CLEAR_PADX = 16;
     inline constexpr double BODY_PADT = 10, BODY_PADX = 10, BODY_PADB = 10;
     inline constexpr double STACK_GAP = 3; // the joint gap that merges the rows into one column
 

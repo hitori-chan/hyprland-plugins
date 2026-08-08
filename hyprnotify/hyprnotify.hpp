@@ -81,7 +81,7 @@ namespace NHyprnotify {
     extern HANDLE PHANDLE;
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.14.0";
+    inline constexpr const char* VERSION = "6.15.0";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -175,8 +175,9 @@ namespace NHyprnotify {
         int                  pw = 0, ph = 0;
         std::string          defaultAction; // the "default" action key, "" = none; a body click fires it, never a button
         bool                 canReply = false;   // the sender offered an "inline-reply" action
+        std::string          replyActionText;    // the action's localized affordance label, usually "Reply"
         std::string          replyPlaceholder;   // x-kde-reply-placeholder-text
-        std::string          replySubmitText;    // x-kde-reply-submit-button-text, else the action's own label
+        std::string          replySubmitText;    // x-kde-reply-submit-button-text, else the stable "Send" label
         std::vector<SAction>    actions;    // non-default actions -> buttons, in Notify order
         std::vector<SBodyImage> bodyImages; // body <img src> thumbnails
         bool                    actionIcons = false; // the action-icons hint: button ids are icon names

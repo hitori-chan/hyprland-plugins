@@ -92,6 +92,46 @@ namespace NHyprnotify {
                 cairo_rectangle(cr, 19.0 * S, 9.0 * S, 2.5 * S, 6.0 * S);
                 cairo_fill(cr);
             };
+            const auto dnd = [&]() {
+                cairo_arc(cr, 12.0 * S, 12.0 * S, 8.0 * S, 0, 2 * PI);
+                cairo_stroke(cr);
+                cairo_move_to(cr, 7.0 * S, 12.0 * S);
+                cairo_line_to(cr, 17.0 * S, 12.0 * S);
+                cairo_stroke(cr);
+            };
+            const auto snooze = [&]() {
+                // SystemUI's drawable/ic_snooze.xml: the lower clock ring,
+                // two top motion marks, and the square Z are kept in one
+                // cached 24dp recipe so font fallback cannot alter it.
+                cairo_arc(cr, 12.0 * S, 13.0 * S, 8.0 * S, 0, 2 * PI);
+                cairo_stroke(cr);
+
+                cairo_move_to(cr, 9.0 * S, 11.0 * S);
+                cairo_line_to(cr, 12.63 * S, 11.0 * S);
+                cairo_line_to(cr, 9.0 * S, 15.2 * S);
+                cairo_line_to(cr, 9.0 * S, 17.0 * S);
+                cairo_line_to(cr, 15.0 * S, 17.0 * S);
+                cairo_line_to(cr, 15.0 * S, 15.0 * S);
+                cairo_line_to(cr, 11.37 * S, 15.0 * S);
+                cairo_line_to(cr, 15.0 * S, 10.8 * S);
+                cairo_line_to(cr, 15.0 * S, 9.0 * S);
+                cairo_line_to(cr, 9.0 * S, 9.0 * S);
+                cairo_close_path(cr);
+                cairo_fill(cr);
+
+                cairo_move_to(cr, 16.056 * S, 3.346 * S);
+                cairo_line_to(cr, 17.338 * S, 1.811 * S);
+                cairo_line_to(cr, 21.945 * S, 5.661 * S);
+                cairo_line_to(cr, 20.665 * S, 7.201 * S);
+                cairo_close_path(cr);
+                cairo_fill(cr);
+                cairo_move_to(cr, 3.336 * S, 7.19 * S);
+                cairo_line_to(cr, 2.056 * S, 5.654 * S);
+                cairo_line_to(cr, 6.662 * S, 1.81 * S);
+                cairo_line_to(cr, 7.942 * S, 3.346 * S);
+                cairo_close_path(cr);
+                cairo_fill(cr);
+            };
 
             switch (icon) {
                 case eControlIcon::CLOSE:
@@ -173,6 +213,12 @@ namespace NHyprnotify {
                     cairo_move_to(cr, 4.0 * S, 4.0 * S);
                     cairo_line_to(cr, 20.0 * S, 20.0 * S);
                     cairo_stroke(cr);
+                    break;
+                case eControlIcon::DO_NOT_DISTURB:
+                    dnd();
+                    break;
+                case eControlIcon::SNOOZE:
+                    snooze();
                     break;
             }
         }

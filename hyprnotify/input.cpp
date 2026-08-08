@@ -331,6 +331,8 @@ namespace NHyprnotify {
                         continue;
                     if (H.part == 4) { // its send pill
                         const auto TX = replyText();
+                        if (TX.empty())
+                            continue; // disabled Send keeps the draft surface armed
                         replyClose();
                         Bus::sendReply(H.id, TX);
                         continue;
