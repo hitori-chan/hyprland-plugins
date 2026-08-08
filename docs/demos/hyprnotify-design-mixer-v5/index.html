@@ -1,0 +1,1392 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="assets/screenshot.svg">
+  <title>hyprnotify v5 Pixel notification study</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --page: #080b10;
+      --page-ink: #e4e8ee;
+      --page-sub: #98a2ac;
+      --page-line: rgba(220, 235, 255, .12);
+      --page-accent: #32d6ff;
+      --font: "IBM Plex Sans", system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-width: 320px; margin: 0; background: var(--page); }
+    body { color: var(--page-ink); font: 14px/1.45 var(--font); }
+    button, input { color: inherit; font: inherit; }
+    button { cursor: pointer; }
+    a { color: var(--page-accent); }
+
+    .page { width: min(1500px, calc(100% - 40px)); margin: 0 auto; padding: 28px 0 52px; }
+    .page-head { max-width: 920px; margin-bottom: 22px; }
+    .eyebrow { color: var(--page-accent); font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin: 6px 0 8px; color: #eef1f5; font-size: clamp(27px, 4vw, 42px); line-height: 1.05; }
+    .lede { max-width: 850px; margin: 0; color: var(--page-sub); font-size: 15px; }
+
+    .board { display: grid; grid-template-columns: minmax(660px, 1fr) 360px; gap: 24px; align-items: start; }
+    .stage {
+      --bar-height: 26px;
+      --island-top: 30px;
+      --island-right: 0;
+      --shade-width: 360px;
+      --background: #080b10;
+      --glass: rgba(15, 18, 24, .62);
+      --fill: rgba(255, 255, 255, .045);
+      --fill2: rgba(255, 255, 255, .09);
+      --line: rgba(220, 235, 255, .09);
+      --ink: #e4e8ee;
+      --title: #eef1f5;
+      --sub: #98a2ac;
+      --accent: #32d6ff;
+      --accent-dim: rgba(50, 214, 255, .16);
+      --on-accent: #07161c;
+      --urgent: #ff8a5c;
+      --link: #7db4ff;
+      --badge-rim: #f4f6f8;
+      position: relative;
+      min-height: 900px;
+      overflow: hidden;
+      border: 1px solid var(--page-line);
+      border-radius: 18px;
+      background: var(--background);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, .38);
+      isolation: isolate;
+    }
+    .stage::before {
+      position: absolute;
+      inset: 0;
+      z-index: -2;
+      background: linear-gradient(rgba(8, 11, 16, .28), rgba(8, 11, 16, .42)), url("assets/wallpaper.jpg") center / cover no-repeat;
+      content: "";
+      filter: saturate(.92) brightness(.82);
+      pointer-events: none;
+    }
+    .stage::after {
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      background: linear-gradient(116deg, rgba(50, 214, 255, .025), transparent 42%);
+      content: "";
+      pointer-events: none;
+    }
+
+    .desktop-topline { display: none; }
+    .workspace { position: absolute; inset: 52px 382px 18px 20px; display: grid; grid-template-columns: .84fr 1.16fr; gap: 12px; opacity: .55; }
+    .window { overflow: hidden; border: 1px solid var(--line); background: rgba(255, 255, 255, .014); }
+    .window-head { display: flex; height: 28px; align-items: center; gap: 7px; padding: 0 10px; border-bottom: 1px solid var(--line); color: var(--sub); font-size: 10px; }
+    .window-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sub); opacity: .7; }
+    .window-body { padding: 17px; color: rgba(152, 162, 172, .62); font: 11px/1.9 var(--font); }
+    .window-body .prompt, .code .cyan { color: var(--accent); }
+    .code .blue { color: var(--link); }
+    .code .orange { color: var(--urgent); }
+    .editor .window-body { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; }
+    .line-numbers { color: rgba(152, 162, 172, .32); text-align: right; }
+
+    .mode-kicker { color: var(--page-accent); font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+    .selection { max-width: 58%; color: var(--page-sub); font-size: 10px; line-height: 1.4; text-align: right; }
+
+    .mode-strip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin: 0 0 14px;
+      padding: 11px 13px;
+      border: 1px solid var(--page-line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .025);
+    }
+    .mode-copy { min-width: 0; }
+    .mode-copy h2 { margin: 2px 0 2px; color: #eef1f5; font-size: 16px; line-height: 1.15; }
+    .mode-copy p { overflow: hidden; margin: 0; color: var(--page-sub); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .mode-tabs { display: inline-flex; flex: 0 0 auto; padding: 3px; border: 1px solid var(--page-line); border-radius: 10px; background: rgba(0, 0, 0, .16); }
+    .mode-tab { min-height: 30px; padding: 5px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--page-sub); font-size: 10px; font-weight: 700; }
+    .mode-tab:hover, .mode-tab.active { background: var(--page-accent); color: var(--on-accent, #07161c); }
+
+    .hyprbar {
+      position: absolute;
+      z-index: 6;
+      top: 0;
+      right: 0;
+      left: 0;
+      height: var(--bar-height);
+      padding: 0 9px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(15, 18, 24, .78);
+      box-shadow: 0 5px 18px rgba(0, 0, 0, .2);
+      color: var(--sub);
+      font: 12px/1.1 "Fira Code", ui-monospace, monospace;
+      backdrop-filter: blur(18px);
+    }
+    .bar-current { display: grid; height: 100%; grid-template-columns: auto minmax(100px, 1fr) auto; align-items: center; gap: 8px; min-width: 0; }
+    .bar-tag, .bar-task, .bar-bell, .bar-tray button, .bar-layout { appearance: none; border: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; }
+    .bar-tags, .bar-tasks, .bar-right, .bar-aosp-status { display: flex; min-width: 0; align-items: center; }
+    .bar-tags { gap: 0; }
+    .bar-tag { position: relative; width: auto; min-width: 0; height: 100%; display: grid; place-items: center; padding: 0 6px; border-radius: 0; color: var(--sub); font-size: 12px; }
+    .bar-tag.active { background: var(--active-bg, rgba(30, 35, 32, .9)); color: var(--active, var(--accent)); }
+    .bar-tag.occupied::before { position: absolute; top: 3px; left: 3px; width: 4px; height: 4px; background: var(--square, #dcdccc); content: ""; }
+    .bar-tag.active.occupied::before { background: var(--square-active, #f0dfaf); }
+    .bar-tasks { flex: 1 1 auto; gap: 0; overflow: hidden; }
+    .bar-task { min-width: 0; flex: 1 1 0; display: flex; height: 100%; align-items: center; gap: 4px; padding: 0 4px; border-radius: 0; color: var(--sub); white-space: nowrap; }
+    .bar-task.active { background: transparent; color: var(--active, var(--accent)); }
+    .bar-task img { width: 20px; height: 20px; flex: 0 0 auto; object-fit: contain; }
+    .bar-task span { overflow: hidden; text-overflow: ellipsis; }
+    .bar-right { justify-content: flex-end; gap: 7px; white-space: nowrap; }
+    .bar-tray, .bar-system { display: flex; align-items: center; gap: 10px; }
+    .bar-tray button { display: grid; width: 20px; height: 26px; place-items: center; padding: 0; }
+    .bar-tray img { width: 20px; height: 20px; object-fit: contain; filter: brightness(0) invert(70%); }
+    .bar-system img, .bar-layout img { width: 16px; height: 16px; object-fit: contain; }
+    .bar-bell { position: relative; display: grid; width: 28px; height: 26px; place-items: center; padding: 0; }
+    .bar-bell > img { width: 16px; height: 16px; }
+    .bar-bell b { position: absolute; top: 1px; right: -3px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--active, var(--accent)); color: var(--on-accent, #07161c); font-size: 9px; line-height: 15px; text-align: center; }
+    .bar-battery { display: flex; align-items: center; color: var(--title); }
+    .bar-battery img { width: 42px; height: 16px; object-fit: contain; }
+    .bar-clock { color: var(--title); }
+    .bar-layout { display: flex; align-items: center; padding: 0; }
+    .bar-aosp-status { display: none; height: 100%; justify-content: space-between; color: var(--aosp-on-surface, #e6e1e5); font-size: 11px; font-weight: 650; }
+    .bar-aosp-status .bar-system { gap: 8px; }
+    .bar-aosp-status img { filter: none; }
+    .pixel-chrome, .pixel-nav-pill { display: none; }
+
+    .runtime-stack { position: absolute; z-index: 4; top: 30px; right: 0; width: 360px; }
+    .center-hidden .runtime-stack { display: none; }
+    .shade {
+      display: flex;
+      width: 360px;
+      flex-direction: column;
+      overflow: hidden;
+      border-radius: 22px;
+      background: var(--glass);
+      box-shadow: 0 22px 46px rgba(0, 0, 0, .45);
+      backdrop-filter: blur(18px);
+    }
+    .shade-head { display: none; }
+    .shade-body { display: grid; gap: 3px; padding: 10px; }
+    .notification {
+      min-width: 0;
+      padding: 9px 12px 10px;
+      border: 0;
+      border-radius: 14px;
+      background: var(--fill);
+    }
+    .notification.urgent { box-shadow: inset 1px 0 var(--urgent); }
+    .notification.clickable { cursor: pointer; }
+    .notification.clickable:hover { background: var(--accent-dim); }
+    .notification-head { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 10px; align-items: start; }
+    .app-cell { position: relative; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 9px; background: var(--fill2); color: var(--accent); }
+    .app-cell .semantic-icon { width: 19px; height: 19px; }
+    .semantic-icon { display: block; object-fit: contain; filter: brightness(0) invert(92%); }
+    .app-icon { display: block; object-fit: contain; }
+    .app-cell.qbit { overflow: hidden; background: transparent; }
+    .app-cell.qbit img { display: block; width: 40px; height: 40px; object-fit: cover; }
+    .avatar { width: 40px; height: 40px; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: #a8b1ba; color: #202830; font-size: 17px; font-weight: 650; }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; object-position: center; }
+
+    /* The checked-in renderer's AOSP conversation geometry: 20px opaque badge,
+       16px app mark, and a 2px rim, protruding 2px from a 40px avatar. */
+    .app-badge { position: absolute; right: -2px; bottom: -2px; width: 20px; height: 20px; display: grid; place-items: center; padding: 2px; border-radius: 50%; background: var(--badge-rim); }
+    .badge-mark { width: 16px; height: 16px; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: #2aabee; color: white; }
+    .badge-mark .app-icon { width: 16px; height: 16px; border-radius: 50%; }
+    .identity { min-width: 0; padding-top: 1px; }
+    .identity strong, .identity span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .identity strong { color: var(--title); font-size: 11px; font-weight: 500; }
+    .identity span { margin-top: 1px; color: var(--sub); font-size: 10px; }
+    .card-title { margin-top: 4px; color: var(--title); font-size: 13.5px; font-weight: 650; }
+    .card-body { color: var(--ink); font-size: 12.5px; }
+    .card-body .link { color: var(--link); text-decoration: underline; }
+    .body-indent { margin-left: 50px; }
+    .hero { height: 110px; margin: 10px 0 10px; overflow: hidden; border-radius: 14px; background: #091b20; }
+    .hero-image { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; }
+    .hero-card { padding: 0; overflow: hidden; }
+    .hero-card .hero { height: 110px; margin: 0; border-radius: 14px 14px 0 0; }
+    .hero-copy { padding: 9px 12px 10px; }
+    .hero-copy .card-title { margin-top: 4px; }
+    .action-row { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0 50px; }
+    .action {
+      min-height: 26px;
+      padding: 4px 10px;
+      border: 0;
+      border-radius: 13px;
+      background: transparent;
+      color: var(--accent);
+      font-size: 12.5px;
+      font-weight: 600;
+      text-align: left;
+    }
+    .action:hover, .action:focus-visible { background: var(--accent-dim); outline: 0; }
+    .snooze-action { display: grid; width: 28px; height: 28px; margin-left: auto; place-items: center; padding: 0; }
+    .snooze-action svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .reply-box { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; margin: 6px 0 0 50px; }
+    .reply-input { min-width: 0; height: 26px; padding: 4px 10px; border: 1px solid var(--accent); border-radius: 13px; outline: 0; background: var(--fill2); color: var(--ink); font-size: 12px; }
+    .reply-input::placeholder { color: var(--sub); }
+    .send { min-width: 46px; height: 26px; padding: 4px 10px; border: 0; border-radius: 13px; background: var(--accent-dim); color: var(--accent); font-size: 12px; font-weight: 600; }
+    .send:not(:disabled) { background: var(--accent); color: var(--on-accent); }
+    .send:disabled { cursor: not-allowed; opacity: .55; }
+
+    .shade-footer { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; padding: 4px 10px 12px; }
+    .dnd, .clear, .muted-rule { height: 34px; border: 0; border-radius: 17px; background: var(--fill2); }
+    .dnd { width: 34px; display: grid; place-items: center; color: var(--ink); }
+    .dnd:hover, .dnd.active { background: var(--accent); color: var(--on-accent); }
+    .dnd .legacy-glyph { font-size: 16px; line-height: 1; }
+    .clear { width: 100%; color: var(--ink); font-size: 12.5px; font-weight: 600; }
+    .clear:hover { background: var(--accent-dim); color: var(--accent); }
+    .clear.disabled { color: var(--sub); opacity: .34; }
+    .history, .settings { display: none; width: 56px; height: 34px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 17px; background: var(--fill2); color: var(--ink); }
+    .history:hover, .settings:hover { background: var(--accent-dim); color: var(--accent); }
+    .muted-rule { display: none; align-items: center; justify-content: center; color: var(--sub); font-size: 11px; }
+
+    .manage-card { padding-bottom: 8px; }
+    .manage-head { display: grid; grid-template-columns: 28px minmax(0, 1fr) 24px; gap: 8px; align-items: center; min-height: 28px; }
+    .manage-head .mini-icon { position: relative; width: 28px; height: 28px; display: grid; place-items: center; overflow: visible; border-radius: 8px; background: var(--fill2); color: var(--accent); }
+    .manage-head .mini-icon .app-icon { width: 22px; height: 22px; border-radius: 50%; }
+    .manage-head strong { color: var(--title); font-size: 12.5px; font-weight: 600; }
+    .manage-head span { color: var(--sub); font-size: 10px; }
+    .manage-head .manage-details > span { display: block; }
+    .manage-close { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: var(--fill2); color: var(--ink); }
+    .manage-close:hover { background: var(--accent-dim); color: var(--accent); }
+    .manage-list { display: grid; gap: 2px; margin-top: 6px; }
+    .manage-row { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 6px; min-height: 28px; align-items: center; padding: 2px 4px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); font-size: 12px; text-align: left; }
+    .manage-row:hover { background: var(--accent-dim); color: var(--accent); }
+    .manage-row.danger { color: var(--urgent); }
+    .legacy-glyph { display: inline-block; width: 22px; color: var(--sub); font-size: 16px; line-height: 1; text-align: center; }
+    .manage-row:hover .legacy-glyph { color: var(--accent); }
+
+    .osd-stack { display: grid; gap: 3px; margin-top: 6px; margin-left: auto; width: 348px; }
+    .osd-card { padding: 9px 12px 10px; border-radius: 16px; background: var(--glass); box-shadow: 0 18px 34px rgba(0, 0, 0, .4); backdrop-filter: blur(18px); }
+    .osd-head { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+    .osd-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 9px; background: var(--fill2); color: var(--ink); }
+    .osd-icon .semantic-icon { width: 20px; height: 20px; }
+    .osd-copy strong, .osd-copy span { display: block; }
+    .osd-copy strong { color: var(--title); font-size: 11px; font-weight: 500; }
+    .osd-copy span { color: var(--sub); font-size: 10px; }
+    .osd-value { color: var(--title); font-size: 13px; font-weight: 650; }
+    .osd-track { height: 5px; margin: 8px 0 0 50px; overflow: hidden; border-radius: 3px; background: var(--fill2); }
+    .osd-track span { display: block; width: 58%; height: 100%; border-radius: inherit; background: var(--accent); }
+
+    .empty-state { min-height: 140px; display: grid; place-items: center; padding: 20px; color: var(--sub); font-size: 12.5px; text-align: center; }
+    .toast { min-height: 19px; padding: 4px 12px 8px; color: var(--accent); font-size: 10px; text-align: center; }
+
+    /* Pixel 7 reference mode. The source mode stays the default and keeps the
+       desktop bar/island. This mode reproduces the supplied 576x1280 captures:
+       status row, four large tiles, blue/teal notification well, wide pill,
+       and history/Clear all/settings footer. */
+    .design-aosp {
+      --background: #102532;
+      --glass: rgba(11, 43, 57, .72);
+      --fill: #111d23;
+      --fill2: #273944;
+      --line: rgba(224, 240, 248, .20);
+      --ink: #eef3f5;
+      --title: #f3f6f7;
+      --sub: #d1dde1;
+      --accent: #9acbff;
+      --accent-dim: rgba(154, 203, 255, .20);
+      --on-accent: #102333;
+      --badge-rim: #f5f7f8;
+      background: var(--background);
+    }
+    .design-aosp::before {
+      background: linear-gradient(180deg, #18252d 0%, #1f2c34 23%, #172a35 34%, #162a36 72%, #132732 100%);
+      filter: none;
+      transform: none;
+    }
+    .design-aosp::after { background: none; }
+    .design-aosp .hyprbar { display: none; }
+    .design-aosp .workspace { display: none; }
+    .design-aosp .pixel-chrome {
+      position: absolute;
+      z-index: 7;
+      top: 0;
+      right: 50%;
+      bottom: 0;
+      display: block;
+      width: min(576px, 100%);
+      transform: translateX(50%);
+      pointer-events: none;
+    }
+    .pixel-statusbar { display: flex; height: 54px; align-items: center; justify-content: space-between; padding: 12px 24px 0; color: #f2f5f6; }
+    .pixel-date { display: flex; align-items: baseline; gap: 12px; font-size: 14px; }
+    .pixel-date strong { font-size: 16px; font-weight: 700; }
+    .pixel-date span { font-weight: 650; }
+    .pixel-status-icons { display: flex; align-items: center; gap: 9px; }
+    .pixel-status-icons img { width: 19px; height: 19px; object-fit: contain; filter: brightness(0) invert(1); }
+    .pixel-status-icons img:last-child { width: 40px; height: 16px; }
+    .pixel-signal { display: inline-flex; align-items: end; gap: 2px; height: 16px; }
+    .pixel-signal i { display: block; width: 3px; border-radius: 2px; background: #f2f5f6; }
+    .pixel-signal i:nth-child(1) { height: 5px; opacity: .62; }
+    .pixel-signal i:nth-child(2) { height: 8px; opacity: .76; }
+    .pixel-signal i:nth-child(3) { height: 11px; opacity: .9; }
+    .pixel-signal i:nth-child(4) { height: 14px; }
+    .pixel-quick-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 19px 24px 0; pointer-events: auto; }
+    .pixel-quick-tile { display: flex; min-width: 0; height: 100px; align-items: center; gap: 13px; padding: 11px; border: 0; border-radius: 43px; background: #151e24; color: var(--ink); text-align: left; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .025); }
+    .pixel-quick-tile.active { background: #9acbff; color: #122536; }
+    .pixel-quick-tile:hover { box-shadow: inset 0 0 0 2px rgba(154, 203, 255, .72); }
+    .pixel-quick-icon { display: grid; width: 76px; height: 76px; flex: 0 0 76px; place-items: center; border-radius: 50%; background: #26313a; }
+    .pixel-quick-tile.active .pixel-quick-icon { background: #b8dcff; }
+    .pixel-quick-icon img { width: 38px; height: 38px; object-fit: contain; filter: brightness(0) invert(1); }
+    .pixel-quick-tile.active .pixel-quick-icon img { filter: brightness(0) saturate(100%) invert(12%) sepia(16%) saturate(1054%) hue-rotate(165deg) brightness(93%) contrast(93%); }
+    .pixel-inline-icon { color: #e8eef1; }
+    .pixel-quick-tile.active .pixel-inline-icon { color: #122536; }
+    .pixel-inline-icon svg { width: 39px; height: 39px; fill: currentColor; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .pixel-quick-tile[data-quick="Bluetooth"] svg { fill: none; }
+    .pixel-quick-copy { min-width: 0; }
+    .pixel-quick-copy strong, .pixel-quick-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pixel-quick-copy strong { font-size: 17px; line-height: 1.18; }
+    .pixel-quick-copy small { margin-top: 3px; font-size: 14px; }
+    .design-aosp .runtime-stack { top: 300px; right: 50%; bottom: 0; width: min(576px, 100%); transform: translateX(50%); }
+    .design-aosp .shade { width: 100%; height: 100%; min-height: 0; border-radius: 32px 32px 0 0; background: rgba(10, 45, 59, .72); box-shadow: none; backdrop-filter: blur(22px) saturate(1.08); }
+    .design-aosp .shade-head { display: none; }
+    .design-aosp .shade-body { flex: 0 0 auto; gap: 12px; padding: 22px 24px 12px; }
+    .design-aosp .notification { padding: 21px 24px 20px; border-radius: 31px; background: #111d23; box-shadow: 0 2px 0 rgba(255, 255, 255, .02); }
+    .design-aosp .notification.clickable:hover { background: #17272f; }
+    .design-aosp .notification-head { grid-template-columns: 52px minmax(0, 1fr); gap: 12px; }
+    .design-aosp .app-cell { width: 52px; height: 52px; border-radius: 50%; background: transparent; }
+    .design-aosp .avatar { width: 52px; height: 52px; }
+    .design-aosp .identity { padding-top: 4px; }
+    .design-aosp .identity strong { font-size: 14px; }
+    .design-aosp .identity span { margin-top: 3px; font-size: 12px; }
+    .design-aosp .card-title { margin-top: 11px; font-size: 18px; }
+    .design-aosp .card-body { font-size: 16px; }
+    .design-aosp .body-indent { margin-left: 64px; }
+    .design-aosp .action-row { align-items: center; gap: 8px; margin: 17px 0 0 64px; }
+    .design-aosp .action { min-height: 34px; padding: 5px 10px; border-radius: 17px; color: var(--accent); font-size: 16px; }
+    .design-aosp .action:hover, .design-aosp .action:focus-visible { background: rgba(154, 203, 255, .13); }
+    .design-aosp .snooze-action { display: grid; width: 34px; height: 34px; margin-left: auto; place-items: center; padding: 0; color: var(--accent); }
+    .design-aosp .snooze-action svg { width: 27px; height: 27px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .design-aosp .hero-card, .design-aosp .qbit-card { display: none; }
+    .design-aosp .shade-footer { grid-template-columns: 56px minmax(0, 1fr) 56px; gap: 12px; max-width: none; width: 100%; margin: 0; padding: 10px 24px 24px; }
+    .design-aosp .dnd { display: none; }
+    .design-aosp .history, .design-aosp .settings { display: flex; width: 56px; height: 56px; border-radius: 28px; background: #16242c; color: var(--ink); }
+    .design-aosp .history:hover, .design-aosp .settings:hover { background: #243944; color: var(--accent); }
+    .design-aosp .clear { height: 56px; border-radius: 28px; background: #16242c; color: var(--ink); font-size: 18px; }
+    .design-aosp .clear:hover { background: #243944; color: var(--accent); }
+    .design-aosp .toast { color: var(--accent); }
+    .design-aosp .osd-stack { display: none; }
+    .design-aosp .pixel-nav-pill { position: absolute; z-index: 8; right: 50%; bottom: 14px; display: block; width: 152px; height: 5px; border-radius: 4px; background: #f2f5f6; transform: translateX(50%); opacity: .95; }
+
+    .manage-settings { display: grid; width: 40px; height: 40px; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--accent); }
+    .manage-settings:hover { background: var(--accent-dim); }
+    .manage-settings .icon { width: 28px; height: 28px; }
+    .channel-list { display: grid; gap: 10px; margin-top: 20px; }
+    .channel-row { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 12px; min-height: 54px; align-items: center; padding: 9px 14px; border: 1px solid rgba(228, 233, 236, .24); border-radius: 22px; background: transparent; color: var(--ink); text-align: left; }
+    .channel-row:hover { border-color: var(--accent); }
+    .channel-row.selected { background: #526274; border-color: rgba(239, 246, 250, .75); }
+    .channel-icon { display: grid; width: 28px; height: 28px; place-items: center; color: var(--ink); }
+    .channel-icon .icon { width: 25px; height: 25px; }
+    .channel-copy strong, .channel-copy small { display: block; }
+    .channel-copy strong { font-size: 15px; }
+    .channel-copy small { margin-top: 2px; font-size: 13px; line-height: 1.25; }
+    .manage-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+    .manage-dismiss, .manage-done { min-width: 104px; height: 48px; padding: 0 18px; border-radius: 24px; font-size: 15px; font-weight: 650; }
+    .manage-dismiss { border: 1px solid var(--accent); background: transparent; color: var(--ink); }
+    .manage-done { border: 1px solid transparent; background: var(--accent); color: var(--on-accent); }
+    .manage-dismiss:hover, .manage-done:hover { filter: brightness(1.08); }
+    .design-aosp .manage-card { padding: 21px 24px 16px; background: #2a2b2b; border-radius: 31px; }
+    .design-aosp .manage-head { grid-template-columns: 52px minmax(0, 1fr) 40px; gap: 12px; min-height: 52px; }
+    .design-aosp .manage-head .mini-icon { width: 52px; height: 52px; border-radius: 50%; background: transparent; }
+    .design-aosp .manage-head .mini-icon .avatar { width: 52px; height: 52px; }
+    .design-aosp .manage-head strong { font-size: 17px; }
+    .design-aosp .manage-head span span { display: block; margin-top: 3px; color: var(--ink); font-size: 15px; }
+    .design-aosp .manage-list { display: none; }
+    .design-aosp .channel-list { margin-top: 22px; }
+    .design-aosp .channel-row { min-height: 68px; border-radius: 24px; }
+    .design-aosp .channel-row.selected { min-height: 112px; }
+    .design-aosp .manage-actions { margin-top: 18px; }
+    .design-aosp .manage-dismiss, .design-aosp .manage-done { height: 52px; border-radius: 26px; }
+
+    .notes { padding: 2px 0; }
+    .notes h2 { margin: 6px 0 8px; color: #eef1f5; font-size: 22px; line-height: 1.1; }
+    .notes > p { color: var(--page-sub); font-size: 12px; }
+    .facts { display: grid; gap: 0; margin: 18px 0 0; }
+    .fact { padding: 11px 0; border-top: 1px solid var(--page-line); }
+    .fact strong { color: #eef1f5; font-size: 12px; }
+    .fact p { margin: 4px 0 0; color: var(--page-sub); font-size: 11px; }
+    .tokens { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin: 18px 0; }
+    .token { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 6px; align-items: center; padding: 5px; border: 1px solid var(--page-line); border-radius: 7px; background: rgba(255, 255, 255, .025); }
+    .token i { width: 20px; height: 20px; border: 1px solid var(--page-line); border-radius: 5px; }
+    .token strong, .token code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .token strong { color: var(--page-ink); font-size: 9px; }
+    .token code { color: var(--page-sub); font-size: 8px; }
+    .sources { margin-top: 18px; color: var(--page-sub); font-size: 10px; }
+    .sources ul { margin: 6px 0 0; padding-left: 15px; }
+    .sources li { margin: 4px 0; }
+
+    .icon { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+    @media (max-width: 1120px) {
+      .board { grid-template-columns: minmax(620px, 1fr) 320px; gap: 18px; }
+      .workspace { right: 342px; }
+      .desktop-topline { right: 342px; }
+    }
+    @media (max-width: 900px) {
+      .page { width: min(100% - 22px, 720px); padding-top: 20px; }
+      .board { display: block; }
+      .notes { margin-top: 26px; }
+    }
+    @media (max-width: 600px) {
+      .page { width: calc(100% - 16px); }
+      .stage { min-height: 880px; border-radius: 14px; }
+      .workspace { inset: 50px 14px 18px; grid-template-columns: 1fr; opacity: .24; }
+      .workspace .editor { display: none; }
+      .runtime-stack { right: 8px; left: 8px; width: auto; }
+      .runtime-stack { top: 30px; }
+      .shade { width: 100%; }
+      .osd-stack { width: calc(100% - 12px); }
+      .selection { max-width: none; margin-top: 5px; text-align: left; }
+      .mode-strip { display: block; }
+      .mode-tabs { width: 100%; margin-top: 10px; }
+      .mode-tab { flex: 1 1 0; }
+      .bar-current { grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px; padding: 0 2px; }
+      .bar-tags .bar-tag:nth-child(n + 6), .bar-task span { display: none; }
+      .bar-tray { gap: 2px; }
+      .bar-tray button { width: 16px; }
+      .bar-tray img { width: 14px; height: 14px; }
+      .bar-right { gap: 3px; }
+      .bar-battery span, .bar-layout, .bar-clock { display: none; }
+      .design-aosp .pixel-chrome { right: 0; width: 100%; transform: none; }
+      .design-aosp .runtime-stack { top: 245px; right: 0; bottom: 0; left: 0; width: 100%; transform: none; }
+      .design-aosp .pixel-statusbar { padding-left: 18px; padding-right: 18px; }
+      .design-aosp .pixel-quick-grid { gap: 7px; padding-left: 18px; padding-right: 18px; }
+      .design-aosp .pixel-quick-tile { height: 68px; gap: 6px; padding: 6px; border-radius: 32px; }
+      .design-aosp .pixel-quick-icon { width: 52px; height: 52px; flex-basis: 52px; }
+      .design-aosp .pixel-quick-icon img, .design-aosp .pixel-inline-icon svg { width: 27px; height: 27px; }
+      .design-aosp .pixel-quick-copy strong { font-size: 12px; }
+      .design-aosp .pixel-quick-copy small { font-size: 9px; }
+      .design-aosp .shade-head { padding: 54px 16px 10px; }
+      .design-aosp .shade-body { padding: 8px 12px 12px; }
+      .design-aosp .shade-footer { padding: 8px 12px 18px; }
+      .design-aosp .osd-stack { right: 12px; bottom: 12px; width: calc(100% - 24px); }
+      .osdplace-below .osd-stack, .osdplace-aligned .osd-stack { width: calc(100% - 12px); }
+      .osdplace-detached .runtime-stack { bottom: 12px; }
+      .osdplace-detached .osd-stack { right: 0; width: calc(100% - 12px); }
+    }
+
+    /* v5 keeps the Pixel reference in the same coordinate space as the
+       supplied 576x1280 captures. The outer stage may scale on a narrow
+       browser, but every child remains positioned in Pixel pixels. */
+    @font-face {
+      font-family: "Pixel Google Sans";
+      src: url("assets/fonts/GoogleSansFlex-Regular.ttf") format("truetype");
+      font-style: normal;
+      font-weight: 100 900;
+      font-display: swap;
+    }
+    .pixel-canvas { position: relative; width: 100%; height: 100%; }
+    .design-aosp {
+      width: min(576px, 100%);
+      height: auto;
+      min-height: 0;
+      aspect-ratio: 576 / 1280;
+      margin: 0 auto;
+      border: 0;
+      border-radius: 0;
+      background: #132733;
+    }
+    .design-aosp .pixel-canvas {
+      width: 576px;
+      height: 1280px;
+      transform: scale(var(--pixel-scale, 1));
+      transform-origin: top left;
+      color: #eef3f5;
+      font-family: "Pixel Google Sans", system-ui, sans-serif;
+      font-variation-settings: "wdth" 108;
+    }
+    .design-aosp .pixel-chrome {
+      top: 0;
+      right: auto;
+      bottom: auto;
+      left: 0;
+      width: 576px;
+      height: 1280px;
+      transform: none;
+      pointer-events: none;
+    }
+    .design-aosp .pixel-statusbar {
+      position: absolute;
+      top: 0;
+      right: 0;
+      left: 0;
+      height: 54px;
+      padding: 17px 29px 0 24px;
+      font-family: "Pixel Google Sans", system-ui, sans-serif;
+      font-size: 16px;
+      line-height: 20px;
+    }
+    .design-aosp .pixel-date { gap: 16px; }
+    .design-aosp .pixel-date strong { font-size: 18px; font-weight: 700; }
+    .design-aosp .pixel-date span { font-size: 18px; font-weight: 650; }
+    .design-aosp .pixel-status-icons { gap: 9px; height: 21px; }
+    .design-aosp .pixel-status-icons img { filter: none; }
+    .design-aosp .pixel-status-icons .pixel-status-battery { width: 21px; height: 19px; transform: translateX(-3px); }
+    .design-aosp .pixel-status-icons .pixel-mobile-error { width: 21px; height: 12px; transform: translateX(-5px); }
+    .design-aosp .pixel-status-icons .pixel-status-wifi { width: 19px; height: 15px; }
+    .design-aosp .pixel-signal { width: 18px; height: 16px; gap: 2px; }
+    .design-aosp .pixel-signal i { width: 3px; background: #f2f5f6; }
+    .design-aosp .pixel-battery-chip {
+      position: relative;
+      display: inline-grid;
+      width: 38px;
+      height: 16px;
+      place-items: center;
+      border-radius: 5px;
+      background: #737778;
+      color: #26323a;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 16px;
+    }
+    .design-aosp .pixel-battery-chip::before {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 11px;
+      height: 16px;
+      border-radius: 5px 0 0 5px;
+      background: #f2f4f4;
+      content: "";
+    }
+    .design-aosp .pixel-battery-chip > span { position: relative; z-index: 1; }
+    .design-aosp .pixel-battery-chip::after {
+      position: absolute;
+      width: 2px;
+      height: 6px;
+      margin-left: 40px;
+      border-radius: 0 2px 2px 0;
+      background: #e9eff2;
+      content: "";
+    }
+    .design-aosp .pixel-quick-grid {
+      position: absolute;
+      top: 73px;
+      right: 23px;
+      left: 23px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 11px 11px;
+      width: auto;
+      padding: 0;
+      pointer-events: auto;
+    }
+    .design-aosp .pixel-quick-tile {
+      height: 100px;
+      gap: 10px;
+      padding: 11px;
+      border-radius: 43px;
+      background: #151c22;
+      box-shadow: none;
+      font-family: "Pixel Google Sans", system-ui, sans-serif;
+    }
+    .design-aosp .pixel-quick-tile.active { background: #161b1f; color: #eef3f5; }
+    .design-aosp .pixel-quick-icon {
+      width: 76px;
+      height: 76px;
+      flex-basis: 76px;
+      background: #343c43;
+    }
+    .design-aosp .pixel-quick-tile.active .pixel-quick-icon { background: #96c9fe; }
+    .design-aosp .pixel-quick-tile.active .pixel-quick-icon { border-radius: 22px; }
+    .design-aosp .pixel-quick-icon img { width: 38px; height: 38px; filter: none; }
+    .design-aosp .pixel-quick-tile.active .pixel-quick-icon img { filter: brightness(0) saturate(100%) invert(13%) sepia(11%) saturate(1272%) hue-rotate(165deg) brightness(91%) contrast(92%); }
+    .design-aosp .pixel-quick-copy strong { font-size: 17px; line-height: 20px; }
+    .design-aosp .pixel-quick-copy small { margin-top: 2px; font-size: 14px; line-height: 18px; }
+    .design-aosp .runtime-stack {
+      top: 318px;
+      right: auto;
+      bottom: auto;
+      left: 0;
+      width: 576px;
+      height: 962px;
+      transform: none;
+    }
+    .design-aosp .shade {
+      width: 576px;
+      height: 962px;
+      min-height: 0;
+      border-radius: 32px 32px 0 0;
+      background: rgba(19, 39, 50, .96);
+      box-shadow: none;
+      backdrop-filter: blur(22px) saturate(1.08);
+      font-family: "Pixel Google Sans", system-ui, sans-serif;
+    }
+    .design-aosp .shade-body {
+      display: grid;
+      gap: 0;
+      padding: 23px 23px 0;
+    }
+    .design-aosp .notification:not(.manage-card) {
+      position: relative;
+      width: 530px;
+      height: 181px;
+      padding: 0;
+      border-radius: 31px;
+      background: #172025;
+      box-shadow: none;
+    }
+    .design-aosp .notification-head {
+      position: absolute;
+      top: 19px;
+      left: 23px;
+      display: grid;
+      grid-template-columns: 56px minmax(0, 1fr);
+      gap: 21px;
+      width: 466px;
+      height: 56px;
+    }
+    .design-aosp .app-cell,
+    .design-aosp .avatar {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: transparent;
+    }
+    .design-aosp .avatar img { object-fit: fill; }
+    .design-aosp .identity { padding-top: 3px; }
+    .design-aosp .identity strong { font-size: 16px; font-weight: 500; line-height: 21px; }
+    .design-aosp .notification:not(.manage-card) .identity span { display: none; }
+    .design-aosp .notification:not(.manage-card) .identity strong::after {
+      display: inline-block;
+      width: 15px;
+      height: 15px;
+      margin-left: 6px;
+      vertical-align: -2px;
+      background: url("assets/pixel-notification-alert.svg") center / contain no-repeat;
+      content: "";
+    }
+    .design-aosp .identity span { margin-top: 1px; font-size: 14px; line-height: 19px; }
+    .design-aosp .body-indent {
+      position: absolute;
+      top: 54px;
+      left: 100px;
+      width: 390px;
+      margin: 0;
+    }
+    .design-aosp .card-title { margin: 0; font-size: 19px; font-weight: 650; line-height: 25px; }
+    .design-aosp .card-body { font-size: 17px; line-height: 23px; }
+    .design-aosp .action-row {
+      position: absolute;
+      right: 17px;
+      bottom: 21px;
+      left: 90px;
+      align-items: center;
+      gap: 21px;
+      margin: 0;
+    }
+    .design-aosp .action { min-height: 34px; padding: 5px 10px; border-radius: 17px; color: #9acbff; font-size: 19px; line-height: 24px; }
+    .design-aosp .snooze-action { width: 38px; height: 38px; margin-left: auto; padding: 0; transform: translateX(-5px); }
+    .design-aosp .snooze-action svg { display: none; }
+    .design-aosp .snooze-action::before { display: block; width: 32px; height: 32px; background: url("assets/pixel-snooze.svg") center / contain no-repeat; content: ""; }
+    .design-aosp .app-badge { right: -3px; bottom: -3px; width: 22px; height: 22px; padding: 2px; background: #f5f7f8; }
+    .design-aosp .badge-mark,
+    .design-aosp .badge-mark .app-icon { width: 18px; height: 18px; }
+    .design-aosp .badge-mark { background: #2aabee; }
+    .design-aosp .hero-card,
+    .design-aosp .qbit-card { display: none; }
+    .design-aosp .shade-footer {
+      grid-template-columns: 82px minmax(0, 1fr) 83px;
+      gap: 12px;
+      width: 530px;
+      max-width: none;
+      margin: 0 23px;
+      padding: 27px 0 0;
+    }
+    .design-aosp .dnd { display: none; }
+    .design-aosp .history,
+    .design-aosp .settings,
+    .design-aosp .clear {
+      height: 56px;
+      border-radius: 28px;
+      background: #131c21;
+      color: #eef3f5;
+    }
+    .design-aosp .history,
+    .design-aosp .settings { display: grid; width: auto; place-items: center; }
+    .design-aosp .history img,
+    .design-aosp .settings img { width: 24px; height: 24px; }
+    .design-aosp .clear { width: auto; font-size: 23px; font-weight: 600; line-height: 28px; }
+    .design-aosp .history:hover,
+    .design-aosp .settings:hover,
+    .design-aosp .clear:hover { background: #1b2b34; color: #9acbff; }
+    .design-aosp .toast { color: #9acbff; }
+    .design-aosp .osd-stack { display: none; }
+    .design-aosp .manage-card {
+      position: relative;
+      width: 530px;
+      height: 494px;
+      padding: 0;
+      border-radius: 31px;
+      background: #2a2a2a;
+    }
+    .design-aosp .manage-head {
+      position: absolute;
+      top: 22px;
+      right: 18px;
+      left: 23px;
+      display: grid;
+      grid-template-columns: 56px minmax(0, 1fr) 40px;
+      gap: 21px;
+      height: 56px;
+      min-height: 56px;
+    }
+    .design-aosp .manage-head .mini-icon { width: 56px; height: 56px; border-radius: 50%; background: transparent; }
+    .design-aosp .manage-head .mini-icon .avatar { width: 56px; height: 56px; }
+    .design-aosp .manage-head strong { font-size: 18px; font-weight: 650; line-height: 24px; }
+    .design-aosp .manage-head .manage-details > span { display: block; margin-top: 0; color: #eef3f5; font-size: 16px; line-height: 24px; }
+    .design-aosp .manage-settings { width: 40px; height: 40px; margin-top: 0; border-radius: 50%; }
+    .design-aosp .manage-settings .icon { display: none; }
+    .design-aosp .manage-settings::before { display: block; width: 32px; height: 32px; background: url("assets/pixel-settings.svg") center / contain no-repeat; content: ""; }
+    .design-aosp .manage-list { display: none; }
+    .design-aosp .channel-list {
+      position: absolute;
+      top: 125px;
+      right: 22px;
+      left: 22px;
+      display: grid;
+      gap: 10px;
+      margin: 0;
+    }
+    .design-aosp .channel-row {
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr);
+      gap: 17px;
+      min-height: 68px;
+      height: 68px;
+      align-items: center;
+      padding: 9px 16px;
+      border: 1px solid #55585b;
+      border-radius: 20px;
+      background: transparent;
+      color: #eef3f5;
+    }
+    .design-aosp .channel-row.selected { height: 112px; min-height: 112px; border-color: #c2ccd4; border-radius: 28px; background: #3b4858; }
+    .design-aosp .channel-icon { width: 32px; height: 32px; }
+    .design-aosp .channel-icon .icon { display: none; }
+    .design-aosp .channel-icon::before { display: block; width: 28px; height: 28px; background: center / contain no-repeat; content: ""; }
+    .design-aosp .channel-row:nth-child(1) .channel-icon::before { background-image: url("assets/pixel-priority.svg"); }
+    .design-aosp .channel-row:nth-child(2) .channel-icon::before { background-image: url("assets/pixel-notification-alert.svg"); }
+    .design-aosp .channel-row:nth-child(3) .channel-icon::before { background-image: url("assets/pixel-notification-silence.svg"); }
+    .design-aosp .channel-copy strong { font-size: 18px; line-height: 24px; }
+    .design-aosp .channel-copy small { margin-top: 1px; font-size: 16px; line-height: 22px; }
+    .design-aosp .manage-actions {
+      position: absolute;
+      right: 22px;
+      bottom: 16px;
+      left: 22px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 0;
+    }
+    .design-aosp .manage-dismiss,
+    .design-aosp .manage-done { height: 52px; border-radius: 26px; font-size: 17px; }
+    .design-aosp .manage-dismiss { min-width: 116px; border-color: #9acbff; color: #eef3f5; }
+    .design-aosp .manage-done { min-width: 94px; background: #9acbff; color: #132733; }
+    .design-aosp .pixel-nav-pill { right: auto; bottom: 14px; left: 212px; width: 152px; height: 5px; transform: none; background: #f2f5f6; }
+    @media (max-width: 600px) {
+      .design-aosp { width: 100%; }
+      .design-aosp .mode-tabs { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="page-head">
+      <div class="eyebrow">hyprnotify / v5 / Pixel 7 ROM alignment study</div>
+      <h1>Notification center, grounded in the real UI</h1>
+      <p class="lede">The preview opens on the checked-in Hyprland implementation. Switch to the ROM-backed Pixel 7 reference: the supplied captures are rendered on a measured 576×1280 canvas with Google Sans and SystemUI vectors extracted from the panther factory image.</p>
+    </header>
+
+    <div class="board">
+      <section>
+        <div class="mode-strip" aria-label="Preview mode">
+          <div class="mode-copy">
+            <div class="mode-kicker">Preview</div>
+            <h2>Notification center</h2>
+            <p id="selection">Current implementation · floating island · live blur · current palette</p>
+          </div>
+          <div class="mode-tabs" role="tablist" aria-label="Design reference">
+            <button class="mode-tab active" type="button" role="tab" aria-selected="true" data-group="design" data-value="current">Current implementation</button>
+            <button class="mode-tab" type="button" role="tab" aria-selected="false" data-group="design" data-value="aosp">Pixel 7 reference</button>
+          </div>
+        </div>
+
+        <div class="stage design-current interaction-source" id="stage" data-design="current" data-interaction="source" data-state="center" data-osd="volume">
+          <div class="pixel-canvas" id="pixel-canvas">
+          <nav class="hyprbar" aria-label="Hyprland bar preview">
+            <div class="bar-current">
+              <div class="bar-tags" aria-label="Workspaces">
+                <button class="bar-tag active occupied" type="button" data-workspace="1" aria-label="Workspace 1">一</button><button class="bar-tag occupied" type="button" data-workspace="2" aria-label="Workspace 2">二</button><button class="bar-tag" type="button" data-workspace="3" aria-label="Workspace 3">三</button><button class="bar-tag" type="button" data-workspace="4" aria-label="Workspace 4">四</button><button class="bar-tag" type="button" data-workspace="5" aria-label="Workspace 5">五</button><button class="bar-tag" type="button" data-workspace="6" aria-label="Workspace 6">六</button><button class="bar-tag" type="button" data-workspace="7" aria-label="Workspace 7">七</button><button class="bar-tag" type="button" data-workspace="8" aria-label="Workspace 8">八</button><button class="bar-tag" type="button" data-workspace="9" aria-label="Workspace 9">九</button>
+              </div>
+              <div class="bar-tasks" aria-label="Tasks">
+                <button class="bar-task active" type="button" data-task="Telegram"><img src="assets/telegram.png" alt=""><span>Telegram</span></button>
+                <button class="bar-task" type="button" data-task="qBittorrent"><img src="assets/qbittorrent.png" alt=""><span>qBittorrent</span></button>
+              </div>
+              <div class="bar-right">
+                <span class="bar-tray" aria-label="System tray">
+                  <button type="button" data-tray="Network" title="Network status"><img src="assets/bar-wifi-connected.svg" alt="Network"></button>
+                  <button type="button" data-tray="Bluetooth" title="Bluetooth status"><img src="assets/bar-bluetooth-active.svg" alt="Bluetooth"></button>
+                  <button type="button" data-tray="Volume" title="Volume status"><img src="assets/bar-volume-high.svg" alt="Volume"></button>
+                </span>
+                <button class="bar-bell" type="button" data-bar-action="bell" aria-label="3 notifications" title="Notification center"><img src="assets/bar-bell-aosp.svg" alt=""><b>3</b></button>
+                <span class="bar-battery" aria-label="Battery 82 percent, charging"><img src="assets/bar-battery-pixel.svg" alt="Battery 82 percent, charging"></span>
+                <span class="bar-clock">Sat Aug 08, 16:53</span>
+                <button class="bar-layout" type="button" data-bar-action="layout" title="Floating layout" aria-label="Floating layout"><img src="assets/floating.png" alt=""></button>
+              </div>
+            </div>
+            <div class="bar-aosp-status">
+              <span>16:53</span>
+              <span class="bar-system"><img src="assets/bar-wifi-aosp.svg" alt="Wi-Fi"><img src="assets/bar-battery-pixel.svg" alt="Battery"><span>82%</span></span>
+            </div>
+          </nav>
+          <div class="pixel-chrome" aria-label="Pixel 7 notification shade reference">
+            <div class="pixel-statusbar">
+              <div class="pixel-date"><strong>17:31</strong><span>Sat, Aug 8</span></div>
+      <div class="pixel-status-icons"><img class="pixel-status-battery" src="assets/pixel-status-battery.svg" alt="Battery"><img class="pixel-mobile-error" src="assets/pixel-mobile-3-5-error.svg" alt="Mobile signal"><img class="pixel-status-wifi" src="assets/pixel-wifi-3.svg" alt="Wi-Fi"><span class="pixel-battery-chip" aria-label="Battery 29 percent"><span>29</span></span></div>
+            </div>
+            <div class="pixel-quick-grid">
+              <button class="pixel-quick-tile active" type="button" data-quick="Wi-Fi">
+                <span class="pixel-quick-icon"><img src="assets/pixel-wifi-3.svg" alt=""></span><span class="pixel-quick-copy"><strong>Wi-Fi</strong><small>L4 Cosmo Living</small></span>
+              </button>
+              <button class="pixel-quick-tile" type="button" data-quick="Bluetooth">
+                <span class="pixel-quick-icon"><img src="assets/pixel-bluetooth-off.svg" alt=""></span><span class="pixel-quick-copy"><strong>Bluetooth</strong></span>
+              </button>
+              <button class="pixel-quick-tile" type="button" data-quick="Airplane mode">
+                <span class="pixel-quick-icon"><img src="assets/pixel-airplane-off.svg" alt=""></span><span class="pixel-quick-copy"><strong>Airplane mode</strong></span>
+              </button>
+              <button class="pixel-quick-tile" type="button" data-quick="Hotspot">
+                <span class="pixel-quick-icon"><img src="assets/pixel-hotspot-off.svg" alt=""></span><span class="pixel-quick-copy"><strong>Hotspot</strong></span>
+              </button>
+            </div>
+          </div>
+          <div class="desktop-topline"><span><strong>hyprland</strong> · workspace 1</span><span>16:53</span></div>
+          <section class="workspace" aria-hidden="true">
+            <div class="window terminal">
+              <div class="window-head"><i class="window-dot"></i><span>terminal</span></div>
+              <div class="window-body">
+                <div><span class="prompt">$</span> hyprctl clients</div>
+                <div>address: 0x31c / workspace: 1</div>
+                <div>class: org.example.Editor</div>
+                <br>
+                <div><span class="prompt">$</span> grim - | wl-copy</div>
+                <div>capture complete</div>
+              </div>
+            </div>
+            <div class="window editor">
+              <div class="window-head"><i class="window-dot"></i><span>notification-layout.cpp</span></div>
+              <div class="window-body">
+                <div class="line-numbers">41<br>42<br>43<br>44<br>45<br>46<br>47<br>48</div>
+                <div class="code"><span class="blue">const auto</span> <span class="cyan">MEDIA</span> = content.image;<br>
+                  <span class="blue">if</span> (MEDIA.isWide()) {<br>
+                  &nbsp;&nbsp;paintHero(MEDIA, card.width);<br>
+                  &nbsp;&nbsp;paintBody(notification);<br>
+                  } <span class="blue">else</span> {<br>
+                  &nbsp;&nbsp;paintPreview(MEDIA);<br>
+                  }<br>
+                  <span class="orange">damage</span>(card.bounds);</div>
+              </div>
+            </div>
+          </section>
+
+          <div class="runtime-stack">
+            <aside class="shade" id="shade" aria-label="Notification center">
+              <header class="shade-head">
+                <span class="shade-title">Notifications</span>
+                <span class="shade-count" id="shade-count">3 recent</span>
+              </header>
+              <div class="shade-body" id="shade-body"></div>
+              <footer class="shade-footer">
+                <button class="dnd" id="dnd" type="button" title="Do not disturb" aria-label="Do not disturb" aria-pressed="false"><span class="legacy-glyph" aria-hidden="true">⊖</span></button>
+                <button class="history" type="button" title="Notification history" aria-label="Notification history"><img src="assets/pixel-history.svg" alt=""></button>
+                <button class="clear" id="clear" type="button">Clear all</button>
+                <button class="settings" type="button" title="Notification settings" aria-label="Notification settings"><img src="assets/pixel-footer-settings.svg" alt=""></button>
+              </footer>
+              <div class="toast" id="toast" role="status" aria-live="polite"></div>
+            </aside>
+            <div class="osd-stack" id="osd-stack" aria-label="OSD preview">
+              <article class="osd-card">
+                <div class="osd-head">
+                  <span class="osd-icon" id="osd-icon"></span>
+                  <span class="osd-copy"><strong id="osd-title">Volume · now</strong><span id="osd-caption">Native semantic OSD card</span></span>
+                  <span class="osd-value" id="osd-value">58%</span>
+                </div>
+                <div class="osd-track"><span id="osd-fill"></span></div>
+              </article>
+            </div>
+          </div>
+          <div class="pixel-nav-pill" aria-hidden="true"></div>
+          </div>
+        </div>
+
+      </section>
+
+      <aside class="notes">
+        <div class="eyebrow">Source alignment</div>
+        <h2>What v5 is checking</h2>
+        <p>The current implementation remains the default: a right-edge 360px island, live blur, current palette, source rows, source footer, and an opaque AOSP conversation badge. The Pixel reference is now a fixed-coordinate reconstruction backed by Google Sans and the exact vector resources present in the supplied panther ROM.</p>
+
+        <div class="tokens" aria-label="Current hyprnotify theme tokens">
+          <div class="token"><i style="background:#0f1218"></i><div><strong>glass</strong><code>#0F1218 / 62%</code></div></div>
+          <div class="token"><i style="background:rgba(255,255,255,.045)"></i><div><strong>fill</strong><code>white / 4.5%</code></div></div>
+          <div class="token"><i style="background:rgba(255,255,255,.09)"></i><div><strong>fill2</strong><code>white / 9%</code></div></div>
+          <div class="token"><i style="background:#32d6ff"></i><div><strong>highlight</strong><code>#32D6FF</code></div></div>
+          <div class="token"><i style="background:#e4e8ee"></i><div><strong>body</strong><code>#E4E8EE</code></div></div>
+          <div class="token"><i style="background:#98a2ac"></i><div><strong>kicker</strong><code>#98A2AC</code></div></div>
+          <div class="token"><i style="background:#ff8a5c"></i><div><strong>urgent</strong><code>#FF8A5C</code></div></div>
+          <div class="token"><i style="background:#f4f6f8"></i><div><strong>badge rim</strong><code>#F4F6F8</code></div></div>
+        </div>
+
+        <div class="facts">
+          <div class="fact"><strong>Island fit</strong><p>Default is 360px wide, flush to the stage edge, and 30px below the top. The center stays a desktop island even though Pixel is the visual reference.</p></div>
+          <div class="fact"><strong>Pixel geometry</strong><p>The supplied Pixel 7 captures establish the large 2×2 quick-setting tiles, a soft blue/teal notification well, a 32px notification pill, and a three-part footer.</p></div>
+          <div class="fact"><strong>Action hierarchy</strong><p>Body click opens the notification, while a 500ms hold reveals snooze, mute, priority, and dismiss. No chevron or kebab competes with those gestures.</p></div>
+          <div class="fact"><strong>Reply ownership</strong><p>The Reply chip is the only center surface that owns keyboard input. Enter sends, Escape returns to the row, and the preview keeps the action inside the notification.</p></div>
+          <div class="fact"><strong>Footer and badge</strong><p>Current mode keeps compact DND plus Clear all; Pixel mode shows history, Clear all, and notification settings. Conversation identity remains an opaque 20px disc with a 16px app mark and 2px rim.</p></div>
+          <div class="fact"><strong>OSD separation</strong><p>Volume, brightness, touchpad, and battery use stable semantic marks. Below-island is the source placement; aligned and detached are explicit comparison options.</p></div>
+        </div>
+
+        <div class="sources">
+          AOSP cross-check: <a href="https://developer.android.com/design/ui/mobile/guides/home-screen/notifications">notification anatomy</a> ·
+          <a href="https://source.android.com/docs/core/display/material">Material You</a> ·
+          <a href="https://source.android.com/docs/core/display/conv-notifications">conversation notifications</a> ·
+          <a href="https://android.googlesource.com/platform/frameworks/base/+/main/packages/SystemUI/src/com/android/systemui/statusbar/notification/footer/ui/view/FooterView.java">FooterView</a>.
+          Static v5 demo only; it does not load or modify a live plugin.
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      const stage = document.querySelector('#stage');
+      const pixelCanvas = document.querySelector('#pixel-canvas');
+      const shade = document.querySelector('#shade');
+      const shadeBody = document.querySelector('#shade-body');
+      const toast = document.querySelector('#toast');
+      const dnd = document.querySelector('#dnd');
+      const clear = document.querySelector('#clear');
+      const selection = document.querySelector('#selection');
+      const shadeCount = document.querySelector('#shade-count');
+      let holdTimer = 0;
+      let pressedCard = null;
+      let activePointerId = null;
+      let pressOrigin = null;
+      let suppressCard = null;
+      let dndOn = false;
+      let centerOn = true;
+
+      const labels = {
+        design: { current: 'Current implementation', aosp: 'Pixel 7 reference' },
+        state: { center: 'Center', hold: 'Hold menu', reply: 'Inline reply', empty: 'Empty' },
+        osd: { volume: 'Volume OSD', brightness: 'Brightness OSD', touchpad: 'Touchpad OSD', battery: 'Battery OSD' }
+      };
+      const defaults = { design: 'current', state: 'center', osd: 'volume' };
+
+      const showToast = (message) => {
+        toast.textContent = message;
+        window.clearTimeout(showToast.timer);
+        showToast.timer = window.setTimeout(() => { toast.textContent = ''; }, 2600);
+      };
+
+      const assetRoot = 'assets/';
+      const assets = {
+        screenshot: 'screenshot.svg',
+        volume: 'osd-volume-aosp.svg',
+        brightness: 'osd-brightness-aosp.svg',
+        touchpad: 'osd-touchpad-aosp.svg',
+        battery: 'osd-battery-aosp.svg',
+        telegram: 'telegram.png'
+      };
+      const icon = (kind) => `<img class="${kind === 'telegram' ? 'app-icon' : 'semantic-icon'}" src="${assetRoot}${assets[kind]}" alt="" aria-hidden="true">`;
+
+      const badge = () => `<span class="app-badge" aria-label="Opaque AOSP application badge"><span class="badge-mark">${icon('telegram')}</span></span>`;
+
+      const managementIcon = (kind) => {
+        const paths = {
+          gear: '<path d="m12 3 1 2.1 2.2.9 2.2-.5 1.6 1.6-.5 2.2.9 2.2L21 12l-2.1 1.5-.9 2.2.5 2.2-1.6 1.6-2.2-.5-2.2.9L12 21l-1.5-2.1-2.2-.9-2.2.5-1.6-1.6.5-2.2L4.1 12 6 10.5l-.5-2.2 1.6-1.6 2.2.5 2.2-.9zM12 9.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6Z"/>',
+          priority: '<path d="M5 7h14M5 12h14M5 17h9"/>',
+          default: '<path d="M6 16h12l-1.1-1.5V10a4.9 4.9 0 0 0-9.8 0v4.5zM10 19h4"/>',
+          silent: '<path d="M6 16h12l-1.1-1.5V10a4.9 4.9 0 0 0-9.8 0v4.5zM4 4l16 16"/>'
+        };
+        return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${paths[kind]}</svg>`;
+      };
+
+      const screenshotCard = () => `
+        <article class="notification clickable hero-card" data-open="Screenshot opened">
+          <div class="hero" role="img" aria-label="Wide screenshot preview"><img class="hero-image" src="${assetRoot}screenshot-preview.png" alt="Captured Hyprland desktop"></div>
+          <div class="hero-copy">
+            <div class="identity"><strong>Screenshot · now</strong><span>Desktop capture</span></div>
+            <div class="card-title">Screenshot saved</div>
+            <div class="card-body">Clicking the preview opens the capture. There is no extra Open or Share row.</div>
+          </div>
+        </article>`;
+
+      const telegramCard = (state) => {
+        if (state === 'hold' && stage.dataset.design === 'aosp') return `
+          <article class="notification manage-card pixel-manage-card">
+            <div class="manage-head"><span class="mini-icon"><div class="avatar"><img src="${assetRoot}pixel-avatar.png" alt="Contact avatar"></div>${badge()}</span><span class="manage-details"><strong>vua bệnh lâu</strong><span>Private Chats (Ben Affleck)</span><span>Telegram</span></span><button class="manage-settings" type="button" data-action="Notification settings opened" aria-label="Notification settings">${managementIcon('gear')}</button></div>
+            <div class="channel-list">
+              <button class="channel-row" type="button" data-action="Priority channel selected"><span class="channel-icon">${managementIcon('priority')}</span><span class="channel-copy"><strong>Priority</strong></span></button>
+              <button class="channel-row selected" type="button" data-action="Default channel selected"><span class="channel-icon">${managementIcon('default')}</span><span class="channel-copy"><strong>Default</strong><small>May ring or vibrate based on device<br>settings</small></span></button>
+              <button class="channel-row" type="button" data-action="Silent channel selected"><span class="channel-icon">${managementIcon('silent')}</span><span class="channel-copy"><strong>Silent</strong></span></button>
+            </div>
+            <div class="manage-actions"><button class="manage-dismiss" type="button" data-action="Notification dismissed">Dismiss</button><button class="manage-done" type="button" data-action="Notification controls closed">Done</button></div>
+          </article>`;
+
+        if (state === 'hold') return `
+          <article class="notification manage-card longpress-card">
+            <div class="manage-head"><span class="mini-icon">${icon('telegram')}</span><span><strong>Telegram</strong><span>Notification controls</span></span></div>
+            <div class="manage-list">
+              <button class="manage-row" type="button" data-action="Snoozed for 15 min"><span class="legacy-glyph">◷</span><span>Snooze 15 min</span></button>
+              <button class="manage-row" type="button" data-action="Snoozed for 1 hour"><span class="legacy-glyph">◷</span><span>Snooze 1 hour</span></button>
+              <button class="manage-row" type="button" data-action="Muted Telegram for 1 hour"><span class="legacy-glyph">⊘</span><span>Mute Telegram for 1 hour</span></button>
+              <button class="manage-row" type="button" data-action="Muted Telegram today"><span class="legacy-glyph">⊘</span><span>Mute Telegram today</span></button>
+              <button class="manage-row" type="button" data-action="Muted Telegram always"><span class="legacy-glyph">⊘</span><span>Mute Telegram always</span></button>
+              <button class="manage-row" type="button" data-action="Priority conversation"><span class="legacy-glyph">★</span><span>Priority conversation</span></button>
+              <button class="manage-row danger" type="button" data-action="Notification dismissed"><span class="legacy-glyph">✕</span><span>Dismiss</span></button>
+            </div>
+          </article>`;
+
+        const reply = state === 'reply' ? `<div class="reply-box"><input class="reply-input" type="text" placeholder="Type a reply..." aria-label="Type a reply"><button class="send" type="button" disabled>Send</button></div>` : '';
+        const actions = state === 'reply' ? '' : '<button class="action" type="button" data-reply="true">Reply</button><button class="action" type="button" data-action="Marked read">Mark as read</button><button class="action snooze-action" type="button" data-action="Notification snoozed" aria-label="Snooze notification"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="7"></circle><path d="M9.5 13h4l-2.2 2.5M8 4h8M9 2h6"/></svg></button>';
+        return `
+          <article class="notification clickable longpress-card" data-open="Telegram opened">
+            <div class="notification-head">
+              <div class="app-cell"><div class="avatar"><img src="${assetRoot}pixel-avatar.png" alt="Contact avatar"></div>${badge()}</div>
+              <div class="identity"><strong>Telegram · now</strong><span>Message notification</span></div>
+            </div>
+            <div class="body-indent"><div class="card-title">vua bệnh lâu</div><div class="card-body">GIF</div></div>
+            <div class="action-row">${actions}</div>${reply}
+          </article>`;
+      };
+
+      const qbitCard = () => `
+        <article class="notification clickable qbit-card" data-open="qBittorrent opened">
+          <div class="notification-head">
+            <div class="app-cell qbit"><img class="app-icon" src="${assetRoot}qbittorrent.png" alt="qBittorrent application"></div>
+            <div class="identity"><strong>qBittorrent · 2m</strong><span>Download complete</span></div>
+          </div>
+          <div class="body-indent"><div class="card-title">Ubuntu ISO</div><div class="card-body">The transfer finished successfully.</div></div>
+        </article>`;
+
+      const centerMarkup = (state) => `${screenshotCard()}${telegramCard(state)}${qbitCard()}`;
+
+      const renderState = (state) => {
+        stage.dataset.state = state;
+        shadeBody.innerHTML = state === 'empty' ? '<div class="empty-state">You\'re all caught up!</div>' : centerMarkup(state);
+        clear.classList.toggle('disabled', state === 'empty');
+        clear.disabled = state === 'empty';
+        shadeCount.textContent = state === 'empty' ? '0 recent' : (stage.dataset.design === 'aosp' ? '1 recent' : '3 recent');
+        document.querySelectorAll('[data-group="state"]').forEach((button) => {
+          button.classList.toggle('active', button.dataset.value === state);
+          button.setAttribute('aria-pressed', String(button.dataset.value === state));
+        });
+        bindReply();
+        updateSelection();
+      };
+
+      const bindReply = () => {
+        const input = shade.querySelector('.reply-input');
+        const send = shade.querySelector('.send');
+        if (!input || !send) return;
+        input.addEventListener('input', () => { send.disabled = input.value.trim().length === 0; });
+        const sendReply = () => {
+          if (send.disabled) return;
+          showToast('Reply sent');
+          renderState('center');
+        };
+        send.addEventListener('click', (event) => {
+          event.stopPropagation();
+          sendReply();
+        });
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            sendReply();
+          } else if (event.key === 'Escape') {
+            event.preventDefault();
+            renderState('center');
+          } else if (event.ctrlKey && event.key.toLowerCase() === 'u') {
+            event.preventDefault();
+            input.value = '';
+            send.disabled = true;
+          } else if (event.ctrlKey && event.key.toLowerCase() === 'w') {
+            event.preventDefault();
+            input.value = input.value.replace(/\s*\S+\s*$/, '');
+            send.disabled = input.value.trim().length === 0;
+          }
+        });
+        input.focus();
+      };
+
+      const setCenter = (visible) => {
+        centerOn = visible;
+        stage.classList.toggle('center-hidden', !visible);
+        const bell = stage.querySelector('[data-bar-action="bell"]');
+        if (bell) {
+          bell.classList.toggle('active', visible);
+          bell.setAttribute('aria-pressed', String(visible));
+        }
+      };
+
+      const syncPixelScale = () => {
+        if (!pixelCanvas) return;
+        const scale = stage.dataset.design === 'aosp' ? Math.min(1, stage.clientWidth / 576) : 1;
+        pixelCanvas.style.setProperty('--pixel-scale', String(scale));
+      };
+      new ResizeObserver(syncPixelScale).observe(stage);
+
+      const updateSelection = () => {
+        if (stage.dataset.design === 'aosp') {
+          selection.textContent = 'Pixel 7 reference · 2×2 quick settings · blue/teal surfaces · history / Clear all / settings';
+          return;
+        }
+        const state = labels.state[stage.dataset.state] || stage.dataset.state;
+        selection.textContent = `Current implementation · floating island · live blur · current palette · ${state}`;
+      };
+
+      const syncControlButtons = () => {
+        document.querySelectorAll('[data-group]').forEach((button) => {
+          const active = button.dataset.value === stage.dataset[button.dataset.group];
+          button.classList.toggle('active', active);
+          button.setAttribute('aria-pressed', String(active));
+        });
+      };
+
+      const setGroup = (group, value) => {
+        const old = stage.dataset[group];
+        if (old) stage.classList.remove(`${group}-${old}`);
+        stage.dataset[group] = value;
+        stage.classList.add(`${group}-${value}`);
+        if (group === 'state') renderState(value);
+        if (group === 'osd') renderOsd(value);
+        if (group === 'design') renderState(stage.dataset.state);
+        syncPixelScale();
+        syncControlButtons();
+        updateSelection();
+      };
+
+      const holdDelay = () => stage.dataset.interaction === 'patient' ? 650 : 500;
+      const clearPress = () => {
+        window.clearTimeout(holdTimer);
+        holdTimer = 0;
+        if (pressedCard) delete pressedCard.dataset.press;
+        pressedCard = null;
+        activePointerId = null;
+        pressOrigin = null;
+      };
+
+      document.querySelectorAll('[data-group]').forEach((button) => button.addEventListener('click', () => setGroup(button.dataset.group, button.dataset.value)));
+
+      stage.querySelectorAll('[data-workspace]').forEach((button) => button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        stage.querySelectorAll('[data-workspace]').forEach((tag) => tag.classList.toggle('active', tag === button));
+        showToast(`Workspace ${button.dataset.workspace} selected`);
+      }));
+
+      const taskButtons = [...stage.querySelectorAll('[data-task]')];
+      taskButtons.forEach((button) => button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (button.classList.contains('active') && !button.classList.contains('minimized')) {
+          button.classList.add('minimized');
+          button.classList.remove('active');
+          const fallback = taskButtons.find((task) => task !== button && !task.classList.contains('minimized'));
+          if (fallback) fallback.classList.add('active');
+          showToast(`${button.dataset.task} minimized`);
+          return;
+        }
+        taskButtons.forEach((task) => task.classList.remove('active'));
+        button.classList.remove('minimized');
+        button.classList.add('active');
+        showToast(`${button.dataset.task} focused`);
+      }));
+
+      stage.querySelectorAll('[data-tray]').forEach((button) => {
+        button.addEventListener('click', (event) => {
+          event.stopPropagation();
+          showToast(`${button.dataset.tray} tray item activated`);
+        });
+        button.addEventListener('contextmenu', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          showToast(`${button.dataset.tray} tray menu opened`);
+        });
+      });
+
+      stage.querySelectorAll('[data-quick]').forEach((button) => {
+        button.addEventListener('click', (event) => {
+          event.stopPropagation();
+          stage.querySelectorAll('[data-quick]').forEach((tile) => tile.classList.toggle('active', tile === button));
+          showToast(`${button.dataset.quick} quick setting selected`);
+        });
+      });
+
+      stage.querySelector('[data-bar-action="bell"]')?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setCenter(!centerOn);
+        showToast(centerOn ? 'Notification center opened' : 'Notification center closed');
+      });
+      stage.querySelector('[data-bar-action="layout"]')?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        showToast('Floating layout selected');
+      });
+      stage.addEventListener('click', (event) => {
+        if (event.target.closest('.shade, .hyprbar')) return;
+        if (centerOn) {
+          setCenter(false);
+          showToast('Notification center closed');
+        }
+      });
+
+      shade.addEventListener('click', (event) => {
+        const target = event.target;
+        if (suppressCard) {
+          const heldCardWasClicked = target.closest('.longpress-card') === suppressCard;
+          suppressCard = null;
+          if (heldCardWasClicked) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+        }
+        const replyButton = target.closest('[data-reply]');
+        const action = target.closest('[data-action]');
+        const close = target.closest('.manage-close');
+        const clearButton = target.closest('#clear');
+        const dndButton = target.closest('#dnd');
+        const historyButton = target.closest('.history');
+        const settingsButton = target.closest('.settings');
+        if (replyButton) {
+          event.stopPropagation();
+          renderState('reply');
+          return;
+        }
+        if (action) {
+          event.stopPropagation();
+          showToast(action.dataset.action);
+          if (target.closest('.manage-card'))
+            renderState('center');
+          else {
+            setCenter(false);
+            renderState('center');
+          }
+          return;
+        }
+        if (close) {
+          event.stopPropagation();
+          renderState('center');
+          return;
+        }
+        if (clearButton) {
+          if (clearButton.disabled) return;
+          renderState('empty');
+          showToast('User notifications cleared; private OSD remains');
+          return;
+        }
+        if (dndButton) {
+          dndOn = !dndOn;
+          dndButton.classList.toggle('active', dndOn);
+          dndButton.setAttribute('aria-pressed', String(dndOn));
+          showToast(dndOn ? 'Do not disturb on' : 'Do not disturb off');
+          return;
+        }
+        if (historyButton) {
+          event.stopPropagation();
+          showToast('Notification history opened');
+          return;
+        }
+        if (settingsButton) {
+          event.stopPropagation();
+          showToast('Notification settings opened');
+          return;
+        }
+        const card = target.closest('[data-open]');
+        if (card && !target.closest('button, input')) {
+          showToast(card.dataset.open);
+          setCenter(false);
+        }
+      });
+
+      shade.addEventListener('pointerdown', (event) => {
+        const card = event.target.closest('.longpress-card');
+        if (!card || event.button !== 0 || event.isPrimary === false || event.target.closest('button, input, textarea, select, a')) return;
+        clearPress();
+        pressedCard = card;
+        activePointerId = event.pointerId;
+        pressOrigin = { x: event.clientX, y: event.clientY };
+        card.dataset.press = 'true';
+        holdTimer = window.setTimeout(() => {
+          if (pressedCard !== card || activePointerId !== event.pointerId) return;
+          suppressCard = card;
+          clearPress();
+          renderState('hold');
+        }, holdDelay());
+      });
+      shade.addEventListener('pointermove', (event) => {
+        if (!pressedCard || event.pointerId !== activePointerId || !pressOrigin) return;
+        const dx = event.clientX - pressOrigin.x;
+        const dy = event.clientY - pressOrigin.y;
+        if (Math.hypot(dx, dy) > 8) clearPress();
+      });
+      shade.addEventListener('pointerup', (event) => {
+        if (activePointerId !== null && event.pointerId !== activePointerId) return;
+        clearPress();
+      });
+      shade.addEventListener('pointercancel', (event) => {
+        if (activePointerId !== null && event.pointerId !== activePointerId) return;
+        clearPress();
+      });
+      shade.addEventListener('pointerout', (event) => {
+        if (!pressedCard || event.pointerId !== activePointerId || pressedCard.contains(event.relatedTarget)) return;
+        clearPress();
+      });
+      shade.addEventListener('contextmenu', (event) => {
+        const card = event.target.closest('.notification');
+        if (!card) return;
+        event.preventDefault();
+        clearPress();
+        if (card.classList.contains('manage-card')) {
+          renderState('center');
+          showToast('Notification controls closed');
+        } else {
+          renderState('center');
+          showToast('Notification dismissed');
+        }
+      });
+
+      const osd = {
+        volume: { title: 'Volume · now', caption: 'Native semantic OSD card', value: '58%', fill: '58%', kind: 'volume' },
+        brightness: { title: 'Brightness · now', caption: 'Native semantic OSD card', value: '72%', fill: '72%', kind: 'brightness' },
+        touchpad: { title: 'Touchpad · now', caption: 'Enabled', value: 'On', fill: '100%', kind: 'touchpad' },
+        battery: { title: 'Battery · now', caption: 'Charging', value: '82%', fill: '82%', kind: 'battery' }
+      };
+      const renderOsd = (key) => {
+        const value = osd[key];
+        document.querySelector('#osd-icon').innerHTML = icon(value.kind);
+        document.querySelector('#osd-title').textContent = value.title;
+        document.querySelector('#osd-caption').textContent = value.caption;
+        document.querySelector('#osd-value').textContent = value.value;
+        document.querySelector('#osd-fill').style.width = value.fill;
+      };
+
+      renderState(defaults.state);
+      renderOsd(defaults.osd);
+      syncControlButtons();
+      setCenter(true);
+      syncPixelScale();
+      const query = new URLSearchParams(window.location.search);
+      if (query.get('mode') === 'pixel')
+        setGroup('design', 'aosp');
+      if (['hold', 'reply', 'empty'].includes(query.get('state')))
+        setGroup('state', query.get('state'));
+      updateSelection();
+    })();
+  </script>
+</body>
+</html>
