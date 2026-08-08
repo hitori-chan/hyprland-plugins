@@ -74,6 +74,12 @@ hl.plugin.hyprnotify.suspend()
 Protocol, admission limits, image precedence, lifecycle, and compositor input
 contracts are documented in [docs/hyprnotify.md](../docs/hyprnotify.md).
 
+The current visual proposal is available as the self-contained [notification
+center design mixer](../docs/demos/hyprnotify-design-mixer-v2/). It includes
+real local application icons, semantic OSD marks, a nested Hyprland capture,
+and the configured wallpaper; it is a static design demo and does not load a
+live plugin.
+
 ## Config
 
 | Key | Purpose | Default |

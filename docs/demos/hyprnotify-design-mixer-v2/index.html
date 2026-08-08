@@ -1,0 +1,1043 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="assets/screenshot.svg">
+  <title>hyprnotify v2 floating-island design mixer</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --page: #080b10;
+      --page-ink: #e4e8ee;
+      --page-sub: #98a2ac;
+      --page-line: rgba(220, 235, 255, .12);
+      --page-accent: #32d6ff;
+      --font: "IBM Plex Sans", system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-width: 320px; margin: 0; background: var(--page); }
+    body { color: var(--page-ink); font: 14px/1.45 var(--font); }
+    button, input { color: inherit; font: inherit; }
+    button { cursor: pointer; }
+    a { color: var(--page-accent); }
+
+    .page { width: min(1500px, calc(100% - 40px)); margin: 0 auto; padding: 28px 0 52px; }
+    .page-head { max-width: 920px; margin-bottom: 22px; }
+    .eyebrow { color: var(--page-accent); font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin: 6px 0 8px; color: #eef1f5; font-size: clamp(27px, 4vw, 42px); line-height: 1.05; }
+    .lede { max-width: 850px; margin: 0; color: var(--page-sub); font-size: 15px; }
+
+    .board { display: grid; grid-template-columns: minmax(660px, 1fr) 360px; gap: 24px; align-items: start; }
+    .stage {
+      --bar-height: 26px;
+      --island-top: 34px;
+      --island-right: 18px;
+      --shade-width: 360px;
+      --background: #080b10;
+      --glass: rgba(15, 18, 24, .62);
+      --fill: rgba(255, 255, 255, .045);
+      --fill2: rgba(255, 255, 255, .09);
+      --line: rgba(220, 235, 255, .09);
+      --ink: #e4e8ee;
+      --title: #eef1f5;
+      --sub: #98a2ac;
+      --accent: #32d6ff;
+      --accent-dim: rgba(50, 214, 255, .16);
+      --on-accent: #07161c;
+      --urgent: #ff8a5c;
+      --link: #7db4ff;
+      --badge-rim: #f4f6f8;
+      position: relative;
+      min-height: 900px;
+      overflow: hidden;
+      border: 1px solid var(--page-line);
+      border-radius: 18px;
+      background: var(--background);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, .38);
+      isolation: isolate;
+    }
+    .stage::before {
+      position: absolute;
+      inset: 0;
+      z-index: -2;
+      background: linear-gradient(rgba(8, 11, 16, .28), rgba(8, 11, 16, .42)), url("assets/wallpaper.jpg") center / cover no-repeat;
+      content: "";
+      filter: saturate(.92) brightness(.82);
+      pointer-events: none;
+    }
+    .stage::after {
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      background: linear-gradient(116deg, rgba(50, 214, 255, .025), transparent 42%);
+      content: "";
+      pointer-events: none;
+    }
+
+    .desktop-topline { display: none; }
+    .workspace { position: absolute; inset: 52px 382px 18px 20px; display: grid; grid-template-columns: .84fr 1.16fr; gap: 12px; opacity: .55; }
+    .window { overflow: hidden; border: 1px solid var(--line); background: rgba(255, 255, 255, .014); }
+    .window-head { display: flex; height: 28px; align-items: center; gap: 7px; padding: 0 10px; border-bottom: 1px solid var(--line); color: var(--sub); font-size: 10px; }
+    .window-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sub); opacity: .7; }
+    .window-body { padding: 17px; color: rgba(152, 162, 172, .62); font: 11px/1.9 var(--font); }
+    .window-body .prompt, .code .cyan { color: var(--accent); }
+    .code .blue { color: var(--link); }
+    .code .orange { color: var(--urgent); }
+    .editor .window-body { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; }
+    .line-numbers { color: rgba(152, 162, 172, .32); text-align: right; }
+
+    .preview-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 10px;
+      padding: 7px;
+      border: 1px solid var(--page-line);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .025);
+    }
+    .preview-toolbar-label { margin: 0 4px 0 2px; color: var(--page-sub); font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+    .preview-choice {
+      min-height: 30px;
+      padding: 5px 11px;
+      border: 1px solid var(--page-line);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--page-sub);
+      font-size: 11px;
+      font-weight: 650;
+    }
+    .preview-choice:hover, .preview-choice.active { border-color: var(--page-accent); background: rgba(50, 214, 255, .13); color: var(--page-accent); }
+    .preview-description { margin-left: auto; color: var(--page-sub); font-size: 10px; text-align: right; }
+
+    .focus-toolbar {
+      display: grid;
+      gap: 8px;
+      margin: 0 0 10px;
+      padding: 9px;
+      border: 1px solid var(--page-line);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .032);
+    }
+    .focus-toolbar-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .focus-toolbar-head strong { color: var(--page-ink); font-size: 11px; }
+    .focus-toolbar-head span { color: var(--page-sub); font-size: 10px; }
+    .focus-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 10px; }
+    .focus-row { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 6px; align-items: start; min-width: 0; }
+    .focus-row > span { padding-top: 7px; color: var(--page-sub); font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+    .focus-choices { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+    .focus-choice {
+      min-height: 28px;
+      padding: 5px 8px;
+      border: 1px solid var(--page-line);
+      border-radius: 7px;
+      background: transparent;
+      color: var(--page-sub);
+      font-size: 10px;
+      font-weight: 650;
+    }
+    .focus-choice:hover, .focus-choice.active { border-color: var(--page-accent); background: rgba(50, 214, 255, .13); color: var(--page-accent); }
+    .focus-readout { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 12px; padding-top: 2px; color: var(--page-sub); font-size: 10px; }
+    .focus-readout strong { color: var(--page-accent); font-weight: 650; }
+    .focus-state { margin-left: auto; text-align: right; }
+
+    .hyprbar {
+      position: absolute;
+      z-index: 6;
+      top: 0;
+      right: 0;
+      left: 0;
+      height: var(--bar-height);
+      padding: 0 9px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(15, 18, 24, .78);
+      box-shadow: 0 5px 18px rgba(0, 0, 0, .2);
+      color: var(--sub);
+      font-size: 10px;
+      backdrop-filter: blur(18px);
+    }
+    .bar-current { display: grid; height: 100%; grid-template-columns: auto minmax(100px, 1fr) auto; align-items: center; gap: 8px; min-width: 0; }
+    .bar-tags, .bar-tasks, .bar-right, .bar-aosp-status { display: flex; min-width: 0; align-items: center; }
+    .bar-tags { gap: 2px; }
+    .bar-tag { position: relative; width: 20px; height: 22px; display: grid; place-items: center; border-radius: 4px; color: var(--sub); font-size: 10px; }
+    .bar-tag.active { background: var(--active-bg, rgba(30, 35, 32, .9)); color: var(--active, var(--accent)); }
+    .bar-tag.occupied::before { position: absolute; top: 3px; left: 3px; width: 4px; height: 4px; background: var(--square, #dcdccc); content: ""; }
+    .bar-tag.active.occupied::before { background: var(--square-active, #f0dfaf); }
+    .bar-tasks { gap: 4px; overflow: hidden; }
+    .bar-task { min-width: 0; display: flex; height: 22px; align-items: center; gap: 5px; padding: 0 7px; border-radius: 4px; color: var(--sub); white-space: nowrap; }
+    .bar-task.active { background: rgba(255, 255, 255, .07); color: var(--active, var(--accent)); }
+    .bar-task img { width: 13px; height: 13px; flex: 0 0 auto; object-fit: contain; }
+    .bar-task span { overflow: hidden; text-overflow: ellipsis; }
+    .bar-right { justify-content: flex-end; gap: 7px; white-space: nowrap; }
+    .bar-tray, .bar-system { display: flex; align-items: center; gap: 5px; }
+    .bar-tray img, .bar-system img, .bar-layout img { width: 14px; height: 14px; object-fit: contain; }
+    .bar-bell { position: relative; display: grid; width: 20px; height: 22px; place-items: center; }
+    .bar-bell > img { width: 15px; height: 15px; }
+    .bar-bell b { position: absolute; top: 0; right: -4px; min-width: 12px; height: 12px; padding: 0 3px; border-radius: 6px; background: var(--active, var(--accent)); color: var(--on-accent, #07161c); font-size: 8px; line-height: 12px; text-align: center; }
+    .bar-battery { display: flex; align-items: center; gap: 3px; color: var(--title); }
+    .bar-battery img { width: 16px; height: 16px; }
+    .bar-clock { color: var(--title); }
+    .bar-layout { display: flex; align-items: center; }
+    .bar-aosp-status { display: none; height: 100%; justify-content: space-between; color: var(--aosp-on-surface, #e6e1e5); font-size: 11px; font-weight: 650; }
+    .bar-aosp-status .bar-system { gap: 8px; }
+    .bar-aosp-status img { filter: none; }
+
+    .runtime-stack { position: absolute; z-index: 4; top: 34px; right: 0; width: 360px; }
+    .shade {
+      display: flex;
+      width: 360px;
+      flex-direction: column;
+      overflow: hidden;
+      border-radius: 22px;
+      background: var(--glass);
+      box-shadow: 0 22px 46px rgba(0, 0, 0, .45);
+      backdrop-filter: blur(18px);
+    }
+    .shade-head { display: none; }
+    .shade-body { display: grid; gap: 3px; padding: 10px; }
+    .notification {
+      min-width: 0;
+      padding: 9px 12px 10px;
+      border: 0;
+      border-radius: 14px;
+      background: var(--fill);
+    }
+    .notification.urgent { box-shadow: inset 1px 0 var(--urgent); }
+    .notification.clickable { cursor: pointer; }
+    .notification.clickable:hover { background: var(--accent-dim); }
+    .notification-head { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 10px; align-items: start; }
+    .app-cell { position: relative; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 9px; background: var(--fill2); color: var(--accent); }
+    .app-cell .semantic-icon { width: 19px; height: 19px; }
+    .semantic-icon { display: block; object-fit: contain; filter: brightness(0) invert(92%); }
+    .app-icon { display: block; object-fit: contain; }
+    .app-cell.qbit { overflow: hidden; background: transparent; }
+    .app-cell.qbit img { display: block; width: 40px; height: 40px; object-fit: cover; }
+    .avatar { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: #a8b1ba; color: #202830; font-size: 17px; font-weight: 650; }
+
+    /* The checked-in renderer's AOSP conversation geometry: 20px opaque badge,
+       16px app mark, and a 2px rim, protruding 2px from a 40px avatar. */
+    .app-badge { position: absolute; right: -2px; bottom: -2px; width: 20px; height: 20px; display: grid; place-items: center; padding: 2px; border-radius: 50%; background: var(--badge-rim); }
+    .badge-mark { width: 16px; height: 16px; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: #2aabee; color: white; }
+    .badge-mark .app-icon { width: 16px; height: 16px; border-radius: 50%; }
+    .identity { min-width: 0; padding-top: 1px; }
+    .identity strong, .identity span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .identity strong { color: var(--title); font-size: 11px; font-weight: 500; }
+    .identity span { margin-top: 1px; color: var(--sub); font-size: 10px; }
+    .card-title { margin-top: 4px; color: var(--title); font-size: 13.5px; font-weight: 650; }
+    .card-body { color: var(--ink); font-size: 12.5px; }
+    .card-body .link { color: var(--link); text-decoration: underline; }
+    .body-indent { margin-left: 50px; }
+    .hero { height: 110px; margin: 10px 0 10px; overflow: hidden; border-radius: 14px; background: #091b20; }
+    .hero-image { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; }
+    .action-row { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0 50px; }
+    .action {
+      min-height: 26px;
+      padding: 4px 10px;
+      border: 0;
+      border-radius: 13px;
+      background: transparent;
+      color: var(--accent);
+      font-size: 12.5px;
+      font-weight: 600;
+      text-align: left;
+    }
+    .action:hover, .action:focus-visible { background: var(--accent-dim); outline: 0; }
+    .reply-box { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; margin: 6px 0 0 50px; }
+    .reply-input { min-width: 0; height: 26px; padding: 4px 10px; border: 1px solid var(--accent); border-radius: 13px; outline: 0; background: var(--fill2); color: var(--ink); font-size: 12px; }
+    .reply-input::placeholder { color: var(--sub); }
+    .send { min-width: 46px; height: 26px; padding: 4px 10px; border: 0; border-radius: 13px; background: var(--accent-dim); color: var(--accent); font-size: 12px; font-weight: 600; }
+    .send:not(:disabled) { background: var(--accent); color: var(--on-accent); }
+    .send:disabled { cursor: not-allowed; opacity: .55; }
+
+    .shade-footer { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; padding: 4px 10px 12px; }
+    .dnd, .clear, .muted-rule { height: 34px; border: 0; border-radius: 17px; background: var(--fill2); }
+    .dnd { width: 34px; display: grid; place-items: center; color: var(--ink); }
+    .dnd:hover, .dnd.active { background: var(--accent); color: var(--on-accent); }
+    .dnd .legacy-glyph { font-size: 16px; line-height: 1; }
+    .clear { width: 100%; color: var(--ink); font-size: 12.5px; font-weight: 600; }
+    .clear:hover { background: var(--accent-dim); color: var(--accent); }
+    .clear.disabled { color: var(--sub); opacity: .34; }
+    .muted-rule { display: none; align-items: center; justify-content: center; color: var(--sub); font-size: 11px; }
+
+    .manage-card { padding-bottom: 8px; }
+    .manage-head { display: grid; grid-template-columns: 28px minmax(0, 1fr) 24px; gap: 8px; align-items: center; min-height: 28px; }
+    .manage-head .mini-icon { width: 28px; height: 28px; display: grid; place-items: center; overflow: hidden; border-radius: 8px; background: var(--fill2); color: var(--accent); }
+    .manage-head .mini-icon .app-icon { width: 22px; height: 22px; border-radius: 50%; }
+    .manage-head strong { color: var(--title); font-size: 12.5px; font-weight: 600; }
+    .manage-head span { color: var(--sub); font-size: 10px; }
+    .manage-close { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: var(--fill2); color: var(--ink); }
+    .manage-close:hover { background: var(--accent-dim); color: var(--accent); }
+    .manage-list { display: grid; gap: 2px; margin-top: 6px; }
+    .manage-row { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 6px; min-height: 28px; align-items: center; padding: 2px 4px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); font-size: 12px; text-align: left; }
+    .manage-row:hover { background: var(--accent-dim); color: var(--accent); }
+    .manage-row.danger { color: var(--urgent); }
+    .legacy-glyph { display: inline-block; width: 22px; color: var(--sub); font-size: 16px; line-height: 1; text-align: center; }
+    .manage-row:hover .legacy-glyph { color: var(--accent); }
+
+    .osd-stack { display: grid; gap: 3px; margin-top: 6px; margin-left: auto; width: 348px; }
+    .osd-card { padding: 9px 12px 10px; border-radius: 16px; background: var(--glass); box-shadow: 0 18px 34px rgba(0, 0, 0, .4); backdrop-filter: blur(18px); }
+    .osd-head { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+    .osd-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 9px; background: var(--fill2); color: var(--ink); }
+    .osd-icon .semantic-icon { width: 20px; height: 20px; }
+    .osd-copy strong, .osd-copy span { display: block; }
+    .osd-copy strong { color: var(--title); font-size: 11px; font-weight: 500; }
+    .osd-copy span { color: var(--sub); font-size: 10px; }
+    .osd-value { color: var(--title); font-size: 13px; font-weight: 650; }
+    .osd-track { height: 5px; margin: 8px 0 0 50px; overflow: hidden; border-radius: 3px; background: var(--fill2); }
+    .osd-track span { display: block; width: 58%; height: 100%; border-radius: inherit; background: var(--accent); }
+
+    .empty-state { min-height: 140px; display: grid; place-items: center; padding: 20px; color: var(--sub); font-size: 12.5px; text-align: center; }
+    .toast { min-height: 19px; padding: 4px 12px 8px; color: var(--accent); font-size: 10px; text-align: center; }
+
+    /* Mixable visual alternatives. `source` is the checked-in renderer baseline. */
+    .layout-airy .runtime-stack { top: 26px; right: 18px; width: 384px; }
+    .layout-airy .shade { width: 384px; }
+    .layout-airy .shade-body { gap: 8px; padding: 14px; }
+    .layout-airy .notification { padding: 12px 14px 13px; border-radius: 16px; }
+    .layout-airy .osd-stack { width: 372px; }
+    .layout-island .shade { border: 1px solid var(--line); }
+    .layout-island .runtime-stack { top: var(--island-top); right: var(--island-right); width: var(--shade-width); }
+    .bar-native .hyprbar { height: 26px; }
+    .bar-compact .hyprbar { height: 22px; }
+    .bar-compact .bar-tag, .bar-compact .bar-task, .bar-compact .bar-bell { height: 20px; }
+    .bar-roomy .hyprbar { height: 30px; }
+    .inset-tight { --island-right: 12px; }
+    .inset-balanced { --island-right: 18px; }
+    .inset-open { --island-right: 24px; }
+    .offset-lift { --island-top: 28px; }
+    .offset-native { --island-top: 34px; }
+    .offset-low { --island-top: 42px; }
+    .density-compact .shade-body { gap: 2px; padding: 8px; }
+    .density-compact .notification { padding: 7px 10px 8px; }
+    .density-comfortable .shade-body { gap: 5px; padding: 12px; }
+    .density-comfortable .notification { padding: 11px 13px 12px; }
+    .density-comfortable .action-row, .density-comfortable .reply-box { margin-top: 8px; }
+    .osdplace-below .osd-stack { margin-top: 6px; margin-left: auto; width: 348px; }
+    .osdplace-aligned .osd-stack { margin-top: 8px; margin-left: 0; width: 100%; }
+    .osdplace-aligned .osd-card { border-radius: 16px; }
+    .osdplace-detached .runtime-stack { bottom: 18px; }
+    .osdplace-detached .osd-stack { position: absolute; right: 0; bottom: 0; width: 348px; margin: 0; }
+    .wallpaper-clear::before { background: url("assets/wallpaper.jpg") center / cover no-repeat; filter: saturate(1) brightness(.96); }
+    .wallpaper-dim::before { background: linear-gradient(rgba(8, 11, 16, .28), rgba(8, 11, 16, .42)), url("assets/wallpaper.jpg") center / cover no-repeat; filter: saturate(.92) brightness(.82); }
+    .wallpaper-soft::before { background: linear-gradient(rgba(8, 11, 16, .36), rgba(8, 11, 16, .52)), url("assets/wallpaper.jpg") center / cover no-repeat; filter: blur(7px) saturate(.82) brightness(.72); transform: scale(1.035); }
+    .interaction-cue .longpress-card { transition: box-shadow 140ms ease, background 140ms ease; }
+    .interaction-cue .longpress-card[data-press="true"] { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 2px var(--accent-dim); }
+    .interaction-patient .longpress-card { transition: box-shadow 180ms ease, background 180ms ease; }
+    .interaction-patient .longpress-card[data-press="true"] { box-shadow: inset 0 0 0 1px var(--accent); }
+    .surface-opaque .shade, .surface-opaque .osd-card { background: #0f1218; border: 1px solid var(--line); backdrop-filter: none; }
+    .surface-tint .shade, .surface-tint .osd-card { background: rgba(15, 18, 24, .76); box-shadow: 0 22px 52px rgba(0, 0, 0, .5); backdrop-filter: blur(24px); }
+    .cards-separated .shade-body { gap: 10px; }
+    .cards-separated .notification { border: 1px solid var(--line); }
+    .cards-flat .shade-body { gap: 0; padding: 10px 0; }
+    .cards-flat .notification { border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
+    .cards-flat .notification:last-child { border-bottom: 0; }
+    .footer-compact .shade-footer { grid-template-columns: 34px auto; justify-content: space-between; }
+    .footer-compact .clear { width: auto; padding: 0 14px; }
+    .footer-icon-only .shade-footer { grid-template-columns: 34px 34px; justify-content: space-between; }
+    .footer-icon-only .clear { width: 34px; padding: 0; overflow: hidden; color: transparent; position: relative; }
+    .footer-icon-only .clear::after { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink); content: "✕"; }
+    .badge-compact .app-badge { width: 18px; height: 18px; right: -1px; bottom: -1px; padding: 2px; }
+    .badge-compact .badge-mark { width: 14px; height: 14px; }
+    .badge-outline .app-badge { padding: 0; border: 2px solid var(--accent); background: var(--background); }
+    .badge-outline .badge-mark { width: 16px; height: 16px; }
+    .palette-neutral { --accent: #9cc5d3; --accent-dim: rgba(156, 197, 211, .17); --link: #a8bed3; --urgent: #ff9c75; }
+    .palette-contrast { --accent: #66e5ff; --accent-dim: rgba(102, 229, 255, .2); --ink: #f1f5f7; --title: #ffffff; --sub: #abb7c1; }
+
+    /* The AOSP comparison is a real visual mode, not a palette-only toggle:
+       SystemUI owns the whole shade surface, uses Material dark roles, and
+       keeps a compact status bar above the notification stack. */
+    .design-aosp {
+      --background: #0f0d13;
+      --glass: rgba(29, 27, 32, .82);
+      --fill: #211f26;
+      --fill2: #302d36;
+      --line: rgba(231, 224, 233, .12);
+      --ink: #e6e1e5;
+      --title: #e6e1e5;
+      --sub: #cac4d0;
+      --accent: #d0bcff;
+      --accent-dim: #4f378b;
+      --on-accent: #381e72;
+      --urgent: #ffb4ab;
+      --link: #d0bcff;
+      --badge-rim: #f7f2fa;
+      --active: #d0bcff;
+      --active-bg: #4f378b;
+      --square: #cac4d0;
+      --square-active: #d0bcff;
+      --aosp-on-surface: #e6e1e5;
+      background: var(--background);
+    }
+    .design-aosp::before { background: linear-gradient(rgba(15, 13, 19, .55), rgba(15, 13, 19, .72)), url("assets/wallpaper.jpg") center / cover no-repeat; filter: saturate(.7) brightness(.62); }
+    .design-aosp .hyprbar { height: 38px; padding: 0 18px; border-bottom: 0; background: rgba(15, 13, 19, .18); box-shadow: none; backdrop-filter: blur(12px); }
+    .design-aosp .bar-current { display: none; }
+    .design-aosp .bar-aosp-status { display: flex; }
+    .design-aosp .runtime-stack { top: 0; right: 0; bottom: 0; left: 0; width: auto; }
+    .design-aosp .shade { width: 100%; height: 100%; min-height: 100%; border-radius: 0; background: var(--glass); box-shadow: none; backdrop-filter: blur(28px); }
+    .design-aosp .shade-head { display: flex; max-width: 700px; width: 100%; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 auto; padding: 58px 24px 12px; }
+    .design-aosp .shade-title { color: var(--title); font-size: 20px; font-weight: 650; }
+    .design-aosp .shade-count { color: var(--sub); font-size: 12px; }
+    .design-aosp .shade-body { max-width: 700px; width: 100%; margin: 0 auto; padding: 8px 24px 14px; gap: 8px; overflow: auto; }
+    .design-aosp .notification { padding: 14px 16px 15px; border-radius: 16px; background: var(--fill); }
+    .design-aosp .notification.clickable:hover { background: #2b2734; }
+    .design-aosp .notification-head { grid-template-columns: 40px minmax(0, 1fr); gap: 12px; }
+    .design-aosp .app-cell { border-radius: 12px; background: var(--fill2); }
+    .design-aosp .identity strong { font-size: 12px; }
+    .design-aosp .identity span { font-size: 11px; }
+    .design-aosp .card-title { margin-top: 10px; font-size: 14px; }
+    .design-aosp .card-body { font-size: 13px; }
+    .design-aosp .hero { height: 160px; margin: 12px 0 10px; border-radius: 14px; }
+    .design-aosp .action-row, .design-aosp .reply-box { margin-left: 0; }
+    .design-aosp .action { min-height: 32px; padding: 5px 14px; border-radius: 17px; background: var(--accent-dim); color: #eaddff; }
+    .design-aosp .reply-input { height: 32px; border-color: #9381b5; border-radius: 17px; background: var(--fill2); }
+    .design-aosp .send { height: 32px; border-radius: 17px; background: var(--accent); color: var(--on-accent); }
+    .design-aosp .app-badge { right: -3px; bottom: -3px; background: var(--badge-rim); }
+    .design-aosp .badge-mark { background: #6750a4; }
+    .design-aosp .manage-head { min-height: 34px; }
+    .design-aosp .manage-row { min-height: 34px; border-radius: 17px; }
+    .design-aosp .shade-footer { max-width: 700px; width: 100%; margin: 0 auto; padding: 8px 24px 22px; }
+    .design-aosp .dnd, .design-aosp .clear { background: var(--fill2); color: var(--ink); }
+    .design-aosp .dnd:hover, .design-aosp .dnd.active { background: var(--accent); color: var(--on-accent); }
+    .design-aosp .clear:hover { background: var(--accent-dim); color: #eaddff; }
+    .design-aosp .osd-stack { position: absolute; z-index: 8; right: 24px; bottom: 24px; width: 348px; margin: 0; }
+    .design-aosp .osd-card { background: #211f26; border: 1px solid var(--line); box-shadow: 0 16px 34px rgba(0, 0, 0, .42); backdrop-filter: none; }
+    .design-aosp .toast { color: var(--accent); }
+
+    .mixer { margin-top: 18px; padding: 14px; border: 1px solid var(--page-line); border-radius: 12px; background: rgba(255, 255, 255, .018); }
+    .mixer-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .mixer h2 { margin: 0; color: #eef1f5; font-size: 16px; }
+    .selection { color: var(--page-sub); font-size: 10px; text-align: right; }
+    .control-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+    .control-group { min-width: 0; }
+    .control-group > span { display: block; margin-bottom: 5px; color: var(--page-sub); font-size: 10px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+    .choices { display: flex; flex-wrap: wrap; gap: 4px; }
+    .choice { min-height: 28px; padding: 5px 8px; border: 1px solid var(--page-line); border-radius: 7px; background: transparent; color: var(--page-sub); font-size: 10px; }
+    .choice:hover, .choice.active { border-color: var(--page-accent); background: rgba(50, 214, 255, .12); color: var(--page-accent); }
+    .mixer-foot { display: flex; flex-wrap: wrap; gap: 7px 12px; margin-top: 12px; color: var(--page-sub); font-size: 10px; }
+    .badge-spec { color: var(--page-accent); }
+
+    .notes { padding: 2px 0; }
+    .notes h2 { margin: 6px 0 8px; color: #eef1f5; font-size: 22px; line-height: 1.1; }
+    .notes > p { color: var(--page-sub); font-size: 12px; }
+    .facts { display: grid; gap: 0; margin: 18px 0 0; }
+    .fact { padding: 11px 0; border-top: 1px solid var(--page-line); }
+    .fact strong { color: #eef1f5; font-size: 12px; }
+    .fact p { margin: 4px 0 0; color: var(--page-sub); font-size: 11px; }
+    .tokens { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin: 18px 0; }
+    .token { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 6px; align-items: center; padding: 5px; border: 1px solid var(--page-line); border-radius: 7px; background: rgba(255, 255, 255, .025); }
+    .token i { width: 20px; height: 20px; border: 1px solid var(--page-line); border-radius: 5px; }
+    .token strong, .token code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .token strong { color: var(--page-ink); font-size: 9px; }
+    .token code { color: var(--page-sub); font-size: 8px; }
+    .sources { margin-top: 18px; color: var(--page-sub); font-size: 10px; }
+    .sources ul { margin: 6px 0 0; padding-left: 15px; }
+    .sources li { margin: 4px 0; }
+
+    .icon { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+    @media (max-width: 1120px) {
+      .board { grid-template-columns: minmax(620px, 1fr) 320px; gap: 18px; }
+      .workspace { right: 342px; }
+      .desktop-topline { right: 342px; }
+    }
+    @media (max-width: 900px) {
+      .page { width: min(100% - 22px, 720px); padding-top: 20px; }
+      .board { display: block; }
+      .notes { margin-top: 26px; }
+    }
+    @media (max-width: 600px) {
+      .page { width: calc(100% - 16px); }
+      .stage { min-height: 880px; border-radius: 14px; }
+      .workspace { inset: 50px 14px 18px; grid-template-columns: 1fr; opacity: .24; }
+      .workspace .editor { display: none; }
+      .runtime-stack, .layout-airy .runtime-stack, .layout-island .runtime-stack { right: 8px; left: 8px; width: auto; }
+      .runtime-stack { top: 34px; }
+      .layout-airy .runtime-stack { top: 26px; }
+      .layout-island .runtime-stack { top: var(--island-top); }
+      .shade, .layout-airy .shade { width: 100%; }
+      .layout-airy .shade-body { padding: 10px; gap: 4px; }
+      .osd-stack, .layout-airy .osd-stack { width: calc(100% - 12px); }
+      .preview-toolbar { flex-wrap: wrap; }
+      .preview-description { width: 100%; margin-left: 2px; text-align: left; }
+      .focus-toolbar-head { display: block; }
+      .focus-toolbar-head span { display: block; margin-top: 3px; }
+      .focus-grid { grid-template-columns: 1fr; }
+      .focus-row { grid-template-columns: 64px minmax(0, 1fr); }
+      .focus-state { width: 100%; margin-left: 0; text-align: left; }
+      .bar-current { grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px; padding: 0 2px; }
+      .bar-tags .bar-tag:nth-child(n + 6), .bar-task span, .bar-tray { display: none; }
+      .bar-right { gap: 3px; }
+      .bar-battery span, .bar-layout, .bar-clock { display: none; }
+      .design-aosp .runtime-stack { top: 0; right: 0; bottom: 0; left: 0; }
+      .design-aosp .shade-head { padding: 54px 16px 10px; }
+      .design-aosp .shade-body { padding: 8px 12px 12px; }
+      .design-aosp .shade-footer { padding: 8px 12px 18px; }
+      .design-aosp .osd-stack { right: 12px; bottom: 12px; width: calc(100% - 24px); }
+      .osdplace-below .osd-stack, .osdplace-aligned .osd-stack { width: calc(100% - 12px); }
+      .osdplace-detached .runtime-stack { bottom: 12px; }
+      .osdplace-detached .osd-stack { right: 0; width: calc(100% - 12px); }
+      .control-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .mixer-head { display: block; }
+      .selection { margin-top: 4px; text-align: left; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="page-head">
+      <div class="eyebrow">hyprnotify / v2 / floating-island audit</div>
+      <h1>Tune the selected notification center</h1>
+      <p class="lede">The default is the selected Hyprland treatment: floating island, live blur, current palette, source rows, source footer, and an opaque AOSP conversation badge. The controls above the preview expose the remaining spacing, placement, and behavior decisions; the full mixer below keeps the earlier comparisons available.</p>
+    </header>
+
+    <div class="board">
+      <section>
+        <div class="preview-toolbar" role="group" aria-label="Preview design comparison">
+          <span class="preview-toolbar-label">Preview</span>
+          <button class="preview-choice active" type="button" data-group="design" data-value="current">Current used</button>
+          <button class="preview-choice" type="button" data-group="design" data-value="aosp">AOSP / Pixel</button>
+          <span class="preview-description" id="preview-description">Hyprland bar + right-edge notification center</span>
+        </div>
+
+        <div class="focus-toolbar" aria-label="Selected floating island options">
+          <div class="focus-toolbar-head"><strong>Selected baseline and focused adjustments</strong><span>All buttons update the preview in place.</span></div>
+          <div class="focus-grid">
+            <div class="focus-row"><span>Baseline</span><div class="focus-choices">
+              <button class="focus-choice active" type="button" data-group="layout" data-value="island">Floating island</button>
+              <button class="focus-choice active" type="button" data-group="surface" data-value="blur">Live blur</button>
+              <button class="focus-choice active" type="button" data-group="palette" data-value="current">Current palette</button>
+              <button class="focus-choice active" type="button" data-group="cards" data-value="source">Source rows</button>
+              <button class="focus-choice active" type="button" data-group="footer" data-value="source">Source footer</button>
+              <button class="focus-choice active" type="button" data-group="badge" data-value="aosp">AOSP badge</button>
+            </div></div>
+            <div class="focus-row"><span>Inset</span><div class="focus-choices">
+              <button class="focus-choice" type="button" data-group="inset" data-value="tight">12px</button>
+              <button class="focus-choice active" type="button" data-group="inset" data-value="balanced">18px</button>
+              <button class="focus-choice" type="button" data-group="inset" data-value="open">24px</button>
+            </div></div>
+            <div class="focus-row"><span>Offset</span><div class="focus-choices">
+              <button class="focus-choice" type="button" data-group="offset" data-value="lift">Lift 28px</button>
+              <button class="focus-choice active" type="button" data-group="offset" data-value="native">Native 34px</button>
+              <button class="focus-choice" type="button" data-group="offset" data-value="low">Lower 42px</button>
+            </div></div>
+            <div class="focus-row"><span>Density</span><div class="focus-choices">
+              <button class="focus-choice active" type="button" data-group="density" data-value="source">Source</button>
+              <button class="focus-choice" type="button" data-group="density" data-value="compact">Compact</button>
+              <button class="focus-choice" type="button" data-group="density" data-value="comfortable">Comfortable</button>
+            </div></div>
+            <div class="focus-row"><span>Bar</span><div class="focus-choices">
+              <button class="focus-choice" type="button" data-group="bar" data-value="compact">22px</button>
+              <button class="focus-choice active" type="button" data-group="bar" data-value="native">26px</button>
+              <button class="focus-choice" type="button" data-group="bar" data-value="roomy">30px</button>
+            </div></div>
+            <div class="focus-row"><span>OSD</span><div class="focus-choices">
+              <button class="focus-choice active" type="button" data-group="osdplace" data-value="below">Below island</button>
+              <button class="focus-choice" type="button" data-group="osdplace" data-value="aligned">Align island</button>
+              <button class="focus-choice" type="button" data-group="osdplace" data-value="detached">Detached</button>
+            </div></div>
+            <div class="focus-row"><span>Wallpaper</span><div class="focus-choices">
+              <button class="focus-choice" type="button" data-group="wallpaper" data-value="clear">Clear</button>
+              <button class="focus-choice active" type="button" data-group="wallpaper" data-value="dim">Current dim</button>
+              <button class="focus-choice" type="button" data-group="wallpaper" data-value="soft">Stronger blur</button>
+            </div></div>
+            <div class="focus-row"><span>Hold</span><div class="focus-choices">
+              <button class="focus-choice active" type="button" data-group="interaction" data-value="source">500ms</button>
+              <button class="focus-choice" type="button" data-group="interaction" data-value="cue">500ms + cue</button>
+              <button class="focus-choice" type="button" data-group="interaction" data-value="patient">650ms</button>
+            </div></div>
+          </div>
+          <div class="focus-readout"><strong id="focus-selection">Current used · Floating island · Live blur · Current palette · Source rows · Source footer · AOSP badge</strong><span class="focus-state" id="focus-state">Center · OSD below island · Hold 500ms</span></div>
+        </div>
+
+        <div class="stage design-current layout-island surface-blur palette-current cards-source footer-source badge-aosp density-source inset-balanced offset-native bar-native osdplace-below wallpaper-dim interaction-source" id="stage" data-design="current" data-layout="island" data-surface="blur" data-palette="current" data-cards="source" data-footer="source" data-badge="aosp" data-density="source" data-inset="balanced" data-offset="native" data-bar="native" data-osdplace="below" data-wallpaper="dim" data-interaction="source" data-state="center" data-osd="volume">
+          <nav class="hyprbar" aria-label="Hyprland bar preview">
+            <div class="bar-current">
+              <div class="bar-tags" aria-label="Workspaces">
+                <span class="bar-tag active occupied">一</span><span class="bar-tag occupied">二</span><span class="bar-tag">三</span><span class="bar-tag">四</span><span class="bar-tag">五</span><span class="bar-tag">六</span><span class="bar-tag">七</span><span class="bar-tag">八</span><span class="bar-tag">九</span>
+              </div>
+              <div class="bar-tasks" aria-label="Tasks">
+                <span class="bar-task active"><img src="assets/telegram.png" alt=""><span>Telegram</span></span>
+                <span class="bar-task"><img src="assets/qbittorrent.png" alt=""><span>qBittorrent</span></span>
+              </div>
+              <div class="bar-right">
+                <span class="bar-tray" aria-label="System tray"><img src="assets/osd-volume-aosp.svg" alt=""><img src="assets/osd-touchpad-aosp.svg" alt=""></span>
+                <span class="bar-bell" aria-label="3 notifications"><img src="assets/bar-bell-aosp.svg" alt=""><b>3</b></span>
+                <span class="bar-battery"><img src="assets/bar-battery-pixel.svg" alt=""><span>82</span></span>
+                <span class="bar-clock">Wed Aug 07, 12:42</span>
+                <span class="bar-layout"><img src="assets/floating.svg" alt="" title="Floating layout"></span>
+              </div>
+            </div>
+            <div class="bar-aosp-status">
+              <span>12:42</span>
+              <span class="bar-system"><img src="assets/bar-wifi-aosp.svg" alt="Wi-Fi"><img src="assets/bar-battery-pixel.svg" alt="Battery"><span>82%</span></span>
+            </div>
+          </nav>
+          <div class="desktop-topline"><span><strong>hyprland</strong> · workspace 1</span><span>12:42</span></div>
+          <section class="workspace" aria-hidden="true">
+            <div class="window terminal">
+              <div class="window-head"><i class="window-dot"></i><span>terminal</span></div>
+              <div class="window-body">
+                <div><span class="prompt">$</span> hyprctl clients</div>
+                <div>address: 0x31c / workspace: 1</div>
+                <div>class: org.example.Editor</div>
+                <br>
+                <div><span class="prompt">$</span> grim - | wl-copy</div>
+                <div>capture complete</div>
+              </div>
+            </div>
+            <div class="window editor">
+              <div class="window-head"><i class="window-dot"></i><span>notification-layout.cpp</span></div>
+              <div class="window-body">
+                <div class="line-numbers">41<br>42<br>43<br>44<br>45<br>46<br>47<br>48</div>
+                <div class="code"><span class="blue">const auto</span> <span class="cyan">MEDIA</span> = content.image;<br>
+                  <span class="blue">if</span> (MEDIA.isWide()) {<br>
+                  &nbsp;&nbsp;paintHero(MEDIA, card.width);<br>
+                  &nbsp;&nbsp;paintBody(notification);<br>
+                  } <span class="blue">else</span> {<br>
+                  &nbsp;&nbsp;paintPreview(MEDIA);<br>
+                  }<br>
+                  <span class="orange">damage</span>(card.bounds);</div>
+              </div>
+            </div>
+          </section>
+
+          <div class="runtime-stack">
+            <aside class="shade" id="shade" aria-label="Notification center">
+              <header class="shade-head">
+                <span class="shade-title">Notifications</span>
+                <span class="shade-count" id="shade-count">3 recent</span>
+              </header>
+              <div class="shade-body" id="shade-body"></div>
+              <footer class="shade-footer">
+                <button class="dnd" id="dnd" type="button" title="Do not disturb" aria-label="Do not disturb" aria-pressed="false"><span class="legacy-glyph" aria-hidden="true">⊖</span></button>
+                <button class="clear" id="clear" type="button">Clear all</button>
+              </footer>
+              <div class="toast" id="toast" role="status" aria-live="polite"></div>
+            </aside>
+            <div class="osd-stack" id="osd-stack" aria-label="OSD preview">
+              <article class="osd-card">
+                <div class="osd-head">
+                  <span class="osd-icon" id="osd-icon"></span>
+                  <span class="osd-copy"><strong id="osd-title">Volume · now</strong><span id="osd-caption">Native semantic OSD card</span></span>
+                  <span class="osd-value" id="osd-value">58%</span>
+                </div>
+                <div class="osd-track"><span id="osd-fill"></span></div>
+              </article>
+            </div>
+          </div>
+        </div>
+
+        <div class="mixer" aria-label="Design mixer">
+          <div class="mixer-head">
+            <h2>Full comparison mixer</h2>
+            <div class="selection" id="selection">Exact shade · Live blur · Current palette · Source rows · Source footer · AOSP badge</div>
+          </div>
+          <div class="control-grid">
+            <div class="control-group">
+              <span>Layout</span>
+              <div class="choices">
+                <button class="choice" data-group="layout" data-value="source">Exact shade</button>
+                <button class="choice" data-group="layout" data-value="airy">Airy shade</button>
+                <button class="choice active" data-group="layout" data-value="island">Floating island</button>
+              </div>
+            </div>
+            <div class="control-group">
+              <span>Surface</span>
+              <div class="choices">
+                <button class="choice active" data-group="surface" data-value="blur">Live blur</button>
+                <button class="choice" data-group="surface" data-value="opaque">Opaque</button>
+                <button class="choice" data-group="surface" data-value="tint">Deep glass</button>
+              </div>
+            </div>
+            <div class="control-group">
+              <span>Palette</span>
+              <div class="choices">
+                <button class="choice active" data-group="palette" data-value="current">Current cyan</button>
+                <button class="choice" data-group="palette" data-value="neutral">Muted neutral</button>
+                <button class="choice" data-group="palette" data-value="contrast">High contrast</button>
+              </div>
+            </div>
+            <div class="control-group">
+              <span>Rows</span>
+              <div class="choices">
+                <button class="choice active" data-group="cards" data-value="source">Source rows</button>
+                <button class="choice" data-group="cards" data-value="separated">Separated</button>
+                <button class="choice" data-group="cards" data-value="flat">Flat list</button>
+              </div>
+            </div>
+            <div class="control-group">
+              <span>Footer</span>
+              <div class="choices">
+                <button class="choice active" data-group="footer" data-value="source">Source footer</button>
+                <button class="choice" data-group="footer" data-value="compact">Compact Clear</button>
+                <button class="choice" data-group="footer" data-value="icon-only">Icon only</button>
+              </div>
+            </div>
+            <div class="control-group">
+              <span>Conversation badge</span>
+              <div class="choices">
+                <button class="choice active" data-group="badge" data-value="aosp">AOSP 20 / 16</button>
+                <button class="choice" data-group="badge" data-value="compact">Compact</button>
+                <button class="choice" data-group="badge" data-value="outline">Outlined</button>
+              </div>
+            </div>
+            <div class="control-group">
+              <span>Center state</span>
+              <div class="choices">
+                <button class="choice active" data-group="state" data-value="center">Center</button>
+                <button class="choice" data-group="state" data-value="hold">Hold menu</button>
+                <button class="choice" data-group="state" data-value="reply">Inline reply</button>
+                <button class="choice" data-group="state" data-value="empty">Empty</button>
+              </div>
+            </div>
+            <div class="control-group">
+              <span>OSD state</span>
+              <div class="choices">
+                <button class="choice active" data-group="osd" data-value="volume">Volume</button>
+                <button class="choice" data-group="osd" data-value="brightness">Brightness</button>
+                <button class="choice" data-group="osd" data-value="touchpad">Touchpad</button>
+                <button class="choice" data-group="osd" data-value="battery">Battery</button>
+              </div>
+            </div>
+          </div>
+          <div class="mixer-foot"><span>Default badge is opaque, not transparent:</span><span class="badge-spec">20px disc · 16px app mark · 2px rim · 2px avatar overhang</span></div>
+        </div>
+      </section>
+
+      <aside class="notes">
+        <div class="eyebrow">Source alignment</div>
+        <h2>What v2 is checking</h2>
+        <p>The selected baseline keeps the source renderer's information hierarchy while making the island boundary explicit. The focused controls isolate the remaining decisions instead of silently changing several dimensions at once.</p>
+
+        <div class="tokens" aria-label="Current hyprnotify theme tokens">
+          <div class="token"><i style="background:#0f1218"></i><div><strong>glass</strong><code>#0F1218 / 62%</code></div></div>
+          <div class="token"><i style="background:rgba(255,255,255,.045)"></i><div><strong>fill</strong><code>white / 4.5%</code></div></div>
+          <div class="token"><i style="background:rgba(255,255,255,.09)"></i><div><strong>fill2</strong><code>white / 9%</code></div></div>
+          <div class="token"><i style="background:#32d6ff"></i><div><strong>highlight</strong><code>#32D6FF</code></div></div>
+          <div class="token"><i style="background:#e4e8ee"></i><div><strong>body</strong><code>#E4E8EE</code></div></div>
+          <div class="token"><i style="background:#98a2ac"></i><div><strong>kicker</strong><code>#98A2AC</code></div></div>
+          <div class="token"><i style="background:#ff8a5c"></i><div><strong>urgent</strong><code>#FF8A5C</code></div></div>
+          <div class="token"><i style="background:#f4f6f8"></i><div><strong>badge rim</strong><code>#F4F6F8</code></div></div>
+        </div>
+
+        <div class="facts">
+          <div class="fact"><strong>Island fit</strong><p>Default is 360px wide, 18px from the stage edge, 34px below the top, and 8px below the 26px bar. The controls test whether that breathing room survives narrow outputs.</p></div>
+          <div class="fact"><strong>Source spacing</strong><p>Rows use 10px content insets and 3px joins. Compact and comfortable options change only row density, so card anatomy and app identity remain comparable.</p></div>
+          <div class="fact"><strong>Action hierarchy</strong><p>Body click opens the notification, while a 500ms hold reveals snooze, mute, priority, and dismiss. No chevron or kebab competes with those gestures.</p></div>
+          <div class="fact"><strong>Reply ownership</strong><p>The Reply chip is the only center surface that owns keyboard input. Enter sends, Escape returns to the row, and the preview keeps the action inside the notification.</p></div>
+          <div class="fact"><strong>Footer and badge</strong><p>DND stays a compact 34px control; Clear all remains the source text action. The conversation badge is an opaque 20px disc with a 16px app mark and 2px rim.</p></div>
+          <div class="fact"><strong>OSD separation</strong><p>Volume, brightness, touchpad, and battery use stable semantic marks. Below-island is the source placement; aligned and detached are explicit comparison options.</p></div>
+        </div>
+
+        <div class="sources">
+          AOSP cross-check: <a href="https://developer.android.com/design/ui/mobile/guides/home-screen/notifications">notification anatomy</a> ·
+          <a href="https://source.android.com/docs/core/display/material">Material You</a> ·
+          <a href="https://source.android.com/docs/core/display/conv-notifications">conversation notifications</a> ·
+          <a href="https://android.googlesource.com/platform/frameworks/base/+/main/packages/SystemUI/src/com/android/systemui/statusbar/notification/footer/ui/view/FooterView.java">FooterView</a>.
+          Temporary v2 only; repository files remain unchanged.
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      const stage = document.querySelector('#stage');
+      const shade = document.querySelector('#shade');
+      const shadeBody = document.querySelector('#shade-body');
+      const toast = document.querySelector('#toast');
+      const dnd = document.querySelector('#dnd');
+      const clear = document.querySelector('#clear');
+      const selection = document.querySelector('#selection');
+      const focusSelection = document.querySelector('#focus-selection');
+      const focusState = document.querySelector('#focus-state');
+      const shadeCount = document.querySelector('#shade-count');
+      const previewDescription = document.querySelector('#preview-description');
+      let holdTimer = 0;
+      let pressedCard = null;
+      let activePointerId = null;
+      let suppressCard = null;
+      let dndOn = false;
+
+      const labels = {
+        design: { current: 'Current used', aosp: 'AOSP / Pixel' },
+        layout: { source: 'Exact shade', airy: 'Airy shade', island: 'Floating island' },
+        surface: { blur: 'Live blur', opaque: 'Opaque', tint: 'Deep glass' },
+        palette: { current: 'Current palette', neutral: 'Muted neutral', contrast: 'High contrast' },
+        cards: { source: 'Source rows', separated: 'Separated rows', flat: 'Flat list' },
+        footer: { source: 'Source footer', compact: 'Compact Clear', 'icon-only': 'Icon-only footer' },
+        badge: { aosp: 'AOSP badge', compact: 'Compact badge', outline: 'Outlined badge' },
+        density: { source: 'Source density', compact: 'Compact density', comfortable: 'Comfortable density' },
+        inset: { tight: '12px inset', balanced: '18px inset', open: '24px inset' },
+        offset: { lift: '28px offset', native: '34px offset', low: '42px offset' },
+        bar: { compact: '22px bar', native: '26px bar', roomy: '30px bar' },
+        osdplace: { below: 'OSD below island', aligned: 'OSD aligned', detached: 'OSD detached' },
+        wallpaper: { clear: 'Clear wallpaper', dim: 'Current dim', soft: 'Stronger wallpaper blur' },
+        interaction: { source: 'Hold 500ms', cue: 'Hold 500ms + cue', patient: 'Hold 650ms' }
+      };
+      const designDescriptions = {
+        current: 'Hyprland bar + right-edge notification center',
+        aosp: 'Pixel/SystemUI full shade + Material dark roles'
+      };
+      const defaults = { design: 'current', layout: 'island', surface: 'blur', palette: 'current', cards: 'source', footer: 'source', badge: 'aosp', density: 'source', inset: 'balanced', offset: 'native', bar: 'native', osdplace: 'below', wallpaper: 'dim', interaction: 'source', state: 'center', osd: 'volume' };
+
+      const showToast = (message) => {
+        toast.textContent = message;
+        window.clearTimeout(showToast.timer);
+        showToast.timer = window.setTimeout(() => { toast.textContent = ''; }, 2600);
+      };
+
+      const assetRoot = 'assets/';
+      const assets = {
+        screenshot: 'screenshot.svg',
+        volume: 'osd-volume-aosp.svg',
+        brightness: 'osd-brightness-aosp.svg',
+        touchpad: 'osd-touchpad-aosp.svg',
+        battery: 'osd-battery-aosp.svg',
+        telegram: 'telegram.png'
+      };
+      const icon = (kind) => `<img class="${kind === 'telegram' ? 'app-icon' : 'semantic-icon'}" src="${assetRoot}${assets[kind]}" alt="" aria-hidden="true">`;
+
+      const badge = () => `<span class="app-badge" aria-label="Opaque AOSP application badge"><span class="badge-mark">${icon('telegram')}</span></span>`;
+
+      const screenshotCard = () => `
+        <article class="notification clickable" data-open="Screenshot opened">
+          <div class="notification-head">
+            <div class="app-cell">${icon('screenshot')}</div>
+            <div class="identity"><strong>Screenshot · now</strong><span>Desktop capture</span></div>
+          </div>
+          <div class="body-indent">
+            <div class="card-title">Screenshot saved</div>
+          </div>
+          <div class="hero" role="img" aria-label="Wide screenshot preview"><img class="hero-image" src="${assetRoot}screenshot-preview.png" alt="Captured Hyprland desktop"></div>
+          <div class="card-body">Clicking the preview opens the capture. There is no extra Open or Share row.</div>
+        </article>`;
+
+      const telegramCard = (state) => {
+        if (state === 'hold') return `
+          <article class="notification manage-card longpress-card">
+            <div class="manage-head"><span class="mini-icon">${icon('telegram')}</span><span><strong>Telegram</strong><span>Held notification</span></span><button class="manage-close" type="button" aria-label="Close management">✕</button></div>
+            <div class="manage-list">
+              <button class="manage-row" type="button" data-action="Snoozed for 15 minutes"><span class="legacy-glyph">◷</span><span>Snooze 15 minutes</span></button>
+              <button class="manage-row" type="button" data-action="Muted Telegram for 1 hour"><span class="legacy-glyph">⊘</span><span>Mute Telegram for 1 hour</span></button>
+              <button class="manage-row" type="button" data-action="Muted Telegram today"><span class="legacy-glyph">⊘</span><span>Mute Telegram today</span></button>
+              <button class="manage-row" type="button" data-action="Priority conversation"><span class="legacy-glyph">★</span><span>Priority conversation</span></button>
+              <button class="manage-row danger" type="button" data-action="Notification dismissed"><span class="legacy-glyph">✕</span><span>Dismiss</span></button>
+            </div>
+          </article>`;
+
+        const reply = state === 'reply' ? `<div class="reply-box"><input class="reply-input" type="text" placeholder="Type a reply..." aria-label="Type a reply"><button class="send" type="button" disabled>Send</button></div>` : '';
+        const actions = state === 'reply' ? '' : '<button class="action" type="button" data-reply="true">Reply</button><button class="action" type="button" data-action="Marked read">Mark read</button>';
+        return `
+          <article class="notification clickable longpress-card" data-open="Telegram opened">
+            <div class="notification-head">
+              <div class="app-cell"><div class="avatar">A</div>${badge()}</div>
+              <div class="identity"><strong>Telegram · now</strong><span>Message</span></div>
+            </div>
+            <div class="body-indent"><div class="card-title">Alice</div><div class="card-body">Are you still coming? I found a better route through the old town.</div></div>
+            <div class="action-row">${actions}</div>${reply}
+          </article>`;
+      };
+
+      const qbitCard = () => `
+        <article class="notification clickable" data-open="qBittorrent opened">
+          <div class="notification-head">
+            <div class="app-cell qbit"><img class="app-icon" src="${assetRoot}qbittorrent.png" alt="qBittorrent application"></div>
+            <div class="identity"><strong>qBittorrent · 2m</strong><span>Download complete</span></div>
+          </div>
+          <div class="body-indent"><div class="card-title">Ubuntu ISO</div><div class="card-body">The transfer finished successfully.</div></div>
+        </article>`;
+
+      const centerMarkup = (state) => `${screenshotCard()}${telegramCard(state)}${qbitCard()}`;
+
+      const renderState = (state) => {
+        stage.dataset.state = state;
+        shadeBody.innerHTML = state === 'empty' ? '<div class="empty-state">You\'re all caught up!</div>' : centerMarkup(state);
+        clear.classList.toggle('disabled', state === 'empty');
+        clear.disabled = state === 'empty';
+        shadeCount.textContent = state === 'empty' ? '0 recent' : '3 recent';
+        document.querySelectorAll('[data-group="state"]').forEach((button) => {
+          button.classList.toggle('active', button.dataset.value === state);
+          button.setAttribute('aria-pressed', String(button.dataset.value === state));
+        });
+        bindReply();
+        updateSelection();
+      };
+
+      const bindReply = () => {
+        const input = shade.querySelector('.reply-input');
+        const send = shade.querySelector('.send');
+        if (!input || !send) return;
+        input.addEventListener('input', () => { send.disabled = input.value.trim().length === 0; });
+        const sendReply = () => {
+          if (send.disabled) return;
+          showToast('Reply sent');
+          renderState('center');
+        };
+        send.addEventListener('click', (event) => {
+          event.stopPropagation();
+          sendReply();
+        });
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            sendReply();
+          } else if (event.key === 'Escape') {
+            event.preventDefault();
+            renderState('center');
+          } else if (event.ctrlKey && event.key.toLowerCase() === 'u') {
+            event.preventDefault();
+            input.value = '';
+            send.disabled = true;
+          } else if (event.ctrlKey && event.key.toLowerCase() === 'w') {
+            event.preventDefault();
+            input.value = input.value.replace(/\s*\S+\s*$/, '');
+            send.disabled = input.value.trim().length === 0;
+          }
+        });
+        input.focus();
+      };
+
+      const updateSelection = () => {
+        const values = ['design', 'layout', 'surface', 'palette', 'cards', 'footer', 'badge'].map((key) => labels[key][stage.dataset[key]]);
+        selection.textContent = values.join(' · ');
+        focusSelection.textContent = values.join(' · ');
+        focusState.textContent = `${labels.state?.[stage.dataset.state] || (stage.dataset.state === 'empty' ? 'Empty' : stage.dataset.state === 'hold' ? 'Hold menu' : stage.dataset.state === 'reply' ? 'Inline reply' : 'Center')} · ${labels.osdplace[stage.dataset.osdplace]} · ${labels.interaction[stage.dataset.interaction]}`;
+        previewDescription.textContent = designDescriptions[stage.dataset.design];
+      };
+
+      const setGroup = (group, value) => {
+        const old = stage.dataset[group];
+        if (old) stage.classList.remove(`${group}-${old}`);
+        stage.dataset[group] = value;
+        stage.classList.add(`${group}-${value}`);
+        document.querySelectorAll(`[data-group="${group}"]`).forEach((button) => {
+          button.classList.toggle('active', button.dataset.value === value);
+          button.setAttribute('aria-pressed', String(button.dataset.value === value));
+        });
+        if (group === 'state') renderState(value);
+        if (group === 'osd') renderOsd(value);
+        updateSelection();
+      };
+
+      const holdDelay = () => stage.dataset.interaction === 'patient' ? 650 : 500;
+      const clearPress = () => {
+        window.clearTimeout(holdTimer);
+        holdTimer = 0;
+        if (pressedCard) delete pressedCard.dataset.press;
+        pressedCard = null;
+        activePointerId = null;
+      };
+
+      document.querySelectorAll('[data-group]').forEach((button) => button.addEventListener('click', () => setGroup(button.dataset.group, button.dataset.value)));
+
+      shade.addEventListener('click', (event) => {
+        const target = event.target;
+        if (suppressCard) {
+          const heldCardWasClicked = target.closest('.longpress-card') === suppressCard;
+          suppressCard = null;
+          if (heldCardWasClicked) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+        }
+        const replyButton = target.closest('[data-reply]');
+        const action = target.closest('[data-action]');
+        const close = target.closest('.manage-close');
+        const clearButton = target.closest('#clear');
+        const dndButton = target.closest('#dnd');
+        if (replyButton) {
+          event.stopPropagation();
+          renderState('reply');
+          return;
+        }
+        if (action) {
+          event.stopPropagation();
+          showToast(action.dataset.action);
+          renderState('center');
+          return;
+        }
+        if (close) {
+          event.stopPropagation();
+          renderState('center');
+          return;
+        }
+        if (clearButton) {
+          if (clearButton.disabled) return;
+          renderState('empty');
+          showToast('User notifications cleared; private OSD remains');
+          return;
+        }
+        if (dndButton) {
+          dndOn = !dndOn;
+          dndButton.classList.toggle('active', dndOn);
+          dndButton.setAttribute('aria-pressed', String(dndOn));
+          showToast(dndOn ? 'Do not disturb on' : 'Do not disturb off');
+          return;
+        }
+        const card = target.closest('[data-open]');
+        if (card && !target.closest('button, input')) showToast(card.dataset.open);
+      });
+
+      shade.addEventListener('pointerdown', (event) => {
+        const card = event.target.closest('.longpress-card');
+        if (!card || event.button !== 0 || event.isPrimary === false || event.target.closest('button, input, textarea, select, a')) return;
+        clearPress();
+        pressedCard = card;
+        activePointerId = event.pointerId;
+        card.dataset.press = 'true';
+        holdTimer = window.setTimeout(() => {
+          if (pressedCard !== card || activePointerId !== event.pointerId) return;
+          suppressCard = card;
+          clearPress();
+          renderState('hold');
+          showToast('Held Telegram notification');
+        }, holdDelay());
+      });
+      shade.addEventListener('pointerup', (event) => {
+        if (activePointerId !== null && event.pointerId !== activePointerId) return;
+        clearPress();
+      });
+      shade.addEventListener('pointercancel', (event) => {
+        if (activePointerId !== null && event.pointerId !== activePointerId) return;
+        clearPress();
+      });
+      shade.addEventListener('pointerout', (event) => {
+        if (!pressedCard || event.pointerId !== activePointerId || pressedCard.contains(event.relatedTarget)) return;
+        clearPress();
+      });
+      shade.addEventListener('contextmenu', (event) => {
+        if (!event.target.closest('.longpress-card')) return;
+        event.preventDefault();
+        clearPress();
+        renderState('hold');
+        showToast('Held Telegram notification');
+      });
+
+      const osd = {
+        volume: { title: 'Volume · now', caption: 'Native semantic OSD card', value: '58%', fill: '58%', kind: 'volume' },
+        brightness: { title: 'Brightness · now', caption: 'Native semantic OSD card', value: '72%', fill: '72%', kind: 'brightness' },
+        touchpad: { title: 'Touchpad · now', caption: 'Enabled', value: 'On', fill: '100%', kind: 'touchpad' },
+        battery: { title: 'Battery · now', caption: 'Charging', value: '82%', fill: '82%', kind: 'battery' }
+      };
+      const renderOsd = (key) => {
+        const value = osd[key];
+        document.querySelector('#osd-icon').innerHTML = icon(value.kind);
+        document.querySelector('#osd-title').textContent = value.title;
+        document.querySelector('#osd-caption').textContent = value.caption;
+        document.querySelector('#osd-value').textContent = value.value;
+        document.querySelector('#osd-fill').style.width = value.fill;
+      };
+
+      renderState(defaults.state);
+      renderOsd(defaults.osd);
+      updateSelection();
+    })();
+  </script>
+</body>
+</html>
