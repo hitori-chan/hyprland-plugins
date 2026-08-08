@@ -23,5 +23,6 @@ Hyprnotify/Hyprbar implementation:
 
 The preview has one unified control board above the stage. It covers design,
 geometry, palette, row/footer/badge variants, center/OSD state, and hold
-behavior; the mock bar also demonstrates workspace, task, tray, bell, and
-layout interactions. It does not load or modify a live plugin.
+behavior, including an optional light AOSP-style OSD border; the mock bar also
+demonstrates workspace, task, tray, bell, and layout interactions. It does not
+load or modify a live plugin.
