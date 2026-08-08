@@ -75,7 +75,7 @@ Protocol, admission limits, image precedence, lifecycle, and compositor input
 contracts are documented in [docs/hyprnotify.md](../docs/hyprnotify.md).
 
 The current visual proposal is available as the self-contained [notification
-center design study](../docs/demos/hyprnotify-design-mixer-v5/). It includes
+center design study](../docs/demos/hyprnotify-design-mixer-v6/). It includes
 real local application/tray icons, ROM-derived Pixel/SystemUI vectors and
 Google Sans assets, semantic OSD marks, the supplied Pixel captures as its
 geometry reference, and the configured wallpaper in the Hyprland mode. It is
