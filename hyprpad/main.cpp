@@ -21,8 +21,8 @@
 //   forgets appliedState and re-checks.
 // - Auto re-checks are change-detected against the last applied state: an
 //   unrelated hotplug re-checks but applies nothing.
-// - Feedback is one async D-Bus Notify (replaces-id 9991, no icon: the
-//   daemon's fallback_icon_dir rolls the card a face) on the plugin's own
+// - Feedback is one async D-Bus Notify (replaces-id 9991, with explicit
+//   touchpad identities) on the plugin's own
 //   event-loop-integrated session-bus connection — hyprbar's tray pattern; the
 //   notification daemon's API is the bus name, never its symbols. If the
 //   bus dies the cards stop; the flip keeps working.
@@ -54,12 +54,13 @@
 #include <chrono>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
-HANDLE PHANDLE = nullptr;
-
 namespace NHyprpad {
+
+    HANDLE PHANDLE = nullptr;
 
     constexpr auto                                             SETTLE = std::chrono::milliseconds(400);
 
@@ -70,15 +71,17 @@ namespace NHyprpad {
     // deliberately not in the lifecycle bundle
     static std::vector<Hyprutils::Signal::CHyprSignalListener> lDestroy;
 
-    // the last state this plugin applied; -1 = unknown, the next check applies
-    static int appliedState = -1;
+    // The last state and actual touchpad object this plugin applied it to. A
+    // replacement must receive policy even when the desired boolean matches.
+    static int          appliedState = -1;
+    static WP<IPointer> appliedTouchpad;
 
     // ---- the feedback cards' bus link (hyprbar's tray pattern, send-only) ----
 
     static std::unique_ptr<sdbus::IProxy> notifyProxy;
     static NHyprCommon::CBusLink          g_bus; // feedback cards' session-bus link
 
-    static void notify(const std::string& body, bool timed) {
+    static void notify(const char* icon, const std::string& body, bool timed) {
         if (!g_bus.conn())
             return;
         try {
@@ -86,8 +89,8 @@ namespace NHyprpad {
                 notifyProxy = sdbus::createProxy(*g_bus.conn(), sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
             notifyProxy->callMethodAsync("Notify")
                 .onInterface("org.freedesktop.Notifications")
-                .withArguments(std::string{"osd"}, uint32_t{9991}, std::string{}, std::string{"Touchpad"}, body, std::vector<std::string>{},
-                               std::map<std::string, sdbus::Variant>{{"urgency", sdbus::Variant{uint8_t{0}}}}, timed ? 1500 : -1)
+                .withArguments(std::string{"osd"}, uint32_t{9991}, std::string{icon}, std::string{"Touchpad"}, body, std::vector<std::string>{},
+                               std::map<std::string, sdbus::Variant>{{"urgency", sdbus::Variant{uint8_t{0}}}, {"x-hitori-osd", sdbus::Variant{true}}}, timed ? 1500 : -1)
                 .uponReplyInvoke([](std::optional<sdbus::Error>, uint32_t) {});
             g_bus.pollSoon(); // flush the send from the event loop, never from here
         } catch (...) {} // broker gone: teardown is already pending, drop the card
@@ -107,13 +110,22 @@ namespace NHyprpad {
         return out;
     }
 
-    static std::string touchpadName() {
+    static SP<IPointer> touchpad() {
         if (!g_pInputManager)
-            return "";
+            return nullptr;
         for (const auto& P : g_pInputManager->m_pointers)
             if (P->m_isTouchpad)
-                return P->m_hlName;
-        return "";
+                return P;
+        return nullptr;
+    }
+
+    // m_connected is the compositor's actual pointer attachment state. It is
+    // updated together with libinput's send-events mode by setPointerConfigs,
+    // so a manual toggle can read the live state even when no automatic pass
+    // has populated appliedState yet.
+    static std::optional<bool> touchpadEnabled() {
+        const auto TOUCHPAD = touchpad();
+        return TOUCHPAD ? std::optional<bool>{TOUCHPAD->m_connected} : std::nullopt;
     }
 
     static bool externalMousePresent() {
@@ -133,11 +145,13 @@ namespace NHyprpad {
         return false;
     }
 
-    static void applyEnabled(bool on) {
-        const auto NAME = touchpadName();
-        if (NAME.empty()) {
+    static void applyEnabled(bool on, SP<IPointer> target = nullptr) {
+        if (!target)
+            target = touchpad();
+        if (!target) {
             appliedState = -1;
-            notify("not found", false);
+            appliedTouchpad.reset();
+            notify("input-touchpad", "not found", false);
             return;
         }
         // the manager lives in a unique pointer: its weak can NEVER lock()
@@ -145,21 +159,26 @@ namespace NHyprpad {
         const auto MGR = Config::Lua::mgr();
         if (!MGR)
             return;
-        if (const auto ERR = MGR->eval("hl.device({ name = \"" + luaq(NAME) + "\", enabled = " + (on ? "true" : "false") + " })")) {
+        if (const auto ERR = MGR->eval("hl.device({ name = \"" + luaq(target->m_hlName) + "\", enabled = " + (on ? "true" : "false") + " })")) {
             HyprlandAPI::addNotification(PHANDLE, "[hyprpad] hl.device failed: " + *ERR, CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
             return; // appliedState untouched: the next check retries
         }
-        appliedState = on ? 1 : 0;
-        notify(on ? "enabled" : "disabled", true);
+        appliedState    = on ? 1 : 0;
+        appliedTouchpad = target;
+        notify(on ? "input-touchpad" : "touchpad-disabled", on ? "enabled" : "disabled", true);
     }
 
     static void autoApply() {
-        if (touchpadName().empty())
+        const auto TOUCHPAD = touchpad();
+        if (!TOUCHPAD) {
+            appliedState = -1;
+            appliedTouchpad.reset();
             return; // nothing to auto-manage — the "not found" card belongs to the manual toggle,
                     // else every mouse hotplug re-spams it (WANT is 0/1, appliedState stuck at -1)
+        }
         const int WANT = externalMousePresent() ? 0 : 1;
-        if (WANT != appliedState)
-            applyEnabled(WANT == 1);
+        if (WANT != appliedState || appliedTouchpad.lock() != TOUCHPAD)
+            applyEnabled(WANT == 1, TOUCHPAD);
     }
 
     // Removal is observable in-process: every pointer's destroy signal arms
@@ -184,7 +203,8 @@ namespace NHyprpad {
         pendingToggle.arm([]() {
             if (settle)
                 settle->updateTimeout(std::nullopt);
-            applyEnabled(appliedState == 0);
+            const bool CURRENT = touchpadEnabled().value_or(appliedState == 1);
+            applyEnabled(!CURRENT);
         });
         return 0;
     }
@@ -240,6 +260,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // and re-check (replaces the old core.lua config.reloaded hook)
     g_lifecycle.listen(Event::bus()->m_events.config.reloaded, []() {
         appliedState = -1;
+        appliedTouchpad.reset();
         if (settle)
             settle->updateTimeout(SETTLE);
     });
@@ -250,13 +271,14 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // device list is populated and the notification daemon is up
     settle->updateTimeout(SETTLE);
 
-    return {"hyprpad", "the awesome touchpad module", "hitori", "1.0.7"};
+    return {"hyprpad", "the awesome touchpad module", "hitori", "1.1.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
     g_lifecycle.resetAll(); // listeners first, then every hop
     lDestroy.clear();
     appliedState = -1;
+    appliedTouchpad.reset();
     g_bus.close(); // fd sources out BEFORE the connection dies
     if (settle && g_pEventLoopManager)
         g_pEventLoopManager->removeTimer(settle);

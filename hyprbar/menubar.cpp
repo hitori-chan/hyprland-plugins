@@ -1,8 +1,12 @@
 // hyprbar/menubar.cpp — awesome's Mod+P launcher: .desktop apps, categories, prompt, completion, history
 
 #include "common/lifecycle.hpp"
+#include "common/clipboard.hpp"
+#include "common/fileindex.hpp"
+#include "common/persist.hpp"
 #include "common/queries.hpp"
 
+#include "desktop_exec.hpp"
 #include "hyprbar.hpp"
 
 namespace NHyprbar {
@@ -25,6 +29,14 @@ namespace NHyprbar {
 
         std::vector<SApp> apps; // parsed on first open, sorted by name
         static bool       parsed = false;
+        static NHyprCommon::CAsyncFileIndex appIndex, completionIndex;
+        static SP<CEventLoopTimer>           indexPoll;
+        static uint64_t                      appGeneration = 0, completionGeneration = 0;
+        static uint64_t                      activationGeneration = 0;
+        static NHyprCommon::CClipboardRead     clipboard;
+        static bool                          appScanning = false, completionScanning = false;
+        static std::unordered_set<std::string> appSeen;
+        static std::string                   pendingSelectionId;
 
         bool              isOpen = false;
         std::string       typed;
@@ -48,12 +60,17 @@ namespace NHyprbar {
         static std::string                histLive;     // the live query parked while walking history
         static bool                       filesLoaded = false;
         constexpr size_t                  HISTORY_MAX = 50; // awful.prompt's history_max
+        constexpr size_t                  QUERY_MAX   = 4096;
 
         // Tab-completion cycle; survives only between consecutive Tabs
         static bool                     compActive = false;
         static std::vector<std::string> compList;
         static int                      compIdx   = 0;
         static size_t                   compStart = 0, compLen = 0;
+        static bool                     compScanning = false, compBackward = false, compHideDotfiles = false;
+        static std::string              compPrefix;
+
+        static void cancelCompletion();
 
         static std::vector<std::string> splitList(const std::string& s, char sep = ';') {
             std::vector<std::string> out;
@@ -68,6 +85,28 @@ namespace NHyprbar {
                 p = N + 1;
             }
             return out;
+        }
+
+        static std::string desktopBusName(std::string id) {
+            if (id.ends_with(".desktop"))
+                id.resize(id.size() - 8);
+            std::ranges::replace(id, '/', '-');
+            return id;
+        }
+
+        static std::optional<sdbus::ObjectPath> desktopObjectPath(const std::string& name) {
+            if (name.empty() || name.front() == '.' || name.back() == '.')
+                return std::nullopt;
+            std::string path{"/"};
+            for (const char C : name) {
+                if (C == '.')
+                    path += '/';
+                else if (C == '-')
+                    path += '_';
+                else
+                    path += C;
+            }
+            return sdbus::ObjectPath{path};
         }
 
         static std::filesystem::path cacheDir() {
@@ -100,11 +139,10 @@ namespace NHyprbar {
         }
 
         static void saveCounts() {
-            std::error_code ec;
-            std::filesystem::create_directories(cacheDir(), ec);
-            std::ofstream F(cacheDir() / "menu_count_file", std::ios::trunc);
+            std::ostringstream out;
             for (const auto& [N, C] : counts)
-                F << N << ';' << C << '\n';
+                out << N << ';' << C << '\n';
+            NHyprCommon::writeAtomic(cacheDir() / "menu_count_file", out.str());
         }
 
         static void historyAdd(const std::string& q) {
@@ -114,52 +152,43 @@ namespace NHyprbar {
             history.push_back(q);
             if (history.size() > HISTORY_MAX)
                 history.erase(history.begin());
-            std::error_code ec;
-            std::filesystem::create_directories(cacheDir(), ec);
-            std::ofstream F(cacheDir() / "history_menu", std::ios::trunc);
+            std::ostringstream out;
             for (const auto& H : history)
-                F << H << '\n';
-        }
-
-        // Exec= field codes: %c = the app name, %k = the .desktop path, %i =
-        // "--icon <path>"; the file/url ones (%f/%u/...) a launcher has nothing
-        // for and drops. "%%" is a literal percent.
-        static std::string substFieldCodes(const std::string& exec, const std::string& name, const std::string& file, const std::string& iconPath) {
-            std::string out;
-            for (size_t i = 0; i < exec.size(); i++) {
-                if (exec[i] != '%' || i + 1 >= exec.size()) {
-                    out += exec[i];
-                    continue;
-                }
-                switch (exec[++i]) {
-                    case '%': out += '%'; break;
-                    case 'c': out += name; break;
-                    case 'k': out += file; break;
-                    case 'i':
-                        if (!iconPath.empty())
-                            out += "--icon " + iconPath;
-                        break;
-                    default: break; // %f/%u/%F/%U and the deprecated codes: dropped
-                }
-            }
-            while (!out.empty() && out.back() == ' ')
-                out.pop_back();
-            return out;
+                out << H << '\n';
+            NHyprCommon::writeAtomic(cacheDir() / "history_menu", out.str());
         }
 
         static std::vector<std::string> desktops; // XDG_CURRENT_DESKTOP entries, for OnlyShowIn/NotShowIn
 
-        static void                     parseFile(const std::filesystem::path& path, const std::string& id, std::unordered_set<std::string>& seen) {
+        static void                     parseFile(const NHyprCommon::CAsyncFileIndex::SEntry& entry, std::unordered_set<std::string>& seen) {
+            const auto& path = entry.path;
+            const auto  id   = entry.relative.generic_string();
             if (!seen.insert(id).second)
                 return; // an earlier (higher-precedence) dir already provides this id
 
-            std::ifstream F(path);
-            if (!F)
-                return;
+            std::istringstream F(entry.contents);
 
-            SApp        app;
-            std::string line, rawExec, onlyShowIn, notShowIn, categories;
-            bool        inEntry = false, hidden = false, isApp = false;
+            SApp                     app;
+            app.desktopId = desktopBusName(id);
+            std::string              line, rawExec;
+            std::vector<std::string> onlyShowIn, notShowIn, categories;
+            bool                     inEntry = false, hidden = false, isApp = false, malformed = false;
+            const auto               stringValue = [&](std::string_view value, std::string& out) {
+                const auto UNESCAPED = DesktopExec::unescapeString(value);
+                if (!UNESCAPED) {
+                    malformed = true;
+                    return;
+                }
+                out = *UNESCAPED;
+            };
+            const auto listValue = [&](std::string_view value, std::vector<std::string>& out) {
+                const auto UNESCAPED = DesktopExec::unescapeList(value);
+                if (!UNESCAPED) {
+                    malformed = true;
+                    return;
+                }
+                out = *UNESCAPED;
+            };
             while (std::getline(F, line)) {
                 if (!line.empty() && line.back() == '\r')
                     line.pop_back();
@@ -172,31 +201,33 @@ namespace NHyprbar {
                 if (!inEntry)
                     continue;
                 if (line.starts_with("Name=") && app.name.empty())
-                    app.name = line.substr(5);
+                    stringValue(std::string_view{line}.substr(5), app.name);
                 else if (line.starts_with("Exec="))
                     rawExec = line.substr(5);
                 else if (line.starts_with("Icon="))
-                    app.icon = line.substr(5);
-                else if (line.starts_with("Terminal=true"))
-                    app.terminal = true;
+                    stringValue(std::string_view{line}.substr(5), app.icon);
+                else if (line.starts_with("Terminal="))
+                    app.terminal = line.substr(9) == "true";
+                else if (line.starts_with("DBusActivatable="))
+                    app.dbusActivatable = line.substr(16) == "true";
                 else if (line.starts_with("Type="))
                     isApp = line.substr(5) == "Application";
                 else if ((line.starts_with("NoDisplay=") || line.starts_with("Hidden=")) && line.ends_with("=true"))
                     hidden = true;
                 else if (line.starts_with("OnlyShowIn="))
-                    onlyShowIn = line.substr(11);
+                    listValue(std::string_view{line}.substr(11), onlyShowIn);
                 else if (line.starts_with("NotShowIn="))
-                    notShowIn = line.substr(10);
+                    listValue(std::string_view{line}.substr(10), notShowIn);
                 else if (line.starts_with("Categories="))
-                    categories = line.substr(11);
+                    listValue(std::string_view{line}.substr(11), categories);
             }
-            if (!isApp || hidden || rawExec.empty())
+            if (malformed || !isApp || hidden || (!app.dbusActivatable && rawExec.empty()))
                 return;
 
             // honor OnlyShowIn/NotShowIn against this desktop (awesome checks
             // them against its wm_name)
-            const auto HERE = [&](const std::string& list) {
-                for (const auto& T : splitList(list))
+            const auto HERE = [&](const std::vector<std::string>& list) {
+                for (const auto& T : list)
                     if (std::find(desktops.begin(), desktops.end(), T) != desktops.end())
                         return true;
                 return false;
@@ -210,7 +241,7 @@ namespace NHyprbar {
                 app.name = "[" + path.stem().string() + "]"; // awesome's nameless fallback
 
             // the first Categories= token that maps files the app there
-            for (const auto& T : splitList(categories)) {
+            for (const auto& T : categories) {
                 for (int i = 0; app.category < 0 && i < NCATS; i++)
                     if (T == CATEGORIES[i].appType)
                         app.category = i;
@@ -218,18 +249,22 @@ namespace NHyprbar {
                     break;
             }
 
-            const std::string ICONPATH = rawExec.find("%i") != std::string::npos ? resolveIconPath(app.icon) : "";
-            app.exec                   = substFieldCodes(rawExec, app.name, path.string(), ICONPATH);
-            if (app.exec.empty())
-                return;
+            if (!rawExec.empty()) {
+                const auto WORDS = DesktopExec::expand(rawExec, app.name, path.string(), app.icon);
+                if (!WORDS && !app.dbusActivatable)
+                    return;
+                if (WORDS)
+                    app.exec = DesktopExec::shellCommand(*WORDS);
+            }
             app.lname = lower(app.name);
             // matched like awesome: against the name AND the launch command line
-            app.lexec = lower(app.terminal ? cfg.terminal->value() + " -e " + app.exec : app.exec);
+            app.lexec = lower(app.terminal && !app.exec.empty() ? cfg.terminal->value() + " -e " + app.exec : app.exec);
             apps.push_back(std::move(app));
         }
 
         static void parseApps() {
             apps.clear();
+            appSeen.clear();
             if (const char* XCD = std::getenv("XDG_CURRENT_DESKTOP"); XCD && *XCD)
                 desktops = splitList(XCD, ':');
             else
@@ -247,21 +282,50 @@ namespace NHyprbar {
                 addDir(std::string{HOME} + "/.local/share/applications");
             if (HOME)
                 addDir(std::string{HOME} + "/.local/share/flatpak/exports/share/applications");
-            for (const auto& D : splitList(std::getenv("XDG_DATA_DIRS") ? std::getenv("XDG_DATA_DIRS") : "/usr/local/share:/usr/share", ':'))
+            const char* DATA_DIRS = std::getenv("XDG_DATA_DIRS");
+            for (const auto& D : splitList(DATA_DIRS && *DATA_DIRS ? DATA_DIRS : "/usr/local/share:/usr/share", ':'))
                 addDir(D + (D.back() == '/' ? "applications" : "/applications"));
             addDir("/var/lib/flatpak/exports/share/applications");
 
-            std::unordered_set<std::string> seen;
-            for (const auto& D : dirs) {
-                std::error_code                               ec;
-                std::filesystem::recursive_directory_iterator IT(D, std::filesystem::directory_options::skip_permission_denied, ec), END;
-                for (; !ec && IT != END; IT.increment(ec)) { // recursive, like awesome
-                    std::error_code ec2;
-                    if (IT->path().extension() == ".desktop" && IT->is_regular_file(ec2))
-                        parseFile(IT->path(), IT->path().lexically_relative(D).string(), seen);
-                }
+            appScanning = true;
+            NHyprCommon::CAsyncFileIndex::SRequest request;
+            request.generation   = ++appGeneration;
+            request.extensions   = {".desktop"};
+            request.maxEntries   = 4096;
+            request.maxVisited   = 65536;
+            request.maxFileBytes = DesktopExec::MAX_DESKTOP_FILE_BYTES;
+            request.recursive    = true;
+            for (const auto& directory : dirs)
+                request.roots.emplace_back(directory);
+            appIndex.request(std::move(request));
+        }
+
+        static bool pollApps() {
+            if (!appScanning)
+                return false;
+            std::vector<NHyprCommon::CAsyncFileIndex::SEntry> entries;
+            const bool COMPLETE = appIndex.poll(appGeneration, entries, 8);
+            const size_t BEFORE = apps.size();
+            for (const auto& entry : entries)
+                parseFile(entry, appSeen);
+            appScanning = !COMPLETE;
+            if (COMPLETE) {
+                if (isOpen && sel >= 0 && sel < (int)shown.size() && shown[sel].app >= 0)
+                    pendingSelectionId = apps[shown[sel].app].desktopId;
+                std::sort(apps.begin(), apps.end(), [](const auto& a, const auto& b) { return a.lname < b.lname; });
             }
-            std::sort(apps.begin(), apps.end(), [](const auto& a, const auto& b) { return a.lname < b.lname; });
+            return apps.size() != BEFORE || COMPLETE;
+        }
+
+        static void restoreSelection() {
+            if (pendingSelectionId.empty())
+                return;
+            for (int i = 0; i < (int)shown.size(); i++)
+                if (shown[i].app >= 0 && apps[shown[i].app].desktopId == pendingSelectionId) {
+                    sel = i;
+                    break;
+                }
+            pendingSelectionId.clear();
         }
 
         // awesome's menulist_update: case-insensitive substring match on the
@@ -324,11 +388,14 @@ namespace NHyprbar {
                 return;
             barChanged(); // while still open: the damage must cover the prompt strip
             isOpen = false;
+            clipboard.cancel();
             typed.clear();
             cursor     = 0;
             currentCat = -1;
             histSel    = -1;
+            cancelCompletion();
             compActive = false;
+            compList.clear();
         }
 
         void open() {
@@ -337,10 +404,13 @@ namespace NHyprbar {
                 return;
             Menu::close();
             if (!parsed) {
-                parseApps(); // a few hundred small file reads, once per session
+                parseApps();
                 parsed = true;
+                if (indexPoll)
+                    indexPoll->updateTimeout(std::chrono::milliseconds(2));
             }
             loadFiles();
+            clipboard.cancel();
             typed.clear();
             cursor     = 0;
             currentCat = -1;
@@ -372,19 +442,55 @@ namespace NHyprbar {
             barChanged();
         }
 
+        static void activateDbus(const SApp& app) {
+            const auto PATH = desktopObjectPath(app.desktopId);
+            if (!PATH || !Tray::bus.conn()) {
+                if (!app.exec.empty())
+                    std::ignore = Config::Supplementary::executor()->spawn(app.exec);
+                return;
+            }
+            try {
+                auto P = std::shared_ptr<sdbus::IProxy>(sdbus::createProxy(*Tray::bus.conn(), sdbus::ServiceName{app.desktopId}, *PATH).release());
+                const auto DATA = std::map<std::string, sdbus::Variant>{};
+                const auto GENERATION = activationGeneration;
+                P->callMethodAsync("Activate")
+                    .onInterface("org.freedesktop.Application")
+                    .withArguments(DATA)
+                    .uponReplyInvoke([P, app, GENERATION](std::optional<sdbus::Error> error) {
+                        if (GENERATION == activationGeneration && error && !app.exec.empty())
+                            std::ignore = Config::Supplementary::executor()->spawn(app.exec);
+                    });
+                Tray::pollSoon();
+            } catch (...) {
+                if (!app.exec.empty())
+                    std::ignore = Config::Supplementary::executor()->spawn(app.exec);
+            }
+        }
+
         // run a shown entry, or the raw query for the Exec one
         static void launch(const SShown& S, bool forceTerminal) {
-            std::string cmd = S.app >= 0 ? apps[S.app].exec : typed;
+            const SApp* APP = S.app >= 0 && S.app < (int)apps.size() ? &apps[S.app] : nullptr;
+            if (APP && APP->dbusActivatable && !forceTerminal) {
+                const SApp COPY = *APP;
+                counts[APP->name]++;
+                pendingExec.arm([COPY, hist = typed]() {
+                    saveCounts();
+                    historyAdd(hist);
+                    activateDbus(COPY);
+                });
+                return;
+            }
+            std::string cmd = APP ? APP->exec : typed;
             while (!cmd.empty() && cmd.back() == ' ')
                 cmd.pop_back();
             if (cmd.empty())
                 return;
-            if ((S.app >= 0 && apps[S.app].terminal) || forceTerminal)
+            if ((APP && APP->terminal) || forceTerminal)
                 cmd = cfg.terminal->value() + " -e " + cmd;
             // most-launched sorts first next time (in-memory, immediate); raw
             // Exec one-offs are not counted — they'd grow the file unbounded
-            if (S.app >= 0)
-                counts[apps[S.app].name]++;
+            if (APP)
+                counts[APP->name]++;
             // the disk writes ride the deferred hop with the spawn, off the key emission
             pendingExec.arm([cmd, hist = typed]() {
                 saveCounts();
@@ -418,66 +524,22 @@ namespace NHyprbar {
             return p;
         }
 
-        // Tab completion (awful.completion.shell, natively): the word under
-        // the cursor completes from $PATH executables when it is the command
-        // word, from filenames otherwise; Tab cycles, Shift-Tab cycles back.
-        static void complete(bool backward) {
-            if (!compActive) {
-                size_t start = cursor;
-                while (start > 0 && typed[start - 1] != ' ')
-                    start--;
-                size_t end = cursor;
-                while (end < typed.size() && typed[end] != ' ')
-                    end++;
-                const auto STEM = typed.substr(start, cursor - start);
+        static void cancelCompletion() {
+            if (!compScanning)
+                return;
+            compScanning = false;
+            completionIndex.cancel(++completionGeneration);
+        }
 
-                compList.clear();
-                if (typed.find_first_not_of(' ') >= start) { // the command word
-                    for (const auto& D : splitList(std::getenv("PATH") ? std::getenv("PATH") : "", ':')) {
-                        std::error_code                     ec;
-                        std::filesystem::directory_iterator IT(D, std::filesystem::directory_options::skip_permission_denied, ec), END;
-                        for (; !ec && IT != END; IT.increment(ec)) {
-                            std::error_code ec2;
-                            const auto      ST = IT->status(ec2);
-                            if (ec2 || !std::filesystem::is_regular_file(ST) ||
-                                (ST.permissions() & (std::filesystem::perms::owner_exec | std::filesystem::perms::group_exec | std::filesystem::perms::others_exec)) ==
-                                    std::filesystem::perms::none)
-                                continue;
-                            if (const auto N = IT->path().filename().string(); N.starts_with(STEM))
-                                compList.push_back(N);
-                        }
-                    }
-                } else { // a filename; the typed form (~ and all) is preserved
-                    std::string expanded = STEM;
-                    if (const char* HOME = std::getenv("HOME"); HOME && expanded.starts_with("~/"))
-                        expanded = std::string{HOME} + expanded.substr(1);
-                    const auto                          SLASH  = expanded.rfind('/');
-                    const auto                          DIR    = SLASH == std::string::npos ? std::string{"."} : expanded.substr(0, SLASH + 1);
-                    const auto                          BASE   = SLASH == std::string::npos ? expanded : expanded.substr(SLASH + 1);
-                    const auto                          TSLASH = STEM.rfind('/');
-                    const auto                          PRE    = TSLASH == std::string::npos ? std::string{} : STEM.substr(0, TSLASH + 1);
-
-                    std::error_code                     ec;
-                    std::filesystem::directory_iterator IT(DIR, std::filesystem::directory_options::skip_permission_denied, ec), END;
-                    for (; !ec && IT != END; IT.increment(ec)) {
-                        std::error_code ec2;
-                        const auto      N = IT->path().filename().string();
-                        if (!N.starts_with(BASE) || (!BASE.starts_with(".") && N.starts_with(".")))
-                            continue;
-                        compList.push_back(PRE + N + (IT->is_directory(ec2) ? "/" : ""));
-                    }
-                }
-                std::sort(compList.begin(), compList.end());
-                compList.erase(std::unique(compList.begin(), compList.end()), compList.end());
-                if (compList.empty())
-                    return;
-                compStart  = start;
-                compLen    = end - start;
-                compIdx    = backward ? (int)compList.size() - 1 : 0;
-                compActive = true;
-            } else {
+        static void applyCompletion(bool backward) {
+            if (compList.empty())
+                return;
+            if (compActive) {
                 const int N = (int)compList.size();
                 compIdx     = ((compIdx + (backward ? -1 : 1)) % N + N) % N;
+            } else {
+                compIdx    = backward ? (int)compList.size() - 1 : 0;
+                compActive = true;
             }
             typed.replace(compStart, compLen, compList[compIdx]);
             compLen = compList[compIdx].size();
@@ -485,6 +547,90 @@ namespace NHyprbar {
             histSel = -1;
             refilter();
             barChanged();
+        }
+
+        static bool pollCompletion() {
+            if (!compScanning)
+                return false;
+            std::vector<NHyprCommon::CAsyncFileIndex::SEntry> entries;
+            const bool COMPLETE = completionIndex.poll(completionGeneration, entries, 64);
+            const std::string SELECTED = compActive ? compList[compIdx] : "";
+            for (const auto& entry : entries) {
+                const auto name = entry.path.filename().string();
+                if (compHideDotfiles && name.starts_with("."))
+                    continue;
+                compList.push_back(compPrefix + name + (entry.directory ? "/" : ""));
+            }
+            if (!entries.empty()) {
+                std::sort(compList.begin(), compList.end());
+                compList.erase(std::unique(compList.begin(), compList.end()), compList.end());
+                if (compActive) {
+                    if (const auto it = std::ranges::find(compList, SELECTED); it != compList.end())
+                        compIdx = (int)std::distance(compList.begin(), it);
+                } else
+                    applyCompletion(compBackward);
+            }
+            compScanning = !COMPLETE;
+            return !entries.empty();
+        }
+
+        // Tab completion (awful.completion.shell, natively): the word under
+        // the cursor completes from $PATH executables when it is the command
+        // word, from filenames otherwise. Enumeration is worker-owned; the
+        // prompt only receives bounded batches through pollCompletion().
+        static void complete(bool backward) {
+            if (compActive) {
+                applyCompletion(backward);
+                return;
+            }
+            if (compScanning) {
+                compBackward = backward;
+                return;
+            }
+
+            size_t start = cursor;
+            while (start > 0 && typed[start - 1] != ' ')
+                start--;
+            size_t end = cursor;
+            while (end < typed.size() && typed[end] != ' ')
+                end++;
+            const auto STEM = typed.substr(start, cursor - start);
+
+            NHyprCommon::CAsyncFileIndex::SRequest request;
+            request.generation = ++completionGeneration;
+            request.maxEntries = 512;
+            request.maxVisited = 8192;
+            if (typed.find_first_not_of(' ') >= start) { // the command word
+                const char* PATH = std::getenv("PATH");
+                for (const auto& dir : splitList(PATH ? PATH : "", ':'))
+                    request.roots.emplace_back(dir);
+                request.namePrefix = STEM;
+                request.executable = true;
+                compPrefix.clear();
+                compHideDotfiles = false;
+            } else { // a filename; the typed form (~ and all) is preserved
+                std::string expanded = STEM;
+                if (const char* HOME = std::getenv("HOME"); HOME && expanded.starts_with("~/"))
+                    expanded = std::string{HOME} + expanded.substr(1);
+                const auto SLASH = expanded.rfind('/');
+                const auto DIR   = SLASH == std::string::npos ? std::string{"."} : expanded.substr(0, SLASH + 1);
+                request.roots.emplace_back(DIR);
+                request.namePrefix = SLASH == std::string::npos ? expanded : expanded.substr(SLASH + 1);
+                request.directories = true;
+                const auto TSLASH = STEM.rfind('/');
+                compPrefix = TSLASH == std::string::npos ? std::string{} : STEM.substr(0, TSLASH + 1);
+                compHideDotfiles = !request.namePrefix.starts_with(".");
+            }
+            if (request.roots.empty())
+                return;
+            compList.clear();
+            compStart    = start;
+            compLen      = end - start;
+            compBackward = backward;
+            compScanning = true;
+            completionIndex.request(std::move(request));
+            if (indexPoll)
+                indexPoll->updateTimeout(std::chrono::milliseconds(2));
         }
 
         // Up/Down (or C-p/C-n): walk the persisted prompt history
@@ -522,6 +668,8 @@ namespace NHyprbar {
                     close();
                 return;
             }
+            if (NHyprCommon::nativeInputCaptureActive())
+                return;
 
             if (!isOpen)
                 return;
@@ -557,8 +705,10 @@ namespace NHyprbar {
 
             if (SYM >= XKB_KEY_Shift_L && SYM <= XKB_KEY_Hyper_R)
                 return; // a bare modifier: not an edit, must not end a Tab cycle
-            if (SYM != XKB_KEY_Tab && SYM != XKB_KEY_ISO_Left_Tab)
+            if (SYM != XKB_KEY_Tab && SYM != XKB_KEY_ISO_Left_Tab) {
                 compActive = false;
+                cancelCompletion();
+            }
 
             const auto edited = [&]() { // any edit detaches the history walk
                 histSel = -1;
@@ -569,6 +719,36 @@ namespace NHyprbar {
                 typed.erase(from, cursor - from);
                 cursor = from;
                 edited();
+            };
+            const auto paste = [&]() {
+                const auto GENERATION = activationGeneration;
+                clipboard.request(QUERY_MAX, [GENERATION](std::string text) {
+                    if (!isOpen || GENERATION != activationGeneration)
+                        return;
+                    for (char& C : text)
+                        if (C == '\n' || C == '\r' || C == '\t')
+                            C = ' ';
+                    std::erase_if(text, [](unsigned char C) { return C < 0x20 || C == 0x7f; });
+                    if (typed.size() >= QUERY_MAX)
+                        return;
+                    if (text.size() > QUERY_MAX - typed.size()) {
+                        text.resize(QUERY_MAX - typed.size());
+                        while (!text.empty() && ((unsigned char)text.back() & 0xc0) == 0x80)
+                            text.pop_back();
+                        if (!text.empty()) {
+                            const unsigned char LEAD = text.back();
+                            if ((LEAD & 0xe0) == 0xc0 || (LEAD & 0xf0) == 0xe0 || (LEAD & 0xf8) == 0xf0)
+                                text.pop_back();
+                        }
+                    }
+                    if (text.empty())
+                        return;
+                    typed.insert(cursor, text);
+                    cursor += text.size();
+                    histSel = -1;
+                    refilter();
+                    barChanged();
+                });
             };
 
             switch (SYM) {
@@ -679,6 +859,7 @@ namespace NHyprbar {
                         return;
                     case XKB_KEY_u: delBack(0); return;
                     case XKB_KEY_w: delBack(prevWord(cursor)); return;
+                    case XKB_KEY_v: paste(); return;
                     default: return; // unbound C-chords are swallowed, not typed
                 }
             }
@@ -706,9 +887,11 @@ namespace NHyprbar {
             char buf[16] = {};
             if (xkb_state_key_get_utf8(KB->m_xkbState, KC, buf, sizeof(buf)) > 0 && (unsigned char)buf[0] >= 0x20 && buf[0] != 0x7f) {
                 const std::string S{buf};
-                typed.insert(cursor, S);
-                cursor += S.size();
-                edited();
+                if (typed.size() + S.size() <= QUERY_MAX) {
+                    typed.insert(cursor, S);
+                    cursor += S.size();
+                    edited();
+                }
             }
         }
 
@@ -720,8 +903,7 @@ namespace NHyprbar {
                 return;
 
             // one palette fetch per render: color() memoizes but still hashes per call
-            const CHyprColor COLBG = color(cfg.colBg), COLFG = color(cfg.colFg), COLACTIVEBG = color(cfg.colActiveBg), COLFOCUS = color(cfg.colFocus),
-                             COLACTIVE = color(cfg.colActive);
+            const CHyprColor COLBG = color(cfg.colBg), COLFG = color(cfg.colFg), COLACTIVEBG = color(cfg.colActiveBg), COLFOCUS = color(cfg.colFocus);
 
             const double     MY = PAINT.mb.y + PAINT.h;
             PAINT.glass(CBox{PAINT.mb.x, MY, PAINT.mb.w, PAINT.h}, COLBG);
@@ -777,13 +959,12 @@ namespace NHyprbar {
                         return namedIcon(Menubar::apps[SH[i].app].icon);
                     if (SH[i].cat >= 0)
                         return namedIcon(Menubar::CATEGORIES[SH[i].cat].icon);
-                    return nullptr;
+                    return namedIcon("system-run");
                 };
 
                 // entry: [8][icon][6][text][8], icon on the 3px-inset rhythm;
-                // the cell is always reserved — an entry whose icon doesn't
-                // resolve gets the tasklist's letter fallback instead of
-                // collapsing (rows kept their rhythm, names never jumped)
+                // the cell is always reserved, even when no icon resolves, so
+                // row geometry stays stable and names never jump.
                 const double ICON  = PAINT.h - 6;
                 const auto   cellW = [&](const SP<ITexture>& t) { return 8 + ICON + 6 + (t ? t->m_size.x / PAINT.scale : 0) + 8; };
 
@@ -815,8 +996,7 @@ namespace NHyprbar {
                     if (ITEX && ITEX->m_texID != 0) {
                         const auto P = PAINT.toPhys(CBox{tx, MY + 3, ICON, ICON});
                         PAINT.tex(ITEX, P);
-                    } else
-                        PAINT.texIn(textTex(letterOf(NAME), COLACTIVE, PAINT.pt), CBox{tx, MY, ICON, PAINT.h});
+                    }
                     tx += ICON + 6;
 
                     const auto T = i == Menubar::sel ? textTex(NAME, fg, PAINT.pt) : WT;
@@ -832,6 +1012,26 @@ namespace NHyprbar {
     }
 
     namespace Menubar {
+        void init() {
+            if (!g_pEventLoopManager)
+                return;
+            ++activationGeneration;
+            indexPoll = makeShared<CEventLoopTimer>(
+                std::nullopt,
+                [](SP<CEventLoopTimer> self, void*) {
+                    const bool APPS = pollApps();
+                    const bool COMP = pollCompletion();
+                    if (isOpen && (APPS || COMP)) {
+                        refilter();
+                        restoreSelection();
+                        barChanged();
+                    }
+                    self->updateTimeout((appScanning || completionScanning) ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
+                },
+                nullptr);
+            g_pEventLoopManager->addTimer(indexPoll);
+        }
+
         // hl.plugin.hyprbar.menubar(), deferred out of the Lua call
         void toggleDeferred() {
             pendingOpen.arm([]() {
@@ -843,15 +1043,26 @@ namespace NHyprbar {
         }
 
         void exit() {
+            ++activationGeneration;
             close();
+            clipboard.cancel();
+            if (indexPoll && g_pEventLoopManager)
+                g_pEventLoopManager->removeTimer(indexPoll);
+            indexPoll.reset();
+            appIndex.exit();
+            completionIndex.exit();
             apps.clear();
             shown.clear(); // its entries index into apps
             desktops.clear();
+            appSeen.clear();
+            pendingSelectionId.clear();
             parsed = false;
+            appScanning = completionScanning = false;
             counts.clear();
             history.clear();
             filesLoaded = false;
             compList.clear();
+            compPrefix.clear();
             pendingExec.reset();
             pendingOpen.reset();
         }

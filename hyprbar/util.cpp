@@ -32,16 +32,4 @@ namespace NHyprbar {
         return s;
     }
 
-    std::string letterOf(const std::string& s) {
-        if (s.empty())
-            return "?";
-        size_t n = 1;
-        while (n < s.size() && (s[n] & 0xC0) == 0x80)
-            n++;
-        std::string L = s.substr(0, n);
-        if (n == 1)
-            L[0] = std::toupper((unsigned char)L[0]);
-        return L;
-    }
-
 } // namespace NHyprbar

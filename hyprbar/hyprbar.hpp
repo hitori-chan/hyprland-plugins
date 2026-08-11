@@ -34,7 +34,7 @@
 
 #include "common/busclient.hpp"
 
-#include "common/glass.hpp" // the frosted material: blurOn/blurRadius + memoized tokens
+#include "common/glass.hpp" // config colors plus opaque/translucent container paint
 
 #include "common/texcache.hpp"
 
@@ -86,6 +86,7 @@
 
 #include <cctype>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -99,25 +100,25 @@
 using namespace Render;
 using namespace Render::GL;
 
-extern HANDLE PHANDLE;
-
 namespace NHyprbar {
 
-    // ---- config (defined in main.cpp, values arrive from theme.lua) ----
+    extern HANDLE PHANDLE;
+
+    // ---- config (defined in main.cpp; shared semantic defaults, runtime overrides) ----
 
     struct SBarConfig {
         SP<Config::Values::CIntValue>    height;
         SP<Config::Values::CIntValue>    fontSize;
         SP<Config::Values::CIntValue>    traySpacing; // awesome's systray_icon_spacing
-        SP<Config::Values::CIntValue>    bellPeekMs;  // hover-intent delay before the bell peeks the shade open; 0 = off
         SP<Config::Values::CStringValue> font;
         SP<Config::Values::CStringValue> terminal; // runs Terminal=true menubar entries
         SP<Config::Values::CColorValue>  colBg;
         SP<Config::Values::CColorValue>  colFg;          // normal text: tags, tasks, clock
-        SP<Config::Values::CColorValue>  colMuted;       // tray letter fallback
+        SP<Config::Values::CColorValue>  colMuted;       // accepted for compatibility; character icon fallbacks were removed
         SP<Config::Values::CColorValue>  colFocus;       // selected menubar entry fg (awesome fg_focus)
         SP<Config::Values::CColorValue>  colActive;      // active tag / focused task fg
         SP<Config::Values::CColorValue>  colActiveBg;    // active tag bg
+        SP<Config::Values::CColorValue>  colOnActive;    // content on an active/primary fill
         SP<Config::Values::CColorValue>  colEmpty;       // disabled/placeholder text
         SP<Config::Values::CColorValue>  colUrgent;      // urgent fg
         SP<Config::Values::CColorValue>  colUrgentBg;    // urgent bg (awesome bg_urgent)
@@ -146,10 +147,6 @@ namespace NHyprbar {
     // briefly be two different objects sharing one id, and a pointer test then
     // matches nothing — the whole tasklist blanked for that frame.
     bool isTaskOn(const PHLWINDOW& w, const PHLWORKSPACE& ws);
-
-    // first UTF-8 character (never a split sequence), uppercased when ASCII —
-    // the icon-cell letter fallback
-    std::string letterOf(const std::string& s);
 
     // ---- widget state entry points (each in its widget's unit) ----
 
@@ -226,7 +223,7 @@ namespace NHyprbar {
     // awesome's awful.layout.inc: cycle the focused monitor's active
     // workspace through the layout registry (render.cpp — a single entry
     // until other layouts get implemented; the bar only carries the state).
-    void layoutInc(int dir);
+    void layoutInc(int dir, PHLMONITOR mon);
 
     // ---- icons.cpp ----
 
@@ -234,9 +231,10 @@ namespace NHyprbar {
     SP<ITexture> loadPngBytes(const std::vector<uint8_t>& data); // dbusmenu icon-data blobs
     std::string  resolveIconPath(const std::string& name, const std::string& extraDir = "");
     void         buildIconDirs();
+    void         iconsInit();
     SP<ITexture> appIcon(const std::string& klass);                           // window class -> texture
     SP<ITexture> namedIcon(const std::string& name);                          // icon name/path -> texture
-    SP<ITexture> trayIcon(const std::string& name, const std::string& theme); // + the item's own theme dir
+    SP<ITexture> trayIcon(const std::string& name, const std::string& theme, const std::string& id = ""); // + theme dir and SNI identity fallback
     void         iconsReload();                                               // config reload: re-probe the dirs, drop every resolved icon
     void         iconsExit();
 
@@ -248,7 +246,11 @@ namespace NHyprbar {
         struct SItem {
             std::string                    service, path;
             std::unique_ptr<sdbus::IProxy> proxy;
-            std::string                    iconName, themePath;
+            bool                           active = true;
+            uint64_t                       propertyRequest = 0;
+            uint64_t                       statusRequest   = 0;
+            uint64_t                       iconRequest     = 0;
+            std::string                    id, iconName, themePath;
             std::string                    menuPath; // dbusmenu object path, "" = none
             std::string                    status;   // SNI Status: Passive hides the icon, NeedsAttention swaps the icon set
             bool                           itemIsMenu = false;
@@ -262,9 +264,10 @@ namespace NHyprbar {
         extern std::vector<SP<SItem>>              items;
 
         void                                       pollSoon(); // pull the next DBus poll tick close after a send
+        void                                       post(std::function<void()> fn); // defer send work out of input/render callbacks
         // fire a desktop notification over the tray's connection (urgency
         // 0/1/2; timeoutMs 0 = the daemon's default — sticky for critical)
-        void notify(const std::string& app, uint32_t replacesId, const std::string& icon, const std::string& summary, const std::string& body, uint8_t urgency, int32_t timeoutMs);
+        void notify(const std::string& app, uint32_t replacesId, const std::string& icon, const std::string& summary, const std::string& body, uint8_t urgency, int32_t timeoutMs, bool osd = false);
         void init();
         void exit();
         void onServiceDropped(const std::string& service); // defined in menu.cpp
@@ -297,7 +300,7 @@ namespace NHyprbar {
 
         CBox toPhys(const CBox& global) const; // global logical -> monitor physical
         void rect(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f) const;
-        void glass(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f) const; // translucent fill + live blur (the frosted band/menus)
+        void glass(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f) const;          // opaque fast path or configured translucent blur
         void border(const CBox& global, const CHyprColor& c, int round, int sizePx, float rp = 2.f) const; // frame ring: one call, not four rects
         void tex(const SP<ITexture>& t, const CBox& physBox) const;                        // pre-computed physical box
         void texIn(const SP<ITexture>& t, const CBox& cell) const;                         // centered in a logical cell, native size
@@ -319,6 +322,7 @@ namespace NHyprbar {
         WP<Tray::SItem> tray;             // tray
         double          anchorX = 0;      // menu anchor (cell-fixed)
         double          clickX  = 0;      // where the press landed (input.cpp fills it)
+        double          clickY  = 0;      // screen-coordinate hint for SNI activation
         PHLMONITORREF   mon;
     };
     extern std::map<uint64_t, std::vector<SHit>> hitboxes; // per monitor id
@@ -420,6 +424,7 @@ namespace NHyprbar {
             std::vector<SEntry>               entries;
             double                            width     = 0; // measured at warm; 0 = remeasure
             int                               widthPt   = 0;
+            uint64_t                          loadRequest = 0;
             int                               hover     = -1;
             int                               scrollTop = 0;     // first visible entry when overflowing
             int                               maxScroll = 0;     // set at render: the last scrollTop that still fills the panel
@@ -460,9 +465,9 @@ namespace NHyprbar {
         extern const int       NCATS;
 
         struct SApp {
-            std::string name, lname, exec, lexec, icon;
+            std::string name, lname, exec, lexec, icon, desktopId;
             int         category = -1; // index into CATEGORIES, -1 = none
-            bool        terminal = false;
+            bool        terminal = false, dbusActivatable = false;
         };
 
         // the filtered list: categories, then apps, then the trailing
@@ -480,6 +485,7 @@ namespace NHyprbar {
         extern int                 sel, first;
         extern PHLMONITORREF       mon;
 
+        void                       init();
         void                       open();
         void                       close();
         void                       toggleDeferred(); // hl.plugin.hyprbar.menubar(), deferred out of the call

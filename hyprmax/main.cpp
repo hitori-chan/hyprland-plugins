@@ -23,10 +23,13 @@
 //
 // hl.plugin.hyprmax.toggle() — the Mod+M bind target. No config.
 
+#include "common/input.hpp"
 #include "common/lifecycle.hpp"
 #include "common/order.hpp"
 #include "common/persist.hpp"
 #include "common/queries.hpp"
+
+#include "geometry.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
@@ -64,10 +67,10 @@ static std::unordered_map<PHLWINDOWREF, CBox> g_maximized;
 // restore target when a window of that app is born maximized again.
 static NHyprCommon::SBoxStore g_lastWindowed;
 
-static CBox                   clampToWorkarea(CBox box, const CBox& wa) {
-    box.x = std::clamp(box.x, wa.x, std::max(wa.x, wa.x + wa.w - box.w));
-    box.y = std::clamp(box.y, wa.y, std::max(wa.y, wa.y + wa.h - box.h));
-    return box;
+static CBox                   boundedRestore(PHLWINDOW w, const CBox& box, const CBox& workarea) {
+    if (!w || !w->m_target)
+        return box;
+    return NHyprmax::Geometry::boundedRestore(box, workarea, w->m_target->minSize(), w->m_target->maxSize());
 }
 
 static std::filesystem::path storePath() {
@@ -90,11 +93,8 @@ static NHyprCommon::CSaver g_saver{saveWindowed};
 static void                rememberWindowed(const std::string& cls, const CBox& box) {
     if (cls.empty() || box.w <= 5 || box.h <= 5)
         return;
-    const auto IT = g_lastWindowed.find(cls);
-    if (IT != g_lastWindowed.end() && IT->second == box)
-        return;
-    g_lastWindowed[cls] = box;
-    g_saver.dirty();
+    if (NHyprCommon::rememberBox(g_lastWindowed, cls, box))
+        g_saver.dirty();
 }
 
 static bool pluginMaximized(PHLWINDOW w) {
@@ -123,7 +123,7 @@ static void adoptCompositorMax(PHLWINDOW W) {
     // hands the size choice to the client (see luaToggle)
     CBox restore{};
     if (const auto IT = g_lastWindowed.find(W->m_initialClass); IT != g_lastWindowed.end())
-        restore = clampToWorkarea(IT->second, WA);
+        restore = boundedRestore(W, IT->second, WA);
     g_maximized[PHLWINDOWREF{W}] = restore;
 
     if (!W->m_isX11 && W->m_xdgSurface && W->m_xdgSurface->m_toplevel)
@@ -145,6 +145,42 @@ static void adoptCompositorMax(PHLWINDOW W) {
 static std::vector<PHLWINDOWREF> g_adoptQueue;
 static bool                      adoptQueued = false;
 static NHyprCommon::CHop         pendingAdopt;
+
+static bool                reflowQueued = false;
+static NHyprCommon::CHop   pendingReflow;
+
+// A plugin-maximized window is a client-only state, so Hyprland's layout
+// reflow does not resize it when a workspace changes monitor or a reserved
+// area changes. Coalesce those events and apply the current workarea after
+// the compositor finishes its own movement.
+static void reflowMaximized() {
+    for (const auto& ENTRY : g_maximized) {
+        const auto W = ENTRY.first.lock();
+        if (!W || !W->m_isMapped || !W->m_isFloating || !W->m_target)
+            continue;
+        const auto MODES = Fullscreen::controller()->getFullscreenModes(W);
+        if (MODES.internal != Fullscreen::FSMODE_NONE || MODES.client != Fullscreen::FSMODE_NONE)
+            continue; // a native fullscreen/maximize grant owns the geometry
+        const auto MON = W->m_monitor.lock();
+        if (!MON)
+            continue;
+        const auto WA = MON->logicalBoxMinusReserved();
+        if (W->m_target->position() == WA)
+            continue;
+        g_layoutManager->setTargetGeom(WA, W->m_target);
+        W->m_target->warpPositionSize();
+    }
+}
+
+static void queueReflow() {
+    if (reflowQueued)
+        return;
+    reflowQueued = true;
+    pendingReflow.arm([]() {
+        reflowQueued = false;
+        reflowMaximized();
+    });
+}
 
 // queue+drain, never a lone doLaterLock: two born-maximized windows can
 // map in one dispatch, and overwriting the lock cancels the unfired one
@@ -180,8 +216,12 @@ static void     onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackI
         swallowedButtons = 0;
         return;
     }
+    if (NHyprCommon::nativeInputCaptureActive()) {
+        swallowedButtons = 0;
+        return;
+    }
 
-    const uint32_t BIT = e.button == BTN_LEFT ? 1u : e.button == BTN_RIGHT ? 2u : 0u;
+    const uint32_t BIT = NHyprCommon::trackedPointerButtonBit(e.button) & 3u;
 
     if (e.state == WL_POINTER_BUTTON_STATE_PRESSED) {
         if (!BIT || info.cancelled)
@@ -189,7 +229,7 @@ static void     onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackI
 
         // the bar owns clicks on layer surfaces; only a Super-grab can move
         // a window, so only that needs swallowing
-        if (g_pInputManager->m_lastFocusOnLS || !superHeld())
+        if (NHyprCommon::nativePointerGrabActive() || NHyprCommon::nativeLayerOwnsPointer() || !superHeld())
             return;
 
         const auto W = windowUnderCursor();
@@ -246,7 +286,7 @@ static int luaToggle(lua_State*) {
             const auto IT  = g_lastWindowed.find(W->m_initialClass);
             if (IT != g_lastWindowed.end() && W->m_sizeFromClientSerial && MON && W->m_isFloating) {
                 W->m_sizeFromClientSerial = 0;
-                g_layoutManager->setTargetGeom(clampToWorkarea(IT->second, MON->logicalBoxMinusReserved()), W->m_target);
+                g_layoutManager->setTargetGeom(boundedRestore(W, IT->second, MON->logicalBoxMinusReserved()), W->m_target);
                 W->m_target->warpPositionSize();
                 // same disarmed-grant flush as adoptCompositorMax: unforced
                 // sends dedup against m_pendingReportedSize and go silent
@@ -273,7 +313,7 @@ static int luaToggle(lua_State*) {
             g_maximized.erase(IT);
             setClientMaximized(false);
             if (STORED.w > 5 && STORED.h > 5) {
-                const CBox R = clampToWorkarea(STORED, WA);
+                const CBox R = boundedRestore(W, STORED, WA);
                 rememberWindowed(W->m_initialClass, R);
                 g_layoutManager->setTargetGeom(R, W->m_target);
                 W->m_target->warpPositionSize();
@@ -351,20 +391,30 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         if (pluginMaximized(w)) {
             if (!w->m_isX11 && w->m_xdgSurface && w->m_xdgSurface->m_toplevel)
                 w->m_xdgSurface->m_toplevel->setMaximized(true);
+            queueReflow();
             return;
         }
         if (w->m_isFloating && Fullscreen::controller()->getFullscreenModes(w).internal == Fullscreen::FSMODE_MAXIMIZED)
             queueAdopt(w);
+        queueReflow();
     });
+
+    auto& EV = Event::bus()->m_events;
+    g_lifecycle.listen(EV.window.moveToWorkspace, [](PHLWINDOW, PHLWORKSPACE) { queueReflow(); });
+    g_lifecycle.listen(EV.workspace.active, [](PHLWORKSPACE) { queueReflow(); });
+    g_lifecycle.listen(EV.workspace.moveToMonitor, [](PHLWORKSPACE, PHLMONITOR) { queueReflow(); });
+    g_lifecycle.listen(EV.monitor.layoutChanged, []() { queueReflow(); });
+    g_lifecycle.listen(EV.monitor.reservedChanged, [](PHLMONITOR) { queueReflow(); });
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprmax", "toggle", luaToggle);
 
-    return {"hyprmax", "awesome's per-window maximize", "hitori", "1.1.8"};
+    return {"hyprmax", "awesome's per-window maximize", "hitori", "1.1.9"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
     g_lifecycle.resetAll(); // listeners first, then every hop
     adoptQueued = false;
+    reflowQueued = false;
     g_adoptQueue.clear();
     g_saver.flush(); // the coalesced write must not die with the session
     g_maximized.clear();

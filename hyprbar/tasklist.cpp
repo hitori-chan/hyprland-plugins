@@ -302,9 +302,9 @@ namespace NHyprbar {
                 double       x = box.x;
                 for (const auto& [SEQ, W] : *F.tasks) {
                     const CBox CELL{x, box.y, ITEMW, P.h};
-                    // the old theme: the focused task is cyan TEXT on the plain
-                    // bar (tasklist_bg_focus = bg_normal, no box); urgent gets
-                    // the urgent bg — and focus wins over urgent, like awesome
+                    // The focused task is primary TEXT on the plain bar
+                    // (tasklist_bg_focus = bg_normal, no box); urgent gets the
+                    // error container — focus wins over urgent, like awesome.
                     CHyprColor fg = F.fg;
                     // minimized wins over focus: a minimized window is never
                     // truly focused, but the compositor's focus fallback can
@@ -324,8 +324,6 @@ namespace NHyprbar {
                     double       tx   = x + 4;
                     if (const auto ITEX = appIcon(W->m_class); ITEX && ITEX->m_texID != 0)
                         P.texFit(ITEX, CBox{tx, box.y + 3, ICON, ICON});
-                    else
-                        P.texIn(textTex(letterOf(W->m_class), F.active, P.pt), CBox{tx, box.y, ICON, P.h});
                     tx += ICON + 4;
 
                     static std::string LBL; // reused; main thread only

@@ -1,14 +1,16 @@
 // hyprbar/battery.cpp — the battery: gauge state from sysfs, the old
-// battery-watch.sh alerts, Android's expressive pill and its widget
+// battery-watch.sh alerts, Google Pixel's expressive pill and its widget
 
 #include "hyprbar.hpp"
+#include "battery_state.hpp"
 
 namespace NHyprbar {
 
-    static int         batteryPercent  = -1;    // -1 = no battery (or an unreadable gauge): the widget hides
-    static bool        batteryCharging = false; // any plugged state; only Discharging is false
+    static int         batteryPercent  = -1;    // -1 = unknown level; batteryDir decides whether the widget exists
+    static bool        batteryPlugged  = false; // known external-power status, never inferred from Unknown
     static bool        batteryDefend   = false; // plugged but held at the charge limit (Android's defender)
-    static bool        batterySave     = false; // platform_profile low-power (Android's power save)
+    static bool        batterySave     = false; // explicit power-profiles-daemon power-saver state
+    static bool        batteryUnknown  = false; // Pixel's question attribution; higher priority than every other state
     static std::string batteryDir;              // /sys/class/power_supply/BATx, empty = none
     // the gauge is read ONCE per event (uevent or minute tick) and both
     // consumers — the pill's display state and the alerts' edge detection —
@@ -19,6 +21,91 @@ namespace NHyprbar {
     // battery's state so exit() leaves nothing latched
     static std::string alertLastStatus;
     static bool        alertWarned = false, alertCritical = false;
+
+    // Power Profiles Daemon is the Linux-wide explicit power-save state. It
+    // owns a separate system-bus link because tray's link is session-local.
+    static NHyprCommon::CBusLink         powerProfilesBus;
+    static std::unique_ptr<sdbus::IProxy> powerProfilesProxy;
+    static std::unique_ptr<sdbus::IProxy> powerProfilesBroker;
+    static uint64_t                       powerProfileGeneration = 0;
+
+    static constexpr const char* POWER_PROFILES_SERVICE = "net.hadess.PowerProfiles";
+    static constexpr const char* POWER_PROFILES_PATH    = "/net/hadess/PowerProfiles";
+    static constexpr const char* POWER_PROFILES_IFACE   = "net.hadess.PowerProfiles";
+
+    static void applyPowerSave(bool save) {
+        if (save == batterySave)
+            return;
+        batterySave = save;
+        barChanged();
+    }
+
+    static void refreshPowerProfile() {
+        if (!powerProfilesBus.conn() || !powerProfilesProxy)
+            return;
+        const uint64_t GENERATION = ++powerProfileGeneration;
+        try {
+            powerProfilesProxy->getPropertyAsync("ActiveProfile").onInterface(POWER_PROFILES_IFACE).uponReplyInvoke([GENERATION](std::optional<sdbus::Error> error, sdbus::Variant profile) {
+                if (GENERATION != powerProfileGeneration)
+                    return;
+                bool save = false;
+                if (!error)
+                    try {
+                        save = Battery::isPowerSaverProfile(profile.get<std::string>());
+                    } catch (...) {}
+                applyPowerSave(save);
+            });
+            powerProfilesBus.pollSoon();
+        } catch (...) {
+            applyPowerSave(false);
+        }
+    }
+
+    static void initPowerProfiles() {
+        powerProfilesBus.dropOwned = []() {
+            ++powerProfileGeneration;
+            powerProfilesProxy.reset();
+            powerProfilesBroker.reset();
+        };
+        powerProfilesBus.afterTeardown = []() { applyPowerSave(false); };
+        try {
+            powerProfilesBus.open(true);
+            powerProfilesProxy.reset(sdbus::createProxy(*powerProfilesBus.conn(), sdbus::ServiceName{POWER_PROFILES_SERVICE}, sdbus::ObjectPath{POWER_PROFILES_PATH}).release());
+            powerProfilesBroker.reset(sdbus::createProxy(*powerProfilesBus.conn(), sdbus::ServiceName{"org.freedesktop.DBus"}, sdbus::ObjectPath{"/org/freedesktop/DBus"}).release());
+            powerProfilesProxy->uponSignal("PropertiesChanged")
+                .onInterface("org.freedesktop.DBus.Properties")
+                .call([](std::string iface, std::map<std::string, sdbus::Variant> changed, std::vector<std::string> invalidated) {
+                    if (iface != POWER_PROFILES_IFACE)
+                        return;
+                    const auto IT = changed.find("ActiveProfile");
+                    if (IT == changed.end()) {
+                        if (std::find(invalidated.begin(), invalidated.end(), "ActiveProfile") != invalidated.end())
+                            refreshPowerProfile();
+                        return;
+                    }
+                    ++powerProfileGeneration; // invalidate an older async property reply
+                    try {
+                        applyPowerSave(Battery::isPowerSaverProfile(IT->second.get<std::string>()));
+                    } catch (...) {
+                        refreshPowerProfile();
+                    }
+                });
+            powerProfilesBroker->uponSignal("NameOwnerChanged").onInterface("org.freedesktop.DBus").call([](std::string name, std::string, std::string newOwner) {
+                if (name != POWER_PROFILES_SERVICE)
+                    return;
+                if (newOwner.empty()) {
+                    ++powerProfileGeneration;
+                    applyPowerSave(false);
+                    return;
+                }
+                refreshPowerProfile();
+            });
+            refreshPowerProfile();
+            powerProfilesBus.sync();
+        } catch (...) {
+            powerProfilesBus.close();
+        }
+    }
 
     static bool        hasBattery() {
         return !batteryDir.empty();
@@ -55,11 +142,12 @@ namespace NHyprbar {
     // GLYPHS (bespoke vector paths, not a font) in black 0.75 centered as a
     // row with 0.8 gaps, and to the right either the D cap (1 unit off, in
     // the track color) or an attribution glyph — the charging bolt, the
-    // defender shield (held at the charge limit) or the power-save plus —
+    // defender shield (held at the charge limit), the power-save plus, or the
+    // unknown-state question —
     // overlapping the body by 20% of its width, white over a 2-unit black
-    // stroke. At 100% the whole body takes the fill color. The canvas is
-    // always the widest (plus) state so the body never shifts when the
-    // state flips.
+    // stroke. At 100% the whole body takes the fill color. BatteryMeasurePolicy
+    // rounds every child independently and changes the total width with the
+    // cap/attribution; batteryPill follows those exact measurements.
     struct SGlyphPath {
         double      w, h;
         const char* d;
@@ -178,17 +266,9 @@ namespace NHyprbar {
         8.5, 8.5,
         "M4.248,0C4.745,0 5.148,0.403 5.148,0.9V3.35H7.6C8.097,3.35 8.5,3.753 8.5,4.25C8.5,4.747 8.097,5.149 7.6,5.149H5.148V7.6C5.148,8.097 4.745,8.5 "
         "4.248,8.5C3.751,8.5 3.349,8.097 3.349,7.6V5.149H0.9C0.403,5.149 0,4.747 0,4.25C0,3.753 0.403,3.35 0.9,3.35H3.349V0.9C3.349,0.403 3.751,0 4.248,0Z"};
-
-    // Android's attribution ladder (BatteryInteractor): PowerSave > Defend >
-    // Charging; the fill follows it (BatteryViewModel$_colorProfile$1) —
-    // Defend shares the CHARGING color, only PowerSave takes the yellow, and
-    // the error red exists solely in the no-attribution state.
-    enum eBattAttr : uint8_t {
-        BATT_ATTR_NONE = 0,
-        BATT_ATTR_CHARGING,
-        BATT_ATTR_DEFEND,
-        BATT_ATTR_SAVE,
-    };
+    static const SGlyphPath BATT_QUESTION{
+        6.0, 10.0,
+        "M2.85,6.438C2.591,6.438 2.363,6.356 2.167,6.193C1.975,6.025 1.879,5.823 1.879,5.588V5.557C1.879,5.209 1.958,4.911 2.117,4.663C2.276,4.416 2.545,4.143 2.925,3.845C3.276,3.572 3.537,3.346 3.708,3.166C3.883,2.985 3.971,2.792 3.971,2.587C3.971,2.31 3.869,2.091 3.664,1.932C3.464,1.768 3.188,1.687 2.837,1.687C2.616,1.687 2.418,1.722 2.242,1.794C2.067,1.865 1.919,1.961 1.798,2.083C1.677,2.205 1.568,2.322 1.472,2.435C1.38,2.545 1.242,2.62 1.059,2.662C0.879,2.7 0.687,2.67 0.482,2.574C0.282,2.477 0.14,2.32 0.057,2.102C-0.023,1.884 -0.019,1.668 0.069,1.454C0.161,1.24 0.34,1.015 0.608,0.78C0.879,0.541 1.207,0.352 1.591,0.214C1.975,0.071 2.426,0 2.944,0C3.866,0 4.605,0.231 5.161,0.692C5.72,1.15 6,1.739 6,2.461C6,2.897 5.889,3.287 5.668,3.631C5.451,3.971 5.098,4.315 4.61,4.663C4.326,4.869 4.127,5.049 4.015,5.205C3.902,5.36 3.835,5.546 3.814,5.765V5.777C3.781,5.945 3.679,6.098 3.507,6.237C3.336,6.371 3.117,6.438 2.85,6.438ZM2.837,10C2.495,10 2.205,9.885 1.967,9.654C1.733,9.423 1.616,9.14 1.616,8.804C1.616,8.477 1.733,8.2 1.967,7.974C2.205,7.747 2.495,7.634 2.837,7.634C3.18,7.634 3.47,7.747 3.708,7.974C3.95,8.2 4.071,8.477 4.071,8.804C4.071,9.14 3.952,9.423 3.714,9.654C3.476,9.885 3.184,10 2.837,10Z"};
 
     // just enough SVG for the paths above: absolute M/L/H/V/C/Z
     static void playPath(cairo_t* CR, const char* d) {
@@ -245,39 +325,56 @@ namespace NHyprbar {
         }
     }
 
-    static SP<ITexture> batteryPill(int percent, eBattAttr attr, double hPx, const CHyprColor& fill) {
-        const double S    = hPx / 13.0; // one viewport unit
-        const int    LVL  = std::clamp(percent, 0, 100);
-        const bool   FULL = LVL >= 100;
-        // canvas fixed at the widest attribution (Plus: 24 + 0.8*8.5) so the
-        // body never shifts when the state flips
-        const int  CW = (int)std::ceil(30.8 * S), CH = (int)std::ceil(13.0 * S);
+    static const SGlyphPath* attributionGlyph(Battery::eAttribution attr) {
+        switch (attr) {
+            case Battery::eAttribution::Charging: return &BATT_BOLT;
+            case Battery::eAttribution::Defender: return &BATT_DEFEND;
+            case Battery::eAttribution::PowerSave: return &BATT_PLUS;
+            case Battery::eAttribution::Unknown: return &BATT_QUESTION;
+            case Battery::eAttribution::None: return nullptr;
+        }
+        return nullptr;
+    }
+
+    static int measuredBatteryWidth(int hPx, Battery::eAttribution attr) {
+        return Battery::measuredWidth(hPx, attr);
+    }
+
+    static SP<ITexture> batteryPill(int percent, Battery::eAttribution attr, int hPx, const CHyprColor& fill) {
+        const double S         = hPx / 13.0;
+        const bool   HAS_LEVEL = percent >= 0;
+        const int    LVL       = std::clamp(percent, 0, 100);
+        const bool   FULL      = HAS_LEVEL && LVL >= 100;
+        const int    BW        = Battery::pixelRound(24.0 * S);
+        const int    BH        = Battery::pixelRound(13.0 * S);
+        const double BS        = std::min(BW / 24.0, BH / 13.0);
+        const int    CW        = measuredBatteryWidth(hPx, attr), CH = BH;
 
         auto*      SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, CW, CH);
         auto*      CR   = cairo_create(SURF);
 
         const auto body = [&]() { // bodyPathSpec: RoundRect 24x13 r=4
             cairo_new_sub_path(CR);
-            cairo_arc(CR, 20 * S, 4 * S, 4 * S, -M_PI / 2, 0);
-            cairo_arc(CR, 20 * S, 9 * S, 4 * S, 0, M_PI / 2);
-            cairo_arc(CR, 4 * S, 9 * S, 4 * S, M_PI / 2, M_PI);
-            cairo_arc(CR, 4 * S, 4 * S, 4 * S, M_PI, 3 * M_PI / 2);
+            cairo_arc(CR, 20 * BS, 4 * BS, 4 * BS, -M_PI / 2, 0);
+            cairo_arc(CR, 20 * BS, 9 * BS, 4 * BS, 0, M_PI / 2);
+            cairo_arc(CR, 4 * BS, 9 * BS, 4 * BS, M_PI / 2, M_PI);
+            cairo_arc(CR, 4 * BS, 4 * BS, 4 * BS, M_PI, 3 * M_PI / 2);
             cairo_close_path(CR);
         };
-        const auto glyphAt = [&](const SGlyphPath& G, double ux, double uy) {
+        const auto glyphAt = [&](const SGlyphPath& G, double px, double py, double scale) {
             cairo_save(CR);
-            cairo_translate(CR, ux * S, uy * S);
-            cairo_scale(CR, S, S);
+            cairo_translate(CR, px, py);
+            cairo_scale(CR, scale, scale);
             playPath(CR, G.d);
             cairo_restore(CR);
         };
 
-        // DarkTheme: track white 0.55 (digits always shown); full = the fill
+        // DarkTheme: 0.55 with digit glyphs, 0.45 when the level is unknown.
         const auto trackColor = [&]() {
             if (FULL)
                 cairo_set_source_rgba(CR, fill.r, fill.g, fill.b, fill.a);
             else
-                cairo_set_source_rgba(CR, 1, 1, 1, 0.55);
+                cairo_set_source_rgba(CR, 1, 1, 1, HAS_LEVEL ? 0.55 : 0.45);
         };
         trackColor();
         body();
@@ -285,7 +382,7 @@ namespace NHyprbar {
 
         if (!FULL && LVL > 0) { // fill: the same round rect under a clip at ceil(level*24/100) units
             cairo_save(CR);
-            cairo_rectangle(CR, 0, 0, std::ceil(LVL * 24.0 / 100.0) * S, 13 * S);
+            cairo_rectangle(CR, 0, 0, std::ceil(LVL * 24.0 / 100.0) * BS, 13 * BS);
             cairo_clip(CR);
             cairo_set_source_rgba(CR, fill.r, fill.g, fill.b, fill.a);
             body();
@@ -293,7 +390,7 @@ namespace NHyprbar {
             cairo_restore(CR);
         }
 
-        { // the level's digit glyphs: a centered row, 0.8-unit gaps, black 0.75
+        if (HAS_LEVEL) { // centered 0.8-unit row, black 0.75
             const auto TXT   = std::to_string(LVL);
             double     total = 0;
             for (size_t i = 0; i < TXT.size(); i++)
@@ -302,25 +399,27 @@ namespace NHyprbar {
             cairo_set_source_rgba(CR, 0, 0, 0, 0.75);
             for (const char C : TXT) {
                 const auto& G = BATT_DIGITS[C - '0'];
-                glyphAt(G, x, (13.0 - G.h) / 2.0);
+                glyphAt(G, x * BS, (13.0 - G.h) / 2.0 * BS, BS);
                 cairo_fill(CR);
                 x += G.w + 0.8;
             }
         }
 
-        if (attr == BATT_ATTR_NONE) { // the D cap, 1 unit off the body, in the track color
-            trackColor();
-            glyphAt(BATT_CAP, 24.0 + std::round(S) / S, (13.0 - BATT_CAP.h) / 2.0);
-            cairo_fill(CR);
-        } else { // the attribution glyph, overlapping the body by 20% of its
-                 // width (the measure policy's 0.8 extension is glyph-generic):
-                 // white over a 2-unit black stroke so it reads on any fill
-            const SGlyphPath& G = attr == BATT_ATTR_CHARGING ? BATT_BOLT : attr == BATT_ATTR_DEFEND ? BATT_DEFEND : BATT_PLUS;
-            glyphAt(G, 24.0 - 0.2 * G.w, (13.0 - G.h) / 2.0);
+        if (const auto* G = attributionGlyph(attr)) {
+            const int    GW = Battery::pixelRound(G->w * S), GH = Battery::pixelRound(G->h * S);
+            const double GS = std::min(GW / G->w, GH / G->h);
+            const int    GX = Battery::pixelRound(BW - GW * 0.2), GY = Battery::pixelRound((BH - GH) / 2.0);
+            glyphAt(*G, GX, GY, GS);
             cairo_set_source_rgba(CR, 0, 0, 0, 1);
-            cairo_set_line_width(CR, 2.0 * S);
+            cairo_set_line_width(CR, 2.0 * GS);
             cairo_stroke_preserve(CR);
             cairo_set_source_rgba(CR, 1, 1, 1, 1);
+            cairo_fill(CR);
+        } else { // D cap, one rounded viewport unit off the body
+            const int    PW = Battery::pixelRound(BATT_CAP.w * S), PH = Battery::pixelRound(BATT_CAP.h * S);
+            const double PS = std::min(PW / BATT_CAP.w, PH / BATT_CAP.h);
+            trackColor();
+            glyphAt(BATT_CAP, BW + Battery::pixelRound(S), Battery::pixelRound((BH - PH) / 2.0), PS);
             cairo_fill(CR);
         }
 
@@ -342,8 +441,8 @@ namespace NHyprbar {
 
     namespace Battery {
         bool refresh() {
-            int  pc       = -1;
-            bool charging = false, defend = false, save = false;
+            int  pc      = -1;
+            bool plugged = false, defend = false, unknown = false;
             batteryStatus.clear();
             if (!batteryDir.empty()) {
                 std::ifstream cf(batteryDir + "/capacity"), sf(batteryDir + "/status");
@@ -352,41 +451,33 @@ namespace NHyprbar {
                     try {
                         pc = std::clamp(std::stoi(cap), 0, 100);
                     } catch (...) {}
-                    // every plugged state (Charging/Full/Not charging) colors the
-                    // pill; only Discharging runs on the cell
-                    charging = sf && std::getline(sf, status) && status != "Discharging";
-                    if (pc >= 0)
-                        batteryStatus = status;
+                }
+                if (sf && std::getline(sf, status))
+                    plugged = statusIsPlugged(status);
+                batteryStatus = status;
+                unknown       = pc < 0 || status.empty() || status == "Unknown";
 
-                    // Android's defender = plugged but deliberately not charging.
-                    // A charge_control_end_threshold below 100 turns "Not
-                    // charging" from a transient (thermal, top-off) into the
-                    // limiter's hold state — including the start/end hysteresis
-                    // band, where capacity sits below the threshold.
-                    if (status == "Not charging") {
-                        std::ifstream tf(batteryDir + "/charge_control_end_threshold");
-                        std::string   lim;
-                        if (tf && std::getline(tf, lim)) {
-                            try {
-                                defend = std::stoi(lim) < 100;
-                            } catch (...) {}
-                        }
+                // Android's defender = plugged but deliberately not charging.
+                // A charge_control_end_threshold below 100 turns "Not
+                // charging" from a transient (thermal, top-off) into the
+                // limiter's hold state — including the start/end hysteresis
+                // band, where capacity sits below the threshold.
+                if (plugged && status == "Not charging") {
+                    std::ifstream tf(batteryDir + "/charge_control_end_threshold");
+                    std::string   lim;
+                    if (tf && std::getline(tf, lim)) {
+                        try {
+                            defend = std::stoi(lim) < 100;
+                        } catch (...) {}
                     }
-
-                    // Android's power save, mapped to the firmware profile (the
-                    // file only exists where ACPI offers profiles). No uevent
-                    // fires on a flip: the minute tick bounds the lag.
-                    std::ifstream pf("/sys/firmware/acpi/platform_profile");
-                    std::string   prof;
-                    save = pf && std::getline(pf, prof) && prof == "low-power";
                 }
             }
-            if (batteryPercent == pc && batteryCharging == charging && batteryDefend == defend && batterySave == save)
+            if (batteryPercent == pc && batteryPlugged == plugged && batteryDefend == defend && batteryUnknown == unknown)
                 return false;
             batteryPercent  = pc;
-            batteryCharging = charging;
+            batteryPlugged  = plugged;
             batteryDefend   = defend;
-            batterySave     = save;
+            batteryUnknown  = unknown;
             return true;
         }
 
@@ -408,9 +499,10 @@ namespace NHyprbar {
             constexpr int WARN = 20, CRIT = 5;
 
             // urgency 0/1/2; 9990 = the script's pinned replace-in-place id.
-            // No icon: the daemon's fallback_icon_dir rolls the card its face.
+            // The semantic icon name keeps this fixed-id card on the native
+            // battery mark instead of falling through to the generic app grid.
             const auto NOTIFY = [](uint8_t urgency, int32_t timeoutMs, const char* summary, const std::string& body) {
-                Tray::notify("battery", 9990, "", summary, body, urgency, timeoutMs);
+                Tray::notify("battery", 9990, "battery-symbolic", summary, body, urgency, timeoutMs, true);
             };
 
             // ACPI transitions/resume report transient "Unknown" — it must not
@@ -468,6 +560,7 @@ namespace NHyprbar {
             refresh();
             if (!hasBattery() || !g_pCompositor)
                 return;
+            initPowerProfiles();
             g_udev = udev_new();
             if (!g_udev)
                 return;
@@ -489,6 +582,7 @@ namespace NHyprbar {
         }
 
         void exit() {
+            powerProfilesBus.close(); // fd sources out before the proxy and system connection die
             if (g_batterySrc)
                 wl_event_source_remove(g_batterySrc); // before the monitor that owns the fd
             if (g_udevMon)
@@ -499,8 +593,8 @@ namespace NHyprbar {
             g_udevMon    = nullptr;
             g_udev       = nullptr;
             pillCache.clear();
-            batteryPercent  = -1;
-            batteryCharging = batteryDefend = batterySave = false;
+            batteryPercent = -1;
+            batteryPlugged = batteryDefend = batterySave = batteryUnknown = false;
             batteryDir.clear();
             batteryStatus.clear();
             alertLastStatus.clear();
@@ -514,21 +608,18 @@ namespace NHyprbar {
         class CBatteryWidget : public IWidget {
           public:
             double fit(const SPaint& P, const SFrame&) override {
-                if (batteryPercent < 0)
-                    return 0; // no gauge (desktops): hidden
+                if (!hasBattery())
+                    return 0; // no system pack: hidden
                 // Android sizes it 13sp beside 14sp status bar text: 13/14 of
                 // the bar's font size, not the icon rhythm — the pill is meant
                 // to read as text-line furniture, not as an icon
                 const int PH = ph(P);
-                // Android's ladder (see eBattAttr): power save > defend >
-                // charging for the attribution; defend shares the charging fill,
-                // the error red exists only in the bare state
-                const eBattAttr  ATTR = batterySave ? BATT_ATTR_SAVE : batteryDefend ? BATT_ATTR_DEFEND : batteryCharging ? BATT_ATTR_CHARGING : BATT_ATTR_NONE;
-                const CHyprColor FILL = ATTR == BATT_ATTR_SAVE ? color(cfg.colSave) :
-                    ATTR != BATT_ATTR_NONE                     ? color(cfg.colCharging) :
-                    batteryPercent <= 20                       ? color(cfg.colLow) :
-                                                                 CHyprColor{1.f, 1.f, 1.f, 1.f};
-                const uint64_t   KEY  = ((uint64_t)batteryPercent << 40) ^ ((uint64_t)ATTR << 48) ^ FILL.getAsHex();
+                const auto STATE = Battery::visualState(batteryPercent, batteryUnknown, batterySave, batteryDefend, batteryPlugged);
+                const CHyprColor FILL = STATE.color == Battery::eColor::Active  ? color(cfg.colCharging) :
+                    STATE.color == Battery::eColor::Warning                     ? color(cfg.colSave) :
+                    STATE.color == Battery::eColor::Error                       ? color(cfg.colLow) :
+                                                                                   CHyprColor{1.f, 1.f, 1.f, 1.f};
+                const uint64_t   KEY = ((uint64_t)(batteryPercent + 1) << 40) ^ ((uint64_t)STATE.attribution << 48) ^ FILL.getAsHex();
                 auto&            PILL = pillCache[PH];
                 // the gate, not P.warm: "this pass paints nothing" and "this
                 // pass may create a texture" are different questions, and only
@@ -536,12 +627,12 @@ namespace NHyprbar {
                 // it refuses — a level that moved under a scissored repaint
                 // gets its warm and its repaint from that).
                 if (PILL.key != KEY && warmGate.mayBuild()) {
-                    PILL.tex = batteryPill(batteryPercent, ATTR, PH, FILL);
+                    PILL.tex = batteryPill(batteryPercent, STATE.attribution, PH, FILL);
                     PILL.key = KEY; // stamp even if the build returns null, so a persistent null can't rewarm-storm
                 }
 
                 // P.pt is already scale-multiplied, and the tex branch returns logical px — so /scale here too
-                const double PW = PILL.tex ? PILL.tex->m_size.x / P.scale : P.pt * 13.0 / 14.0 * 30.8 / 13.0 / P.scale;
+                const double PW = PILL.tex ? PILL.tex->m_size.x / P.scale : measuredBatteryWidth(PH, STATE.attribution) / P.scale;
                 return 6 + PW + 6; // breathing room off the tray
             }
 

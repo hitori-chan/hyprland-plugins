@@ -33,10 +33,15 @@
 #include "common/queries.hpp"
 
 #include "hyprsnap.hpp"
+#include "geometry.hpp"
 
 #include <hyprland/src/config/ConfigValue.hpp>
 
 #include <array>
+#include <cmath>
+#include <limits>
+#include <tuple>
+#include <vector>
 
 namespace NHyprsnap::Snap {
 
@@ -52,13 +57,16 @@ namespace NHyprsnap::Snap {
             H_RIGHT
         };
 
-        std::optional<CBox> zoneBox; // the armed aerosnap slot, global logical
+        std::optional<CBox> zoneBox; // constrained aerosnap border box, global logical
         PHLMONITORREF       zoneMon;
+        eEdgeV              zoneV = V_NONE;
+        eEdgeH              zoneH = H_NONE;
         NHyprCommon::CHop   pendingMagnet;
         bool                magnetQueued = false;
         std::optional<CBox> resizeStart; // resize-drag begin box: tells dragged edges from anchored
 
-        using NHyprCommon::monitorAt; // the allocation-free per-motion lookup
+        using NHyprCommon::monitorAt;         // nearest output for magnetism
+        using NHyprCommon::monitorContaining; // edge zones need actual containment
 
         std::array<CBox, 4> zoneStrips(const CBox& Z) {
             constexpr double BW = 1;
@@ -99,29 +107,104 @@ namespace NHyprsnap::Snap {
             return std::nullopt;
         }
 
-        // snap_inside: pull g's edges flush with the INSIDE of sg
-        CBox snapInside(CBox g, const CBox& sg, double d) {
-            if (g.x > sg.x && g.x - sg.x < d)
-                g.x = sg.x;
-            else if (std::abs((sg.x + sg.w) - (g.x + g.w)) < d)
-                g.x = sg.x + sg.w - g.w;
-            if (g.y > sg.y && g.y - sg.y < d)
-                g.y = sg.y;
-            else if (std::abs((sg.y + sg.h) - (g.y + g.h)) < d)
-                g.y = sg.y + sg.h - g.h;
+        std::optional<CBox> constrainedZone(const SP<Layout::ITarget>& target, const PHLMONITOR& monitor, eEdgeV v, eEdgeH h) {
+            if (!target || !monitor)
+                return std::nullopt;
+            const auto WA   = monitor->logicalBoxMinusReserved();
+            const auto SLOT = slotFor(v, h, WA);
+            if (!SLOT)
+                return std::nullopt;
+
+            static auto PBORDER = CConfigValue<Config::INTEGER>("general:border_size");
+            const auto  HA = h == H_LEFT ? Geometry::EHorizontalAnchor::LEFT :
+                h == H_RIGHT ? Geometry::EHorizontalAnchor::RIGHT : Geometry::EHorizontalAnchor::CENTER;
+            const auto VA = v == V_TOP ? Geometry::EVerticalAnchor::TOP : v == V_BOTTOM ? Geometry::EVerticalAnchor::BOTTOM : Geometry::EVerticalAnchor::CENTER;
+            return Geometry::constrainedSlot(*SLOT, target->minSize(), target->maxSize(), std::max((double)*PBORDER, 0.0), HA, VA);
+        }
+
+        struct SNearest {
+            bool   found = false;
+            double distance = 0;
+            double value = 0;
+            CBox   key;
+        };
+
+        bool earlierGeometry(const CBox& a, const CBox& b) {
+            return std::tie(a.x, a.y, a.w, a.h) < std::tie(b.x, b.y, b.w, b.h);
+        }
+
+        void considerNearest(SNearest& best, double value, double current, const CBox& key, double d) {
+            const double DIST = std::abs(value - current);
+            if (DIST >= d || (best.found && (DIST > best.distance || (DIST == best.distance && !earlierGeometry(key, best.key)))))
+                return;
+            best = {.found = true, .distance = DIST, .value = value, .key = key};
+        }
+
+        CBox snapInsideNearest(CBox g, const CBox& sg, double d) {
+            SNearest X, Y;
+            if (g.x > sg.x)
+                considerNearest(X, sg.x, g.x, sg, d);
+            if (std::abs((sg.x + sg.w) - (g.x + g.w)) < d)
+                considerNearest(X, sg.x + sg.w - g.w, g.x, sg, d);
+            if (g.y > sg.y)
+                considerNearest(Y, sg.y, g.y, sg, d);
+            if (std::abs((sg.y + sg.h) - (g.y + g.h)) < d)
+                considerNearest(Y, sg.y + sg.h - g.h, g.y, sg, d);
+            if (X.found)
+                g.x = X.value;
+            if (Y.found)
+                g.y = Y.value;
             return g;
         }
 
-        // snap_outside: pull g flush AGAINST sg's opposite edges
-        CBox snapOutside(CBox g, const CBox& sg, double d) {
-            if (g.x > sg.x + sg.w && g.x < sg.x + sg.w + d)
-                g.x = sg.x + sg.w; // my left edge to their right
-            else if (g.x + g.w < sg.x && g.x + g.w > sg.x - d)
-                g.x = sg.x - g.w; // my right edge to their left
-            if (g.y > sg.y + sg.h && g.y < sg.y + sg.h + d)
-                g.y = sg.y + sg.h;
-            else if (g.y + g.h < sg.y && g.y + g.h > sg.y - d)
-                g.y = sg.y - g.h;
+        CBox snapOutsideNearest(CBox g, const std::vector<CBox>& others, double d) {
+            SNearest X, Y;
+            for (const auto& O : others) {
+                if (g.x > O.x + O.w && g.x < O.x + O.w + d)
+                    considerNearest(X, O.x + O.w, g.x, O, d);
+                else if (g.x + g.w < O.x && g.x + g.w > O.x - d)
+                    considerNearest(X, O.x - g.w, g.x, O, d);
+                if (g.y > O.y + O.h && g.y < O.y + O.h + d)
+                    considerNearest(Y, O.y + O.h, g.y, O, d);
+                else if (g.y + g.h < O.y && g.y + g.h > O.y - d)
+                    considerNearest(Y, O.y - g.h, g.y, O, d);
+            }
+            if (X.found)
+                g.x = X.value;
+            if (Y.found)
+                g.y = Y.value;
+            return g;
+        }
+
+        CBox snapResizeOutside(CBox g, const std::vector<CBox>& others, double d, bool left, bool right, bool top, bool bottom) {
+            SNearest L, R, T, B;
+            for (const auto& O : others) {
+                // A resize edge only snaps when it is approaching the
+                // neighbour from the outside. Without the direction check a
+                // window already overlapping O could be pulled through it,
+                // and right/bottom candidates compared the candidate's left
+                // or top against the current opposite edge.
+                if (left && g.x > O.x + O.w && g.x < O.x + O.w + d)
+                    considerNearest(L, O.x + O.w, g.x, O, d);
+                if (right && g.x + g.w < O.x && g.x + g.w > O.x - d)
+                    considerNearest(R, O.x - g.w, g.x, O, d);
+                if (top && g.y > O.y + O.h && g.y < O.y + O.h + d)
+                    considerNearest(T, O.y + O.h, g.y, O, d);
+                if (bottom && g.y + g.h < O.y && g.y + g.h > O.y - d)
+                    considerNearest(B, O.y - g.h, g.y, O, d);
+            }
+            if (L.found) {
+                g.w += g.x - L.value;
+                g.x = L.value;
+            }
+            if (R.found)
+                g.w = R.value - g.x;
+            if (T.found) {
+                g.h += g.y - T.value;
+                g.y = T.value;
+            }
+            if (B.found)
+                g.h = B.value - g.y;
             return g;
         }
     }
@@ -135,6 +218,8 @@ namespace NHyprsnap::Snap {
             damageZone();
         zoneBox.reset();
         zoneMon.reset();
+        zoneV = V_NONE;
+        zoneH = H_NONE;
         lRender.reset();
         pendingMagnet.reset();
         magnetQueued = false;
@@ -156,8 +241,8 @@ namespace NHyprsnap::Snap {
             const double D = (double)g_config.snapDist->value();
             if (D <= 0)
                 return;
-            const auto POS = g_pInputManager->getMouseCoordsInternal();
-            const auto MON = monitorAt(POS);
+            const auto CURSOR = g_pInputManager->getMouseCoordsInternal();
+            const auto MON = monitorAt(CURSOR);
             if (!MON)
                 return;
 
@@ -167,7 +252,8 @@ namespace NHyprsnap::Snap {
             const double B       = std::max((double)*PBORDER, 0.0);
             const auto   WS      = MON->m_activeWorkspace;
 
-            const auto   othersOf = [&](SP<Layout::ITarget> self, auto&& per) {
+            const auto   othersOf = [&](SP<Layout::ITarget> self) {
+                std::vector<CBox> OUT;
                 for (const auto& O : Desktop::windowState()->windows()) {
                     if (!O->m_isMapped || O->isHidden() || !O->m_isFloating || !O->m_target || O->m_target == self)
                         continue;
@@ -176,8 +262,9 @@ namespace NHyprsnap::Snap {
                     if (Fullscreen::controller()->isFullscreen(O))
                         continue;
                     const auto OB = O->m_target->position();
-                    per(CBox{OB.x - B, OB.y - B, OB.w + 2 * B, OB.h + 2 * B});
+                    OUT.push_back(CBox{OB.x - B, OB.y - B, OB.w + 2 * B, OB.h + 2 * B});
                 }
+                return OUT;
             };
 
             if (const auto T = draggedFloatingTarget()) {
@@ -185,9 +272,9 @@ namespace NHyprsnap::Snap {
                 // other visible client (later pulls override earlier ones)
                 const CBox CUR = T->position();
                 CBox       g   = CBox{CUR.x - B, CUR.y - B, CUR.w + 2 * B, CUR.h + 2 * B};
-                g              = snapInside(g, MON->logicalBox(), D);
-                g              = snapInside(g, MON->logicalBoxMinusReserved(), D);
-                othersOf(T, [&](const CBox& o) { g = snapOutside(g, o, D); });
+                g              = snapInsideNearest(g, MON->logicalBox(), D);
+                g              = snapInsideNearest(g, MON->logicalBoxMinusReserved(), D);
+                g              = snapOutsideNearest(g, othersOf(T), D);
 
                 g.x += B;
                 g.y += B;
@@ -226,25 +313,24 @@ namespace NHyprsnap::Snap {
             };
             pullInside(MON->logicalBox());
             pullInside(MON->logicalBoxMinusReserved());
-            othersOf(T, [&](const CBox& o) {
-                // abut the neighbor's opposite edge, like snap_outside
-                if (EL && std::abs(g.x - (o.x + o.w)) < D) {
-                    g.w += g.x - (o.x + o.w);
-                    g.x = o.x + o.w;
-                }
-                if (ER && std::abs(o.x - (g.x + g.w)) < D)
-                    g.w = o.x - g.x;
-                if (ET && std::abs(g.y - (o.y + o.h)) < D) {
-                    g.h += g.y - (o.y + o.h);
-                    g.y = o.y + o.h;
-                }
-                if (EB && std::abs(o.y - (g.y + g.h)) < D)
-                    g.h = o.y - g.y;
-            });
+            g = snapResizeOutside(g, othersOf(T), D, EL, ER, ET, EB);
 
             const CBox RES{g.x + B, g.y + B, g.w - 2 * B, g.h - 2 * B};
-            if (RES.x != CUR.x || RES.y != CUR.y || RES.w != CUR.w || RES.h != CUR.h) {
-                T->setPositionGlobal(RES);
+            const auto  MINRAW = T->minSize().value_or(Vector2D{MIN_WINDOW_SIZE, MIN_WINDOW_SIZE});
+            const auto  MAXRAW = T->maxSize().value_or(Math::VECTOR2D_MAX);
+            const double MINX  = std::max(1.0, std::isfinite(MINRAW.x) ? MINRAW.x : 1.0);
+            const double MINY  = std::max(1.0, std::isfinite(MINRAW.y) ? MINRAW.y : 1.0);
+            const double MAXX  = std::max(MINX, std::isfinite(MAXRAW.x) ? MAXRAW.x : std::numeric_limits<double>::max());
+            const double MAXY  = std::max(MINY, std::isfinite(MAXRAW.y) ? MAXRAW.y : std::numeric_limits<double>::max());
+            const Vector2D SIZE{std::clamp(RES.w, MINX, MAXX), std::clamp(RES.h, MINY, MAXY)};
+            Vector2D       NEWPOS{RES.x, RES.y};
+            if (EL && !ER)
+                NEWPOS.x += RES.w - SIZE.x;
+            if (ET && !EB)
+                NEWPOS.y += RES.h - SIZE.y;
+            const CBox FINAL{NEWPOS, SIZE};
+            if (FINAL.x != CUR.x || FINAL.y != CUR.y || FINAL.w != CUR.w || FINAL.h != CUR.h) {
+                T->setPositionGlobal(FINAL);
                 T->warpPositionSize();
             }
         });
@@ -254,6 +340,10 @@ namespace NHyprsnap::Snap {
         // emissions precede the compositor's lock handling: locked input
         // belongs to the lockscreen
         if (NHyprCommon::sessionLocked()) {
+            reset();
+            return;
+        }
+        if (NHyprCommon::nativeInputCaptureActive()) {
             reset();
             return;
         }
@@ -275,20 +365,26 @@ namespace NHyprsnap::Snap {
         resizeStart.reset();
 
         const auto POS = g_pInputManager->getMouseCoordsInternal();
-        const auto MON = monitorAt(POS);
-        if (!MON)
+        const auto MON = monitorContaining(POS);
+        if (!MON) {
+            if (zoneBox)
+                reset();
+            queueMagnet();
             return;
+        }
 
         // -- aerosnap arming + preview --
         const auto [V, HZ] = screenEdges(MON->logicalBox(), POS, std::max((double)g_config.edge->value(), 1.0));
-        const auto SLOT    = slotFor(V, HZ, MON->logicalBoxMinusReserved());
-        const bool CHANGED =
-            SLOT.has_value() != zoneBox.has_value() || (SLOT && zoneBox && (SLOT->x != zoneBox->x || SLOT->y != zoneBox->y || SLOT->w != zoneBox->w || SLOT->h != zoneBox->h));
+        const auto SLOT    = constrainedZone(T, MON, V, HZ);
+        const bool CHANGED = V != zoneV || HZ != zoneH || SLOT.has_value() != zoneBox.has_value() ||
+            (SLOT && zoneBox && (SLOT->x != zoneBox->x || SLOT->y != zoneBox->y || SLOT->w != zoneBox->w || SLOT->h != zoneBox->h));
         if (CHANGED) {
             const bool HAD = zoneBox.has_value();
             damageZone(); // the outgoing outline's monitor
             zoneBox = SLOT;
             zoneMon = MON;
+            zoneV   = V;
+            zoneH   = HZ;
             damageZone(); // and the incoming one's
             if (!HAD && zoneBox)
                 lRender = Event::bus()->m_events.render.stage.listen([](eRenderStage stage) { onRenderStage(stage); });
@@ -306,6 +402,10 @@ namespace NHyprsnap::Snap {
             reset();
             return;
         }
+        if (NHyprCommon::nativeInputCaptureActive()) {
+            reset();
+            return;
+        }
 
         const auto T = draggedFloatingTarget();
         if (!T) {
@@ -315,14 +415,20 @@ namespace NHyprsnap::Snap {
             resizeStart.reset();
             return;
         }
-        if (zoneBox && zoneMon.lock()) {
+        if (zoneBox) {
             // the slot is the border box; the surface sits inside it, so the
             // border stays on screen (maximize is the one full-bleed state)
             static auto  PBORDER = CConfigValue<Config::INTEGER>("general:border_size");
             const double B       = std::max((double)*PBORDER, 0.0);
-            // dragEnd right after us commits the geometry we set here
-            T->setPositionGlobal(CBox{zoneBox->x + B, zoneBox->y + B, zoneBox->w - 2 * B, zoneBox->h - 2 * B});
-            T->warpPositionSize();
+            // Re-read workarea and client constraints at drop: either can
+            // change after the last pointer motion.
+            if (const auto MON = zoneMon.lock(); MON) {
+                if (const auto FINAL = constrainedZone(T, MON, zoneV, zoneH); FINAL) {
+                    // dragEnd right after us commits the geometry we set here
+                    T->setPositionGlobal(CBox{FINAL->x + B, FINAL->y + B, FINAL->w - 2 * B, FINAL->h - 2 * B});
+                    T->warpPositionSize();
+                }
+            }
         }
         reset();
     }
@@ -351,8 +457,8 @@ namespace NHyprsnap::Snap {
 
         const auto toPhys = [&](const CBox& b) { return CBox{b}.translate(-MON->m_position).scale(MON->m_scale).round(); };
 
-        g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(CRectPassElement::SRectData{.box = toPhys(*zoneBox), .color = fill}));
+        g_pHyprRenderer->addPassElement(makeUnique<CRectPassElement>(CRectPassElement::SRectData{.box = toPhys(*zoneBox), .color = fill}));
         for (const auto& R : zoneStrips(*zoneBox))
-            g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(CRectPassElement::SRectData{.box = toPhys(R), .color = col}));
+            g_pHyprRenderer->addPassElement(makeUnique<CRectPassElement>(CRectPassElement::SRectData{.box = toPhys(R), .color = col}));
     }
 }

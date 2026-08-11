@@ -38,18 +38,18 @@
 // - bell: the notification bell and its unread badge, sitting between the
 //   tray and the battery and riding the tray's own bus link. The one
 //   widget whose state lives in ANOTHER plugin: it reads counts from
-//   hyprnotify's org.hitori.hyprnotify face — State in, Toggle/Peek out —
-//   never from a shared symbol. Left click toggles the shade; hovering it
-//   PEEKS the shade open unpinned after bell_peek_ms.
-// - battery: Android's expressive battery (the Pixel pill), transcribed
-//   1:1 from SystemUI's Compose implementation and drawn natively in the
-//   warm pass (cairo; assets embedded verbatim, see battery.cpp) — digits
-//   inside, Android's attribution ladder to the right (power-save plus >
-//   charge-limit shield > charging bolt > the D cap) and its fill colors:
-//   yellow in power save, green charging OR held at the charge limit,
-//   error red at 20% discharging, white otherwise. State from
-//   /sys/class/power_supply + /sys/firmware/acpi/platform_profile
-//   (hidden on desktops). The old battery-watch.sh alerts live here too: AC
+//   hyprnotify's org.hitori.hyprnotify face — State in, Toggle out — never
+//   from a shared symbol. Left click toggles the shade.
+// - battery: Google Pixel's expressive battery, transcribed from SystemUI
+//   CP2A.260705.006 and drawn natively in the warm pass (cairo; assets
+//   embedded verbatim, see battery.cpp) — exact child rounding, digits inside,
+//   and Pixel's attribution ladder to the right (unknown question > power-save
+//   plus > charge-limit shield > charging bolt > D cap). Yellow belongs to
+//   Battery Saver even while plugged, green to charging/defender, error red to
+//   a bare level <=20%, and white otherwise. Gauge state comes from
+//   /sys/class/power_supply; explicit Linux Battery Saver comes from
+//   net.hadess.PowerProfiles, never ACPI platform_profile (hidden on desktops).
+//   The old battery-watch.sh alerts live here too: AC
 //   plug/unplug, low (20%) and critical (5%, Android's lines) —
 //   edge-triggered, riding the same udev uevents as the gauge, sent as
 //   direct Notify calls over the tray's bus connection (no fork;
@@ -74,9 +74,9 @@
 //   shell completion ($PATH for the command word, filenames after),
 //   Up/Down or C-p/C-n walk the prompt history, readline editing
 //   (C-a/e/b/f/d/h/u/w, M-b/f/d, C-BackSpace), Escape or any click
-//   closes. Entries show a theme icon when one resolves, else the
-//   tasklist's letter fallback — the icon cell always reserved so rows
-//   keep their rhythm (a deliberate step past awesome's collapsing
+//   closes. Entries show a theme icon when one resolves; an unresolved
+//   icon leaves its reserved cell empty so rows keep their rhythm without
+//   substituting a character (a deliberate step past awesome's collapsing
 //   imagebox). Launch counts and history persist in ~/.cache/hyprbar/
 //   (menu_count_file, history_menu), like awesome's.
 // - The strip owns the pointer: hovering the bar never leaks the cursor
@@ -84,8 +84,8 @@
 // - The bar hides while the workspace has a real fullscreen window
 //   (maximized windows respect the reserved strip and keep it visible).
 //
-// Colors/fonts arrive from theme.lua via hl.config plugin values — the C++
-// defaults just mirror the theme.
+// Colors/fonts expose independent hl.config plugin values. Their C++ defaults
+// share the repository's Pixel/AOSP semantic role set.
 //
 // THE TEXTURE RULE, the one thing to know before touching the bar or a widget: a
 // texture cannot be painted by the frame that created it, and creating one
@@ -113,8 +113,8 @@
 // in the wayland event loop as removable sources (torn out before the
 // connection dies), so idle costs zero wakeups and a tray signal lands the
 // same loop iteration; a normally-disarmed timer carries only sd-bus's own
-// rare timeouts and the deferred post-send drain (dispatch is not
-// re-entrant). The clock re-arms to the minute it actually changes on, and
+// rare timeouts, the bounded idle send queue, and the deferred post-send drain
+// (dispatch is not re-entrant). The clock re-arms to the minute it actually changes on, and
 // the battery gauge refreshes from power_supply udev uevents (plug/unplug is
 // instant) with the minute tick as a failsafe; the plug/low/critical alerts
 // ride the same two paths.
@@ -127,13 +127,12 @@
 
 #include "hyprbar.hpp"
 
-using namespace NHyprbar;
-
-HANDLE PHANDLE = nullptr;
-
 namespace NHyprbar {
+    HANDLE PHANDLE = nullptr;
     SBarConfig cfg;
 }
+
+using namespace NHyprbar;
 
 // the minute tick: clock text + battery failsafe read
 static SP<CEventLoopTimer>                                 timer;
@@ -173,11 +172,11 @@ static int luaMenubar(lua_State*) {
 
 // hl.plugin.hyprbar.layout_next/layout_prev() — awesome's awful.layout.inc(±1).
 static int luaLayoutNext(lua_State*) {
-    layoutInc(1);
+    layoutInc(1, Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr);
     return 0;
 }
 static int luaLayoutPrev(lua_State*) {
-    layoutInc(-1);
+    layoutInc(-1, Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr);
     return 0;
 }
 
@@ -214,45 +213,46 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // count as window clicks anywhere else
     NHyprCommon::mustLoadBefore(PHANDLE, "hyprbar", {"hyprnotify", "hyprmax", "hyprclick"});
 
-    // Defaults mirror theme.lua; the config overwrites them from the theme.
+    // Pixel/AOSP semantic defaults from common/theme.hpp. Config keeps every
+    // role independently themeable without forking render paths.
+    namespace Th       = NHyprCommon::Theme;
     cfg.height         = makeShared<Config::Values::CIntValue>("plugin:hyprbar:height", "bar height in logical px (reserve it: monitor reserved top)", 26);
     cfg.fontSize       = makeShared<Config::Values::CIntValue>("plugin:hyprbar:font_size", "text size in logical px (monitor scale applies at raster time)", 12);
     cfg.traySpacing    = makeShared<Config::Values::CIntValue>("plugin:hyprbar:tray_spacing", "px between tray icons (awesome systray_icon_spacing)", 10);
-    cfg.bellPeekMs     = makeShared<Config::Values::CIntValue>("plugin:hyprbar:bell_peek_ms", "hover the bell this long to peek the shade open; 0 = off", 350);
-    cfg.font           = makeShared<Config::Values::CStringValue>("plugin:hyprbar:font", "font family", "Fira Code");
+    cfg.font           = makeShared<Config::Values::CStringValue>("plugin:hyprbar:font", "font family", Th::FONT);
     cfg.terminal       = makeShared<Config::Values::CStringValue>("plugin:hyprbar:terminal", "terminal that runs Terminal=true menubar entries", "alacritty");
-    cfg.colBg          = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_bg", "bar background", 0xff131313);
-    cfg.colFg          = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_fg", "normal text", 0xffaaaaaa);
-    cfg.colMuted       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_muted", "tray letter fallback", 0xff8a97a8);
-    // the ONE colour the bar shares with the shell material — awesome's
-    // fg_focus slot, filled by the glass·ink accent. Everything around it is
-    // deliberately awesome's own palette, so this is the exception.
-    cfg.colFocus       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_focus", "selected menubar entry text (awesome fg_focus)", NHyprCommon::Theme::ACCENT);
-    cfg.colActive      = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_active", "active tag / focused task text", 0xff00ccff);
-    cfg.colActiveBg    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_active_bg", "active tag background", 0xff1e2320);
-    cfg.colEmpty       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_empty", "disabled/placeholder text", 0xff565e6b);
-    cfg.colUrgent      = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_urgent", "urgent text", 0xffc83f11);
-    cfg.colUrgentBg    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_urgent_bg", "urgent background (awesome bg_urgent)", 0xff3f3f3f);
-    cfg.colSquareSel   = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_square_sel", "taglist square, tag holds the focused window", 0xfff0dfaf);
-    cfg.colSquareUnsel = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_square_unsel", "taglist square, occupied tag", 0xffdcdccc);
-    cfg.colFrame       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_frame", "menu panel frame", 0xff3f3f3f);
+    cfg.colBg          = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_bg", "panel container", Th::PANEL);
+    cfg.colFg          = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_fg", "on-surface text", Th::ON_SURFACE);
+    cfg.colMuted       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_muted", "legacy fallback color retained for config compatibility", Th::ON_SURFACE_VARIANT);
+    cfg.colFocus       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_focus", "selected launcher text", Th::PRIMARY);
+    cfg.colActive      = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_active", "active tag and focused task text", Th::PRIMARY);
+    cfg.colActiveBg    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_active_bg", "active and hover state layer", Th::STATE);
+    cfg.colOnActive    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_on_active", "content on a primary fill", Th::ON_PRIMARY);
+    cfg.colEmpty       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_empty", "disabled and placeholder text", Th::ON_SURFACE_DISABLED);
+    cfg.colUrgent      = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_urgent", "error content", Th::ERROR);
+    cfg.colUrgentBg    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_urgent_bg", "error container", Th::ERROR_CONTAINER);
+    cfg.colSquareSel   = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_square_sel", "focused-window tag marker", Th::PRIMARY);
+    cfg.colSquareUnsel = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_square_unsel", "occupied tag marker", Th::ON_SURFACE_VARIANT);
+    cfg.colFrame       = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_frame", "menu outline", Th::OUTLINE);
     cfg.colCharging    = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_charging", "battery fill charging/defending (Android's charging green)", 0xff18cc47);
     cfg.colLow         = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_low", "battery fill at 20% and under (Android's error red)", 0xffff0e01);
     cfg.colSave        = makeShared<Config::Values::CColorValue>("plugin:hyprbar:col_powersave", "battery fill in power save (Android's warning yellow)", 0xffffc917);
 
-    for (const auto& V : {cfg.height, cfg.fontSize, cfg.traySpacing, cfg.bellPeekMs})
+    for (const auto& V : {cfg.height, cfg.fontSize, cfg.traySpacing})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
     for (const auto& V : {cfg.font, cfg.terminal})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
-    for (const auto& V : {cfg.colBg, cfg.colFg, cfg.colMuted, cfg.colFocus, cfg.colActive, cfg.colActiveBg, cfg.colEmpty, cfg.colUrgent, cfg.colUrgentBg, cfg.colSquareSel,
-                          cfg.colSquareUnsel, cfg.colFrame, cfg.colCharging, cfg.colLow, cfg.colSave})
+    for (const auto& V : {cfg.colBg, cfg.colFg, cfg.colMuted, cfg.colFocus, cfg.colActive, cfg.colActiveBg, cfg.colOnActive, cfg.colEmpty, cfg.colUrgent, cfg.colUrgentBg,
+                          cfg.colSquareSel, cfg.colSquareUnsel, cfg.colFrame, cfg.colCharging, cfg.colLow, cfg.colSave})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
 
     buildIconDirs();
+    iconsInit();
     Clock::refresh();
     Battery::init();
     Tray::init();
     Bell::init(); // after Tray: the bell rides the tray's session-bus link
+    Menubar::init();
 
     g_lifecycle.init();
     g_lifecycle.listen(Event::bus()->m_events.render.stage, [](eRenderStage stage) { onRenderStage(stage); });
@@ -339,9 +339,9 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // Colors and fonts heal themselves — they are part of every texture's
     // cache key, so a changed value simply misses and rebuilds. What doesn't
     // is anything resolved from DISK at init: the icon dirs (probed once from
-    // the GTK theme name) and the files found in them. The .desktop scan is
-    // deliberately not redone — those apps aren't config, and the walk is a
-    // few hundred file reads.
+    // the GTK theme name) and the files found in them. Desktop discovery is
+    // worker-owned and independent of the theme, so a config reload does not
+    // restart it.
     g_lifecycle.listen(EV.config.reloaded, []() {
         iconsReload();
         layoutboxReload();
@@ -364,7 +364,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.4.2"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.5.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

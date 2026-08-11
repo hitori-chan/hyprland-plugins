@@ -37,6 +37,7 @@
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
+#include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/layout/target/Target.hpp>
@@ -45,10 +46,14 @@
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/protocols/XDGShell.hpp>
+#include <hyprland/src/xwayland/XSurface.hpp>
 #include <hyprland/src/helpers/memory/Memory.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
+#include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -57,6 +62,9 @@ namespace NHyprplace {
     namespace {
         NHyprCommon::CHop         pendingPlace;
         std::vector<PHLWINDOWREF> placeQueue;
+
+        constexpr size_t MAX_PLACE_QUEUE = 256;
+        constexpr double MAX_RESTORE_AXIS = 16384.0;
 
         // each app's last window box (position + size), surviving relogs; the
         // legacy position-only rows load with a zero size, which stays until
@@ -77,14 +85,51 @@ namespace NHyprplace {
 
         NHyprCommon::CSaver g_saver{saveSpots};
 
+        std::string classKey(PHLWINDOW w) {
+            if (!w)
+                return {};
+            return !w->m_initialClass.empty() ? w->m_initialClass : w->fetchClass();
+        }
+
+        std::optional<CBox> predictWorkarea(PHLWINDOW w) {
+            auto MON = w ? w->m_monitor.lock() : nullptr;
+            if (!MON && Desktop::focusState())
+                MON = Desktop::focusState()->monitor();
+            if (!MON)
+                return std::nullopt;
+            return MON->logicalBoxMinusReserved();
+        }
+
+        Vector2D boundedRestoreSize(PHLWINDOW w, Vector2D desired, const CBox* workarea) {
+            if (!std::isfinite(desired.x) || !std::isfinite(desired.y))
+                desired = {};
+
+            Vector2D MIN{1, 1}, MAX{MAX_RESTORE_AXIS, MAX_RESTORE_AXIS};
+            if (w && !w->m_isX11 && w->m_xdgSurface && w->m_xdgSurface->m_toplevel) {
+                MIN = w->m_xdgSurface->m_toplevel->layoutMinSize();
+                MAX = w->m_xdgSurface->m_toplevel->layoutMaxSize();
+            }
+            MIN.x = std::max(1.0, std::isfinite(MIN.x) ? MIN.x : 1.0);
+            MIN.y = std::max(1.0, std::isfinite(MIN.y) ? MIN.y : 1.0);
+            // xdg-shell represents an unconstrained maximum as zero; do not
+            // mistake that sentinel for a one-pixel upper bound.
+            MAX.x = std::max(MIN.x, std::isfinite(MAX.x) && MAX.x > 1 ? std::min(MAX.x, MAX_RESTORE_AXIS) : MAX_RESTORE_AXIS);
+            MAX.y = std::max(MIN.y, std::isfinite(MAX.y) && MAX.y > 1 ? std::min(MAX.y, MAX_RESTORE_AXIS) : MAX_RESTORE_AXIS);
+            if (workarea) {
+                // A client minimum remains authoritative when it is larger
+                // than the output; otherwise restoration never exceeds the
+                // current usable output, even after a monitor change.
+                MAX.x = std::max(MIN.x, std::min(MAX.x, std::max(1.0, workarea->w)));
+                MAX.y = std::max(MIN.y, std::min(MAX.y, std::max(1.0, workarea->h)));
+            }
+            desired.x = std::clamp(desired.x, MIN.x, MAX.x);
+            desired.y = std::clamp(desired.y, MIN.y, MAX.y);
+            return desired;
+        }
+
         void                rememberSpot(const std::string& cls, const CBox& box) {
-            if (cls.empty())
-                return;
-            const auto IT = g_lastSpot.find(cls);
-            if (IT != g_lastSpot.end() && IT->second == box)
-                return;
-            g_lastSpot[cls] = box;
-            g_saver.dirty();
+            if (NHyprCommon::rememberBox(g_lastSpot, cls, box))
+                g_saver.dirty();
         }
 
         // a float sized to (or past) the whole workarea is maximized in all
@@ -95,6 +140,40 @@ namespace NHyprplace {
             return b.x <= wa.x && b.y <= wa.y && b.x + b.w >= wa.x + wa.w && b.y + b.h >= wa.y + wa.h;
         }
 
+        // The open emission precedes Hyprland's initial fullscreen/maximize
+        // application. Do not place or resize a float while any grant is
+        // still pending, and do not mistake a compositor mode for a normal
+        // client-chosen geometry. This mirrors the target's map-time state
+        // sources instead of trying to infer them from a placeholder box.
+        bool hasFullscreenOrMaximizeGrant(PHLWINDOW w) {
+            if (!w)
+                return false;
+            if (w->m_wantsInitialFullscreen || w->m_wantsInitialMaximize)
+                return true;
+
+            if (w->m_xdgSurface && w->m_xdgSurface->m_toplevel) {
+                const auto& TOP = w->m_xdgSurface->m_toplevel;
+                if (TOP->m_state.requestsFullscreen.value_or(false) || TOP->m_state.requestsMaximize.value_or(false) ||
+                    std::ranges::contains(TOP->m_pendingApply.states, XDG_TOPLEVEL_STATE_FULLSCREEN) ||
+                    std::ranges::contains(TOP->m_pendingApply.states, XDG_TOPLEVEL_STATE_MAXIMIZED))
+                    return true;
+            }
+
+            if (w->m_xwaylandSurface && (w->m_xwaylandSurface->m_fullscreen || w->m_xwaylandSurface->m_maximized ||
+                                         w->m_xwaylandSurface->m_state.requestsFullscreen.value_or(false) || w->m_xwaylandSurface->m_state.requestsMaximize.value_or(false)))
+                return true;
+
+            if (w->m_ruleApplicator) {
+                const auto& STATIC = w->m_ruleApplicator->static_;
+                if (STATIC.fullscreen.value_or(false) || STATIC.maximize.value_or(false) || STATIC.fullscreenStateInternal.value_or(0) != 0 ||
+                    STATIC.fullscreenStateClient.value_or(0) != 0)
+                    return true;
+            }
+
+            const auto MODES = Fullscreen::controller()->getFullscreenModes(w);
+            return MODES.internal != Fullscreen::FSMODE_NONE || MODES.client != Fullscreen::FSMODE_NONE;
+        }
+
         // Fill the initial configure with the remembered size (the
         // window.predictSize emission at the initial commit): the client's
         // first buffer is then already right and the map-time pass only
@@ -102,20 +181,23 @@ namespace NHyprplace {
         // m_initialClass isn't captured that early, so the class comes off
         // the toplevel state directly (applied before this emission).
         void onPredictSize(PHLWINDOW w, Vector2D& size) {
-            if (!w || w->parent() || !NHyprCommon::resizable(w))
+            if (!w || w->parent() || !NHyprCommon::resizable(w) || hasFullscreenOrMaximizeGrant(w))
                 return;
-            const auto CLS = w->fetchClass();
+            const auto CLS = classKey(w);
             if (CLS.empty())
                 return;
             const auto IT = g_lastSpot.find(CLS);
             if (IT == g_lastSpot.end() || IT->second.w <= 5 || IT->second.h <= 5)
                 return;
-            size = IT->second.size();
+            const auto WA = predictWorkarea(w);
+            size         = boundedRestoreSize(w, IT->second.size(), WA ? &*WA : nullptr);
         }
 
         void placeWindow(PHLWINDOW w) {
             // X11 override-redirect surfaces (menus, tooltips) place themselves
             if (!w || !w->m_isMapped || !w->m_isFloating || w->isX11OverrideRedirect() || !w->m_target || Fullscreen::controller()->isFullscreen(w))
+                return;
+            if (hasFullscreenOrMaximizeGrant(w))
                 return;
             const auto WS  = w->m_workspace;
             const auto MON = w->m_monitor.lock();
@@ -168,11 +250,11 @@ namespace NHyprplace {
             const bool          RESIZABLE = NHyprCommon::resizable(w);
             std::optional<CBox> stored;
             if (!w->m_isX11 && !w->parent())
-                if (const auto IT = g_lastSpot.find(w->m_initialClass); IT != g_lastSpot.end())
+                if (const auto IT = g_lastSpot.find(classKey(w)); IT != g_lastSpot.end())
                     stored = IT->second;
             Vector2D size = CUR.size();
             if (RESIZABLE && stored && stored->w > 5 && stored->h > 5)
-                size = stored->size();
+                size = boundedRestoreSize(w, stored->size(), &WA);
 
             // no_offscreen: nudge the box fully into the workarea AND leave a
             // border's width of margin — the border is drawn outside the box,
@@ -285,6 +367,8 @@ namespace NHyprplace {
         // renders. Several windows can map in one dispatch — queue them all
         // and drain once: re-arming the lock cancels the previous callback,
         // the queue survives.
+        if (!w || placeQueue.size() >= MAX_PLACE_QUEUE)
+            return; // overload falls back to Hyprland's native placement
         placeQueue.emplace_back(w);
         pendingPlace.arm([]() {
             for (const auto& REF : placeQueue)
@@ -302,7 +386,7 @@ namespace NHyprplace {
             return;
         if (const auto MON = w->m_monitor.lock(); MON && coversWorkarea(w->m_target->position(), MON->logicalBoxMinusReserved()))
             return;
-        rememberSpot(w->m_initialClass, w->m_target->position());
+        rememberSpot(classKey(w), w->m_target->position());
     }
 }
 
@@ -341,7 +425,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             g_lifecycle.listen(events.window.predictSize, [](PHLWINDOW w, Vector2D& size) { onPredictSize(w, size); });
     }(Event::bus()->m_events);
 
-    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.1.2"};
+    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.1.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

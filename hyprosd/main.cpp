@@ -16,8 +16,8 @@
 //   get spawns with its stdout on a pipe the event loop drains — two
 //   short forks per keypress instead of the script's shell pipeline, and
 //   render/input never wait on any of it.
-// - Cards carry the `value` hint (the daemon's 4px bar) and no icon: the
-//   daemon's fallback_icon_dir rolls each card its face.
+// - Cards carry the `value` hint (the daemon's 4px bar) and an explicit
+//   freedesktop/AOSP identity icon so the OSD does not look like a random app.
 // - Feedback rides the plugin's own event-loop-integrated session-bus
 //   connection (hyprbar's tray pattern; the daemon's API is the bus name,
 //   never its symbols). Bus death turns the cards off; the keys keep
@@ -28,6 +28,8 @@
 
 #include "common/busclient.hpp"
 #include "common/lifecycle.hpp"
+#include "common/process.hpp"
+#include "wpctl.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/Compositor.hpp>
@@ -42,24 +44,32 @@
 #include <sdbus-c++/sdbus-c++.h>
 #include <spawn.h>
 #include <sys/syscall.h>
-#include <sys/wait.h>
 #include <unistd.h>
 #include <wayland-server-core.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cerrno>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 extern char** environ;
 
-HANDLE        PHANDLE = nullptr;
-
 namespace NHyprosd {
+
+    HANDLE        PHANDLE = nullptr;
+
+    constexpr size_t MAX_ACTION_QUEUE     = 128;
+    constexpr size_t MAX_ACTIVE_CHAINS    = 16;
+    constexpr size_t MAX_ORPHANS          = 32;
+    constexpr size_t MAX_TRACKED_CHILDREN = 32;
 
     // ---- bus links (hyprpad's chassis, one per bus) ----
 
@@ -91,18 +101,18 @@ namespace NHyprosd {
 
     // ---- the cards ----
 
-    static void notify(uint32_t id, const char* summary, const std::string& body, int value) {
+    static void notify(uint32_t id, const char* icon, const char* summary, const std::string& body, int value) {
         if (!sessionBus.conn())
             return;
         try {
             if (!notifyProxy)
                 notifyProxy = sdbus::createProxy(*sessionBus.conn(), sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
-            std::map<std::string, sdbus::Variant> hints{{"urgency", sdbus::Variant{uint8_t{0}}}};
+            std::map<std::string, sdbus::Variant> hints{{"urgency", sdbus::Variant{uint8_t{0}}}, {"x-hitori-osd", sdbus::Variant{true}}};
             if (value >= 0)
                 hints.emplace("value", sdbus::Variant{int32_t{value}});
             notifyProxy->callMethodAsync("Notify")
                 .onInterface("org.freedesktop.Notifications")
-                .withArguments(std::string{"osd"}, id, std::string{}, std::string{summary}, body, std::vector<std::string>{}, hints, 1200)
+                .withArguments(std::string{"osd"}, id, std::string{icon}, std::string{summary}, body, std::vector<std::string>{}, hints, 1200)
                 .uponReplyInvoke([](std::optional<sdbus::Error>, uint32_t) {});
             sessionBus.pollSoon(); // flush the send from the event loop, never from here
         } catch (...) {} // broker gone: teardown is already pending, drop the card
@@ -130,8 +140,22 @@ namespace NHyprosd {
     // sysfs is the truth again (external tools, resume).
     static int             lastSetRaw = -1;
     static Time::steady_tp lastSetAt;
+    static uint64_t        brightnessGeneration = 0;
+    static uint64_t        volumeGeneration     = 0;
+    static uint64_t        micGeneration        = 0;
+    static uint64_t        volumeFeedback       = 0;
+    static uint64_t        micFeedback          = 0;
+
+    static const char* volumeIcon(int pct) {
+        if (pct <= 33)
+            return "audio-volume-low";
+        if (pct <= 66)
+            return "audio-volume-medium";
+        return "audio-volume-high";
+    }
 
     static void            brightnessStep(int dir) {
+        const uint64_t GENERATION = ++brightnessGeneration;
         if (backlightDev.empty() || !systemBus.conn())
             return;
 
@@ -159,10 +183,10 @@ namespace NHyprosd {
             logindProxy->callMethodAsync("SetBrightness")
                 .onInterface("org.freedesktop.login1.Session")
                 .withArguments(std::string{"backlight"}, backlightDev, (uint32_t)raw)
-                .uponReplyInvoke([PCT](std::optional<sdbus::Error> err) {
-                    if (!err)
-                        notify(9992, "Brightness", std::to_string(PCT) + "%", PCT);
-                    else
+                .uponReplyInvoke([PCT, GENERATION](std::optional<sdbus::Error> err) {
+                    if (!err && GENERATION == brightnessGeneration)
+                        notify(9992, "display-brightness-symbolic", "Brightness", std::to_string(PCT) + "%", PCT);
+                    else if (GENERATION == brightnessGeneration)
                         lastSetRaw = -1; // logind refused: drop the trust window so the next press re-reads sysfs
                 });
             systemBus.pollSoon();
@@ -188,17 +212,47 @@ namespace NHyprosd {
     // every set runs (each IS a step), late gets just show the final state.
     struct SChain {
         bool             mic    = false;
+        uint64_t         generation = 0;
         pid_t            setPid = -1, getPid = -1;
         int              pidFd = -1, outFd = -1;
         wl_event_source* pidSrc = nullptr;
         wl_event_source* outSrc = nullptr;
         std::string      out;
+        bool             outputTruncated = false;
     };
     static std::vector<UP<SChain>> chains;
-    static std::vector<pid_t>      orphans; // capped-burst children still owed a waitpid
+    static std::vector<pid_t>      orphans; // children without a live event source
+    static SP<CEventLoopTimer>     orphanTick;
+
+    static size_t trackedChildren() {
+        size_t count = orphans.size();
+        for (const auto& C : chains)
+            count += (C->setPid > 0) + (C->getPid > 0);
+        return count;
+    }
+
+    static bool canTrackChild(bool newChain = true) {
+        return (!newChain || chains.size() < MAX_ACTIVE_CHAINS) && orphans.size() < MAX_ORPHANS && trackedChildren() < MAX_TRACKED_CHILDREN;
+    }
 
     static void                    reapOrphans() {
-        std::erase_if(orphans, [](pid_t p) { return waitpid(p, nullptr, WNOHANG) != 0; });
+        std::erase_if(orphans, [](pid_t p) {
+            const pid_t RESULT = NHyprCommon::reapPid(p);
+            return RESULT > 0 || (RESULT < 0 && errno == ECHILD);
+        });
+        if (orphanTick && g_pEventLoopManager)
+            orphanTick->updateTimeout(orphans.empty() ? std::nullopt : std::optional{std::chrono::milliseconds(100)});
+    }
+
+    static void                    rememberOrphan(pid_t pid) {
+        if (pid <= 0 || std::find(orphans.begin(), orphans.end(), pid) != orphans.end())
+            return;
+        // Every spawn is admitted through canTrackChild(). This guard keeps a
+        // late fallback bounded if the ownership path changes in the future.
+        if (orphans.size() >= MAX_ORPHANS)
+            return;
+        orphans.push_back(pid);
+        reapOrphans();
     }
 
     static void                    chainDone(SChain* c) {
@@ -212,10 +266,16 @@ namespace NHyprosd {
             close(c->outFd);
         // a child that closed its stdout a hair before exiting isn't a zombie
         // yet; hand it to the orphan list to re-reap rather than leak it
-        if (c->setPid > 0 && waitpid(c->setPid, nullptr, WNOHANG) == 0)
-            orphans.push_back(c->setPid);
-        if (c->getPid > 0 && waitpid(c->getPid, nullptr, WNOHANG) == 0)
-            orphans.push_back(c->getPid);
+        const auto detach = [](pid_t& pid) {
+            if (pid <= 0)
+                return;
+            const pid_t CHILD = std::exchange(pid, -1);
+            const pid_t RESULT = NHyprCommon::reapPid(CHILD);
+            if (RESULT == 0)
+                rememberOrphan(CHILD);
+        };
+        detach(c->setPid);
+        detach(c->getPid);
         std::erase_if(chains, [&](const auto& U) { return U.get() == c; });
     }
 
@@ -232,7 +292,12 @@ namespace NHyprosd {
         for (;;) {
             const auto N = read(fd, buf, sizeof(buf));
             if (N > 0) {
-                c->out.append(buf, N);
+                constexpr size_t CAP = 4096;
+                const size_t      KEEP = c->out.size() < CAP ? std::min<size_t>((size_t)N, CAP - c->out.size()) : 0;
+                if (KEEP)
+                    c->out.append(buf, KEEP);
+                if (KEEP != (size_t)N)
+                    c->outputTruncated = true;
                 continue;
             }
             if (N < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
@@ -240,26 +305,28 @@ namespace NHyprosd {
             break;        // EOF or error: the child is done talking
         }
 
-        // wpctl get-volume: "Volume: 0.65" or "Volume: 0.65 [MUTED]" —
-        // formatted through the user locale, so a comma decimal must parse too
-        const bool MUTED = c->out.find("[MUTED]") != std::string::npos;
-        int        pct   = -1;
-        if (const auto P = c->out.find(':'); P != std::string::npos) {
-            auto num = c->out.substr(P + 1);
-            if (const auto CM = num.find(','); CM != std::string::npos)
-                num[CM] = '.';
-            pct = (int)std::lround(std::strtod(num.c_str(), nullptr) * 100.0);
+        if (c->outputTruncated) {
+            chainDone(c);
+            return 0;
         }
+
+        const auto READBACK = Wpctl::parseReadback(c->out);
+        const bool MUTED    = READBACK && READBACK->muted;
+        const int  PCT      = READBACK ? (READBACK->value >= 1.0 ? 100 : (int)std::lround(READBACK->value * 100.0)) : -1;
+        uint64_t&  FEEDBACK = c->mic ? micFeedback : volumeFeedback;
+        const bool NEWER    = READBACK && c->generation > FEEDBACK;
 
         // no parseable readback (no default device, wpctl error): no card —
         // asserting "live"/a percent for a state that never changed lies
-        if (c->mic) {
-            if (MUTED || pct >= 0)
-                notify(9995, "Microphone", MUTED ? "muted" : "live", -1);
-        } else if (MUTED)
-            notify(9993, "Volume", "muted", -1);
-        else if (pct >= 0)
-            notify(9993, "Volume", std::to_string(pct) + "%", std::min(pct, 100));
+        if (NEWER)
+            FEEDBACK = c->generation;
+        if (NEWER && c->mic) {
+            if (MUTED || PCT >= 0)
+                notify(9995, MUTED ? "microphone-sensitivity-muted" : "microphone-sensitivity-high", "Microphone", MUTED ? "muted" : "live", -1);
+        } else if (NEWER && MUTED)
+            notify(9993, "audio-volume-muted", "Volume", "muted", -1);
+        else if (NEWER && PCT >= 0)
+            notify(9993, volumeIcon(PCT), "Volume", std::to_string(PCT) + "%", std::min(PCT, 100));
 
         chainDone(c);
         return 0;
@@ -271,8 +338,15 @@ namespace NHyprosd {
         c->pidSrc = nullptr;
         close(c->pidFd);
         c->pidFd = -1;
-        waitpid(c->setPid, nullptr, WNOHANG);
+        // Hyprland installs SA_NOCLDWAIT, so no child exit status remains to
+        // reap. The pidfd is the completion signal; the following readback is
+        // the authoritative state exposed to the user.
         c->setPid = -1;
+
+        if (!canTrackChild(false)) {
+            chainDone(c);
+            return 0;
+        }
 
         int pfd[2];
         if (pipe2(pfd, O_CLOEXEC | O_NONBLOCK) != 0) {
@@ -292,6 +366,14 @@ namespace NHyprosd {
         }
         c->outFd  = pfd[0];
         c->outSrc = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, c->outFd, WL_EVENT_READABLE, onGetOut, c);
+        if (!c->outSrc) {
+            close(c->outFd);
+            c->outFd = -1;
+            if (NHyprCommon::reapPid(c->getPid) == 0)
+                rememberOrphan(c->getPid);
+            c->getPid = -1;
+            chainDone(c);
+        }
         return 0;
     }
 
@@ -303,30 +385,34 @@ namespace NHyprosd {
             {"wpctl", "set-mute", "@DEFAULT_AUDIO_SOURCE@", "toggle", nullptr},
         };
 
+        if (!canTrackChild())
+            return;
+
         const pid_t PID = spawn(ARGV[a], nullptr);
         if (PID < 0)
             return;
 
-        // a runaway key repeat keeps stepping, only the readback is skipped;
-        // the orphan list re-reaps them (never waitpid(-1): the Executor's
-        // children are not ours to steal)
-        if (chains.size() >= 16) {
-            orphans.push_back(PID);
-            return;
-        }
-
-        auto c    = makeUnique<SChain>();
-        c->mic    = a == MIC_MUTE;
+        const bool MIC = a == MIC_MUTE;
+        auto c         = makeUnique<SChain>();
+        c->mic         = MIC;
+        c->generation  = ++(MIC ? micGeneration : volumeGeneration);
         c->setPid = PID;
         c->pidFd  = (int)syscall(SYS_pidfd_open, PID, 0);
         if (c->pidFd < 0) {
             // no pidfd (EMFILE, ancient kernel): never block the loop on a
             // reap — the orphan list re-reaps it; the card is skipped
-            orphans.push_back(PID);
+            rememberOrphan(PID);
             return;
         }
         fcntl(c->pidFd, F_SETFD, FD_CLOEXEC); // SYS_pidfd_open takes no CLOEXEC flag; keep it out of concurrent spawns
         c->pidSrc = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, c->pidFd, WL_EVENT_READABLE, onSetDone, c.get());
+        if (!c->pidSrc) {
+            close(c->pidFd);
+            c->pidFd = -1;
+            if (NHyprCommon::reapPid(PID) == 0)
+                rememberOrphan(PID);
+            return;
+        }
         chains.push_back(std::move(c));
     }
 
@@ -341,6 +427,8 @@ namespace NHyprosd {
     static void                 enqueue(eAction a) {
         if (!g_pEventLoopManager)
             return; // an unarmable drain must not let the queue grow
+        if (queued.size() >= MAX_ACTION_QUEUE)
+            return; // bounded backpressure under a key-repeat storm
         queued.push_back(a);
         pendingDrain.arm([]() {
             reapOrphans();
@@ -402,6 +490,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     busInit(sessionBus, false, "session");
     busInit(systemBus, true, "system");
+    orphanTick = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { reapOrphans(); }, nullptr);
+    g_pEventLoopManager->addTimer(orphanTick);
     findBacklight();
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "volume_up", luaVolumeUp);
@@ -411,19 +501,30 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_up", luaBrightnessUp);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_down", luaBrightnessDown);
 
-    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.2.1"};
+    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.3.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
     g_lifecycle.resetAll(); // every hop, in one place
     queued.clear();
     while (!chains.empty())
-        chainDone(chains.back().get()); // sources out, fds closed, children reaped as far as WNOHANG goes
+        chainDone(chains.back().get());
     reapOrphans();
+    // Event sources and descriptors are gone. The exact target installs
+    // SA_NOCLDWAIT, so a helper that exits later cannot become a zombie and
+    // must not hold compositor teardown hostage.
     orphans.clear();
+    if (orphanTick && g_pEventLoopManager)
+        g_pEventLoopManager->removeTimer(orphanTick);
+    orphanTick.reset();
     backlightDev.clear();
     backlightMax = 0;
     lastSetRaw   = -1;
+    brightnessGeneration = 0;
+    volumeGeneration     = 0;
+    micGeneration        = 0;
+    volumeFeedback       = 0;
+    micFeedback          = 0;
     sessionBus.close(); // fd sources out BEFORE the connections die
     systemBus.close();
 }

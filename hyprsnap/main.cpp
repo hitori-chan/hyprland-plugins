@@ -10,6 +10,7 @@
 //   plugin:hyprsnap:col_frame      the armed zone's outline color
 
 #include "common/lifecycle.hpp"
+#include "common/theme.hpp"
 
 #include "hyprsnap.hpp"
 
@@ -69,7 +70,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     g_config.edge     = makeShared<Config::Values::CIntValue>("plugin:hyprsnap:edge", "px from a screen edge that arms an aerosnap zone", 16);
     g_config.snapDist = makeShared<Config::Values::CIntValue>("plugin:hyprsnap:snap_distance", "px of magnetic pull between window and screen/client edges", 8);
-    g_config.colFrame = makeShared<Config::Values::CColorValue>("plugin:hyprsnap:col_frame", "armed snap zone outline", 0xff32d6ff);
+    g_config.colFrame = makeShared<Config::Values::CColorValue>("plugin:hyprsnap:col_frame", "armed snap zone outline", NHyprCommon::Theme::PRIMARY);
 
     HyprlandAPI::addConfigValueV2(PHANDLE, g_config.edge);
     HyprlandAPI::addConfigValueV2(PHANDLE, g_config.snapDist);
@@ -83,7 +84,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // no render.stage listener here: snap.cpp connects one only while a zone
     // is armed — the signal fires per window per frame
 
-    return {"hyprsnap", "awesome's awful.mouse.snap", "hitori", "1.3.9"};
+    return {"hyprsnap", "awesome's awful.mouse.snap", "hitori", "1.3.10"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

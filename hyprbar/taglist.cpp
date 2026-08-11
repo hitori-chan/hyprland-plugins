@@ -85,27 +85,54 @@ namespace NHyprbar {
                 // window sits on exactly one workspace here.
                 if (bit != 1u)
                     return;
+                const auto MON = h.mon.lock();
+                if (!MON)
+                    return;
+
+                // Workspace IDs are global in Hyprland. Create a missing tag
+                // on the monitor whose bar was clicked, but never create a
+                // second workspace for an ID already owned elsewhere.
+                auto ws = State::workspaceState()->query().id(h.tag).run();
+                if (!ws)
+                    ws = State::workspaceState()->create(h.tag, MON->m_id);
+                if (!ws)
+                    return;
                 if (super) {
-                    auto ws = State::workspaceState()->query().id(h.tag).run();
-                    if (!ws)
-                        if (const auto M = Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr)
-                            ws = State::workspaceState()->create(h.tag, M->m_id);
-                    if (ws)
-                        std::ignore = Config::Actions::moveToWorkspace(ws, true); // silent — move_to_tag never followed
-                } else
-                    std::ignore = Config::Actions::changeWorkspace(std::to_string(h.tag));
+                    std::ignore = Config::Actions::moveToWorkspace(ws, true); // silent — move_to_tag never followed
+                    return;
+                }
+
+                // A tag owned by another monitor is not a local target. Do
+                // not redirect the click through changeWorkspace(), which
+                // would focus and warp to that monitor unexpectedly.
+                if (ws->m_monitor.lock() != MON || MON->m_activeWorkspace == ws)
+                    return;
+                if (Desktop::focusState() && Desktop::focusState()->monitor() == MON)
+                    std::ignore = Config::Actions::changeWorkspace(ws);
+                else
+                    MON->changeWorkspace(ws, false, true, true); // switch the background output without stealing focus
             }
 
             bool accumulatesScroll() const override {
                 return true;
             }
             void onScrollSteps(int steps, PHLMONITOR mon) override {
+                if (!mon)
+                    return;
                 // awful.tag.viewnext/viewprev, wrapping
                 auto CUR = mon->m_activeWorkspace ? mon->m_activeWorkspace->m_id : 1;
                 if (CUR < 1 || CUR > 9)
                     CUR = 1;
                 const int T = (int)((CUR - 1 + (steps % 9) + 9) % 9) + 1;
-                std::ignore = Config::Actions::changeWorkspace(std::to_string(T));
+                auto ws = State::workspaceState()->query().id(T).run();
+                if (!ws)
+                    ws = State::workspaceState()->create(T, mon->m_id);
+                if (!ws || ws->m_monitor.lock() != mon || mon->m_activeWorkspace == ws)
+                    return;
+                if (Desktop::focusState() && Desktop::focusState()->monitor() == mon)
+                    std::ignore = Config::Actions::changeWorkspace(ws);
+                else
+                    mon->changeWorkspace(ws, false, true, true);
             }
         };
     } // namespace
