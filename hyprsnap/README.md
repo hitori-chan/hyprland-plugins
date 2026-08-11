@@ -1,20 +1,19 @@
 # hyprsnap
 
-Awesome's `awful.mouse.snap`, both behaviors during every floating
-move-drag. (Spawn placement lives in `hyprplace`.)
+Magnetic and edge/corner snapping during floating move drags.
 
-- **Magnetism** — window edges pull flush to the screen, the workarea and
-  the other windows when within `snap_distance`.
-- **Aerosnap** — the cursor at a screen edge arms that half; at two edges,
-  that corner's quarter — outline preview, committed on drop. Either
-  release order works: the button, or Super first.
+- Nearby window and workarea edges pull together within `snap_distance`.
+- Reaching one output edge previews a half; reaching two previews that corner's
+  quarter. Release commits the preview regardless of whether the pointer button
+  or `Super` is released first.
+- Preview and commit honor the client's current size limits and keep the chosen
+  edge anchored. Gaps between outputs do not arm a zone.
 
-Keep the native `general:snap` off: two magnets pull to different spots.
+Disable Hyprland's native `general:snap` to avoid competing policies. Spawn
+placement belongs to `hyprplace`.
 
-## Config
-
-| key | what | default |
+| Key | Purpose | Default |
 |---|---|---|
-| `plugin:hyprsnap:edge` | px from a screen edge that arms a zone | 16 |
-| `plugin:hyprsnap:snap_distance` | px of magnetic pull | 8 |
-| `plugin:hyprsnap:col_frame` | armed zone outline | `32d6ff` |
+| `plugin:hyprsnap:edge` | distance from an output edge that arms a zone | 16 |
+| `plugin:hyprsnap:snap_distance` | magnetic pull distance | 8 |
+| `plugin:hyprsnap:col_frame` | preview outline | `ff9acbff` |
