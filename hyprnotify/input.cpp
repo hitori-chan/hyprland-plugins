@@ -236,8 +236,9 @@ namespace NHyprnotify {
         Model::closeOne(id, Model::R_DISMISSED);
     }
 
-    // Alerting choices stage until Done. Snooze is a separate immediate verb,
-    // so it never commits a policy choice the user only previewed.
+    // Alerting choices stage until Done. Snooze and the timed silences are
+    // separate immediate verbs, so neither commits a policy choice the user
+    // only previewed.
     static void manageEntry(uint32_t id, size_t idx, const std::string& group) {
         const auto N = Model::byId(id);
         if (!N)
@@ -251,6 +252,11 @@ namespace NHyprnotify {
                 centerToggleManage(id);
                 Model::snooze(id);
             }
+            return;
+        }
+        if (EN[idx].kind == eManageEntryKind::SILENCE_TIMED) {
+            centerToggleManage(id);
+            Policy::setSilenceUntil(N->appKey, EN[idx].silenceSeconds);
             return;
         }
         centerChooseManageMode(EN[idx].mode);

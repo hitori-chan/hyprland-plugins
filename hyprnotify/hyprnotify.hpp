@@ -341,9 +341,11 @@ namespace NHyprnotify {
         void        init();
         void        exit();
         bool        silenced(const std::string& appKey);                            // no banner, no sound, ranked quiet
+        int64_t     silenceRemaining(const std::string& appKey);                    // seconds until silence expires; 0 = forever; -1 = not silenced
         bool          priority(const std::string& appKey, const std::string& conversationId); // this chat outranks everything but critical
         eAlertingMode mode(const std::string& appKey, const std::string& conversationId, bool conversation);
         bool          setMode(const std::string& appKey, const std::string& conversationId, bool conversation, eAlertingMode mode);
+        bool          setSilenceUntil(const std::string& appKey, int64_t seconds); // timed silence: 0 = forever, >0 = duration
         void          refreshExpired(); // event-loop/warm only; keeps draw-side reads pure
         void        unsilenceAll(); // the footer chip: one click out of every standing rule
         size_t      silencedCount(); // rules in force — the footer never lets one hide

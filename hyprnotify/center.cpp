@@ -7,7 +7,7 @@
 //
 // RANKING — Android's, without the dividers: critical, then conversations,
 // then normal, then silent; newest first inside each tier. An app's cards
-// BUNDLE into one digest at two, matching the target Pixel GroupHelper.
+// BUNDLE into one digest at four, matching the target Pixel GroupHelper.
 // Declared groups win over automatic app/section groups. Conversation cards
 // remain distinct children: conversation identity and group identity are
 // separate contracts.
@@ -24,7 +24,7 @@
 
 namespace NHyprnotify {
 
-    inline constexpr size_t AUTOGROUP_AT = 2;
+    inline constexpr size_t AUTOGROUP_AT = 4; // AOSP bundles at 4 notifications from same app
 
     // ---- state ----
 

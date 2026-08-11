@@ -16,7 +16,7 @@
 //   history — a dismissed card is gone. Ranking is Android's without the
 //   dividers (critical, marked conversations, the rest of them, normal,
 //   silent; newest first inside each). Declared groups win over automatic
-//   application/section groups, which form at two; conversations remain
+//   application/section groups, which form at four; conversations remain
 //   distinct children. The top item receives deterministic system expansion,
 //   and the count pill alone toggles user expansion. A row's body always fires
 //   its primary exactly as the popup does. Right dismisses; middle remains a

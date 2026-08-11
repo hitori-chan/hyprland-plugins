@@ -69,6 +69,20 @@ namespace NHyprnotify {
         return std::format("{}d", S / 86400);
     }
 
+    // A standing timed silence, in the same buckets ageString uses: the header
+    // reads "App • Silent 15m • 3m" with no glyph, so the line stays one
+    // texture and needs no emoji font to be legible.
+    std::string shortDuration(int64_t seconds) {
+        seconds = std::max<int64_t>(seconds, 0);
+        if (seconds < 60)
+            return std::format("{}s", seconds);
+        if (seconds < 3600)
+            return std::format("{}m", seconds / 60);
+        if (seconds < 86400)
+            return std::format("{}h", seconds / 3600);
+        return std::format("{}d", seconds / 86400);
+    }
+
     const std::string& bodyForDisplay(const SNotif& n) {
         static std::string FALLBACK;
         FALLBACK = n.body;

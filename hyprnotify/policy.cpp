@@ -211,6 +211,26 @@ namespace NHyprnotify::Policy {
         return false;
     }
 
+    int64_t silenceRemaining(const std::string& appKey) {
+        if (appKey.empty())
+            return -1;
+        const auto APP = storeKey(appKey);
+        if (!validKey(APP))
+            return -1;
+        const auto IT = s_silenced.find(APP);
+        if (IT == s_silenced.end())
+            return -1;
+        if (expired(IT->second)) {
+            s_silenced.erase(IT);
+            refreshDerivedSections(appKey, false);
+            s_saver.dirty();
+            return -1;
+        }
+        if (IT->second == 0)
+            return 0;
+        return std::max<int64_t>(0, IT->second - nowEpoch());
+    }
+
     // how many rules are in force — the footer's count, so a silence you set
     // once is never invisible again
     size_t silencedCount() {
@@ -281,6 +301,32 @@ namespace NHyprnotify::Policy {
 
         if (!changed)
             return false;
+        s_saver.dirty();
+        Bus::emitStateSoon();
+        return true;
+    }
+
+    bool setSilenceUntil(const std::string& appKey, int64_t seconds) {
+        if (appKey.empty())
+            return false;
+
+        const auto APP = storeKey(appKey);
+        if (!validKey(APP))
+            return false;
+
+        const size_t NEXT_RULES = s_silenced.size() + (s_silenced.contains(APP) ? 0 : 1);
+        if (NEXT_RULES > MAX_POLICY_RULES)
+            return false;
+
+        const int64_t UNTIL = seconds == 0 ? 0 : nowEpoch() + seconds;
+        const auto    IT    = s_silenced.find(APP);
+        const bool    CHANGED = IT == s_silenced.end() || IT->second != UNTIL;
+
+        if (!CHANGED)
+            return false;
+
+        s_silenced.insert_or_assign(APP, UNTIL);
+        refreshDerivedSections(appKey, true);
         s_saver.dirty();
         Bus::emitStateSoon();
         return true;

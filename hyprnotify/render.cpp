@@ -205,6 +205,7 @@ namespace NHyprnotify {
             renderAll(m_mon.lock(), false);
             warmGate.inRender = false;
             warmGate.rewarmIfStale([]() {
+                Policy::refreshExpired();
                 warmNotifs();
                 damageNotifs();
             });

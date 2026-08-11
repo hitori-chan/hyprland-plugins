@@ -81,6 +81,12 @@ namespace NHyprnotify {
         const double BODYW    = TEXTW;
         const int    BODYWPX  = TEXTWPX;
 
+        // Timed silence indicator: when the app is under a timed mute, show a
+        // clock icon and the time remaining in the header line. Android shows
+        // this in the notification row's metadata area.
+        const int64_t SILENCE_REMAINING = Policy::silenceRemaining(N->appKey);
+        const bool    TIMED_SILENCE     = SILENCE_REMAINING > 0;
+
         double       th = 0;
         const double TY = box.y + ROW_PADT;
 
@@ -91,6 +97,11 @@ namespace NHyprnotify {
             SB += " <span foreground=\"";
             SB += SUBHEX;
             SB += "\">• ";
+            if (TIMED_SILENCE) {
+                SB += "Silent ";
+                SB += shortDuration(SILENCE_REMAINING);
+                SB += " • ";
+            }
             SB += AGE;
             SB += "</span>";
             const auto LINE = cachedText(SB, COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
@@ -119,6 +130,11 @@ namespace NHyprnotify {
             auto& KB = scratch();
             if (ST.headerHasApp) {
                 appendEsc(KB, N->appName);
+                KB += " • ";
+            }
+            if (TIMED_SILENCE) {
+                KB += "Silent ";
+                KB += shortDuration(SILENCE_REMAINING);
                 KB += " • ";
             }
             KB += AGE;
@@ -398,20 +414,34 @@ namespace NHyprnotify {
         return std::to_string(seconds) + " sec";
     }
 
+    // Android's timed mute durations: 15 minutes, 1 hour, 2 hours, Forever.
+    // These appear directly under a staged Silent choice.
+    static constexpr std::array<std::pair<const char*, int64_t>, 4> SILENCE_DURATIONS = {
+        {{"15 minutes", 15 * 60}, {"1 hour", 60 * 60}, {"2 hours", 2 * 60 * 60}, {"Forever", 0}}
+    };
+
     std::vector<SMenuEntry> menuEntries(const SP<SNotif>& N, bool bundle) {
         std::vector<SMenuEntry> out;
         const auto              SELECTED = centerManageMode();
         if (!bundle && !N->conversationId.empty())
-            out.push_back({eControlIcon::PRIORITY, "Priority", "Show at the top and alert", eManageEntryKind::ALERTING, Policy::eAlertingMode::PRIORITY,
+            out.push_back({eControlIcon::PRIORITY, "Priority", "Show at the top and alert", eManageEntryKind::ALERTING, Policy::eAlertingMode::PRIORITY, 0,
                            SELECTED == Policy::eAlertingMode::PRIORITY});
-        out.push_back({eControlIcon::NOTIFICATION_ALERT, "Default", "May ring or vibrate based on device settings", eManageEntryKind::ALERTING, Policy::eAlertingMode::DEFAULT,
+        out.push_back({eControlIcon::NOTIFICATION_ALERT, "Default", "May ring or vibrate based on device settings", eManageEntryKind::ALERTING, Policy::eAlertingMode::DEFAULT, 0,
                        SELECTED == Policy::eAlertingMode::DEFAULT});
-        out.push_back({eControlIcon::NOTIFICATION_SILENT, "Silent", "Show quietly without a banner or sound", eManageEntryKind::ALERTING, Policy::eAlertingMode::SILENT,
-                       SELECTED == Policy::eAlertingMode::SILENT});
+        const bool SILENT_STAGED = SELECTED == Policy::eAlertingMode::SILENT;
+        out.push_back({eControlIcon::NOTIFICATION_SILENT, "Silent", "Show quietly without a banner or sound", eManageEntryKind::ALERTING, Policy::eAlertingMode::SILENT, 0,
+                       SILENT_STAGED});
+        // Android's timed mutes: staging Silent reveals the durations directly
+        // under it. Each is its own immediate verb — picking one commits the
+        // silence and closes the panel, so Done stays the persistent choice.
+        if (SILENT_STAGED)
+            for (const auto& [LABEL, SECONDS] : SILENCE_DURATIONS)
+                out.push_back({eControlIcon::SNOOZE, LABEL, "", eManageEntryKind::SILENCE_TIMED, Policy::eAlertingMode::SILENT, SECONDS, false});
+
         if (!bundle && !Model::vanishes(N)) {
             const auto SECONDS = std::max<int64_t>(cfg.snoozeSeconds->value(), 0);
             out.push_back({eControlIcon::SNOOZE, "Snooze " + snoozeDurationLabel(SECONDS), "Hide and alert again later", eManageEntryKind::SNOOZE,
-                           Policy::eAlertingMode::DEFAULT, false});
+                           Policy::eAlertingMode::DEFAULT, 0, false});
         }
         return out;
     }

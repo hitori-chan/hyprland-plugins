@@ -129,8 +129,8 @@ namespace NHyprnotify {
     double damageMargin(PHLMONITOR m);
     bool                    liveBlurNeeded(); // only visible translucent glass requests the compositor blur path
 
-    inline constexpr double PIXEL_SHADE_RADIUS    = 32;
-    inline constexpr double PIXEL_INTERNAL_RADIUS = 4;
+    inline constexpr double PIXEL_SHADE_RADIUS    = 16; // heritage card radius
+    inline constexpr double PIXEL_INTERNAL_RADIUS = 16; // consistent internal joints
 
     // Pixel's shade and connected-child radii are independent resources.
     // The rounding config remains the outer notification radius override.
@@ -177,6 +177,7 @@ namespace NHyprnotify {
     std::string        hexOf(const CHyprColor& c);
     std::string        lastLine(const std::string& body); // the collapsed one-liner: the newest message
     std::string        ageString(const Time::steady_tp& t); // bucketed: "now", "5m", "2h", "3d"
+    std::string        shortDuration(int64_t seconds);       // the same buckets, for a standing timed silence
     const std::string& bodyForDisplay(const SNotif& n); // image alt text after a failed local decode
     const std::string& titleForDisplay(const SNotif& n);
 
@@ -238,6 +239,7 @@ namespace NHyprnotify {
     enum class eManageEntryKind : uint8_t {
         ALERTING,
         SNOOZE,
+        SILENCE_TIMED, // submenu parent for timed silence options
     };
 
     struct SMenuEntry {
@@ -246,6 +248,7 @@ namespace NHyprnotify {
         std::string           description;
         eManageEntryKind      kind;
         Policy::eAlertingMode mode;
+        int64_t               silenceSeconds = 0; // for SILENCE_TIMED: duration in seconds (0 = forever)
         bool                  selected = false;
     };
     std::vector<SMenuEntry> menuEntries(const SP<SNotif>& N, bool bundle = false);
