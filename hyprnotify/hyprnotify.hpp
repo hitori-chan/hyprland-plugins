@@ -83,7 +83,7 @@ namespace NHyprnotify {
     extern HANDLE PHANDLE;
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION                = "7.0.0";
+    inline constexpr const char* VERSION                = "7.0.1";
     inline constexpr int         DEFAULT_ROUNDING       = 28;
     inline constexpr float       DEFAULT_ROUNDING_POWER = 2.f;
 
