@@ -8,6 +8,13 @@ chk "hyprosd: volume up uses the capped relative wpctl command" grep -Fxq "set-v
 chk "hyprosd: volume up readback produces an OSD card" test "$(st)" = "center:0 live:1 dnd:0"
 nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications CloseNotification u 9993 >/dev/null 2>&1; sleep 0.2
 
+: > "$STATE/flood-wpctl"
+dsp "hl.plugin.hyprosd.volume_up()"; sleep 0.5
+chk "hyprosd: flood readback closes at the retained-output cap" test -s "$STATE/flood-wpctl.closed"
+chk "hyprosd: flood readback emits no guessed feedback" test "$(st)" = "center:0 live:0 dnd:0"
+chk "hyprosd: flood leaves the nested compositor responsive" hq_matches '^center:0 live:0 dnd:0$' hyprnotify state
+rm -f "$STATE/flood-wpctl" "$STATE/flood-wpctl.closed"
+
 : > "$STATE/wpctl.log"
 dsp "hl.plugin.hyprosd.volume_down()"; sleep 0.4
 chk "hyprosd: volume down uses the relative wpctl command" grep -Fxq "set-volume @DEFAULT_AUDIO_SINK@ 5%-" "$STATE/wpctl.log"

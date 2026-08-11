@@ -23,6 +23,15 @@ set-mute)
 	esac
 	;;
 get-volume)
+	if [[ -n "${HYPROSD_WPCTL_FLOOD_FILE:-}" && -e "$HYPROSD_WPCTL_FLOOD_FILE" ]]; then
+		# The reader must close this pipe at its retained-output cap. Ignoring
+		# SIGPIPE lets the loop record that the close, rather than a timeout,
+		# stopped the producer.
+		trap '' PIPE
+		while printf 'Volume: 0.56\n' 2>/dev/null; do :; done
+		printf 'closed\n' > "${HYPROSD_WPCTL_FLOOD_FILE}.closed"
+		exit 0
+	fi
 	case "${2:-}" in
 	"@DEFAULT_AUDIO_SINK@") printf 'Volume: 0.56\n' ;;
 	"@DEFAULT_AUDIO_SOURCE@") printf 'Volume: 1.00 [MUTED]\n' ;;

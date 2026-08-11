@@ -50,7 +50,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cerrno>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -293,21 +292,20 @@ namespace NHyprosd {
             const auto N = read(fd, buf, sizeof(buf));
             if (N > 0) {
                 constexpr size_t CAP = 4096;
-                const size_t      KEEP = c->out.size() < CAP ? std::min<size_t>((size_t)N, CAP - c->out.size()) : 0;
-                if (KEEP)
-                    c->out.append(buf, KEEP);
-                if (KEEP != (size_t)N)
+                if (c->out.size() >= CAP || (size_t)N > CAP - c->out.size()) {
+                    // The retained-output cap is also the work cap. Closing
+                    // now gives a noisy producer SIGPIPE instead of letting
+                    // it keep this Wayland callback in its read loop.
                     c->outputTruncated = true;
+                    chainDone(c);
+                    return 0;
+                }
+                c->out.append(buf, (size_t)N);
                 continue;
             }
             if (N < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
                 return 0; // more later
             break;        // EOF or error: the child is done talking
-        }
-
-        if (c->outputTruncated) {
-            chainDone(c);
-            return 0;
         }
 
         const auto READBACK = Wpctl::parseReadback(c->out);
@@ -501,7 +499,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_up", luaBrightnessUp);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_down", luaBrightnessDown);
 
-    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.3.0"};
+    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.3.1"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
