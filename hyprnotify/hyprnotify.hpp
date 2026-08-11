@@ -247,13 +247,17 @@ namespace NHyprnotify {
         SP<ITexture> iconTex;  // bounded content image; avatar only for conversations
         SP<ITexture> identTex; // one application identity used at top-left and as a conversation badge
         SP<ITexture> conversationTex; // explicit/generated shortcut artwork; participant face piles stay separate
+        SP<ITexture> childIconTex;     // 24px sender/source icon for bundle children
         std::string  imageFor, identFor;
         std::string  conversationFor;
+        std::string  childIconFor;
         int          imageIconPx  = 0;
         int          identIconPx = 0;
         int          conversationIconPx = 0;
+        int          childIconPx = 0;
         bool         imageSettled = false, identSettled = false;
         bool         conversationSettled = false;
+        bool         childIconSettled = false;
         uint64_t     pixelsFor = 0;
         int          pixelsIconPx = 0;
     };
@@ -375,6 +379,7 @@ namespace NHyprnotify {
     std::string resolveDesktopEntryIcon(const std::string& entry, int sizePx);
     void        ensureIconTex(SNotif& n, int iconPx);
     void        ensureConversationIcons(SNotif& n, int iconPx);
+    void        ensureChildIcon(SNotif& n, int iconPx);
 
     // (Re)build an action button's icon when action-icons is set and its id (an
     // icon name or a path) changed; clears it when the hint is off.

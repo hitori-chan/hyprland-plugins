@@ -72,8 +72,10 @@ namespace NHyprnotify {
                 ensureBodyImage(IM, (int)std::lround(BODYIMG_H * P.scale));
 
         const bool   LEADICON = !child && hasLeadIcon(*N);
-        const double ICONW    = LEADICON ? ST.iconPx : 0;
-        const double TX       = box.x + ROW_PADX + (ICONW > 0 ? ICONW + ROW_ICON_GAP : 0);
+        const bool   CHILDICON = child; // bundle children get 24px sender icons
+        const double ICONW    = LEADICON ? ST.iconPx : CHILDICON ? 24.0 : 0;
+        const double ICONGAP  = ICONW > 0 ? (CHILDICON ? 16.0 : ROW_ICON_GAP) : 0;
+        const double TX       = box.x + ROW_PADX + (ICONW > 0 ? ICONW + ICONGAP : 0);
         const double MIN_TEXT_W = 1.0 / std::max(P.scale, 0.01);
         const double TEXTW      = std::max(MIN_TEXT_W, box.x + box.w - ROW_PADX - TX - (!child && more ? CONTENT_END : 0));
         const int    TEXTWPX  = std::max(1, (int)std::floor(TEXTW * P.scale));
@@ -96,6 +98,8 @@ namespace NHyprnotify {
             SB += titleForDisplay(*N);
             SB += " <span foreground=\"";
             SB += SUBHEX;
+            SB += "\" size=\"";
+            SB += std::to_string(T.header * PANGO_SCALE);
             SB += "\">• ";
             if (TIMED_SILENCE) {
                 SB += "Silent ";
@@ -632,6 +636,8 @@ namespace NHyprnotify {
         appendEsc(DB, NEWEST->appName);
         DB += " <span foreground=\"";
         DB += SUBHEX;
+        DB += "\" size=\"";
+        DB += std::to_string(T.header * PANGO_SCALE);
         DB += "\">• ";
         DB += std::to_string(D.items.size());
         DB += " • ";
@@ -705,6 +711,8 @@ namespace NHyprnotify {
         appendEsc(HB, NEWEST->appName);
         HB += " <span foreground=\"";
         HB += SUBHEX;
+        HB += "\" size=\"";
+        HB += std::to_string(T.header * PANGO_SCALE);
         HB += "\">• ";
         HB += std::to_string(D.items.size());
         HB += " • ";
@@ -741,6 +749,15 @@ namespace NHyprnotify {
             P.rect(CBox{box.x, cy - (CHILD_GAP + DIVIDER_H) / 2, box.w, DIVIDER_H}, color(cfg.colFrame), 0);
             if (CHOV)
                 P.rect(CBox{box.x, cy, box.w, CH2}, stateLayer(), rJoint(P.scale), RP);
+
+            // Bundle child sender/source icon: 24px circular, matching conversation message avatars
+            constexpr double CHILD_SENDER_ICON = 24.0;
+            if (warmGate.warming)
+                ensureChildIcon(*N, (int)std::lround(CHILD_SENDER_ICON * P.scale));
+            if (!P.warm && N->childIconTex && N->childIconTex->m_texID != 0)
+                P.texCover(N->childIconTex, CBox{box.x + ROW_PADX, cy + (CH2 - CHILD_SENDER_ICON) / 2, CHILD_SENDER_ICON, CHILD_SENDER_ICON},
+                           (int)std::lround(CHILD_SENDER_ICON / 2 * P.scale), RP);
+
             SCard card;
             card.group = D.key;
             renderRow(P, T, N, CBox{box.x, cy, box.w, 0}, true, false, ROW_CHILD, card, true);

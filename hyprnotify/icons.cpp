@@ -641,6 +641,57 @@ namespace NHyprnotify {
         }
     }
 
+    void ensureChildIcon(SNotif& n, int iconPx) {
+        // Bundle children get 24px sender/source icons. Priority:
+        // 1. Conversation participant avatar (if this is a conversation message)
+        // 2. Content image if distinct from app identity (sender-specific icon)
+        // 3. Generated icon from notification identity for visual distinction
+
+        // Build a stable key from sources we'll actually use
+        std::string sourceKey;
+        SP<ITexture> resultTex;
+
+        // Priority 1: Conversation participant (reuse existing avatar infrastructure)
+        if (n.conversation && !n.participants.empty()) {
+            ensureParticipantAvatar(n.participants[0], iconPx);
+            resultTex = n.participants[0].avatarTex;
+            sourceKey = "__child_participant:" + n.participants[0].key;
+        }
+        // Priority 2: Content image if it's sender-specific (not the app icon)
+        else if (!n.image.empty() && n.image != n.identity && n.iconTex && n.iconTex->m_texID != 0) {
+            resultTex = n.iconTex;
+            sourceKey = "__child_content:" + n.image;
+        }
+        // Priority 3: Generate distinctive icon from notification identity
+        else {
+            // Use (summary + id) for uniqueness within the bundle
+            const std::string IDENTITY = n.summary + ":" + std::to_string(n.id);
+            sourceKey = "__child_generated:" + IDENTITY;
+
+            if (n.childIconFor != sourceKey || n.childIconPx != iconPx) {
+                n.childIconTex.reset();
+                n.childIconFor = sourceKey;
+                n.childIconPx = iconPx;
+                n.childIconSettled = false;
+            }
+
+            if (!n.childIconSettled) {
+                const std::string INITIALS = n.summary.empty() ? "?" : Pixel::initials(n.summary);
+                n.childIconTex = generatedAvatar(IDENTITY, INITIALS, iconPx);
+                n.childIconSettled = n.childIconTex != nullptr;
+            }
+            resultTex = n.childIconTex;
+        }
+
+        // Update cache state for priorities 1 & 2
+        if (n.childIconFor != sourceKey || n.childIconPx != iconPx) {
+            n.childIconTex = resultTex;
+            n.childIconFor = sourceKey;
+            n.childIconPx = iconPx;
+            n.childIconSettled = resultTex != nullptr;
+        }
+    }
+
     void ensureActionIcon(SNotif& n, SAction& a, int iconPx) {
         if (!n.actionIcons) {
             a.iconTex.reset();
