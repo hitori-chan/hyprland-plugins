@@ -22,8 +22,8 @@
 //
 // Both are keyed by what the shade already groups by, so nothing here is a
 // per-app branch in code — it is per-app state the user typed with a click.
-// Silence keys on the app; priority keys on the app plus the sender, because
-// one chat app carries many people.
+// Silence keys on the app; priority keys on the app plus the stable
+// conversation ID, because one chat app carries many conversations.
 
 #include "common/persist.hpp"
 
@@ -31,12 +31,12 @@
 
 namespace NHyprnotify::Policy {
 
-    // app key -> when the silence lifts, as a wall-clock epoch second. 0 is
-    // "always", the rule that never lifts. Wall clock and not steady time
-    // because this outlives the session it was set in: a suspend, a reboot
-    // and a week off all have to count against "mute for an hour".
+    // app key -> when the silence lifts, as a wall-clock epoch second. The
+    // current hold surface writes 0 (persistent Silent); nonzero deadlines
+    // remain readable for policy files written by older releases. Wall clock
+    // makes those legacy deadlines elapse across suspend and relog.
     static std::map<std::string, int64_t> s_silenced;
-    static std::set<std::string>          s_priority; // app key + US + sender
+    static std::set<std::string>          s_priority; // app key + US + conversation ID
 
     static int64_t                        nowEpoch() {
         return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -44,27 +44,16 @@ namespace NHyprnotify::Policy {
     static bool expired(int64_t until) {
         return until != 0 && until <= nowEpoch();
     }
-    // "today" is not a duration, it is a time of day: iOS's "Mute for Today"
-    // lasts until tomorrow morning, not for a rolling 24 hours.
-    static int64_t untilTomorrow() {
-        const auto T = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        std::tm    lt{};
-        localtime_r(&T, &lt);
-        const int64_t ELAPSED = (int64_t)lt.tm_hour * 3600 + lt.tm_min * 60 + lt.tm_sec;
-        return std::max<int64_t>(86400 - ELAPSED, 60);
-    }
-
     static std::filesystem::path storePath() {
         return NHyprCommon::statePath("hyprnotify", "policy.tsv");
     }
 
     // One rule per line: a verb, a tab, the key, and for a silence an optional
-    // tab + expiry. Keys are user-facing strings (app names, chat titles) so
-    // they may hold anything but a tab or a newline — the two characters the
+    // tab + expiry. Keys originate in client-supplied app/conversation fields,
+    // so they may hold anything but a tab or a newline — the two characters the
     // format spends. A line that is neither verb is skipped rather than fatal:
     // this file is editable state, and a hostile one must not take the session
-    // down with it. A silence with no expiry field is one written before they
-    // existed, and means always.
+    // down with it. A silence with no expiry field is persistent.
     static void load() {
         s_silenced.clear();
         s_priority.clear();
@@ -112,7 +101,7 @@ namespace NHyprnotify::Policy {
 
     // The format spends exactly two characters: a tab between the verb and
     // its key, a newline between rows. EVERY key here arrives from the wire
-    // — an app name, the desktop-entry hint, a chat's title — so one holding
+    // — an app name, the desktop-entry hint, a conversation ID — so one holding
     // either would write rows load() reads back as rules the user never set
     // (an app named "x\np\tsomeone" marks a conversation on its own). Scrub
     // on the way in and on the way out alike, or a stored rule would stop
@@ -124,15 +113,35 @@ namespace NHyprnotify::Policy {
         return k;
     }
 
-    // the sender's own line in the store; US separates the two halves
-    static std::string convKey(const std::string& appKey, const std::string& sender) {
-        return storeKey(appKey + "\x1f" + sender);
+    // US separates two independently scrubbed halves. Scrub a client-supplied
+    // US too, or distinct app/conversation pairs could alias the same key.
+    static std::string convKey(const std::string& appKey, const std::string& conversationId) {
+        auto APP = storeKey(appKey), CONVERSATION = storeKey(conversationId);
+        std::ranges::replace(APP, '\x1f', ' ');
+        std::ranges::replace(CONVERSATION, '\x1f', ' ');
+        return APP + "\x1f" + CONVERSATION;
     }
 
-    // Lazy expiry: a lapsed rule is dropped the next time anyone asks about
-    // it, which is every arrival and every paint. No timer earns its keep for
-    // this — nothing has to HAPPEN at the moment a silence lifts, the app
-    // simply banners again the next time it speaks.
+    static void refreshDerivedSections(const std::string& appKey, bool appSilent) {
+        for (const auto& N : notifs)
+            if (N->appKey == appKey && !N->sectionExplicit)
+                N->section = appSilent || N->urgency == 0 ? "silent" : "alerting";
+    }
+
+    static bool pruneExpired() {
+        const auto BEFORE = s_silenced.size();
+        std::erase_if(s_silenced, [](const auto& E) { return expired(E.second); });
+        if (s_silenced.size() == BEFORE)
+            return false;
+        for (const auto& N : notifs)
+            if (!N->sectionExplicit)
+                N->section = s_silenced.contains(storeKey(N->appKey)) || N->urgency == 0 ? "silent" : "alerting";
+        s_saver.dirty();
+        return true;
+    }
+
+    // Lazy expiry: arrivals and event-loop warm passes drop lapsed rules. No
+    // timer earns its keep for this; draw-side count/ranking reads stay pure.
     bool silenced(const std::string& appKey) {
         if (appKey.empty())
             return false;
@@ -142,6 +151,7 @@ namespace NHyprnotify::Policy {
         if (!expired(IT->second))
             return true;
         s_silenced.erase(IT);
+        refreshDerivedSections(appKey, false);
         s_saver.dirty();
         return false;
     }
@@ -149,87 +159,83 @@ namespace NHyprnotify::Policy {
     // how many rules are in force — the footer's count, so a silence you set
     // once is never invisible again
     size_t silencedCount() {
-        std::erase_if(s_silenced, [](const auto& E) { return expired(E.second); });
         return s_silenced.size();
     }
 
-    bool priority(const std::string& appKey, const std::string& sender) {
-        return !appKey.empty() && s_priority.contains(convKey(appKey, sender));
+    void refreshExpired() {
+        pruneExpired();
     }
 
-    // A rule change is retroactive: the cards already in the shade re-rank
-    // and re-badge under it, which is the only reading of "silence this app"
-    // that isn't a lie about the six of its cards you are looking at.
-    void toggleSilence(const std::string& appKey) {
+    bool priority(const std::string& appKey, const std::string& conversationId) {
+        return !appKey.empty() && !conversationId.empty() && s_priority.contains(convKey(appKey, conversationId));
+    }
+
+    eAlertingMode mode(const std::string& appKey, const std::string& conversationId, bool conversation) {
+        if (silenced(appKey))
+            return eAlertingMode::SILENT;
+        if (conversation && priority(appKey, conversationId))
+            return eAlertingMode::PRIORITY;
+        return eAlertingMode::DEFAULT;
+    }
+
+    // The hold surface stages one Android-style channel mode and commits it on
+    // Done. Linux notifications do not expose Android channel IDs, so Silent is
+    // necessarily per application while Priority remains per conversation.
+    // For a conversation target, update both maps as one transaction so the
+    // target cannot remain app-silent and conversation-priority by accident.
+    bool setMode(const std::string& appKey, const std::string& conversationId, bool conversation, eAlertingMode selected) {
         if (appKey.empty())
-            return;
-        const auto KEY = storeKey(appKey);
-        if (const auto IT = s_silenced.find(KEY); IT != s_silenced.end())
-            s_silenced.erase(IT);
-        else
-            s_silenced.emplace(KEY, 0); // the quick toggle is the permanent one
-        s_saver.dirty();
-        notifChanged();
-        Bus::emitStateSoon();
-    }
+            return false;
 
-    // The timed variants iOS puts first: "Mute for 1 Hour", "Mute for Today".
-    // Permanent is still available, but it stops being the only thing a click
-    // can mean — it is the choice people regret, and the one whose rule then
-    // sits in a file nobody looks at. seconds 0 = always, < 0 = today; a
-    // re-silence replaces the standing rule rather than stacking beside it.
-    void silenceFor(const std::string& appKey, int64_t seconds) {
-        if (appKey.empty())
-            return;
-        if (seconds < 0)
-            seconds = untilTomorrow();
-        s_silenced[storeKey(appKey)] = seconds > 0 ? nowEpoch() + seconds : 0;
-        s_saver.dirty();
-        notifChanged();
-        Bus::emitStateSoon();
-    }
+        const auto APP     = storeKey(appKey);
+        const auto CONV    = conversation && !conversationId.empty() ? convKey(appKey, conversationId) : std::string{};
+        bool       changed = false;
 
-    void unsilence(const std::string& appKey) {
-        if (appKey.empty() || s_silenced.erase(storeKey(appKey)) == 0)
-            return;
+        if (selected == eAlertingMode::SILENT) {
+            const auto IT = s_silenced.find(APP);
+            changed |= IT == s_silenced.end() || IT->second != 0;
+            s_silenced.insert_or_assign(APP, 0);
+        } else
+            changed |= s_silenced.erase(APP) > 0;
+
+        if (!CONV.empty()) {
+            if (selected == eAlertingMode::PRIORITY)
+                changed |= s_priority.insert(CONV).second;
+            else
+                changed |= s_priority.erase(CONV) > 0;
+        }
+
+        const bool ON = selected == eAlertingMode::PRIORITY;
+        if (!CONV.empty())
+            for (const auto& N : notifs)
+                if (N->appKey == appKey && N->conversationId == conversationId)
+                    N->priority = ON;
+        refreshDerivedSections(appKey, selected == eAlertingMode::SILENT);
+
+        if (!changed)
+            return false;
         s_saver.dirty();
-        notifChanged();
         Bus::emitStateSoon();
+        return true;
     }
 
     void unsilenceAll() {
         if (s_silenced.empty())
             return;
         s_silenced.clear();
-        s_saver.dirty();
-        notifChanged();
-        Bus::emitStateSoon();
-    }
-
-    void togglePriority(const std::string& appKey, const std::string& sender) {
-        if (appKey.empty() || sender.empty())
-            return;
-        const auto KEY = convKey(appKey, sender);
-        const auto IT  = s_priority.find(KEY);
-        const bool ON  = IT == s_priority.end();
-        if (ON)
-            s_priority.insert(KEY);
-        else
-            s_priority.erase(IT);
-        // the paint reads the flag, not the store — ASSIGN it rather than
-        // flipping, so a card whose flag ever drifted lands back in step
         for (const auto& N : notifs)
-            if (N->appKey == appKey && N->summary == sender)
-                N->priority = ON;
+            if (!N->sectionExplicit)
+                N->section = N->urgency == 0 ? "silent" : "alerting";
         s_saver.dirty();
         notifChanged();
         Bus::emitStateSoon();
     }
 
     // "silenced:a,b priority:c,d" — the debug line, and what the gate reads.
-    // A timed rule prints its remaining seconds, so the gate can tell "muted
-    // for an hour" from "muted for good" without reading the clock itself.
+    // A legacy timed rule prints its remaining seconds so diagnostics preserve
+    // the on-disk distinction until that rule expires.
     std::string stateString() {
+        refreshExpired();
         const auto  NOW = nowEpoch();
         std::string out = "silenced:" + std::to_string(silencedCount());
         for (const auto& [K, UNTIL] : s_silenced)

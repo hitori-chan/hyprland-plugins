@@ -10,21 +10,169 @@
 
 #include "hyprnotify.hpp"
 
+#include <cmath>
+
 namespace NHyprnotify::Parse {
 
-    // We advertise body-markup, so the whitelisted Pango tags pass through
-    // live; everything else is neutralized into content. Two client dialects
-    // must both come out right: a markup-aware client escapes its reserved
-    // chars ("a &amp;amp; b"), a naive one sends them raw ("a & b") — a bare
-    // '&'/'<' that forms no entity/tag is escaped so Pango renders it
-    // verbatim either way. Disallowed tags are dropped (spec: "filter them
-    // out"); allowLinks adds <a> (hyperlinks phase). <img> never reaches
-    // here — it is extracted before sanitizing (body-images phase).
-    static bool allowedTag(const std::string& name, bool allowLinks) {
-        return name == "b" || name == "i" || name == "u" || name == "span" || name == "br" || (allowLinks && name == "a");
+    static size_t utf8Prefix(const std::string_view in, size_t maxBytes) {
+        const size_t END = std::min(in.size(), maxBytes);
+        if (END == in.size())
+            return END;
+
+        size_t safe = END;
+        while (safe > 0 && ((unsigned char)in[safe] & 0xC0) == 0x80)
+            safe--;
+        return safe;
     }
 
-    std::string sanitizeMarkup(const std::string& in, bool allowLinks) {
+    std::string clipUtf8(const std::string_view in, const size_t maxBytes) {
+        return std::string{in.substr(0, utf8Prefix(in, maxBytes))};
+    }
+
+    std::string boundedOpaque(const std::string_view in, const size_t maxBytes) {
+        return in.size() <= maxBytes ? std::string{in} : std::string{};
+    }
+
+    static size_t entityEnd(const std::string_view in, const size_t start) {
+        constexpr size_t MAX_ENTITY_BYTES = 10;
+        if (start >= in.size() || in[start] != '&')
+            return std::string_view::npos;
+        const size_t LIMIT = std::min(in.size(), start + MAX_ENTITY_BYTES + 1);
+        for (size_t pos = start + 1; pos < LIMIT; pos++) {
+            if (in[pos] == ';')
+                return pos;
+            if (!std::isalnum((unsigned char)in[pos]) && in[pos] != '#')
+                break;
+        }
+        return std::string_view::npos;
+    }
+
+    static bool supportedEntity(const std::string_view entity) {
+        return entity == "amp" || entity == "lt" || entity == "gt" || entity == "quot" || entity == "apos" || (entity.size() > 1 && entity.front() == '#');
+    }
+
+    // A nested '<' cannot belong to a valid tag. Stopping there means every
+    // byte is inspected at most twice even for malformed '<...<...>' input.
+    static size_t tagEnd(const std::string_view in, const size_t start) {
+        const size_t LIMIT = std::min(in.size(), start + MAX_MARKUP_TAG_BYTES);
+        for (size_t pos = start + 1; pos < LIMIT; pos++) {
+            if (in[pos] == '>')
+                return pos;
+            if (in[pos] == '<')
+                return std::string_view::npos;
+        }
+        return std::string_view::npos;
+    }
+
+    static void appendHref(std::string& out, const std::string_view href) {
+        for (size_t pos = 0; pos < href.size();) {
+            if (href[pos] == '&') {
+                const auto END = entityEnd(href, pos);
+                if (END != std::string_view::npos && supportedEntity(href.substr(pos + 1, END - pos - 1))) {
+                    out.append(href.substr(pos, END - pos + 1));
+                    pos = END + 1;
+                    continue;
+                }
+                out += "&amp;";
+            } else if (href[pos] == '"')
+                out += "&quot;";
+            else if (href[pos] == '\'')
+                out += "&apos;";
+            else if (href[pos] == '<')
+                out += "&lt;";
+            else if (href[pos] == '>')
+                out += "&gt;";
+            else
+                out += href[pos];
+            pos++;
+        }
+    }
+
+    // We advertise body-markup, so only the notification specification's
+    // small tag set crosses the bus boundary. In particular, do not forward
+    // arbitrary Pango <span> attributes: they are a large, implementation-
+    // specific layout surface and are not part of the fd.o contract.
+    static std::optional<std::string> safeTag(const std::string_view raw, bool allowLinks) {
+        if (raw.size() < 3 || raw.front() != '<' || raw.back() != '>')
+            return std::nullopt;
+
+        const auto isNameStart = [](unsigned char C) { return std::isalpha(C); };
+        const auto isNameChar  = [](unsigned char C) { return std::isalpha(C) || std::isdigit(C) || C == '-' || C == '_'; };
+        size_t     POS         = 1;
+        const bool CLOSE       = POS < raw.size() && raw[POS] == '/';
+        if (CLOSE)
+            POS++;
+        const size_t NAME_START = POS;
+        if (POS >= raw.size() || !isNameStart((unsigned char)raw[POS]))
+            return std::nullopt;
+        while (POS < raw.size() && isNameChar((unsigned char)raw[POS]))
+            POS++;
+        std::string LOWER{raw.substr(NAME_START, POS - NAME_START)};
+        std::ranges::transform(LOWER, LOWER.begin(), [](unsigned char C) { return (char)std::tolower(C); });
+
+        const auto skipSpace = [&]() {
+            while (POS < raw.size() && std::isspace((unsigned char)raw[POS]))
+                POS++;
+        };
+        const auto canonical = [&](const char* TAG) -> std::optional<std::string> {
+            skipSpace();
+            if (POS + 1 != raw.size() || raw[POS] != '>')
+                return std::nullopt;
+            return std::string{"<"} + (CLOSE ? "/" : "") + TAG + ">";
+        };
+
+        if (LOWER == "b" || LOWER == "i" || LOWER == "u")
+            return canonical(LOWER.c_str());
+        if (CLOSE) {
+            if (LOWER == "a" && allowLinks)
+                return canonical("a");
+            return std::nullopt;
+        }
+        if (LOWER != "a" || !allowLinks)
+            return std::nullopt;
+
+        // The only legal attribute is the quoted href on an opening <a>.
+        // Rebuild the tag so duplicate or unknown attributes cannot reach
+        // Pango even if its parser accepts them.
+        bool        haveHref = false;
+        std::string href;
+        while (true) {
+            skipSpace();
+            if (POS + 1 == raw.size() && raw[POS] == '>')
+                break;
+            if (POS >= raw.size() || !isNameStart((unsigned char)raw[POS]))
+                return std::nullopt;
+            const size_t ATTR_START = POS++;
+            while (POS < raw.size() && isNameChar((unsigned char)raw[POS]))
+                POS++;
+            std::string ATTR{raw.substr(ATTR_START, POS - ATTR_START)};
+            std::ranges::transform(ATTR, ATTR.begin(), [](unsigned char C) { return (char)std::tolower(C); });
+            skipSpace();
+            if (ATTR != "href" || haveHref || POS >= raw.size() || raw[POS] != '=')
+                return std::nullopt;
+            POS++;
+            skipSpace();
+            if (POS >= raw.size() || (raw[POS] != '"' && raw[POS] != '\''))
+                return std::nullopt;
+            const char   QUOTE       = raw[POS++];
+            const size_t VALUE_START = POS;
+            while (POS < raw.size() && raw[POS] != QUOTE && raw[POS] != '<')
+                POS++;
+            if (POS >= raw.size() || raw[POS] != QUOTE)
+                return std::nullopt;
+            href     = std::string{raw.substr(VALUE_START, POS - VALUE_START)};
+            haveHref = true;
+            POS++;
+        }
+        if (!haveHref)
+            return std::nullopt;
+        std::string out{"<a href=\""};
+        appendHref(out, href);
+        return out + "\">";
+    }
+
+    std::string sanitizeMarkup(const std::string_view raw, bool allowLinks) {
+        const std::string in = clipUtf8(raw, MAX_BODY_BYTES);
         std::string out;
         out.reserve(in.size() + 16);
         for (size_t i = 0; i < in.size();) {
@@ -37,14 +185,14 @@ namespace NHyprnotify::Parse {
                 while (j < in.size() && std::isalpha((unsigned char)in[j]))
                     j++;
                 if (j > NS) {
-                    const auto END = in.find('>', j);
+                    const auto END = tagEnd(in, i);
                     if (END != std::string::npos) {
                         std::string name = in.substr(NS, j - NS);
                         std::ranges::transform(name, name.begin(), [](unsigned char c) { return std::tolower(c); });
-                        if (name == "br")
+                        if (name == "br" && j == END)
                             out += '\n'; // a line break, whatever the card does with it
-                        else if (allowedTag(name, allowLinks))
-                            out += in.substr(i, END - i + 1); // live tag, verbatim (Pango validates attrs)
+                        else if (const auto TAG = safeTag(std::string_view{in}.substr(i, END - i + 1), allowLinks))
+                            out += *TAG;
                         // else: disallowed tag, dropped
                         i = END + 1;
                         continue;
@@ -55,11 +203,11 @@ namespace NHyprnotify::Parse {
                 continue;
             }
             if (CH == '&') {
-                const auto END = in.find(';', i);
-                if (END != std::string::npos && END - i <= 10) {
-                    const auto E = in.substr(i + 1, END - i - 1);
-                    if (E == "amp" || E == "lt" || E == "gt" || E == "quot" || E == "apos" || (E.size() > 1 && E[0] == '#')) {
-                        out += in.substr(i, END - i + 1); // a real entity: Pango decodes it
+                const auto END = entityEnd(in, i);
+                if (END != std::string::npos) {
+                    const auto E = std::string_view{in}.substr(i + 1, END - i - 1);
+                    if (supportedEntity(E)) {
+                        out.append(in, i, END - i + 1); // a real entity: Pango decodes it
                         i = END + 1;
                         continue;
                     }
@@ -73,24 +221,6 @@ namespace NHyprnotify::Parse {
             i++;
         }
         return out;
-    }
-
-    // One quoted attribute out of one tag — the fiddly part of reading a tag a
-    // stranger wrote, so both readers (the <img> src here, the <a> href in
-    // text.cpp) share it rather than each getting it nearly right. The name is
-    // matched case-insensitively against a lowered COPY, whose offsets still
-    // line up with the original the value is cut from. "" if absent.
-    std::string attrValue(const std::string& tag, const std::string& attr) {
-        std::string lower = tag;
-        std::ranges::transform(lower, lower.begin(), [](unsigned char c) { return std::tolower(c); });
-        const auto AT = lower.find(attr);
-        if (AT == std::string::npos)
-            return "";
-        const auto Q = tag.find_first_of("\"'", AT);
-        if (Q == std::string::npos)
-            return "";
-        const auto END = tag.find(tag[Q], Q + 1);
-        return END == std::string::npos ? "" : tag.substr(Q + 1, END - Q - 1);
     }
 
     std::string oneLine(std::string s) {
@@ -117,31 +247,48 @@ namespace NHyprnotify::Parse {
     // markup sanitizer would drop it, resolve each src (path or themed name),
     // and return the thumbnails — removing the tags from the text. http(s)
     // and data: srcs aren't fetched, so they're skipped.
-    std::vector<std::string> extractImages(std::string& body, int sizePx) {
-        std::vector<std::string> out;
+    std::vector<SBodyImage> extractImages(std::string& body, int sizePx) {
+        std::vector<SBodyImage> out;
+        std::string              visible;
+        body = clipUtf8(body, MAX_BODY_BYTES);
+        visible.reserve(body.size());
         for (size_t i = 0; i < body.size();) {
             if (body[i] != '<') {
+                visible += body[i];
                 i++;
                 continue;
             }
+            const auto END = tagEnd(body, i);
+            if (END == std::string::npos) {
+                visible += body[i++];
+                continue;
+            }
             size_t j = i + 1;
-            while (j < body.size() && std::isalpha((unsigned char)body[j]))
+            while (j < END && std::isalpha((unsigned char)body[j]))
                 j++;
             std::string name = body.substr(i + 1, j - i - 1);
             std::ranges::transform(name, name.begin(), [](unsigned char c) { return std::tolower(c); });
             if (name != "img") {
-                i++;
+                visible.append(body, i, END - i + 1);
+                i = END + 1;
                 continue;
             }
-            const auto END = body.find('>', j);
-            if (END == std::string::npos)
-                break;
-            const auto SRC = attrValue(body.substr(i, END - i + 1), "src");
-            if (!SRC.empty() && !SRC.starts_with("http") && !SRC.starts_with("data:"))
-                if (const auto P = resolveImage(SRC, sizePx); !P.empty())
-                    out.push_back(P);
-            body.erase(i, END - i + 1); // drop the tag from the text
+            const std::string_view TAG{body.data() + i, END - i + 1};
+            const auto SRC = attrValue(TAG, "src");
+            const auto ALT = clipUtf8(attrValue(TAG, "alt"), MAX_HINT_TEXT_BYTES);
+            if (out.size() < MAX_BODY_IMAGES && SRC.size() <= MAX_SOURCE_BYTES && !SRC.empty() && !SRC.starts_with("http") && !SRC.starts_with("data:")) {
+                if (const auto P = resolveImage(SRC, sizePx); !P.empty()) {
+                    out.push_back(SBodyImage{.src = P, .alt = ALT});
+                    i = END + 1; // rendered below the text
+                    continue;
+                }
+            }
+            // The spec requires alt text for an image. Keep it in the body
+            // when the source is remote, malformed, or cannot be resolved.
+            visible += ALT;
+            i = END + 1;
         }
+        body = std::move(visible);
         return out;
     }
 
@@ -154,42 +301,60 @@ namespace NHyprnotify::Parse {
         // message max) that would otherwise map + premultiply in full.
         if (W <= 0 || H <= 0 || (int64_t)W * H > (16 << 20) || BPS != 8 || (CH != 3 && CH != 4) || (int64_t)STRIDE < (int64_t)W * CH || DATA.size() < (size_t)STRIDE * (H - 1) + (size_t)W * CH)
             return;
-        n.pixels.resize((size_t)W * H * 4);
-        for (int32_t y = 0; y < H; y++) {
-            const uint8_t* row = DATA.data() + (size_t)y * STRIDE;
-            uint8_t*       out = n.pixels.data() + (size_t)y * W * 4;
-            for (int32_t x = 0; x < W; x++) {
-                const uint8_t R = row[x * CH], G = row[x * CH + 1], B = row[x * CH + 2], A = CH == 4 ? row[x * CH + 3] : 255;
-                out[x * 4]     = (uint8_t)(B * A / 255);
-                out[x * 4 + 1] = (uint8_t)(G * A / 255);
-                out[x * 4 + 2] = (uint8_t)(R * A / 255);
-                out[x * 4 + 3] = A;
-            }
-        }
-        n.pw        = W;
-        n.ph        = H;
-        n.hasPixels = true;
-        // keep only what a card can ever paint: warm frees visible cards'
-        // buffers after upload, but an off-screen card would hold its
-        // full-size pixmap until it scrolls on. The caller's cap covers the
-        // hero layout at any monitor scale; warm still scales exactly.
-        shrinkPixels(n, capPx);
-    }
+        const int CAP = std::max(capPx, 1);
+        const double SCALE = std::min({1.0, (double)CAP / W, (double)CAP / H});
+        const int OUTW = std::max(1, (int)std::lround(W * SCALE));
+        const int OUTH = std::max(1, (int)std::lround(H * SCALE));
 
-    // Join an appended conversation body under the cap: newest lines
-    // append at the back, oldest lines drop off the front whole.
-    std::string joinAppend(const std::string& oldBody, const std::string& add) {
-        std::string joined = oldBody.empty() ? add : oldBody + "\n" + add;
-        constexpr size_t CAP = 8192;
-        while (joined.size() > CAP) {
-            const auto NL = joined.find('\n');
-            if (NL == std::string::npos) {
-                joined.erase(0, joined.size() - CAP);
-                break;
+        n.pixels.resize((size_t)OUTW * OUTH * 4);
+
+        // Keep the common, already-small path integer-only. Large hostile
+        // pixmaps go through the bounded bilinear path below without ever
+        // allocating a full-size intermediate image.
+        if (OUTW == W && OUTH == H) {
+            for (int32_t y = 0; y < H; y++) {
+                const uint8_t* row = DATA.data() + (size_t)y * STRIDE;
+                uint8_t*       out = n.pixels.data() + (size_t)y * W * 4;
+                for (int32_t x = 0; x < W; x++) {
+                    const uint8_t R = row[x * CH], G = row[x * CH + 1], B = row[x * CH + 2], A = CH == 4 ? row[x * CH + 3] : 255;
+                    out[x * 4]     = (uint8_t)(B * A / 255);
+                    out[x * 4 + 1] = (uint8_t)(G * A / 255);
+                    out[x * 4 + 2] = (uint8_t)(R * A / 255);
+                    out[x * 4 + 3] = A;
+                }
             }
-            joined.erase(0, NL + 1);
+        } else {
+            const auto sample = [&](int x, int y, int channel) {
+                const auto* ROW = DATA.data() + (size_t)y * STRIDE;
+                const uint8_t R = ROW[x * CH], G = ROW[x * CH + 1], B = ROW[x * CH + 2], A = CH == 4 ? ROW[x * CH + 3] : 255;
+                if (channel == 3)
+                    return (double)A;
+                const uint8_t VALUE = channel == 0 ? B : channel == 1 ? G : R;
+                return (double)VALUE * A / 255.0; // premultiplied BGRA
+            };
+
+            for (int y = 0; y < OUTH; y++) {
+                const double SY = ((double)y + 0.5) * H / OUTH - 0.5;
+                const int    Y0 = std::clamp((int)std::floor(SY), 0, H - 1);
+                const int    Y1 = std::clamp(Y0 + 1, 0, H - 1);
+                const double FY = std::clamp(SY - Y0, 0.0, 1.0);
+                for (int x = 0; x < OUTW; x++) {
+                    const double SX = ((double)x + 0.5) * W / OUTW - 0.5;
+                    const int    X0 = std::clamp((int)std::floor(SX), 0, W - 1);
+                    const int    X1 = std::clamp(X0 + 1, 0, W - 1);
+                    const double FX = std::clamp(SX - X0, 0.0, 1.0);
+                    uint8_t*     OUT = n.pixels.data() + ((size_t)y * OUTW + x) * 4;
+                    for (int c = 0; c < 4; c++) {
+                        const double TOP = sample(X0, Y0, c) * (1.0 - FX) + sample(X1, Y0, c) * FX;
+                        const double BOT = sample(X0, Y1, c) * (1.0 - FX) + sample(X1, Y1, c) * FX;
+                        OUT[c]           = (uint8_t)std::clamp(std::lround(TOP * (1.0 - FY) + BOT * FY), 0L, 255L);
+                    }
+                }
+            }
         }
-        return joined;
+        n.pw        = OUTW;
+        n.ph        = OUTH;
+        n.hasPixels = true;
     }
 
 } // namespace NHyprnotify::Parse
