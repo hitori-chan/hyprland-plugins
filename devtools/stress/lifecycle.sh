@@ -194,23 +194,7 @@ else
 	bad "teardown: active helpers do not block compositor exit"
 	[[ -n "$NESTED_PID" ]] && kill -KILL "$NESTED_PID" 2>/dev/null || true
 fi
-if [[ -n "$CLIP_PID" ]]; then
-	kill "$CLIP_PID" 2>/dev/null || true
-	wait "$CLIP_PID" 2>/dev/null || true
-	CLIP_PID=""
-fi
-for marker in "$STATE/hang-wpctl" "$STATE/hang-sound"; do
-	pid="$(cat "${marker}.pid" 2>/dev/null)"
-	[[ -n "$pid" ]] && kill "$pid" 2>/dev/null || true
-done
-if [[ "${HYPR_STRESS_KEEP_STATE:-0}" == 1 ]]; then
-	echo "   retained nested evidence under $STATE"
-else
-	rm -rf "$STATE" "$CFG"
-fi
-hyprctl output remove nested-dev >/dev/null 2>&1
-rm -f "$HARNESS/nested.sig" "$HARNESS/nested.wl"
-
+cleanup_harness
 echo
 if [[ ${#FAILED[@]} -eq 0 ]]; then
 	echo "== stress: ALL $PASS CHECKS PASSED =="

@@ -20,9 +20,17 @@ WL=""
 MON_W=0
 MON_H=0
 NBUS=""
+PKG_COPY_DIR=""
+HARNESS_CLEANED=0
+HARNESS_OUTPUT_OWNED=""
 
 # shellcheck source=devtools/stress/harness.sh
 source "$STRESS_DIR/harness.sh"
+# Scenario modules execute their checks immediately. Install the cleanup
+# owner before any module can create a compositor or fixture.
+trap cleanup_harness EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 # shellcheck source=devtools/stress/preflight.sh
 source "$STRESS_DIR/preflight.sh"
 # shellcheck source=devtools/stress/windows.sh

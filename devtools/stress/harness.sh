@@ -17,8 +17,8 @@ normalize_target_pkgconfig() {
 		return 1
 	fi
 
-	local pc="$pkg_path/hyprland.pc"
-	[[ -f "$pc" ]] || {
+	local source_pc="$pkg_path/hyprland.pc"
+	[[ -f "$source_pc" ]] || {
 		echo "missing hyprland.pc under HYPR_DEPLOY_PKG_CONFIG_PATH: $pkg_path" >&2
 		return 1
 	}
@@ -31,9 +31,14 @@ normalize_target_pkgconfig() {
 	}
 
 	# CMake writes the configured install prefix into hyprland.pc even when
-	# cmake --install is redirected to a disposable --prefix. Fix that one
-	# generated line before common.mk resolves the plugin flags.
-	sed -i "s|^prefix=.*|prefix=$prefix|" "$pc"
+	# cmake --install is redirected to a disposable --prefix. Normalize an
+	# owned copy, never metadata the caller passed to the gate.
+	PKG_COPY_DIR="$(mktemp -d "$HARNESS/hypr-pkgconfig.XXXXXX")" || return 1
+	cp -- "$source_pc" "$PKG_COPY_DIR/hyprland.pc" || return 1
+	sed -i "s|^prefix=.*|prefix=$prefix|" "$PKG_COPY_DIR/hyprland.pc" || return 1
+	HYPR_DEPLOY_PKG_CONFIG_PATH="$PKG_COPY_DIR"
+	PKG_CONFIG_PATH="$PKG_COPY_DIR"
+	export HYPR_DEPLOY_PKG_CONFIG_PATH PKG_CONFIG_PATH
 }
 
 validated_nested_pid() {
@@ -139,8 +144,10 @@ expect() { # expect <name> <python-expr-over-cs>
 
 stop_capture() {
 	if [[ -n "$CAPTURE_PID" ]]; then
-		kill "$CAPTURE_PID" 2>/dev/null || true
-		wait "$CAPTURE_PID" 2>/dev/null || true
+		if grep -Fzxq -- "$REPO/devtools/input-capture" "/proc/$CAPTURE_PID/cmdline" 2>/dev/null; then
+			kill "$CAPTURE_PID" 2>/dev/null || true
+			wait "$CAPTURE_PID" 2>/dev/null || true
+		fi
 		CAPTURE_PID=""
 	fi
 }
@@ -153,14 +160,56 @@ kill_nested() { # kill any non-live instance running one of the harness cfgs
 		[[ "$sig" == "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && continue
 		pid="$(head -1 "$s/hyprland.lock" 2>/dev/null)"
 		[[ -n "$pid" ]] || continue
-		grep -qa -- "$HARNESS" "/proc/$pid/cmdline" 2>/dev/null && kill "$pid" 2>/dev/null
+		grep -Fzxq -- "$CFG" "/proc/$pid/cmdline" 2>/dev/null && kill "$pid" 2>/dev/null
 	done
 	sleep 0.6
 }
 
 launch_nested() {
+	if [[ -z "$HARNESS_OUTPUT_OWNED" ]]; then
+		HARNESS_OUTPUT_OWNED=0
+		if [[ -e "$HARNESS/nested.output-owned" ]] || ! hyprctl monitors -j 2>/dev/null | python3 -c 'import json,sys;sys.exit(0 if any(m["name"] == "nested-dev" for m in json.load(sys.stdin)) else 1)'; then
+			HARNESS_OUTPUT_OWNED=1
+			: > "$HARNESS/nested.output-owned"
+		fi
+	fi
 	PATH="$REPO/devtools/fakes:$PATH" HYPROSD_WPCTL_LOG="$STATE/wpctl.log" \
-		HYPROSD_WPCTL_HANG_FILE="$STATE/hang-wpctl" HYPRNOTIFY_SOUND_HANG_FILE="$STATE/hang-sound" \
+		HYPROSD_WPCTL_HANG_FILE="$STATE/hang-wpctl" HYPROSD_WPCTL_FLOOD_FILE="$STATE/flood-wpctl" HYPRNOTIFY_SOUND_HANG_FILE="$STATE/hang-sound" \
 		HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" XDG_CACHE_HOME="$STATE/cache" \
 		bash "$HARNESS/launch.sh" >/dev/null 2>&1
+}
+
+cleanup_harness() {
+	[[ "${HARNESS_CLEANED:-0}" == 1 ]] && return
+	HARNESS_CLEANED=1
+	stop_capture
+	if [[ -n "${CLIP_PID:-}" ]]; then
+		if grep -Fzxq -- "$REPO/devtools/cliphold" "/proc/$CLIP_PID/cmdline" 2>/dev/null; then
+			kill "$CLIP_PID" 2>/dev/null || true
+			wait "$CLIP_PID" 2>/dev/null || true
+		fi
+		CLIP_PID=""
+	fi
+	for marker in "$STATE/hang-wpctl" "$STATE/hang-sound"; do
+		local pid
+		pid="$(cat "${marker}.pid" 2>/dev/null)"
+		if [[ "$pid" =~ ^[0-9]+$ ]] && grep -Fzxq -- "XDG_STATE_HOME=$STATE" "/proc/$pid/environ" 2>/dev/null; then
+			kill "$pid" 2>/dev/null || true
+		fi
+	done
+	kill_nested
+	if [[ "${HYPR_STRESS_KEEP_STATE:-0}" == 1 ]]; then
+		echo "   retained nested evidence under $STATE"
+	else
+		rm -rf -- "$STATE" "$CFG"
+	fi
+	if [[ "${HARNESS_OUTPUT_OWNED:-0}" == 1 ]]; then
+		hyprctl output remove nested-dev >/dev/null 2>&1 || true
+		rm -f -- "$HARNESS/nested.output-owned"
+	fi
+	rm -f -- "$HARNESS/nested.sig" "$HARNESS/nested.wl"
+	if [[ -n "${PKG_COPY_DIR:-}" && "$PKG_COPY_DIR" == "$HARNESS"/hypr-pkgconfig.* ]]; then
+		rm -rf -- "$PKG_COPY_DIR"
+		PKG_COPY_DIR=""
+	fi
 }

@@ -13,11 +13,16 @@ echo "== stress: $BIN =="
 # resolving it here separately is how this check ends up vouching for a tree
 # nothing was built against (a distro hyprland package in /usr next to the
 # fork in /usr/local is enough).
-normalize_target_pkgconfig || exit 1
 if [[ -n "${HYPR_DEPLOY_PKG_CONFIG_PATH:-}" && "${PKG_CONFIG_PATH:-}" != "$HYPR_DEPLOY_PKG_CONFIG_PATH" ]]; then
 	echo "PKG_CONFIG_PATH and HYPR_DEPLOY_PKG_CONFIG_PATH must name the same target package set" >&2
 	exit 1
 fi
+DEPLOY_PC_SOURCE="${HYPR_DEPLOY_PKG_CONFIG_PATH:-}/hyprland.pc"
+DEPLOY_PC_SUM=""
+if [[ -n "${HYPR_DEPLOY_PKG_CONFIG_PATH:-}" ]]; then
+	DEPLOY_PC_SUM="$(sha256sum "$DEPLOY_PC_SOURCE" | cut -d' ' -f1)"
+fi
+normalize_target_pkgconfig || exit 1
 make -C "$REPO/devtools" test >/dev/null || { echo "standalone regressions FAILED"; exit 1; }
 HDR_VER=""
 for d in $(make -s -C "$REPO/hyprnotify" print-hl-cflags 2>/dev/null | tr ' ' '\n' | sed -n 's/^-I//p'); do
@@ -69,6 +74,9 @@ for p in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd
 	make -B "$J" -C "$REPO/$p" >/dev/null 2>&1 || { build_ok=0; echo "  build broke: $p"; }
 done
 [[ $build_ok == 1 ]] && ok "all 8 plugins build" || { echo "plugin build FAILED"; exit 1; }
+if [[ -n "$DEPLOY_PC_SUM" ]]; then
+	chk "deploy pkg-config metadata remained untouched" test "$(sha256sum "$DEPLOY_PC_SOURCE" | cut -d' ' -f1)" = "$DEPLOY_PC_SUM"
+fi
 rm -rf "$STATE"; mkdir -p "$STATE/hyprplace"
 printf '100\t100\t500\t400\tfoot\n200\t80\tlegacyfoot\n' > "$STATE/hyprplace/lastspot.tsv"
 {
