@@ -9,9 +9,9 @@
 #include <fstream>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <utility>
 #include <vector>
+#include <wayland-server-core.h>
 
 namespace {
 
@@ -61,7 +61,9 @@ namespace {
         std::string oversized(MAX_DESKTOP_FILE_BYTES + 1, '#');
         std::ofstream{DIR / "oversized.desktop", std::ios::binary} << oversized;
 
+        wl_event_loop* const                    LOOP = wl_event_loop_create();
         NHyprCommon::CAsyncFileIndex           index;
+        expect(LOOP && index.init(LOOP), "desktop index binds a Wayland event loop");
         NHyprCommon::CAsyncFileIndex::SRequest request;
         request.generation   = 1;
         request.roots        = {DIR};
@@ -74,13 +76,115 @@ namespace {
         std::vector<NHyprCommon::CAsyncFileIndex::SEntry> entries;
         bool                                              complete = false;
         for (const auto DEADLINE = std::chrono::steady_clock::now() + std::chrono::seconds(2); std::chrono::steady_clock::now() < DEADLINE && !complete;) {
+            wl_event_loop_dispatch(LOOP, 10);
             complete = index.poll(1, entries, 8);
-            if (!complete)
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         expect(complete, "desktop index completes");
         expect(entries.size() == 1 && entries.front().path.filename() == "firefox.desktop" && entries.front().contents.size() == firefox.size(),
                "localized desktop file admitted and oversized file rejected");
+        index.exit();
+        wl_event_loop_destroy(LOOP);
+    }
+
+    void expectBoundedIndexCancellation() {
+        const auto STAMP = std::chrono::steady_clock::now().time_since_epoch().count();
+        const auto DIR   = std::filesystem::temp_directory_path() / ("hyprbar-desktop-index-bounds-" + std::to_string(STAMP));
+        std::filesystem::create_directory(DIR);
+        struct SCleanup {
+            std::filesystem::path path;
+            ~SCleanup() {
+                std::error_code error;
+                std::filesystem::remove_all(path, error);
+            }
+        } cleanup{DIR};
+
+        for (size_t i = 0; i < 48; ++i)
+            std::ofstream{DIR / ("indexed-" + std::to_string(i) + ".desktop")} << "[Desktop Entry]\nType=Application\nName=Indexed\n";
+        const auto TOOL = DIR / "tool-launcher";
+        std::ofstream{TOOL} << "#!/bin/sh\n";
+        std::filesystem::permissions(TOOL, std::filesystem::perms::owner_exec, std::filesystem::perm_options::add);
+        std::filesystem::create_directory(DIR / "folder-completion");
+
+        wl_event_loop* const          LOOP = wl_event_loop_create();
+        NHyprCommon::CAsyncFileIndex index;
+        expect(LOOP && index.init(LOOP), "bounded desktop index binds a Wayland event loop");
+
+        NHyprCommon::CAsyncFileIndex::SRequest request;
+        request.generation   = 7;
+        request.roots        = {DIR};
+        request.extensions   = {".desktop"};
+        request.maxEntries   = 12;
+        request.maxVisited   = 64;
+        request.maxFileBytes = MAX_DESKTOP_FILE_BYTES;
+        index.request(std::move(request));
+
+        std::vector<NHyprCommon::CAsyncFileIndex::SEntry> entries;
+        bool                                              complete = false;
+        for (const auto DEADLINE = std::chrono::steady_clock::now() + std::chrono::seconds(2); std::chrono::steady_clock::now() < DEADLINE && !complete;) {
+            wl_event_loop_dispatch(LOOP, 10);
+            std::vector<NHyprCommon::CAsyncFileIndex::SEntry> batch;
+            complete = index.poll(7, batch, 3);
+            entries.insert(entries.end(), std::make_move_iterator(batch.begin()), std::make_move_iterator(batch.end()));
+        }
+        expect(complete, "desktop index completes after bounded polls");
+        expect(entries.size() == 12, "desktop index enforces entry admission across bounded polls");
+
+        request.generation = 8;
+        request.roots      = {DIR};
+        request.extensions.clear();
+        request.namePrefix = "tool-";
+        request.maxEntries = 4;
+        request.maxVisited = 64;
+        request.maxFileBytes = 0;
+        request.recursive    = false;
+        request.executable = true;
+        request.directories = false;
+        index.request(std::move(request));
+        std::vector<NHyprCommon::CAsyncFileIndex::SEntry> commands;
+        complete = false;
+        for (const auto DEADLINE = std::chrono::steady_clock::now() + std::chrono::seconds(2); std::chrono::steady_clock::now() < DEADLINE && !complete;) {
+            wl_event_loop_dispatch(LOOP, 10);
+            complete = index.poll(8, commands, 4);
+        }
+        expect(complete && commands.size() == 1 && commands.front().path.filename() == "tool-launcher" && !commands.front().directory,
+               "desktop index admits executable command completion without recursion");
+
+        request.generation  = 9;
+        request.roots       = {DIR};
+        request.extensions.clear();
+        request.namePrefix  = "folder-";
+        request.maxEntries  = 4;
+        request.maxVisited  = 64;
+        request.maxFileBytes = 0;
+        request.recursive    = false;
+        request.executable  = false;
+        request.directories = true;
+        index.request(std::move(request));
+        std::vector<NHyprCommon::CAsyncFileIndex::SEntry> folders;
+        complete = false;
+        for (const auto DEADLINE = std::chrono::steady_clock::now() + std::chrono::seconds(2); std::chrono::steady_clock::now() < DEADLINE && !complete;) {
+            wl_event_loop_dispatch(LOOP, 10);
+            complete = index.poll(9, folders, 4);
+        }
+        expect(complete && folders.size() == 1 && folders.front().path.filename() == "folder-completion" && folders.front().directory,
+               "desktop index retains directory completion semantics");
+
+        request.generation   = 10;
+        request.roots        = {DIR};
+        request.extensions   = {".desktop"};
+        request.namePrefix.clear();
+        request.maxEntries   = 48;
+        request.maxVisited   = 64;
+        request.maxFileBytes = MAX_DESKTOP_FILE_BYTES;
+        request.recursive    = false;
+        request.executable   = false;
+        request.directories  = false;
+        index.request(std::move(request));
+        index.cancel(11);
+        std::vector<NHyprCommon::CAsyncFileIndex::SEntry> cancelled;
+        expect(index.poll(11, cancelled, 8) && cancelled.empty() && !index.active(11), "desktop index cancellation closes an active helper without stale records");
+        index.exit();
+        wl_event_loop_destroy(LOOP);
     }
 
 } // namespace
@@ -146,6 +250,7 @@ int main() {
     expect(!NHyprCommon::iconIdentityPrefixMatch("enterprise_status_icon_1", "ente"), "partial SNI identity prefix rejected");
 
     expectLocalizedDesktopAdmission();
+    expectBoundedIndexCancellation();
 
     return suite.finish();
 }

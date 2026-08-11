@@ -45,10 +45,13 @@ tooltips, and overlay icons are not implemented.
 
 ## Launcher
 
-Desktop discovery and completion run in bounded cancellable workers. Desktop
-Entry strings are decoded before use; `Exec=` preserves its quoting and field
-code grammar before passing argument boundaries to Hyprland's executor. History
-is stored atomically under `$XDG_CACHE_HOME/hyprbar/` (or `~/.cache/hyprbar/`).
+Desktop discovery and completion run in a bounded cancellable helper process.
+The compositor drains framed results through its event loop; queue backpressure
+pauses the helper, and teardown closes the pipe and terminates its private
+process group without joining filesystem work. Desktop Entry strings are decoded
+before use; `Exec=` preserves its quoting and field-code grammar before passing
+argument boundaries to Hyprland's executor. History is stored atomically under
+`$XDG_CACHE_HOME/hyprbar/` (or `~/.cache/hyprbar/`).
 
 | Keys | Action |
 |---|---|

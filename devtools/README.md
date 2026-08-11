@@ -17,7 +17,7 @@ make -C devtools test-pixel-model
 |---|---|
 | `test-icon-resolver` | theme, symbolic, SVG, and identity lookup |
 | `test-battery-state` | Pixel battery attribution, color, and width |
-| `test-desktop-exec` | Desktop Entry decoding, indexing, and `Exec=` parsing |
+| `test-desktop-exec` | Desktop Entry decoding, event-loop indexing, cancellation, and `Exec=` parsing |
 | `test-hyprosd` | strict `wpctl` readback parsing |
 | `test-pixel-model` | grouping, expansion, conversations, avatars, and bounds |
 | `test-persist` | bounded geometry-state admission |

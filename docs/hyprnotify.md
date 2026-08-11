@@ -62,6 +62,10 @@ never authorize text-derived merging.
 | messages / participants / unread display | 32 / 16 / 999 |
 | cards | `max_notifs` |
 
+Desktop-entry identity lookup uses the same bounded event-loop file-index
+helper as the launcher. Its private process group is terminated during plugin
+exit; no filesystem operation is joined from compositor teardown.
+
 Text truncates at UTF-8 boundaries. Oversized opaque inputs are rejected. The
 accepted Pango subset is `<b>`, `<i>`, `<u>`, `<br>`, and body-only `<a href>`;
 other markup is stripped and malformed markup falls back to plain text.

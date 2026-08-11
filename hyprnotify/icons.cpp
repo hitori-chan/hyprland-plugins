@@ -194,7 +194,7 @@ namespace NHyprnotify {
     void iconsInit() {
         decodeJobs.clear();
         decodeJobs.reserve(MAX_PENDING_IMAGE_RESOURCES);
-        if (!g_pEventLoopManager)
+        if (!g_pEventLoopManager || !g_pCompositor || !desktopIndex.init(g_pCompositor->m_wlEventLoop))
             return;
         decodePoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { pollDecodeJobs(); }, nullptr);
         g_pEventLoopManager->addTimer(decodePoll);

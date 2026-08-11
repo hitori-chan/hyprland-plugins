@@ -11,6 +11,8 @@ KLIBS   := $(shell pkg-config --libs xkbcommon)
 EICFLAGS := $(shell pkg-config --cflags libei-1.0)
 EILIBS   := $(shell pkg-config --libs libei-1.0)
 HYPR_CFLAGS := $(shell pkg-config --cflags hyprland)
+SERVER_CFLAGS := $(shell pkg-config --cflags wayland-server)
+SERVER_LIBS   := $(shell pkg-config --libs wayland-server)
 TEST_CXXFLAGS := -std=c++26 -O2 -Wall -Wextra -Wpedantic -Werror -I..
 TEST_BINS := icon-resolver-test battery-state-test desktop-exec-test \
 	hyprosd-readback-test pixel-model-test persist-test \
@@ -36,7 +38,7 @@ test-battery-state: battery-state-test
 	./battery-state-test
 
 desktop-exec-test: desktop_exec_test.cpp test.hpp ../hyprbar/desktop_exec.hpp ../common/fileindex.hpp ../common/icons.hpp
-	$(CXX) $(TEST_CXXFLAGS) -pthread $< -o $@
+	$(CXX) $(TEST_CXXFLAGS) $(SERVER_CFLAGS) $< -o $@ $(SERVER_LIBS)
 
 test-desktop-exec: desktop-exec-test
 	./desktop-exec-test
