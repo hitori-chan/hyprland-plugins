@@ -19,8 +19,12 @@
 #include <hyprland/src/Compositor.hpp>
 
 #include <functional>
+#include <algorithm>
+#include <cstddef>
+#include <limits>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 namespace NHyprCommon {
 
@@ -109,9 +113,17 @@ namespace NHyprCommon {
     // surface, which is the only reason it is a parameter: the bar warms on
     // every clock tick and wants a longer grace than the shade, which warms
     // only when its model changes.
-    template <typename TValue, uint64_t LIFE = 32>
+    template <typename TValue, uint64_t LIFE = 32, size_t MAX_BYTES = 64ull << 20>
     class CGenCache {
       public:
+        using Measure = std::function<size_t(const TValue&)>;
+
+        CGenCache() : CGenCache(MAX_BYTES, {}) {}
+        CGenCache(size_t maxBytes, Measure measure) : m_maxBytes(maxBytes), m_measure(std::move(measure)) {
+            if (!m_measure)
+                m_measure = [](const TValue&) { return sizeof(TValue); };
+        }
+
         // the entry if present, TOUCHED so this generation's sweep spares it
         TValue* find(const std::string& key) {
             const auto IT = m_map.find(key);
@@ -122,10 +134,28 @@ namespace NHyprCommon {
         }
 
         TValue* insert(const std::string& key, TValue&& val) {
-            auto& E = m_map[key];
-            E.val   = std::move(val);
-            E.gen   = m_gen;
-            return &E.val;
+            const size_t BYTES = entryBytes(key, val);
+            if (BYTES > m_maxBytes)
+                return nullptr; // never retain one hostile raster above the cap
+
+            if (const auto OLD = m_map.find(key); OLD != m_map.end()) {
+                m_bytes -= OLD->second.bytes;
+                OLD->second.val   = std::move(val);
+                OLD->second.gen   = m_gen;
+                OLD->second.bytes = BYTES;
+                m_bytes += BYTES;
+                return &OLD->second.val;
+            }
+
+            while (m_bytes + BYTES > m_maxBytes && !m_map.empty()) {
+                const auto VICTIM = std::min_element(m_map.begin(), m_map.end(), [](const auto& A, const auto& B) { return A.second.gen < B.second.gen; });
+                m_bytes -= VICTIM->second.bytes;
+                m_map.erase(VICTIM);
+            }
+            auto [IT, INSERTED] = m_map.emplace(key, SEntry{.val = std::move(val), .gen = m_gen, .bytes = BYTES});
+            (void)INSERTED;
+            m_bytes += BYTES;
+            return &IT->second.val;
         }
 
         void tick() {
@@ -136,21 +166,40 @@ namespace NHyprCommon {
         // (one monitor, one menu) never asks for the textures it left alone,
         // so ageing on one would evict them for having been skipped.
         void sweep() {
-            if (m_gen > LIFE)
-                std::erase_if(m_map, [this](const auto& E) { return E.second.gen + LIFE < m_gen; });
+            if (m_gen <= LIFE)
+                return;
+            for (auto IT = m_map.begin(); IT != m_map.end();) {
+                if (IT->second.gen + LIFE < m_gen) {
+                    m_bytes -= IT->second.bytes;
+                    IT = m_map.erase(IT);
+                } else
+                    ++IT;
+            }
         }
 
         void clear() {
             m_map.clear();
+            m_bytes = 0;
         }
 
       private:
+        size_t entryBytes(const std::string& key, const TValue& val) const {
+            const size_t VALUE = m_measure(val);
+            if (VALUE > std::numeric_limits<size_t>::max() - key.size())
+                return std::numeric_limits<size_t>::max();
+            return key.size() + VALUE;
+        }
+
         struct SEntry {
             TValue   val;
             uint64_t gen = 0;
+            size_t   bytes = 0;
         };
         std::unordered_map<std::string, SEntry> m_map;
         uint64_t                                m_gen = 0;
+        size_t                                  m_bytes = 0;
+        size_t                                  m_maxBytes;
+        Measure                                  m_measure;
     };
 
 } // namespace NHyprCommon

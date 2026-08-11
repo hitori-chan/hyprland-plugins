@@ -5,7 +5,8 @@
 // removable sources, its rare internal timeouts ride a normally disarmed
 // timer. Steady state is zero armed timers and no wakeups until the fd
 // actually fires; every callback runs on the main thread, never inside
-// render or input.
+// render or input. Input/render send sites use the bounded idle queue below,
+// so message construction is also outside those callbacks.
 //
 // Teardown order is the load-bearing part (the historical SEGV class:
 // sdbus-c++ exceptions in flight while the connection dies unwind through
@@ -27,8 +28,10 @@
 #include <wayland-server-core.h>
 
 #include <chrono>
+#include <deque>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 namespace NHyprCommon {
@@ -50,6 +53,7 @@ namespace NHyprCommon {
         // early message can dispatch against an unregistered object — call
         // sync() once setup is complete.
         void open(bool system, const char* serviceName = nullptr) {
+            m_tearingDown = false;
             try {
                 m_conn = system         ? sdbus::createSystemBusConnection() :
                     serviceName != nullptr ? sdbus::createSessionBusConnection(sdbus::ServiceName{serviceName}) :
@@ -59,6 +63,8 @@ namespace NHyprCommon {
                 const auto PD = m_conn->getEventLoopPollData();
                 m_src         = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, PD.fd, WL_EVENT_READABLE, fdReady, this);
                 m_evtSrc      = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, PD.eventFd, WL_EVENT_READABLE, fdReady, this);
+                if (!m_src || !m_evtSrc)
+                    throw std::runtime_error("failed to register the D-Bus event sources");
             } catch (...) {
                 close();
                 throw;
@@ -70,6 +76,23 @@ namespace NHyprCommon {
         void pollSoon() {
             if (m_poll)
                 m_poll->updateTimeout(std::chrono::milliseconds(2));
+        }
+
+        // Queue message construction/sending that originates in a render or
+        // input callback. sdbus-c++'s async API does not wait for the reply,
+        // but serialising a message and touching the connection still adds
+        // allocations and can throw on the compositor's hot path. The idle
+        // hop keeps that work on the event loop, after the emission/frame has
+        // returned. A bounded drain prevents a repeat storm from monopolising
+        // the loop; remaining sends continue on the next idle turn.
+        void post(std::function<void()> fn) {
+            if (!m_conn || m_tearingDown || !fn || tearingDown())
+                return;
+            if (m_posts.size() >= MAX_POSTS)
+                return; // input/render sends are best effort under overload
+            m_posts.emplace_back(std::move(fn));
+            if (!m_pendingPosts.armed())
+                m_pendingPosts.arm([this]() { drainPosts(); });
         }
 
         // Drain, then hand sd-bus's own poll needs to the event loop: fd
@@ -105,6 +128,9 @@ namespace NHyprCommon {
 
         // sources out first, then owned objects, then the connection
         void teardown() {
+            m_tearingDown = true;
+            m_pendingPosts.reset();
+            m_posts.clear();
             if (m_src)
                 wl_event_source_remove(m_src);
             if (m_evtSrc)
@@ -114,6 +140,11 @@ namespace NHyprCommon {
                 m_poll->updateTimeout(std::nullopt);
             if (dropOwned)
                 dropOwned();
+            // dropOwned() may close a menu or send a final signal. Those
+            // paths share post(), but teardown must not leave a new idle hop
+            // pointing at this connection or a soon-to-be-unloaded plugin.
+            m_pendingPosts.reset();
+            m_posts.clear();
             m_conn.reset();
         }
 
@@ -136,11 +167,39 @@ namespace NHyprCommon {
             return 0;
         }
 
+        void drainPosts() {
+            m_pendingPosts.reset();
+            if (!m_conn) {
+                m_posts.clear();
+                return;
+            }
+
+            size_t count = 0;
+            while (!m_posts.empty() && count++ < 64) {
+                auto FN = std::move(m_posts.front());
+                m_posts.pop_front();
+                try {
+                    FN();
+                } catch (...) {
+                    // Send sites already treat a dying peer as a dropped
+                    // request. Never let an sdbus exception unwind through
+                    // the Wayland idle callback.
+                }
+            }
+
+            if (!m_posts.empty() && m_conn && !tearingDown())
+                m_pendingPosts.arm([this]() { drainPosts(); });
+        }
+
+        static constexpr size_t            MAX_POSTS = 256;
         std::unique_ptr<sdbus::IConnection> m_conn;
         SP<CEventLoopTimer>                 m_poll;
         wl_event_source*                    m_src    = nullptr;
         wl_event_source*                    m_evtSrc = nullptr;
         CHop                                m_pendingDrop;
+        CHop                                m_pendingPosts;
+        std::deque<std::function<void()>>   m_posts;
+        bool                                m_tearingDown = false;
     };
 
 } // namespace NHyprCommon

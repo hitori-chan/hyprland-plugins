@@ -15,10 +15,26 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
 namespace NHyprCommon {
+
+    inline bool iconIdentityPrefixMatch(std::string_view identifier, std::string_view candidate) {
+        if (candidate.size() < 3 || candidate.size() >= identifier.size() || !identifier.starts_with(candidate))
+            return false;
+        const char boundary = identifier[candidate.size()];
+        return boundary == '_' || boundary == '-';
+    }
+
+    inline bool isSvgIconPath(std::string_view source) {
+        if (source.size() < 4)
+            return false;
+        const auto ext = source.substr(source.size() - 4);
+        const auto eq  = [](char value, char lower) { return value == lower || value == lower - ('a' - 'A'); };
+        return ext[0] == '.' && eq(ext[1], 's') && eq(ext[2], 'v') && eq(ext[3], 'g');
+    }
 
     // The XDG data dirs in precedence order: the per-user one first (it
     // overrides), then $XDG_DATA_DIRS. Every freedesktop lookup a plugin
@@ -156,7 +172,11 @@ namespace NHyprCommon {
         themes.push_back("Adwaita"); // the freedesktop-name last resorts
         themes.push_back("AdwaitaLegacy");
 
-        std::vector<std::string> sizeDirs = {"scalable"};
+        // Adwaita stores symbolic marks as symbolic/<context>/name.svg,
+        // unlike themes that use scalable/<context>/ or size/<context>/.
+        // Treat symbolic as a size directory so findIconInDir also probes the
+        // context below it.
+        std::vector<std::string> sizeDirs = {"scalable", "symbolic"};
         for (const int S : {sizePx, 64, 48, 96, 128, 256, 72, 32, 24, 16})
             sizeDirs.push_back(std::to_string(S) + "x" + std::to_string(S));
 

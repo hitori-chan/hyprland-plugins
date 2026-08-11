@@ -35,28 +35,6 @@ namespace NHyprCommon {
         return M.col;
     }
 
-    // the theme fills, converted exactly once
-    inline const CHyprColor& tFill() {
-        static const CHyprColor C{Theme::FILL};
-        return C;
-    }
-    inline const CHyprColor& tFill2() {
-        static const CHyprColor C{Theme::FILL2};
-        return C;
-    }
-    inline const CHyprColor& tAccentDim() {
-        static const CHyprColor C{Theme::ACCENT_DIM};
-        return C;
-    }
-    inline const CHyprColor& tLine() {
-        static const CHyprColor C{Theme::LINE};
-        return C;
-    }
-    inline const CHyprColor& tOnAccent() {
-        static const CHyprColor C{Theme::ON_ACCENT};
-        return C;
-    }
-
     // animations=0 is the shell's motion kill switch
     inline bool animationsOn() {
         static auto V = CConfigValue<Config::INTEGER>("animations:enabled");

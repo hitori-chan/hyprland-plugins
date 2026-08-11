@@ -14,8 +14,10 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <limits>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 namespace NHyprCommon {
@@ -65,11 +67,81 @@ namespace NHyprCommon {
     // state and a hostile one must not take the session down.
     using SBoxStore = std::unordered_map<std::string, CBox>;
 
+    inline constexpr size_t MAX_BOX_STORE_FILE_BYTES = 1024 * 1024;
+    inline constexpr size_t MAX_BOX_STORE_LINE_BYTES = 1024;
+    inline constexpr size_t MAX_BOX_STORE_ROWS       = 4096;
+    inline constexpr size_t MAX_BOX_STORE_CLASS_BYTES = 512;
+    inline constexpr size_t MAX_BOX_STORE_ENTRIES    = 1024;
+
+    inline bool validBoxNumber(double value) {
+        // writeBoxTsv uses llround; stay strictly inside its representable
+        // domain instead of letting hostile state invoke undefined behavior.
+        return std::isfinite(value) && value > (double)std::numeric_limits<long long>::min() && value < (double)std::numeric_limits<long long>::max();
+    }
+
+    inline bool validBoxClass(std::string_view cls) {
+        if (cls.empty() || cls.size() > MAX_BOX_STORE_CLASS_BYTES)
+            return false;
+        return cls.find_first_of(std::string_view{"\t\r\n\0", 4}) == std::string_view::npos;
+    }
+
+    // The same admission path owns loaded and newly remembered state. False
+    // means invalid, unchanged, or full; callers only need to dirty the store
+    // when this returns true.
+    inline bool rememberBox(SBoxStore& store, std::string_view cls, const CBox& box) {
+        if (!validBoxClass(cls) || !validBoxNumber(box.x) || !validBoxNumber(box.y) || !validBoxNumber(box.w) || !validBoxNumber(box.h) || box.w < 0 || box.h < 0)
+            return false;
+
+        const std::string key{cls};
+        if (const auto IT = store.find(key); IT != store.end()) {
+            if (IT->second == box)
+                return false;
+            IT->second = box;
+            return true;
+        }
+        if (store.size() >= MAX_BOX_STORE_ENTRIES)
+            return false;
+        store.emplace(key, box);
+        return true;
+    }
+
     inline SBoxStore readBoxTsv(const std::filesystem::path& path) {
         SBoxStore     out;
-        std::ifstream f(path);
-        std::string   line;
-        while (std::getline(f, line)) {
+        std::error_code statusError;
+        if (!std::filesystem::is_regular_file(path, statusError))
+            return out;
+        std::ifstream f(path, std::ios::binary);
+        if (!f)
+            return out;
+
+        // One bounded read also covers files that grow after open and special
+        // files whose reported size is not meaningful. Oversized input is
+        // rejected as a unit instead of retaining an arbitrary prefix.
+        std::string contents(MAX_BOX_STORE_FILE_BYTES + 1, '\0');
+        f.read(contents.data(), static_cast<std::streamsize>(contents.size()));
+        const auto READ = static_cast<size_t>(f.gcount());
+        if (READ > MAX_BOX_STORE_FILE_BYTES)
+            return out;
+        contents.resize(READ);
+
+        size_t begin = 0;
+        size_t rows  = 0;
+        while (begin < contents.size() && rows++ < MAX_BOX_STORE_ROWS) {
+            const auto END = contents.find('\n', begin);
+            const auto LEN = (END == std::string::npos ? contents.size() : END) - begin;
+            if (LEN > MAX_BOX_STORE_LINE_BYTES) {
+                if (END == std::string::npos)
+                    break;
+                begin = END + 1;
+                continue;
+            }
+            const std::string line{contents.data() + begin, LEN};
+            if (line.find('\0') != std::string::npos) {
+                if (END == std::string::npos)
+                    break;
+                begin = END + 1;
+                continue;
+            }
             // take the leading tab-terminated numbers; whatever follows is the
             // class, so a class starting with a digit ("0ad") can't be eaten
             double      v[4] = {};
@@ -83,17 +155,35 @@ namespace NHyprCommon {
                 v[n++] = NUM;
                 p      = e + 1;
             }
-            if ((n != 2 && n != 4) || !*p)
+            if ((n != 2 && n != 4) || !*p) {
+                if (END == std::string::npos)
+                    break;
+                begin = END + 1;
                 continue; // neither form, or no class
-            out[p] = n == 4 ? CBox{v[0], v[1], v[2], v[3]} : CBox{v[0], v[1], 0, 0};
+            }
+            bool valid = true;
+            for (int i = 0; i < n; i++)
+                valid = valid && validBoxNumber(v[i]);
+            if (valid && (n != 4 || (v[2] >= 0 && v[3] >= 0)))
+                rememberBox(out, p, n == 4 ? CBox{v[0], v[1], v[2], v[3]} : CBox{v[0], v[1], 0, 0});
+            if (END == std::string::npos)
+                break;
+            begin = END + 1;
         }
         return out;
     }
 
     inline bool writeBoxTsv(const std::filesystem::path& path, const SBoxStore& store) {
         std::ostringstream out;
-        for (const auto& [CLS, B] : store)
+        size_t             rows = 0;
+        for (const auto& [CLS, B] : store) {
+            if (rows >= MAX_BOX_STORE_ENTRIES)
+                break;
+            if (!validBoxNumber(B.x) || !validBoxNumber(B.y) || !validBoxNumber(B.w) || !validBoxNumber(B.h) || B.w < 0 || B.h < 0 || !validBoxClass(CLS))
+                continue;
             out << std::llround(B.x) << '\t' << std::llround(B.y) << '\t' << std::llround(B.w) << '\t' << std::llround(B.h) << '\t' << CLS << '\n';
+            ++rows;
+        }
         return writeAtomic(path, out.str());
     }
 
