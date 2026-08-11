@@ -29,6 +29,8 @@
 
 #include "hyprnotify.hpp"
 
+#include <charconv>
+
 namespace NHyprnotify::Policy {
 
     // app key -> when the silence lifts, as a wall-clock epoch second. The
@@ -37,6 +39,19 @@ namespace NHyprnotify::Policy {
     // makes those legacy deadlines elapse across suspend and relog.
     static std::map<std::string, int64_t> s_silenced;
     static std::set<std::string>          s_priority; // app key + US + conversation ID
+
+    // This is editable, client-influenced state read while the compositor is
+    // starting. Keep every dimension finite: malformed policy must never turn
+    // startup or its diagnostic command into unbounded work.
+    static constexpr size_t MAX_POLICY_FILE_BYTES  = 64 * 1024;
+    static constexpr size_t MAX_POLICY_LINE_BYTES  = 1024;
+    static constexpr size_t MAX_POLICY_ROWS        = 512;
+    static constexpr size_t MAX_POLICY_KEY_BYTES   = 512;
+    // A persistent-silence row has a verb, two separators, a newline, and a
+    // 19-digit positive int64 expiry in addition to its key. Admission must
+    // fit even that worst case or save() could create a file load() rejects.
+    static constexpr size_t MAX_POLICY_RULES       = MAX_POLICY_FILE_BYTES / (2 + MAX_POLICY_KEY_BYTES + 1 + 19 + 1);
+    static constexpr size_t MAX_POLICY_STATE_BYTES = 8192;
 
     static int64_t                        nowEpoch() {
         return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -48,6 +63,17 @@ namespace NHyprnotify::Policy {
         return NHyprCommon::statePath("hyprnotify", "policy.tsv");
     }
 
+    static bool validKey(std::string_view key) {
+        return !key.empty() && key.size() <= MAX_POLICY_KEY_BYTES && key.find_first_of(std::string_view{"\t\r\n\0", 4}) == std::string_view::npos;
+    }
+
+    static bool parseExpiry(std::string_view value, int64_t& until) {
+        if (value.empty() || !std::ranges::all_of(value, [](unsigned char c) { return std::isdigit(c); }))
+            return false;
+        const auto [END, ERROR] = std::from_chars(value.data(), value.data() + value.size(), until);
+        return ERROR == std::errc{} && END == value.data() + value.size();
+    }
+
     // One rule per line: a verb, a tab, the key, and for a silence an optional
     // tab + expiry. Keys originate in client-supplied app/conversation fields,
     // so they may hold anything but a tab or a newline — the two characters the
@@ -57,33 +83,59 @@ namespace NHyprnotify::Policy {
     static void load() {
         s_silenced.clear();
         s_priority.clear();
-        std::ifstream f(storePath());
-        std::string   line;
-        while (std::getline(f, line)) {
-            if (line.size() < 3 || line[1] != '\t')
+        std::error_code statusError;
+        const auto      path = storePath();
+        if (!std::filesystem::is_regular_file(path, statusError))
+            return;
+        std::ifstream f(path, std::ios::binary);
+        if (!f)
+            return;
+
+        // Read one byte beyond the cap: reject an oversized file as a unit
+        // instead of retaining an arbitrary prefix while it is being edited.
+        std::string contents(MAX_POLICY_FILE_BYTES + 1, '\0');
+        f.read(contents.data(), static_cast<std::streamsize>(contents.size()));
+        const auto READ = static_cast<size_t>(f.gcount());
+        if (READ > MAX_POLICY_FILE_BYTES)
+            return;
+        contents.resize(READ);
+
+        size_t begin = 0;
+        size_t rows  = 0;
+        while (begin < contents.size() && rows++ < MAX_POLICY_ROWS && s_silenced.size() + s_priority.size() < MAX_POLICY_RULES) {
+            const auto END = contents.find('\n', begin);
+            const auto LEN = (END == std::string::npos ? contents.size() : END) - begin;
+            const auto advance = [&]() {
+                begin = END == std::string::npos ? contents.size() : END + 1;
+            };
+            const std::string_view line{contents.data() + begin, LEN};
+            if (LEN > MAX_POLICY_LINE_BYTES || line.find('\0') != std::string_view::npos || line.size() < 3 || line[1] != '\t') {
+                advance();
                 continue;
+            }
+
             auto    rest  = line.substr(2);
             int64_t until = 0;
             if (line[0] == 's') {
-                if (const auto TAB = rest.rfind('\t'); TAB != std::string::npos) {
-                    // a trailing field that is not a number is part of the key
-                    // (nothing scrubs tabs out of a hand-edited file)
+                if (const auto TAB = rest.rfind('\t'); TAB != std::string_view::npos) {
                     const auto NUM = rest.substr(TAB + 1);
-                    if (!NUM.empty() && std::ranges::all_of(NUM, [](unsigned char c) { return std::isdigit(c); })) {
-                        try {
-                            until = std::stoll(NUM);
-                            rest  = rest.substr(0, TAB);
-                        } catch (...) {}
+                    if (!parseExpiry(NUM, until)) {
+                        advance();
+                        continue;
                     }
+                    rest = rest.substr(0, TAB);
                 }
             }
-            if (rest.empty())
+            if (!validKey(rest)) {
+                advance();
                 continue;
+            }
             if (line[0] == 's') {
                 if (!expired(until)) // a rule that lapsed while we were away never loads
-                    s_silenced.emplace(rest, until);
+                    s_silenced.emplace(std::string{rest}, until);
             } else if (line[0] == 'p')
-                s_priority.insert(rest);
+                s_priority.emplace(rest);
+            advance();
         }
     }
 
@@ -145,7 +197,10 @@ namespace NHyprnotify::Policy {
     bool silenced(const std::string& appKey) {
         if (appKey.empty())
             return false;
-        const auto IT = s_silenced.find(storeKey(appKey));
+        const auto APP = storeKey(appKey);
+        if (!validKey(APP))
+            return false;
+        const auto IT = s_silenced.find(APP);
         if (IT == s_silenced.end())
             return false;
         if (!expired(IT->second))
@@ -167,7 +222,10 @@ namespace NHyprnotify::Policy {
     }
 
     bool priority(const std::string& appKey, const std::string& conversationId) {
-        return !appKey.empty() && !conversationId.empty() && s_priority.contains(convKey(appKey, conversationId));
+        if (appKey.empty() || conversationId.empty())
+            return false;
+        const auto CONV = convKey(appKey, conversationId);
+        return validKey(CONV) && s_priority.contains(CONV);
     }
 
     eAlertingMode mode(const std::string& appKey, const std::string& conversationId, bool conversation) {
@@ -189,6 +247,15 @@ namespace NHyprnotify::Policy {
 
         const auto APP     = storeKey(appKey);
         const auto CONV    = conversation && !conversationId.empty() ? convKey(appKey, conversationId) : std::string{};
+        if (!validKey(APP) || (!CONV.empty() && !validKey(CONV)))
+            return false;
+        const bool DROP_SILENCE  = selected != eAlertingMode::SILENT && s_silenced.contains(APP);
+        const bool DROP_PRIORITY = !CONV.empty() && selected != eAlertingMode::PRIORITY && s_priority.contains(CONV);
+        const bool ADD_SILENCE   = selected == eAlertingMode::SILENT && !s_silenced.contains(APP);
+        const bool ADD_PRIORITY  = selected == eAlertingMode::PRIORITY && !CONV.empty() && !s_priority.contains(CONV);
+        const size_t NEXT_RULES  = s_silenced.size() + s_priority.size() - (size_t)DROP_SILENCE - (size_t)DROP_PRIORITY + (size_t)ADD_SILENCE + (size_t)ADD_PRIORITY;
+        if (NEXT_RULES > MAX_POLICY_RULES)
+            return false;
         bool       changed = false;
 
         if (selected == eAlertingMode::SILENT) {
@@ -238,13 +305,24 @@ namespace NHyprnotify::Policy {
         refreshExpired();
         const auto  NOW = nowEpoch();
         std::string out = "silenced:" + std::to_string(silencedCount());
+        const auto append = [&](const std::string& value, size_t limit) {
+            if (out.size() + value.size() <= limit) {
+                out += value;
+                return true;
+            }
+            if (out.size() + 3 <= limit)
+                out += "...";
+            return false;
+        };
         for (const auto& [K, UNTIL] : s_silenced)
-            out += " s=" + K + (UNTIL ? "+" + std::to_string(UNTIL - NOW) : "");
+            if (!append(" s=" + K + (UNTIL ? "+" + std::to_string(UNTIL - NOW) : ""), MAX_POLICY_STATE_BYTES / 2))
+                break;
         out += " priority:" + std::to_string(s_priority.size());
         for (const auto& K : s_priority) {
             auto k = K;
             std::ranges::replace(k, '\x1f', '/');
-            out += " p=" + k;
+            if (!append(" p=" + k, MAX_POLICY_STATE_BYTES))
+                break;
         }
         return out;
     }
