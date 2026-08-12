@@ -48,7 +48,7 @@ namespace NHyprnotify {
     inline constexpr double PADX = 16, PADY = 16, ICON_GAP = 16; // Pixel notification margin/content start
     inline constexpr double HEAD_GAP = 3, TITLE_GAP = 4;         // header -> title -> body
     inline constexpr double PROGRESS_H = 5, PROGRESS_GAP = 8;
-    inline constexpr double BTN_H = 48, BTN_PADX = 16, BTN_GAP = 8, BTN_ROW_GAP = 6, BTN_ICON = 20, BTN_ICON_GAP = 8;
+    inline constexpr double BTN_H = 34, BTN_PADX = 12, BTN_GAP = 8, BTN_ROW_GAP = 6, BTN_ICON = 18, BTN_ICON_GAP = 6;
     inline constexpr double BODYIMG_H = 96, IMG_GAP = 6, IMG_ROW_GAP = 8;
 
     // Texture-backed marks cover deterministic identity, trusted system OSD

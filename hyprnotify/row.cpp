@@ -100,7 +100,7 @@ namespace NHyprnotify {
             SB += SUBHEX;
             SB += "\" size=\"";
             SB += std::to_string(T.header * PANGO_SCALE);
-            SB += "\">• ";
+            SB += "\" weight=\"500\">• ";
             if (TIMED_SILENCE) {
                 SB += "Silent ";
                 SB += shortDuration(SILENCE_REMAINING);
@@ -387,7 +387,10 @@ namespace NHyprnotify {
 
     void paintSingle(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box, bool open, bool more) {
         const bool HOV = hovered.kind == SCard::ROW && hovered.id == N->id && hovered.btn < 0 && hovered.part == 0;
-        P.rect(box, HOV ? stateLayer() : surface(), rRow(P.scale), rPow());
+        if (HOV)
+            P.rect(box, stateLayer(), rRow(P.scale), rPow());
+        else
+            P.glass(box, surface(), rRow(P.scale), rPow());
         SCard card;
         renderRow(P, T, N, CBox{box.x, box.y, box.w, 0}, open, more, ROW_SINGLE, card, false);
         cards.push_back(std::move(card));
@@ -461,7 +464,7 @@ namespace NHyprnotify {
     void paintManagePanel(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box, const std::string& group) {
         const auto  COLFG = color(cfg.colFg), COLSUB = color(cfg.colKicker), COLACC = color(cfg.colHighlight);
         const float RP = rPow();
-        P.rect(box, surface(), rRow(P.scale), RP);
+        P.glass(box, surface(), rRow(P.scale), RP);
 
         SCard card;
         card.kind = SCard::MANAGE;
@@ -568,7 +571,7 @@ namespace NHyprnotify {
     void paintSnoozeRow(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box) {
         const auto  COLSUB = color(cfg.colKicker), COLACC = color(cfg.colHighlight);
         const float RP     = rPow();
-        P.rect(box, surface(), rRow(P.scale), RP);
+        P.glass(box, surface(), rRow(P.scale), RP);
 
         if (warmGate.warming) {
             ensureIconTex(*N, (int)std::lround(cfg.maxIcon->value() * P.scale));
@@ -621,7 +624,10 @@ namespace NHyprnotify {
 
         const auto& NEWEST = D.items.front();
         const bool  HOV    = hovered.kind == SCard::DIGEST && hovered.group == D.key && hovered.part == 0;
-        P.rect(box, HOV ? stateLayer() : surface(), rRow(P.scale), RP);
+        if (HOV)
+            P.rect(box, stateLayer(), rRow(P.scale), RP);
+        else
+            P.glass(box, surface(), rRow(P.scale), RP);
 
         if (warmGate.warming)
             ensureIconTex(*NEWEST, (int)std::lround(cfg.maxIcon->value() * P.scale));
@@ -638,7 +644,7 @@ namespace NHyprnotify {
         DB += SUBHEX;
         DB += "\" size=\"";
         DB += std::to_string(T.header * PANGO_SCALE);
-        DB += "\">• ";
+        DB += "\" weight=\"500\">• ";
         DB += std::to_string(D.items.size());
         DB += " • ";
         DB += ageString(NEWEST->arrived);
@@ -694,7 +700,7 @@ namespace NHyprnotify {
         // One outer surface owns the group's silhouette, so the final child's
         // bottom corners inherit the full notification radius. Header/child
         // state layers keep the small connected radius inside that outline.
-        P.rect(box, surface(), rRow(P.scale), RP);
+        P.glass(box, surface(), rRow(P.scale), RP);
         if (HHOV)
             P.rect(CBox{box.x, box.y, box.w, HEADRH}, stateLayer(), rJoint(P.scale), RP);
 
@@ -713,7 +719,7 @@ namespace NHyprnotify {
         HB += SUBHEX;
         HB += "\" size=\"";
         HB += std::to_string(T.header * PANGO_SCALE);
-        HB += "\">• ";
+        HB += "\" weight=\"500\">• ";
         HB += std::to_string(D.items.size());
         HB += " • ";
         HB += ageString(NEWEST->arrived);

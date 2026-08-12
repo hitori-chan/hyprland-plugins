@@ -608,7 +608,10 @@ namespace NHyprnotify {
             const CBox   B{bx, BARY, CLEAR_W, BAR_BTN};
             if (!P.warm) {
                 const bool HOV = hovered.kind == SCard::BTN_CLEAR;
-                P.rect(B, HOV && TARGET ? stateLayer() : surface().modifyA(TARGET ? 1.f : 0.38f), (int)std::lround(BAR_BTN / 2 * P.scale));
+                if (HOV && TARGET)
+                    P.rect(B, stateLayer(), (int)std::lround(BAR_BTN / 2 * P.scale));
+                else
+                    P.glass(B, surface().modifyA(TARGET ? 1.f : 0.38f), (int)std::lround(BAR_BTN / 2 * P.scale), RP);
                 const auto* L = HOV && TARGET ? HOT : REST;
                 if (L && L->tex)
                     P.tex(L->tex, B.x + (B.w - L->tex->m_size.x / P.scale) / 2, B.y + (B.h - L->tex->m_size.y / P.scale) / 2);
