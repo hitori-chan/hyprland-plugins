@@ -688,6 +688,21 @@ namespace NHyprnotify {
                 }
             }
             n->identity = Parse::resolveImage(APP_ICON, ICONPX);
+            // For non-conversation notifications, if app_icon didn't resolve,
+            // try image-path hint before falling back to desktop-entry Icon.
+            // NetworkManager and similar system services send state-specific
+            // icons via image-path (network-wireless-signal-excellent, etc.)
+            // rather than through the app_icon parameter.
+            if (!CONVERSATION && n->identity.empty()) {
+                std::string imagePath;
+                for (const auto* KEY : {"image-path", "image_path"})
+                    if (const auto IT = hints.find(KEY); IT != hints.end() && imagePath.empty())
+                        try {
+                            imagePath = Parse::boundedOpaque(IT->second.get<std::string>(), Parse::MAX_SOURCE_BYTES);
+                        } catch (...) {}
+                if (!imagePath.empty())
+                    n->identity = Parse::resolveImage(imagePath, ICONPX);
+            }
             n->identityFromDesktop = n->identity.empty() && !DESKTOP.empty();
             if (n->identityFromDesktop)
                 n->identity = resolveDesktopEntryIcon(DESKTOP, ICONPX);
