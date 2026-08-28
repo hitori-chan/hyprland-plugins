@@ -19,6 +19,55 @@ namespace NHyprbar {
 
     static NHyprCommon::CHop         pendingHit;
 
+    // Batched hits drain in one hop: two button presses can land in one
+    // dispatch (a simultaneous left+right tap, a scripted client) and
+    // overwriting a lone doLaterLock cancels the unfired click
+    struct SHitJob {
+        enum eKind : uint8_t {
+            WIDGET,
+            MENU_ACTIVATE,
+            MENU_SUBMENU
+        } kind = WIDGET;
+        SHit         hit; // WIDGET
+        Menu::SEntry entry; // MENU_ACTIVATE
+        size_t       subLevel = 0; // MENU_SUBMENU
+        int          subIdx = -1;
+        uint32_t     bit = 0;
+        bool         super = false;
+    };
+    static std::vector<SHitJob> hitJobs;
+    static bool                 hitQueued = false;
+
+    static void queueHitJob(SHitJob job) {
+        if (hitJobs.size() < 16)
+            hitJobs.push_back(std::move(job));
+        if (hitQueued)
+            return;
+        hitQueued = true;
+        pendingHit.arm([]() {
+            hitQueued = false;
+            if (NHyprCommon::sessionLocked()) {
+                hitJobs.clear(); // the lock can engage between the click and this hop
+                return;
+            }
+            for (auto& J : hitJobs) {
+                switch (J.kind) {
+                case SHitJob::WIDGET:
+                    if (J.hit.widget)
+                        J.hit.widget->onHit(J.hit, J.bit, J.super); // a widget onHit can change workspace/focus — never under a lock
+                    break;
+                case SHitJob::MENU_ACTIVATE:
+                    Menu::activate(J.entry);
+                    break;
+                case SHitJob::MENU_SUBMENU:
+                    Menu::openSub(J.subLevel, J.subIdx);
+                    break;
+                }
+            }
+            hitJobs.clear();
+        });
+    }
+
     // ---- input ----
 
     using NHyprCommon::monitorAt; // common/queries.hpp: allocation-free, runs per pointer motion
@@ -111,19 +160,10 @@ namespace NHyprbar {
                         }
                         if ((BIT == 1u || BIT == 2u) && (size_t)IDX < L.entries.size() && L.entries[IDX].enabled && !L.entries[IDX].separator) {
                             if (L.entries[IDX].submenu) { // a click cascades too, like GTK
-                                pendingHit.arm([li, IDX]() {
-                                    if (NHyprCommon::sessionLocked())
-                                        return; // the lock can engage between the click and this hop
-                                    Menu::openSub(li, IDX);
-                                });
+                                queueHitJob(SHitJob{.kind = SHitJob::MENU_SUBMENU, .subLevel = li, .subIdx = IDX});
                                 return;
                             }
-                            const auto EN = L.entries[IDX];
-                            pendingHit.arm([EN]() {
-                                if (NHyprCommon::sessionLocked())
-                                    return;
-                                Menu::activate(EN);
-                            });
+                            queueHitJob(SHitJob{.kind = SHitJob::MENU_ACTIVATE, .entry = L.entries[IDX]});
                         }
                         return;
                     }
@@ -164,11 +204,7 @@ namespace NHyprbar {
                 // Deferred out of the input emission: workspace/focus changes
                 // mid-button-event bite code that still holds pre-click state.
                 if (hc.widget)
-                    pendingHit.arm([hc, BIT, SUPER]() {
-                        if (NHyprCommon::sessionLocked())
-                            return; // a widget onHit can change workspace/focus — never under a lock
-                        hc.widget->onHit(hc, BIT, SUPER);
-                    });
+                    queueHitJob(SHitJob{.kind = SHitJob::WIDGET, .hit = hc, .bit = BIT, .super = SUPER});
                 break;
             }
         }
@@ -410,6 +446,8 @@ namespace NHyprbar {
     void inputExit() {
         setHoverWidget(nullptr);
         pendingHit.reset();
+        hitJobs.clear();
+        hitQueued = false;
         pendingScroll.reset();
         scrollAcc.clear();
         scrollQueued = false;

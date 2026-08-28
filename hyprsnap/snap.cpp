@@ -254,6 +254,7 @@ namespace NHyprsnap::Snap {
 
             const auto   othersOf = [&](SP<Layout::ITarget> self) {
                 std::vector<CBox> OUT;
+                OUT.reserve(16); // most sessions have a handful of floaters; this runs on every move
                 for (const auto& O : Desktop::windowState()->windows()) {
                     if (!O->m_isMapped || O->isHidden() || !O->m_isFloating || !O->m_target || O->m_target == self)
                         continue;

@@ -302,13 +302,20 @@ namespace NHyprplace {
             // have no gap and settle into the corners). One pass, no cascade,
             // no center pile.
             if (!pos) {
-                const auto overlapAt = [&](const Vector2D& p) {
+                // cutoff: only a strictly better score wins, so the running
+                // total can disqualify a point the moment it reaches it — a
+                // busy screen scores (2n+1)^2 grid points, and the losers
+                // stop early
+                const auto overlapAt = [&](const Vector2D& p, double cutoff) {
                     double sum = 0.0;
                     for (const auto& B : blockers) {
                         const double ix = std::min(p.x + size.x, B.x + B.w) - std::max(p.x, B.x);
                         const double iy = std::min(p.y + size.y, B.y + B.h) - std::max(p.y, B.y);
-                        if (ix > 0 && iy > 0)
+                        if (ix > 0 && iy > 0) {
                             sum += ix * iy;
+                            if (sum >= cutoff)
+                                return sum;
+                        }
                     }
                     return sum;
                 };
@@ -325,13 +332,13 @@ namespace NHyprplace {
                 ys.erase(std::unique(ys.begin(), ys.end()), ys.end());
 
                 Vector2D best   = clampToWA(CUR.pos());
-                double   bestOv = overlapAt(best);
+                double   bestOv = overlapAt(best, std::numeric_limits<double>::infinity());
                 for (const double X : xs) {
                     if (bestOv <= 1.0) // a zero-overlap gap — nothing beats it
                         break;
                     for (const double Y : ys) {
                         const Vector2D P  = clampToWA(Vector2D{X, Y});
-                        const double   OV = overlapAt(P);
+                        const double   OV = overlapAt(P, bestOv);
                         if (OV < bestOv - 1.0) {
                             bestOv = OV;
                             best   = P;
@@ -425,7 +432,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             g_lifecycle.listen(events.window.predictSize, [](PHLWINDOW w, Vector2D& size) { onPredictSize(w, size); });
     }(Event::bus()->m_events);
 
-    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.1.3"};
+    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.1.4"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
