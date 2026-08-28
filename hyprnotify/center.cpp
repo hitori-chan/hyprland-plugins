@@ -686,24 +686,29 @@ namespace NHyprnotify {
             }
 
             const size_t SHOWN = histShown();
-            if (SHOWN == 0) {
-                const auto EM = cachedText("No dismissed notifications.", v13On60(), T.body, (int)((HBW - 2 * HIST_PX) * P.scale), linePx(T.body), 0, false, 400);
-                if (!P.warm && EM && EM->tex)
-                    P.tex(EM->tex, HB.x + HIST_PX, HB.y + HIST_PT + HIST_HEAD_H + HIST_GAP + (HIST_EMPTY_H - EM->tex->m_size.y / P.scale) / 2);
-            } else {
+            // Built OUTSIDE the paint guard: the warm pass owns texture
+            // creation, the render pass only paints. A build trapped in the
+            // !warm block misses mayBuild every frame (never caching, never
+            // painting) and spin-rewarms the shade — the footer's empty
+            // buttons and this sheet's invisible rows were that bug.
+            const auto EM = SHOWN == 0 ? cachedText("No dismissed notifications.", v13On60(), T.body, (int)((HBW - 2 * HIST_PX) * P.scale), linePx(T.body), 0, false, 400) : nullptr;
+            if (!P.warm && EM && EM->tex)
+                P.tex(EM->tex, HB.x + HIST_PX, HB.y + HIST_PT + HIST_HEAD_H + HIST_GAP + (HIST_EMPTY_H - EM->tex->m_size.y / P.scale) / 2);
+            if (SHOWN > 0) {
                 double iy = HB.y + HIST_PT + HIST_HEAD_H + HIST_GAP;
                 for (size_t k = 0; k < SHOWN; k++) {
                     const auto& E = HIST[HIST.size() - 1 - k]; // newest first
                     const auto  I = historyIcon(E.iconSource, (int)std::lround(HIST_ICON_D * P.scale));
+                    const auto  G = I ? nullptr : controlIcon(eControlIcon::NOTIFICATION_ALERT, (int)std::lround(15 * P.scale), v13On60());
+                    // the app keeps 45% of the line, the title the rest
+                    const double TW = HBW - 2 * HIST_PX - HIST_ICON_D - 9;
+                    const auto   A  = cachedText(E.app, v13On82(), T.body, (int)(0.45 * TW * P.scale), linePx(T.body), 0, false, 400);
+                    const auto   B  = cachedText(E.title, v13On60(), T.body, (int)((TW - 0.45 * TW - 6) * P.scale), linePx(T.body), 0, false, 400);
                     if (!P.warm) {
                         if (I)
                             P.texFit(I, CBox{HB.x + HIST_PX, iy + (HIST_ITEM_H - HIST_ICON_D) / 2, HIST_ICON_D, HIST_ICON_D}, (int)std::lround(HIST_ICON_D / 2 * P.scale), 2.f);
-                        else if (const auto G = controlIcon(eControlIcon::NOTIFICATION_ALERT, (int)std::lround(15 * P.scale), v13On60()); G)
+                        else if (G)
                             P.texFit(G, CBox{HB.x + HIST_PX + (HIST_ICON_D - 15) / 2, iy + (HIST_ITEM_H - 15) / 2, 15, 15}, 0);
-                        // the app keeps 45% of the line, the title the rest
-                        const double TW = HBW - 2 * HIST_PX - HIST_ICON_D - 9;
-                        const auto   A  = cachedText(E.app, v13On82(), T.body, (int)(0.45 * TW * P.scale), linePx(T.body), 0, false, 400);
-                        const auto   B  = cachedText(E.title, v13On60(), T.body, (int)((TW - 0.45 * TW - 6) * P.scale), linePx(T.body), 0, false, 400);
                         const double AX = HB.x + HIST_PX + HIST_ICON_D + 9;
                         if (A && A->tex)
                             P.tex(A->tex, AX, iy + (HIST_ITEM_H - A->tex->m_size.y / P.scale) / 2);

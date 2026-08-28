@@ -83,7 +83,7 @@ namespace NHyprnotify {
     extern HANDLE PHANDLE;
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION                = "7.2.3";
+    inline constexpr const char* VERSION                = "7.2.4";
     inline constexpr int         DEFAULT_ROUNDING       = 28; // the ROM's 28dp card corner
     inline constexpr float       DEFAULT_ROUNDING_POWER = 10.f; // high exponent = circular corner, like CSS border-radius
 
