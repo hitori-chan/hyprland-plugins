@@ -156,13 +156,14 @@ chk "manage/group: bundle panel lifted the rule" test "$(polsil)" = "silenced:0"
 outside_click; hq hyprnotify clear >/dev/null; sleep 0.8
 chk "manage: reset after the manage battery" test "$(st)" = "center:0 live:0 dnd:0"
 
-# Clear all owns the whole track left after DND. With a normal management
-# panel open, its footer center is deterministic; this x is inside the full
-# track but well left of the removed centered 96px chip.
+# The hold menu's footer pair: Dismiss (outline, left) + Done (filled,
+# right). The left button is the deterministic left-side target; dismissing
+# leaves the shade open with the card in history. The menu's own geometry is
+# width-invariant, so only the x moves when the panel goes full-width.
 psend cleartrack "full footer target" ""; sleep 1.2
 hq hyprnotify center >/dev/null; sleep 0.7
 longpress "$ROWX" "$ROWY" 272
-CLEAR_TRACK_X=$((MON_W - 300))
+CLEAR_TRACK_X=$((PANEL_X + 67)) # the Dismiss button: panel 39..127, center 83
 CLEAR_TRACK_Y=369
 click "$CLEAR_TRACK_X" "$CLEAR_TRACK_Y" 272
 chk "Clear all: the expanded footer track owns its left side" test "$(st)" = "center:1 live:0 dnd:0"

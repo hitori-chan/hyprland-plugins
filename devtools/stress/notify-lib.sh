@@ -10,27 +10,27 @@
 #   source .../stress/notify-lib.sh
 
 # ---- pixel-parity geometry (derived from hyprnotify/ui.hpp, ledger A-141) ----
-# The island hangs off the monitor's right edge: EDGE 16 + CENTER_W 380, below
-# offset_y 26. Card slots start at PAD 8 below the panel top; the footer
-# (history circle, Clear all, DND circle) is FOOTER_H 52 tall with FOOTER_MT 16
-# above it, so a single-card panel is 16 + cardH + 68 tall and the card bottom
-# is panel_bottom - 76. Every click coordinate below is an inset from that
-# fixed right-edge origin; the harness's MON_W keeps it monitor-relative.
+# v14 (AOSP-exact): the shade and the heads-up banner span the screen —
+# EDGE 16 margins each side, full width, below offset_y 26. Card slots start
+# at PAD 8 below the panel top; the footer (history left, centered Clear all,
+# DND right) is FOOTER_H 52 tall with FOOTER_MT 16 above it, so a single-card
+# panel is 16 + cardH + 68 tall. Left-anchored coordinates stay insets from
+# the panel's LEFT edge; right-anchored ones are insets from the right edge.
 N_EDGE=16
-N_W=380
+N_W=$((MON_W - 2 * N_EDGE))            # v14: the full-width span
 N_OFFSET=26
 N_PAD=8
-PANEL_X=$((MON_W - N_EDGE - N_W))
+PANEL_X=$N_EDGE
 CARD1_Y=$((N_OFFSET + N_PAD))          # 34: the first card slot top
 ROWX=$((PANEL_X + 150))                # card body: clears the avatar column (16..64)
 ROWY=$((CARD1_Y + 37))                 # 71: inside a 74px collapsed card
-CHIPX=$((PANEL_X + 343))               # the row-expand chevron hit (336..380 x)
-KIDCHEV_X=$((PANEL_X + 343))           # the kid chevron hit, same column
+CHIPX=$((PANEL_X + N_W - 37))          # the row-expand chevron hit, 37px off the right edge
+KIDCHEV_X=$((PANEL_X + N_W - 37))      # the kid chevron hit, same column
 KIDCHEV_Y=$((CARD1_Y + 82))            # 116: kid box starts at 34+12+48=94, its 44px hit spans 94..138
-REPLY_BTN_X=$((PANEL_X + 116))         # the expanded kid's Reply button
+REPLY_BTN_X=$((PANEL_X + 116))         # the expanded kid's Reply button (left-anchored)
 REPLY_BTN_Y=186                        # expanded kid action row: 164..208
-REPLY_FIELD_X=$((PANEL_X + 188))       # the armed field center (84..295 x)
-REPLY_SEND_X=$((PANEL_X + 317))        # the send pill center
+REPLY_FIELD_X=$((PANEL_X + 646))       # the armed field center (84..1207 x)
+REPLY_SEND_X=$((PANEL_X + 1229))       # the send pill center (right-anchored: 1207..1251)
 # the hold menu (long-press a card). Menu row boxes are full-width (350px);
 # click x is the panel middle. The menu's own geometry is unchanged from v13;
 # the panel pad 15->8 shifts every row 7px up and the footer block (16+52 vs
@@ -47,7 +47,7 @@ REPLY_SEND_X=$((PANEL_X + 317))        # the send pill center
 # 1:1 conversation target: the header carries the chat title (+22 to every
 # y above); buttons 386 closed / 594 open; panel h 468/450 / 676/658.
 # Group conversation (bundle): no snooze section; buttons 334; panel h 416/406.
-MENU_X=$((PANEL_X + 190))
+MENU_X=$((PANEL_X + N_W / 2))          # the panel middle (the rows are full-width)
 MENU_PRIORITY_Y_DEFAULTSTAGED=130
 MENU_DEFAULT_Y_DEFAULTSTAGED=191
 MENU_SILENT_Y_DEFAULTSTAGED=252
@@ -77,7 +77,7 @@ MENU_DONE_Y_CONV_OPEN=594
 MENU_DONE_Y_BUNDLE=326
 MENU_DONE_Y_BUNDLE_SILENTSTAGED=298
 MENU_DISMISS_X=$((PANEL_X + 74))
-MENU_DONE_X=$((PANEL_X + 317))
+MENU_DONE_X=$((PANEL_X + N_W - 63))
 # the manage-menu aliases the policy and pointer-only batteries click with. The
 # manage menu IS the hold menu above: the row x is MENU_X, the plain rows are
 # the Default-staged ys, and Done is the (now pill-centered) MENU_DONE_X. A
@@ -97,12 +97,12 @@ MANAGE_SNOOZE_CHAT_Y=$MENU_SNOOZE_Y_CONV
 # the OSD banner hangs off the same right edge as the shade; its icon cell is
 # 16px in from the left, 16px below the y-34 band top.
 POP_CARD_X=$PANEL_X
-UNDO_X=$((PANEL_X + 330))             # the snooze row's right-aligned Undo
+UNDO_X=$((PANEL_X + N_W - 50))        # the snooze row's right-aligned Undo
 REPLY_FIELD_Y=190                     # armed field spans 168..212 inside the first kid
 UNDO_Y=$((CARD1_Y + 37))              # 71: the 74px row's button center
-# banner (HUN) geometry: the first banner is at y 26, 106px tall (plain) with
-# its 44x66 chevron hit on the right edge
-POP_CHEV_X=$((PANEL_X + 358))
+# banner (HUN) geometry: the first banner is at y 26, full width, with its
+# 44x66 chevron hit 22px off the right edge
+POP_CHEV_X=$((PANEL_X + N_W - 22))
 POP_CHEV_Y=59
 
 click() { # click <x> <y> <button-code>
@@ -194,8 +194,8 @@ import sys
 from PIL import Image
 im = Image.open(sys.argv[1]).convert('RGB')
 px = im.load()
-x0 = int(sys.argv[2]) - 392 + 2   # panel left edge, inset past the corner
-x1 = int(sys.argv[2]) - 12        # panel right edge, inset past the corner
+x0 = 16 + 6                      # panel left edge (16), inset past the corner
+x1 = int(sys.argv[2]) - 16 - 6   # panel right edge (MON_W-16), inset past the corner
 # max, not min: a frost card row over the black backdrop is (4,6,9) — its
 # min channel no longer clears the old threshold, while its max does. The
 # shadow rows are neutral grey, where max == min, so the calibrated panel
