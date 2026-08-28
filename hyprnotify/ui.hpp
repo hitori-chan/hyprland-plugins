@@ -232,9 +232,9 @@ namespace NHyprnotify {
     // corner and only the rim protrudes.
     inline constexpr double BADGE_D = 20.0 / 40.0, BADGE_PROT = 2.0 / 40.0, BADGE_INSET = 2.0 / 20.0;
 
-    // panel and card radii: the ROM draws both at 28dp with the compositor's
-    // rounding_power (10 = a circular corner); the `rounding`
-    // config remains the user's override for BOTH
+    // panel and card radii: the ROM draws both at 28dp circular arcs
+    // (superellipse exponent 2); the `rounding` config remains the user's
+    // override for BOTH, `rounding_power` the user's exponent override
     inline constexpr double PIXEL_SHADE_RADIUS    = 28;
     inline constexpr double PIXEL_INTERNAL_RADIUS = 18; // the footer/stadium joints
 
