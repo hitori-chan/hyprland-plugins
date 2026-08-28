@@ -723,10 +723,15 @@ namespace NHyprnotify {
 
         { // the history pill
             const CBox B{bx, FOOTY, FOOTER_PILL_W, FOOTER_H};
+            // The build must run in the warm pass too: a texture created
+            // during render paints nothing, and a draw-side miss only
+            // schedules a rewarm — so building INSIDE the !warm guard could
+            // never succeed (the footer sat empty forever).
+            const bool HOV = hovered.kind == SCard::BTN_HISTORY;
+            const auto G   = controlIcon(eControlIcon::HISTORY, (int)std::lround(FOOTER_ICON * P.scale), HOV ? v13On() : v13On82());
             if (!P.warm) {
-                const bool HOV = hovered.kind == SCard::BTN_HISTORY;
                 P.rect(B, HOV ? v13RaisedH() : v13Raised(), (int)std::lround(FOOTER_R * P.scale), RP);
-                if (const auto G = controlIcon(eControlIcon::HISTORY, (int)std::lround(FOOTER_ICON * P.scale), HOV ? v13On() : v13On82()); G)
+                if (G)
                     P.texFit(G, CBox{B.x + (B.w - FOOTER_ICON) / 2, B.y + (B.h - FOOTER_ICON) / 2, FOOTER_ICON, FOOTER_ICON}, 0);
             }
             SCard c;
@@ -789,11 +794,14 @@ namespace NHyprnotify {
 
         { // do-not-disturb: the accent fill while it is on
             const CBox B{DNDX, FOOTY, FOOTER_PILL_W, FOOTER_H};
+            const bool LIT = Model::suspendedNow();
+            const bool HOV = hovered.kind == SCard::BTN_DND;
+            // built outside the paint guard: the warm pass owns creation (see
+            // the history pill above)
+            const auto G = controlIcon(eControlIcon::DND_BELL_GEAR, (int)std::lround(22 * P.scale), LIT ? v13OnAccent() : (HOV ? v13On() : v13On82()));
             if (!P.warm) {
-                const bool LIT = Model::suspendedNow();
-                const bool HOV = hovered.kind == SCard::BTN_DND;
                 P.rect(B, LIT ? v13Accent() : (HOV ? v13RaisedH() : v13Raised()), (int)std::lround(FOOTER_R * P.scale), RP);
-                if (const auto G = controlIcon(eControlIcon::DND_BELL_GEAR, (int)std::lround(22 * P.scale), LIT ? v13OnAccent() : (HOV ? v13On() : v13On82())); G)
+                if (G)
                     P.texFit(G, CBox{B.x + (B.w - 22) / 2, B.y + (B.h - 22) / 2, 22, 22}, 0);
             }
             SCard c;

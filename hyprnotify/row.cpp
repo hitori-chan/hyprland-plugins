@@ -666,33 +666,37 @@ namespace NHyprnotify {
         // header line's shape depends on it ----
         std::vector<SPreviewLine> prev;
         if (!open) {
-            if (IS_CONV)
-                prev = previewLines(*N, kind, N->conversationKind == "group" ? 2 : 1);
-            else if (BUNDLE)
+            if (IS_CONV) {
+                size_t cap = N->conversationKind == "group" ? 2 : 1;
+                // A group whose two newest messages are one sender's reads
+                // as a single "mipu: <text>" line (AOSP); the second line
+                // appears only when a second sender spoke.
+                if (cap == 2 && N->messages.size() >= 2 &&
+                    N->messages.rbegin()->senderName == N->messages.rbegin()[1].senderName)
+                    cap = 1;
+                prev = previewLines(*N, kind, cap);
+            } else if (BUNDLE)
                 prev = previewLines(*N, kind, 1);
         }
-        // pixel-parity header (ledger A-141): a single-preview conversation
-        // and every plain card lead with the title/who semibold + " · age" on
-        // ONE line beside the avatar; multi-sender groups and bundles keep
-        // the two-tone summary kicker.
+        // pixel-parity header (AOSP captures): semibold title + grey " · age"
+        // on ONE line beside the avatar — the group name for groups, app ·
+        // conversation for 1:1s, the title for plain cards. The unread count
+        // rides the count pill top-right, never the kicker.
         const bool TITLEHEAD = !open && IS_CONV && prev.size() == 1;
 
         // ---- the header line beside the avatar ----
         const auto TITLETXT = titleForDisplay(*N);
         std::string left, right;
         if (IS_CONV) {
-            if (TITLEHEAD)
-                left = !prev.front().a.empty() ? prev.front().a
-                                               : (!N->participants.empty() ? N->participants.front().name : N->appName);
+            if (N->conversationKind == "group")
+                left = N->conversationTitle.empty() ? "Group" : N->conversationTitle;
             else {
                 left = N->appName;
-                if (N->conversationKind == "group") {
-                    left += " · " + (N->conversationTitle.empty() ? "Group" : N->conversationTitle);
-                    if (N->unreadCount > 1)
-                        left += " · " + std::to_string(N->unreadCount) + " new messages";
-                } else if (!N->participants.empty()) {
+                if (!N->participants.empty())
                     left += " · " + N->participants.front().name;
-                }
+                // the expanded 1:1 keeps the count run (the AOSP level-2 card)
+                if (open && N->unreadCount > 1)
+                    left += " · " + std::to_string(N->unreadCount) + " new messages";
             }
             right = " · " + ageString(N->arrived);
         } else { // PLAIN, and the bundle lead (the newest child)
@@ -700,7 +704,7 @@ namespace NHyprnotify {
             right = " · " + ageString(N->arrived);
         }
         const bool   COUNT = BUNDLE || (IS_CONV && N->unreadCount > 1);
-        const bool   HEADBIG = TITLEHEAD || (!BUNDLE && !IS_CONV); // the semibold title-size lead
+        const bool   HEADBIG = IS_CONV || !BUNDLE; // the semibold title-size lead
         const double KICKW = W - TX - (COUNT ? KICK_RIGHT_COUNT : KICK_RIGHT);
         const auto   K     = kick2(P, T, left, right, KICKW, HEADBIG);
 

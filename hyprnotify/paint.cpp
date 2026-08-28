@@ -340,6 +340,8 @@ namespace NHyprnotify {
                                 cairo_line_to(cr, 13.500 * S, 12.250 * S);
                                 cairo_line_to(cr, 13.500 * S, 8.000 * S);
                                 cairo_line_to(cr, 12.000 * S, 8.000 * S);
+                    cairo_fill(cr);
+                    break;
                 }
                 case eControlIcon::GEAR: {
                     // demo mi-gear
@@ -387,6 +389,8 @@ namespace NHyprnotify {
                                 cairo_curve_to(cr, 8.400 * S, 10.020 * S, 10.020 * S, 8.400 * S, 12.000 * S, 8.400 * S);
                                 cairo_curve_to(cr, 13.980 * S, 8.400 * S, 15.600 * S, 10.020 * S, 15.600 * S, 12.000 * S);
                                 cairo_curve_to(cr, 15.600 * S, 13.980 * S, 13.980 * S, 15.600 * S, 12.000 * S, 15.600 * S);
+                    cairo_fill(cr);
+                    break;
                 }
                 case eControlIcon::DND_BELL_GEAR: {
                     // demo mi-dnd2 (bell + gear, the 960-box ROM mark)
@@ -453,6 +457,8 @@ namespace NHyprnotify {
                                 cairo_curve_to(cr, 632.000 * G, 227.000 * G, 625.000 * G, 244.000 * G, 625.000 * G, 264.000 * G);
                                 cairo_curve_to(cr, 625.000 * G, 284.000 * G, 632.000 * G, 301.000 * G, 646.000 * G, 315.000 * G);
                                 cairo_curve_to(cr, 660.000 * G, 329.000 * G, 677.000 * G, 336.000 * G, 697.000 * G, 336.000 * G);
+                    cairo_fill(cr);
+                    break;
                 }
                 case eControlIcon::SEND:
                     // demo mi-send (the reply field's paper plane)
