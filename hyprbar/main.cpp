@@ -170,6 +170,7 @@ static int luaMenubar(lua_State*) {
     return 0;
 }
 
+
 // hl.plugin.hyprbar.layout_next/layout_prev() — awesome's awful.layout.inc(±1).
 static int luaLayoutNext(lua_State*) {
     layoutInc(1, Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr);
@@ -364,7 +365,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.5.2"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.5.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

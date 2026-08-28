@@ -149,6 +149,11 @@ namespace NHyprCommon {
 
             while (m_bytes + BYTES > m_maxBytes && !m_map.empty()) {
                 const auto VICTIM = std::min_element(m_map.begin(), m_map.end(), [](const auto& A, const auto& B) { return A.second.gen < B.second.gen; });
+                // Never evict an entry this generation touched or inserted:
+                // a caller may still hold the pointer insert() returned for
+                // it, and erasing the node would dangle it mid-warm.
+                if (VICTIM->second.gen >= m_gen)
+                    return nullptr;
                 m_bytes -= VICTIM->second.bytes;
                 m_map.erase(VICTIM);
             }
