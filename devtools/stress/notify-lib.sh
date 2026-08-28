@@ -196,9 +196,13 @@ im = Image.open(sys.argv[1]).convert('RGB')
 px = im.load()
 x0 = int(sys.argv[2]) - 392 + 2   # panel left edge, inset past the corner
 x1 = int(sys.argv[2]) - 12        # panel right edge, inset past the corner
+# max, not min: a frost card row over the black backdrop is (4,6,9) — its
+# min channel no longer clears the old threshold, while its max does. The
+# shadow rows are neutral grey, where max == min, so the calibrated panel
+# bottoms do not move.
 def filled(y):
     for x in range(x0, x1, 3):
-        if min(px[x, y]) > 5:
+        if max(px[x, y]) > 5:
             return True
     return False
 H = im.size[1]
