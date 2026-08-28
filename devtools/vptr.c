@@ -1,7 +1,7 @@
 // vptr — a wlr-virtual-pointer injector. Reads a gesture script on stdin so a
 // whole press/move/release lives in one process (the pointer dies with it).
 //   argv: W H   (extent = monitor size in px; default 1280 800)
-//   stdin lines: move X Y | press BTN | release BTN | scroll AXIS VAL | sleep MS
+//   stdin lines: move X Y | rel DX DY | press BTN | release BTN | scroll AXIS VAL | sleep MS
 //   BTN = linux code (272 left, 273 right, 274 middle); AXIS 0=vert 1=horiz
 #define _POSIX_C_SOURCE 200809L
 #include <wayland-client.h>
@@ -16,12 +16,17 @@ static struct zwlr_virtual_pointer_manager_v1 *mgr;
 static struct wl_seat                         *seat;
 
 static void g_add(void *d, struct wl_registry *r, uint32_t name, const char *iface, uint32_t ver) {
+    (void)d;
     if (!strcmp(iface, zwlr_virtual_pointer_manager_v1_interface.name))
         mgr = wl_registry_bind(r, name, &zwlr_virtual_pointer_manager_v1_interface, ver < 2 ? ver : 2);
     else if (!strcmp(iface, wl_seat_interface.name))
         seat = wl_registry_bind(r, name, &wl_seat_interface, 1);
 }
-static void g_rem(void *d, struct wl_registry *r, uint32_t name) {}
+static void g_rem(void *d, struct wl_registry *r, uint32_t name) {
+    (void)d;
+    (void)r;
+    (void)name;
+}
 static const struct wl_registry_listener RL = {g_add, g_rem};
 
 static uint32_t ms(void) {
@@ -49,6 +54,7 @@ int main(int argc, char **argv) {
         if (sscanf(line, "%31s %ld %ld", cmd, &a, &b) < 1) continue;
         uint32_t t = ms();
         if (!strcmp(cmd, "move"))         { zwlr_virtual_pointer_v1_motion_absolute(p, t, (uint32_t)a, (uint32_t)b, W, H); zwlr_virtual_pointer_v1_frame(p); }
+        else if (!strcmp(cmd, "rel"))     { zwlr_virtual_pointer_v1_motion(p, t, wl_fixed_from_int((int)a), wl_fixed_from_int((int)b)); zwlr_virtual_pointer_v1_frame(p); }
         else if (!strcmp(cmd, "press"))   { zwlr_virtual_pointer_v1_button(p, t, (uint32_t)a, 1); zwlr_virtual_pointer_v1_frame(p); }
         else if (!strcmp(cmd, "release")) { zwlr_virtual_pointer_v1_button(p, t, (uint32_t)a, 0); zwlr_virtual_pointer_v1_frame(p); }
         else if (!strcmp(cmd, "scroll"))  { zwlr_virtual_pointer_v1_axis(p, t, (uint32_t)a, wl_fixed_from_int((int)b)); zwlr_virtual_pointer_v1_frame(p); }

@@ -32,37 +32,50 @@ namespace NHyprnotify::Bus {
     void emitClosed(uint32_t id, uint32_t reason) {
         if (!obj)
             return;
-        try {
-            obj->emitSignal("NotificationClosed").onInterface(IFACE).withArguments(id, reason);
-        } catch (...) {} // a dead bus must not unwind through the timer/doLater C frames
-        pollSoon();
+        // Model changes can originate in pointer/key drains, expiry timers, or
+        // D-Bus method handlers. Keep signal construction off all of those
+        // callbacks and let the link own the bounded send queue.
+        g_bus.post([id, reason]() {
+            if (!obj)
+                return;
+            try {
+                obj->emitSignal("NotificationClosed").onInterface(IFACE).withArguments(id, reason);
+            } catch (...) {} // a dead bus must not unwind through the idle C frame
+            g_bus.pollSoon();
+        });
     }
 
     // the bar's bell: live + kept + dnd + center, coalesced per model change
     void emitStateSoon() {
         pendingState.arm([]() {
-            if (!obj)
-                return;
-            try {
-                const auto [LIVE, KEPT] = Model::badgeCounts();
-                obj->emitSignal("State").onInterface(CIFACE).withArguments(LIVE, KEPT, Model::suspendedNow(), centerVisible());
-            } catch (...) {}
-            pollSoon();
+            g_bus.post([]() {
+                if (!obj)
+                    return;
+                try {
+                    const auto [LIVE, KEPT] = Model::badgeCounts();
+                    obj->emitSignal("State").onInterface(CIFACE).withArguments(LIVE, KEPT, Model::suspendedNow(), centerVisible());
+                } catch (...) {}
+                g_bus.pollSoon();
+            });
         });
     }
 
     void invokeAction(uint32_t id, const std::string& key) {
         if (!obj)
             return;
-        try {
-            // spec 1.3: the token signal precedes the action, so the
-            // sender's xdg-activation request can actually raise it —
-            // tokenless activates only flag urgent
-            if (PROTO::activation)
-                obj->emitSignal("ActivationToken").onInterface(IFACE).withArguments(id, PROTO::activation->mintToken());
-            obj->emitSignal("ActionInvoked").onInterface(IFACE).withArguments(id, key);
-        } catch (...) {}
-        pollSoon();
+        g_bus.post([id, key]() {
+            if (!obj)
+                return;
+            try {
+                // spec 1.3: the token signal precedes the action, so the
+                // sender's xdg-activation request can actually raise it —
+                // tokenless activates only flag urgent
+                if (PROTO::activation)
+                    obj->emitSignal("ActivationToken").onInterface(IFACE).withArguments(id, PROTO::activation->mintToken());
+                obj->emitSignal("ActionInvoked").onInterface(IFACE).withArguments(id, key);
+            } catch (...) {}
+            g_bus.pollSoon();
+        });
     }
 
     // The user typed a reply: hand it back and close the card, the same
@@ -74,14 +87,17 @@ namespace NHyprnotify::Bus {
         const auto N = Model::byId(id);
         if (!N || !N->canReply)
             return;
-        if (obj) {
-            try {
-                if (PROTO::activation)
-                    obj->emitSignal("ActivationToken").onInterface(IFACE).withArguments(id, PROTO::activation->mintToken());
-                obj->emitSignal("NotificationReplied").onInterface(IFACE).withArguments(id, text);
-            } catch (...) {}
-            pollSoon();
-        }
+        if (obj)
+            g_bus.post([id, text]() {
+                if (!obj)
+                    return;
+                try {
+                    if (PROTO::activation)
+                        obj->emitSignal("ActivationToken").onInterface(IFACE).withArguments(id, PROTO::activation->mintToken());
+                    obj->emitSignal("NotificationReplied").onInterface(IFACE).withArguments(id, text);
+                } catch (...) {}
+                g_bus.pollSoon();
+            });
         if (!N->resident)
             Model::closeOne(id, Model::R_DISMISSED);
         else
@@ -111,7 +127,8 @@ namespace NHyprnotify::Bus {
                            sdbus::registerMethod("CloseNotification").withInputParamNames("id").implementedAs([](uint32_t id) {
                                if (cfg.ignoreDbusClose->value())
                                    return;
-                               Model::closeOne(id, Model::R_CLOSED);
+                               if (!Model::closeOne(id, Model::R_CLOSED))
+                                   throw sdbus::Error{sdbus::Error::Name{"org.freedesktop.Notifications.Error"}, "Unknown notification ID"};
                                emitStateSoon();
                            }),
                            sdbus::registerMethod("GetCapabilities").withOutputParamNames("capabilities").implementedAs([]() {
@@ -129,7 +146,6 @@ namespace NHyprnotify::Bus {
             // the shell face: the bar's bell toggles the center and reads
             // the badge counts here
             obj->addVTable(sdbus::registerMethod("Toggle").implementedAs([]() { queueCenterToggle(); }),
-                           sdbus::registerMethod("Peek").withInputParamNames("on_bell").implementedAs([](bool on) { queueCenterPeek(on); }),
                            sdbus::registerMethod("State").withOutputParamNames("live", "kept", "dnd", "center").implementedAs([]() {
                                const auto [LIVE, KEPT] = Model::badgeCounts();
                                return std::tuple<uint32_t, uint32_t, bool, bool>{LIVE, KEPT, Model::suspendedNow(), centerVisible()};

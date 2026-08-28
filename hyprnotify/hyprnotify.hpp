@@ -5,19 +5,19 @@
 //
 //   bus.cpp     the org.freedesktop.Notifications connection: the object,
 //               the vtables, the signals, the name
-//   parse.cpp   the untrusted payload: markup, images, appended bodies
-//   model.cpp   the cards: arrival, residency, merging, DND, the expiry
+//   parse.cpp   the untrusted payload: markup, images, bounded fields
+//   model.cpp   the cards: arrival, residency, conversations, DND, expiry
 //   policy.cpp  the user's own rules: silenced apps, priority chats
 //   icons.cpp   notification images: content avatars, identity icons,
 //               raw image-data
 //   text.cpp    the pango rasterizer + the keyed text cache + markup helpers
 //   paint.cpp   the paint context, shared card recipes, type scale, motion
-//   popups.cpp  the banner column (the one-card anatomy, hover-✕, springs)
+//   popups.cpp  the banner column (the one-card anatomy, springs)
 //   row.cpp     one shade row in its two states, and the bundle recipes
-//   center.cpp  the shade: the display list, the expansion budget, the panel
+//   center.cpp  the shade: grouping, explicit expansion, paging, the panel
 //   render.cpp  the render skeleton: warm/draw, damage, ticks, the pass
 //               element (surface machinery shared through ui.hpp)
-//   input.cpp   clicks, wheel paging, esc, pointer ownership
+//   input.cpp   clicks, wheel paging, pointer ownership, reply-key delegation
 //   reply.cpp   the inline-reply field: its state, its keys, its drawing
 //   main.cpp    plugin glue: config, listeners, init/exit
 //
@@ -25,6 +25,8 @@
 // plugin's at dlopen time.
 
 #include "common/glass.hpp"
+#include "markup_attr.hpp"
+#include "pixel_model.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/Compositor.hpp>
@@ -40,6 +42,7 @@
 #include <hyprland/src/helpers/memory/Memory.hpp>
 #include <hyprland/src/helpers/time/Time.hpp>
 #include <hyprland/src/render/Renderer.hpp>
+#include <hyprland/src/render/AsyncResourceGatherer.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/Texture.hpp>
 #include <hyprland/src/render/pass/PassElement.hpp>
@@ -63,9 +66,11 @@
 #include <chrono>
 #include <cstdlib>
 #include <map>
+#include <limits>
 #include <memory>
 #include <set>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -73,15 +78,14 @@
 using namespace Render;
 using namespace Render::GL;
 
-extern HANDLE PHANDLE;
-
 namespace NHyprnotify {
 
-    // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "6.9.2";
+    extern HANDLE PHANDLE;
 
-    // wide images render card-width ("hero") instead of icon-boxed
-    inline constexpr double HERO_ASPECT = 1.5;
+    // one working number: PLUGIN_INIT and GetServerInformation both return it
+    inline constexpr const char* VERSION                = "7.2.1";
+    inline constexpr int         DEFAULT_ROUNDING       = 28; // the ROM's 28dp card corner
+    inline constexpr float       DEFAULT_ROUNDING_POWER = 10.f; // high exponent = circular corner, like CSS border-radius
 
     // the OSD scripts pin ids here: replace-in-place, never appended, never
     // grouped, never history; fresh ids and recalls never mint into it
@@ -90,22 +94,23 @@ namespace NHyprnotify {
         return id >= OSD_LO && id <= OSD_HI;
     }
 
-    // ---- config (defined in main.cpp, values arrive from theme.lua) ----
+    // ---- config (defined in main.cpp; shared semantic defaults, runtime overrides) ----
 
     struct SNotifyConfig {
+        SP<Config::Values::CStringValue> theme;        // "ink" (default) or "glass": the v13 material set (ui.hpp's v13())
         SP<Config::Values::CStringValue> font;
         SP<Config::Values::CIntValue>    fontSize;      // body size, logical px; monitor scale applies at raster time
         SP<Config::Values::CIntValue>    width;         // popup card width, logical px (the shade has its own CENTER_W)
         SP<Config::Values::CIntValue>    maxHeight;     // popup card height cap
         SP<Config::Values::CIntValue>    maxIcon;       // popup icon column; shade rows are fixed (ROW_ICON/CHILD_ICON) and only raster at this cap
-        SP<Config::Values::CIntValue>    margin;        // screen-edge gap AND inter-card gap
+        SP<Config::Values::CIntValue>    margin;        // inter-card and stack gap
         SP<Config::Values::CIntValue>    offsetY;       // popups' and the center's distance from the monitor top
         SP<Config::Values::CIntValue>    timeoutLow;    // ms; the -1 fallback for ephemerals (low/transient/progress)
         SP<Config::Values::CIntValue>    timeoutNormal; // ms; the -1 fallback for normal urgency, then it retreats to the shade; 0 = sticky (critical always is)
         SP<Config::Values::CIntValue>    coalescePopups; // 1 = at most one live popup per app; same-app extras land resident + silent
-        SP<Config::Values::CIntValue>    quietFullscreen; // 1 = hold banners back while a real fullscreen window owns the monitor
+        SP<Config::Values::CIntValue>    quietFullscreen; // 1 = opt-in hold while a real fullscreen window owns the monitor; 0 = show banners
         SP<Config::Values::CIntValue>    snoozeSeconds;   // how long a snoozed card stays out of sight before it alerts again
-        SP<Config::Values::CIntValue>    rounding;      // card radius; the panel (+6) and rows (-2) derive from it
+        SP<Config::Values::CIntValue>    rounding;        // outer notification radius; shade/internal radii are explicit Pixel values
         SP<Config::Values::CFloatValue>  roundingPower; // superellipse exponent, the compositor's rounding_power
         SP<Config::Values::CIntValue>    maxNotifs;     // model cap; overflow evicts oldest non-critical
         SP<Config::Values::CIntValue>    ignoreDbusClose; // ignore app-initiated CloseNotification (dunst's knob)
@@ -117,8 +122,12 @@ namespace NHyprnotify {
         SP<Config::Values::CColorValue>  colUrgent;     // critical accents
         SP<Config::Values::CColorValue>  colHighlight;  // the accent: progress, actions, selections
         SP<Config::Values::CColorValue>  colLink;       // body hyperlinks
+        SP<Config::Values::CColorValue>  colSurface;    // translucent notification/row frost
+        SP<Config::Values::CColorValue>  colSurfaceHigh; // raised controls and chips
+        SP<Config::Values::CColorValue>  colState;       // hover/selected interaction layer
+        SP<Config::Values::CColorValue>  colOnHighlight; // text/icons on a highlight fill
+        SP<Config::Values::CColorValue>  colOnUrgent;    // text/icons on an urgent/error fill
         SP<Config::Values::CStringValue> soundCommand;  // libcanberra player; "" disables sound
-        SP<Config::Values::CStringValue> fallbackIconDir; // iconless cards draw a random identity face from here
     };
     extern SNotifyConfig cfg;
 
@@ -136,6 +145,8 @@ namespace NHyprnotify {
         std::string  label;   // localized button text
         SP<ITexture> iconTex; // resolved action-icon (warm; action-icons only)
         std::string  iconFor; // staleness: the id the icon was resolved from
+        int          iconPx = 0;
+        bool         iconSettled = false; // current request decoded or failed
     };
 
     // a body hyperlink (<a href>): a clickable region opening its URL
@@ -147,35 +158,73 @@ namespace NHyprnotify {
     // a body <img src>: a thumbnail rendered below the text
     struct SBodyImage {
         std::string  src;      // resolved file path
+        std::string  alt;      // alt text kept as body fallback when image load fails
         SP<ITexture> tex;      // built by warm
-        std::string  builtFor; // staleness: the src the tex was built from
+        std::string  builtFor; // staleness: the source + target cap
+        int          builtPx = 0;
+        bool         settled = false; // current request decoded or failed
+    };
+
+    struct SMessage {
+        std::string id;
+        std::string senderId;
+        std::string senderName;
+        std::string senderIcon;
+        std::string text;
+        int64_t     timestampMs = 0;
+        bool        historic    = false;
+    };
+
+    struct SParticipant {
+        std::string  key;
+        std::string  name;
+        std::string  iconSource;
+        std::string  icon;
+        SP<ITexture> avatarTex;
+        std::string  avatarFor;
+        int          avatarPx      = 0;
+        bool         avatarSettled = false;
     };
 
     struct SNotif {
         uint32_t             id = 0;
         std::string          appName;
         std::string          appKey;  // grouping identity: desktop-entry, else the app name
+        std::string          desktopEntry; // raw freedesktop desktop-entry identity
         std::string          summary; // newlines flattened, whitelisted markup
         std::string          body;    // whitelisted markup (Pango subset)
+        std::string               conversationId; // explicit stable chat identity; empty means no merge contract
+        std::string               conversationTitle;
+        std::string               conversationKind; // one-to-one or group
+        std::string               conversationIconSource;
+        std::string               conversationIcon;
+        std::string               declaredGroupKey;        // app-owned group identity, if supplied
+        std::string               section;                 // Pixel-like automatic grouping section
+        bool                      sectionExplicit = false; // supplied section survives derived alerting changes
+        std::vector<SMessage>     messages;                // oldest first, bounded MessagingStyle adaptation
+        std::vector<SParticipant> participants;            // latest distinct senders, bounded and texture-owning
+        uint32_t                  unreadCount = 0;
         uint8_t              urgency  = 1;
         int                  progress = -1; // 0..100 from the "value" hint, -1 = none
         std::string          image;    // CONTENT source (image-path), resolved file path, "" = none
         std::string          identity; // IDENTITY source (app_icon/desktop-entry), resolved path, "" = none
+        std::string          appIcon;  // raw app_icon; trusted OSD names select stable semantic marks
         std::vector<uint8_t> pixels;   // image-data, premultiplied BGRA (DRM ARGB8888); freed once uploaded
         bool                 hasPixels = false; // the LAST Notify carried image-data (outlives the freed buffer)
         int                  pw = 0, ph = 0;
         std::string          defaultAction; // the "default" action key, "" = none; a body click fires it, never a button
         bool                 canReply = false;   // the sender offered an "inline-reply" action
+        std::string          replyActionText;    // the action's localized affordance label, usually "Reply"
         std::string          replyPlaceholder;   // x-kde-reply-placeholder-text
-        std::string          replySubmitText;    // x-kde-reply-submit-button-text, else the action's own label
+        std::string          replySubmitText;    // x-kde-reply-submit-button-text, else the stable "Send" label
         std::vector<SAction>    actions;    // non-default actions -> buttons, in Notify order
         std::vector<SBodyImage> bodyImages; // body <img src> thumbnails
         bool                    actionIcons = false; // the action-icons hint: button ids are icon names
         bool                    resident    = false; // the resident hint: an action keeps the card
         bool                    transient   = false; // the transient hint: bypass history AND residency
-        bool                    conversation = false; // fd.o category im.*/call.*: outranks ordinary cards, never bundles, merges by sender
+        bool                      conversation        = false; // fd.o category or explicit conversation metadata
         bool                    priority     = false; // the user marked this chat: ranks first, the badge wears the ring
-        std::string             fallbackPick;         // the rolled identity face; survives in-place replaces
+        bool                    identityFromDesktop = false; // desktop-entry Icon= resolved asynchronously
 
         bool                 waiting = false; // arrived while suspended (DND): collected, not shown, timeout held
         bool                 banner  = true;  // the popup is up; expiry drops only this — the card stays resident
@@ -186,7 +235,7 @@ namespace NHyprnotify {
         // shade closes), which is the only thing that gives the undo something
         // to be clicked ON.
         Time::steady_tp      snoozeConfirmUntil;
-        int64_t              snoozeSecs = 0; // the duration in force, for the row's label and the ˅
+        int64_t              snoozeSecs = 0; // the duration in force for the Undo-row label
 
         float                timeoutMs = 0; // resolved; 0 = sticky
         Time::steady_tp      deadline;      // meaningful when banner && timeoutMs > 0 and not waiting
@@ -196,29 +245,60 @@ namespace NHyprnotify {
         // image textures — built ONLY by the warm pass (the texture rule).
         // Text rasters live in render.cpp's keyed cache; only the decoded
         // images cache here (their sources don't re-key per age tick).
-        SP<ITexture> iconTex;  // content avatar (or hero)
-        SP<ITexture> identTex; // identity icon: the corner badge, or the lead icon when no content
+        SP<ITexture> iconTex;  // bounded content image; avatar only for conversations
+        SP<ITexture> identTex; // one application identity used at top-left and as a conversation badge
+        SP<ITexture> conversationTex; // explicit/generated shortcut artwork; participant face piles stay separate
+        SP<ITexture> childIconTex;     // 24px sender/source icon for bundle children
         std::string  imageFor, identFor;
-        bool         heroTex   = false; // iconTex was built for the hero layout
+        std::string  conversationFor;
+        std::string  childIconFor;
+        int          imageIconPx  = 0;
+        int          identIconPx = 0;
+        int          conversationIconPx = 0;
+        int          childIconPx = 0;
+        bool         imageSettled = false, identSettled = false;
+        bool         conversationSettled = false;
+        bool         childIconSettled = false;
         uint64_t     pixelsFor = 0;
+        int          pixelsIconPx = 0;
     };
     extern std::vector<SP<SNotif>> notifs;
 
     // ---- parse.cpp: the untrusted payload -> values a card can hold ----
 
     namespace Parse {
+        // The D-Bus transport has already accepted a Notify before this code
+        // runs. These limits bound the work and state the compositor retains.
+        inline constexpr size_t MAX_APP_NAME_BYTES     = 256;
+        inline constexpr size_t MAX_SUMMARY_BYTES      = 2048;
+        inline constexpr size_t MAX_BODY_BYTES         = 8192;
+        inline constexpr size_t MAX_HINT_TEXT_BYTES    = 1024;
+        inline constexpr size_t MAX_SOURCE_BYTES       = 4096;
+        inline constexpr size_t MAX_ACTION_ID_BYTES    = 256;
+        inline constexpr size_t MAX_ACTION_LABEL_BYTES = 1024;
+        inline constexpr size_t MAX_ACTION_PAIRS       = 12;
+        inline constexpr size_t MAX_BODY_IMAGES        = 4;
+        inline constexpr size_t MAX_MARKUP_TAG_BYTES   = 1024;
+        inline constexpr size_t MAX_CONVERSATION_ID_BYTES   = 512;
+        inline constexpr size_t MAX_MESSAGE_ID_BYTES        = 512;
+        inline constexpr size_t MAX_SENDER_ID_BYTES         = 512;
+        inline constexpr size_t MAX_SENDER_NAME_BYTES       = 512;
+        inline constexpr size_t MAX_CONVERSATION_KIND_BYTES = 32;
+
         // the spec's image-data: width, height, rowstride, has_alpha,
         // bits_per_sample, channels, RGB(A) bytes
         using ImageData = sdbus::Struct<int32_t, int32_t, int32_t, bool, int32_t, int32_t, std::vector<uint8_t>>;
 
-        std::string              sanitizeMarkup(const std::string& in, bool allowLinks = false);
-        std::string              attrValue(const std::string& tag, const std::string& attr); // one quoted attr, case-insensitive name
+        std::string              clipUtf8(std::string_view in, size_t maxBytes);
+        std::string              boundedOpaque(std::string_view in, size_t maxBytes);
+        std::string              sanitizeMarkup(std::string_view in, bool allowLinks = false);
         std::string              oneLine(std::string s);
         std::string              resolveImage(std::string s, int sizePx); // path, file://, or a themed icon NAME
-        std::vector<std::string> extractImages(std::string& body, int sizePx); // pulls <img src> out of the body
+        std::vector<SBodyImage>  extractImages(std::string& body, int sizePx); // pulls <img src alt> out of the body
         void                     unpackImageData(SNotif& n, const ImageData& d, int capPx); // -> premultiplied BGRA
-        std::string              joinAppend(const std::string& oldBody, const std::string& add);
     }
+
+    void textCacheClear();
 
     // ---- model.cpp: the cards and their lifetimes ----
 
@@ -235,15 +315,26 @@ namespace NHyprnotify {
         uint32_t arrive(const std::string& appName, uint32_t replacesId, const std::string& appIcon, const std::string& summary, const std::string& body,
                         const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout);
 
-        void                          closeOne(uint32_t id, uint32_t reason);
+        bool                          closeOne(uint32_t id, uint32_t reason);
         void                          dismissAllLive();                      // "Clear all": every visible card goes; the DND queue stays
-        void                          dismissApp(const std::string& appKey); // a bundle's right-click
+        void                          dismissGroup(const std::string& groupKey); // dismiss one displayed declared/automatic group
+
+        // the in-memory history (v13): dismissed cards and Clear-all sweeps
+        // stash a bounded entry; the footer's history pill reveals the last
+        // few. Transient and OSD-band cards never stash.
+        struct SHistoryEntry {
+            std::string iconSource; // the identity source; the 20px texture resolves at render time
+            std::string app;
+            std::string title;
+        };
+        void                          pushHistory(const SP<SNotif>& n); // stashes unless the card opts out
+        void                          clearHistory();
+        const std::vector<SHistoryEntry>& history();
         void                          absorbPopped();                        // opening the shade parks the popped stack (no re-pop on close)
         void                          rearmExpiry();
         void                          snooze(uint32_t id);                        // out of sight, then back with a fresh banner
-        void                          snoozeFor(uint32_t id, int64_t seconds);    // the panel's explicit durations
+        void                          snoozeWith(uint32_t id, int64_t seconds); // the hold menu's chosen duration
         void                          snoozeUndo(uint32_t id);  // inside the undo window: as if it never happened
-        void                          snoozeCycle(uint32_t id); // the ▾: next rung of the duration ladder
         void                          snoozeEndConfirm();       // the shade closed; every confirmation row goes
         bool                          snoozeConfirming(const SP<SNotif>& n); // still showing its undo row
         std::string                   snoozeLabel(const SP<SNotif>& n);      // "15 min", "2 hours"
@@ -259,15 +350,22 @@ namespace NHyprnotify {
     // ---- policy.cpp: the user's rules, persisted ----
 
     namespace Policy {
+        enum class eAlertingMode : uint8_t {
+            PRIORITY,
+            DEFAULT,
+            SILENT,
+        };
+
         void        init();
         void        exit();
         bool        silenced(const std::string& appKey);                            // no banner, no sound, ranked quiet
-        bool        priority(const std::string& appKey, const std::string& sender); // this chat outranks everything but critical
-        void        toggleSilence(const std::string& appKey);                       // the quick toggle: always, or not at all
-        void        silenceFor(const std::string& appKey, int64_t seconds);         // iOS's "Mute for 1 Hour"; 0 = always, < 0 = today
-        void        unsilence(const std::string& appKey);
+        int64_t     silenceRemaining(const std::string& appKey);                    // seconds until silence expires; 0 = forever; -1 = not silenced
+        bool          priority(const std::string& appKey, const std::string& conversationId); // this chat outranks everything but critical
+        eAlertingMode mode(const std::string& appKey, const std::string& conversationId, bool conversation);
+        bool          setMode(const std::string& appKey, const std::string& conversationId, bool conversation, eAlertingMode mode);
+        bool          setSilenceUntil(const std::string& appKey, int64_t seconds); // timed silence: 0 = forever, >0 = duration
+        void          refreshExpired(); // event-loop/warm only; keeps draw-side reads pure
         void        unsilenceAll(); // the footer chip: one click out of every standing rule
-        void        togglePriority(const std::string& appKey, const std::string& sender);
         size_t      silencedCount(); // rules in force — the footer never lets one hide
         std::string stateString();   // the debug line, and what the gate reads
     }
@@ -287,11 +385,17 @@ namespace NHyprnotify {
     // ---- icons.cpp ----
 
     // (Re)build n.iconTex (content) and n.identTex (identity) when their
-    // sources changed. iconPx caps the icon-box raster; content sources wider
-    // than HERO_ASPECT (and at least half the hero box) raster to heroWPx
-    // instead, cover-cropped to heroHCapPx, and set heroTex.
-    void resetFallbackCache(); // forget the fallback_icon_dir listing (a config reload rescans)
-    void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx);
+    // sources changed. iconPx caps every decoded/uploaded card image.
+    void iconsInit();
+    void iconsExit();
+    void        resetDesktopIconCache();     // re-resolve app identity and restart the bounded desktop-entry index
+    void        resetGeneratedAvatarCache(); // re-resolve conversation sources and clear theme/font-sensitive textures
+    SP<ITexture> historyIcon(const std::string& source, int iconPx); // the 20px history-row mark; null = none yet
+    void        historyIconsClear();
+    std::string resolveDesktopEntryIcon(const std::string& entry, int sizePx);
+    void        ensureIconTex(SNotif& n, int iconPx);
+    void        ensureConversationIcons(SNotif& n, int iconPx);
+    void        ensureChildIcon(SNotif& n, int iconPx);
 
     // (Re)build an action button's icon when action-icons is set and its id (an
     // icon name or a path) changed; clears it when the hint is off.
@@ -301,8 +405,11 @@ namespace NHyprnotify {
     // decoded raster.
     void ensureBodyImage(SBodyImage& im, int maxPx);
 
-    // Downscale n.pixels in place when it exceeds maxPx (unpack-time cap).
-    void shrinkPixels(SNotif& n, int maxPx);
+    // Mark ready asynchronous sources for this warm, then release the ones
+    // consumed or superseded by it. True means a queue slot opened for a
+    // deferred visible request and a follow-up warm is needed.
+    void iconsWarmBegin();
+    bool iconsWarmEnd();
 
     // ---- render.cpp ----
 
@@ -317,26 +424,35 @@ namespace NHyprnotify {
     bool centerVisible();
     void setCenter(bool on);  // event-loop only (input/hyprctl defer through main.cpp's queue)
     void centerPage(int dir); // wheel: >0 towards older rows
-    void centerToggleGroup(const std::string& appKey);
+    void                  centerToggleGroup(const std::string& groupKey);
     void centerToggleRow(uint32_t id);
-    void     centerToggleManage(uint32_t id); // the ⋮: one row at a time wears its manage panel
-    uint32_t centerManageRow();
-    uint32_t selectedRow(); // the keyboard selection's card id, 0 = none/a bundle
-    void centerSelectMove(int dir);                         // ↑/↓: move the keyboard selection, paging to keep it on screen
-    bool centerSelection(uint32_t& id, std::string& group); // the selected item; group non-empty = a bundle. false = none
+    void     centerToggleManage(uint32_t id); // long-press: one row at a time wears its manage panel
+    void                  centerToggleManageGroup(const std::string& groupKey);
+    Policy::eAlertingMode centerManageMode();
+    void                  centerChooseManageMode(Policy::eAlertingMode mode);
+    bool                  centerManageBundle(); // the target is a bundle (no snooze section)
+    bool                  centerManageConversation(); // the target carries a conversation (hold header line)
+    void                  centerCommitManage(uint32_t id, const std::string& appKey = {});
+    // v13: the hold menu's snooze section, staged like the importance mode —
+    // Done commits whichever of the two is open
+    bool          centerManageSnoozeOpen();
+    void          centerToggleManageSnooze();
+    int64_t       centerManageSnoozeSecs();
+    void          centerChooseManageSnooze(int64_t seconds);
+    // v13: kid-level expansion (the time + name + action row under one kid)
+    bool          centerKidExpanded(const std::string& childKey);
+    void          centerToggleChild(const std::string& childKey);
+    // v13: the footer history panel
+    bool          centerHistOpen();
+    void          centerToggleHistory();
+    void          centerHistoryClear();
 
-    // the bell's hover-peek: open unpinned, close when the pointer is on
-    // neither the bell nor the panel, pin on any click
-    void centerPeek(bool onBell);
-    void centerPeekPointer(bool onCard); // the pointer entered/left one of our cards
-    void centerPin();
-    bool centerPeeking();
-    void centerInit(); // the peek's grace timer
     void centerExit();
 
     void onRenderStage(eRenderStage stage);
-    // render.preChecks: keep a visible card compositing over a solitary
-    // fullscreen window (else scanout/solitary-render skips the notify pass)
+    // render.preChecks: ask the target monitor to keep a visible card
+    // composited over a solitary fullscreen window (else scanout/solitary
+    // render skips the notify pass)
     void onRenderPreChecks(PHLMONITOR mon);
     void renderInit(); // the age/motion tick timers
     void renderExit();
@@ -345,28 +461,33 @@ namespace NHyprnotify {
     struct SCard {
         enum eKind : uint8_t {
             POPUP = 0,
-            ROW,       // a shade row
-            DIGEST,    // a folded app bundle (group = app key)
+            ROW,       // a v13 card body (plain, conversation, or bundle lead)
+            DIGEST,    // a folded app bundle (group = app key) — its lead card
             GHEAD,     // an expanded bundle's header row
-            CHILD,     // a bundle child row
+            CHILD,     // a kid row: a conversation message/sender or a bundle child
             SNOOZE,    // a snoozed card's undo row, in the slot the card held
-            MANAGE,    // a row turned into its manage panel by the ⋮
-            BTN_RULES, // footer "⊘ N": the silences in force, and the way out of them
+            MANAGE,    // the hold menu, in the card's own slot (long-press)
+            BTN_RULES, // footer muted-count control: the silences in force and the way out
             BTN_CLEAR, // footer "Clear all": the global sweep
-            BTN_DND,   // footer ⊖ (do-not-disturb)
+            BTN_DND,   // footer DND control
+            BTN_HISTORY, // footer history pill: toggles the history panel
+            HIST_BOX,   // the history panel itself (swallows clicks)
+            HIST_CLEAR, // the history panel's "Clear" button
             PANEL,     // the shade panel body: swallows clicks, owns the wheel
         };
         eKind       kind = POPUP;
         CBox        box;
-        uint32_t    id   = 0; // live identity
-        std::string group;    // DIGEST/GHEAD/CHILD: the app key
-        CBox        chevron;      // ROW: the 24Ø fold indicator; w = 0 -> none
-        CBox        close;        // POPUP hover-✕ / GHEAD ✕; w = 0 -> none
-        CBox        replyField;   // ROW: the armed inline-reply box (swallows, never acts)
-        CBox        replySend;    // ROW: its send pill
-        // every small control the surface carries — the ⋮, the undo row's two,
-        // a manage panel's entries — as one rect per part code, so another
-        // verb costs an entry here and not a member
+        uint32_t    id = 0;             // live identity
+        std::string group;              // DIGEST/GHEAD/CHILD: the app key
+        std::string childKey;           // CHILD: its expansion key (card id + sender/app identity)
+        bool        expandable = false; // ROW: open form reveals hidden compact content
+        CBox        replyField;         // ROW: the armed inline-reply box (swallows, never acts)
+        CBox        replySend;          // ROW: its send pill
+        CBox        expandButton;       // Pixel expand/count pill hit target
+        bool        expansionButton = false;
+        // every small control the surface carries — the undo row's action and a
+        // manage panel's entries — as one rect per part code, so another verb
+        // costs an entry here and not a member
         struct SManage {
             CBox    box;
             uint8_t part;
@@ -388,15 +509,20 @@ namespace NHyprnotify {
 
     // hover affordance: rows/buttons warm under the pointer. `btn` -1 = the
     // surface itself, >= 0 = that action button; `part` distinguishes the
-    // chevron/✕ corners. A change damages only the boxes involved.
+    // reply, management, and undo controls. A change damages only the boxes involved.
     struct SHover {
         uint32_t     id = 0;
         std::string  group;
+        std::string  childKey; // CHILD: distinguishes siblings that share one card id
         SCard::eKind kind = SCard::POPUP;
         int          btn  = -1;
-        // 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 5 silence,
-        // 6 priority, 7 snooze, 8 undo, 9 duration, 10 the ⋮, 16+n a manage
-        // panel entry
+        // part codes are per-kind (SCard::manage boxes and the reply boxes
+        // carry their own):
+        //  ROW/DIGEST/GHEAD  1 expand chip, 2 icon column
+        //  CHILD             1 kid chevron
+        //  MANAGE            0..2 importance, 3 snooze head, 4..7 snooze
+        //                    options (15/30/60/120), 8 Done, 9 Dismiss
+        //  SNOOZE            8 undo
         uint8_t      part = 0;
         bool         operator==(const SHover&) const = default;
     };
@@ -414,6 +540,8 @@ namespace NHyprnotify {
     void               replyOpen(uint32_t id);
     void               replyClose();
     const std::string& replyText();
+    size_t                    replyCursor();
+    std::pair<size_t, size_t> replySelection();
     // a key while armed. Returns false when the key is not ours to eat.
     bool               replyKey(xkb_state* state, uint32_t keycode);
     void               replyExit();
@@ -423,15 +551,13 @@ namespace NHyprnotify {
     void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info);
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info);
     void onMouseAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info);
-    void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info); // esc peels the center; ↑↓ space enter delete drive it
+    void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info); // only an armed inline-reply field owns keys
     void releasePointer();
     void refreshPointerOwnership(); // the hovered card vanished under a still pointer
-    bool pointerOverCards();        // the pointer is on one of our surfaces (the peek's other cancel)
+    void inputCancelLongPress();
     void inputExit();
 
-    // main.cpp: the deferred center toggle every entry point funnels through
-    // (bell click over the bus, hyprctl, Lua, F12's user bind)
+    // main.cpp: the deferred center toggle used by the bar bus and hyprctl
     void queueCenterToggle();
-    void queueCenterPeek(bool onBell); // the bar's bell hover, over the bus
 
 } // namespace NHyprnotify

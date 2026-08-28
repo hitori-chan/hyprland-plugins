@@ -1,23 +1,15 @@
 # hyprclick
 
-Awesome's click and focus-raise policy. No config.
+Click/focus policy with no configuration.
 
-1. **Click-to-raise** — a plain left click raises the clicked window;
-   clicking a maximized window tucks the floaters back behind it (by
-   fullscreen flag only — z-order is never touched). Skips presses another
-   plugin swallowed (load `hyprmax` first).
-2. **Keyboard focus raises, hover never does** — binds and dispatchers
-   raise; sloppy focus doesn't.
-3. **Clicks aimed at a just-dead window are swallowed** — when a click
-   closes a window (or drops it out of fullscreen), the vacated box briefly
-   eats further presses, so the tail of a fast double-click can't raise and
-   focus whatever happened to be underneath.
-4. **`hl.plugin.hyprclick.focus_prev_here()`** — the previously focused
-   window on the current workspace; repeated presses bounce between the
-   two most recent windows (awesome's Mod+Tab).
-5. **`hl.plugin.hyprclick.focus_next()` / `focus_prev()`** — cycle the
-   workspace's windows in arrival order, wrapping (awesome's Mod+J/K,
-   `focus.byidx`). The native cycle walks the z-order list, which rule
-   2's raises reshuffle — backward cycling bounced instead of walking.
+- A plain left click raises the target. Clicking a maximized window tucks
+  fullscreen-flagged floaters without rewriting z-order.
+- Keyboard focus raises; pointer hover does not.
+- A short-lived corpse guard consumes presses aimed at a window that just
+  closed or left fullscreen, preventing click-through to the window below.
+- `hl.plugin.hyprclick.focus_prev_here()` toggles the two most recent windows
+  on the current workspace.
+- `focus_next()` and `focus_prev()` cycle stable arrival order instead of the
+  z-order that click-to-raise continuously changes.
 
-Maximize itself lives in `hyprmax`.
+`hyprmax` owns maximize and must load first so its drag swallow wins.

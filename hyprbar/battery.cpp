@@ -545,9 +545,16 @@ namespace NHyprbar {
     static wl_event_source* g_batterySrc = nullptr;
 
     static int              onBatteryUevent(int, uint32_t, void*) {
+        // libudev does not coalesce for us. Yield after a small batch so a
+        // noisy power-supply driver cannot monopolize the compositor loop.
+        constexpr size_t MAX_UDEV_EVENTS_PER_DISPATCH = 16;
         if (g_udevMon)
-            while (auto* DEV = udev_monitor_receive_device(g_udevMon))
+            for (size_t i = 0; i < MAX_UDEV_EVENTS_PER_DISPATCH; ++i) {
+                auto* DEV = udev_monitor_receive_device(g_udevMon);
+                if (!DEV)
+                    break;
                 udev_device_unref(DEV);
+            }
         if (Battery::refresh())
             barChanged(); // a uevent lands in the event loop: warm now, no deferral needed
         Battery::alerts();

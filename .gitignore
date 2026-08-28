@@ -5,8 +5,16 @@
 
 # local agent instructions
 CLAUDE.md
+AGENTS.md
 HANDOFF.md
 .claude/
+
+# local audit ledger
+docs/audit-tracking.md
+
+# local visual studies; keep generated demos out of repository history
+docs/demos/
+screenshots/
 
 # devtools — nested-Hyprland test tooling: track the sources, not the
 # build artifacts (the vptr binary + the wayland-scanner protocol glue)
@@ -16,3 +24,28 @@ devtools/vptr-proto.h
 devtools/vkbd
 devtools/vkbd-proto.c
 devtools/vkbd-proto.h
+devtools/input-capture
+devtools/input-capture-proto.c
+devtools/input-capture-proto.h
+devtools/cliphold
+devtools/cliphold-proto.c
+devtools/cliphold-proto.h
+devtools/battery-state-test
+devtools/desktop-exec-test
+devtools/fileindex-test
+devtools/hyprosd-readback-test
+devtools/pixel-model-test
+devtools/icon-resolver-test
+devtools/persist-test
+devtools/hyprsnap-geometry-test
+devtools/hyprmax-geometry-test
+
+# Planning, audit, and implementation-report documents (local only,
+# never tracked). Covers both separator styles the files actually use.
+AUDIT*.md
+*_AUDIT.md
+hyprnotify/BUNDLE-CHILD-ICONS.md
+PLAN_*.md
+*[-_]audit*.md
+*[-_]spec*.md
+*[-_]plan*.md

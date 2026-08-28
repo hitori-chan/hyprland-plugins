@@ -1,89 +1,52 @@
 # hyprbar
 
-The AwesomeWM wibar, drawn by the compositor. Renders in each monitor's
-reserved top strip (`reserved = { top = 26 }`, matching
-`plugin:hyprbar:height`); hides under real fullscreen — except while the
-menubar is open, which floats above even that; maximized windows keep it
-visible. The strip owns its pointer — hovering it never leaks cursor shape
-or focus to a window underneath. The band, the menubar strip and the tray
-menus are frosted glass — a translucent `col_bg` over a live blur — when the
-compositor's blur is on; the widgets riding them stay opaque.
+A compositor-drawn top bar for every monitor:
 
-```
-[taglist 一..九] [tasklist of the active workspace ...] [tray] [bell] [battery] [clock] [layoutbox]
+```text
+[workspaces] [tasks...........................] [tray] [bell] [battery] [clock] [layout]
 ```
 
-- **Taglist** — kanji buttons, awesome's state matrix; occupancy as the
-  corner square. Click views, `Mod+click` sends the focused window, wheel
-  cycles.
-- **Tasklist** — the active workspace's windows in arrival order: app icon,
-  `⌃` pinned / `+` maximized / `✈` floating markers; minimized windows keep
-  their row, muted (awesome's `fg_minimize`). Click the focused task to
-  minimize it, click any other (minimized included) to restore + focus;
-  right-click opens the all-clients menu, wheel walks focus (skipping
-  minimized). `Mod+N` / `Mod+Ctrl+N` minimize / restore-last
-  (`hl.plugin.hyprbar.minimize()` / `.restore()`); a client's own minimize
-  request (a CSD button, X11 `IconicState`) is honored too.
-- **Tray** — in-compositor SNI host with a native dbusmenu renderer. Menus
-  wear the glass·ink material: a frosted, card-radius panel with a `col_frame`
-  ring, accent-dim hover pills inset 4px, hairline separators — the same
-  language as the notification cards.
-- **Bell** — the notification bell + unread badge, riding the tray's bus
-  link to hyprnotify (`org.hitori.hyprnotify`). The badge counts the shade
-  (popped + waiting) and hides at zero; a left click toggles the
-  notification center, and HOVERING it for `bell_peek_ms` peeks the shade
-  open without a click (`Peek`; hyprnotify decides when to drop it, since
-  the pointer may travel from here down into the panel — a click pins it).
-  DND has no bar presence — that lives in the center's ⊖ only.
-- **Battery** — Android's expressive battery (the Pixel pill of Android 16
-  QPR2/17), a 1:1 transcription of SystemUI's Compose implementation with
-  its vector assets embedded verbatim, bespoke digit glyphs included:
-  borderless pill on a translucent track, left-anchored fill, D cap right
-  — replaced by Android's attribution ladder: the power-save plus (ACPI
-  platform profile `low-power`), the defender shield (plugged but held at
-  `charge_control_end_threshold`), or the charging bolt — digits punched
-  in black. Fill white idle / yellow in power save / green charging or
-  defending / red ≤ 20%; sized 13:14 against the bar font, the proportion
-  Android gives it against status bar text; hidden on desktops.
-  Alerts ride along on Android's same lines: AC plug/unplug, low at 20%,
-  critical (sticky) at 5% — sent through the notification daemon off the
-  same udev uevents as the gauge.
-- **Clock** — `%a %b %d, %H:%M`.
-- **Layoutbox** — the active workspace's layout, rightmost. Click/wheel
-  cycles like awesome (`Super+Space` too); one layout until more land.
-- **Menubar** (`Mod+P`, `hl.plugin.hyprbar.menubar()`) — awesome's launcher
-  in its own strip below the bar: categories + `.desktop` apps filtered as
-  you type, most-launched first, shell completion, history, readline
-  editing. Draws above fullscreen, like awesome's ontop wibox. Iconless
-  entries keep their cell with a letter fallback instead of collapsing.
+- Workspaces are monitor-local. Click or wheel to switch; `Mod+click` moves the
+  focused window without following it.
+- Tasks stay in arrival order. Click to focus or minimize, right-click for the
+  client list, and wheel to cycle non-minimized windows.
+- The tray hosts StatusNotifier items and dbusmenu. Passive items hide and
+  narrow outputs omit cells that do not fit.
+- The bell shows `hyprnotify`'s resident count and toggles its center.
+- The battery uses Pixel SystemUI geometry and state precedence. Only the
+  PowerProfiles `power-saver` profile selects the yellow plus; charging and
+  defender use green, and an unattributed level at or below 20% uses red.
+- `hl.plugin.hyprbar.menubar()` opens the bounded desktop-entry and command
+  launcher. The query editor supports history, completion, readline-style
+  editing, and asynchronous paste with a 4 KiB UTF-8 limit.
 
-Details and the full menubar key reference: [docs/hyprbar.md](../docs/hyprbar.md).
+The strip stays above maximized windows, hides below fullscreen clients, and
+temporarily composites above fullscreen while the launcher is open. Detailed
+input, tray, task, and launcher contracts are in
+[`docs/hyprbar.md`](../docs/hyprbar.md).
 
 ## Config
 
-Colors and font come from `theme.lua` via `hl.config { plugin = { hyprbar =
-… } }`; the C++ defaults mirror the theme.
-
-| key | what | default |
+| Key | Purpose | Default |
 |---|---|---|
-| `plugin:hyprbar:height` | bar height in logical px (reserve it: monitor `reserved top`) | 26 |
-| `plugin:hyprbar:font_size` | text size in logical px | 12 |
-| `plugin:hyprbar:tray_spacing` | px between tray icons | 10 |
-| `plugin:hyprbar:bell_peek_ms` | hover the bell this long to peek the shade open; 0 = off | 350 |
-| `plugin:hyprbar:font` | font family | Fira Code |
-| `plugin:hyprbar:terminal` | terminal for `Terminal=true` menubar entries | alacritty |
-| `plugin:hyprbar:col_bg` | bar background | `131313` |
-| `plugin:hyprbar:col_fg` | normal text | `aaaaaa` |
-| `plugin:hyprbar:col_muted` | tray letter fallback | `8a97a8` |
-| `plugin:hyprbar:col_focus` | selected menubar entry text | `32d6ff` |
-| `plugin:hyprbar:col_active` | active tag / focused task text | `00ccff` |
-| `plugin:hyprbar:col_active_bg` | active tag background | `1e2320` |
-| `plugin:hyprbar:col_empty` | disabled/placeholder text | `565e6b` |
-| `plugin:hyprbar:col_urgent` | urgent text | `c83f11` |
-| `plugin:hyprbar:col_urgent_bg` | urgent background | `3f3f3f` |
-| `plugin:hyprbar:col_square_sel` | taglist square: tag holds the focused window | `f0dfaf` |
-| `plugin:hyprbar:col_square_unsel` | taglist square: occupied tag | `dcdccc` |
-| `plugin:hyprbar:col_frame` | menu panel frame | `3f3f3f` |
-| `plugin:hyprbar:col_charging` | battery fill charging/defending (Android's charging green) | `18cc47` |
-| `plugin:hyprbar:col_low` | battery fill ≤ 20% (Android's error red) | `ff0e01` |
-| `plugin:hyprbar:col_powersave` | battery fill in power save (Android's warning yellow) | `ffc917` |
+| `plugin:hyprbar:height` | bar height and required top reservation | 26 |
+| `plugin:hyprbar:font_size` | text size | 12 |
+| `plugin:hyprbar:tray_spacing` | tray icon gap | 10 |
+| `plugin:hyprbar:font` | font family | `Roboto` |
+| `plugin:hyprbar:terminal` | terminal for `Terminal=true` entries | `alacritty` |
+| `plugin:hyprbar:col_bg` | panel | `ff132732` |
+| `plugin:hyprbar:col_fg` | text | `ffeef3f5` |
+| `plugin:hyprbar:col_muted` | compatibility fallback | `ffd1dde1` |
+| `plugin:hyprbar:col_focus` | launcher selection | `ff9acbff` |
+| `plugin:hyprbar:col_active` | active workspace/task | `ff9acbff` |
+| `plugin:hyprbar:col_active_bg` | active/hover state | `339acbff` |
+| `plugin:hyprbar:col_on_active` | content on primary | `ff102333` |
+| `plugin:hyprbar:col_empty` | disabled content | `61d1dde1` |
+| `plugin:hyprbar:col_urgent` | urgent content | `ffffb4ab` |
+| `plugin:hyprbar:col_urgent_bg` | urgent container | `ff93000a` |
+| `plugin:hyprbar:col_square_sel` | focused-window marker | `ff9acbff` |
+| `plugin:hyprbar:col_square_unsel` | occupied marker | `ffd1dde1` |
+| `plugin:hyprbar:col_frame` | menu outline | `33e0f0f8` |
+| `plugin:hyprbar:col_charging` | charging/defender battery | `18cc47` |
+| `plugin:hyprbar:col_low` | low battery | `ff0e01` |
+| `plugin:hyprbar:col_powersave` | Battery Saver | `ffc917` |

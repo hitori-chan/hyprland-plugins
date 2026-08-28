@@ -385,7 +385,7 @@ namespace NHyprbar {
     }
 
     void iconsInit() {
-        if (!g_pEventLoopManager)
+        if (!g_pEventLoopManager || !g_pCompositor || !desktopIndex.init(g_pCompositor->m_wlEventLoop))
             return;
         desktopPoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { pollDesktopIndex(); }, nullptr);
         g_pEventLoopManager->addTimer(desktopPoll);

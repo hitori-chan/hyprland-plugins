@@ -1,24 +1,34 @@
-// common/fileindex.hpp -- bounded, cancellable file enumeration off compositor paths.
+// common/fileindex.hpp -- bounded file enumeration without plugin-owned workers.
 #pragma once
 
 #include <algorithm>
+#include <array>
+#include <cerrno>
+#include <charconv>
 #include <cctype>
-#include <condition_variable>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
-#include <fstream>
-#include <limits>
-#include <mutex>
-#include <optional>
-#include <stop_token>
+#include <fcntl.h>
+#include <signal.h>
+#include <spawn.h>
 #include <string>
-#include <thread>
+#include <string_view>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <utility>
 #include <vector>
+#include <wayland-server-core.h>
+
+extern char** environ;
 
 namespace NHyprCommon {
 
+    // A plugin cannot leave a filesystem thread alive across dlclose, and a
+    // jthread destructor can wait indefinitely in a hostile mount. Keep the
+    // slow traversal in an owned helper process instead. Its only output is a
+    // bounded record stream drained by the compositor's event loop.
     class CAsyncFileIndex {
       public:
         struct SEntry {
@@ -48,213 +58,495 @@ namespace NHyprCommon {
         CAsyncFileIndex(const CAsyncFileIndex&)            = delete;
         CAsyncFileIndex& operator=(const CAsyncFileIndex&) = delete;
 
-        void start() {
-            if (m_worker.joinable())
-                return;
-            m_worker = std::jthread([this](std::stop_token stop) { worker(stop); });
+        // init/exit run on the compositor event loop. Requests made before
+        // init deliberately complete empty instead of starting an unowned
+        // helper while plugin startup is incomplete.
+        bool init(wl_event_loop* loop) {
+            if (!loop || (m_loop && m_loop != loop))
+                return false;
+            m_loop = loop;
+            return true;
         }
 
         void request(SRequest request) {
-            start();
-            {
-                std::scoped_lock lock(m_mutex);
-                m_generation = request.generation;
-                m_complete   = 0;
-                m_results.clear();
-                m_request = std::move(request);
+            stopHelper(true);
+            clearResults();
+            m_generation = request.generation;
+            m_complete   = false;
+            m_eof        = false;
+            m_roots.clear();
+
+            if (!m_loop || !prepare(request)) {
+                m_complete = true;
+                return;
             }
-            m_cv.notify_all();
+
+            for (auto& root : request.roots)
+                if (!root.empty())
+                    m_roots.push_back(std::move(root));
+            if (m_roots.empty()) {
+                m_complete = true;
+                return;
+            }
+
+            m_maxFileBytes = request.maxFileBytes;
+            if (!spawn(std::move(request)))
+                m_complete = true;
         }
 
-        // A cancellation is another generation, so a slow old filesystem
-        // operation cannot publish after the consumer has moved on.
+        // A cancellation is another generation, so an old helper's records
+        // cannot be observed after the consumer has moved on.
         void cancel(uint64_t generation) {
-            {
-                std::scoped_lock lock(m_mutex);
-                m_generation = generation;
-                m_complete   = generation;
-                m_results.clear();
-                m_request.reset();
-            }
-            m_cv.notify_all();
+            stopHelper(true);
+            clearResults();
+            m_roots.clear();
+            m_generation = generation;
+            m_complete   = true;
+            m_eof        = false;
         }
 
         // Move at most max entries onto the event loop. True means this
         // generation is complete and no retained result remains to consume.
         bool poll(uint64_t generation, std::vector<SEntry>& out, size_t max) {
-            bool complete = false;
-            {
-                std::scoped_lock lock(m_mutex);
-                while (out.size() < max && !m_results.empty()) {
-                    if (m_results.front().generation == generation)
-                        out.push_back(std::move(m_results.front().entry));
-                    m_results.pop_front();
-                }
-                complete = m_complete == generation && m_results.empty();
+            if (generation != m_generation)
+                return false;
+            while (out.size() < max && !m_results.empty()) {
+                m_resultBytes -= m_results.front().bytes;
+                out.push_back(std::move(m_results.front().entry));
+                m_results.pop_front();
             }
-            m_cv.notify_all();
-            return complete;
+            if (!parseFrames())
+                return true;
+            resumeIfPossible();
+            finishIfEof();
+            return m_complete && m_results.empty();
         }
 
         bool active(uint64_t generation) const {
-            std::scoped_lock lock(m_mutex);
-            return m_generation == generation && m_complete != generation;
+            return m_generation == generation && !m_complete;
         }
 
         void exit() {
-            if (!m_worker.joinable())
-                return;
-            m_worker.request_stop();
-            m_cv.notify_all();
-            m_worker = {};
-            std::scoped_lock lock(m_mutex);
-            m_request.reset();
-            m_results.clear();
-            m_generation = m_complete = 0;
+            stopHelper(true);
+            clearResults();
+            m_roots.clear();
+            m_generation   = 0;
+            m_complete     = true;
+            m_eof          = false;
+            m_loop         = nullptr;
+            m_maxFileBytes = 0;
         }
 
       private:
         static constexpr size_t MAX_QUEUED_RESULTS = 128;
+        static constexpr size_t MAX_QUEUED_BYTES   = 4u << 20;
+        static constexpr size_t MAX_ROOTS           = 64;
+        static constexpr size_t MAX_ENTRIES         = 4096;
+        static constexpr size_t MAX_VISITED         = 65536;
+        static constexpr size_t MAX_FILE_BYTES      = 1u << 20;
+        static constexpr size_t MAX_PATH_BYTES      = 4096;
+        static constexpr size_t MAX_PREFIX_BYTES    = 4096;
+        static constexpr size_t MAX_EXTENSIONS      = 16;
+        static constexpr size_t MAX_EXTENSION_BYTES = 64;
+        static constexpr size_t HEADER_BYTES        = 25; // three 8-digit hex fields + directory bit
+        static constexpr size_t READ_BYTES          = 4096;
+        static constexpr size_t READS_PER_DISPATCH  = 16;
+
+        // All request values are passed as argv, never interpolated into the
+        // script. The helper only writes framed data to stdout; stdout is our
+        // CLOEXEC pipe and the helper owns a separate process group.
+        static constexpr std::string_view HELPER = R"BASH(LC_ALL=C
+export LC_ALL
+max_entries=$1
+max_visited=$2
+max_file_bytes=$3
+recursive=$4
+executable=$5
+directories=$6
+name_prefix=$7
+extension_count=$8
+shift 8
+extensions=("${@:1:extension_count}")
+shift "$extension_count"
+
+visited=0
+emitted=0
+stop=0
+
+too_large() {
+    local value=$1 limit=$2
+    ((${#value} > ${#limit})) || { ((${#value} == ${#limit})) && [[ "$value" > "$limit" ]]; }
+}
+
+emit_entry() {
+    local root_index=$1 path=$2 bytes=$3 directory=$4 contents=''
+    (( ${#path} <= 4096 )) || return
+    if (( directory == 0 && max_file_bytes > 0 )); then
+        IFS= read -r -N "$bytes" contents < "$path" || true
+        # Bash variables cannot represent NUL. Desktop entries are text, so
+        # reject a changed or binary file rather than corrupting the frame.
+        (( ${#contents} == bytes )) || return
+    fi
+    printf '%08X%08X%08X%d' "${#path}" "$root_index" "${#contents}" "$directory"
+    printf '%s' "$path"
+    printf '%s' "$contents"
+}
+
+visit_root() {
+    local root=$1 root_index=$2 path bytes name name_without_dot extension wanted directory matched
+    local -a find_args=(-mindepth 1)
+    (( recursive )) || find_args+=(-maxdepth 1)
+    while IFS= read -r -d '' path && IFS= read -r -d '' bytes; do
+        (( ++visited > max_visited )) && { stop=1; break; }
+        [[ "$bytes" =~ ^[0-9]+$ ]] || continue
+        if [[ -d "$path" ]]; then
+            directory=1
+        elif [[ -f "$path" ]]; then
+            directory=0
+        else
+            continue
+        fi
+        (( directory == 0 || directories != 0 )) || continue
+        name=${path##*/}
+        [[ -z "$name_prefix" || "$name" == "$name_prefix"* ]] || continue
+        if (( extension_count > 0 )); then
+            extension=''
+            name_without_dot=${name#.}
+            [[ "$name_without_dot" == *.* ]] && extension=".${name_without_dot##*.}"
+            extension=${extension,,}
+            matched=0
+            for wanted in "${extensions[@]}"; do
+                [[ "$extension" == "$wanted" ]] && { matched=1; break; }
+            done
+            (( matched )) || continue
+        fi
+        (( executable == 0 || directory != 0 )) || [[ -x "$path" ]] || continue
+        # -f follows symlinks but find's %s reports the LINK length: without a
+        # deref'd re-stat, a packaged .desktop symlink truncates its target to
+        # that prefix and the app vanishes from every desktop index. (-L:
+        # this coreutils does not dereference stat by default.)
+        if (( directory == 0 && max_file_bytes > 0 )); then
+            bytes=$(stat -L -c %s -- "$path") || continue
+            too_large "$bytes" "$max_file_bytes" && continue
+        fi
+        if emit_entry "$root_index" "$path" "$bytes" "$directory"; then
+            (( ++emitted >= max_entries )) && { stop=1; break; }
+        fi
+    done < <(/usr/bin/find -- "$root" "${find_args[@]}" -printf '%p\0%s\0' 2>/dev/null)
+}
+
+root_index=0
+for root in "$@"; do
+    visit_root "$root" "$root_index"
+    (( stop )) && break
+    (( ++root_index ))
+done
+)BASH";
 
         struct SResult {
-            uint64_t generation = 0;
-            SEntry   entry;
+            SEntry entry;
+            size_t bytes = 0;
         };
 
-        bool cancelled(uint64_t generation, std::stop_token stop) const {
-            if (stop.stop_requested())
-                return true;
-            std::scoped_lock lock(m_mutex);
-            return m_generation != generation;
+        static bool validText(std::string_view value, size_t limit) {
+            return value.size() <= limit && value.find('\0') == std::string_view::npos;
         }
 
-        bool emit(uint64_t generation, SEntry entry, std::stop_token stop) {
-            std::unique_lock lock(m_mutex);
-            m_cv.wait(lock, stop, [this, generation] { return m_generation != generation || m_results.size() < MAX_QUEUED_RESULTS; });
-            if (stop.stop_requested() || m_generation != generation)
+        bool prepare(SRequest& request) {
+            if (request.maxEntries == 0 || request.roots.empty() || request.roots.size() > MAX_ROOTS || !validText(request.namePrefix, MAX_PREFIX_BYTES) ||
+                request.extensions.size() > MAX_EXTENSIONS)
                 return false;
-            m_results.push_back({.generation = generation, .entry = std::move(entry)});
+            request.maxEntries   = std::min(request.maxEntries, MAX_ENTRIES);
+            request.maxFileBytes = std::min(request.maxFileBytes, MAX_FILE_BYTES);
+            if (request.maxVisited == 0)
+                request.maxVisited = request.maxEntries > MAX_VISITED / 32 ? MAX_VISITED : request.maxEntries * 32;
+            request.maxVisited = std::min(request.maxVisited, MAX_VISITED);
+            for (auto& root : request.roots)
+                if (!root.empty() && (!validText(root.native(), MAX_PATH_BYTES)))
+                    return false;
+            for (auto& extension : request.extensions) {
+                if (!validText(extension, MAX_EXTENSION_BYTES))
+                    return false;
+                std::ranges::transform(extension, extension.begin(), [](unsigned char character) { return (char)std::tolower(character); });
+            }
             return true;
         }
 
-        static bool matches(const std::filesystem::path& path, const SRequest& request) {
-            const auto name = path.filename().string();
-            if (!request.namePrefix.empty() && !name.starts_with(request.namePrefix))
-                return false;
-            if (request.extensions.empty())
-                return true;
-            auto extension = path.extension().string();
-            std::ranges::transform(extension, extension.begin(), [](unsigned char character) { return (char)std::tolower(character); });
-            return std::ranges::find(request.extensions, extension) != request.extensions.end();
+        static bool parseHex(std::string_view text, uint32_t& value) {
+            const auto [END, ERROR] = std::from_chars(text.data(), text.data() + text.size(), value, 16);
+            return ERROR == std::errc{} && END == text.data() + text.size();
         }
 
-        static bool readContents(const std::filesystem::path& path, size_t maxBytes, std::string& contents) {
-            if (maxBytes == 0)
-                return true;
-            std::error_code ec;
-            const auto      size = std::filesystem::file_size(path, ec);
-            if (ec || size > maxBytes || size > std::numeric_limits<size_t>::max())
-                return false;
-            std::ifstream file(path, std::ios::binary);
-            if (!file)
-                return false;
-            contents.resize((size_t)size);
-            file.read(contents.data(), (std::streamsize)contents.size());
-            if (file.gcount() != (std::streamsize)contents.size())
-                return false;
-            return file.peek() == std::char_traits<char>::eof();
+        static size_t resultBytes(const SEntry& entry) {
+            return entry.path.native().size() + entry.relative.native().size() + entry.contents.size();
         }
 
-        void enumerate(const SRequest& request, std::stop_token stop) {
-            if (request.maxEntries == 0)
+        bool spawn(SRequest request) {
+            int pipefd[2];
+            if (pipe(pipefd) != 0)
+                return false;
+            const int readFlags = fcntl(pipefd[0], F_GETFL);
+            if (readFlags < 0 || fcntl(pipefd[0], F_SETFL, readFlags | O_NONBLOCK) != 0 || fcntl(pipefd[0], F_SETFD, FD_CLOEXEC) != 0 ||
+                fcntl(pipefd[1], F_SETFD, FD_CLOEXEC) != 0) {
+                close(pipefd[0]);
+                close(pipefd[1]);
+                return false;
+            }
+
+            std::vector<std::string> args;
+            args.reserve(12 + request.extensions.size() + m_roots.size());
+            args.emplace_back("/usr/bin/bash");
+            args.emplace_back("-c");
+            args.emplace_back(HELPER);
+            args.emplace_back("hypr-file-index");
+            args.push_back(std::to_string(request.maxEntries));
+            args.push_back(std::to_string(request.maxVisited));
+            args.push_back(std::to_string(request.maxFileBytes));
+            args.push_back(request.recursive ? "1" : "0");
+            args.push_back(request.executable ? "1" : "0");
+            args.push_back(request.directories ? "1" : "0");
+            args.push_back(std::move(request.namePrefix));
+            args.push_back(std::to_string(request.extensions.size()));
+            for (auto& extension : request.extensions)
+                args.push_back(std::move(extension));
+            for (const auto& root : m_roots)
+                args.push_back(root.native());
+
+            std::vector<char*> argv;
+            argv.reserve(args.size() + 1);
+            for (auto& arg : args)
+                argv.push_back(arg.data());
+            argv.push_back(nullptr);
+
+            posix_spawn_file_actions_t actions;
+            posix_spawnattr_t          attributes;
+            if (posix_spawn_file_actions_init(&actions) != 0) {
+                close(pipefd[0]);
+                close(pipefd[1]);
+                return false;
+            }
+            if (posix_spawnattr_init(&attributes) != 0) {
+                posix_spawn_file_actions_destroy(&actions);
+                close(pipefd[0]);
+                close(pipefd[1]);
+                return false;
+            }
+#ifndef POSIX_SPAWN_SETPGROUP
+            posix_spawn_file_actions_destroy(&actions);
+            posix_spawnattr_destroy(&attributes);
+            close(pipefd[0]);
+            close(pipefd[1]);
+            return false; // without a private group we cannot terminate find with the helper
+#else
+            const bool configured = posix_spawn_file_actions_adddup2(&actions, pipefd[1], STDOUT_FILENO) == 0 &&
+                posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0) == 0 &&
+                posix_spawn_file_actions_addclose(&actions, pipefd[0]) == 0 && posix_spawn_file_actions_addclose(&actions, pipefd[1]) == 0 &&
+                posix_spawnattr_setpgroup(&attributes, 0) == 0 && posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETPGROUP) == 0;
+            if (!configured) {
+                posix_spawn_file_actions_destroy(&actions);
+                posix_spawnattr_destroy(&attributes);
+                close(pipefd[0]);
+                close(pipefd[1]);
+                return false;
+            }
+#endif
+
+            pid_t pid = -1;
+            const int status = posix_spawn(&pid, "/usr/bin/bash", &actions, &attributes, argv.data(), environ);
+            posix_spawn_file_actions_destroy(&actions);
+            posix_spawnattr_destroy(&attributes);
+            close(pipefd[1]);
+            if (status != 0) {
+                close(pipefd[0]);
+                return false;
+            }
+
+            m_fd     = pipefd[0];
+            m_pid    = pid;
+            m_source = wl_event_loop_add_fd(m_loop, m_fd, WL_EVENT_READABLE, onPipe, this);
+            if (m_source)
+                return true;
+
+            stopHelper(true);
+            return false;
+        }
+
+        static int onPipe(int fd, uint32_t mask, void* data) {
+            return static_cast<CAsyncFileIndex*>(data)->drain(fd, mask);
+        }
+
+        int drain(int fd, uint32_t mask) {
+            if (fd != m_fd || m_complete)
+                return 0;
+            if (mask & WL_EVENT_ERROR) {
+                fail();
+                return 0;
+            }
+            if (m_results.size() >= MAX_QUEUED_RESULTS || m_resultBytes >= MAX_QUEUED_BYTES) {
+                pause();
+                return 0;
+            }
+
+            std::array<char, READ_BYTES> bytes;
+            for (size_t i = 0; i < READS_PER_DISPATCH; ++i) {
+                const ssize_t count = read(fd, bytes.data(), bytes.size());
+                if (count > 0) {
+                    const size_t MAX_BUFFER = HEADER_BYTES + MAX_PATH_BYTES + m_maxFileBytes + READ_BYTES;
+                    if (m_buffer.size() + (size_t)count > MAX_BUFFER) {
+                        fail();
+                        return 0;
+                    }
+                    m_buffer.append(bytes.data(), (size_t)count);
+                    if (!parseFrames())
+                        return 0;
+                    if (m_results.size() >= MAX_QUEUED_RESULTS || m_resultBytes >= MAX_QUEUED_BYTES) {
+                        pause();
+                        return 0;
+                    }
+                    continue;
+                }
+                if (count == 0) {
+                    m_eof = true;
+                    finishIfEof();
+                    return 0;
+                }
+                if (errno == EINTR)
+                    continue;
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                    return 0;
+                fail();
+                return 0;
+            }
+            return 0; // yield to timers and input even when the helper floods
+        }
+
+        bool parseFrames() {
+            size_t consumed = 0;
+            while (m_results.size() < MAX_QUEUED_RESULTS && m_resultBytes < MAX_QUEUED_BYTES) {
+                const size_t available = m_buffer.size() - consumed;
+                if (available < HEADER_BYTES)
+                    break;
+                const std::string_view header{m_buffer.data() + consumed, HEADER_BYTES};
+                uint32_t pathBytes = 0, rootIndex = 0, contentsBytes = 0;
+                if (!parseHex(header.substr(0, 8), pathBytes) || !parseHex(header.substr(8, 8), rootIndex) || !parseHex(header.substr(16, 8), contentsBytes) ||
+                    (header[24] != '0' && header[24] != '1') || pathBytes == 0 || pathBytes > MAX_PATH_BYTES || rootIndex >= m_roots.size() || contentsBytes > m_maxFileBytes) {
+                    fail();
+                    return false;
+                }
+                const size_t frameBytes = HEADER_BYTES + (size_t)pathBytes + (size_t)contentsBytes;
+                if (frameBytes > m_buffer.size() - consumed)
+                    break;
+
+                const bool DIRECTORY = header[24] == '1';
+                if (DIRECTORY && contentsBytes != 0) {
+                    fail();
+                    return false;
+                }
+                const std::string_view path{m_buffer.data() + consumed + HEADER_BYTES, pathBytes};
+                if (path.find('\0') != std::string_view::npos) {
+                    fail();
+                    return false;
+                }
+                SEntry entry{.path = std::filesystem::path{path}, .relative = std::filesystem::path{path}.lexically_relative(m_roots[rootIndex]), .contents = {}, .directory = DIRECTORY};
+                if (contentsBytes > 0)
+                    entry.contents.assign(m_buffer.data() + consumed + HEADER_BYTES + pathBytes, contentsBytes);
+                const size_t bytes = resultBytes(entry);
+                if (bytes > MAX_QUEUED_BYTES || m_resultBytes > MAX_QUEUED_BYTES - bytes)
+                    break;
+                m_resultBytes += bytes;
+                m_results.push_back({.entry = std::move(entry), .bytes = bytes});
+                consumed += frameBytes;
+            }
+            if (consumed > 0)
+                m_buffer.erase(0, consumed);
+            return true;
+        }
+
+        void pause() {
+            if (m_source && !m_paused) {
+                wl_event_source_fd_update(m_source, 0);
+                m_paused = true;
+            }
+        }
+
+        void resumeIfPossible() {
+            if (m_source && m_paused && m_results.size() < MAX_QUEUED_RESULTS && m_resultBytes < MAX_QUEUED_BYTES) {
+                wl_event_source_fd_update(m_source, WL_EVENT_READABLE);
+                m_paused = false;
+            }
+        }
+
+        void finishIfEof() {
+            if (!m_eof || m_complete)
                 return;
-            const size_t visitedCap = request.maxVisited != 0 ? request.maxVisited : request.maxEntries > std::numeric_limits<size_t>::max() / 32 ? std::numeric_limits<size_t>::max() : request.maxEntries * 32;
-            size_t       visited    = 0;
-            size_t       emitted    = 0;
-
-            for (const auto& root : request.roots) {
-                std::error_code ec;
-                const auto visit = [&](const std::filesystem::directory_entry& candidate) {
-                    if (++visited > visitedCap || cancelled(request.generation, stop))
-                        return false;
-                    std::error_code entryError;
-                    const bool       directory = candidate.is_directory(entryError);
-                    if (entryError)
-                        return true;
-                    if (directory && !request.directories)
-                        return true;
-                    if (!directory && !candidate.is_regular_file(entryError))
-                        return true;
-                    if (!matches(candidate.path(), request))
-                        return true;
-                    if (!directory && request.executable) {
-                        const auto status = candidate.status(entryError);
-                        if (entryError || (status.permissions() & (std::filesystem::perms::owner_exec | std::filesystem::perms::group_exec | std::filesystem::perms::others_exec)) == std::filesystem::perms::none)
-                            return true;
-                    }
-
-                    SEntry entry{.path = candidate.path(), .relative = candidate.path().lexically_relative(root), .contents = {}, .directory = directory};
-                    if (!directory && !readContents(entry.path, request.maxFileBytes, entry.contents))
-                        return true;
-                    if (!emit(request.generation, std::move(entry), stop))
-                        return false;
-                    emitted++;
-                    return emitted < request.maxEntries;
-                };
-
-                if (request.recursive) {
-                    std::filesystem::recursive_directory_iterator it(root, std::filesystem::directory_options::skip_permission_denied, ec), end;
-                    while (!ec && it != end) {
-                        if (!visit(*it))
-                            return;
-                        it.increment(ec);
-                    }
-                } else {
-                    std::filesystem::directory_iterator it(root, std::filesystem::directory_options::skip_permission_denied, ec), end;
-                    while (!ec && it != end) {
-                        if (!visit(*it))
-                            return;
-                        it.increment(ec);
-                    }
-                }
-                if (emitted >= request.maxEntries || cancelled(request.generation, stop))
-                    return;
+            if (!parseFrames())
+                return;
+            if (!m_buffer.empty()) {
+                fail();
+                return;
             }
+            closePipe();
+            reapNoWait();
+            m_complete = true;
         }
 
-        void worker(std::stop_token stop) {
-            while (!stop.stop_requested()) {
-                SRequest request;
-                {
-                    std::unique_lock lock(m_mutex);
-                    m_cv.wait(lock, stop, [this] { return m_request.has_value(); });
-                    if (stop.stop_requested())
-                        return;
-                    request = std::move(*m_request);
-                    m_request.reset();
-                }
-                try {
-                    enumerate(request, stop);
-                } catch (...) {
-                    // A hostile filesystem must not escape the worker or
-                    // prevent the event loop from accepting later work.
-                }
-                {
-                    std::scoped_lock lock(m_mutex);
-                    if (m_generation == request.generation)
-                        m_complete = request.generation;
-                }
-                m_cv.notify_all();
-            }
+        void clearResults() {
+            m_results.clear();
+            m_resultBytes = 0;
+            m_buffer.clear();
         }
 
-        mutable std::mutex              m_mutex;
-        std::condition_variable_any     m_cv;
-        std::optional<SRequest>         m_request;
-        std::deque<SResult>             m_results;
-        std::jthread                    m_worker;
-        uint64_t                        m_generation = 0;
-        uint64_t                        m_complete   = 0;
+        void closePipe() {
+            if (m_source) {
+                wl_event_source_remove(m_source);
+                m_source = nullptr;
+            }
+            if (m_fd >= 0) {
+                close(m_fd);
+                m_fd = -1;
+            }
+            m_paused = false;
+        }
+
+        void reapNoWait() {
+            if (m_pid <= 0)
+                return;
+            for (;;) {
+                const pid_t result = waitpid(m_pid, nullptr, WNOHANG);
+                if (result < 0 && errno == EINTR)
+                    continue;
+                break;
+            }
+            m_pid = -1;
+        }
+
+        void stopHelper(bool terminate) {
+            closePipe();
+            if (m_pid > 0 && terminate)
+                kill(-m_pid, SIGTERM); // the Bash worker and its find child share this owned group
+            reapNoWait();
+            m_eof = false;
+        }
+
+        void fail() {
+            stopHelper(true);
+            clearResults();
+            m_complete = true;
+        }
+
+        wl_event_loop*                      m_loop         = nullptr;
+        wl_event_source*                    m_source       = nullptr;
+        int                                 m_fd           = -1;
+        pid_t                               m_pid          = -1;
+        uint64_t                            m_generation   = 0;
+        size_t                              m_maxFileBytes = 0;
+        size_t                              m_resultBytes  = 0;
+        bool                                m_complete     = true;
+        bool                                m_eof          = false;
+        bool                                m_paused       = false;
+        std::vector<std::filesystem::path> m_roots;
+        std::string                         m_buffer;
+        std::deque<SResult>                m_results;
     };
 
 } // namespace NHyprCommon

@@ -1013,7 +1013,7 @@ namespace NHyprbar {
 
     namespace Menubar {
         void init() {
-            if (!g_pEventLoopManager)
+            if (!g_pEventLoopManager || !g_pCompositor || !appIndex.init(g_pCompositor->m_wlEventLoop) || !completionIndex.init(g_pCompositor->m_wlEventLoop))
                 return;
             ++activationGeneration;
             indexPoll = makeShared<CEventLoopTimer>(

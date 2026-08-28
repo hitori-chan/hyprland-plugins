@@ -1,244 +1,164 @@
-# hyprnotify details
+# hyprnotify contracts
 
-The compositor owns `org.freedesktop.Notifications`: no external daemon, no
-layer surface. Cards render top-right on the focused monitor, newest at the
-top, styled like the old naughty boxes (flat dark cards, 1px frame, big
-icons).
+User behavior and configuration live in
+[`hyprnotify/README.md`](../hyprnotify/README.md). This file defines protocol,
+admission, model, renderer, input, and lifecycle contracts.
 
-## Spec surface
+## Protocol
 
-- Methods: `Notify`, `CloseNotification`, `GetCapabilities`,
-  `GetServerInformation` (spec 1.3). Signals: `NotificationClosed`,
-  `ActionInvoked`, `ActivationToken`, `NotificationReplied`.
-- Capabilities: `actions`, `action-icons`, `body`, `body-markup`,
-  `body-hyperlinks`, `body-images`, `icon-static`, `inline-reply`,
-  `persistence`, `sound`.
-- `replaces_id` updates a card in place, keeping its stack slot; an unknown
-  id creates the card under that id (the OSD scripts pin fixed ids in the
-  9990s, which fresh ids never mint into).
-- `expire_timeout`: 0 → sticky, >0 → ms. −1 (server decides) → normal and
-  critical cards are sticky until dismissed — a message waits to be read;
-  self-declared ephemerals (low urgency, `transient`, `value` cards) run
-  `timeout_low`. `timeout_normal` > 0 restores a clock for the rest.
-- Hints honored: `urgency`; `value` (0–100) draws the progress bar (the
-  volume/brightness OSD); `image-data`/`image_data`/`icon_data` raw pixmaps;
-  `image-path`/`image_path`; `desktop-entry`; `action-icons`; `resident`;
-  `transient`; `sound-file`/`sound-name`/`suppress-sound`.
+The daemon implements Freedesktop Notifications 1.3 methods and emits
+`NotificationClosed`, `ActionInvoked`, `ActivationToken`, and
+`NotificationReplied`. It accepts standard urgency, value, image, desktop-entry,
+action-icon, resident, transient, sound, suppress-sound, and KDE reply hints.
 
-## Markup
+- A known `replaces_id` updates one daemon record. Unknown IDs create a new
+  record outside the private 9990-9999 OSD range.
+- Timeout 0 is sticky; positive values are milliseconds. A server-default
+  timeout uses normal or ephemeral policy. Critical cards remain sticky.
+- Only non-`default` actions render as buttons. Body click invokes an explicit
+  default action and otherwise dismisses. Activation token delivery precedes
+  action invocation.
 
-- Body and title render the whitelisted Pango subset: `<b> <i> <u> <span>
-  <br>`. Other tags are dropped; a stray `<`/`&` that forms no tag or entity
-  survives as literal text, so a markup-aware sender and a naive one both
-  come out right. Malformed markup falls back to plain text.
-- `<a href>` in the body is a hyperlink (Pango has no `<a>` tag, so it is
-  rewritten to a styled span and hit-tested by its stripped-text byte
-  offset); a click opens the URL via `xdg-open` and leaves the card up — but
-  not the shade, since a browser is about to cover it. The pointer shows the
-  hand over a link.
-- `<img src>` in the body renders as a thumbnail row below the text.
+Specification: <https://specifications.freedesktop.org/notification/latest/>
 
-## Images / icons
+### Structured Conversations
 
-- Precedence: `image-data` beats `image-path` beats `app_icon` beats
-  `desktop-entry`.
-- Each of `app_icon` / `image-path` / `desktop-entry` may be a file path
-  (`file://` too) OR a freedesktop icon NAME, resolved against the GTK icon
-  theme, then hicolor, then `/usr/share/pixmaps`.
-- Decoding is hyprgraphics: PNG/JPEG/WEBP/BMP/AVIF/JXL + SVG (no GIF); big
-  images downscale once at load, not per frame. Wide images (aspect ≥ 1.5)
-  render card-width as a cover-cropped hero. Iconless cards draw a random
-  face from `fallback_icon_dir`.
-- The icon column is Android's conversation container
-  (`notification_2025_conversation_icon_container.xml`): the CONTENT image
-  leads as the avatar — a true circle for a conversation, a squircle
-  otherwise — and the IDENTITY (`app_icon`/`desktop-entry`) rides its
-  bottom-right corner as a badge, sized by AOSP's ratios off the 40dp
-  avatar: a 20dp badge of which **16dp is the app glyph and 2dp on each
-  side is the rim**, placed so the glyph sits flush with the avatar's
-  bottom-right corner (AOSP spells that margin out as 40 − 16 − 2 = 22dp)
-  and only the rim protrudes. The 2021 template we took these from spent
-  4dp on the rim and left 12dp for the glyph; at a 40px icon that is a 10px
-  app icon inside a 3px ring, and AOSP itself halved the rim and grew the
-  glyph. The disc is a near-white `BADGE_RIM`: AOSP tints its (white) badge
-  drawable to the notification's background colour so the rim reads as a
-  gap, but a glass card has no one colour to borrow, and near-white
-  separates the glyph from a light avatar and a dark one alike. A card with
-  no content image leads with its identity and wears no badge. There is no
-  second icon: one column says both who sent it and which app carried it.
+The `Notify` signature is unchanged. A sender may add bounded typed hints:
 
-## Actions
+| Hint | Type | Meaning |
+|---|---|---|
+| `x-hyprnotify-conversation-id` | string | stable chat ID within the app |
+| `x-hyprnotify-conversation-title` | string | chat display title |
+| `x-hyprnotify-conversation-kind` | string | `one-to-one` or `group` |
+| `x-hyprnotify-conversation-icon` | string | chat/shortcut artwork |
+| `x-hyprnotify-sender-id` | string | stable participant ID |
+| `x-hyprnotify-sender-name` | string | participant display name |
+| `x-hyprnotify-sender-icon` | string | participant artwork |
+| `x-hyprnotify-message-id` | string | stable message ID |
+| `x-hyprnotify-message-timestamp` | int64 | Unix milliseconds |
+| `x-hyprnotify-message-historic` | bool | historic message marker |
+| `x-hyprnotify-unread-count` | uint32 | count-pill value |
+| `x-hyprnotify-group-key` | string | app-declared group |
+| `x-hyprnotify-section` | string | automatic-grouping section |
 
-- Non-`default` actions render as a clickable button row; a left click emits
-  `ActionInvoked` and dismisses the card unless the `resident` hint holds it.
-  Under the `action-icons` hint each action id is a freedesktop icon name
-  drawn on the button.
-- The `default` action (and a lone action) fire on a body left click, on
-  BOTH surfaces, and are never drawn as a button. The spec defines it as
-  "the default action (usually invoked by clicking the notification)" and
-  says implementations are free not to display it; Material Design likewise
-  says action buttons must not duplicate the tap action.
-  `ActivationToken` precedes each invoke (a compositor-minted
-  xdg-activation token) so the sender can raise itself.
+Malformed fields are ignored independently. Omitted fields preserve existing
+conversation metadata. `im.*` and `call.*` categories affect presentation but
+never authorize text-derived merging.
 
-## Behavior
+## Admission
 
-- Popup clicks: left invokes the action / opens the link / fires the default,
-  then dismisses; right dismisses; middle parks the stack into the shade. The
-  cards own the pointer over them — hover never leaks to the window beneath
-  (sloppy focus would flip focus under every popup).
-- Popup hover HOLDS the timeout: the card under the pointer stops counting
-  down, and leaving restarts its full clock rather than resuming the sliver
-  that was left (Android's heads-up does the same when a touch ends). Only
-  one card can be held, because only one can be hovered.
-- Shade clicks: a row behaves as its banner did — left on the body fires the
-  card's primary and dismisses unless `resident`, a link opens, a button
-  acts. Rows open by default, so the click is spent acting rather than
-  revealing; the CHEVRON is the only fold target. Right dismisses; middle is
-  "Clear all". On an app bundle left expands and right (or the header ✕)
-  dismisses the whole app.
-- Acting CLOSES the shade. Firing a card's primary, pressing one of its
-  buttons or opening a body link all raise something over the panel the
-  click was made in, so the panel gets out of the way. This is Android's
-  rule, split the same way: `StatusBarNotificationActivityStarter`
-  collapses the shade on a content-intent click, and `handleRemoteViewClick`
-  closes it for any action that starts an activity — but an action that
-  does not start one leaves the shade standing. fd.o has no `isActivity`,
-  and `resident` is the nearest thing it does have ("the server will not
-  automatically remove the notification when an action has been invoked"),
-  so the shade goes exactly when the card goes. Everything that keeps you
-  here keeps the shade: a dismissal, a fold, the manage panel, DND, "Clear
-  all", the reply field, and a card with no action to fire (that click is
-  only a dismissal). swaync draws the same line with `hide-on-action`
-  (default on) versus `hide-on-clear` (default off).
-- Inline reply (KDE's protocol, which Telegram Desktop speaks): an action
-  keyed `inline-reply` is not a button — it grows a reply field in the open
-  shade row, and sending emits `NotificationReplied(id, text)` and closes
-  the card unless `resident`. `x-kde-reply-placeholder-text` and
-  `x-kde-reply-submit-button-text` are honored. The field takes the whole
-  keyboard while armed (there is no focus to give it); editing is
-  append-and-backspace plus C-u / C-w. Banners have no field.
-- Shade keys, while it is open and only then: Esc peels (an open manage panel
-  first, then the shade), ↑/↓ move a selection (an accent hairline; the page
-  follows it), Space folds, Enter fires the primary, Tab arms the selected
-  card's reply field, Delete dismisses, `m` silences the app, `s` snoozes the
-  card, `p` marks the sender, `u` takes a snooze back while its undo row is
-  up. An undo row is its own keyboard surface: `s` there re-picks the
-  duration, and Space/Enter belong to focus since the row has neither a fold
-  nor a primary. Modified chords pass through as user binds, and so does any
-  key with nothing to act on — nothing selected, or `p` on a card that is not
-  a chat.
-- Per-app rules (`policy.cpp`, persisted to
-  `$XDG_STATE_HOME/hyprnotify/policy.tsv`): SILENCED apps get no banner and
-  no sound and rank with the quiet ones — Android's "Silent", dunst's
-  `skip_display` — while MARKED conversations rank above everything but a
-  critical card and wear AOSP's `conversation_icon_badge_ring`, the one it
-  ships with `visibility=gone` until you mark someone — drawn at the badge's
-  own diameter with the rim's width for a stroke
-  (`importance_ring_size`/`importance_ring_stroke_width`), so marking a chat
-  recolours that band instead of hanging a second circle outside it and
-  making a marked badge bigger than an unmarked one. Critical bypasses a
-  silence exactly as it bypasses DND. Set from the row's manage panel or the
-  bundle header; both rules are retroactive, so the cards already in the
-  shade re-rank under them. Silence keys on the app identity, a mark on app +
-  sender: one chat app carries many people. This is state the user typed with
-  a click, never a per-app branch in code.
+| Input/state | Bound |
+|---|---|
+| application name | 256 bytes |
+| summary / body | 2 KiB / 8 KiB |
+| display label / opaque source | 1 KiB / 4 KiB |
+| action pairs / body thumbnails | 12 / 4 |
+| markup tag | 1 KiB |
+| desktop files indexed / visited | 4,096 / 16,384 |
+| pending image sources | 24 |
+| file-backed image / decoded upload | 32 MiB / 16 MP |
+| reply draft | 2,000 bytes |
+| conversation field | 512 bytes |
+| messages / participants / unread display | 32 / 16 / 999 |
+| cards | `max_notifs` |
 
-  A silence carries an EXPIRY (`s<TAB>key<TAB>epoch`, 0 = always), so iOS's
-  "Mute for 1 Hour" and "Mute for Today" are sayable and permanent stops
-  being the only thing a click can mean — it is the choice people regret.
-  Wall clock, not steady time: a suspend, a reboot and a week off all count
-  against the hour. Expiry is lazy — a lapsed rule is dropped the next time
-  anyone asks, which is every arrival and every paint, and nothing has to
-  HAPPEN at the moment a silence lifts. A rule that lapsed while the session
-  was down never loads. The footer's `⊘ N` is the other half: the shade
-  admits what it is holding back, and one click lifts every rule.
-- The manage panel: the ⋮ turns a row into its own verbs rather than opening
-  a floating menu. Same ergonomics as Android's long-press panel — full-width
-  labelled targets, each with its key in the right column — with none of a
-  second surface's cost: no z-order, no outside-click grab, no damage region
-  of its own, and it rides the fold machinery that already exists. One row
-  wears it at a time. Esc peels it before the shade. It replaced three 20px
-  glyphs at 4px separation, hover-only and unlabelled, with the irreversible
-  verb in the middle slot.
-- Snooze (`s` or the panel, `snooze_seconds`, 900): the card goes out of
-  sight and comes back alerting — Android's snooze. It stays in the model
-  while away, so `state` counts it while the badge does not, and "Clear all"
-  leaves it alone. The wake re-keys the arrival spring but not `arrived`: the
-  age line still tells the truth about when the card came. Ephemerals are
-  refused — expiry takes those cards whole, so there is nothing to come back
-  to.
+Desktop-entry identity lookup uses the same bounded event-loop file-index
+helper as the launcher. Its private process group is terminated during plugin
+exit; no filesystem operation is joined from compositor teardown.
 
-  It does NOT leave at the click, which is what stopped it being the one
-  irreversible verb in the shell. Android replaces the notification in place
-  with "Snoozed for 1 hour ▾ · Undo" and lets it go afterwards; so does this.
-  For CONFIRM_MS (6s) the card holds its slot as a one-line undo row — Undo
-  or `u` restores it, the ˅ or `s` cycles Android's 15m/30m/1h/2h ladder, and
-  each change re-arms both clocks. Closing the shade commits every pending
-  snooze rather than stranding a window nobody can see. Not history and not
-  recall: the card never left. ONE event-loop timer serves all three clocks —
-  banner expiry, the wake, and the undo window — since all are deadlines on
-  the same list.
-- Swipe: a horizontal wheel on a row, away to dismiss and back to open the
-  manage panel. Both go through the CLICK queue rather than acting in the
-  emission (crash class 6) — a swipe is an alias for a click that already
-  exists. Strictly an addition: a mouse with no horizontal wheel never
-  reaches it, so neither gesture may be the only way to reach its verb.
-- Bell hover-peek: `Peek(on_bell)` from the bar opens the shade UNPINNED
-  after `hyprbar:bell_peek_ms`. A peek does not absorb the popped banners
-  (a pointer crossing the bell must not swallow unread ones), and it closes
-  on a grace timer once the pointer is on neither the bell nor the panel —
-  both surfaces cancel that timer, which is what lets the pointer travel
-  from the bell down into the shade. Any click pins it.
-- Quiet while fullscreen (`quiet_fullscreen`, on): a real fullscreen window
-  on the focused monitor holds banners back — presenting, gaming and
-  watching are the same ask — and the card lands resident in the shade
-  instead. Critical bypasses it; a maximized window is not fullscreen.
-- Critical: urgent-colored frame and progress fill, never expires.
-- Sound: `sound-file`/`sound-name` play through a libcanberra player
-  (`sound_command`, empty disables); `suppress-sound` mutes one arrival. The
-  compositor has no audio backend, so this shells out, reaped off the event
-  loop.
-- DND (`hl.plugin.hyprnotify.suspend()`): arrivals collect silently with
-  timeouts held; resume renders the queue newest-first on fresh timeouts.
-- Residency (`persistence`): an expired banner RETREATS into the shade
-  rather than closing, and waits there until dismissed or acted on — the
-  shade is the safety net. There is no history and no recall: a dismissed
-  card is gone, as on Android. `hyprctl hyprnotify count` answers the live
-  total (the lockscreen bell reads it).
-- The conversation merge (Android's MessagingStyle): a fresh `Notify` whose
-  app identity + summary matches a live card is joined onto it, bodies
-  appended under an 8KB cap — so one chat is one growing card however many
-  messages arrive. Triggered by the fd.o conversation categories
-  (`im.*`/`call.*`, where the summary is the sender or the room) or by the
-  `x-canonical-append` hint. Cards that vanish on expiry never merge.
-- Fullscreen: while a card is up over a solitary fullscreen window, the
-  monitor's scanout/solitary latch is dropped so the card composites over
-  it; self-heals once the last card clears.
-- Session lock: cards never render above the lockscreen (the built-in
-  `hyprctl notify` overlay does; these are the user's notifications). Input
-  listeners guard-and-reset first; whatever survives the lock repaints at
-  unlock.
-- Overflow: `max_notifs` caps the model — overflow evicts the oldest
-  non-critical card (critical last) with `NotificationClosed`.
+Text truncates at UTF-8 boundaries. Oversized opaque inputs are rejected. The
+accepted Pango subset is `<b>`, `<i>`, `<u>`, `<br>`, and body-only `<a href>`;
+other markup is stripped and malformed markup falls back to plain text.
 
-## Limitations
+## Identity And Media
 
-- GIF images don't decode (hyprgraphics has no GIF codec).
-- No animated icons (`icon-multi`).
-- Icon-theme resolution is a pragmatic scan (GTK theme → hicolor →
-  pixmaps), not a full `index.theme` inheritance engine.
+Application identity and content are separate. Resolution accepts bounded file
+paths/URIs, the active GTK theme, hicolor, pixmaps, and Adwaita symbolic
+contexts. It is not a complete `index.theme` inheritance engine. PNG, JPEG,
+WEBP, BMP, AVIF, JXL, and SVG decode asynchronously; GIF is unsupported.
 
-## Config
+Every card has one leading identity:
 
-`plugin:hyprnotify:*` — `font`, `font_size` (12), `width` (348),
-`max_height` (300), `max_icon` (44), `margin` (6, screen edge +
-inter-card), `offset_y` (34, clears the bar), `timeout_low` (4000, the
-ephemerals' clock), `timeout_normal` (5000, then the banner retreats to the
-shade; 0 = sticky), `coalesce_popups` (1), `rounding`, `rounding_power`,
-`max_notifs`, `ignore_dbusclose`, `quiet_fullscreen` (1),
-`fallback_icon_dir`, `sound_command`
-(`canberra-gtk-play`), `col_bg`, `col_fg`, `col_title`, `col_kicker`,
-`col_frame`, `col_urgent`, `col_highlight`, `col_link`. The peek's delay is
-the bar's (`plugin:hyprbar:bell_peek_ms`, 350; 0 = off). Colors and fonts
-arrive from `theme.lua`; the C++ defaults mirror it.
+- Ordinary cards use one unbadged application icon or the generic app mark.
+- One-to-one conversations select supplied conversation art, latest participant
+  art, conversation image media, then a deterministic generated avatar.
+- Group conversations select supplied group art or a bounded two-person face
+  pile. Missing participant art uses deterministic initials and color.
+- Conversation avatars use a ~48dp cell; a 1:1 avatar wears a ~20dp application
+  badge and a collapsed group avatar wears an unread-count bubble. Expanded
+  group-conversation sender runs may show one 24dp participant avatar.
+- Expanded bundle children show one 24dp circular sender icon: conversation
+  participant art, then the notification's content image when distinct from
+  the app identity, then a deterministic generated avatar.
+
+Decoded surfaces become textures only during a later warm pass. Raw images are
+downscaled directly into bounded output buffers.
+
+## Model
+
+One bounded model backs banners and center rows.
+
+- Normal expiry moves a card to center residency; transient/progress expiry
+  removes it. DND, app silence, popup coalescing, and opt-in fullscreen quieting
+  suppress banners without losing eligible cards.
+- Snooze stores hidden state plus undo/wake deadlines. Opening the center absorbs
+  banners. Overflow evicts the oldest non-critical card first.
+- Replacement targets one daemon ID. Conversation merge requires exact
+  `(appKey, conversationId)` identity; visible text is never a key.
+- Message ID replacement preserves omitted metadata. Messages sort by supplied
+  timestamp. Pruning removes oldest historic entries before current entries;
+  presentation uses the newest seven non-empty messages.
+- Explicit group keys override automatic `(appKey, section)` grouping and fold
+  at two cards; automatic groups form at four (AOSP). Valid sections are
+  `promotions`, `social`, `news`, `recommendations`, `alerting`, and `silent`.
+- Standard group limits are 2/5/8; classified limits are 0/30/50. Viewport
+  clipping can show fewer without changing expansion state.
+- User dismissals and Clear all push a bounded summary (last 32) into the
+  in-memory history sheet; the footer history pill or a >90px horizontal flick
+  flips it over the shade, and its Clear empties the list without touching the
+  model. Snoozed, waiting, transient, and OSD-band cards never enter it.
+
+One event-loop timer owns expiry, snooze, and undo deadlines. Deferred model,
+policy, reply, process, and menu work carries generation or ownership checks.
+Policy writes atomically to `$XDG_STATE_HOME/hyprnotify/policy.tsv`.
+
+`ignore_dbusclose` affects only application `CloseNotification` requests. User
+actions, expiry, overflow, and Clear all retain normal close semantics. Clear all
+excludes private OSD, DND-queued, and snoozed cards.
+
+## Rendering And Input
+
+Cards use stable logical geometry, damage/scissor, and the shared warm/draw
+texture gate. Opaque defaults skip blur. Translucent colors use the exact fork's
+rounded custom-UV blur path so the sampled blur and card share corners.
+
+Core Pixel geometry is 16dp screen inset, 28dp card radius, 28dp center radius,
+4dp connected-child radius, a ~48dp avatar circle, 72dp minimum row, 48dp
+actions, an 8dp card gap, a 32dp circular chevron button (or the 25x17dp count
+pill), 16dp footer margins, and 52dp full-pill footer controls with a 40dp
+pointer target. Collapsed cards lead with the title/who semibold + " · age" on
+one line beside the avatar, the body below in the larger type (two lines,
+ellipsized); a group message carries its sender-name prefix. Monitor scale
+applies once after logical layout.
+
+Before taking input, the plugin rechecks session lock, native layers/popups/IME
+surfaces, seat and implicit grabs, and input-capture ownership. Native ownership
+wins and clears partial swallow, reply, drag, hold, and gesture state. Pointer
+mutations are deferred out of input emission.
+
+Reply owns keys only while its visible field is armed. It tracks UTF-8 cursor and
+selection offsets, clips/scrolls one line, and uses a cancellable nonblocking
+clipboard pipe with a 1.5-second deadline. The exact fork exposes no public
+text-input focus contract for a compositor-drawn editor, so IME/preedit remains
+unsupported. Every other center action is pointer-driven.
+
+Fullscreen cards request a full render through the fork's public hook and never
+draw above session lock. Removing the final card permits normal scanout again.
+
+## Bus And Process Safety
+
+D-Bus is integrated with the compositor event loop. Render/input send sites use
+bounded idle queues and never drain a connection inline. Teardown removes event
+sources, invalidates callbacks, releases borrowed proxies/objects, then destroys
+the connection. Image scans/decodes and process I/O stay off render and input
+paths; stuck helpers cannot block plugin teardown.

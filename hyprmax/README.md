@@ -1,21 +1,13 @@
 # hyprmax
 
-Awesome's per-window maximize. No config.
+Per-window maximize without consuming Hyprland's fullscreen slot. No config.
 
-- **Per-window flag, any number at once** — never enters compositor
-  fullscreen state: the client is told (xdg `set_maximized`) and sized to
-  the workarea. Compositor-maximized windows (initial-maximize, app
-  requests) unmaximize through the native controller.
-- **Adopts compositor-granted maximize on sight** — a window the compositor
-  maximized (a born-maximized app, a maximize request) is converted to the
-  plugin's per-window flag, freeing the workspace's single fullscreen slot
-  so a later fullscreen window can't evict it.
-- **Immovable while maximized** — Super+click drags on a maximized window
-  are swallowed. Loads before `hyprclick` so the swallow wins.
-- **Windowed size remembered per app** — across closes and relogs
-  (`$XDG_STATE_HOME/hyprmax/windowed.tsv`): un-maximizing a born-maximized
-  window restores the app's last real windowed box.
-
-## Lua
-
-`hl.plugin.hyprmax.toggle()` — acts on the focused window.
+- `hl.plugin.hyprmax.toggle()` maximizes the focused window to its current
+  workarea and sends the native xdg maximized state.
+- App- or compositor-maximized windows are adopted into the same model.
+- Maximized windows follow workspace, output, and reserved-area changes.
+- `Mod+click` drags are swallowed while maximized; `hyprmax` therefore loads
+  before `hyprclick`.
+- Windowed geometry is restored from
+  `$XDG_STATE_HOME/hyprmax/windowed.tsv`, constrained by the current workarea
+  and client size hints.
