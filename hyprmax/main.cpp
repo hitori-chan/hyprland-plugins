@@ -250,87 +250,105 @@ static void     onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackI
 }
 
 // hl.plugin.hyprmax.toggle() — awesome's Mod+M (see header).
+static void applyMaxToggle(const PHLWINDOWREF& WR) {
+    const auto W = WR.lock();
+    if (!W || !W->m_isMapped || !W->m_target)
+        return;
+    // the lock can engage between the keypress and this deferred run
+    if (NHyprCommon::sessionLocked())
+        return;
+
+    std::erase_if(g_maximized, [](const auto& E) { return E.first.expired(); });
+
+    const auto FSMODE = Fullscreen::controller()->getFullscreenModes(W).internal;
+
+    // awesome keeps maximized and fullscreen independent: Mod+M toggles
+    // maximized and must never drop a genuinely-fullscreen window (nor
+    // plugin-maximize one — its fullscreen box is not a windowed size).
+    if (FSMODE == Fullscreen::FSMODE_FULLSCREEN)
+        return;
+
+    // Compositor-maximized (born maximized, app request): native unmax.
+    if (FSMODE == Fullscreen::FSMODE_MAXIMIZED) {
+        Fullscreen::controller()->setFullscreenMode(W, Fullscreen::FSMODE_NONE, Fullscreen::FSMODE_NONE);
+
+        // Born maximized: the compositor just granted the client the size
+        // choice (m_sizeFromClientSerial armed). If this app's windowed
+        // box is remembered, that beats the client's answer — GTK forgets
+        // its normal geometry across restarts.
+        const auto MON = W->m_monitor.lock();
+        const auto IT  = g_lastWindowed.find(W->m_initialClass);
+        if (IT != g_lastWindowed.end() && W->m_sizeFromClientSerial && MON && W->m_isFloating) {
+            W->m_sizeFromClientSerial = 0;
+            g_layoutManager->setTargetGeom(boundedRestore(W, IT->second, MON->logicalBoxMinusReserved()), W->m_target);
+            W->m_target->warpPositionSize();
+            // same disarmed-grant flush as adoptCompositorMax: unforced
+            // sends dedup against m_pendingReportedSize and go silent
+            // when the remembered box matches it
+            W->sendWindowSize(true);
+        }
+        return;
+    }
+
+    const auto MON = W->m_monitor.lock();
+    if (!MON || !W->m_isFloating)
+        return;
+
+    // X11 has no maximize hint on this path; geometry alone.
+    const auto setClientMaximized = [&W](bool m) {
+        if (!W->m_isX11 && W->m_xdgSurface && W->m_xdgSurface->m_toplevel)
+            W->m_xdgSurface->m_toplevel->setMaximized(m);
+    };
+
+    const auto WA = MON->logicalBoxMinusReserved();
+
+    if (const auto IT = g_maximized.find(WR); IT != g_maximized.end()) {
+        const CBox STORED = IT->second;
+        g_maximized.erase(IT);
+        setClientMaximized(false);
+        if (STORED.w > 5 && STORED.h > 5) {
+            const CBox R = boundedRestore(W, STORED, WA);
+            rememberWindowed(W->m_initialClass, R);
+            g_layoutManager->setTargetGeom(R, W->m_target);
+            W->m_target->warpPositionSize();
+        } else {
+            // adopted with no remembered box: the client picks its size
+            // (the 0x0 grant; the commit adoption recenters it)
+            W->requestClientSize();
+        }
+    } else {
+        const auto BOX = W->m_target->position();
+        g_maximized.emplace(WR, BOX);
+        rememberWindowed(W->m_initialClass, BOX);
+        setClientMaximized(true);
+        g_layoutManager->setTargetGeom(WA, W->m_target);
+        W->m_target->warpPositionSize();
+        Desktop::windowState()->raise(W);
+    }
+}
+
+// queue+drain, never a lone doLaterLock: two toggles can arm in one dispatch
+// (scripted binds, event backlog) and overwriting the lock cancels the
+// unfired one
+static std::vector<PHLWINDOWREF> g_maxToggles;
+static bool                      maxToggleQueued = false;
+
 static int luaToggle(lua_State*) {
     const auto FOCUS = Desktop::focusState()->window();
     if (!FOCUS || !FOCUS->m_isMapped || !FOCUS->m_workspace)
         return 0;
 
-    PHLWINDOWREF WR{FOCUS};
-    pendingMax.arm([WR]() {
-        const auto W = WR.lock();
-        if (!W || !W->m_isMapped || !W->m_target)
-            return;
-        // the lock can engage between the keypress and this deferred run
-        if (NHyprCommon::sessionLocked())
-            return;
-
-        std::erase_if(g_maximized, [](const auto& E) { return E.first.expired(); });
-
-        const auto FSMODE = Fullscreen::controller()->getFullscreenModes(W).internal;
-
-        // awesome keeps maximized and fullscreen independent: Mod+M toggles
-        // maximized and must never drop a genuinely-fullscreen window (nor
-        // plugin-maximize one — its fullscreen box is not a windowed size).
-        if (FSMODE == Fullscreen::FSMODE_FULLSCREEN)
-            return;
-
-        // Compositor-maximized (born maximized, app request): native unmax.
-        if (FSMODE == Fullscreen::FSMODE_MAXIMIZED) {
-            Fullscreen::controller()->setFullscreenMode(W, Fullscreen::FSMODE_NONE, Fullscreen::FSMODE_NONE);
-
-            // Born maximized: the compositor just granted the client the size
-            // choice (m_sizeFromClientSerial armed). If this app's windowed
-            // box is remembered, that beats the client's answer — GTK forgets
-            // its normal geometry across restarts.
-            const auto MON = W->m_monitor.lock();
-            const auto IT  = g_lastWindowed.find(W->m_initialClass);
-            if (IT != g_lastWindowed.end() && W->m_sizeFromClientSerial && MON && W->m_isFloating) {
-                W->m_sizeFromClientSerial = 0;
-                g_layoutManager->setTargetGeom(boundedRestore(W, IT->second, MON->logicalBoxMinusReserved()), W->m_target);
-                W->m_target->warpPositionSize();
-                // same disarmed-grant flush as adoptCompositorMax: unforced
-                // sends dedup against m_pendingReportedSize and go silent
-                // when the remembered box matches it
-                W->sendWindowSize(true);
-            }
-            return;
-        }
-
-        const auto MON = W->m_monitor.lock();
-        if (!MON || !W->m_isFloating)
-            return;
-
-        // X11 has no maximize hint on this path; geometry alone.
-        const auto setClientMaximized = [&W](bool m) {
-            if (!W->m_isX11 && W->m_xdgSurface && W->m_xdgSurface->m_toplevel)
-                W->m_xdgSurface->m_toplevel->setMaximized(m);
-        };
-
-        const auto WA = MON->logicalBoxMinusReserved();
-
-        if (const auto IT = g_maximized.find(WR); IT != g_maximized.end()) {
-            const CBox STORED = IT->second;
-            g_maximized.erase(IT);
-            setClientMaximized(false);
-            if (STORED.w > 5 && STORED.h > 5) {
-                const CBox R = boundedRestore(W, STORED, WA);
-                rememberWindowed(W->m_initialClass, R);
-                g_layoutManager->setTargetGeom(R, W->m_target);
-                W->m_target->warpPositionSize();
-            } else {
-                // adopted with no remembered box: the client picks its size
-                // (the 0x0 grant; the commit adoption recenters it)
-                W->requestClientSize();
-            }
-        } else {
-            const auto BOX = W->m_target->position();
-            g_maximized.emplace(WR, BOX);
-            rememberWindowed(W->m_initialClass, BOX);
-            setClientMaximized(true);
-            g_layoutManager->setTargetGeom(WA, W->m_target);
-            W->m_target->warpPositionSize();
-            Desktop::windowState()->raise(W);
-        }
+    if (g_maxToggles.size() < 16)
+        g_maxToggles.emplace_back(PHLWINDOWREF{FOCUS});
+    if (maxToggleQueued)
+        return 0;
+    maxToggleQueued = true;
+    pendingMax.arm([]() {
+        maxToggleQueued = false;
+        const auto Q = std::move(g_maxToggles);
+        g_maxToggles.clear();
+        for (const auto& WR : Q)
+            applyMaxToggle(WR);
     });
     return 0;
 }
@@ -408,7 +426,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprmax", "toggle", luaToggle);
 
-    return {"hyprmax", "awesome's per-window maximize", "hitori", "1.1.9"};
+    return {"hyprmax", "awesome's per-window maximize", "hitori", "1.1.10"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

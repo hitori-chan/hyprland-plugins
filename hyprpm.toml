@@ -29,7 +29,7 @@ build       = ["make -C hyprnotify all"]
 
 [hyprmax]
 description = "awesome's per-window maximize"
-version     = "1.1.9"
+version     = "1.1.10"
 authors     = ["hitori"]
 output      = "hyprmax/hyprmax.so"
 build       = ["make -C hyprmax all"]
@@ -43,7 +43,7 @@ build       = ["make -C hyprsnap all"]
 
 [hyprclick]
 description = "awesome's click/focus policy"
-version     = "1.2.5"
+version     = "1.2.6"
 authors     = ["hitori"]
 output      = "hyprclick/hyprclick.so"
 build       = ["make -C hyprclick all"]
@@ -57,7 +57,7 @@ build       = ["make -C hyprplace all"]
 
 [hyprpad]
 description = "the awesome touchpad module"
-version     = "1.1.1"
+version     = "1.1.2"
 authors     = ["hitori"]
 output      = "hyprpad/hyprpad.so"
 build       = ["make -C hyprpad all"]

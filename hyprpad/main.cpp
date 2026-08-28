@@ -199,8 +199,25 @@ namespace NHyprpad {
     // hl.plugin.hyprpad.toggle() — XF86TouchpadToggle. Deferred out of the
     // bind's input emission; the manual flip also cancels a pending auto
     // re-check so it isn't overridden a beat later.
+    //
+    // queue+drain, never a lone doLaterLock: two flips can arm in one
+    // dispatch and overwriting the lock cancels the unfired one; only the
+    // parity survives the drain (an even batch nets to no change)
+    static std::vector<int> g_toggleQueue; // one entry per flip
+    static bool             toggleQueued = false;
+
     static int luaToggle(lua_State*) {
+        if (g_toggleQueue.size() < 16)
+            g_toggleQueue.push_back(0);
+        if (toggleQueued)
+            return 0;
+        toggleQueued = true;
         pendingToggle.arm([]() {
+            const int N = (int)g_toggleQueue.size();
+            g_toggleQueue.clear();
+            toggleQueued = false;
+            if (N % 2 == 0)
+                return;
             if (settle)
                 settle->updateTimeout(std::nullopt);
             const bool CURRENT = touchpadEnabled().value_or(appliedState == 1);
@@ -271,7 +288,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // device list is populated and the notification daemon is up
     settle->updateTimeout(SETTLE);
 
-    return {"hyprpad", "the awesome touchpad module", "hitori", "1.1.1"};
+    return {"hyprpad", "the awesome touchpad module", "hitori", "1.1.2"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

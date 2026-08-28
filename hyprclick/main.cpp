@@ -60,6 +60,61 @@ static HANDLE                  PHANDLE = nullptr;
 static NHyprCommon::CLifecycle g_lifecycle;
 static NHyprCommon::CHop       pendingRaise, pendingFocus;
 
+static void raiseWindow(PHLWINDOW w);
+
+// queue+drain, never a lone doLaterLock: two raises/focuses can arm in one
+// dispatch (a press plus the focus it caused, a scripted bind pair, an event
+// backlog) and overwriting the lock cancels the unfired one
+struct SRaiseJob {
+    PHLWINDOWREF WR;
+    bool         fullscreenOnly = false; // the press path: only fullscreen needs the allowed-over cleanup
+};
+static std::vector<SRaiseJob>    g_raiseJobs;
+static std::vector<PHLWINDOWREF> g_focusJobs;
+static bool                      raiseQueued = false, focusQueued = false;
+
+static void queueRaise(const PHLWINDOWREF& WR, bool fullscreenOnly) {
+    if (g_raiseJobs.size() < 16)
+        g_raiseJobs.push_back({WR, fullscreenOnly});
+    if (raiseQueued)
+        return;
+    raiseQueued = true;
+    pendingRaise.arm([]() {
+        raiseQueued = false;
+        const auto Q = std::move(g_raiseJobs);
+        g_raiseJobs.clear();
+        for (const auto& J : Q) {
+            if (NHyprCommon::sessionLocked())
+                return; // the lock can engage between the emission and this run
+            const auto W = J.WR.lock();
+            if (!W || !W->m_isMapped)
+                continue;
+            if (J.fullscreenOnly && !Fullscreen::controller()->isFullscreen(W))
+                continue;
+            raiseWindow(W);
+        }
+    });
+}
+
+static void queueFocus(const PHLWINDOWREF& TARGET) {
+    if (g_focusJobs.size() < 16)
+        g_focusJobs.push_back(TARGET);
+    if (focusQueued)
+        return;
+    focusQueued = true;
+    pendingFocus.arm([]() {
+        focusQueued = false;
+        const auto Q = std::move(g_focusJobs);
+        g_focusJobs.clear();
+        for (const auto& TARGET : Q) {
+            if (NHyprCommon::sessionLocked())
+                return; // the lock can engage between the emission and this run
+            if (const auto W = TARGET.lock(); W && W->m_isMapped)
+                Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_SWITCH_TO_WINDOW_HARD);
+        }
+    });
+}
+
 // arrival order for focus_next/focus_prev — the z-order list is useless as
 // a cycle order under click-to-raise (every focus rotates it)
 // (common/arrival.hpp; this .so's own instance)
@@ -213,15 +268,8 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
     // floating windows are raised synchronously by Hyprland's native
     // hit-tested press path, so scheduling a second raise only adds work and
     // can reapply stack state after another input event.
-    if (W) {
-        PHLWINDOWREF WR{W};
-        pendingRaise.arm([WR]() {
-            if (NHyprCommon::sessionLocked())
-                return; // the lock can engage between the emission and this run
-            if (const auto W = WR.lock(); W && W->m_isMapped && Fullscreen::controller()->isFullscreen(W))
-                raiseWindow(W);
-        });
-    }
+    if (W)
+        queueRaise(PHLWINDOWREF{W}, true);
 }
 
 // Keyboard focus raises, hover focus doesn't. The raise is deferred out of
@@ -233,13 +281,7 @@ static void onWindowActive(PHLWINDOW w, Desktop::eFocusReason reason) {
          reason != FOCUS_REASON_SWITCH_TO_WINDOW_HARD))
         return;
 
-    PHLWINDOWREF WR{w};
-    pendingRaise.arm([WR]() {
-        if (NHyprCommon::sessionLocked())
-            return; // the lock can engage between the emission and this run
-        if (const auto W = WR.lock(); W && W->m_isMapped)
-            raiseWindow(W);
-    });
+    queueRaise(PHLWINDOWREF{w}, false);
 }
 
 // hl.plugin.hyprclick.focus_prev_here() — awesome's Mod+Tab: the most
@@ -260,13 +302,7 @@ static int luaFocusPrevHere(lua_State*) {
         if (!W || W == FOCUS || !W->m_isMapped || W->isHidden() || W->m_workspace != WS)
             continue;
 
-        PHLWINDOWREF TARGET{W};
-        pendingFocus.arm([TARGET]() {
-            if (NHyprCommon::sessionLocked())
-                return; // the lock can engage between the emission and this run
-            if (const auto W = TARGET.lock())
-                Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_SWITCH_TO_WINDOW_HARD);
-        });
+        queueFocus(PHLWINDOWREF{W});
         break;
     }
     return 0;
@@ -289,13 +325,7 @@ static void focusByIdx(bool next) {
     if (!NEXT)
         return;
 
-    PHLWINDOWREF TARGET{NEXT};
-    pendingFocus.arm([TARGET]() {
-        if (NHyprCommon::sessionLocked())
-            return; // the lock can engage between the emission and this run
-        if (const auto W = TARGET.lock(); W && W->m_isMapped)
-            Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_SWITCH_TO_WINDOW_HARD);
-    });
+    queueFocus(PHLWINDOWREF{NEXT});
 }
 
 static int luaFocusNext(lua_State*) {
@@ -357,7 +387,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_next", luaFocusNext);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev", luaFocusPrev);
 
-    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.2.5"};
+    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.2.6"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
