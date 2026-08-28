@@ -85,8 +85,7 @@ namespace NHyprnotify {
     // Cards span the island width minus an 8px inset each side; the island
     // keeps a 16px margin from the screen edge. Card gaps are tight (8px).
 
-    inline constexpr double EDGE        = 16;  // panel margin from the screen edge
-    inline constexpr double CENTER_W    = 380; // panel width
+    inline constexpr double EDGE        = 16;  // the shade/banner margin from the screen edge
     inline constexpr double PANEL_PAD   = 8;   // the panel's all-side padding
     inline constexpr double STACK_GAP   = 8;   // card gap
 

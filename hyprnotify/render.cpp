@@ -223,7 +223,9 @@ namespace NHyprnotify {
                 return std::nullopt;
             const auto   MB  = MON->logicalBox();
             const double PAD = damageMargin(MON);
-            const double W   = std::max(lastContentW, std::max((double)cfg.width->value(), CENTER_W)) + EDGE;
+            // v14 surfaces span the screen width; the floor is the full-width
+            // span (over-damage is safe, under-damage clips the banner).
+            const double W   = std::max(lastContentW, MB.w - 2 * EDGE) + EDGE;
             // monitor-local LOGICAL px — the pass scales by m_scale itself
             return CBox{MB.w - W - PAD, (double)cfg.offsetY->value() - PAD, W + 2 * PAD, std::max(lastContentH, 0.0) + 2 * PAD};
         }
