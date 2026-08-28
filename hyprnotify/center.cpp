@@ -606,7 +606,7 @@ namespace NHyprnotify {
         const CBox   PANEL{X, Y0, PANEL_W, std::max(0.0, PANELH)};
 
         P.shadow(PANEL, RPANEL, RP, 22);
-        P.glass(PANEL, v13Panel(), RPANEL, RP); // opaque ink, no rim (A-141)
+        P.glass(PANEL, v13Panel(), RPANEL, RP); // the panel veil: frost by default, opaque when theme = "ink"
         {
             SCard pc;
             pc.kind = SCard::PANEL;

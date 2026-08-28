@@ -86,14 +86,15 @@ and compositor contracts are in
 
 ## Config
 
-The default material is `ink`: opaque near-black surfaces (#0f1114 island,
-#1b1b1e cards) with no rims, matching the Pixel ROM captures. `theme =
-"glass"` switches every role the user never overrode to the translucent
-glass·ink set; an explicit color always wins over either set.
+The default material is `glass`: the AOSP shade's frost — translucent
+surfaces with the compositor's live blur behind them (`decoration:blur`),
+the glass·ink set. `theme = "ink"` switches every role the user never
+overrode to the opaque near-black set (#0f1114 island, #1b1b1e cards, no
+rims); an explicit color always wins over either set.
 
 | Key | Purpose | Default |
 |---|---|---|
-| `plugin:hyprnotify:theme` | material set: `ink` or `glass` | `ink` |
+| `plugin:hyprnotify:theme` | material set: `glass` (the AOSP frost) or `ink` (opaque) | `glass` |
 | `plugin:hyprnotify:font` | font family | `IBM Plex Sans` |
 | `plugin:hyprnotify:font_size` | body text size in logical px (type roles derive from it) | 12 |
 | `plugin:hyprnotify:width` | popup width | 380 |

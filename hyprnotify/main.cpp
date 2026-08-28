@@ -233,7 +233,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // theme set"), so switching `theme` to glass re-tunes every role the
     // user never overrode. Explicit user colors always win.
     namespace Th = NHyprCommon::Theme;
-    cfg.theme           = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:theme", "\"ink\" or \"glass\": the v13 material set", "ink");
+    cfg.theme           = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:theme", "\"glass\" (the AOSP frost, default) or \"ink\" (opaque): the v13 material set", "glass");
     cfg.font            = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:font", "font family", Th::FONT);
     cfg.fontSize        = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:font_size", "body text size in logical px (the type roles derive from it)", 12);
     cfg.width           = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:width", "popup card width in logical px", 380);
