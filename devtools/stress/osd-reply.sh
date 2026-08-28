@@ -230,7 +230,7 @@ conversation_notify Telegram team-grp "Team" sibling Sibling grp-1 "lunch?" grou
 sleep 0.6
 conv_reply_notify Telegram team-grp teammate Teammate grp-2 "Reply from the expanded child" group
 sleep 0.8
-expect_panel "reply/group: two senders fold into one two-line card" "$STATE/reply-group-card.png" 167
+expect_panel "reply/group: two senders fold into one two-line card" "$STATE/reply-group-card.png" 172
 click "$CHIPX" 74 272
 expect_panel "reply/group: the chip opens both sender kids" "$STATE/reply-group-open.png" 288
 click "$KIDCHEV_X" "$KIDCHEV_Y" 272

@@ -328,13 +328,13 @@ hq hyprnotify clear >/dev/null; sleep 0.5
 conversation_notify holde grp-e "Team E" eve Eve e-1 one group
 conversation_notify holde grp-e "Team E" evan Evan e-2 two group
 sleep 1
-expect_panel "group-conv: two senders fold into one two-line card" "$STATE/group-conv-card.png" 167
+expect_panel "group-conv: two senders fold into one two-line card" "$STATE/group-conv-card.png" 172
 longpress "$ROWX" "$ROWY" 272
 expect_panel "group-conv: its menu carries the chat title" "$STATE/group-conv-menu.png" 467
 click "$MENU_X" "$MENU_SILENT_Y_CONV_DEFAULTSTAGED" 272
 expect_panel "group-conv: stage Silent" "$STATE/group-conv-silent.png" 449
 click "$ROWX" "$ROWY" 273
-expect_panel "group-conv: right-click closes, nothing committed" "$STATE/group-conv-closed.png" 167
+expect_panel "group-conv: right-click closes, nothing committed" "$STATE/group-conv-closed.png" 172
 chk "group-conv: no rule left behind" test "$(hq hyprnotify policy)" = "silenced:0 priority:0"
 click "$ROWX" "$ROWY" 273
 expect_panel "group-conv: a second right-click dismisses the conversation" "$STATE/group-conv-gone.png" 145
