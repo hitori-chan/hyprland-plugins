@@ -157,13 +157,14 @@ namespace NHyprnotify {
     inline constexpr double REPLY_H      = 44;  // the armed reply field row
     inline constexpr double SEND_D       = 44;  // its send button
 
-    // footer: three equal ~52px controls, full-pill radius
+    // footer: the AOSP 37px-tall stadium controls (history, Clear all,
+    // DND) — 55px pills at rest, 18px radius, 18px glyphs
     inline constexpr double FOOTER_MT     = 16;
-    inline constexpr double FOOTER_H      = 52;
+    inline constexpr double FOOTER_H      = 37;
     inline constexpr double FOOTER_GAP    = 8;
-    inline constexpr double FOOTER_PILL_W = 52;
-    inline constexpr double FOOTER_R      = 26; // the full pill
-    inline constexpr double FOOTER_ICON   = 22;
+    inline constexpr double FOOTER_PILL_W = 55;
+    inline constexpr double FOOTER_R      = 18; // the stadium
+    inline constexpr double FOOTER_ICON   = 18;
 
     // the history panel
     inline constexpr double HIST_INSET  = 14; // from the panel edge

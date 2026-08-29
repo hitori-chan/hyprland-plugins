@@ -606,7 +606,7 @@ namespace NHyprnotify {
         const CBox   PANEL{X, Y0, PANEL_W, std::max(0.0, PANELH)};
 
         P.shadow(PANEL, RPANEL, RP, 22);
-        P.glass(PANEL, v13Panel(), RPANEL, RP); // the panel veil: opaque v13 ink by default, frost when theme = "glass"
+        P.glass(PANEL, v13Panel(), RPANEL, RP); // the panel veil: opaque tray-menu material by default, frost when theme = "glass"
         {
             SCard pc;
             pc.kind = SCard::PANEL;
@@ -803,11 +803,11 @@ namespace NHyprnotify {
             const bool HOV = hovered.kind == SCard::BTN_DND;
             // built outside the paint guard: the warm pass owns creation (see
             // the history pill above)
-            const auto G = controlIcon(eControlIcon::DND_BELL_GEAR, (int)std::lround(22 * P.scale), LIT ? v13OnAccent() : (HOV ? v13On() : v13On82()));
+            const auto G = controlIcon(eControlIcon::DND_BELL_GEAR, (int)std::lround(FOOTER_ICON * P.scale), LIT ? v13OnAccent() : (HOV ? v13On() : v13On82()));
             if (!P.warm) {
                 P.rect(B, LIT ? v13Accent() : (HOV ? v13RaisedH() : v13Raised()), (int)std::lround(FOOTER_R * P.scale), RP);
                 if (G)
-                    P.texFit(G, CBox{B.x + (B.w - 22) / 2, B.y + (B.h - 22) / 2, 22, 22}, 0);
+                    P.texFit(G, CBox{B.x + (B.w - FOOTER_ICON) / 2, B.y + (B.h - FOOTER_ICON) / 2, FOOTER_ICON, FOOTER_ICON}, 0);
             }
             SCard c;
             c.kind = SCard::BTN_DND;
