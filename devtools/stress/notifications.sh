@@ -420,7 +420,7 @@ click "$ROWX" "$ROWY" 273
 expect_panel "history: the third dismiss leaves the empty state" "$STATE/hist-r3.png" 145
 swipeh "$ROWX" "$ROWY" 120
 expect_panel "history: the flick opens the sheet with three entries" "$STATE/hist-open.png" 342
-click "$((PANEL_X + N_W - 64))" 124 272
+click "$((PANEL_X + 316))" 124 272
 expect_panel "history: Clear empties the list" "$STATE/hist-cleared.png" 242
 swipeh "$ROWX" "$ROWY" -120
 expect_panel "history: the flick back closes the sheet" "$STATE/hist-closed.png" 145

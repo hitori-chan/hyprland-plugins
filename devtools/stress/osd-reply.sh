@@ -72,9 +72,9 @@ chk "center OSD: brightness card is active" test "$(st)" = "center:1 live:1 dnd:
 chk "center OSD: fixed card remains outside shade accounting" test "$(bd)" = "banners:0 resident:0"
 # Measured with the shade open: the empty shade ends at y=175 (26+149), the
 # band starts at 182, and the right-aligned OSD card spans 182..289, so its
-# center is (PANEL_X + N_W/2 - 1, 235). The old formula assumed a
-# closed-shade band and clicked the shade's own glass.
-OSD_X=$((PANEL_X + N_W / 2 - 1))
+# center is (PANEL_X+189, 235). The old formula assumed a closed-shade band
+# and clicked the shade's own glass.
+OSD_X=$((PANEL_X + 380 / 2 - 1))
 OSD_Y=235
 click "$OSD_X" "$OSD_Y" 272
 chk "center OSD: below-shade popup hitbox dismisses the card" test "$(st)" = "center:1 live:0 dnd:0"
@@ -123,16 +123,14 @@ chk "fullscreen: ordinary banner remains visible by default" test "$(bd)" = "ban
 capture_nested "$BLUR_FRAME"
 hq eval 'hl.config({ decoration = { blur = { enabled = false } } })' >/dev/null; sleep 0.6
 capture_nested "$FLAT_FRAME"
-CARD_X=$N_EDGE
-# The outside sample must sit OUTSIDE the popup surface AND its 16px shadow:
+CARD_X=$((MON_W - 16 - 380))
+# The corner sample must sit OUTSIDE the popup surface AND its 16px shadow:
 # the shadow is semi-transparent surface ink, so any crop within its reach
 # legitimately shows the blur on/off difference and cannot gate clipping.
-# v14 banners are full-width, so the 16px screen margin equals the shadow
-# reach and there is no horizontal clear strip; the 24px-below-the-bottom
-# sample (plain banner: y 26..132, shadow to 148) clears both. A blur
-# composite that leaks past the surface bounds still trips it.
+# 24px left of the card edge clears both; a blur composite that leaks past
+# the surface bounds still trips it.
 CORNER_DELTA="$(magick "$BLUR_FRAME" "$FLAT_FRAME" -compose difference -composite \
-	-crop "8x8+$((CARD_X + 4))+156" +repage -colorspace sRGB -format '%[fx:mean]' info: 2>/dev/null)"
+	-crop "8x8+$((CARD_X - 24))+34" +repage -colorspace sRGB -format '%[fx:mean]' info: 2>/dev/null)"
 INTERIOR_DELTA="$(magick "$BLUR_FRAME" "$FLAT_FRAME" -compose difference -composite \
 	-crop "12x12+$((CARD_X + 280))+$((34 + 44))" +repage -colorspace sRGB -format '%[fx:mean]' info: 2>/dev/null)"
 chk "rounded blur: clipped corner matches the no-blur surface" awk '{ exit !($1 < 0.01) }' <<<"$CORNER_DELTA"
@@ -262,7 +260,7 @@ REPLY_HOME_FRAME="$STATE/reply-scroll-home.png"
 capture_nested "$REPLY_END_FRAME"
 reply_keys 'tap home'
 capture_nested "$REPLY_HOME_FRAME"
-REPLY_FIELD_X=$((PANEL_X + 82))
+REPLY_FIELD_X=$((MON_W - 314))
 REPLY_FIELD_Y=167 # measured: the armed field's text line inside the expanded kid
 REPLY_FIELD_END_HASH="$(magick "$REPLY_END_FRAME" -crop "140x18+$((REPLY_FIELD_X + 8))+$((REPLY_FIELD_Y - 9))" +repage -depth 8 rgba:- 2>/dev/null | sha256sum | cut -d' ' -f1)"
 REPLY_FIELD_HOME_HASH="$(magick "$REPLY_HOME_FRAME" -crop "140x18+$((REPLY_FIELD_X + 8))+$((REPLY_FIELD_Y - 9))" +repage -depth 8 rgba:- 2>/dev/null | sha256sum | cut -d' ' -f1)"
