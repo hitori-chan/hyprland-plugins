@@ -525,8 +525,7 @@ namespace NHyprnotify {
 
         const double MIN_PANEL = PANEL_PAD * 2 + FOOTER_H;
         const double OFFSET    = std::clamp((double)cfg.offsetY->value(), 0.0, std::max(0.0, MB.h - MIN_PANEL - EDGE));
-        // The AOSP shade spans the screen: full width, 16px margins each side.
-        const double PANEL_W   = std::max(1.0, MB.w - 2 * EDGE);
+        const double PANEL_W   = std::max(1.0, std::min(CENTER_W, MB.w - 2 * EDGE));
         const double X         = MB.x + MB.w - EDGE - PANEL_W;
         const double Y0        = MB.y + OFFSET;
 
@@ -778,19 +777,13 @@ namespace NHyprnotify {
             bx += CW + FOOTER_GAP;
         }
 
-        { // "Clear all" — the AOSP footer's compact centered pill; greys when
-            // the shade is empty. A fixed 120-logical-px raster bound keeps
-            // the cache address stable while the pill itself hugs the text.
-            const int CLR_B = (int)std::lround(120 * P.scale);
-            const auto   REST   = cachedText("Clear all", v13On(), T.bar, CLR_B, -1, 0, false, 500);
-            const auto   REST_D = cachedText("Clear all", v13On40(), T.bar, CLR_B, -1, 0, false, 500);
-            const double CLEAR_W = std::max(texW(REST, P.scale), texW(REST_D, P.scale)) + 2 * 18;
-            double       CLR_X   = X + (PANEL_W - CLEAR_W) / 2;
-            if (CLR_X < bx + FOOTER_GAP) // the muted chip can crowd the center on a narrow monitor
-                CLR_X = std::min(bx + FOOTER_GAP, DNDX - FOOTER_GAP - CLEAR_W);
+        { // "Clear all" — the global sweep; greys when the shade is empty
+            const double CLEAR_W = std::max(0.0, DNDX - FOOTER_GAP - bx);
+            const auto   REST    = cachedText("Clear all", v13On(), T.bar, (int)(std::max(1.0, CLEAR_W) * P.scale), -1, 0, false, 500);
+            const auto   REST_D  = cachedText("Clear all", v13On40(), T.bar, (int)(std::max(1.0, CLEAR_W) * P.scale), -1, 0, false, 500);
 
             const bool TARGET = std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && !N->snoozed && !inOsdBand(N->id); });
-            const CBox B{CLR_X, FOOTY, CLEAR_W, FOOTER_H};
+            const CBox B{bx, FOOTY, CLEAR_W, FOOTER_H};
             if (!P.warm) {
                 const bool HOV = hovered.kind == SCard::BTN_CLEAR;
                 P.rect(B, HOV && TARGET ? v13RaisedH() : v13Raised(), (int)std::lround(FOOTER_R * P.scale), RP);

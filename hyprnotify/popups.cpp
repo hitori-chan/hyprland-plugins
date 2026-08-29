@@ -162,10 +162,7 @@ namespace NHyprnotify {
 
     double renderPopups(const SPaint& P, const SType& T, bool osdOnly, std::optional<double> startY, bool measureOnly) {
         const auto   MB   = P.mon->logicalBox();
-        // The AOSP heads-up is a full-width banner; `width` > 0 pins a
-        // narrower card (the pre-v14 380px strip) for users who want it.
-        const double FULL = std::max(1.0, MB.w - 2 * EDGE);
-        const double W    = cfg.width->value() > 0 ? std::min((double)cfg.width->value(), FULL) : FULL;
+        const double W    = std::max(1.0, std::min(CENTER_W, MB.w - 2 * EDGE));
         const double GAP  = osdOnly ? std::max((double)cfg.margin->value(), 0.0) : HUN_GAP;
         const int    RR   = rRow(P.scale);
         const float  RP   = rPow();

@@ -11,9 +11,9 @@ one deterministic generic mark.
 
 ## Banners
 
-- Banners drop from the bar as AOSP full-width heads-ups (a `width` > 0 pins
-  a narrower card). Left click invokes a link or default action, right click
-  dismisses, and middle click moves the stack into the center.
+- Cards appear at the focused monitor's top-right. Left click invokes a link or
+  default action, right click dismisses, and middle click moves the stack into
+  the center.
 - Normal cards retreat into the center after `timeout_normal`. Low, transient,
   and progress cards expire after `timeout_low`; critical cards stay until
   dismissed. Hover pauses the active timeout.
@@ -97,7 +97,7 @@ rims); an explicit color always wins over either set.
 | `plugin:hyprnotify:theme` | material set: `glass` (the AOSP frost) or `ink` (opaque) | `glass` |
 | `plugin:hyprnotify:font` | font family | `IBM Plex Sans` |
 | `plugin:hyprnotify:font_size` | body text size in logical px (type roles derive from it) | 12 |
-| `plugin:hyprnotify:width` | popup (banner) width in logical px; 0 = the AOSP full-width banner | 0 |
+| `plugin:hyprnotify:width` | popup width | 380 |
 | `plugin:hyprnotify:max_height` | popup height cap | 300 |
 | `plugin:hyprnotify:max_icon` | popup identity cell | 40 |
 | `plugin:hyprnotify:margin` | inter-card gap | 8 |
