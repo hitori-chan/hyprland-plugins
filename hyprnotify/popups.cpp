@@ -241,6 +241,10 @@ namespace NHyprnotify {
                     appendEsc(SB, PREV.front().b);
                 } else if (!PREV.empty())
                     appendEsc(SB, PREV.front().b);
+                else
+                    // a category-based conversation (im.*/call.*) without
+                    // structured messages: the app's own body IS the preview
+                    appendEsc(SB, bodyForDisplay(*N));
             } else
                 appendEsc(SB, bodyForDisplay(*N));
             const SCachedText* BODY = SB.empty() ? nullptr : cachedText(SB, v13On82(), T.title, TEXTWPX, linePx(T.title), 18.0 / 15.0, true, 400, &LINKCOL);

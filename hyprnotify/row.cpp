@@ -717,6 +717,12 @@ namespace NHyprnotify {
             appendEsc(HB, open ? FULLBODY : lastLine(FULLBODY));
             // collapsed caps at two lines, ellipsized (the ROM card)
             BODY = cachedText(HB, v13On82(), T.title, TWPX, open ? -1 : 2 * linePx(T.title), 18.0 / 15.0, true, 400, &LINKCOL);
+        } else if (!open && IS_CONV && prev.empty() && !FULLBODY.empty()) {
+            // a category-based conversation (im.*/call.*) without structured
+            // messages (e.g. a plain Telegram message): the app's own body IS
+            // the collapsed preview, rendered like a plain card's
+            appendEsc(HB, lastLine(FULLBODY));
+            BODY = cachedText(HB, v13On82(), T.title, TWPX, 2 * linePx(T.title), 18.0 / 15.0, true, 400, &LINKCOL);
         } else if (TITLEHEAD) {
             // a group's sender leads the line ("mipu: <text>"); 1:1 is the
             // bare message. Up to two lines, ellipsized.
