@@ -92,18 +92,18 @@ conv_reply_notify tg chat-ladder Alice alice ladder-1 "hello there"
 sleep 1
 chk "ladder: the conversation arrived as one banner" test "$(bd)" = "banners:1 resident:0"
 hq hyprnotify center >/dev/null; sleep 0.5
-expect_panel "ladder A: collapsed conversation card is 70px" "$STATE/ladder-a.png" 157
+expect_panel "ladder A: collapsed conversation card is 70px" "$STATE/ladder-a.png" 142
 click "$CHIPX" 74 272
-expect_panel "ladder B: the chip opened the card, one 66px kid is 138px" "$STATE/ladder-b.png" 221
+expect_panel "ladder B: the chip opened the card, one 66px kid is 138px" "$STATE/ladder-b.png" 206
 click "$KIDCHEV_X" "$KIDCHEV_Y" 272
-expect_panel "ladder C: the kid chevron opened the kid with its Reply at 186px" "$STATE/ladder-c.png" 278
+expect_panel "ladder C: the kid chevron opened the kid with its Reply at 186px" "$STATE/ladder-c.png" 263
 click "$REPLY_BTN_X" "$REPLY_BTN_Y" 272
-expect_panel "ladder D: the armed field takes 202px" "$STATE/ladder-d.png" 290
+expect_panel "ladder D: the armed field takes 202px" "$STATE/ladder-d.png" 275
 # the field owns the keys: type a word and send; the card leaves with it
 printf 'tap h\ntap i\nsleep 300\n' | vk; sleep 0.5
 printf 'tap enter\n' | vk; sleep 0.8
 chk "ladder: the reply fired and its card left" test "$(st)" = "center:1 live:0 dnd:0"
-expect_panel "ladder: the shade stays open on its empty state" "$STATE/ladder-sent.png" 145
+expect_panel "ladder: the shade stays open on its empty state" "$STATE/ladder-sent.png" 130
 hq hyprnotify center >/dev/null; sleep 0.4
 hq hyprnotify clear >/dev/null; sleep 0.6
 
@@ -116,7 +116,7 @@ hq hyprnotify clear >/dev/null; sleep 0.6
 # NOT arm the inline field (that lives on the shade's kid).
 nfy clickmodel "actionless"; sleep 1
 hq hyprnotify center >/dev/null; sleep 0.6
-expect_panel "clickmodel: one collapsed plain card is 100px (title + one body line)" "$STATE/clickmodel-a.png" 157
+expect_panel "clickmodel: one collapsed plain card is 100px (title + one body line)" "$STATE/clickmodel-a.png" 142
 click "$ROWX" "$ROWY" 272
 chk "clickmodel: an actionless body click dismisses, the shade stays" test "$(st)" = "center:1 live:0 dnd:0"
 nfy clickmodel "right me"; sleep 1
@@ -130,13 +130,13 @@ hq hyprnotify clear >/dev/null; sleep 0.6
 nfy toggler "long title that carries a body line" "first line of the body
 second line of the body"; sleep 1
 hq hyprnotify center >/dev/null; sleep 0.6
-expect_panel "toggle: the collapsed plain card shows its last body line" "$STATE/toggle-a.png" 157
+expect_panel "toggle: the collapsed plain card shows its last body line" "$STATE/toggle-a.png" 142
 click "$CHIPX" 74 272
-expect_panel "toggle: the chip revealed the full two-line body" "$STATE/toggle-b.png" 181
+expect_panel "toggle: the chip revealed the full two-line body" "$STATE/toggle-b.png" 166
 click "$CHIPX" 68 272
-expect_panel "toggle: the chip folded it again" "$STATE/toggle-c.png" 157
+expect_panel "toggle: the chip folded it again" "$STATE/toggle-c.png" 142
 click "$((PANEL_X + 30))" 74 272
-expect_panel "toggle: the icon column toggles too" "$STATE/toggle-d.png" 181
+expect_panel "toggle: the icon column toggles too" "$STATE/toggle-d.png" 166
 click "$CHIPX" 68 272
 chk "toggle: reset the card to collapsed" test "$(st)" = "center:1 live:1 dnd:0"
 # drag down past 90px swipes the card away. The nested virtual-pointer drag is
@@ -157,7 +157,7 @@ sleep 1
 chk "hun: the conversation is up as a banner" test "$(bd)" = "banners:1 resident:0"
 click "$POP_CHEV_X" "$POP_CHEV_Y" 272
 chk "hun: the banner chevron opened the shade and absorbed the banner" test "$(st)" = "center:1 live:1 dnd:0"
-expect_panel "hun: the absorbed card is the collapsed conversation" "$STATE/hun-shade.png" 157
+expect_panel "hun: the absorbed card is the collapsed conversation" "$STATE/hun-shade.png" 142
 hq hyprnotify center >/dev/null; sleep 0.4
 hq hyprnotify clear >/dev/null; sleep 0.4 # chat-hun is still resident; sweep it or the next card is born resident, bannerless
 conv_reply_notify tg chat-hun2 Iris iris hun2-1 "pong"
@@ -220,34 +220,34 @@ center_off
 nfy holda "hold target"
 sleep 1
 hq hyprnotify center >/dev/null; sleep 0.6
-expect_panel "hold: one plain card before the menu" "$STATE/hold-plain.png" 157
+expect_panel "hold: one plain card before the menu" "$STATE/hold-plain.png" 142
 longpress "$ROWX" "$ROWY" 272
-expect_panel "hold: long-press opens the menu, Default staged" "$STATE/hold-menu.png" 445
+expect_panel "hold: long-press opens the menu, Default staged" "$STATE/hold-menu.png" 430
 click "$MENU_X" "$MENU_SILENT_Y_DEFAULTSTAGED" 272
-expect_panel "hold: staging Silent folds the selected row" "$STATE/hold-silent.png" 427
+expect_panel "hold: staging Silent folds the selected row" "$STATE/hold-silent.png" 412
 click "$MENU_X" "$MENU_PRIORITY_Y_DEFAULTSTAGED" 272
-expect_panel "hold: staging Priority keeps the same height" "$STATE/hold-priority.png" 427
+expect_panel "hold: staging Priority keeps the same height" "$STATE/hold-priority.png" 412
 click "$MENU_X" "$MENU_DEFAULT_Y_PRIORITYSTAGED" 272
-expect_panel "hold: staging Default grows it back" "$STATE/hold-default.png" 445
+expect_panel "hold: staging Default grows it back" "$STATE/hold-default.png" 430
 click "$ROWX" "$ROWY" 273
-expect_panel "hold: right-click closes without committing" "$STATE/hold-closed.png" 157
+expect_panel "hold: right-click closes without committing" "$STATE/hold-closed.png" 142
 chk "hold: nothing was committed" test "$(hq hyprnotify policy)" = "silenced:0 priority:0"
 hq hyprnotify clear >/dev/null; sleep 0.6
 nfy holdb "hold commit"
 sleep 1
 longpress "$ROWX" "$ROWY" 272
-expect_panel "hold-commit: the menu opens Default-staged for a clean app" "$STATE/hold-commit-menu.png" 445
+expect_panel "hold-commit: the menu opens Default-staged for a clean app" "$STATE/hold-commit-menu.png" 430
 click "$MENU_X" "$MENU_SILENT_Y_DEFAULTSTAGED" 272
-expect_panel "hold-commit: stage Silent" "$STATE/hold-commit-silent.png" 427
+expect_panel "hold-commit: stage Silent" "$STATE/hold-commit-silent.png" 412
 click "$MENU_DONE_X" "$MENU_DONE_Y" 272
-expect_panel "hold-commit: Done commits and the card folds back" "$STATE/hold-commit-done.png" 157
+expect_panel "hold-commit: Done commits and the card folds back" "$STATE/hold-commit-done.png" 142
 chk "hold-commit: the app is silenced" test "$(hq hyprnotify policy)" = "silenced:1 s=holdb priority:0"
 longpress "$ROWX" "$ROWY" 272
-expect_panel "hold-commit: the menu reopens Silent-staged" "$STATE/hold-restage.png" 427
+expect_panel "hold-commit: the menu reopens Silent-staged" "$STATE/hold-restage.png" 412
 click "$MENU_X" "$MENU_DEFAULT_Y_SILENTSTAGED" 272
-expect_panel "hold-commit: stage Default back" "$STATE/hold-restage-default.png" 445
+expect_panel "hold-commit: stage Default back" "$STATE/hold-restage-default.png" 430
 click "$MENU_DONE_X" "$MENU_DONE_Y" 272
-expect_panel "hold-commit: Default is committed again" "$STATE/hold-restage-done.png" 157
+expect_panel "hold-commit: Default is committed again" "$STATE/hold-restage-done.png" 142
 chk "hold-commit: the silence rule is gone" test "$(hq hyprnotify policy)" = "silenced:0 priority:0"
 hq hyprnotify clear >/dev/null; sleep 0.6
 
@@ -258,23 +258,23 @@ hq hyprnotify clear >/dev/null; sleep 0.6
 SNOOZE_ID=$(nfyid holds "snooze me")
 sleep 1
 longpress "$ROWX" "$ROWY" 272
-expect_panel "snooze: the menu opens" "$STATE/snooze-menu.png" 445
+expect_panel "snooze: the menu opens" "$STATE/snooze-menu.png" 430
 click "$MENU_X" "$MENU_SNOOZE_Y" 272
-expect_panel "snooze: the section unfolds its four options" "$STATE/snooze-open.png" 653
+expect_panel "snooze: the section unfolds its four options" "$STATE/snooze-open.png" 638
 click "$MENU_X" "$MENU_OPT1_Y" 272
-expect_panel "snooze: picking an option keeps the section open" "$STATE/snooze-opt.png" 653
+expect_panel "snooze: picking an option keeps the section open" "$STATE/snooze-opt.png" 638
 click "$MENU_DONE_X" "$MENU_DONE_Y_OPEN" 272
-expect_panel "snooze: the card swaps to its undo row" "$STATE/snooze-row.png" 157
+expect_panel "snooze: the card swaps to its undo row" "$STATE/snooze-row.png" 142
 chk "snooze: the model counts it snoozed" test "$(hq hyprnotify snoozed)" = "1"
 click "$UNDO_X" "$UNDO_Y" 272
-expect_panel "snooze: Undo restores the card inside the window" "$STATE/snooze-undo.png" 157
+expect_panel "snooze: Undo restores the card inside the window" "$STATE/snooze-undo.png" 142
 chk "snooze: the undo cleared the snooze" test "$(hq hyprnotify snoozed)" = "0"
 longpress "$ROWX" "$ROWY" 272
 click "$MENU_X" "$MENU_SNOOZE_Y" 272
-expect_panel "snooze: re-snoozing opens the section again" "$STATE/snooze-reopen.png" 653
+expect_panel "snooze: re-snoozing opens the section again" "$STATE/snooze-reopen.png" 638
 click "$MENU_X" "$MENU_OPT2_Y" 272
 click "$MENU_DONE_X" "$MENU_DONE_Y_OPEN" 272
-expect_panel "snooze: committed again" "$STATE/snooze-row2.png" 157
+expect_panel "snooze: committed again" "$STATE/snooze-row2.png" 142
 chk "snooze: snoozed again" test "$(hq hyprnotify snoozed)" = "1"
 sleep 7.2 # the 6s undo window lapses before the late press
 click "$UNDO_X" "$UNDO_Y" 272
@@ -282,7 +282,7 @@ click "$UNDO_X" "$UNDO_Y" 272
 # after the delay. The undo row holds the slot only for CONFIRM_MS; once it
 # lapses the card leaves the view (the model keeps it snoozed), so the empty
 # shade is the correct height and the late press hits nothing.
-expect_panel "snooze: a late Undo is a no-op" "$STATE/snooze-late.png" 145
+expect_panel "snooze: a late Undo is a no-op" "$STATE/snooze-late.png" 130
 chk "snooze: still snoozed after the late press" test "$(hq hyprnotify snoozed)" = "1"
 closeid "$SNOOZE_ID"
 sleep 0.6
@@ -294,30 +294,30 @@ hq hyprnotify clear >/dev/null; sleep 0.5
 # footer at 393 closed / 601 open.
 conversation_notify convhold chat-c "Chat C" dana Dana c-1 "hello"
 sleep 1
-expect_panel "conv-hold: the collapsed conversation is 70px" "$STATE/convhold-card.png" 157
+expect_panel "conv-hold: the collapsed conversation is 70px" "$STATE/convhold-card.png" 142
 longpress "$ROWX" "$ROWY" 272
-expect_panel "conv-hold: the menu opens under its chat title" "$STATE/convhold-menu.png" 467
+expect_panel "conv-hold: the menu opens under its chat title" "$STATE/convhold-menu.png" 452
 click "$MENU_X" "$MENU_SILENT_Y_CONV_DEFAULTSTAGED" 272
-expect_panel "conv-hold: stage Silent" "$STATE/convhold-silent.png" 449
+expect_panel "conv-hold: stage Silent" "$STATE/convhold-silent.png" 434
 click "$MENU_X" "$MENU_SNOOZE_Y_CONV" 272
-expect_panel "conv-hold: snooze unfolds" "$STATE/convhold-snooze-open.png" 657
+expect_panel "conv-hold: snooze unfolds" "$STATE/convhold-snooze-open.png" 642
 click "$MENU_X" "$MENU_OPT2_Y_CONV" 272
 click "$MENU_DONE_X" "$MENU_DONE_Y_CONV_OPEN" 272
-expect_panel "conv-hold: the conversation snoozes to its undo row" "$STATE/convhold-snoozed.png" 157
+expect_panel "conv-hold: the conversation snoozes to its undo row" "$STATE/convhold-snoozed.png" 142
 chk "conv-hold: snoozed" test "$(hq hyprnotify snoozed)" = "1"
 click "$UNDO_X" "$UNDO_Y" 272
-expect_panel "conv-hold: Undo restores the collapsed card" "$STATE/convhold-undo.png" 157
+expect_panel "conv-hold: Undo restores the collapsed card" "$STATE/convhold-undo.png" 142
 chk "conv-hold: un-snoozed" test "$(hq hyprnotify snoozed)" = "0"
 longpress "$ROWX" "$ROWY" 272
 click "$MENU_X" "$MENU_SILENT_Y_CONV_DEFAULTSTAGED" 272
 click "$MENU_DONE_X" "$MENU_DONE_Y_CONV" 272
-expect_panel "conv-hold: Silent committed, the card folds back" "$STATE/convhold-committed.png" 157
+expect_panel "conv-hold: Silent committed, the card folds back" "$STATE/convhold-committed.png" 142
 chk "conv-hold: the app is silenced" test "$(hq hyprnotify policy)" = "silenced:1 s=convhold priority:0"
 longpress "$ROWX" "$ROWY" 272
-expect_panel "conv-hold: the menu reopens Silent-staged" "$STATE/convhold-restage.png" 449
+expect_panel "conv-hold: the menu reopens Silent-staged" "$STATE/convhold-restage.png" 434
 click "$MENU_X" "$MENU_DEFAULT_Y_CONV_SILENTSTAGED" 272
 click "$MENU_DONE_X" "$MENU_DONE_Y_CONV" 272
-expect_panel "conv-hold: Default committed back" "$STATE/convhold-restored.png" 157
+expect_panel "conv-hold: Default committed back" "$STATE/convhold-restored.png" 142
 chk "conv-hold: the silence rule is gone" test "$(hq hyprnotify policy)" = "silenced:0 priority:0"
 hq hyprnotify clear >/dev/null; sleep 0.5
 
@@ -328,38 +328,38 @@ hq hyprnotify clear >/dev/null; sleep 0.5
 conversation_notify holde grp-e "Team E" eve Eve e-1 one group
 conversation_notify holde grp-e "Team E" evan Evan e-2 two group
 sleep 1
-expect_panel "group-conv: two senders fold into one two-line card" "$STATE/group-conv-card.png" 172
+expect_panel "group-conv: two senders fold into one two-line card" "$STATE/group-conv-card.png" 157
 longpress "$ROWX" "$ROWY" 272
-expect_panel "group-conv: its menu carries the chat title" "$STATE/group-conv-menu.png" 467
+expect_panel "group-conv: its menu carries the chat title" "$STATE/group-conv-menu.png" 452
 click "$MENU_X" "$MENU_SILENT_Y_CONV_DEFAULTSTAGED" 272
-expect_panel "group-conv: stage Silent" "$STATE/group-conv-silent.png" 449
+expect_panel "group-conv: stage Silent" "$STATE/group-conv-silent.png" 434
 click "$ROWX" "$ROWY" 273
-expect_panel "group-conv: right-click closes, nothing committed" "$STATE/group-conv-closed.png" 172
+expect_panel "group-conv: right-click closes, nothing committed" "$STATE/group-conv-closed.png" 157
 chk "group-conv: no rule left behind" test "$(hq hyprnotify policy)" = "silenced:0 priority:0"
 click "$ROWX" "$ROWY" 273
-expect_panel "group-conv: a second right-click dismisses the conversation" "$STATE/group-conv-gone.png" 145
+expect_panel "group-conv: a second right-click dismisses the conversation" "$STATE/group-conv-gone.png" 130
 chk "group-conv: the whole conversation left the model" test "$(st)" = "center:1 live:0 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.5
 
 sec_notify heldg "declared one" shared
 sec_notify heldg "declared two" shared
 sleep 1
-expect_panel "digest: the declared group folds into one 70px card" "$STATE/digest-card.png" 155
+expect_panel "digest: the declared group folds into one 70px card" "$STATE/digest-card.png" 140
 longpress "$ROWX" "$ROWY" 272
-expect_panel "digest: the bundle menu has no snooze section" "$STATE/digest-menu.png" 393
+expect_panel "digest: the bundle menu has no snooze section" "$STATE/digest-menu.png" 378
 click "$MENU_X" "$MENU_SILENT_Y_DEFAULTSTAGED" 272
-expect_panel "digest: stage Silent" "$STATE/digest-silent.png" 375
+expect_panel "digest: stage Silent" "$STATE/digest-silent.png" 360
 click "$MENU_DONE_X" "$MENU_DONE_Y_BUNDLE_SILENTSTAGED" 272
-expect_panel "digest: Done commits the group rule" "$STATE/digest-committed.png" 155
+expect_panel "digest: Done commits the group rule" "$STATE/digest-committed.png" 140
 chk "digest: the app is silenced" test "$(hq hyprnotify policy)" = "silenced:1 s=heldg priority:0"
 longpress "$ROWX" "$ROWY" 272
-expect_panel "digest: the menu reopens Silent-staged" "$STATE/digest-restage.png" 375
+expect_panel "digest: the menu reopens Silent-staged" "$STATE/digest-restage.png" 360
 click "$MENU_X" "$MENU_DEFAULT_Y_SILENTSTAGED" 272
 click "$MENU_DONE_X" "$MENU_DONE_Y_BUNDLE" 272
-expect_panel "digest: Default committed back" "$STATE/digest-restored.png" 155
+expect_panel "digest: Default committed back" "$STATE/digest-restored.png" 140
 chk "digest: the silence rule is gone" test "$(hq hyprnotify policy)" = "silenced:0 priority:0"
 click "$ROWX" "$ROWY" 273
-expect_panel "digest: right-click dismisses the WHOLE group" "$STATE/digest-gone.png" 145
+expect_panel "digest: right-click dismisses the WHOLE group" "$STATE/digest-gone.png" 130
 chk "digest: both cards left the model" test "$(st)" = "center:1 live:0 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.5
 
@@ -371,7 +371,7 @@ hq hyprnotify clear >/dev/null; sleep 0.5
 conversation_notify idapp chat-d "Chat D" dana Dana d-1 "hello"
 conversation_notify idapp chat-e "Chat E" ivan Ivan e-1 "hi"
 sleep 1
-expect_panel "identity: two 1:1 chats, two cards" "$STATE/identity.png" 239
+expect_panel "identity: two 1:1 chats, two cards" "$STATE/identity.png" 224
 chk "identity: the two senders get distinct generated avatars" test "$(
 	python3 - "$STATE/identity.png" "$PANEL_X" <<'PY'
 import sys
@@ -397,9 +397,9 @@ hq hyprnotify clear >/dev/null; sleep 0.6
 # clamped ends in bounded repeats — the ends are exact, the midpoints aren't.
 for i in 1 2 3 4 5 6 7 8 9 10; do nfy "of$i" "overflow $i" ""; done
 sleep 1.4
-expect_panel "overflow: eight of ten title-only cards fit" "$STATE/overflow-full.png" 715
-if page_to "$STATE/overflow-scrolled.png" 155 150; then ok "overflow: the wheel pages to the last card"; else bad "overflow: the wheel pages to the last card (want panel h 155)"; fi
-if page_to "$STATE/overflow-back.png" 715 -150; then ok "overflow: the wheel pages back to the top"; else bad "overflow: the wheel pages back to the top (want panel h 715)"; fi
+expect_panel "overflow: eight of ten title-only cards fit" "$STATE/overflow-full.png" 700
+if page_to "$STATE/overflow-scrolled.png" 140 150; then ok "overflow: the wheel pages to the last card"; else bad "overflow: the wheel pages to the last card (want panel h 140)"; fi
+if page_to "$STATE/overflow-back.png" 700 -150; then ok "overflow: the wheel pages back to the top"; else bad "overflow: the wheel pages back to the top (want panel h 700)"; fi
 chk "overflow: paging kept every card" test "$(st)" = "center:1 live:10 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.8
 
@@ -411,19 +411,19 @@ nfy h1 "hist one"
 nfy h2 "hist two"
 nfy h3 "hist three"
 sleep 1.2
-expect_panel "history: three cards, history closed" "$STATE/hist-cards.png" 321
+expect_panel "history: three cards, history closed" "$STATE/hist-cards.png" 306
 click "$ROWX" "$ROWY" 273
-expect_panel "history: the first dismiss" "$STATE/hist-r1.png" 239
+expect_panel "history: the first dismiss" "$STATE/hist-r1.png" 224
 click "$ROWX" "$ROWY" 273
-expect_panel "history: the second dismiss" "$STATE/hist-r2.png" 157
+expect_panel "history: the second dismiss" "$STATE/hist-r2.png" 142
 click "$ROWX" "$ROWY" 273
-expect_panel "history: the third dismiss leaves the empty state" "$STATE/hist-r3.png" 145
+expect_panel "history: the third dismiss leaves the empty state" "$STATE/hist-r3.png" 130
 swipeh "$ROWX" "$ROWY" 120
-expect_panel "history: the flick opens the sheet with three entries" "$STATE/hist-open.png" 342
+expect_panel "history: the flick opens the sheet with three entries" "$STATE/hist-open.png" 327
 click "$((PANEL_X + 316))" 124 272
-expect_panel "history: Clear empties the list" "$STATE/hist-cleared.png" 242
+expect_panel "history: Clear empties the list" "$STATE/hist-cleared.png" 227
 swipeh "$ROWX" "$ROWY" -120
-expect_panel "history: the flick back closes the sheet" "$STATE/hist-closed.png" 145
+expect_panel "history: the flick back closes the sheet" "$STATE/hist-closed.png" 130
 center_off
 hq hyprnotify clear >/dev/null; sleep 0.6
 

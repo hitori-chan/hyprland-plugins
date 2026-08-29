@@ -163,7 +163,7 @@ psend cleartrack "full footer target" ""; sleep 1.2
 hq hyprnotify center >/dev/null; sleep 0.7
 longpress "$ROWX" "$ROWY" 272
 CLEAR_TRACK_X=$((MON_W - 300))
-CLEAR_TRACK_Y=369
+CLEAR_TRACK_Y=361
 click "$CLEAR_TRACK_X" "$CLEAR_TRACK_Y" 272
 chk "Clear all: the expanded footer track owns its left side" test "$(st)" = "center:1 live:0 dnd:0"
 outside_click; sleep 0.5
@@ -197,10 +197,10 @@ chk "undo: the window lapsed and the snooze stands" test "$(sz)" = 1
 click "$UNDO_X" "$UNDO_Y" 272 # past the window there is no undo hitbox
 chk "undo: a late Undo click does nothing" test "$(sz)" = 1
 # the row must also leave the shade on its own clock once CONFIRM_MS lapses;
-# the empty shade ("No new notifications" + footer) measures 171 while the
-# undo-row shade is 183 (26 + 157)
+# the empty shade ("No new notifications" + footer) measures 156 while the
+# undo-row shade is 168 (26 + 142)
 capture_nested "$STATE/undo-row-gone.png"
-chk "undo: the undo row left the shade on its own clock" test "$(panel_bottom "$STATE/undo-row-gone.png")" = 171
+chk "undo: the undo row left the shade on its own clock" test "$(panel_bottom "$STATE/undo-row-gone.png")" = 156
 closeid "$UNDOER_ID" >/dev/null 2>&1; sleep 0.5
 chk "undo: closing the reminder by id tears it down" test "$(sz)" = 0
 outside_click; hq hyprnotify clear >/dev/null; sleep 0.8

@@ -12,10 +12,11 @@
 # ---- pixel-parity geometry (derived from hyprnotify/ui.hpp, ledger A-141) ----
 # The island hangs off the monitor's right edge: EDGE 16 + CENTER_W 380, below
 # offset_y 26. Card slots start at PAD 8 below the panel top; the footer
-# (history circle, Clear all, DND circle) is FOOTER_H 52 tall with FOOTER_MT 16
-# above it, so a single-card panel is 16 + cardH + 68 tall and the card bottom
-# is panel_bottom - 76. Every click coordinate below is an inset from that
-# fixed right-edge origin; the harness's MON_W keeps it monitor-relative.
+# (history, Clear all, DND — the 37px AOSP stadiums) is FOOTER_H 37 tall with
+# FOOTER_MT 16 above it, so a single-card panel is 16 + cardH + 53 tall and
+# the card bottom is panel_bottom - 61. Every click coordinate below is an
+# inset from that fixed right-edge origin; the harness's MON_W keeps it
+# monitor-relative.
 N_EDGE=16
 N_W=380
 N_OFFSET=26
@@ -32,10 +33,10 @@ REPLY_BTN_Y=186                        # expanded kid action row: 164..208
 REPLY_FIELD_X=$((PANEL_X + 188))       # the armed field center (84..295 x)
 REPLY_SEND_X=$((PANEL_X + 317))        # the send pill center
 # the hold menu (long-press a card). Menu row boxes are full-width (350px);
-# click x is the panel middle. The menu's own geometry is unchanged from v13;
-# the panel pad 15->8 shifts every row 7px up and the footer block (16+52 vs
-# 20+37) trims 3px off every panel height. Non-conversation target (card
-# slot 1, top=34):
+# click x is the panel middle. The menu's own geometry is unchanged from v13
+# (rows lay out down from the card-slot top, so shrinking the footer never
+# moves them); the footer block is FOOTER_MT 16 + FOOTER_H 37. Non-
+# conversation target (card slot 1, top=34):
 #   rows  (Default staged)    (Silent staged)     (Priority staged)
 #   Priority    130             130                 139
 #   Default     191 (62)        182                 200
@@ -43,10 +44,10 @@ REPLY_SEND_X=$((PANEL_X + 317))        # the send pill center
 #   Snooze      304             304                 304
 #   options   356/408/460/512 when Snooze is open (every staging state)
 #   buttons   364 closed, 572 open (every staging state)
-#   panel h   446/428 closed, 654/636 open
+#   panel h   431/413 closed, 639/621 open
 # 1:1 conversation target: the header carries the chat title (+22 to every
-# y above); buttons 386 closed / 594 open; panel h 468/450 / 676/658.
-# Group conversation (bundle): no snooze section; buttons 334; panel h 416/406.
+# y above); buttons 386 closed / 594 open; panel h 453/435 / 661/643.
+# Group conversation (bundle): no snooze section; buttons 334; panel h 401/391.
 MENU_X=$((PANEL_X + 190))
 MENU_PRIORITY_Y_DEFAULTSTAGED=130
 MENU_DEFAULT_Y_DEFAULTSTAGED=191

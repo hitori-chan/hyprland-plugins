@@ -230,15 +230,15 @@ conversation_notify Telegram team-grp "Team" sibling Sibling grp-1 "lunch?" grou
 sleep 0.6
 conv_reply_notify Telegram team-grp teammate Teammate grp-2 "Reply from the expanded child" group
 sleep 0.8
-expect_panel "reply/group: two senders fold into one two-line card" "$STATE/reply-group-card.png" 172
+expect_panel "reply/group: two senders fold into one two-line card" "$STATE/reply-group-card.png" 157
 click "$CHIPX" 74 272
-expect_panel "reply/group: the chip opens both sender kids" "$STATE/reply-group-open.png" 288
+expect_panel "reply/group: the chip opens both sender kids" "$STATE/reply-group-open.png" 273
 click "$KIDCHEV_X" "$KIDCHEV_Y" 272
-expect_panel "reply/group: the newest kid opens with its Reply chip" "$STATE/reply-group-kid.png" 345
+expect_panel "reply/group: the newest kid opens with its Reply chip" "$STATE/reply-group-kid.png" 330
 GROUP_REPLY_X=$((PANEL_X + 112)) # the kid Reply text center
 GROUP_REPLY_Y=186                # same first-kid geometry as REPLY_BTN_Y
 click "$GROUP_REPLY_X" "$GROUP_REPLY_Y" 272
-expect_panel "reply/group: the armed field takes 345px" "$STATE/reply-group-armed.png" 357
+expect_panel "reply/group: the armed field takes 345px" "$STATE/reply-group-armed.png" 342
 chk "reply/group: expanded child Reply arms without dismissing its group" test "$(st)" = "center:1 live:1 dnd:0"
 reply_keys $'tap g\ntap r\ntap o\ntap u\ntap p\ntap e\ntap d\ntap enter'
 chk "reply/group: expanded child emits NotificationReplied" last_reply_is grouped
