@@ -40,15 +40,17 @@ namespace NHyprCommon::Theme {
     inline constexpr uint64_t BADGE_RIM           = 0xfff4f6f8; // identity badge disc
 
     // ---- v13 (2026-08-18 ROM capture) material token sets --------------
-    // hyprnotify v13 ships two approved materials for the shade: A · ink
-    // (the approved demo default, a deep neutral graphite) and E · tray menu
-    // (the glass·ink set above). Each struct holds the roles the plugin
-    // cannot derive from the shared roles above; `theme` in main.cpp maps
-    // the config option to one set, and hyprnotify's ui.hpp resolves every
-    // colour role as "follow the set while the config value still holds
-    // the INK default" — an explicit user colour always wins.
-    // Sources: docs/demos/hyprnotify-design-mixer-v13/style.css (.glass.vA
-    // + shared .glass) and the 2026-08-18 device captures.
+    // hyprnotify v13 ships three approved materials for the shade: M · tray
+    // (the hyprbar tray-menu material, OPAQUE — the default), A · ink (the
+    // 2026-08-18 ROM captures' own tones) and E · glass (the tray-menu
+    // frost). Each struct holds the roles the plugin cannot derive from the
+    // shared roles above; `theme` in main.cpp maps the config option to one
+    // set, and hyprnotify's ui.hpp resolves every colour role as "follow
+    // the set while the config value still holds the INK default" — an
+    // explicit user colour always wins.
+    // Sources: hyprbar/menu.cpp (the tray menu's render),
+    // docs/demos/hyprnotify-design-mixer-v13/style.css (.glass.vA + shared
+    // .glass) and the 2026-08-18 device captures.
     struct SV13 {
         uint64_t panel, card, heads; // container veils; heads = the HUN's own heavier veil
         uint64_t raised, raisedH;    // rest fill; hover / pressed fill
@@ -106,6 +108,34 @@ namespace NHyprCommon::Theme {
         .onAccent   = 0xFF07161C, // = ON_PRIMARY
         .chip       = 0x24DECBFF, // #dcebff @14%
         .pillBg     = 0x2E32D6FF, // state cyan @18%
+        .pillFg     = 0xFF32D6FF,
+        .headPillBg = 0x2E32D6FF,
+        .headPillFg = 0xFF32D6FF,
+    };
+    // M · tray — the hyprbar tray icon's right-click menu material (the
+    // shared PANEL/SURFACE/SURFACE_HIGH/STATE/PRIMARY/ON_SURFACE roles),
+    // with the veils baked OPAQUE: the shade must read on any background
+    // without a blur pass behind it, so no frost — user-directed default.
+    // Over the opaque panel the translucent tokens render exactly their
+    // bakes, so they stay material-true.
+    inline constexpr SV13 TRAY = {
+        .panel      = 0xFF0F1218, // opaque PANEL hue (#0f1218)
+        .card       = 0xFF1D2026, // SURFACE white @6% baked on the panel
+        .heads      = 0xFF0F1218, // the HUN veil wears the panel hue
+        .raised     = 0x0FFFFFFF, // SURFACE white @6%
+        .raisedH    = 0x1CFFFFFF, // SURFACE_HIGH white @11%
+        .rowLine    = 0x1FDECBFF, // OUTLINE #dcebff @12%
+        .rim        = 0x1FDECBFF, // the menu's frame ring
+        .selRow     = 0x2E32D6FF, // STATE primary @18%
+        .selRowB    = 0x00000000,
+        .on         = 0xFFE4E8EE, // ON_SURFACE
+        .on82       = 0xD1E4E8EE,
+        .on60       = 0x99E4E8EE,
+        .on40       = 0x66E4E8EE,
+        .action     = 0xFF32D6FF, // = PRIMARY
+        .onAccent   = 0xFF07161C, // = ON_PRIMARY
+        .chip       = 0x1CFFFFFF, // SURFACE_HIGH @11% — the chevron disc
+        .pillBg     = 0x2E32D6FF, // STATE primary @18%
         .pillFg     = 0xFF32D6FF,
         .headPillBg = 0x2E32D6FF,
         .headPillFg = 0xFF32D6FF,
