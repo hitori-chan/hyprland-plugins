@@ -170,6 +170,20 @@ sleep 1
 chk "hun: the banner Reply invoked the sender's UI and dismissed the card" test "$(st)" = "center:0 live:0 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.6
 
+# ---- a bare conversation: an im.* category without structured hints ---------
+# A plain Telegram message arrives as category im.received with NO
+# x-hyprnotify-conversation-id: the card is a conversation whose message list
+# stays empty, so its preview must fall back to the app's own body (the
+# header-only card/banner was the 2026-08-29 field report).
+nfyact imbare "Telegram" 0 1 category s im.received
+sleep 1
+capture_nested "$STATE/imbare-hun.png"
+chk "imbare: the banner keeps its preview body (carded banner, not header-only)" test "$(panel_bottom "$STATE/imbare-hun.png")" -eq 131
+hq hyprnotify center >/dev/null; sleep 0.6
+expect_panel "imbare: the bare-conversation card shows its body (100px card)" "$STATE/imbare-shade.png" 142
+hq hyprnotify center >/dev/null; sleep 0.4
+hq hyprnotify clear >/dev/null; sleep 0.6
+
 # ---- acting CLOSES the shade (Android's collapse-on-click) ------------------
 # Firing a card's primary raises the sender over the very panel the click was
 # made in, so the panel leaves with it — AOSP collapses the shade on a
