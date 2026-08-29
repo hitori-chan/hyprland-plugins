@@ -83,7 +83,7 @@ namespace NHyprnotify {
     extern HANDLE PHANDLE;
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION                = "7.5.0";
+    inline constexpr const char* VERSION                = "7.6.0";
     inline constexpr int         DEFAULT_ROUNDING       = 28; // the ROM's 28dp card corner
     inline constexpr float       DEFAULT_ROUNDING_POWER = 2.0f; // superellipse exponent: 2 = circular arc (the AOSP corner), higher = flat shoulders toward a square
 
@@ -97,7 +97,7 @@ namespace NHyprnotify {
     // ---- config (defined in main.cpp; shared semantic defaults, runtime overrides) ----
 
     struct SNotifyConfig {
-        SP<Config::Values::CStringValue> theme;        // "ink" (the v13 AOSP palette, default) or "glass" (the tray-menu frost): the v13 material set (ui.hpp's v13())
+        SP<Config::Values::CStringValue> theme;        // "tray" (the hyprbar tray-menu palette, opaque — default), "ink" (the v13 AOSP palette) or "glass" (the frost): the v13 material set (ui.hpp's v13set())
         SP<Config::Values::CStringValue> font;
         SP<Config::Values::CIntValue>    fontSize;      // body size, logical px; monitor scale applies at raster time
         SP<Config::Values::CIntValue>    width;         // popup card width, logical px (the shade has its own CENTER_W)

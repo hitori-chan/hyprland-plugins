@@ -86,16 +86,18 @@ and compositor contracts are in
 
 ## Config
 
-The default material is `ink`: the v13 spec's variant A — the AOSP
-captures' own opaque near-black tones (#0f1114 island, #1b1b1e cards,
-no rims), which stays legible over any wallpaper. `theme = "glass"`
-switches every role the user never overrode to the tray-menu frost set
-(translucent surfaces with the compositor's live blur behind them,
-`decoration:blur`); an explicit color always wins over either set.
+The default material is `tray`: the hyprbar tray icon's right-click menu
+palette, baked **opaque** — the #0f1218 island with white @6%/11% surface
+layers, the #32d6ff accent, and #dcebff hairlines — so the shade reads over
+any wallpaper without a blur pass behind it. `theme = "ink"` switches every
+role the user never overrode to the v13 AOSP set (the captures' own opaque
+near-black #0f1114/#1b1b1e, no rims) and `theme = "glass"` to the tray-menu
+frost (translucent surfaces with the compositor's live blur behind them,
+`decoration:blur`); an explicit color always wins over any set.
 
 | Key | Purpose | Default |
 |---|---|---|
-| `plugin:hyprnotify:theme` | material set: `ink` (the v13 AOSP palette) or `glass` (the tray-menu frost) | `ink` |
+| `plugin:hyprnotify:theme` | material set: `tray` (the hyprbar tray-menu palette, opaque), `ink` (the v13 AOSP palette) or `glass` (the frost) | `tray` |
 | `plugin:hyprnotify:font` | font family | `IBM Plex Sans` |
 | `plugin:hyprnotify:font_size` | body text size in logical px (type roles derive from it) | 12 |
 | `plugin:hyprnotify:width` | popup width | 380 |
@@ -128,4 +130,6 @@ switches every role the user never overrode to the tray-menu frost set
 | `plugin:hyprnotify:col_link` | links | `ffa8c7fa` |
 
 These are fixed semantic defaults, not wallpaper-derived dynamic color. Every
-role remains independently configurable.
+role remains independently configurable; the color roles' registered
+defaults are the INK set's values, and while a role still holds its
+default it follows the active material set instead.
