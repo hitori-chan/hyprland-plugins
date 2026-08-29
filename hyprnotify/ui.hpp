@@ -244,9 +244,11 @@ namespace NHyprnotify {
     // frost) is the default and ink the opt-in opaque material. A color
     // config still holding its INK default follows the active set; an
     // explicit user color always wins.
+    // The v13 spec's material is variant A · ink (the opaque near-black of
+    // the AOSP captures; the glass set is the opt-in tray-menu frost).
     inline const Theme::SV13& v13set() {
         static const Theme::SV13 SINK = Theme::INK, SGLASS = Theme::GLASS;
-        return cfg.theme && cfg.theme->value() == "ink" ? SINK : SGLASS;
+        return cfg.theme && cfg.theme->value() == "glass" ? SGLASS : SINK;
     }
     inline CHyprColor v13col(const SP<Config::Values::CColorValue>& v, uint64_t ink, uint64_t set) {
         if (v && NHyprCommon::color(v).getAsHex() == ink)

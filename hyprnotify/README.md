@@ -86,15 +86,16 @@ and compositor contracts are in
 
 ## Config
 
-The default material is `glass`: the AOSP shade's frost — translucent
-surfaces with the compositor's live blur behind them (`decoration:blur`),
-the glass·ink set. `theme = "ink"` switches every role the user never
-overrode to the opaque near-black set (#0f1114 island, #1b1b1e cards, no
-rims); an explicit color always wins over either set.
+The default material is `ink`: the v13 spec's variant A — the AOSP
+captures' own opaque near-black tones (#0f1114 island, #1b1b1e cards,
+no rims), which stays legible over any wallpaper. `theme = "glass"`
+switches every role the user never overrode to the tray-menu frost set
+(translucent surfaces with the compositor's live blur behind them,
+`decoration:blur`); an explicit color always wins over either set.
 
 | Key | Purpose | Default |
 |---|---|---|
-| `plugin:hyprnotify:theme` | material set: `glass` (the AOSP frost) or `ink` (opaque) | `glass` |
+| `plugin:hyprnotify:theme` | material set: `ink` (the v13 AOSP palette) or `glass` (the tray-menu frost) | `ink` |
 | `plugin:hyprnotify:font` | font family | `IBM Plex Sans` |
 | `plugin:hyprnotify:font_size` | body text size in logical px (type roles derive from it) | 12 |
 | `plugin:hyprnotify:width` | popup width | 380 |
