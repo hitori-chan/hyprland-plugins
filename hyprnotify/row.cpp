@@ -386,7 +386,7 @@ namespace NHyprnotify {
     void paintSnoozeRow(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box) {
         const int R  = (int)std::lround(box.h / 2 * P.scale);
         P.rect(box, v13Card(), R, rPow());
-        const CBox ICON{box.x + 15, box.y + (box.h - CARD_ICON_D) / 2, CARD_ICON_D, CARD_ICON_D};
+        const CBox ICON{box.x + CARD_ICON_X, box.y + (box.h - CARD_ICON_D) / 2, CARD_ICON_D, CARD_ICON_D};
         paintLead(P, *N, ICON);
         auto& SB = scratch();
         SB += "Snoozed ";
