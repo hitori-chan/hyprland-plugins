@@ -85,6 +85,11 @@ namespace NHyprnotify {
         if (LOGO || ALT)
             return false; // window-management chords are never the field's
 
+        if (SYM >= XKB_KEY_Shift_L && SYM <= XKB_KEY_Hyper_R)
+            return false; // a bare modifier press is not a character; swallowing it
+                          // would keep the press out of the keybind layer's input
+                          // state and break side-constrained binds (SUPER_L + …)
+
         if (CTRL) {
             switch (SYM) {
                 case XKB_KEY_u: // readline's kill-line, the one chord worth keeping

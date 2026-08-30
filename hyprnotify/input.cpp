@@ -547,9 +547,23 @@ namespace NHyprnotify {
     }
 
     void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
-        if (NHyprCommon::sessionLocked())
+        if (NHyprCommon::sessionLocked()) {
+            // a lock discards every half-tracked input state (crash class 3):
+            // a queued shade action or pending esc must not drain after unlock,
+            // and an armed reply field must not keep owning the keyboard with
+            // text collected while the lock was up
+            pendingEsc.reset();
+            pendingKey.reset();
+            keyQueue.clear();
+            keyQueued = false;
+            replyExit();
             return;
+        }
         if (!centerVisible() || info.cancelled)
+            return;
+        // input-capture-v1 is fed after the plugin emissions: while a client
+        // owns the physical stream, the shade must not cancel a key first
+        if (NHyprCommon::nativeInputCaptureActive())
             return;
         // releases pass untouched (crash class 3: never cancel key releases)
         if (e.state != WL_KEYBOARD_KEY_STATE_PRESSED)
