@@ -111,6 +111,8 @@ source "$STRESS_DIR/preflight.sh"
 # notification helpers, so any subset can run alone.
 for _name in "${CANONICAL_BATTERIES[@]}"; do
 	is_selected "$_name" || continue
+	echo
+	echo "== battery: $_name ($SECONDS s in) =="
 	source "$STRESS_DIR/$_name.sh"
 done
 
@@ -118,10 +120,10 @@ done
 # trap either way (cleanup_harness is idempotent via HARNESS_CLEANED).
 echo
 if [[ ${#FAILED[@]} -eq 0 ]]; then
-	echo "== stress: ALL $PASS CHECKS PASSED =="
+	echo "== stress: ALL $PASS CHECKS PASSED in ${SECONDS}s =="
 	exit 0
 else
-	echo "== stress: $PASS passed, ${#FAILED[@]} FAILED =="
+	echo "== stress: $PASS passed, ${#FAILED[@]} FAILED in ${SECONDS}s =="
 	printf '   - %s\n' "${FAILED[@]}"
 	exit 1
 fi

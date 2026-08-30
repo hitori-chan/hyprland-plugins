@@ -59,12 +59,29 @@ kill_nested
 # identical (path equality is enforced, normalization retargets both onto one
 # scratch pc): build once, credit both assertions. Only the installed-cache
 # fallback case needs two different passes.
-J="-j$(nproc)"
+# 8 sequential -B passes took ~95s of the gate; one slot per plugin keeps
+# the total job count at nproc. PJ is the per-plugin -j under that cap.
+NP="$(nproc)"
+PJ="-j$(( (NP + 7) / 8 ))"
+build_all() { # $1: 1 = strip PKG_CONFIG_PATH (installed-cache rehearsal)
+	local strip=$1 p pid ok=1
+	local -A who=()
+	for p in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd; do
+		if [[ $strip == 1 ]]; then
+			( env -u PKG_CONFIG_PATH make -B "$PJ" -C "$REPO/$p" ) >/dev/null 2>&1 &
+		else
+			( make -B "$PJ" -C "$REPO/$p" ) >/dev/null 2>&1 &
+		fi
+		who[$!]=$p
+	done
+	for pid in "${!who[@]}"; do
+		wait "$pid" || { ok=0; echo "  deploy-build broke: ${who[$pid]}"; }
+	done
+	return $(( 1 - ok ))
+}
 build_ok=1
 if [[ -n "${HYPR_DEPLOY_PKG_CONFIG_PATH:-}" ]]; then
-	for p in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd; do
-		make -B "$J" -C "$REPO/$p" >/dev/null 2>&1 || { build_ok=0; echo "  deploy-build broke: $p"; }
-	done
+	build_all 0 || build_ok=0
 	if [[ $build_ok == 1 ]]; then
 		ok "deploy rehearsal: all 8 build against the explicit target pkg-config path"
 		ok "all 8 plugins build"
@@ -74,18 +91,22 @@ if [[ -n "${HYPR_DEPLOY_PKG_CONFIG_PATH:-}" ]]; then
 		echo "plugin build FAILED"; exit 1
 	fi
 else
-	DEPLOY_ENV=(env -u PKG_CONFIG_PATH)
 	DEPLOY_HEADERS="the installed header cache"
-	dep_ok=1
-	for p in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd; do
-		"${DEPLOY_ENV[@]}" make -B "$J" -C "$REPO/$p" >/dev/null 2>&1 || { dep_ok=0; echo "  deploy-build broke: $p"; }
-	done
-	[[ $dep_ok == 1 ]] && ok "deploy rehearsal: all 8 build against $DEPLOY_HEADERS" || bad "deploy rehearsal build"
-	build_ok=1
-	for p in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd; do
-		make -B "$J" -C "$REPO/$p" >/dev/null 2>&1 || { build_ok=0; echo "  build broke: $p"; }
-	done
-	[[ $build_ok == 1 ]] && ok "all 8 plugins build" || { echo "plugin build FAILED"; exit 1; }
+	# The rehearsal strips PKG_CONFIG_PATH; the gate build uses this shell's
+	# environment. When both resolve to the SAME cflags (the installed fork
+	# is the target), the two -B passes are byte-identical — one build
+	# credits both, exactly as the explicit-target branch does. A different
+	# resolved target (a distro tree in /usr next to the fork) pays both.
+	REH_CFLAGS="$(env -u PKG_CONFIG_PATH make -s -C "$REPO/hyprnotify" print-hl-cflags 2>/dev/null)"
+	GATE_CFLAGS="$(make -s -C "$REPO/hyprnotify" print-hl-cflags 2>/dev/null)"
+	if [[ -n "$REH_CFLAGS" && "$REH_CFLAGS" == "$GATE_CFLAGS" ]]; then
+		build_all 1 || { bad "deploy rehearsal build"; bad "all 8 plugins build"; echo "plugin build FAILED"; exit 1; }
+		ok "deploy rehearsal: all 8 build against $DEPLOY_HEADERS (identical to the target flags; one build credits both)"
+		ok "all 8 plugins build"
+	else
+		build_all 1 && ok "deploy rehearsal: all 8 build against $DEPLOY_HEADERS" || bad "deploy rehearsal build"
+		build_all 0 && ok "all 8 plugins build" || { echo "plugin build FAILED"; exit 1; }
+	fi
 fi
 if [[ -n "$DEPLOY_PC_SUM" ]]; then
 	chk "deploy pkg-config metadata remained untouched" test "$(sha256sum "$DEPLOY_PC_SOURCE" | cut -d' ' -f1)" = "$DEPLOY_PC_SUM"
