@@ -1,5 +1,5 @@
-// hyprnotify/text.cpp — the pango rasterizer, the keyed text cache, and the
-// markup/link/age helpers every drawing unit shares.
+// hyprnotify/text.cpp — the pango rasterizer, the keyed texture cache, and
+// the markup/link/age helpers every drawing unit shares.
 //
 // Everything text becomes a texture here, keyed on content + style + width
 // into common/texcache.hpp's CGenCache — see there for why the key needs no
@@ -361,6 +361,58 @@ namespace NHyprnotify {
                 entry.links.push_back({HREF, R}); // physical px; the drawing unit descales
         } else
             entry.tex = buildText(text, col, pt, maxWpx, maxHpx, lineSp, markup, weight);
+        return texCache.insert(KEY, std::move(entry));
+    }
+
+    // ---- the Material chevron ----
+
+    // A stroked chevron, not a font glyph: Pixel's expand_more/less is two
+    // 45° strokes with round caps, and a glyph's weight is the font's, never
+    // ours. Same warm-gate contract as cachedText — built only on a warm
+    // pass, drawn on a later frame.
+    static SP<ITexture> buildChevron(int dir, const CHyprColor& col, int px) {
+        if (px <= 4)
+            return nullptr;
+        const double S = px / 24.0; // Material's 24dp canvas
+        auto*        SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, px, px);
+        auto*        CR   = cairo_create(SURF);
+        cairo_set_source_rgba(CR, col.r, col.g, col.b, col.a);
+        cairo_set_line_width(CR, 2.0 * S);
+        cairo_set_line_cap(CR, CAIRO_LINE_CAP_ROUND);
+        cairo_set_line_join(CR, CAIRO_LINE_JOIN_ROUND);
+        // 12dp wide, 6dp tall, centered on the canvas
+        if (dir > 0) { // up
+            cairo_move_to(CR, 6.0 * S, 14.0 * S);
+            cairo_line_to(CR, 12.0 * S, 8.0 * S);
+            cairo_line_to(CR, 18.0 * S, 14.0 * S);
+        } else { // down
+            cairo_move_to(CR, 6.0 * S, 10.0 * S);
+            cairo_line_to(CR, 12.0 * S, 16.0 * S);
+            cairo_line_to(CR, 18.0 * S, 10.0 * S);
+        }
+        cairo_stroke(CR);
+        cairo_surface_flush(SURF);
+        auto tex = g_pHyprRenderer->createTexture(SURF);
+        cairo_destroy(CR);
+        cairo_surface_destroy(SURF);
+        return tex;
+    }
+
+    const SCachedText* chevronTex(int dir, const CHyprColor& col, int px) {
+        if (px <= 4)
+            return nullptr;
+        char      meta[64];
+        const int METALEN = std::snprintf(meta, sizeof(meta), "chevron|%d|%llx|%d", dir, (unsigned long long)col.getAsHex(), px);
+        static std::string KEY; // reused; main thread only
+        KEY.clear();
+        KEY.assign(meta, METALEN > 0 ? (size_t)METALEN : 0);
+
+        if (const auto* HIT = texCache.find(KEY))
+            return HIT;
+        if (!warmGate.mayBuild())
+            return nullptr;
+        SCachedText entry;
+        entry.tex = buildChevron(dir, col, px);
         return texCache.insert(KEY, std::move(entry));
     }
 

@@ -244,7 +244,7 @@ namespace NHyprnotify {
         if (CHEVRON) {
             const double CY = open ? box.y + ROW_PADT : box.y + (ROWH - CHEV) / 2;
             const CBox   CB{box.x + box.w - ROW_PADX - CHEV, CY, CHEV, CHEV};
-            const auto   G = cachedText(open ? "˄" : "˅", COLFG, T.small, 64, -1, 0, false, 600); // built in BOTH modes
+            const auto   G = chevronTex(open ? 1 : 0, COLFG, (int)CHEV); // built in BOTH modes
             if (!P.warm) {
                 const bool CHOV = hovered.id == N->id && hovered.part == 1 && hovered.btn < 0;
                 P.rect(CB, CHOV ? tAccentDim() : tFill2(), (int)std::lround(CHEV / 2 * P.scale));
@@ -414,7 +414,7 @@ namespace NHyprnotify {
 
         const CBox DB{UB.x - MANAGE_GAP - MANAGE_D, CY, MANAGE_D, MANAGE_D};
         const bool DHOV = hovered.kind == SCard::SNOOZE && hovered.id == N->id && hovered.part == 9;
-        const auto DG   = cachedText("˅", COLSUB, T.small, 64, -1, 0, false, 600);
+        const auto DG   = chevronTex(0, COLSUB, (int)MANAGE_D);
         if (!P.warm) {
             P.rect(DB, DHOV ? tAccentDim() : tFill2(), (int)std::lround(MANAGE_D / 2 * P.scale));
             if (DG && DG->tex)
@@ -451,13 +451,19 @@ namespace NHyprnotify {
             P.texFit(IDT, CBox{box.x + ROW_PADX, box.y + ROW_PADT, ROW_ICON, ROW_ICON}, (int)std::lround(ROW_ICON * 10.0 / 44.0 * P.scale), RP);
 
         const double TX    = box.x + ROW_PADX + ROW_ICON + ROW_ICON_GAP;
-        const auto   PILL  = cachedText(std::to_string(D.items.size()) + " ˅", COLFG, T.small, 64, -1, 0, false, 600);
-        const double PILLW = texW(PILL, P.scale) + 14;
+        const auto   PILL  = cachedText(std::to_string(D.items.size()), COLFG, T.small, 64, -1, 0, false, 600);
+        const auto   PCHV  = chevronTex(0, COLFG, (int)std::lround(T.small * 1.7));
+        const double PILLW = texW(PILL, P.scale) + 3 + texW(PCHV, P.scale) + 14;
         const CBox   PB{box.x + box.w - ROW_PADX - PILLW, box.y + ROW_PADT + (ROW_ICON - PILL_H) / 2, PILLW, PILL_H};
         if (!P.warm) {
             P.rect(PB, HOV ? tAccentDim() : tFill2(), (int)std::lround(PILL_H / 2 * P.scale));
-            if (PILL && PILL->tex)
-                P.tex(PILL->tex, PB.x + (PB.w - PILL->tex->m_size.x / P.scale) / 2, PB.y + (PB.h - PILL->tex->m_size.y / P.scale) / 2);
+            if (PILL && PILL->tex && PCHV && PCHV->tex) {
+                const double NW = PILL->tex->m_size.x / P.scale, NH = PILL->tex->m_size.y / P.scale;
+                const double CW = PCHV->tex->m_size.x / P.scale, CHH = PCHV->tex->m_size.y / P.scale;
+                const double X0 = PB.x + (PB.w - (NW + 3 + CW)) / 2;
+                P.tex(PILL->tex, X0, PB.y + (PB.h - NH) / 2);
+                P.tex(PCHV->tex, X0 + NW + 3, PB.y + (PB.h - CHH) / 2);
+            }
         }
 
         // a folded bundle is where an app most obviously earns a silencing,
@@ -571,13 +577,19 @@ namespace NHyprnotify {
             }
         }
 
-        const auto   PILL  = cachedText(std::to_string(D.items.size()) + " ˄", COLFG, T.small, 64, -1, 0, false, 600);
-        const double PILLW = texW(PILL, P.scale) + 14;
+        const auto   PILL  = cachedText(std::to_string(D.items.size()), COLFG, T.small, 64, -1, 0, false, 600);
+        const auto   PCHV  = chevronTex(1, COLFG, (int)std::lround(T.small * 1.7));
+        const double PILLW = texW(PILL, P.scale) + 3 + texW(PCHV, P.scale) + 14;
         const CBox   PB{MB.x - 6 - PILLW, box.y + ROW_PADT + (CHILD_ICON - PILL_H) / 2, PILLW, PILL_H};
         if (!P.warm) {
             P.rect(PB, tFill2(), (int)std::lround(PILL_H / 2 * P.scale));
-            if (PILL && PILL->tex)
-                P.tex(PILL->tex, PB.x + (PB.w - PILL->tex->m_size.x / P.scale) / 2, PB.y + (PB.h - PILL->tex->m_size.y / P.scale) / 2);
+            if (PILL && PILL->tex && PCHV && PCHV->tex) {
+                const double NW = PILL->tex->m_size.x / P.scale, NH = PILL->tex->m_size.y / P.scale;
+                const double CW = PCHV->tex->m_size.x / P.scale, CHH = PCHV->tex->m_size.y / P.scale;
+                const double X0 = PB.x + (PB.w - (NW + 3 + CW)) / 2;
+                P.tex(PILL->tex, X0, PB.y + (PB.h - NH) / 2);
+                P.tex(PCHV->tex, X0 + NW + 3, PB.y + (PB.h - CHH) / 2);
+            }
         }
 
         const double TX = box.x + ROW_PADX + CHILD_ICON + ROW_ICON_GAP;

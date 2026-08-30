@@ -124,6 +124,8 @@ namespace NHyprnotify {
     // (single-paragraph text only); linkCol non-null collects <a href> rects.
     const SCachedText* cachedText(const std::string& text, const CHyprColor& col, int pt, int maxWpx, int maxHpx, float lineSp, bool markup, int weight,
                                   const CHyprColor* linkCol = nullptr);
+    // dir 0 = down, 1 = up; a px-square canvas, the Material chevron centered
+    const SCachedText* chevronTex(int dir, const CHyprColor& col, int px);
 
     double             texH(const SCachedText* e, double scale);
     double             texW(const SCachedText* e, double scale);

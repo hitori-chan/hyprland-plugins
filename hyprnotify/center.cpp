@@ -604,29 +604,31 @@ namespace NHyprnotify {
             cards.push_back(c);
         }
 
-        // Paging cues: a wheel-scroll is invisible otherwise. "▴" when rows
-        // sit above the fold, a "▾ N" chip when N notifications sit below —
-        // informational only, the wheel (input.cpp) does the scrolling. Both
-        // live inside the already-damaged panel box, so no extra damage.
+        // Paging cues: a wheel-scroll is invisible otherwise. An up chevron
+        // when rows sit above the fold, a "chevron N" chip when N
+        // notifications sit below — informational only, the wheel
+        // (input.cpp) does the scrolling. Both live inside the already-
+        // damaged panel box, so no extra damage.
         if (!EMPTY) {
             size_t below = 0;
             for (size_t i = (placed.empty() ? 0 : placed.back().idx + 1); i < disp.size(); i++)
                 below += disp[i].items.size();
             if (s_skip > 0) {
-                const auto U = cachedText("▴", COLSUB, T.small, 64, -1, 0, false, 500);
+                const auto U = chevronTex(1, COLSUB, (int)std::lround(T.small * 1.7));
                 if (!P.warm && U && U->tex)
                     P.tex(U->tex, X + (CENTER_W - U->tex->m_size.x / P.scale) / 2, Y0 + 2);
             }
             if (below > 0) {
-                auto& DB = scratch();
-                DB += "▾ ";
-                DB += std::to_string(below);
-                const auto D2 = cachedText(DB, COLSUB, T.small, 128, -1, 0, false, 500);
-                if (!P.warm && D2 && D2->tex) {
-                    const double cw = D2->tex->m_size.x / P.scale, ch = D2->tex->m_size.y / P.scale;
-                    const double cx = X + (CENTER_W - cw) / 2, cy = BARY - ch - 3;
-                    P.rect(CBox{cx - 8, cy - 2, cw + 16, ch + 4}, tFill2(), (int)std::lround((ch / 2 + 2) * P.scale));
-                    P.tex(D2->tex, cx, cy);
+                const auto NUM = cachedText(std::to_string(below), COLSUB, T.small, 128, -1, 0, false, 500);
+                const auto DCH = chevronTex(0, COLSUB, (int)std::lround(T.small * 1.7));
+                if (!P.warm && NUM && NUM->tex && DCH && DCH->tex) {
+                    const double NW = NUM->tex->m_size.x / P.scale, NH = NUM->tex->m_size.y / P.scale;
+                    const double CW = DCH->tex->m_size.x / P.scale, CHH = DCH->tex->m_size.y / P.scale;
+                    const double CH = std::max(NH, CHH), TOT = CW + 3 + NW;
+                    const double cx = X + (CENTER_W - TOT) / 2, cy = BARY - CH - 3;
+                    P.rect(CBox{cx - 8, cy - 2, TOT + 16, CH + 4}, tFill2(), (int)std::lround((CH / 2 + 2) * P.scale));
+                    P.tex(DCH->tex, cx, cy + (CH - CHH) / 2);
+                    P.tex(NUM->tex, cx + CW + 3, cy + (CH - NH) / 2);
                 }
             }
         }
