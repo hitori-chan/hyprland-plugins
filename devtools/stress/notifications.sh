@@ -119,6 +119,74 @@ chk "overflow: wheeling down keeps every card" test "$(st)" = "center:1 live:15 
 hq hyprnotify center >/dev/null; sleep 0.4
 hq hyprnotify clear >/dev/null; sleep 0.8
 
+# ---- the center hero: the shade's face of the banner preview -------------
+# A content image (the image-path hint — what notify-send -i <png> puts on
+# the wire) is hero-capable: the banner shows it full-width, and the center
+# row must show the SAME preview, collapsed and expanded, and it must survive
+# the banner retreating (the texture lives on the card, not the popup). Solid
+# test blue (30,160,240): the glass palette can't make it, so its pixel count
+# is an unambiguous hero witness. Row 1 of the open center: y 44 (offset_y 34
+# + BODY_PADT 10), the hero spans 110 (HERO_CAP) below the row top, and the
+# chevron sits in the text block below it (TY 165, centered on the 18px title).
+HEROIMG=/tmp/hero-probe.png
+python3 - "$HEROIMG" <<'PY'
+import sys
+from PIL import Image
+Image.new("RGB", (640, 360), (30, 160, 240)).save(sys.argv[1])
+PY
+hero_px() { # hero_px <frame> — hero-blue pixels in the center's first-row band
+	python3 - "$1" "$MON_W" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+px = im.load()
+x0, x1 = int(sys.argv[2]) - 362, int(sys.argv[2]) - 16
+n = 0
+for y in range(46, 152):
+    for x in range(x0, x1, 2):
+        r, g, b = px[x, y]
+        if b > 200 and r < 100 and 120 < g < 200:
+            n += 1
+print(n)
+PY
+}
+hero_span() { # hero_span <frame> — vertical run of the hero band in px (0: none)
+	python3 - "$1" "$MON_W" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+px = im.load()
+x0, x1 = int(sys.argv[2]) - 362, int(sys.argv[2]) - 16
+ys = [y for y in range(40, 170)
+      if any(b > 200 and r < 100 and 120 < g < 200 for r, g, b in (px[x, y] for x in range(x0, x1, 8)))]
+print(max(ys) - min(ys) + 1 if ys else 0)
+PY
+}
+dsp "hl.dsp.exec_cmd('notify-send -a heroapp -t 2000 -i $HEROIMG \"Screenshot\" saved')"; sleep 1
+chk "hero: the image card pops with its banner" test "$(bd)" = "banners:1 resident:0"
+hq hyprnotify center >/dev/null; sleep 0.4
+capture_nested /tmp/hero-1.png
+chk "hero: the center row (open by default) shows the preview" test "$(hero_px /tmp/hero-1.png)" -gt 8000
+chk "hero: the preview is the capped strip, not the full image" test "$(hero_span /tmp/hero-1.png)" -ge 104 -a "$(hero_span /tmp/hero-1.png)" -le 116
+PB1="$(panel_bottom /tmp/hero-1.png)"
+# the top row opens by default (the expansion budget), so the chevron tap
+# FOLDS it: the panel must move by the body's height, and the preview must
+# survive the fold — the post-tap frame IS the collapsed preview
+click $CHVX 174 272
+capture_nested /tmp/hero-2.png
+chk "hero: the folded row keeps the preview" test "$(hero_px /tmp/hero-2.png)" -gt 8000
+PB2="$(panel_bottom /tmp/hero-2.png)"
+chk "hero: the panel follows the fold (the body height moves)" test $(( PB2 > PB1 ? PB2 - PB1 : PB1 - PB2 )) -ge 18
+sleep 1.5
+capture_nested /tmp/hero-3.png
+chk "hero: the preview survives the banner retreating" test "$(hero_px /tmp/hero-3.png)" -gt 8000
+chk "hero: the card is a resident, its banner is down" test "$(bd)" = "banners:0 resident:1"
+click $CHVX 174 272
+sleep 0.4
+hq hyprnotify center >/dev/null; sleep 0.4
+hq hyprnotify clear >/dev/null; sleep 0.8
+chk "hero: reset after the center-hero battery" test "$(st)" = "center:0 live:0 dnd:0"
+
 # ---- the shade's click model ---------------------------------------------
 # A shade row IS its banner: left on the BODY fires the card's primary and
 # dismisses it, and the CHEVRON is the only fold target. Driven through the
