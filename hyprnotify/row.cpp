@@ -452,7 +452,7 @@ namespace NHyprnotify {
 
         const double TX    = box.x + ROW_PADX + ROW_ICON + ROW_ICON_GAP;
         const auto   PILL  = cachedText(std::to_string(D.items.size()), COLFG, T.small, 64, -1, 0, false, 600);
-        const auto   PCHV  = chevronTex(0, COLFG, (int)std::lround(T.small * 1.7));
+        const auto   PCHV  = chevronTex(0, COLFG, (int)std::lround(T.small * 2.0));
         const double PILLW = texW(PILL, P.scale) + 3 + texW(PCHV, P.scale) + 14;
         const CBox   PB{box.x + box.w - ROW_PADX - PILLW, box.y + ROW_PADT + (ROW_ICON - PILL_H) / 2, PILLW, PILL_H};
         if (!P.warm) {
@@ -578,7 +578,7 @@ namespace NHyprnotify {
         }
 
         const auto   PILL  = cachedText(std::to_string(D.items.size()), COLFG, T.small, 64, -1, 0, false, 600);
-        const auto   PCHV  = chevronTex(1, COLFG, (int)std::lround(T.small * 1.7));
+        const auto   PCHV  = chevronTex(1, COLFG, (int)std::lround(T.small * 2.0));
         const double PILLW = texW(PILL, P.scale) + 3 + texW(PCHV, P.scale) + 14;
         const CBox   PB{MB.x - 6 - PILLW, box.y + ROW_PADT + (CHILD_ICON - PILL_H) / 2, PILLW, PILL_H};
         if (!P.warm) {

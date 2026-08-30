@@ -614,13 +614,13 @@ namespace NHyprnotify {
             for (size_t i = (placed.empty() ? 0 : placed.back().idx + 1); i < disp.size(); i++)
                 below += disp[i].items.size();
             if (s_skip > 0) {
-                const auto U = chevronTex(1, COLSUB, (int)std::lround(T.small * 1.7));
+                const auto U = chevronTex(1, COLSUB, (int)std::lround(T.small * 2.0));
                 if (!P.warm && U && U->tex)
                     P.tex(U->tex, X + (CENTER_W - U->tex->m_size.x / P.scale) / 2, Y0 + 2);
             }
             if (below > 0) {
                 const auto NUM = cachedText(std::to_string(below), COLSUB, T.small, 128, -1, 0, false, 500);
-                const auto DCH = chevronTex(0, COLSUB, (int)std::lround(T.small * 1.7));
+                const auto DCH = chevronTex(0, COLSUB, (int)std::lround(T.small * 2.0));
                 if (!P.warm && NUM && NUM->tex && DCH && DCH->tex) {
                     const double NW = NUM->tex->m_size.x / P.scale, NH = NUM->tex->m_size.y / P.scale;
                     const double CW = DCH->tex->m_size.x / P.scale, CHH = DCH->tex->m_size.y / P.scale;
