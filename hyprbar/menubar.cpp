@@ -655,8 +655,11 @@ namespace NHyprbar {
             barChanged();
         }
 
-        // While open the prompt owns the keyboard: every key event is swallowed
-        // before the keybind layer, the IME, and the apps see it. Swallowing is
+        // While open the prompt owns the keyboard: key presses are swallowed
+        // before the keybind layer, the IME, and the apps see it — except
+        // Super chords, which stay the user's (Super+1, the prompt's own
+        // Super+P toggle) and must run even with the strip open; a prompt
+        // left open would otherwise strand workspace switching. Swallowing is
         // modifier-safe — mods reach clients via the separate onKeyboardMod
         // path, never through these key events.
         void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
@@ -692,8 +695,6 @@ namespace NHyprbar {
             if (e.state != WL_KEYBOARD_KEY_STATE_PRESSED)
                 return;
 
-            info.cancelled = true;
-
             const auto KB = g_pSeatManager ? g_pSeatManager->m_keyboard.lock() : nullptr;
             if (!KB || !KB->m_xkbState)
                 return;
@@ -702,6 +703,13 @@ namespace NHyprbar {
             const xkb_keysym_t  SYM  = xkb_state_key_get_one_sym(KB->m_xkbState, KC);
             const bool          CTRL = xkb_state_mod_name_is_active(KB->m_xkbState, XKB_MOD_NAME_CTRL, XKB_STATE_MODS_EFFECTIVE) == 1;
             const bool          ALT  = xkb_state_mod_name_is_active(KB->m_xkbState, XKB_MOD_NAME_ALT, XKB_STATE_MODS_EFFECTIVE) == 1;
+            const bool          LOGO = xkb_state_mod_name_is_active(KB->m_xkbState, XKB_MOD_NAME_LOGO, XKB_STATE_MODS_EFFECTIVE) == 1;
+
+            if (LOGO)
+                return; // a Super chord is a user bind passing through — the chord runs (workspace switch,
+                        // Super+P re-toggles the strip), the prompt keeps whatever state it has
+
+            info.cancelled = true;
 
             if (SYM >= XKB_KEY_Shift_L && SYM <= XKB_KEY_Hyper_R)
                 return; // a bare modifier: not an edit, must not end a Tab cycle
