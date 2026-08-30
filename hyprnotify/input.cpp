@@ -48,7 +48,10 @@
 //
 // Every mutation lands via the hit queue + CHop drain, never synchronously
 // inside the emission (crash class 6); every listener gates on
-// sessionLocked() first and resets its half-tracked state there (class 7).
+// sessionLocked() first and resets its half-tracked state there (class 7),
+// and a native input-capture session, an implicit or seat grab, or a native
+// layer surface at the point passes through unintercepted (the
+// input-capture-v1 / native hit-test contract, mirrored from the bar).
 
 #include "common/lifecycle.hpp"
 #include "common/queries.hpp"
@@ -379,6 +382,11 @@ namespace NHyprnotify {
             heldButtons    = 0;
             return;
         }
+        if (NHyprCommon::nativeInputCaptureActive()) {
+            swallowRelease = 0;
+            heldButtons    = 0;
+            return;
+        }
 
         const uint32_t BIT = e.button == BTN_LEFT ? 1u : e.button == BTN_RIGHT ? 2u : e.button == BTN_MIDDLE ? 4u : 0u;
 
@@ -399,6 +407,16 @@ namespace NHyprnotify {
 
         const auto COORDS = g_pInputManager->getMouseCoordsInternal();
         const auto CARD   = BIT ? cardAt(COORDS) : nullptr;
+
+        // A live implicit or seat grab, or a native layer surface at the
+        // point, stays authoritative over every drawn surface (the bar's
+        // strip does the same): the press goes through, the cards only watch
+        if (heldButtons > 0 || NHyprCommon::nativePointerGrabActive()) {
+            heldButtons++;
+            return;
+        }
+        if (NHyprCommon::nativeLayerOwnsPointer())
+            return;
 
         if (!CARD) {
             // Android closes the shade on an outside tap; the closing click
@@ -443,6 +461,13 @@ namespace NHyprnotify {
             swipeOn              = 0;
             return;
         }
+        if (NHyprCommon::nativeInputCaptureActive()) {
+            scrollAcc = swipeAcc = 0;
+            swipeOn              = 0;
+            return;
+        }
+        if (heldButtons > 0 || NHyprCommon::nativePointerGrabActive() || NHyprCommon::nativeLayerOwnsPointer())
+            return;
         if (!centerVisible() || cards.empty() || info.cancelled)
             return;
         const auto POS  = g_pInputManager->getMouseCoordsInternal();
@@ -699,6 +724,11 @@ namespace NHyprnotify {
             releasePointer();
             return;
         }
+        if (NHyprCommon::nativeInputCaptureActive()) {
+            setHovered({});
+            releasePointer();
+            return;
+        }
 
         // cheap first: almost every motion happens with nothing shown
         if (cards.empty()) {
@@ -718,7 +748,8 @@ namespace NHyprnotify {
         }
 
         const auto CARD = cardAt(pos);
-        if (!CARD || heldButtons > 0 || (g_layoutManager && g_layoutManager->dragController()->target())) {
+        if (!CARD || heldButtons > 0 || NHyprCommon::nativePointerGrabActive() || NHyprCommon::nativeLayerOwnsPointer() ||
+            (g_layoutManager && g_layoutManager->dragController()->target())) {
             setHovered({});
             releasePointer();
             return;
