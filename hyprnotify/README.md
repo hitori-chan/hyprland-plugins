@@ -59,6 +59,12 @@ Two surfaces share one card model:
      more; below that every card stands alone. Conversations never bundle —
      each chat keeps its own card, and its open row runs to Android's
      MessagingStyle depth (~7 messages) where an ordinary card gets four.
+   - **A wide content image (aspect ≥ 1.5) leads the row as a hero** — the
+     same full-width, height-capped strip the banner shows, so the center
+     carries the preview (a screenshot card, a message's image) collapsed
+     AND expanded, and it outlives the banner's clock because the texture
+     lives on the card, not the popup. The icon column yields to it, exactly
+     as the banner's does; digest previews stay mini.
    - **Rows open by default.** An expansion budget walks the page from the
      top and opens each row while the panel still has room (the top row
      always opens — Android's one guarantee; the desktop shade is taller, so

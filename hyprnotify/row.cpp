@@ -32,9 +32,15 @@ namespace NHyprnotify {
         // P.warm forced on to suppress painting, and a build there would be a
         // build inside a render (crash class 4). Only the real warm may create.
         if (warmGate.warming)
-            ensureIconTex(*N, (int)std::lround(std::max(ST.iconPx, (double)cfg.maxIcon->value()) * P.scale), 0, 0);
+            ensureIconTex(*N, (int)std::lround(std::max(ST.iconPx, (double)cfg.maxIcon->value()) * P.scale),
+                          (int)std::lround(box.w * P.scale), (int)std::lround(HERO_CAP * P.scale));
 
-        const bool   LEADICON = hasLeadIcon(*N);
+        // the center face of the banner hero (popups.cpp): a hero-worthy content
+        // image leads the row full-width and suppresses the icon column — AOSP
+        // hides the large icon the same way when its BigPicture is up
+        const bool   HERO     = N->iconTex && N->heroTex;
+        const double HEROH    = HERO ? N->iconTex->m_size.y / P.scale : 0;
+        const bool   LEADICON = !HERO && hasLeadIcon(*N);
         const double ICONW    = LEADICON ? ST.iconPx : 0;
         const double TX       = box.x + ROW_PADX + (ICONW > 0 ? ICONW + ROW_ICON_GAP : 0);
         const bool   CHEVRON  = ST.hasChevron && (open || more);
@@ -43,7 +49,7 @@ namespace NHyprnotify {
         const int    TEXTWPX  = std::max(1, (int)std::floor(TEXTW * P.scale));
 
         double       th = 0;
-        const double TY = box.y + ROW_PADT;
+        const double TY = HERO ? box.y + HEROH + PADY : box.y + ROW_PADT;
 
         if (!open) {
             // collapsed: bold "title • age" + the newest body line (+progress)
@@ -232,17 +238,20 @@ namespace NHyprnotify {
             }
         }
 
-        const double ROWH = std::max(th, ICONW) + ROW_PADT + ROW_PADB;
+        const double ROWH = (HERO ? HEROH + PADY : ROW_PADT) + std::max(th, ICONW) + ROW_PADB;
+
+        if (!P.warm && HERO)
+            P.texFit(N->iconTex, CBox{box.x, box.y, box.w, HEROH}, (int)std::lround(rRow(P.scale) * P.scale), RP);
 
         if (!P.warm && LEADICON) {
             // collapsed rows center the icon; expanded top-pin it
-            const double IY = open ? box.y + ROW_PADT : box.y + (ROWH - ICONW) / 2;
+            const double IY = open ? TY : box.y + (ROWH - ICONW) / 2;
             paintIconColumn(P, *N, CBox{box.x + ROW_PADX, IY, ICONW, ICONW}, ST.withBadge, RP);
         }
         // the chevron circle: an INDICATOR that the row folds, and a second
         // hit target for it — the whole row is the first one
         if (CHEVRON) {
-            const double CY = open ? box.y + ROW_PADT : box.y + (ROWH - CHEV) / 2;
+            const double CY = open ? TY : (HERO ? TY + (std::max(th, ICONW) - CHEV) / 2 : box.y + (ROWH - CHEV) / 2);
             const CBox   CB{box.x + box.w - ROW_PADX - CHEV, CY, CHEV, CHEV};
             const auto   G = chevronTex(open ? 1 : 0, COLFG, (int)CHEV); // built in BOTH modes
             if (!P.warm) {
@@ -334,7 +343,8 @@ namespace NHyprnotify {
         // the header keeps the row identifiable while its body is gone, and
         // carries the ⋮ back out — the panel must not be a one-way door
         if (warmGate.warming)
-            ensureIconTex(*N, (int)std::lround(cfg.maxIcon->value() * P.scale), 0, 0);
+            ensureIconTex(*N, (int)std::lround(cfg.maxIcon->value() * P.scale),
+                          (int)std::lround(box.w * P.scale), (int)std::lround(HERO_CAP * P.scale));
         const auto& IDT = N->identTex && N->identTex->m_texID ? N->identTex : N->iconTex;
         if (!P.warm && IDT)
             P.texFit(IDT, CBox{box.x + ROW_PADX, box.y + ROW_PADT, CHILD_ICON, CHILD_ICON}, (int)std::lround(CHILD_ICON * 10.0 / 44.0 * P.scale), RP);
@@ -445,7 +455,8 @@ namespace NHyprnotify {
         P.rect(box, HOV ? tAccentDim() : tFill(), rRow(P.scale), RP);
 
         if (warmGate.warming)
-            ensureIconTex(*NEWEST, (int)std::lround(cfg.maxIcon->value() * P.scale), 0, 0);
+            ensureIconTex(*NEWEST, (int)std::lround(cfg.maxIcon->value() * P.scale),
+                          (int)std::lround(box.w * P.scale), (int)std::lround(HERO_CAP * P.scale));
         const auto& IDT = NEWEST->identTex && NEWEST->identTex->m_texID ? NEWEST->identTex : NEWEST->iconTex;
         if (IDT)
             P.texFit(IDT, CBox{box.x + ROW_PADX, box.y + ROW_PADT, ROW_ICON, ROW_ICON}, (int)std::lround(ROW_ICON * 10.0 / 44.0 * P.scale), RP);
@@ -498,7 +509,8 @@ namespace NHyprnotify {
         for (size_t i = 0; i < PREV; i++) {
             const auto& N = D.items[i];
             if (warmGate.warming)
-                ensureIconTex(*N, (int)std::lround(cfg.maxIcon->value() * P.scale), 0, 0);
+                ensureIconTex(*N, (int)std::lround(cfg.maxIcon->value() * P.scale),
+                              (int)std::lround(box.w * P.scale), (int)std::lround(HERO_CAP * P.scale));
             const double LH = (double)T.body / P.scale * 1.35;
             py += 3;
             double px = TX;
@@ -545,7 +557,8 @@ namespace NHyprnotify {
         P.rect(CBox{box.x, box.y, box.w, HEADRH}, HHOV ? tAccentDim() : tFill(), rRow(P.scale), RP);
 
         if (warmGate.warming)
-            ensureIconTex(*NEWEST, (int)std::lround(cfg.maxIcon->value() * P.scale), 0, 0);
+            ensureIconTex(*NEWEST, (int)std::lround(cfg.maxIcon->value() * P.scale),
+                          (int)std::lround(box.w * P.scale), (int)std::lround(HERO_CAP * P.scale));
         const auto& IDT = NEWEST->identTex && NEWEST->identTex->m_texID ? NEWEST->identTex : NEWEST->iconTex;
         if (IDT)
             P.texFit(IDT, CBox{box.x + ROW_PADX, box.y + ROW_PADT, CHILD_ICON, CHILD_ICON}, (int)std::lround(CHILD_ICON * 10.0 / 44.0 * P.scale), RP);
