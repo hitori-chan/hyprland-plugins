@@ -46,11 +46,10 @@ HYPR_DEPLOY_PKG_CONFIG_PATH=$SCRATCH/share/pkgconfig \
 ```
 
 `-b LIST` runs only the named batteries and `-k LIST` skips them (comma
-separated; from `windows notifications osd-reply policy lifecycle`; `all` is
-the default). Canonical order is enforced regardless of user order, selecting
-`lifecycle` auto-includes `osd-reply`, and preflight (builds, launch,
-retarget) always runs. Without `lifecycle` selected, `stress.sh` itself prints
-the final summary line.
+separated; from `windows notifications reply policy lifecycle`; `all` is the
+default). Canonical order is enforced regardless of user order, and
+preflight (parallel builds, launch, retarget) always runs. Without
+`lifecycle` selected, `stress.sh` itself prints the final summary line.
 
 The gate rejects mismatched package paths, target headers, and compositor
 commits. `HYPR_STRESS_KEEP_STATE=1` retains screenshots and logs after a run.
@@ -64,7 +63,7 @@ The shell is split by ownership under `devtools/stress/`:
 | `windows.sh` | placement, persistence, maximize, snap, and window storms |
 | `notify-lib.sh` | shared notification helpers: geometry constants, input gestures, Notify senders, panel measurement. Pure definitions, safe to source anywhere after `retarget` |
 | `notifications.sh` | notification model, center, grouping, identity, and pixel checks |
-| `osd-reply.sh` | OSD process/icon paths, fullscreen cards, reply, and clipboard |
+| `reply.sh` | hyprosd's wpctl process path, the pointer-only shade close, inline reply, and the launcher clipboard |
 | `policy.sh` | DND, management, snooze/undo, gestures, ranking, and admission |
 | `lifecycle.sh` | input capture, input storms, reload, logs, and teardown |
 | `probe-env.sh` | bootstrap for isolated one-off probes (see below) |
@@ -86,10 +85,12 @@ source devtools/stress/notify-lib.sh
 ```
 
 `launch_stress_nested` kills any stale stress nested, regenerates the stress
-config, waits out the compositor's 15s no-watchdog toast (it overlays the
-panel column and poisons `panel_bottom`), and validates the target. The
-probe's EXIT trap tears the nested and fixture state down; set
-`HARNESS_CLEANED=1` before exiting to retain captures for inspection.
+config, validates the target, and waits until the panel column is clear
+before the first measurement. The stress config suppresses the fork's 15s
+no-watchdog toast (it used to hang in the panel column and poison
+`panel_bottom`); the wait remains as the launch readiness check. The probe's
+EXIT trap tears the nested and fixture state down; set `HARNESS_CLEANED=1`
+before exiting to retain captures for inspection.
 
 ### Isolated Battery Runs
 
@@ -107,10 +108,8 @@ source devtools/stress/notify-lib.sh
 source devtools/stress/policy.sh              # the battery under test
 ```
 
-Batteries are not pure definitions — sourcing one executes it. Batteries
-that use helpers from an earlier battery (e.g. `lifecycle.sh` calls
-`arm_reply`/`reply_keys` from `osd-reply.sh`) must be sourced after their
-dependencies, exactly as `stress.sh` orders them. `policy.sh` and
+Batteries are not pure definitions — sourcing one executes it. Source them
+in the canonical order, exactly as `stress.sh` does; `policy.sh` and
 `windows.sh` relaunch the nested themselves (persistence fixtures), so an
 isolated run of either needs no prior state.
 

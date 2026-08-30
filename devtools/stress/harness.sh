@@ -1,5 +1,7 @@
-ok()  { PASS=$((PASS + 1)); printf '  ok  %s\n' "$1"; }
-bad() { FAILED+=("$1"); printf ' FAIL %s\n' "$1"; }
+# SECONDS-based wall clock, in s since stress.sh started: each line shows
+# where the minutes go, so a slow battery is visible without a profiler.
+ok()  { PASS=$((PASS + 1)); printf '  ok  [%s s] %s\n' "$SECONDS" "$1"; }
+bad() { FAILED+=("$1"); printf ' FAIL [%s s] %s\n' "$SECONDS" "$1"; }
 chk() { # chk <name> <command...> — command's exit code decides
 	local name=$1; shift
 	if "$@" >/dev/null 2>&1; then ok "$name"; else bad "$name"; fi
@@ -190,16 +192,23 @@ write_stress_cfg() { # the nested config: nested.lua plus the stress preamble
 		echo 'hl.permission(".*input-capture$", "input-capture", "allow")'
 		echo 'hl.permission(".*vkbd$", "keyboard", "allow")'
 		echo 'hl.permission(".*grim$", "screencopy", "allow")'
-		cat "$HARNESS/nested.lua"
+		# Suppress the fork's 15s no-watchdog toast (it lives in the panel
+		# column, so wait_launch_toast must otherwise poll for its whole
+		# lifetime at every launch). Injected into nested.lua's own misc
+		# table — a second hl.config call's merge semantics are not a
+		# contract. A harness config without a misc table keeps the toast
+		# and pays the wait; the gate still passes.
+		awk '{ print } /misc = \{/ { print "\t\tdisable_watchdog_warning = 1," }' "$HARNESS/nested.lua"
 		echo 'hl.window_rule({ match = { class = "foot|mpv|corpseA|corpseB|tuckmax|tuckfloat|tuckfs" }, float = true })'
 	} > "$CFG"
 }
 
-# The fork's no-watchdog toast ("started without start-hyprland") lives 15s
-# and spans the panel column right where panel_bottom starts scanning, so
-# every shade measurement before it fades is poisoned (a short first run at
-# y26 reads as a 13px panel). Wait it out instead of reproducing the 773
-# class at every launch. Only meaningful directly after launch_nested.
+# Launch readiness: the panel column must be clear before the first
+# measurement, or a short first run at y26 reads as a 13px panel. The fork's
+# 15s no-watchdog toast used to span exactly this column and poisoned every
+# shade measurement until it faded; write_stress_cfg now suppresses it
+# (misc:disable_watchdog_warning), so this normally clears within a couple of
+# frames of launch. Only meaningful directly after launch_nested.
 wait_launch_toast() {
 	local f="$STATE/toast-check.png"
 	for _ in $(seq 1 40); do
@@ -215,7 +224,7 @@ raise SystemExit(0 if clear else 1)
 PY
 		sleep 0.5
 	done
-	echo "launch toast never cleared; shade measurements would be poisoned" >&2
+	echo "panel column never cleared after launch; shade measurements would be poisoned" >&2
 	return 1
 }
 

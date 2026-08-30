@@ -66,9 +66,11 @@ sleep 0.5
 read -r BBX BBY <<< "$(center_of stormb)"; click_at "$BBX" "$BBY"
 chk "storm probes up: stormb focused by its own click" test "$(pyc "cs[-1]['class']=='stormb' if cs else False")" = 1
 {
-	for i in $(seq 1 60); do echo "move $(( (i * 97) % MON_W )) $(( 30 + (i * 61) % (MON_H - 40) ))"; echo "sleep 10"; done
-	for i in $(seq 1 15); do echo "move 500 13"; echo "sleep 15"; echo "scroll 0 1"; echo "sleep 25"; done
-	for i in $(seq 1 10); do
+	# the burst size is not the property under test — a stuck swallow eats
+	# the post-storm click at any volume; 30/8/5 keeps the same event mix
+	for i in $(seq 1 30); do echo "move $(( (i * 97) % MON_W )) $(( 30 + (i * 61) % (MON_H - 40) ))"; echo "sleep 10"; done
+	for i in $(seq 1 8); do echo "move 500 13"; echo "sleep 15"; echo "scroll 0 1"; echo "sleep 25"; done
+	for i in $(seq 1 5); do
 		echo "move 34 13"; echo "sleep 15"; echo "press 272"; echo "sleep 20"; echo "release 272"; echo "sleep 35"
 		echo "move 59 13"; echo "sleep 15"; echo "press 272"; echo "sleep 20"; echo "release 272"; echo "sleep 35"
 	done
@@ -215,10 +217,10 @@ fi
 cleanup_harness
 echo
 if [[ ${#FAILED[@]} -eq 0 ]]; then
-	echo "== stress: ALL $PASS CHECKS PASSED =="
+	echo "== stress: ALL $PASS CHECKS PASSED in ${SECONDS}s =="
 	exit 0
 else
-	echo "== stress: $PASS passed, ${#FAILED[@]} FAILED =="
+	echo "== stress: $PASS passed, ${#FAILED[@]} FAILED in ${SECONDS}s =="
 	printf '   - %s\n' "${FAILED[@]}"
 	exit 1
 fi

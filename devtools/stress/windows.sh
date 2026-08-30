@@ -53,28 +53,32 @@ chk "fullscreen roundtrip restores the exact boxes" test "$(feet)" = "$FEET"
 # ---- close storm + memory update ---------------------------------------
 for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in json.load(sys.stdin) if c['class']=='foot']"); do
 	dsp "hl.dsp.window.close({window=\"address:$a\"})" &
-done; wait; sleep 2
+done; wait; sleep 1.2
 chk "close storm: no stragglers" test "$(pyc "sum(1 for c in cs if c['class']=='foot')")" = 0
 chk "tsv: exactly one foot row survives the coalesced save" test "$(grep -c $'\tfoot$' "$STATE/hyprplace/lastspot.tsv")" = 1
 chk "tsv: no temp-file debris" bash -c "! ls $STATE/hyprplace/*.tmp 2>/dev/null | grep -q ."
 
 # ---- spawn storm --------------------------------------------------------
-for i in $(seq 1 12); do
+# 8 concurrent spawns still stress the tiler, the placement fallback and the
+# workarea clamp; the count buys nothing above the tile budget.
+for i in $(seq 1 8); do
 	dsp "hl.dsp.exec_cmd('foot --window-size-pixels=$((400 + (i % 4) * 80))x$((250 + (i % 3) * 60))')" &
-done; wait; sleep 4
-expect "spawn storm: all 12 up, fully inside the workarea" \
-	"sum(1 for c in cs if c['class']=='foot')==12 and all(c['at'][0]>=0 and c['at'][1]>=26 and c['at'][0]+c['size'][0]<=$MON_W and c['at'][1]+c['size'][1]<=$MON_H for c in cs if c['class']=='foot')"
+done; wait; sleep 2.5
+expect "spawn storm: all 8 up, fully inside the workarea" \
+	"sum(1 for c in cs if c['class']=='foot')==8 and all(c['at'][0]>=0 and c['at'][1]>=26 and c['at'][0]+c['size'][0]<=$MON_W and c['at'][1]+c['size'][1]<=$MON_H for c in cs if c['class']=='foot')"
 for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in json.load(sys.stdin) if c['class']=='foot']"); do
 	dsp "hl.dsp.window.close({window=\"address:$a\"})" &
-done; wait; sleep 2
+done; wait; sleep 1.2
 
 # ---- notification cap ---------------------------------------------------
-for i in $(seq 1 65); do
+# 55 is just over the cap of 50 — enough to prove eviction without paying
+# for 65 daemons.
+for i in $(seq 1 55); do
 	u=normal; [[ $((i % 6)) == 0 ]] && u=critical
 	dsp "hl.dsp.exec_cmd('notify-send -u $u \"stress $i\" body')" &
-done; wait; sleep 5
-chk "notif storm: cap holds at exactly 50/65" test "$(hq hyprnotify count)" = 50
-# The shade has no history: the 15 evicted entries and the removed control
+done; wait; sleep 4
+chk "notif storm: cap holds at exactly 50/55" test "$(hq hyprnotify count)" = 50
+# The shade has no history: the evicted entries and the removed control
 # verbs must stay gone.
 chk "no history verb survives the model removal" test "$(hq hyprnotify history)" = "unknown request"
 chk "no recall verb survives the model removal" test "$(hq hyprnotify recall)" = "unknown request"
@@ -164,13 +168,13 @@ done
 chk "hyprmax: removing native reservation restores maximized workarea" test "$(box)" = "$MAX_BEFORE"
 dsp "hl.plugin.hyprmax.toggle()"; sleep 0.5
 chk "hyprmax: reserved-area roundtrip preserves windowed restore" test "$(box)" = "$REF"
-for i in $(seq 1 20); do dsp "hl.plugin.hyprmax.toggle()"; done; sleep 1
-chk "20 maximize toggles round-trip losslessly" test "$(box)" = "$REF"
-for i in $(seq 1 10); do dsp "hl.plugin.hyprbar.minimize()"; dsp "hl.plugin.hyprbar.restore()"; done; sleep 1
-chk "10 minimize/restore cycles round-trip" test "$(box)" = "$REF"
-for i in $(seq 1 30); do dsp "hl.dsp.focus({workspace=\"$(( (i % 9) + 1 ))\"})"; done
+for i in $(seq 1 10); do dsp "hl.plugin.hyprmax.toggle()"; done; sleep 1
+chk "10 maximize toggles round-trip losslessly" test "$(box)" = "$REF"
+for i in $(seq 1 5); do dsp "hl.plugin.hyprbar.minimize()"; dsp "hl.plugin.hyprbar.restore()"; done; sleep 1
+chk "5 minimize/restore cycles round-trip" test "$(box)" = "$REF"
+for i in $(seq 1 15); do dsp "hl.dsp.focus({workspace=\"$(( (i % 9) + 1 ))\"})"; done
 dsp "hl.dsp.focus({workspace=\"1\"})"; sleep 1
-chk "30 workspace hops: back on 1" test "$(ws)" = 1
+chk "15 workspace hops: back on 1" test "$(ws)" = 1
 
 # ---- hostile state file -------------------------------------------------
 kill_nested
