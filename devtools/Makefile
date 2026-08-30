@@ -15,10 +15,10 @@ SERVER_CFLAGS := $(shell pkg-config --cflags wayland-server)
 SERVER_LIBS   := $(shell pkg-config --libs wayland-server)
 TEST_CXXFLAGS := -std=c++26 -O2 -Wall -Wextra -Wpedantic -Werror -I..
 TEST_BINS := icon-resolver-test battery-state-test desktop-exec-test \
-	hyprosd-readback-test pixel-model-test persist-test fileindex-test \
+	hyprosd-readback-test persist-test fileindex-test \
 	hyprsnap-geometry-test hyprmax-geometry-test
 TEST_TARGETS := test-icon-resolver test-battery-state test-desktop-exec \
-	test-hyprosd test-pixel-model test-persist test-fileindex \
+	test-hyprosd test-persist test-fileindex \
 	test-hyprsnap-geometry test-hyprmax-geometry
 
 all: vptr vkbd input-capture cliphold
@@ -48,12 +48,6 @@ hyprosd-readback-test: hyprosd_readback_test.cpp test.hpp ../hyprosd/wpctl.hpp
 
 test-hyprosd: hyprosd-readback-test
 	./hyprosd-readback-test
-
-pixel-model-test: pixel_model_test.cpp test.hpp ../hyprnotify/pixel_model.hpp
-	$(CXX) $(TEST_CXXFLAGS) $< -o $@
-
-test-pixel-model: pixel-model-test
-	./pixel-model-test
 
 persist-test: persist_test.cpp test.hpp ../common/persist.hpp ../common/lifecycle.hpp
 	$(CXX) $(TEST_CXXFLAGS) $(HYPR_CFLAGS) $< -o $@

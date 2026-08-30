@@ -176,9 +176,10 @@ chk "30 workspace hops: back on 1" test "$(ws)" = 1
 kill_nested
 printf 'garbage\n42\n1e400\t0\t300\t200\tinffoot\n-100\t-100\t-50\t-50\tnegfoot\n100000\t100000\t400\t300\tfoot\n' > "$STATE/hyprplace/lastspot.tsv"
 # the policy store is the other user-editable file: a verb-less line, an
-# empty key and an unknown verb must all be skipped, not fatal
+# empty key, an unknown verb and a duplicated rule must all be skipped or
+# deduped, not fatal (a long key is well-formed: app names carry no cap)
 mkdir -p "$STATE/hyprnotify"
-printf 'garbage\ns\n s\tx\nz\tnope\ns\t\ns\tkeepme\ns\t%*s\n' 513 '' | tr ' ' x > "$STATE/hyprnotify/policy.tsv"
+printf 'garbage\ns\n s\tx\nz\tnope\ns\t\np\t\ns\tkeepme\ns\tkeepme\n' > "$STATE/hyprnotify/policy.tsv"
 launch_nested || { echo "relaunch FAILED"; exit 1; }
 retarget || { echo "nested retarget FAILED after relaunch"; exit 1; }
 chk "hostile tsv: all 8 plugins still load" test "$(hq plugin list | grep -c Plugin)" = 8

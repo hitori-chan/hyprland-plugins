@@ -1,17 +1,47 @@
 #!/usr/bin/env bash
-# The hyprnotify behavior battery: expiry and residency, coalescing,
-# conversation identity, the v13 card ladder and shade click model, hold
-# menus, snooze, digests, generated-identity pixels, overflow, and history.
-# Helpers live in notify-lib.sh; this file is battery code only.
+# The hyprnotify behavior battery: the notification cap, expiry and residency,
+# popup coalescing, the conversation merge, overflow paging, the shade's click
+# model, close-on-act, hover-hold, the bell's hover-peek, keyboard nav, and
+# quiet-while-fullscreen. Helpers live in notify-lib.sh; this file is battery
+# code only.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/notify-lib.sh"
 
+# The hostile-tsv battery (windows) relaunched the nested target with a
+# well-formed keepme rule still standing: lift it before the first assertion,
+# or every "clean state" check below passes over a live silence.
+policy_lift
+chk "notif reset: no rule left standing by the hostile fixture" test "$(pol)" = "silenced:0 priority:0"
+
+# ---- notification cap ---------------------------------------------------
+# The model is deliberately bounded: 65 arrivals leave exactly max_notifs
+# (50) behind, and the shade has no history — the evicted cards are gone, and
+# the verbs that used to resurrect them are gone with it.
+for i in $(seq 1 65); do
+	u=normal; [[ $((i % 6)) == 0 ]] && u=critical
+	dsp "hl.dsp.exec_cmd('notify-send -u $u \"stress $i\" body')" &
+done; wait; sleep 5
+chk "notif storm: cap holds at exactly 50/65" test "$(hq hyprnotify count)" = 50
+chk "no history verb survives the model removal" test "$(hq hyprnotify history)" = "unknown request"
+chk "no recall verb survives the model removal" test "$(hq hyprnotify recall)" = "unknown request"
+hq hyprnotify clear >/dev/null; sleep 0.8
+# wrong-typed hints make sdbus-c++ throw inside the plugin's parse — the
+# catch must survive (exercises exception unwinding across the .so boundary).
+# Cards expire on their own clocks, so assert the daemon still answers with
+# a number, not any absolute count.
+dsp "hl.dsp.exec_cmd('notify-send -h int:transient:1 -h string:urgency:critical typed-hint-abuse body')"; sleep 1.5
+chk "wrong-typed hints survived (sdbus::Error thrown + caught)" bash -c "hyprctl -i $SIG hyprnotify count | grep -qE '^[0-9]+$'"
+# that card still runs its own clock — drop it before the next battery
+# asserts a clean state (the monolith got this clear from its relaunch)
+hq hyprnotify clear >/dev/null 2>&1; sleep 0.6
+
 # ---- expiry, residency & the center ------------------------------------
-# A normal banner runs its clock, then retreats to a resident center row while
-# remaining in the model. Critical (urgency>=2) is the only sticky banner.
-# Ephemerals vanish outright: transient and progress/OSD. The `state` line
-# counts residents as `live` (raw model size, blind to the popup/shade
-# split); the `badge` verb reads that split — "banners:N resident:N".
-# Distinct -a apps here so popup coalescing (tested below) can't interfere.
+# A normal banner runs its clock, then RETREATS to a resident shade row —
+# still in the model (the center is the safety net), just no longer a popup.
+# Critical (urgency>=2) is the only sticky banner. Ephemerals vanish
+# outright: transient. The `state` line counts residents as `live` (raw model
+# size, blind to the popup/shade split); the `badge` verb reads that split —
+# "banners:N resident:N". Distinct -a apps here so popup coalescing (tested
+# below) can't interfere.
 chk "notif reset: clean state line" test "$(st)" = "center:0 live:0 dnd:0"
 dsp "hl.dsp.exec_cmd('notify-send -a crit -u critical \"urgent\" body')" # no -t: critical sticks
 sleep 1
@@ -32,7 +62,8 @@ hq hyprnotify center >/dev/null; sleep 0.5
 chk "center: closing neither re-pops nor drops a card" test "$(st)" = "center:0 live:3 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.8
 chk "center: Clear all sweeps every visible card" test "$(st)" = "center:0 live:0 dnd:0"
-# A plain (-1) normal card runs timeout_normal (5s) and retreats unattended.
+# A plain normal card is not sticky — it runs timeout_normal (5s) and
+# retreats to the shade on its own, unattended.
 dsp "hl.dsp.exec_cmd('notify-send \"default normal\" body')"
 sleep 1
 chk "default normal: pops as a banner" test "$(bd)" = "banners:1 resident:0"
@@ -42,7 +73,7 @@ chk "default normal: the card is kept, not lost" test "$(st)" = "center:0 live:1
 hq hyprnotify clear >/dev/null; sleep 0.8
 
 # ---- popup coalescing: one live banner per app -------------------------
-# spam control (coalesce_popups, default on): while an app shows a banner,
+# Spam control (coalesce_popups, default on): while an app shows a banner,
 # further NON-CRITICAL same-app arrivals are born resident — one popup, the
 # rest silent in the shade's fold. `badge` sees the split, `state` counts
 # them all. Critical punches through; a different app gets its own banner.
@@ -58,390 +89,177 @@ dsp "hl.dsp.exec_cmd('notify-send -a other elsewhere body')"; sleep 1
 chk "coalesce: a different app gets its own banner" test "$(bd)" = "banners:3 resident:2"
 hq hyprnotify clear >/dev/null; sleep 0.8
 
-# ---- structured conversation identity (Android's MessagingStyle) --------
-# Nine hint entries (busctl's a{sv} count is strict): desktop-entry,
-# category, conv-id, conv-title, conv-kind, sender-id, sender-name,
-# sender-icon, message-id.
-
-for m in one two three; do conversation_notify tg chat-alice "Shared title" alice Alice "alice-$m" "$m"; sleep 0.4; done
+# ---- the conversation merge (Android's MessagingStyle) ------------------
+# One chat is ONE card however many messages arrive: a fresh Notify whose app
+# + summary matches a live card is joined onto it. The fd.o conversation
+# categories are the trigger (the summary is the sender), so a plain card
+# from the same app must NOT be swallowed.
+for m in one two three; do dsp "hl.dsp.exec_cmd('notify-send -a tg -c im.received -t 30000 Alice \"$m\"')"; sleep 0.4; done
 sleep 0.8
-chk "conversation: 3 messages with one stable chat ID remain 1 card" test "$(st)" = "center:0 live:1 dnd:0"
-conversation_notify tg chat-bob "Shared title" bob Bob bob-1 hello; sleep 1
-chk "conversation: identical titles with different IDs remain distinct" test "$(st)" = "center:0 live:2 dnd:0"
-conversation_notify tg chat-alice "Shared title" alice Alice alice-three edited; sleep 0.8
-chk "conversation: a known message ID replaces in place" test "$(st)" = "center:0 live:2 dnd:0"
-nfy tg "plain one"
-nfy tg "plain two"; sleep 1
-chk "conversation: standard notifications never merge by visible text" test "$(st)" = "center:0 live:4 dnd:0"
+chk "merge: 3 messages from one sender collapse to 1 card" test "$(st)" = "center:0 live:1 dnd:0"
+dsp "hl.dsp.exec_cmd('notify-send -a tg -c im.received -t 30000 Bob hello')"; sleep 1
+chk "merge: a different sender keeps its own card" test "$(st)" = "center:0 live:2 dnd:0"
+dsp "hl.dsp.exec_cmd('notify-send -a tg -t 30000 \"plain one\" body')"
+dsp "hl.dsp.exec_cmd('notify-send -a tg -t 30000 \"plain two\" body')"; sleep 1
+chk "merge: no category, no merging — same app still stacks" test "$(st)" = "center:0 live:4 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.8
 
-# ---- the v13 card ladder: collapsed, card-open, kid-open, field-armed ----
-# The pixel-parity conversation card is 74px collapsed (header + body),
-# 106px card-open (one 66px kid), 161px with the newest kid open (time, name,
-# text, and its Reply button), 175px while the reply field is armed. The
-# panel is fit-to-content: 8 + card + 68 + 8. Each state is asserted on the
-# white rim, so a layout that grows or shrinks a state fails here, not in
-# production.
-# Eight hint entries: desktop-entry, category, conv-id, conv-title,
-# conv-kind, sender-id, sender-name, message-id. The actions carry the
-# reserved "inline-reply" ID (its label renders as Reply) plus a plain
-# "Reply" action, so the card shows the arm-field button and the invoke
-# button side by side — the ladder and HUN batteries click the FIRST.
-
-conv_reply_notify tg chat-ladder Alice alice ladder-1 "hello there"
-sleep 1
-chk "ladder: the conversation arrived as one banner" test "$(bd)" = "banners:1 resident:0"
-hq hyprnotify center >/dev/null; sleep 0.5
-expect_panel "ladder A: collapsed conversation card is 70px" "$STATE/ladder-a.png" 142
-click "$CHIPX" 74 272
-expect_panel "ladder B: the chip opened the card, one 66px kid is 138px" "$STATE/ladder-b.png" 206
-click "$KIDCHEV_X" "$KIDCHEV_Y" 272
-expect_panel "ladder C: the kid chevron opened the kid with its Reply at 186px" "$STATE/ladder-c.png" 263
-click "$REPLY_BTN_X" "$REPLY_BTN_Y" 272
-expect_panel "ladder D: the armed field takes 202px" "$STATE/ladder-d.png" 275
-# the field owns the keys: type a word and send; the card leaves with it
-printf 'tap h\ntap i\nsleep 300\n' | vk; sleep 0.5
-printf 'tap enter\n' | vk; sleep 0.8
-chk "ladder: the reply fired and its card left" test "$(st)" = "center:1 live:0 dnd:0"
-expect_panel "ladder: the shade stays open on its empty state" "$STATE/ladder-sent.png" 130
-hq hyprnotify center >/dev/null; sleep 0.4
-hq hyprnotify clear >/dev/null; sleep 0.6
-
-# ---- the v13 shade click model -------------------------------------------
-# Body fires the card's primary (or dismisses an actionless card) and a
-# non-resident act leaves the shade with it; right dismisses; the chip or the
-# icon column toggles the card's content; a drag down past 90px swipes the
-# card away; the banner's chevron opens the shade instead of expanding in
-# place; the banner's Reply invokes the sender's UI and dismisses, it does
-# NOT arm the inline field (that lives on the shade's kid).
-nfy clickmodel "actionless"; sleep 1
+# ---- shade overflow ------------------------------------------------------
+# More rows than the monitor-tall panel holds must PAGE, not bleed off the
+# bottom. 15 distinct-app cards -> 15 rows (one app each, so nothing
+# coalesces); the expansion budget opens what fits and folds the rest.
+# Drawing it (the placement break + the paging cue) must not crash and must
+# keep every card.
+for i in $(seq 1 15); do dsp "hl.dsp.exec_cmd('notify-send -a ovf$i -t 30000 \"row $i\" body')"; done; sleep 1.5
 hq hyprnotify center >/dev/null; sleep 0.6
-expect_panel "clickmodel: one collapsed plain card is 100px (title + one body line)" "$STATE/clickmodel-a.png" 142
-click "$ROWX" "$ROWY" 272
-chk "clickmodel: an actionless body click dismisses, the shade stays" test "$(st)" = "center:1 live:0 dnd:0"
-nfy clickmodel "right me"; sleep 1
-click "$ROWX" "$ROWY" 273
-chk "clickmodel: right on a row dismisses it" test "$(st)" = "center:1 live:0 dnd:0"
+chk "overflow: a 15-item center renders paged, keeps every card" test "$(st)" = "center:1 live:15 dnd:0"
+wheel 120
+wheel 120
+chk "overflow: wheeling down keeps every card" test "$(st)" = "center:1 live:15 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.4
-hq hyprnotify clear >/dev/null; sleep 0.6
-# the chip and the icon column both toggle a plain card's content. The body
-# is TWO lines: collapsed shows its last line (100px card), open shows both
-# (124px card — a body line is 24px), so the toggle changes the height.
-nfy toggler "long title that carries a body line" "first line of the body
-second line of the body"; sleep 1
-hq hyprnotify center >/dev/null; sleep 0.6
-expect_panel "toggle: the collapsed plain card shows its last body line" "$STATE/toggle-a.png" 142
-click "$CHIPX" 74 272
-expect_panel "toggle: the chip revealed the full two-line body" "$STATE/toggle-b.png" 166
-click "$CHIPX" 68 272
-expect_panel "toggle: the chip folded it again" "$STATE/toggle-c.png" 142
-click "$((PANEL_X + 30))" 74 272
-expect_panel "toggle: the icon column toggles too" "$STATE/toggle-d.png" 166
-click "$CHIPX" 68 272
-chk "toggle: reset the card to collapsed" test "$(st)" = "center:1 live:1 dnd:0"
-# drag down past 90px swipes the card away. The nested virtual-pointer drag is
-# not frame-deterministic, so this is best-effort: when it lands the card is
-# gone; when it doesn't we note it (source + demo verify the behavior, ledger
-# A-138) and clear the card so the battery stays clean.
-dragdown "$ROWX" "$ROWY" 120
-if [[ "$(st)" == center:1\ live:0\ dnd:0 ]]; then
-	ok "drag: a 120px downward drag dismissed the card"
-else
-	printf ' note drag: nested virtual-pointer drag was not deterministic here; swipe-to-dismiss is source- and demo-verified (A-138)\n'
-	hq hyprnotify clear >/dev/null; sleep 0.4
-fi
-outside_click; sleep 0.4
-# the banner chevron opens the shade; the banner body's Reply invokes + dismisses
-conv_reply_notify tg chat-hun Hana hana hun-1 "ping"
-sleep 1
-chk "hun: the conversation is up as a banner" test "$(bd)" = "banners:1 resident:0"
-click "$POP_CHEV_X" "$POP_CHEV_Y" 272
-chk "hun: the banner chevron opened the shade and absorbed the banner" test "$(st)" = "center:1 live:1 dnd:0"
-expect_panel "hun: the absorbed card is the collapsed conversation" "$STATE/hun-shade.png" 142
-hq hyprnotify center >/dev/null; sleep 0.4
-hq hyprnotify clear >/dev/null; sleep 0.4 # chat-hun is still resident; sweep it or the next card is born resident, bannerless
-conv_reply_notify tg chat-hun2 Iris iris hun2-1 "pong"
-sleep 1
-# the banner's action row sits below who+message (the row is 44px, its
-# center ~109 from the monitor top for a one-message conversation). The
-# banner's actions invoke the sender's UI over the wire — they never arm
-# the inline field (that lives on the shade's kid)
- click "$((PANEL_X + 99))" 109 272
-chk "hun: the banner Reply invoked the sender's UI and dismissed the card" test "$(st)" = "center:0 live:0 dnd:0"
-hq hyprnotify clear >/dev/null; sleep 0.6
+hq hyprnotify clear >/dev/null; sleep 0.8
 
-# ---- a bare conversation: an im.* category without structured hints ---------
-# A plain Telegram message arrives as category im.received with NO
-# x-hyprnotify-conversation-id: the card is a conversation whose message list
-# stays empty, so its preview must fall back to the app's own body (the
-# header-only card/banner was the 2026-08-29 field report).
-nfyact imbare "Telegram" 0 1 category s im.received
-sleep 1
-capture_nested "$STATE/imbare-hun.png"
-chk "imbare: the banner keeps its preview body (carded banner, not header-only)" test "$(panel_bottom "$STATE/imbare-hun.png")" -eq 131
+# ---- the shade's click model ---------------------------------------------
+# A shade row IS its banner: left on the BODY fires the card's primary and
+# dismisses it, and the CHEVRON is the only fold target. Driven through the
+# real hit boxes via vptr. The panel hangs off the monitor's right edge
+# (EDGE 10 + CENTER_W 360) below offset_y 34, so the first row's body is a
+# fixed inset from the top-right corner, and the chevron rides the row's
+# right end (ROW_PADX 12 + CHEV 24). Hit boxes are final-position, so the
+# open spring cannot move them out from under the click. The fold has no
+# model-level path, hence the shape of these assertions: the chevron must
+# change NOTHING in the model, while the body clears the card.
+dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"read me\" body')"; sleep 1
+chk "shade: one card waiting" test "$(st)" = "center:0 live:1 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.6
-expect_panel "imbare: the bare-conversation card shows its body (100px card)" "$STATE/imbare-shade.png" 142
+click $CHVX $ROWY 272
+chk "shade: the chevron only folds — nothing invoked, nothing dismissed" test "$(st)" = "center:1 live:1 dnd:0"
+click $CHVX $ROWY 272
+chk "shade: the chevron unfolds again, still nothing dismissed" test "$(st)" = "center:1 live:1 dnd:0"
+click $ROWX $ROWY 272
+# The card carries no actions, so the body click has nothing to fire: it is
+# a pure DISMISSAL, and dismissing never closes the shade (center stays 1).
+chk "shade: left on an actionless BODY dismisses it, shade stays" test "$(st)" = "center:1 live:0 dnd:0"
+dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"right me\" body')"; sleep 1
+click $ROWX $ROWY 273
+chk "shade: right on a row dismisses it" test "$(st)" = "center:1 live:0 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.4
-hq hyprnotify clear >/dev/null; sleep 0.6
+hq hyprnotify clear >/dev/null; sleep 0.8
+chk "hardening: reset after the shade click battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- acting CLOSES the shade (Android's collapse-on-click) ------------------
 # Firing a card's primary raises the sender over the very panel the click was
 # made in, so the panel leaves with it — AOSP collapses the shade on a
 # content-intent click. `resident` is the fd.o way of saying the action does
 # NOT take you away, and it holds the shade exactly as it holds the card.
-#
-# NOT notify-send, even though -A can send the action: notify-send WAITS for
-# its action and EXITS the moment one fires, and libnotify closes the
-# notification on the way out. The card then dies down the bus
-# CloseNotification path rather than from the click, so "did the click keep
-# the card?" would be measuring notify-send. busctl's call returns and
-# leaves nothing behind — the card's whole life is hyprnotify's.
-nfyact gatechat "open me" 2 default Open 0
-sleep 1
+# nfyact, not notify-send, for the reason in notify-lib: busctl's call
+# returns and leaves nothing behind — the card's whole life is hyprnotify's.
+nfyact gatechat "open me" 2 default Open 0; sleep 1
 hq hyprnotify center >/dev/null; sleep 0.6
 chk "close-on-act: the shade is open with the firing card in it" test "$(st)" = "center:1 live:1 dnd:0"
-click "$ROWX" "$ROWY" 272
+click $ROWX $ROWY 272
 chk "close-on-act: the primary took the card AND the shade with it" test "$(st)" = "center:0 live:0 dnd:0"
-# actions are id/label STRING PAIRS on the wire: one button is two strings.
-nfyact gatechat "stay me" 2 resident resident 1 resident b true
-sleep 1
+nfyact gatechat "stay me" 2 default Open 1 resident b true; sleep 1
 hq hyprnotify center >/dev/null; sleep 0.6
 chk "close-on-act: the resident card is in an open shade" test "$(st)" = "center:1 live:1 dnd:0"
-# the card has no "default" action, so a body click is a dismissal; the
-# resident verb is its own button. Expand via the icon column, click it.
-click $((PANEL_X + 46)) 76 272
-sleep 0.8
-click $((PANEL_X + 119)) 149 272 # the "resident" label's center
+click $ROWX $ROWY 272
 chk "close-on-act: a resident card's action keeps card and shade both" test "$(st)" = "center:1 live:1 dnd:0"
 hq hyprnotify center >/dev/null; sleep 0.4
 hq hyprnotify clear >/dev/null; sleep 0.8
 chk "close-on-act: reset after the battery" test "$(st)" = "center:0 live:0 dnd:0"
 
-# ---- the v13 hold menu: staging, commit, pre-stage ---------------------------
-# A long-press turns the card into its management surface: three mode rows
-# (Priority / Default / Silent) that only STAGE, a snooze section, and a
-# Done/Dismiss footer. Done commits (Policy::setMode) and the card folds back;
-# Dismiss and right-click close without committing. The menu reopens with the
-# currently-effective mode already staged, so a silenced app's menu opens
-# Silent-staged. Silent persists per app (and on disk: policy.tsv survives a
-# nested restart), Priority per conversation. A leftover rule from any earlier
-# run would pre-stage these menus, so lift every standing one first: a card
-# from the app, its menu, Default, Done.
-
-policy_lift
-chk "policy-lift: no standing rules before the menu batteries" test "$(hq hyprnotify policy)" = "silenced:0 priority:0"
-center_off
-nfy holda "hold target"
-sleep 1
-hq hyprnotify center >/dev/null; sleep 0.6
-expect_panel "hold: one plain card before the menu" "$STATE/hold-plain.png" 142
-longpress "$ROWX" "$ROWY" 272
-expect_panel "hold: long-press opens the menu, Default staged" "$STATE/hold-menu.png" 430
-click "$MENU_X" "$MENU_SILENT_Y_DEFAULTSTAGED" 272
-expect_panel "hold: staging Silent folds the selected row" "$STATE/hold-silent.png" 412
-click "$MENU_X" "$MENU_PRIORITY_Y_DEFAULTSTAGED" 272
-expect_panel "hold: staging Priority keeps the same height" "$STATE/hold-priority.png" 412
-click "$MENU_X" "$MENU_DEFAULT_Y_PRIORITYSTAGED" 272
-expect_panel "hold: staging Default grows it back" "$STATE/hold-default.png" 430
-click "$ROWX" "$ROWY" 273
-expect_panel "hold: right-click closes without committing" "$STATE/hold-closed.png" 142
-chk "hold: nothing was committed" test "$(hq hyprnotify policy)" = "silenced:0 priority:0"
-hq hyprnotify clear >/dev/null; sleep 0.6
-nfy holdb "hold commit"
-sleep 1
-longpress "$ROWX" "$ROWY" 272
-expect_panel "hold-commit: the menu opens Default-staged for a clean app" "$STATE/hold-commit-menu.png" 430
-click "$MENU_X" "$MENU_SILENT_Y_DEFAULTSTAGED" 272
-expect_panel "hold-commit: stage Silent" "$STATE/hold-commit-silent.png" 412
-click "$MENU_DONE_X" "$MENU_DONE_Y" 272
-expect_panel "hold-commit: Done commits and the card folds back" "$STATE/hold-commit-done.png" 142
-chk "hold-commit: the app is silenced" test "$(hq hyprnotify policy)" = "silenced:1 s=holdb priority:0"
-longpress "$ROWX" "$ROWY" 272
-expect_panel "hold-commit: the menu reopens Silent-staged" "$STATE/hold-restage.png" 412
-click "$MENU_X" "$MENU_DEFAULT_Y_SILENTSTAGED" 272
-expect_panel "hold-commit: stage Default back" "$STATE/hold-restage-default.png" 430
-click "$MENU_DONE_X" "$MENU_DONE_Y" 272
-expect_panel "hold-commit: Default is committed again" "$STATE/hold-restage-done.png" 142
-chk "hold-commit: the silence rule is gone" test "$(hq hyprnotify policy)" = "silenced:0 priority:0"
-hq hyprnotify clear >/dev/null; sleep 0.6
-
-# ---- the snooze: commit, undo window, late-undo no-op ------------------------
-# Snooze is a card state, not a mode: the card swaps to a 74px undo row for
-# CONFIRM_MS, the row's Undo restores the card, and the snoozed card survives
-# Clear all until it is closed by id.
-SNOOZE_ID=$(nfyid holds "snooze me")
-sleep 1
-longpress "$ROWX" "$ROWY" 272
-expect_panel "snooze: the menu opens" "$STATE/snooze-menu.png" 430
-click "$MENU_X" "$MENU_SNOOZE_Y" 272
-expect_panel "snooze: the section unfolds its four options" "$STATE/snooze-open.png" 638
-click "$MENU_X" "$MENU_OPT1_Y" 272
-expect_panel "snooze: picking an option keeps the section open" "$STATE/snooze-opt.png" 638
-click "$MENU_DONE_X" "$MENU_DONE_Y_OPEN" 272
-expect_panel "snooze: the card swaps to its undo row" "$STATE/snooze-row.png" 142
-chk "snooze: the model counts it snoozed" test "$(hq hyprnotify snoozed)" = "1"
-click "$UNDO_X" "$UNDO_Y" 272
-expect_panel "snooze: Undo restores the card inside the window" "$STATE/snooze-undo.png" 142
-chk "snooze: the undo cleared the snooze" test "$(hq hyprnotify snoozed)" = "0"
-longpress "$ROWX" "$ROWY" 272
-click "$MENU_X" "$MENU_SNOOZE_Y" 272
-expect_panel "snooze: re-snoozing opens the section again" "$STATE/snooze-reopen.png" 638
-click "$MENU_X" "$MENU_OPT2_Y" 272
-click "$MENU_DONE_X" "$MENU_DONE_Y_OPEN" 272
-expect_panel "snooze: committed again" "$STATE/snooze-row2.png" 142
-chk "snooze: snoozed again" test "$(hq hyprnotify snoozed)" = "1"
-sleep 7.2 # the 6s undo window lapses before the late press
-click "$UNDO_X" "$UNDO_Y" 272
-# Spec 2.8: on commit the notification is REMOVED and re-posted quietly
-# after the delay. The undo row holds the slot only for CONFIRM_MS; once it
-# lapses the card leaves the view (the model keeps it snoozed), so the empty
-# shade is the correct height and the late press hits nothing.
-expect_panel "snooze: a late Undo is a no-op" "$STATE/snooze-late.png" 130
-chk "snooze: still snoozed after the late press" test "$(hq hyprnotify snoozed)" = "1"
-closeid "$SNOOZE_ID"
-sleep 0.6
-chk "snooze: a snoozed card can be closed by id" test "$(hq hyprnotify snoozed)" = "0"
-hq hyprnotify clear >/dev/null; sleep 0.5
-
-# ---- the conversation hold menu (1:1) ----------------------------------------
-# The same surface under a chat title: every y is +22, the buttons ride the
-# footer at 393 closed / 601 open.
-conversation_notify convhold chat-c "Chat C" dana Dana c-1 "hello"
-sleep 1
-expect_panel "conv-hold: the collapsed conversation is 70px" "$STATE/convhold-card.png" 142
-longpress "$ROWX" "$ROWY" 272
-expect_panel "conv-hold: the menu opens under its chat title" "$STATE/convhold-menu.png" 452
-click "$MENU_X" "$MENU_SILENT_Y_CONV_DEFAULTSTAGED" 272
-expect_panel "conv-hold: stage Silent" "$STATE/convhold-silent.png" 434
-click "$MENU_X" "$MENU_SNOOZE_Y_CONV" 272
-expect_panel "conv-hold: snooze unfolds" "$STATE/convhold-snooze-open.png" 642
-click "$MENU_X" "$MENU_OPT2_Y_CONV" 272
-click "$MENU_DONE_X" "$MENU_DONE_Y_CONV_OPEN" 272
-expect_panel "conv-hold: the conversation snoozes to its undo row" "$STATE/convhold-snoozed.png" 142
-chk "conv-hold: snoozed" test "$(hq hyprnotify snoozed)" = "1"
-click "$UNDO_X" "$UNDO_Y" 272
-expect_panel "conv-hold: Undo restores the collapsed card" "$STATE/convhold-undo.png" 142
-chk "conv-hold: un-snoozed" test "$(hq hyprnotify snoozed)" = "0"
-longpress "$ROWX" "$ROWY" 272
-click "$MENU_X" "$MENU_SILENT_Y_CONV_DEFAULTSTAGED" 272
-click "$MENU_DONE_X" "$MENU_DONE_Y_CONV" 272
-expect_panel "conv-hold: Silent committed, the card folds back" "$STATE/convhold-committed.png" 142
-chk "conv-hold: the app is silenced" test "$(hq hyprnotify policy)" = "silenced:1 s=convhold priority:0"
-longpress "$ROWX" "$ROWY" 272
-expect_panel "conv-hold: the menu reopens Silent-staged" "$STATE/convhold-restage.png" 434
-click "$MENU_X" "$MENU_DEFAULT_Y_CONV_SILENTSTAGED" 272
-click "$MENU_DONE_X" "$MENU_DONE_Y_CONV" 272
-expect_panel "conv-hold: Default committed back" "$STATE/convhold-restored.png" 142
-chk "conv-hold: the silence rule is gone" test "$(hq hyprnotify policy)" = "silenced:0 priority:0"
-hq hyprnotify clear >/dev/null; sleep 0.5
-
-# ---- the group conversation and the digest ----------------------------------
-# Two senders in one group chat fold into one card with a two-line preview;
-# two cards in one declared group fold into a digest. Both keep the full hold
-# menu (a digest's is the no-snooze flavor, buttons at 319).
-conversation_notify holde grp-e "Team E" eve Eve e-1 one group
-conversation_notify holde grp-e "Team E" evan Evan e-2 two group
-sleep 1
-expect_panel "group-conv: two senders fold into one two-line card" "$STATE/group-conv-card.png" 157
-longpress "$ROWX" "$ROWY" 272
-expect_panel "group-conv: its menu carries the chat title" "$STATE/group-conv-menu.png" 452
-click "$MENU_X" "$MENU_SILENT_Y_CONV_DEFAULTSTAGED" 272
-expect_panel "group-conv: stage Silent" "$STATE/group-conv-silent.png" 434
-click "$ROWX" "$ROWY" 273
-expect_panel "group-conv: right-click closes, nothing committed" "$STATE/group-conv-closed.png" 157
-chk "group-conv: no rule left behind" test "$(hq hyprnotify policy)" = "silenced:0 priority:0"
-click "$ROWX" "$ROWY" 273
-expect_panel "group-conv: a second right-click dismisses the conversation" "$STATE/group-conv-gone.png" 130
-chk "group-conv: the whole conversation left the model" test "$(st)" = "center:1 live:0 dnd:0"
-hq hyprnotify clear >/dev/null; sleep 0.5
-
-sec_notify heldg "declared one" shared
-sec_notify heldg "declared two" shared
-sleep 1
-expect_panel "digest: the declared group folds into one 70px card" "$STATE/digest-card.png" 140
-longpress "$ROWX" "$ROWY" 272
-expect_panel "digest: the bundle menu has no snooze section" "$STATE/digest-menu.png" 378
-click "$MENU_X" "$MENU_SILENT_Y_DEFAULTSTAGED" 272
-expect_panel "digest: stage Silent" "$STATE/digest-silent.png" 360
-click "$MENU_DONE_X" "$MENU_DONE_Y_BUNDLE_SILENTSTAGED" 272
-expect_panel "digest: Done commits the group rule" "$STATE/digest-committed.png" 140
-chk "digest: the app is silenced" test "$(hq hyprnotify policy)" = "silenced:1 s=heldg priority:0"
-longpress "$ROWX" "$ROWY" 272
-expect_panel "digest: the menu reopens Silent-staged" "$STATE/digest-restage.png" 360
-click "$MENU_X" "$MENU_DEFAULT_Y_SILENTSTAGED" 272
-click "$MENU_DONE_X" "$MENU_DONE_Y_BUNDLE" 272
-expect_panel "digest: Default committed back" "$STATE/digest-restored.png" 140
-chk "digest: the silence rule is gone" test "$(hq hyprnotify policy)" = "silenced:0 priority:0"
-click "$ROWX" "$ROWY" 273
-expect_panel "digest: right-click dismisses the WHOLE group" "$STATE/digest-gone.png" 130
-chk "digest: both cards left the model" test "$(st)" = "center:1 live:0 dnd:0"
-hq hyprnotify clear >/dev/null; sleep 0.5
-
-# ---- generated-identity pixels ------------------------------------------------
-# A 1:1 conversation with no sender icon gets a generated avatar: a hashed
-# fill plus initials. Two senders must not share a face, and neither face may
-# dissolve into the card glass. Sampled off the initials glyph, inside the
-# 37px lead circle.
-conversation_notify idapp chat-d "Chat D" dana Dana d-1 "hello"
-conversation_notify idapp chat-e "Chat E" ivan Ivan e-1 "hi"
-sleep 1
-expect_panel "identity: two 1:1 chats, two cards" "$STATE/identity.png" 224
-chk "identity: the two senders get distinct generated avatars" test "$(
-	python3 - "$STATE/identity.png" "$PANEL_X" <<'PY'
-import sys
-from PIL import Image
-im = Image.open(sys.argv[1]).convert("RGB")
-PX = int(sys.argv[2])
-def px(x, y): return im.getpixel((x, y))
-# The stack is newest-first, so neither sender's slot is assumed: sample each
-# avatar's top-center, clear of the initials glyph and the app mark.
-a  = px(PX + 44, 64)    # slot 1 avatar top-center
-b  = px(PX + 44, 152)   # slot 2 avatar top-center
-bg = px(PX + 200, 100)  # card glass, below the text run
-print("pass" if a != b and a != bg and b != bg else f"fail a={a} b={b} bg={bg}")
-PY
-)" = "pass"
-hq hyprnotify clear >/dev/null; sleep 0.6
-
-# ---- overflow and the wheel ---------------------------------------------------
-# The shade fit-caps its stack: ten 72px title-only cards, only eight fit
-# the 667px body cap. The vertical wheel pages through the rest, one card per
-# 15px of accumulated delta; nothing is dropped, only skipped past. The
-# virtual pointer's delta->step ratio is compositor-dependent, so page to the
-# clamped ends in bounded repeats — the ends are exact, the midpoints aren't.
-for i in 1 2 3 4 5 6 7 8 9 10; do nfy "of$i" "overflow $i" ""; done
+# ---- hover holds a banner's clock ------------------------------------------
+# A card must not expire out from under the pointer reading it. The pointer
+# parks on the popup (top-right: EDGE 10 + width 348, below offset_y 34) for
+# longer than the card's own timeout, then leaves — which RESTARTS the full
+# clock rather than resuming the sliver that was left.
+dsp "hl.dsp.exec_cmd('notify-send -t 1200 \"hold me\" body')"; sleep 0.4
+printf 'move %s 64\nsleep 2400\n' "$POPX" | vp
+chk "hover: the pointer holds the banner past its own clock" test "$(bd)" = "banners:1 resident:0"
+printf 'move %s %s\nsleep 150\n' "$((MON_W / 2))" "$((MON_H / 2))" | vp
+sleep 0.4
+chk "hover: leaving restarts the clock, it has not expired yet" test "$(bd)" = "banners:1 resident:0"
 sleep 1.4
-expect_panel "overflow: eight of ten title-only cards fit" "$STATE/overflow-full.png" 700
-if page_to "$STATE/overflow-scrolled.png" 140 150; then ok "overflow: the wheel pages to the last card"; else bad "overflow: the wheel pages to the last card (want panel h 140)"; fi
-if page_to "$STATE/overflow-back.png" 700 -150; then ok "overflow: the wheel pages back to the top"; else bad "overflow: the wheel pages back to the top (want panel h 700)"; fi
-chk "overflow: paging kept every card" test "$(st)" = "center:1 live:10 dnd:0"
+chk "hover: once the restarted clock runs out it retreats" test "$(bd)" = "banners:0 resident:1"
 hq hyprnotify clear >/dev/null; sleep 0.8
 
-# ---- the history panel ---------------------------------------------------------
-# A deliberate horizontal flick (>90px) flips the history sheet over the
-# shade's content from any card or the panel itself. Dismissed cards land in
-# the last-32 FIFO; Clear empties the list, not the model.
-nfy h1 "hist one"
-nfy h2 "hist two"
-nfy h3 "hist three"
-sleep 1.2
-expect_panel "history: three cards, history closed" "$STATE/hist-cards.png" 306
-click "$ROWX" "$ROWY" 273
-expect_panel "history: the first dismiss" "$STATE/hist-r1.png" 224
-click "$ROWX" "$ROWY" 273
-expect_panel "history: the second dismiss" "$STATE/hist-r2.png" 142
-click "$ROWX" "$ROWY" 273
-expect_panel "history: the third dismiss leaves the empty state" "$STATE/hist-r3.png" 130
-swipeh "$ROWX" "$ROWY" 120
-expect_panel "history: the flick opens the sheet with three entries" "$STATE/hist-open.png" 327
-click "$((PANEL_X + 316))" 124 272
-expect_panel "history: Clear empties the list" "$STATE/hist-cleared.png" 227
-swipeh "$ROWX" "$ROWY" -120
-expect_panel "history: the flick back closes the sheet" "$STATE/hist-closed.png" 130
-center_off
-hq hyprnotify clear >/dev/null; sleep 0.6
+# ---- the bell's hover-peek --------------------------------------------------
+# Driven over the very bus verb hyprbar's bell calls. A peek opens the shade
+# UNPINNED and must NOT absorb: a pointer crossing the bell cannot be allowed
+# to swallow banners the user never read. Leaving closes it again after the
+# grace; a toggle (the bell's click) pins instead of closing.
+# Guard the whole battery against passing vacuously: if the call lands on the
+# WRONG daemon (or none), every "the shade stayed shut" assertion below is
+# true for the wrong reason.
+chk "peek: the nested daemon is the one answering, and it has Peek" \
+	bash -c "nbus() { DBUS_SESSION_BUS_ADDRESS='$NBUS' busctl --user \"\$@\"; }; nbus introspect org.freedesktop.Notifications /org/freedesktop/Notifications org.hitori.hyprnotify | grep -q '\.Peek'"
+dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"peek me\" body')"; sleep 1
+chk "peek: a banner is up and the shade is shut" test "$(st)" = "center:0 live:1 dnd:0"
+peek true
+chk "peek: hovering the bell opens the shade" test "$(st)" = "center:1 live:1 dnd:0"
+chk "peek: a peek does NOT absorb the banner" test "$(bd)" = "banners:1 resident:0"
+peek false # > the 400ms grace
+chk "peek: leaving the bell closes it again" test "$(st)" = "center:0 live:1 dnd:0"
+peek true
+hq hyprnotify center >/dev/null; sleep 0.5
+chk "peek: the bell's click PINS rather than closing" test "$(st)" = "center:1 live:1 dnd:0"
+chk "peek: pinning absorbs what the peek left alone" test "$(bd)" = "banners:0 resident:1"
+peek false
+chk "peek: a pinned shade ignores the pointer leaving" test "$(st)" = "center:1 live:1 dnd:0"
+hq hyprnotify center >/dev/null; sleep 0.4
+hq hyprnotify clear >/dev/null; sleep 0.8
+chk "peek: reset after the peek battery" test "$(st)" = "center:0 live:0 dnd:0"
 
-# ---- the module leaves the plugin exactly as the preflight found it -----------
+# ---- the shade's keyboard nav ----------------------------------------------
+# The one surface with no pointer path at all. Injected through a REAL
+# virtual keyboard so it rides the same emission a physical key does. The
+# list is newest-first, so ↓ lands on "key two" and the card carrying the
+# primary is behind it. The destructive steps are positive assertions on
+# purpose: a dead injector would make every "nothing changed" line pass for
+# the wrong reason.
+dsp "hl.dsp.exec_cmd('notify-send -t 60000 -A default=Open \"key one\" body')"; sleep 0.6
+dsp "hl.dsp.exec_cmd('notify-send -t 60000 \"key two\" body')"; sleep 1
+hq hyprnotify center >/dev/null; sleep 0.7
+chk "keys: two rows with the shade open" test "$(st)" = "center:1 live:2 dnd:0"
+tap down
+chk "keys: down only SELECTS — nothing acted, nothing dismissed" test "$(st)" = "center:1 live:2 dnd:0"
+tap space
+chk "keys: space only folds" test "$(st)" = "center:1 live:2 dnd:0"
+tap delete
+chk "keys: delete dismisses the selected row" test "$(st)" = "center:1 live:1 dnd:0"
+tap enter
+# Enter is the body click's twin, so it collapses for the same reason: "key
+# one" carries a real -A default, and firing it raises the sender over the
+# panel. The card goes AND the shade goes with it.
+chk "keys: enter fires the primary, taking the card and the shade" test "$(st)" = "center:0 live:0 dnd:0"
+# Which leaves esc nothing to close — give it its own shade, or the line
+# below passes on a shade that was already gone.
+hq hyprnotify center >/dev/null; sleep 0.5
+chk "keys: a fresh shade for esc to close" test "$(st)" = "center:1 live:0 dnd:0"
+tap esc
+chk "keys: esc closes the shade" test "$(st)" = "center:0 live:0 dnd:0"
+
+# ---- quiet while fullscreen -------------------------------------------------
+# A real fullscreen window owns the screen, so the banner is held back and
+# the card lands straight in the shade (residency is the safety net, so
+# nothing is lost). Critical still punches through, exactly as it does
+# through DND.
+dsp "hl.dsp.exec_cmd('foot --window-size-pixels=600x400')"; sleep 2
+dsp "hl.dsp.window.fullscreen()"; sleep 1
+# Mode 2 is FSMODE_FULLSCREEN; 1 is merely maximized and must NOT count
+expect "quiet-fs: a window really is fullscreen" "any(c['fullscreen'] == 2 for c in cs)"
+dsp "hl.dsp.exec_cmd('notify-send -a q1 -t 30000 quiet body')"; sleep 1.2
+chk "quiet-fs: the card landed silent, no banner" test "$(bd)" = "banners:0 resident:1"
+dsp "hl.dsp.exec_cmd('notify-send -a q2 -u critical \"loud\" body')"; sleep 1.2
+chk "quiet-fs: critical still punches through" test "$(bd)" = "banners:1 resident:1"
+hq hyprnotify clear >/dev/null; sleep 0.5
+dsp "hl.dsp.window.fullscreen()"; sleep 1
+dsp "hl.dsp.exec_cmd('notify-send -a q3 -t 30000 loudagain body')"; sleep 1.2
+chk "quiet-fs: out of fullscreen, banners are back" test "$(bd)" = "banners:1 resident:0"
+hq hyprnotify clear >/dev/null; sleep 0.5
+dsp "hl.dsp.window.close()"; sleep 1
+
+# ---- the module leaves the plugin exactly as the preflight found it --------
 chk "notifications: final clean state" test "$(st)" = "center:0 live:0 dnd:0"
 chk "notifications: no policy left behind" test "$(hq hyprnotify policy)" = "silenced:0 priority:0"
 chk "notifications: no snooze in flight" test "$(hq hyprnotify snoozed)" = "0"
