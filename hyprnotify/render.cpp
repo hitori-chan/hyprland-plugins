@@ -15,7 +15,6 @@ namespace NHyprnotify {
     SHover             hovered;
     double             lastContentH = 0;
     double             lastContentW = 0;
-    double             centerOsdReserve = 0;
 
     static CBox                lastBox; // last damaged layout, global logical (already expanded)
     static SP<CEventLoopTimer> ageTick;    // 30s: re-buckets the age lines
@@ -39,16 +38,6 @@ namespace NHyprnotify {
         return false;
     }
 
-    bool liveBlurNeeded() {
-        if (!blurOn() || !anythingToDraw())
-            return false;
-        if (centerVisible() && v13Panel().a < 1.f)
-            return true;
-        if (v13Card().a >= 1.f)
-            return false;
-        return std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && N->banner && (!centerVisible() || inOsdBand(N->id)); });
-    }
-
     // ---- the frame: one layout, two modes ----
 
     static void renderAll(PHLMONITOR mon, bool warm) {
@@ -63,27 +52,12 @@ namespace NHyprnotify {
         cards.clear(); // capacity retained: no per-frame allocations
         cardsMon = mon;
 
-        // Ordinary banners yield to the center when it opens. OSD cards keep
-        // the normal popup anatomy but move below the panel. Measure them
-        // before center placement is chosen so a full shade never grows into
-        // the OSD area.
-        if (centerVisible()) {
-            SPaint      MEASURE = P;
-            MEASURE.warm       = true; // layout only: never paint in the probe
-            const double GAP   = std::max((double)cfg.margin->value(), 0.0);
-            const double OSDH  = renderPopups(MEASURE, T, true, std::nullopt, true);
-            const auto     MB  = mon->logicalBox();
-            const double   MIN = PANEL_PAD * 2 + FOOTER_H;
-            const double   OFF = std::clamp((double)cfg.offsetY->value(), 0.0, std::max(0.0, MB.h - MIN - EDGE));
-            const double   ROOM = std::max(0.0, MB.h - OFF - MIN - EDGE - GAP);
-            centerOsdReserve   = std::min(OSDH > 0 ? OSDH + GAP : 0.0, ROOM);
+        // the center and popups never coexist: opening the center folds the
+        // live cards into the panel (same textures, different layout)
+        if (centerVisible())
             renderCenter(P, T);
-            const double STARTY = MB.y + std::clamp((double)cfg.offsetY->value(), 0.0, std::max(0.0, MB.h - MIN - EDGE)) + lastContentH + GAP;
-            renderPopups(P, T, true, STARTY);
-        } else {
-            centerOsdReserve = 0;
+        else
             renderPopups(P, T);
-        }
     }
 
     // ---- damage ----
@@ -120,13 +94,16 @@ namespace NHyprnotify {
         if (h == hovered)
             return;
         Model::holdBanner(h.kind == SCard::POPUP ? h.id : 0); // reading a banner stops its clock
+        centerPeekPointer(!(h == SHover{}));                // and staying on the shade keeps a peek alive
         if (g_pHyprRenderer) {
             const auto   M      = cardsMon.lock();
             const double MARGIN = (M ? std::ceil(M->m_scale) : 1.0) + 1.0;
             for (const auto& C : cards) {
                 const bool WAS = C.kind == hovered.kind && C.id == hovered.id && C.group == hovered.group;
                 const bool IS  = C.kind == h.kind && C.id == h.id && C.group == h.group;
-                if (WAS || IS)
+                // popups repaint on any enter/leave (the ✕ reveals)
+                const bool POPHOV = C.kind == SCard::POPUP && (C.id == hovered.id || C.id == h.id);
+                if (WAS || IS || POPHOV)
                     g_pHyprRenderer->damageBox(CBox{C.box}.expand(MARGIN));
             }
         }
@@ -146,7 +123,7 @@ namespace NHyprnotify {
     static void armMotionTick() {
         if (!motionTick)
             return;
-        const bool WANT = animationsOn() && (centerAnimating() || (!centerVisible() && popupsAnimating()) || (centerVisible() && popupsAnimating(true)));
+        const bool WANT = animationsOn() && (centerAnimating() || (!centerVisible() && popupsAnimating()));
         motionTick->updateTimeout(WANT ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
     }
 
@@ -155,8 +132,6 @@ namespace NHyprnotify {
     void warmNotifs() {
         if (!warmGate.beginWarm())
             return;
-        Policy::refreshExpired();
-        iconsWarmBegin();
         const auto MON = anythingToDraw() ? focusedMon() : nullptr;
         if (!MON) {
             // no content — or no monitor (disconnect transition): stale boxes
@@ -168,10 +143,7 @@ namespace NHyprnotify {
             renderAll(MON, true);
             textCacheSweep();
         }
-        const bool REWARM = iconsWarmEnd();
         warmGate.endWarm();
-        if (REWARM)
-            notifChanged();
     }
 
     void notifChanged() {
@@ -184,12 +156,17 @@ namespace NHyprnotify {
             armMotionTick();
             Bus::emitStateSoon();
             // A card arriving over a solitary/scanned-out fullscreen window
-            // may not schedule a frame from its own damage box. Damage the
-            // focused monitor once on every visible-state change so the
-            // compositor reaches render.preChecks, where requestFullRender()
-            // exits the native solitary/direct-scanout path for this frame.
-            if (const auto MON = focusedMon(); MON && g_pHyprRenderer && anythingToDraw() && MON->canAttemptDirectScanoutFast())
-                g_pHyprRenderer->damageMonitor(MON);
+            // (mpv under direct_scanout): the monitor presents the client's
+            // buffer directly, so the per-card damageBox may not schedule a
+            // compositor frame at all — and onRenderPreChecks, which drops the
+            // scanout/solitary latch, only runs from renderMonitor. Force a
+            // whole-monitor frame so renderMonitor runs and the card
+            // composites. Full-monitor (not the card box) so it can't be
+            // occlusion-culled behind the fullscreen surface; a no-op cost when
+            // the monitor isn't latched.
+            if (const auto MON = focusedMon(); MON && g_pHyprRenderer && (MON->m_directScanoutIsActive || !MON->m_solitaryClient.expired()))
+                if (anythingToDraw())
+                    g_pHyprRenderer->damageMonitor(MON);
         });
     }
 
@@ -205,14 +182,13 @@ namespace NHyprnotify {
             renderAll(m_mon.lock(), false);
             warmGate.inRender = false;
             warmGate.rewarmIfStale([]() {
-                Policy::refreshExpired();
                 warmNotifs();
                 damageNotifs();
             });
             return {};
         }
         virtual bool needsLiveBlur() override {
-            return liveBlurNeeded();
+            return blurOn(); // the glass samples what's beneath, live
         }
         virtual bool needsPrecomputeBlur() override {
             return false;
@@ -242,9 +218,11 @@ namespace NHyprnotify {
     // workspace render for its monitor — direct scanout, or a solitary-only
     // renderWindow — so RENDER_POST_WINDOWS never fires and the card is
     // invisible. Notifications are ontop, so while a VISIBLE card (or the
-    // open center) is up the compositor-owned hook requests the normal render
-    // path at preChecks, before direct scanout is selected. Once the last card
-    // clears, the scheduler's normal solitary recheck restores the fast path.
+    // open center) is up we drop the monitor's solitary latch here, at
+    // preChecks (which fires per monitor BEFORE the scanout decision): the
+    // normal render path then runs and composites the card over the
+    // fullscreen window. Self-healing — once the last card clears, the
+    // compositor re-latches solitary and scanout re-engages.
     void onRenderPreChecks(PHLMONITOR mon) {
         // the cheap gate first: this runs per monitor per frame, and a
         // resident-only model (nothing drawn) must NOT inhibit scanout —
@@ -255,7 +233,13 @@ namespace NHyprnotify {
             return;
         if (NHyprCommon::sessionLocked())
             return; // never force a card to float over the lockscreen
-        mon->requestFullRender();
+        mon->m_solitaryClient.reset(); // open the solitary gate -> renderWorkspace -> RENDER_POST_WINDOWS
+        // resetting solitary alone would SEGV on the transition frame:
+        // canAttemptDirectScanoutFast() stays true off m_lastScanout and
+        // attemptDirectScanout() then derefs the now-null candidate. Leaving any
+        // active scanout clears that latch so the scanout branch is skipped.
+        if (!mon->m_lastScanout.expired() || mon->m_directScanoutIsActive)
+            mon->handleDSleave();
     }
 
     void onRenderStage(eRenderStage stage) {
@@ -270,7 +254,7 @@ namespace NHyprnotify {
         const auto MON = g_pHyprRenderer->m_renderData.pMonitor.lock();
         if (!MON || MON != focusedMon())
             return;
-        g_pHyprRenderer->addPassElement(makeUnique<CNotifyPassElement>(MON));
+        g_pHyprRenderer->m_renderPass.add(makeUnique<CNotifyPassElement>(MON));
     }
 
     void renderInit() {
@@ -308,7 +292,6 @@ namespace NHyprnotify {
         textCacheClear();
         lastContentH      = 0;
         lastContentW      = 0;
-        centerOsdReserve  = 0;
         warmGate.warming  = false;
         warmGate.texStale = false;
         hovered           = {};

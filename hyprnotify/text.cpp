@@ -7,9 +7,7 @@
 
 #include "ui.hpp"
 
-#include <cmath>
 #include <format>
-#include <limits>
 
 namespace NHyprnotify {
 
@@ -67,37 +65,6 @@ namespace NHyprnotify {
         if (S < 86400)
             return std::format("{}h", S / 3600);
         return std::format("{}d", S / 86400);
-    }
-
-    // A standing timed silence, in the same buckets ageString uses: the header
-    // reads "App • Silent 15m • 3m" with no glyph, so the line stays one
-    // texture and needs no emoji font to be legible.
-    std::string shortDuration(int64_t seconds) {
-        seconds = std::max<int64_t>(seconds, 0);
-        if (seconds < 60)
-            return std::format("{}s", seconds);
-        if (seconds < 3600)
-            return std::format("{}m", seconds / 60);
-        if (seconds < 86400)
-            return std::format("{}h", seconds / 3600);
-        return std::format("{}d", seconds / 86400);
-    }
-
-    const std::string& bodyForDisplay(const SNotif& n) {
-        static std::string FALLBACK;
-        FALLBACK = n.body;
-        for (const auto& IM : n.bodyImages) {
-            if (IM.settled && !IM.tex && !IM.alt.empty()) {
-                if (!FALLBACK.empty())
-                    FALLBACK += ' ';
-                FALLBACK += Parse::sanitizeMarkup(IM.alt, true);
-            }
-        }
-        return FALLBACK;
-    }
-
-    const std::string& titleForDisplay(const SNotif& n) {
-        return n.conversation && !n.conversationTitle.empty() ? n.conversationTitle : n.summary;
     }
 
     // ---- hyperlinks (<a href>) ----
@@ -361,24 +328,7 @@ namespace NHyprnotify {
 
     // 24 warms of grace — the shade warms only when its model changes, so
     // this is a longer wall-clock reprieve than the same number gives the bar
-    static size_t textureBytes(const SP<ITexture>& texture) {
-        if (!texture || !std::isfinite(texture->m_size.x) || !std::isfinite(texture->m_size.y) || texture->m_size.x <= 0 || texture->m_size.y <= 0)
-            return 0;
-        const long double BYTES = (long double)texture->m_size.x * (long double)texture->m_size.y * 4.0L;
-        return BYTES >= (long double)std::numeric_limits<size_t>::max() ? std::numeric_limits<size_t>::max() : (size_t)BYTES;
-    }
-
-    static size_t cachedTextBytes(const SCachedText& entry) {
-        size_t bytes = textureBytes(entry.tex);
-        for (const auto& link : entry.links) {
-            if (bytes > std::numeric_limits<size_t>::max() - sizeof(SLink) - link.href.size())
-                return std::numeric_limits<size_t>::max();
-            bytes += sizeof(SLink) + link.href.size();
-        }
-        return bytes;
-    }
-
-    static NHyprCommon::CGenCache<SCachedText, 24> texCache{64ull << 20, cachedTextBytes};
+    static NHyprCommon::CGenCache<SCachedText, 24> texCache;
 
     const SCachedText* cachedText(const std::string& text, const CHyprColor& col, int pt, int maxWpx, int maxHpx, float lineSp, bool markup, int weight,
                                   const CHyprColor* linkCol) {
@@ -395,8 +345,6 @@ namespace NHyprnotify {
 
         static std::string KEY; // reused; main thread only
         KEY.clear();
-        KEY += cfg.font->value();
-        KEY.push_back('\x1f');
         KEY += text;
         KEY.append(meta, std::min<size_t>(METALEN > 0 ? (size_t)METALEN : 0, sizeof(meta) - 1));
 

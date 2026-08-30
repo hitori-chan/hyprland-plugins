@@ -1,346 +1,253 @@
-// hyprnotify/popups.cpp — the v13 banner column: the heads-up cards flush
-// under the 26px bar (top-right, the panel's own X and width) and the OSD
-// cards that follow an open shade.
+// hyprnotify/popups.cpp — the banner column: glass cards top-right on the
+// focused monitor, the one-card anatomy (icon column + header/title/body +
+// original actions), the hover-✕, the arrival spring.
 //
-// A banner IS a collapsed shade card with two deltas (spec §2.6): the action
-// row is always on (a banner is the alerting face of the card), and the
-// expand chip becomes the shade chevron — a HUN never expands in place, the
-// chevron jumps to the shade like the AOSP HUN expand button. Its veil is the
-// card color (darker than the panel frost, which it floats over instead of
-// joining), and urgent banners wear the urgent title, nothing else.
-//
-// Ordinary banners yield to the shade while it is open (renderAll); OSD-band
-// cards keep this same anatomy and are placed below the open shade.
+// Only cards whose banner is up show here (residency hides expired banners
+// into the center's shade); while the center is open the column yields to
+// the panel entirely — render.cpp picks the surface.
 
 #include "ui.hpp"
 
 namespace NHyprnotify {
 
-    inline constexpr double HUN_GAP = 8; // the demo's .heads stack gap
-
-    bool popupsAnimating(bool osdOnly) {
+    bool popupsAnimating() {
         if (!animationsOn())
             return false;
         for (const auto& N : notifs)
-            if ((!osdOnly || inOsdBand(N->id)) && !N->waiting && N->banner && animT(N->born, Theme::MOTION_SPATIAL) < 1.f)
+            if (!N->waiting && N->banner && animT(N->born, Theme::MOTION_SPATIAL) < 1.f)
                 return true;
         return false;
     }
 
-    // ---- action rows: the same borderless tinted buttons as the shade ----
+    void renderPopups(const SPaint& P, const SType& T) {
+        const auto   MB      = P.mon->logicalBox();
+        const double W       = std::max((double)cfg.width->value(), 120.0);
+        const double MAXH    = std::max((double)cfg.maxHeight->value(), 60.0);
+        const double GAP     = std::max((double)cfg.margin->value(), 0.0);
+        const double MAXICON = std::clamp((double)cfg.maxIcon->value(), 16.0, 64.0);
+        const int    ROUND   = std::max(0, (int)std::lround(cfg.rounding->value() * P.scale));
+        const float  RP      = (float)cfg.roundingPower->value();
 
-    struct SAct {
-        const std::string*   id;
-        const std::string*   label;
-        const SP<ITexture>*  icon; // null = text only
-    };
+        const auto   COLBG = color(cfg.colBg), COLFG = color(cfg.colFg), COLTITLE = color(cfg.colTitle), COLSUB = color(cfg.colKicker), COLURGENT = color(cfg.colUrgent),
+                   COLACC = color(cfg.colHighlight), COLLINK = color(cfg.colLink);
+        const CHyprColor COLBODY = COLFG.modifyA(COLFG.a * 0.92);
 
-    // the synthetic inline-reply entry leads when the sender offered it; the
-    // rest are the card's actions in Notify order. A HUN's Reply INVOKES the
-    // action (the ROM opens the app's reply UI) — input.cpp keeps this card
-    // from arming an inline field.
-    static void actionsOf(const SNotif& N, std::vector<SAct>& out) {
-        out.clear();
-        static const std::string  REPLY_ID  = "inline-reply";
-        static const std::string  REPLY_LBL = "Reply";
-        static const SP<ITexture> NONE      = nullptr;
-        if (N.canReply)
-            out.push_back({&REPLY_ID, N.replyActionText.empty() ? &REPLY_LBL : &N.replyActionText, &NONE});
-        for (const auto& A : N.actions)
-            out.push_back({&A.id, &A.label, &A.iconTex});
-    }
-
-    // measures the button rows under maxW; boxes are RELATIVE to the row's
-    // origin, parallel to `acts`. Returns the total height (0 = none).
-    static double layoutActions(const SPaint& P, const SType& T, const std::vector<SAct>& acts, std::vector<CBox>& boxes, double maxW) {
-        boxes.clear();
-        if (acts.empty())
-            return 0;
-        const int MAXW = (int)std::max(1.0, maxW * P.scale);
-        double    bx   = 0, rowY = 0;
-        for (const auto& A : acts) {
-            auto& SB = scratch();
-            appendEsc(SB, *A.label);
-            const auto   LBL = cachedText(SB, v13Action(), T.action, MAXW, linePx(T.action), 0, false, 500);
-            const double LW  = texW(LBL, P.scale);
-            const double IW  = A.icon ? BTN_ICON + BTN_ICON_GAP : 0;
-            const double BW  = std::max(BTN_MIN_W, IW + LW + 2 * BTN_PADX);
-            if (bx > 0 && bx + BW > maxW + 0.5) {
-                bx = 0;
-                rowY += BTN_H + BTN_GAP;
-            }
-            boxes.push_back(CBox{bx, rowY, BW, BTN_H});
-            bx += BW + BTN_GAP;
-        }
-        return rowY + BTN_H;
-    }
-
-    // draws the laid-out rows at (x0, y0) and records the absolute boxes
-    static void paintActions(const SPaint& P, const SType& T, uint32_t id, const std::vector<SAct>& acts, const std::vector<CBox>& boxes, double x0, double y0,
-                             std::vector<CBox>& absOut) {
-        absOut.clear();
-        for (size_t i = 0; i < boxes.size(); i++) {
-            const CBox B{x0 + boxes[i].x, y0 + boxes[i].y, boxes[i].w, boxes[i].h};
-            absOut.push_back(B);
-            const bool HOV = hovered.kind == SCard::POPUP && hovered.id == id && hovered.btn == (int)i;
-            if (HOV)
-                P.rect(B, v13RaisedH(), (int)std::lround(BTN_R * P.scale), rPow());
-            double cx = B.x + BTN_PADX;
-            if (acts[i].icon && texReady(*acts[i].icon)) {
-                P.texFit(*acts[i].icon, CBox{cx, B.y + (B.h - BTN_ICON) / 2, BTN_ICON, BTN_ICON}, 0);
-                cx += BTN_ICON + BTN_ICON_GAP;
-            }
-            auto& SB = scratch();
-            appendEsc(SB, *acts[i].label);
-            const auto LBL = cachedText(SB, v13Action(), T.action, (int)(B.w * P.scale), linePx(T.action), 0, false, 500);
-            if (LBL && LBL->tex)
-                P.tex(LBL->tex, cx, B.y + (B.h - LBL->tex->m_size.y / P.scale) / 2);
-        }
-    }
-
-    // ---- the chevron: a 25x17 stadium, or the HUN's lavender count pill ----
-
-    static double chipCountText(const SType& T, double scale, int count) {
-        auto& SB = scratch();
-        SB += std::to_string(count);
-        const auto N = cachedText(SB, v13HeadPillFg(), T.header, 64, linePx(T.header), 0, false, 600);
-        return texW(N, scale);
-    }
-
-    static double chipW(const SType& T, double scale, int count) {
-        if (count < 0)
-            return CHIP_W;
-        return CHIP_COUNT_PL + chipCountText(T, scale, count) + 2 + CHEV_D_COUNT + CHIP_COUNT_PR;
-    }
-
-    static void paintChev(const SPaint& P, const SType& T, double x, double y, int count, const CHyprColor& bg, const CHyprColor& fg) {
-        const double H = count < 0 ? CHIP_H : CHIP_COUNT_H;
-        const double W = chipW(T, P.scale, count);
-        P.rect(CBox{x, y, W, H}, bg, (int)std::lround(H / 2 * P.scale), 2.f);
-        double cx = x;
-        if (count >= 0) {
-            auto& SB = scratch();
-            SB += std::to_string(count);
-            const auto N = cachedText(SB, fg, T.header, 64, linePx(T.header), 0, false, 600);
-            if (N && N->tex)
-                P.tex(N->tex, cx + CHIP_COUNT_PL, y + (H - N->tex->m_size.y / P.scale) / 2);
-            cx += CHIP_COUNT_PL + chipCountText(T, P.scale, count);
-        }
-        const bool NUM = count >= 0;
-        const int  CPX = (int)std::lround((NUM ? CHEV_D_COUNT : CHEV_D) * P.scale);
-        // the HUN chevron always points down: it expands INTO the shade
-        const auto CHEV = controlIcon(eControlIcon::EXPAND_MORE, CPX, fg);
-        if (CHEV)
-            P.texFit(CHEV, CBox{cx + 2, y + (H - (NUM ? CHEV_D_COUNT : CHEV_D)) / 2, NUM ? CHEV_D_COUNT : CHEV_D, NUM ? CHEV_D_COUNT : CHEV_D}, 0);
-    }
-
-    // the plain-banner lead: the app identity or the content image, chip disc
-    // + initial when nothing resolved (row.cpp's paintLead keeps its own copy
-    // for the shade; the conversation branch is paintIconColumn's)
-    static void paintLeadBanner(const SPaint& P, const SNotif& N, const CBox& cell) {
-        const int    R    = (int)std::lround(cell.w / 2 * P.scale);
-        const auto   LEAD = texReady(N.identTex) ? N.identTex : N.iconTex;
-        if (N.conversation)
-            paintIconColumn(P, N, cell, true, rPow());
-        else if (texReady(LEAD))
-            P.texCover(LEAD, cell, R, 2.f);
-        if (texReady(LEAD))
-            return;
-        P.rect(cell, v13Chip(), R, 2.f);
-        std::string name = N.appName;
-        if (name.empty())
-            name = titleForDisplay(N);
-        std::string init;
-        if (!name.empty())
-            init = Pixel::firstCodepoint(name, 0);
-        if (init.empty())
-            init = "?";
-        const auto GLYPH = cachedText(init, v13On(), (int)std::lround(15 * P.scale), (int)(cell.w * P.scale) + 8, linePx((int)std::lround(15 * P.scale)), 0, false, 600);
-        if (GLYPH && GLYPH->tex)
-            P.tex(GLYPH->tex, cell.x + (cell.w - GLYPH->tex->m_size.x / P.scale) / 2, cell.y + (cell.h - GLYPH->tex->m_size.y / P.scale) / 2);
-    }
-
-    double renderPopups(const SPaint& P, const SType& T, bool osdOnly, std::optional<double> startY, bool measureOnly) {
-        const auto   MB   = P.mon->logicalBox();
-        const double W    = std::max(1.0, std::min(CENTER_W, MB.w - 2 * EDGE));
-        const double GAP  = osdOnly ? std::max((double)cfg.margin->value(), 0.0) : HUN_GAP;
-        const int    RR   = rRow(P.scale);
-        const float  RP   = rPow();
-
-        const double X     = MB.x + MB.w - EDGE - W;
-        const double START = startY.value_or(MB.y + std::clamp((double)cfg.offsetY->value(), 0.0, std::max(0.0, MB.h - HUN_MIN_H - 2 * EDGE)));
-        double       y     = START;
-
-        const CHyprColor LINKCOL = v13Action(); // body-hyperlink color, a stable address for the cache
-
-        static std::vector<SAct> acts; // reused; main thread only
-        static std::vector<CBox> btnBoxes, btnAbs;
+        const double     X = MB.x + MB.w - EDGE - W;
+        double           y = MB.y + (double)cfg.offsetY->value();
 
         for (const auto& N : notifs) {
             if (N->waiting || !N->banner)
                 continue; // residency: only banners show as popups
-            if (osdOnly && !inOsdBand(N->id))
-                continue;
-            if (y + HUN_MIN_H > MB.y + MB.h - 8)
+            if (y + 2 * PADY > MB.y + MB.h)
                 break; // no room: the tail waits off-screen, timeouts running
 
-            // every texture build gates on the warm gate, never P.warm — a
-            // measuring pass forces P.warm on to paint nothing, but it still
-            // REQUESTS the glyphs the draw will need (the texture rule)
-            if (warmGate.warming) {
-                ensureIconTex(*N, (int)std::lround(CARD_ICON_D * P.scale));
-                ensureConversationIcons(*N, (int)std::lround(CARD_ICON_D * P.scale));
+            const bool CRITICAL = N->urgency >= 2;
+            const auto AGE      = ageString(N->arrived);
+
+            // every build in the drawing units gates on warmGate.warming, never
+            // on P.warm — a measuring pass forces P.warm on to paint nothing
+            if (warmGate.warming)
+                ensureIconTex(*N, (int)std::lround(MAXICON * P.scale), (int)std::lround(W * P.scale), (int)std::lround(HERO_CAP * P.scale));
+
+            const bool   HERO  = N->iconTex && N->heroTex;
+            const double HEROH = HERO ? N->iconTex->m_size.y / P.scale : 0;
+
+            // ONE icon column (paintIconColumn): the avatar leads and the app
+            // identity badges its corner. A wide content image goes hero instead.
+            const bool   LEADICON = !HERO && hasLeadIcon(*N);
+            const double ICONW    = LEADICON ? MAXICON : 0;
+
+            const double TEXTW   = W - 2 * PADX - (ICONW > 0 ? ICONW + ICON_GAP : 0);
+            const int    TEXTWPX = std::max(1, (int)std::floor(TEXTW * P.scale));
+
+            // text pieces (cache-keyed; ages re-key on bucket moves); the
+            // body is rastered LAST — its cap subtracts every other block.
+            // Compositions build into the reused scratch buffer: this runs
+            // per card per layout pass, and fresh strings here were the
+            // hottest allocation on the path.
+            auto& SB = scratch();
+            appendEsc(SB, N->appName);
+            SB += " • ";
+            SB += AGE;
+            const auto HEADER = cachedText(SB, COLSUB, T.header, TEXTWPX, -1, 0, true, 500);
+            const auto TITLE  = N->summary.empty() ? nullptr : cachedText(N->summary, COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
+
+            // action labels + icons
+            if (warmGate.warming)
                 for (auto& A : N->actions)
                     ensureActionIcon(*N, A, (int)std::lround(BTN_ICON * P.scale));
+            static std::vector<CBox> btnBoxes; // reused; main thread only
+            btnBoxes.clear();
+            double btnH = 0;
+            {
+                double bx = 0, rowY = 0;
+                for (const auto& A : N->actions) {
+                    auto& LB = scratch();
+                    appendEsc(LB, A.label);
+                    const auto   LBL = cachedText(LB, COLACC, T.action, TEXTWPX, -1, 0, true, 600);
+                    const double LW  = texW(LBL, P.scale);
+                    const double IW  = (N->actionIcons && A.iconTex) ? BTN_ICON + BTN_ICON_GAP : 0;
+                    const double BW  = std::min(TEXTW, IW + LW + 2 * BTN_PADX);
+                    if (bx > 0 && bx + BW > TEXTW + 0.5) {
+                        bx = 0;
+                        rowY += BTN_H + BTN_GAP;
+                    }
+                    btnBoxes.push_back(CBox{bx, rowY, BW, BTN_H});
+                    bx += BW + BTN_GAP;
+                }
+                btnH = btnBoxes.empty() ? 0 : rowY + BTN_H;
             }
+            const double BTN_BLOCK = btnH > 0 ? BTN_ROW_GAP + btnH : 0;
 
-            const bool CONV = N->conversation;
-            const bool URGENT = N->urgency >= 2;
-            const auto AGE  = ageString(N->arrived);
-
-            const double TX     = CARD_TEXT_X; // 76 — the avatar column is always reserved
-            const double TEXTW  = std::max(1.0, W - TX - CARD_TEXT_INSET);
-            const int    TEXTWPX = std::max(1, (int)std::lround(TEXTW * P.scale));
-
-            // the action row: always on for a banner
-            actionsOf(*N, acts);
-            const double ACTSH = layoutActions(P, T, acts, btnBoxes, TEXTW);
-            const double ACTS_BLOCK = ACTSH > 0 ? 3.0 + ACTSH : 0; // demo .hcard .acts margin-top
-
-            double textH = 0;
-            double kickH = 0, bodyH = 0;
-
-            // pixel-parity banner (ledger A-141): the header line is the
-            // semibold who/title + " · age"; the body below carries the
-            // larger type, a group message led by its sender's name
-            const auto PREV = CONV ? previewLines(*N, eCardKind::CONV, 1) : std::vector<SPreviewLine>{};
-            std::string HEADL;
-            if (CONV) {
-                HEADL = PREV.empty() ? std::string{} : PREV.front().a;
-                if (HEADL.empty())
-                    HEADL = N->appName;
-            } else {
-                const auto& TITLETEXT = titleForDisplay(*N);
-                HEADL = TITLETEXT.empty() ? N->appName : TITLETEXT;
+            if (warmGate.warming)
+                for (auto& IM : N->bodyImages)
+                    ensureBodyImage(IM, (int)std::lround(BODYIMG_H * P.scale));
+            static std::vector<CBox> imgBoxes; // reused; main thread only
+            imgBoxes.clear();
+            double imgH = 0;
+            {
+                double bx = 0, rowY = 0;
+                for (const auto& IM : N->bodyImages) {
+                    if (!IM.tex)
+                        continue;
+                    const double AR = IM.tex->m_size.y > 0 ? IM.tex->m_size.x / IM.tex->m_size.y : 1.0;
+                    const double WD = std::min(TEXTW, AR * BODYIMG_H);
+                    if (bx > 0 && bx + WD > TEXTW + 0.5) {
+                        bx = 0;
+                        rowY += BODYIMG_H + IMG_GAP;
+                    }
+                    imgBoxes.push_back(CBox{bx, rowY, WD, BODYIMG_H});
+                    bx += WD + IMG_GAP;
+                }
+                imgH = imgBoxes.empty() ? 0 : rowY + BODYIMG_H;
             }
+            const double IMG_BLOCK = imgH > 0 ? IMG_ROW_GAP + imgH : 0;
 
-            auto& SB = scratch();
-            appendEsc(SB, HEADL);
-            const SCachedText* HEAD = cachedText(SB, URGENT && !CONV ? v13Urgent() : v13OnT(), T.title, TEXTWPX, linePx(T.title), 0, false, 600);
-            SB.clear();
-            appendEsc(SB, "· " + AGE);
-            const SCachedText* TIME = cachedText(SB, v13On60(), T.header, TEXTWPX, linePx(T.header), 0, false, 400);
-            kickH = std::max(KICK_MIN_H, std::max(texH(HEAD, P.scale), texH(TIME, P.scale)));
+            // the body cap: at most ~8 lines, and never past what max_height
+            // leaves after the other blocks — an uncapped body painted
+            // OUTSIDE the glass once actions and thumbnails stacked up (the
+            // 02359ed lesson; a one-line floor keeps hostile configs sane)
+            const double HH = texH(HEADER, P.scale), TH = texH(TITLE, P.scale);
+            const double AVAIL = MAXH - 2 * PADY - (HERO ? HEROH : 0) - HH - (HH > 0 ? HEAD_GAP : 0) - TH - TITLE_GAP - (N->progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0) -
+                BTN_BLOCK - IMG_BLOCK;
+            const int  LINEPX  = (int)std::lround(T.body * 1.35);
+            const int  BODYCAP = std::max(LINEPX, std::min(LINEPX * 8, (int)std::floor(AVAIL * P.scale)));
+            const auto BODY    = N->body.empty() ? nullptr : cachedText(N->body, COLBODY, T.body, TEXTWPX, BODYCAP, 1.1f, true, 400, &COLLINK);
 
-            SB.clear();
-            if (CONV) {
-                if (!PREV.empty() && N->conversationKind == "group" && !PREV.front().a.empty()) {
-                    SB += "<span foreground=\"#" + hexOfCached(v13On()) + "\">";
-                    appendEsc(SB, PREV.front().a);
-                    SB += ":</span> ";
-                    appendEsc(SB, PREV.front().b);
-                } else if (!PREV.empty())
-                    appendEsc(SB, PREV.front().b);
-                else
-                    // a category-based conversation (im.*/call.*) without
-                    // structured messages: the app's own body IS the preview
-                    appendEsc(SB, bodyForDisplay(*N));
-            } else
-                appendEsc(SB, bodyForDisplay(*N));
-            const SCachedText* BODY = SB.empty() ? nullptr : cachedText(SB, v13On82(), T.title, TEXTWPX, linePx(T.title), 18.0 / 15.0, true, 400, &LINKCOL);
-            bodyH = texH(BODY, P.scale);
+            const double BH = texH(BODY, P.scale);
+            double       th = HH + (HH > 0 ? HEAD_GAP : 0) + TH + (TH > 0 && BH > 0 ? TITLE_GAP : 0) + BH + IMG_BLOCK;
+            if (N->progress >= 0)
+                th += (th > 0 ? PROGRESS_GAP : 0) + PROGRESS_H;
+            th += BTN_BLOCK;
 
-            textH = kickH + (bodyH > 0 ? BODY_MT : 0) + bodyH + ACTS_BLOCK;
+            const double CH = HERO ? HEROH + PADY + std::min(th, MAXH - HERO_TEXT_MIN) + PADY : std::min(MAXH, std::max(ICONW, th) + 2 * PADY);
 
-            const double CH = std::max(HUN_MIN_H, std::max(CARD_ICON_D, textH) + CARD_PADT + CARD_PADB_ACTS);
-
-            // per-card arrival motion: fade + an 8px drop, keyed on `born`
-            SPaint CP = P;
+            // per-card arrival motion: fade + an 8px drop. Keyed on `born`,
+            // never `arrived` — an OSD replace refreshes arrived every step
+            // and must not re-run the spring.
+            SPaint      CP = P;
             const float AT = animationsOn() && N->banner ? animT(N->born, Theme::MOTION_SPATIAL) : 1.f;
             if (AT < 1.f) {
                 CP.alpha = P.alpha * easeOutCubic(AT);
-                const double DROP = (1.0 - easeOutBack(AT)) * 8.0;
-                CP.dy = P.dy - (startY ? std::min(DROP, GAP) : DROP); // a below-shade card must not animate through the panel
+                CP.dy    = P.dy - (1.0 - easeOutBack(AT)) * 8.0;
             }
 
             const CBox CARD{X, y, W, CH};
-            CP.shadow(CARD, RR, RP, 16);
-            CP.glass(CARD, v13Card(), RR, RP); // stroke-free, no rim (A-141)
+            CP.shadow(CARD, ROUND, RP, 16);
+            CP.glass(CARD, COLBG, ROUND, RP);
+            if (CRITICAL) // the urgent edge: a hairline ring in the urgent color
+                CP.ring(CARD, COLURGENT, ROUND, RP);
 
-            // the lead: centered on the text block (a banner is never open)
-            const double ICONY = CARD_PADT + (textH - CARD_ICON_D) / 2;
-            paintLeadBanner(CP, *N, CBox{X + CARD_ICON_X, y + ICONY, CARD_ICON_D, CARD_ICON_D});
+            if (HERO)
+                CP.texFit(N->iconTex, CBox{X, y, W, HEROH}, ROUND, RP);
+            else if (LEADICON)
+                paintIconColumn(CP, *N, CBox{X + PADX, y + PADY, ICONW, ICONW}, true, RP);
 
+            const double                 TX = X + PADX + (ICONW > 0 ? ICONW + ICON_GAP : 0);
+            double                       ty = HERO ? y + HEROH + PADY : y + PADY;
             std::vector<SCard::SLinkHit> cardLinks;
-            double               ty = y + CARD_PADT;
-
-            if (HEAD && HEAD->tex)
-                CP.tex(HEAD->tex, X + TX, ty);
-            if (TIME && TIME->tex) // the tail rides the lead's baseline
-                CP.tex(TIME->tex, X + TX + texW(HEAD, P.scale), ty + (texH(HEAD, P.scale) - texH(TIME, P.scale)));
-            if (CONV && N->unreadCount > 0) { // the alert mark after the time
-                const double KW = W - TX - (N->unreadCount > 1 ? KICK_RIGHT_COUNT : KICK_RIGHT);
-                const auto IMP = controlIcon(eControlIcon::NOTIFICATION_ALERT, (int)std::lround(13 * P.scale), v13On82());
-                if (IMP) {
-                    const double IW = 13;
-                    double       ix = X + TX + texW(HEAD, P.scale) + texW(TIME, P.scale) + 5;
-                    if (ix + IW > X + TX + KW)
-                        ix = X + TX + KW - IW;
-                    CP.texFit(IMP, CBox{ix, ty + (kickH - IW) / 2, IW, IW}, 0);
-                }
-            }
-            ty += kickH;
-            if (BODY && BODY->tex) {
-                ty += BODY_MT;
-                CP.tex(BODY->tex, X + TX, ty);
+            if (HEADER)
+                CP.tex(HEADER->tex, TX, ty);
+            ty += HH + (HH > 0 ? HEAD_GAP : 0);
+            if (TITLE)
+                CP.tex(TITLE->tex, TX, ty);
+            ty += TH + (TH > 0 && BH > 0 ? TITLE_GAP : 0);
+            if (BODY) {
+                CP.tex(BODY->tex, TX, ty);
                 for (const auto& L : BODY->links) // physical -> global logical
-                    cardLinks.push_back({CBox{X + TX + L.rel.x / P.scale, ty + L.rel.y / P.scale, L.rel.w / P.scale, L.rel.h / P.scale}, L.href});
-                ty += bodyH;
+                    cardLinks.push_back({CBox{TX + L.rel.x / P.scale, ty + L.rel.y / P.scale, L.rel.w / P.scale, L.rel.h / P.scale}, L.href});
+                ty += BH;
+            }
+            if (!imgBoxes.empty()) {
+                ty += IMG_ROW_GAP;
+                size_t bi = 0;
+                for (const auto& IM : N->bodyImages)
+                    if (IM.tex && bi < imgBoxes.size()) {
+                        const auto& B = imgBoxes[bi++];
+                        CP.texFit(IM.tex, CBox{TX + B.x, ty + B.y, B.w, B.h}, ROUND, RP);
+                    }
+                ty += imgH;
+            }
+            if (N->progress >= 0) {
+                ty += th > 0 ? PROGRESS_GAP : 0;
+                paintProgress(CP, TX, ty, TEXTW, N->progress, CRITICAL);
+                ty += PROGRESS_H;
             }
 
-            if (ACTSH > 0) {
-                ty += 3; // the demo's .acts margin-top
-                paintActions(CP, T, N->id, acts, btnBoxes, X + TX, ty, btnAbs);
-            }
-
-            // the shade chevron: the HUN's only expand affordance — the
-            // count pill, or the ROM's circular chevron button
-            {
-                const int    CHIPN = CONV && N->unreadCount > 1 ? (int)N->unreadCount : -1;
-                const bool   HOV   = hovered.kind == SCard::POPUP && hovered.id == N->id && hovered.part == 5;
-                if (CHIPN < 0)
-                    paintChevronButton(CP, X + W - CHEV_BTN_X - CHEV_BTN_D, y + CHEV_BTN_Y, false, HOV);
-                else
-                    paintChev(CP, T, X + W - CHIP_X - chipW(T, P.scale, CHIPN), y + CHIP_Y, CHIPN, HOV ? v13RaisedH() : v13HeadPillBg(), v13HeadPillFg());
+            // actions: borderless tinted text buttons, labels aligned to the
+            // content column (the -BTN_PADX optical pull)
+            std::vector<SCard::SBtn> cardBtns;
+            if (!btnBoxes.empty()) {
+                ty += BTN_ROW_GAP;
+                const double BX0 = TX - BTN_PADX;
+                for (size_t i = 0; i < btnBoxes.size(); i++) {
+                    const auto& A = N->actions[i];
+                    const CBox  BOX{BX0 + btnBoxes[i].x, ty + btnBoxes[i].y, btnBoxes[i].w, btnBoxes[i].h};
+                    const bool  BHOV = hovered.kind == SCard::POPUP && hovered.id == N->id && hovered.btn == (int)i;
+                    if (BHOV)
+                        CP.rect(BOX, tAccentDim(), (int)std::lround(BTN_H / 2 * P.scale));
+                    double cx = BOX.x + BTN_PADX;
+                    if (N->actionIcons && A.iconTex) {
+                        CP.texFit(A.iconTex, CBox{cx, BOX.y + (BOX.h - BTN_ICON) / 2, BTN_ICON, BTN_ICON}, 0);
+                        cx += BTN_ICON + BTN_ICON_GAP;
+                    }
+                    auto& LB = scratch();
+                    appendEsc(LB, A.label);
+                    const auto LBL = cachedText(LB, COLACC, T.action, TEXTWPX, -1, 0, true, 600);
+                    if (LBL && LBL->tex)
+                        CP.tex(LBL->tex, cx, BOX.y + (BOX.h - LBL->tex->m_size.y / P.scale) / 2);
+                    cardBtns.push_back({BOX, A.id});
+                }
             }
 
             SCard card;
-            card.kind            = SCard::POPUP;
-            card.box             = CARD;
-            card.id              = N->id;
-            card.expansionButton = true;
-            card.expandButton    = CBox{CARD.x + W - CHEV_HIT_W, CARD.y, CHEV_HIT_W, CHEV_HIT_H};
-            if (!measureOnly) {
-                for (size_t i = 0; i < btnAbs.size() && i < acts.size(); i++)
-                    card.buttons.push_back({btnAbs[i], *acts[i].id});
-                card.links = std::move(cardLinks);
-                cards.push_back(std::move(card));
+            card.kind    = SCard::POPUP;
+            card.box     = CARD;
+            card.id      = N->id;
+            card.buttons = std::move(cardBtns);
+            card.links   = std::move(cardLinks);
+
+            // the hover-✕ (the desktop analog of swipe), revealed while the
+            // pointer is on the card; its glyph builds in both modes
+            const auto XG      = cachedText("✕", COLFG, T.small, 64, -1, 0, false, 600);
+            const auto XGHOT   = cachedText("✕", tOnAccent(), T.small, 64, -1, 0, false, 600);
+            const bool CARDHOV = hovered.kind == SCard::POPUP && hovered.id == N->id;
+            if (CARDHOV) {
+                const CBox XB{X + W - XCIRC - 8, y + 8, XCIRC, XCIRC};
+                const bool XHOV = hovered.part == 2;
+                CP.rect(XB, XHOV ? COLURGENT : tFill2(), (int)std::lround(XCIRC / 2 * P.scale));
+                const auto* G = XHOV ? XGHOT : XG;
+                if (G && G->tex)
+                    CP.tex(G->tex, XB.x + (XB.w - G->tex->m_size.x / P.scale) / 2, XB.y + (XB.h - G->tex->m_size.y / P.scale) / 2);
+                card.close = XB;
             }
+
+            cards.push_back(std::move(card));
             y += CH + GAP;
         }
 
-        const double CONTENTH = std::max(0.0, y - GAP - START);
-        if (osdOnly) {
-            // The pass box starts at offset_y. Include the shade and the OSD
-            // stack below it so the renderer damages both regions together.
-            const double BASE = MB.y + (double)cfg.offsetY->value();
-            lastContentH = std::max(lastContentH, std::max(0.0, START + CONTENTH - BASE));
-            lastContentW = std::max(lastContentW, W);
-        } else {
-            lastContentH = CONTENTH;
-            lastContentW = W;
-        }
-        return CONTENTH;
+        lastContentH = std::max(0.0, y - GAP - (MB.y + (double)cfg.offsetY->value()));
+        lastContentW = W;
     }
 
 } // namespace NHyprnotify
