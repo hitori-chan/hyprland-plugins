@@ -30,6 +30,27 @@ namespace NHyprnotify {
         static bool                suspended  = false; // DND
         static uint32_t            heldBanner = 0;     // the popup under the pointer: its countdown is paused
 
+        // a hostile sender's payload caps: buttons and <img> rows beyond
+        // these would draw past the clamped card into the next card's glass,
+        // so they are dropped, not clipped
+        constexpr size_t MAX_ACTIONS     = 8;
+        constexpr size_t MAX_BODY_IMAGES = 4;
+
+        // a fresh body is hostile-able up to the D-Bus message limit; the
+        // merged path caps at 8192, so a fresh one earns the same cut,
+        // codepoint-safe
+        static std::string capUtf8(std::string s) {
+            constexpr size_t CAP = 8192;
+            if (s.size() <= CAP)
+                return s;
+            s.resize(CAP);
+            while (!s.empty() && ((unsigned char)s.back() & 0xc0) == 0x80)
+                s.pop_back();
+            if (!s.empty() && (unsigned char)s.back() >= 0xc2)
+                s.pop_back(); // a lead byte whose followers the cut took
+            return s;
+        }
+
         SP<SNotif>                 byId(uint32_t id) {
             for (const auto& N : notifs)
                 if (N->id == id)
@@ -458,9 +479,12 @@ namespace NHyprnotify {
             n->summary = Parse::oneLine(Parse::sanitizeMarkup(summary));
             std::string bodyText = body;
             n->bodyImages.clear();
-            for (const auto& P : Parse::extractImages(bodyText, std::max(64, (int)cfg.maxIcon->value() * 2)))
+            for (const auto& P : Parse::extractImages(bodyText, std::max(64, (int)cfg.maxIcon->value() * 2))) {
+                if (n->bodyImages.size() >= MAX_BODY_IMAGES)
+                    break;
                 n->bodyImages.push_back({P});
-            n->body = Parse::sanitizeMarkup(bodyText, /*allowLinks=*/true);
+            }
+            n->body = capUtf8(Parse::sanitizeMarkup(bodyText, /*allowLinks=*/true));
             if (!appendOnto.empty())
                 n->body = Parse::joinAppend(appendOnto, n->body);
 
@@ -540,7 +564,7 @@ namespace NHyprnotify {
                     n->canReply = true;
                     if (n->replySubmitText.empty())
                         n->replySubmitText = actions[i + 1]; // the sender's own "Reply" label
-                } else if (!actions[i + 1].empty()) // an empty label has no button to draw
+                } else if (!actions[i + 1].empty() && n->actions.size() < MAX_ACTIONS) // an empty label has no button to draw
                     n->actions.push_back(SAction{.id = actions[i], .label = actions[i + 1]});
             }
             // a lone named action doubles as the body-click default; it keeps
