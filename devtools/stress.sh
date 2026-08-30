@@ -9,14 +9,14 @@ HARNESS="${HYPR_HARNESS:-$HOME/.local/share/hypr-nested}"
 
 # Battery selection: resolved against this canonical order; sourcing below
 # always walks it so user-specified order never changes execution order.
-CANONICAL_BATTERIES=(windows notifications osd-reply policy lifecycle)
+CANONICAL_BATTERIES=(windows notifications reply policy lifecycle)
 SELECTED=()
 
 usage() {
 	cat >&2 <<'EOF'
 usage: stress.sh [-b LIST] [-k LIST] [compositor-bin]
   -b LIST   comma-separated batteries to RUN, from:
-            windows notifications osd-reply policy lifecycle (canonical order enforced regardless of user order)
+            windows notifications reply policy lifecycle (canonical order enforced regardless of user order)
             special value: all (default)
   -k LIST   comma-separated batteries to SKIP from the canonical set
 EOF
@@ -78,11 +78,6 @@ if [[ -n "$K_SPEC" ]]; then
 	done
 	SELECTED=("${_KEPT[@]}")
 fi
-# lifecycle.sh sources osd-reply helpers (arm_reply, reply_keys).
-if is_selected lifecycle && ! is_selected osd-reply; then
-	echo "note: lifecycle needs osd-reply helpers — including osd-reply" >&2
-	SELECTED+=("osd-reply")
-fi
 STATE="$HARNESS/stress-state"
 CFG="$HARNESS/stress.lua"
 CAPTURE_LOG="$HARNESS/input-capture.log"
@@ -111,7 +106,9 @@ trap 'exit 143' TERM
 source "$STRESS_DIR/preflight.sh"
 # Batteries execute on source. When lifecycle.sh is among the selected, its
 # tail prints the final summary, calls cleanup_harness, and exits — ending this
-# script here; the fallback summary below is then unreachable.
+# script here; the fallback summary below is then unreachable. Batteries are
+# otherwise independent: each sources notify-lib.sh only when it needs the
+# notification helpers, so any subset can run alone.
 for _name in "${CANONICAL_BATTERIES[@]}"; do
 	is_selected "$_name" || continue
 	source "$STRESS_DIR/$_name.sh"

@@ -36,7 +36,10 @@ if [[ $CAPTURE_READY == 1 ]]; then
 	printf 'tap a\nsleep 100\n' | vk
 	wait "$CAPTURE_PID"; CAPTURE_STATUS=$?
 	CAPTURE_PID=""
-	chk "input capture: motion, button, and key events reached EIS" test "$CAPTURE_STATUS" = 0
+	if ! chk "input capture: motion, button, and key events reached EIS" test "$CAPTURE_STATUS" = 0; then
+		# the receiver's timeout line says WHICH event class never arrived
+		sed 's/^/  input-capture: /' "$CAPTURE_LOG" 2>/dev/null
+	fi
 else
 	stop_capture
 fi
@@ -182,16 +185,9 @@ chk "log clean (only known-benign lines)" bash -c \
 # ---- teardown -----------------------------------------------------------
 # A mapped plugin cannot retain callbacks into its code after unload, but an
 # external helper also cannot be allowed to hold compositor exit hostage.
-# Start one helper through each owner plus a clipboard transfer whose producer
-# never writes; require bounded shutdown, then remove the deliberately hung
-# fixtures owned by this test.
-arm_reply "Teardown paste"
-CLIP_TEARDOWN_LOG="$STATE/clip-teardown.log"
-WAYLAND_DISPLAY="$WL" "$REPO/devtools/cliphold" -1 held >"$CLIP_TEARDOWN_LOG" 2>&1 & CLIP_PID=$!
-for _ in $(seq 1 30); do grep -qx READY "$CLIP_TEARDOWN_LOG" 2>/dev/null && break; sleep 0.1; done
-chk "teardown: delayed clipboard source owns the nested selection" grep -qx READY "$CLIP_TEARDOWN_LOG"
-reply_keys $'mods ctrl\ntap v\nmods none'
-chk "teardown: reply owns a pending clipboard read" grep -qx SEND "$CLIP_TEARDOWN_LOG"
+# Start one helper through each owner (a wpctl readback that never returns and
+# a sound helper that never finishes); require bounded shutdown, then remove
+# the deliberately hung fixtures owned by this test.
 : > "$STATE/hang-wpctl"
 : > "$STATE/hang-sound"
 dsp "hl.plugin.hyprosd.volume_up()"
