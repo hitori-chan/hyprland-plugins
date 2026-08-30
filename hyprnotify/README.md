@@ -43,11 +43,12 @@ Two surfaces share one card model:
    dismissed card is gone, exactly as on Android, and there is no recall.
    Opening it ABSORBS the popped banners (they park as shade rows, no
    dismiss), so closing never re-pops them; empty, it says "You're all
-   caught up!". **Hovering the bell peeks it open** after
-   `hyprbar:bell_peek_ms` (350ms, 0 = off) without costing a click: a peek
-   does NOT absorb the banners, and it closes again once the pointer is on
-   neither the bell nor the panel. Any click pins it, and a pinned shade is
-   an ordinary one.
+   caught up!". The bar's bell click toggles it; the `Peek(on_bell)` verb
+   opens it UNPINNED without absorbing the banners and closes it again on a
+   400ms grace once the pointer is on neither the bell nor the panel — the
+   bar's hover-peek wiring is not in the current bar, but a binding can
+   call the verb directly and gets the same peek. Any click pins it, and a
+   pinned shade is an ordinary one.
    - **Ranking** is Android's, minus the dividers: critical, then marked
      conversations, then the rest of the conversations (fd.o category
      `im.*`/`call.*`), then normal, then silent — newest first inside each
@@ -156,10 +157,10 @@ bus `CloseNotification` path (user dismissals and expiry are untouched);
 overflow evicts the oldest non-critical. Grouping keys on app identity
 (`desktop-entry`, else the app name).
 
-The bar's bell talks over the bus: the `org.hitori.hyprnotify` interface on
-the Notifications object carries `Toggle` (the shade), `Peek(on_bell)` (the
-hover) and a `State` signal (live/kept/dnd/center — the badge counts the
-shade, never the DND queue or the OSD band).
+The bell talks over the bus: the `org.hitori.hyprnotify` interface on the
+Notifications object carries `Toggle` (the shade's click), `Peek(on_bell)`
+(the hover-peek verb) and a `State` signal (live/kept/dnd/center — the
+badge counts the shade, never the DND queue or the OSD band).
 `hyprctl hyprnotify {count,center,state,badge,policy,snoozed,clear}`;
 `hl.plugin.hyprnotify.{suspend,center}()`.
 
