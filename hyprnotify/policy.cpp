@@ -70,8 +70,12 @@ namespace NHyprnotify::Policy {
         s_priority.clear();
         std::ifstream f(storePath());
         std::string   line;
-        while (std::getline(f, line)) {
-            if (line.size() < 3 || line[1] != '\t')
+        size_t        lines = 0;
+        // the hostile-file promise, in numbers: a kilobyre a line, a few
+        // thousand lines (the same shape as persist's box stores)
+        while (lines < 4096 && std::getline(f, line)) {
+            lines++;
+            if (line.size() < 3 || line.size() > 1024 || line[1] != '\t')
                 continue;
             auto    rest  = line.substr(2);
             int64_t until = 0;
