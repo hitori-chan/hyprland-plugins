@@ -36,6 +36,7 @@
 #include "geometry.hpp"
 
 #include <hyprland/src/config/ConfigValue.hpp>
+#include <hyprland/src/layout/target/WindowTarget.hpp>
 
 #include <array>
 #include <cmath>
@@ -256,13 +257,13 @@ namespace NHyprsnap::Snap {
                 std::vector<CBox> OUT;
                 OUT.reserve(16); // most sessions have a handful of floaters; this runs on every move
                 for (const auto& O : Desktop::windowState()->windows()) {
-                    if (!O->m_isMapped || O->isHidden() || !O->m_isFloating || !O->m_target || O->m_target == self)
+                    if (!O->mapped() || O->isHidden() || !O->isFloating() || !O->windowTarget() || O->windowTarget().get() == self.get())
                         continue;
-                    if (O->m_workspace != WS && !(O->m_pinned && O->m_monitor.lock() == MON))
+                    if (O->m_workspace != WS && !(NHyprCommon::isPinned(O) && O->m_monitor.lock() == MON))
                         continue;
                     if (Fullscreen::controller()->isFullscreen(O))
                         continue;
-                    const auto OB = O->m_target->position();
+                    const auto OB = O->windowTarget()->position();
                     OUT.push_back(CBox{OB.x - B, OB.y - B, OB.w + 2 * B, OB.h + 2 * B});
                 }
                 return OUT;

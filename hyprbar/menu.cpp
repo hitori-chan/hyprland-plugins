@@ -462,7 +462,7 @@ namespace NHyprbar {
             for (const auto& W : Desktop::windowState()->windows()) {
                 // minimized windows stay listed (awesome's client_list un-minimizes) —
                 // mirror isTaskOn; only genuinely-hidden (swallowed) ones drop out
-                if (W->m_isMapped && (!W->isHidden() || Tasklist::isMinimized(W)))
+                if (W->mapped() && (!W->isHidden() || Tasklist::isMinimized(W)))
                     ws.emplace_back(Tasklist::seqOf(W.get()), W);
             }
             if (ws.empty())
@@ -473,7 +473,7 @@ namespace NHyprbar {
             for (const auto& [SEQ, W] : ws) {
                 std::string lbl;
                 Tasklist::label(W, lbl);
-                L.entries.push_back({.label = lbl, .display = std::move(lbl), .win = W, .icon = appIcon(W->m_class)});
+                L.entries.push_back({.label = lbl, .display = std::move(lbl), .win = W, .icon = appIcon(W->metadata().appID())});
             }
             ws.clear(); // drop the strong refs now — entries hold weak ones
             anchorX = ax;
@@ -485,7 +485,7 @@ namespace NHyprbar {
 
         // leaf rows only — submenu rows cascade via openSub (hover or click)
         void activate(const SEntry& en) {
-            if (const auto W = en.win.lock(); W && W->m_isMapped) { // client-list row: jump to it
+            if (const auto W = en.win.lock(); W && W->mapped()) { // client-list row: jump to it
                 if (W->m_workspace && !W->m_workspace->isVisible())
                     std::ignore = Config::Actions::changeWorkspace(W->m_workspace);
                 // a minimized target must be un-minimized, not focused while

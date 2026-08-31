@@ -322,7 +322,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             return;
         PHLWINDOWREF WR{w};
         pendingActivate.arm([WR]() {
-            if (const auto W = WR.lock(); W && W->m_isMapped && Tasklist::isMinimized(W))
+            if (const auto W = WR.lock(); W && W->mapped() && Tasklist::isMinimized(W))
                 Tasklist::restore(W); // un-hides, re-slots if tiled, raises and focuses
         });
     });
@@ -365,7 +365,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.5.5"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.5.6"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

@@ -3,7 +3,12 @@
 // state — never shared symbols).
 #pragma once
 
-#include <hyprland/src/desktop/view/Window.hpp>
+#include <hyprland/src/desktop/view/window/Window.hpp>
+#include <hyprland/src/desktop/view/window/WaylandBackend.hpp>
+#include <hyprland/src/desktop/view/window/X11Backend.hpp>
+#include <hyprland/src/desktop/view/window/WindowFullscreenPolicy.hpp>
+#include <hyprland/src/desktop/view/window/WindowPresentation.hpp>
+#include <hyprland/src/xwayland/XSurface.hpp>
 #include <hyprland/src/desktop/state/ViewState.hpp>
 #include <hyprland/src/devices/IKeyboard.hpp>
 #include <hyprland/src/helpers/MiscFunctions.hpp>
@@ -109,12 +114,46 @@ namespace NHyprCommon {
         return KB && (KB->getModifiers() & Input::HL_MODIFIER_META) != Input::HL_MODIFIER_NONE;
     }
 
+    // The client-facing xdg toplevel role resource, or nullptr for X11
+    // windows, unmapped views, or a destroyed resource. The fork exposes
+    // CWaylandBackend::m_resource publicly for exactly this (see
+    // docs/audit-tracking.md); the old fork's m_xdgSurface->m_toplevel chain
+    // is gone in the backend split.
+    inline SP<CXDGToplevelResource> xdgToplevel(const PHLWINDOW& w) {
+        if (!w || w->backend().isX11())
+            return nullptr;
+        const auto* wl = dynamic_cast<const Desktop::View::CWaylandBackend*>(&w->backend());
+        if (!wl)
+            return nullptr;
+        const auto res = wl->m_resource.lock();
+        return res ? res->m_toplevel.lock() : nullptr;
+    }
+
+    // The X11 surface of an XWayland window, or nullptr. Same fork exposure
+    // as xdgToplevel() (CX11Backend::m_xwaylandSurface).
+    inline SP<CXWaylandSurface> x11Surface(const PHLWINDOW& w) {
+        if (!w || !w->backend().isX11())
+            return nullptr;
+        const auto* x11 = dynamic_cast<const Desktop::View::CX11Backend*>(&w->backend());
+        if (!x11)
+            return nullptr;
+        return x11->m_xwaylandSurface.lock();
+    }
+
+    // "Pinned" (all-workspace) in Hyprland is a client-told maximized window
+    // — FSMODE_MAXIMIZED, which never enters the compositor fullscreen stack.
+    inline bool isPinned(const PHLWINDOW& w) {
+        return w && Fullscreen::controller() &&
+            Fullscreen::controller()->getFullscreenModes(w).internal == Fullscreen::FSMODE_MAXIMIZED;
+    }
+
     // Maximize can be client-only state (hyprmax's maximize never enters
     // compositor fullscreen), so read back what the toplevel was last told.
     inline bool toldMaximized(const PHLWINDOW& w) {
-        if (w->m_isX11 || !w->m_xdgSurface || !w->m_xdgSurface->m_toplevel)
+        const auto TOP = xdgToplevel(w);
+        if (!TOP)
             return false;
-        return std::ranges::contains(w->m_xdgSurface->m_toplevel->m_pendingApply.states, XDG_TOPLEVEL_STATE_MAXIMIZED);
+        return std::ranges::contains(TOP->m_pendingApply.states, XDG_TOPLEVEL_STATE_MAXIMIZED);
     }
 
     // A genuinely user-resizable toplevel — its last size is worth
@@ -123,10 +162,11 @@ namespace NHyprCommon {
     // reimposed (that would blink it — awesome never did). No toplevel
     // (X11, unmapped) = can't tell = treat as fixed.
     inline bool resizable(const PHLWINDOW& w) {
-        if (w->m_isX11 || !w->m_xdgSurface || !w->m_xdgSurface->m_toplevel)
+        const auto TOP = xdgToplevel(w);
+        if (!TOP)
             return false;
-        const auto MIN      = w->m_xdgSurface->m_toplevel->layoutMinSize();
-        const auto MAX      = w->m_xdgSurface->m_toplevel->layoutMaxSize();
+        const auto MIN      = TOP->layoutMinSize();
+        const auto MAX      = TOP->layoutMaxSize();
         const bool PINNED_X = MAX.x > 1 && MIN.x >= MAX.x;
         const bool PINNED_Y = MAX.y > 1 && MIN.y >= MAX.y;
         return !(PINNED_X && PINNED_Y);

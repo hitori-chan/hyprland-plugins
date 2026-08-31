@@ -32,7 +32,7 @@
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/Workspace.hpp>
-#include <hyprland/src/desktop/view/Window.hpp>
+#include <hyprland/src/desktop/view/window/Window.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/desktop/state/ViewState.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>
@@ -87,7 +87,7 @@ static void queueRaise(const PHLWINDOWREF& WR, bool fullscreenOnly) {
             if (NHyprCommon::sessionLocked())
                 return; // the lock can engage between the emission and this run
             const auto W = J.WR.lock();
-            if (!W || !W->m_isMapped)
+            if (!W || !W->mapped())
                 continue;
             if (J.fullscreenOnly && !Fullscreen::controller()->isFullscreen(W))
                 continue;
@@ -109,7 +109,7 @@ static void queueFocus(const PHLWINDOWREF& TARGET) {
         for (const auto& TARGET : Q) {
             if (NHyprCommon::sessionLocked())
                 return; // the lock can engage between the emission and this run
-            if (const auto W = TARGET.lock(); W && W->m_isMapped)
+            if (const auto W = TARGET.lock(); W && W->mapped())
                 Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_SWITCH_TO_WINDOW_HARD);
         }
     });
@@ -168,13 +168,13 @@ static void raiseWindow(PHLWINDOW w) {
         // pointer-focus raise on press; reproduced live). Pinned windows
         // stay above fullscreen by design, like awesome's ontop.
         for (const auto& OW : Desktop::windowState()->windows()) {
-            if (OW == w || !OW->m_isMapped || OW->m_workspace != w->m_workspace || !OW->m_allowedOverFullscreen || OW->m_pinned)
+            if (OW == w || !OW->mapped() || OW->m_workspace != w->m_workspace || !OW->isAllowedOverFullscreen() || NHyprCommon::isPinned(OW))
                 continue;
-            OW->m_allowedOverFullscreen = false;
+            OW->fullscreenPolicy().setAllowedOverFullscreen(false);
             OW->updateFullscreenInputState();
-            *OW->alpha(Desktop::View::WINDOW_ALPHA_FULLSCREEN) = OW->isBlockedByFullscreen() ? 0.F : 1.F;
+            *OW->presentation().alpha(Desktop::View::WINDOW_ALPHA_FULLSCREEN) = OW->isBlockedByFullscreen() ? 0.F : 1.F;
         }
-    } else if (w->m_isFloating)
+    } else if (w->isFloating())
         Desktop::windowState()->raise(w);
 }
 
@@ -299,7 +299,7 @@ static int luaFocusPrevHere(lua_State*) {
     const auto& HIST = Desktop::History::windowTracker()->fullHistory();
     for (auto it = HIST.rbegin(); it != HIST.rend(); ++it) {
         const auto W = it->lock();
-        if (!W || W == FOCUS || !W->m_isMapped || W->isHidden() || W->m_workspace != WS)
+        if (!W || W == FOCUS || !W->mapped() || W->isHidden() || W->m_workspace != WS)
             continue;
 
         queueFocus(PHLWINDOWREF{W});
@@ -387,7 +387,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_next", luaFocusNext);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprclick", "focus_prev", luaFocusPrev);
 
-    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.2.6"};
+    return {"hyprclick", "awesome's click/focus policy", "hitori", "1.2.7"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

@@ -193,11 +193,11 @@ namespace NHyprbar {
         F.ws = WS;
         tasks.clear();
         for (const auto& W : Desktop::windowState()->windows()) {
-            if (W->m_isMapped && W->m_workspace) {
+            if (W->mapped() && W->m_workspace) {
                 const auto ID = W->m_workspace->m_id;
                 if (ID >= 1 && ID <= 9) {
                     F.windows[ID]++;
-                    if (W->m_isUrgent)
+                    if (W->m_hints & Desktop::View::WINDOW_HINT_URGENT)
                         F.urgent[ID] = true;
                 }
             }
