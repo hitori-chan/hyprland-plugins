@@ -78,7 +78,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "7.1.0";
+    inline constexpr const char* VERSION = "7.1.1";
 
     // wide images render card-width ("hero") instead of icon-boxed
     inline constexpr double HERO_ASPECT = 1.5;
@@ -235,7 +235,7 @@ namespace NHyprnotify {
         uint32_t arrive(const std::string& appName, uint32_t replacesId, const std::string& appIcon, const std::string& summary, const std::string& body,
                         const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout);
 
-        void                          closeOne(uint32_t id, uint32_t reason);
+        bool                          closeOne(uint32_t id, uint32_t reason);
         void                          dismissAllLive();                      // "Clear all": every visible card goes; the DND queue stays
         void                          dismissApp(const std::string& appKey); // a bundle's right-click
         void                          absorbPopped();                        // opening the shade parks the popped stack (no re-pop on close)
@@ -275,7 +275,6 @@ namespace NHyprnotify {
     // ---- bus.cpp: the connection ----
 
     namespace Bus {
-        void pollSoon(); // pull the next DBus poll tick close after a send
         void init();
         void exit();
         void invokeAction(uint32_t id, const std::string& key);
