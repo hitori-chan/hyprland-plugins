@@ -327,6 +327,15 @@ chk "quiet-fs: out of fullscreen, banners are back" test "$(bd)" = "banners:1 re
 hq hyprnotify clear >/dev/null; sleep 0.5
 dsp "hl.dsp.window.close()"; sleep 1
 
+# ---- bus: closing an unknown ID is an error, not a silent no-op ----------
+# Spec 1.3: an unknown ID replies with an error, and the live model must
+# not move because of the failed close.
+dsp "hl.dsp.exec_cmd('notify-send -a unk -t 30000 unknown \"close probe body\"')"; sleep 1.2
+chk "bus-close: a live card for the probe" test "$(bd)" = "banners:1 resident:0"
+chk "bus-close: unknown id is an error" bash -c "nbus() { DBUS_SESSION_BUS_ADDRESS='$NBUS' busctl --user \"\$@\"; }; nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications CloseNotification u 4294967000 2>&1 | grep -q 'Call failed: Unknown notification ID'"
+chk "bus-close: the failed close touched nothing" test "$(st)" = "center:0 live:1 dnd:0"
+hq hyprnotify clear >/dev/null; sleep 0.5
+
 # ---- the module leaves the plugin exactly as the preflight found it --------
 chk "notifications: final clean state" test "$(st)" = "center:0 live:0 dnd:0"
 chk "notifications: no policy left behind" test "$(hq hyprnotify policy)" = "silenced:0 priority:0"
