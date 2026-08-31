@@ -158,7 +158,8 @@ Notify whose app + summary matches a live card rides the replace path with
 the bodies joined, triggered by the `im.*`/`call.*` categories or by
 `x-canonical-append`; the OSD id band 9990-9999 replaces in place and never
 appends or groups; critical bypasses DND; `ignore_dbusclose` gates only the
-bus `CloseNotification` path (user dismissals and expiry are untouched);
+bus `CloseNotification` path (user dismissals and expiry are untouched, and an
+unknown ID is an error, not a silent no-op);
 `transient` and progress cards vanish entirely on expiry; `max_notifs`
 overflow evicts the oldest non-critical. Grouping keys on app identity
 (`desktop-entry`, else the app name).

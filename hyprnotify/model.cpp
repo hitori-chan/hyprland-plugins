@@ -261,14 +261,15 @@ namespace NHyprnotify {
             return false;
         }
 
-        void closeOne(uint32_t id, uint32_t reason) {
+        bool closeOne(uint32_t id, uint32_t reason) {
             const auto BEFORE = notifs.size();
             std::erase_if(notifs, [&](const auto& N) { return N->id == id; });
             if (notifs.size() == BEFORE)
-                return;
+                return false; // spec: unknown IDs must be reportable
             Bus::emitClosed(id, reason);
             notifChanged();
             rearmExpiry();
+            return true;
         }
 
         // Only what the user can SEE is sweepable. The DND queue was never
