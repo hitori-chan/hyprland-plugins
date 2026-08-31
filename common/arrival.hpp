@@ -20,7 +20,7 @@
 #pragma once
 
 #include <hyprland/src/desktop/Workspace.hpp>
-#include <hyprland/src/desktop/view/Window.hpp>
+#include <hyprland/src/desktop/view/window/Window.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>
 
 #include <algorithm>
@@ -58,7 +58,7 @@ namespace NHyprCommon {
             if (!ws)
                 return out;
             for (const auto& W : Desktop::windowState()->windows()) {
-                if (!W || !W->m_isMapped || W->isHidden() || !W->m_workspace || W->m_workspace->m_id != ws->m_id)
+                if (!W || !W->mapped() || W->isHidden() || !W->m_workspace || W->m_workspace->m_id != ws->m_id)
                     continue;
                 if (!keep(W))
                     continue;

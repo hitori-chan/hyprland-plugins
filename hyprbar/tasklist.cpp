@@ -49,7 +49,7 @@ namespace NHyprbar {
         const auto& WINS = Desktop::windowState()->windows();
         for (size_t i = WINS.size(); i-- > 0;) {
             const auto& W = WINS[i];
-            if (W == gone || !W || !W->m_isMapped || W->isHidden() || !W->m_workspace || W->m_workspace->m_id != ws->m_id)
+            if (W == gone || !W || !W->mapped() || W->isHidden() || !W->m_workspace || W->m_workspace->m_id != ws->m_id)
                 continue;
             g_pInputManager->refocus(W->middle());
             return;
@@ -73,8 +73,8 @@ namespace NHyprbar {
     static NHyprCommon::CHop                              pendingMinReq;
 
     static std::optional<bool>                            minimizeRequestOf(const PHLWINDOW& w) {
-        if (w->m_xdgSurface && w->m_xdgSurface->m_toplevel)
-            return w->m_xdgSurface->m_toplevel->m_state.requestsMinimize;
+        if (const auto TOP = NHyprCommon::xdgToplevel(w))
+            return TOP->m_state.requestsMinimize;
         return std::nullopt; // XWayland self-minimize would need XSurface.hpp
     }
 
@@ -93,7 +93,7 @@ namespace NHyprbar {
         }
 
         void minimize(const PHLWINDOW& w) {
-            if (!w || !w->m_isMapped || w->isHidden())
+            if (!w || !w->mapped() || w->isHidden())
                 return; // already hidden — minimized, or swallowed
             // Only the focused window pulls focus to a neighbor on hide; an app
             // minimizing a BACKGROUND window (its own set_minimized) must not
@@ -108,7 +108,7 @@ namespace NHyprbar {
             const auto FS = Fullscreen::controller()->getFullscreenModes(w);
             if (FS.internal != Fullscreen::FSMODE_NONE)
                 Fullscreen::controller()->setFullscreenMode(w, Fullscreen::FSMODE_NONE, Fullscreen::FSMODE_NONE);
-            const bool TILED = !w->m_isFloating;
+            const bool TILED = !w->isFloating();
             const auto WS    = w->m_workspace;
             if (TILED && g_layoutManager)
                 g_layoutManager->removeTarget(w->layoutTarget());
@@ -170,7 +170,7 @@ namespace NHyprbar {
                     found = true;
                     break;
                 }
-            if (!found || !w->m_isMapped)
+            if (!found || !w->mapped())
                 return;
             w->setHidden(false);
             if (tiled && g_layoutManager && w->m_workspace)
@@ -186,9 +186,10 @@ namespace NHyprbar {
         // Attach the self-minimize listener to a freshly-opened window (from
         // window.open). The listener is dropped in forget() on destroy / exit().
         void watchMinimize(const PHLWINDOW& w) {
-            if (!w || !w->m_xdgSurface || !w->m_xdgSurface->m_toplevel)
+            const auto TOP = NHyprCommon::xdgToplevel(w);
+            if (!w || !TOP)
                 return;
-            minReqListeners[w.get()] = w->m_xdgSurface->m_toplevel->m_events.stateChanged.listen([wr = PHLWINDOWREF{w}]() {
+            minReqListeners[w.get()] = TOP->m_events.stateChanged.listen([wr = PHLWINDOWREF{w}]() {
                 const auto W = wr.lock();
                 if (!W)
                     return;
@@ -228,7 +229,7 @@ namespace NHyprbar {
             // is currently viewed (isVisible), so it returns where you are.
             for (size_t i = minStack.size(); i-- > 0;) {
                 const auto W = minStack[i].w.lock();
-                if (W && W->m_isMapped && W->m_workspace && W->m_workspace->isVisible()) {
+                if (W && W->mapped() && W->m_workspace && W->m_workspace->isVisible()) {
                     restore(W);
                     return;
                 }
@@ -267,22 +268,22 @@ namespace NHyprbar {
     //   ▴/▾/⬌/⬍ have no Hyprland analog.
     void Tasklist::label(const PHLWINDOW& w, std::string& out) {
         out.clear();
-        if (w->m_pinned)
+        if (NHyprCommon::isPinned(w))
             out += "⌃";
         // maximized: the configured xdg state where it's honest (floating —
         // hyprmax's per-window maximize speaks xdg only), the fullscreen
         // chain otherwise (tiled windows are told maximized as the CSD lie).
         // This runs per task per frame; the chain is a dozen virtual calls.
         bool maximized;
-        if (!w->m_isX11 && w->m_isFloating && w->m_xdgSurface && w->m_xdgSurface->m_toplevel)
+        if (!w->backend().isX11() && w->isFloating() && NHyprCommon::xdgToplevel(w))
             maximized = NHyprCommon::toldMaximized(w);
         else
             maximized = Fullscreen::controller()->getFullscreenModes(w).internal == Fullscreen::FSMODE_MAXIMIZED;
         if (maximized)
             out += "+";
-        else if (w->m_isFloating)
+        else if (w->isFloating())
             out += "✈";
-        out += w->m_title.empty() ? "<untitled>" : w->m_title;
+        out += w->metadata().title().empty() ? "<untitled>" : w->metadata().title();
     }
 
     namespace {
@@ -313,7 +314,7 @@ namespace NHyprbar {
                         fg = F.minimized; // awesome's fg_minimize: muted, no bg
                     else if (W == F.focus)
                         fg = F.active;
-                    else if (W->m_isUrgent) {
+                    else if (W->m_hints & Desktop::View::WINDOW_HINT_URGENT) {
                         P.rect(CELL, F.urgentBg);
                         fg = F.urgentFg;
                     }
@@ -322,7 +323,7 @@ namespace NHyprbar {
                     // the bar's 3px-inset rhythm
                     const double ICON = P.h - 6;
                     double       tx   = x + 4;
-                    if (const auto ITEX = appIcon(W->m_class); ITEX && ITEX->m_texID != 0)
+                    if (const auto ITEX = appIcon(W->metadata().appID()); ITEX && ITEX->m_texID != 0)
                         P.texFit(ITEX, CBox{tx, box.y + 3, ICON, ICON});
                     tx += ICON + 4;
 
@@ -354,7 +355,7 @@ namespace NHyprbar {
                 if (bit != 1u)
                     return;
                 const auto W = h.window.lock();
-                if (!W || !W->m_isMapped)
+                if (!W || !W->mapped())
                     return;
 
                 // awesome's tasklist button 1: clicking the focused task

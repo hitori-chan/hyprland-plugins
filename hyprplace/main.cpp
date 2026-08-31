@@ -36,7 +36,8 @@
 #include "common/queries.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
-#include <hyprland/src/desktop/view/Window.hpp>
+#include <hyprland/src/desktop/view/window/Window.hpp>
+#include <hyprland/src/layout/target/WindowTarget.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>
 #include <hyprland/src/event/EventBus.hpp>
@@ -85,10 +86,19 @@ namespace NHyprplace {
 
         NHyprCommon::CSaver g_saver{saveSpots};
 
+        // metadata().appID() is only captured on first map; before that (the
+        // predictSize pass) the class still has to come off the client state,
+        // exactly the old m_initialClass ? m_initialClass : fetchClass() chain.
         std::string classKey(PHLWINDOW w) {
             if (!w)
                 return {};
-            return !w->m_initialClass.empty() ? w->m_initialClass : w->fetchClass();
+            if (!w->metadata().appID().empty())
+                return w->metadata().appID();
+            if (const auto TOP = NHyprCommon::xdgToplevel(w))
+                return TOP->m_state.appid;
+            if (const auto X11 = NHyprCommon::x11Surface(w))
+                return X11->m_state.appid;
+            return {};
         }
 
         std::optional<CBox> predictWorkarea(PHLWINDOW w) {
@@ -105,9 +115,9 @@ namespace NHyprplace {
                 desired = {};
 
             Vector2D MIN{1, 1}, MAX{MAX_RESTORE_AXIS, MAX_RESTORE_AXIS};
-            if (w && !w->m_isX11 && w->m_xdgSurface && w->m_xdgSurface->m_toplevel) {
-                MIN = w->m_xdgSurface->m_toplevel->layoutMinSize();
-                MAX = w->m_xdgSurface->m_toplevel->layoutMaxSize();
+            if (const auto TOP = w ? NHyprCommon::xdgToplevel(w) : nullptr) {
+                MIN = TOP->layoutMinSize();
+                MAX = TOP->layoutMaxSize();
             }
             MIN.x = std::max(1.0, std::isfinite(MIN.x) ? MIN.x : 1.0);
             MIN.y = std::max(1.0, std::isfinite(MIN.y) ? MIN.y : 1.0);
@@ -148,19 +158,19 @@ namespace NHyprplace {
         bool hasFullscreenOrMaximizeGrant(PHLWINDOW w) {
             if (!w)
                 return false;
-            if (w->m_wantsInitialFullscreen || w->m_wantsInitialMaximize)
+            if (w->fullscreenPolicy().pendingClientRequest().mode.has_value())
                 return true;
 
-            if (w->m_xdgSurface && w->m_xdgSurface->m_toplevel) {
-                const auto& TOP = w->m_xdgSurface->m_toplevel;
+            if (const auto TOP = NHyprCommon::xdgToplevel(w)) {
                 if (TOP->m_state.requestsFullscreen.value_or(false) || TOP->m_state.requestsMaximize.value_or(false) ||
                     std::ranges::contains(TOP->m_pendingApply.states, XDG_TOPLEVEL_STATE_FULLSCREEN) ||
                     std::ranges::contains(TOP->m_pendingApply.states, XDG_TOPLEVEL_STATE_MAXIMIZED))
                     return true;
             }
 
-            if (w->m_xwaylandSurface && (w->m_xwaylandSurface->m_fullscreen || w->m_xwaylandSurface->m_maximized ||
-                                         w->m_xwaylandSurface->m_state.requestsFullscreen.value_or(false) || w->m_xwaylandSurface->m_state.requestsMaximize.value_or(false)))
+            if (const auto X11 = NHyprCommon::x11Surface(w);
+                X11 && (X11->m_fullscreen || X11->m_maximized ||
+                        X11->m_state.requestsFullscreen.value_or(false) || X11->m_state.requestsMaximize.value_or(false)))
                 return true;
 
             if (w->m_ruleApplicator) {
@@ -181,7 +191,7 @@ namespace NHyprplace {
         // m_initialClass isn't captured that early, so the class comes off
         // the toplevel state directly (applied before this emission).
         void onPredictSize(PHLWINDOW w, Vector2D& size) {
-            if (!w || w->parent() || !NHyprCommon::resizable(w) || hasFullscreenOrMaximizeGrant(w))
+            if (!w || w->backend().parent() || !NHyprCommon::resizable(w) || hasFullscreenOrMaximizeGrant(w))
                 return;
             const auto CLS = classKey(w);
             if (CLS.empty())
@@ -195,7 +205,8 @@ namespace NHyprplace {
 
         void placeWindow(PHLWINDOW w) {
             // X11 override-redirect surfaces (menus, tooltips) place themselves
-            if (!w || !w->m_isMapped || !w->m_isFloating || w->isX11OverrideRedirect() || !w->m_target || Fullscreen::controller()->isFullscreen(w))
+            if (!w || !w->mapped() || !w->isFloating() || w->backend().traits().overrideRedirect || !w->windowTarget() ||
+                Fullscreen::controller()->isFullscreen(w))
                 return;
             if (hasFullscreenOrMaximizeGrant(w))
                 return;
@@ -205,7 +216,7 @@ namespace NHyprplace {
                 return;
 
             const auto WA  = MON->logicalBoxMinusReserved();
-            const auto CUR = w->m_target->position();
+            const auto CUR = w->windowTarget()->position();
 
             // a client-maximized (hyprmax) or workarea-filling window is not
             // ours to place or resize — symmetric with onWindowClose. Without
@@ -219,13 +230,13 @@ namespace NHyprplace {
             // fullscreen ones cover no free space, as in awesome
             std::vector<CBox> blockers;
             for (const auto& O : Desktop::windowState()->windows()) {
-                if (O == w || !O->m_isMapped || O->isHidden() || !O->m_isFloating || !O->m_target)
+                if (O == w || !O->mapped() || O->isHidden() || !O->isFloating() || !O->windowTarget())
                     continue;
-                if (O->m_workspace != WS && !(O->m_pinned && O->m_monitor.lock() == MON))
+                if (O->m_workspace != WS && !(NHyprCommon::isPinned(O) && O->m_monitor.lock() == MON))
                     continue;
                 if (Fullscreen::controller()->isFullscreen(O) || NHyprCommon::toldMaximized(O))
                     continue;
-                const auto OB = O->m_target->position();
+                const auto OB = O->windowTarget()->position();
                 if (coversWorkarea(OB, WA))
                     continue;
                 blockers.push_back(OB);
@@ -249,7 +260,7 @@ namespace NHyprplace {
             // never onto an exact stack.
             const bool          RESIZABLE = NHyprCommon::resizable(w);
             std::optional<CBox> stored;
-            if (!w->m_isX11 && !w->parent())
+            if (!w->backend().isX11() && !w->backend().parent())
                 if (const auto IT = g_lastSpot.find(classKey(w)); IT != g_lastSpot.end())
                     stored = IT->second;
             Vector2D size = CUR.size();
@@ -265,7 +276,7 @@ namespace NHyprplace {
             // without the margin drops it on that axis rather than going
             // off-screen — and a maximized/workarea-filling window, wider than
             // the margin allows, is left exactly where it is.
-            const double BORDER    = std::max(0, w->getRealBorderSize());
+            const double BORDER    = std::max(0, w->presentation().borderSize());
             const auto   clampToWA = [&](const Vector2D& p) {
                 const double mx  = size.x + 2 * BORDER <= WA.w ? BORDER : 0;
                 const double my  = size.y + 2 * BORDER <= WA.h ? BORDER : 0;
@@ -276,7 +287,7 @@ namespace NHyprplace {
 
             std::optional<Vector2D> pos;
 
-            if (w->m_isX11 || w->parent()) {
+            if (w->backend().isX11() || w->backend().parent()) {
                 // the window chose this spot (X11 geometry, parent-anchored
                 // dialog): keep it while it's free
                 if (fits(CBox{CUR.pos(), size}))
@@ -362,8 +373,8 @@ namespace NHyprplace {
             // size change goes out as one ordinary configure — no serial
             // ownership, no force: a client-size grant in flight still wins,
             // and the client's own later resizes are never fought.
-            g_layoutManager->setTargetGeom(CBox{nx, ny, size.x, size.y}, w->m_target);
-            w->m_target->warpPositionSize();
+            g_layoutManager->setTargetGeom(CBox{nx, ny, size.x, size.y}, w->windowTarget());
+            w->windowTarget()->warpPositionSize();
             if (size != CUR.size())
                 w->sendWindowSize();
         }
@@ -387,13 +398,13 @@ namespace NHyprplace {
     void onWindowClose(PHLWINDOW w) {
         // a maximized/fullscreen close-box is the workarea, not a spot; X11
         // windows and dialogs place themselves and never consult the memory
-        if (!w || !w->m_isMapped || !w->m_isFloating || !w->m_target || w->m_isX11 || w->parent())
+        if (!w || !w->mapped() || !w->isFloating() || !w->windowTarget() || w->backend().isX11() || w->backend().parent())
             return;
         if (NHyprCommon::toldMaximized(w) || Fullscreen::controller()->isFullscreen(w))
             return;
-        if (const auto MON = w->m_monitor.lock(); MON && coversWorkarea(w->m_target->position(), MON->logicalBoxMinusReserved()))
+        if (const auto MON = w->m_monitor.lock(); MON && coversWorkarea(w->windowTarget()->position(), MON->logicalBoxMinusReserved()))
             return;
-        rememberSpot(classKey(w), w->m_target->position());
+        rememberSpot(classKey(w), w->windowTarget()->position());
     }
 }
 
@@ -432,7 +443,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             g_lifecycle.listen(events.window.predictSize, [](PHLWINDOW w, Vector2D& size) { onPredictSize(w, size); });
     }(Event::bus()->m_events);
 
-    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.1.4"};
+    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.1.5"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
