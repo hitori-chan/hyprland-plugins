@@ -37,6 +37,14 @@ normalize_target_pkgconfig() {
 	# owned copy, never metadata the caller passed to the gate.
 	PKG_COPY_DIR="$(mktemp -d "$HARNESS/hypr-pkgconfig.XXXXXX")" || return 1
 	cp -- "$source_pc" "$PKG_COPY_DIR/hyprland.pc" || return 1
+	# The target pc's Requires must resolve inside the disposable set; a
+	# dependency only present in a user-local tree (e.g. a freshly built
+	# aquamarine) is invisible from the copy dir and pkg-config silently
+	# falls back to the system version, failing the version check.
+	local pc
+	for pc in "$pkg_path"/*.pc; do
+		[[ -f "$pc" && "$pc" != "$source_pc" ]] && cp -- "$pc" "$PKG_COPY_DIR/" || true
+	done
 	sed -i "s|^prefix=.*|prefix=$prefix|" "$PKG_COPY_DIR/hyprland.pc" || return 1
 	HYPR_DEPLOY_PKG_CONFIG_PATH="$PKG_COPY_DIR"
 	PKG_CONFIG_PATH="$PKG_COPY_DIR"
