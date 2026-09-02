@@ -140,11 +140,14 @@ namespace NHyprCommon {
         return x11->m_xwaylandSurface.lock();
     }
 
-    // "Pinned" (all-workspace) in Hyprland is a client-told maximized window
-    // — FSMODE_MAXIMIZED, which never enters the compositor fullscreen stack.
+    // "Pinned" = the `pin` window rule (all-workspace/ontop). Post backend
+    // split this is a window-state bit (the old per-window bool is gone); the
+    // fork's own isAllowedOverFullscreen() consumes this same bit. This is
+    // NOT the client-told maximize (FSMODE_MAXIMIZED) — a separate concept
+    // that must not skip these loops (it used to get its over-fullscreen
+    // grant cleared, and must keep doing so).
     inline bool isPinned(const PHLWINDOW& w) {
-        return w && Fullscreen::controller() &&
-            Fullscreen::controller()->getFullscreenModes(w).internal == Fullscreen::FSMODE_MAXIMIZED;
+        return w && static_cast<bool>(w->m_state & Desktop::View::WINDOW_STATE_PINNED);
     }
 
     // Maximize can be client-only state (hyprmax's maximize never enters
