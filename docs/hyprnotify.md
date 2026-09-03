@@ -2,8 +2,8 @@
 
 The compositor owns `org.freedesktop.Notifications`: no external daemon, no
 layer surface. Cards render top-right on the focused monitor, newest at the
-top, styled like the old naughty boxes (flat dark cards, 1px frame, big
-icons).
+top, in the glass·ink skin (frosted graphite, superellipse corners — the
+surface description and config live in `hyprnotify/README.md`).
 
 ## Spec surface
 
