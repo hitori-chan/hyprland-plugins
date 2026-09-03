@@ -176,15 +176,61 @@ stop_capture() {
 
 kill_nested() { # kill any non-live instance running one of the harness cfgs
 	stop_capture
+	local killed="" s sig pid
 	for s in "$RUNDIR"/*/; do
-		local sig pid
 		sig="$(basename "$s")"
 		[[ "$sig" == "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && continue
 		pid="$(head -1 "$s/hyprland.lock" 2>/dev/null)"
 		[[ -n "$pid" ]] || continue
-		grep -Fzxq -- "$CFG" "/proc/$pid/cmdline" 2>/dev/null && kill "$pid" 2>/dev/null
+		grep -Fzxq -- "$CFG" "/proc/$pid/cmdline" 2>/dev/null && { kill "$pid" 2>/dev/null; killed="$killed $pid"; }
+	done
+	# Host-side client teardown outlives process death: a still-alive nested
+	# during a live 'output remove' is the race that leaves the monitor half
+	# torn down (zombie in the all-monitors list). Wait for full death, with
+	# a SIGKILL fallback, before the caller proceeds.
+	local k
+	for k in $killed; do
+		local _
+		for _ in $(seq 1 50); do
+			kill -0 "$k" 2>/dev/null || break
+			sleep 0.1
+		done
+		if kill -0 "$k" 2>/dev/null; then
+			echo "harness: warning: nested $k survived 5s, SIGKILL" >&2
+			kill -9 "$k" 2>/dev/null
+			for _ in $(seq 1 20); do
+				kill -0 "$k" 2>/dev/null || break
+				sleep 0.1
+			done
+		fi
 	done
 	sleep 0.6
+}
+
+nested_dev_state() { # echo none | active | zombie (see remove_nested_dev)
+	local all active
+	all="$(hyprctl monitors all -j 2>/dev/null | python3 -c 'import json,sys;print(any(m["name"]=="nested-dev" for m in json.load(sys.stdin)))' 2>/dev/null)"
+	active="$(hyprctl monitors -j 2>/dev/null | python3 -c 'import json,sys;print(any(m["name"]=="nested-dev" for m in json.load(sys.stdin)))' 2>/dev/null)"
+	if [[ "$all" == True && "$active" == True ]]; then
+		echo active
+	elif [[ "$all" == True ]]; then
+		echo zombie
+	else
+		echo none
+	fi
+}
+
+remove_nested_dev() { # remove + verify the monitor is fully gone; 0 clean, 1 leak
+	local attempt state
+	for attempt in 1 2; do
+		hyprctl output remove nested-dev >/dev/null 2>&1
+		for _ in $(seq 1 20); do
+			state="$(nested_dev_state)"
+			[[ "$state" == none ]] && return 0
+			sleep 0.25
+		done
+	done
+	return 1
 }
 
 fresh_stress_state() { # a clean fixture state with hyprplace's seeded spots
@@ -239,10 +285,30 @@ PY
 launch_nested() {
 	if [[ -z "$HARNESS_OUTPUT_OWNED" ]]; then
 		HARNESS_OUTPUT_OWNED=0
-		if [[ -e "$HARNESS/nested.output-owned" ]] || ! hyprctl monitors -j 2>/dev/null | python3 -c 'import json,sys;sys.exit(0 if any(m["name"] == "nested-dev" for m in json.load(sys.stdin)) else 1)'; then
-			HARNESS_OUTPUT_OWNED=1
-			: > "$HARNESS/nested.output-owned"
-		fi
+		case "$(nested_dev_state)" in
+			none)
+				HARNESS_OUTPUT_OWNED=1
+				: > "$HARNESS/nested.output-owned"
+				;;
+			zombie)
+				# A prior crashed/leaked run left it in the all-monitors list
+				# only; clean it before claiming, or refuse to launch on top.
+				if remove_nested_dev; then
+					HARNESS_OUTPUT_OWNED=1
+					: > "$HARNESS/nested.output-owned"
+				else
+					echo "harness: WARNING: leaked 'nested-dev' monitor could not be removed; run 'hyprctl output remove nested-dev' (or relog)" >&2
+					return 1
+				fi
+				;;
+			active)
+				# present and alive: only claim it when the marker says this
+				# harness family created it, otherwise another nested owns it
+				if [[ -e "$HARNESS/nested.output-owned" ]]; then
+					HARNESS_OUTPUT_OWNED=1
+				fi
+				;;
+		esac
 	fi
 	PATH="$REPO/devtools/fakes:$PATH" HYPROSD_WPCTL_LOG="$STATE/wpctl.log" \
 		HYPROSD_WPCTL_HANG_FILE="$STATE/hang-wpctl" HYPROSD_WPCTL_FLOOD_FILE="$STATE/flood-wpctl" HYPRNOTIFY_SOUND_HANG_FILE="$STATE/hang-sound" \
@@ -275,8 +341,10 @@ cleanup_harness() {
 		rm -rf -- "$STATE" "$CFG"
 	fi
 	if [[ "${HARNESS_OUTPUT_OWNED:-0}" == 1 ]]; then
-		hyprctl output remove nested-dev >/dev/null 2>&1 || true
 		rm -f -- "$HARNESS/nested.output-owned"
+		if ! remove_nested_dev; then
+			echo "harness: WARNING: 'nested-dev' monitor survived output removal (zombie); live by-id workspace lookups may misroute — run 'hyprctl output remove nested-dev' or relog" >&2
+		fi
 	fi
 	rm -f -- "$HARNESS/nested.sig" "$HARNESS/nested.wl"
 	if [[ -n "${PKG_COPY_DIR:-}" && "$PKG_COPY_DIR" == "$HARNESS"/hypr-pkgconfig.* ]]; then
