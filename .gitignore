@@ -3,14 +3,12 @@
 *.tmp
 .build/
 
-# local agent instructions
+# local agent instructions and open-issues list
 CLAUDE.md
 AGENTS.md
 HANDOFF.md
+TODO.md
 .claude/
-
-# local audit ledger
-docs/audit-tracking.md
 
 # local visual studies; keep generated demos out of repository history
 docs/demos/

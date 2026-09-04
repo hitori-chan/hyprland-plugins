@@ -116,9 +116,8 @@ namespace NHyprCommon {
 
     // The client-facing xdg toplevel role resource, or nullptr for X11
     // windows, unmapped views, or a destroyed resource. The fork exposes
-    // CWaylandBackend::m_resource publicly for exactly this (see
-    // docs/audit-tracking.md); the old fork's m_xdgSurface->m_toplevel chain
-    // is gone in the backend split.
+    // CWaylandBackend::m_resource publicly for exactly this; the old
+    // fork's m_xdgSurface->m_toplevel chain is gone in the backend split.
     inline SP<CXDGToplevelResource> xdgToplevel(const PHLWINDOW& w) {
         if (!w || w->backend().isX11())
             return nullptr;
