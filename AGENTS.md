@@ -70,10 +70,13 @@ gate.
   resolution into `/usr/local/include` (dual-root redefinition errors)
   and the `-MMD` gap documented in `common/common.mk` (`make -B` after
   a header install).
-- Long builds and gate runs go in tmux with logs on a persistent path
-  (e.g. `~/`), never `/tmp` (tmpfs); fork work happens in
-  `~/repo/Hyprland` itself. `cmd | tee` swallows the exit code — trust
-  the log's summary line.
+- Long builds and gate runs go in tmux. Every temporary artifact —
+  logs, debug dumps, scratch files, probe dirs — goes under a
+  dedicated `/tmp` subdirectory (e.g. `/tmp/hypr-gate/`); keep `~`
+  free of temp stuff. `/tmp` is tmpfs, so nothing
+  that must survive a reboot goes there (fork work, large `gcore`
+  dumps); fork work happens in `~/repo/Hyprland` itself. `cmd | tee`
+  swallows the exit code — trust the log's summary line.
 - The nested harness parks a headless `nested-dev` output in the live
   session; if workspace switching misbehaves after gate runs, check
   `hyprctl monitors all -j` before suspecting a plugin.
