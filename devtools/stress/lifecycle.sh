@@ -1,3 +1,11 @@
+# The teardown battery sends its hung-sound notification through nbus, so
+# this file needs the shared notification helpers even though it is not a
+# notification battery. Sourcing notify-lib.sh here (as notifications.sh,
+# policy.sh, and reply.sh do) keeps the battery runnable on its own: in a
+# full run an earlier battery's source used to define nbus for it, and the
+# standalone -b lifecycle run failed with `nbus: command not found`.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/notify-lib.sh"
+
 # ---- native input capture ------------------------------------------------
 # The protocol is fed after plugin input listeners emit. A receiver that gets
 # all three event classes proves the bar, shade, click, max, and snap gates
