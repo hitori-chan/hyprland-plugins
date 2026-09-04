@@ -499,7 +499,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_up", luaBrightnessUp);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_down", luaBrightnessDown);
 
-    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.3.5"};
+    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.3.6"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
