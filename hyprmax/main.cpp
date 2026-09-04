@@ -119,6 +119,11 @@ static void adoptCompositorMax(PHLWINDOW W) {
     Fullscreen::controller()->setFullscreenMode(W, Fullscreen::FSMODE_NONE, Fullscreen::FSMODE_NONE);
     // the exit just granted the client the size choice — the box is ours
     W->m_sizeFromClientSerial = 0;
+    // the geometry change below re-enters the floating recalc, which would
+    // fire the one-shot respawnIfBornFullscreen and re-arm the 0x0 client-
+    // size grant on top of the plugin box; a client answering with its
+    // normal size would resize the plugin-maximized window out from under us
+    W->m_bornFullscreen = false;
 
     const auto WA = MON->logicalBoxMinusReserved();
     // empty restore box = no windowed geometry ever existed; un-maximizing
