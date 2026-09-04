@@ -44,8 +44,12 @@ $(NAME).so: $(OBJS)
 	$(CXX) $(LDFLAGS) $(OBJS) -o $@ $(LDLIBS)
 
 # -MMD writes each unit's header list beside its object, so a common/ or
-# Hyprland header change rebuilds exactly what included it; the makefiles
+# third-party header change rebuilds exactly what included it; the makefiles
 # are a dependency too, since flags decide the codegen just as much.
+# A-152: GCC 16's -MMD omits headers under /usr/local/include (the installed
+# fork headers) even though they are -I'd, so installed-header changes never
+# trigger an incremental rebuild — after installing a new fork use `make -B`
+# (the gate does).
 $(OBJDIR)/%.o: %.cpp Makefile ../common/common.mk | $(OBJDIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
