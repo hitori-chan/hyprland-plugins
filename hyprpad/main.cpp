@@ -151,7 +151,7 @@ namespace NHyprpad {
         if (!target) {
             appliedState = -1;
             appliedTouchpad.reset();
-            notify("input-touchpad", "not found", false);
+            notify("input-touchpad-symbolic", "not found", false);
             return;
         }
         // the manager lives in a unique pointer: its weak can NEVER lock()
@@ -165,7 +165,9 @@ namespace NHyprpad {
         }
         appliedState    = on ? 1 : 0;
         appliedTouchpad = target;
-        notify(on ? "input-touchpad" : "touchpad-disabled", on ? "enabled" : "disabled", true);
+        // symbolic, not the plain names: "touchpad-disabled" ships in the
+        // HighContrast theme only (unprobed) and would render iconless
+        notify(on ? "input-touchpad-symbolic" : "touchpad-disabled-symbolic", on ? "enabled" : "disabled", true);
     }
 
     static void autoApply() {
@@ -288,7 +290,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // device list is populated and the notification daemon is up
     settle->updateTimeout(SETTLE);
 
-    return {"hyprpad", "the awesome touchpad module", "hitori", "1.1.6"};
+    return {"hyprpad", "the awesome touchpad module", "hitori", "1.1.7"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
