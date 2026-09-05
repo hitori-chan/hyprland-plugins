@@ -90,7 +90,7 @@ namespace NHyprpad {
             notifyProxy->callMethodAsync("Notify")
                 .onInterface("org.freedesktop.Notifications")
                 .withArguments(std::string{"osd"}, uint32_t{9991}, std::string{icon}, std::string{"Touchpad"}, body, std::vector<std::string>{},
-                               std::map<std::string, sdbus::Variant>{{"urgency", sdbus::Variant{uint8_t{0}}}, {"x-hitori-osd", sdbus::Variant{true}}}, timed ? 1500 : -1)
+                               std::map<std::string, sdbus::Variant>{{"urgency", sdbus::Variant{uint8_t{0}}}, {"x-hyprnotify-osd", sdbus::Variant{true}}}, timed ? 1500 : -1)
                 .uponReplyInvoke([](std::optional<sdbus::Error>, uint32_t) {});
             g_bus.pollSoon(); // flush the send from the event loop, never from here
         } catch (...) {} // broker gone: teardown is already pending, drop the card
@@ -290,7 +290,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // device list is populated and the notification daemon is up
     settle->updateTimeout(SETTLE);
 
-    return {"hyprpad", "the awesome touchpad module", "hitori", "1.1.7"};
+    return {"hyprpad", "the awesome touchpad module", "hitori", "1.1.8"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

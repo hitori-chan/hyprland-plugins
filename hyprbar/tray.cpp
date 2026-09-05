@@ -76,7 +76,7 @@ namespace NHyprbar {
                     notifyProxy = sdbus::createProxy(*bus.conn(), sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
                 std::map<std::string, sdbus::Variant> hints{{"urgency", sdbus::Variant{urgency}}};
                 if (osd)
-                    hints.emplace("x-hitori-osd", sdbus::Variant{true});
+                    hints.emplace("x-hyprnotify-osd", sdbus::Variant{true});
                 notifyProxy->callMethodAsync("Notify")
                     .onInterface("org.freedesktop.Notifications")
                     .withArguments(app, replacesId, icon, summary, body, std::vector<std::string>{}, hints,

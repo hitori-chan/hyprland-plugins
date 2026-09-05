@@ -10,7 +10,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/notify-lib.sh"
 # The nested compositor shadows only wpctl, so this reaches the real Lua,
 # deferred queue, pidfd, pipe readback, and notification paths without
 # changing the live PipeWire sink. The fake validates argv and emits real
-# wpctl output. v6 has no OSD surface: the x-hitori-osd hint is just an
+# wpctl output. v6 has no OSD surface: the x-hyprnotify-osd hint is just an
 # unknown hint, so the feedback card is a plain 1200ms card and the battery
 # tears each one down by its fixed bus id (9993, volume) to keep the model clean.
 : > "$STATE/wpctl.log"
