@@ -906,7 +906,7 @@ namespace NHyprnotify {
             // libcanberra player unless the client suppresses it. DND-queued
             // (waiting) arrivals stay silent; the resume doesn't replay.
             if (!n->waiting) {
-                bool        suppress = COALESCED || SILENCED || n->snoozed; // none of these announces itself
+                bool        suppress = COALESCED || SILENCED || FSQUIET || n->snoozed; // none of these announces itself — the held banner included
                 std::string soundFile, soundName;
                 if (const auto IT = hints.find("suppress-sound"); IT != hints.end())
                     try {
