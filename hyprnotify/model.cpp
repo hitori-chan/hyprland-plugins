@@ -442,6 +442,21 @@ namespace NHyprnotify {
                 }
             }
 
+
+            // The reserved band is not a capability: a fresh chosen id in
+            // it requires the private x-hyprnotify-osd hint (our in-tree
+            // OSD senders carry it), so an ordinary client can't pin a
+            // band id and hijack the OSD that replaces it.
+            if (id != 0 && !byId(id) && inOsdBand(id)) {
+                bool privateOsd = false;
+                if (const auto IT = hints.find("x-hyprnotify-osd"); IT != hints.end())
+                    try {
+                        privateOsd = IT->second.get<bool>();
+                    } catch (...) {}
+                if (!privateOsd)
+                    id = 0;
+            }
+
             if (id == 0) {
                 // Fresh ids count up from a low counter and skip any that's
                 // still live, so they never collide with a displayed
