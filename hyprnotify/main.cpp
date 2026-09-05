@@ -251,6 +251,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     Bus::init();
     renderInit();
     centerInit();
+    iconsInit(); // the async decode poll and the .desktop index scan start now
 
     // the lockscreen bell reads count; the stress gate reads state
     ctlCmd =
@@ -326,5 +327,6 @@ APICALL EXPORT void PLUGIN_EXIT() {
     replyExit();
     reapChildren();
     centerExit();
+    iconsExit(); // the decode poll and the index helper out with the plugin
     renderExit();
 }
