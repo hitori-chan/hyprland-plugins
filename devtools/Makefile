@@ -16,10 +16,10 @@ SERVER_LIBS   := $(shell pkg-config --libs wayland-server)
 TEST_CXXFLAGS := -std=c++26 -O2 -Wall -Wextra -Wpedantic -Werror -I..
 TEST_BINS := icon-resolver-test battery-state-test desktop-exec-test \
 	hyprosd-readback-test persist-test fileindex-test \
-	hyprsnap-geometry-test hyprmax-geometry-test
+	hyprsnap-geometry-test hyprmax-geometry-test pixel-model-test
 TEST_TARGETS := test-icon-resolver test-battery-state test-desktop-exec \
 	test-hyprosd test-persist test-fileindex \
-	test-hyprsnap-geometry test-hyprmax-geometry
+	test-hyprsnap-geometry test-hyprmax-geometry test-pixel-model
 
 all: vptr vkbd input-capture cliphold
 
@@ -54,6 +54,12 @@ persist-test: persist_test.cpp test.hpp ../common/persist.hpp ../common/lifecycl
 
 test-persist: persist-test
 	./persist-test
+
+pixel-model-test: pixel_model_test.cpp test.hpp ../hyprnotify/pixel_model.hpp
+	$(CXX) $(TEST_CXXFLAGS) $< -o $@
+
+test-pixel-model: pixel-model-test
+	./pixel-model-test
 
 fileindex-test: fileindex_test.cpp test.hpp ../common/fileindex.hpp
 	$(CXX) $(TEST_CXXFLAGS) $(SERVER_CFLAGS) $< -o $@ $(SERVER_LIBS)
