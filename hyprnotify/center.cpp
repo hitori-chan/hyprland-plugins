@@ -288,12 +288,14 @@ namespace NHyprnotify {
         return !n->conversation && !n->snoozed && !n->appKey.empty();
     }
 
-    // How many bundleable cards one app holds, and where its digest landed.
-    // Even at the model cap the distinct app keys are a handful, so one linear
-    // scan beats the two string-keyed trees this used to build from scratch on
-    // every warm AND every draw.
+    // How many bundleable cards one (app, declared group) holds, and where
+    // its digest landed. Even at the model cap the distinct keys are a
+    // handful, so one linear scan beats the two string-keyed trees this used
+    // to build from scratch on every warm AND every draw. A group's 4+ runs
+    // inside the group, not across it: different x-hyprnotify-group-key
+    // values never merge, and each owns its own digest and fold state.
     struct SOwner {
-        const std::string* key;
+        std::string        key;
         size_t             count = 0;
         size_t             first = (size_t)-1; // index in out, once one is placed
     };
@@ -310,22 +312,21 @@ namespace NHyprnotify {
         // notifs is newest-first; a STABLE sort by tier keeps that inside each
         std::ranges::stable_sort(src, [](const auto& a, const auto& b) { return tier(a) < tier(b); });
 
-        // the keys point into src's notifications, which outlive this call
         const auto ownerOf = [](const std::string& k) {
             for (size_t i = 0; i < owners.size(); i++)
-                if (*owners[i].key == k)
+                if (owners[i].key == k)
                     return i;
-            owners.push_back({.key = &k});
+            owners.push_back(SOwner{.key = k});
             return owners.size() - 1;
         };
 
         for (const auto& N : src) // conversations never bundle
             if (bundleable(N))
-                owners[ownerOf(N->appKey)].count++;
+                owners[ownerOf(Model::groupKeyOf(N))].count++;
 
         for (const auto& N : src) {
             if (bundleable(N)) {
-                auto& O = owners[ownerOf(N->appKey)];
+                auto& O = owners[ownerOf(Model::groupKeyOf(N))];
                 if (O.count >= AUTOGROUP_AT) {
                     if (O.first != (size_t)-1) {
                         out[O.first].items.push_back(N);
@@ -334,7 +335,9 @@ namespace NHyprnotify {
                     O.first = out.size();
                 }
             }
-            out.push_back(SDisp{.items = {N}, .key = N->appKey});
+            // the key rides the fold state, hover, selection and the ⋮ — a
+            // bundle head carries the (app, group) identity, singles the app
+            out.push_back(SDisp{.items = {N}, .key = Model::groupKeyOf(N)});
         }
     }
 
