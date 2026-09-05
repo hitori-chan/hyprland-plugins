@@ -5,6 +5,7 @@ XML     := $(HL)/protocols/wlr-virtual-pointer-unstable-v1.xml
 KXML    := $(HL)/protocols/virtual-keyboard-unstable-v1.xml
 CXML    := $(HL)/subprojects/hyprland-protocols/protocols/hyprland-input-capture-v1.xml
 DXML    := $(HL)/protocols/wlr-data-control-unstable-v1.xml
+XXML    := /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml
 CFLAGS  += -O2 -Wall $(shell pkg-config --cflags wayland-client)
 LDLIBS  += $(shell pkg-config --libs wayland-client)
 KLIBS   := $(shell pkg-config --libs xkbcommon)
@@ -21,7 +22,7 @@ TEST_TARGETS := test-icon-resolver test-battery-state test-desktop-exec \
 	test-hyprosd test-persist test-fileindex \
 	test-hyprsnap-geometry test-hyprmax-geometry test-pixel-model
 
-all: vptr vkbd input-capture cliphold
+all: vptr vkbd input-capture cliphold fixwin
 
 test: $(TEST_TARGETS)
 
@@ -91,6 +92,9 @@ input-capture: input-capture.c input-capture-proto.c input-capture-proto.h
 cliphold: cliphold.c cliphold-proto.c cliphold-proto.h
 	$(CC) $(CFLAGS) cliphold.c cliphold-proto.c -o $@ $(LDLIBS)
 
+fixwin: fixwin.c fixwin-protocol.h fixwin-proto.c
+	$(CC) $(CFLAGS) fixwin.c fixwin-proto.c -o $@ $(LDLIBS)
+
 vptr-proto.h: $(XML)
 	wayland-scanner client-header $< $@
 vptr-proto.c: $(XML)
@@ -107,8 +111,12 @@ cliphold-proto.h: $(DXML)
 	wayland-scanner client-header $< $@
 cliphold-proto.c: $(DXML)
 	wayland-scanner private-code $< $@
+fixwin-protocol.h: $(XXML)
+	wayland-scanner client-header $< $@
+fixwin-proto.c: $(XXML)
+	wayland-scanner private-code $< $@
 
 clean:
-	rm -f vptr vkbd input-capture cliphold $(TEST_BINS) vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c
+	rm -f vptr vkbd input-capture cliphold fixwin $(TEST_BINS) vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c fixwin-protocol.h fixwin-proto.c
 
 .PHONY: all clean test $(TEST_TARGETS)

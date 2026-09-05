@@ -70,6 +70,30 @@ for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in j
 	dsp "hl.dsp.window.close({window=\"address:$a\"})" &
 done; wait; sleep 1.2
 
+# ---- fixed-size (dialog/splash) placement --------------------------------
+# A fixed-size native toplevel (min == max) keeps the compositor's centered
+# native spot and never reads or writes the class row — the Discord-updater
+# shape: its grant-exempt main window lets the splash own the row, the
+# blocked spot steers it to the least-overlap corner, and the corner is
+# re-remembered on close. With a blocker on screen, the old code's
+# least-overlap fallback would corner it; the row must also stay unwritten.
+dsp "hl.dsp.exec_cmd('foot --window-size-pixels=700x500')"; sleep 2
+dsp "hl.dsp.exec_cmd('$REPO/devtools/fixwin 310 360')"; sleep 1.5
+expect "fixed-size dialog keeps the centered native spot, not the least-overlap corner" \
+	"any(abs(c['at'][0]-$(( (MON_W-310)/2 )))<=14 and abs(c['at'][1]-$(( 26+(MON_H-26-360)/2 )))<=14 for c in cs if c['class']=='fixwin')"
+FW="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='fixwin'), ''))")"
+[[ -n "$FW" ]] && dsp "hl.dsp.window.close({window=\"address:$FW\"})"; sleep 1
+chk "fixed-size dialog never writes the class row" \
+	bash -c "! grep -q $'\tfixwin\$' \"$STATE/hyprplace/lastspot.tsv\""
+FF="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), ''))")"
+[[ -n "$FF" ]] && dsp "hl.dsp.window.close({window=\"address:$FF\"})"; sleep 0.5
+chk "fixed-size battery left no windows" \
+	test "$(pyc "sum(1 for c in cs if c['class'] in ('fixwin','foot'))")" = 0
+
 # ---- notification cap ---------------------------------------------------
 # 55 is just over the cap of 50 — enough to prove eviction without paying
 # for 65 daemons.
