@@ -298,8 +298,17 @@ static void applyMaxToggle(const PHLWINDOWREF& WR) {
     }
 
     const auto MON = W->m_monitor.lock();
-    if (!MON || !W->isFloating())
+    if (!MON)
         return;
+
+    // Tiled windows maximize natively: the plugin box is a floating
+    // mechanism, and the native unmax above serves both layouts, so a
+    // tiled re-max must go through the native path or the toggle is
+    // one-directional (unmax works, re-max is a no-op)
+    if (!W->isFloating()) {
+        Fullscreen::controller()->setFullscreenMode(W, Fullscreen::FSMODE_MAXIMIZED, Fullscreen::FSMODE_MAXIMIZED);
+        return;
+    }
 
     // X11 has no maximize hint on this path; geometry alone.
     const auto setClientMaximized = [&W](bool m) {
@@ -433,7 +442,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprmax", "toggle", luaToggle);
 
-    return {"hyprmax", "awesome's per-window maximize", "hitori", "1.1.14"};
+    return {"hyprmax", "awesome's per-window maximize", "hitori", "1.1.15"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
