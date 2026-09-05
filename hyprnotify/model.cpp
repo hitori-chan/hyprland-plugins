@@ -797,9 +797,20 @@ namespace NHyprnotify {
                         } catch (...) {}
                 n->image = Parse::resolveImage(cand, ICONPX);
             }
+            n->desktopEntry = DESKTOP;
+            n->identityFromDesktop = false;
             n->identity = Parse::resolveImage(appIcon, ICONPX);
-            if (n->identity.empty() && !DESKTOP.empty())
-                n->identity = Parse::resolveImage(DESKTOP, ICONPX);
+            if (n->identity.empty() && !DESKTOP.empty()) {
+                // the entry's own Icon= (the F2 index) beats an icon-name
+                // collision; while the index has not reached the entry the
+                // name stand-in holds, and pollDesktopIndex upgrades it
+                if (const auto I = resolveDesktopEntryIcon(DESKTOP, ICONPX); !I.empty())
+                    n->identity = I;
+                else {
+                    n->identity = Parse::resolveImage(DESKTOP, ICONPX);
+                    n->identityFromDesktop = true;
+                }
+            }
             n->appKey = APPKEY;
 
             // The inline-reply protocol (KDE's, which Telegram/Fractal speak):

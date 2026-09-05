@@ -1,13 +1,20 @@
 // hyprnotify/icons.cpp — notification images: content avatars and identity
 // icons via hyprgraphics, raw image-data pixmaps
 
+#include "common/fileindex.hpp"
 #include "common/icons.hpp"
 
+#include "hyprbar/desktop_exec.hpp"
+
 #include "hyprnotify.hpp"
+#include "ui.hpp"
+
+#include <hyprland/src/render/AsyncResourceGatherer.hpp>
 
 #include <cstring>
 #include <filesystem>
 #include <random>
+#include <sstream>
 
 namespace NHyprnotify {
 
@@ -45,6 +52,227 @@ namespace NHyprnotify {
             return "";
         static std::mt19937 rng{std::random_device{}()};
         return fallbackFiles[std::uniform_int_distribution<size_t>{0, fallbackFiles.size() - 1}(rng)];
+    }
+
+    // ---- async decode + the desktop-entry index (F/F2) ----
+    //
+    // A file icon's decode used to happen on the compositor thread, inside
+    // the warm pass: one 4K app icon stalled every frame. The decode now
+    // rides the compositor's own async resource gatherer (one shared
+    // worker); the warm pass only scales an already-decoded bounded result
+    // and uploads it. A card whose icon is still decoding shows its fallback
+    // face (or the generic mark) until the 16 ms poll sees the resource
+    // ready and re-warms.
+    //
+    // The desktop-entry index is the same idea for the Icon= lookup: a
+    // bounded enumeration of every $XDG_DATA_DIRS/applications *.desktop
+    // (the helper process keeps it off our threads), parsed into a
+    // name -> Icon= map. Arrivals read the map; an entry that lands after
+    // the card arrived upgrades it in place.
+
+    static constexpr size_t MAX_PENDING_IMAGE_RESOURCES = 24; // the gatherer is shared with the compositor
+    static constexpr size_t MAX_IMAGE_FILE_BYTES        = 32 * 1024 * 1024;
+    static constexpr double MAX_DECODED_IMAGE_PIXELS    = 16.0 * 1024 * 1024;
+    static constexpr size_t MAX_DESKTOP_FILES           = 4096;
+    static constexpr size_t MAX_DESKTOP_VISITED         = 16384;
+
+    struct SDecodeJob {
+        std::string                                                    source;
+        int                                                            svgPx   = 0;
+        Hyprutils::Memory::CAtomicSharedPointer<Hyprgraphics::CImageResource> resource;
+        bool                                                           rejected = false; // too big or not a file: settled null
+        bool                                                           readyAtPoll = false;
+    };
+
+    static std::vector<SDecodeJob>   decodeJobs;
+    static SP<CEventLoopTimer>       decodePoll;
+    static bool                      slotFreed           = false;
+    static bool                      waitedForDecodeSlot = false;
+
+    static NHyprCommon::CAsyncFileIndex                 desktopIndex;
+    static std::unordered_map<std::string, std::string> desktopIcons;
+    static uint64_t                                     desktopGeneration = 0;
+    static bool                                         desktopScanning   = false;
+
+    static std::unordered_map<std::string, SP<ITexture>> generatedAvatars;
+
+    static bool resourceReady(const SDecodeJob& job) {
+        return job.rejected || (job.resource && job.resource->m_ready.load(std::memory_order_acquire));
+    }
+
+    static bool admissibleImageFile(const std::string& source) {
+        std::error_code ec;
+        const auto      status = std::filesystem::status(source, ec);
+        if (ec || !std::filesystem::is_regular_file(status))
+            return false;
+        const auto bytes = std::filesystem::file_size(source, ec);
+        return !ec && bytes <= MAX_IMAGE_FILE_BYTES;
+    }
+
+    static void armDecodePoll() {
+        if (!decodePoll)
+            return;
+        const bool PENDING = desktopScanning || std::ranges::any_of(decodeJobs, [](const auto& job) { return !resourceReady(job); });
+        decodePoll->updateTimeout(PENDING ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
+    }
+
+    // find-or-enqueue the gatherer's job for (source, svg viewport). nullptr:
+    // the slot is taken — the caller keeps the card unsettled and a freed
+    // slot re-warms (a decode cannot be cancelled after enqueue, so the cap
+    // also bounds replaced and deleted cards)
+    static SDecodeJob* decodeJobFor(const std::string& source, int svgPx) {
+        const int SVG_PX = NHyprCommon::isSvgIconPath(source) ? std::clamp(svgPx, 1, 256) : 0;
+        if (const auto IT = std::ranges::find_if(decodeJobs, [&](const auto& job) { return job.source == source && job.svgPx == SVG_PX; }); IT != decodeJobs.end())
+            return &*IT;
+        if (decodeJobs.size() >= MAX_PENDING_IMAGE_RESOURCES) {
+            waitedForDecodeSlot = true;
+            return nullptr;
+        }
+        if (!admissibleImageFile(source)) {
+            decodeJobs.push_back(SDecodeJob{.source = source, .rejected = true});
+            return &decodeJobs.back();
+        }
+        // hyprgraphics needs an explicit viewport for SVG files; without it
+        // the path constructor settles with "invalid size". Rasters ignore it.
+        auto resource = SVG_PX > 0 ? makeAtomicShared<Hyprgraphics::CImageResource>(source, Vector2D{(double)SVG_PX, (double)SVG_PX})
+                                   :
+                                   makeAtomicShared<Hyprgraphics::CImageResource>(source);
+        g_pAsyncResourceGatherer->enqueue(resource);
+        decodeJobs.push_back(SDecodeJob{.source = source, .svgPx = SVG_PX, .resource = std::move(resource)});
+        armDecodePoll();
+        return &decodeJobs.back();
+    }
+
+    // The texture is uploaded now; the decoded image dies with the job. A
+    // freed slot unblocks the card that waited at the cap.
+    static void dropDecodeJob(const SDecodeJob* job) {
+        const auto IT = std::ranges::find_if(decodeJobs, [&](const auto& j) { return &j == job; });
+        if (IT != decodeJobs.end()) {
+            decodeJobs.erase(IT);
+            slotFreed = true;
+        }
+    }
+
+    static void pollDecodeJobs() {
+        bool becameReady = false;
+        for (auto& job : decodeJobs) {
+            const bool READY = resourceReady(job);
+            becameReady |= READY && !job.readyAtPoll;
+            job.readyAtPoll |= READY;
+        }
+        const bool SLOT = slotFreed;
+        slotFreed       = false;
+        armDecodePoll();
+        if (becameReady || (waitedForDecodeSlot && SLOT))
+            notifChanged();
+    }
+
+    static std::string lowerKey(std::string value) {
+        std::ranges::transform(value, value.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+        return value;
+    }
+
+    // application dirs in XDG order: per-user first, then the data dirs
+    // (Flatpak/system exports)
+    static std::vector<std::string> appDirs() {
+        auto dirs = NHyprCommon::xdgDataDirs();
+        for (auto& D : dirs)
+            D += "/applications";
+        return dirs;
+    }
+
+    static void indexDesktopEntry(const NHyprCommon::CAsyncFileIndex::SEntry& entry) {
+        std::istringstream F(entry.contents);
+        std::string        icon, wmClass, line;
+        bool               inEntry = false;
+        while (std::getline(F, line)) {
+            if (!line.empty() && line.back() == '\r')
+                line.pop_back();
+            if (line.starts_with("[")) {
+                if (inEntry)
+                    break;
+                inEntry = line == "[Desktop Entry]";
+                continue;
+            }
+            if (!inEntry)
+                continue;
+            if (icon.empty() && line.starts_with("Icon=")) {
+                if (const auto VALUE = NHyprbar::DesktopExec::unescapeString(std::string_view{line}.substr(5)))
+                    icon = *VALUE;
+            } else if (wmClass.empty() && line.starts_with("StartupWMClass=")) {
+                if (const auto VALUE = NHyprbar::DesktopExec::unescapeString(std::string_view{line}.substr(15)))
+                    wmClass = *VALUE;
+            }
+            if (!icon.empty() && !wmClass.empty())
+                break;
+        }
+        if (icon.empty())
+            return;
+        // the desktop-file basename AND StartupWMClass: a sender's hint is
+        // often the window class, rarely the file name
+        const auto remember = [&](const std::string& key) {
+            if (!key.empty())
+                desktopIcons.try_emplace(lowerKey(key), icon);
+        };
+        remember(entry.path.stem().string());
+        remember(wmClass);
+    }
+
+    static void startDesktopIndex() {
+        desktopIcons.clear();
+        desktopScanning = true;
+        NHyprCommon::CAsyncFileIndex::SRequest request;
+        request.generation   = ++desktopGeneration;
+        request.extensions   = {".desktop"};
+        request.maxEntries   = MAX_DESKTOP_FILES;
+        request.maxVisited   = MAX_DESKTOP_VISITED;
+        request.maxFileBytes = NHyprbar::DesktopExec::MAX_DESKTOP_FILE_BYTES;
+        for (const auto& directory : appDirs())
+            request.roots.emplace_back(directory);
+        desktopIndex.request(std::move(request));
+        if (decodePoll)
+            decodePoll->updateTimeout(std::chrono::milliseconds(2));
+    }
+
+    // the index's batch landed: fold it in, and upgrade every live card that
+    // is still riding the icon-name stand-in for its desktop entry
+    static void pollDesktopIndex() {
+        if (!desktopScanning)
+            return;
+        std::vector<NHyprCommon::CAsyncFileIndex::SEntry> entries;
+        const bool COMPLETE = desktopIndex.poll(desktopGeneration, entries, 8);
+        const size_t BEFORE = desktopIcons.size();
+        for (const auto& entry : entries)
+            indexDesktopEntry(entry);
+        desktopScanning = !COMPLETE;
+        if (desktopIcons.size() != BEFORE) {
+            bool identityChanged = false;
+            const int ICONPX      = std::max(8, (int)cfg.maxIcon->value());
+            for (const auto& N : notifs) {
+                if (!N->identityFromDesktop)
+                    continue;
+                const auto ICON = resolveDesktopEntryIcon(N->desktopEntry, ICONPX);
+                if (ICON.empty() || ICON == N->identity)
+                    continue;
+                N->identity      = ICON; // the entry's own Icon= is authoritative
+                N->identTex.reset();
+                N->identFor.clear();
+                N->identIconPx   = 0;
+                N->identSettled  = false;
+                N->identityFromDesktop = false;
+                identityChanged = true;
+            }
+            if (identityChanged)
+                notifChanged();
+        }
+        armDecodePoll();
+    }
+
+    // the desktop entry's own Icon= (the index's value), resolved to a file.
+    // Empty while the index has not reached the entry.
+    std::string resolveDesktopEntryIcon(const std::string& entry, int sizePx) {
+        const auto IT = desktopIcons.find(lowerKey(entry));
+        return IT == desktopIcons.end() ? "" : Parse::resolveImage(IT->second, sizePx);
     }
 
     // one deterministic initials face per (identity, name, font, size): the
@@ -185,9 +413,18 @@ namespace NHyprnotify {
         cairo_surface_mark_dirty(SURF);
     }
 
+    struct SFileTexResult {
+        SP<ITexture> texture;
+        bool         settled = false; // false: an async decode is in flight
+        bool         hero    = false;
+    };
+
     // CImage's size hint only bounds SVG rasters; raster formats decode full
-    // size transiently and get scaled here.
-    static SP<ITexture> fileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool& hero, bool tintSymbolic = false) {
+    // size transiently and get scaled here. The synchronous path: always
+    // settled, used for symbolic icons (the tint would bake into the
+    // gatherer's shared surface) and SVG heroes (a 256 px async viewport
+    // could never cover them).
+    static SP<ITexture> syncFileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool& hero, bool tintSymbolic = false) {
         const int            HINT = std::max(iconPx, heroWPx);
         Hyprgraphics::CImage image(path, Vector2D{(double)HINT, (double)HINT});
         if (!image.success())
@@ -208,6 +445,44 @@ namespace NHyprnotify {
         if (hero)
             return coverTex(SURF->cairo(), SZ.x, SZ.y, heroWPx, std::min((int)std::lround(heroWPx * SZ.y / SZ.x), heroHCapPx));
         return scaledTex(SURF->cairo(), SZ.x, SZ.y, iconPx);
+    }
+
+    // The async front door: a file icon decodes on the gatherer's worker and
+    // the warm pass only scales the ready result. settled=false means "ask
+    // again after the next warm" — the 16 ms poll re-warms when the
+    // resource lands.
+    static SFileTexResult fileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool tintSymbolic = false) {
+        if (tintSymbolic || (heroWPx > 0 && NHyprCommon::isSvgIconPath(path))) {
+            bool hero = false;
+            return {.texture = syncFileTex(path, iconPx, heroWPx, heroHCapPx, hero, tintSymbolic), .settled = true, .hero = hero};
+        }
+        if (!g_pAsyncResourceGatherer) {
+            bool hero = false;
+            return {.texture = syncFileTex(path, iconPx, heroWPx, heroHCapPx, hero), .settled = true, .hero = hero};
+        }
+        const auto JOB = decodeJobFor(path, iconPx);
+        if (!JOB || !resourceReady(*JOB))
+            return {}; // the slot is taken, or the decode is in flight
+        // Capture before the drop: erasing the job destroys the struct (and
+        // releases our reference); the resource copy below outlives the call
+        const bool REJECTED = JOB->rejected;
+        const auto RESOURCE = JOB->resource;
+        dropDecodeJob(JOB);
+        SFileTexResult result{.settled = true};
+        if (REJECTED)
+            return result;
+        const auto SURF = RESOURCE->m_asset.cairoSurface;
+        if (!SURF || SURF->status() != CAIRO_STATUS_SUCCESS)
+            return result;
+        const auto SZ = SURF->size();
+        if (SZ.x <= 0 || SZ.y <= 0 || (double)SZ.x * SZ.y > MAX_DECODED_IMAGE_PIXELS)
+            return result;
+        result.hero = heroWorthy(SZ.x, SZ.y, heroWPx);
+        if (result.hero)
+            result.texture = coverTex(SURF->cairo(), SZ.x, SZ.y, heroWPx, std::min((int)std::lround((double)heroWPx * SZ.y / SZ.x), heroHCapPx));
+        else
+            result.texture = scaledTex(SURF->cairo(), SZ.x, SZ.y, iconPx);
+        return result;
     }
 
     // CPU-side cap for image-data buffers at unpack time (bus.cpp) — same
@@ -261,10 +536,14 @@ namespace NHyprnotify {
     // image-path file, hero-capable), n.identTex the IDENTITY (app_icon /
     // desktop-entry, icon-box only). The render decides which leads and
     // whether the identity rides as the corner badge.
+    // the deterministic generic mark an iconless card wears (identity empty
+    // AND the fallback face dir empty): the theme's application-default-icon
+    // when it exists, else an apps-grid glyph in the theme ink — no card is
+    // ever faceless
     static SP<ITexture> genericMark(int px) {
         if (const auto PATH = Parse::resolveImage("application-default-icon", px); !PATH.empty()) {
             bool hero = false;
-            return fileTex(PATH, px, 0, 0, hero);
+            return syncFileTex(PATH, px, 0, 0, hero); // a small theme SVG: decode here, not on the worker
         }
 
         auto*        SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, px, px);
@@ -312,10 +591,27 @@ namespace NHyprnotify {
             // rebuilds it — hyprbar's dropStaleTint, per-card edition
             const auto SYM = isSymbolicIconPath(n.identity);
             const auto KEY = SYM ? n.identity + "\x1f" + std::to_string((uint64_t)cfg.colFg->value()) : n.identity;
-            if (n.identFor != KEY) { // remembers a failed load too: no disk retry per warm
-                bool hero = false;
-                n.identTex = fileTex(n.identity, iconPx, 0, 0, hero, SYM);
-                n.identFor = KEY;
+            if (n.identFor != KEY || n.identIconPx != iconPx) {
+                n.identTex.reset();
+                n.identFor     = KEY;
+                n.identIconPx  = iconPx;
+                n.identSettled = false;
+            }
+            if (!n.identSettled) {
+                const auto TEX = fileTex(n.identity, iconPx, 0, 0, SYM);
+                if (TEX.settled) {
+                    n.identTex     = TEX.texture;
+                    n.identSettled = true; // a failed load stays failed: no disk retry per warm
+                    if (!n.identTex) {
+                        // a resolved path can disappear or fail to decode: the
+                        // fallback face (or the generic mark) takes over next
+                        // warm, not a retry of the known-bad source
+                        n.identity.clear();
+                        n.identFor.clear();
+                        n.identIconPx  = 0;
+                        n.identSettled = false;
+                    }
+                }
             }
         } else {
             if (n.fallbackPick.empty())
@@ -325,14 +621,30 @@ namespace NHyprnotify {
                 // card; the key carries the fg it was drawn in, so a theme
                 // change rebuilds it (the symbolic-identity contract)
                 const auto GENERIC = "__hyprnotify_generic__\x1f" + std::to_string((uint64_t)cfg.colFg->value());
-                if (n.identFor != GENERIC) {
-                    n.identTex = genericMark(iconPx);
-                    n.identFor = GENERIC;
+                if (n.identFor != GENERIC || n.identIconPx != iconPx) {
+                    n.identTex.reset();
+                    n.identFor     = GENERIC;
+                    n.identIconPx  = iconPx;
+                    n.identSettled = false;
                 }
-            } else if (n.identFor != n.fallbackPick) {
-                bool hero  = false;
-                n.identTex = fileTex(n.fallbackPick, iconPx, 0, 0, hero);
-                n.identFor = n.fallbackPick;
+                if (n.identFor == GENERIC && !n.identSettled) {
+                    n.identTex     = genericMark(iconPx);
+                    n.identSettled = n.identTex != nullptr;
+                }
+            } else if (n.identFor != n.fallbackPick || n.identIconPx != iconPx) {
+                n.identTex.reset();
+                n.identFor     = n.fallbackPick;
+                n.identIconPx  = iconPx;
+                n.identSettled = false;
+            }
+            if (n.identFor == n.fallbackPick && !n.identSettled) {
+                const auto TEX = fileTex(n.fallbackPick, iconPx, 0, 0, false);
+                if (TEX.settled) {
+                    n.identTex     = TEX.texture;
+                    n.identSettled = true; // a dead face stays failed: no disk retry per warm
+                    if (!n.identTex)
+                        n.fallbackPick.clear(); // the re-roll, or the generic mark, takes over
+                }
             }
         }
 
@@ -372,21 +684,38 @@ namespace NHyprnotify {
             n.imageFor.clear();
             n.pixelsFor = 0;
             n.heroTex   = false;
+            n.imageSettled = true;
             return;
         }
-        if (n.imageFor == n.image) // also remembers a failed load: no disk retry per warm
-            return;
-        bool hero   = false;
-        n.iconTex   = fileTex(n.image, iconPx, heroWPx, heroHCapPx, hero);
-        n.imageFor  = n.image;
-        n.pixelsFor = 0;
-        n.heroTex   = hero;
+        if (n.imageFor != n.image || n.imageIconPx != iconPx) {
+            n.iconTex.reset();
+            n.imageFor     = n.image;
+            n.imageIconPx  = iconPx;
+            n.pixelsFor    = 0;
+            n.imageSettled = false;
+        }
+        if (!n.imageSettled) {
+            const auto TEX = fileTex(n.image, iconPx, heroWPx, heroHCapPx, false);
+            if (TEX.settled) {
+                n.iconTex      = TEX.texture;
+                n.imageSettled = true; // a known-bad source: no disk retry per warm
+                n.heroTex      = TEX.hero;
+                if (!n.iconTex) {
+                    n.image.clear();
+                    n.imageFor.clear();
+                    n.imageIconPx  = 0;
+                    n.imageSettled = false;
+                }
+            }
+        }
     }
 
     void ensureActionIcon(SNotif& n, SAction& a, int iconPx) {
         if (!n.actionIcons) {
             a.iconTex.reset();
             a.iconFor.clear(); // so re-enabling the hint rebuilds
+            a.iconSettled = false;
+            a.iconPx = 0;
             return;
         }
         std::string path = a.id;
@@ -399,40 +728,111 @@ namespace NHyprnotify {
         // as the identity; the bare id keeps remembering failed resolves
         const auto SYM = isSymbolicIconPath(path);
         const auto KEY = SYM ? a.id + "\x1f" + std::to_string((uint64_t)cfg.colFg->value()) : a.id;
-        if (a.iconFor == KEY) // also remembers a failed resolve: no rescan per warm
+        if (a.iconFor != KEY || a.iconPx != iconPx) {
+            a.iconFor     = KEY;
+            a.iconPx      = iconPx;
+            a.iconTex.reset();
+            a.iconSettled = false;
+        }
+        if (a.iconSettled)
             return;
-        a.iconFor = KEY;
-        a.iconTex.reset();
-        if (path.empty())
+        if (path.empty()) {
+            a.iconSettled = true; // a failed resolve stays failed: no rescan per warm
             return;
-        bool hero = false;
-        a.iconTex = fileTex(path, iconPx, 0, 0, hero, SYM); // icon box only, never hero
+        }
+        const auto TEX = fileTex(path, iconPx, 0, 0, SYM); // icon box only, never hero
+        if (TEX.settled) {
+            a.iconTex     = TEX.texture;
+            a.iconSettled = true;
+        }
     }
 
     void ensureBodyImage(SBodyImage& im, int maxPx) {
         if (im.src.empty()) {
             im.tex.reset();
             im.builtFor.clear();
+            im.settled = false;
+            im.builtPx = 0;
             return;
         }
-        if (im.builtFor == im.src) // remembers a failed load too: no disk retry per warm
+        if (im.builtFor != im.src || im.builtPx != maxPx) {
+            im.builtFor = im.src;
+            im.builtPx  = maxPx;
+            im.tex.reset();
+            im.settled = false;
+        }
+        if (im.settled)
             return;
-        im.builtFor = im.src;
-        bool hero   = false;
-        im.tex      = fileTex(im.src, maxPx, 0, 0, hero); // fit a box, never hero
+        const auto TEX = fileTex(im.src, maxPx, 0, 0, false); // fit a box, never hero
+        if (TEX.settled) {
+            im.tex     = TEX.texture;
+            im.settled = true; // a failed load stays failed: the alt line keeps it
+        }
     }
 
-    // a facepile avatar: the sender's icon, or the generic mark when the
-    // sender is faceless — keyed like an identity, failures remembered
+    // a facepile avatar: the sender's icon, or a generated initials face
+    // when the sender is faceless — keyed like an identity, failures
+    // remembered
     void ensureAvatarTex(SParticipant& p, int px) {
-        const auto KEY = p.icon.empty() ? std::string("__hyprnotify_generic__\x1f") + std::to_string((uint64_t)cfg.colFg->value())
-                                         :
-                                         p.icon + "\x1f" + std::to_string(px);
-        if (p.avatarFor == KEY)
+        if (p.icon.empty()) {
+            const std::string KEY = "__hyprnotify_avatar:\x1f" + p.key + "\x1f" + p.name + "\x1f" + cfg.font->value() + "\x1f" + std::to_string(px);
+            if (p.avatarFor == KEY)
+                return;
+            p.avatarTex     = generatedAvatar(p.key, p.name, px);
+            p.avatarFor     = KEY;
+            p.avatarPx      = px;
+            p.avatarSettled = p.avatarTex != nullptr;
             return;
-        bool hero = false;
-        p.avatarTex = p.icon.empty() ? genericMark(px) : fileTex(p.icon, px, 0, 0, hero);
-        p.avatarFor = KEY;
+        }
+        const auto KEY = p.icon + "\x1f" + std::to_string(px);
+        if (p.avatarFor != KEY || p.avatarPx != px) {
+            p.avatarTex.reset();
+            p.avatarFor     = KEY;
+            p.avatarPx      = px;
+            p.avatarSettled = false;
+        }
+        if (p.avatarSettled)
+            return;
+        const auto TEX = fileTex(p.icon, px, 0, 0, false);
+        if (TEX.settled) {
+            p.avatarTex     = TEX.texture;
+            p.avatarSettled = true;
+            if (!p.avatarTex) {
+                // a dead icon: the sender falls back to the generated face
+                p.icon.clear();
+                p.avatarFor.clear();
+                p.avatarPx = 0;
+                p.avatarSettled = false;
+                ensureAvatarTex(p, px);
+            }
+        }
+    }
+
+    void iconsInit() {
+        decodeJobs.clear();
+        decodeJobs.reserve(MAX_PENDING_IMAGE_RESOURCES);
+        if (!g_pEventLoopManager || !g_pCompositor)
+            return;
+        decodePoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) {
+            pollDecodeJobs();
+            pollDesktopIndex();
+        }, nullptr);
+        g_pEventLoopManager->addTimer(decodePoll);
+        if (desktopIndex.init(g_pCompositor->m_wlEventLoop))
+            startDesktopIndex();
+    }
+
+    void iconsExit() {
+        if (decodePoll && g_pEventLoopManager)
+            g_pEventLoopManager->removeTimer(decodePoll);
+        decodePoll.reset();
+        decodeJobs.clear();
+        desktopIndex.exit();
+        desktopIcons.clear();
+        generatedAvatars.clear();
+        desktopScanning     = false;
+        waitedForDecodeSlot = false;
+        slotFreed           = false;
     }
 
 } // namespace NHyprnotify

@@ -138,6 +138,8 @@ namespace NHyprnotify {
         std::string  label;   // localized button text
         SP<ITexture> iconTex; // resolved action-icon (warm; action-icons only)
         std::string  iconFor; // staleness: the id the icon was resolved from
+        bool         iconSettled = false; // a pending async decode stays false
+        int          iconPx = 0;
     };
 
     // a body hyperlink (<a href>): a clickable region opening its URL
@@ -152,6 +154,8 @@ namespace NHyprnotify {
         SP<ITexture> tex;      // built by warm
         std::string  builtFor; // staleness: the src the tex was built from
         std::string  alt;      // the img's alt text: the body fallback when the load fails
+        bool         settled = false; // a pending async decode stays false
+        int          builtPx = 0;
     };
 
     // one structured message of a conversation (the message-id upsert keeps
@@ -202,6 +206,8 @@ namespace NHyprnotify {
         int                  progress = -1; // 0..100 from the "value" hint, -1 = none
         std::string          image;    // CONTENT source (image-path), resolved file path, "" = none
         std::string          identity; // IDENTITY source (app_icon/desktop-entry), resolved path, "" = none
+        std::string          desktopEntry;     // the raw desktop-entry hint (the F2 index's key)
+        bool                 identityFromDesktop = false; // identity rides the hint: the index may upgrade it
         std::vector<uint8_t> pixels;   // image-data, premultiplied BGRA (DRM ARGB8888); freed once uploaded
         bool                 hasPixels = false; // the LAST Notify carried image-data (outlives the freed buffer)
         int                  pw = 0, ph = 0;
@@ -240,8 +246,11 @@ namespace NHyprnotify {
         SP<ITexture> iconTex;  // content avatar (or hero)
         SP<ITexture> identTex; // identity icon: the corner badge, or the lead icon when no content
         std::string  imageFor, identFor;
-        bool         heroTex   = false; // iconTex was built for the hero layout
-        uint64_t     pixelsFor = 0;
+        bool         heroTex      = false; // iconTex was built for the hero layout
+        uint64_t     pixelsFor    = 0;
+        bool         imageSettled = false; // false while an async decode is in flight
+        bool         identSettled = false;
+        int          imageIconPx  = 0, identIconPx = 0;
     };
     extern std::vector<SP<SNotif>> notifs;
 
@@ -340,6 +349,9 @@ namespace NHyprnotify {
     void resetFallbackCache(); // forget the fallback_icon_dir listing (a config reload rescans)
     void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx);
     void ensureAvatarTex(SParticipant& p, int px);
+    std::string resolveDesktopEntryIcon(const std::string& entry, int sizePx);
+    void        iconsInit();
+    void        iconsExit();
 
     // (Re)build an action button's icon when action-icons is set and its id (an
     // icon name or a path) changed; clears it when the hint is off.
