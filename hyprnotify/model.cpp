@@ -291,12 +291,27 @@ namespace NHyprnotify {
             rearmExpiry();
         }
 
-        void dismissApp(const std::string& appKey) {
+        // the bundle's identity: the app key, sub-keyed by the declared
+        // group when one is in force — the digest, the fold state and the
+        // dismissal all ride on this one string
+        std::string groupKeyOf(const SP<SNotif>& n) {
+            return n->declaredGroupKey.empty() ? n->appKey : n->appKey + "\x1f" + n->declaredGroupKey;
+        }
+
+        void dismissApp(const std::string& key) {
+            // a bundle's key may be (app, group): dismiss exactly that group,
+            // never the app's other groups
+            std::string app = key, group;
+            if (const auto P = key.find('\x1f'); P != std::string::npos) {
+                app   = key.substr(0, P);
+                group = key.substr(P + 1);
+            }
+            const auto MATCH = [&](const auto& N) { return visible(N) && N->appKey == app && (group.empty() || N->declaredGroupKey == group); };
             const auto BEFORE = notifs.size();
             for (const auto& N : notifs)
-                if (visible(N) && N->appKey == appKey)
+                if (MATCH(N))
                     Bus::emitClosed(N->id, R_DISMISSED);
-            std::erase_if(notifs, [&](const auto& N) { return visible(N) && N->appKey == appKey; });
+            std::erase_if(notifs, MATCH);
             if (notifs.size() == BEFORE)
                 return;
             notifChanged();
