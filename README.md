@@ -46,9 +46,12 @@ Implementation contracts that cross files live in
 [`docs/hyprbar.md`](docs/hyprbar.md) and
 [`docs/hyprnotify.md`](docs/hyprnotify.md).
 
-Build one plugin and run the standalone regressions with:
+Build everything from the repo root, or one plugin and the standalone
+regressions:
 
 ```sh
+make            # all plugins, sequential
+make test       # devtools unit tests
 make -C hyprnotify
 make -C devtools test
 ```
