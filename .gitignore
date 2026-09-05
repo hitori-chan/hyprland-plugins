@@ -27,6 +27,9 @@ devtools/input-capture-proto.h
 devtools/cliphold
 devtools/cliphold-proto.c
 devtools/cliphold-proto.h
+devtools/fixwin
+devtools/fixwin-proto.c
+devtools/fixwin-protocol.h
 devtools/battery-state-test
 devtools/desktop-exec-test
 devtools/fileindex-test

@@ -139,3 +139,5 @@ make -C devtools HL=/path/to/Hyprland
   the fork's input-capture protocol and EIS.
 - `cliphold DELAY_MS TEXT` owns the nested clipboard and delays or indefinitely
   holds a transfer to test cancellation and teardown.
+- `fixwin WIDTH HEIGHT [TITLE]` maps a fixed-size xdg-toplevel (min == max,
+  the dialog/splash shape) to test placement of windows that refuse to resize.
