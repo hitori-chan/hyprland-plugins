@@ -14,8 +14,11 @@ surface description and config live in `hyprnotify/README.md`).
   `body-hyperlinks`, `body-images`, `icon-static`, `inline-reply`,
   `persistence`, `sound`.
 - `replaces_id` updates a card in place, keeping its stack slot; an unknown
-  id creates the card under that id (the OSD scripts pin fixed ids in the
-  9990s, which fresh ids never mint into).
+  id creates the card under that id. The 9990s are the private OSD band: a
+  FRESH (non-replacing) id chosen inside it only sticks when the hints carry
+  `x-hyprnotify-osd` (bool) — our in-tree OSD senders do — so an ordinary
+  client cannot pin a band id and hijack the OSD that replaces it. Fresh
+  ids outside the band are minted from a low counter.
 - `expire_timeout`: 0 → sticky, >0 → ms. −1 (server decides) → normal and
   critical cards are sticky until dismissed — a message waits to be read;
   self-declared ephemerals (low urgency, `transient`, `value` cards) run
@@ -23,7 +26,42 @@ surface description and config live in `hyprnotify/README.md`).
 - Hints honored: `urgency`; `value` (0–100) draws the progress bar (the
   volume/brightness OSD); `image-data`/`image_data`/`icon_data` raw pixmaps;
   `image-path`/`image_path`; `desktop-entry`; `action-icons`; `resident`;
-  `transient`; `sound-file`/`sound-name`/`suppress-sound`.
+  `transient`; `sound-file`/`sound-name`/`suppress-sound`;
+  `x-hyprnotify-osd`; `x-canonical-append`; `x-hyprnotify-group-key`.
+- Structured-conversation hints (neither name form sits in the published
+  spec's hint table; the plain name is tried first, the `x-hyprnotify-*`
+  alias second): `conversation-id` (the merge contract),
+  `conversation-title`, `conversation-kind` (`one-to-one`/`group`/`call`),
+  `conversation-icon`, `sender-id`/`sender-name`/`sender-icon`, `message-id`,
+  `message-time` (ms epoch), `message-historic` (bool), `unread-count`
+  (uint, capped at 999).
+
+## Conversations
+
+- A `conversation-id` in the hints is the merge contract: every message of
+  that chat is ONE card however many `Notify` calls arrive (a replace with
+  the same id joins; a replace carrying a DIFFERENT conversation-id starts
+  the other chat's card; a replace with none keeps the target's conversation
+  for the same app). Display text and category alone are not a contract —
+  two chats can share a title. The id is opaque and rejected above 512
+  bytes (clipping it would merge two different chats).
+- When a conversation-id is in force, the card's body is the TRANSCRIPT:
+  the latest seven kept messages (32 retained), newest on top, group
+  senders prefixed by name under an 8KB cap. `message-id` upserts (an edit
+  replaces in place), `message-time` orders, `message-historic` marks a
+  backfill (it does not grow the unread count). `unread-count` shows the
+  header pill; the header also shows a facepile of the distinct senders of
+  the kept messages (max three) for `group` chats, each avatar its
+  `sender-icon` or a deterministic initials face.
+- Without a conversation-id the legacy merge stands: a fresh `Notify` whose
+  app + summary matches a live card is joined onto it, bodies appended
+  under the same cap — triggered by the fd.o conversation categories
+  (`im.*`/`call.*`, where the summary is the sender or the room) or
+  `x-canonical-append`. Cards that vanish on expiry never merge.
+- `x-hyprnotify-group-key` (opaque, ≤512 bytes) sub-keys the app's bundle:
+  four or more cards of one app share ONE digest per declared group, and
+  the digest, the fold and the dismissal all act on that group alone. A
+  replace without the hint keeps the group for the same app.
 
 ## Markup
 
@@ -36,7 +74,10 @@ surface description and config live in `hyprnotify/README.md`).
   offset); a click opens the URL via `xdg-open` and leaves the card up — but
   not the shade, since a browser is about to cover it. The pointer shows the
   hand over a link.
-- `<img src>` in the body renders as a thumbnail row below the text.
+- `<img src>` in the body renders as a thumbnail row below the text. A
+  thumbnail that fails to load keeps its `alt` text as a one-line body
+  entry — the sender meant to show something, and the words outlive the
+  missing file.
 
 ## Images / icons
 
@@ -44,11 +85,22 @@ surface description and config live in `hyprnotify/README.md`).
   `desktop-entry`.
 - Each of `app_icon` / `image-path` / `desktop-entry` may be a file path
   (`file://` too) OR a freedesktop icon NAME, resolved against the GTK icon
-  theme, then hicolor, then `/usr/share/pixmaps`.
+  theme, then hicolor, then `/usr/share/pixmaps`. A `desktop-entry` hint
+  additionally resolves the .desktop file's own `Icon=` (all
+  `$XDG_DATA_DIRS/applications` entries are indexed once at plugin start by
+  a bounded helper process, keyed by the file name and `StartupWMClass`),
+  which beats an icon-name collision; while the index has not reached the
+  entry, the icon-name stand-in draws and the index upgrades the live
+  card when it lands.
 - Decoding is hyprgraphics: PNG/JPEG/WEBP/BMP/AVIF/JXL + SVG (no GIF); big
-  images downscale once at load, not per frame. Wide images (aspect ≥ 1.5)
-  render card-width as a cover-cropped hero. Iconless cards draw a random
-  face from `fallback_icon_dir`.
+  images downscale once at load, not per frame. File icons decode OFF the
+  render thread on the compositor's async resource gatherer (a bounded
+  share of its queue; symbolic icons and SVG heroes stay synchronous): a
+  card whose icon is still decoding shows its fallback face until the
+  decode lands and re-warms. Wide images (aspect ≥ 1.5) render card-width
+  as a cover-cropped hero. Iconless cards draw a random face from
+  `fallback_icon_dir`, and when that dir is empty (or a face fails to
+  load) a deterministic generic application mark, so no card is faceless.
 - The icon column is Android's conversation container
   (`notification_2025_conversation_icon_container.xml`): the CONTENT image
   leads as the avatar — a true circle for a conversation, a squircle
@@ -194,7 +246,9 @@ surface description and config live in `hyprnotify/README.md`).
 - Quiet while fullscreen (`quiet_fullscreen`, on): a real fullscreen window
   on the focused monitor holds banners back — presenting, gaming and
   watching are the same ask — and the card lands resident in the shade
-  instead. Critical bypasses it; a maximized window is not fullscreen.
+  instead, SILENT (a held banner does not chime when the fullscreen lets
+  up; it already rang in the shade's count, and the hold is the point).
+  Critical bypasses it; a maximized window is not fullscreen.
 - Critical: urgent-colored frame and progress fill, never expires.
 - Sound: `sound-file`/`sound-name` play through a libcanberra player
   (`sound_command`, empty disables); `suppress-sound` mutes one arrival. The
@@ -207,12 +261,6 @@ surface description and config live in `hyprnotify/README.md`).
   shade is the safety net. There is no history and no recall: a dismissed
   card is gone, as on Android. `hyprctl hyprnotify count` answers the live
   total (the lockscreen bell reads it).
-- The conversation merge (Android's MessagingStyle): a fresh `Notify` whose
-  app identity + summary matches a live card is joined onto it, bodies
-  appended under an 8KB cap — so one chat is one growing card however many
-  messages arrive. Triggered by the fd.o conversation categories
-  (`im.*`/`call.*`, where the summary is the sender or the room) or by the
-  `x-canonical-append` hint. Cards that vanish on expiry never merge.
 - Fullscreen: while a card is up over a solitary fullscreen window, the
   monitor's scanout/solitary latch is dropped so the card composites over
   it; self-heals once the last card clears.
