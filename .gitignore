@@ -42,6 +42,7 @@ devtools/hyprmax-geometry-test
 AUDIT*.md
 *_AUDIT.md
 hyprnotify/BUNDLE-CHILD-ICONS.md
+PLAN.md
 PLAN_*.md
 *[-_]audit*.md
 *[-_]spec*.md
