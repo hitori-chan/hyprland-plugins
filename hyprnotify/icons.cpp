@@ -201,6 +201,44 @@ namespace NHyprnotify {
     // image-path file, hero-capable), n.identTex the IDENTITY (app_icon /
     // desktop-entry, icon-box only). The render decides which leads and
     // whether the identity rides as the corner badge.
+    static SP<ITexture> genericMark(int px) {
+        if (const auto PATH = Parse::resolveImage("application-default-icon", px); !PATH.empty()) {
+            bool hero = false;
+            return fileTex(PATH, px, 0, 0, hero);
+        }
+
+        auto*        SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, px, px);
+        auto*        CT   = cairo_create(SURF);
+        const auto   INK  = color(cfg.colFg), PLATE = color(cfg.colFrame);
+        auto         rounded = [&](double x, double y, double w, double h, double r) {
+            cairo_new_sub_path(CT);
+            cairo_arc(CT, x + w - r, y + r, r, -M_PI_2, 0);
+            cairo_arc(CT, x + w - r, y + h - r, r, 0, M_PI_2);
+            cairo_arc(CT, x + r, y + h - r, r, M_PI_2, M_PI);
+            cairo_arc(CT, x + r, y + r, r, M_PI, 1.5 * M_PI);
+            cairo_close_path(CT);
+        };
+        rounded(0, 0, px, px, px * 0.22);
+        cairo_set_source_rgba(CT, PLATE.r, PLATE.g, PLATE.b, PLATE.a * 0.55);
+        cairo_fill(CT);
+        const double G = px * 0.16, GAP = px * 0.12;
+        const double X0 = (px - (2 * G + GAP)) / 2;
+        for (int q = 0; q < 2; q++)
+            for (int r = 0; r < 2; r++) {
+                rounded(X0 + q * (G + GAP), X0 + r * (G + GAP), G, G, G * 0.35);
+                cairo_set_source_rgba(CT, INK.r, INK.g, INK.b, INK.a * 0.7);
+                cairo_fill(CT);
+            }
+        cairo_destroy(CT);
+        if (cairo_surface_status(SURF) != CAIRO_STATUS_SUCCESS) {
+            cairo_surface_destroy(SURF);
+            return nullptr;
+        }
+        auto TEX = scaledTex(SURF, px, px, px);
+        cairo_surface_destroy(SURF);
+        return TEX;
+    }
+
     void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx) {
         // IDENTITY (the left lead): the app_icon/desktop-entry, drawn at every
         // size it appears (lead avatar, group header). An iconless card rolls a
@@ -223,8 +261,14 @@ namespace NHyprnotify {
             if (n.fallbackPick.empty())
                 n.fallbackPick = pickFallback();
             if (n.fallbackPick.empty()) {
-                n.identTex.reset();
-                n.identFor.clear();
+                // the generic mark: one neutral face for every iconless
+                // card; the key carries the fg it was drawn in, so a theme
+                // change rebuilds it (the symbolic-identity contract)
+                const auto GENERIC = "__hyprnotify_generic__\x1f" + std::to_string((uint64_t)cfg.colFg->value());
+                if (n.identFor != GENERIC) {
+                    n.identTex = genericMark(iconPx);
+                    n.identFor = GENERIC;
+                }
             } else if (n.identFor != n.fallbackPick) {
                 bool hero  = false;
                 n.identTex = fileTex(n.fallbackPick, iconPx, 0, 0, hero);
