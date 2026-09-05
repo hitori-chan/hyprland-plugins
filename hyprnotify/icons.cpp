@@ -47,6 +47,66 @@ namespace NHyprnotify {
         return fallbackFiles[std::uniform_int_distribution<size_t>{0, fallbackFiles.size() - 1}(rng)];
     }
 
+    // one deterministic initials face per (identity, name, font, size): the
+    // facepile never shows a blank square for a faceless sender
+    static SP<ITexture> generatedAvatar(const std::string& identity, const std::string& name, int iconPx) {
+        const auto BG   = color(cfg.colBg);
+        const bool DARK = BG.r + BG.g + BG.b < 1.5f;
+        const auto TINT = Pixel::avatarColor(identity, DARK);
+        const int  PX   = std::clamp(iconPx, 16, 128);
+        std::string KEY;
+        const auto appendKey = [&](std::string_view value) {
+            KEY += std::to_string(value.size());
+            KEY.push_back(':');
+            KEY += value;
+        };
+        appendKey(identity);
+        appendKey(name);
+        appendKey(cfg.font->value());
+        KEY += std::to_string(PX) + ":" + std::to_string(DARK);
+        if (const auto IT = generatedAvatars.find(KEY); IT != generatedAvatars.end())
+            return IT->second;
+        if (!warmGate.mayBuild() || !g_pHyprRenderer)
+            return {};
+
+        auto* SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, PX, PX);
+        if (!SURF || cairo_surface_status(SURF) != CAIRO_STATUS_SUCCESS) {
+            if (SURF)
+                cairo_surface_destroy(SURF);
+            return {};
+        }
+        auto*      CR     = cairo_create(SURF);
+        cairo_set_source_rgb(CR, TINT.r, TINT.g, TINT.b);
+        cairo_paint(CR);
+        auto*      LAYOUT = pango_cairo_create_layout(CR);
+        const auto LABEL  = Pixel::initials(name.empty() ? identity : name);
+        pango_layout_set_text(LAYOUT, LABEL.c_str(), -1);
+        auto* FONT = pango_font_description_from_string(cfg.font->value().c_str());
+        pango_font_description_set_size(FONT, std::max(8, (int)std::lround(PX * 0.38)) * PANGO_SCALE);
+        pango_font_description_set_weight(FONT, PANGO_WEIGHT_BOLD);
+        pango_layout_set_font_description(LAYOUT, FONT);
+        pango_layout_set_alignment(LAYOUT, PANGO_ALIGN_CENTER);
+        pango_layout_set_width(LAYOUT, PX * PANGO_SCALE);
+        int TW = 0, TH = 0;
+        pango_layout_get_pixel_size(LAYOUT, &TW, &TH);
+        const auto FG = Pixel::lightAvatarForeground(TINT) ? CHyprColor{0.98f, 0.99f, 1.f, 1.f} : CHyprColor{0.06f, 0.08f, 0.10f, 1.f};
+        cairo_set_source_rgba(CR, FG.r, FG.g, FG.b, FG.a);
+        cairo_move_to(CR, 0, (PX - TH) / 2.0);
+        pango_cairo_show_layout(CR, LAYOUT);
+        pango_font_description_free(FONT);
+        g_object_unref(LAYOUT);
+        cairo_destroy(CR);
+        cairo_surface_flush(SURF);
+        auto TEX = g_pHyprRenderer->createTexture(SURF);
+        cairo_surface_destroy(SURF);
+        if (!TEX)
+            return {};
+        if (generatedAvatars.size() >= 128)
+            generatedAvatars.erase(generatedAvatars.begin());
+        generatedAvatars.emplace(KEY, TEX);
+        return TEX;
+    }
+
     // Anything bigger than the card's icon box is downscaled ONCE on the CPU
     // at load — a 4K pixmap kept full-size would hold megabytes of VRAM to
     // paint <=100 logical px, and its GL upload would stall the main thread.
@@ -360,6 +420,19 @@ namespace NHyprnotify {
         im.builtFor = im.src;
         bool hero   = false;
         im.tex      = fileTex(im.src, maxPx, 0, 0, hero); // fit a box, never hero
+    }
+
+    // a facepile avatar: the sender's icon, or the generic mark when the
+    // sender is faceless — keyed like an identity, failures remembered
+    void ensureAvatarTex(SParticipant& p, int px) {
+        const auto KEY = p.icon.empty() ? std::string("__hyprnotify_generic__\x1f") + std::to_string((uint64_t)cfg.colFg->value())
+                                         :
+                                         p.icon + "\x1f" + std::to_string(px);
+        if (p.avatarFor == KEY)
+            return;
+        bool hero = false;
+        p.avatarTex = p.icon.empty() ? genericMark(px) : fileTex(p.icon, px, 0, 0, hero);
+        p.avatarFor = KEY;
     }
 
 } // namespace NHyprnotify

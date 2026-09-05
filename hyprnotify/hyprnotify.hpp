@@ -174,6 +174,10 @@ namespace NHyprnotify {
         std::string  name;
         std::string  iconSource; // the raw sender-icon
         std::string  icon;       // resolved path
+        SP<ITexture> avatarTex;
+        std::string  avatarFor;
+        int          avatarPx = 0;
+        bool         avatarSettled = false;
     };
 
     struct SNotif {
@@ -335,6 +339,7 @@ namespace NHyprnotify {
     // instead, cover-cropped to heroHCapPx, and set heroTex.
     void resetFallbackCache(); // forget the fallback_icon_dir listing (a config reload rescans)
     void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx);
+    void ensureAvatarTex(SParticipant& p, int px);
 
     // (Re)build an action button's icon when action-icons is set and its id (an
     // icon name or a path) changed; clears it when the hint is off.

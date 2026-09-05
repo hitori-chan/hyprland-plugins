@@ -27,13 +27,18 @@ namespace NHyprnotify {
         const auto       AGE     = ageString(N->arrived);
         const auto&      SUBHEX  = hexOfCached(COLSUB);
         const float      RP      = rPow();
+        const double     FACEPILE_D = 20, FACEPILE_GAP = 4;
 
         // warmGate.warming, not P.warm: measureRow runs this whole function with
         // P.warm forced on to suppress painting, and a build there would be a
         // build inside a render (crash class 4). Only the real warm may create.
-        if (warmGate.warming)
+        if (warmGate.warming) {
             ensureIconTex(*N, (int)std::lround(std::max(ST.iconPx, (double)cfg.maxIcon->value()) * P.scale),
                           (int)std::lround(box.w * P.scale), (int)std::lround(HERO_CAP * P.scale));
+            if (N->conversationKind == "group")
+                for (auto& PA : N->participants)
+                    ensureAvatarTex(PA, (int)std::lround(FACEPILE_D * P.scale));
+        }
 
         // the center face of the banner hero (popups.cpp): a hero-worthy content
         // image leads the row full-width and suppresses the icon column — AOSP
@@ -84,7 +89,17 @@ namespace NHyprnotify {
             // the ⋮ rides the header line; the kicker gives up exactly its
             // width so the two can never collide, shown or not
             const double MANAGEW = ST.manage ? OVER_D + OVER_GAP + 4 : 0;
-            const int    KICKWPX = std::max(1, (int)std::floor((TEXTW - MANAGEW) * P.scale));
+            // a group conversation's header also carries a facepile (the
+            // distinct senders of the kept messages) and, while the sender
+            // reports unread, an accent pill — the kicker gives up exactly
+            // their widths, as it does for the ⋮
+            const bool   FACEPILE = N->conversationKind == "group" && !N->participants.empty();
+            const size_t PILEN    = FACEPILE ? std::min<size_t>(3, N->participants.size()) : 0;
+            const auto   UNREAD   = (N->conversation && N->unreadCount > 0) ? cachedText(std::to_string(N->unreadCount), tOnAccent(), T.small, 64, -1, 0, false, 600) : nullptr;
+            const double PILLW2   = UNREAD && UNREAD->tex ? texW(UNREAD, P.scale) + 12 : 0;
+            const double FACEW    = PILEN > 0 ? (double)PILEN * FACEPILE_D + (double)(PILEN - 1) * FACEPILE_GAP : 0;
+            const double EXTRAW   = (FACEW > 0 ? FACEW + 6 : 0) + (PILLW2 > 0 ? PILLW2 + (FACEW > 0 ? 6 : 0) : 0);
+            const int    KICKWPX  = std::max(1, (int)std::floor((TEXTW - MANAGEW - EXTRAW) * P.scale));
 
             auto& KB = scratch();
             if (ST.headerHasApp) {
@@ -93,7 +108,10 @@ namespace NHyprnotify {
             }
             KB += AGE;
             const auto KICK  = cachedText(KB, COLSUB, T.header, KICKWPX, -1, 0, true, 500);
-            const auto TITLE = N->summary.empty() ? nullptr : cachedText(N->summary, COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
+            // a structured conversation shows the app's declared title; the
+            // sender's summary stands in where none was declared
+            const auto TITLESRC = !N->conversationTitle.empty() ? N->conversationTitle : N->summary;
+            const auto TITLE    = TITLESRC.empty() ? nullptr : cachedText(TITLESRC, COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
             // a merged chat is a transcript, so it gets Android's MessagingStyle
             // depth (~7 messages) where an ordinary card gets four lines
             const int  CAPL = (int)std::lround(T.body * 1.35 * (N->conversation ? 7 : 4));
@@ -141,8 +159,27 @@ namespace NHyprnotify {
                 (btnH > 0 ? BTN_ROW_GAP + btnH : 0) + (ARMED ? BTN_ROW_GAP + BTN_H : 0);
 
             double yy = TY;
-            if (!P.warm && KICK)
-                P.tex(KICK->tex, TX, yy);
+            if (!P.warm) {
+                if (KICK)
+                    P.tex(KICK->tex, TX, yy);
+                // the header's right side, walking left from the ⋮: the
+                // unread pill, then the facepile — each reserves exactly its
+                // width, so the kicker can never collide with them
+                double RIGHT = box.x + box.w - ROW_PADX - RTRIM - (ST.manage ? OVER_D + OVER_GAP : 0);
+                if (PILLW2 > 0 && UNREAD && UNREAD->tex) {
+                    const CBox PB2{RIGHT - PILLW2, TY + (std::max(KH, PILL_H) - PILL_H) / 2, PILLW2, PILL_H};
+                    P.rect(PB2, tAccentDim(), (int)std::lround(PILL_H / 2 * P.scale));
+                    P.tex(UNREAD->tex, PB2.x + (PB2.w - UNREAD->tex->m_size.x / P.scale) / 2, PB2.y + (PB2.h - UNREAD->tex->m_size.y / P.scale) / 2);
+                    RIGHT -= PILLW2 + 6;
+                }
+                for (size_t i = 0; i < PILEN; i++) {
+                    const auto& PA = N->participants[i];
+                    if (PA.avatarTex && PA.avatarTex->m_texID)
+                        P.texFit(PA.avatarTex, CBox{RIGHT - FACEPILE_D, TY + (std::max(KH, FACEPILE_D) - FACEPILE_D) / 2, FACEPILE_D, FACEPILE_D},
+                                 (int)std::lround(FACEPILE_D / 2 * P.scale), RP);
+                    RIGHT -= FACEPILE_D + FACEPILE_GAP;
+                }
+            }
             yy += KH + (KH > 0 ? HEAD_GAP : 0);
             if (!P.warm && TITLE)
                 P.tex(TITLE->tex, TX, yy);
