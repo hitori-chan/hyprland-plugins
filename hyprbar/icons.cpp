@@ -75,6 +75,24 @@ namespace NHyprbar {
             cairo_surface_destroy(SURF);
             return nullptr;
         }
+        // a tray cell is ~22px: inline SNI PNGs (nm-applet composites its
+        // signal icons at runtime) must not ride to GL full-size, same rule
+        // as loadPng
+        constexpr int CAP  = 128;
+        if (W > CAP || H > CAP) {
+            const double SCALE = std::min((double)CAP / W, (double)CAP / H);
+            const int    DW    = std::max(1, (int)std::lround(W * SCALE)), DH = std::max(1, (int)std::lround(H * SCALE));
+            auto*        SMALL = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, DW, DH);
+            auto*        CR    = cairo_create(SMALL);
+            cairo_scale(CR, (double)DW / W, (double)DH / H);
+            cairo_set_source_surface(CR, SURF, 0, 0);
+            cairo_pattern_set_filter(cairo_get_source(CR), CAIRO_FILTER_GOOD);
+            cairo_paint(CR);
+            cairo_destroy(CR);
+            cairo_surface_flush(SMALL);
+            cairo_surface_destroy(SURF);
+            SURF = SMALL;
+        }
         auto tex = g_pHyprRenderer->createTexture(SURF);
         cairo_surface_destroy(SURF);
         return tex;
