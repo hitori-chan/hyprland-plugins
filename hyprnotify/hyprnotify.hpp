@@ -157,6 +157,7 @@ namespace NHyprnotify {
         std::string          appKey;  // grouping identity: desktop-entry, else the app name
         std::string          summary; // newlines flattened, whitelisted markup
         std::string          body;    // whitelisted markup (Pango subset)
+        std::string          declaredGroupKey; // x-hyprnotify-group-key: the app's own grouping
         uint8_t              urgency  = 1;
         int                  progress = -1; // 0..100 from the "value" hint, -1 = none
         std::string          image;    // CONTENT source (image-path), resolved file path, "" = none
@@ -237,7 +238,8 @@ namespace NHyprnotify {
 
         bool                          closeOne(uint32_t id, uint32_t reason);
         void                          dismissAllLive();                      // "Clear all": every visible card goes; the DND queue stays
-        void                          dismissApp(const std::string& appKey); // a bundle's right-click
+        void                          dismissApp(const std::string& key);    // a bundle's right-click; the key may be (app, group)
+        std::string                   groupKeyOf(const SP<SNotif>& n);       // the bundle's identity: the app key, sub-keyed by the declared group
         void                          absorbPopped();                        // opening the shade parks the popped stack (no re-pop on close)
         void                          rearmExpiry();
         void                          snooze(uint32_t id);                        // out of sight, then back with a fresh banner
