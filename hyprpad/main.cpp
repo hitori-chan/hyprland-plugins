@@ -32,6 +32,7 @@
 
 #include "common/busclient.hpp"
 #include "common/lifecycle.hpp"
+#include "common/notifycard.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/Compositor.hpp>
@@ -82,18 +83,8 @@ namespace NHyprpad {
     static NHyprCommon::CBusLink          g_bus; // feedback cards' session-bus link
 
     static void notify(const char* icon, const std::string& body, bool timed) {
-        if (!g_bus.conn())
-            return;
-        try {
-            if (!notifyProxy)
-                notifyProxy = sdbus::createProxy(*g_bus.conn(), sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
-            notifyProxy->callMethodAsync("Notify")
-                .onInterface("org.freedesktop.Notifications")
-                .withArguments(std::string{"osd"}, uint32_t{9991}, std::string{icon}, std::string{"Touchpad"}, body, std::vector<std::string>{},
-                               std::map<std::string, sdbus::Variant>{{"urgency", sdbus::Variant{uint8_t{0}}}, {"x-hyprnotify-osd", sdbus::Variant{true}}}, timed ? 1500 : -1)
-                .uponReplyInvoke([](std::optional<sdbus::Error>, uint32_t) {});
-            g_bus.pollSoon(); // flush the send from the event loop, never from here
-        } catch (...) {} // broker gone: teardown is already pending, drop the card
+        NHyprCommon::SNotifyCard c{.id = 9991, .icon = icon, .summary = "Touchpad", .body = body, .timeoutMs = timed ? 1500 : -1, .osd = true};
+        NHyprCommon::notifyCard(g_bus, notifyProxy, c);
     }
 
     // ---- the device side ----
