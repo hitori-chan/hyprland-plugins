@@ -15,7 +15,11 @@
 // least-overlap fallback is KWin's default: it fills free space and, when
 // the screen is full, minimizes how much windows cover each other. Windows
 // that chose their spot (X11, dialogs anchored to a parent) keep it while
-// it's free; X11 override-redirect surfaces are left alone; the result is
+// it's free; a fixed-size toplevel (min == max — a dialog, a splash) keeps
+// the compositor's centered spot outright and never reads or writes the
+// class row, so a splash's box can neither steer it to a corner nor
+// clobber the app's memory; X11 override-redirect surfaces are left alone;
+// the result is
 // clamped fully on-screen, border included (no_offscreen), unless the
 // window is too big to fit. The whole close-box is remembered, and a
 // genuinely resizable app is BORN at its remembered size: the
@@ -259,6 +263,18 @@ namespace NHyprplace {
             // sibling sitting on it sends the newcomer to least-overlap,
             // never onto an exact stack.
             const bool          RESIZABLE = NHyprCommon::resizable(w);
+            // A fixed-size native toplevel (min == max) is a dialog or a
+            // splash, not an app window: it keeps the compositor's native
+            // placement and stays out of the class memory in both
+            // directions. Reading would steer a blocked remembered spot into
+            // the least-overlap corner — and a class whose main window is
+            // grant-exempt (a maximized Electron main, Discord's shape) lets
+            // the splash own the row, so the corner lands, closes and is
+            // remembered again; writing would clobber the row with the
+            // transient's box. X11 and parent-anchored windows below keep
+            // their own keep-while-free contract.
+            if (!RESIZABLE && !w->backend().isX11() && !w->backend().parent())
+                return;
             std::optional<CBox> stored;
             if (!w->backend().isX11() && !w->backend().parent())
                 if (const auto IT = g_lastSpot.find(classKey(w)); IT != g_lastSpot.end())
@@ -397,8 +413,11 @@ namespace NHyprplace {
 
     void onWindowClose(PHLWINDOW w) {
         // a maximized/fullscreen close-box is the workarea, not a spot; X11
-        // windows and dialogs place themselves and never consult the memory
-        if (!w || !w->mapped() || !w->isFloating() || !w->windowTarget() || w->backend().isX11() || w->backend().parent())
+        // windows and dialogs place themselves and never consult the memory;
+        // a fixed-size native window (a dialog/splash) never owns the row,
+        // or its transient box would clobber the app's remembered close-box
+        if (!w || !w->mapped() || !w->isFloating() || !w->windowTarget() || w->backend().isX11() || w->backend().parent() ||
+            !NHyprCommon::resizable(w))
             return;
         if (NHyprCommon::toldMaximized(w) || Fullscreen::controller()->isFullscreen(w))
             return;
@@ -443,7 +462,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             g_lifecycle.listen(events.window.predictSize, [](PHLWINDOW w, Vector2D& size) { onPredictSize(w, size); });
     }(Event::bus()->m_events);
 
-    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.1.9"};
+    return {"hyprplace", "spawn placement with geometry memory", "hitori", "2.1.10"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
