@@ -220,8 +220,26 @@ nested_dev_state() { # echo none | active | zombie (see remove_nested_dev)
 	fi
 }
 
+nested_dev_occupants() { # classes of live windows mapped on nested-dev
+	local mindex
+	mindex="$(hyprctl monitors -j 2>/dev/null | python3 -c 'import json,sys;print(next((i for i,m in enumerate(json.load(sys.stdin),1) if m["name"]=="nested-dev"),0))' 2>/dev/null)"
+	[[ "${mindex:-0}" != "0" ]] || return 0
+	hyprctl clients -j 2>/dev/null | python3 -c "
+import json, sys
+print(' '.join(c['class'] for c in json.load(sys.stdin) if c.get('monitor') == $mindex))" 2>/dev/null
+}
+
 remove_nested_dev() { # remove + verify the monitor is fully gone; 0 clean, 1 leak
-	local attempt state
+	local attempt state occ
+	# never remove an output that still hosts live windows: nested-dev is the
+	# gate's headless parking output, and anything parked there at sweep time
+	# is the user's (a re-logged browser), not the gate's — the gate's own
+	# nested window dies with its instance
+	occ="$(nested_dev_occupants)"
+	if [[ -n "$occ" ]]; then
+		echo "harness: nested-dev has windows parked on it ($occ); refusing to remove" >&2
+		return 1
+	fi
 	for attempt in 1 2; do
 		hyprctl output remove nested-dev >/dev/null 2>&1
 		for _ in $(seq 1 20); do
@@ -297,7 +315,7 @@ launch_nested() {
 					HARNESS_OUTPUT_OWNED=1
 					: > "$HARNESS/nested.output-owned"
 				else
-					echo "harness: WARNING: leaked 'nested-dev' monitor could not be removed; run 'hyprctl output remove nested-dev' (or relog)" >&2
+					echo "harness: WARNING: leaked 'nested-dev' monitor could not be removed; move/close its windows, then run 'hyprctl output remove nested-dev' (or relog)" >&2
 					return 1
 				fi
 				;;
