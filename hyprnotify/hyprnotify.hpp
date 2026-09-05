@@ -149,6 +149,7 @@ namespace NHyprnotify {
         std::string  src;      // resolved file path
         SP<ITexture> tex;      // built by warm
         std::string  builtFor; // staleness: the src the tex was built from
+        std::string  alt;      // the img's alt text: the body fallback when the load fails
     };
 
     struct SNotif {
@@ -216,7 +217,13 @@ namespace NHyprnotify {
         std::string              attrValue(const std::string& tag, const std::string& attr); // one quoted attr, case-insensitive name
         std::string              oneLine(std::string s);
         std::string              resolveImage(std::string s, int sizePx); // path, file://, or a themed icon NAME
-        std::vector<std::string> extractImages(std::string& body, int sizePx); // pulls <img src> out of the body
+        // one <img src>: the resolved path and its alt — the load-failure
+        // fallback line
+        struct SImgRef {
+            std::string src;
+            std::string alt;
+        };
+        std::vector<SImgRef> extractImages(std::string& body, int sizePx); // pulls <img src> out of the body
         void                     unpackImageData(SNotif& n, const ImageData& d, int capPx); // -> premultiplied BGRA
         std::string              joinAppend(const std::string& oldBody, const std::string& add);
     }

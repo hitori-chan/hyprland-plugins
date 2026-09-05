@@ -117,8 +117,20 @@ namespace NHyprnotify::Parse {
     // markup sanitizer would drop it, resolve each src (path or themed name),
     // and return the thumbnails — removing the tags from the text. http(s)
     // and data: srcs aren't fetched, so they're skipped.
-    std::vector<std::string> extractImages(std::string& body, int sizePx) {
-        std::vector<std::string> out;
+    // an <img> alt attribute is untrusted too: cut codepoint-safe before
+    // it may become a fallback line
+    static std::string clipAttr(std::string s) {
+        constexpr size_t CAP = 512;
+        if (s.size() <= CAP)
+            return s;
+        s.resize(CAP);
+        while (!s.empty() && ((unsigned char)s.back() & 0xc0) == 0x80)
+            s.pop_back();
+        return s;
+    }
+
+    std::vector<SImgRef> extractImages(std::string& body, int sizePx) {
+        std::vector<SImgRef> out;
         for (size_t i = 0; i < body.size();) {
             if (body[i] != '<') {
                 i++;
@@ -136,10 +148,12 @@ namespace NHyprnotify::Parse {
             const auto END = body.find('>', j);
             if (END == std::string::npos)
                 break;
-            const auto SRC = attrValue(body.substr(i, END - i + 1), "src");
+            const auto TAG = body.substr(i, END - i + 1);
+            const auto SRC = attrValue(TAG, "src");
+            const auto ALT = oneLine(sanitizeMarkup(clipAttr(attrValue(TAG, "alt"))));
             if (!SRC.empty() && !SRC.starts_with("http") && !SRC.starts_with("data:"))
                 if (const auto P = resolveImage(SRC, sizePx); !P.empty())
-                    out.push_back(P);
+                    out.push_back(SImgRef{.src = P, .alt = ALT});
             body.erase(i, END - i + 1); // drop the tag from the text
         }
         return out;

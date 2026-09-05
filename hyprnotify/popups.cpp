@@ -19,6 +19,14 @@ namespace NHyprnotify {
         return false;
     }
 
+    // one alt line of a failed body <img>: the text, its warmed raster and
+    // the height layout reserved for it
+    struct SAltLine {
+        std::string      text;
+        const SCachedText* tex = nullptr;
+        double            h    = 0;
+    };
+
     void renderPopups(const SPaint& P, const SType& T) {
         const auto   MB      = P.mon->logicalBox();
         const double W       = std::max((double)cfg.width->value(), 120.0);
@@ -123,13 +131,29 @@ namespace NHyprnotify {
             }
             const double IMG_BLOCK = imgH > 0 ? IMG_ROW_GAP + imgH : 0;
 
+            // an <img> that failed to load keeps its alt text as a body line
+            // — the sender meant to show something; the words outlive the
+            // missing file
+            static std::vector<SAltLine> altLines; // reused; main thread only
+            altLines.clear();
+            for (const auto& IM : N->bodyImages)
+                if (!IM.tex && !IM.alt.empty())
+                    altLines.push_back(SAltLine{.text = IM.alt});
+            double altH = 0;
+            for (auto& A : altLines) {
+                A.tex = cachedText(A.text, COLSUB, T.body, TEXTWPX, 1, 0, false, 400);
+                A.h   = A.tex ? std::max(14.0, texH(A.tex, P.scale)) : 0;
+                altH += A.h;
+            }
+            const double ALT_BLOCK = altH > 0 ? IMG_ROW_GAP + altH : 0;
+
             // the body cap: at most ~8 lines, and never past what max_height
             // leaves after the other blocks — an uncapped body painted
             // OUTSIDE the glass once actions and thumbnails stacked up (the
             // 02359ed lesson; a one-line floor keeps hostile configs sane)
             const double HH = texH(HEADER, P.scale), TH = texH(TITLE, P.scale);
             const double AVAIL = MAXH - 2 * PADY - (HERO ? HEROH : 0) - HH - (HH > 0 ? HEAD_GAP : 0) - TH - TITLE_GAP - (N->progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0) -
-                BTN_BLOCK - IMG_BLOCK;
+                BTN_BLOCK - IMG_BLOCK - ALT_BLOCK;
             const int  LINEPX  = (int)std::lround(T.body * 1.35);
             const int  BODYCAP = std::max(LINEPX, std::min(LINEPX * 8, (int)std::floor(AVAIL * P.scale)));
             const auto BODY    = N->body.empty() ? nullptr : cachedText(N->body, COLBODY, T.body, TEXTWPX, BODYCAP, 1.1f, true, 400, &COLLINK);
@@ -187,6 +211,14 @@ namespace NHyprnotify {
                         CP.texFit(IM.tex, CBox{TX + B.x, ty + B.y, B.w, B.h}, ROUND, RP);
                     }
                 ty += imgH;
+            }
+            if (!altLines.empty()) {
+                ty += IMG_ROW_GAP;
+                for (const auto& A : altLines)
+                    if (A.tex && A.tex->tex) {
+                        CP.tex(A.tex->tex, TX, ty + (A.h - texH(A.tex, P.scale)) / 2);
+                        ty += A.h;
+                    }
             }
             if (N->progress >= 0) {
                 ty += th > 0 ? PROGRESS_GAP : 0;
