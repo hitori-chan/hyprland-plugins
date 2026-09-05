@@ -98,9 +98,36 @@ namespace NHyprnotify {
         return heroWPx > 0 && sh > 0 && sw / sh >= HERO_ASPECT && sw * 2 >= heroWPx;
     }
 
+    // The freedesktop symbolic convention, shared with hyprbar's loadIcon:
+    // a pure-shape mark the toolkit repaints with the widget's foreground.
+    // Adwaita bakes them near-black, so on a dark card the brightness OSD
+    // icon was invisible until fileTex repaints it.
+    static bool isSymbolicIconPath(const std::string& path) {
+        return NHyprCommon::isSvgIconPath(path) && (path.find("-symbolic") != std::string::npos || path.find("/symbolic/") != std::string::npos);
+    }
+
+    // Repaint a rasterized symbolic surface to col, premultiplied (the same
+    // pixel math as hyprbar's loadSvg recolor; alpha untouched).
+    static void tintSurface(cairo_surface_t* SURF, const CHyprColor& col) {
+        const uint8_t R = (uint8_t)(col.r * 255), G = (uint8_t)(col.g * 255), B = (uint8_t)(col.b * 255);
+        auto*         D      = cairo_image_surface_get_data(SURF);
+        const int     W      = cairo_image_surface_get_width(SURF), H = cairo_image_surface_get_height(SURF);
+        const int     STRIDE = cairo_image_surface_get_stride(SURF);
+        for (int y = 0; y < H; y++) {
+            auto* row = D + (size_t)y * STRIDE;
+            for (int x = 0; x < W; x++) {
+                const uint8_t A = row[x * 4 + 3];
+                row[x * 4]      = (uint8_t)(B * A / 255);
+                row[x * 4 + 1]  = (uint8_t)(G * A / 255);
+                row[x * 4 + 2]  = (uint8_t)(R * A / 255);
+            }
+        }
+        cairo_surface_mark_dirty(SURF);
+    }
+
     // CImage's size hint only bounds SVG rasters; raster formats decode full
     // size transiently and get scaled here.
-    static SP<ITexture> fileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool& hero) {
+    static SP<ITexture> fileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool& hero, bool tintSymbolic = false) {
         const int            HINT = std::max(iconPx, heroWPx);
         Hyprgraphics::CImage image(path, Vector2D{(double)HINT, (double)HINT});
         if (!image.success())
@@ -113,6 +140,9 @@ namespace NHyprnotify {
         const auto SZ = SURF->size();
         if (SZ.x <= 0 || SZ.y <= 0)
             return nullptr;
+
+        if (tintSymbolic && isSymbolicIconPath(path))
+            tintSurface(SURF->cairo(), color(cfg.colFg));
 
         hero = heroWorthy(SZ.x, SZ.y, heroWPx);
         if (hero)
@@ -179,10 +209,15 @@ namespace NHyprnotify {
         // identity is icon-box only — a wide waifu never goes hero.
         if (!n.identity.empty()) {
             n.fallbackPick.clear();
-            if (n.identFor != n.identity) { // remembers a failed load too: no disk retry per warm
-                bool hero  = false;
-                n.identTex = fileTex(n.identity, iconPx, 0, 0, hero);
-                n.identFor = n.identity;
+            // a symbolic identity bakes colFg into its pixels (fileTex): the
+            // key carries the fg it was tinted with, so a theme change
+            // rebuilds it — hyprbar's dropStaleTint, per-card edition
+            const auto SYM = isSymbolicIconPath(n.identity);
+            const auto KEY = SYM ? n.identity + "\x1f" + std::to_string((uint64_t)cfg.colFg->value()) : n.identity;
+            if (n.identFor != KEY) { // remembers a failed load too: no disk retry per warm
+                bool hero = false;
+                n.identTex = fileTex(n.identity, iconPx, 0, 0, hero, SYM);
+                n.identFor = KEY;
             }
         } else {
             if (n.fallbackPick.empty())
@@ -250,20 +285,24 @@ namespace NHyprnotify {
             a.iconFor.clear(); // so re-enabling the hint rebuilds
             return;
         }
-        if (a.iconFor == a.id) // also remembers a failed resolve: no rescan per warm
-            return;
-        a.iconFor = a.id;
-        a.iconTex.reset();
-
         std::string path = a.id;
         if (path.starts_with("file://"))
             path.erase(0, 7);
         if (!path.starts_with('/'))
             path = NHyprCommon::resolveIconName(a.id, iconPx);
+
+        // a symbolic action bakes colFg into its pixels: same fg-carrying key
+        // as the identity; the bare id keeps remembering failed resolves
+        const auto SYM = isSymbolicIconPath(path);
+        const auto KEY = SYM ? a.id + "\x1f" + std::to_string((uint64_t)cfg.colFg->value()) : a.id;
+        if (a.iconFor == KEY) // also remembers a failed resolve: no rescan per warm
+            return;
+        a.iconFor = KEY;
+        a.iconTex.reset();
         if (path.empty())
             return;
         bool hero = false;
-        a.iconTex = fileTex(path, iconPx, 0, 0, hero); // icon box only, never hero
+        a.iconTex = fileTex(path, iconPx, 0, 0, hero, SYM); // icon box only, never hero
     }
 
     void ensureBodyImage(SBodyImage& im, int maxPx) {
