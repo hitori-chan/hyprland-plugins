@@ -513,7 +513,7 @@ namespace NHyprnotify {
             for (const auto& P : Parse::extractImages(bodyText, std::max(64, (int)cfg.maxIcon->value() * 2))) {
                 if (n->bodyImages.size() >= MAX_BODY_IMAGES)
                     break;
-                n->bodyImages.push_back({P});
+                n->bodyImages.push_back(SBodyImage{.src = P.src, .alt = P.alt});
             }
             n->body = capUtf8(Parse::sanitizeMarkup(bodyText, /*allowLinks=*/true));
             if (!appendOnto.empty())
