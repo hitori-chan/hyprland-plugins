@@ -14,7 +14,8 @@ Two surfaces share one card model:
    Android anatomy: ONE icon column on the left, Android's conversation
    container — the AVATAR leads (the card's content image, which for a chat
    is the sender's face; a rolled fallback face from `fallback_icon_dir`
-   when a card is iconless) and the app IDENTITY rides its bottom-right
+   when a card is iconless, and a deterministic generic application mark
+   when the dir is empty) and the app IDENTITY rides its bottom-right
    corner as a badge — AOSP's 2025 ratios off a 40dp avatar, so the app
    glyph is 16dp of the 20dp badge and the rim only 2dp — so one column
    says both who sent it and which app carried it. Symbolic icons
@@ -37,7 +38,8 @@ Two surfaces share one card model:
    next one pops fresh once that banner retreats — critical always shows.
    `quiet_fullscreen` (on by default) does the same for a screen that is
    spoken for: while a REAL fullscreen window owns the monitor, banners are
-   held back and the card lands straight in the shade. Nothing is lost —
+   held back, silent — the hold is the point — and the card lands straight
+   in the shade. Nothing is lost —
    residency is that safety net — and critical punches through, as through
    DND. A merely maximized window does not count.
 2. **The shade** (F12, the bar's bell, `hyprctl hyprnotify center`) — ONE
@@ -61,6 +63,9 @@ Two surfaces share one card model:
      more; below that every card stands alone. Conversations never bundle —
      each chat keeps its own card, and its open row runs to Android's
      MessagingStyle depth (~7 messages) where an ordinary card gets four.
+     A sender's `x-hyprnotify-group-key` sub-keys the app: an app carrying
+     many chats bundles per declared group, and the digest, the fold and
+     the dismissal all act on that group alone.
    - **A wide content image (aspect ≥ 1.5) leads the row as a hero** — the
      same full-width, height-capped strip the banner shows, so the center
      carries the preview (a screenshot card, a message's image) collapsed
@@ -158,8 +163,14 @@ Model rules: the **conversation merge** (Android's MessagingStyle) joins one
 chat's messages into one growing card (~8KB, oldest lines drop) — a fresh
 Notify whose app + summary matches a live card rides the replace path with
 the bodies joined, triggered by the `im.*`/`call.*` categories or by
-`x-canonical-append`; the OSD id band 9990-9999 replaces in place and never
-appends or groups; critical bypasses DND; `ignore_dbusclose` gates only the
+`x-canonical-append`; a sender's structured `conversation-id` hint is the
+stronger contract — it IS the chat's identity, whatever the display text
+says, and that card's body becomes the transcript (the last 7 of 32 kept
+messages, group senders named) with an unread-count pill and a sender
+facepile in the header; the OSD id band 9990-9999 replaces in place and
+never appends or groups, and a FRESH id chosen inside it only sticks when
+the sender carries `x-hyprnotify-osd` (our in-tree OSD senders do) — a
+foreign client cannot pin a band id; critical bypasses DND; `ignore_dbusclose` gates only the
 bus `CloseNotification` path (user dismissals and expiry are untouched, and an
 unknown ID is an error, not a silent no-op);
 `transient` and progress cards vanish entirely on expiry; `max_notifs`
@@ -174,8 +185,9 @@ badge counts the shade, never the DND queue or the OSD band).
 `hl.plugin.hyprnotify.{suspend,center}()`.
 
 Markup stays the whitelisted Pango subset with the literal-`<`/`&` rescue;
-`<a href>` opens via `xdg-open`; `<img src>` renders a thumbnail row;
-`sound-file`/`sound-name` play through `sound_command`. Cards never render
+`<a href>` opens via `xdg-open`; `<img src>` renders a thumbnail row (a
+load failure keeps its `alt` text as a line); `sound-file`/`sound-name`
+play through `sound_command`. Cards never render
 above the lockscreen, and input listeners guard and reset there first.
 Colors, fonts and metrics arrive from theme.lua via `plugin:hyprnotify:*`;
 the C++ defaults ARE the glass·ink tokens (`common/theme.hpp`), so an
