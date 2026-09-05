@@ -16,6 +16,25 @@ namespace NHyprbar {
             cairo_surface_destroy(SURF);
             return nullptr;
         }
+        // A bar cell is <=40px; apps that ship a single large icon (256-
+        // 1024px) must not ride to GL full-size — downscale once on the CPU,
+        // the same rule as hyprnotify's scaledTex
+        constexpr int    CAP  = 128;
+        const int        W    = cairo_image_surface_get_width(SURF), H = cairo_image_surface_get_height(SURF);
+        if (W > CAP || H > CAP) {
+            const double SCALE = std::min((double)CAP / W, (double)CAP / H);
+            const int    DW    = std::max(1, (int)std::lround(W * SCALE)), DH = std::max(1, (int)std::lround(H * SCALE));
+            auto*        SMALL = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, DW, DH);
+            auto*        CR    = cairo_create(SMALL);
+            cairo_scale(CR, (double)DW / W, (double)DH / H);
+            cairo_set_source_surface(CR, SURF, 0, 0);
+            cairo_pattern_set_filter(cairo_get_source(CR), CAIRO_FILTER_GOOD);
+            cairo_paint(CR);
+            cairo_destroy(CR);
+            cairo_surface_flush(SMALL);
+            cairo_surface_destroy(SURF);
+            SURF = SMALL;
+        }
         auto tex = g_pHyprRenderer->createTexture(SURF);
         cairo_surface_destroy(SURF);
         return tex;
@@ -149,9 +168,13 @@ namespace NHyprbar {
                 }
             }
         for (const auto& B : BASES) {
-            for (const char* SZ : {"48x48", "64x64", "128x128", "32x32", "24x24", "22x22", "16x16"})
+            for (const char* SZ : {"48x48", "64x64", "128x128", "32x32", "24x24", "22x22", "16x16", "96x96", "72x72", "36x36", "20x20"})
                 add(B + "/hicolor/" + SZ + "/apps");
             add(B + "/hicolor/scalable/apps");
+            // large sizes last: apps that ship ONE icon often ship it large
+            // (discord is 256x256-only) — a fallback tier, capped in loadPng
+            for (const char* SZ : {"192x192", "256x256", "384x384", "512x512", "1024x1024"})
+                add(B + "/hicolor/" + SZ + "/apps");
         }
         for (const auto& D : NHyprCommon::xdgDataDirs())
             add(D + "/pixmaps");
