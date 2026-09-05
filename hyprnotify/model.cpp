@@ -35,20 +35,30 @@ namespace NHyprnotify {
         // so they are dropped, not clipped
         constexpr size_t MAX_ACTIONS     = 8;
         constexpr size_t MAX_BODY_IMAGES = 4;
+        // structured conversation identity: hostile senders can't grow these
+        // without bound — they key the merge scan and the message upsert
+        constexpr size_t MAX_CONV_ID_BYTES     = 512;
+        constexpr size_t MAX_MESSAGE_ID_BYTES  = 512;
+        constexpr size_t MAX_SENDER_ID_BYTES   = 512;
+        constexpr size_t MAX_SENDER_NAME_BYTES = 256;
+        constexpr size_t MAX_CONV_KIND_BYTES   = 32;
 
         // a fresh body is hostile-able up to the D-Bus message limit; the
         // merged path caps at 8192, so a fresh one earns the same cut,
         // codepoint-safe
-        static std::string capUtf8(std::string s) {
-            constexpr size_t CAP = 8192;
-            if (s.size() <= CAP)
+        static std::string clipUtf8(std::string s, size_t cap) {
+            if (s.size() <= cap)
                 return s;
-            s.resize(CAP);
+            s.resize(cap);
             while (!s.empty() && ((unsigned char)s.back() & 0xc0) == 0x80)
                 s.pop_back();
             if (!s.empty() && (unsigned char)s.back() >= 0xc2)
                 s.pop_back(); // a lead byte whose followers the cut took
             return s;
+        }
+
+        static std::string capUtf8(std::string s) {
+            return clipUtf8(std::move(s), 8192);
         }
 
         SP<SNotif>                 byId(uint32_t id) {
@@ -400,6 +410,55 @@ namespace NHyprnotify {
             }
         }
 
+        // the conversation's display body: the latest kept messages, newest
+        // on top as the row renders it, group senders prefixed by name
+        static std::string conversationBody(const SNotif& n) {
+            if (n.messages.empty())
+                return n.body;
+
+            std::string  out;
+            const size_t START = Pixel::presentedMessageStart(n.messages);
+            for (size_t i = n.messages.size(); i-- > START;) {
+                const auto& M = n.messages[i];
+                if (M.text.empty())
+                    continue;
+                std::string line;
+                if (n.conversationKind == "group" && !M.senderName.empty()) {
+                    line += Parse::oneLine(Parse::sanitizeMarkup(M.senderName));
+                    line += ": ";
+                }
+                line += M.text;
+                if (out.empty()) {
+                    out = capUtf8(std::move(line));
+                    continue;
+                }
+                if (line.size() + 1 + out.size() > 8192)
+                    break;
+                out.insert(0, "\n");
+                out.insert(0, line);
+            }
+            return out;
+        }
+
+        // the distinct senders of the kept messages, newest first, capped —
+        // their textures ride on the participants, not on the messages
+        static void rebuildConversationParticipants(SNotif& n, int iconPx) {
+            auto previous = std::move(n.participants);
+            n.participants.clear();
+            const auto INDICES = Pixel::latestDistinctParticipantIndices(n.messages);
+            n.participants.reserve(INDICES.size());
+            for (const auto INDEX : INDICES) {
+                const auto& M = n.messages[INDEX];
+                SParticipant P{.key = Pixel::participantKey(M.senderId, M.senderName), .name = M.senderName, .iconSource = M.senderIcon};
+                if (const auto OLD = std::ranges::find_if(previous, [&](const auto& item) { return item.key == P.key && item.name == P.name && item.iconSource == P.iconSource; });
+                    OLD != previous.end())
+                    P = std::move(*OLD);
+                else
+                    P.icon = Parse::resolveImage(P.iconSource, iconPx);
+                n.participants.push_back(std::move(P));
+            }
+        }
+
         // ---- arrival ----
 
         uint32_t arrive(const std::string& appName, uint32_t replacesId, const std::string& appIcon, const std::string& summary, const std::string& body,
@@ -416,47 +475,160 @@ namespace NHyprnotify {
                     } catch (...) {}
                 return "";
             };
-            const std::string DESKTOP = strHint("desktop-entry");
-            const std::string APPKEY  = !DESKTOP.empty() ? DESKTOP : appName; // grouping identity
-            const std::string CAT     = strHint("category");
-            const bool CONVERSATION   = CAT.starts_with("im.") || CAT == "im" || CAT.starts_with("call.") || CAT == "call";
-
-            // THE CONVERSATION MERGE (Android's MessagingStyle): every message
-            // of one chat is ONE card. A fresh Notify whose app + summary
-            // matches a live card rides the replace path with the bodies
-            // joined, so a chatty sender grows a single card instead of
-            // stacking a row per message. Two triggers: the fd.o conversation
-            // categories (im.*/call.* — the summary IS the sender or the room),
-            // and x-canonical-append (notify-osd's extension) for apps that ask
-            // for it without a category. Cards that vanish never merge (a
-            // suppressed banner would strand them), nor does the OSD band.
-            std::string appendOnto;
-            if (id == 0) {
-                bool append = CONVERSATION;
-                if (const auto IT = hints.find("x-canonical-append"); !append && IT != hints.end())
+            // typed hint readers: nullopt = absent (or unparseable), and
+            // "sent but empty" stays distinct — a replace that clears a
+            // conversation-id must tear the conversation state down. An
+            // over-cap opaque id is REJECTED, not clipped: a truncated id
+            // would merge two different chats.
+            const auto optStrHint = [&](const char* key, const char* alias, size_t cap, bool opaque = false) -> std::optional<std::string> {
+                const auto LOOK = [&](const char* K) -> std::optional<std::string> {
+                    const auto IT = hints.find(K);
+                    if (IT == hints.end())
+                        return std::nullopt;
                     try {
-                        append = IT->second.get<bool>();
+                        const auto value = IT->second.get<std::string>();
+                        if (opaque && value.size() > cap)
+                            return std::nullopt;
+                        return opaque ? value : clipUtf8(value, cap);
+                    } catch (...) {}
+                    return std::nullopt;
+                };
+                if (const auto V = LOOK(key); V)
+                    return V;
+                return alias ? LOOK(alias) : std::nullopt;
+            };
+            const auto optBoolHint = [&](const char* key, const char* alias) -> std::optional<bool> {
+                const auto LOOK = [&](const char* K) -> std::optional<bool> {
+                    const auto IT = hints.find(K);
+                    if (IT == hints.end())
+                        return std::nullopt;
+                    try {
+                        return IT->second.get<bool>();
                     } catch (...) {
                         try {
                             const auto S = IT->second.get<std::string>();
-                            append       = !S.empty() && S != "false" && S != "0";
-                        } catch (...) {
-                            try {
-                                append = IT->second.get<uint8_t>() != 0;
-                            } catch (...) {}
-                        }
+                            if (S == "1" || S == "true" || S == "yes")
+                                return true;
+                            if (S == "0" || S == "false" || S == "no")
+                                return false;
+                        } catch (...) {}
                     }
-                if (append) {
-                    const auto SUM = Parse::oneLine(Parse::sanitizeMarkup(summary));
+                    return std::nullopt;
+                };
+                if (const auto V = LOOK(key); V)
+                    return V;
+                return alias ? LOOK(alias) : std::nullopt;
+            };
+            const auto optU32Hint = [&](const char* key, const char* alias) -> std::optional<uint32_t> {
+                const auto LOOK = [&](const char* K) -> std::optional<uint32_t> {
+                    const auto IT = hints.find(K);
+                    if (IT == hints.end())
+                        return std::nullopt;
+                    try {
+                        return IT->second.get<uint32_t>();
+                    } catch (...) {
+                        try {
+                            return (uint32_t)std::max<int32_t>(0, IT->second.get<int32_t>());
+                        } catch (...) {}
+                    }
+                    return std::nullopt;
+                };
+                if (const auto V = LOOK(key); V)
+                    return V;
+                return alias ? LOOK(alias) : std::nullopt;
+            };
+            const auto optI64Hint = [&](const char* key, const char* alias) -> std::optional<int64_t> {
+                const auto LOOK = [&](const char* K) -> std::optional<int64_t> {
+                    const auto IT = hints.find(K);
+                    if (IT == hints.end())
+                        return std::nullopt;
+                    try {
+                        return IT->second.get<int64_t>();
+                    } catch (...) {
+                        try {
+                            const auto VALUE = IT->second.get<uint64_t>();
+                            if (VALUE <= (uint64_t)std::numeric_limits<int64_t>::max())
+                                return (int64_t)VALUE;
+                        } catch (...) {}
+                    }
+                    return std::nullopt;
+                };
+                if (const auto V = LOOK(key); V)
+                    return V;
+                return alias ? LOOK(alias) : std::nullopt;
+            };
+
+            const std::string DESKTOP = strHint("desktop-entry");
+            const std::string APPKEY  = !DESKTOP.empty() ? DESKTOP : appName; // grouping identity
+            const std::string CAT     = strHint("category");
+            const bool        CATEGORY_CONVERSATION = CAT.starts_with("im.") || CAT == "im" || CAT.starts_with("call.") || CAT == "call";
+
+            // the structured conversation hints: the plain names are the
+            // de-facto extension, the x-hyprnotify-* forms the private
+            // alias — neither sits in the published spec's hint table
+            // (docs/hyprnotify.md keeps the table)
+            const auto        CONV_ID_HINT        = optStrHint("conversation-id", "x-hyprnotify-conversation-id", MAX_CONV_ID_BYTES, true);
+            const auto        CONV_TITLE_HINT     = optStrHint("conversation-title", "x-hyprnotify-conversation-title", 512);
+            const auto        CONV_KIND_HINT      = optStrHint("conversation-kind", "x-hyprnotify-conversation-kind", MAX_CONV_KIND_BYTES, true);
+            const auto        CONV_ICON_HINT      = optStrHint("conversation-icon", "x-hyprnotify-conversation-icon", 512, true);
+            const auto        SENDER_ID_HINT      = optStrHint("sender-id", "x-hyprnotify-sender-id", MAX_SENDER_ID_BYTES, true);
+            const auto        SENDER_NAME_HINT    = optStrHint("sender-name", "x-hyprnotify-sender-name", MAX_SENDER_NAME_BYTES);
+            const auto        SENDER_ICON_HINT    = optStrHint("sender-icon", "x-hyprnotify-sender-icon", 512, true);
+            const auto        MESSAGE_ID_HINT     = optStrHint("message-id", "x-hyprnotify-message-id", MAX_MESSAGE_ID_BYTES, true);
+            const auto        DECLARED_GROUP_HINT = optStrHint("x-hyprnotify-group-key", nullptr, MAX_CONV_ID_BYTES, true);
+            const auto        UNREAD_HINT         = optU32Hint("unread-count", "x-hyprnotify-unread-count");
+            const auto        HISTORIC_HINT       = optBoolHint("message-historic", "x-hyprnotify-message-historic");
+            const auto        MESSAGE_TIME_HINT   = optI64Hint("message-time", "x-hyprnotify-message-timestamp");
+            const std::string CONV_ID        = CONV_ID_HINT ? *CONV_ID_HINT : std::string{};
+            const std::string MESSAGE_ID     = MESSAGE_ID_HINT ? *MESSAGE_ID_HINT : std::string{};
+            const std::string SENDER_NAME    = SENDER_NAME_HINT ? Parse::oneLine(Parse::sanitizeMarkup(*SENDER_NAME_HINT)) : std::string{};
+            const bool        HISTORIC       = HISTORIC_HINT.value_or(false);
+
+            // THE CONVERSATION MERGE (Android's MessagingStyle): every message
+            // of one chat is ONE card. The primary contract is the sender's
+            // stable conversation-id: display text and category alone are
+            // insufficient — two Telegram chats can share a title, and a
+            // browser can reuse visible text for unrelated site alerts.
+            // Without a conversation-id the legacy contract stands: a fresh
+            // Notify whose app + summary matches a live card rides the replace
+            // path with the bodies joined (the fd.o conversation categories —
+            // the summary IS the sender or the room — and x-canonical-append).
+            // Cards that vanish never merge (a suppressed banner would strand
+            // them), nor does the OSD band.
+            std::string appendOnto;
+            if (id == 0) {
+                if (!CONV_ID.empty()) {
                     for (const auto& N : notifs)
-                        if (!inOsdBand(N->id) && !vanishes(N) && N->appKey == APPKEY && N->summary == SUM) {
-                            id         = N->id;
-                            appendOnto = N->body;
+                        if (!inOsdBand(N->id) && !vanishes(N) && Pixel::matchesConversation(APPKEY, CONV_ID, N->appKey, N->conversationId)) {
+                            id = N->id;
                             break;
                         }
+                } else {
+                    bool append = CATEGORY_CONVERSATION;
+                    if (const auto IT = hints.find("x-canonical-append"); !append && IT != hints.end())
+                        try {
+                            append = IT->second.get<bool>();
+                        } catch (...) {
+                            try {
+                                const auto S = IT->second.get<std::string>();
+                                append       = !S.empty() && S != "false" && S != "0";
+                            } catch (...) {
+                                try {
+                                    append = IT->second.get<uint8_t>() != 0;
+                                } catch (...) {}
+                            }
+                        }
+                    if (append) {
+                        const auto SUM = Parse::oneLine(Parse::sanitizeMarkup(summary));
+                        for (const auto& N : notifs)
+                            if (!inOsdBand(N->id) && !vanishes(N) && N->appKey == APPKEY && N->summary == SUM) {
+                                id         = N->id;
+                                appendOnto = N->body;
+                                break;
+                            }
+                    }
                 }
             }
-
 
             // The reserved band is not a capability: a fresh chosen id in
             // it requires the private x-hyprnotify-osd hint (our in-tree
@@ -487,7 +659,8 @@ namespace NHyprnotify {
                 } while (byId(id) || inOsdBand(id));
             }
 
-            auto n = byId(id);
+            auto       n        = byId(id);
+            const bool EXISTING = n != nullptr;
             if (!n) {
                 n = makeShared<SNotif>();
                 n->id = id;
@@ -497,6 +670,18 @@ namespace NHyprnotify {
                 n->waiting = suspended;
                 notifs.insert(notifs.begin(), n); // newest on top; a replace keeps its slot
                 evictOverflow();
+            }
+
+            // Which conversation this arrival belongs to. A replace that
+            // carries a conversation-id aims at that chat; one without it
+            // keeps the target's conversation only for the same app.
+            const bool        SAME_APP          = EXISTING && n->appKey == APPKEY;
+            const std::string EFFECTIVE_CONV_ID = CONV_ID_HINT ? CONV_ID : SAME_APP ? n->conversationId : std::string{};
+            const bool        SAME_CONVERSATION = EXISTING && !EFFECTIVE_CONV_ID.empty() && SAME_APP && n->conversationId == EFFECTIVE_CONV_ID;
+            const bool        CONVERSATION      = CATEGORY_CONVERSATION || !EFFECTIVE_CONV_ID.empty() || (SAME_CONVERSATION && n->conversation);
+            if (!SAME_CONVERSATION) {
+                n->messages.clear();
+                n->unreadCount = 0;
             }
 
             n->arrived = Time::steadyNow(); // a replace refreshes the age, like a new arrival would
@@ -518,6 +703,52 @@ namespace NHyprnotify {
             n->body = capUtf8(Parse::sanitizeMarkup(bodyText, /*allowLinks=*/true));
             if (!appendOnto.empty())
                 n->body = Parse::joinAppend(appendOnto, n->body);
+
+            // the structured conversation state: identity, kind, icon, the
+            // app's declared group, and — when a conversation-id is in force
+            // — the bounded message log the body is rebuilt from
+            const int ICONPX = std::max(8, (int)cfg.maxIcon->value());
+            n->conversationId = EFFECTIVE_CONV_ID;
+            if (CONV_TITLE_HINT)
+                n->conversationTitle = CONV_TITLE_HINT->empty() ? n->summary : Parse::oneLine(Parse::sanitizeMarkup(*CONV_TITLE_HINT));
+            else if (!SAME_CONVERSATION)
+                n->conversationTitle = n->summary;
+            if (CONV_KIND_HINT) {
+                const auto KIND = Pixel::normalizeConversationKind(*CONV_KIND_HINT);
+                if (!KIND.empty())
+                    n->conversationKind = KIND;
+                else if (!SAME_CONVERSATION)
+                    n->conversationKind.clear();
+            } else if (!SAME_CONVERSATION)
+                n->conversationKind = !EFFECTIVE_CONV_ID.empty() ? "one-to-one" : "";
+            if (n->conversationKind.empty() && !EFFECTIVE_CONV_ID.empty())
+                n->conversationKind = "one-to-one";
+            if (CONV_ICON_HINT)
+                n->conversationIconSource = *CONV_ICON_HINT;
+            else if (!SAME_CONVERSATION) {
+                n->conversationIconSource.clear();
+                n->conversationIcon.clear();
+            }
+            if (CONV_ICON_HINT)
+                n->conversationIcon = Parse::resolveImage(n->conversationIconSource, ICONPX);
+            if (DECLARED_GROUP_HINT)
+                n->declaredGroupKey = *DECLARED_GROUP_HINT;
+            else if (!SAME_APP)
+                n->declaredGroupKey.clear();
+
+            if (!EFFECTIVE_CONV_ID.empty()) {
+                const auto viewOf = [](const std::optional<std::string>& value) -> std::optional<std::string_view> {
+                    return value ? std::optional<std::string_view>{*value} : std::nullopt;
+                };
+                const auto SENDER_NAME_VIEW = SENDER_NAME_HINT ? std::optional<std::string_view>{SENDER_NAME} : std::nullopt;
+                const auto MUTATION = Pixel::upsertMessage(n->messages, MESSAGE_ID, n->body, viewOf(SENDER_ID_HINT), SENDER_NAME_VIEW, viewOf(SENDER_ICON_HINT), MESSAGE_TIME_HINT, HISTORIC_HINT);
+                rebuildConversationParticipants(*n, ICONPX);
+                n->body        = conversationBody(*n);
+                n->unreadCount = Pixel::updatedUnreadCount(n->unreadCount, UNREAD_HINT, HISTORIC, MUTATION);
+            } else {
+                n->unreadCount = 0;
+                n->participants.clear();
+            }
 
             n->urgency  = 1;
             n->progress = -1;
@@ -551,7 +782,6 @@ namespace NHyprnotify {
             // the IDENTITY (app_icon param, else the desktop-entry hint)
             // rides it as a corner badge — or leads alone when there is no
             // content. Nothing at all = a text-only card.
-            const int ICONPX = std::max(8, (int)cfg.maxIcon->value());
             const int PIXCAP = std::max((int)cfg.width->value() * 2, (int)cfg.maxIcon->value() * 3);
             for (const auto* KEY : {"image-data", "image_data", "icon_data"})
                 if (const auto IT = hints.find(KEY); IT != hints.end() && n->pixels.empty())
@@ -619,11 +849,16 @@ namespace NHyprnotify {
                     n->transient = IT->second.get<bool>();
                 } catch (...) {}
 
-            // fd.o category: conversations rank high in the shade and never
-            // bundle into an app digest (Android keeps every chat its own
-            // card). Ordering and merging only — no per-app casing.
+            // Conversation identity (an fd.o category or a stable
+            // conversation-id) outranks ordinary cards and never bundles
+            // into an app digest (Android keeps every chat its own card).
+            // Ordering and merging only — no per-app casing.
             n->conversation = CONVERSATION;
-            n->priority     = CONVERSATION && Policy::priority(APPKEY, n->summary);
+            // a priority mark keys on the conversation-id when one is in
+            // force, else the sender's summary — marks set before a sender
+            // adopted ids keep applying
+            n->priority = (CONVERSATION || !n->conversationId.empty()) && (!n->conversationId.empty() ? (Policy::priority(APPKEY, n->conversationId) || Policy::priority(APPKEY, n->summary))
+                                                                                                    : Policy::priority(APPKEY, n->summary));
 
             if (expireTimeout > 0)
                 n->timeoutMs = expireTimeout;

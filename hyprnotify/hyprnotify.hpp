@@ -26,6 +26,8 @@
 
 #include "common/glass.hpp"
 
+#include "pixel_model.hpp"
+
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
@@ -152,13 +154,46 @@ namespace NHyprnotify {
         std::string  alt;      // the img's alt text: the body fallback when the load fails
     };
 
+    // one structured message of a conversation (the message-id upsert keeps
+    // the log bounded; see pixel_model.hpp)
+    struct SMessage {
+        std::string id;
+        std::string senderId;
+        std::string senderName;
+        std::string senderIcon;
+        std::string text;
+        int64_t     timestampMs = 0;
+        bool        historic    = false; // backfill: counted, never unread
+    };
+
+    // a distinct sender of a conversation; the avatar texture is warm-built
+    // (the texture rule) and owned here so the face pile and the transcript
+    // faces draw from one decode
+    struct SParticipant {
+        std::string  key; // stable: the sender-id, else the name
+        std::string  name;
+        std::string  iconSource; // the raw sender-icon
+        std::string  icon;       // resolved path
+    };
+
     struct SNotif {
         uint32_t             id = 0;
         std::string          appName;
         std::string          appKey;  // grouping identity: desktop-entry, else the app name
         std::string          summary; // newlines flattened, whitelisted markup
         std::string          body;    // whitelisted markup (Pango subset)
+        // structured conversation metadata (the hint table in docs/hyprnotify.md):
+        // a sender with a stable conversation-id grows ONE card per chat, its
+        // message log kept and its body rebuilt from the latest of it
+        std::string          conversationId; // stable chat identity; "" = no merge contract
+        std::string          conversationTitle;
+        std::string          conversationKind; // "one-to-one" or "group"
+        std::string          conversationIconSource; // the raw conversation-icon
+        std::string          conversationIcon;       // resolved path
         std::string          declaredGroupKey; // x-hyprnotify-group-key: the app's own grouping
+        std::vector<SMessage>     messages;     // oldest first, bounded
+        std::vector<SParticipant> participants; // latest distinct senders, bounded
+        uint32_t             unreadCount = 0;
         uint8_t              urgency  = 1;
         int                  progress = -1; // 0..100 from the "value" hint, -1 = none
         std::string          image;    // CONTENT source (image-path), resolved file path, "" = none
@@ -271,7 +306,7 @@ namespace NHyprnotify {
         void        init();
         void        exit();
         bool        silenced(const std::string& appKey);                            // no banner, no sound, ranked quiet
-        bool        priority(const std::string& appKey, const std::string& sender); // this chat outranks everything but critical
+        bool        priority(const std::string& appKey, const std::string& chat);  // this chat outranks everything but critical; chat = the conversation-id, else the sender summary
         void        toggleSilence(const std::string& appKey);                       // the quick toggle: always, or not at all
         void        silenceFor(const std::string& appKey, int64_t seconds);         // iOS's "Mute for 1 Hour"; 0 = always, < 0 = today
         void        unsilence(const std::string& appKey);
