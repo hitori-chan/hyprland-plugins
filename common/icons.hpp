@@ -177,14 +177,19 @@ namespace NHyprCommon {
         // Treat symbolic as a size directory so findIconInDir also probes the
         // context below it.
         std::vector<std::string> sizeDirs = {"scalable", "symbolic"};
-        for (const int S : {sizePx, 64, 48, 96, 128, 256, 72, 32, 24, 16})
+        // Small sizes in proximity order, the large ones LAST: an app that
+        // ships a single large icon (discord ships 256x256 only) must still
+        // resolve, but when both exist a source near the request wins. 22 is
+        // load-bearing, not a nicety: nm-applet's whole nm-* notification
+        // set (nm-signal-*, nm-stage*, nm-tech-*) is 22x22 only.
+        for (const int S : {sizePx, 64, 48, 96, 128, 256, 72, 36, 32, 24, 22, 20, 16, 192, 384, 512, 1024})
             sizeDirs.push_back(std::to_string(S) + "x" + std::to_string(S));
 
         // breeze (and KDE themes generally) lay out <context>/<size> instead
         // of <size>x<size>/<context> — probe the common contexts too
         static const char*       CTXS[]   = {"status", "apps", "devices", "actions", "categories", "mimetypes", "legacy", "symbolic"};
         std::vector<std::string> ctxSizes = {"symbolic", "scalable"};
-        for (const int S : {sizePx, 64, 48, 32, 24, 22, 16})
+        for (const int S : {sizePx, 64, 48, 32, 24, 22, 20, 16, 96, 128, 256, 512})
             ctxSizes.push_back(std::to_string(S));
 
         std::string found;
