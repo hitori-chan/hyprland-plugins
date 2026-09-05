@@ -179,7 +179,9 @@ namespace NHyprnotify {
     }
     static void markSender(uint32_t id) {
         if (const auto N = Model::byId(id))
-            Policy::togglePriority(N->appKey, N->summary);
+            // a conversation-id in force is the mark's key; the summary
+            // stays the key for cards that never adopted ids
+            Policy::togglePriority(N->appKey, !N->conversationId.empty() ? N->conversationId : N->summary);
     }
 
     // one entry of a row's manage panel, by the index its hit rect carried
@@ -195,7 +197,7 @@ namespace NHyprnotify {
             case 1: Model::snoozeFor(id, E.arg); break;
             case 2: Policy::silenceFor(N->appKey, E.arg); break;
             case 3: Policy::unsilence(N->appKey); break;
-            case 4: Policy::togglePriority(N->appKey, N->summary); break;
+            case 4: Policy::togglePriority(N->appKey, !N->conversationId.empty() ? N->conversationId : N->summary); break;
             case 5: Model::closeOne(id, Model::R_DISMISSED); return; // the card is gone; so is its panel
         }
         // Acting on a rule LEAVES the panel — you came for one verb. The
