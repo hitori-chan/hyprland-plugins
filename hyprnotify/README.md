@@ -17,7 +17,9 @@ Two surfaces share one card model:
    when a card is iconless) and the app IDENTITY rides its bottom-right
    corner as a badge — AOSP's 2025 ratios off a 40dp avatar, so the app
    glyph is 16dp of the 20dp badge and the rim only 2dp — so one column
-   says both who sent it and which app carried it. A wide content
+   says both who sent it and which app carried it. Symbolic icons
+   (names ending in `-symbolic`) are recolored to the theme fg so
+   device and OSD glyphs stay visible on the glass. A wide content
    image (aspect ≥ 1.5) goes hero, full-width instead. Then an "App • age"
    header, bold title, body, a progress pill
    for the `value` hint, and the card's actions as tinted text buttons.
