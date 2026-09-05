@@ -28,6 +28,7 @@
 
 #include "common/busclient.hpp"
 #include "common/lifecycle.hpp"
+#include "common/notifycard.hpp"
 #include "common/process.hpp"
 #include "wpctl.hpp"
 
@@ -101,20 +102,8 @@ namespace NHyprosd {
     // ---- the cards ----
 
     static void notify(uint32_t id, const char* icon, const char* summary, const std::string& body, int value) {
-        if (!sessionBus.conn())
-            return;
-        try {
-            if (!notifyProxy)
-                notifyProxy = sdbus::createProxy(*sessionBus.conn(), sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
-            std::map<std::string, sdbus::Variant> hints{{"urgency", sdbus::Variant{uint8_t{0}}}, {"x-hyprnotify-osd", sdbus::Variant{true}}};
-            if (value >= 0)
-                hints.emplace("value", sdbus::Variant{int32_t{value}});
-            notifyProxy->callMethodAsync("Notify")
-                .onInterface("org.freedesktop.Notifications")
-                .withArguments(std::string{"osd"}, id, std::string{icon}, std::string{summary}, body, std::vector<std::string>{}, hints, 1200)
-                .uponReplyInvoke([](std::optional<sdbus::Error>, uint32_t) {});
-            sessionBus.pollSoon(); // flush the send from the event loop, never from here
-        } catch (...) {} // broker gone: teardown is already pending, drop the card
+        NHyprCommon::SNotifyCard c{.id = id, .icon = icon, .summary = summary, .body = body, .timeoutMs = 1200, .osd = true, .value = value};
+        NHyprCommon::notifyCard(sessionBus, notifyProxy, c);
     }
 
     // ---- brightness (sysfs + logind, zero forks) ----

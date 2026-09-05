@@ -1,6 +1,7 @@
 // hyprbar/tray.cpp — the in-compositor StatusNotifierWatcher/Host and its items
 
 #include "common/lifecycle.hpp"
+#include "common/notifycard.hpp"
 
 #include "hyprbar.hpp"
 
@@ -69,21 +70,8 @@ namespace NHyprbar {
         // symbols (two independently-versioned .so files must not couple);
         // whatever daemon owns the name receives it.
         void notify(const std::string& app, uint32_t replacesId, const std::string& icon, const std::string& summary, const std::string& body, uint8_t urgency, int32_t timeoutMs, bool osd) {
-            if (!bus.conn())
-                return;
-            try {
-                if (!notifyProxy)
-                    notifyProxy = sdbus::createProxy(*bus.conn(), sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
-                std::map<std::string, sdbus::Variant> hints{{"urgency", sdbus::Variant{urgency}}};
-                if (osd)
-                    hints.emplace("x-hyprnotify-osd", sdbus::Variant{true});
-                notifyProxy->callMethodAsync("Notify")
-                    .onInterface("org.freedesktop.Notifications")
-                    .withArguments(app, replacesId, icon, summary, body, std::vector<std::string>{}, hints,
-                                   timeoutMs > 0 ? timeoutMs : -1)
-                    .uponReplyInvoke([](std::optional<sdbus::Error>, uint32_t) {});
-                pollSoon();  // flush the send from the event loop, never from here
-            } catch (...) {} // broker gone: teardown is already pending, drop the card
+            NHyprCommon::SNotifyCard c{.app = app, .id = replacesId, .icon = icon, .summary = summary, .body = body, .urgency = urgency, .timeoutMs = timeoutMs, .osd = osd};
+            NHyprCommon::notifyCard(bus, notifyProxy, c);
         }
 
         // A drain must never run synchronously from a send site. Input/render
