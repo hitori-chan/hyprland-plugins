@@ -106,7 +106,7 @@ namespace NHyprosd {
         try {
             if (!notifyProxy)
                 notifyProxy = sdbus::createProxy(*sessionBus.conn(), sdbus::ServiceName{"org.freedesktop.Notifications"}, sdbus::ObjectPath{"/org/freedesktop/Notifications"});
-            std::map<std::string, sdbus::Variant> hints{{"urgency", sdbus::Variant{uint8_t{0}}}, {"x-hitori-osd", sdbus::Variant{true}}};
+            std::map<std::string, sdbus::Variant> hints{{"urgency", sdbus::Variant{uint8_t{0}}}, {"x-hyprnotify-osd", sdbus::Variant{true}}};
             if (value >= 0)
                 hints.emplace("value", sdbus::Variant{int32_t{value}});
             notifyProxy->callMethodAsync("Notify")
@@ -499,7 +499,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_up", luaBrightnessUp);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprosd", "brightness_down", luaBrightnessDown);
 
-    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.3.6"};
+    return {"hyprosd", "the awesome volume/brightness OSD", "hitori", "1.3.7"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
