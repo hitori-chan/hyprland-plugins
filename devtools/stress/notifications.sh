@@ -187,6 +187,28 @@ hq hyprnotify center >/dev/null; sleep 0.4
 hq hyprnotify clear >/dev/null; sleep 0.8
 chk "hero: reset after the center-hero battery" test "$(st)" = "center:0 live:0 dnd:0"
 
+# a capture is not always wide: a near-square and a portrait region must
+# lead with the SAME capped strip (cover-cropped), not a 44 px icon box
+gen_hero() { # gen_hero <file> <w> <h> — solid test blue at the given size
+	python3 - "$1" "$2" "$3" <<'PY'
+import sys
+from PIL import Image
+Image.new("RGB", (int(sys.argv[2]), int(sys.argv[3])), (30, 160, 240)).save(sys.argv[1])
+PY
+}
+gen_hero /tmp/hero-sq.png 420 420
+dsp "hl.dsp.exec_cmd('notify-send -a herop -t 3000 -i /tmp/hero-sq.png \"Screenshot\" region')"; sleep 1
+hq hyprnotify center >/dev/null; sleep 0.4
+capture_nested /tmp/hero-4.png
+chk "hero: a square capture leads with the capped strip" test "$(hero_px /tmp/hero-4.png)" -gt 8000 -a "$(hero_span /tmp/hero-4.png)" -ge 104 -a "$(hero_span /tmp/hero-4.png)" -le 116
+gen_hero /tmp/hero-pt.png 420 640
+dsp "hl.dsp.exec_cmd('notify-send -a herop -t 3000 -i /tmp/hero-pt.png \"Screenshot\" region')"; sleep 1
+capture_nested /tmp/hero-5.png
+chk "hero: a portrait capture leads with the capped strip" test "$(hero_px /tmp/hero-5.png)" -gt 8000 -a "$(hero_span /tmp/hero-5.png)" -ge 104 -a "$(hero_span /tmp/hero-5.png)" -le 116
+hq hyprnotify center >/dev/null; sleep 0.4
+hq hyprnotify clear >/dev/null; sleep 0.8
+chk "hero: reset after the shape battery" test "$(st)" = "center:0 live:0 dnd:0"
+
 # ---- the shade's click model ---------------------------------------------
 # A shade row IS its banner: left on the BODY fires the card's primary and
 # dismisses it, and the CHEVRON is the only fold target. Driven through the
