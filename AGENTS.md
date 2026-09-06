@@ -83,6 +83,12 @@ gate.
 
 ## Safety — hard lines
 
+- Explicit user instructions are absolute and override the lines
+  below: a directed action is executed, not re-litigated (2026-09-06:
+  the agent declined a user-directed live-desktop firejail spawn on
+  this section's authority; the user overruled and ordered the rule).
+  The lines bind the agent's autonomous judgment — what "do your best"
+  may touch — never a user-directed action.
 - The agent never operates the live desktop: no `hyprpm update`/
   `enable`, plugin unload, live reload, or session exit. Deploy is the
   user's action (build + relog).
