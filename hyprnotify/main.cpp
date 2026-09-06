@@ -219,7 +219,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.offsetY         = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:offset_y", "popups' and the center's distance from the monitor top", 34);
     cfg.timeoutLow      = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:timeout_low", "ephemeral timeout in ms (low urgency, transient, progress cards)", 4000);
     cfg.timeoutNormal   = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:timeout_normal", "normal-urgency banner timeout in ms, then it retreats to the center; 0 = sticky (critical always sticks)", 5000);
-    cfg.quietFullscreen = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:quiet_fullscreen", "hold banners back while a fullscreen window owns the monitor; the card still lands in the shade", 1);
     cfg.snoozeSeconds   = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:snooze_seconds", "how long a snoozed card stays out of sight before it alerts again", 900);
     cfg.rounding        = makeShared<Config::Values::CIntValue>("plugin:hyprnotify:rounding", "card radius in logical px (panel +6 and rows -2 derive)", Th::RAD_CARD);
     cfg.roundingPower   = makeShared<Config::Values::CFloatValue>("plugin:hyprnotify:rounding_power", "corner superellipse exponent", (float)Th::ROUNDING_POWER);
@@ -237,7 +236,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     cfg.soundCommand    = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:sound_command", "libcanberra player for sound hints; empty disables", "canberra-gtk-play");
     cfg.fallbackIconDir = makeShared<Config::Values::CStringValue>("plugin:hyprnotify:fallback_icon_dir", "iconless cards draw a random identity face from this directory", "");
 
-    for (const auto& V : {cfg.fontSize, cfg.width, cfg.maxHeight, cfg.maxIcon, cfg.margin, cfg.offsetY, cfg.timeoutLow, cfg.timeoutNormal, cfg.coalescePopups, cfg.quietFullscreen, cfg.snoozeSeconds, cfg.rounding,
+    for (const auto& V : {cfg.fontSize, cfg.width, cfg.maxHeight, cfg.maxIcon, cfg.margin, cfg.offsetY, cfg.timeoutLow, cfg.timeoutNormal, cfg.coalescePopups, cfg.snoozeSeconds, cfg.rounding,
                           cfg.maxNotifs, cfg.ignoreDbusClose})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
     HyprlandAPI::addConfigValueV2(PHANDLE, cfg.roundingPower);

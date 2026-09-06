@@ -36,12 +36,8 @@ Two surfaces share one card model:
    live banner: while its popup is up, further non-critical arrivals from it
    land silent and resident in the center (folded, badge-counted), and the
    next one pops fresh once that banner retreats — critical always shows.
-   `quiet_fullscreen` (on by default) does the same for a screen that is
-   spoken for: while a REAL fullscreen window owns the monitor, banners are
-   held back, silent — the hold is the point — and the card lands straight
-   in the shade. Nothing is lost —
-   residency is that safety net — and critical punches through, as through
-   DND. A merely maximized window does not count.
+   Banners also show OVER a fullscreen window — the ecosystem default;
+   DND and the shade are the escape hatches.
 2. **The shade** (F12, the bar's bell, `hyprctl hyprnotify center`) — ONE
    list of live cards, no lifecycle sections and no history view: a
    dismissed card is gone, exactly as on Android, and there is no recall.
@@ -209,7 +205,6 @@ surface: [docs/hyprnotify.md](../docs/hyprnotify.md).
 | `plugin:hyprnotify:offset_y` | popups' and the shade's distance from the monitor top | 34 |
 | `plugin:hyprnotify:timeout_low` | ephemeral timeout in ms (low urgency, `transient`, progress cards) | 4000 |
 | `plugin:hyprnotify:timeout_normal` | normal-urgency banner timeout in ms, then it retreats to the shade; 0 = sticky (critical always sticks) | 5000 |
-| `plugin:hyprnotify:quiet_fullscreen` | hold banners back while a fullscreen window owns the monitor; the card still lands in the shade | 1 |
 | `plugin:hyprnotify:snooze_seconds` | how long a snoozed card stays out of sight before it alerts again | 900 |
 | `plugin:hyprnotify:coalesce_popups` | 1 = at most one live popup per app; same-app extras land silent in the shade (0 = a banner per message) | 1 |
 | `plugin:hyprnotify:max_notifs` | model cap; overflow evicts the oldest non-critical card | 50 |

@@ -885,18 +885,14 @@ namespace NHyprnotify {
             // the shade (folded, badge-counted), no second popup, no repeat
             // sound. A replace re-alerting its own live card is not a second
             // banner (appHasBanner skips self). Critical always punches through.
-            // Presenting, gaming, watching: a real fullscreen window means the
-            // screen is spoken for, so the banner is held back and the card
-            // lands straight in the shade instead. Nothing is lost — residency
-            // is exactly that safety net — and critical still punches through,
-            // as it does through DND.
+            // Banners show over a fullscreen window too — the ecosystem
+            // default; DND and the shade are the user's escape hatches.
             // And a silenced app asked for exactly this, permanently: its
             // cards land in the shade without ever taking the screen.
             const bool SOFT      = !n->waiting && n->urgency < 2 && !vanishes(n);
-            const bool FSQUIET   = SOFT && cfg.quietFullscreen->value() && NHyprCommon::fullscreenOn(Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr);
             const bool COALESCED = SOFT && cfg.coalescePopups->value() && appHasBanner(n);
             const bool SILENCED  = SOFT && Policy::silenced(n->appKey);
-            if (COALESCED || FSQUIET || SILENCED)
+            if (COALESCED || SILENCED)
                 n->banner = false;
 
             if (!n->waiting) // a suspended arrival is invisible: no warm, no damage
@@ -906,7 +902,7 @@ namespace NHyprnotify {
             // libcanberra player unless the client suppresses it. DND-queued
             // (waiting) arrivals stay silent; the resume doesn't replay.
             if (!n->waiting) {
-                bool        suppress = COALESCED || SILENCED || FSQUIET || n->snoozed; // none of these announces itself — the held banner included
+                bool        suppress = COALESCED || SILENCED || n->snoozed; // none of these announces itself
                 std::string soundFile, soundName;
                 if (const auto IT = hints.find("suppress-sound"); IT != hints.end())
                     try {

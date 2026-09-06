@@ -41,6 +41,7 @@
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/desktop/view/window/Window.hpp>
+#include <hyprland/src/desktop/view/window/WindowFullscreenPolicy.hpp>
 #include <hyprland/src/layout/target/WindowTarget.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>

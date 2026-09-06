@@ -2,7 +2,7 @@
 # The hyprnotify behavior battery: the notification cap, expiry and residency,
 # popup coalescing, the conversation merge, overflow paging, the shade's click
 # model, close-on-act, hover-hold, the bell's hover-peek, keyboard nav, and
-# quiet-while-fullscreen. Helpers live in notify-lib.sh; this file is battery
+# banners-over-fullscreen. Helpers live in notify-lib.sh; this file is battery
 # code only.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/notify-lib.sh"
 
@@ -307,23 +307,16 @@ chk "keys: a fresh shade for esc to close" test "$(st)" = "center:1 live:0 dnd:0
 tap esc
 chk "keys: esc closes the shade" test "$(st)" = "center:0 live:0 dnd:0"
 
-# ---- quiet while fullscreen -------------------------------------------------
-# A real fullscreen window owns the screen, so the banner is held back and
-# the card lands straight in the shade (residency is the safety net, so
-# nothing is lost). Critical still punches through, exactly as it does
-# through DND.
+# ---- banners over fullscreen ------------------------------------------------
+# No quiet-while-fullscreen policy: a real fullscreen window owns the screen
+# but the banner still shows over it (the ecosystem default). Residency and
+# DND remain the user's escape hatches.
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=600x400')"; sleep 2
 dsp "hl.dsp.window.fullscreen()"; sleep 1
-# Mode 2 is FSMODE_FULLSCREEN; 1 is merely maximized and must NOT count
-expect "quiet-fs: a window really is fullscreen" "any(c['fullscreen'] == 2 for c in cs)"
-dsp "hl.dsp.exec_cmd('notify-send -a q1 -t 30000 quiet body')"; sleep 1.2
-chk "quiet-fs: the card landed silent, no banner" test "$(bd)" = "banners:0 resident:1"
-dsp "hl.dsp.exec_cmd('notify-send -a q2 -u critical \"loud\" body')"; sleep 1.2
-chk "quiet-fs: critical still punches through" test "$(bd)" = "banners:1 resident:1"
-hq hyprnotify clear >/dev/null; sleep 0.5
-dsp "hl.dsp.window.fullscreen()"; sleep 1
-dsp "hl.dsp.exec_cmd('notify-send -a q3 -t 30000 loudagain body')"; sleep 1.2
-chk "quiet-fs: out of fullscreen, banners are back" test "$(bd)" = "banners:1 resident:0"
+# Mode 2 is FSMODE_FULLSCREEN; 1 is merely maximized
+dsp "hl.dsp.exec_cmd('notify-send -a q1 -t 30000 over-fullscreen body')"; sleep 1.2
+expect "fs-banner: a window really is fullscreen" "any(c['fullscreen'] == 2 for c in cs)"
+chk "fs-banner: the banner shows over the fullscreen window" test "$(bd)" = "banners:1 resident:0"
 hq hyprnotify clear >/dev/null; sleep 0.5
 dsp "hl.dsp.window.close()"; sleep 1
 

@@ -105,7 +105,6 @@ namespace NHyprnotify {
         SP<Config::Values::CIntValue>    timeoutLow;    // ms; the -1 fallback for ephemerals (low/transient/progress)
         SP<Config::Values::CIntValue>    timeoutNormal; // ms; the -1 fallback for normal urgency, then it retreats to the shade; 0 = sticky (critical always is)
         SP<Config::Values::CIntValue>    coalescePopups; // 1 = at most one live popup per app; same-app extras land resident + silent
-        SP<Config::Values::CIntValue>    quietFullscreen; // 1 = hold banners back while a real fullscreen window owns the monitor
         SP<Config::Values::CIntValue>    snoozeSeconds;   // how long a snoozed card stays out of sight before it alerts again
         SP<Config::Values::CIntValue>    rounding;      // card radius; the panel (+6) and rows (-2) derive from it
         SP<Config::Values::CFloatValue>  roundingPower; // superellipse exponent, the compositor's rounding_power

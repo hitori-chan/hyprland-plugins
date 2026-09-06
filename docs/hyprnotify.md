@@ -243,12 +243,9 @@ surface description and config live in `hyprnotify/README.md`).
   ones), and it closes on a grace timer once the pointer is on neither the
   bell nor the panel — both surfaces cancel that timer, which is what lets
   the pointer travel from the bell down into the shade. Any click pins it.
-- Quiet while fullscreen (`quiet_fullscreen`, on): a real fullscreen window
-  on the focused monitor holds banners back — presenting, gaming and
-  watching are the same ask — and the card lands resident in the shade
-  instead, SILENT (a held banner does not chime when the fullscreen lets
-  up; it already rang in the shade's count, and the hold is the point).
-  Critical bypasses it; a maximized window is not fullscreen.
+- Over fullscreen: banners show over a real fullscreen window too — the
+  ecosystem default, no quiet-while-fullscreen policy. DND and the shade
+  are the escape hatches; a maximized window was never different.
 - Critical: urgent-colored frame and progress fill, never expires.
 - Sound: `sound-file`/`sound-name` play through a libcanberra player
   (`sound_command`, empty disables); `suppress-sound` mutes one arrival. The
@@ -285,7 +282,7 @@ surface description and config live in `hyprnotify/README.md`).
 inter-card), `offset_y` (34, clears the bar), `timeout_low` (4000, the
 ephemerals' clock), `timeout_normal` (5000, then the banner retreats to the
 shade; 0 = sticky), `coalesce_popups` (1), `rounding`, `rounding_power`,
-`max_notifs`, `ignore_dbusclose`, `quiet_fullscreen` (1),
+`max_notifs`, `ignore_dbusclose`,
 `fallback_icon_dir`, `sound_command`
 (`canberra-gtk-play`), `col_bg`, `col_fg`, `col_title`, `col_kicker`,
 `col_frame`, `col_urgent`, `col_highlight`, `col_link`. The peek's grace
