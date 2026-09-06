@@ -6,7 +6,6 @@
 #include <hyprland/src/desktop/view/window/Window.hpp>
 #include <hyprland/src/desktop/view/window/WaylandBackend.hpp>
 #include <hyprland/src/desktop/view/window/X11Backend.hpp>
-#include <hyprland/src/desktop/view/window/WindowFullscreenPolicy.hpp>
 #include <hyprland/src/desktop/view/window/WindowPresentation.hpp>
 #include <hyprland/src/xwayland/XSurface.hpp>
 #include <hyprland/src/desktop/state/ViewState.hpp>
@@ -14,7 +13,6 @@
 #include <hyprland/src/helpers/MiscFunctions.hpp>
 #include <hyprland/src/managers/SeatManager.hpp>
 #include <hyprland/src/managers/SessionLockManager.hpp>
-#include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/desktop/Workspace.hpp>
 #include <hyprland/src/output/Monitor.hpp>
@@ -55,16 +53,6 @@ namespace NHyprCommon {
     // cancel a button, axis, key, or warp event before it reaches that client.
     inline bool nativeInputCaptureActive() {
         return g_pInputManager && g_pInputManager->inputCaptureActive();
-    }
-
-    // A REAL fullscreen window owns this monitor's active workspace (a
-    // maximized one respects the reserved strip and does not count). The bar
-    // hides for it; notification quieting is an explicit opt-in policy.
-    inline bool fullscreenOn(PHLMONITOR mon) {
-        if (!mon || !Fullscreen::controller())
-            return false;
-        const auto WS = mon->m_activeWorkspace;
-        return WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN;
     }
 
     // The monitor a point belongs to, nearest one if it lands off every
