@@ -22,7 +22,7 @@ TEST_TARGETS := test-icon-resolver test-battery-state test-desktop-exec \
 	test-hyprosd test-persist test-fileindex \
 	test-hyprsnap-geometry test-hyprmax-geometry test-pixel-model
 
-all: vptr vkbd input-capture cliphold fixwin
+all: vptr vkbd input-capture cliphold fixwin splashwin
 
 test: $(TEST_TARGETS)
 
@@ -92,6 +92,9 @@ input-capture: input-capture.c input-capture-proto.c input-capture-proto.h
 cliphold: cliphold.c cliphold-proto.c cliphold-proto.h
 	$(CC) $(CFLAGS) cliphold.c cliphold-proto.c -o $@ $(LDLIBS)
 
+splashwin: splashwin.c fixwin-protocol.h fixwin-proto.c
+	$(CC) $(CFLAGS) splashwin.c fixwin-proto.c -o $@ $(LDLIBS)
+
 fixwin: fixwin.c fixwin-protocol.h fixwin-proto.c
 	$(CC) $(CFLAGS) fixwin.c fixwin-proto.c -o $@ $(LDLIBS)
 
@@ -117,6 +120,6 @@ fixwin-proto.c: $(XXML)
 	wayland-scanner private-code $< $@
 
 clean:
-	rm -f vptr vkbd input-capture cliphold fixwin $(TEST_BINS) vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c fixwin-protocol.h fixwin-proto.c
+	rm -f vptr vkbd input-capture cliphold fixwin splashwin $(TEST_BINS) vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c fixwin-protocol.h fixwin-proto.c
 
 .PHONY: all clean test $(TEST_TARGETS)

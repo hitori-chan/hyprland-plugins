@@ -94,6 +94,29 @@ print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), '
 chk "fixed-size battery left no windows" \
 	test "$(pyc "sum(1 for c in cs if c['class'] in ('fixwin','foot'))")" = 0
 
+# ---- CSD geometry offset (discord-updater splash shape) ------------------
+# A fixed-size CSD toplevel pins min == max to its content frame and commits
+# a larger buffer (shadow margin, geometry offset (m,m)). The box must be the
+# client-declared frame, not the offset-inflated one: the old code inflated
+# 300x350 -> 310x360 and left a 10px wallpaper-visible strip bottom/right
+# where the client paints nothing. The resizable twin (min only) keeps the
+# offset-converted hints and its normal first-window layout, unchanged.
+dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 300 350 10 csdpin')"; sleep 2
+expect "fixed CSD splash: box is the client-declared frame, not offset-inflated" \
+	"any(c['class']=='csdpin' and c['floating'] and c['size']==[300,350] and abs(c['at'][0]-$(( (MON_W-300)/2 )))<=14 and abs(c['at'][1]-$(( 30+(MON_H-30-350)/2 )))<=14 for c in cs)"
+CP="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdpin'), ''))")"
+[[ -n "$CP" ]] && dsp "hl.dsp.window.close({window=\"address:$CP\"})"; sleep 1
+dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 300 350 10 csdresz - - resz')"; sleep 2
+expect "resizable CSD first window still tiles the workarea (pin-skip does not leak)" \
+	"any(c['class']=='csdresz' and not c['floating'] and c['at']==[1,31] and c['size']==[$((MON_W-2)), $((MON_H-32))] for c in cs)"
+CR="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdresz'), ''))")"
+[[ -n "$CR" ]] && dsp "hl.dsp.window.close({window=\"address:$CR\"})"; sleep 1
+chk "csd battery left no windows" test "$(pyc "sum(1 for c in cs if c['class'] in ('csdpin','csdresz'))")" = 0
+
 # ---- notification cap ---------------------------------------------------
 # 55 is just over the cap of 50 — enough to prove eviction without paying
 # for 65 daemons.
