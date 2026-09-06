@@ -3,13 +3,16 @@
 // CSD toplevel whose committed buffer is larger than the declared
 // window geometry (a shadow margin on all sides), min pinned to max
 // in the geometry frame.
-// usage: splashwin <w> <h> [margin] [app-id] [late] [parented] [resz] [vismargin]
+// usage: splashwin <w> <h> [margin] [app-id] [late] [parented] [resz] [vismargin] [pinx] [parentonly] [pgeo]
 //   w, h   content size = the declared window geometry, min == max (resz: min only)
 //   margin shadow inset: the buffer is (w + 2m) x (h + 2m)
 //   late     map first (buffer commit), THEN declare the size limits
 //   parented also create a big resizable toplevel first and transient-for it
 //   resz     declare the min size only: a resizable CSD window with the same offset
 //   vismargin paint the margin as opaque light gray (visible over any background)
+//   pinx     pin the width only (max = w x 0): the per-axis pin shape
+//   parentonly create only the parent toplevel (no child)
+//   pgeo     give the parent an explicit window geometry (0,0,PW,PH)
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,7 +34,7 @@ static struct wl_surface   *g_psurf;
 static struct xdg_surface  *g_pxsd;
 static struct xdg_toplevel *g_ptop;
 static struct wl_buffer    *g_pbuf;
-static int                  g_w = 300, g_h = 350, g_m = 10, g_late, g_parented, g_resz, g_vis, g_done;
+static int                  g_w = 300, g_h = 350, g_m = 10, g_late, g_parented, g_resz, g_vis, g_pinx, g_parentonly, g_pgeo, g_done;
 static const char          *g_id = "splashwin";
 
 static void reg_bind(void *d, struct wl_registry *r, uint32_t id, const char *ifc, uint32_t ver) {
@@ -87,6 +90,9 @@ int main(int argc, char **argv) {
     g_parented = argc > 6 && !strcmp(argv[6], "parented");
     g_resz = argc > 7 && !strcmp(argv[7], "resz");
     g_vis  = argc > 8 && !strcmp(argv[8], "vismargin");
+    g_pinx = argc > 9 && !strcmp(argv[9], "pinx");
+    g_parentonly = argc > 10 && !strcmp(argv[10], "parentonly");
+    g_pgeo = argc > 11 && !strcmp(argv[11], "pgeo");
 
     const int BW = g_w + 2 * g_m, BH = g_h + 2 * g_m; // buffer = content + shadow margin
 
@@ -120,9 +126,14 @@ int main(int argc, char **argv) {
         wl_surface_attach(g_psurf, g_pbuf, 0, 0);
         wl_surface_commit(g_psurf);
         wl_display_roundtrip(g_dpy);
-        munmap(ppx, PN);
-        close(pfd);
+        // like the child's buffer: the fd lives with the process; closing it
+        // while the compositor is still mapping the buffer destroys the surface
+        if (g_pgeo)
+            xdg_surface_set_window_geometry(g_pxsd, 0, 0, PW, PH);
     }
+
+    if (g_parentonly)
+        goto runloop;
 
     g_surf = wl_compositor_create_surface(g_comp);
     g_xsd  = xdg_wm_base_get_xdg_surface(g_wm, g_surf);
@@ -153,7 +164,9 @@ int main(int argc, char **argv) {
 
     if (!g_late) {
         xdg_toplevel_set_min_size(g_top, g_w, g_h);
-        if (!g_resz)
+        if (g_pinx)
+            xdg_toplevel_set_max_size(g_top, g_w, 0); // width pinned, height free
+        else if (!g_resz)
             xdg_toplevel_set_max_size(g_top, g_w, g_h); // min == max: the splash shape
     }
 
@@ -168,6 +181,7 @@ int main(int argc, char **argv) {
         wl_surface_commit(g_surf);
     }
 
+runloop:
     while (!g_done)
         if (wl_display_dispatch(g_dpy) < 0)
             break;
