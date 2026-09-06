@@ -115,7 +115,17 @@ CR="$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdresz'), ''))")"
 [[ -n "$CR" ]] && dsp "hl.dsp.window.close({window=\"address:$CR\"})"; sleep 1
-chk "csd battery left no windows" test "$(pyc "sum(1 for c in cs if c['class'] in ('csdpin','csdresz'))")" = 0
+# Per-axis pin (max = w x 0): the pinned axis must stay at the client frame
+# (old code inflated it: 310), the free axis keeps the offset-converted min
+# (350 + 10). The probe's content frame is 300x350 with a 10px offset.
+dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 300 350 10 csdpinx - - - - pinx')"; sleep 2
+expect "per-axis-pinned CSD: pinned axis stays at the client frame" \
+	"any(c['class']=='csdpinx' and c['floating'] and c['size']==[300,360] for c in cs)"
+CX="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdpinx'), ''))")"
+[[ -n "$CX" ]] && dsp "hl.dsp.window.close({window=\"address:$CX\"})"; sleep 1
+chk "csd battery left no windows" test "$(pyc "sum(1 for c in cs if c['class'] in ('csdpin','csdresz','csdpinx'))")" = 0
 
 # ---- notification cap ---------------------------------------------------
 # 55 is just over the cap of 50 — enough to prove eviction without paying
