@@ -97,8 +97,9 @@ surface description and config live in `hyprnotify/README.md`).
   render thread on the compositor's async resource gatherer (a bounded
   share of its queue; symbolic icons and SVG heroes stay synchronous): a
   card whose icon is still decoding shows its fallback face until the
-  decode lands and re-warms. Wide images (aspect ≥ 1.5) render card-width
-  as a cover-cropped hero. Iconless cards draw a random face from
+  decode lands and re-warms. Screenshot-sized images (256 px in both
+  dimensions) render card-width as a cover-cropped hero, in any capture
+  shape (wide, square, portrait). Iconless cards draw a random face from
   `fallback_icon_dir`, and when that dir is empty (or a face fails to
   load) a deterministic generic application mark, so no card is faceless.
 - The icon column is Android's conversation container

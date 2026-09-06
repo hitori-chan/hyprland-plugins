@@ -380,10 +380,12 @@ namespace NHyprnotify {
         return tex;
     }
 
-    // A source wide enough for the hero layout: HERO_ASPECT and at least
-    // half the hero box, so a tiny wide icon never blows up to card width.
+    // A screenshot-sized source takes the hero layout: 256 px in both
+    // dimensions and at least half the hero box wide, so any capture shape
+    // (wide, square, portrait) previews full-bleed while a true app icon
+    // never blows up to card width.
     static bool heroWorthy(double sw, double sh, int heroWPx) {
-        return heroWPx > 0 && sh > 0 && sw / sh >= HERO_ASPECT && sw * 2 >= heroWPx;
+        return heroWPx > 0 && sw >= 256 && sh >= 256 && sw * 2 >= heroWPx;
     }
 
     // The freedesktop symbolic convention, shared with hyprbar's loadIcon:

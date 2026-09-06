@@ -20,8 +20,10 @@ Two surfaces share one card model:
    glyph is 16dp of the 20dp badge and the rim only 2dp — so one column
    says both who sent it and which app carried it. Symbolic icons
    (names ending in `-symbolic`) are recolored to the theme fg so
-   device and OSD glyphs stay visible on the glass. A wide content
-   image (aspect ≥ 1.5) goes hero, full-width instead. Then an "App • age"
+   device and OSD glyphs stay visible on the glass. A screenshot-sized
+   content image (256 px in both dimensions) goes hero, full-width
+   instead — any capture shape (wide, square, portrait), cover-cropped
+   to the capped strip. Then an "App • age"
    header, bold title, body, a progress pill
    for the `value` hint, and the card's actions as tinted text buttons.
    Hovering reveals the ✕ **and holds the timeout** — a banner never expires
@@ -62,7 +64,8 @@ Two surfaces share one card model:
      A sender's `x-hyprnotify-group-key` sub-keys the app: an app carrying
      many chats bundles per declared group, and the digest, the fold and
      the dismissal all act on that group alone.
-   - **A wide content image (aspect ≥ 1.5) leads the row as a hero** — the
+   - **A screenshot-sized content image (256 px in both dimensions)
+     leads the row as a hero** — the
      same full-width, height-capped strip the banner shows, so the center
      carries the preview (a screenshot card, a message's image) collapsed
      AND expanded, and it outlives the banner's clock because the texture

@@ -82,9 +82,6 @@ namespace NHyprnotify {
     // one working number: PLUGIN_INIT and GetServerInformation both return it
     inline constexpr const char* VERSION = "7.3.0";
 
-    // wide images render card-width ("hero") instead of icon-boxed
-    inline constexpr double HERO_ASPECT = 1.5;
-
     // the OSD scripts pin ids here: replace-in-place, never appended, never
     // grouped, never history; fresh ids and recalls never mint into it
     inline constexpr uint32_t OSD_LO = 9990, OSD_HI = 9999;
@@ -342,9 +339,9 @@ namespace NHyprnotify {
     // ---- icons.cpp ----
 
     // (Re)build n.iconTex (content) and n.identTex (identity) when their
-    // sources changed. iconPx caps the icon-box raster; content sources wider
-    // than HERO_ASPECT (and at least half the hero box) raster to heroWPx
-    // instead, cover-cropped to heroHCapPx, and set heroTex.
+    // sources changed. iconPx caps the icon-box raster; screenshot-sized
+    // content (256 px both ways, at least half the hero box) raster to
+    // heroWPx instead, cover-cropped to heroHCapPx, and set heroTex.
     void resetFallbackCache(); // forget the fallback_icon_dir listing (a config reload rescans)
     void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx);
     void ensureAvatarTex(SParticipant& p, int px);
