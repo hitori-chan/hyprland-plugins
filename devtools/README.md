@@ -28,7 +28,7 @@ make -C devtools test-pixel-model
 
 `stress.sh` builds the eight plugins, launches the controlled compositor, and
 tests load order, geometry policy, notifications, OSDs, reply/paste, DND,
-management, snooze, fullscreen composition, input capture, reload, hostile
+management, fullscreen composition, input capture, reload, hostile
 state, queue bounds, and teardown. Success requires its final
 `ALL CHECKS PASSED` line.
 
@@ -64,7 +64,7 @@ The shell is split by ownership under `devtools/stress/`:
 | `notify-lib.sh` | shared notification helpers: geometry constants, input gestures, Notify senders, panel measurement. Pure definitions, safe to source anywhere after `retarget` |
 | `notifications.sh` | notification model, center, grouping, identity, and pixel checks |
 | `reply.sh` | hyprosd's wpctl process path, the pointer-only shade close, inline reply, and the launcher clipboard |
-| `policy.sh` | DND, management, snooze/undo, gestures, ranking, and admission |
+| `policy.sh` | DND, management, gestures, ranking, and admission |
 | `lifecycle.sh` | input capture, input storms, reload, logs, and teardown |
 | `probe-env.sh` | bootstrap for isolated one-off probes (see below) |
 

@@ -258,12 +258,12 @@ namespace NHyprnotify {
             // raster under the pointer.
             //
             // It shows for the KEYBOARD too, not just the pointer: arrowing to
-            // a row used to reveal nothing at all, so the verbs behind m/s/p
-            // had no affordance anywhere.
+            // a row used to reveal nothing at all, so the verbs behind p and
+            // delete had no affordance anywhere.
             if (ST.manage) {
                 const bool SHOWN = (hovered.kind == SCard::ROW && hovered.id == N->id) || selectedRow() == N->id;
                 const bool HOV   = hovered.kind == SCard::ROW && hovered.id == N->id && hovered.part == 10;
-                const bool LIT   = Policy::silenced(N->appKey) || N->priority; // a rule is in force behind it
+                const bool LIT   = N->priority; // a mark is in force behind it
                 const CBox MB{box.x + box.w - ROW_PADX - RTRIM - OVER_D, box.y + ROW_PADT + (CHEV - OVER_D) / 2, OVER_D, OVER_D};
                 const auto G = cachedText("⋮", LIT ? tOnAccent() : COLSUB, T.small, 64, -1, 0, false, 600);
                 if (!P.warm && (SHOWN || LIT)) {
@@ -333,33 +333,15 @@ namespace NHyprnotify {
         return ROW_PADT + CHILD_ICON + ROW_PADB;
     }
 
-    double snoozeRowH() {
-        return SNOOZE_H;
-    }
-
     // ---- the manage panel ----
     //
     // Every verb the strip used to hide behind a symbol, named, at row width,
-    // with the key that does the same thing in the right column. The mute
-    // durations are iOS's ("Mute for 1 Hour", "Mute for Today"): permanent is
-    // still here, but it stops being the only thing a click can mean — it is
-    // the choice people regret, and its rule then sits in a file nobody reads.
+    // with the key that does the same thing in the right column.
     std::vector<SMenuEntry> menuEntries(const SP<SNotif>& N) {
         std::vector<SMenuEntry> out;
-        out.push_back({"◷", "Snooze 15 min", "s", 1, 900});
-        out.push_back({"◷", "Snooze 1 hour", "", 1, 3600});
-
-        const std::string APP = N->appName.empty() ? N->appKey : N->appName;
-        if (Policy::silenced(N->appKey))
-            out.push_back({"⊘", "Unmute " + APP, "m", 3, 0, true});
-        else {
-            out.push_back({"⊘", "Mute " + APP + " for 1 hour", "", 2, 3600});
-            out.push_back({"⊘", "Mute " + APP + " today", "", 2, -1});
-            out.push_back({"⊘", "Mute " + APP + " always", "m", 2, 0});
-        }
         if (N->conversation)
-            out.push_back({"★", N->priority ? "Unmark this conversation" : "Priority conversation", "p", 4, 0, N->priority});
-        out.push_back({"✕", "Dismiss", "del", 5, 0});
+            out.push_back({"★", N->priority ? "Unmark this conversation" : "Priority conversation", "p", 4, N->priority});
+        out.push_back({"✕", "Dismiss", "del", 5});
         return out;
     }
 
@@ -429,57 +411,6 @@ namespace NHyprnotify {
         cards.push_back(std::move(card));
     }
 
-    // The undo row — Android's "Snoozed for 1 hour ▾ · Undo", in the slot the
-    // card just held. It is the whole reason the ◷ stopped being irreversible:
-    // the card has not gone anywhere yet, so there is still something to click.
-    // Both controls STAND rather than hide: a control you have seconds to find
-    // must not also have to be discovered.
-    void paintSnoozeRow(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box) {
-        const auto  COLSUB = color(cfg.colKicker), COLACC = color(cfg.colHighlight);
-        const float RP     = rPow();
-        P.rect(box, tFill(), rRow(P.scale), RP);
-
-        SCard card;
-        card.kind = SCard::SNOOZE;
-        card.id   = N->id;
-        card.box  = box;
-
-        const double CY = box.y + (SNOOZE_H - MANAGE_D) / 2;
-
-        // right edge, walking left: Undo, then the duration ▾
-        const auto   UND  = cachedText("Undo", COLACC, T.action, 96, -1, 0, false, 600);
-        const double UNDW = texW(UND, P.scale) + 2 * BTN_PADX;
-        const CBox   UB{box.x + box.w - ROW_PADX - UNDW, box.y + (SNOOZE_H - BTN_H) / 2, UNDW, BTN_H};
-        const bool   UHOV = hovered.kind == SCard::SNOOZE && hovered.id == N->id && hovered.part == 8;
-        if (!P.warm) {
-            if (UHOV)
-                P.rect(UB, tAccentDim(), (int)std::lround(BTN_H / 2 * P.scale));
-            if (UND && UND->tex)
-                P.tex(UND->tex, UB.x + BTN_PADX, UB.y + (UB.h - UND->tex->m_size.y / P.scale) / 2);
-        }
-        card.manage.push_back({UB, 8});
-
-        const CBox DB{UB.x - MANAGE_GAP - MANAGE_D, CY, MANAGE_D, MANAGE_D};
-        const bool DHOV = hovered.kind == SCard::SNOOZE && hovered.id == N->id && hovered.part == 9;
-        const auto DG   = chevronTex(0, COLSUB, (int)MANAGE_D);
-        if (!P.warm) {
-            P.rect(DB, DHOV ? tAccentDim() : tFill2(), (int)std::lround(MANAGE_D / 2 * P.scale));
-            if (DG && DG->tex)
-                P.tex(DG->tex, DB.x + (DB.w - DG->tex->m_size.x / P.scale) / 2, DB.y + (DB.h - DG->tex->m_size.y / P.scale) / 2);
-        }
-        card.manage.push_back({DB, 9});
-
-        auto& LB = scratch();
-        LB += "◷ Snoozed ";
-        appendEsc(LB, Model::snoozeLabel(N));
-        const int  LW  = std::max(1, (int)std::floor((DB.x - MANAGE_GAP - box.x - ROW_PADX) * P.scale));
-        const auto LBL = cachedText(LB, COLSUB, T.body, LW, -1, 0, true, 500);
-        if (!P.warm && LBL && LBL->tex)
-            P.tex(LBL->tex, box.x + ROW_PADX, box.y + (SNOOZE_H - LBL->tex->m_size.y / P.scale) / 2);
-
-        cards.push_back(std::move(card));
-    }
-
     // The folded bundle: the app's identity, a count pill, and the two newest
     // cards previewed a line each — enough to decide whether to open it.
     void paintDigest(const SPaint& P, const SType& T, const SDisp& D, const CBox& box) {
@@ -514,19 +445,6 @@ namespace NHyprnotify {
             }
         }
 
-        // a folded bundle is where an app most obviously earns a silencing,
-        // so the strip reaches here too — revealed on hover, as on a row
-        const bool MUTED = Policy::silenced(D.key);
-        const CBox MB{PB.x - 6 - MANAGE_D, box.y + ROW_PADT + (ROW_ICON - MANAGE_D) / 2, MANAGE_D, MANAGE_D};
-        {
-            const auto G = cachedText("⊘", MUTED ? tOnAccent() : COLSUB, T.small, 64, -1, 0, false, 600);
-            if (!P.warm && HOV) {
-                P.rect(MB, MUTED ? color(cfg.colHighlight) : hovered.part == 5 ? tAccentDim() : tFill2(), (int)std::lround(MANAGE_D / 2 * P.scale));
-                if (G && G->tex)
-                    P.tex(G->tex, MB.x + (MB.w - G->tex->m_size.x / P.scale) / 2, MB.y + (MB.h - G->tex->m_size.y / P.scale) / 2);
-            }
-        }
-
         auto& DB = scratch();
         appendEsc(DB, NEWEST->appName);
         DB += " <span foreground=\"";
@@ -536,7 +454,7 @@ namespace NHyprnotify {
         DB += " • ";
         DB += ageString(NEWEST->arrived);
         DB += "</span>";
-        const auto SUMLINE = cachedText(DB, COLTITLE, T.title, std::max(1, (int)((MB.x - 8 - TX) * P.scale)), -1, 0, true, 600);
+        const auto SUMLINE = cachedText(DB, COLTITLE, T.title, std::max(1, (int)((PB.x - 8 - TX) * P.scale)), -1, 0, true, 600);
         if (!P.warm && SUMLINE)
             P.tex(SUMLINE->tex, TX, box.y + ROW_PADT + (ROW_ICON - texH(SUMLINE, P.scale)) / 2);
 
@@ -577,7 +495,6 @@ namespace NHyprnotify {
         card.kind  = SCard::DIGEST;
         card.box   = box;
         card.group = D.key;
-        card.manage.push_back({MB, 5});
         cards.push_back(std::move(card));
     }
 
@@ -613,24 +530,10 @@ namespace NHyprnotify {
                 P.tex(G->tex, XB.x + (XB.w - G->tex->m_size.x / P.scale) / 2, XB.y + (XB.h - G->tex->m_size.y / P.scale) / 2);
         }
 
-        // the header is chrome, so its controls stand rather than hide — the
-        // ✕ already does, and the ⊘ beside it manages the whole bundle's app
-        const bool MUTED = Policy::silenced(D.key);
-        const CBox MB{XB.x - 6 - MANAGE_D, box.y + ROW_PADT + (CHILD_ICON - MANAGE_D) / 2, MANAGE_D, MANAGE_D};
-        {
-            const bool MHOV = HHOV && hovered.part == 5;
-            const auto G    = cachedText("⊘", MUTED ? tOnAccent() : COLSUB, T.small, 64, -1, 0, false, 600);
-            if (!P.warm) {
-                P.rect(MB, MUTED ? color(cfg.colHighlight) : MHOV ? tAccentDim() : tFill2(), (int)std::lround(MANAGE_D / 2 * P.scale));
-                if (G && G->tex)
-                    P.tex(G->tex, MB.x + (MB.w - G->tex->m_size.x / P.scale) / 2, MB.y + (MB.h - G->tex->m_size.y / P.scale) / 2);
-            }
-        }
-
         const auto   PILL  = cachedText(std::to_string(D.items.size()), COLFG, T.small, 64, -1, 0, false, 600);
         const auto   PCHV  = chevronTex(1, COLFG, (int)std::lround(T.small * 2.0));
         const double PILLW = texW(PILL, P.scale) + 3 + texW(PCHV, P.scale) + 14;
-        const CBox   PB{MB.x - 6 - PILLW, box.y + ROW_PADT + (CHILD_ICON - PILL_H) / 2, PILLW, PILL_H};
+        const CBox   PB{XB.x - 6 - PILLW, box.y + ROW_PADT + (CHILD_ICON - PILL_H) / 2, PILLW, PILL_H};
         if (!P.warm) {
             P.rect(PB, tFill2(), (int)std::lround(PILL_H / 2 * P.scale));
             if (PILL && PILL->tex && PCHV && PCHV->tex) {
@@ -662,7 +565,6 @@ namespace NHyprnotify {
             card.box   = CBox{box.x, box.y, box.w, HEADRH};
             card.group = D.key;
             card.close = XB;
-            card.manage.push_back({MB, 5});
             cards.push_back(std::move(card));
         }
 

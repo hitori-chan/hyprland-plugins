@@ -55,13 +55,11 @@ namespace NHyprnotify {
     inline constexpr double CENTER_W = 360; // the shade's height is the monitor's (see renderCenter)
     inline constexpr double ROW_PADT = 9, ROW_PADX = 12, ROW_PADB = 10, ROW_ICON = 40, ROW_ICON_GAP = 10;
     inline constexpr double CHEV = 24;                       // the fold chevron circle
-    inline constexpr double MANAGE_D = 20, MANAGE_GAP = 4;   // the ⊘ a bundle header/digest carries
     inline constexpr double OVER_D = 24, OVER_GAP = 6;       // the row's ⋮, beside the chevron
     inline constexpr double MENU_ROW_H = 28, MENU_GLYPH_W = 22; // the manage panel's own rows
     inline constexpr double CHILD_ICON = 28, CHILD_GAP = 2; // segmented group children
     inline constexpr double PREV_ICON = 16;                 // digest preview avatars
     inline constexpr double PILL_H = 20;                    // the count pill
-    inline constexpr double SNOOZE_H = 38;                  // the undo row, one line of chrome
     inline constexpr double BAR_BTN = 34, BAR_PADT = 4, BAR_PADX = 10, BAR_PADB = 12, BAR_GAP = 8;
     inline constexpr double BODY_PADT = 10, BODY_PADX = 10, BODY_PADB = 10;
     inline constexpr double STACK_GAP = 3; // the joint gap that merges the rows into one column
@@ -167,7 +165,7 @@ namespace NHyprnotify {
         bool   headerHasApp; // singles: "App • age"; children: age only
         bool   hasChevron;   // singles fold; expanded-bundle children are always open
         bool   canReply;     // the inline-reply field; conversations never bundle, so children never need it
-        bool   manage;       // the silence/priority strip; a child's app is managed from its bundle header
+        bool   manage;       // the priority strip; a child's app is managed from its bundle header
     };
     inline constexpr SRowStyle ROW_SINGLE{ROW_ICON, true, true, true, true, true};
     inline constexpr SRowStyle ROW_CHILD{CHILD_ICON, false, false, false, false, false};
@@ -185,8 +183,7 @@ namespace NHyprnotify {
     void   paintSingle(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box, bool open, bool more);
     void   paintDigest(const SPaint& P, const SType& T, const SDisp& D, const CBox& box);
     void   paintGroup(const SPaint& P, const SType& T, const SDisp& D, const CBox& box, const std::vector<double>& childH);
-    // a snoozed card's undo row, in the slot the card held
-    void   paintSnoozeRow(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box);
+
 
     // ---- the manage panel: what Android's long-press holds, as a row state ----
     //
@@ -199,8 +196,7 @@ namespace NHyprnotify {
         const char* glyph;
         std::string label;
         const char* hint;      // the key that does the same thing
-        int         verb;      // 1 snooze, 2 mute, 3 unmute, 4 priority, 5 dismiss
-        int64_t     arg = 0;   // verb 1/2: seconds, 0 = always, < 0 = today (Policy::silenceFor)
+        int         verb;      // 4 priority, 5 dismiss
         bool        lit = false;
     };
     std::vector<SMenuEntry> menuEntries(const SP<SNotif>& N);
@@ -209,7 +205,6 @@ namespace NHyprnotify {
 
     double digestH(const SType& T, size_t count, double scale); // the folded bundle's height
     double groupHeadH();                                        // an expanded bundle's header row
-    double snoozeRowH();                                        // the undo row: one line, fixed
 
     // ---- popups.cpp / center.cpp: the two surfaces ----
 
