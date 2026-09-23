@@ -297,7 +297,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     });
     g_lifecycle.listen(EV.window.title, [](PHLWINDOW w) {
         // a hidden workspace's titles render nowhere; workspace.active re-warms the switch
-        if (w && w->m_workspace && !w->m_workspace->isVisible())
+        if (w && w->m_workspace && !w->m_workspace->visible())
             return;
         damageAndWarm();
     });

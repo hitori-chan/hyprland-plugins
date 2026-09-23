@@ -19,7 +19,7 @@
 // this class exists to avoid, frozen permanently.
 #pragma once
 
-#include <hyprland/src/desktop/Workspace.hpp>
+#include <hyprland/src/workspace/HLWorkspace.hpp>
 #include <hyprland/src/desktop/view/window/Window.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>
 
@@ -58,7 +58,7 @@ namespace NHyprCommon {
             if (!ws)
                 return out;
             for (const auto& W : Desktop::windowState()->windows()) {
-                if (!W || !W->mapped() || W->isHidden() || !W->m_workspace || W->m_workspace->m_id != ws->m_id)
+                if (!W || !W->mapped() || W->isHidden() || !W->m_workspace || W->m_workspace->id() != ws->id())
                     continue;
                 if (!keep(W))
                     continue;

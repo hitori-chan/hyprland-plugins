@@ -31,7 +31,7 @@
 #include "common/queries.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
-#include <hyprland/src/desktop/Workspace.hpp>
+#include <hyprland/src/workspace/HLWorkspace.hpp>
 #include <hyprland/src/desktop/view/window/Window.hpp>
 #include <hyprland/src/desktop/view/window/WindowFullscreenPolicy.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
@@ -133,7 +133,7 @@ static std::chrono::steady_clock::time_point g_pressAt{};
 static uint32_t                              g_swallowRelease = 0;
 static CBox                                  g_corpseBox;   // where the window the press killed last stood
 static PHLWINDOWREF                          g_corpseOwner; // while it lives, presses resolving to it pass
-static WORKSPACEID                           g_corpseWs = WORKSPACE_INVALID;
+static uint32_t                              g_corpseWs = 0; // numbered workspace of the corpse, 0 = none (IDs start at 1)
 static std::chrono::steady_clock::time_point g_corpseUntil{};
 
 // Arm (or grow) the corpse over `box` if the press on `w` was recent
@@ -150,7 +150,7 @@ static void armCorpse(PHLWINDOW w, const CBox& box) {
     } else
         g_corpseBox = box;
     g_corpseOwner = w;
-    g_corpseWs    = w->workspaceID();
+    g_corpseWs    = w->m_workspace ? w->m_workspace->numberedID().value_or(0) : 0;
     g_corpseUntil = NOW + GESTURE;
 }
 
@@ -244,7 +244,8 @@ static void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo&
     // corpse box is not the corpse's).
     if (NOW < g_corpseUntil && g_corpseBox.containsPoint(POS) && (!W || W != g_corpseOwner.lock())) {
         const auto MON          = NHyprCommon::monitorAt(POS);
-        const bool ON_CORPSE_WS = W ? W->workspaceID() == g_corpseWs : MON && MON->activeWorkspaceID() == g_corpseWs;
+        const bool ON_CORPSE_WS = W ? (W->m_workspace && W->m_workspace->numberedID().value_or(0) == g_corpseWs)
+                                    : (MON && MON->m_activeWorkspace && MON->m_activeWorkspace->numberedID().value_or(0) == g_corpseWs);
         if (ON_CORPSE_WS) {
             info.cancelled = true;
             g_swallowRelease |= BIT;

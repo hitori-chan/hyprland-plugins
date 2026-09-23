@@ -486,7 +486,7 @@ namespace NHyprbar {
         // leaf rows only — submenu rows cascade via openSub (hover or click)
         void activate(const SEntry& en) {
             if (const auto W = en.win.lock(); W && W->mapped()) { // client-list row: jump to it
-                if (W->m_workspace && !W->m_workspace->isVisible())
+                if (W->m_workspace && !W->m_workspace->visible())
                     std::ignore = Config::Actions::changeWorkspace(W->m_workspace);
                 // a minimized target must be un-minimized, not focused while
                 // hidden — restore() unhides, re-tiles, raises, focuses and
