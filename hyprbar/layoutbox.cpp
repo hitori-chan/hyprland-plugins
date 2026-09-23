@@ -11,13 +11,13 @@ namespace NHyprbar {
     // wherever they get implemented; the bar carries the state and the icon
     // (~/.config/hypr/icons/<name>.png).
     static const std::vector<const char*>          LAYOUTS = {"floating"};
-    static std::unordered_map<WORKSPACEID, size_t> wsLayout;
+    static std::unordered_map<uint32_t, size_t>    wsLayout; // keyed by numbered workspace ID
     // keyed by the LAYOUTS literals themselves — pointer identity, no
     // per-frame string
     static std::unordered_map<const char*, SP<ITexture>> layoutTexs;
     static std::unordered_set<const char*>               layoutTexTried;
 
-    static const char*                                   currentLayout(WORKSPACEID ws) {
+    static const char*                                   currentLayout(uint32_t ws) {
         const auto IT = wsLayout.find(ws);
         return LAYOUTS[(IT == wsLayout.end() ? 0 : IT->second) % LAYOUTS.size()];
     }
@@ -25,8 +25,11 @@ namespace NHyprbar {
     void layoutInc(int dir, PHLMONITOR MON) {
         if (!MON || !MON->m_activeWorkspace)
             return;
+        const auto NUM = MON->m_activeWorkspace->numberedID();
+        if (!NUM)
+            return; // the bar tracks numbered workspaces
         const int64_t N   = (int64_t)LAYOUTS.size();
-        auto&         IDX = wsLayout[MON->m_activeWorkspace->m_id];
+        auto&         IDX = wsLayout[*NUM];
         IDX               = (size_t)(((int64_t)IDX + dir % N + N) % N);
         barChanged();
     }
@@ -55,7 +58,7 @@ namespace NHyprbar {
                 // the active workspace's layout icon; click/wheel cycles the
                 // registry — with its single entry it is still the static
                 // floating indicator it always was
-                const char* NAME = currentLayout(F.ws ? F.ws->m_id : WORKSPACE_INVALID);
+                const char* NAME = currentLayout(F.ws ? F.ws->numberedID().value_or(0) : 0);
                 auto&       TEX  = layoutTexs[NAME];
                 // an icon is a texture too: only the warm builds it
                 if (!TEX && !layoutTexTried.contains(NAME) && warmGate.mayBuild()) {

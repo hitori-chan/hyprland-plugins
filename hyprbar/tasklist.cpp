@@ -49,7 +49,7 @@ namespace NHyprbar {
         const auto& WINS = Desktop::windowState()->windows();
         for (size_t i = WINS.size(); i-- > 0;) {
             const auto& W = WINS[i];
-            if (W == gone || !W || !W->mapped() || W->isHidden() || !W->m_workspace || W->m_workspace->m_id != ws->m_id)
+            if (W == gone || !W || !W->mapped() || W->isHidden() || !W->m_workspace || W->m_workspace->id() != ws->id())
                 continue;
             g_pInputManager->refocus(W->middle());
             return;
@@ -174,7 +174,7 @@ namespace NHyprbar {
                 return;
             w->setHidden(false);
             if (tiled && g_layoutManager && w->m_workspace)
-                g_layoutManager->newTarget(w->layoutTarget(), w->m_workspace->m_space);
+                g_layoutManager->newTarget(w->layoutTarget(), w->m_workspace->space());
             raiseAndFocus(w);
             // re-enter the fullscreen/maximize the window held when minimized,
             // after focus — the compositor fullscreens the active window.
@@ -229,7 +229,7 @@ namespace NHyprbar {
             // is currently viewed (isVisible), so it returns where you are.
             for (size_t i = minStack.size(); i-- > 0;) {
                 const auto W = minStack[i].w.lock();
-                if (W && W->mapped() && W->m_workspace && W->m_workspace->isVisible()) {
+                if (W && W->mapped() && W->m_workspace && W->m_workspace->visible()) {
                     restore(W);
                     return;
                 }

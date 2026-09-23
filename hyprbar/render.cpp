@@ -194,11 +194,11 @@ namespace NHyprbar {
         tasks.clear();
         for (const auto& W : Desktop::windowState()->windows()) {
             if (W->mapped() && W->m_workspace) {
-                const auto ID = W->m_workspace->m_id;
-                if (ID >= 1 && ID <= 9) {
-                    F.windows[ID]++;
+                const auto NUM = W->m_workspace->numberedID();
+                if (NUM && *NUM >= 1 && *NUM <= 9) {
+                    F.windows[*NUM]++;
                     if (W->m_hints & Desktop::View::WINDOW_HINT_URGENT)
-                        F.urgent[ID] = true;
+                        F.urgent[*NUM] = true;
                 }
             }
             if (isTaskOn(W, WS))
@@ -210,7 +210,7 @@ namespace NHyprbar {
         // Focus is global, but the bar is rendered once per output. A window
         // focused on another output must not mark this monitor's tag/task.
         F.focus   = GLOBALFOCUS && GLOBALFOCUS->m_monitor.lock() == mon ? GLOBALFOCUS : nullptr;
-        F.focusWs = F.focus && F.focus->m_workspace ? F.focus->m_workspace->m_id : WORKSPACE_INVALID;
+        F.focusWs = F.focus && F.focus->m_workspace ? F.focus->m_workspace->numberedID().value_or(0) : 0;
 
         // one palette fetch per frame: color() memoizes the conversion but
         // still hashes per call, and the widgets make dozens

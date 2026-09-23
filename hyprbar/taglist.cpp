@@ -20,7 +20,7 @@ namespace NHyprbar {
             };
             static SCell cell(const SFrame& F, int i) {
                 SCell c{.fg = F.fg};
-                if (F.ws && F.ws->m_id == i) {
+                if (F.ws && F.ws->numberedID() == i) {
                     c.bg    = F.activeBg;
                     c.hasBg = true;
                     c.fg    = F.active;
@@ -57,7 +57,7 @@ namespace NHyprbar {
                         P.rect(CELL, C.bg);
 
                     if (F.windows[i] > 0) {
-                        if (F.focusWs == i)
+                        if (F.focusWs == (uint32_t)i)
                             P.rect(CBox{x, box.y, SQ, SQ}, F.squareSel);
                         else { // hollow
                             P.rect(CBox{x, box.y, SQ, 1}, F.squareUnsel);
@@ -92,9 +92,9 @@ namespace NHyprbar {
                 // Workspace IDs are global in Hyprland. Create a missing tag
                 // on the monitor whose bar was clicked, but never create a
                 // second workspace for an ID already owned elsewhere.
-                auto ws = State::workspaceState()->query().id(h.tag).run();
+                auto ws = State::workspaceState()->find(State::Workspace::STarget{.id = Workspace::SWorkspaceNumberedID{(uint32_t)h.tag}, .address = std::to_string(h.tag)});
                 if (!ws)
-                    ws = State::workspaceState()->create(h.tag, MON->m_id);
+                    ws = State::workspaceState()->createNumbered(Workspace::SWorkspaceNumberedID{(uint32_t)h.tag}, MON);
                 if (!ws)
                     return;
                 if (super) {
@@ -120,13 +120,13 @@ namespace NHyprbar {
                 if (!mon)
                     return;
                 // awful.tag.viewnext/viewprev, wrapping
-                auto CUR = mon->m_activeWorkspace ? mon->m_activeWorkspace->m_id : 1;
+                auto CUR = mon->m_activeWorkspace ? mon->m_activeWorkspace->numberedID().value_or(1) : 1;
                 if (CUR < 1 || CUR > 9)
                     CUR = 1;
                 const int T = (int)((CUR - 1 + (steps % 9) + 9) % 9) + 1;
-                auto ws = State::workspaceState()->query().id(T).run();
+                auto ws = State::workspaceState()->find(State::Workspace::STarget{.id = Workspace::SWorkspaceNumberedID{(uint32_t)T}, .address = std::to_string(T)});
                 if (!ws)
-                    ws = State::workspaceState()->create(T, mon->m_id);
+                    ws = State::workspaceState()->createNumbered(Workspace::SWorkspaceNumberedID{(uint32_t)T}, mon);
                 if (!ws || ws->m_monitor.lock() != mon || mon->m_activeWorkspace == ws)
                     return;
                 if (Desktop::focusState() && Desktop::focusState()->monitor() == mon)
