@@ -53,8 +53,8 @@ Two surfaces share one card model:
    pinned shade is an ordinary one.
    - **Ranking** is Android's, minus the dividers: critical, then marked
      conversations, then the rest of the conversations (fd.o category
-     `im.*`/`call.*`), then normal, then silent — newest first inside each
-     tier. A silenced app ranks with the silent ones.
+     `im.*`/`call.*`), then normal, then low-urgency — newest first inside
+     each tier.
    - **Bundling** follows `GroupHelper.AUTOGROUP_AT_COUNT`: an app's cards
      collapse into one digest (identity icon · "App • N • age" · count pill
      · ≤2 preview lines, each wearing its own sender's face) only at FOUR or
@@ -104,35 +104,12 @@ Two surfaces share one card model:
      It shows for the keyboard selection too, not only the pointer.
      (This replaced a hover-revealed strip of three 20px glyphs at 4px
      separation, unlabelled, with the one irreversible verb in the middle.)
-   - **Per-app rules** live in that panel. **Mute** comes in iOS's three
-     lengths — for 1 hour, today (until tomorrow morning, not a rolling 24h),
-     or always: no banner, no sound, straight to the shade, ranked with the
-     quiet ones, and critical still punches through exactly as through DND.
-     **★ Priority conversation** sorts that chat above everything but a
-     critical card and lights the ring AOSP keeps hidden on the badge until
-     you mark someone. A bundle's ⊘ still sits by its count pill as a
-     straight always-toggle. Rules persist across relogs in
-     `$XDG_STATE_HOME/hyprnotify/policy.tsv` (a silence carries its expiry
-     as a third field; 0 never lifts, and a rule that lapsed while you were
-     away never loads), all are retroactive, and silence keys on the app
-     while a mark keys on app + sender — one chat app carries many people.
-     Whenever any silence is in force the footer says so: **⊘ N** stands
-     beside ⊖, and clicking it lifts every one. A rule you set once is never
-     invisible again.
-   - **Snooze** (in the panel, or `s`) is Android's, and it is a verb on one
-     card rather than a rule: the card goes out of sight and comes back
-     ALERTING, which is the whole point of asking. It stays in the model the
-     entire time, so "Clear all" cannot quietly cancel a reminder.
-     It does not leave at the click. Android replaces the notification in
-     place with "Snoozed for 1 hour ▾ · Undo", so for six seconds the card
-     holds its slot as a one-line undo row: **Undo** (or `u`) puts it back,
-     the **˅** (or `s` again) cycles Android's ladder — 15m / 30m / 1h / 2h,
-     with `snooze_seconds` as the duration a bare snooze takes. Closing the
-     shade commits it, since the shade is the row's only surface. This is
-     not history and not recall: the card never left, and past the window it
-     is gone exactly as before. Ephemerals (`transient`, progress) are
-     refused — expiry takes those cards whole, so they have nothing to come
-     back to.
+   - **Priority conversation** (in the panel, or `p`) is Android's:
+     **★** sorts that chat above everything but a critical card and lights
+     the ring AOSP keeps hidden on the badge until you mark someone. Marks
+     persist across relogs in `$XDG_STATE_HOME/hyprnotify/policy.tsv`, are
+     retroactive, and key on app + sender — one chat app carries many
+     people.
    - **Inline reply.** A sender that sees the `inline-reply` capability
      adds an action keyed `inline-reply` and waits for a
      `NotificationReplied(id, text)` signal — it is how Telegram, Fractal
@@ -146,9 +123,7 @@ Two surfaces share one card model:
    - **Keys.** While the shade is open it owns exactly the nav set and
      nothing else: Esc closes, ↑/↓ move a selection (an accent hairline,
      paging to stay on screen), Space folds it, Enter fires the primary,
-     Tab opens a reply, Delete dismisses, `m` silences the app, `s` snoozes
-     the card, `p` marks the sender, `u` takes a snooze back while its undo
-     row is up (and `s` there re-picks the duration instead). A chord with
+     Tab opens a reply, Delete dismisses, `p` marks the sender. A chord with
      ctrl/alt/super is a user bind passing through, and a nav key with
      nothing selected — or nothing to do, like `p` on a card that is not a
      chat — still belongs to whatever holds focus. Selection, fold state and
@@ -180,7 +155,7 @@ The bell talks over the bus: the `org.hitori.hyprnotify` interface on the
 Notifications object carries `Toggle` (the shade's click), `Peek(on_bell)`
 (the hover-peek verb) and a `State` signal (live/kept/dnd/center — the
 badge counts the shade, never the DND queue or the OSD band).
-`hyprctl hyprnotify {count,center,state,badge,policy,snoozed,clear}`;
+`hyprctl hyprnotify {count,center,state,badge,policy,clear}`;
 `hl.plugin.hyprnotify.{suspend,center}()`.
 
 Markup stays the whitelisted Pango subset with the literal-`<`/`&` rescue;
@@ -208,7 +183,6 @@ surface: [docs/hyprnotify.md](../docs/hyprnotify.md).
 | `plugin:hyprnotify:offset_y` | popups' and the shade's distance from the monitor top | 34 |
 | `plugin:hyprnotify:timeout_low` | ephemeral timeout in ms (low urgency, `transient`, progress cards) | 4000 |
 | `plugin:hyprnotify:timeout_normal` | normal-urgency banner timeout in ms, then it retreats to the shade; 0 = sticky (critical always sticks) | 5000 |
-| `plugin:hyprnotify:snooze_seconds` | how long a snoozed card stays out of sight before it alerts again | 900 |
 | `plugin:hyprnotify:coalesce_popups` | 1 = at most one live popup per app; same-app extras land silent in the shade (0 = a banner per message) | 1 |
 | `plugin:hyprnotify:max_notifs` | model cap; overflow evicts the oldest non-critical card | 50 |
 | `plugin:hyprnotify:ignore_dbusclose` | ignore app-initiated `CloseNotification` (dunst's knob) | 0 |

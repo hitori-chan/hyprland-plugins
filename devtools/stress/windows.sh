@@ -238,13 +238,15 @@ kill_nested
 printf 'garbage\n42\n1e400\t0\t300\t200\tinffoot\n-100\t-100\t-50\t-50\tnegfoot\n100000\t100000\t400\t300\tfoot\n' > "$STATE/hyprplace/lastspot.tsv"
 # the policy store is the other user-editable file: a verb-less line, an
 # empty key, an unknown verb and a duplicated rule must all be skipped or
-# deduped, not fatal (a long key is well-formed: app names carry no cap)
+# deduped, not fatal (a long key is well-formed: app names carry no cap).
+# The 's' lines are the legacy silence format — the feature is gone, and a
+# stored line nobody can act on is skipped, not fatal.
 mkdir -p "$STATE/hyprnotify"
 printf 'garbage\ns\n s\tx\nz\tnope\ns\t\np\t\ns\tkeepme\ns\tkeepme\n' > "$STATE/hyprnotify/policy.tsv"
 launch_nested || { echo "relaunch FAILED"; exit 1; }
 retarget || { echo "nested retarget FAILED after relaunch"; exit 1; }
 chk "hostile tsv: all 8 plugins still load" test "$(hq plugin list | grep -c Plugin)" = 8
-chk "hostile policy: only the well-formed rule loaded" test "$(hq hyprnotify policy)" = "silenced:1 s=keepme priority:0"
+chk "hostile policy: nothing actionable loaded" test "$(hq hyprnotify policy)" = "priority:0"
 dsp "hl.dsp.window.close()"; sleep 0.5
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x300')"; sleep 2
 # the stored 400x300 is applied over the requested 500x300, then the

@@ -133,7 +133,6 @@ namespace NHyprnotify {
     // would otherwise carry them past Model::exit and destroy them, textures
     // and all, at static-destruction time with the renderer already gone.
     static void resetVisit() {
-        Model::snoozeEndConfirm(); // the undo rows had exactly this surface
         s_skip = s_items = 0;
         s_openedRow.clear();
         s_foldedRow.clear();
@@ -267,25 +266,19 @@ namespace NHyprnotify {
 
     // Android's shade ranking, minus the visible dividers: urgent things,
     // then the people you marked, then the rest of the people, then
-    // everything else, then the quiet ones. A silenced app ranks with the
-    // quiet ones — that IS what silencing it asked for.
+    // everything else, then the quiet ones.
     static int tier(const SP<SNotif>& n) {
         if (n->urgency >= 2)
             return 0;
-        if (n->urgency == 0 || Policy::silenced(n->appKey))
+        if (n->urgency == 0)
             return 4;
         if (n->conversation)
             return n->priority ? 1 : 2;
         return 3;
     }
 
-    // a snoozed card still holding its slot for the undo window: it shows as a
-    // one-line confirmation row, and bundles with nothing
-    static bool confirming(const SP<SNotif>& n) {
-        return n->snoozed && Model::snoozeConfirming(n);
-    }
     static bool bundleable(const SP<SNotif>& n) {
-        return !n->conversation && !n->snoozed && !n->appKey.empty();
+        return !n->conversation && !n->appKey.empty();
     }
 
     // How many bundleable cards one (app, declared group) holds, and where
@@ -307,7 +300,7 @@ namespace NHyprnotify {
         src.clear();
         owners.clear();
         for (const auto& N : notifs)
-            if (!N->waiting && !inOsdBand(N->id) && (!N->snoozed || confirming(N)))
+            if (!N->waiting && !inOsdBand(N->id))
                 src.push_back(N);
         // notifs is newest-first; a STABLE sort by tier keeps that inside each
         std::ranges::stable_sort(src, [](const auto& a, const auto& b) { return tier(a) < tier(b); });
@@ -354,12 +347,7 @@ namespace NHyprnotify {
             const double LEAD = i == s_skip ? 0 : STACK_GAP;
             const bool   TOP  = i == s_skip;
 
-            if (D.items.size() < 2 && confirming(D.items.front())) {
-                // fixed, and never folded: an undo row has one state
-                s_itemH[i]    = snoozeRowH();
-                s_itemOpen[i] = 0;
-                s_itemMore[i] = 0;
-            } else if (D.items.size() < 2 && D.items.front()->id == s_manageRow) {
+            if (D.items.size() < 2 && D.items.front()->id == s_manageRow) {
                 s_itemH[i]    = managePanelH(D.items.front());
                 s_itemOpen[i] = 0;
                 s_itemMore[i] = 0;
@@ -519,9 +507,7 @@ namespace NHyprnotify {
             first = false;
 
             const CBox SLOT{CONTENT_X, y, CONTENT_W, IH};
-            if (D.items.size() < 2 && confirming(D.items.front()))
-                paintSnoozeRow(P, T, D.items.front(), SLOT);
-            else if (D.items.size() < 2 && D.items.front()->id == s_manageRow)
+            if (D.items.size() < 2 && D.items.front()->id == s_manageRow)
                 paintManagePanel(P, T, D.items.front(), SLOT);
             else if (D.items.size() < 2)
                 paintSingle(P, T, D.items.front(), SLOT, OPEN, MORE);
@@ -559,41 +545,10 @@ namespace NHyprnotify {
             bx += BAR_BTN + BAR_GAP;
         }
 
-        // A silence used to be invisible once set: the only places it showed
-        // were a lit glyph on a card from the very app it was suppressing, and
-        // `hyprctl hyprnotify policy`. You could mute something and lose it for
-        // a month. The count stands in the footer whenever a rule is in force,
-        // and names them on hover — the shade always admits what it is holding
-        // back.
-        const size_t MUTED = Policy::silencedCount();
-        if (MUTED > 0) {
-            // BOTH labels every pass: hover flips without a rewarm, so keying
-            // this raster on the hover state would miss the cache for a frame
-            auto& SB = scratch();
-            SB += "⊘ ";
-            SB += std::to_string(MUTED);
-            const auto REST = cachedText(SB, COLSUB, T.bar, 64, -1, 0, false, 600);
-            const auto HOT  = cachedText("Unmute all", COLFG, T.bar, 200, -1, 0, false, 600);
-            const bool HOV  = hovered.kind == SCard::BTN_RULES;
-            // the wider of the two: the chip must not resize under the pointer
-            const double CW = std::max(texW(REST, P.scale), texW(HOT, P.scale)) + 18;
-            const CBox   B{bx, BARY, CW, BAR_BTN};
-            if (!P.warm) {
-                P.rect(B, HOV ? tAccentDim() : tFill2(), (int)std::lround(BAR_BTN / 2 * P.scale));
-                if (const auto* L = HOV ? HOT : REST; L && L->tex)
-                    P.tex(L->tex, B.x + (B.w - L->tex->m_size.x / P.scale) / 2, B.y + (B.h - L->tex->m_size.y / P.scale) / 2);
-            }
-            SCard c;
-            c.kind = SCard::BTN_RULES;
-            c.box  = B;
-            cards.push_back(c);
-            bx += CW + BAR_GAP;
-        }
-
         { // "Clear all" — the global sweep; greys when the shade is empty
             const double CW = X + CENTER_W - BAR_PADX - bx;
             const CBox   B{bx, BARY, CW, BAR_BTN};
-            const bool   TARGET = std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && !N->snoozed && !inOsdBand(N->id); });
+            const bool   TARGET = std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && !inOsdBand(N->id); });
             const auto   L      = cachedText("Clear all", TARGET ? COLFG : COLSUB.modifyA(0.35f), T.bar, (int)(CW * P.scale), -1, 0, false, 600);
             if (!P.warm) {
                 const bool HOV = hovered.kind == SCard::BTN_CLEAR;

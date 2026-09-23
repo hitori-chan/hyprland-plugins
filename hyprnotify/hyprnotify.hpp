@@ -7,7 +7,7 @@
 //               the vtables, the signals, the name
 //   parse.cpp   the untrusted payload: markup, images, appended bodies
 //   model.cpp   the cards: arrival, residency, merging, DND, the expiry
-//   policy.cpp  the user's own rules: silenced apps, priority chats
+//   policy.cpp  the user's own rules: priority chats
 //   icons.cpp   notification images: content avatars, identity icons,
 //               raw image-data
 //   text.cpp    the pango rasterizer + the keyed text cache + markup helpers
@@ -80,7 +80,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "7.4.0";
+    inline constexpr const char* VERSION = "7.5.0";
 
     // the OSD scripts pin ids here: replace-in-place, never appended, never
     // grouped, never history; fresh ids and recalls never mint into it
@@ -102,7 +102,6 @@ namespace NHyprnotify {
         SP<Config::Values::CIntValue>    timeoutLow;    // ms; the -1 fallback for ephemerals (low/transient/progress)
         SP<Config::Values::CIntValue>    timeoutNormal; // ms; the -1 fallback for normal urgency, then it retreats to the shade; 0 = sticky (critical always is)
         SP<Config::Values::CIntValue>    coalescePopups; // 1 = at most one live popup per app; same-app extras land resident + silent
-        SP<Config::Values::CIntValue>    snoozeSeconds;   // how long a snoozed card stays out of sight before it alerts again
         SP<Config::Values::CIntValue>    rounding;      // card radius; the panel (+6) and rows (-2) derive from it
         SP<Config::Values::CFloatValue>  roundingPower; // superellipse exponent, the compositor's rounding_power
         SP<Config::Values::CIntValue>    maxNotifs;     // model cap; overflow evicts oldest non-critical
@@ -222,14 +221,6 @@ namespace NHyprnotify {
 
         bool                 waiting = false; // arrived while suspended (DND): collected, not shown, timeout held
         bool                 banner  = true;  // the popup is up; expiry drops only this — the card stays resident
-        bool                 snoozed = false; // "remind me": out of sight until snoozeUntil, then it alerts again
-        Time::steady_tp      snoozeUntil;
-        // The undo window. A snoozed card does not leave the shade at the
-        // click: it collapses to a confirmation row until this passes (or the
-        // shade closes), which is the only thing that gives the undo something
-        // to be clicked ON.
-        Time::steady_tp      snoozeConfirmUntil;
-        int64_t              snoozeSecs = 0; // the duration in force, for the row's label and the ˅
 
         float                timeoutMs = 0; // resolved; 0 = sticky
         Time::steady_tp      deadline;      // meaningful when banner && timeoutMs > 0 and not waiting
@@ -293,14 +284,6 @@ namespace NHyprnotify {
         std::string                   groupKeyOf(const SP<SNotif>& n);       // the bundle's identity: the app key, sub-keyed by the declared group
         void                          absorbPopped();                        // opening the shade parks the popped stack (no re-pop on close)
         void                          rearmExpiry();
-        void                          snooze(uint32_t id);                        // out of sight, then back with a fresh banner
-        void                          snoozeFor(uint32_t id, int64_t seconds);    // the panel's explicit durations
-        void                          snoozeUndo(uint32_t id);  // inside the undo window: as if it never happened
-        void                          snoozeCycle(uint32_t id); // the ▾: next rung of the duration ladder
-        void                          snoozeEndConfirm();       // the shade closed; every confirmation row goes
-        bool                          snoozeConfirming(const SP<SNotif>& n); // still showing its undo row
-        std::string                   snoozeLabel(const SP<SNotif>& n);      // "15 min", "2 hours"
-        uint32_t                      snoozedCount();
         void                          holdBanner(uint32_t id); // the hovered popup's countdown pauses; 0 releases (and restarts it)
         void                          toggleSuspend();         // DND; resume renders the queue, fresh timeouts
         bool                          suspendedNow();
@@ -314,14 +297,9 @@ namespace NHyprnotify {
     namespace Policy {
         void        init();
         void        exit();
-        bool        silenced(const std::string& appKey);                            // no banner, no sound, ranked quiet
-        bool        priority(const std::string& appKey, const std::string& chat);  // this chat outranks everything but critical; chat = the conversation-id, else the sender summary
-        void        toggleSilence(const std::string& appKey);                       // the quick toggle: always, or not at all
-        void        silenceFor(const std::string& appKey, int64_t seconds);         // iOS's "Mute for 1 Hour"; 0 = always, < 0 = today
-        void        unsilence(const std::string& appKey);
-        void        unsilenceAll(); // the footer chip: one click out of every standing rule
+        bool        priority(const std::string& appKey, const std::string& chat); // this chat outranks everything but critical; chat = the conversation-id, else the sender summary
         void        togglePriority(const std::string& appKey, const std::string& sender);
-        size_t      silencedCount(); // rules in force — the footer never lets one hide
+        size_t      priorityCount(); // marks in force — the debug line never lets one hide
         std::string stateString();   // the debug line, and what the gate reads
     }
 
@@ -405,9 +383,7 @@ namespace NHyprnotify {
             DIGEST,    // a folded app bundle (group = app key)
             GHEAD,     // an expanded bundle's header row
             CHILD,     // a bundle child row
-            SNOOZE,    // a snoozed card's undo row, in the slot the card held
             MANAGE,    // a row turned into its manage panel by the ⋮
-            BTN_RULES, // footer "⊘ N": the silences in force, and the way out of them
             BTN_CLEAR, // footer "Clear all": the global sweep
             BTN_DND,   // footer ⊖ (do-not-disturb)
             PANEL,     // the shade panel body: swallows clicks, owns the wheel
@@ -450,9 +426,8 @@ namespace NHyprnotify {
         std::string  group;
         SCard::eKind kind = SCard::POPUP;
         int          btn  = -1;
-        // 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 5 silence,
-        // 6 priority, 7 snooze, 8 undo, 9 duration, 10 the ⋮, 16+n a manage
-        // panel entry
+        // 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 6 priority,
+        // 10 the ⋮, 16+n a manage panel entry
         uint8_t      part = 0;
         bool         operator==(const SHover&) const = default;
     };

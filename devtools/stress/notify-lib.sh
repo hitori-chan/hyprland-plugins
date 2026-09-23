@@ -76,9 +76,7 @@ peek() { # peek <true|false> — the bell-hover path on the plugin's own bus
 # ---- model strings -------------------------------------------------------------
 st() { hq hyprnotify state; }    # center:X live:Y dnd:Z — the raw model size
 bd() { hq hyprnotify badge; }    # banners:N resident:M — the popup/shade split
-sz() { hq hyprnotify snoozed; }  # the snoozed count (still in the model)
-pol() { hq hyprnotify policy; }  # silenced:N s=app[+secs] priority:M p=app/sender
-polsil() { pol | sed 's/ priority:.*//'; }
+pol() { hq hyprnotify policy; }  # priority:N p=app/sender — the user's marks
 nbus() { DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user "$@"; }
 
 # ---- sends -----------------------------------------------------------------------
@@ -147,25 +145,14 @@ closeid() { # closeid <id> — CloseNotification by the returned id
 # ---- center / policy -------------------------------------------------------------
 center_off() { [[ "$(st)" == center:1* ]] && { hq hyprnotify center >/dev/null; sleep 0.4; }; }
 center_on() { [[ "$(st)" != center:1* ]] && { hq hyprnotify center >/dev/null; sleep 0.5; }; }
-# policy_lift — leave no rule standing between batteries. v6 toggles a rule
-# by key on the SELECTED row (m = mute app, p = mark sender), and selection
-# starts nowhere, so: send the app a fresh card (newest = the top row), open
-# the shade, ↓ selects it, m/p lifts. A muted app still lands resident, so
-# the card is always there to be selected.
+# policy_lift — leave no rule standing between batteries. v6 toggles a mark
+# by key on the SELECTED row (p = mark sender), and selection starts nowhere,
+# so: send the app a fresh card (newest = the top row), open the shade, ↓
+# selects it, p lifts.
 policy_lift() {
 	local line tok app sender
 	line=$(pol)
-	[[ "$line" == "silenced:0 priority:0" ]] && return 0
-	for tok in $(grep -o 's=[^ ]*' <<<"$line"); do
-		app=${tok#s=}; app=${app%%+*} # a timed silence prints s=app+remaining
-		psend "$app" "policy lift" ""
-		sleep 1
-		center_on
-		tap down
-		tap 50 # m
-		tap esc # the lift leaves the shade open; the next battery starts closed
-		hq hyprnotify clear >/dev/null 2>&1; sleep 0.5
-	done
+	[[ "$line" == "priority:0" ]] && return 0
 	for tok in $(grep -o 'p=[^ ]*' <<<"$line"); do
 		app=${tok#p=}; app=${app%%/*}
 		sender=${tok#p=*/} # the state line prints app/sender

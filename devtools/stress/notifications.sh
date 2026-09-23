@@ -6,11 +6,10 @@
 # code only.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/notify-lib.sh"
 
-# The hostile-tsv battery (windows) relaunched the nested target with a
-# well-formed keepme rule still standing: lift it before the first assertion,
-# or every "clean state" check below passes over a live silence.
+# Safety net: lift any mark a battery left standing before the first
+# assertion, or every "clean state" check below passes over one.
 policy_lift
-chk "notif reset: no rule left standing by the hostile fixture" test "$(pol)" = "silenced:0 priority:0"
+chk "notif reset: no mark left standing" test "$(pol)" = "priority:0"
 
 # ---- notification cap ---------------------------------------------------
 # The model is deliberately bounded: 65 arrivals leave exactly max_notifs
@@ -353,6 +352,5 @@ hq hyprnotify clear >/dev/null; sleep 0.5
 
 # ---- the module leaves the plugin exactly as the preflight found it --------
 chk "notifications: final clean state" test "$(st)" = "center:0 live:0 dnd:0"
-chk "notifications: no policy left behind" test "$(hq hyprnotify policy)" = "silenced:0 priority:0"
-chk "notifications: no snooze in flight" test "$(hq hyprnotify snoozed)" = "0"
+chk "notifications: no mark left behind" test "$(hq hyprnotify policy)" = "priority:0"
 chk "notifications: no banners or residents" test "$(bd)" = "banners:0 resident:0"

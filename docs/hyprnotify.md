@@ -174,38 +174,25 @@ surface description and config live in `hyprnotify/README.md`).
 - Shade keys, while it is open and only then: Esc peels (an open manage panel
   first, then the shade), ↑/↓ move a selection (an accent hairline; the page
   follows it), Space folds, Enter fires the primary, Tab arms the selected
-  card's reply field, Delete dismisses, `m` silences the app, `s` snoozes the
-  card, `p` marks the sender, `u` takes a snooze back while its undo row is
-  up. An undo row is its own keyboard surface: `s` there re-picks the
-  duration, and Space/Enter belong to focus since the row has neither a fold
-  nor a primary. Modified chords pass through as user binds, and so does any
-  key with nothing to act on — nothing selected, or `p` on a card that is not
-  a chat.
+  card's reply field, Delete dismisses, `p` marks the sender. Modified chords
+  pass through as user binds, and so does any key with nothing to act on —
+  nothing selected, or `p` on a card that is not a chat.
 - Per-app rules (`policy.cpp`, persisted to
-  `$XDG_STATE_HOME/hyprnotify/policy.tsv`): SILENCED apps get no banner and
-  no sound and rank with the quiet ones — Android's "Silent", dunst's
-  `skip_display` — while MARKED conversations rank above everything but a
-  critical card and wear AOSP's `conversation_icon_badge_ring`, the one it
-  ships with `visibility=gone` until you mark someone — drawn at the badge's
-  own diameter with the rim's width for a stroke
+  `$XDG_STATE_HOME/hyprnotify/policy.tsv`): MARKED conversations rank above
+  everything but a critical card and wear AOSP's `conversation_icon_badge_ring`,
+  the one it ships with `visibility=gone` until you mark someone — drawn at
+  the badge's own diameter with the rim's width for a stroke
   (`importance_ring_size`/`importance_ring_stroke_width`), so marking a chat
   recolours that band instead of hanging a second circle outside it and
-  making a marked badge bigger than an unmarked one. Critical bypasses a
-  silence exactly as it bypasses DND. Set from the row's manage panel or the
-  bundle header; both rules are retroactive, so the cards already in the
-  shade re-rank under them. Silence keys on the app identity, a mark on app +
-  sender: one chat app carries many people. This is state the user typed with
-  a click, never a per-app branch in code.
+  making a marked badge bigger than an unmarked one. Set from the row's
+  manage panel; the mark is retroactive, so the cards already in the shade
+  re-rank under it. It keys on app + sender: one chat app carries many
+  people. This is state the user typed with a click, never a per-app branch
+  in code.
 
-  A silence carries an EXPIRY (`s<TAB>key<TAB>epoch`, 0 = always), so iOS's
-  "Mute for 1 Hour" and "Mute for Today" are sayable and permanent stops
-  being the only thing a click can mean — it is the choice people regret.
-  Wall clock, not steady time: a suspend, a reboot and a week off all count
-  against the hour. Expiry is lazy — a lapsed rule is dropped the next time
-  anyone asks, which is every arrival and every paint, and nothing has to
-  HAPPEN at the moment a silence lifts. A rule that lapsed while the session
-  was down never loads. The footer's `⊘ N` is the other half: the shade
-  admits what it is holding back, and one click lifts every rule.
+  The store's line format is `p<TAB>app<US>sender`. Lines the older format
+  wrote for per-app silences (`s`) are skipped on load — the feature is
+  gone, and a stored line nobody can act on is just noise.
 - The manage panel: the ⋮ turns a row into its own verbs rather than opening
   a floating menu. Same ergonomics as Android's long-press panel — full-width
   labelled targets, each with its key in the right column — with none of a
@@ -214,24 +201,6 @@ surface description and config live in `hyprnotify/README.md`).
   wears it at a time. Esc peels it before the shade. It replaced three 20px
   glyphs at 4px separation, hover-only and unlabelled, with the irreversible
   verb in the middle slot.
-- Snooze (`s` or the panel, `snooze_seconds`, 900): the card goes out of
-  sight and comes back alerting — Android's snooze. It stays in the model
-  while away, so `state` counts it while the badge does not, and "Clear all"
-  leaves it alone. The wake re-keys the arrival spring but not `arrived`: the
-  age line still tells the truth about when the card came. Ephemerals are
-  refused — expiry takes those cards whole, so there is nothing to come back
-  to.
-
-  It does NOT leave at the click, which is what stopped it being the one
-  irreversible verb in the shell. Android replaces the notification in place
-  with "Snoozed for 1 hour ▾ · Undo" and lets it go afterwards; so does this.
-  For CONFIRM_MS (6s) the card holds its slot as a one-line undo row — Undo
-  or `u` restores it, the ˅ or `s` cycles Android's 15m/30m/1h/2h ladder, and
-  each change re-arms both clocks. Closing the shade commits every pending
-  snooze rather than stranding a window nobody can see. Not history and not
-  recall: the card never left. ONE event-loop timer serves all three clocks —
-  banner expiry, the wake, and the undo window — since all are deadlines on
-  the same list.
 - Swipe: a horizontal wheel on a row, away to dismiss and back to open the
   manage panel. Both go through the CLICK queue rather than acting in the
   emission (crash class 6) — a swipe is an alias for a click that already
