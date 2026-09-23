@@ -168,7 +168,11 @@ namespace NHyprnotify {
         notifChanged();
     }
     uint32_t centerManageRow() {
-        return s_manageRow;
+        // a panel riding a card that died (dismissed through its own
+        // entry, swiped away, expired) would swallow the next esc as a
+        // peel of a ghost — validate liveness so the peel only spends
+        // on a live panel
+        return s_manageRow && Model::byId(s_manageRow) ? s_manageRow : 0;
     }
 
     // the selected item's card id — the ⋮ shows for the keyboard too, and a
