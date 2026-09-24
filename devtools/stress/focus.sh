@@ -111,7 +111,8 @@ dsp "hl.dsp.exec_cmd('foot --window-size-pixels=600x300')"
 sleep 2
 
 run_ping_mode() { # run_ping_mode <mode> — map, park focus, ping, assert
-	local mode=$1 cap="$STATE/focus-$mode.cap" lpid="" probe="" paddr="" faddr=""
+	local mode=$1
+	local cap="$STATE/focus-$mode.cap" lpid="" probe="" paddr="" faddr=""
 	DISPLAY="$NDISP" "$FOCUSTRAP" "$mode" 5 16 >/dev/null 2>&1 &
 	probe=$!
 	sleep 1.8
