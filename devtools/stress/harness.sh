@@ -336,7 +336,28 @@ launch_nested() {
 	PATH="$REPO/devtools/fakes:$PATH" HYPROSD_WPCTL_LOG="$STATE/wpctl.log" \
 		HYPROSD_WPCTL_HANG_FILE="$STATE/hang-wpctl" HYPROSD_WPCTL_FLOOD_FILE="$STATE/flood-wpctl" HYPRNOTIFY_SOUND_HANG_FILE="$STATE/hang-sound" \
 		HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" XDG_CACHE_HOME="$STATE/cache" \
-		bash "$HARNESS/launch.sh" >/dev/null 2>&1
+		bash "$HARNESS/launch.sh" >/dev/null 2>&1 || return 1
+	# The nested compositor enters fallback (a headless "FALLBACK" output,
+	# no window) 2s after its ready event when its aquamarine window output
+	# never appeared. A window lost in that window renders into the void:
+	# every nested capture starves and all batteries fail. A late window
+	# output can still arrive and lift the fallback, so give it a moment
+	# before relaunching (launch.sh kills the prior same-config nested).
+	local sig n
+	sig="$(cat "$HARNESS/nested.sig" 2>/dev/null)"
+	[[ -n "$sig" ]] || return 1
+	for n in 1 2 3; do
+		for _ in $(seq 1 10); do
+			hyprctl -i "$sig" monitors -j 2>/dev/null | python3 -c 'import json,sys;ms=json.load(sys.stdin);sys.exit(0 if any(m["name"]!="FALLBACK" for m in ms) else 1)' && return 0
+			sleep 1
+		done
+		echo "harness: nested stuck in FALLBACK (window lost?); relaunching (attempt $n/3)" >&2
+		[[ $n == 3 ]] && return 1
+		bash "$HARNESS/launch.sh" >/dev/null 2>&1 || return 1
+		sig="$(cat "$HARNESS/nested.sig" 2>/dev/null)"
+		sleep 2
+	done
+	return 0
 }
 
 cleanup_harness() {
