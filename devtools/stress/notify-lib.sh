@@ -108,6 +108,12 @@ psend() { # psend <app> <sender> [category] — an explicit desktop-entry, so
 	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
 		Notify susssasa\{sv\}i "$1" 0 "" "$2" body 0 2 desktop-entry s "$1" category s "$3" 30000 >/dev/null 2>&1
 }
+pcid() { # pcid <app> <title> <conv-id> — a conversation card on the STABLE
+	# conversation-id contract (Telegram's): the mark and the merge ride the
+	# id, never the title, so a renamed chat keeps its state
+	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
+		Notify susssasa\{sv\}i "$1" 0 "" "$2" body 0 3 desktop-entry s "$1" category s im.received conversation-id s "$3" 30000 >/dev/null 2>&1
+}
 pcrit() { # pcrit <app> <sender> — a critical arrival under the app key
 	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
 		Notify susssasa\{sv\}i "$1" 0 "" "$2" body 0 2 desktop-entry s "$1" urgency y 2 30000 >/dev/null 2>&1

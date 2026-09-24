@@ -87,11 +87,16 @@ namespace NHyprnotify::Policy {
             s_priority.insert(KEY);
         else
             s_priority.erase(IT);
-        // the paint reads the flag, not the store — ASSIGN it rather than
-        // flipping, so a card whose flag ever drifted lands back in step
+        // The paint reads the flag, not the store — RE-DERIVE it for the
+        // app's cards, mirroring arrive's key choice: a conversation card
+        // keys on its conversation-id (the summary as fallback), a plain
+        // card on the summary, and a mark only ever exists on a
+        // conversation. A summary-only match would leave a visible
+        // conversation-id card unranked and unringed until its next replace.
         for (const auto& N : notifs)
-            if (N->appKey == appKey && N->summary == sender)
-                N->priority = ON;
+            if (N->appKey == appKey)
+                N->priority = (N->conversation || !N->conversationId.empty()) && (!N->conversationId.empty() ? (s_priority.contains(convKey(appKey, N->conversationId)) || s_priority.contains(convKey(appKey, N->summary)))
+                                                                                                              : s_priority.contains(convKey(appKey, N->summary)));
         s_saver.dirty();
         notifChanged();
         Bus::emitStateSoon();
