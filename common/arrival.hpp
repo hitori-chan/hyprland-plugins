@@ -14,9 +14,9 @@
 //
 // CALL seqOf FROM window.open. A number is minted on first sight, so whatever
 // looks first defines the order: stamp at map and the sequence is arrival, let
-// a render walk or onWorkspace's comparator mint them and it is whatever order
-// that walk happened to visit — which for a batch seen at once is the Z-order
-// this class exists to avoid, frozen permanently.
+// a render walk or onWorkspace mint them (in visit order, before any sort)
+// and it is whatever order that walk happened to visit — which for a batch
+// seen at once is the Z-order this class exists to avoid, frozen permanently.
 #pragma once
 
 #include <hyprland/src/workspace/HLWorkspace.hpp>
@@ -64,7 +64,13 @@ namespace NHyprCommon {
                     continue;
                 out.push_back(W);
             }
-            std::ranges::sort(out, [this](const PHLWINDOW& a, const PHLWINDOW& b) { return seqOf(a.get()) < seqOf(b.get()); });
+            // Mint any missing sequences BEFORE the sort, in visit order —
+            // the comparator must be a pure read: minting mid-sort would let
+            // a first-sight batch's sequence depend on the sort algorithm's
+            // comparison schedule, not its visit order.
+            for (const auto& W : out)
+                seqOf(W.get());
+            std::ranges::sort(out, [this](const PHLWINDOW& a, const PHLWINDOW& b) { return m_seq.at(a.get()) < m_seq.at(b.get()); });
             return out;
         }
 
