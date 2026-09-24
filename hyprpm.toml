@@ -15,14 +15,14 @@ authors = ["hitori"]
 
 [hyprbar]
 description = "the awesome wibar, drawn by the compositor"
-version     = "4.5.14"
+version     = "4.6.0"
 authors     = ["hitori"]
 output      = "hyprbar/hyprbar.so"
 build       = ["make -C hyprbar all"]
 
 [hyprnotify]
 description = "awesome's naughty: notifications drawn by the compositor"
-version     = "7.5.3"
+version     = "7.6.0"
 authors     = ["hitori"]
 output      = "hyprnotify/hyprnotify.so"
 build       = ["make -C hyprnotify all"]
