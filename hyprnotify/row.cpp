@@ -66,7 +66,7 @@ namespace NHyprnotify {
             SB += AGE;
             SB += "</span>";
             const auto LINE = cachedText(SB, COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
-            const auto B1S  = lastLine(N->body);
+            const auto B1S  = collapsedLine(N); // the newest message, whichever end holds it
             const auto B1   = B1S.empty() ? nullptr : cachedText(B1S, COLBODY, T.body, TEXTWPX, -1, 0, true, 400);
             th              = texH(LINE, P.scale) + (B1 ? 2 + texH(B1, P.scale) : 0) + (N->progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0);
             if (!P.warm) {

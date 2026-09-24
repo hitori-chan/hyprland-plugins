@@ -275,6 +275,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                 return IPC::Socket1::SResponse{Model::badgeString()};
             if (COMMAND.ends_with("policy"))
                 return IPC::Socket1::SResponse{Policy::stateString()};
+            if (COMMAND.ends_with("topline")) // the gate's text probe: the newest card's collapsed one-liner
+                return IPC::Socket1::SResponse{Model::toplineString()};
             if (COMMAND.ends_with("clear")) { // the scripted reset
                 static NHyprCommon::CHop pendingClear;
                 pendingClear.arm([]() { Model::dismissAllLive(); });

@@ -114,6 +114,18 @@ pcid() { # pcid <app> <title> <conv-id> — a conversation card on the STABLE
 	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
 		Notify susssasa\{sv\}i "$1" 0 "" "$2" body 0 3 desktop-entry s "$1" category s im.received conversation-id s "$3" 30000 >/dev/null 2>&1
 }
+pcidb() { # pcidb <app> <title> <conv-id> <body> — pcid with a chosen message
+	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
+		Notify susssasa\{sv\}i "$1" 0 "" "$2" "$4" 0 3 desktop-entry s "$1" category s im.received conversation-id s "$3" 30000 >/dev/null 2>&1
+}
+tdgrp() { # tdgrp <chat> <sender> <message> — Telegram Desktop's group wire:
+	# the sender is a LEADING bold line of the body (body-markup), the summary
+	# is the chat, and the im.received merge keeps one card per chat
+	local body
+	body=$(printf '<b>%s</b>\n%s' "$2" "$3")
+	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
+		Notify susssasa\{sv\}i "Telegram" 0 "" "$1" "$body" 0 3 suppress-sound b true category s im.received desktop-entry s telegram-desktop 30000 >/dev/null 2>&1
+}
 pcrit() { # pcrit <app> <sender> — a critical arrival under the app key
 	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
 		Notify susssasa\{sv\}i "$1" 0 "" "$2" body 0 2 desktop-entry s "$1" urgency y 2 30000 >/dev/null 2>&1
@@ -128,7 +140,7 @@ conv_notify() { # conv_notify <app> <sender> <message> — a v6 conversation
 	# card: the summary IS the sender (the merge key) and the message is
 	# the body
 	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
-		Notify susssasa\{sv\}i "$1" 0 "" "$2" "$3" 0 1 desktop-entry s "$1" category s im.received 30000 >/dev/null 2>&1
+		Notify susssasa\{sv\}i "$1" 0 "" "$2" "$3" 0 2 desktop-entry s "$1" category s im.received 30000 >/dev/null 2>&1
 }
 conv_reply_notify() { # conv_reply_notify <app> <sender> <message> — a
 	# conversation card that also offers inline-reply

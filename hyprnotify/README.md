@@ -134,7 +134,8 @@ Two surfaces share one card model:
      it and loses no verb, so neither gesture is the only way to do its job.
 
 Model rules: the **conversation merge** (Android's MessagingStyle) joins one
-chat's messages into one growing card (~8KB, oldest lines drop) — a fresh
+chat's messages into one growing card (~8KB, newest on top, oldest lines
+drop) — a fresh
 Notify whose app + summary matches a live card rides the replace path with
 the bodies joined, triggered by the `im.*`/`call.*` categories or by
 `x-canonical-append`; a sender's structured `conversation-id` hint is the
@@ -155,7 +156,7 @@ The bell talks over the bus: the `org.hitori.hyprnotify` interface on the
 Notifications object carries `Toggle` (the shade's click), `Peek(on_bell)`
 (the hover-peek verb) and a `State` signal (live/kept/dnd/center — the
 badge counts the shade, never the DND queue or the OSD band).
-`hyprctl hyprnotify {count,center,state,badge,policy,clear}`;
+`hyprctl hyprnotify {count,center,state,badge,policy,topline,clear}`;
 `hl.plugin.hyprnotify.{suspend,center}()`.
 
 Markup stays the whitelisted Pango subset with the literal-`<`/`&` rescue;
