@@ -335,6 +335,18 @@ namespace NHyprbar {
         return best ? *best : "";
     }
 
+    // The caches key on strings a local client can rotate (window class,
+    // dbusmenu icon-name, the SNI IconName|ThemePath|Id): one chattering
+    // client must not grow them without bound. At the cap, drop everything —
+    // the defined behavior — and let the next warm rebuild what is still
+    // wanted.
+    constexpr size_t MAX_ICON_CACHE = 512;
+    template <class MAP>
+    static void boundIconCache(MAP& m) {
+        if (m.size() >= MAX_ICON_CACHE)
+            m.clear();
+    }
+
     // symbolic SVGs bake col_fg into their pixels (loadIcon), so a foreground
     // change invalidates every icon cache — checked at the caches' entrances
     static void dropStaleTint();
@@ -355,6 +367,7 @@ namespace NHyprbar {
             path = resolveIconPath(desktopIconName(klass));
 
         SP<ITexture> tex    = path.empty() ? nullptr : loadIcon(path);
+        boundIconCache(appIconCache);
         appIconCache[klass] = tex;
         return tex;
     }
@@ -372,6 +385,7 @@ namespace NHyprbar {
 
         const auto   path    = resolveIconPath(name);
         SP<ITexture> tex     = path.empty() ? nullptr : loadIcon(path);
+        boundIconCache(namedIconCache);
         namedIconCache[name] = tex;
         return tex;
     }
@@ -408,6 +422,7 @@ namespace NHyprbar {
         if (path.empty())
             path = resolveIconPath(desktopIconName(id), themePath);
         SP<ITexture> tex   = path.empty() ? nullptr : loadIcon(path);
+        boundIconCache(trayIconCache);
         trayIconCache[KEY] = tex;
         return tex;
     }
