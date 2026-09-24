@@ -46,8 +46,8 @@ HYPR_DEPLOY_PKG_CONFIG_PATH=$SCRATCH/share/pkgconfig \
 ```
 
 `-b LIST` runs only the named batteries and `-k LIST` skips them (comma
-separated; from `windows notifications reply policy lifecycle`; `all` is the
-default). Canonical order is enforced regardless of user order, and
+separated; from `windows notifications reply policy focus lifecycle`; `all`
+is the default). Canonical order is enforced regardless of user order, and
 preflight (parallel builds, launch, retarget) always runs. Without
 `lifecycle` selected, `stress.sh` itself prints the final summary line.
 
@@ -65,6 +65,7 @@ The shell is split by ownership under `devtools/stress/`:
 | `notifications.sh` | notification model, center, grouping, identity, and pixel checks |
 | `reply.sh` | hyprosd's wpctl process path, the pointer-only shade close, inline reply, and the launcher clipboard |
 | `policy.sh` | DND, management, gestures, ranking, and admission |
+| `focus.sh` | X11 EWMH pings (the GOG/Proton focus steal): urgency only, focus stays, click still focuses |
 | `lifecycle.sh` | input capture, input storms, reload, logs, and teardown |
 | `probe-env.sh` | bootstrap for isolated one-off probes (see below) |
 

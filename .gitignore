@@ -31,6 +31,7 @@ devtools/fixwin
 devtools/fixwin-proto.c
 devtools/fixwin-protocol.h
 devtools/splashwin
+devtools/focustrap
 devtools/battery-state-test
 devtools/desktop-exec-test
 devtools/fileindex-test
