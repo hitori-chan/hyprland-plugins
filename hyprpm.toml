@@ -22,14 +22,14 @@ build       = ["make -C hyprbar all"]
 
 [hyprnotify]
 description = "awesome's naughty: notifications drawn by the compositor"
-version     = "7.5.1"
+version     = "7.5.2"
 authors     = ["hitori"]
 output      = "hyprnotify/hyprnotify.so"
 build       = ["make -C hyprnotify all"]
 
 [hyprmax]
 description = "awesome's per-window maximize"
-version     = "1.1.15"
+version     = "1.1.16"
 authors     = ["hitori"]
 output      = "hyprmax/hyprmax.so"
 build       = ["make -C hyprmax all"]
