@@ -140,12 +140,17 @@ capture_nested() { # capture_nested <output>: tolerate a transient screencopy de
 	# The parked compositor renders on damage: start grim, then jitter the
 	# virtual pointer so a frame is produced while the screencopy waits. An
 	# idle nested session can otherwise starve the capture to a timeout.
-	local jitter_pid=""
+	# The jitter MUST be a real delta: a fresh nested parks its pointer at
+	# the output center, so the old absolute 'move 640 400' was a no-op with
+	# no damage and the whole launch starved (17-min transparent window).
+	# Alternate direction so repeated captures do not drift the pointer.
+	local jitter_pid="" dir=1
 	for _ in 1 2 3; do
 		timeout 8 env WAYLAND_DISPLAY="$WL" grim "$out" >/dev/null 2>&1 &
 		local gpid=$!
-		( sleep 0.4; printf 'move %d %d\nsleep 10\n' "$((MON_W / 2))" "$((MON_H / 2))" | vp ) &
+		( sleep 0.4; printf 'rel %d %d\nsleep 10\n' $((dir * 2)) $((dir * 2)) | vp ) &
 		jitter_pid=$!
+		dir=$((-dir))
 		if wait "$gpid"; then
 			wait "$jitter_pid" 2>/dev/null
 			return 0
