@@ -122,6 +122,12 @@ isolated run of either needs no prior state.
 - Never rebuild a plugin while the nested compositor maps its `.so`.
 - The generated config grants plugin, screencopy, keyboard, and input-capture
   permissions only inside the nested session.
+- After any live-session relog, the tmux server environment still carries the
+  old `HYPRLAND_INSTANCE_SIGNATURE`; the harness live-side parking (nested-dev
+  creation, window move) then fails silently and every nested capture
+  starves. Refresh it with `tmux set-environment -g HYPRLAND_INSTANCE_SIGNATURE
+  $(hyprctl --ping | head -1)` (or read it from the live Hyprland's
+  environ) before launching the gate from tmux.
 - Faked `wpctl` and sound helpers never modify live devices.
 
 ## Wayland Fixtures
