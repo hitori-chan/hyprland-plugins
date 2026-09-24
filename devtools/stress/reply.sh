@@ -27,6 +27,27 @@ chk "hyprosd: flood readback emits no guessed feedback" test "$(st)" = "center:0
 chk "hyprosd: flood leaves the nested compositor responsive" hq_matches '^center:0 live:0 dnd:0$' hyprnotify state
 rm -f "$STATE/flood-wpctl" "$STATE/flood-wpctl.closed"
 
+# ---- hyprnotify sound-spawn backpressure ------------------------------------
+# The sound path is ARRIVAL-triggered (the sound-file/sound-name hints): a
+# hostile sender holding a steady stream of sound-hinted notifications would
+# hold a steady fork rate. The hang fixture keeps each helper alive long
+# enough to count them: 20 distinct-app arrivals, 16 admitted spawns.
+: > "$STATE/hang-sound"
+rm -f "$STATE/hang-sound.pid"
+for i in $(seq 1 20); do
+	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
+		Notify susssasa\{sv\}i "flood$i" 0 "" "sound" body 0 1 sound-name s gate 30000 >/dev/null 2>&1
+done
+sleep 1.5
+chk "hyprnotify: the sound spawn cap holds" test "$(wc -l < "$STATE/hang-sound.pid" 2>/dev/null || echo 0)" -eq 16
+chk "hyprnotify: the capped spawns still carried every card" test "$(st)" = "center:0 live:20 dnd:0"
+# the hung helpers die with the block: the teardown battery re-arms the same
+# fixture and must not race this block's sleep-30 residue for the spawn cap
+xargs -r kill 2>/dev/null <"$STATE/hang-sound.pid"
+rm -f "$STATE/hang-sound" "${STATE}/hang-sound.pid"
+hq hyprnotify clear >/dev/null; sleep 0.8
+chk "hyprnotify: the sound flood cleared" test "$(st)" = "center:0 live:0 dnd:0"
+
 : > "$STATE/wpctl.log"
 dsp "hl.plugin.hyprosd.volume_down()"; sleep 0.4
 chk "hyprosd: volume down uses the relative wpctl command" grep -Fxq "set-volume @DEFAULT_AUDIO_SINK@ 5%-" "$STATE/wpctl.log"
