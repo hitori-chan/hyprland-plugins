@@ -52,6 +52,36 @@ chk "policy: the TOP row was the marked chat, not the newer one" test "$(bd)" = 
 chk "policy: the mark outlives the card it was set on" test "$(pol)" = "priority:1 p=chatapp/Alice"
 tap esc; hq hyprnotify clear >/dev/null; sleep 0.8
 chk "policy: reset after the policy battery" test "$(st)" = "center:0 live:0 dnd:0"
+# the summary-keyed mark is lifted before the id block: the id block's
+# assertions read the WHOLE policy line, and the lift rides the same by-key
+# path the block below exercises
+policy_lift
+chk "policy: the summary mark lifted" test "$(pol)" = "priority:0"
+
+# the STABLE-id contract (Telegram's): the mark keys on the conversation-id,
+# not the title. The store half is the same as above; the RANK half is what
+# the summary-only re-derive got wrong — the visible card's flag must land at
+# the mark, else the newer unmarked chat sorts on top of the marked one until
+# the card's next replace. The newcomer is transient so the two stay tellable
+# in the badge, exactly as above.
+pcid cidapp "Carol" cid-carol; sleep 1
+hq hyprnotify center >/dev/null; sleep 0.7
+tap down
+tap 25 # p
+chk "policy: p marked the conversation-id" test "$(pol)" = "priority:1 p=cidapp/cid-carol"
+chk "policy: the id mark reached the disk" grep -qxF "$(printf 'p\tcidapp\x1fcid-carol')" "$POLFILE"
+tap esc; sleep 0.5
+ptran cidapp2 "Dan" ""; sleep 1.2
+hq hyprnotify center >/dev/null; sleep 0.7
+chk "policy: the id mark and a newer transient one" test "$(bd)" = "banners:1 resident:1"
+tap down
+tap delete
+chk "policy: the TOP row was the id-marked chat, not the newer one" test "$(bd)" = "banners:1 resident:0"
+chk "policy: the id mark outlives the card it was set on" test "$(pol)" = "priority:1 p=cidapp/cid-carol"
+tap esc; hq hyprnotify clear >/dev/null; sleep 0.8
+policy_lift # leave no id mark standing for the later blocks
+chk "policy: the id mark lifted" test "$(pol)" = "priority:0"
+chk "policy: reset after the id-mark battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- the manage panel -------------------------------------------------------
 # Everything the row can do beyond fire/dismiss is a named entry in the panel
