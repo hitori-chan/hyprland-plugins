@@ -95,6 +95,15 @@ Two surfaces share one card model:
      keeps you here keeps it: dismissing, folding, the manage panel, DND,
      "Clear all", the reply field, and a `resident` card's actions — the
      spec's own way of saying the action does not take you away.
+   - **X11 senders are raised by the click itself.** The `ActivationToken`
+     minted with the `ActionInvoked` signal only reaches a sender that can
+     spend it — a Wayland app, through xdg-activation. An X11 app's
+     activation arrives as an EWMH ping, and the compositor maps those to
+     urgency only (a Wine/Proton app pings on every internal
+     SetForegroundWindow; it cannot authenticate a gesture). So after the
+     signals, the plugin resolves the *sender's* bus PID (captured on the
+     call — the card is gone by the time the reply runs) and hard-focuses
+     the app's topmost X11 window itself.
    - **The manage panel** — what Android hides behind a long-press, and the
      thing one global DND could never say. An open row carries a **⋮**
      beside its chevron; it turns the row into a panel of its verbs, each

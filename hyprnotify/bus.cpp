@@ -3,6 +3,7 @@
 // no cards; every method here is a thin translation between the wire and
 // model.cpp, and every signal is something the model asked to send.
 
+#include "common/activate.hpp"
 #include "common/busclient.hpp"
 #include "common/lifecycle.hpp"
 
@@ -19,6 +20,7 @@ namespace NHyprnotify::Bus {
     static const sdbus::InterfaceName CIFACE{"org.hitori.hyprnotify"};
 
     static std::unique_ptr<sdbus::IObject> obj;
+    static std::unique_ptr<sdbus::IProxy>  busProbe; // org.freedesktop.DBus: sender -> pid
     static NHyprCommon::CBusLink           g_bus;
     static NHyprCommon::CHop               pendingState;
 
@@ -51,8 +53,8 @@ namespace NHyprnotify::Bus {
         });
     }
 
-    void invokeAction(uint32_t id, const std::string& key) {
-        g_bus.post([id, key]() {
+    void invokeAction(uint32_t id, const std::string& key, const std::string& sender) {
+        g_bus.post([id, key, sender]() {
             if (!obj)
                 return;
             try {
@@ -63,6 +65,26 @@ namespace NHyprnotify::Bus {
                     obj->emitSignal("ActivationToken").onInterface(IFACE).withArguments(id, PROTO::activation->mintToken());
                 obj->emitSignal("ActionInvoked").onInterface(IFACE).withArguments(id, key);
             } catch (...) {}
+            // The token above is for Wayland senders (they spend it through
+            // xdg-activation). An X11 sender cannot: its activation arrives
+            // as an urgency ping, so the side that saw the click — us —
+            // focuses the sender's own window. The sender string came in on
+            // the call (the card may be closed by the time this lambda runs).
+            if (!sender.empty() && g_bus.conn()) {
+                if (!busProbe)
+                    busProbe = sdbus::createProxy(*g_bus.conn(), sdbus::ServiceName{"org.freedesktop.DBus"}, sdbus::ObjectPath{"/org/freedesktop/DBus"});
+                try {
+                    busProbe->callMethodAsync("GetConnectionUnixProcessID")
+                        .onInterface("org.freedesktop.DBus")
+                        .withArguments(sender)
+                        .uponReplyInvoke([sender](std::optional<sdbus::Error> e, uint32_t pid) {
+                            if (e)
+                                return; // a unique name that vanished: the app is gone, nothing to focus
+                            NHyprCommon::activateAppWindow(pid);
+                        });
+                } catch (...) {}
+                g_bus.pollSoon();
+            }
             g_bus.pollSoon();
         });
     }
@@ -107,7 +129,14 @@ namespace NHyprnotify::Bus {
                                .withOutputParamNames("id")
                                .implementedAs([](std::string appName, uint32_t replacesId, std::string appIcon, std::string summary, std::string body,
                                                  std::vector<std::string> actions, std::map<std::string, sdbus::Variant> hints,
-                                                 int32_t expireTimeout) { return Model::arrive(appName, replacesId, appIcon, summary, body, actions, hints, expireTimeout); }),
+                                                 int32_t expireTimeout) {
+                                   std::string sender;
+                                   if (g_bus.conn())
+                                       try {
+                                           sender = g_bus.conn()->getCurrentlyProcessedMessage().getSender();
+                                       } catch (...) {}
+                                   return Model::arrive(appName, replacesId, appIcon, summary, body, sender, actions, hints, expireTimeout);
+                               }),
                            // ignore_dbusclose (dunst's knob): an app revoking its
                            // own notification (Telegram on read-elsewhere) is
                            // ignored — the card lives out its banner and waits in
