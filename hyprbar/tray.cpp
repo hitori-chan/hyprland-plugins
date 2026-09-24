@@ -1,5 +1,6 @@
 // hyprbar/tray.cpp — the in-compositor StatusNotifierWatcher/Host and its items
 
+#include "common/activate.hpp"
 #include "common/lifecycle.hpp"
 #include "common/notifycard.hpp"
 
@@ -84,6 +85,26 @@ namespace NHyprbar {
 
         void post(std::function<void()> fn) {
             bus.post(std::move(fn));
+        }
+
+        // the click IS the activation: resolve the item's bus pid and focus
+        // its own X11 window (see common/activate.hpp). Wayland apps answer
+        // the Activate call with a token-validated xdg-activation of their
+        // own, so only the X11 side needs the focus from our side.
+        static void activateApp(SP<SItem> it) {
+            if (!it || !it->active || !busProxy)
+                return;
+            try {
+                busProxy->callMethodAsync("GetConnectionUnixProcessID")
+                    .onInterface("org.freedesktop.DBus")
+                    .withArguments(it->service)
+                    .uponReplyInvoke([it](std::optional<sdbus::Error> e, uint32_t pid) {
+                        if (e || !it->active)
+                            return; // the item may have vanished over the round trip
+                        NHyprCommon::activateAppWindow(pid);
+                    });
+                pollSoon();
+            } catch (...) {} // dying bus: teardown is already pending
         }
 
         // owned objects borrow the connection — reset them before it dies
@@ -491,6 +512,11 @@ namespace NHyprbar {
                                 .uponReplyInvoke([](std::optional<sdbus::Error>) {});
                             Tray::pollSoon(); // the activation usually flips the icon right back
                         } catch (...) {} // dying bus: teardown is already pending
+                        // X11 apps cannot authenticate this gesture (their
+                        // SetForegroundWindow arrives as an urgency ping), so
+                        // focus the app's own window here; Wayland apps
+                        // self-activate through xdg-activation.
+                        activateApp(IT);
                     });
                     return;
                 }

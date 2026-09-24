@@ -369,7 +369,7 @@ namespace NHyprnotify {
         // ---- arrival ----
 
         uint32_t arrive(const std::string& appName, uint32_t replacesId, const std::string& appIcon, const std::string& summary, const std::string& body,
-                        const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout) {
+                        const std::string& sender, const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout) {
             uint32_t id = replacesId;
 
             // cap the wire strings before they become card members (see the
@@ -608,6 +608,7 @@ namespace NHyprnotify {
             // one card stays the whole conversation.
             n->banner = true;
             n->appName = APP;
+            n->sender = sender; // the X11 activation lookup resolves the app's window by this pid
             n->summary = Parse::oneLine(Parse::sanitizeMarkup(SUM));
             std::string bodyText = TXT;
             n->bodyImages.clear();

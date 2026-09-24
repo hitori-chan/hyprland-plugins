@@ -144,19 +144,21 @@ namespace NHyprnotify {
     // closes the shade, here or on a phone.
     static void invokeLive(uint32_t id, const std::string& actionOverride) {
         std::string action   = actionOverride;
+        std::string sender; // the X11 activation lookup, captured before close-on-act
         bool        resident = false;
         for (const auto& N : notifs)
             if (N->id == id) {
                 if (action.empty())
                     action = N->defaultAction;
                 resident = N->resident;
+                sender   = N->sender;
                 break;
             }
         if (action.empty()) { // nothing to fire: the body click is a dismissal
             Model::closeOne(id, Model::R_DISMISSED);
             return;
         }
-        Bus::invokeAction(id, action);
+        Bus::invokeAction(id, action, sender);
         if (resident)
             return; // the card stays, and so does the shade behind it
         setCenter(false);

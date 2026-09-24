@@ -35,6 +35,14 @@ alerts and the bell. Calls originating in render/input are posted through the
 bounded shared queue. Teardown removes event sources and borrowed proxies before
 destroying the connection.
 
+A tray click is the activation: after the SNI `Activate` call, the bar
+resolves the item's bus PID and focuses the app's own topmost X11 window
+(`NHyprCommon::activateAppWindow`). X11 clients cannot authenticate the
+gesture — their SetForegroundWindow arrives at the compositor as an urgency
+ping that must never take focus — so the plugin that saw the click performs
+the raise. Wayland items self-activate through the validated xdg-activation
+token instead.
+
 The bell talks to `hyprnotify` only through `org.hitori.hyprnotify` on
 `/org/freedesktop/Notifications`. It consumes `State` and posts `Toggle`; no
 plugin symbols or duplicate center state are shared.

@@ -183,6 +183,7 @@ namespace NHyprnotify {
         uint32_t             id = 0;
         std::string          appName;
         std::string          appKey;  // grouping identity: desktop-entry, else the app name
+        std::string          sender;  // the bus name that sent this Notify (the X11 activation lookup)
         std::string          summary; // newlines flattened, whitelisted markup
         std::string          body;    // whitelisted markup (Pango subset)
         // structured conversation metadata (the hint table in docs/hyprnotify.md):
@@ -286,6 +287,7 @@ namespace NHyprnotify {
 
         // a Notify payload becomes (or refreshes) a card; returns its id
         uint32_t arrive(const std::string& appName, uint32_t replacesId, const std::string& appIcon, const std::string& summary, const std::string& body,
+                        const std::string& sender,
                         const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout);
 
         bool                          closeOne(uint32_t id, uint32_t reason);
@@ -319,7 +321,7 @@ namespace NHyprnotify {
     namespace Bus {
         void init();
         void exit();
-        void invokeAction(uint32_t id, const std::string& key);
+        void invokeAction(uint32_t id, const std::string& key, const std::string& sender);
         void sendReply(uint32_t id, const std::string& text); // NotificationReplied, then close unless resident
         void emitClosed(uint32_t id, uint32_t reason);        // the model's outbound half of a card's death
         void emitStateSoon(); // coalesced org.hitori.hyprnotify State signal (the bar's bell: shade counts)
