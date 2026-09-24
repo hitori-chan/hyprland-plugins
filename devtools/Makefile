@@ -22,7 +22,7 @@ TEST_TARGETS := test-icon-resolver test-battery-state test-desktop-exec \
 	test-hyprosd test-persist test-fileindex \
 	test-hyprsnap-geometry test-hyprmax-geometry test-pixel-model
 
-all: vptr vkbd input-capture cliphold fixwin splashwin
+all: vptr vkbd input-capture cliphold fixwin splashwin focustrap
 
 test: $(TEST_TARGETS)
 
@@ -98,6 +98,10 @@ splashwin: splashwin.c fixwin-protocol.h fixwin-proto.c
 fixwin: fixwin.c fixwin-protocol.h fixwin-proto.c
 	$(CC) $(CFLAGS) fixwin.c fixwin-proto.c -o $@ $(LDLIBS)
 
+# First X11 fixture (not a wayland-client one): links Xlib directly.
+focustrap: focustrap.c
+	$(CC) -O2 -Wall $< -o $@ -lX11
+
 vptr-proto.h: $(XML)
 	wayland-scanner client-header $< $@
 vptr-proto.c: $(XML)
@@ -120,6 +124,6 @@ fixwin-proto.c: $(XXML)
 	wayland-scanner private-code $< $@
 
 clean:
-	rm -f vptr vkbd input-capture cliphold fixwin splashwin $(TEST_BINS) vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c fixwin-protocol.h fixwin-proto.c
+	rm -f vptr vkbd input-capture cliphold fixwin splashwin focustrap $(TEST_BINS) vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c fixwin-protocol.h fixwin-proto.c
 
 .PHONY: all clean test $(TEST_TARGETS)
