@@ -42,6 +42,16 @@ namespace NHyprnotify {
         constexpr size_t MAX_SENDER_ID_BYTES   = 512;
         constexpr size_t MAX_SENDER_NAME_BYTES = 256;
         constexpr size_t MAX_CONV_KIND_BYTES   = 32;
+        // free-form wire strings are capped codepoint-safe at arrival: the
+        // D-Bus message limit is megabytes, and a stored string rides into
+        // texture-cache keys, grouping identities and policy-store lines for
+        // the card's whole life
+        constexpr size_t MAX_APP_NAME_BYTES   = 256;
+        constexpr size_t MAX_SUMMARY_BYTES    = 1024;
+        constexpr size_t MAX_SOURCE_BYTES     = 1024; // app icon / image-path / sound-file / desktop-entry
+        constexpr size_t MAX_ACTION_KEY_BYTES = 256;  // id and label
+        constexpr size_t MAX_REPLY_TEXT_BYTES = 256;  // placeholder / submit label
+        constexpr size_t MAX_BODY_RAW_BYTES   = 32768; // pre-sanitize: the markup intermediate can grow ~5x
 
         // a fresh body is hostile-able up to the D-Bus message limit; the
         // merged path caps at 8192, so a fresh one earns the same cut,
@@ -341,6 +351,13 @@ namespace NHyprnotify {
                         const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout) {
             uint32_t id = replacesId;
 
+            // cap the wire strings before they become card members (see the
+            // MAX_*_BYTES above)
+            const std::string APP     = clipUtf8(appName, MAX_APP_NAME_BYTES);
+            const std::string APPICON = clipUtf8(appIcon, MAX_SOURCE_BYTES);
+            const std::string SUM     = clipUtf8(summary, MAX_SUMMARY_BYTES);
+            const std::string TXT     = clipUtf8(body, MAX_BODY_RAW_BYTES);
+
             // Two hints are read before the main parse: the merge decision
             // below needs the grouping key and the category before there is
             // a card to hang them on.
@@ -434,8 +451,8 @@ namespace NHyprnotify {
                 return alias ? LOOK(alias) : std::nullopt;
             };
 
-            const std::string DESKTOP = strHint("desktop-entry");
-            const std::string APPKEY  = !DESKTOP.empty() ? DESKTOP : appName; // grouping identity
+            const std::string DESKTOP = clipUtf8(strHint("desktop-entry"), MAX_SOURCE_BYTES);
+            const std::string APPKEY  = !DESKTOP.empty() ? DESKTOP : APP; // grouping identity
             const std::string CAT     = strHint("category");
             const bool        CATEGORY_CONVERSATION = CAT.starts_with("im.") || CAT == "im" || CAT.starts_with("call.") || CAT == "call";
 
@@ -565,9 +582,9 @@ namespace NHyprnotify {
             // keeps aiming a chat's new messages at the card that holds it, so
             // one card stays the whole conversation.
             n->banner = true;
-            n->appName = appName;
-            n->summary = Parse::oneLine(Parse::sanitizeMarkup(summary));
-            std::string bodyText = body;
+            n->appName = APP;
+            n->summary = Parse::oneLine(Parse::sanitizeMarkup(SUM));
+            std::string bodyText = TXT;
             n->bodyImages.clear();
             for (const auto& P : Parse::extractImages(bodyText, std::max(64, (int)cfg.maxIcon->value() * 2))) {
                 if (n->bodyImages.size() >= MAX_BODY_IMAGES)
@@ -669,11 +686,13 @@ namespace NHyprnotify {
                         try {
                             cand = IT->second.get<std::string>();
                         } catch (...) {}
+                if (!cand.empty())
+                    cand = clipUtf8(std::move(cand), MAX_SOURCE_BYTES);
                 n->image = Parse::resolveImage(cand, ICONPX);
             }
             n->desktopEntry = DESKTOP;
             n->identityFromDesktop = false;
-            n->identity = Parse::resolveImage(appIcon, ICONPX);
+            n->identity = Parse::resolveImage(APPICON, ICONPX);
             if (n->identity.empty() && !DESKTOP.empty()) {
                 // the entry's own Icon= (the F2 index) beats an icon-name
                 // collision; while the index has not reached the entry the
@@ -692,8 +711,8 @@ namespace NHyprnotify {
             // server advertises the capability, and expects NotificationReplied
             // back. It is NOT a button — it opens the row's reply field.
             n->canReply         = false;
-            n->replyPlaceholder = strHint("x-kde-reply-placeholder-text");
-            n->replySubmitText  = strHint("x-kde-reply-submit-button-text");
+            n->replyPlaceholder = clipUtf8(strHint("x-kde-reply-placeholder-text"), MAX_REPLY_TEXT_BYTES);
+            n->replySubmitText  = clipUtf8(strHint("x-kde-reply-submit-button-text"), MAX_REPLY_TEXT_BYTES);
 
             // actions arrive as [id0,label0, id1,label1, ...]. Every named pair
             // becomes a button; "default" is the card's primary and gets NO
@@ -704,14 +723,17 @@ namespace NHyprnotify {
             n->defaultAction.clear();
             n->actions.clear();
             for (size_t i = 0; i + 1 < actions.size(); i += 2) {
-                if (actions[i] == "default")
-                    n->defaultAction = actions[i];
-                else if (actions[i] == "inline-reply") {
+                const auto AID = clipUtf8(actions[i], MAX_ACTION_KEY_BYTES);
+                if (AID == "default")
+                    n->defaultAction = AID;
+                else if (AID == "inline-reply") {
                     n->canReply = true;
                     if (n->replySubmitText.empty())
-                        n->replySubmitText = actions[i + 1]; // the sender's own "Reply" label
-                } else if (!actions[i + 1].empty() && n->actions.size() < MAX_ACTIONS) // an empty label has no button to draw
-                    n->actions.push_back(SAction{.id = actions[i], .label = actions[i + 1]});
+                        n->replySubmitText = clipUtf8(actions[i + 1], MAX_REPLY_TEXT_BYTES); // the sender's own "Reply" label
+                } else if (!actions[i + 1].empty() && n->actions.size() < MAX_ACTIONS) { // an empty label has no button to draw
+                    const auto LBL = clipUtf8(actions[i + 1], MAX_ACTION_KEY_BYTES);
+                    n->actions.push_back(SAction{.id = std::move(AID), .label = std::move(LBL)});
+                }
             }
             // a lone named action doubles as the body-click default; it keeps
             // its own button too, since it was given a label to show
@@ -787,6 +809,8 @@ namespace NHyprnotify {
                     try {
                         soundName = IT->second.get<std::string>();
                     } catch (...) {}
+                soundFile = clipUtf8(std::move(soundFile), MAX_SOURCE_BYTES);
+                soundName = clipUtf8(std::move(soundName), MAX_SOURCE_BYTES);
                 if (soundFile.starts_with("file://"))
                     soundFile.erase(0, 7);
                 const std::string CMD = cfg.soundCommand->value();

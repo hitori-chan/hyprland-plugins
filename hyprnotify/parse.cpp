@@ -75,22 +75,49 @@ namespace NHyprnotify::Parse {
         return out;
     }
 
-    // One quoted attribute out of one tag — the fiddly part of reading a tag a
-    // stranger wrote, so both readers (the <img> src here, the <a> href in
-    // text.cpp) share it rather than each getting it nearly right. The name is
-    // matched case-insensitively against a lowered COPY, whose offsets still
-    // line up with the original the value is cut from. "" if absent.
+    // One quoted attribute out of one tag — the fiddly part of reading a tag
+    // a stranger wrote, so both readers (the <img> src here, the <a> href in
+    // text.cpp) share it rather than each getting it nearly right. The scan
+    // tracks the quote that opened the current value, and the NAME must stand
+    // alone OUTSIDE any value (tag start or whitespace before it) followed by
+    // '=' — a hit inside a quoted value (title="..src=..") is not the
+    // attribute. Names match case-insensitively against a lowered COPY, whose
+    // offsets still line up with the original the value is cut from. "" if
+    // absent.
     std::string attrValue(const std::string& tag, const std::string& attr) {
         std::string lower = tag;
         std::ranges::transform(lower, lower.begin(), [](unsigned char c) { return std::tolower(c); });
-        const auto AT = lower.find(attr);
-        if (AT == std::string::npos)
-            return "";
-        const auto Q = tag.find_first_of("\"'", AT);
-        if (Q == std::string::npos)
-            return "";
-        const auto END = tag.find(tag[Q], Q + 1);
-        return END == std::string::npos ? "" : tag.substr(Q + 1, END - Q - 1);
+        char inQuote = 0;
+        for (size_t i = 0; i < tag.size(); i++) {
+            const auto CH = tag[i];
+            if (inQuote) {
+                if (CH == inQuote)
+                    inQuote = 0;
+                continue;
+            }
+            if (CH == '"' || CH == '\'') {
+                inQuote = CH;
+                continue;
+            }
+            if (lower.compare(i, attr.size(), attr) != 0)
+                continue;
+            if (i > 0 && lower[i - 1] != ' ' && lower[i - 1] != '\t')
+                continue;
+            size_t P = i + attr.size();
+            while (P < lower.size() && (lower[P] == ' ' || lower[P] == '\t'))
+                P++;
+            if (P >= lower.size() || lower[P] != '=')
+                continue;
+            P++;
+            while (P < lower.size() && (lower[P] == ' ' || lower[P] == '\t'))
+                P++;
+            if (P >= lower.size() || (lower[P] != '"' && lower[P] != '\''))
+                continue;
+            const char Q  = tag[P];
+            const auto END = tag.find(Q, P + 1);
+            return END == std::string::npos ? "" : tag.substr(P + 1, END - P - 1);
+        }
+        return "";
     }
 
     std::string oneLine(std::string s) {
@@ -126,8 +153,14 @@ namespace NHyprnotify::Parse {
         s.resize(CAP);
         while (!s.empty() && ((unsigned char)s.back() & 0xc0) == 0x80)
             s.pop_back();
+        if (!s.empty() && (unsigned char)s.back() >= 0xc2)
+            s.pop_back(); // a lead byte whose followers the cut took
         return s;
     }
+
+    // a hostile sender's <img> src is a path: past this it is skipped whole
+    // (the defined behavior at the bound, as MAX_BODY_IMAGES in model)
+    constexpr size_t MAX_SRC_BYTES = 1024;
 
     std::vector<SImgRef> extractImages(std::string& body, int sizePx) {
         std::vector<SImgRef> out;
@@ -151,7 +184,7 @@ namespace NHyprnotify::Parse {
             const auto TAG = body.substr(i, END - i + 1);
             const auto SRC = attrValue(TAG, "src");
             const auto ALT = oneLine(sanitizeMarkup(clipAttr(attrValue(TAG, "alt"))));
-            if (!SRC.empty() && !SRC.starts_with("http") && !SRC.starts_with("data:"))
+            if (!SRC.empty() && SRC.size() <= MAX_SRC_BYTES && !SRC.starts_with("http") && !SRC.starts_with("data:"))
                 if (const auto P = resolveImage(SRC, sizePx); !P.empty())
                     out.push_back(SImgRef{.src = P, .alt = ALT});
             body.erase(i, END - i + 1); // drop the tag from the text
