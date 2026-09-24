@@ -30,16 +30,21 @@ namespace NHyprnotify {
 
     // One roll per card (bus keeps the pick across in-place replaces). The
     // listing is scanned once per config life, from the warm pass — never
-    // the render or a bus dispatch.
+    // the render or a bus dispatch. The scan is visit-bounded: the directory
+    // is config-chosen, but a pathological mount (deep or FUSE-synthesized)
+    // must not hold the event loop mid-warm.
     static std::string pickFallback() {
         const auto DIR = cfg.fallbackIconDir->value();
         if (DIR.empty())
             return "";
         if (!fallbackScanned) {
             fallbackScanned = true;
-            std::error_code ec;
-            for (auto it = std::filesystem::recursive_directory_iterator(DIR, std::filesystem::directory_options::skip_permission_denied, ec); !ec && it != std::filesystem::end(it);
+            constexpr size_t MAX_VISITS = 65536;
+            std::error_code  ec;
+            size_t           visited = 0;
+            for (auto it = std::filesystem::recursive_directory_iterator(DIR, std::filesystem::directory_options::skip_permission_denied, ec); !ec && it != std::filesystem::end(it) && visited < MAX_VISITS;
                  it.increment(ec)) {
+                visited++;
                 if (!it->is_regular_file(ec))
                     continue;
                 auto ext = it->path().extension().string();
