@@ -95,6 +95,23 @@ active_window_class_is() {
 # to be under it.
 WL=""; MON_W=0; MON_H=0; NBUS=""
 retarget() {
+	local n
+	for n in 1 2 3; do
+		retarget_env || { echo "retarget: nested state is unavailable" >&2; return 1; }
+		# Every launch/relaunch passes through here: warm the parked window's
+		# frame cycle before any battery takes a nested-side measurement.
+		launch_warmup && return 0
+		# The render cycle is dead and no focus kick revived it: relaunch the
+		# nested instance (a fresh parking dance is a fresh draw) and retry.
+		echo "harness: nested render cycle dead; relaunching nested (attempt $n/3)" >&2
+		[[ $n == 3 ]] && return 1
+		kill_nested
+		launch_nested || { echo "retarget: relaunch FAILED" >&2; return 1; }
+	done
+	return 0
+}
+
+retarget_env() {
 	SIG=""; WL=""; MON_W=0; MON_H=0; NBUS=""
 	IFS= read -r SIG <"$HARNESS/nested.sig" 2>/dev/null || {
 		echo "retarget: nested signature is unavailable" >&2
@@ -132,6 +149,38 @@ print(int(m['width']/m['scale']), int(m['height']/m['scale']))" 2>/dev/null)" &&
 		echo "retarget: nested monitor geometry is invalid" >&2
 		return 1
 	}
+	return 0
+}
+
+# Render-cycle warmup: the parked window's frame cycle on live can start
+# cold. The parking dance briefly focuses the VM so the live compositor
+# frames it; if that first focused frame lands while the nested compositor
+# is still initializing, the surface's first frame callback is lost and the
+# cycle never starts: an unfocused off-screen monitor does not schedule
+# frames for window damage (moves/resizes are no-ops on it), the nested
+# renders nothing, and every nested capture starves. Verify the cycle with
+# a real capture; when it is stalled, re-run the parking focus dance (focus
+# the VM, hand focus straight back) to force a fresh frame.
+launch_warmup() {
+	local n real_mon start_ws
+	real_mon="$(hyprctl monitors -j 2>/dev/null | python3 -c "
+import json,sys
+print(next((m['name'] for m in json.load(sys.stdin) if m['name']!='nested-dev'), ''))")"
+	for n in 1 2 3 4 5; do
+		capture_nested "$STATE/launch-warmup.png" && return 0
+		start_ws="$(hyprctl activeworkspace -j 2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin)['id'])" 2>/dev/null)"
+		hyprctl dispatch "hl.dsp.focus({monitor=\"nested-dev\"})" >/dev/null 2>&1
+		sleep 0.2
+		hyprctl dispatch "hl.dsp.focus({workspace=\"99\"})" >/dev/null 2>&1
+		sleep 0.2
+		if [[ -n "$real_mon" ]]; then
+			hyprctl dispatch "hl.dsp.focus({monitor=\"$real_mon\"})" >/dev/null 2>&1
+			[[ -n "${start_ws:-}" ]] && hyprctl dispatch "hl.dsp.focus({workspace=\"$start_ws\"})" >/dev/null 2>&1
+		fi
+		sleep 0.5
+	done
+	echo "harness: nested render cycle never warmed (captures starve); aborting" >&2
+	return 1
 }
 vp() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" "$MON_W" "$MON_H" >/dev/null 2>&1; }
 vk() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vkbd" >/dev/null 2>&1; } # keys need no extent
