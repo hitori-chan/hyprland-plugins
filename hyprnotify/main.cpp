@@ -84,10 +84,18 @@ namespace NHyprnotify {
         return 0;
     }
 
+    // one live tracked child at a time is one fork: the xdg-open path is a
+    // human click, but the sound path is ARRIVAL-triggered, so a hostile
+    // sender can hold a steady fork rate. At the cap the spawn is skipped —
+    // a dropped sound is the defined behavior, a fork storm is not.
+    constexpr size_t MAX_LIVE_CHILDREN = 16;
+
     void spawnDetached(std::vector<const char*> argv) {
         if (argv.empty() || !argv[0])
             return;
         std::erase_if(spawnOrphans, [](pid_t p) { return waitpid(p, nullptr, WNOHANG) != 0; });
+        if (children.size() >= MAX_LIVE_CHILDREN)
+            return;
         if (argv.back())
             argv.push_back(nullptr); // execv needs the null terminator
 

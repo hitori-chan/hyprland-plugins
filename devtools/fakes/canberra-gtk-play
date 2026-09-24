@@ -3,5 +3,6 @@ set -u
 
 MARKER=${HYPRNOTIFY_SOUND_HANG_FILE:-}
 [[ -n "$MARKER" && -e "$MARKER" ]] || exit 0
-printf '%s\n' "$$" > "${MARKER}.pid"
+# append: a spawn-cap test hangs SEVERAL players and counts their lines
+printf '%s\n' "$$" >> "${MARKER}.pid"
 exec sleep 30
