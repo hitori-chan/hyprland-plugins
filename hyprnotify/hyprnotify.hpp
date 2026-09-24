@@ -261,7 +261,17 @@ namespace NHyprnotify {
         std::vector<SImgRef> extractImages(std::string& body, int sizePx); // pulls <img src> out of the body
         void                     unpackImageData(SNotif& n, const ImageData& d, int capPx); // -> premultiplied BGRA
         std::string              joinAppend(const std::string& oldBody, const std::string& add);
+        std::string              foldSenderPrefix(std::string body); // "<b>S</b>\nmsg" -> "<b>S</b>: msg"
+
     }
+
+    // the collapsed row's one-liner, whichever end holds the newest message:
+    // a conversation card's body is newest-front, an ordinary body is
+    // chronological. Renderer and the topline probe share this so they
+    // cannot drift apart.
+    std::string lastLine(const std::string& body); // the newest line of an ordinary body ends it
+    std::string firstLine(const std::string& body); // the newest line of a conversation body leads it
+    std::string collapsedLine(const SP<SNotif>& n);
 
     // ---- model.cpp: the cards and their lifetimes ----
 
@@ -290,6 +300,7 @@ namespace NHyprnotify {
         std::pair<uint32_t, uint32_t> badgeCounts(); // {bannered, resident} — the bell's two numbers
         std::string                   stateString(); // "center:N live:N dnd:N" — raw model counts, the debug line
         std::string                   badgeString(); // "banners:N resident:N" — the popup/shade split the bell reads (state's `live` can't see it)
+        std::string                   toplineString(); // the newest card's collapsed one-liner — the gate's text probe
     }
 
     // ---- policy.cpp: the user's rules, persisted ----

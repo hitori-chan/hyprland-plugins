@@ -103,6 +103,36 @@ dsp "hl.dsp.exec_cmd('notify-send -a tg -t 30000 \"plain two\" body')"; sleep 1
 chk "merge: no category, no merging — same app still stacks" test "$(st)" = "center:0 live:4 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.8
 
+# ---- the collapsed one-liner: the NEWEST message --------------------------
+# A conversation card's body is the TRANSCRIPT, rebuilt newest-front, so the
+# collapsed row must lead with its FIRST line. Reading lastLine instead
+# printed the OLDEST kept message — the newest hidden until the row opened.
+# topline probes the newest card through the same selector the renderer uses.
+pcidb toplineapp "Carol" cid-t1 "first message"
+sleep 1
+pcidb toplineapp "Carol" cid-t1 "second message"
+pcidb toplineapp "Carol" cid-t1 "third message"
+sleep 1.2
+chk "topline: a transcript card's one-liner is the newest message" test "$(hq hyprnotify topline)" = "third message"
+# the legacy join is newest-front too: the newest message leads the body
+conv_notify toplineapp2 "Dave" "alpha"
+conv_notify toplineapp2 "Dave" "beta"
+sleep 1.2
+chk "topline: a joined card's one-liner is the newest message" test "$(hq hyprnotify topline)" = "beta"
+hq hyprnotify clear >/dev/null; sleep 0.8
+# Telegram Desktop's group wire: the sender is a LEADING bold line of the
+# body. The fold keeps each message one line — without it the newest BODY
+# line is the bare sender name and the newest MESSAGE sits under it (the
+# old lastLine read printed the OLDEST message's line instead)
+tdgrp "Design Team" Alice "sketched the new logo"
+sleep 0.6
+tdgrp "Design Team" Bob "looks great, ship it"
+tdgrp "Design Team" Alice "uploading the final files now"
+sleep 1.2
+chk "topline: the group card merged to one card" test "$(st)" = "center:0 live:1 dnd:0"
+chk "topline: the group card's one-liner is the newest message, sender inline" test "$(hq hyprnotify topline)" = "<b>Alice</b>: uploading the final files now"
+hq hyprnotify clear >/dev/null; sleep 0.8
+
 # ---- shade overflow ------------------------------------------------------
 # More rows than the monitor-tall panel holds must PAGE, not bleed off the
 # bottom. 15 distinct-app cards -> 15 rows (one app each, so nothing

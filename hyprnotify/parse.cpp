@@ -223,18 +223,41 @@ namespace NHyprnotify::Parse {
         shrinkPixels(n, capPx);
     }
 
-    // Join an appended conversation body under the cap: newest lines
-    // append at the back, oldest lines drop off the front whole.
+    // XDG conversation clients (Telegram Desktop's) embed the sender as a
+    // LEADING bold line: "<b>Alice</b>\nmessage". Fold the block to the one
+    // line "<b>Alice</b>: message" — the body stays one line per message,
+    // so the newest message (and its sender) stays first-line reachable:
+    // the collapsed row and the banner window read lines, and a bare-name
+    // first line would hide the message under it
+    std::string foldSenderPrefix(std::string body) {
+        if (!body.starts_with("<b>"))
+            return body;
+        const auto CLOSE = body.find("</b>");
+        if (CLOSE == std::string::npos)
+            return body;
+        const auto NL = body.find('\n', CLOSE);
+        if (NL == std::string::npos)
+            return body; // no message line after the sender: leave as-is
+        std::string out;
+        out.reserve(body.size());
+        out.append(body, 0, CLOSE + 4); // through the '>' of "</b>"
+        out += ": ";
+        out += body.substr(NL + 1);
+        return out;
+    }
+
+    // newest-front, like the transcript: the card's visible lines are the
+    // LATEST messages, and the cap drops the oldest (bottom) lines
     std::string joinAppend(const std::string& oldBody, const std::string& add) {
-        std::string joined = oldBody.empty() ? add : oldBody + "\n" + add;
+        std::string joined = oldBody.empty() ? add : add + "\n" + oldBody;
         constexpr size_t CAP = 8192;
         while (joined.size() > CAP) {
-            const auto NL = joined.find('\n');
+            const auto NL = joined.rfind('\n');
             if (NL == std::string::npos) {
-                joined.erase(0, joined.size() - CAP);
+                joined.erase(joined.size() - CAP);
                 break;
             }
-            joined.erase(0, NL + 1);
+            joined.erase(NL); // the separator plus the oldest line
         }
         return joined;
     }

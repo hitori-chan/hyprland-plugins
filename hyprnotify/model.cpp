@@ -24,6 +24,15 @@ namespace NHyprnotify {
 
     std::vector<SP<SNotif>> notifs;
 
+    // A conversation card's body is newest-front (the transcript and the
+    // legacy join alike), so its newest message LEADS; an ordinary body ends
+    // on its newest line. The collapsed row must always print the newest.
+    std::string collapsedLine(const SP<SNotif>& n) {
+        if (n->body.empty())
+            return {};
+        return n->conversation ? firstLine(n->body) : lastLine(n->body);
+    }
+
     namespace Model {
         static SP<CEventLoopTimer> expiry;
         static uint32_t            nextId     = 1;
@@ -145,6 +154,15 @@ namespace NHyprnotify {
         std::string badgeString() {
             const auto [LIVE, KEPT] = badgeCounts();
             return "banners:" + std::to_string(LIVE) + " resident:" + std::to_string(KEPT);
+        }
+
+        // notifs is newest-first, so the first visible card is the newest —
+        // the stress gate's single-card batteries make it the top row too
+        std::string toplineString() {
+            for (const auto& N : notifs)
+                if (!N->waiting && !inOsdBand(N->id))
+                    return collapsedLine(N);
+            return {};
         }
 
         // one live popup per app: does another card already hold a banner for
@@ -302,9 +320,12 @@ namespace NHyprnotify {
             if (n.messages.empty())
                 return n.body;
 
-            std::string  out;
+            std::string out;
             const size_t START = Pixel::presentedMessageStart(n.messages);
-            for (size_t i = n.messages.size(); i-- > START;) {
+            // walk the window OLDEST-FIRST and prepend each line: the newest
+            // lands on top. (Prepending in newest-first order would invert
+            // the window — the card used to show its oldest message on top.)
+            for (size_t i = START; i < n.messages.size(); i++) {
                 const auto& M = n.messages[i];
                 if (M.text.empty())
                     continue;
@@ -489,6 +510,7 @@ namespace NHyprnotify {
             // Cards that vanish never merge (a suppressed banner would strand
             // them), nor does the OSD band.
             std::string appendOnto;
+            bool        canonicalAppend = false; // x-canonical-append: this card joins a conversation
             if (id == 0) {
                 if (!CONV_ID.empty()) {
                     for (const auto& N : notifs)
@@ -511,6 +533,7 @@ namespace NHyprnotify {
                                 } catch (...) {}
                             }
                         }
+                    canonicalAppend = append;
                     if (append) {
                         const auto SUM = Parse::oneLine(Parse::sanitizeMarkup(summary));
                         for (const auto& N : notifs)
@@ -571,7 +594,9 @@ namespace NHyprnotify {
             const bool        SAME_APP          = EXISTING && n->appKey == APPKEY;
             const std::string EFFECTIVE_CONV_ID = CONV_ID_HINT ? CONV_ID : SAME_APP ? n->conversationId : std::string{};
             const bool        SAME_CONVERSATION = EXISTING && !EFFECTIVE_CONV_ID.empty() && SAME_APP && n->conversationId == EFFECTIVE_CONV_ID;
-            const bool        CONVERSATION      = CATEGORY_CONVERSATION || !EFFECTIVE_CONV_ID.empty() || (SAME_CONVERSATION && n->conversation);
+            // x-canonical-append is a conversation by definition: its body is
+            // the joined transcript, newest-front, like the category's
+            const bool CONVERSATION = CATEGORY_CONVERSATION || canonicalAppend || !EFFECTIVE_CONV_ID.empty() || (SAME_CONVERSATION && n->conversation);
             if (!SAME_CONVERSATION) {
                 n->messages.clear();
                 n->unreadCount = 0;
@@ -592,6 +617,12 @@ namespace NHyprnotify {
                 n->bodyImages.push_back(SBodyImage{.src = P.src, .alt = P.alt});
             }
             n->body = capUtf8(Parse::sanitizeMarkup(bodyText, /*allowLinks=*/true));
+            if (CONVERSATION) {
+                // the conversation's lines must stay one message each: the
+                // sender's leading bold line would otherwise be the body's
+                // newest line, hiding the message under it
+                n->body = Parse::foldSenderPrefix(std::move(n->body));
+            }
             if (!appendOnto.empty())
                 n->body = Parse::joinAppend(appendOnto, n->body);
 

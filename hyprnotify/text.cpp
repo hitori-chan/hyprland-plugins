@@ -44,8 +44,8 @@ namespace NHyprnotify {
         }
     }
 
-    // the collapsed row's one-liner: the LAST non-empty line — a joined
-    // conversation shows its newest message, like Android's collapsed card
+    // the collapsed row's one-liner for an ORDINARY body: the last non-empty
+    // line — the newest message ends a chronological body
     std::string lastLine(const std::string& body) {
         const size_t END = body.find_last_not_of('\n');
         if (END == std::string::npos)
@@ -53,6 +53,17 @@ namespace NHyprnotify {
         const size_t NL    = body.rfind('\n', END);
         const size_t START = NL == std::string::npos ? 0 : NL + 1;
         return body.substr(START, END - START + 1);
+    }
+
+    // the conversation body's twin: a conversation card's body is built
+    // NEWEST-FRONT (transcript and legacy join alike), so its newest
+    // message LEADS
+    std::string firstLine(const std::string& body) {
+        const size_t START = body.find_first_not_of('\n');
+        if (START == std::string::npos)
+            return "";
+        const size_t END = body.find('\n', START);
+        return body.substr(START, END == std::string::npos ? std::string::npos : END - START);
     }
 
     // bucketed so a texture key only moves when the display would

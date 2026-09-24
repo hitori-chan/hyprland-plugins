@@ -54,8 +54,9 @@ surface description and config live in `hyprnotify/README.md`).
   the kept messages (max three) for `group` chats, each avatar its
   `sender-icon` or a deterministic initials face.
 - Without a conversation-id the legacy merge stands: a fresh `Notify` whose
-  app + summary matches a live card is joined onto it, bodies appended
-  under the same cap — triggered by the fd.o conversation categories
+  app + summary matches a live card is joined onto it, bodies joined
+  newest-front under the same cap — triggered by the fd.o conversation
+  categories
   (`im.*`/`call.*`, where the summary is the sender or the room) or
   `x-canonical-append`. Cards that vanish on expiry never merge.
 - `x-hyprnotify-group-key` (opaque, ≤512 bytes) sub-keys the app's bundle:
