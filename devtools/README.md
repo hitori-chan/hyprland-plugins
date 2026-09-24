@@ -122,12 +122,21 @@ isolated run of either needs no prior state.
 - Never rebuild a plugin while the nested compositor maps its `.so`.
 - The generated config grants plugin, screencopy, keyboard, and input-capture
   permissions only inside the nested session.
-- After any live-session relog, the tmux server environment still carries the
-  old `HYPRLAND_INSTANCE_SIGNATURE`; the harness live-side parking (nested-dev
-  creation, window move) then fails silently and every nested capture
-  starves. Refresh it with `tmux set-environment -g HYPRLAND_INSTANCE_SIGNATURE
-  $(hyprctl --ping | head -1)` (or read it from the live Hyprland's
-  environ) before launching the gate from tmux.
+- Run the gate from a process rooted in the LIVE login session (e.g. a
+  terminal window in it), not from a long-lived tmux server: a tmux server
+  outlived by its session (its cgroup still `session-N.scope` for a logged-
+  out session) poisons every nested it launches — the window parks
+  correctly but the render cycle never starts (no frame callback from
+  live), so every nested-side capture starves and no external kick
+  (window move, VM focus, internal dispatch) revives it. Env, devices,
+  rlimits, seccomp and caps are identical either way; the cgroup root is
+  the difference, and migrating into the live session's cgroup from
+  outside is denied. Symptoms: `retarget` reports
+  "nested render cycle dead; relaunching nested" up to 3×, then aborts.
+  After any live-session relog, also refresh the tmux server's stale
+  `HYPRLAND_INSTANCE_SIGNATURE` (`tmux set-environment -g
+  HYPRLAND_INSTANCE_SIGNATURE $(hyprctl --ping | head -1)`) — live-side
+  parking fails silently on a stale signature.
 - Faked `wpctl` and sound helpers never modify live devices.
 
 ## Wayland Fixtures
