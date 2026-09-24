@@ -304,8 +304,11 @@ static void applyMaxToggle(const PHLWINDOWREF& WR) {
     // Tiled windows maximize natively: the plugin box is a floating
     // mechanism, and the native unmax above serves both layouts, so a
     // tiled re-max must go through the native path or the toggle is
-    // one-directional (unmax works, re-max is a no-op)
+    // one-directional (unmax works, re-max is a no-op). A plugin entry that
+    // survived a re-tile is stale — the native mechanism owns the geometry
+    // from here, and its box is the workarea, not a windowed size.
     if (!W->isFloating()) {
+        g_maximized.erase(WR);
         Fullscreen::controller()->setFullscreenMode(W, Fullscreen::FSMODE_MAXIMIZED, Fullscreen::FSMODE_MAXIMIZED);
         return;
     }
@@ -402,8 +405,14 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         // get(), never lock(): the emission runs inside ~CWindow, where the
         // ref is already marked destroying — lock() can never succeed there,
         // while the pointed-to members are still intact (destructor body).
-        if (const auto* W = wr.get())
-            rememberWindowed(W->metadata().appID(), IT->second);
+        if (const auto* W = wr.get()) {
+            // plugin maximize is a floating mechanism: a window that left
+            // floating (an external re-tile) no longer owns the box the
+            // entry holds — remembering it would save the workarea as the
+            // app's last windowed size
+            if (W->isFloating())
+                rememberWindowed(W->metadata().appID(), IT->second);
+        }
         g_maximized.erase(IT);
     });
 
