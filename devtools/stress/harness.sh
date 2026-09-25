@@ -202,6 +202,16 @@ capture_nested() { # capture_nested <output>: tolerate a transient screencopy de
 		dir=$((-dir))
 		if wait "$gpid"; then
 			wait "$jitter_pid" 2>/dev/null
+			# A capture of a different size is a broken assumption, not a
+			# transient error: every pixel metric derives from MON_WxMON_H, so
+			# a drifted frame would poison downstream measurements silently.
+			# Drop it and retry.
+			python3 -c 'import sys
+from PIL import Image
+sys.exit(0 if Image.open(sys.argv[1]).size == (int(sys.argv[2]), int(sys.argv[3])) else 1)' "$out" "$MON_W" "$MON_H" 2>/dev/null || {
+				rm -f -- "$out"
+				continue
+			}
 			return 0
 		fi
 		kill "$jitter_pid" 2>/dev/null
