@@ -328,6 +328,32 @@ namespace NHyprbar {
                                 lvl->entries.push_back(std::move(en));
                             } catch (...) { continue; }
                         }
+                        // dbusmenu providers can end a level on a separator or
+                        // emit them in a row: nm-applet via appindicator appends
+                        // one after "Edit Connections…" and its About row only
+                        // exists in the GtkStatusIcon fallback, so the live menu
+                        // ends on a line with nothing below it. The panel must
+                        // never draw a leading, doubled, or trailing separator.
+                        {
+                            std::vector<SEntry> CLEAN;
+                            CLEAN.reserve(lvl->entries.size());
+                            bool pendingSep = false;
+                            for (auto& E : lvl->entries) {
+                                if (E.separator) {
+                                    if (!CLEAN.empty())
+                                        pendingSep = true; // a run collapses to one, emitted lazily
+                                    continue;
+                                }
+                                if (pendingSep) {
+                                    SEntry S{};
+                                    S.separator = true;
+                                    CLEAN.push_back(std::move(S));
+                                    pendingSep = false;
+                                }
+                                CLEAN.push_back(std::move(E));
+                            }
+                            lvl->entries = std::move(CLEAN); // a pendingSep with no row after it dies here
+                        }
                         lvl->width = 0;
                         damageMenu();
                     });

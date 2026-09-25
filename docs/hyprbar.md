@@ -48,8 +48,10 @@ The bell talks to `hyprnotify` only through `org.hitori.hyprnotify` on
 plugin symbols or duplicate center state are shared.
 
 Icon resolution follows the active GTK theme, hicolor, and pixmaps. Menus support
-updates, cascades, scrolling, and check/radio state. Tray keyboard navigation,
-tooltips, and overlay icons are not implemented.
+updates, cascades, scrolling, and check/radio state. Providers may emit a
+leading, doubled, or trailing separator (nm-applet ships a trailing one); the
+parse trims them so a panel never draws a line with nothing across it. Tray
+keyboard navigation, tooltips, and overlay icons are not implemented.
 
 ## Launcher
 
