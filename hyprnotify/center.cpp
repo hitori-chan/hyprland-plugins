@@ -243,18 +243,21 @@ namespace NHyprnotify {
         return true;
     }
 
-    void setCenter(bool on) {
+    void setCenter(bool on, bool repop) {
         if (on == s_on)
             return;
         s_on = on;
         if (!on) {
             resetVisit();
             replyExit(); // a field cannot outlive the panel it was drawn in
+            if (repop)
+                Model::repopAbsorbed(); // an explicit close returns the parked stack
         } else {
             // Opening absorbs the popped stack — the banners stand down into
-            // parked shade rows, so closing never re-pops them. A PEEK does
-            // not: a pointer crossing the bell must not silently swallow
-            // banners the user never read (centerPin absorbs instead).
+            // parked shade rows; an explicit close re-pops them (the user
+            // must not lose sight of what the shade swallowed). A PEEK does
+            // not absorb: a pointer crossing the bell must not silently
+            // swallow banners the user never read (centerPin absorbs instead).
             if (!s_peek)
                 Model::absorbPopped();
             if (animationsOn()) {

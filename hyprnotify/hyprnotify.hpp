@@ -218,6 +218,7 @@ namespace NHyprnotify {
         bool                    transient   = false; // the transient hint: bypass history AND residency
         bool                    conversation = false; // fd.o category im.*/call.*: outranks ordinary cards, never bundles, merges by sender
         bool                    priority     = false; // the user marked this chat: ranks first, the badge wears the ring
+        bool                    absorbed     = false; // the open shade parked this banner; the close returns it
         std::string             fallbackPick;         // the rolled identity face; survives in-place replaces
 
         bool                 waiting = false; // arrived while suspended (DND): collected, not shown, timeout held
@@ -294,7 +295,8 @@ namespace NHyprnotify {
         void                          dismissAllLive();                      // "Clear all": every visible card goes; the DND queue stays
         void                          dismissApp(const std::string& key);    // a bundle's right-click; the key may be (app, group)
         std::string                   groupKeyOf(const SP<SNotif>& n);       // the bundle's identity: the app key, sub-keyed by the declared group
-        void                          absorbPopped();                        // opening the shade parks the popped stack (no re-pop on close)
+        void                          absorbPopped();                        // opening the shade parks the popped stack
+        void                          repopAbsorbed();                       // closing it returns the parked stack to banners
         void                          rearmExpiry();
         void                          holdBanner(uint32_t id); // the hovered popup's countdown pauses; 0 releases (and restarts it)
         void                          toggleSuspend();         // DND; resume renders the queue, fresh timeouts
@@ -362,7 +364,11 @@ namespace NHyprnotify {
 
     // the shade: ONE list of live cards, newest first, no lifecycle sections
     bool centerVisible();
-    void setCenter(bool on);  // event-loop only (input/hyprctl defer through main.cpp's queue)
+    // event-loop only (input/hyprctl defer through main.cpp's queue). repop:
+    // an explicit close (outside click, esc, toggle) returns the absorbed
+    // stack to banners; an action that closes on its way out (the sender is
+    // coming up over them) does not.
+    void setCenter(bool on, bool repop = false);
     void centerPage(int dir); // wheel: >0 towards older rows
     void centerToggleGroup(const std::string& appKey);
     void centerToggleRow(uint32_t id);
