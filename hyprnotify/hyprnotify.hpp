@@ -79,7 +79,7 @@ extern HANDLE PHANDLE;
 namespace NHyprnotify {
 
     // one working number: PLUGIN_INIT and GetServerInformation both return it
-    inline constexpr const char* VERSION = "7.6.0";
+    inline constexpr const char* VERSION = "7.7.0";
 
     // the OSD scripts pin ids here: replace-in-place, never appended, never
     // grouped, never history; fresh ids and recalls never mint into it
