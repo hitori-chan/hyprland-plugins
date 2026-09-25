@@ -161,10 +161,21 @@ surface description and config live in `hyprnotify/README.md`).
   and `resident` is the nearest thing it does have ("the server will not
   automatically remove the notification when an action has been invoked"),
   so the shade goes exactly when the card goes. Everything that keeps you
-  here keeps the shade: a dismissal, a fold, the manage panel, DND, "Clear
-  all", the reply field, and a card with no action to fire (that click is
-  only a dismissal). swaync draws the same line with `hide-on-action`
-  (default on) versus `hide-on-clear` (default off).
+  here keeps the shade: a dismissal, a fold, DND, "Clear all", the reply
+  field, and a card with no action to fire (that click is only a
+  dismissal). swaync draws the same line with `hide-on-action` (default on)
+  versus `hide-on-clear` (default off).
+- The close returns the absorbed stack: opening the shade (and a popup's
+  middle-click park) stands the live banners down into parked shade rows so
+  the panel and the column never fight for the same corner. An EXPLICIT
+  close — an outside click, Esc, the toggle — pops those cards back to
+  banners, one per app under the same cap the DND resume applies, on fresh
+  timeouts. The outside-click close is the common stray click (the pointer
+  parks in the corner dead-strip next to a conversation), and a close that
+  leaves the notifications invisible is a lost-notification bug, not an
+  Android parity point: on a phone the shade IS the notification list, but
+  a closed panel here is just off-screen. An action-driven close (the
+  sender is coming up over the parked stack) does not re-pop.
 - Inline reply (KDE's protocol, which Telegram Desktop speaks): an action
   keyed `inline-reply` is not a button — it grows a reply field in the open
   shade row, and sending emits `NotificationReplied(id, text)` and closes
@@ -172,48 +183,24 @@ surface description and config live in `hyprnotify/README.md`).
   `x-kde-reply-submit-button-text` are honored. The field takes the whole
   keyboard while armed (there is no focus to give it); editing is
   append-and-backspace plus C-u / C-w. Banners have no field.
-- Shade keys, while it is open and only then: Esc peels (an open manage panel
-  first, then the shade), ↑/↓ move a selection (an accent hairline; the page
-  follows it), Space folds, Enter fires the primary, Tab arms the selected
-  card's reply field, Delete dismisses, `p` marks the sender. Modified chords
-  pass through as user binds, and so does any key with nothing to act on —
-  nothing selected, or `p` on a card that is not a chat.
-- Per-app rules (`policy.cpp`, persisted to
-  `$XDG_STATE_HOME/hyprnotify/policy.tsv`): MARKED conversations rank above
-  everything but a critical card and wear AOSP's `conversation_icon_badge_ring`,
-  the one it ships with `visibility=gone` until you mark someone — drawn at
-  the badge's own diameter with the rim's width for a stroke
-  (`importance_ring_size`/`importance_ring_stroke_width`), so marking a chat
-  recolours that band instead of hanging a second circle outside it and
-  making a marked badge bigger than an unmarked one. Set from the row's
-  manage panel; the mark is retroactive, so the cards already in the shade
-  re-rank under it. It keys on app + sender: one chat app carries many
-  people. This is state the user typed with a click, never a per-app branch
-  in code.
-
-  The store's line format is `p<TAB>app<US>sender`. Lines the older format
-  wrote for per-app silences (`s`) are skipped on load — the feature is
-  gone, and a stored line nobody can act on is just noise.
-- The manage panel: the ⋮ turns a row into its own verbs rather than opening
-  a floating menu. Same ergonomics as Android's long-press panel — full-width
-  labelled targets, each with its key in the right column — with none of a
-  second surface's cost: no z-order, no outside-click grab, no damage region
-  of its own, and it rides the fold machinery that already exists. One row
-  wears it at a time. Esc peels it before the shade. It replaced three 20px
-  glyphs at 4px separation, hover-only and unlabelled, with the irreversible
-  verb in the middle slot.
-- Swipe: a horizontal wheel on a row, away to dismiss and back to open the
-  manage panel. Both go through the CLICK queue rather than acting in the
-  emission (crash class 6) — a swipe is an alias for a click that already
-  exists. Strictly an addition: a mouse with no horizontal wheel never
-  reaches it, so neither gesture may be the only way to reach its verb.
+- Shade keys, while it is open and only then: Esc closes, ↑/↓ move a
+  selection (an accent hairline; the page follows it), Space folds, Enter
+  fires the primary, Tab arms the selected card's reply field, Delete
+  dismisses. Modified chords pass through as user binds, and so does any
+  key with nothing to act on — nothing selected.
+- Swipe: a horizontal wheel on a row, away to dismiss (the phone's
+  swipe-to-dismiss). It goes through the CLICK queue rather than acting in
+  the emission (crash class 6) — a swipe is an alias for a click that
+  already exists. Strictly an addition: a mouse with no horizontal wheel
+  never reaches it, and right-click is the same verb without the gesture.
 - Bell peek: the bar's bell click speaks `Toggle`; `Peek(on_bell)` opens
   the shade UNPINNED (the hover-peek verb — the current bar does not send
   it, but a binding can, and it costs nothing). A peek does not absorb the
   popped banners (a pointer crossing the bell must not swallow unread
   ones), and it closes on a grace timer once the pointer is on neither the
   bell nor the panel — both surfaces cancel that timer, which is what lets
-  the pointer travel from the bell down into the shade. Any click pins it.
+  the pointer travel from the bell down into the shade. Any click pins it
+  (the pin absorbs then, and a later explicit close re-pops).
 - Over fullscreen: banners show over a real fullscreen window too — the
   ecosystem default, no quiet-while-fullscreen policy. DND and the shade
   are the escape hatches; a maximized window was never different.

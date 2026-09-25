@@ -6,11 +6,6 @@
 # code only.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/notify-lib.sh"
 
-# Safety net: lift any mark a battery left standing before the first
-# assertion, or every "clean state" check below passes over one.
-policy_lift
-chk "notif reset: no mark left standing" test "$(pol)" = "priority:0"
-
 # ---- notification cap ---------------------------------------------------
 # The model is deliberately bounded: 65 arrivals leave exactly max_notifs
 # (50) behind, and the shade has no history — the evicted cards are gone, and
@@ -380,7 +375,74 @@ chk "bus-close: unknown id is an error" bash -c "nbus() { DBUS_SESSION_BUS_ADDRE
 chk "bus-close: the failed close touched nothing" test "$(st)" = "center:0 live:1 dnd:0"
 hq hyprnotify clear >/dev/null; sleep 0.5
 
+# ---- swipe: the horizontal wheel on a row -----------------------------------
+# An ADDITION on top of the pointer path — a mouse without a horizontal wheel
+# must lose no verb — so this asserts the gesture works, not that it is the
+# only way. Away (right) dismisses; the left direction does nothing.
+psend swiper "flick me" ""; sleep 1.2
+hq hyprnotify center >/dev/null; sleep 0.7
+chk "swipe: a card in an open shade" test "$(st)" = "center:1 live:1 dnd:0"
+swipe $ROWMID_X 64 25
+chk "swipe: away dismissed the row" test "$(st)" = "center:1 live:0 dnd:0"
+tap esc; hq hyprnotify clear >/dev/null; sleep 0.8
+chk "swipe: reset after the swipe battery" test "$(st)" = "center:0 live:0 dnd:0"
+
+# Ranking: a critical sorts to the top however late the others arrived. The
+# two cards are made TELLABLE APART in the badge — a transient one opts out
+# of residency, so opening the shade absorbs the critical and leaves it a
+# banner — and the keyboard deletes whatever the top row is. Both wrong
+# answers (older-first, or an injector that did nothing) read differently.
+dsp "hl.dsp.exec_cmd('notify-send -e -t 60000 -a chat \"an ordinary card\" body')"; sleep 0.6
+dsp "hl.dsp.exec_cmd('notify-send -a alarm -u critical \"disk failing\" body')"; sleep 1
+hq hyprnotify center >/dev/null; sleep 0.7
+chk "ranking: an absorbed critical beside an unabsorbed transient" test "$(bd)" = "banners:1 resident:1"
+tap down
+tap delete
+chk "ranking: the TOP row was the critical, not the card that came first" test "$(bd)" = "banners:1 resident:0"
+hq hyprnotify center >/dev/null; sleep 0.4
+hq hyprnotify clear >/dev/null; sleep 0.8
+
+# absorb is idempotent: toggling the center never loses or dupes a card
+dsp "hl.dsp.exec_cmd('notify-send \"keep one\" body')"
+dsp "hl.dsp.exec_cmd('notify-send \"keep two\" body')"; sleep 1
+for i in 1 2 3; do hq hyprnotify center >/dev/null; sleep 0.35; done # on, off, on
+chk "absorb: three toggles leave the two cards intact" bash -c "hyprctl -i $SIG hyprnotify state | grep -qE '^center:1 live:2 '"
+hq hyprnotify center >/dev/null; sleep 0.35 # off
+# one per app: the newest re-pops, the same-app sibling stays parked
+chk "absorb: the close re-popped the newest, the sibling parked (one per app)" test "$(bd)" = "banners:1 resident:1"
+hq hyprnotify clear >/dev/null; sleep 0.8
+
+# The lost-notification bug: the corner dead-strip next to a conversation is
+# the common stray outside click — the close must re-pop what the open
+# absorbed, not leave the stack invisible in the closed panel
+dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"repop me\" body')"; sleep 1
+chk "repop: a live banner before the open" test "$(bd)" = "banners:1 resident:0"
+hq hyprnotify center >/dev/null; sleep 0.7
+chk "repop: the open absorbed it" test "$(bd)" = "banners:0 resident:1"
+outside_click; sleep 0.8
+chk "repop: the outside-click close popped it back" test "$(bd)" = "banners:1 resident:0"
+hq hyprnotify clear >/dev/null; sleep 0.8
+
+# DND queues arrivals silently; the resume keeps them AND applies the same
+# one-per-app cap (the resume banner assignment is coalesce-aware — this
+# guards it alongside the absorb path).
+dsp "hl.plugin.hyprnotify.suspend()"; sleep 0.5
+chk "DND arms" hq_matches 'dnd:1' hyprnotify state
+dsp "hl.dsp.exec_cmd('notify-send -a q one body')"
+dsp "hl.dsp.exec_cmd('notify-send -a q two body')"; sleep 0.8
+chk "DND: two same-app arrivals queued, none shown" test "$(bd)" = "banners:0 resident:0"
+dsp "hl.plugin.hyprnotify.suspend()"; sleep 0.6
+chk "DND resume: one popped, the sibling resumed resident (one per app)" test "$(bd)" = "banners:1 resident:1"
+chk "DND resume: dnd off, both cards kept" hq_matches '^center:0 live:2 dnd:0$' hyprnotify state
+hq hyprnotify clear >/dev/null; sleep 0.8
+
+# hostile hints: a wrong-typed category must not crash the parse (sdbus::Error
+# thrown + caught), the card still lands
+dsp "hl.dsp.exec_cmd('notify-send -h int:category:5 \"badcat\" body')"
+dsp "hl.dsp.exec_cmd('notify-send -h string:category:im.received \"convo\" body')"; sleep 1
+chk "hostile: wrong-typed category survived, both cards landed" test "$(st)" = "center:0 live:2 dnd:0"
+hq hyprnotify clear >/dev/null; sleep 0.8
+
 # ---- the module leaves the plugin exactly as the preflight found it --------
 chk "notifications: final clean state" test "$(st)" = "center:0 live:0 dnd:0"
-chk "notifications: no mark left behind" test "$(hq hyprnotify policy)" = "priority:0"
 chk "notifications: no banners or residents" test "$(bd)" = "banners:0 resident:0"

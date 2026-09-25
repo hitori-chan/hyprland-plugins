@@ -29,9 +29,7 @@ PANEL_X=$((MON_W - N_EDGE - CENTER_W))
 ROWX=$((PANEL_X + 10 + 80))             # row-1 body: panel x + body pad + into the text column
 ROWY=64                                 # offset + body pad + into the first row (spans 44..103)
 CHVX=$((MON_W - 10 - 10 - 12 - 12))     # row-1 chevron center: right edge - body pad - ROW_PADX - half CHEV
-OVX=$((MON_W - 20 - 12 - 32 - 12))      # row-1 manage-⋮ center, riding the same row
-ENTX=$((MON_W - 200))                   # anywhere inside a manage entry's width
-ent() { echo $((N_OFFSET + 10 + 9 + 28 + $1 * 28 + 14)); }  # manage entry i center y
+ROWMID_X=$((MON_W - 200))               # anywhere inside a row's width (the swipe's pointer)
 POPX=$((MON_W - N_EDGE - N_W / 2))      # the first banner's center x (the hover-hold park)
 DND_X=$((PANEL_X + 10 + 17))            # the footer DND ⊖ (34×34 at panel x + 10)
 
@@ -51,7 +49,7 @@ tap() { # tap <key> — one virtual-keyboard tap: a named key (down, up, esc,
 }
 swipe() { # swipe <x> <y> <delta> — the horizontal row wheel. Three ±25
 	# increments accumulate past the ±60 threshold: right (positive)
-	# dismisses the row, left (negative) opens its manage panel.
+	# dismisses the row (the phone's swipe-to-dismiss); left does nothing.
 	printf 'move %s %s\nsleep 60\nscroll 1 %s\nsleep 30\nscroll 1 %s\nsleep 30\nscroll 1 %s\nsleep 200\n' "$1" "$2" "$3" "$3" "$3" |
 		vp
 	sleep 0.9
@@ -76,7 +74,6 @@ peek() { # peek <true|false> — the bell-hover path on the plugin's own bus
 # ---- model strings -------------------------------------------------------------
 st() { hq hyprnotify state; }    # center:X live:Y dnd:Z — the raw model size
 bd() { hq hyprnotify badge; }    # banners:N resident:M — the popup/shade split
-pol() { hq hyprnotify policy; }  # priority:N p=app/sender — the user's marks
 nbus() { DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user "$@"; }
 
 # ---- sends -----------------------------------------------------------------------
@@ -160,31 +157,9 @@ closeid() { # closeid <id> — CloseNotification by the returned id
 		CloseNotification u "$1" >/dev/null 2>&1
 }
 
-# ---- center / policy -------------------------------------------------------------
+# ---- center ---------------------------------------------------------------------------
 center_off() { [[ "$(st)" == center:1* ]] && { hq hyprnotify center >/dev/null; sleep 0.4; }; }
 center_on() { [[ "$(st)" != center:1* ]] && { hq hyprnotify center >/dev/null; sleep 0.5; }; }
-# policy_lift — leave no rule standing between batteries. v6 toggles a mark
-# by key on the SELECTED row (p = mark sender), and selection starts nowhere,
-# so: send the app a fresh card (newest = the top row), open the shade, ↓
-# selects it, p lifts.
-policy_lift() {
-	local line tok app sender
-	line=$(pol)
-	[[ "$line" == "priority:0" ]] && return 0
-	for tok in $(grep -o 'p=[^ ]*' <<<"$line"); do
-		app=${tok#p=}; app=${app%%/*}
-		sender=${tok#p=*/} # the state line prints app/sender
-		# the same card shape the mark was SET on (the p verb only answers to
-		# a conversation card carrying that app + sender)
-		psend "$app" "$sender" im.received
-		sleep 1
-		center_on
-		tap down
-		tap 25 # p
-		tap esc # as above — leave the shade the way the batteries found it
-		hq hyprnotify clear >/dev/null 2>&1; sleep 0.5
-	done
-}
 
 # ---- pixels ------------------------------------------------------------------------
 # panel_bottom <frame>: the shade's bottom rim row (the 1px edge), or 0 when

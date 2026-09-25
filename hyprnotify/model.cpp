@@ -53,8 +53,7 @@ namespace NHyprnotify {
         constexpr size_t MAX_CONV_KIND_BYTES   = 32;
         // free-form wire strings are capped codepoint-safe at arrival: the
         // D-Bus message limit is megabytes, and a stored string rides into
-        // texture-cache keys, grouping identities and policy-store lines for
-        // the card's whole life
+        // texture-cache keys and grouping identities for the card's whole life
         constexpr size_t MAX_APP_NAME_BYTES   = 256;
         constexpr size_t MAX_SUMMARY_BYTES    = 1024;
         constexpr size_t MAX_SOURCE_BYTES     = 1024; // app icon / image-path / sound-file / desktop-entry
@@ -823,11 +822,6 @@ namespace NHyprnotify {
             // into an app digest (Android keeps every chat its own card).
             // Ordering and merging only — no per-app casing.
             n->conversation = CONVERSATION;
-            // a priority mark keys on the conversation-id when one is in
-            // force, else the sender's summary — marks set before a sender
-            // adopted ids keep applying
-            n->priority = (CONVERSATION || !n->conversationId.empty()) && (!n->conversationId.empty() ? (Policy::priority(APPKEY, n->conversationId) || Policy::priority(APPKEY, n->summary))
-                                                                                                    : Policy::priority(APPKEY, n->summary));
 
             if (expireTimeout > 0)
                 n->timeoutMs = expireTimeout;

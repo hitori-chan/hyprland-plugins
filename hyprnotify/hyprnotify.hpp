@@ -7,7 +7,6 @@
 //               the vtables, the signals, the name
 //   parse.cpp   the untrusted payload: markup, images, appended bodies
 //   model.cpp   the cards: arrival, residency, merging, DND, the expiry
-//   policy.cpp  the user's own rules: priority chats
 //   icons.cpp   notification images: content avatars, identity icons,
 //               raw image-data
 //   text.cpp    the pango rasterizer + the keyed text cache + markup helpers
@@ -217,7 +216,6 @@ namespace NHyprnotify {
         bool                    resident    = false; // the resident hint: an action keeps the card
         bool                    transient   = false; // the transient hint: bypass history AND residency
         bool                    conversation = false; // fd.o category im.*/call.*: outranks ordinary cards, never bundles, merges by sender
-        bool                    priority     = false; // the user marked this chat: ranks first, the badge wears the ring
         bool                    absorbed     = false; // the open shade parked this banner; the close returns it
         std::string             fallbackPick;         // the rolled identity face; survives in-place replaces
 
@@ -307,17 +305,6 @@ namespace NHyprnotify {
         std::string                   toplineString(); // the newest card's collapsed one-liner — the gate's text probe
     }
 
-    // ---- policy.cpp: the user's rules, persisted ----
-
-    namespace Policy {
-        void        init();
-        void        exit();
-        bool        priority(const std::string& appKey, const std::string& chat); // this chat outranks everything but critical; chat = the conversation-id, else the sender summary
-        void        togglePriority(const std::string& appKey, const std::string& sender);
-        size_t      priorityCount(); // marks in force — the debug line never lets one hide
-        std::string stateString();   // the debug line, and what the gate reads
-    }
-
     // ---- bus.cpp: the connection ----
 
     namespace Bus {
@@ -372,9 +359,6 @@ namespace NHyprnotify {
     void centerPage(int dir); // wheel: >0 towards older rows
     void centerToggleGroup(const std::string& appKey);
     void centerToggleRow(uint32_t id);
-    void     centerToggleManage(uint32_t id); // the ⋮: one row at a time wears its manage panel
-    uint32_t centerManageRow();
-    uint32_t selectedRow(); // the keyboard selection's card id, 0 = none/a bundle
     void centerSelectMove(int dir);                         // ↑/↓: move the keyboard selection, paging to keep it on screen
     bool centerSelection(uint32_t& id, std::string& group); // the selected item; group non-empty = a bundle. false = none
 
@@ -402,7 +386,6 @@ namespace NHyprnotify {
             DIGEST,    // a folded app bundle (group = app key)
             GHEAD,     // an expanded bundle's header row
             CHILD,     // a bundle child row
-            MANAGE,    // a row turned into its manage panel by the ⋮
             BTN_CLEAR, // footer "Clear all": the global sweep
             BTN_DND,   // footer ⊖ (do-not-disturb)
             PANEL,     // the shade panel body: swallows clicks, owns the wheel
@@ -415,14 +398,6 @@ namespace NHyprnotify {
         CBox        close;        // POPUP hover-✕ / GHEAD ✕; w = 0 -> none
         CBox        replyField;   // ROW: the armed inline-reply box (swallows, never acts)
         CBox        replySend;    // ROW: its send pill
-        // every small control the surface carries — the ⋮, the undo row's two,
-        // a manage panel's entries — as one rect per part code, so another
-        // verb costs an entry here and not a member
-        struct SManage {
-            CBox    box;
-            uint8_t part;
-        };
-        std::vector<SManage> manage;
         struct SBtn {
             CBox        box;
             std::string id;
@@ -445,8 +420,7 @@ namespace NHyprnotify {
         std::string  group;
         SCard::eKind kind = SCard::POPUP;
         int          btn  = -1;
-        // 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 6 priority,
-        // 10 the ⋮, 16+n a manage panel entry
+        // 0 body, 1 chevron, 2 close, 3 reply field, 4 send
         uint8_t      part = 0;
         bool         operator==(const SHover&) const = default;
     };
