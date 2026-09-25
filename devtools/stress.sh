@@ -123,7 +123,8 @@ for _name in "${CANONICAL_BATTERIES[@]}"; do
 	battery_begin "$_name"
 	source "$STRESS_DIR/$_name.sh"
 	# lifecycle.sh's tail (when selected) records its own battery_end and
-	# exits before this line runs; for every other battery it applies here.
+	# exits before these lines run; for every other battery they apply here.
+	assert_desktop_clean "$_name"
 	battery_end "$_name"
 done
 
