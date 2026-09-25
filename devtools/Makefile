@@ -22,7 +22,7 @@ TEST_TARGETS := test-icon-resolver test-battery-state test-desktop-exec \
 	test-hyprosd test-persist test-fileindex \
 	test-hyprsnap-geometry test-hyprmax-geometry test-pixel-model
 
-all: vptr vkbd input-capture cliphold fixwin splashwin focustrap
+all: vptr vkbd input-capture cliphold fixwin splashwin focustrap fake-sni
 
 test: $(TEST_TARGETS)
 
@@ -102,6 +102,11 @@ fixwin: fixwin.c fixwin-protocol.h fixwin-proto.c
 focustrap: focustrap.c
 	$(CC) -O2 -Wall $< -o $@ -lX11
 
+# SNI + dbusmenu fixture over libdbus (not a compositor client): the tray
+# menu battery drives it against the nested instance's private session bus.
+fake-sni: fake-sni.c
+	$(CC) -O2 -Wall $< -o $@ $(shell pkg-config --cflags --libs dbus-1)
+
 vptr-proto.h: $(XML)
 	wayland-scanner client-header $< $@
 vptr-proto.c: $(XML)
@@ -124,6 +129,6 @@ fixwin-proto.c: $(XXML)
 	wayland-scanner private-code $< $@
 
 clean:
-	rm -f vptr vkbd input-capture cliphold fixwin splashwin focustrap $(TEST_BINS) vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c fixwin-protocol.h fixwin-proto.c
+	rm -f vptr vkbd input-capture cliphold fixwin splashwin focustrap fake-sni $(TEST_BINS) vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c fixwin-protocol.h fixwin-proto.c
 
 .PHONY: all clean test $(TEST_TARGETS)

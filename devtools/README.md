@@ -46,7 +46,7 @@ HYPR_DEPLOY_PKG_CONFIG_PATH=$SCRATCH/share/pkgconfig \
 ```
 
 `-b LIST` runs only the named batteries and `-k LIST` skips them (comma
-separated; from `windows notifications reply policy focus lifecycle`; `all`
+separated; from `windows notifications reply policy focus tray lifecycle`; `all`
 is the default). Canonical order is enforced regardless of user order, and
 preflight (parallel builds, launch, retarget) always runs. Without
 `lifecycle` selected, `stress.sh` itself prints the final summary line.
