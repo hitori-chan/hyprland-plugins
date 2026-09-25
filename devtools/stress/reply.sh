@@ -70,7 +70,10 @@ dsp "hl.dsp.exec_cmd('notify-send -t 60000 \"pointer center\" body')"; sleep 1
 hq hyprnotify center >/dev/null; sleep 0.7
 outside_click
 chk "center pointer: outside click closes the shade" test "$(st)" = "center:0 live:1 dnd:0"
-chk "center pointer: and dismissed nothing" test "$(bd)" = "banners:0 resident:1"
+# an explicit close re-pops the absorbed stack (f1fc6c0): the card is back as
+# a live banner, not dismissed and not stranded parked (repop checks: the
+# notifications battery)
+chk "center pointer: and dismissed nothing" test "$(bd)" = "banners:1 resident:0"
 hq hyprnotify center >/dev/null; sleep 0.5
 tap esc
 chk "center pointer: esc also closes it" test "$(st)" = "center:0 live:1 dnd:0"
