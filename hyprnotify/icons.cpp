@@ -13,6 +13,7 @@
 
 #include <cstring>
 #include <filesystem>
+#include <iterator>
 #include <list>
 #include <random>
 #include <sstream>
@@ -354,7 +355,10 @@ namespace NHyprnotify {
             generatedAvatars.erase(COLD);
         }
         avatarLru.push_back(KEY);
-        auto [AIT, _] = generatedAvatars.emplace(KEY, std::pair{TEX, avatarLru.end()});
+        // the map must hold the element's OWN iterator (not end(), which the
+        // hit-path splice would read as a refresh) — the prev() after the
+        // push_back is exactly the entry just appended
+        const auto [AIT, _] = generatedAvatars.emplace(KEY, std::pair{TEX, std::prev(avatarLru.end())});
         return AIT->second.first;
     }
 
