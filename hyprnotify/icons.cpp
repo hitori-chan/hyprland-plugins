@@ -13,8 +13,10 @@
 
 #include <cstring>
 #include <filesystem>
+#include <list>
 #include <random>
 #include <sstream>
+#include <utility>
 
 namespace NHyprnotify {
 
@@ -99,7 +101,17 @@ namespace NHyprnotify {
     static uint64_t                                     desktopGeneration = 0;
     static bool                                         desktopScanning   = false;
 
-    static std::unordered_map<std::string, SP<ITexture>> generatedAvatars;
+    // one face per (identity, name, font, size, bg): the facepile never
+    // shows a blank square for a faceless sender. The cache is an LRU, not a
+    // size cap: a busy group outgrows it in DISTINCT senders, and evicting
+    // an arbitrary entry (unordered_map's begin()) dropped the faces the
+    // senders cycled back into a visible window — cairo + pango + a GL
+    // upload per re-request, the stall the async decode redesign removed.
+    // The working set is the senders the facepiles keep re-asking for, which
+    // LRU keeps hot.
+    static std::list<std::string> avatarLru; // most recently used at the back
+    static std::unordered_map<std::string, std::pair<SP<ITexture>, std::list<std::string>::iterator>> generatedAvatars;
+    static constexpr size_t       MAX_GENERATED_AVATARS = 128;
 
     static bool resourceReady(const SDecodeJob& job) {
         return job.rejected || (job.resource && job.resource->m_ready.load(std::memory_order_acquire));
@@ -297,8 +309,10 @@ namespace NHyprnotify {
         appendKey(name);
         appendKey(cfg.font->value());
         KEY += std::to_string(PX) + ":" + std::to_string(DARK);
-        if (const auto IT = generatedAvatars.find(KEY); IT != generatedAvatars.end())
-            return IT->second;
+        if (const auto IT = generatedAvatars.find(KEY); IT != generatedAvatars.end()) {
+            avatarLru.splice(avatarLru.end(), avatarLru, IT->second.second);
+            return IT->second.first;
+        }
         if (!warmGate.mayBuild() || !g_pHyprRenderer)
             return {};
 
@@ -334,10 +348,14 @@ namespace NHyprnotify {
         cairo_surface_destroy(SURF);
         if (!TEX)
             return {};
-        if (generatedAvatars.size() >= 128)
-            generatedAvatars.erase(generatedAvatars.begin());
-        generatedAvatars.emplace(KEY, TEX);
-        return TEX;
+        if (generatedAvatars.size() >= MAX_GENERATED_AVATARS) {
+            const auto COLD = avatarLru.front();
+            avatarLru.pop_front();
+            generatedAvatars.erase(COLD);
+        }
+        avatarLru.push_back(KEY);
+        auto [AIT, _] = generatedAvatars.emplace(KEY, std::pair{TEX, avatarLru.end()});
+        return AIT->second.first;
     }
 
     // Anything bigger than the card's icon box is downscaled ONCE on the CPU
@@ -782,7 +800,13 @@ namespace NHyprnotify {
     // remembered
     void ensureAvatarTex(SParticipant& p, int px) {
         if (p.icon.empty()) {
-            const std::string KEY = "__hyprnotify_avatar:\x1f" + p.key + "\x1f" + p.name + "\x1f" + cfg.font->value() + "\x1f" + std::to_string(px);
+            // the face's tint rides the card's bg (the light/dark split
+            // inside generatedAvatar): the key carries the bg it was rolled
+            // under, so a theme switch re-rolls it — the identity's
+            // fg-carrying key, initials edition. Without it a dark->light
+            // switch kept the dark-tinted face on every faceless sender.
+            const std::string KEY = "__hyprnotify_avatar:\x1f" + p.key + "\x1f" + p.name + "\x1f" + cfg.font->value() + "\x1f" + std::to_string(px) + "\x1f" +
+                                    std::to_string((uint64_t)cfg.colBg->value());
             if (p.avatarFor == KEY)
                 return;
             p.avatarTex     = generatedAvatar(p.key, p.name, px);
@@ -836,6 +860,7 @@ namespace NHyprnotify {
         decodeJobs.clear();
         desktopIndex.exit();
         desktopIcons.clear();
+        avatarLru.clear();
         generatedAvatars.clear();
         desktopScanning     = false;
         waitedForDecodeSlot = false;
