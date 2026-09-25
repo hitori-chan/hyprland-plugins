@@ -21,6 +21,7 @@ make -C devtools test-pixel-model
 | `test-hyprosd` | strict `wpctl` readback parsing |
 | `test-pixel-model` | grouping, expansion, conversations, avatars, and bounds |
 | `test-persist` | bounded geometry-state admission |
+| `test-fileindex` | `.desktop` indexing: symlink resolution, dangling/oversized/NUL admission |
 | `test-hyprsnap-geometry` | constrained snap geometry |
 | `test-hyprmax-geometry` | constrained restore geometry |
 
@@ -28,8 +29,8 @@ make -C devtools test-pixel-model
 
 `stress.sh` builds the eight plugins, launches the controlled compositor, and
 tests load order, geometry policy, notifications, OSDs, reply/paste, DND,
-fullscreen composition, input capture, reload, hostile state, queue
-bounds, and teardown. Success requires its final
+X11 focus steal, the tray menu, fullscreen composition, input capture,
+reload, hostile state, queue bounds, and teardown. Success requires its final
 `ALL CHECKS PASSED` line.
 
 ```sh
@@ -47,9 +48,24 @@ HYPR_DEPLOY_PKG_CONFIG_PATH=$SCRATCH/share/pkgconfig \
 
 `-b LIST` runs only the named batteries and `-k LIST` skips them (comma
 separated; from `windows notifications reply focus tray lifecycle`; `all`
-is the default). Canonical order is enforced regardless of user order, and
+is the default). Canonical order is enforced regardless of user order,
+flags may appear before or after the compositor-bin positional, and
 preflight (parallel builds, launch, retarget) always runs. Without
-`lifecycle` selected, `stress.sh` itself prints the final summary line.
+`lifecycle` selected, `stress.sh` itself prints the final summary.
+The summary line is preceded by a per-battery `ok`/`fail` breakdown — a
+battery that silently lost checks (a skipped block, a relaunch that no-ops)
+shows up as a lower count instead of a quiet green.
+
+Harness-level invariants, checked on top of the batteries:
+
+- After every battery (lifecycle excepted, which tears the nested down
+  itself) the nested must be client-free; a fixture window leaked past a
+  battery boundary is named in the failure (the focus battery once left its
+  foot under the tray menu column and poisoned the next battery's panel
+  geometry).
+- `capture_nested` validates that the capture is exactly the nested
+  monitor's size; a drifted frame is dropped and retried, not fed to the
+  pixel metrics.
 
 The gate rejects mismatched package paths, target headers, and compositor
 commits. `HYPR_STRESS_KEEP_STATE=1` retains screenshots and logs after a run.
@@ -62,10 +78,10 @@ The shell is split by ownership under `devtools/stress/`:
 | `preflight.sh` | standalone tests, exact headers, builds, config, and launch |
 | `windows.sh` | placement, persistence, maximize, snap, and window storms |
 | `notify-lib.sh` | shared notification helpers: geometry constants, input gestures, Notify senders, panel measurement. Pure definitions, safe to source anywhere after `retarget` |
-| `notifications.sh` | notification model, center, grouping, identity, and pixel checks |
-| `reply.sh` | hyprosd's wpctl process path, the pointer-only shade close, inline reply, and the launcher clipboard |
-| `policy.sh` | DND, management, gestures, ranking, and admission |
-| `focus.sh` | X11 EWMH pings (the GOG/Proton focus steal): urgency only, focus stays, click still focuses |
+| `notifications.sh` | notification model, center, grouping, identity, DND, ranking, admission, gestures, and pixel checks |
+| `reply.sh` | hyprosd's wpctl process path, the pointer-only shade close (an explicit close re-pops the absorbed stack), inline reply, and the launcher clipboard |
+| `focus.sh` | X11 EWMH pings (the GOG/Proton focus steal): urgency only, focus stays, click still focuses; closes its own foot before the geometry batteries |
+| `tray.sh` | StatusNotifierItem lifecycle against the bar (the `fake-sni` fixture): strip icon, menu separator trim, submenu cascade, outside-click close |
 | `lifecycle.sh` | input capture, input storms, reload, logs, and teardown |
 | `probe-env.sh` | bootstrap for isolated one-off probes (see below) |
 
@@ -134,9 +150,10 @@ of it needs no prior state.
   outside is denied. Symptoms: `retarget` reports
   "nested render cycle dead; relaunching nested" up to 3×, then aborts.
   After any live-session relog, also refresh the tmux server's stale
-  `HYPRLAND_INSTANCE_SIGNATURE` (`tmux set-environment -g
-  HYPRLAND_INSTANCE_SIGNATURE $(hyprctl --ping | head -1)`) — live-side
-  parking fails silently on a stale signature.
+  `HYPRLAND_INSTANCE_SIGNATURE` (from a terminal inside the live session:
+  `tmux set-environment -g HYPRLAND_INSTANCE_SIGNATURE
+  "$HYPRLAND_INSTANCE_SIGNATURE"`) — live-side parking fails silently on
+  a stale signature.
 - Faked `wpctl` and sound helpers never modify live devices.
 
 ## Wayland Fixtures
@@ -157,3 +174,22 @@ make -C devtools HL=/path/to/Hyprland
   holds a transfer to test cancellation and teardown.
 - `fixwin WIDTH HEIGHT [TITLE]` maps a fixed-size xdg-toplevel (min == max,
   the dialog/splash shape) to test placement of windows that refuse to resize.
+- `splashwin W H MARGIN [ID] [late] [parented] [resz] [vismargin] [pinx] [parentonly] [pgeo]`
+  maps the Discord-updater-splash shape: a CSD toplevel whose committed
+  buffer exceeds the declared geometry (a shadow margin) with the frame
+  pinned — plus the per-axis-pin, resizable-CSD, and transient-parent
+  variants the windows battery drives against placement.
+- `focustrap <map|attention|activate> [delay-s] [hold-s]` is the X11
+  fixture: it maps a toplevel, waits, sends one unauthenticated EWMH ping —
+  `_NET_ACTIVE_WINDOW` (activate) or `_NET_WM_STATE_DEMANDS_ATTENTION`
+  (attention) — and holds; the focus battery asserts the ping stays
+  urgency-only and the keyboard focus never moves.
+
+### D-Bus Fixtures
+
+- `fake-sni` serves one StatusNotifierItem plus a dbusmenu (a magenta 22x22
+  pixmap, a root layout with doubled and trailing separators, a sub layout
+  with a trailing one) on the address given by `DBUS_SESSION_BUS_ADDRESS` —
+  the tray battery points it at the nested instance's PRIVATE session bus
+  (never the live one) and asserts the strip, the parse-time separator
+  trim, and the cascade against it.
