@@ -218,6 +218,40 @@ expect() { # expect <name> <python-expr-over-cs>
 	[[ "$(pyc "$2")" == "1" ]] && ok "$1" || bad "$1"
 }
 
+# Per-battery accounting: stress.sh brackets each battery with
+# battery_begin/battery_end so the final summary reports the per-battery
+# counts. A battery that silently lost checks (a skipped block, a relaunch
+# that no-ops, a metric that started crashing) shows up as a lower count
+# instead of a quiet green.
+BATTERY_NAME=""
+BATTERY_SUMMARY=()
+battery_begin() {
+	BATTERY_NAME=$1
+	PASS_START=$PASS
+	FAILED_START=${#FAILED[@]}
+	echo
+	echo "== battery: $1 (${SECONDS} s in) =="
+}
+battery_end() {
+	BATTERY_SUMMARY+=("$1 $((PASS - PASS_START)) $(( ${#FAILED[@]} - FAILED_START ))")
+}
+print_summary() { # the gate's final lines; the return code is the exit code
+	local entry n o f
+	if [[ ${#BATTERY_SUMMARY[@]} -gt 0 ]]; then
+		for entry in "${BATTERY_SUMMARY[@]}"; do
+			read -r n o f <<<"$entry"
+			printf '   %-14s %s ok, %s fail\n' "$n" "$o" "$f"
+		done
+	fi
+	if [[ ${#FAILED[@]} -eq 0 ]]; then
+		echo "== stress: ALL $PASS CHECKS PASSED in ${SECONDS}s =="
+		return 0
+	fi
+	echo "== stress: $PASS passed, ${#FAILED[@]} FAILED in ${SECONDS}s =="
+	printf '   - %s\n' "${FAILED[@]}"
+	return 1
+}
+
 stop_capture() {
 	if [[ -n "$CAPTURE_PID" ]]; then
 		if grep -Fzxq -- "$REPO/devtools/input-capture" "/proc/$CAPTURE_PID/cmdline" 2>/dev/null; then

@@ -222,13 +222,7 @@ else
 	bad "teardown: active helpers do not block compositor exit"
 	[[ -n "$NESTED_PID" ]] && kill -KILL "$NESTED_PID" 2>/dev/null || true
 fi
+battery_end "$BATTERY_NAME"
 cleanup_harness
-echo
-if [[ ${#FAILED[@]} -eq 0 ]]; then
-	echo "== stress: ALL $PASS CHECKS PASSED in ${SECONDS}s =="
-	exit 0
-else
-	echo "== stress: $PASS passed, ${#FAILED[@]} FAILED in ${SECONDS}s =="
-	printf '   - %s\n' "${FAILED[@]}"
-	exit 1
-fi
+print_summary
+exit $?
