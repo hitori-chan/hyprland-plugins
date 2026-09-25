@@ -31,7 +31,10 @@ make -C devtools test-pixel-model
 tests load order, geometry policy, notifications, OSDs, reply/paste, DND,
 X11 focus steal, the tray menu, fullscreen composition, input capture,
 reload, hostile state, queue bounds, and teardown. Success requires its final
-`ALL CHECKS PASSED` line.
+`ALL CHECKS PASSED` line. That line is the contract, not the shell exit
+status: a piped run (`| tee`) reports the pipe's status, and the script's
+own exit code (which does agree: 0 = all passed) is only visible when the
+run is not piped.
 
 ```sh
 ./devtools/stress.sh
