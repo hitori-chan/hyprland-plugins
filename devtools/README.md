@@ -66,6 +66,14 @@ Harness-level invariants, checked on top of the batteries:
 - `capture_nested` validates that the capture is exactly the nested
   monitor's size; a drifted frame is dropped and retried, not fed to the
   pixel metrics.
+- Every nested the gate kills must die clean: `kill_nested` checks the
+  coredump record for the killed pid (a SEGV-class teardown death writes
+  one, a clean exit does not), reports a 5s survivor as a SIGKILL hang
+  rather than letting it pass, and degrades to an explicit "unverified"
+  line when `coredumpctl` or the systemd-coredump `core_pattern` is
+  absent. This is what the teardown SEGV class (2026-09-04..25, fork fix
+  `377b812e`) should have caught: it passed every gate for three weeks
+  because nothing looked at the corpse.
 
 The gate rejects mismatched package paths, target headers, and compositor
 commits. `HYPR_STRESS_KEEP_STATE=1` retains screenshots and logs after a run.
@@ -160,6 +168,11 @@ of it needs no prior state.
   and even pid-liveness checks on them are meaningless — a dead display
   looks exactly like a live one to them (the 2026-09-25 false alarm; and
   `rm`-ing one while the display is live is how you break a live session).
+- `kernel.core_pattern` is runtime-only: a reboot resets it, and a
+  faulting teardown then writes no record the gate can see. The
+  clean-teardown check detects the un-armed pattern and reports
+  "unverified" instead of a silent pass; re-arm after any reboot with
+  `sudo sysctl -w "kernel.core_pattern=|/usr/lib/systemd/systemd-coredump %P %u %g %s %t %c %h"`
 
 ## Wayland Fixtures
 
