@@ -235,6 +235,24 @@ battery_begin() {
 battery_end() {
 	BATTERY_SUMMARY+=("$1 $((PASS - PASS_START)) $(( ${#FAILED[@]} - FAILED_START ))")
 }
+# A battery must leave the nested client-free: the stress desktop starts
+# empty and every battery closes its own windows. A stray client at a
+# boundary is a leak by definition — the focus battery once left its foot at
+# the bottom-right corner, under the tray menu column, and poisoned every
+# panel-extent capture of the battery after it. Called from the stress.sh
+# loop BEFORE battery_end so the result counts into this battery; lifecycle
+# is exempt (its tail tears the nested down itself, so the query is empty
+# for the wrong reason).
+assert_desktop_clean() {
+	sleep 0.5
+	local who
+	who="$(clients | python3 -c 'import json,sys;print(" ".join(sorted({c["class"] for c in json.load(sys.stdin)})))' 2>/dev/null)"
+	if [[ -z "$who" ]]; then
+		ok "$1: leaves the nested client-free"
+	else
+		bad "$1: leaves nested clients behind: $who"
+	fi
+}
 print_summary() { # the gate's final lines; the return code is the exit code
 	local entry n o f
 	if [[ ${#BATTERY_SUMMARY[@]} -gt 0 ]]; then
