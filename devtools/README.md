@@ -155,6 +155,11 @@ of it needs no prior state.
   "$HYPRLAND_INSTANCE_SIGNATURE"`) — live-side parking fails silently on
   a stale signature.
 - Faked `wpctl` and sound helpers never modify live devices.
+- A "dead" Wayland display is verified with `flock`, never by the lock
+  file: the `wayland-*.lock` files are EMPTY flock files, so file presence
+  and even pid-liveness checks on them are meaningless — a dead display
+  looks exactly like a live one to them (the 2026-09-25 false alarm; and
+  `rm`-ing one while the display is live is how you break a live session).
 
 ## Wayland Fixtures
 
