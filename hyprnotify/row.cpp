@@ -86,20 +86,17 @@ namespace NHyprnotify {
             // expanded: age/header line, title, body, progress, then the card's
             // own actions in Notify order. The PRIMARY gets no button here —
             // the row body fires it, exactly as the banner does.
-            // the ⋮ rides the header line; the kicker gives up exactly its
-            // width so the two can never collide, shown or not
-            const double MANAGEW = ST.manage ? OVER_D + OVER_GAP + 4 : 0;
             // a group conversation's header also carries a facepile (the
             // distinct senders of the kept messages) and, while the sender
             // reports unread, an accent pill — the kicker gives up exactly
-            // their widths, as it does for the ⋮
+            // their widths
             const bool   FACEPILE = N->conversationKind == "group" && !N->participants.empty();
             const size_t PILEN    = FACEPILE ? std::min<size_t>(3, N->participants.size()) : 0;
             const auto   UNREAD   = (N->conversation && N->unreadCount > 0) ? cachedText(std::to_string(N->unreadCount), tOnAccent(), T.small, 64, -1, 0, false, 600) : nullptr;
             const double PILLW2   = UNREAD && UNREAD->tex ? texW(UNREAD, P.scale) + 12 : 0;
             const double FACEW    = PILEN > 0 ? (double)PILEN * FACEPILE_D + (double)(PILEN - 1) * FACEPILE_GAP : 0;
-            const double EXTRAW   = (FACEW > 0 ? FACEW + 6 : 0) + (PILLW2 > 0 ? PILLW2 + (FACEW > 0 ? 6 : 0) : 0);
-            const int    KICKWPX  = std::max(1, (int)std::floor((TEXTW - MANAGEW - EXTRAW) * P.scale));
+            const double EXTRAW = (FACEW > 0 ? FACEW + 6 : 0) + (PILLW2 > 0 ? PILLW2 + (FACEW > 0 ? 6 : 0) : 0);
+            const int    KICKWPX = std::max(1, (int)std::floor((TEXTW - EXTRAW) * P.scale));
 
             auto& KB = scratch();
             if (ST.headerHasApp) {
@@ -162,10 +159,10 @@ namespace NHyprnotify {
             if (!P.warm) {
                 if (KICK)
                     P.tex(KICK->tex, TX, yy);
-                // the header's right side, walking left from the ⋮: the
-                // unread pill, then the facepile — each reserves exactly its
-                // width, so the kicker can never collide with them
-                double RIGHT = box.x + box.w - ROW_PADX - RTRIM - (ST.manage ? OVER_D + OVER_GAP : 0);
+                // the header's right side: the unread pill, then the facepile
+                // — each reserves exactly its width, so the kicker can never
+                // collide with them
+                double RIGHT = box.x + box.w - ROW_PADX - RTRIM;
                 if (PILLW2 > 0 && UNREAD && UNREAD->tex) {
                     const CBox PB2{RIGHT - PILLW2, TY + (std::max(KH, PILL_H) - PILL_H) / 2, PILLW2, PILL_H};
                     P.rect(PB2, tAccentDim(), (int)std::lround(PILL_H / 2 * P.scale));
@@ -248,31 +245,6 @@ namespace NHyprnotify {
                 yy += BTN_H;
             }
 
-            // ---- the ⋮: the way into the manage panel ----
-            //
-            // This used to be three 20px glyphs at 4px separation, hover-only
-            // and unlabelled, with the one irreversible verb in the middle.
-            // Now it is one 24px target that names everything it opens. Its
-            // width is reserved whether it shows or not — a control that
-            // appeared on hover and reflowed the header would re-key every
-            // raster under the pointer.
-            //
-            // It shows for the KEYBOARD too, not just the pointer: arrowing to
-            // a row used to reveal nothing at all, so the verbs behind p and
-            // delete had no affordance anywhere.
-            if (ST.manage) {
-                const bool SHOWN = (hovered.kind == SCard::ROW && hovered.id == N->id) || selectedRow() == N->id;
-                const bool HOV   = hovered.kind == SCard::ROW && hovered.id == N->id && hovered.part == 10;
-                const bool LIT   = N->priority; // a mark is in force behind it
-                const CBox MB{box.x + box.w - ROW_PADX - RTRIM - OVER_D, box.y + ROW_PADT + (CHEV - OVER_D) / 2, OVER_D, OVER_D};
-                const auto G = cachedText("⋮", LIT ? tOnAccent() : COLSUB, T.small, 64, -1, 0, false, 600);
-                if (!P.warm && (SHOWN || LIT)) {
-                    P.rect(MB, LIT ? COLACC : HOV ? tAccentDim() : tFill2(), (int)std::lround(OVER_D / 2 * P.scale));
-                    if (G && G->tex)
-                        P.tex(G->tex, MB.x + (MB.w - G->tex->m_size.x / P.scale) / 2, MB.y + (MB.h - G->tex->m_size.y / P.scale) / 2);
-                }
-                card.manage.push_back({MB, 10});
-            }
         }
 
         const double ROWH = (HERO ? HEROH + PADY : ROW_PADT) + std::max(th, ICONW) + ROW_PADB;
@@ -331,84 +303,6 @@ namespace NHyprnotify {
 
     double groupHeadH() {
         return ROW_PADT + CHILD_ICON + ROW_PADB;
-    }
-
-    // ---- the manage panel ----
-    //
-    // Every verb the strip used to hide behind a symbol, named, at row width,
-    // with the key that does the same thing in the right column.
-    std::vector<SMenuEntry> menuEntries(const SP<SNotif>& N) {
-        std::vector<SMenuEntry> out;
-        if (N->conversation)
-            out.push_back({"★", N->priority ? "Unmark this conversation" : "Priority conversation", "p", 4, N->priority});
-        out.push_back({"✕", "Dismiss", "del", 5});
-        return out;
-    }
-
-    double managePanelH(const SP<SNotif>& N) {
-        return ROW_PADT + CHILD_ICON + (double)menuEntries(N).size() * MENU_ROW_H + ROW_PADB;
-    }
-
-    void paintManagePanel(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box) {
-        const auto  COLFG = color(cfg.colFg), COLSUB = color(cfg.colKicker), COLACC = color(cfg.colHighlight);
-        const float RP = rPow();
-        P.rect(box, tFill(), rRow(P.scale), RP);
-
-        SCard card;
-        card.kind = SCard::MANAGE;
-        card.id   = N->id;
-        card.box  = box;
-
-        // the header keeps the row identifiable while its body is gone, and
-        // carries the ⋮ back out — the panel must not be a one-way door
-        if (warmGate.warming)
-            ensureIconTex(*N, (int)std::lround(cfg.maxIcon->value() * P.scale),
-                          (int)std::lround(box.w * P.scale), (int)std::lround(HERO_CAP * P.scale));
-        const auto& IDT = N->identTex && N->identTex->m_texID ? N->identTex : N->iconTex;
-        if (!P.warm && IDT)
-            P.texFit(IDT, CBox{box.x + ROW_PADX, box.y + ROW_PADT, CHILD_ICON, CHILD_ICON}, (int)std::lround(CHILD_ICON * 10.0 / 44.0 * P.scale), RP);
-
-        const double TX  = box.x + ROW_PADX + CHILD_ICON + ROW_ICON_GAP;
-        const CBox   OB{box.x + box.w - ROW_PADX - OVER_D, box.y + ROW_PADT + (CHILD_ICON - OVER_D) / 2, OVER_D, OVER_D};
-        const auto   HEAD = cachedText(N->appName.empty() ? "Notification" : N->appName, COLSUB, T.header, std::max(1, (int)((OB.x - 6 - TX) * P.scale)), -1, 0, false, 500);
-        if (!P.warm && HEAD && HEAD->tex)
-            P.tex(HEAD->tex, TX, box.y + ROW_PADT + (CHILD_ICON - HEAD->tex->m_size.y / P.scale) / 2);
-
-        const bool OHOV = hovered.kind == SCard::MANAGE && hovered.id == N->id && hovered.part == 10;
-        const auto OG   = cachedText("⋮", COLACC, T.small, 64, -1, 0, false, 600);
-        if (!P.warm) {
-            P.rect(OB, OHOV ? tAccentDim() : tFill2(), (int)std::lround(OVER_D / 2 * P.scale));
-            if (OG && OG->tex)
-                P.tex(OG->tex, OB.x + (OB.w - OG->tex->m_size.x / P.scale) / 2, OB.y + (OB.h - OG->tex->m_size.y / P.scale) / 2);
-        }
-        card.manage.push_back({OB, 10});
-
-        double     y  = box.y + ROW_PADT + CHILD_ICON;
-        const auto EN = menuEntries(N);
-        for (size_t i = 0; i < EN.size(); i++) {
-            const auto& E = EN[i];
-            const CBox  RB{box.x + ROW_PADX / 2, y, box.w - ROW_PADX, MENU_ROW_H};
-            // part codes 16.. address the entries: one rect per row, so a new
-            // verb costs an entry and not a member
-            const bool HOV = hovered.kind == SCard::MANAGE && hovered.id == N->id && hovered.part == (uint8_t)(16 + i);
-            const auto G   = cachedText(E.glyph, E.lit ? COLACC : COLSUB, T.small, 64, -1, 0, false, 600);
-            const auto L   = cachedText(E.label, E.lit ? COLACC : COLFG, T.body, std::max(1, (int)((RB.w - MENU_GLYPH_W - 40) * P.scale)), -1, 0, false, 500);
-            const auto H   = E.hint[0] ? cachedText(E.hint, COLSUB.modifyA(0.5f), T.small, 64, -1, 0, false, 500) : nullptr;
-            if (!P.warm) {
-                if (HOV)
-                    P.rect(RB, tAccentDim(), (int)std::lround(6 * P.scale), RP);
-                if (G && G->tex)
-                    P.tex(G->tex, RB.x + (MENU_GLYPH_W - G->tex->m_size.x / P.scale) / 2, RB.y + (MENU_ROW_H - G->tex->m_size.y / P.scale) / 2);
-                if (L && L->tex)
-                    P.tex(L->tex, RB.x + MENU_GLYPH_W, RB.y + (MENU_ROW_H - L->tex->m_size.y / P.scale) / 2);
-                if (H && H->tex)
-                    P.tex(H->tex, RB.x + RB.w - 8 - H->tex->m_size.x / P.scale, RB.y + (MENU_ROW_H - H->tex->m_size.y / P.scale) / 2);
-            }
-            card.manage.push_back({RB, (uint8_t)(16 + i)});
-            y += MENU_ROW_H;
-        }
-
-        cards.push_back(std::move(card));
     }
 
     // The folded bundle: the app's identity, a count pill, and the two newest

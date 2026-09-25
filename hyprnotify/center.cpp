@@ -45,7 +45,6 @@ namespace NHyprnotify {
     // is the last item the placement fitted — the paging keys work off it.
     static int      s_sel     = -1;
     static size_t   s_lastVis = 0;
-    static uint32_t s_manageRow = 0; // the row wearing its manage panel, 0 = none
 
     // the warm-measured layout cache (see renderCenter); dropped on close so
     // no strong SNotif refs (and their textures) outlive the visit
@@ -143,7 +142,6 @@ namespace NHyprnotify {
         s_animating = false;
         s_sel       = -1;
         s_lastVis   = 0;
-        s_manageRow = 0;
         s_peek = s_peekBell = false; // a closed shade is never a peeked one
         armPeekOut(false);
         s_disp.clear();
@@ -159,29 +157,6 @@ namespace NHyprnotify {
         s_peekOut.reset();
         s_on = false;
         resetVisit();
-    }
-
-    // Only one row wears the panel: two open at once would be two menus, and
-    // the shade would stop being a list of notifications.
-    void centerToggleManage(uint32_t id) {
-        s_manageRow = s_manageRow == id ? 0 : id;
-        notifChanged();
-    }
-    uint32_t centerManageRow() {
-        // a panel riding a card that died (dismissed through its own
-        // entry, swiped away, expired) would swallow the next esc as a
-        // peel of a ghost — validate liveness so the peel only spends
-        // on a live panel
-        return s_manageRow && Model::byId(s_manageRow) ? s_manageRow : 0;
-    }
-
-    // the selected item's card id — the ⋮ shows for the keyboard too, and a
-    // bundle has no one card to manage
-    uint32_t selectedRow() {
-        if (s_sel < 0 || (size_t)s_sel >= s_disp.size())
-            return 0;
-        const auto& D = s_disp[s_sel];
-        return D.items.size() == 1 ? D.items.front()->id : 0;
     }
 
     void centerToggleRow(uint32_t id) {
@@ -272,15 +247,14 @@ namespace NHyprnotify {
     // ---- the display list: one ranked list, apps bundled at four ----
 
     // Android's shade ranking, minus the visible dividers: urgent things,
-    // then the people you marked, then the rest of the people, then
-    // everything else, then the quiet ones.
+    // then the people, then everything else, then the quiet ones.
     static int tier(const SP<SNotif>& n) {
         if (n->urgency >= 2)
             return 0;
         if (n->urgency == 0)
             return 4;
         if (n->conversation)
-            return n->priority ? 1 : 2;
+            return 2;
         return 3;
     }
 
@@ -335,8 +309,8 @@ namespace NHyprnotify {
                     O.first = out.size();
                 }
             }
-            // the key rides the fold state, hover, selection and the ⋮ — a
-            // bundle head carries the (app, group) identity, singles the app
+            // the key rides the fold state, hover and selection — a bundle
+            // head carries the (app, group) identity, singles the app
             out.push_back(SDisp{.items = {N}, .key = Model::groupKeyOf(N)});
         }
     }
@@ -354,11 +328,7 @@ namespace NHyprnotify {
             const double LEAD = i == s_skip ? 0 : STACK_GAP;
             const bool   TOP  = i == s_skip;
 
-            if (D.items.size() < 2 && D.items.front()->id == s_manageRow) {
-                s_itemH[i]    = managePanelH(D.items.front());
-                s_itemOpen[i] = 0;
-                s_itemMore[i] = 0;
-            } else if (D.items.size() < 2) {
+            if (D.items.size() < 2) {
                 const auto&  N          = D.items.front();
                 const double CH         = measureRow(P, T, N, contentW, false, ROW_SINGLE);
                 const bool   FORCE_OPEN = s_openedRow.contains(N->id), FORCE_FOLD = s_foldedRow.contains(N->id);
@@ -514,9 +484,7 @@ namespace NHyprnotify {
             first = false;
 
             const CBox SLOT{CONTENT_X, y, CONTENT_W, IH};
-            if (D.items.size() < 2 && D.items.front()->id == s_manageRow)
-                paintManagePanel(P, T, D.items.front(), SLOT);
-            else if (D.items.size() < 2)
+            if (D.items.size() < 2)
                 paintSingle(P, T, D.items.front(), SLOT, OPEN, MORE);
             else if (!OPEN)
                 paintDigest(P, T, D, SLOT);

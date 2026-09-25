@@ -26,10 +26,9 @@
 //   popup does. The chevron is the only fold target. Right dismisses,
 //   middle sweeps; the footer is ⊖ DND · a global "Clear all". While it is
 //   open it owns the nav keys (↑↓ select, space folds, enter fires the
-//   primary, delete dismisses, p marks, esc closes) and nothing else.
+//   primary, delete dismisses, esc closes) and nothing else.
 //   Hovering the bar's bell PEEKS it open unpinned, so a glance costs no
-//   click. A row's ⋮ turns it into a manage panel: mark the sender, dismiss
-//   — every verb named, and the marks persist across relogs.
+//   click.
 //
 // Model rules: the conversation merge joins one chat's messages into one
 // growing card (~8KB cap, oldest lines drop) — fd.o's im.*/call.* categories,
@@ -254,8 +253,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     for (const auto& V : {cfg.colBg, cfg.colFg, cfg.colTitle, cfg.colKicker, cfg.colFrame, cfg.colUrgent, cfg.colHighlight, cfg.colLink})
         HyprlandAPI::addConfigValueV2(PHANDLE, V);
 
-    Policy::init(); // the user's rules load before the first arrival is judged
-    Model::init();  // and the expiry timer stands before anything can arrive
+    Model::init(); // the expiry timer stands before anything can arrive
     Bus::init();
     renderInit();
     centerInit();
@@ -275,8 +273,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                 return IPC::Socket1::SResponse{Model::stateString()};
             if (COMMAND.ends_with("badge"))
                 return IPC::Socket1::SResponse{Model::badgeString()};
-            if (COMMAND.ends_with("policy"))
-                return IPC::Socket1::SResponse{Policy::stateString()};
             if (COMMAND.ends_with("topline")) // the gate's text probe: the newest card's collapsed one-liner
                 return IPC::Socket1::SResponse{Model::toplineString()};
             if (COMMAND.ends_with("clear")) { // the scripted reset
@@ -328,9 +324,8 @@ APICALL EXPORT void PLUGIN_EXIT() {
     if (ctlCmd)
         HyprlandAPI::unregisterHyprCtlCommand(PHANDLE, ctlCmd);
     ctlCmd.reset();
-    Bus::exit();    // the connection first: nothing may arrive mid-teardown
-    Model::exit();  // then the cards, and their textures with them
-    Policy::exit(); // the rules outlive all of it, so they flush last
+    Bus::exit();  // the connection first: nothing may arrive mid-teardown
+    Model::exit(); // then the cards, and their textures with them
     inputExit();
     replyExit();
     reapChildren();

@@ -28,8 +28,8 @@ make -C devtools test-pixel-model
 
 `stress.sh` builds the eight plugins, launches the controlled compositor, and
 tests load order, geometry policy, notifications, OSDs, reply/paste, DND,
-management, fullscreen composition, input capture, reload, hostile
-state, queue bounds, and teardown. Success requires its final
+fullscreen composition, input capture, reload, hostile state, queue
+bounds, and teardown. Success requires its final
 `ALL CHECKS PASSED` line.
 
 ```sh
@@ -46,7 +46,7 @@ HYPR_DEPLOY_PKG_CONFIG_PATH=$SCRATCH/share/pkgconfig \
 ```
 
 `-b LIST` runs only the named batteries and `-k LIST` skips them (comma
-separated; from `windows notifications reply policy focus tray lifecycle`; `all`
+separated; from `windows notifications reply focus tray lifecycle`; `all`
 is the default). Canonical order is enforced regardless of user order, and
 preflight (parallel builds, launch, retarget) always runs. Without
 `lifecycle` selected, `stress.sh` itself prints the final summary line.
@@ -106,13 +106,13 @@ launch_stress_nested || exit 1
 CAPTURE_LOG="$HARNESS/input-capture.log"      # normally from stress.sh
 LOG="$HARNESS/nested.log"                     # normally from preflight.sh
 source devtools/stress/notify-lib.sh
-source devtools/stress/policy.sh              # the battery under test
+source devtools/stress/notifications.sh       # the battery under test
 ```
 
 Batteries are not pure definitions — sourcing one executes it. Source them
-in the canonical order, exactly as `stress.sh` does; `policy.sh` and
-`windows.sh` relaunch the nested themselves (persistence fixtures), so an
-isolated run of either needs no prior state.
+in the canonical order, exactly as `stress.sh` does; `windows.sh`
+relaunches the nested itself (the persistence fixture), so an isolated run
+of it needs no prior state.
 
 ### Safety
 

@@ -51,10 +51,9 @@ Two surfaces share one card model:
    bar's hover-peek wiring is not in the current bar, but a binding can
    call the verb directly and gets the same peek. Any click pins it, and a
    pinned shade is an ordinary one.
-   - **Ranking** is Android's, minus the dividers: critical, then marked
-     conversations, then the rest of the conversations (fd.o category
-     `im.*`/`call.*`), then normal, then low-urgency — newest first inside
-     each tier.
+   - **Ranking** is Android's, minus the dividers: critical, then
+     conversations (fd.o category `im.*`/`call.*`), then normal, then
+     low-urgency — newest first inside each tier.
    - **Bundling** follows `GroupHelper.AUTOGROUP_AT_COUNT`: an app's cards
      collapse into one digest (identity icon · "App • N • age" · count pill
      · ≤2 preview lines, each wearing its own sender's face) only at FOUR or
@@ -88,13 +87,17 @@ Two surfaces share one card model:
      would only duplicate the click. Right dismisses, middle sweeps. On a
      bundle: left expands, right (or the header ✕) dismisses the whole app.
      The footer is ⊖ DND (accent-lit while on) and "Clear all". A click
-     outside closes.
+     outside closes — and an explicit close (outside click, Esc, the
+     toggle) re-pops the banners the open had absorbed, one per app, on
+     fresh timeouts, so a stray corner click cannot leave the stack
+     invisible in the closed panel. An action-driven close does not: the
+     sender is coming up over the parked stack.
    - **Acting closes the shade**, exactly as it collapses Android's. The
      primary, an action button and a body link all raise something over the
      panel you clicked in, so the panel leaves with them. Everything that
-     keeps you here keeps it: dismissing, folding, the manage panel, DND,
-     "Clear all", the reply field, and a `resident` card's actions — the
-     spec's own way of saying the action does not take you away.
+     keeps you here keeps it: dismissing, folding, DND, "Clear all", the
+     reply field, and a `resident` card's actions — the spec's own way of
+     saying the action does not take you away.
    - **X11 senders are raised by the click itself.** The `ActivationToken`
      minted with the `ActionInvoked` signal only reaches a sender that can
      spend it — a Wayland app, through xdg-activation. An X11 app's
@@ -104,21 +107,6 @@ Two surfaces share one card model:
      signals, the plugin resolves the *sender's* bus PID (captured on the
      call — the card is gone by the time the reply runs) and hard-focuses
      the app's topmost X11 window itself.
-   - **The manage panel** — what Android hides behind a long-press, and the
-     thing one global DND could never say. An open row carries a **⋮**
-     beside its chevron; it turns the row into a panel of its verbs, each
-     one named at panel width with the key that does the same thing in the
-     right column. Acting on one leaves the panel; the ⋮, right-click and
-     Esc all close it, and Esc peels the panel before it peels the shade.
-     It shows for the keyboard selection too, not only the pointer.
-     (This replaced a hover-revealed strip of three 20px glyphs at 4px
-     separation, unlabelled, with the one irreversible verb in the middle.)
-   - **Priority conversation** (in the panel, or `p`) is Android's:
-     **★** sorts that chat above everything but a critical card and lights
-     the ring AOSP keeps hidden on the badge until you mark someone. Marks
-     persist across relogs in `$XDG_STATE_HOME/hyprnotify/policy.tsv`, are
-     retroactive, and key on app + sender — one chat app carries many
-     people.
    - **Inline reply.** A sender that sees the `inline-reply` capability
      adds an action keyed `inline-reply` and waits for a
      `NotificationReplied(id, text)` signal — it is how Telegram, Fractal
@@ -132,15 +120,14 @@ Two surfaces share one card model:
    - **Keys.** While the shade is open it owns exactly the nav set and
      nothing else: Esc closes, ↑/↓ move a selection (an accent hairline,
      paging to stay on screen), Space folds it, Enter fires the primary,
-     Tab opens a reply, Delete dismisses, `p` marks the sender. A chord with
-     ctrl/alt/super is a user bind passing through, and a nav key with
-     nothing selected — or nothing to do, like `p` on a card that is not a
-     chat — still belongs to whatever holds focus. Selection, fold state and
-     the open manage panel all reset on close.
+     Tab opens a reply, Delete dismisses. A chord with ctrl/alt/super is a
+     user bind passing through, and a nav key with nothing selected still
+     belongs to whatever holds focus. Selection and fold state reset on
+     close.
    - **Swipe.** A horizontal wheel on a row is the phone gesture: away
-     dismisses it, back opens its manage panel. Strictly an addition on top
-     of the pointer path — a mouse without a horizontal wheel never reaches
-     it and loses no verb, so neither gesture is the only way to do its job.
+     dismisses it (the phone's swipe-to-dismiss). Strictly an addition on
+     top of the pointer path — a mouse without a horizontal wheel never
+     reaches it, and right-click is the same verb without the gesture.
 
 Model rules: the **conversation merge** (Android's MessagingStyle) joins one
 chat's messages into one growing card (~8KB, newest on top, oldest lines
@@ -165,7 +152,7 @@ The bell talks over the bus: the `org.hitori.hyprnotify` interface on the
 Notifications object carries `Toggle` (the shade's click), `Peek(on_bell)`
 (the hover-peek verb) and a `State` signal (live/kept/dnd/center — the
 badge counts the shade, never the DND queue or the OSD band).
-`hyprctl hyprnotify {count,center,state,badge,policy,topline,clear}`;
+`hyprctl hyprnotify {count,center,state,badge,topline,clear}`;
 `hl.plugin.hyprnotify.{suspend,center}()`.
 
 Markup stays the whitelisted Pango subset with the literal-`<`/`&` rescue;

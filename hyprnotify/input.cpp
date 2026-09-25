@@ -8,36 +8,28 @@
 //            same as the popup — rows open by default, so the click is
 //            spent on acting rather than on revealing. The CHEVRON is the
 //            only fold target · a link opens · a button acts · right =
-//            dismiss · middle = Clear all · the ⋮ beside the chevron turns
-//            the row into its manage panel
-//   manage   the row's verbs, named and at row width: priority on a chat,
-//            dismiss. Acting on one leaves the panel; the ⋮, right and esc
-//            all close it. This replaced a three-glyph hover strip whose
-//            targets were 20px at 4px separation, unlabelled, with the one
-//            irreversible verb in the middle.
+//            dismiss · middle = Clear all
 //   leaving  anything that RAISES something else closes the shade with it —
 //            the primary, an action button, a link (invokeLive below has
 //            the AOSP citation). Everything that keeps you here does not:
-//            a dismissal, a fold, the manage panel, DND, Clear all, and a
-//            `resident` card's actions, which is the spec's own way of
-//            saying the action does not take you away.
+//            a dismissal, a fold, DND, Clear all, and a `resident` card's
+//            actions, which is the spec's own way of saying the action does
+//            not take you away.
 //   child    a bundle child is a row without the fold: body, links, buttons
 //   digest   left expands the app's bundle · right dismisses
 //   ghead    left collapses · the ✕ / right dismisses the bundle
 //   footer   ⊖ = DND · "Clear all" = the global sweep
 //   wheel    vertical pages the shade — captured only inside the panel box.
-//            HORIZONTAL on a row is the phone gesture: away dismisses, back
-//            opens the manage panel. Strictly an addition — a mouse without a
-//            horizontal wheel never reaches it and loses no verb.
+//            HORIZONTAL AWAY on a row is the phone's swipe-to-dismiss. Strictly
+//            an addition — a mouse without a horizontal wheel never reaches it
+//            and loses no verb.
 //   keys     while the shade is open it owns the nav set and nothing else:
-//            esc closes (the topmost-peel's middle link) · ↑/↓ move the
-//            selection · space folds it (the click's twin) · enter fires the
-//            primary · delete dismisses · p marks the sender · tab opens its
+//            esc closes · ↑/↓ move the selection · space folds it (the click's
+//            twin) · enter fires the primary · delete dismisses · tab opens its
 //            reply field, and while one is armed EVERY key is the field's
 //            (reply.cpp). A chord with ctrl/alt/super is the user's bind, and
-//            a nav key with NOTHING selected (or nothing to do — p on a card
-//            that is not a chat) still belongs to whatever holds focus: the
-//            shade never grabs a key it has no use for.
+//            a nav key with NOTHING selected still belongs to whatever holds
+//            focus: the shade never grabs a key it has no use for.
 //
 // Every mutation lands via the hit queue + CHop drain, never synchronously
 // inside the emission (crash class 6); every listener gates on
@@ -68,7 +60,7 @@ namespace NHyprnotify {
         uint32_t     id;
         std::string  group;
         uint32_t     bit;
-        uint8_t      part;   // the SHover part codes: 0 body, 1 chevron, 2 close, 3 reply field, 4 send, 6 priority, 10 the ⋮, 16+n a manage entry
+        uint8_t      part;   // the SHover part codes: 0 body, 1 chevron, 2 close, 3 reply field, 4 send
         std::string  action; // non-empty: a specific action button
         std::string  href;   // non-empty: a body hyperlink
         bool         outside = false; // the click fell outside every surface (closes the shade)
@@ -110,9 +102,6 @@ namespace NHyprnotify {
     }
 
     static uint8_t partAt(const SCard& c, const Vector2D& pos) {
-        for (const auto& M : c.manage)
-            if (M.box.containsPoint(pos))
-                return M.part;
         if (c.chevron.w > 0 && c.chevron.containsPoint(pos))
             return 1;
         if (c.close.w > 0 && c.close.containsPoint(pos))
@@ -163,34 +152,6 @@ namespace NHyprnotify {
             return; // the card stays, and so does the shade behind it
         setCenter(false); // no re-pop: the app the action raises is coming up over the parked stack
         Model::closeOne(id, Model::R_DISMISSED);
-    }
-
-    // The mark behind the KEY p — the pointer reaches it through the row's
-    // manage panel instead. Keyed on something the card carries, so the
-    // selected card is only here to supply the key.
-    static void markSender(uint32_t id) {
-        if (const auto N = Model::byId(id))
-            // a conversation-id in force is the mark's key; the summary
-            // stays the key for cards that never adopted ids
-            Policy::togglePriority(N->appKey, !N->conversationId.empty() ? N->conversationId : N->summary);
-    }
-
-    // one entry of a row's manage panel, by the index its hit rect carried
-    static void manageEntry(uint32_t id, size_t idx) {
-        const auto N = Model::byId(id);
-        if (!N)
-            return;
-        const auto EN = menuEntries(N);
-        if (idx >= EN.size())
-            return;
-        const auto& E = EN[idx];
-        switch (E.verb) {
-            case 4: Policy::togglePriority(N->appKey, !N->conversationId.empty() ? N->conversationId : N->summary); break;
-            case 5: Model::closeOne(id, Model::R_DISMISSED); return; // the card is gone; so is its panel
-        }
-        // Acting on a verb LEAVES the panel — you came for one. The dismissal
-        // above never gets here.
-        centerToggleManage(id);
     }
 
     // Deferred out of the input emission: closes reflow the layout and an
@@ -248,10 +209,6 @@ namespace NHyprnotify {
                         centerToggleRow(H.id);
                         continue;
                     }
-                    if (H.part == 10) { // the ⋮ turns the row into its manage panel
-                        centerToggleManage(H.id);
-                        continue;
-                    }
                     if (H.part == 3) // inside the armed field: keep typing
                         continue;
                     if (H.part == 4) { // its send pill
@@ -304,22 +261,6 @@ namespace NHyprnotify {
                         Model::dismissAllLive();
                         return;
                     }
-                    continue;
-                }
-                case SCard::MANAGE: {
-                    // right closes the panel rather than dismissing the card:
-                    // you are looking at a menu, and the card's own Dismiss is
-                    // one of the rows in front of you
-                    if (H.bit == 2u) {
-                        centerToggleManage(H.id);
-                        continue;
-                    }
-                    if (H.bit != 1u)
-                        continue;
-                    if (H.part == 10)
-                        centerToggleManage(H.id);
-                    else if (H.part >= 16)
-                        manageEntry(H.id, H.part - 16);
                     continue;
                 }
                 case SCard::BTN_CLEAR: // the footer: the global sweep
@@ -441,11 +382,9 @@ namespace NHyprnotify {
         info.cancelled = true;
         const double DELTA = e.delta != 0.0 ? e.delta : e.deltaDiscrete / 120.0 * 15.0;
 
-        // HORIZONTAL is the phone gesture, and the vertical wheel already had
-        // the panel — a trackpad gets swipe-to-dismiss and swipe-to-manage for
-        // free. It is strictly an ADDITION: a mouse with no horizontal wheel
-        // never reaches here and loses nothing, so neither verb may be the
-        // only way to do its job.
+        // HORIZONTAL AWAY on a row is the phone's swipe-to-dismiss. It is
+        // strictly an ADDITION: a mouse with no horizontal wheel never
+        // reaches here, and right-click is the same verb without the gesture.
         if (e.axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL) {
             const bool ROW = CARD->kind == SCard::ROW || CARD->kind == SCard::CHILD;
             if (!ROW || CARD->id == 0) {
@@ -466,13 +405,15 @@ namespace NHyprnotify {
             // very same path.
             if (swipeAcc >= SWIPE || swipeAcc <= -SWIPE) {
                 const bool AWAY = swipeAcc > 0;
-                swipeAcc        = 0;
-                SHit h;
-                h.kind = CARD->kind;
-                h.id   = CARD->id;
-                h.bit  = AWAY ? 2u : 1u;  // right-swipe IS the right-click
-                h.part = AWAY ? 0 : 10;   // the other way opens the ⋮'s panel
-                queueHit(std::move(h));
+                swipeAcc        = 0; // bounded either way; only away acts
+                if (AWAY) {
+                    SHit h;
+                    h.kind = CARD->kind;
+                    h.id   = CARD->id;
+                    h.bit  = 2u; // the swipe IS the right-click
+                    h.part = 0;
+                    queueHit(std::move(h));
+                }
             }
             return;
         }
@@ -493,7 +434,7 @@ namespace NHyprnotify {
     // Same shape as the click queue, and for the same reason: an action can
     // make the client focus itself, so nothing runs inside the emission.
     struct SKeyAct {
-        int      verb = 0; // 1 fold, 2 the primary, 3 dismiss, 5 mark
+        int      verb = 0; // 1 fold, 2 the primary, 3 dismiss
         uint32_t    id   = 0;
         std::string group; // non-empty: a bundle
     };
@@ -519,8 +460,7 @@ namespace NHyprnotify {
                     Model::dismissApp(A.group);
                 else
                     Model::closeOne(A.id, Model::R_DISMISSED);
-            } else if (A.verb == 5)
-                markSender(A.id);
+            }
         }
     }
 
@@ -566,12 +506,6 @@ namespace NHyprnotify {
         const auto SYM = xkb_state_key_get_one_sym(KB->m_xkbState, e.keycode + 8);
         if (SYM == XKB_KEY_Escape) {
             info.cancelled = true;
-            // one more peel before the shade itself: an open manage panel is a
-            // menu, and esc closes the innermost thing first
-            if (const auto MID = centerManageRow(); MID != 0) {
-                pendingEsc.arm([MID]() { centerToggleManage(MID); });
-                return;
-            }
             pendingEsc.arm([]() { setCenter(false, /*repop=*/true); }); // deferred: the close reflows and refocuses
             return;
         }
@@ -607,28 +541,12 @@ namespace NHyprnotify {
             case XKB_KEY_Return:
             case XKB_KEY_KP_Enter: a.verb = 2; break;
             case XKB_KEY_Delete: a.verb = 3; break;
-            case XKB_KEY_p: a.verb = 5; break; // mark the sender
             default: return;
         }
         // nothing selected: the shade has not taken the keyboard, so a bare
         // space still belongs to whatever holds focus
         if (!centerSelection(a.id, a.group))
             return;
-
-        // and a bare p with nothing to mark belongs to focus too: a bundle
-        // has no one sender to mark, and neither does a card that is not a
-        // chat
-        if (a.verb == 5) {
-            bool conv = false;
-            if (a.group.empty())
-                for (const auto& N : notifs)
-                    if (N->id == a.id) {
-                        conv = N->conversation;
-                        break;
-                    }
-            if (!conv)
-                return;
-        }
 
         info.cancelled = true;
         keyQueue.push_back(std::move(a));

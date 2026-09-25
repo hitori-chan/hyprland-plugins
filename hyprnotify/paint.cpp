@@ -140,20 +140,8 @@ namespace NHyprnotify {
         const float  LRP       = ROUNDFACE ? 2.f : rp;
         P.texFit(LEAD, cell, (int)std::lround(R * P.scale), LRP);
 
-        // renderBorder grows OUTWARD from the box it is given, so every ring
-        // here is drawn on a box inset by its own stroke: the band then lands
-        // inside the shape's edge instead of making a marked icon bigger than
-        // an unmarked one.
-        const double RINGPX = cell.w * BADGE_D * BADGE_INSET;
-        const auto   INSET  = [&](const CBox& b) { return CBox{b.x + RINGPX, b.y + RINGPX, b.w - 2 * RINGPX, b.h - 2 * RINGPX}; };
-
-        if (!withBadge || !AVATAR || !HASIDENT) {
-            // no badge to ring: a marked chat with no face wears it on the
-            // icon it does have
-            if (n.priority)
-                P.ring(INSET(cell), color(cfg.colHighlight), (int)std::lround((R - RINGPX) * P.scale), LRP, RINGPX);
-            return;
-        }
+        if (!withBadge || !AVATAR || !HASIDENT)
+            return; // no badge to draw: the lead icon is the whole column
         const double D = cell.w * BADGE_D, IN = D * BADGE_INSET;
         const CBox   BB{cell.x + cell.w * (1 + BADGE_PROT) - D, cell.y + cell.h * (1 + BADGE_PROT) - D, D, D};
         // The rim's job is to cut the app glyph free of the avatar it sits on.
@@ -164,13 +152,6 @@ namespace NHyprnotify {
         // glyph against a light avatar and a dark one alike.
         P.rect(BB, CHyprColor{Theme::BADGE_RIM}, (int)std::lround(D / 2 * P.scale), 2.f);
         P.texFit(n.identTex, CBox{BB.x + IN, BB.y + IN, D - 2 * IN, D - 2 * IN}, (int)std::lround((D / 2 - IN) * P.scale), 2.f);
-        // conversation_icon_badge_ring — the one AOSP ships with
-        // visibility=gone and shows only once you mark the conversation. Its
-        // stroke IS the rim's width at the rim's place (importance_ring_size
-        // is the badge's own 20dp), so marking a chat recolours that band
-        // rather than hanging a second circle off the outside of it.
-        if (n.priority)
-            P.ring(INSET(BB), color(cfg.colHighlight), (int)std::lround((D / 2 - RINGPX) * P.scale), 2.f, RINGPX);
     }
 
 } // namespace NHyprnotify
