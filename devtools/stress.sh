@@ -44,17 +44,26 @@ die_unknown() {
 	exit 2
 }
 
+# Manual parsing (not getopts): getopts stops at the first positional, so
+# 'stress.sh BIN -b tray' would silently run the full gate.
 B_SPEC=""
 K_SPEC=""
-while getopts ":b:k:" opt; do
-	case "$opt" in
-	b) B_SPEC="$OPTARG" ;;
-	k) K_SPEC="$OPTARG" ;;
-	\?|:) usage; exit 2 ;;
+BIN=""
+while [[ $# -gt 0 ]]; do
+	case $1 in
+	-b)  [[ $# -ge 2 ]] || { usage; exit 2; }; B_SPEC=$2; shift 2 ;;
+	-b*) B_SPEC=${1#-b}; shift ;;
+	-k)  [[ $# -ge 2 ]] || { usage; exit 2; }; K_SPEC=$2; shift 2 ;;
+	-k*) K_SPEC=${1#-k}; shift ;;
+	-h|--help) usage; exit 0 ;;
+	-*) usage; exit 2 ;;
+	*)  if [[ -n "$BIN" ]]; then
+		echo "stress.sh: unexpected argument '$1'" >&2; usage; exit 2
+		fi
+		BIN=$1; shift ;;
 	esac
 done
-shift $((OPTIND - 1))
-BIN="${1:-${HYPR_BIN:-/usr/local/bin/Hyprland}}"
+[[ -n "$BIN" ]] || BIN=${HYPR_BIN:-/usr/local/bin/Hyprland}
 
 if [[ -z "$B_SPEC" || "$B_SPEC" == "all" ]]; then
 	SELECTED=("${CANONICAL_BATTERIES[@]}")
