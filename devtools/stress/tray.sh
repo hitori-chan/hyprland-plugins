@@ -56,11 +56,13 @@ print(x1 - x0 + 1, x0, x1, yt, yb)
 PY
 }
 col_h() { # col_h <img> <x> — the vertical run height at one column (0 if none)
+	# x is clamped: the probe derives from a span edge (+40 px) and a span
+	# flush with the capture's right edge would otherwise index out of range
 	python3 - "$1" "$2" <<'PY'
 import sys
 from PIL import Image
 im = Image.open(sys.argv[1]); px = im.load()
-x = int(sys.argv[2])
+x = min(int(sys.argv[2]), im.size[0] - 1)
 run = [y for y in range(27, 700) if min(px[x, y][:3]) > 5]
 print(max(run) - min(run) + 1 if len(run) > 20 and max(run) - min(run) > 40 else 0)
 PY
