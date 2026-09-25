@@ -54,7 +54,10 @@ preflight (parallel builds, launch, retarget) always runs. Without
 `lifecycle` selected, `stress.sh` itself prints the final summary.
 The summary line is preceded by a per-battery `ok`/`fail` breakdown — a
 battery that silently lost checks (a skipped block, a relaunch that no-ops)
-shows up as a lower count instead of a quiet green.
+shows up as a lower count instead of a quiet green. The boundary guard
+checks are counted and annotated separately, and a battery that ran no
+checks of its own fails the gate outright (a dead battery script can only
+produce the guard).
 
 Harness-level invariants, checked on top of the batteries:
 

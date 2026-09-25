@@ -232,18 +232,23 @@ expect() { # expect <name> <python-expr-over-cs>
 # battery_begin/battery_end so the final summary reports the per-battery
 # counts. A battery that silently lost checks (a skipped block, a relaunch
 # that no-ops, a metric that started crashing) shows up as a lower count
-# instead of a quiet green.
+# instead of a quiet green. The guard checks (assert_desktop_clean) are
+# tracked separately: they are the ONLY checks a dead battery script can
+# produce, so a battery with zero non-guard checks fails the gate.
 BATTERY_NAME=""
 BATTERY_SUMMARY=()
+GUARD_CHECKS=0
+GUARDS_START=0
 battery_begin() {
 	BATTERY_NAME=$1
 	PASS_START=$PASS
 	FAILED_START=${#FAILED[@]}
+	GUARDS_START=$GUARD_CHECKS
 	echo
 	echo "== battery: $1 (${SECONDS} s in) =="
 }
 battery_end() {
-	BATTERY_SUMMARY+=("$1 $((PASS - PASS_START)) $(( ${#FAILED[@]} - FAILED_START ))")
+	BATTERY_SUMMARY+=("$1 $((PASS - PASS_START)) $(( ${#FAILED[@]} - FAILED_START )) $((GUARD_CHECKS - GUARDS_START))")
 }
 # A battery must leave the nested client-free: the stress desktop starts
 # empty and every battery closes its own windows. A stray client at a
@@ -262,13 +267,17 @@ assert_desktop_clean() {
 	else
 		bad "$1: leaves nested clients behind: $who"
 	fi
+	GUARD_CHECKS=$((GUARD_CHECKS + 1))
 }
 print_summary() { # the gate's final lines; the return code is the exit code
-	local entry n o f
+	local entry n o f g real
 	if [[ ${#BATTERY_SUMMARY[@]} -gt 0 ]]; then
 		for entry in "${BATTERY_SUMMARY[@]}"; do
-			read -r n o f <<<"$entry"
-			printf '   %-14s %s ok, %s fail\n' "$n" "$o" "$f"
+			read -r n o f g <<<"$entry"
+			g=${g:-0}
+			real=$((o + f - g))
+			printf '   %-14s %s ok, %s fail%s\n' "$n" "$o" "$f" "$([[ $g -gt 0 ]] && printf ' (+%s guard)' "$g")"
+			[[ $real -gt 0 ]] || bad "battery $n ran no checks (empty battery — script dead or fully gated)"
 		done
 	fi
 	if [[ ${#FAILED[@]} -eq 0 ]]; then
