@@ -177,8 +177,10 @@ namespace NHyprnotify {
             // closing what the user has not chosen to open yet
             if (centerPeeking())
                 centerPin();
+            else if (centerVisible())
+                setCenter(false, /*repop=*/true); // an explicit close returns the parked stack
             else
-                setCenter(!centerVisible());
+                setCenter(true);
         });
     }
 

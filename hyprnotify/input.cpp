@@ -161,7 +161,7 @@ namespace NHyprnotify {
         Bus::invokeAction(id, action, sender);
         if (resident)
             return; // the card stays, and so does the shade behind it
-        setCenter(false);
+        setCenter(false); // no re-pop: the app the action raises is coming up over the parked stack
         Model::closeOne(id, Model::R_DISMISSED);
     }
 
@@ -211,7 +211,7 @@ namespace NHyprnotify {
         hitQueue.clear();
         for (const auto& H : Q) {
             if (H.outside) { // a click off every surface closes the center
-                setCenter(false);
+                setCenter(false, /*repop=*/true);
                 continue;
             }
             centerPin(); // a click on the shade keeps it: hover peeks, click pins
@@ -381,7 +381,10 @@ namespace NHyprnotify {
 
         if (!CARD) {
             // Android closes the shade on an outside tap; the closing click
-            // is swallowed, like the tray menu's
+            // is swallowed, like the tray menu's. The corner dead-strip
+            // (offset_y, the screen edge) is the most common stray click
+            // next to a conversation — drainHits re-pops the absorbed stack
+            // so the close does not leave the notifications invisible
             if (centerVisible() && BIT) {
                 info.cancelled = true;
                 swallowRelease |= BIT;
@@ -569,7 +572,7 @@ namespace NHyprnotify {
                 pendingEsc.arm([MID]() { centerToggleManage(MID); });
                 return;
             }
-            pendingEsc.arm([]() { setCenter(false); }); // deferred: the close reflows and refocuses
+            pendingEsc.arm([]() { setCenter(false, /*repop=*/true); }); // deferred: the close reflows and refocuses
             return;
         }
         // Tab moves into the selected card's reply field, the way Tab moves

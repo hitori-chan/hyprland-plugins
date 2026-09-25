@@ -138,6 +138,19 @@ dsp "hl.dsp.exec_cmd('notify-send \"keep two\" body')"; sleep 1
 for i in 1 2 3; do hq hyprnotify center >/dev/null; sleep 0.35; done # on, off, on
 chk "absorb: three toggles leave the two cards intact" bash -c "hyprctl -i $SIG hyprnotify state | grep -qE '^center:1 live:2 '"
 hq hyprnotify center >/dev/null; sleep 0.35 # off
+# one per app: the newest re-pops, the same-app sibling stays parked
+chk "absorb: the close re-popped the newest, the sibling parked (one per app)" test "$(bd)" = "banners:1 resident:1"
+hq hyprnotify clear >/dev/null; sleep 0.8
+
+# The lost-notification bug: the corner dead-strip next to a conversation is
+# the common stray outside click — the close must re-pop what the open
+# absorbed, not leave the stack invisible in the closed panel
+dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"repop me\" body')"; sleep 1
+chk "repop: a live banner before the open" test "$(bd)" = "banners:1 resident:0"
+hq hyprnotify center >/dev/null; sleep 0.7
+chk "repop: the open absorbed it" test "$(bd)" = "banners:0 resident:1"
+outside_click; sleep 0.8
+chk "repop: the outside-click close popped it back" test "$(bd)" = "banners:1 resident:0"
 hq hyprnotify clear >/dev/null; sleep 0.8
 
 # DND queues arrivals silently; the resume keeps them AND applies the same

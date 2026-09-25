@@ -246,8 +246,37 @@ namespace NHyprnotify {
                     continue;
                 if (vanishes(N))
                     continue;
-                N->banner = false;
-                changed   = true;
+                N->banner   = false;
+                N->absorbed = true;
+                changed     = true;
+            }
+            if (changed) {
+                notifChanged();
+                Bus::emitStateSoon();
+            }
+        }
+
+        // Closing the shade returns what the open parked: an absorbed card
+        // gets its banner back, or stays parked under the same one-per-app
+        // cap the DND resume applies. Without this, an outside click next to
+        // the panel (the offset strip, the screen edge) closed the shade and
+        // left the whole stack invisible — the notifications sat in the now
+        // closed panel, nowhere on screen. Expiry-parked cards are not
+        // absorbed and stay parked: an expired banner does not re-pop because
+        // the user closed the panel.
+        void repopAbsorbed() {
+            const auto NOW     = Time::steadyNow();
+            bool       changed = false;
+            for (const auto& N : notifs) {
+                if (!N->absorbed)
+                    continue;
+                N->absorbed = false;
+                changed     = true;
+                if (N->waiting || vanishes(N))
+                    continue;
+                N->banner = !(cfg.coalescePopups->value() && N->urgency < 2 && appHasBanner(N));
+                if (N->banner && N->timeoutMs > 0)
+                    N->deadline = NOW + std::chrono::milliseconds((int64_t)N->timeoutMs);
             }
             if (changed) {
                 notifChanged();
@@ -606,7 +635,8 @@ namespace NHyprnotify {
             // A replace re-alerts (the OSD sweep relies on it); the merge above
             // keeps aiming a chat's new messages at the card that holds it, so
             // one card stays the whole conversation.
-            n->banner = true;
+            n->banner   = true;
+            n->absorbed = false; // a re-arrival re-banners, whatever parked the previous one
             n->appName = APP;
             n->sender = sender; // the X11 activation lookup resolves the app's window by this pid
             n->summary = Parse::oneLine(Parse::sanitizeMarkup(SUM));
