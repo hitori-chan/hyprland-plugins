@@ -120,19 +120,14 @@ source "$STRESS_DIR/preflight.sh"
 # notification helpers, so any subset can run alone.
 for _name in "${CANONICAL_BATTERIES[@]}"; do
 	is_selected "$_name" || continue
-	echo
-	echo "== battery: $_name ($SECONDS s in) =="
+	battery_begin "$_name"
 	source "$STRESS_DIR/$_name.sh"
+	# lifecycle.sh's tail (when selected) records its own battery_end and
+	# exits before this line runs; for every other battery it applies here.
+	battery_end "$_name"
 done
 
 # Fallback summary for runs without lifecycle.sh. Cleanup happens in the EXIT
 # trap either way (cleanup_harness is idempotent via HARNESS_CLEANED).
-echo
-if [[ ${#FAILED[@]} -eq 0 ]]; then
-	echo "== stress: ALL $PASS CHECKS PASSED in ${SECONDS}s =="
-	exit 0
-else
-	echo "== stress: $PASS passed, ${#FAILED[@]} FAILED in ${SECONDS}s =="
-	printf '   - %s\n' "${FAILED[@]}"
-	exit 1
-fi
+print_summary
+exit $?
