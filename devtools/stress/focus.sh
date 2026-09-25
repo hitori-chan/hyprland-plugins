@@ -151,6 +151,18 @@ run_ping_mode map
 run_ping_mode attention
 run_ping_mode activate
 
+# This battery's foot would otherwise survive into the tray battery: the
+# remembered spot (the windows battery's hostile-tsv clamp) puts it at the
+# bottom-right corner, right under the menu column, and its bright columns
+# poison every panel-extent capture. Close it and verify, as the windows
+# battery does for its own seeds.
+FF="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), ''))")"
+[[ -n "$FF" ]] && dsp "hl.dsp.window.close({window=\"address:$FF\"})"; sleep 0.5
+chk "focus: its foot is closed before the geometry batteries" \
+	test "$(pyc "sum(1 for c in cs if c['class']=='foot')")" = 0
+
 # Leave the stress config as the rest of the gate found it.
 restore_focus_cfg
 sleep 0.5
