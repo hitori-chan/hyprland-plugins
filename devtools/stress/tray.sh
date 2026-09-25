@@ -19,11 +19,14 @@ sni_items() {
 		org.kde.StatusNotifierWatcher RegisteredStatusNotifierItems 2>/dev/null
 }
 icon_box() { # icon_box <img> — "cx cy" of the magenta block in the bar band, "0 0" if absent
+	# convert('RGB') everywhere: a mode mismatch (grayscale/palette frame)
+	# would crash the index below with a confusing error instead of a 0 0.
 	python3 - "$1" <<'PY'
 import sys
 from PIL import Image
-im = Image.open(sys.argv[1]); px = im.load()
-pts = [(x, y) for x in range(700, 1280) for y in range(26)
+im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
+w = im.size[0]
+pts = [(x, y) for x in range(w // 2, w) for y in range(26)
        if px[x, y][0] > 150 and px[x, y][1] < 90 and px[x, y][2] > 150]
 if len(pts) < 50:
     print("0 0"); sys.exit()
@@ -37,14 +40,17 @@ PY
 # sub panel cascades flush against the root, so the two panels form one
 # column span; width separates the states (root ~180 px, root+sub ~360 px).
 panel_extent() {
+	# convert('RGB') + image-derived bounds: a mode mismatch or a capture
+	# that is not the full output used to crash the metric (IndexError) and
+	# take the rest of the battery down with it.
 	python3 - "$1" <<'PY'
 import sys
 from PIL import Image
-im = Image.open(sys.argv[1]); px = im.load()
-w = im.size[0]
+im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
+w, h = im.size
 good = []
-for x in range(600, w):
-    run = [y for y in range(27, 700) if min(px[x, y][:3]) > 5]
+for x in range(w):
+    run = [y for y in range(27, h) if min(px[x, y][:3]) > 5]
     if len(run) > 20 and max(run) - min(run) > 40:
         good.append((x, min(run), max(run)))
 if not good:
@@ -61,9 +67,9 @@ col_h() { # col_h <img> <x> — the vertical run height at one column (0 if none
 	python3 - "$1" "$2" <<'PY'
 import sys
 from PIL import Image
-im = Image.open(sys.argv[1]); px = im.load()
+im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
 x = min(int(sys.argv[2]), im.size[0] - 1)
-run = [y for y in range(27, 700) if min(px[x, y][:3]) > 5]
+run = [y for y in range(27, im.size[1]) if min(px[x, y][:3]) > 5]
 print(max(run) - min(run) + 1 if len(run) > 20 and max(run) - min(run) > 40 else 0)
 PY
 }
