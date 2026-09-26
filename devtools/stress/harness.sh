@@ -13,9 +13,9 @@ chk() { # chk <name> <command...> — command's exit code decides
 NPLUGINS=9
 # How many plugins the stress config LOADS. As a Rust module is cut over,
 # its C++ original is dropped from nested.lua's load list, so loaded can be
-# smaller than built. (After the hyprmax cutover: the C++ hyprmax is built
-# but not loaded — the Rust port owns hyprmax.toggle.)
-NLOADED=8
+# smaller than built. (After the hyprmax + hyprplace cutovers: the C++
+# hyprmax and hyprplace are built but not loaded — the Rust ports own them.)
+NLOADED=7
 
 normalize_target_pkgconfig() {
 	local pkg_path=${HYPR_DEPLOY_PKG_CONFIG_PATH:-}

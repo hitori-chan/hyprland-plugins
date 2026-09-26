@@ -432,6 +432,110 @@ pub fn min_max_size(ctx: Ctx, w: &WindowHandle) -> Option<(hl_box_t, hl_box_t)> 
     (rc == HL_E_OK).then_some((min, max))
 }
 
+// ---- placement queries (hyprplace) ----
+
+/// The placement-relevant window state (box + flags + class). None if expired.
+pub struct WindowPlace {
+    pub app_id: String,
+    /// position + size (GLOBAL logical px — like a monitor box).
+    pub box_: hl_box_t,
+    pub fullscreen: u32,
+    pub floating: bool,
+    pub pinned: bool,
+    pub visible: bool,
+}
+
+pub fn window_place(ctx: Ctx, w: &WindowHandle) -> Option<WindowPlace> {
+    let mut app: hl_str_t = hl_str_t {
+        d: std::ptr::null(),
+        l: 0,
+    };
+    let mut at: hl_box_t = unsafe { std::mem::zeroed() };
+    let mut fs: u32 = 0;
+    let mut floating: u32 = 0;
+    let mut pinned: u32 = 0;
+    let mut visible: u32 = 0;
+    let rc = unsafe {
+        hl_window_get(
+            ctx,
+            w.as_raw(),
+            &raw mut app,
+            std::ptr::null_mut(),
+            &raw mut at,
+            std::ptr::null_mut(),
+            &raw mut fs,
+            std::ptr::null_mut(),
+            &raw mut floating,
+            &raw mut pinned,
+            &raw mut visible,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    if rc != HL_E_OK {
+        return None;
+    }
+    Some(WindowPlace {
+        app_id: str_from(&app),
+        box_: at,
+        fullscreen: fs,
+        floating: floating != 0,
+        pinned: pinned != 0,
+        visible: visible != 0,
+    })
+}
+
+pub fn window_is_x11(ctx: Ctx, w: &WindowHandle) -> bool {
+    unsafe { hl_window_is_x11(ctx, w.as_raw()) != 0 }
+}
+pub fn window_has_parent(ctx: Ctx, w: &WindowHandle) -> bool {
+    unsafe { hl_window_has_parent(ctx, w.as_raw()) != 0 }
+}
+pub fn window_override_redirect(ctx: Ctx, w: &WindowHandle) -> bool {
+    unsafe { hl_window_override_redirect(ctx, w.as_raw()) != 0 }
+}
+/// The window's monitor (takes ownership of the ref). None if expired/detached.
+pub fn window_monitor(ctx: Ctx, w: &WindowHandle) -> Option<MonitorHandle> {
+    let mut out: *mut hl_monitor = std::ptr::null_mut();
+    let rc = unsafe { hl_window_monitor(ctx, w.as_raw(), &raw mut out) };
+    (rc == HL_E_OK).then(|| unsafe { MonitorHandle::from_raw(out) }.unwrap())
+}
+/// The window's border width (0 if expired; the border is drawn outside the box).
+pub fn window_border_size(ctx: Ctx, w: &WindowHandle) -> f64 {
+    unsafe { hl_window_border_size(ctx, w.as_raw()) }
+}
+/// True while a fullscreen/maximize grant is in play (the compositor owns the
+/// geometry, so the placement must not place it).
+pub fn window_grant_exempt(ctx: Ctx, w: &WindowHandle) -> bool {
+    unsafe { hl_window_grant_exempt(ctx, w.as_raw()) != 0 }
+}
+/// True if the xdg toplevel was last told maximized (hyprmax's client-only
+/// maximize — never enters compositor fullscreen, so the fullscreen mode
+/// alone misses it).
+pub fn window_told_maximized(ctx: Ctx, w: &WindowHandle) -> bool {
+    unsafe { hl_window_told_maximized(ctx, w.as_raw()) != 0 }
+}
+
+/// Every live window (bounded at CAP). Each returned handle owns one ref,
+/// released on drop. A screen has far fewer than CAP windows; the count is
+/// the bound, so a pathological overflow degrades to the first CAP (a missed
+/// blocker, never UB).
+pub fn all_windows(ctx: Ctx) -> Vec<WindowHandle> {
+    const CAP: u32 = 4096;
+    let mut ptrs: Vec<*mut hl_window> = vec![std::ptr::null_mut(); CAP as usize];
+    let total = unsafe { hl_windows(ctx, ptrs.as_mut_ptr(), CAP) } as usize;
+    ptrs.truncate(total.min(CAP as usize));
+    ptrs.into_iter()
+        .filter_map(|p| {
+            if p.is_null() {
+                None
+            } else {
+                unsafe { WindowHandle::from_raw(p) }
+            }
+        })
+        .collect()
+}
+
 // ---- window writes (event-loop thread) ----
 
 pub fn window_set_geom(ctx: Ctx, w: &WindowHandle, x: f64, y: f64, pw: f64, ph: f64) -> u32 {
@@ -573,6 +677,45 @@ impl Drop for MonitorHandle {
     fn drop(&mut self) {
         unsafe { hl_monitor_unref(self.ptr) };
     }
+}
+
+pub struct WorkspaceHandle {
+    ptr: *mut hl_workspace,
+}
+impl WorkspaceHandle {
+    pub(crate) unsafe fn from_raw(ptr: *mut hl_workspace) -> Option<Self> {
+        (!ptr.is_null()).then_some(Self { ptr })
+    }
+    pub(crate) fn as_raw(&self) -> *mut hl_workspace {
+        self.ptr
+    }
+}
+impl Drop for WorkspaceHandle {
+    fn drop(&mut self) {
+        unsafe { hl_workspace_unref(self.ptr) };
+    }
+}
+
+/// The window's workspace (takes ownership of the ref). None if expired.
+pub fn window_workspace(ctx: Ctx, w: &WindowHandle) -> Option<WorkspaceHandle> {
+    let mut out: *mut hl_workspace = std::ptr::null_mut();
+    let rc = unsafe { hl_window_workspace(ctx, w.as_raw(), &raw mut out) };
+    (rc == HL_E_OK).then(|| unsafe { WorkspaceHandle::from_raw(out) }.unwrap())
+}
+
+/// The workspace's stable id (0 if expired).
+pub fn workspace_id(ctx: Ctx, ws: &WorkspaceHandle) -> u32 {
+    let mut id: u32 = 0;
+    let rc = unsafe {
+        hl_workspace_get(
+            ctx,
+            ws.as_raw(),
+            std::ptr::null_mut(),
+            &raw mut id,
+            std::ptr::null_mut(),
+        )
+    };
+    if rc == HL_E_OK { id } else { 0 }
 }
 
 /// A monitor's logical box (x, y, w, h) + scale, or None if it expired.

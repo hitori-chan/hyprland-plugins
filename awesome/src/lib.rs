@@ -8,6 +8,7 @@
 mod bar;
 mod ffi;
 mod max;
+mod place;
 mod probe;
 
 // Re-export the two loader entry points at the crate root so they are
