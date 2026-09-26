@@ -241,7 +241,7 @@ kill_nested
 printf 'garbage\n42\n1e400\t0\t300\t200\tinffoot\n-100\t-100\t-50\t-50\tnegfoot\n100000\t100000\t400\t300\tfoot\n' > "$STATE/hyprplace/lastspot.tsv"
 launch_nested || { echo "relaunch FAILED"; exit 1; }
 retarget || { echo "nested retarget FAILED after relaunch"; exit 1; }
-chk "hostile tsv: all $NPLUGINS plugins still load" test "$(hq plugin list | grep -c Plugin)" = "$NPLUGINS"
+chk "hostile tsv: all $NLOADED plugins still load" test "$(hq plugin list | grep -c Plugin)" = "$NLOADED"
 dsp "hl.dsp.window.close()"; sleep 0.5
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x300')"; sleep 2
 # the stored 400x300 is applied over the requested 500x300, then the

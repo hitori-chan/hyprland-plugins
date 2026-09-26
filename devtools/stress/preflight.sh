@@ -125,7 +125,7 @@ launch_nested || { echo "nested launch FAILED"; exit 1; }
 retarget || { echo "nested retarget FAILED"; exit 1; }
 LOG="$HARNESS/nested.log"
 ok "nested monitor is ${MON_W}x${MON_H} (every coordinate below derives from it)"
-chk "$NPLUGINS plugins loaded" test "$(hq plugin list | grep -c Plugin)" = "$NPLUGINS"
+chk "$NLOADED plugins loaded" test "$(hq plugin list | grep -c Plugin)" = "$NLOADED"
 dsp "hl.dsp.window.close()" # the donate/updated screen, when present
 sleep 0.5
 chk "launch toast cleared before the batteries" wait_launch_toast
