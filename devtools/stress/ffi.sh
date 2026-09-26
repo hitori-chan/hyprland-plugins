@@ -30,3 +30,27 @@ for i in 1 2 3; do
 	chk "ffi: all $NPLUGINS plugins alive after reload #$i" \
 	    test "$(hq plugin list | grep -c Plugin)" = "$NPLUGINS"
 done
+
+# 3. The Phase 1 mini-bar renders (canvas + textures) -------------------------
+# The Rust mini-bar paints the BOTTOM strip of the monitor (the C++ hyprbar owns
+# the top, and the Rust plugin loads last so it never reorders input priority).
+# A capture's bottom strip must show the bar's dark blue-gray content (not
+# black) — proving the cabi render pipeline (canvas glass/border/rect, the RGBA
+# icon, the text clock, and damage) works end to end in the nested.
+_bar_ok=0
+if capture_nested "$STATE/ffi-bar.png" && python3 - "$STATE/ffi-bar.png" "$MON_W" "$MON_H" >/dev/null 2>&1 <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+px = im.load()
+w, h = int(sys.argv[2]), int(sys.argv[3])
+# bottom strip (the Rust mini-bar): full width, the bottom ~20 rows
+vals = [px[x, y] for y in range(h - 20, h) for x in range(0, w, 8)]
+avg = tuple(sum(c[i] for c in vals) / len(vals) for i in range(3))
+# the strip is a dark blue-gray (~25,34,47, sum ~106); black would be 0
+sys.exit(0 if sum(avg) > 40 else 1)
+PY
+then
+	_bar_ok=1
+fi
+if [[ "$_bar_ok" == 1 ]]; then ok "ffi: Rust mini-bar paints the bottom strip"; else bad "ffi: Rust mini-bar paints the bottom strip"; fi

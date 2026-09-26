@@ -7,8 +7,10 @@
 // This module is safe: every raw-pointer / libc / Box-reclaim operation is a
 // safe wrapper in `ffi`.
 use std::ptr;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 
+use crate::bar;
 use crate::ffi;
 
 /// The ABI version this build targets (must equal the fork's cabiAbiVersion).
@@ -18,6 +20,7 @@ pub const CABI_ABI_VERSION: u32 = 1;
 pub const JOB_DEFER: u8 = 1;
 pub const JOB_TIMER: u8 = 2;
 pub const JOB_PIPE: u8 = 3;
+pub const JOB_BAR_TICK: u8 = 4;
 
 // how often a TICK logs (TICK fires every frame; keep the log readable)
 const TICK_LOG_EVERY: u64 = 240;
@@ -28,6 +31,9 @@ pub struct State {
     events: AtomicU64,
     pipe_read: libc::c_int,
     pipe_write: libc::c_int,
+    // The Phase 1 mini-bar (render + textures). Behind a Mutex: the render
+    // callback and the clock timer both touch it (single-threaded, no nesting).
+    pub bar: Mutex<bar::BarState>,
 }
 
 static STATE: AtomicPtr<State> = AtomicPtr::new(ptr::null_mut());
@@ -62,14 +68,17 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
         );
     }
 
-    let state = Box::new(State {
+    let mut state = Box::new(State {
         ctx,
         tick: AtomicU64::new(0),
         events: AtomicU64::new(0),
         pipe_read: read_fd,
         pipe_write: write_fd,
+        bar: Mutex::new(bar::BarState::new()),
     });
-    let state_ptr: *mut State = Box::into_raw(state);
+    // The pointer the (leaked) Box will live at. We use it for every job's
+    // `ud` and the render callback; the Box is leaked at the end of init.
+    let state_ptr: *mut State = Box::as_mut_ptr(&mut state);
     STATE.store(state_ptr, Ordering::SeqCst);
 
     // subscribe to the Phase 0 event set (no input is ever cancelled)
@@ -103,6 +112,19 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
         kind: JOB_TIMER,
     }));
     ffi::timer(ctx, 1000, 1, timer_arg);
+
+    // The Phase 1 mini-bar (render + textures). Non-fatal if it can't come up
+    // (e.g. no monitor): the probe's event/job/config behavior is independent.
+    // Called with a safe `&State` (the Box is still owned here); it captures
+    // `state_ptr` for its render callback and timer.
+    if !bar::init(ctx, &state, state_ptr) {
+        ffi::log_str(ctx, ffi::LOG_WARN, "bar: mini-bar did not start");
+    }
+
+    // Leak the Box now that every callback holds `state_ptr` (unchanged by
+    // the leak). The pointer already lives in the STATE static; after this,
+    // `state` must not be dropped.
+    let _ = Box::into_raw(state);
 
     ffi::log_str(
         ctx,
@@ -224,6 +246,7 @@ pub fn on_job(state: &State, kind: u8) {
             Some(n) if n > 0 => ffi::log_str(state.ctx, ffi::LOG_INFO, "job bus-pipe byte=0x42"),
             _ => ffi::log_str(state.ctx, ffi::LOG_WARN, "job bus-pipe: readable but empty"),
         },
+        JOB_BAR_TICK => bar::tick(state.ctx, state),
         _ => {}
     }
 }
