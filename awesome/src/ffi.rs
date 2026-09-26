@@ -98,6 +98,33 @@ impl Drop for WindowHandle {
     }
 }
 
+pub struct PointerHandle {
+    ptr: *mut hl_pointer,
+}
+
+impl PointerHandle {
+    /// Takes ownership of one reference (the fork handed the plugin a ref).
+    pub(crate) unsafe fn from_raw(ptr: *mut hl_pointer) -> Option<Self> {
+        if ptr.is_null() {
+            return None;
+        }
+        Some(Self { ptr })
+    }
+    pub(crate) fn as_raw(&self) -> *mut hl_pointer {
+        self.ptr
+    }
+    /// A second handle to the same pointer (increments the handle's refcount).
+    pub fn clone_handle(&self) -> Self {
+        unsafe { hl_pointer_ref(self.ptr) };
+        Self { ptr: self.ptr }
+    }
+}
+impl Drop for PointerHandle {
+    fn drop(&mut self) {
+        unsafe { hl_pointer_unref(self.ptr) }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // string model
 // ---------------------------------------------------------------------------
@@ -252,7 +279,7 @@ pub fn defer(ctx: Ctx, arg: &JobArg) -> u64 {
     }
 }
 
-/// Register a timer (ms, repeat>0 to repeat).
+/// Register a timer (ms, repeat>0 to repeat). Returns the job token.
 pub fn timer(ctx: Ctx, ms: u32, repeat: u32, arg: &JobArg) -> u64 {
     unsafe {
         hl_timer(
@@ -262,6 +289,13 @@ pub fn timer(ctx: Ctx, ms: u32, repeat: u32, arg: &JobArg) -> u64 {
             Some(job_trampoline),
             std::ptr::from_ref::<JobArg>(arg) as *mut c_void,
         )
+    }
+}
+
+/// Cancel a pending job (a timer or deferred). No-op if already fired.
+pub fn job_cancel(ctx: Ctx, token: u64) {
+    if token != 0 {
+        unsafe { hl_job_cancel(ctx, token) };
     }
 }
 
@@ -592,6 +626,66 @@ pub fn all_windows(ctx: Ctx) -> Vec<WindowHandle> {
         .collect()
 }
 
+// ---- pointers (the input device list) ----
+
+/// Every connected pointer (bounded at CAP). Each handle owns one ref.
+pub fn pointers(ctx: Ctx) -> Vec<PointerHandle> {
+    const CAP: u32 = 128;
+    let mut ptrs: Vec<*mut hl_pointer> = vec![std::ptr::null_mut(); CAP as usize];
+    let total = unsafe { hl_pointers(ctx, ptrs.as_mut_ptr(), CAP) } as usize;
+    ptrs.truncate(total.min(CAP as usize));
+    ptrs.into_iter()
+        .filter_map(|p| {
+            if p.is_null() {
+                None
+            } else {
+                unsafe { PointerHandle::from_raw(p) }
+            }
+        })
+        .collect()
+}
+
+/// 1 if the pointer is a touchpad (libinput touchpad class), else 0.
+pub fn pointer_is_touchpad(ctx: Ctx, p: &PointerHandle) -> bool {
+    let v: u32 = unsafe { hl_pointer_is_touchpad(ctx, p.as_raw()) };
+    v != 0
+}
+/// 1 if the pointer is virtual (a composited/synthesized pointer), else 0.
+pub fn pointer_is_virtual(ctx: Ctx, p: &PointerHandle) -> bool {
+    let v: u32 = unsafe { hl_pointer_is_virtual(ctx, p.as_raw()) };
+    v != 0
+}
+/// 1 if the pointer is connected to the cursor, 0 otherwise.
+pub fn pointer_connected(ctx: Ctx, p: &PointerHandle) -> bool {
+    let v: u32 = unsafe { hl_pointer_connected(ctx, p.as_raw()) };
+    v != 0
+}
+/// The libinput bus type (BUS_* in linux/input.h). 0 if expired/no device.
+pub fn pointer_bus_type(ctx: Ctx, p: &PointerHandle) -> u32 {
+    unsafe { hl_pointer_bus_type(ctx, p.as_raw()) }
+}
+/// The pointer's HL device name (m_hlName). Empty if expired.
+pub fn pointer_name(ctx: Ctx, p: &PointerHandle) -> String {
+    let mut s: hl_str_t = hl_str_t { d: std::ptr::null(), l: 0 };
+    let rc = unsafe { hl_pointer_name(ctx, p.as_raw(), &mut s) };
+    if rc != HL_E_OK {
+        return String::new();
+    }
+    str_from(&s)
+}
+/// The pointer's address (a stable identity). 0 if expired.
+pub fn pointer_id(ctx: Ctx, p: &PointerHandle) -> u64 {
+    unsafe { hl_pointer_id(ctx, p.as_raw()) }
+}
+
+/// Run a Lua snippet on the config manager (the same path as the `hl.` API).
+/// Returns true if it ran, false on a Lua error.
+pub fn run_lua(ctx: Ctx, code: &str) -> bool {
+    let c = format!("{code}\0");
+    let rc = unsafe { hl_run_lua(ctx, c.as_ptr().cast::<c_char>()) };
+    rc == HL_E_OK
+}
+
 // ---- window writes (event-loop thread) ----
 
 pub fn window_set_geom(ctx: Ctx, w: &WindowHandle, x: f64, y: f64, pw: f64, ph: f64) -> u32 {
@@ -654,6 +748,11 @@ pub unsafe extern "C" fn lua_focus_next(_lua: *mut c_void) -> i32 {
 }
 pub unsafe extern "C" fn lua_focus_prev(_lua: *mut c_void) -> i32 {
     crate::click::lua_focus_prev_impl()
+}
+
+/// The `unsafe extern "C"` wrapper for the hyprpad manual toggle.
+pub unsafe extern "C" fn lua_pad_toggle(_lua: *mut c_void) -> i32 {
+    crate::pad::lua_toggle_impl()
 }
 
 /// Wrap a non-null raw pointer in a shared reference (the one place a raw

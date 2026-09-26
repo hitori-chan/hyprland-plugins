@@ -14,6 +14,7 @@ use crate::bar;
 use crate::click;
 use crate::ffi;
 use crate::max;
+use crate::pad;
 use crate::place;
 
 /// The ABI version this build targets (must equal the fork's cabiAbiVersion).
@@ -29,6 +30,8 @@ pub const JOB_MAX_ADOPT: u8 = 6;
 pub const JOB_MAX_REFLOW: u8 = 7;
 pub const JOB_PLACE: u8 = 8;
 pub const JOB_CLICK: u8 = 9;
+pub const JOB_PAD_SETTLE: u8 = 10;
+pub const JOB_PAD_TOGGLE: u8 = 11;
 
 // how often a TICK logs (TICK fires every frame; keep the log readable)
 const TICK_LOG_EVERY: u64 = 240;
@@ -48,6 +51,8 @@ pub struct State {
     place: Mutex<place::PlaceState>,
     // The Phase 2 hyprclick policy (click-to-raise, focus raises, corpse).
     click: Mutex<click::ClickState>,
+    // The Phase 2 hyprpad policy (touchpad auto on/off, manual toggle).
+    pad: Mutex<pad::PadState>,
 }
 
 static STATE: AtomicPtr<State> = AtomicPtr::new(ptr::null_mut());
@@ -92,6 +97,7 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
         max: Mutex::new(max::MaxState::new()),
         place: Mutex::new(place::PlaceState::new()),
         click: Mutex::new(click::ClickState::new()),
+        pad: Mutex::new(pad::PadState::new()),
     });
     // The pointer the (leaked) Box will live at. We use it for every job's
     // `ud` and the render callback; the Box is leaked at the end of init.
@@ -112,7 +118,9 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
         | ffi::HL_EV_WS_ACTIVE
         | ffi::HL_EV_WS_MOVE_MON
         | ffi::HL_EV_MON_RESERVED
-        | ffi::HL_EV_MON_LAYOUT;
+        | ffi::HL_EV_MON_LAYOUT
+        | ffi::HL_EV_POINTER_CHANGED
+        | ffi::HL_EV_CONFIG_RELOAD;
     if ffi::subscribe(ctx, mask, state_ptr.cast::<std::ffi::c_void>()) != 0 {
         ffi::log_str(ctx, ffi::LOG_ERR, "eject: subscribe failed");
         return -1;
@@ -129,6 +137,8 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
     );
     let _ = ffi::lua_register(ctx, "hyprclick", "focus_next", ffi::lua_focus_next);
     let _ = ffi::lua_register(ctx, "hyprclick", "focus_prev", ffi::lua_focus_prev);
+    // the hyprpad manual toggle (its original namespace)
+    let _ = ffi::lua_register(ctx, "hyprpad", "toggle", ffi::lua_pad_toggle);
 
     // bus pipe: watch the read end; the deferred job writes one byte
     let pipe_arg = Box::leak(Box::new(ffi::JobArg {
@@ -166,6 +176,9 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
     // (the hyprclick state is constructed with `State`; it holds no persisted
     // data, only the live gesture timers + the arrival order)
 
+    // The Phase 2 hyprpad policy (arms the initial settle timer).
+    pad::init(&state);
+
     // Leak the Box now that every callback holds `state_ptr` (unchanged by
     // the leak). The pointer already lives in the STATE static; after this,
     // `state` must not be dropped.
@@ -193,6 +206,8 @@ pub fn exit(state: &State) {
         let mut c = click_lock(state);
         c.reset();
     }
+    // cancel the hyprpad settle timer (no job pending at teardown)
+    pad::exit(state);
 }
 
 /// Take the live State pointer (null if none). Safe: pointer load only.
@@ -231,6 +246,13 @@ pub fn place_lock(state: &State) -> std::sync::MutexGuard<'_, place::PlaceState>
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+pub fn pad_lock(state: &State) -> std::sync::MutexGuard<'_, pad::PadState> {
+    state
+        .pad
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// Arm a one-shot deferred job for a job kind (leaks its `JobArg`, as every
 /// other job does; the fork's `defer` is one-shot, so a fresh arg per arm).
 pub fn arm_job(ctx: ffi::Ctx, kind: u8) {
@@ -240,6 +262,16 @@ pub fn arm_job(ctx: ffi::Ctx, kind: u8) {
     }
     let arg = Box::leak(Box::new(ffi::JobArg { state: sp, kind }));
     ffi::defer(ctx, arg);
+}
+
+/// Arm a one-shot timer job (ms). Returns the job token (0 if no state).
+pub fn arm_timer(ctx: ffi::Ctx, ms: u32, kind: u8) -> u64 {
+    let sp = STATE.load(Ordering::SeqCst);
+    if sp.is_null() {
+        return 0;
+    }
+    let arg = Box::leak(Box::new(ffi::JobArg { state: sp, kind }));
+    ffi::timer(ctx, ms, 0, arg)
 }
 
 // ---------------------------------------------------------------------------
@@ -330,6 +362,16 @@ pub fn dispatch(state: &State, ev: &ffi::SafeEvent) -> bool {
             let ctx = state.ctx;
             let mut m = max_lock(state);
             max::on_reflow_trigger(&mut m, ctx);
+            false
+        }
+        ffi::HL_EV_POINTER_CHANGED => {
+            let mut p = pad_lock(state);
+            pad::on_pointer_changed(state, &mut p);
+            false
+        }
+        ffi::HL_EV_CONFIG_RELOAD => {
+            let mut p = pad_lock(state);
+            pad::on_config_reloaded(state, &mut p);
             false
         }
         _ => false,
@@ -428,6 +470,14 @@ pub fn on_job(state: &State, kind: u8) {
         JOB_CLICK => {
             let mut c = click_lock(state);
             click::drain(state.ctx, &mut c);
+        }
+        JOB_PAD_SETTLE => {
+            let mut p = pad_lock(state);
+            pad::drain_settle(state, &mut p);
+        }
+        JOB_PAD_TOGGLE => {
+            let mut p = pad_lock(state);
+            pad::drain_toggles(state, &mut p);
         }
         _ => {}
     }

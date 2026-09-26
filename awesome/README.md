@@ -6,12 +6,12 @@ Nothing C++ (no types, exceptions, references, or templates) crosses the
 boundary; the design and phase plan live in
 [`docs/awesome-rust-plan.md`](../docs/awesome-rust-plan.md).
 
-**Current state — Phases 0-2 (probe + mini-bar + hyprmax, hyprplace &
-hyprclick ports).** The Phase 0 ABI probe (below) is complete, Phase 1 adds
-the first real render (a mini-bar that proves the whole cabi render pipeline
-end to end), and Phase 2 ports the full C++ policy plugins (`hyprmax`, then
-`hyprplace`, then `hyprclick`), each cut over so the Rust port — not the C++
-original — is the one the gate validates.
+**Current state — Phases 0-2 (probe + mini-bar + hyprmax, hyprplace,
+hyprclick & hyprpad ports).** The Phase 0 ABI probe (below) is complete,
+Phase 1 adds the first real render (a mini-bar that proves the whole cabi
+render pipeline end to end), and Phase 2 ports the full C++ policy plugins
+(`hyprmax`, then `hyprplace`, then `hyprclick`, then `hyprpad`), each cut
+over so the Rust port — not the C++ original — is the one the gate validates.
 
 Phase 0 (the probe) proves the C boundary is clean:
 
@@ -86,6 +86,24 @@ the version out-param had to be NUL-terminated (the `env!` &str sits
 mid-rodata, so an unterminated read swallowed the next literal and broke the
 metadata round-trip).
 
+`hyprpad` (the touchpad policy) is the fourth and final Phase 2 port: the
+touchpad turns off while an external (USB/Bluetooth) mouse is present and
+back on when it's unplugged, and `hyprpad.toggle` flips it by hand. Hotplug
+rides the compositor's own device signal — the fork fires `HL_EV_POINTER_CHANGED`
+on a pointer add (the backend `newPointer`) or remove (a per-pointer destroy
+listener, set up lazily and kept alive in a global so the signal's weak ref
+expires safely) — and the handler only (re)arms a settle timer that
+coalesces a plug's burst into one re-check. The flip is
+`hl_run_lua("hl.device({...})")` — the code `hyprctl eval` reaches, minus
+the fork + socket round-trip. The port needed a pointer handle + queries
+(`hl_pointers` / `is_touchpad` / `is_virtual` / `connected` / `bus_type` /
+`name` / `id`) and the Lua-eval passthrough; the settle timer is a
+one-shot job re-armed by cancel+re-arm (extend the timeout on each hotplug).
+The one part not yet ported is the **feedback cards** (the async D-Bus
+Notify "enabled"/"disabled" cards) — they ride the session-bus bus-thread
+subsystem that `hyprosd`/`hyprnotify` also need, so they land with that
+infrastructure; the flip itself works without them.
+
 It loads **last** in `hyprpm.toml` and, while the C++ plugins are still
 loaded, defers to their input (the bar eats its strip first); as a module is
 cut over, the Rust port takes that module's input in place of the C++
@@ -111,6 +129,9 @@ original.
 - `src/click.rs` — safe Phase 2 `hyprclick` port (click-to-raise, the
   fullscreen tuck, keyboard-focus-raises, arrival-order focus cycling, the
   corpse guard). No `unsafe`.
+- `src/pad.rs` — safe Phase 2 `hyprpad` port (touchpad auto on/off on
+  external-mouse presence, the settle-timer hotplug coalescing, the
+  `hyprpad.toggle` parity drain). No `unsafe`.
 
 ## Build
 
