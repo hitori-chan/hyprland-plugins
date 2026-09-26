@@ -1,9 +1,11 @@
 // awesome — the single Rust plugin. The `ffi` module is the only place
 // unsafe lives (the cabi C ABI boundary); `probe` is the safe Phase 0
 // behavior (event logging, a counter, a deferred job, a bus pipe, one config
-// keyword). See docs/awesome-rust-plan.md.
+// keyword); `bar` is the Phase 1 mini-bar (render + textures). See
+// docs/awesome-rust-plan.md.
 #![allow(clippy::missing_safety_doc)]
 
+mod bar;
 mod ffi;
 mod probe;
 

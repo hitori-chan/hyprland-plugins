@@ -61,16 +61,38 @@ yb = max(g[2] for g in good)
 print(x1 - x0 + 1, x0, x1, yt, yb)
 PY
 }
-col_h() { # col_h <img> <x> — the vertical run height at one column (0 if none)
+col_h() { # col_h <img> <x> — the panel's vertical height at one column (0 if none)
 	# x is clamped: the probe derives from a span edge (+40 px) and a span
-	# flush with the capture's right edge would otherwise index out of range
+	# flush with the capture's right edge would otherwise index out of range.
+	# The height is the top-to-bottom span of the panel, but the scan STOPS at
+	# the first black gap larger than GAP_MAX: the panel's internal separators
+	# are small (8px), while a large gap means the panel has ended and other UI
+	# (e.g. the Rust mini-bar at the bottom, Phases 1-5) sits further down the
+	# same column. A naive top-to-bottom span would swallow that UI and report
+	# a spurious multi-hundred-px height.
 	python3 - "$1" "$2" <<'PY'
 import sys
 from PIL import Image
 im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
 x = min(int(sys.argv[2]), im.size[0] - 1)
-run = [y for y in range(27, im.size[1]) if min(px[x, y][:3]) > 5]
-print(max(run) - min(run) + 1 if len(run) > 20 and max(run) - min(run) > 40 else 0)
+h = im.size[1]
+GAP_MAX = 20
+top = next((y for y in range(27, h) if min(px[x, y][:3]) > 5), None)
+if top is None:
+    print(0); sys.exit()
+bottom = top
+y = top
+while y < h:
+    if min(px[x, y][:3]) > 5:
+        bottom = y; y += 1; continue
+    gap = 0; yy = y
+    while yy < h and min(px[x, yy][:3]) <= 5:
+        gap += 1; yy += 1
+    if gap > GAP_MAX:
+        break
+    y = yy
+span = bottom - top + 1
+print(span if span > 40 else 0)
 PY
 }
 

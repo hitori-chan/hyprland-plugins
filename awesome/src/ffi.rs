@@ -316,6 +316,225 @@ pub fn config_get(ctx: Ctx, h: *mut c_void) -> Option<(u32, f64, String)> {
 }
 
 // ---------------------------------------------------------------------------
+// render (canvas + textures) — the Phase 1 surface
+// ---------------------------------------------------------------------------
+
+// render stages (mirror of the fork's hl_render_stage_t; bindgen prefixes the
+// consts with the type name).
+pub const HL_RND_POST_WINDOWS: u32 = hl_render_stage_t_HL_RND_POST_WINDOWS;
+
+/// A refcounted GPU texture (the fork handed us one ref; Drop unreffs it).
+pub struct TextureHandle {
+    ptr: *mut hl_texture,
+}
+impl TextureHandle {
+    pub(crate) unsafe fn from_raw(ptr: *mut hl_texture) -> Option<Self> {
+        (!ptr.is_null()).then_some(Self { ptr })
+    }
+    pub(crate) fn as_raw(&self) -> *mut hl_texture {
+        self.ptr
+    }
+    /// The texture's pixel size (0,0 if not uploaded yet).
+    pub fn size(&self) -> (u32, u32) {
+        let mut w: u32 = 0;
+        let mut h: u32 = 0;
+        unsafe { hl_texture_size(self.ptr, &raw mut w, &raw mut h) };
+        (w, h)
+    }
+}
+impl Drop for TextureHandle {
+    fn drop(&mut self) {
+        unsafe { hl_texture_unref(self.ptr) };
+    }
+}
+
+/// A monitor handle (RAII; Drop unreffs).
+pub struct MonitorHandle {
+    ptr: *mut hl_monitor,
+}
+impl MonitorHandle {
+    pub(crate) unsafe fn from_raw(ptr: *mut hl_monitor) -> Option<Self> {
+        (!ptr.is_null()).then_some(Self { ptr })
+    }
+    pub(crate) fn as_raw(&self) -> *mut hl_monitor {
+        self.ptr
+    }
+}
+impl Drop for MonitorHandle {
+    fn drop(&mut self) {
+        unsafe { hl_monitor_unref(self.ptr) };
+    }
+}
+
+/// A monitor's logical box (x, y, w, h) + scale, or None if it expired.
+pub fn monitor_box(ctx: Ctx, mon: &MonitorHandle) -> Option<(hl_box_t, f32)> {
+    let mut b: hl_box_t = unsafe { std::mem::zeroed() };
+    let mut s: f32 = 1.0;
+    let rc = unsafe {
+        hl_monitor_get(
+            ctx,
+            mon.as_raw(),
+            std::ptr::null_mut(),
+            &raw mut b,
+            &raw mut s,
+            std::ptr::null_mut(),
+        )
+    };
+    (rc == HL_E_OK).then_some((b, s))
+}
+
+/// The first monitor in the compositor's list (takes ownership of the ref).
+pub fn first_monitor(ctx: Ctx) -> Option<MonitorHandle> {
+    let mut out: *mut hl_monitor = std::ptr::null_mut();
+    let n = unsafe { hl_monitors(ctx, &raw mut out, 1) };
+    if n == 0 {
+        return None;
+    }
+    unsafe { MonitorHandle::from_raw(out) }
+}
+
+/// Register a render callback at `stage`; the fork invokes `draw_trampoline`
+/// (with `ud`) once per rendered frame at that stage. Returns the C error.
+/// The fork requires a non-null out-handle slot; we discard the handle (the
+/// plugin never unregisters individual callbacks — teardown clears all).
+pub fn render_listen(ctx: Ctx, stage: u32, ud: *mut c_void) -> u32 {
+    let mut h: *mut c_void = std::ptr::null_mut();
+    unsafe { hl_render_listen(ctx, stage, Some(draw_trampoline), ud, &raw mut h) }
+}
+
+// The extern "C" draw callback. Owns the raw canvas pointer; hands the bar a
+// fully-safe view. A panic can never unwind across the C boundary. The canvas
+// is a stack object in the fork's trampoline, valid only for this call.
+unsafe extern "C" fn draw_trampoline(cv: *mut hl_canvas, ud: *mut c_void) {
+    if cv.is_null() || ud.is_null() {
+        return;
+    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let state = unsafe { &*(ud as *const super::probe::State) };
+        super::bar::draw(cv, state);
+    }));
+}
+
+// ---- canvas (non-owning; the pointer is valid only during the draw call) ----
+
+/// The monitor the canvas is painting (takes ownership of the ref).
+pub fn canvas_monitor(cv: *mut hl_canvas) -> Option<MonitorHandle> {
+    if cv.is_null() {
+        return None;
+    }
+    let mut out: *mut hl_monitor = std::ptr::null_mut();
+    unsafe { hl_canvas_monitor(cv, &raw mut out) };
+    unsafe { MonitorHandle::from_raw(out) }
+}
+
+/// The monitor's logical extent (0,0,w,h in monitor-local logical px) + scale.
+pub fn canvas_extent(cv: *mut hl_canvas) -> Option<(hl_box_t, f32)> {
+    if cv.is_null() {
+        return None;
+    }
+    let mut b: hl_box_t = unsafe { std::mem::zeroed() };
+    let mut s: f32 = 1.0;
+    unsafe { hl_canvas_extent(cv, &raw mut b, &raw mut s) };
+    (b.w > 0.0 && b.h > 0.0).then_some((b, s))
+}
+
+pub fn canvas_rect(cv: *mut hl_canvas, box_: hl_box_t, color: hl_color_t, round: u32, rp: f32) {
+    if cv.is_null() {
+        return;
+    }
+    unsafe { hl_canvas_rect(cv, box_, color, round, rp) };
+}
+
+pub fn canvas_glass(
+    cv: *mut hl_canvas,
+    box_: hl_box_t,
+    color: hl_color_t,
+    round: u32,
+    rp: f32,
+    blur: bool,
+) {
+    if cv.is_null() {
+        return;
+    }
+    unsafe { hl_canvas_glass(cv, box_, color, round, rp, u32::from(blur)) };
+}
+
+pub fn canvas_border(
+    cv: *mut hl_canvas,
+    box_: hl_box_t,
+    color: hl_color_t,
+    round: u32,
+    rp: f32,
+    size_px: u32,
+) {
+    if cv.is_null() {
+        return;
+    }
+    unsafe { hl_canvas_border(cv, box_, color, round, rp, size_px) };
+}
+
+pub fn canvas_texture(cv: *mut hl_canvas, tex: &TextureHandle, box_: hl_box_t) {
+    if cv.is_null() {
+        return;
+    }
+    unsafe { hl_canvas_texture(cv, tex.as_raw(), box_) };
+}
+
+// ---- textures (built OUTSIDE a frame — the warm/draw gate, crash class 4) ----
+
+/// Build a text texture (the compositor rasterizes `text` at `pt` pt).
+pub fn text_texture(
+    ctx: Ctx,
+    text: &str,
+    color: hl_color_t,
+    pt: u32,
+    max_width: u32,
+    font: &str,
+) -> Option<TextureHandle> {
+    let t = format!("{text}\0");
+    let f = format!("{font}\0");
+    let mut out: *mut hl_texture = std::ptr::null_mut();
+    let rc = unsafe {
+        hl_text_texture(
+            ctx,
+            t.as_ptr().cast::<c_char>(),
+            color,
+            pt,
+            max_width,
+            f.as_ptr().cast::<c_char>(),
+            &raw mut out,
+        )
+    };
+    if rc != HL_E_OK {
+        return None;
+    }
+    unsafe { TextureHandle::from_raw(out) }
+}
+
+/// Build a texture from CPU RGBA (XRGB8888) pixels.
+pub fn texture_from_rgba(
+    ctx: Ctx,
+    data: &[u8],
+    w: u32,
+    h: u32,
+    stride: u32,
+) -> Option<TextureHandle> {
+    let mut out: *mut hl_texture = std::ptr::null_mut();
+    let rc = unsafe { hl_texture_from_rgba(ctx, data.as_ptr(), w, h, stride, &raw mut out) };
+    if rc != HL_E_OK {
+        return None;
+    }
+    unsafe { TextureHandle::from_raw(out) }
+}
+
+// ---- damage ----
+
+/// Damage a monitor-local logical box (schedules a repaint of that region).
+pub fn damage(ctx: Ctx, mon: &MonitorHandle, box_: hl_box_t) {
+    unsafe { hl_damage(ctx, mon.as_raw(), box_) };
+}
+
+// ---------------------------------------------------------------------------
 // sys (pipe + fd io) — safe wrappers over libc
 // ---------------------------------------------------------------------------
 
@@ -349,6 +568,32 @@ pub fn write_fd(fd: libc::c_int, buf: &[u8]) -> Result<(), i32> {
         return Err(-1);
     }
     Ok(())
+}
+
+/// The current local time as "HH:MM:SS" (via libc; no std-time dependency).
+pub fn now_hms() -> String {
+    let mut t: libc::time_t = 0;
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    let mut buf = [0i8; 16];
+    unsafe {
+        if libc::time(&raw mut t) == libc::time_t::MAX {
+            return String::new();
+        }
+        if libc::localtime_r(&raw const t, &raw mut tm).is_null() {
+            return String::new();
+        }
+        let n = libc::strftime(
+            buf.as_mut_ptr(),
+            buf.len(),
+            c"%H:%M:%S".as_ptr().cast(),
+            &raw const tm,
+        );
+        if n == 0 {
+            return String::new();
+        }
+        let bytes = std::slice::from_raw_parts(buf.as_ptr().cast::<u8>(), n as usize);
+        String::from_utf8_lossy(bytes).into_owned()
+    }
 }
 
 // ---------------------------------------------------------------------------
