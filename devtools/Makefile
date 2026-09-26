@@ -23,14 +23,16 @@ TEST_TARGETS := test-icon-resolver test-battery-state test-desktop-exec \
 
 # Rust fixture clients (awesome-rust plan, Track D): same names, same CLI.
 # As a client is ported it moves from the C rules to RUST_BINS.
-RUST_BINS := vptr
+RUST_BINS := vptr focustrap
 .PHONY: rust
 
-all: rust vkbd input-capture cliphold fixwin splashwin focustrap fake-sni
+all: $(RUST_BINS) vkbd input-capture cliphold fixwin splashwin fake-sni
 
 rust:
 	cargo build --release
-	@for b in $(RUST_BINS); do cp target/release/$$b $$b; done
+
+$(RUST_BINS): rust
+	cp target/release/$@ $@
 
 test: $(TEST_TARGETS)
 
@@ -103,19 +105,11 @@ splashwin: splashwin.c fixwin-protocol.h fixwin-proto.c
 fixwin: fixwin.c fixwin-protocol.h fixwin-proto.c
 	$(CC) $(CFLAGS) fixwin.c fixwin-proto.c -o $@ $(LDLIBS)
 
-# First X11 fixture (not a wayland-client one): links Xlib directly.
-focustrap: focustrap.c
-	$(CC) -O2 -Wall $< -o $@ -lX11
-
 # SNI + dbusmenu fixture over libdbus (not a compositor client): the tray
 # menu battery drives it against the nested instance's private session bus.
 fake-sni: fake-sni.c
 	$(CC) -O2 -Wall $< -o $@ $(shell pkg-config --cflags --libs dbus-1)
 
-vptr-proto.h: $(XML)
-	wayland-scanner client-header $< $@
-vptr-proto.c: $(XML)
-	wayland-scanner private-code $< $@
 vkbd-proto.h: $(KXML)
 	wayland-scanner client-header $< $@
 vkbd-proto.c: $(KXML)
@@ -134,6 +128,6 @@ fixwin-proto.c: $(XXML)
 	wayland-scanner private-code $< $@
 
 clean:
-	rm -f vptr vkbd input-capture cliphold fixwin splashwin focustrap fake-sni $(TEST_BINS) vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c fixwin-protocol.h fixwin-proto.c
+	rm -f $(RUST_BINS) vkbd input-capture cliphold fixwin splashwin fake-sni $(TEST_BINS) vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c fixwin-protocol.h fixwin-proto.c
 
 .PHONY: all clean test $(TEST_TARGETS)

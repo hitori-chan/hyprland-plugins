@@ -15,9 +15,14 @@ path = "src/lib.rs"
 name = "vptr"
 path = "src/bin/vptr.rs"
 
+[[bin]]
+name = "focustrap"
+path = "src/bin/focustrap.rs"
+
 [dependencies]
 wayland-client = "=0.31.15"
 wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] }
+x11rb = "=0.14.0"
 
 [profile.release]
 lto = "thin"
