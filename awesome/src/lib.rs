@@ -6,6 +6,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 mod bar;
+mod click;
 mod ffi;
 mod max;
 mod place;

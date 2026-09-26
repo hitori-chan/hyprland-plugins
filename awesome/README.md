@@ -6,12 +6,12 @@ Nothing C++ (no types, exceptions, references, or templates) crosses the
 boundary; the design and phase plan live in
 [`docs/awesome-rust-plan.md`](../docs/awesome-rust-plan.md).
 
-**Current state — Phases 0-2 (probe + mini-bar + hyprmax & hyprplace
-ports).** The Phase 0 ABI probe (below) is complete, Phase 1 adds the first
-real render (a mini-bar that proves the whole cabi render pipeline end to
-end), and Phase 2 ports the full C++ policy plugins (`hyprmax`, then
-`hyprplace`), each cut over so the Rust port — not the C++ original — is the
-one the gate validates.
+**Current state — Phases 0-2 (probe + mini-bar + hyprmax, hyprplace &
+hyprclick ports).** The Phase 0 ABI probe (below) is complete, Phase 1 adds
+the first real render (a mini-bar that proves the whole cabi render pipeline
+end to end), and Phase 2 ports the full C++ policy plugins (`hyprmax`, then
+`hyprplace`, then `hyprclick`), each cut over so the Rust port — not the C++
+original — is the one the gate validates.
 
 Phase 0 (the probe) proves the C boundary is clean:
 
@@ -70,6 +70,22 @@ may already be null). The port needed placement queries on the fork
 self-block (comparing handle pointers instead of the window address) made the
 remembered spot "occupied" and sent every spawn to least-overlap.
 
+`hyprclick` (click and focus-raise policy) is the third Phase 2 port: a plain
+left click (or a Super+right grab) raises the clicked window, a fullscreen
+"raise" tucks the floaters back behind it by clearing the allowed-over flag
+(never `lower()`), and only the keyboard/dispatch/switch focus reasons raise
+(a hover never does). `focus_prev_here` / `focus_next` / `focus_prev` walk
+the workspace in ARRIVAL order (the z-order is useless under click-to-raise,
+which rotates it). The corpse guard swallows the tail of a fast double-click
+on a click-to-close surface (a window that died under the cursor is not
+retargeted). In the dispatch it runs after `max` (a Super-grab max swallowed
+is never a raise click). The port needed a focus *setter* with an explicit
+reason (`hl_focus_window_set` — the reason is what picks the raise), a fresh
+cursor hit test, the focus history, and the monitor's active workspace; and
+the version out-param had to be NUL-terminated (the `env!` &str sits
+mid-rodata, so an unterminated read swallowed the next literal and broke the
+metadata round-trip).
+
 It loads **last** in `hyprpm.toml` and, while the C++ plugins are still
 loaded, defers to their input (the bar eats its strip first); as a module is
 cut over, the Rust port takes that module's input in place of the C++
@@ -92,6 +108,9 @@ original.
 - `src/place.rs` — safe Phase 2 `hyprplace` port (spawn placement + geometry
   memory: remembered spot when free, else least-overlap; fixed-size / X11 /
   parent handling; border-aware on-screen clamp). No `unsafe`.
+- `src/click.rs` — safe Phase 2 `hyprclick` port (click-to-raise, the
+  fullscreen tuck, keyboard-focus-raises, arrival-order focus cycling, the
+  corpse guard). No `unsafe`.
 
 ## Build
 

@@ -11,6 +11,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 
 use crate::bar;
+use crate::click;
 use crate::ffi;
 use crate::max;
 use crate::place;
@@ -27,6 +28,7 @@ pub const JOB_MAX_TOGGLE: u8 = 5;
 pub const JOB_MAX_ADOPT: u8 = 6;
 pub const JOB_MAX_REFLOW: u8 = 7;
 pub const JOB_PLACE: u8 = 8;
+pub const JOB_CLICK: u8 = 9;
 
 // how often a TICK logs (TICK fires every frame; keep the log readable)
 const TICK_LOG_EVERY: u64 = 240;
@@ -44,6 +46,8 @@ pub struct State {
     max: Mutex<max::MaxState>,
     // The Phase 2 hyprplace policy (spawn placement + geometry memory).
     place: Mutex<place::PlaceState>,
+    // The Phase 2 hyprclick policy (click-to-raise, focus raises, corpse).
+    click: Mutex<click::ClickState>,
 }
 
 static STATE: AtomicPtr<State> = AtomicPtr::new(ptr::null_mut());
@@ -87,6 +91,7 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
         bar: Mutex::new(bar::BarState::new()),
         max: Mutex::new(max::MaxState::new()),
         place: Mutex::new(place::PlaceState::new()),
+        click: Mutex::new(click::ClickState::new()),
     });
     // The pointer the (leaked) Box will live at. We use it for every job's
     // `ud` and the render callback; the Box is leaked at the end of init.
@@ -115,6 +120,15 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
 
     // the user-facing bind target keeps its original namespace (hyprmax.toggle)
     let _ = ffi::lua_register(ctx, "hyprmax", "toggle", ffi::lua_toggle);
+    // the hyprclick focus helpers (their original namespace too)
+    let _ = ffi::lua_register(
+        ctx,
+        "hyprclick",
+        "focus_prev_here",
+        ffi::lua_focus_prev_here,
+    );
+    let _ = ffi::lua_register(ctx, "hyprclick", "focus_next", ffi::lua_focus_next);
+    let _ = ffi::lua_register(ctx, "hyprclick", "focus_prev", ffi::lua_focus_prev);
 
     // bus pipe: watch the read end; the deferred job writes one byte
     let pipe_arg = Box::leak(Box::new(ffi::JobArg {
@@ -149,6 +163,8 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
 
     // The Phase 2 hyprplace policy (loads the persisted spawn spots).
     place::init(&state);
+    // (the hyprclick state is constructed with `State`; it holds no persisted
+    // data, only the live gesture timers + the arrival order)
 
     // Leak the Box now that every callback holds `state_ptr` (unchanged by
     // the leak). The pointer already lives in the STATE static; after this,
@@ -172,6 +188,11 @@ pub fn exit(state: &State) {
     max::exit(state);
     // flush the coalesced hyprplace spawn-spot write before the ctx is gone
     place::exit(state);
+    // reset the hyprclick gesture state (a swallow mask must not survive)
+    {
+        let mut c = click_lock(state);
+        c.reset();
+    }
 }
 
 /// Take the live State pointer (null if none). Safe: pointer load only.
@@ -196,6 +217,13 @@ pub fn max_lock(state: &State) -> std::sync::MutexGuard<'_, max::MaxState> {
 }
 
 /// Lock the hyprplace policy state (recovers from a poisoned lock).
+pub fn click_lock(state: &State) -> std::sync::MutexGuard<'_, click::ClickState> {
+    state
+        .click
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 pub fn place_lock(state: &State) -> std::sync::MutexGuard<'_, place::PlaceState> {
     state
         .place
@@ -233,19 +261,25 @@ pub fn dispatch(state: &State, ev: &ffi::SafeEvent) -> bool {
         }
         ffi::HL_EV_MOUSE_BUTTON => {
             let ctx = state.ctx;
-            ffi::log_str(
-                ctx,
-                ffi::LOG_DEBUG,
-                &format!(
-                    "event BUTTON b={} state={} x={} y={}",
-                    ev.button, ev.state, ev.x, ev.y
-                ),
-            );
-            let mut m = max_lock(state);
-            max::on_button(ctx, &mut m, ev)
+            // max runs first (a Super-grab it swallows is never a raise
+            // click — the C++ load order hyprmax -> hyprclick, now in-plugin).
+            let max_cancel = {
+                let mut m = max_lock(state);
+                max::on_button(ctx, &mut m, ev)
+            };
+            if max_cancel {
+                true
+            } else {
+                let mut c = click_lock(state);
+                click::on_button(ctx, &mut c, ev)
+            }
         }
         ffi::HL_EV_WINDOW_ACTIVE => {
             on_window(state, ev, "WINDOW_ACTIVE");
+            {
+                let mut c = click_lock(state);
+                click::on_window_active(state.ctx, &mut c, ev);
+            }
             false
         }
         ffi::HL_EV_WINDOW_OPEN => {
@@ -253,6 +287,8 @@ pub fn dispatch(state: &State, ev: &ffi::SafeEvent) -> bool {
             if let Some(w) = &ev.window {
                 let mut p = place_lock(state);
                 place::on_open(state.ctx, &mut p, w);
+                let mut c = click_lock(state);
+                click::on_open(state.ctx, &mut c, w);
             }
             false
         }
@@ -261,6 +297,10 @@ pub fn dispatch(state: &State, ev: &ffi::SafeEvent) -> bool {
                 let mut p = place_lock(state);
                 place::on_close(state.ctx, &mut p, w);
             }
+            {
+                let mut c = click_lock(state);
+                click::on_close(state.ctx, &mut c, ev);
+            }
             false
         }
         ffi::HL_EV_WINDOW_DESTROY => {
@@ -268,12 +308,18 @@ pub fn dispatch(state: &State, ev: &ffi::SafeEvent) -> bool {
             let ctx = state.ctx;
             let mut m = max_lock(state);
             max::on_destroy(ctx, &mut m);
+            if let Some(w) = &ev.window {
+                let mut c = click_lock(state);
+                click::on_destroy(ctx, &mut c, w);
+            }
             false
         }
         ffi::HL_EV_WINDOW_FULL => {
             let ctx = state.ctx;
             let mut m = max_lock(state);
             max::on_fullscreen(ctx, &mut m, ev);
+            let mut c = click_lock(state);
+            click::on_fullscreen(ctx, &mut c, ev);
             false
         }
         ffi::HL_EV_WINDOW_WS
@@ -378,6 +424,10 @@ pub fn on_job(state: &State, kind: u8) {
         JOB_PLACE => {
             let mut p = place_lock(state);
             place::drain(state.ctx, &mut p);
+        }
+        JOB_CLICK => {
+            let mut c = click_lock(state);
+            click::drain(state.ctx, &mut c);
         }
         _ => {}
     }
