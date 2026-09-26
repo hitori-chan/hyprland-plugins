@@ -188,6 +188,16 @@ Build the helpers from the exact fork protocol XML:
 make -C devtools HL=/path/to/Hyprland
 ```
 
+Rust porting track (awesome-rust plan, Track D): the fixture clients are
+being rewritten one at a time in `devtools/src/bin/` (workspace in
+`devtools/Cargo.toml`); `make` builds them via cargo and copies the binaries
+over the C ones, keeping the names and CLI contracts identical so the gate
+needs no changes. A C client's sources are deleted in the same commit its
+Rust replacement passes the full gate. `vptr` is the first port (its C
+source is gone); the virtual-keyboard XML is generated at build time from
+the fork's copy (`build.rs`, `HYPR_LAND_DIR` overrides the path) because
+upstream wlr-protocols dropped it.
+
 - `vptr WIDTH HEIGHT` reads virtual pointer commands: `move`, `rel`, `press`,
   `release`, `scroll`, and `sleep`. One process owns one gesture.
 - `vkbd` reads `tap`, `press`, `release`, `mods`, and `sleep`, installs its own
