@@ -9,14 +9,15 @@ HARNESS="${HYPR_HARNESS:-$HOME/.local/share/hypr-nested}"
 
 # Battery selection: resolved against this canonical order; sourcing below
 # always walks it so user-specified order never changes execution order.
-CANONICAL_BATTERIES=(windows notifications reply focus tray lifecycle)
+CANONICAL_BATTERIES=(windows notifications reply focus tray ffi lifecycle)
 SELECTED=()
 
 usage() {
 	cat >&2 <<'EOF'
 usage: stress.sh [-b LIST] [-k LIST] [compositor-bin]
   -b LIST   comma-separated batteries to RUN, from:
-            windows notifications reply focus tray lifecycle (canonical order enforced regardless of user order)
+            windows notifications reply focus tray ffi lifecycle
+            (canonical order enforced regardless of user order)
             special value: all (default)
   -k LIST   comma-separated batteries to SKIP from the canonical set
 EOF

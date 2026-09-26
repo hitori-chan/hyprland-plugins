@@ -186,15 +186,21 @@ them, append new ones.
 - `hyprpad`: in-process touchpad policy via aquamarine and Lua config.
 - `hyprosd`: volume/brightness bus client shown through `hyprnotify`;
   draws nothing.
+- `awesome`: the Rust rewrite of the C++ plugins above (one `cdylib`
+  across the fork's `cabi` C ABI). Phase 0 ships only the probe
+  (event/config/job validation); it loads last and cancels no input,
+  so it cannot reorder the C++ priority table. Plan:
+  `docs/awesome-rust-plan.md`.
 
 The order in `hyprpm.toml` is a behavior contract:
 
-`hyprbar -> hyprnotify -> hyprmax -> hyprsnap -> hyprclick -> hyprplace -> hyprpad -> hyprosd`
+`hyprbar -> hyprnotify -> hyprmax -> hyprsnap -> hyprclick -> hyprplace -> hyprpad -> hyprosd -> awesome`
 
 The bar claims its strip and menus before window policy; notification
 input beats the window below; the maximized-window swallow beats
-click-to-raise. `NHyprCommon::mustLoadBefore` and the plugin READMEs
-must agree with the manifest.
+click-to-raise. `awesome` stays last until the ported modules take over
+the C++ plugins' input. `NHyprCommon::mustLoadBefore` and the plugin
+READMEs must agree with the manifest.
 
 ## Git and versions
 

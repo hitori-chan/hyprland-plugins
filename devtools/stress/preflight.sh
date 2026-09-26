@@ -45,7 +45,11 @@ for p in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd
 	SRC=$(grep -rhoE '"[0-9]+\.[0-9]+\.[0-9]+"' "$REPO/$p/main.cpp" "$REPO/$p"/*.hpp 2>/dev/null | tail -1 | tr -d '"')
 	[[ "$TOML" == "$SRC" ]] || { vsync_ok=0; echo "  version skew: $p toml=$TOML src=$SRC"; }
 done
-[[ $vsync_ok == 1 ]] && ok "version sync (toml == PLUGIN_INIT), all 8" || bad "version sync"
+# awesome (Rust) keeps its version in Cargo.toml, not a main.cpp PLUGIN_INIT
+AW_TOML=$(grep -A2 '^\[awesome\]' "$REPO/hyprpm.toml" | grep version | grep -o '[0-9.]*')
+AW_SRC=$(grep -m1 '^version' "$REPO/awesome/Cargo.toml" | grep -o '[0-9.]*')
+[[ "$AW_TOML" == "$AW_SRC" ]] || { vsync_ok=0; echo "  version skew: awesome toml=$AW_TOML src=$AW_SRC"; }
+[[ $vsync_ok == 1 ]] && ok "version sync (toml == source), all $NPLUGINS" || bad "version sync"
 
 # ---- build + launch -----------------------------------------------------
 kill_nested
@@ -62,11 +66,15 @@ kill_nested
 # 8 sequential -B passes took ~95s of the gate; one slot per plugin keeps
 # the total job count at nproc. PJ is the per-plugin -j under that cap.
 NP="$(nproc)"
-PJ="-j$(( (NP + 7) / 8 ))"
+PJ="-j$(( (NP + 8) / 9 ))"
+# awesome builds against the cabi C ABI header (not pkg-config); point it at
+# the staged header that matches the gated binary. make's `CABI_HDR ?=` picks
+# up an exported value, and the rehearsal's `env -u PKG_CONFIG_PATH` leaves it.
+export CABI_HDR="$HDR_ROOT/hyprland/src/plugins/cabi/cabi.h"
 build_all() { # $1: 1 = strip PKG_CONFIG_PATH (installed-cache rehearsal)
 	local strip=$1 p pid ok=1
 	local -A who=()
-	for p in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd; do
+	for p in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd awesome; do
 		if [[ $strip == 1 ]]; then
 			( env -u PKG_CONFIG_PATH make -B "$PJ" -C "$REPO/$p" ) >/dev/null 2>&1 &
 		else
@@ -83,11 +91,11 @@ build_ok=1
 if [[ -n "${HYPR_DEPLOY_PKG_CONFIG_PATH:-}" ]]; then
 	build_all 0 || build_ok=0
 	if [[ $build_ok == 1 ]]; then
-		ok "deploy rehearsal: all 8 build against the explicit target pkg-config path"
-		ok "all 8 plugins build"
+		ok "deploy rehearsal: all $NPLUGINS build against the explicit target pkg-config path"
+		ok "all $NPLUGINS plugins build"
 	else
 		bad "deploy rehearsal build"
-		bad "all 8 plugins build"
+		bad "all $NPLUGINS plugins build"
 		echo "plugin build FAILED"; exit 1
 	fi
 else
@@ -100,12 +108,12 @@ else
 	REH_CFLAGS="$(env -u PKG_CONFIG_PATH make -s -C "$REPO/hyprnotify" print-hl-cflags 2>/dev/null)"
 	GATE_CFLAGS="$(make -s -C "$REPO/hyprnotify" print-hl-cflags 2>/dev/null)"
 	if [[ -n "$REH_CFLAGS" && "$REH_CFLAGS" == "$GATE_CFLAGS" ]]; then
-		build_all 1 || { bad "deploy rehearsal build"; bad "all 8 plugins build"; echo "plugin build FAILED"; exit 1; }
-		ok "deploy rehearsal: all 8 build against $DEPLOY_HEADERS (identical to the target flags; one build credits both)"
-		ok "all 8 plugins build"
+		build_all 1 || { bad "deploy rehearsal build"; bad "all $NPLUGINS plugins build"; echo "plugin build FAILED"; exit 1; }
+		ok "deploy rehearsal: all $NPLUGINS build against $DEPLOY_HEADERS (identical to the target flags; one build credits both)"
+		ok "all $NPLUGINS plugins build"
 	else
-		build_all 1 && ok "deploy rehearsal: all 8 build against $DEPLOY_HEADERS" || bad "deploy rehearsal build"
-		build_all 0 && ok "all 8 plugins build" || { echo "plugin build FAILED"; exit 1; }
+		build_all 1 && ok "deploy rehearsal: all $NPLUGINS build against $DEPLOY_HEADERS" || bad "deploy rehearsal build"
+		build_all 0 && ok "all $NPLUGINS plugins build" || { echo "plugin build FAILED"; exit 1; }
 	fi
 fi
 if [[ -n "$DEPLOY_PC_SUM" ]]; then
@@ -117,7 +125,7 @@ launch_nested || { echo "nested launch FAILED"; exit 1; }
 retarget || { echo "nested retarget FAILED"; exit 1; }
 LOG="$HARNESS/nested.log"
 ok "nested monitor is ${MON_W}x${MON_H} (every coordinate below derives from it)"
-chk "8 plugins loaded" test "$(hq plugin list | grep -c Plugin)" = 8
+chk "$NPLUGINS plugins loaded" test "$(hq plugin list | grep -c Plugin)" = "$NPLUGINS"
 dsp "hl.dsp.window.close()" # the donate/updated screen, when present
 sleep 0.5
 chk "launch toast cleared before the batteries" wait_launch_toast

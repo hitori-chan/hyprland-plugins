@@ -68,3 +68,15 @@ version     = "1.3.7"
 authors     = ["hitori"]
 output      = "hyprosd/hyprosd.so"
 build       = ["make -C hyprosd all"]
+
+# The single Rust plugin (awesome-rust plan). Phase 0 is the ABI-skeleton
+# probe: it subscribes to compositor events and logs them, defers a job,
+# drives a bus pipe, and registers one config keyword — but it NEVER cancels
+# input, so it loads last and cannot reorder the C++ plugins' priority table.
+# (Phase 6 deletes the eight C++ entries above and this becomes the only one.)
+[awesome]
+description = "awesome's modules as one Rust plugin (cabi C ABI)"
+version     = "1.0.0"
+authors     = ["hitori"]
+output      = "awesome/awesome.so"
+build       = ["make -C awesome all"]

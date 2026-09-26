@@ -1,7 +1,10 @@
 # hyprland-plugins
 
 Eight native C++26 plugins for the exact
-[`hitori-chan/Hyprland`](https://github.com/hitori-chan/Hyprland) fork ABI.
+[`hitori-chan/Hyprland`](https://github.com/hitori-chan/Hyprland) fork ABI, plus
+`awesome` — the in-progress Rust rewrite of all eight. Phase 0 ships the `cabi`
+probe (it validates the fork's C ABI boundary: events, config, and the job
+model) and loads last so it cannot reorder the C++ input contract.
 
 | Plugin | Responsibility |
 |---|---|
@@ -13,19 +16,20 @@ Eight native C++26 plugins for the exact
 | `hyprplace` | Remembered floating-window placement with least-overlap fallback |
 | `hyprpad` | Automatic and manual touchpad policy |
 | `hyprosd` | Asynchronous volume, microphone, and brightness feedback through `hyprnotify` |
+| `awesome` | Rust rewrite of the above (Phase 0: the `cabi` C-ABI probe; see [`docs/awesome-rust-plan.md`](docs/awesome-rust-plan.md)) |
 
 Load order is part of the input contract and is fixed in
 [`hyprpm.toml`](hyprpm.toml):
 
 ```text
-hyprbar -> hyprnotify -> hyprmax -> hyprsnap -> hyprclick -> hyprplace -> hyprpad -> hyprosd
+hyprbar -> hyprnotify -> hyprmax -> hyprsnap -> hyprclick -> hyprplace -> hyprpad -> hyprosd -> awesome
 ```
 
 ## Install
 
 ```sh
 hyprpm add https://github.com/hitori-chan/hyprland-plugins
-for plugin in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd; do
+for plugin in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd awesome; do
     hyprpm enable "$plugin"
 done
 ```

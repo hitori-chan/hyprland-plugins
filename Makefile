@@ -4,7 +4,9 @@
 # `make` builds the plugins one behind another; `make -j` builds them in
 # parallel (the -j propagates to each plugin's TU farm through MAKEFLAGS).
 
-PLUGINS := hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd
+# awesome is the Rust plugin (cargo); it has its own Makefile that wraps
+# `cargo build --release`, so it slots into the same per-plugin loop.
+PLUGINS := hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd awesome
 
 all: $(PLUGINS)
 
