@@ -84,6 +84,13 @@ impl WindowHandle {
     pub(crate) fn as_raw(&self) -> *mut hl_window {
         self.ptr
     }
+    /// A second handle to the same window (increments the handle's own
+    /// refcount; the compositor ref stays weak, so this never keeps a window
+    /// alive).
+    pub fn clone_handle(&self) -> Self {
+        unsafe { hl_window_ref(self.ptr) };
+        Self { ptr: self.ptr }
+    }
 }
 impl Drop for WindowHandle {
     fn drop(&mut self) {
@@ -196,7 +203,9 @@ unsafe extern "C" fn dispatch_trampoline(ev: *mut hl_event_t, ud: *mut c_void) {
         return;
     }
     let state = unsafe { &*(ud as *const super::probe::State) };
-    let _ = catch_unwind(AssertUnwindSafe(|| {
+    // dispatch returns true to CANCEL the event (swallow a tracked button on
+    // a plugin-maximized window). The raw ev is needed for the cancel slot.
+    let cancel = catch_unwind(AssertUnwindSafe(|| {
         let e = unsafe { &*ev };
         let window = unsafe { WindowHandle::from_raw(e.window) };
         let safe = SafeEvent {
@@ -208,8 +217,12 @@ unsafe extern "C" fn dispatch_trampoline(ev: *mut hl_event_t, ud: *mut c_void) {
             keycode: e.keycode,
             window,
         };
-        super::probe::dispatch(state, &safe);
-    }));
+        super::probe::dispatch(state, &safe)
+    }))
+    .unwrap_or(false);
+    if cancel {
+        unsafe { event_cancel_raw(ev) };
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -313,6 +326,202 @@ pub fn config_get(ctx: Ctx, h: *mut c_void) -> Option<(u32, f64, String)> {
         return None;
     }
     Some((r#type, num, str_from(&s)))
+}
+
+// ---------------------------------------------------------------------------
+// window policy (Phase 2) — queries, writes, input state, Lua
+// ---------------------------------------------------------------------------
+
+// compositor fullscreen modes (mirror of eFullscreenMode; the fork's swap:
+// 1 = maximized, 2 = real fullscreen — OPPOSITE of the IPC convention).
+pub const FS_NONE: u32 = 0;
+pub const FS_MAXIMIZED: u32 = 1;
+pub const FS_FULLSCREEN: u32 = 2;
+
+pub struct WindowFull {
+    pub app_id: String,
+    /// position + size (GLOBAL logical px — like a monitor box).
+    pub at: hl_box_t,
+    pub fullscreen: u32,
+    pub floating: bool,
+}
+
+impl WindowFull {
+    pub fn new(app_id: String, at: hl_box_t, fs: u32, fl: bool) -> Self {
+        Self {
+            app_id,
+            at,
+            fullscreen: fs,
+            floating: fl,
+        }
+    }
+}
+
+/// The full window query: appID + layout box + fullscreen modes + flags.
+/// None if the handle's weak ref has expired.
+pub fn window_full(ctx: Ctx, w: &WindowHandle) -> Option<WindowFull> {
+    let mut app: hl_str_t = hl_str_t {
+        d: std::ptr::null(),
+        l: 0,
+    };
+    let mut at: hl_box_t = unsafe { std::mem::zeroed() };
+    let mut fs: u32 = 0;
+    let mut floating: u32 = 0;
+    let rc = unsafe {
+        hl_window_get(
+            ctx,
+            w.as_raw(),
+            &raw mut app,
+            std::ptr::null_mut(),
+            &raw mut at,
+            std::ptr::null_mut(),
+            &raw mut fs,
+            std::ptr::null_mut(),
+            &raw mut floating,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    if rc != HL_E_OK {
+        return None;
+    }
+    Some(WindowFull::new(str_from(&app), at, fs, floating != 0))
+}
+
+/// The window's stable identity (its address); 0 if the handle expired.
+pub fn window_id(ctx: Ctx, w: &WindowHandle) -> u64 {
+    unsafe { hl_window_id(ctx, w.as_raw()) }
+}
+
+/// The focused window (takes ownership of the ref). None if none.
+pub fn focus_window(ctx: Ctx) -> Option<WindowHandle> {
+    let mut out: *mut hl_window = std::ptr::null_mut();
+    let rc = unsafe { hl_focus_window(ctx, &raw mut out) };
+    (rc == HL_E_OK).then(|| unsafe { WindowHandle::from_raw(out) }.unwrap())
+}
+
+/// The window under a global point (fresh hit-test). Takes ownership of the ref.
+pub fn window_at(ctx: Ctx, x: f64, y: f64) -> Option<WindowHandle> {
+    let mut out: *mut hl_window = std::ptr::null_mut();
+    let rc = unsafe { hl_window_at(ctx, x, y, &raw mut out) };
+    (rc == HL_E_OK).then(|| unsafe { WindowHandle::from_raw(out) }.unwrap())
+}
+
+/// The monitor containing a global point (nearest one if it lands in a gap).
+/// Takes ownership of the ref.
+pub fn monitor_at(ctx: Ctx, x: f64, y: f64) -> Option<MonitorHandle> {
+    let mut out: *mut hl_monitor = std::ptr::null_mut();
+    let rc = unsafe { hl_monitor_at(ctx, x, y, &raw mut out) };
+    (rc == HL_E_OK).then(|| unsafe { MonitorHandle::from_raw(out) }.unwrap())
+}
+
+/// The monitor's workarea (logical box minus reserved areas, global px).
+pub fn monitor_workarea(ctx: Ctx, mon: &MonitorHandle) -> Option<hl_box_t> {
+    let mut b: hl_box_t = unsafe { std::mem::zeroed() };
+    let rc = unsafe { hl_monitor_workarea(ctx, mon.as_raw(), &raw mut b) };
+    (rc == HL_E_OK).then_some(b)
+}
+
+/// The toplevel's min/max size (a pinned axis has min == max). None if expired.
+pub fn min_max_size(ctx: Ctx, w: &WindowHandle) -> Option<(hl_box_t, hl_box_t)> {
+    let mut min: hl_box_t = unsafe { std::mem::zeroed() };
+    let mut max: hl_box_t = unsafe { std::mem::zeroed() };
+    let rc = unsafe { hl_window_min_max_size(ctx, w.as_raw(), &raw mut min, &raw mut max) };
+    (rc == HL_E_OK).then_some((min, max))
+}
+
+// ---- window writes (event-loop thread) ----
+
+pub fn window_set_geom(ctx: Ctx, w: &WindowHandle, x: f64, y: f64, pw: f64, ph: f64) -> u32 {
+    unsafe { hl_window_set_geom(ctx, w.as_raw(), x, y, pw, ph) }
+}
+pub fn window_set_fs_mode(ctx: Ctx, w: &WindowHandle, internal: u32, client: u32) -> u32 {
+    unsafe { hl_window_set_fs_mode(ctx, w.as_raw(), internal, client) }
+}
+pub fn window_set_toplevel_maximized(ctx: Ctx, w: &WindowHandle, on: bool) -> u32 {
+    unsafe { hl_window_set_toplevel_maximized(ctx, w.as_raw(), u32::from(on)) }
+}
+pub fn window_request_client_size(ctx: Ctx, w: &WindowHandle) -> u32 {
+    unsafe { hl_window_request_client_size(ctx, w.as_raw()) }
+}
+pub fn window_send_window_size(ctx: Ctx, w: &WindowHandle, force: bool) -> u32 {
+    unsafe { hl_window_send_window_size(ctx, w.as_raw(), u32::from(force)) }
+}
+pub fn window_raise(ctx: Ctx, w: &WindowHandle) -> u32 {
+    unsafe { hl_window_raise(ctx, w.as_raw()) }
+}
+pub fn window_reset_client_size_grant(ctx: Ctx, w: &WindowHandle) -> u32 {
+    unsafe { hl_window_reset_client_size_grant(ctx, w.as_raw()) }
+}
+pub fn window_set_born_fullscreen(ctx: Ctx, w: &WindowHandle, on: bool) -> u32 {
+    unsafe { hl_window_set_born_fullscreen(ctx, w.as_raw(), u32::from(on)) }
+}
+
+// ---- Lua (the user-facing bind targets keep their original namespaces) ----
+
+/// A Lua function body (the fork's `PLUGIN_LUA_FN`; returns # of results).
+pub type LuaFn = unsafe extern "C" fn(*mut c_void) -> i32;
+
+pub fn lua_register(ctx: Ctx, ns: &str, name: &str, f: LuaFn) -> u32 {
+    let n = format!("{ns}\0");
+    let m = format!("{name}\0");
+    unsafe {
+        hl_lua_register(
+            ctx,
+            n.as_ptr().cast::<c_char>(),
+            m.as_ptr().cast::<c_char>(),
+            Some(f),
+        )
+    }
+}
+
+/// The `unsafe extern "C"` wrapper for the hyprmax Lua toggle. The `unsafe`
+/// boundary lives here (one module); the body is the safe max impl.
+pub unsafe extern "C" fn lua_toggle(_lua: *mut c_void) -> i32 {
+    crate::max::lua_toggle_impl()
+}
+
+/// Wrap a non-null raw pointer in a shared reference (the one place a raw
+/// pointer becomes a `&`; the pointee's lifetime is the plugin's). The safe
+/// modules call this instead of doing the cast themselves.
+pub fn ref_from_ptr<T>(ptr: *mut T) -> Option<&'static T> {
+    (!ptr.is_null()).then(|| unsafe { &*ptr })
+}
+
+// ---- input state (the compositor-integration gates) ----
+
+pub fn input_capture_active(ctx: Ctx) -> bool {
+    unsafe { hl_input_capture_active(ctx) != 0 }
+}
+pub fn native_pointer_grab(ctx: Ctx) -> bool {
+    unsafe { hl_native_pointer_grab(ctx) != 0 }
+}
+pub fn native_layer_at(ctx: Ctx) -> bool {
+    unsafe { hl_native_layer_at(ctx) != 0 }
+}
+pub fn super_held(ctx: Ctx) -> bool {
+    unsafe { hl_super_held(ctx) != 0 }
+}
+
+/// Cancel the in-flight event (cancellable kinds only). The fork's
+/// `_cancel_slot` is fork-owned; this is the only way to swallow it.
+pub unsafe fn event_cancel_raw(ev: *mut hl_event_t) {
+    if !ev.is_null() {
+        unsafe { hl_event_cancel(ev) };
+    }
+}
+
+/// A tracked left/right/middle button bit (the only buttons a plugin may
+/// swallow; anything else stays native application input).
+pub fn tracked_button_bit(button: u32) -> u32 {
+    match button {
+        270 /* BTN_LEFT */ => 1,
+        271 /* BTN_RIGHT */ => 2,
+        272 /* BTN_MIDDLE */ => 4,
+        _ => 0,
+    }
 }
 
 // ---------------------------------------------------------------------------

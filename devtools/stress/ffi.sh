@@ -27,8 +27,8 @@ for i in 1 2 3; do
 	sleep 1.5
 	chk "ffi: Rust probe survives config reload #$i" \
 	    test "$(hq plugin list | grep -c 'Plugin awesome')" = 1
-	chk "ffi: all $NPLUGINS plugins alive after reload #$i" \
-	    test "$(hq plugin list | grep -c Plugin)" = "$NPLUGINS"
+	chk "ffi: all $NLOADED plugins alive after reload #$i" \
+	    test "$(hq plugin list | grep -c Plugin)" = "$NLOADED"
 done
 
 # 3. The Phase 1 mini-bar renders (canvas + textures) -------------------------

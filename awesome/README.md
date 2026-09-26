@@ -6,9 +6,11 @@ Nothing C++ (no types, exceptions, references, or templates) crosses the
 boundary; the design and phase plan live in
 [`docs/awesome-rust-plan.md`](../docs/awesome-rust-plan.md).
 
-**Current state — Phase 1 (the probe + the mini-bar).** The Phase 0 ABI
-probe (below) is complete, and Phase 1 adds the first real render: a
-mini-bar that proves the whole cabi render pipeline end to end.
+**Current state — Phases 0-2 (probe + mini-bar + hyprmax port).** The
+Phase 0 ABI probe (below) is complete, Phase 1 adds the first real render
+(a mini-bar that proves the whole cabi render pipeline end to end), and
+Phase 2 ports the first full C++ plugin (`hyprmax`), cut over so the Rust
+port — not the C++ original — is the one the gate validates.
 
 Phase 0 (the probe) proves the C boundary is clean:
 
@@ -34,8 +36,28 @@ bottom so it never overlaps the C++ hyprbar (top) while both are loaded
 (Phases 1-5); Phase 5 grows it into the real top bar and Phase 6 removes the
 C++ bar.
 
-It loads **last** in `hyprpm.toml` and cancels no input, so it cannot reorder
-the C++ plugins' input priority table.
+Phase 2 (the `hyprmax` port) proves the **write-side** cabi API: the fork
+now exposes `hl_window_set_geom`/`hl_window_set_fs_mode`/
+`hl_window_set_toplevel_maximized`/`hl_monitor_workarea`, the window
+min-max-size + client-size-grant accessors, `hl_window_id`, and
+`hl_super_held`, and wires the window/workspace/monitor policy events into
+`hl_subscribe`. `max.rs` is a port of the C++ `hyprmax`: per-window
+(client-told) maximize, adopt the compositor-granted maximize, remember and
+restore the windowed box per app (persisted TSV), reflow on a monitor
+reserved-area or workspace/monitor change, swallow a Super+click on a
+maximized window, and handle born-fullscreen. It registers `hyprmax.toggle`
+through the fork's `hl_lua_register`. Because `ConfigManager` gives the
+first registration of a Lua `namespace.name` the win, the gate **cuts over**:
+the C++ `hyprmax` is removed from the harness `nested.lua` load list so the
+Rust port owns `hyprmax.toggle`, and the `windows` battery's maximize checks
+(toggle, reserved-area reflow, restore, 10× round-trip) now validate the
+Rust port. The C++ `hyprmax` is still **built** (it stays in the build list)
+— only its load is dropped — until Phase 6 deletes it.
+
+It loads **last** in `hyprpm.toml` and, while the C++ plugins are still
+loaded, defers to their input (the bar eats its strip first); as a module is
+cut over, the Rust port takes that module's input in place of the C++
+original.
 
 ## Layout
 
@@ -47,6 +69,10 @@ the C++ plugins' input priority table.
 - `src/probe.rs` — safe Phase 0 behavior (the event/config/job probe).
 - `src/bar.rs` — safe Phase 1 mini-bar (the canvas render, the RGBA icon,
   the updating text clock, and the 1 s damage timer).
+- `src/max.rs` — safe Phase 2 `hyprmax` port (per-window maximize, adopt,
+  remembered/restore windowed box, reserved-area + workspace reflow, the
+  Super+click swallow, born-fullscreen). No `unsafe` — it calls only the
+  safe `ffi` wrappers.
 
 ## Build
 

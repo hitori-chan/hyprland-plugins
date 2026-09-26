@@ -4,7 +4,7 @@
 # C++<->Rust boundary in the system. Phase 0 is the ABI-skeleton probe.
 [package]
 name        = "awesome"
-version     = "1.0.0"
+version     = "1.1.0"
 edition     = "2024"
 description = "awesome's plugin set as one Rust plugin on the cabi C ABI"
 

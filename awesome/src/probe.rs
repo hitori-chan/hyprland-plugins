@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 
 use crate::bar;
 use crate::ffi;
+use crate::max;
 
 /// The ABI version this build targets (must equal the fork's cabiAbiVersion).
 pub const CABI_ABI_VERSION: u32 = 1;
@@ -21,6 +22,9 @@ pub const JOB_DEFER: u8 = 1;
 pub const JOB_TIMER: u8 = 2;
 pub const JOB_PIPE: u8 = 3;
 pub const JOB_BAR_TICK: u8 = 4;
+pub const JOB_MAX_TOGGLE: u8 = 5;
+pub const JOB_MAX_ADOPT: u8 = 6;
+pub const JOB_MAX_REFLOW: u8 = 7;
 
 // how often a TICK logs (TICK fires every frame; keep the log readable)
 const TICK_LOG_EVERY: u64 = 240;
@@ -34,6 +38,8 @@ pub struct State {
     // The Phase 1 mini-bar (render + textures). Behind a Mutex: the render
     // callback and the clock timer both touch it (single-threaded, no nesting).
     pub bar: Mutex<bar::BarState>,
+    // The Phase 2 hyprmax policy (maximize/restore/adopt/reflow/swallow).
+    max: Mutex<max::MaxState>,
 }
 
 static STATE: AtomicPtr<State> = AtomicPtr::new(ptr::null_mut());
@@ -75,23 +81,34 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
         pipe_read: read_fd,
         pipe_write: write_fd,
         bar: Mutex::new(bar::BarState::new()),
+        max: Mutex::new(max::MaxState::new()),
     });
     // The pointer the (leaked) Box will live at. We use it for every job's
     // `ud` and the render callback; the Box is leaked at the end of init.
     let state_ptr: *mut State = Box::as_mut_ptr(&mut state);
     STATE.store(state_ptr, Ordering::SeqCst);
 
-    // subscribe to the Phase 0 event set (no input is ever cancelled)
+    // subscribe to the event set. The input events are cancellable: the
+    // hyprmax swallow (Super+press on a maximized window) cancels them.
     let mask = ffi::HL_EV_TICK
         | ffi::HL_EV_KEY
         | ffi::HL_EV_MOUSE_BUTTON
         | ffi::HL_EV_WINDOW_ACTIVE
         | ffi::HL_EV_WINDOW_OPEN
-        | ffi::HL_EV_WINDOW_DESTROY;
+        | ffi::HL_EV_WINDOW_DESTROY
+        | ffi::HL_EV_WINDOW_FULL
+        | ffi::HL_EV_WINDOW_WS
+        | ffi::HL_EV_WS_ACTIVE
+        | ffi::HL_EV_WS_MOVE_MON
+        | ffi::HL_EV_MON_RESERVED
+        | ffi::HL_EV_MON_LAYOUT;
     if ffi::subscribe(ctx, mask, state_ptr.cast::<std::ffi::c_void>()) != 0 {
         ffi::log_str(ctx, ffi::LOG_ERR, "eject: subscribe failed");
         return -1;
     }
+
+    // the user-facing bind target keeps its original namespace (hyprmax.toggle)
+    let _ = ffi::lua_register(ctx, "hyprmax", "toggle", ffi::lua_toggle);
 
     // bus pipe: watch the read end; the deferred job writes one byte
     let pipe_arg = Box::leak(Box::new(ffi::JobArg {
@@ -121,6 +138,9 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
         ffi::log_str(ctx, ffi::LOG_WARN, "bar: mini-bar did not start");
     }
 
+    // The Phase 2 hyprmax policy (loads the persisted windowed boxes).
+    max::init(&state);
+
     // Leak the Box now that every callback holds `state_ptr` (unchanged by
     // the leak). The pointer already lives in the STATE static; after this,
     // `state` must not be dropped.
@@ -139,6 +159,8 @@ pub fn exit(state: &State) {
     ffi::log_str(state.ctx, ffi::LOG_INFO, "shutdown");
     // the fork owns the read end (closed with the ctx); close only our write end
     ffi::close_fd(state.pipe_write);
+    // flush the coalesced hyprmax windowed-box write before the ctx is gone
+    max::exit(state);
 }
 
 /// Take the live State pointer (null if none). Safe: pointer load only.
@@ -146,20 +168,95 @@ pub fn take_state() -> *mut State {
     STATE.swap(ptr::null_mut(), Ordering::SeqCst)
 }
 
+/// A shared reference to the live State (null-safe). Used by the Lua entry
+/// points, which are static `extern "C"` fns with no capture. Single-threaded
+/// (the event loop owns the State), so a plain load is sound.
+pub fn state() -> Option<&'static State> {
+    ffi::ref_from_ptr(STATE.load(Ordering::SeqCst))
+}
+
+/// Lock the hyprmax policy state (recovers from a poisoned lock — the whole
+/// plugin is single-threaded, so poison only means a prior panic).
+pub fn max_lock(state: &State) -> std::sync::MutexGuard<'_, max::MaxState> {
+    state
+        .max
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Arm a one-shot deferred job for a job kind (leaks its `JobArg`, as every
+/// other job does; the fork's `defer` is one-shot, so a fresh arg per arm).
+pub fn arm_job(ctx: ffi::Ctx, kind: u8) {
+    let sp = STATE.load(Ordering::SeqCst);
+    if sp.is_null() {
+        return;
+    }
+    let arg = Box::leak(Box::new(ffi::JobArg { state: sp, kind }));
+    ffi::defer(ctx, arg);
+}
+
 // ---------------------------------------------------------------------------
 // event dispatch (safe; the ffi trampoline handed us a SafeEvent)
 // ---------------------------------------------------------------------------
 
-pub fn dispatch(state: &State, ev: &ffi::SafeEvent) {
+/// Dispatch one event. Returns true to CANCEL it (the hyprmax swallow on a
+/// maximized window; every other path passes through).
+pub fn dispatch(state: &State, ev: &ffi::SafeEvent) -> bool {
     state.events.fetch_add(1, Ordering::Relaxed);
     match ev.kind {
-        ffi::HL_EV_TICK => on_tick(state),
-        ffi::HL_EV_KEY => on_key(state, ev),
-        ffi::HL_EV_MOUSE_BUTTON => on_button(state, ev),
-        ffi::HL_EV_WINDOW_ACTIVE => on_window(state, ev, "WINDOW_ACTIVE"),
-        ffi::HL_EV_WINDOW_OPEN => on_window(state, ev, "WINDOW_OPEN"),
-        ffi::HL_EV_WINDOW_DESTROY => on_window(state, ev, "WINDOW_DESTROY"),
-        _ => {}
+        ffi::HL_EV_TICK => {
+            on_tick(state);
+            false
+        }
+        ffi::HL_EV_KEY => {
+            on_key(state, ev);
+            false
+        }
+        ffi::HL_EV_MOUSE_BUTTON => {
+            let ctx = state.ctx;
+            ffi::log_str(
+                ctx,
+                ffi::LOG_DEBUG,
+                &format!(
+                    "event BUTTON b={} state={} x={} y={}",
+                    ev.button, ev.state, ev.x, ev.y
+                ),
+            );
+            let mut m = max_lock(state);
+            max::on_button(ctx, &mut m, ev)
+        }
+        ffi::HL_EV_WINDOW_ACTIVE => {
+            on_window(state, ev, "WINDOW_ACTIVE");
+            false
+        }
+        ffi::HL_EV_WINDOW_OPEN => {
+            on_window(state, ev, "WINDOW_OPEN");
+            false
+        }
+        ffi::HL_EV_WINDOW_DESTROY => {
+            on_window(state, ev, "WINDOW_DESTROY");
+            let ctx = state.ctx;
+            let mut m = max_lock(state);
+            max::on_destroy(ctx, &mut m);
+            false
+        }
+        ffi::HL_EV_WINDOW_FULL => {
+            let ctx = state.ctx;
+            let mut m = max_lock(state);
+            max::on_fullscreen(ctx, &mut m, ev);
+            false
+        }
+        ffi::HL_EV_WINDOW_WS
+        | ffi::HL_EV_WS_ACTIVE
+        | ffi::HL_EV_WS_MOVE_MON
+        | ffi::HL_EV_MON_RESERVED
+        | ffi::HL_EV_MON_LAYOUT => {
+            let ctx = state.ctx;
+            let mut m = max_lock(state);
+            max::on_reflow_trigger(&mut m, ctx);
+            false
+        }
+        _ => false,
     }
 }
 
@@ -185,17 +282,6 @@ fn on_key(state: &State, ev: &ffi::SafeEvent) {
         &format!(
             "event KEY code={} state={} session_locked={}",
             ev.keycode, ev.state, locked
-        ),
-    );
-}
-
-fn on_button(state: &State, ev: &ffi::SafeEvent) {
-    ffi::log_str(
-        state.ctx,
-        ffi::LOG_DEBUG,
-        &format!(
-            "event BUTTON b={} state={} x={} y={}",
-            ev.button, ev.state, ev.x, ev.y
         ),
     );
 }
@@ -247,6 +333,18 @@ pub fn on_job(state: &State, kind: u8) {
             _ => ffi::log_str(state.ctx, ffi::LOG_WARN, "job bus-pipe: readable but empty"),
         },
         JOB_BAR_TICK => bar::tick(state.ctx, state),
+        JOB_MAX_TOGGLE => {
+            let mut m = max_lock(state);
+            max::drain_toggles(state.ctx, &mut m);
+        }
+        JOB_MAX_ADOPT => {
+            let mut m = max_lock(state);
+            max::drain_adopts(state.ctx, &mut m);
+        }
+        JOB_MAX_REFLOW => {
+            let mut m = max_lock(state);
+            max::do_reflow_job(state.ctx, &mut m);
+        }
         _ => {}
     }
 }

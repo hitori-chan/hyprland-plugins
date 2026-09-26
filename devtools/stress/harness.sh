@@ -7,11 +7,15 @@ chk() { # chk <name> <command...> — command's exit code decides
 	if "$@" >/dev/null 2>&1; then ok "$name"; else bad "$name"; fi
 }
 
-# How many plugins the stress config loads: the 8 C++ plugins plus the Rust
-# "awesome" probe (cabi C ABI, loaded last). The plugin-list count checks
-# compare against this — keep it in lockstep with the plugin list in
-# nested.lua (a new plugin means bumping this here, not per-check).
+# How many plugins the stress config BUILDS: the 8 C++ plugins plus the Rust
+# "awesome" probe (cabi C ABI, loaded last). Keep in lockstep with the build
+# list in preflight.sh.
 NPLUGINS=9
+# How many plugins the stress config LOADS. As a Rust module is cut over,
+# its C++ original is dropped from nested.lua's load list, so loaded can be
+# smaller than built. (After the hyprmax cutover: the C++ hyprmax is built
+# but not loaded — the Rust port owns hyprmax.toggle.)
+NLOADED=8
 
 normalize_target_pkgconfig() {
 	local pkg_path=${HYPR_DEPLOY_PKG_CONFIG_PATH:-}
