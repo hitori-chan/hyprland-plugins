@@ -31,8 +31,13 @@ path = "src/bin/vkbd.rs"
 name = "cliphold"
 path = "src/bin/cliphold.rs"
 
+[[bin]]
+name = "fixwin"
+path = "src/bin/fixwin.rs"
+
 [dependencies]
 wayland-client = "=0.31.15"
+wayland-protocols = { version = "=0.32.13", features = ["client"] }
 wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] }
 x11rb = "=0.14.0"
 xkbcommon = "=0.9.0"
