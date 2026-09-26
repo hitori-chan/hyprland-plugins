@@ -9,6 +9,7 @@ mod bar;
 mod click;
 mod ffi;
 mod max;
+mod pad;
 mod place;
 mod probe;
 
