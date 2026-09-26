@@ -194,7 +194,7 @@ being rewritten one at a time in `devtools/src/bin/` (workspace in
 over the C ones, keeping the names and CLI contracts identical so the gate
 needs no changes. A C client's sources are deleted in the same commit its
 Rust replacement passes the full gate. Ported so far: `vptr`, `focustrap`,
-and `vkbd` (C sources gone). Two porting notes the C code did not have to
+and `vkbd` (C sources gone), `cliphold` next. Two porting notes the C code did not have to
 carry: `xkbcommon` >= 1.7 changed mod-name lookup (the mod-map names
 `Shift`/`Control`/`Mod1` work; the old `CTRL`/`ALT` aliases are dead), and
 `xkb_keymap_new_from_names` takes a struct in 1.13 (the xkbcommon-rust

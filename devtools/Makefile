@@ -2,7 +2,6 @@
 # executables are generated locally and ignored by Git.
 HL      ?= $(HOME)/repo/Hyprland
 CXML    := $(HL)/subprojects/hyprland-protocols/protocols/hyprland-input-capture-v1.xml
-DXML    := $(HL)/protocols/wlr-data-control-unstable-v1.xml
 XXML    := /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml
 CFLAGS  += -O2 -Wall $(shell pkg-config --cflags wayland-client)
 LDLIBS  += $(shell pkg-config --libs wayland-client)
@@ -21,10 +20,10 @@ TEST_TARGETS := test-icon-resolver test-battery-state test-desktop-exec \
 
 # Rust fixture clients (awesome-rust plan, Track D): same names, same CLI.
 # As a client is ported it moves from the C rules to RUST_BINS.
-RUST_BINS := vptr focustrap vkbd
+RUST_BINS := vptr focustrap vkbd cliphold
 .PHONY: rust
 
-all: $(RUST_BINS) input-capture cliphold fixwin splashwin fake-sni
+all: $(RUST_BINS) input-capture fixwin splashwin fake-sni
 
 rust:
 	cargo build --release
@@ -91,9 +90,6 @@ test-hyprmax-geometry: hyprmax-geometry-test
 input-capture: input-capture.c input-capture-proto.c input-capture-proto.h
 	$(CC) $(CFLAGS) $(EICFLAGS) input-capture.c input-capture-proto.c -o $@ $(LDLIBS) $(EILIBS)
 
-cliphold: cliphold.c cliphold-proto.c cliphold-proto.h
-	$(CC) $(CFLAGS) cliphold.c cliphold-proto.c -o $@ $(LDLIBS)
-
 splashwin: splashwin.c fixwin-protocol.h fixwin-proto.c
 	$(CC) $(CFLAGS) splashwin.c fixwin-proto.c -o $@ $(LDLIBS)
 
@@ -109,16 +105,12 @@ input-capture-proto.h: $(CXML)
 	wayland-scanner client-header $< $@
 input-capture-proto.c: $(CXML)
 	wayland-scanner private-code $< $@
-cliphold-proto.h: $(DXML)
-	wayland-scanner client-header $< $@
-cliphold-proto.c: $(DXML)
-	wayland-scanner private-code $< $@
 fixwin-protocol.h: $(XXML)
 	wayland-scanner client-header $< $@
 fixwin-proto.c: $(XXML)
 	wayland-scanner private-code $< $@
 
 clean:
-	rm -f $(RUST_BINS) input-capture cliphold fixwin splashwin fake-sni $(TEST_BINS) input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c fixwin-protocol.h fixwin-proto.c
+	rm -f $(RUST_BINS) input-capture fixwin splashwin fake-sni $(TEST_BINS) input-capture-proto.h input-capture-proto.c fixwin-protocol.h fixwin-proto.c
 
 .PHONY: all clean test $(TEST_TARGETS)
