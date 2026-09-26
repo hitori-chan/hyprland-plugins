@@ -15,9 +15,12 @@
 # the ctx is dropped) is covered by the lifecycle battery's teardown core check.
 
 # 1. present + metadata round-trip -----------------------------------------
+# the probe's version is the toml's [awesome] version (kept in lockstep with
+# Cargo.toml by the preflight version-sync check); read it rather than hardcode
+AW_VER=$(grep -A2 '^\[awesome\]' "$REPO/hyprpm.toml" | grep version | grep -o '[0-9.]*')
 chk "ffi: Rust probe is in the plugin list" test "$(hq plugin list | grep -c 'Plugin awesome')" = 1
-chk "ffi: Rust probe reports its C-ABI version (1.0.0)" \
-    test "$(hq plugin list | grep -A3 'Plugin awesome' | grep -c 'Version: 1.0.0')" = 1
+chk "ffi: Rust probe reports its C-ABI version ($AW_VER)" \
+    test "$(hq plugin list | grep -A3 'Plugin awesome' | grep -c "Version: $AW_VER")" = 1
 chk "ffi: Rust probe metadata round-trips (cabi description)" \
     test "$(hq plugin list | grep -A3 'Plugin awesome' | grep -c 'cabi')" = 1
 

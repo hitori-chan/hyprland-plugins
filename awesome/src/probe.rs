@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use crate::bar;
 use crate::ffi;
 use crate::max;
+use crate::place;
 
 /// The ABI version this build targets (must equal the fork's cabiAbiVersion).
 pub const CABI_ABI_VERSION: u32 = 1;
@@ -25,6 +26,7 @@ pub const JOB_BAR_TICK: u8 = 4;
 pub const JOB_MAX_TOGGLE: u8 = 5;
 pub const JOB_MAX_ADOPT: u8 = 6;
 pub const JOB_MAX_REFLOW: u8 = 7;
+pub const JOB_PLACE: u8 = 8;
 
 // how often a TICK logs (TICK fires every frame; keep the log readable)
 const TICK_LOG_EVERY: u64 = 240;
@@ -40,6 +42,8 @@ pub struct State {
     pub bar: Mutex<bar::BarState>,
     // The Phase 2 hyprmax policy (maximize/restore/adopt/reflow/swallow).
     max: Mutex<max::MaxState>,
+    // The Phase 2 hyprplace policy (spawn placement + geometry memory).
+    place: Mutex<place::PlaceState>,
 }
 
 static STATE: AtomicPtr<State> = AtomicPtr::new(ptr::null_mut());
@@ -82,6 +86,7 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
         pipe_write: write_fd,
         bar: Mutex::new(bar::BarState::new()),
         max: Mutex::new(max::MaxState::new()),
+        place: Mutex::new(place::PlaceState::new()),
     });
     // The pointer the (leaked) Box will live at. We use it for every job's
     // `ud` and the render callback; the Box is leaked at the end of init.
@@ -95,6 +100,7 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
         | ffi::HL_EV_MOUSE_BUTTON
         | ffi::HL_EV_WINDOW_ACTIVE
         | ffi::HL_EV_WINDOW_OPEN
+        | ffi::HL_EV_WINDOW_CLOSE
         | ffi::HL_EV_WINDOW_DESTROY
         | ffi::HL_EV_WINDOW_FULL
         | ffi::HL_EV_WINDOW_WS
@@ -141,6 +147,9 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
     // The Phase 2 hyprmax policy (loads the persisted windowed boxes).
     max::init(&state);
 
+    // The Phase 2 hyprplace policy (loads the persisted spawn spots).
+    place::init(&state);
+
     // Leak the Box now that every callback holds `state_ptr` (unchanged by
     // the leak). The pointer already lives in the STATE static; after this,
     // `state` must not be dropped.
@@ -161,6 +170,8 @@ pub fn exit(state: &State) {
     ffi::close_fd(state.pipe_write);
     // flush the coalesced hyprmax windowed-box write before the ctx is gone
     max::exit(state);
+    // flush the coalesced hyprplace spawn-spot write before the ctx is gone
+    place::exit(state);
 }
 
 /// Take the live State pointer (null if none). Safe: pointer load only.
@@ -180,6 +191,14 @@ pub fn state() -> Option<&'static State> {
 pub fn max_lock(state: &State) -> std::sync::MutexGuard<'_, max::MaxState> {
     state
         .max
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Lock the hyprplace policy state (recovers from a poisoned lock).
+pub fn place_lock(state: &State) -> std::sync::MutexGuard<'_, place::PlaceState> {
+    state
+        .place
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
@@ -231,6 +250,17 @@ pub fn dispatch(state: &State, ev: &ffi::SafeEvent) -> bool {
         }
         ffi::HL_EV_WINDOW_OPEN => {
             on_window(state, ev, "WINDOW_OPEN");
+            if let Some(w) = &ev.window {
+                let mut p = place_lock(state);
+                place::on_open(state.ctx, &mut p, w);
+            }
+            false
+        }
+        ffi::HL_EV_WINDOW_CLOSE => {
+            if let Some(w) = &ev.window {
+                let mut p = place_lock(state);
+                place::on_close(state.ctx, &mut p, w);
+            }
             false
         }
         ffi::HL_EV_WINDOW_DESTROY => {
@@ -344,6 +374,10 @@ pub fn on_job(state: &State, kind: u8) {
         JOB_MAX_REFLOW => {
             let mut m = max_lock(state);
             max::do_reflow_job(state.ctx, &mut m);
+        }
+        JOB_PLACE => {
+            let mut p = place_lock(state);
+            place::drain(state.ctx, &mut p);
         }
         _ => {}
     }

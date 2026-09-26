@@ -6,11 +6,12 @@ Nothing C++ (no types, exceptions, references, or templates) crosses the
 boundary; the design and phase plan live in
 [`docs/awesome-rust-plan.md`](../docs/awesome-rust-plan.md).
 
-**Current state — Phases 0-2 (probe + mini-bar + hyprmax port).** The
-Phase 0 ABI probe (below) is complete, Phase 1 adds the first real render
-(a mini-bar that proves the whole cabi render pipeline end to end), and
-Phase 2 ports the first full C++ plugin (`hyprmax`), cut over so the Rust
-port — not the C++ original — is the one the gate validates.
+**Current state — Phases 0-2 (probe + mini-bar + hyprmax & hyprplace
+ports).** The Phase 0 ABI probe (below) is complete, Phase 1 adds the first
+real render (a mini-bar that proves the whole cabi render pipeline end to
+end), and Phase 2 ports the full C++ policy plugins (`hyprmax`, then
+`hyprplace`), each cut over so the Rust port — not the C++ original — is the
+one the gate validates.
 
 Phase 0 (the probe) proves the C boundary is clean:
 
@@ -54,6 +55,21 @@ Rust port owns `hyprmax.toggle`, and the `windows` battery's maximize checks
 Rust port. The C++ `hyprmax` is still **built** (it stays in the build list)
 — only its load is dropped — until Phase 6 deletes it.
 
+`hyprplace` (spawn placement with geometry memory) is the second Phase 2
+port: a new window is born at the remembered size for its class, and the
+remembered spot lands when it's free — otherwise the least-overlap spot
+(KWin's default). A fixed-size toplevel (min == max) keeps the compositor's
+centered spot and never touches the class row; X11 and parent-anchored
+windows keep their own spot while it's free; a maximized or workarea-filling
+window consumes no free space. Placement is deferred out of the map emission
+(queue + one-shot job); the close-box is remembered synchronously on
+`window.close` (a strong ref — the fork now wires it, since `window.destroy`
+may already be null). The port needed placement queries on the fork
+(`hl_window_is_x11`/`has_parent`/`override_redirect`/`monitor`/
+`border_size`/`grant_exempt`) and a window-address identity check — a
+self-block (comparing handle pointers instead of the window address) made the
+remembered spot "occupied" and sent every spawn to least-overlap.
+
 It loads **last** in `hyprpm.toml` and, while the C++ plugins are still
 loaded, defers to their input (the bar eats its strip first); as a module is
 cut over, the Rust port takes that module's input in place of the C++
@@ -73,6 +89,9 @@ original.
   remembered/restore windowed box, reserved-area + workspace reflow, the
   Super+click swallow, born-fullscreen). No `unsafe` — it calls only the
   safe `ffi` wrappers.
+- `src/place.rs` — safe Phase 2 `hyprplace` port (spawn placement + geometry
+  memory: remembered spot when free, else least-overlap; fixed-size / X11 /
+  parent handling; border-aware on-screen clamp). No `unsafe`.
 
 ## Build
 
