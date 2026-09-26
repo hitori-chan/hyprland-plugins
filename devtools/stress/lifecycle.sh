@@ -85,7 +85,7 @@ chk "storm probes up: stormb focused by its own click" test "$(pyc "cs[-1]['clas
 	echo "move 12 13"; echo "sleep 30"; echo "press 272"; echo "sleep 30"; echo "release 272"; echo "sleep 100"
 } | vp
 sleep 1
-chk "input storm: all 8 plugins alive" test "$(hq plugin list | grep -c Plugin)" = 8
+chk "input storm: all $NPLUGINS plugins alive" test "$(hq plugin list | grep -c Plugin)" = "$NPLUGINS"
 chk "input storm: the final taglist click registered (ws 1)" test "$(ws)" = 1
 read -r BAX BAY <<< "$(center_of storma)"; click_at "$BAX" "$BAY"
 expect "post-storm click still raises + focuses (no stuck swallow)" \
@@ -181,7 +181,7 @@ sleep 0.8
 chk "reload: the config re-applies" hq_matches 'ok' reload
 sleep 1.2
 retarget || { echo "nested retarget FAILED after reload"; exit 1; }
-chk "reload: all 8 plugins alive" test "$(hq plugin list | grep -c Plugin)" = 8
+chk "reload: all $NPLUGINS plugins alive" test "$(hq plugin list | grep -c Plugin)" = "$NPLUGINS"
 chk "reload: hyprnotify still answers" hq_matches '^center:' hyprnotify state
 printf "move 59 13\nsleep 30\npress 272\nsleep 30\nrelease 272\nsleep 120\n" | vp; sleep 0.6
 chk "reload: the strip still takes a click (tag 3)" test "$(ws)" = 3

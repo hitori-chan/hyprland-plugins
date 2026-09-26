@@ -7,6 +7,12 @@ chk() { # chk <name> <command...> — command's exit code decides
 	if "$@" >/dev/null 2>&1; then ok "$name"; else bad "$name"; fi
 }
 
+# How many plugins the stress config loads: the 8 C++ plugins plus the Rust
+# "awesome" probe (cabi C ABI, loaded last). The plugin-list count checks
+# compare against this — keep it in lockstep with the plugin list in
+# nested.lua (a new plugin means bumping this here, not per-check).
+NPLUGINS=9
+
 normalize_target_pkgconfig() {
 	local pkg_path=${HYPR_DEPLOY_PKG_CONFIG_PATH:-}
 	[[ -n "$pkg_path" ]] || return 0

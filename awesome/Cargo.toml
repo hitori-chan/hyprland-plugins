@@ -1,0 +1,31 @@
+# awesome — the single Rust plugin that carries all of the awesome modules
+# (bar, notify, max, snap, click, place, pad, osd). It sits on the fork's
+# cabi C ABI (Hyprland src/plugins/cabi/cabi.h); that header is the only
+# C++<->Rust boundary in the system. Phase 0 is the ABI-skeleton probe.
+[package]
+name        = "awesome"
+version     = "1.0.0"
+edition     = "2024"
+description = "awesome's plugin set as one Rust plugin on the cabi C ABI"
+
+[lib]
+name       = "awesome"
+path       = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+libc = "=0.2.189"
+
+[build-dependencies]
+bindgen = "=0.71.1"
+
+[profile.release]
+lto           = "thin"
+codegen-units = 1
+
+[lints.rust]
+unsafe_code = "deny"
+unused      = "deny"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -100 }

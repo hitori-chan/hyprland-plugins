@@ -3,6 +3,9 @@
 *.tmp
 .build/
 
+# awesome — the Rust plugin: cargo build artifacts (the .so is covered by *.so)
+awesome/target/
+
 # local agent files (the tracked contract is AGENTS.md at the root)
 CLAUDE.md
 HANDOFF.md
