@@ -1,0 +1,31 @@
+# hyprdevtools — the stress-gate fixture clients in Rust (awesome-rust plan,
+# Track D). Binaries keep their historical names; the stress harness
+# references them by path. One bin per client; shared code in the lib.
+[package]
+name = "hyprdevtools"
+version = "0.1.0"
+edition = "2024"
+description = "hyprland-plugins stress-gate fixture clients (Rust)"
+
+[lib]
+name = "hyprdevtools"
+path = "src/lib.rs"
+
+[[bin]]
+name = "vptr"
+path = "src/bin/vptr.rs"
+
+[dependencies]
+wayland-client = "=0.31.15"
+wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[lints.rust]
+unsafe_code = "deny"
+unused = "deny"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -100 }

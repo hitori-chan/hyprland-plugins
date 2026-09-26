@@ -1,7 +1,6 @@
 # Native Wayland fixtures and standalone C++ regressions. Protocol glue and
 # executables are generated locally and ignored by Git.
 HL      ?= $(HOME)/repo/Hyprland
-XML     := $(HL)/protocols/wlr-virtual-pointer-unstable-v1.xml
 KXML    := $(HL)/protocols/virtual-keyboard-unstable-v1.xml
 CXML    := $(HL)/subprojects/hyprland-protocols/protocols/hyprland-input-capture-v1.xml
 DXML    := $(HL)/protocols/wlr-data-control-unstable-v1.xml
@@ -22,7 +21,16 @@ TEST_TARGETS := test-icon-resolver test-battery-state test-desktop-exec \
 	test-hyprosd test-persist test-fileindex \
 	test-hyprsnap-geometry test-hyprmax-geometry test-pixel-model
 
-all: vptr vkbd input-capture cliphold fixwin splashwin focustrap fake-sni
+# Rust fixture clients (awesome-rust plan, Track D): same names, same CLI.
+# As a client is ported it moves from the C rules to RUST_BINS.
+RUST_BINS := vptr
+.PHONY: rust
+
+all: rust vkbd input-capture cliphold fixwin splashwin focustrap fake-sni
+
+rust:
+	cargo build --release
+	@for b in $(RUST_BINS); do cp target/release/$$b $$b; done
 
 test: $(TEST_TARGETS)
 
@@ -79,9 +87,6 @@ hyprmax-geometry-test: hyprmax_geometry_test.cpp test.hpp ../hyprmax/geometry.hp
 
 test-hyprmax-geometry: hyprmax-geometry-test
 	./hyprmax-geometry-test
-
-vptr: vptr.c vptr-proto.c vptr-proto.h
-	$(CC) $(CFLAGS) vptr.c vptr-proto.c -o $@ $(LDLIBS)
 
 vkbd: vkbd.c vkbd-proto.c vkbd-proto.h
 	$(CC) $(CFLAGS) vkbd.c vkbd-proto.c -o $@ $(LDLIBS) $(KLIBS)

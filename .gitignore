@@ -16,8 +16,8 @@ screenshots/
 # devtools — nested-Hyprland test tooling: track the sources, not the
 # build artifacts (the vptr binary + the wayland-scanner protocol glue)
 devtools/vptr
-devtools/vptr-proto.c
-devtools/vptr-proto.h
+devtools/target/
+devtools/protocols/
 devtools/vkbd
 devtools/vkbd-proto.c
 devtools/vkbd-proto.h
