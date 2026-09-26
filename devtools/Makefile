@@ -20,10 +20,10 @@ TEST_TARGETS := test-icon-resolver test-battery-state test-desktop-exec \
 
 # Rust fixture clients (awesome-rust plan, Track D): same names, same CLI.
 # As a client is ported it moves from the C rules to RUST_BINS.
-RUST_BINS := vptr focustrap vkbd cliphold
+RUST_BINS := vptr focustrap vkbd cliphold fixwin
 .PHONY: rust
 
-all: $(RUST_BINS) input-capture fixwin splashwin fake-sni
+all: $(RUST_BINS) input-capture splashwin fake-sni
 
 rust:
 	cargo build --release
@@ -92,9 +92,6 @@ input-capture: input-capture.c input-capture-proto.c input-capture-proto.h
 
 splashwin: splashwin.c fixwin-protocol.h fixwin-proto.c
 	$(CC) $(CFLAGS) splashwin.c fixwin-proto.c -o $@ $(LDLIBS)
-
-fixwin: fixwin.c fixwin-protocol.h fixwin-proto.c
-	$(CC) $(CFLAGS) fixwin.c fixwin-proto.c -o $@ $(LDLIBS)
 
 # SNI + dbusmenu fixture over libdbus (not a compositor client): the tray
 # menu battery drives it against the nested instance's private session bus.
