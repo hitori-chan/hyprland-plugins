@@ -35,6 +35,10 @@ path = "src/bin/cliphold.rs"
 name = "fixwin"
 path = "src/bin/fixwin.rs"
 
+[[bin]]
+name = "splashwin"
+path = "src/bin/splashwin.rs"
+
 [dependencies]
 wayland-client = "=0.31.15"
 wayland-protocols = { version = "=0.32.13", features = ["client"] }
