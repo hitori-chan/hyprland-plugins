@@ -1,13 +1,11 @@
 # Native Wayland fixtures and standalone C++ regressions. Protocol glue and
 # executables are generated locally and ignored by Git.
 HL      ?= $(HOME)/repo/Hyprland
-KXML    := $(HL)/protocols/virtual-keyboard-unstable-v1.xml
 CXML    := $(HL)/subprojects/hyprland-protocols/protocols/hyprland-input-capture-v1.xml
 DXML    := $(HL)/protocols/wlr-data-control-unstable-v1.xml
 XXML    := /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml
 CFLAGS  += -O2 -Wall $(shell pkg-config --cflags wayland-client)
 LDLIBS  += $(shell pkg-config --libs wayland-client)
-KLIBS   := $(shell pkg-config --libs xkbcommon)
 EICFLAGS := $(shell pkg-config --cflags libei-1.0)
 EILIBS   := $(shell pkg-config --libs libei-1.0)
 HYPR_CFLAGS := $(shell pkg-config --cflags hyprland)
@@ -23,10 +21,10 @@ TEST_TARGETS := test-icon-resolver test-battery-state test-desktop-exec \
 
 # Rust fixture clients (awesome-rust plan, Track D): same names, same CLI.
 # As a client is ported it moves from the C rules to RUST_BINS.
-RUST_BINS := vptr focustrap
+RUST_BINS := vptr focustrap vkbd
 .PHONY: rust
 
-all: $(RUST_BINS) vkbd input-capture cliphold fixwin splashwin fake-sni
+all: $(RUST_BINS) input-capture cliphold fixwin splashwin fake-sni
 
 rust:
 	cargo build --release
@@ -90,9 +88,6 @@ hyprmax-geometry-test: hyprmax_geometry_test.cpp test.hpp ../hyprmax/geometry.hp
 test-hyprmax-geometry: hyprmax-geometry-test
 	./hyprmax-geometry-test
 
-vkbd: vkbd.c vkbd-proto.c vkbd-proto.h
-	$(CC) $(CFLAGS) vkbd.c vkbd-proto.c -o $@ $(LDLIBS) $(KLIBS)
-
 input-capture: input-capture.c input-capture-proto.c input-capture-proto.h
 	$(CC) $(CFLAGS) $(EICFLAGS) input-capture.c input-capture-proto.c -o $@ $(LDLIBS) $(EILIBS)
 
@@ -110,10 +105,6 @@ fixwin: fixwin.c fixwin-protocol.h fixwin-proto.c
 fake-sni: fake-sni.c
 	$(CC) -O2 -Wall $< -o $@ $(shell pkg-config --cflags --libs dbus-1)
 
-vkbd-proto.h: $(KXML)
-	wayland-scanner client-header $< $@
-vkbd-proto.c: $(KXML)
-	wayland-scanner private-code $< $@
 input-capture-proto.h: $(CXML)
 	wayland-scanner client-header $< $@
 input-capture-proto.c: $(CXML)
@@ -128,6 +119,6 @@ fixwin-proto.c: $(XXML)
 	wayland-scanner private-code $< $@
 
 clean:
-	rm -f $(RUST_BINS) vkbd input-capture cliphold fixwin splashwin fake-sni $(TEST_BINS) vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c fixwin-protocol.h fixwin-proto.c
+	rm -f $(RUST_BINS) input-capture cliphold fixwin splashwin fake-sni $(TEST_BINS) input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c fixwin-protocol.h fixwin-proto.c
 
 .PHONY: all clean test $(TEST_TARGETS)
