@@ -125,6 +125,8 @@ pub struct WindowInfo {
     pub title: String,
     pub floating: bool,
     pub pinned: bool,
+    /// mapped && !hidden (the window is live and visible on its workspace).
+    pub visible: bool,
 }
 
 /// Window metadata (appID, title) + a few flags. The strings are copied out
@@ -140,6 +142,7 @@ pub fn window_info(ctx: Ctx, w: &WindowHandle) -> Option<WindowInfo> {
     };
     let mut floating: u32 = 0;
     let mut pinned: u32 = 0;
+    let mut visible: u32 = 0;
     let rc = unsafe {
         hl_window_get(
             ctx,
@@ -152,7 +155,7 @@ pub fn window_info(ctx: Ctx, w: &WindowHandle) -> Option<WindowInfo> {
             std::ptr::null_mut(),
             &raw mut floating,
             &raw mut pinned,
-            std::ptr::null_mut(),
+            &raw mut visible,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
         )
@@ -165,6 +168,7 @@ pub fn window_info(ctx: Ctx, w: &WindowHandle) -> Option<WindowInfo> {
         title: str_from(&title),
         floating: floating != 0,
         pinned: pinned != 0,
+        visible: visible != 0,
     })
 }
 
@@ -186,6 +190,7 @@ pub struct SafeEvent {
     pub button: u32,
     pub state: u32,
     pub keycode: u32,
+    pub focus_reason: u32,
     pub window: Option<WindowHandle>,
 }
 
@@ -215,6 +220,7 @@ unsafe extern "C" fn dispatch_trampoline(ev: *mut hl_event_t, ud: *mut c_void) {
             button: e.button,
             state: e.state,
             keycode: e.keycode,
+            focus_reason: e.focus_reason,
             window,
         };
         super::probe::dispatch(state, &safe)
@@ -516,6 +522,56 @@ pub fn window_told_maximized(ctx: Ctx, w: &WindowHandle) -> bool {
     unsafe { hl_window_told_maximized(ctx, w.as_raw()) != 0 }
 }
 
+// ---- hyprclick: focus-setter + cursor/fullscreen/history queries ----
+/// A focus SETTER (fullWindowFocus with an explicit reason). The reason is
+/// what picks the raise policy (keyboard/focus reasons raise, a hover pass
+/// does not).
+pub fn focus_window_set(ctx: Ctx, w: &WindowHandle, reason: u32) -> u32 {
+    unsafe { hl_focus_window_set(ctx, w.as_raw(), reason) }
+}
+/// The window under the pointer (a fresh hit test). None if none.
+pub fn window_under_cursor(ctx: Ctx) -> Option<WindowHandle> {
+    let mut out: *mut hl_window = std::ptr::null_mut();
+    let rc = unsafe { hl_window_under_cursor(ctx, &raw mut out) };
+    (rc == HL_E_OK).then(|| unsafe { WindowHandle::from_raw(out) }.unwrap())
+}
+/// Controller-level fullscreen (internal OR client mode active).
+pub fn window_is_fullscreen(ctx: Ctx, w: &WindowHandle) -> bool {
+    unsafe { hl_window_is_fullscreen(ctx, w.as_raw()) != 0 }
+}
+/// Tuck the floaters back behind a fullscreen/maximized window (clear the
+/// allowed-over flag on the other windows of its workspace; never `lower()`).
+pub fn clear_allowed_over(ctx: Ctx, w: &WindowHandle) {
+    unsafe { hl_clear_allowed_over(ctx, w.as_raw()) }
+}
+/// The window focus history, old -> new (bounded at CAP; dead windows are
+/// skipped, so the count can be under the historical length).
+pub fn focus_history(ctx: Ctx) -> Vec<WindowHandle> {
+    const CAP: u32 = 256;
+    let mut ptrs: Vec<*mut hl_window> = vec![std::ptr::null_mut(); CAP as usize];
+    let total = unsafe { hl_focus_history(ctx, ptrs.as_mut_ptr(), CAP) } as usize;
+    ptrs.truncate(total.min(CAP as usize));
+    ptrs.into_iter()
+        .filter_map(|p| {
+            if p.is_null() {
+                None
+            } else {
+                unsafe { WindowHandle::from_raw(p) }
+            }
+        })
+        .collect()
+}
+/// A monitor's full logical box, or None if it expired.
+pub fn monitor_logical_box(ctx: Ctx, mon: &MonitorHandle) -> Option<hl_box_t> {
+    let mut out: hl_box_t = unsafe { std::mem::zeroed() };
+    let rc = unsafe { hl_monitor_logical_box(ctx, mon.as_raw(), &raw mut out) };
+    (rc == HL_E_OK).then_some(out)
+}
+/// The workspace's numbered id (0 for special/none — numbered IDs start at 1).
+pub fn workspace_number(ctx: Ctx, ws: &WorkspaceHandle) -> u32 {
+    unsafe { hl_workspace_number(ctx, ws.as_raw()) }
+}
+
 /// Every live window (bounded at CAP). Each returned handle owns one ref,
 /// released on drop. A screen has far fewer than CAP windows; the count is
 /// the bound, so a pathological overflow degrades to the first CAP (a missed
@@ -587,6 +643,19 @@ pub unsafe extern "C" fn lua_toggle(_lua: *mut c_void) -> i32 {
     crate::max::lua_toggle_impl()
 }
 
+/// The `unsafe extern "C"` wrappers for the hyprclick Lua focus helpers. The
+/// `unsafe` boundary lives here (one module); the bodies are the safe click
+/// impls.
+pub unsafe extern "C" fn lua_focus_prev_here(_lua: *mut c_void) -> i32 {
+    crate::click::lua_focus_prev_here_impl()
+}
+pub unsafe extern "C" fn lua_focus_next(_lua: *mut c_void) -> i32 {
+    crate::click::lua_focus_next_impl()
+}
+pub unsafe extern "C" fn lua_focus_prev(_lua: *mut c_void) -> i32 {
+    crate::click::lua_focus_prev_impl()
+}
+
 /// Wrap a non-null raw pointer in a shared reference (the one place a raw
 /// pointer becomes a `&`; the pointee's lifetime is the plugin's). The safe
 /// modules call this instead of doing the cast themselves.
@@ -620,10 +689,12 @@ pub unsafe fn event_cancel_raw(ev: *mut hl_event_t) {
 /// A tracked left/right/middle button bit (the only buttons a plugin may
 /// swallow; anything else stays native application input).
 pub fn tracked_button_bit(button: u32) -> u32 {
+    // the standard linux BTN_* codes (the virtual pointer + the real seat both
+    // deliver these; an earlier off-by-two mapped BTN_LEFT to the middle slot).
     match button {
-        270 /* BTN_LEFT */ => 1,
-        271 /* BTN_RIGHT */ => 2,
-        272 /* BTN_MIDDLE */ => 4,
+        272 /* BTN_LEFT */ => 1,
+        274 /* BTN_RIGHT */ => 2,
+        273 /* BTN_MIDDLE */ => 4,
         _ => 0,
     }
 }
@@ -700,6 +771,18 @@ impl Drop for WorkspaceHandle {
 pub fn window_workspace(ctx: Ctx, w: &WindowHandle) -> Option<WorkspaceHandle> {
     let mut out: *mut hl_workspace = std::ptr::null_mut();
     let rc = unsafe { hl_window_workspace(ctx, w.as_raw(), &raw mut out) };
+    (rc == HL_E_OK).then(|| unsafe { WorkspaceHandle::from_raw(out) }.unwrap())
+}
+/// The focused monitor (takes ownership of the ref). None if none.
+pub fn focus_monitor(ctx: Ctx) -> Option<MonitorHandle> {
+    let mut out: *mut hl_monitor = std::ptr::null_mut();
+    let rc = unsafe { hl_focus_monitor(ctx, &raw mut out) };
+    (rc == HL_E_OK).then(|| unsafe { MonitorHandle::from_raw(out) }.unwrap())
+}
+/// A monitor's active (numbered) workspace. None if it expired or has none.
+pub fn monitor_workspace(ctx: Ctx, mon: &MonitorHandle) -> Option<WorkspaceHandle> {
+    let mut out: *mut hl_workspace = std::ptr::null_mut();
+    let rc = unsafe { hl_monitor_active_workspace(ctx, mon.as_raw(), &raw mut out) };
     (rc == HL_E_OK).then(|| unsafe { WorkspaceHandle::from_raw(out) }.unwrap())
 }
 
@@ -996,7 +1079,14 @@ fn init_impl(
             *name = c"awesome".as_ptr();
         }
         if !version.is_null() {
-            *version = env!("CARGO_PKG_VERSION").as_ptr().cast::<c_char>();
+            // env! is a Rust &str (not NUL-terminated); the fork copies the C
+            // string until NUL, so terminate it explicitly (the &str's bytes
+            // sit mid-\u{2e}rodata, adjacent to other literals, so an unterminated
+            // read would swallow them).
+            *version = concat!(env!("CARGO_PKG_VERSION"), "\0")
+                .as_bytes()
+                .as_ptr()
+                .cast::<c_char>();
         }
         if !author.is_null() {
             *author = c"hitori".as_ptr();

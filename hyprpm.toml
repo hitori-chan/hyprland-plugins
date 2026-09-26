@@ -76,7 +76,7 @@ build       = ["make -C hyprosd all"]
 # (Phase 6 deletes the eight C++ entries above and this becomes the only one.)
 [awesome]
 description = "awesome's modules as one Rust plugin (cabi C ABI)"
-version     = "1.2.0"
+version     = "1.3.0"
 authors     = ["hitori"]
 output      = "awesome/awesome.so"
 build       = ["make -C awesome all"]
