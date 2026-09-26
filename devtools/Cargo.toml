@@ -7,6 +7,10 @@ version = "0.1.0"
 edition = "2024"
 description = "hyprland-plugins stress-gate fixture clients (Rust)"
 
+# only the declared bins below build; src/bin/ holds one file per client and
+# unported files must not become auto-detected targets in trimmed manifests
+autobins = false
+
 [lib]
 name = "hyprdevtools"
 path = "src/lib.rs"
@@ -19,10 +23,19 @@ path = "src/bin/vptr.rs"
 name = "focustrap"
 path = "src/bin/focustrap.rs"
 
+[[bin]]
+name = "vkbd"
+path = "src/bin/vkbd.rs"
+
 [dependencies]
 wayland-client = "=0.31.15"
 wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] }
 x11rb = "=0.14.0"
+xkbcommon = "=0.9.0"
+wayland-scanner = "=0.31.11"
+wayland-backend = "=0.3.17"
+rustix = { version = "=1.1.5", features = ["event", "mm"] }
+
 
 [profile.release]
 lto = "thin"

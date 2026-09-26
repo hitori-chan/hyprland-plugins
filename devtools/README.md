@@ -193,10 +193,18 @@ being rewritten one at a time in `devtools/src/bin/` (workspace in
 `devtools/Cargo.toml`); `make` builds them via cargo and copies the binaries
 over the C ones, keeping the names and CLI contracts identical so the gate
 needs no changes. A C client's sources are deleted in the same commit its
-Rust replacement passes the full gate. `vptr` is the first port (its C
-source is gone); the virtual-keyboard XML is generated at build time from
-the fork's copy (`build.rs`, `HYPR_LAND_DIR` overrides the path) because
-upstream wlr-protocols dropped it.
+Rust replacement passes the full gate. Ported so far: `vptr`, `focustrap`,
+and `vkbd` (C sources gone). Two porting notes the C code did not have to
+carry: `xkbcommon` >= 1.7 changed mod-name lookup (the mod-map names
+`Shift`/`Control`/`Mod1` work; the old `CTRL`/`ALT` aliases are dead), and
+`xkb_keymap_new_from_names` takes a struct in 1.13 (the xkbcommon-rust
+binding passes empty strings, which still compile the default keymap).
+`input-capture` stays C: the current EIS protocol is a custom binary
+protocol (not the Wayland wire protocol) and no maintained Rust libei
+client exists — a fixture is not worth hand-rolling the protocol.
+The virtual-keyboard XML is generated at build time from the fork's copy
+(`build.rs`, `HYPR_LAND_DIR` overrides the path) because upstream
+wlr-protocols dropped it.
 
 - `vptr WIDTH HEIGHT` reads virtual pointer commands: `move`, `rel`, `press`,
   `release`, `scroll`, and `sleep`. One process owns one gesture.
@@ -221,9 +229,11 @@ upstream wlr-protocols dropped it.
 
 ### D-Bus Fixtures
 
-- `fake-sni` serves one StatusNotifierItem plus a dbusmenu (a magenta 22x22
-  pixmap, a root layout with doubled and trailing separators, a sub layout
-  with a trailing one) on the address given by `DBUS_SESSION_BUS_ADDRESS` —
-  the tray battery points it at the nested instance's PRIVATE session bus
-  (never the live one) and asserts the strip, the parse-time separator
-  trim, and the cascade against it.
+- `fake-sni` registers a StatusNotifierItem on the session bus (the address
+  given by `DBUS_SESSION_BUS_ADDRESS`) and serves a dbusmenu whose separator
+  defects (trailing, doubled, repeated in the submenu) let the tray battery
+  assert the bar draws none of them. A magenta 22x22 pixmap keeps the icon
+  theme-free. The `Get` handler takes sdbus-c++'s two-string shape
+  (interface, property); unknown properties answer with the string `""`,
+  not an error. The tray battery points it at the nested instance's PRIVATE
+  session bus (never the live one).
