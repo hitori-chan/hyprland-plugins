@@ -39,16 +39,22 @@ path = "src/bin/fixwin.rs"
 name = "splashwin"
 path = "src/bin/splashwin.rs"
 
+[[bin]]
+name = "fake-sni"
+path = "src/bin/fake-sni.rs"
+
 [dependencies]
 wayland-client = "=0.31.15"
 wayland-protocols = { version = "=0.32.13", features = ["client"] }
 wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] }
-x11rb = "=0.14.0"
-xkbcommon = "=0.9.0"
 wayland-scanner = "=0.31.11"
 wayland-backend = "=0.3.17"
 
+x11rb = "=0.14.0"
+xkbcommon = "=0.9.0"
 rustix = { version = "=1.1.5", features = ["event", "mm"] }
+zbus = "=5.19"
+tokio = { version = "=1.53.1", features = ["rt", "macros", "signal", "time"] }
 
 [profile.release]
 lto = "thin"

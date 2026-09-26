@@ -193,16 +193,22 @@ being rewritten one at a time in `devtools/src/bin/` (workspace in
 `devtools/Cargo.toml`); `make` builds them via cargo and copies the binaries
 over the C ones, keeping the names and CLI contracts identical so the gate
 needs no changes. A C client's sources are deleted in the same commit its
-Rust replacement passes the full gate. Ported so far: `vptr`, `focustrap`,
-and `vkbd` (C sources gone), `cliphold` next. Two porting notes the C code did not have to
-carry: `xkbcommon` >= 1.7 changed mod-name lookup (the mod-map names
-`Shift`/`Control`/`Mod1` work; the old `CTRL`/`ALT` aliases are dead), and
-`xkb_keymap_new_from_names` takes a struct in 1.13 (the xkbcommon-rust
-binding passes empty strings, which still compile the default keymap).
-`input-capture` stays C: the current EIS protocol is a custom binary
-protocol (not the Wayland wire protocol) and no maintained Rust libei
-client exists — a fixture is not worth hand-rolling the protocol.
-The virtual-keyboard XML is generated at build time from the fork's copy
+Rust replacement passes the full gate. Every fixture is ported now except
+`input-capture`, which stays C: the current EIS protocol is a custom
+binary protocol (not the Wayland wire protocol) and no maintained Rust
+libei client exists — a fixture is not worth hand-rolling the protocol.
+Porting notes the C code did not have to carry: `xkbcommon` >= 1.7
+changed mod-name lookup (the mod-map names `Shift`/`Control`/`Mod1`
+work; the old `CTRL`/`ALT` aliases are dead, which is why the C
+fixture's `mods` lines silently sent modifiers(0,0,0,0)), and
+`xkb_keymap_new_from_names` takes a struct in 1.13. zbus serves the
+standard `org.freedesktop.DBus.Properties` interface automatically — and
+only from `#[zbus(property)]` declarations: sdbus-c++ reads properties
+through its two-arg `Get(interface, property)` on that interface, so a
+plain method named `Get` on the SNI interface is never seen (gate29:
+the tray went icon-less and every GetLayout child was a
+variant-of-variant the bar's struct decode rejected). The
+virtual-keyboard XML is generated at build time from the fork's copy
 (`build.rs`, `HYPR_LAND_DIR` overrides the path) because upstream
 wlr-protocols dropped it.
 

@@ -19,10 +19,10 @@ TEST_TARGETS := test-icon-resolver test-battery-state test-desktop-exec \
 
 # Rust fixture clients (awesome-rust plan, Track D): same names, same CLI.
 # As a client is ported it moves from the C rules to RUST_BINS.
-RUST_BINS := vptr focustrap vkbd cliphold fixwin splashwin
+RUST_BINS := vptr focustrap vkbd cliphold fixwin splashwin fake-sni
 .PHONY: rust
 
-all: $(RUST_BINS) input-capture fake-sni
+all: $(RUST_BINS) input-capture
 
 rust:
 	cargo build --release
@@ -89,17 +89,12 @@ test-hyprmax-geometry: hyprmax-geometry-test
 input-capture: input-capture.c input-capture-proto.c input-capture-proto.h
 	$(CC) $(CFLAGS) $(EICFLAGS) input-capture.c input-capture-proto.c -o $@ $(LDLIBS) $(EILIBS)
 
-# SNI + dbusmenu fixture over libdbus (not a compositor client): the tray
-# menu battery drives it against the nested instance's private session bus.
-fake-sni: fake-sni.c
-	$(CC) -O2 -Wall $< -o $@ $(shell pkg-config --cflags --libs dbus-1)
-
 input-capture-proto.h: $(CXML)
 	wayland-scanner client-header $< $@
 input-capture-proto.c: $(CXML)
 	wayland-scanner private-code $< $@
 
 clean:
-	rm -f $(RUST_BINS) input-capture fake-sni $(TEST_BINS) input-capture-proto.h input-capture-proto.c
+	rm -f $(RUST_BINS) input-capture $(TEST_BINS) input-capture-proto.h input-capture-proto.c
 
 .PHONY: all clean test $(TEST_TARGETS)
