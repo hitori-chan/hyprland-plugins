@@ -16,7 +16,7 @@ NPLUGINS=9
 # smaller than built. (After the hyprmax + hyprplace + hyprclick + hyprpad
 # + hyprsnap cutovers: the C++ originals of those are built but not loaded —
 # the Rust ports own them.)
-NLOADED=4
+NLOADED=3
 
 normalize_target_pkgconfig() {
 	local pkg_path=${HYPR_DEPLOY_PKG_CONFIG_PATH:-}
@@ -512,8 +512,8 @@ launch_nested() {
 				;;
 		esac
 	fi
-	PATH="$REPO/devtools/fakes:$PATH" HYPROSD_WPCTL_LOG="$STATE/wpctl.log" \
-		HYPROSD_WPCTL_HANG_FILE="$STATE/hang-wpctl" HYPROSD_WPCTL_FLOOD_FILE="$STATE/flood-wpctl" HYPRNOTIFY_SOUND_HANG_FILE="$STATE/hang-sound" \
+	PATH="$REPO/devtools/fakes:$PATH" OSD_WPCTL_LOG="$STATE/wpctl.log" \
+		OSD_WPCTL_HANG_FILE="$STATE/hang-wpctl" OSD_WPCTL_FLOOD_FILE="$STATE/flood-wpctl" HYPRNOTIFY_SOUND_HANG_FILE="$STATE/hang-sound" \
 		HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" XDG_CACHE_HOME="$STATE/cache" \
 		bash "$HARNESS/launch.sh" >/dev/null 2>&1 || return 1
 	# The nested compositor enters fallback (a headless "FALLBACK" output,

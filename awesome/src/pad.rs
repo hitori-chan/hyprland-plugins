@@ -19,10 +19,11 @@
 // - Auto re-checks are change-detected against the last applied state: an
 //   unrelated hotplug re-checks but applies nothing.
 //
-// The feedback cards (async D-Bus Notify on the session bus) are deferred to
-// the bus-thread subsystem that hyprosd/hyprnotify also need; the flip works
-// without them.
+// - Feedback is one bus-thread Notify (replaces-id 9991, with an explicit
+//   freedesktop icon): the daemon's API is the bus name, never its symbols.
+//   If the bus dies the cards stop; the flip keeps working.
 
+use crate::bus::{BusCmd, Card};
 use crate::ffi;
 use crate::probe::{self, State};
 
@@ -111,13 +112,26 @@ fn external_mouse_present(ctx: ffi::Ctx) -> bool {
     false
 }
 
-fn apply_enabled(ctx: ffi::Ctx, st: &mut PadState, on: bool, target: Option<&ffi::PointerHandle>) {
+// The feedback card (id 9991, the OSD band): replaces in place. `timed`
+// cards live 1.5 s; the "not found" card has no timeout (it says something
+// that will not fix itself on its own).
+fn pad_card(icon: &str, body: &str, timed: bool) {
+    if let Some(bus) = crate::bus::handle() {
+        let mut card = Card::osd(9991, icon, "Touchpad", body.to_owned(), -1);
+        card.timeout_ms = if timed { 1500 } else { -1 };
+        bus.send(BusCmd::NotifyCard(card));
+    }
+}
+
+fn apply_enabled(state: &State, st: &mut PadState, on: bool, target: Option<&ffi::PointerHandle>) {
+    let ctx = state.ctx;
     let (tp, id) = if let Some(tp) = target {
         (tp.clone_handle(), ffi::pointer_id(ctx, tp))
     } else {
         let Some(t) = touchpad(ctx) else {
             st.applied_state = -1;
             st.applied_touchpad = 0;
+            pad_card("input-touchpad-symbolic", "not found", false);
             return;
         };
         t
@@ -133,17 +147,31 @@ fn apply_enabled(ctx: ffi::Ctx, st: &mut PadState, on: bool, target: Option<&ffi
     }
     st.applied_state = i32::from(on);
     st.applied_touchpad = id;
+    // symbolic, not the plain names: "touchpad-disabled" ships in the
+    // HighContrast theme only (unprobed) and would render iconless
+    pad_card(
+        if on {
+            "input-touchpad-symbolic"
+        } else {
+            "touchpad-disabled-symbolic"
+        },
+        if on { "enabled" } else { "disabled" },
+        true,
+    );
 }
 
-fn auto_apply(ctx: ffi::Ctx, st: &mut PadState) {
+fn auto_apply(state: &State, st: &mut PadState) {
+    let ctx = state.ctx;
     let Some((tp, id)) = touchpad(ctx) else {
         st.applied_state = -1;
         st.applied_touchpad = 0;
-        return; // nothing to auto-manage
+        // nothing to auto-manage — the "not found" card belongs to the manual
+        // toggle, else every mouse hotplug re-spams it
+        return;
     };
     let want = i32::from(!external_mouse_present(ctx));
     if want != st.applied_state || st.applied_touchpad != id {
-        apply_enabled(ctx, st, want == 1, Some(&tp));
+        apply_enabled(state, st, want == 1, Some(&tp));
     }
 }
 
@@ -163,7 +191,7 @@ fn arm_settle(state: &State, st: &mut PadState) {
 /// re-check is change-detected; an unrelated hotplug applies nothing).
 pub fn drain_settle(state: &State, st: &mut PadState) {
     st.settle_job = 0;
-    auto_apply(state.ctx, st);
+    auto_apply(state, st);
 }
 
 // ---------------------------------------------------------------------------
@@ -198,7 +226,7 @@ pub fn drain_toggles(state: &State, st: &mut PadState) {
     st.settle_job = 0;
     let ctx = state.ctx;
     let current = touchpad_enabled(ctx).unwrap_or(st.applied_state == 1);
-    apply_enabled(ctx, st, !current, None);
+    apply_enabled(state, st, !current, None);
 }
 
 // ---------------------------------------------------------------------------

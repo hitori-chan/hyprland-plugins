@@ -14,6 +14,7 @@ use crate::bar;
 use crate::click;
 use crate::ffi;
 use crate::max;
+use crate::osd;
 use crate::pad;
 use crate::place;
 use crate::snap;
@@ -34,6 +35,11 @@ pub const JOB_CLICK: u8 = 9;
 pub const JOB_PAD_SETTLE: u8 = 10;
 pub const JOB_PAD_TOGGLE: u8 = 11;
 pub const JOB_SNAP_MAGNET: u8 = 12;
+pub const JOB_OSD_DRAIN: u8 = 13;
+pub const JOB_OSD_SET_DONE: u8 = 14;
+pub const JOB_OSD_GET_OUT: u8 = 15;
+pub const JOB_BUS_WAKE: u8 = 16;
+pub const JOB_OSD_ORPHAN_TICK: u8 = 17;
 
 // how often a TICK logs (TICK fires every frame; keep the log readable)
 const TICK_LOG_EVERY: u64 = 240;
@@ -59,6 +65,14 @@ pub struct State {
     // the snap render callback reads it by the state pointer (the draw is in
     // the snap module, same crate, but the field must be visible there).
     pub snap: Mutex<snap::SnapState>,
+    // The Phase 3 hyprosd policy (the volume/brightness OSD chains).
+    osd: Mutex<osd::OsdState>,
+    // The one bus thread (the plan's D-Bus line). The event-loop handle
+    // lives in `crate::bus`'s static (State is leaked and cannot be mutated
+    // from teardown); these are the wake pipe's read end (owned by us; the
+    // thread owns the write end) + its watch token.
+    pub bus_pipe_read: libc::c_int,
+    pub bus_reply_token: u64,
 }
 
 static STATE: AtomicPtr<State> = AtomicPtr::new(ptr::null_mut());
@@ -106,6 +120,9 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
         click: Mutex::new(click::ClickState::new()),
         pad: Mutex::new(pad::PadState::new()),
         snap: Mutex::new(snap::SnapState::new()),
+        osd: Mutex::new(osd::OsdState::new()),
+        bus_pipe_read: -1,
+        bus_reply_token: 0,
     });
     // The pointer the (leaked) Box will live at. We use it for every job's
     // `ud` and the render callback; the Box is leaked at the end of init.
@@ -143,17 +160,40 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
     let _ = ffi::lua_register(ctx, "click", "focus_next", ffi::lua_focus_next);
     let _ = ffi::lua_register(ctx, "click", "focus_prev", ffi::lua_focus_prev);
     let _ = ffi::lua_register(ctx, "pad", "toggle", ffi::lua_pad_toggle);
+    let _ = ffi::lua_register(ctx, "osd", "volume_up", ffi::lua_osd_volume_up);
+    let _ = ffi::lua_register(ctx, "osd", "volume_down", ffi::lua_osd_volume_down);
+    let _ = ffi::lua_register(ctx, "osd", "mute", ffi::lua_osd_mute);
+    let _ = ffi::lua_register(ctx, "osd", "mic_mute", ffi::lua_osd_mic_mute);
+    let _ = ffi::lua_register(ctx, "osd", "brightness_up", ffi::lua_osd_brightness_up);
+    let _ = ffi::lua_register(ctx, "osd", "brightness_down", ffi::lua_osd_brightness_down);
+
+    // The one bus thread (the plan's D-Bus line): cards, logind, and (from
+    // Phase 4) the notification service all run there, never on the event
+    // loop. The wake pipe wakes this loop when a reply lands.
+    if let Some((r, w)) = ffi::pipe2_nonblock() {
+        if crate::bus::start(w) {
+            state.bus_pipe_read = r;
+            state.bus_reply_token = watch_job(ctx, r, JOB_BUS_WAKE, 0);
+        } else {
+            // the thread never started: close both ends (commands would just
+            // drop — the keys keep working, the cards don't)
+            ffi::close_fd(r);
+            ffi::close_fd(w);
+        }
+    }
 
     // bus pipe: watch the read end; the deferred job writes one byte
     let pipe_arg = Box::leak(Box::new(ffi::JobArg {
         state: state_ptr,
         kind: JOB_PIPE,
+        extra: 0,
     }));
     ffi::watch_fd(ctx, read_fd, pipe_arg);
 
     let defer_arg = Box::leak(Box::new(ffi::JobArg {
         state: state_ptr,
         kind: JOB_DEFER,
+        extra: 0,
     }));
     ffi::defer(ctx, defer_arg);
 
@@ -161,6 +201,7 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
     let timer_arg = Box::leak(Box::new(ffi::JobArg {
         state: state_ptr,
         kind: JOB_TIMER,
+        extra: 0,
     }));
     ffi::timer(ctx, 1000, 1, timer_arg);
 
@@ -187,6 +228,13 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
     {
         let mut s = state.snap.lock().unwrap();
         snap::init(ctx, &mut s, state_ptr);
+    }
+
+    // The Phase 3 hyprosd policy (finds the backlight device; the Lua face is
+    // registered above, the chains drain from the event loop).
+    {
+        let mut o = state.osd.lock().unwrap();
+        osd::init(&mut o);
     }
 
     // Leak the Box now that every callback holds `state_ptr` (unchanged by
@@ -218,6 +266,22 @@ pub fn exit(state: &State) {
     }
     // cancel the hyprpad settle timer (no job pending at teardown)
     pad::exit(state);
+    // the hyprosd chains out (every watch cancelled, every fd closed)
+    {
+        let mut o = osd_lock(state);
+        osd::exit(state.ctx, &mut o);
+    }
+    // The bus thread: the wake watch out, the read end closed, then the
+    // handle dropped — its sender drop ends the thread, which closes the
+    // write end (the sources out BEFORE the connections die, as the C++
+    // links did).
+    if state.bus_reply_token != 0 {
+        ffi::job_cancel(state.ctx, state.bus_reply_token);
+    }
+    if state.bus_pipe_read >= 0 {
+        ffi::close_fd(state.bus_pipe_read);
+    }
+    crate::bus::stop();
 }
 
 /// Take the live State pointer (null if none). Safe: pointer load only.
@@ -256,6 +320,13 @@ pub fn place_lock(state: &State) -> std::sync::MutexGuard<'_, place::PlaceState>
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+pub fn osd_lock(state: &State) -> std::sync::MutexGuard<'_, osd::OsdState> {
+    state
+        .osd
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 pub fn snap_lock(state: &State) -> std::sync::MutexGuard<'_, snap::SnapState> {
     state
         .snap
@@ -272,13 +343,18 @@ pub fn pad_lock(state: &State) -> std::sync::MutexGuard<'_, pad::PadState> {
 
 /// Arm a one-shot deferred job for a job kind (leaks its `JobArg`, as every
 /// other job does; the fork's `defer` is one-shot, so a fresh arg per arm).
-pub fn arm_job(ctx: ffi::Ctx, kind: u8) {
+/// Returns false when no state (an unarmable drain must not let a queue grow).
+pub fn arm_job(ctx: ffi::Ctx, kind: u8) -> bool {
     let sp = STATE.load(Ordering::SeqCst);
     if sp.is_null() {
-        return;
+        return false;
     }
-    let arg = Box::leak(Box::new(ffi::JobArg { state: sp, kind }));
-    ffi::defer(ctx, arg);
+    let arg = Box::leak(Box::new(ffi::JobArg {
+        state: sp,
+        kind,
+        extra: 0,
+    }));
+    ffi::defer(ctx, arg) != 0
 }
 
 /// Arm a one-shot timer job (ms). Returns the job token (0 if no state).
@@ -287,8 +363,42 @@ pub fn arm_timer(ctx: ffi::Ctx, ms: u32, kind: u8) -> u64 {
     if sp.is_null() {
         return 0;
     }
-    let arg = Box::leak(Box::new(ffi::JobArg { state: sp, kind }));
+    let arg = Box::leak(Box::new(ffi::JobArg {
+        state: sp,
+        kind,
+        extra: 0,
+    }));
     ffi::timer(ctx, ms, 0, arg)
+}
+
+/// Arm a REPEATING timer job (ms). Returns the job token (0 if no state);
+/// the caller cancels it with `job_cancel`.
+pub fn arm_timer_repeat(ctx: ffi::Ctx, ms: u32, kind: u8) -> u64 {
+    let sp = STATE.load(Ordering::SeqCst);
+    if sp.is_null() {
+        return 0;
+    }
+    let arg = Box::leak(Box::new(ffi::JobArg {
+        state: sp,
+        kind,
+        extra: 0,
+    }));
+    ffi::timer(ctx, ms, 1, arg)
+}
+
+/// Arm a persistent readable watch that carries a u32 payload (the osd's
+/// chain index rides in `extra`). Returns the job token (0 on failure).
+pub fn watch_job(ctx: ffi::Ctx, fd: i32, kind: u8, extra: u32) -> u64 {
+    let sp = STATE.load(Ordering::SeqCst);
+    if sp.is_null() {
+        return 0;
+    }
+    let arg = Box::leak(Box::new(ffi::JobArg {
+        state: sp,
+        kind,
+        extra,
+    }));
+    ffi::watch_fd_persistent(ctx, fd, arg)
 }
 
 // ---------------------------------------------------------------------------
@@ -467,7 +577,7 @@ fn on_window(state: &State, ev: &ffi::SafeEvent, what: &str) {
 // jobs (safe; the ffi trampoline decoded the JobArg)
 // ---------------------------------------------------------------------------
 
-pub fn on_job(state: &State, kind: u8) {
+pub fn on_job(state: &State, kind: u8, extra: u32) {
     match kind {
         JOB_DEFER => {
             ffi::log_str(
@@ -519,6 +629,34 @@ pub fn on_job(state: &State, kind: u8) {
         JOB_SNAP_MAGNET => {
             let mut s = snap_lock(state);
             snap::do_magnet(state.ctx, &mut s);
+        }
+        JOB_OSD_DRAIN => {
+            let mut o = osd_lock(state);
+            osd::drain(state.ctx, &mut o);
+        }
+        JOB_OSD_SET_DONE => {
+            let mut o = osd_lock(state);
+            osd::on_set_done(state.ctx, &mut o, extra);
+        }
+        JOB_OSD_GET_OUT => {
+            let mut o = osd_lock(state);
+            osd::on_get_out(state.ctx, &mut o, extra);
+        }
+        JOB_OSD_ORPHAN_TICK => {
+            let mut o = osd_lock(state);
+            osd::drain_orphan_tick(state.ctx, &mut o);
+        }
+        JOB_BUS_WAKE => {
+            // drain the wake pipe, then the reply queue (the queue is the
+            // source of truth; the byte is only the nudge)
+            let _ = ffi::read_fd(state.bus_pipe_read, &mut [0u8; 64]);
+            let replies = crate::bus::handle()
+                .map(|b| b.drain_replies())
+                .unwrap_or_default();
+            for crate::bus::BusReply::BrightnessFailed { gen_id } in replies {
+                let mut o = osd_lock(state);
+                osd::on_brightness_failed(&mut o, gen_id);
+            }
         }
         _ => {}
     }
