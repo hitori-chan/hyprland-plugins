@@ -12,6 +12,7 @@ mod max;
 mod pad;
 mod place;
 mod probe;
+mod snap;
 
 // Re-export the two loader entry points at the crate root so they are
 // unambiguously part of the public (dylib) surface.
