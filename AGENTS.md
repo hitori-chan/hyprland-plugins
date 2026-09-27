@@ -186,11 +186,11 @@ them, append new ones.
 - `hyprpad`: in-process touchpad policy via aquamarine and Lua config.
 - `hyprosd`: volume/brightness bus client shown through `hyprnotify`;
   draws nothing.
-- `awesome`: the Rust rewrite of the C++ plugins above (one `cdylib`
-  across the fork's `cabi` C ABI). Phase 0 ships only the probe
-  (event/config/job validation); it loads last and cancels no input,
-  so it cannot reorder the C++ priority table. Plan:
-  `docs/awesome-rust-plan.md`.
+- `awesome`: the Rust rewrite of the eight C++ plugins above (one
+  `cdylib` across the fork's `cabi` C ABI). It loads last; the ported
+  modules take over the C++ plugins' input per the in-plugin priority
+  table. Hard lines + the no-legacy naming: the section below. Plan
+  (source of truth): `docs/awesome-rust-plan.md`.
 
 The order in `hyprpm.toml` is a behavior contract:
 
@@ -201,6 +201,40 @@ input beats the window below; the maximized-window swallow beats
 click-to-raise. `awesome` stays last until the ported modules take over
 the C++ plugins' input. `NHyprCommon::mustLoadBefore` and the plugin
 READMEs must agree with the manifest.
+
+## The awesome rewrite (hard lines)
+
+`awesome` (one Rust plugin) replaces the eight C++ plugins. The plan,
+`docs/awesome-rust-plan.md`, is the source of truth; this section states
+the binding decisions only, so the port does not drift from it.
+
+- **Naming — no legacy.** The namespace is the MODULE — bar, notify, max,
+  click, snap, place, pad, osd — never the old plugin name. Lua methods
+  are `hl.plugin.<module>.<method>`; config keys are
+  `plugin:<module>:<key>`. The user's live `hypr*` config is migrated
+  old→new exactly once, at the Phase 6 cutover (the one documented
+  breaking change). `org.hitori.hyprnotify` (the bar→notify bridge) is
+  deleted at cutover — it becomes an intra-process call.
+  (Incident: max/click/pad were first ported under their old `hypr*`
+  namespaces to keep the live binds working during coexistence; that
+  contradicted this decision and is being corrected.)
+- **Phases land gate-green.** Phase 0→6. A port is committed, and its C++
+  original dropped from the harness load list, only in the commit whose
+  gate battery passes. The C++ module stays built (NPLUGINS) until Phase 6
+  deletes it; NLOADED falls as each module cuts over.
+- **The cabi is the only boundary.** All C++ complexity stays fork-side;
+  no C++ type, reference, exception, or template crosses it. The config
+  model is BOOL/INT/DOUBLE/STR; `HL_CFG_COLOR` is a documented gap-fill
+  (the C++ plugins register color values the plan's model omitted).
+- **Priority table replaces load order.** In-plugin dispatch:
+  bar > notify > max > snap > click; place/pad/osd take no input. The
+  first module to cancel an input event wins.
+- **D-Bus off the event loop.** zbus runs on the one bus thread (a tokio
+  single-thread runtime); no bus call on the event-loop thread, ever.
+- **Ergonomics over ceremony.** The crate's file layout is the agent's
+  call (flat module files are fine); the plan's directory sketch is a
+  suggestion, not a requirement. The naming, phase, cabi, priority, and
+  D-Bus lines above are the binding parts.
 
 ## Git and versions
 
