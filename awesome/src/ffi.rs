@@ -263,10 +263,12 @@ unsafe extern "C" fn dispatch_trampoline(ev: *mut hl_event_t, ud: *mut c_void) {
 // jobs
 // ---------------------------------------------------------------------------
 
-/// A job argument (the probe's State + a kind tag). Leaked; freed at exit.
+/// A job argument (the probe's State + a kind tag + one u32 payload — e.g.
+/// a chain index). Leaked; freed at exit.
 pub struct JobArg {
     pub state: *const super::probe::State,
     pub kind: u8,
+    pub extra: u32,
 }
 
 /// Register a one-shot deferred job (next idle).
@@ -300,10 +302,28 @@ pub fn job_cancel(ctx: Ctx, token: u64) {
     }
 }
 
-/// Watch an fd for readability (the fork takes ownership of the fd).
+/// Watch an fd for readability, ONE-SHOT (the fork takes ownership of the
+/// fd: it closes it when the callback fires). The callback is dropped if
+/// the fd is already readable at register time (the job is still inactive
+/// during the synchronous delivery).
 pub fn watch_fd(ctx: Ctx, fd: i32, arg: &JobArg) -> u64 {
     unsafe {
         hl_watch_fd(
+            ctx,
+            fd,
+            Some(job_trampoline),
+            std::ptr::from_ref::<JobArg>(arg) as *mut c_void,
+        )
+    }
+}
+
+/// Watch an fd for readability, PERSISTENT (re-arms on every readable edge;
+/// the plugin keeps fd ownership — close it after `job_cancel`). An
+/// already-readable fd fires on the next loop iteration. Returns 0 on
+/// failure.
+pub fn watch_fd_persistent(ctx: Ctx, fd: i32, arg: &JobArg) -> u64 {
+    unsafe {
+        hl_watch_fd_persistent(
             ctx,
             fd,
             Some(job_trampoline),
@@ -319,8 +339,62 @@ unsafe extern "C" fn job_trampoline(ud: *mut c_void) {
     }
     let _ = catch_unwind(AssertUnwindSafe(|| {
         let arg = unsafe { &*(ud as *const JobArg) };
-        super::probe::on_job(unsafe { &*arg.state }, arg.kind);
+        super::probe::on_job(unsafe { &*arg.state }, arg.kind, arg.extra);
     }));
+}
+
+// ---- raw fd helpers (the osd's subprocess chains + the bus reply pipe) ----
+
+/// `pipe2(O_CLOEXEC | O_NONBLOCK)`. None on failure.
+pub fn pipe2_nonblock() -> Option<(i32, i32)> {
+    let mut fds: [libc::c_int; 2] = [-1; 2];
+    // SAFETY: pipe2 fills both fds atomically; we take ownership of them.
+    let rc = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) };
+    (rc == 0).then_some((fds[0], fds[1]))
+}
+
+/// Open a pidfd for a child (the completion signal; Hyprland installs
+/// `SA_NOCLDWAIT`, so the pidfd, not a `waitpid`, tells us when it exits).
+/// -1 on failure (EMFILE on a crowded loop — the caller orphans the pid).
+#[allow(clippy::cast_possible_truncation)] // the result is an fd or -errno: i32-safe
+pub fn pidfd_open(pid: i32) -> i32 {
+    // SAFETY: SYS_pidfd_open is a leaf syscall returning a fresh fd or -1.
+    unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) as i32 }
+}
+
+/// Mark an fd close-on-exec (`SYS_pidfd_open` takes no CLOEXEC flag; keep the
+/// fd out of concurrent spawns).
+pub fn set_cloexec(fd: i32) -> bool {
+    // SAFETY: fcntl F_SETFD is a leaf on an fd we own.
+    let rc = unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) };
+    rc >= 0
+}
+
+/// Take ownership of a raw fd the bus thread moved into itself (the wake
+/// pipe's write end; closed exactly once, with the thread).
+pub fn owned_fd(fd: i32) -> std::os::fd::OwnedFd {
+    // SAFETY: `fd` was just split from a fresh pipe(2); the bus thread is
+    // its only owner from this point on, and OwnedFd closes it exactly once
+    // when dropped.
+    use std::os::fd::FromRawFd;
+    unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) }
+}
+
+/// Write one NUL byte (the bus thread's wake-pipe nudge). EAGAIN on a full
+/// (wedged) pipe loses the nudge only — the reply stays queued.
+pub fn write_nul(fd: i32) {
+    // SAFETY: a leaf write of one byte to a pipe we own; the result is
+    // deliberately ignored (EAGAIN/EPIPE are both tolerable).
+    let nul: [u8; 1] = [0];
+    let _ = unsafe { libc::write(fd, nul.as_ptr().cast::<libc::c_void>(), 1) };
+}
+
+/// `waitpid(WNOHANG)`: >0 reaped, 0 still running, <0 (ECHILD) already gone.
+/// The orphan reaper's only child contact (never blocks the loop).
+pub fn waitpid_nohang(pid: i32) -> i32 {
+    let mut status: libc::c_int = 0;
+    // SAFETY: WNOHANG never blocks; status is a private out-param.
+    unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) }
 }
 
 // ---------------------------------------------------------------------------
@@ -816,6 +890,26 @@ pub unsafe extern "C" fn lua_focus_prev(_lua: *mut c_void) -> i32 {
 /// The `unsafe extern "C"` wrapper for the hyprpad manual toggle.
 pub unsafe extern "C" fn lua_pad_toggle(_lua: *mut c_void) -> i32 {
     crate::pad::lua_toggle_impl()
+}
+
+/// The `unsafe extern "C"` wrappers for the hyprosd Lua face (the osd module).
+pub unsafe extern "C" fn lua_osd_volume_up(_lua: *mut c_void) -> i32 {
+    crate::osd::lua_volume_up_impl()
+}
+pub unsafe extern "C" fn lua_osd_volume_down(_lua: *mut c_void) -> i32 {
+    crate::osd::lua_volume_down_impl()
+}
+pub unsafe extern "C" fn lua_osd_mute(_lua: *mut c_void) -> i32 {
+    crate::osd::lua_mute_impl()
+}
+pub unsafe extern "C" fn lua_osd_mic_mute(_lua: *mut c_void) -> i32 {
+    crate::osd::lua_mic_mute_impl()
+}
+pub unsafe extern "C" fn lua_osd_brightness_up(_lua: *mut c_void) -> i32 {
+    crate::osd::lua_brightness_up_impl()
+}
+pub unsafe extern "C" fn lua_osd_brightness_down(_lua: *mut c_void) -> i32 {
+    crate::osd::lua_brightness_down_impl()
 }
 
 /// Wrap a non-null raw pointer in a shared reference (the one place a raw

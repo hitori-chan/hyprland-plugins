@@ -200,14 +200,14 @@ chk "log clean (only known-benign lines)" bash -c \
 # the deliberately hung fixtures owned by this test.
 : > "$STATE/hang-wpctl"
 : > "$STATE/hang-sound"
-dsp "hl.plugin.hyprosd.volume_up()"
+dsp "hl.plugin.osd.volume_up()"
 nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
 	Notify susssasa\{sv\}i teardown 0 "" "hung sound" body 0 1 sound-name s gate 30000 >/dev/null 2>&1
 for _ in $(seq 1 30); do
 	[[ -s "$STATE/hang-wpctl.pid" && -s "$STATE/hang-sound.pid" ]] && break
 	sleep 0.1
 done
-chk "teardown: hyprosd owns an active helper" test -s "$STATE/hang-wpctl.pid"
+chk "teardown: osd owns an active helper" test -s "$STATE/hang-wpctl.pid"
 chk "teardown: hyprnotify owns an active helper" test -s "$STATE/hang-sound.pid"
 NESTED_PID="$(validated_nested_pid 2>/dev/null)"
 chk "teardown: nested compositor pid is known" test -n "$NESTED_PID"

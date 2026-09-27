@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# The reply and shared-clipboard battery: the hyprosd wpctl process path,
+# The reply and shared-clipboard battery: the osd wpctl process path,
 # the shade's pointer-only close, the inline-reply protocol, and the launcher
 # clipboard (hyprbar's menubar paste shares the bounded asynchronous
 # clipboard helper). Helpers live in notify-lib.sh; this file is battery
 # code only.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/notify-lib.sh"
 
-# ---- hyprosd wpctl process path -------------------------------------------
+# ---- osd wpctl process path -------------------------------------------
 # The nested compositor shadows only wpctl, so this reaches the real Lua,
 # deferred queue, pidfd, pipe readback, and notification paths without
 # changing the live PipeWire sink. The fake validates argv and emits real
@@ -14,17 +14,17 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/notify-lib.sh"
 # unknown hint, so the feedback card is a plain 1200ms card and the battery
 # tears each one down by its fixed bus id (9993, volume) to keep the model clean.
 : > "$STATE/wpctl.log"
-dsp "hl.plugin.hyprosd.volume_up()"; sleep 0.4
-chk "hyprosd: volume up uses the capped relative wpctl command" grep -Fxq "set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+" "$STATE/wpctl.log"
-chk "hyprosd: volume up readback produces a card" test "$(st)" = "center:0 live:1 dnd:0"
+dsp "hl.plugin.osd.volume_up()"; sleep 0.4
+chk "osd: volume up uses the capped relative wpctl command" grep -Fxq "set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+" "$STATE/wpctl.log"
+chk "osd: volume up readback produces a card" test "$(st)" = "center:0 live:1 dnd:0"
 closeid 9993; sleep 0.3
-chk "hyprosd: the feedback card tears down by id" test "$(st)" = "center:0 live:0 dnd:0"
+chk "osd: the feedback card tears down by id" test "$(st)" = "center:0 live:0 dnd:0"
 
 : > "$STATE/flood-wpctl"
-dsp "hl.plugin.hyprosd.volume_up()"; sleep 0.5
-chk "hyprosd: flood readback closes at the retained-output cap" test -s "$STATE/flood-wpctl.closed"
-chk "hyprosd: flood readback emits no guessed feedback" test "$(st)" = "center:0 live:0 dnd:0"
-chk "hyprosd: flood leaves the nested compositor responsive" hq_matches '^center:0 live:0 dnd:0$' hyprnotify state
+dsp "hl.plugin.osd.volume_up()"; sleep 0.5
+chk "osd: flood readback closes at the retained-output cap" test -s "$STATE/flood-wpctl.closed"
+chk "osd: flood readback emits no guessed feedback" test "$(st)" = "center:0 live:0 dnd:0"
+chk "osd: flood leaves the nested compositor responsive" hq_matches '^center:0 live:0 dnd:0$' hyprnotify state
 rm -f "$STATE/flood-wpctl" "$STATE/flood-wpctl.closed"
 
 # ---- hyprnotify sound-spawn backpressure ------------------------------------
@@ -49,17 +49,17 @@ hq hyprnotify clear >/dev/null; sleep 0.8
 chk "hyprnotify: the sound flood cleared" test "$(st)" = "center:0 live:0 dnd:0"
 
 : > "$STATE/wpctl.log"
-dsp "hl.plugin.hyprosd.volume_down()"; sleep 0.4
-chk "hyprosd: volume down uses the relative wpctl command" grep -Fxq "set-volume @DEFAULT_AUDIO_SINK@ 5%-" "$STATE/wpctl.log"
-chk "hyprosd: volume down readback produces a card" test "$(st)" = "center:0 live:1 dnd:0"
+dsp "hl.plugin.osd.volume_down()"; sleep 0.4
+chk "osd: volume down uses the relative wpctl command" grep -Fxq "set-volume @DEFAULT_AUDIO_SINK@ 5%-" "$STATE/wpctl.log"
+chk "osd: volume down readback produces a card" test "$(st)" = "center:0 live:1 dnd:0"
 closeid 9993; sleep 0.3
 
 : > "$STATE/wpctl.log"
-dsp "(function() for _ = 1, 32 do hl.plugin.hyprosd.volume_up() end return hl.dsp.no_op() end)()"; sleep 0.8
-chk "hyprosd: repeat backpressure caps active chains" test "$(grep -c '^set-volume ' "$STATE/wpctl.log")" = 16
-chk "hyprosd: repeat backpressure preserves admitted feedback" test "$(st)" = "center:0 live:1 dnd:0"
+dsp "(function() for _ = 1, 32 do hl.plugin.osd.volume_up() end return hl.dsp.no_op() end)()"; sleep 0.8
+chk "osd: repeat backpressure caps active chains" test "$(grep -c '^set-volume ' "$STATE/wpctl.log")" = 16
+chk "osd: repeat backpressure preserves admitted feedback" test "$(st)" = "center:0 live:1 dnd:0"
 closeid 9993; sleep 0.3
-chk "hyprosd: reset after the wpctl battery" test "$(st)" = "center:0 live:0 dnd:0"
+chk "osd: reset after the wpctl battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- pointer shade ownership -------------------------------------------------
 # The shade's close paths that only the pointer owns: an outside click closes

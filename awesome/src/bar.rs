@@ -135,6 +135,7 @@ pub fn init(ctx: ffi::Ctx, state: &State, state_ptr: *mut State) -> bool {
     let arg = Box::leak(Box::new(ffi::JobArg {
         state: state_ptr,
         kind: crate::probe::JOB_BAR_TICK,
+        extra: 0,
     }));
     ffi::timer(ctx, 1000, 1, arg);
 

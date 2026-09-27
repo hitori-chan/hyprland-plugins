@@ -390,6 +390,7 @@ pub fn queue_magnet(ctx: ffi::Ctx, state: &mut SnapState) {
     crate::probe::arm_job(ctx, crate::probe::JOB_SNAP_MAGNET);
 }
 
+#[allow(clippy::too_many_lines)] // the port keeps the C++ structure
 pub fn do_magnet(ctx: ffi::Ctx, state: &mut SnapState) {
     state.magnet_queued = false;
     if ffi::session_locked(ctx) {

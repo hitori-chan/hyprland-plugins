@@ -6,12 +6,15 @@ Nothing C++ (no types, exceptions, references, or templates) crosses the
 boundary; the design and phase plan live in
 [`docs/awesome-rust-plan.md`](../docs/awesome-rust-plan.md).
 
-**Current state — Phases 0-2 (probe + mini-bar + hyprmax, hyprplace,
-hyprclick & hyprpad ports).** The Phase 0 ABI probe (below) is complete,
-Phase 1 adds the first real render (a mini-bar that proves the whole cabi
-render pipeline end to end), and Phase 2 ports the full C++ policy plugins
-(`hyprmax`, then `hyprplace`, then `hyprclick`, then `hyprpad`), each cut
-over so the Rust port — not the C++ original — is the one the gate validates.
+**Current state — Phases 0-3 (probe + mini-bar + the six policy/OSD
+module ports).** The Phase 0 ABI probe (below) is complete, Phase 1 adds
+the first real render (a mini-bar that proves the whole cabi render
+pipeline end to end), Phase 2 ports the full C++ policy plugins (`hyprmax`,
+`hyprplace`, `hyprclick`, `hyprpad`), and Phase 3 adds `hyprsnap` (drag
+magnetism + aerosnap) and `hyprosd` (the volume/brightness OSD) on the new
+bus-thread subsystem. Every port is cut over so the Rust port — not the C++
+original — is the one the gate validates. The remaining ports are
+`hyprnotify` (Phase 4) and `hyprbar` (Phase 5).
 
 Phase 0 (the probe) proves the C boundary is clean:
 
@@ -86,28 +89,73 @@ the version out-param had to be NUL-terminated (the `env!` &str sits
 mid-rodata, so an unterminated read swallowed the next literal and broke the
 metadata round-trip).
 
-`hyprpad` (the touchpad policy) is the fourth and final Phase 2 port: the
-touchpad turns off while an external (USB/Bluetooth) mouse is present and
-back on when it's unplugged, and `hyprpad.toggle` flips it by hand. Hotplug
-rides the compositor's own device signal — the fork fires `HL_EV_POINTER_CHANGED`
-on a pointer add (the backend `newPointer`) or remove (a per-pointer destroy
-listener, set up lazily and kept alive in a global so the signal's weak ref
-expires safely) — and the handler only (re)arms a settle timer that
-coalesces a plug's burst into one re-check. The flip is
-`hl_run_lua("hl.device({...})")` — the code `hyprctl eval` reaches, minus
-the fork + socket round-trip. The port needed a pointer handle + queries
-(`hl_pointers` / `is_touchpad` / `is_virtual` / `connected` / `bus_type` /
-`name` / `id`) and the Lua-eval passthrough; the settle timer is a
-one-shot job re-armed by cancel+re-arm (extend the timeout on each hotplug).
-The one part not yet ported is the **feedback cards** (the async D-Bus
-Notify "enabled"/"disabled" cards) — they ride the session-bus bus-thread
-subsystem that `hyprosd`/`hyprnotify` also need, so they land with that
-infrastructure; the flip itself works without them.
+`hyprpad` (the touchpad policy) is the fourth Phase 2 port: the touchpad
+turns off while an external (USB/Bluetooth) mouse is present and back on
+when it's unplugged, and the `pad` module's toggle flips it by hand.
+Hotplug rides the compositor's own device signal — the fork fires
+`HL_EV_POINTER_CHANGED` on a pointer add (the backend `newPointer`) or
+remove (a per-pointer destroy listener, set up lazily and kept alive in a
+global so the signal's weak ref expires safely) — and the handler only
+(re)arms a settle timer that coalesces a plug's burst into one re-check.
+The flip is `hl_run_lua("hl.device({…})")` — the code `hyprctl eval`
+reaches, minus the fork + socket round-trip. The port needed a pointer
+handle + queries (`hl_pointers` / `is_touchpad` / `is_virtual` /
+`connected` / `bus_type` / `name` / `id`) and the Lua-eval passthrough;
+the settle timer is a one-shot job re-armed by cancel+re-arm (extend the
+timeout on each hotplug). Its feedback cards (the async D-Bus Notify
+"enabled"/"disabled"/"not found" cards) land with the bus thread in
+Phase 3.
 
-It loads **last** in `hyprpm.toml` and, while the C++ plugins are still
-loaded, defers to their input (the bar eats its strip first); as a module is
-cut over, the Rust port takes that module's input in place of the C++
-original.
+Phase 3 adds the **bus thread** (`src/bus.rs`) and the last two small
+modules. The bus thread is the plan's D-Bus line made concrete: zbus on a
+tokio current_thread runtime living on its own std::thread — no bus call
+runs on the compositor's event loop, and the bus thread never blocks the
+compositor (each command is one bounded async step, the 5 s method timeout
+bounds a wedged daemon). The event loop talks to it through a bounded
+command channel (sends drop under overload, as the C++ bounded post
+queues did) and a reply queue + non-blocking wake pipe (the persistent
+`hl_watch_fd_persistent` keeps the read end armed across EAGAIN/EOF;
+the queue is the source of truth, the pipe byte is only the nudge). No
+reconnect — a bus death turns the cards off, the keys keep working (the
+C++ links' behavior).
+
+`hyprsnap` is the first Phase 3 port: drag **magnetism** (a floating
+drag's edges snap to the workarea/screen edges within `snap_distance`,
+and a resize snaps to neighboring windows on the same workspace) plus
+**aerosnap** (a drag near a monitor edge arms a slot preview — left/right
+columns, top/bottom strips, or a fullscreen — drawn in the render pass
+and committed on the drag's end). The magnetism runs as a deferred job
+(one per motion, coalesced); the aerosnap zone is armed/reset in the
+mouse-move handler and committed from the drag-end path. The port needed
+drag-state + target-geometry reads on the fork (`hl_drag_target` /
+`hl_drag_mode` / `hl_drag_threshold_reached` / `hl_drag_dragging_tiled`,
+`hl_window_target_position` / `hl_window_set_position_global` /
+`hl_window_warp_position_size`), config reads (`hl_config_int` + the
+`HL_CFG_COLOR` type), `hl_monitor_containing` (true containment, null in a
+gap — the nearest `hl_monitor_at` would arm a zone the pointer isn't in),
+and a second render listener (the snap preview coexists with the bar's
+element).
+
+`hyprosd` is the second Phase 3 port, now the `osd` module
+(`hl.plugin.osd.*`): nothing is drawn — the value cards ride the bus
+thread's `Notify` (ids 9992 brightness / 9993 volume / 9995 mic, replaced
+in place). Brightness is fork-free (sysfs read, ±5% linear steps, floor 2
+raw, written through logind `Session.SetBrightness` on the system bus;
+the card waits for logind's ack and a 500 ms trust window keeps a fast
+repeat from re-stepping off stale sysfs). Volume/mic go through `wpctl`
+subprocesses sequenced on the event loop (set → pidfd → get → stdout pipe
+→ parse → card; two short forks per keypress, render/input never wait on
+any of it), with the readback as the authoritative state (a parse failure
+emits no card) and every queue/chain/child bounded.
+
+**Naming — no legacy.** The namespace is the MODULE, not the old plugin
+name: Lua methods are `hl.plugin.<module>.<method>` (`max`, `click`,
+`pad`, `snap`, `osd`, …) and config keys are `plugin:<module>:<key>`. The
+user's live `hypr*` config is migrated old→new exactly once at the Phase
+6 cutover (the one documented breaking change). It loads **last** in
+`hyprpm.toml` and, while the C++ plugins are still loaded, defers to their
+input (the bar eats its strip first); as a module is cut over, the Rust
+port takes that module's input in place of the C++ original.
 
 ## Layout
 
@@ -131,7 +179,18 @@ original.
   corpse guard). No `unsafe`.
 - `src/pad.rs` — safe Phase 2 `hyprpad` port (touchpad auto on/off on
   external-mouse presence, the settle-timer hotplug coalescing, the
-  `hyprpad.toggle` parity drain). No `unsafe`.
+  `pad.toggle` parity drain, the feedback cards on the bus thread).
+  No `unsafe`.
+- `src/snap.rs` — safe Phase 3 `hyprsnap` port (drag magnetism as a
+  deferred job, the aerosnap edge-zone preview + commit). No `unsafe`.
+- `src/bus.rs` — the one D-Bus thread (zbus on a tokio current_thread
+  runtime on its own std::thread; bounded command channel, reply queue +
+  wake pipe; no reconnect). The event-loop handle lives in a static
+  (`bus::handle()` / `bus::stop()`) because the probe's State is leaked
+  and cannot be mutated from teardown.
+- `src/osd.rs` — safe Phase 3 `hyprosd` port (the volume/brightness
+  chains: pidfd + stdout-pipe sequencing on the event loop, sysfs +
+  logind brightness, the bounded orphan reaper). No `unsafe`.
 
 ## Build
 
@@ -150,8 +209,13 @@ The crate is `edition 2024` with `unsafe_code = "deny"` and
 
 ## Gate
 
-The nested gate loads the probe alongside the C++ plugins and runs a dedicated
-`ffi` battery (probe present + metadata round-trip + 3 clean config reloads +
-a check that the mini-bar paints the bottom strip), with the clean-teardown
-core check in the `lifecycle` battery covering the exit path. See
-`devtools/stress/ffi.sh`.
+The nested gate loads the probe alongside the still-unported C++ plugins
+and runs the full battery; each ported module's own checks (maximize/reflow
+and placement in `windows.sh`, click/focus in `focus.sh`, the wpctl process
+path in `reply.sh`, the mini-bar in `ffi.sh`) validate the Rust port once
+its C++ original is cut over (removed from the harness `nested.lua` load
+list). The snap port — the C++ original never had a dedicated battery for
+it — is validated by the full battery staying green across the drag and
+workspace-switch paths. The clean-teardown core check in the `lifecycle`
+battery covers the exit path, including the bus thread's sources-out
+ordering.

@@ -6,9 +6,11 @@
 #![allow(clippy::missing_safety_doc)]
 
 mod bar;
+mod bus;
 mod click;
 mod ffi;
 mod max;
+mod osd;
 mod pad;
 mod place;
 mod probe;
