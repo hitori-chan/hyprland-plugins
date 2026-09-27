@@ -10,9 +10,13 @@
 CARGO    ?= cargo
 CABI_HDR ?= $(HOME)/repo/Hyprland/src/plugins/cabi/cabi.h
 
+# the .so has no prerequisites of its own (cargo decides staleness); a find
+# over the source files makes `make` re-check the cargo build after any edit
+SRCS := $(shell find src build.rs Cargo.toml Cargo.lock -type f 2>/dev/null)
+
 all: awesome.so
 
-awesome.so:
+awesome.so: $(SRCS)
 	@HYPR_CABI_HEADER="$(CABI_HDR)" $(CARGO) build --release --manifest-path Cargo.toml
 	@cp target/release/libawesome.so awesome.so
 
