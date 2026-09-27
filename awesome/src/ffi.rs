@@ -41,6 +41,7 @@ pub const LOG_ERR: u32 = 3;
 // (from the #define macros) and need no alias.
 pub const HL_E_OK: hl_error_t = hl_error_t_HL_E_OK;
 pub const HL_CFG_INT: hl_cfg_type_t = hl_cfg_type_t_HL_CFG_INT;
+pub const HL_CFG_COLOR: hl_cfg_type_t = hl_cfg_type_t_HL_CFG_COLOR;
 
 pub type Ctx = *mut hl_ctx;
 
@@ -464,6 +465,65 @@ pub fn monitor_workarea(ctx: Ctx, mon: &MonitorHandle) -> Option<hl_box_t> {
     (rc == HL_E_OK).then_some(b)
 }
 
+/// The monitor whose logical box contains the point, or None if it is in a gap.
+pub fn monitor_containing(ctx: Ctx, x: f64, y: f64) -> Option<MonitorHandle> {
+    let mut out: *mut hl_monitor = std::ptr::null_mut();
+    let rc = unsafe { hl_monitor_containing(ctx, x, y, &raw mut out) };
+    (rc == HL_E_OK).then(|| unsafe { MonitorHandle::from_raw(out) }.unwrap())
+}
+
+/// The window being move/resize-dragged right now, or None. The caller owns
+/// the returned handle.
+pub fn drag_target(ctx: Ctx) -> Option<WindowHandle> {
+    let mut out: *mut hl_window = std::ptr::null_mut();
+    let rc = unsafe { hl_drag_target(ctx, &raw mut out) };
+    if rc != HL_E_OK || out.is_null() {
+        return None;
+    }
+    unsafe { WindowHandle::from_raw(out) }
+}
+
+/// The drag mode (eMouseBindMode): -1 invalid, 0 move, 1..3 resize.
+pub fn drag_mode(ctx: Ctx) -> i32 {
+    unsafe { hl_drag_mode(ctx) }
+}
+
+/// 1 if the drag threshold was reached, else 0.
+pub fn drag_threshold_reached(ctx: Ctx) -> bool {
+    unsafe { hl_drag_threshold_reached(ctx) != 0 }
+}
+
+/// 1 if the drag is a tiled (re-tiling) drag, else 0.
+pub fn drag_dragging_tiled(ctx: Ctx) -> bool {
+    unsafe { hl_drag_dragging_tiled(ctx) != 0 }
+}
+
+/// The window's layout position (the target's position box, global px).
+pub fn window_target_position(ctx: Ctx, w: &WindowHandle) -> Option<hl_box_t> {
+    let mut b: hl_box_t = unsafe { std::mem::zeroed() };
+    let rc = unsafe { hl_window_target_position(ctx, w.as_raw(), &raw mut b) };
+    (rc == HL_E_OK).then_some(b)
+}
+
+/// Set the window's layout position (the target's setPositionGlobal).
+pub fn window_set_position_global(ctx: Ctx, w: &WindowHandle, box_: hl_box_t) -> u32 {
+    unsafe { hl_window_set_position_global(ctx, w.as_raw(), box_) }
+}
+
+/// Push the target's box to the client (after a position/size set).
+pub fn window_warp_position_size(ctx: Ctx, w: &WindowHandle) -> u32 {
+    unsafe { hl_window_warp_position_size(ctx, w.as_raw()) }
+}
+
+/// Read an integer config value by name (colors are packed int64, so this
+/// reads those too). None if the key is absent.
+pub fn config_int(ctx: Ctx, key: &str) -> Option<i64> {
+    let key = format!("{key}\0");
+    let mut out: i64 = 0;
+    let rc = unsafe { hl_config_int(ctx, key.as_ptr().cast(), &raw mut out) };
+    (rc == HL_E_OK).then_some(out)
+}
+
 /// The toplevel's min/max size (a pinned axis has min == max). None if expired.
 pub fn min_max_size(ctx: Ctx, w: &WindowHandle) -> Option<(hl_box_t, hl_box_t)> {
     let mut min: hl_box_t = unsafe { std::mem::zeroed() };
@@ -664,10 +724,13 @@ pub fn pointer_connected(ctx: Ctx, p: &PointerHandle) -> bool {
 pub fn pointer_bus_type(ctx: Ctx, p: &PointerHandle) -> u32 {
     unsafe { hl_pointer_bus_type(ctx, p.as_raw()) }
 }
-/// The pointer's HL device name (m_hlName). Empty if expired.
+/// The pointer's HL device name (the `m_hlName`). Empty if expired.
 pub fn pointer_name(ctx: Ctx, p: &PointerHandle) -> String {
-    let mut s: hl_str_t = hl_str_t { d: std::ptr::null(), l: 0 };
-    let rc = unsafe { hl_pointer_name(ctx, p.as_raw(), &mut s) };
+    let mut s: hl_str_t = hl_str_t {
+        d: std::ptr::null(),
+        l: 0,
+    };
+    let rc = unsafe { hl_pointer_name(ctx, p.as_raw(), &raw mut s) };
     if rc != HL_E_OK {
         return String::new();
     }
@@ -842,6 +905,10 @@ impl MonitorHandle {
     pub(crate) fn as_raw(&self) -> *mut hl_monitor {
         self.ptr
     }
+    pub fn clone_handle(&self) -> Self {
+        unsafe { hl_monitor_ref(self.ptr) };
+        Self { ptr: self.ptr }
+    }
 }
 impl Drop for MonitorHandle {
     fn drop(&mut self) {
@@ -877,6 +944,13 @@ pub fn focus_monitor(ctx: Ctx) -> Option<MonitorHandle> {
     let mut out: *mut hl_monitor = std::ptr::null_mut();
     let rc = unsafe { hl_focus_monitor(ctx, &raw mut out) };
     (rc == HL_E_OK).then(|| unsafe { MonitorHandle::from_raw(out) }.unwrap())
+}
+
+/// The monitor's active numbered workspace, or None.
+pub fn monitor_active_workspace(ctx: Ctx, mon: &MonitorHandle) -> Option<WorkspaceHandle> {
+    let mut out: *mut hl_workspace = std::ptr::null_mut();
+    let rc = unsafe { hl_monitor_active_workspace(ctx, mon.as_raw(), &raw mut out) };
+    (rc == HL_E_OK).then(|| unsafe { WorkspaceHandle::from_raw(out) }.unwrap())
 }
 /// A monitor's active (numbered) workspace. None if it expired or has none.
 pub fn monitor_workspace(ctx: Ctx, mon: &MonitorHandle) -> Option<WorkspaceHandle> {
@@ -936,6 +1010,14 @@ pub fn render_listen(ctx: Ctx, stage: u32, ud: *mut c_void) -> u32 {
     unsafe { hl_render_listen(ctx, stage, Some(draw_trampoline), ud, &raw mut h) }
 }
 
+// A second render listener, routed to the hyprsnap preview (the bar's is
+// draw_trampoline). The fork walks every registered callback each frame, so
+// the two coexist.
+pub fn render_listen_snap(ctx: Ctx, stage: u32, ud: *mut c_void) -> u32 {
+    let mut h: *mut c_void = std::ptr::null_mut();
+    unsafe { hl_render_listen(ctx, stage, Some(snap_draw_trampoline), ud, &raw mut h) }
+}
+
 // The extern "C" draw callback. Owns the raw canvas pointer; hands the bar a
 // fully-safe view. A panic can never unwind across the C boundary. The canvas
 // is a stack object in the fork's trampoline, valid only for this call.
@@ -946,6 +1028,17 @@ unsafe extern "C" fn draw_trampoline(cv: *mut hl_canvas, ud: *mut c_void) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
         let state = unsafe { &*(ud as *const super::probe::State) };
         super::bar::draw(cv, state);
+    }));
+}
+
+// The snap preview's draw callback (same shape as the bar's).
+unsafe extern "C" fn snap_draw_trampoline(cv: *mut hl_canvas, ud: *mut c_void) {
+    if cv.is_null() || ud.is_null() {
+        return;
+    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let state = unsafe { &*(ud as *const super::probe::State) };
+        super::snap::draw(cv, state);
     }));
 }
 

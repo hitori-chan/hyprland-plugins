@@ -111,25 +111,23 @@ fn external_mouse_present(ctx: ffi::Ctx) -> bool {
     false
 }
 
-fn apply_enabled(
-    ctx: ffi::Ctx,
-    st: &mut PadState,
-    on: bool,
-    target: Option<&ffi::PointerHandle>,
-) {
-    let (tp, id) = match target {
-        Some(tp) => (tp.clone_handle(), ffi::pointer_id(ctx, tp)),
-        None => match touchpad(ctx) {
-            Some(t) => t,
-            None => {
-                st.applied_state = -1;
-                st.applied_touchpad = 0;
-                return;
-            }
-        },
+fn apply_enabled(ctx: ffi::Ctx, st: &mut PadState, on: bool, target: Option<&ffi::PointerHandle>) {
+    let (tp, id) = if let Some(tp) = target {
+        (tp.clone_handle(), ffi::pointer_id(ctx, tp))
+    } else {
+        let Some(t) = touchpad(ctx) else {
+            st.applied_state = -1;
+            st.applied_touchpad = 0;
+            return;
+        };
+        t
     };
     let name = ffi::pointer_name(ctx, &tp);
-    let code = format!("hl.device({{ name = \"{}\", enabled = {} }})", luaq(&name), on);
+    let code = format!(
+        "hl.device({{ name = \"{}\", enabled = {} }})",
+        luaq(&name),
+        on
+    );
     if !ffi::run_lua(ctx, &code) {
         return; // appliedState untouched: the next check retries
     }
@@ -161,7 +159,7 @@ fn arm_settle(state: &State, st: &mut PadState) {
     st.settle_job = probe::arm_timer(ctx, SETTLE_MS, probe::JOB_PAD_SETTLE);
 }
 
-/// Fired by JOB_PAD_SETTLE: the settle timer. Re-check the devices (the
+/// Fired by `JOB_PAD_SETTLE`: the settle timer. Re-check the devices (the
 /// re-check is change-detected; an unrelated hotplug applies nothing).
 pub fn drain_settle(state: &State, st: &mut PadState) {
     st.settle_job = 0;
@@ -186,12 +184,12 @@ fn queue_toggle(state: &State, st: &mut PadState) {
     probe::arm_job(state.ctx, probe::JOB_PAD_TOGGLE);
 }
 
-/// Fired by JOB_PAD_TOGGLE: drain the toggle queue.
+/// Fired by `JOB_PAD_TOGGLE`: drain the toggle queue.
 pub fn drain_toggles(state: &State, st: &mut PadState) {
     let n = st.toggle_queue.len();
     st.toggle_queue.clear();
     st.toggle_queued = false;
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         return;
     }
     // the manual flip cancels a pending auto re-check so it isn't overridden
@@ -214,7 +212,7 @@ pub fn init(state: &State) {
     arm_settle(state, &mut st);
 }
 
-/// A pointer was added or removed (HL_EV_POINTER_CHANGED): arm the settle timer.
+/// A pointer was added or removed (`HL_EV_POINTER_CHANGED`): arm the settle timer.
 pub fn on_pointer_changed(state: &State, st: &mut PadState) {
     arm_settle(state, st);
 }

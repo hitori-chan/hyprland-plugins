@@ -16,6 +16,7 @@ use crate::ffi;
 use crate::max;
 use crate::pad;
 use crate::place;
+use crate::snap;
 
 /// The ABI version this build targets (must equal the fork's cabiAbiVersion).
 pub const CABI_ABI_VERSION: u32 = 1;
@@ -32,6 +33,7 @@ pub const JOB_PLACE: u8 = 8;
 pub const JOB_CLICK: u8 = 9;
 pub const JOB_PAD_SETTLE: u8 = 10;
 pub const JOB_PAD_TOGGLE: u8 = 11;
+pub const JOB_SNAP_MAGNET: u8 = 12;
 
 // how often a TICK logs (TICK fires every frame; keep the log readable)
 const TICK_LOG_EVERY: u64 = 240;
@@ -53,12 +55,17 @@ pub struct State {
     click: Mutex<click::ClickState>,
     // The Phase 2 hyprpad policy (touchpad auto on/off, manual toggle).
     pad: Mutex<pad::PadState>,
+    // The Phase 3 hyprsnap policy (magnetism + aerosnap edge zones). `pub`:
+    // the snap render callback reads it by the state pointer (the draw is in
+    // the snap module, same crate, but the field must be visible there).
+    pub snap: Mutex<snap::SnapState>,
 }
 
 static STATE: AtomicPtr<State> = AtomicPtr::new(ptr::null_mut());
 
 /// Set up the probe: pipe, config, subscription, and jobs. Returns 0 on
 /// success (init ok), non-zero to eject.
+#[allow(clippy::too_many_lines)]
 pub fn init(ctx: ffi::Ctx) -> i32 {
     let Some((read_fd, write_fd)) = ffi::pipe() else {
         ffi::log_str(ctx, ffi::LOG_ERR, "eject: pipe() failed");
@@ -98,6 +105,7 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
         place: Mutex::new(place::PlaceState::new()),
         click: Mutex::new(click::ClickState::new()),
         pad: Mutex::new(pad::PadState::new()),
+        snap: Mutex::new(snap::SnapState::new()),
     });
     // The pointer the (leaked) Box will live at. We use it for every job's
     // `ud` and the render callback; the Box is leaked at the end of init.
@@ -109,6 +117,7 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
     let mask = ffi::HL_EV_TICK
         | ffi::HL_EV_KEY
         | ffi::HL_EV_MOUSE_BUTTON
+        | ffi::HL_EV_MOUSE_MOVE
         | ffi::HL_EV_WINDOW_ACTIVE
         | ffi::HL_EV_WINDOW_OPEN
         | ffi::HL_EV_WINDOW_CLOSE
@@ -126,19 +135,14 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
         return -1;
     }
 
-    // the user-facing bind target keeps its original namespace (hyprmax.toggle)
-    let _ = ffi::lua_register(ctx, "hyprmax", "toggle", ffi::lua_toggle);
-    // the hyprclick focus helpers (their original namespace too)
-    let _ = ffi::lua_register(
-        ctx,
-        "hyprclick",
-        "focus_prev_here",
-        ffi::lua_focus_prev_here,
-    );
-    let _ = ffi::lua_register(ctx, "hyprclick", "focus_next", ffi::lua_focus_next);
-    let _ = ffi::lua_register(ctx, "hyprclick", "focus_prev", ffi::lua_focus_prev);
-    // the hyprpad manual toggle (its original namespace)
-    let _ = ffi::lua_register(ctx, "hyprpad", "toggle", ffi::lua_pad_toggle);
+    // The no-legacy naming (plan §4): the namespace is the MODULE, not the old
+    // plugin name. The user's live `hypr*` binds are migrated old→new at the
+    // Phase 6 cutover (the one documented breaking change).
+    let _ = ffi::lua_register(ctx, "max", "toggle", ffi::lua_toggle);
+    let _ = ffi::lua_register(ctx, "click", "focus_prev_here", ffi::lua_focus_prev_here);
+    let _ = ffi::lua_register(ctx, "click", "focus_next", ffi::lua_focus_next);
+    let _ = ffi::lua_register(ctx, "click", "focus_prev", ffi::lua_focus_prev);
+    let _ = ffi::lua_register(ctx, "pad", "toggle", ffi::lua_pad_toggle);
 
     // bus pipe: watch the read end; the deferred job writes one byte
     let pipe_arg = Box::leak(Box::new(ffi::JobArg {
@@ -178,6 +182,12 @@ pub fn init(ctx: ffi::Ctx) -> i32 {
 
     // The Phase 2 hyprpad policy (arms the initial settle timer).
     pad::init(&state);
+
+    // The Phase 3 hyprsnap policy (registers its config + the render listener).
+    {
+        let mut s = state.snap.lock().unwrap();
+        snap::init(ctx, &mut s, state_ptr);
+    }
 
     // Leak the Box now that every callback holds `state_ptr` (unchanged by
     // the leak). The pointer already lives in the STATE static; after this,
@@ -246,6 +256,13 @@ pub fn place_lock(state: &State) -> std::sync::MutexGuard<'_, place::PlaceState>
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+pub fn snap_lock(state: &State) -> std::sync::MutexGuard<'_, snap::SnapState> {
+    state
+        .snap
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 pub fn pad_lock(state: &State) -> std::sync::MutexGuard<'_, pad::PadState> {
     state
         .pad
@@ -280,6 +297,7 @@ pub fn arm_timer(ctx: ffi::Ctx, ms: u32, kind: u8) -> u64 {
 
 /// Dispatch one event. Returns true to CANCEL it (the hyprmax swallow on a
 /// maximized window; every other path passes through).
+#[allow(clippy::too_many_lines)]
 pub fn dispatch(state: &State, ev: &ffi::SafeEvent) -> bool {
     state.events.fetch_add(1, Ordering::Relaxed);
     match ev.kind {
@@ -288,11 +306,23 @@ pub fn dispatch(state: &State, ev: &ffi::SafeEvent) -> bool {
             false
         }
         ffi::HL_EV_KEY => {
+            // the snap drag end (a key event tears down the drag too — the
+            // keybind layer runs after the plugin emission, drag state intact)
+            {
+                let mut s = snap_lock(state);
+                snap::on_input_ending_drag(state.ctx, &mut s);
+            }
             on_key(state, ev);
             false
         }
         ffi::HL_EV_MOUSE_BUTTON => {
             let ctx = state.ctx;
+            // the snap drag end (commit the armed zone / reset the resize
+            // state) runs before max/click — the drag is being torn down.
+            {
+                let mut s = snap_lock(state);
+                snap::on_input_ending_drag(ctx, &mut s);
+            }
             // max runs first (a Super-grab it swallows is never a raise
             // click — the C++ load order hyprmax -> hyprclick, now in-plugin).
             let max_cancel = {
@@ -305,6 +335,13 @@ pub fn dispatch(state: &State, ev: &ffi::SafeEvent) -> bool {
                 let mut c = click_lock(state);
                 click::on_button(ctx, &mut c, ev)
             }
+        }
+        ffi::HL_EV_MOUSE_MOVE => {
+            // the hyprsnap aerosnap arming + magnetism (the mouse move is
+            // cancellable, but snap never cancels it)
+            let mut s = snap_lock(state);
+            snap::on_mouse_move(state.ctx, &mut s, ev.x, ev.y);
+            false
         }
         ffi::HL_EV_WINDOW_ACTIVE => {
             on_window(state, ev, "WINDOW_ACTIVE");
@@ -478,6 +515,10 @@ pub fn on_job(state: &State, kind: u8) {
         JOB_PAD_TOGGLE => {
             let mut p = pad_lock(state);
             pad::drain_toggles(state, &mut p);
+        }
+        JOB_SNAP_MAGNET => {
+            let mut s = snap_lock(state);
+            snap::do_magnet(state.ctx, &mut s);
         }
         _ => {}
     }

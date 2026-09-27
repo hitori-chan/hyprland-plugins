@@ -169,7 +169,7 @@ for _ in $(seq 1 10); do
 done
 # A plugin-maximized window lives outside the compositor fullscreen model.
 # Changing a native reserved area must therefore reach hyprmax explicitly.
-dsp "hl.plugin.hyprmax.toggle()"; sleep 0.5
+dsp "hl.plugin.max.toggle()"; sleep 0.5
 MAX_BEFORE="$(box)"
 RESERVED_BEFORE="$(reserved)"
 ERROR_MESSAGE="reserved-area-probe $(printf 'wrapped-message-with-enough-width-to-force-a-second-line %.0s' {1..6})"
@@ -223,9 +223,9 @@ for _ in $(seq 1 30); do
 	sleep 0.1
 done
 chk "hyprmax: removing native reservation restores maximized workarea" test "$(box)" = "$MAX_BEFORE"
-dsp "hl.plugin.hyprmax.toggle()"; sleep 0.5
+dsp "hl.plugin.max.toggle()"; sleep 0.5
 chk "hyprmax: reserved-area roundtrip preserves windowed restore" test "$(box)" = "$REF"
-for i in $(seq 1 10); do dsp "hl.plugin.hyprmax.toggle()"; done; sleep 1
+for i in $(seq 1 10); do dsp "hl.plugin.max.toggle()"; done; sleep 1
 chk "10 maximize toggles round-trip losslessly" test "$(box)" = "$REF"
 for i in $(seq 1 5); do dsp "hl.plugin.hyprbar.minimize()"; dsp "hl.plugin.hyprbar.restore()"; done; sleep 1
 chk "5 minimize/restore cycles round-trip" test "$(box)" = "$REF"

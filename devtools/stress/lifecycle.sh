@@ -139,7 +139,7 @@ sleep 0.8
 # by FLAG ONLY: its stack position must survive the viewer, or it comes
 # back buried under every maximized window (reproduced live).
 dsp "hl.dsp.exec_cmd('foot -a tuckmax')"; sleep 1.6
-dsp "hl.plugin.hyprmax.toggle()"; sleep 0.5
+dsp "hl.plugin.max.toggle()"; sleep 0.5
 dsp "hl.dsp.exec_cmd('foot -a tuckfloat')"; sleep 1.6
 dsp "hl.dsp.window.move({x=500, y=300})"; dsp "hl.dsp.window.resize({x=500, y=300})"; sleep 0.4
 dsp "hl.dsp.exec_cmd('foot -a tuckfs -F')"; sleep 1.6
