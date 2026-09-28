@@ -10,8 +10,10 @@ superellipse corners.
 
 Two surfaces share one card model:
 
-1. **Popups (banners)** — glass cards top-right on the focused monitor, the
-   Android anatomy: ONE icon column on the left, Android's conversation
+1. **Popups (banners)** — glass cards top-right on the focused monitor (the
+   stack follows a keyboard or workspace focus flip, but not one the pointer
+   itself makes: a sloppy mouse grazing the neighboring monitor's corner
+   leaves the cards where they are), the Android anatomy: ONE icon column on the left, Android's conversation
    container — the AVATAR leads (the card's content image, which for a chat
    is the sender's face; a rolled fallback face from `fallback_icon_dir`
    when a card is iconless, and a deterministic generic application mark

@@ -46,6 +46,7 @@
 #include "common/icons.hpp"
 #include "common/lifecycle.hpp"
 #include "common/order.hpp"
+#include "common/queries.hpp"
 #include "common/theme.hpp"
 
 #include "hyprnotify.hpp"
@@ -297,10 +298,20 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // desktop event layout depends on (rawMonitorFocus early-outs same-monitor
     // flips, so sloppy focus costs nothing). It fires BEFORE m_focusMonitor is
     // assigned — the warm must stay deferred, which notifChanged guarantees.
+    // But the follow is SOURCE-SELECTIVE: a sloppy (follow_mouse) pointer that
+    // crosses onto the new monitor IS the focus change, and lingering in the
+    // corner next to a notification must not pull every card across the
+    // screens and back. Only a flip the pointer did not make (keyboard,
+    // workspace switching) re-targets; a new arrival lands on whatever is
+    // focused at arrival time anyway.
     auto& EV = Event::bus()->m_events;
-    g_lifecycle.listen(EV.monitor.focused, [](PHLMONITOR) {
-        if (!notifs.empty() || centerVisible())
-            notifChanged();
+    g_lifecycle.listen(EV.monitor.focused, [](PHLMONITOR mon) {
+        if (notifs.empty() && !centerVisible())
+            return;
+        if (mon && g_pInputManager &&
+            NHyprCommon::monitorContaining(g_pInputManager->getMouseCoordsInternal()) == mon)
+            return;
+        notifChanged();
     });
     g_lifecycle.listen(EV.monitor.layoutChanged, []() {
         if (!notifs.empty() || centerVisible())
