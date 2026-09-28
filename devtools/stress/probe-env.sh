@@ -30,7 +30,11 @@ source "$STRESS_DIR/harness.sh"
 
 # A probe owns its nested: without this trap a failed probe leaks the
 # compositor and the next probe's kill_nested becomes the only cleanup.
-trap cleanup_harness EXIT
+# Arm only when this file is executed — sourced into an interactive shell
+# the trap would kill the nested (and delete stress.lua) at shell exit.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+	trap cleanup_harness EXIT
+fi
 
 launch_stress_nested() { # kill, relaunch fresh, validate, wait out the toast
 	kill_nested
