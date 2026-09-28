@@ -229,7 +229,11 @@ namespace NHyprnotify {
         // two quiet shade cards would composite fullscreen video forever
         if (!anythingToDraw())
             return;
-        if (!mon || mon != focusedMon())
+        // The pass follows the LAYOUT's monitor, not the focus: a sloppy
+        // pointer crossing to the neighbor leaves the focus behind, and the
+        // cards must keep painting where they were laid out until a re-warm
+        // actually moves the layout.
+        if (!mon || mon != cardsMon.lock())
             return;
         if (NHyprCommon::sessionLocked())
             return; // never force a card to float over the lockscreen
@@ -252,7 +256,7 @@ namespace NHyprnotify {
         if (NHyprCommon::sessionLocked())
             return;
         const auto MON = g_pHyprRenderer->m_renderData.pMonitor.lock();
-        if (!MON || MON != focusedMon())
+        if (!MON || MON != cardsMon.lock())
             return;
         g_pHyprRenderer->m_renderPass.add(makeUnique<CNotifyPassElement>(MON));
     }

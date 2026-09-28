@@ -1,7 +1,10 @@
 # hyprnotify details
 
 The compositor owns `org.freedesktop.Notifications`: no external daemon, no
-layer surface. Cards render top-right on the focused monitor, newest at the
+layer surface. Cards render top-right on the focused monitor — the stack
+follows a keyboard or workspace focus flip, but not one the pointer itself
+makes, so a mouse grazing the neighboring monitor's corner leaves the cards
+where they are — newest at the
 top, in the glass·ink skin (frosted graphite, superellipse corners — the
 surface description and config live in `hyprnotify/README.md`).
 
