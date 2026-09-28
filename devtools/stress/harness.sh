@@ -501,10 +501,16 @@ launch_nested() {
 				;;
 		esac
 	fi
-	PATH="$REPO/devtools/fakes:$PATH" HYPROSD_WPCTL_LOG="$STATE/wpctl.log" \
-		HYPROSD_WPCTL_HANG_FILE="$STATE/hang-wpctl" HYPROSD_WPCTL_FLOOD_FILE="$STATE/flood-wpctl" HYPRNOTIFY_SOUND_HANG_FILE="$STATE/hang-sound" \
-		HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" XDG_CACHE_HOME="$STATE/cache" \
-		bash "$HARNESS/launch.sh" >/dev/null 2>&1 || return 1
+	# One spawn path for the initial launch AND the FALLBACK relaunches below:
+	# the env must travel with the relaunch too, or it falls back to
+	# nested.lua + /usr/local/bin/Hyprland and the retarget guard refuses it.
+	_harness_launch() {
+		PATH="$REPO/devtools/fakes:$PATH" HYPROSD_WPCTL_LOG="$STATE/wpctl.log" \
+			HYPROSD_WPCTL_HANG_FILE="$STATE/hang-wpctl" HYPROSD_WPCTL_FLOOD_FILE="$STATE/flood-wpctl" HYPRNOTIFY_SOUND_HANG_FILE="$STATE/hang-sound" \
+			HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" XDG_CACHE_HOME="$STATE/cache" \
+			bash "$HARNESS/launch.sh" >/dev/null 2>&1
+	}
+	_harness_launch || return 1
 	# The nested compositor enters fallback (a headless "FALLBACK" output,
 	# no window) 2s after its ready event when its aquamarine window output
 	# never appeared. A window lost in that window renders into the void:
@@ -521,7 +527,7 @@ launch_nested() {
 		done
 		echo "harness: nested stuck in FALLBACK (window lost?); relaunching (attempt $n/3)" >&2
 		[[ $n == 3 ]] && return 1
-		bash "$HARNESS/launch.sh" >/dev/null 2>&1 || return 1
+		_harness_launch || return 1
 		sig="$(cat "$HARNESS/nested.sig" 2>/dev/null)"
 		sleep 2
 	done
