@@ -40,7 +40,10 @@ pub const LOG_ERR: u32 = 3;
 // of the crate uses. The HL_EV_* event bits are already plain pub consts
 // (from the #define macros) and need no alias.
 pub const HL_E_OK: hl_error_t = hl_error_t_HL_E_OK;
+pub const HL_E_FULL: hl_error_t = hl_error_t_HL_E_FULL;
+pub const HL_E_FAILED: hl_error_t = hl_error_t_HL_E_FAILED;
 pub const HL_CFG_INT: hl_cfg_type_t = hl_cfg_type_t_HL_CFG_INT;
+pub const HL_CFG_STRING: hl_cfg_type_t = hl_cfg_type_t_HL_CFG_STRING;
 pub const HL_CFG_COLOR: hl_cfg_type_t = hl_cfg_type_t_HL_CFG_COLOR;
 
 pub type Ctx = *mut hl_ctx;
@@ -219,6 +222,14 @@ pub struct SafeEvent {
     pub state: u32,
     pub keycode: u32,
     pub focus_reason: u32,
+    pub axis: u32,
+    pub delta: f64,
+    pub delta_discrete: f64,
+    /// 1 if hl_event_cancel applies to this event.
+    /// 1 if an earlier listener (the C++ bar's strip/menu, during the
+    /// coexistence phases) already cancelled this event: the point is not
+    /// ours (a strip click is not a card click).
+    pub cancelled: bool,
     pub window: Option<WindowHandle>,
 }
 
@@ -249,6 +260,10 @@ unsafe extern "C" fn dispatch_trampoline(ev: *mut hl_event_t, ud: *mut c_void) {
             state: e.state,
             keycode: e.keycode,
             focus_reason: e.focus_reason,
+            axis: e.axis,
+            delta: e.delta,
+            delta_discrete: e.delta_discrete,
+            cancelled: e.cancelled != 0,
             window,
         };
         super::probe::dispatch(state, &safe)
@@ -912,6 +927,15 @@ pub unsafe extern "C" fn lua_osd_brightness_down(_lua: *mut c_void) -> i32 {
     crate::osd::lua_brightness_down_impl()
 }
 
+/// The `unsafe extern "C"` wrappers for the notification module's Lua face
+/// (`notify.center` and `notify.suspend`; the no-legacy naming, plan §4).
+pub unsafe extern "C" fn lua_notify_center(_lua: *mut c_void) -> i32 {
+    crate::notify::lua_center_impl()
+}
+pub unsafe extern "C" fn lua_notify_suspend(_lua: *mut c_void) -> i32 {
+    crate::notify::lua_suspend_impl()
+}
+
 /// Wrap a non-null raw pointer in a shared reference (the one place a raw
 /// pointer becomes a `&`; the pointee's lifetime is the plugin's). The safe
 /// modules call this instead of doing the cast themselves.
@@ -932,6 +956,26 @@ pub fn native_layer_at(ctx: Ctx) -> bool {
 }
 pub fn super_held(ctx: Ctx) -> bool {
     unsafe { hl_super_held(ctx) != 0 }
+}
+
+/// The pointer's current internal position (button events carry no coords).
+pub fn mouse_coords(ctx: Ctx) -> (f64, f64) {
+    let mut x = 0.0;
+    let mut y = 0.0;
+    unsafe { hl_mouse_coords(ctx, &raw mut x, &raw mut y) };
+    (x, y)
+}
+
+/// Hand the pointer focus back to the compositor: the window under the
+/// plugin's drawn surface gets its leave (call on ENTERING the surface).
+pub fn pointer_focus_reset(ctx: Ctx) {
+    unsafe { hl_pointer_focus_reset(ctx) };
+}
+
+/// Re-run the compositor's pointer focus resolution (call on LEAVING the
+/// surface): the window beneath gets its enter back.
+pub fn mouse_simulate_move(ctx: Ctx) {
+    unsafe { hl_mouse_simulate_move(ctx) };
 }
 
 /// Cancel the in-flight event (cancellable kinds only). The fork's
@@ -962,6 +1006,36 @@ pub fn tracked_button_bit(button: u32) -> u32 {
 // render stages (mirror of the fork's hl_render_stage_t; bindgen prefixes the
 // consts with the type name).
 pub const HL_RND_POST_WINDOWS: u32 = hl_render_stage_t_HL_RND_POST_WINDOWS;
+
+// ---- time ----
+
+/// The live windows in Z-order (index 0 = bottommost). Each handle owns a
+/// ref; drop them when done.
+pub fn windows(ctx: Ctx) -> Vec<WindowHandle> {
+    const CAP: u32 = 512;
+    let mut raw = vec![std::ptr::null_mut(); CAP as usize];
+    let n = unsafe { hl_windows(ctx, raw.as_mut_ptr(), CAP) } as usize;
+    let mut out = Vec::with_capacity(n);
+    for p in raw.iter().take(n) {
+        if !p.is_null()
+            && let Some(w) = unsafe { WindowHandle::from_raw(*p) }
+        {
+            out.push(w);
+        }
+    }
+    out
+}
+
+/// Steady time in ms since plugin process start (monotonic; the C++
+/// Time::steadyNow for deadlines and ages).
+pub fn steady_ms() -> u64 {
+    use std::sync::OnceLock;
+    static START: OnceLock<std::time::Instant> = OnceLock::new();
+    START
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis() as u64
+}
 
 /// A refcounted GPU texture (the fork handed us one ref; Drop unreffs it).
 pub struct TextureHandle {
@@ -1112,6 +1186,43 @@ pub fn render_listen_snap(ctx: Ctx, stage: u32, ud: *mut c_void) -> u32 {
     unsafe { hl_render_listen(ctx, stage, Some(snap_draw_trampoline), ud, &raw mut h) }
 }
 
+// The notify port's render listener (the third trampoline; the fork walks
+// every registered callback each frame, so all three coexist).
+pub fn render_listen_notify(ctx: Ctx, stage: u32, ud: *mut c_void) -> u32 {
+    let mut h: *mut c_void = std::ptr::null_mut();
+    unsafe { hl_render_listen(ctx, stage, Some(notify_draw_trampoline), ud, &raw mut h) }
+}
+
+/// A pre-scanout callback (per monitor, per frame; also fires on frames that
+/// end in a direct scanout). The trampoline hands the notify module the raw
+/// monitor so it can hold the workspace render while a card is up.
+pub fn render_prechecks_listen(ctx: Ctx, ud: *mut c_void) -> u32 {
+    let mut h: *mut c_void = std::ptr::null_mut();
+    unsafe { hl_render_prechecks_listen(ctx, Some(prechecks_trampoline), ud, &raw mut h) }
+}
+
+unsafe extern "C" fn prechecks_trampoline(mon: *mut hl_monitor, ud: *mut c_void) {
+    if mon.is_null() || ud.is_null() {
+        return;
+    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let state = unsafe { &*(ud as *const super::probe::State) };
+        super::nrender::prechecks(mon, state);
+    }));
+}
+
+/// Force the monitor's next frame to run a full workspace render (drops the
+/// solitary-client / direct-scanout latch).
+pub fn monitor_force_render(ctx: Ctx, mon: &MonitorHandle) {
+    unsafe { hl_monitor_force_render(ctx, mon.as_raw()) };
+}
+
+/// The prechecks callback's monitor (it arrives with one ref the plugin
+/// takes; `Drop` releases it).
+pub fn monitor_from_raw(ptr: *mut hl_monitor) -> Option<MonitorHandle> {
+    unsafe { MonitorHandle::from_raw(ptr) }
+}
+
 // The extern "C" draw callback. Owns the raw canvas pointer; hands the bar a
 // fully-safe view. A panic can never unwind across the C boundary. The canvas
 // is a stack object in the fork's trampoline, valid only for this call.
@@ -1122,6 +1233,18 @@ unsafe extern "C" fn draw_trampoline(cv: *mut hl_canvas, ud: *mut c_void) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
         let state = unsafe { &*(ud as *const super::probe::State) };
         super::bar::draw(cv, state);
+    }));
+}
+
+// A third render listener, routed to the notify port's draw (popups + the
+// shade). The bar and snap trampolines are untouched.
+unsafe extern "C" fn notify_draw_trampoline(cv: *mut hl_canvas, ud: *mut c_void) {
+    if cv.is_null() || ud.is_null() {
+        return;
+    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let state = unsafe { &*(ud as *const super::probe::State) };
+        super::nrender::draw(cv, state);
     }));
 }
 
@@ -1180,6 +1303,14 @@ pub fn canvas_glass(
     unsafe { hl_canvas_glass(cv, box_, color, round, rp, u32::from(blur)) };
 }
 
+/// The card's drop shadow (monitor-local logical box + physical range).
+pub fn canvas_shadow(cv: *mut hl_canvas, box_: hl_box_t, round: u32, rp: f32, range: u32, a: f32) {
+    if cv.is_null() {
+        return;
+    }
+    unsafe { hl_canvas_shadow(cv, box_, round, rp, range, a) };
+}
+
 pub fn canvas_border(
     cv: *mut hl_canvas,
     box_: hl_box_t,
@@ -1194,11 +1325,18 @@ pub fn canvas_border(
     unsafe { hl_canvas_border(cv, box_, color, round, rp, size_px) };
 }
 
-pub fn canvas_texture(cv: *mut hl_canvas, tex: &TextureHandle, box_: hl_box_t) {
+pub fn canvas_texture(
+    cv: *mut hl_canvas,
+    tex: &TextureHandle,
+    box_: hl_box_t,
+    round: u32,
+    rp: f32,
+    a: f32,
+) {
     if cv.is_null() {
         return;
     }
-    unsafe { hl_canvas_texture(cv, tex.as_raw(), box_) };
+    unsafe { hl_canvas_texture(cv, tex.as_raw(), box_, round, rp, a) };
 }
 
 // ---- textures (built OUTSIDE a frame — the warm/draw gate, crash class 4) ----
@@ -1397,11 +1535,48 @@ pub extern "C" fn hyprPluginExitC(ctx: *mut c_void) {
         // context and dlclose()s the .so, so nothing references freed memory.
         let state_ptr = super::probe::take_state();
         if !state_ptr.is_null() {
-            super::probe::exit(unsafe { &*state_ptr });
+            super::probe::exit(unsafe { &mut *state_ptr });
             free_state(state_ptr);
         }
         shutdown(ctx);
     }));
+}
+
+// ---- hyprctl verbs -------------------------------------------------------
+
+unsafe extern "C" fn ctl_trampoline(
+    c: *mut hl_ctx,
+    command: *const hl_str_t,
+    out: *mut *mut c_char,
+) -> i32 {
+    unsafe {
+        let _ = c;
+        if command.is_null() || out.is_null() || (*command).d.is_null() {
+            return HL_E_FAILED as i32;
+        }
+        let cmd = str_from(&*command);
+        let Some(resp) = super::probe::ctl_command(&cmd) else {
+            return HL_E_FAILED as i32;
+        };
+        let cs = std::ffi::CString::new(resp).unwrap_or_default();
+        *out = cs.into_raw(); // the fork frees it (the malloc pair)
+        HL_E_OK as i32
+    }
+}
+
+/// Register the plugin's hyprctl verb (prefix match: the full line reaches
+/// the trampoline). The fork unregisters it at plugin unload.
+pub fn ctl_register(ctx: Ctx, name: &str) -> bool {
+    let n = format!("{name}\0");
+    unsafe {
+        hl_ctl_register(
+            ctx,
+            n.as_ptr().cast::<c_char>(),
+            1,
+            Some(ctl_trampoline),
+            std::ptr::null_mut(),
+        ) == HL_E_OK
+    }
 }
 
 /// Reclaim a leaked State Box (the `Box::into_raw` pair in `probe::init`).
@@ -1411,3 +1586,6 @@ fn free_state(ptr: *mut super::probe::State) {
     }
     unsafe { drop(Box::from_raw(ptr)) };
 }
+
+pub(crate) mod notify;
+pub use notify::*;

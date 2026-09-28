@@ -197,7 +197,7 @@ pub fn draw(cv: *mut ffi::hl_canvas, state: &State) {
             w: ICON_SIZE,
             h: ICON_SIZE,
         };
-        ffi::canvas_texture(cv, icon, ibox);
+        ffi::canvas_texture(cv, icon, ibox, 0, 2.0, 1.0);
     }
 
     // The clock: right-aligned.
@@ -218,6 +218,9 @@ pub fn draw(cv: *mut ffi::hl_canvas, state: &State) {
                     w: twl,
                     h: thl,
                 },
+                0,
+                2.0,
+                1.0,
             );
         }
     }
