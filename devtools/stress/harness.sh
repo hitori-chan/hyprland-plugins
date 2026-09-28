@@ -16,7 +16,7 @@ NPLUGINS=9
 # smaller than built. (After the hyprmax + hyprplace + hyprclick + hyprpad
 # + hyprsnap cutovers: the C++ originals of those are built but not loaded —
 # the Rust ports own them.)
-NLOADED=3
+NLOADED=2
 
 normalize_target_pkgconfig() {
 	local pkg_path=${HYPR_DEPLOY_PKG_CONFIG_PATH:-}

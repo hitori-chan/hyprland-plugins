@@ -4,7 +4,7 @@
 # C++<->Rust boundary in the system. Phase 0 is the ABI-skeleton probe.
 [package]
 name        = "awesome"
-version     = "1.6.0"
+version     = "1.7.0"
 edition     = "2024"
 description = "awesome's plugin set as one Rust plugin on the cabi C ABI"
 
@@ -17,7 +17,8 @@ crate-type = ["cdylib"]
 libc = "=0.2.189"
 # The one bus thread (zbus on a tokio current_thread runtime); see bus.rs.
 zbus = "=5.19.0"
-tokio = { version = "=1.53.1", features = ["rt", "time", "net"] }
+serde = "=1.0.229"
+tokio = { version = "=1.53.1", features = ["rt", "time", "net", "sync"] }
 crossbeam-channel = "=0.5.17"
 
 [build-dependencies]
