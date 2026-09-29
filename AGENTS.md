@@ -42,6 +42,10 @@ conversation state. Never copy state into this file.
   in `~/repo/Hyprland`.
 - Keep scope user-driven: no new feature, product-model change, or
   protocol-contract change just because an alternative seems preferable.
+- User configs (`~/.config/hypr/...`) stay clean and minimal: no
+  investigation notes, no comment dumps (2026-09-29: lock-chain findings
+  were written into binds.lua; the user ordered them out). Provenance and
+  diagnosis go to `TODO.md`; config comments only for a non-obvious why.
 
 ## Environment and build
 
