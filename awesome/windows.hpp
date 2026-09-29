@@ -13,6 +13,11 @@ namespace NAwesome::Windows {
         }
         void init() override;
         void teardown() override;
+
+        void onPointerButton(const IPointer::SButtonEvent&, Event::SCallbackInfo&) override;
+        void onPointerMove(const Vector2D&, Event::SCallbackInfo&) override;
+        void onKey(const IKeyboard::SKeyEvent&, Event::SCallbackInfo&) override;
+        void onInputBlocked() override;
     };
     CModule& module();
 }
