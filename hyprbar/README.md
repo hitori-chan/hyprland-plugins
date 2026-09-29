@@ -3,7 +3,7 @@
 A compositor-drawn top bar for every monitor:
 
 ```text
-[workspaces] [tasks...........................] [tray] [bell] [battery] [clock] [layout]
+[workspaces] [tasks...........................] [tray] [bell] [battery] [clock]
 ```
 
 - Workspaces are monitor-local. Click or wheel to switch; `Mod+click` moves the
