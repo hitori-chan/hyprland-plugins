@@ -21,7 +21,7 @@ export PKG_CONFIG_PATH
 CXX       ?= g++
 CXXFLAGS  ?= -O2
 HL_CFLAGS := $(shell pkg-config --cflags $(PKGS) $(PKGS_EXTRA))
-CXXFLAGS  += -std=c++26 -Wall -fPIC -fno-gnu-unique -MMD -MP $(HL_CFLAGS)
+CXXFLAGS  += -std=c++26 -Wall -fPIC -fno-gnu-unique -MMD -MP -I. $(HL_CFLAGS)
 LDFLAGS   += -shared -Wl,--version-script=plugin.ver
 LDLIBS    += $(shell pkg-config --libs $(LIBS_EXTRA))
 
