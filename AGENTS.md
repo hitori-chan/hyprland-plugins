@@ -25,6 +25,11 @@ truth, not here. `CLAUDE.md` is dead — do not recreate or track it.
 - Open issues and evidence limits: `TODO.md` (local, gitignored). Close
   an item by deleting its line; provenance for closed work is the
   commit history.
+- The awesome rewrite (the eight plugins becoming one, in progress):
+  design contract in `docs/awesome-design.md`, live state and next step
+  in `PLAN.md` (local, gitignored). Read both before touching
+  `awesome/` or the old plugin tree; the old tree is frozen until the
+  cutover described there.
 - Behavior: the plugin READMEs and `docs/hyprbar.md` /
   `docs/hyprnotify.md`.
 - Gate results: the summary line of the run log
@@ -177,6 +182,12 @@ them, append new ones.
   values, cross-file contracts, and regression guards.
 
 ## Plugin ownership and load order
+
+This section describes the CURRENT eight-plugin tree. It is frozen: the
+awesome rewrite (PLAN.md) replaces the whole section — modules, the
+bus seam, and the load-order contract — at its cutover. Do not extend
+the old tree in ways that conflict with that target (no new cross-plugin
+bus interfaces, no new load-order edges).
 
 - `hyprbar`: top strip, widgets, tray, dbusmenu, menubar, bell; owns
   bar/menu input; talks to `hyprnotify` through its bus API.
