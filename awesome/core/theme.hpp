@@ -50,6 +50,9 @@ namespace NAwesome::Theme {
     inline constexpr int         RAD_CARD      = 16;
     inline constexpr double      ROUNDING_POWER = 3.0;
 
+    // ---- motion (ms) ----
+    inline constexpr int MOTION_SPATIAL = 320; // panel open/close, card arrival
+
 } // namespace NAwesome::Theme
 
 namespace NAwesome {
@@ -71,6 +74,11 @@ namespace NAwesome {
             M.col = CHyprColor{raw};
         }
         return M.col;
+    }
+
+    // the SP form: the schema's color values are held as ConfigValue handles
+    inline CHyprColor color(const SP<Config::Values::CColorValue>& v) {
+        return color(v->value());
     }
 
     // static fills, constructed once each

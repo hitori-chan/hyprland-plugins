@@ -12,7 +12,7 @@ namespace NAwesome {
 
     void ConfigRegistry::init(HANDLE handle) {
         for (const auto& S : m_schema.specs()) {
-            SP<Config::IConfigValue> V;
+            SP<Config::Values::IValue> V;
             if (S.kind == Kind::Int)
                 V = makeShared<Config::Values::CIntValue>(S.key, S.desc, S.ival);
             else if (S.kind == Kind::Double) // the fork's float value is the double slot
@@ -28,8 +28,9 @@ namespace NAwesome {
     }
 
     void ConfigRegistry::exit(HANDLE handle) {
-        for (const auto& [KEY, V] : m_values)
-            HyprlandAPI::removeConfigValueV2(handle, V);
+        // the fork owns removal: CConfigManager::onPluginUnload erases
+        // every value registered for this handle (there is no per-value
+        // remove API); we just drop our handles
         m_values.clear();
     }
 
@@ -39,8 +40,8 @@ namespace NAwesome {
         if (!S || IT == m_values.end())
             return S ? S->ival : 0;
         const auto V = dynamic_cast<Config::Values::CIntValue*>(IT->second.get());
-        const auto RAW = V ? V->value() : S->ival;
-        return std::clamp(RAW, S->imin, S->imax);
+        const auto RAW = V ? V->value() : S->ival; // Config::INTEGER is a long
+        return (int)std::clamp<long>(RAW, (long)S->imin, (long)S->imax);
     }
 
     double ConfigRegistry::getD(std::string_view key) const {
