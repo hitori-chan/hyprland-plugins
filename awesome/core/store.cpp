@@ -205,6 +205,56 @@ namespace NAwesome {
         return writeAtomic(path, out.str());
     }
 
+    // ---- CountStore ----
+
+    bool CountStore::bump(std::string_view name) {
+        if (!validKey(name))
+            return false;
+        auto& C = counts[std::string{name}];
+        if (C >= 1000000)
+            return false; // the display only ranks; a hostile count file must not grow the file
+        ++C;
+        return true;
+    }
+
+    CountStore CountStore::read(const fs::path& path) {
+        CountStore out;
+        const auto CONTENTS = readBoundedFile(path);
+        forRows(CONTENTS, [&](std::string_view line) {
+            // "name;count": the count is the LAST field, the name may contain
+            // anything but a newline (app names with semicolons are possible —
+            // only the trailing number is parsed)
+            const auto SEP = line.rfind(';');
+            if (SEP == std::string_view::npos || SEP == 0)
+                return;
+            const auto NAME = std::string_view{line.data(), SEP};
+            if (!validKey(NAME))
+                return;
+            const char* BEG = line.data() + SEP + 1;
+            const char* END = line.data() + line.size();
+            char*        E   = nullptr;
+            const long  C   = std::strtol(BEG, &E, 10);
+            if (E != END || C < 0 || C > 1000000)
+                return;
+            out.counts[std::string{NAME}] = (int)C;
+        });
+        return out;
+    }
+
+    bool CountStore::write(const fs::path& path) const {
+        std::ostringstream out;
+        size_t             rows = 0;
+        for (const auto& [N, C] : counts) {
+            if (rows >= MAX_STORE_ENTRIES)
+                break;
+            if (!validKey(N) || C < 0)
+                continue;
+            out << N << ';' << C << '\n';
+            ++rows;
+        }
+        return writeAtomic(path, out.str());
+    }
+
     // ---- migration (one-time; legacy files are read, never modified) ----
 
     static bool migrate(const fs::path& fresh, const fs::path& legacy, auto readFn, auto writeFn) {
@@ -225,6 +275,11 @@ namespace NAwesome {
     bool migrateListStore(const fs::path& fresh, const fs::path& legacy) {
         return migrate(fresh, legacy, [](const fs::path& P) { return ListStore::read(P); },
                        [](const fs::path& P, const ListStore& S) { return S.write(P); });
+    }
+
+    bool migrateCountStore(const fs::path& fresh, const fs::path& legacy) {
+        return migrate(fresh, legacy, [](const fs::path& P) { return CountStore::read(P); },
+                       [](const fs::path& P, const CountStore& S) { return S.write(P); });
     }
 
 } // namespace NAwesome

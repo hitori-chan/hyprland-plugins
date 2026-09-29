@@ -160,6 +160,11 @@ namespace NAwesome::Notify {
             refreshPointerOwnership();
             armAgeTick();
             armMotionTick();
+            // the shell's bell repaints off this same funnel (it reads the
+            // model's badge counts directly — no bus); the hook fires after
+            // this surface's own warm so its barChanged takes a clean bracket
+            if (Model::badgeChangedHook())
+                Model::badgeChangedHook()();
             // A card arriving over a solitary/scanned-out fullscreen window
             // (mpv under direct_scanout): the monitor presents the client's
             // buffer directly, so the per-card damageBox may not schedule a

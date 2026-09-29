@@ -12,6 +12,7 @@
 
 #include <array>
 #include <filesystem>
+#include <map>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -52,6 +53,19 @@ namespace NAwesome {
         bool            write(const std::filesystem::path& path) const;
     };
 
+    // name → launch count (the launcher's most-launched ranking), one
+    // "name;count" row. The name is the .desktop Name= (it may contain
+    // spaces and punctuation, never a semicolon or newline).
+    struct CountStore {
+        std::map<std::string, int> counts;
+
+        // False when nothing changed.
+        bool bump(std::string_view name);
+
+        static CountStore read(const std::filesystem::path& path);
+        bool             write(const std::filesystem::path& path) const;
+    };
+
     // One bounded list of bounded strings, one entry per line (the
     // launcher's query history: most recent last, re-running a query moves
     // it to the front of recency).
@@ -75,5 +89,6 @@ namespace NAwesome {
     // cutover, so the legacy file is dead state, not a live store.
     bool migrateBoxStore(const std::filesystem::path& fresh, const std::filesystem::path& legacy);
     bool migrateListStore(const std::filesystem::path& fresh, const std::filesystem::path& legacy);
+    bool migrateCountStore(const std::filesystem::path& fresh, const std::filesystem::path& legacy);
 
 } // namespace NAwesome

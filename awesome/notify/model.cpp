@@ -181,6 +181,13 @@ namespace NAwesome::Notify {
             std::map<std::string, sdbus::Variant> hints;
             if (c.value >= 0)
                 hints.emplace("value", sdbus::Variant{std::clamp(c.value, 0, 100)});
+            if (c.urgency != 1)
+                hints.emplace("urgency", sdbus::Variant{c.urgency});
+            // We ARE the in-tree OSD sender: the private hint is the pass
+            // that lets a FRESH band id pin its replace-in-place slot (a
+            // foreign client gets its band id zeroed without it).
+            if (c.osd || inOsdBand(c.id))
+                hints.emplace("x-notify-osd", sdbus::Variant{true});
             arrive("osd", c.id, c.icon ? c.icon : "", c.summary ? c.summary : "", c.body ? c.body : "", "", {}, hints, c.expireTimeout);
         }
 

@@ -48,6 +48,7 @@ namespace NAwesome::Theme {
 
     inline constexpr const char* FONT          = "IBM Plex Sans";
     inline constexpr int         RAD_CARD      = 16;
+    inline constexpr int         RAD_ROW       = 14; // the shell's menu rows: no rounding config, a fixed pill
     inline constexpr double      ROUNDING_POWER = 3.0;
 
     // ---- motion (ms) ----
