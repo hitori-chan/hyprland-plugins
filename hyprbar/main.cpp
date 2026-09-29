@@ -3,7 +3,7 @@
 // A flat bar drawn by the compositor itself in each monitor's reserved top
 // strip (the config reserves it: hl.monitor reserved = { top = <height> }).
 //
-//   [taglist 一..九] [tasklist of the active workspace ...] [tray] [bat] [clock] [layoutbox]
+//   [taglist 一..九] [tasklist of the active workspace ...] [tray] [bat] [clock]
 //
 // - taglist: kanji buttons, awesome's exact state matrix — the viewed tag
 //   gets the focus colors, urgent ones the urgent colors, everything else
@@ -56,11 +56,6 @@
 //   hyprnotify answers from the same process).
 // - clock: "%a %b %d, %H:%M" (the awesome textclock default; the bar pads
 //   it with a real margin, not the format's literal spaces).
-// - layoutbox: rightmost like awesome — the active workspace's layout
-//   icon (~/.config/hypr/icons/<name>.png), per-tag state like awesome's.
-//   awesome's buttons: click next, right-click previous, wheel both ways;
-//   Super+Space / Super+Shift+Space call layout_next()/layout_prev().
-//   The registry holds one layout (floating) until more are implemented.
 // - menubar: awesome's Mod+P launcher in its OWN strip right below the
 //   bar — the bar stays visible, exactly like awesome's menubar wibox at
 //   the workarea top (hl.plugin.hyprbar.menubar()): "Run: " prompt, the
@@ -171,16 +166,6 @@ static int luaMenubar(lua_State*) {
 }
 
 
-// hl.plugin.hyprbar.layout_next/layout_prev() — awesome's awful.layout.inc(±1).
-static int luaLayoutNext(lua_State*) {
-    layoutInc(1, Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr);
-    return 0;
-}
-static int luaLayoutPrev(lua_State*) {
-    layoutInc(-1, Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr);
-    return 0;
-}
-
 // hl.plugin.hyprbar.minimize()/restore() — awesome's client.minimized (Mod+N)
 // and awful.client.restore (Mod+Ctrl+N). Deferred out of the keybind emission:
 // both change focus + layout, which must never run synchronously inside an
@@ -263,8 +248,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_lifecycle.listen(Event::bus()->m_events.input.keyboard.key, [](IKeyboard::SKeyEvent e, Event::SCallbackInfo& info) { Menubar::onKey(e, info); });
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprbar", "menubar", luaMenubar);
-    HyprlandAPI::addLuaFunction(PHANDLE, "hyprbar", "layout_next", luaLayoutNext);
-    HyprlandAPI::addLuaFunction(PHANDLE, "hyprbar", "layout_prev", luaLayoutPrev);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprbar", "minimize", luaMinimize);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprbar", "restore", luaRestore);
 
@@ -345,7 +328,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // restart it.
     g_lifecycle.listen(EV.config.reloaded, []() {
         iconsReload();
-        layoutboxReload();
         for (const auto& I : Tray::items)
             I->dirty = true; // their textures came out of the theme we just dropped
         damageAndWarm();
@@ -365,7 +347,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     damageBars();
 
-    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.6.1"};
+    return {"hyprbar", "the awesome wibar, drawn by the compositor", "hitori", "4.6.2"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
@@ -379,7 +361,6 @@ APICALL EXPORT void PLUGIN_EXIT() {
         g_pEventLoopManager->removeTimer(timer);
     timer.reset();
     renderExit();
-    layoutboxExit();
     Tasklist::exit();
     Clock::exit();
     iconsExit();
