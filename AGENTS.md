@@ -27,9 +27,14 @@ truth, not here. `CLAUDE.md` is dead — do not recreate or track it.
   commit history.
 - The awesome rewrite (the eight plugins becoming one, in progress):
   design contract in `docs/awesome-design.md`, live state and next step
-  in `PLAN.md` (local, gitignored). Read both before touching
-  `awesome/` or the old plugin tree; the old tree is frozen until the
-  cutover described there.
+  in `PLAN.md`, the goal and definition of complete in `GOAL.md` (both
+  local, gitignored). Read all three before touching `awesome/` or the
+  old plugin tree; the old tree is frozen until the cutover described
+  there. The rewrite work is autonomous (2026-09-29 user directive):
+  work milestone to milestone without pausing to ask until GOAL.md is
+  fully met — the Safety hard lines below still bind; blockage on a
+  user-only action (sudo, deploy, relog) is recorded in PLAN.md, not
+  a stop.
 - Behavior: the plugin READMEs and `docs/hyprbar.md` /
   `docs/hyprnotify.md`.
 - Gate results: the summary line of the run log
