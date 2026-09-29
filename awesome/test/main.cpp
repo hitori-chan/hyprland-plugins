@@ -8,6 +8,7 @@ int main() {
         {"box", test_box},
         {"store", test_store},
         {"schema", test_schema},
+        {"wpctl", test_wpctl},
     };
     for (const auto& C : CASES)
         std::printf("[case] %s\n", C.name), C.fn();

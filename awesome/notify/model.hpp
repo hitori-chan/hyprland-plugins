@@ -243,6 +243,21 @@ namespace NAwesome::Notify {
                         const std::string& sender,
                         const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout);
 
+        // In-process card posting (the system module's feedback: old
+        // hyprosd/hyprpad). The bus face is for FOREIGN daemons; ours is a
+        // function call — no bus, no proxy, no hint-table ceremony.
+        // The id pins the replace-in-place slot (the OSD band 9990-9999
+        // keeps its old semantics: replace, no history, no grouping).
+        struct SPostCard {
+            uint32_t id = 0; // stable replaces-id
+            const char* icon = nullptr;   // icon-theme name or path; "" = none
+            const char* summary = nullptr;
+            const char* body = nullptr;
+            int32_t expireTimeout = 0; // 0 = the model's policy
+            int value = -1;            // the value hint, 0..100; -1 = none
+        };
+        void postCard(const SPostCard& c);
+
         bool       closeOne(uint32_t id, uint32_t reason);
         void       dismissAllLive();                      // "Clear all": every visible card goes; the DND queue stays
         void       dismissApp(const std::string& key);    // a bundle's right-click; the key may be (app, group)

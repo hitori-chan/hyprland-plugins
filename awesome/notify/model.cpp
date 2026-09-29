@@ -177,6 +177,13 @@ namespace NAwesome::Notify {
             return false;
         }
 
+        void postCard(const SPostCard& c) {
+            std::map<std::string, sdbus::Variant> hints;
+            if (c.value >= 0)
+                hints.emplace("value", sdbus::Variant{std::clamp(c.value, 0, 100)});
+            arrive("osd", c.id, c.icon ? c.icon : "", c.summary ? c.summary : "", c.body ? c.body : "", "", {}, hints, c.expireTimeout);
+        }
+
         bool closeOne(uint32_t id, uint32_t reason) {
             const auto BEFORE = notifs.size();
             std::erase_if(notifs, [&](const auto& N) { return N->id == id; });
