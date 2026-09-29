@@ -434,6 +434,7 @@ namespace NAwesome::Shell {
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info);
     void onInputBlocked(); // the pipeline head's reset: locked or natively captured
     void releasePointer();
+    void inputInit(); // the hover self-heal timer
     void inputExit();
 
 } // namespace NAwesome::Shell
