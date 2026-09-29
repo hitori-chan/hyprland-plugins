@@ -26,7 +26,9 @@ LDFLAGS   += -shared -Wl,--version-script=plugin.ver
 LDLIBS    += $(shell pkg-config --libs $(LIBS_EXTRA))
 
 OBJDIR := .build
-OBJS   := $(patsubst %.cpp,$(OBJDIR)/%.o,$(wildcard *.cpp))
+# one unit per file; subdirectory units (windows/, notify/, shell/,
+# system/) build to the same tree so their object names stay unique
+OBJS   := $(patsubst %.cpp,$(OBJDIR)/%.o,$(shell find . -name '*.cpp' -not -path './.build/*' -not -path './test/*'))
 
 all: $(NAME).so
 
@@ -37,12 +39,13 @@ $(NAME).so: $(OBJS)
 # GCC-16 installed-header gap as the old build: `make -B` after a fork
 # install)
 $(OBJDIR)/%.o: %.cpp Makefile plugin.ver | $(OBJDIR)
+	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(OBJDIR):
 	@mkdir -p $@
 
--include $(wildcard $(OBJDIR)/*.d)
+-include $(shell find $(OBJDIR) -name '*.d' 2>/dev/null)
 
 # the headless unit harness (pure core; no fork headers, no compositor)
 test:

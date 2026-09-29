@@ -286,7 +286,7 @@ namespace NAwesome {
         // Contain-fit: scale to fill the cell as far as aspect allows,
         // centered. renderTexture stretches to its box, so a non-square icon
         // handed a square cell comes out squashed — fit keeps proportions.
-        void texFit(const SP<ITexture>& t, const CBox& cell) const {
+        void texFit(const SP<ITexture>& t, const CBox& cell, int round = 0, float rp = 2.f) const {
             if (warm || !t || t->m_texID == 0)
                 return;
             const double TW = t->m_size.x, TH = t->m_size.y;
@@ -296,7 +296,7 @@ namespace NAwesome {
             const double S = std::min(B.w / TW, B.h / TH);
             const double W = TW * S, H = TH * S;
             CBox         b{B.x + (B.w - W) / 2.0, B.y + (B.h - H) / 2.0, W, H};
-            g_pHyprOpenGL->renderTexture(t, b.round(), {.a = alpha});
+            g_pHyprOpenGL->renderTexture(t, b.round(), {.a = alpha, .round = round, .roundingPower = rp});
         }
         // Fill the cell, aspect not preserved (the card's full-bleed images)
         void texStretch(const SP<ITexture>& t, const CBox& cell, int round = 0, float rp = 2.f) const {

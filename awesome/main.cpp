@@ -24,7 +24,13 @@ namespace {
     static SP<IPC::Socket1::SCommand> ctlCmd;
 
     // `hyprctl awesome <verb>`: the first module to answer owns it.
-    static std::string ctlDispatch(const std::string& verb) {
+    // The prefix command hands us the FULL request ("awesome count");
+    // the verb is everything after the command word.
+    static std::string ctlDispatch(const std::string& request) {
+        const auto SP = request.find(' ');
+        const auto verb = (SP == std::string::npos) ? std::string{} : request.substr(SP + 1);
+        if (verb.empty())
+            return "usage: awesome <count|center|state|badge|topline|clear|…>";
         const NAwesome::IModule* const MODULES[] = {&NAwesome::Shell::module(), &NAwesome::Notify::module(), &NAwesome::Windows::module(), &NAwesome::System::module()};
         for (const auto* M : MODULES)
             if (const auto R = M->handleCtl(verb))
