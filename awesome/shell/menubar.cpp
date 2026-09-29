@@ -1,0 +1,1060 @@
+// awesome/shell/menubar.cpp — awesome's Mod+P launcher: .desktop apps, categories, prompt, completion, history
+
+
+#include "../core/clipboard.hpp"
+#include "../core/fileindex.hpp"
+#include "../core/persist.hpp"
+
+
+#include "../core/desktop_exec.hpp"
+#include "shell/shell.hpp"
+
+namespace NAwesome::Shell {
+
+    // ---- menubar: awesome's Mod+P app launcher, drawn in the bar strip ----
+
+    namespace Menubar {
+        // The stock awesome categories (menubar/menu_gen.lua): an app files
+        // under the first of its Categories= tokens that maps here. Categories
+        // list alongside the apps; Enter on one drills into it.
+        const SCategory CATEGORIES[] = {
+            {"Accessories", "Utility", "applications-accessories"},  {"Development", "Development", "applications-development"},
+            {"Education", "Education", "applications-science"},      {"Games", "Game", "applications-games"},
+            {"Graphics", "Graphics", "applications-graphics"},       {"Internet", "Network", "applications-internet"},
+            {"Multimedia", "AudioVideo", "applications-multimedia"}, {"Office", "Office", "applications-office"},
+            {"Science", "Science", "applications-science"},          {"Settings", "Settings", "applications-utilities"},
+            {"System Tools", "System", "applications-system"},
+        };
+        const int         NCATS = (int)(sizeof(CATEGORIES) / sizeof(*CATEGORIES));
+
+        std::vector<SApp> apps; // parsed on first open, sorted by name
+        static bool       parsed = false;
+        static NAwesome::CAsyncFileIndex appIndex, completionIndex;
+        static SP<CEventLoopTimer>           indexPoll;
+        static uint64_t                      appGeneration = 0, completionGeneration = 0;
+        static uint64_t                      activationGeneration = 0;
+        static NAwesome::CClipboardRead     clipboard;
+        static bool                          appScanning = false, completionScanning = false;
+        static std::unordered_set<std::string> appSeen;
+        static std::string                   pendingSelectionId;
+
+        bool              isOpen = false;
+        std::string       typed;
+        size_t            cursor     = 0;
+        int               currentCat = -1;
+        static int        prevSel    = 0; // selection restored when leaving the category
+
+        // the filtered list: categories, then apps, then the trailing
+        // "Exec: <query>" entry that runs the raw typed text as a command
+        std::vector<SShown>              shown;
+        int                              sel = 0, first = 0;
+        PHLMONITORREF                    mon;
+
+        static NAwesome::CHop         pendingExec, pendingOpen;
+
+        // launch counts + prompt history, persisted through the core stores
+        // ($XDG_STATE_HOME/awesome, migrated from the old hyprbar cache)
+        static NAwesome::CountStore launchCounts;
+        static NAwesome::ListStore  history;            // oldest first
+        static int                  histSel = -1;       // -1 = editing the live query
+        static std::string          histLive;           // the live query parked while walking history
+        static bool                 filesLoaded = false;
+        constexpr size_t                  QUERY_MAX   = 4096;
+
+        // Tab-completion cycle; survives only between consecutive Tabs
+        static bool                     compActive = false;
+        static std::vector<std::string> compList;
+        static int                      compIdx   = 0;
+        static size_t                   compStart = 0, compLen = 0;
+        static bool                     compScanning = false, compBackward = false, compHideDotfiles = false;
+        static std::string              compPrefix;
+
+        static void cancelCompletion();
+
+        static std::vector<std::string> splitList(const std::string& s, char sep = ';') {
+            std::vector<std::string> out;
+            size_t                   p = 0;
+            while (p < s.size()) {
+                const auto N = s.find(sep, p);
+                const auto T = s.substr(p, (N == std::string::npos ? s.size() : N) - p);
+                if (!T.empty())
+                    out.push_back(T);
+                if (N == std::string::npos)
+                    break;
+                p = N + 1;
+            }
+            return out;
+        }
+
+        static std::string desktopBusName(std::string id) {
+            if (id.ends_with(".desktop"))
+                id.resize(id.size() - 8);
+            std::ranges::replace(id, '/', '-');
+            return id;
+        }
+
+        static std::optional<sdbus::ObjectPath> desktopObjectPath(const std::string& name) {
+            if (name.empty() || name.front() == '.' || name.back() == '.')
+                return std::nullopt;
+            std::string path{"/"};
+            for (const char C : name) {
+                if (C == '.')
+                    path += '/';
+                else if (C == '-')
+                    path += '_';
+                else
+                    path += C;
+            }
+            return sdbus::ObjectPath{path};
+        }
+
+        // the launcher's state: the core stores under $XDG_STATE_HOME/awesome,
+        // migrated once from the old hyprbar cache files (legacy files are
+        // read, never modified)
+        static std::filesystem::path legacyCacheDir() {
+            if (const char* XDG = std::getenv("XDG_CACHE_HOME"); XDG && *XDG)
+                return std::filesystem::path{XDG} / "hyprbar";
+            const char* HOME = std::getenv("HOME");
+            return std::filesystem::path{HOME ? HOME : "/tmp"} / ".cache" / "hyprbar";
+        }
+
+        static void loadFiles() {
+            if (filesLoaded)
+                return;
+            filesLoaded = true;
+            NAwesome::migrateCountStore(NAwesome::statePath("shell-launches.tsv"), legacyCacheDir() / "menu_count_file");
+            NAwesome::migrateListStore(NAwesome::statePath("shell-history.tsv"), legacyCacheDir() / "history_menu");
+            launchCounts = NAwesome::CountStore::read(NAwesome::statePath("shell-launches.tsv"));
+            history      = NAwesome::ListStore::read(NAwesome::statePath("shell-history.tsv"));
+        }
+
+        static void saveCounts() {
+            launchCounts.write(NAwesome::statePath("shell-launches.tsv"));
+        }
+
+        static void historyAdd(const std::string& q) {
+            if (q.empty())
+                return;
+            history.remember(q); // dedup + most-recent-last + the 50 bound
+            history.write(NAwesome::statePath("shell-history.tsv"));
+        }
+
+        static std::vector<std::string> desktops; // XDG_CURRENT_DESKTOP entries, for OnlyShowIn/NotShowIn
+
+        static void                     parseFile(const NAwesome::CAsyncFileIndex::SEntry& entry, std::unordered_set<std::string>& seen) {
+            const auto& path = entry.path;
+            const auto  id   = entry.relative.generic_string();
+            if (!seen.insert(id).second)
+                return; // an earlier (higher-precedence) dir already provides this id
+
+            std::istringstream F(entry.contents);
+
+            SApp                     app;
+            app.desktopId = desktopBusName(id);
+            std::string              line, rawExec;
+            std::vector<std::string> onlyShowIn, notShowIn, categories;
+            bool                     inEntry = false, hidden = false, isApp = false, malformed = false;
+            const auto               stringValue = [&](std::string_view value, std::string& out) {
+                const auto UNESCAPED = NAwesome::DesktopExec::unescapeString(value);
+                if (!UNESCAPED) {
+                    malformed = true;
+                    return;
+                }
+                out = *UNESCAPED;
+            };
+            const auto listValue = [&](std::string_view value, std::vector<std::string>& out) {
+                const auto UNESCAPED = NAwesome::DesktopExec::unescapeList(value);
+                if (!UNESCAPED) {
+                    malformed = true;
+                    return;
+                }
+                out = *UNESCAPED;
+            };
+            while (std::getline(F, line)) {
+                if (!line.empty() && line.back() == '\r')
+                    line.pop_back();
+                if (line.starts_with("[")) {
+                    if (inEntry)
+                        break; // only [Desktop Entry] matters
+                    inEntry = line == "[Desktop Entry]";
+                    continue;
+                }
+                if (!inEntry)
+                    continue;
+                if (line.starts_with("Name=") && app.name.empty())
+                    stringValue(std::string_view{line}.substr(5), app.name);
+                else if (line.starts_with("Exec="))
+                    rawExec = line.substr(5);
+                else if (line.starts_with("Icon="))
+                    stringValue(std::string_view{line}.substr(5), app.icon);
+                else if (line.starts_with("Terminal="))
+                    app.terminal = line.substr(9) == "true";
+                else if (line.starts_with("DBusActivatable="))
+                    app.dbusActivatable = line.substr(16) == "true";
+                else if (line.starts_with("Type="))
+                    isApp = line.substr(5) == "Application";
+                else if ((line.starts_with("NoDisplay=") || line.starts_with("Hidden=")) && line.ends_with("=true"))
+                    hidden = true;
+                else if (line.starts_with("OnlyShowIn="))
+                    listValue(std::string_view{line}.substr(11), onlyShowIn);
+                else if (line.starts_with("NotShowIn="))
+                    listValue(std::string_view{line}.substr(10), notShowIn);
+                else if (line.starts_with("Categories="))
+                    listValue(std::string_view{line}.substr(11), categories);
+            }
+            if (malformed || !isApp || hidden || (!app.dbusActivatable && rawExec.empty()))
+                return;
+
+            // honor OnlyShowIn/NotShowIn against this desktop (awesome checks
+            // them against its wm_name)
+            const auto HERE = [&](const std::vector<std::string>& list) {
+                for (const auto& T : list)
+                    if (std::find(desktops.begin(), desktops.end(), T) != desktops.end())
+                        return true;
+                return false;
+            };
+            if (!onlyShowIn.empty() && !HERE(onlyShowIn))
+                return;
+            if (HERE(notShowIn))
+                return;
+
+            if (app.name.empty())
+                app.name = "[" + path.stem().string() + "]"; // awesome's nameless fallback
+
+            // the first Categories= token that maps files the app there
+            for (const auto& T : categories) {
+                for (int i = 0; app.category < 0 && i < NCATS; i++)
+                    if (T == CATEGORIES[i].appType)
+                        app.category = i;
+                if (app.category >= 0)
+                    break;
+            }
+
+            if (!rawExec.empty()) {
+                const auto WORDS = NAwesome::DesktopExec::expand(rawExec, app.name, path.string(), app.icon);
+                if (!WORDS && !app.dbusActivatable)
+                    return;
+                if (WORDS)
+                    app.exec = NAwesome::DesktopExec::shellCommand(*WORDS);
+            }
+            app.lname = lower(app.name);
+            // matched like awesome: against the name AND the launch command line
+            app.lexec = lower(app.terminal && !app.exec.empty() ? std::string(cfg().getS("plugin:awesome:shell:terminal")) + " -e " + app.exec : app.exec);
+            apps.push_back(std::move(app));
+        }
+
+        static void parseApps() {
+            apps.clear();
+            appSeen.clear();
+            if (const char* XCD = std::getenv("XDG_CURRENT_DESKTOP"); XCD && *XCD)
+                desktops = splitList(XCD, ':');
+            else
+                desktops = {"Hyprland"};
+
+            std::vector<std::string> dirs; // user dirs first: their ids win
+            const auto               addDir = [&](const std::string& d) {
+                if (!d.empty() && std::find(dirs.begin(), dirs.end(), d) == dirs.end())
+                    dirs.push_back(d);
+            };
+            const char* HOME = std::getenv("HOME");
+            if (const char* XDH = std::getenv("XDG_DATA_HOME"); XDH && *XDH)
+                addDir(std::string{XDH} + "/applications");
+            else if (HOME)
+                addDir(std::string{HOME} + "/.local/share/applications");
+            if (HOME)
+                addDir(std::string{HOME} + "/.local/share/flatpak/exports/share/applications");
+            const char* DATA_DIRS = std::getenv("XDG_DATA_DIRS");
+            for (const auto& D : splitList(DATA_DIRS && *DATA_DIRS ? DATA_DIRS : "/usr/local/share:/usr/share", ':'))
+                addDir(D + (D.back() == '/' ? "applications" : "/applications"));
+            addDir("/var/lib/flatpak/exports/share/applications");
+
+            appScanning = true;
+            NAwesome::CAsyncFileIndex::SRequest request;
+            request.generation   = ++appGeneration;
+            request.extensions   = {".desktop"};
+            request.maxEntries   = 4096;
+            request.maxVisited   = 65536;
+            request.maxFileBytes = NAwesome::DesktopExec::MAX_DESKTOP_FILE_BYTES;
+            request.recursive    = true;
+            for (const auto& directory : dirs)
+                request.roots.emplace_back(directory);
+            appIndex.request(std::move(request));
+        }
+
+        static bool pollApps() {
+            if (!appScanning)
+                return false;
+            std::vector<NAwesome::CAsyncFileIndex::SEntry> entries;
+            const bool COMPLETE = appIndex.poll(appGeneration, entries, 8);
+            const size_t BEFORE = apps.size();
+            for (const auto& entry : entries)
+                parseFile(entry, appSeen);
+            appScanning = !COMPLETE;
+            if (COMPLETE) {
+                if (isOpen && sel >= 0 && sel < (int)shown.size() && shown[sel].app >= 0)
+                    pendingSelectionId = apps[shown[sel].app].desktopId;
+                std::sort(apps.begin(), apps.end(), [](const auto& a, const auto& b) { return a.lname < b.lname; });
+            }
+            return apps.size() != BEFORE || COMPLETE;
+        }
+
+        static void restoreSelection() {
+            if (pendingSelectionId.empty())
+                return;
+            for (int i = 0; i < (int)shown.size(); i++)
+                if (shown[i].app >= 0 && apps[shown[i].app].desktopId == pendingSelectionId) {
+                    sel = i;
+                    break;
+                }
+            pendingSelectionId.clear();
+        }
+
+        // awesome's menulist_update: case-insensitive substring match on the
+        // name or the command line; prefix matches rank higher, and once a
+        // query is typed, entries launched often rank first (launch counts).
+        static void refilter() {
+            shown.clear();
+            const auto Q = lower(typed);
+
+            struct SRank {
+                SShown s;
+                int    prio, weight;
+            };
+            static std::vector<SRank> R; // reused; the menubar is singular
+            R.clear();
+
+            const auto weightOf = [&](const std::string& name) -> int {
+                if (Q.empty())
+                    return 0; // like awesome: counts only reorder typed queries
+                const auto IT = launchCounts.counts.find(name);
+                return IT == launchCounts.counts.end() ? 0 : IT->second;
+            };
+
+            static const std::vector<std::string> LCATS = [] {
+                std::vector<std::string> v;
+                for (int i = 0; i < NCATS; i++)
+                    v.push_back(lower(CATEGORIES[i].name));
+                return v;
+            }();
+
+            if (currentCat < 0)
+                for (int i = 0; i < NCATS; i++) {
+                    const auto& LN = LCATS[i];
+                    if (LN.find(Q) == std::string::npos)
+                        continue;
+                    R.push_back({{.cat = i}, LN.starts_with(Q) ? 3 : 2, weightOf(CATEGORIES[i].name)});
+                }
+
+            for (int i = 0; i < (int)apps.size(); i++) {
+                const auto& A = apps[i];
+                if (currentCat >= 0 && A.category != currentCat)
+                    continue;
+                if (A.lname.find(Q) == std::string::npos && A.lexec.find(Q) == std::string::npos)
+                    continue;
+                R.push_back({{.app = i}, A.lname.starts_with(Q) || A.lexec.starts_with(Q) ? 1 : 0, weightOf(A.name)});
+            }
+
+            std::stable_sort(R.begin(), R.end(), [](const SRank& a, const SRank& b) { return a.prio != b.prio ? a.prio > b.prio : a.weight > b.weight; });
+            for (const auto& r : R)
+                shown.push_back(r.s);
+            shown.push_back({}); // "Exec: <query>", always last
+
+            // awesome keeps the selection across query changes, only clamped
+            sel   = std::clamp(sel, 0, (int)shown.size() - 1);
+            first = std::min(first, sel);
+        }
+
+        void close() {
+            if (!isOpen)
+                return;
+            barChanged(); // while still open: the damage must cover the prompt strip
+            isOpen = false;
+            clipboard.cancel();
+            typed.clear();
+            cursor     = 0;
+            currentCat = -1;
+            histSel    = -1;
+            cancelCompletion();
+            compActive = false;
+            compList.clear();
+        }
+
+        void open() {
+            const auto M = Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr;
+            if (!M)
+                return;
+            Menu::close();
+            if (!parsed) {
+                parseApps();
+                parsed = true;
+                if (indexPoll)
+                    indexPoll->updateTimeout(std::chrono::milliseconds(2));
+            }
+            loadFiles();
+            clipboard.cancel();
+            typed.clear();
+            cursor     = 0;
+            currentCat = -1;
+            sel = first = 0;
+            histSel     = -1;
+            compActive  = false;
+            refilter();
+            mon    = M;
+            isOpen = true;
+            barChanged();
+        }
+
+        static void enterCategory(int c) {
+            currentCat = c;
+            prevSel    = sel;
+            typed.clear(); // awesome resets the query when drilling in
+            cursor  = 0;
+            histSel = -1;
+            sel = first = 0;
+            refilter();
+            barChanged();
+        }
+
+        static void exitCategory() { // the typed query survives, like awesome
+            currentCat = -1;
+            refilter();
+            sel   = std::clamp(prevSel, 0, (int)shown.size() - 1);
+            first = 0;
+            barChanged();
+        }
+
+        static void activateDbus(const SApp& app) {
+            const auto PATH = desktopObjectPath(app.desktopId);
+            if (!PATH || !Tray::bus.conn()) {
+                if (!app.exec.empty())
+                    std::ignore = Config::Supplementary::executor()->spawn(app.exec);
+                return;
+            }
+            try {
+                auto P = std::shared_ptr<sdbus::IProxy>(sdbus::createProxy(*Tray::bus.conn(), sdbus::ServiceName{app.desktopId}, *PATH).release());
+                const auto DATA = std::map<std::string, sdbus::Variant>{};
+                const auto GENERATION = activationGeneration;
+                P->callMethodAsync("Activate")
+                    .onInterface("org.freedesktop.Application")
+                    .withArguments(DATA)
+                    .uponReplyInvoke([P, app, GENERATION](std::optional<sdbus::Error> error) {
+                        if (GENERATION == activationGeneration && error && !app.exec.empty())
+                            std::ignore = Config::Supplementary::executor()->spawn(app.exec);
+                    });
+                Tray::pollSoon();
+            } catch (...) {
+                if (!app.exec.empty())
+                    std::ignore = Config::Supplementary::executor()->spawn(app.exec);
+            }
+        }
+
+        // run a shown entry, or the raw query for the Exec one
+        static void launch(const SShown& S, bool forceTerminal) {
+            const SApp* APP = S.app >= 0 && S.app < (int)apps.size() ? &apps[S.app] : nullptr;
+            if (APP && APP->dbusActivatable && !forceTerminal) {
+                const SApp COPY = *APP;
+                launchCounts.bump(APP->name);
+                pendingExec.arm([COPY, hist = typed]() {
+                    saveCounts();
+                    historyAdd(hist);
+                    activateDbus(COPY);
+                });
+                return;
+            }
+            std::string cmd = APP ? APP->exec : typed;
+            while (!cmd.empty() && cmd.back() == ' ')
+                cmd.pop_back();
+            if (cmd.empty())
+                return;
+            if ((APP && APP->terminal) || forceTerminal)
+                cmd = std::string(cfg().getS("plugin:awesome:shell:terminal")) + " -e " + cmd;
+            // most-launched sorts first next time (in-memory, immediate); raw
+            // Exec one-offs are not counted — they'd grow the file unbounded
+            if (APP)
+                launchCounts.bump(APP->name);
+            // the disk writes ride the deferred hop with the spawn, off the key emission
+            pendingExec.arm([cmd, hist = typed]() {
+                saveCounts();
+                historyAdd(hist);
+                std::ignore = Config::Supplementary::executor()->spawn(cmd);
+            });
+        }
+
+        // cursor movement over typed: byte offsets on UTF-8 boundaries
+        static size_t prevChar(size_t p) {
+            while (p > 0 && (typed[--p] & 0xC0) == 0x80) {}
+            return p;
+        }
+        static size_t nextChar(size_t p) {
+            if (p < typed.size())
+                for (p++; p < typed.size() && (typed[p] & 0xC0) == 0x80; p++) {}
+            return p;
+        }
+        static size_t prevWord(size_t p) {
+            while (p > 0 && typed[p - 1] == ' ')
+                p--;
+            while (p > 0 && typed[p - 1] != ' ')
+                p--;
+            return p;
+        }
+        static size_t nextWord(size_t p) {
+            while (p < typed.size() && typed[p] == ' ')
+                p++;
+            while (p < typed.size() && typed[p] != ' ')
+                p++;
+            return p;
+        }
+
+        static void cancelCompletion() {
+            if (!compScanning)
+                return;
+            compScanning = false;
+            completionIndex.cancel(++completionGeneration);
+        }
+
+        static void applyCompletion(bool backward) {
+            if (compList.empty())
+                return;
+            if (compActive) {
+                const int N = (int)compList.size();
+                compIdx     = ((compIdx + (backward ? -1 : 1)) % N + N) % N;
+            } else {
+                compIdx    = backward ? (int)compList.size() - 1 : 0;
+                compActive = true;
+            }
+            typed.replace(compStart, compLen, compList[compIdx]);
+            compLen = compList[compIdx].size();
+            cursor  = compStart + compLen;
+            histSel = -1;
+            refilter();
+            barChanged();
+        }
+
+        static bool pollCompletion() {
+            if (!compScanning)
+                return false;
+            std::vector<NAwesome::CAsyncFileIndex::SEntry> entries;
+            const bool COMPLETE = completionIndex.poll(completionGeneration, entries, 64);
+            const std::string SELECTED = compActive ? compList[compIdx] : "";
+            for (const auto& entry : entries) {
+                const auto name = entry.path.filename().string();
+                if (compHideDotfiles && name.starts_with("."))
+                    continue;
+                compList.push_back(compPrefix + name + (entry.directory ? "/" : ""));
+            }
+            if (!entries.empty()) {
+                std::sort(compList.begin(), compList.end());
+                compList.erase(std::unique(compList.begin(), compList.end()), compList.end());
+                if (compActive) {
+                    if (const auto it = std::ranges::find(compList, SELECTED); it != compList.end())
+                        compIdx = (int)std::distance(compList.begin(), it);
+                } else
+                    applyCompletion(compBackward);
+            }
+            compScanning = !COMPLETE;
+            return !entries.empty();
+        }
+
+        // Tab completion (awful.completion.shell, natively): the word under
+        // the cursor completes from $PATH executables when it is the command
+        // word, from filenames otherwise. Enumeration is worker-owned; the
+        // prompt only receives bounded batches through pollCompletion().
+        static void complete(bool backward) {
+            if (compActive) {
+                applyCompletion(backward);
+                return;
+            }
+            if (compScanning) {
+                compBackward = backward;
+                return;
+            }
+
+            size_t start = cursor;
+            while (start > 0 && typed[start - 1] != ' ')
+                start--;
+            size_t end = cursor;
+            while (end < typed.size() && typed[end] != ' ')
+                end++;
+            const auto STEM = typed.substr(start, cursor - start);
+
+            NAwesome::CAsyncFileIndex::SRequest request;
+            request.generation = ++completionGeneration;
+            request.maxEntries = 512;
+            request.maxVisited = 8192;
+            if (typed.find_first_not_of(' ') >= start) { // the command word
+                const char* PATH = std::getenv("PATH");
+                for (const auto& dir : splitList(PATH ? PATH : "", ':'))
+                    request.roots.emplace_back(dir);
+                request.namePrefix = STEM;
+                request.executable = true;
+                compPrefix.clear();
+                compHideDotfiles = false;
+            } else { // a filename; the typed form (~ and all) is preserved
+                std::string expanded = STEM;
+                if (const char* HOME = std::getenv("HOME"); HOME && expanded.starts_with("~/"))
+                    expanded = std::string{HOME} + expanded.substr(1);
+                const auto SLASH = expanded.rfind('/');
+                const auto DIR   = SLASH == std::string::npos ? std::string{"."} : expanded.substr(0, SLASH + 1);
+                request.roots.emplace_back(DIR);
+                request.namePrefix = SLASH == std::string::npos ? expanded : expanded.substr(SLASH + 1);
+                request.directories = true;
+                const auto TSLASH = STEM.rfind('/');
+                compPrefix = TSLASH == std::string::npos ? std::string{} : STEM.substr(0, TSLASH + 1);
+                compHideDotfiles = !request.namePrefix.starts_with(".");
+            }
+            if (request.roots.empty())
+                return;
+            compList.clear();
+            compStart    = start;
+            compLen      = end - start;
+            compBackward = backward;
+            compScanning = true;
+            completionIndex.request(std::move(request));
+            if (indexPoll)
+                indexPoll->updateTimeout(std::chrono::milliseconds(2));
+        }
+
+        // Up/Down (or C-p/C-n): walk the persisted prompt history
+        static void histGo(int dir) {
+            if (history.entries.empty())
+                return;
+            if (histSel < 0) {
+                if (dir > 0)
+                    return;
+                histLive = typed; // park the live query
+                histSel  = (int)history.entries.size() - 1;
+            } else if (dir < 0) {
+                histSel = std::max(histSel - 1, 0);
+            } else if (++histSel >= (int)history.entries.size()) {
+                histSel = -1;
+                typed   = histLive; // walked past the newest: live query back
+            }
+            if (histSel >= 0)
+                typed = history.entries[histSel];
+            cursor = typed.size();
+            refilter();
+            barChanged();
+        }
+
+        // While open the prompt owns the keyboard: key presses are swallowed
+        // before the keybind layer, the IME, and the apps see it — except
+        // Super chords, which stay the user's (Super+1, the prompt's own
+        // Super+P toggle) and must run even with the strip open; a prompt
+        // left open would otherwise strand workspace switching. Swallowing is
+        // modifier-safe — mods reach clients via the separate onKeyboardMod
+        // path, never through these key events.
+        void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
+            // emissions precede the compositor's lock handling: a locked
+            // session must never feed the prompt (typed keys would collect in
+            // `typed` and Return would launch() the line — under a LOCK)
+            if (NAwesome::sessionLocked()) {
+                if (isOpen)
+                    close();
+                return;
+            }
+            if (NAwesome::nativeInputCaptureActive())
+                return;
+
+            if (!isOpen)
+                return;
+
+            // monitor gone: never keep an invisible prompt grabbing the
+            // keyboard. Fullscreen deliberately does NOT close it — render
+            // and pointer both keep the prompt alive above fullscreen.
+            const auto M = mon.lock();
+            if (!M) {
+                close();
+                return;
+            }
+
+            // Releases pass through UNTOUCHED: the keybind layer tracks
+            // pressed keys (m_pressedKeys), and eating the release of the
+            // very Mod+P that opened the prompt left its 'p' marked held —
+            // the next Mod+P press wouldn't fire and the chord needed two
+            // presses. A stray release is harmless everywhere else (clients
+            // and the IME ignore a release whose press they never saw).
+            if (e.state != WL_KEYBOARD_KEY_STATE_PRESSED)
+                return;
+
+            const auto KB = g_pSeatManager ? g_pSeatManager->m_keyboard.lock() : nullptr;
+            if (!KB || !KB->m_xkbState)
+                return;
+
+            const xkb_keycode_t KC   = e.keycode + 8;
+            const xkb_keysym_t  SYM  = xkb_state_key_get_one_sym(KB->m_xkbState, KC);
+            const bool          CTRL = xkb_state_mod_name_is_active(KB->m_xkbState, XKB_MOD_NAME_CTRL, XKB_STATE_MODS_EFFECTIVE) == 1;
+            const bool          ALT  = xkb_state_mod_name_is_active(KB->m_xkbState, XKB_MOD_NAME_ALT, XKB_STATE_MODS_EFFECTIVE) == 1;
+            const bool          LOGO = xkb_state_mod_name_is_active(KB->m_xkbState, XKB_MOD_NAME_LOGO, XKB_STATE_MODS_EFFECTIVE) == 1;
+
+            if (LOGO)
+                return; // a Super chord is a user bind passing through — the chord runs (workspace switch,
+                        // Super+P re-toggles the strip), the prompt keeps whatever state it has
+
+            info.cancelled = true;
+
+            if (SYM >= XKB_KEY_Shift_L && SYM <= XKB_KEY_Hyper_R)
+                return; // a bare modifier: not an edit, must not end a Tab cycle
+            if (SYM != XKB_KEY_Tab && SYM != XKB_KEY_ISO_Left_Tab) {
+                compActive = false;
+                cancelCompletion();
+            }
+
+            const auto edited = [&]() { // any edit detaches the history walk
+                histSel = -1;
+                refilter();
+                barChanged();
+            };
+            const auto delBack = [&](size_t from) {
+                typed.erase(from, cursor - from);
+                cursor = from;
+                edited();
+            };
+            const auto paste = [&]() {
+                const auto GENERATION = activationGeneration;
+                clipboard.request(QUERY_MAX, [GENERATION](std::string text) {
+                    if (!isOpen || GENERATION != activationGeneration)
+                        return;
+                    for (char& C : text)
+                        if (C == '\n' || C == '\r' || C == '\t')
+                            C = ' ';
+                    std::erase_if(text, [](unsigned char C) { return C < 0x20 || C == 0x7f; });
+                    if (typed.size() >= QUERY_MAX)
+                        return;
+                    if (text.size() > QUERY_MAX - typed.size()) {
+                        text.resize(QUERY_MAX - typed.size());
+                        while (!text.empty() && ((unsigned char)text.back() & 0xc0) == 0x80)
+                            text.pop_back();
+                        if (!text.empty()) {
+                            const unsigned char LEAD = text.back();
+                            if ((LEAD & 0xe0) == 0xc0 || (LEAD & 0xf0) == 0xe0 || (LEAD & 0xf8) == 0xf0)
+                                text.pop_back();
+                        }
+                    }
+                    if (text.empty())
+                        return;
+                    typed.insert(cursor, text);
+                    cursor += text.size();
+                    histSel = -1;
+                    refilter();
+                    barChanged();
+                });
+            };
+
+            switch (SYM) {
+                case XKB_KEY_Escape:
+                    if (currentCat >= 0)
+                        exitCategory(); // Escape leaves the category first, like awesome
+                    else
+                        close();
+                    return;
+
+                case XKB_KEY_Return:
+                case XKB_KEY_KP_Enter: {
+                    if (CTRL)
+                        sel = (int)shown.size() - 1; // C-Return: the Exec entry, the raw query
+                    if (sel >= 0 && sel < (int)shown.size()) {
+                        const auto S = shown[sel];
+                        if (S.cat >= 0) {
+                            enterCategory(S.cat);
+                            return; // drilling in keeps the prompt open
+                        }
+                        launch(S, CTRL && ALT); // C-M-Return: the raw query in the terminal
+                    }
+                    close();
+                    return;
+                }
+
+                case XKB_KEY_Left: // selection never wraps, like awesome
+                    sel = std::max(sel - 1, 0);
+                    barChanged();
+                    return;
+                case XKB_KEY_Right:
+                    sel = std::min(sel + 1, (int)shown.size() - 1);
+                    barChanged();
+                    return;
+                case XKB_KEY_Home:
+                    sel = first = 0;
+                    barChanged();
+                    return;
+                case XKB_KEY_End:
+                    sel = (int)shown.size() - 1;
+                    barChanged();
+                    return;
+
+                case XKB_KEY_Tab: // shell completion, never selection (awesome parity)
+                    complete(false);
+                    return;
+                case XKB_KEY_ISO_Left_Tab: complete(true); return;
+
+                case XKB_KEY_Up: histGo(-1); return;
+                case XKB_KEY_Down: histGo(1); return;
+
+                case XKB_KEY_Delete:
+                    if (cursor < typed.size()) {
+                        typed.erase(cursor, nextChar(cursor) - cursor);
+                        edited();
+                    }
+                    return;
+
+                case XKB_KEY_BackSpace:
+                    if (CTRL || ALT)
+                        delBack(prevWord(cursor));
+                    else if (typed.empty() && currentCat >= 0)
+                        exitCategory(); // BackSpace on an empty query backs out
+                    else if (cursor > 0)
+                        delBack(prevChar(cursor));
+                    return;
+
+                default: break;
+            }
+
+            if (CTRL && !ALT) {
+                switch (SYM) {
+                    case XKB_KEY_j: // awesome: C-j/C-k double Left/Right
+                        sel = std::max(sel - 1, 0);
+                        barChanged();
+                        return;
+                    case XKB_KEY_k:
+                        sel = std::min(sel + 1, (int)shown.size() - 1);
+                        barChanged();
+                        return;
+                    case XKB_KEY_p: histGo(-1); return;
+                    case XKB_KEY_n: histGo(1); return;
+                    case XKB_KEY_a:
+                        cursor = 0;
+                        barChanged();
+                        return;
+                    case XKB_KEY_e:
+                        cursor = typed.size();
+                        barChanged();
+                        return;
+                    case XKB_KEY_b:
+                        cursor = prevChar(cursor);
+                        barChanged();
+                        return;
+                    case XKB_KEY_f:
+                        cursor = nextChar(cursor);
+                        barChanged();
+                        return;
+                    case XKB_KEY_d:
+                        if (cursor < typed.size()) {
+                            typed.erase(cursor, nextChar(cursor) - cursor);
+                            edited();
+                        }
+                        return;
+                    case XKB_KEY_h:
+                        if (cursor > 0)
+                            delBack(prevChar(cursor));
+                        return;
+                    case XKB_KEY_u: delBack(0); return;
+                    case XKB_KEY_w: delBack(prevWord(cursor)); return;
+                    case XKB_KEY_v: paste(); return;
+                    default: return; // unbound C-chords are swallowed, not typed
+                }
+            }
+
+            if (ALT && !CTRL) {
+                switch (SYM) {
+                    case XKB_KEY_b:
+                        cursor = prevWord(cursor);
+                        barChanged();
+                        return;
+                    case XKB_KEY_f:
+                        cursor = nextWord(cursor);
+                        barChanged();
+                        return;
+                    case XKB_KEY_d:
+                        typed.erase(cursor, nextWord(cursor) - cursor);
+                        edited();
+                        return;
+                    default: return; // unbound M-chords are swallowed, not typed
+                }
+            }
+            if (CTRL || ALT)
+                return;
+
+            char buf[16] = {};
+            if (xkb_state_key_get_utf8(KB->m_xkbState, KC, buf, sizeof(buf)) > 0 && (unsigned char)buf[0] >= 0x20 && buf[0] != 0x7f) {
+                const std::string S{buf};
+                if (typed.size() + S.size() <= QUERY_MAX) {
+                    typed.insert(cursor, S);
+                    cursor += S.size();
+                    edited();
+                }
+            }
+        }
+
+        // The prompt strip, drawn right BELOW the bar so the bar stays visible —
+        // awesome's menubar is a separate wibox at the workarea top, under the
+        // wibar; it never replaced it.
+        void render(const SPaint& PAINT) {
+            if (!isOpen || mon.lock() != PAINT.mon)
+                return;
+
+            // one palette fetch per render: color() memoizes but still hashes per call
+            const CHyprColor COLBG = color(cfg().getColor("plugin:awesome:shell:col_bg")), COLFG = color(cfg().getColor("plugin:awesome:shell:col_fg")), COLACTIVEBG = color(cfg().getColor("plugin:awesome:shell:col_active_bg")), COLFOCUS = color(cfg().getColor("plugin:awesome:shell:col_focus"));
+
+            const double     MY = PAINT.mb.y + PAINT.h;
+            PAINT.glass(CBox{PAINT.mb.x, MY, PAINT.mb.w, PAINT.h}, COLBG);
+
+            double px = PAINT.mb.x + 8;
+
+            // "Run: " (or the drilled-into category) with the cursor in place —
+            // a ▏ glyph: renderText takes plain text only (no pango markup),
+            // so awesome's inverse-video block cursor can't be drawn natively
+            static std::string PROMPTBUF; // reused; the strip renders on the main thread only
+            PROMPTBUF.clear();
+            if (Menubar::currentCat >= 0) {
+                PROMPTBUF += Menubar::CATEGORIES[Menubar::currentCat].name;
+                PROMPTBUF += ": ";
+            } else
+                PROMPTBUF += "Run: ";
+            PROMPTBUF.append(Menubar::typed, 0, Menubar::cursor);
+            PROMPTBUF += "▏";
+            PROMPTBUF.append(Menubar::typed, Menubar::cursor);
+            const auto   PROMPT = textTex(PROMPTBUF, COLFG, PAINT.pt);
+            const double PW     = PROMPT ? PROMPT->m_size.x / PAINT.scale : 0;
+            PAINT.texIn(PROMPT, CBox{px, MY, PW, PAINT.h});
+            px += PW + 12;
+
+            auto& SH = Menubar::shown;
+            if (!SH.empty()) {
+                if (Menubar::sel >= (int)SH.size())
+                    Menubar::sel = (int)SH.size() - 1;
+                if (Menubar::first > Menubar::sel)
+                    Menubar::first = Menubar::sel;
+
+                // by reference: the row labels are already stored strings, and
+                // this runs per visible row per frame (warm AND draw) — copying
+                // them out was a handful of allocations per frame for nothing.
+                // Only the trailing Exec row composes, into a reused buffer.
+                static const std::vector<std::string> CATNAMES = [] {
+                    std::vector<std::string> v;
+                    for (int i = 0; i < NCATS; i++)
+                        v.emplace_back(CATEGORIES[i].name);
+                    return v;
+                }();
+                static std::string EXECNAME;
+                const auto         entryName = [&](int i) -> const std::string& {
+                    if (SH[i].app >= 0)
+                        return Menubar::apps[SH[i].app].name;
+                    if (SH[i].cat >= 0)
+                        return CATNAMES[SH[i].cat];
+                    EXECNAME.assign("Exec: ").append(Menubar::typed);
+                    return EXECNAME;
+                };
+                const auto entryIcon = [&](int i) -> SP<ITexture> {
+                    if (SH[i].app >= 0)
+                        return namedIcon(Menubar::apps[SH[i].app].icon);
+                    if (SH[i].cat >= 0)
+                        return namedIcon(Menubar::CATEGORIES[SH[i].cat].icon);
+                    return namedIcon("system-run");
+                };
+
+                // entry: [8][icon][6][text][8], icon on the 3px-inset rhythm;
+                // the cell is always reserved, even when no icon resolves, so
+                // row geometry stays stable and names never jump.
+                const double ICON  = PAINT.h - 6;
+                const auto   cellW = [&](const SP<ITexture>& t) { return 8 + ICON + 6 + (t ? t->m_size.x / PAINT.scale : 0) + 8; };
+
+                { // keep the selection on screen: page-jump to it when it won't fit
+                    double w = 0;
+                    for (int i = Menubar::first; i <= Menubar::sel; i++)
+                        w += cellW(textTex(entryName(i), COLFG, PAINT.pt));
+                    if (px + w > PAINT.mb.x + PAINT.mb.w)
+                        Menubar::first = Menubar::sel;
+                }
+
+                for (int i = Menubar::first; i < (int)SH.size(); i++) {
+                    const auto&  NAME = entryName(i);
+                    const auto   ITEX = entryIcon(i);
+                    const auto   WT   = textTex(NAME, COLFG, PAINT.pt);
+                    const double W    = cellW(WT);
+                    if (px + W > PAINT.mb.x + PAINT.mb.w)
+                        break;
+
+                    // awesome's menubar item colors: fg_normal, the selected
+                    // one fg_focus on bg_focus
+                    CHyprColor fg = COLFG;
+                    if (i == Menubar::sel) {
+                        PAINT.rect(CBox{px, MY, W, PAINT.h}, COLACTIVEBG);
+                        fg = COLFOCUS;
+                    }
+
+                    double tx = px + 8;
+                    if (ITEX && ITEX->m_texID != 0) {
+                        const auto P = PAINT.toPhys(CBox{tx, MY + 3, ICON, ICON});
+                        PAINT.tex(ITEX, P);
+                    }
+                    tx += ICON + 6;
+
+                    const auto T = i == Menubar::sel ? textTex(NAME, fg, PAINT.pt) : WT;
+                    if (T && T->m_texID != 0) {
+                        const auto P = PAINT.toPhys(CBox{tx, MY, 1, PAINT.h});
+                        CBox       b{P.x, P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y};
+                        PAINT.tex(T, b.round());
+                    }
+                    px += W;
+                }
+            }
+        }
+    }
+
+    namespace Menubar {
+        void init() {
+            if (!g_pEventLoopManager || !g_pCompositor || !appIndex.init(g_pCompositor->m_wlEventLoop) || !completionIndex.init(g_pCompositor->m_wlEventLoop))
+                return;
+            ++activationGeneration;
+            indexPoll = makeShared<CEventLoopTimer>(
+                std::nullopt,
+                [](SP<CEventLoopTimer> self, void*) {
+                    const bool APPS = pollApps();
+                    const bool COMP = pollCompletion();
+                    if (isOpen && (APPS || COMP)) {
+                        refilter();
+                        restoreSelection();
+                        barChanged();
+                    }
+                    self->updateTimeout((appScanning || completionScanning) ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
+                },
+                nullptr);
+            g_pEventLoopManager->addTimer(indexPoll);
+        }
+
+        // hl.plugin.hyprbar.menubar(), deferred out of the Lua call
+        void toggleDeferred() {
+            pendingOpen.arm([]() {
+                if (isOpen)
+                    close();
+                else
+                    open();
+            });
+        }
+
+        void exit() {
+            ++activationGeneration;
+            close();
+            clipboard.cancel();
+            if (indexPoll && g_pEventLoopManager)
+                g_pEventLoopManager->removeTimer(indexPoll);
+            indexPoll.reset();
+            appIndex.exit();
+            completionIndex.exit();
+            apps.clear();
+            shown.clear(); // its entries index into apps
+            desktops.clear();
+            appSeen.clear();
+            pendingSelectionId.clear();
+            parsed = false;
+            appScanning = completionScanning = false;
+            launchCounts.counts.clear();
+            history.entries.clear();
+            filesLoaded = false;
+            compList.clear();
+            compPrefix.clear();
+            pendingExec.reset();
+            pendingOpen.reset();
+        }
+    } // namespace Menubar
+
+} // namespace NAwesome::Shell

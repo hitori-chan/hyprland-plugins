@@ -311,6 +311,15 @@ namespace NAwesome {
     struct ILayer {
         virtual ~ILayer() = default;
         virtual const char* name() const = 0;
+        // A canvas warm pass is about to start (true) / has finished
+        // (false) with `scoped` = one monitor only. Layers with a
+        // generation-cache tick the generation on a FULL walk and sweep its
+        // grace window after it; a scoped walk does neither — the textures it
+        // left unenumerated were not unwanted, just out of scope, and ageing
+        // on a scoped warm would evict them (every later scoped warm
+        // rebuilding them: the strip's task-label thrash). Default: none.
+        virtual void warmBegin(bool scoped) {}
+        virtual void warmEnd(bool scoped) {}
         // Build every texture this monitor's NEXT frame will paint.
         virtual void        warm(PHLMONITOR mon) = 0;
         // Paint. Must never build.
@@ -351,11 +360,15 @@ namespace NAwesome {
         void warmAll(PHLMONITOR only = nullptr) {
             if (!m_gate.beginWarm())
                 return;
-            m_texturesTickPending = true;
+            const bool SCOPED = only != nullptr;
+            for (auto* L : m_layers)
+                L->warmBegin(SCOPED);
             for (const auto& M : State::monitorState()->monitors())
                 if (!only || M == only)
                     for (auto* L : m_layers)
                         L->warm(M);
+            for (auto* L : m_layers)
+                L->warmEnd(SCOPED);
             m_gate.endWarm();
         }
 
@@ -381,7 +394,6 @@ namespace NAwesome {
         friend class CAwesomePassElement;
         std::vector<ILayer*> m_layers;
         CWarmGate            m_gate;
-        bool                 m_texturesTickPending = false;
 
         class CAwesomePassElement : public IPassElement {
           public:

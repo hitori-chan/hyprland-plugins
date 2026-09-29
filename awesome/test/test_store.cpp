@@ -69,7 +69,7 @@ bool test_store() {
     {
         BoxStore S;
         for (size_t i = 0; i < MAX_STORE_ENTRIES; i++)
-            AW_CHECK(S.remember("k" + std::to_string(i), {i, 0, 1, 1}));
+            AW_CHECK(S.remember("k" + std::to_string(i), {(int)i, 0, 1, 1}));
         AW_CHECK(!S.remember("overflow", {0, 0, 1, 1}));
         // an existing key still updates at the cap
         AW_CHECK(S.remember("k0", {0, 0, 2, 2}));
@@ -99,6 +99,34 @@ bool test_store() {
         AW_CHECK(L.write(P));
         const auto R = ListStore::read(P);
         AW_CHECK(R.entries == L.entries);
+    }
+
+    // ---- CountStore: bump, round-trip, hostile rows ----
+    {
+        CountStore C;
+        AW_CHECK(C.bump("Firefox"));
+        AW_CHECK(C.bump("Firefox"));
+        AW_CHECK(!C.bump("bad\tname"));
+        AW_CHECK(!C.bump(""));
+        const auto P = TDIR / "counts.tsv";
+        AW_CHECK(C.write(P));
+        const auto R = CountStore::read(P);
+        AW_CHECK(R.counts.size() == 1 && R.counts.at("Firefox") == 2);
+        // a name with a semicolon: only the trailing number is the count
+        const auto H = TDIR / "semi.tsv";
+        {
+            std::ofstream f(H, std::ios::binary);
+            f << "org;app;7\n";   // name "org;app", count 7
+            f << "no.count\n";     // no separator: skipped
+            f << ";3\n";           // empty name: skipped
+            f << "neg;-1\n";       // negative: skipped
+            f << "huge;999999999\n"; // over the cap: skipped
+            f << "ok;5\n";
+        }
+        const auto R2 = CountStore::read(H);
+        AW_CHECK(R2.counts.size() == 2);
+        AW_CHECK((R2.counts.count("org;app") && R2.counts.at("org;app") == 7));
+        AW_CHECK((R2.counts.count("ok") && R2.counts.at("ok") == 5));
     }
 
     // ---- migration: legacy read once, fresh wins once live ----

@@ -55,6 +55,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -244,10 +245,11 @@ namespace NAwesome::Notify {
                         const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout);
 
         // In-process card posting (the system module's feedback: old
-        // hyprosd/hyprpad). The bus face is for FOREIGN daemons; ours is a
-        // function call — no bus, no proxy, no hint-table ceremony.
-        // The id pins the replace-in-place slot (the OSD band 9990-9999
-        // keeps its old semantics: replace, no history, no grouping).
+        // hyprosd/hyprpad; the shell's battery alerts). The bus face is for
+        // FOREIGN daemons; ours is a function call — no bus, no proxy, no
+        // hint-table ceremony. The id pins the replace-in-place slot (the
+        // OSD band 9990-9999 keeps its old semantics: replace, no history,
+        // no grouping).
         struct SPostCard {
             uint32_t id = 0; // stable replaces-id
             const char* icon = nullptr;   // icon-theme name or path; "" = none
@@ -255,6 +257,8 @@ namespace NAwesome::Notify {
             const char* body = nullptr;
             int32_t expireTimeout = 0; // 0 = the model's policy
             int value = -1;            // the value hint, 0..100; -1 = none
+            uint8_t urgency = 1;       // 0 low / 1 normal / 2 critical (sticky)
+            bool osd = false;          // the x-notify-osd blip mark
         };
         void postCard(const SPostCard& c);
 
@@ -269,6 +273,14 @@ namespace NAwesome::Notify {
         void       toggleSuspend();         // DND; resume renders the queue, fresh timeouts
         bool       suspendedNow();
         std::pair<uint32_t, uint32_t> badgeCounts(); // {bannered, resident} — the bell's two numbers
+
+        // The shell's bell repaints when the badge numbers can have moved:
+        // the shell registers the hook at init; it fires from notifChanged,
+        // the single funnel of every model change, on the event loop.
+        inline std::function<void()>& badgeChangedHook() {
+            static std::function<void()> H;
+            return H;
+        }
         std::string                   stateString(); // "center:N live:N dnd:N" — raw model counts, the debug line
         std::string                   badgeString(); // "banners:N resident:N" — the popup/shade split the bell reads
         std::string                   toplineString(); // the newest card's collapsed one-liner — the gate's text probe
