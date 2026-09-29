@@ -14,7 +14,6 @@
 //                 widget                          (widget)
 //   battery.cpp   gauge state, alerts, Android's pill (widget)
 //   clock.cpp     awesome's textclock               (widget)
-//   layoutbox.cpp the per-tag layout registry       (widget)
 //   icons.cpp     icon loading + resolution (GTK theme dirs, PNG/SVG, caches)
 //   menu.cpp      the menu: dbusmenu for tray items + local client list, and
 //                 its own painting (Menu::render)
@@ -190,9 +189,6 @@ namespace NHyprbar {
         void watchMinimize(const PHLWINDOW& w);
     }
 
-    void layoutboxReload(); // config reload: look for the layout icon again
-    void layoutboxExit();
-
     // ---- the texture rule (render.cpp explains the why) ----
     //
     // A texture cannot be painted by the frame that created it, and creating
@@ -223,7 +219,6 @@ namespace NHyprbar {
     // awesome's awful.layout.inc: cycle the focused monitor's active
     // workspace through the layout registry (render.cpp — a single entry
     // until other layouts get implemented; the bar only carries the state).
-    void layoutInc(int dir, PHLMONITOR mon);
 
     // ---- icons.cpp ----
 
@@ -386,7 +381,6 @@ namespace NHyprbar {
     IWidget& bellWidget();      // bell.cpp
     IWidget& batteryWidget();   // battery.cpp
     IWidget& clockWidget();     // clock.cpp
-    IWidget& layoutboxWidget(); // layoutbox.cpp
 
     // ---- menu.cpp ----
 

@@ -225,10 +225,10 @@ namespace NHyprbar {
 
         // awesome's align layout: the left slot, the tasklist filling the
         // middle, the right slot laid from the edge inwards (awesome's order
-        // is [systray][battery][clock][layoutbox], so the layoutbox sits
-        // last). Widgets whose fit comes back 0 are hidden this frame.
+        // is [systray][battery][clock]). Widgets whose fit comes back 0 are
+        // hidden this frame.
         IWidget* const LEFT[]  = {&taglistWidget()};
-        IWidget* const RIGHT[] = {&trayWidget(), &bellWidget(), &batteryWidget(), &clockWidget(), &layoutboxWidget()};
+        IWidget* const RIGHT[] = {&trayWidget(), &bellWidget(), &batteryWidget(), &clockWidget()};
 
         double         x = MB.x;
         for (auto* const W : LEFT) {
