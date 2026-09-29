@@ -38,6 +38,7 @@ namespace NAwesome::Shell {
         buildIconDirs();
         stripInit(); // the strip's canvas layer before anything warms
         iconsInit();
+        inputInit();
         Clock::refresh();
         Battery::init();
         Tray::init();

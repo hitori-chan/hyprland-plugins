@@ -436,7 +436,42 @@ namespace NAwesome::Shell {
             Menubar::close();
     }
 
+    // ---- hover self-heal ----
+    //
+    // The compositor dedups a pointer move that lands on its LAST-REMEMBERED
+    // position, and it remembers a position only for moves it did not cancel:
+    // over the bar every move is ours (cancelled), so the remembered position
+    // is frozen at the last point OFF the bar. A move back to exactly that
+    // point is then swallowed by the dedup and NO module ever sees the bar
+    // leave — a hovered cell (the bell's peek, a menu row's intent) would
+    // never clear. The gate's scripted pointer parks at a point, visits the
+    // bar, and parks again, so it hits this on every run; a real cursor that
+    // rests on one spot above the bell does too.
+    //
+    // The backstop: while any widget is hovered, a slow tick re-tests the
+    // pointer against the bar and forces the hover out when it is gone. One
+    // geometry walk every 200ms, only while a hover is live.
+    static SP<CEventLoopTimer> hoverHeal;
+
+    void inputInit() {
+        hoverHeal = makeShared<CEventLoopTimer>(
+            std::chrono::milliseconds(200),
+            [](SP<CEventLoopTimer> self, void*) {
+                if (hoverWidget && g_pInputManager) {
+                    const auto POS = g_pInputManager->getMouseCoordsInternal();
+                    if (!barOwnsPoint(POS))
+                        setHoverWidget(nullptr);
+                }
+                self->updateTimeout(std::chrono::milliseconds(200));
+            },
+            nullptr);
+        g_pEventLoopManager->addTimer(hoverHeal);
+    }
+
     void inputExit() {
+        if (hoverHeal && g_pEventLoopManager)
+            g_pEventLoopManager->removeTimer(hoverHeal);
+        hoverHeal.reset();
         pendingHit.reset();
         hitJobs.clear();
         hitQueued = false;

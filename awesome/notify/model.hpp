@@ -348,6 +348,10 @@ namespace NAwesome::Notify {
     void centerPeekPointer(bool onCard); // the pointer entered/left one of our cards
     void centerPin();
     bool centerPeeking();
+    // the click door (Lua, the bell, `hyprctl awesome center`): deferred,
+    // accumulating, and a click on a PEEKED shade pins it instead of closing
+    // what the pointer only glanced at
+    void queueCenterToggle();
     void centerInit(); // the peek's grace timer
     void centerExit();
 
