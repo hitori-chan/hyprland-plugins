@@ -25,6 +25,7 @@ namespace NAwesome {
 
     struct Spec {
         const char*      key; // "plugin:awesome:<module>:<name>"
+        const char*      desc; // config validation and error messages
         Kind             kind;
         int              ival = 0; // Int default
         double           dval = 0.0;
