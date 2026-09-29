@@ -1,33 +1,55 @@
-# awesome/ — the unified plugin.
+# awesome — the unified shell plugin.
 #
-# Two targets:
-#   make -C awesome test   — the headless unit tests (pure core, no fork
-#                            headers: the regression net for the platform
-#                            layer)
-#   make -C awesome        — the .so (lands with the supervisor; it needs
-#                            the fork headers through pkg-config, like the
-#                            old plugins)
+# Standalone build (the old common/common.mk dies at cutover with the old
+# plugins): same header discipline — an inherited PKG_CONFIG_PATH wins
+# (hyprpm's header cache, the gate's scratch headers), and with no fork
+# installed this falls through to the installed prefix, which must be the
+# fork's (/usr/local).
+#
+# Dependencies are the union of the old plugins': Hyprland itself, plus
+# sdbus-c++ (the fd.o notification daemon), librsvg (icons), libudev
+# (battery uevents), and pangocairo (text) which Hyprland's .pc does not
+# carry.
+NAME       := awesome
+PKGS       := hyprland pixman-1 libdrm
+PKGS_EXTRA := librsvg-2.0 libudev pangocairo
+LIBS_EXTRA := sdbus-c++ librsvg-2.0 libudev pangocairo
 
-CXX      ?= g++
-CXXFLAGS ?= -O2
-CXXFLAGS += -std=c++26 -Wall -fno-gnu-unique -I.
+PKG_CONFIG_PATH := $(if $(PKG_CONFIG_PATH),$(PKG_CONFIG_PATH):)/usr/local/share/pkgconfig
+export PKG_CONFIG_PATH
 
-BUILD := .build
+CXX       ?= g++
+CXXFLAGS  ?= -O2
+HL_CFLAGS := $(shell pkg-config --cflags $(PKGS) $(PKGS_EXTRA))
+CXXFLAGS  += -std=c++26 -Wall -fPIC -fno-gnu-unique -MMD -MP $(HL_CFLAGS)
+LDFLAGS   += -shared -Wl,--version-script=plugin.ver
+LDLIBS    += $(shell pkg-config --libs $(LIBS_EXTRA))
 
-TEST_BIN  := $(BUILD)/awesome-test
-CORE_SRCS := $(wildcard core/*.cpp)
-TEST_SRCS := $(wildcard test/*.cpp)
+OBJDIR := .build
+OBJS   := $(patsubst %.cpp,$(OBJDIR)/%.o,$(wildcard *.cpp))
 
-all: $(TEST_BIN)
+all: $(NAME).so
 
-$(TEST_BIN): $(TEST_SRCS) $(CORE_SRCS) $(wildcard core/*.hpp) $(wildcard test/*.hpp)
-	@mkdir -p $(BUILD)
-	$(CXX) $(CXXFLAGS) $(TEST_SRCS) $(CORE_SRCS) -o $@
+$(NAME).so: $(OBJS)
+	$(CXX) $(LDFLAGS) $(OBJS) -o $@ $(LDLIBS)
 
-test: $(TEST_BIN)
-	$(TEST_BIN)
+# one object per unit; -MMD keeps the incremental build honest (the same
+# GCC-16 installed-header gap as the old build: `make -B` after a fork
+# install)
+$(OBJDIR)/%.o: %.cpp Makefile plugin.ver | $(OBJDIR)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(OBJDIR):
+	@mkdir -p $@
+
+-include $(wildcard $(OBJDIR)/*.d)
+
+# the headless unit harness (pure core; no fork headers, no compositor)
+test:
+	g++ -std=c++26 -Wall -I.. -I. test/main.cpp test/test_bounded.cpp test/test_box.cpp test/test_store.cpp test/test_schema.cpp core/bounded.hpp core/store.cpp core/schema.cpp -o .build/test
+	.build/test
 
 clean:
-	rm -rf $(BUILD)
+	rm -rf $(OBJDIR) $(NAME).so
 
 .PHONY: all test clean
