@@ -3,7 +3,7 @@
 // inline-reply field), and the input they own.
 //
 // The full picture lives at the top of notify.cpp; per-module docs at the
-// top of each unit (the old hyprnotify's layout, kept):
+// top of each unit:
 //
 //   bus.cpp     the org.freedesktop.Notifications connection
 //   parse.cpp   the untrusted payload: markup, images, appended bodies
@@ -23,7 +23,7 @@
 //
 // Everything lives in NAwesome::Notify. The only D-Bus in the plugin is
 // this fd.o daemon (plus the system module's logind reads): the old
-// org.hitori.hyprnotify bridge is gone — the shell's bell reads the model
+// the old private bus bridge is gone — the shell's bell reads the model
 // directly.
 #pragma once
 
@@ -140,8 +140,8 @@ namespace NAwesome::Notify {
         std::string          sender;  // the bus name that sent this Notify (the X11 activation lookup)
         std::string          summary; // newlines flattened, whitelisted markup
         std::string          body;    // whitelisted markup (Pango subset)
-        // structured conversation metadata (the hint table in
-        // docs/hyprnotify.md): a sender with a stable conversation-id grows
+        // structured conversation metadata: a sender with a stable
+        // conversation-id grows
         // ONE card per chat, its message log kept and its body rebuilt from
         // the latest of it
         std::string          conversationId; // stable chat identity; "" = no merge contract
@@ -244,8 +244,8 @@ namespace NAwesome::Notify {
                         const std::string& sender,
                         const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout);
 
-        // In-process card posting (the system module's feedback: old
-        // hyprosd/hyprpad; the shell's battery alerts). The bus face is for
+        // In-process card posting (the system module's feedback: audio,
+        // pad; the shell's battery alerts). The bus face is for
         // FOREIGN daemons; ours is a function call — no bus, no proxy, no
         // hint-table ceremony. The id pins the replace-in-place slot (the
         // OSD band 9990-9999 keeps its old semantics: replace, no history,

@@ -2,7 +2,7 @@
 // conversion happens at the module edges; core and the headless tests are
 // fork-header-free.
 //
-// Admission is the legacy store's behavior contract: coordinates and sizes
+// Admission: coordinates and sizes
 // are integers strictly inside llround's representable domain (hostile
 // state must not invoke undefined behavior on the write path), sizes
 // non-negative.

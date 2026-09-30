@@ -424,7 +424,7 @@ namespace NAwesome::Windows::Place {
     }
 
     inline void init() {
-        // one-time migration from the legacy hyprplace store
+        // one-time migration from the legacy store
         migrateBoxStore(storePath(), stateDir().parent_path() / "hyprplace" / "lastspot.tsv");
         lastSpot() = BoxStore::read(storePath());
 

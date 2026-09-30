@@ -129,9 +129,9 @@ namespace NAwesome {
                 v[n++] = NUM;
                 p      = e + 1;
             }
-            // n == 2 is the legacy position-only form; it migrates with a
-            // zero size (module policy decides whether a zero-size row is a
-            // usable restore target)
+            // n == 2 is the position-only form (legacy stores wrote it);
+            // it migrates with a zero size (module policy decides whether
+            // a zero-size row is a usable restore target)
             if ((n != 2 && n != 4) || p == END)
                 return;
             for (int i = 0; i < 4; i++) {

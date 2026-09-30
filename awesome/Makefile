@@ -1,13 +1,13 @@
 # awesome — the unified shell plugin.
 #
-# Standalone build (the old common/common.mk dies at cutover with the old
-# plugins): same header discipline — an inherited PKG_CONFIG_PATH wins
+# Standalone build: same header discipline — an inherited PKG_CONFIG_PATH
+# wins
 # (hyprpm's header cache, the gate's scratch headers), and with no fork
 # installed this falls through to the installed prefix, which must be the
 # fork's (/usr/local).
 #
-# Dependencies are the union of the old plugins': Hyprland itself, plus
-# sdbus-c++ (the fd.o notification daemon), librsvg (icons), libudev
+# Dependencies: Hyprland itself, plus sdbus-c++ (the fd.o notification
+# daemon), librsvg (icons), libudev
 # (battery uevents), and pangocairo (text) which Hyprland's .pc does not
 # carry.
 NAME       := awesome
@@ -52,8 +52,7 @@ test:
 	g++ -std=c++26 -Wall -I.. -I. test/main.cpp test/test_bounded.cpp test/test_box.cpp test/test_store.cpp test/test_schema.cpp test/test_wpctl.cpp core/bounded.hpp core/store.cpp core/schema.cpp -o .build/test
 	.build/test
 
-# the gate's preflight resolves the header root through this (the same
-# contract common/common.mk kept for the old tree)
+# the gate's preflight resolves the header root through this
 print-hl-cflags:
 	@echo $(HL_CFLAGS)
 

@@ -413,7 +413,7 @@ namespace NAwesome::Notify {
         return heroWPx > 0 && sw >= 256 && sh >= 256 && sw * 2 >= heroWPx;
     }
 
-    // The freedesktop symbolic convention, shared with hyprbar's loadIcon:
+    // The freedesktop symbolic convention, shared with the shell's loadIcon:
     // a pure-shape mark the toolkit repaints with the widget's foreground.
     // Adwaita bakes them near-black, so on a dark card the brightness OSD
     // icon was invisible until fileTex repaints it.
@@ -422,7 +422,7 @@ namespace NAwesome::Notify {
     }
 
     // Repaint a rasterized symbolic surface to col, premultiplied (the same
-    // pixel math as hyprbar's loadSvg recolor; alpha untouched).
+    // pixel math as the shell's loadSvg recolor; alpha untouched).
     static void tintSurface(cairo_surface_t* SURF, const CHyprColor& col) {
         const uint8_t R = (uint8_t)(col.r * 255), G = (uint8_t)(col.g * 255), B = (uint8_t)(col.b * 255);
         auto*         D      = cairo_image_surface_get_data(SURF);
@@ -615,7 +615,7 @@ namespace NAwesome::Notify {
             n.fallbackPick.clear();
             // a symbolic identity bakes colFg into its pixels (fileTex): the
             // key carries the fg it was tinted with, so a theme change
-            // rebuilds it — hyprbar's dropStaleTint, per-card edition
+            // rebuilds it — the shell's dropStaleTint, per-card edition
             const auto SYM = isSymbolicIconPath(n.identity);
             const auto KEY = SYM ? n.identity + "\x1f" + std::to_string(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg")) : n.identity;
             if (n.identFor != KEY || n.identIconPx != iconPx) {
@@ -647,7 +647,7 @@ namespace NAwesome::Notify {
                 // the generic mark: one neutral face for every iconless
                 // card; the key carries the fg it was drawn in, so a theme
                 // change rebuilds it (the symbolic-identity contract)
-                const auto GENERIC = "__hyprnotify_generic__\x1f" + std::to_string(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg"));
+                const auto GENERIC = "__awesome_generic__\x1f" + std::to_string(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg"));
                 if (n.identFor != GENERIC || n.identIconPx != iconPx) {
                     n.identTex.reset();
                     n.identFor     = GENERIC;
@@ -807,7 +807,7 @@ namespace NAwesome::Notify {
             // under, so a theme switch re-rolls it — the identity's
             // fg-carrying key, initials edition. Without it a dark->light
             // switch kept the dark-tinted face on every faceless sender.
-            const std::string KEY = "__hyprnotify_avatar:\x1f" + p.key + "\x1f" + p.name + "\x1f" + std::string{NAwesome::cfg().getS("plugin:awesome:notify:font")} + "\x1f" + std::to_string(px) + "\x1f" +
+            const std::string KEY = "__awesome_avatar:\x1f" + p.key + "\x1f" + p.name + "\x1f" + std::string{NAwesome::cfg().getS("plugin:awesome:notify:font")} + "\x1f" + std::to_string(px) + "\x1f" +
                                     std::to_string(NAwesome::cfg().getColor("plugin:awesome:notify:col_bg"));
             if (p.avatarFor == KEY)
                 return;

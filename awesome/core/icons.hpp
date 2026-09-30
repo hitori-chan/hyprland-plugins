@@ -1,5 +1,5 @@
 // awesome/core/icons.hpp — freedesktop icon-NAME resolution, shared by every
-// plugin that shows themed icons (hyprnotify's cards, hyprbar's task chips
+// plugin that shows themed icons (the notify module's cards, the shell's task chips
 // and tray). One implementation: the GTK theme's size dirs (scalable first,
 // then size proximity), then hicolor, then flat pixmaps. Inheritance beyond
 // hicolor isn't followed — app icons live in hicolor in practice.
@@ -147,7 +147,7 @@ namespace NAwesome {
     // unresolved or if the string is already a path. Cached per name AND
     // size: the requested size leads sizeDirs below, so in a PNG-only theme
     // it CHOOSES the file — keyed on the name alone, whichever caller asked
-    // first pinned the size for every later one (hyprnotify wants a card
+    // first pinned the size for every later one (the notify module wants a card
     // icon at max_icon and an action icon at ~15px).
     inline std::string resolveIconName(const std::string& name, int sizePx) {
         if (name.empty() || name.find('/') != std::string::npos)

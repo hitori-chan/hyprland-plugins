@@ -297,12 +297,12 @@ namespace NAwesome::Notify {
             if (BIT && (swallowRelease & BIT)) {
                 swallowRelease &= ~BIT;
                 info.cancelled = true;
-            } else if (!info.cancelled) // a release hyprbar swallowed ends a press we never counted
+            } else if (!info.cancelled) // a release the shell module swallowed ends a press we never counted
                 heldButtons = std::max(0, heldButtons - 1);
             return;
         }
 
-        // hyprbar runs first: a press it swallowed (strip click, open tray
+        // the shell module runs first: a press it swallowed (strip click, open tray
         // menu over the card region) was never ours — and never reached an
         // app, so there is no grab to count
         if (info.cancelled)
@@ -429,7 +429,7 @@ namespace NAwesome::Notify {
     }
 
     // ---- keys: esc peels the center (tray menu > center > menubar: load
-    //      order puts hyprbar's menu first, we're next), and the shade drives
+    //      order puts the shell's menu first, we're next), and the shade drives
     //      its selection ----
 
     // Same shape as the click queue, and for the same reason: an action can
@@ -616,7 +616,7 @@ namespace NAwesome::Notify {
             return;
         }
 
-        // info.cancelled: an earlier listener (hyprbar's strip or an open
+        // info.cancelled: an earlier listener (the shell's strip or an open
         // menu) owns the point — and just set the shared SPECIAL_ACTION
         // cursor slot. Drop ownership WITHOUT unsetting it: releasePointer's
         // unset would strip the bar's override for its whole visit.

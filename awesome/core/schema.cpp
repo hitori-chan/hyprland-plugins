@@ -23,7 +23,6 @@ namespace NAwesome {
             {"plugin:awesome:shell:terminal", "terminal that runs Terminal=true launcher entries", Kind::String, 0, 0, "alacritty"},
             {"plugin:awesome:shell:col_bg", "bar panel", Kind::Color, 0, 0, {}, 0xff132732},
             {"plugin:awesome:shell:col_fg", "bar text", Kind::Color, 0, 0, {}, 0xffeef3f5},
-            {"plugin:awesome:shell:col_muted", "legacy fallback color", Kind::Color, 0, 0, {}, 0xffd1dde1},
             {"plugin:awesome:shell:col_focus", "launcher selection", Kind::Color, 0, 0, {}, 0xff9acbff},
             {"plugin:awesome:shell:col_active", "active workspace/task", Kind::Color, 0, 0, {}, 0xff9acbff},
             {"plugin:awesome:shell:col_active_bg", "active/hover state", Kind::Color, 0, 0, {}, 0x339acbff},

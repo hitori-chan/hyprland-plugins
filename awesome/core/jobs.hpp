@@ -1,7 +1,7 @@
 // awesome/core/jobs.hpp — the plugin's one subprocess path: bounded,
-// watched, generation-checked. Ported from hyprnotify's detached spawner,
-// generalized: every shell-out in the plugin (sound, hyperlink open,
-// wpctl, the launcher's Exec=) goes through here, nothing else forks.
+// watched, generation-checked. Every shell-out in the plugin (sound,
+// hyperlink open, wpctl, the launcher's Exec=) goes through here, nothing
+// else forks.
 //
 // A child per pidfd, reaped by an event-loop source when it dies: no
 // blocking, no zombies, and exit pulls the sources before the loop goes.

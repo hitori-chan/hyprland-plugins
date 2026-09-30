@@ -1,4 +1,4 @@
-// awesome/shell.cpp — the shell module: the port of hyprbar's plugin glue.
+// awesome/shell.cpp — the shell module: the bar glue.
 //
 // init owns the surface units (strip, icons, clock, battery, tray, bell,
 // menubar), the window/view listeners, the minute timer, and the Lua face.

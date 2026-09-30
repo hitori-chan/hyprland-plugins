@@ -13,7 +13,7 @@ inter-module bus:
 | `notify` | the `org.freedesktop.Notifications` daemon: cards, conversations, shade, popups, inline reply, sound |
 | `system` | volume/mic (wpctl), brightness (logind), touchpad policy — every action's feedback is a notify card |
 
-`hyprnotify` owns `org.freedesktop.Notifications`; disable another
+The plugin owns `org.freedesktop.Notifications`; disable another
 daemon (dunst, mako) before enabling it.
 
 ## Lua API

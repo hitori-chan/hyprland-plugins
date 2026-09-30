@@ -4,9 +4,9 @@
 // self-minimize request routing (X11 WM_CHANGE_STATE, the CSD xdg
 // set_minimize button, which Hyprland's onUpdateState ignores).
 //
-// Ported whole from the old bar's tasklist: the bar keeps only the VIEWS
-// and the click routing; the STATE is here, in the windows module, next
-// to the maximize state it composes with.
+// The bar keeps only the VIEWS and the click routing; the STATE lives
+// here, in the windows module, next to the maximize state it composes
+// with.
 #pragma once
 
 #include "geometry.hpp"

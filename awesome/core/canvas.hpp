@@ -41,7 +41,7 @@ using Render::GL::g_pHyprOpenGL;
 
 namespace NAwesome {
 
-    // ---- the warm/draw state machine (port of common/texcache.hpp) ----
+    // ---- the warm/draw state machine ----
 
     class CWarmGate {
       public:

@@ -1,12 +1,11 @@
-# awesome/gate/preflight.sh — the monolith's preflight: the same target
-# validation as the old gate (header/binary hash match, deploy rehearsal,
-# launch, toast) with the plugin surface reduced to ONE: `awesome`.
+# awesome/gate/preflight.sh — the gate's preflight: header/binary hash
+# match, deploy rehearsal, launch, toast. One plugin surface: `awesome`.
 echo "== gate:  =="
 
 # ---- preflight ----------------------------------------------------------
 [[ -x "$BIN" ]] || { echo "no such compositor binary: $BIN"; exit 1; }
 { [[ -x "$REPO/devtools/vptr" ]] && [[ -x "$REPO/devtools/vkbd" ]] && [[ -x "$REPO/devtools/input-capture" ]] && [[ -x "$REPO/devtools/cliphold" ]]; } || make -C "$REPO/devtools" >/dev/null
-# The flags come from the monolith's own build (common/common.mk), not from a
+# The flags come from the plugin's own build (print-hl-cflags), not from a
 # pkg-config call of our own: resolving it here separately is how this check
 # ends up vouching for a tree nothing was built against.
 if [[ -n "${HYPR_DEPLOY_PKG_CONFIG_PATH:-}" && "${PKG_CONFIG_PATH:-}" != "$HYPR_DEPLOY_PKG_CONFIG_PATH" ]]; then
@@ -37,14 +36,14 @@ else
 	bad "headers match the gated binary (headers ${HDR_HASH:0:8} vs binary ${BIN_HASH:0:8})"
 	echo "   header root: $HDR_ROOT"; echo "   refusing to run a gate that mismatches at load"; exit 1
 fi
-# Version lockstep: one constant (core/version.hpp) until the cutover flips
-# the manifest, then the [awesome] toml section must equal it.
+# Version lockstep: one constant (core/version.hpp); the [awesome] toml
+# section must equal it once present.
 AW_VER="$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$REPO/awesome/core/version.hpp" | head -1)"
 AW_TOML="$(grep -A2 '^\[awesome\]' "$REPO/hyprpm.toml" 2>/dev/null | grep version | grep -o '[0-9.]*' | head -1)"
 if [[ -n "$AW_TOML" ]]; then
 	[[ "$AW_TOML" == "$AW_VER" ]] && ok "version sync (toml == version.hpp: $AW_VER)" || bad "version sync (toml=$AW_TOML vs version.hpp=$AW_VER)"
 else
-	[[ -n "$AW_VER" ]] && ok "version constant present (version.hpp: $AW_VER; the toml section lands at cutover)" || bad "version constant present"
+	[[ -n "$AW_VER" ]] && ok "version constant present (version.hpp: $AW_VER)" || bad "version constant present"
 fi
 
 # ---- build + launch -----------------------------------------------------

@@ -267,7 +267,7 @@ namespace NAwesome::Notify {
     // its digest landed. Even at the model cap the distinct keys are a
     // handful, so one linear scan beats the two string-keyed trees this used
     // to build from scratch on every warm AND every draw. A group's 4+ runs
-    // inside the group, not across it: different x-hyprnotify-group-key
+    // inside the group, not across it: different x-notify-group-key
     // values never merge, and each owns its own digest and fold state.
     struct SOwner {
         std::string        key;

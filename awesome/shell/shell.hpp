@@ -1,6 +1,6 @@
 // awesome/shell/shell.hpp — shared declarations between the shell module's
-// translation units. The module is the port of the old hyprbar: the bar
-// strip and its widgets, the menubar prompt, the dbusmenu renderer.
+// translation units. The module: the strip and its widgets, the menubar
+// prompt, the dbusmenu renderer.
 //
 //   strip.cpp       the strip's SKELETON: the texture cache, the SPaint
 //                   context, the canvas layer, one window walk (SFrame)

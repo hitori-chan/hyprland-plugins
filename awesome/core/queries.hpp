@@ -1,8 +1,7 @@
 // awesome/core/queries.hpp — the read-side of the compositor: the session
 // lock gate, the native input stack, and the state lookups every module
-// shares. Ported whole from common/queries.hpp — these helpers encode
-// input-ordering regressions (crash classes 3 and 7), so they move, not
-// get re-derived.
+// shares. The helpers encode input-ordering regressions (crash classes 3
+// and 7) — treat them as pinned contracts, not candidates for cleanup.
 #pragma once
 
 #include <hyprland/src/desktop/view/window/Window.hpp>

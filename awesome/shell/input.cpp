@@ -70,7 +70,7 @@ namespace NAwesome::Shell {
 
     // ---- input ----
 
-    using NAwesome::monitorAt; // common/queries.hpp: allocation-free, runs per pointer motion
+    using NAwesome::monitorAt; // core/queries.hpp: allocation-free, runs per pointer motion
 
     // Presses that reached apps (nothing swallowed them) — while one is held an
     // implicit grab may be live, and the strip must not steal the pointer from

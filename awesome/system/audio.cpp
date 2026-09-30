@@ -1,16 +1,12 @@
 // awesome/system/audio.cpp — volume, mic, and brightness.
 //
-// Ported from the old hyprosd with two changes of shape, both forced by
-// the monolith:
-// - The cards no longer travel the session bus (the fd.o daemon WAS this
-//   plugin's sibling; now it is this module's neighbor). They post
-//   straight into the notify model — same ids (9992/9993/9995), same
-//   value hints, same replace-in-place semantics; the OSD band lives in
-//   the model now, so no x-hyprnotify-osd hint.
-// - The wpctl readback chain (set -> get -> parse -> card) rides the
-//   core's Jobs (pidfd-watched, bounded, generation-checked) instead of
-//   a private event-source fleet. The chain's state is therefore just
-//   (mic, generation): the children are Jobs' children.
+// The cards post straight into the notify model — ids 9992/9993/9995,
+// value hints and replace-in-place semantics are the contract; the OSD
+// band lives in the model, so no OSD hint is needed.
+//
+// The wpctl readback chain (set -> get -> parse -> card) rides the core's
+// Jobs (pidfd-watched, bounded, generation-checked). The chain's state is
+// therefore just (mic, generation): the children are Jobs' children.
 //
 // Brightness stays fork-free: /sys/class/backlight for current/max,
 // ±5% linear steps (the shown percent IS current/max), floor 2 raw so

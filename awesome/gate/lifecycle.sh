@@ -1,7 +1,6 @@
 # awesome/gate/lifecycle.sh — the monolith's lifecycle battery: the corpse
 # guard (click/focus policy), the fullscreen tuck, the config reload, log
-# hygiene, and the bounded teardown with hung helpers. Port of
-# devtools/stress/lifecycle.sh on the monolith's surfaces.
+# hygiene, and the bounded teardown with hung helpers.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # ---- corpse guard (the click policy) ------------------------------------
