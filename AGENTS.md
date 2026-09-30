@@ -2,7 +2,9 @@
 
 Native C++26 Hyprland plugins inspired by AwesomeWM: one directory per
 plugin, shared code in `common/`, the controlled nested-compositor gate
-in `devtools/`, behavior docs in `docs/`.
+in `devtools/`, behavior docs in `docs/`. The eight-plugin tree is
+frozen: the awesome rewrite (PLAN.md/GOAL.md) replaces it in one
+cutover, and the monolith builds in `awesome/` alongside it.
 
 This file is the agreement between user and agent. It states principles
 and hard lines, not project state. Broad user autonomy ("do your best")
@@ -91,9 +93,19 @@ gate.
   that must survive a reboot goes there (fork work, large `gcore`
   dumps); fork work happens in `~/repo/Hyprland` itself. `cmd | tee`
   swallows the exit code — trust the log's summary line.
+- The monolith (`awesome/`) has its OWN standalone Makefile (the old
+  `common/common.mk` is frozen with the old tree); build with
+  `make -C awesome`.
 - The nested harness parks a headless `nested-dev` output in the live
   session; if workspace switching misbehaves after gate runs, check
-  `hyprctl monitors all -j` before suspecting a plugin.
+  `hyprctl monitors all -j` before suspecting a plugin. Teardown
+  ALWAYS via stop.sh / the harness teardown — they own
+  `output remove nested-dev`; raw-killing the nested PIDs leaves a
+  phantom output that churns the renderer (2026-09-29: 411 workbuffer
+  allocs). Keep the `nested-dev` monitor rule pinned to the live
+  panel's mode/scale (core.lua): any divergent properties perturb the
+  dmabuf feedback table on join/leave and crash live clients on this
+  Mesa (2-plane AR24 class, 2026-09-29 + 2026-09-30; TODO.md).
 
 ## Safety — hard lines
 
