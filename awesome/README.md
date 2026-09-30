@@ -406,3 +406,20 @@ against a throwaway nested compositor; the input fixtures it drives
 diagnosis, `gate/probe.sh` runs the same preflight and then executes a
 probe body script against the live nested (harness + lib already
 sourced; teardown always runs).
+
+The nested itself is a real second compositor in a window of the live
+session (wayland backend), parked on an off-screen `nested-dev` output
+with a private dbus session — it never touches your workspace. The
+harness scripts are in `gate/` and run from a clone as-is:
+
+```sh
+bash awesome/gate/launch.sh        # start the nested (the gate uses the same)
+bash awesome/gate/shot.sh out.png  # screenshot it + a 2x bar crop
+bash awesome/gate/dev.sh           # stop + build + launch + probe + shot
+bash awesome/gate/stop.sh          # tear it down (kill + remove the output)
+```
+
+Runtime state (signature, socket, log, gate scratch) goes to
+`$HYPR_HARNESS`, default `~/.local/share/hypr-nested` — the repo stays
+free of state. Never rebuild the plugin while a nested has its `.so`
+mapped (`dev.sh` stops first).

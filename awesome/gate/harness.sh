@@ -480,13 +480,14 @@ launch_nested() {
 		esac
 	fi
 	# One spawn path for the initial launch AND the FALLBACK relaunches below:
-	# the env must travel with the relaunch too, or it falls back to
-	# nested.lua + /usr/local/bin/Hyprland and the retarget guard refuses it.
+	# the env must travel with the relaunch too, or it falls back to its
+	# defaults (the gate's nested.lua + /usr/local/bin/Hyprland) and the
+	# retarget guard refuses it.
 	_harness_launch() {
 		PATH="$REPO/devtools/fakes:$PATH" AW_WPCTL_LOG="$STATE/wpctl.log" \
 			AW_WPCTL_HANG_FILE="$STATE/hang-wpctl" AW_WPCTL_FLOOD_FILE="$STATE/flood-wpctl" AW_SOUND_HANG_FILE="$STATE/hang-sound" \
 			HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" XDG_CACHE_HOME="$STATE/cache" \
-			bash "$HARNESS/launch.sh" >/dev/null 2>&1
+			bash "$GATE_DIR/launch.sh" >/dev/null 2>&1
 	}
 	_harness_launch || return 1
 	# The nested compositor enters fallback (a headless "FALLBACK" output,
