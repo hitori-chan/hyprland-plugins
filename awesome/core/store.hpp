@@ -27,7 +27,10 @@ namespace NAwesome {
     inline constexpr size_t MAX_STORE_ROWS          = 4096;
     inline constexpr size_t MAX_STORE_KEY_BYTES     = 512;
     inline constexpr size_t MAX_STORE_ENTRIES       = 1024;
-    inline constexpr size_t MAX_STORE_STRING_BYTES  = 512; // per list entry
+    // per list entry: the launcher history stores whole queries, so the
+    // entry bound is the prompt's own query cap (shell/menubar.cpp QUERY_MAX
+    // = 4096) — the history can never hold more than the prompt admits.
+    inline constexpr size_t MAX_STORE_STRING_BYTES  = 4096;
     inline constexpr size_t MAX_STORE_LIST_ENTRIES  = 50;  // awful.prompt's history_max
 
     // app class → remembered box (windowed sizes, spawn spots)
