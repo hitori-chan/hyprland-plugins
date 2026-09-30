@@ -29,9 +29,9 @@ truth, not here. `CLAUDE.md` is dead — do not recreate or track it.
   an item by deleting its line; provenance for closed work is the
   commit history.
 - Design contract: `docs/awesome-design.md` (tracked). The rewrite's
-  live state and goal lived in `PLAN.md` / `GOAL.md` (local,
-  gitignored) — read them while the cutover is still settling; they are
-  retired once the user's deploy is verified.
+  live state and goal lived in `PLAN.md` / `GOAL.md` (local, gitignored)
+  and were retired 2026-09-30 once the user's deploy was verified; the
+  commit history is their provenance.
 - Behavior: `awesome/README.md` (the single behavior doc) and
   `docs/awesome-design.md` (the contract it implements).
 - Gate results: the summary line of the run log
