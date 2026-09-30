@@ -28,7 +28,7 @@
 //    that array iterator. Writing the struct straight into the variant
 //    iterator instead (content signature "(iiay)") silently emits a single
 //    struct where an array is expected — sdbus-c++'s vector decode then
-//    throws and hyprbar drops the icon. A variant holding a plain struct
+//    throws and the tray drops the icon. A variant holding a plain struct
 //    (GetLayout children) takes "(ia{sv}av)" and the struct IS written
 //    directly into the variant iterator. ("(ay)" is a STRUCT with one
 //    array field, not an array — parentheses matter.)
@@ -92,7 +92,7 @@ static void kv(DBusMessageIter *map, const char *key, int variantType, void **va
 	dbus_message_iter_close_container(map, &ent);
 }
 
-// one child of the children array. hyprbar (like nm-applet and every other
+// one child of the children array. the bar (like nm-applet and every other
 // modern dbusmenu host) speaks spec >= 0.5: GetLayout(i, i, as) ->
 // u(ia{sv}av) where the children are an array of VARIANTS, each wrapping a
 // 3-field (id, props, children) struct — NOT the legacy bare-struct

@@ -1,6 +1,5 @@
-# awesome/gate/manifest.tsv — the check-level map from the old eight-plugin gate
-# (devtools/stress.sh, 219 executed checks) to the monolith's gate
-# (awesome/gate/gate.sh).
+# awesome/gate/manifest.tsv — the check-level map from the pre-rewrite
+# gate (219 executed checks) to this gate (awesome/gate/gate.sh).
 #
 # Format: old_battery \t old_check_name \t new_battery \t new_check_name \t note
 #

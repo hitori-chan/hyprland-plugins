@@ -1,25 +1,16 @@
-# Root convenience target — the plugins each own their build (common.mk);
-# this is the "one command" entry for the dev loop and the gate.
+# Root convenience entry for the dev loop and the gate.
 #
-# `make` builds the plugins one behind another; `make -j` builds them in
-# parallel (the -j propagates to each plugin's TU farm through MAKEFLAGS).
+# `make` builds the plugin; `make test` runs its headless harness;
+# `make gate` runs the nested integration gate (ARGS passes through).
 
-PLUGINS := hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd
-
-all: $(PLUGINS)
-
-$(PLUGINS):
-	$(MAKE) -C $@
+all:
+	$(MAKE) -C awesome
 
 test:
-	$(MAKE) -C devtools
-	@for t in devtools/*-test; do $$t || exit 1; done
-
-clean:
-	@for p in $(PLUGINS); do $(MAKE) -C $$p clean; done
-	$(MAKE) -C devtools clean
+	$(MAKE) -C awesome test
 
 gate:
-	bash devtools/stress.sh
+	$(MAKE) -C awesome gate ARGS=$(ARGS)
 
-.PHONY: all test clean gate $(PLUGINS)
+clean:
+	$(MAKE) -C awesome clean

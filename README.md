@@ -1,38 +1,31 @@
 # hyprland-plugins
 
-Eight native C++26 plugins for the exact
-[`hitori-chan/Hyprland`](https://github.com/hitori-chan/Hyprland) fork ABI.
+One native C++26 Hyprland plugin for the exact
+[`hitori-chan/Hyprland`](https://github.com/hitori-chan/Hyprland) fork
+ABI: [`awesome`](awesome/), the awesome shell as a monolith.
 
-| Plugin | Responsibility |
+| module | owns |
 |---|---|
-| `hyprbar` | Top bar, workspaces, tasks, tray, launcher, battery, clock, and notification bell |
-| `hyprnotify` | Freedesktop notification daemon, banners, notification center, DND, policy, and replies |
-| `hyprmax` | Per-window maximize with remembered windowed geometry |
-| `hyprsnap` | Magnetic and edge/corner snapping |
-| `hyprclick` | Click-to-raise and stable focus cycling |
-| `hyprplace` | Remembered floating-window placement with least-overlap fallback |
-| `hyprpad` | Automatic and manual touchpad policy |
-| `hyprosd` | Asynchronous volume, microphone, and brightness feedback through `hyprnotify` |
+| `core` | the platform: supervisor, input pipeline, hop queue, canvas (warm/draw gate), config schema, stores, jobs, fd.o bus client |
+| `shell` | the bar: workspaces, tasks (views), tray, bell, battery, clock, menubar launcher |
+| `windows` | the window state machine and all placement: maximize/minimize/restore, click/focus policy, spawn placement, drag snap |
+| `notify` | the `org.freedesktop.Notifications` daemon: cards, conversations, shade, popups, inline reply, sound |
+| `system` | volume/mic (wpctl), brightness (logind), touchpad policy — every action's feedback is a notify card |
 
-Load order is part of the input contract and is fixed in
-[`hyprpm.toml`](hyprpm.toml):
-
-```text
-hyprbar -> hyprnotify -> hyprmax -> hyprsnap -> hyprclick -> hyprplace -> hyprpad -> hyprosd
-```
+The behavior docs live in [`awesome/README.md`](awesome/README.md);
+the design contract in
+[`docs/awesome-design.md`](docs/awesome-design.md).
 
 ## Install
 
 ```sh
 hyprpm add https://github.com/hitori-chan/hyprland-plugins
-for plugin in hyprbar hyprnotify hyprmax hyprsnap hyprclick hyprplace hyprpad hyprosd; do
-    hyprpm enable "$plugin"
-done
+hyprpm enable awesome
 ```
 
-`hyprnotify` owns `org.freedesktop.Notifications`; disable another daemon such
-as dunst or mako before using it. Point `hyprpm` at the matching fork before an
-update:
+The plugin owns `org.freedesktop.Notifications`; disable another daemon
+such as dunst or mako before enabling it. Point `hyprpm` at the matching
+fork before an update:
 
 ```sh
 hyprpm update --hl-url https://github.com/hitori-chan/Hyprland
@@ -40,23 +33,14 @@ hyprpm update --hl-url https://github.com/hitori-chan/Hyprland
 
 ## Development
 
-Each plugin has its own user-facing README. Shared lifecycle, bus, persistence,
-icon, theme, process, and texture helpers live in [`common/`](common/).
-Implementation contracts that cross files live in
-[`docs/hyprbar.md`](docs/hyprbar.md) and
-[`docs/hyprnotify.md`](docs/hyprnotify.md).
-
-Build everything from the repo root, or one plugin and the standalone
-regressions:
-
 ```sh
-make            # all plugins, sequential
-make test       # devtools unit tests
-make -C hyprnotify
-make -C devtools test
+make              # the plugin
+make test         # headless core harness
+make gate ARGS=...  # the nested integration gate (see awesome/gate/)
 ```
 
-Before deployment, run the exact-fork nested gate described in
-[`devtools/README.md`](devtools/README.md) and require its final
-`ALL CHECKS PASSED` line. Never rebuild or replace a plugin while a compositor
-has that plugin mapped.
+Before deployment, run the nested gate described in
+[`awesome/gate/gate.sh`](awesome/gate/gate.sh) and require its final
+`ALL CHECKS PASSED` line. The gate drives the shared input fixtures in
+[`devtools/`](devtools/README.md). Never rebuild or replace the plugin
+while a compositor has it mapped.

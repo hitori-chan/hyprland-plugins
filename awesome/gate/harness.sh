@@ -228,7 +228,7 @@ expect() { # expect <name> <python-expr-over-cs>
 	[[ "$(pyc "$2")" == "1" ]] && ok "$1" || bad "$1"
 }
 
-# Per-battery accounting: stress.sh brackets each battery with
+# Per-battery accounting: the gate brackets each battery with
 # battery_begin/battery_end so the final summary reports the per-battery
 # counts. A battery that silently lost checks (a skipped block, a relaunch
 # that no-ops, a metric that started crashing) shows up as a lower count
@@ -254,7 +254,7 @@ battery_end() {
 # empty and every battery closes its own windows. A stray client at a
 # boundary is a leak by definition — the focus battery once left its foot at
 # the bottom-right corner, under the tray menu column, and poisoned every
-# panel-extent capture of the battery after it. Called from the stress.sh
+# panel-extent capture of the battery after it. Called from the gate
 # loop BEFORE battery_end so the result counts into this battery; lifecycle
 # is exempt (its tail tears the nested down itself, so the query is empty
 # for the wrong reason).
