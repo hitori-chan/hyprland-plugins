@@ -52,7 +52,18 @@ test:
 	g++ -std=c++26 -Wall -I.. -I. test/main.cpp test/test_bounded.cpp test/test_box.cpp test/test_store.cpp test/test_schema.cpp test/test_wpctl.cpp core/bounded.hpp core/store.cpp core/schema.cpp -o .build/test
 	.build/test
 
+# the gate's preflight resolves the header root through this (the same
+# contract common/common.mk kept for the old tree)
+print-hl-cflags:
+	@echo $(HL_CFLAGS)
+
+# the integration gate (nested compositor; see gate/gate.sh): the plugin's
+# behavioral contract. Unit tests are `make test`; the gate is the rest.
+# ARGS passes through to gate.sh (bin, -b/-k selection).
+gate: all
+	bash gate/gate.sh $(ARGS)
+
 clean:
 	rm -rf $(OBJDIR) $(NAME).so
 
-.PHONY: all test clean
+.PHONY: all test gate clean print-hl-cflags
