@@ -27,6 +27,10 @@ make -C devtools test-pixel-model
 
 ## Nested Gate
 
+The `awesome/` monolith owns its own gate: `make -C awesome gate`
+(`awesome/gate/`, six scenario batteries). This section covers the
+frozen eight-plugin tree's gate, which the rewrite deletes at cutover.
+
 `stress.sh` builds the eight plugins, launches the controlled compositor, and
 tests load order, geometry policy, notifications, OSDs, reply/paste, DND,
 X11 focus steal, the tray menu, fullscreen composition, input capture,

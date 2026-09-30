@@ -60,7 +60,13 @@ them again.
 ```sh
 make -C awesome            # the plugin (needs the fork headers)
 make -C awesome test       # headless core harness, no fork headers
+make -C awesome gate       # the nested integration gate (gate/gate.sh;
+                           # ARGS passes through: bin, -b/-k battery selection)
 ```
 
-Before a release, run the exact-fork nested gate (see
-devtools/README.md) and require its final `ALL CHECKS PASSED` line.
+Before a release, run the gate and require its final `ALL CHECKS
+PASSED` line. The gate is the plugin's behavioral contract: six
+scenario batteries (shell/windows/notify/system/pipeline/lifecycle)
+against a throwaway nested compositor, with the old->new check map in
+gate/manifest.tsv. The input fixtures it drives (vptr, vkbd, cliphold,
+…) are the shared devtools/.
