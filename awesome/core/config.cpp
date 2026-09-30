@@ -65,13 +65,13 @@ namespace NAwesome {
         return V ? (uint32_t)V->value() : S->cval;
     }
 
-    std::string_view ConfigRegistry::getS(std::string_view key) const {
+    std::string ConfigRegistry::getS(std::string_view key) const {
         const auto* S = m_schema.find(key);
         const auto  IT = m_values.find(std::string{key});
         if (!S || IT == m_values.end())
-            return S ? S->sval : std::string_view{};
+            return S ? std::string{S->sval} : std::string{};
         const auto V = dynamic_cast<Config::Values::CStringValue*>(IT->second.get());
-        return V ? std::string_view{V->value()} : S->sval;
+        return V ? V->value() : std::string{S->sval};
     }
 
 } // namespace NAwesome

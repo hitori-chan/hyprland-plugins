@@ -30,7 +30,11 @@ namespace NAwesome {
         int      getI(std::string_view key) const;
         double   getD(std::string_view key) const;
         uint32_t getColor(std::string_view key) const;
-        std::string_view getS(std::string_view key) const;
+        // std::string BY VALUE: value() returns a temporary string, and a
+        // string_view into it would dangle the instant the return completes
+        // (callers then read freed memory — the 4 KiB launcher and the
+        // sound-command spawns were the first casualties).
+        std::string getS(std::string_view key) const;
 
       private:
         using ValueBase = Config::Values::IValue;
