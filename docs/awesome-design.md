@@ -89,12 +89,14 @@ atomics; ordering is program order plus the hop queue.
   bar icons share it; the warm/draw gate applies on decode land.
 - **Config schema** — one declarative table: key, module, type,
   default, validator. Typed accessors; theme tokens resolved once;
-  unknown keys are a load error. The 45 legacy keys re-namespace to
-  `plugin:awesome:<module>:<key>`.
-- **Store** — bounded key/value and box stores with admission rules
-  (fixed file, row, key, entry bounds; malformed state ignored).
-  `$XDG_STATE_HOME/awesome/{windows,shell}.tsv`. First run migrates the
-  old per-plugin stores once (read old path, write new, never both).
+  unknown keys are a load error. The legacy keys re-namespace to
+  `plugin:awesome:<module>:<key>` (48: shell 21, notify 24, windows 3).
+- **Store** — bounded key/value, list, and box stores with admission
+  rules (fixed file, row, key, entry bounds; malformed state
+  ignored). `$XDG_STATE_HOME/awesome/`: `windows-spot.tsv`,
+  `windows-windowed.tsv`, `shell-launches.tsv`, `shell-history.tsv`.
+  First run migrates the old per-plugin stores once (read old path,
+  write new, never both).
 - **Jobs** — the one subprocess runner: bounded queue, generation-
   checked callbacks, single reap path, env isolation. `system`'s
   wpctl/logind chains and the launcher's `Exec=` spawn go through it.
@@ -143,8 +145,9 @@ least-overlap, fixed-size exclusion, drag snap with indicator). The
 window-press arbitration — swallow / focus / let the compositor drag
 proceed — is one function, replacing the four load-order edges.
 Maximized windows stay immovable (the press is swallowed whole, with
-matching release swallow). Spawn geometry and remembered windowed
-sizes persist in `awesome/windows.tsv`.
+matching release swallow). Spawn geometry persists in
+`awesome/windows-spot.tsv`, remembered windowed sizes in
+`awesome/windows-windowed.tsv`.
 
 ### notify
 
@@ -177,16 +180,17 @@ hl.plugin.awesome.windows.focus_next()
 hl.plugin.awesome.windows.focus_prev()
 hl.plugin.awesome.windows.focus_prev_here()
 hl.plugin.awesome.notify.center()         -- toggles the shade
-hl.plugin.awesome.notify.dnd()            -- toggles DND
-hl.plugin.awesome.notify.clear()
+hl.plugin.awesome.notify.suspend()        -- toggles DND
+hl.plugin.awesome.notify.clear_all()
 hl.plugin.awesome.system.volume_up()  -- ... volume_down, mute, mic_mute,
 hl.plugin.awesome.system.brightness_up() -- brightness_down
-hl.plugin.awesome.system.touchpad()      -- manual toggle
+hl.plugin.awesome.system.touchpad_toggle()
 ```
 
-`hyprctl awesome {count, center, state, dnd, clear}` mirrors the
-daemon verbs; the old `hyprctl hyprnotify …` and the per-plugin
-`hl.plugin.*` names are removed, not aliased.
+`hyprctl awesome <verb>` routes to the owning module: notify takes
+`{count, center, state, badge, topline, clear}`, system takes `pad`;
+the old `hyprctl hyprnotify …` and the per-plugin `hl.plugin.*`
+names are removed, not aliased.
 
 Config: `plugin:awesome:shell:*` (21 keys), `plugin:awesome:notify:*`
 (24), `plugin:awesome:windows:*` (3: edge, snap_distance, col_frame).
