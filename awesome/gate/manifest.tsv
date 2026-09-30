@@ -34,7 +34,7 @@ windows	tsv: exactly one foot row survives the coalesced save	windows	(same name
 windows	tsv: no temp-file debris	windows	(same name)	re-scope: temp debris under the fresh state dir
 windows	hostile tsv: the monolith still loads	windows	(same name)	re-scope: hostile FRESH file (fresh wins once live; the legacy file is a one-time source, not a live one)
 windows	far-off-screen seed: stored size applied, clamped to (...)	windows	(same name)	re-scope: seed via the fresh path
-notify	peek: hovering the bell opens the shade	notify	peek: the bell glyph is found in the strip + (same name)	re-scope: the peek is a REAL pointer hover over the bell glyph (bell_x pixel find); the old D-Bus `org.hitori.hyprnotify Peek` verb is gone with the bus
+notify	peek: hovering the bell opens the shade	notify	bell: the glyph is found in the strip + hover is a no-op + (same name)	re-scope: the old D-Bus `Peek` verb never got a monolith successor — the hover-peek was removed by user request 2026-09-30 (click-only shade); the battery keeps the real-pointer-over-glyph shape (bell_x pixel find)
 notify	launcher: Ctrl+V admits one valid UTF-8 query up to 4 KiB	shell	(same name)	moved reply -> shell; the history store moved to $AW_HISTORY
 notify	launcher: closing the prompt invalidates a late paste	shell	(same name)	moved reply -> shell; the history store moved to $AW_HISTORY
 reply	hyprosd: volume up uses the capped relative wpctl command	system	system: volume up uses the capped relative wpctl command	owner rename hyprosd -> system

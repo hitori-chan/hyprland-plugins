@@ -220,12 +220,11 @@ namespace NAwesome::Notify {
         std::string              foldSenderPrefix(std::string body); // "<b>S</b>\nmsg" -> "<b>S</b>: msg"
     }
 
-    // the collapsed row's one-liner, whichever end holds the newest message:
-    // a conversation card's body is newest-front, an ordinary body is
-    // chronological. Renderer and the topline probe share this so they
-    // cannot drift apart.
-    std::string lastLine(const std::string& body); // the newest line of an ordinary body ends it
-    std::string firstLine(const std::string& body); // the newest line of a conversation body leads it
+    // the collapsed row's one-liner: every card body is chronological
+    // (transcript, legacy join and ordinary alike), so the newest message
+    // ENDS it. Renderer and the topline probe share this so they cannot
+    // drift apart.
+    std::string lastLine(const std::string& body); // the newest line of any body ends it
     std::string collapsedLine(const SP<SNotif>& n);
 
     // ---- model.cpp: the cards and their lifetimes ----
@@ -268,6 +267,10 @@ namespace NAwesome::Notify {
         std::string groupKeyOf(const SP<SNotif>& n);       // the bundle's identity: the app key, sub-keyed by the declared group
         void       absorbPopped();                        // opening the shade parks the popped stack
         void       repopAbsorbed();                       // closing it returns the parked stack to banners
+        // the transcript of the latest `limit` kept messages, chronological
+        // (oldest leads, newest ends): the banner previews five, the shade
+        // renders all seven through the card's stored body
+        std::string conversationBody(const SP<SNotif>& n, size_t limit);
         void       rearmExpiry();
         void       holdBanner(uint32_t id); // the hovered popup's countdown pauses; 0 releases (and restarts it)
         void       toggleSuspend();         // DND; resume renders the queue, fresh timeouts
@@ -342,17 +345,9 @@ namespace NAwesome::Notify {
     void centerSelectMove(int dir);                         // ↑/↓: move the keyboard selection, paging to keep it on screen
     bool centerSelection(uint32_t& id, std::string& group); // the selected item; group non-empty = a bundle. false = none
 
-    // the bell's hover-peek: open unpinned, close when the pointer is on
-    // neither the bell nor the panel, pin on any click
-    void centerPeek(bool onBell);
-    void centerPeekPointer(bool onCard); // the pointer entered/left one of our cards
-    void centerPin();
-    bool centerPeeking();
-    // the click door (Lua, the bell, `hyprctl awesome center`): deferred,
-    // accumulating, and a click on a PEEKED shade pins it instead of closing
-    // what the pointer only glanced at
+    // the click door (Lua, the bell, `hyprctl awesome center`): deferred and
+    // accumulating
     void queueCenterToggle();
-    void centerInit(); // the peek's grace timer
     void centerExit();
 
     void onRenderPreChecks(PHLMONITOR mon);
@@ -435,7 +430,6 @@ namespace NAwesome::Notify {
     void onInputBlocked();
     void releasePointer();
     void refreshPointerOwnership(); // the hovered card vanished under a still pointer
-    bool pointerOverCards();        // the pointer is on one of our surfaces (the peek's other cancel)
     void inputExit();
 
 } // namespace NAwesome::Notify

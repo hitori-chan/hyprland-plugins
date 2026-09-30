@@ -25,13 +25,14 @@ namespace NAwesome::Notify {
 
     std::vector<SP<SNotif>> notifs;
 
-    // A conversation card's body is newest-front (the transcript and the
-    // legacy join alike), so its newest message LEADS; an ordinary body ends
-    // on its newest line. The collapsed row must always print the newest.
+    // The transcript and the legacy join are both chronological (oldest
+    // leads, newest ends), and an ordinary body ends on its newest line too —
+    // the newest message sits at the END of every card body. The collapsed
+    // row must always print the newest.
     std::string collapsedLine(const SP<SNotif>& n) {
         if (n->body.empty())
             return {};
-        return n->conversation ? firstLine(n->body) : lastLine(n->body);
+        return lastLine(n->body);
     }
 
     namespace Model {
@@ -354,35 +355,42 @@ namespace NAwesome::Notify {
             }
         }
 
-        // the conversation's display body: the latest kept messages, newest
-        // on top as the row renders it, group senders prefixed by name
-        static std::string conversationBody(const SNotif& n) {
-            if (n.messages.empty())
-                return n.body;
+        // the conversation's display body: the latest `limit` kept messages,
+        // CHRONOLOGICAL — the oldest line leads and the newest ENDS the body,
+        // so an arrival lands at the bottom and pushes the oldest out of the
+        // top of the window. Group senders are prefixed by name.
+        std::string conversationBody(const SP<SNotif>& n, size_t limit) {
+            if (n->messages.empty())
+                return n->body;
 
-            std::string out;
-            const size_t START = Pixel::presentedMessageStart(n.messages);
-            // walk the window OLDEST-FIRST and prepend each line: the newest
-            // lands on top. (Prepending in newest-first order would invert
-            // the window — the card used to show its oldest message on top.)
-            for (size_t i = START; i < n.messages.size(); i++) {
-                const auto& M = n.messages[i];
+            std::vector<std::string> LINES;
+            const size_t             START = Pixel::presentedMessageStart(n->messages, limit);
+            for (size_t i = START; i < n->messages.size(); i++) {
+                const auto& M = n->messages[i];
                 if (M.text.empty())
                     continue;
                 std::string line;
-                if (n.conversationKind == "group" && !M.senderName.empty()) {
+                if (n->conversationKind == "group" && !M.senderName.empty()) {
                     line += Parse::oneLine(Parse::sanitizeMarkup(M.senderName));
                     line += ": ";
                 }
                 line += M.text;
-                if (out.empty()) {
-                    out = capUtf8(std::move(line));
-                    continue;
+                LINES.push_back(capUtf8(std::move(line)));
+            }
+            // the 8 KB cap evicts from the OLDEST end — the newest message is
+            // what the card exists to show (n ≤ 7, so the rebuild is cheap)
+            std::string out;
+            for (size_t FRONT = 0; FRONT < LINES.size(); FRONT++) {
+                std::string cand;
+                for (size_t i = FRONT; i < LINES.size(); i++) {
+                    if (!cand.empty())
+                        cand += "\n";
+                    cand += LINES[i];
                 }
-                if (line.size() + 1 + out.size() > 8192)
+                if (cand.size() <= 8192) {
+                    out = std::move(cand);
                     break;
-                out.insert(0, "\n");
-                out.insert(0, line);
+                }
             }
             return out;
         }
@@ -635,7 +643,7 @@ namespace NAwesome::Notify {
             const std::string EFFECTIVE_CONV_ID = CONV_ID_HINT ? CONV_ID : SAME_APP ? n->conversationId : std::string{};
             const bool        SAME_CONVERSATION = EXISTING && !EFFECTIVE_CONV_ID.empty() && SAME_APP && n->conversationId == EFFECTIVE_CONV_ID;
             // x-canonical-append is a conversation by definition: its body is
-            // the joined transcript, newest-front, like the category's
+            // the joined transcript, chronological, like the category's
             const bool CONVERSATION = CATEGORY_CONVERSATION || canonicalAppend || !EFFECTIVE_CONV_ID.empty() || (SAME_CONVERSATION && n->conversation);
             if (!SAME_CONVERSATION) {
                 n->messages.clear();
@@ -707,7 +715,7 @@ namespace NAwesome::Notify {
                 const auto SENDER_NAME_VIEW = SENDER_NAME_HINT ? std::optional<std::string_view>{SENDER_NAME} : std::nullopt;
                 const auto MUTATION = Pixel::upsertMessage(n->messages, MESSAGE_ID, n->body, viewOf(SENDER_ID_HINT), SENDER_NAME_VIEW, viewOf(SENDER_ICON_HINT), MESSAGE_TIME_HINT, HISTORIC_HINT);
                 rebuildConversationParticipants(*n, ICONPX);
-                n->body        = conversationBody(*n);
+                n->body        = conversationBody(n, Pixel::MAX_PRESENTED_CONVERSATION_MESSAGES);
                 n->unreadCount = Pixel::updatedUnreadCount(n->unreadCount, UNREAD_HINT, HISTORIC, MUTATION);
             } else {
                 n->unreadCount = 0;

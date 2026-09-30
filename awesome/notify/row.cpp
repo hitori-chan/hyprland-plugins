@@ -66,7 +66,7 @@ namespace NAwesome::Notify {
             SB += AGE;
             SB += "</span>";
             const auto LINE = cachedText(SB, COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
-            const auto B1S  = collapsedLine(N); // the newest message, whichever end holds it
+            const auto B1S  = collapsedLine(N); // the newest message — a chronological body ends on it
             const auto B1   = B1S.empty() ? nullptr : cachedText(B1S, COLBODY, T.body, TEXTWPX, -1, 0, true, 400);
             th              = texH(LINE, P.scale) + (B1 ? 2 + texH(B1, P.scale) : 0) + (N->progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0);
             if (!P.warm) {
@@ -110,8 +110,9 @@ namespace NAwesome::Notify {
             const auto TITLESRC = !N->conversationTitle.empty() ? N->conversationTitle : N->summary;
             const auto TITLE    = TITLESRC.empty() ? nullptr : cachedText(TITLESRC, COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
             // a merged chat is a transcript, so it gets Android's MessagingStyle
-            // depth (~7 messages) where an ordinary card gets four lines
-            const int  CAPL = (int)std::lround(T.body * 1.35 * (N->conversation ? 7 : 4));
+            // depth (the full 7-message window) where an ordinary card gets
+            // four lines
+            const int CAPL = bodyBudgetPx(P.scale, N->conversation ? 7 : 4);
             // linkCol collects the <a href> rects: without them a body click
             // meant for a URL would fire the card's primary instead
             const auto COLLINK = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_link"));
@@ -298,7 +299,7 @@ namespace NAwesome::Notify {
     }
 
     double digestH(const SType& T, size_t count, double scale) {
-        return ROW_PADT + std::max(ROW_ICON, (double)T.title / scale + 2) + std::min<size_t>(2, count) * ((double)T.body / scale * 1.35 + 3) + ROW_PADB;
+        return ROW_PADT + std::max(ROW_ICON, (double)T.title / scale + 2) + std::min<size_t>(2, count) * (bodyLineH(scale) + 3) + ROW_PADB;
     }
 
     double groupHeadH() {
@@ -360,7 +361,7 @@ namespace NAwesome::Notify {
             if (NAwesome::Canvas::inst().gate().warming)
                 ensureIconTex(*N, (int)std::lround(NAwesome::cfg().getI("plugin:awesome:notify:max_icon") * P.scale),
                               (int)std::lround(box.w * P.scale), (int)std::lround(HERO_CAP * P.scale));
-            const double LH = (double)T.body / P.scale * 1.35;
+            const double LH = bodyLineH(P.scale);
             py += 3;
             double px = TX;
             // each child's OWN face: a bundle's children all share one

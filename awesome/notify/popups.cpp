@@ -154,9 +154,12 @@ namespace NAwesome::Notify {
             const double HH = texH(HEADER, P.scale), TH = texH(TITLE, P.scale);
             const double AVAIL = MAXH - 2 * PADY - (HERO ? HEROH : 0) - HH - (HH > 0 ? HEAD_GAP : 0) - TH - TITLE_GAP - (N->progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0) -
                 BTN_BLOCK - IMG_BLOCK - ALT_BLOCK;
-            const int  LINEPX  = (int)std::lround(T.body * 1.35);
-            const int  BODYCAP = std::max(LINEPX, std::min(LINEPX * 8, (int)std::floor(AVAIL * P.scale)));
-            const auto BODY    = N->body.empty() ? nullptr : cachedText(N->body, COLBODY, T.body, TEXTWPX, BODYCAP, 1.1f, true, 400, &COLLINK);
+            const int LINEPX  = bodyBudgetPx(P.scale, 1);
+            const int BODYCAP = std::max(LINEPX, std::min(bodyBudgetPx(P.scale, 8), (int)std::floor(AVAIL * P.scale)));
+            // the banner previews the five newest transcript messages; the
+            // shade renders the card's stored full window
+            const std::string BODYSRC = N->conversation ? Model::conversationBody(N, Pixel::MAX_PREVIEWED_CONVERSATION_MESSAGES) : N->body;
+            const auto        BODY    = BODYSRC.empty() ? nullptr : cachedText(BODYSRC, COLBODY, T.body, TEXTWPX, BODYCAP, 1.1f, true, 400, &COLLINK);
 
             const double BH = texH(BODY, P.scale);
             double       th = HH + (HH > 0 ? HEAD_GAP : 0) + TH + (TH > 0 && BH > 0 ? TITLE_GAP : 0) + BH + IMG_BLOCK;

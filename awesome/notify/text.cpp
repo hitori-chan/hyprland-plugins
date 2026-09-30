@@ -46,8 +46,8 @@ namespace NAwesome::Notify {
         }
     }
 
-    // the collapsed row's one-liner for an ORDINARY body: the last non-empty
-    // line — the newest message ends a chronological body
+    // the collapsed row's one-liner: the last non-empty line — every card
+    // body is chronological, so the newest message ends it
     std::string lastLine(const std::string& body) {
         const size_t END = body.find_last_not_of('\n');
         if (END == std::string::npos)
@@ -55,17 +55,6 @@ namespace NAwesome::Notify {
         const size_t NL    = body.rfind('\n', END);
         const size_t START = NL == std::string::npos ? 0 : NL + 1;
         return body.substr(START, END - START + 1);
-    }
-
-    // the conversation body's twin: a conversation card's body is built
-    // NEWEST-FRONT (transcript and legacy join alike), so its newest
-    // message LEADS
-    std::string firstLine(const std::string& body) {
-        const size_t START = body.find_first_not_of('\n');
-        if (START == std::string::npos)
-            return "";
-        const size_t END = body.find('\n', START);
-        return body.substr(START, END == std::string::npos ? std::string::npos : END - START);
     }
 
     // bucketed so a texture key only moves when the display would
@@ -242,12 +231,80 @@ namespace NAwesome::Notify {
         return md;
     }
 
+    // the font's real line advance, measured once per style: the pixel
+    // budgets of the rows are line COUNTS, and a constant multiplier of the
+    // point size drifts with the user's font
+    struct SLineMetric {
+        int lineH; // one line, no spacing beyond the font's own
+        int adv;   // the per-line advance with the requested spacing
+    };
+    static bool lineMetric(const std::string& family, int pt, int weight, float lineSpacing, int& lineH, int& adv) {
+        char mkey[128];
+        const int KLEN = snprintf(mkey, sizeof mkey, "|lm|%s|%d|%d|%d", family.c_str(), pt, weight, (int)(lineSpacing * 100));
+        const std::string KEY(mkey, std::min<size_t>(KLEN > 0 ? (size_t)KLEN : 0, sizeof mkey - 1));
+        static NAwesome::CGenCache<SLineMetric, 16, 1024> cache;
+        if (const auto* HIT = cache.find(KEY)) {
+            lineH = HIT->lineH;
+            adv   = HIT->adv;
+            return true;
+        }
+        PangoFontMap* fontMap = pango_cairo_font_map_get_default();
+        PangoContext* context = pango_font_map_create_context(fontMap);
+        const auto    measure = [](const char* text, PangoContext* ctx, const char* fam, int size, int wt, float sp) -> int {
+            PangoLayout*          l  = pango_layout_new(ctx);
+            PangoFontDescription* f  = pango_font_description_new();
+            pango_font_description_set_family_static(f, fam);
+            pango_font_description_set_absolute_size(f, size * PANGO_SCALE);
+            if (wt != 400)
+                pango_font_description_set_weight(f, (PangoWeight)wt);
+            pango_layout_set_font_description(l, f);
+            if (sp > 0)
+                pango_layout_set_line_spacing(l, sp);
+            pango_layout_set_text(l, text, -1);
+            PangoRectangle a, b;
+            pango_layout_get_pixel_extents(l, &a, &b);
+            const int h   = b.height;
+            pango_font_description_free(f);
+            g_object_unref(l);
+            return h;
+        };
+        const int H1 = measure("x", context, family.c_str(), pt, weight, lineSpacing);
+        const int H2 = measure("x\ny", context, family.c_str(), pt, weight, lineSpacing);
+        g_object_unref(context);
+        if (H1 <= 0 || H2 <= H1)
+            return false;
+        lineH = H1;
+        adv   = H2 - H1;
+        cache.insert(KEY, SLineMetric{lineH, adv});
+        return true;
+    }
+
+    double bodyLineH(double scale) {
+        const auto T      = typeScale(scale);
+        const auto FAMILY = NAwesome::cfg().getS("plugin:awesome:notify:font");
+        int LINEH = 0, ADV = 0;
+        if (!lineMetric(FAMILY, T.body, 400, 1.1f, LINEH, ADV))
+            return (double)T.body / scale * 1.35;
+        return (double)LINEH / scale;
+    }
+
+    int bodyBudgetPx(double scale, int lines) {
+        if (lines <= 0)
+            return 0;
+        const auto T      = typeScale(scale);
+        const auto FAMILY = NAwesome::cfg().getS("plugin:awesome:notify:font");
+        int LINEH = 0, ADV = 0;
+        if (!lineMetric(FAMILY, T.body, 400, 1.1f, LINEH, ADV))
+            return (int)std::lround((double)T.body * 1.35 * lines);
+        return LINEH + (lines - 1) * ADV;
+    }
+
     // renderText word-wraps nothing (maxWidth only ellipsizes), so everything
     // here rasters through its own pango layout — then the same
     // premultiplied-ARGB32 cairo -> createTexture path renderText uses.
-    // maxHeightPx > 0 caps pixels (tail line ellipsized); < 0 caps LINES —
-    // pango's cap is per PARAGRAPH, so line-capped text must be single-line
-    // flattened first (the collapsed rows are).
+    // maxHeightPx >= 0 is a pixel budget (rounded down to whole lines, tail
+    // line ellipsized); < 0 caps nothing — text that must be single-line is
+    // flattened to one line before it gets here (the collapsed rows).
     static SP<ITexture> buildText(const std::string& text, const CHyprColor& col, int pt, int maxWidthPx, int maxHeightPx, float lineSpacing, bool markup, int weight,
                                   const CHyprColor* linkCol = nullptr, std::vector<std::pair<std::string, CBox>>* outLinks = nullptr) {
         PangoFontMap*         fontMap = pango_cairo_font_map_get_default();
@@ -286,7 +343,22 @@ namespace NAwesome::Notify {
 
         pango_layout_set_width(layout, std::max(maxWidthPx, 1) * PANGO_SCALE);
         pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
-        pango_layout_set_height(layout, maxHeightPx < 0 ? maxHeightPx : std::max(maxHeightPx, pt) * PANGO_SCALE);
+        // the pixel budget is a count of WHOLE lines at this font's real
+        // advance: the old 1.35x-body constant undershot the default font
+        // by ~10%, so a seven-line transcript rendered six (the clip took
+        // the oldest line first, and went unnoticed until the order went
+        // chronological and started clipping the newest)
+        if (maxHeightPx < 0) {
+            pango_layout_set_height(layout, maxHeightPx);
+        } else {
+            int LINEH = 0, ADV = 0;
+            int HEIGHT = std::max(maxHeightPx, pt);
+            if (lineMetric(FAMILY, pt, weight, lineSpacing, LINEH, ADV)) {
+                const int LINES = std::max(1, (maxHeightPx - LINEH) / ADV + 1); // whole lines that fit
+                HEIGHT          = LINEH + (LINES - 1) * ADV;
+            }
+            pango_layout_set_height(layout, HEIGHT * PANGO_SCALE);
+        }
         pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
         if (attrs) {
             pango_layout_set_attributes(layout, attrs);

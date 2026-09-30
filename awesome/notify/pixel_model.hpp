@@ -21,8 +21,9 @@ namespace NAwesome::Notify::Pixel {
         USER_EXPANDED,
     };
 
-    inline constexpr size_t   MAX_CONVERSATION_MESSAGES           = 32;
-    inline constexpr size_t   MAX_PRESENTED_CONVERSATION_MESSAGES = 7;
+    inline constexpr size_t   MAX_CONVERSATION_MESSAGES           = 32; // the retained log
+    inline constexpr size_t   MAX_PRESENTED_CONVERSATION_MESSAGES = 7;  // the shade's full transcript
+    inline constexpr size_t   MAX_PREVIEWED_CONVERSATION_MESSAGES = 5;  // the banner's preview
     inline constexpr size_t   MAX_CONVERSATION_PARTICIPANTS       = 16;
     inline constexpr uint32_t MAX_UNREAD_COUNT                    = 999;
 
