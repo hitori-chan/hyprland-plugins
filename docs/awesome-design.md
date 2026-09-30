@@ -2,7 +2,7 @@
 
 One C++26 Hyprland plugin replacing the eight. Same process, same
 PluginAPI, same fork headers — no FFI, no fork-side surface. The
-behavior contract is the current gate (219 checks) plus the behavior
+behavior contract is the current gate (249 checks) plus the behavior
 docs; a check may be re-scoped to the new architecture, never waived.
 
 The module boundaries are re-derived from the domain. The old plugin
@@ -44,8 +44,8 @@ Cross-module rules:
 - The input pipeline (core) dispatches each event to the modules in a
   fixed, documented priority: `shell` → `notify` → `windows`. The old
   `mustLoadBefore` edges and the hyprpm load-order contract die; the
-  priority table in `core/pipeline` is the contract, and the unit tests
-  pin it.
+  registration order in `core/supervisor` is the contract, and the
+  gate's pipeline battery pins it.
 
 ## 2. core — the platform
 
@@ -90,7 +90,7 @@ atomics; ordering is program order plus the hop queue.
 - **Config schema** — one declarative table: key, module, type,
   default, validator. Typed accessors; theme tokens resolved once;
   unknown keys are a load error. The legacy keys re-namespace to
-  `plugin:awesome:<module>:<key>` (48: shell 21, notify 24, windows 3).
+  `plugin:awesome:<module>:<key>` (47: shell 20, notify 24, windows 3).
 - **Store** — bounded key/value, list, and box stores with admission
   rules (fixed file, row, key, entry bounds; malformed state
   ignored). `$XDG_STATE_HOME/awesome/`: `windows-spot.tsv`,
@@ -99,8 +99,9 @@ atomics; ordering is program order plus the hop queue.
   write new, never both).
 - **Jobs** — the one subprocess runner: bounded queue, generation-
   checked callbacks, single reap path, env isolation. `system`'s
-  wpctl/logind chains and the launcher's `Exec=` spawn go through it.
-  Nothing else in the plugin spawns a process.
+  wpctl/logind chains, the launcher's `Exec=` spawn, notify's sound
+  player and link opens all go through it. Nothing else in the plugin
+  spawns a process.
 - **Bus** — the fd.o Notifications daemon (spec 1.3), kept
   asynchronous off hot paths (`post()` for bus-originated work,
   `pollSoon()` dispatch). The plugin-internal service interface is a
@@ -172,19 +173,19 @@ process I/O through Jobs; readbacks reject malformed output.
 Lua, one entry point:
 
 ```lua
-hl.plugin.awesome.shell.menubar()
-hl.plugin.awesome.windows.maximize()      -- the focused window
-hl.plugin.awesome.windows.minimize()
-hl.plugin.awesome.windows.restore()
-hl.plugin.awesome.windows.focus_next()
-hl.plugin.awesome.windows.focus_prev()
-hl.plugin.awesome.windows.focus_prev_here()
-hl.plugin.awesome.notify.center()         -- toggles the shade
-hl.plugin.awesome.notify.suspend()        -- toggles DND
-hl.plugin.awesome.notify.clear_all()
-hl.plugin.awesome.system.volume_up()  -- ... volume_down, mute, mic_mute,
-hl.plugin.awesome.system.brightness_up() -- brightness_down
-hl.plugin.awesome.system.touchpad_toggle()
+hl.plugin.awesome.menubar()                -- the launcher
+hl.plugin.awesome.maximize()               -- the focused window
+hl.plugin.awesome.minimize()
+hl.plugin.awesome.restore()
+hl.plugin.awesome.focus_next()
+hl.plugin.awesome.focus_prev()
+hl.plugin.awesome.focus_prev_here()
+hl.plugin.awesome.center()                 -- toggles the shade
+hl.plugin.awesome.suspend()                -- toggles DND
+hl.plugin.awesome.clear_all()
+hl.plugin.awesome.volume_up()              -- volume_down, mute, mic_mute
+hl.plugin.awesome.brightness_up()          -- brightness_down
+hl.plugin.awesome.touchpad_toggle()
 ```
 
 `hyprctl awesome <verb>` routes to the owning module: notify takes
@@ -192,13 +193,12 @@ hl.plugin.awesome.system.touchpad_toggle()
 the old `hyprctl hyprnotify …` and the per-plugin `hl.plugin.*`
 names are removed, not aliased.
 
-Config: `plugin:awesome:shell:*` (21 keys), `plugin:awesome:notify:*`
+Config: `plugin:awesome:shell:*` (20 keys), `plugin:awesome:notify:*`
 (24), `plugin:awesome:windows:*` (3: edge, snap_distance, col_frame).
-The user's `theme.lua`/`binds.lua` get one migration pass at cutover.
+The user's `theme.lua`/`binds.lua` got one migration pass at cutover.
 
-Manifest: one entry, `awesome`, version `1.0.0` (the first release of
-the unified plugin; MAJOR.MINOR.PATCH from there). `PLUGIN_INIT` and
-`hyprpm.toml` stay in lockstep, one constant in `core`.
+Manifest: one entry, `awesome`; the version is MAJOR.MINOR.PATCH and
+stays in lockstep between `core/version.hpp` and `hyprpm.toml`.
 
 ## 5. Performance
 
@@ -221,35 +221,28 @@ check, the coredump teardown guard, the probe env). What changes:
 
 - **Check engine** — one `check <id> <desc> <fn>` primitive with a
   machine-readable manifest: declared checks vs executed, per-battery
-  coverage, failure screenshots auto-retained. The summary line stays
-  the contract: `== awesome: ALL N CHECKS PASSED in Ns ==`.
+  coverage, failure screenshots auto-retained. The summary line is the
+  contract: `== stress: ALL N CHECKS PASSED in Ns ==`.
 - **Batteries per module** — `shell`, `windows`, `notify`, `system`,
-  `lifecycle` (reload/teardown/lock/capture/queue bounds), replacing
-  the per-plugin batteries. Each old 219-check contract maps to a new
-  check id; the mapping table lives in the gate, and dropping a check
-  is a reviewable diff.
+  `pipeline`, `lifecycle` (reload/teardown/lock/capture/queue bounds),
+  replacing the per-plugin batteries. Each old check maps to a new
+  check id; the mapping table lives in the gate (`manifest.tsv`), and
+  dropping a check is a reviewable diff.
 - **Unit tests** — one headless C++26 harness (no external deps),
-  `make -C awesome test`: pipeline priority, config schema, store
-  admission, bounded types, pixel model, wpctl/desktop-exec parsing,
-  the window state machine's transitions.
+  `make -C awesome test`: bounded types, box math, config schema
+  (including the alpha-0 color guard), store admission, wpctl parsing.
 - **Fixtures** — the C Wayland fixtures (vptr, vkbd, fake-sni, cliphold,
   fixwin, splashwin, focustrap) stay C against the exact fork protocol
-  XML; they are re-pointed at the new tree and extended only where a
-  battery needs a new shape.
+  XML; they live in `devtools/` and are extended only where a battery
+  needs a new shape.
 
-## 7. Execution
+## 7. Execution (as landed)
 
-- The new tree (`awesome/`) is built alongside the old one; the old
-  plugins are untouched until cutover, so the regression net (the
-  current gate) stays intact throughout.
-- Order: `core` (platform + unit tests) → `windows` (first full
-  module: state machine, pipeline consumer) → `notify` (model first,
-  surfaces after the canvas is proven) → `system` → `shell` → the
-  re-derived gate → cutover.
-- Cutover is one commit series: manifest flips to `[awesome]`, the old
-  eight directories and `common/` are deleted, the user config is
-  migrated, `AGENTS.md`'s ownership/load-order sections are rewritten,
-  versions settle at `1.0.0`. The gate is green on the new tree before
-  the series lands.
-- Nothing ships red; the user deploys (`hyprpm update` + relog) only
-  on the cutover.
+Built in the order `core` → `windows` → `notify` → `system` → `shell`
+→ the re-derived gate; the old tree stayed intact until cutover so the
+regression net held throughout. The cutover was one commit series:
+manifest flipped to `[awesome]`, the old eight directories and
+`common/` deleted, the user config migrated to `plugin:awesome:*`,
+AGENTS.md rewritten. It landed on `main` with the gate green and the
+user deploy verified (2026-09-30); the provenance is the commit
+history, not this document.
