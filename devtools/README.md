@@ -44,10 +44,10 @@ make -C devtools HL=/path/to/Hyprland
   instance's PRIVATE session bus (never the live one) and asserts the
   strip, the parse-time separator trim, and the cascade against it.
 - `fakes/wpctl` logs its arguments, and hangs or floods on demand
-  through `HYPROSD_WPCTL_*` marker files (the system battery's
+  through `AW_WPCTL_*` marker files (the system battery's
   process-path checks).
 - `fakes/canberra-gtk-play` records its invocation and hangs on demand
-  through `HYPRNOTIFY_SOUND_HANG_FILE` (the notify battery's sound
+  through `AW_SOUND_HANG_FILE` (the notify battery's sound
   checks).
 
 ## Gate safety (still binds)

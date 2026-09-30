@@ -483,8 +483,8 @@ launch_nested() {
 	# the env must travel with the relaunch too, or it falls back to
 	# nested.lua + /usr/local/bin/Hyprland and the retarget guard refuses it.
 	_harness_launch() {
-		PATH="$REPO/devtools/fakes:$PATH" HYPROSD_WPCTL_LOG="$STATE/wpctl.log" \
-			HYPROSD_WPCTL_HANG_FILE="$STATE/hang-wpctl" HYPROSD_WPCTL_FLOOD_FILE="$STATE/flood-wpctl" HYPRNOTIFY_SOUND_HANG_FILE="$STATE/hang-sound" \
+		PATH="$REPO/devtools/fakes:$PATH" AW_WPCTL_LOG="$STATE/wpctl.log" \
+			AW_WPCTL_HANG_FILE="$STATE/hang-wpctl" AW_WPCTL_FLOOD_FILE="$STATE/flood-wpctl" AW_SOUND_HANG_FILE="$STATE/hang-sound" \
 			HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" XDG_CACHE_HOME="$STATE/cache" \
 			bash "$HARNESS/launch.sh" >/dev/null 2>&1
 	}
