@@ -2,7 +2,7 @@
 // the markup/link/age helpers every drawing unit shares.
 //
 // Everything text becomes a texture here, keyed on content + style + width
-// into common/texcache.hpp's CGenCache — see there for why the key needs no
+// into core/canvas.hpp's cache — see there for why the key needs no
 // staleness bookkeeping and why the bound is a grace generation.
 
 #include "ui.hpp"

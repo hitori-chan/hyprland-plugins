@@ -484,9 +484,9 @@ namespace NAwesome::Shell {
 
         // Edge-triggered off the same uevents as the gauge (the minute tick is
         // the failsafe); thresholds are Android's lines (20 low / 5 critical —
-        // the pill's error red shares the 20 line). Never called at INIT: the
-        // first minute tick covers a login-low, after hyprnotify is up — hyprbar
-        // loads before the notification daemon does.
+        // the pill's error red shares the 20 line). Never called at INIT:
+        // the shell module registers before the notify module, so the first
+        // minute tick — not init — is the first moment an alert can land.
         void alerts() {
             // refresh() runs first at both call sites (the uevent and the
             // minute tick) and leaves this sample behind

@@ -3,8 +3,6 @@
 // prompt's C-v) has no wl_data_device of its own, so it asks the seat's
 // public IDataSource directly, then drains the pipe from the Wayland event
 // loop. No read blocks compositor dispatch.
-//
-// Ported from common/clipboard.hpp (hyprbar was its only consumer).
 #pragma once
 
 #include <hyprland/src/Compositor.hpp>

@@ -1,7 +1,7 @@
 # awesome/gate/windows.sh — the windows module's behavior battery: spawn
 # placement (the fresh store the migration fed), the CSD geometry battery,
-# maximize, minimize/restore, the focus policy, the X11 ping battery, and the
-# hostile state file. Port of devtools/stress/windows.sh + focus.sh.
+# maximize, minimize/restore, the focus policy, the X11 ping battery, and
+# the hostile state file.
 
 # ---- placement memory ---------------------------------------------------
 # The preflight's seeded legacy store migrated to $AW_SPOT at this first

@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# awesome/gate/lib.sh — the shared probe helpers for the monolith's batteries.
-# Port of devtools/stress/notify-lib.sh with the monolith's surfaces: the
-# control verbs are `hyprctl awesome <verb>`, and the bell's hover-peek is
-# driven by a REAL pointer over the bell glyph (the monolith has no bus verb
-# — the hover is a widget event).
+# awesome/gate/lib.sh — the shared probe helpers for the batteries. The
+# control verbs are `hyprctl awesome <verb>`; the bell's hover-peek is
+# driven by a REAL pointer over the bell glyph — the hover is a widget
+# event, there is no bus verb.
 # Pure definitions only — no side effects, no battery code.
 
-# ---- v6 geometry (derived from notify/ui.hpp) ---------------------------
+# ---- geometry (derived from notify/ui.hpp) ------------------------------
 N_EDGE=10
 N_W=348
 CENTER_W=360

@@ -9,7 +9,7 @@
 // topmost X11 window.
 //
 // Only X11 windows need this — a Wayland app self-activates with the
-// token-validated xdg-activation protocol (hyprnotify mints the token on
+// token-validated xdg-activation protocol (the notify module mints the token on
 // the ActivationToken signal).
 #pragma once
 

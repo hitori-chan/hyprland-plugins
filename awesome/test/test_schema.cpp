@@ -11,8 +11,8 @@ using namespace NAwesome;
 bool test_schema() {
     Schema S;
 
-    // the surface: 48 keys, unique, all namespaced
-    AW_CHECK(S.specs().size() == 48);
+    // the surface: 47 keys, unique, all namespaced
+    AW_CHECK(S.specs().size() == 47);
     for (const auto& A : S.specs()) {
         const auto K = std::string_view{A.key};
         AW_CHECK(K.starts_with("plugin:awesome:"));
@@ -22,8 +22,8 @@ bool test_schema() {
             if (&A != &B)
                 AW_CHECK(K != B.key);
     }
-    // every key resolves; modules are the five of the design (the system
-    // module takes no config)
+    // every key resolves; the config-bearing modules are shell, windows
+    // and notify (system takes no config)
     const char* MODULES[] = {"shell", "windows", "notify"};
     size_t perModule[3] = {0, 0, 0};
     for (const auto& K : S.specs()) {
@@ -32,7 +32,7 @@ bool test_schema() {
             if (std::string_view{K.key}.starts_with(std::string{"plugin:awesome:"} + MODULES[i] + ":"))
                 perModule[i]++;
     }
-    AW_CHECK(perModule[0] == 21 && perModule[1] == 3 && perModule[2] == 24);
+    AW_CHECK(perModule[0] == 20 && perModule[1] == 3 && perModule[2] == 24);
 
     // defaults are the glass·ink tokens
     AW_CHECK(S.getI("plugin:awesome:shell:height") == 26);

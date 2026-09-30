@@ -519,8 +519,7 @@ namespace NAwesome::Notify {
 
             // the structured conversation hints: the plain names are the
             // de-facto extension, the x-notify-* forms the private alias —
-            // neither sits in the published spec's hint table (docs/
-            // hyprnotify.md keeps the table)
+            // neither sits in the published spec's hint table
             const auto        CONV_ID_HINT        = optStrHint("conversation-id", "x-notify-conversation-id", MAX_CONV_ID_BYTES, true);
             const auto        CONV_TITLE_HINT     = optStrHint("conversation-title", "x-notify-conversation-title", 512);
             const auto        CONV_KIND_HINT      = optStrHint("conversation-kind", "x-notify-conversation-kind", MAX_CONV_KIND_BYTES, true);

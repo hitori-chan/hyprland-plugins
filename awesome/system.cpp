@@ -1,8 +1,7 @@
 // awesome/system.cpp — the system module: the one CModule over the two
 // units (audio.cpp — volume/mic/brightness; pad.cpp — the touchpad
-// policy). Port of the old hyprosd + hyprpad; the feedback bus is the
-// notify model, the Lua face is the flat hl.plugin.awesome.* names
-// (the old hyprosd.*/hyprpad.* namespaces die with the cutover).
+// policy). The feedback bus is the notify model, the Lua face is the flat
+// hl.plugin.awesome.* names.
 
 #include "system.hpp"
 

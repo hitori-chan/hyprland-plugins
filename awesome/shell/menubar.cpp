@@ -53,7 +53,7 @@ namespace NAwesome::Shell {
         static NAwesome::CHop         pendingExec, pendingOpen;
 
         // launch counts + prompt history, persisted through the core stores
-        // ($XDG_STATE_HOME/awesome, migrated from the old hyprbar cache)
+        // ($XDG_STATE_HOME/awesome, migrated from the legacy cache)
         static NAwesome::CountStore launchCounts;
         static NAwesome::ListStore  history;            // oldest first
         static int                  histSel = -1;       // -1 = editing the live query
@@ -109,8 +109,8 @@ namespace NAwesome::Shell {
         }
 
         // the launcher's state: the core stores under $XDG_STATE_HOME/awesome,
-        // migrated once from the old hyprbar cache files (legacy files are
-        // read, never modified)
+        // migrated once from the legacy cache files (legacy files are read,
+        // never modified)
         static std::filesystem::path legacyCacheDir() {
             if (const char* XDG = std::getenv("XDG_CACHE_HOME"); XDG && *XDG)
                 return std::filesystem::path{XDG} / "hyprbar";
@@ -1021,7 +1021,7 @@ namespace NAwesome::Shell {
             g_pEventLoopManager->addTimer(indexPoll);
         }
 
-        // hl.plugin.hyprbar.menubar(), deferred out of the Lua call
+        // hl.plugin.awesome.menubar(), deferred out of the Lua call
         void toggleDeferred() {
             pendingOpen.arm([]() {
                 if (isOpen)

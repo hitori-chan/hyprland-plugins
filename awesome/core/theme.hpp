@@ -1,8 +1,7 @@
 // awesome/core/theme.hpp — the glass·ink material: the C++ config DEFAULTS,
 // which theme.lua overrides at runtime through the schema, plus the runtime
-// color memo and the compositor gates the glass rides on. Ported from
-// common/theme.hpp + common/glass.hpp (merged: the tokens and the memo are
-// one concern now that one plugin owns all the drawing).
+// color memo and the compositor gates the glass rides on. The tokens and
+// the memo are one concern: one plugin owns all the drawing.
 #pragma once
 
 #include "schema.hpp"

@@ -1,9 +1,8 @@
 # awesome/gate/shell.sh — the shell module's behavior battery: the strip's
 # presence and state (tags, tasks, the bell badge, the clock), the tray
-# lifecycle against the bar (ported from devtools/stress/tray.sh), and the
-# menubar/launcher (port of the reply.sh launcher battery, on the monolith's
-# store paths). Helpers: capture_nested, vp, vk, chk, hq, ws, dsp from the
-# harness; strip_band, bar_bright, bell_x from lib.sh.
+# lifecycle against the bar, and the menubar/launcher. Helpers:
+# capture_nested, vp, vk, chk, hq, ws, dsp from the harness; strip_band,
+# bar_bright, bell_x from lib.sh.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # ---- the strip -------------------------------------------------------------

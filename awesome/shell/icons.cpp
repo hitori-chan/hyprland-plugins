@@ -18,7 +18,7 @@ namespace NAwesome::Shell {
         }
         // A bar cell is <=40px; apps that ship a single large icon (256-
         // 1024px) must not ride to GL full-size — downscale once on the CPU,
-        // the same rule as hyprnotify's scaledTex
+        // the same rule as the notify module's scaledTex
         constexpr int    CAP  = 128;
         const int        W    = cairo_image_surface_get_width(SURF), H = cairo_image_surface_get_height(SURF);
         if (W > CAP || H > CAP) {
@@ -431,7 +431,7 @@ namespace NAwesome::Shell {
     // resolved against the old one: the dir list is probed once at init from
     // the theme name, and the caches hold the files it found. Re-probe and
     // drop them; the next warm resolves again. (resetIconNameCache forgets
-    // the memoized theme name — common/icons.hpp.)
+    // the memoized theme name — core/icons.hpp.)
     void iconsReload() {
         NAwesome::resetIconNameCache();
         appIconCache.clear();

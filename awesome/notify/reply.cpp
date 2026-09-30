@@ -9,7 +9,7 @@
 //
 // The hard part is that we have no keyboard focus to give a text field: the
 // shade is drawn by the compositor, not by a layer surface with
-// keyboard_interactivity. So the field TAKES the keyboard the way hyprbar's
+// keyboard_interactivity. So the field TAKES the keyboard the way the shell's
 // menubar prompt does — while one is armed every key press is ours, and the
 // ones we have no use for are simply dropped rather than leaking into
 // whatever holds focus underneath. Releases always pass (crash class 3).

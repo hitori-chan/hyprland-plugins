@@ -78,7 +78,7 @@ namespace NAwesome::Shell {
         }
 
         // the click IS the activation: resolve the item's bus pid and focus
-        // its own X11 window (see common/activate.hpp). Wayland apps answer
+        // its own X11 window (see core/activate.hpp). Wayland apps answer
         // the Activate call with a token-validated xdg-activation of their
         // own, so only the X11 side needs the focus from our side.
         static void activateApp(SP<SItem> it) {
@@ -325,7 +325,7 @@ namespace NAwesome::Shell {
 
         void init() {
             bus.onLost = [](const std::string& err) {
-                HyprlandAPI::addNotification(NAwesome::supervisor().handle(), "[hyprbar] tray bus lost, tray disabled: " + err, CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
+                HyprlandAPI::addNotification(NAwesome::supervisor().handle(), "[awesome] tray bus lost, tray disabled: " + err, CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
             };
             bus.dropOwned     = []() { dropOwnedObjects(); };
             bus.afterTeardown = []() { barChanged(); }; // the dead items just left the strip
@@ -395,7 +395,7 @@ namespace NAwesome::Shell {
 
                 bus.sync(); // drain anything queued during setup — the vtable is registered, nothing dispatches early
             } catch (const std::exception& E) {
-                HyprlandAPI::addNotification(NAwesome::supervisor().handle(), std::string{"[hyprbar] tray disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
+                HyprlandAPI::addNotification(NAwesome::supervisor().handle(), std::string{"[awesome] tray disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
                 dropOwnedObjects();
                 bus.close();
             }

@@ -1,10 +1,8 @@
 // awesome/system/pad.cpp — the touchpad policy.
 //
-// Ported from the old hyprpad: the touchpad turns off while an external
-// (USB/Bluetooth) mouse is present and back on when it's unplugged;
-// XF86TouchpadToggle flips it by hand. The one change of shape: the
-// feedback card posts straight into the notify model (id 9991, the old
-// session-bus Notify is gone with the daemon's bus face).
+// The touchpad turns off while an external (USB/Bluetooth) mouse is
+// present and back on when it's unplugged; XF86TouchpadToggle flips it by
+// hand. The feedback card posts straight into the notify model (id 9991).
 //
 // Fully in-process — no udev, no forks:
 // - Hotplug rides the compositor's own device signals: aquamarine's

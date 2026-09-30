@@ -20,8 +20,8 @@
 
 namespace NAwesome {
 
-    // Shared admission bounds (the legacy per-plugin stores' contract,
-    // kept so migration is behavior-identical).
+    // Shared admission bounds (the one-time migration below reads the
+    // legacy stores through exactly this admission).
     inline constexpr size_t MAX_STORE_FILE_BYTES    = 1024 * 1024;
     inline constexpr size_t MAX_STORE_LINE_BYTES    = 1024;
     inline constexpr size_t MAX_STORE_ROWS          = 4096;
@@ -86,10 +86,10 @@ namespace NAwesome {
     // $XDG_STATE_HOME/awesome/, ~/.local/state/awesome fallback
     std::filesystem::path stateDir();
 
-    // One-time migration: when the fresh file does not exist and a legacy
-    // file does, load the legacy contents into the fresh path. Legacy
-    // files are read, never modified — the old plugins are gone after
-    // cutover, so the legacy file is dead state, not a live store.
+    // One-time migration: when the fresh file does not exist and the
+    // legacy file does, load the legacy contents into the fresh path.
+    // Legacy files are read, never modified — they are dead state, not a
+    // live store.
     bool migrateBoxStore(const std::filesystem::path& fresh, const std::filesystem::path& legacy);
     bool migrateListStore(const std::filesystem::path& fresh, const std::filesystem::path& legacy);
     bool migrateCountStore(const std::filesystem::path& fresh, const std::filesystem::path& legacy);

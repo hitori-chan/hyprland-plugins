@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # awesome/gate/gate.sh — the awesome plugin's integration gate.
 #
-# The plugin's behavioral contract, re-derived from the eight-plugin tree's
-# 219-check gate (check-ID mapping in manifest.tsv): the scenario batteries
-# run in this shell and share one validated nested target and fixture state.
+# The plugin's behavioral contract: the scenario batteries run in this
+# shell and share one validated nested target and fixture state.
+# manifest.tsv maps each check to its predecessor in the retired gate.
 # The operational core is harness.sh (launch/teardown/retarget/capture/
 # coredumps + the monolith's store fixtures and config writer); the input
 # fixtures it drives (vptr, vkbd, cliphold, ...) are the shared devtools/.

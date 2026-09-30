@@ -129,8 +129,8 @@ retarget_env() {
 	pid="$(validated_nested_pid)" || return 1
 	# launch.sh isolates the nested instance under its OWN dbus-run-session,
 	# so anything driving the nested daemon over the bus must use THAT
-	# address: the login session's bus is owned by the host's hyprnotify,
-	# which answers happily and makes the assertion vacuous.
+	# address: the login session's bus is owned by the host's notification
+	# daemon, which answers happily and makes the assertion vacuous.
 	NBUS="$(tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p')"
 	[[ -n "$NBUS" ]] || { echo "retarget: nested D-Bus address is unavailable" >&2; return 1; }
 	dimensions=""

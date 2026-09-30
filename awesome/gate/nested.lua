@@ -1,19 +1,16 @@
-hl.permission("^/tmp/hp-v[56]/.*", "plugin", "allow")
-hl.permission("^/tmp/hp-v7i/.*", "plugin", "allow")
 -- nested.lua — a throwaway Hyprland config for the nested dev instance
--- (Hyprland-in-a-window). Loads the repo's C++ plugins directly, in
--- hyprpm.toml order. NO autostart, NO portal/dbus restarts, NO exec-once —
--- nothing that could touch the live session. Runs under its own dbus session
--- and Wayland backend.
+-- (Hyprland-in-a-window). Loads the repo's plugin directly. NO autostart,
+-- NO portal/dbus restarts, NO exec-once — nothing that could touch the
+-- live session. Runs under its own dbus session and Wayland backend.
 --
--- The glass·ink theme ships as the plugins' C++ defaults (common/theme.hpp),
+-- The glass·ink theme ships as the plugin's C++ defaults (core/theme.hpp),
 -- so the nested instance sets NO plugin values — it tests exactly the
--- defaults the redesign decided. Blur is on because the islands/cards are
+-- defaults the design decided. Blur is on because the islands/cards are
 -- glass.
 
--- load the plugins we BUILD in the repo (each <name>/<name>.so from `make`),
--- so the nested instance tests local changes — not the stale hyprpm cache.
--- Override the source dir with HYPR_PLUGIN_DIR.
+-- load the plugin we BUILD in the repo, so the nested instance tests local
+-- changes — not the stale hyprpm cache. Override the source dir with
+-- HYPR_PLUGIN_DIR.
 local REPO = os.getenv("HYPR_PLUGIN_DIR") or (os.getenv("HOME") .. "/repo/hyprland-plugins")
 
 -- the nested output: a window in the live session. Reserve the band.
