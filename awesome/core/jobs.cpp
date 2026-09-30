@@ -4,6 +4,7 @@
 #include <hyprland/src/Compositor.hpp>
 
 #include <cerrno>
+#include <csignal>
 #include <fcntl.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
@@ -17,6 +18,32 @@ namespace NAwesome {
     Jobs& Jobs::inst() {
         static Jobs J;
         return J;
+    }
+
+    // The compositor process runs with SIGTERM blocked (graceful-shutdown
+    // handling), and children inherit the blocked mask: an unkillable helper
+    // (kill(1) reports success) that outlives its purpose and pins a pool
+    // slot for its full timeout. posix_spawnp with POSIX_SPAWN_SETSIGMASK
+    // does not lift it on this glibc (verified: the child stays blocked).
+    // The fork's own Executor does fork + mask-clear + exec; match it so
+    // plugin helpers keep default signal semantics.
+    static pid_t spawnChild(const std::vector<const char*>& argv, int outDup) {
+        const pid_t pid = fork();
+        if (pid < 0)
+            return -1;
+        if (pid == 0) {
+            sigset_t mask;
+            sigemptyset(&mask);
+            sigprocmask(SIG_SETMASK, &mask, nullptr);
+            if (outDup >= 0 && outDup != 1) {
+                dup2(outDup, 1);
+                if (outDup > 2)
+                    close(outDup);
+            }
+            execvp(argv[0], const_cast<char* const*>(argv.data()));
+            _exit(127);
+        }
+        return pid;
     }
 
     int Jobs::onChildExit(int, uint32_t, void* data) {
@@ -60,8 +87,8 @@ namespace NAwesome {
         if (argv.back())
             argv.push_back(nullptr); // execv needs the null terminator
 
-        pid_t pid = -1;
-        if (posix_spawnp(&pid, argv[0], nullptr, nullptr, const_cast<char* const*>(argv.data()), environ) != 0)
+        const pid_t pid = spawnChild(argv, -1);
+        if (pid < 0)
             return false;
 
         const int FD = (int)syscall(SYS_pidfd_open, pid, 0);
@@ -95,14 +122,7 @@ namespace NAwesome {
 
         if (argv.back())
             argv.push_back(nullptr);
-        pid_t pid = -1;
-        {
-            posix_spawn_file_actions_t fa;
-            posix_spawn_file_actions_init(&fa);
-            posix_spawn_file_actions_adddup2(&fa, pfd[1], 1);
-            pid = posix_spawnp(&pid, argv[0], &fa, nullptr, const_cast<char* const*>(argv.data()), environ) == 0 ? pid : -1;
-            posix_spawn_file_actions_destroy(&fa);
-        }
+        const pid_t pid = spawnChild(argv, pfd[1]);
         close(pfd[1]); // the write end lives in the child only
         if (pid < 0) {
             close(pfd[0]);
