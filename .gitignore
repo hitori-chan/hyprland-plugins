@@ -14,7 +14,7 @@ docs/demos/
 screenshots/
 
 # devtools — nested-Hyprland test tooling: track the sources, not the
-# build artifacts (the vptr binary + the wayland-scanner protocol glue)
+# build artifacts (fixture binaries + the wayland-scanner protocol glue)
 devtools/vptr
 devtools/vptr-proto.c
 devtools/vptr-proto.h
@@ -33,21 +33,11 @@ devtools/fixwin-protocol.h
 devtools/splashwin
 devtools/focustrap
 devtools/fake-sni
-devtools/battery-state-test
-devtools/desktop-exec-test
-devtools/fileindex-test
-devtools/hyprosd-readback-test
-devtools/pixel-model-test
-devtools/icon-resolver-test
-devtools/persist-test
-devtools/hyprsnap-geometry-test
-devtools/hyprmax-geometry-test
 
 # Planning, audit, and implementation-report documents (local only,
 # never tracked). Covers both separator styles the files actually use.
 AUDIT*.md
 *_AUDIT.md
-hyprnotify/BUNDLE-CHILD-ICONS.md
 GOAL.md
 PLAN.md
 PLAN_*.md

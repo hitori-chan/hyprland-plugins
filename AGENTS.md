@@ -1,10 +1,10 @@
 # hyprland-plugins — working agreement for coding agents
 
-Native C++26 Hyprland plugins inspired by AwesomeWM: one directory per
-plugin, shared code in `common/`, the controlled nested-compositor gate
-in `devtools/`, behavior docs in `docs/`. The eight-plugin tree is
-frozen: the awesome rewrite (PLAN.md/GOAL.md) replaces it in one
-cutover, and the monolith builds in `awesome/` alongside it.
+One native C++26 Hyprland plugin inspired by AwesomeWM: the `awesome`
+monolith (five modules: core, shell, windows, notify, system), its
+nested-compositor gate in `awesome/gate/`, shared input/window fixtures
+in `devtools/`, behavior docs in `awesome/README.md` with the design
+contract in `docs/awesome-design.md`.
 
 This file is the agreement between user and agent. It states principles
 and hard lines, not project state. Broad user autonomy ("do your best")
@@ -19,26 +19,21 @@ truth, not here. `CLAUDE.md` is dead — do not recreate or track it.
 
 ## Where state lives
 
-- Plugin versions: `hyprpm.toml` (must equal `PLUGIN_INIT` in each
-  plugin; the gate enforces).
+- Plugin version: `awesome/core/version.hpp` (must equal
+  `hyprpm.toml`'s `[awesome]` version; the gate preflight enforces the
+  lockstep).
 - Fork state: `~/repo/Hyprland` — `git log` there is the truth for what
   the running binary is built from. Pre-bump states are tagged
   (`pre-bump-*`), so the fork is always restorable.
 - Open issues and evidence limits: `TODO.md` (local, gitignored). Close
   an item by deleting its line; provenance for closed work is the
   commit history.
-- The awesome rewrite (the eight plugins becoming one, in progress):
-  design contract in `docs/awesome-design.md`, live state and next step
-  in `PLAN.md`, the goal and definition of complete in `GOAL.md` (both
-  local, gitignored). Read all three before touching `awesome/` or the
-  old plugin tree; the old tree is frozen until the cutover described
-  there. The rewrite work is autonomous (2026-09-29 user directive):
-  work milestone to milestone without pausing to ask until GOAL.md is
-  fully met — the Safety hard lines below still bind; blockage on a
-  user-only action (sudo, deploy, relog) is recorded in PLAN.md, not
-  a stop.
-- Behavior: the plugin READMEs and `docs/hyprbar.md` /
-  `docs/hyprnotify.md`.
+- Design contract: `docs/awesome-design.md` (tracked). The rewrite's
+  live state and goal lived in `PLAN.md` / `GOAL.md` (local,
+  gitignored) — read them while the cutover is still settling; they are
+  retired once the user's deploy is verified.
+- Behavior: `awesome/README.md` (the single behavior doc) and
+  `docs/awesome-design.md` (the contract it implements).
 - Gate results: the summary line of the run log
   (`== stress: ALL N CHECKS PASSED in Ns ==`), not shell exit codes.
 
@@ -48,10 +43,9 @@ conversation state. Never copy state into this file.
 ## Before editing
 
 - Check `git status` and preserve existing worktree changes.
-- Read the affected plugin's README, module header, and entrypoint; for
-  cross-cutting UI, renderer, tray, notification, or bus work read the
-  focused docs; for compositor integration read the exact fork sources
-  in `~/repo/Hyprland`.
+- Read the affected module's headers and `awesome/README.md`; for
+  compositor integration read the exact fork sources in
+  `~/repo/Hyprland`.
 - Keep scope user-driven: no new feature, product-model change, or
   protocol-contract change just because an alternative seems preferable.
 - User configs (`~/.config/hypr/...`) stay clean and minimal: no
@@ -61,16 +55,16 @@ conversation state. Never copy state into this file.
 
 ## Environment and build
 
-Plugins are ABI-locked to the exact `hitori-chan/Hyprland` fork commit
-the compositor is built from; never assume upstream `main` is
+The plugin is ABI-locked to the exact `hitori-chan/Hyprland` fork
+commit the compositor is built from; never assume upstream `main` is
 compatible. A fork bump means re-checking the ABI surface (PluginAPI,
 input capture/EIS, IME and native hit testing, renderer pass insertion,
-monitor scanout hooks), rebuilding all plugins, and running the full
+monitor scanout hooks), rebuilding the plugin, and running the full
 gate.
 
-- Build with `make -C <plugin>`; `common/common.mk` owns the C++26 and
-  ABI-sensitive flags. Do not add `-fvisibility=hidden`:
-  `common/plugin.ver` localizes plugin symbols while Hyprland inline
+- Build with `make -C awesome`; its Makefile is standalone and owns the
+  C++26 and ABI-sensitive flags. Do not add `-fvisibility=hidden`:
+  `awesome/plugin.ver` localizes plugin symbols while Hyprland inline
   globals must stay unified for `dlopen`.
 - The fork exposes a few members publicly that upstream keeps private
   (e.g. `CWaylandBackend::m_resource`, `CX11Backend::m_xwaylandSurface`)
@@ -84,8 +78,7 @@ gate.
   `PKG_CONFIG_PATH` and `HYPR_DEPLOY_PKG_CONFIG_PATH` (same directory);
   never substitute a stale installed cache — watch stale-header
   resolution into `/usr/local/include` (dual-root redefinition errors)
-  and the `-MMD` gap documented in `common/common.mk` (`make -B` after
-  a header install).
+  and the `-MMD` gap (`make -B` after a header install).
 - Long builds and gate runs go in tmux. Every temporary artifact —
   logs, debug dumps, scratch files, probe dirs — goes under a
   dedicated `/tmp` subdirectory (e.g. `/tmp/hypr-gate/`); keep `~`
@@ -93,19 +86,19 @@ gate.
   that must survive a reboot goes there (fork work, large `gcore`
   dumps); fork work happens in `~/repo/Hyprland` itself. `cmd | tee`
   swallows the exit code — trust the log's summary line.
-- The monolith (`awesome/`) has its OWN standalone Makefile (the old
-  `common/common.mk` is frozen with the old tree); build with
-  `make -C awesome`.
+- The gate is `make -C awesome gate` (`awesome/gate/gate.sh`; ARGS
+  passes through: the compositor bin and `-b`/`-k` battery selection).
+  Fixtures build with `make -C devtools`.
 - The nested harness parks a headless `nested-dev` output in the live
   session; if workspace switching misbehaves after gate runs, check
-  `hyprctl monitors all -j` before suspecting a plugin. Teardown
-  ALWAYS via stop.sh / the harness teardown — they own
-  `output remove nested-dev`; raw-killing the nested PIDs leaves a
-  phantom output that churns the renderer (2026-09-29: 411 workbuffer
-  allocs). Keep the `nested-dev` monitor rule pinned to the live
-  panel's mode/scale (core.lua): any divergent properties perturb the
-  dmabuf feedback table on join/leave and crash live clients on this
-  Mesa (2-plane AR24 class, 2026-09-29 + 2026-09-30; TODO.md).
+  `hyprctl monitors all -j` before suspecting the plugin. Teardown
+  ALWAYS via the harness — it owns `output remove nested-dev`;
+  raw-killing the nested PIDs leaves a phantom output that churns the
+  renderer (2026-09-29: 411 workbuffer allocs). Keep the `nested-dev`
+  monitor rule pinned to the live panel's mode/scale (core.lua): any
+  divergent properties perturb the dmabuf feedback table on join/leave
+  and crash live clients on this Mesa (2-plane AR24 class, 2026-09-29 +
+  2026-09-30; TODO.md).
 
 ## Safety — hard lines
 
@@ -124,7 +117,8 @@ gate.
 - No destructive git operations (`reset --hard`, `checkout --`, branch
   deletion, force-push, rebase, history rewrite) without an explicit
   user request; preserve the user's worktree changes.
-- Never rebuild or edit a plugin while a nested instance has it mapped.
+- Never rebuild or edit the plugin while a nested instance has it
+  mapped.
 - Keep environment identifiers (SSIDs, hostnames, MACs, user-specific
   socket paths) out of source, docs, tests, and commits.
 - Do not claim a production regression or exploit without controlled
@@ -146,15 +140,15 @@ them, append new ones.
 3. Never cancel key releases; reset every partial input state on
    session lock or relevant native capture-state change.
 4. A texture cannot be painted in the frame that created it: use
-   `common/texcache.hpp`'s warm/draw gate, create textures from the
+   `awesome/core/canvas.hpp`'s warm/draw gate, create textures from the
    event loop, scissor paints to damage, and damage every
    visible-state transition (hover damages but does not rewarm).
 5. Never overwrite a mapped `.so` in place.
 6. Defer workspace and focus changes out of input emissions through
-   `NHyprCommon::CHop`; teardown resets listeners before hops and makes
+   `NAwesome::CHop`; teardown resets listeners before hops and makes
    newly armed hops no-ops.
 7. Plugin input emissions run before compositor session-lock checks;
-   every input listener checks `NHyprCommon::sessionLocked()` first and
+   every input listener checks `NAwesome::sessionLocked()` first and
    clears swallow masks, held counters, drag state, and armed zones
    there.
 
@@ -170,18 +164,19 @@ them, append new ones.
 - Keep scanout transitions behind the public full-render request hook;
   never edit direct-scanout state from a plugin.
 - Render only after the warm/draw gate, use damage and scissor
-  correctly, and keep stable geometry for bars, menus, cards, OSDs, and
+  correctly, and keep stable geometry for the bar, menus, cards, and
   hit regions.
 - Prefer universal behavior; a per-app rule is explicit configuration,
   not a substitute for correct Wayland protocol ordering.
 
 ## Code conventions
 
-- Extend the `common/` helper that owns the concern instead of
+- Extend the `core/` helper that owns the concern instead of
   recreating it.
-- Plugin symbols live in the plugin namespace (`NHyprbar`,
-  `NHyprnotify`, …); shared symbols in `NHyprCommon`; a required global
-  `PHANDLE` is an ABI exception and must be documented.
+- Module symbols live in their module namespace
+  (`NAwesome::Shell`, `NAwesome::Windows`, `NAwesome::Notify`,
+  `NAwesome::System`); platform symbols in `NAwesome`; a required
+  global `PHANDLE` is an ABI exception and must be documented.
 - Keep D-Bus asynchronous and off render/input hot paths:
   `CBusLink::post()` for bus-originated work, `pollSoon()` for
   event-loop dispatch; never drain a connection inline.
@@ -191,42 +186,39 @@ them, append new ones.
 - Deferred replies, timers, subprocess callbacks, menu sessions, and
   replaced device/daemon state carry a generation or ownership check;
   teardown invalidates late callbacks before releasing their objects.
-- Cross-plugin state travels through Wayland protocol state or a
-  documented bus API, never through shared plugin symbols.
+- Cross-module state travels through a documented core seam (the
+  bell reads the notify model directly; the system module posts its
+  feedback cards into it) — never through one module's private state
+  from another.
 - Keep input, render, and bus callbacks short; move blocking work off
   compositor dispatch where the target API permits.
 - Comments only for hard constraints, non-obvious workarounds, magic
   values, cross-file contracts, and regression guards.
 
-## Plugin ownership and load order
+## Modules
 
-This section describes the CURRENT eight-plugin tree. It is frozen: the
-awesome rewrite (PLAN.md) replaces the whole section — modules, the
-bus seam, and the load-order contract — at its cutover. Do not extend
-the old tree in ways that conflict with that target (no new cross-plugin
-bus interfaces, no new load-order edges).
+The monolith is one plugin; the modules are an internal split with one
+input pipeline (the supervisor dispatches button/move/axis/key to the
+modules in a fixed order) and no inter-module bus.
 
-- `hyprbar`: top strip, widgets, tray, dbusmenu, menubar, bell; owns
-  bar/menu input; talks to `hyprnotify` through its bus API.
-- `hyprnotify`: `org.freedesktop.Notifications`, banners, shade, DND,
-  notification input; an action closes the shade.
-- `hyprmax`: client-told per-window maximize, remembered windowed size.
-- `hyprclick`: click/focus policy.
-- `hyprsnap`: drag edge snapping and snap indicators.
-- `hyprplace`: remembered per-class spawn geometry, least-overlap
-  fallback; client grants stay authoritative.
-- `hyprpad`: in-process touchpad policy via aquamarine and Lua config.
-- `hyprosd`: volume/brightness bus client shown through `hyprnotify`;
-  draws nothing.
+- `core`: the platform — supervisor, input pipeline, hop queue, canvas
+  (warm/draw gate), config schema, stores, jobs, fd.o bus client.
+  Headless-tested (`make -C awesome test`).
+- `shell`: the bar — workspaces, tasks (views), tray, bell, battery,
+  clock, menubar launcher. Owns bar/menu input; the bell reads the
+  notify model directly.
+- `windows`: the window state machine and all placement —
+  maximize/minimize/restore, click/focus policy, spawn placement, drag
+  snap.
+- `notify`: the `org.freedesktop.Notifications` daemon — cards,
+  conversations, shade, popups, inline reply, sound.
+- `system`: volume/mic (wpctl), brightness (logind), touchpad policy —
+  every action's feedback is a notify card.
 
-The order in `hyprpm.toml` is a behavior contract:
-
-`hyprbar -> hyprnotify -> hyprmax -> hyprsnap -> hyprclick -> hyprplace -> hyprpad -> hyprosd`
-
-The bar claims its strip and menus before window policy; notification
-input beats the window below; the maximized-window swallow beats
-click-to-raise. `NHyprCommon::mustLoadBefore` and the plugin READMEs
-must agree with the manifest.
+The input pipeline's module order is a behavior contract: the bar
+claims its strip and menus before window policy, and notification
+input beats the window below. It lives in the supervisor's dispatch
+loop and must agree with `awesome/README.md`.
 
 ## Git and versions
 
@@ -235,11 +227,10 @@ must agree with the manifest.
   (first verify the unpushed tail with `git merge-base --is-ancestor
   origin/main main`).
 - One logical change per commit; imperative `scope: summary` subject of
-  about 50 characters; scopes: plugin names, `common:`, `devtools:`,
+  about 50 characters; scopes: `awesome:`, `devtools:`, `docs:`,
   `build:`, `all:`. No versions in subjects, no `Co-Authored-By`.
 - Versions are MAJOR.MINOR.PATCH (redesign / feature / fix); keep
-  `PLUGIN_INIT` and `hyprpm.toml` in lockstep (`hyprnotify` stores its
-  source version in the shared header, the others in `main.cpp`).
+  `awesome/core/version.hpp` and `hyprpm.toml` in lockstep.
 - Keep behavior docs current with code; update `TODO.md` when a change
   affects an open item.
 - Never push a change that has not passed its build and the applicable
@@ -250,8 +241,8 @@ must agree with the manifest.
 Before calling work complete:
 
 1. The affected README/docs and `TODO.md` reflect the actual behavior.
-2. Each changed plugin builds against the exact target headers with
-   C++26.
+2. The plugin builds against the exact target headers with C++26
+   (`make -C awesome`) and `make -C awesome test` is green.
 3. The relevant nested checks end with `ALL CHECKS PASSED`.
 4. Teardown, reload, session-lock, native input precedence, damage,
    queue bounds, and late replies were considered for the change.
