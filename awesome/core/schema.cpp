@@ -33,9 +33,9 @@ namespace NAwesome {
             {"plugin:awesome:shell:col_square_sel", "focused-window marker", Kind::Color, 0, 0, {}, 0xff9acbff},
             {"plugin:awesome:shell:col_square_unsel", "occupied marker", Kind::Color, 0, 0, {}, 0xffd1dde1},
             {"plugin:awesome:shell:col_frame", "menu outline", Kind::Color, 0, 0, {}, 0x33e0f0f8},
-            {"plugin:awesome:shell:col_charging", "battery fill charging/defender", Kind::Color, 0, 0, {}, 0x18cc47},
-            {"plugin:awesome:shell:col_low", "battery fill low", Kind::Color, 0, 0, {}, 0xff0e01},
-            {"plugin:awesome:shell:col_powersave", "battery fill power save", Kind::Color, 0, 0, {}, 0xffc917},
+            {"plugin:awesome:shell:col_charging", "battery fill charging/defender", Kind::Color, 0, 0, {}, 0xff18cc47},
+            {"plugin:awesome:shell:col_low", "battery fill low", Kind::Color, 0, 0, {}, 0xffff0e01},
+            {"plugin:awesome:shell:col_powersave", "battery fill power save", Kind::Color, 0, 0, {}, 0xffffc917},
             // ---- notify ----
             {"plugin:awesome:notify:font", "font family", Kind::String, 0, 0, "IBM Plex Sans"},
             {"plugin:awesome:notify:font_size", "body text size in logical px (the type roles derive from it)", Kind::Int, 12, 0, {}, 0, 6, 48},
@@ -58,7 +58,7 @@ namespace NAwesome {
             {"plugin:awesome:notify:col_title", "card titles", Kind::Color, 0, 0, {}, 0xffeef1f5},
             {"plugin:awesome:notify:col_kicker", "header/age/secondary text", Kind::Color, 0, 0, {}, 0xff98a2ac},
             {"plugin:awesome:notify:col_frame", "hairlines", Kind::Color, 0, 0, {}, 0x17dcebff},
-            {"plugin:awesome:notify:col_urgent", "critical ring/progress/urgent fills", Kind::Color, 0, 0, {}, 0xff8a5c},
+            {"plugin:awesome:notify:col_urgent", "critical ring/progress/urgent fills", Kind::Color, 0, 0, {}, 0xffff8a5c},
             {"plugin:awesome:notify:col_highlight", "the accent: progress, actions, selections", Kind::Color, 0, 0, {}, 0xff32d6ff},
             {"plugin:awesome:notify:col_link", "body hyperlinks", Kind::Color, 0, 0, {}, 0xff7db4ff},
             // ---- windows ----
