@@ -69,11 +69,7 @@ namespace NAwesome::Notify {
         pendingCenter.arm([]() {
             if (!(std::exchange(centerPresses, 0) & 1))
                 return;
-            // a click on a shade the pointer PEEKED open keeps it, rather than
-            // closing what the user has not chosen to open yet
-            if (centerPeeking())
-                centerPin();
-            else if (centerVisible())
+            if (centerVisible())
                 setCenter(false, /*repop=*/true); // an explicit close returns the parked stack
             else
                 setCenter(true);
@@ -84,7 +80,6 @@ namespace NAwesome::Notify {
         Model::init(); // the expiry timer stands before anything can arrive
         Bus::init();
         surfaceInit(); // the tick timers, the canvas layer, the preChecks latch
-        centerInit(); // the peek's grace timer
         iconsInit(); // the async decode poll and the .desktop index scan start now
 
         auto& EV = Event::bus()->m_events;

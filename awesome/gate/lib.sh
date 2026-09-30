@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # awesome/gate/lib.sh — the shared probe helpers for the batteries. The
-# control verbs are `hyprctl awesome <verb>`; the bell's hover-peek is
-# driven by a REAL pointer over the bell glyph — the hover is a widget
-# event, there is no bus verb.
+# control verbs are `hyprctl awesome <verb>`; the bell is driven by a REAL
+# pointer over the bell glyph — hover (a no-op) and click are widget
+# events, there is no bus verb for either.
 # Pure definitions only — no side effects, no battery code.
 
 # ---- geometry (derived from notify/ui.hpp) ------------------------------
@@ -43,13 +43,13 @@ wheel() {
 }
 outside_click() { click "$((MON_W / 2))" "$((MON_H / 2))" 272; }
 
-# ---- the bell's hover-peek, pointer-driven ----------------------------------
-# The monolith's bell opens the shade unpinned on a REAL hover and closes it
-# on leave (the 400ms grace, self-healed by the shell's 200ms tick). The bell
-# glyph is the leftmost bright run of the bar's right cluster (tray items sit
-# further left and are magenta; the battery and the clock sit to its right),
-# so it is found by pixel, not by a fixed inset: the clock and the battery
-# text change width under the gate and would drift a constant.
+# ---- the bell, pointer-driven ------------------------------------------------
+# The monolith's bell is a no-op on hover and toggles the shade on click;
+# both are REAL pointer events over the glyph. The glyph is the leftmost
+# bright run of the bar's right cluster (tray items sit further left and are
+# magenta; the battery and the clock sit to its right), so it is found by
+# pixel, not by a fixed inset: the clock and the battery text change width
+# under the gate and would drift a constant.
 bell_x() { # bell_x <frame> — the bell glyph's center x (0 when absent)
 	# The bell is the leftmost element of the right slot (then badge, battery,
 	# clock). The badge is glued to the glyph's right edge (gap <= 2), so the

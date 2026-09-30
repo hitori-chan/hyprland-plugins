@@ -84,10 +84,6 @@ namespace NAwesome::Notify {
         return nullptr;
     }
 
-    bool       pointerOverCards() {
-        return g_pInputManager && cardAt(g_pInputManager->getMouseCoordsInternal()) != nullptr;
-    }
-
     static int buttonAt(const SCard& c, const Vector2D& pos) {
         for (size_t i = 0; i < c.buttons.size(); i++)
             if (c.buttons[i].box.containsPoint(pos))
@@ -176,7 +172,6 @@ namespace NAwesome::Notify {
                 setCenter(false, /*repop=*/true);
                 continue;
             }
-            centerPin(); // a click on the shade keeps it: hover peeks, click pins
             switch (H.kind) {
                 case SCard::POPUP: {
                     if (H.bit == 4u) {

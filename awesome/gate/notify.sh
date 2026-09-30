@@ -1,8 +1,9 @@
 # awesome/gate/notify.sh — the notify module's behavior battery: the cap,
 # expiry and residency, coalescing, the conversation merge, topline, overflow
-# paging, the shade's click model, close-on-act, hover-hold, the bell's
-# hover-peek (pointer-driven), keyboard nav, banners-over-fullscreen, the
-# reply protocol, and the sound-spawn backpressure.
+# paging, the shade's click model, close-on-act, hover-hold, the bell
+# (pointer-driven: hover is a no-op, a click toggles), keyboard nav,
+# banners-over-fullscreen, the reply protocol, and the sound-spawn
+# backpressure.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # ---- notification cap ---------------------------------------------------
@@ -226,29 +227,30 @@ sleep 1.4
 chk "hover: once the restarted clock runs out it retreats" test "$(bd)" = "banners:0 resident:1"
 hq awesome clear >/dev/null; sleep 0.8
 
-# ---- the bell's hover-peek (pointer-driven) ---------------------------------
-# The monolith has no bus verb: the peek is a real widget hover, opened by
-# the pointer over the bell glyph and closed by the leave grace (the shell's
-# 200ms self-heal covers the compositor's dedup-swallowed bar leave).
-dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"peek me\" body')"; sleep 1
-chk "peek: a banner is up and the shade is shut" test "$(st)" = "center:0 live:1 dnd:0"
+# ---- the bell (pointer-driven) ------------------------------------------------
+# The shade opens on a CLICK only: hover is a no-op (the hover-peek was
+# removed by user request, 2026-09-30). The bell is a real widget — the
+# hover and the click are real pointer events over the glyph, found by
+# pixel.
+dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"ring me\" body')"; sleep 1
+chk "bell: a banner is up and the shade is shut" test "$(st)" = "center:0 live:1 dnd:0"
 bell_frame || true
 BELLX="$(bell_x "$STATE/bell-probe.png")"
-chk "peek: the bell glyph is found in the strip" test "$BELLX" -gt 0
+chk "bell: the bell glyph is found in the strip" test "$BELLX" -gt 0
 bell_hover true
-chk "peek: hovering the bell opens the shade" test "$(st)" = "center:1 live:1 dnd:0"
-chk "peek: a peek does NOT absorb the banner" test "$(bd)" = "banners:1 resident:0"
+chk "bell: hovering the bell is a no-op" test "$(st)" = "center:0 live:1 dnd:0"
+chk "bell: hover leaves the banner a banner" test "$(bd)" = "banners:1 resident:0"
 bell_hover false
-chk "peek: leaving the bell closes it again" test "$(st)" = "center:0 live:1 dnd:0"
-bell_hover true
+chk "bell: the shade is still shut" test "$(st)" = "center:0 live:1 dnd:0"
+printf 'move %s %s\nsleep 120\nmove %s 13\nsleep 60\npress 272\nsleep 40\nrelease 272\nsleep 80\n' \
+    "$(( (BELLX + MON_W / 2) / 2 ))" "$(( MON_H / 2 ))" "$BELLX" | vp
+sleep 1
+chk "bell: a click opens the shade and absorbs the banner" test "$(st)" = "center:1 live:1 dnd:0"
+chk "bell: the absorption parked the banner" test "$(bd)" = "banners:0 resident:1"
 hq awesome center >/dev/null; sleep 0.5
-chk "peek: the bell's click PINS rather than closing" test "$(st)" = "center:1 live:1 dnd:0"
-chk "peek: pinning absorbs what the peek left alone" test "$(bd)" = "banners:0 resident:1"
-bell_hover false
-chk "peek: a pinned shade ignores the pointer leaving" test "$(st)" = "center:1 live:1 dnd:0"
-hq awesome center >/dev/null; sleep 0.4
+chk "bell: the explicit close re-pops the parked banner" test "$(bd)" = "banners:1 resident:0"
 hq awesome clear >/dev/null; sleep 0.8
-chk "peek: reset after the peek battery" test "$(st)" = "center:0 live:0 dnd:0"
+chk "bell: reset after the bell battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- the shade's keyboard nav ----------------------------------------------
 dsp "hl.dsp.exec_cmd('notify-send -t 60000 -A default=Open \"key one\" body')"; sleep 0.6

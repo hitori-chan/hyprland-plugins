@@ -443,10 +443,10 @@ namespace NAwesome::Shell {
     // over the bar every move is ours (cancelled), so the remembered position
     // is frozen at the last point OFF the bar. A move back to exactly that
     // point is then swallowed by the dedup and NO module ever sees the bar
-    // leave — a hovered cell (the bell's peek, a menu row's intent) would
-    // never clear. The gate's scripted pointer parks at a point, visits the
-    // bar, and parks again, so it hits this on every run; a real cursor that
-    // rests on one spot above the bell does too.
+    // leave — a hovered cell (a menu row's intent) would never clear. The
+    // gate's scripted pointer parks at a point, visits the bar, and parks
+    // again, so it hits this on every run; a real cursor that rests on one
+    // spot above the bar does too.
     //
     // The backstop: while any widget is hovered, a slow tick re-tests the
     // pointer against the bar and forces the hover out when it is gone. One

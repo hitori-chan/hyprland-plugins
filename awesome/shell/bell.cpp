@@ -2,8 +2,8 @@
 // no cross-module bus: the bell reads the notify MODEL's badge counts
 // directly and repaints off its badgeChangedHook (fired from the model's
 // single change funnel). A click toggles the center — a function call, not a
-// proxy; hovering it peeks (unpinned) the shade. The glyph is Material's
-// filled notifications bell (Apache-2.0), transcribed and drawn natively.
+// proxy. The glyph is Material's filled notifications bell (Apache-2.0),
+// transcribed and drawn natively.
 
 #include "shell/shell.hpp"
 
@@ -201,17 +201,9 @@ namespace NAwesome::Shell {
             void onHit(const SHit&, uint32_t bit, bool) override {
                 if (bit != 1u)
                     return;
-                // the shared click door: deferred, and a click on a shade the
-                // pointer PEEKED open pins it rather than closing what the
-                // user only glanced at (the monolith's center is a function
-                // call, not a proxy round trip)
+                // the shared click door: deferred (the monolith's center is a
+                // function call, not a proxy round trip)
                 NAwesome::Notify::queueCenterToggle();
-            }
-
-            void onHover(bool in) override {
-                // the bell's hover-peek: open unpinned on GTK's popup delay;
-                // the close is a grace timer the panel's own hover cancels
-                NAwesome::Notify::centerPeek(in);
             }
         };
     } // namespace

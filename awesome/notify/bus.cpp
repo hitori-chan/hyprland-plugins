@@ -4,8 +4,8 @@
 // and model.cpp, and every signal is something the model asked to send.
 //
 // The only D-Bus interface in the plugin: the old private bus shell face
-// is gone — the bell and the peek live in the same .so now and
-// call the model's functions directly.
+// is gone — the bell lives in the same .so now and calls the model's
+// functions directly.
 #include "model.hpp"
 
 #include "../core/activate.hpp"

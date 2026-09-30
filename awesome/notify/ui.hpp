@@ -88,10 +88,19 @@ namespace NAwesome::Notify {
         std::vector<SLink> links; // physical px rel rects (body markup only)
     };
 
+    // The body line's REAL metrics (the font's own, measured once per
+    // style): the layout used to estimate 1.35x the point size, which
+    // undershot the default font by ~7% — a seven-line transcript
+    // rendered six, and the clip took the newest line once the order went
+    // chronological.
+    double bodyLineH(double scale);         // logical px, one body line
+    int    bodyBudgetPx(double scale, int lines); // physical px for whole lines
+
     // Content + style + width IS the key: a replace or an age-bucket move
     // simply misses to a new key. Builds only while the gate allows;
-    // a draw-side miss flags the rewarm. maxHpx < 0 caps LINES
-    // (single-paragraph text only); linkCol non-null collects <a href> rects.
+    // a draw-side miss flags the rewarm. maxHpx >= 0 is a pixel budget
+    // (rounded down to whole lines, tail ellipsized); < 0 caps nothing.
+    // linkCol non-null collects <a href> rects.
     const SCachedText* cachedText(const std::string& text, const CHyprColor& col, int pt, int maxWpx, int maxHpx, float lineSp, bool markup, int weight,
                                   const CHyprColor* linkCol = nullptr);
     // dir 0 = down, 1 = up; a px-square canvas, the Material chevron centered
@@ -107,8 +116,7 @@ namespace NAwesome::Notify {
     // small shared helpers
     std::string        hexOf(const CHyprColor& c);
     std::string        ageString(const Time::steady_tp& t); // bucketed: "now", "5m", "2h", "3d"
-    std::string        lastLine(const std::string& body); // the ordinary body's newest line
-    std::string        firstLine(const std::string& body); // the conversation body's newest (leading) line
+    std::string        lastLine(const std::string& body); // any body's newest line ends it
 
     // the layout passes compose row strings per frame: build them into a
     // reused buffer (capacity retained; ONE composition live at a time) and

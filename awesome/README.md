@@ -50,8 +50,7 @@ visible transitions.
   parse trims them. Keyboard navigation, tooltips, and overlay icons
   are not implemented.
 - **Bell**: reads the notify model directly (same process — no bus
-  seam). A click toggles the shade; a pointer hover peeks it for 400
-  ms, moving off cancels, and a click pins.
+  seam). A click toggles the shade; pointer hover does nothing.
 - **Battery** watches the udev battery; the clock ticks per second.
 
 ### The launcher (menubar)
@@ -168,17 +167,22 @@ superellipse corners).
   id is opaque and rejected above 512 bytes (clipping it would merge
   two different chats).
 - When a conversation-id is in force, the card's body is the
-  TRANSCRIPT: the latest seven kept messages (32 retained), newest on
-  top, group senders prefixed by name under an 8 KB cap. `message-id`
-  upserts (an edit replaces in place), `message-time` orders,
-  `message-historic` marks a backfill (it does not grow the unread
-  count). `unread-count` shows the header pill; the header also shows a
+  TRANSCRIPT: the latest kept messages, CHRONOLOGICAL — the oldest line
+  leads and the newest ends the body, so an arrival lands at the bottom
+  and pushes the oldest out of the top of the window. The banner
+  previews the five newest messages; the shade renders the full seven
+  (32 retained). Group senders are prefixed by name, all under an 8 KB
+  cap that evicts from the oldest end. `message-id` upserts (an edit
+  replaces in place), `message-time` orders, `message-historic` marks a
+  backfill (it does not grow the unread count). `unread-count` shows
+  the header pill; the header also shows a
   facepile of the distinct senders of the kept messages (max three)
   for `group` chats, each avatar its `sender-icon` or a deterministic
   initials face.
 - Without a conversation-id the legacy merge stands: a fresh `Notify`
   whose app + summary matches a live card is joined onto it, bodies
-  joined newest-front under the same cap — triggered by the fd.o
+  joined chronologically (newest appended at the end) under the same
+  cap — triggered by the fd.o
   conversation categories (`im.*`/`call.*`, where the summary is the
   sender or the room) or `x-canonical-append`. Cards that vanish on
   expiry never merge.
@@ -284,11 +288,8 @@ itself.
 - Swipe: a horizontal wheel on a row, away to dismiss. It goes through
   the click queue rather than acting in the emission (crash class 6) —
   a swipe is an alias for a click that already exists.
-- Bell: a click speaks Toggle; a peek (hover) opens the shade UNPINNED
-  and closes on a grace timer once the pointer is on neither the bell
-  nor the panel — both surfaces cancel that timer, which is what lets
-  the pointer travel from the bell down into the shade. Any click pins
-  it (the pin absorbs then, and a later explicit close re-pops).
+- Bell: a click speaks Toggle (opening absorbs the banners into parked
+  rows, a later explicit close re-pops them); pointer hover is a no-op.
 - Over fullscreen: banners show over a real fullscreen window too — the
   ecosystem default, no quiet-while-fullscreen policy. While a card is
   up over a solitary fullscreen window, the monitor's scanout/solitary
@@ -358,9 +359,6 @@ hl.plugin.awesome.volume_up()              -- volume_down, mute, mic_mute
 hl.plugin.awesome.brightness_up()          -- brightness_down
 hl.plugin.awesome.touchpad_toggle()
 ```
-
-The bell also peeks the shade on pointer hover (400 ms grace; moving
-off cancels, a click pins).
 
 ## hyprctl
 

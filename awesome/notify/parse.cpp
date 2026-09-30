@@ -246,18 +246,19 @@ namespace NAwesome::Notify::Parse {
         return out;
     }
 
-    // newest-front, like the transcript: the card's visible lines are the
-    // LATEST messages, and the cap drops the oldest (bottom) lines
+    // chronological, like the transcript: the visible lines are the LATEST
+    // messages, the newest ends the body, and the cap drops the oldest (top)
+    // lines
     std::string joinAppend(const std::string& oldBody, const std::string& add) {
-        std::string joined = oldBody.empty() ? add : add + "\n" + oldBody;
+        std::string joined = oldBody.empty() ? add : oldBody + "\n" + add;
         constexpr size_t CAP = 8192;
         while (joined.size() > CAP) {
-            const auto NL = joined.rfind('\n');
+            const auto NL = joined.find('\n');
             if (NL == std::string::npos) {
-                joined.erase(joined.size() - CAP);
+                joined.erase(0, joined.size() - CAP); // keep the newest tail
                 break;
             }
-            joined.erase(NL); // the separator plus the oldest line
+            joined.erase(0, NL + 1); // the oldest line plus its separator
         }
         return joined;
     }
