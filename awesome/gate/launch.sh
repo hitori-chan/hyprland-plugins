@@ -129,8 +129,9 @@ before=set('''$before_aq'''.split())
 done
 if [[ -n "$newaq" ]]; then
 	# Park deterministically (proven sequence). Each step must settle before
-	# the next, hence the sleeps; retry the whole thing until the VM's active
-	# workspace is NEST_WS.
+	# the next, hence the sleeps; retry the whole thing until the window is
+	# verifiably in NEST_WS on the VM.
+	parked=0
 	for attempt in 1 2 3 4 5; do
 		# 1. window -> NEST_WS (silent; creates NEST_WS, initially on $REAL)
 		hlq dispatch "hl.dsp.window.move({workspace=\"$NEST_WS\", follow=false, window=\"address:$newaq\"})" >/dev/null 2>&1
@@ -152,9 +153,21 @@ if [[ -n "$newaq" ]]; then
 			hlq dispatch "hl.dsp.workspace.move({workspace=\"$w\", monitor=\"$REAL\"})" >/dev/null 2>&1
 		done
 		sleep 0.2
-		hlq monitors -j | python3 -c "import json,sys;sys.exit(0 if any(m['name']=='$VM' and m['activeWorkspace']['id']==$NEST_WS for m in json.load(sys.stdin)) else 1)" && break
+		# Verify the WINDOW, not just the workspace: NEST_WS can be the VM's
+		# active workspace while the window still sits elsewhere (a move
+		# dispatch that silently no-ops parks nothing, and every later capture
+		# starves — the message below used to claim success on that state).
+		vm_index="$(hlq monitors -j 2>/dev/null | python3 -c "import json,sys;print(next((i for i,m in enumerate(json.load(sys.stdin)) if m['name']=='$VM' and m['activeWorkspace']['id']==$NEST_WS),''))" 2>/dev/null)"
+		if [[ -n "$vm_index" ]] && hlq clients -j 2>/dev/null | python3 -c "import json,sys;sys.exit(0 if any(c['class']=='aquamarine' and c['address']=='$newaq' and c['workspace']['id']==$NEST_WS and c['monitor']==int(sys.argv[1]) for c in json.load(sys.stdin)) else 1)" "$vm_index" 2>/dev/null; then
+			parked=1
+			break
+		fi
 	done
-	echo "launch: parked nested window $newaq on $VM ws $NEST_WS (attempt $attempt)"
+	if [[ "$parked" == "1" ]]; then
+		echo "launch: parked nested window $newaq on $VM ws $NEST_WS (attempt $attempt)"
+	else
+		echo "launch: WARN park unverified after 5 attempts (window $newaq not confirmed on $VM ws $NEST_WS); continuing — the warmup detects a dead frame cycle" >&2
+	fi
 else
 	echo "launch: WARN could not find nested window to park" >&2
 fi

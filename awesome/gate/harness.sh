@@ -180,6 +180,20 @@ print(next((m['name'] for m in json.load(sys.stdin) if m['name']!='nested-dev'),
 		sleep 0.5
 	done
 	echo "harness: nested render cycle never warmed (captures starve); aborting" >&2
+	# Post-mortem: is the nested alive, and what did it last log? A live
+	# process with a silent log is a stalled frame cycle; a dead process
+	# means the window died mid-park. (This used to be the only evidence left
+	# to a failed gate run.)
+	if [[ -n "${SIG:-}" ]]; then
+		local npid
+		npid="$(head -n 1 "$RUNDIR/$SIG/hyprland.lock" 2>/dev/null)"
+		if [[ "${npid:-}" =~ ^[0-9]+$ ]] && kill -0 "$npid" 2>/dev/null; then
+			echo "harness: nested $npid still alive; nested log tail:" >&2
+		else
+			echo "harness: nested process is GONE; nested log tail:" >&2
+		fi
+		grep -ivE "xkbcomp|Warning:|^>|DEBUG" "$HARNESS/nested.log" 2>/dev/null | tail -8 >&2
+	fi
 	return 1
 }
 vp() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" "$MON_W" "$MON_H" >/dev/null 2>&1; }
@@ -487,9 +501,15 @@ launch_nested() {
 		PATH="$REPO/devtools/fakes:$PATH" AW_WPCTL_LOG="$STATE/wpctl.log" \
 			AW_WPCTL_HANG_FILE="$STATE/hang-wpctl" AW_WPCTL_FLOOD_FILE="$STATE/flood-wpctl" AW_SOUND_HANG_FILE="$STATE/hang-sound" \
 			HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" XDG_CACHE_HOME="$STATE/cache" \
-			bash "$GATE_DIR/launch.sh" >/dev/null 2>&1
+			bash "$GATE_DIR/launch.sh" >>"$HARNESS/launch.log" 2>&1
 	}
-	_harness_launch || return 1
+	# The launch diagnostics used to be swallowed here; a failed park or a
+	# dead nested is only readable from that log.
+	_harness_launch || {
+		echo "harness: nested launch failed — launch log tail:" >&2
+		tail -25 "$HARNESS/launch.log" 2>/dev/null >&2
+		return 1
+	}
 	# The nested compositor enters fallback (a headless "FALLBACK" output,
 	# no window) 2s after its ready event when its aquamarine window output
 	# never appeared. A window lost in that window renders into the void:
