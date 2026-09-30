@@ -149,11 +149,13 @@ superellipse corners).
   `x-notify-osd`; `x-canonical-append`; `x-notify-group-key`.
 - Structured-conversation hints (neither name form sits in the
   published spec's hint table; the plain name is tried first, the
-  `x-notify-*` alias second): `conversation-id` (the merge contract),
-  `conversation-title`, `conversation-kind` (`one-to-one`/`group`/
-  `call`), `conversation-icon`, `sender-id`/`sender-name`/
-  `sender-icon`, `message-id`, `message-timestamp` (ms epoch),
-  `message-historic` (bool), `unread-count` (uint, capped at 999).
+  `x-notify-*` alias second — the message-time alias alone is
+  `x-notify-message-timestamp`): `conversation-id` (the merge
+  contract), `conversation-title`, `conversation-kind`
+  (`one-to-one`/`group`/`call`), `conversation-icon`,
+  `sender-id`/`sender-name`/`sender-icon`, `message-id`,
+  `message-time` (int64, ms epoch), `message-historic` (bool),
+  `unread-count` (uint, capped at 999).
 
 **Conversations.**
 
@@ -168,7 +170,7 @@ superellipse corners).
 - When a conversation-id is in force, the card's body is the
   TRANSCRIPT: the latest seven kept messages (32 retained), newest on
   top, group senders prefixed by name under an 8 KB cap. `message-id`
-  upserts (an edit replaces in place), `message-timestamp` orders,
+  upserts (an edit replaces in place), `message-time` orders,
   `message-historic` marks a backfill (it does not grow the unread
   count). `unread-count` shows the header pill; the header also shows a
   facepile of the distinct senders of the kept messages (max three)
