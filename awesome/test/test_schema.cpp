@@ -21,6 +21,11 @@ bool test_schema() {
         for (const auto& B : S.specs())
             if (&A != &B)
                 AW_CHECK(K != B.key);
+        // an alpha-0 color default paints nothing: a six-digit hex in a 32-bit
+        // AARRGGBB field is the trap (the 0xff8a5c incident — the urgent ring
+        // and the battery fills were silently invisible)
+        if (A.kind == Kind::Color)
+            AW_CHECK((A.cval >> 24) != 0);
     }
     // every key resolves; the config-bearing modules are shell, windows
     // and notify (system takes no config)
