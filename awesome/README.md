@@ -16,22 +16,345 @@ inter-module bus:
 The plugin owns `org.freedesktop.Notifications`; disable another
 daemon (dunst, mako) before enabling it.
 
+## Behavior
+
+### The bar (shell)
+
+The strip, launcher, and tray menus are compositor-drawn on the focused
+monitor. Before intercepting any input the pipeline rechecks session
+lock and native input ownership (layers, popups, IME, grabs,
+input-capture); native wins and resets the plugin's partial input
+state. Geometry and hitboxes are monitor-local; fixed widget slots and
+tray clipping protect the task area on narrow outputs. Textures follow
+the canvas warm/draw gate: warm on the event loop, draw no earlier than
+the next frame, scissor to damage, damage both old and new geometry for
+visible transitions.
+
+- **Workspaces** render as tag cells, **tasks** as view cells, both
+  pixel-drawn at their own measured widths (nothing fixed-pitch).
+- **Tasks**: Hyprland has no plugin-owned minimized state, so the
+  windows module removes a minimized window from layout/render
+  participation and remembers its fullscreen, maximize, and floating
+  state for restoration. Tasks stay in arrival order; focus cycling
+  skips minimized windows. A task's minimize/restore repaints through
+  the task-changed hook.
+- **Tray**: owns the StatusNotifier/dbusmenu connection. A tray click
+  is the activation — after the SNI `Activate` call the bar resolves
+  the item's bus PID and focuses the app's own topmost X11 window
+  (X11 clients cannot authenticate the gesture; their
+  SetForegroundWindow arrives as an urgency ping that must never take
+  focus, so the plugin that saw the click performs the raise). Wayland
+  items self-activate through the validated xdg-activation token.
+  Menus support updates, cascades, scrolling, and check/radio state;
+  providers may emit a leading, doubled, or trailing separator and the
+  parse trims them. Keyboard navigation, tooltips, and overlay icons
+  are not implemented.
+- **Bell**: reads the notify model directly (same process — no bus
+  seam). A click toggles the shade; a pointer hover peeks it for 400
+  ms, moving off cancels, and a click pins.
+- **Battery** watches the udev battery; the clock ticks per second.
+
+### The launcher (menubar)
+
+Desktop discovery and completion run in a bounded cancellable helper
+process. The compositor drains framed results through the event loop;
+queue backpressure pauses the helper, and teardown closes the pipe and
+terminates its private process group without joining filesystem work.
+Desktop Entry strings are decoded before use; `Exec=` preserves its
+quoting and field-code grammar before passing argument boundaries to
+the executor.
+
+| Keys | Action |
+|---|---|
+| `Left/Right`, `C-j/k`, `Home/End` | select |
+| `Enter` | run selected entry |
+| `C-Return`, `C-M-Return` | run raw query directly or in a terminal |
+| `Tab`, `Shift-Tab` | complete command/path |
+| `Up/Down`, `C-p/n` | history |
+| `C-a/e/b/f/d/h/u/w`, `M-b/f/d`, `C-BackSpace` | edit |
+| `C-v` | paste asynchronously |
+| `Escape` or pointer click | close |
+
+Typed and pasted input shares a 4 KiB UTF-8 limit. Clipboard transfer
+is nonblocking with a 1.5-second deadline; closing or tearing down the
+launcher removes the fd and invalidates the callback. History is
+stored under `$XDG_STATE_HOME/awesome/`.
+
+### Windows
+
+- **Maximize** is per-window and does not consume Hyprland's
+  fullscreen slot: the window fills the current workarea and carries
+  the native xdg maximized state; app- or compositor-maximized windows
+  are adopted into the same model. Maximized windows follow workspace,
+  output, and reserved-area changes. `Mod+click` drags are swallowed
+  while maximized so the raise policy never fights the drag. Windowed
+  geometry is restored from the store, constrained by the current
+  workarea and the client's size hints.
+- **Click policy**: a plain left click raises the target; clicking a
+  maximized window tucks fullscreen-flagged floaters without rewriting
+  z-order. Keyboard focus raises, pointer hover does not. A short-lived
+  corpse guard consumes presses aimed at a window that just closed or
+  left fullscreen, preventing click-through to the window below.
+  `focus_next`/`focus_prev` cycle stable arrival order (not the
+  z-order that click-to-raise keeps changing); `focus_prev_here`
+  toggles the two most recent windows on the current workspace.
+- **Spawn placement** is per-class: the last free geometry from the
+  store, else least-overlap for a second window of the same class.
+  Resizable xdg-toplevels can receive the remembered size in the
+  initial configure. Client size limits, fullscreen/maximize state,
+  pending native requests, rules, parent-anchored dialogs, X11
+  geometry, and override-redirect surfaces stay authoritative. A
+  fixed-size toplevel (min == max — a dialog or splash) keeps the
+  compositor's native centered placement and never reads or writes the
+  class row.
+- **Snap**: during a floating move drag, nearby window and workarea
+  edges pull together within `snap_distance`; reaching one output edge
+  previews a half, two edges that corner's quarter. Release commits the
+  preview regardless of whether the pointer button or `Super` is
+  released first. Previews honor the client's size limits and keep the
+  chosen edge anchored; gaps between outputs do not arm a zone.
+  Disable Hyprland's native `general:snap` to avoid competing
+  policies.
+
+### Notifications (notify)
+
+Cards render top-right on the focused monitor — the stack follows a
+keyboard or workspace focus flip, but not one the pointer itself makes,
+so a mouse grazing the neighboring monitor's corner leaves the cards
+where they are. Newest at the top, glass·ink skin (frosted graphite,
+superellipse corners).
+
+**Spec surface.** Methods `Notify`, `CloseNotification`,
+`GetCapabilities`, `GetServerInformation` (spec 1.3); signals
+`NotificationClosed`, `ActionInvoked`, `ActivationToken`,
+`NotificationReplied`. Capabilities: `actions`, `action-icons`,
+`body`, `body-markup`, `body-hyperlinks`, `body-images`,
+`icon-static`, `inline-reply`, `persistence`, `sound`.
+
+- `replaces_id` updates a card in place, keeping its stack slot; an
+  unknown id creates the card under that id. The 9990s are the private
+  OSD band: a FRESH (non-replacing) id chosen inside it only sticks
+  when the hints carry `x-notify-osd` (bool), so an ordinary client
+  cannot pin a band id and hijack the OSD that replaces it. Fresh ids
+  outside the band are minted from a low counter.
+- `expire_timeout`: 0 → sticky, >0 → ms. −1 (server decides) → normal
+  and critical cards are sticky until dismissed — a message waits to be
+  read; self-declared ephemerals (low urgency, `transient`, `value`
+  cards) run `timeout_low`. `timeout_normal` > 0 restores a clock for
+  the rest.
+- Hints honored: `urgency`; `value` (0–100) draws the progress bar (the
+  volume/brightness OSD); `image-data`/`image_data`/`icon_data` raw
+  pixmaps; `image-path`/`image_path`; `desktop-entry`; `action-icons`;
+  `resident`; `transient`; `sound-file`/`sound-name`/`suppress-sound`;
+  `x-notify-osd`; `x-canonical-append`; `x-notify-group-key`.
+- Structured-conversation hints (neither name form sits in the
+  published spec's hint table; the plain name is tried first, the
+  `x-notify-*` alias second): `conversation-id` (the merge contract),
+  `conversation-title`, `conversation-kind` (`one-to-one`/`group`/
+  `call`), `conversation-icon`, `sender-id`/`sender-name`/
+  `sender-icon`, `message-id`, `message-timestamp` (ms epoch),
+  `message-historic` (bool), `unread-count` (uint, capped at 999).
+
+**Conversations.**
+
+- A `conversation-id` in the hints is the merge contract: every
+  message of that chat is ONE card however many `Notify` calls arrive
+  (a replace with the same id joins; a replace carrying a DIFFERENT
+  conversation-id starts the other chat's card; a replace with none
+  keeps the target's conversation for the same app). Display text and
+  category alone are not a contract — two chats can share a title. The
+  id is opaque and rejected above 512 bytes (clipping it would merge
+  two different chats).
+- When a conversation-id is in force, the card's body is the
+  TRANSCRIPT: the latest seven kept messages (32 retained), newest on
+  top, group senders prefixed by name under an 8 KB cap. `message-id`
+  upserts (an edit replaces in place), `message-timestamp` orders,
+  `message-historic` marks a backfill (it does not grow the unread
+  count). `unread-count` shows the header pill; the header also shows a
+  facepile of the distinct senders of the kept messages (max three)
+  for `group` chats, each avatar its `sender-icon` or a deterministic
+  initials face.
+- Without a conversation-id the legacy merge stands: a fresh `Notify`
+  whose app + summary matches a live card is joined onto it, bodies
+  joined newest-front under the same cap — triggered by the fd.o
+  conversation categories (`im.*`/`call.*`, where the summary is the
+  sender or the room) or `x-canonical-append`. Cards that vanish on
+  expiry never merge.
+- `x-notify-group-key` (opaque, ≤512 bytes) sub-keys the app's bundle:
+  four or more cards of one app share ONE digest per declared group,
+  and the digest, the fold and the dismissal all act on that group
+  alone. A replace without the hint keeps the group for the same app.
+
+**Markup.** Body and title render the whitelisted Pango subset
+`<b> <i> <u> <span> <br>`; other tags are dropped and a stray `<`/`&`
+that forms no tag or entity survives as literal text, so a
+markup-aware sender and a naive one both come out right. Malformed
+markup falls back to plain text. `<a href>` in the body is a
+hyperlink (rewritten to a styled span and hit-tested by its
+stripped-text byte offset); a click opens the URL via `xdg-open` and
+leaves the card up — but not the shade, since a browser is about to
+cover it. The pointer shows the hand over a link. `<img src>` in the
+body renders as a thumbnail row below the text; a thumbnail that fails
+to load keeps its `alt` text as a one-line body entry.
+
+**Images and icons.** Precedence: `image-data` beats `image-path`
+beats `app_icon` beats `desktop-entry`. Each of `app_icon` /
+`image-path` / `desktop-entry` may be a file path (`file://` too) OR a
+freedesktop icon name, resolved against the GTK icon theme, then
+hicolor, then `/usr/share/pixmaps`. A `desktop-entry` hint additionally
+resolves the .desktop file's own `Icon=` (all `$XDG_DATA_DIRS/
+applications` entries are indexed once at plugin start by a bounded
+helper process, keyed by the file name and `StartupWMClass`), which
+beats an icon-name collision; while the index has not reached the
+entry, the icon-name stand-in draws and the index upgrades the live
+card when it lands. Decoding is hyprgraphics: PNG/JPEG/WEBP/BMP/AVIF/
+JXL + SVG (no GIF); big images downscale once at load, not per frame.
+File icons decode off the render thread on the compositor's async
+resource gatherer (a bounded share of its queue; symbolic icons and SVG
+heroes stay synchronous): a card whose icon is still decoding shows
+its fallback face until the decode lands and re-warms. Screenshot-sized
+images (256 px in both dimensions) render card-width as a
+cover-cropped hero in any capture shape. Iconless cards draw a random
+face from `fallback_icon_dir`, and when that dir is empty (or a face
+fails to load) a deterministic generic application mark, so no card is
+faceless. The icon column is Android's conversation container: the
+CONTENT image leads as the avatar (a true circle for a conversation, a
+squircle otherwise) and the IDENTITY (`app_icon`/`desktop-entry`)
+rides its bottom-right corner as a badge sized by AOSP's ratios off the
+40 dp avatar — a 20 dp badge of which 16 dp is the app glyph and 2 dp
+on each side is the rim, so only the rim protrudes. A card with no
+content image leads with its identity and wears no badge. One column
+says both who sent it and which app carried it.
+
+**Actions.** Non-`default` actions render as a clickable button row; a
+left click emits `ActionInvoked` and dismisses the card unless the
+`resident` hint holds it. Under the `action-icons` hint each action id
+is a freedesktop icon name drawn on the button. The `default` action
+(and a lone action) fire on a body left click, on BOTH surfaces, and
+are never drawn as a button. `ActivationToken` precedes each invoke (a
+compositor-minted xdg-activation token) so the sender can raise
+itself.
+
+**Behavior.**
+
+- Popup clicks: left invokes the action / opens the link / fires the
+  default, then dismisses; right dismisses; middle parks the stack into
+  the shade. The cards own the pointer over them — hover never leaks to
+  the window beneath.
+- Popup hover HOLDS the timeout: the card under the pointer stops
+  counting down, and leaving restarts its full clock rather than
+  resuming the sliver that was left. Only one card can be held, because
+  only one can be hovered.
+- Shade clicks: a row behaves as its banner did — left on the body
+  fires the card's primary and dismisses unless `resident`, a link
+  opens, a button acts. Rows open by default, so the click is spent
+  acting rather than revealing; the CHEVRON is the only fold target.
+  Right dismisses; middle is "Clear all". On an app bundle left
+  expands and right (or the header ✕) dismisses the whole app.
+- Acting CLOSES the shade: firing a card's primary, pressing one of its
+  buttons or opening a body link all raise something over the panel
+  the click was made in, so the panel gets out of the way. fd.o has no
+  `isActivity`, and `resident` is the nearest thing it does have, so
+  the shade goes exactly when the card goes. Everything that keeps you
+  here keeps the shade: a dismissal, a fold, DND, "Clear all", the
+  reply field, and a card with no action to fire.
+- The close returns the absorbed stack: opening the shade (and a
+  popup's middle-click park) stands the live banners down into parked
+  shade rows. An EXPLICIT close — an outside click, Esc, the toggle —
+  pops those cards back to banners, one per app under the same cap the
+  DND resume applies, on fresh timeouts; a close that leaves the
+  notifications invisible is a lost-notification bug. An
+  action-driven close (the sender is coming up over the parked stack)
+  does not re-pop.
+- Inline reply (KDE's protocol, which Telegram Desktop speaks): an
+  action keyed `inline-reply` is not a button — it grows a reply field
+  in the open shade row, and sending emits `NotificationReplied(id,
+  text)` and closes the card unless `resident`.
+  `x-kde-reply-placeholder-text` and `x-kde-reply-submit-button-text`
+  are honored. The field takes the whole keyboard while armed (there is
+  no focus to give it); editing is append-and-backspace plus C-u / C-w.
+  Banners have no field.
+- Shade keys, while it is open and only then: Esc closes, ↑/↓ move a
+  selection (an accent hairline; the page follows it), Space folds,
+  Enter fires the primary, Tab arms the selected card's reply field,
+  Delete dismisses. Modified chords pass through as user binds, and so
+  does any key with nothing to act on.
+- Swipe: a horizontal wheel on a row, away to dismiss. It goes through
+  the click queue rather than acting in the emission (crash class 6) —
+  a swipe is an alias for a click that already exists.
+- Bell: a click speaks Toggle; a peek (hover) opens the shade UNPINNED
+  and closes on a grace timer once the pointer is on neither the bell
+  nor the panel — both surfaces cancel that timer, which is what lets
+  the pointer travel from the bell down into the shade. Any click pins
+  it (the pin absorbs then, and a later explicit close re-pops).
+- Over fullscreen: banners show over a real fullscreen window too — the
+  ecosystem default, no quiet-while-fullscreen policy. While a card is
+  up over a solitary fullscreen window, the monitor's scanout/solitary
+  latch is dropped so the card composites over it; it self-heals once
+  the last card clears.
+- Critical: urgent-colored frame and progress fill, never expires.
+- Sound: `sound-file`/`sound-name` play through a player
+  (`sound_command`, empty disables); `suppress-sound` mutes one
+  arrival. The compositor has no audio backend, so this shells out,
+  reaped off the event loop.
+- DND (`hl.plugin.awesome.suspend()`): arrivals collect
+  silently with timeouts held; resume renders the queue newest-first on
+  fresh timeouts.
+- Residency (`persistence`): an expired banner RETREATS into the shade
+  rather than closing, and waits there until dismissed or acted on —
+  the shade is the safety net. There is no history and no recall: a
+  dismissed card is gone. `hyprctl awesome count` answers the live
+  total (the lockscreen bell reads it).
+- Session lock: cards never render above the lockscreen. Input
+  listeners guard-and-reset first; whatever survives the lock repaints
+  at unlock.
+- Overflow: `max_notifs` caps the model — overflow evicts the oldest
+  non-critical card (critical last) with `NotificationClosed`.
+
+**Limitations.** GIF images don't decode (hyprgraphics has no GIF
+codec). No animated icons (`icon-multi`). Icon-theme resolution is a
+pragmatic scan (GTK theme → hicolor → pixmaps), not a full
+`index.theme` inheritance engine.
+
+### System
+
+- **Brightness** reads `/sys/class/backlight`, applies 5% linear steps
+  with a raw floor of 2, and writes through logind
+  `Session.SetBrightness` on the system bus — no root, no udev rule.
+- **Volume and microphone** use bounded `wpctl` set/readback chains.
+  PipeWire process I/O stays off render and input callbacks (the core
+  Jobs pool: pidfd-watched, capped, generation-checked); readback
+  rejects malformed or non-finite output.
+- **Touchpad policy**: the touchpad turns off while an external
+  (USB/Bluetooth) mouse is present and back on when it's unplugged;
+  `XF86TouchpadToggle` flips it by hand. Hotplug rides the
+  compositor's own device signals (a settle timer coalesces the
+  burst); the flip writes the compositor's per-device config store
+  through `hl.device`, so nothing fights the next config re-apply, and
+  a reload re-checks.
+- Every action's feedback is a card posted straight into the notify
+  model: fixed ids (pad 9991, volume 9992, mic 9993, brightness 9995)
+  replace in place, low urgency, 1200 ms expiry, a `value` bar, and the
+  matching identity icon.
+
 ## Lua API
 
+Flat under one namespace — `hl.plugin.awesome.<fn>`:
+
 ```lua
-hl.plugin.awesome.shell.menubar()          -- the launcher
-hl.plugin.awesome.windows.maximize()       -- focused window
-hl.plugin.awesome.windows.minimize()
-hl.plugin.awesome.windows.restore()
-hl.plugin.awesome.windows.focus_next()
-hl.plugin.awesome.windows.focus_prev()
-hl.plugin.awesome.windows.focus_prev_here()
-hl.plugin.awesome.notify.center()          -- toggles the shade
-hl.plugin.awesome.notify.suspend()         -- toggles DND
-hl.plugin.awesome.notify.clear_all()
-hl.plugin.awesome.system.volume_up()       -- volume_down, mute, mic_mute
-hl.plugin.awesome.system.brightness_up()   -- brightness_down
-hl.plugin.awesome.system.touchpad_toggle()
+hl.plugin.awesome.menubar()                -- the launcher
+hl.plugin.awesome.maximize()               -- focused window
+hl.plugin.awesome.minimize()
+hl.plugin.awesome.restore()
+hl.plugin.awesome.focus_next()
+hl.plugin.awesome.focus_prev()
+hl.plugin.awesome.focus_prev_here()
+hl.plugin.awesome.center()                 -- toggles the shade
+hl.plugin.awesome.suspend()                -- toggles DND
+hl.plugin.awesome.clear_all()
+hl.plugin.awesome.volume_up()              -- volume_down, mute, mic_mute
+hl.plugin.awesome.brightness_up()          -- brightness_down
+hl.plugin.awesome.touchpad_toggle()
 ```
 
 The bell also peeks the shade on pointer hover (400 ms grace; moving
@@ -45,15 +368,26 @@ off cancels, a click pins).
 
 ## Configuration
 
-48 keys under `plugin:awesome:<module>:<key>` (shell 21, notify 24,
-windows 3). The table — kinds, defaults, clamps — is
+47 keys under `plugin:awesome:<module>:<key>` — shell 20, notify 24,
+windows 3. The table (kinds, defaults, clamps) is
 [`core/schema.cpp`](core/schema.cpp); the defaults are the glass·ink
 theme tokens, so an empty config still looks right.
 
+| module | keys |
+|---|---|
+| shell | `height`, `font_size`, `tray_spacing`, `font`, `terminal`, `col_bg`, `col_fg`, `col_focus`, `col_active`, `col_active_bg`, `col_on_active`, `col_empty`, `col_urgent`, `col_urgent_bg`, `col_square_sel`, `col_square_unsel`, `col_frame`, `col_charging`, `col_low`, `col_powersave` |
+| notify | `font`, `font_size`, `width`, `max_height`, `max_icon`, `margin`, `offset_y`, `timeout_low`, `timeout_normal`, `coalesce_popups`, `max_notifs`, `ignore_dbusclose`, `rounding`, `rounding_power`, `sound_command`, `fallback_icon_dir`, `col_bg`, `col_fg`, `col_title`, `col_kicker`, `col_frame`, `col_urgent`, `col_highlight`, `col_link` |
+| windows | `edge`, `snap_distance`, `col_frame` |
+
+Colors and fonts arrive from the user's `theme.lua`; the C++ defaults
+mirror it.
+
+## State
+
 State lives in `$XDG_STATE_HOME/awesome/` (`windows-spot.tsv`,
 `windows-windowed.tsv`, `shell-launches.tsv`, `shell-history.tsv`);
-first run migrates the old per-plugin stores once and never touches
-them again.
+first run migrates the pre-rewrite per-plugin stores once and never
+touches them again.
 
 ## Build and test
 
@@ -67,6 +401,5 @@ make -C awesome gate       # the nested integration gate (gate/gate.sh;
 Before a release, run the gate and require its final `ALL CHECKS
 PASSED` line. The gate is the plugin's behavioral contract: six
 scenario batteries (shell/windows/notify/system/pipeline/lifecycle)
-against a throwaway nested compositor, with the old->new check map in
-gate/manifest.tsv. The input fixtures it drives (vptr, vkbd, cliphold,
-…) are the shared devtools/.
+against a throwaway nested compositor; the input fixtures it drives
+(vptr, vkbd, cliphold, …) are the shared `devtools/`.
