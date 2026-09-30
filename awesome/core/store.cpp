@@ -76,14 +76,14 @@ namespace NAwesome {
     // built from the line's own start — advancing `begin` first hands the
     // callback the NEXT line's start with this line's length (out of range).
     template <typename F>
-    static void forRows(const std::string& contents, F&& fn) {
+    static void forRows(const std::string& contents, size_t maxLineBytes, F&& fn) {
         size_t begin = 0;
         size_t rows  = 0;
         while (begin < contents.size() && rows++ < MAX_STORE_ROWS) {
             const auto END = contents.find('\n', begin);
             const auto LEN = (END == std::string::npos ? contents.size() : END) - begin;
             const auto NUL = contents.find('\0', begin);
-            if (LEN <= MAX_STORE_LINE_BYTES && (NUL == std::string::npos || NUL >= END))
+            if (LEN <= maxLineBytes && (NUL == std::string::npos || NUL >= END))
                 fn(std::string_view{contents.data() + begin, LEN});
             if (END == std::string::npos)
                 break;
@@ -112,7 +112,7 @@ namespace NAwesome {
     BoxStore BoxStore::read(const fs::path& path) {
         BoxStore out;
         const auto CONTENTS = readBoundedFile(path);
-        forRows(CONTENTS, [&](std::string_view line) {
+        forRows(CONTENTS, MAX_STORE_LINE_BYTES, [&](std::string_view line) {
             // "x y w h class", class LAST: app ids contain spaces and
             // colons, never tabs. Take the leading tab-terminated numbers;
             // whatever follows is the class, so a class starting with a
@@ -187,7 +187,9 @@ namespace NAwesome {
     ListStore ListStore::read(const fs::path& path) {
         ListStore out;
         const auto CONTENTS = readBoundedFile(path);
-        forRows(CONTENTS, [&](std::string_view line) {
+        // lines ARE the data here (whole launcher queries), so the line gate
+        // is the entry bound, not the generic 1 KiB guard.
+        forRows(CONTENTS, MAX_STORE_STRING_BYTES, [&](std::string_view line) {
             BoundedString<MAX_STORE_STRING_BYTES> B;
             B.assignClipped(line);
             if (!B.str().empty())
@@ -220,7 +222,7 @@ namespace NAwesome {
     CountStore CountStore::read(const fs::path& path) {
         CountStore out;
         const auto CONTENTS = readBoundedFile(path);
-        forRows(CONTENTS, [&](std::string_view line) {
+        forRows(CONTENTS, MAX_STORE_LINE_BYTES, [&](std::string_view line) {
             // "name;count": the count is the LAST field, the name may contain
             // anything but a newline (app names with semicolons are possible —
             // only the trailing number is parsed)
