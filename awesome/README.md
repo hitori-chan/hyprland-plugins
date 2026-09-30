@@ -402,4 +402,7 @@ Before a release, run the gate and require its final `ALL CHECKS
 PASSED` line. The gate is the plugin's behavioral contract: six
 scenario batteries (shell/windows/notify/system/pipeline/lifecycle)
 against a throwaway nested compositor; the input fixtures it drives
-(vptr, vkbd, cliphold, …) are the shared `devtools/`.
+(vptr, vkbd, cliphold, …) are the shared `devtools/`. For one-off
+diagnosis, `gate/probe.sh` runs the same preflight and then executes a
+probe body script against the live nested (harness + lib already
+sourced; teardown always runs).
