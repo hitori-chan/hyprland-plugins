@@ -89,16 +89,17 @@ gate.
 - The gate is `make -C awesome gate` (`awesome/gate/gate.sh`; ARGS
   passes through: the compositor bin and `-b`/`-k` battery selection).
   Fixtures build with `make -C devtools`.
-- The nested harness parks a headless `nested-dev` output in the live
-  session; if workspace switching misbehaves after gate runs, check
-  `hyprctl monitors all -j` before suspecting the plugin. Teardown
-  ALWAYS via the harness — it owns `output remove nested-dev`;
-  raw-killing the nested PIDs leaves a phantom output that churns the
-  renderer (2026-09-29: 411 workbuffer allocs). Keep the `nested-dev`
-  monitor rule pinned to the live panel's mode/scale (core.lua): any
-  divergent properties perturb the dmabuf feedback table on join/leave
-  and crash live clients on this Mesa (2-plane AR24 class, 2026-09-29 +
-  2026-09-30; TODO.md).
+- The nested harness (scripts in `awesome/gate/`: launch/stop/shot/dev;
+  runtime state in `$HYPR_HARNESS`, default `~/.local/share/hypr-nested`)
+  parks a headless `nested-dev` output in the live session; if workspace
+  switching misbehaves after gate runs, check `hyprctl monitors all -j`
+  before suspecting the plugin. Teardown ALWAYS via the harness — it owns
+  `output remove nested-dev`; raw-killing the nested PIDs leaves a phantom
+  output that churns the renderer (2026-09-29: 411 workbuffer allocs).
+  Keep the `nested-dev` monitor rule pinned to the live panel's
+  mode/scale (core.lua): any divergent properties perturb the dmabuf
+  feedback table on join/leave and crash live clients on this Mesa
+  (2-plane AR24 class, 2026-09-29 + 2026-09-30; TODO.md).
 
 ## Safety — hard lines
 
