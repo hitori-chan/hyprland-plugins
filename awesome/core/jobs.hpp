@@ -14,7 +14,6 @@
 #include <functional>
 #include <vector>
 
-#include <spawn.h>
 
 namespace NAwesome {
 

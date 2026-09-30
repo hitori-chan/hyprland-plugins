@@ -1,10 +1,10 @@
 // awesome/core/icons.hpp — freedesktop icon-NAME resolution, shared by every
-// plugin that shows themed icons (the notify module's cards, the shell's task chips
-// and tray). One implementation: the GTK theme's size dirs (scalable first,
-// then size proximity), then hicolor, then flat pixmaps. Inheritance beyond
-// hicolor isn't followed — app icons live in hicolor in practice.
+// module that shows themed icons (the notify module's cards, the shell's task
+// chips and tray). One implementation: the GTK theme's size dirs (scalable
+// first, then size proximity), then hicolor, then flat pixmaps. Inheritance
+// beyond hicolor isn't followed — app icons live in hicolor in practice.
 //
-// Pure name -> path; rasterizing stays per plugin (each has its own texture
+// Pure name -> path; rasterizing stays per module (each has its own texture
 // rules and caches). Misses are cached too, so a nonexistent name never
 // rescans the theme. Call resetIconNameCache() on config reload — it forgets
 // the memoized GTK theme name along with the paths, since a theme switch is

@@ -71,7 +71,7 @@ namespace NAwesome {
 
     // One bounded list of bounded strings, one entry per line (the
     // launcher's query history: most recent last, re-running a query moves
-    // it to the front of recency).
+    // it to the most recent).
     struct ListStore {
         std::vector<std::string> entries;
 
