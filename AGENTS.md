@@ -22,18 +22,17 @@ truth, not here. `CLAUDE.md` is dead — do not recreate or track it.
 - Plugin version: `awesome/core/version.hpp` (must equal
   `hyprpm.toml`'s `[awesome]` version; the gate preflight enforces the
   lockstep).
-- Fork state: `~/repo/Hyprland` — `git log` there is the truth for what
-  the running binary is built from. Pre-bump states are tagged
-  (`pre-bump-*`), so the fork is always restorable.
-- Open issues and evidence limits: `TODO.md` (local, gitignored). Close
-  an item by deleting its line; provenance for closed work is the
-  commit history.
-- Design contract: `docs/awesome-design.md` (tracked). The rewrite's
-  live state and goal lived in `PLAN.md` / `GOAL.md` (local,
-  gitignored) — read them while the cutover is still settling; they are
-  retired once the user's deploy is verified.
-- Behavior: `awesome/README.md` (the single behavior doc) and
-  `docs/awesome-design.md` (the contract it implements).
+- Fork state: the fork checkout (`~/repo/Hyprland`) — `git log` there
+  is the truth for what the running binary is built from; every bumped
+  state is pushed, so the fork is always restorable from the remote.
+- Open issues and evidence limits: `TODO.md` (local, gitignored,
+  machine-local). Close an item by deleting its line; provenance for
+  closed work is the commit history.
+- Docs: `awesome/README.md` is the single behavior doc;
+  `docs/awesome-design.md` is the design contract it implements (the
+  rewrite's live state/goal lived in local `PLAN.md`/`GOAL.md`,
+  retired 2026-09-30 with the deploy — commit history is the
+  provenance).
 - Gate results: the summary line of the run log
   (`== stress: ALL N CHECKS PASSED in Ns ==`), not shell exit codes.
 
@@ -70,10 +69,9 @@ gate.
   (e.g. `CWaylandBackend::m_resource`, `CX11Backend::m_xwaylandSurface`)
   so plugins can read client state — read-only, documented in the fork
   headers.
-- Dependencies come from distro packages (aquamarine 0.15.0; the
-  `~/repo/aquamarine` checkout is exactly upstream, not a fork
-  dependency); keep `~/repo/<dep>` checkouts at the fork's `flake.lock`
-  pins; the user performs sudo installs.
+- Dependencies come from distro packages (aquamarine 0.15.0); the user
+  performs sudo installs. If a source checkout is needed for reference,
+  keep it at the fork's `flake.lock` pins.
 - For an uninstalled fork, pass one package/header set through both
   `PKG_CONFIG_PATH` and `HYPR_DEPLOY_PKG_CONFIG_PATH` (same directory);
   never substitute a stale installed cache — watch stale-header
@@ -82,24 +80,25 @@ gate.
 - Long builds and gate runs go in tmux. Every temporary artifact —
   logs, debug dumps, scratch files, probe dirs — goes under a
   dedicated `/tmp` subdirectory (e.g. `/tmp/hypr-gate/`); keep `~`
-  free of temp stuff. `/tmp` is tmpfs, so nothing
-  that must survive a reboot goes there (fork work, large `gcore`
-  dumps); fork work happens in `~/repo/Hyprland` itself. `cmd | tee`
-  swallows the exit code — trust the log's summary line.
+  free of temp stuff. `/tmp` is tmpfs, so nothing that must survive a
+  reboot goes there. `cmd | tee` swallows the exit code — trust the
+  log's summary line.
 - The gate is `make -C awesome gate` (`awesome/gate/gate.sh`; ARGS
   passes through: the compositor bin and `-b`/`-k` battery selection).
   Fixtures build with `make -C devtools`.
 - The nested harness (scripts in `awesome/gate/`: launch/stop/shot/dev;
   runtime state in `$HYPR_HARNESS`, default `~/.local/share/hypr-nested`)
-  parks a headless `nested-dev` output in the live session; if workspace
-  switching misbehaves after gate runs, check `hyprctl monitors all -j`
-  before suspecting the plugin. Teardown ALWAYS via the harness — it owns
-  `output remove nested-dev`; raw-killing the nested PIDs leaves a phantom
-  output that churns the renderer (2026-09-29: 411 workbuffer allocs).
-  Keep the `nested-dev` monitor rule pinned to the live panel's
-  mode/scale (core.lua): any divergent properties perturb the dmabuf
-  feedback table on join/leave and crash live clients on this Mesa
-  (2-plane AR24 class, 2026-09-29 + 2026-09-30; TODO.md).
+  parks a headless `nested-dev` output in the live session. Teardown
+  ALWAYS via the harness — it owns `output remove nested-dev`;
+  raw-killing the nested PIDs leaves a phantom output that churns the
+  renderer (2026-09-29: 411 workbuffer allocs). Suspicious workspace
+  switching after gate runs is a leftover output first: check
+  `hyprctl monitors all -j` before suspecting the plugin.
+- On machines with the Mesa 2-plane AR24 feedback bug, a `nested-dev`
+  whose mode/scale diverges from the panel can crash live clients on
+  join/leave; pin it with a `hl.monitor` rule in core.lua (recipe in
+  TODO.md). The rule is machine-specific — it is not in the repo or the
+  default config.
 
 ## Safety — hard lines
 
