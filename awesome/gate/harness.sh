@@ -555,6 +555,17 @@ cleanup_harness_core() {
 	if [[ "${HYPR_STRESS_KEEP_STATE:-0}" == 1 ]]; then
 		echo "   retained nested evidence under $STATE"
 	else
+		# A crash report under $STATE is the only evidence of HOW the nested
+		# died; the rm below would destroy it (2026-10-01: a red run in the
+		# repeat-backpressure burst left exactly one). $HARNESS survives the
+		# next run's fresh_stress_state.
+		local report
+		for report in "$STATE"/cache/hyprland/hyprlandCrashReport*.txt; do
+			[[ -f "$report" ]] || continue
+			mkdir -p "$HARNESS/crash-reports"
+			cp -- "$report" "$HARNESS/crash-reports/" 2>/dev/null &&
+				echo "   retained crash report: $HARNESS/crash-reports/$(basename "$report")" >&2
+		done
 		rm -rf -- "$STATE" "$CFG"
 	fi
 	if [[ "${HARNESS_OUTPUT_OWNED:-0}" == 1 ]]; then
