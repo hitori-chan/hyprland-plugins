@@ -223,10 +223,14 @@ namespace NAwesome::System {
         const uint64_t GEN  = ++(MIC ? micGeneration : volumeGeneration);
         liveChains.push_back(GEN);
         if (!Jobs::inst().spawnChecked(ARGV[a], [MIC, GEN](int) {
-                // the set is done; the readback is the authoritative state
+                // the set is done; the readback is the authoritative state.
+                // Indexed by MIC like the ARGV table: [0] = the volume
+                // chain reads the SINK, [1] = the mic chain reads the
+                // SOURCE. (Inverted here once: the volume card then showed
+                // the mic's fixed 1.00 — the always-100% OSD.)
                 static const std::vector<const char*> GET[] = {
-                    {"wpctl", "get-volume", "@DEFAULT_AUDIO_SOURCE@", nullptr},
                     {"wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@", nullptr},
+                    {"wpctl", "get-volume", "@DEFAULT_AUDIO_SOURCE@", nullptr},
                 };
                 const bool OK = Jobs::inst().spawnPiped(GET[MIC], [MIC, GEN](Jobs::SPipedResult R) {
                     dropChain(GEN);
