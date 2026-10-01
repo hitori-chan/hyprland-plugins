@@ -5,6 +5,14 @@ echo "== gate:  =="
 # ---- preflight ----------------------------------------------------------
 [[ -x "$BIN" ]] || { echo "no such compositor binary: $BIN"; exit 1; }
 { [[ -x "$REPO/devtools/vptr" ]] && [[ -x "$REPO/devtools/vkbd" ]] && [[ -x "$REPO/devtools/input-capture" ]] && [[ -x "$REPO/devtools/cliphold" ]]; } || make -C "$REPO/devtools" >/dev/null
+# Every pixel assertion goes through PIL. A missing python-pillow fails
+# SILENTLY, not here: the capture's size check errors, the frame is dropped,
+# and the launch warmup dies as a "starved render cycle" — a false symptom
+# that cost a whole fork-side diagnosis (2026-10-01).
+python3 -c "import PIL" 2>/dev/null && ok "python3 sees PIL (every capture assertion)" || {
+	bad "python3 sees PIL (every capture assertion)"
+	echo "   install python-pillow: without it every capture is dropped and the warmup starves"; exit 1
+}
 # The flags come from the plugin's own build (print-hl-cflags), not from a
 # pkg-config call of our own: resolving it here separately is how this check
 # ends up vouching for a tree nothing was built against.
