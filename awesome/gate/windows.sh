@@ -377,11 +377,16 @@ print(int(c['at'][0]+c['size'][0]/2), int(c['at'][1]+c['size'][1]/2)) if c else 
 		env WAYLAND_DISPLAY="$WL" "$ACTWIN" 8 >/dev/null 2>&1 &
 		RP=$!
 		for _ in $(seq 1 24); do clients 2>/dev/null | grep -q '"class": *"activatewin"' && break; sleep 0.25; done
-		sleep 1.5 # map + ask are a sub-second burst; the hop fires on the next loop turn
+		# map + ask are a sub-second burst; the hop fires on the next loop
+		# turn, which on a loaded (or occluded) compositor can lag seconds -
+		# poll the s2 capture for the urgent line, bounded, instead of a
+		# fixed sleep that races the compositor's loop
+		for _ in $(seq 1 12); do grep -q "urgent>>" "$STATE/retract.cap" 2>/dev/null && break; sleep 0.5; done
 		RPAD="$(clients | python3 -c "
 import json,sys
 a = next((c['address'] for c in json.load(sys.stdin) if c['class']=='activatewin'), '')
 print(a[2:] if a.startswith('0x') else a)")"
+		sleep 0.5 # the retraction hop lands with (or just after) the urgent event
 		chk "retract: the map+ask pair retracted to the pre-map focus" \
 			test "$(focus_addr)" = "$RF"
 		chk "retract: the ask posted an urgent event for the probe" \
