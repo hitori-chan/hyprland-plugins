@@ -17,6 +17,7 @@
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>
 
+#include <chrono>
 #include <cstdint>
 
 namespace NAwesome {
@@ -37,6 +38,24 @@ inline bool activateAppWindow(uint32_t pid) {
         Desktop::windowState()->raise(best);
     Desktop::focusState()->fullWindowFocus(best, Desktop::FOCUS_REASON_SWITCH_TO_WINDOW_HARD);
     return true;
+}
+
+// ---- the user-gesture stamp --------------------------------------------------
+// A tray left/middle click sends SNI Activate/SecondaryActivate: a Wayland
+// app answers by re-mapping AND xdg-activating itself, which is
+// byte-identical to a message-driven tray return. This stamp tells the
+// windows module's map-focus retraction (windows/retract.hpp) that the
+// following re-map-and-ask burst was the user's: keep the map focus. It is
+// pid-less and short (the retraction's arrival window) — a real message
+// arriving inside the grace is let through once, the cost of a universal
+// mechanism; the retraction's pre-map-focus condition is the rest of the
+// discrimination.
+inline std::chrono::steady_clock::time_point& userGestureAt() {
+    static std::chrono::steady_clock::time_point T{};
+    return T;
+}
+inline void markUserGesture() {
+    userGestureAt() = std::chrono::steady_clock::now();
 }
 
 } // namespace NAwesome
