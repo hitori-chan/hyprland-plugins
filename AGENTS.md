@@ -153,6 +153,15 @@ them, append new ones.
    every input listener checks `NAwesome::sessionLocked()` first and
    clears swallow masks, held counters, drag state, and armed zones
    there.
+8. Compositor-side teardown: `CCompositor::cleanup()` destroys the
+   window/workspace/monitor state before unloading plugins (the renderer
+   holds smart refs into the .so, so the unload must stay later), so
+   `~CWindow` & co. still emit bus events into our listeners over a
+   half-dead state. All event-driven work no-ops from the moment
+   `m_isShuttingDown` is set; the supervisor gates every state listener
+   on `NAwesome::compositorShuttingDown()` (2026-10-01: every nested
+   teardown SEGV'd in `Shell::renderBar` on a released CSharedPointer
+   owner — the standing "input storm SEGV" red runs).
 
 ## Compositor integration
 

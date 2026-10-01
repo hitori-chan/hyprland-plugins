@@ -4,6 +4,7 @@
 // and 7) — treat them as pinned contracts, not candidates for cleanup.
 #pragma once
 
+#include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/view/window/Window.hpp>
 #include <linux/input-event-codes.h>
 #include <hyprland/src/desktop/view/window/WaylandBackend.hpp>
@@ -31,6 +32,20 @@ namespace NAwesome {
     // it trips.
     inline bool sessionLocked() {
         return g_pSessionLockManager && g_pSessionLockManager->isSessionLocked();
+    }
+
+    // The compositor-side teardown: CCompositor::cleanup() destroys the
+    // workspace/window/monitor state while the plugin is still loaded —
+    // the unload deliberately happens LATER (the renderer holds smart
+    // refs into the .so, and plugin-held textures must die with GL alive),
+    // so ~CWindow & co. still emit bus events into our listeners while the
+    // monitors' GL resources are dying. A listener that warms the bar into
+    // that half-dead state SEGVs on a released CSharedPointer owner (the
+    // 2026-10-01 "input storm SEGV": every nested teardown, 100%). Every
+    // event-driven path must no-op from the moment this is true; the
+    // supervisor gates its state listeners on it.
+    inline bool compositorShuttingDown() {
+        return g_pCompositor && g_pCompositor->m_isShuttingDown;
     }
 
     // A compositor-drawn overlay may cancel mouse motion before Hyprland can

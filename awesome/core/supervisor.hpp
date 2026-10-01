@@ -14,12 +14,44 @@
 #include "hop.hpp"
 #include "queries.hpp"
 
+#include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/devices/IKeyboard.hpp>
 
 #include <functional>
 #include <vector>
+
+namespace NAwesome::detail {
+
+    // mirror of CSignalT's RefArg (a nested alias there): trivially
+    // copyable args by value, the rest by const reference
+    template <typename T>
+    using RefArgT = std::conditional_t<std::is_trivially_copyable_v<T>, T, const T&>;
+
+    // a listener wrapper that no-ops once the compositor begins shutting
+    // down (crash class 8) while keeping the signal's exact argument
+    // signature: a variadic/generic wrapper is ambiguous between CSignalT's
+    // listen(std::function<void(RefArg<Args>...)>) and listen(std::function<void()>).
+    template <typename S>
+    struct ListenerGate;
+    template <typename... A>
+    struct ListenerGate<Hyprutils::Signal::CSignalT<A...>> {
+        template <typename F>
+        static auto make(F fn) {
+            struct Guarded {
+                F fn;
+                void operator()(RefArgT<A>... a) {
+                    if (compositorShuttingDown())
+                        return;
+                    fn(a...);
+                }
+            };
+            return Guarded{std::move(fn)};
+        }
+    };
+
+} // namespace NAwesome::detail
 
 namespace NAwesome {
 
@@ -64,10 +96,16 @@ namespace NAwesome {
 
         // state listeners: registered during a module's init(), cleared in
         // stop() BEFORE any module teardown (a listener firing mid-teardown
-        // could re-queue a hop that outlives the .so — crash class 6)
+        // could re-queue a hop that outlives the .so — crash class 6).
+        // Every listener is wrapped in detail::ListenerGate: once the
+        // COMPOSITOR begins shutting down, cleanup() clears the
+        // window/workspace/monitor state with the plugin still loaded
+        // (unload comes after the renderer), so ~CWindow emissions still
+        // reach us into a half-dead state — warming the bar there SEGVs
+        // (crash class 8). The gate makes those emissions no-ops.
         template <typename S, typename F>
         void listen(S& signal, F&& fn) {
-            m_listeners.emplace_back(signal.listen(std::forward<F>(fn)));
+            m_listeners.emplace_back(signal.listen(detail::ListenerGate<S>::make(std::forward<F>(fn))));
         }
 
         void start(HANDLE handle) {
