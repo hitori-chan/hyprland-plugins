@@ -315,13 +315,17 @@ stop_capture() {
 
 kill_nested() { # kill any non-live instance running one of the harness cfgs
 	stop_capture
-	local killed="" s sig pid
-	for s in "$RUNDIR"/*/; do
-		sig="$(basename "$s")"
-		[[ "$sig" == "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && continue
-		pid="$(head -1 "$s/hyprland.lock" 2>/dev/null)"
-		[[ -n "$pid" ]] || continue
-		grep -Fzxq -- "$CFG" "/proc/$pid/cmdline" 2>/dev/null && { kill "$pid" 2>/dev/null; killed="$killed $pid"; }
+	local killed="" pid
+	# By cmdline, not by signature dir: a nested that boots slower than
+	# launch.sh's signature wait outlives a gate that gave up on it — the
+	# dir appears only when the boot completes, so a dir scan misses the
+	# orphan (2026-10-01: two failed gdb launches left zombies hosting
+	# aquamarine windows until a third nested joined and the live session
+	# died with it). The live instance never carries a harness cfg, so the
+	# match is live-safe without the signature compare.
+	for pid in $(pgrep -x Hyprland 2>/dev/null); do
+		grep -Fzxq -- "$CFG" "/proc/$pid/cmdline" 2>/dev/null || continue
+		kill "$pid" 2>/dev/null; killed="$killed $pid"
 	done
 	# Host-side client teardown outlives process death: a still-alive nested
 	# during a live 'output remove' is the race that leaves the monitor half
@@ -466,6 +470,11 @@ PY
 }
 
 launch_nested() {
+	# A failed run's orphaned nested (boot slower than the signature wait)
+	# has no registerable state; sweep by cfg before spawning another, or
+	# two harness nested coexist — their extra divergent nested-dev outputs
+	# are the live-session kill recipe (2026-10-01).
+	kill_nested
 	if [[ -z "$HARNESS_OUTPUT_OWNED" ]]; then
 		HARNESS_OUTPUT_OWNED=0
 		case "$(nested_dev_state)" in
