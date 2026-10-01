@@ -8,13 +8,19 @@
 // (awesome has the same property: its global focus rule focuses tray-return
 // clients, and the classic fix is a per-app focus=false rule). The
 // discriminator is what follows the map: the app ASKS for attention
-// (an xdg-activation or X11 ping demoted to urgency, focus_on_activate
-// off). When that ask lands on a window that (a) holds the focus its own
+// (an xdg-activation or X11 ping; with focus_on_activate off the ask is
+// urgency, and the fork marks the ask urgent EVEN when the window already
+// holds the map focus — without that the retraction could never see the
+// tray-return burst, the exact case where the focus was taken). When that
+// ask lands on a window that (a) holds the focus its own
 // fresh map just took, (b) mapped within the arrival window below, and
-// (c) has a live pre-arrival focus target, the focus goes back to the
-// pre-arrival window — raised, so the newcomer doesn't sit on top of your
-// work — and the urgency stays (the chip's tint is the whole answer). An
-// app you launched that never asks keeps the map focus.
+// (c) has a live pre-arrival focus target, and (d) was not triggered by
+// the user's own tray click (the stamp in core/activate.hpp: the SNI
+// Activate makes the app re-map and ask itself, byte-identical to a
+// message return), the focus goes back to the pre-arrival window —
+// raised, so the newcomer doesn't sit on top of your work — and the
+// urgency stays (the chip's tint is the whole answer). An app you
+// launched that never asks keeps the map focus.
 //
 // Gate state: with focus_on_activate ON the user has opted into app
 // activation focus; the map focus + the activation focus are then the
@@ -26,6 +32,7 @@
 
 #include "state.hpp" // Tasklist::raiseAndFocus, the module's focus path
 
+#include "core/activate.hpp" // userGestureAt: the tray-click suppression stamp
 #include "core/hop.hpp"
 #include "core/queries.hpp"
 
@@ -88,6 +95,10 @@ namespace NAwesome::Windows::Retract {
     inline void maybeRetract(const PHLWINDOW& w) {
         static auto FOCUS_ON_ACTIVATE = CConfigValue<Config::INTEGER>("misc:focus_on_activate");
         if (!w || !w->mapped() || *FOCUS_ON_ACTIVATE || sessionLocked())
+            return;
+        // A tray click inside the grace made the app re-map and ask for
+        // itself: the burst is the user's, keep the map focus.
+        if (std::chrono::steady_clock::now() - userGestureAt() < kArrivalWindow)
             return;
         if (!Desktop::focusState() || Desktop::focusState()->window() != w)
             return;
