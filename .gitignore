@@ -32,6 +32,7 @@ devtools/fixwin-proto.c
 devtools/fixwin-protocol.h
 devtools/splashwin
 devtools/focustrap
+devtools/activatewin
 devtools/fake-sni
 
 # Planning, audit, and implementation-report documents (local only,

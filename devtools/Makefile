@@ -12,7 +12,7 @@ KLIBS  := $(shell pkg-config --libs xkbcommon)
 EICFLAGS := $(shell pkg-config --cflags libei-1.0)
 EILIBS   := $(shell pkg-config --libs libei-1.0)
 
-all: vptr vkbd input-capture cliphold fixwin splashwin focustrap fake-sni
+all: vptr vkbd input-capture cliphold fixwin splashwin activatewin focustrap fake-sni
 
 vptr: vptr.c vptr-proto.c vptr-proto.h
 	$(CC) $(CFLAGS) vptr.c vptr-proto.c -o $@ $(LDLIBS)
@@ -28,6 +28,9 @@ cliphold: cliphold.c cliphold-proto.c cliphold-proto.h
 
 splashwin: splashwin.c fixwin-protocol.h fixwin-proto.c
 	$(CC) $(CFLAGS) splashwin.c fixwin-proto.c -o $@ $(LDLIBS)
+
+activatewin: activatewin.c fixwin-protocol.h fixwin-proto.c
+	$(CC) $(CFLAGS) activatewin.c fixwin-proto.c -o $@ $(LDLIBS)
 
 fixwin: fixwin.c fixwin-protocol.h fixwin-proto.c
 	$(CC) $(CFLAGS) fixwin.c fixwin-proto.c -o $@ $(LDLIBS)
@@ -63,6 +66,6 @@ fixwin-proto.c: $(XXML)
 	wayland-scanner private-code $< $@
 
 clean:
-	rm -f vptr vkbd input-capture cliphold fixwin splashwin focustrap fake-sni vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c fixwin-protocol.h fixwin-proto.c
+	rm -f vptr vkbd input-capture cliphold fixwin splashwin activatewin focustrap fake-sni vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c fixwin-protocol.h fixwin-proto.c
 
 .PHONY: all clean
