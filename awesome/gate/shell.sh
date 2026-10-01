@@ -16,6 +16,9 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
 	fi
 	sleep 0.5
 done
+# one reading for the log either way: a failed canary must say HOW dark
+# the strip was (0 = never drew; 150-300 = mid-warm), not just "dark"
+echo "shell: strip bright=$(bar_bright "$STATE/strip-base.png")" >&2
 chk "shell: the strip is on screen (clock + tags draw)" \
 	test "$(bar_bright "$STATE/strip-base.png")" -gt 300
 BELL0="$(bell_x "$STATE/strip-base.png")"
