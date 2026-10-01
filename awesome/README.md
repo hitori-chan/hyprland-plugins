@@ -97,6 +97,24 @@ stored under `$XDG_STATE_HOME/awesome/`.
   `focus_next`/`focus_prev` cycle stable arrival order (not the
   z-order that click-to-raise keeps changing); `focus_prev_here`
   toggles the two most recent windows on the current workspace.
+- **Focus semantics (the awesome contract)**: a newly mapped window
+  takes initial focus — that is how a spawned terminal gets it (the
+  compositor's new-map focus, left authoritative). App-originated
+  "present me" requests never take focus: X11 pings are urgency-only
+  by the fork's XWM (X11 cannot authenticate a gesture), and with
+  `misc:focus_on_activate` off (the fork default) a Wayland
+  xdg-activation is demoted to the same urgency — the task chip's
+  urgent tint is the answer, `Mod+U` or a click focuses. The one case
+  the compositor cannot tell apart: a tray-returning app re-maps as a
+  brand-new window and takes the new-map focus before it pings. The
+  windows module retracts that steal — when an urgency lands on a
+  window that holds the focus its own map just took (mapped within
+  ~2s) and a pre-arrival focus target is alive, the pre-arrival window
+  is raised and re-focused and the urgency stays. A launched app that
+  never pings keeps its map focus; with `focus_on_activate` on, the
+  retraction is off (the user opted into activation focus).
+  Tray- and notification-click activation for X11 apps still focuses
+  (the plugin performs it compositor-side, having seen the gesture).
 - **Spawn placement** is per-class: the last free geometry from the
   store, else least-overlap for a second window of the same class.
   Resizable xdg-toplevels can receive the remembered size in the

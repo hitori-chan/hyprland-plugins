@@ -354,6 +354,29 @@ print(int(c['at'][0]+c['size'][0]/2), int(c['at'][1]+c['size'][1]/2)) if c else 
 			&& mv "$CFG.restore" "$CFG" && hq reload >/dev/null 2>&1
 		sleep 1
 	fi
+	# Tray-return retraction: with focus_on_activate off (the restored
+	# default), a window that maps and then asks for attention within the
+	# arrival window must not keep the map focus — the pre-map focus comes
+	# back (raised) and the chip carries the urgency. The X11 ping is
+	# urgency-only regardless of the gate, so without the retraction
+	# (windows/retract.hpp) the probe would keep the focus it mapped with.
+	if [[ -n "$NDISP" ]]; then
+		click_center foot
+		RF="$(focus_addr)"
+		: >"$STATE/retract.cap"
+		python3 "$S2CAP_PY" "$S2SOCK" 6 "$STATE/retract.cap" &
+		RLPID=$!
+		DISPLAY="$NDISP" "$FOCUSTRAP" activate 1 8 >/dev/null 2>&1 &
+		RP=$!
+		sleep 3 # map (t0, takes focus), ping (t0+1s), retract (t0+1s+)
+		RPAD="$(probe_addr)"
+		chk "retract: the map+ping pair retracted to the pre-map focus" \
+			test "$(focus_addr)" = "$RF"
+		chk "retract: the ping posted an urgent event for the probe" \
+			grep -q "urgent>>$RPAD" "$STATE/retract.cap"
+		kill "$RP" 2>/dev/null
+		wait "$RLPID" 2>/dev/null
+	fi
 fi
 FF="$(clients | python3 -c "
 import json,sys
