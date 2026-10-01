@@ -190,10 +190,16 @@ namespace NAwesome {
             close(c->outFd);
         if (c->fd >= 0)
             close(c->fd);
+        // The callback fires BEFORE the erase: the vector's shared_ptr is
+        // c's last owner, so erasing first frees the SChild under the
+        // onPiped read. onChildExitChecked has the same order. The callback
+        // may spawn again; the new child lands in the vector while c is
+        // still owned by its own slot, and the erase below finds c by
+        // pointer, so the callback's growth cannot shadow it.
+        if (c->onPiped)
+            c->onPiped(std::move(R));
         auto& J = inst();
         std::erase_if(J.m_children, [&](const auto& U) { return U.get() == c; });
-        if (c->onPiped)
-            c->onPiped(std::move(R)); // after the release: the callback may spawn again
     }
 
     void Jobs::teardown() {
