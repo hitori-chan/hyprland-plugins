@@ -10,6 +10,7 @@
 #include "windows/click.hpp"
 #include "windows/max.hpp"
 #include "windows/place.hpp"
+#include "windows/retract.hpp"
 #include "windows/snap.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
@@ -58,15 +59,20 @@ namespace NAwesome::Windows {
         // the state machine first: its window.open/close/destroy listeners
         // define the bookkeeping the views and policies read
         supervisor().listen(Event::bus()->m_events.window.open, [](PHLWINDOW w) {
-            if (w)
-                Tasklist::watchMinimize(w);
+            if (!w)
+                return;
+            Tasklist::watchMinimize(w);
+            Retract::noteArrival(w);
         });
         supervisor().listen(Event::bus()->m_events.window.active, [](PHLWINDOW w, Desktop::eFocusReason reason) {
             Tasklist::focusAwayFromHidden(w);
+            Retract::noteFocus(w);
         });
         supervisor().listen(Event::bus()->m_events.window.destroy, [](PHLWINDOWREF wr) {
-            if (const auto* W = wr.get())
+            if (const auto* W = wr.get()) {
                 Tasklist::forget(W);
+                Retract::forget(W);
+            }
         });
         // An activation request — a notification click, a browser's "switch to
         // tab", any xdg-activation — reaches a MINIMIZED window and dies
@@ -95,6 +101,14 @@ namespace NAwesome::Windows {
             });
         });
 
+        // A map that is answered by an attention ask does not keep the map
+        // focus: the pre-arrival window comes back, the chip carries the
+        // urgency (see windows/retract.hpp). The gate-OFF mode's promise,
+        // completed from the map path onto the activation path.
+        supervisor().listen(Event::bus()->m_events.window.urgent, [](PHLWINDOW w) {
+            Retract::maybeRetract(w);
+        });
+
         Max::init();
         Click::init();
         Place::init();
@@ -115,6 +129,7 @@ namespace NAwesome::Windows {
         // firing mid-teardown cannot re-arm a hop: the hops are already
         // reset by the supervisor)
         pendingActivate.reset();
+        Retract::exit();
         Snap::teardown();
         Place::teardown();
         Click::teardown();
