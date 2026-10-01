@@ -6,7 +6,16 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # ---- the strip -------------------------------------------------------------
-capture_nested "$STATE/strip-base.png"
+# The strip warms in over its first frames after launch (the warm/draw gate
+# never paints in the frame that creates a texture); a capture that lands
+# mid-warm counts the absent glyphs. Wait for the strip to actually draw —
+# bounded, so a strip that never draws still fails the check below.
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+	if capture_nested "$STATE/strip-base.png" && [[ "$(bar_bright "$STATE/strip-base.png")" -gt 300 ]]; then
+		break
+	fi
+	sleep 0.5
+done
 chk "shell: the strip is on screen (clock + tags draw)" \
 	test "$(bar_bright "$STATE/strip-base.png")" -gt 300
 BELL0="$(bell_x "$STATE/strip-base.png")"
