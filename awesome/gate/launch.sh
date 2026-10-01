@@ -91,7 +91,10 @@ before_aq="$(hlq clients -j 2>/dev/null | python3 -c "import json,sys;print(' '.
 
 # --- launch, wayland backend, double-fork + setsid detached ---
 echo "launch: $BIN -c $CFG (wayland backend -> $VM ws $NEST_WS, private dbus)"
-( setsid env -u HYPRLAND_INSTANCE_SIGNATURE AQ_BACKENDS=wayland \
+( # unlimited core rlimit: if kernel.core_pattern is a file, a nested SEGV
+  # leaves a core for forensics (core_pattern defaults to a pipe that drops)
+  ulimit -c unlimited 2>/dev/null
+  setsid env -u HYPRLAND_INSTANCE_SIGNATURE AQ_BACKENDS=wayland \
 	dbus-run-session -- "$BIN" -c "$CFG" >"$LOG" 2>&1 & )
 
 # --- wait for the new instance signature ---
