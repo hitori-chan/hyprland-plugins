@@ -49,7 +49,7 @@ $(OBJDIR):
 
 # the headless unit harness (pure core; no fork headers, no compositor)
 test:
-	g++ -std=c++26 -Wall -I.. -I. test/main.cpp test/test_bounded.cpp test/test_box.cpp test/test_store.cpp test/test_schema.cpp test/test_wpctl.cpp core/bounded.hpp core/store.cpp core/schema.cpp -o .build/test
+	g++ -std=c++26 -Wall -I.. -I. test/main.cpp test/test_bounded.cpp test/test_box.cpp test/test_store.cpp test/test_schema.cpp test/test_wpctl.cpp test/test_desktop_exec.cpp core/bounded.hpp core/store.cpp core/schema.cpp -o .build/test
 	.build/test
 
 # the gate's preflight resolves the header root through this
