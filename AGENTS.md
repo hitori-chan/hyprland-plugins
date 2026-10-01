@@ -28,10 +28,11 @@ truth, not here. `CLAUDE.md` is dead — do not recreate or track it.
 - Open issues and evidence limits: `TODO.md` (local, gitignored). Close
   an item by deleting its line; provenance for closed work is the
   commit history.
-- Design contract: `docs/awesome-design.md` (tracked). The rewrite's
-  live state and goal lived in `PLAN.md` / `GOAL.md` (local, gitignored)
-  and were retired 2026-09-30 once the user's deploy was verified; the
-  commit history is their provenance.
+- Design contract: `docs/awesome-design.md` (tracked). Live-phase
+  state and goal: `PLAN.md` (local, gitignored; the rewrite's
+  `PLAN.md`/`GOAL.md` were retired 2026-09-30 once the user's deploy was
+  verified, and the user revived `PLAN.md` 2026-10-01 for the
+  awesome-alignment phase); the commit history is provenance.
 - Behavior: `awesome/README.md` (the single behavior doc) and
   `docs/awesome-design.md` (the contract it implements).
 - Gate results: the summary line of the run log
