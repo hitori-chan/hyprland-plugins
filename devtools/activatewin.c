@@ -36,6 +36,11 @@ static struct xdg_surface   *g_xsd;
 static struct xdg_toplevel  *g_top;
 static struct wl_buffer     *g_buf;
 static void                 *g_act; // xdg_activation_v1 (private iface)
+static struct wl_seat       *g_seat;
+static struct wl_keyboard   *g_kbd;
+static struct wl_pointer    *g_ptr;
+static uint32_t              g_serial; // last seat event serial (pointer enter/button)
+static struct wl_seat       *g_serial_seat;
 static int                   g_done;
 static const char           *g_id   = "activatewin";
 static int                   g_hold = 10;
@@ -46,6 +51,14 @@ static char                  g_tokstr[128];
 // manager: 0 destroy, 1 get_activation_token(n), 2 activate(s, o)
 // token:   0 set_serial(u,o), 1 set_app_id(s), 2 set_surface(o),
 //          3 commit, 4 destroy | events: 0 done(s)
+//
+// The compositor validates the token's set_serial against the client's own
+// seat events (upstream 21290254's anti-spoofing): a token committed
+// without a serial of this client's own pointer/keyboard events is
+// rejected with an empty done. The gate moves a virtual pointer over the
+// window before the ask so the fixture's enter event carries the serial.
+// NO_SERIAL=1 skips the set_serial for the negative case: the ask must be
+// rejected (no focus, no urgency).
 static const struct wl_interface *xav_dummy[]            = { NULL };
 static const struct wl_interface *xav_gettok_types[1]    = { NULL };
 static const struct wl_interface *xav_act_types[2]       = { NULL };
@@ -79,6 +92,8 @@ static const struct wl_interface xav_token_iface = {
 };
 
 // ---- registry -------------------------------------------------------------
+static const struct wl_seat_listener g_seatl;
+
 static void reg_bind(void *d, struct wl_registry *r, uint32_t id, const char *ifc, uint32_t ver) {
     (void) d;
     (void) ver;
@@ -90,7 +105,83 @@ static void reg_bind(void *d, struct wl_registry *r, uint32_t id, const char *if
         g_wm = wl_registry_bind(r, id, &xdg_wm_base_interface, 1);
     else if (!strcmp(ifc, "xdg_activation_v1") && !g_act)
         g_act = wl_registry_bind(r, id, &xav_manager_iface, 1);
+    else if (!strcmp(ifc, "wl_seat") && !g_seat) {
+        g_seat = wl_registry_bind(r, id, &wl_seat_interface, 4);
+        wl_seat_add_listener(g_seat, &g_seatl, NULL);
+    }
 }
+
+// ---- the seat: a token needs this client's own event serial ---------------
+static void ptr_enter(void *d, struct wl_pointer *p, uint32_t serial, struct wl_surface *s, int32_t x, int32_t y) {
+    (void) d; (void) p; (void) s; (void) x; (void) y;
+    g_serial      = serial;
+    g_serial_seat = g_seat;
+}
+static void ptr_leave(void *d, struct wl_pointer *p, uint32_t serial, struct wl_surface *s) { (void) d; (void) p; (void) serial; (void) s; }
+static void ptr_motion(void *d, struct wl_pointer *p, uint32_t t, int32_t x, int32_t y) { (void) d; (void) p; (void) t; (void) x; (void) y; }
+static void ptr_button(void *d, struct wl_pointer *p, uint32_t serial, uint32_t t, uint32_t b, uint32_t st) {
+    (void) p; (void) t; (void) b; (void) st;
+    if (serial)
+        g_serial = serial;
+}
+static void ptr_frame(void *d, struct wl_pointer *p) { (void) d; (void) p; }
+static void ptr_axis(void *d, struct wl_pointer *p, uint32_t t, uint32_t a, int32_t v) { (void) d; (void) p; (void) t; (void) a; (void) v; }
+static const struct wl_pointer_listener g_ptrl = {
+    .enter         = ptr_enter,
+    .leave         = ptr_leave,
+    .motion        = ptr_motion,
+    .button        = ptr_button,
+    .frame         = ptr_frame,
+    .axis          = ptr_axis,
+};
+
+// keyboard events land in the same seat container as pointer events (the
+// compositor records both per seat resource), so a key routed to this
+// client is an equally valid serial source — and needs no pointer at all
+static void kb_key(void *d, struct wl_keyboard *k, uint32_t serial, uint32_t t, uint32_t key, uint32_t state) {
+    (void) d; (void) k; (void) t; (void) key; (void) state;
+    if (serial)
+        g_serial = serial;
+    g_serial_seat = g_seat;
+}
+static void kb_enter(void *d, struct wl_keyboard *k, uint32_t serial, struct wl_surface *s, struct wl_array *keys) {
+    (void) d; (void) k; (void) s; (void) keys;
+    g_serial      = serial;
+    g_serial_seat = g_seat;
+}
+static void kb_leave(void *d, struct wl_keyboard *k, uint32_t serial, struct wl_surface *s) { (void) d; (void) k; (void) serial; (void) s; }
+static void kb_mods(void *d, struct wl_keyboard *k, uint32_t t, uint32_t dep, uint32_t lat, uint32_t loc, uint32_t grp) { (void) d; (void) k; (void) t; (void) dep; (void) lat; (void) loc; (void) grp; }
+// the keymap event is opcode 0 of wl_keyboard: a bound keyboard receives it
+// on enter, and libwayland aborts on a NULL listener for it
+static void kb_keymap(void *d, struct wl_keyboard *k, uint32_t fmt, int fd, uint32_t size) {
+    (void) d; (void) k; (void) fmt; (void) size;
+    close(fd);
+}
+// repeat_info is opcode 5 (since v4); libwayland aborts on a NULL listener
+static void kb_repeat(void *d, struct wl_keyboard *k, int32_t delay, int32_t rate) { (void) d; (void) k; (void) delay; (void) rate; }
+static const struct wl_keyboard_listener g_kbdl = {
+    .keymap     = kb_keymap,
+    .key        = kb_key,
+    .repeat_info = kb_repeat,
+    .enter      = kb_enter,
+    .leave      = kb_leave,
+    .modifiers  = kb_mods,
+};
+static void seat_caps(void *d, struct wl_seat *s, uint32_t caps) {
+    (void) d; (void) s;
+    if ((caps & WL_SEAT_CAPABILITY_POINTER) && !g_ptr) {
+        g_ptr = wl_seat_get_pointer(g_seat);
+        if (g_ptr)
+            wl_pointer_add_listener(g_ptr, &g_ptrl, NULL);
+    }
+    if ((caps & WL_SEAT_CAPABILITY_KEYBOARD) && !g_kbd) {
+        g_kbd = wl_seat_get_keyboard(g_seat);
+        if (g_kbd)
+            wl_keyboard_add_listener(g_kbd, &g_kbdl, NULL);
+    }
+}
+static void seat_name(void *d, struct wl_seat *s, const char *name) { (void) d; (void) s; (void) name; }
+static const struct wl_seat_listener g_seatl = { .capabilities = seat_caps, .name = seat_name };
 static void reg_remove(void *d, struct wl_registry *r, uint32_t id) {
     (void) d;
     (void) r;
@@ -202,6 +293,15 @@ int main(int argc, char **argv) {
     struct wl_proxy *tok = wl_proxy_marshal_flags((struct wl_proxy *)g_act, 1, &xav_token_iface, 1, 0, NULL);
     if (!tok || wl_proxy_add_dispatcher(tok, tok_dispatch, NULL, NULL) != 0)
         return 1;
+
+    // the compositor validates the token against this client's own seat
+    // events; skip the set_serial under NO_SERIAL to exercise the rejection
+    if (!g_serial || getenv("NO_SERIAL"))
+        fprintf(stderr, "activatewin: no seat serial%s — token will be rejected\n",
+                g_serial ? " (NO_SERIAL)" : "");
+    else
+        wl_proxy_marshal((struct wl_proxy *)tok, 0, g_serial, g_serial_seat); // set_serial
+
     wl_proxy_marshal((struct wl_proxy *)tok, 3); // commit -> done(token)
 
     // hold so the gate can observe the focus return (and the urgent event);
