@@ -296,6 +296,19 @@ c = next((c for c in json.load(sys.stdin) if c['class']=='$1'), None)
 print(int(c['at'][0]+c['size'][0]/2), int(c['at'][1]+c['size'][1]/2)) if c else (0,0)" \
 				| { read -r cx cy; printf "move %s %s\nsleep 50\npress 272\nsleep 50\nrelease 272\nsleep 50\n" "$cx" "$cy"; } | vp
 		}
+		touch_probe() { # touch_probe <class>: a keyboard event for the window
+			# (must hold keyboard focus: in every case it holds the map focus).
+			# The new upstream's xdg-activation token path validates the
+			# client's set_serial against ITS OWN seat events (anti-spoofing):
+			# a client that never saw a seat event has no serial to spend, the
+			# token comes back empty and the ask is void. A key routed to the
+			# probe hands the fixture a serial with no pointer motion (no
+			# follow-focus, no position dependence) and no press (no click).
+			clients | python3 -c "
+import json,sys
+print(1 if any(c['class']=='$1' for c in json.load(sys.stdin)) else 0)" \
+			| { read -r up; [[ "$up" == 1 ]] && printf 'tap 89\nsleep 200\n' | vk; }
+		}
 		wait_gone() { # wait_gone <class>: bounded wait for no client of the class
 			for _ in $(seq 1 24); do
 				clients 2>/dev/null | grep -q "\"class\": *\"$1\"" || return 0
@@ -318,7 +331,12 @@ print(int(c['at'][0]+c['size'][0]/2), int(c['at'][1]+c['size'][1]/2)) if c else 
 			ok "focus($mode): probe mapped"
 			click_center foot
 			faddr="$(focus_addr)"
-			chk "focus($mode): foot holds focus after the map" test -n "$faddr"
+			# the probe takes the map focus, so the click must demonstrably
+			# land on foot: with the probe focused the ping below early-returns
+			# (an activation request on the focused window is a no-op) and the
+			# urgent check fails for the wrong reason
+			chk "focus($mode): the click moved focus off the probe to foot" \
+				test -n "$faddr" && test "$faddr" != "$paddr"
 			: >"$cap"
 			python3 "$S2CAP_PY" "$S2SOCK" 14 "$cap" &
 			lpid=$!
@@ -338,6 +356,12 @@ print(int(c['at'][0]+c['size'][0]/2), int(c['at'][1]+c['size'][1]/2)) if c else 
 					grep -q "urgent>>$paddr" "$cap"
 			fi
 		}
+		# foot is the ping's focus target; the geometry batteries closed
+		# theirs, so make sure a window to click is up (a click_center with
+		# no foot clicks (0,0), the bar, and the probe keeps the map focus)
+		clients 2>/dev/null | grep -q '"class": *"foot"' \
+			|| { dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x300')"; sleep 2.5; }
+
 		run_ping_mode map
 		run_ping_mode attention
 		run_ping_mode activate
@@ -456,7 +480,7 @@ print(a[2:] if a.startswith('0x') else a)")"
 		: >"$STATE/askunfoc.cap"
 		python3 "$S2CAP_PY" "$S2SOCK" 13 "$STATE/askunfoc.cap" &
 		AFPL=$!
-		env WAYLAND_DISPLAY="$WL" "$ACTWIN" 13 2 >"$STATE/askunfoc.win.log" 2>&1 &
+		env WAYLAND_DISPLAY="$WL" "$ACTWIN" 13 3 >"$STATE/askunfoc.win.log" 2>&1 &
 		AP=$!
 		for _ in $(seq 1 24); do clients 2>/dev/null | grep -q '"class": *"activatewin"' && break; sleep 0.25; done
 		APAD="$(clients | python3 -c "
@@ -466,6 +490,14 @@ print(a[2:] if a.startswith('0x') else a)")"
 		FAD="$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), ''))")"
+		# the tap precedes the programmatic focus: the fixture holds a
+		# serial to spend when the delayed ask lands, and no pointer event
+		# races the focus between it and the ask. The ask's delay (3s) must
+		# outrun the tap's overhead plus the focus dispatch, or it lands
+		# while the probe still holds the map focus and the ask is a
+		# focused-visible no-op (2026-10-03 flake: the 2s ask raced the
+		# ~1.8s focus land and won half the runs)
+		touch_probe activatewin
 		dsp "hl.dsp.focus({window=\"address:$FAD\"})"
 		AF=""; for _ in $(seq 1 8); do AF="$(focus_addr)"; [[ -n "$AF" && "$AF" != "$APAD" ]] && break; sleep 0.25; done
 		for _ in $(seq 1 8); do grep -q "sent activation" "$STATE/askunfoc.win.log" 2>/dev/null && break; sleep 0.5; done
@@ -489,6 +521,10 @@ print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), '
 		env WAYLAND_DISPLAY="$WL" "$ACTWIN" 13 6 >"$STATE/asknv.win.log" 2>&1 &
 		NP=$!
 		for _ in $(seq 1 24); do clients 2>/dev/null | grep -q '"class": *"activatewin"' && break; sleep 0.25; done
+		# the tap lands while the probe is on the visible workspace;
+		# the serial outlives the workspace switch (the seat container
+		# keeps it until the token spends it)
+		touch_probe activatewin
 		dsp "hl.dsp.focus({workspace=\"2\"})"; sleep 0.8
 		# the fixture prints when the delayed ask went out; wait for it,
 		# bounded, instead of a fixed sleep racing the dispatch loop
@@ -514,6 +550,39 @@ print(a[2:] if a.startswith('0x') else a)")"
 		echo "asknv: probe='$NPAD' focus='$(focus_addr)' urgent-lines=$(grep -c 'urgent>>' "$STATE/asknv.cap" 2>/dev/null) client=[$(cat "$STATE/asknv.win.log" 2>/dev/null | tr '\n' '|')]" >&2
 		kill "$NP" 2>/dev/null
 		wait "$NVLPID" 2>/dev/null
+		wait_gone activatewin 2>/dev/null || true
+
+		# (n) the rejected ask: upstream's token path validates set_serial
+		# against the client's own seat events (anti-spoofing). NO_SERIAL
+		# skips the set_serial; the token comes back empty and the ask is
+		# void. The probe is unfocused, so a PROCESSED ask would demote to
+		# the urgency mark (attention-only) — no urgent line is the proof
+		# the token was rejected, and focus must stay on foot either way.
+		: >"$STATE/asknos.cap"
+		python3 "$S2CAP_PY" "$S2SOCK" 9 "$STATE/asknos.cap" &
+		NSLPID=$!
+		env NO_SERIAL=1 WAYLAND_DISPLAY="$WL" "$ACTWIN" 9 1 >"$STATE/asknos.win.log" 2>&1 &
+		NSP=$!
+		for _ in $(seq 1 24); do clients 2>/dev/null | grep -q '"class": *"activatewin"' && break; sleep 0.25; done
+		NSAD="$(clients | python3 -c "
+import json,sys
+a = next((c['address'] for c in json.load(sys.stdin) if c['class']=='activatewin'), '')
+print(a[2:] if a.startswith('0x') else a)")"
+		NSFAD="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), ''))")"
+		dsp "hl.dsp.focus({window=\"address:$NSFAD\"})"
+		NSAF=""; for _ in $(seq 1 8); do NSAF="$(focus_addr)"; [[ -n "$NSAF" && "$NSAF" != "$NSAD" ]] && break; sleep 0.25; done
+		for _ in $(seq 1 8); do grep -q "sent activation" "$STATE/asknos.win.log" 2>/dev/null && break; sleep 0.5; done
+		sleep 1
+		chk "ask-noserial: the unauthenticated ask raises no urgency" \
+			bash -c "! grep -q 'urgent>>' '$STATE/asknos.cap'"
+		chk "ask-noserial: the unauthenticated ask takes no focus" \
+			test "$(focus_addr)" = "$NSAF"
+		echo "asknos: foot='$NSAF' post='$(focus_addr)' probe='$NSAD' urgent-lines=$(grep -c 'urgent>>' "$STATE/asknos.cap" 2>/dev/null) client=[$(cat "$STATE/asknos.win.log" 2>/dev/null | tr '\n' '|')]" >&2
+		kill "$NSP" 2>/dev/null
+		wait "$NSLPID" 2>/dev/null
+		wait_gone activatewin 2>/dev/null || true
 	fi
 	# the (b) probe may still be settling out; make sure the view is back on
 	# workspace 1 before the foot-cleanup trailer
