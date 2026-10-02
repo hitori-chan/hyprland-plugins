@@ -354,8 +354,15 @@ kill_nested() { # kill any non-live instance running one of the harness cfgs
 	# died with it). The live instance never carries a harness cfg, so the
 	# match is live-safe without the signature compare.
 	for pid in $(pgrep -x Hyprland 2>/dev/null); do
-		grep -Fzxq -- "$CFG" "/proc/$pid/cmdline" 2>/dev/null || continue
-		kill "$pid" 2>/dev/null; killed="$killed $pid"
+		grep -Fzxq -- "$CFG" "/proc/$pid/cmdline" 2>/dev/null && { kill "$pid" 2>/dev/null; killed="$killed $pid"; continue; }
+		# Same rule as stop.sh: any nested-style launch (-c, no live
+		# --watchdog-fd) is a harness orphan, even when its cfg is not the
+		# current one (2026-10-02: a /tmp debug-cfg orphan outlived every
+		# stop; its window re-mapped onto eDP-1 and stole the live focus).
+		if grep -Fzxq -- "-c" "/proc/$pid/cmdline" 2>/dev/null \
+			&& ! grep -Fzxq -- "--watchdog-fd" "/proc/$pid/cmdline" 2>/dev/null; then
+			kill "$pid" 2>/dev/null; killed="$killed $pid"
+		fi
 	done
 	# Host-side client teardown outlives process death: a still-alive nested
 	# during a live 'output remove' is the race that leaves the monitor half

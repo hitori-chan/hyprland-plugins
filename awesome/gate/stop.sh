@@ -18,7 +18,12 @@ for s in "$RUNDIR"/*/; do
 	[[ "$sig" == "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && continue
 	pid="$(head -1 "$s/hyprland.lock" 2>/dev/null)"
 	[[ -n "$pid" ]] || continue
-	if grep -qa -- "$CFG" "/proc/$pid/cmdline" 2>/dev/null; then
+	# Match any nested-style launch (a -c config token, never the live
+	# --watchdog-fd session), not just this $CFG: an orphan from another
+	# cfg (manual/old) outlived every stop and its window took the live
+	# focus once nested-dev went away (2026-10-02, /tmp debug cfg).
+	if grep -qa -- "$CFG" "/proc/$pid/cmdline" 2>/dev/null \
+		|| { grep -Fzxq -- "-c" "/proc/$pid/cmdline" 2>/dev/null && ! grep -Fzxq -- "--watchdog-fd" "/proc/$pid/cmdline" 2>/dev/null; }; then
 		echo "stop: killing nested $sig (pid $pid)"
 		kill "$pid" 2>/dev/null
 	fi
