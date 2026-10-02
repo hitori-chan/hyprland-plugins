@@ -47,11 +47,17 @@ namespace NAwesome::Notify::Bus {
                     obj->emitSignal("ActivationToken").onInterface(IFACE).withArguments(id, PROTO::activation->mintToken());
                 obj->emitSignal("ActionInvoked").onInterface(IFACE).withArguments(id, key);
             } catch (...) {}
-            // The token above is for Wayland senders (they spend it through
-            // xdg-activation). An X11 sender cannot: its activation arrives
-            // as an urgency ping, so the side that saw the click — us —
-            // focuses the sender's own window. The sender string came in on
-            // the call (the card may be closed by the time this lambda runs).
+            // The click is a user action: the sender's window comes to the
+            // foreground. The token above lets a Wayland sender spend it
+            // through xdg-activation (vanilla: the app activates itself),
+            // but a sender may never spend it, and an X11 sender's own
+            // activation (_NET_ACTIVE_WINDOW) is unauthenticated and maps
+            // to urgency only — so the side that SAW the click focuses the
+            // sender's own window itself, for every backend (core/
+            // activate.hpp; a sender that DID spend the token just lands
+            // on its already-focused window). The sender string came in on
+            // the call (the card may be closed by the time this lambda
+            // runs).
             if (!sender.empty() && g_bus.conn()) {
                 if (!busProbe)
                     busProbe = sdbus::createProxy(*g_bus.conn(), sdbus::ServiceName{"org.freedesktop.DBus"}, sdbus::ObjectPath{"/org/freedesktop/DBus"});

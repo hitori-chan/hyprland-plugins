@@ -10,7 +10,6 @@
 #include "windows/click.hpp"
 #include "windows/max.hpp"
 #include "windows/place.hpp"
-#include "windows/retract.hpp"
 #include "windows/snap.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
@@ -62,34 +61,27 @@ namespace NAwesome::Windows {
             if (!w)
                 return;
             Tasklist::watchMinimize(w);
-            Retract::noteArrival(w);
         });
         supervisor().listen(Event::bus()->m_events.window.active, [](PHLWINDOW w, Desktop::eFocusReason reason) {
             Tasklist::focusAwayFromHidden(w);
-            Retract::noteFocus(w);
         });
         supervisor().listen(Event::bus()->m_events.window.destroy, [](PHLWINDOWREF wr) {
-            if (const auto* W = wr.get()) {
+            if (const auto* W = wr.get())
                 Tasklist::forget(W);
-                Retract::forget(W);
-            }
         });
         // An activation request — a notification click, a browser's "switch to
-        // tab", any xdg-activation — reaches a MINIMIZED window and dies
-        // there. CWindow::activate() raises and focuses, but the window is
-        // setHidden and activate() has no idea how to un-hide it: minimize
-        // is OUR invention (the compositor has no such state), so the
-        // restore is ours too. Without this the focus lands on an unrendered
-        // window and the check_focus guard above bounces straight back off it
-        // — the click does nothing at all.
-        //
-        // urgent fires from activate() BEFORE its focus_on_activate gate, so
-        // read the same value the compositor is about to read: with it off
-        // the user has asked that activation never steal focus, and
-        // un-minimizing a window is exactly that theft — the chip's urgent
-        // tint is the whole answer then.
+        // tab", any xdg-activation — reaches a MINIMIZED window. Minimize is
+        // OUR state (the compositor has no such thing), so CWindow::activate()
+        // routes asks on hidden windows to the urgency mark, and the restore
+        // is ours too: this is awesome's "c.minimized = false + focus" for
+        // the ask (permissions.activate's raise hint), performed from the
+        // event instead of inside the compositor's activation call.
+        // Gated like the compositor's own focus_on_activate: with it off the
+        // user has asked that activation never steal focus, and un-minimizing
+        // a window is exactly that theft — the chip's urgent tint is the
+        // whole answer then.
         // Deferred like every other restore path; we are inside the emission
-        // whose caller is about to run the compositor's own focus.
+        // the compositor is running its own activation from.
         supervisor().listen(Event::bus()->m_events.window.urgent, [](PHLWINDOW w) {
             static auto FOCUS_ON_ACTIVATE = CConfigValue<Config::INTEGER>("misc:focus_on_activate");
             if (!w || !*FOCUS_ON_ACTIVATE || !w->isHidden() || !Tasklist::isMinimized(w))
@@ -99,14 +91,6 @@ namespace NAwesome::Windows {
                 if (const auto W = WR.lock(); W && W->mapped() && Tasklist::isMinimized(W))
                     Tasklist::restore(W); // un-hides, re-slots if tiled, raises and focuses
             });
-        });
-
-        // A map that is answered by an attention ask does not keep the map
-        // focus: the pre-arrival window comes back, the chip carries the
-        // urgency (see windows/retract.hpp). The gate-OFF mode's promise,
-        // completed from the map path onto the activation path.
-        supervisor().listen(Event::bus()->m_events.window.urgent, [](PHLWINDOW w) {
-            Retract::maybeRetract(w);
         });
 
         Max::init();
@@ -129,7 +113,6 @@ namespace NAwesome::Windows {
         // firing mid-teardown cannot re-arm a hop: the hops are already
         // reset by the supervisor)
         pendingActivate.reset();
-        Retract::exit();
         Snap::teardown();
         Place::teardown();
         Click::teardown();

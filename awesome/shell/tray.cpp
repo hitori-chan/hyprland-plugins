@@ -473,7 +473,6 @@ namespace NAwesome::Shell {
                     return;
                 const int32_t X = Tray::sniCoord(h.clickX), Y = Tray::sniCoord(h.clickY);
                 if (bit == 4u) { // middle: the SNI SecondaryActivate call
-                    NAwesome::markUserGesture(); // the app's self-activation is the user's (core/activate.hpp)
                     Tray::post([IT, X, Y]() {
                         if (!IT->active || !IT->proxy)
                             return;
@@ -489,7 +488,6 @@ namespace NAwesome::Shell {
                 }
                 const bool HASMENU = !IT->menuPath.empty();
                 if (bit == 1u && !(IT->itemIsMenu && HASMENU)) {
-                    NAwesome::markUserGesture(); // same: the self-activation is the user's
                     Tray::post([IT, X, Y]() {
                         if (!IT->active || !IT->proxy)
                             return;
