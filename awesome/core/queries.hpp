@@ -21,6 +21,8 @@
 #include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/protocols/XDGShell.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
+#include <hyprland/src/layout/target/WindowTarget.hpp>
+#include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 
 #include <algorithm>
 
@@ -154,13 +156,27 @@ namespace NAwesome {
         return w && static_cast<bool>(w->m_state & Desktop::View::WINDOW_STATE_PINNED);
     }
 
-    // Maximize can be client-only state (windows' maximize never enters
-    // compositor fullscreen), so read back what the toplevel was last told.
+    // A window in the maximized presentation. The xdg MAXIMIZED state is
+    // NOT a read-back: upstream (21290254) tells every toplevel maximized
+    // at first map (the CSD-suppression lie, extended from tiled to all
+    // windows), so the state reads "maximized" on every window. Read the
+    // presentation instead: the compositor's internal FSMODE_MAXIMIZED
+    // covers born/client maximize, and a float whose box covers the whole
+    // workarea is the windows module's plugin-maximize box (a float sized
+    // to the workarea is maximized in all but state).
     inline bool toldMaximized(const PHLWINDOW& w) {
-        const auto TOP = xdgToplevel(w);
-        if (!TOP)
+        if (!w || !w->windowTarget())
             return false;
-        return std::ranges::contains(TOP->m_pendingApply.states, XDG_TOPLEVEL_STATE_MAXIMIZED);
+        if (Fullscreen::controller()->getFullscreenModes(w).internal == Fullscreen::FSMODE_MAXIMIZED)
+            return true;
+        if (!w->isFloating())
+            return false;
+        const auto MON = w->m_monitor.lock();
+        if (!MON)
+            return false;
+        const auto CUR = w->windowTarget()->position();
+        const auto WA  = MON->logicalBoxMinusReserved();
+        return CUR.x <= WA.x && CUR.y <= WA.y && CUR.x + CUR.w >= WA.x + WA.w && CUR.y + CUR.h >= WA.y + WA.h;
     }
 
     // A genuinely user-resizable toplevel — its last size is worth

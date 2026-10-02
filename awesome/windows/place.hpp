@@ -153,18 +153,21 @@ namespace NAwesome::Windows::Place {
         // still pending, and do not mistake a compositor mode for a normal
         // client-chosen geometry. This mirrors the target's map-time state
         // sources instead of trying to infer them from a placeholder box.
+        // Read the REQUESTS, not the toplevel's pending states: upstream
+        // (21290254) pushes XDG_TOPLEVEL_STATE_MAXIMIZED into every
+        // toplevel's pending apply at first map (the CSD-suppression trick
+        // — "apps are always maximized under Hyprland + Wayland"), so a
+        // state-contains check reads a grant on every window and placement
+        // never runs.
         inline bool hasFullscreenOrMaximizeGrant(PHLWINDOW w) {
             if (!w)
                 return false;
             if (w->fullscreenPolicy().pendingClientRequest().mode.has_value())
                 return true;
 
-            if (const auto TOP = xdgToplevel(w)) {
-                if (TOP->m_state.requestsFullscreen.value_or(false) || TOP->m_state.requestsMaximize.value_or(false) ||
-                    std::ranges::contains(TOP->m_pendingApply.states, XDG_TOPLEVEL_STATE_FULLSCREEN) ||
-                    std::ranges::contains(TOP->m_pendingApply.states, XDG_TOPLEVEL_STATE_MAXIMIZED))
-                    return true;
-            }
+            if (const auto TOP = xdgToplevel(w);
+                TOP && (TOP->m_state.requestsFullscreen.value_or(false) || TOP->m_state.requestsMaximize.value_or(false)))
+                return true;
 
             if (const auto X11 = x11Surface(w);
                 X11 && (X11->m_fullscreen || X11->m_maximized ||
