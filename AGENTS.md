@@ -80,10 +80,9 @@ gate.
 - Long builds and gate runs go in tmux. Every temporary artifact —
   logs, debug dumps, scratch files, probe dirs — goes under a
   dedicated `/tmp` subdirectory (e.g. `/tmp/hypr-gate/`); keep `~`
-  free of temp stuff. `/tmp` is tmpfs, so nothing
-  that must survive a reboot goes there (fork work, large `gcore`
-  dumps); fork work happens in `~/repo/Hyprland` itself. `cmd | tee`
-  swallows the exit code — trust the log's summary line.
+  free of temp stuff. `/tmp` is tmpfs, so nothing that must survive a
+  reboot goes there. `cmd | tee` swallows the exit code — trust the
+  log's summary line.
 - The gate is `make -C awesome gate` (`awesome/gate/gate.sh`; ARGS
   passes through: the compositor bin and `-b`/`-k` battery selection).
   Fixtures build with `make -C devtools`.
