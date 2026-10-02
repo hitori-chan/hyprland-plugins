@@ -82,6 +82,34 @@ if ! hlq monitors -j | python3 -c "import json,sys;sys.exit(0 if any(m['name']==
 	hlq output create headless "$VM" >/dev/null 2>&1
 	sleep 0.4
 fi
+# Pin the dev output's mode+scale to the panel's, every join. On this Mesa
+# a DIVERGENT output entering/leaving the dmabuf feedback table triggers the
+# 2-plane AR24 class: a live client segfaulted (hyprpaper, 2026-10-02) and
+# the live renderer froze until the user re-logged. A pin kept in the user
+# config would be machine-specific cruft (core.lua says so); the output is
+# the harness's, so the pin lives here and re-applies to a surviving output.
+PIN="$(hlq monitors -j 2>/dev/null | python3 -c "
+import json,sys
+ms=json.load(sys.stdin)
+real=next((m for m in ms if m['name']!='$VM'),None)
+vm=next((m for m in ms if m['name']=='$VM'),None)
+key=lambda m:(m['width'],m['height'],m['refreshRate'],m['scale'])
+if real and vm and key(real)!=key(vm):
+    print('hl.monitor({output=\"$VM\", mode=\"%dx%d@%.5f\", scale=%g})'%key(real))
+" 2>/dev/null)"
+if [[ -n "$PIN" ]]; then
+	echo "launch: pinning $VM to the panel's mode/scale: $PIN"
+	hlq dispatch "(function() $PIN return hl.dsp.no_op() end)()" >/dev/null 2>&1
+	sleep 0.5
+	AFTER="$(hlq monitors -j 2>/dev/null | python3 -c "
+import json,sys
+ms=json.load(sys.stdin)
+real=next((m for m in ms if m['name']!='$VM'),None)
+vm=next((m for m in ms if m['name']=='$VM'),None)
+print('%dx%d@%.3f/%g'%(vm['width'],vm['height'],vm['refreshRate'],vm['scale']) if vm else 'absent')
+" 2>/dev/null)"
+	echo "launch: $VM now ${AFTER:-unreadable}"
+fi
 # pin NEST_WS to the VM and make it the VM's ACTIVE (rendered) workspace. Done
 # in park() below once the window exists, because activation is only reliable
 # after NEST_WS actually lives on the VM.
