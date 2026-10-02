@@ -1,12 +1,11 @@
 #define _GNU_SOURCE
-// activatewin — the tray-return shape for the map-focus retraction gate:
-// a Wayland toplevel that maps (and takes the new-map initial focus),
-// then asks for attention through xdg-activation — the exact sequence a
-// tray-returning app performs on a new message, and the one the
-// compositor cannot distinguish from a user-launched window. With
-// focus_on_activate off the ask lands as urgency, and the plugin's
-// retraction (windows/retract.hpp) must hand the focus back to the
-// pre-arrival window.
+// activatewin — the xdg-activation fixture for the focus gate: a Wayland
+// toplevel that maps (taking the new-map initial focus), then asks for
+// activation through xdg-activation — the exact sequence a tray-returning
+// app performs on a new message. With an optional delay the ask lands
+// after the gate moved the compositor away, so it arrives at a
+// NOT-VISIBLE window (awesome's isvisible/urgent branch: urgency, no
+// focus, no workspace switch).
 //
 // Fork protocol (Hyprland/protocols/xdg-activation-v1): the token object
 // mints on commit and delivers the token string in its done event; the
@@ -15,7 +14,7 @@
 // own copies (interface tables for the proxies, opcodes for the
 // opcode-based 1.26 client marshal).
 //
-// usage: activatewin [hold-s] [app-id]
+// usage: activatewin [hold-s] [delay-s] [app-id]
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -40,6 +39,7 @@ static void                 *g_act; // xdg_activation_v1 (private iface)
 static int                   g_done;
 static const char           *g_id   = "activatewin";
 static int                   g_hold = 10;
+static int                   g_delay = 0;
 static char                  g_tokstr[128];
 
 // ---- xdg-activation-v1, the fork's wire format ----------------------------
@@ -140,7 +140,9 @@ int main(int argc, char **argv) {
     if (argc > 1)
         g_hold = atoi(argv[1]);
     if (argc > 2)
-        g_id = argv[2];
+        g_delay = atoi(argv[2]);
+    if (argc > 3)
+        g_id = argv[3];
 
     g_dpy = wl_display_connect(NULL);
     if (!g_dpy)
@@ -183,10 +185,20 @@ int main(int argc, char **argv) {
     wl_display_roundtrip(g_dpy);
     fprintf(stderr, "activatewin: mapped\n");
 
-    // the ask, right after the map — the back-to-back burst the retraction
-    // discriminates on (the arrival window). The "n" request is the
-    // constructor-style marshal: the new interface is an argument, the id
-    // is minted by the library (the 1.26 client API)
+    // optional delay between the map and the ask, dispatched wall-clock so
+    // the map really lands (and the gate can move the compositor away in
+    // the meantime) before the ask arrives at a not-visible window
+    if (g_delay > 0) {
+        struct timespec ts0 = { .tv_sec = 0, .tv_nsec = 500 * 1000 * 1000 };
+        for (int i = 0; i < g_delay * 2 && !g_done; i++)
+            if (wl_display_dispatch_timeout(g_dpy, &ts0) < 0)
+                break;
+    }
+
+    // the ask — right after the map by default (the back-to-back burst a
+    // tray-return performs). The "n" request is the constructor-style
+    // marshal: the new interface is an argument, the id is minted by the
+    // library (the 1.26 client API)
     struct wl_proxy *tok = wl_proxy_marshal_flags((struct wl_proxy *)g_act, 1, &xav_token_iface, 1, 0, NULL);
     if (!tok || wl_proxy_add_dispatcher(tok, tok_dispatch, NULL, NULL) != 0)
         return 1;
