@@ -35,8 +35,17 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HARNESS_DIR="${HYPR_HARNESS:-$HOME/.local/share/hypr-nested}"
 mkdir -p "$HARNESS_DIR"
 CFG="${HYPR_CFG:-$HERE/nested.lua}"
-BIN="${HYPR_BIN:-/usr/local/bin/Hyprland}"
+# $1 (a manual launch) overrides HYPR_BIN; the harness passes HYPR_BIN and no
+# argument. Refusing a missing binary keeps a mistyped path from silently
+# launching the installed one (2026-10-02: manual probes ran the stale
+# installed binary for an hour because this fell back by default).
+BIN="${1:-${HYPR_BIN:-/usr/local/bin/Hyprland}}"
+[[ -x "$BIN" ]] || { echo "launch: no such binary: $BIN" >&2; exit 1; }
 LOG="$HARNESS_DIR/nested.log"
+# the batteries' nested are relaunched between sections and $LOG is
+# truncated each launch: keep the previous instance's log so a failed
+# section's plugin/compositor debug lines survive for diagnosis
+[[ -f "$LOG" ]] && mv -f "$LOG" "$LOG.prev"
 VM="nested-dev"                    # the off-screen virtual monitor
 RUNDIR="${XDG_RUNTIME_DIR:?}/hypr"
 
