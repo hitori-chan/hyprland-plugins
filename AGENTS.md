@@ -96,12 +96,16 @@ gate.
   live panel's mode/scale at creation (`hl.monitor` after `output create
   headless`): a divergent-mode output reconfigures the dmabuf feedback
   table on every join/leave, and one rapid divergent-mode
-  remove+create pair killed the live compositor on this Intel/i915
-  box (2026-10-02; the earlier 2-plane AR24 client class was the old
-  AMD machine's Mesa — see TODO.md). Never run launch/stop by hand
-  while a gate is running — the gate's warmup relaunches a perturbed
-  nested mid-battery, so a manual stop/launch corrupts the run and
-  doubles the output churn.
+  remove+create pair killed the live compositor on this i915 box
+  (2026-10-02). Never run launch/stop by hand while a gate is running
+  — the gate's warmup relaunches a perturbed nested mid-battery, so a
+  manual stop/launch corrupts the run and doubles the output churn.
+  The harness NEVER focuses the live session (no live `hl.dsp.focus`
+  dispatches, no cursor warps): the old parking/warmup focus dance
+  stole the user's keyboard focus on every launch/warmup/stop
+  (2026-10-02, user report) — frame-cycle warmup is capture-only now,
+  and the harness's live-focus canary fails the gate if the live
+  focus ever lands on `nested-dev`.
 
 ## Safety — hard lines
 
@@ -112,6 +116,15 @@ gate.
 - The agent never operates the live desktop: no `hyprpm update`/
   `enable`, plugin unload, live reload, or session exit. Deploy is the
   user's action (build + relog).
+- Tests and gates never affect the live workspace and never take over
+  the user's mouse or focus: harness scripts may create/move the
+  off-screen `nested-dev` output and its window, but they must not
+  focus live monitors/workspaces, warp the live cursor, or churn live
+  state. Verified, not assumed: the harness canaries the live
+  focused monitor+workspace across every launch/stop and fails the
+  gate on a delta (2026-10-02: the parking focus dance violated this;
+  the user's rule is absolute for all gate and probe scripts, and for
+  any manual investigation launch).
 - Never hot-swap a loaded plugin or overwrite a mapped `.so` in place
   (invariants 2 and 5). Let `hyprpm` own deployment, or build a
   complete artifact and rename it atomically.

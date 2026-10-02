@@ -19,9 +19,9 @@ done
 # one reading for the log either way: a failed canary must say HOW dark
 # the strip was (0 = never drew; 150-250 = mid-warm), not just "dark".
 # The threshold counts bright pixels of the whole band and is render-
-# hardware sensitive: the fully drawn strip settles at 283-296 on the
-# i915/Mesa 26.2.3 box (300+ on the old AMD one, 2026-10-02), so the
-# floor sits under the lowest settled reading. A mid-warm frame lacks
+# hardware sensitive: the fully drawn strip settles at 283-296 on this
+# i915/Mesa 26.2.3 box, so the floor sits under the lowest settled
+# reading. A mid-warm frame lacks
 # most of its glyphs and scores far below; the poll loop above retries
 # through the warm, and the glyph checks that follow are the real
 # presence test either way.
