@@ -15,7 +15,7 @@ and use judgment; when scope is ambiguous, ask before expanding it.
 Maintenance: add a rule only when an incident earns it, with the reason
 attached; prune when the reason stops applying; keep the file lean — if
 a section needs frequent updates, its content belongs in a source of
-truth, not here. `CLAUDE.md` is dead — do not recreate or track it.
+truth, not here.
 
 ## Where state lives
 
@@ -29,10 +29,8 @@ truth, not here. `CLAUDE.md` is dead — do not recreate or track it.
   an item by deleting its line; provenance for closed work is the
   commit history.
 - Design contract: `docs/awesome-design.md` (tracked). Live-phase
-  state and goal: `PLAN.md` (local, gitignored; the rewrite's
-  `PLAN.md`/`GOAL.md` were retired 2026-09-30 once the user's deploy was
-  verified, and the user revived `PLAN.md` 2026-10-01 for the
-  awesome-alignment phase); the commit history is provenance.
+  state and goal: `PLAN.md` (local, gitignored); the commit history is
+  provenance.
 - Behavior: `awesome/README.md` (the single behavior doc) and
   `docs/awesome-design.md` (the contract it implements).
 - Gate results: the summary line of the run log
@@ -50,9 +48,9 @@ conversation state. Never copy state into this file.
 - Keep scope user-driven: no new feature, product-model change, or
   protocol-contract change just because an alternative seems preferable.
 - User configs (`~/.config/hypr/...`) stay clean and minimal: no
-  investigation notes, no comment dumps (2026-09-29: lock-chain findings
-  were written into binds.lua; the user ordered them out). Provenance and
-  diagnosis go to `TODO.md`; config comments only for a non-obvious why.
+  investigation notes, no comment dumps (the user ordered notes out of
+  binds.lua — provenance belongs in `TODO.md`, not config). Config
+  comments only for a non-obvious why.
 
 ## Environment and build
 
@@ -71,10 +69,9 @@ gate.
   (e.g. `CWaylandBackend::m_resource`, `CX11Backend::m_xwaylandSurface`)
   so plugins can read client state — read-only, documented in the fork
   headers.
-- Dependencies come from distro packages (aquamarine 0.15.0; the
-  `~/repo/aquamarine` checkout is exactly upstream, not a fork
-  dependency); keep `~/repo/<dep>` checkouts at the fork's `flake.lock`
-  pins; the user performs sudo installs.
+- Dependencies come from distro packages (the `~/repo/<dep>` checkouts
+  are exactly upstream, not fork dependencies); keep them at the fork's
+  `flake.lock` pins; the user performs sudo installs.
 - For an uninstalled fork, pass one package/header set through both
   `PKG_CONFIG_PATH` and `HYPR_DEPLOY_PKG_CONFIG_PATH` (same directory);
   never substitute a stale installed cache — watch stale-header
@@ -96,20 +93,23 @@ gate.
   switching misbehaves after gate runs, check `hyprctl monitors all -j`
   before suspecting the plugin. Teardown ALWAYS via the harness — it owns
   `output remove nested-dev`; raw-killing the nested PIDs leaves a phantom
-  output that churns the renderer (2026-09-29: 411 workbuffer allocs).
-  Keep the `nested-dev` monitor rule pinned to the live panel's
-  mode/scale (core.lua): any divergent properties perturb the dmabuf
-  feedback table on join/leave and crash live clients on this Mesa
-  (2-plane AR24 class, 2026-09-29 + 2026-09-30; TODO.md).
+  output that churns the renderer. launch.sh pins `nested-dev` to the
+  live panel's mode/scale at creation (`hl.monitor` after `output create
+  headless`): a divergent-mode output reconfigures the dmabuf feedback
+  table on every join/leave, and one rapid divergent-mode
+  remove+create pair killed the live compositor on this Intel/i915
+  box (2026-10-02; the earlier 2-plane AR24 client class was the old
+  AMD machine's Mesa — see TODO.md). Never run launch/stop by hand
+  while a gate is running — the gate's warmup relaunches a perturbed
+  nested mid-battery, so a manual stop/launch corrupts the run and
+  doubles the output churn.
 
 ## Safety — hard lines
 
 - Explicit user instructions are absolute and override the lines
-  below: a directed action is executed, not re-litigated (2026-09-06:
-  the agent declined a user-directed live-desktop firejail spawn on
-  this section's authority; the user overruled and ordered the rule).
-  The lines bind the agent's autonomous judgment — what "do your best"
-  may touch — never a user-directed action.
+  below: a directed action is executed, not re-litigated. The lines
+  bind the agent's autonomous judgment — what "do your best" may
+  touch — never a user-directed action.
 - The agent never operates the live desktop: no `hyprpm update`/
   `enable`, plugin unload, live reload, or session exit. Deploy is the
   user's action (build + relog).
@@ -159,12 +159,15 @@ them, append new ones.
    `~CWindow` & co. still emit bus events into our listeners over a
    half-dead state. All event-driven work no-ops from the moment
    `m_isShuttingDown` is set; the supervisor gates every state listener
-   on `NAwesome::compositorShuttingDown()` (2026-10-01: every nested
-   teardown SEGV'd in `Shell::renderBar` on a released CSharedPointer
-   owner — the standing "input storm SEGV" red runs).
+   on `NAwesome::compositorShuttingDown()` (an event-driven bar warm over
+   a released CSharedPointer owner SEGVs on nested teardown).
 
 ## Compositor integration
 
+- Behavior follows AwesomeWM's vanilla semantics, source-verified
+  (the contract lives in `docs/awesome-design.md`), tuned for
+  Wayland/Hyprland where an X11/vanilla assumption is broken or
+  unsafe: no per-app rules; every documented deviation says why.
 - Use the fork's current public APIs and native renderer/input
   ownership; mutate private compositor state only when the exact target
   requires it, and document the dependency in code.
