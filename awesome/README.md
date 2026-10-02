@@ -100,38 +100,50 @@ stored under `$XDG_STATE_HOME/awesome/`.
   `focus_next`/`focus_prev` cycle stable arrival order (not the
   z-order that click-to-raise keeps changing); `focus_prev_here`
   toggles the two most recent windows on the current workspace.
-- **Focus semantics (vanilla awesome, Wayland-tuned)**: the model is
-  awesome's `permissions.activate`, source-verified, with two documented
-  deviations where X11 assumptions break on Wayland/Hyprland:
+- **Focus semantics (attention-first, the shipped default)**: the
+  mechanism is awesome's `permissions.activate` (source-verified), and
+  the shipped default picks the Windows foreground model — a background
+  app's "present me" asks for ATTENTION, never the focus (this is what
+  keeps a message arriving in Telegram from stealing the keyboard):
   - A newly mapped window takes initial focus (awesome's global
     `focus = awful.client.focus.filter` rule; the compositor's new-map
     focus, left authoritative) — that is how a spawned terminal gets
     it, and why a tray-returning app's re-map takes focus as in
     awesome.
-  - An activation ask on a VISIBLE window focuses it (xdg-activation,
-    the token-validated ask — `misc:focus_on_activate` on, which the
-    config sets; the fork's default off is Hyprland's anti-steal mode
-    and demotes even a visible ask to the urgency mark). The focused
-    window is never marked: an ask landing on the window that already
-    holds focus is a no-op (awesome's `permissions.urgent` never marks
-    the focused client).
-  - An ask on a NOT-VISIBLE window (another workspace, or minimized) is
+  - An activation ask (xdg-activation, the token-validated ask) NEVER
+    takes the focus with `misc:focus_on_activate` off (the fork
+    default, the live config): the asking window's task chip gets the
+    urgent tint — a fork extension over upstream Hyprland, which
+    ignores such asks silently. A chip click, `Mod+U` (`hl.dsp.focus({
+    urgent_or_last = true })` — the urgent window wins over the
+    last-window fallback and the view follows it to its workspace,
+    awesome's `awful.client.urgent.jumpto`), or a tray/notification
+    click completes the attention.
+  - A focused, visible window that asks is a no-op, in both gate modes
+    (awesome's `permissions.urgent` never marks the focused client;
+    marking it would tint the active chip while the user watches it).
+  - An ask on a not-visible window (another workspace, or minimized) is
     urgency only: no focus, no workspace switch — awesome's
     `isvisible` branch, performed in the fork's `CWindow::activate`
     (`m_workspace->visible()` is the fork's own idiom for "on a
-    monitor"). `Mod+U` (`hl.dsp.focus({ urgent_or_last = true })`,
-    the user's binding) or a click completes the attention.
+    monitor"). An ask on a MINIMIZED window tints the chip; the
+    restore is a user action (chip click, `Mod+Ctrl+N`).
   - Focus clears the urgency mark (EWMH / FS#1310; the fork's
-    FocusState already does it), as in awesome's client focus handler.
-  - Deviation 1 — X11 `_NET_ACTIVE_WINDOW` is urgency ONLY (the fork's
-    XWM, documented there): X11 cannot authenticate a gesture, and
-    Wine/Proton send it on every internal SetForegroundWindow. A
-    user-initiated X11 activation is performed by the plugin instead:
-    tray and notification clicks focus the app's own window
-    compositor-side (core/activate.hpp), for every backend — also the
-    fallback when a Wayland sender never spends the token the plugin
-    minted for it (Deviation 2: the plugin makes awesome's "the app
-    activates itself after the click" unconditional).
+    FocusState does it), as in awesome's client focus handler.
+  - `focus_on_activate = true` switches to vanilla awesome / KWin-token
+    behavior: an ask on a VISIBLE window focuses it (the not-visible
+    and minimized branches above are unchanged). The user's live config
+    leaves the value at the fork default (attention-only); the nested
+    gate battery tests that mode.
+  - X11 `_NET_ACTIVE_WINDOW` is urgency ONLY in both gate modes (the
+    fork's XWM, documented there): X11 cannot authenticate a gesture,
+    and Wine/Proton send it on every internal SetForegroundWindow. A
+    user-initiated activation is performed by the plugin instead: tray
+    and notification clicks focus the app's own window compositor-side
+    (core/activate.hpp), for every backend — also the fallback when a
+    Wayland sender never spends the token the plugin minted for it
+    (the plugin makes awesome's "the app activates itself after the
+    click" unconditional).
 - **Spawn placement** is per-class: the last free geometry from the
   store, else least-overlap for a second window of the same class.
   Resizable xdg-toplevels can receive the remembered size in the
