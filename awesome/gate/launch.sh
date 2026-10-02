@@ -121,16 +121,28 @@ before_sig="$(ls -1 "$RUNDIR" 2>/dev/null)"
 before_aq="$(hlq clients -j 2>/dev/null | python3 -c "import json,sys;print(' '.join(c['address'] for c in json.load(sys.stdin) if c['class']=='aquamarine'))" 2>/dev/null)"
 
 # --- launch via the live compositor's exec, with the exec-rule -------------
-# The executor (CExecutor::spawnRawProc) runs `sh -c '<cmd>'`. A single
-# `exec` chain keeps the exec'd process's PID: sh execs (no fork for a
-# simple command), setsid does not fork when it is not a group leader,
-# env execs, and dbus-run-session execs the target after forking its
-# private dbus — so the nested Hyprland's client PID is the one the exec
-# rule registered, and its root toplevel picks the rule up at map time.
-# The 60s exec-rule expiry (IRule::markAsExecRule) comfortably covers boot.
+# The executor (CExecutor::spawnRawProc) runs `sh -c '<cmd>'` FORKED FROM
+# THE LIVE COMPOSITOR — so the nested inherits the live compositor's
+# environment, NOT this script's. The harness's stress env (XDG_STATE_HOME/
+# XDG_CACHE_HOME to the scratch state, the fake-wpctl PATH + AW_* files) is
+# therefore INLINED into the exec string; the first version of this launch
+# inherited the live env and the gate wrote the battery's stores into the
+# user's real ~/.local/state (2026-10-02). Standalone (no harness), the
+# values are the caller session's own — the pre-exec_cmd inheritance
+# behavior.
+# A single `exec` chain keeps the exec'd process's PID: sh execs (no fork
+# for a simple command), setsid does not fork when it is not a group
+# leader, env execs, and dbus-run-session execs the target after forking
+# its private dbus — so the nested Hyprland's client PID is the one the
+# exec rule registered, and its root toplevel picks the rule up at map
+# time. The 60s exec-rule expiry (IRule::markAsExecRule) covers boot.
 echo "launch: $BIN -c $CFG (wayland backend -> $VM, private dbus)"
+exec_env="AQ_BACKENDS=wayland"
+for v in XDG_STATE_HOME XDG_CACHE_HOME PATH AW_WPCTL_LOG AW_WPCTL_HANG_FILE AW_WPCTL_FLOOD_FILE AW_SOUND_HANG_FILE; do
+	[[ -n "${!v:-}" ]] && exec_env="$exec_env $v=${!v}"
+done
 exec_rc=0
-hlq dispatch "hl.dsp.exec_cmd('ulimit -c unlimited 2>/dev/null; exec setsid env -u HYPRLAND_INSTANCE_SIGNATURE AQ_BACKENDS=wayland dbus-run-session -- $BIN -c $CFG > $LOG 2>&1', {monitor='$VM silent'})" >/dev/null 2>&1 || exec_rc=$?
+hlq dispatch "hl.dsp.exec_cmd('ulimit -c unlimited 2>/dev/null; exec setsid env -u HYPRLAND_INSTANCE_SIGNATURE $exec_env dbus-run-session -- $BIN -c $CFG > $LOG 2>&1', {monitor='$VM silent'})" >/dev/null 2>&1 || exec_rc=$?
 if [[ $exec_rc -ne 0 ]]; then
 	echo "launch: hl.dsp.exec_cmd failed (rc=$exec_rc) — the exec-rule park needs a fork with the monitor-rule silent suffix; refusing to fall back to the focus-dragging moves" >&2
 	exit 1
