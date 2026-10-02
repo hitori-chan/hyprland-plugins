@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -u
+
+MARKER=${AW_SOUND_HANG_FILE:-}
+[[ -n "$MARKER" && -e "$MARKER" ]] || exit 0
+# append: a spawn-cap test hangs SEVERAL players and counts their lines
+printf '%s\n' "$$" >> "${MARKER}.pid"
+exec sleep 30
