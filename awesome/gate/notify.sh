@@ -7,10 +7,11 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # ---- notification cap ---------------------------------------------------
+storm_jobs=()
 for i in $(seq 1 65); do
 	u=normal; [[ $((i % 6)) == 0 ]] && u=critical
-	dsp "hl.dsp.exec_cmd('notify-send -u $u \"stress $i\" body')" &
-done; wait; sleep 5
+	dsp "hl.dsp.exec_cmd('notify-send -u $u \"stress $i\" body')" & storm_jobs+=("$!")
+done; [[ ${#storm_jobs[@]} -gt 0 ]] && wait "${storm_jobs[@]}" || true; sleep 5
 chk "notif storm: cap holds at exactly 50/65" test "$(hq awesome count)" = 50
 chk "no history verb survives the model removal" test "$(hq awesome history)" = "unknown request"
 chk "no recall verb survives the model removal" test "$(hq awesome recall)" = "unknown request"

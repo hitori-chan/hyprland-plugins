@@ -52,22 +52,25 @@ dsp "hl.dsp.window.fullscreen()"; sleep 0.7; dsp "hl.dsp.window.fullscreen()"; s
 chk "fullscreen roundtrip restores the exact boxes" test "$(feet)" = "$FEET"
 
 # ---- close storm + memory update ---------------------------------------
+storm_jobs=()
 for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in json.load(sys.stdin) if c['class']=='foot']"); do
-	dsp "hl.dsp.window.close({window=\"address:$a\"})" &
-done; wait; sleep 1.2
+	dsp "hl.dsp.window.close({window=\"address:$a\"})" & storm_jobs+=("$!")
+done; [[ ${#storm_jobs[@]} -gt 0 ]] && wait "${storm_jobs[@]}" || true; sleep 1.2
 chk "close storm: no stragglers" test "$(pyc "sum(1 for c in cs if c['class']=='foot')")" = 0
 chk "tsv: exactly one foot row survives the coalesced save" test "$(grep -c $'\tfoot$' "$AW_SPOT")" = 1
 chk "tsv: no temp-file debris" bash -c "! ls $AWSTATE/*.tmp 2>/dev/null | grep -q ."
 
 # ---- spawn storm --------------------------------------------------------
+storm_jobs=()
 for i in $(seq 1 8); do
-	dsp "hl.dsp.exec_cmd('foot --window-size-pixels=$((400 + (i % 4) * 80))x$((250 + (i % 3) * 60))')" &
-done; wait; sleep 2.5
+	dsp "hl.dsp.exec_cmd('foot --window-size-pixels=$((400 + (i % 4) * 80))x$((250 + (i % 3) * 60))')" & storm_jobs+=("$!")
+done; [[ ${#storm_jobs[@]} -gt 0 ]] && wait "${storm_jobs[@]}" || true; sleep 2.5
 expect "spawn storm: all 8 up, fully inside the workarea" \
 	"sum(1 for c in cs if c['class']=='foot')==8 and all(c['at'][0]>=0 and c['at'][1]>=26 and c['at'][0]+c['size'][0]<=$MON_W and c['at'][1]+c['size'][1]<=$MON_H for c in cs if c['class']=='foot')"
+storm_jobs=()
 for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in json.load(sys.stdin) if c['class']=='foot']"); do
-	dsp "hl.dsp.window.close({window=\"address:$a\"})" &
-done; wait; sleep 1.2
+	dsp "hl.dsp.window.close({window=\"address:$a\"})" & storm_jobs+=("$!")
+done; [[ ${#storm_jobs[@]} -gt 0 ]] && wait "${storm_jobs[@]}" || true; sleep 1.2
 
 # ---- fixed-size (dialog/splash) placement --------------------------------
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=700x500')"; sleep 2

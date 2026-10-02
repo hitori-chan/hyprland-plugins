@@ -86,18 +86,20 @@ dsp "hl.dsp.focus({workspace=\"1\"})"; sleep 0.8
 chk "shell: back on workspace 1" test "$(ws)" = 1
 
 # ---- tasks: the chip appears with the window, dims with minimize -----------
-TASKBAND0="$(strip_band "$STATE/strip-base.png" 250 600 100)"
+# Band window: the chip's x follows the taglist width (workspace count),
+# 222 without the old ws99 park tag, ~250 with; 210 covers both (2026-10-02).
+TASKBAND0="$(strip_band "$STATE/strip-base.png" 210 600 100)"
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x300')"; sleep 2
 capture_nested "$STATE/strip-task.png"
-TASKBAND1="$(strip_band "$STATE/strip-task.png" 250 600 100)"
+TASKBAND1="$(strip_band "$STATE/strip-task.png" 210 600 100)"
 chk "shell: the task chip draws with the window" test "$TASKBAND1" -gt $(( TASKBAND0 + 100 ))
 dsp "hl.plugin.awesome.minimize()"; sleep 1
 capture_nested "$STATE/strip-task-min.png"
-TASKBAND2="$(strip_band "$STATE/strip-task-min.png" 250 600 100)"
+TASKBAND2="$(strip_band "$STATE/strip-task-min.png" 210 600 100)"
 chk "shell: minimizing dims the chip" test "$TASKBAND2" -lt "$TASKBAND1"
 dsp "hl.plugin.awesome.restore()"; sleep 1
 capture_nested "$STATE/strip-task-restore.png"
-TASKBAND3="$(strip_band "$STATE/strip-task-restore.png" 250 600 100)"
+TASKBAND3="$(strip_band "$STATE/strip-task-restore.png" 210 600 100)"
 chk "shell: restoring re-brightens the chip" test "$TASKBAND3" -gt "$TASKBAND2"
 FT="$(clients | python3 -c "
 import json,sys
@@ -105,7 +107,7 @@ print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), '
 [[ -n "$FT" ]] && dsp "hl.dsp.window.close({window=\"address:$FT\"})"; sleep 1
 capture_nested "$STATE/strip-task-gone.png"
 chk "shell: the chip leaves with the window" \
-	test "$(strip_band "$STATE/strip-task-gone.png" 250 600 100)" -le $(( TASKBAND0 + 100 ))
+	test "$(strip_band "$STATE/strip-task-gone.png" 210 600 100)" -le $(( TASKBAND0 + 100 ))
 
 # ---- the bell badge: the counts the bell reads from the model --------------
 BELLBAND() { # bellband <img> — the badge fill in the bell's badge box

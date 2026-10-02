@@ -31,8 +31,9 @@ print(next(c['address'] for c in json.load(sys.stdin) if c['fullscreen']==2))")"
 # a 5-press burst spanning ~700ms: the tail outlives a fixed 400ms corpse,
 # so this also asserts each swallowed press extends the gesture
 ( { printf "move ${P% *} ${P#* }\nsleep 30\n"; for i in 1 2 3 4 5; do printf "press 272\nsleep 40\nrelease 272\nsleep 110\n"; done; } | vp ) &
+burst_pid=$!
 sleep 0.12; dsp "hl.dsp.window.close({window=\"address:$V\"})"
-wait; sleep 0.9
+wait "$burst_pid" 2>/dev/null; sleep 0.9
 expect "corpse guard: click burst through a dying viewer keeps the stack" \
 	"cs[-1]['class']=='corpseB'"
 chk "corpse guard: focus stayed with the viewer's app" active_window_class_is corpseB
