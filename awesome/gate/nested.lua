@@ -30,6 +30,10 @@ hl.config({
 	misc = {
 		disable_hyprland_logo = true,
 		disable_splash_rendering = true,
+		-- the vanilla awesome baseline (permissions.activate): an activation
+		-- ask on a visible window focuses it. The batteries test this mode;
+		-- never inject/restore the value at runtime (2026-10-02 stuck line).
+		focus_on_activate = true,
 		font_family = "IBM Plex Sans",
 		-- Keep it near-black (<=5): the stress panel-bottom detector keys on
 		-- min-channel > 5 to find the panel's edge, so the background must sit

@@ -232,15 +232,13 @@ fi
 if [[ ! -x "$FOCUSTRAP" ]]; then
 	bad "focus: $FOCUSTRAP is unavailable"
 else
-	FOCUS_RULE=0
-	if ! grep -q "focus_on_activate" "$CFG" 2>/dev/null; then
-		awk '{ print } /misc = \{/ && !inj { print "\t\tfocus_on_activate = 1,"; inj = 1 }' \
-			"$CFG" >"$CFG.focus" && mv "$CFG.focus" "$CFG" && FOCUS_RULE=1
-	fi
-	if [[ "$FOCUS_RULE" == 1 ]]; then
-		hq reload >/dev/null 2>&1
-		sleep 2
-	fi
+	# The nested baseline IS the vanilla mode (nested.lua sets
+	# focus_on_activate = true, the gate's permanent expectation — the old
+	# inject/restore-at-runtime machinery is gone: a line left behind by an
+	# interrupted run silently flipped every expectation, 2026-10-02). A
+	# drifted config must FAIL the battery, not change what it means.
+	chk "focus: the nested baseline is the vanilla gate (focus_on_activate on)" \
+		grep -q "focus_on_activate = true" "$CFG"
 	NPID_FOCUS="$(head -1 "$RUNDIR/$SIG/hyprland.lock" 2>/dev/null)"
 	NDISP=""
 	for p in $(pgrep -P "$NPID_FOCUS" 2>/dev/null); do
@@ -348,52 +346,105 @@ print(int(c['at'][0]+c['size'][0]/2), int(c['at'][1]+c['size'][1]/2)) if c else 
 			test "$(pyc "any(c['class']=='focustrap' and not c['hidden'] for c in cs)")" = 1
 		kill "$FP" 2>/dev/null
 	fi
-	# leave the config as the preflight found it
-	if [[ "${FOCUS_RULE:-0}" == 1 ]]; then
-		grep -v "focus_on_activate = 1," "$CFG" >"$CFG.restore" 2>/dev/null \
-			&& mv "$CFG.restore" "$CFG" && hq reload >/dev/null 2>&1
-		sleep 1
-	fi
-	# Tray-return retraction: with focus_on_activate off (the restored
-	# default), a window that maps and then asks for attention within the
-	# arrival window must not keep the map focus — the pre-map focus comes
-	# back (raised) and the chip carries the urgency. activatewin performs
-	# the real tray-return sequence on the real path: a Wayland map (which
-	# takes the new-map initial focus) followed immediately by an
-	# xdg-activation ask, which with the gate off is demoted to urgency.
-	# Wayland on purpose: an X11 ping's arrival is offset by the Xwayland
-	# pipeline lag, which on a loaded machine can exceed the 2s arrival
-	# window and void the test; the Wayland burst lands in milliseconds.
-	# Without the retraction (windows/retract.hpp) the probe keeps the
-	# focus it mapped with.
+	# ---- vanilla activation (Wayland xdg-activation, the token-validated path)
+	# (a) VISIBLE ask: the tray-return burst — a Wayland map (which takes the
+	#     new-map initial focus, awesome's "rules" context) followed
+	#     immediately by an xdg-activation ask. The ask lands on a window
+	#     that already holds focus: vanilla neither moves the focus nor
+	#     marks the focused client (permissions.urgent: c ~= client.focus).
+	#     Wayland on purpose: an X11 ping's arrival is offset by the Xwayland
+	#     pipeline lag and voids the sub-second burst; the Wayland burst
+	#     lands in milliseconds.
+	# (b) NOT-VISIBLE ask: the same burst with a delay — the battery moves
+	#     the compositor to another workspace in between, so the ask arrives
+	#     at a window whose workspace is off-monitor: permissions.activate's
+	#     isvisible branch — urgency, no focus, no workspace switch.
 	ACTWIN="$REPO/devtools/activatewin"
 	[[ -x "$ACTWIN" ]] || make -C "$REPO/devtools" activatewin >/dev/null 2>&1
 	if [[ -n "$NDISP" && -x "$ACTWIN" ]]; then
+		# let the killed X11 probe fully leave the window list first: its
+		# destroy is async through Xwayland, and a click (or a new map's
+		# focus fallback) racing the dying surface lands on dead geometry
+		# (2026-10-02 battery repro). An empty S1 response is a transport
+		# hiccup, not "no windows": keep waiting on it.
+		for _ in $(seq 1 20); do
+			CL="$(clients 2>/dev/null)"
+			if [[ -n "$CL" ]]; then
+				echo "$CL" | grep -q '"class": *"focustrap"' || break
+			fi
+			sleep 0.25
+		done
+		# a mid-battery relaunch (the harness's FALLBACK recovery) leaves a
+		# bare nested: the foot this section spawned is gone with the old
+		# instance. Re-establish the precondition instead of clicking empty
+		# air (2026-10-02: the check read clients=[] and failed for that
+		# reason).
+		clients 2>/dev/null | grep -q '"class": *"foot"' \
+			|| { dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x300')"; sleep 2.5; }
+
+		# (a) the visible burst
 		click_center foot
-		RF="$(focus_addr)"
-		: >"$STATE/retract.cap"
-		python3 "$S2CAP_PY" "$S2SOCK" 8 "$STATE/retract.cap" &
-		RLPID=$!
-		env WAYLAND_DISPLAY="$WL" "$ACTWIN" 8 >/dev/null 2>&1 &
-		RP=$!
-		for _ in $(seq 1 24); do clients 2>/dev/null | grep -q '"class": *"activatewin"' && break; sleep 0.25; done
-		# map + ask are a sub-second burst; the hop fires on the next loop
-		# turn, which on a loaded (or occluded) compositor can lag seconds -
-		# poll the s2 capture for the urgent line, bounded, instead of a
-		# fixed sleep that races the compositor's loop
-		for _ in $(seq 1 12); do grep -q "urgent>>" "$STATE/retract.cap" 2>/dev/null && break; sleep 0.5; done
-		RPAD="$(clients | python3 -c "
+		# the click's focus round-trip is one compositor loop turn; give
+		# it a bounded wait instead of a single immediate read
+		RF=""
+		for _ in $(seq 1 8); do RF="$(focus_addr)"; [[ -n "$RF" ]] && break; sleep 0.25; done
+		if [[ -z "$RF" ]]; then
+			bad "vanilla-visible: no pre-map focus to click against (the click missed foot)"
+			echo "  diag raw clients: $(clients 2>/dev/null | head -c 1200)" >&2
+		else
+			: >"$STATE/vanvis.cap"
+			python3 "$S2CAP_PY" "$S2SOCK" 8 "$STATE/vanvis.cap" &
+			RLPID=$!
+			env WAYLAND_DISPLAY="$WL" "$ACTWIN" 8 >"$STATE/vanvis.win.log" 2>&1 &
+			RP=$!
+			for _ in $(seq 1 24); do clients 2>/dev/null | grep -q '"class": *"activatewin"' && break; sleep 0.25; done
+			RPAD="$(clients | python3 -c "
 import json,sys
 a = next((c['address'] for c in json.load(sys.stdin) if c['class']=='activatewin'), '')
 print(a[2:] if a.startswith('0x') else a)")"
-		sleep 0.5 # the retraction hop lands with (or just after) the urgent event
-		chk "retract: the map+ask pair retracted to the pre-map focus" \
-			test "$(focus_addr)" = "$RF"
-		chk "retract: the ask posted an urgent event for the probe" \
-			grep -q "urgent>>$RPAD" "$STATE/retract.cap"
-		kill "$RP" 2>/dev/null
-		wait "$RLPID" 2>/dev/null
+			sleep 1.5 # the ask lands in milliseconds; the settle covers the event round-trip
+		chk "vanilla-visible: the map focus holds after the ask" \
+			test "$(focus_addr)" = "$RPAD"
+		chk "vanilla-visible: the focused window is not marked urgent" \
+			bash -c "! grep -q 'urgent>>$RPAD' '$STATE/vanvis.cap'"
+			# one line for the log either way: a FAIL must say what the client
+			# did (mapped? asked?), what the capture saw, and where focus ended
+			echo "vanvis: pre-map='$RF' post='$(focus_addr)' probe='$RPAD' urgent-lines=$(grep -c 'urgent>>' "$STATE/vanvis.cap" 2>/dev/null) client=[$(cat "$STATE/vanvis.win.log" 2>/dev/null | tr '\n' '|')]" >&2
+			kill "$RP" 2>/dev/null
+			wait "$RLPID" 2>/dev/null
+		fi
+
+		# (b) the not-visible ask: the probe maps on the current workspace and
+		# takes the map focus; the battery then moves to workspace 2, taking
+		# the probe's workspace off the monitor, and the delayed ask (6s in)
+		# arrives at a not-visible window
+		: >"$STATE/vannv.cap"
+		python3 "$S2CAP_PY" "$S2SOCK" 13 "$STATE/vannv.cap" &
+		NVLPID=$!
+		env WAYLAND_DISPLAY="$WL" "$ACTWIN" 13 6 >"$STATE/vannv.win.log" 2>&1 &
+		NP=$!
+		for _ in $(seq 1 24); do clients 2>/dev/null | grep -q '"class": *"activatewin"' && break; sleep 0.25; done
+		dsp "hl.dsp.focus({workspace=\"2\"})"; sleep 0.8
+		# the fixture prints when the delayed ask went out; wait for it,
+		# bounded, instead of a fixed sleep racing the dispatch loop
+		for _ in $(seq 1 16); do grep -q "sent activation" "$STATE/vannv.win.log" 2>/dev/null && break; sleep 0.5; done
+		sleep 1
+		NPAD="$(clients | python3 -c "
+import json,sys
+a = next((c['address'] for c in json.load(sys.stdin) if c['class']=='activatewin'), '')
+print(a[2:] if a.startswith('0x') else a)")"
+		chk "vanilla-notvisible: the ask posted an urgent event for the probe" \
+			grep -q "urgent>>$NPAD" "$STATE/vannv.cap"
+		chk "vanilla-notvisible: the focus did not follow the ask" \
+			bash -c "test \"$(focus_addr)\" != \"$NPAD\""
+		dsp "hl.dsp.focus({workspace=\"1\"})" # the probe keeps its mark on ws 1
+		kill "$NP" 2>/dev/null
+		wait "$NVLPID" 2>/dev/null
+		echo "vannv: probe='$NPAD' focus='$(focus_addr)' urgent-lines=$(grep -c 'urgent>>' "$STATE/vannv.cap" 2>/dev/null) client=[$(cat "$STATE/vannv.win.log" 2>/dev/null | tr '\n' '|')]" >&2
 	fi
+	# the (b) probe may still be settling out; make sure the view is back on
+	# workspace 1 before the foot-cleanup trailer
+	dsp "hl.dsp.focus({workspace=\"1\"})"; sleep 0.5
 fi
 FF="$(clients | python3 -c "
 import json,sys
