@@ -17,10 +17,17 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
 	sleep 0.5
 done
 # one reading for the log either way: a failed canary must say HOW dark
-# the strip was (0 = never drew; 150-300 = mid-warm), not just "dark"
+# the strip was (0 = never drew; 150-250 = mid-warm), not just "dark".
+# The threshold counts bright pixels of the whole band and is render-
+# hardware sensitive: the fully drawn strip settles at 283-296 on the
+# i915/Mesa 26.2.3 box (300+ on the old AMD one, 2026-10-02), so the
+# floor sits under the lowest settled reading. A mid-warm frame lacks
+# most of its glyphs and scores far below; the poll loop above retries
+# through the warm, and the glyph checks that follow are the real
+# presence test either way.
 echo "shell: strip bright=$(bar_bright "$STATE/strip-base.png")" >&2
 chk "shell: the strip is on screen (clock + tags draw)" \
-	test "$(bar_bright "$STATE/strip-base.png")" -gt 300
+	test "$(bar_bright "$STATE/strip-base.png")" -gt 250
 BELL0="$(bell_x "$STATE/strip-base.png")"
 chk "shell: the bell glyph is the leftmost bright run of the right cluster" test "$BELL0" -gt 400
 
