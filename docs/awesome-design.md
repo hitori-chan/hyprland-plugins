@@ -17,7 +17,7 @@ removes them.
 |---|---|
 | `core` | the platform (section 2) |
 | `shell` | the persistent chrome: workspaces, tasks (views), tray, bell, battery, clock, launcher |
-| `windows` | the window state machine and all placement: normal/minimized/maximized (told-state, adopt, restore), focus policy (raise, corpse guard, cycling, map-focus retraction for tray returns), spawn placement (lastspot, least-overlap, fixed-size exclusion), drag snapping (arm/preview/commit, indicator layer) |
+| `windows` | the window state machine and all placement: normal/minimized/maximized (told-state, adopt, restore), focus policy (vanilla activation semantics, raise, corpse guard, cycling, the urgent-restore hop for minimized asks), spawn placement (lastspot, least-overlap, fixed-size exclusion), drag snapping (arm/preview/commit, indicator layer) |
 | `notify` | the `org.freedesktop.Notifications` daemon, the card model (conversations, grouping, DND, OSD band 9990s), popups, shade, inline reply, sound |
 | `system` | machine-state controls — volume/mic (wpctl), brightness (logind), touchpad policy (mouse presence) — each action renders its feedback as a notify card (fixed IDs, value bar) |
 
