@@ -232,13 +232,14 @@ fi
 if [[ ! -x "$FOCUSTRAP" ]]; then
 	bad "focus: $FOCUSTRAP is unavailable"
 else
-	# The nested baseline IS the vanilla mode (nested.lua sets
-	# focus_on_activate = true, the gate's permanent expectation — the old
-	# inject/restore-at-runtime machinery is gone: a line left behind by an
-	# interrupted run silently flipped every expectation, 2026-10-02). A
-	# drifted config must FAIL the battery, not change what it means.
-	chk "focus: the nested baseline is the vanilla gate (focus_on_activate on)" \
-		grep -q "focus_on_activate = true" "$CFG"
+	# The nested baseline IS the user's live mode (nested.lua leaves
+	# focus_on_activate at the fork default, false — attention-only
+	# activation, the mode the user runs). The old inject/restore-at-runtime
+	# machinery is gone: a line left behind by an interrupted run silently
+	# flipped every expectation (2026-10-02). A drifted config must FAIL the
+	# battery, not change what it means.
+	chk "focus: the nested baseline is the attention-only default (no focus_on_activate line)" \
+		bash -c "! grep -q 'focus_on_activate' '$CFG'"
 	NPID_FOCUS="$(head -1 "$RUNDIR/$SIG/hyprland.lock" 2>/dev/null)"
 	NDISP=""
 	for p in $(pgrep -P "$NPID_FOCUS" 2>/dev/null); do
@@ -292,6 +293,13 @@ c = next((c for c in json.load(sys.stdin) if c['class']=='$1'), None)
 print(int(c['at'][0]+c['size'][0]/2), int(c['at'][1]+c['size'][1]/2)) if c else (0,0)" \
 				| { read -r cx cy; printf "move %s %s\nsleep 50\npress 272\nsleep 50\nrelease 272\nsleep 50\n" "$cx" "$cy"; } | vp
 		}
+		wait_gone() { # wait_gone <class>: bounded wait for no client of the class
+			for _ in $(seq 1 24); do
+				clients 2>/dev/null | grep -q "\"class\": *\"$1\"" || return 0
+				sleep 0.25
+			done
+			return 1
+		}
 		run_ping_mode() {
 			local mode=$1
 			local cap="$STATE/focus-$mode.cap" lpid="" probe="" paddr="" faddr=""
@@ -330,35 +338,55 @@ print(int(c['at'][0]+c['size'][0]/2), int(c['at'][1]+c['size'][1]/2)) if c else 
 		run_ping_mode map
 		run_ping_mode attention
 		run_ping_mode activate
-		# activation of a MINIMIZED window: the monolith restores it (the
-		# state machine's urgent hop) — the old bar's deferred restore. The
-		# probe pings its OWN X11 toplevel 14s after the map; the probe is
-		# focused then minimized in the meantime, so the ping is the test.
+		# attention on a MINIMIZED window, gate off: the ask is demoted to the
+		# urgency mark, the window STAYS minimized — the chip's tint is the
+		# whole answer; a chip click or Mod+Ctrl+N restores. (Gate on, the
+		# plugin's urgent hop performs the restore instead — a config flip,
+		# not a battery case.) The probe pings its OWN X11 toplevel 14s after
+		# the map; the probe is focused then minimized in the meantime, so
+		# the ping is the test.
+		: >"$STATE/focus-min.cap"
+		python3 "$S2CAP_PY" "$S2SOCK" 17 "$STATE/focus-min.cap" &
+		FMPL=$!
 		DISPLAY="$NDISP" "$FOCUSTRAP" activate 2 14 >/dev/null 2>&1 &
 		FP=$!
 		sleep 1.8
+		PMAPADDR="$(probe_addr)"
 		click_center focustrap
 		dsp "hl.plugin.awesome.minimize()"; sleep 0.8
-		chk "urgent-restore: the probe is minimized" \
+		chk "urgent-min: the probe is minimized" \
 			test "$(pyc "any(c['class']=='focustrap' and c['hidden'] for c in cs)")" = 1
-		sleep 13
-		chk "urgent-restore: activating a minimized window restores it" \
-			test "$(pyc "any(c['class']=='focustrap' and not c['hidden'] for c in cs)")" = 1
+		sleep 13.5 # the ping lands at 14s
+		chk "urgent-min: the ask did not restore the minimized window (attention-only mode)" \
+			test "$(pyc "any(c['class']=='focustrap' and c['hidden'] for c in cs)")" = 1
+		chk "urgent-min: the ask on the minimized window posted an urgent event" \
+			grep -q "urgent>>$PMAPADDR" "$STATE/focus-min.cap"
 		kill "$FP" 2>/dev/null
+		wait "$FMPL" 2>/dev/null
 	fi
-	# ---- vanilla activation (Wayland xdg-activation, the token-validated path)
-	# (a) VISIBLE ask: the tray-return burst — a Wayland map (which takes the
-	#     new-map initial focus, awesome's "rules" context) followed
-	#     immediately by an xdg-activation ask. The ask lands on a window
-	#     that already holds focus: vanilla neither moves the focus nor
-	#     marks the focused client (permissions.urgent: c ~= client.focus).
-	#     Wayland on purpose: an X11 ping's arrival is offset by the Xwayland
-	#     pipeline lag and voids the sub-second burst; the Wayland burst
-	#     lands in milliseconds.
-	# (b) NOT-VISIBLE ask: the same burst with a delay — the battery moves
-	#     the compositor to another workspace in between, so the ask arrives
-	#     at a window whose workspace is off-monitor: permissions.activate's
-	#     isvisible branch — urgency, no focus, no workspace switch.
+	# ---- Wayland xdg-activation (the token-validated path), attention-only
+	#     default (focus_on_activate at the fork default, the user's live
+	#     mode — a message arriving in a background app must not steal):
+	# (a)  VISIBLE ask on the FOCUSED window: the tray-return burst — a
+	#      Wayland map (which takes the new-map initial focus) followed
+	#      immediately by an xdg-activation ask. A focused, visible window is
+	#      being looked at: the ask is a no-op, in both gate modes (vanilla's
+	#      permissions.urgent never marks the focused client).
+	# (a') VISIBLE ask on a NOT-FOCUSED window — the Telegram case: the probe
+	#      maps (map focus), the battery clicks foot, and the delayed ask
+	#      arrives at the visible, unfocused probe: urgency mark, focus stays
+	#      on foot. With focus_on_activate on the same ask would take the
+	#      focus (vanilla/KWin-token behavior) — a config flip, not a battery
+	#      case.
+	# (b)  NOT-VISIBLE ask: the delayed ask arrives after the battery moved to
+	#      another workspace: permissions.activate's isvisible branch —
+	#      urgency, no focus, no workspace switch (both gate modes).
+	# (d)  jumpto: the Mod+U chord (hl.dsp.focus urgent_or_last) — the urgent
+	#      window wins over the last-window fallback and the view follows it
+	#      to its workspace (awesome's awful.client.urgent.jumpto).
+	# Wayland on purpose: an X11 ping's arrival is offset by the Xwayland
+	# pipeline lag and voids the sub-second burst; the Wayland burst lands in
+	# milliseconds.
 	ACTWIN="$REPO/devtools/activatewin"
 	[[ -x "$ACTWIN" ]] || make -C "$REPO/devtools" activatewin >/dev/null 2>&1
 	if [[ -n "$NDISP" && -x "$ACTWIN" ]]; then
@@ -382,20 +410,20 @@ print(int(c['at'][0]+c['size'][0]/2), int(c['at'][1]+c['size'][1]/2)) if c else 
 		clients 2>/dev/null | grep -q '"class": *"foot"' \
 			|| { dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x300')"; sleep 2.5; }
 
-		# (a) the visible burst
+		# (a) the visible ask on the focused window
 		click_center foot
 		# the click's focus round-trip is one compositor loop turn; give
 		# it a bounded wait instead of a single immediate read
 		RF=""
 		for _ in $(seq 1 8); do RF="$(focus_addr)"; [[ -n "$RF" ]] && break; sleep 0.25; done
 		if [[ -z "$RF" ]]; then
-			bad "vanilla-visible: no pre-map focus to click against (the click missed foot)"
+			bad "ask-focused: no pre-map focus to click against (the click missed foot)"
 			echo "  diag raw clients: $(clients 2>/dev/null | head -c 1200)" >&2
 		else
-			: >"$STATE/vanvis.cap"
-			python3 "$S2CAP_PY" "$S2SOCK" 8 "$STATE/vanvis.cap" &
+			: >"$STATE/askfocus.cap"
+			python3 "$S2CAP_PY" "$S2SOCK" 8 "$STATE/askfocus.cap" &
 			RLPID=$!
-			env WAYLAND_DISPLAY="$WL" "$ACTWIN" 8 >"$STATE/vanvis.win.log" 2>&1 &
+			env WAYLAND_DISPLAY="$WL" "$ACTWIN" 8 >"$STATE/askfocus.win.log" 2>&1 &
 			RP=$!
 			for _ in $(seq 1 24); do clients 2>/dev/null | grep -q '"class": *"activatewin"' && break; sleep 0.25; done
 			RPAD="$(clients | python3 -c "
@@ -403,44 +431,86 @@ import json,sys
 a = next((c['address'] for c in json.load(sys.stdin) if c['class']=='activatewin'), '')
 print(a[2:] if a.startswith('0x') else a)")"
 			sleep 1.5 # the ask lands in milliseconds; the settle covers the event round-trip
-		chk "vanilla-visible: the map focus holds after the ask" \
-			test "$(focus_addr)" = "$RPAD"
-		chk "vanilla-visible: the focused window is not marked urgent" \
-			bash -c "! grep -q 'urgent>>$RPAD' '$STATE/vanvis.cap'"
-			# one line for the log either way: a FAIL must say what the client
-			# did (mapped? asked?), what the capture saw, and where focus ended
-			echo "vanvis: pre-map='$RF' post='$(focus_addr)' probe='$RPAD' urgent-lines=$(grep -c 'urgent>>' "$STATE/vanvis.cap" 2>/dev/null) client=[$(cat "$STATE/vanvis.win.log" 2>/dev/null | tr '\n' '|')]" >&2
-			kill "$RP" 2>/dev/null
-			wait "$RLPID" 2>/dev/null
+			chk "ask-focused: the map focus holds after the ask" \
+				test "$(focus_addr)" = "$RPAD"
+			chk "ask-focused: the focused window is not marked urgent" \
+				bash -c "! grep -q 'urgent>>$RPAD' '$STATE/askfocus.cap'"
+				# one line for the log either way: a FAIL must say what the client
+				# did (mapped? asked?), what the capture saw, and where focus ended
+				echo "askfocus: pre-map='$RF' post='$(focus_addr)' probe='$RPAD' urgent-lines=$(grep -c 'urgent>>' "$STATE/askfocus.cap" 2>/dev/null) client=[$(cat "$STATE/askfocus.win.log" 2>/dev/null | tr '\n' '|')]" >&2
+				kill "$RP" 2>/dev/null
+				wait "$RLPID" 2>/dev/null
+			wait_gone activatewin 2>/dev/null || true
 		fi
+
+		# (a') the visible ask on a NOT-focused window (the Telegram case):
+		# the probe maps (map focus), the battery focuses foot PROGRAMMATICALLY
+		# and the delayed ask (2s in) arrives at the visible, unfocused probe.
+		# No vptr click here: a click's focus rides on follow-mouse, and any
+		# later pointer event in the nested re-takes whatever it lands on,
+		# racing the delayed ask (2026-10-02 battery flake). With no pointer
+		# motion between the focus and the ask, the check is deterministic.
+		: >"$STATE/askunfoc.cap"
+		python3 "$S2CAP_PY" "$S2SOCK" 13 "$STATE/askunfoc.cap" &
+		AFPL=$!
+		env WAYLAND_DISPLAY="$WL" "$ACTWIN" 13 2 >"$STATE/askunfoc.win.log" 2>&1 &
+		AP=$!
+		for _ in $(seq 1 24); do clients 2>/dev/null | grep -q '"class": *"activatewin"' && break; sleep 0.25; done
+		APAD="$(clients | python3 -c "
+import json,sys
+a = next((c['address'] for c in json.load(sys.stdin) if c['class']=='activatewin'), '')
+print(a[2:] if a.startswith('0x') else a)")"
+		FAD="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), ''))")"
+		dsp "hl.dsp.focus({window=\"address:$FAD\"})"
+		AF=""; for _ in $(seq 1 8); do AF="$(focus_addr)"; [[ -n "$AF" && "$AF" != "$APAD" ]] && break; sleep 0.25; done
+		for _ in $(seq 1 8); do grep -q "sent activation" "$STATE/askunfoc.win.log" 2>/dev/null && break; sleep 0.5; done
+		sleep 1
+		chk "ask-unfocused: the ask did not steal focus from the front window" \
+			test "$(focus_addr)" = "$AF"
+		chk "ask-unfocused: the ask posted an urgent event for the probe" \
+			grep -q "urgent>>$APAD" "$STATE/askunfoc.cap"
+		echo "askunfoc: foot='$AF' post='$(focus_addr)' probe='$APAD' urgent-lines=$(grep -c 'urgent>>' "$STATE/askunfoc.cap" 2>/dev/null) client=[$(cat "$STATE/askunfoc.win.log" 2>/dev/null | tr '\n' '|')]" >&2
+		kill "$AP" 2>/dev/null
+		wait "$AFPL" 2>/dev/null
+		wait_gone activatewin 2>/dev/null || true
 
 		# (b) the not-visible ask: the probe maps on the current workspace and
 		# takes the map focus; the battery then moves to workspace 2, taking
 		# the probe's workspace off the monitor, and the delayed ask (6s in)
 		# arrives at a not-visible window
-		: >"$STATE/vannv.cap"
-		python3 "$S2CAP_PY" "$S2SOCK" 13 "$STATE/vannv.cap" &
+		: >"$STATE/asknv.cap"
+		python3 "$S2CAP_PY" "$S2SOCK" 13 "$STATE/asknv.cap" &
 		NVLPID=$!
-		env WAYLAND_DISPLAY="$WL" "$ACTWIN" 13 6 >"$STATE/vannv.win.log" 2>&1 &
+		env WAYLAND_DISPLAY="$WL" "$ACTWIN" 13 6 >"$STATE/asknv.win.log" 2>&1 &
 		NP=$!
 		for _ in $(seq 1 24); do clients 2>/dev/null | grep -q '"class": *"activatewin"' && break; sleep 0.25; done
 		dsp "hl.dsp.focus({workspace=\"2\"})"; sleep 0.8
 		# the fixture prints when the delayed ask went out; wait for it,
 		# bounded, instead of a fixed sleep racing the dispatch loop
-		for _ in $(seq 1 16); do grep -q "sent activation" "$STATE/vannv.win.log" 2>/dev/null && break; sleep 0.5; done
+		for _ in $(seq 1 16); do grep -q "sent activation" "$STATE/asknv.win.log" 2>/dev/null && break; sleep 0.5; done
 		sleep 1
 		NPAD="$(clients | python3 -c "
 import json,sys
 a = next((c['address'] for c in json.load(sys.stdin) if c['class']=='activatewin'), '')
 print(a[2:] if a.startswith('0x') else a)")"
-		chk "vanilla-notvisible: the ask posted an urgent event for the probe" \
-			grep -q "urgent>>$NPAD" "$STATE/vannv.cap"
-		chk "vanilla-notvisible: the focus did not follow the ask" \
+		chk "ask-notvisible: the ask posted an urgent event for the probe" \
+			grep -q "urgent>>$NPAD" "$STATE/asknv.cap"
+		chk "ask-notvisible: the focus did not follow the ask" \
 			bash -c "test \"$(focus_addr)\" != \"$NPAD\""
-		dsp "hl.dsp.focus({workspace=\"1\"})" # the probe keeps its mark on ws 1
+
+		# (d) jumpto from the other workspace: the urgent window must beat the
+		# last-window fallback (foot, focused before the probe's map) and the
+		# view must follow to ws 1
+		dsp "hl.dsp.focus({urgent_or_last=true})"; sleep 1.2
+		chk "jumpto: the urgent window wins over the last-window fallback" \
+			test "$(focus_addr)" = "$NPAD"
+		chk "jumpto: the view followed to the urgent window's workspace" \
+			test "$(ws)" = 1
+		echo "asknv: probe='$NPAD' focus='$(focus_addr)' urgent-lines=$(grep -c 'urgent>>' "$STATE/asknv.cap" 2>/dev/null) client=[$(cat "$STATE/asknv.win.log" 2>/dev/null | tr '\n' '|')]" >&2
 		kill "$NP" 2>/dev/null
 		wait "$NVLPID" 2>/dev/null
-		echo "vannv: probe='$NPAD' focus='$(focus_addr)' urgent-lines=$(grep -c 'urgent>>' "$STATE/vannv.cap" 2>/dev/null) client=[$(cat "$STATE/vannv.win.log" 2>/dev/null | tr '\n' '|')]" >&2
 	fi
 	# the (b) probe may still be settling out; make sure the view is back on
 	# workspace 1 before the foot-cleanup trailer
