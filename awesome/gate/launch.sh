@@ -4,17 +4,28 @@
 # harness calls this (harness.sh); it is also the standalone dev launcher.
 #
 # How it stays out of your way: the aquamarine WAYLAND backend renders the
-# nested desktop into a window of the live session (the headless backend
+# nested desktop into a window of the LIVE session (the headless backend
 # needs direct GPU access the tool sandbox denies — it crashes). A hidden
 # workspace would starve that window of frames (no screencopy), so instead we
-# add an off-screen virtual monitor to the LIVE session (nested-dev) and pin
-# the nested window to a dedicated workspace (NEST_WS=99) on it: always
-# rendered, always screenshottable, never on your real screen.
+# add an off-screen virtual monitor to the LIVE session (nested-dev). The
+# nested is spawned through the live compositor's exec with the exec-rule
+# {monitor=nested-dev silent}: its root toplevel maps STRAIGHT onto the
+# VM's active workspace without taking focus (the monitor rule's "silent"
+# suffix; CWindow::mapWindow). That is the whole park — no moves, no
+# workspace churn, zero live-focus dispatches (user rule 2026-10-02).
+# Two hard constraints behind the shape:
+#   * a window on a NON-active workspace is never painted by the host, so
+#     the frame callbacks stop and the nested's render loop starves
+#     (captures hang, S1 hangs) — the window must sit on the VM's ACTIVE ws;
+#   * moving a workspace that holds the focused window (hl.workspace.move,
+#     carryFocus default) fires rawMonitorFocus(VM) + a live cursor warp —
+#     the old map-to-REAL + window.move + workspace.move park did exactly
+#     that on every relaunch (the live-focus canary caught it, 2026-10-02).
 #
 # Isolation: private dbus session (the nested monolith claims
 # org.freedesktop.Notifications and the SNI watcher names on its own bus,
-# never the live ones); a minted-fresh instance signature; double-fork +
-# setsid so a torn-down caller can't take the instance with it.
+# never the live ones); a minted-fresh instance signature; setsid so a
+# torn-down caller can't take the instance with it.
 #
 # Runtime state (nested.sig / nested.wl / nested.log) goes to $HARNESS,
 # default ~/.local/share/hypr-nested — keep the repo tree free of state.
@@ -27,7 +38,6 @@ CFG="${HYPR_CFG:-$HERE/nested.lua}"
 BIN="${HYPR_BIN:-/usr/local/bin/Hyprland}"
 LOG="$HARNESS_DIR/nested.log"
 VM="nested-dev"                    # the off-screen virtual monitor
-NEST_WS="${HYPR_NEST_WS:-99}"      # dedicated workspace for the nested window
 RUNDIR="${XDG_RUNTIME_DIR:?}/hypr"
 
 if [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
@@ -36,8 +46,6 @@ if [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
 fi
 
 hlq() { hyprctl "$@"; }   # live session (inherits the live instance sig)
-# the real monitor = the first one that isn't our virtual dev output
-real_mon() { hlq monitors -j | python3 -c "import json,sys;print(next(m['name'] for m in json.load(sys.stdin) if m['name']!='$VM'))"; }
 
 # --- kill a prior nested instance from this config (never the live one) ---
 KILLED=""
@@ -70,24 +78,23 @@ for k in $KILLED; do
 done
 sleep 0.3
 
-REAL="$(real_mon)"
-# the monitor + workspace you're on right now, so we can hand focus straight
-# back after briefly focusing the VM to activate its workspace
-FOCUSED_MON="$(hlq monitors -j | python3 -c "import json,sys;print(next((m['name'] for m in json.load(sys.stdin) if m['focused']), '$REAL'))")"
-START_WS="$(hlq activeworkspace -j | python3 -c "import json,sys;print(json.load(sys.stdin)['id'])")"
-
 # --- ensure the off-screen virtual monitor exists ---
 if ! hlq monitors -j | python3 -c "import json,sys;sys.exit(0 if any(m['name']=='$VM' for m in json.load(sys.stdin)) else 1)"; then
 	echo "launch: creating virtual monitor $VM"
 	hlq output create headless "$VM" >/dev/null 2>&1
 	sleep 0.4
 fi
-# Pin the dev output's mode+scale to the panel's, every join. On this Mesa
-# a DIVERGENT output entering/leaving the dmabuf feedback table triggers the
-# 2-plane AR24 class: a live client segfaulted (hyprpaper, 2026-10-02) and
-# the live renderer froze until the user re-logged. A pin kept in the user
-# config would be machine-specific cruft (core.lua says so); the output is
-# the harness's, so the pin lives here and re-applies to a surviving output.
+# NO live focus dispatches anywhere in this script (user rule 2026-10-02):
+# the exec-rule park maps the window silently onto the VM's active ws, and
+# the VM keeps rendering it (damage on its surface schedules frames on the
+# overlapping output; IHyprRenderer::damageSurface), so the harness capture
+# works without any focus or cursor touch. Pin the dev output's
+# mode+scale to the panel's, every join. A
+# DIVERGENT-mode output reconfigures the dmabuf feedback table on
+# join/leave, and one rapid divergent-mode remove+create killed the
+# live compositor on this i915 box (2026-10-02, hyprpaper SEGV). The
+# pin is machine-specific, so it lives here, not in the user config,
+# and re-applies to a surviving output.
 PIN="$(hlq monitors -j 2>/dev/null | python3 -c "
 import json,sys
 ms=json.load(sys.stdin)
@@ -110,20 +117,24 @@ print('%dx%d@%.3f/%g'%(vm['width'],vm['height'],vm['refreshRate'],vm['scale']) i
 " 2>/dev/null)"
 	echo "launch: $VM now ${AFTER:-unreadable}"
 fi
-# pin NEST_WS to the VM and make it the VM's ACTIVE (rendered) workspace. Done
-# in park() below once the window exists, because activation is only reliable
-# after NEST_WS actually lives on the VM.
-
 before_sig="$(ls -1 "$RUNDIR" 2>/dev/null)"
 before_aq="$(hlq clients -j 2>/dev/null | python3 -c "import json,sys;print(' '.join(c['address'] for c in json.load(sys.stdin) if c['class']=='aquamarine'))" 2>/dev/null)"
 
-# --- launch, wayland backend, double-fork + setsid detached ---
-echo "launch: $BIN -c $CFG (wayland backend -> $VM ws $NEST_WS, private dbus)"
-( # unlimited core rlimit: if kernel.core_pattern is a file, a nested SEGV
-  # leaves a core for forensics (core_pattern defaults to a pipe that drops)
-  ulimit -c unlimited 2>/dev/null
-  setsid env -u HYPRLAND_INSTANCE_SIGNATURE AQ_BACKENDS=wayland \
-	dbus-run-session -- "$BIN" -c "$CFG" >"$LOG" 2>&1 & )
+# --- launch via the live compositor's exec, with the exec-rule -------------
+# The executor (CExecutor::spawnRawProc) runs `sh -c '<cmd>'`. A single
+# `exec` chain keeps the exec'd process's PID: sh execs (no fork for a
+# simple command), setsid does not fork when it is not a group leader,
+# env execs, and dbus-run-session execs the target after forking its
+# private dbus — so the nested Hyprland's client PID is the one the exec
+# rule registered, and its root toplevel picks the rule up at map time.
+# The 60s exec-rule expiry (IRule::markAsExecRule) comfortably covers boot.
+echo "launch: $BIN -c $CFG (wayland backend -> $VM, private dbus)"
+exec_rc=0
+hlq dispatch "hl.dsp.exec_cmd('ulimit -c unlimited 2>/dev/null; exec setsid env -u HYPRLAND_INSTANCE_SIGNATURE AQ_BACKENDS=wayland dbus-run-session -- $BIN -c $CFG > $LOG 2>&1', {monitor='$VM silent'})" >/dev/null 2>&1 || exec_rc=$?
+if [[ $exec_rc -ne 0 ]]; then
+	echo "launch: hl.dsp.exec_cmd failed (rc=$exec_rc) — the exec-rule park needs a fork with the monitor-rule silent suffix; refusing to fall back to the focus-dragging moves" >&2
+	exit 1
+fi
 
 # --- wait for the new instance signature ---
 sig=""
@@ -159,45 +170,31 @@ before=set('''$before_aq'''.split())
 	sleep 0.1
 done
 if [[ -n "$newaq" ]]; then
-	# Park deterministically (proven sequence). Each step must settle before
-	# the next, hence the sleeps; retry the whole thing until the window is
-	# verifiably in NEST_WS on the VM.
+	# The exec-rule did the park at map time: the window must already sit on
+	# the VM's ACTIVE workspace. Verify, don't fix — there is no focus-safe
+	# fix (moving it would be the dance we removed), so a miss is a hard
+	# fail: off the VM's active ws the window is unpainted and the nested's
+	# frame cycle starves (captures hang, S1 hangs).
 	parked=0
 	for attempt in 1 2 3 4 5; do
-		# 1. window -> NEST_WS (silent; creates NEST_WS, initially on $REAL)
-		hlq dispatch "hl.dsp.window.move({workspace=\"$NEST_WS\", follow=false, window=\"address:$newaq\"})" >/dev/null 2>&1
-		sleep 0.4
-		# 2. bind NEST_WS to the VM (does NOT activate it there yet)
-		hlq dispatch "hl.dsp.workspace.move({workspace=\"$NEST_WS\", monitor=\"$VM\"})" >/dev/null 2>&1
-		sleep 0.4
-		# 3. focus the VM then NEST_WS -> now that it lives on the VM this
-		#    ACTIVATES it there (= rendered), then focus straight back to the
-		#    monitor+workspace you were on. Your $REAL view is unchanged; only
-		#    input focus blinks over and back.
-		hlq dispatch "hl.dsp.focus({monitor=\"$VM\"})" >/dev/null 2>&1; sleep 0.2
-		hlq dispatch "hl.dsp.focus({workspace=\"$NEST_WS\"})" >/dev/null 2>&1; sleep 0.2
-		hlq dispatch "hl.dsp.focus({monitor=\"$FOCUSED_MON\"})" >/dev/null 2>&1
-		hlq dispatch "hl.dsp.focus({workspace=\"$START_WS\"})" >/dev/null 2>&1
-		sleep 0.2
-		# 4. return any OTHER workspace the VM grabbed (never NEST_WS itself)
-		for w in $(hlq workspaces -j | python3 -c "import json,sys;print(' '.join(str(x['id']) for x in json.load(sys.stdin) if x['monitor']=='$VM' and x['id']!=$NEST_WS))"); do
-			hlq dispatch "hl.dsp.workspace.move({workspace=\"$w\", monitor=\"$REAL\"})" >/dev/null 2>&1
-		done
-		sleep 0.2
-		# Verify the WINDOW, not just the workspace: NEST_WS can be the VM's
-		# active workspace while the window still sits elsewhere (a move
-		# dispatch that silently no-ops parks nothing, and every later capture
-		# starves — the message below used to claim success on that state).
-		vm_index="$(hlq monitors -j 2>/dev/null | python3 -c "import json,sys;print(next((i for i,m in enumerate(json.load(sys.stdin)) if m['name']=='$VM' and m['activeWorkspace']['id']==$NEST_WS),''))" 2>/dev/null)"
-		if [[ -n "$vm_index" ]] && hlq clients -j 2>/dev/null | python3 -c "import json,sys;sys.exit(0 if any(c['class']=='aquamarine' and c['address']=='$newaq' and c['workspace']['id']==$NEST_WS and c['monitor']==int(sys.argv[1]) for c in json.load(sys.stdin)) else 1)" "$vm_index" 2>/dev/null; then
+		# ws ids are unique across monitors, so "window's ws == the VM's
+		# active ws" proves placement AND paintability in one check.
+		vm_active="$(hlq monitors -j 2>/dev/null | python3 -c "import json,sys;print(next((m['activeWorkspace']['id'] for m in json.load(sys.stdin) if m['name']=='$VM'),''))" 2>/dev/null)"
+		if [[ -n "$vm_active" ]] && hlq clients -j 2>/dev/null | python3 -c "
+import json,sys
+cs = json.load(sys.stdin)
+c = next((c for c in cs if c['class']=='aquamarine' and c['address']=='$newaq'), None)
+sys.exit(0 if c and c['workspace']['id'] == int(sys.argv[1]) else 1)" "$vm_active" 2>/dev/null; then
 			parked=1
 			break
 		fi
+		sleep 0.5
 	done
 	if [[ "$parked" == "1" ]]; then
-		echo "launch: parked nested window $newaq on $VM ws $NEST_WS (attempt $attempt)"
+		echo "launch: parked nested window $newaq on the $VM active ws (attempt $attempt)"
 	else
-		echo "launch: WARN park unverified after 5 attempts (window $newaq not confirmed on $VM ws $NEST_WS); continuing — the warmup detects a dead frame cycle" >&2
+		echo "launch: FAIL nested window $newaq did not land on the $VM active ws via the exec-rule park — off it the window is unpainted and every capture would hang" >&2
+		exit 1
 	fi
 else
 	echo "launch: WARN could not find nested window to park" >&2

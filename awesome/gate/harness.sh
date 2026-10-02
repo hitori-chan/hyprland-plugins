@@ -7,6 +7,43 @@ chk() { # chk <name> <command...> — command's exit code decides
 	if "$@" >/dev/null 2>&1; then ok "$name"; else bad "$name"; fi
 }
 
+# --- live session canary ----------------------------------------------------
+# User rule (2026-10-02, absolute): tests/gates never affect the live
+# workspace and never take the user's mouse or focus. The harness samples
+# the LIVE focused monitor at 10Hz for the whole run and fails the gate if
+# it ever lands on the gate's off-screen output (nested-dev) — a state only
+# the gate itself can produce (the user cannot focus an off-screen monitor).
+# This is the regression net for the parking focus dance, which focused
+# nested-dev on every launch/warmup/stop and stole the user's keyboard
+# focus (the dance is gone from launch.sh/harness.sh; this proves it).
+# The cursor position is NOT sampled: the user moves the mouse during a
+# run (false positives), and the mouse yank lived in the focus dance, which
+# the focused-monitor watch above does catch.
+CANARY_PID="" CANARY_FILE=""
+live_canary_start() {
+	[[ -n "$CANARY_PID" ]] && return
+	CANARY_FILE="$HARNESS/live-canary.log" # $HARNESS: $STATE is wiped by cleanup
+	: >"$CANARY_FILE"
+	( while :; do
+			mon="$(hyprctl monitors -j 2>/dev/null | python3 -c "import json,sys;print(next((m['name'] for m in json.load(sys.stdin) if m.get('focused')), ''))" 2>/dev/null)"
+			[[ "$mon" == "nested-dev" ]] && printf '%s\n' "$(date +%H:%M:%S)" >>"$CANARY_FILE"
+			sleep 0.1
+		done ) &
+	CANARY_PID=$!
+}
+live_canary_stop() {
+	[[ -n "$CANARY_PID" ]] || return 0
+	kill "$CANARY_PID" 2>/dev/null
+	wait "$CANARY_PID" 2>/dev/null
+	CANARY_PID=""
+	if [[ -s "$CANARY_FILE" ]]; then
+		bad "live canary: the live focus sat on the gate's nested-dev output $(wc -l <"$CANARY_FILE") sample(s) during the run — the gate must never take live focus ($CANARY_FILE)"
+		return 1
+	fi
+	ok "live canary: live focus never touched the gate's output"
+	return 0
+}
+
 normalize_target_pkgconfig() {
 	local pkg_path=${HYPR_DEPLOY_PKG_CONFIG_PATH:-}
 	[[ -n "$pkg_path" ]] || return 0
@@ -75,7 +112,11 @@ validated_nested_pid() {
 
 hq() {
 	validated_nested_pid >/dev/null || return 1
-	hyprctl -i "$SIG" "$@"
+	# bounded: a nested whose S1 handler blocks (e.g. a commit waiting on a
+	# frame callback that never lands — the off-screen frame-cycle class)
+	# must fail the checks, not hang the whole gate for minutes (2026-10-02:
+	# an unbounded 'dsp ... & wait' close storm sat 8 min on this)
+	timeout 10 hyprctl -i "$SIG" "$@"
 }
 dsp()     { hq dispatch "$1" >/dev/null 2>&1; }
 clients() { hq clients -j 2>/dev/null; }
@@ -152,32 +193,21 @@ print(int(m['width']/m['scale']), int(m['height']/m['scale']))" 2>/dev/null)" &&
 	return 0
 }
 
-# Render-cycle warmup: the parked window's frame cycle on live can start
-# cold. The parking dance briefly focuses the VM so the live compositor
-# frames it; if that first focused frame lands while the nested compositor
-# is still initializing, the surface's first frame callback is lost and the
-# cycle never starts: an unfocused off-screen monitor does not schedule
-# frames for window damage (moves/resizes are no-ops on it), the nested
-# renders nothing, and every nested capture starves. Verify the cycle with
-# a real capture; when it is stalled, re-run the parking focus dance (focus
-# the VM, hand focus straight back) to force a fresh frame.
+# Render-cycle warmup: the parked window renders on the UNFOCUSED off-screen
+# VM like any window there — damage on its surface schedules frames on the
+# overlapping output (IHyprRenderer::damageSurface), and capture_nested's
+# own vptr jitter (a motion INSIDE the nested, not the live session) pushes
+# a frame on demand. A cold start can still lose the nested's first frame
+# callback while it initializes; retrying the capture (which jitters) lets
+# the cycle self-heal. NO live focus dispatches here: the old parking dance
+# (focus the VM, hand focus back) stole the user's keyboard focus and yanked
+# the mouse state on every launch/warmup (user rule 2026-10-02: the gate
+# never takes the live mouse or focus).
 launch_warmup() {
-	local n real_mon start_ws
-	real_mon="$(hyprctl monitors -j 2>/dev/null | python3 -c "
-import json,sys
-print(next((m['name'] for m in json.load(sys.stdin) if m['name']!='nested-dev'), ''))")"
+	local n
 	for n in 1 2 3 4 5; do
 		capture_nested "$STATE/launch-warmup.png" && return 0
-		start_ws="$(hyprctl activeworkspace -j 2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin)['id'])" 2>/dev/null)"
-		hyprctl dispatch "hl.dsp.focus({monitor=\"nested-dev\"})" >/dev/null 2>&1
-		sleep 0.2
-		hyprctl dispatch "hl.dsp.focus({workspace=\"99\"})" >/dev/null 2>&1
-		sleep 0.2
-		if [[ -n "$real_mon" ]]; then
-			hyprctl dispatch "hl.dsp.focus({monitor=\"$real_mon\"})" >/dev/null 2>&1
-			[[ -n "${start_ws:-}" ]] && hyprctl dispatch "hl.dsp.focus({workspace=\"$start_ws\"})" >/dev/null 2>&1
-		fi
-		sleep 0.5
+		sleep 1
 	done
 	echo "harness: nested render cycle never warmed (captures starve); aborting" >&2
 	# Post-mortem: is the nested alive, and what did it last log? A live
@@ -474,6 +504,7 @@ launch_nested() {
 	# has no registerable state; sweep by cfg before spawning another, or
 	# two harness nested coexist — their extra divergent nested-dev outputs
 	# are the live-session kill recipe (2026-10-01).
+	live_canary_start
 	kill_nested
 	if [[ -z "$HARNESS_OUTPUT_OWNED" ]]; then
 		HARNESS_OUTPUT_OWNED=0
@@ -583,6 +614,7 @@ cleanup_harness_core() {
 			echo "harness: WARNING: 'nested-dev' monitor survived output removal (zombie); live by-id workspace lookups may misroute — run 'hyprctl output remove nested-dev' or relog" >&2
 		fi
 	fi
+	live_canary_stop
 	rm -f -- "$HARNESS/nested.sig" "$HARNESS/nested.wl"
 	if [[ -n "${PKG_COPY_DIR:-}" && "$PKG_COPY_DIR" == "$HARNESS"/hypr-pkgconfig.* ]]; then
 		rm -rf -- "$PKG_COPY_DIR"
