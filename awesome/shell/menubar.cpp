@@ -4,6 +4,7 @@
 #include "../core/clipboard.hpp"
 #include "../core/fileindex.hpp"
 #include "../core/persist.hpp"
+#include "../core/state.hpp"
 
 
 #include "../core/desktop_exec.hpp"
@@ -52,10 +53,10 @@ namespace NAwesome::Shell {
 
         static NAwesome::CHop         pendingExec, pendingOpen;
 
-        // launch counts + prompt history, persisted through the core stores
-        // ($XDG_STATE_HOME/awesome, migrated from the legacy cache)
-        static NAwesome::CountStore launchCounts;
-        static NAwesome::ListStore  history;            // oldest first
+        // launch counts + prompt history: the core's unified state
+        // (core/state.hpp), one shared in-memory copy
+        static NAwesome::CountStore& launchCounts = NAwesome::StateStore::inst().data().launches;
+        static NAwesome::ListStore&  history      = NAwesome::StateStore::inst().data().history; // oldest first
         static int                  histSel = -1;       // -1 = editing the live query
         static std::string          histLive;           // the live query parked while walking history
         static bool                 filesLoaded = false;
@@ -108,35 +109,26 @@ namespace NAwesome::Shell {
             return sdbus::ObjectPath{path};
         }
 
-        // the launcher's state: the core stores under
-        // $XDG_STATE_HOME/hyprland/plugin/awesome, migrated once from the
-        // legacy cache files (legacy files are read, never modified)
-        static std::filesystem::path legacyCacheDir() {
-            if (const char* XDG = std::getenv("XDG_CACHE_HOME"); XDG && *XDG)
-                return std::filesystem::path{XDG} / "hyprbar";
-            const char* HOME = std::getenv("HOME");
-            return std::filesystem::path{HOME ? HOME : "/tmp"} / ".cache" / "hyprbar";
-        }
-
+        // the launcher's state is the core's unified state file (the
+        // supervisor loads it — and migrates the legacy layouts — before
+        // module inits); this is only the idempotent guard for a lazy
+        // first use.
         static void loadFiles() {
             if (filesLoaded)
                 return;
             filesLoaded = true;
-            NAwesome::migrateCountStore(NAwesome::statePath("shell-launches.tsv"), legacyCacheDir() / "menu_count_file");
-            NAwesome::migrateListStore(NAwesome::statePath("shell-history.tsv"), legacyCacheDir() / "history_menu");
-            launchCounts = NAwesome::CountStore::read(NAwesome::statePath("shell-launches.tsv"));
-            history      = NAwesome::ListStore::read(NAwesome::statePath("shell-history.tsv"));
+            NAwesome::StateStore::inst().load();
         }
 
         static void saveCounts() {
-            launchCounts.write(NAwesome::statePath("shell-launches.tsv"));
+            NAwesome::StateStore::inst().dirty(); // coalesced atomic write
         }
 
         static void historyAdd(const std::string& q) {
             if (q.empty())
                 return;
             history.remember(q); // dedup + most-recent-last + the 50 bound
-            history.write(NAwesome::statePath("shell-history.tsv"));
+            NAwesome::StateStore::inst().dirty();
         }
 
         static std::vector<std::string> desktops; // XDG_CURRENT_DESKTOP entries, for OnlyShowIn/NotShowIn

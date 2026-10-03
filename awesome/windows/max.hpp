@@ -12,8 +12,8 @@
 // is ADOPTED into this model on sight, for the same reason.
 //
 // The last windowed box is remembered per app class across window closes
-// AND relogs (persisted under $XDG_STATE_HOME/awesome/): un-maximizing a
-// born-maximized window restores it instead of the client's guess (GTK
+// AND relogs (the core's unified state file, core/state.hpp): un-maximizing
+// a born-maximized window restores it instead of the client's guess (GTK
 // forgets its normal geometry across restarts).
 //
 // Maximized windows are immovable, like awesome's: Super+left/right-click
@@ -28,6 +28,7 @@
 
 #include "core/persist.hpp"
 #include "core/queries.hpp"
+#include "core/state.hpp"
 
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include <hyprland/src/layout/LayoutManager.hpp>
@@ -49,19 +50,10 @@ namespace NAwesome::Windows {
 
         // last windowed box per app class, surviving window closes and
         // relogs: the restore target when a window of that app is born
-        // maximized again.
+        // maximized again. The store is the core's unified state
+        // (core/state.hpp).
         inline BoxStore& lastWindowed() {
-            static BoxStore S;
-            return S;
-        }
-
-        inline std::filesystem::path storePath() {
-            return statePath("windows-windowed.tsv");
-        }
-
-        inline Saver& saver() {
-            static Saver S{[]() { lastWindowed().write(storePath()); }};
-            return S;
+            return StateStore::inst().data().windowed;
         }
 
         inline CBox boundedRestore(PHLWINDOW w, const CBox& box, const CBox& workarea) {
@@ -72,11 +64,10 @@ namespace NAwesome::Windows {
         }
 
         inline void loadWindowed() {
-            // one-time migration from the legacy store
-            migrateBoxStore(storePath(), stateBase() / "hyprmax" / "windowed.tsv");
-            lastWindowed() = BoxStore::read(storePath());
-            // only a real windowed size is a restore target (a legacy
-            // position-only row carries none)
+            // the unified state (and the one-time legacy migration) is
+            // loaded by the supervisor before module inits; only a real
+            // windowed size is a restore target (a legacy position-only row
+            // carries none)
             std::erase_if(lastWindowed().rows, [](const auto& E) { return E.second.w <= 5 || E.second.h <= 5; });
         }
 
@@ -84,7 +75,7 @@ namespace NAwesome::Windows {
             if (cls.empty() || box.w <= 5 || box.h <= 5)
                 return;
             if (lastWindowed().remember(cls, Box{(int)std::llround(box.x), (int)std::llround(box.y), (int)std::llround(box.w), (int)std::llround(box.h)}))
-                saver().dirty();
+                StateStore::inst().dirty();
         }
 
         inline bool pluginMaximized(PHLWINDOW w) {
@@ -286,6 +277,14 @@ namespace NAwesome::Windows {
             if (const auto IT = maximized().find(WR); IT != maximized().end()) {
                 const CBox STORED = IT->second;
                 maximized().erase(IT);
+                // tell the client the truth: a client never told it left
+                // maximized (notably GTK) stays in maximized mode — it
+                // saves "maximized" on close and reopens maximized, and
+                // stops tracking its normal geometry (2026-10-03: firefox
+                // "always opens maximized"). Its CSD when windowed is the
+                // correct windowed look (the shadow is part of its buffer,
+                // composited with alpha — the pre-bump fork's behavior);
+                // the fork no longer lies maximized at map to suppress it.
                 setClientMaximized(false);
                 if (STORED.w > 5 && STORED.h > 5) {
                     const CBox R = boundedRestore(W, STORED, WA);
@@ -448,7 +447,7 @@ namespace NAwesome::Windows {
         }
 
         inline void teardown() {
-            saver().flush(); // the coalesced write must not die with the session
+            StateStore::inst().flush(); // the coalesced write must not die with the session
             maximized().clear();
             lastWindowed().rows.clear();
             swallowedButtons() = 0;

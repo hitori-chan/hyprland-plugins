@@ -38,6 +38,7 @@
 #include "state.hpp"
 
 #include "core/queries.hpp"
+#include "core/state.hpp"
 
 #include <hyprland/src/desktop/view/window/WindowFullscreenPolicy.hpp>
 #include <hyprland/src/layout/LayoutManager.hpp>
@@ -68,19 +69,10 @@ namespace NAwesome::Windows::Place {
 
         // each app's last window box (position + size), surviving relogs; the
         // legacy position-only rows load with a zero size, which stays until
-        // the app closes once and a full box is recorded
+        // the app closes once and a full box is recorded. The store is the
+        // core's unified state (core/state.hpp).
         inline BoxStore& lastSpot() {
-            static BoxStore S;
-            return S;
-        }
-
-        inline std::filesystem::path storePath() {
-            return statePath("windows-spot.tsv");
-        }
-
-        inline Saver& saver() {
-            static Saver S{[]() { lastSpot().write(storePath()); }};
-            return S;
+            return StateStore::inst().data().spot;
         }
 
         // metadata().appID() is only captured on first map; before that (the
@@ -137,7 +129,7 @@ namespace NAwesome::Windows::Place {
 
         inline void rememberSpot(const std::string& cls, const CBox& box) {
             if (lastSpot().remember(cls, Box{(int)std::llround(box.x), (int)std::llround(box.y), (int)std::llround(box.w), (int)std::llround(box.h)}))
-                saver().dirty();
+                StateStore::inst().dirty();
         }
 
         // a float sized to (or past) the whole workarea is maximized in all
@@ -153,12 +145,11 @@ namespace NAwesome::Windows::Place {
         // still pending, and do not mistake a compositor mode for a normal
         // client-chosen geometry. This mirrors the target's map-time state
         // sources instead of trying to infer them from a placeholder box.
-        // Read the REQUESTS, not the toplevel's pending states: upstream
-        // (21290254) pushes XDG_TOPLEVEL_STATE_MAXIMIZED into every
-        // toplevel's pending apply at first map (the CSD-suppression trick
-        // — "apps are always maximized under Hyprland + Wayland"), so a
-        // state-contains check reads a grant on every window and placement
-        // never runs.
+        // Read the REQUESTS, not the toplevel's applied states: a state
+        // check would read a grant the compositor has already told the
+        // client about, not one that is about to be applied — the request
+        // flags (plus the rule grants and the controller's modes) are the
+        // map-time sources of truth for "a grant is still in flight".
         inline bool hasFullscreenOrMaximizeGrant(PHLWINDOW w) {
             if (!w)
                 return false;
@@ -427,10 +418,8 @@ namespace NAwesome::Windows::Place {
     }
 
     inline void init() {
-        // one-time migration from the legacy store
-        migrateBoxStore(storePath(), stateBase() / "hyprplace" / "lastspot.tsv");
-        lastSpot() = BoxStore::read(storePath());
-
+        // the unified state (and the one-time legacy migration) is loaded
+        // by the supervisor before module inits
         supervisor().listen(Event::bus()->m_events.window.open, [](PHLWINDOW w) { onWindowOpen(w); });
         supervisor().listen(Event::bus()->m_events.window.close, [](PHLWINDOW w) { onWindowClose(w); });
         // window.predictSize is the fork's born-at-size hook; against
@@ -444,7 +433,7 @@ namespace NAwesome::Windows::Place {
     }
 
     inline void teardown() {
-        saver().flush(); // the deferred flush never runs at compositor exit
+        StateStore::inst().flush(); // the deferred flush never runs at compositor exit
         placeQueue().clear();
         lastSpot().rows.clear();
     }

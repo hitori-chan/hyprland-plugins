@@ -46,9 +46,4 @@ namespace NAwesome {
         bool                  m_queued = false;
     };
 
-    // $XDG_STATE_HOME/awesome/<file>
-    inline std::filesystem::path statePath(const char* file) {
-        return stateDir() / file;
-    }
-
 } // namespace NAwesome

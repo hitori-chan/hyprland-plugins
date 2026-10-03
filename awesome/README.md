@@ -79,8 +79,8 @@ the executor.
 
 Typed and pasted input shares a 4 KiB UTF-8 limit. Clipboard transfer
 is nonblocking with a 1.5-second deadline; closing or tearing down the
-launcher removes the fd and invalidates the callback. History is
-stored under `$XDG_STATE_HOME/awesome/`.
+launcher removes the fd and invalidates the callback. History lives in
+the plugin's one state file (see State).
 
 ### Windows
 
@@ -436,10 +436,18 @@ mirror it.
 
 ## State
 
-State lives in `$XDG_STATE_HOME/awesome/` (`windows-spot.tsv`,
-`windows-windowed.tsv`, `shell-launches.tsv`, `shell-history.tsv`);
-first run migrates the pre-rewrite per-plugin stores once and never
-touches them again.
+One file: `$XDG_STATE_HOME/hyprland/plugin/awesome/state.tsv` — typed
+tab-separated rows in fixed order (`spot`, `windowed`, `launches`,
+`history`), one atomic write (temp + rename), every row admitted or
+skipped (a hostile file can never take the session down). The four
+module stores (spawn spots, last-windowed boxes, launcher counts,
+prompt history) live in this one file; modules reach them through the
+core's `StateStore` (the documented cross-module seam). First run
+migrates the old layouts once — the four-file layout (both the current
+and the pre-rename `awesome/` dir) and the ancient `hyprplace` /
+`hyprmax` / `hyprbar` stores — merges key-by-key (newer wins), then
+CONSUMES the sources: the migration is one-time, and the plugin has
+exactly one state file from then on.
 
 ## Build and test
 
