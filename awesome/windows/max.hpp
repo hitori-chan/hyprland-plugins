@@ -286,7 +286,14 @@ namespace NAwesome::Windows {
             if (const auto IT = maximized().find(WR); IT != maximized().end()) {
                 const CBox STORED = IT->second;
                 maximized().erase(IT);
-                setClientMaximized(false);
+                // do NOT tell the client "unmaximized": the fork suppresses
+                // CSD by keeping CSD apps told maximized, so a real false
+                // makes GTK relayout into its CSD mode — the shadow region
+                // paints as a black band along the window's top/left inside
+                // the restored box — and the maximized re-tell flips it back
+                // after a tug-of-war (2026-10-03 user report: firefox
+                // unmax shows blank top-left). Geometry alone makes it
+                // windowed; the client stays in its (suppressed-CSD) mode.
                 if (STORED.w > 5 && STORED.h > 5) {
                     const CBox R = boundedRestore(W, STORED, WA);
                     rememberWindowed(W->metadata().appID(), R);
