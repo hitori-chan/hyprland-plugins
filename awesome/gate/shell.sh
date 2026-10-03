@@ -311,10 +311,13 @@ clipboard_now "$QUERY_PAYLOAD"
 open_menubar
 printf 'mods ctrl\ntap v\nmods none\nmods ctrl\ntap enter\nmods none\nsleep 400\n' | vk
 sleep 1
-chk "launcher: Ctrl+V admits one valid UTF-8 query up to 4 KiB" python3 - "$AW_HISTORY" <<'PY'
+chk "launcher: Ctrl+V admits one valid UTF-8 query up to 4 KiB" python3 - "$AW_STATE" <<'PY'
 import sys
 lines = open(sys.argv[1], "rb").read().splitlines()
-ok = bool(lines) and len(lines[-1]) == 4096 and lines[-1].decode().startswith("true # ") and lines[-1].endswith("🙂".encode())
+ok = False
+if lines and lines[-1].startswith(b"history\t"):
+    payload = lines[-1][len(b"history\t"):]
+    ok = len(payload) == 4096 and payload.decode().startswith("true # ") and payload.endswith("🙂".encode())
 raise SystemExit(0 if ok else 1)
 PY
 clipboard_stop
@@ -329,7 +332,7 @@ open_menubar
 printf 'mods ctrl\ntap v\nmods none\nmods ctrl\ntap enter\nmods none\nsleep 400\n' | vk
 sleep 1
 chk "launcher: closing the prompt invalidates a late paste" \
-	test "$(tail -n 1 "$AW_HISTORY")" = true
+	test "$(tail -n 1 "$AW_STATE" | cut -f2-)" = true
 clipboard_stop
 
 chk "shell: final clean state" test "$(st)" = "center:0 live:0 dnd:0"

@@ -150,8 +150,22 @@ exec_env="AQ_BACKENDS=wayland"
 for v in XDG_STATE_HOME XDG_CACHE_HOME PATH AW_WPCTL_LOG AW_WPCTL_HANG_FILE AW_WPCTL_FLOOD_FILE AW_SOUND_HANG_FILE; do
 	[[ -n "${!v:-}" ]] && exec_env="$exec_env $v=${!v}"
 done
+# The dbus session must NEVER reach the live displays: dbus-activated
+# services (the portals — file picker & co) would open their windows on
+# the LIVE session (2026-10-03: a nested zenity picker leaked live via
+# the inherited WAYLAND_DISPLAY, then via X11 when the display was merely
+# unset). So the dbus session gets the NESTED display (smallest free
+# wayland index — the nested picks the same), the live X11 DISPLAY is
+# stripped, and the compositor itself keeps the PARENT display (its
+# wayland backend finds the parent through it). If the index guess
+# misses (stale lock), portal services get a dead socket, clients fall
+# back to in-process dialogs, and everything still stays nested.
+RT="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+i=1; while [[ -e "$RT/wayland-$i.lock" ]]; do i=$((i+1)); done
+NESTED_WL="wayland-$i"
+PARENT_WL="${WAYLAND_DISPLAY:-wayland-1}"
 exec_rc=0
-hlq dispatch "hl.dsp.exec_cmd('ulimit -c unlimited 2>/dev/null; exec setsid env -u HYPRLAND_INSTANCE_SIGNATURE $exec_env dbus-run-session -- $BIN -c $CFG > $LOG 2>&1', {monitor='$VM silent'})" >/dev/null 2>&1 || exec_rc=$?
+hlq dispatch "hl.dsp.exec_cmd('ulimit -c unlimited 2>/dev/null; exec setsid env -u HYPRLAND_INSTANCE_SIGNATURE -u DISPLAY WAYLAND_DISPLAY=$NESTED_WL $exec_env dbus-run-session -- env -u DISPLAY WAYLAND_DISPLAY=$PARENT_WL $BIN -c $CFG > $LOG 2>&1', {monitor='$VM silent'})" >/dev/null 2>&1 || exec_rc=$?
 if [[ $exec_rc -ne 0 ]]; then
 	echo "launch: hl.dsp.exec_cmd failed (rc=$exec_rc) — the exec-rule park needs a fork with the monitor-rule silent suffix; refusing to fall back to the focus-dragging moves" >&2
 	exit 1
