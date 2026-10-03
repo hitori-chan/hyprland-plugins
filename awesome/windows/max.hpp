@@ -73,7 +73,7 @@ namespace NAwesome::Windows {
 
         inline void loadWindowed() {
             // one-time migration from the legacy store
-            migrateBoxStore(storePath(), stateDir().parent_path() / "hyprmax" / "windowed.tsv");
+            migrateBoxStore(storePath(), stateBase() / "hyprmax" / "windowed.tsv");
             lastWindowed() = BoxStore::read(storePath());
             // only a real windowed size is a restore target (a legacy
             // position-only row carries none)

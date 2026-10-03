@@ -17,11 +17,18 @@ namespace fs = std::filesystem;
 
 namespace NAwesome {
 
-    std::filesystem::path stateDir() {
+    std::filesystem::path stateBase() {
         const char* XDG  = std::getenv("XDG_STATE_HOME");
         const char* HOME = std::getenv("HOME");
-        const auto  BASE = XDG && *XDG ? fs::path{XDG} : fs::path{HOME ? HOME : ""} / ".local" / "state";
-        return BASE / "awesome";
+        return XDG && *XDG ? fs::path{XDG} : fs::path{HOME ? HOME : ""} / ".local" / "state";
+    }
+
+    std::filesystem::path stateDir() {
+        return stateBase() / "hyprland" / "plugin" / "awesome";
+    }
+
+    std::filesystem::path legacyStateDir() {
+        return stateBase() / "awesome";
     }
 
     static bool validKey(std::string_view k) {
@@ -282,6 +289,17 @@ namespace NAwesome {
     bool migrateCountStore(const fs::path& fresh, const fs::path& legacy) {
         return migrate(fresh, legacy, [](const fs::path& P) { return CountStore::read(P); },
                        [](const fs::path& P, const CountStore& S) { return S.write(P); });
+    }
+
+    bool migrateStateDirRename() {
+        const auto NEW = stateDir();
+        const auto OLD = legacyStateDir();
+        bool ALL = true;
+        ALL &= migrateBoxStore(NEW / "windows-spot.tsv", OLD / "windows-spot.tsv");
+        ALL &= migrateBoxStore(NEW / "windows-windowed.tsv", OLD / "windows-windowed.tsv");
+        ALL &= migrateCountStore(NEW / "shell-launches.tsv", OLD / "shell-launches.tsv");
+        ALL &= migrateListStore(NEW / "shell-history.tsv", OLD / "shell-history.tsv");
+        return ALL;
     }
 
 } // namespace NAwesome

@@ -634,7 +634,7 @@ cleanup_harness_core() {
 # Store paths the plugin owns (core/persist.hpp, windows/{place,max}.hpp,
 # shell/menubar.cpp). The legacy sources it migrates from are seeded by
 # fresh_stress_state, so every full run exercises the migration.
-AWSTATE="$STATE/awesome"
+AWSTATE="$STATE/hyprland/plugin/awesome"
 AW_SPOT="$AWSTATE/windows-spot.tsv"
 AW_WINDOWED="$AWSTATE/windows-windowed.tsv"
 AW_LAUNCHES="$AWSTATE/shell-launches.tsv"

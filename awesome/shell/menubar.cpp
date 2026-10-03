@@ -108,9 +108,9 @@ namespace NAwesome::Shell {
             return sdbus::ObjectPath{path};
         }
 
-        // the launcher's state: the core stores under $XDG_STATE_HOME/awesome,
-        // migrated once from the legacy cache files (legacy files are read,
-        // never modified)
+        // the launcher's state: the core stores under
+        // $XDG_STATE_HOME/hyprland/plugin/awesome, migrated once from the
+        // legacy cache files (legacy files are read, never modified)
         static std::filesystem::path legacyCacheDir() {
             if (const char* XDG = std::getenv("XDG_CACHE_HOME"); XDG && *XDG)
                 return std::filesystem::path{XDG} / "hyprbar";

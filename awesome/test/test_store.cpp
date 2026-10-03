@@ -3,6 +3,7 @@
 #include "../core/store.hpp"
 
 #include <filesystem>
+#include <cstdlib>
 #include <fstream>
 
 #include "harness.hpp"
@@ -150,6 +151,37 @@ bool test_store() {
         // no legacy file: a no-op, fresh left absent
         AW_CHECK(migrateBoxStore(TDIR / "absent.tsv", TDIR / "nope.tsv"));
         AW_CHECK(!fs::exists(TDIR / "absent.tsv"));
+    }
+
+    // ---- state-dir rename: old "awesome" dir -> "hyprland/plugin/awesome"
+    {
+        char* ORIG = std::getenv("XDG_STATE_HOME");
+        setenv("XDG_STATE_HOME", TDIR.c_str(), 1);
+        const auto OLD = TDIR / "awesome";
+        const auto NEW = TDIR / "hyprland" / "plugin" / "awesome";
+        fs::create_directories(OLD, ec);
+        BoxStore B;
+        B.remember("org.app.Main", {5, 6, 320, 240});
+        AW_CHECK(B.write(OLD / "windows-spot.tsv"));
+        AW_CHECK(migrateStateDirRename());
+        const auto M = BoxStore::read(NEW / "windows-spot.tsv");
+        AW_CHECK((M.find("org.app.Main") != nullptr && *M.find("org.app.Main") == Box{5, 6, 320, 240}));
+        // idempotent: a second run must not touch the live fresh store
+        BoxStore B2;
+        B2.remember("org.stale.App", {1, 1, 50, 50});
+        AW_CHECK(B2.write(OLD / "windows-spot.tsv"));
+        AW_CHECK(migrateStateDirRename());
+        const auto M2 = BoxStore::read(NEW / "windows-spot.tsv");
+        AW_CHECK(M2.contains("org.app.Main") && !M2.contains("org.stale.App"));
+        // no legacy dir at all: a clean no-op
+        fs::remove_all(OLD, ec);
+        AW_CHECK(migrateStateDirRename());
+        const auto M3 = BoxStore::read(NEW / "windows-spot.tsv");
+        AW_CHECK(M3.rows.size() == M2.rows.size() && M3.contains("org.app.Main") && !M3.contains("org.stale.App"));
+        if (ORIG)
+            setenv("XDG_STATE_HOME", ORIG, 1);
+        else
+            unsetenv("XDG_STATE_HOME");
     }
 
     fs::remove_all(TDIR, ec);

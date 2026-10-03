@@ -5,5 +5,5 @@
 namespace NAwesome {
     inline constexpr const char* NAME    = "awesome";
     inline constexpr const char* AUTHOR  = "hitori";
-    inline constexpr const char* VERSION = "2.0.0";
+    inline constexpr const char* VERSION = "2.1.0";
 }

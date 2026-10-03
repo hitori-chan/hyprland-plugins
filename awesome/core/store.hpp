@@ -83,8 +83,19 @@ namespace NAwesome {
         bool             write(const std::filesystem::path& path) const;
     };
 
-    // $XDG_STATE_HOME/awesome/, ~/.local/state/awesome fallback
+    // $XDG_STATE_HOME/hyprland/plugin/awesome/, ~/.local/state fallback:
+    // the dir is this plugin's — family / category / plugin — bare
+    // "awesome" collided with real AwesomeWM state.
     std::filesystem::path stateDir();
+
+    // the pre-rename state dir; the dead legacy source for
+    // migrateStateDirRename()
+    std::filesystem::path legacyStateDir();
+
+    // the XDG state root itself ($XDG_STATE_HOME or ~/.local/state): the
+    // anchor for per-module legacy paths that live beside, not inside, the
+    // plugin dir (hyprplace/, hyprmax/)
+    std::filesystem::path stateBase();
 
     // One-time migration: when the fresh file does not exist and the
     // legacy file does, load the legacy contents into the fresh path.
@@ -93,5 +104,10 @@ namespace NAwesome {
     bool migrateBoxStore(const std::filesystem::path& fresh, const std::filesystem::path& legacy);
     bool migrateListStore(const std::filesystem::path& fresh, const std::filesystem::path& legacy);
     bool migrateCountStore(const std::filesystem::path& fresh, const std::filesystem::path& legacy);
+
+    // The state-dir rename itself: move every store file out of
+    // legacyStateDir() into stateDir(), per the per-store rules above. Must
+    // run before any module loads its store.
+    bool migrateStateDirRename();
 
 } // namespace NAwesome
