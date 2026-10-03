@@ -10,10 +10,14 @@
 // of the requested kind and holds, so the gate can assert the focus stayed
 // and the socket2 `urgent` event named this window.
 //
-// usage: focustrap <map|attention|activate> [delay-s] [hold-s]
+// usage: focustrap <map|attention|activate> [delay-s|trigger-file] [hold-s]
 //   map      — map only, no ping (baseline: map-time focus is allowed)
 //   attention — _NET_WM_STATE ADD _NET_WM_STATE_DEMANDS_ATTENTION
 //   activate  — _NET_ACTIVE_WINDOW (source = application)
+// delay-s is a fixed sleep before the ping; a path (leading '/') instead
+// makes the fixture ping as soon as that file appears (the gate triggers it
+// once focus is demonstrably OFF the probe — a fixed delay races the
+// battery's clicks under compositor stalls, 2026-10-03)
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -25,9 +29,10 @@
 #include <unistd.h>
 
 int main(int argc, char** argv) {
-    const char* mode   = argc > 1 ? argv[1] : "attention";
-    int         delay  = argc > 2 ? atoi(argv[2]) : 6;
-    int         hold   = argc > 3 ? atoi(argv[3]) : 18;
+    const char* mode      = argc > 1 ? argv[1] : "attention";
+    const char* trigger   = argc > 2 ? argv[2] : NULL; // number of seconds, or a file path
+    int         hold      = argc > 3 ? atoi(argv[3]) : 18;
+    int         delay     = (trigger && trigger[0] == '/') ? -1 : (trigger ? atoi(trigger) : 6);
 
     Display* dpy = XOpenDisplay(NULL);
     if (!dpy) {
@@ -35,12 +40,17 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    setvbuf(stderr, NULL, _IOLBF, 0); // killed runs lose buffered "sent" lines otherwise
     int  scr       = DefaultScreen(dpy);
     Atom netWmState = XInternAtom(dpy, "_NET_WM_STATE", False);
     Atom demands    = XInternAtom(dpy, "_NET_WM_STATE_DEMANDS_ATTENTION", False);
     Atom netActive  = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
 
-    Window w = XCreateSimpleWindow(dpy, RootWindow(dpy, scr), 900, 500, 90, 60, 1, 0xff305070, 0xffb0d0ff);
+    // StructureNotifyMask: without it no MapNotify is ever delivered and the
+    // mapped-wait below burns its full 5s budget, shifting the ping past the
+    // gate's focus assertions (2026-10-03 gate regression)
+    Window w = XCreateWindow(dpy, RootWindow(dpy, scr), 900, 500, 90, 60, 1, DefaultDepth(dpy, scr),
+                             InputOutput, DefaultVisual(dpy, scr), StructureNotifyMask, NULL);
     XStoreName(dpy, w, "focustrap");
     XClassHint ch;
     ch.res_name  = (char*)"focustrap";
@@ -50,21 +60,28 @@ int main(int argc, char** argv) {
     XFlush(dpy);
     fprintf(stderr, "focustrap: mapped 0x%lx pid %d\n", (unsigned long)w, getpid());
 
-    for (int i = 0; i < 100; i++) {
-        if (XPending(dpy)) {
-            XEvent ev;
-            XNextEvent(dpy, &ev);
-            if (ev.type == MapNotify && ev.xmap.window == w)
+    // No MapNotify wait: this Xwayland delivers no StructureNotify events to
+    // clients (verified 2026-10-03 — a StructureNotifyMask window sees zero
+    // events), so the wait was a dead 5s that shifted the ping past the gate's
+    // assertions. The gate polls probe_addr for the map itself.
+    // wait for the ping moment: a fixed delay, or the trigger file to appear
+    // (bounded — a lost trigger must not hang the fixture past the battery)
+    if (delay >= 0) {
+        for (int i = 0; i < delay * 20; i++) {
+            if (XPending(dpy))
+                XNextEvent(dpy, &(XEvent){0});
+            else
+                usleep(50 * 1000);
+        }
+    } else {
+        for (int i = 0; i < 600; i++) { // 30s bound
+            if (access(trigger, F_OK) == 0)
                 break;
-        } else
-            usleep(50 * 1000);
-    }
-
-    for (int i = 0; i < delay * 20; i++) {
-        if (XPending(dpy))
-            XNextEvent(dpy, &(XEvent){0});
-        else
-            usleep(50 * 1000);
+            if (XPending(dpy))
+                XNextEvent(dpy, &(XEvent){0});
+            else
+                usleep(50 * 1000);
+        }
     }
 
     if (strcmp(mode, "map") != 0) {

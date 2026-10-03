@@ -61,10 +61,16 @@ kill_nested
 # builds are provably identical — build once, credit both assertions.
 build_aw() { # $1: 1 = strip PKG_CONFIG_PATH (installed-cache rehearsal)
 	local strip=$1
+	# Incremental by default: a dev-loop gate must not pay a 150 s forced
+	# rebuild every run. GATE_FORCE_BUILD=1 restores the old -B behavior —
+	# still required after a header install, where the -MMD gap makes
+	# staleness real (AGENTS.md: `make -B` after a header install).
+	local force=()
+	[[ -n "${GATE_FORCE_BUILD:-}" ]] && force+=(-B)
 	if [[ $strip == 1 ]]; then
-		env -u PKG_CONFIG_PATH make -B -j"$(nproc)" -C "$REPO/awesome" >/dev/null 2>&1
+		env -u PKG_CONFIG_PATH make "${force[@]}" -j"$(nproc)" -C "$REPO/awesome" >/dev/null 2>&1
 	else
-		make -B -j"$(nproc)" -C "$REPO/awesome" >/dev/null 2>&1
+		make "${force[@]}" -j"$(nproc)" -C "$REPO/awesome" >/dev/null 2>&1
 	fi
 }
 if [[ -n "${HYPR_DEPLOY_PKG_CONFIG_PATH:-}" ]]; then
@@ -104,6 +110,7 @@ dsp "hl.dsp.window.close()" # the donate/updated screen, when present
 sleep 0.5
 chk "launch toast cleared before the batteries" wait_launch_toast
 # The migration ran at this first init: the seeded legacy spot store must
-# have landed in the fresh path, legacy left UNTOUCHED (read, never modified).
-chk "legacy spot store migrated to the fresh path" \
-	bash -c "grep -q $'\tfoot\$' \"$AW_SPOT\" && grep -q $'\tfoot\$' \"$LEG_SPOT\""
+# have landed in the unified state file, its source CONSUMED (the one-time
+# migration leaves exactly one state file).
+chk "legacy spot store migrated into state.tsv and consumed" \
+	bash -c "grep -q $'\tfoot\$' \"$AW_STATE\" && ! test -e \"$LEG_SPOT\""

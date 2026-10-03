@@ -631,26 +631,25 @@ cleanup_harness_core() {
 
 # ---- the monolith's harness state ------------------------------------------
 #
-# Store paths the plugin owns (core/persist.hpp, windows/{place,max}.hpp,
-# shell/menubar.cpp). The legacy sources it migrates from are seeded by
-# fresh_stress_state, so every full run exercises the migration.
+# The plugin's single persistent state file (core/state.hpp): one typed
+# file, one load, one save path. The legacy sources it migrates — and
+# CONSUMES — from are seeded by fresh_stress_state, so every full run
+# exercises the one-time migration.
 AWSTATE="$STATE/hyprland/plugin/awesome"
-AW_SPOT="$AWSTATE/windows-spot.tsv"
-AW_WINDOWED="$AWSTATE/windows-windowed.tsv"
-AW_LAUNCHES="$AWSTATE/shell-launches.tsv"
-AW_HISTORY="$AWSTATE/shell-history.tsv"
+AW_STATE="$AWSTATE/state.tsv"
 LEG_SPOT="$STATE/hyprplace/lastspot.tsv"
 LEG_WINDOWED="$STATE/hyprmax/windowed.tsv"
 LEG_MENUBAR_COUNT="$STATE/cache/hyprbar/menu_count_file"
 LEG_MENUBAR_HIST="$STATE/cache/hyprbar/history_menu"
 
-# The default stress state seeds the LEGACY stores: the monolith's first init
-# migrates them into $AWSTATE/*, and the placement batteries read the fresh
-# files afterwards. (The "exactly one foot row" check reads the fresh spot
-# store, where the migration consolidated the legacy rows.)
+# The default stress state seeds the ANCIENT legacy store: the monolith's
+# first init migrates it into $AW_STATE (and consumes the source), and the
+# placement batteries read the unified file afterwards. (The "exactly one
+# foot row" check reads the spot rows of $AW_STATE, where the migration
+# consolidated the legacy rows.)
 fresh_stress_state() {
 	rm -rf -- "$STATE"
-	mkdir -p "$AWSTATE" "$(dirname "$LEG_SPOT")" "$(dirname "$LEG_WINDOWED")" "$(dirname "$LEG_MENUBAR_COUNT")"
+	mkdir -p "$(dirname "$LEG_SPOT")" "$(dirname "$LEG_WINDOWED")" "$(dirname "$LEG_MENUBAR_COUNT")"
 	printf '100\t100\t500\t400\tfoot\n200\t80\tlegacyfoot\n' > "$LEG_SPOT"
 }
 

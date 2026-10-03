@@ -57,7 +57,7 @@ for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in j
 	dsp "hl.dsp.window.close({window=\"address:$a\"})" & storm_jobs+=("$!")
 done; [[ ${#storm_jobs[@]} -gt 0 ]] && wait "${storm_jobs[@]}" || true; sleep 1.2
 chk "close storm: no stragglers" test "$(pyc "sum(1 for c in cs if c['class']=='foot')")" = 0
-chk "tsv: exactly one foot row survives the coalesced save" test "$(grep -c $'\tfoot$' "$AW_SPOT")" = 1
+chk "tsv: exactly one foot row survives the coalesced save" test "$(grep -c $'\tfoot$' "$AW_STATE")" = 1
 chk "tsv: no temp-file debris" bash -c "! ls $AWSTATE/*.tmp 2>/dev/null | grep -q ."
 
 # ---- spawn storm --------------------------------------------------------
@@ -82,7 +82,7 @@ import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='fixwin'), ''))")"
 [[ -n "$FW" ]] && dsp "hl.dsp.window.close({window=\"address:$FW\"})"; sleep 1
 chk "fixed-size dialog never writes the class row" \
-	bash -c "! grep -q $'\tfixwin\$' \"$AW_SPOT\""
+	bash -c "! grep -q $'\tfixwin\$' \"$AW_STATE\""
 FF="$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), ''))")"
@@ -184,14 +184,12 @@ dsp "hl.dsp.focus({workspace=\"1\"})"; sleep 1
 chk "15 workspace hops: back on 1" test "$(ws)" = 1
 
 # ---- hostile state file -------------------------------------------------
-# The remembered-spawn store is the user-editable FRESH file now: a garbage
-# line, an out-of-range number and an absurd spot must all be skipped or
-# clamped, not fatal. The monolith's "fresh wins once live" migration means
-# the probe writes the fresh path directly (the legacy file is a one-time
-# source, not a live one).
+# The unified state file is the user-editable live file: a garbage line,
+# an out-of-range number and an absurd spot must all be skipped or clamped,
+# not fatal (the state.tsv-present check also makes the migration a no-op).
 kill_nested
-rm -f -- "$AW_SPOT"
-printf 'garbage\n42\n1e400\t0\t300\t200\tinffoot\n-100\t-100\t-50\t-50\tnegfoot\n100000\t100000\t400\t300\tfoot\n' > "$AW_SPOT"
+rm -f -- "$AW_STATE"
+printf 'garbage\n42\nspot\t1e400\t0\t300\t200\tinffoot\nspot\t-100\t-100\t-50\t-50\tnegfoot\nspot\t100000\t100000\t400\t300\tfoot\n' > "$AW_STATE"
 launch_nested || { echo "relaunch FAILED"; exit 1; }
 retarget || { echo "nested retarget FAILED after relaunch"; exit 1; }
 chk "hostile tsv: the monolith still loads" test "$(hq plugin list | grep -c Plugin)" = 1
@@ -207,23 +205,31 @@ chk "hostile seed closed: no foot survives into the panel batteries" test "$(pyc
 
 # ---- hostile LEGACY migration -------------------------------------------
 # The one-time migration itself is hostile-file input: a garbage legacy with
-# NO fresh file must filter row-by-row and still land a usable store.
+# NO unified file must filter row-by-row and still land a usable store —
+# and consume the source (the migration is one-time).
 kill_nested
-rm -f -- "$AW_SPOT"
+rm -f -- "$AW_STATE"
+# the preflight migration CONSUMED (and rmdir'd) this dir; re-seeding must
+# recreate it or the seed silently no-ops (2026-10-03: a failed redirect
+# left the migration with no source and the focus batteries ran on empty
+# spot memory)
+mkdir -p "$(dirname "$LEG_SPOT")"
 printf 'garbage\n1e400\t0\t300\t200\tinffoot\n-100\t-100\t-50\t-50\tnegfoot\n300\t200\t400\t300\tmigrfoot\n' > "$LEG_SPOT"
 launch_nested || { echo "relaunch FAILED"; exit 1; }
 retarget || { echo "nested retarget FAILED after relaunch"; exit 1; }
-chk "legacy migration: the hostile file filtered into the fresh store" \
-	bash -c "! grep -q inffoot \"$AW_SPOT\" && ! grep -q negfoot \"$AW_SPOT\" && grep -q $'\tmigrfoot\$' \"$AW_SPOT\""
-# fresh wins once live: a different legacy now must not clobber it
+chk "legacy migration: the hostile file filtered into state.tsv" \
+	bash -c "! grep -q inffoot \"$AW_STATE\" && ! grep -q negfoot \"$AW_STATE\" && grep -q $'\tmigrfoot\$' \"$AW_STATE\""
+chk "legacy migration: the consumed source is gone" test "! -e $LEG_SPOT"
+# the live unified file wins once present: a re-seeded legacy must not clobber it
 kill_nested
+mkdir -p "$(dirname "$LEG_SPOT")"
 printf '999\t999\t100\t100\tfoot\n' > "$LEG_SPOT"
 launch_nested || { echo "relaunch FAILED"; exit 1; }
 retarget || { echo "nested retarget FAILED after relaunch"; exit 1; }
 chk "legacy migration: a second pass does not clobber the live store" \
-	bash -c "! grep -q $'\tfoot\$' \"$AW_SPOT\" || grep -q $'\tmigrfoot\$' \"$AW_SPOT\""
+	bash -c "! grep -q $'\tfoot\$' \"$AW_STATE\" || grep -q $'\tmigrfoot\$' \"$AW_STATE\""
 kill_nested
-rm -f -- "$AW_SPOT"
+rm -f -- "$AW_STATE"
 launch_nested || { echo "relaunch FAILED"; exit 1; }
 retarget || { echo "nested retarget FAILED after relaunch"; exit 1; }
 
@@ -289,12 +295,41 @@ print(a[2:] if a.startswith('0x') else a)"
 		focus_addr() {
 			hq activewindow 2>/dev/null | awk '/^Window/ { print $2; exit }'
 		}
-		click_center() {
+		# click_point <class>: a point INSIDE the window that no other window
+		# covers, or "0 0" when the class is missing or fully covered. The old
+		# center-only click silently landed on whatever covered the center
+		# (the X11 probe maps workarea-sized; after the hostile batteries a
+		# fresh foot sat over its center) and the focus check failed for the
+		# wrong reason. The sample grid keeps the search bounded.
+		click_point() {
 			clients | python3 -c "
 import json,sys
-c = next((c for c in json.load(sys.stdin) if c['class']=='$1'), None)
-print(int(c['at'][0]+c['size'][0]/2), int(c['at'][1]+c['size'][1]/2)) if c else (0,0)" \
-				| { read -r cx cy; printf "move %s %s\nsleep 50\npress 272\nsleep 50\nrelease 272\nsleep 50\n" "$cx" "$cy"; } | vp
+cs = json.load(sys.stdin)
+t = next((c for c in cs if c['class']==sys.argv[1]), None)
+if t is None:
+    print('0 0'); raise SystemExit
+x, y = t['at']; w, h = t['size']
+def inside(p, c):
+    return c['at'][0] <= p[0] < c['at'][0]+c['size'][0] and c['at'][1] <= p[1] < c['at'][1]+c['size'][1]
+pts = [(x+max(1,int(w*f/100)), y+max(1,int(h*g/100))) for f in (5,25,50,75,95) for g in (5,25,50,75,95)]
+for p in pts:
+    if all(not inside(p, c) for c in cs if c['address'] != t['address']):
+        print(*p); raise SystemExit
+print(x+w//2, y+h//2)" "$1"
+		}
+		click_xy() { # click_xy <x> <y>
+			printf "move %s %s\nsleep 50\npress 272\nsleep 50\nrelease 272\nsleep 50\n" "$1" "$2" | vp
+		}
+		focus_class() { # focus_class <class>: click a reachable point; 1 = nothing to click
+			read -r _cx _cy < <(click_point "$1")
+			[[ "$_cx" == "0" && "$_cy" == "0" ]] && return 1
+			click_xy "$_cx" "$_cy"
+			return 0
+		}
+		geomdump() { # the geometry a click decision was made against
+			clients | python3 -c "
+import json,sys
+print(' '.join(f\"{c['class']}@{c['at'][0]},{c['at'][1]}:{c['size'][0]}x{c['size'][1]}\" for c in json.load(sys.stdin)))" 2>/dev/null
 		}
 		touch_probe() { # touch_probe <class>: a keyboard event for the window
 			# (must hold keyboard focus: in every case it holds the map focus).
@@ -318,8 +353,16 @@ print(1 if any(c['class']=='$1' for c in json.load(sys.stdin)) else 0)" \
 		}
 		run_ping_mode() {
 			local mode=$1
-			local cap="$STATE/focus-$mode.cap" lpid="" probe="" paddr="" faddr=""
-			DISPLAY="$NDISP" "$FOCUSTRAP" "$mode" 5 16 >/dev/null 2>&1 &
+			local cap="$STATE/focus-$mode.cap" trig="$STATE/focus-$mode.trigger"
+			local lpid="" probe="" paddr="" faddr=""
+			rm -f "$trig"
+			# Trigger-driven ping: the fixture fires the moment $trig appears —
+			# the battery touches it only once focus is demonstrably OFF the
+			# probe, so the attention-only (GATED) path is guaranteed at ping
+			# time. A fixed delay races the battery's own clicks under
+			# compositor stalls (the ping lands on the just-refocused probe and
+		# is a no-op — 2026-10-03). Hold 18 outlives the late-event poll.
+			DISPLAY="$NDISP" "$FOCUSTRAP" "$mode" "$trig" 18 >/dev/null 2>&1 &
 			probe=$!
 			sleep 1.8
 			paddr="$(probe_addr)"
@@ -329,31 +372,73 @@ print(1 if any(c['class']=='$1' for c in json.load(sys.stdin)) else 0)" \
 				return
 			fi
 			ok "focus($mode): probe mapped"
-			click_center foot
+			# S2 streams only from connect time: capture from now, so the
+			# trigger-firing event below can never land in a not-yet-open file
+			python3 "$S2CAP_PY" "$S2SOCK" 30 "$cap" &
+			lpid=$!
+			if ! focus_class foot; then
+				bad "focus($mode): no reachable click point on foot: $(geomdump)"
+				kill "$probe" 2>/dev/null
+				wait "$lpid" 2>/dev/null
+				return
+			fi
 			faddr="$(focus_addr)"
 			# the probe takes the map focus, so the click must demonstrably
 			# land on foot: with the probe focused the ping below early-returns
 			# (an activation request on the focused window is a no-op) and the
 			# urgent check fails for the wrong reason
-			chk "focus($mode): the click moved focus off the probe to foot" \
-				test -n "$faddr" && test "$faddr" != "$paddr"
-			: >"$cap"
-			python3 "$S2CAP_PY" "$S2SOCK" 14 "$cap" &
-			lpid=$!
-			sleep 9
-			chk "focus($mode): the ping did not move the keyboard focus" \
-				test "$(focus_addr)" = "$faddr"
-			click_center focustrap
-			chk "focus($mode): clicking the urgent probe focuses it" \
-				test "$(focus_addr)" = "$paddr"
-			kill "$probe" 2>/dev/null
-			wait "$lpid" 2>/dev/null
+			if [[ -n "$faddr" && "$faddr" != "$paddr" ]]; then
+				ok "focus($mode): the click moved focus off the probe to foot"
+			else
+				bad "focus($mode): the click moved focus off the probe to foot (focus=[$faddr] want!=[$paddr])"
+				geomdump
+				kill "$probe" 2>/dev/null
+				wait "$lpid" 2>/dev/null
+				return
+			fi
+			if [[ "$mode" != "map" ]]; then
+				# fire the ping with focus demonstrably on foot, then settle
+				# past the Xwayland pipeline lag before asserting the focus held
+				touch "$trig"
+				sleep 2.5
+				chk "focus($mode): the ping did not move the keyboard focus" \
+					test "$(focus_addr)" = "$faddr"
+			fi
+			if ! focus_class focustrap; then
+				bad "focus($mode): the probe is fully covered, no reachable point: $(geomdump)"
+				kill "$probe" 2>/dev/null
+				wait "$lpid" 2>/dev/null
+				return
+			fi
+			if [[ "$(focus_addr)" == "$paddr" ]]; then
+				ok "focus($mode): clicking the urgent probe focuses it"
+			else
+				bad "focus($mode): clicking the urgent probe focuses it (focus=[$(focus_addr)] want=[$paddr])"
+				geomdump
+			fi
 			if [[ "$mode" == "map" ]]; then
+				# no ping: a settle past where an event would have landed, then
+				# the absence is the assertion
+				sleep 2
+				kill "$probe" 2>/dev/null
+				wait "$lpid" 2>/dev/null
 				chk "focus(map): a bare map raises no urgency" \
 					bash -c "! grep -q 'urgent>>' '$cap'"
 			else
+				# wait for the event, bounded: the X pipeline lag is unbounded
+				# from the outside, so poll the capture instead of betting a
+				# fixed window outlives it. The probe stays UP until the event
+				# is in hand — a dead X client's queued ClientMessage may be
+				# dropped, which would void the ping itself
+				local got=0
+				for _ in $(seq 1 24); do
+					grep -q "urgent>>$paddr" "$cap" 2>/dev/null && { got=1; break; }
+					sleep 0.5
+				done
+				kill "$probe" 2>/dev/null
+				wait "$lpid" 2>/dev/null
 				chk "focus($mode): the ping posted an urgent event for the probe window" \
-					grep -q "urgent>>$paddr" "$cap"
+					bash -c "test '$got' = 1"
 			fi
 		}
 		# foot is the ping's focus target; the geometry batteries closed
@@ -369,25 +454,39 @@ print(1 if any(c['class']=='$1' for c in json.load(sys.stdin)) else 0)" \
 		# urgency mark, the window STAYS minimized — the chip's tint is the
 		# whole answer; a chip click or Mod+Ctrl+N restores. (Gate on, the
 		# plugin's urgent hop performs the restore instead — a config flip,
-		# not a battery case.) The probe pings its OWN X11 toplevel 14s after
-		# the map; the probe is focused then minimized in the meantime, so
-		# the ping is the test.
+		# not a battery case.) The probe pings its OWN X11 toplevel once the
+		# battery fires the trigger (below, after the minimize); the probe is
+		# focused then minimized first, so the ping is the test.
+		FMTRIG="$STATE/focus-min.trigger"; rm -f "$FMTRIG"
 		: >"$STATE/focus-min.cap"
-		python3 "$S2CAP_PY" "$S2SOCK" 17 "$STATE/focus-min.cap" &
+		python3 "$S2CAP_PY" "$S2SOCK" 25 "$STATE/focus-min.cap" &
 		FMPL=$!
-		DISPLAY="$NDISP" "$FOCUSTRAP" activate 2 14 >/dev/null 2>&1 &
+		DISPLAY="$NDISP" "$FOCUSTRAP" activate "$FMTRIG" 15 >/dev/null 2>&1 &
 		FP=$!
 		sleep 1.8
 		PMAPADDR="$(probe_addr)"
-		click_center focustrap
-		dsp "hl.plugin.awesome.minimize()"; sleep 0.8
-		chk "urgent-min: the probe is minimized" \
-			test "$(pyc "any(c['class']=='focustrap' and c['hidden'] for c in cs)")" = 1
-		sleep 13.5 # the ping lands at 14s
-		chk "urgent-min: the ask did not restore the minimized window (attention-only mode)" \
-			test "$(pyc "any(c['class']=='focustrap' and c['hidden'] for c in cs)")" = 1
-		chk "urgent-min: the ask on the minimized window posted an urgent event" \
-			grep -q "urgent>>$PMAPADDR" "$STATE/focus-min.cap"
+		if [[ -z "$PMAPADDR" ]]; then
+			bad "urgent-min: probe window never mapped"
+		else
+			focus_class focustrap || bad "urgent-min: no reachable click point on the probe: $(geomdump)"
+			dsp "hl.plugin.awesome.minimize()"; sleep 0.8
+			chk "urgent-min: the probe is minimized" \
+				test "$(pyc "any(c['class']=='focustrap' and c['hidden'] for c in cs)")" = 1
+			touch "$FMTRIG"
+			# poll the event (it doubles as proof the ping was processed); the
+			# probe stays up until then — a dead X client's queued ping may be
+			# dropped, voiding the test. The 12s worst case still lands before
+			# the probe's map+4+12s lifetime
+			GOTMIN=0
+			for _ in $(seq 1 24); do
+				grep -q "urgent>>$PMAPADDR" "$STATE/focus-min.cap" 2>/dev/null && { GOTMIN=1; break; }
+				sleep 0.5
+			done
+			chk "urgent-min: the ask did not restore the minimized window (attention-only mode)" \
+				test "$(pyc "any(c['class']=='focustrap' and c['hidden'] for c in cs)")" = 1
+			chk "urgent-min: the ask on the minimized window posted an urgent event" \
+				bash -c "test '$GOTMIN' = 1"
+		fi
 		kill "$FP" 2>/dev/null
 		wait "$FMPL" 2>/dev/null
 	fi
@@ -438,7 +537,7 @@ print(1 if any(c['class']=='$1' for c in json.load(sys.stdin)) else 0)" \
 			|| { dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x300')"; sleep 2.5; }
 
 		# (a) the visible ask on the focused window
-		click_center foot
+		focus_class foot
 		# the click's focus round-trip is one compositor loop turn; give
 		# it a bounded wait instead of a single immediate read
 		RF=""
@@ -478,9 +577,9 @@ print(a[2:] if a.startswith('0x') else a)")"
 		# racing the delayed ask (2026-10-02 battery flake). With no pointer
 		# motion between the focus and the ask, the check is deterministic.
 		: >"$STATE/askunfoc.cap"
-		python3 "$S2CAP_PY" "$S2SOCK" 13 "$STATE/askunfoc.cap" &
+		python3 "$S2CAP_PY" "$S2SOCK" 25 "$STATE/askunfoc.cap" &
 		AFPL=$!
-		env WAYLAND_DISPLAY="$WL" "$ACTWIN" 13 3 >"$STATE/askunfoc.win.log" 2>&1 &
+		env WAYLAND_DISPLAY="$WL" "$ACTWIN" 18 3 >"$STATE/askunfoc.win.log" 2>&1 &
 		AP=$!
 		for _ in $(seq 1 24); do clients 2>/dev/null | grep -q '"class": *"activatewin"' && break; sleep 0.25; done
 		APAD="$(clients | python3 -c "
@@ -504,8 +603,16 @@ print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), '
 		sleep 1
 		chk "ask-unfocused: the ask did not steal focus from the front window" \
 			test "$(focus_addr)" = "$AF"
+		# poll the event instead of betting a fixed capture window outlives
+		# the pipeline lag; the probe holds 18s so the 9s worst case lands
+		# while it is still a live client
+		GOTU=0
+		for _ in $(seq 1 18); do
+			grep -q "urgent>>$APAD" "$STATE/askunfoc.cap" 2>/dev/null && { GOTU=1; break; }
+			sleep 0.5
+			done
 		chk "ask-unfocused: the ask posted an urgent event for the probe" \
-			grep -q "urgent>>$APAD" "$STATE/askunfoc.cap"
+			bash -c "test '$GOTU' = 1"
 		echo "askunfoc: foot='$AF' post='$(focus_addr)' probe='$APAD' urgent-lines=$(grep -c 'urgent>>' "$STATE/askunfoc.cap" 2>/dev/null) client=[$(cat "$STATE/askunfoc.win.log" 2>/dev/null | tr '\n' '|')]" >&2
 		kill "$AP" 2>/dev/null
 		wait "$AFPL" 2>/dev/null
@@ -516,9 +623,9 @@ print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), '
 		# the probe's workspace off the monitor, and the delayed ask (6s in)
 		# arrives at a not-visible window
 		: >"$STATE/asknv.cap"
-		python3 "$S2CAP_PY" "$S2SOCK" 13 "$STATE/asknv.cap" &
+		python3 "$S2CAP_PY" "$S2SOCK" 25 "$STATE/asknv.cap" &
 		NVLPID=$!
-		env WAYLAND_DISPLAY="$WL" "$ACTWIN" 13 6 >"$STATE/asknv.win.log" 2>&1 &
+		env WAYLAND_DISPLAY="$WL" "$ACTWIN" 18 6 >"$STATE/asknv.win.log" 2>&1 &
 		NP=$!
 		for _ in $(seq 1 24); do clients 2>/dev/null | grep -q '"class": *"activatewin"' && break; sleep 0.25; done
 		# the tap lands while the probe is on the visible workspace;
@@ -534,8 +641,13 @@ print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), '
 import json,sys
 a = next((c['address'] for c in json.load(sys.stdin) if c['class']=='activatewin'), '')
 print(a[2:] if a.startswith('0x') else a)")"
+		GOTNV=0
+		for _ in $(seq 1 12); do
+			grep -q "urgent>>$NPAD" "$STATE/asknv.cap" 2>/dev/null && { GOTNV=1; break; }
+			sleep 0.5
+			done
 		chk "ask-notvisible: the ask posted an urgent event for the probe" \
-			grep -q "urgent>>$NPAD" "$STATE/asknv.cap"
+			bash -c "test '$GOTNV' = 1"
 		chk "ask-notvisible: the focus did not follow the ask" \
 			bash -c "test \"$(focus_addr)\" != \"$NPAD\""
 
@@ -559,9 +671,9 @@ print(a[2:] if a.startswith('0x') else a)")"
 		# the urgency mark (attention-only) — no urgent line is the proof
 		# the token was rejected, and focus must stay on foot either way.
 		: >"$STATE/asknos.cap"
-		python3 "$S2CAP_PY" "$S2SOCK" 9 "$STATE/asknos.cap" &
+		python3 "$S2CAP_PY" "$S2SOCK" 6 "$STATE/asknos.cap" &
 		NSLPID=$!
-		env NO_SERIAL=1 WAYLAND_DISPLAY="$WL" "$ACTWIN" 9 1 >"$STATE/asknos.win.log" 2>&1 &
+		env NO_SERIAL=1 WAYLAND_DISPLAY="$WL" "$ACTWIN" 6 1 >"$STATE/asknos.win.log" 2>&1 &
 		NSP=$!
 		for _ in $(seq 1 24); do clients 2>/dev/null | grep -q '"class": *"activatewin"' && break; sleep 0.25; done
 		NSAD="$(clients | python3 -c "
