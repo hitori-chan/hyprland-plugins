@@ -35,6 +35,10 @@ truth, not here.
   `docs/awesome-design.md` (the contract it implements).
 - Gate results: the summary line of the run log
   (`== stress: ALL N CHECKS PASSED in Ns ==`), not shell exit codes.
+- Live plugin load: probe with `hyprctl awesome <verb>` (e.g.
+  `count`) — the plugin logs nothing on a successful load, so log
+  greps can neither prove nor disprove a load (2026-10-03: a
+  whole "plugin not loading" thread was a log-grep phantom).
 
 When in doubt, verify against these sources instead of memory or
 conversation state. Never copy state into this file.
