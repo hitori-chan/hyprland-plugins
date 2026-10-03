@@ -13,7 +13,7 @@
 #include "config.hpp"
 #include "hop.hpp"
 #include "queries.hpp"
-#include "store.hpp"
+#include "state.hpp"
 
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
@@ -112,9 +112,10 @@ namespace NAwesome {
         void start(HANDLE handle) {
             m_handle = handle;
             beginSession();
-            // one-time move out of the pre-rename state dir — before any
-            // module loads its store, or it would seed the old path
-            migrateStateDirRename();
+            // load (and, once, migrate + consume the legacy layouts into)
+            // the unified state file — before any module touches its
+            // store, or it would seed the old paths
+            StateStore::inst().load();
             for (auto* M : m_modules)
                 M->init();
 

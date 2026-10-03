@@ -83,11 +83,13 @@ namespace NAwesome::Windows::Tasklist {
             Desktop::focusState()->fullWindowFocus(nullptr, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW);
     }
 
-    // Hyprland's onUpdateState ignores requestsMinimize, so a CSD minimize
-    // button is dead without this: the per-window stateChanged signal carries
-    // a VOLATILE requestsMinimize (the compositor resets it right after the
-    // emit), so it's read synchronously in the signal and the state change is
-    // deferred out of the request.
+    // Hyprland's onUpdateState ignores requestsMinimize, so a client's own
+    // minimize button is dead without this — on BOTH backends: the xdg
+    // set_minimize (CSD) and X11's _NET_WM_STATE_HIDDEN / WM_CHANGE_STATE
+    // (XWayland clients, Wine). Both backends route the request into the
+    // backend's stateRequest with a VOLATILE .minimized (the compositor
+    // resets the flag right after the emit), so it's read synchronously in
+    // the signal and the state change is deferred out of the request.
     inline std::unordered_map<const void*, Hyprutils::Signal::CHyprSignalListener>& minReqListeners() {
         static std::unordered_map<const void*, Hyprutils::Signal::CHyprSignalListener> M;
         return M;
@@ -103,12 +105,6 @@ namespace NAwesome::Windows::Tasklist {
     inline CHop& pendingMinReq() {
         static CHop H;
         return H;
-    }
-
-    inline std::optional<bool> minimizeRequestOf(const PHLWINDOW& w) {
-        if (const auto TOP = xdgToplevel(w))
-            return TOP->m_state.requestsMinimize;
-        return std::nullopt; // XWayland self-minimize would need XSurface.hpp
     }
 
     inline bool isMinimized(const PHLWINDOW& w) {
@@ -215,18 +211,19 @@ namespace NAwesome::Windows::Tasklist {
 
     // Attach the self-minimize listener to a freshly-opened window (from
     // window.open). The listener is dropped in forget() on destroy / exit.
+    // The BACKEND's stateRequest is the one signal both backends carry the
+    // (volatile) minimize request on — the toplevel's raw stateChanged does
+    // not exist for X11 windows at all.
     inline void watchMinimize(const PHLWINDOW& w) {
-        const auto TOP = xdgToplevel(w);
-        if (!w || !TOP)
+        if (!w)
             return;
-        minReqListeners()[w.get()] = TOP->m_events.stateChanged.listen([wr = PHLWINDOWREF{w}]() {
+        minReqListeners()[w.get()] = w->backend().m_events.stateRequest.listen([wr = PHLWINDOWREF{w}](const Desktop::View::SBackendStateRequest& req) {
             const auto W = wr.lock();
             if (!W)
                 return;
-            const auto REQ = minimizeRequestOf(W);
-            if (!REQ.has_value())
-                return; // this stateChanged carried a fs/maximize change, not a minimize
-            minReqQueue().emplace_back(wr, *REQ);
+            if (!req.minimized.has_value())
+                return; // this request carried a fullscreen/maximize change, not a minimize
+            minReqQueue().emplace_back(wr, *req.minimized);
             if (minReqQueued())
                 return; // one drain coalesces a burst — overwriting the lock would cancel it
             minReqQueued() = true;

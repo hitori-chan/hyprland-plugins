@@ -156,14 +156,14 @@ namespace NAwesome {
         return w && static_cast<bool>(w->m_state & Desktop::View::WINDOW_STATE_PINNED);
     }
 
-    // A window in the maximized presentation. The xdg MAXIMIZED state is
-    // NOT a read-back: upstream (21290254) tells every toplevel maximized
-    // at first map (the CSD-suppression lie, extended from tiled to all
-    // windows), so the state reads "maximized" on every window. Read the
-    // presentation instead: the compositor's internal FSMODE_MAXIMIZED
+    // A window in the maximized presentation. Read the presentation, not
+    // the xdg MAXIMIZED state: the compositor's internal FSMODE_MAXIMIZED
     // covers born/client maximize, and a float whose box covers the whole
     // workarea is the windows module's plugin-maximize box (a float sized
-    // to the workarea is maximized in all but state).
+    // to the workarea is maximized in all but state) — the geometry is the
+    // one fact both mechanisms share. (The fork no longer lies maximized
+    // at map, so the client state is a true read-back again; the
+    // presentation read stays because it also covers the plugin box.)
     inline bool toldMaximized(const PHLWINDOW& w) {
         if (!w || !w->windowTarget())
             return false;

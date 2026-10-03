@@ -91,12 +91,18 @@ atomics; ordering is program order plus the hop queue.
   default, validator. Typed accessors; theme tokens resolved once;
   unknown keys are a load error. The legacy keys re-namespace to
   `plugin:awesome:<module>:<key>` (47: shell 20, notify 24, windows 3).
-- **Store** — bounded key/value, list, and box stores with admission
-  rules (fixed file, row, key, entry bounds; malformed state
-  ignored). `$XDG_STATE_HOME/awesome/`: `windows-spot.tsv`,
-  `windows-windowed.tsv`, `shell-launches.tsv`, `shell-history.tsv`.
-  First run migrates the old per-plugin stores once (read old path,
-  write new, never both).
+- **Store** — the plugin's single persistent state: one typed file
+  (`$XDG_STATE_HOME/hyprland/plugin/awesome/state.tsv`; rows
+  `spot|windowed <x> <y> <w> <h> <key>`, `launches <name>;<count>`,
+  `history <query>`), one atomic write, all rows admitted or skipped
+  (fixed file/row/key/entry bounds; a hostile file can never take the
+  session down). The four module stores (spawn spots, last-windowed
+  boxes, launcher counts, prompt history) are one in-memory `AppState`
+  owned by the core's `StateStore` — the documented cross-module seam
+  for persisted state. First run migrates the old layouts once — the
+  four-file layout (current + pre-rename dirs) and the ancient
+  hyprplace/hyprmax/hyprbar stores, newer wins key-by-key — then
+  CONSUMES the sources: exactly one state file from then on.
 - **Jobs** — the one subprocess runner: bounded queue, generation-
   checked callbacks, single reap path, env isolation. `system`'s
   wpctl/logind chains, the launcher's `Exec=` spawn, notify's sound
@@ -146,9 +152,9 @@ least-overlap, fixed-size exclusion, drag snap with indicator). The
 window-press arbitration — swallow / focus / let the compositor drag
 proceed — is one function, replacing the four load-order edges.
 Maximized windows stay immovable (the press is swallowed whole, with
-matching release swallow). Spawn geometry persists in
-`awesome/windows-spot.tsv`, remembered windowed sizes in
-`awesome/windows-windowed.tsv`.
+matching release swallow). Spawn geometry and remembered windowed
+sizes persist in the core's unified state file (`spot` and
+`windowed` rows, core/state.hpp).
 
 ### notify
 
