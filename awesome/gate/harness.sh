@@ -7,6 +7,22 @@ chk() { # chk <name> <command...> — command's exit code decides
 	if "$@" >/dev/null 2>&1; then ok "$name"; else bad "$name"; fi
 }
 
+# --- live session access ----------------------------------------------------
+# The LIVE instance = the instance dir holding a live control socket. Never
+# trust the caller's HYPRLAND_INSTANCE_SIGNATURE: after a live relog it
+# points at the dead session and every default-socket hyprctl fails (rc=4)
+# (2026-10-04: launch broke for a day after the user relogged). Every LIVE
+# operation in the harness goes through hlq with the resolved sig.
+LIVE_SIG=""
+if [[ -n "${RUNDIR:-}" ]]; then
+	for _s in "$RUNDIR"/*/; do
+		[[ -S "$_s/.socket.sock" ]] && { LIVE_SIG="$(basename "$_s")"; break; }
+	done
+	unset _s
+fi
+export HYPRLAND_INSTANCE_SIGNATURE="${LIVE_SIG:-${HYPRLAND_INSTANCE_SIGNATURE:-}}"
+hlq() { [[ -n "$LIVE_SIG" ]] && hyprctl -i "$LIVE_SIG" "$@"; }
+
 # --- live session canary ----------------------------------------------------
 # User rule (2026-10-02, absolute): tests/gates never affect the live
 # workspace and never take the user's mouse or focus. The harness samples
@@ -25,7 +41,7 @@ live_canary_start() {
 	CANARY_FILE="$HARNESS/live-canary.log" # $HARNESS: $STATE is wiped by cleanup
 	: >"$CANARY_FILE"
 	( while :; do
-			mon="$(hyprctl monitors -j 2>/dev/null | python3 -c "import json,sys;print(next((m['name'] for m in json.load(sys.stdin) if m.get('focused')), ''))" 2>/dev/null)"
+			mon="$(hlq monitors -j 2>/dev/null | python3 -c "import json,sys;print(next((m['name'] for m in json.load(sys.stdin) if m.get('focused')), ''))" 2>/dev/null)"
 			[[ "$mon" == "nested-dev" ]] && printf '%s\n' "$(date +%H:%M:%S)" >>"$CANARY_FILE"
 			sleep 0.1
 		done ) &
@@ -437,8 +453,8 @@ sys.exit(0 if any(e.get("pid") == int(sys.argv[1]) for e in entries) else 1)' "$
 
 nested_dev_state() { # echo none | active | zombie (see remove_nested_dev)
 	local all active
-	all="$(hyprctl monitors all -j 2>/dev/null | python3 -c 'import json,sys;print(any(m["name"]=="nested-dev" for m in json.load(sys.stdin)))' 2>/dev/null)"
-	active="$(hyprctl monitors -j 2>/dev/null | python3 -c 'import json,sys;print(any(m["name"]=="nested-dev" for m in json.load(sys.stdin)))' 2>/dev/null)"
+	all="$(hlq monitors all -j 2>/dev/null | python3 -c 'import json,sys;print(any(m["name"]=="nested-dev" for m in json.load(sys.stdin)))' 2>/dev/null)"
+	active="$(hlq monitors -j 2>/dev/null | python3 -c 'import json,sys;print(any(m["name"]=="nested-dev" for m in json.load(sys.stdin)))' 2>/dev/null)"
 	if [[ "$all" == True && "$active" == True ]]; then
 		echo active
 	elif [[ "$all" == True ]]; then
@@ -450,9 +466,9 @@ nested_dev_state() { # echo none | active | zombie (see remove_nested_dev)
 
 nested_dev_occupants() { # classes of live windows mapped on nested-dev
 	local mindex
-	mindex="$(hyprctl monitors -j 2>/dev/null | python3 -c 'import json,sys;print(next((i for i,m in enumerate(json.load(sys.stdin),1) if m["name"]=="nested-dev"),0))' 2>/dev/null)"
+	mindex="$(hlq monitors -j 2>/dev/null | python3 -c 'import json,sys;print(next((i for i,m in enumerate(json.load(sys.stdin),1) if m["name"]=="nested-dev"),0))' 2>/dev/null)"
 	[[ "${mindex:-0}" != "0" ]] || return 0
-	hyprctl clients -j 2>/dev/null | python3 -c "
+	hlq clients -j 2>/dev/null | python3 -c "
 import json, sys
 print(' '.join(c['class'] for c in json.load(sys.stdin) if c.get('monitor') == $mindex))" 2>/dev/null
 }
@@ -469,7 +485,7 @@ remove_nested_dev() { # remove + verify the monitor is fully gone; 0 clean, 1 le
 		return 1
 	fi
 	for attempt in 1 2; do
-		hyprctl output remove nested-dev >/dev/null 2>&1
+		hlq output remove nested-dev >/dev/null 2>&1
 		for _ in $(seq 1 20); do
 			state="$(nested_dev_state)"
 			[[ "$state" == none ]] && return 0
