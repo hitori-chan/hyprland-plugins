@@ -324,6 +324,56 @@ namespace NAwesome::Windows {
             }
         }
 
+        // A client's own unmaximize (its titlebar restore button, a titlebar
+        // double-click) on a plugin-maximized window. The compositor drops
+        // it — it only honors an unmaximize for a window IT holds maximized,
+        // and the adoption cleared that — so the client stayed told
+        // maximized forever, saved "maximized" on close and reopened
+        // maximized (2026-10-04: firefox "always opens maximized"). The
+        // request flag is volatile, so it is read in the backend's emission;
+        // the restore is deferred out of it.
+        inline std::unordered_map<const void*, Hyprutils::Signal::CHyprSignalListener>& unmaxRequestListeners() {
+            static std::unordered_map<const void*, Hyprutils::Signal::CHyprSignalListener> M;
+            return M;
+        }
+        inline std::vector<PHLWINDOWREF>& clientUnmaxes() {
+            static std::vector<PHLWINDOWREF> Q;
+            return Q;
+        }
+        inline bool& clientUnmaxQueued() {
+            static bool Q = false;
+            return Q;
+        }
+        inline CHop& pendingClientUnmax() {
+            static CHop H;
+            return H;
+        }
+
+        inline void watchClientUnmax(const PHLWINDOW& w) {
+            unmaxRequestListeners()[w.get()] = w->backend().m_events.stateRequest.listen([wr = PHLWINDOWREF{w}](const Desktop::View::SBackendStateRequest& req) {
+                if (!req.maximized.has_value() || *req.maximized)
+                    return;
+                const auto W = wr.lock();
+                if (!W || !pluginMaximized(W) || clientUnmaxes().size() >= 16)
+                    return;
+                clientUnmaxes().emplace_back(wr);
+                if (clientUnmaxQueued())
+                    return;
+                clientUnmaxQueued() = true;
+                pendingClientUnmax().arm([]() {
+                    clientUnmaxQueued() = false;
+                    const auto Q = std::move(clientUnmaxes());
+                    clientUnmaxes().clear();
+                    // still plugin-maximized: the toggle takes its restore
+                    // branch (a Mod+M in the same dispatch may have won)
+                    for (const auto& WR : Q)
+                        if (const auto W = WR.lock(); W && pluginMaximized(W))
+                            applyMaxToggle(WR);
+                    pointerFollowsGeometry();
+                });
+            });
+        }
+
         // queue+drain, never a lone doLaterLock: two toggles can arm in one
         // dispatch (scripted binds, event backlog) and overwriting the lock
         // cancels the unfired one
@@ -401,11 +451,19 @@ namespace NAwesome::Windows {
                 maxToggles().clear();
                 for (const auto& WR : Q)
                     applyMaxToggle(WR);
+                pointerFollowsGeometry();
             });
         }
 
         inline void init() {
             loadWindowed();
+
+            // the client-unmaximize watch lives as long as the window
+            supervisor().listen(Event::bus()->m_events.window.open, [](PHLWINDOW w) {
+                if (w)
+                    watchClientUnmax(w);
+            });
+            supervisor().listen(Event::bus()->m_events.window.destroy, [](PHLWINDOWREF wr) { unmaxRequestListeners().erase(wr.get()); });
 
             // A window closed while plugin-maximized: keep its windowed box
             // as the app's remembered size (the window ref itself is about
@@ -451,7 +509,6 @@ namespace NAwesome::Windows {
                     return;
                 }
                 if (w->isFloating() && Fullscreen::controller()->getFullscreenModes(w).internal == Fullscreen::FSMODE_MAXIMIZED)
-                pointerFollowsGeometry();
                     queueAdopt(w);
                 queueReflow();
             });
@@ -472,6 +529,11 @@ namespace NAwesome::Windows {
             adoptQueued() = false;
             reflowQueued() = false;
             adoptQueue().clear();
+            for (auto& [K, L] : unmaxRequestListeners())
+                L.reset();
+            unmaxRequestListeners().clear();
+            clientUnmaxes().clear();
+            clientUnmaxQueued() = false;
         }
     } // namespace Max
 

@@ -87,8 +87,13 @@ the plugin's one state file (see State).
 - **Maximize** is per-window and does not consume Hyprland's
   fullscreen slot: the window fills the current workarea and carries
   the native xdg maximized state; app- or compositor-maximized windows
-  are adopted into the same model. Maximized windows follow workspace,
-  output, and reserved-area changes. `Mod+click` drags are swallowed
+  are adopted into the same model, and a client's own unmaximize (its
+  CSD titlebar restore button or double-click) leaves it the same way
+  `Mod+M` does — the compositor alone drops that request for a window it
+  does not hold maximized, which left such clients told maximized and
+  reopening maximized. Maximized windows follow workspace, output, and
+  reserved-area changes, and the pointer follows every such geometry
+  change (a window that grows under a still cursor takes the next click). `Mod+click` drags are swallowed
   while maximized so the raise policy never fights the drag. Windowed
   geometry is restored from the store, constrained by the current
   workarea and the client's size hints.
