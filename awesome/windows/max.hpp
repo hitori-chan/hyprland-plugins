@@ -475,7 +475,6 @@ namespace NAwesome::Windows {
         }
 
         inline void teardown() {
-            StateStore::inst().flush(); // the coalesced write must not die with the session
             maximized().clear();
             lastWindowed().rows.clear();
             swallowedButtons() = 0;

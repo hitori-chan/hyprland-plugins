@@ -442,7 +442,6 @@ namespace NAwesome::Windows::Place {
     }
 
     inline void teardown() {
-        StateStore::inst().flush(); // the deferred flush never runs at compositor exit
         places().reset();
         lastSpot().rows.clear();
     }

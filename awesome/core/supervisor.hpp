@@ -21,6 +21,7 @@
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/devices/IKeyboard.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -122,8 +123,24 @@ namespace NAwesome {
             // the unified state file — before any module touches its
             // store, or it would seed the old paths
             StateStore::inst().load();
-            for (auto* M : m_modules)
-                M->init();
+            // A throwing init (bad_alloc, a bus that refuses us) ejects the
+            // plugin WITHOUT PLUGIN_EXIT: tear down whatever did start —
+            // including the thrower's partial init — so no listener, timer,
+            // hop or event source is left pointing into the unmapped .so.
+            size_t started = 0;
+            try {
+                for (; started < m_modules.size(); ++started)
+                    m_modules[started]->init();
+            } catch (...) {
+                for (auto& L : m_listeners)
+                    L.reset();
+                m_listeners.clear();
+                resetHops();
+                for (size_t i = std::min(started + 1, m_modules.size()); i-- > 0;)
+                    m_modules[i]->teardown();
+                Jobs::inst().teardown();
+                throw;
+            }
 
             auto& EV = Event::bus()->m_events;
             m_listenRenderStage = EV.render.stage.listen([](const Event::SRenderStageEvent& ev) { Canvas::inst().onRenderStage(ev); });
@@ -147,6 +164,9 @@ namespace NAwesome {
                 L.reset();
             m_listeners.clear(); // state listeners before the hops they arm
             resetHops();
+            // the coalesced state write was a hop: write it now, before any
+            // module clears its in-memory rows
+            StateStore::inst().flush();
             for (auto IT = m_modules.rbegin(); IT != m_modules.rend(); ++IT)
                 (*IT)->teardown();
             Jobs::inst().teardown(); // helpers after the modules that spawned them
