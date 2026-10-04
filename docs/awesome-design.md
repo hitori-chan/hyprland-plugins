@@ -35,9 +35,10 @@ Legacy → new:
 Cross-module rules:
 
 - Modules talk through `core` interfaces and direct C++ calls. There is
-  no bus between modules: `org.hitori.hyprnotify` is deleted. The only
-  D-Bus the plugin speaks is the fd.o daemon (owned by `notify`) and
-  client calls (logind) inside `system` jobs.
+  no bus between modules: `org.hitori.hyprnotify` is deleted. The D-Bus
+  the plugin speaks is external only: the fd.o daemon (owned by
+  `notify`), the SNI tray and dbusmenu (`shell`), and system-bus clients
+  (logind brightness in `system`, power-profiles in the battery widget).
 - A module never reaches into another module's state; the contract is
   the interface in `core` (e.g. `shell` asks `windows.minimize(w)`,
   `system` posts cards through the `notify` model API).
@@ -79,14 +80,19 @@ atomics; ordering is program order plus the hop queue.
   glass group, scissor-paints, and enforces the warm/draw gate: a layer
   cannot paint a texture in the frame that created it (invariant 4).
   Damage happens on every visible-state transition, including hover.
-- **Text engine** — one Pango context, one layout pool, shared glyph
-  metrics. The whitelisted markup subset, the literal-`<`/`&` rescue,
-  `<a href>` hit-testing, and the card text shaping all go through it.
-  No per-module pango state.
-- **Icon subsystem** — freedesktop resolution (GTK theme → hicolor →
-  pixmaps), the .desktop index, symbolic recolor, and ONE bounded
-  decode queue on the compositor's async resource gatherer. Cards and
-  bar icons share it; the warm/draw gate applies on decode land.
+- **Text** — the bar renders labels through the compositor's
+  `renderText`; the cards shape with their own Pango layouts (the
+  whitelisted markup subset, the literal-`<`/`&` rescue, `<a href>`
+  hit-testing — http(s) and mailto only). One shared text engine for
+  both is open work.
+- **Icons** — one freedesktop name resolver in `core/icons.hpp` (GTK
+  theme → hicolor → pixmaps; plausible names only, bounded memo) and one
+  file admission rule (`admissibleImageFile`: a regular file under 32 MiB)
+  at every decode entry. Cards decode file icons on the compositor's
+  async resource gatherer (24 bounded slots, orphans freed per warm); the
+  bar still decodes its task and tray icons synchronously, and each
+  module keeps its own .desktop index. One shared index and decode queue
+  is open work.
 - **Config schema** — one declarative table: key, module, type,
   default, validator. Typed accessors; theme tokens resolved once;
   unknown keys are a load error. The legacy keys re-namespace to
@@ -103,11 +109,15 @@ atomics; ordering is program order plus the hop queue.
   four-file layout (current + pre-rename dirs) and the ancient
   hyprplace/hyprmax/hyprbar stores, newer wins key-by-key — then
   CONSUMES the sources: exactly one state file from then on.
-- **Jobs** — the one subprocess runner: bounded queue, generation-
-  checked callbacks, single reap path, env isolation. `system`'s
-  wpctl/logind chains, the launcher's `Exec=` spawn, notify's sound
-  player and link opens all go through it. Nothing else in the plugin
-  spawns a process.
+- **Processes** — `core/proc.hpp` is the one spawn primitive
+  (`pidfd_spawnp`: an empty signal mask and default dispositions,
+  stdin/stderr on /dev/null, every fd above 2 closed, a race-free pidfd,
+  the exit status read from the pidfd under the compositor's
+  SA_NOCLDWAIT). `Jobs` runs the plugin's helpers on it in class budgets
+  — CONTROL (wpctl, 16, killed after 5 s), SOUND (4, 30 s), OPEN
+  (xdg-open, 32, never killed) — and the file index's helper spawns
+  through it too. The launcher's `Exec=` goes through the compositor's
+  executor (exec rules, activation tokens).
 - **Bus** — the fd.o Notifications daemon (spec 1.3), kept
   asynchronous off hot paths (`post()` for bus-originated work,
   `pollSoon()` dispatch). The plugin-internal service interface is a
@@ -217,22 +227,38 @@ stays in lockstep between `core/version.hpp` and `hyprpm.toml`.
 
 ## 5. Performance
 
-- One Pango context and glyph cache for all text (bar, cards, menus,
-  OSD) instead of two independent shaping pipelines.
-- One damage computation and glass grouping per monitor; layers share
-  the stack's glass where the design allows it.
-- One bounded icon decode queue on the async gatherer for bar and
-  cards.
+- One canvas pass per monitor: its bounding box is the union of the
+  layers' boxes, and it claims live blur only while a layer paints
+  translucent glass (the default palette is opaque).
+- Warms coalesce: one bar warm per event-loop turn however many events
+  arrived; the cards warm once, on their monitor.
+- Config reads are a hash of the key and a typed value read — no
+  allocation, no RTTI — on every path, the per-motion ones included.
 - No bus round-trips on any live path (badge counts, DND state, OSD
   posts are in-process calls).
-- The pixel model's metrics are `constexpr` where they are fixed; the
-  card geometry is computed once per state change, not per frame.
+- Notification images are box-decimated while unpacked; nothing
+  allocates a full-size screenshot on the main thread.
+- Open: the draw still re-runs the layout per frame (a cached display
+  list per state change is the target), and the bar's icons decode
+  synchronously.
 
 ## 6. devtools — re-derived, not patched
 
 The harness keeps its operational core (nested launch/teardown,
-capture validation, the cgroup session-root rule, the flock display
-check, the coredump teardown guard, the probe env). What changes:
+capture validation, the coredump teardown guard, the probe env). What
+changes:
+
+- **Isolation** — the nested Hyprland runs inside a private headless
+  labwc (`gate/host.sh`), with its own session bus, a private system bus
+  carrying a fake logind and backlight (`devtools/fakes/fake-logind`),
+  scratch XDG dirs, and aquamarine at the fork's `flake.lock` pin. The
+  live session receives nothing; the isolation check (structural at each
+  launch, observed at the end) fails the gate on any trace.
+- **Two builds** — the release plugin (the deploy rehearsal) and the
+  gate variant (`make GATE=1`, `awesome-gate.so`): test seams compile in
+  under `AWESOME_GATE` only.
+- **One command** — `make -C awesome gate ARGS="-s <fork> -b <tier>"`
+  stages the fork build's headers itself and verifies its `version.h`.
 
 - **Check engine** — one `check <id> <desc> <fn>` primitive with a
   machine-readable manifest: declared checks vs executed, per-battery
@@ -246,10 +272,13 @@ check, the coredump teardown guard, the probe env). What changes:
 - **Unit tests** — one headless C++26 harness (no external deps),
   `make -C awesome test`: bounded types, box math, config schema
   (including the alpha-0 color guard), store admission, wpctl parsing.
+- **Unit tests** cover the process runner too (spawn under the
+  compositor's signal state).
 - **Fixtures** — the C Wayland fixtures (vptr, vkbd, fake-sni, cliphold,
-  fixwin, splashwin, focustrap) stay C against the exact fork protocol
-  XML; they live in `devtools/` and are extended only where a battery
-  needs a new shape.
+  fixwin, splashwin, focustrap, activatewin) stay C against the exact
+  fork protocol XML; fakes (wpctl, the sound player, logind) shadow the
+  host's services; all live in `devtools/` and are extended only where a
+  battery needs a new shape.
 
 ## 7. Execution (as landed)
 

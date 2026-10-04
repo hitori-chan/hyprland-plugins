@@ -145,7 +145,8 @@ the plugin's one state file (see State).
     and Wine/Proton send it on every internal SetForegroundWindow. A
     user-initiated activation is performed by the plugin instead: tray
     and notification clicks focus the app's own window compositor-side
-    (core/activate.hpp), for every backend — also the fallback when a
+    (core/activate.hpp), for every backend — restoring it first when its
+    only window is minimized — also the fallback when a
     Wayland sender never spends the token the plugin minted for it
     (the plugin makes awesome's "the app activates itself after the
     click" unconditional).
@@ -252,7 +253,9 @@ that forms no tag or entity survives as literal text, so a
 markup-aware sender and a naive one both come out right. Malformed
 markup falls back to plain text. `<a href>` in the body is a
 hyperlink (rewritten to a styled span and hit-tested by its
-stripped-text byte offset); a click opens the URL via `xdg-open` and
+stripped-text byte offset) when it is an `http(s)://` or `mailto:` link
+— any other scheme stays plain text, since any sender writes these
+bodies; a click opens the URL via `xdg-open` and
 leaves the card up — but not the shade, since a browser is about to
 cover it. The pointer shows the hand over a link. `<img src>` in the
 body renders as a thumbnail row below the text; a thumbnail that fails
@@ -360,7 +363,9 @@ semantics).
 - Sound: `sound-file`/`sound-name` play through a player
   (`sound_command`, empty disables); `suppress-sound` mutes one
   arrival. The compositor has no audio backend, so this shells out,
-  reaped off the event loop.
+  reaped off the event loop: at most 4 players at once (each killed
+  after 30 s), a budget of their own — a sound flood never takes the
+  volume keys' helpers.
 - DND (`hl.plugin.awesome.suspend()`): arrivals collect
   silently with timeouts held; resume renders the queue newest-first on
   fresh timeouts.
@@ -397,7 +402,7 @@ pragmatic scan (GTK theme → hicolor → pixmaps), not a full
   through `hl.device`, so nothing fights the next config re-apply, and
   a reload re-checks.
 - Every action's feedback is a card posted straight into the notify
-  model: fixed ids (pad 9991, volume 9992, mic 9993, brightness 9995)
+  model: fixed ids (pad 9991, brightness 9992, volume 9993, mic 9995)
   replace in place, low urgency, 1200 ms expiry, a `value` bar, and the
   matching identity icon.
 
@@ -464,31 +469,33 @@ exactly one state file from then on.
 ## Build and test
 
 ```sh
-make -C awesome            # the plugin (needs the fork headers)
+make -C awesome            # the release plugin (needs the fork headers)
+make -C awesome GATE=1     # awesome-gate.so: the gate's variant (test seams)
 make -C awesome test       # headless core harness, no fork headers
-make -C awesome gate       # the nested integration gate (gate/gate.sh;
-                           # ARGS passes through: bin, -b/-k battery selection)
+make -C awesome gate ARGS="-s ~/repo/Hyprland -b quick|all|everything"
 ```
 
-Before a release, run the gate and require its final `ALL CHECKS
-PASSED` line. The gate is the plugin's behavioral contract: six
-scenario batteries (shell/windows/notify/system/pipeline/lifecycle)
-against a throwaway nested compositor; the input fixtures it drives
-(vptr, vkbd, cliphold, …) are the shared `devtools/`. For one-off
-diagnosis, `gate/probe.sh` runs the same preflight and then executes a
-probe body script against the live nested (harness + lib already
-sourced; teardown always runs).
+Before a release, run the gate (`-b everything`) and require its final
+`ALL CHECKS PASSED` line. The gate is the plugin's behavioral contract:
+scenario batteries (quick/shell/windows/state/notify/system/pipeline/
+focus/lifecycle) against a throwaway nested compositor; the input
+fixtures and fakes it drives (vptr, vkbd, cliphold, wpctl, logind, …) are
+the shared `devtools/`. `-s` stages the fork build's headers and defaults
+the compositor to that build. For one-off diagnosis, `gate/probe.sh` runs
+the same preflight and then executes a probe body script against the
+nested (harness + lib already sourced; teardown always runs).
 
-The nested itself is a real second compositor in a window of the live
-session (wayland backend), parked on an off-screen `nested-dev` output
-with a private dbus session — it never touches your workspace. The
-harness scripts are in `gate/` and run from a clone as-is:
+The nested is a real second compositor inside a private headless host
+(labwc — install it once), with its own session and system buses — your
+session is never touched: no output, window, focus, cursor, brightness or
+volume change, verified by the gate's isolation check. The harness
+scripts are in `gate/` and run from a clone as-is:
 
 ```sh
-bash awesome/gate/launch.sh        # start the nested (the gate uses the same)
+bash awesome/gate/launch.sh        # start the host + nested (the gate uses the same)
 bash awesome/gate/shot.sh out.png  # screenshot it + a 2x bar crop
 bash awesome/gate/dev.sh           # stop + build + launch + probe + shot
-bash awesome/gate/stop.sh          # tear it down (kill + remove the output)
+bash awesome/gate/stop.sh          # tear down the nested, its host and buses
 ```
 
 Runtime state (signature, socket, log, gate scratch) goes to
