@@ -301,8 +301,12 @@ namespace NAwesome::Shell {
             indexDesktopEntry(entry);
         desktopScanning = !COMPLETE;
         if (desktopIcons.size() != BEFORE) {
-            appIconCache.clear();
-            trayIconCache.clear();
+            // new entries can only fill MISSES (cached nulls) — a resolved
+            // icon stays resolved; clearing everything per 8-entry batch
+            // re-decoded every task and tray icon dozens of times while the
+            // index loaded
+            std::erase_if(appIconCache, [](const auto& E) { return !E.second; });
+            std::erase_if(trayIconCache, [](const auto& E) { return !E.second; });
             for (const auto& item : Tray::items)
                 if (item->pixels.empty() && (!item->tex || item->tex->m_texID == 0))
                     item->dirty = true;
