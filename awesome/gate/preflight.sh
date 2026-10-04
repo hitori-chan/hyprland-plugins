@@ -56,45 +56,31 @@ fi
 
 # ---- build + launch -----------------------------------------------------
 kill_nested
-# Deploy rehearsal FIRST: hyprpm builds against ITS OWN cached headers, not
-# this run's scratch set. With an explicit target set, rehearsal and gate
-# builds are provably identical — build once, credit both assertions.
-build_aw() { # $1: 1 = strip PKG_CONFIG_PATH (installed-cache rehearsal)
-	local strip=$1
-	# Incremental by default: a dev-loop gate must not pay a 150 s forced
-	# rebuild every run. GATE_FORCE_BUILD=1 restores the old -B behavior —
-	# still required after a header install, where the -MMD gap makes
-	# staleness real (AGENTS.md: `make -B` after a header install).
+# Two variants of one tree, each with its own objects (incremental): the
+# RELEASE build is the deploy rehearsal — what hyprpm builds, no test
+# seams — and the GATE build (GATE=1, AWESOME_GATE seams compiled in) is
+# what the nested loads. GATE_FORCE_BUILD=1 forces -B (only needed after
+# installing fork headers under /usr/local, the -MMD gap).
+build_aw() { # build_aw <gate 0|1> <strip PKG_CONFIG_PATH 0|1>
 	local force=()
 	[[ -n "${GATE_FORCE_BUILD:-}" ]] && force+=(-B)
-	if [[ $strip == 1 ]]; then
-		env -u PKG_CONFIG_PATH make "${force[@]}" -j"$(nproc)" -C "$REPO/awesome" >/dev/null 2>&1
+	if [[ $2 == 1 ]]; then
+		env -u PKG_CONFIG_PATH make "${force[@]}" -j"$(nproc)" -C "$REPO/awesome" GATE="$1" >/dev/null 2>&1
 	else
-		make "${force[@]}" -j"$(nproc)" -C "$REPO/awesome" >/dev/null 2>&1
+		make "${force[@]}" -j"$(nproc)" -C "$REPO/awesome" GATE="$1" >/dev/null 2>&1
 	fi
 }
 if [[ -n "${HYPR_DEPLOY_PKG_CONFIG_PATH:-}" ]]; then
-	if build_aw 0; then
-		ok "deploy rehearsal: awesome builds against the explicit target pkg-config path"
-		ok "awesome builds"
-	else
-		bad "deploy rehearsal build"
-		bad "awesome builds"
-		echo "plugin build FAILED"; exit 1
-	fi
+	REHEARSAL_STRIP=0 DEPLOY_HEADERS="the explicit target pkg-config path"
 else
-	DEPLOY_HEADERS="the installed header cache"
-	REH_CFLAGS="$(env -u PKG_CONFIG_PATH make -s -C "$REPO/awesome" print-hl-cflags 2>/dev/null)"
-	GATE_CFLAGS="$(make -s -C "$REPO/awesome" print-hl-cflags 2>/dev/null)"
-	if [[ -n "$REH_CFLAGS" && "$REH_CFLAGS" == "$GATE_CFLAGS" ]]; then
-		build_aw 1 || { bad "deploy rehearsal build"; bad "awesome builds"; echo "plugin build FAILED"; exit 1; }
-		ok "deploy rehearsal: awesome builds against $DEPLOY_HEADERS (identical to the target flags; one build credits both)"
-		ok "awesome builds"
-	else
-		build_aw 1 && ok "deploy rehearsal: awesome builds against $DEPLOY_HEADERS" || bad "deploy rehearsal build"
-		build_aw 0 && ok "awesome builds" || { echo "plugin build FAILED"; exit 1; }
-	fi
+	# hyprpm builds against its installed header cache, not this run's
+	REHEARSAL_STRIP=1 DEPLOY_HEADERS="the installed header cache"
 fi
+build_aw 0 "$REHEARSAL_STRIP" && ok "deploy rehearsal: the release build compiles against $DEPLOY_HEADERS" || {
+	bad "deploy rehearsal: the release build compiles against $DEPLOY_HEADERS"
+	echo "plugin build FAILED"; exit 1
+}
+build_aw 1 0 && ok "the gate build (AWESOME_GATE seams) compiles" || { bad "the gate build compiles"; echo "plugin build FAILED"; exit 1; }
 if [[ -n "$DEPLOY_PC_SUM" ]]; then
 	chk "deploy pkg-config metadata remained untouched" test "$(sha256sum "$DEPLOY_PC_SOURCE" | cut -d' ' -f1)" = "$DEPLOY_PC_SUM"
 fi

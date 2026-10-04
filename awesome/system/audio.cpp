@@ -71,13 +71,20 @@ namespace NAwesome::System {
 
     // ---- brightness (sysfs + logind, zero forks) ----
 
-    static std::string backlightDev; // /sys/class/backlight/<dev>, name only
+    static std::string backlightRoot = "/sys/class/backlight";
+    static std::string backlightDev; // <backlightRoot>/<dev>, name only
     static int         backlightMax = 0;
     static std::string logindSessionPath; // explicit over "auto": see findLogindSession
 
     static void findBacklight() {
+#ifdef AWESOME_GATE
+        // the gate's fake backlight class dir, driven by a fake logind on the
+        // nested's private system bus: its battery never moves the panel
+        if (const char* DIR = std::getenv("AW_BACKLIGHT_DIR"); DIR && *DIR)
+            backlightRoot = DIR;
+#endif
         std::error_code ec;
-        for (const auto& e : std::filesystem::directory_iterator("/sys/class/backlight", ec)) {
+        for (const auto& e : std::filesystem::directory_iterator(backlightRoot, ec)) {
             std::ifstream m(e.path() / "max_brightness");
             if (m && (m >> backlightMax) && backlightMax > 0) {
                 backlightDev = e.path().filename();
@@ -137,7 +144,7 @@ namespace NAwesome::System {
         if (lastSetRaw >= 0 && Time::steadyNow() - lastSetAt < std::chrono::milliseconds(500))
             raw = lastSetRaw;
         else {
-            std::ifstream b("/sys/class/backlight/" + backlightDev + "/brightness");
+            std::ifstream b(backlightRoot + "/" + backlightDev + "/brightness");
             if (!b || !(b >> raw) || raw < 0)
                 return;
         }

@@ -13,7 +13,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 
 bash "$HERE/stop.sh" >/dev/null 2>&1
-make -C "$REPO/awesome" >/dev/null || { echo "dev: build failed, not launching" >&2; exit 1; }
+make -C "$REPO/awesome" GATE=1 >/dev/null || { echo "dev: build failed, not launching" >&2; exit 1; }
 bash "$HERE/launch.sh" || exit 1
 
 SIG="$(cat "${HYPR_HARNESS:-$HOME/.local/share/hypr-nested}/nested.sig")"

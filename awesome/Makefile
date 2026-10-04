@@ -27,19 +27,31 @@ CXXFLAGS  += -std=c++26 -Wall -fPIC -fno-gnu-unique -MMD -MP -I. $(HL_CFLAGS)
 LDFLAGS   += -shared -Wl,--version-script=plugin.ver
 LDLIBS    += $(shell pkg-config --libs $(LIBS_EXTRA))
 
-OBJDIR := .build
+# GATE=1 is the gate's variant (awesome-gate.so, loaded by the nested): its
+# test seams compile in under AWESOME_GATE, from objects of its own. The
+# release build — hyprpm's, and the gate's deploy rehearsal — never has
+# them.
+ifeq ($(GATE),1)
+CXXFLAGS += -DAWESOME_GATE
+OBJDIR   := .build-gate
+TARGET   := $(NAME)-gate.so
+else
+OBJDIR   := .build
+TARGET   := $(NAME).so
+endif
 # one unit per file; subdirectory units (windows/, notify/, shell/,
 # system/) build to the same tree so their object names stay unique
-OBJS   := $(patsubst %.cpp,$(OBJDIR)/%.o,$(shell find . -name '*.cpp' -not -path './.build/*' -not -path './test/*'))
+OBJS   := $(patsubst %.cpp,$(OBJDIR)/%.o,$(shell find . -name '*.cpp' -not -path './.build*' -not -path './test/*'))
 
-all: $(NAME).so
+all: $(TARGET)
 
-$(NAME).so: $(OBJS)
+$(TARGET): $(OBJS)
 	$(CXX) $(LDFLAGS) $(OBJS) -o $@ $(LDLIBS)
 
-# one object per unit; -MMD keeps the incremental build honest (the same
-# GCC-16 installed-header gap as the old build: `make -B` after a fork
-# install)
+# one object per unit; -MMD keeps the incremental build honest. Headers
+# under /usr/local/include are system headers to GCC and never land in the
+# .d files: `make -B` after installing fork headers there (a staged set,
+# gate.sh -s, is tracked normally)
 $(OBJDIR)/%.o: %.cpp Makefile plugin.ver | $(OBJDIR)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -65,6 +77,6 @@ gate: all
 	bash gate/gate.sh $(ARGS)
 
 clean:
-	rm -rf $(OBJDIR) $(NAME).so
+	rm -rf .build .build-gate $(NAME).so $(NAME)-gate.so
 
 .PHONY: all test gate clean print-hl-cflags

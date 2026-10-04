@@ -54,4 +54,4 @@ hl.bind("ALT + N", function()
 end, { description = "notification center" })
 
 -- the monolith: one plugin; the input pipeline owns the order
-hl.plugin.load(REPO .. "/awesome/awesome.so")
+hl.plugin.load(REPO .. "/awesome/awesome-gate.so") -- the GATE=1 build: test seams compiled in
