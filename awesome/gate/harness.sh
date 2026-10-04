@@ -40,7 +40,12 @@ live_canary_start() {
 	[[ -n "$CANARY_PID" ]] && return
 	CANARY_FILE="$HARNESS/live-canary.log" # $HARNESS: $STATE is wiped by cleanup
 	: >"$CANARY_FILE"
-	( while :; do
+	# The loop dies with the shell that started it: only cleanup_harness
+	# stops it otherwise, and ad-hoc probe scripts that sourced the harness
+	# without that trap orphaned their samplers onto the live session
+	# (2026-10-04: 14 leaked loops polling the live compositor for hours).
+	local owner=$BASHPID
+	( while kill -0 "$owner" 2>/dev/null; do
 			mon="$(hlq monitors -j 2>/dev/null | python3 -c "import json,sys;print(next((m['name'] for m in json.load(sys.stdin) if m.get('focused')), ''))" 2>/dev/null)"
 			[[ "$mon" == "nested-dev" ]] && printf '%s\n' "$(date +%H:%M:%S)" >>"$CANARY_FILE"
 			sleep 0.1
