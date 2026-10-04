@@ -3,7 +3,10 @@
 //   1. an app reopens where its last window closed (per class, persisted
 //      across relogs): every new window of the class is born at the
 //      remembered size, and the remembered spot lands when it's free — a
-//      sibling sitting on it sends the newcomer to step 2 instead
+//      sibling sitting on it sends the newcomer to step 2 instead. A close
+//      in maximized state carries the app's last windowed box (the
+//      maximize module's restore memory) into the spot, so an app that
+//      always closes maximized keeps its spawn memory
 //   2. otherwise the spot that overlaps the other windows the least —
 //      KWin's default. A lone window keeps the compositor's centered spot
 //      (nothing to overlap), a busy screen fills the gaps, and a full one
@@ -410,11 +413,27 @@ namespace NAwesome::Windows::Place {
         if (!w || !w->mapped() || !w->isFloating() || !w->windowTarget() || w->backend().isX11() || w->backend().parent() ||
             !resizable(w))
             return;
+        const auto CLS = classKey(w);
         if (toldMaximized(w) || Fullscreen::controller()->isFullscreen(w))
+        {
+            // a browser that always closes maximized would otherwise never
+            // leave a spot row: its spawn memory would be lost and it would
+            // reopen centered at the client's own size. The app's last
+            // WINDOWED box (the maximize module's restore memory) is where
+            // it actually was — carry it into the spot.
+            if (const auto WB = StateStore::inst().data().windowed.find(CLS); WB && WB->w > 5 && WB->h > 5)
+                rememberSpot(CLS, CBox{(double)WB->x, (double)WB->y, (double)WB->w, (double)WB->h});
             return;
+        }
         if (const auto MON = w->m_monitor.lock(); MON && coversWorkarea(w->windowTarget()->position(), MON->logicalBoxMinusReserved()))
+        {
+            // a workarea-filling float is the plugin-maximize shape: same
+            // fallback, or its close-box would read as a spot.
+            if (const auto WB = StateStore::inst().data().windowed.find(CLS); WB && WB->w > 5 && WB->h > 5)
+                rememberSpot(CLS, CBox{(double)WB->x, (double)WB->y, (double)WB->w, (double)WB->h});
             return;
-        rememberSpot(classKey(w), w->windowTarget()->position());
+        }
+        rememberSpot(CLS, w->windowTarget()->position());
     }
 
     inline void init() {
