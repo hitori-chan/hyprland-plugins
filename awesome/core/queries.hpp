@@ -7,10 +7,7 @@
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/view/window/Window.hpp>
 #include <linux/input-event-codes.h>
-#include <hyprland/src/desktop/view/window/WaylandBackend.hpp>
-#include <hyprland/src/desktop/view/window/X11Backend.hpp>
 #include <hyprland/src/desktop/view/window/WindowPresentation.hpp>
-#include <hyprland/src/xwayland/XSurface.hpp>
 #include <hyprland/src/desktop/state/ViewState.hpp>
 #include <hyprland/src/devices/IKeyboard.hpp>
 #include <hyprland/src/helpers/MiscFunctions.hpp>
@@ -23,6 +20,10 @@
 #include <hyprland/src/state/MonitorState.hpp>
 #include <hyprland/src/layout/target/WindowTarget.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
+#include <hyprland/src/managers/input/InputMethodRelay.hpp>
+#include <hyprland/src/desktop/view/LayerSurface.hpp>
+#include <hyprland/src/protocols/InputCapture.hpp>
+#include <hyprland/src/protocols/LayerShell.hpp>
 
 #include <algorithm>
 #include <limits>
@@ -51,14 +52,6 @@ namespace NAwesome {
         return g_pCompositor && g_pCompositor->m_isShuttingDown;
     }
 
-    // A compositor-drawn overlay may cancel mouse motion before Hyprland can
-    // refresh m_lastFocusOnLS. Resolve the native stack at the event point so
-    // it cannot swallow input belonging to a priority window, layer surface,
-    // or IME popup.
-    inline bool nativeLayerOwnsPointer() {
-        return g_pInputManager && g_pInputManager->pointerHitIsNativeSurface();
-    }
-
     // Input listeners run before CInputManager records the current press, so
     // the held-button half covers an existing client implicit grab. A native
     // seat grab covers xdg-popups and focus-grab surfaces even with no button
@@ -72,7 +65,7 @@ namespace NAwesome {
     // the physical event stream, so compositor-drawn plugin surfaces must not
     // cancel a button, axis, key, or warp event before it reaches that client.
     inline bool nativeInputCaptureActive() {
-        return g_pInputManager && g_pInputManager->inputCaptureActive();
+        return PROTO::inputCapture && PROTO::inputCapture->isCaptured();
     }
 
     // The monitor a point belongs to, nearest one if it lands off every
@@ -104,6 +97,54 @@ namespace NAwesome {
         return nullptr;
     }
 
+    // A compositor-drawn overlay may cancel mouse motion before Hyprland can
+    // refresh m_lastFocusOnLS. Resolve the native stack at the event point so
+    // it cannot swallow input belonging to an IME popup, a focus-priority
+    // window, a stay-focused window, or a layer surface. Mirrors the order of
+    // CInputManager::mouseMoveUnified() — re-check it on every fork bump.
+    // Read-only, allocation-free: it runs per pointer motion.
+    inline bool nativeLayerOwnsPointer() {
+        if (!g_pInputManager)
+            return false;
+        const auto POS = g_pInputManager->getMouseCoordsInternal();
+        const auto MON = monitorAt(POS);
+        if (!MON)
+            return false;
+
+        if (g_pInputManager->m_relay.popupFromCoords(POS))
+            return true;
+
+        const auto HIT = Desktop::viewState()->hitTest();
+        Vector2D surfaceCoords;
+        if (const auto PRIORITY = HIT.windowAt(POS, Desktop::View::FOCUS_PRIORITY); PRIORITY && HIT.windowSurfaceAt(POS, PRIORITY, surfaceCoords))
+            return true;
+
+        if (!g_pInputManager->m_forcedFocus.expired())
+            return true;
+        for (const auto& W : Desktop::windowState()->windows()) // the stay-focused query, without its query object
+            if (W->mapped() && W->acceptsInput() && W->m_workspace && W->m_workspace->visible() && W->m_ruleApplicator->stayFocused().valueOrDefault())
+                return true;
+
+        const auto WS = MON->m_activeSpecialWorkspace ? MON->m_activeSpecialWorkspace : MON->m_activeWorkspace;
+        const auto& FS = Fullscreen::controller();
+        const bool EXCLUSIVE_FS = (FS->hasFullscreen(WS) && FS->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN) ||
+            (FS->hasFullscreen(MON) && FS->getFullscreenModes(MON).internal == Fullscreen::FSMODE_FULLSCREEN);
+        // the mouseMoveUnified() fullscreen filter: a top layer without
+        // aboveFullscreen sits below an exclusive fullscreen client
+        const auto OWNS = [EXCLUSIVE_FS](const PHLLS& ls) {
+            return ls &&
+                (!EXCLUSIVE_FS || ls->m_layer > ZWLR_LAYER_SHELL_V1_LAYER_TOP ||
+                 (ls->m_layer == ZWLR_LAYER_SHELL_V1_LAYER_TOP && (ls->m_flags & Desktop::View::LAYER_FLAG_ABOVE_FULLSCREEN)));
+        };
+
+        PHLLS layer;
+        if (HIT.layerPopupSurfaceAt(POS, MON, &surfaceCoords, &layer))
+            return OWNS(layer);
+        if (HIT.layerSurfaceAt(POS, &MON->m_layerSurfaceLayers[ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY], &surfaceCoords, &layer))
+            return OWNS(layer);
+        return HIT.layerSurfaceAt(POS, &MON->m_layerSurfaceLayers[ZWLR_LAYER_SHELL_V1_LAYER_TOP], &surfaceCoords, &layer) && OWNS(layer);
+    }
+
     // The window under the pointer, hit-tested FRESH — never the seat's
     // pointer focus, which a map or unmap under a still cursor leaves stale.
     // Reserved and input extents count: a click on a window's shadow or CSD
@@ -122,29 +163,18 @@ namespace NAwesome {
         return KB && (KB->getModifiers() & Input::HL_MODIFIER_META) != Input::HL_MODIFIER_NONE;
     }
 
-    // The client-facing xdg toplevel role resource, or nullptr for X11
-    // windows, unmapped views, or a destroyed resource. The fork exposes
-    // CWaylandBackend::m_resource publicly for exactly this; the old
-    // fork's m_xdgSurface->m_toplevel chain is gone in the backend split.
+    // The client-facing xdg toplevel, or nullptr for X11 windows, unmapped
+    // views, or a destroyed role (a closing GTK/Firefox client destroys its
+    // toplevel before the window unmaps). Reached through the surface's
+    // public role object.
     inline SP<CXDGToplevelResource> xdgToplevel(const PHLWINDOW& w) {
-        if (!w || w->backend().isX11())
+        if (!w || w->backend().isX11() || !w->wlSurface())
             return nullptr;
-        const auto* wl = dynamic_cast<const Desktop::View::CWaylandBackend*>(&w->backend());
-        if (!wl)
+        const auto SURF = w->wlSurface()->resource();
+        if (!SURF || !SURF->m_role || SURF->m_role->role() != SURFACE_ROLE_XDG_SHELL)
             return nullptr;
-        const auto res = wl->m_resource.lock();
-        return res ? res->m_toplevel.lock() : nullptr;
-    }
-
-    // The X11 surface of an XWayland window, or nullptr. Same fork exposure
-    // as xdgToplevel() (CX11Backend::m_xwaylandSurface).
-    inline SP<CXWaylandSurface> x11Surface(const PHLWINDOW& w) {
-        if (!w || !w->backend().isX11())
-            return nullptr;
-        const auto* x11 = dynamic_cast<const Desktop::View::CX11Backend*>(&w->backend());
-        if (!x11)
-            return nullptr;
-        return x11->m_xwaylandSurface.lock();
+        const auto XDG = static_cast<CXDGSurfaceRole*>(SURF->m_role.get())->m_xdgSurface.lock();
+        return XDG ? XDG->m_toplevel.lock() : nullptr;
     }
 
     // "Pinned" = the `pin` window rule (all-workspace/ontop). Post backend

@@ -232,6 +232,11 @@ namespace NAwesome::Shell {
         int                pt = 0;       // text size in pt, already scaled
         size_t*            fp = nullptr; // frame fingerprint: widgets whose drawn content
                                          // can change without damage fold a hash in here
+        Render::CRenderContext* rctx = nullptr; // the frame's render session; null = paint nothing
+
+        bool paints() const {
+            return !warm && rctx;
+        }
 
         CBox toPhys(const CBox& global) const; // global logical -> monitor physical
         void rect(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f) const;

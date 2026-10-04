@@ -12,7 +12,9 @@
 # carry.
 NAME       := awesome
 PKGS       := hyprland pixman-1 libdrm
-PKGS_EXTRA := librsvg-2.0 libudev pangocairo
+# libeis: the input-capture protocol header includes it, Hyprland's .pc
+# does not carry it
+PKGS_EXTRA := librsvg-2.0 libudev pangocairo libeis-1.0
 LIBS_EXTRA := sdbus-c++ librsvg-2.0 libudev pangocairo
 
 PKG_CONFIG_PATH := $(if $(PKG_CONFIG_PATH),$(PKG_CONFIG_PATH):)/usr/local/share/pkgconfig

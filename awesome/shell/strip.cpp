@@ -68,44 +68,44 @@ namespace NAwesome::Shell {
     }
 
     void SPaint::rect(const CBox& global, const CHyprColor& c, int round, float rp) const {
-        if (warm)
+        if (!paints())
             return;
-        g_pHyprOpenGL->renderRect(toPhys(global), c, {.round = round, .roundingPower = rp});
+        g_pHyprOpenGL->renderRect(*rctx, toPhys(global), c, {.round = round, .roundingPower = rp});
     }
 
     // Semantic container paint. Opaque defaults make the fork skip blur;
     // configured alpha below 1 retains the rounded live-glass path.
     void SPaint::glass(const CBox& global, const CHyprColor& c, int round, float rp) const {
-        if (warm)
+        if (!paints())
             return;
-        g_pHyprOpenGL->renderRect(toPhys(global), c, {.round = round, .roundingPower = rp, .blur = NAwesome::blurOn()});
+        g_pHyprOpenGL->renderRect(*rctx, toPhys(global), c, {.round = round, .roundingPower = rp, .blur = NAwesome::blurOn()});
     }
 
     void SPaint::border(const CBox& global, const CHyprColor& c, int round, int sizePx, float rp) const {
-        if (warm)
+        if (!paints())
             return;
-        g_pHyprOpenGL->renderBorder(toPhys(global), Config::CGradientValueData{c}, {.round = round, .roundingPower = rp, .borderSize = sizePx});
+        g_pHyprOpenGL->renderBorder(*rctx, toPhys(global), Config::CGradientValueData{c}, {.round = round, .roundingPower = rp, .borderSize = sizePx});
     }
 
     void SPaint::tex(const SP<ITexture>& t, const CBox& physBox) const {
-        if (warm || !t || t->m_texID == 0)
+        if (!paints() || !t || t->m_texID == 0)
             return;
-        g_pHyprOpenGL->renderTexture(t, physBox, {});
+        g_pHyprOpenGL->renderTexture(*rctx, t, physBox, {});
     }
 
     void SPaint::texIn(const SP<ITexture>& t, const CBox& cell) const {
-        if (warm || !t || t->m_texID == 0)
+        if (!paints() || !t || t->m_texID == 0)
             return;
         const auto B = toPhys(cell);
         CBox       b{B.x + (B.w - t->m_size.x) / 2.0, B.y + (B.h - t->m_size.y) / 2.0, t->m_size.x, t->m_size.y};
-        g_pHyprOpenGL->renderTexture(t, b.round(), {});
+        g_pHyprOpenGL->renderTexture(*rctx, t, b.round(), {});
     }
 
     // Contain-fit: scale to fill the cell as far as aspect allows, centered.
     // renderTexture stretches to its box, so a non-square icon handed a square
     // cell comes out squashed — fit keeps the icon's proportions instead.
     void SPaint::texFit(const SP<ITexture>& t, const CBox& cell) const {
-        if (warm || !t || t->m_texID == 0)
+        if (!paints() || !t || t->m_texID == 0)
             return;
         const double TW = t->m_size.x, TH = t->m_size.y;
         if (TW <= 0 || TH <= 0)
@@ -114,7 +114,7 @@ namespace NAwesome::Shell {
         const double S = std::min(B.w / TW, B.h / TH);
         const double W = TW * S, H = TH * S;
         CBox         b{B.x + (B.w - W) / 2.0, B.y + (B.h - H) / 2.0, W, H};
-        g_pHyprOpenGL->renderTexture(t, b.round(), {});
+        g_pHyprOpenGL->renderTexture(*rctx, t, b.round(), {});
     }
 
     // ---- rendering ----
@@ -141,7 +141,8 @@ namespace NAwesome::Shell {
         return WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN && !(Menubar::isOpen && Menubar::mon.lock() == mon);
     }
 
-    static void renderBar(PHLMONITOR mon, bool warm) {
+    static void renderBar(PHLMONITOR mon, Render::CRenderContext* rctx) {
+        const bool warm = rctx == nullptr;
         if (!mon)
             return;
 
@@ -176,7 +177,7 @@ namespace NAwesome::Shell {
         // out anything else may have been clipped — repaint the strip.
         size_t frameFp = 0;
 
-        const SPaint P{.mon = mon, .hits = &hits, .warm = warm, .scale = SCALE, .mb = MB, .h = H, .pt = PT, .fp = &frameFp};
+        const SPaint P{.mon = mon, .hits = &hits, .warm = warm, .scale = SCALE, .mb = MB, .h = H, .pt = PT, .fp = &frameFp, .rctx = rctx};
 
         P.glass(CBox{MB.x, MB.y, MB.w, H}, color(cfg().getColor("plugin:awesome:shell:col_bg")));
 
@@ -292,10 +293,11 @@ namespace NAwesome::Shell {
         }
 
         void warm(PHLMONITOR mon) override {
-            renderBar(mon, true);
+            renderBar(mon, nullptr);
         }
-        void draw(PHLMONITOR mon, NAwesome::SPaint&) override {
-            renderBar(mon, false);
+        void draw(PHLMONITOR mon, NAwesome::SPaint& P) override {
+            if (P.rctx)
+                renderBar(mon, P.rctx);
         }
         void damage() override {
             damageBars();

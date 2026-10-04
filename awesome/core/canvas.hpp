@@ -21,8 +21,11 @@
 #include "theme.hpp"
 
 #include <hyprland/src/Compositor.hpp>
+#include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
+#include <hyprland/src/render/Context.hpp>
+#include <hyprland/src/render/WindowRenderPresentation.hpp>
 #include <hyprland/src/render/pass/PassElement.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
 
@@ -230,29 +233,36 @@ namespace NAwesome {
         double                  h     = 0; // the shell strip height (bar layers)
         int                     pt    = 12; // the base type role, physical
         size_t*                 fp    = nullptr; // layout fingerprint sink (shell)
+        // the frame's render session, borrowed for the pass element's draw;
+        // null outside a draw (a warm or a measure paints nothing)
+        Render::CRenderContext* rctx  = nullptr;
+
+        bool paints() const {
+            return !warm && rctx;
+        }
 
         CBox toPhys(const CBox& global) const {
             return CBox{global}.translate(Vector2D{-mon->m_position.x, -mon->m_position.y + dy}).scale(scale).round();
         }
         void rect(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f) const {
-            if (warm)
+            if (!paints())
                 return;
-            g_pHyprOpenGL->renderRect(toPhys(global), c.modifyA(c.a * alpha), {.round = round, .roundingPower = rp});
+            g_pHyprOpenGL->renderRect(*rctx, toPhys(global), c.modifyA(c.a * alpha), {.round = round, .roundingPower = rp});
         }
         // Semantic container paint. Opaque defaults make the fork skip blur;
         // configured alpha below 1 retains the rounded live-glass path.
         void glass(const CBox& global, const CHyprColor& c, int round, float rp) const {
-            if (warm)
+            if (!paints())
                 return;
-            g_pHyprOpenGL->renderRect(toPhys(global), c.modifyA(c.a * alpha), {.round = round, .roundingPower = rp, .blur = blurOn(), .blurA = alpha});
+            g_pHyprOpenGL->renderRect(*rctx, toPhys(global), c.modifyA(c.a * alpha), {.round = round, .roundingPower = rp, .blur = blurOn(), .blurA = alpha});
         }
         void border(const CBox& global, const CHyprColor& c, int round, int sizePx, float rp) const {
-            if (warm)
+            if (!paints())
                 return;
-            g_pHyprOpenGL->renderBorder(toPhys(global), Config::CGradientValueData{c}, {.round = round, .roundingPower = rp, .borderSize = sizePx, .a = alpha});
+            g_pHyprOpenGL->renderBorder(*rctx, toPhys(global), Config::CGradientValueData{c}, {.round = round, .roundingPower = rp, .borderSize = sizePx, .a = alpha});
         }
         void ring(const CBox& global, const CHyprColor& c, int round, float rp, double px = 1.0) const {
-            if (warm)
+            if (!paints())
                 return;
             // the gradient ctor heap-allocates and OkLab-converts — memoize per color
             static std::unordered_map<uint64_t, Config::CGradientValueData> grads;
@@ -260,34 +270,34 @@ namespace NAwesome {
             auto                                                            IT  = grads.find(KEY);
             if (IT == grads.end())
                 IT = grads.emplace(KEY, Config::CGradientValueData{c}).first;
-            g_pHyprOpenGL->renderBorder(toPhys(global), IT->second, {.round = round, .roundingPower = rp, .borderSize = std::max(1, (int)std::lround(px * scale)), .a = alpha});
+            g_pHyprOpenGL->renderBorder(*rctx, toPhys(global), IT->second, {.round = round, .roundingPower = rp, .borderSize = std::max(1, (int)std::lround(px * scale)), .a = alpha});
         }
         void shadow(const CBox& global, int round, float rp, int range) const {
-            if (warm)
+            if (!paints())
                 return;
             static Config::CGradientValueData GRAD{CHyprColor{Theme::SHADOW}};
-            g_pHyprOpenGL->renderRoundedShadow(toPhys(global), round, rp, (int)std::lround(range * scale), GRAD, alpha);
+            g_pHyprOpenGL->renderRoundedShadow(*rctx, toPhys(global), round, rp, (int)std::lround(range * scale), GRAD, alpha, Render::SWindowRenderPresentation{});
         }
         // native px at a logical position
         void tex(const SP<ITexture>& t, double gx, double gy) const {
-            if (warm || !t || t->m_texID == 0)
+            if (!paints() || !t || t->m_texID == 0)
                 return;
             const auto P = toPhys(CBox{gx, gy, 1, 1});
-            g_pHyprOpenGL->renderTexture(t, CBox{(double)P.x, (double)P.y, t->m_size.x, t->m_size.y}, {.a = alpha});
+            g_pHyprOpenGL->renderTexture(*rctx, t, CBox{(double)P.x, (double)P.y, t->m_size.x, t->m_size.y}, {.a = alpha});
         }
         // center the texture inside the cell at native size
         void texIn(const SP<ITexture>& t, const CBox& cell) const {
-            if (warm || !t || t->m_texID == 0)
+            if (!paints() || !t || t->m_texID == 0)
                 return;
             const auto B = toPhys(cell);
             CBox       b{B.x + (B.w - t->m_size.x) / 2.0, B.y + (B.h - t->m_size.y) / 2.0, t->m_size.x, t->m_size.y};
-            g_pHyprOpenGL->renderTexture(t, b.round(), {.a = alpha});
+            g_pHyprOpenGL->renderTexture(*rctx, t, b.round(), {.a = alpha});
         }
         // Contain-fit: scale to fill the cell as far as aspect allows,
         // centered. renderTexture stretches to its box, so a non-square icon
         // handed a square cell comes out squashed — fit keeps proportions.
         void texFit(const SP<ITexture>& t, const CBox& cell, int round = 0, float rp = 2.f) const {
-            if (warm || !t || t->m_texID == 0)
+            if (!paints() || !t || t->m_texID == 0)
                 return;
             const double TW = t->m_size.x, TH = t->m_size.y;
             if (TW <= 0 || TH <= 0)
@@ -296,13 +306,13 @@ namespace NAwesome {
             const double S = std::min(B.w / TW, B.h / TH);
             const double W = TW * S, H = TH * S;
             CBox         b{B.x + (B.w - W) / 2.0, B.y + (B.h - H) / 2.0, W, H};
-            g_pHyprOpenGL->renderTexture(t, b.round(), {.a = alpha, .round = round, .roundingPower = rp});
+            g_pHyprOpenGL->renderTexture(*rctx, t, b.round(), {.a = alpha, .round = round, .roundingPower = rp});
         }
         // Fill the cell, aspect not preserved (the card's full-bleed images)
         void texStretch(const SP<ITexture>& t, const CBox& cell, int round = 0, float rp = 2.f) const {
-            if (warm || !t || t->m_texID == 0)
+            if (!paints() || !t || t->m_texID == 0)
                 return;
-            g_pHyprOpenGL->renderTexture(t, toPhys(cell), {.a = alpha, .round = round, .roundingPower = rp});
+            g_pHyprOpenGL->renderTexture(*rctx, t, toPhys(cell), {.a = alpha, .round = round, .roundingPower = rp});
         }
     };
 
@@ -373,14 +383,13 @@ namespace NAwesome {
         }
 
         // The pass element registers on RENDER_POST_WINDOWS: one pass per
-        // monitor renders EVERY layer that claims that monitor.
-        void onRenderStage(eRenderStage stage) {
-            if (stage != RENDER_POST_WINDOWS)
+        // monitor renders EVERY layer that claims that monitor. The context
+        // is borrowed for this emission only — the element gets its own
+        // context back at draw time.
+        void onRenderStage(const Event::SRenderStageEvent& ev) {
+            if (ev.stage != RENDER_POST_WINDOWS || !ev.monitor || !ev.context)
                 return;
-            const auto MON = g_pHyprRenderer->m_renderData.pMonitor.lock();
-            if (!MON)
-                return;
-            g_pHyprRenderer->addPassElement(makeUnique<CAwesomePassElement>(MON));
+            Render::IHyprRenderer::addPassElement(ev.context->get(), makeUnique<CAwesomePassElement>(ev.monitor));
         }
 
         bool anyLayerVisible(PHLMONITOR mon) const {
@@ -400,7 +409,7 @@ namespace NAwesome {
             explicit CAwesomePassElement(PHLMONITOR mon) : m_mon(mon) {}
             virtual ~CAwesomePassElement() = default;
 
-            virtual std::vector<UP<IPassElement>> draw() override {
+            virtual std::vector<UP<IPassElement>> draw(Render::CRenderContext& rctx) override {
                 auto& C = Canvas::inst();
                 C.m_gate.inRender = true;
                 if (const auto MON = m_mon.lock()) {
@@ -408,6 +417,7 @@ namespace NAwesome {
                     ctx.mon   = MON;
                     ctx.scale = MON->m_scale;
                     ctx.mb    = MON->logicalBox();
+                    ctx.rctx  = &rctx;
                     for (auto* L : C.m_layers)
                         L->draw(MON, ctx);
                 }
@@ -424,7 +434,7 @@ namespace NAwesome {
                 });
                 return {};
             }
-            virtual bool needsLiveBlur() override {
+            virtual bool needsLiveBlur(Render::CRenderContext&) override {
                 // only while a layer actually paints — never claim a live
                 // blur of a region that is hidden (blur for nothing)
                 const auto MON = m_mon.lock();
@@ -435,10 +445,10 @@ namespace NAwesome {
                         return true;
                 return false;
             }
-            virtual bool needsPrecomputeBlur() override {
+            virtual bool needsPrecomputeBlur(Render::CRenderContext&) override {
                 return false;
             }
-            virtual std::optional<CBox> boundingBox() override {
+            virtual std::optional<CBox> boundingBox(Render::CRenderContext&) override {
                 // the union of the layers' boxes: monitor-local LOGICAL px
                 const auto MON = m_mon.lock();
                 if (!MON)

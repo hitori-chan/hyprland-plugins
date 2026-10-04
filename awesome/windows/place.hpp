@@ -89,8 +89,6 @@ namespace NAwesome::Windows::Place {
                 return w->metadata().appID();
             if (const auto TOP = xdgToplevel(w))
                 return TOP->m_state.appid;
-            if (const auto X11 = x11Surface(w))
-                return X11->m_state.appid;
             return {};
         }
 
@@ -163,9 +161,9 @@ namespace NAwesome::Windows::Place {
                 TOP && (TOP->m_state.requestsFullscreen.value_or(false) || TOP->m_state.requestsMaximize.value_or(false)))
                 return true;
 
-            if (const auto X11 = x11Surface(w);
-                X11 && (X11->m_fullscreen || X11->m_maximized ||
-                        X11->m_state.requestsFullscreen.value_or(false) || X11->m_state.requestsMaximize.value_or(false)))
+            // X11: a fullscreen client state is a trait; its maximize and
+            // fullscreen requests ride the pending client request above
+            if (w->backend().isX11() && w->backend().traits().fullscreen)
                 return true;
 
             if (w->m_ruleApplicator) {

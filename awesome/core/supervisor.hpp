@@ -125,7 +125,7 @@ namespace NAwesome {
                 M->init();
 
             auto& EV = Event::bus()->m_events;
-            m_listenRenderStage = EV.render.stage.listen([](eRenderStage stage) { Canvas::inst().onRenderStage(stage); });
+            m_listenRenderStage = EV.render.stage.listen([](const Event::SRenderStageEvent& ev) { Canvas::inst().onRenderStage(ev); });
             m_listenButton      = EV.input.mouse.button.listen([](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { Supervisor::inst().dispatchButton(e, info); });
             m_listenMove        = EV.input.mouse.move.listen([](Vector2D pos, Event::SCallbackInfo& info) { Supervisor::inst().dispatchMove(pos, info); });
             m_listenAxis        = EV.input.mouse.axis.listen([](IPointer::SAxisEvent e, Event::SCallbackInfo& info) { Supervisor::inst().dispatchAxis(e, info); });
