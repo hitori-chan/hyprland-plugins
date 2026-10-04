@@ -23,9 +23,11 @@ namespace NAwesome::Windows {
         return M;
     }
 
-    // the activate-of-a-minimized restore hop (init's window.urgent listener);
-    // reset in teardown like every module hop
+    // the activate-of-a-minimized restore hop (init's window.urgent listener)
+    // and the focus bounce off a minimized window (window.active); reset in
+    // teardown like every module hop
     static CHop pendingActivate;
+    static CHop pendingFocusAway;
 
     namespace {
         int luaMaximize(lua_State*) {
@@ -62,8 +64,17 @@ namespace NAwesome::Windows {
                 return;
             Tasklist::watchMinimize(w);
         });
-        supervisor().listen(Event::bus()->m_events.window.active, [](PHLWINDOW w, Desktop::eFocusReason reason) {
-            Tasklist::focusAwayFromHidden(w);
+        // Focus landed on a minimized (hidden) window — the compositor's
+        // fallback does not know our minimize. Bounce it, deferred: a focus
+        // change inside the focus emission nests a second rawWindowFocus and
+        // later listeners see the stale one (invariant 6).
+        supervisor().listen(Event::bus()->m_events.window.active, [](PHLWINDOW w, Desktop::eFocusReason) {
+            if (!w || !w->isHidden() || !Tasklist::isMinimized(w))
+                return;
+            pendingFocusAway.arm([WR = PHLWINDOWREF{w}]() {
+                if (const auto W = WR.lock())
+                    Tasklist::focusAwayFromHidden(W);
+            });
         });
         supervisor().listen(Event::bus()->m_events.window.destroy, [](PHLWINDOWREF wr) {
             if (const auto* W = wr.get())
@@ -113,6 +124,7 @@ namespace NAwesome::Windows {
         // firing mid-teardown cannot re-arm a hop: the hops are already
         // reset by the supervisor)
         pendingActivate.reset();
+        pendingFocusAway.reset();
         Snap::teardown();
         Place::teardown();
         Click::teardown();
