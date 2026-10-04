@@ -196,7 +196,20 @@ namespace NAwesome::System {
         settle->updateTimeout(SETTLE);
     }
 
+    // queued, never a lone doLaterLock: two flips can arm in one dispatch
+    // and overwriting the lock cancels the unfired one; only the parity
+    // survives the drain (an even batch nets to no change)
+    static CHopQueue<char, 16> toggles([](std::vector<char>& batch) {
+        if (batch.size() % 2 == 0)
+            return;
+        if (settle)
+            settle->updateTimeout(std::nullopt);
+        const bool CURRENT = touchpadEnabled().value_or(appliedState == 1);
+        applyEnabled(!CURRENT);
+    });
+
     void padExit() {
+        toggles.reset();
         lDestroy.clear();
         appliedState    = -1;
         appliedTouchpad.reset();
@@ -208,31 +221,8 @@ namespace NAwesome::System {
     // The manual flip (XF86TouchpadToggle). Deferred out of the bind's input
     // emission; the manual flip also cancels a pending auto re-check so it
     // isn't overridden a beat later.
-    //
-    // queue+drain, never a lone doLaterLock: two flips can arm in one
-    // dispatch and overwriting the lock cancels the unfired one; only the
-    // parity survives the drain (an even batch nets to no change)
-    static std::vector<int> g_toggleQueue; // one entry per flip
-    static bool             toggleQueued = false;
-    static CHop             pendingToggle;
-
     void padToggle() {
-        if (g_toggleQueue.size() < 16)
-            g_toggleQueue.push_back(0);
-        if (toggleQueued)
-            return;
-        toggleQueued = true;
-        pendingToggle.arm([]() {
-            const int N = (int)g_toggleQueue.size();
-            g_toggleQueue.clear();
-            toggleQueued = false;
-            if (N % 2 == 0)
-                return;
-            if (settle)
-                settle->updateTimeout(std::nullopt);
-            const bool CURRENT = touchpadEnabled().value_or(appliedState == 1);
-            applyEnabled(!CURRENT);
-        });
+        toggles.push(0);
     }
 
     // the gate's probe: the touchpad's live state, not the policy's memory

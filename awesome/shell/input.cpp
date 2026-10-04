@@ -17,8 +17,6 @@ namespace NAwesome::Shell {
     // this unit owns swallowing, the deferral out of the input emission,
     // and the notch coalescing.
 
-    static NAwesome::CHop         pendingHit;
-
     // Batched hits drain in one hop: two button presses can land in one
     // dispatch (a simultaneous left+right tap, a scripted client) and
     // overwriting a lone doLaterLock cancels the unfired click
@@ -35,37 +33,30 @@ namespace NAwesome::Shell {
         uint32_t     bit = 0;
         bool         super = false;
     };
-    static std::vector<SHitJob> hitJobs;
-    static bool                 hitQueued = false;
+    // a click's action, out of the input emission (a widget's onHit can
+    // change workspace or focus); 16 pending is far past a human's clicks
+    // per turn
+    static NAwesome::CHopQueue<SHitJob, 16> hitJobs([](std::vector<SHitJob>& batch) {
+        if (NAwesome::sessionLocked())
+            return; // the lock can engage between the click and this hop
+        for (auto& J : batch) {
+            switch (J.kind) {
+            case SHitJob::WIDGET:
+                if (J.hit.widget)
+                    J.hit.widget->onHit(J.hit, J.bit, J.super); // a widget onHit can change workspace/focus — never under a lock
+                break;
+            case SHitJob::MENU_ACTIVATE:
+                Menu::activate(J.entry);
+                break;
+            case SHitJob::MENU_SUBMENU:
+                Menu::openSub(J.subLevel, J.subIdx);
+                break;
+            }
+        }
+    });
 
     static void queueHitJob(SHitJob job) {
-        if (hitJobs.size() < 16)
-            hitJobs.push_back(std::move(job));
-        if (hitQueued)
-            return;
-        hitQueued = true;
-        pendingHit.arm([]() {
-            hitQueued = false;
-            if (NAwesome::sessionLocked()) {
-                hitJobs.clear(); // the lock can engage between the click and this hop
-                return;
-            }
-            for (auto& J : hitJobs) {
-                switch (J.kind) {
-                case SHitJob::WIDGET:
-                    if (J.hit.widget)
-                        J.hit.widget->onHit(J.hit, J.bit, J.super); // a widget onHit can change workspace/focus — never under a lock
-                    break;
-                case SHitJob::MENU_ACTIVATE:
-                    Menu::activate(J.entry);
-                    break;
-                case SHitJob::MENU_SUBMENU:
-                    Menu::openSub(J.subLevel, J.subIdx);
-                    break;
-                }
-            }
-            hitJobs.clear();
-        });
+        hitJobs.push(std::move(job));
     }
 
     // ---- input ----
@@ -422,9 +413,7 @@ namespace NAwesome::Shell {
     void onInputBlocked() {
         swallowRelease = 0;
         heldButtons    = 0;
-        pendingHit.reset();
-        hitJobs.clear();
-        hitQueued = false;
+        hitJobs.reset();
         pendingScroll.reset();
         scrollAcc.clear();
         scrollQueued = false;
@@ -472,9 +461,7 @@ namespace NAwesome::Shell {
         if (hoverHeal && g_pEventLoopManager)
             g_pEventLoopManager->removeTimer(hoverHeal);
         hoverHeal.reset();
-        pendingHit.reset();
-        hitJobs.clear();
-        hitQueued = false;
+        hitJobs.reset();
         pendingScroll.reset();
         scrollAcc.clear();
         scrollQueued = false;

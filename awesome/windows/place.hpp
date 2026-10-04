@@ -58,16 +58,6 @@
 namespace NAwesome::Windows::Place {
 
     namespace {
-        inline CHop& pendingPlace() {
-            static CHop H;
-            return H;
-        }
-        inline std::vector<PHLWINDOWREF>& placeQueue() {
-            static std::vector<PHLWINDOWREF> Q;
-            return Q;
-        }
-
-        inline constexpr size_t MAX_PLACE_QUEUE = 256;
         inline constexpr double MAX_RESTORE_AXIS = 16384.0;
 
         // each app's last window box (position + size), surviving relogs; the
@@ -387,19 +377,21 @@ namespace NAwesome::Windows::Place {
         }
     }
 
-    inline void onWindowOpen(PHLWINDOW w) {
-        // deferred out of the map emission; runs before the first frame
-        // renders. Several windows can map in one dispatch — queue them all
-        // and drain once: re-arming the lock cancels the previous callback,
-        // the queue survives.
-        if (!w || placeQueue().size() >= MAX_PLACE_QUEUE)
-            return; // overload falls back to Hyprland's native placement
-        placeQueue().emplace_back(w);
-        pendingPlace().arm([]() {
-            for (const auto& REF : placeQueue())
+    // deferred out of the map emission; runs before the first frame
+    // renders. Several windows can map in one dispatch — queued, one drain.
+    // Past 256 pending maps the overload falls back to Hyprland's native
+    // placement.
+    inline CHopQueue<PHLWINDOWREF, 256>& places() {
+        static CHopQueue<PHLWINDOWREF, 256> Q([](std::vector<PHLWINDOWREF>& batch) {
+            for (const auto& REF : batch)
                 placeWindow(REF.lock());
-            placeQueue().clear();
         });
+        return Q;
+    }
+
+    inline void onWindowOpen(PHLWINDOW w) {
+        if (w)
+            places().push(PHLWINDOWREF{w});
     }
 
     inline void onWindowClose(PHLWINDOW w) {
@@ -451,7 +443,7 @@ namespace NAwesome::Windows::Place {
 
     inline void teardown() {
         StateStore::inst().flush(); // the deferred flush never runs at compositor exit
-        placeQueue().clear();
+        places().reset();
         lastSpot().rows.clear();
     }
 

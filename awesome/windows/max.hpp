@@ -144,18 +144,6 @@ namespace NAwesome::Windows {
                 g_pInputManager->simulateMouseMovement();
         }
 
-        inline std::vector<PHLWINDOWREF>& adoptQueue() {
-            static std::vector<PHLWINDOWREF> Q;
-            return Q;
-        }
-        inline bool& adoptQueued() {
-            static bool Q = false;
-            return Q;
-        }
-        inline CHop& pendingAdopt() {
-            static CHop H;
-            return H;
-        }
         inline bool& reflowQueued() {
             static bool Q = false;
             return Q;
@@ -202,22 +190,19 @@ namespace NAwesome::Windows {
             });
         }
 
-        // queue+drain, never a lone doLaterLock: two born-maximized windows
-        // can map in one dispatch, and overwriting the lock cancels the
-        // unfired one
-        inline void queueAdopt(PHLWINDOW w) {
-            adoptQueue().emplace_back(w);
-            if (adoptQueued())
-                return;
-            adoptQueued() = true;
-            pendingAdopt().arm([]() {
-                adoptQueued() = false;
-                const auto Q = std::move(adoptQueue());
-                adoptQueue().clear();
-                for (const auto& WR : Q)
+        // queued, never a lone doLaterLock: two born-maximized windows can
+        // map in one dispatch, and overwriting the lock cancels the unfired
+        // one
+        inline CHopQueue<PHLWINDOWREF, 64>& adopts() {
+            static CHopQueue<PHLWINDOWREF, 64> Q([](std::vector<PHLWINDOWREF>& batch) {
+                for (const auto& WR : batch)
                     adoptCompositorMax(WR.lock());
                 pointerFollowsGeometry();
             });
+            return Q;
+        }
+        inline void queueAdopt(PHLWINDOW w) {
+            adopts().push(PHLWINDOWREF{w});
         }
 
         inline bool maximizedAny(PHLWINDOW w) {
@@ -336,17 +321,16 @@ namespace NAwesome::Windows {
             static std::unordered_map<const void*, Hyprutils::Signal::CHyprSignalListener> M;
             return M;
         }
-        inline std::vector<PHLWINDOWREF>& clientUnmaxes() {
-            static std::vector<PHLWINDOWREF> Q;
+        inline CHopQueue<PHLWINDOWREF, 16>& clientUnmaxes() {
+            static CHopQueue<PHLWINDOWREF, 16> Q([](std::vector<PHLWINDOWREF>& batch) {
+                // still plugin-maximized: the toggle takes its restore
+                // branch (a Mod+M in the same dispatch may have won)
+                for (const auto& WR : batch)
+                    if (const auto W = WR.lock(); W && pluginMaximized(W))
+                        applyMaxToggle(WR);
+                pointerFollowsGeometry();
+            });
             return Q;
-        }
-        inline bool& clientUnmaxQueued() {
-            static bool Q = false;
-            return Q;
-        }
-        inline CHop& pendingClientUnmax() {
-            static CHop H;
-            return H;
         }
 
         inline void watchClientUnmax(const PHLWINDOW& w) {
@@ -354,40 +338,21 @@ namespace NAwesome::Windows {
                 if (!req.maximized.has_value() || *req.maximized)
                     return;
                 const auto W = wr.lock();
-                if (!W || !pluginMaximized(W) || clientUnmaxes().size() >= 16)
-                    return;
-                clientUnmaxes().emplace_back(wr);
-                if (clientUnmaxQueued())
-                    return;
-                clientUnmaxQueued() = true;
-                pendingClientUnmax().arm([]() {
-                    clientUnmaxQueued() = false;
-                    const auto Q = std::move(clientUnmaxes());
-                    clientUnmaxes().clear();
-                    // still plugin-maximized: the toggle takes its restore
-                    // branch (a Mod+M in the same dispatch may have won)
-                    for (const auto& WR : Q)
-                        if (const auto W = WR.lock(); W && pluginMaximized(W))
-                            applyMaxToggle(WR);
-                    pointerFollowsGeometry();
-                });
+                if (W && pluginMaximized(W))
+                    clientUnmaxes().push(wr);
             });
         }
 
         // queue+drain, never a lone doLaterLock: two toggles can arm in one
         // dispatch (scripted binds, event backlog) and overwriting the lock
         // cancels the unfired one
-        inline std::vector<PHLWINDOWREF>& maxToggles() {
-            static std::vector<PHLWINDOWREF> Q;
+        inline CHopQueue<PHLWINDOWREF, 16>& maxToggles() {
+            static CHopQueue<PHLWINDOWREF, 16> Q([](std::vector<PHLWINDOWREF>& batch) {
+                for (const auto& WR : batch)
+                    applyMaxToggle(WR);
+                pointerFollowsGeometry();
+            });
             return Q;
-        }
-        inline bool& maxToggleQueued() {
-            static bool Q = false;
-            return Q;
-        }
-        inline CHop& pendingMax() {
-            static CHop H;
-            return H;
         }
     }
 
@@ -440,19 +405,7 @@ namespace NAwesome::Windows {
             if (!FOCUS || !FOCUS->mapped() || !FOCUS->m_workspace)
                 return;
 
-            if (maxToggles().size() < 16)
-                maxToggles().emplace_back(PHLWINDOWREF{FOCUS});
-            if (maxToggleQueued())
-                return;
-            maxToggleQueued() = true;
-            pendingMax().arm([]() {
-                maxToggleQueued() = false;
-                const auto Q = std::move(maxToggles());
-                maxToggles().clear();
-                for (const auto& WR : Q)
-                    applyMaxToggle(WR);
-                pointerFollowsGeometry();
-            });
+            maxToggles().push(PHLWINDOWREF{FOCUS});
         }
 
         inline void init() {
@@ -526,14 +479,13 @@ namespace NAwesome::Windows {
             maximized().clear();
             lastWindowed().rows.clear();
             swallowedButtons() = 0;
-            adoptQueued() = false;
+            adopts().reset();
+            maxToggles().reset();
             reflowQueued() = false;
-            adoptQueue().clear();
             for (auto& [K, L] : unmaxRequestListeners())
                 L.reset();
             unmaxRequestListeners().clear();
-            clientUnmaxes().clear();
-            clientUnmaxQueued() = false;
+            clientUnmaxes().reset();
         }
     } // namespace Max
 

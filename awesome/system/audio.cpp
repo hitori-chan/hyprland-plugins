@@ -255,23 +255,18 @@ namespace NAwesome::System {
     // Actions queue and drain from the event loop, never inside the bind's
     // input emission; a queue rather than one deferred slot so a key-repeat
     // burst never coalesces two steps into one.
-    static std::vector<uint8_t> queued;
-    static CHop                 pendingDrain;
+    // bounded backpressure under a key-repeat storm (a full queue drops the
+    // step: a storm must back off, not fork)
+    static CHopQueue<uint8_t, MAX_ACTION_QUEUE> queued([](std::vector<uint8_t>& batch) {
+        for (const auto A : batch)
+            if (A == BRI_UP || A == BRI_DOWN)
+                brightnessStep(A == BRI_UP ? 1 : -1);
+            else
+                wpctlAction((eAction)A);
+    });
 
     void enqueueAction(eAction a) {
-        if (!g_pEventLoopManager)
-            return; // an unarmable drain must not let the queue grow
-        if (queued.size() >= MAX_ACTION_QUEUE)
-            return; // bounded backpressure under a key-repeat storm
-        queued.push_back(a);
-        pendingDrain.arm([]() {
-            for (const auto A : queued)
-                if (A == BRI_UP || A == BRI_DOWN)
-                    brightnessStep(A == BRI_UP ? 1 : -1);
-                else
-                    wpctlAction((eAction)A);
-            queued.clear();
-        });
+        queued.push(a);
     }
 
     void audioInit() {
@@ -284,8 +279,7 @@ namespace NAwesome::System {
         // the queue is the module's own; Jobs' children are the core's and
         // go with the loop — in-flight callbacks are generation-checked by
         // the teardown bump below.
-        queued.clear();
-        pendingDrain.reset();
+        queued.reset();
         liveChains.clear();
         ++brightnessGeneration;
         ++volumeGeneration;

@@ -66,9 +66,10 @@ namespace NAwesome::Notify {
         std::string  href;   // non-empty: a body hyperlink
         bool         outside = false; // the click fell outside every surface (closes the shade)
     };
-    static std::vector<SHit> hitQueue;
-    static bool              hitQueued = false;
-    static NAwesome::CHop pendingHit;
+    static void           drainHits(std::vector<SHit>& batch);
+    // clicks deferred out of the input emission; 32 pending is far past a
+    // human's clicks per turn
+    static NAwesome::CHopQueue<SHit, 32> hits(drainHits);
     static NAwesome::CHop pendingEsc;
 
     // most-specific-first: rows/buttons are pushed after the panel they sit on
@@ -154,20 +155,12 @@ namespace NAwesome::Notify {
     // Deferred out of the input emission: closes reflow the layout and an
     // action can make the client focus/raise itself. Queue+drain so two
     // clicks in one dispatch both land.
-    static void drainHits();
     static void queueHit(SHit h) {
-        hitQueue.push_back(std::move(h));
-        if (hitQueued)
-            return;
-        hitQueued = true;
-        pendingHit.arm(drainHits);
+        hits.push(std::move(h));
     }
 
-    static void drainHits() {
-        hitQueued    = false;
-        const auto Q = std::move(hitQueue);
-        hitQueue.clear();
-        for (const auto& H : Q) {
+    static void drainHits(std::vector<SHit>& batch) {
+        for (const auto& H : batch) {
             if (H.outside) { // a click off every surface closes the center
                 setCenter(false, /*repop=*/true);
                 continue;
@@ -434,15 +427,8 @@ namespace NAwesome::Notify {
         uint32_t    id   = 0;
         std::string group; // non-empty: a bundle
     };
-    static std::vector<SKeyAct> keyQueue;
-    static bool                 keyQueued = false;
-    static NAwesome::CHop    pendingKey;
-
-    static void                 drainKeys() {
-        keyQueued    = false;
-        const auto Q = std::move(keyQueue);
-        keyQueue.clear();
-        for (const auto& A : Q) {
+    static void drainKeys(std::vector<SKeyAct>& batch) {
+        for (const auto& A : batch) {
             const bool GROUP = !A.group.empty();
             if (A.verb == 1 || (A.verb == 2 && GROUP)) { // space, and enter on a bundle: fold
                 if (GROUP)
@@ -460,6 +446,9 @@ namespace NAwesome::Notify {
         }
     }
 
+    // shade key actions, deferred like the clicks
+    static NAwesome::CHopQueue<SKeyAct, 32> keys(drainKeys);
+
     void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
         if (NAwesome::sessionLocked()) {
             // a lock discards every half-tracked input state (crash class 3):
@@ -467,9 +456,7 @@ namespace NAwesome::Notify {
             // and an armed reply field must not keep owning the keyboard with
             // text collected while the lock was up
             pendingEsc.reset();
-            pendingKey.reset();
-            keyQueue.clear();
-            keyQueued = false;
+            keys.reset();
             replyExit();
             return;
         }
@@ -545,11 +532,7 @@ namespace NAwesome::Notify {
             return;
 
         info.cancelled = true;
-        keyQueue.push_back(std::move(a));
-        if (keyQueued)
-            return;
-        keyQueued = true;
-        pendingKey.arm(drainKeys);
+        keys.push(std::move(a));
     }
 
     // the pipeline's blocked branch: the handlers never fire while the
@@ -566,12 +549,9 @@ namespace NAwesome::Notify {
             // a queued shade action or pending esc must not drain after unlock,
             // and an armed reply field must not keep owning the keyboard with
             // text collected while the lock was up
-            pendingHit.reset();
+            hits.reset();
             pendingEsc.reset();
-            pendingKey.reset();
-            hitQueued = keyQueued = false;
-            hitQueue.clear();
-            keyQueue.clear();
+            keys.reset();
             replyExit();
         }
         setHovered({});
@@ -679,12 +659,9 @@ namespace NAwesome::Notify {
     }
 
     void inputExit() {
-        pendingHit.reset();
+        hits.reset();
         pendingEsc.reset();
-        pendingKey.reset();
-        hitQueued = keyQueued = false;
-        hitQueue.clear();
-        keyQueue.clear();
+        keys.reset();
         swallowRelease = 0;
         heldButtons    = 0;
         scrollAcc      = 0;

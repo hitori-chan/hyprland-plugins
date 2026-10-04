@@ -16,6 +16,7 @@
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/helpers/memory/Memory.hpp>
 
+#include <cstddef>
 #include <functional>
 #include <vector>
 
@@ -58,6 +59,50 @@ namespace NAwesome {
 
       private:
         UP<SEventLoopDoLaterLock> m_lock;
+    };
+
+    // A bounded queue drained once per event-loop turn: producers push from
+    // emissions (input, client requests), one hop drains the batch
+    // (invariant 6). The batch moves out before the drain runs, so a drain
+    // that pushes again lands in the next batch instead of the one being
+    // walked. At the bound a push is DROPPED and reported — the defined
+    // backpressure for client-fed input; the entries already queued win.
+    // reset() is the teardown and the session-lock purge.
+    template <typename T, size_t N>
+    class CHopQueue {
+      public:
+        using Drain = std::function<void(std::vector<T>&)>;
+        explicit CHopQueue(Drain drain) : m_drain(std::move(drain)) {}
+
+        bool push(T item) {
+            if (m_items.size() >= N)
+                return false;
+            m_items.push_back(std::move(item));
+            if (!m_pending) { // one hop per batch: re-arming would cancel it
+                m_pending = true;
+                m_hop.arm([this]() {
+                    m_pending   = false;
+                    auto BATCH  = std::move(m_items);
+                    m_items.clear();
+                    m_drain(BATCH);
+                });
+            }
+            return true;
+        }
+        void reset() {
+            m_hop.reset();
+            m_items.clear();
+            m_pending = false;
+        }
+        bool empty() const {
+            return m_items.empty();
+        }
+
+      private:
+        std::vector<T> m_items;
+        CHop           m_hop;
+        bool           m_pending = false;
+        Drain          m_drain;
     };
 
     // the .so-wide teardown, in the only safe order: hops after the

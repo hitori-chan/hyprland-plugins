@@ -94,18 +94,6 @@ namespace NAwesome::Windows::Tasklist {
         static std::unordered_map<const void*, Hyprutils::Signal::CHyprSignalListener> M;
         return M;
     }
-    inline std::vector<std::pair<PHLWINDOWREF, bool>>& minReqQueue() {
-        static std::vector<std::pair<PHLWINDOWREF, bool>> Q; // (window, minimize?)
-        return Q;
-    }
-    inline bool& minReqQueued() {
-        static bool Q = false;
-        return Q;
-    }
-    inline CHop& pendingMinReq() {
-        static CHop H;
-        return H;
-    }
 
     inline bool isMinimized(const PHLWINDOW& w) {
         if (!w)
@@ -209,6 +197,27 @@ namespace NAwesome::Windows::Tasklist {
             taskChangedHook()();
     }
 
+    // Client minimize/unminimize requests, applied out of the request's
+    // emission (one drain per turn, a burst coalesced; a client flooding
+    // set_minimized is capped — 64 pending requests is far past any real
+    // client's toggling).
+    inline CHopQueue<std::pair<PHLWINDOWREF, bool>, 64>& minReqs() {
+        static CHopQueue<std::pair<PHLWINDOWREF, bool>, 64> Q([](std::vector<std::pair<PHLWINDOWREF, bool>>& batch) {
+            if (sessionLocked())
+                return; // never hide/reorder windows under the lockscreen
+            for (const auto& [WR, MIN] : batch) {
+                const auto W = WR.lock();
+                if (!W)
+                    continue;
+                if (MIN)
+                    minimize(W);
+                else
+                    restore(W);
+            }
+        });
+        return Q;
+    }
+
     // Attach the self-minimize listener to a freshly-opened window (from
     // window.open). The listener is dropped in forget() on destroy / exit.
     // The BACKEND's stateRequest is the one signal both backends carry the
@@ -223,26 +232,7 @@ namespace NAwesome::Windows::Tasklist {
                 return;
             if (!req.minimized.has_value())
                 return; // this request carried a fullscreen/maximize change, not a minimize
-            minReqQueue().emplace_back(wr, *req.minimized);
-            if (minReqQueued())
-                return; // one drain coalesces a burst — overwriting the lock would cancel it
-            minReqQueued() = true;
-            pendingMinReq().arm([]() {
-                minReqQueued() = false;
-                const auto Q = std::move(minReqQueue());
-                minReqQueue().clear();
-                if (sessionLocked())
-                    return; // never hide/reorder windows under the lockscreen
-                for (const auto& [WR, MIN] : Q) {
-                    const auto WW = WR.lock();
-                    if (!WW)
-                        continue;
-                    if (MIN)
-                        minimize(WW);
-                    else
-                        restore(WW);
-                }
-            });
+            minReqs().push({wr, *req.minimized});
         });
     }
 
@@ -274,9 +264,7 @@ namespace NAwesome::Windows::Tasklist {
     inline void exit() {
         winOrder().clear();
         minStack().clear();
-        pendingMinReq().reset();
-        minReqQueued() = false;
-        minReqQueue().clear();
+        minReqs().reset();
         for (auto& [K, L] : minReqListeners())
             L.reset();
         minReqListeners().clear();
