@@ -18,22 +18,35 @@
 #include <hyprland/src/desktop/state/WindowState.hpp>
 
 #include <cstdint>
+#include <functional>
 
 namespace NAwesome {
 
-// Raise + hard-focus the topmost mapped, visible window of the pid.
-// Returns false when the pid has no such window: the app is still
-// handling the action (a tray return re-maps a moment later and takes
-// the new-window focus, as in awesome).
+// The windows module's minimize lives in the windows module: it registers
+// how to restore a minimized window here (cleared in its teardown), so an
+// activation of a minimized app restores it instead of finding nothing.
+inline std::function<bool(const PHLWINDOW&)>& restoreMinimizedHook() {
+    static std::function<bool(const PHLWINDOW&)> H;
+    return H;
+}
+
+// Raise + hard-focus the topmost mapped, visible window of the pid; failing
+// that, restore its most recently stacked minimized window. Returns false
+// when the pid has no such window: the app is still handling the action (a
+// tray return re-maps a moment later and takes the new-window focus, as in
+// awesome).
 inline bool activateAppWindow(uint32_t pid) {
-    PHLWINDOW best;
+    PHLWINDOW best, minimized;
     for (const auto& W : Desktop::windowState()->windows()) { // Z-order: the LAST match is topmost
-        if (!W->mapped() || W->isHidden() || W->backend().pid() != static_cast<pid_t>(pid))
+        if (!W->mapped() || W->backend().pid() != static_cast<pid_t>(pid))
             continue;
-        best = W;
+        if (W->isHidden())
+            minimized = W;
+        else
+            best = W;
     }
     if (!best)
-        return false;
+        return minimized && restoreMinimizedHook() && restoreMinimizedHook()(minimized);
     if (best->isFloating())
         Desktop::windowState()->raise(best);
     Desktop::focusState()->fullWindowFocus(best, Desktop::FOCUS_REASON_SWITCH_TO_WINDOW_HARD);

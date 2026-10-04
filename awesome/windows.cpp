@@ -12,6 +12,8 @@
 #include "windows/place.hpp"
 #include "windows/snap.hpp"
 
+#include "core/activate.hpp"
+
 #include <hyprland/src/plugins/PluginAPI.hpp>
 
 #include <hyprland/src/config/ConfigValue.hpp>
@@ -109,6 +111,17 @@ namespace NAwesome::Windows {
         Place::init();
         Snap::init();
 
+        // A user activation (tray icon, notification action) of an app whose
+        // only window is minimized restores it: the click is the activation,
+        // like awesome's c.minimized = false + focus. Core resolves the app
+        // and asks through this seam.
+        restoreMinimizedHook() = [](const PHLWINDOW& w) {
+            if (!w || !w->mapped() || !Tasklist::isMinimized(w))
+                return false;
+            Tasklist::restore(w); // un-hides, re-slots if tiled, raises and focuses
+            return true;
+        };
+
         HANDLE H = supervisor().handle();
         HyprlandAPI::addLuaFunction(H, "awesome", "maximize", luaMaximize);
         HyprlandAPI::addLuaFunction(H, "awesome", "minimize", luaMinimize);
@@ -125,6 +138,7 @@ namespace NAwesome::Windows {
         // reset by the supervisor)
         pendingActivate.reset();
         pendingFocusAway.reset();
+        restoreMinimizedHook() = nullptr;
         Snap::teardown();
         Place::teardown();
         Click::teardown();
