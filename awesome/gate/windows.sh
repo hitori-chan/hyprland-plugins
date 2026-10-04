@@ -205,7 +205,38 @@ CF="$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdfall'), ''))")"
 [[ -n "$CF" ]] && dsp "hl.dsp.window.close({window=\"address:$CF\"})"; sleep 1
-chk "csd battery left no windows" test "$(pyc "sum(1 for c in cs if c['class'] in ('csdpin','csdresz','csdpinx','csdfollow','csdfall'))")" = 0
+# A real CSD app's close: the client destroys its toplevel BEFORE the
+# window unmaps (splashwin does, like GTK and Firefox). The close must still
+# remember the box — the close-time read once needed the live toplevel and
+# recorded nothing for every such app (2026-10-04: thunar, firefox and the
+# rest reopened centered). The moved spot discriminates: centered is the
+# no-memory default.
+csdmem_addr() { clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdmem'), ''))"; }
+dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 600 400 20 csdmem - - resz - - - - follow')"; sleep 2
+CM="$(csdmem_addr)"
+dsp "hl.dsp.window.move({x = 120, y = 150, window = \"address:$CM\"})"; sleep 1
+dsp "hl.dsp.window.close({window=\"address:$CM\"})"; sleep 1.5
+chk "toplevel-first close remembers the box" grep -q "^spot	120	150	600	400	csdmem$" "$AW_STATE"
+dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 600 400 20 csdmem - - resz - - - - follow unmaxwhenmaxed')"; sleep 2
+expect "toplevel-first close: the respawn lands at the remembered box" \
+	"any(c['class']=='csdmem' and c['at']==[120,150] and c['size']==[600,400] for c in cs)"
+# The client's own unmaximize (its CSD titlebar restore button) on a
+# plugin-maximized window. The compositor drops it (it only honors an
+# unmaximize for a window IT holds maximized); without the plugin's answer
+# the client stays told maximized, saves "maximized" and reopens so
+# (2026-10-04: firefox "always opens maximized"). The fixture asks 1.5 s
+# after it is told maximized.
+dsp "hl.plugin.awesome.maximize()"; sleep 0.7
+expect "client unmaximize: Mod+M maximized the window first" \
+	"any(c['class']=='csdmem' and c['at']==[0,30] and c['size']==[$MON_W,$((MON_H - 30))] for c in cs)"
+sleep 2.5
+expect "client unmaximize: its own restore button restores the windowed box" \
+	"any(c['class']=='csdmem' and c['at']==[120,150] and c['size']==[600,400] for c in cs)"
+CM="$(csdmem_addr)"
+[[ -n "$CM" ]] && dsp "hl.dsp.window.close({window=\"address:$CM\"})"; sleep 1
+chk "csd battery left no windows" test "$(pyc "sum(1 for c in cs if c['class'] in ('csdpin','csdresz','csdpinx','csdfollow','csdfall','csdmem'))")" = 0
 
 # ---- state churn --------------------------------------------------------
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x300')"; sleep 2
