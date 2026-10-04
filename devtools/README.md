@@ -23,11 +23,12 @@ make -C devtools HL=/path/to/Hyprland
   max, the dialog/splash shape) to test placement of windows that refuse
   to resize.
 - `splashwin W H MARGIN [ID] [late] [parented] [resz] [vismargin]
-  [pinx] [parentonly] [pgeo]` maps the Discord-updater-splash shape: a
-  CSD toplevel whose committed buffer exceeds the declared geometry (a
-  shadow margin) with the frame pinned — plus the per-axis-pin,
-  resizable-CSD, and transient-parent variants the windows battery
-  drives against placement.
+  [pinx] [parentonly] [pgeo] [follow] [unmaxwhenmaxed]` maps the
+  Discord-updater-splash shape: a CSD toplevel whose committed buffer
+  exceeds the declared geometry (a shadow margin) with the frame pinned —
+  plus the per-axis-pin, resizable-CSD, transient-parent, configure-
+  following and client-unmaximize (the CSD titlebar restore button)
+  variants the windows battery drives against placement and maximize.
 - `focustrap <map|attention|activate> [delay-s] [hold-s]` is the X11
   fixture: it maps a toplevel, waits, sends one unauthenticated EWMH
   ping — `_NET_ACTIVE_WINDOW` (activate) or

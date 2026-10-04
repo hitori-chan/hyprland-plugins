@@ -3,7 +3,7 @@
 // CSD toplevel whose committed buffer is larger than the declared
 // window geometry (a shadow margin on all sides), min pinned to max
 // in the geometry frame.
-// usage: splashwin <w> <h> [margin] [app-id] [late] [parented] [resz] [vismargin] [pinx] [parentonly] [pgeo]
+// usage: splashwin <w> <h> [margin] [app-id] [late] [parented] [resz] [vismargin] [pinx] [parentonly] [pgeo] [follow] [unmaxwhenmaxed]
 //   w, h   content size = the declared window geometry, min == max (resz: min only)
 //   margin shadow inset: the buffer is (w + 2m) x (h + 2m)
 //   late     map first (buffer commit), THEN declare the size limits
@@ -17,7 +17,12 @@
 //            size (content = the configure, buffer = content + 2m) and
 //            recommit — the shape that exposes the box/content frame
 //            mismatch (the content-clip the CSD content-frame fix removes)
+//   unmaxwhenmaxed  once a configure tells it maximized, ask to unmaximize
+//            1.5 s later — the CSD titlebar restore button (Firefox's
+//            double-click) on a compositor/plugin-maximized window
 #include <fcntl.h>
+#include <poll.h>
+#include <time.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -38,7 +43,8 @@ static struct wl_surface   *g_psurf;
 static struct xdg_surface  *g_pxsd;
 static struct xdg_toplevel *g_ptop;
 static struct wl_buffer    *g_pbuf;
-static int                  g_w = 300, g_h = 350, g_m = 10, g_late, g_parented, g_resz, g_vis, g_pinx, g_parentonly, g_pgeo, g_follow, g_done;
+static int                  g_w = 300, g_h = 350, g_m = 10, g_late, g_parented, g_resz, g_vis, g_pinx, g_parentonly, g_pgeo, g_follow, g_unmaxwhenmaxed, g_done;
+static long long           g_unmaxAt; // monotonic ms; 0 = nothing scheduled
 static const char          *g_id = "splashwin";
 
 static void reg_bind(void *d, struct wl_registry *r, uint32_t id, const char *ifc, uint32_t ver) {
@@ -106,10 +112,24 @@ static void sendContent(void) {
     wl_surface_commit(g_surf);
 }
 
+static long long nowMs(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
 static void top_configure(void *d, struct xdg_toplevel *t, int32_t w, int32_t h, struct wl_array *s) {
     (void) d;
     (void) t;
-    (void) s;
+    if (g_unmaxwhenmaxed) {
+        const uint32_t *st;
+        wl_array_for_each(st, s) {
+            if (*st == XDG_TOPLEVEL_STATE_MAXIMIZED && !g_unmaxAt) {
+                g_unmaxAt        = nowMs() + 1500;
+                g_unmaxwhenmaxed = 0; // one restore per run
+            }
+        }
+    }
     if (!g_follow || w < 1 || h < 1)
         return; // 0x0 = "you decide": keep the own size
     if (w == g_w && h == g_h)
@@ -144,6 +164,7 @@ int main(int argc, char **argv) {
     g_parentonly = argc > 10 && !strcmp(argv[10], "parentonly");
     g_pgeo = argc > 11 && !strcmp(argv[11], "pgeo");
     g_follow = argc > 12 && !strcmp(argv[12], "follow");
+    g_unmaxwhenmaxed = argc > 13 && !strcmp(argv[13], "unmaxwhenmaxed");
 
     g_dpy = wl_display_connect(NULL);
     if (!g_dpy)
@@ -218,18 +239,41 @@ int main(int argc, char **argv) {
     }
 
 runloop:
-    while (!g_done)
-        if (wl_display_dispatch(g_dpy) < 0)
+    while (!g_done) {
+        // a scheduled unmaximize needs a timed wait; otherwise block
+        wl_display_flush(g_dpy);
+        struct pollfd pfd = {.fd = wl_display_get_fd(g_dpy), .events = POLLIN};
+        const int     TIMEOUT = g_unmaxAt ? (int)(g_unmaxAt > nowMs() ? g_unmaxAt - nowMs() : 0) : -1;
+        if (poll(&pfd, 1, TIMEOUT) > 0 && wl_display_dispatch(g_dpy) < 0)
             break;
+        if (g_unmaxAt && nowMs() >= g_unmaxAt) {
+            g_unmaxAt = 0;
+            if (g_top)
+                xdg_toplevel_unset_maximized(g_top);
+        }
+    }
 
-    xdg_toplevel_destroy(g_top);
-    wl_surface_destroy(g_surf);
+    // a real CSD client's teardown order (GTK, Firefox): the toplevel
+    // role, then the xdg_surface — whose destroy is what unmaps the window,
+    // with the toplevel already gone — then the wl_surface
+    if (g_top) { // parentonly maps no child
+        xdg_toplevel_destroy(g_top);
+        xdg_surface_destroy(g_xsd);
+        wl_surface_destroy(g_surf);
+        // deliver the teardown in this order while still connected, like an
+        // app that outlives its window: wl_display_disconnect does not
+        // flush, and a bare disconnect lets the compositor reap the objects
+        // in its own order (the toplevel then outlives the unmap and masks
+        // the close-order class this fixture exists to reproduce)
+        wl_display_roundtrip(g_dpy);
+    }
     // buffers already released by the compositor are gone; the last
     // attached one (if any) may still be referenced — the process exit
     // reclaims it, so destroy only if the release listener hasn't run.
     // (wl_buffer_destroy after release would double-free.)
     if (g_parented) {
         xdg_toplevel_destroy(g_ptop);
+        xdg_surface_destroy(g_pxsd);
         wl_surface_destroy(g_psurf);
         wl_buffer_destroy(g_pbuf);
     }
