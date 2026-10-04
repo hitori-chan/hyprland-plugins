@@ -13,6 +13,10 @@
 //   pinx     pin the width only (max = w x 0): the per-axis pin shape
 //   parentonly create only the parent toplevel (no child)
 //   pgeo     give the parent an explicit window geometry (0,0,PW,PH)
+//   follow   like a real CSD client: resize the content to the configured
+//            size (content = the configure, buffer = content + 2m) and
+//            recommit — the shape that exposes the box/content frame
+//            mismatch (the content-clip the CSD content-frame fix removes)
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,7 +38,7 @@ static struct wl_surface   *g_psurf;
 static struct xdg_surface  *g_pxsd;
 static struct xdg_toplevel *g_ptop;
 static struct wl_buffer    *g_pbuf;
-static int                  g_w = 300, g_h = 350, g_m = 10, g_late, g_parented, g_resz, g_vis, g_pinx, g_parentonly, g_pgeo, g_done;
+static int                  g_w = 300, g_h = 350, g_m = 10, g_late, g_parented, g_resz, g_vis, g_pinx, g_parentonly, g_pgeo, g_follow, g_done;
 static const char          *g_id = "splashwin";
 
 static void reg_bind(void *d, struct wl_registry *r, uint32_t id, const char *ifc, uint32_t ver) {
@@ -60,12 +64,58 @@ static void wm_ping(void *d, struct xdg_wm_base *b, uint32_t s) {
 }
 static const struct xdg_wm_base_listener wml = { .ping = wm_ping };
 
+static void buf_release(void *d, struct wl_buffer *b) {
+    (void) d;
+    wl_buffer_destroy(b); // the compositor is done with it: safe to destroy
+}
+static const struct wl_buffer_listener bufl = { .release = buf_release };
+
+// One buffer per paint; a committed buffer stays alive until its release
+// event (destroying it earlier is a protocol error — the compositor may
+// still be reading it). Buffer creation only: the caller decides when the
+// attach+commit happens. For the initial paint that MUST be after the
+// toplevel's min/max size requests, or the window maps without the
+// fixed-size hints and the layout tiles it (the splash float heuristic
+// reads the hints at map).
+static void makeContent(int W, int H) {
+    const int BW = W + 2 * g_m, BH = H + 2 * g_m;
+    const size_t N = (size_t)BW * BH * 4;
+    int          fd = memfd_create("splashwin", 0);
+    ftruncate(fd, N);
+    uint32_t   *px = mmap(NULL, N, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    for (int y = 0; y < BH; y++) {
+        for (int x = 0; x < BW; x++) {
+            const int IN = x >= g_m && x < g_m + W && y >= g_m && y < g_m + H;
+            px[y * BW + x] = IN ? 0xff302020 : (g_vis ? 0xffb0b0b0 : 0x00000000);
+        }
+    }
+    struct wl_shm_pool *pool = wl_shm_create_pool(g_shm, fd, N);
+    g_buf = wl_shm_pool_create_buffer(pool, 0, BW, BH, BW * 4, WL_SHM_FORMAT_ARGB8888);
+    // the release listener owns destruction once the compositor is done
+    wl_buffer_add_listener(g_buf, &bufl, NULL);
+    wl_shm_pool_destroy(pool);
+    g_w = W;
+    g_h = H;
+    // the fd lives with the process; the buffer is the process's
+    munmap(px, N);
+    close(fd);
+}
+
+static void sendContent(void) {
+    wl_surface_attach(g_surf, g_buf, 0, 0);
+    wl_surface_commit(g_surf);
+}
+
 static void top_configure(void *d, struct xdg_toplevel *t, int32_t w, int32_t h, struct wl_array *s) {
     (void) d;
     (void) t;
-    (void) w;
-    (void) h;
     (void) s;
+    if (!g_follow || w < 1 || h < 1)
+        return; // 0x0 = "you decide": keep the own size
+    if (w == g_w && h == g_h)
+        return; // already there: no commit storm
+    makeContent(w, h);
+    sendContent();
 }
 static void top_close(void *d, struct xdg_toplevel *t) {
     (void) d;
@@ -93,8 +143,7 @@ int main(int argc, char **argv) {
     g_pinx = argc > 9 && !strcmp(argv[9], "pinx");
     g_parentonly = argc > 10 && !strcmp(argv[10], "parentonly");
     g_pgeo = argc > 11 && !strcmp(argv[11], "pgeo");
-
-    const int BW = g_w + 2 * g_m, BH = g_h + 2 * g_m; // buffer = content + shadow margin
+    g_follow = argc > 12 && !strcmp(argv[12], "follow");
 
     g_dpy = wl_display_connect(NULL);
     if (!g_dpy)
@@ -148,19 +197,7 @@ int main(int argc, char **argv) {
     xdg_surface_set_window_geometry(g_xsd, g_m, g_m, g_w, g_h);
 
     // the fd lives with the process; one fixture window, no reuse
-    const size_t N  = (size_t)BW * BH * 4;
-    int          fd = memfd_create("splashwin", 0);
-    ftruncate(fd, N);
-    uint32_t   *px = mmap(NULL, N, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    for (int y = 0; y < BH; y++) {
-        for (int x = 0; x < BW; x++) {
-            const int IN = x >= g_m && x < g_m + g_w && y >= g_m && y < g_m + g_h;
-            px[y * BW + x] = IN ? 0xff302020 : (g_vis ? 0xffb0b0b0 : 0x00000000);
-        }
-    }
-    struct wl_shm_pool *pool = wl_shm_create_pool(g_shm, fd, N);
-    g_buf                    = wl_shm_pool_create_buffer(pool, 0, BW, BH, BW * 4, WL_SHM_FORMAT_ARGB8888);
-    wl_shm_pool_destroy(pool);
+    makeContent(g_w, g_h);
 
     if (!g_late) {
         xdg_toplevel_set_min_size(g_top, g_w, g_h);
@@ -170,15 +207,14 @@ int main(int argc, char **argv) {
             xdg_toplevel_set_max_size(g_top, g_w, g_h); // min == max: the splash shape
     }
 
-    wl_surface_attach(g_surf, g_buf, 0, 0);
-    wl_surface_commit(g_surf); // maps (late: without any size limits yet)
+    sendContent(); // maps (late: without any size limits yet)
 
     if (g_late) {
         // the race shape: the limits land only after the first map commit
         wl_display_roundtrip(g_dpy);
         xdg_toplevel_set_min_size(g_top, g_w, g_h);
         xdg_toplevel_set_max_size(g_top, g_w, g_h);
-        wl_surface_commit(g_surf);
+        sendContent();
     }
 
 runloop:
@@ -188,7 +224,10 @@ runloop:
 
     xdg_toplevel_destroy(g_top);
     wl_surface_destroy(g_surf);
-    wl_buffer_destroy(g_buf);
+    // buffers already released by the compositor are gone; the last
+    // attached one (if any) may still be referenced — the process exit
+    // reclaims it, so destroy only if the release listener hasn't run.
+    // (wl_buffer_destroy after release would double-free.)
     if (g_parented) {
         xdg_toplevel_destroy(g_ptop);
         wl_surface_destroy(g_psurf);
@@ -199,7 +238,5 @@ runloop:
     wl_compositor_destroy(g_comp);
     wl_registry_destroy(reg);
     wl_display_disconnect(g_dpy);
-    munmap(px, N);
-    close(fd);
     return 0;
 }
