@@ -131,6 +131,19 @@ namespace NAwesome::Windows {
             W->sendWindowSize(true);
         }
 
+        // The pointer follows the geometry, like the compositor's own
+        // maximize/fullscreen dispatchers: a window that grows under a
+        // still cursor (an adopted born-maximized window, a restore) never
+        // got the pointer — and a press on the already-focused window does
+        // not refocus it, so the first click went nowhere (2026-10-04: a
+        // reopened maximized firefox ignored the titlebar double-click).
+        // Called once per drain, from the event loop, never from an input
+        // emission.
+        inline void pointerFollowsGeometry() {
+            if (g_pInputManager && !sessionLocked())
+                g_pInputManager->simulateMouseMovement();
+        }
+
         inline std::vector<PHLWINDOWREF>& adoptQueue() {
             static std::vector<PHLWINDOWREF> Q;
             return Q;
@@ -156,7 +169,8 @@ namespace NAwesome::Windows {
         // layout reflow does not resize it when a workspace changes monitor
         // or a reserved area changes. Coalesce those events and apply the
         // current workarea after the compositor finishes its own movement.
-        inline void reflowMaximized() {
+        inline bool reflowMaximized() {
+            bool moved = false;
             for (const auto& ENTRY : maximized()) {
                 const auto W = ENTRY.first.lock();
                 if (!W || !W->mapped() || !W->isFloating() || !W->windowTarget())
@@ -172,7 +186,9 @@ namespace NAwesome::Windows {
                     continue;
                 g_layoutManager->setTargetGeom(WA, W->windowTarget());
                 W->windowTarget()->warpPositionSize();
+                moved = true;
             }
+            return moved;
         }
 
         inline void queueReflow() {
@@ -181,7 +197,8 @@ namespace NAwesome::Windows {
             reflowQueued() = true;
             pendingReflow().arm([]() {
                 reflowQueued() = false;
-                reflowMaximized();
+                if (reflowMaximized())
+                    pointerFollowsGeometry();
             });
         }
 
@@ -199,6 +216,7 @@ namespace NAwesome::Windows {
                 adoptQueue().clear();
                 for (const auto& WR : Q)
                     adoptCompositorMax(WR.lock());
+                pointerFollowsGeometry();
             });
         }
 
@@ -433,6 +451,7 @@ namespace NAwesome::Windows {
                     return;
                 }
                 if (w->isFloating() && Fullscreen::controller()->getFullscreenModes(w).internal == Fullscreen::FSMODE_MAXIMIZED)
+                pointerFollowsGeometry();
                     queueAdopt(w);
                 queueReflow();
             });
