@@ -314,6 +314,11 @@ namespace NAwesome::Shell {
                 h = M->logicalBox().h; // cascades anchor anywhere below the bar — cover it all, an undersized box clips
             return CBox{0, 0, M->logicalBox().w, h};
         }
+        // the open menubar is awesome's ontop wibox: it paints over a
+        // fullscreen client (barHidden() keeps the rest of the strip off)
+        bool overFullscreen(PHLMONITOR mon) const override {
+            return Menubar::isOpen && Menubar::mon.lock() == mon;
+        }
         bool needsBlur(PHLMONITOR mon) const override {
             // only while the band actually paints — never claim a live blur of
             // a strip that is hidden under a fullscreen window (blur for nothing)

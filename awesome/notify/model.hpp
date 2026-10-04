@@ -350,7 +350,6 @@ namespace NAwesome::Notify {
     void queueCenterToggle();
     void centerExit();
 
-    void onRenderPreChecks(PHLMONITOR mon);
     void surfaceInit(); // the age/motion tick timers
     void surfaceExit();
 

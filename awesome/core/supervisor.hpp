@@ -126,6 +126,7 @@ namespace NAwesome {
 
             auto& EV = Event::bus()->m_events;
             m_listenRenderStage = EV.render.stage.listen([](const Event::SRenderStageEvent& ev) { Canvas::inst().onRenderStage(ev); });
+            m_listenSolitary    = EV.monitor.blockSolitary.listen([](PHLMONITOR mon, bool& block) { Canvas::inst().onBlockSolitary(mon, block); });
             m_listenButton      = EV.input.mouse.button.listen([](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { Supervisor::inst().dispatchButton(e, info); });
             m_listenMove        = EV.input.mouse.move.listen([](Vector2D pos, Event::SCallbackInfo& info) { Supervisor::inst().dispatchMove(pos, info); });
             m_listenAxis        = EV.input.mouse.axis.listen([](IPointer::SAxisEvent e, Event::SCallbackInfo& info) { Supervisor::inst().dispatchAxis(e, info); });
@@ -136,6 +137,7 @@ namespace NAwesome {
         // priority.
         void stop() {
             m_listenRenderStage.reset();
+            m_listenSolitary.reset();
             m_listenButton.reset();
             m_listenMove.reset();
             m_listenAxis.reset();
@@ -233,6 +235,7 @@ namespace NAwesome {
         std::vector<IModule*>                         m_modules;
         std::vector<Hyprutils::Signal::CHyprSignalListener> m_listeners;
         Hyprutils::Signal::CHyprSignalListener m_listenRenderStage;
+        Hyprutils::Signal::CHyprSignalListener m_listenSolitary;
         Hyprutils::Signal::CHyprSignalListener m_listenButton;
         Hyprutils::Signal::CHyprSignalListener m_listenMove;
         Hyprutils::Signal::CHyprSignalListener m_listenAxis;

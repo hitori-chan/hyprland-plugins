@@ -167,12 +167,12 @@ namespace NAwesome::Notify {
             // A card arriving over a solitary/scanned-out fullscreen window
             // (mpv under direct_scanout): the monitor presents the client's
             // buffer directly, so the per-card damageBox may not schedule a
-            // compositor frame at all — and onRenderPreChecks, which drops the
-            // scanout/solitary latch, only runs from renderMonitor. Force a
-            // whole-monitor frame so renderMonitor runs and the card
-            // composites. Full-monitor (not the card box) so it can't be
-            // occlusion-culled behind the fullscreen surface; a no-op cost when
-            // the monitor isn't latched.
+            // compositor frame at all — and the solitary recheck (where
+            // CSurface::overFullscreen blocks scanout) runs per frame. Force a
+            // whole-monitor frame so the recheck runs and the card composites.
+            // Full-monitor (not the card box) so it can't be occlusion-culled
+            // behind the fullscreen surface; a no-op cost when the monitor
+            // isn't latched.
             if (const auto MON = focusedMon(); MON && g_pHyprRenderer && (MON->m_directScanoutIsActive || !MON->m_solitaryClient.expired()))
                 if (anythingToDraw())
                     g_pHyprRenderer->damageMonitor(MON);
@@ -233,35 +233,17 @@ namespace NAwesome::Notify {
             // the glass samples what's beneath, live — only while it paints
             return blurOn() && anythingToDraw() && mon && mon == cardsMon.lock();
         }
-    };
 
-    // A solitary fullscreen client (mpv) makes the compositor skip the whole
-    // workspace render for its monitor — direct scanout, or a solitary-only
-    // renderWindow — so RENDER_POST_WINDOWS never fires and the card is
-    // invisible. Notifications are ontop, so while a VISIBLE card (or the
-    // open center) is up we drop the monitor's solitary latch here, at
-    // preChecks (which fires per monitor BEFORE the scanout decision): the
-    // normal render path then runs and composites the card over the
-    // fullscreen window. Self-healing — once the last card clears, the
-    // compositor re-latches solitary and scanout re-engages.
-    void onRenderPreChecks(PHLMONITOR mon) {
-        // the cheap gate first: this runs per monitor per frame, and a
-        // resident-only model (nothing drawn) must NOT inhibit scanout —
-        // two quiet shade cards would composite fullscreen video forever
-        if (!anythingToDraw())
-            return;
-        if (!mon || mon != cardsMon.lock())
-            return;
-        if (NAwesome::sessionLocked())
-            return; // never force a card to float over the lockscreen
-        mon->m_solitaryClient.reset(); // open the solitary gate -> renderWorkspace -> RENDER_POST_WINDOWS
-        // resetting solitary alone would SEGV on the transition frame:
-        // canAttemptDirectScanoutFast() stays true off m_lastScanout and
-        // attemptDirectScanout() then derefs the now-null candidate. Leaving any
-        // active scanout clears that latch so the scanout branch is skipped.
-        if (!mon->m_lastScanout.expired() || mon->m_directScanoutIsActive)
-            mon->handleDSleave();
-    }
+        // Notifications are on top: a VISIBLE card (or the open center)
+        // composites over fullscreen video. A resident-only model (nothing
+        // drawn) must not block scanout — two quiet shade cards would
+        // composite fullscreen video forever — and a card never floats over
+        // the lockscreen. The compositor drops scanout at the next frame
+        // and re-engages it once the last card clears.
+        bool overFullscreen(PHLMONITOR mon) const override {
+            return anythingToDraw() && mon && mon == cardsMon.lock() && !NAwesome::sessionLocked();
+        }
+    };
 
     void surfaceInit() {
         ageTick = makeShared<CEventLoopTimer>(
@@ -283,7 +265,6 @@ namespace NAwesome::Notify {
         g_pEventLoopManager->addTimer(motionTick);
 
         NAwesome::Canvas::inst().addLayer(&CSurface::inst());
-        supervisor().listen(Event::bus()->m_events.render.preChecks, [](PHLMONITOR mon) { onRenderPreChecks(mon); });
     }
 
     void surfaceExit() {

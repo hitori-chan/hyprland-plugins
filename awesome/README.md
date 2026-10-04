@@ -352,9 +352,10 @@ semantics).
   rows, a later explicit close re-pops them); pointer hover is a no-op.
 - Over fullscreen: banners show over a real fullscreen window too — the
   ecosystem default, no quiet-while-fullscreen policy. While a card is
-  up over a solitary fullscreen window, the monitor's scanout/solitary
-  latch is dropped so the card composites over it; it self-heals once
-  the last card clears.
+  up over a fullscreen window, the plugin blocks the monitor's solitary
+  render and direct scanout through the compositor's
+  `monitor.blockSolitary` hook, so the card composites over it; scanout
+  re-engages once the last card clears. The open menubar does the same.
 - Critical: urgent-colored frame and progress fill, never expires.
 - Sound: `sound-file`/`sound-name` play through a player
   (`sound_command`, empty disables); `suppress-sound` mutes one

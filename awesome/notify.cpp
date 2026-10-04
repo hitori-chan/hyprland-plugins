@@ -79,7 +79,7 @@ namespace NAwesome::Notify {
     void CModule::init() {
         Model::init(); // the expiry timer stands before anything can arrive
         Bus::init();
-        surfaceInit(); // the tick timers, the canvas layer, the preChecks latch
+        surfaceInit(); // the tick timers, the canvas layer
         iconsInit(); // the async decode poll and the .desktop index scan start now
 
         auto& EV = Event::bus()->m_events;

@@ -344,6 +344,15 @@ namespace NAwesome {
         virtual bool needsBlur(PHLMONITOR mon) const {
             return false;
         }
+        // Must paint over a fullscreen client on this monitor right now: a
+        // solitary/direct-scanout fullscreen client skips the scene render
+        // (no RENDER_POST_WINDOWS), so the canvas blocks solitary while any
+        // layer says so (monitor.blockSolitary). False by default — a
+        // layer that claims this needlessly costs fullscreen video its
+        // scanout.
+        virtual bool overFullscreen(PHLMONITOR mon) const {
+            return false;
+        }
     };
 
     // ---- the canvas: layer table, warm, the one pass ----
@@ -390,6 +399,16 @@ namespace NAwesome {
             if (ev.stage != RENDER_POST_WINDOWS || !ev.monitor || !ev.context)
                 return;
             Render::IHyprRenderer::addPassElement(ev.context->get(), makeUnique<CAwesomePassElement>(ev.monitor));
+        }
+
+        void onBlockSolitary(PHLMONITOR mon, bool& block) const {
+            if (block || !mon)
+                return;
+            for (auto* L : m_layers)
+                if (L->overFullscreen(mon)) {
+                    block = true;
+                    return;
+                }
         }
 
         bool anyLayerVisible(PHLMONITOR mon) const {
