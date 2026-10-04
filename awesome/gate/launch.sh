@@ -54,13 +54,27 @@ if [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
 	exit 1
 fi
 
-hlq() { hyprctl "$@"; }   # live session (inherits the live instance sig)
+# The LIVE instance = the instance dir holding a live control socket.
+# Never trust the caller's HYPRLAND_INSTANCE_SIGNATURE: after a live relog it
+# points at the dead session and every default-socket hyprctl fails (rc=4)
+# while the dead dir can even sort as "newest" (2026-10-04: launch broke for
+# a day after the user relogged).
+LIVE_SIG=""
+for s in "$RUNDIR"/*/; do
+	[[ -S "$s/.socket.sock" ]] && { LIVE_SIG="$(basename "$s")"; break; }
+done
+if [[ -z "$LIVE_SIG" ]]; then
+	echo "launch: no live instance socket in $RUNDIR — not in a Wayland session?" >&2
+	exit 1
+fi
+export HYPRLAND_INSTANCE_SIGNATURE="$LIVE_SIG"
+hlq() { hyprctl -i "$LIVE_SIG" "$@"; }
 
 # --- kill a prior nested instance from this config (never the live one) ---
 KILLED=""
 for s in "$RUNDIR"/*/; do
 	sig="$(basename "$s")"
-	[[ "$sig" == "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && continue
+	[[ "$sig" == "$LIVE_SIG" ]] && continue
 	pid="$(head -1 "$s/hyprland.lock" 2>/dev/null)"
 	[[ -n "$pid" ]] || continue
 	if grep -qa -- "$CFG" "/proc/$pid/cmdline" 2>/dev/null; then
