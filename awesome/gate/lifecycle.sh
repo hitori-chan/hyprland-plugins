@@ -99,7 +99,7 @@ chk "reload: and back on tag 1" test "$(ws)" = 1
 
 # ---- log hygiene ----------------------------------------------------------
 chk "log clean (only known-benign lines)" bash -c \
-	"! grep -iE 'error|assert|segv|abort' '$LOG' | grep -vE 'Creating the Error Overlay|xkbcomp' | grep -q ."
+	"! grep -iE 'error|assert|segv|abort' '$(nested_log)' | grep -vE 'Creating the Error Overlay|xkbcomp' | grep -q ."
 
 # ---- teardown -------------------------------------------------------------
 # A mapped plugin cannot retain callbacks into its code after unload, but an

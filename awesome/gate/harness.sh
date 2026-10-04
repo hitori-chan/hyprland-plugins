@@ -7,62 +7,47 @@ chk() { # chk <name> <command...> — command's exit code decides
 	if "$@" >/dev/null 2>&1; then ok "$name"; else bad "$name"; fi
 }
 
-# --- live session access ----------------------------------------------------
-# The LIVE instance = the instance dir holding a live control socket. Never
-# trust the caller's HYPRLAND_INSTANCE_SIGNATURE: after a live relog it
-# points at the dead session and every default-socket hyprctl fails (rc=4)
-# (2026-10-04: launch broke for a day after the user relogged). Every LIVE
-# operation in the harness goes through hlq with the resolved sig.
-LIVE_SIG=""
-if [[ -n "${RUNDIR:-}" ]]; then
-	for _s in "$RUNDIR"/*/; do
-		[[ -S "$_s/.socket.sock" ]] && { LIVE_SIG="$(basename "$_s")"; break; }
-	done
-	unset _s
-fi
-export HYPRLAND_INSTANCE_SIGNATURE="${LIVE_SIG:-${HYPRLAND_INSTANCE_SIGNATURE:-}}"
-hlq() { [[ -n "$LIVE_SIG" ]] && hyprctl -i "$LIVE_SIG" "$@"; }
+# --- the live session: read-only --------------------------------------------
+# The nested runs inside a private host (host.sh): the harness sends the
+# live session NOTHING — no output, workspace, window, dispatch, focus or
+# cursor (user rule, absolute: tests never touch the live desktop). It
+# reads it twice, for the isolation check below.
+HARNESS_DIR="$HARNESS"
+# shellcheck source=live.sh
+. "$GATE_DIR/live.sh" # LIVE_SIG/LIVE_PID, live_read, is_nested_pid, nested_log, sweep_nested_dirs
+# shellcheck source=host.sh
+. "$GATE_DIR/host.sh" # host_*, sysbus_*, aq_pinned_libdir
 
-# --- live session canary ----------------------------------------------------
-# User rule (2026-10-02, absolute): tests/gates never affect the live
-# workspace and never take the user's mouse or focus. The harness samples
-# the LIVE focused monitor at 10Hz for the whole run and fails the gate if
-# it ever lands on the gate's off-screen output (nested-dev) — a state only
-# the gate itself can produce (the user cannot focus an off-screen monitor).
-# This is the regression net for the parking focus dance, which focused
-# nested-dev on every launch/warmup/stop and stole the user's keyboard
-# focus (the dance is gone from launch.sh/harness.sh; this proves it).
-# The cursor position is NOT sampled: the user moves the mouse during a
-# run (false positives), and the mouse yank lived in the focus dance, which
-# the focused-monitor watch above does catch.
-CANARY_PID="" CANARY_FILE=""
-live_canary_start() {
-	[[ -n "$CANARY_PID" ]] && return
-	CANARY_FILE="$HARNESS/live-canary.log" # $HARNESS: $STATE is wiped by cleanup
-	: >"$CANARY_FILE"
-	# The loop dies with the shell that started it: only cleanup_harness
-	# stops it otherwise, and ad-hoc probe scripts that sourced the harness
-	# without that trap orphaned their samplers onto the live session
-	# (2026-10-04: 14 leaked loops polling the live compositor for hours).
-	local owner=$BASHPID
-	( while kill -0 "$owner" 2>/dev/null; do
-			mon="$(hlq monitors -j 2>/dev/null | python3 -c "import json,sys;print(next((m['name'] for m in json.load(sys.stdin) if m.get('focused')), ''))" 2>/dev/null)"
-			[[ "$mon" == "nested-dev" ]] && printf '%s\n' "$(date +%H:%M:%S)" >>"$CANARY_FILE"
-			sleep 0.1
-		done ) &
-	CANARY_PID=$!
+# The isolation check: the structural half runs at every launch (the
+# nested's parent display is the private host's socket, never the live
+# one — refuse to continue otherwise); the observed half compares the live
+# session's outputs and nested-class windows before and after the run.
+LIVE_MONITORS_AT_START=""
+isolation_start() {
+	[[ -n "$LIVE_MONITORS_AT_START" ]] && return
+	LIVE_MONITORS_AT_START="$(live_read monitors all -j 2>/dev/null | python3 -c 'import json,sys;print(" ".join(sorted(m["name"] for m in json.load(sys.stdin))))' 2>/dev/null)"
 }
-live_canary_stop() {
-	[[ -n "$CANARY_PID" ]] || return 0
-	kill "$CANARY_PID" 2>/dev/null
-	wait "$CANARY_PID" 2>/dev/null
-	CANARY_PID=""
-	if [[ -s "$CANARY_FILE" ]]; then
-		bad "live canary: the live focus sat on the gate's nested-dev output $(wc -l <"$CANARY_FILE") sample(s) during the run — the gate must never take live focus ($CANARY_FILE)"
+isolation_verify_nested() { # <pid>: its parent display must be the private host
+	local pid=$1 parent host
+	host="$(cat "$HOST_DIR/wl" 2>/dev/null)"
+	parent="$(tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | sed -n 's/^WAYLAND_DISPLAY=//p')"
+	if [[ -z "$host" || "$parent" != "$host" || "$parent" == "${WAYLAND_DISPLAY:-wayland-1}" ]]; then
+		bad "isolation: nested $pid's parent display is '$parent', not the private host '$host' — refusing to run against the live session"
 		return 1
 	fi
-	ok "live canary: live focus never touched the gate's output"
-	return 0
+}
+isolation_check() {
+	[[ -n "$LIVE_SIG" ]] || { ok "isolation: no live session to compare (not run inside one)"; return 0; }
+	local now leaked
+	now="$(live_read monitors all -j 2>/dev/null | python3 -c 'import json,sys;print(" ".join(sorted(m["name"] for m in json.load(sys.stdin))))' 2>/dev/null)"
+	leaked="$(live_read clients -j 2>/dev/null | python3 -c 'import json,sys;print(" ".join(c["class"] for c in json.load(sys.stdin) if c["class"] in ("aquamarine","labwc")))' 2>/dev/null)"
+	if [[ -n "$LIVE_MONITORS_AT_START" && "$now" != "$LIVE_MONITORS_AT_START" ]]; then
+		bad "isolation: the live outputs changed during the run ($LIVE_MONITORS_AT_START -> $now)"
+	elif [[ -n "$leaked" ]]; then
+		bad "isolation: nested windows appeared in the live session ($leaked)"
+	else
+		ok "isolation: the live session was untouched (outputs: ${now:-?})"
+	fi
 }
 
 normalize_target_pkgconfig() {
@@ -134,7 +119,7 @@ validated_nested_pid() {
 hq() {
 	validated_nested_pid >/dev/null || return 1
 	# bounded: a nested whose S1 handler blocks (e.g. a commit waiting on a
-	# frame callback that never lands — the off-screen frame-cycle class)
+	# frame callback that never lands — a starved frame cycle)
 	# must fail the checks, not hang the whole gate for minutes (2026-10-02:
 	# an unbounded 'dsp ... & wait' close storm sat 8 min on this)
 	timeout 10 hyprctl -i "$SIG" "$@"
@@ -160,11 +145,11 @@ retarget() {
 	local n
 	for n in 1 2 3; do
 		retarget_env || { echo "retarget: nested state is unavailable" >&2; return 1; }
-		# Every launch/relaunch passes through here: warm the parked window's
-		# frame cycle before any battery takes a nested-side measurement.
+		# Every launch/relaunch passes through here: warm the nested's frame
+		# cycle before any battery takes a nested-side measurement.
 		launch_warmup && return 0
-		# The render cycle is dead and no focus kick revived it: relaunch the
-		# nested instance (a fresh parking dance is a fresh draw) and retry.
+		# The render cycle is dead: relaunch the nested instance (a fresh
+		# host window is a fresh draw) and retry.
 		echo "harness: nested render cycle dead; relaunching nested (attempt $n/3)" >&2
 		[[ $n == 3 ]] && return 1
 		kill_nested
@@ -214,16 +199,11 @@ print(int(m['width']/m['scale']), int(m['height']/m['scale']))" 2>/dev/null)" &&
 	return 0
 }
 
-# Render-cycle warmup: the parked window renders on the UNFOCUSED off-screen
-# VM like any window there — damage on its surface schedules frames on the
-# overlapping output (IHyprRenderer::damageSurface), and capture_nested's
-# own vptr jitter (a motion INSIDE the nested, not the live session) pushes
-# a frame on demand. A cold start can still lose the nested's first frame
-# callback while it initializes; retrying the capture (which jitters) lets
-# the cycle self-heal. NO live focus dispatches here: the old parking dance
-# (focus the VM, hand focus back) stole the user's keyboard focus and yanked
-# the mouse state on every launch/warmup (user rule 2026-10-02: the gate
-# never takes the live mouse or focus).
+# Render-cycle warmup: the nested's host window renders on damage like any
+# window, and capture_nested's own vptr jitter (a motion inside the nested)
+# pushes a frame on demand. A cold start can still lose the nested's first
+# frame callback while it initializes; retrying the capture (which jitters)
+# lets the cycle self-heal.
 launch_warmup() {
 	local n
 	for n in 1 2 3 4 5; do
@@ -233,7 +213,7 @@ launch_warmup() {
 	echo "harness: nested render cycle never warmed (captures starve); aborting" >&2
 	# Post-mortem: is the nested alive, and what did it last log? A live
 	# process with a silent log is a stalled frame cycle; a dead process
-	# means the window died mid-park. (This used to be the only evidence left
+	# means the instance died at boot. (This used to be the only evidence left
 	# to a failed gate run.)
 	if [[ -n "${SIG:-}" ]]; then
 		local npid
@@ -243,7 +223,7 @@ launch_warmup() {
 		else
 			echo "harness: nested process is GONE; nested log tail:" >&2
 		fi
-		grep -ivE "xkbcomp|Warning:|^>|DEBUG" "$HARNESS/nested.log" 2>/dev/null | tail -8 >&2
+		grep -ivE "xkbcomp|Warning:|^>|DEBUG" "$(nested_log)" "$HARNESS/nested.stdout" 2>/dev/null | tail -8 >&2
 	fi
 	return 1
 }
@@ -251,7 +231,7 @@ vp() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" "$MON_W" "$MON_H" >/dev/null 
 vk() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vkbd" >/dev/null 2>&1; } # keys need no extent
 capture_nested() { # capture_nested <output>: tolerate a transient screencopy denial
 	local out=$1
-	# The parked compositor renders on damage: start grim, then jitter the
+	# The nested renders on damage: start grim, then jitter the
 	# virtual pointer so a frame is produced while the screencopy waits. An
 	# idle nested session can otherwise starve the capture to a timeout.
 	# The jitter MUST be a real delta: a fresh nested parks its pointer at
@@ -374,21 +354,16 @@ kill_nested() { # kill any non-live instance running one of the harness cfgs
 	# aquamarine windows until a third nested joined and the live session
 	# died with it). The live instance never carries a harness cfg, so the
 	# match is live-safe without the signature compare.
+	# Same rule as stop.sh: any nested-style launch (-c, no --watchdog-fd,
+	# never the live PID) is a harness orphan, even when its cfg is not the
+	# current one (2026-10-02: a /tmp debug-cfg orphan outlived every stop;
+	# its window re-mapped onto the live panel and stole the focus).
 	for pid in $(pgrep -x Hyprland 2>/dev/null); do
-		grep -Fzxq -- "$CFG" "/proc/$pid/cmdline" 2>/dev/null && { kill "$pid" 2>/dev/null; killed="$killed $pid"; continue; }
-		# Same rule as stop.sh: any nested-style launch (-c, no live
-		# --watchdog-fd) is a harness orphan, even when its cfg is not the
-		# current one (2026-10-02: a /tmp debug-cfg orphan outlived every
-		# stop; its window re-mapped onto eDP-1 and stole the live focus).
-		if grep -Fzxq -- "-c" "/proc/$pid/cmdline" 2>/dev/null \
-			&& ! grep -Fzxq -- "--watchdog-fd" "/proc/$pid/cmdline" 2>/dev/null; then
-			kill "$pid" 2>/dev/null; killed="$killed $pid"
-		fi
+		is_nested_pid "$pid" && { kill "$pid" 2>/dev/null; killed="$killed $pid"; }
 	done
-	# Host-side client teardown outlives process death: a still-alive nested
-	# during a live 'output remove' is the race that leaves the monitor half
-	# torn down (zombie in the all-monitors list). Wait for full death, with
-	# a SIGKILL fallback, before the caller proceeds.
+	# Wait for full death, with a SIGKILL fallback, before the caller
+	# relaunches: a dying nested still holding its host window races the
+	# next one's boot.
 	local k
 	for k in $killed; do
 		local _ sigkilled=0
@@ -407,6 +382,7 @@ kill_nested() { # kill any non-live instance running one of the harness cfgs
 		fi
 		nested_exit_check "$k" "$sigkilled"
 	done
+	sweep_nested_dirs # their runtime dirs, keeping the last log
 	sleep 0.6
 }
 
@@ -456,52 +432,6 @@ sys.exit(0 if any(e.get("pid") == int(sys.argv[1]) for e in entries) else 1)' "$
 	esac
 }
 
-nested_dev_state() { # echo none | active | zombie (see remove_nested_dev)
-	local all active
-	all="$(hlq monitors all -j 2>/dev/null | python3 -c 'import json,sys;print(any(m["name"]=="nested-dev" for m in json.load(sys.stdin)))' 2>/dev/null)"
-	active="$(hlq monitors -j 2>/dev/null | python3 -c 'import json,sys;print(any(m["name"]=="nested-dev" for m in json.load(sys.stdin)))' 2>/dev/null)"
-	if [[ "$all" == True && "$active" == True ]]; then
-		echo active
-	elif [[ "$all" == True ]]; then
-		echo zombie
-	else
-		echo none
-	fi
-}
-
-nested_dev_occupants() { # classes of live windows mapped on nested-dev
-	local mindex
-	mindex="$(hlq monitors -j 2>/dev/null | python3 -c 'import json,sys;print(next((i for i,m in enumerate(json.load(sys.stdin),1) if m["name"]=="nested-dev"),0))' 2>/dev/null)"
-	[[ "${mindex:-0}" != "0" ]] || return 0
-	hlq clients -j 2>/dev/null | python3 -c "
-import json, sys
-print(' '.join(c['class'] for c in json.load(sys.stdin) if c.get('monitor') == $mindex))" 2>/dev/null
-}
-
-remove_nested_dev() { # remove + verify the monitor is fully gone; 0 clean, 1 leak
-	local attempt state occ
-	# never remove an output that still hosts live windows: nested-dev is the
-	# gate's headless parking output, and anything parked there at sweep time
-	# is the user's (a re-logged browser), not the gate's — the gate's own
-	# nested window dies with its instance
-	occ="$(nested_dev_occupants)"
-	if [[ -n "$occ" ]]; then
-		echo "harness: nested-dev has windows parked on it ($occ); refusing to remove" >&2
-		return 1
-	fi
-	for attempt in 1 2; do
-		hlq output remove nested-dev >/dev/null 2>&1
-		for _ in $(seq 1 20); do
-			state="$(nested_dev_state)"
-			[[ "$state" == none ]] && return 0
-			sleep 0.25
-		done
-	done
-	return 1
-}
-
-
-
 # Launch readiness: the panel column must be clear before the first
 # measurement, or a short first run at y26 reads as a 13px panel. The fork's
 # 15s no-watchdog toast used to span exactly this column and poisoned every
@@ -528,62 +458,34 @@ PY
 }
 
 launch_nested() {
-	# A failed run's orphaned nested (boot slower than the signature wait)
-	# has no registerable state; sweep by cfg before spawning another, or
-	# two harness nested coexist — their extra divergent nested-dev outputs
-	# are the live-session kill recipe (2026-10-01).
-	live_canary_start
+	isolation_start
 	kill_nested
-	if [[ -z "$HARNESS_OUTPUT_OWNED" ]]; then
-		HARNESS_OUTPUT_OWNED=0
-		case "$(nested_dev_state)" in
-			none)
-				HARNESS_OUTPUT_OWNED=1
-				: > "$HARNESS/nested.output-owned"
-				;;
-			zombie)
-				# A prior crashed/leaked run left it in the all-monitors list
-				# only; clean it before claiming, or refuse to launch on top.
-				if remove_nested_dev; then
-					HARNESS_OUTPUT_OWNED=1
-					: > "$HARNESS/nested.output-owned"
-				else
-					echo "harness: WARNING: leaked 'nested-dev' monitor could not be removed; move/close its windows, then run 'hyprctl output remove nested-dev' (or relog)" >&2
-					return 1
-				fi
-				;;
-			active)
-				# present and alive: only claim it when the marker says this
-				# harness family created it, otherwise another nested owns it
-				if [[ -e "$HARNESS/nested.output-owned" ]]; then
-					HARNESS_OUTPUT_OWNED=1
-				fi
-				;;
-		esac
-	fi
 	# One spawn path for the initial launch AND the FALLBACK relaunches below:
-	# the env must travel with the relaunch too, or it falls back to its
-	# defaults (the gate's nested.lua + /usr/local/bin/Hyprland) and the
-	# retarget guard refuses it.
+	# the env travels with every relaunch (the fake wpctl/sound PATH, the
+	# AW_* hang/flood files, the scratch XDG dirs, the fake backlight).
 	_harness_launch() {
 		PATH="$REPO/devtools/fakes:$PATH" AW_WPCTL_LOG="$STATE/wpctl.log" \
 			AW_WPCTL_HANG_FILE="$STATE/hang-wpctl" AW_WPCTL_FLOOD_FILE="$STATE/flood-wpctl" AW_SOUND_HANG_FILE="$STATE/hang-sound" \
-			HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" XDG_CACHE_HOME="$STATE/cache" \
+			AW_BACKLIGHT_DIR="$STATE/backlight" AW_LOGIND_LOG="$STATE/logind.log" \
+			HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" XDG_CACHE_HOME="$STATE/cache" XDG_CONFIG_HOME="$STATE/config" \
 			bash "$GATE_DIR/launch.sh" >>"$HARNESS/launch.log" 2>&1
 	}
-	# The launch diagnostics used to be swallowed here; a failed park or a
-	# dead nested is only readable from that log.
-	_harness_launch || {
+	_harness_verify() {
+		local sig pid
+		sig="$(cat "$HARNESS/nested.sig" 2>/dev/null)"
+		pid="$(head -n 1 "$RUNDIR/$sig/hyprland.lock" 2>/dev/null)"
+		[[ "$pid" =~ ^[0-9]+$ ]] || { echo "harness: no nested pid for $sig" >&2; return 1; }
+		isolation_verify_nested "$pid"
+	}
+	_harness_launch && _harness_verify || {
 		echo "harness: nested launch failed — launch log tail:" >&2
 		tail -25 "$HARNESS/launch.log" 2>/dev/null >&2
 		return 1
 	}
 	# The nested compositor enters fallback (a headless "FALLBACK" output,
-	# no window) 2s after its ready event when its aquamarine window output
-	# never appeared. A window lost in that window renders into the void:
-	# every nested capture starves and all batteries fail. A late window
-	# output can still arrive and lift the fallback, so give it a moment
-	# before relaunching (launch.sh kills the prior same-config nested).
+	# no window) 2s after its ready event when its host window output never
+	# appeared; every capture would starve. A late window output can still
+	# lift the fallback, so give it a moment before relaunching.
 	local sig n
 	sig="$(cat "$HARNESS/nested.sig" 2>/dev/null)"
 	[[ -n "$sig" ]] || return 1
@@ -592,9 +494,9 @@ launch_nested() {
 			hyprctl -i "$sig" monitors -j 2>/dev/null | python3 -c 'import json,sys;ms=json.load(sys.stdin);sys.exit(0 if any(m["name"]!="FALLBACK" for m in ms) else 1)' && return 0
 			sleep 1
 		done
-		echo "harness: nested stuck in FALLBACK (window lost?); relaunching (attempt $n/3)" >&2
+		echo "harness: nested stuck in FALLBACK (host window lost?); relaunching (attempt $n/3)" >&2
 		[[ $n == 3 ]] && return 1
-		_harness_launch || return 1
+		_harness_launch && _harness_verify || return 1
 		sig="$(cat "$HARNESS/nested.sig" 2>/dev/null)"
 		sleep 2
 	done
@@ -636,18 +538,9 @@ cleanup_harness_core() {
 		done
 		rm -rf -- "$STATE" "$CFG"
 	fi
-	if [[ "${HARNESS_OUTPUT_OWNED:-0}" == 1 ]]; then
-		rm -f -- "$HARNESS/nested.output-owned"
-		remove_nested_dev
-		# A mid-teardown read can say "none" while the output is still dying
-		# and then reappear; one delayed re-verify + retry (2026-10-04: the
-		# gate's own remove verified gone, nested-dev reappeared ~30s later)
-		sleep 1
-		if [[ "$(nested_dev_state)" != "none" ]] && ! remove_nested_dev; then
-			echo "harness: WARNING: 'nested-dev' monitor survived output removal (zombie); live by-id workspace lookups may misroute — run 'hyprctl output remove nested-dev' or relog" >&2
-		fi
-	fi
-	live_canary_stop
+	host_stop
+	sysbus_stop
+	isolation_check
 	rm -f -- "$HARNESS/nested.sig" "$HARNESS/nested.wl"
 	if [[ -n "${PKG_COPY_DIR:-}" && "$PKG_COPY_DIR" == "$HARNESS"/hypr-pkgconfig.* ]]; then
 		rm -rf -- "$PKG_COPY_DIR"
@@ -675,32 +568,20 @@ LEG_MENUBAR_HIST="$STATE/cache/hyprbar/history_menu"
 # consolidated the legacy rows.)
 fresh_stress_state() {
 	rm -rf -- "$STATE"
-	mkdir -p "$(dirname "$LEG_SPOT")" "$(dirname "$LEG_WINDOWED")" "$(dirname "$LEG_MENUBAR_COUNT")"
+	mkdir -p "$(dirname "$LEG_SPOT")" "$(dirname "$LEG_WINDOWED")" "$(dirname "$LEG_MENUBAR_COUNT")" "$STATE/config"
+	# The nested session's own config home: real apps run in it (Thunar,
+	# GTK pickers, Firefox) and wrote their window sizes into the user's
+	# xfconf/dconf (2026-10-04). Fonts stay the user's: text metrics are
+	# part of what the batteries measure.
+	[[ -d "${XDG_CONFIG_HOME:-$HOME/.config}/fontconfig" ]] && ln -s "${XDG_CONFIG_HOME:-$HOME/.config}/fontconfig" "$STATE/config/fontconfig"
 	printf '100\t100\t500\t400\tfoot\n200\t80\tlegacyfoot\n' > "$LEG_SPOT"
 }
 
-# The system battery's brightness presses move the HOST backlight (the
-# nested's logind session is the live session's). The battery writes a
-# restore marker; this runs it before the core teardown wipes $STATE, so the
-# effect is reversible even on a mid-battery failure. (The core teardown is
-# called by its own name — a wrapper that re-invoked `cleanup_harness`
-# would resolve to itself at call time and recurse into a stack overflow,
-# which is exactly how the pre-merge harness died with RC=139 on every
-# run's exit trap.)
+# The exit trap's name. (The core teardown is called by its own name — a
+# wrapper that re-invoked `cleanup_harness` would resolve to itself at call
+# time and recurse into a stack overflow: the pre-merge harness died with
+# RC=139 on every run's exit trap that way.)
 cleanup_harness() {
-	local f="${STATE:-}/sys-brightness-restore"
-	if [[ -n "${STATE:-}" && -f "$f" ]]; then
-		local dev val sess
-		read -r dev val <"$f"
-		if [[ -n "$dev" && -w "/sys/class/backlight/$dev/brightness" ]]; then
-			printf '%s' "$val" > "/sys/class/backlight/$dev/brightness" 2>/dev/null || true
-		else
-			sess="$(sed -n 's/.*session-\([0-9]*\)\.scope.*/\1/p' /proc/self/cgroup | head -1)"
-			[[ -n "$sess" ]] && busctl --user call org.freedesktop.login1 \
-				"/org/freedesktop/login1/session/$sess" \
-				org.freedesktop.login1.Session SetBrightness ssu "backlight" "$dev" "$val" >/dev/null 2>&1 || true
-		fi
-	fi
 	cleanup_harness_core
 }
 

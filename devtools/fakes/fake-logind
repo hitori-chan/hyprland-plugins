@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+# devtools/fakes/fake-logind — org.freedesktop.login1 on the gate's PRIVATE
+# system bus (DBUS_SYSTEM_BUS_ADDRESS). The plugin's brightness path calls
+# Session.SetBrightness; here it writes the fake backlight under
+# $AW_BACKLIGHT_DIR/<name>/brightness and logs the call to $AW_LOGIND_LOG,
+# so the battery exercises the real D-Bus path without ever touching the
+# host's backlight. Any session path answers (auto, session-N, _3N).
+import os
+import sys
+import warnings
+
+from gi.repository import Gio, GLib
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)  # register_object: fine for a fake
+
+BUS_NAME = "org.freedesktop.login1"
+XML = """
+<node>
+  <interface name="org.freedesktop.login1.Session">
+    <method name="SetBrightness">
+      <arg type="s" name="subsystem" direction="in"/>
+      <arg type="s" name="name" direction="in"/>
+      <arg type="u" name="brightness" direction="in"/>
+    </method>
+  </interface>
+  <interface name="org.freedesktop.login1.Manager">
+    <method name="GetSession">
+      <arg type="s" name="id" direction="in"/>
+      <arg type="o" name="path" direction="out"/>
+    </method>
+  </interface>
+</node>
+"""
+BACKLIGHT = os.environ.get("AW_BACKLIGHT_DIR", "")
+LOG = os.environ.get("AW_LOGIND_LOG", "")
+NODE = Gio.DBusNodeInfo.new_for_xml(XML)
+
+
+def log(line):
+    if LOG:
+        with open(LOG, "a") as f:
+            f.write(line + "\n")
+
+
+def on_call(conn, sender, path, iface, method, params, invocation):
+    if method == "SetBrightness":
+        subsystem, name, value = params.unpack()
+        target = os.path.join(BACKLIGHT, name, "brightness")
+        if subsystem != "backlight" or not BACKLIGHT or "/" in name or not os.path.exists(target):
+            invocation.return_dbus_error("org.freedesktop.login1.NoSuchDevice", f"no backlight {name}")
+            return
+        with open(target, "w") as f:
+            f.write(str(value))
+        log(f"SetBrightness {path} {name} {value}")
+        invocation.return_value(None)
+    elif method == "GetSession":
+        invocation.return_value(GLib.Variant("(o)", ("/org/freedesktop/login1/session/auto",)))
+    else:
+        invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)
+
+
+def main():
+    addr = os.environ.get("DBUS_SYSTEM_BUS_ADDRESS")
+    if not addr:
+        sys.exit("fake-logind: DBUS_SYSTEM_BUS_ADDRESS is not set (refusing the real system bus)")
+    conn = Gio.DBusConnection.new_for_address_sync(
+        addr, Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION, None, None)
+    conn.register_object("/org/freedesktop/login1", NODE.interfaces[1], on_call)
+    # the plugin addresses its own session explicitly when its cgroup names
+    # one, else "auto": register both shapes it can produce
+    session = NODE.interfaces[0]
+    conn.register_object("/org/freedesktop/login1/session/auto", session, on_call)
+    for line in open("/proc/self/cgroup"):
+        mark = line.rfind("session-")
+        if mark >= 0 and line.strip().endswith(".scope"):
+            sid = line.strip()[mark + len("session-"):-len(".scope")]
+            if sid.isdigit():
+                conn.register_object(f"/org/freedesktop/login1/session/{sid}", session, on_call)
+    Gio.bus_own_name_on_connection(conn, BUS_NAME, Gio.BusNameOwnerFlags.NONE, None, None)
+    GLib.MainLoop().run()
+
+
+main()

@@ -1,10 +1,9 @@
 # awesome/gate/system.sh — the system module's behavior battery: the wpctl
 # process path (volume/mic), the readback caps, the repeat backpressure,
-# the logind brightness path (with host-backlight restore), and the touchpad
-# policy probe. The fake wpctl shadows the nested's PATH only — the live
-# PipeWire sink is never touched. The brightness path is the one battery
-# section with a real live side effect (the nested's logind session is the
-# live session's): the restore marker keeps that effect reversible.
+# the logind brightness path (a fake logind + backlight), and the touchpad
+# policy probe. Nothing reaches the host: the fake wpctl shadows the
+# nested's PATH (the live PipeWire sink is never touched), and the
+# brightness path talks to the nested's private system bus.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # ---- the wpctl process path ------------------------------------------------
@@ -55,37 +54,36 @@ dsp "hl.plugin.awesome.mic_mute()"; sleep 0.4
 hq awesome clear >/dev/null; sleep 0.4
 
 # ---- the logind brightness path --------------------------------------------
-# The nested's logind session IS the live session: these presses move the
-# HOST backlight. The marker records the start value; cleanup_harness (the
-# monolith's harness delta) restores it even on a mid-battery failure.
-BDEV="$(ls /sys/class/backlight 2>/dev/null | head -1)"
-if [[ -z "$BDEV" || ! -r "/sys/class/backlight/$BDEV/brightness" ]]; then
-	bad "brightness: no readable backlight device (skipping the brightness checks)"
-else
-	BSTART="$(cat "/sys/class/backlight/$BDEV/brightness")"
-	printf '%s %s\n' "$BDEV" "$BSTART" > "$STATE/sys-brightness-restore"
-	BRT() { cat "/sys/class/backlight/$1/brightness" 2>/dev/null; }
-	brt_wait() { # brt_wait <dir> — poll until the backlight moved dir*step from the given base
-		local dir=$1 base=$2 got
-		for _ in $(seq 1 40); do
-			got="$(BRT "$BDEV")"
-			[[ "$got" -gt "$base" ]] && [[ "$dir" == up ]] && { echo "$got"; return 0; }
-			[[ "$got" -lt "$base" ]] && [[ "$dir" == down ]] && { echo "$got"; return 0; }
-			sleep 0.1
-		done
-		echo "$base"; return 1
-	}
-	dsp "hl.plugin.awesome.brightness_up()"; sleep 0.4
-	BAFTER_UP="$(brt_wait up "$BSTART")"
-	chk "system: brightness_up moved the host backlight up" test "$BAFTER_UP" -gt "$BSTART"
-	chk "system: brightness_up posts the percent card on logind's ack" test "$(st)" = "center:0 live:1 dnd:0"
-	hq awesome clear >/dev/null; sleep 0.4
-	dsp "hl.plugin.awesome.brightness_down()"; sleep 0.4
-	BAFTER_DOWN="$(brt_wait down "$BAFTER_UP")"
-	chk "system: brightness_down moved it back" test "$BAFTER_DOWN" -lt "$BAFTER_UP"
-	chk "system: brightness_down posts the percent card" test "$(st)" = "center:0 live:1 dnd:0"
-	hq awesome clear >/dev/null; sleep 0.4
-fi
+# The plugin's real path — sysfs read, logind SetBrightness over the system
+# bus — against the nested's PRIVATE system bus: a fake logind writes the
+# fake backlight the harness points the plugin at (AW_BACKLIGHT_DIR,
+# seeded 500/1000 per launch). The host's panel never moves.
+BDIR="$STATE/backlight/gate0"
+BRT() { cat "$BDIR/brightness" 2>/dev/null; }
+brt_wait() { # brt_wait <up|down> <base> — poll until the fake backlight moved
+	local dir=$1 base=$2 got
+	for _ in $(seq 1 40); do
+		got="$(BRT)"
+		[[ "$dir" == up && "$got" -gt "$base" ]] && { echo "$got"; return 0; }
+		[[ "$dir" == down && "$got" -lt "$base" ]] && { echo "$got"; return 0; }
+		sleep 0.1
+	done
+	echo "$base"
+	return 1
+}
+BSTART="$(BRT)"
+chk "system: the fake backlight is seeded (500 of 1000)" test "$BSTART" = 500
+dsp "hl.plugin.awesome.brightness_up()"; sleep 0.4
+BAFTER_UP="$(brt_wait up "$BSTART")"
+chk "system: brightness_up sets +5% through logind" test "$BAFTER_UP" = 550
+chk "system: the set went through the logind session path" grep -q "SetBrightness /org/freedesktop/login1/session/[a-z0-9]* gate0 550" "$STATE/logind.log"
+chk "system: brightness_up posts the percent card on logind's ack" test "$(st)" = "center:0 live:1 dnd:0"
+hq awesome clear >/dev/null; sleep 0.4
+dsp "hl.plugin.awesome.brightness_down()"; sleep 0.4
+BAFTER_DOWN="$(brt_wait down "$BAFTER_UP")"
+chk "system: brightness_down moved it back" test "$BAFTER_DOWN" = 500
+chk "system: brightness_down posts the percent card" test "$(st)" = "center:0 live:1 dnd:0"
+hq awesome clear >/dev/null; sleep 0.4
 
 # ---- the touchpad policy ------------------------------------------------------
 PSTART="$(hq awesome pad)"

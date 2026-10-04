@@ -88,7 +88,6 @@ fresh_stress_state
 write_stress_cfg
 launch_nested || { echo "nested launch FAILED"; exit 1; }
 retarget || { echo "nested retarget FAILED"; exit 1; }
-LOG="$HARNESS/nested.log"
 ok "nested monitor is ${MON_W}x${MON_H} (every coordinate below derives from it)"
 chk "the monolith loaded (one plugin, named awesome)" \
 	bash -c "test \"\$(hyprctl -i '$SIG' plugin list | grep -c Plugin)\" = 1 && hyprctl -i '$SIG' plugin list | grep -q awesome"

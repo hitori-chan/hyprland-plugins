@@ -56,7 +56,6 @@ MON_H=0
 NBUS=""
 PKG_COPY_DIR=""
 HARNESS_CLEANED=0
-HARNESS_OUTPUT_OWNED=""
 
 # shellcheck source=awesome/gate/harness.sh
 source "$GATE_DIR/harness.sh"
@@ -69,5 +68,6 @@ echo "== probe: $(basename "$PROBE") =="
 # shellcheck source=awesome/gate/preflight.sh
 source "$GATE_DIR/preflight.sh"
 source "$PROBE"
+cleanup_harness
 print_summary
 exit $?

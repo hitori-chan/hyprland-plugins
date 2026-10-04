@@ -1,7 +1,8 @@
 -- nested.lua — a throwaway Hyprland config for the nested dev instance
--- (Hyprland-in-a-window). Loads the repo's plugin directly. NO autostart,
--- NO portal/dbus restarts, NO exec-once — nothing that could touch the
--- live session. Runs under its own dbus session and Wayland backend.
+-- (Hyprland-in-a-window, inside the gate's private headless host — never
+-- the live session). Loads the repo's plugin directly. NO autostart, NO
+-- portal/dbus restarts, NO exec-once. Runs under its own session and
+-- system buses and the Wayland backend.
 --
 -- The glass·ink theme ships as the plugin's C++ defaults (core/theme.hpp),
 -- so the nested instance sets NO plugin values — it tests exactly the
@@ -13,7 +14,8 @@
 -- HYPR_PLUGIN_DIR.
 local REPO = os.getenv("HYPR_PLUGIN_DIR") or (os.getenv("HOME") .. "/repo/hyprland-plugins")
 
--- the nested output: a window in the live session. Reserve the band.
+-- the nested output: its window in the host (launch.sh sizes the window
+-- from this mode). Reserve the band.
 hl.monitor({
 	output = "",
 	mode = "1280x800@60",

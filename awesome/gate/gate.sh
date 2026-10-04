@@ -127,7 +127,6 @@ MON_H=0
 NBUS=""
 PKG_COPY_DIR=""
 HARNESS_CLEANED=0
-HARNESS_OUTPUT_OWNED=""
 
 # shellcheck source=awesome/gate/harness.sh
 source "$GATE_DIR/harness.sh"
@@ -151,7 +150,11 @@ for _name in "${CANONICAL_BATTERIES[@]}"; do
 	battery_end "$_name"
 done
 
-# Fallback summary for runs without lifecycle.sh. Cleanup happens in the EXIT
-# trap either way (cleanup_harness is idempotent via HARNESS_CLEANED).
+# Fallback summary for runs without lifecycle.sh. Teardown first, like
+# lifecycle.sh's tail: the isolation verdict and the nested's exit check
+# land in the summary and the exit code, not after them
+# (cleanup_harness is idempotent via HARNESS_CLEANED; the EXIT trap is the
+# backstop).
+cleanup_harness
 print_summary
 exit $?
