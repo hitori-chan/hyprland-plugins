@@ -132,6 +132,7 @@ namespace NAwesome::Notify {
         if (BRACKET && !NAwesome::Canvas::inst().gate().beginWarm())
             return;
         const auto MON = anythingToDraw() ? focusedMon() : nullptr;
+        decodeWarmBegin();
         if (!MON) {
             // no content — or no monitor (disconnect transition): stale boxes
             // must not linger to swallow clicks over nothing
@@ -147,6 +148,7 @@ namespace NAwesome::Notify {
             renderAll(MON, P);
             textCacheSweep();
         }
+        decodeWarmEnd();
         if (BRACKET)
             NAwesome::Canvas::inst().gate().endWarm();
     }

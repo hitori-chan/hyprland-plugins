@@ -111,6 +111,8 @@ namespace NAwesome::Notify {
 
     void   textCacheTick(); // a full warm begins: advance the grace generation
     void   textCacheSweep(); // a full warm ended: evict what no recent warm wanted
+    void   decodeWarmBegin(); // a full warm begins: no decode job is wanted yet
+    void   decodeWarmEnd();   // a full warm ended: free the finished decodes no card wanted
     void   textCacheClear();
 
     // small shared helpers

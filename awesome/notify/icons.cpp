@@ -87,6 +87,7 @@ namespace NAwesome::Notify {
         Hyprutils::Memory::CAtomicSharedPointer<Hyprgraphics::CImageResource> resource;
         bool                                                           rejected = false; // too big or not a file: settled null
         bool                                                           readyAtPoll = false;
+        bool                                                           wanted      = false; // asked for by the current warm
     };
 
     static std::vector<SDecodeJob>   decodeJobs;
@@ -128,14 +129,16 @@ namespace NAwesome::Notify {
     // also bounds replaced and deleted cards)
     static SDecodeJob* decodeJobFor(const std::string& source, int svgPx) {
         const int SVG_PX = NAwesome::isSvgIconPath(source) ? std::clamp(svgPx, 1, 256) : 0;
-        if (const auto IT = std::ranges::find_if(decodeJobs, [&](const auto& job) { return job.source == source && job.svgPx == SVG_PX; }); IT != decodeJobs.end())
+        if (const auto IT = std::ranges::find_if(decodeJobs, [&](const auto& job) { return job.source == source && job.svgPx == SVG_PX; }); IT != decodeJobs.end()) {
+            IT->wanted = true;
             return &*IT;
+        }
         if (decodeJobs.size() >= MAX_PENDING_IMAGE_RESOURCES) {
             waitedForDecodeSlot = true;
             return nullptr;
         }
         if (!NAwesome::admissibleImageFile(source)) {
-            decodeJobs.push_back(SDecodeJob{.source = source, .rejected = true});
+            decodeJobs.push_back(SDecodeJob{.source = source, .rejected = true, .wanted = true});
             return &decodeJobs.back();
         }
         // hyprgraphics needs an explicit viewport for SVG files; without it
@@ -144,7 +147,7 @@ namespace NAwesome::Notify {
                                    :
                                    makeAtomicShared<Hyprgraphics::CImageResource>(source);
         g_pAsyncResourceGatherer->enqueue(resource);
-        decodeJobs.push_back(SDecodeJob{.source = source, .svgPx = SVG_PX, .resource = std::move(resource)});
+        decodeJobs.push_back(SDecodeJob{.source = source, .svgPx = SVG_PX, .resource = std::move(resource), .wanted = true});
         armDecodePoll();
         return &decodeJobs.back();
     }
@@ -157,6 +160,20 @@ namespace NAwesome::Notify {
             decodeJobs.erase(IT);
             slotFreed = true;
         }
+    }
+
+    // A finished decode no card asked for during a full warm is an orphan:
+    // its card was replaced (notify-send -r, a player's next track), dismissed
+    // or re-keyed while the decode ran, and nothing will ever ask again.
+    // Without this sweep each one held a slot for good, and at the cap every
+    // new file icon stayed on the fallback until reload.
+    void decodeWarmBegin() {
+        for (auto& job : decodeJobs)
+            job.wanted = false;
+    }
+    void decodeWarmEnd() {
+        if (std::erase_if(decodeJobs, [](const auto& job) { return !job.wanted && resourceReady(job); }) > 0)
+            slotFreed = true;
     }
 
     static void pollDecodeJobs() {
@@ -469,6 +486,9 @@ namespace NAwesome::Notify {
     // again after the next warm" — the 16 ms poll re-warms when the
     // resource lands.
     static SFileTexResult fileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool tintSymbolic = false) {
+        // every branch below may read the file on this thread
+        if (!NAwesome::admissibleImageFile(path))
+            return {.settled = true};
         if (tintSymbolic || (heroWPx > 0 && NAwesome::isSvgIconPath(path))) {
             bool hero = false;
             return {.texture = syncFileTex(path, iconPx, heroWPx, heroHCapPx, hero, tintSymbolic), .settled = true, .hero = hero};
@@ -486,9 +506,6 @@ namespace NAwesome::Notify {
         const auto RESOURCE = JOB->resource;
         dropDecodeJob(JOB);
         SFileTexResult result{.settled = true};
-        // every branch below may read the file on this thread
-        if (!NAwesome::admissibleImageFile(path))
-            return {.settled = true};
         if (REJECTED)
             return result;
         const auto SURF = RESOURCE->m_asset.cairoSurface;
