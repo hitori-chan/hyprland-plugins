@@ -9,6 +9,7 @@
 
 #include "../core/config.hpp"
 
+#include <cctype>
 #include <format>
 
 namespace NAwesome::Notify {
@@ -115,6 +116,24 @@ namespace NAwesome::Notify {
         return 0;
     }
 
+    // A body link is opened with xdg-open on a click: only web and mail
+    // links qualify. Any sender on the session bus writes these bodies, and
+    // xdg-open will happily run a file:// desktop entry, a custom scheme
+    // handler, or a local script — those stay plain text.
+    static std::string openableLink(std::string href) {
+        const auto COLON = href.find(':');
+        if (COLON == std::string::npos || COLON == 0 || COLON > 16)
+            return {};
+        std::string scheme = href.substr(0, COLON);
+        for (auto& c : scheme)
+            c = (char)std::tolower((unsigned char)c);
+        if ((scheme == "http" || scheme == "https") && href.compare(COLON, 3, "://") == 0)
+            return href;
+        if (scheme == "mailto" && href.size() > COLON + 1)
+            return href;
+        return {};
+    }
+
     static std::string decodeEntities(const std::string& s) { // for the href handed to xdg-open
         std::string out;
         out.reserve(s.size());
@@ -201,11 +220,12 @@ namespace NAwesome::Notify {
                         md += "</span>";
                         if (inLink) {
                             cur.len = plain - cur.start;
-                            out.push_back(cur);
+                            if (!cur.href.empty())
+                                out.push_back(cur);
                             inLink = false;
                         }
                     } else {
-                        const auto href = decodeEntities(Parse::attrValue(in.substr(i, END - i + 1), "href"));
+                        const auto href = openableLink(decodeEntities(Parse::attrValue(in.substr(i, END - i + 1), "href")));
                         md += "<span foreground=\"" + colHex + "\" underline=\"single\">";
                         cur    = SLinkSpan{href, plain, 0};
                         inLink = true;
