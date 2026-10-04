@@ -151,6 +151,15 @@ namespace NAwesome::Notify {
         std::string          conversationIcon;       // resolved path
         std::string          declaredGroupKey; // x-notify-group-key: the app's own grouping
         std::vector<SMessage>     messages;     // oldest first, bounded
+        // bumped by every arrival that touches the card (messages,
+        // conversation kind): conversationBody's memo key — the banner
+        // rebuilt the transcript body, sanitizing every message, per frame
+        uint64_t                  rev = 0;
+        struct {
+            uint64_t    rev   = ~0ull;
+            size_t      limit = 0;
+            std::string body;
+        } convMemo;
         std::vector<SParticipant> participants; // latest distinct senders, bounded
         uint32_t             unreadCount = 0;
         uint8_t              urgency  = 1;

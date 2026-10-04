@@ -359,9 +359,18 @@ namespace NAwesome::Notify {
         // CHRONOLOGICAL — the oldest line leads and the newest ENDS the body,
         // so an arrival lands at the bottom and pushes the oldest out of the
         // top of the window. Group senders are prefixed by name.
+        static std::string buildConversationBody(const SP<SNotif>& n, size_t limit);
+
         std::string conversationBody(const SP<SNotif>& n, size_t limit) {
             if (n->messages.empty())
                 return n->body;
+            if (n->convMemo.rev == n->rev && n->convMemo.limit == limit)
+                return n->convMemo.body;
+            n->convMemo = {.rev = n->rev, .limit = limit, .body = buildConversationBody(n, limit)};
+            return n->convMemo.body;
+        }
+
+        static std::string buildConversationBody(const SP<SNotif>& n, size_t limit) {
 
             std::vector<std::string> LINES;
             const size_t             START = Pixel::presentedMessageStart(n->messages, limit);
@@ -645,6 +654,7 @@ namespace NAwesome::Notify {
             // x-canonical-append is a conversation by definition: its body is
             // the joined transcript, chronological, like the category's
             const bool CONVERSATION = CATEGORY_CONVERSATION || canonicalAppend || !EFFECTIVE_CONV_ID.empty() || (SAME_CONVERSATION && n->conversation);
+            ++n->rev; // the arrival below may rewrite messages and kind
             if (!SAME_CONVERSATION) {
                 n->messages.clear();
                 n->unreadCount = 0;
