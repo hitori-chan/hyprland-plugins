@@ -201,20 +201,36 @@ namespace NAwesome::Notify::Parse {
         // message max) that would otherwise map + premultiply in full.
         if (W <= 0 || H <= 0 || (int64_t)W * H > (16 << 20) || BPS != 8 || (CH != 3 && CH != 4) || (int64_t)STRIDE < (int64_t)W * CH || DATA.size() < (size_t)STRIDE * (H - 1) + (size_t)W * CH)
             return;
-        n.pixels.resize((size_t)W * H * 4);
-        for (int32_t y = 0; y < H; y++) {
-            const uint8_t* row = DATA.data() + (size_t)y * STRIDE;
-            uint8_t*       out = n.pixels.data() + (size_t)y * W * 4;
-            for (int32_t x = 0; x < W; x++) {
-                const uint8_t R = row[x * CH], G = row[x * CH + 1], B = row[x * CH + 2], A = CH == 4 ? row[x * CH + 3] : 255;
-                out[x * 4]     = (uint8_t)(B * A / 255);
-                out[x * 4 + 1] = (uint8_t)(G * A / 255);
-                out[x * 4 + 2] = (uint8_t)(R * A / 255);
-                out[x * 4 + 3] = A;
+        // Box-decimate by an integer factor K while unpacking: a card paints
+        // at most capPx, so a screenshot notification (up to 16 MP) never
+        // allocates or premultiplies at full size inside the D-Bus handler.
+        // K keeps >= 2x the cap; shrinkPixels does the exact final scale.
+        const int32_t K  = std::max<int32_t>(1, std::max(W, H) / std::max(1, capPx * 2));
+        const int32_t OW = std::max<int32_t>(1, W / K), OH = std::max<int32_t>(1, H / K);
+        n.pixels.resize((size_t)OW * OH * 4);
+        for (int32_t oy = 0; oy < OH; oy++) {
+            uint8_t* out = n.pixels.data() + (size_t)oy * OW * 4;
+            for (int32_t ox = 0; ox < OW; ox++) {
+                uint64_t sb = 0, sg = 0, sr = 0, sa = 0; // premultiplied sums
+                for (int32_t y = oy * K; y < std::min(H, (oy + 1) * K); y++) {
+                    const uint8_t* row = DATA.data() + (size_t)y * STRIDE;
+                    for (int32_t x = ox * K; x < std::min(W, (ox + 1) * K); x++) {
+                        const uint32_t A = CH == 4 ? row[x * CH + 3] : 255;
+                        sr += row[x * CH] * A;
+                        sg += row[x * CH + 1] * A;
+                        sb += row[x * CH + 2] * A;
+                        sa += A;
+                    }
+                }
+                const uint64_t N = (uint64_t)(std::min(H, (oy + 1) * K) - oy * K) * (std::min(W, (ox + 1) * K) - ox * K);
+                out[ox * 4]     = (uint8_t)(sb / (255 * N));
+                out[ox * 4 + 1] = (uint8_t)(sg / (255 * N));
+                out[ox * 4 + 2] = (uint8_t)(sr / (255 * N));
+                out[ox * 4 + 3] = (uint8_t)(sa / N);
             }
         }
-        n.pw        = W;
-        n.ph        = H;
+        n.pw        = OW;
+        n.ph        = OH;
         n.hasPixels = true;
         // keep only what a card can ever paint: warm frees visible cards'
         // buffers after upload, but an off-screen card would hold its
