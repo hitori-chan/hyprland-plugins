@@ -107,7 +107,13 @@ namespace NAwesome::Notify::Bus {
         g_bus.onLost = [](const std::string& err) {
             HyprlandAPI::addNotification(NAwesome::supervisor().handle(), "[awesome] bus lost, notifications disabled: " + err, CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
         };
-        g_bus.dropOwned = []() { obj.reset(); };
+        // everything bound to the connection goes before it: an in-flight
+        // GetConnectionUnixProcessID would otherwise run its slot deleter
+        // against a destroyed connection when the static proxy dies at unload
+        g_bus.dropOwned = []() {
+            busProbe.reset();
+            obj.reset();
+        };
         try {
             g_bus.open(false, "org.freedesktop.Notifications");
             obj = sdbus::createObject(*g_bus.conn(), sdbus::ObjectPath{"/org/freedesktop/Notifications"});
