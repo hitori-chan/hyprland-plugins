@@ -227,9 +227,10 @@ stays in lockstep between `core/version.hpp` and `hyprpm.toml`.
 
 ## 5. Performance
 
-- One canvas pass per monitor: its bounding box is the union of the
-  layers' boxes, and it claims live blur only while a layer paints
-  translucent glass (the default palette is opaque).
+- One canvas pass element per layer and monitor, each with its own box:
+  the renderer culls a layer the frame's damage misses, and an element
+  claims live blur only while its layer paints translucent glass (the
+  bar's default is opaque, the cards' glass is not).
 - Warms coalesce: one bar warm per event-loop turn however many events
   arrived; the cards warm once, on their monitor.
 - Config reads are a hash of the key and a typed value read — no
@@ -238,9 +239,15 @@ stays in lockstep between `core/version.hpp` and `hyprpm.toml`.
   posts are in-process calls).
 - Notification images are box-decimated while unpacked; nothing
   allocates a full-size screenshot on the main thread.
-- Open: the draw still re-runs the layout per frame (a cached display
-  list per state change is the target), and the bar's icons decode
-  synchronously.
+- The draw re-runs the layout per frame, deliberately: measured with the
+  gate's `drawstats` (a card over a window redrawing every frame), the
+  worst case is ~90 us for the card and ~90 us for the bar when the
+  glass's blur damage reaches it, a third of that paint calls — about 1%
+  of a 60 Hz frame. A cached display list would save ~100 us at the cost
+  of a stale-content risk across every state source.
+- One .desktop index for the whole plugin (core), shared by the bar's
+  icons and the cards' sender identities. Open: the bar decodes its icons
+  synchronously on the warm (once per class), not on the async gatherer.
 
 ## 6. devtools — re-derived, not patched
 
