@@ -122,6 +122,18 @@ namespace NAwesome::Windows {
             return true;
         };
 
+        // Windows mapped before the plugin loaded (a runtime hyprpm reload)
+        // get what window.open would have given them: the minimize and
+        // client-unmaximize watches and an arrival number (their current Z
+        // order — the best order left). Placement is not redone.
+        for (const auto& W : Desktop::windowState()->windows()) {
+            if (!W || !W->mapped())
+                continue;
+            Tasklist::watchMinimize(W);
+            watchClientUnmax(W);
+            winOrder().seqOf(W.get());
+        }
+
         HANDLE H = supervisor().handle();
         HyprlandAPI::addLuaFunction(H, "awesome", "maximize", luaMaximize);
         HyprlandAPI::addLuaFunction(H, "awesome", "minimize", luaMinimize);
