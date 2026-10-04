@@ -633,7 +633,12 @@ cleanup_harness_core() {
 	fi
 	if [[ "${HARNESS_OUTPUT_OWNED:-0}" == 1 ]]; then
 		rm -f -- "$HARNESS/nested.output-owned"
-		if ! remove_nested_dev; then
+		remove_nested_dev
+		# A mid-teardown read can say "none" while the output is still dying
+		# and then reappear; one delayed re-verify + retry (2026-10-04: the
+		# gate's own remove verified gone, nested-dev reappeared ~30s later)
+		sleep 1
+		if [[ "$(nested_dev_state)" != "none" ]] && ! remove_nested_dev; then
 			echo "harness: WARNING: 'nested-dev' monitor survived output removal (zombie); live by-id workspace lookups may misroute — run 'hyprctl output remove nested-dev' or relog" >&2
 		fi
 	fi
