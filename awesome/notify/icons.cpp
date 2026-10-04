@@ -77,7 +77,6 @@ namespace NAwesome::Notify {
     // the card arrived upgrades it in place.
 
     static constexpr size_t MAX_PENDING_IMAGE_RESOURCES = 24; // the gatherer is shared with the compositor
-    static constexpr size_t MAX_IMAGE_FILE_BYTES        = 32 * 1024 * 1024;
     static constexpr double MAX_DECODED_IMAGE_PIXELS    = 16.0 * 1024 * 1024;
     static constexpr size_t MAX_DESKTOP_FILES           = 4096;
     static constexpr size_t MAX_DESKTOP_VISITED         = 16384;
@@ -116,15 +115,6 @@ namespace NAwesome::Notify {
         return job.rejected || (job.resource && job.resource->m_ready.load(std::memory_order_acquire));
     }
 
-    static bool admissibleImageFile(const std::string& source) {
-        std::error_code ec;
-        const auto      status = std::filesystem::status(source, ec);
-        if (ec || !std::filesystem::is_regular_file(status))
-            return false;
-        const auto bytes = std::filesystem::file_size(source, ec);
-        return !ec && bytes <= MAX_IMAGE_FILE_BYTES;
-    }
-
     static void armDecodePoll() {
         if (!decodePoll)
             return;
@@ -144,7 +134,7 @@ namespace NAwesome::Notify {
             waitedForDecodeSlot = true;
             return nullptr;
         }
-        if (!admissibleImageFile(source)) {
+        if (!NAwesome::admissibleImageFile(source)) {
             decodeJobs.push_back(SDecodeJob{.source = source, .rejected = true});
             return &decodeJobs.back();
         }
@@ -496,6 +486,9 @@ namespace NAwesome::Notify {
         const auto RESOURCE = JOB->resource;
         dropDecodeJob(JOB);
         SFileTexResult result{.settled = true};
+        // every branch below may read the file on this thread
+        if (!NAwesome::admissibleImageFile(path))
+            return {.settled = true};
         if (REJECTED)
             return result;
         const auto SURF = RESOURCE->m_asset.cairoSurface;

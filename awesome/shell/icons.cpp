@@ -139,6 +139,8 @@ namespace NAwesome::Shell {
     }
 
     static SP<ITexture> loadIcon(const std::string& path) {
+        if (!NAwesome::admissibleImageFile(path))
+            return nullptr; // a FIFO or a huge file: never read on this thread
         if (path.ends_with(".svg")) {
             const bool SYMBOLIC = path.find("-symbolic") != std::string::npos || path.find("/symbolic/") != std::string::npos;
             return loadSvg(path, SYMBOLIC, color(cfg().getColor("plugin:awesome:shell:col_fg")));
@@ -207,13 +209,13 @@ namespace NAwesome::Shell {
             return "";
         std::error_code ec;
         if (name.front() == '/')
-            return std::filesystem::exists(name, ec) ? name : "";
+            return NAwesome::admissibleImageFile(name) ? name : "";
 
         const auto tryDir = [&](const std::string& D) -> std::string {
             for (const auto& N : {name, lower(name)}) {
                 for (const char* EXT : {".png", ".svg"}) {
                     const auto P = D + "/" + N + EXT;
-                    if (std::filesystem::exists(P, ec))
+                    if (NAwesome::admissibleImageFile(P)) // D may be an SNI's own IconThemePath
                         return P;
                 }
             }

@@ -11,6 +11,9 @@
 // exactly what makes the old resolutions wrong.
 #pragma once
 
+#include <algorithm>
+#include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -34,6 +37,21 @@ namespace NAwesome {
         const auto ext = source.substr(source.size() - 4);
         const auto eq  = [](char value, char lower) { return value == lower || value == lower - ('a' - 'A'); };
         return ext[0] == '.' && eq(ext[1], 's') && eq(ext[2], 'v') && eq(ext[3], 'g');
+    }
+
+    // A file the plugin may decode on the main thread: a regular file (a
+    // FIFO or device path would block the compositor in open/read, and any
+    // session-bus sender — a notification's image-path, an SNI icon theme
+    // path — names the file) of bounded size. Every decode entry point that
+    // takes a client-influenced path checks this first.
+    inline constexpr uintmax_t MAX_DECODE_FILE_BYTES = 32u << 20;
+    inline bool admissibleImageFile(const std::string& path, uintmax_t maxBytes = MAX_DECODE_FILE_BYTES) {
+        std::error_code ec;
+        const auto      STATUS = std::filesystem::status(path, ec); // follows symlinks: the target counts
+        if (ec || !std::filesystem::is_regular_file(STATUS))
+            return false;
+        const auto BYTES = std::filesystem::file_size(path, ec);
+        return !ec && BYTES <= maxBytes;
     }
 
     // The XDG data dirs in precedence order: the per-user one first (it
@@ -149,13 +167,26 @@ namespace NAwesome {
     // it CHOOSES the file — keyed on the name alone, whichever caller asked
     // first pinned the size for every later one (the notify module wants a card
     // icon at max_icon and an action icon at ~15px).
+    // Names come from session-bus senders (a notification's app_icon, an
+    // SNI IconName): only a plausible freedesktop icon name is worth a theme
+    // scan, and the memo is bounded (cleared at the bound: a re-resolution
+    // is a few stats, an unbounded map is a leak a sender controls).
+    inline constexpr size_t MAX_ICON_NAME_CACHE = 2048;
+    inline bool plausibleIconName(const std::string& name) {
+        if (name.empty() || name.size() > 128)
+            return false;
+        return std::ranges::all_of(name, [](unsigned char c) { return std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '+' || c == '@'; });
+    }
+
     inline std::string resolveIconName(const std::string& name, int sizePx) {
-        if (name.empty() || name.find('/') != std::string::npos)
-            return ""; // already a path, or nothing to resolve
+        if (!plausibleIconName(name))
+            return ""; // a path, nothing, or not an icon name
         auto&      CACHE = iconNameCache();
         const auto KEY   = name + "\x1f" + std::to_string(sizePx);
         if (const auto IT = CACHE.find(KEY); IT != CACHE.end())
             return IT->second;
+        if (CACHE.size() >= MAX_ICON_NAME_CACHE)
+            CACHE.clear();
 
         const auto               bases = xdgIconBases();
 
