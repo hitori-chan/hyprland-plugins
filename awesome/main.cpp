@@ -30,7 +30,9 @@ namespace {
         const auto SP = request.find(' ');
         const auto verb = (SP == std::string::npos) ? std::string{} : request.substr(SP + 1);
         if (verb.empty())
-            return "usage: awesome <count|center|state|badge|topline|clear|…>";
+            return "usage: awesome <count|center|state|badge|topline|clear|trace|…>";
+        if (verb == "trace")
+            return NAwesome::supervisor().traceString();
         const NAwesome::IModule* const MODULES[] = {&NAwesome::Shell::module(), &NAwesome::Notify::module(), &NAwesome::Windows::module(), &NAwesome::System::module()};
         for (const auto* M : MODULES)
             if (const auto R = M->handleCtl(verb))

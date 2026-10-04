@@ -20,7 +20,12 @@
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/devices/IKeyboard.hpp>
 
+#include <array>
+#include <chrono>
+#include <cmath>
+#include <format>
 #include <functional>
+#include <string>
 #include <vector>
 
 namespace NAwesome::detail {
@@ -144,62 +149,39 @@ namespace NAwesome {
         }
 
         // ---- the pipeline ----
+        //
+        // One shape for every event class: the head gates on the lock and on
+        // native input capture (resetting every module's partial state), then
+        // the modules run in priority order until one consumes the event.
+        // Every button, axis and key event lands in the input trace with who
+        // took it (motion stays out: it would flush the ring at once).
 
         void dispatchButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
-            if (info.cancelled)
-                return;
-            if (sessionLocked() || nativeInputCaptureActive()) {
-                for (auto* M : m_modules)
-                    M->onInputBlocked();
-                return;
-            }
-            for (auto* M : m_modules) {
-                M->onPointerButton(e, info);
-                if (info.cancelled)
-                    return;
-            }
+            dispatch(info, "button", e.button, e.state, [&](IModule* M) { M->onPointerButton(e, info); });
         }
         void dispatchMove(const Vector2D& pos, Event::SCallbackInfo& info) {
-            if (info.cancelled)
-                return;
-            if (sessionLocked() || nativeInputCaptureActive()) {
-                for (auto* M : m_modules)
-                    M->onInputBlocked();
-                return;
-            }
-            for (auto* M : m_modules) {
-                M->onPointerMove(pos, info);
-                if (info.cancelled)
-                    return;
-            }
+            dispatch(info, nullptr, 0, 0, [&](IModule* M) { M->onPointerMove(pos, info); });
         }
         void dispatchAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
-            if (info.cancelled)
-                return;
-            if (sessionLocked() || nativeInputCaptureActive()) {
-                for (auto* M : m_modules)
-                    M->onInputBlocked();
-                return;
-            }
-            for (auto* M : m_modules) {
-                M->onPointerAxis(e, info);
-                if (info.cancelled)
-                    return;
-            }
+            dispatch(info, "axis", (uint32_t)e.axis, (uint32_t)std::lround(e.delta), [&](IModule* M) { M->onPointerAxis(e, info); });
         }
         void dispatchKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
-            if (info.cancelled)
-                return;
-            if (sessionLocked() || nativeInputCaptureActive()) {
-                for (auto* M : m_modules)
-                    M->onInputBlocked();
-                return;
+            dispatch(info, "key", e.keycode, (uint32_t)e.state, [&](IModule* M) { M->onKey(e, info); });
+        }
+
+        // `hyprctl awesome trace`: the last input events, oldest first, and
+        // who took each one — a module, "blocked" (lock/capture), "upstream"
+        // (cancelled before the plugin saw it) or "-" (passed through to the
+        // compositor). Motion is not traced: it would flush the ring at once.
+        std::string traceString() const {
+            std::string out;
+            for (size_t i = 0; i < TRACE_N; i++) {
+                const auto& T = m_trace[(m_traceHead + i) % TRACE_N];
+                if (!T.what)
+                    continue;
+                out += std::format("{} {} {} {} by {}\n", T.ms, T.what, T.a, T.b, T.by);
             }
-            for (auto* M : m_modules) {
-                M->onKey(e, info);
-                if (info.cancelled)
-                    return;
-            }
+            return out.empty() ? "no input yet\n" : out;
         }
 
         HANDLE handle() const {
@@ -207,6 +189,46 @@ namespace NAwesome {
         }
 
       private:
+        template <typename F>
+        void dispatch(Event::SCallbackInfo& info, const char* what, uint32_t a, uint32_t b, F&& run) {
+            if (info.cancelled) {
+                trace(what, a, b, "upstream");
+                return;
+            }
+            if (sessionLocked() || nativeInputCaptureActive()) {
+                for (auto* M : m_modules)
+                    M->onInputBlocked();
+                trace(what, a, b, "blocked");
+                return;
+            }
+            for (auto* M : m_modules) {
+                run(M);
+                if (info.cancelled) {
+                    trace(what, a, b, M->name());
+                    return;
+                }
+            }
+            trace(what, a, b, "-"); // passed through to the compositor
+        }
+
+        struct STrace {
+            uint64_t    ms   = 0;
+            const char* what = nullptr; // nullptr = empty slot (and motion: untraced)
+            uint32_t    a = 0, b = 0;
+            const char* by = "";
+        };
+        static constexpr size_t TRACE_N = 32;
+
+        void trace(const char* what, uint32_t a, uint32_t b, const char* by) {
+            if (!what)
+                return;
+            const auto NOW = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+            m_trace[m_traceHead] = {.ms = (uint64_t)NOW, .what = what, .a = a, .b = b, .by = by};
+            m_traceHead          = (m_traceHead + 1) % TRACE_N;
+        }
+
+        std::array<STrace, TRACE_N>                   m_trace{};
+        size_t                                        m_traceHead = 0;
         HANDLE                                        m_handle = nullptr;
         std::vector<IModule*>                         m_modules;
         std::vector<Hyprutils::Signal::CHyprSignalListener> m_listeners;
