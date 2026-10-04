@@ -10,6 +10,7 @@ int main() {
         {"schema", test_schema},
         {"wpctl", test_wpctl},
         {"desktop-exec", test_desktop_exec},
+        {"proc", test_proc},
     };
     for (const auto& C : CASES)
         std::printf("[case] %s\n", C.name), C.fn();

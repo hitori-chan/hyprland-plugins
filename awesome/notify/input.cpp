@@ -183,7 +183,7 @@ namespace NAwesome::Notify {
                         continue;
                     }
                     if (!H.href.empty()) { // left on a hyperlink: open it, keep the card up
-                        NAwesome::Jobs::inst().spawn({"xdg-open", H.href.c_str(), nullptr});
+                        NAwesome::Jobs::inst().spawn(NAwesome::Jobs::OPEN, {"xdg-open", H.href.c_str(), nullptr});
                         continue;
                     }
                     invokeLive(H.id, H.action);
@@ -222,7 +222,7 @@ namespace NAwesome::Notify {
                         continue;
                     }
                     if (!H.href.empty()) { // a link in the body: open it, keep the card
-                        NAwesome::Jobs::inst().spawn({"xdg-open", H.href.c_str(), nullptr});
+                        NAwesome::Jobs::inst().spawn(NAwesome::Jobs::OPEN, {"xdg-open", H.href.c_str(), nullptr});
                         setCenter(false); // but not the shade: a browser is coming up over it
                         continue;
                     }

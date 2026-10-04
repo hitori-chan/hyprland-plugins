@@ -383,7 +383,9 @@ hq awesome clear >/dev/null; sleep 0.8
 # The sound path is ARRIVAL-triggered (the sound-file/sound-name hints): a
 # hostile sender with a steady stream of sound-hinted notifications would
 # hold a steady fork rate. The hang fixture keeps each helper alive long
-# enough to count them: 20 distinct-app arrivals, 16 admitted spawns.
+# enough to count them: 20 distinct-app arrivals, 4 admitted spawns (the
+# SOUND class budget — its own, so a flood never takes the volume keys'
+# slots).
 : > "$STATE/hang-sound"
 rm -f "$STATE/hang-sound.pid"
 for i in $(seq 1 20); do
@@ -391,8 +393,12 @@ for i in $(seq 1 20); do
 		Notify susssasa\{sv\}i "flood$i" 0 "" "sound" body 0 1 sound-name s gate 30000 >/dev/null 2>&1
 done
 sleep 1.5
-chk "sound: the spawn cap holds" test "$(wc -l < "$STATE/hang-sound.pid" 2>/dev/null || echo 0)" -eq 16
+chk "sound: the spawn cap holds" test "$(wc -l < "$STATE/hang-sound.pid" 2>/dev/null || echo 0)" -eq 4
 chk "sound: the capped spawns still carried every card" test "$(st)" = "center:0 live:20 dnd:0"
+# every SOUND slot is held: the volume keys still have theirs
+: > "$STATE/wpctl.log"
+dsp "hl.plugin.awesome.volume_up()"; sleep 0.5
+chk "sound: a sound flood leaves the volume keys their own slots" grep -Fxq "set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+" "$STATE/wpctl.log"
 xargs -r kill 2>/dev/null <"$STATE/hang-sound.pid"
 rm -f "$STATE/hang-sound" "${STATE}/hang-sound.pid"
 hq awesome clear >/dev/null; sleep 0.8

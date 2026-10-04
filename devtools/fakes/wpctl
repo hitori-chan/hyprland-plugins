@@ -24,10 +24,12 @@ set-mute)
 	;;
 get-volume)
 	if [[ -n "${AW_WPCTL_FLOOD_FILE:-}" && -e "$AW_WPCTL_FLOOD_FILE" ]]; then
-		# The reader must close this pipe at its retained-output cap. Ignoring
-		# SIGPIPE lets the loop record that the close, rather than a timeout,
-		# stopped the producer.
+		# The reader must stop this producer at its retained-output cap: it
+		# closes the pipe (recorded below, SIGPIPE ignored so the loop sees
+		# EPIPE) and kills the child; either way it is gone, not running to
+		# a timeout.
 		trap '' PIPE
+		printf '%s\n' "$$" > "${AW_WPCTL_FLOOD_FILE}.pid"
 		while printf 'Volume: 0.56\n' 2>/dev/null; do :; done
 		printf 'closed\n' > "${AW_WPCTL_FLOOD_FILE}.closed"
 		exit 0

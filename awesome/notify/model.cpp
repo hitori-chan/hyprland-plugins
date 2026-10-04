@@ -895,9 +895,9 @@ namespace NAwesome::Notify {
                 const std::string CMD{NAwesome::cfg().getS("plugin:awesome:notify:sound_command")};
                 if (!suppress && !CMD.empty()) {
                     if (!soundFile.empty())
-                        NAwesome::Jobs::inst().spawn({CMD.c_str(), "-f", soundFile.c_str(), nullptr});
+                        NAwesome::Jobs::inst().spawn(NAwesome::Jobs::SOUND, {CMD.c_str(), "-f", soundFile.c_str(), nullptr});
                     else if (!soundName.empty())
-                        NAwesome::Jobs::inst().spawn({CMD.c_str(), "-i", soundName.c_str(), nullptr});
+                        NAwesome::Jobs::inst().spawn(NAwesome::Jobs::SOUND, {CMD.c_str(), "-i", soundName.c_str(), nullptr});
                 }
             }
 

@@ -6,7 +6,6 @@
 // is the fork's own cross-build guard; the layout matching is the real
 // protection, this is the fast, loud half.
 #include "core/config.hpp"
-#include "core/jobs.hpp"
 #include "core/supervisor.hpp"
 #include "core/version.hpp"
 
@@ -74,6 +73,5 @@ APICALL EXPORT void PLUGIN_EXIT() {
     if (ctlCmd)
         HyprlandAPI::unregisterHyprCtlCommand(PHANDLE, ctlCmd);
     ctlCmd.reset();
-    NAwesome::Jobs::inst().teardown(); // children after the modules that armed them
     NAwesome::cfg().exit(PHANDLE);
 }

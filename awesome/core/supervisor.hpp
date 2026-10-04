@@ -12,6 +12,7 @@
 #include "canvas.hpp"
 #include "config.hpp"
 #include "hop.hpp"
+#include "jobs.hpp"
 #include "queries.hpp"
 #include "state.hpp"
 
@@ -148,6 +149,7 @@ namespace NAwesome {
             resetHops();
             for (auto IT = m_modules.rbegin(); IT != m_modules.rend(); ++IT)
                 (*IT)->teardown();
+            Jobs::inst().teardown(); // helpers after the modules that spawned them
         }
 
         // ---- the pipeline ----

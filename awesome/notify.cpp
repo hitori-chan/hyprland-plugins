@@ -13,7 +13,6 @@
 
 #include "notify/model.hpp"
 
-#include "core/jobs.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 
@@ -122,7 +121,6 @@ namespace NAwesome::Notify {
         replyExit();
         centerExit();
         iconsExit(); // the decode poll and the index helper out with the plugin
-        NAwesome::Jobs::inst().teardown(); // every child source before the loop goes
         surfaceExit();
     }
 

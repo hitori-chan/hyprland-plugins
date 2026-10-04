@@ -16,10 +16,16 @@ hq awesome clear >/dev/null; sleep 0.4
 
 : > "$STATE/flood-wpctl"
 dsp "hl.plugin.awesome.volume_up()"; sleep 0.5
-chk "system: flood readback closes at the retained-output cap" test -s "$STATE/flood-wpctl.closed"
+flood_stopped() { # the reader closed the pipe, or killed the producer
+	local pid
+	[[ -s "$STATE/flood-wpctl.closed" ]] && return 0
+	pid="$(cat "$STATE/flood-wpctl.pid" 2>/dev/null)"
+	[[ "$pid" =~ ^[1-9][0-9]*$ ]] && ! kill -0 "$pid" 2>/dev/null
+}
+chk "system: flood readback stops the producer at the retained-output cap" flood_stopped
 chk "system: flood readback emits no guessed feedback" test "$(st)" = "center:0 live:0 dnd:0"
 chk "system: flood leaves the nested compositor responsive" hq_matches '^center:0 live:0 dnd:0$' awesome state
-rm -f "$STATE/flood-wpctl" "$STATE/flood-wpctl.closed"
+rm -f "$STATE/flood-wpctl" "$STATE/flood-wpctl.closed" "$STATE/flood-wpctl.pid"
 
 : > "$STATE/wpctl.log"
 dsp "hl.plugin.awesome.volume_down()"; sleep 0.4

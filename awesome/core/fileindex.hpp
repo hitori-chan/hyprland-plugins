@@ -11,7 +11,6 @@
 #include <filesystem>
 #include <fcntl.h>
 #include <signal.h>
-#include <spawn.h>
 #include <string>
 #include <string_view>
 #include <sys/types.h>
@@ -21,7 +20,7 @@
 #include <vector>
 #include <wayland-server-core.h>
 
-extern char** environ;
+#include "proc.hpp"
 
 namespace NAwesome {
 
@@ -283,15 +282,8 @@ done
 
         bool spawn(SRequest request) {
             int pipefd[2];
-            if (pipe(pipefd) != 0)
+            if (pipe2(pipefd, O_CLOEXEC | O_NONBLOCK) != 0)
                 return false;
-            const int readFlags = fcntl(pipefd[0], F_GETFL);
-            if (readFlags < 0 || fcntl(pipefd[0], F_SETFL, readFlags | O_NONBLOCK) != 0 || fcntl(pipefd[0], F_SETFD, FD_CLOEXEC) != 0 ||
-                fcntl(pipefd[1], F_SETFD, FD_CLOEXEC) != 0) {
-                close(pipefd[0]);
-                close(pipefd[1]);
-                return false;
-            }
 
             std::vector<std::string> args;
             args.reserve(12 + request.extensions.size() + m_roots.size());
@@ -318,48 +310,16 @@ done
                 argv.push_back(arg.data());
             argv.push_back(nullptr);
 
-            posix_spawn_file_actions_t actions;
-            posix_spawnattr_t          attributes;
-            if (posix_spawn_file_actions_init(&actions) != 0) {
-                close(pipefd[0]);
-                close(pipefd[1]);
-                return false;
-            }
-            if (posix_spawnattr_init(&attributes) != 0) {
-                posix_spawn_file_actions_destroy(&actions);
-                close(pipefd[0]);
-                close(pipefd[1]);
-                return false;
-            }
-#ifndef POSIX_SPAWN_SETPGROUP
-            posix_spawn_file_actions_destroy(&actions);
-            posix_spawnattr_destroy(&attributes);
-            close(pipefd[0]);
+            // its own group: cancel/exit signals bash and its find child
+            // together; Proc::spawn gives both default signal dispositions
+            // (the compositor's blocked SIGTERM made the kill a no-op)
+            const auto CHILD = Proc::spawn(argv.data(), {.stdoutFd = pipefd[1], .ownGroup = true, .pidfd = false});
             close(pipefd[1]);
-            return false; // without a private group we cannot terminate find with the helper
-#else
-            const bool configured = posix_spawn_file_actions_adddup2(&actions, pipefd[1], STDOUT_FILENO) == 0 &&
-                posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0) == 0 &&
-                posix_spawn_file_actions_addclose(&actions, pipefd[0]) == 0 && posix_spawn_file_actions_addclose(&actions, pipefd[1]) == 0 &&
-                posix_spawnattr_setpgroup(&attributes, 0) == 0 && posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETPGROUP) == 0;
-            if (!configured) {
-                posix_spawn_file_actions_destroy(&actions);
-                posix_spawnattr_destroy(&attributes);
-                close(pipefd[0]);
-                close(pipefd[1]);
-                return false;
-            }
-#endif
-
-            pid_t pid = -1;
-            const int status = posix_spawn(&pid, "/usr/bin/bash", &actions, &attributes, argv.data(), environ);
-            posix_spawn_file_actions_destroy(&actions);
-            posix_spawnattr_destroy(&attributes);
-            close(pipefd[1]);
-            if (status != 0) {
+            if (!CHILD) {
                 close(pipefd[0]);
                 return false;
             }
+            const pid_t pid = CHILD.pid;
 
             m_fd     = pipefd[0];
             m_pid    = pid;
