@@ -25,6 +25,7 @@
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 
 #include <algorithm>
+#include <limits>
 
 namespace NAwesome {
 
@@ -182,16 +183,25 @@ namespace NAwesome {
     // A genuinely user-resizable toplevel — its last size is worth
     // restoring (mpv, terminals, browsers). A fixed-size dialog pins
     // min == max in both axes; its size stays the client's, never
-    // reimposed (that would blink it — awesome never did). No toplevel
-    // (X11, unmapped) = can't tell = treat as fixed.
+    // reimposed (that would blink it — awesome never did). X11 or no hints
+    // ever committed = can't tell = treat as fixed.
+    //
+    // Read the backend's hints, not the xdg_toplevel: they are cached past
+    // the toplevel's death, and a closing client (GTK, Firefox) destroys
+    // its toplevel BEFORE the window unmaps — the close-time spot read
+    // then saw "no toplevel", took the window for fixed-size and never
+    // remembered where any of those apps closed.
     inline bool resizable(const PHLWINDOW& w) {
-        const auto TOP = xdgToplevel(w);
-        if (!TOP)
+        if (!w || w->backend().isX11())
             return false;
-        const auto MIN      = TOP->layoutMinSize();
-        const auto MAX      = TOP->layoutMaxSize();
-        const bool PINNED_X = MAX.x > 1 && MIN.x >= MAX.x;
-        const bool PINNED_Y = MAX.y > 1 && MIN.y >= MAX.y;
+        const auto HINTS = w->backend().geometryHints(Desktop::View::eBackendState::BACKEND_STATE_CURRENT);
+        if (!HINTS.minSize || !HINTS.maxSize)
+            return false;
+        const auto MIN      = *HINTS.minSize;
+        const auto MAX      = *HINTS.maxSize;
+        const auto UNBOUND  = std::numeric_limits<double>::max(); // the backend's "no max" sentinel
+        const bool PINNED_X = MAX.x < UNBOUND && MIN.x >= MAX.x;
+        const bool PINNED_Y = MAX.y < UNBOUND && MIN.y >= MAX.y;
         return !(PINNED_X && PINNED_Y);
     }
 

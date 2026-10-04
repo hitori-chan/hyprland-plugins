@@ -149,7 +149,10 @@ the plugin's one state file (see State).
   Resizable xdg-toplevels can receive the remembered size in the
   initial configure. Client size limits, fullscreen/maximize state,
   pending native requests, rules, parent-anchored dialogs, X11
-  geometry, and override-redirect surfaces stay authoritative. A
+  geometry, and override-redirect surfaces stay authoritative. The close
+  is remembered however the client tears down (GTK and Firefox destroy
+  their toplevel before the window unmaps): the size limits are read from
+  the compositor's cached copy, not the live toplevel. A
   fixed-size toplevel (min == max — a dialog or splash) keeps the
   compositor's native centered placement and never reads or writes the
   class row.
