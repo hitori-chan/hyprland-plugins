@@ -32,6 +32,10 @@ namespace {
             return "usage: awesome <count|center|state|badge|topline|clear|trace|…>";
         if (verb == "trace")
             return NAwesome::supervisor().traceString();
+#ifdef AWESOME_GATE
+        if (verb == "drawstats")
+            return NAwesome::Canvas::inst().drawStats();
+#endif
         const NAwesome::IModule* const MODULES[] = {&NAwesome::Shell::module(), &NAwesome::Notify::module(), &NAwesome::Windows::module(), &NAwesome::System::module()};
         for (const auto* M : MODULES)
             if (const auto R = M->handleCtl(verb))

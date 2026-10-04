@@ -33,6 +33,8 @@ using ITexture  = Render::ITexture;
 using Render::GL::g_pHyprOpenGL;
 
 #include <algorithm>
+#include <chrono>
+#include <format>
 #include <cstddef>
 #include <functional>
 #include <limits>
@@ -44,6 +46,41 @@ using Render::GL::g_pHyprOpenGL;
 
 namespace NAwesome {
 
+#ifdef AWESOME_GATE
+    // the gate's draw profile: time spent inside the paint calls, so a
+    // `drawstats` read can split the draw into layout and paint
+    inline uint64_t& gatePaintNs() {
+        static uint64_t N = 0;
+        return N;
+    }
+    struct SGatePaintScope {
+        std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+        ~SGatePaintScope() {
+            gatePaintNs() += std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count();
+        }
+    };
+#define AW_PAINT_SCOPE NAwesome::SGatePaintScope awPaintScope_
+    // named buckets for one-off attribution: AW_PROFILE("name") in a scope
+    inline std::unordered_map<std::string_view, std::pair<uint64_t, uint64_t>>& gateProfile() {
+        static std::unordered_map<std::string_view, std::pair<uint64_t, uint64_t>> M;
+        return M;
+    }
+    struct SGateScope {
+        std::string_view                      name;
+        std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+        ~SGateScope() {
+            auto& E = gateProfile()[name];
+            E.first++;
+            E.second += std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count();
+        }
+    };
+#define AW_PROFILE_CAT2(a, b) a##b
+#define AW_PROFILE_CAT(a, b) AW_PROFILE_CAT2(a, b)
+#define AW_PROFILE(n) NAwesome::SGateScope AW_PROFILE_CAT(awProf_, __LINE__){n}
+#else
+#define AW_PAINT_SCOPE
+#define AW_PROFILE(n)
+#endif
 
     // ---- the warm/draw state machine ----
 
@@ -248,6 +285,7 @@ namespace NAwesome {
         void rect(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f) const {
             if (!paints())
                 return;
+            AW_PAINT_SCOPE;
             g_pHyprOpenGL->renderRect(*rctx, toPhys(global), c.modifyA(c.a * alpha), {.round = round, .roundingPower = rp});
         }
         // Semantic container paint. Opaque defaults make the fork skip blur;
@@ -255,16 +293,19 @@ namespace NAwesome {
         void glass(const CBox& global, const CHyprColor& c, int round, float rp) const {
             if (!paints())
                 return;
+            AW_PAINT_SCOPE;
             g_pHyprOpenGL->renderRect(*rctx, toPhys(global), c.modifyA(c.a * alpha), {.round = round, .roundingPower = rp, .blur = blurOn(), .blurA = alpha});
         }
         void border(const CBox& global, const CHyprColor& c, int round, int sizePx, float rp) const {
             if (!paints())
                 return;
+            AW_PAINT_SCOPE;
             g_pHyprOpenGL->renderBorder(*rctx, toPhys(global), Config::CGradientValueData{c}, {.round = round, .roundingPower = rp, .borderSize = sizePx, .a = alpha});
         }
         void ring(const CBox& global, const CHyprColor& c, int round, float rp, double px = 1.0) const {
             if (!paints())
                 return;
+            AW_PAINT_SCOPE;
             // the gradient ctor heap-allocates and OkLab-converts — memoize per color
             static std::unordered_map<uint64_t, Config::CGradientValueData> grads;
             const auto                                                      KEY = c.getAsHex();
@@ -276,6 +317,7 @@ namespace NAwesome {
         void shadow(const CBox& global, int round, float rp, int range) const {
             if (!paints())
                 return;
+            AW_PAINT_SCOPE;
             static Config::CGradientValueData GRAD{CHyprColor{Theme::SHADOW}};
             g_pHyprOpenGL->renderRoundedShadow(*rctx, toPhys(global), round, rp, (int)std::lround(range * scale), GRAD, alpha, Render::SWindowRenderPresentation{});
         }
@@ -283,6 +325,7 @@ namespace NAwesome {
         void tex(const SP<ITexture>& t, double gx, double gy) const {
             if (!paints() || !t || t->m_texID == 0)
                 return;
+            AW_PAINT_SCOPE;
             const auto P = toPhys(CBox{gx, gy, 1, 1});
             g_pHyprOpenGL->renderTexture(*rctx, t, CBox{(double)P.x, (double)P.y, t->m_size.x, t->m_size.y}, {.a = alpha});
         }
@@ -290,6 +333,7 @@ namespace NAwesome {
         void texIn(const SP<ITexture>& t, const CBox& cell) const {
             if (!paints() || !t || t->m_texID == 0)
                 return;
+            AW_PAINT_SCOPE;
             const auto B = toPhys(cell);
             CBox       b{B.x + (B.w - t->m_size.x) / 2.0, B.y + (B.h - t->m_size.y) / 2.0, t->m_size.x, t->m_size.y};
             g_pHyprOpenGL->renderTexture(*rctx, t, b.round(), {.a = alpha});
@@ -300,6 +344,7 @@ namespace NAwesome {
         void texFit(const SP<ITexture>& t, const CBox& cell, int round = 0, float rp = 2.f) const {
             if (!paints() || !t || t->m_texID == 0)
                 return;
+            AW_PAINT_SCOPE;
             const double TW = t->m_size.x, TH = t->m_size.y;
             if (TW <= 0 || TH <= 0)
                 return;
@@ -313,6 +358,7 @@ namespace NAwesome {
         void texStretch(const SP<ITexture>& t, const CBox& cell, int round = 0, float rp = 2.f) const {
             if (!paints() || !t || t->m_texID == 0)
                 return;
+            AW_PAINT_SCOPE;
             g_pHyprOpenGL->renderTexture(*rctx, t, toPhys(cell), {.a = alpha, .round = round, .roundingPower = rp});
         }
     };
@@ -426,11 +472,30 @@ namespace NAwesome {
             return false;
         }
 
+#ifdef AWESOME_GATE
+        // the gate's draw profile (`hyprctl awesome drawstats`): time inside
+        // the canvas pass's draw — layout and the paint calls it issues —
+        // since the last read
+        std::string drawStats() {
+            const auto OUT = std::format("draws:{} ns:{} avg_us:{:.1f} paint_avg_us:{:.1f}", m_draws, m_drawNs, m_draws ? m_drawNs / 1000.0 / m_draws : 0.0,
+                                         m_draws ? gatePaintNs() / 1000.0 / m_draws : 0.0);
+            std::string buckets;
+            for (const auto& [N, E] : gateProfile())
+                buckets += std::format(" {}:{}x/{:.1f}us", N, E.first, m_draws ? E.second / 1000.0 / m_draws : 0.0);
+            gateProfile().clear();
+            m_draws = m_drawNs = 0;
+            gatePaintNs()      = 0;
+            return OUT + buckets;
+        }
+#endif
 
       private:
         friend class CAwesomePassElement;
         std::vector<ILayer*> m_layers;
         CWarmGate            m_gate;
+#ifdef AWESOME_GATE
+        uint64_t m_draws = 0, m_drawNs = 0;
+#endif
 
         class CAwesomePassElement : public IPassElement {
           public:
@@ -439,6 +504,9 @@ namespace NAwesome {
 
             virtual std::vector<UP<IPassElement>> draw(Render::CRenderContext& rctx) override {
                 auto& C = Canvas::inst();
+#ifdef AWESOME_GATE
+                const auto T0 = std::chrono::steady_clock::now();
+#endif
                 C.m_gate.inRender = true;
                 if (const auto MON = m_mon.lock()) {
                     SPaint ctx;
@@ -449,6 +517,10 @@ namespace NAwesome {
                     m_layer->draw(MON, ctx);
                 }
                 C.m_gate.inRender = false;
+#ifdef AWESOME_GATE
+                C.m_drawNs += std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - T0).count();
+                C.m_draws++;
+#endif
 
                 // Something changed without warming first (a texture the warm
                 // never enumerated). One glyph is missing for one frame;
