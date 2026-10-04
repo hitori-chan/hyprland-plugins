@@ -194,10 +194,13 @@ namespace NAwesome::Notify {
             return "notify";
         }
 
-        // The canvas bracket is already open here (its warmAll owns it)
+        // The canvas bracket is already open here (its warmAll owns it).
+        // The cards lay out on the focused monitor only: warm once, for it —
+        // a warm per monitor re-ran the whole stack's layout N times.
         void warm(PHLMONITOR mon) override {
-            (void)mon;
-            warmNotifs();
+            const auto FOCUS = focusedMon();
+            if (!FOCUS || mon == FOCUS)
+                warmNotifs();
         }
 
         void draw(PHLMONITOR mon, SPaint& ctx) override {

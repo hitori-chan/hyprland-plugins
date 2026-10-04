@@ -372,9 +372,16 @@ namespace NAwesome::Shell {
         }
     }
 
+    // Coalesced: one warm + damage per event-loop turn, however many bar
+    // events (title, focus, urgency, tray icons) arrived in it — each used to
+    // warm every layer on every monitor synchronously. A frame that renders
+    // first finds the stale texture and rewarms itself (the canvas gate).
+    static NAwesome::CHop pendingBarChange;
     void barChanged() {
-        warmBars();
-        damageBars();
+        pendingBarChange.arm([]() {
+            warmBars();
+            damageBars();
+        });
     }
 
     bool isTaskOn(const PHLWINDOW& w, const PHLWORKSPACE& ws) {
