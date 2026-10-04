@@ -39,6 +39,14 @@ truth, not here.
   `count`) — the plugin logs nothing on a successful load, so log
   greps can neither prove nor disprove a load (2026-10-03: a
   whole "plugin not loading" thread was a log-grep phantom).
+- The nested's socket is NOT the nested process's `WAYLAND_DISPLAY`
+  environ: that value is the display the nested CONNECTS to (the live
+  socket), so `hyprctl`/`dispatch` aimed there hit the LIVE session.
+  Read the provided socket from the harness (`$HARNESS/nested.sig` or
+  the `SIG=` line of `$HARNESS/launch.log`), never from `/proc/<pid>/
+  environ` (2026-10-04: probing "the nested" via its environ dispatched
+  exec_cmd and window.close onto the live desktop, spawning fixture
+  windows there and stealing live focus).
 
 When in doubt, verify against these sources instead of memory or
 conversation state. Never copy state into this file.
@@ -80,7 +88,14 @@ gate.
   `PKG_CONFIG_PATH` and `HYPR_DEPLOY_PKG_CONFIG_PATH` (same directory);
   never substitute a stale installed cache — watch stale-header
   resolution into `/usr/local/include` (dual-root redefinition errors)
-  and the `-MMD` gap (`make -B` after a header install).
+  and the `-MMD` gap (`make -B` after a header install). After a fork
+  commit, refresh the gate header set's `src/version.h` by COPYING
+  `~/repo/Hyprland/src/version.h` (CMake-generated) verbatim — never a
+  partial template substitution: the plugin's load-time hash guard
+  compares a six-component hash (git hash + aquamarine/hyprutils/
+  hyprgraphics/hyprcursor/hyprlang versions), and one unsubstituted
+  `@VAR@` silently breaks the plugin load (2026-10-04: a partial
+  refresh masked a full CSD battery failure as "plugin not loaded").
 - Long builds and gate runs go in tmux. Every temporary artifact —
   logs, debug dumps, scratch files, probe dirs — goes under a
   dedicated `/tmp` subdirectory (e.g. `/tmp/hypr-gate/`); keep `~`
