@@ -99,9 +99,10 @@ chk "fixed-size battery left no windows" \
 # ---- CSD geometry offset (discord-updater splash shape) ------------------
 # The window box is the CONTENT frame: the client declares its content
 # rectangle inside a bigger buffer (the CSD shadow margin), and the
-# compositor renders the buffer offset so the margin lands OUTSIDE the box
-# (the shadow), never inside it. No padding between the border and the
-# content, on any side; the size round-trips in the content frame.
+# compositor shows exactly that rectangle at the box — the margin is
+# cropped, never padding inside the box nor a halo outside it. No gap
+# between the border and the content, on any side; the size round-trips in
+# the content frame.
 dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 300 350 10 csdpin')"; sleep 2
 expect "pinned CSD splash: box is the content frame (300x350), centered" \
 	"any(c['class']=='csdpin' and c['floating'] and c['size']==[300,350] and abs(c['at'][0]-$(( (MON_W-300)/2 )))<=14 and abs(c['at'][1]-$(( 30+(MON_H-30-350)/2 )))<=14 for c in cs)"
@@ -110,7 +111,7 @@ import json,sys
 c = next((c for c in json.load(sys.stdin) if c['class']=='$1'), None)
 print(f\"{c['at'][0]} {c['at'][1]} {c['size'][0]} {c['size'][1]}\") if c else print('none')" ; }
 capture_nested "$STATE/csd-pin.png"
-chk "pinned CSD: content fills the box, the margin renders outside it" \
+chk "pinned CSD: content fills the box, the margin is cropped" \
 	test "$(python3 - "$STATE/csd-pin.png" "$(box4 csdpin)" <<'PY'
 import sys
 from PIL import Image
@@ -122,7 +123,7 @@ MAROON = (48, 32, 32)
 content = lambda dx, dy: px[x + dx, y + dy] == MAROON
 ok = content(3, 3) and content(w - 4, 3) and content(3, h - 4) and content(w - 4, h - 4) \
    and content(w // 2, h // 2)
-# 5px OUTSIDE the box edge: the shadow margin, never content
+# 5px OUTSIDE the box edge: never content
 outside = lambda dx, dy: px[dx, dy] != MAROON
 ok = ok and outside(x - 5, y + h // 2) and outside(x + w + 5, y + h // 2) \
       and outside(x + w // 2, y - 5) and outside(x + w // 2, y + h + 5)
@@ -154,7 +155,7 @@ dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 800 500 20 csdfollow - - resz vis
 expect "following CSD: box is the content frame (800x500), centered" \
 	"any(c['class']=='csdfollow' and c['floating'] and c['size']==[800,500] and abs(c['at'][0]-$(( (MON_W-800)/2 )))<=14 and abs(c['at'][1]-$(( 30+(MON_H-30-500)/2 )))<=14 for c in cs)"
 capture_nested "$STATE/csd-follow.png"
-chk "following CSD: content whole to the box edge, margin outside it" \
+chk "following CSD: content whole to the box edge, margin cropped" \
 	test "$(python3 - "$STATE/csd-follow.png" "$(box4 csdfollow)" <<'PY'
 import sys
 from PIL import Image
@@ -162,13 +163,14 @@ im = Image.open(sys.argv[1]).convert("RGB"); px = im.load()
 x, y, w, h = map(int, sys.argv[2].split())
 # the client resized its content to the configure: content reaches every
 # box edge (not clipped, not shrunken), and the vismargin gray the client
-# paints in its buffer margin sits OUTSIDE the box, never inside it.
+# paints in its buffer margin is never drawn — not inside the box, not
+# outside it.
 content = lambda dx, dy: px[x + dx, y + dy] == (48, 32, 32)
 margin  = lambda dx, dy: px[dx, dy] == (176, 176, 176)
 ok = content(3, 3) and content(w - 4, 3) and content(3, h - 4) and content(w - 4, h - 4) \
    and content(w // 2, h // 2) \
-   and margin(x - 5, y + h // 2) and margin(x + w + 5, y + h // 2) \
-   and margin(x + w // 2, y - 5) and margin(x + w // 2, y + h + 5)
+   and not margin(x - 5, y + h // 2) and not margin(x + w + 5, y + h // 2) \
+   and not margin(x + w // 2, y - 5) and not margin(x + w // 2, y + h + 5)
 print(1 if ok else 0)
 PY
 )" = 1

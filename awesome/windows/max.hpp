@@ -281,9 +281,8 @@ namespace NAwesome::Windows {
                 // maximized (notably GTK) stays in maximized mode — it
                 // saves "maximized" on close and reopens maximized, and
                 // stops tracking its normal geometry (2026-10-03: firefox
-                // "always opens maximized"). Its CSD when windowed is the
-                // correct windowed look (the shadow is part of its buffer,
-                // composited with alpha — the pre-bump fork's behavior);
+                // "always opens maximized"). Its windowed CSD shadow
+                // margin is cropped at the box by the fork's renderer;
                 // the fork no longer lies maximized at map to suppress it.
                 setClientMaximized(false);
                 if (STORED.w > 5 && STORED.h > 5) {

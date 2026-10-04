@@ -75,8 +75,8 @@ expect "quick: the spot round-trips after close+respawn" \
 	"any(c['class']=='foot' and c['size']==[500,400] for c in cs)"
 
 # ---- CSD content frame (the 2026-10-04 bug) --------------------------------
-# box == the client's content frame, centered: the shadow margin renders
-# OUTSIDE the box, never as padding inside it.
+# box == the client's content frame, centered: the buffer's shadow margin
+# is cropped at the box edge, never padding inside it.
 dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 300 350 10 quickcsd')"; sleep 2
 expect "quick: pinned CSD box is the content frame (300x350), centered" \
 	"any(c['class']=='quickcsd' and c['floating'] and c['size']==[300,350] and abs(c['at'][0]-$(( (MON_W-300)/2 )))<=14 and abs(c['at'][1]-$(( 30+(MON_H-30-350)/2 )))<=14 for c in cs)"
@@ -85,7 +85,7 @@ import json,sys
 c = next((c for c in json.load(sys.stdin) if c['class']=='quickcsd'), None)
 print(f\"{c['at'][0]} {c['at'][1]} {c['size'][0]} {c['size'][1]}\" if c else 'none')")"
 capture_nested "$STATE/quick-csd.png"
-chk "quick: CSD content fills the box, the margin renders outside it" \
+chk "quick: CSD content fills the box, the margin is cropped" \
 	test "$(python3 - "$STATE/quick-csd.png" "$CS" <<'PY'
 import sys
 from PIL import Image
