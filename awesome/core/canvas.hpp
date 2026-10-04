@@ -44,6 +44,7 @@ using Render::GL::g_pHyprOpenGL;
 
 namespace NAwesome {
 
+
     // ---- the warm/draw state machine ----
 
     class CWarmGate {
@@ -391,14 +392,21 @@ namespace NAwesome {
             m_gate.endWarm();
         }
 
-        // The pass element registers on RENDER_POST_WINDOWS: one pass per
-        // monitor renders EVERY layer that claims that monitor. The context
-        // is borrowed for this emission only — the element gets its own
+        // The pass elements register on RENDER_POST_WINDOWS. The context is
+        // borrowed for this emission only — each element gets its own
         // context back at draw time.
+        //
+        // One element PER LAYER, each with its own box: the renderer drops an
+        // element whose box misses the frame's damage, so a card redrawn over
+        // a busy window no longer re-runs the bar's whole layout (one union
+        // element did: ~190 us of a ~300 us draw, every frame). A layer with
+        // nothing on this monitor adds no element at all.
         void onRenderStage(const Event::SRenderStageEvent& ev) {
             if (ev.stage != RENDER_POST_WINDOWS || !ev.monitor || !ev.context)
                 return;
-            Render::IHyprRenderer::addPassElement(ev.context->get(), makeUnique<CAwesomePassElement>(ev.monitor));
+            for (auto* L : m_layers)
+                if (L->boundingBox(ev.monitor))
+                    Render::IHyprRenderer::addPassElement(ev.context->get(), makeUnique<CAwesomePassElement>(ev.monitor, L));
         }
 
         void onBlockSolitary(PHLMONITOR mon, bool& block) const {
@@ -418,6 +426,7 @@ namespace NAwesome {
             return false;
         }
 
+
       private:
         friend class CAwesomePassElement;
         std::vector<ILayer*> m_layers;
@@ -425,7 +434,7 @@ namespace NAwesome {
 
         class CAwesomePassElement : public IPassElement {
           public:
-            explicit CAwesomePassElement(PHLMONITOR mon) : m_mon(mon) {}
+            CAwesomePassElement(PHLMONITOR mon, ILayer* layer) : m_mon(mon), m_layer(layer) {}
             virtual ~CAwesomePassElement() = default;
 
             virtual std::vector<UP<IPassElement>> draw(Render::CRenderContext& rctx) override {
@@ -437,8 +446,7 @@ namespace NAwesome {
                     ctx.scale = MON->m_scale;
                     ctx.mb    = MON->logicalBox();
                     ctx.rctx  = &rctx;
-                    for (auto* L : C.m_layers)
-                        L->draw(MON, ctx);
+                    m_layer->draw(MON, ctx);
                 }
                 C.m_gate.inRender = false;
 
@@ -454,37 +462,18 @@ namespace NAwesome {
                 return {};
             }
             virtual bool needsLiveBlur(Render::CRenderContext&) override {
-                // only while a layer actually paints — never claim a live
-                // blur of a region that is hidden (blur for nothing)
+                // only while the layer actually paints translucent glass —
+                // never claim a live blur of a region that is hidden
                 const auto MON = m_mon.lock();
-                if (!MON || !blurOn())
-                    return false;
-                for (auto* L : Canvas::inst().m_layers)
-                    if (L->needsBlur(MON))
-                        return true;
-                return false;
+                return MON && blurOn() && m_layer->needsBlur(MON);
             }
             virtual bool needsPrecomputeBlur(Render::CRenderContext&) override {
                 return false;
             }
             virtual std::optional<CBox> boundingBox(Render::CRenderContext&) override {
-                // the union of the layers' boxes: monitor-local LOGICAL px
+                // monitor-local LOGICAL px
                 const auto MON = m_mon.lock();
-                if (!MON)
-                    return std::nullopt;
-                // seeded from the first box: a (0,0) seed stretched every
-                // union to the monitor's corner
-                double minx = 0, miny = 0, maxx = 0, maxy = 0;
-                bool   any  = false;
-                for (auto* L : Canvas::inst().m_layers)
-                    if (const auto B = L->boundingBox(MON)) {
-                        minx = any ? std::min(minx, (double)B->x) : (double)B->x;
-                        miny = any ? std::min(miny, (double)B->y) : (double)B->y;
-                        maxx = any ? std::max(maxx, (double)B->x + B->w) : (double)B->x + B->w;
-                        maxy = any ? std::max(maxy, (double)B->y + B->h) : (double)B->y + B->h;
-                        any  = true;
-                    }
-                return any ? std::optional<CBox>{CBox{minx, miny, maxx - minx, maxy - miny}} : std::nullopt;
+                return MON ? m_layer->boundingBox(MON) : std::nullopt;
             }
             virtual const char* passName() override {
                 return "CAwesomePassElement";
@@ -495,6 +484,7 @@ namespace NAwesome {
 
           private:
             PHLMONITORREF m_mon;
+            ILayer*       m_layer; // a static module layer: outlives every frame's pass
         };
     };
 
