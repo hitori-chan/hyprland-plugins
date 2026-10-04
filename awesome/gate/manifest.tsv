@@ -69,17 +69,17 @@ preflight	version sync per plugin (x8)	preflight	(consolidated to one)	one const
 lifecycle	(none)	(none)	(none)	the old gate had no session-lock battery (hyprlock needs a lock client the nested does not run); parity kept
 
 # ---- new (no old-gate predecessor) ------------------------------------------
-# The CSD model change (window box = surface frame; the compositor sizes the
-# client's content to box - margin) re-pinned the csdpin/csdpinx size
-# assertions and added the follow-client content-integrity and maximized-close
-# spot-mint checks below. The old gate's CSD assertions pinned the pre-fix
-# content-frame box and are superseded, not kept.
-new 	 - 	 windows 	 pinned CSD splash: box is the surface frame (content + 2m) 	 superseded: fixed CSD splash: box is the client-declared frame
-new 	 - 	 windows 	 pinned CSD: no content bleed at the box's bottom-right (shadow not clipped) 	 new
-new 	 - 	 windows 	 per-axis-pinned CSD: box is the surface frame on both axes 	 superseded: per-axis-pinned CSD: pinned axis stays at the client frame
-new 	 - 	 windows 	 following CSD: box is the surface frame (840x540), centered 	 new
-new 	 - 	 windows 	 following CSD: content whole with margin on all four sides 	 new
-new 	 - 	 windows 	 following CSD: the remembered spot round-trips at the surface-frame size 	 new
+# The CSD model (window box = CONTENT frame; the buffer's shadow margin
+# renders OUTSIDE the box, so there is no padding between the border and
+# the content) pins the csdpin/csdpinx size assertions to the content box
+# and adds the margin-outside pixel checks, the follow-client content-
+# integrity and the maximized-close spot-mint checks below.
+new 	 - 	 windows 	 pinned CSD splash: box is the content frame (300x350), centered 	 new
+new 	 - 	 windows 	 pinned CSD: content fills the box, the margin renders outside it 	 new
+new 	 - 	 windows 	 per-axis-pinned CSD: box is the content frame on both axes 	 new
+new 	 - 	 windows 	 following CSD: box is the content frame (800x500), centered 	 new
+new 	 - 	 windows 	 following CSD: content whole to the box edge, margin outside it 	 new
+new 	 - 	 windows 	 following CSD: the remembered spot round-trips at the content-frame size 	 new
 new 	 - 	 windows 	 maximized close mints the spot from the last windowed box 	 new
 new 	 - 	 windows 	 minted spot lands the respawn at the remembered box 	 new
 

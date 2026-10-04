@@ -19,16 +19,27 @@ HARNESS="${HYPR_HARNESS:-$HOME/.local/share/hypr-nested}"
 
 # Battery selection: resolved against this canonical order; sourcing below
 # always walks it so user-specified order never changes execution order.
-CANONICAL_BATTERIES=(shell windows notify system pipeline lifecycle)
+#
+# Tiers (2026-10-04 gate trim): the dev loop runs QUICK by default; the
+# battle-tested batteries that pay for relaunches (state) or X-wayland
+# pipeline polling (focus) are opt-in, and `all` is the pre-trim full run
+# without focus. `everything` runs every battery.
+CANONICAL_BATTERIES=(quick shell windows state notify system pipeline focus lifecycle)
+QUICK_TIER=(quick)
+ALL_TIER=(shell windows state notify system pipeline lifecycle)
 SELECTED=()
 
 usage() {
 	cat >&2 <<'EOF'
-usage: gate.sh [-b LIST] [-k LIST] [compositor-bin]
-  -b LIST   comma-separated batteries to RUN, from:
-            shell windows notify system pipeline lifecycle (canonical order enforced regardless of user order)
-            special value: all (default)
-  -k LIST   comma-separated batteries to SKIP from the canonical set
+usage: gate.sh [-b TIER|LIST] [-k LIST] [compositor-bin]
+  -b        tiers:
+              quick      the dev-loop smoke battery (DEFAULT)
+              all        shell windows state notify system pipeline lifecycle
+              everything quick + all + focus
+            or a comma-separated battery list, from:
+              quick shell windows state notify system pipeline focus lifecycle
+            (canonical order enforced regardless of user order)
+  -k LIST   comma-separated batteries to SKIP from the selected set
 EOF
 }
 
@@ -75,7 +86,11 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$BIN" ]] || BIN=${HYPR_BIN:-/usr/local/bin/Hyprland}
 
-if [[ -z "$B_SPEC" || "$B_SPEC" == "all" ]]; then
+if [[ -z "$B_SPEC" || "$B_SPEC" == "quick" ]]; then
+	SELECTED=("${QUICK_TIER[@]}")
+elif [[ "$B_SPEC" == "all" ]]; then
+	SELECTED=("${ALL_TIER[@]}")
+elif [[ "$B_SPEC" == "everything" ]]; then
 	SELECTED=("${CANONICAL_BATTERIES[@]}")
 else
 	IFS=',' read -r -a REQUESTED <<< "$B_SPEC"
