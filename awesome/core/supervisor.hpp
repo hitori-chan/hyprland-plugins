@@ -10,6 +10,7 @@
 #pragma once
 
 #include "canvas.hpp"
+#include "desktopindex.hpp"
 #include "config.hpp"
 #include "hop.hpp"
 #include "jobs.hpp"
@@ -123,6 +124,8 @@ namespace NAwesome {
             // the unified state file — before any module touches its
             // store, or it would seed the old paths
             StateStore::inst().load();
+            // the shared .desktop icon index, before the modules subscribe
+            CDesktopIcons::inst().start();
             // A throwing init (bad_alloc, a bus that refuses us) ejects the
             // plugin WITHOUT PLUGIN_EXIT: tear down whatever did start —
             // including the thrower's partial init — so no listener, timer,
@@ -139,6 +142,7 @@ namespace NAwesome {
                 for (size_t i = std::min(started + 1, m_modules.size()); i-- > 0;)
                     m_modules[i]->teardown();
                 Jobs::inst().teardown();
+                CDesktopIcons::inst().stop();
                 throw;
             }
 
@@ -170,6 +174,7 @@ namespace NAwesome {
             for (auto IT = m_modules.rbegin(); IT != m_modules.rend(); ++IT)
                 (*IT)->teardown();
             Jobs::inst().teardown(); // helpers after the modules that spawned them
+            CDesktopIcons::inst().stop(); // its helper and subscribers, after the modules
         }
 
         // ---- the pipeline ----

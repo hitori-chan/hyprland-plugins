@@ -1,9 +1,8 @@
 // awesome/shell/icons.cpp — icon loading and resolution: GTK theme dirs, PNG/SVG, per-use caches
 
-#include "../core/fileindex.hpp"
 #include "../core/icons.hpp" // the shared XDG walk + the GTK theme name
+#include "../core/desktopindex.hpp"
 
-#include "../core/desktop_exec.hpp"
 #include "shell/shell.hpp"
 
 namespace NAwesome::Shell {
@@ -159,11 +158,6 @@ namespace NAwesome::Shell {
     static std::vector<std::string> iconDirs;
     static std::unordered_map<std::string, SP<ITexture>> appIconCache;
     static std::unordered_map<std::string, SP<ITexture>> namedIconCache, trayIconCache;
-    static NAwesome::CAsyncFileIndex                  desktopIndex;
-    static SP<CEventLoopTimer>                           desktopPoll;
-    static std::unordered_map<std::string, std::string>  desktopIcons;
-    static uint64_t                                      desktopGeneration = 0;
-    static bool                                          desktopScanning   = false;
 
     void                            buildIconDirs() {
         iconDirs.clear();
@@ -231,100 +225,16 @@ namespace NAwesome::Shell {
         return "";
     }
 
-    // Application dirs in XDG order: per-user first (it overrides system),
-    // then the data dirs (Flatpak/system exports).
-    static std::vector<std::string> appDirs() {
-        auto dirs = NAwesome::xdgDataDirs();
-        for (auto& D : dirs)
-            D += "/applications";
-        return dirs;
-    }
-
-    static void indexDesktopEntry(const NAwesome::CAsyncFileIndex::SEntry& entry) {
-        std::istringstream F(entry.contents);
-        std::string        icon, wmClass, line;
-        bool               inEntry = false;
-        while (std::getline(F, line)) {
-            if (!line.empty() && line.back() == '\r')
-                line.pop_back();
-            if (line.starts_with("[")) {
-                if (inEntry)
-                    break;
-                inEntry = line == "[Desktop Entry]";
-                continue;
-            }
-            if (!inEntry)
-                continue;
-            if (icon.empty() && line.starts_with("Icon=")) {
-                if (const auto VALUE = NAwesome::DesktopExec::unescapeString(std::string_view{line}.substr(5)))
-                    icon = *VALUE;
-            } else if (wmClass.empty() && line.starts_with("StartupWMClass=")) {
-                if (const auto VALUE = NAwesome::DesktopExec::unescapeString(std::string_view{line}.substr(15)))
-                    wmClass = *VALUE;
-            }
-            if (!icon.empty() && !wmClass.empty())
-                break;
-        }
-        if (icon.empty())
-            return;
-        const auto remember = [&](const std::string& key) {
-            if (!key.empty())
-                desktopIcons.try_emplace(lower(key), icon);
-        };
-        remember(entry.path.stem().string());
-        remember(wmClass);
-    }
-
-    static void startDesktopIndex() {
-        desktopIcons.clear();
-        desktopScanning = true;
-        NAwesome::CAsyncFileIndex::SRequest request;
-        request.generation   = ++desktopGeneration;
-        request.extensions   = {".desktop"};
-        request.maxEntries   = 4096;
-        request.maxVisited   = 16384;
-        request.maxFileBytes = NAwesome::DesktopExec::MAX_DESKTOP_FILE_BYTES;
-        for (const auto& directory : appDirs())
-            request.roots.emplace_back(directory);
-        desktopIndex.request(std::move(request));
-        if (desktopPoll)
-            desktopPoll->updateTimeout(std::chrono::milliseconds(2));
-    }
-
-    static void pollDesktopIndex() {
-        if (!desktopScanning)
-            return;
-        std::vector<NAwesome::CAsyncFileIndex::SEntry> entries;
-        const bool COMPLETE = desktopIndex.poll(desktopGeneration, entries, 8);
-        const size_t BEFORE = desktopIcons.size();
-        for (const auto& entry : entries)
-            indexDesktopEntry(entry);
-        desktopScanning = !COMPLETE;
-        if (desktopIcons.size() != BEFORE) {
-            // new entries can only fill MISSES (cached nulls) — a resolved
-            // icon stays resolved; clearing everything per 8-entry batch
-            // re-decoded every task and tray icon dozens of times while the
-            // index loaded
-            std::erase_if(appIconCache, [](const auto& E) { return !E.second; });
-            std::erase_if(trayIconCache, [](const auto& E) { return !E.second; });
-            for (const auto& item : Tray::items)
-                if (item->pixels.empty() && (!item->tex || item->tex->m_texID == 0))
-                    item->dirty = true;
-            barChanged();
-        }
-        if (desktopPoll)
-            desktopPoll->updateTimeout(desktopScanning ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
-    }
-
     // Window class -> Icon= from the app's .desktop file. A window's class
     // rarely equals its desktop-file basename (ente's class is "ente" but it
     // ships ente-desktop.desktop; qBittorrent's is "qbittorrent" under
     // org.qbittorrent.qBittorrent.desktop) — the spec's StartupWMClass field
     // is the canonical association, so scan for it when the basename misses.
     static std::string desktopIconName(const std::string& identifier) {
-        const auto ID = lower(identifier);
-        if (const auto it = desktopIcons.find(ID); it != desktopIcons.end())
-            return it->second;
+        const auto& INDEX = NAwesome::CDesktopIcons::inst();
+        const auto  ID    = lower(identifier);
+        if (const auto* ICON = INDEX.find(ID))
+            return *ICON;
 
         // SNI Id is stable but not required to be a desktop-file id. Accept a
         // mapped desktop identity only at an explicit suffix boundary, so an
@@ -332,7 +242,7 @@ namespace NAwesome::Shell {
         // match an unrelated "application" id.
         const std::string* best = nullptr;
         size_t             bestLength = 0;
-        for (const auto& [key, icon] : desktopIcons) {
+        for (const auto& [key, icon] : INDEX.entries()) {
             if (key.size() <= bestLength || !NAwesome::iconIdentityPrefixMatch(ID, key))
                 continue;
             best       = &icon;
@@ -447,20 +357,21 @@ namespace NAwesome::Shell {
     }
 
     void iconsInit() {
-        if (!g_pEventLoopManager || !g_pCompositor || !desktopIndex.init(g_pCompositor->m_wlEventLoop))
-            return;
-        desktopPoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { pollDesktopIndex(); }, nullptr);
-        g_pEventLoopManager->addTimer(desktopPoll);
-        startDesktopIndex();
+        // the shared .desktop index (core) grew: new entries can only fill
+        // MISSES (cached nulls) — a resolved icon stays resolved; clearing
+        // everything per batch re-decoded every task and tray icon dozens of
+        // times while the index loaded
+        NAwesome::CDesktopIcons::inst().subscribe([]() {
+            std::erase_if(appIconCache, [](const auto& E) { return !E.second; });
+            std::erase_if(trayIconCache, [](const auto& E) { return !E.second; });
+            for (const auto& item : Tray::items)
+                if (item->pixels.empty() && (!item->tex || item->tex->m_texID == 0))
+                    item->dirty = true;
+            barChanged();
+        });
     }
 
     void iconsExit() {
-        if (desktopPoll && g_pEventLoopManager)
-            g_pEventLoopManager->removeTimer(desktopPoll);
-        desktopPoll.reset();
-        desktopIndex.exit();
-        desktopIcons.clear();
-        desktopScanning = false;
         appIconCache.clear();
         namedIconCache.clear();
         trayIconCache.clear();

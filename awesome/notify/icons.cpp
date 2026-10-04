@@ -4,8 +4,7 @@
 #include "ui.hpp"
 
 #include "../core/config.hpp"
-#include "../core/desktop_exec.hpp"
-#include "../core/fileindex.hpp"
+#include "../core/desktopindex.hpp"
 
 #include <hyprland/src/render/AsyncResourceGatherer.hpp>
 
@@ -78,8 +77,6 @@ namespace NAwesome::Notify {
 
     static constexpr size_t MAX_PENDING_IMAGE_RESOURCES = 24; // the gatherer is shared with the compositor
     static constexpr double MAX_DECODED_IMAGE_PIXELS    = 16.0 * 1024 * 1024;
-    static constexpr size_t MAX_DESKTOP_FILES           = 4096;
-    static constexpr size_t MAX_DESKTOP_VISITED         = 16384;
 
     struct SDecodeJob {
         std::string                                                    source;
@@ -95,10 +92,6 @@ namespace NAwesome::Notify {
     static bool                      slotFreed           = false;
     static bool                      waitedForDecodeSlot = false;
 
-    static NAwesome::CAsyncFileIndex                 desktopIndex;
-    static std::unordered_map<std::string, std::string> desktopIcons;
-    static uint64_t                                     desktopGeneration = 0;
-    static bool                                         desktopScanning   = false;
 
     // one face per (identity, name, font, size, bg): the facepile never
     // shows a blank square for a faceless sender. The cache is an LRU, not a
@@ -119,7 +112,7 @@ namespace NAwesome::Notify {
     static void armDecodePoll() {
         if (!decodePoll)
             return;
-        const bool PENDING = desktopScanning || std::ranges::any_of(decodeJobs, [](const auto& job) { return !resourceReady(job); });
+        const bool PENDING = std::ranges::any_of(decodeJobs, [](const auto& job) { return !resourceReady(job); });
         decodePoll->updateTimeout(PENDING ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
     }
 
@@ -195,107 +188,34 @@ namespace NAwesome::Notify {
         return value;
     }
 
-    // application dirs in XDG order: per-user first, then the data dirs
-    // (Flatpak/system exports)
-    static std::vector<std::string> appDirs() {
-        auto dirs = NAwesome::xdgDataDirs();
-        for (auto& D : dirs)
-            D += "/applications";
-        return dirs;
-    }
-
-    static void indexDesktopEntry(const NAwesome::CAsyncFileIndex::SEntry& entry) {
-        std::istringstream F(entry.contents);
-        std::string        icon, wmClass, line;
-        bool               inEntry = false;
-        while (std::getline(F, line)) {
-            if (!line.empty() && line.back() == '\r')
-                line.pop_back();
-            if (line.starts_with("[")) {
-                if (inEntry)
-                    break;
-                inEntry = line == "[Desktop Entry]";
+    // the shared .desktop index (core) grew: upgrade every live card still
+    // riding the icon-name stand-in for its desktop entry
+    static void onDesktopEntries() {
+        bool      identityChanged = false;
+        const int ICONPX          = std::max(8, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon"));
+        for (const auto& N : notifs) {
+            if (!N->identityFromDesktop)
                 continue;
-            }
-            if (!inEntry)
+            const auto ICON = resolveDesktopEntryIcon(N->desktopEntry, ICONPX);
+            if (ICON.empty() || ICON == N->identity)
                 continue;
-            if (icon.empty() && line.starts_with("Icon=")) {
-                if (const auto VALUE = NAwesome::DesktopExec::unescapeString(std::string_view{line}.substr(5)))
-                    icon = *VALUE;
-            } else if (wmClass.empty() && line.starts_with("StartupWMClass=")) {
-                if (const auto VALUE = NAwesome::DesktopExec::unescapeString(std::string_view{line}.substr(15)))
-                    wmClass = *VALUE;
-            }
-            if (!icon.empty() && !wmClass.empty())
-                break;
+            N->identity            = ICON; // the entry's own Icon= is authoritative
+            N->identTex.reset();
+            N->identFor.clear();
+            N->identIconPx         = 0;
+            N->identSettled        = false;
+            N->identityFromDesktop = false;
+            identityChanged        = true;
         }
-        if (icon.empty())
-            return;
-        // the desktop-file basename AND StartupWMClass: a sender's hint is
-        // often the window class, rarely the file name
-        const auto remember = [&](const std::string& key) {
-            if (!key.empty())
-                desktopIcons.try_emplace(lowerKey(key), icon);
-        };
-        remember(entry.path.stem().string());
-        remember(wmClass);
-    }
-
-    static void startDesktopIndex() {
-        desktopIcons.clear();
-        desktopScanning = true;
-        NAwesome::CAsyncFileIndex::SRequest request;
-        request.generation   = ++desktopGeneration;
-        request.extensions   = {".desktop"};
-        request.maxEntries   = MAX_DESKTOP_FILES;
-        request.maxVisited   = MAX_DESKTOP_VISITED;
-        request.maxFileBytes = NAwesome::DesktopExec::MAX_DESKTOP_FILE_BYTES;
-        for (const auto& directory : appDirs())
-            request.roots.emplace_back(directory);
-        desktopIndex.request(std::move(request));
-        if (decodePoll)
-            decodePoll->updateTimeout(std::chrono::milliseconds(2));
-    }
-
-    // the index's batch landed: fold it in, and upgrade every live card that
-    // is still riding the icon-name stand-in for its desktop entry
-    static void pollDesktopIndex() {
-        if (!desktopScanning)
-            return;
-        std::vector<NAwesome::CAsyncFileIndex::SEntry> entries;
-        const bool COMPLETE = desktopIndex.poll(desktopGeneration, entries, 8);
-        const size_t BEFORE = desktopIcons.size();
-        for (const auto& entry : entries)
-            indexDesktopEntry(entry);
-        desktopScanning = !COMPLETE;
-        if (desktopIcons.size() != BEFORE) {
-            bool identityChanged = false;
-            const int ICONPX      = std::max(8, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon"));
-            for (const auto& N : notifs) {
-                if (!N->identityFromDesktop)
-                    continue;
-                const auto ICON = resolveDesktopEntryIcon(N->desktopEntry, ICONPX);
-                if (ICON.empty() || ICON == N->identity)
-                    continue;
-                N->identity      = ICON; // the entry's own Icon= is authoritative
-                N->identTex.reset();
-                N->identFor.clear();
-                N->identIconPx   = 0;
-                N->identSettled  = false;
-                N->identityFromDesktop = false;
-                identityChanged = true;
-            }
-            if (identityChanged)
-                notifChanged();
-        }
-        armDecodePoll();
+        if (identityChanged)
+            notifChanged();
     }
 
     // the desktop entry's own Icon= (the index's value), resolved to a file.
     // Empty while the index has not reached the entry.
     std::string resolveDesktopEntryIcon(const std::string& entry, int sizePx) {
-        const auto IT = desktopIcons.find(lowerKey(entry));
-        return IT == desktopIcons.end() ? "" : Parse::resolveImage(IT->second, sizePx);
+        const auto* ICON = NAwesome::CDesktopIcons::inst().find(lowerKey(entry));
+        return ICON ? Parse::resolveImage(*ICON, sizePx) : "";
     }
 
     // one deterministic initials face per (identity, name, font, size): the
@@ -856,13 +776,9 @@ namespace NAwesome::Notify {
         decodeJobs.reserve(MAX_PENDING_IMAGE_RESOURCES);
         if (!g_pEventLoopManager || !g_pCompositor)
             return;
-        decodePoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) {
-            pollDecodeJobs();
-            pollDesktopIndex();
-        }, nullptr);
+        decodePoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { pollDecodeJobs(); }, nullptr);
         g_pEventLoopManager->addTimer(decodePoll);
-        if (desktopIndex.init(g_pCompositor->m_wlEventLoop))
-            startDesktopIndex();
+        NAwesome::CDesktopIcons::inst().subscribe(onDesktopEntries);
     }
 
     void iconsExit() {
@@ -870,11 +786,8 @@ namespace NAwesome::Notify {
             g_pEventLoopManager->removeTimer(decodePoll);
         decodePoll.reset();
         decodeJobs.clear();
-        desktopIndex.exit();
-        desktopIcons.clear();
         avatarLru.clear();
         generatedAvatars.clear();
-        desktopScanning     = false;
         waitedForDecodeSlot = false;
         slotFreed           = false;
     }
