@@ -105,6 +105,17 @@ gate.
 - The gate is `make -C awesome gate` (`awesome/gate/gate.sh`; ARGS
   passes through: the compositor bin and `-b`/`-k` battery selection).
   Fixtures build with `make -C devtools`.
+  Battery tiers (2026-10-04 trim): default (no `-b`) = `quick` (the ~1-min
+  smoke battery: load, strip, chip, CSD content-frame, maximize round-
+  trip, one notification); `-b all` = shell windows state notify system
+  pipeline lifecycle; `-b everything` = all + quick + focus (the X11-ping
+  / activation battery). `state` and `focus` were split from `windows`
+  because they are battle-tested and pay for relaunches — a geometry or
+  CSD change runs `-b windows` (~1.5 min) alone, not the full gate.
+  The harness resolves the LIVE instance from its control socket, never
+  from the caller's `HYPRLAND_INSTANCE_SIGNATURE` (stale after a live
+  relog: default-socket hyprctl fails rc=4 and the gate's exec_cmd dies —
+  2026-10-04).
 - The nested harness (scripts in `awesome/gate/`: launch/stop/shot/dev;
   runtime state in `$HYPR_HARNESS`, default `~/.local/share/hypr-nested`)
   parks a headless `nested-dev` output in the live session; if workspace

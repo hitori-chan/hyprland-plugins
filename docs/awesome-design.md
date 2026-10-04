@@ -154,7 +154,15 @@ proceed — is one function, replacing the four load-order edges.
 Maximized windows stay immovable (the press is swallowed whole, with
 matching release swallow). Spawn geometry and remembered windowed
 sizes persist in the core's unified state file (`spot` and
-`windowed` rows, core/state.hpp).
+`windowed` rows, core/state.hpp). The CSD contract (fork-side,
+source-verified against upstream Hyprland's content-frame model):
+the window box IS the client's content frame (its
+`set_geometry` rectangle); the compositor renders the client's
+bigger buffer (content + CSD shadow margin) offset so the margin
+lands OUTSIDE the box, with no compositor drop-shadow (the client
+provides its own) — never padding between the border and the
+content (2026-10-04: a surface-frame model shipped the shadow margin
+inside the box as gray padding around firefox/thunar).
 
 ### notify
 
