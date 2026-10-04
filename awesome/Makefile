@@ -17,6 +17,7 @@ PKGS       := hyprland pixman-1 libdrm
 PKGS_EXTRA := librsvg-2.0 libudev pangocairo libeis-1.0
 LIBS_EXTRA := sdbus-c++ librsvg-2.0 libudev pangocairo
 
+GATE_PKG_CONFIG_PATH := $(PKG_CONFIG_PATH)
 PKG_CONFIG_PATH := $(if $(PKG_CONFIG_PATH),$(PKG_CONFIG_PATH):)/usr/local/share/pkgconfig
 export PKG_CONFIG_PATH
 
@@ -72,9 +73,12 @@ print-hl-cflags:
 
 # the integration gate (nested compositor; see gate/gate.sh): the plugin's
 # behavioral contract. Unit tests are `make test`; the gate is the rest.
-# ARGS passes through to gate.sh (bin, -b/-k selection).
-gate: all
-	bash gate/gate.sh $(ARGS)
+# ARGS passes through to gate.sh (-s fork dir, bin, -b/-k selection). The
+# gate builds the plugin itself, against the caller's exact header set:
+# hand it the caller's PKG_CONFIG_PATH, not this file's installed-prefix
+# fallback (the preflight refuses a mixed path).
+gate:
+	env PKG_CONFIG_PATH="$(GATE_PKG_CONFIG_PATH)" bash gate/gate.sh $(ARGS)
 
 clean:
 	rm -rf .build .build-gate $(NAME).so $(NAME)-gate.so

@@ -31,7 +31,11 @@ SELECTED=()
 
 usage() {
 	cat >&2 <<'EOF'
-usage: gate.sh [-b TIER|LIST] [-k LIST] [compositor-bin]
+usage: gate.sh [-s FORK-DIR] [-b TIER|LIST] [-k LIST] [compositor-bin]
+  -s DIR    a built fork checkout (e.g. ~/repo/Hyprland): stage its build's
+            header set (cmake --install to $HYPR_GATE_TMP/fork-pkg, .pc
+            prefix normalized, version.h verified) as the target headers,
+            and default the compositor to DIR/build/Hyprland
   -b        tiers:
               quick      the dev-loop smoke battery (DEFAULT)
               all        shell windows state notify system pipeline lifecycle
@@ -70,12 +74,14 @@ die_unknown() {
 B_SPEC=""
 K_SPEC=""
 BIN=""
+FORK_SRC=""
 while [[ $# -gt 0 ]]; do
 	case $1 in
 	-b)  [[ $# -ge 2 ]] || { usage; exit 2; }; B_SPEC=$2; shift 2 ;;
 	-b*) B_SPEC=${1#-b}; shift ;;
 	-k)  [[ $# -ge 2 ]] || { usage; exit 2; }; K_SPEC=$2; shift 2 ;;
 	-k*) K_SPEC=${1#-k}; shift ;;
+	-s)  [[ $# -ge 2 ]] || { usage; exit 2; }; FORK_SRC=$2; shift 2 ;;
 	-h|--help) usage; exit 0 ;;
 	-*) usage; exit 2 ;;
 	*)  if [[ -n "$BIN" ]]; then
@@ -84,6 +90,36 @@ while [[ $# -gt 0 ]]; do
 		BIN=$1; shift ;;
 	esac
 done
+# -s: stage the fork build's header set ourselves — one command instead of
+# a hand-run cmake --install, a .pc prefix fix, and two env vars. CMake
+# writes the CONFIGURED prefix into hyprland.pc; the harness normalizes a
+# copy (normalize_target_pkgconfig). version.h is generated at CONFIGURE
+# time only: a build tree configured at another commit carries a stale
+# hash, which the plugin's load guard then rejects — refuse it here.
+if [[ -n "$FORK_SRC" ]]; then
+	FORK_SRC="$(cd "$FORK_SRC" 2>/dev/null && pwd)" || { echo "gate.sh: no such fork dir" >&2; exit 2; }
+	[[ -x "$FORK_SRC/build/Hyprland" ]] || { echo "gate.sh: $FORK_SRC/build/Hyprland is not built" >&2; exit 2; }
+	_head="$(git -C "$FORK_SRC" rev-parse HEAD 2>/dev/null)"
+	grep -q "GIT_COMMIT_HASH *\"$_head\"" "$FORK_SRC/src/version.h" 2>/dev/null || {
+		echo "gate.sh: $FORK_SRC/src/version.h is not HEAD ($_head): reconfigure (cmake -S . -B build) and rebuild" >&2
+		exit 2
+	}
+	_pkg="${HYPR_GATE_TMP:-/tmp/hypr-gate}/fork-pkg"
+	rm -rf -- "$_pkg"
+	# install_manifest.txt in a root-owned build dir fails the exit code
+	# after every file is in place: judge the result, not the rc
+	cmake --install "$FORK_SRC/build" --prefix "$_pkg" >/dev/null 2>&1
+	cmp -s "$FORK_SRC/src/version.h" "$_pkg/include/hyprland/src/version.h" && [[ -f "$_pkg/share/pkgconfig/hyprland.pc" ]] || {
+		echo "gate.sh: staging the fork headers into $_pkg failed" >&2
+		exit 2
+	}
+	# the staged set is ours: point its .pc at itself, so a manual
+	# `PKG_CONFIG_PATH=$_pkg/share/pkgconfig make` builds against it too
+	sed -i "s|^prefix=.*|prefix=$_pkg/include|" "$_pkg/share/pkgconfig/hyprland.pc"
+	export PKG_CONFIG_PATH="$_pkg/share/pkgconfig" HYPR_DEPLOY_PKG_CONFIG_PATH="$_pkg/share/pkgconfig"
+	[[ -n "$BIN" ]] || BIN="$FORK_SRC/build/Hyprland"
+	unset _head _pkg
+fi
 [[ -n "$BIN" ]] || BIN=${HYPR_BIN:-/usr/local/bin/Hyprland}
 
 if [[ -z "$B_SPEC" || "$B_SPEC" == "quick" ]]; then
