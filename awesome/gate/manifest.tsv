@@ -68,6 +68,21 @@ windows	(none)	notify	wrong-typed hints survived (sdbus::Error thrown + caught)	
 preflight	version sync per plugin (x8)	preflight	(consolidated to one)	one constant, one plugin
 lifecycle	(none)	(none)	(none)	the old gate had no session-lock battery (hyprlock needs a lock client the nested does not run); parity kept
 
+# ---- new (no old-gate predecessor) ------------------------------------------
+# The CSD model change (window box = surface frame; the compositor sizes the
+# client's content to box - margin) re-pinned the csdpin/csdpinx size
+# assertions and added the follow-client content-integrity and maximized-close
+# spot-mint checks below. The old gate's CSD assertions pinned the pre-fix
+# content-frame box and are superseded, not kept.
+new 	 - 	 windows 	 pinned CSD splash: box is the surface frame (content + 2m) 	 superseded: fixed CSD splash: box is the client-declared frame
+new 	 - 	 windows 	 pinned CSD: no content bleed at the box's bottom-right (shadow not clipped) 	 new
+new 	 - 	 windows 	 per-axis-pinned CSD: box is the surface frame on both axes 	 superseded: per-axis-pinned CSD: pinned axis stays at the client frame
+new 	 - 	 windows 	 following CSD: box is the surface frame (840x540), centered 	 new
+new 	 - 	 windows 	 following CSD: content whole with margin on all four sides 	 new
+new 	 - 	 windows 	 following CSD: the remembered spot round-trips at the surface-frame size 	 new
+new 	 - 	 windows 	 maximized close mints the spot from the last windowed box 	 new
+new 	 - 	 windows 	 minted spot lands the respawn at the remembered box 	 new
+
 # ---- kept at parity (NOT a check, documented for the cutover) --------------
 # Session-lock resets (invariant 7) and the native input-capture pass-through
 # are the two blocked-input paths. The capture pass-through IS checked

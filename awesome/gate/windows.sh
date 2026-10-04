@@ -91,9 +91,28 @@ chk "fixed-size battery left no windows" \
 	test "$(pyc "sum(1 for c in cs if c['class'] in ('fixwin','foot'))")" = 0
 
 # ---- CSD geometry offset (discord-updater splash shape) ------------------
+# The window box is the SURFACE frame (content + shadow margin all round);
+# the compositor sizes the client's CONTENT to box - margin, so the buffer
+# fits the box exactly and the bottom/right shadow is never clipped.
 dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 300 350 10 csdpin')"; sleep 2
-expect "fixed CSD splash: box is the client-declared frame, not offset-inflated" \
-	"any(c['class']=='csdpin' and c['floating'] and c['size']==[300,350] and abs(c['at'][0]-$(( (MON_W-300)/2 )))<=14 and abs(c['at'][1]-$(( 30+(MON_H-30-350)/2 )))<=14 for c in cs)"
+expect "pinned CSD splash: box is the surface frame (content + 2m)" \
+	"any(c['class']=='csdpin' and c['floating'] and c['size']==[320,370] and abs(c['at'][0]-$(( (MON_W-320)/2 )))<=14 and abs(c['at'][1]-$(( 30+(MON_H-30-370)/2 )))<=14 for c in cs)"
+box4() { clients | python3 -c "
+import json,sys
+c = next((c for c in json.load(sys.stdin) if c['class']=='$1'), None)
+print(f\"{c['at'][0]} {c['at'][1]} {c['size'][0]} {c['size'][1]}\") if c else print('none')" ; }
+capture_nested "$STATE/csd-pin.png"
+chk "pinned CSD: no content bleed at the box's bottom-right (shadow not clipped)" \
+	test "$(python3 - "$STATE/csd-pin.png" "$(box4 csdpin)" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB"); px = im.load()
+x, y, w, h = map(int, sys.argv[2].split())
+# the box corner sits in the (transparent) margin — background, never the
+# content maroon; the center is content.
+print(1 if px[x + w // 2, y + h // 2] == (48, 32, 32) and px[x + w - 4, y + h - 4] != (48, 32, 32) else 0)
+PY
+)" = 1
 CP="$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdpin'), ''))")"
@@ -106,13 +125,66 @@ import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdresz'), ''))")"
 [[ -n "$CR" ]] && dsp "hl.dsp.window.close({window=\"address:$CR\"})"; sleep 1
 dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 300 350 10 csdpinx - - - - pinx')"; sleep 2
-expect "per-axis-pinned CSD: pinned axis stays at the client frame" \
-	"any(c['class']=='csdpinx' and c['floating'] and c['size']==[300,360] for c in cs)"
+expect "per-axis-pinned CSD: box is the surface frame on both axes" \
+	"any(c['class']=='csdpinx' and c['floating'] and c['size']==[320,370] for c in cs)"
 CX="$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdpinx'), ''))")"
 [[ -n "$CX" ]] && dsp "hl.dsp.window.close({window=\"address:$CX\"})"; sleep 1
-chk "csd battery left no windows" test "$(pyc "sum(1 for c in cs if c['class'] in ('csdpin','csdresz','csdpinx'))")" = 0
+
+# a FOLLOWING CSD client (real GTK shape): it resizes its content to the
+# configure, so any frame mismatch shows up as a clipped or shrunk content.
+dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 800 500 20 csdfollow - - resz vismargin follow')"; sleep 2
+expect "following CSD: box is the surface frame (840x540), centered" \
+	"any(c['class']=='csdfollow' and c['floating'] and c['size']==[840,540] and abs(c['at'][0]-$(( (MON_W-840)/2 )))<=14 and abs(c['at'][1]-$(( 30+(MON_H-30-540)/2 )))<=14 for c in cs)"
+capture_nested "$STATE/csd-follow.png"
+chk "following CSD: content whole with margin on all four sides" \
+	test "$(python3 - "$STATE/csd-follow.png" "$(box4 csdfollow)" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB"); px = im.load()
+x, y, w, h = map(int, sys.argv[2].split())
+# vismargin: the box corners are the gray margin, the content (maroon)
+# reaches all the way to the margins (not clipped, not shrunken).
+corner = lambda dx, dy: px[x + dx, y + dy] == (176, 176, 176)
+content = lambda dx, dy: px[x + dx, y + dy] == (48, 32, 32)
+ok = corner(3, 3) and corner(w - 3, 3) and corner(3, h - 3) and corner(w - 3, h - 3) \
+   and content(25, 25) and content(w - 25, 25) and content(25, h - 25) and content(w - 25, h - 25)
+print(1 if ok else 0)
+PY
+)" = 1
+CF="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdfollow'), ''))")"
+dsp "hl.dsp.window.close({window=\"address:$CF\"})"; sleep 1
+dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 800 500 20 csdfollow - - resz vismargin follow')"; sleep 2
+expect "following CSD: the remembered spot round-trips at the surface-frame size" \
+	"any(c['class']=='csdfollow' and c['size']==[840,540] and c['at']==[$(( (MON_W-840)/2 )), $(( 30+(MON_H-30-540)/2 ))] for c in cs)"
+CF="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdfollow'), ''))")"
+[[ -n "$CF" ]] && dsp "hl.dsp.window.close({window=\"address:$CF\"})"; sleep 1
+
+# a close in maximized state must mint the spot from the app's last
+# windowed box (a browser that always closes maximized keeps its memory);
+# the fresh class has only ever been maximized, so a spot row proves the
+# fallback ran.
+dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 800 500 20 csdfall - - resz vismargin follow')"; sleep 2
+dsp "hl.plugin.awesome.maximize()"; sleep 1
+CF="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdfall'), ''))")"
+dsp "hl.dsp.window.close({window=\"address:$CF\"})"; sleep 1.5
+chk "maximized close mints the spot from the last windowed box" \
+	grep -q "^spot	[0-9]*	[0-9]*	[0-9]*	[0-9]*	csdfall$" "$AW_STATE"
+dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 800 500 20 csdfall - - resz vismargin follow')"; sleep 2
+expect "minted spot lands the respawn at the remembered box" \
+	"any(c['class']=='csdfall' and c['size']==[840,540] and c['at']==[$(( (MON_W-840)/2 )), $(( 30+(MON_H-30-540)/2 ))] for c in cs)"
+CF="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdfall'), ''))")"
+[[ -n "$CF" ]] && dsp "hl.dsp.window.close({window=\"address:$CF\"})"; sleep 1
+chk "csd battery left no windows" test "$(pyc "sum(1 for c in cs if c['class'] in ('csdpin','csdresz','csdpinx','csdfollow','csdfall'))")" = 0
 
 # ---- state churn --------------------------------------------------------
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x300')"; sleep 2
