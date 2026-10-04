@@ -53,11 +53,13 @@ namespace NAwesome {
             size_t begin = 0;
             size_t rows  = 0;
             while (begin < contents.size() && rows++ < maxRows) {
-                const auto END = contents.find('\n', begin);
-                const auto LEN = (END == std::string::npos ? contents.size() : END) - begin;
-                const auto NUL = contents.find('\0', begin);
-                if (LEN <= maxLineBytes && (NUL == std::string::npos || NUL >= END))
-                    fn(std::string_view{contents.data() + begin, LEN});
+                const auto END  = contents.find('\n', begin);
+                const auto LEN  = (END == std::string::npos ? contents.size() : END) - begin;
+                const auto LINE = std::string_view{contents.data() + begin, LEN};
+                // the NUL check stays inside the line: a search from `begin`
+                // to the file's end per line was O(n^2) on a NUL-free file
+                if (LEN <= maxLineBytes && LINE.find('\0') == std::string_view::npos)
+                    fn(LINE);
                 if (END == std::string::npos)
                     break;
                 begin = END + 1;
