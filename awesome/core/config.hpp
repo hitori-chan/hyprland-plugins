@@ -14,8 +14,14 @@
 #include <hyprland/src/config/values/types/FloatValue.hpp>
 #include <hyprland/src/config/values/types/IntValue.hpp>
 
-#include <map>
 #include <memory>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+
+namespace Config::Values {
+    class CStringValue;
+}
 
 namespace NAwesome {
 
@@ -37,9 +43,23 @@ namespace NAwesome {
         std::string getS(std::string_view key) const;
 
       private:
-        using ValueBase = Config::Values::IValue;
-        std::map<std::string, SP<ValueBase>> m_values;
-        Schema m_schema;
+        // One slot per schema key, its typed value resolved once at init:
+        // a read is one hash of the key (no allocation — the index views
+        // the schema's static key strings) and a virtual value() call, not
+        // a linear scan, a std::string and a dynamic_cast (the bar reads
+        // its height on every pointer motion).
+        struct SSlot {
+            const Spec*                    spec = nullptr;
+            SP<Config::Values::IValue>     value; // the registered handle
+            Config::Values::CIntValue*     i = nullptr;
+            Config::Values::CFloatValue*   d = nullptr;
+            Config::Values::CColorValue*   c = nullptr;
+            Config::Values::CStringValue*  s = nullptr;
+        };
+        const SSlot*                                 slot(std::string_view key) const;
+        std::vector<SSlot>                           m_slots;
+        std::unordered_map<std::string_view, size_t> m_index;
+        Schema                                       m_schema;
     };
 
     inline ConfigRegistry& cfg() {
