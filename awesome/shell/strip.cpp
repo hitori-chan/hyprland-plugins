@@ -322,7 +322,11 @@ namespace NAwesome::Shell {
         bool needsBlur(PHLMONITOR mon) const override {
             // only while the band actually paints — never claim a live blur of
             // a strip that is hidden under a fullscreen window (blur for nothing)
-            return NAwesome::blurOn() && !barHidden(mon);
+            // and only while its glass is translucent: an opaque col_bg (the
+            // default) draws without blur, so claiming live blur would make
+            // the renderer blur and disable occlusion under the strip for a
+            // result nobody sees
+            return NAwesome::blurOn() && !barHidden(mon) && color(cfg().getColor("plugin:awesome:shell:col_bg")).a < 1.0;
         }
 
         void exit() {

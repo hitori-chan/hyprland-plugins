@@ -472,14 +472,16 @@ namespace NAwesome {
                 const auto MON = m_mon.lock();
                 if (!MON)
                     return std::nullopt;
+                // seeded from the first box: a (0,0) seed stretched every
+                // union to the monitor's corner
                 double minx = 0, miny = 0, maxx = 0, maxy = 0;
                 bool   any  = false;
                 for (auto* L : Canvas::inst().m_layers)
                     if (const auto B = L->boundingBox(MON)) {
-                        minx = std::min(minx, (double)B->x);
-                        miny = std::min(miny, (double)B->y);
-                        maxx = std::max(maxx, (double)B->x + B->w);
-                        maxy = std::max(maxy, (double)B->y + B->h);
+                        minx = any ? std::min(minx, (double)B->x) : (double)B->x;
+                        miny = any ? std::min(miny, (double)B->y) : (double)B->y;
+                        maxx = any ? std::max(maxx, (double)B->x + B->w) : (double)B->x + B->w;
+                        maxy = any ? std::max(maxy, (double)B->y + B->h) : (double)B->y + B->h;
                         any  = true;
                     }
                 return any ? std::optional<CBox>{CBox{minx, miny, maxx - minx, maxy - miny}} : std::nullopt;
