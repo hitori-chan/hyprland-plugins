@@ -148,10 +148,14 @@ namespace NAwesome::Windows::Place {
                 return;
 
             // the visible floating windows to stay clear of; maximized and
-            // fullscreen ones cover no free space, as in awesome
+            // fullscreen ones cover no free space, as in awesome. A dialog's
+            // own parent is not an obstacle: the compositor centered it there
+            // on purpose, and counting the parent sent every parented dialog
+            // off it to the least-overlap spot.
+            const auto        PARENT = w->backend().parent();
             std::vector<CBox> blockers;
             for (const auto& O : Desktop::windowState()->windows()) {
-                if (O == w || !O->mapped() || O->isHidden() || !O->isFloating() || !O->windowTarget())
+                if (O == w || O == PARENT || !O->mapped() || O->isHidden() || !O->isFloating() || !O->windowTarget())
                     continue;
                 if (O->m_workspace != WS && !(isPinned(O) && O->m_monitor.lock() == MON))
                     continue;
