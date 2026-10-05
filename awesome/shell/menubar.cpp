@@ -951,11 +951,16 @@ namespace NAwesome::Shell {
                 const auto   cellW = [&](const SP<ITexture>& t) { return 8 + ICON + 6 + (t ? t->m_size.x / PAINT.scale : 0) + 8; };
 
                 { // keep the selection on screen: page-jump to it when it won't fit
+                    // (the first overflow decides it: End from the top would
+                    // otherwise raster every entry in one warm)
                     double w = 0;
-                    for (int i = Menubar::first; i <= Menubar::sel; i++)
+                    for (int i = Menubar::first; i <= Menubar::sel; i++) {
                         w += cellW(textTex(entryName(i), COLFG, PAINT.pt));
-                    if (px + w > PAINT.mb.x + PAINT.mb.w)
-                        Menubar::first = Menubar::sel;
+                        if (px + w > PAINT.mb.x + PAINT.mb.w) {
+                            Menubar::first = Menubar::sel;
+                            break;
+                        }
+                    }
                 }
 
                 for (int i = Menubar::first; i < (int)SH.size(); i++) {
