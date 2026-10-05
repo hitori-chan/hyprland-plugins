@@ -76,7 +76,10 @@ atomics; ordering is program order plus the hop queue.
   with consume/pass semantics. The chain is a table in one file.
 - **Canvas** — per-monitor scene. Modules contribute layers (bar
   strip, menus, card stack, shade, OSD cards, snap indicator) with
-  stable geometry; the canvas computes the damage union, runs glass per
+  stable geometry, at an explicit level (`eLayerZ`: bar, cards, snap,
+  popups) whose paint order agrees with the input chain — where two
+  overlap, the one that takes the press is on top (an open menu over the
+  cards); the canvas computes the damage union, runs glass per
   glass group, scissor-paints, and enforces the warm/draw gate: a layer
   cannot paint a texture in the frame that created it (invariant 4).
   Damage happens on every visible-state transition, including hover.

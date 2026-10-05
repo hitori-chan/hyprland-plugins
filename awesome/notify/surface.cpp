@@ -271,7 +271,7 @@ namespace NAwesome::Notify {
             nullptr);
         g_pEventLoopManager->addTimer(motionTick);
 
-        NAwesome::Canvas::inst().addLayer(&CSurface::inst());
+        NAwesome::Canvas::inst().addLayer(&CSurface::inst(), NAwesome::eLayerZ::CARDS);
     }
 
     void surfaceExit() {
