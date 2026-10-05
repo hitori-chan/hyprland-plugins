@@ -361,7 +361,8 @@ namespace NAwesome::Notify {
         const auto  COLBG = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_bg")), COLFG = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg")), COLSUB = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_kicker")), COLACC = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_highlight"));
 
         const double X  = MB.x + MB.w - EDGE - CENTER_W;
-        const double Y0 = MB.y + (double)NAwesome::cfg().getI("plugin:awesome:notify:offset_y");
+        const double TOP = cardsTop(P.mon);
+        const double Y0  = MB.y + TOP;
 
         const double CONTENT_X = X + BODY_PADX, CONTENT_W = CENTER_W - 2 * BODY_PADX;
 
@@ -372,7 +373,7 @@ namespace NAwesome::Notify {
         // bleed; renderRow caps a row's body at 4 lines (7 for a chat), so no
         // single row can exceed the cap and the always-place-the-first-row rule
         // can't spill.
-        const double AVAILH  = MB.h - (double)NAwesome::cfg().getI("plugin:awesome:notify:offset_y") - (double)NAwesome::cfg().getI("plugin:awesome:notify:margin");
+        const double AVAILH  = MB.h - TOP - cardsBottomReserved(P.mon) - (double)NAwesome::cfg().getI("plugin:awesome:notify:margin");
         const double BODYCAP = std::max(ROW_ICON, AVAILH - BAR_H - BODY_PADT - BODY_PADB);
 
         // The display list, every height AND every fold verdict are decided

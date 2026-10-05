@@ -256,7 +256,7 @@ namespace NAwesome::Notify {
             const auto   MB  = mon->logicalBox();
             const double PAD = damageMargin(mon);
             const double W   = std::max(lastContentW, std::max((double)NAwesome::cfg().getI("plugin:awesome:notify:width"), CENTER_W)) + EDGE;
-            return CBox{MB.w - W - PAD, (double)NAwesome::cfg().getI("plugin:awesome:notify:offset_y") - PAD, W + 2 * PAD, std::max(lastContentH, 0.0) + 2 * PAD};
+            return CBox{MB.w - W - PAD, cardsTop(mon) - PAD, W + 2 * PAD, std::max(lastContentH, 0.0) + 2 * PAD};
         }
 
         bool needsBlur(PHLMONITOR mon) const override {

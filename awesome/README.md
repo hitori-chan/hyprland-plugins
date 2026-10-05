@@ -180,9 +180,11 @@ Cards render top-right on the focused monitor — the stack follows a
 keyboard or workspace focus flip, but not one the pointer itself makes,
 so a mouse grazing the neighboring monitor's corner leaves the cards
 where they are (drawn and clickable there alike until a deliberate move
-carries them). An open tray menu or the menubar paints over the cards, as
-it takes the press first. Newest at the top, glass·ink skin (frosted
-graphite, superellipse corners).
+carries them). They start `offset_y` below the monitor top, never above
+the workarea, so a taller strip never runs under them. An open tray menu
+or the menubar paints over the cards, as it takes the press first.
+Newest at the top, glass·ink skin (frosted graphite, superellipse
+corners).
 
 **Spec surface.** Methods `Notify`, `CloseNotification`,
 `GetCapabilities`, `GetServerInformation` (spec 1.3); signals
