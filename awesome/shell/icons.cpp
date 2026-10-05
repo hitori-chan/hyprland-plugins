@@ -10,6 +10,10 @@ namespace NAwesome::Shell {
     // ---- icons (tasklist + tray) ----
 
     SP<ITexture> loadPng(const std::string& path) {
+        // the declared size first: cairo decodes the whole raster before we
+        // could look at it (an absolute SNI IconName reaches here)
+        if (!NAwesome::admissibleImageFile(path))
+            return nullptr;
         auto* SURF = cairo_image_surface_create_from_png(path.c_str());
         if (cairo_surface_status(SURF) != CAIRO_STATUS_SUCCESS) {
             cairo_surface_destroy(SURF);
@@ -46,8 +50,8 @@ namespace NAwesome::Shell {
         constexpr size_t MAX_ENCODED = 4u << 20;
         constexpr int    MAX_DIM     = 2048;
         constexpr size_t MAX_PIXELS  = 4u << 20;
-        if (data.empty() || data.size() > MAX_ENCODED)
-            return nullptr;
+        if (data.empty() || data.size() > MAX_ENCODED || !NAwesome::admissibleRasterBytes(data.data(), data.size()))
+            return nullptr; // the declared size, before cairo decodes it whole
 
         struct SCursor {
             const uint8_t* p;

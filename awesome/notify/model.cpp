@@ -530,7 +530,13 @@ namespace NAwesome::Notify {
             };
 
             const std::string DESKTOP = clipUtf8(strHint("desktop-entry"), MAX_SOURCE_BYTES);
-            const std::string APPKEY  = !DESKTOP.empty() ? DESKTOP : APP; // grouping identity
+            // grouping identity; control bytes out — the bundle key joins
+            // (app, group) on \x1f, and an app named with one split wrong
+            const std::string APPKEY = [&] {
+                std::string k = !DESKTOP.empty() ? DESKTOP : APP;
+                std::erase_if(k, [](unsigned char c) { return c < 0x20; });
+                return k;
+            }();
             const std::string CAT     = strHint("category");
             const bool        CATEGORY_CONVERSATION = CAT.starts_with("im.") || CAT == "im" || CAT.starts_with("call.") || CAT == "call";
 
@@ -591,9 +597,11 @@ namespace NAwesome::Notify {
                         }
                     canonicalAppend = append;
                     if (append) {
-                        const auto SUM = Parse::oneLine(Parse::sanitizeMarkup(summary));
+                        // the CLIPPED summary, as stored: the raw one was both
+                        // unbounded work and never equal past the clip
+                        const auto KEY = Parse::oneLine(Parse::sanitizeMarkup(SUM));
                         for (const auto& N : notifs)
-                            if (!inOsdBand(N->id) && !vanishes(N) && N->appKey == APPKEY && N->summary == SUM) {
+                            if (!inOsdBand(N->id) && !vanishes(N) && N->appKey == APPKEY && N->summary == KEY) {
                                 id         = N->id;
                                 appendOnto = N->body;
                                 break;
@@ -671,11 +679,8 @@ namespace NAwesome::Notify {
             n->summary = Parse::oneLine(Parse::sanitizeMarkup(SUM));
             std::string bodyText = TXT;
             n->bodyImages.clear();
-            for (const auto& P : Parse::extractImages(bodyText, std::max(64, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon") * 2))) {
-                if (n->bodyImages.size() >= MAX_BODY_IMAGES)
-                    break;
+            for (const auto& P : Parse::extractImages(bodyText, std::max(64, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon") * 2), MAX_BODY_IMAGES))
                 n->bodyImages.push_back(SBodyImage{.src = P.src, .alt = P.alt});
-            }
             n->body = capUtf8(Parse::sanitizeMarkup(bodyText, /*allowLinks=*/true));
             if (CONVERSATION) {
                 // the conversation's lines must stay one message each: the
@@ -713,9 +718,10 @@ namespace NAwesome::Notify {
             }
             if (CONV_ICON_HINT)
                 n->conversationIcon = Parse::resolveImage(n->conversationIconSource, ICONPX);
-            if (DECLARED_GROUP_HINT)
+            if (DECLARED_GROUP_HINT) {
                 n->declaredGroupKey = *DECLARED_GROUP_HINT;
-            else if (!SAME_APP)
+                std::erase_if(n->declaredGroupKey, [](unsigned char c) { return c < 0x20; }); // the \x1f join, as the app key
+            } else if (!SAME_APP)
                 n->declaredGroupKey.clear();
 
             if (!EFFECTIVE_CONV_ID.empty()) {
