@@ -217,12 +217,16 @@ namespace NAwesome::Windows::Snap {
                 // or top against the current opposite edge.
                 if (left && g.x > O.x + O.w && g.x < O.x + O.w + d)
                     considerNearest(L, O.x + O.w, g.x, O, d);
+                // right/bottom: the candidate is the EDGE (O's left/top) against
+                // our edge — a left-position candidate here once set the
+                // width to "neighbour's left minus width minus x", collapsing
+                // the window to its minimum near any neighbour
                 if (right && g.x + g.w < O.x && g.x + g.w > O.x - d)
-                    considerNearest(R, O.x - g.w, g.x, O, d);
+                    considerNearest(R, O.x, g.x + g.w, O, d);
                 if (top && g.y > O.y + O.h && g.y < O.y + O.h + d)
                     considerNearest(T, O.y + O.h, g.y, O, d);
                 if (bottom && g.y + g.h < O.y && g.y + g.h > O.y - d)
-                    considerNearest(B, O.y - g.h, g.y, O, d);
+                    considerNearest(B, O.y, g.y + g.h, O, d);
             }
             if (L.found) {
                 g.w += g.x - L.value;
