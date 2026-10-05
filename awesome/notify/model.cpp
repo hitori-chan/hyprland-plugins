@@ -363,7 +363,7 @@ namespace NAwesome::Notify {
         // top of the window. Group senders are prefixed by name.
         static std::string buildConversationBody(const SP<SNotif>& n, size_t limit);
 
-        std::string conversationBody(const SP<SNotif>& n, size_t limit) {
+        const std::string& conversationBody(const SP<SNotif>& n, size_t limit) {
             if (n->messages.empty())
                 return n->body;
             if (n->convMemo.rev == n->rev && n->convMemo.limit == limit)

@@ -107,7 +107,7 @@ namespace NAwesome::Notify {
             const auto KICK  = cachedText(KB, COLSUB, T.header, KICKWPX, -1, 0, true, 500);
             // a structured conversation shows the app's declared title; the
             // sender's summary stands in where none was declared
-            const auto TITLESRC = !N->conversationTitle.empty() ? N->conversationTitle : N->summary;
+            const auto& TITLESRC = !N->conversationTitle.empty() ? N->conversationTitle : N->summary;
             const auto TITLE    = TITLESRC.empty() ? nullptr : cachedText(TITLESRC, COLTITLE, T.title, TEXTWPX, -1, 0, true, 600);
             // a merged chat is a transcript, so it gets Android's MessagingStyle
             // depth (the full 7-message window) where an ordinary card gets

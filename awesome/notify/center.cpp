@@ -62,6 +62,11 @@ namespace NAwesome::Notify {
         return s_on;
     }
     bool centerAnimating() {
+        // by the clock, not only the draw: a draw that never runs (the
+        // session locked mid-spring) would leave the flag up and the motion
+        // tick damaging the cards for nothing
+        if (s_animating && animT(s_openedAt, Theme::MOTION_SPATIAL) >= 1.f)
+            s_animating = false;
         return s_animating;
     }
 

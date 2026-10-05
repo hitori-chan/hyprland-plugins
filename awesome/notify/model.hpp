@@ -279,7 +279,9 @@ namespace NAwesome::Notify {
         // the transcript of the latest `limit` kept messages, chronological
         // (oldest leads, newest ends): the banner previews five, the shade
         // renders all seven through the card's stored body
-        std::string conversationBody(const SP<SNotif>& n, size_t limit);
+        // a reference into the card (its body, or the memo): valid while the
+        // card lives and its revision stands
+        const std::string& conversationBody(const SP<SNotif>& n, size_t limit);
         void       rearmExpiry();
         void       holdBanner(uint32_t id); // the hovered popup's countdown pauses; 0 releases (and restarts it)
         void       toggleSuspend();         // DND; resume renders the queue, fresh timeouts
