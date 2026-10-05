@@ -150,10 +150,13 @@ the plugin's one state file (see State).
     Wayland sender never spends the token the plugin minted for it
     (the plugin makes awesome's "the app activates itself after the
     click" unconditional).
-- **Spawn placement** is per-class: the last free geometry from the
+- **Spawn placement** is per-class: the last free position from the
   store, else least-overlap for a second window of the same class.
-  Resizable xdg-toplevels can receive the remembered size in the
-  initial configure. Client size limits, fullscreen/maximize state,
+  Placement only moves a window: its size is always the client's own
+  (the initial configure stays 0x0, so apps restore their own sizes and
+  dialogs open at their natural size). The one size the plugin supplies
+  is the unmaximize restore box of a window born maximized. Client size
+  limits, fullscreen/maximize state,
   pending native requests, rules, parent-anchored dialogs, X11
   geometry, and override-redirect surfaces stay authoritative. The close
   is remembered however the client tears down (GTK and Firefox destroy

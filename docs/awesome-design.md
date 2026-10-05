@@ -162,9 +162,9 @@ least-overlap, fixed-size exclusion, drag snap with indicator). The
 window-press arbitration — swallow / focus / let the compositor drag
 proceed — is one function, replacing the four load-order edges.
 Maximized windows stay immovable (the press is swallowed whole, with
-matching release swallow). Spawn geometry and remembered windowed
-sizes persist in the core's unified state file (`spot` and
-`windowed` rows, core/state.hpp). The CSD contract (fork-side,
+matching release swallow). Spawn positions (the client keeps its own
+size) and remembered windowed sizes persist in the core's unified state
+file (`spot` and `windowed` rows, core/state.hpp). The CSD contract (fork-side,
 source-verified against upstream Hyprland's content-frame model, the
 one its popup math already assumes): the window box IS the client's
 content frame (its `set_window_geometry` rectangle) and the client's
