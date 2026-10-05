@@ -187,6 +187,15 @@ namespace NAwesome {
         return w && static_cast<bool>(w->m_state & Desktop::View::WINDOW_STATE_PINNED);
     }
 
+    // The workspace a monitor shows on top: an open special workspace
+    // covers the regular one, and its windows are the ones a cycle or a
+    // magnet means.
+    inline PHLWORKSPACE shownWorkspace(const PHLMONITOR& mon) {
+        if (!mon)
+            return nullptr;
+        return mon->m_activeSpecialWorkspace ? mon->m_activeSpecialWorkspace : mon->m_activeWorkspace;
+    }
+
     // A window in the maximized presentation. Read the presentation, not
     // the xdg MAXIMIZED state: the compositor's internal FSMODE_MAXIMIZED
     // covers born/client maximize, and a float whose box covers the whole
