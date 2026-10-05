@@ -281,9 +281,17 @@ done
         }
 
         bool spawn(SRequest request) {
+            // non-blocking on OUR end only: the helper's stdout must block —
+            // on EAGAIN its stdio drops the unwritten bytes, a frame comes
+            // out short and the whole scan fails partial
             int pipefd[2];
-            if (pipe2(pipefd, O_CLOEXEC | O_NONBLOCK) != 0)
+            if (pipe2(pipefd, O_CLOEXEC) != 0)
                 return false;
+            if (fcntl(pipefd[0], F_SETFL, fcntl(pipefd[0], F_GETFL) | O_NONBLOCK) != 0) {
+                close(pipefd[0]);
+                close(pipefd[1]);
+                return false;
+            }
 
             std::vector<std::string> args;
             args.reserve(12 + request.extensions.size() + m_roots.size());
@@ -422,17 +430,24 @@ done
             return true;
         }
 
+        // Paused means OFF the loop: epoll reports a hangup whatever the
+        // mask, so a masked source of a helper that already exited woke the
+        // loop on every iteration (a compositor thread at 100%) until the
+        // consumer drained.
         void pause() {
             if (m_source && !m_paused) {
-                wl_event_source_fd_update(m_source, 0);
+                wl_event_source_remove(m_source);
+                m_source = nullptr;
                 m_paused = true;
             }
         }
 
         void resumeIfPossible() {
-            if (m_source && m_paused && m_results.size() < MAX_QUEUED_RESULTS && m_resultBytes < MAX_QUEUED_BYTES) {
-                wl_event_source_fd_update(m_source, WL_EVENT_READABLE);
-                m_paused = false;
+            if (m_paused && m_fd >= 0 && m_results.size() < MAX_QUEUED_RESULTS && m_resultBytes < MAX_QUEUED_BYTES) {
+                m_source = wl_event_loop_add_fd(m_loop, m_fd, WL_EVENT_READABLE, onPipe, this);
+                m_paused = !m_source;
+                if (!m_source)
+                    fail();
             }
         }
 

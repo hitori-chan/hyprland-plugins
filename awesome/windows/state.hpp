@@ -25,6 +25,22 @@
 #include <utility>
 #include <vector>
 
+namespace NAwesome::Windows {
+
+    // Every geometry the module sets goes through here: a target can outlive
+    // its layout space (a swallowed window keeps its target, its slot is
+    // removed), and the layout dereferences the space unchecked — a reflow
+    // of such a window segfaulted the compositor.
+    inline bool setGeom(const PHLWINDOW& w, const CBox& box) {
+        const auto T = w ? w->windowTarget() : nullptr;
+        if (!T || !T->space() || !g_layoutManager)
+            return false;
+        g_layoutManager->setTargetGeom(box, T);
+        return true;
+    }
+
+} // namespace NAwesome::Windows
+
 namespace NAwesome::Windows::Tasklist {
 
     // The shell repaints its tasklist when the minimized set changes: the

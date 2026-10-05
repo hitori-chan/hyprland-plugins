@@ -24,13 +24,27 @@ namespace NAwesome::Notify::Bus {
     // Model changes can originate in pointer/key drains, expiry timers, or
     // D-Bus method handlers. Keep signal construction off all of those
     // callbacks and let the link own the bounded send queue.
+    // Closes batch into ONE post per drain: a Clear all over 400 cards was 400
+    // posts against the link's 256 bound, and the tail's NotificationClosed
+    // were dropped (the spec signals every close). Bounded: each card closes
+    // once, and the batch can't outgrow a few model's worth between drains.
+    static std::vector<std::pair<uint32_t, uint32_t>> s_closed;
+    static bool                                       s_closedPosted = false;
+
     void emitClosed(uint32_t id, uint32_t reason) {
-        g_bus.post([id, reason]() {
+        if (s_closed.size() < 8192)
+            s_closed.emplace_back(id, reason);
+        if (s_closedPosted)
+            return;
+        s_closedPosted = g_bus.post([]() {
+            s_closedPosted = false;
+            const auto BATCH = std::exchange(s_closed, {});
             if (!obj)
                 return;
-            try {
-                obj->emitSignal("NotificationClosed").onInterface(IFACE).withArguments(id, reason);
-            } catch (...) {} // a dead bus must not unwind through the idle C frame
+            for (const auto& [ID, REASON] : BATCH)
+                try {
+                    obj->emitSignal("NotificationClosed").onInterface(IFACE).withArguments(ID, REASON);
+                } catch (...) {} // a dead bus must not unwind through the idle C frame
             g_bus.pollSoon();
         });
     }
@@ -167,6 +181,8 @@ namespace NAwesome::Notify::Bus {
 
     void exit() {
         g_bus.close(); // fd sources out BEFORE the connection dies
+        s_closed.clear();
+        s_closedPosted = false;
     }
 
 } // namespace NAwesome::Notify::Bus

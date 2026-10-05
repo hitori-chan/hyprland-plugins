@@ -390,6 +390,15 @@ namespace NAwesome::Notify {
         PangoRectangle ink = {}, log = {};
         pango_layout_get_pixel_extents(layout, &ink, &log);
         const int W = std::max(log.width, ink.x + ink.width), H = std::max(log.height, ink.y + ink.height);
+        // A stranger's <span size=/line_height=/rise=> can blow one glyph up
+        // to thousands of px (a 180 MB raster per surface). Real markup
+        // keeps a line within ~3x the type size and wraps inside the width:
+        // past that the markup goes, and the plain text lays out instead.
+        if (markup && (W > std::max(maxWidthPx, 1) + 4 * pt || H > pango_layout_get_line_count(layout) * pt * 3 + pt)) {
+            pango_font_description_free(fd);
+            g_object_unref(layout); // owns the attr list now
+            return buildText(stripMarkupTags(text), col, pt, maxWidthPx, maxHeightPx, lineSpacing, false, weight);
+        }
         if (W <= 0 || H <= 0) {
             pango_font_description_free(fd);
             g_object_unref(layout);
@@ -444,7 +453,11 @@ namespace NAwesome::Notify {
 
     // 24 warms of grace — the shade warms only when its model changes, so
     // this is a longer wall-clock reprieve than the same number gives the bar
-    static NAwesome::CGenCache<SCachedText, 24> texCache;
+    // measured in texture bytes (the shell's cache does the same): the byte
+    // cap is what bounds a burst of large rasters, sizeof() never did
+    static NAwesome::CGenCache<SCachedText, 24> texCache{64ull << 20, [](const SCachedText& t) {
+        return sizeof(SCachedText) + (t.tex ? (size_t)std::max(0.0, t.tex->m_size.x) * (size_t)std::max(0.0, t.tex->m_size.y) * 4 : 0);
+    }};
 
     const SCachedText* cachedText(const std::string& text, const CHyprColor& col, int pt, int maxWpx, int maxHpx, float lineSp, bool markup, int weight,
                                   const CHyprColor* linkCol) {

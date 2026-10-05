@@ -24,9 +24,14 @@ namespace NAwesome::Notify::Parse {
         return name == "b" || name == "i" || name == "u" || name == "span" || name == "br" || (allowLinks && name == "a");
     }
 
+    // Linear in the input: a stranger's text full of '<x' or '&' that never
+    // close must not rescan to the end for each one (a 130 KB summary of
+    // '&' was ~0.5 s on the compositor thread per call). A tag can only end
+    // at or before the LAST '>', and an entity is at most 10 bytes.
     std::string sanitizeMarkup(const std::string& in, bool allowLinks) {
         std::string out;
         out.reserve(in.size() + 16);
+        const size_t LASTGT = in.rfind('>');
         for (size_t i = 0; i < in.size();) {
             const char CH = in[i];
             if (CH == '<') {
@@ -36,7 +41,7 @@ namespace NAwesome::Notify::Parse {
                 const size_t NS = j;
                 while (j < in.size() && std::isalpha((unsigned char)in[j]))
                     j++;
-                if (j > NS) {
+                if (j > NS && LASTGT != std::string::npos && LASTGT >= j) {
                     const auto END = in.find('>', j);
                     if (END != std::string::npos) {
                         std::string name = in.substr(NS, j - NS);
@@ -55,7 +60,8 @@ namespace NAwesome::Notify::Parse {
                 continue;
             }
             if (CH == '&') {
-                const auto END = in.find(';', i);
+                const auto SEMI = std::string_view{in}.substr(i, 11).find(';');
+                const auto END  = SEMI == std::string_view::npos ? std::string::npos : i + SEMI;
                 if (END != std::string::npos && END - i <= 10) {
                     const auto E = in.substr(i + 1, END - i - 1);
                     if (E == "amp" || E == "lt" || E == "gt" || E == "quot" || E == "apos" || (E.size() > 1 && E[0] == '#')) {
@@ -162,33 +168,44 @@ namespace NAwesome::Notify::Parse {
     // (the defined behavior at the bound, as MAX_BODY_IMAGES in model)
     constexpr size_t MAX_SRC_BYTES = 1024;
 
-    std::vector<SImgRef> extractImages(std::string& body, int sizePx) {
+    // One linear pass: every <img> tag leaves the text, but only the first
+    // `maxImages` with a usable src are resolved — a resolve can be a theme
+    // scan, and a body of 2000 distinct tags once ran 2000 of them on the
+    // compositor thread before the model's cap applied.
+    std::vector<SImgRef> extractImages(std::string& body, int sizePx, size_t maxImages) {
         std::vector<SImgRef> out;
-        for (size_t i = 0; i < body.size();) {
-            if (body[i] != '<') {
-                i++;
-                continue;
-            }
-            size_t j = i + 1;
-            while (j < body.size() && std::isalpha((unsigned char)body[j]))
+        std::string          kept;
+        kept.reserve(body.size());
+        const size_t LASTGT = body.rfind('>');
+        size_t       i      = 0;
+        while (i < body.size()) {
+            const auto LT = body.find('<', i);
+            if (LT == std::string::npos)
+                break;
+            size_t j = LT + 1;
+            while (j < body.size() && j - LT <= 4 && std::isalpha((unsigned char)body[j]))
                 j++;
-            std::string name = body.substr(i + 1, j - i - 1);
-            std::ranges::transform(name, name.begin(), [](unsigned char c) { return std::tolower(c); });
-            if (name != "img") {
-                i++;
+            const bool IMG = j - LT - 1 == 3 && std::tolower((unsigned char)body[LT + 1]) == 'i' &&
+                std::tolower((unsigned char)body[LT + 2]) == 'm' && std::tolower((unsigned char)body[LT + 3]) == 'g' &&
+                (j >= body.size() || !std::isalpha((unsigned char)body[j]));
+            if (!IMG || LASTGT == std::string::npos || LASTGT < j) {
+                kept.append(body, i, LT + 1 - i);
+                i = LT + 1;
                 continue;
             }
             const auto END = body.find('>', j);
-            if (END == std::string::npos)
-                break;
-            const auto TAG = body.substr(i, END - i + 1);
-            const auto SRC = attrValue(TAG, "src");
-            const auto ALT = oneLine(sanitizeMarkup(clipAttr(attrValue(TAG, "alt"))));
+            kept.append(body, i, LT - i); // the text before the tag
+            i = END + 1;                  // the tag itself is dropped
+            if (out.size() >= maxImages)
+                continue;
+            const std::string_view TAG{body.data() + LT, END - LT + 1};
+            const auto             SRC = attrValue(std::string{TAG}, "src");
             if (!SRC.empty() && SRC.size() <= MAX_SRC_BYTES && !SRC.starts_with("http") && !SRC.starts_with("data:"))
                 if (const auto P = resolveImage(SRC, sizePx); !P.empty())
-                    out.push_back(SImgRef{.src = P, .alt = ALT});
-            body.erase(i, END - i + 1); // drop the tag from the text
+                    out.push_back(SImgRef{.src = P, .alt = oneLine(sanitizeMarkup(clipAttr(attrValue(std::string{TAG}, "alt"))))});
         }
+        kept.append(body, i, std::string::npos);
+        body = std::move(kept);
         return out;
     }
 

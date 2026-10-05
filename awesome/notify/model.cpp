@@ -292,8 +292,10 @@ namespace NAwesome::Notify {
                 if (N->banner && N->timeoutMs > 0)
                     N->deadline = NOW + std::chrono::milliseconds((int64_t)N->timeoutMs);
             }
-            if (changed)
+            if (changed) {
                 notifChanged();
+                rearmExpiry(); // the timer may have disarmed while they were parked
+            }
         }
 
         void toggleSuspend() {
@@ -530,7 +532,13 @@ namespace NAwesome::Notify {
             };
 
             const std::string DESKTOP = clipUtf8(strHint("desktop-entry"), MAX_SOURCE_BYTES);
-            const std::string APPKEY  = !DESKTOP.empty() ? DESKTOP : APP; // grouping identity
+            // grouping identity; control bytes out — the bundle key joins
+            // (app, group) on \x1f, and an app named with one split wrong
+            const std::string APPKEY = [&] {
+                std::string k = !DESKTOP.empty() ? DESKTOP : APP;
+                std::erase_if(k, [](unsigned char c) { return c < 0x20; });
+                return k;
+            }();
             const std::string CAT     = strHint("category");
             const bool        CATEGORY_CONVERSATION = CAT.starts_with("im.") || CAT == "im" || CAT.starts_with("call.") || CAT == "call";
 
@@ -591,9 +599,11 @@ namespace NAwesome::Notify {
                         }
                     canonicalAppend = append;
                     if (append) {
-                        const auto SUM = Parse::oneLine(Parse::sanitizeMarkup(summary));
+                        // the CLIPPED summary, as stored: the raw one was both
+                        // unbounded work and never equal past the clip
+                        const auto KEY = Parse::oneLine(Parse::sanitizeMarkup(SUM));
                         for (const auto& N : notifs)
-                            if (!inOsdBand(N->id) && !vanishes(N) && N->appKey == APPKEY && N->summary == SUM) {
+                            if (!inOsdBand(N->id) && !vanishes(N) && N->appKey == APPKEY && N->summary == KEY) {
                                 id         = N->id;
                                 appendOnto = N->body;
                                 break;
@@ -639,8 +649,10 @@ namespace NAwesome::Notify {
                 n->id = id;
                 n->born = Time::steadyNow(); // the arrival spring keys here, never on `arrived`
                 // DND collects silently — except critical, which punches
-                // through (the urgency parse below lifts it back out)
-                n->waiting = suspended;
+                // through (the urgency parse below lifts it back out), and the
+                // OSD band, the user's own feedback (a volume key pressed
+                // under DND must still answer)
+                n->waiting = suspended && !inOsdBand(id);
                 notifs.insert(notifs.begin(), n); // newest on top; a replace keeps its slot
                 evictOverflow();
             }
@@ -660,6 +672,7 @@ namespace NAwesome::Notify {
                 n->unreadCount = 0;
             }
 
+            const bool WAS_SHOWN = EXISTING && n->banner && !n->waiting; // before the re-alert below
             n->arrived = Time::steadyNow(); // a replace refreshes the age, like a new arrival would
             // A replace re-alerts (the OSD sweep relies on it); the merge
             // above keeps aiming a chat's new messages at the card that holds
@@ -671,11 +684,8 @@ namespace NAwesome::Notify {
             n->summary = Parse::oneLine(Parse::sanitizeMarkup(SUM));
             std::string bodyText = TXT;
             n->bodyImages.clear();
-            for (const auto& P : Parse::extractImages(bodyText, std::max(64, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon") * 2))) {
-                if (n->bodyImages.size() >= MAX_BODY_IMAGES)
-                    break;
+            for (const auto& P : Parse::extractImages(bodyText, std::max(64, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon") * 2), MAX_BODY_IMAGES))
                 n->bodyImages.push_back(SBodyImage{.src = P.src, .alt = P.alt});
-            }
             n->body = capUtf8(Parse::sanitizeMarkup(bodyText, /*allowLinks=*/true));
             if (CONVERSATION) {
                 // the conversation's lines must stay one message each: the
@@ -713,9 +723,10 @@ namespace NAwesome::Notify {
             }
             if (CONV_ICON_HINT)
                 n->conversationIcon = Parse::resolveImage(n->conversationIconSource, ICONPX);
-            if (DECLARED_GROUP_HINT)
+            if (DECLARED_GROUP_HINT) {
                 n->declaredGroupKey = *DECLARED_GROUP_HINT;
-            else if (!SAME_APP)
+                std::erase_if(n->declaredGroupKey, [](unsigned char c) { return c < 0x20; }); // the \x1f join, as the app key
+            } else if (!SAME_APP)
                 n->declaredGroupKey.clear();
 
             if (!EFFECTIVE_CONV_ID.empty()) {
@@ -748,6 +759,16 @@ namespace NAwesome::Notify {
                         n->urgency = (uint8_t)std::clamp(IT->second.get<int32_t>(), 0, 2);
                     } catch (...) {}
                 }
+            // DND holds a re-arrival as it holds a new one (a replace or a
+            // conversation merge re-alerts otherwise): a card on screen stays
+            // as it is, silently; one that isn't queues for the resume
+            bool quiet = false;
+            if (EXISTING && suspended && n->urgency < 2 && !inOsdBand(n->id)) {
+                if (WAS_SHOWN)
+                    quiet = true;
+                else
+                    n->waiting = true;
+            }
             if (n->waiting && n->urgency >= 2)
                 n->waiting = false; // critical bypasses DND
             if (const auto IT = hints.find("value"); IT != hints.end())
@@ -855,7 +876,9 @@ namespace NAwesome::Notify {
             // Ordering and merging only — no per-app casing.
             n->conversation = CONVERSATION;
 
-            if (expireTimeout > 0)
+            if (n->urgency >= 2) // critical never expires on its own (spec; README)
+                n->timeoutMs = 0;
+            else if (expireTimeout > 0)
                 n->timeoutMs = expireTimeout;
             else if (expireTimeout == 0)
                 n->timeoutMs = 0;
@@ -884,11 +907,13 @@ namespace NAwesome::Notify {
             // libcanberra player unless the client suppresses it. DND-queued
             // (waiting) arrivals stay silent; the resume doesn't replay.
             if (!n->waiting) {
-                bool        suppress = COALESCED; // a coalesced arrival announces itself neither
+                // a coalesced or DND-quiet arrival announces itself neither;
+                // the hint can only add silence, never lift ours
+                bool        suppress = COALESCED || quiet;
                 std::string soundFile, soundName;
                 if (const auto IT = hints.find("suppress-sound"); IT != hints.end())
                     try {
-                        suppress = IT->second.get<bool>();
+                        suppress = suppress || IT->second.get<bool>();
                     } catch (...) {}
                 if (const auto IT = hints.find("sound-file"); IT != hints.end())
                     try {
@@ -935,9 +960,12 @@ namespace NAwesome::Notify {
                             gone.push_back(N->id);
                             continue;
                         }
+                        // into the shade: it still exists (we advertise
+                        // persistence), so no NotificationClosed — libnotify
+                        // and GLib forget a closed id, and its actions in the
+                        // shade then reached nobody
                         N->banner = false;
-                        Bus::emitClosed(N->id, R_EXPIRED);
-                        changed = true;
+                        changed   = true;
                     }
                     for (const auto ID : gone) {
                         std::erase_if(notifs, [&](const auto& N) { return N->id == ID; });

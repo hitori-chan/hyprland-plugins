@@ -223,7 +223,7 @@ namespace NAwesome::Notify {
             std::string src;
             std::string alt;
         };
-        std::vector<SImgRef> extractImages(std::string& body, int sizePx); // pulls <img src> out of the body
+        std::vector<SImgRef> extractImages(std::string& body, int sizePx, size_t maxImages); // pulls <img src> out of the body
         void                     unpackImageData(SNotif& n, const ImageData& d, int capPx); // -> premultiplied BGRA
         std::string              joinAppend(const std::string& oldBody, const std::string& add);
         std::string              foldSenderPrefix(std::string body); // "<b>S</b>\nmsg" -> "<b>S</b>: msg"

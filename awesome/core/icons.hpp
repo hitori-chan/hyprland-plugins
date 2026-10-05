@@ -15,6 +15,8 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
+#include <optional>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -39,19 +41,96 @@ namespace NAwesome {
         return ext[0] == '.' && eq(ext[1], 's') && eq(ext[2], 'v') && eq(ext[3], 'g');
     }
 
+    // The pixel size a raster declares in its header, before anything
+    // decodes it: a few-KB compressed image can declare 20000x20000 (1.6 GB
+    // decoded). PNG, JPEG, WebP, GIF and BMP — the formats icons and
+    // notification images come in; anything else answers nullopt.
+    inline std::optional<std::pair<uint32_t, uint32_t>> rasterDims(const uint8_t* d, size_t n) {
+        const auto BE16 = [&](size_t o) { return o + 2 <= n ? (uint32_t)d[o] << 8 | d[o + 1] : 0u; };
+        const auto BE32 = [&](size_t o) { return o + 4 <= n ? (uint32_t)d[o] << 24 | (uint32_t)d[o + 1] << 16 | (uint32_t)d[o + 2] << 8 | d[o + 3] : 0u; };
+        const auto LE16 = [&](size_t o) { return o + 2 <= n ? (uint32_t)d[o] | (uint32_t)d[o + 1] << 8 : 0u; };
+        const auto LE24 = [&](size_t o) { return o + 3 <= n ? (uint32_t)d[o] | (uint32_t)d[o + 1] << 8 | (uint32_t)d[o + 2] << 16 : 0u; };
+        const auto LE32 = [&](size_t o) { return o + 4 <= n ? LE16(o) | LE16(o + 2) << 16 : 0u; };
+        if (n >= 24 && !memcmp(d, "\x89PNG\r\n\x1a\n", 8) && !memcmp(d + 12, "IHDR", 4))
+            return std::pair{BE32(16), BE32(20)};
+        if (n >= 10 && (!memcmp(d, "GIF87a", 6) || !memcmp(d, "GIF89a", 6)))
+            return std::pair{LE16(6), LE16(8)};
+        if (n >= 26 && d[0] == 'B' && d[1] == 'M')
+            return std::pair{LE32(18), (uint32_t)std::abs((int32_t)LE32(22))};
+        if (n >= 30 && !memcmp(d, "RIFF", 4) && !memcmp(d + 8, "WEBP", 4)) {
+            if (!memcmp(d + 12, "VP8X", 4))
+                return std::pair{LE24(24) + 1, LE24(27) + 1};
+            if (!memcmp(d + 12, "VP8L", 4) && n >= 25) {
+                const uint32_t B = LE32(21);
+                return std::pair{(B & 0x3fff) + 1, (B >> 14 & 0x3fff) + 1};
+            }
+            if (!memcmp(d + 12, "VP8 ", 4))
+                return std::pair{LE16(26) & 0x3fff, LE16(28) & 0x3fff};
+            return std::nullopt;
+        }
+        if (n >= 4 && d[0] == 0xff && d[1] == 0xd8) { // JPEG: walk the segments to a SOFn
+            size_t o = 2;
+            while (o + 9 <= n) {
+                if (d[o] != 0xff)
+                    return std::nullopt;
+                const uint8_t M = d[o + 1];
+                if (M == 0xff) {
+                    o++;
+                    continue;
+                }
+                if (M >= 0xc0 && M <= 0xcf && M != 0xc4 && M != 0xc8 && M != 0xcc)
+                    return std::pair{BE16(o + 7), BE16(o + 5)};
+                if (M == 0xd8 || M == 0x01 || (M >= 0xd0 && M <= 0xd7)) {
+                    o += 2;
+                    continue;
+                }
+                o += 2 + BE16(o + 2);
+            }
+        }
+        return std::nullopt;
+    }
+
+    // Every decode of client-influenced bytes stays under this many pixels.
+    inline constexpr uint64_t MAX_DECODE_PIXELS = 16ull << 20;
+    inline bool admissibleRasterBytes(const uint8_t* d, size_t n) {
+        const auto DIMS = rasterDims(d, n);
+        return DIMS && DIMS->first > 0 && DIMS->second > 0 && (uint64_t)DIMS->first * DIMS->second <= MAX_DECODE_PIXELS;
+    }
+
     // A file the plugin may decode on the main thread: a regular file (a
     // FIFO or device path would block the compositor in open/read, and any
     // session-bus sender — a notification's image-path, an SNI icon theme
-    // path — names the file) of bounded size. Every decode entry point that
-    // takes a client-influenced path checks this first.
+    // path — names the file) of bounded size, whose header declares a
+    // bounded raster (an SVG is bounded by its size and the raster it is
+    // drawn at). Every decode entry point that takes a client-influenced
+    // path checks this first.
     inline constexpr uintmax_t MAX_DECODE_FILE_BYTES = 32u << 20;
+    inline constexpr uintmax_t MAX_SVG_FILE_BYTES    = 2u << 20;
     inline bool admissibleImageFile(const std::string& path, uintmax_t maxBytes = MAX_DECODE_FILE_BYTES) {
         std::error_code ec;
         const auto      STATUS = std::filesystem::status(path, ec); // follows symlinks: the target counts
         if (ec || !std::filesystem::is_regular_file(STATUS))
             return false;
         const auto BYTES = std::filesystem::file_size(path, ec);
-        return !ec && BYTES <= maxBytes;
+        if (ec || BYTES > maxBytes)
+            return false;
+        // an SVG parses and rasters on the calling thread: theme icons are
+        // a few KB, and 2 MiB bounds a stranger's
+        if (isSvgIconPath(path))
+            return BYTES <= MAX_SVG_FILE_BYTES;
+        // the header: 4 KiB holds every format's but a JPEG whose SOF sits
+        // past a large EXIF block — that one reads on, to 256 KiB
+        std::ifstream        F(path, std::ios::binary);
+        std::vector<uint8_t> head(std::min<uintmax_t>(BYTES, 4096));
+        if (!F.read((char*)head.data(), (std::streamsize)head.size()))
+            return false;
+        if (!rasterDims(head.data(), head.size()) && head.size() >= 2 && head[0] == 0xff && head[1] == 0xd8 && BYTES > head.size()) {
+            const size_t HAVE = head.size();
+            head.resize(std::min<uintmax_t>(BYTES, 256u << 10));
+            if (!F.read((char*)head.data() + HAVE, (std::streamsize)(head.size() - HAVE)))
+                return false;
+        }
+        return admissibleRasterBytes(head.data(), head.size());
     }
 
     // The XDG data dirs in precedence order: the per-user one first (it

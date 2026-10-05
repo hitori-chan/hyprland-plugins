@@ -96,8 +96,12 @@ namespace NAwesome::Windows {
         // Deferred like every other restore path; we are inside the emission
         // the compositor is running its own activation from.
         supervisor().listen(Event::bus()->m_events.window.urgent, [](PHLWINDOW w) {
+            // X11 asks (_NET_ACTIVE_WINDOW, DEMANDS_ATTENTION) are urgency-only
+            // in both modes (README): Wine sends them on every internal
+            // SetForegroundWindow, so they never restore. The per-window rule
+            // gates like the compositor's own activate().
             static auto FOCUS_ON_ACTIVATE = CConfigValue<Config::INTEGER>("misc:focus_on_activate");
-            if (!w || !*FOCUS_ON_ACTIVATE || !w->isHidden() || !Tasklist::isMinimized(w))
+            if (!w || w->backend().isX11() || !w->m_ruleApplicator->focusOnActivate().valueOr(*FOCUS_ON_ACTIVATE) || !w->isHidden() || !Tasklist::isMinimized(w))
                 return;
             PHLWINDOWREF WR{w};
             pendingActivate.arm([WR]() {

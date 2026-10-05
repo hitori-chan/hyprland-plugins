@@ -35,7 +35,7 @@ namespace NAwesome::Shell {
         static uint64_t                      appGeneration = 0, completionGeneration = 0;
         static uint64_t                      activationGeneration = 0;
         static NAwesome::CClipboardRead     clipboard;
-        static bool                          appScanning = false, completionScanning = false;
+        static bool                          appScanning = false;
         static std::unordered_set<std::string> appSeen;
         static std::string                   pendingSelectionId;
 
@@ -1007,7 +1007,7 @@ namespace NAwesome::Shell {
                         restoreSelection();
                         barChanged();
                     }
-                    self->updateTimeout((appScanning || completionScanning) ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
+                    self->updateTimeout((appScanning || compScanning) ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
                 },
                 nullptr);
             g_pEventLoopManager->addTimer(indexPoll);
@@ -1038,7 +1038,7 @@ namespace NAwesome::Shell {
             appSeen.clear();
             pendingSelectionId.clear();
             parsed = false;
-            appScanning = completionScanning = false;
+            appScanning = compScanning = false;
             launchCounts.counts.clear();
             history.entries.clear();
             filesLoaded = false;

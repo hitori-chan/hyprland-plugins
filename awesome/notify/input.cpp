@@ -132,15 +132,20 @@ namespace NAwesome::Notify {
     static void invokeLive(uint32_t id, const std::string& actionOverride) {
         std::string action   = actionOverride;
         std::string sender; // the X11 activation lookup, captured before close-on-act
-        bool        resident = false;
+        bool        resident = false, live = false;
         for (const auto& N : notifs)
             if (N->id == id) {
                 if (action.empty())
                     action = N->defaultAction;
                 resident = N->resident;
                 sender   = N->sender;
+                live     = true;
                 break;
             }
+        // the card went between the press and this deferred click (closed by
+        // its sender, expired): its action must not fire for a gone id
+        if (!live)
+            return;
         if (action.empty()) { // nothing to fire: the body click is a dismissal
             Model::closeOne(id, Model::R_DISMISSED);
             return;

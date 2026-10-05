@@ -90,12 +90,13 @@ namespace NAwesome {
     }
 
     bool StateStore::readUnified(const fs::path& path, AppState& out) {
-        const auto CONTENTS = detail::readBoundedFile(path);
+        const auto CONTENTS = detail::readBoundedFile(path, MAX_STATE_FILE_BYTES);
         if (CONTENTS.empty())
             return false;
         size_t perKind[4] = {}; // 0 spot, 1 windowed, 2 launches, 3 history
         constexpr size_t   KIND_CAP[4] = {MAX_STORE_ENTRIES, MAX_STORE_ENTRIES, MAX_STORE_ENTRIES, MAX_STORE_LIST_ENTRIES};
-        detail::forRows(CONTENTS, MAX_STORE_STRING_BYTES, MAX_STATE_ROWS, [&](std::string_view line) {
+        // a row is its kind prefix plus a payload of up to a whole string
+        detail::forRows(CONTENTS, MAX_STORE_STRING_BYTES + 64, MAX_STATE_ROWS, [&](std::string_view line) {
             const auto T = line.find('\t');
             if (T == std::string_view::npos)
                 return;
@@ -144,11 +145,21 @@ namespace NAwesome {
             return;
         m_loaded = true;
 
-        const auto P = path();
-        AppState   U{};
-        if (readUnified(P, U)) {
-            m_data = std::move(U);
-            return; // the unified file is live; nothing to migrate
+        const auto      P = path();
+        AppState        U{};
+        std::error_code ec;
+        const auto      STATUS = fs::status(P, ec);
+        if (fs::exists(STATUS) || (ec && ec != std::errc::no_such_file_or_directory)) {
+            if (readUnified(P, U) || (fs::is_regular_file(STATUS) && fs::file_size(P, ec) == 0 && !ec)) {
+                m_data = std::move(U);
+                return; // the unified file is live; nothing to migrate
+            }
+            // there, but unreadable (EIO, EACCES, mangled past the bounds):
+            // never clobber it with a migration or this session's state —
+            // a failed read once looked like a missing file and the user's
+            // memory was overwritten empty
+            m_writeBlocked = true;
+            return;
         }
 
         // Migration, newest first: the current four-file layout, the
@@ -176,6 +187,9 @@ namespace NAwesome {
         m_saver.flush();
     }
 
-    StateStore::StateStore() : m_saver([this]() { this->writeUnified(path(), this->m_data); }) {}
+    StateStore::StateStore() : m_saver([this]() {
+        if (!this->m_writeBlocked)
+            this->writeUnified(path(), this->m_data);
+    }) {}
 
 } // namespace NAwesome
