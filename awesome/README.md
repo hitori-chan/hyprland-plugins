@@ -325,8 +325,11 @@ semantics).
   acting rather than revealing; the CHEVRON is the only fold target.
   Right dismisses; middle is "Clear all". On an app bundle left
   expands and right (or the header ✕) dismisses the whole app.
-- A wrapped body link is hit on exactly the text it covers, line by
-  line.
+- `max_height` bounds a popup by priority: header, title, one body
+  line, progress and the action buttons first, then the images, then
+  their alt text; the body takes the rest. A block that doesn't fit is
+  dropped whole, never painted past the card. A wrapped body link is
+  hit on exactly the text it covers, line by line.
 - Acting CLOSES the shade: firing a card's primary, pressing one of its
   buttons or opening a body link all raise something over the panel
   the click was made in, so the panel gets out of the way. fd.o has no
