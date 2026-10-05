@@ -1,10 +1,8 @@
 // awesome/shell/input.cpp — clicks, scrolls and pointer ownership over the strip
 
-
-
-
-
 #include "shell/shell.hpp"
+
+#include <ranges>
 
 namespace NAwesome::Shell {
 
@@ -107,11 +105,14 @@ namespace NAwesome::Shell {
         }
 
         // the menubar prompt closes on any press, like clicking away in awesome;
-        // a press ON its strip must not fall through to the window beneath it
+        // a press ON its strip must not fall through to the window beneath it.
+        // While it was open here the bar showed even over a fullscreen window
+        // (barHidden), so this press still lands on what was drawn.
+        const bool MENUBAR_HERE = Menubar::isOpen && Menubar::mon.lock() == MON;
         if (Menubar::isOpen) {
             const auto MBM = Menubar::mon.lock();
             Menubar::close();
-            if (MBM == MON && POS.y > MON->logicalBox().y + barHeight() && POS.y <= MON->logicalBox().y + barHeight() * 2) {
+            if (MBM == MON && POS.y >= MON->logicalBox().y + barHeight() && POS.y < MON->logicalBox().y + barHeight() * 2) {
                 info.cancelled = true;
                 swallowRelease |= BIT;
                 return;
@@ -157,13 +158,14 @@ namespace NAwesome::Shell {
 
         // bar hidden under real fullscreen: the strip belongs to the window then
         // (swallowing here would make the top rows of fullscreen apps click-dead)
-        if (const auto WS = MON->m_activeWorkspace; WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN) {
+        if (const auto WS = MON->m_activeWorkspace;
+            !MENUBAR_HERE && WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN) {
             heldButtons++;
             return;
         }
 
         const auto MB = MON->logicalBox();
-        if (POS.y > MB.y + barHeight()) {
+        if (POS.y >= MB.y + barHeight()) {
             heldButtons++;
             return;
         }
@@ -175,8 +177,10 @@ namespace NAwesome::Shell {
         if (IT == hitboxes.end())
             return;
 
+        // topmost first: a cell painted later (the bell's badge over its
+        // neighbour) is what the pointer is on
         const bool SUPER = NAwesome::superHeld();
-        for (const auto& HIT : IT->second) {
+        for (const auto& HIT : IT->second | std::views::reverse) {
             if (HIT.box.containsPoint(POS)) {
                 SHit hc   = HIT;
                 hc.mon    = MON;
@@ -248,13 +252,13 @@ namespace NAwesome::Shell {
                 return;
             }
         }
-        if (Menubar::isOpen && Menubar::mon.lock() == MON && POS.y <= MON->logicalBox().y + barHeight() * 2) {
+        if (Menubar::isOpen && Menubar::mon.lock() == MON && POS.y < MON->logicalBox().y + barHeight() * 2) {
             info.cancelled = true; // the prompt strip swallows scroll, no action
             return;
         }
         if (const auto WS = MON->m_activeWorkspace; WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN)
             return; // bar hidden, strip belongs to the fullscreen window
-        if (POS.y > MON->logicalBox().y + barHeight())
+        if (POS.y >= MON->logicalBox().y + barHeight())
             return;
 
         info.cancelled = true;
@@ -269,7 +273,7 @@ namespace NAwesome::Shell {
         const auto IT = hitboxes.find(MON->m_id);
         if (IT == hitboxes.end())
             return;
-        for (const auto& HIT : IT->second) {
+        for (const auto& HIT : IT->second | std::views::reverse) { // topmost first
             if (!HIT.box.containsPoint(POS))
                 continue;
             if (!HIT.widget)
@@ -302,15 +306,18 @@ namespace NAwesome::Shell {
             return nullptr;
 
         // the cheap geometry first: this runs per pointer motion, and almost
-        // every motion is far below the strip
-        bool over = pos.y <= MON->logicalBox().y + barHeight();
+        // every motion is far below the strip. Half-open, like every strip
+        // edge test (presses included): the row at top + H is the window's,
+        // and with integer edges a floored motion coordinate and an exact
+        // press coordinate always fall on the same side.
+        bool over = pos.y < MON->logicalBox().y + barHeight();
         if (!over && Menu::isOpen && Menu::mon.lock() == MON)
             for (const auto& L : Menu::levels)
                 if (L.box.containsPoint(pos)) {
                     over = true;
                     break;
                 }
-        if (!over && Menubar::isOpen && Menubar::mon.lock() == MON && pos.y <= MON->logicalBox().y + barHeight() * 2)
+        if (!over && Menubar::isOpen && Menubar::mon.lock() == MON && pos.y < MON->logicalBox().y + barHeight() * 2)
             over = true; // the prompt strip below the bar is ours too
         if (!over)
             return nullptr;
@@ -390,7 +397,7 @@ namespace NAwesome::Shell {
 
         IWidget* over = nullptr;
         if (const auto IT = hitboxes.find(MON->m_id); IT != hitboxes.end())
-            for (const auto& HIT : IT->second)
+            for (const auto& HIT : IT->second | std::views::reverse) // topmost first
                 if (HIT.box.containsPoint(pos)) {
                     over = HIT.widget;
                     break;
