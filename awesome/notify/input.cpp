@@ -485,8 +485,22 @@ namespace NAwesome::Notify {
 
         // An armed reply field owns the keyboard first: the user is typing a
         // sentence, and every nav key below would otherwise steal a letter.
+        const bool HELD = replyHeld();
         if (replyArmed()) {
             if (replyKey(KB->m_xkbState, e.keycode + 8))
+                info.cancelled = true;
+            return;
+        }
+        // The field's card died mid-sentence (the sender closed it: the chat
+        // was read elsewhere) and the field disarmed itself. This key was
+        // typed for the field, and the selection's index now names the card
+        // that took the dead one's place: swallow the key, drop the
+        // selection — never a space that folds, or a Return that fires,
+        // someone else's card.
+        if (HELD) {
+            centerDeselect();
+            const auto SYM = xkb_state_key_get_one_sym(KB->m_xkbState, e.keycode + 8);
+            if (SYM < XKB_KEY_Shift_L || SYM > XKB_KEY_Hyper_R) // a bare modifier passes, as in the field
                 info.cancelled = true;
             return;
         }

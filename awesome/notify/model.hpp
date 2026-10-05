@@ -353,6 +353,7 @@ namespace NAwesome::Notify {
     void centerToggleGroup(const std::string& appKey);
     void centerToggleRow(uint32_t id);
     void centerSelectMove(int dir);                         // ↑/↓: move the keyboard selection, paging to keep it on screen
+    void centerDeselect();
     bool centerSelection(uint32_t& id, std::string& group); // the selected item; group non-empty = a bundle. false = none
 
     // the click door (Lua, the bell, `hyprctl awesome center`): deferred and
@@ -425,6 +426,9 @@ namespace NAwesome::Notify {
     // hand it, so it takes the keys and gives back what it does not use.
 
     bool               replyArmedOn(uint32_t id); // this card's field is the armed one
+    // an arm is held, live or not: replyArmed() is the liveness test, and a
+    // field that died since disarms there
+    bool               replyHeld();
     bool               replyArmed();
     void               replyOpen(uint32_t id);
     void               replyClose();

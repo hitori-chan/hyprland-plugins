@@ -98,6 +98,8 @@ namespace NAwesome::Notify {
         if (IT != s_rowState.end() && IT->second) {
             s_openedRow.erase(id);
             s_foldedRow.insert(id);
+            if (replyArmedOn(id))
+                replyClose(); // its field folds away with the row
         } else {
             s_foldedRow.erase(id);
             s_openedRow.insert(id);
@@ -123,6 +125,13 @@ namespace NAwesome::Notify {
         s_skip = (size_t)std::clamp((int64_t)s_skip + dir, (int64_t)0, (int64_t)(s_items - 1));
         // a pointer page leaves the keyboard's row behind: the next arrow
         // enters the new page (Enter/Delete must never act off screen)
+        s_sel = -1;
+        notifChanged();
+    }
+
+    void centerDeselect() {
+        if (s_sel < 0)
+            return;
         s_sel = -1;
         notifChanged();
     }
@@ -271,7 +280,10 @@ namespace NAwesome::Notify {
             if (D.items.size() < 2) {
                 const auto&  N          = D.items.front();
                 const double CH         = measureRow(P, T, N, contentW, false, ROW_SINGLE);
-                const bool   FORCE_OPEN = s_openedRow.contains(N->id), FORCE_FOLD = s_foldedRow.contains(N->id);
+                // an armed reply field is drawn in the open row only: its
+                // row is open whatever the budget or a fold says
+                const bool   ARMED      = replyArmedOn(N->id);
+                const bool   FORCE_OPEN = ARMED || s_openedRow.contains(N->id), FORCE_FOLD = !ARMED && s_foldedRow.contains(N->id);
                 bool         open = false, more = true;
                 double       h = CH;
                 if (!FORCE_FOLD && (FORCE_OPEN || TOP || used + LEAD + CH < bodyCap)) {

@@ -219,7 +219,7 @@ namespace NAwesome::Notify {
                 const int    RB = (int)std::lround(BTN_H / 2 * P.scale);
 
                 // the typed text, or the sender's placeholder while it is empty
-                const auto ENT = TXT.empty() ? nullptr : cachedText(TXT, COLFG, T.action, std::max(1, (int)((FB.w - 2 * BTN_PADX) * P.scale)), -1, 0, false, 400);
+                const auto ENT = TXT.empty() ? nullptr : cachedText(TXT, COLFG, T.action, std::max(1, (int)((FB.w - 2 * BTN_PADX) * P.scale)), -1, 0, false, 400, nullptr, true);
                 const auto PH  = TXT.empty() ? cachedText(N->replyPlaceholder.empty() ? "Type a reply…" : N->replyPlaceholder, COLSUB, T.action,
                                                          std::max(1, (int)((FB.w - 2 * BTN_PADX) * P.scale)), -1, 0, false, 400) :
                                                nullptr;

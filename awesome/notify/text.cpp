@@ -323,10 +323,11 @@ namespace NAwesome::Notify {
     // here rasters through its own pango layout — then the same
     // premultiplied-ARGB32 cairo -> createTexture path renderText uses.
     // maxHeightPx >= 0 is a pixel budget (rounded down to whole lines, tail
-    // line ellipsized); < 0 caps nothing — text that must be single-line is
-    // flattened to one line before it gets here (the collapsed rows).
+    // line ellipsized); < 0 is pango's one line per paragraph, ellipsized —
+    // text that must be ONE line is flattened before it gets here (the
+    // collapsed rows).
     static SP<ITexture> buildText(const std::string& text, const CHyprColor& col, int pt, int maxWidthPx, int maxHeightPx, float lineSpacing, bool markup, int weight,
-                                  const CHyprColor* linkCol = nullptr, std::vector<std::pair<std::string, CBox>>* outLinks = nullptr) {
+                                  const CHyprColor* linkCol = nullptr, std::vector<std::pair<std::string, CBox>>* outLinks = nullptr, bool headCut = false) {
         PangoFontMap*         fontMap = pango_cairo_font_map_get_default();
         PangoContext*         context = pango_font_map_create_context(fontMap);
         PangoLayout*          layout  = pango_layout_new(context);
@@ -379,7 +380,7 @@ namespace NAwesome::Notify {
             }
             pango_layout_set_height(layout, HEIGHT * PANGO_SCALE);
         }
-        pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
+        pango_layout_set_ellipsize(layout, headCut ? PANGO_ELLIPSIZE_START : PANGO_ELLIPSIZE_END);
         if (attrs) {
             pango_layout_set_attributes(layout, attrs);
             pango_attr_list_unref(attrs);
@@ -460,17 +461,17 @@ namespace NAwesome::Notify {
     }};
 
     const SCachedText* cachedText(const std::string& text, const CHyprColor& col, int pt, int maxWpx, int maxHpx, float lineSp, bool markup, int weight,
-                                  const CHyprColor* linkCol) {
+                                  const CHyprColor* linkCol, bool headCut) {
         if (text.empty())
             return nullptr;
         // wide enough for every conversion at ITS widest (two 16-digit hex,
-        // six 11-char signed decimals, the separators): snprintf reports what
+        // seven 11-char signed decimals, the separators): snprintf reports what
         // it WOULD have written, so a buffer the key outgrew would be read
         // past its end — and a truncated key would alias two styles onto one
         // texture. The append clamps anyway, for the next field added here.
-        char      meta[112];
-        const int METALEN = std::snprintf(meta, sizeof(meta), "|%llx|%d|%d|%d|%d|%d|%d|%llx", (unsigned long long)col.getAsHex(), pt, maxWpx, maxHpx, (int)(lineSp * 100), markup,
-                                          weight, linkCol ? (unsigned long long)linkCol->getAsHex() : 0ULL);
+        char      meta[128];
+        const int METALEN = std::snprintf(meta, sizeof(meta), "|%llx|%d|%d|%d|%d|%d|%d|%llx|%d", (unsigned long long)col.getAsHex(), pt, maxWpx, maxHpx, (int)(lineSp * 100), markup,
+                                          weight, linkCol ? (unsigned long long)linkCol->getAsHex() : 0ULL, headCut);
 
         static std::string KEY; // reused; main thread only
         KEY.clear();
@@ -489,7 +490,7 @@ namespace NAwesome::Notify {
             for (auto& [HREF, R] : lrects)
                 entry.links.push_back({HREF, R}); // physical px; the drawing unit descales
         } else
-            entry.tex = buildText(text, col, pt, maxWpx, maxHpx, lineSp, markup, weight);
+            entry.tex = buildText(text, col, pt, maxWpx, maxHpx, lineSp, markup, weight, nullptr, nullptr, headCut);
         return texCache.insert(KEY, std::move(entry));
     }
 

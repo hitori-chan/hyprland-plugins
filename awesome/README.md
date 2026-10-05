@@ -364,8 +364,12 @@ semantics).
   text)` and closes the card unless `resident`.
   `x-kde-reply-placeholder-text` and `x-kde-reply-submit-button-text`
   are honored. The field takes the whole keyboard while armed (there is
-  no focus to give it); editing is append-and-backspace plus C-u / C-w.
-  Banners have no field.
+  no focus to give it); editing is append-and-backspace plus C-u / C-w,
+  and a text wider than the field shows its newest end. The armed row
+  stays open and on the page; folding it closes the field. A card that
+  dies mid-reply (the sender closed it) disarms the field: the key that
+  finds it gone is swallowed and the selection dropped, so no keystroke
+  reaches another card. Banners have no field.
 - Shade keys, while it is open and only then: Esc closes, ↑/↓ move a
   selection (an accent hairline; the page follows it, however tall the
   next row), Space folds, Enter fires the primary, Tab arms the selected

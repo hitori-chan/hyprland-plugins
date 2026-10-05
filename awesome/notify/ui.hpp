@@ -118,10 +118,12 @@ namespace NAwesome::Notify {
     // Content + style + width IS the key: a replace or an age-bucket move
     // simply misses to a new key. Builds only while the gate allows;
     // a draw-side miss flags the rewarm. maxHpx >= 0 is a pixel budget
-    // (rounded down to whole lines, tail ellipsized); < 0 caps nothing.
-    // linkCol non-null collects <a href> rects.
+    // (rounded down to whole lines, tail ellipsized); < 0 is one line per
+    // paragraph, ellipsized. linkCol non-null collects <a href> rects.
+    // headCut ellipsizes at the START: an entry, whose newest characters
+    // (the caret's end) must stay in view.
     const SCachedText* cachedText(const std::string& text, const CHyprColor& col, int pt, int maxWpx, int maxHpx, float lineSp, bool markup, int weight,
-                                  const CHyprColor* linkCol = nullptr);
+                                  const CHyprColor* linkCol = nullptr, bool headCut = false);
     // dir 0 = down, 1 = up; a px-square canvas, the Material chevron centered
     const SCachedText* chevronTex(int dir, const CHyprColor& col, int px);
 
