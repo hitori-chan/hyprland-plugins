@@ -299,7 +299,7 @@ namespace NAwesome::Windows::Place {
             // tracking follows the placement (a raw target move leaves it
             // stale and a fullscreen roundtrip would restore the
             // pre-placement spot); a move, never a configure
-            g_layoutManager->setTargetGeom(CBox{nx, ny, size.x, size.y}, w->windowTarget());
+            setGeom(w, CBox{nx, ny, size.x, size.y});
             w->windowTarget()->warpPositionSize();
         }
     }

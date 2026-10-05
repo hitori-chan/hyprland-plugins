@@ -121,7 +121,7 @@ namespace NAwesome::Windows {
             // lastBox — a raw setPositionGlobal leaves that stale at the
             // pre-maximize box, and the window "un-maximizes" on any later
             // fullscreen roundtrip
-            g_layoutManager->setTargetGeom(WA, W->windowTarget());
+            setGeom(W, WA);
             W->windowTarget()->warpPositionSize();
             // the exit's 0x0 grant configure already reached the client, but
             // m_pendingReportedSize kept the real size — an unforced send
@@ -161,7 +161,7 @@ namespace NAwesome::Windows {
             bool moved = false;
             for (const auto& ENTRY : maximized()) {
                 const auto W = ENTRY.first.lock();
-                if (!W || !W->mapped() || !W->isFloating() || !W->windowTarget())
+                if (!W || !W->mapped() || W->isHidden() || !W->isFloating() || !W->windowTarget())
                     continue;
                 const auto MODES = Fullscreen::controller()->getFullscreenModes(W);
                 if (MODES.internal != Fullscreen::FSMODE_NONE || MODES.client != Fullscreen::FSMODE_NONE)
@@ -172,7 +172,7 @@ namespace NAwesome::Windows {
                 const auto WA = MON->logicalBoxMinusReserved();
                 if (W->windowTarget()->position() == WA)
                     continue;
-                g_layoutManager->setTargetGeom(WA, W->windowTarget());
+                setGeom(W, WA);
                 W->windowTarget()->warpPositionSize();
                 moved = true;
             }
@@ -242,7 +242,7 @@ namespace NAwesome::Windows {
                 const auto  B  = lastWindowed().find(W->metadata().appID());
                 if (B && W->m_sizeFromClientSerial && MON && W->isFloating()) {
                     W->m_sizeFromClientSerial = 0;
-                    g_layoutManager->setTargetGeom(boundedRestore(W, CBox{(double)B->x, (double)B->y, (double)B->w, (double)B->h}, MON->logicalBoxMinusReserved()), W->windowTarget());
+                    setGeom(W, boundedRestore(W, CBox{(double)B->x, (double)B->y, (double)B->w, (double)B->h}, MON->logicalBoxMinusReserved()));
                     W->windowTarget()->warpPositionSize();
                     // same disarmed-grant flush as adoptCompositorMax:
                     // unforced sends dedup against m_pendingReportedSize and
@@ -291,7 +291,7 @@ namespace NAwesome::Windows {
                 if (STORED.w > 5 && STORED.h > 5) {
                     const CBox R = boundedRestore(W, STORED, WA);
                     rememberWindowed(W->metadata().appID(), R);
-                    g_layoutManager->setTargetGeom(R, W->windowTarget());
+                    setGeom(W, R);
                     W->windowTarget()->warpPositionSize();
                 } else {
                     // adopted with no remembered box: the client picks its
@@ -303,7 +303,7 @@ namespace NAwesome::Windows {
                 maximized().emplace(WR, BOX);
                 rememberWindowed(W->metadata().appID(), BOX);
                 setClientMaximized(true);
-                g_layoutManager->setTargetGeom(WA, W->windowTarget());
+                setGeom(W, WA);
                 W->windowTarget()->warpPositionSize();
                 Desktop::windowState()->raise(W);
             }
