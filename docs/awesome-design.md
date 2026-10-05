@@ -73,10 +73,16 @@ atomics; ordering is program order plus the hop queue.
   armed zone and bail (invariant 7); native input-capture/seat grab
   active → pass through; native hit-test (layer surfaces, popups, IME)
   → pass through. Then the handler chain `shell → notify → windows`
-  with consume/pass semantics. The chain is a table in one file.
+  with consume/pass semantics. The chain is a table in one file. A
+  claimed MOVE still reaches the later modules (with the claim set) so
+  they let go of hover and pointer ownership: motion is state, not an
+  action.
 - **Canvas** — per-monitor scene. Modules contribute layers (bar
   strip, menus, card stack, shade, OSD cards, snap indicator) with
-  stable geometry; the canvas computes the damage union, runs glass per
+  stable geometry, at an explicit level (`eLayerZ`: bar, cards, snap,
+  popups) whose paint order agrees with the input chain — where two
+  overlap, the one that takes the press is on top (an open menu over the
+  cards); the canvas computes the damage union, runs glass per
   glass group, scissor-paints, and enforces the warm/draw gate: a layer
   cannot paint a texture in the frame that created it (invariant 4).
   Damage happens on every visible-state transition, including hover.
@@ -162,9 +168,9 @@ least-overlap, fixed-size exclusion, drag snap with indicator). The
 window-press arbitration — swallow / focus / let the compositor drag
 proceed — is one function, replacing the four load-order edges.
 Maximized windows stay immovable (the press is swallowed whole, with
-matching release swallow). Spawn geometry and remembered windowed
-sizes persist in the core's unified state file (`spot` and
-`windowed` rows, core/state.hpp). The CSD contract (fork-side,
+matching release swallow). Spawn positions (the client keeps its own
+size) and remembered windowed sizes persist in the core's unified state
+file (`spot` and `windowed` rows, core/state.hpp). The CSD contract (fork-side,
 source-verified against upstream Hyprland's content-frame model, the
 one its popup math already assumes): the window box IS the client's
 content frame (its `set_window_geometry` rectangle) and the client's

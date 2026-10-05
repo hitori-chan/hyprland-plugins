@@ -150,10 +150,13 @@ the plugin's one state file (see State).
     Wayland sender never spends the token the plugin minted for it
     (the plugin makes awesome's "the app activates itself after the
     click" unconditional).
-- **Spawn placement** is per-class: the last free geometry from the
+- **Spawn placement** is per-class: the last free position from the
   store, else least-overlap for a second window of the same class.
-  Resizable xdg-toplevels can receive the remembered size in the
-  initial configure. Client size limits, fullscreen/maximize state,
+  Placement only moves a window: its size is always the client's own
+  (the initial configure stays 0x0, so apps restore their own sizes and
+  dialogs open at their natural size). The one size the plugin supplies
+  is the unmaximize restore box of a window born maximized. Client size
+  limits, fullscreen/maximize state,
   pending native requests, rules, parent-anchored dialogs, X11
   geometry, and override-redirect surfaces stay authoritative. The close
   is remembered however the client tears down (GTK and Firefox destroy
@@ -176,8 +179,12 @@ the plugin's one state file (see State).
 Cards render top-right on the focused monitor — the stack follows a
 keyboard or workspace focus flip, but not one the pointer itself makes,
 so a mouse grazing the neighboring monitor's corner leaves the cards
-where they are. Newest at the top, glass·ink skin (frosted graphite,
-superellipse corners).
+where they are (drawn and clickable there alike until a deliberate move
+carries them). They start `offset_y` below the monitor top, never above
+the workarea, so a taller strip never runs under them. An open tray menu
+or the menubar paints over the cards, as it takes the press first.
+Newest at the top, glass·ink skin (frosted graphite, superellipse
+corners).
 
 **Spec surface.** Methods `Notify`, `CloseNotification`,
 `GetCapabilities`, `GetServerInformation` (spec 1.3); signals
@@ -319,7 +326,14 @@ semantics).
   opens, a button acts. Rows open by default, so the click is spent
   acting rather than revealing; the CHEVRON is the only fold target.
   Right dismisses; middle is "Clear all". On an app bundle left
-  expands and right (or the header ✕) dismisses the whole app.
+  expands and right (or the header ✕) dismisses the whole app. The
+  paging chips (⌃ above the fold, ⌄ N below it) are their own targets:
+  a click pages a screenful, like the wheel.
+- `max_height` bounds a popup by priority: header, title, one body
+  line, progress and the action buttons first, then the images, then
+  their alt text; the body takes the rest. A block that doesn't fit is
+  dropped whole, never painted past the card. A wrapped body link is
+  hit on exactly the text it covers, line by line.
 - Acting CLOSES the shade: firing a card's primary, pressing one of its
   buttons or opening a body link all raise something over the panel
   the click was made in, so the panel gets out of the way. fd.o has no
@@ -352,7 +366,9 @@ semantics).
   the click queue rather than acting in the emission (crash class 6) —
   a swipe is an alias for a click that already exists.
 - Bell: a click speaks Toggle (opening absorbs the banners into parked
-  rows, a later explicit close re-pops them); pointer hover is a no-op.
+  rows, a later explicit close re-pops them) and opens the shade on the
+  clicked bar's monitor; the badge is part of its target. Pointer hover
+  is a no-op.
 - Over fullscreen: banners show over a real fullscreen window too — the
   ecosystem default, no quiet-while-fullscreen policy. While a card is
   up over a fullscreen window, the plugin blocks the monitor's solitary
