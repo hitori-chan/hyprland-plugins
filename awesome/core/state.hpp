@@ -57,7 +57,8 @@ namespace NAwesome {
         StateStore();
         AppState m_data{};
         Saver    m_saver;
-        bool     m_loaded = false;
+        bool     m_loaded       = false;
+        bool     m_writeBlocked = false; // the file exists but could not be read: leave it be
     };
 
 } // namespace NAwesome

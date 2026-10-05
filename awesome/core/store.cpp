@@ -12,17 +12,17 @@ namespace fs = std::filesystem;
 
 namespace NAwesome::detail {
 
-    std::string readBoundedFile(const fs::path& path) {
+    std::string readBoundedFile(const fs::path& path, size_t maxBytes) {
         std::error_code statusError;
         if (!fs::is_regular_file(path, statusError))
             return {};
         std::ifstream f(path, std::ios::binary);
         if (!f)
             return {};
-        std::string contents(MAX_STORE_FILE_BYTES + 1, '\0');
+        std::string contents(maxBytes + 1, '\0');
         f.read(contents.data(), static_cast<std::streamsize>(contents.size()));
         const auto READ = static_cast<size_t>(f.gcount());
-        if (READ > MAX_STORE_FILE_BYTES)
+        if (READ > maxBytes)
             return {};
         contents.resize(READ);
         return contents;

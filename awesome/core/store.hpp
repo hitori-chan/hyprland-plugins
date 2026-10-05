@@ -38,11 +38,15 @@ namespace NAwesome {
     // the unified state.tsv interleaves the four stores: one hostile file
     // must not cost more than a bounded number of rows to parse.
     inline constexpr size_t MAX_STATE_ROWS          = 16384;
+    // what the writer can produce at the caps above (1024 spot + 1024
+    // windowed + 1024 launches rows of 512-byte keys, 50 history rows of
+    // 4 KiB: ~1.9 MB): the reader must accept anything the writer wrote
+    inline constexpr size_t MAX_STATE_FILE_BYTES    = 4u << 20;
 
     namespace detail {
         // One bounded read of the whole file; empty when absent,
         // oversized, or unreadable.
-        std::string readBoundedFile(const std::filesystem::path& path);
+        std::string readBoundedFile(const std::filesystem::path& path, size_t maxBytes = MAX_STORE_FILE_BYTES);
 
         // Iterate rows; the callback owns per-row admission. The line view
         // is built from the line's own start — advancing `begin` first
