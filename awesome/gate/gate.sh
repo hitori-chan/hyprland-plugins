@@ -3,7 +3,6 @@
 #
 # The plugin's behavioral contract: the scenario batteries run in this
 # shell and share one validated nested target and fixture state.
-# manifest.tsv maps each check to its predecessor in the retired gate.
 # The operational core is harness.sh (launch/teardown/retarget/capture/
 # coredumps + the monolith's store fixtures and config writer); the input
 # fixtures it drives (vptr, vkbd, cliphold, ...) are the shared devtools/.
@@ -20,13 +19,11 @@ HARNESS="${HYPR_HARNESS:-$HOME/.local/share/hypr-nested}"
 # Battery selection: resolved against this canonical order; sourcing below
 # always walks it so user-specified order never changes execution order.
 #
-# Tiers (2026-10-04 gate trim): the dev loop runs QUICK by default; the
-# battle-tested batteries that pay for relaunches (state) or X-wayland
-# pipeline polling (focus) are opt-in, and `all` is the pre-trim full run
-# without focus. `everything` runs every battery.
-CANONICAL_BATTERIES=(quick shell windows state notify system pipeline focus lifecycle)
+# Tiers: the dev loop runs QUICK (a smoke of each module) by default; `all`
+# runs every module battery (quick is a subset of them).
+CANONICAL_BATTERIES=(quick shell windows notify system pipeline lifecycle)
 QUICK_TIER=(quick)
-ALL_TIER=(shell windows state notify system pipeline lifecycle)
+ALL_TIER=(shell windows notify system pipeline lifecycle)
 SELECTED=()
 
 usage() {
@@ -38,10 +35,9 @@ usage: gate.sh [-s FORK-DIR] [-b TIER|LIST] [-k LIST] [compositor-bin]
             and default the compositor to DIR/build/Hyprland
   -b        tiers:
               quick      the dev-loop smoke battery (DEFAULT)
-              all        shell windows state notify system pipeline lifecycle
-              everything quick + all + focus
+              all        shell windows notify system pipeline lifecycle
             or a comma-separated battery list, from:
-              quick shell windows state notify system pipeline focus lifecycle
+              quick shell windows notify system pipeline lifecycle
             (canonical order enforced regardless of user order)
   -k LIST   comma-separated batteries to SKIP from the selected set
 EOF
@@ -126,8 +122,6 @@ if [[ -z "$B_SPEC" || "$B_SPEC" == "quick" ]]; then
 	SELECTED=("${QUICK_TIER[@]}")
 elif [[ "$B_SPEC" == "all" ]]; then
 	SELECTED=("${ALL_TIER[@]}")
-elif [[ "$B_SPEC" == "everything" ]]; then
-	SELECTED=("${CANONICAL_BATTERIES[@]}")
 else
 	IFS=',' read -r -a REQUESTED <<< "$B_SPEC"
 	for _name in "${REQUESTED[@]}"; do

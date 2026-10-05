@@ -89,6 +89,27 @@ bell_hover() { # bell_hover <true|false> — the real pointer over/off the bell
 	fi
 }
 
+# ---- bounded waits ----------------------------------------------------------------
+# until_is <seconds> <want> <cmd...>: poll until the command prints `want` —
+# an asynchronous effect landing (an arrival, a sweep) — false on timeout.
+# For final states only: a "nothing happened" check keeps a fixed settle.
+until_is() {
+	local n=$(($1 * 10)) want=$2
+	shift 2
+	while ((n-- > 0)); do
+		[[ "$("$@" 2>/dev/null)" == "$want" ]] && return 0
+		sleep 0.1
+	done
+	return 1
+}
+# sweep the model and wait until it is empty (the shade may stay open)
+nclear() {
+	hq awesome clear >/dev/null 2>&1
+	local n=30
+	while ((n-- > 0)) && [[ "$(st)" != *" live:0 "* ]]; do sleep 0.1; done
+	sleep 0.2
+}
+
 # ---- model strings -------------------------------------------------------------
 st() { hq awesome state; }
 bd() { hq awesome badge; }

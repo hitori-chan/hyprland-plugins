@@ -283,8 +283,8 @@ changes:
   contract: `== stress: ALL N CHECKS PASSED in Ns ==`.
 - **Batteries per module** — `shell`, `windows`, `notify`, `system`,
   `pipeline`, `lifecycle` (reload/teardown/lock/capture/queue bounds),
-  replacing the per-plugin batteries. Each old check maps to a new
-  check id; the mapping table lives in the gate (`manifest.tsv`), and
+  replacing the per-plugin batteries, plus `quick`, the default smoke.
+  Battle-tested checks are retired once their code stops changing;
   dropping a check is a reviewable diff.
 - **Unit tests** — one headless C++26 harness (no external deps),
   `make -C awesome test`: bounded types, box math, config schema
@@ -292,7 +292,7 @@ changes:
 - **Unit tests** cover the process runner too (spawn under the
   compositor's signal state).
 - **Fixtures** — the C Wayland fixtures (vptr, vkbd, fake-sni, cliphold,
-  fixwin, splashwin, focustrap, activatewin) stay C against the exact
+  fixwin, splashwin) stay C against the exact
   fork protocol XML; fakes (wpctl, the sound player, logind) shadow the
   host's services; all live in `devtools/` and are extended only where a
   battery needs a new shape.

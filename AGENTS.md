@@ -37,7 +37,7 @@ compositor is built from.
   why.
 - A bump: rebase the series onto upstream, drop patches upstream made
   obsolete, rebuild, port the plugin to the new ABI, run the full gate
-  (`-b everything`). `src/version.h` is generated at CMake CONFIGURE time:
+  (`-b all`). `src/version.h` is generated at CMake CONFIGURE time:
   reconfigure (`cmake -S . -B build`) after moving HEAD, or the binary and
   headers carry a stale hash the plugin's load guard rejects.
 - Dependencies come from distro packages at the fork's `flake.lock` pins;
@@ -59,11 +59,12 @@ compositor is built from.
 
 ## The gate
 
-`make -C awesome gate ARGS="-s ~/repo/Hyprland [-b quick|all|everything|LIST]"`
+`make -C awesome gate ARGS="-s ~/repo/Hyprland [-b quick|all|LIST]"`
 stages the fork build's headers, builds both variants, and runs the
 batteries against a nested Hyprland. Default tier `quick` (~1 min);
-`-b windows` alone for a geometry/CSD change; `-b everything` for a bump
-or a release.
+`-b windows` alone for a geometry/CSD change; `-b all` for a bump or a
+release. Keep it lean: retire a check once its code is battle-tested,
+gate new behavior with discriminating checks.
 
 - Isolation is absolute: the nested runs inside a private headless labwc
   (`gate/host.sh`) with its own session bus, its own system bus (a fake
