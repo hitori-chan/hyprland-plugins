@@ -27,6 +27,15 @@ namespace NAwesome::Notify {
     // ---- layout constants (logical px; the decided spec) ----
 
     inline constexpr double EDGE = 10; // right screen inset
+
+    // The cards' top below the monitor's top: offset_y, but never above the
+    // workarea — the strip reserves its band, and a card over it would be
+    // drawn where the strip takes the press (a taller shell:height than
+    // offset_y once put the top cards' clicks on the bar).
+    inline double cardsTop(const PHLMONITOR& mon) {
+        const double OFF = (double)NAwesome::cfg().getI("plugin:awesome:notify:offset_y");
+        return mon ? std::max(OFF, mon->logicalBoxMinusReserved().y - mon->logicalBox().y) : OFF;
+    }
     inline constexpr double PADX = 14, PADY = 11, ICON_GAP = 12; // popup card padding
     inline constexpr double HEAD_GAP = 3, TITLE_GAP = 4; // header -> title -> body
     inline constexpr double PROGRESS_H = 5, PROGRESS_GAP = 8;

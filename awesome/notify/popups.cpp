@@ -41,7 +41,8 @@ namespace NAwesome::Notify {
         const CHyprColor COLBODY = COLFG.modifyA(COLFG.a * 0.92);
 
         const double     X = MB.x + MB.w - EDGE - W;
-        double           y = MB.y + (double)NAwesome::cfg().getI("plugin:awesome:notify:offset_y");
+        const double     TOP = cardsTop(P.mon);
+        double           y   = MB.y + TOP;
 
         for (const auto& N : notifs) {
             if (N->waiting || !N->banner)
@@ -306,7 +307,7 @@ namespace NAwesome::Notify {
             y += CH + GAP;
         }
 
-        lastContentH = std::max(0.0, y - GAP - (MB.y + (double)NAwesome::cfg().getI("plugin:awesome:notify:offset_y")));
+        lastContentH = std::max(0.0, y - GAP - (MB.y + TOP));
         lastContentW = W;
     }
 
