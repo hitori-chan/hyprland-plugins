@@ -268,6 +268,22 @@ chk "DND resume: one popped, the sibling resumed resident (one per app)" test "$
 chk "DND resume: dnd off, both cards kept" hq_matches '^center:0 live:2 dnd:0$' awesome state
 nclear
 
+# ---- DND holds a merge onto an existing card ------------------------------------
+# A conversation's first message retreats to the shade; with DND armed the
+# next message merges onto that card — it must not pop the banner DND is
+# holding back.
+nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
+	Notify susssasa\{sv\}i dndchat 0 "" Alice one 0 3 desktop-entry s dndchat category s im.received conversation-id s cid-dnd 600 >/dev/null 2>&1
+until_is 3 "banners:0 resident:1" bd
+dsp "hl.plugin.awesome.suspend()"; sleep 0.4
+nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
+	Notify susssasa\{sv\}i dndchat 0 "" Alice two 0 3 desktop-entry s dndchat category s im.received conversation-id s cid-dnd 30000 >/dev/null 2>&1
+sleep 1
+chk "DND: a merge onto a shaded card stays in the shade" test "$(bd)" = "banners:0 resident:1"
+chk "DND: the merge landed on the one card" test "$(st)" = "center:0 live:1 dnd:1"
+dsp "hl.plugin.awesome.suspend()"; sleep 0.4
+nclear
+
 # ---- hostile hints ---------------------------------------------------------------
 dsp "hl.dsp.exec_cmd('notify-send -h int:category:5 \"badcat\" body')"
 dsp "hl.dsp.exec_cmd('notify-send -h string:category:im.received \"convo\" body')"; sleep 1

@@ -62,6 +62,11 @@ namespace NAwesome::Notify {
         return s_on;
     }
     bool centerAnimating() {
+        // by the clock, not only the draw: a draw that never runs (the
+        // session locked mid-spring) would leave the flag up and the motion
+        // tick damaging the cards for nothing
+        if (s_animating && animT(s_openedAt, Theme::MOTION_SPATIAL) >= 1.f)
+            s_animating = false;
         return s_animating;
     }
 
@@ -98,6 +103,8 @@ namespace NAwesome::Notify {
         if (IT != s_rowState.end() && IT->second) {
             s_openedRow.erase(id);
             s_foldedRow.insert(id);
+            if (replyArmedOn(id))
+                replyClose(); // its field folds away with the row
         } else {
             s_foldedRow.erase(id);
             s_openedRow.insert(id);
@@ -121,6 +128,16 @@ namespace NAwesome::Notify {
         if (s_items <= 1)
             return;
         s_skip = (size_t)std::clamp((int64_t)s_skip + dir, (int64_t)0, (int64_t)(s_items - 1));
+        // a pointer page leaves the keyboard's row behind: the next arrow
+        // enters the new page (Enter/Delete must never act off screen)
+        s_sel = -1;
+        notifChanged();
+    }
+
+    void centerDeselect() {
+        if (s_sel < 0)
+            return;
+        s_sel = -1;
         notifChanged();
     }
 
@@ -268,7 +285,10 @@ namespace NAwesome::Notify {
             if (D.items.size() < 2) {
                 const auto&  N          = D.items.front();
                 const double CH         = measureRow(P, T, N, contentW, false, ROW_SINGLE);
-                const bool   FORCE_OPEN = s_openedRow.contains(N->id), FORCE_FOLD = s_foldedRow.contains(N->id);
+                // an armed reply field is drawn in the open row only: its
+                // row is open whatever the budget or a fold says
+                const bool   ARMED      = replyArmedOn(N->id);
+                const bool   FORCE_OPEN = ARMED || s_openedRow.contains(N->id), FORCE_FOLD = !ARMED && s_foldedRow.contains(N->id);
                 bool         open = false, more = true;
                 double       h = CH;
                 if (!FORCE_FOLD && (FORCE_OPEN || TOP || used + LEAD + CH < bodyCap)) {
@@ -312,6 +332,31 @@ namespace NAwesome::Notify {
         }
     }
 
+    // The last row placed from s_skip down at these heights (the draw's
+    // placement, ahead of it).
+    static size_t lastFit(double bodyCap) {
+        double used = 0;
+        size_t last = s_skip;
+        for (size_t i = s_skip; i < s_itemH.size(); i++) {
+            const double LEAD = i == s_skip ? 0 : STACK_GAP;
+            if (i > s_skip && used + LEAD + s_itemH[i] > bodyCap)
+                break;
+            used += LEAD + s_itemH[i];
+            last = i;
+        }
+        return last;
+    }
+
+    // The row the keyboard works on: an armed reply field's, else the
+    // selection; -1 for none.
+    static int keyboardRow() {
+        for (size_t i = 0; i < s_disp.size(); i++)
+            for (const auto& N : s_disp[i].items)
+                if (replyArmedOn(N->id))
+                    return (int)i;
+        return s_sel;
+    }
+
     // ---- the panel ----
 
     void renderCenter(const SPaint& PIN, const SType& T) {
@@ -345,7 +390,7 @@ namespace NAwesome::Notify {
         // bleed; renderRow caps a row's body at 4 lines (7 for a chat), so no
         // single row can exceed the cap and the always-place-the-first-row rule
         // can't spill.
-        const double AVAILH  = MB.h - TOP - (double)NAwesome::cfg().getI("plugin:awesome:notify:margin");
+        const double AVAILH  = MB.h - TOP - cardsBottomReserved(P.mon) - (double)NAwesome::cfg().getI("plugin:awesome:notify:margin");
         const double BODYCAP = std::max(ROW_ICON, AVAILH - BAR_H - BODY_PADT - BODY_PADB);
 
         // The display list, every height AND every fold verdict are decided
@@ -366,6 +411,15 @@ namespace NAwesome::Notify {
             s_rowState.clear();
             s_groupState.clear();
             runBudget(P, T, CONTENT_W, BODYCAP);
+            // the keyboard's row stays on the page: a step past the last row
+            // pages by one, and a taller next row (or rows the new top
+            // re-opened) can still leave it below the fold
+            for (const int KEEP = keyboardRow(); KEEP > (int)s_skip && (size_t)KEEP > lastFit(BODYCAP);) {
+                ++s_skip;
+                s_rowState.clear();
+                s_groupState.clear();
+                runBudget(P, T, CONTENT_W, BODYCAP);
+            }
         }
         const auto& disp = s_disp;
         s_items          = disp.size();

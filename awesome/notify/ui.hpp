@@ -36,6 +36,16 @@ namespace NAwesome::Notify {
         const double OFF = (double)NAwesome::cfg().getI("plugin:awesome:notify:offset_y");
         return mon ? std::max(OFF, mon->logicalBoxMinusReserved().y - mon->logicalBox().y) : OFF;
     }
+    // what the monitor reserves at its bottom edge (a dock, a bottom bar):
+    // the shade stops above it, or its footer sits under the dock and the
+    // dock takes the presses
+    inline double cardsBottomReserved(const PHLMONITOR& mon) {
+        if (!mon)
+            return 0;
+        const auto MB = mon->logicalBox();
+        const auto WA = mon->logicalBoxMinusReserved();
+        return std::max(0.0, (MB.y + MB.h) - (WA.y + WA.h));
+    }
     inline constexpr double PADX = 14, PADY = 11, ICON_GAP = 12; // popup card padding
     inline constexpr double HEAD_GAP = 3, TITLE_GAP = 4; // header -> title -> body
     inline constexpr double PROGRESS_H = 5, PROGRESS_GAP = 8;
@@ -108,10 +118,12 @@ namespace NAwesome::Notify {
     // Content + style + width IS the key: a replace or an age-bucket move
     // simply misses to a new key. Builds only while the gate allows;
     // a draw-side miss flags the rewarm. maxHpx >= 0 is a pixel budget
-    // (rounded down to whole lines, tail ellipsized); < 0 caps nothing.
-    // linkCol non-null collects <a href> rects.
+    // (rounded down to whole lines, tail ellipsized); < 0 is one line per
+    // paragraph, ellipsized. linkCol non-null collects <a href> rects.
+    // headCut ellipsizes at the START: an entry, whose newest characters
+    // (the caret's end) must stay in view.
     const SCachedText* cachedText(const std::string& text, const CHyprColor& col, int pt, int maxWpx, int maxHpx, float lineSp, bool markup, int weight,
-                                  const CHyprColor* linkCol = nullptr);
+                                  const CHyprColor* linkCol = nullptr, bool headCut = false);
     // dir 0 = down, 1 = up; a px-square canvas, the Material chevron centered
     const SCachedText* chevronTex(int dir, const CHyprColor& col, int px);
 
