@@ -59,8 +59,8 @@ kill_nested
 # Two variants of one tree, each with its own objects (incremental): the
 # RELEASE build is the deploy rehearsal — what hyprpm builds, no test
 # seams — and the GATE build (GATE=1, AWESOME_GATE seams compiled in) is
-# what the nested loads. GATE_FORCE_BUILD=1 forces -B (only needed after
-# installing fork headers under /usr/local, the -MMD gap).
+# what the nested loads. A new header set rebuilds by itself (the
+# Makefile's target stamp); GATE_FORCE_BUILD=1 still forces -B.
 build_aw() { # build_aw <gate 0|1> <strip PKG_CONFIG_PATH 0|1>
 	local force=()
 	[[ -n "${GATE_FORCE_BUILD:-}" ]] && force+=(-B)

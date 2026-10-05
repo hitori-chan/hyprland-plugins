@@ -52,9 +52,9 @@ compositor is built from.
   environment switch in the release binary.
 - Do not add `-fvisibility=hidden`: `awesome/plugin.ver` localizes plugin
   symbols while Hyprland's inline globals must stay unified for `dlopen`.
-- Headers installed under `/usr/local/include` are system headers to GCC
-  and escape `-MMD`: `make -B` after installing fork headers there. The
-  gate's staged set (`gate.sh -s`) is tracked normally.
+- The build stamps its target (compiler, flags, the headers'
+  `version.h`): switching header sets or installing a fork rebuilds
+  everything by itself; no `make -B`.
 - `make -C awesome test` runs the headless unit cases.
 
 ## The gate

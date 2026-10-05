@@ -44,16 +44,27 @@ endif
 # system/) build to the same tree so their object names stay unique
 OBJS   := $(patsubst %.cpp,$(OBJDIR)/%.o,$(shell find . -name '*.cpp' -not -path './.build*' -not -path './test/*'))
 
+# The build's target: compiler, flags (they carry the header roots) and
+# the fork's version.h. Every object depends on this stamp, rewritten only
+# when it changes, so a new header set rebuilds everything: another root
+# (the gate's staged set vs the installed one), or a fork installed over
+# the same root, which -MMD cannot see (/usr/local/include headers are
+# system headers to GCC and never land in the .d files).
+HL_VERSION_H := $(firstword $(wildcard $(patsubst -I%,%/hyprland/src/version.h,$(filter -I%,$(HL_CFLAGS)))))
+STAMP        := $(OBJDIR)/target.stamp
+STAMP_TEXT   := $(CXX) $(CXXFLAGS) $(if $(HL_VERSION_H),$(shell cksum < $(HL_VERSION_H)))
+
 all: $(TARGET)
+
+$(STAMP): FORCE | $(OBJDIR)
+	@echo '$(STAMP_TEXT)' | cmp -s - $@ || echo '$(STAMP_TEXT)' > $@
 
 $(TARGET): $(OBJS)
 	$(CXX) $(LDFLAGS) $(OBJS) -o $@ $(LDLIBS)
 
-# one object per unit; -MMD keeps the incremental build honest. Headers
-# under /usr/local/include are system headers to GCC and never land in the
-# .d files: `make -B` after installing fork headers there (a staged set,
-# gate.sh -s, is tracked normally)
-$(OBJDIR)/%.o: %.cpp Makefile plugin.ver | $(OBJDIR)
+# one object per unit; -MMD tracks the plugin's own headers, the stamp
+# the target's
+$(OBJDIR)/%.o: %.cpp Makefile plugin.ver $(STAMP) | $(OBJDIR)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
@@ -83,4 +94,4 @@ gate:
 clean:
 	rm -rf .build .build-gate $(NAME).so $(NAME)-gate.so
 
-.PHONY: all test gate clean print-hl-cflags
+.PHONY: all test gate clean print-hl-cflags FORCE
