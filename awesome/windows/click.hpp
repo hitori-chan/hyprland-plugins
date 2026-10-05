@@ -155,6 +155,14 @@ namespace NAwesome::Windows {
             static PHLWINDOWREF W; // who took the last press, and when
             return W;
         }
+        // the pressed window was in TRUE fullscreen at the press: only then
+        // can its leaving fullscreen be the click-to-close family (the
+        // adoption dropping a compositor maximize, or a minimize dropping
+        // the held mode, also emit window.fullscreen)
+        inline bool& pressWasFullscreen() {
+            static bool F = false;
+            return F;
+        }
         inline std::chrono::steady_clock::time_point& pressAt() {
             static std::chrono::steady_clock::time_point T{};
             return T;
@@ -270,8 +278,9 @@ namespace NAwesome::Windows {
             // close/fullscreen event. Middle and ordinary right clicks must
             // never leave a later press guarded as if they had been
             // click-to-close gestures.
-            pressWindow() = W;
-            pressAt()     = NOW;
+            pressWindow()        = W;
+            pressAt()            = NOW;
+            pressWasFullscreen() = W && Fullscreen::controller()->getFullscreenModes(W).internal == Fullscreen::FSMODE_FULLSCREEN;
 
             // Fullscreen needs the plugin's special allowed-over cleanup.
             // Ordinary floating windows are raised synchronously by
@@ -371,7 +380,7 @@ namespace NAwesome::Windows {
                 // box no longer covers what the screen still shows. Guard the
                 // monitor box it vacated; the owner lives, so presses
                 // resolving to it still pass.
-                if (!w || w != pressWindow().lock() || Fullscreen::controller()->isFullscreen(w))
+                if (!w || w != pressWindow().lock() || !pressWasFullscreen() || Fullscreen::controller()->isFullscreen(w))
                     return;
                 if (const auto MON = w->m_monitor.lock())
                     armCorpse(w, MON->logicalBox());
