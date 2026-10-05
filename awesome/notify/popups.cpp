@@ -105,7 +105,6 @@ namespace NAwesome::Notify {
                 }
                 btnH = btnBoxes.empty() ? 0 : rowY + BTN_H;
             }
-            const double BTN_BLOCK = btnH > 0 ? BTN_ROW_GAP + btnH : 0;
 
             if (NAwesome::Canvas::inst().gate().warming)
                 for (auto& IM : N->bodyImages)
@@ -129,7 +128,6 @@ namespace NAwesome::Notify {
                 }
                 imgH = imgBoxes.empty() ? 0 : rowY + BODYIMG_H;
             }
-            const double IMG_BLOCK = imgH > 0 ? IMG_ROW_GAP + imgH : 0;
 
             // an <img> that failed to load keeps its alt text as a body line
             // — the sender meant to show something; the words outlive the
@@ -139,30 +137,57 @@ namespace NAwesome::Notify {
             for (const auto& IM : N->bodyImages)
                 if (!IM.tex && !IM.alt.empty())
                     altLines.push_back(SAltLine{.text = IM.alt});
-            double altH = 0;
             for (auto& A : altLines) {
                 A.tex = cachedText(A.text, COLSUB, T.body, TEXTWPX, 1, 0, false, 400);
                 A.h   = A.tex ? std::max(14.0, texH(A.tex, P.scale)) : 0;
-                altH += A.h;
             }
+
+            // max_height fits the blocks by priority: header, title, one body
+            // line, progress and the actions first (what the sender asks the
+            // user to do), then the images, then their alt lines; the body
+            // takes what is left (the cap below). A block that doesn't fit is
+            // dropped whole, from the end — painted past the glass once, it
+            // covered whatever lay below and took none of its clicks.
+            const double HH = texH(HEADER, P.scale), TH = texH(TITLE, P.scale);
+            // the banner previews the five newest transcript messages; the
+            // shade renders the card's stored full window
+            const std::string BODYSRC = N->conversation ? Model::conversationBody(N, Pixel::MAX_PREVIEWED_CONVERSATION_MESSAGES) : N->body;
+            const int         LINEPX  = bodyBudgetPx(P.scale, 1);
+            double room = (HERO ? MAXH - HERO_TEXT_MIN : MAXH - 2 * PADY) - HH - (HH > 0 ? HEAD_GAP : 0) - TH - TITLE_GAP - (BODYSRC.empty() ? 0 : LINEPX / P.scale) -
+                (N->progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0);
+            // whole rows of boxes (y from the block top) while the block fits
+            const auto fitRows = [&](std::vector<CBox>& boxes, double gap) {
+                while (!boxes.empty() && gap + boxes.back().y + boxes.back().h > room + 0.5)
+                    boxes.pop_back();
+                const double H = boxes.empty() ? 0 : gap + boxes.back().y + boxes.back().h;
+                room -= H;
+                return boxes.empty() ? 0.0 : H - gap;
+            };
+            btnH = fitRows(btnBoxes, BTN_ROW_GAP);
+            imgH = fitRows(imgBoxes, IMG_ROW_GAP);
+            double altH = 0;
+            for (size_t i = 0; i < altLines.size(); i++) {
+                if (IMG_ROW_GAP + altH + altLines[i].h > room + 0.5) {
+                    altLines.resize(i);
+                    break;
+                }
+                altH += altLines[i].h;
+            }
+            const double BTN_BLOCK = btnH > 0 ? BTN_ROW_GAP + btnH : 0;
+            const double IMG_BLOCK = imgH > 0 ? IMG_ROW_GAP + imgH : 0;
             const double ALT_BLOCK = altH > 0 ? IMG_ROW_GAP + altH : 0;
 
             // the body cap: at most ~8 lines, and never past what max_height
             // leaves after the other blocks — an uncapped body painted
             // OUTSIDE the glass once actions and thumbnails stacked up (the
             // 02359ed lesson; a one-line floor keeps hostile configs sane)
-            const double HH = texH(HEADER, P.scale), TH = texH(TITLE, P.scale);
             const double AVAIL = MAXH - 2 * PADY - (HERO ? HEROH : 0) - HH - (HH > 0 ? HEAD_GAP : 0) - TH - TITLE_GAP - (N->progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0) -
                 BTN_BLOCK - IMG_BLOCK - ALT_BLOCK;
-            const int LINEPX  = bodyBudgetPx(P.scale, 1);
-            const int BODYCAP = std::max(LINEPX, std::min(bodyBudgetPx(P.scale, 8), (int)std::floor(AVAIL * P.scale)));
-            // the banner previews the five newest transcript messages; the
-            // shade renders the card's stored full window
-            const std::string BODYSRC = N->conversation ? Model::conversationBody(N, Pixel::MAX_PREVIEWED_CONVERSATION_MESSAGES) : N->body;
-            const auto        BODY    = BODYSRC.empty() ? nullptr : cachedText(BODYSRC, COLBODY, T.body, TEXTWPX, BODYCAP, 1.1f, true, 400, &COLLINK);
+            const int  BODYCAP = std::max(LINEPX, std::min(bodyBudgetPx(P.scale, 8), (int)std::floor(AVAIL * P.scale)));
+            const auto BODY    = BODYSRC.empty() ? nullptr : cachedText(BODYSRC, COLBODY, T.body, TEXTWPX, BODYCAP, 1.1f, true, 400, &COLLINK);
 
             const double BH = texH(BODY, P.scale);
-            double       th = HH + (HH > 0 ? HEAD_GAP : 0) + TH + (TH > 0 && BH > 0 ? TITLE_GAP : 0) + BH + IMG_BLOCK;
+            double       th = HH + (HH > 0 ? HEAD_GAP : 0) + TH + (TH > 0 && BH > 0 ? TITLE_GAP : 0) + BH + IMG_BLOCK + ALT_BLOCK;
             if (N->progress >= 0)
                 th += (th > 0 ? PROGRESS_GAP : 0) + PROGRESS_H;
             th += BTN_BLOCK;
