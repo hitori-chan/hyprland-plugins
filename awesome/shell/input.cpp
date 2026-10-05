@@ -117,6 +117,16 @@ namespace NAwesome::Shell {
                 swallowRelease |= BIT;
                 return;
             }
+            // Over a fullscreen window the strip showed only for the prompt:
+            // with the prompt gone, a press on it (a task's or a tray icon's
+            // menu) would open what the hidden bar's warm closes at once.
+            // The press closed the launcher; that is all it does.
+            if (MBM == MON && POS.y >= MON->logicalBox().y && POS.y < MON->logicalBox().y + barHeight())
+                if (const auto WS = MON->m_activeWorkspace; WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN) {
+                    info.cancelled = true;
+                    swallowRelease |= BIT;
+                    return;
+                }
         }
 
         // menu first: it owns every click while open. Panels are hit-tested
