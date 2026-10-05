@@ -124,6 +124,11 @@ namespace NAwesome::Notify {
         notifChanged();
     }
 
+    // a screenful, keeping the edge row in view: the paging chips' click
+    void centerPageScreen(int dir) {
+        centerPage(dir * (int)std::max<size_t>(1, s_lastVis > s_skip ? s_lastVis - s_skip : 1));
+    }
+
     void centerSelectMove(int dir) {
         if (s_disp.empty()) {
             s_sel = -1;
@@ -471,8 +476,10 @@ namespace NAwesome::Notify {
 
         // Paging cues: a wheel-scroll is invisible otherwise. An up chevron
         // when rows sit above the fold, a "chevron N" chip when N
-        // notifications sit below — informational only, the wheel
-        // (input.cpp) does the scrolling. Both live inside the already-
+        // notifications sit below. They are drawn over the edge rows, so
+        // they take their own clicks (a page, like the wheel) — pushed last,
+        // they are hit first; informational-only once let a click on the
+        // chip act on the row beneath it. Both live inside the already-
         // damaged panel box, so no extra damage.
         if (!EMPTY) {
             size_t below = 0;
@@ -480,20 +487,34 @@ namespace NAwesome::Notify {
                 below += disp[i].items.size();
             if (s_skip > 0) {
                 const auto U = chevronTex(1, COLSUB, (int)std::lround(T.small * 2.0));
-                if (!P.warm && U && U->tex)
-                    P.tex(U->tex, X + (CENTER_W - U->tex->m_size.x / P.scale) / 2, Y0 + 2);
+                if (U && U->tex) {
+                    const double UW = U->tex->m_size.x / P.scale, UH = U->tex->m_size.y / P.scale, UX = X + (CENTER_W - UW) / 2;
+                    if (!P.warm)
+                        P.tex(U->tex, UX, Y0 + 2);
+                    SCard c;
+                    c.kind = SCard::PAGE_UP;
+                    c.box  = CBox{UX - 8, Y0, UW + 16, UH + 4};
+                    cards.push_back(c);
+                }
             }
             if (below > 0) {
                 const auto NUM = cachedText(std::to_string(below), COLSUB, T.small, 128, -1, 0, false, 500);
                 const auto DCH = chevronTex(0, COLSUB, (int)std::lround(T.small * 2.0));
-                if (!P.warm && NUM && NUM->tex && DCH && DCH->tex) {
+                if (NUM && NUM->tex && DCH && DCH->tex) {
                     const double NW = NUM->tex->m_size.x / P.scale, NH = NUM->tex->m_size.y / P.scale;
                     const double CW = DCH->tex->m_size.x / P.scale, CHH = DCH->tex->m_size.y / P.scale;
                     const double CH = std::max(NH, CHH), TOT = CW + 3 + NW;
                     const double cx = X + (CENTER_W - TOT) / 2, cy = BARY - CH - 3;
-                    P.rect(CBox{cx - 8, cy - 2, TOT + 16, CH + 4}, tFill2(), (int)std::lround((CH / 2 + 2) * P.scale));
-                    P.tex(DCH->tex, cx, cy + (CH - CHH) / 2);
-                    P.tex(NUM->tex, cx + CW + 3, cy + (CH - NH) / 2);
+                    const CBox   CHIP{cx - 8, cy - 2, TOT + 16, CH + 4};
+                    if (!P.warm) {
+                        P.rect(CHIP, tFill2(), (int)std::lround((CH / 2 + 2) * P.scale));
+                        P.tex(DCH->tex, cx, cy + (CH - CHH) / 2);
+                        P.tex(NUM->tex, cx + CW + 3, cy + (CH - NH) / 2);
+                    }
+                    SCard c;
+                    c.kind = SCard::PAGE_DOWN;
+                    c.box  = CHIP;
+                    cards.push_back(c);
                 }
             }
         }
