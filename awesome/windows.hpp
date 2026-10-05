@@ -13,6 +13,7 @@ namespace NAwesome::Windows {
         }
         void init() override;
         void teardown() override;
+        void persist() override;
 
         void onPointerButton(const IPointer::SButtonEvent&, Event::SCallbackInfo&) override;
         void onPointerMove(const Vector2D&, Event::SCallbackInfo&) override;

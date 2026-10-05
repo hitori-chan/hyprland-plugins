@@ -2,20 +2,24 @@
 //
 // One file, one load, one save path:
 //   $XDG_STATE_HOME/hyprland/plugin/awesome/state.tsv
-// with typed tab-separated rows, fixed order:
-//   spot    <x> <y> <w> <h> <class>   (spawn placement, last closed box)
-//   windowed <x> <y> <w> <h> <appID>  (un-max restore, last windowed box)
-//   launches <name>;<count>           (launcher ranking)
-//   history <query>                   (launcher query history, newest last)
+// A version line, then typed tab-separated rows, each kind oldest first
+// (the least recently remembered row is the first to go at a bound):
+//   awesome-state 2
+//   spot     <x> <y> <class>          (where the app's last window closed)
+//   windowed <x> <y> <w> <h> <class>  (its last windowed box: the un-max
+//                                      restore of a window born maximized)
+//   launches <count> <name>           (launcher ranking, by .desktop Name)
+//   history  <query>                  (launcher queries, newest last)
+// Positions are relative to the origin of the monitor the window was on:
+// a spot remembered on one monitor lands at the same place on whichever
+// monitor the app opens on next, never clamped against a far edge. The
+// key (class, name) is the row's last field: app ids contain spaces and
+// colons, never tabs.
 //
-// load() runs once, before any module inits. When state.tsv is absent it
-// migrates, newest first — the four-file layout in stateDir(), the
-// pre-rename layout in legacyStateDir(), the ancient per-module stores
-// (stateBase()/hyprplace, stateBase()/hyprmax, cacheBase()/hyprbar) —
-// merges key-by-key (newer wins, older fills only missing keys) and then
-// CONSUMES the sources (the migration is one-time; the plugin has exactly
-// one state file from then on). The consume is best-effort and only runs
-// once state.tsv itself is safely written.
+// load() runs once, before any module inits. A file without this version
+// line, or one that exists but cannot be read, blocks every later write
+// (writeBlocked(), which the supervisor reports): the user's memory is
+// never replaced by a session that could not see it.
 //
 // Modules reach their stores through this object — the documented
 // cross-module seam for anything persisted.
@@ -26,12 +30,11 @@
 
 namespace NAwesome {
 
-    // The four module stores, one in-memory copy.
     struct AppState {
-        BoxStore   spot;
-        BoxStore   windowed;
-        CountStore launches;
-        ListStore  history;
+        CRecentMap<Box> spot;     // w, h unused (0): the client picks its size
+        CRecentMap<Box> windowed;
+        CRecentMap<int> launches;
+        ListStore       history;
     };
 
     class StateStore {
@@ -48,17 +51,21 @@ namespace NAwesome {
         // dirtying event); flush() writes immediately (teardown).
         void dirty();
         void flush();
+        bool writeBlocked() const {
+            return m_writeBlocked;
+        }
 
         static std::filesystem::path path();
-        static bool                  readUnified(const std::filesystem::path& path, AppState& out);
-        static bool                  writeUnified(const std::filesystem::path& path, const AppState& data);
+        // false: absent, unreadable, or not this version
+        static bool                  read(const std::filesystem::path& path, AppState& out);
+        static bool                  write(const std::filesystem::path& path, const AppState& data);
 
       private:
         StateStore();
         AppState m_data{};
         Saver    m_saver;
         bool     m_loaded       = false;
-        bool     m_writeBlocked = false; // the file exists but could not be read: leave it be
+        bool     m_writeBlocked = false;
     };
 
 } // namespace NAwesome

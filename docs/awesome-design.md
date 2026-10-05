@@ -104,17 +104,17 @@ atomics; ordering is program order plus the hop queue.
   unknown keys are a load error. The legacy keys re-namespace to
   `plugin:awesome:<module>:<key>` (47: shell 20, notify 24, windows 3).
 - **Store** — the plugin's single persistent state: one typed file
-  (`$XDG_STATE_HOME/hyprland/plugin/awesome/state.tsv`; rows
-  `spot|windowed <x> <y> <w> <h> <key>`, `launches <name>;<count>`,
-  `history <query>`), one atomic write, all rows admitted or skipped
-  (fixed file/row/key/entry bounds; a hostile file can never take the
-  session down). The four module stores (spawn spots, last-windowed
-  boxes, launcher counts, prompt history) are one in-memory `AppState`
-  owned by the core's `StateStore` — the documented cross-module seam
-  for persisted state. First run migrates the old layouts once — the
-  four-file layout (current + pre-rename dirs) and the ancient
-  hyprplace/hyprmax/hyprbar stores, newer wins key-by-key — then
-  CONSUMES the sources: exactly one state file from then on.
+  (`$XDG_STATE_HOME/hyprland/plugin/awesome/state.tsv`; a version line,
+  then rows `spot <x> <y> <key>`, `windowed <x> <y> <w> <h> <key>`,
+  `launches <count> <name>`, `history <query>`, positions relative to
+  their monitor's origin), one atomic write, all rows admitted or
+  skipped (fixed file/row/key/entry bounds; a hostile file can never
+  take the session down; the least recently remembered row goes at a
+  bound). The four module stores (spawn spots, last-windowed boxes,
+  launcher counts, prompt history) are one in-memory `AppState` owned by
+  the core's `StateStore` — the documented cross-module seam for
+  persisted state. An unreadable file, or one without this version
+  line, blocks writes.
 - **Processes** — `core/proc.hpp` is the one spawn primitive
   (`pidfd_spawnp`: an empty signal mask and default dispositions,
   stdin/stderr on /dev/null, every fd above 2 closed, a race-free pidfd,
