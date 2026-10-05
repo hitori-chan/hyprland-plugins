@@ -191,11 +191,27 @@ namespace NAwesome::Shell {
             damageMenu();
         }
 
+        // The proxy's destructor sends its RemoveMatch calls: never from the
+        // input or render pass that closed the menu — the tray link's own
+        // turn drops it (its teardown clears the queue before the
+        // connection; a refused post drops it here, as before).
+        static void releaseProxy() {
+            if (!proxy)
+                return;
+            auto P = std::move(proxy);
+            proxy.reset();
+            Tray::post([P]() mutable { P.reset(); });
+        }
+
         void close() {
             ++menuSession; // invalidate every reply from the old owner/session
             if (!isOpen)
             {
-                proxy.reset();
+                // a level appended under a close that ran mid-openSub (its
+                // warm closed the menu: the lock, a fullscreen) must not
+                // open the next menu as a phantom "…" root
+                levels.clear();
+                releaseProxy();
                 item.reset();
                 return;
             }
@@ -207,7 +223,7 @@ namespace NAwesome::Shell {
                 menuEvent(L.parentId, "closed");
             levels.clear();
             damageMenu();
-            proxy.reset(); // also drops the LayoutUpdated/ItemsPropertiesUpdated subscriptions
+            releaseProxy(); // also drops the LayoutUpdated/ItemsPropertiesUpdated subscriptions
             item.reset();
         }
 
@@ -258,6 +274,8 @@ namespace NAwesome::Shell {
             });
         }
 
+        static void loadLevel(int32_t parentId, uint64_t session);
+
         static void loadLevelNow(int32_t parentId, uint64_t session) {
             if (!sessionActive(session))
                 return;
@@ -265,18 +283,28 @@ namespace NAwesome::Shell {
             auto* const level = findLevel(parentId);
             if (!level)
                 return;
+            if (level->loading) {
+                level->reloadAgain = true;
+                return;
+            }
             const uint64_t REQUEST = ++requestSerial;
             level->loadRequest = REQUEST;
+            level->loading     = true;
             try {
                 proxy->callMethodAsync("GetLayout")
                     .onInterface(DBUSMENU)
                     .withArguments(parentId, (int32_t)1, std::vector<std::string>{})
                     .uponReplyInvoke([parentId, session, REQUEST](std::optional<sdbus::Error> e, uint32_t, LayoutItem root) {
-                        if (e || !sessionActive(session))
+                        if (!sessionActive(session))
                             return;
                         auto* const lvl = findLevel(parentId);
                         if (!lvl || lvl->loadRequest != REQUEST)
                             return; // that cascade closed while the reply was in flight
+                        lvl->loading = false;
+                        if (std::exchange(lvl->reloadAgain, false))
+                            loadLevel(parentId, session); // the updates that came in meanwhile
+                        if (e)
+                            return;
                         lvl->entries.clear();
                         lvl->hover = -1; // scrollTop stays: live updates must not yank a browsed list to its top
                         SWarmToken WARM; // we resolve icon-name textures here, in a DBus reply — not a render
@@ -357,6 +385,18 @@ namespace NAwesome::Shell {
                             lvl->entries = std::move(CLEAN); // a pendingSep with no row after it dies here
                         }
                         lvl->width = 0;
+                        // the open cascade hangs off its parent row by INDEX:
+                        // re-find that row by id (rows above it may have come
+                        // or gone), or close the cascade with it
+                        const size_t K = (size_t)(lvl - levels.data());
+                        if (K + 1 < levels.size()) {
+                            auto&      NEXT = levels[K + 1];
+                            const auto IT   = std::ranges::find_if(lvl->entries, [&](const SEntry& E) { return E.id == NEXT.parentId && E.submenu; });
+                            if (IT == lvl->entries.end())
+                                closeDeeperThan(K);
+                            else
+                                NEXT.parentIdx = (int)(IT - lvl->entries.begin());
+                        }
                         damageMenu();
                     });
                 Tray::pollSoon(); // don't leave the layout reply waiting on a poll tick
@@ -471,6 +511,8 @@ namespace NAwesome::Shell {
             const uint64_t SESSION = menuSession;
             disarm();
             closeDeeperThan(level);
+            if (!isOpen || menuSession != SESSION)
+                return; // its warm closed the menu (the lock, a fullscreen)
             auto& N     = levels.emplace_back();
             N.parentId  = ID;
             N.parentIdx = entryIdx;
@@ -528,6 +570,10 @@ namespace NAwesome::Shell {
                 close();
                 return;
             }
+            if (isLocal) { // a client-list row whose window closed: nothing to jump to
+                close();
+                return;
+            }
             if (!proxy)
                 return;
             const auto P = proxy;
@@ -575,11 +621,17 @@ namespace NAwesome::Shell {
                         mw = L.width;
                     else {
                         mw = 180;
+                        // a label is measured at most at the panel's cap (an
+                        // app's 4 KiB label would raster at full length), and
+                        // the walk stops once a row reaches it
+                        const int CAPPX = (int)std::lround((380.0 - 48) * PAINT.scale);
                         for (const auto& E : L.entries) {
                             if (E.separator)
                                 continue;
-                            if (const auto T = textTex(E.label, COLFG, PAINT.pt); T)
+                            if (const auto T = textTex(E.label, COLFG, PAINT.pt, CAPPX); T)
                                 mw = std::max(mw, T->m_size.x / PAINT.scale + 48);
+                            if (mw >= 380.0)
+                                break;
                         }
                         mw = std::min(mw, 380.0);
                         if (PAINT.warm) { // a draw can hit texture misses -> a short measure

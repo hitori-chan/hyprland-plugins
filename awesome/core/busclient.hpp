@@ -54,6 +54,9 @@ namespace NAwesome {
         // sync() once setup is complete.
         void open(bool system, const char* serviceName = nullptr) {
             m_tearingDown = false;
+            // armed() stays true once the drop ran: a reopened link must arm
+            // its own on the next loss
+            m_pendingDrop.reset();
             try {
                 m_conn = system         ? sdbus::createSystemBusConnection() :
                     serviceName != nullptr ? sdbus::createSessionBusConnection(sdbus::ServiceName{serviceName}) :
