@@ -365,6 +365,19 @@ namespace NAwesome {
 
     // ---- layers ----
 
+    // Paint order, bottom to top. It must agree with the input pipeline
+    // (supervisor: shell, notify, windows): where two layers overlap, the
+    // one whose module takes the press first paints on top — an open menu
+    // or the menubar prompt owns every press, so it paints over the cards
+    // (registration order once put the cards over an open menu that still
+    // took their clicks).
+    enum class eLayerZ : uint8_t {
+        BAR,    // the strip
+        CARDS,  // notification popups and the shade
+        SNAP,   // the drag-snap preview (no input of its own)
+        POPUPS, // the shell's menus and menubar prompt
+    };
+
     struct ILayer {
         virtual ~ILayer() = default;
         virtual const char* name() const = 0;
@@ -414,8 +427,11 @@ namespace NAwesome {
             return m_gate;
         }
 
-        void addLayer(ILayer* L) {
-            m_layers.push_back(L);
+        // kept in paint order; equal levels keep registration order
+        void addLayer(ILayer* L, eLayerZ z) {
+            const auto AT = std::ranges::upper_bound(m_z, z) - m_z.begin();
+            m_z.insert(m_z.begin() + AT, z);
+            m_layers.insert(m_layers.begin() + AT, L);
         }
 
         // From the event loop: build every texture the NEXT frame will
@@ -491,7 +507,8 @@ namespace NAwesome {
 
       private:
         friend class CAwesomePassElement;
-        std::vector<ILayer*> m_layers;
+        std::vector<ILayer*> m_layers; // paint order
+        std::vector<eLayerZ> m_z;      // each layer's level, parallel
         CWarmGate            m_gate;
 #ifdef AWESOME_GATE
         uint64_t m_draws = 0, m_drawNs = 0;

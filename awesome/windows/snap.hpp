@@ -504,7 +504,7 @@ namespace NAwesome::Windows::Snap {
     }
 
     inline void init() {
-        Canvas::inst().addLayer(&zoneLayer());
+        Canvas::inst().addLayer(&zoneLayer(), eLayerZ::SNAP);
     }
 
     inline void teardown() {

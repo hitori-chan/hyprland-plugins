@@ -181,11 +181,6 @@ namespace NAwesome::Shell {
 
         P.glass(CBox{MB.x, MB.y, MB.w, H}, color(cfg().getColor("plugin:awesome:shell:col_bg")));
 
-        // -- the menubar: its own strip right BELOW the bar, the bar stays
-        // visible (awesome's menubar is a separate wibox at the workarea top,
-        // which sits under the wibar — it never replaced it) --
-        Menubar::render(P);
-
         // ONE walk of the window list for all its consumers: per-workspace
         // urgency + occupancy (taglist) and this workspace's tasks (tasklist,
         // in arrival order).
@@ -264,6 +259,29 @@ namespace NAwesome::Shell {
         }
 
         tasks.clear(); // don't keep strong window refs across frames
+    }
+
+    // The shell's popups on their own layer, above the cards (eLayerZ): an
+    // open menu or the menubar prompt owns every press, so it must also be
+    // what's seen there. Their hit geometry is their own (Menu::levels, the
+    // menubar strip), laid out by this same pass, warm and draw alike.
+    static bool popupsOn(PHLMONITOR mon) {
+        return mon && ((Menu::isOpen && Menu::mon.lock() == mon) || (Menubar::isOpen && Menubar::mon.lock() == mon));
+    }
+
+    static void renderPopups(PHLMONITOR mon, Render::CRenderContext* rctx) {
+        // the bar's pass (a layer below) closes a menu its bar no longer
+        // shows (session lock, real fullscreen) before this one runs
+        if (!popupsOn(mon))
+            return;
+        const double SCALE = mon->m_scale;
+        const int    PT    = std::max(6, (int)std::round((double)cfg().getI("plugin:awesome:shell:font_size") * SCALE));
+        const SPaint P{.mon = mon, .warm = rctx == nullptr, .scale = SCALE, .mb = mon->logicalBox(), .h = barHeight(), .pt = PT, .rctx = rctx};
+
+        // -- the menubar: its own strip right BELOW the bar, the bar stays
+        // visible (awesome's menubar is a separate wibox at the workarea top,
+        // which sits under the wibar — it never replaced it) --
+        Menubar::render(P);
 
         // -- the open menu, panel by panel: the client list is fixed at 250
         // wide (the old rc's client_list width); dbusmenu levels size
@@ -304,15 +322,9 @@ namespace NAwesome::Shell {
         }
         // monitor-local LOGICAL px — the canvas pass scales by m_scale itself
         std::optional<CBox> boundingBox(PHLMONITOR mon) const override {
-            const auto M = mon;
-            if (!M)
+            if (!mon)
                 return std::nullopt;
-            double h = barHeight();
-            if (Menubar::isOpen && Menubar::mon.lock() == M)
-                h += barHeight(); // the prompt strip below the bar
-            if (Menu::isOpen && Menu::mon.lock() == M)
-                h = M->logicalBox().h; // cascades anchor anywhere below the bar — cover it all, an undersized box clips
-            return CBox{0, 0, M->logicalBox().w, h};
+            return CBox{0, 0, mon->logicalBox().w, barHeight()};
         }
         // the open menubar is awesome's ontop wibox: it paints over a
         // fullscreen client (barHidden() keeps the rest of the strip off)
@@ -343,8 +355,53 @@ namespace NAwesome::Shell {
         return L;
     }
 
+    class CPopupLayer : public NAwesome::ILayer {
+      public:
+        const char* name() const override {
+            return "shell-popups";
+        }
+        // the strip layer brackets the shared texture cache's generation
+        void warm(PHLMONITOR mon) override {
+            renderPopups(mon, nullptr);
+        }
+        void draw(PHLMONITOR mon, NAwesome::SPaint& P) override {
+            if (P.rctx)
+                renderPopups(mon, P.rctx);
+        }
+        void damage() override {
+            if (!g_pHyprRenderer)
+                return;
+            for (const auto& M : State::monitorState()->monitors())
+                if (const auto B = boundingBox(M))
+                    g_pHyprRenderer->damageBox(CBox{*B}.translate(M->logicalBox().pos()));
+        }
+        std::optional<CBox> boundingBox(PHLMONITOR mon) const override {
+            if (!popupsOn(mon))
+                return std::nullopt;
+            // cascades anchor anywhere below the bar — cover it all, an
+            // undersized box clips
+            if (Menu::isOpen && Menu::mon.lock() == mon)
+                return CBox{0, 0, mon->logicalBox().w, mon->logicalBox().h};
+            return CBox{0, barHeight(), mon->logicalBox().w, barHeight()};
+        }
+        // the open menubar is awesome's ontop wibox: it paints over a
+        // fullscreen client
+        bool overFullscreen(PHLMONITOR mon) const override {
+            return Menubar::isOpen && Menubar::mon.lock() == mon;
+        }
+        bool needsBlur(PHLMONITOR mon) const override {
+            return NAwesome::blurOn() && popupsOn(mon) && color(cfg().getColor("plugin:awesome:shell:col_bg")).a < 1.0;
+        }
+    };
+
+    static CPopupLayer& popupLayer() {
+        static CPopupLayer L;
+        return L;
+    }
+
     void stripInit() {
-        NAwesome::Canvas::inst().addLayer(&stripLayer());
+        NAwesome::Canvas::inst().addLayer(&stripLayer(), NAwesome::eLayerZ::BAR);
+        NAwesome::Canvas::inst().addLayer(&popupLayer(), NAwesome::eLayerZ::POPUPS);
     }
     void stripExit() {
         stripLayer().exit();
