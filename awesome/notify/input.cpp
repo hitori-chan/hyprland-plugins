@@ -485,8 +485,22 @@ namespace NAwesome::Notify {
 
         // An armed reply field owns the keyboard first: the user is typing a
         // sentence, and every nav key below would otherwise steal a letter.
+        const bool HELD = replyHeld();
         if (replyArmed()) {
             if (replyKey(KB->m_xkbState, e.keycode + 8))
+                info.cancelled = true;
+            return;
+        }
+        // The field's card died mid-sentence (the sender closed it: the chat
+        // was read elsewhere) and the field disarmed itself. This key was
+        // typed for the field, and the selection's index now names the card
+        // that took the dead one's place: swallow the key, drop the
+        // selection — never a space that folds, or a Return that fires,
+        // someone else's card.
+        if (HELD) {
+            centerDeselect();
+            const auto SYM = xkb_state_key_get_one_sym(KB->m_xkbState, e.keycode + 8);
+            if (SYM < XKB_KEY_Shift_L || SYM > XKB_KEY_Hyper_R) // a bare modifier passes, as in the field
                 info.cancelled = true;
             return;
         }
@@ -611,7 +625,10 @@ namespace NAwesome::Notify {
             return;
         }
 
-        const auto CARD = cardAt(pos);
+        // the exact position, as the press tests it: the event's is floored,
+        // and a card edge at a fractional scale falls between the two
+        const auto P    = g_pInputManager ? g_pInputManager->getMouseCoordsInternal() : pos;
+        const auto CARD = cardAt(P);
         if (!CARD || heldButtons > 0 || NAwesome::nativePointerGrabActive() || NAwesome::nativeLayerOwnsPointer() ||
             (g_layoutManager && g_layoutManager->dragController()->target())) {
             setHovered({});
@@ -623,12 +640,12 @@ namespace NAwesome::Notify {
         h.kind  = CARD->kind;
         h.id    = CARD->id;
         h.group = CARD->group;
-        h.btn   = buttonAt(*CARD, pos);
-        h.part  = h.btn >= 0 ? 0 : partAt(*CARD, pos);
+        h.btn   = buttonAt(*CARD, P);
+        h.part  = h.btn >= 0 ? 0 : partAt(*CARD, P);
         setHovered(h);
         info.cancelled = true;
 
-        const bool ONLINK = h.btn < 0 && h.part == 0 && linkAt(*CARD, pos) >= 0; // a hyperlink shows the hand (GTK convention)
+        const bool ONLINK = h.btn < 0 && h.part == 0 && linkAt(*CARD, P) >= 0; // a hyperlink shows the hand (GTK convention)
 
         const bool ENTERING = !pointerOwned;
         if (ENTERING) {

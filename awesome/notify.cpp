@@ -61,6 +61,13 @@ namespace NAwesome::Notify {
         }
     }
 
+    // Where the last pointer MOTION landed. A pointer crossing onto another
+    // monitor moves first and focuses the monitor after; a keyboard focus
+    // move warps the pointer (no motion) and then focuses: only the motion
+    // tells the two apart — the live pointer is on the new monitor either
+    // way.
+    static Vector2D lastMovePos{-1, -1};
+
     void queueCenterToggle(PHLMONITOR on) {
         if (!g_pEventLoopManager)
             return;
@@ -95,8 +102,7 @@ namespace NAwesome::Notify {
         supervisor().listen(EV.monitor.focused, [](PHLMONITOR mon) {
             if (notifs.empty() && !centerVisible())
                 return;
-            if (mon && g_pInputManager &&
-                NAwesome::monitorContaining(g_pInputManager->getMouseCoordsInternal()) == mon)
+            if (mon && NAwesome::monitorContaining(lastMovePos) == mon)
                 return;
             placeCardsOn(mon);
         });
@@ -118,6 +124,7 @@ namespace NAwesome::Notify {
     }
 
     void CModule::teardown() {
+        lastMovePos = {-1, -1};
         pendingSuspend.reset();
         pendingCenter.reset();
         Bus::exit(); // the connection first: nothing may arrive mid-teardown
@@ -137,6 +144,7 @@ namespace NAwesome::Notify {
         NAwesome::Notify::onMouseButton(e, info);
     }
     void CModule::onPointerMove(const Vector2D& pos, Event::SCallbackInfo& info) {
+        lastMovePos = pos;
         NAwesome::Notify::onMouseMove(pos, info);
     }
     void CModule::onPointerAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {

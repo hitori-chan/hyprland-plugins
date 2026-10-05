@@ -152,7 +152,7 @@ namespace NAwesome::Notify {
             const double HH = texH(HEADER, P.scale), TH = texH(TITLE, P.scale);
             // the banner previews the five newest transcript messages; the
             // shade renders the card's stored full window
-            const std::string BODYSRC = N->conversation ? Model::conversationBody(N, Pixel::MAX_PREVIEWED_CONVERSATION_MESSAGES) : N->body;
+            const std::string& BODYSRC = N->conversation ? Model::conversationBody(N, Pixel::MAX_PREVIEWED_CONVERSATION_MESSAGES) : N->body;
             const int         LINEPX  = bodyBudgetPx(P.scale, 1);
             double room = (HERO ? MAXH - HERO_TEXT_MIN : MAXH - 2 * PADY) - HH - (HH > 0 ? HEAD_GAP : 0) - TH - TITLE_GAP - (BODYSRC.empty() ? 0 : LINEPX / P.scale) -
                 (N->progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0);

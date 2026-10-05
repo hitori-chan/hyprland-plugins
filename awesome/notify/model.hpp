@@ -279,7 +279,9 @@ namespace NAwesome::Notify {
         // the transcript of the latest `limit` kept messages, chronological
         // (oldest leads, newest ends): the banner previews five, the shade
         // renders all seven through the card's stored body
-        std::string conversationBody(const SP<SNotif>& n, size_t limit);
+        // a reference into the card (its body, or the memo): valid while the
+        // card lives and its revision stands
+        const std::string& conversationBody(const SP<SNotif>& n, size_t limit);
         void       rearmExpiry();
         void       holdBanner(uint32_t id); // the hovered popup's countdown pauses; 0 releases (and restarts it)
         void       toggleSuspend();         // DND; resume renders the queue, fresh timeouts
@@ -353,6 +355,7 @@ namespace NAwesome::Notify {
     void centerToggleGroup(const std::string& appKey);
     void centerToggleRow(uint32_t id);
     void centerSelectMove(int dir);                         // ↑/↓: move the keyboard selection, paging to keep it on screen
+    void centerDeselect();
     bool centerSelection(uint32_t& id, std::string& group); // the selected item; group non-empty = a bundle. false = none
 
     // the click door (Lua, the bell, `hyprctl awesome center`): deferred and
@@ -425,6 +428,9 @@ namespace NAwesome::Notify {
     // hand it, so it takes the keys and gives back what it does not use.
 
     bool               replyArmedOn(uint32_t id); // this card's field is the armed one
+    // an arm is held, live or not: replyArmed() is the liveness test, and a
+    // field that died since disarms there
+    bool               replyHeld();
     bool               replyArmed();
     void               replyOpen(uint32_t id);
     void               replyClose();

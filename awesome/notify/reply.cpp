@@ -20,6 +20,8 @@
 
 #include "ui.hpp"
 
+#include "../core/hop.hpp"
+
 #include <xkbcommon/xkbcommon-keysyms.h>
 #include <xkbcommon/xkbcommon-names.h>
 
@@ -27,6 +29,8 @@ namespace NAwesome::Notify {
 
     static uint32_t    s_id = 0; // the card whose field is armed; 0 = none
     static std::string s_text;
+    // the send changes the model (the card goes): out of the key emission
+    static NAwesome::CHop s_pendingSend;
 
     // Self-healing: the card can be dismissed, expire or be swept while the
     // user is mid-sentence, and the shade can close under it. A stale arm
@@ -42,6 +46,9 @@ namespace NAwesome::Notify {
         s_id = 0;
         s_text.clear();
         return false;
+    }
+    bool replyHeld() {
+        return s_id != 0;
     }
     bool replyArmedOn(uint32_t id) {
         return s_id != 0 && s_id == id;
@@ -69,6 +76,7 @@ namespace NAwesome::Notify {
     void replyExit() { // teardown: no notifChanged, the model is going away
         s_id = 0;
         s_text.clear();
+        s_pendingSend.reset();
     }
 
     // A key press while the field is armed. False means "not ours" — the
@@ -119,7 +127,7 @@ namespace NAwesome::Notify {
                 const auto ID = s_id;
                 auto       TX = s_text; // replyClose wipes the buffer under us
                 replyClose();
-                Bus::sendReply(ID, TX);
+                s_pendingSend.arm([ID, TX = std::move(TX)]() { Bus::sendReply(ID, TX); });
                 return true;
             }
             case XKB_KEY_BackSpace: {
