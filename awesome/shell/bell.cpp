@@ -181,6 +181,11 @@ namespace NAwesome::Shell {
                 const uint32_t          COUNT = LIVE + KEPT;
                 if (P.fp)
                     *P.fp = *P.fp * 1099511628211ULL + COUNT; // the count can move without a bar event
+                // the hit area is what's drawn: the cell, plus the badge where
+                // it overhangs the next cell (painted after it, so on top)
+                SHit h;
+                h.box    = box;
+                h.widget = this;
                 if (COUNT > 0) {
                     const auto   TXT  = COUNT > 99 ? std::string{"99+"} : std::to_string(COUNT);
                     const auto   BPT  = std::max(6, (int)std::round(9.0 * P.scale));
@@ -190,20 +195,21 @@ namespace NAwesome::Shell {
                     const CBox   BB{box.x + box.w / 2 + GLYPH / 2 - 3, box.y + (box.h - 24) / 2 - 4 + 3, BW, 15};
                     P.rect(BB, color(cfg().getColor("plugin:awesome:shell:col_active")), (int)std::lround(7.5 * P.scale));
                     P.texIn(TT, BB);
+                    const double X1 = std::max(box.x + box.w, BB.x + BB.w), Y0 = std::min(box.y, BB.y), Y1 = std::max(box.y + box.h, BB.y + BB.h);
+                    h.box           = CBox{box.x, Y0, X1 - box.x, Y1 - Y0};
                 }
-
-                SHit h;
-                h.box    = CBox{box.x - 2, box.y, box.w + 4, box.h};
-                h.widget = this;
                 P.hits->push_back(h);
             }
 
-            void onHit(const SHit&, uint32_t bit, bool) override {
+            void onHit(const SHit& hit, uint32_t bit, bool) override {
                 if (bit != 1u)
                     return;
                 // the shared click door: deferred (the monolith's center is a
-                // function call, not a proxy round trip)
-                NAwesome::Notify::queueCenterToggle();
+                // function call, not a proxy round trip); the shade opens on
+                // the clicked bar's monitor — the focus hasn't moved there
+                // yet (the strip swallowed the press before the compositor
+                // saw it)
+                NAwesome::Notify::queueCenterToggle(hit.mon.lock());
             }
         };
     } // namespace

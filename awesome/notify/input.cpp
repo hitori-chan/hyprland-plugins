@@ -601,7 +601,10 @@ namespace NAwesome::Notify {
             return;
         }
 
-        const auto CARD = cardAt(pos);
+        // the exact position, as the press tests it: the event's is floored,
+        // and a card edge at a fractional scale falls between the two
+        const auto P    = g_pInputManager ? g_pInputManager->getMouseCoordsInternal() : pos;
+        const auto CARD = cardAt(P);
         if (!CARD || heldButtons > 0 || NAwesome::nativePointerGrabActive() || NAwesome::nativeLayerOwnsPointer() ||
             (g_layoutManager && g_layoutManager->dragController()->target())) {
             setHovered({});
@@ -613,12 +616,12 @@ namespace NAwesome::Notify {
         h.kind  = CARD->kind;
         h.id    = CARD->id;
         h.group = CARD->group;
-        h.btn   = buttonAt(*CARD, pos);
-        h.part  = h.btn >= 0 ? 0 : partAt(*CARD, pos);
+        h.btn   = buttonAt(*CARD, P);
+        h.part  = h.btn >= 0 ? 0 : partAt(*CARD, P);
         setHovered(h);
         info.cancelled = true;
 
-        const bool ONLINK = h.btn < 0 && h.part == 0 && linkAt(*CARD, pos) >= 0; // a hyperlink shows the hand (GTK convention)
+        const bool ONLINK = h.btn < 0 && h.part == 0 && linkAt(*CARD, P) >= 0; // a hyperlink shows the hand (GTK convention)
 
         const bool ENTERING = !pointerOwned;
         if (ENTERING) {

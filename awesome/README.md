@@ -357,7 +357,9 @@ semantics).
   the click queue rather than acting in the emission (crash class 6) —
   a swipe is an alias for a click that already exists.
 - Bell: a click speaks Toggle (opening absorbs the banners into parked
-  rows, a later explicit close re-pops them); pointer hover is a no-op.
+  rows, a later explicit close re-pops them) and opens the shade on the
+  clicked bar's monitor; the badge is part of its target. Pointer hover
+  is a no-op.
 - Over fullscreen: banners show over a real fullscreen window too — the
   ecosystem default, no quiet-while-fullscreen policy. While a card is
   up over a fullscreen window, the plugin blocks the monitor's solitary

@@ -263,7 +263,7 @@ namespace NAwesome::Notify {
         if (CHEVRON) {
             const double CY = open ? TY : (HERO ? TY + (std::max(th, ICONW) - CHEV) / 2 : box.y + (ROWH - CHEV) / 2);
             const CBox   CB{box.x + box.w - ROW_PADX - CHEV, CY, CHEV, CHEV};
-            const auto   G = chevronTex(open ? 1 : 0, COLFG, (int)CHEV); // built in BOTH modes
+            const auto   G = chevronTex(open ? 1 : 0, COLFG, (int)std::lround(CHEV * P.scale)); // built in BOTH modes
             if (!P.warm) {
                 const bool CHOV = hovered.id == N->id && hovered.part == 1 && hovered.btn < 0;
                 P.rect(CB, CHOV ? tAccentDim() : tFill2(), (int)std::lround(CHEV / 2 * P.scale));
