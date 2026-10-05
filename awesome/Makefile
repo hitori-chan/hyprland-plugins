@@ -44,15 +44,18 @@ endif
 # system/) build to the same tree so their object names stay unique
 OBJS   := $(patsubst %.cpp,$(OBJDIR)/%.o,$(shell find . -name '*.cpp' -not -path './.build*' -not -path './test/*'))
 
-# The build's target: compiler, flags (they carry the header roots) and
-# the fork's version.h. Every object depends on this stamp, rewritten only
-# when it changes, so a new header set rebuilds everything: another root
-# (the gate's staged set vs the installed one), or a fork installed over
-# the same root, which -MMD cannot see (/usr/local/include headers are
-# system headers to GCC and never land in the .d files).
+# The build's target: compiler and flags (they carry the header roots).
+# Every object depends on this stamp, rewritten only when it changes, so
+# another header root (the gate's staged set vs the installed one)
+# rebuilds everything. Under a system include dir (/usr/local/include) a
+# fork installed over the same root is invisible to -MMD — GCC never lists
+# system headers in the .d files — so there the fork's version.h joins the
+# stamp. A staged set is tracked header by header (cmake --install keeps
+# the sources' mtimes): a fork change that touches no header rebuilds only
+# what includes version.h.
 HL_VERSION_H := $(firstword $(wildcard $(patsubst -I%,%/hyprland/src/version.h,$(filter -I%,$(HL_CFLAGS)))))
 STAMP        := $(OBJDIR)/target.stamp
-STAMP_TEXT   := $(CXX) $(CXXFLAGS) $(if $(HL_VERSION_H),$(shell cksum < $(HL_VERSION_H)))
+STAMP_TEXT   := $(CXX) $(CXXFLAGS) $(if $(filter /usr/%,$(HL_VERSION_H)),$(shell cksum < $(HL_VERSION_H)))
 
 all: $(TARGET)
 
