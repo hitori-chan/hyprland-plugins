@@ -1,8 +1,7 @@
 // awesome/windows/place.hpp — spawn placement for floating windows:
 //
 //   1. an app reopens where its last window closed (per class, persisted
-//      across relogs): every new window of the class is born at the
-//      remembered size, and the remembered spot lands when it's free — a
+//      across relogs): the remembered spot lands when it's free — a
 //      sibling sitting on it sends the newcomer to step 2 instead. A close
 //      in maximized state carries the app's last windowed box (the
 //      maximize module's restore memory) into the spot, so an app that
@@ -12,30 +11,27 @@
 //      (nothing to overlap), a busy screen fills the gaps, and a full one
 //      lands where it hides the least. No cascade, no center pile.
 //
-// Memory-first is what desktops converge on (macOS window restoration,
-// Windows SetWindowPlacement); on X11 the apps did it themselves and
-// Wayland toplevels can't, so the compositor remembers for them. The
-// least-overlap fallback is KWin's default: it fills free space and, when
-// the screen is full, minimizes how much windows cover each other. Windows
-// that chose their spot (X11, dialogs anchored to a parent) keep it while
-// it's free; a fixed-size toplevel (min == max — a dialog, a splash) keeps
-// the compositor's centered spot outright and never reads or writes the
-// class row, so a splash's box can neither steer it to a corner nor
-// clobber the app's memory; X11 override-redirect surfaces are left alone;
-// the result is clamped fully on-screen, border included (no_offscreen),
-// unless the window is too big to fit. The whole close-box is remembered,
-// and a genuinely resizable app is BORN at its remembered size: the
-// window.predictSize hook fills the initial configure, so the client's
-// first buffer is already the remembered size — no post-map resize, no
-// second configure, nothing owned or re-asserted. A client whose
-// resizability can't be read that early falls back to one ordinary
-// configure at map. Unlike the old force path (client-serial stomp +
-// forced configure), a grant in flight (born-fullscreen/maximized) keeps
-// winning and the client's own later resizes are never fought. Fixed-size
-// dialogs (min == max) keep the client's size and are never resized.
-// Maximized windows AND floats sized to the whole workarea consume no free
-// space; the placement scan then puts a new window where it overlaps them
-// the least.
+// Placement only ever MOVES a window; its size is the client's own. A
+// Wayland toplevel can't position itself, so the compositor remembers
+// where it was (memory-first, as macOS window restoration and Windows
+// SetWindowPlacement do for their apps); but it does choose its size —
+// the initial configure is 0x0, "you decide" — and real apps restore
+// their own (the GTK file chooser, Firefox, Thunar, Telegram), while a
+// dialog's natural size is its content's. Imposing a remembered size
+// overrode both: every dialog of a class was born at the app's main-window
+// size (the portal file chooser at 1203x953). The unmaximize restore box
+// (max.hpp) is the one size the compositor supplies, because a window born
+// maximized has no windowed size of its own.
+//
+// Windows that chose their spot (X11, dialogs anchored to a parent) keep
+// it while it's free; a fixed-size toplevel (min == max — a dialog, a
+// splash) keeps the compositor's centered spot outright and never reads or
+// writes the class row, so a splash's box can neither steer it to a corner
+// nor clobber the app's memory; X11 override-redirect surfaces are left
+// alone; the result is clamped fully on-screen, border included
+// (no_offscreen), unless the window is too big to fit. Maximized windows
+// AND floats sized to the whole workarea consume no free space; the
+// placement scan then puts a new window where it overlaps them the least.
 #pragma once
 
 #include "state.hpp"
@@ -58,8 +54,6 @@
 namespace NAwesome::Windows::Place {
 
     namespace {
-        inline constexpr double MAX_RESTORE_AXIS = 16384.0;
-
         // each app's last window box (position + size), surviving relogs; the
         // legacy position-only rows load with a zero size, which stays until
         // the app closes once and a full box is recorded. The store is the
@@ -68,10 +62,8 @@ namespace NAwesome::Windows::Place {
             return StateStore::inst().data().spot;
         }
 
-        // metadata().appID() is only captured on first map; before that (the
-        // predictSize pass) the class still has to come off the client
-        // state, exactly the old m_initialClass ? m_initialClass :
-        // fetchClass() chain.
+        // metadata().appID() is captured on first map; a window that never
+        // got there still has its class on the client state
         inline std::string classKey(PHLWINDOW w) {
             if (!w)
                 return {};
@@ -80,42 +72,6 @@ namespace NAwesome::Windows::Place {
             if (const auto TOP = xdgToplevel(w))
                 return TOP->m_state.appid;
             return {};
-        }
-
-        inline std::optional<CBox> predictWorkarea(PHLWINDOW w) {
-            auto MON = w ? w->m_monitor.lock() : nullptr;
-            if (!MON && Desktop::focusState())
-                MON = Desktop::focusState()->monitor();
-            if (!MON)
-                return std::nullopt;
-            return MON->logicalBoxMinusReserved();
-        }
-
-        inline Vector2D boundedRestoreSize(PHLWINDOW w, Vector2D desired, const CBox* workarea) {
-            if (!std::isfinite(desired.x) || !std::isfinite(desired.y))
-                desired = {};
-
-            Vector2D MIN{1, 1}, MAX{MAX_RESTORE_AXIS, MAX_RESTORE_AXIS};
-            if (const auto TOP = w ? xdgToplevel(w) : nullptr) {
-                MIN = TOP->layoutMinSize();
-                MAX = TOP->layoutMaxSize();
-            }
-            MIN.x = std::max(1.0, std::isfinite(MIN.x) ? MIN.x : 1.0);
-            MIN.y = std::max(1.0, std::isfinite(MIN.y) ? MIN.y : 1.0);
-            // xdg-shell represents an unconstrained maximum as zero; do not
-            // mistake that sentinel for a one-pixel upper bound.
-            MAX.x = std::max(MIN.x, std::isfinite(MAX.x) && MAX.x > 1 ? std::min(MAX.x, MAX_RESTORE_AXIS) : MAX_RESTORE_AXIS);
-            MAX.y = std::max(MIN.y, std::isfinite(MAX.y) && MAX.y > 1 ? std::min(MAX.y, MAX_RESTORE_AXIS) : MAX_RESTORE_AXIS);
-            if (workarea) {
-                // A client minimum remains authoritative when it is larger
-                // than the output; otherwise restoration never exceeds the
-                // current usable output, even after a monitor change.
-                MAX.x = std::max(MIN.x, std::min(MAX.x, std::max(1.0, workarea->w)));
-                MAX.y = std::max(MIN.y, std::min(MAX.y, std::max(1.0, workarea->h)));
-            }
-            desired.x = std::clamp(desired.x, MIN.x, MAX.x);
-            desired.y = std::clamp(desired.y, MIN.y, MAX.y);
-            return desired;
         }
 
         inline void rememberSpot(const std::string& cls, const CBox& box) {
@@ -167,23 +123,6 @@ namespace NAwesome::Windows::Place {
             return MODES.internal != Fullscreen::FSMODE_NONE || MODES.client != Fullscreen::FSMODE_NONE;
         }
 
-        // Fill the initial configure with the remembered size (the
-        // window.predictSize emission at the initial commit): the client's
-        // first buffer is then already right and the map-time pass only
-        // positions. Guards mirror placeWindow's size selection.
-        inline void onPredictSize(PHLWINDOW w, Vector2D& size) {
-            if (!w || w->backend().parent() || !resizable(w) || hasFullscreenOrMaximizeGrant(w))
-                return;
-            const auto CLS = classKey(w);
-            if (CLS.empty())
-                return;
-            const auto B = lastSpot().find(CLS);
-            if (!B || B->w <= 5 || B->h <= 5)
-                return;
-            const auto WA = predictWorkarea(w);
-            size         = boundedRestoreSize(w, Vector2D{(double)B->w, (double)B->h}, WA ? &*WA : nullptr);
-        }
-
         inline void placeWindow(PHLWINDOW w) {
             // X11 override-redirect surfaces (menus, tooltips) place
             // themselves
@@ -233,14 +172,10 @@ namespace NAwesome::Windows::Place {
                 return true;
             };
 
-            // The size the window spawns at: the client's own, unless this
-            // app is resizable and a real size was remembered — then the
-            // remembered box is applied whole, once. Every new window of the
-            // class gets the size (a second terminal is born like the
-            // first); the spot only lands when free (fits() below), so a
-            // sibling sitting on it sends the newcomer to least-overlap,
-            // never onto an exact stack.
-            const bool RESIZABLE = resizable(w);
+            // the client's own size, always; the spot only lands when free
+            // (fits() below), so a sibling sitting on it sends the newcomer
+            // to least-overlap, never onto an exact stack
+            const Vector2D size = CUR.size();
             // A fixed-size native toplevel (min == max) is a dialog or a
             // splash, not an app window: it keeps the compositor's native
             // placement and stays out of the class memory in both
@@ -251,15 +186,13 @@ namespace NAwesome::Windows::Place {
             // writing would clobber the row with the transient's box. X11
             // and parent-anchored windows below keep their own
             // keep-while-free contract.
-            if (!RESIZABLE && !w->backend().isX11() && !w->backend().parent())
+            if (!resizable(w) && !w->backend().isX11() && !w->backend().parent())
                 return;
-            std::optional<CBox> stored;
+            // the remembered spot: its position (the row keeps the close-box)
+            std::optional<Vector2D> stored;
             if (!w->backend().isX11() && !w->backend().parent())
                 if (const auto B = lastSpot().find(classKey(w)); B)
-                    stored = CBox{(double)B->x, (double)B->y, (double)B->w, (double)B->h};
-            Vector2D size = CUR.size();
-            if (RESIZABLE && stored && stored->w > 5 && stored->h > 5)
-                size = boundedRestoreSize(w, stored->size(), &WA);
+                    stored = Vector2D{(double)B->x, (double)B->y};
 
             // no_offscreen: nudge the box fully into the workarea AND leave
             // a border's width of margin — the border is drawn outside the
@@ -287,12 +220,11 @@ namespace NAwesome::Windows::Place {
                 if (fits(CBox{CUR.pos(), size}))
                     return;
             } else {
-                // 1: where — and, for a resizable app, how big — this app's
-                // last window closed, clamped on-screen so a spot that ran
-                // past an edge is honored (against the edge) rather than
-                // lost
+                // 1: where this app's last window closed, clamped on-screen
+                // so a spot that ran past an edge is honored (against the
+                // edge) rather than lost
                 if (stored) {
-                    const auto P = clampToWA(stored->pos());
+                    const auto P = clampToWA(*stored);
                     if (fits(CBox{P, size}))
                         pos = P;
                 }
@@ -361,19 +293,14 @@ namespace NAwesome::Windows::Place {
             const auto   FINAL = clampToWA(chosen);
             const double nx = FINAL.x, ny = FINAL.y;
 
-            if (nx == CUR.x && ny == CUR.y && size == CUR.size())
+            if (nx == CUR.x && ny == CUR.y)
                 return;
             // through the layout so the floating algorithm's lastBox
             // tracking follows the placement (a raw target move leaves it
             // stale and a fullscreen roundtrip would restore the
-            // pre-placement spot). The size change goes out as one ordinary
-            // configure — no serial ownership, no force: a client-size grant
-            // in flight still wins, and the client's own later resizes are
-            // never fought.
+            // pre-placement spot); a move, never a configure
             g_layoutManager->setTargetGeom(CBox{nx, ny, size.x, size.y}, w->windowTarget());
             w->windowTarget()->warpPositionSize();
-            if (size != CUR.size())
-                w->sendWindowSize();
         }
     }
 
@@ -431,14 +358,6 @@ namespace NAwesome::Windows::Place {
         // by the supervisor before module inits
         supervisor().listen(Event::bus()->m_events.window.open, [](PHLWINDOW w) { onWindowOpen(w); });
         supervisor().listen(Event::bus()->m_events.window.close, [](PHLWINDOW w) { onWindowClose(w); });
-        // window.predictSize is the fork's born-at-size hook; against
-        // headers that predate it, compile the listener out and the map-time
-        // pass covers (one ordinary configure instead of the initial one).
-        // A missing event must degrade, not brick the whole update.
-        [](auto& events) {
-            if constexpr (requires { events.window.predictSize; })
-                supervisor().listen(events.window.predictSize, [](PHLWINDOW w, Vector2D& size) { onPredictSize(w, size); });
-        }(Event::bus()->m_events);
     }
 
     inline void teardown() {

@@ -22,9 +22,9 @@ chk "quick: the strip is on screen (clock + tags draw)" \
 # the chip draws IN the strip's task band (x 210-600 of the 30px strip):
 # baseline from the strip capture above, then the chip must add bright there
 CHIP0="$(strip_band "$STATE/quick-strip.png" 210 600 100)"
-dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x400')"; sleep 2
-expect "quick: the spawn lands at the remembered 500x400" \
-	"any(c['class']=='foot' and c['size']==[500,400] for c in cs)"
+dsp "hl.dsp.exec_cmd('foot --window-size-pixels=600x300')"; sleep 2
+expect "quick: the spawn keeps its requested 600x300 at the remembered (100,100)" \
+	"any(c['class']=='foot' and c['at']==[100,100] and c['size']==[600,300] for c in cs)"
 capture_nested "$STATE/quick-chip.png"
 CHIP1="$(strip_band "$STATE/quick-chip.png" 210 600 100)"
 chk "quick: the task chip draws with the window" \
@@ -65,14 +65,15 @@ if [[ "$RESTORED" != 1 ]]; then
 else
 	ok "quick: unmaximize restores the remembered floating box"
 fi
-# spot memory: close + respawn round-trips the box
+# spot memory: close + respawn round-trips the position; a different
+# requested size is the client's to keep
 FF="$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), ''))")"
 [[ -n "$FF" ]] && dsp "hl.dsp.window.close({window=\"address:$FF\"})"; sleep 1
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x400')"; sleep 2
-expect "quick: the spot round-trips after close+respawn" \
-	"any(c['class']=='foot' and c['size']==[500,400] for c in cs)"
+expect "quick: the spot round-trips after close+respawn, at the requested 500x400" \
+	"any(c['class']=='foot' and c['at']==[100,100] and c['size']==[500,400] for c in cs)"
 
 # ---- CSD content frame (the 2026-10-04 bug) --------------------------------
 # box == the client's content frame, centered: the buffer's shadow margin

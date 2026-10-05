@@ -7,13 +7,14 @@
 
 # ---- placement memory ---------------------------------------------------
 # The preflight's seeded legacy store migrated to $AW_SPOT at this first
-# init; the remembered 500x400 at (100,100) must win over the requested size.
+# init: the remembered spot is (100,100) (a 500x400 close-box). Memory is
+# the POSITION; the size is always the client's own request.
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=600x300')"; sleep 2
-expect "size memory: remembered 500x400 beats requested 600x300 at (100,100)" \
-	"any(c['class']=='foot' and c['at']==[100,100] and c['size']==[500,400] for c in cs)"
+expect "spawn memory: the requested 600x300 lands at the remembered (100,100)" \
+	"any(c['class']=='foot' and c['at']==[100,100] and c['size']==[600,300] for c in cs)"
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=600x300')"; sleep 2
-expect "sibling is born at the remembered 500x400 too" \
-	"sum(1 for c in cs if c['class']=='foot' and c['size']==[500,400])==2"
+expect "a sibling keeps its own requested 600x300 too" \
+	"sum(1 for c in cs if c['class']=='foot' and c['size']==[600,300])==2"
 expect "sibling lands off the taken spot — no exact stacking" \
 	"len(set(tuple(c['at']) for c in cs if c['class']=='foot'))==2"
 B="$(clients | python3 -c "
@@ -38,8 +39,8 @@ import json,sys
 cs = json.load(sys.stdin)
 b = next((c for c in cs if c['address'] == '$B'), None)
 def overlaps(c):
-    return c['at'][0] < 600 and c['at'][0] + c['size'][0] > 100 and c['at'][1] < 500 and c['at'][1] + c['size'][1] > 100
-on_spot = any(c['class'] == 'foot' and c['at'] == [100,100] and c['size'] == [500,400] for c in cs)
+    return c['at'][0] < 700 and c['at'][0] + c['size'][0] > 100 and c['at'][1] < 400 and c['at'][1] + c['size'][1] > 100
+on_spot = any(c['class'] == 'foot' and c['at'] == [100,100] and c['size'] == [600,300] for c in cs)
 positions = {tuple(c['at']) for c in cs if c['class'] == 'foot'}
 print(1 if b and len(positions) == 2 and ((not overlaps(b) and on_spot) or (overlaps(b) and not on_spot)) else 0)"
 }
@@ -230,6 +231,20 @@ CF="$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdfall'), ''))")"
 [[ -n "$CF" ]] && dsp "hl.dsp.window.close({window=\"address:$CF\"})"; sleep 1
+# A small window of a class remembered big keeps its own size: the spot
+# row carries a 700x500 close-box, the respawn asks for 300x200 and gets
+# it, at the remembered position (2026-10-05: the portal file chooser and
+# bleachbit's dialogs were born at the app's remembered main-window size).
+csdsmall_addr() { clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdsmall'), ''))"; }
+dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 700 500 20 csdsmall - - resz - - - - follow')"; sleep 2
+dsp "hl.dsp.window.move({x = 140, y = 120, window = \"address:$(csdsmall_addr)\"})"; sleep 1
+dsp "hl.dsp.window.close({window=\"address:$(csdsmall_addr)\"})"; sleep 1.5
+dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 300 200 20 csdsmall - - resz - - - - follow')"; sleep 2
+expect "a small window of a class remembered 700x500 keeps its own 300x200, at the remembered spot" \
+	"any(c['class']=='csdsmall' and c['at']==[140,120] and c['size']==[300,200] for c in cs)"
+[[ -n "$(csdsmall_addr)" ]] && dsp "hl.dsp.window.close({window=\"address:$(csdsmall_addr)\"})"; sleep 1
 # A real CSD app's close: the client destroys its toplevel BEFORE the
 # window unmaps (splashwin does, like GTK and Firefox). The close must still
 # remember the box — the close-time read once needed the live toplevel and

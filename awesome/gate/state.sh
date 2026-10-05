@@ -15,8 +15,8 @@ retarget || { echo "nested retarget FAILED after relaunch"; exit 1; }
 chk "hostile tsv: the monolith still loads" test "$(hq plugin list | grep -c Plugin)" = 1
 dsp "hl.dsp.window.close()"; sleep 0.5
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x300')"; sleep 2
-expect "far-off-screen seed: stored size applied, clamped to ($((MON_W-401)),$((MON_H-301)))" \
-	"any(c['class']=='foot' and c['at']==[$((MON_W-401)),$((MON_H-301))] and c['size']==[400,300] for c in cs)"
+expect "far-off-screen seed: the requested 500x300 clamped on-screen to ($((MON_W-501)),$((MON_H-301)))" \
+	"any(c['class']=='foot' and c['at']==[$((MON_W-501)),$((MON_H-301))] and c['size']==[500,300] for c in cs)"
 HF="$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), ''))")"
