@@ -364,13 +364,19 @@ semantics).
   text)` and closes the card unless `resident`.
   `x-kde-reply-placeholder-text` and `x-kde-reply-submit-button-text`
   are honored. The field takes the whole keyboard while armed (there is
-  no focus to give it); editing is append-and-backspace plus C-u / C-w.
-  Banners have no field.
+  no focus to give it); editing is append-and-backspace plus C-u / C-w,
+  and a text wider than the field shows its newest end. The armed row
+  stays open and on the page; folding it closes the field. A card that
+  dies mid-reply (the sender closed it) disarms the field: the key that
+  finds it gone is swallowed and the selection dropped, so no keystroke
+  reaches another card. Banners have no field.
 - Shade keys, while it is open and only then: Esc closes, ↑/↓ move a
-  selection (an accent hairline; the page follows it), Space folds,
-  Enter fires the primary, Tab arms the selected card's reply field,
-  Delete dismisses. Modified chords pass through as user binds, and so
-  does any key with nothing to act on.
+  selection (an accent hairline; the page follows it, however tall the
+  next row), Space folds, Enter fires the primary, Tab arms the selected
+  card's reply field, Delete dismisses. Paging with the wheel or the
+  chips drops the selection (Enter and Delete never act off screen).
+  Modified chords pass through as user binds, and so does any key with
+  nothing to act on.
 - Swipe: a horizontal wheel on a row, away to dismiss. It goes through
   the click queue rather than acting in the emission (crash class 6) —
   a swipe is an alias for a click that already exists.
@@ -392,8 +398,10 @@ semantics).
   after 30 s), a budget of their own — a sound flood never takes the
   volume keys' helpers.
 - DND (`hl.plugin.awesome.suspend()`): arrivals collect
-  silently with timeouts held; resume renders the queue newest-first on
-  fresh timeouts.
+  silently with timeouts held, and resume renders the queue newest-first
+  on fresh timeouts. An update or a conversation message onto a card
+  already shown (a banner, or a row in the shade) updates it in place,
+  silently, as it was.
 - Residency (`persistence`): an expired banner RETREATS into the shade
   rather than closing, and waits there until dismissed or acted on —
   the shade is the safety net. There is no history and no recall: a

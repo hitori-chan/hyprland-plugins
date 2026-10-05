@@ -363,7 +363,7 @@ namespace NAwesome::Notify {
         // top of the window. Group senders are prefixed by name.
         static std::string buildConversationBody(const SP<SNotif>& n, size_t limit);
 
-        std::string conversationBody(const SP<SNotif>& n, size_t limit) {
+        const std::string& conversationBody(const SP<SNotif>& n, size_t limit) {
             if (n->messages.empty())
                 return n->body;
             if (n->convMemo.rev == n->rev && n->convMemo.limit == limit)
@@ -672,7 +672,8 @@ namespace NAwesome::Notify {
                 n->unreadCount = 0;
             }
 
-            const bool WAS_SHOWN = EXISTING && n->banner && !n->waiting; // before the re-alert below
+            // before the re-alert below: DND puts a shown card back as it was
+            const bool WAS_WAITING = EXISTING && n->waiting, WAS_BANNER = EXISTING && n->banner, WAS_ABSORBED = EXISTING && n->absorbed;
             n->arrived = Time::steadyNow(); // a replace refreshes the age, like a new arrival would
             // A replace re-alerts (the OSD sweep relies on it); the merge
             // above keeps aiming a chat's new messages at the card that holds
@@ -760,14 +761,14 @@ namespace NAwesome::Notify {
                     } catch (...) {}
                 }
             // DND holds a re-arrival as it holds a new one (a replace or a
-            // conversation merge re-alerts otherwise): a card on screen stays
-            // as it is, silently; one that isn't queues for the resume
+            // conversation merge re-alerts otherwise): a card already shown —
+            // a banner, or a row in the shade — is updated in place, silently,
+            // as it was; one still queued stays queued for the resume
             bool quiet = false;
-            if (EXISTING && suspended && n->urgency < 2 && !inOsdBand(n->id)) {
-                if (WAS_SHOWN)
-                    quiet = true;
-                else
-                    n->waiting = true;
+            if (EXISTING && suspended && n->urgency < 2 && !inOsdBand(n->id) && !WAS_WAITING) {
+                quiet       = true;
+                n->banner   = WAS_BANNER;
+                n->absorbed = WAS_ABSORBED;
             }
             if (n->waiting && n->urgency >= 2)
                 n->waiting = false; // critical bypasses DND
