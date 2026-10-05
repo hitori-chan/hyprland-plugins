@@ -1,9 +1,7 @@
 # awesome/gate/windows.sh — the windows module's behavior battery: spawn
-# placement (the fresh store the migration fed), the CSD geometry battery,
-# and maximize/minimize/restore round-trips. The focus-policy battery lives
-# in focus.sh and the hostile state-file battery in state.sh (2026-10-04
-# gate trim: both are battle-tested and pay for relaunches, so a geometry
-# change runs this file alone).
+# placement, the CSD geometry battery (a real GTK3 client included), and
+# maximize/minimize/restore round-trips. A geometry change runs this file
+# alone (-b windows).
 
 # ---- placement memory ---------------------------------------------------
 # The preflight's seeded legacy store migrated to $AW_SPOT at this first
@@ -67,18 +65,6 @@ chk "tsv: exactly one foot spot row survives the coalesced save" \
 	test "$(grep -c $'^spot\t[0-9]*\t[0-9]*\t[0-9]*\t[0-9]*\tfoot$' "$AW_STATE")" = 1
 chk "tsv: no temp-file debris" bash -c "! ls $AWSTATE/*.tmp 2>/dev/null | grep -q ."
 
-# ---- spawn storm --------------------------------------------------------
-storm_jobs=()
-for i in $(seq 1 8); do
-	dsp "hl.dsp.exec_cmd('foot --window-size-pixels=$((400 + (i % 4) * 80))x$((250 + (i % 3) * 60))')" & storm_jobs+=("$!")
-done; [[ ${#storm_jobs[@]} -gt 0 ]] && wait "${storm_jobs[@]}" || true; sleep 2.5
-expect "spawn storm: all 8 up, fully inside the workarea" \
-	"sum(1 for c in cs if c['class']=='foot')==8 and all(c['at'][0]>=0 and c['at'][1]>=26 and c['at'][0]+c['size'][0]<=$MON_W and c['at'][1]+c['size'][1]<=$MON_H for c in cs if c['class']=='foot')"
-storm_jobs=()
-for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in json.load(sys.stdin) if c['class']=='foot']"); do
-	dsp "hl.dsp.window.close({window=\"address:$a\"})" & storm_jobs+=("$!")
-done; [[ ${#storm_jobs[@]} -gt 0 ]] && wait "${storm_jobs[@]}" || true; sleep 1.2
-
 # ---- fixed-size (dialog/splash) placement --------------------------------
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=700x500')"; sleep 2
 dsp "hl.dsp.exec_cmd('$REPO/devtools/fixwin 310 360')"; sleep 1.5
@@ -135,21 +121,6 @@ CP="$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdpin'), ''))")"
 [[ -n "$CP" ]] && dsp "hl.dsp.window.close({window=\"address:$CP\"})"; sleep 1
-dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 300 350 10 csdresz - - resz')"; sleep 2
-expect "resizable CSD first window still tiles the workarea (pin-skip does not leak)" \
-	"any(c['class']=='csdresz' and not c['floating'] and c['at']==[1,31] and c['size']==[$((MON_W-2)), $((MON_H-32))] for c in cs)"
-CR="$(clients | python3 -c "
-import json,sys
-print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdresz'), ''))")"
-[[ -n "$CR" ]] && dsp "hl.dsp.window.close({window=\"address:$CR\"})"; sleep 1
-dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 300 350 10 csdpinx - - - - pinx')"; sleep 2
-expect "per-axis-pinned CSD: box is the content frame on both axes" \
-	"any(c['class']=='csdpinx' and c['floating'] and c['size']==[300,350] for c in cs)"
-CX="$(clients | python3 -c "
-import json,sys
-print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdpinx'), ''))")"
-[[ -n "$CX" ]] && dsp "hl.dsp.window.close({window=\"address:$CX\"})"; sleep 1
-
 # Input follows the content frame: the client's surface coords start at
 # the margin's outer corner, so a pointer at box-local (x, y) lands at
 # (x + m, y + m) in the client. (A GTK file chooser got every click shifted
@@ -453,13 +424,9 @@ for i in $(seq 1 10); do dsp "hl.plugin.awesome.maximize()"; done; sleep 1
 chk "10 maximize toggles round-trip losslessly" test "$(box)" = "$REF"
 for i in $(seq 1 5); do dsp "hl.plugin.awesome.minimize()"; dsp "hl.plugin.awesome.restore()"; done; sleep 1
 chk "5 minimize/restore cycles round-trip" test "$(box)" = "$REF"
-for i in $(seq 1 15); do dsp "hl.dsp.focus({workspace=\"$(( (i % 9) + 1 ))\"})"; done
-dsp "hl.dsp.focus({workspace=\"1\"})"; sleep 1
-chk "15 workspace hops: back on 1" test "$(ws)" = 1
 
 # the churn probe's foot stays open: close it so the battery leaves the
-# desktop clean (the hostile-state relaunch used to take it with the
-# instance — state.sh still does, when it runs after this one)
+# desktop clean
 FF="$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), ''))")"

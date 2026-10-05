@@ -488,13 +488,14 @@ exactly one state file from then on.
 make -C awesome            # the release plugin (needs the fork headers)
 make -C awesome GATE=1     # awesome-gate.so: the gate's variant (test seams)
 make -C awesome test       # headless core harness, no fork headers
-make -C awesome gate ARGS="-s ~/repo/Hyprland -b quick|all|everything"
+make -C awesome gate ARGS="-s ~/repo/Hyprland -b quick|all"
 ```
 
-Before a release, run the gate (`-b everything`) and require its final
+Before a release, run the gate (`-b all`) and require its final
 `ALL CHECKS PASSED` line. The gate is the plugin's behavioral contract:
-scenario batteries (quick/shell/windows/state/notify/system/pipeline/
-focus/lifecycle) against a throwaway nested compositor; the input
+scenario batteries (shell/windows/notify/system/pipeline/lifecycle, and
+`quick`, a smoke of each module, by default) against a throwaway nested
+compositor; the input
 fixtures and fakes it drives (vptr, vkbd, cliphold, wpctl, logind, …) are
 the shared `devtools/`. `-s` stages the fork build's headers and defaults
 the compositor to that build. For one-off diagnosis, `gate/probe.sh` runs

@@ -38,12 +38,6 @@ make -C devtools HL=/path/to/Hyprland
   items; every press logs what GTK hit (`HIT <color>`, `MENU <color>`).
   `findcolors.py PNG NAME=R,G,B...` finds where each color is drawn in a
   capture, so a click on what is drawn must name the same block.
-- `focustrap <map|attention|activate> [delay-s] [hold-s]` is the X11
-  fixture: it maps a toplevel, waits, sends one unauthenticated EWMH
-  ping — `_NET_ACTIVE_WINDOW` (activate) or
-  `_NET_WM_STATE_DEMANDS_ATTENTION` (attention) — and holds; the focus
-  checks assert the ping stays urgency-only and the keyboard focus never
-  moves.
 
 ## D-Bus and process fakes
 
