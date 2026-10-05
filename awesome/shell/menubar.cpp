@@ -356,7 +356,11 @@ namespace NAwesome::Shell {
         void close() {
             if (!isOpen)
                 return;
-            barChanged(); // while still open: the damage must cover the prompt strip
+            // damage NOW, while still open: the coalesced barChanged runs
+            // after isOpen drops and damages the bar's height alone, leaving
+            // the prompt band's old pixels on screen
+            damageBars();
+            barChanged();
             isOpen = false;
             clipboard.cancel();
             typed.clear();
