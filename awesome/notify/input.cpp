@@ -261,6 +261,11 @@ namespace NAwesome::Notify {
                         Model::toggleSuspend();
                     continue;
                 case SCard::PANEL: continue; // dead panel space swallows silently
+                case SCard::PAGE_UP:
+                case SCard::PAGE_DOWN:
+                    if (H.bit == 1u)
+                        centerPageScreen(H.kind == SCard::PAGE_DOWN ? 1 : -1);
+                    continue;
             }
         }
     }

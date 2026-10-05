@@ -324,7 +324,9 @@ semantics).
   opens, a button acts. Rows open by default, so the click is spent
   acting rather than revealing; the CHEVRON is the only fold target.
   Right dismisses; middle is "Clear all". On an app bundle left
-  expands and right (or the header ✕) dismisses the whole app.
+  expands and right (or the header ✕) dismisses the whole app. The
+  paging chips (⌃ above the fold, ⌄ N below it) are their own targets:
+  a click pages a screenful, like the wheel.
 - `max_height` bounds a popup by priority: header, title, one body
   line, progress and the action buttons first, then the images, then
   their alt text; the body takes the rest. A block that doesn't fit is
@@ -354,10 +356,12 @@ semantics).
   no focus to give it); editing is append-and-backspace plus C-u / C-w.
   Banners have no field.
 - Shade keys, while it is open and only then: Esc closes, ↑/↓ move a
-  selection (an accent hairline; the page follows it), Space folds,
-  Enter fires the primary, Tab arms the selected card's reply field,
-  Delete dismisses. Modified chords pass through as user binds, and so
-  does any key with nothing to act on.
+  selection (an accent hairline; the page follows it, however tall the
+  next row), Space folds, Enter fires the primary, Tab arms the selected
+  card's reply field, Delete dismisses. Paging with the wheel or the
+  chips drops the selection (Enter and Delete never act off screen).
+  Modified chords pass through as user binds, and so does any key with
+  nothing to act on.
 - Swipe: a horizontal wheel on a row, away to dismiss. It goes through
   the click queue rather than acting in the emission (crash class 6) —
   a swipe is an alias for a click that already exists.

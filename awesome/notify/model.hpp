@@ -349,6 +349,7 @@ namespace NAwesome::Notify {
     // sender is coming up over them) does not.
     void setCenter(bool on, bool repop = false);
     void centerPage(int dir); // wheel: >0 towards older rows
+    void centerPageScreen(int dir); // the paging chips: a screenful
     void centerToggleGroup(const std::string& appKey);
     void centerToggleRow(uint32_t id);
     void centerSelectMove(int dir);                         // ↑/↓: move the keyboard selection, paging to keep it on screen
@@ -377,6 +378,8 @@ namespace NAwesome::Notify {
             BTN_CLEAR, // footer "Clear all": the global sweep
             BTN_DND,   // footer ⊖ (do-not-disturb)
             PANEL,     // the shade panel body: swallows clicks, owns the wheel
+            PAGE_UP,   // the shade's paging chips (drawn over the edge rows)
+            PAGE_DOWN,
         };
         eKind       kind = POPUP;
         CBox        box;
