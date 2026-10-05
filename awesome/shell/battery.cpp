@@ -7,12 +7,16 @@
 
 namespace NAwesome::Shell {
 
-    static int         batteryPercent  = -1;    // -1 = unknown level; batteryDir decides whether the widget exists
+    static int         batteryPercent  = -1;    // -1 = unknown level; batteryDirs decides whether the widget exists
     static bool        batteryPlugged  = false; // known external-power status, never inferred from Unknown
     static bool        batteryDefend   = false; // plugged but held at the charge limit (Android's defender)
     static bool        batterySave     = false; // explicit power-profiles-daemon power-saver state
     static bool        batteryUnknown  = false; // Pixel's question attribution; higher priority than every other state
-    static std::string batteryDir;              // /sys/class/power_supply/BATx, empty = none
+    // the system packs (/sys/class/power_supply/BATx), empty = none: a
+    // dual-pack laptop drains one pack first, and the other one is half the
+    // charge the user has
+    static std::vector<std::string> batteryDirs;
+    constexpr size_t                MAX_PACKS = 8;
     // the gauge is read ONCE per event (uevent or minute tick) and both
     // consumers — the pill's display state and the alerts' edge detection —
     // read the result: the raw status string is what the alerts key off, and
@@ -109,11 +113,11 @@ namespace NAwesome::Shell {
     }
 
     static bool        hasBattery() {
-        return !batteryDir.empty();
+        return !batteryDirs.empty();
     }
 
-    static void findBattery() {
-        batteryDir.clear();
+    static void findBatteries() {
+        batteryDirs.clear();
         std::error_code ec;
         for (const auto& e : std::filesystem::directory_iterator("/sys/class/power_supply", ec)) {
             std::ifstream t(e.path() / "type");
@@ -126,9 +130,28 @@ namespace NAwesome::Shell {
             std::string   scope;
             if (sc && std::getline(sc, scope) && scope == "Device")
                 continue;
-            batteryDir = e.path();
-            break;
+            batteryDirs.push_back(e.path());
+            if (batteryDirs.size() >= MAX_PACKS)
+                break;
         }
+        std::ranges::sort(batteryDirs); // BAT0 first: a stable read order
+    }
+
+    static std::optional<long long> readSysInt(const std::string& path) {
+        std::ifstream f(path);
+        std::string   s;
+        if (!f || !std::getline(f, s))
+            return std::nullopt;
+        try {
+            return std::stoll(s);
+        } catch (...) { return std::nullopt; }
+    }
+    static std::string readSysLine(const std::string& path) {
+        std::ifstream f(path);
+        std::string   s;
+        if (f)
+            std::getline(f, s);
+        return s;
     }
 
     // ---- the battery (Android's expressive battery, drawn natively) ----
@@ -445,33 +468,67 @@ namespace NAwesome::Shell {
             int  pc      = -1;
             bool plugged = false, defend = false, unknown = false;
             batteryStatus.clear();
-            if (!batteryDir.empty()) {
-                std::ifstream cf(batteryDir + "/capacity"), sf(batteryDir + "/status");
-                std::string   cap, status;
-                if (cf && std::getline(cf, cap)) {
-                    try {
-                        pc = std::clamp(std::stoi(cap), 0, 100);
-                    } catch (...) {}
-                }
-                if (sf && std::getline(sf, status))
-                    plugged = statusIsPlugged(status);
-                batteryStatus = status;
-                unknown       = pc < 0 || status.empty() || status == "Unknown";
-
-                // Android's defender = plugged but deliberately not charging.
-                // A charge_control_end_threshold below 100 turns "Not
-                // charging" from a transient (thermal, top-off) into the
-                // limiter's hold state — including the start/end hysteresis
-                // band, where capacity sits below the threshold.
-                if (plugged && status == "Not charging") {
-                    std::ifstream tf(batteryDir + "/charge_control_end_threshold");
-                    std::string   lim;
-                    if (tf && std::getline(tf, lim)) {
-                        try {
-                            defend = std::stoi(lim) < 100;
-                        } catch (...) {}
+            if (!batteryDirs.empty()) {
+                // the packs as ONE battery, upower's display device: the
+                // level weighted by each pack's energy (charge where a pack
+                // reports no energy), the status the most telling of theirs
+                long long eNow = 0, eFull = 0, cNow = 0, cFull = 0;
+                bool      allEnergy = true, allCharge = true;
+                int       capSum = 0, capN = 0;
+                bool      anyCharging = false, anyDischarging = false, anyHolding = false, allFull = true, anyRead = false;
+                for (const auto& D : batteryDirs) {
+                    if (const auto C = readSysInt(D + "/capacity")) {
+                        capSum += (int)std::clamp(*C, 0LL, 100LL);
+                        ++capN;
                     }
+                    const auto EN = readSysInt(D + "/energy_now"), EF = readSysInt(D + "/energy_full");
+                    const auto CN = readSysInt(D + "/charge_now"), CF = readSysInt(D + "/charge_full");
+                    allEnergy = allEnergy && EN && EF && *EF > 0;
+                    allCharge = allCharge && CN && CF && *CF > 0;
+                    if (allEnergy) {
+                        eNow += *EN;
+                        eFull += *EF;
+                    }
+                    if (allCharge) {
+                        cNow += *CN;
+                        cFull += *CF;
+                    }
+                    const auto S = readSysLine(D + "/status");
+                    if (S.empty() || S == "Unknown")
+                        continue;
+                    anyRead = true;
+                    anyCharging |= S == "Charging";
+                    anyDischarging |= S == "Discharging";
+                    anyHolding |= S == "Not charging";
+                    allFull = allFull && S == "Full";
+                    // Android's defender = plugged but deliberately not
+                    // charging. A charge_control_end_threshold below 100
+                    // turns "Not charging" from a transient (thermal,
+                    // top-off) into the limiter's hold state — including the
+                    // start/end hysteresis band, where capacity sits below
+                    // the threshold.
+                    if (S == "Not charging")
+                        if (const auto LIM = readSysInt(D + "/charge_control_end_threshold"); LIM && *LIM < 100)
+                            defend = true;
                 }
+                if (batteryDirs.size() == 1)
+                    pc = capN ? capSum : -1; // one pack: its own gauge, as every other UI shows it
+                else if (allEnergy && eFull > 0)
+                    pc = (int)std::clamp(std::llround(100.0 * (double)eNow / (double)eFull), 0LL, 100LL);
+                else if (allCharge && cFull > 0)
+                    pc = (int)std::clamp(std::llround(100.0 * (double)cNow / (double)cFull), 0LL, 100LL);
+                else if (capN)
+                    pc = capSum / capN;
+                const std::string status = !anyRead ? "Unknown" :
+                    anyCharging                     ? "Charging" :
+                    anyDischarging                  ? "Discharging" :
+                    allFull                         ? "Full" :
+                    anyHolding                      ? "Not charging" :
+                                                      "Unknown";
+                plugged       = statusIsPlugged(status);
+                defend        = defend && status == "Not charging";
+                batteryStatus = status;
+                unknown       = pc < 0 || status == "Unknown";
             }
             if (batteryPercent == pc && batteryPlugged == plugged && batteryDefend == defend && batteryUnknown == unknown)
                 return false;
@@ -549,13 +606,19 @@ namespace NAwesome::Shell {
         // libudev does not coalesce for us. Yield after a small batch so a
         // noisy power-supply driver cannot monopolize the compositor loop.
         constexpr size_t MAX_UDEV_EVENTS_PER_DISPATCH = 16;
+        bool rescan = false;
         if (g_udevMon)
             for (size_t i = 0; i < MAX_UDEV_EVENTS_PER_DISPATCH; ++i) {
                 auto* DEV = udev_monitor_receive_device(g_udevMon);
                 if (!DEV)
                     break;
+                // a pack inserted or removed (a ThinkPad's swappable one)
+                if (const char* A = udev_device_get_action(DEV); A && (std::string_view{A} == "add" || std::string_view{A} == "remove"))
+                    rescan = true;
                 udev_device_unref(DEV);
             }
+        if (rescan)
+            findBatteries();
         if (Battery::refresh())
             barChanged(); // a uevent lands in the event loop: warm now, no deferral needed
         Battery::alerts();
@@ -564,7 +627,7 @@ namespace NAwesome::Shell {
 
     namespace Battery {
         void init() {
-            findBattery();
+            findBatteries();
             refresh();
             if (!hasBattery() || !g_pCompositor)
                 return;
@@ -603,7 +666,7 @@ namespace NAwesome::Shell {
             pillCache.clear();
             batteryPercent = -1;
             batteryPlugged = batteryDefend = batterySave = batteryUnknown = false;
-            batteryDir.clear();
+            batteryDirs.clear();
             batteryStatus.clear();
             alertLastStatus.clear();
             alertWarned = alertCritical = false;

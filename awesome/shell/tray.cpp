@@ -336,10 +336,29 @@ namespace NAwesome::Shell {
                 watcher
                     ->addVTable(sdbus::registerMethod("RegisterStatusNotifierItem").withInputParamNames("service").implementedAs([](std::string arg) {
                         const std::string SENDER = watcher->getCurrentlyProcessedMessage().getSender();
-                        if (!arg.empty() && arg.front() == '/')
+                        if (!arg.empty() && arg.front() == '/') {
                             addItem(SENDER, arg);
-                        else
-                            addItem(arg.empty() ? SENDER : arg, "/StatusNotifierItem");
+                            return;
+                        }
+                        if (arg.empty() || arg == SENDER) {
+                            addItem(SENDER, "/StatusNotifierItem");
+                            return;
+                        }
+                        // a well-known name nobody owns would never leave:
+                        // its NameOwnerChanged never comes, and the cell
+                        // stays a blank click target for the session
+                        if (!busProxy)
+                            return;
+                        try {
+                            busProxy->callMethodAsync("GetNameOwner")
+                                .onInterface("org.freedesktop.DBus")
+                                .withArguments(arg)
+                                .uponReplyInvoke([arg](std::optional<sdbus::Error> e, std::string owner) {
+                                    if (!e && !owner.empty())
+                                        addItem(arg, "/StatusNotifierItem");
+                                });
+                            pollSoon();
+                        } catch (...) {}
                     }),
                                 sdbus::registerMethod("RegisterStatusNotifierHost").withInputParamNames("service").implementedAs([](std::string service) {
                                     if (!watcher)

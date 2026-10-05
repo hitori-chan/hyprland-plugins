@@ -117,6 +117,16 @@ namespace NAwesome::Shell {
                 swallowRelease |= BIT;
                 return;
             }
+            // Over a fullscreen window the strip showed only for the prompt:
+            // with the prompt gone, a press on it (a task's or a tray icon's
+            // menu) would open what the hidden bar's warm closes at once.
+            // The press closed the launcher; that is all it does.
+            if (MBM == MON && POS.y >= MON->logicalBox().y && POS.y < MON->logicalBox().y + barHeight())
+                if (const auto WS = MON->m_activeWorkspace; WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN) {
+                    info.cancelled = true;
+                    swallowRelease |= BIT;
+                    return;
+                }
         }
 
         // menu first: it owns every click while open. Panels are hit-tested
@@ -432,42 +442,7 @@ namespace NAwesome::Shell {
             Menubar::close();
     }
 
-    // ---- hover self-heal ----
-    //
-    // The compositor dedups a pointer move that lands on its LAST-REMEMBERED
-    // position, and it remembers a position only for moves it did not cancel:
-    // over the bar every move is ours (cancelled), so the remembered position
-    // is frozen at the last point OFF the bar. A move back to exactly that
-    // point is then swallowed by the dedup and NO module ever sees the bar
-    // leave — a hovered cell (a menu row's intent) would never clear. The
-    // gate's scripted pointer parks at a point, visits the bar, and parks
-    // again, so it hits this on every run; a real cursor that rests on one
-    // spot above the bar does too.
-    //
-    // The backstop: while any widget is hovered, a slow tick re-tests the
-    // pointer against the bar and forces the hover out when it is gone. One
-    // geometry walk every 200ms, only while a hover is live.
-    static SP<CEventLoopTimer> hoverHeal;
-
-    void inputInit() {
-        hoverHeal = makeShared<CEventLoopTimer>(
-            std::chrono::milliseconds(200),
-            [](SP<CEventLoopTimer> self, void*) {
-                if (hoverWidget && g_pInputManager) {
-                    const auto POS = g_pInputManager->getMouseCoordsInternal();
-                    if (!barOwnsPoint(POS))
-                        setHoverWidget(nullptr);
-                }
-                self->updateTimeout(std::chrono::milliseconds(200));
-            },
-            nullptr);
-        g_pEventLoopManager->addTimer(hoverHeal);
-    }
-
     void inputExit() {
-        if (hoverHeal && g_pEventLoopManager)
-            g_pEventLoopManager->removeTimer(hoverHeal);
-        hoverHeal.reset();
         hitJobs.reset();
         pendingScroll.reset();
         scrollAcc.clear();

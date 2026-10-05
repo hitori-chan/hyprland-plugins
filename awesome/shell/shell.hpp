@@ -364,6 +364,10 @@ namespace NAwesome::Shell {
             double                            width     = 0; // measured at warm; 0 = remeasure
             int                               widthPt   = 0;
             uint64_t                          loadRequest = 0;
+            // one GetLayout in flight per level: an update storm (a scan
+            // flipping rows every few ms) re-requests once when it lands
+            bool                              loading     = false;
+            bool                              reloadAgain = false;
             int                               hover     = -1;
             int                               scrollTop = 0;     // first visible entry when overflowing
             int                               maxScroll = 0;     // set at render: the last scrollTop that still fills the panel
@@ -439,7 +443,6 @@ namespace NAwesome::Shell {
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info);
     void onInputBlocked(); // the pipeline head's reset: locked or natively captured
     void releasePointer();
-    void inputInit(); // the hover self-heal timer
     void inputExit();
 
 } // namespace NAwesome::Shell

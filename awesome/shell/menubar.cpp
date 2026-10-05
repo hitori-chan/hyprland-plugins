@@ -173,7 +173,7 @@ namespace NAwesome::Shell {
                 if (line.starts_with("Name=") && app.name.empty())
                     stringValue(std::string_view{line}.substr(5), app.name);
                 else if (line.starts_with("Exec="))
-                    rawExec = line.substr(5);
+                    rawExec = NAwesome::DesktopExec::unescapeExec(std::string_view{line}.substr(5));
                 else if (line.starts_with("Icon="))
                     stringValue(std::string_view{line}.substr(5), app.icon);
                 else if (line.starts_with("Terminal="))
@@ -356,7 +356,11 @@ namespace NAwesome::Shell {
         void close() {
             if (!isOpen)
                 return;
-            barChanged(); // while still open: the damage must cover the prompt strip
+            // damage NOW, while still open: the coalesced barChanged runs
+            // after isOpen drops and damages the bar's height alone, leaving
+            // the prompt band's old pixels on screen
+            damageBars();
+            barChanged();
             isOpen = false;
             clipboard.cancel();
             typed.clear();
@@ -947,11 +951,16 @@ namespace NAwesome::Shell {
                 const auto   cellW = [&](const SP<ITexture>& t) { return 8 + ICON + 6 + (t ? t->m_size.x / PAINT.scale : 0) + 8; };
 
                 { // keep the selection on screen: page-jump to it when it won't fit
+                    // (the first overflow decides it: End from the top would
+                    // otherwise raster every entry in one warm)
                     double w = 0;
-                    for (int i = Menubar::first; i <= Menubar::sel; i++)
+                    for (int i = Menubar::first; i <= Menubar::sel; i++) {
                         w += cellW(textTex(entryName(i), COLFG, PAINT.pt));
-                    if (px + w > PAINT.mb.x + PAINT.mb.w)
-                        Menubar::first = Menubar::sel;
+                        if (px + w > PAINT.mb.x + PAINT.mb.w) {
+                            Menubar::first = Menubar::sel;
+                            break;
+                        }
+                    }
                 }
 
                 for (int i = Menubar::first; i < (int)SH.size(); i++) {

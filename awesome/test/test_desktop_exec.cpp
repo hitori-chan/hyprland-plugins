@@ -32,6 +32,16 @@ bool test_desktop_exec() {
     AW_CHECK(!DE::unescapeList("a;\\").has_value()); // dangling escape at end of item
     AW_CHECK(!DE::unescapeList("a\\qb").has_value()); // unknown escape
 
+    // ---- unescapeExec: the string pass, before the quoting grammar ----
+    AW_CHECK(DE::unescapeExec("a\\sb") == "a b");
+    AW_CHECK(DE::unescapeExec("a\\\\b") == "a\\b");
+    AW_CHECK(DE::unescapeExec("\"q\\\"x\"") == "\"q\\\"x\""); // an unknown escape stays for tokens()
+    AW_CHECK(DE::unescapeExec("dangling\\") == "dangling\\");
+    // Wine's generated entry: four backslashes are one literal, an escaped
+    // escape-space keeps "Start Menu" one argument
+    AW_CHECK(wordsEqual(DE::words(DE::unescapeExec("wine C:\\\\\\\\windows\\\\\\\\start.exe /Unix /home/u/Start\\\\ Menu/x.lnk")),
+                        {"wine", "C:\\windows\\start.exe", "/Unix", "/home/u/Start Menu/x.lnk"}));
+
     // ---- tokens / words (the Exec line) ----
     AW_CHECK(wordsEqual(DE::words("/usr/bin/term -o flag"), {"/usr/bin/term", "-o", "flag"}));
     AW_CHECK(wordsEqual(DE::words("app \"arg with space\""), {"app", "arg with space"}));
