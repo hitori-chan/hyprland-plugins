@@ -2,20 +2,34 @@
 
 #include "shell/shell.hpp"
 
+#include <locale.h>
+
+#include <ctime>
+#include <utility>
+
 namespace NAwesome::Shell {
 
     static std::string clockText;
+    // the user's LC_TIME: the compositor never calls setlocale, so a plain
+    // strftime spoke the C locale's English (awesome's os.date speaks the
+    // session's)
+    static locale_t    timeLocale      = (locale_t)0;
+    static bool        timeLocaleTried = false;
 
     namespace Clock {
         bool refresh() {
-            char       buf[64];
+            char       buf[128];
             const auto NOW = std::time(nullptr);
-            const auto* TM = std::localtime(&NOW);
-            if (!TM)
+            std::tm    tm{};
+            if (!localtime_r(&NOW, &tm))
                 return false;
+            if (!std::exchange(timeLocaleTried, true))
+                timeLocale = newlocale(LC_TIME_MASK, "", (locale_t)0);
             // awesome's default format, trimmed — padding is the widget's
             // explicit margin, not spaces baked into the text
-            std::strftime(buf, sizeof(buf), "%a %b %d, %H:%M", TM);
+            const size_t N = timeLocale ? strftime_l(buf, sizeof(buf), "%a %b %d, %H:%M", &tm, timeLocale) : std::strftime(buf, sizeof(buf), "%a %b %d, %H:%M", &tm);
+            if (N == 0)
+                return false;
             if (clockText == buf)
                 return false;
             clockText = buf;
@@ -24,6 +38,10 @@ namespace NAwesome::Shell {
 
         void exit() {
             clockText.clear();
+            if (timeLocale)
+                freelocale(timeLocale);
+            timeLocale      = (locale_t)0;
+            timeLocaleTried = false;
         }
     } // namespace Clock
 
