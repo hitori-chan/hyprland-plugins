@@ -93,10 +93,15 @@ the plugin's one state file (see State).
   does not hold maximized, which left such clients told maximized and
   reopening maximized. Maximized windows follow workspace, output, and
   reserved-area changes, and the pointer follows every such geometry
-  change (a window that grows under a still cursor takes the next click). `Mod+click` drags are swallowed
-  while maximized so the raise policy never fights the drag. Windowed
-  geometry is restored from the store, constrained by the current
-  workarea and the client's size hints.
+  change (a window that grows under a still cursor takes the next click). A maximized window
+  does not move, as in awesome's `mouse.client.move`: `Mod+click` drags
+  are swallowed, and a drag the client starts from its own titlebar is
+  ended at once. Windowed geometry is restored from the store,
+  constrained by the current workarea and the client's size hints. A
+  grouped window is neither minimized nor plugin-maximized (its layout
+  slot is the group's). A plugin reload keeps both states: minimized
+  windows are shown again as the plugin stops (nothing else would know
+  to), and the next instance adopts the windows still told maximized.
 - **Click policy**: a plain left click raises the target; clicking a
   maximized window tucks fullscreen-flagged floaters without rewriting
   z-order. Keyboard focus raises, pointer hover does not. A short-lived
@@ -104,7 +109,9 @@ the plugin's one state file (see State).
   left fullscreen, preventing click-through to the window below.
   `focus_next`/`focus_prev` cycle stable arrival order (not the
   z-order that click-to-raise keeps changing); `focus_prev_here`
-  toggles the two most recent windows on the current workspace.
+  toggles the two most recent windows on the current workspace. Both,
+  and the snap magnet, work on an open special workspace when one covers
+  the regular one.
 - **Focus semantics (attention-first, the shipped default)**: the
   mechanism is awesome's `permissions.activate` (source-verified), and
   the shipped default picks the Windows foreground model — a background

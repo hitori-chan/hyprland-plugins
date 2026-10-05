@@ -294,7 +294,7 @@ namespace NAwesome::Windows::Snap {
                 // X11 geometry was border-inclusive: snap the BORDER flush,
                 // never swallow it offscreen — inflate, snap, deflate (each
                 // window by its own border)
-                const auto WS = MON->m_activeWorkspace;
+                const auto WS = shownWorkspace(MON);
 
                 const auto   othersOf = [&](SP<Layout::ITarget> self) {
                     std::vector<CBox> OUT;
