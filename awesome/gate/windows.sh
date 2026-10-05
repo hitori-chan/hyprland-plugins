@@ -167,6 +167,13 @@ if [[ "$PX" =~ ^[0-9]+$ ]]; then
 	}
 	csd_ptr 3 3 "at 23 23" "CSD input: the content frame's corner lands at the margin (23,23)"
 	csd_ptr 150 100 "at 170 120" "CSD input: the content center lands at box-local + margin (170,120)"
+	# a pointer device appearing while the cursor rests over the window (a
+	# re-added device after resume): the client binds a new wl_pointer and
+	# must be entered where the cursor is, not at (-1,-1) until it moves
+	printf 'sleep 300\n' | vp
+	GOT="$(tail -1 "$PTRLOG")"
+	[[ "$GOT" == "at 170 120" ]] && ok "a late-bound pointer enters where the cursor rests (170,120)" ||
+		bad "a late-bound pointer enters where the cursor rests (170,120) (client saw '$GOT')"
 else
 	bad "CSD input: the csdptr window mapped"
 fi
@@ -245,6 +252,109 @@ dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 300 200 20 csdsmall - - resz - - 
 expect "a small window of a class remembered 700x500 keeps its own 300x200, at the remembered spot" \
 	"any(c['class']=='csdsmall' and c['at']==[140,120] and c['size']==[300,200] for c in cs)"
 [[ -n "$(csdsmall_addr)" ]] && dsp "hl.dsp.window.close({window=\"address:$(csdsmall_addr)\"})"; sleep 1
+# ---- a real GTK3 client: what is drawn is what is clicked ----------------
+# Render-vs-input with a real toolkit: find where each color block is DRAWN
+# (a capture), click its center, and the client must name that block — the
+# floating CSD window (its content offset), its GtkMenu (an xdg_popup placed
+# against the window geometry), and the same app over XWayland. Then the
+# positioner: a menu that fits below its button near the bottom edge opens
+# below it, not flipped (2026-10-05: the popup pass drew menus a shadow
+# margin up-left of where input put them — a click on an item hit the one
+# above — and the solver measured the parent from box + margin).
+if python3 -c 'import gi; gi.require_version("Gtk", "3.0"); gi.require_version("Gdk", "3.0"); from gi.repository import Gdk, Gtk' 2>/dev/null; then
+	GG_LOG="$STATE/gtkgrid.log" GG_WL="$STATE/gtkgrid.wl"
+	GG_BLOCKS="red=255,0,0 green=0,255,0 blue=0,0,255 yellow=255,255,0 magenta=255,0,255 cyan=0,255,255"
+	# one pointer device for the whole section: a popup's grab must survive
+	# from the press that opened it to the click on its item
+	rm -f "$STATE/vp.fifo"; mkfifo "$STATE/vp.fifo"
+	vp <"$STATE/vp.fifo" & GG_VP=$!
+	exec 7>"$STATE/vp.fifo"
+	gg_send() { printf '%s\n' "$@" >&7; }
+	gg_click() { gg_send "move $1 $2" "sleep 120" "press 272" "sleep 50" "release 272" "sleep 120"; sleep 0.7; }
+	# by title: X11 names the class after the script (Gtkgrid.py)
+	gg_addr() { clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['title']=='gtkgrid'), ''))"; }
+	gg_open() { # gg_open <backend> [trace]
+		: >"$GG_LOG"
+		dsp "hl.dsp.exec_cmd('python3 $REPO/devtools/gtkgrid.py $GG_LOG $1 ${2:+$GG_WL}')"
+		for _ in $(seq 1 40); do grep -q READY "$GG_LOG" && break; sleep 0.25; done
+		sleep 1.5
+	}
+	gg_close() { # and wait it out: a leftover window sits on the spots the next checks remember
+		local a; a="$(gg_addr)"
+		[[ -n "$a" ]] && dsp "hl.dsp.window.close({window=\"address:$a\"})"
+		for _ in $(seq 1 30); do [[ -z "$(gg_addr)" ]] && break; sleep 0.1; done
+		[[ -z "$(gg_addr)" ]] || bad "the GTK3 client closed"
+	}
+	gg_find() { python3 "$REPO/devtools/findcolors.py" "$@"; }
+	gg_blocks() { # gg_blocks <label>
+		capture_nested "$STATE/gg-$1.png"
+		local name cx cy n got
+		while read -r name cx cy n; do
+			if ((n < 500)); then bad "[$1] the $name block is drawn ($n px)"; continue; fi
+			gg_click "$cx" "$cy"
+			got="$(grep '^HIT' "$GG_LOG" | tail -1)"
+			[[ "$got" == "HIT $name" ]] && ok "[$1] a click on the drawn $name block hits it" ||
+				bad "[$1] a click on the drawn $name block hits it (client: '$got')"
+		done < <(gg_find "$STATE/gg-$1.png" $GG_BLOCKS)
+	}
+	gg_menu() { # gg_menu <label>: open the menu by its drawn button, click the drawn violet item
+		local bx by bn vx vy vn got
+		capture_nested "$STATE/gg-$1-btn.png"
+		read -r _ bx by bn < <(gg_find "$STATE/gg-$1-btn.png" button=128,64,0)
+		if ((bn < 500)); then bad "[$1] the menu button is drawn"; return 1; fi
+		gg_click "$bx" "$by"; sleep 0.8
+		capture_nested "$STATE/gg-$1-menu.png"
+		read -r _ vx vy vn < <(gg_find "$STATE/gg-$1-menu.png" violet=128,0,255)
+		if ((vn < 300)); then bad "[$1] the menu opened (violet drawn: $vn px)"; return 1; fi
+		gg_click "$vx" "$vy"
+		got="$(grep '^MENU ' "$GG_LOG" | tail -1)"
+		[[ "$got" == "MENU violet" ]] && ok "[$1] a click on the drawn menu item activates it" ||
+			bad "[$1] a click on the drawn menu item activates it (client: '$got')"
+	}
+	gg_cfg() { # the last popup configure: "<y> <h>" relative to the window geometry
+		grep -oE 'xdg_popup#[0-9]+\.configure\(-?[0-9]+, -?[0-9]+, [0-9]+, [0-9]+\)' "$GG_WL" | tail -1 |
+			sed -E 's/.*\((-?[0-9]+), (-?[0-9]+), ([0-9]+), ([0-9]+)\)/\2 \4/'
+	}
+
+	gg_open wayland trace
+	gg_blocks gtk3-wl
+	if gg_menu gtk3-wl; then
+		# near the bottom edge: the menu fits below its button with 6px to
+		# spare past the solver's 4px padding, so it must not flip
+		read -r CY MH <<<"$(gg_cfg)"
+		TY=$((MON_H - 10 - CY - MH))
+		dsp "hl.dsp.window.move({x = 200, y = $TY, window = \"address:$(gg_addr)\"})"; sleep 1
+		read -r _ GY _ _ <<<"$(box4 gtkgrid)"
+		if [[ "$GY" == "$TY" ]]; then
+			gg_menu gtk3-wl-edge
+			read -r CY2 _ <<<"$(gg_cfg)"
+			[[ "$CY2" == "$CY" ]] && ok "a menu that fits below its button at the bottom edge opens below it" ||
+				bad "a menu that fits below its button at the bottom edge opens below it (configure y $CY2, unconstrained $CY)"
+			# and 12px lower it overflows by 6: it must flip (or slide) up —
+			# with the fit above, any solver error past 6px in either
+			# direction fails one of the two
+			dsp "hl.dsp.window.move({x = 200, y = $((TY + 12)), window = \"address:$(gg_addr)\"})"; sleep 1
+			gg_menu gtk3-wl-over
+			read -r CY3 _ <<<"$(gg_cfg)"
+			((CY3 < CY)) && ok "a menu that overflows the bottom edge by 6px flips above its button" ||
+				bad "a menu that overflows the bottom edge by 6px flips above its button (configure y $CY3, unconstrained $CY)"
+		else
+			bad "the GTK3 window moved near the bottom edge (at y $GY, wanted $TY)"
+		fi
+	fi
+	gg_close
+	gg_open x11
+	gg_blocks gtk3-x11
+	gg_menu gtk3-x11
+	gg_close
+	exec 7>&-
+	wait "$GG_VP" 2>/dev/null
+else
+	ok "real GTK3 client checks skipped: no GTK3 / PyGObject on this machine"
+fi
+
 # A real CSD app's close: the client destroys its toplevel BEFORE the
 # window unmaps (splashwin does, like GTK and Firefox). The close must still
 # remember the box — the close-time read once needed the live toplevel and
