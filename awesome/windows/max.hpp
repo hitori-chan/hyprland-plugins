@@ -341,6 +341,28 @@ namespace NAwesome::Windows {
             return Q;
         }
 
+        // A client's titlebar drag (xdg move, X11 _NET_WM_MOVERESIZE) on a
+        // plugin-maximized window: the compositor began the drag in the
+        // same emission (its own listener runs first), and the Super-drag
+        // swallow never saw it. awesome's mouse.client.move refuses a
+        // maximized client: end the drag out of the emission (the end
+        // refocuses) and re-assert the box.
+        inline std::unordered_map<const void*, Hyprutils::Signal::CHyprSignalListener>& moveRequestListeners() {
+            static std::unordered_map<const void*, Hyprutils::Signal::CHyprSignalListener> M;
+            return M;
+        }
+        inline CHopQueue<PHLWINDOWREF, 16>& refusedDrags() {
+            static CHopQueue<PHLWINDOWREF, 16> Q([](std::vector<PHLWINDOWREF>& batch) {
+                for (const auto& WR : batch) {
+                    const auto W = WR.lock();
+                    if (W && pluginMaximized(W) && g_layoutManager && g_layoutManager->dragController()->target() == W->layoutTarget())
+                        g_layoutManager->endDragTarget();
+                }
+                queueReflow();
+            });
+            return Q;
+        }
+
         inline void watchClientUnmax(const PHLWINDOW& w) {
             unmaxRequestListeners()[w.get()] = w->backend().m_events.stateRequest.listen([wr = PHLWINDOWREF{w}](const Desktop::View::SBackendStateRequest& req) {
                 if (!req.maximized.has_value() || *req.maximized)
@@ -348,6 +370,10 @@ namespace NAwesome::Windows {
                 const auto W = wr.lock();
                 if (W && pluginMaximized(W))
                     clientUnmaxes().push(wr);
+            });
+            moveRequestListeners()[w.get()] = w->backend().m_events.moveRequest.listen([wr = PHLWINDOWREF{w}]() {
+                if (const auto W = wr.lock(); W && pluginMaximized(W))
+                    refusedDrags().push(wr);
             });
         }
 
@@ -453,7 +479,10 @@ namespace NAwesome::Windows {
                 if (w)
                     watchClientUnmax(w);
             });
-            supervisor().listen(Event::bus()->m_events.window.destroy, [](PHLWINDOWREF wr) { unmaxRequestListeners().erase(wr.get()); });
+            supervisor().listen(Event::bus()->m_events.window.destroy, [](PHLWINDOWREF wr) {
+                unmaxRequestListeners().erase(wr.get());
+                moveRequestListeners().erase(wr.get());
+            });
 
             // A window closed while plugin-maximized: keep its windowed box
             // as the app's remembered size (the window ref itself is about
@@ -521,6 +550,10 @@ namespace NAwesome::Windows {
                 L.reset();
             unmaxRequestListeners().clear();
             clientUnmaxes().reset();
+            refusedDrags().reset();
+            for (auto& [K, L] : moveRequestListeners())
+                L.reset();
+            moveRequestListeners().clear();
         }
     } // namespace Max
 
