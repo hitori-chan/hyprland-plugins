@@ -151,7 +151,9 @@ the plugin's one state file (see State).
     (the plugin makes awesome's "the app activates itself after the
     click" unconditional).
 - **Spawn placement** is per-class: the last free position from the
-  store, else least-overlap for a second window of the same class.
+  store (relative to the monitor it was on, applied on the monitor the
+  window opens on), else least-overlap for a second window of the same
+  class.
   Placement only moves a window: its size is always the client's own
   (the initial configure stays 0x0, so apps restore their own sizes and
   dialogs open at their natural size). The one size the plugin supplies
@@ -474,17 +476,26 @@ mirror it.
 ## State
 
 One file: `$XDG_STATE_HOME/hyprland/plugin/awesome/state.tsv` — typed
-tab-separated rows in fixed order (`spot`, `windowed`, `launches`,
-`history`), one atomic write (temp + rename), every row admitted or
-skipped (a hostile file can never take the session down). The four
-module stores (spawn spots, last-windowed boxes, launcher counts,
-prompt history) live in this one file; modules reach them through the
-core's `StateStore` (the documented cross-module seam). First run
-migrates the old layouts once — the four-file layout (both the current
-and the pre-rename `awesome/` dir) and the ancient `hyprplace` /
-`hyprmax` / `hyprbar` stores — merges key-by-key (newer wins), then
-CONSUMES the sources: the migration is one-time, and the plugin has
-exactly one state file from then on.
+tab-separated rows, the key last:
+
+| row | meaning |
+|---|---|
+| `spot <x> <y> <class>` | where the app's last window closed |
+| `windowed <x> <y> <w> <h> <class>` | its last windowed box: the restore of a window born maximized |
+| `launches <count> <name>` | the launcher's ranking, by .desktop Name |
+| `history <query>` | the prompt history, newest last |
+
+Positions are relative to the origin of the monitor the window was on: a
+spot remembered on one monitor lands at the same place on whichever
+monitor the app opens on next. Each kind is kept oldest-first and bounded
+(1024 keys, 50 queries): at the bound the least recently remembered row
+goes, never a new one. The windows still open when the plugin stops (a
+logout) are recorded as closing. One atomic write (temp + rename); every
+row is admitted or skipped (a hostile file can never take the session
+down); a file that exists but cannot be read blocks every write (a
+notification says so) — the user's memory is never replaced by a session
+that could not see it. Modules reach the stores through the core's
+`StateStore` (the documented cross-module seam).
 
 ## Build and test
 

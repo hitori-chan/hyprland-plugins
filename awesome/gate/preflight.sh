@@ -94,8 +94,3 @@ chk "the monolith loaded (one plugin, named awesome)" \
 dsp "hl.dsp.window.close()" # the donate/updated screen, when present
 sleep 0.5
 chk "launch toast cleared before the batteries" wait_launch_toast
-# The migration ran at this first init: the seeded legacy spot store must
-# have landed in the unified state file, its source CONSUMED (the one-time
-# migration leaves exactly one state file).
-chk "legacy spot store migrated into state.tsv and consumed" \
-	bash -c "grep -q $'\tfoot\$' \"$AW_STATE\" && ! test -e \"$LEG_SPOT\""

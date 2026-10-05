@@ -118,6 +118,15 @@ for _ in $(seq 1 30); do
 done
 chk "teardown: the monolith owns an active wpctl helper" test -s "$STATE/hang-wpctl.pid"
 chk "teardown: the monolith owns an active sound helper" test -s "$STATE/hang-sound.pid"
+# A window still open at the compositor's exit never emits a close the
+# plugin hears: its spot is recorded as the plugin stops, before the final
+# state flush.
+dsp "hl.dsp.exec_cmd('foot -a exitfoot --window-size-pixels=400x300')"
+for _ in $(seq 1 30); do clients | grep -q '"class": *"exitfoot"' && break; sleep 0.1; done
+EF="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='exitfoot'), ''))")"
+dsp "hl.dsp.window.move({x = 140, y = 160, window = \"address:$EF\"})"; sleep 0.5
 NESTED_PID="$(validated_nested_pid 2>/dev/null)"
 chk "teardown: nested compositor pid is known" test -n "$NESTED_PID"
 kill_nested
@@ -131,6 +140,7 @@ else
 	bad "teardown: active helpers do not block compositor exit"
 	[[ -n "$NESTED_PID" ]] && kill -KILL "$NESTED_PID" 2>/dev/null || true
 fi
+chk "teardown: a window open at exit leaves its spot" grep -q "^spot	140	160	exitfoot$" "$AW_STATE"
 battery_end "$BATTERY_NAME"
 cleanup_harness
 print_summary

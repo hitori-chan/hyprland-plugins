@@ -55,7 +55,7 @@ namespace NAwesome::Shell {
 
         // launch counts + prompt history: the core's unified state
         // (core/state.hpp), one shared in-memory copy
-        static NAwesome::CountStore& launchCounts = NAwesome::StateStore::inst().data().launches;
+        static NAwesome::CRecentMap<int>& launchCounts = NAwesome::StateStore::inst().data().launches;
         static NAwesome::ListStore&  history      = NAwesome::StateStore::inst().data().history; // oldest first
         static int                  histSel = -1;       // -1 = editing the live query
         static std::string          histLive;           // the live query parked while walking history
@@ -110,9 +110,8 @@ namespace NAwesome::Shell {
         }
 
         // the launcher's state is the core's unified state file (the
-        // supervisor loads it — and migrates the legacy layouts — before
-        // module inits); this is only the idempotent guard for a lazy
-        // first use.
+        // supervisor loads it before module inits); this is only the
+        // idempotent guard for a lazy first use.
         static void loadFiles() {
             if (filesLoaded)
                 return;
@@ -125,10 +124,8 @@ namespace NAwesome::Shell {
         }
 
         static void historyAdd(const std::string& q) {
-            if (q.empty())
-                return;
-            history.remember(q); // dedup + most-recent-last + the 50 bound
-            NAwesome::StateStore::inst().dirty();
+            if (history.remember(q)) // dedup + most-recent-last + the 50 bound
+                NAwesome::StateStore::inst().dirty();
         }
 
         static std::vector<std::string> desktops; // XDG_CURRENT_DESKTOP entries, for OnlyShowIn/NotShowIn
@@ -318,8 +315,8 @@ namespace NAwesome::Shell {
             const auto weightOf = [&](const std::string& name) -> int {
                 if (Q.empty())
                     return 0; // like awesome: counts only reorder typed queries
-                const auto IT = launchCounts.counts.find(name);
-                return IT == launchCounts.counts.end() ? 0 : IT->second;
+                const int* C = launchCounts.find(name);
+                return C ? *C : 0;
             };
 
             static const std::vector<std::string> LCATS = [] {
@@ -445,7 +442,7 @@ namespace NAwesome::Shell {
             const SApp* APP = S.app >= 0 && S.app < (int)apps.size() ? &apps[S.app] : nullptr;
             if (APP && APP->dbusActivatable && !forceTerminal) {
                 const SApp COPY = *APP;
-                launchCounts.bump(APP->name);
+                NAwesome::bumpCount(launchCounts, APP->name);
                 pendingExec.arm([COPY, hist = typed]() {
                     saveCounts();
                     historyAdd(hist);
@@ -463,7 +460,7 @@ namespace NAwesome::Shell {
             // most-launched sorts first next time (in-memory, immediate); raw
             // Exec one-offs are not counted — they'd grow the file unbounded
             if (APP)
-                launchCounts.bump(APP->name);
+                NAwesome::bumpCount(launchCounts, APP->name);
             // the disk writes ride the deferred hop with the spawn, off the key emission
             pendingExec.arm([cmd, hist = typed]() {
                 saveCounts();
@@ -1039,7 +1036,7 @@ namespace NAwesome::Shell {
             pendingSelectionId.clear();
             parsed = false;
             appScanning = compScanning = false;
-            launchCounts.counts.clear();
+            launchCounts.clear();
             history.entries.clear();
             filesLoaded = false;
             compList.clear();

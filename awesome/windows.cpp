@@ -162,6 +162,10 @@ namespace NAwesome::Windows {
         Tasklist::exit();
     }
 
+    void CModule::persist() {
+        Place::rememberOpen();
+    }
+
     // ---- the pipeline (max swallow -> snap commit -> click policy) ----
 
     void CModule::onPointerButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
