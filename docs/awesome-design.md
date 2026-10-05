@@ -73,7 +73,10 @@ atomics; ordering is program order plus the hop queue.
   armed zone and bail (invariant 7); native input-capture/seat grab
   active → pass through; native hit-test (layer surfaces, popups, IME)
   → pass through. Then the handler chain `shell → notify → windows`
-  with consume/pass semantics. The chain is a table in one file.
+  with consume/pass semantics. The chain is a table in one file. A
+  claimed MOVE still reaches the later modules (with the claim set) so
+  they let go of hover and pointer ownership: motion is state, not an
+  action.
 - **Canvas** — per-monitor scene. Modules contribute layers (bar
   strip, menus, card stack, shade, OSD cards, snap indicator) with
   stable geometry, at an explicit level (`eLayerZ`: bar, cards, snap,
