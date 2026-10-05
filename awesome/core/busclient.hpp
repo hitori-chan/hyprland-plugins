@@ -85,14 +85,16 @@ namespace NAwesome {
         // hop keeps that work on the event loop, after the emission/frame has
         // returned. A bounded drain prevents a repeat storm from monopolising
         // the loop; remaining sends continue on the next idle turn.
-        void post(std::function<void()> fn) {
+        // true when queued: a caller batching its own sends retries a refused one
+        bool post(std::function<void()> fn) {
             if (!m_conn || m_tearingDown || !fn || tearingDown())
-                return;
+                return false;
             if (m_posts.size() >= MAX_POSTS)
-                return; // input/render sends are best effort under overload
+                return false; // input/render sends are best effort under overload
             m_posts.emplace_back(std::move(fn));
             if (!m_pendingPosts.armed())
                 m_pendingPosts.arm([this]() { drainPosts(); });
+            return true;
         }
 
         // Drain, then hand sd-bus's own poll needs to the event loop: fd

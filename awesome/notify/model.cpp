@@ -292,8 +292,10 @@ namespace NAwesome::Notify {
                 if (N->banner && N->timeoutMs > 0)
                     N->deadline = NOW + std::chrono::milliseconds((int64_t)N->timeoutMs);
             }
-            if (changed)
+            if (changed) {
                 notifChanged();
+                rearmExpiry(); // the timer may have disarmed while they were parked
+            }
         }
 
         void toggleSuspend() {
@@ -861,7 +863,9 @@ namespace NAwesome::Notify {
             // Ordering and merging only — no per-app casing.
             n->conversation = CONVERSATION;
 
-            if (expireTimeout > 0)
+            if (n->urgency >= 2) // critical never expires on its own (spec; README)
+                n->timeoutMs = 0;
+            else if (expireTimeout > 0)
                 n->timeoutMs = expireTimeout;
             else if (expireTimeout == 0)
                 n->timeoutMs = 0;
@@ -890,11 +894,13 @@ namespace NAwesome::Notify {
             // libcanberra player unless the client suppresses it. DND-queued
             // (waiting) arrivals stay silent; the resume doesn't replay.
             if (!n->waiting) {
-                bool        suppress = COALESCED; // a coalesced arrival announces itself neither
+                // a coalesced arrival announces itself neither; the hint can
+                // only add silence, never lift ours
+                bool        suppress = COALESCED;
                 std::string soundFile, soundName;
                 if (const auto IT = hints.find("suppress-sound"); IT != hints.end())
                     try {
-                        suppress = IT->second.get<bool>();
+                        suppress = suppress || IT->second.get<bool>();
                     } catch (...) {}
                 if (const auto IT = hints.find("sound-file"); IT != hints.end())
                     try {
@@ -941,9 +947,12 @@ namespace NAwesome::Notify {
                             gone.push_back(N->id);
                             continue;
                         }
+                        // into the shade: it still exists (we advertise
+                        // persistence), so no NotificationClosed — libnotify
+                        // and GLib forget a closed id, and its actions in the
+                        // shade then reached nobody
                         N->banner = false;
-                        Bus::emitClosed(N->id, R_EXPIRED);
-                        changed = true;
+                        changed   = true;
                     }
                     for (const auto ID : gone) {
                         std::erase_if(notifs, [&](const auto& N) { return N->id == ID; });
