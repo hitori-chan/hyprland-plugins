@@ -16,6 +16,7 @@
 #include "core/queries.hpp"
 
 #include <hyprland/src/desktop/state/FocusState.hpp>
+#include <hyprland/src/desktop/view/window/WindowGroupMembership.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/layout/LayoutManager.hpp>
@@ -142,6 +143,10 @@ namespace NAwesome::Windows::Tasklist {
     inline void minimize(const PHLWINDOW& w) {
         if (!w || !w->mapped() || w->isHidden())
             return; // already hidden — minimized, or swallowed
+        // a group member's layout target is the group's: hiding one member
+        // would pull the whole group's slot
+        if (w->grouping().group())
+            return;
         prune(); // a stale entry of this very window must not double up
         // Only the focused window pulls focus to a neighbor on hide; an app
         // minimizing a BACKGROUND window (its own set_minimized) must not

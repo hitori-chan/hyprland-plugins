@@ -277,6 +277,14 @@ namespace NAwesome::Windows {
                 return;
             }
 
+            // A floating group lays out from the group's own target: the
+            // member's box is ignored, and the client would be told a
+            // maximize nobody sees. (A plugin entry cannot exist for it:
+            // the restore branch below still runs for one that predates
+            // the grouping.)
+            if (W->grouping().group() && !pluginMaximized(W))
+                return;
+
             // X11 has no maximize hint on this path; geometry alone.
             const auto setClientMaximized = [&W](bool m) {
                 if (auto TOP = xdgToplevel(W))
