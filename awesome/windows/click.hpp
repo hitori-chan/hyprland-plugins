@@ -309,7 +309,7 @@ namespace NAwesome::Windows {
         inline void focusPrevHere() {
             const auto FOCUS = Desktop::focusState()->window();
             const auto MON   = Desktop::focusState()->monitor();
-            const auto WS    = MON ? MON->m_activeWorkspace : nullptr;
+            const auto WS    = shownWorkspace(MON);
             if (!WS)
                 return;
 
@@ -334,7 +334,7 @@ namespace NAwesome::Windows {
         // between the two newest raises.
         inline void focusByIdx(bool next) {
             const auto MON = Desktop::focusState()->monitor();
-            const auto WS  = MON ? MON->m_activeWorkspace : nullptr;
+            const auto WS  = shownWorkspace(MON);
             if (!WS)
                 return;
 

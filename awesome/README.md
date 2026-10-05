@@ -108,7 +108,9 @@ the plugin's one state file (see State).
   left fullscreen, preventing click-through to the window below.
   `focus_next`/`focus_prev` cycle stable arrival order (not the
   z-order that click-to-raise keeps changing); `focus_prev_here`
-  toggles the two most recent windows on the current workspace.
+  toggles the two most recent windows on the current workspace. Both,
+  and the snap magnet, work on an open special workspace when one covers
+  the regular one.
 - **Focus semantics (attention-first, the shipped default)**: the
   mechanism is awesome's `permissions.activate` (source-verified), and
   the shipped default picks the Windows foreground model — a background
