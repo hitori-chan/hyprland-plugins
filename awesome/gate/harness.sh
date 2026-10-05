@@ -550,31 +550,21 @@ cleanup_harness_core() {
 
 # ---- the monolith's harness state ------------------------------------------
 #
-# The plugin's single persistent state file (core/state.hpp): one typed
-# file, one load, one save path. The legacy sources it migrates — and
-# CONSUMES — from are seeded by fresh_stress_state, so every full run
-# exercises the one-time migration.
+# The plugin's single persistent state file (core/state.hpp). The stress
+# state seeds one remembered spot, so the first spawn of the batteries
+# proves the load: foot's spot is (100,100).
 AWSTATE="$STATE/hyprland/plugin/awesome"
 AW_STATE="$AWSTATE/state.tsv"
-LEG_SPOT="$STATE/hyprplace/lastspot.tsv"
-LEG_WINDOWED="$STATE/hyprmax/windowed.tsv"
-LEG_MENUBAR_COUNT="$STATE/cache/hyprbar/menu_count_file"
-LEG_MENUBAR_HIST="$STATE/cache/hyprbar/history_menu"
 
-# The default stress state seeds the ANCIENT legacy store: the monolith's
-# first init migrates it into $AW_STATE (and consumes the source), and the
-# placement batteries read the unified file afterwards. (The "exactly one
-# foot row" check reads the spot rows of $AW_STATE, where the migration
-# consolidated the legacy rows.)
 fresh_stress_state() {
 	rm -rf -- "$STATE"
-	mkdir -p "$(dirname "$LEG_SPOT")" "$(dirname "$LEG_WINDOWED")" "$(dirname "$LEG_MENUBAR_COUNT")" "$STATE/config"
+	mkdir -p "$AWSTATE" "$STATE/config"
 	# The nested session's own config home: real apps run in it (Thunar,
 	# GTK pickers, Firefox) and wrote their window sizes into the user's
 	# xfconf/dconf (2026-10-04). Fonts stay the user's: text metrics are
 	# part of what the batteries measure.
 	[[ -d "${XDG_CONFIG_HOME:-$HOME/.config}/fontconfig" ]] && ln -s "${XDG_CONFIG_HOME:-$HOME/.config}/fontconfig" "$STATE/config/fontconfig"
-	printf '100\t100\t500\t400\tfoot\n200\t80\tlegacyfoot\n' > "$LEG_SPOT"
+	printf 'spot\t100\t100\tfoot\n' > "$AW_STATE"
 }
 
 # The exit trap's name. (The core teardown is called by its own name — a
@@ -593,6 +583,6 @@ write_stress_cfg() {
 		echo 'hl.permission(".*vkbd$", "keyboard", "allow")'
 		echo 'hl.permission(".*grim$", "screencopy", "allow")'
 		awk '{ print } /misc = \{/ { print "\t\tdisable_watchdog_warning = 1," }' "$GATE_DIR/nested.lua"
-		echo 'hl.window_rule({ match = { class = "foot|mpv|corpseA|corpseB|tuckmax|tuckfloat|tuckfs|csdfollow|csdfall|csdmem|csdsmall" }, float = true })'
+		echo 'hl.window_rule({ match = { class = "foot|mpv|corpseA|corpseB|tuckmax|tuckfloat|tuckfs|csdfollow|csdfall|csdmem|csdsmall|exitfoot" }, float = true })'
 	} > "$CFG"
 }
