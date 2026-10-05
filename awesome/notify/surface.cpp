@@ -25,6 +25,29 @@ namespace NAwesome::Notify {
         return Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr;
     }
 
+    // The monitor the cards live on: chosen where a damage of the old and
+    // new spots follows (the first card's arrival, a deliberate focus move,
+    // the shade opened from a monitor's bell — placeCardsOn) and reused by
+    // every other warm. Re-reading the focus in each warm let a bar warm
+    // (the pointer crossing monitors) move the hit boxes with no repaint:
+    // the old monitor kept a card that no longer took clicks, the new one
+    // took clicks on cards it never drew.
+    static PHLMONITORREF layoutMon;
+
+    static PHLMONITOR layoutMonitor() {
+        if (const auto M = layoutMon.lock(); M && M->m_enabled)
+            return M;
+        layoutMon = focusedMon(); // first arrival, or its monitor went away
+        return layoutMon.lock();
+    }
+
+    void placeCardsOn(PHLMONITOR mon) {
+        if (!mon || layoutMon.lock() == mon)
+            return;
+        layoutMon = mon;
+        notifChanged(); // warms there and damages the old and new spots
+    }
+
     // Residency keeps quiet cards in the model with NOTHING on screen: only
     // the open center or a live banner actually draws. Everything frame-rate
     // gates on this — the pass element, the scanout inhibit, the age tick —
@@ -131,13 +154,15 @@ namespace NAwesome::Notify {
         const bool BRACKET = !NAwesome::Canvas::inst().gate().inPass;
         if (BRACKET && !NAwesome::Canvas::inst().gate().beginWarm())
             return;
-        const auto MON = anythingToDraw() ? focusedMon() : nullptr;
+        const auto MON = anythingToDraw() ? layoutMonitor() : nullptr;
         decodeWarmBegin();
         if (!MON) {
             // no content — or no monitor (disconnect transition): stale boxes
-            // must not linger to swallow clicks over nothing
+            // must not linger to swallow clicks over nothing; the next card
+            // arrives on the focused monitor
             cards.clear();
             lastContentH = 0;
+            layoutMon.reset();
         } else {
             textCacheTick();
             SPaint P;
@@ -175,7 +200,7 @@ namespace NAwesome::Notify {
             // Full-monitor (not the card box) so it can't be occlusion-culled
             // behind the fullscreen surface; a no-op cost when the monitor
             // isn't latched.
-            if (const auto MON = focusedMon(); MON && g_pHyprRenderer && (MON->m_directScanoutIsActive || !MON->m_solitaryClient.expired()))
+            if (const auto MON = cardsMon.lock(); MON && g_pHyprRenderer && (MON->m_directScanoutIsActive || !MON->m_solitaryClient.expired()))
                 if (anythingToDraw())
                     g_pHyprRenderer->damageMonitor(MON);
         });
@@ -195,11 +220,11 @@ namespace NAwesome::Notify {
         }
 
         // The canvas bracket is already open here (its warmAll owns it).
-        // The cards lay out on the focused monitor only: warm once, for it —
-        // a warm per monitor re-ran the whole stack's layout N times.
+        // The cards lay out on their one monitor: warm once, for it — a warm
+        // per monitor re-ran the whole stack's layout N times.
         void warm(PHLMONITOR mon) override {
-            const auto FOCUS = focusedMon();
-            if (!FOCUS || mon == FOCUS)
+            const auto ON = anythingToDraw() ? layoutMonitor() : nullptr;
+            if (!ON || mon == ON)
                 warmNotifs();
         }
 
@@ -286,6 +311,7 @@ namespace NAwesome::Notify {
         }
         cards.clear();
         cardsMon.reset();
+        layoutMon.reset();
         textCacheClear();
         lastContentH = 0;
         lastContentW = 0;
