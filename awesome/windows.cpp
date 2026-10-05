@@ -64,6 +64,7 @@ namespace NAwesome::Windows {
         supervisor().listen(Event::bus()->m_events.window.open, [](PHLWINDOW w) {
             if (!w)
                 return;
+            Tasklist::onMap(w);
             Tasklist::watchMinimize(w);
         });
         // Focus landed on a minimized (hidden) window — the compositor's
@@ -129,12 +130,14 @@ namespace NAwesome::Windows {
         // Windows mapped before the plugin loaded (a runtime hyprpm reload)
         // get what window.open would have given them: the minimize and
         // client-unmaximize watches and an arrival number (their current Z
-        // order — the best order left). Placement is not redone.
+        // order — the best order left), and a plugin maximize the previous
+        // instance left is adopted. Placement is not redone.
         for (const auto& W : Desktop::windowState()->windows()) {
             if (!W || !W->mapped())
                 continue;
             Tasklist::watchMinimize(W);
             watchClientUnmax(W);
+            adoptOnLoad(W);
             winOrder().seqOf(W.get());
         }
 

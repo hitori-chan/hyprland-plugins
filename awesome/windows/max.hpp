@@ -277,6 +277,14 @@ namespace NAwesome::Windows {
                 return;
             }
 
+            // A floating group lays out from the group's own target: the
+            // member's box is ignored, and the client would be told a
+            // maximize nobody sees. (A plugin entry cannot exist for it:
+            // the restore branch below still runs for one that predates
+            // the grouping.)
+            if (W->grouping().group() && !pluginMaximized(W))
+                return;
+
             // X11 has no maximize hint on this path; geometry alone.
             const auto setClientMaximized = [&W](bool m) {
                 if (auto TOP = xdgToplevel(W))
@@ -341,6 +349,28 @@ namespace NAwesome::Windows {
             return Q;
         }
 
+        // A client's titlebar drag (xdg move, X11 _NET_WM_MOVERESIZE) on a
+        // plugin-maximized window: the compositor began the drag in the
+        // same emission (its own listener runs first), and the Super-drag
+        // swallow never saw it. awesome's mouse.client.move refuses a
+        // maximized client: end the drag out of the emission (the end
+        // refocuses) and re-assert the box.
+        inline std::unordered_map<const void*, Hyprutils::Signal::CHyprSignalListener>& moveRequestListeners() {
+            static std::unordered_map<const void*, Hyprutils::Signal::CHyprSignalListener> M;
+            return M;
+        }
+        inline CHopQueue<PHLWINDOWREF, 16>& refusedDrags() {
+            static CHopQueue<PHLWINDOWREF, 16> Q([](std::vector<PHLWINDOWREF>& batch) {
+                for (const auto& WR : batch) {
+                    const auto W = WR.lock();
+                    if (W && pluginMaximized(W) && g_layoutManager && g_layoutManager->dragController()->target() == W->layoutTarget())
+                        g_layoutManager->endDragTarget();
+                }
+                queueReflow();
+            });
+            return Q;
+        }
+
         inline void watchClientUnmax(const PHLWINDOW& w) {
             unmaxRequestListeners()[w.get()] = w->backend().m_events.stateRequest.listen([wr = PHLWINDOWREF{w}](const Desktop::View::SBackendStateRequest& req) {
                 if (!req.maximized.has_value() || *req.maximized)
@@ -349,6 +379,39 @@ namespace NAwesome::Windows {
                 if (W && pluginMaximized(W))
                     clientUnmaxes().push(wr);
             });
+            moveRequestListeners()[w.get()] = w->backend().m_events.moveRequest.listen([wr = PHLWINDOWREF{w}]() {
+                if (const auto W = wr.lock(); W && pluginMaximized(W))
+                    refusedDrags().push(wr);
+            });
+        }
+
+        // A plugin-maximized window outlives a reload (or disable/enable)
+        // at the workarea box, told maximized, which the fresh plugin does
+        // not know: the next Mod+M would "maximize" it again and save the
+        // workarea as its windowed box, and its own unmaximize button would
+        // be dropped. Adopt it, restoring to the app's remembered windowed
+        // box (or the client's own size).
+        inline void adoptOnLoad(const PHLWINDOW& w) {
+            if (!w || !w->mapped() || !w->isFloating() || !w->windowTarget() || pluginMaximized(w))
+                return;
+            if (Fullscreen::controller()->getFullscreenModes(w).internal != Fullscreen::FSMODE_NONE)
+                return; // a compositor mode: the open/commit adoption's case
+            const auto MON = w->m_monitor.lock();
+            if (!MON)
+                return;
+            const auto CUR = w->windowTarget()->position();
+            const auto WA  = MON->logicalBoxMinusReserved();
+            if (CUR.x > WA.x || CUR.y > WA.y || CUR.x + CUR.w < WA.x + WA.w || CUR.y + CUR.h < WA.y + WA.h)
+                return;
+            // an xdg client must have been TOLD maximized: a float that is
+            // merely sized to the workarea keeps being one (X11 clients are
+            // never told; the box is all there is)
+            if (const auto TOP = xdgToplevel(w); TOP && std::ranges::find(TOP->m_pendingApply.states, XDG_TOPLEVEL_STATE_MAXIMIZED) == TOP->m_pendingApply.states.end())
+                return;
+            CBox restore{};
+            if (const auto B = windowedOn(w->metadata().appID(), MON))
+                restore = boundedRestore(w, *B, WA);
+            maximized()[PHLWINDOWREF{w}] = restore;
         }
 
         // queue+drain, never a lone doLaterLock: two toggles can arm in one
@@ -424,7 +487,10 @@ namespace NAwesome::Windows {
                 if (w)
                     watchClientUnmax(w);
             });
-            supervisor().listen(Event::bus()->m_events.window.destroy, [](PHLWINDOWREF wr) { unmaxRequestListeners().erase(wr.get()); });
+            supervisor().listen(Event::bus()->m_events.window.destroy, [](PHLWINDOWREF wr) {
+                unmaxRequestListeners().erase(wr.get());
+                moveRequestListeners().erase(wr.get());
+            });
 
             // A window closed while plugin-maximized: keep its windowed box
             // as the app's remembered size (the window ref itself is about
@@ -492,6 +558,10 @@ namespace NAwesome::Windows {
                 L.reset();
             unmaxRequestListeners().clear();
             clientUnmaxes().reset();
+            refusedDrags().reset();
+            for (auto& [K, L] : moveRequestListeners())
+                L.reset();
+            moveRequestListeners().clear();
         }
     } // namespace Max
 

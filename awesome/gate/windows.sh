@@ -424,11 +424,22 @@ chk "10 maximize toggles round-trip losslessly" test "$(box)" = "$REF"
 for i in $(seq 1 5); do dsp "hl.plugin.awesome.minimize()"; dsp "hl.plugin.awesome.restore()"; done; sleep 1
 chk "5 minimize/restore cycles round-trip" test "$(box)" = "$REF"
 
-# the churn probe's foot stays open: close it so the battery leaves the
-# desktop clean
+# Mod+U's jump (urgent_or_last: here the last window, the foot on 1)
+# switches the view to the window's workspace through the exact-window
+# focus AND announces it (the workspace history, IPC bars): `workspace
+# previous` returns to where the view was. That focus once switched
+# silently and `previous` went nowhere. (A plain focus-window dispatch
+# switches the workspace itself first: it never took that path.)
 FF="$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), ''))")"
+dsp "hl.dsp.focus({workspace=\"2\"})"; sleep 0.4
+dsp "hl.dsp.focus({urgent_or_last=true})"; sleep 0.4
+chk "Mod+U jumps to the last window's workspace" test "$(ws)" = 1
+dsp "hl.dsp.focus({workspace=\"previous\"})"; sleep 0.4
+chk "that jump was announced: workspace previous returns to 2" test "$(ws)" = 2
+dsp "hl.dsp.focus({workspace=\"1\"})"; sleep 0.4
+
 [[ -n "$FF" ]] && dsp "hl.dsp.window.close({window=\"address:$FF\"})"; sleep 0.5
 chk "windows: its foot is closed at the battery's end" \
 	test "$(pyc "sum(1 for c in cs if c['class']=='foot')")" = 0
