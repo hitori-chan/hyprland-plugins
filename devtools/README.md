@@ -29,6 +29,15 @@ make -C devtools HL=/path/to/Hyprland
   plus the per-axis-pin, resizable-CSD, transient-parent, configure-
   following and client-unmaximize (the CSD titlebar restore button)
   variants the windows battery drives against placement and maximize.
+  With `SPLASHWIN_POINTER_LOG=<path>` it appends `at X Y` (surface-local,
+  margin included) on every pointer enter and motion: where a click
+  lands in the client's own frame.
+- `gtkgrid.py LOG [wayland|x11] [WAYLAND-TRACE]` is a real GTK3 client
+  (PyGObject) as a render-vs-input oracle: a floating CSD window of solid
+  color blocks and a menu button whose GtkMenu is an xdg_popup of colored
+  items; every press logs what GTK hit (`HIT <color>`, `MENU <color>`).
+  `findcolors.py PNG NAME=R,G,B...` finds where each color is drawn in a
+  capture, so a click on what is drawn must name the same block.
 - `focustrap <map|attention|activate> [delay-s] [hold-s]` is the X11
   fixture: it maps a toplevel, waits, sends one unauthenticated EWMH
   ping — `_NET_ACTIVE_WINDOW` (activate) or
