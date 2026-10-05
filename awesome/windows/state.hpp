@@ -111,8 +111,12 @@ namespace NAwesome::Windows::Tasklist {
         return M;
     }
 
+    // Minimized = in the stack AND still hidden: the compositor un-hides
+    // windows on paths the plugin does not own (a floating X11 window's
+    // configure request, a layout switch, setprop min/max size), and a
+    // window on screen is not minimized whatever the stack remembers.
     inline bool isMinimized(const PHLWINDOW& w) {
-        if (!w)
+        if (!w || !w->isHidden())
             return false;
         for (const auto& M : minStack())
             if (M.key == w.get())
@@ -120,9 +124,25 @@ namespace NAwesome::Windows::Tasklist {
         return false;
     }
 
+    // Drop the entries of windows the compositor showed again; a tiled one
+    // gets back the layout slot its minimize removed.
+    inline void prune() {
+        std::erase_if(minStack(), [](const SMinimized& m) {
+            const auto W = m.w.lock();
+            if (!W)
+                return true;
+            if (W->isHidden())
+                return false;
+            if (m.tiled && W->mapped() && g_layoutManager && W->m_workspace && !W->layoutTarget()->space())
+                g_layoutManager->newTarget(W->layoutTarget(), W->m_workspace->space());
+            return true;
+        });
+    }
+
     inline void minimize(const PHLWINDOW& w) {
         if (!w || !w->mapped() || w->isHidden())
             return; // already hidden — minimized, or swallowed
+        prune(); // a stale entry of this very window must not double up
         // Only the focused window pulls focus to a neighbor on hide; an app
         // minimizing a BACKGROUND window (its own set_minimized) must not
         // yank focus from wherever it currently sits.
@@ -201,6 +221,14 @@ namespace NAwesome::Windows::Tasklist {
             }
         if (!found || !w->mapped())
             return;
+        if (!w->isHidden()) {
+            // the compositor showed it already (see isMinimized): the
+            // entry was stale, and a re-slot would add a second target
+            raiseAndFocus(w);
+            if (taskChangedHook())
+                taskChangedHook()();
+            return;
+        }
         w->setHidden(false);
         if (tiled && g_layoutManager && w->m_workspace)
             g_layoutManager->newTarget(w->layoutTarget(), w->m_workspace->space());
@@ -260,6 +288,7 @@ namespace NAwesome::Windows::Tasklist {
     inline void restoreLast() {
         // awful.client.restore: the most-recently minimized window whose tag
         // is currently viewed (isVisible), so it returns where you are.
+        prune();
         auto& S = minStack();
         for (size_t i = S.size(); i-- > 0;) {
             const auto W = S[i].w.lock();
@@ -277,7 +306,39 @@ namespace NAwesome::Windows::Tasklist {
         std::erase_if(S, [w](const SMinimized& m) { return m.key == w || m.w.expired(); });
     }
 
+    // An X11 window unmapped and mapped again keeps its window object —
+    // and the hidden flag its minimize set, which the map never clears: an
+    // app hiding to its tray and shown from there remapped invisible. A map
+    // is a fresh window: never minimized.
+    inline void onMap(const PHLWINDOW& w) {
+        auto& S = minStack();
+        const auto IT = std::ranges::find_if(S, [&](const SMinimized& m) { return m.key == w.get(); });
+        if (IT == S.end())
+            return;
+        S.erase(IT);
+        w->setHidden(false);
+        if (taskChangedHook())
+            taskChangedHook()();
+    }
+
     inline void exit() {
+        // An unload that is not the compositor's own shutdown (a reload, a
+        // disable) must not strand what only this plugin knew was
+        // minimized: hidden, out of the layout, and gone from the strip.
+        // Show them again (the held fullscreen modes are not re-entered:
+        // nothing would focus them).
+        if (!compositorShuttingDown()) {
+            for (const auto& M : minStack()) {
+                const auto W = M.w.lock();
+                if (!W || !W->mapped() || !W->isHidden())
+                    continue;
+                W->setHidden(false);
+                if (M.tiled && g_layoutManager && W->m_workspace && !W->layoutTarget()->space())
+                    g_layoutManager->newTarget(W->layoutTarget(), W->m_workspace->space());
+                if (g_pHyprRenderer)
+                    g_pHyprRenderer->damageWindow(W, true);
+            }
+        }
         winOrder().clear();
         minStack().clear();
         minReqs().reset();

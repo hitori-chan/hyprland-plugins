@@ -96,7 +96,10 @@ the plugin's one state file (see State).
   change (a window that grows under a still cursor takes the next click). `Mod+click` drags are swallowed
   while maximized so the raise policy never fights the drag. Windowed
   geometry is restored from the store, constrained by the current
-  workarea and the client's size hints.
+  workarea and the client's size hints. A plugin reload keeps minimize
+  and maximize: minimized windows are shown again as the plugin stops
+  (nothing else would know to), and the next instance adopts the windows
+  still told maximized.
 - **Click policy**: a plain left click raises the target; clicking a
   maximized window tucks fullscreen-flagged floaters without rewriting
   z-order. Keyboard focus raises, pointer hover does not. A short-lived

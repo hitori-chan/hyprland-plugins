@@ -351,6 +351,35 @@ namespace NAwesome::Windows {
             });
         }
 
+        // A plugin-maximized window outlives a reload (or disable/enable)
+        // at the workarea box, told maximized, which the fresh plugin does
+        // not know: the next Mod+M would "maximize" it again and save the
+        // workarea as its windowed box, and its own unmaximize button would
+        // be dropped. Adopt it, restoring to the app's remembered windowed
+        // box (or the client's own size).
+        inline void adoptOnLoad(const PHLWINDOW& w) {
+            if (!w || !w->mapped() || !w->isFloating() || !w->windowTarget() || pluginMaximized(w))
+                return;
+            if (Fullscreen::controller()->getFullscreenModes(w).internal != Fullscreen::FSMODE_NONE)
+                return; // a compositor mode: the open/commit adoption's case
+            const auto MON = w->m_monitor.lock();
+            if (!MON)
+                return;
+            const auto CUR = w->windowTarget()->position();
+            const auto WA  = MON->logicalBoxMinusReserved();
+            if (CUR.x > WA.x || CUR.y > WA.y || CUR.x + CUR.w < WA.x + WA.w || CUR.y + CUR.h < WA.y + WA.h)
+                return;
+            // an xdg client must have been TOLD maximized: a float that is
+            // merely sized to the workarea keeps being one (X11 clients are
+            // never told; the box is all there is)
+            if (const auto TOP = xdgToplevel(w); TOP && std::ranges::find(TOP->m_pendingApply.states, XDG_TOPLEVEL_STATE_MAXIMIZED) == TOP->m_pendingApply.states.end())
+                return;
+            CBox restore{};
+            if (const auto B = windowedOn(w->metadata().appID(), MON))
+                restore = boundedRestore(w, *B, WA);
+            maximized()[PHLWINDOWREF{w}] = restore;
+        }
+
         // queue+drain, never a lone doLaterLock: two toggles can arm in one
         // dispatch (scripted binds, event backlog) and overwriting the lock
         // cancels the unfired one
