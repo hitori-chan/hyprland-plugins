@@ -150,8 +150,11 @@ namespace NAwesome::System {
         }
 
         // ±5% of max, linear, floored at 2 raw (the old brightnessctl -n2)
-        const int STEP = std::max(1, (int)std::lround(backlightMax * 0.05));
-        raw            = std::clamp(raw + dir * STEP, 2, backlightMax);
+        // — a floor never above the panel's own max (a 0..1 panel), and a
+        // step down never raises a panel already under the floor
+        const int STEP  = std::max(1, (int)std::lround(backlightMax * 0.05));
+        const int FLOOR = std::min({2, backlightMax, dir < 0 ? raw : 2});
+        raw             = std::clamp(raw + dir * STEP, FLOOR, backlightMax);
 
         const int PCT = (int)std::lround(100.0 * raw / backlightMax);
         try {
