@@ -3,6 +3,7 @@
 *.tmp
 .build/
 .build-gate/
+.build-test/
 
 # local agent files (the tracked contract is AGENTS.md at the root)
 CLAUDE.md

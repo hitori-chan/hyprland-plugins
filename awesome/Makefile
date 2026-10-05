@@ -73,10 +73,22 @@ $(OBJDIR):
 
 -include $(shell find $(OBJDIR) -name '*.d' 2>/dev/null)
 
-# the headless unit harness (pure core; no fork headers, no compositor)
-test:
-	g++ -std=c++26 -Wall -I.. -I. test/main.cpp test/test_bounded.cpp test/test_box.cpp test/test_store.cpp test/test_schema.cpp test/test_wpctl.cpp test/test_desktop_exec.cpp test/test_proc.cpp test/stubs.cpp core/bounded.hpp core/store.cpp core/state.cpp core/schema.cpp -o .build/test
-	.build/test
+# the headless unit harness (pure core; no fork headers, no compositor),
+# incremental: its own objects, its own dir
+TEST_SRCS := $(wildcard test/*.cpp) core/store.cpp core/state.cpp core/schema.cpp
+TEST_OBJS := $(patsubst %.cpp,.build-test/%.o,$(TEST_SRCS))
+
+.build-test/%.o: %.cpp Makefile
+	@mkdir -p $(dir $@)
+	$(CXX) -std=c++26 -Wall -MMD -MP -I.. -I. -c $< -o $@
+
+.build-test/awesome-test: $(TEST_OBJS)
+	$(CXX) $(TEST_OBJS) -o $@
+
+test: .build-test/awesome-test
+	.build-test/awesome-test
+
+-include $(shell find .build-test -name '*.d' 2>/dev/null)
 
 # the gate's preflight resolves the header root through this
 print-hl-cflags:
@@ -92,6 +104,6 @@ gate:
 	env PKG_CONFIG_PATH="$(GATE_PKG_CONFIG_PATH)" bash gate/gate.sh $(ARGS)
 
 clean:
-	rm -rf .build .build-gate $(NAME).so $(NAME)-gate.so
+	rm -rf .build .build-gate .build-test $(NAME).so $(NAME)-gate.so
 
 .PHONY: all test gate clean print-hl-cflags FORCE
