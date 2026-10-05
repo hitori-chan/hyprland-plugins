@@ -74,7 +74,10 @@ namespace NAwesome {
         virtual void        teardown() = 0;
 
         // The pipeline, in registration order. Setting info.cancelled
-        // consumes the event for everything after.
+        // consumes the event for everything after — except a MOVE: motion is
+        // state, not an action, so the later modules still hear it with
+        // info.cancelled set, and must only let go of what they held (hover,
+        // pointer ownership), never act on it.
         virtual void onPointerButton(const IPointer::SButtonEvent&, Event::SCallbackInfo&) {}
         virtual void onPointerMove(const Vector2D&, Event::SCallbackInfo&) {}
         virtual void onPointerAxis(const IPointer::SAxisEvent&, Event::SCallbackInfo&) {}
@@ -188,8 +191,20 @@ namespace NAwesome {
         void dispatchButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
             dispatch(info, "button", e.button, e.state, [&](IModule* M) { M->onPointerButton(e, info); });
         }
+        // Every module hears a move, claimed or not: the cards under a
+        // pointer that slid onto the bar once never heard it leave (their ✕
+        // stayed up, their timeout stayed paused) because the bar's claim
+        // ended the dispatch.
         void dispatchMove(const Vector2D& pos, Event::SCallbackInfo& info) {
-            dispatch(info, nullptr, 0, 0, [&](IModule* M) { M->onPointerMove(pos, info); });
+            if (info.cancelled)
+                return; // claimed before the plugin saw it
+            if (sessionLocked() || nativeInputCaptureActive()) {
+                for (auto* M : m_modules)
+                    M->onInputBlocked();
+                return;
+            }
+            for (auto* M : m_modules)
+                M->onPointerMove(pos, info);
         }
         void dispatchAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
             dispatch(info, "axis", (uint32_t)e.axis, (uint32_t)std::lround(e.delta), [&](IModule* M) { M->onPointerAxis(e, info); });

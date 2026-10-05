@@ -168,7 +168,9 @@ namespace NAwesome::Windows {
         Click::onPointerButton(e, info);
     }
 
-    void CModule::onPointerMove(const Vector2D&, Event::SCallbackInfo&) {
+    void CModule::onPointerMove(const Vector2D&, Event::SCallbackInfo& info) {
+        if (info.cancelled) // an earlier module owns this point
+            return;
         Snap::onMouseMove();
     }
 
