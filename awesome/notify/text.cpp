@@ -396,22 +396,34 @@ namespace NAwesome::Notify {
             return nullptr;
         }
 
-        // probe the laid-out layout for each link's hit rect (physical px)
-        if (outLinks && !linkSpans.empty())
-            for (const auto& L : linkSpans) {
-                if (L.len <= 0)
-                    continue;
-                PangoRectangle a, b;
-                pango_layout_index_to_pos(layout, L.start, &a);
-                pango_layout_index_to_pos(layout, L.start + L.len, &b);
-                const double X0 = a.x / (double)PANGO_SCALE, Y0 = a.y / (double)PANGO_SCALE;
-                double       x1 = b.x / (double)PANGO_SCALE, h = a.height / (double)PANGO_SCALE;
-                if (b.y != a.y) { // the link wrapped a line: cover to the right edge and down
-                    x1 = (double)W;
-                    h  = (b.y + b.height) / (double)PANGO_SCALE - Y0;
+        // probe the laid-out layout for each link's hit rects (physical px):
+        // one per line the link's text actually occupies, from pango's own
+        // visual ranges (layout-relative, alignment and bidi included). One
+        // box from the link's start to its end once spanned the wrong area
+        // when the link wrapped: the text after it on the first line opened
+        // it, its own second-line part did not.
+        if (outLinks && !linkSpans.empty()) {
+            PangoLayoutIter* IT = pango_layout_get_iter(layout);
+            do {
+                const PangoLayoutLine* LINE = pango_layout_iter_get_line_readonly(IT);
+                const int              LS = LINE->start_index, LE = LS + LINE->length;
+                PangoRectangle         lineRect;
+                pango_layout_iter_get_line_extents(IT, nullptr, &lineRect);
+                for (const auto& L : linkSpans) {
+                    const int S = std::max(L.start, LS), E = std::min(L.start + L.len, LE);
+                    if (L.len <= 0 || S >= E)
+                        continue;
+                    int* ranges = nullptr;
+                    int  n      = 0;
+                    pango_layout_line_get_x_ranges(const_cast<PangoLayoutLine*>(LINE), S, E, &ranges, &n);
+                    for (int i = 0; i < n; i++)
+                        outLinks->push_back({L.href, CBox{ranges[2 * i] / (double)PANGO_SCALE, lineRect.y / (double)PANGO_SCALE,
+                                                          (ranges[2 * i + 1] - ranges[2 * i]) / (double)PANGO_SCALE, lineRect.height / (double)PANGO_SCALE}});
+                    g_free(ranges);
                 }
-                outLinks->push_back({L.href, CBox{std::min(X0, x1), Y0, std::abs(x1 - X0), h}});
-            }
+            } while (pango_layout_iter_next_line(IT));
+            pango_layout_iter_free(IT);
+        }
 
         auto* SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
         auto* CR   = cairo_create(SURF);
