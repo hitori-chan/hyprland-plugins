@@ -132,6 +132,13 @@ namespace NAwesome::Windows::Snap {
             return std::nullopt;
         }
 
+        // the window's own border (a rule can set it per window), as placement
+        // reads it: the global size once made the preview a border larger
+        // on each side than where a window with a border rule landed
+        inline double borderOf(const PHLWINDOW& w) {
+            return w ? std::max(0.0, (double)w->presentation().borderSize()) : 0.0;
+        }
+
         std::optional<CBox> constrainedZone(const SP<Layout::ITarget>& target, const PHLMONITOR& monitor, eEdgeV v, eEdgeH h) {
             if (!target || !monitor)
                 return std::nullopt;
@@ -140,11 +147,10 @@ namespace NAwesome::Windows::Snap {
             if (!SLOT)
                 return std::nullopt;
 
-            static auto PBORDER = CConfigValue<Config::INTEGER>("general:border_size");
             const auto  HA = h == H_LEFT ? Geometry::EHorizontalAnchor::LEFT :
                 h == H_RIGHT ? Geometry::EHorizontalAnchor::RIGHT : Geometry::EHorizontalAnchor::CENTER;
             const auto VA = v == V_TOP ? Geometry::EVerticalAnchor::TOP : v == V_BOTTOM ? Geometry::EVerticalAnchor::BOTTOM : Geometry::EVerticalAnchor::CENTER;
-            return Geometry::constrainedSlot(*SLOT, target->minSize(), target->maxSize(), std::max((double)*PBORDER, 0.0), HA, VA);
+            return Geometry::constrainedSlot(*SLOT, target->minSize(), target->maxSize(), borderOf(target->window()), HA, VA);
         }
 
         struct SNearest {
@@ -282,10 +288,9 @@ namespace NAwesome::Windows::Snap {
                     return;
 
                 // X11 geometry was border-inclusive: snap the BORDER flush,
-                // never swallow it offscreen — inflate, snap, deflate.
-                static auto  PBORDER = CConfigValue<Config::INTEGER>("general:border_size");
-                const double B       = std::max((double)*PBORDER, 0.0);
-                const auto   WS      = MON->m_activeWorkspace;
+                // never swallow it offscreen — inflate, snap, deflate (each
+                // window by its own border)
+                const auto WS = MON->m_activeWorkspace;
 
                 const auto   othersOf = [&](SP<Layout::ITarget> self) {
                     std::vector<CBox> OUT;
@@ -297,8 +302,9 @@ namespace NAwesome::Windows::Snap {
                             continue;
                         if (Fullscreen::controller()->isFullscreen(O))
                             continue;
-                        const auto OB = O->windowTarget()->position();
-                        OUT.push_back(CBox{OB.x - B, OB.y - B, OB.w + 2 * B, OB.h + 2 * B});
+                        const auto   OB = O->windowTarget()->position();
+                        const double OBB = borderOf(O);
+                        OUT.push_back(CBox{OB.x - OBB, OB.y - OBB, OB.w + 2 * OBB, OB.h + 2 * OBB});
                     }
                     return OUT;
                 };
@@ -307,9 +313,10 @@ namespace NAwesome::Windows::Snap {
                     // move: the whole box pulls — screen, workarea, then
                     // every other visible client (later pulls override
                     // earlier ones)
-                    const CBox CUR = T->position();
-                    CBox       g   = CBox{CUR.x - B, CUR.y - B, CUR.w + 2 * B, CUR.h + 2 * B};
-                    g              = snapInsideNearest(g, MON->logicalBox(), D);
+                    const CBox   CUR = T->position();
+                    const double B   = borderOf(T->window());
+                    CBox         g   = CBox{CUR.x - B, CUR.y - B, CUR.w + 2 * B, CUR.h + 2 * B};
+                    g                = snapInsideNearest(g, MON->logicalBox(), D);
                     g              = snapInsideNearest(g, MON->logicalBoxMinusReserved(), D);
                     g              = snapOutsideNearest(g, othersOf(T), D);
 
@@ -327,7 +334,8 @@ namespace NAwesome::Windows::Snap {
                     return;
 
                 // resize: only the dragged edges pull, anchored edges hold
-                const CBox CUR = T->position();
+                const CBox   CUR = T->position();
+                const double B   = borderOf(T->window());
                 const bool EL = CUR.x != resizeStart()->x, ER = CUR.x + CUR.w != resizeStart()->x + resizeStart()->w;
                 const bool ET = CUR.y != resizeStart()->y, EB = CUR.y + CUR.h != resizeStart()->y + resizeStart()->h;
                 if (!(EL || ER || ET || EB))
@@ -441,8 +449,7 @@ namespace NAwesome::Windows::Snap {
         if (zoneBox()) {
             // the slot is the border box; the surface sits inside it, so the
             // border stays on screen (maximize is the one full-bleed state)
-            static auto  PBORDER = CConfigValue<Config::INTEGER>("general:border_size");
-            const double B       = std::max((double)*PBORDER, 0.0);
+            const double B = borderOf(T ? T->window() : nullptr);
             // Re-read workarea and client constraints at drop: either can
             // change after the last pointer motion.
             if (const auto MON = zoneMon().lock(); MON) {
