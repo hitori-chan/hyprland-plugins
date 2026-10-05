@@ -356,7 +356,11 @@ namespace NAwesome::Notify {
 
     // the click door (Lua, the bell, `hyprctl awesome center`): deferred and
     // accumulating
-    void queueCenterToggle();
+    // the shade opens on `on` when given (the bell clicked there), else
+    // where the cards are
+    void queueCenterToggle(PHLMONITOR on = nullptr);
+    // move the cards (and the shade) to this monitor, damaging both spots
+    void placeCardsOn(PHLMONITOR mon);
     void centerExit();
 
     void surfaceInit(); // the age/motion tick timers

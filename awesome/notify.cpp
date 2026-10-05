@@ -18,7 +18,7 @@
 
 namespace NAwesome::Notify {
 
-    void queueCenterToggle(); // defined below; the Lua door calls it first
+    void queueCenterToggle(PHLMONITOR on); // defined below; the Lua door calls it first
 
     CModule& module() {
         static CModule M;
@@ -48,9 +48,10 @@ namespace NAwesome::Notify {
         // the shell's bell, and `hyprctl awesome center` all funnel here —
         // deferred and accumulating like suspend.
         static int               centerPresses = 0;
+        static PHLMONITORREF     centerOn; // the latest press's monitor (the bell's)
         static NAwesome::CHop    pendingCenter;
         int                      luaCenter(lua_State*) {
-            queueCenterToggle();
+            queueCenterToggle(nullptr);
             return 0;
         }
         int luaClearAll(lua_State*) {
@@ -60,9 +61,17 @@ namespace NAwesome::Notify {
         }
     }
 
-    void queueCenterToggle() {
+    // Where the last pointer MOTION landed. A pointer crossing onto another
+    // monitor moves first and focuses the monitor after; a keyboard focus
+    // move warps the pointer (no motion) and then focuses: only the motion
+    // tells the two apart — the live pointer is on the new monitor either
+    // way.
+    static Vector2D lastMovePos{-1, -1};
+
+    void queueCenterToggle(PHLMONITOR on) {
         if (!g_pEventLoopManager)
             return;
+        centerOn = on;
         if (++centerPresses > 1)
             return;
         pendingCenter.arm([]() {
@@ -70,8 +79,10 @@ namespace NAwesome::Notify {
                 return;
             if (centerVisible())
                 setCenter(false, /*repop=*/true); // an explicit close returns the parked stack
-            else
+            else {
+                placeCardsOn(centerOn.lock()); // the bell's monitor, not the focus's
                 setCenter(true);
+            }
         });
     }
 
@@ -82,18 +93,18 @@ namespace NAwesome::Notify {
         iconsInit(); // the async decode poll and the .desktop index scan start now
 
         auto& EV = Event::bus()->m_events;
-        // Everything lives on the FOCUSED monitor: monitor.focused is the one
-        // desktop event layout depends on. The follow is SOURCE-SELECTIVE: a
-        // sloppy (follow_mouse) pointer that crosses onto the new monitor IS
-        // the focus change, and lingering in the corner next to a
-        // notification must not pull every card across the screens and back.
+        // The cards arrive on the FOCUSED monitor and stay there
+        // (surface.cpp: layoutMonitor) until a deliberate focus move carries
+        // them. The follow is SOURCE-SELECTIVE: a sloppy (follow_mouse)
+        // pointer that crosses onto the new monitor IS the focus change, and
+        // lingering in the corner next to a notification must not pull every
+        // card across the screens and back.
         supervisor().listen(EV.monitor.focused, [](PHLMONITOR mon) {
             if (notifs.empty() && !centerVisible())
                 return;
-            if (mon && g_pInputManager &&
-                NAwesome::monitorContaining(g_pInputManager->getMouseCoordsInternal()) == mon)
+            if (mon && NAwesome::monitorContaining(lastMovePos) == mon)
                 return;
-            notifChanged();
+            placeCardsOn(mon);
         });
         supervisor().listen(EV.monitor.layoutChanged, []() {
             if (!notifs.empty() || centerVisible())
@@ -113,6 +124,7 @@ namespace NAwesome::Notify {
     }
 
     void CModule::teardown() {
+        lastMovePos = {-1, -1};
         pendingSuspend.reset();
         pendingCenter.reset();
         Bus::exit(); // the connection first: nothing may arrive mid-teardown
@@ -132,6 +144,7 @@ namespace NAwesome::Notify {
         NAwesome::Notify::onMouseButton(e, info);
     }
     void CModule::onPointerMove(const Vector2D& pos, Event::SCallbackInfo& info) {
+        lastMovePos = pos;
         NAwesome::Notify::onMouseMove(pos, info);
     }
     void CModule::onPointerAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
@@ -149,7 +162,7 @@ namespace NAwesome::Notify {
         if (verb == "count")
             return std::to_string(notifs.size());
         if (verb == "center") {
-            queueCenterToggle();
+            queueCenterToggle(nullptr);
             return "ok";
         }
         if (verb == "state")
