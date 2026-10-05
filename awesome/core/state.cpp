@@ -1,6 +1,8 @@
 // awesome/core/state.cpp — see state.hpp.
 #include "state.hpp"
 
+#include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -35,52 +37,69 @@ namespace NAwesome {
             return !ec;
         }
 
-        // The four legacy row names inside one pre-unification state dir.
-        constexpr const char* const LEGACY_FILES[4] = {"windows-spot.tsv", "windows-windowed.tsv", "shell-launches.tsv", "shell-history.tsv"};
+    } // namespace
 
-        // Key-by-key merge: dst wins, src fills only missing keys (and
-        // stays within the store's entry bound).
-        void mergeBoxes(BoxStore& dst, const BoxStore& src) {
-            for (const auto& [K, B] : src.rows)
-                if (!dst.rows.contains(K) && dst.rows.size() < MAX_STORE_ENTRIES)
-                    dst.rows.emplace(K, B);
-        }
-        void mergeCounts(CountStore& dst, const CountStore& src) {
-            for (const auto& [K, C] : src.counts)
-                if (!dst.counts.contains(K) && dst.counts.size() < MAX_STORE_ENTRIES)
-                    dst.counts.emplace(K, C);
+    namespace {
+
+        constexpr std::string_view MAGIC   = "awesome-state\t";
+        constexpr std::string_view VERSION = "2";
+
+        bool numberStart(char c) {
+            return c == '-' || c == '+' || c == '.' || (c >= '0' && c <= '9');
         }
 
-        // One pre-unification four-file layout (newest dir first).
-        void mergeLegacyLayout(const fs::path& dir, AppState& m) {
-            mergeBoxes(m.spot, BoxStore::read(dir / LEGACY_FILES[0]));
-            mergeBoxes(m.windowed, BoxStore::read(dir / LEGACY_FILES[1]));
-            mergeCounts(m.launches, CountStore::read(dir / LEGACY_FILES[2]));
-            if (m.history.entries.empty())
-                m.history = ListStore::read(dir / LEGACY_FILES[3]);
+        // `n` leading tab-terminated numbers, then the key: the rest of the
+        // row. strtod skips leading whitespace (the line's own end
+        // included), so a field must START with its number or a short row
+        // would borrow the next row's. A position-only store drops the size
+        // a version-1 spot still carried.
+        bool parseBox(std::string_view row, int n, bool keepSize, CRecentMap<Box>& out) {
+            double            v[4] = {};
+            const char*       p    = row.data();
+            const char* const END  = row.data() + row.size();
+            for (int i = 0; i < n; i++) {
+                if (p >= END || !numberStart(*p))
+                    return false;
+                char* e = nullptr;
+                v[i]    = std::strtod(p, &e);
+                if (e == p || e >= END || *e != '\t' || !std::isfinite(v[i]) || v[i] < (double)MIN_COORD || v[i] > (double)MAX_COORD)
+                    return false;
+                p = e + 1;
+            }
+            if (p >= END)
+                return false;
+            // the range check keeps every value inside int
+            const auto I = [&](int i) { return static_cast<int>(std::llround(v[i])); };
+            return out.put(std::string_view{p, (size_t)(END - p)}, keepSize ? Box{I(0), I(1), I(2), I(3)} : Box{I(0), I(1), 0, 0});
         }
 
-        // The migration's dead sources, in load order. Removed only after
-        // state.tsv is safely written; each removal is best-effort (a
-        // read-only or busy source must not block the load).
-        const std::vector<fs::path>& sources() {
-            static const std::vector<fs::path> S = {
-                stateDir() / LEGACY_FILES[0],  stateDir() / LEGACY_FILES[1],  stateDir() / LEGACY_FILES[2],  stateDir() / LEGACY_FILES[3],
-                legacyStateDir() / LEGACY_FILES[0], legacyStateDir() / LEGACY_FILES[1], legacyStateDir() / LEGACY_FILES[2],
-                legacyStateDir() / LEGACY_FILES[3], stateBase() / "hyprplace" / "lastspot.tsv",   stateBase() / "hyprmax" / "windowed.tsv",
-                cacheBase() / "hyprbar" / "menu_count_file",  cacheBase() / "hyprbar" / "history_menu",
-            };
-            return S;
+        // version 2: "<count>\t<name>"
+        bool parseCount(std::string_view row, CRecentMap<int>& out) {
+            const auto T = row.find('\t');
+            if (T == 0 || T == std::string_view::npos || T > 7)
+                return false;
+            int count = 0;
+            for (size_t i = 0; i < T; i++) {
+                if (row[i] < '0' || row[i] > '9')
+                    return false;
+                count = count * 10 + (row[i] - '0');
+            }
+            return out.put(row.substr(T + 1), count);
         }
 
-        void consumeSources() {
-            std::error_code ec;
-            for (const auto& P : sources())
-                fs::remove(P, ec);
-            // the emptied ancestors: the pre-rename dir, the ancient
-            // per-module dirs. Only rmdir what is actually empty.
-            for (const auto& D : {legacyStateDir(), stateBase() / "hyprplace", stateBase() / "hyprmax", cacheBase() / "hyprbar"})
-                fs::remove(D, ec);
+        // version 1: "<name>;<count>" — the name may hold semicolons, the
+        // count is the LAST field
+        bool parseCountV1(std::string_view row, CRecentMap<int>& out) {
+            const auto SEP = row.rfind(';');
+            if (SEP == 0 || SEP == std::string_view::npos || row.size() - SEP - 1 > 7 || SEP + 1 == row.size())
+                return false;
+            int count = 0;
+            for (size_t i = SEP + 1; i < row.size(); i++) {
+                if (row[i] < '0' || row[i] > '9')
+                    return false;
+                count = count * 10 + (row[i] - '0');
+            }
+            return out.put(row.substr(0, SEP), count);
         }
 
     } // namespace
@@ -89,42 +108,48 @@ namespace NAwesome {
         return stateDir() / "state.tsv";
     }
 
-    bool StateStore::readUnified(const fs::path& path, AppState& out) {
+    bool StateStore::read(const fs::path& path, AppState& out) {
         const auto CONTENTS = detail::readBoundedFile(path, MAX_STATE_FILE_BYTES);
         if (CONTENTS.empty())
             return false;
-        size_t perKind[4] = {}; // 0 spot, 1 windowed, 2 launches, 3 history
-        constexpr size_t   KIND_CAP[4] = {MAX_STORE_ENTRIES, MAX_STORE_ENTRIES, MAX_STORE_ENTRIES, MAX_STORE_LIST_ENTRIES};
-        // a row is its kind prefix plus a payload of up to a whole string
+        bool v1 = true;
+        if (std::string_view{CONTENTS}.starts_with(MAGIC)) {
+            const auto EOL = CONTENTS.find('\n');
+            if (std::string_view{CONTENTS}.substr(MAGIC.size(), EOL == std::string::npos ? std::string::npos : EOL - MAGIC.size()) != VERSION)
+                return false; // a newer layout: not ours to read, nor to rewrite
+            v1 = false;
+        }
+        // a row is its kind plus a payload of up to a whole string; the
+        // version line is a kind nobody reads
         detail::forRows(CONTENTS, MAX_STORE_STRING_BYTES + 64, MAX_STATE_ROWS, [&](std::string_view line) {
             const auto T = line.find('\t');
             if (T == std::string_view::npos)
                 return;
-            const auto KIND = std::string_view{line.data(), T};
-            const auto PAYLOAD = line.substr(T + 1);
-            if (KIND == "spot") {
-                if (perKind[0] < KIND_CAP[0])
-                    perKind[0] += BoxStore::parseRow(PAYLOAD, out.spot);
-            } else if (KIND == "windowed") {
-                if (perKind[1] < KIND_CAP[1])
-                    perKind[1] += BoxStore::parseRow(PAYLOAD, out.windowed);
-            } else if (KIND == "launches") {
-                if (perKind[2] < KIND_CAP[2])
-                    perKind[2] += CountStore::parseRow(PAYLOAD, out.launches);
-            } else if (KIND == "history") {
-                // parseRow bounds the store itself (most-recent window)
-                ListStore::parseRow(PAYLOAD, out.history);
-            }
+            const auto KIND = line.substr(0, T);
+            const auto ROW  = line.substr(T + 1);
+            if (KIND == "spot")
+                parseBox(ROW, v1 ? 4 : 2, false, out.spot);
+            else if (KIND == "windowed")
+                parseBox(ROW, 4, true, out.windowed);
+            else if (KIND == "launches")
+                v1 ? parseCountV1(ROW, out.launches) : parseCount(ROW, out.launches);
+            else if (KIND == "history")
+                out.history.remember(ROW);
         });
         return true;
     }
 
-    bool StateStore::writeUnified(const fs::path& path, const AppState& data) {
+    bool StateStore::write(const fs::path& path, const AppState& data) {
         std::ostringstream out;
-        data.spot.serializeRows(out, "spot\t");
-        data.windowed.serializeRows(out, "windowed\t");
-        data.launches.serializeRows(out, "launches\t");
-        data.history.serializeRows(out, "history\t");
+        out << MAGIC << VERSION << '\n';
+        for (const auto& [K, B] : data.spot)
+            out << "spot\t" << B.x << '\t' << B.y << '\t' << K << '\n';
+        for (const auto& [K, B] : data.windowed)
+            out << "windowed\t" << B.x << '\t' << B.y << '\t' << B.w << '\t' << B.h << '\t' << K << '\n';
+        for (const auto& [K, C] : data.launches)
+            out << "launches\t" << C << '\t' << K << '\n';
+        for (const auto& E : data.history.entries)
+            out << "history\t" << E << '\n';
         return writeAtomic(path, out.str());
     }
 
@@ -146,38 +171,21 @@ namespace NAwesome {
         m_loaded = true;
 
         const auto      P = path();
-        AppState        U{};
         std::error_code ec;
         const auto      STATUS = fs::status(P, ec);
-        if (fs::exists(STATUS) || (ec && ec != std::errc::no_such_file_or_directory)) {
-            if (readUnified(P, U) || (fs::is_regular_file(STATUS) && fs::file_size(P, ec) == 0 && !ec)) {
-                m_data = std::move(U);
-                return; // the unified file is live; nothing to migrate
-            }
-            // there, but unreadable (EIO, EACCES, mangled past the bounds):
-            // never clobber it with a migration or this session's state —
-            // a failed read once looked like a missing file and the user's
-            // memory was overwritten empty
-            m_writeBlocked = true;
+        if (!fs::exists(STATUS) && (!ec || ec == std::errc::no_such_file_or_directory))
+            return; // a first run: the first dirty() writes the file
+        AppState U{};
+        if (read(P, U) || (fs::is_regular_file(STATUS) && fs::file_size(P, ec) == 0 && !ec)) {
+            m_data = std::move(U);
             return;
         }
-
-        // Migration, newest first: the current four-file layout, the
-        // pre-rename layout, the ancient per-module stores.
-        AppState M{};
-        mergeLegacyLayout(stateDir(), M);
-        mergeLegacyLayout(legacyStateDir(), M);
-        mergeBoxes(M.spot, BoxStore::read(stateBase() / "hyprplace" / "lastspot.tsv"));
-        mergeBoxes(M.windowed, BoxStore::read(stateBase() / "hyprmax" / "windowed.tsv"));
-        mergeCounts(M.launches, CountStore::read(cacheBase() / "hyprbar" / "menu_count_file"));
-        if (M.history.entries.empty())
-            M.history = ListStore::read(cacheBase() / "hyprbar" / "history_menu");
-
-        m_data = std::move(M);
-        if (writeUnified(P, m_data))
-            consumeSources();
-        // a failed first write keeps the in-memory copy live; the next
-        // dirty() retries the same unified write.
+        // there, but unreadable (EIO, EACCES, mangled past the bounds, a
+        // newer version):
+        // never clobber it with this session's state — a failed read once
+        // looked like a missing file and the user's memory was overwritten
+        // empty
+        m_writeBlocked = true;
     }
 
     void StateStore::dirty() {
@@ -189,7 +197,7 @@ namespace NAwesome {
 
     StateStore::StateStore() : m_saver([this]() {
         if (!this->m_writeBlocked)
-            this->writeUnified(path(), this->m_data);
+            this->write(path(), this->m_data);
     }) {}
 
 } // namespace NAwesome

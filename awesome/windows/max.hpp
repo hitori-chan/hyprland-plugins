@@ -51,9 +51,18 @@ namespace NAwesome::Windows {
         // last windowed box per app class, surviving window closes and
         // relogs: the restore target when a window of that app is born
         // maximized again. The store is the core's unified state
-        // (core/state.hpp).
-        inline BoxStore& lastWindowed() {
+        // (core/state.hpp), relative to the monitor's origin.
+        inline CRecentMap<Box>& lastWindowed() {
             return StateStore::inst().data().windowed;
+        }
+
+        // the app's remembered windowed box, on `mon`
+        inline std::optional<CBox> windowedOn(const std::string& cls, PHLMONITOR mon) {
+            const auto* B = lastWindowed().find(cls);
+            if (!B || !mon)
+                return std::nullopt;
+            const auto O = mon->logicalBox().pos();
+            return CBox{O.x + B->x, O.y + B->y, (double)B->w, (double)B->h};
         }
 
         inline CBox boundedRestore(PHLWINDOW w, const CBox& box, const CBox& workarea) {
@@ -64,17 +73,16 @@ namespace NAwesome::Windows {
         }
 
         inline void loadWindowed() {
-            // the unified state (and the one-time legacy migration) is
-            // loaded by the supervisor before module inits; only a real
-            // windowed size is a restore target (a legacy position-only row
-            // carries none)
-            std::erase_if(lastWindowed().rows, [](const auto& E) { return E.second.w <= 5 || E.second.h <= 5; });
+            // the state is loaded by the supervisor before module inits;
+            // only a real windowed size is a restore target
+            lastWindowed().eraseIf([](const std::string&, const Box& b) { return b.w <= 5 || b.h <= 5; });
         }
 
-        inline void rememberWindowed(const std::string& cls, const CBox& box) {
-            if (cls.empty() || box.w <= 5 || box.h <= 5)
+        inline void rememberWindowed(const std::string& cls, const CBox& box, PHLMONITOR mon) {
+            if (cls.empty() || !mon || box.w <= 5 || box.h <= 5)
                 return;
-            if (lastWindowed().remember(cls, Box{(int)std::llround(box.x), (int)std::llround(box.y), (int)std::llround(box.w), (int)std::llround(box.h)}))
+            const auto O = mon->logicalBox().pos();
+            if (lastWindowed().put(cls, Box{(int)std::llround(box.x - O.x), (int)std::llround(box.y - O.y), (int)std::llround(box.w), (int)std::llround(box.h)}))
                 StateStore::inst().dirty();
         }
 
@@ -110,8 +118,8 @@ namespace NAwesome::Windows {
             // empty restore box = no windowed geometry ever existed;
             // un-maximizing hands the size choice to the client
             CBox restore{};
-            if (const auto* B = lastWindowed().find(W->metadata().appID()))
-                restore = boundedRestore(W, CBox{(double)B->x, (double)B->y, (double)B->w, (double)B->h}, WA);
+            if (const auto B = windowedOn(W->metadata().appID(), MON))
+                restore = boundedRestore(W, *B, WA);
             maximized()[PHLWINDOWREF{W}] = restore;
 
             if (auto TOP = xdgToplevel(W))
@@ -239,10 +247,10 @@ namespace NAwesome::Windows {
                 // windowed box is remembered, that beats the client's answer
                 // — GTK forgets its normal geometry across restarts.
                 const auto MON = W->m_monitor.lock();
-                const auto  B  = lastWindowed().find(W->metadata().appID());
-                if (B && W->m_sizeFromClientSerial && MON && W->isFloating()) {
+                const auto B   = windowedOn(W->metadata().appID(), MON);
+                if (B && W->m_sizeFromClientSerial && W->isFloating()) {
                     W->m_sizeFromClientSerial = 0;
-                    setGeom(W, boundedRestore(W, CBox{(double)B->x, (double)B->y, (double)B->w, (double)B->h}, MON->logicalBoxMinusReserved()));
+                    setGeom(W, boundedRestore(W, *B, MON->logicalBoxMinusReserved()));
                     W->windowTarget()->warpPositionSize();
                     // same disarmed-grant flush as adoptCompositorMax:
                     // unforced sends dedup against m_pendingReportedSize and
@@ -290,7 +298,7 @@ namespace NAwesome::Windows {
                 setClientMaximized(false);
                 if (STORED.w > 5 && STORED.h > 5) {
                     const CBox R = boundedRestore(W, STORED, WA);
-                    rememberWindowed(W->metadata().appID(), R);
+                    rememberWindowed(W->metadata().appID(), R, W->m_monitor.lock());
                     setGeom(W, R);
                     W->windowTarget()->warpPositionSize();
                 } else {
@@ -301,7 +309,7 @@ namespace NAwesome::Windows {
             } else {
                 const auto BOX = W->windowTarget()->position();
                 maximized().emplace(WR, BOX);
-                rememberWindowed(W->metadata().appID(), BOX);
+                rememberWindowed(W->metadata().appID(), BOX, W->m_monitor.lock());
                 setClientMaximized(true);
                 setGeom(W, WA);
                 W->windowTarget()->warpPositionSize();
@@ -435,7 +443,7 @@ namespace NAwesome::Windows {
                     // box the entry holds — remembering it would save the
                     // workarea as the app's last windowed size
                     if (W->isFloating())
-                        rememberWindowed(W->metadata().appID(), IT->second);
+                        rememberWindowed(W->metadata().appID(), IT->second, W->m_monitor.lock());
                 }
                 maximized().erase(IT);
             });
@@ -476,7 +484,6 @@ namespace NAwesome::Windows {
 
         inline void teardown() {
             maximized().clear();
-            lastWindowed().rows.clear();
             swallowedButtons() = 0;
             adopts().reset();
             maxToggles().reset();

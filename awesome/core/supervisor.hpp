@@ -72,6 +72,9 @@ namespace NAwesome {
         virtual void        init() = 0;
         // teardown in reverse order, after listeners and hops are down
         virtual void        teardown() = 0;
+        // before the final state flush (listeners and hops already down):
+        // store what only the live session knows
+        virtual void        persist() {}
 
         // The pipeline, in registration order. Setting info.cancelled
         // consumes the event for everything after — except a MOVE: motion is
@@ -123,9 +126,7 @@ namespace NAwesome {
         void start(HANDLE handle) {
             m_handle = handle;
             beginSession();
-            // load (and, once, migrate + consume the legacy layouts into)
-            // the unified state file — before any module touches its
-            // store, or it would seed the old paths
+            // the unified state file, before any module reads its store
             StateStore::inst().load();
             // the shared .desktop icon index, before the modules subscribe
             CDesktopIcons::inst().start();
@@ -171,8 +172,10 @@ namespace NAwesome {
                 L.reset();
             m_listeners.clear(); // state listeners before the hops they arm
             resetHops();
-            // the coalesced state write was a hop: write it now, before any
-            // module clears its in-memory rows
+            // the coalesced state write was a hop: write it now, with what
+            // the modules still know (the windows open at a logout)
+            for (auto* M : m_modules)
+                M->persist();
             StateStore::inst().flush();
             for (auto IT = m_modules.rbegin(); IT != m_modules.rend(); ++IT)
                 (*IT)->teardown();

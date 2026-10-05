@@ -4,9 +4,8 @@
 # alone (-b windows).
 
 # ---- placement memory ---------------------------------------------------
-# The preflight's seeded legacy store migrated to $AW_SPOT at this first
-# init: the remembered spot is (100,100) (a 500x400 close-box). Memory is
-# the POSITION; the size is always the client's own request.
+# The harness seeds foot's spot at (100,100). Memory is the POSITION; the
+# size is always the client's own request.
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=600x300')"; sleep 2
 expect "spawn memory: the requested 600x300 lands at the remembered (100,100)" \
 	"any(c['class']=='foot' and c['at']==[100,100] and c['size']==[600,300] for c in cs)"
@@ -62,7 +61,7 @@ chk "close storm: no stragglers" test "$(pyc "sum(1 for c in cs if c['class']=='
 # restore row for the same class — the coalesced-save invariant is about
 # the SPOT row
 chk "tsv: exactly one foot spot row survives the coalesced save" \
-	test "$(grep -c $'^spot\t[0-9]*\t[0-9]*\t[0-9]*\t[0-9]*\tfoot$' "$AW_STATE")" = 1
+	test "$(grep -c $'^spot\t-*[0-9]*\t-*[0-9]*\tfoot$' "$AW_STATE")" = 1
 chk "tsv: no temp-file debris" bash -c "! ls $AWSTATE/*.tmp 2>/dev/null | grep -q ."
 
 # ---- fixed-size (dialog/splash) placement --------------------------------
@@ -201,7 +200,7 @@ import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdfall'), ''))")"
 dsp "hl.dsp.window.close({window=\"address:$CF\"})"; sleep 1.5
 chk "maximized close mints the spot from the last windowed box" \
-	grep -q "^spot	[0-9]*	[0-9]*	[0-9]*	[0-9]*	csdfall$" "$AW_STATE"
+	grep -q "^spot	[0-9]*	[0-9]*	csdfall$" "$AW_STATE"
 dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 800 500 20 csdfall - - resz vismargin follow')"; sleep 2
 expect "minted spot lands the respawn at the remembered box" \
 	"any(c['class']=='csdfall' and c['size']==[800,500] and c['at']==[$(( (MON_W-800)/2 )), $(( 30+(MON_H-30-500)/2 ))] for c in cs)"
@@ -339,7 +338,7 @@ dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 600 400 20 csdmem - - resz - - - 
 CM="$(csdmem_addr)"
 dsp "hl.dsp.window.move({x = 120, y = 150, window = \"address:$CM\"})"; sleep 1
 dsp "hl.dsp.window.close({window=\"address:$CM\"})"; sleep 1.5
-chk "toplevel-first close remembers the box" grep -q "^spot	120	150	600	400	csdmem$" "$AW_STATE"
+chk "toplevel-first close remembers the spot" grep -q "^spot	120	150	csdmem$" "$AW_STATE"
 dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 600 400 20 csdmem - - resz - - - - follow unmaxwhenmaxed')"; sleep 2
 expect "toplevel-first close: the respawn lands at the remembered box" \
 	"any(c['class']=='csdmem' and c['at']==[120,150] and c['size']==[600,400] for c in cs)"

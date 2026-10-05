@@ -54,11 +54,11 @@
 namespace NAwesome::Windows::Place {
 
     namespace {
-        // each app's last window box (position + size), surviving relogs; the
-        // legacy position-only rows load with a zero size, which stays until
-        // the app closes once and a full box is recorded. The store is the
-        // core's unified state (core/state.hpp).
-        inline BoxStore& lastSpot() {
+        // each app's last close position, surviving relogs, relative to the
+        // origin of the monitor it closed on: it lands at the same place on
+        // whichever monitor the app opens on next. The store is the core's
+        // unified state (core/state.hpp).
+        inline CRecentMap<Box>& lastSpot() {
             return StateStore::inst().data().spot;
         }
 
@@ -74,8 +74,9 @@ namespace NAwesome::Windows::Place {
             return {};
         }
 
-        inline void rememberSpot(const std::string& cls, const CBox& box) {
-            if (lastSpot().remember(cls, Box{(int)std::llround(box.x), (int)std::llround(box.y), (int)std::llround(box.w), (int)std::llround(box.h)}))
+        // `rel`: already relative to its monitor's origin
+        inline void rememberSpot(const std::string& cls, const Vector2D& rel) {
+            if (lastSpot().put(cls, Box{(int)std::llround(rel.x), (int)std::llround(rel.y), 0, 0}))
                 StateStore::inst().dirty();
         }
 
@@ -192,11 +193,11 @@ namespace NAwesome::Windows::Place {
             // keep-while-free contract.
             if (!resizable(w) && !w->backend().isX11() && !w->backend().parent())
                 return;
-            // the remembered spot: its position (the row keeps the close-box)
+            // the remembered spot, on this window's monitor
             std::optional<Vector2D> stored;
             if (!w->backend().isX11() && !w->backend().parent())
                 if (const auto B = lastSpot().find(classKey(w)); B)
-                    stored = Vector2D{(double)B->x, (double)B->y};
+                    stored = MON->logicalBox().pos() + Vector2D{(double)B->x, (double)B->y};
 
             // no_offscreen: nudge the box fully into the workarea AND leave
             // a border's width of margin — the border is drawn outside the
@@ -335,38 +336,41 @@ namespace NAwesome::Windows::Place {
             !resizable(w))
             return;
         const auto CLS = classKey(w);
-        if (toldMaximized(w) || Fullscreen::controller()->isFullscreen(w))
-        {
-            // a browser that always closes maximized would otherwise never
-            // leave a spot row: its spawn memory would be lost and it would
-            // reopen centered at the client's own size. The app's last
-            // WINDOWED box (the maximize module's restore memory) is where
-            // it actually was — carry it into the spot.
+        const auto MON = w->m_monitor.lock();
+        if (!MON)
+            return;
+        // A browser that always closes maximized would otherwise never
+        // leave a spot row: its spawn memory would be lost and it would
+        // reopen centered at the client's own size. The app's last WINDOWED
+        // box (the maximize module's restore memory, monitor-relative too)
+        // is where it actually was — carry it into the spot. A
+        // workarea-filling float is the plugin-maximize shape: same
+        // fallback, or its close-box would read as a spot.
+        if (toldMaximized(w) || Fullscreen::controller()->isFullscreen(w) || coversWorkarea(w->windowTarget()->position(), MON->logicalBoxMinusReserved())) {
             if (const auto WB = StateStore::inst().data().windowed.find(CLS); WB && WB->w > 5 && WB->h > 5)
-                rememberSpot(CLS, CBox{(double)WB->x, (double)WB->y, (double)WB->w, (double)WB->h});
+                rememberSpot(CLS, Vector2D{(double)WB->x, (double)WB->y});
             return;
         }
-        if (const auto MON = w->m_monitor.lock(); MON && coversWorkarea(w->windowTarget()->position(), MON->logicalBoxMinusReserved()))
-        {
-            // a workarea-filling float is the plugin-maximize shape: same
-            // fallback, or its close-box would read as a spot.
-            if (const auto WB = StateStore::inst().data().windowed.find(CLS); WB && WB->w > 5 && WB->h > 5)
-                rememberSpot(CLS, CBox{(double)WB->x, (double)WB->y, (double)WB->w, (double)WB->h});
-            return;
-        }
-        rememberSpot(CLS, w->windowTarget()->position());
+        rememberSpot(CLS, w->windowTarget()->position().pos() - MON->logicalBox().pos());
+    }
+
+    // The windows still open when the plugin stops (a logout, a reload)
+    // never emit a close the plugin hears: record them as closing now, in
+    // stacking order (the topmost window of a class wins, as the last to
+    // close would), before the supervisor's final flush.
+    inline void rememberOpen() {
+        for (const auto& W : Desktop::windowState()->windows())
+            onWindowClose(W);
     }
 
     inline void init() {
-        // the unified state (and the one-time legacy migration) is loaded
-        // by the supervisor before module inits
+        // the unified state is loaded by the supervisor before module inits
         supervisor().listen(Event::bus()->m_events.window.open, [](PHLWINDOW w) { onWindowOpen(w); });
         supervisor().listen(Event::bus()->m_events.window.close, [](PHLWINDOW w) { onWindowClose(w); });
     }
 
     inline void teardown() {
         places().reset();
-        lastSpot().rows.clear();
     }
 
 } // namespace NAwesome::Windows::Place
