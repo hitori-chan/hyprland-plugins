@@ -20,8 +20,12 @@
 //   unmaxwhenmaxed  once a configure tells it maximized, ask to unmaximize
 //            1.5 s later — the CSD titlebar restore button (Firefox's
 //            double-click) on a compositor/plugin-maximized window
+// SPLASHWIN_POINTER_LOG=<path>: append "at X Y" (surface-local, the buffer
+//   origin = the margin's outer corner) on every pointer enter/motion over
+//   the window — where a click would land in the client's own coordinates
 #include <fcntl.h>
 #include <poll.h>
+#include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,9 +47,72 @@ static struct wl_surface   *g_psurf;
 static struct xdg_surface  *g_pxsd;
 static struct xdg_toplevel *g_ptop;
 static struct wl_buffer    *g_pbuf;
+static struct wl_seat      *g_seat;
+static struct wl_pointer   *g_ptr;
+static FILE                *g_ptrlog;
 static int                  g_w = 300, g_h = 350, g_m = 10, g_late, g_parented, g_resz, g_vis, g_pinx, g_parentonly, g_pgeo, g_follow, g_unmaxwhenmaxed, g_done;
 static long long           g_unmaxAt; // monotonic ms; 0 = nothing scheduled
 static const char          *g_id = "splashwin";
+
+// the pointer log: v1 pointer events, ours only
+static void ptr_at(struct wl_surface *s, wl_fixed_t x, wl_fixed_t y) {
+    if (s != g_surf)
+        return;
+    fprintf(g_ptrlog, "at %.0f %.0f\n", wl_fixed_to_double(x), wl_fixed_to_double(y));
+    fflush(g_ptrlog);
+}
+static struct wl_surface *g_ptrSurf;
+static void ptr_enter(void *d, struct wl_pointer *p, uint32_t serial, struct wl_surface *s, wl_fixed_t x, wl_fixed_t y) {
+    (void) d;
+    (void) p;
+    (void) serial;
+    g_ptrSurf = s;
+    ptr_at(s, x, y);
+}
+static void ptr_leave(void *d, struct wl_pointer *p, uint32_t serial, struct wl_surface *s) {
+    (void) d;
+    (void) p;
+    (void) serial;
+    (void) s;
+    g_ptrSurf = NULL;
+}
+static void ptr_motion(void *d, struct wl_pointer *p, uint32_t t, wl_fixed_t x, wl_fixed_t y) {
+    (void) d;
+    (void) p;
+    (void) t;
+    ptr_at(g_ptrSurf, x, y);
+}
+static void ptr_button(void *d, struct wl_pointer *p, uint32_t serial, uint32_t t, uint32_t b, uint32_t st) {
+    (void) d;
+    (void) p;
+    (void) serial;
+    (void) t;
+    (void) b;
+    (void) st;
+}
+static void ptr_axis(void *d, struct wl_pointer *p, uint32_t t, uint32_t a, wl_fixed_t v) {
+    (void) d;
+    (void) p;
+    (void) t;
+    (void) a;
+    (void) v;
+}
+static const struct wl_pointer_listener ptrl = { .enter = ptr_enter, .leave = ptr_leave, .motion = ptr_motion, .button = ptr_button, .axis = ptr_axis };
+
+// the gate's virtual pointer exists only while a gesture runs: bind on
+// every capability gain, release on the loss
+static void seat_caps(void *d, struct wl_seat *s, uint32_t caps) {
+    (void) d;
+    if ((caps & WL_SEAT_CAPABILITY_POINTER) && !g_ptr) {
+        g_ptr = wl_seat_get_pointer(s);
+        wl_pointer_add_listener(g_ptr, &ptrl, NULL);
+    } else if (!(caps & WL_SEAT_CAPABILITY_POINTER) && g_ptr) {
+        wl_pointer_destroy(g_ptr); // v1 has no release request
+        g_ptr     = NULL;
+        g_ptrSurf = NULL;
+    }
+}
+static const struct wl_seat_listener seatl = { .capabilities = seat_caps };
 
 static void reg_bind(void *d, struct wl_registry *r, uint32_t id, const char *ifc, uint32_t ver) {
     (void) d;
@@ -56,6 +123,10 @@ static void reg_bind(void *d, struct wl_registry *r, uint32_t id, const char *if
         g_shm = wl_registry_bind(r, id, &wl_shm_interface, 1);
     else if (!strcmp(ifc, "xdg_wm_base") && !g_wm)
         g_wm = wl_registry_bind(r, id, &xdg_wm_base_interface, 1);
+    else if (!strcmp(ifc, "wl_seat") && !g_seat && g_ptrlog) {
+        g_seat = wl_registry_bind(r, id, &wl_seat_interface, 1); // v1: enter/leave/motion/button/axis only
+        wl_seat_add_listener(g_seat, &seatl, NULL);              // before its first capabilities event
+    }
 }
 static void reg_remove(void *d, struct wl_registry *r, uint32_t id) {
     (void) d;
@@ -165,6 +236,8 @@ int main(int argc, char **argv) {
     g_pgeo = argc > 11 && !strcmp(argv[11], "pgeo");
     g_follow = argc > 12 && !strcmp(argv[12], "follow");
     g_unmaxwhenmaxed = argc > 13 && !strcmp(argv[13], "unmaxwhenmaxed");
+    if (getenv("SPLASHWIN_POINTER_LOG"))
+        g_ptrlog = fopen(getenv("SPLASHWIN_POINTER_LOG"), "a");
 
     g_dpy = wl_display_connect(NULL);
     if (!g_dpy)
