@@ -149,6 +149,31 @@ import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdpinx'), ''))")"
 [[ -n "$CX" ]] && dsp "hl.dsp.window.close({window=\"address:$CX\"})"; sleep 1
 
+# Input follows the content frame: the client's surface coords start at
+# the margin's outer corner, so a pointer at box-local (x, y) lands at
+# (x + m, y + m) in the client. (A GTK file chooser got every click shifted
+# up-left by its shadow margin when only the drawing cropped it.)
+PTRLOG="$STATE/csdptr.log"; : >"$PTRLOG"
+dsp "hl.dsp.exec_cmd('env SPLASHWIN_POINTER_LOG=$PTRLOG $REPO/devtools/splashwin 300 200 20 csdptr - - - vismargin')"; sleep 2
+read -r PX PY _ _ <<<"$(box4 csdptr)"
+if [[ "$PX" =~ ^[0-9]+$ ]]; then
+	# one device for the whole gesture: the client binds wl_pointer on the
+	# capability gain, then sees the real enter/motion
+	csd_ptr() { # csd_ptr <box-dx> <box-dy> <want "at X Y"> <name>
+		printf 'sleep 300\nmove %s %s\nsleep 150\n' "$((PX + $1))" "$((PY + $2))" | vp
+		local got; got="$(tail -1 "$PTRLOG")"
+		[[ "$got" == "$3" ]] && ok "$4" || bad "$4 (client saw '$got')"
+	}
+	csd_ptr 3 3 "at 23 23" "CSD input: the content frame's corner lands at the margin (23,23)"
+	csd_ptr 150 100 "at 170 120" "CSD input: the content center lands at box-local + margin (170,120)"
+else
+	bad "CSD input: the csdptr window mapped"
+fi
+CQ="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdptr'), ''))")"
+[[ -n "$CQ" ]] && dsp "hl.dsp.window.close({window=\"address:$CQ\"})"; sleep 1
+
 # a FOLLOWING CSD client (real GTK shape): it resizes its content to the
 # configure, so any frame mismatch shows up as a clipped or shrunk content.
 dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 800 500 20 csdfollow - - resz vismargin follow')"; sleep 2
