@@ -649,8 +649,10 @@ namespace NAwesome::Notify {
                 n->id = id;
                 n->born = Time::steadyNow(); // the arrival spring keys here, never on `arrived`
                 // DND collects silently — except critical, which punches
-                // through (the urgency parse below lifts it back out)
-                n->waiting = suspended;
+                // through (the urgency parse below lifts it back out), and the
+                // OSD band, the user's own feedback (a volume key pressed
+                // under DND must still answer)
+                n->waiting = suspended && !inOsdBand(id);
                 notifs.insert(notifs.begin(), n); // newest on top; a replace keeps its slot
                 evictOverflow();
             }
@@ -670,6 +672,8 @@ namespace NAwesome::Notify {
                 n->unreadCount = 0;
             }
 
+            // before the re-alert below: DND puts a shown card back as it was
+            const bool WAS_WAITING = EXISTING && n->waiting, WAS_BANNER = EXISTING && n->banner, WAS_ABSORBED = EXISTING && n->absorbed;
             n->arrived = Time::steadyNow(); // a replace refreshes the age, like a new arrival would
             // A replace re-alerts (the OSD sweep relies on it); the merge
             // above keeps aiming a chat's new messages at the card that holds
@@ -756,6 +760,16 @@ namespace NAwesome::Notify {
                         n->urgency = (uint8_t)std::clamp(IT->second.get<int32_t>(), 0, 2);
                     } catch (...) {}
                 }
+            // DND holds a re-arrival as it holds a new one (a replace or a
+            // conversation merge re-alerts otherwise): a card already shown —
+            // a banner, or a row in the shade — is updated in place, silently,
+            // as it was; one still queued stays queued for the resume
+            bool quiet = false;
+            if (EXISTING && suspended && n->urgency < 2 && !inOsdBand(n->id) && !WAS_WAITING) {
+                quiet       = true;
+                n->banner   = WAS_BANNER;
+                n->absorbed = WAS_ABSORBED;
+            }
             if (n->waiting && n->urgency >= 2)
                 n->waiting = false; // critical bypasses DND
             if (const auto IT = hints.find("value"); IT != hints.end())
@@ -894,9 +908,9 @@ namespace NAwesome::Notify {
             // libcanberra player unless the client suppresses it. DND-queued
             // (waiting) arrivals stay silent; the resume doesn't replay.
             if (!n->waiting) {
-                // a coalesced arrival announces itself neither; the hint can
-                // only add silence, never lift ours
-                bool        suppress = COALESCED;
+                // a coalesced or DND-quiet arrival announces itself neither;
+                // the hint can only add silence, never lift ours
+                bool        suppress = COALESCED || quiet;
                 std::string soundFile, soundName;
                 if (const auto IT = hints.find("suppress-sound"); IT != hints.end())
                     try {

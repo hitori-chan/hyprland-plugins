@@ -385,8 +385,10 @@ semantics).
   after 30 s), a budget of their own — a sound flood never takes the
   volume keys' helpers.
 - DND (`hl.plugin.awesome.suspend()`): arrivals collect
-  silently with timeouts held; resume renders the queue newest-first on
-  fresh timeouts.
+  silently with timeouts held, and resume renders the queue newest-first
+  on fresh timeouts. An update or a conversation message onto a card
+  already shown (a banner, or a row in the shade) updates it in place,
+  silently, as it was.
 - Residency (`persistence`): an expired banner RETREATS into the shade
   rather than closing, and waits there until dismissed or acted on —
   the shade is the safety net. There is no history and no recall: a
