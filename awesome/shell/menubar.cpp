@@ -173,7 +173,7 @@ namespace NAwesome::Shell {
                 if (line.starts_with("Name=") && app.name.empty())
                     stringValue(std::string_view{line}.substr(5), app.name);
                 else if (line.starts_with("Exec="))
-                    rawExec = line.substr(5);
+                    rawExec = NAwesome::DesktopExec::unescapeExec(std::string_view{line}.substr(5));
                 else if (line.starts_with("Icon="))
                     stringValue(std::string_view{line}.substr(5), app.icon);
                 else if (line.starts_with("Terminal="))
