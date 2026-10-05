@@ -35,11 +35,22 @@ namespace NAwesome::Shell {
     // miss during a draw returns null (that one label is missing for one
     // frame) rather than building, which would paint nothing anyway AND
     // swallow every later draw in the element.
+    // The shell font, resolved once per warm (the config's string read
+    // returns a fresh std::string — a copy per label per frame): every
+    // texture build happens inside a warm, so draws between warms key on
+    // the same value, and a changed font applies at the next warm.
+    static std::string warmFont;
+    static const std::string& shellFont() {
+        if (warmFont.empty())
+            warmFont = cfg().getS("plugin:awesome:shell:font");
+        return warmFont;
+    }
+
     SP<ITexture> textTex(const std::string& text, const CHyprColor& col, int pt, int maxWidth, const std::string& font) {
         // key on the RESOLVED font: every caller passes "", and keying the
         // empty string made old-font textures permanent hits across a
         // font change
-        const std::string F = font.empty() ? std::string(cfg().getS("plugin:awesome:shell:font")) : font;
+        const std::string& F = font.empty() ? shellFont() : font;
 
         char               meta[48]; // the non-text key parts in one stack write — no to_string churn per call
         const int          METALEN = std::snprintf(meta, sizeof(meta), "|%llx|%d|%d|", (unsigned long long)col.getAsHex(), pt, maxWidth);
@@ -302,6 +313,7 @@ namespace NAwesome::Shell {
         // (a scoped warm leaves the other monitors' textures unenumerated and
         // must not age them)
         void warmBegin(bool scoped) override {
+            warmFont = cfg().getS("plugin:awesome:shell:font");
             if (!scoped)
                 texCache.tick();
         }
@@ -347,6 +359,7 @@ namespace NAwesome::Shell {
             // caches cleared below
             texCache.clear();
             lastTaskFp.clear();
+            warmFont.clear();
         }
     };
 

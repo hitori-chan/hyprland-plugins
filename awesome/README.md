@@ -54,7 +54,7 @@ visible transitions.
   are not implemented.
 - **Bell**: reads the notify model directly (same process — no bus
   seam). A click toggles the shade; pointer hover does nothing.
-- **Battery** watches the udev battery; the clock ticks per second.
+- **Battery** watches the udev battery packs (a dual-pack laptop reads as one); the clock ticks on the wall clock's minute, and a resume or a clock step updates it at once.
 
 ### The launcher (menubar)
 

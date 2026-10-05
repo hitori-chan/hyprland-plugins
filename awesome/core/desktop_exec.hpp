@@ -27,8 +27,9 @@ namespace NAwesome::DesktopExec {
     }
 
     // Desktop Entry string escaping applies to ordinary values such as Name
-    // and Icon. Exec has its own quote-and-backslash grammar below, so callers
-    // must pass its raw value to tokens()/expand().
+    // and Icon. Exec takes it too, BEFORE its own quote-and-backslash grammar
+    // below (the spec: a literal backslash in a quoted argument is written
+    // four times) — through unescapeExec, not this.
     inline std::optional<std::string> unescapeString(std::string_view value) {
         std::string out;
         out.reserve(value.size());
@@ -43,6 +44,26 @@ namespace NAwesome::DesktopExec {
             if (!unescaped)
                 return std::nullopt;
             out += *unescaped;
+        }
+        return out;
+    }
+
+    // Exec's string pass: the five string escapes decode, and any other
+    // backslash stays for the quoting grammar (GLib's behavior). Wine's
+    // entries depend on it: `Start\\ Menu` must reach tokens() as `Start\ Menu`
+    // (one argument), and `C:\\\\windows` as `C:\\windows`.
+    inline std::string unescapeExec(std::string_view value) {
+        std::string out;
+        out.reserve(value.size());
+        for (size_t i = 0; i < value.size(); i++) {
+            if (value[i] == '\\' && i + 1 < value.size()) {
+                if (const auto C = unescapeChar(value[i + 1], false)) {
+                    out += *C;
+                    i++;
+                    continue;
+                }
+            }
+            out += value[i];
         }
         return out;
     }
