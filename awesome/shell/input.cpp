@@ -341,22 +341,6 @@ namespace NAwesome::Shell {
         return MON;
     }
 
-    // ---- cell hover ----
-    //
-    // Widgets that want it get enter/leave on their cells. Tracked per WIDGET,
-    // not per hit: moving between two of the same widget's cells is not a leave.
-    static IWidget* hoverWidget = nullptr;
-
-    static void     setHoverWidget(IWidget* w) {
-        if (w == hoverWidget)
-            return;
-        if (hoverWidget)
-            hoverWidget->onHover(false);
-        hoverWidget = w;
-        if (hoverWidget)
-            hoverWidget->onHover(true);
-    }
-
     void releasePointer() {
         if (!pointerOwned)
             return;
@@ -401,18 +385,8 @@ namespace NAwesome::Shell {
         const auto MON = GRABBED ? nullptr : barOwnsPoint(pos);
         if (!MON) {
             releasePointer();
-            setHoverWidget(nullptr);
             return;
         }
-
-        IWidget* over = nullptr;
-        if (const auto IT = hitboxes.find(MON->m_id); IT != hitboxes.end())
-            for (const auto& HIT : IT->second | std::views::reverse) // topmost first
-                if (HIT.box.containsPoint(pos)) {
-                    over = HIT.widget;
-                    break;
-                }
-        setHoverWidget(over);
 
         info.cancelled = true;
         if (!pointerOwned) {
@@ -435,7 +409,6 @@ namespace NAwesome::Shell {
         scrollAcc.clear();
         scrollQueued = false;
         releasePointer();
-        setHoverWidget(nullptr);
         if (Menu::isOpen)
             Menu::close();
         if (Menubar::isOpen)
@@ -451,7 +424,6 @@ namespace NAwesome::Shell {
         swallowRelease = 0;
         heldButtons    = 0;
         releasePointer();
-        setHoverWidget(nullptr);
     }
 
 } // namespace NAwesome::Shell
