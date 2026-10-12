@@ -29,6 +29,7 @@ namespace NAwesome::Notify {
 
     static uint32_t    s_id = 0; // the card whose field is armed; 0 = none
     static std::string s_text;
+    static std::string s_target; // replyTarget of the card when armed
     // the send changes the model (the card goes): out of the key emission
     static NAwesome::CHop s_pendingSend;
 
@@ -56,11 +57,18 @@ namespace NAwesome::Notify {
     const std::string& replyText() {
         return s_text;
     }
+    const std::string& replyTargetKey() {
+        return s_target;
+    }
 
     void replyOpen(uint32_t id) {
         if (s_id == id)
             return;
-        s_id = id;
+        const auto N = Model::byId(id);
+        if (!N)
+            return;
+        s_id     = id;
+        s_target = replyTarget(*N);
         s_text.clear();
         notifChanged();
     }
@@ -126,8 +134,9 @@ namespace NAwesome::Notify {
             case XKB_KEY_KP_Enter: {
                 const auto ID = s_id;
                 auto       TX = s_text; // replyClose wipes the buffer under us
+                auto       TG = s_target;
                 replyClose();
-                s_pendingSend.arm([ID, TX = std::move(TX)]() { Bus::sendReply(ID, TX); });
+                s_pendingSend.arm([ID, TX = std::move(TX), TG = std::move(TG)]() { Bus::sendReply(ID, TX, TG); });
                 return true;
             }
             case XKB_KEY_BackSpace: {

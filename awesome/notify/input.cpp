@@ -207,8 +207,9 @@ namespace NAwesome::Notify {
                         continue;
                     if (H.part == 4) { // its send pill
                         const auto TX = replyText();
+                        const auto TG = replyTargetKey();
                         replyClose();
-                        Bus::sendReply(H.id, TX);
+                        Bus::sendReply(H.id, TX, TG);
                         continue;
                     }
                     if (H.action == "inline-reply") { // the chip arms the field

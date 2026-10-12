@@ -23,94 +23,123 @@ namespace NAwesome::Notify::Bus {
 
     // Model changes can originate in pointer/key drains, expiry timers, or
     // D-Bus method handlers. Keep signal construction off all of those
-    // callbacks and let the link own the bounded send queue.
-    // Closes batch into ONE post per drain: a Clear all over 400 cards was 400
-    // posts against the link's 256 bound, and the tail's NotificationClosed
-    // were dropped (the spec signals every close). Bounded: each card closes
-    // once, and the batch can't outgrow a few model's worth between drains.
-    static std::vector<std::pair<uint32_t, uint32_t>> s_closed;
-    static bool                                       s_closedPosted = false;
+    // callbacks: every outbound signal joins ONE ordered queue, sent by one
+    // post per drain. Ordered: a card's NotificationClosed must not overtake
+    // its ActionInvoked (GLib's GNotification forgets an id on close and
+    // drops the action after it), which two separate posts allowed. Batched:
+    // a Clear all over 400 cards was 400 posts against the link's 256 bound
+    // once, and the tail's closes were dropped. Bounded: past MAX_OUT queued
+    // signals a push is refused.
+    struct SOut {
+        enum eKind : uint8_t {
+            CLOSED,
+            ACTION,
+            REPLY,
+        } kind;
+        uint32_t    id     = 0;
+        uint32_t    reason = 0;
+        std::string text;   // the action key, or the reply
+        std::string sender; // ACTION/REPLY: the one client that hears them
+    };
+    static std::vector<SOut> s_out;
+    static bool              s_outPosted = false;
+    constexpr size_t         MAX_OUT     = 8192;
+
+    // The action, its activation token and a reply's text concern the
+    // sender alone: sent to it, never broadcast (any session-bus listener
+    // could otherwise read what the user typed, or spend the token to take
+    // focus). A card with no known sender (one posted in-process) has no
+    // client to tell.
+    template <typename... A>
+    static void emitTo(const std::string& sender, const char* name, const A&... args) {
+        if (sender.empty())
+            return;
+        auto signal = obj->createSignal(IFACE, sdbus::SignalName{name});
+        (signal << ... << args);
+        signal.setDestination(sender);
+        obj->emitSignal(signal);
+    }
+
+    // The click is a user action: the sender's window comes to the
+    // foreground. The token lets a Wayland sender spend it through
+    // xdg-activation (vanilla: the app activates itself), but a sender may
+    // never spend it, and an X11 sender's own activation is unauthenticated
+    // (urgency only) — so the side that SAW the click focuses the sender's
+    // own window itself, for every backend (core/activate.hpp; a sender
+    // that DID spend the token just lands on its already-focused window).
+    static void focusSender(const std::string& sender) {
+        if (sender.empty() || !g_bus.conn())
+            return;
+        if (!busProbe)
+            busProbe = sdbus::createProxy(*g_bus.conn(), sdbus::ServiceName{"org.freedesktop.DBus"}, sdbus::ObjectPath{"/org/freedesktop/DBus"});
+        try {
+            busProbe->callMethodAsync("GetConnectionUnixProcessID")
+                .onInterface("org.freedesktop.DBus")
+                .withArguments(sender)
+                .uponReplyInvoke([](std::optional<sdbus::Error> e, uint32_t pid) {
+                    if (e)
+                        return; // a unique name that vanished: the app is gone, nothing to focus
+                    NAwesome::activateAppWindow(pid);
+                });
+        } catch (...) {}
+    }
+
+    static void flushOut() {
+        s_outPosted      = false;
+        const auto BATCH = std::exchange(s_out, {});
+        if (!obj)
+            return;
+        for (const auto& O : BATCH) {
+            try { // a dead bus must not unwind through the idle C frame
+                if (O.kind == SOut::CLOSED)
+                    obj->emitSignal("NotificationClosed").onInterface(IFACE).withArguments(O.id, O.reason);
+                else {
+                    // spec 1.3: the token precedes the action, so the
+                    // sender's xdg-activation request can actually raise
+                    // it — tokenless activates only flag urgent
+                    if (PROTO::activation && !O.sender.empty())
+                        emitTo(O.sender, "ActivationToken", O.id, PROTO::activation->mintToken());
+                    emitTo(O.sender, O.kind == SOut::ACTION ? "ActionInvoked" : "NotificationReplied", O.id, O.text);
+                }
+            } catch (...) {}
+            if (O.kind == SOut::ACTION)
+                focusSender(O.sender);
+        }
+        g_bus.pollSoon();
+    }
+
+    static bool queueOut(SOut&& o) {
+        if (!obj || s_out.size() >= MAX_OUT)
+            return false;
+        s_out.push_back(std::move(o));
+        if (!s_outPosted) // a refused post retries with the next push
+            s_outPosted = g_bus.post(flushOut);
+        return true;
+    }
 
     void emitClosed(uint32_t id, uint32_t reason) {
-        if (s_closed.size() < 8192)
-            s_closed.emplace_back(id, reason);
-        if (s_closedPosted)
-            return;
-        s_closedPosted = g_bus.post([]() {
-            s_closedPosted = false;
-            const auto BATCH = std::exchange(s_closed, {});
-            if (!obj)
-                return;
-            for (const auto& [ID, REASON] : BATCH)
-                try {
-                    obj->emitSignal("NotificationClosed").onInterface(IFACE).withArguments(ID, REASON);
-                } catch (...) {} // a dead bus must not unwind through the idle C frame
-            g_bus.pollSoon();
-        });
+        queueOut({.kind = SOut::CLOSED, .id = id, .reason = reason});
     }
 
     void invokeAction(uint32_t id, const std::string& key, const std::string& sender) {
-        g_bus.post([id, key, sender]() {
-            if (!obj)
-                return;
-            try {
-                // spec 1.3: the token signal precedes the action, so the
-                // sender's xdg-activation request can actually raise it —
-                // tokenless activates only flag urgent
-                if (PROTO::activation)
-                    obj->emitSignal("ActivationToken").onInterface(IFACE).withArguments(id, PROTO::activation->mintToken());
-                obj->emitSignal("ActionInvoked").onInterface(IFACE).withArguments(id, key);
-            } catch (...) {}
-            // The click is a user action: the sender's window comes to the
-            // foreground. The token above lets a Wayland sender spend it
-            // through xdg-activation (vanilla: the app activates itself),
-            // but a sender may never spend it, and an X11 sender's own
-            // activation (_NET_ACTIVE_WINDOW) is unauthenticated and maps
-            // to urgency only — so the side that SAW the click focuses the
-            // sender's own window itself, for every backend (core/
-            // activate.hpp; a sender that DID spend the token just lands
-            // on its already-focused window). The sender string came in on
-            // the call (the card may be closed by the time this lambda
-            // runs).
-            if (!sender.empty() && g_bus.conn()) {
-                if (!busProbe)
-                    busProbe = sdbus::createProxy(*g_bus.conn(), sdbus::ServiceName{"org.freedesktop.DBus"}, sdbus::ObjectPath{"/org/freedesktop/DBus"});
-                try {
-                    busProbe->callMethodAsync("GetConnectionUnixProcessID")
-                        .onInterface("org.freedesktop.DBus")
-                        .withArguments(sender)
-                        .uponReplyInvoke([sender](std::optional<sdbus::Error> e, uint32_t pid) {
-                            if (e)
-                                return; // a unique name that vanished: the app is gone, nothing to focus
-                            NAwesome::activateAppWindow(pid);
-                        });
-                } catch (...) {}
-                g_bus.pollSoon();
-            }
-            g_bus.pollSoon();
-        });
+        queueOut({.kind = SOut::ACTION, .id = id, .text = key, .sender = sender});
     }
 
     // The user typed a reply: hand it back and close the card, the same
     // way an invoked action does — the sender will post its own follow-up
     // if the conversation continues. `resident` holds the card, as ever.
-    void sendReply(uint32_t id, const std::string& text) {
+    // The card must still be the conversation the reply was typed for (a
+    // sender may reuse the id for another chat while the user types), and
+    // a reply that could not be queued leaves the card — and the user's
+    // chance to retry — in place.
+    void sendReply(uint32_t id, const std::string& text, const std::string& target) {
         if (text.empty())
             return;
         const auto N = Model::byId(id);
-        if (!N || !N->canReply)
+        if (!N || !N->canReply || replyTarget(*N) != target)
             return;
-        if (obj)
-            g_bus.post([id, text]() {
-                if (!obj)
-                    return;
-                try {
-                    if (PROTO::activation)
-                        obj->emitSignal("ActivationToken").onInterface(IFACE).withArguments(id, PROTO::activation->mintToken());
-                    obj->emitSignal("NotificationReplied").onInterface(IFACE).withArguments(id, text);
-                } catch (...) {}
-                g_bus.pollSoon();
-            });
+        if (!queueOut({.kind = SOut::REPLY, .id = id, .text = text, .sender = N->sender}))
+            return;
         if (!N->resident)
             Model::closeOne(id, Model::R_DISMISSED);
         else
@@ -181,8 +210,8 @@ namespace NAwesome::Notify::Bus {
 
     void exit() {
         g_bus.close(); // fd sources out BEFORE the connection dies
-        s_closed.clear();
-        s_closedPosted = false;
+        s_out.clear();
+        s_outPosted = false;
     }
 
 } // namespace NAwesome::Notify::Bus

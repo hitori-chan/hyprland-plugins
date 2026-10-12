@@ -206,6 +206,12 @@ namespace NAwesome::Notify {
     };
     extern std::vector<SP<SNotif>> notifs;
 
+    // who a reply typed on this card is for: its conversation, else the
+    // app and the summary (the sender's name, for a legacy chat card)
+    inline std::string replyTarget(const SNotif& n) {
+        return n.conversationId.empty() ? n.appKey + '\x1f' + n.summary : n.conversationId;
+    }
+
     // ---- parse.cpp: the untrusted payload -> values a card can hold ----
 
     namespace Parse {
@@ -306,7 +312,9 @@ namespace NAwesome::Notify {
         void init();
         void exit();
         void invokeAction(uint32_t id, const std::string& key, const std::string& sender);
-        void sendReply(uint32_t id, const std::string& text); // NotificationReplied, then close unless resident
+        // NotificationReplied to the sender, then close unless resident;
+        // nothing unless the card is still `target` (replyTarget)
+        void sendReply(uint32_t id, const std::string& text, const std::string& target);
         void emitClosed(uint32_t id, uint32_t reason);        // the model's outbound half of a card's death
     }
 
@@ -435,6 +443,7 @@ namespace NAwesome::Notify {
     void               replyOpen(uint32_t id);
     void               replyClose();
     const std::string& replyText();
+    const std::string& replyTargetKey(); // the armed card's replyTarget at arm time
     // a key while armed. Returns false when the key is not ours to eat.
     bool               replyKey(xkb_state* state, uint32_t keycode);
     void               replyExit();
