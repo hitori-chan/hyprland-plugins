@@ -59,7 +59,11 @@ namespace NAwesome::Notify {
                 ensureIconTex(*N, (int)std::lround(MAXICON * P.scale), (int)std::lround(W * P.scale), (int)std::lround(HERO_CAP * P.scale));
 
             const bool   HERO  = N->iconTex && N->heroTex;
-            const double HEROH = HERO ? N->iconTex->m_size.y / P.scale : 0;
+            // the hero's height follows its ASPECT at the card's width: the
+            // texture's pixel height is the scale it was built at, and an
+            // image-data hero (its pixels freed after the upload) shown on a
+            // monitor of another scale came out half or twice as tall
+            const double HEROH = HERO ? W * N->iconTex->m_size.y / std::max(1.0, N->iconTex->m_size.x) : 0;
 
             // ONE icon column (paintIconColumn): the avatar leads and the app
             // identity badges its corner. A wide content image goes hero instead.

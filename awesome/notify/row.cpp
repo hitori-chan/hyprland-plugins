@@ -44,7 +44,7 @@ namespace NAwesome::Notify {
         // image leads the row full-width and suppresses the icon column — AOSP
         // hides the large icon the same way when its BigPicture is up
         const bool   HERO     = N->iconTex && N->heroTex;
-        const double HEROH    = HERO ? N->iconTex->m_size.y / P.scale : 0;
+        const double HEROH    = HERO ? box.w * N->iconTex->m_size.y / std::max(1.0, N->iconTex->m_size.x) : 0; // the aspect at the row's width (popups.cpp)
         const bool   LEADICON = !HERO && hasLeadIcon(*N);
         const double ICONW    = LEADICON ? ST.iconPx : 0;
         const double TX       = box.x + ROW_PADX + (ICONW > 0 ? ICONW + ROW_ICON_GAP : 0);
