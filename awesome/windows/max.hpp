@@ -121,7 +121,7 @@ namespace NAwesome::Windows {
 
             Fullscreen::controller()->setFullscreenMode(W, Fullscreen::FSMODE_NONE, Fullscreen::FSMODE_NONE);
             // the exit just granted the client the size choice — the box is ours
-            W->m_sizeFromClientSerial = 0;
+            W->cancelClientSize();
             // the geometry change below re-enters the floating recalc, which
             // would fire the one-shot respawnIfBornFullscreen and re-arm the
             // 0x0 client-size grant on top of the plugin box; a client
@@ -146,12 +146,6 @@ namespace NAwesome::Windows {
             // fullscreen roundtrip
             setGeom(W, WA);
             W->windowTarget()->warpPositionSize();
-            // the exit's 0x0 grant configure already reached the client, but
-            // m_pendingReportedSize kept the real size — an unforced send
-            // dedups against it and stays silent, leaving the client
-            // maximized at 0x0 with nothing to lay out: it never commits a
-            // frame (invisible window). Force the workarea configure out.
-            W->sendWindowSize(true);
         }
 
         // The pointer follows the geometry, like the compositor's own
@@ -264,13 +258,9 @@ namespace NAwesome::Windows {
                 const auto MON = W->m_monitor.lock();
                 const auto B   = windowedOn(W->metadata().appID(), MON);
                 if (B && W->m_sizeFromClientSerial && W->isFloating()) {
-                    W->m_sizeFromClientSerial = 0;
+                    W->cancelClientSize();
                     setGeom(W, boundedRestore(W, *B, MON->logicalBoxMinusReserved()));
                     W->windowTarget()->warpPositionSize();
-                    // same disarmed-grant flush as adoptCompositorMax:
-                    // unforced sends dedup against m_pendingReportedSize and
-                    // go silent when the remembered box matches it
-                    W->sendWindowSize(true);
                 }
                 return;
             }
