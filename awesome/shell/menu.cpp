@@ -19,6 +19,7 @@ namespace NAwesome::Shell {
         constexpr size_t                      MAX_PROPERTY_UPDATES = 1024;
         constexpr size_t                      MAX_LABEL_BYTES     = 4096;
         constexpr size_t                      MAX_ICON_BYTES      = 2u << 20;
+        constexpr size_t                      MAX_INLINE_DECODES  = 64; // per layout reply
 
         bool                                  isOpen  = false;
         bool                                  isLocal = false;
@@ -313,6 +314,9 @@ namespace NAwesome::Shell {
                             if (&L != lvl)
                                 retained += L.entries.size();
                         const size_t entryLimit = retained >= MAX_TOTAL_ENTRIES ? 0 : std::min(MAX_ENTRIES, MAX_TOTAL_ENTRIES - retained);
+                        // inline icons decode on this thread: a reply buys
+                        // a bounded number of them, the rest go iconless
+                        size_t inlineDecodes = 0;
                         for (auto& CV : std::get<2>(root)) {
                             if (lvl->entries.size() >= entryLimit)
                                 break;
@@ -348,10 +352,12 @@ namespace NAwesome::Shell {
                                     if (NAME.size() <= MAX_LABEL_BYTES)
                                         en.icon = namedIcon(NAME);
                                 }
-                                if (!en.icon) // nm-applet ships its signal-strength icons inline
+                                if (!en.icon && inlineDecodes < MAX_INLINE_DECODES) // nm-applet ships its signal-strength icons inline
                                     if (auto it = P.find("icon-data"); it != P.end())
-                                        if (const auto DATA = it->second.get<std::vector<uint8_t>>(); DATA.size() <= MAX_ICON_BYTES)
+                                        if (const auto DATA = it->second.get<std::vector<uint8_t>>(); DATA.size() <= MAX_ICON_BYTES) {
+                                            inlineDecodes++;
                                             en.icon = loadPngBytes(DATA);
+                                        }
                                 en.display = en.label + (en.submenu ? "  ▸" : "");
                                 if (en.icon && en.icon->m_texID != 0 && en.toggle != TG_NONE && en.toggleState == 1)
                                     en.display = (en.toggle == TG_RADIO ? "● " : "✓ ") + en.display;

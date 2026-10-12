@@ -123,29 +123,55 @@ namespace NAwesome::Shell {
             watcher.reset();
         }
 
+        // An item's string as stored: a hostile item cannot make one
+        // unbounded (a 10 MB IconName was copied per directory per lookup)
+        static std::string boundedProp(std::string s) {
+            constexpr size_t MAX_PROP_BYTES = 1024;
+            if (s.size() > MAX_PROP_BYTES)
+                s.clear();
+            return s;
+        }
+
         // Name and pixmap are fetched SERIALLY and committed as ONE change.
         // They arrive as separate replies, and applying each on its own gave
         // every REAL icon flip (fcitx idle <-> unikey — one per IM toggle /
         // input-context change) an intermediate frame: the new name rendered
         // from the theme file, then the item's own pixmap — a visible
-        // double-blink on the tray per window action.
+        // double-blink on the tray per window action. One fetch is in flight
+        // per item: a NewIcon storm (fcitx fires one per input-context
+        // change) only marks the item for one more fetch when the current
+        // one lands, instead of a request chain per signal.
         static void fetchIcon(SP<SItem> it) {
             if (!it || !it->active || !it->proxy)
                 return;
+            if (it->iconFetching) {
+                it->iconAgain = true;
+                return;
+            }
+            it->iconFetching = true;
+            // the chain's end, whatever the outcome: run the one queued
+            const auto done = [](const SP<SItem>& it) {
+                it->iconFetching = false;
+                if (std::exchange(it->iconAgain, false))
+                    fetchIcon(it);
+            };
             // a NeedsAttention item shows its attention icon set (SNI spec)
             const bool     ATTN    = it->status == "NeedsAttention";
             const char*    PNAME   = ATTN ? "AttentionIconName" : "IconName";
             const char*    PPIX    = ATTN ? "AttentionIconPixmap" : "IconPixmap";
             const uint64_t REQUEST = ++it->iconRequest;
-            it->proxy->getPropertyAsync(PNAME).onInterface(SNI).uponReplyInvoke([it, PPIX, ATTN, REQUEST](std::optional<sdbus::Error> eN, sdbus::Variant vN) {
-                if (!it->active || !it->proxy || it->iconRequest != REQUEST || (it->status == "NeedsAttention") != ATTN)
+            it->proxy->getPropertyAsync(PNAME).onInterface(SNI).uponReplyInvoke([it, PPIX, ATTN, REQUEST, done](std::optional<sdbus::Error> eN, sdbus::Variant vN) {
+                if (!it->active || !it->proxy || it->iconRequest != REQUEST || (it->status == "NeedsAttention") != ATTN) {
+                    done(it);
                     return;
+                }
                 auto name = it->iconName; // an errored reply keeps the current name
                 if (!eN)
                     try {
-                        name = vN.get<std::string>();
+                        name = boundedProp(vN.get<std::string>());
                     } catch (...) {}
-                it->proxy->getPropertyAsync(PPIX).onInterface(SNI).uponReplyInvoke([it, name, ATTN, REQUEST](std::optional<sdbus::Error> e, sdbus::Variant v) {
+                it->proxy->getPropertyAsync(PPIX).onInterface(SNI).uponReplyInvoke([it, name, ATTN, REQUEST, done](std::optional<sdbus::Error> e, sdbus::Variant v) {
+                    done(it);
                     if (!it->active || !it->proxy || it->iconRequest != REQUEST || (it->status == "NeedsAttention") != ATTN)
                         return;
                     std::vector<uint8_t> px;
@@ -212,7 +238,7 @@ namespace NAwesome::Shell {
                 if (!it->active || !it->proxy || it->propertyRequest != REQUEST || e)
                     return;
                 try {
-                    const auto ID = v.get<std::string>();
+                    const auto ID = boundedProp(v.get<std::string>());
                     if (ID != it->id) {
                         it->id    = ID;
                         it->dirty = true;
@@ -229,7 +255,7 @@ namespace NAwesome::Shell {
                     return;
                 if (!e)
                     try {
-                        const auto THEME = v.get<std::string>();
+                        const auto THEME = boundedProp(v.get<std::string>());
                         if (THEME != it->themePath) {
                             it->themePath = THEME;
                             it->dirty = true;
@@ -261,7 +287,7 @@ namespace NAwesome::Shell {
                 std::string st = it->status; // an errored reply keeps the current status
                 if (!e)
                     try {
-                        st = v.get<std::string>();
+                        st = boundedProp(v.get<std::string>());
                     } catch (...) {}
                 if (st != it->status) {
                     it->status = st;

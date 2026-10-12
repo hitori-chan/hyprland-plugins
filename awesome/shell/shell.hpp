@@ -164,6 +164,7 @@ namespace NAwesome::Shell {
             uint64_t                       propertyRequest = 0;
             uint64_t                       statusRequest   = 0;
             uint64_t                       iconRequest     = 0;
+            bool                           iconFetching = false, iconAgain = false; // one icon fetch in flight; a storm coalesces
             std::string                    id, iconName, themePath;
             std::string                    menuPath; // dbusmenu object path, "" = none
             std::string                    status;   // SNI Status: Passive hides the icon, NeedsAttention swaps the icon set
