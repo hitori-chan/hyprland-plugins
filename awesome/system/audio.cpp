@@ -149,7 +149,23 @@ namespace NAwesome::System {
         return "audio-volume-high";
     }
 
+    // One SetBrightness in flight: presses while it runs add up into the
+    // next one (a stalled logind would otherwise collect a call per press
+    // until its 25 s timeout)
+    static bool brightnessBusy    = false;
+    static int  brightnessPending = 0;
+
+    static void brightnessApply();
     static void brightnessStep(int dir) {
+        brightnessPending = std::clamp(brightnessPending + dir, -20, 20);
+        if (!brightnessBusy)
+            brightnessApply();
+    }
+
+    static void brightnessApply() {
+        const int dir = std::exchange(brightnessPending, 0); // the steps, signed
+        if (dir == 0)
+            return;
         const uint64_t GENERATION = ++brightnessGeneration;
         if (backlightDev.empty() || !systemBus().conn())
             return;
@@ -184,12 +200,15 @@ namespace NAwesome::System {
                 .withArguments(std::string{"backlight"}, backlightDev, (uint32_t)raw)
                 .uponReplyInvoke([PCT, GENERATION](std::optional<sdbus::Error> err) {
                     if (GENERATION != brightnessGeneration)
-                        return; // a newer press owns the state
+                        return; // a teardown owns the state now
+                    brightnessBusy = false;
                     if (!err)
                         Notify::Model::postCard({.id = ID_BRIGHTNESS, .icon = "display-brightness-symbolic", .summary = "Brightness", .body = (std::to_string(PCT) + "%").c_str(), .expireTimeout = OSD_TIMEOUT, .value = PCT});
                     else
                         lastSetRaw = -1; // logind refused: drop the trust window so the next press re-reads sysfs
+                    brightnessApply(); // what was pressed meanwhile
                 });
+            brightnessBusy = true;
             L.pollSoon();
         } catch (...) { return; }
 
@@ -303,7 +322,9 @@ namespace NAwesome::System {
         ++micGeneration;
         ++volumeFeedback;
         ++micFeedback;
-        lastSetRaw   = -1;
+        brightnessBusy    = false;
+        brightnessPending = 0;
+        lastSetRaw        = -1;
         backlightDev.clear();
         backlightMax = 0;
         systemBus().close(); // fd sources out BEFORE the connection dies
