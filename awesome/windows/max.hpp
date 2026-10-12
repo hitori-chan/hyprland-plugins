@@ -109,7 +109,9 @@ namespace NAwesome::Windows {
         // the grant into plugin maximize instead — slot freed, told-state
         // and workarea box kept.
         inline void adoptCompositorMax(PHLWINDOW W) {
-            if (!W || !W->mapped() || !W->windowTarget() || !W->isFloating() || pluginMaximized(W))
+            // a group lays out from the group's target: the member's box is
+            // ignored (the toggle's own rule)
+            if (!W || !W->mapped() || !W->windowTarget() || !W->isFloating() || W->grouping().group() || pluginMaximized(W))
                 return;
             if (Fullscreen::controller()->getFullscreenModes(W).internal != Fullscreen::FSMODE_MAXIMIZED)
                 return;
