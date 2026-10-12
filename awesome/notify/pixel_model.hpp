@@ -15,12 +15,6 @@
 
 namespace NAwesome::Notify::Pixel {
 
-    enum class eExpansion : uint8_t {
-        COLLAPSED,
-        SYSTEM_EXPANDED,
-        USER_EXPANDED,
-    };
-
     inline constexpr size_t   MAX_CONVERSATION_MESSAGES           = 32; // the retained log
     inline constexpr size_t   MAX_PRESENTED_CONVERSATION_MESSAGES = 7;  // the shade's full transcript
     inline constexpr size_t   MAX_PREVIEWED_CONVERSATION_MESSAGES = 5;  // the banner's preview
@@ -41,76 +35,10 @@ namespace NAwesome::Notify::Pixel {
         bool   operator==(const SAvatarColor&) const = default;
     };
 
-    inline size_t maxVisibleChildren(bool bundle, eExpansion state) {
-        if (bundle) {
-            switch (state) {
-                case eExpansion::COLLAPSED: return 0;
-                case eExpansion::SYSTEM_EXPANDED: return 30;
-                case eExpansion::USER_EXPANDED: return 50;
-            }
-        }
-        switch (state) {
-            case eExpansion::COLLAPSED: return 2;
-            case eExpansion::SYSTEM_EXPANDED: return 5;
-            case eExpansion::USER_EXPANDED: return 8;
-        }
-        return 2;
-    }
-
-    inline std::string normalizeSection(std::string_view section) {
-        if (section == "promotions" || section == "social" || section == "news" || section == "recommendations" || section == "alerting" || section == "silent")
-            return std::string{section};
-        return {};
-    }
-
     inline std::string normalizeConversationKind(std::string_view kind) {
         if (kind == "one-to-one" || kind == "group")
             return std::string{kind};
         return {};
-    }
-
-    inline std::string automaticGroupKey(std::string_view appKey, std::string_view section) {
-        const auto append = [](std::string& out, std::string_view value) {
-            out.append(std::to_string(value.size()));
-            out.push_back(':');
-            out.append(value);
-        };
-        std::string out = "auto:";
-        append(out, appKey);
-        append(out, section.empty() ? std::string_view{"alerting"} : section);
-        return out;
-    }
-
-    inline std::string declaredGroupKey(std::string_view appKey, std::string_view groupKey) {
-        const auto append = [](std::string& out, std::string_view value) {
-            out.append(std::to_string(value.size()));
-            out.push_back(':');
-            out.append(value);
-        };
-        std::string out = "declared:";
-        append(out, appKey);
-        append(out, groupKey);
-        return out;
-    }
-
-    inline std::string displayGroupKey(std::string_view appKey, std::string_view declaredKey, std::string_view section) {
-        return declaredKey.empty() ? automaticGroupKey(appKey, section) : declaredGroupKey(appKey, declaredKey);
-    }
-
-    inline std::string conversationKey(std::string_view appKey, std::string_view conversationId) {
-        const auto append = [](std::string& out, std::string_view value) {
-            out.append(std::to_string(value.size()));
-            out.push_back(':');
-            out.append(value);
-        };
-        std::string out = "conversation:";
-        append(out, appKey);
-        append(out, conversationId);
-        return out;
-    }
-
-    inline bool classifiedSection(std::string_view section) {
-        return section == "promotions" || section == "social" || section == "news" || section == "recommendations";
     }
 
     inline bool matchesConversation(std::string_view appKey, std::string_view conversationId, std::string_view candidateAppKey, std::string_view candidateConversationId) {
