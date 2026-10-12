@@ -14,7 +14,7 @@
 # A probe body is a shell fragment, executed top to bottom; ok/bad
 # count into the printed summary (which reports PASS/FAILED like a
 # battery). Anything that must survive is copied out of $STATE before
-# the exit trap (tmpfs + fresh_stress_state on the next run).
+# the exit trap (it is on tmpfs, wiped by fresh_stress_state on the next run).
 
 set -u
 
@@ -51,7 +51,7 @@ done
 [[ -f "$PROBE" ]] || { echo "probe.sh: no such probe: $PROBE" >&2; exit 2; }
 [[ -n "$BIN" ]] || BIN=${HYPR_BIN:-/usr/local/bin/Hyprland}
 
-STATE="$HARNESS/stress-state"
+STATE="${HYPR_GATE_TMP:-/tmp/hypr-gate}/stress-state" # tmpfs
 CFG="$HARNESS/stress.lua"
 CAPTURE_LOG="$HARNESS/input-capture.log"
 RUNDIR="${XDG_RUNTIME_DIR:?}/hypr"

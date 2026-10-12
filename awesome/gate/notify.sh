@@ -94,7 +94,7 @@ hq awesome center >/dev/null; sleep 0.4
 nclear
 
 # ---- the center hero: the shade's face of the banner preview -------------
-HEROIMG=/tmp/hero-probe-aw.png
+HEROIMG=$STATE/hero-probe-aw.png
 python3 - "$HEROIMG" <<'PY'
 import sys
 from PIL import Image
@@ -131,18 +131,18 @@ PY
 dsp "hl.dsp.exec_cmd('notify-send -a heroapp -t 2000 -i $HEROIMG \"Screenshot\" saved')"; sleep 1
 chk "hero: the image card pops with its banner" test "$(bd)" = "banners:1 resident:0"
 hq awesome center >/dev/null; sleep 0.4
-capture_nested /tmp/hero-1-aw.png
-chk "hero: the center row (open by default) shows the preview" test "$(hero_px /tmp/hero-1-aw.png)" -gt 8000
-chk "hero: the preview is the capped strip, not the full image" test "$(hero_span /tmp/hero-1-aw.png)" -ge 104 -a "$(hero_span /tmp/hero-1-aw.png)" -le 116
-PB1="$(panel_bottom /tmp/hero-1-aw.png)"
+capture_nested $STATE/hero-1-aw.png
+chk "hero: the center row (open by default) shows the preview" test "$(hero_px $STATE/hero-1-aw.png)" -gt 8000
+chk "hero: the preview is the capped strip, not the full image" test "$(hero_span $STATE/hero-1-aw.png)" -ge 104 -a "$(hero_span $STATE/hero-1-aw.png)" -le 116
+PB1="$(panel_bottom $STATE/hero-1-aw.png)"
 click $CHVX 174 272
-capture_nested /tmp/hero-2-aw.png
-chk "hero: the folded row keeps the preview" test "$(hero_px /tmp/hero-2-aw.png)" -gt 8000
-PB2="$(panel_bottom /tmp/hero-2-aw.png)"
+capture_nested $STATE/hero-2-aw.png
+chk "hero: the folded row keeps the preview" test "$(hero_px $STATE/hero-2-aw.png)" -gt 8000
+PB2="$(panel_bottom $STATE/hero-2-aw.png)"
 chk "hero: the panel follows the fold (the body height moves)" test $(( PB2 > PB1 ? PB2 - PB1 : PB1 - PB2 )) -ge 18
 sleep 1.5
-capture_nested /tmp/hero-3-aw.png
-chk "hero: the preview survives the banner retreating" test "$(hero_px /tmp/hero-3-aw.png)" -gt 8000
+capture_nested $STATE/hero-3-aw.png
+chk "hero: the preview survives the banner retreating" test "$(hero_px $STATE/hero-3-aw.png)" -gt 8000
 chk "hero: the card is a resident, its banner is down" test "$(bd)" = "banners:0 resident:1"
 click $CHVX 174 272
 sleep 0.4
@@ -184,8 +184,8 @@ chk "close-on-act: reset after the battery" test "$(st)" = "center:0 live:0 dnd:
 
 # ---- hover holds a banner's clock ------------------------------------------
 dsp "hl.dsp.exec_cmd('notify-send -t 1200 \"hold me\" body')"; sleep 0.4
-capture_nested /tmp/banner-aw.png
-chk "banner: it is on screen (the card's pixels)" test "$(banner_px /tmp/banner-aw.png)" -gt 150
+capture_nested $STATE/banner-aw.png
+chk "banner: it is on screen (the card's pixels)" test "$(banner_px $STATE/banner-aw.png)" -gt 150
 printf 'move %s 64\nsleep 2400\n' "$POPX" | vp
 chk "hover: the pointer holds the banner past its own clock" test "$(bd)" = "banners:1 resident:0"
 printf 'move %s %s\nsleep 150\n' "$((MON_W / 2))" "$((MON_H / 2))" | vp

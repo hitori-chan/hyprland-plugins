@@ -153,7 +153,8 @@ if [[ -n "$K_SPEC" ]]; then
 	SELECTED=("${_KEPT[@]}")
 fi
 [[ ${#SELECTED[@]} -gt 0 ]] || { echo "gate.sh: no battery left to run (-b/-k selected nothing)" >&2; exit 2; }
-STATE="$HARNESS/stress-state"
+# scratch state on tmpfs: ~45 captures a run, never worth a disk write
+STATE="${HYPR_GATE_TMP:-/tmp/hypr-gate}/stress-state"
 CFG="$HARNESS/stress.lua"
 CAPTURE_LOG="$HARNESS/input-capture.log"
 RUNDIR="${XDG_RUNTIME_DIR:?}/hypr"
