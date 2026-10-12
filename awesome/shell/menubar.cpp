@@ -1,6 +1,7 @@
 // awesome/shell/menubar.cpp — awesome's Mod+P launcher: .desktop apps, categories, prompt, completion, history
 
 
+#include "../core/bounded.hpp"
 #include "../core/clipboard.hpp"
 #include "../core/fileindex.hpp"
 #include "../core/persist.hpp"
@@ -533,7 +534,15 @@ namespace NAwesome::Shell {
                 const auto name = entry.path.filename().string();
                 if (compHideDotfiles && name.starts_with("."))
                     continue;
-                compList.push_back(compPrefix + name + (entry.directory ? "/" : ""));
+                // the prompt runs through /bin/sh -c: a name lands as one
+                // escaped word, or not at all (control/bidi characters)
+                const auto WORD = NAwesome::DesktopExec::shellWord(name);
+                if (!WORD)
+                    continue;
+                auto candidate = compPrefix + *WORD + (entry.directory ? "/" : "");
+                if (typed.size() - compLen + candidate.size() > QUERY_MAX)
+                    continue; // the prompt's bound holds for completions too
+                compList.push_back(std::move(candidate));
             }
             if (!entries.empty()) {
                 std::sort(compList.begin(), compList.end());
@@ -562,13 +571,15 @@ namespace NAwesome::Shell {
                 return;
             }
 
-            size_t start = cursor;
-            while (start > 0 && typed[start - 1] != ' ')
+            // the word under the cursor, an escaped space inside it
+            const auto WORDBREAK = [](size_t i) { return typed[i] == ' ' && !NAwesome::DesktopExec::escapedAt(typed, i); };
+            size_t     start     = cursor;
+            while (start > 0 && !WORDBREAK(start - 1))
                 start--;
             size_t end = cursor;
-            while (end < typed.size() && typed[end] != ' ')
+            while (end < typed.size() && !WORDBREAK(end))
                 end++;
-            const auto STEM = typed.substr(start, cursor - start);
+            const auto STEM = typed.substr(start, cursor - start); // as typed, escapes and all
 
             NAwesome::CAsyncFileIndex::SRequest request;
             request.generation = ++completionGeneration;
@@ -578,12 +589,12 @@ namespace NAwesome::Shell {
                 const char* PATH = std::getenv("PATH");
                 for (const auto& dir : splitList(PATH ? PATH : "", ':'))
                     request.roots.emplace_back(dir);
-                request.namePrefix = STEM;
+                request.namePrefix = NAwesome::DesktopExec::unescapeWord(STEM);
                 request.executable = true;
                 compPrefix.clear();
                 compHideDotfiles = false;
             } else { // a filename; the typed form (~ and all) is preserved
-                std::string expanded = STEM;
+                std::string expanded = NAwesome::DesktopExec::unescapeWord(STEM);
                 if (const char* HOME = std::getenv("HOME"); HOME && expanded.starts_with("~/"))
                     expanded = std::string{HOME} + expanded.substr(1);
                 const auto SLASH = expanded.rfind('/');
@@ -710,21 +721,17 @@ namespace NAwesome::Shell {
                     for (char& C : text)
                         if (C == '\n' || C == '\r' || C == '\t')
                             C = ' ';
-                    std::erase_if(text, [](unsigned char C) { return C < 0x20 || C == 0x7f; });
+                    // the line runs through /bin/sh: no control or bidi
+                    // character may hide what the prompt shows
+                    text = NAwesome::DesktopExec::typeableText(text);
                     if (typed.size() >= QUERY_MAX)
                         return;
-                    if (text.size() > QUERY_MAX - typed.size()) {
-                        text.resize(QUERY_MAX - typed.size());
-                        while (!text.empty() && ((unsigned char)text.back() & 0xc0) == 0x80)
-                            text.pop_back();
-                        if (!text.empty()) {
-                            const unsigned char LEAD = text.back();
-                            if ((LEAD & 0xe0) == 0xc0 || (LEAD & 0xf0) == 0xe0 || (LEAD & 0xf8) == 0xf0)
-                                text.pop_back();
-                        }
-                    }
+                    text.resize(NAwesome::clipToUtf8Boundary(text, QUERY_MAX - typed.size()));
                     if (text.empty())
                         return;
+                    // the scan and the cycle hold byte offsets into the query
+                    compActive = false;
+                    cancelCompletion();
                     typed.insert(cursor, text);
                     cursor += text.size();
                     histSel = -1;

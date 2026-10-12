@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cctype>
+#include <cstdint>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -295,6 +296,94 @@ namespace NAwesome::DesktopExec {
             out += shellQuote(W);
         }
         return out;
+    }
+
+    // ---- the launcher's typed command line (run through /bin/sh -c) ----
+
+    // A name that may be typed into a command line: no C0/C1 control (a
+    // newline ends the command) and no bidi control (it can hide or reorder
+    // what the prompt shows). Bytes are UTF-8; anything malformed is refused.
+    inline bool typeableName(std::string_view s) {
+        for (size_t i = 0; i < s.size();) {
+            const auto C = (unsigned char)s[i];
+            if (C < 0x20 || C == 0x7f)
+                return false;
+            if (C < 0x80) {
+                i++;
+                continue;
+            }
+            const size_t LEN = C >= 0xf0 ? 4 : C >= 0xe0 ? 3 : C >= 0xc2 ? 2 : 0;
+            if (LEN == 0 || i + LEN > s.size())
+                return false;
+            uint32_t cp = C & (0xff >> (LEN + 1));
+            for (size_t k = 1; k < LEN; k++) {
+                const auto B = (unsigned char)s[i + k];
+                if ((B & 0xc0) != 0x80)
+                    return false;
+                cp = (cp << 6) | (B & 0x3f);
+            }
+            if ((cp >= 0x80 && cp <= 0x9f) || cp == 0x61c || cp == 0x200e || cp == 0x200f || (cp >= 0x202a && cp <= 0x202e) || (cp >= 0x2066 && cp <= 0x2069))
+                return false;
+            i += LEN;
+        }
+        return true;
+    }
+
+    // Text that may be typed into a command line: `s` with every C0/C1 and
+    // bidi control and every malformed UTF-8 byte removed (see typeableName)
+    inline std::string typeableText(std::string_view s) {
+        std::string out;
+        out.reserve(s.size());
+        for (size_t i = 0; i < s.size();) {
+            const auto   C   = (unsigned char)s[i];
+            const size_t LEN = C < 0x80 ? 1 : C >= 0xf0 && C < 0xf5 ? 4 : C >= 0xe0 ? 3 : C >= 0xc2 ? 2 : 0;
+            if (LEN == 0 || i + LEN > s.size()) {
+                i++; // a stray byte
+                continue;
+            }
+            if (typeableName(s.substr(i, LEN)))
+                out.append(s, i, LEN);
+            i += LEN;
+        }
+        return out;
+    }
+
+    // A completed name as one sh word: every byte sh gives a meaning to is
+    // backslash-escaped (a file named `x$(cmd)` must stay a file name; `=`
+    // too, which would make a first word an assignment).
+    // nullopt for a name that cannot be typed at all.
+    inline std::optional<std::string> shellWord(std::string_view name) {
+        if (!typeableName(name))
+            return std::nullopt;
+        std::string out;
+        out.reserve(name.size());
+        for (const char C : name) {
+            const auto U = (unsigned char)C;
+            if (!(std::isalnum(U) || U >= 0x80 || std::string_view{"._+,:@%/-"}.find(C) != std::string_view::npos))
+                out += '\\';
+            out += C;
+        }
+        return out;
+    }
+
+    // sh's backslash in a plain word: the next byte is literal
+    inline std::string unescapeWord(std::string_view word) {
+        std::string out;
+        out.reserve(word.size());
+        for (size_t i = 0; i < word.size(); i++) {
+            if (word[i] == '\\' && i + 1 < word.size())
+                i++;
+            out += word[i];
+        }
+        return out;
+    }
+
+    // whether the byte at `at` is escaped (an odd run of backslashes before it)
+    inline bool escapedAt(std::string_view s, size_t at) {
+        size_t n = 0;
+        while (at > n && s[at - n - 1] == '\\')
+            n++;
+        return n % 2 == 1;
     }
 
 } // namespace NAwesome::DesktopExec

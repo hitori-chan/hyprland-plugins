@@ -97,5 +97,29 @@ bool test_desktop_exec() {
     AW_CHECK(DE::shellQuote("a b\"c") == "'a b\"c'");
     AW_CHECK(DE::shellCommand({"a", "b c"}) == "'a' 'b c'");
 
+    // ---- the launcher's typed line: completed names are one sh word ----
+    AW_CHECK(DE::shellWord("plain-name_1.2.mp4").value() == "plain-name_1.2.mp4");
+    AW_CHECK(DE::shellWord("x$(id).mp4").value() == "x\\$\\(id\\).mp4"); // no substitution survives
+    AW_CHECK(DE::shellWord("a b").value() == "a\\ b");
+    AW_CHECK(DE::shellWord("it's;&|<>`\"*?").value() == "it\\'s\\;\\&\\|\\<\\>\\`\\\"\\*\\?");
+    AW_CHECK(DE::shellWord("~home").value() == "\\~home"); // no tilde expansion
+    AW_CHECK(DE::shellWord("a=b").value() == "a\\=b");     // never an assignment
+    AW_CHECK(DE::shellWord("ünïcødé").value() == "ünïcødé");
+    AW_CHECK(!DE::shellWord("new\nline").has_value());        // a newline ends the command
+    AW_CHECK(!DE::shellWord("tab\there").has_value());
+    AW_CHECK(!DE::shellWord("c1\xc2\x85").has_value());       // NEL (C1)
+    AW_CHECK(!DE::shellWord("bidi\xe2\x80\xae").has_value()); // RLO
+    AW_CHECK(!DE::shellWord("iso\xe2\x81\xa6").has_value());  // LRI
+    AW_CHECK(!DE::shellWord("bad\xff").has_value());           // malformed UTF-8
+    AW_CHECK(!DE::shellWord("cut\xe2\x80").has_value());      // truncated sequence
+    AW_CHECK(DE::unescapeWord("a\\ b") == "a b");
+    AW_CHECK(DE::unescapeWord(DE::shellWord("x$(id) y").value()) == "x$(id) y"); // round trip
+    AW_CHECK(DE::unescapeWord("trailing\\") == "trailing\\");
+    AW_CHECK(DE::escapedAt("a\\ b", 2));
+    AW_CHECK(!DE::escapedAt("a\\\\ b", 3)); // an escaped backslash, then a real space
+    AW_CHECK(!DE::escapedAt("a b", 1));
+    AW_CHECK(DE::typeableText("ok\x01\xe2\x80\xaeyes\xff") == "okyes");
+    AW_CHECK(DE::typeableText("ünï") == "ünï");
+
     return true;
 }
