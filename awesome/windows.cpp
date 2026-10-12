@@ -25,10 +25,17 @@ namespace NAwesome::Windows {
         return M;
     }
 
-    // the activate-of-a-minimized restore hop (init's window.urgent listener)
+    // the activate-of-a-minimized restores (init's window.urgent listener) —
+    // queued, never a lone hop: two asks in one dispatch must both land —
     // and the focus bounce off a minimized window (window.active); reset in
     // teardown like every module hop
-    static CHop pendingActivate;
+    static CHopQueue<PHLWINDOWREF, 16> pendingActivates([](std::vector<PHLWINDOWREF>& batch) {
+        if (sessionLocked())
+            return; // never un-minimize under the lockscreen
+        for (const auto& WR : batch)
+            if (const auto W = WR.lock(); W && W->mapped() && Tasklist::isMinimized(W))
+                Tasklist::restore(W); // un-hides, re-slots if tiled, raises and focuses
+    });
     static CHop pendingFocusAway;
 
     namespace {
@@ -104,11 +111,7 @@ namespace NAwesome::Windows {
             static auto FOCUS_ON_ACTIVATE = CConfigValue<Config::INTEGER>("misc:focus_on_activate");
             if (!w || w->backend().isX11() || !w->m_ruleApplicator->focusOnActivate().valueOr(*FOCUS_ON_ACTIVATE) || !w->isHidden() || !Tasklist::isMinimized(w))
                 return;
-            PHLWINDOWREF WR{w};
-            pendingActivate.arm([WR]() {
-                if (const auto W = WR.lock(); W && W->mapped() && Tasklist::isMinimized(W))
-                    Tasklist::restore(W); // un-hides, re-slots if tiled, raises and focuses
-            });
+            pendingActivates.push(PHLWINDOWREF{w});
         });
 
         Max::init();
@@ -155,7 +158,7 @@ namespace NAwesome::Windows {
         // clears its per-window self-minimize listeners — a stateChanged
         // firing mid-teardown cannot re-arm a hop: the hops are already
         // reset by the supervisor)
-        pendingActivate.reset();
+        pendingActivates.reset();
         pendingFocusAway.reset();
         restoreMinimizedHook() = nullptr;
         Snap::teardown();
