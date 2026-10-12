@@ -174,6 +174,16 @@ namespace NAwesome::Shell {
                 }
                 if (!inEntry)
                     continue;
+                // the spec: space before and after the '=' is ignored
+                if (const auto EQ = line.find('='); EQ != std::string::npos && !line.starts_with('#')) {
+                    size_t keyEnd = EQ, valStart = EQ + 1;
+                    while (keyEnd > 0 && line[keyEnd - 1] == ' ')
+                        keyEnd--;
+                    while (valStart < line.size() && line[valStart] == ' ')
+                        valStart++;
+                    if (keyEnd != EQ || valStart != EQ + 1)
+                        line = line.substr(0, keyEnd) + "=" + line.substr(valStart);
+                }
                 if (line.starts_with("Name=") && app.name.empty())
                     stringValue(std::string_view{line}.substr(5), app.name);
                 else if (line.starts_with("Exec="))
