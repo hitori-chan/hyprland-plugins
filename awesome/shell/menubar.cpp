@@ -11,6 +11,8 @@
 #include "../core/desktop_exec.hpp"
 #include "shell/shell.hpp"
 
+#include <hyprland/src/protocols/XDGActivation.hpp>
+
 namespace NAwesome::Shell {
 
     // ---- menubar: awesome's Mod+P app launcher, drawn in the bar strip ----
@@ -417,28 +419,51 @@ namespace NAwesome::Shell {
             promptChanged();
         }
 
+        // The launch is the user's gesture, but the Enter that made it was
+        // swallowed: the app holds no input serial to earn its own
+        // xdg-activation token, so an already-running app (a D-Bus activated
+        // one, a single-instance one) could not raise itself. Hand it a
+        // compositor-minted token, the way any launcher passes its own.
+        static std::string launchToken() {
+            return PROTO::activation ? PROTO::activation->mintToken() : std::string{};
+        }
+
+        // The command line with the token in its environment (the executor
+        // runs it through /bin/sh -c, so an export covers a whole list)
+        static std::string withToken(const std::string& cmd, const std::string& token) {
+            if (token.empty())
+                return cmd;
+            const auto Q = NAwesome::DesktopExec::shellQuote(token);
+            return "export XDG_ACTIVATION_TOKEN=" + Q + " DESKTOP_STARTUP_ID=" + Q + "; " + cmd;
+        }
+
         static void activateDbus(const SApp& app) {
-            const auto PATH = desktopObjectPath(app.desktopId);
+            const auto TOKEN = launchToken();
+            const auto PATH  = desktopObjectPath(app.desktopId);
             if (!PATH || !Tray::bus.conn()) {
                 if (!app.exec.empty())
-                    std::ignore = Config::Supplementary::executor()->spawn(app.exec);
+                    std::ignore = Config::Supplementary::executor()->spawn(withToken(app.exec, TOKEN));
                 return;
             }
             try {
                 auto P = std::shared_ptr<sdbus::IProxy>(sdbus::createProxy(*Tray::bus.conn(), sdbus::ServiceName{app.desktopId}, *PATH).release());
-                const auto DATA = std::map<std::string, sdbus::Variant>{};
+                auto DATA = std::map<std::string, sdbus::Variant>{};
+                if (!TOKEN.empty()) {
+                    DATA.emplace("activation-token", sdbus::Variant{TOKEN});
+                    DATA.emplace("desktop-startup-id", sdbus::Variant{TOKEN});
+                }
                 const auto GENERATION = activationGeneration;
                 P->callMethodAsync("Activate")
                     .onInterface("org.freedesktop.Application")
                     .withArguments(DATA)
                     .uponReplyInvoke([P, app, GENERATION](std::optional<sdbus::Error> error) {
                         if (GENERATION == activationGeneration && error && !app.exec.empty())
-                            std::ignore = Config::Supplementary::executor()->spawn(app.exec);
+                            std::ignore = Config::Supplementary::executor()->spawn(withToken(app.exec, launchToken()));
                     });
                 Tray::pollSoon();
             } catch (...) {
                 if (!app.exec.empty())
-                    std::ignore = Config::Supplementary::executor()->spawn(app.exec);
+                    std::ignore = Config::Supplementary::executor()->spawn(withToken(app.exec, TOKEN));
             }
         }
 
@@ -470,7 +495,7 @@ namespace NAwesome::Shell {
             pendingExec.arm([cmd, hist = typed]() {
                 saveCounts();
                 historyAdd(hist);
-                std::ignore = Config::Supplementary::executor()->spawn(cmd);
+                std::ignore = Config::Supplementary::executor()->spawn(withToken(cmd, launchToken()));
             });
         }
 
