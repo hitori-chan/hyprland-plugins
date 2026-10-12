@@ -57,6 +57,10 @@ namespace NAwesome::Windows::Tasklist {
     // records whether restore must re-add a layout slot: a floating window
     // reserves none, so hiding alone suffices and its box stays untouched —
     // routing it through the layout would risk the float-recenter (see max).
+    // A tiled window keeps its space as a GHOST while minimized (in the
+    // space, not laid out — the compositor's own grouped-member state): a
+    // target with no space at all is dereferenced unchecked by the layout's
+    // resize (a resize dispatch naming a minimized window crashed it).
     // `fs` is the compositor fullscreen/maximize mode held at minimize: a
     // hidden window can't keep the workspace's one FS slot without stranding
     // it, so the mode is dropped before hiding and re-entered on restore —
@@ -134,7 +138,7 @@ namespace NAwesome::Windows::Tasklist {
                 return true;
             if (W->isHidden())
                 return false;
-            if (m.tiled && W->mapped() && g_layoutManager && W->m_workspace && !W->layoutTarget()->space())
+            if (m.tiled && W->mapped() && g_layoutManager && W->m_workspace) // a no-op when already laid out
                 g_layoutManager->newTarget(W->layoutTarget(), W->m_workspace->space());
             return true;
         });
@@ -162,10 +166,10 @@ namespace NAwesome::Windows::Tasklist {
             Fullscreen::controller()->setFullscreenMode(w, Fullscreen::FSMODE_NONE, Fullscreen::FSMODE_NONE);
         const bool TILED = !w->isFloating();
         const auto WS    = w->m_workspace;
-        if (TILED && g_layoutManager)
-            g_layoutManager->removeTarget(w->layoutTarget());
+        if (TILED && WS)
+            w->layoutTarget()->setSpaceGhost(WS->space());
         w->setHidden(true); // unrendered, xdg-suspended, no frame callbacks
-        // setHidden issues NO damage. A tiled window's removeTarget reflow
+        // setHidden issues NO damage. A tiled window's ghosting reflow
         // repaints the vacated area for free, but a floating window leaves
         // its last frame stale on screen until something else damages it —
         // so its box flickers back under the cursor's motion damage. Force
@@ -338,7 +342,7 @@ namespace NAwesome::Windows::Tasklist {
                 if (!W || !W->mapped() || !W->isHidden())
                     continue;
                 W->setHidden(false);
-                if (M.tiled && g_layoutManager && W->m_workspace && !W->layoutTarget()->space())
+                if (M.tiled && g_layoutManager && W->m_workspace)
                     g_layoutManager->newTarget(W->layoutTarget(), W->m_workspace->space());
                 if (g_pHyprRenderer)
                     g_pHyprRenderer->damageWindow(W, true);
