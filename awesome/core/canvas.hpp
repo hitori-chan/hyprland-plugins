@@ -124,10 +124,27 @@ namespace NAwesome {
 
         // pass-element tail: back out to the event loop to build what the
         // draw found missing, then repaint — we are inside the render when
-        // we notice, so it must be deferred
+        // we notice, so it must be deferred. Bounded: a texture no warm can
+        // build (a raster that fails every time) would otherwise rewarm and
+        // repaint at refresh rate forever. A frame drawn without a miss
+        // resets the streak; past the bound the miss waits for the next
+        // warm a real change brings.
         void rewarmIfStale(std::function<void()> warmRepaint) {
-            if (texStale)
-                m_rewarm.arm(std::move(warmRepaint));
+            if (!texStale) {
+                m_staleStreak = 0;
+                return;
+            }
+            if (m_rewarmPending)
+                return; // this frame's rewarm is already queued
+            if (++m_staleStreak > MAX_STALE_STREAK) {
+                texStale = false;
+                return;
+            }
+            m_rewarmPending = true;
+            m_rewarm.arm([this, fn = std::move(warmRepaint)]() {
+                m_rewarmPending = false;
+                fn();
+            });
         }
 
         // Some textures resolve OUTSIDE the warm pass, from the event loop
@@ -151,8 +168,12 @@ namespace NAwesome {
         };
 
       private:
-        bool m_tokenPermit = false; // warming as it stood when this pass began
-        CHop m_rewarm;
+        static constexpr int MAX_STALE_STREAK = 8;
+
+        bool                 m_tokenPermit   = false; // warming as it stood when this pass began
+        bool                 m_rewarmPending = false;
+        int                  m_staleStreak   = 0;
+        CHop                 m_rewarm;
     };
 
     // The keyed raster cache. Staleness needs no bookkeeping at all: content
@@ -185,9 +206,15 @@ namespace NAwesome {
         }
 
         TValue* insert(const std::string& key, TValue&& val) {
-            const size_t BYTES = entryBytes(key, val);
-            if (BYTES > m_maxBytes)
-                return nullptr; // never retain one hostile raster above the cap
+            size_t BYTES = entryBytes(key, val);
+            if (BYTES > m_maxBytes) {
+                // Never retain one hostile raster above the cap — but do
+                // remember the refusal: an empty entry is a hit that paints
+                // nothing, where a missing one is a miss every draw, and
+                // every miss rewarms (the raster rebuilt at refresh rate)
+                val   = TValue{};
+                BYTES = entryBytes(key, val);
+            }
 
             if (const auto OLD = m_map.find(key); OLD != m_map.end()) {
                 m_bytes -= OLD->second.bytes;
