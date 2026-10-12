@@ -25,6 +25,7 @@ namespace NAwesome::Shell {
         NAwesome::CBusLink                  bus; // menu.cpp borrows the connection for its dbusmenu proxies
         static std::unique_ptr<sdbus::IObject> watcher;
         static std::unique_ptr<sdbus::IProxy>  busProxy;
+        static sdbus::Slot                     itemMatch, menuMatch; // the connection's item/dbusmenu signal matches (onItemSignal)
         std::vector<SP<SItem>>                 items;
         static std::unordered_map<std::string, std::string> hosts; // service -> unique owner
         static std::string                                  hostService;
@@ -119,6 +120,8 @@ namespace NAwesome::Shell {
             }
             hostService.clear();
             hostNameOwned = false;
+            itemMatch     = {};
+            menuMatch     = {};
             busProxy.reset();
             watcher.reset();
         }
@@ -305,7 +308,42 @@ namespace NAwesome::Shell {
             pollSoon();
         }
 
-        static void addItem(const std::string& service, const std::string& path) {
+        // The item signals, from every client, through ONE match installed
+        // asynchronously at init: a per-item uponSignal is a synchronous
+        // AddMatch round trip on the compositor thread (three per item, in
+        // the RegisterStatusNotifierItem handler), and a stalled broker
+        // froze the compositor for sd-bus's timeout. Routed by the sender's
+        // unique name and the item's path.
+        static void onItemSignal(sdbus::Message& m) {
+            const char* SENDER = m.getSender();
+            const char* PATH   = m.getPath();
+            const char* MEMBER = m.getMemberName();
+            if (!SENDER || !PATH || !MEMBER)
+                return;
+            for (const auto& I : items) {
+                if (!I->active || I->owner != SENDER || I->path != PATH)
+                    continue;
+                const std::string_view NAME{MEMBER};
+                if (NAME == "NewIcon" || NAME == "NewAttentionIcon") // NewIcon changes only the icon (SNI); Menu/Status don't
+                    fetchIcon(I);
+                else if (NAME == "NewStatus") {
+                    std::string st;
+                    try {
+                        m >> st;
+                    } catch (...) { return; }
+                    st = boundedProp(std::move(st));
+                    ++I->statusRequest; // invalidate only the initial Status reply
+                    if (st != I->status) {
+                        I->status = st;
+                        barChanged(); // Passive <-> shown, NeedsAttention swaps the icon set
+                    }
+                    fetchIcon(I);
+                }
+                return;
+            }
+        }
+
+        static void addItem(const std::string& service, const std::string& path, const std::string& owner) {
             if (service.empty() || path.empty() || items.size() >= MAX_ITEMS)
                 return;
             for (const auto& I : items)
@@ -317,19 +355,10 @@ namespace NAwesome::Shell {
             auto it     = makeShared<SItem>();
             it->service = service;
             it->path    = path;
-            it->proxy   = sdbus::createProxy(*bus.conn(), sdbus::ServiceName{service}, sdbus::ObjectPath{path});
-            it->proxy->uponSignal("NewIcon").onInterface(SNI).call([it]() { fetchIcon(it); }); // NewIcon changes only the icon (SNI); Menu/Status don't
-            it->proxy->uponSignal("NewAttentionIcon").onInterface(SNI).call([it]() { fetchIcon(it); });
-            it->proxy->uponSignal("NewStatus").onInterface(SNI).call([it](std::string st) {
-                if (!it->active || !it->proxy)
-                    return;
-                ++it->statusRequest; // invalidate only the initial Status reply
-                if (st != it->status) {
-                    it->status = st;
-                    barChanged(); // Passive <-> shown, NeedsAttention swaps the icon set
-                }
-                fetchIcon(it);
-            });
+            it->owner   = owner;
+            // no per-proxy signal handlers: the item's signals ride the
+            // connection's one match (onItemSignal)
+            it->proxy = sdbus::createProxy(*bus.conn(), sdbus::ServiceName{service}, sdbus::ObjectPath{path});
             fetchProps(it);
             items.push_back(it);
             watcher->emitSignal("StatusNotifierItemRegistered").onInterface(WIFACE).withArguments(service + path);
@@ -375,11 +404,11 @@ namespace NAwesome::Shell {
                     ->addVTable(sdbus::registerMethod("RegisterStatusNotifierItem").withInputParamNames("service").implementedAs([](std::string arg) {
                         const std::string SENDER = watcher->getCurrentlyProcessedMessage().getSender();
                         if (!arg.empty() && arg.front() == '/') {
-                            addItem(SENDER, arg);
+                            addItem(SENDER, arg, SENDER);
                             return;
                         }
                         if (arg.empty() || arg == SENDER) {
-                            addItem(SENDER, "/StatusNotifierItem");
+                            addItem(SENDER, "/StatusNotifierItem", SENDER);
                             return;
                         }
                         // a well-known name nobody owns would never leave:
@@ -393,7 +422,7 @@ namespace NAwesome::Shell {
                                 .withArguments(arg)
                                 .uponReplyInvoke([arg](std::optional<sdbus::Error> e, std::string owner) {
                                     if (!e && !owner.empty())
-                                        addItem(arg, "/StatusNotifierItem");
+                                        addItem(arg, "/StatusNotifierItem", owner);
                                 });
                             pollSoon();
                         } catch (...) {}
@@ -444,6 +473,11 @@ namespace NAwesome::Shell {
                         dropService(name);
                     dropHostName(name, oldOwner, newOwner);
                 });
+
+                itemMatch = bus.conn()->addMatchAsync("type='signal',interface='org.kde.StatusNotifierItem'", [](sdbus::Message m) { onItemSignal(m); },
+                                                      [](sdbus::Message) {}, sdbus::return_slot);
+                menuMatch = bus.conn()->addMatchAsync("type='signal',interface='com.canonical.dbusmenu'", [](sdbus::Message m) { onMenuSignal(m); },
+                                                      [](sdbus::Message) {}, sdbus::return_slot);
 
                 hostService = "org.freedesktop.StatusNotifierHost-" + std::to_string((long long)getpid());
                 bus.conn()->requestName(sdbus::ServiceName{hostService});

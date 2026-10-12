@@ -159,6 +159,7 @@ namespace NAwesome::Shell {
 
         struct SItem {
             std::string                    service, path;
+            std::string                    owner; // the unique bus name its signals come from
             std::unique_ptr<sdbus::IProxy> proxy;
             bool                           active = true;
             uint64_t                       propertyRequest = 0;
@@ -183,6 +184,7 @@ namespace NAwesome::Shell {
         void init();
         void exit();
         void onServiceDropped(const std::string& service); // defined in menu.cpp
+        void onMenuSignal(sdbus::Message& msg);             // defined in menu.cpp: a dbusmenu signal from any client
     }
 
     // ---- bell.cpp: the bell reads the notify MODEL, not a bus ----

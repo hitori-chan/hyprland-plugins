@@ -448,51 +448,6 @@ namespace NAwesome::Shell {
                 return;
             }
 
-            const auto P = proxy;
-            Tray::post([P, SESSION]() {
-                if (!P || !sessionActive(SESSION) || proxy != P)
-                    return;
-
-                // apps mutate their menu while it's up (scans, state flips) —
-                // reload any open level the update signals touch
-                P->uponSignal("LayoutUpdated").onInterface(DBUSMENU).call([SESSION](uint32_t, int32_t parent) {
-                    if (!sessionActive(SESSION))
-                        return;
-                    for (const auto& L : levels)
-                        if (L.parentId == parent) {
-                            loadLevel(parent, SESSION);
-                            break;
-                        }
-                });
-                P->uponSignal("ItemsPropertiesUpdated")
-                    .onInterface(DBUSMENU)
-                    .call(
-                        [SESSION](std::vector<sdbus::Struct<int32_t, std::map<std::string, sdbus::Variant>>> changed, std::vector<sdbus::Struct<int32_t, std::vector<std::string>>> removed) {
-                            if (!sessionActive(SESSION))
-                                return;
-                            std::unordered_set<int32_t> ids;
-                            for (const auto& C : changed) {
-                                if (ids.size() >= MAX_PROPERTY_UPDATES)
-                                    break;
-                                ids.insert(std::get<0>(C));
-                            }
-                            for (const auto& R : removed) {
-                                if (ids.size() >= MAX_PROPERTY_UPDATES)
-                                    break;
-                                ids.insert(std::get<0>(R));
-                            }
-                            std::unordered_set<int32_t> reload; // affected levels, deduped
-                            for (const auto& L : levels)
-                                for (const auto& E : L.entries)
-                                    if (ids.contains(E.id)) {
-                                        reload.insert(L.parentId);
-                                        break;
-                                    }
-                            for (const auto PARENT : reload)
-                                loadLevel(PARENT, SESSION);
-                        });
-            });
-
             // AboutToShow lets lazy apps (nm-applet) populate; load either way.
             menuEvent(0, "opened");
             aboutToShow(0, SESSION);
@@ -792,6 +747,59 @@ namespace NAwesome::Shell {
                 }
             }
         }
+    }
+
+    // A dbusmenu signal from any client, through the tray connection's one
+    // async match (tray.cpp): only the open menu's own sender and path
+    // count. Apps mutate their menu while it is up (scans, state flips):
+    // reload any open level the update touches.
+    void Tray::onMenuSignal(sdbus::Message& m) {
+        using namespace Menu;
+        const uint64_t SESSION = menuSession;
+        if (!sessionActive(SESSION) || !item)
+            return;
+        const char* SENDER = m.getSender();
+        const char* PATH   = m.getPath();
+        const char* MEMBER = m.getMemberName();
+        if (!SENDER || !PATH || !MEMBER || item->owner != SENDER || item->menuPath != PATH)
+            return;
+        const std::string_view NAME{MEMBER};
+        try {
+            if (NAME == "LayoutUpdated") {
+                uint32_t revision = 0;
+                int32_t  parent   = 0;
+                m >> revision >> parent;
+                for (const auto& L : levels)
+                    if (L.parentId == parent) {
+                        loadLevel(parent, SESSION);
+                        break;
+                    }
+            } else if (NAME == "ItemsPropertiesUpdated") {
+                std::vector<sdbus::Struct<int32_t, std::map<std::string, sdbus::Variant>>> changed;
+                std::vector<sdbus::Struct<int32_t, std::vector<std::string>>>             removed;
+                m >> changed >> removed;
+                std::unordered_set<int32_t> ids;
+                for (const auto& C : changed) {
+                    if (ids.size() >= MAX_PROPERTY_UPDATES)
+                        break;
+                    ids.insert(std::get<0>(C));
+                }
+                for (const auto& R : removed) {
+                    if (ids.size() >= MAX_PROPERTY_UPDATES)
+                        break;
+                    ids.insert(std::get<0>(R));
+                }
+                std::unordered_set<int32_t> reload; // affected levels, deduped
+                for (const auto& L : levels)
+                    for (const auto& E : L.entries)
+                        if (ids.contains(E.id)) {
+                            reload.insert(L.parentId);
+                            break;
+                        }
+                for (const auto PARENT : reload)
+                    loadLevel(PARENT, SESSION);
+            }
+        } catch (...) {} // a malformed signal is ignored
     }
 
     void Tray::onServiceDropped(const std::string& service) {
