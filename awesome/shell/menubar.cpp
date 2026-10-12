@@ -873,9 +873,12 @@ namespace NAwesome::Shell {
             if (CTRL || ALT)
                 return;
 
-            char buf[16] = {};
-            if (xkb_state_key_get_utf8(KB->m_xkbState, KC, buf, sizeof(buf)) > 0 && (unsigned char)buf[0] >= 0x20 && buf[0] != 0x7f) {
-                const std::string S{buf};
+            // the return is the length NEEDED: a longer keysym string was cut,
+            // maybe mid-codepoint — typed whole or not at all
+            char      buf[64] = {};
+            const int N       = xkb_state_key_get_utf8(KB->m_xkbState, KC, buf, sizeof(buf));
+            if (N > 0 && (size_t)N < sizeof(buf) && (unsigned char)buf[0] >= 0x20 && buf[0] != 0x7f) {
+                const std::string S{buf, (size_t)N};
                 if (typed.size() + S.size() <= QUERY_MAX) {
                     typed.insert(cursor, S);
                     cursor += S.size();

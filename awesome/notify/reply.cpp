@@ -143,9 +143,11 @@ namespace NAwesome::Notify {
         }
 
         // anything that types a character types into the field
-        char       buf[8]{};
+        // the return is the length NEEDED (snprintf-style): past the buffer
+        // the bytes were cut, and appending N would read past it
+        char       buf[64]{};
         const int  N = xkb_state_key_get_utf8(state, keycode, buf, sizeof buf);
-        if (N > 0 && (unsigned char)buf[0] >= 0x20 && buf[0] != 0x7f) {
+        if (N > 0 && (size_t)N < sizeof buf && (unsigned char)buf[0] >= 0x20 && buf[0] != 0x7f) {
             if (s_text.size() < 2000) // a reply, not a document
                 s_text.append(buf, (size_t)N);
             notifChanged();
