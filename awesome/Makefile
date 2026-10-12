@@ -56,18 +56,24 @@ OBJS   := $(patsubst %.cpp,$(OBJDIR)/%.o,$(shell find . -name '*.cpp' -not -path
 HL_VERSION_H := $(firstword $(wildcard $(patsubst -I%,%/hyprland/src/version.h,$(filter -I%,$(HL_CFLAGS)))))
 STAMP        := $(OBJDIR)/target.stamp
 STAMP_TEXT   := $(CXX) $(CXXFLAGS) $(if $(filter /usr/%,$(HL_VERSION_H)),$(shell cksum < $(HL_VERSION_H)))
+# the link's own target: the version script and the libraries relink, they
+# never recompile
+LINK_STAMP   := $(OBJDIR)/link.stamp
+LINK_TEXT    := $(LDFLAGS) $(LDLIBS)
 
 all: $(TARGET)
 
 $(STAMP): FORCE | $(OBJDIR)
 	@echo '$(STAMP_TEXT)' | cmp -s - $@ || echo '$(STAMP_TEXT)' > $@
+$(LINK_STAMP): FORCE | $(OBJDIR)
+	@echo '$(LINK_TEXT)' | cmp -s - $@ || echo '$(LINK_TEXT)' > $@
 
-$(TARGET): $(OBJS)
+$(TARGET): $(OBJS) plugin.ver $(LINK_STAMP)
 	$(CXX) $(LDFLAGS) $(OBJS) -o $@ $(LDLIBS)
 
 # one object per unit; -MMD tracks the plugin's own headers, the stamp
 # the target's
-$(OBJDIR)/%.o: %.cpp Makefile plugin.ver $(STAMP) | $(OBJDIR)
+$(OBJDIR)/%.o: %.cpp Makefile $(STAMP) | $(OBJDIR)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
