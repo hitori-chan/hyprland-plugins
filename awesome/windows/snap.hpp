@@ -9,10 +9,10 @@
 //   the other visible windows' opposite edges, whenever they come within
 //   snap_distance (awesome's default_distance = 8). The DragController
 //   recomputes position from its begin-anchor + delta on every motion, so
-//   a correction applied AFTER it (deferred out of the move emission)
-//   never accumulates or fights — it just wins the frame. (The round-4
-//   "external move mid-drag = jitter" lesson was about timers racing the
-//   controller; per-motion post-adjustment is the fight-free way around.)
+//   a correction applied AFTER it — in its own motion signal, which fires
+//   once it has placed the window — never accumulates or fights, and lands
+//   in the same frame. (The round-4 "external move mid-drag = jitter"
+//   lesson was about timers racing the controller.)
 //
 // - edge_enabled aerosnap: the CURSOR within `edge` px of a screen edge
 //   arms that edge's half slot; within `edge` of TWO edges at once, that
@@ -39,8 +39,11 @@
 #include "core/canvas.hpp"
 #include "core/config.hpp"
 #include "core/queries.hpp"
+#include "core/supervisor.hpp"
 
 #include <hyprland/src/config/ConfigValue.hpp>
+#include <hyprland/src/layout/LayoutManager.hpp>
+#include <hyprland/src/layout/supplementary/DragController.hpp>
 #include <hyprland/src/layout/target/WindowTarget.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
 
@@ -79,14 +82,6 @@ namespace NAwesome::Windows::Snap {
         inline eEdgeH& zoneH() {
             static eEdgeH H = H_NONE;
             return H;
-        }
-        inline CHop& pendingMagnet() {
-            static CHop H;
-            return H;
-        }
-        inline bool& magnetQueued() {
-            static bool Q = false;
-            return Q;
         }
         inline std::optional<CBox>& resizeStart() {
             static std::optional<CBox> B; // resize-drag begin box: tells dragged edges from anchored
@@ -269,18 +264,15 @@ namespace NAwesome::Windows::Snap {
             return floatingDragTarget(true);
         }
 
-        // one deferred run per dispatch, applied after the DragController
-        // has positioned the window for this motion; the lambda reads live
-        // state
-        void queueMagnet() {
-            if (magnetQueued() || cfg().getI("plugin:awesome:windows:snap_distance") <= 0)
+        // From the DragController's motion signal: it has positioned the
+        // window for this motion. A geometry change, no focus or workspace
+        // change — fine inside the emission.
+        void applyMagnet() {
+            if (cfg().getI("plugin:awesome:windows:snap_distance") <= 0)
                 return;
-            magnetQueued() = true;
-            pendingMagnet().arm([]() {
-                magnetQueued() = false;
-                // the lock can engage between the motion emission and this
-                // run (idle timeout mid-drag): never move windows under the
-                // lockscreen
+            {
+                // a lock engaging mid-drag (an idle timeout) is not an input
+                // event: never move windows under the lockscreen
                 if (sessionLocked())
                     return;
                 const double D = (double)cfg().getI("plugin:awesome:windows:snap_distance");
@@ -296,9 +288,9 @@ namespace NAwesome::Windows::Snap {
                 // window by its own border)
                 const auto WS = shownWorkspace(MON);
 
-                const auto   othersOf = [&](SP<Layout::ITarget> self) {
-                    std::vector<CBox> OUT;
-                    OUT.reserve(16); // most sessions have a handful of floaters; this runs on every move
+                const auto   othersOf = [&](SP<Layout::ITarget> self) -> const std::vector<CBox>& {
+                    static std::vector<CBox> OUT; // reused: this runs on every motion of a drag
+                    OUT.clear();
                     for (const auto& O : Desktop::windowState()->windows()) {
                         if (!O->mapped() || O->isHidden() || !O->isFloating() || !O->windowTarget() || O->windowTarget().get() == self.get())
                             continue;
@@ -382,7 +374,7 @@ namespace NAwesome::Windows::Snap {
                     T->setPositionGlobal(FINAL);
                     T->warpPositionSize();
                 }
-            });
+            }
         }
     }
 
@@ -393,8 +385,6 @@ namespace NAwesome::Windows::Snap {
         zoneMon().reset();
         zoneV() = V_NONE;
         zoneH() = H_NONE;
-        pendingMagnet().reset();
-        magnetQueued() = false;
         resizeStart().reset();
     }
 
@@ -408,7 +398,6 @@ namespace NAwesome::Windows::Snap {
             if (const auto RT = resizingFloatingTarget()) {
                 if (!resizeStart())
                     resizeStart() = RT->position(); // emission precedes this motion's resize
-                queueMagnet();
             } else
                 resizeStart().reset();
             return;
@@ -420,7 +409,6 @@ namespace NAwesome::Windows::Snap {
         if (!MON) {
             if (zoneBox())
                 reset();
-            queueMagnet();
             return;
         }
 
@@ -437,8 +425,6 @@ namespace NAwesome::Windows::Snap {
             zoneH()   = HZ;
             damageZone(); // and the incoming one's
         }
-
-        queueMagnet();
     }
 
     inline void onInputEndingDrag() {
@@ -523,6 +509,17 @@ namespace NAwesome::Windows::Snap {
 
     inline void init() {
         Canvas::inst().addLayer(&zoneLayer(), eLayerZ::SNAP);
+        if (!g_layoutManager)
+            return;
+        auto& DRAG = g_layoutManager->dragController()->m_events;
+        supervisor().listen(DRAG.motion, []() { applyMagnet(); });
+        // a drag ends on paths no input reaches (the dragged window closed,
+        // togglefloating): the preview goes with it
+        supervisor().listen(DRAG.ended, []() {
+            if (zoneBox())
+                reset();
+            resizeStart().reset();
+        });
     }
 
     inline void teardown() {
