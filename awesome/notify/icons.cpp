@@ -90,6 +90,7 @@ namespace NAwesome::Notify {
         bool                                                           rejected = false; // too big or not a file: settled null
         bool                                                           readyAtPoll = false;
         bool                                                           wanted      = false; // asked for by the current warm
+        bool                                                           consumed    = false; // a card built from it: it goes when the warm ends
     };
 
     static std::vector<SDecodeJob>   decodeJobs;
@@ -150,16 +151,6 @@ namespace NAwesome::Notify {
         return &decodeJobs.back();
     }
 
-    // The texture is uploaded now; the decoded image dies with the job. A
-    // freed slot unblocks the card that waited at the cap.
-    static void dropDecodeJob(const SDecodeJob* job) {
-        const auto IT = std::ranges::find_if(decodeJobs, [&](const auto& j) { return &j == job; });
-        if (IT != decodeJobs.end()) {
-            decodeJobs.erase(IT);
-            slotFreed = true;
-        }
-    }
-
     // A finished decode no card asked for during a full warm is an orphan:
     // its card was replaced (notify-send -r, a player's next track), dismissed
     // or re-keyed while the decode ran, and nothing will ever ask again.
@@ -170,7 +161,7 @@ namespace NAwesome::Notify {
             job.wanted = false;
     }
     void decodeWarmEnd() {
-        if (std::erase_if(decodeJobs, [](const auto& job) { return !job.wanted && resourceReady(job); }) > 0)
+        if (std::erase_if(decodeJobs, [](const auto& job) { return (job.consumed || !job.wanted) && resourceReady(job); }) > 0)
             slotFreed = true;
     }
 
@@ -431,11 +422,13 @@ namespace NAwesome::Notify {
         const auto JOB = decodeJobFor(path, iconPx);
         if (!JOB || !resourceReady(*JOB))
             return {}; // the slot is taken, or the decode is in flight
-        // Capture before the drop: erasing the job destroys the struct (and
-        // releases our reference); the resource copy below outlives the call
+        // The job stays until this warm ends (decodeWarmEnd): every other
+        // card asking for the same file in the same warm (an app's cards,
+        // the same fallback face) takes the same decode instead of queueing
+        // its own, one after another
         const bool REJECTED = JOB->rejected;
         const auto RESOURCE = JOB->resource;
-        dropDecodeJob(JOB);
+        JOB->consumed       = true;
         SFileTexResult result{.settled = true};
         if (REJECTED)
             return result;
