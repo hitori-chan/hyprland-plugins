@@ -615,8 +615,11 @@ namespace NAwesome::Notify {
                         // the CLIPPED summary, as stored: the raw one was both
                         // unbounded work and never equal past the clip
                         const auto KEY = Parse::oneLine(Parse::sanitizeMarkup(SUM));
+                        // never onto a structured conversation: its body is
+                        // rebuilt from its message log, and a joined body
+                        // upserted as one message duplicated the transcript
                         for (const auto& N : notifs)
-                            if (!inOsdBand(N->id) && !vanishes(N) && N->appKey == APPKEY && N->summary == KEY) {
+                            if (!inOsdBand(N->id) && !vanishes(N) && N->conversationId.empty() && N->appKey == APPKEY && N->summary == KEY) {
                                 id         = N->id;
                                 appendOnto = N->body;
                                 break;
