@@ -22,10 +22,18 @@ HOST_BIN="${HYPR_HOST_BIN:-$(command -v labwc 2>/dev/null)}"
 HOST_LIBS="${HYPR_HOST_LIBS:-}" # LD_LIBRARY_PATH for an unpacked labwc (HYPR_HOST_BIN)
 AQ_SRC="${HYPR_AQ_SRC:-$HOME/repo/aquamarine}"
 
+# A recorded pid is ours only while it still runs what WE started: the
+# process's environment or command line carries our private path (a pid
+# file outlives a crash and a reboot; the pid is then someone else's — a
+# name match alone once could have killed an unrelated python3).
+_owns_pid() { # _owns_pid <pidfile> <environ|cmdline> <needle>: prints the pid
+	local p
+	p="$(cat "$1" 2>/dev/null)"
+	[[ "$p" =~ ^[0-9]+$ ]] && grep -Fzq -- "$3" "/proc/$p/$2" 2>/dev/null && printf '%s\n' "$p"
+}
+
 host_alive() {
-	local pid
-	pid="$(cat "$HOST_DIR/pid" 2>/dev/null)"
-	[[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null && [[ "$(cat "/proc/$pid/comm" 2>/dev/null)" == labwc ]] &&
+	_owns_pid "$HOST_DIR/pid" environ "XDG_CONFIG_HOME=$HOST_DIR/xdg" >/dev/null &&
 		[[ -S "$XDG_RUNTIME_DIR/$(cat "$HOST_DIR/wl" 2>/dev/null)" ]]
 }
 
@@ -77,8 +85,7 @@ host_start() {
 
 host_stop() {
 	local pid
-	pid="$(cat "$HOST_DIR/pid" 2>/dev/null)"
-	if [[ "$pid" =~ ^[0-9]+$ ]] && [[ "$(cat "/proc/$pid/comm" 2>/dev/null)" == labwc ]]; then
+	if pid="$(_owns_pid "$HOST_DIR/pid" environ "XDG_CONFIG_HOME=$HOST_DIR/xdg")"; then
 		kill "$pid" 2>/dev/null
 		for _ in $(seq 1 30); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
 		kill -9 "$pid" 2>/dev/null
@@ -118,17 +125,9 @@ SYSBUS_ADDR="unix:path=$SYSBUS_DIR/bus"
 SYSBUS_BACKLIGHT="${AW_BACKLIGHT_DIR:-$SYSBUS_DIR/backlight}"
 SYSBUS_FAKE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/devtools/fakes/fake-logind"
 
-# a recorded pid is ours only while it still runs the program we started
-# (a pid file can outlive a reboot; the pid is then someone else's)
-_sysbus_pid() { # _sysbus_pid <file> <comm>
-	local p
-	p="$(cat "$1" 2>/dev/null)"
-	[[ "$p" =~ ^[0-9]+$ && "$(cat "/proc/$p/comm" 2>/dev/null)" == "$2" ]] && printf '%s\n' "$p"
-}
-
 sysbus_alive() {
-	_sysbus_pid "$SYSBUS_DIR/daemon.pid" dbus-daemon >/dev/null && _sysbus_pid "$SYSBUS_DIR/logind.pid" python3 >/dev/null &&
-		[[ -S "$SYSBUS_DIR/bus" ]]
+	_owns_pid "$SYSBUS_DIR/daemon.pid" cmdline "--config-file=$SYSBUS_DIR/bus.conf" >/dev/null &&
+		_owns_pid "$SYSBUS_DIR/logind.pid" cmdline "$SYSBUS_FAKE" >/dev/null && [[ -S "$SYSBUS_DIR/bus" ]]
 }
 
 sysbus_start() {
@@ -172,7 +171,7 @@ sysbus_start() {
 
 sysbus_stop() {
 	local p
-	p="$(_sysbus_pid "$SYSBUS_DIR/logind.pid" python3)" && kill "$p" 2>/dev/null
-	p="$(_sysbus_pid "$SYSBUS_DIR/daemon.pid" dbus-daemon)" && kill "$p" 2>/dev/null
+	p="$(_owns_pid "$SYSBUS_DIR/logind.pid" cmdline "$SYSBUS_FAKE")" && kill "$p" 2>/dev/null
+	p="$(_owns_pid "$SYSBUS_DIR/daemon.pid" cmdline "--config-file=$SYSBUS_DIR/bus.conf")" && kill "$p" 2>/dev/null
 	rm -f "$SYSBUS_DIR/logind.pid" "$SYSBUS_DIR/daemon.pid" "$SYSBUS_DIR/bus"
 }

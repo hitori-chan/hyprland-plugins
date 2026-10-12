@@ -47,13 +47,14 @@ live_read() {
 	esac
 }
 
-# A harness-style nested: a Hyprland that is not the live one, started
-# with a -c config and without the session's --watchdog-fd. Orphan sweeps
-# match this, so a nested launched from any (old, /tmp debug) config is
-# still reaped — and the live PID never is.
+# A harness nested: a Hyprland that launch.sh started, marked in its
+# environment (AW_GATE_NESTED=1) — identified POSITIVELY, never by
+# exclusion: a live session started as `Hyprland -c ...` without the
+# watchdog launcher once matched "a -c config, no --watchdog-fd", and a
+# sweep would have killed it. Never the live PID either way.
 is_nested_pid() {
 	[[ -n "$1" && "$1" != "$LIVE_PID" ]] || return 1
-	grep -Fzxq -- "-c" "/proc/$1/cmdline" 2>/dev/null && ! grep -Fzxq -- "--watchdog-fd" "/proc/$1/cmdline" 2>/dev/null
+	grep -Fzxq -- "AW_GATE_NESTED=1" "/proc/$1/environ" 2>/dev/null
 }
 
 # The nested's real log: the instance file (stdout carries only the lines

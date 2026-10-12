@@ -28,7 +28,12 @@ bash "$HERE/stop.sh" >/dev/null 2>&1
 make -C "$REPO/awesome" GATE=1 >/dev/null || { echo "dev: build failed, not launching" >&2; exit 1; }
 bash "$HERE/launch.sh" || exit 1
 
-SIG="$(cat "${HYPR_HARNESS:-$HOME/.local/share/hypr-nested}/nested.sig")"
+SIG="$(cat "$HARNESS/nested.sig" 2>/dev/null)"
+# never a bare -i: hyprctl reads an empty one as HYPRLAND_INSTANCE_SIGNATURE,
+# the LIVE session — a nested signature, owned by a marked nested, or nothing
+[[ "$SIG" =~ ^[[:alnum:]_.-]+$ && "$SIG" != "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || { echo "dev: no nested signature" >&2; exit 1; }
+NPID="$(head -1 "${XDG_RUNTIME_DIR:?}/hypr/$SIG/hyprland.lock" 2>/dev/null)"
+grep -Fzxq -- "AW_GATE_NESTED=1" "/proc/$NPID/environ" 2>/dev/null || { echo "dev: $SIG is not a harness nested" >&2; exit 1; }
 # a probe window so the taglist/tasklist have content (nested uses Lua dispatch)
 hyprctl -i "$SIG" dispatch "hl.dsp.exec_cmd('foot')" >/dev/null 2>&1
 sleep 1.5
