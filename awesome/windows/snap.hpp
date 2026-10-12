@@ -462,6 +462,13 @@ namespace NAwesome::Windows::Snap {
                     // here
                     T->setPositionGlobal(CBox{FINAL->x + B, FINAL->y + B, FINAL->w - 2 * B, FINAL->h - 2 * B});
                     T->warpPositionSize();
+                    // the controller assigns a dragged float the workspace
+                    // its MIDDLE is over, and the cursor arms a zone before
+                    // the middle crosses: a zone on another monitor must
+                    // take the window's workspace along, or it shows there
+                    // but lives on the old one
+                    if (const auto WS = shownWorkspace(MON); WS && T->space() != WS->space())
+                        T->assignToSpace(WS->space());
                 }
             }
         }
