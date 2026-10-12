@@ -167,6 +167,33 @@ namespace NAwesome::Notify {
             return {};
         }
 
+        // A boolean hint as clients actually send it: bool, but also an int
+        // or byte (`notify-send -h int:transient:1` is the common idiom) or
+        // a string. nullopt when absent or of no such type.
+        static std::optional<bool> hintFlag(const std::map<std::string, sdbus::Variant>& hints, const char* key) {
+            const auto IT = hints.find(key);
+            if (IT == hints.end())
+                return std::nullopt;
+            const auto& V = IT->second;
+            try {
+                if (V.containsValueOfType<bool>())
+                    return V.get<bool>();
+                if (V.containsValueOfType<int32_t>())
+                    return V.get<int32_t>() != 0;
+                if (V.containsValueOfType<uint32_t>())
+                    return V.get<uint32_t>() != 0;
+                if (V.containsValueOfType<uint8_t>())
+                    return V.get<uint8_t>() != 0;
+                if (V.containsValueOfType<int64_t>())
+                    return V.get<int64_t>() != 0;
+                if (V.containsValueOfType<std::string>()) {
+                    const auto S = V.get<std::string>();
+                    return !S.empty() && S != "false" && S != "0";
+                }
+            } catch (...) {}
+            return std::nullopt;
+        }
+
         // one live popup per app: does another card already hold a banner for
         // this app? A new same-app arrival then lands resident instead of
         // stacking a second popup — the shade folds the extras, the badge
@@ -583,20 +610,7 @@ namespace NAwesome::Notify {
                             break;
                         }
                 } else {
-                    bool append = CATEGORY_CONVERSATION;
-                    if (const auto IT = hints.find("x-canonical-append"); !append && IT != hints.end())
-                        try {
-                            append = IT->second.get<bool>();
-                        } catch (...) {
-                            try {
-                                const auto S = IT->second.get<std::string>();
-                                append       = !S.empty() && S != "false" && S != "0";
-                            } catch (...) {
-                                try {
-                                    append = IT->second.get<uint8_t>() != 0;
-                                } catch (...) {}
-                            }
-                        }
+                    const bool append = CATEGORY_CONVERSATION || hintFlag(hints, "x-canonical-append").value_or(false);
                     canonicalAppend = append;
                     if (append) {
                         // the CLIPPED summary, as stored: the raw one was both
@@ -855,21 +869,9 @@ namespace NAwesome::Notify {
             if (n->defaultAction.empty() && n->actions.size() == 1)
                 n->defaultAction = n->actions.front().id;
 
-            n->resident = false;
-            if (const auto IT = hints.find("resident"); IT != hints.end())
-                try {
-                    n->resident = IT->second.get<bool>();
-                } catch (...) {}
-            n->actionIcons = false;
-            if (const auto IT = hints.find("action-icons"); IT != hints.end())
-                try {
-                    n->actionIcons = IT->second.get<bool>();
-                } catch (...) {}
-            n->transient = false;
-            if (const auto IT = hints.find("transient"); IT != hints.end())
-                try {
-                    n->transient = IT->second.get<bool>();
-                } catch (...) {}
+            n->resident    = hintFlag(hints, "resident").value_or(false);
+            n->actionIcons = hintFlag(hints, "action-icons").value_or(false);
+            n->transient   = hintFlag(hints, "transient").value_or(false);
 
             // Conversation identity (an fd.o category or a stable
             // conversation-id) outranks ordinary cards and never bundles
@@ -910,12 +912,8 @@ namespace NAwesome::Notify {
             if (!n->waiting) {
                 // a coalesced or DND-quiet arrival announces itself neither;
                 // the hint can only add silence, never lift ours
-                bool        suppress = COALESCED || quiet;
+                const bool  suppress = COALESCED || quiet || hintFlag(hints, "suppress-sound").value_or(false);
                 std::string soundFile, soundName;
-                if (const auto IT = hints.find("suppress-sound"); IT != hints.end())
-                    try {
-                        suppress = suppress || IT->second.get<bool>();
-                    } catch (...) {}
                 if (const auto IT = hints.find("sound-file"); IT != hints.end())
                     try {
                         soundFile = IT->second.get<std::string>();
