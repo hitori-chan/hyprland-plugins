@@ -10,7 +10,7 @@ test:
 	$(MAKE) -C awesome test
 
 gate:
-	$(MAKE) -C awesome gate ARGS=$(ARGS)
+	$(MAKE) -C awesome gate ARGS='$(ARGS)'
 
 clean:
 	$(MAKE) -C awesome clean
