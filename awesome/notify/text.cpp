@@ -129,8 +129,13 @@ namespace NAwesome::Notify {
             c = (char)std::tolower((unsigned char)c);
         if ((scheme == "http" || scheme == "https") && href.compare(COLON, 3, "://") == 0)
             return href;
-        if (scheme == "mailto" && href.size() > COLON + 1)
-            return href;
+        // a mailto's query is the mail client's to interpret, and some
+        // honor ?attach=<path>: a local file pre-attached to the draft.
+        // The address is the link; the rest is dropped.
+        if (scheme == "mailto" && href.size() > COLON + 1) {
+            href.resize(std::min(href.size(), href.find_first_of("?#")));
+            return href.size() > COLON + 1 ? href : std::string{};
+        }
         return {};
     }
 
