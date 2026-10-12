@@ -356,8 +356,9 @@ namespace NAwesome::Windows {
             return Q;
         }
 
-        // A client's titlebar drag (xdg move, X11 _NET_WM_MOVERESIZE) on a
-        // plugin-maximized window: the compositor began the drag in the
+        // A client's titlebar drag (an xdg move; XWayland advertises
+        // _NET_WM_MOVERESIZE but never handles it) on a plugin-maximized
+        // window: the compositor began the drag in the
         // same emission (its own listener runs first), and the Super-drag
         // swallow never saw it. awesome's mouse.client.move refuses a
         // maximized client: end the drag out of the emission (the end

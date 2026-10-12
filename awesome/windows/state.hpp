@@ -87,9 +87,10 @@ namespace NAwesome::Windows::Tasklist {
     }
 
     // After hiding a window, commit focus to the next task. Two compositor
-    // quirks shape this: setHidden's own focus reset only fires for the
-    // swallow path (the swallowee is never focused), so minimizing the
-    // FOCUSED window leaves focus on it; and a plain fullWindowFocus won't
+    // quirks shape this: setHidden's own focus reset resets a COPY of the
+    // focused window (focusState()->window() returns by value) and changes
+    // nothing, so minimizing the FOCUSED window leaves focus on it; and a
+    // plain fullWindowFocus won't
     // move focus off a just-hidden window here. refocus() at the
     // successor's own center is the authoritative input path and lands right
     // regardless of where the real cursor sits (a click leaves it on the
