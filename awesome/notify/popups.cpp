@@ -143,7 +143,7 @@ namespace NAwesome::Notify {
                 if (!IM.tex && !IM.alt.empty())
                     altLines.push_back(SAltLine{.text = IM.alt});
             for (auto& A : altLines) {
-                A.tex = cachedText(A.text, COLSUB, T.body, TEXTWPX, 1, 0, false, 400);
+                A.tex = cachedText(A.text, COLSUB, T.body, TEXTWPX, 1, 0, true, 400); // sanitized markup: entities decode
                 A.h   = A.tex ? std::max(14.0, texH(A.tex, P.scale)) : 0;
             }
 
