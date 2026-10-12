@@ -53,9 +53,11 @@ host_start() {
 	before="$(ls "$XDG_RUNTIME_DIR" | grep -E '^wayland-[0-9]+$' | sort)"
 	# nothing of the user's session: no display to connect to, no session
 	# bus to activate on, no activation-environment update, no seat
+	# (labwc updates the systemd/D-Bus activation environment only on DRM,
+	# but never leave the live user manager's environment to a default)
 	env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE -u XDG_SESSION_ID \
-		-u LABWC_UPDATE_ACTIVATION_ENV DBUS_SESSION_BUS_ADDRESS=disabled: \
-		XDG_CONFIG_HOME="$HOST_DIR/xdg" LD_LIBRARY_PATH="$HOST_LIBS" \
+		LABWC_UPDATE_ACTIVATION_ENV=false DBUS_SESSION_BUS_ADDRESS=disabled: \
+		XDG_CONFIG_HOME="$HOST_DIR/xdg" XDG_CONFIG_DIRS="$HOST_DIR/xdg" LD_LIBRARY_PATH="$HOST_LIBS" \
 		WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=gles2 LIBSEAT_BACKEND=seatd \
 		setsid "$HOST_BIN" >"$HOST_DIR/log" 2>&1 9>&- &
 	pid=$!

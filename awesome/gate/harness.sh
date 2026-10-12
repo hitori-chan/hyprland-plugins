@@ -23,6 +23,14 @@ HARNESS_DIR="$HARNESS"
 # shellcheck source=host.sh
 . "$GATE_DIR/host.sh" # host_*, sysbus_*, aq_pinned_libdir
 
+# The live session's handles leave the environment once live.sh resolved
+# the live instance: every nested call names its own display ($WL), bus
+# ($NBUS) and signature ($SIG), so a call that forgot to now fails here
+# instead of reaching the user's session.
+LIVE_WL="${WAYLAND_DISPLAY:-}"
+unset WAYLAND_DISPLAY WAYLAND_SOCKET DISPLAY HYPRLAND_INSTANCE_SIGNATURE
+export DBUS_SESSION_BUS_ADDRESS=disabled:
+
 # The isolation check: the structural half runs at every launch (the
 # nested's parent display is the private host's socket, never the live
 # one — refuse to continue otherwise); the observed half compares the live
@@ -36,7 +44,7 @@ isolation_verify_nested() { # <pid>: its parent display must be the private host
 	local pid=$1 parent host
 	host="$(cat "$HOST_DIR/wl" 2>/dev/null)"
 	parent="$(tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | sed -n 's/^WAYLAND_DISPLAY=//p')"
-	if [[ -z "$host" || "$parent" != "$host" || "$parent" == "${WAYLAND_DISPLAY:-wayland-1}" ]]; then
+	if [[ -z "$host" || "$parent" != "$host" || "$parent" == "${LIVE_WL:-wayland-1}" ]]; then
 		bad "isolation: nested $pid's parent display is '$parent', not the private host '$host' — refusing to run against the live session"
 		return 1
 	fi
@@ -102,7 +110,7 @@ normalize_target_pkgconfig() {
 validated_nested_pid() {
 	[[ -n "$SIG" ]] || { echo "refusing hyprctl: nested signature is empty" >&2; return 1; }
 	[[ "$SIG" =~ ^[[:alnum:]_.-]+$ ]] || { echo "refusing hyprctl: invalid nested signature" >&2; return 1; }
-	[[ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" || "$SIG" != "$HYPRLAND_INSTANCE_SIGNATURE" ]] || {
+	[[ "$SIG" != "${LIVE_SIG:-}" ]] || {
 		echo "refusing hyprctl: nested signature resolves to the live compositor" >&2
 		return 1
 	}
