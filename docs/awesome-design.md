@@ -86,28 +86,48 @@ atomics; ordering is program order plus the hop queue.
   glass group, scissor-paints, and enforces the warm/draw gate: a layer
   cannot paint a texture in the frame that created it (invariant 4).
   Damage happens on every visible-state transition, including hover.
+  A warm can be scoped to one monitor and one layer (a launcher
+  keystroke warms the prompt's layer on its monitor, nothing else); the
+  cards warm on their own changes only, and only a stale rewarm (a draw
+  that found a texture missing) forces every layer — at most 8 times in
+  a row, so a texture no warm can build never loops the frame. A raster
+  the cache refuses is remembered as empty, a hit that paints nothing.
 - **Text** — the bar renders labels through the compositor's
   `renderText`; the cards shape with their own Pango layouts (the
   whitelisted markup subset, the literal-`<`/`&` rescue, `<a href>`
-  hit-testing — http(s) and mailto only). One shared text engine for
-  both is open work.
-- **Icons** — one freedesktop name resolver in `core/icons.hpp` (GTK
-  theme → hicolor → pixmaps; plausible names only, bounded memo) and one
-  file admission rule (`admissibleImageFile`: a regular file under 32 MiB)
-  at every decode entry. Cards decode file icons on the compositor's
-  async resource gatherer (24 bounded slots, orphans freed per warm); the
-  bar still decodes its task and tray icons synchronously, and each
-  module keeps its own .desktop index. One shared index and decode queue
-  is open work.
-- **Config schema** — one declarative table: key, module, type,
-  default, validator. Typed accessors; theme tokens resolved once;
-  unknown keys are a load error. The legacy keys re-namespace to
+  hit-testing — http(s) and mailto only, a mailto's query dropped). Text
+  that must be one line IS one line: the bar replaces a client label's
+  control characters before rastering, the cards lay a single line out
+  in Pango's single-paragraph mode, and every card raster is clamped to
+  its slot (stacked combining marks reach far past the line box). One
+  shared text engine for both is open work.
+- **Icons** — one freedesktop name resolver in `core/icons.hpp` for the
+  bar and the cards (GTK theme → hicolor → pixmaps; plausible names
+  only; a two-generation memo; at most 32 uncached theme walks a second,
+  past which a lookup resolves to nothing, uncached — a burst of
+  distinct names costs a bounded stall). One file admission: a file is
+  opened ONCE, non-blocking, and judged on that fd (a regular file under
+  32 MiB, 2 MiB for an SVG, a bounded declared raster); a synchronous
+  decoder decodes the bytes read from it, the cards' async decodes (the
+  compositor's resource gatherer, 24 bounded slots, one decode shared by
+  every card asking for the same file in a warm) read /proc/self/fd of
+  the held file — never the path again. One .desktop index (core). Open
+  work: the bar still decodes its task and tray icons synchronously.
+- **Config schema** — one declarative constexpr table: key, module, type,
+  default, range (`core/schema.hpp`). A getter's key literal is checked
+  when the call COMPILES (`CfgKey`, consteval): a typo is a build error,
+  never a silent zero, and a read is an index into the registered
+  values. Out-of-range values clamp, non-finite doubles fall back to the
+  default, strings are bounded (4 KiB, cut at a codepoint) — the same
+  pure functions the unit tests run. The legacy keys re-namespace to
   `plugin:awesome:<module>:<key>` (47: shell 20, notify 24, windows 3).
 - **Store** — the plugin's single persistent state: one typed file
   (`$XDG_STATE_HOME/hyprland/plugin/awesome/state.tsv`; rows
   `spot <x> <y> <key>`, `windowed <x> <y> <w> <h> <key>`,
   `launches <count> <name>`, `history <query>`, positions relative to
-  their monitor's origin), one atomic write, all rows admitted or
+  their monitor's origin), one durable atomic write (a private 0600
+  temp, never through a link, fdatasync, rename, directory fsync), all
+  rows admitted or
   skipped (fixed file/row/key/entry bounds; a hostile file can never
   take the session down; the least recently remembered row goes at a
   bound). The four module stores (spawn spots, last-windowed boxes,
@@ -118,20 +138,31 @@ atomics; ordering is program order plus the hop queue.
   (`pidfd_spawnp`: an empty signal mask and default dispositions,
   stdin/stderr on /dev/null, every fd above 2 closed, a race-free pidfd,
   the exit status read from the pidfd under the compositor's
-  SA_NOCLDWAIT). `Jobs` runs the plugin's helpers on it in class budgets
-  — CONTROL (wpctl, 16, killed after 5 s), SOUND (4, 30 s), OPEN
-  (xdg-open, 32, never killed) — and the file index's helper spawns
-  through it too. The launcher's `Exec=` goes through the compositor's
+  SA_NOCLDWAIT, where the kernel still has it). `Jobs` runs the
+  plugin's helpers on it in class budgets — CONTROL (wpctl, 16, killed
+  after 5 s), SOUND (4, its process group killed after 30 s), OPEN
+  (xdg-open, 32, never killed); a deadline holds until delivery (a
+  grandchild holding the pipe cannot keep a slot), callbacks never
+  unwind into the C dispatch — and the file index's helper spawns
+  through it too, its group signalled through the pidfd. The launcher's `Exec=` goes through the compositor's
   executor (exec rules, activation tokens).
 - **Bus** — the fd.o Notifications daemon (spec 1.3), kept
   asynchronous off hot paths (`post()` for bus-originated work,
-  `pollSoon()` dispatch). The plugin-internal service interface is a
-  C++ interface, not a bus.
-- **Bounded types** — `BoundedString<N>` (UTF-8-aware) and
-  `BoundedQueue<T,N>` (eviction policy in the type) at every wire
-  boundary: bus strings, action payloads, image data, decoded
-  textures, queue depths. "Bound every externally sized structure" is
-  a type property, not a discipline.
+  `pollSoon()` dispatch, a dispatch capped at 64 messages and 4 ms).
+  The daemon's signals leave in order from one queue; the action, the
+  activation token and a reply go to the sender only. The tray installs
+  ONE async match per signal interface, routed by sender and path,
+  never a per-proxy (synchronous) AddMatch. The plugin-internal service
+  interface is a C++ interface, not a bus.
+- **Bounds** — every externally sized structure has a bound and a
+  defined behavior at it, enforced where it enters: client-fed queues
+  are `CHopQueue<T, N>` (a push at the bound is refused), wire strings
+  are cut at a codepoint boundary (`clipToUtf8Boundary`,
+  `BoundedString<N>` where a string is stored as one), image data is
+  decimated while unpacked, raster caches are capped in bytes, and work
+  is bounded too (theme walks a second, decodes a reply, messages a
+  dispatch). `BoundedQueue<T, N>` (eviction policy in the type) is the
+  helper for an evicting queue.
 
 Crash-class invariants → structure:
 
@@ -241,19 +272,24 @@ stays in lockstep between `core/version.hpp` and `hyprpm.toml`.
   claims live blur only while its layer paints translucent glass (the
   bar's default is opaque, the cards' glass is not).
 - Warms coalesce: one bar warm per event-loop turn however many events
-  arrived; the cards warm once, on their monitor.
-- Config reads are a hash of the key and a typed value read — no
-  allocation, no RTTI — on every path, the per-motion ones included.
+  arrived; the cards warm once, on their monitor, and only on their own
+  changes (a clock tick or a title change no longer re-measures the
+  shade); the launcher's keystrokes warm its layer on its monitor and
+  damage the prompt band. The shade measures no row past the fold.
+- Config reads are an index (the key resolved at compile time) and a
+  typed value read — no hash, no allocation, no RTTI.
 - No bus round-trips on any live path (badge counts, DND state, OSD
-  posts are in-process calls).
-- Notification images are box-decimated while unpacked; nothing
-  allocates a full-size screenshot on the main thread.
+  posts are in-process calls), and no synchronous AddMatch anywhere.
+- Notification images are box-decimated while unpacked (still on the
+  main thread, inside the Notify dispatch: tens of ms for a
+  screenshot-sized image-data; off-thread unpacking is open work).
 - The draw re-runs the layout per frame, deliberately: measured with the
   gate's `drawstats` (a card over a window redrawing every frame), the
   worst case is ~90 us for the card and ~90 us for the bar when the
-  glass's blur damage reaches it, a third of that paint calls — about 1%
-  of a 60 Hz frame. A cached display list would save ~100 us at the cost
-  of a stale-content risk across every state source.
+  glass's blur damage reaches it — about 1% of a 60 Hz frame. The bar's
+  paints now count in the profile's paint split too (they did not when
+  the display list was declined). A cached display list would save
+  ~100 us at the cost of a stale-content risk across every state source.
 - One .desktop index for the whole plugin (core), shared by the bar's
   icons and the cards' sender identities. Open: the bar decodes its icons
   synchronously on the warm (once per class), not on the async gatherer.
@@ -261,7 +297,7 @@ stays in lockstep between `core/version.hpp` and `hyprpm.toml`.
 ## 6. devtools — re-derived, not patched
 
 The harness keeps its operational core (nested launch/teardown,
-capture validation, the coredump teardown guard, the probe env). What
+capture validation, the teardown exit-status guard, the probe env). What
 changes:
 
 - **Isolation** — the nested Hyprland runs inside a private headless
@@ -276,10 +312,15 @@ changes:
 - **One command** — `make -C awesome gate ARGS="-s <fork> -b <tier>"`
   stages the fork build's headers itself and verifies its `version.h`.
 
-- **Check engine** — one `check <id> <desc> <fn>` primitive with a
-  machine-readable manifest: declared checks vs executed, per-battery
-  coverage, failure screenshots auto-retained. The summary line is the
-  contract: `== stress: ALL N CHECKS PASSED in Ns ==`.
+- **Check engine** — `chk <desc> <cmd…>` (the command's status decides
+  and is returned), `ok`/`bad`, and `skip` for a check whose
+  precondition is missing: a skip is listed under the summary and never
+  counted as a pass. Each battery reports its tally; a battery that ran
+  no checks fails. A nested that dies is caught by its exit status (a
+  signal death fails the gate; a crash report or the nested's evidence is
+  retained), not by log greps. One run at a time: gate, probe and dev
+  share a lock on `$HARNESS`. The summary line is the contract:
+  `== stress: ALL N CHECKS PASSED in Ns ==`.
 - **Batteries per module** — `shell`, `windows`, `notify`, `system`,
   `pipeline`, `lifecycle` (reload/teardown/lock/capture/queue bounds),
   replacing the per-plugin batteries, plus `quick`, the default smoke.
@@ -287,9 +328,9 @@ changes:
   dropping a check is a reviewable diff.
 - **Unit tests** — one headless C++26 harness (no external deps),
   `make -C awesome test`: bounded types, box math, config schema
-  (including the alpha-0 color guard), store admission, wpctl parsing.
-- **Unit tests** cover the process runner too (spawn under the
-  compositor's signal state).
+  (including the alpha-0 color guard and the clamps), store admission,
+  wpctl parsing, Exec/launcher quoting, the process runner (spawn under
+  the compositor's signal state).
 - **Fixtures** — the C Wayland fixtures (vptr, vkbd, fake-sni, cliphold,
   fixwin, splashwin) stay C against the exact
   fork protocol XML; fakes (wpctl, the sound player, logind) shadow the
