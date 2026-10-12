@@ -83,12 +83,26 @@ namespace NAwesome::System {
         if (const char* DIR = std::getenv("AW_BACKLIGHT_DIR"); DIR && *DIR)
             backlightRoot = DIR;
 #endif
+        // Several devices (acpi_video0 beside the native panel, a GPU's,
+        // ddcci): the systemd rule — firmware, then platform, then raw;
+        // directory order only breaks a tie. The firmware interface is the
+        // one that reliably moves the panel.
+        const auto RANK = [](const std::string& type) { return type == "firmware" ? 0 : type == "platform" ? 1 : type == "raw" ? 2 : 3; };
+        int        best = 4;
         std::error_code ec;
         for (const auto& e : std::filesystem::directory_iterator(backlightRoot, ec)) {
+            int           max = 0;
             std::ifstream m(e.path() / "max_brightness");
-            if (m && (m >> backlightMax) && backlightMax > 0) {
+            if (!m || !(m >> max) || max <= 0)
+                continue;
+            std::string   type;
+            std::ifstream t(e.path() / "type");
+            if (t)
+                t >> type;
+            if (RANK(type) < best) {
+                best         = RANK(type);
                 backlightDev = e.path().filename();
-                return;
+                backlightMax = max;
             }
         }
     }
