@@ -65,6 +65,6 @@ make -C devtools HL=/path/to/Hyprland
   session-outlived tmux; see `awesome/gate/preflight.sh`).
 - A "dead" Wayland display is verified with `flock`, never by the lock
   file (empty flock files — `rm`-ing one breaks a live session).
-- `kernel.core_pattern` is runtime-only: re-arm after any reboot or the
-  clean-teardown check degrades to "unverified".
+- The clean-teardown check reads the nested's exit status (launch.sh's
+  wrapper records it); it needs no core dump and no `core_pattern`.
 - The faked helpers never touch live devices.
