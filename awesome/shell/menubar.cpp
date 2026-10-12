@@ -233,16 +233,22 @@ namespace NAwesome::Shell {
                     break;
             }
 
+            std::string plainExec; // the words as typed, unquoted: what a query matches
             if (!rawExec.empty()) {
                 const auto WORDS = NAwesome::DesktopExec::expand(rawExec, app.name, path.string(), app.icon);
                 if (!WORDS && !app.dbusActivatable)
                     return;
-                if (WORDS)
+                if (WORDS) {
                     app.exec = NAwesome::DesktopExec::shellCommand(*WORDS);
+                    for (const auto& W : *WORDS)
+                        plainExec.append(plainExec.empty() ? "" : " ").append(W);
+                }
             }
             app.lname = lower(app.name);
-            // matched like awesome: against the name AND the launch command line
-            app.lexec = lower(app.terminal && !app.exec.empty() ? std::string(cfg().getS("plugin:awesome:shell:terminal")) + " -e " + app.exec : app.exec);
+            // matched like awesome: against the name AND the launch command
+            // line — its plain words (the quoted form starts every word with
+            // a quote, and the command-prefix rank never matched)
+            app.lexec = lower(app.terminal && !plainExec.empty() ? std::string(cfg().getS("plugin:awesome:shell:terminal")) + " -e " + plainExec : plainExec);
             apps.push_back(std::move(app));
         }
 
