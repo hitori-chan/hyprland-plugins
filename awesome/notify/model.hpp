@@ -254,9 +254,11 @@ namespace NAwesome::Notify {
         bool       vanishes(const SP<SNotif>& n); // opts out of residency: expiry takes the whole card
 
         // a Notify payload becomes (or refreshes) a card; returns its id
+        // `osd`: an in-process post (postCard) — only those may pin a fresh
+        // id in the OSD band; no wire hint grants it
         uint32_t arrive(const std::string& appName, uint32_t replacesId, const std::string& appIcon, const std::string& summary, const std::string& body,
-                        const std::string& sender,
-                        const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout);
+                        const std::string& sender, const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout,
+                        bool osd = false);
 
         // In-process card posting (the system module's feedback: audio,
         // pad; the shell's battery alerts). The bus face is for
@@ -272,7 +274,7 @@ namespace NAwesome::Notify {
             int32_t expireTimeout = 0; // 0 = the model's policy
             int value = -1;            // the value hint, 0..100; -1 = none
             uint8_t urgency = 1;       // 0 low / 1 normal / 2 critical (sticky)
-            bool osd = false;          // the x-notify-osd blip mark
+            bool osd = false;          // an OSD-band post: may pin a fresh band id
         };
         void postCard(const SPostCard& c);
 

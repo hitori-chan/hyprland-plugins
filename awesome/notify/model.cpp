@@ -211,12 +211,10 @@ namespace NAwesome::Notify {
                 hints.emplace("value", sdbus::Variant{std::clamp(c.value, 0, 100)});
             if (c.urgency != 1)
                 hints.emplace("urgency", sdbus::Variant{c.urgency});
-            // We ARE the in-tree OSD sender: the private hint is the pass
+            // We ARE the in-tree OSD sender: being in-process is the pass
             // that lets a FRESH band id pin its replace-in-place slot (a
-            // foreign client gets its band id zeroed without it).
-            if (c.osd || inOsdBand(c.id))
-                hints.emplace("x-notify-osd", sdbus::Variant{true});
-            arrive("osd", c.id, c.icon ? c.icon : "", c.summary ? c.summary : "", c.body ? c.body : "", "", {}, hints, c.expireTimeout);
+            // foreign client gets its band id zeroed)
+            arrive("osd", c.id, c.icon ? c.icon : "", c.summary ? c.summary : "", c.body ? c.body : "", "", {}, hints, c.expireTimeout, c.osd || inOsdBand(c.id));
         }
 
         bool closeOne(uint32_t id, uint32_t reason) {
@@ -455,7 +453,8 @@ namespace NAwesome::Notify {
         // ---- arrival ----
 
         uint32_t arrive(const std::string& appName, uint32_t replacesId, const std::string& appIcon, const std::string& summary, const std::string& body,
-                        const std::string& sender, const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout) {
+                        const std::string& sender, const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout,
+                        bool osd) {
             uint32_t id = replacesId;
 
             // cap the wire strings before they become card members (see the
@@ -627,18 +626,11 @@ namespace NAwesome::Notify {
             }
 
             // The reserved band is not a capability: a fresh chosen id in
-            // it requires the private x-notify-osd hint (our in-tree
-            // OSD senders carry it), so an ordinary client can't pin a
-            // band id and hijack the OSD that replaces it.
-            if (id != 0 && !byId(id) && inOsdBand(id)) {
-                bool privateOsd = false;
-                if (const auto IT = hints.find("x-notify-osd"); IT != hints.end())
-                    try {
-                        privateOsd = IT->second.get<bool>();
-                    } catch (...) {}
-                if (!privateOsd)
-                    id = 0;
-            }
+            // it is for our in-process OSD posts only, so a client can't pin
+            // a band id and hijack the OSD that replaces it (nor ride the
+            // band's DND bypass).
+            if (id != 0 && !byId(id) && inOsdBand(id) && !osd)
+                id = 0;
 
             if (id == 0) {
                 // Fresh ids count up from a low counter and skip any that's
