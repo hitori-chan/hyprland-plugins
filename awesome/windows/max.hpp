@@ -222,8 +222,10 @@ namespace NAwesome::Windows {
             adopts().push(PHLWINDOWREF{w});
         }
 
+        // plugin maximize is a floating state: an entry of a window that left
+        // floating is on its way out (window.floating), never immovable
         inline bool maximizedAny(PHLWINDOW w) {
-            return pluginMaximized(w) || Fullscreen::controller()->isFullscreen(w);
+            return (pluginMaximized(w) && w->isFloating()) || Fullscreen::controller()->isFullscreen(w);
         }
 
         // The maximize toggle (hl.plugin.awesome.maximize, awesome's Mod+M).
@@ -419,6 +421,23 @@ namespace NAwesome::Windows {
             maximized()[PHLWINDOWREF{w}] = restore;
         }
 
+        // A plugin-maximized window that leaves floating (togglefloating, a
+        // re-tile) or unmaps no longer owns the plugin box: drop the entry,
+        // keep the windowed box it held as the app's remembered one, and
+        // tell the client it left maximize. Left in place, the entry made a
+        // tiled window immovable, turned its CSD unmaximize into a native
+        // maximize and snapped it back to the workarea once floated again.
+        inline void dropMaximize(const PHLWINDOW& w) {
+            const auto IT = maximized().find(PHLWINDOWREF{w});
+            if (IT == maximized().end())
+                return;
+            const auto MON = w->m_monitor.lock();
+            rememberWindowed(w->metadata().appID(), monGlobal(IT->second, MON), MON);
+            maximized().erase(IT);
+            if (auto TOP = xdgToplevel(w))
+                TOP->setMaximized(false);
+        }
+
         // queue+drain, never a lone doLaterLock: two toggles can arm in one
         // dispatch (scripted binds, event backlog) and overwriting the lock
         // cancels the unfired one
@@ -517,6 +536,14 @@ namespace NAwesome::Windows {
                         rememberWindowed(W->metadata().appID(), monGlobal(IT->second, W->m_monitor.lock()), W->m_monitor.lock());
                 }
                 maximized().erase(IT);
+            });
+            supervisor().listen(Event::bus()->m_events.window.floating, [](PHLWINDOW w) {
+                if (w && !w->isFloating())
+                    dropMaximize(w);
+            });
+            supervisor().listen(Event::bus()->m_events.window.close, [](PHLWINDOW w) {
+                if (w)
+                    dropMaximize(w);
             });
 
             // The compositor recomputes the client-facing maximized bit from
