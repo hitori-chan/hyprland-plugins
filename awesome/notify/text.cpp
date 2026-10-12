@@ -371,6 +371,10 @@ namespace NAwesome::Notify {
         // chronological and started clipping the newest)
         if (maxHeightPx < 0) {
             pango_layout_set_height(layout, maxHeightPx);
+            // ONE line means one paragraph: the negative height bounds the
+            // lines of each paragraph, and a sender's &#10; or U+2029 would
+            // otherwise make a thousand of them (a 27000 px texture)
+            pango_layout_set_single_paragraph_mode(layout, TRUE);
         } else {
             int LINEH = 0, ADV = 0;
             int HEIGHT = std::max(maxHeightPx, pt);
@@ -390,7 +394,7 @@ namespace NAwesome::Notify {
 
         PangoRectangle ink = {}, log = {};
         pango_layout_get_pixel_extents(layout, &ink, &log);
-        const int W = std::max(log.width, ink.x + ink.width), H = std::max(log.height, ink.y + ink.height);
+        int W = std::max(log.width, ink.x + ink.width), H = std::max(log.height, ink.y + ink.height);
         // A stranger's <span size=/line_height=/rise=> can blow one glyph up
         // to thousands of px (a 180 MB raster per surface). Real markup
         // keeps a line within ~3x the type size and wraps inside the width:
@@ -405,6 +409,12 @@ namespace NAwesome::Notify {
             g_object_unref(layout);
             return nullptr;
         }
+        // The raster never outgrows its slot, whatever the ink does: stacked
+        // combining marks (plain text skips the markup check above) reach
+        // far past the line box. A little overhang is kept for italics and
+        // ordinary accents.
+        W = std::min(W, std::max(maxWidthPx, 1) + 2 * pt);
+        H = std::min(H, maxHeightPx >= 0 ? std::max(maxHeightPx, pt) + 2 * pt : 4 * pt);
 
         // probe the laid-out layout for each link's hit rects (physical px):
         // one per line the link's text actually occupies, from pango's own

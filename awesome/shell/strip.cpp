@@ -46,7 +46,22 @@ namespace NAwesome::Shell {
         return warmFont;
     }
 
-    SP<ITexture> textTex(const std::string& text, const CHyprColor& col, int pt, int maxWidth, const std::string& font) {
+    SP<ITexture> textTex(const std::string& rawText, const CHyprColor& col, int pt, int maxWidth, const std::string& font) {
+        // One line, always: every label here is a client's string (a title,
+        // a tray or menu label) and the bar and its menus have one line per
+        // cell. Pango makes a paragraph of each newline — ~4000 of them in a
+        // 4 KiB title rasterized a texture tens of thousands of px tall —
+        // so control characters become spaces before anything else.
+        static std::string CLEAN; // reused; main thread only
+        const bool         DIRTY = std::ranges::any_of(rawText, [](char c) { return (unsigned char)c < 0x20 || c == 0x7f; });
+        if (DIRTY) {
+            CLEAN = rawText;
+            for (auto& c : CLEAN)
+                if ((unsigned char)c < 0x20 || c == 0x7f)
+                    c = ' ';
+        }
+        const std::string& text = DIRTY ? CLEAN : rawText;
+
         // key on the RESOLVED font: every caller passes "", and keying the
         // empty string made old-font textures permanent hits across a
         // font change
