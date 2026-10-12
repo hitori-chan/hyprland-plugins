@@ -242,6 +242,7 @@ launch_warmup() {
 }
 vp() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" "$MON_W" "$MON_H" >/dev/null 2>&1; }
 vk() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vkbd" >/dev/null 2>&1; } # keys need no extent
+CAPTURE_DIR=1 # the jitter's direction, alternated across captures (not reset per call)
 capture_nested() { # capture_nested <output>: tolerate a transient screencopy denial
 	local out=$1
 	# The nested renders on damage: start grim, then jitter the
@@ -251,13 +252,13 @@ capture_nested() { # capture_nested <output>: tolerate a transient screencopy de
 	# the output center, so the old absolute 'move 640 400' was a no-op with
 	# no damage and the whole launch starved (17-min transparent window).
 	# Alternate direction so repeated captures do not drift the pointer.
-	local jitter_pid="" dir=1
+	local jitter_pid=""
 	for _ in 1 2 3; do
 		timeout 8 env WAYLAND_DISPLAY="$WL" grim "$out" >/dev/null 2>&1 &
 		local gpid=$!
-		( sleep 0.4; printf 'rel %d %d\nsleep 10\n' $((dir * 2)) $((dir * 2)) | vp ) &
+		( sleep 0.4; printf 'rel %d %d\nsleep 10\n' $((CAPTURE_DIR * 2)) $((CAPTURE_DIR * 2)) | vp ) &
 		jitter_pid=$!
-		dir=$((-dir))
+		CAPTURE_DIR=$((-CAPTURE_DIR))
 		if wait "$gpid"; then
 			wait "$jitter_pid" 2>/dev/null
 			# A capture of a different size is a broken assumption, not a
