@@ -7,34 +7,51 @@
 #include <fstream>
 #include <sstream>
 
+#include <cerrno>
+#include <fcntl.h>
+#include <unistd.h>
+
 namespace fs = std::filesystem;
 
 namespace NAwesome {
 
     namespace {
 
-        // temp + rename(2): a crash mid-write must not eat the state
+        // temp + fsync + rename(2) + directory fsync: a crash or a power
+        // loss mid-write must not eat the state — without the fsync, a
+        // journaling filesystem may commit the rename before the data and
+        // come back with a zero-length file. The temp is the process's own
+        // (no other writer's rename takes it), created fresh with O_EXCL and
+        // O_NOFOLLOW (a planted symlink is never written through), 0600 (the
+        // state holds the launcher's history).
         bool writeAtomic(const fs::path& path, const std::string& contents) {
             std::error_code ec;
             fs::create_directories(path.parent_path(), ec);
-            const auto TMP = path.string() + ".tmp";
-            {
-                std::ofstream f(TMP, std::ios::trunc);
-                if (!f)
-                    return false;
-                f << contents;
-                f.close(); // flush BEFORE the check: a short write (full disk)
-                           // reports only once the stream has tried to make it
-                if (!f) {
-                    fs::remove(TMP, ec); // the temp exists precisely so a
-                                         // failure leaves the state alone
-                    return false;
-                }
+            const auto TMP = path.string() + ".tmp." + std::to_string((long long)getpid());
+            ::unlink(TMP.c_str()); // a leftover of this pid's crash, or a link: removed, never followed
+            const int FD = ::open(TMP.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+            if (FD < 0)
+                return false;
+            bool   ok   = true;
+            size_t done = 0;
+            while (ok && done < contents.size()) {
+                const ssize_t N = ::write(FD, contents.data() + done, contents.size() - done);
+                if (N < 0 && errno == EINTR)
+                    continue;
+                ok = N > 0;
+                done += ok ? (size_t)N : 0;
             }
-            fs::rename(TMP, path, ec);
-            if (ec)
-                fs::remove(TMP, ec); // no orphan beside the state
-            return !ec;
+            ok = ok && ::fdatasync(FD) == 0; // a full disk can report only here
+            ok = ::close(FD) == 0 && ok;
+            if (!ok || ::rename(TMP.c_str(), path.c_str()) != 0) {
+                ::unlink(TMP.c_str()); // the temp exists precisely so a failure leaves the state alone
+                return false;
+            }
+            if (const int DIR = ::open(path.parent_path().c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC); DIR >= 0) {
+                ::fsync(DIR); // the rename itself is durable
+                ::close(DIR);
+            }
+            return true;
         }
 
     } // namespace
