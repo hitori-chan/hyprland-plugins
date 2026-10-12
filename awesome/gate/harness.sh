@@ -1,10 +1,15 @@
 # SECONDS-based wall clock, in s since gate.sh started: each line shows
 # where the minutes go, so a slow battery is visible without a profiler.
-ok()  { PASS=$((PASS + 1)); printf '  ok  [%s s] %s\n' "$SECONDS" "$1"; }
-bad() { FAILED+=("$1"); printf ' FAIL [%s s] %s\n' "$SECONDS" "$1"; }
-chk() { # chk <name> <command...> — command's exit code decides
+ok()   { PASS=$((PASS + 1)); printf '  ok  [%s s] %s\n' "$SECONDS" "$1"; }
+bad()  { FAILED+=("$1"); printf ' FAIL [%s s] %s\n' "$SECONDS" "$1"; }
+# a check this machine cannot run (a missing toolkit): never a pass —
+# listed under the summary line
+skip() { SKIPS+=("$1"); printf ' skip [%s s] %s\n' "$SECONDS" "$1"; }
+chk() { # chk <name> <command...> — command's exit code decides, and is returned
 	local name=$1; shift
-	if "$@" >/dev/null 2>&1; then ok "$name"; else bad "$name"; fi
+	if "$@" >/dev/null 2>&1; then ok "$name"; return 0; fi
+	bad "$name"
+	return 1
 }
 
 # --- the live session: read-only --------------------------------------------
@@ -306,6 +311,12 @@ battery_end() {
 assert_desktop_clean() {
 	sleep 0.5
 	local who
+	# a dead nested has no clients either: that is a failure, never "clean"
+	if ! validated_nested_pid >/dev/null 2>&1; then
+		bad "$1: the nested is gone at the battery's end"
+		GUARD_CHECKS=$((GUARD_CHECKS + 1))
+		return
+	fi
 	who="$(clients | python3 -c 'import json,sys;print(" ".join(sorted({c["class"] for c in json.load(sys.stdin)})))' 2>/dev/null)"
 	if [[ -z "$who" ]]; then
 		ok "$1: leaves the nested client-free"
@@ -327,10 +338,12 @@ print_summary() { # the gate's final lines; the return code is the exit code
 	fi
 	if [[ ${#FAILED[@]} -eq 0 ]]; then
 		echo "== stress: ALL $PASS CHECKS PASSED in ${SECONDS}s =="
+		[[ ${#SKIPS[@]} -eq 0 ]] || printf '   skipped (not run, not passed): %s\n' "${SKIPS[@]}"
 		return 0
 	fi
 	echo "== stress: $PASS passed, ${#FAILED[@]} FAILED in ${SECONDS}s =="
 	printf '   - %s\n' "${FAILED[@]}"
+	[[ ${#SKIPS[@]} -eq 0 ]] || printf '   skipped (not run, not passed): %s\n' "${SKIPS[@]}"
 	return 1
 }
 

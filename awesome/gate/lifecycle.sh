@@ -98,8 +98,9 @@ printf "move 12 13\nsleep 30\npress 272\nsleep 30\nrelease 272\nsleep 120\n" | v
 chk "reload: and back on tag 1" test "$(ws)" = 1
 
 # ---- log hygiene ----------------------------------------------------------
+# a missing or empty log is no evidence of a clean one
 chk "log clean (only known-benign lines)" bash -c \
-	"! grep -iE 'error|assert|segv|abort' '$(nested_log)' | grep -vE 'Creating the Error Overlay|xkbcomp' | grep -q ."
+	"test -s '$(nested_log)' && ! grep -iE 'error|assert|segv|abort' '$(nested_log)' | grep -vE 'Creating the Error Overlay|xkbcomp' | grep -q ."
 
 # ---- teardown -------------------------------------------------------------
 # A mapped plugin cannot retain callbacks into its code after unload, but an

@@ -139,8 +139,8 @@ capture_nested "$STATE/bell-badge2.png"
 # minimum width below three digits and the 9px glyph moves only ~2 px of
 # ink between "1" and "2" — a pixel count cannot see the growth, so the
 # pixel side asserts the badge still stands, the state side the number.
-chk "shell: the badge count grows with a second card" \
-	test "$(st)" = "center:0 live:2 dnd:0" && test "$(BELLBAND "$STATE/bell-badge2.png" "$BELL0")" -gt 30
+badge_grew() { [[ "$(st)" == "center:0 live:2 dnd:0" && "$(BELLBAND "$STATE/bell-badge2.png" "$BELL0")" -gt 30 ]]; }
+chk "shell: the badge count grows with a second card" badge_grew
 hq awesome clear >/dev/null; sleep 1.2
 capture_nested "$STATE/bell-badge0.png"
 chk "shell: the badge leaves at zero" \
@@ -207,7 +207,8 @@ chk "tray: watcher accepted the fake item" test "$(sni_items | grep -c HyprFakeS
 sleep 1.2
 capture_nested "$STATE/tray-icon.png"
 ICON="$(icon_box "$STATE/tray-icon.png")"
-chk "tray: magenta icon sits in the bar band" bash -c "[[ '${ICON:0:1}' != '0' ]]"
+# an empty answer (a failed capture) is no icon either
+chk "tray: magenta icon sits in the bar band" bash -c "[[ -n '$ICON' && '${ICON:0:1}' != '0' ]]"
 read -r IX IY <<<"$ICON"
 
 # the root menu: doubled + trailing separators collapse to one (parse trim)

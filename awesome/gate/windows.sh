@@ -260,14 +260,18 @@ print(next((c['address'] for c in json.load(sys.stdin) if c['title']=='gtkgrid')
 	gg_find() { python3 "$REPO/devtools/findcolors.py" "$@"; }
 	gg_blocks() { # gg_blocks <label>
 		capture_nested "$STATE/gg-$1.png"
-		local name cx cy n got
+		local name cx cy n got found=0
 		while read -r name cx cy n; do
+			found=$((found + 1))
 			if ((n < 500)); then bad "[$1] the $name block is drawn ($n px)"; continue; fi
 			gg_click "$cx" "$cy"
 			got="$(grep '^HIT' "$GG_LOG" | tail -1)"
 			[[ "$got" == "HIT $name" ]] && ok "[$1] a click on the drawn $name block hits it" ||
 				bad "[$1] a click on the drawn $name block hits it (client: '$got')"
 		done < <(gg_find "$STATE/gg-$1.png" $GG_BLOCKS)
+		# a failed capture or a crashed finder yields no blocks at all: that
+		# ran zero checks, which must not read as six passes
+		((found > 0)) || bad "[$1] the color blocks were searched for in the capture"
 	}
 	gg_menu() { # gg_menu <label>: open the menu by its drawn button, click the drawn violet item
 		local bx by bn vx vy vn got
@@ -322,7 +326,7 @@ print(next((c['address'] for c in json.load(sys.stdin) if c['title']=='gtkgrid')
 	exec 7>&-
 	wait "$GG_VP" 2>/dev/null
 else
-	ok "real GTK3 client checks skipped: no GTK3 / PyGObject on this machine"
+	skip "real GTK3 client checks: no GTK3 / PyGObject on this machine"
 fi
 
 # A real CSD app's close: the client destroys its toplevel BEFORE the

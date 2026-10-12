@@ -142,6 +142,7 @@ if [[ -n "$K_SPEC" ]]; then
 	done
 	SELECTED=("${_KEPT[@]}")
 fi
+[[ ${#SELECTED[@]} -gt 0 ]] || { echo "gate.sh: no battery left to run (-b/-k selected nothing)" >&2; exit 2; }
 STATE="$HARNESS/stress-state"
 CFG="$HARNESS/stress.lua"
 CAPTURE_LOG="$HARNESS/input-capture.log"
@@ -151,6 +152,7 @@ CAPTURE_PID=""
 CLIP_PID=""
 PASS=0
 FAILED=()
+SKIPS=()
 WL=""
 MON_W=0
 MON_H=0
