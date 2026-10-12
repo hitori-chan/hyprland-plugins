@@ -42,10 +42,23 @@
 namespace NAwesome::Windows {
 
     namespace {
-        // plugin-maximized windows and their restore geometry.
+        // plugin-maximized windows and their restore geometry, relative to
+        // the window's monitor origin (a workspace moved to another monitor
+        // restores there, not clamped against the old one's edge). An empty
+        // box: no windowed geometry ever existed.
         inline std::unordered_map<PHLWINDOWREF, CBox>& maximized() {
             static std::unordered_map<PHLWINDOWREF, CBox> M;
             return M;
+        }
+        inline CBox monLocal(const CBox& global, const PHLMONITOR& mon) {
+            if (!mon || global.w <= 5 || global.h <= 5)
+                return global;
+            return CBox{global}.translate(-mon->logicalBox().pos());
+        }
+        inline CBox monGlobal(const CBox& local, const PHLMONITOR& mon) {
+            if (!mon || local.w <= 5 || local.h <= 5)
+                return local;
+            return CBox{local}.translate(mon->logicalBox().pos());
         }
 
         // last windowed box per app class, surviving window closes and
@@ -119,7 +132,7 @@ namespace NAwesome::Windows {
             // un-maximizing hands the size choice to the client
             CBox restore{};
             if (const auto B = windowedOn(W->metadata().appID(), MON))
-                restore = boundedRestore(W, *B, WA);
+                restore = monLocal(boundedRestore(W, *B, WA), MON);
             maximized()[PHLWINDOWREF{W}] = restore;
 
             if (auto TOP = xdgToplevel(W))
@@ -294,7 +307,7 @@ namespace NAwesome::Windows {
             const auto WA = MON->logicalBoxMinusReserved();
 
             if (const auto IT = maximized().find(WR); IT != maximized().end()) {
-                const CBox STORED = IT->second;
+                const CBox STORED = monGlobal(IT->second, MON);
                 maximized().erase(IT);
                 // tell the client the truth: a client never told it left
                 // maximized (notably GTK) stays in maximized mode — it
@@ -316,7 +329,7 @@ namespace NAwesome::Windows {
                 }
             } else {
                 const auto BOX = W->windowTarget()->position();
-                maximized().emplace(WR, BOX);
+                maximized().emplace(WR, monLocal(BOX, MON));
                 rememberWindowed(W->metadata().appID(), BOX, W->m_monitor.lock());
                 setClientMaximized(true);
                 setGeom(W, WA);
@@ -410,7 +423,7 @@ namespace NAwesome::Windows {
                 return;
             CBox restore{};
             if (const auto B = windowedOn(w->metadata().appID(), MON))
-                restore = boundedRestore(w, *B, WA);
+                restore = monLocal(boundedRestore(w, *B, WA), MON);
             maximized()[PHLWINDOWREF{w}] = restore;
         }
 
@@ -509,7 +522,7 @@ namespace NAwesome::Windows {
                     // box the entry holds — remembering it would save the
                     // workarea as the app's last windowed size
                     if (W->isFloating())
-                        rememberWindowed(W->metadata().appID(), IT->second, W->m_monitor.lock());
+                        rememberWindowed(W->metadata().appID(), monGlobal(IT->second, W->m_monitor.lock()), W->m_monitor.lock());
                 }
                 maximized().erase(IT);
             });
