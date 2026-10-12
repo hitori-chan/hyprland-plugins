@@ -606,17 +606,32 @@ namespace NAwesome::Shell {
         // libudev does not coalesce for us. Yield after a small batch so a
         // noisy power-supply driver cannot monopolize the compositor loop.
         constexpr size_t MAX_UDEV_EVENTS_PER_DISPATCH = 16;
-        bool rescan = false;
+        bool rescan = false, relevant = false;
         if (g_udevMon)
             for (size_t i = 0; i < MAX_UDEV_EVENTS_PER_DISPATCH; ++i) {
                 auto* DEV = udev_monitor_receive_device(g_udevMon);
                 if (!DEV)
                     break;
-                // a pack inserted or removed (a ThinkPad's swappable one)
-                if (const char* A = udev_device_get_action(DEV); A && (std::string_view{A} == "add" || std::string_view{A} == "remove"))
+                // Only the system's packs and the mains supply move the
+                // gauge: a USB-C port's or a headset's battery (scope
+                // Device) re-read every pack's sysfs for nothing — a read
+                // that can evaluate ACPI methods
+                const char*            T      = udev_device_get_property_value(DEV, "POWER_SUPPLY_TYPE");
+                const char*            S      = udev_device_get_property_value(DEV, "POWER_SUPPLY_SCOPE");
+                const char*            A      = udev_device_get_action(DEV);
+                const std::string_view TYPE   = T ? T : "", SCOPE = S ? S : "", ACTION = A ? A : "";
+                const bool             PACK   = TYPE == "Battery" && SCOPE != "Device";
+                const bool             HOTPLUG = ACTION == "add" || ACTION == "remove";
+                // a pack inserted or removed (a ThinkPad's swappable one);
+                // a removal may arrive without its properties
+                if (HOTPLUG && (PACK || TYPE.empty()))
                     rescan = true;
+                if (PACK || TYPE == "Mains" || (HOTPLUG && TYPE.empty()))
+                    relevant = true;
                 udev_device_unref(DEV);
             }
+        if (!relevant)
+            return 0;
         if (rescan)
             findBatteries();
         if (Battery::refresh())
