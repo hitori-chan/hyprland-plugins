@@ -81,6 +81,11 @@ namespace NAwesome::Notify {
     struct SDecodeJob {
         std::string                                                    source;
         int                                                            svgPx   = 0;
+        // the admitted file, held open: the gatherer's worker decodes
+        // /proc/self/fd/N — the inode the core checked, never the path
+        // again (a swap after the check cannot reach it) — and reads it off
+        // this thread. Closed with the job, once the decode is done.
+        NAwesome::CImageFile                                           file;
         Hyprutils::Memory::CAtomicSharedPointer<Hyprgraphics::CImageResource> resource;
         bool                                                           rejected = false; // too big or not a file: settled null
         bool                                                           readyAtPoll = false;
@@ -130,17 +135,17 @@ namespace NAwesome::Notify {
             waitedForDecodeSlot = true;
             return nullptr;
         }
-        if (!NAwesome::admissibleImageFile(source)) {
+        auto file = NAwesome::openAdmissibleImage(source);
+        if (!file) {
             decodeJobs.push_back(SDecodeJob{.source = source, .rejected = true, .wanted = true});
             return &decodeJobs.back();
         }
         // hyprgraphics needs an explicit viewport for SVG files; without it
         // the path constructor settles with "invalid size". Rasters ignore it.
-        auto resource = SVG_PX > 0 ? makeAtomicShared<Hyprgraphics::CImageResource>(source, Vector2D{(double)SVG_PX, (double)SVG_PX})
-                                   :
-                                   makeAtomicShared<Hyprgraphics::CImageResource>(source);
+        auto resource = SVG_PX > 0 ? makeAtomicShared<Hyprgraphics::CImageResource>(file.path(), Vector2D{(double)SVG_PX, (double)SVG_PX}) :
+                                     makeAtomicShared<Hyprgraphics::CImageResource>(file.path());
         g_pAsyncResourceGatherer->enqueue(resource);
-        decodeJobs.push_back(SDecodeJob{.source = source, .svgPx = SVG_PX, .resource = std::move(resource), .wanted = true});
+        decodeJobs.push_back(SDecodeJob{.source = source, .svgPx = SVG_PX, .file = std::move(file), .resource = std::move(resource), .wanted = true});
         armDecodePoll();
         return &decodeJobs.back();
     }
@@ -379,8 +384,17 @@ namespace NAwesome::Notify {
     // gatherer's shared surface) and SVG heroes (a 256 px async viewport
     // could never cover them).
     static SP<ITexture> syncFileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool& hero, bool tintSymbolic = false) {
-        const int            HINT = std::max(iconPx, heroWPx);
-        Hyprgraphics::CImage image(path, Vector2D{(double)HINT, (double)HINT});
+        const int  HINT  = std::max(iconPx, heroWPx);
+        const auto BYTES = NAwesome::readImageFile(path); // one non-blocking open; these bytes are what decodes
+        if (!BYTES)
+            return nullptr;
+        // the format named, not sniffed: AUTO loads libmagic's database per
+        // image, on this thread
+        const auto FORMAT = NAwesome::isSvgIconPath(path)                                                                          ? Hyprgraphics::IMAGE_FORMAT_SVG :
+            BYTES->size() >= 4 && (*BYTES)[0] == 0x89 && (*BYTES)[1] == 'P' && (*BYTES)[2] == 'N' && (*BYTES)[3] == 'G' ? Hyprgraphics::IMAGE_FORMAT_PNG :
+            BYTES->size() >= 2 && (*BYTES)[0] == 0xff && (*BYTES)[1] == 0xd8                                              ? Hyprgraphics::IMAGE_FORMAT_JPEG :
+                                                                                                                             Hyprgraphics::IMAGE_FORMAT_AUTO;
+        Hyprgraphics::CImage image(std::span<const uint8_t>{*BYTES}, FORMAT, Vector2D{(double)HINT, (double)HINT});
         if (!image.success())
             return nullptr;
 
@@ -406,9 +420,6 @@ namespace NAwesome::Notify {
     // again after the next warm" — the 16 ms poll re-warms when the
     // resource lands.
     static SFileTexResult fileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool tintSymbolic = false) {
-        // every branch below may read the file on this thread
-        if (!NAwesome::admissibleImageFile(path))
-            return {.settled = true};
         if (tintSymbolic || (heroWPx > 0 && NAwesome::isSvgIconPath(path))) {
             bool hero = false;
             return {.texture = syncFileTex(path, iconPx, heroWPx, heroHCapPx, hero, tintSymbolic), .settled = true, .hero = hero};
@@ -785,6 +796,14 @@ namespace NAwesome::Notify {
         if (decodePoll && g_pEventLoopManager)
             g_pEventLoopManager->removeTimer(decodePoll);
         decodePoll.reset();
+        // A decode still on the gatherer's worker opens /proc/self/fd/N after
+        // this: closing N would let the number be reused, and the worker
+        // open whatever got it (a pipe would block the compositor's shared
+        // gatherer). Those fds stay open — bounded by the slot cap, and only
+        // an unload mid-decode leaves any.
+        for (auto& job : decodeJobs)
+            if (!resourceReady(job))
+                job.file.release();
         decodeJobs.clear();
         avatarLru.clear();
         generatedAvatars.clear();

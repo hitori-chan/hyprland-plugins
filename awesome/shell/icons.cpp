@@ -9,55 +9,20 @@ namespace NAwesome::Shell {
 
     // ---- icons (tasklist + tray) ----
 
-    SP<ITexture> loadPng(const std::string& path) {
-        // the declared size first: cairo decodes the whole raster before we
-        // could look at it (an absolute SNI IconName reaches here)
-        if (!NAwesome::admissibleImageFile(path))
+    // PNG bytes -> a texture: the declared size checked before cairo decodes
+    // the whole raster, and a large icon downscaled once on the CPU (a bar
+    // cell is <=40 px; apps that ship a single 256-1024 px icon must not
+    // ride to GL full size — the notify module's scaledTex rule)
+    static SP<ITexture> pngTexture(const std::vector<uint8_t>& data, uint32_t maxDim) {
+        const auto DIMS = NAwesome::rasterDims(data.data(), data.size());
+        if (!DIMS || DIMS->first == 0 || DIMS->second == 0 || DIMS->first > maxDim || DIMS->second > maxDim ||
+            (uint64_t)DIMS->first * DIMS->second > NAwesome::MAX_DECODE_PIXELS)
             return nullptr;
-        auto* SURF = cairo_image_surface_create_from_png(path.c_str());
-        if (cairo_surface_status(SURF) != CAIRO_STATUS_SUCCESS) {
-            cairo_surface_destroy(SURF);
-            return nullptr;
-        }
-        // A bar cell is <=40px; apps that ship a single large icon (256-
-        // 1024px) must not ride to GL full-size — downscale once on the CPU,
-        // the same rule as the notify module's scaledTex
-        constexpr int    CAP  = 128;
-        const int        W    = cairo_image_surface_get_width(SURF), H = cairo_image_surface_get_height(SURF);
-        if (W > CAP || H > CAP) {
-            const double SCALE = std::min((double)CAP / W, (double)CAP / H);
-            const int    DW    = std::max(1, (int)std::lround(W * SCALE)), DH = std::max(1, (int)std::lround(H * SCALE));
-            auto*        SMALL = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, DW, DH);
-            auto*        CR    = cairo_create(SMALL);
-            cairo_scale(CR, (double)DW / W, (double)DH / H);
-            cairo_set_source_surface(CR, SURF, 0, 0);
-            cairo_pattern_set_filter(cairo_get_source(CR), CAIRO_FILTER_GOOD);
-            cairo_paint(CR);
-            cairo_destroy(CR);
-            cairo_surface_flush(SMALL);
-            cairo_surface_destroy(SURF);
-            SURF = SMALL;
-        }
-        auto tex = g_pHyprRenderer->createTexture(SURF);
-        cairo_surface_destroy(SURF);
-        return tex;
-    }
-
-    // dbusmenu "icon-data" is a PNG shipped inline (nm-applet composites its
-    // per-network signal-strength icons at runtime — they exist nowhere on
-    // disk, so a theme lookup can never find them).
-    SP<ITexture> loadPngBytes(const std::vector<uint8_t>& data) {
-        constexpr size_t MAX_ENCODED = 4u << 20;
-        constexpr int    MAX_DIM     = 2048;
-        constexpr size_t MAX_PIXELS  = 4u << 20;
-        if (data.empty() || data.size() > MAX_ENCODED || !NAwesome::admissibleRasterBytes(data.data(), data.size()))
-            return nullptr; // the declared size, before cairo decodes it whole
 
         struct SCursor {
             const uint8_t* p;
             size_t         left;
         } cur{data.data(), data.size()};
-
         const auto READ = [](void* closure, unsigned char* out, unsigned int len) -> cairo_status_t {
             auto* C = (SCursor*)closure;
             if (C->left < len)
@@ -67,24 +32,20 @@ namespace NAwesome::Shell {
             C->left -= len;
             return CAIRO_STATUS_SUCCESS;
         };
-
         auto* SURF = cairo_image_surface_create_from_png_stream(READ, &cur);
         if (cairo_surface_status(SURF) != CAIRO_STATUS_SUCCESS) {
             cairo_surface_destroy(SURF);
             return nullptr;
         }
         const int W = cairo_image_surface_get_width(SURF), H = cairo_image_surface_get_height(SURF);
-        if (W <= 0 || H <= 0 || W > MAX_DIM || H > MAX_DIM || (size_t)W * (size_t)H > MAX_PIXELS) {
+        if (W <= 0 || H <= 0 || (uint32_t)W > maxDim || (uint32_t)H > maxDim) { // what cairo decoded must be what was declared
             cairo_surface_destroy(SURF);
             return nullptr;
         }
-        // a tray cell is ~22px: inline SNI PNGs (nm-applet composites its
-        // signal icons at runtime) must not ride to GL full-size, same rule
-        // as loadPng
-        constexpr int CAP  = 128;
+        constexpr int CAP = 128;
         if (W > CAP || H > CAP) {
             const double SCALE = std::min((double)CAP / W, (double)CAP / H);
-            const int    DW    = std::max(1, (int)std::lround(W * SCALE)), DH = std::max(1, (int)std::lround(H * SCALE));
+            const int    DW = std::max(1, (int)std::lround(W * SCALE)), DH = std::max(1, (int)std::lround(H * SCALE));
             auto*        SMALL = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, DW, DH);
             auto*        CR    = cairo_create(SMALL);
             cairo_scale(CR, (double)DW / W, (double)DH / H);
@@ -101,12 +62,35 @@ namespace NAwesome::Shell {
         return tex;
     }
 
+    SP<ITexture> loadPng(const std::string& path) {
+        // the bytes come from ONE non-blocking open (core/icons.hpp): an
+        // absolute SNI IconName reaches here
+        const auto BYTES = NAwesome::readImageFile(path);
+        return BYTES ? pngTexture(*BYTES, 4096) : nullptr;
+    }
+
+    // dbusmenu "icon-data" is a PNG shipped inline (nm-applet composites its
+    // per-network signal-strength icons at runtime — they exist nowhere on
+    // disk, so a theme lookup can never find them). A menu row's icon is
+    // ~16-24 px: the declared size is held to 256 px a side before cairo
+    // decodes it (a 4096² PNG of one color is a few KB on the wire and
+    // 64 MiB decoded).
+    SP<ITexture> loadPngBytes(const std::vector<uint8_t>& data) {
+        constexpr size_t MAX_ENCODED = 4u << 20;
+        if (data.empty() || data.size() > MAX_ENCODED)
+            return nullptr;
+        return pngTexture(data, 256);
+    }
+
     // SVG -> texture via librsvg (alacritty ships nothing but an SVG; tray icon
     // names like input-keyboard-symbolic only exist as theme SVGs). Rasterized
     // bigger than any bar cell; GL scales down. Symbolic icons are a pure alpha
     // shape in some theme-chosen color — repaint them with the bar's fg.
     static SP<ITexture> loadSvg(const std::string& path, bool recolor, const CHyprColor& col) {
-        RsvgHandle* handle = rsvg_handle_new_from_file(path.c_str(), nullptr);
+        const auto BYTES = NAwesome::readImageFile(path); // one non-blocking open, size-bounded
+        if (!BYTES)
+            return nullptr;
+        RsvgHandle* handle = rsvg_handle_new_from_data(BYTES->data(), BYTES->size(), nullptr);
         if (!handle)
             return nullptr;
 
@@ -142,8 +126,6 @@ namespace NAwesome::Shell {
     }
 
     static SP<ITexture> loadIcon(const std::string& path) {
-        if (!NAwesome::admissibleImageFile(path))
-            return nullptr; // a FIFO or a huge file: never read on this thread
         if (path.ends_with(".svg")) {
             const bool SYMBOLIC = path.find("-symbolic") != std::string::npos || path.find("/symbolic/") != std::string::npos;
             return loadSvg(path, SYMBOLIC, color(cfg().getColor("plugin:awesome:shell:col_fg")));

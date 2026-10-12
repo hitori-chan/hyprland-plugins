@@ -22,7 +22,13 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
+
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace NAwesome {
 
@@ -97,40 +103,136 @@ namespace NAwesome {
         return DIMS && DIMS->first > 0 && DIMS->second > 0 && (uint64_t)DIMS->first * DIMS->second <= MAX_DECODE_PIXELS;
     }
 
-    // A file the plugin may decode on the main thread: a regular file (a
-    // FIFO or device path would block the compositor in open/read, and any
-    // session-bus sender — a notification's image-path, an SNI icon theme
-    // path — names the file) of bounded size, whose header declares a
-    // bounded raster (an SVG is bounded by its size and the raster it is
-    // drawn at). Every decode entry point that takes a client-influenced
-    // path checks this first.
     inline constexpr uintmax_t MAX_DECODE_FILE_BYTES = 32u << 20;
     inline constexpr uintmax_t MAX_SVG_FILE_BYTES    = 2u << 20;
-    inline bool admissibleImageFile(const std::string& path, uintmax_t maxBytes = MAX_DECODE_FILE_BYTES) {
-        std::error_code ec;
-        const auto      STATUS = std::filesystem::status(path, ec); // follows symlinks: the target counts
-        if (ec || !std::filesystem::is_regular_file(STATUS))
-            return false;
-        const auto BYTES = std::filesystem::file_size(path, ec);
-        if (ec || BYTES > maxBytes)
-            return false;
-        // an SVG parses and rasters on the calling thread: theme icons are
-        // a few KB, and 2 MiB bounds a stranger's
-        if (isSvgIconPath(path))
-            return BYTES <= MAX_SVG_FILE_BYTES;
-        // the header: 4 KiB holds every format's but a JPEG whose SOF sits
-        // past a large EXIF block — that one reads on, to 256 KiB
-        std::ifstream        F(path, std::ios::binary);
-        std::vector<uint8_t> head(std::min<uintmax_t>(BYTES, 4096));
-        if (!F.read((char*)head.data(), (std::streamsize)head.size()))
-            return false;
-        if (!rasterDims(head.data(), head.size()) && head.size() >= 2 && head[0] == 0xff && head[1] == 0xd8 && BYTES > head.size()) {
-            const size_t HAVE = head.size();
-            head.resize(std::min<uintmax_t>(BYTES, 256u << 10));
-            if (!F.read((char*)head.data() + HAVE, (std::streamsize)(head.size() - HAVE)))
+
+    // The file is opened ONCE, non-blocking, and judged on that open fd: a
+    // path checked and then reopened by the decoder could be swapped in
+    // between (a FIFO named by a sender then hangs the compositor in the
+    // decoder's open), and a FIFO already there would hang a blocking open.
+    namespace detail {
+        struct SImageFd {
+            int       fd    = -1;
+            uintmax_t bytes = 0;
+            ~SImageFd() {
+                if (fd >= 0)
+                    ::close(fd);
+            }
+        };
+        inline bool openImage(const std::string& path, uintmax_t maxBytes, SImageFd& out) {
+            out.fd = ::open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC | O_NOCTTY); // follows symlinks: the target counts
+            if (out.fd < 0)
                 return false;
+            struct stat st{};
+            if (fstat(out.fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size < 0)
+                return false;
+            out.bytes = (uintmax_t)st.st_size;
+            // an SVG parses and rasters on the calling thread: theme icons
+            // are a few KB, and 2 MiB bounds a stranger's
+            return out.bytes <= (isSvgIconPath(path) ? std::min(maxBytes, MAX_SVG_FILE_BYTES) : maxBytes);
         }
-        return admissibleRasterBytes(head.data(), head.size());
+        inline size_t readAll(int fd, uint8_t* to, size_t n) {
+            size_t got = 0;
+            while (got < n) {
+                const ssize_t R = ::read(fd, to + got, n - got);
+                if (R < 0 && errno == EINTR)
+                    continue;
+                if (R <= 0)
+                    break;
+                got += (size_t)R;
+            }
+            return got;
+        }
+    }
+
+    namespace detail {
+        // the admission on an open fd: a regular file of bounded size whose
+        // header declares a bounded raster (an SVG is bounded by its size
+        // and the raster it is drawn at)
+        inline bool admitOpen(const std::string& path, uintmax_t maxBytes, SImageFd& F) {
+            if (!openImage(path, maxBytes, F))
+                return false;
+            if (isSvgIconPath(path))
+                return true;
+            // the header: 4 KiB holds every format's but a JPEG whose SOF
+            // sits past a large EXIF block — that one reads on, to 256 KiB
+            std::vector<uint8_t> head(std::min<uintmax_t>(F.bytes, 4096));
+            head.resize(readAll(F.fd, head.data(), head.size()));
+            if (!rasterDims(head.data(), head.size()) && head.size() >= 2 && head[0] == 0xff && head[1] == 0xd8 && F.bytes > head.size()) {
+                const size_t HAVE = head.size();
+                head.resize(std::min<uintmax_t>(F.bytes, 256u << 10));
+                head.resize(HAVE + readAll(F.fd, head.data() + HAVE, head.size() - HAVE));
+            }
+            return admissibleRasterBytes(head.data(), head.size());
+        }
+    }
+
+    // A file the plugin may decode (any session-bus sender — a
+    // notification's image-path, an SNI icon theme path — names it). For a
+    // check only: a decoder takes readImageFile's bytes or
+    // openAdmissibleImage's held file instead of reopening the path.
+    inline bool admissibleImageFile(const std::string& path, uintmax_t maxBytes = MAX_DECODE_FILE_BYTES) {
+        detail::SImageFd F;
+        return detail::admitOpen(path, maxBytes, F);
+    }
+
+    // The whole admitted file, for a decoder on this thread that decodes
+    // THESE bytes: judged on the same open fd they are read from.
+    inline std::optional<std::vector<uint8_t>> readImageFile(const std::string& path, uintmax_t maxBytes = MAX_DECODE_FILE_BYTES) {
+        detail::SImageFd F;
+        if (!detail::admitOpen(path, maxBytes, F) || lseek(F.fd, 0, SEEK_SET) != 0)
+            return std::nullopt;
+        std::vector<uint8_t> bytes((size_t)F.bytes);
+        bytes.resize(detail::readAll(F.fd, bytes.data(), bytes.size()));
+        if (bytes.empty())
+            return std::nullopt;
+        return bytes;
+    }
+
+    // An admitted file held open, for a decoder off this thread that takes a
+    // path: it reads /proc/self/fd/N, the very inode that was checked. Close
+    // it only once that decoder is done with it.
+    class CImageFile {
+      public:
+        CImageFile() = default;
+        explicit CImageFile(int fd) : m_fd(fd) {}
+        CImageFile(CImageFile&& o) noexcept : m_fd(std::exchange(o.m_fd, -1)) {}
+        CImageFile& operator=(CImageFile&& o) noexcept {
+            if (this != &o) {
+                reset();
+                m_fd = std::exchange(o.m_fd, -1);
+            }
+            return *this;
+        }
+        CImageFile(const CImageFile&)            = delete;
+        CImageFile& operator=(const CImageFile&) = delete;
+        ~CImageFile() {
+            reset();
+        }
+        void reset() {
+            if (m_fd >= 0)
+                ::close(m_fd);
+            m_fd = -1;
+        }
+        // hand the fd over without closing it (a decoder still reading)
+        int release() {
+            return std::exchange(m_fd, -1);
+        }
+        std::string path() const {
+            return "/proc/self/fd/" + std::to_string(m_fd);
+        }
+        explicit operator bool() const {
+            return m_fd >= 0;
+        }
+
+      private:
+        int m_fd = -1;
+    };
+    inline CImageFile openAdmissibleImage(const std::string& path, uintmax_t maxBytes = MAX_DECODE_FILE_BYTES) {
+        detail::SImageFd F;
+        if (!detail::admitOpen(path, maxBytes, F))
+            return {};
+        return CImageFile{std::exchange(F.fd, -1)};
     }
 
     // The XDG data dirs in precedence order: the per-user one first (it
