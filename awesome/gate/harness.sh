@@ -412,45 +412,31 @@ nested_exit_check() { # $1=killed pid, $2=1 if SIGKILL was needed
 	# instance died: the teardown SEGV class (use-after-dlclose, fork fix
 	# 377b812e; 100% repro on every relaunch) passed every gate from
 	# 2026-09-04 through 2026-09-25 because nothing looked at the corpse.
-	# A clean SIGTERM exit leaves no core; a SEGV-class death does
-	# (kernel.core_pattern pipes to systemd-coredump). An instance that had
-	# to be SIGKILL'd can never have written a core — that is a teardown
-	# hang, reported as such, not as a clean exit.
+	# launch.sh's wrapper records the nested's exit status: a SIGTERM stop
+	# is a clean 0, a crash is a signal (a run-time one aborts through the
+	# crash reporter, a teardown one dies by its raw signal). No core dump
+	# and no coredumpctl needed — core_pattern may route cores nowhere. An
+	# instance that had to be SIGKILL'd is a teardown hang.
 	if [[ "${2:-0}" == "1" ]]; then
-		bad "nested $1 teardown: survived 5s and was SIGKILL'd (hang — no core to verify)"
+		bad "nested $1 teardown: survived 5s and was SIGKILL'd (hang)"
 		return 0
 	fi
-	local pattern
-	pattern="$(cat /proc/sys/kernel/core_pattern 2>/dev/null)"
-	if [[ "$pattern" != *systemd-coredump* ]]; then
-		ok "nested $1 teardown: core check unverified (core_pattern is not the systemd-coredump pipe — reboot resets it)"
-		return 0
-	fi
-	if ! command -v coredumpctl >/dev/null 2>&1; then
-		ok "nested $1 teardown: core check unverified (no coredumpctl)"
-		return 0
-	fi
-	# systemd-coredump records asynchronously; query, retry once on an
-	# unreadable journal, then decide: 0=core, 1=clean, 2=unreadable.
-	local out rc=2
-	for _ in 1 2; do
-		sleep 2
-		out="$(coredumpctl list --json=short 2>/dev/null)"
-		printf '%s' "$out" | python3 -c '
-import json, sys
-try:
-    entries = json.load(sys.stdin)
-except Exception:
-    sys.exit(2)
-sys.exit(0 if any(e.get("pid") == int(sys.argv[1]) for e in entries) else 1)' "$1"
-		rc=$?
-		[[ $rc -eq 2 ]] || break
+	local f="$HARNESS/nested.exit.$1" st=""
+	for _ in $(seq 1 30); do
+		[[ -s "$f" ]] && break
+		sleep 0.1
 	done
-	case $rc in
-		0) bad "nested $1 teardown: core dump found (SEGV class — coredumpctl info $1)" ;;
-		1) ok "nested $1 teardown: clean exit, no core" ;;
-		*) ok "nested $1 teardown: core check unverified (coredumpctl unavailable)" ;;
-	esac
+	st="$(cat "$f" 2>/dev/null)"
+	rm -f -- "$f"
+	if [[ -z "$st" ]]; then
+		skip "nested $1 teardown: no exit status recorded (not started by launch.sh)"
+	elif [[ "$st" == 0 ]]; then
+		ok "nested $1 teardown: clean exit"
+	elif ((st > 128)); then
+		bad "nested $1 teardown: died by signal $((st - 128)) (crash class — $HARNESS/crash-reports, the nested log)"
+	else
+		bad "nested $1 teardown: exited with status $st"
+	fi
 }
 
 # Launch readiness: the panel column must be clear before the first

@@ -85,13 +85,15 @@ before_sig="$(ls -1 "$RUNDIR" 2>/dev/null)"
 echo "launch: $BIN -c $CFG (host $HOST_WL, private session + system bus)"
 # setsid: a torn-down caller cannot take the instance with it.
 # AW_GATE_NESTED marks the instance (live.sh: is_nested_pid matches it
-# positively, never by exclusion).
+# positively, never by exclusion); the wrapper records the nested's exit
+# status as $HARNESS/nested.exit.<pid> (harness.sh: nested_exit_check).
 (
 	ulimit -c unlimited 2>/dev/null
 	exec setsid env -u DISPLAY -u WAYLAND_SOCKET -u HYPRLAND_INSTANCE_SIGNATURE -u XDG_SESSION_ID -u SWAYSOCK \
 		LIBSEAT_BACKEND=seatd LD_LIBRARY_PATH="$AQ_LIB" DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" \
 		AW_BACKLIGHT_DIR="$SYSBUS_BACKLIGHT" WAYLAND_DISPLAY="$NESTED_WL" AW_GATE_NESTED=1 \
-		dbus-run-session -- env WAYLAND_DISPLAY="$HOST_WL" "$BIN" -c "$CFG"
+		dbus-run-session -- env WAYLAND_DISPLAY="$HOST_WL" \
+		sh -c '"$0" -c "$1" & p=$!; wait "$p"; echo "$?" >"$2/nested.exit.$p"' "$BIN" "$CFG" "$HARNESS_DIR"
 ) >"$LOG" 2>&1 </dev/null 9>&- &
 
 # --- wait for the new instance signature and its client socket ------------
