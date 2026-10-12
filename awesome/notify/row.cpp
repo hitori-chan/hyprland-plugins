@@ -212,7 +212,8 @@ namespace NAwesome::Notify {
             if (ARMED) {
                 yy += BTN_ROW_GAP;
                 const auto&  TXT   = replyText();
-                const auto   SLBL  = cachedText(N->replySubmitText.empty() ? "Send" : N->replySubmitText, tOnAccent(), T.action, TEXTWPX, -1, 0, false, 600);
+                static const std::string SEND = "Send", PLACEHOLDER = "Type a reply…"; // no temporary per frame
+                const auto   SLBL  = cachedText(N->replySubmitText.empty() ? SEND : N->replySubmitText, tOnAccent(), T.action, TEXTWPX, -1, 0, false, 600);
                 const double SENDW = std::min(TEXTW / 2, texW(SLBL, P.scale) + 2 * BTN_PADX);
                 const CBox   FB{TX, yy, std::max(40.0, TEXTW - SENDW - BTN_GAP), BTN_H};
                 const CBox   SB{TX + TEXTW - SENDW, yy, SENDW, BTN_H};
@@ -220,7 +221,7 @@ namespace NAwesome::Notify {
 
                 // the typed text, or the sender's placeholder while it is empty
                 const auto ENT = TXT.empty() ? nullptr : cachedText(TXT, COLFG, T.action, std::max(1, (int)((FB.w - 2 * BTN_PADX) * P.scale)), -1, 0, false, 400, nullptr, true);
-                const auto PH  = TXT.empty() ? cachedText(N->replyPlaceholder.empty() ? "Type a reply…" : N->replyPlaceholder, COLSUB, T.action,
+                const auto PH  = TXT.empty() ? cachedText(N->replyPlaceholder.empty() ? PLACEHOLDER : N->replyPlaceholder, COLSUB, T.action,
                                                          std::max(1, (int)((FB.w - 2 * BTN_PADX) * P.scale)), -1, 0, false, 400) :
                                                nullptr;
                 if (!P.warm) {
