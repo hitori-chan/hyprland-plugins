@@ -1,10 +1,13 @@
 # awesome/gate/preflight.sh — the gate's preflight: header/binary hash
 # match, deploy rehearsal, launch, toast. One plugin surface: `awesome`.
-echo "== gate:  =="
+echo "== gate: ${SELECTED[*]:-$(basename "$0" .sh)} =="
 
 # ---- preflight ----------------------------------------------------------
 [[ -x "$BIN" ]] || { echo "no such compositor binary: $BIN"; exit 1; }
-{ [[ -x "$REPO/devtools/vptr" ]] && [[ -x "$REPO/devtools/vkbd" ]] && [[ -x "$REPO/devtools/input-capture" ]] && [[ -x "$REPO/devtools/cliphold" ]]; } || make -C "$REPO/devtools" >/dev/null
+# the fixtures, always through make (a no-op when current): an edited
+# fixture or a bumped protocol must not run its stale binary; built
+# against the protocol XML of the fork under test
+make -C "$REPO/devtools" HL="${FORK_SRC:-$HOME/repo/Hyprland}" >/dev/null || { echo "devtools build FAILED"; exit 1; }
 # Every pixel assertion goes through PIL. A missing python-pillow fails
 # SILENTLY, not here: the capture's size check errors, the frame is dropped,
 # and the launch warmup dies as a "starved render cycle" — a false symptom
@@ -28,7 +31,11 @@ fi
 normalize_target_pkgconfig || exit 1
 # The headless core harness gates with the build: pure logic (stores, schema,
 # boxes, wpctl parsing) that must not regress while the batteries run.
-make -C "$REPO/awesome" test >/dev/null || { echo "awesome headless tests FAILED"; exit 1; }
+TEST_OUT="$(make -C "$REPO/awesome" test 2>&1)" || {
+	echo "awesome headless tests FAILED"
+	grep -E 'FAIL|error' <<<"$TEST_OUT" | head -20
+	exit 1
+}
 HDR_VER=""
 for d in $(make -s -C "$REPO/awesome" print-hl-cflags 2>/dev/null | tr ' ' '\n' | sed -n 's/^-I//p'); do
 	for v in "$d/hyprland/src/version.h" "$d/src/version.h"; do
@@ -47,12 +54,9 @@ fi
 # Version lockstep: one constant (core/version.hpp); the [awesome] toml
 # section must equal it once present.
 AW_VER="$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$REPO/awesome/core/version.hpp" | head -1)"
-AW_TOML="$(grep -A2 '^\[awesome\]' "$REPO/hyprpm.toml" 2>/dev/null | grep version | grep -o '[0-9.]*' | head -1)"
-if [[ -n "$AW_TOML" ]]; then
-	[[ "$AW_TOML" == "$AW_VER" ]] && ok "version sync (toml == version.hpp: $AW_VER)" || bad "version sync (toml=$AW_TOML vs version.hpp=$AW_VER)"
-else
-	[[ -n "$AW_VER" ]] && ok "version constant present (version.hpp: $AW_VER)" || bad "version constant present"
-fi
+# the [awesome] section's own version key, wherever it sits in the section
+AW_TOML="$(awk '/^\[/ { s = ($0 == "[awesome]") } s && /^version[[:space:]]*=/ { gsub(/[^0-9.]/, "", $0); print; exit }' "$REPO/hyprpm.toml" 2>/dev/null)"
+[[ -n "$AW_VER" && "$AW_TOML" == "$AW_VER" ]] && ok "version sync (toml == version.hpp: $AW_VER)" || bad "version sync (toml='$AW_TOML' vs version.hpp='$AW_VER')"
 
 # ---- build + launch -----------------------------------------------------
 kill_nested
