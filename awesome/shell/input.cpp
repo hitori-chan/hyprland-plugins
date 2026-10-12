@@ -236,12 +236,18 @@ namespace NAwesome::Shell {
     }
 
     void onMouseAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
-        if (heldButtons > 0 || NAwesome::nativePointerGrabActive() || NAwesome::nativeLayerOwnsPointer())
-            return;
-
         const auto POS = g_pInputManager->getMouseCoordsInternal();
         const auto MON = monitorAt(POS);
         if (!MON)
+            return;
+        // the cheap test first: a scroll anywhere off the shell's territory
+        // (the bar, the prompt strip, an open menu) is none of ours, and the
+        // native hit-test below walks the windows and layers per event
+        const bool MENU_HERE = Menu::isOpen && Menu::mon.lock() == MON;
+        const bool PROMPT_HERE = Menubar::isOpen && Menubar::mon.lock() == MON;
+        if (!MENU_HERE && POS.y >= MON->logicalBox().y + barHeight() * (PROMPT_HERE ? 2 : 1))
+            return;
+        if (heldButtons > 0 || NAwesome::nativePointerGrabActive() || NAwesome::nativeLayerOwnsPointer())
             return;
 
         if (Menu::isOpen && Menu::mon.lock() == MON) {
