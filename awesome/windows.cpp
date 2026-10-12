@@ -113,6 +113,12 @@ namespace NAwesome::Windows {
                 return;
             pendingActivates.push(PHLWINDOWREF{w});
         });
+        // A taskbar's minimize (wlr-foreign-toplevel set/unset_minimized):
+        // the same state request a client's own minimize button makes
+        supervisor().listen(Event::bus()->m_events.window.minimize, [](PHLWINDOW w, bool minimized) {
+            if (w)
+                Tasklist::minReqs().push({PHLWINDOWREF{w}, minimized});
+        });
 
         Max::init();
         Click::init();
