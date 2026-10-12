@@ -332,6 +332,16 @@ namespace NAwesome::Notify {
                 s_groupState[D.key] = open;
             }
             used += LEAD + s_itemH[i];
+            // past the fold: no later row is on this page, and measuring
+            // them rastered two texts and queued an icon decode each for
+            // content nothing draws (the age tick re-rastered them all).
+            // Unmeasured rows never fit; paging re-runs the budget from the
+            // new top.
+            if (i > s_skip && used > bodyCap) {
+                for (size_t k = i + 1; k < s_disp.size(); k++)
+                    s_itemH[k] = bodyCap + 1;
+                break;
+            }
         }
     }
 
