@@ -267,6 +267,9 @@ namespace NAwesome::Notify {
             // head carries the (app, group) identity, singles the app
             out.push_back(SDisp{.items = {N}, .key = Model::groupKeyOf(N)});
         }
+        // the buffer is reused, its references are not: a dismissed card
+        // (and its textures) must not live on until the shade next opens
+        src.clear();
     }
 
     // ---- the expansion budget ----
