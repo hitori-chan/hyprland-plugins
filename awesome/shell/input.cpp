@@ -219,15 +219,18 @@ namespace NAwesome::Shell {
         if (scrollQueued)
             return;
         scrollQueued  = true;
-        pendingScroll.arm([mon]() {
-            scrollQueued = false;
-            if (NAwesome::sessionLocked()) {
+        // weak: an output removed between the scroll and the hop must not
+        // get a workspace switched onto it
+        pendingScroll.arm([monRef = PHLMONITORREF{mon}]() {
+            scrollQueued   = false;
+            const auto MON = monRef.lock();
+            if (NAwesome::sessionLocked() || !MON || !MON->m_enabled) {
                 scrollAcc.clear(); // reset the half-tracked accumulator, act on nothing
                 return;
             }
             for (auto& [W, STEPS] : scrollAcc)
                 if (STEPS)
-                    W->onScrollSteps(STEPS, mon);
+                    W->onScrollSteps(STEPS, MON);
             scrollAcc.clear();
         });
     }
