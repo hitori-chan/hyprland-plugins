@@ -236,14 +236,7 @@ namespace NAwesome::Shell {
             apps.push_back(std::move(app));
         }
 
-        static void parseApps() {
-            apps.clear();
-            appSeen.clear();
-            if (const char* XCD = std::getenv("XDG_CURRENT_DESKTOP"); XCD && *XCD)
-                desktops = splitList(XCD, ':');
-            else
-                desktops = {"Hyprland"};
-
+        static std::vector<std::string> appDirs() {
             std::vector<std::string> dirs; // user dirs first: their ids win
             const auto               addDir = [&](const std::string& d) {
                 if (!d.empty() && std::find(dirs.begin(), dirs.end(), d) == dirs.end())
@@ -260,6 +253,35 @@ namespace NAwesome::Shell {
             for (const auto& D : splitList(DATA_DIRS && *DATA_DIRS ? DATA_DIRS : "/usr/local/share:/usr/share", ':'))
                 addDir(D + (D.back() == '/' ? "applications" : "/applications"));
             addDir("/var/lib/flatpak/exports/share/applications");
+            return dirs;
+        }
+
+        // The application directories as last scanned: an app installed (or
+        // removed) since changes its directory's mtime, and the next open
+        // rescans — the index is not built once per compositor lifetime
+        // (restarting awesome was cheap; relogging is not).
+        static std::vector<int64_t> appDirStamps;
+        static std::vector<int64_t> stampsOf(const std::vector<std::string>& dirs) {
+            std::vector<int64_t> out;
+            out.reserve(dirs.size());
+            for (const auto& D : dirs) {
+                std::error_code ec;
+                const auto      T = std::filesystem::last_write_time(D, ec);
+                out.push_back(ec ? 0 : (int64_t)T.time_since_epoch().count());
+            }
+            return out;
+        }
+
+        static void parseApps() {
+            apps.clear();
+            appSeen.clear();
+            if (const char* XCD = std::getenv("XDG_CURRENT_DESKTOP"); XCD && *XCD)
+                desktops = splitList(XCD, ':');
+            else
+                desktops = {"Hyprland"};
+
+            const auto dirs = appDirs();
+            appDirStamps    = stampsOf(dirs);
 
             appScanning = true;
             NAwesome::CAsyncFileIndex::SRequest request;
@@ -382,7 +404,7 @@ namespace NAwesome::Shell {
             if (!M)
                 return;
             Menu::close();
-            if (!parsed) {
+            if (!parsed || stampsOf(appDirs()) != appDirStamps) {
                 parseApps();
                 parsed = true;
                 if (indexPoll)
