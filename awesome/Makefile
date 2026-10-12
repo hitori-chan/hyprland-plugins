@@ -87,7 +87,7 @@ $(OBJDIR):
 # headers (the hop's event-loop types; test/stubs.cpp supplies the
 # symbols): resolved from the SAME header set as the plugin's, and
 # rebuilt with it (the stamp)
-TEST_SRCS     := $(wildcard test/*.cpp) core/store.cpp core/state.cpp core/schema.cpp
+TEST_SRCS     := $(wildcard test/*.cpp) core/store.cpp core/state.cpp
 TEST_OBJS     := $(patsubst %.cpp,.build-test/%.o,$(TEST_SRCS))
 TEST_INCLUDES := $(filter -I%,$(HL_CFLAGS))
 

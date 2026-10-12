@@ -2,20 +2,16 @@
 #include "config.hpp"
 
 #include <hyprland/src/config/values/types/StringValue.hpp>
-#include <hyprland/src/helpers/Color.hpp>
 
-#include <algorithm>
-#include <cmath>
 #include <stdexcept>
 
 namespace NAwesome {
 
     void ConfigRegistry::init(HANDLE handle) {
-        m_slots.clear();
-        m_index.clear();
-        m_slots.reserve(m_schema.specs().size());
-        for (const auto& S : m_schema.specs()) {
-            SSlot slot{.spec = &S};
+        m_slots = {};
+        for (size_t idx = 0; idx < SPEC_COUNT; idx++) {
+            const auto& S    = SPECS[idx];
+            auto&       slot = m_slots[idx];
             if (S.kind == Kind::Int) {
                 auto V = makeShared<Config::Values::CIntValue>(S.key, S.desc, S.ival);
                 slot.i = V.get(), slot.value = V;
@@ -31,8 +27,6 @@ namespace NAwesome {
             }
             if (!HyprlandAPI::addConfigValueV2(handle, slot.value))
                 throw std::runtime_error(std::string{"[awesome] failed to register config key "} + S.key);
-            m_index.emplace(std::string_view{S.key}, m_slots.size());
-            m_slots.push_back(std::move(slot));
         }
     }
 
@@ -40,44 +34,33 @@ namespace NAwesome {
         // the fork owns removal: CConfigManager::onPluginUnload erases
         // every value registered for this handle (there is no per-value
         // remove API); we just drop our handles
-        m_index.clear();
-        m_slots.clear();
+        m_slots = {};
     }
 
-    // nullptr before init (and in the headless tests): the schema default
-    const ConfigRegistry::SSlot* ConfigRegistry::slot(std::string_view key) const {
-        const auto IT = m_index.find(key);
-        return IT == m_index.end() ? nullptr : &m_slots[IT->second];
+    int ConfigRegistry::getI(CfgKey key) const {
+        const auto& S = SPECS[key.index];
+        if (const auto* V = m_slots[key.index].i) // Config::INTEGER is a long
+            return clampInt(S, V->value());
+        return S.ival;
     }
 
-    int ConfigRegistry::getI(std::string_view key) const {
-        if (const auto* SL = slot(key); SL && SL->i) // Config::INTEGER is a long
-            return (int)std::clamp<long>(SL->i->value(), (long)SL->spec->imin, (long)SL->spec->imax);
-        const auto* S = m_schema.find(key);
-        return S ? S->ival : 0;
+    double ConfigRegistry::getD(CfgKey key) const {
+        const auto& S = SPECS[key.index];
+        if (const auto* V = m_slots[key.index].d)
+            return clampDouble(S, V->value());
+        return S.dval;
     }
 
-    double ConfigRegistry::getD(std::string_view key) const {
-        if (const auto* SL = slot(key); SL && SL->d) {
-            const double RAW = SL->d->value();
-            return std::isfinite(RAW) ? std::clamp(RAW, SL->spec->dmin, SL->spec->dmax) : SL->spec->dval;
-        }
-        const auto* S = m_schema.find(key);
-        return S ? S->dval : 0.0;
+    uint32_t ConfigRegistry::getColor(CfgKey key) const {
+        if (const auto* V = m_slots[key.index].c)
+            return (uint32_t)V->value();
+        return SPECS[key.index].cval;
     }
 
-    uint32_t ConfigRegistry::getColor(std::string_view key) const {
-        if (const auto* SL = slot(key); SL && SL->c)
-            return (uint32_t)SL->c->value();
-        const auto* S = m_schema.find(key);
-        return S ? S->cval : 0;
-    }
-
-    std::string ConfigRegistry::getS(std::string_view key) const {
-        if (const auto* SL = slot(key); SL && SL->s)
-            return SL->s->value();
-        const auto* S = m_schema.find(key);
-        return S ? std::string{S->sval} : std::string{};
+    std::string ConfigRegistry::getS(CfgKey key) const {
+        if (const auto* V = m_slots[key.index].s)
+            return boundString(V->value());
+        return std::string{SPECS[key.index].sval};
     }
 
 } // namespace NAwesome
