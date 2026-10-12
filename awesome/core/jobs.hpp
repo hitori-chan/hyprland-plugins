@@ -26,9 +26,10 @@ namespace NAwesome {
         // the slots the volume keys need.
         enum eClass : uint8_t {
             CONTROL = 0, // short readback/control commands (wpctl): 16 live, killed after 5 s
-            SOUND,       // one-shot players: 4 live, killed after 30 s
-            OPEN,        // a user-facing opener (xdg-open may exec the browser itself):
-                         // never tracked, never killed, NOFILE back to the session's
+            SOUND,       // one-shot players: 4 live, their group killed after 30 s (a wrapper
+                         // script's player goes with it)
+            OPEN,        // a user-facing opener (xdg-open may exec the browser itself): 32 live
+                         // (watched until exit), never killed, NOFILE back to the session's
             CLASS_COUNT,
         };
 
@@ -41,8 +42,11 @@ namespace NAwesome {
         bool spawn(eClass cls, std::vector<const char*> argv);
 
         // A child whose exit a callback consumes (status: the wait status,
-        // -1 = unknown or killed at the deadline). The callback runs on the
-        // event loop after the exit and must be generation-safe.
+        // -1 = unknown — the compositor reaps at once (SA_NOCLDWAIT), and
+        // the kernel keeps the status for the pidfd only on newer kernels,
+        // not always by the time the pidfd wakes — or killed at the
+        // deadline). The callback runs on the event loop after the exit and
+        // must be generation-safe.
         bool spawnChecked(eClass cls, std::vector<const char*> argv, std::function<void(int)> onExit);
 
         // A child whose STDOUT and exit a callback consumes: stdout drains on

@@ -22,8 +22,8 @@ namespace NAwesome {
             size_t                    live;
             std::chrono::milliseconds deadline; // 0 = never killed
         };
-        // CONTROL matches the system module's chain cap (MAX_ACTIVE_CHAINS):
-        // a readback chain holds at most one control child at a time
+        // CONTROL: the system module runs one wpctl child per audio device
+        // at a time (its presses accumulate meanwhile); the rest is headroom
         constexpr SBudget BUDGET[Jobs::CLASS_COUNT] = {
             {16, 5s},  // CONTROL
             {4, 30s},  // SOUND
@@ -33,9 +33,11 @@ namespace NAwesome {
         // the retained-output cap is also the work cap (see onPipeReadable)
         constexpr size_t MAX_PIPED_OUTPUT = 4096;
 
-        void killChild(int pidfd) {
+        // a SOUND child leads its own group: a sound_command wrapper script
+        // must not leave its player behind
+        void killChild(int pidfd, bool group = false) {
             if (pidfd >= 0)
-                pidfd_send_signal(pidfd, SIGKILL, nullptr, 0);
+                pidfd_send_signal(pidfd, SIGKILL, nullptr, group ? PIDFD_SIGNAL_PROCESS_GROUP : 0);
         }
     }
 
@@ -62,8 +64,16 @@ namespace NAwesome {
         if (!onDone)
             return false;
         int pfd[2];
-        if (pipe2(pfd, O_CLOEXEC | O_NONBLOCK) != 0)
+        // non-blocking on OUR end only: both ends share one file
+        // description per end, and a non-blocking stdout makes a child's
+        // writes past the pipe buffer fail with EAGAIN instead of waiting
+        if (pipe2(pfd, O_CLOEXEC) != 0)
             return false;
+        if (const int FL = fcntl(pfd[0], F_GETFL); FL < 0 || fcntl(pfd[0], F_SETFL, FL | O_NONBLOCK) != 0) {
+            close(pfd[0]);
+            close(pfd[1]);
+            return false;
+        }
         auto c     = makeUnique<SChild>();
         c->outFd   = pfd[0];
         c->onPiped = std::move(onDone);
@@ -87,7 +97,7 @@ namespace NAwesome {
         if (argv.back())
             argv.push_back(nullptr); // execv needs the null terminator
 
-        const auto CHILD = Proc::spawn(argv.data(), {.stdoutFd = stdoutFd, .ownGroup = cls == OPEN, .userFacing = cls == OPEN});
+        const auto CHILD = Proc::spawn(argv.data(), {.stdoutFd = stdoutFd, .ownGroup = cls == OPEN || cls == SOUND, .userFacing = cls == OPEN});
         if (CHILD.pidfd < 0)
             return FAIL();
 
@@ -101,7 +111,7 @@ namespace NAwesome {
             // unwatchable: never leave a helper running unobserved (an
             // OPEN child is the user's app and keeps running)
             if (cls != OPEN)
-                killChild(c->pidfd);
+                killChild(c->pidfd, cls == SOUND);
             auto* raw = c.get();
             m_children.push_back(std::move(c));
             release(raw);
@@ -132,7 +142,7 @@ namespace NAwesome {
                     // the cap: stop reading NOW, close the read end, and end
                     // the producer (a closed pipe alone leaves it running)
                     c->truncated = true;
-                    killChild(c->pidfd);
+                    killChild(c->pidfd, c->cls == SOUND);
                     break;
                 }
                 c->out.append(buf, (size_t)N);
@@ -165,10 +175,13 @@ namespace NAwesome {
         auto         onPiped = std::move(c->onPiped);
         SPipedResult result{.out = std::move(c->out), .truncated = c->truncated, .status = STATUS};
         release(c);
-        if (onPiped)
-            onPiped(std::move(result));
-        else if (onExit)
-            onExit(STATUS);
+        // we are inside libwayland's C dispatch: nothing may unwind into it
+        try {
+            if (onPiped)
+                onPiped(std::move(result));
+            else if (onExit)
+                onExit(STATUS);
+        } catch (...) {}
     }
 
     void Jobs::release(SChild* c) {
@@ -183,10 +196,16 @@ namespace NAwesome {
         std::erase_if(m_children, [c](const auto& U) { return U.get() == c; });
     }
 
+    // undelivered: still running, or exited with its pipe still open (a
+    // grandchild that inherited stdout keeps it open after the child dies)
+    static bool undelivered(const auto& c) {
+        return !c->exited || (c->outFd >= 0 && !c->pipeDone);
+    }
+
     void Jobs::armDeadline() {
         auto next = std::chrono::steady_clock::time_point::max();
         for (const auto& c : m_children)
-            if (!c->exited)
+            if (undelivered(c))
                 next = std::min(next, c->deadline);
         if (next == std::chrono::steady_clock::time_point::max()) {
             if (m_timer)
@@ -201,15 +220,31 @@ namespace NAwesome {
     }
 
     // Past the deadline: kill it. Its pidfd turns readable and the normal
-    // exit path delivers (truncated, status of the kill).
+    // exit path delivers (truncated, status of the kill). A child already
+    // gone whose pipe a grandchild still holds is delivered here, its pipe
+    // closed: the deadline holds until delivery, so no slot is kept forever.
     void Jobs::onDeadline() {
-        const auto NOW = std::chrono::steady_clock::now();
-        for (const auto& c : m_children)
-            if (!c->exited && c->deadline <= NOW) {
-                killChild(c->pidfd);
-                c->truncated = true;
-                c->deadline  = std::chrono::steady_clock::time_point::max(); // killed once
-            }
+        const auto     NOW = std::chrono::steady_clock::now();
+        std::vector<SChild*> stuck;
+        for (const auto& c : m_children) {
+            if (!undelivered(c) || c->deadline > NOW)
+                continue;
+            c->truncated = true;
+            c->deadline  = std::chrono::steady_clock::time_point::max(); // once
+            if (!c->exited)
+                killChild(c->pidfd, c->cls == SOUND);
+            else
+                stuck.push_back(c.get());
+        }
+        for (auto* c : stuck) {
+            if (c->outSrc)
+                wl_event_source_remove((wl_event_source*)c->outSrc);
+            c->outSrc = nullptr;
+            close(c->outFd);
+            c->outFd    = -1;
+            c->pipeDone = true;
+            maybeFinish(c); // may spawn again: m_children may grow — walked above, not here
+        }
         armDeadline();
     }
 
@@ -225,7 +260,7 @@ namespace NAwesome {
             if (c->outFd >= 0)
                 close(c->outFd);
             if (c->cls != OPEN && !c->exited)
-                killChild(c->pidfd); // a helper must not outlive the plugin; the user's app may
+                killChild(c->pidfd, c->cls == SOUND); // a helper must not outlive the plugin; the user's app may
             Proc::reap(c->pidfd);
             if (c->pidfd >= 0)
                 close(c->pidfd);
