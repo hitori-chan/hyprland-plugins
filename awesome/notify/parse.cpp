@@ -198,11 +198,13 @@ namespace NAwesome::Notify::Parse {
     constexpr size_t MAX_SRC_BYTES = 1024;
 
     // One linear pass: every <img> tag leaves the text, but only the first
-    // `maxImages` with a usable src are resolved — a resolve can be a theme
-    // scan, and a body of 2000 distinct tags once ran 2000 of them on the
-    // compositor thread before the model's cap applied.
+    // `maxImages` srcs are even TRIED — a resolve can be a theme scan, a miss
+    // the most expensive one, and a body of 2000 distinct unresolvable tags
+    // once ran 2000 of them on the compositor thread (counting only the
+    // srcs that resolved never stopped a body of misses).
     std::vector<SImgRef> extractImages(std::string& body, int sizePx, size_t maxImages) {
         std::vector<SImgRef> out;
+        size_t               tried = 0;
         std::string          kept;
         kept.reserve(body.size());
         const size_t LASTGT = body.rfind('>');
@@ -225,13 +227,15 @@ namespace NAwesome::Notify::Parse {
             const auto END = body.find('>', j);
             kept.append(body, i, LT - i); // the text before the tag
             i = END + 1;                  // the tag itself is dropped
-            if (out.size() >= maxImages)
+            if (tried >= maxImages)
                 continue;
             const std::string_view TAG{body.data() + LT, END - LT + 1};
             const auto             SRC = attrValue(std::string{TAG}, "src");
-            if (!SRC.empty() && SRC.size() <= MAX_SRC_BYTES && !SRC.starts_with("http") && !SRC.starts_with("data:"))
+            if (!SRC.empty() && SRC.size() <= MAX_SRC_BYTES && !SRC.starts_with("http") && !SRC.starts_with("data:")) {
+                tried++;
                 if (const auto P = resolveImage(SRC, sizePx); !P.empty())
                     out.push_back(SImgRef{.src = P, .alt = oneLine(sanitizeMarkup(clipAttr(attrValue(std::string{TAG}, "alt"))))});
+            }
         }
         kept.append(body, i, std::string::npos);
         body = std::move(kept);
