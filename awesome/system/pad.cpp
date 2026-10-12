@@ -113,7 +113,13 @@ namespace NAwesome::System {
         return false;
     }
 
-    static void applyEnabled(bool on, SP<IPointer> target = nullptr) {
+    // The state the user was last SHOWN: an automatic re-apply that changes
+    // nothing they can see (a config reload wipes the runtime hl.device
+    // state, and every config save reloads) stays silent; a manual toggle
+    // always answers.
+    static int announcedState = -1;
+
+    static void applyEnabled(bool on, SP<IPointer> target = nullptr, bool manual = false) {
         if (!target)
             target = touchpad();
         if (!target) {
@@ -133,6 +139,9 @@ namespace NAwesome::System {
         }
         appliedState    = on ? 1 : 0;
         appliedTouchpad = target;
+        if (!manual && announcedState == appliedState)
+            return;
+        announcedState = appliedState;
         // symbolic, not the plain names: "touchpad-disabled" ships in the
         // HighContrast theme only (unprobed) and would render iconless
         postPad(on ? "input-touchpad-symbolic" : "touchpad-disabled-symbolic", on ? "enabled" : "disabled", PAD_TIMEOUT);
@@ -204,14 +213,19 @@ namespace NAwesome::System {
             return;
         if (settle)
             settle->updateTimeout(std::nullopt);
+        // the cancelled re-check also attached the destroy listeners: a
+        // mouse plugged in just before this toggle must still be heard
+        // leaving
+        watchPointers();
         const bool CURRENT = touchpadEnabled().value_or(appliedState == 1);
-        applyEnabled(!CURRENT);
+        applyEnabled(!CURRENT, nullptr, true);
     });
 
     void padExit() {
         toggles.reset();
         lDestroy.clear();
         appliedState    = -1;
+        announcedState  = -1;
         appliedTouchpad.reset();
         if (settle && g_pEventLoopManager)
             g_pEventLoopManager->removeTimer(settle);
