@@ -56,8 +56,13 @@ namespace NAwesome::Notify {
     // ---- shared card recipes (popups and center rows drifted apart once —
     //      the badge and the progress pill draw from ONE place now) ----
 
+    // An icon still decoding reserves its column: the text laid out full
+    // width and re-laid narrower when the decode landed, a visible jump and
+    // every text rastered twice. (A content image that turns out hero-wide
+    // still swaps the column for the hero when it lands.)
     bool hasLeadIcon(const SNotif& n) {
-        return (n.iconTex && !n.heroTex) || (n.identTex && n.identTex->m_texID != 0);
+        const bool PENDING = (!n.identity.empty() && !n.identSettled) || (!n.fallbackPick.empty() && !n.identSettled) || (!n.image.empty() && !n.imageSettled);
+        return PENDING || (n.iconTex && !n.heroTex) || (n.identTex && n.identTex->m_texID != 0);
     }
 
     void paintProgress(const SPaint& P, double x, double y, double w, int pct, bool critical) {
