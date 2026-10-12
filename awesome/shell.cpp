@@ -96,6 +96,20 @@ namespace NAwesome::Shell {
         supervisor().listen(EV.workspace.removed, [](PHLWORKSPACEREF) { barChanged(); });
         supervisor().listen(EV.workspace.moveToMonitor, [](PHLWORKSPACE, PHLMONITOR) { barChanged(); });
         supervisor().listen(EV.monitor.layoutChanged, []() { barChanged(); });
+        // An output going away (unplugged, or disabled with the lid shut)
+        // takes what was open on it: a menu or a prompt drawn nowhere would
+        // keep its bus session and swallow the next press or every key. Its
+        // per-monitor hit cells go too.
+        supervisor().listen(EV.monitor.removed, [](PHLMONITOR mon) {
+            if (!mon)
+                return;
+            if (Menu::isOpen && Menu::mon.lock() == mon)
+                Menu::close();
+            if (Menubar::isOpen && Menubar::mon.lock() == mon)
+                Menubar::close();
+            forgetMonitor(mon->m_id);
+            barChanged();
+        });
 
         // Colors and fonts heal themselves — they are part of every texture's
         // cache key, so a changed value simply misses and rebuilds. What

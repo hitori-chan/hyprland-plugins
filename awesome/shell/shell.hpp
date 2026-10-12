@@ -266,6 +266,7 @@ namespace NAwesome::Shell {
         PHLMONITORREF   mon;
     };
     extern std::map<uint64_t, std::vector<SHit>> hitboxes; // per monitor id
+    void forgetMonitor(uint64_t id); // its hit cells and layout memos (strip.cpp)
 
     // ---- the widget model (awesome's wibar, compiled) ----
     //

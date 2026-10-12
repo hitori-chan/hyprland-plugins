@@ -748,11 +748,13 @@ namespace NAwesome::Shell {
             if (!isOpen)
                 return;
 
-            // monitor gone: never keep an invisible prompt grabbing the
-            // keyboard. Fullscreen deliberately does NOT close it — render
-            // and pointer both keep the prompt alive above fullscreen.
+            // monitor gone or disabled (a lid closed with the output
+            // disabled keeps its object): never keep an invisible prompt
+            // grabbing the keyboard. Fullscreen deliberately does NOT close
+            // it — render and pointer both keep the prompt alive above
+            // fullscreen.
             const auto M = mon.lock();
-            if (!M) {
+            if (!M || !M->m_enabled) {
                 close();
                 return;
             }

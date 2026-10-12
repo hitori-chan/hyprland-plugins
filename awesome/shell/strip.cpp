@@ -31,6 +31,11 @@ namespace NAwesome::Shell {
     // the tasklist in renderBar
     static std::unordered_map<uint64_t, size_t> lastTaskFp;
 
+    void forgetMonitor(uint64_t id) {
+        lastTaskFp.erase(id);
+        hitboxes.erase(id);
+    }
+
     // Built ONLY by the warm pass — see the texture rule in shell/shell.hpp. A
     // miss during a draw returns null (that one label is missing for one
     // frame) rather than building, which would paint nothing anyway AND
