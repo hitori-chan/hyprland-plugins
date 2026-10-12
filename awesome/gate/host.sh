@@ -57,7 +57,7 @@ host_start() {
 		-u LABWC_UPDATE_ACTIVATION_ENV DBUS_SESSION_BUS_ADDRESS=disabled: \
 		XDG_CONFIG_HOME="$HOST_DIR/xdg" LD_LIBRARY_PATH="$HOST_LIBS" \
 		WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=gles2 LIBSEAT_BACKEND=seatd \
-		setsid "$HOST_BIN" >"$HOST_DIR/log" 2>&1 &
+		setsid "$HOST_BIN" >"$HOST_DIR/log" 2>&1 9>&- &
 	pid=$!
 	for _ in $(seq 1 50); do
 		sleep 0.1
@@ -154,11 +154,11 @@ sysbus_start() {
 		  </policy>
 		</busconfig>
 	EOF
-	setsid dbus-daemon --config-file="$SYSBUS_DIR/bus.conf" --nofork --nopidfile >"$SYSBUS_DIR/daemon.log" 2>&1 &
+	setsid dbus-daemon --config-file="$SYSBUS_DIR/bus.conf" --nofork --nopidfile >"$SYSBUS_DIR/daemon.log" 2>&1 9>&- &
 	printf '%s\n' "$!" >"$SYSBUS_DIR/daemon.pid"
 	for _ in $(seq 1 30); do [[ -S "$SYSBUS_DIR/bus" ]] && break; sleep 0.1; done
 	DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" AW_BACKLIGHT_DIR="$SYSBUS_BACKLIGHT" AW_LOGIND_LOG="${AW_LOGIND_LOG:-$SYSBUS_DIR/logind.log}" \
-		setsid python3 "$SYSBUS_FAKE" >"$SYSBUS_DIR/logind.stderr" 2>&1 &
+		setsid python3 "$SYSBUS_FAKE" >"$SYSBUS_DIR/logind.stderr" 2>&1 9>&- &
 	printf '%s\n' "$!" >"$SYSBUS_DIR/logind.pid"
 	for _ in $(seq 1 30); do
 		DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" timeout 1 busctl --system status org.freedesktop.login1 >/dev/null 2>&1 && return 0

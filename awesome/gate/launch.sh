@@ -24,6 +24,15 @@ set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HARNESS_DIR="${HYPR_HARNESS:-$HOME/.local/share/hypr-nested}"
 mkdir -p "$HARNESS_DIR"
+# One run at a time: every entry point shares $HARNESS_DIR (the nested's
+# signature, the host, the system bus) and kills every nested it finds —
+# a second run would tear the first one's nested down mid-battery. The
+# lock fd is closed for the long-lived children (the nested, the host).
+if [[ -z "${HYPR_HARNESS_LOCKED:-}" ]]; then
+	exec 9>"$HARNESS_DIR/.lock"
+	flock -n 9 || { echo "$(basename "$0"): another gate/probe/dev run holds $HARNESS_DIR/.lock" >&2; exit 2; }
+	export HYPR_HARNESS_LOCKED=1
+fi
 CFG="${HYPR_CFG:-$HERE/nested.lua}"
 # $1 (a manual launch) overrides HYPR_BIN; the harness passes HYPR_BIN and no
 # argument. Refusing a missing binary keeps a mistyped path from silently
@@ -81,7 +90,7 @@ echo "launch: $BIN -c $CFG (host $HOST_WL, private session + system bus)"
 		LIBSEAT_BACKEND=seatd LD_LIBRARY_PATH="$AQ_LIB" DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" \
 		AW_BACKLIGHT_DIR="$SYSBUS_BACKLIGHT" WAYLAND_DISPLAY="$NESTED_WL" \
 		dbus-run-session -- env WAYLAND_DISPLAY="$HOST_WL" "$BIN" -c "$CFG"
-) >"$LOG" 2>&1 </dev/null &
+) >"$LOG" 2>&1 </dev/null 9>&- &
 
 # --- wait for the new instance signature and its client socket ------------
 sig=""

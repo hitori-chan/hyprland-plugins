@@ -8,6 +8,18 @@
 # this is the standalone version for a manual launch.
 set -u
 
+HARNESS="${HYPR_HARNESS:-$HOME/.local/share/hypr-nested}"
+# One run at a time: every entry point shares $HARNESS (the nested's
+# signature, the host, the system bus) and kills every nested it finds —
+# a second run would tear the first one's nested down mid-battery. The
+# lock fd is closed for the long-lived children (the nested, the host).
+if [[ -z "${HYPR_HARNESS_LOCKED:-}" ]]; then
+	mkdir -p "$HARNESS"
+	exec 9>"$HARNESS/.lock"
+	flock -n 9 || { echo "$(basename "$0"): another gate/probe/dev run holds $HARNESS/.lock" >&2; exit 2; }
+	export HYPR_HARNESS_LOCKED=1
+fi
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HARNESS_DIR="${HYPR_HARNESS:-$HOME/.local/share/hypr-nested}"
 # shellcheck source=live.sh
