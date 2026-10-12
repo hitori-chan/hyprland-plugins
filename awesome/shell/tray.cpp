@@ -337,10 +337,12 @@ namespace NAwesome::Shell {
         }
 
         static void dropService(const std::string& service) {
-            const auto BEFORE = items.size();
+            const auto               BEFORE = items.size();
+            std::vector<std::string> gone; // service+path, as Registered announced them
             std::erase_if(items, [&](const auto& I) {
                 if (I->service != service)
                     return false;
+                gone.push_back(I->service + I->path);
                 I->active = false;
                 ++I->propertyRequest;
                 ++I->statusRequest;
@@ -351,7 +353,10 @@ namespace NAwesome::Shell {
             if (items.size() != BEFORE) {
                 onServiceDropped(service);
                 if (watcher)
-                    watcher->emitSignal("StatusNotifierItemUnregistered").onInterface(WIFACE).withArguments(service);
+                    for (const auto& G : gone)
+                        try {
+                            watcher->emitSignal("StatusNotifierItemUnregistered").onInterface(WIFACE).withArguments(G);
+                        } catch (...) {}
                 barChanged();
             }
         }
