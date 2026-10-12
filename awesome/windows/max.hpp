@@ -572,6 +572,8 @@ namespace NAwesome::Windows {
                 queueReflow();
             });
 
+            Tasklist::restoredHook() = []() { queueReflow(); };
+
             auto& EV = Event::bus()->m_events;
             supervisor().listen(EV.window.moveToWorkspace, [](PHLWINDOW, PHLWORKSPACE) { queueReflow(); });
             supervisor().listen(EV.workspace.active, [](PHLWORKSPACE) { queueReflow(); });
@@ -581,6 +583,7 @@ namespace NAwesome::Windows {
         }
 
         inline void teardown() {
+            Tasklist::restoredHook() = nullptr;
             maximized().clear();
             swallowedButtons() = 0;
             adopts().reset();

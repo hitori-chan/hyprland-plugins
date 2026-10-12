@@ -51,6 +51,13 @@ namespace NAwesome::Windows::Tasklist {
         static std::function<void()> H;
         return H;
     }
+    // A restored window may land on another monitor than it left (its
+    // workspace moved while it was hidden): the maximize module re-fits a
+    // plugin-maximized one to the current workarea through this.
+    inline std::function<void()>& restoredHook() {
+        static std::function<void()> H;
+        return H;
+    }
 
     // The window's raw pointer is the identity key (like the arrival order),
     // dropped in forget() on destroy before the pointer can be reused. `tiled`
@@ -72,6 +79,7 @@ namespace NAwesome::Windows::Tasklist {
         const void*                 key   = nullptr;
         bool                        tiled = false;
         Fullscreen::SFullscreenMode fs{};
+        PHLMONITORREF               mon; // where it was hidden: a floating box is moved along to where it returns
     };
     inline std::vector<SMinimized>& minStack() {
         static std::vector<SMinimized> S; // most-recently minimized last
@@ -178,7 +186,7 @@ namespace NAwesome::Windows::Tasklist {
             g_pHyprRenderer->damageWindow(w, true);
         if (WASFOCUSED)
             focusNextAfterMinimize(w, WS);
-        minStack().push_back({PHLWINDOWREF{w}, w.get(), TILED, FS});
+        minStack().push_back({PHLWINDOWREF{w}, w.get(), TILED, FS, w->m_monitor});
         if (taskChangedHook())
             taskChangedHook()();
     }
@@ -219,11 +227,13 @@ namespace NAwesome::Windows::Tasklist {
             return;
         bool                        tiled = false, found = false;
         Fullscreen::SFullscreenMode fs{};
-        auto& S                                                              = minStack();
+        PHLMONITORREF               then;
+        auto&                       S = minStack();
         for (auto it = S.begin(); it != S.end(); ++it)
             if (it->key == w.get()) {
                 tiled = it->tiled;
                 fs    = it->fs;
+                then  = it->mon;
                 S.erase(it);
                 found = true;
                 break;
@@ -241,11 +251,24 @@ namespace NAwesome::Windows::Tasklist {
         w->setHidden(false);
         if (tiled && g_layoutManager && w->m_workspace)
             g_layoutManager->newTarget(w->layoutTarget(), w->m_workspace->space());
+        else if (const auto NOW = w->m_monitor.lock(); NOW && NOW != then.lock() && w->isFloating() && w->windowTarget()) {
+            // the compositor moves a workspace's floating windows with it
+            // only while they are shown: a hidden one kept the old monitor's
+            // coordinates. Carry it along, kept inside the workarea.
+            auto       box  = w->windowTarget()->position();
+            const auto THEN = then.lock();
+            if (THEN)
+                box.translate(NOW->logicalBox().pos() - THEN->logicalBox().pos());
+            setGeom(w, Geometry::boundedRestore(box, NOW->logicalBoxMinusReserved(), w->windowTarget()->minSize(), w->windowTarget()->maxSize()));
+            w->windowTarget()->warpPositionSize();
+        }
         raiseAndFocus(w);
         // re-enter the fullscreen/maximize the window held when minimized,
         // after focus — the compositor fullscreens the active window.
         if (fs.internal != Fullscreen::FSMODE_NONE)
             Fullscreen::controller()->setFullscreenMode(w, fs.internal, fs.client);
+        if (restoredHook())
+            restoredHook()();
         if (taskChangedHook())
             taskChangedHook()();
     }
