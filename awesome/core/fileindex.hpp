@@ -231,7 +231,7 @@ visit_root() {
         if emit_entry "$root_index" "$path" "$bytes" "$directory"; then
             (( ++emitted >= max_entries )) && { stop=1; break; }
         fi
-    done < <(/usr/bin/find -- "$root" "${find_args[@]}" -printf '%p\0%s\0' 2>/dev/null)
+    done < <(/usr/bin/find -H -- "$root" "${find_args[@]}" -printf '%p\0%s\0' 2>/dev/null)
 }
 
 root_index=0
@@ -320,17 +320,20 @@ done
 
             // its own group: cancel/exit signals bash and its find child
             // together; Proc::spawn gives both default signal dispositions
-            // (the compositor's blocked SIGTERM made the kill a no-op)
-            const auto CHILD = Proc::spawn(argv.data(), {.stdoutFd = pipefd[1], .ownGroup = true, .pidfd = false});
+            // (the compositor's blocked SIGTERM made the kill a no-op). The
+            // group is signalled through the pidfd: the compositor reaps on
+            // its own (SA_NOCLDWAIT), so a bare pid may already be reused
+            // by the time a cancel signals it.
+            const auto CHILD = Proc::spawn(argv.data(), {.stdoutFd = pipefd[1], .ownGroup = true, .pidfd = true});
             close(pipefd[1]);
             if (!CHILD) {
                 close(pipefd[0]);
                 return false;
             }
-            const pid_t pid = CHILD.pid;
 
             m_fd     = pipefd[0];
-            m_pid    = pid;
+            m_pid    = CHILD.pid;
+            m_pidfd  = CHILD.pidfd;
             m_source = wl_event_loop_add_fd(m_loop, m_fd, WL_EVENT_READABLE, onPipe, this);
             if (m_source)
                 return true;
@@ -367,7 +370,7 @@ done
                     m_buffer.append(bytes.data(), (size_t)count);
                     if (!parseFrames())
                         return 0;
-                    if (m_results.size() >= MAX_QUEUED_RESULTS || m_resultBytes >= MAX_QUEUED_BYTES) {
+                    if (m_blocked || m_results.size() >= MAX_QUEUED_RESULTS || m_resultBytes >= MAX_QUEUED_BYTES) {
                         pause();
                         return 0;
                     }
@@ -390,6 +393,7 @@ done
 
         bool parseFrames() {
             size_t consumed = 0;
+            m_blocked       = false;
             while (m_results.size() < MAX_QUEUED_RESULTS && m_resultBytes < MAX_QUEUED_BYTES) {
                 const size_t available = m_buffer.size() - consumed;
                 if (available < HEADER_BYTES)
@@ -419,8 +423,13 @@ done
                 if (contentsBytes > 0)
                     entry.contents.assign(m_buffer.data() + consumed + HEADER_BYTES + pathBytes, contentsBytes);
                 const size_t bytes = resultBytes(entry);
-                if (bytes > MAX_QUEUED_BYTES || m_resultBytes > MAX_QUEUED_BYTES - bytes)
+                if (bytes > MAX_QUEUED_BYTES || m_resultBytes > MAX_QUEUED_BYTES - bytes) {
+                    // the next whole frame waits for the consumer to make
+                    // room: reading on would only grow the buffer past its
+                    // bound, and an EOF now must not drop what is buffered
+                    m_blocked = true;
                     break;
+                }
                 m_resultBytes += bytes;
                 m_results.push_back({.entry = std::move(entry), .bytes = bytes});
                 consumed += frameBytes;
@@ -443,7 +452,7 @@ done
         }
 
         void resumeIfPossible() {
-            if (m_paused && m_fd >= 0 && m_results.size() < MAX_QUEUED_RESULTS && m_resultBytes < MAX_QUEUED_BYTES) {
+            if (m_paused && !m_blocked && m_fd >= 0 && m_results.size() < MAX_QUEUED_RESULTS && m_resultBytes < MAX_QUEUED_BYTES) {
                 m_source = wl_event_loop_add_fd(m_loop, m_fd, WL_EVENT_READABLE, onPipe, this);
                 m_paused = !m_source;
                 if (!m_source)
@@ -456,6 +465,8 @@ done
                 return;
             if (!parseFrames())
                 return;
+            if (m_blocked)
+                return; // frames still buffered: the consumer's next poll finishes
             if (!m_buffer.empty()) {
                 fail();
                 return;
@@ -469,6 +480,7 @@ done
             m_results.clear();
             m_resultBytes = 0;
             m_buffer.clear();
+            m_blocked = false;
         }
 
         void closePipe() {
@@ -497,8 +509,13 @@ done
 
         void stopHelper(bool terminate) {
             closePipe();
-            if (m_pid > 0 && terminate)
-                kill(-m_pid, SIGTERM); // the Bash worker and its find child share this owned group
+            // the Bash worker and its find child share this owned group
+            if (terminate && m_pidfd >= 0)
+                pidfd_send_signal(m_pidfd, SIGTERM, nullptr, PIDFD_SIGNAL_PROCESS_GROUP);
+            if (m_pidfd >= 0) {
+                close(m_pidfd);
+                m_pidfd = -1;
+            }
             reapNoWait();
             m_eof = false;
         }
@@ -513,12 +530,14 @@ done
         wl_event_source*                    m_source       = nullptr;
         int                                 m_fd           = -1;
         pid_t                               m_pid          = -1;
+        int                                 m_pidfd        = -1;
         uint64_t                            m_generation   = 0;
         size_t                              m_maxFileBytes = 0;
         size_t                              m_resultBytes  = 0;
         bool                                m_complete     = true;
         bool                                m_eof          = false;
         bool                                m_paused       = false;
+        bool                                m_blocked      = false; // a buffered whole frame waits for queue room
         std::vector<std::filesystem::path> m_roots;
         std::string                         m_buffer;
         std::deque<SResult>                m_results;
