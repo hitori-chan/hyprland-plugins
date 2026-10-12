@@ -70,14 +70,17 @@ HARNESS_CLEANED=0
 
 # shellcheck source=awesome/gate/harness.sh
 source "$GATE_DIR/harness.sh"
-# shellcheck source=awesome/gate/lib.sh
-source "$GATE_DIR/lib.sh"
 trap cleanup_harness EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 echo "== probe: $(basename "$PROBE") =="
 # shellcheck source=awesome/gate/preflight.sh
 source "$GATE_DIR/preflight.sh"
+# lib.sh AFTER the preflight: its geometry derives from the monitor size
+# the launch measured (sourced before, every coordinate was computed
+# from MON_W=0 and landed off-screen)
+# shellcheck source=awesome/gate/lib.sh
+source "$GATE_DIR/lib.sh"
 source "$PROBE"
 cleanup_harness
 print_summary
