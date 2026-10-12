@@ -21,6 +21,10 @@ namespace NAwesome::Shell {
             char       buf[128];
             const auto NOW = std::time(nullptr);
             std::tm    tm{};
+            // localtime_r never re-reads the zone: a timezone change (travel,
+            // timedatectl) would keep the old zone until a restart. Once a
+            // minute, re-read it.
+            tzset();
             if (!localtime_r(&NOW, &tm))
                 return false;
             if (!std::exchange(timeLocaleTried, true))
