@@ -10,6 +10,9 @@
 #include "../core/config.hpp"
 
 #include <cctype>
+#include <functional>
+#include <string_view>
+#include <unordered_map>
 #include <format>
 
 namespace NAwesome::Notify {
@@ -263,14 +266,25 @@ namespace NAwesome::Notify {
         int lineH; // one line, no spacing beyond the font's own
         int adv;   // the per-line advance with the requested spacing
     };
+    // A plain memo, not the warm-aged raster cache: a metric is a few bytes
+    // and asked for on the draw path too, where nothing ticks a generation
+    // (aged that way, its byte cap filled after a few styles and refused
+    // every new one — two Pango layouts per call from then on). Lookups key
+    // on the stack buffer; past the bound the memo starts over.
+    struct SMetricHash {
+        using is_transparent = void;
+        size_t operator()(std::string_view s) const {
+            return std::hash<std::string_view>{}(s);
+        }
+    };
     static bool lineMetric(const std::string& family, int pt, int weight, float lineSpacing, int& lineH, int& adv) {
-        char mkey[128];
-        const int KLEN = snprintf(mkey, sizeof mkey, "|lm|%s|%d|%d|%d", family.c_str(), pt, weight, (int)(lineSpacing * 100));
-        const std::string KEY(mkey, std::min<size_t>(KLEN > 0 ? (size_t)KLEN : 0, sizeof mkey - 1));
-        static NAwesome::CGenCache<SLineMetric, 16, 1024> cache;
-        if (const auto* HIT = cache.find(KEY)) {
-            lineH = HIT->lineH;
-            adv   = HIT->adv;
+        char                   mkey[128];
+        const int              KLEN = snprintf(mkey, sizeof mkey, "|lm|%s|%d|%d|%d", family.c_str(), pt, weight, (int)(lineSpacing * 100));
+        const std::string_view KEY(mkey, std::min<size_t>(KLEN > 0 ? (size_t)KLEN : 0, sizeof mkey - 1));
+        static std::unordered_map<std::string, SLineMetric, SMetricHash, std::equal_to<>> cache;
+        if (const auto IT = cache.find(KEY); IT != cache.end()) {
+            lineH = IT->second.lineH;
+            adv   = IT->second.adv;
             return true;
         }
         PangoFontMap* fontMap = pango_cairo_font_map_get_default();
@@ -300,7 +314,9 @@ namespace NAwesome::Notify {
             return false;
         lineH = H1;
         adv   = H2 - H1;
-        cache.insert(KEY, SLineMetric{lineH, adv});
+        if (cache.size() >= 64)
+            cache.clear();
+        cache.emplace(std::string{KEY}, SLineMetric{lineH, adv});
         return true;
     }
 
