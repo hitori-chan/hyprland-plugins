@@ -919,8 +919,7 @@ namespace NAwesome::Notify {
                     } catch (...) {}
                 soundFile = clipUtf8(std::move(soundFile), MAX_SOURCE_BYTES);
                 soundName = clipUtf8(std::move(soundName), MAX_SOURCE_BYTES);
-                if (soundFile.starts_with("file://"))
-                    soundFile.erase(0, 7);
+                soundFile = Parse::fileUriPath(std::move(soundFile));
                 const std::string CMD{NAwesome::cfg().getS("plugin:awesome:notify:sound_command")};
                 if (!suppress && !CMD.empty()) {
                     if (!soundFile.empty())

@@ -133,16 +133,45 @@ namespace NAwesome::Notify::Parse {
         return s;
     }
 
-    // A path (file:// or absolute) is taken verbatim; anything else is a
-    // freedesktop icon NAME resolved against the theme (dunst/mako do this,
-    // and so should a compositor daemon). "" = nothing usable.
+    // A file:// URI is percent-encoded (a screenshot named "Screenshot
+    // from 2026-10-12 10-00-00.png" arrives as %20s), may name localhost,
+    // and may carry a query or fragment that is no part of the path.
+    std::string fileUriPath(std::string s) {
+        if (!s.starts_with("file://"))
+            return s.starts_with('/') ? s : std::string{};
+        std::string_view uri{s};
+        uri.remove_prefix(7);
+        if (uri.starts_with("localhost/"))
+            uri.remove_prefix(9);
+        if (!uri.starts_with('/'))
+            return ""; // another host's file: not ours to read
+        uri = uri.substr(0, uri.find_first_of("?#"));
+        const auto HEX = [](char c) -> int { return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1; };
+        std::string out;
+        out.reserve(uri.size());
+        for (size_t i = 0; i < uri.size(); i++) {
+            if (uri[i] != '%') {
+                out += uri[i];
+                continue;
+            }
+            const int HI = i + 2 < uri.size() ? HEX(uri[i + 1]) : -1, LO = i + 2 < uri.size() ? HEX(uri[i + 2]) : -1;
+            if (HI < 0 || LO < 0 || (HI == 0 && LO == 0))
+                return ""; // malformed, or an embedded NUL
+            out += (char)(HI * 16 + LO);
+            i += 2;
+        }
+        return out;
+    }
+
+    // An absolute path or a file:// URI (fileUriPath) names the file;
+    // anything else is a freedesktop icon NAME resolved against the theme
+    // (dunst/mako do this, and so should a compositor daemon). "" = nothing
+    // usable.
     std::string resolveImage(std::string s, int sizePx) {
         if (s.empty())
             return "";
-        if (s.starts_with("file://"))
-            s.erase(0, 7);
-        if (s.starts_with('/'))
-            return s;
+        if (s.starts_with("file://") || s.starts_with('/'))
+            return fileUriPath(std::move(s));
         return NAwesome::resolveIconName(s, sizePx);
     }
 

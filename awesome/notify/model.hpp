@@ -223,6 +223,7 @@ namespace NAwesome::Notify {
         std::string              attrValue(const std::string& tag, const std::string& attr); // one quoted attr, case-insensitive name
         std::string              oneLine(std::string s);
         std::string              resolveImage(std::string s, int sizePx); // path, file://, or a themed icon NAME
+        std::string              fileUriPath(std::string s); // a path or a file:// URI -> the path, "" if neither
         // one <img src>: the resolved path and its alt — the load-failure
         // fallback line
         struct SImgRef {

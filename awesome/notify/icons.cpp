@@ -679,11 +679,7 @@ namespace NAwesome::Notify {
             a.iconPx = 0;
             return;
         }
-        std::string path = a.id;
-        if (path.starts_with("file://"))
-            path.erase(0, 7);
-        if (!path.starts_with('/'))
-            path = NAwesome::resolveIconName(a.id, iconPx);
+        std::string path = Parse::resolveImage(a.id, iconPx); // a path, a file:// URI or a themed name
 
         // a symbolic action bakes colFg into its pixels: same fg-carrying key
         // as the identity; the bare id keeps remembering failed resolves
