@@ -82,14 +82,18 @@ $(OBJDIR):
 
 -include $(shell find $(OBJDIR) -name '*.d' 2>/dev/null)
 
-# the headless unit harness (pure core; no fork headers, no compositor),
-# incremental: its own objects, its own dir
-TEST_SRCS := $(wildcard test/*.cpp) core/store.cpp core/state.cpp core/schema.cpp
-TEST_OBJS := $(patsubst %.cpp,.build-test/%.o,$(TEST_SRCS))
+# the headless unit harness (pure core; no compositor), incremental: its
+# own objects, its own dir. The core headers it includes reach a few fork
+# headers (the hop's event-loop types; test/stubs.cpp supplies the
+# symbols): resolved from the SAME header set as the plugin's, and
+# rebuilt with it (the stamp)
+TEST_SRCS     := $(wildcard test/*.cpp) core/store.cpp core/state.cpp core/schema.cpp
+TEST_OBJS     := $(patsubst %.cpp,.build-test/%.o,$(TEST_SRCS))
+TEST_INCLUDES := $(filter -I%,$(HL_CFLAGS))
 
-.build-test/%.o: %.cpp Makefile
+.build-test/%.o: %.cpp Makefile $(STAMP)
 	@mkdir -p $(dir $@)
-	$(CXX) -std=c++26 -Wall -MMD -MP -I.. -I. -c $< -o $@
+	$(CXX) -std=c++26 -Wall -MMD -MP -I.. -I. $(TEST_INCLUDES) -c $< -o $@
 
 .build-test/awesome-test: $(TEST_OBJS)
 	$(CXX) $(TEST_OBJS) -o $@
