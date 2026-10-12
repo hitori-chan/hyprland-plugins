@@ -1046,10 +1046,28 @@ namespace NAwesome::Shell {
                 PROMPTBUF += ": ";
             } else
                 PROMPTBUF += "Run: ";
-            PROMPTBUF.append(Menubar::typed, 0, Menubar::cursor);
-            PROMPTBUF += "▏";
-            PROMPTBUF.append(Menubar::typed, Menubar::cursor);
-            const auto   PROMPT = textTex(PROMPTBUF, COLFG, PAINT.pt);
+            // a window of the query around the cursor, and a raster no wider
+            // than the monitor: a 4 KiB query rasterized whole was tens of
+            // thousands of px, past what GL can upload
+            {
+                constexpr size_t BEFORE = 160, AFTER = 96; // bytes either side of the cursor
+                const auto&      Q      = Menubar::typed;
+                const size_t     CUR    = std::min(Menubar::cursor, Q.size());
+                size_t           from   = CUR > BEFORE ? CUR - BEFORE : 0;
+                size_t           to     = std::min(Q.size(), CUR + AFTER);
+                while (from > 0 && ((unsigned char)Q[from] & 0xC0) == 0x80)
+                    from--;
+                while (to < Q.size() && ((unsigned char)Q[to] & 0xC0) == 0x80)
+                    to++;
+                if (from > 0)
+                    PROMPTBUF += "…";
+                PROMPTBUF.append(Q, from, CUR - from);
+                PROMPTBUF += "▏";
+                PROMPTBUF.append(Q, CUR, to - CUR);
+                if (to < Q.size())
+                    PROMPTBUF += "…";
+            }
+            const auto   PROMPT = textTex(PROMPTBUF, COLFG, PAINT.pt, (int)(PAINT.mb.w * PAINT.scale));
             const double PW     = PROMPT ? PROMPT->m_size.x / PAINT.scale : 0;
             PAINT.texIn(PROMPT, CBox{px, MY, PW, PAINT.h});
             px += PW + 12;
@@ -1093,13 +1111,16 @@ namespace NAwesome::Shell {
                 // row geometry stays stable and names never jump.
                 const double ICON  = PAINT.h - 6;
                 const auto   cellW = [&](const SP<ITexture>& t) { return 8 + ICON + 6 + (t ? t->m_size.x / PAINT.scale : 0) + 8; };
+                // an entry never outgrows half the strip (the Exec row
+                // echoes the whole query)
+                const int    ENTRYMAX = (int)(PAINT.mb.w * PAINT.scale / 2);
 
                 { // keep the selection on screen: page-jump to it when it won't fit
                     // (the first overflow decides it: End from the top would
                     // otherwise raster every entry in one warm)
                     double w = 0;
                     for (int i = Menubar::first; i <= Menubar::sel; i++) {
-                        w += cellW(textTex(entryName(i), COLFG, PAINT.pt));
+                        w += cellW(textTex(entryName(i), COLFG, PAINT.pt, ENTRYMAX));
                         if (px + w > PAINT.mb.x + PAINT.mb.w) {
                             Menubar::first = Menubar::sel;
                             break;
@@ -1110,7 +1131,7 @@ namespace NAwesome::Shell {
                 for (int i = Menubar::first; i < (int)SH.size(); i++) {
                     const auto&  NAME = entryName(i);
                     const auto   ITEX = entryIcon(i);
-                    const auto   WT   = textTex(NAME, COLFG, PAINT.pt);
+                    const auto   WT   = textTex(NAME, COLFG, PAINT.pt, ENTRYMAX);
                     const double W    = cellW(WT);
                     if (px + W > PAINT.mb.x + PAINT.mb.w)
                         break;
@@ -1130,7 +1151,7 @@ namespace NAwesome::Shell {
                     }
                     tx += ICON + 6;
 
-                    const auto T = i == Menubar::sel ? textTex(NAME, fg, PAINT.pt) : WT;
+                    const auto T = i == Menubar::sel ? textTex(NAME, fg, PAINT.pt, ENTRYMAX) : WT;
                     if (T && T->m_texID != 0) {
                         const auto P = PAINT.toPhys(CBox{tx, MY, 1, PAINT.h});
                         CBox       b{P.x, P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y};
