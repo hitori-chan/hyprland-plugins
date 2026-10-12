@@ -133,81 +133,32 @@ namespace NAwesome::Shell {
         return loadPng(path);
     }
 
-    // Where icons live, probed once at init (existing dirs only). Not a full
-    // xdg icon-theme implementation — a fixed, ordered list of the dirs that
-    // actually exist, so a lookup is a bounded stat walk instead of a theme
-    // traversal: the user's GTK theme (both dir layouts), hicolor, pixmaps,
-    // Adwaita's symbolic set as the last resort for freedesktop names like
-    // input-keyboard-symbolic. Every tier walks the XDG bases in precedence
-    // order — a theme (or an app icon) installed under ~/.local/share/icons
-    // is as real as a packaged one.
-    static std::vector<std::string> iconDirs;
     static std::unordered_map<std::string, SP<ITexture>> appIconCache;
     static std::unordered_map<std::string, SP<ITexture>> namedIconCache, trayIconCache;
 
-    void                            buildIconDirs() {
-        iconDirs.clear();
-        std::error_code ec;
-        const auto      add = [&](const std::string& d) {
-            if (std::filesystem::is_directory(d, ec))
-                iconDirs.push_back(d);
-        };
-        const auto BASES = NAwesome::xdgIconBases();
-
-        // the GTK theme (Qt follows it) across every base, both layouts
-        if (const auto THEME = NAwesome::gtkIconThemeName(); !THEME.empty() && THEME != "hicolor")
-            for (const auto& B : BASES) {
-                const auto TDIR = B + "/" + THEME + "/";
-                for (const char* CTX : {"apps", "status", "devices", "categories"}) {
-                    for (const char* SZ : {"48", "32", "24", "22", "16"}) {
-                        add(TDIR + CTX + "/" + SZ);            // breeze layout
-                        add(TDIR + SZ + "x" + SZ + "/" + CTX); // classic layout
-                    }
-                    add(TDIR + "scalable/" + CTX);
-                    add(TDIR + "symbolic/" + CTX);
-                }
-            }
-        for (const auto& B : BASES) {
-            for (const char* SZ : {"48x48", "64x64", "128x128", "32x32", "24x24", "22x22", "16x16", "96x96", "72x72", "36x36", "20x20"})
-                add(B + "/hicolor/" + SZ + "/apps");
-            add(B + "/hicolor/scalable/apps");
-            // large sizes last: apps that ship ONE icon often ship it large
-            // (discord is 256x256-only) — a fallback tier, capped in loadPng
-            for (const char* SZ : {"192x192", "256x256", "384x384", "512x512", "1024x1024"})
-                add(B + "/hicolor/" + SZ + "/apps");
-        }
-        for (const auto& D : NAwesome::xdgDataDirs())
-            add(D + "/pixmaps");
-        for (const auto& B : BASES)
-            for (const char* CTX : {"devices", "status", "apps", "legacy"})
-                add(B + "/Adwaita/symbolic/" + CTX);
-    }
-
-    // Icon name (or absolute path) -> a file on disk, PNG or SVG.
+    // Icon name (or absolute path) -> a file on disk, PNG or SVG: an SNI's
+    // own IconThemePath first, then the core's one freedesktop resolver —
+    // the bar and the cards resolve a name to the same file, through the
+    // same plausibility gate and bounded memo.
     std::string resolveIconPath(const std::string& name, const std::string& extraDir) {
         if (name.empty())
             return "";
-        std::error_code ec;
         if (name.front() == '/')
             return NAwesome::admissibleImageFile(name) ? name : "";
-
-        const auto tryDir = [&](const std::string& D) -> std::string {
-            for (const auto& N : {name, lower(name)}) {
-                for (const char* EXT : {".png", ".svg"}) {
-                    const auto P = D + "/" + N + EXT;
-                    if (NAwesome::admissibleImageFile(P)) // D may be an SNI's own IconThemePath
-                        return P;
-                }
-            }
+        if (!NAwesome::plausibleIconName(name))
             return "";
-        };
 
         if (!extraDir.empty())
-            if (auto P = tryDir(extraDir); !P.empty())
-                return P;
-        for (const auto& D : iconDirs)
-            if (auto P = tryDir(D); !P.empty())
-                return P;
+            for (const auto& N : {name, lower(name)})
+                for (const char* EXT : {".png", ".svg"})
+                    if (const auto P = extraDir + "/" + N + EXT; NAwesome::admissibleImageFile(P))
+                        return P;
+
+        constexpr int BAR_ICON_PX = 24; // the strip's icon cells, the size a lookup prefers
+        if (auto P = NAwesome::resolveIconName(name, BAR_ICON_PX); !P.empty())
+            return P;
+        if (const auto LOWER = lower(name); LOWER != name)
+            return NAwesome::resolveIconName(LOWER, BAR_ICON_PX);
         return "";
     }
 
@@ -330,16 +281,14 @@ namespace NAwesome::Shell {
     }
 
     // A reload may follow a GTK theme switch, and everything above was
-    // resolved against the old one: the dir list is probed once at init from
-    // the theme name, and the caches hold the files it found. Re-probe and
-    // drop them; the next warm resolves again. (resetIconNameCache forgets
-    // the memoized theme name — core/icons.hpp.)
+    // resolved against the old one: drop the caches; the next warm resolves
+    // again. (resetIconNameCache forgets the memoized theme name and the
+    // resolver's memo — core/icons.hpp.)
     void iconsReload() {
         NAwesome::resetIconNameCache();
         appIconCache.clear();
         namedIconCache.clear();
         trayIconCache.clear();
-        buildIconDirs();
     }
 
     void iconsInit() {
@@ -361,7 +310,6 @@ namespace NAwesome::Shell {
         appIconCache.clear();
         namedIconCache.clear();
         trayIconCache.clear();
-        iconDirs.clear();
     }
 
 } // namespace NAwesome::Shell

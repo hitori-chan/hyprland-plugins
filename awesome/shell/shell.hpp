@@ -144,7 +144,6 @@ namespace NAwesome::Shell {
     SP<ITexture> loadPng(const std::string& path);
     SP<ITexture> loadPngBytes(const std::vector<uint8_t>& data); // dbusmenu icon-data blobs
     std::string  resolveIconPath(const std::string& name, const std::string& extraDir = "");
-    void         buildIconDirs();
     void         iconsInit();
     SP<ITexture> appIcon(const std::string& klass);
     SP<ITexture> namedIcon(const std::string& name);

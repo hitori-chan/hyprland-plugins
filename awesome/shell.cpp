@@ -61,7 +61,6 @@ namespace NAwesome::Shell {
     }
 
     void CModule::init() {
-        buildIconDirs();
         stripInit(); // the strip's canvas layer before anything warms
         iconsInit();
         Clock::refresh();
