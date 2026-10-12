@@ -309,11 +309,22 @@ namespace NAwesome {
         CBox toPhys(const CBox& global) const {
             return CBox{global}.translate(Vector2D{-mon->m_position.x, -mon->m_position.y + dy}).scale(scale).round();
         }
+        // the renderer asserts on an empty box (a 1.5 px caret rounds to 0
+        // below scale ~0.67): nothing to paint, nothing handed over
+        static bool drawable(const CBox& phys) {
+            return phys.w > 0 && phys.h > 0;
+        }
+        // CHyprColor's ctor converts to OkLab: a fade's alpha costs one, a
+        // fully opaque paint (the common case) none
+        CHyprColor faded(const CHyprColor& c) const {
+            return alpha >= 1.f ? c : c.modifyA(c.a * alpha);
+        }
         void rect(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f) const {
             if (!paints())
                 return;
             AW_PAINT_SCOPE;
-            g_pHyprOpenGL->renderRect(*rctx, toPhys(global), c.modifyA(c.a * alpha), {.round = round, .roundingPower = rp});
+            if (const auto B = toPhys(global); drawable(B))
+                g_pHyprOpenGL->renderRect(*rctx, B, faded(c), {.round = round, .roundingPower = rp});
         }
         // Semantic container paint. Opaque defaults make the fork skip blur;
         // configured alpha below 1 retains the rounded live-glass path.
@@ -321,28 +332,26 @@ namespace NAwesome {
             if (!paints())
                 return;
             AW_PAINT_SCOPE;
-            g_pHyprOpenGL->renderRect(*rctx, toPhys(global), c.modifyA(c.a * alpha), {.round = round, .roundingPower = rp, .blur = blurOn(), .blurA = alpha});
-        }
-        void border(const CBox& global, const CHyprColor& c, int round, int sizePx, float rp) const {
-            if (!paints())
-                return;
-            AW_PAINT_SCOPE;
-            g_pHyprOpenGL->renderBorder(*rctx, toPhys(global), Config::CGradientValueData{c}, {.round = round, .roundingPower = rp, .borderSize = sizePx, .a = alpha});
+            if (const auto B = toPhys(global); drawable(B))
+                g_pHyprOpenGL->renderRect(*rctx, B, faded(c), {.round = round, .roundingPower = rp, .blur = blurOn(), .blurA = alpha});
         }
         void ring(const CBox& global, const CHyprColor& c, int round, float rp, double px = 1.0) const {
             if (!paints())
                 return;
             AW_PAINT_SCOPE;
+            const auto B = toPhys(global);
+            if (!drawable(B))
+                return;
             // the gradient ctor heap-allocates and OkLab-converts — memoize per color
             static std::unordered_map<uint64_t, Config::CGradientValueData> grads;
             const auto                                                      KEY = c.getAsHex();
             auto                                                            IT  = grads.find(KEY);
             if (IT == grads.end())
                 IT = grads.emplace(KEY, Config::CGradientValueData{c}).first;
-            g_pHyprOpenGL->renderBorder(*rctx, toPhys(global), IT->second, {.round = round, .roundingPower = rp, .borderSize = std::max(1, (int)std::lround(px * scale)), .a = alpha});
+            g_pHyprOpenGL->renderBorder(*rctx, B, IT->second, {.round = round, .roundingPower = rp, .borderSize = std::max(1, (int)std::lround(px * scale)), .a = alpha});
         }
         void shadow(const CBox& global, int round, float rp, int range) const {
-            if (!paints())
+            if (!paints() || !drawable(toPhys(global)))
                 return;
             AW_PAINT_SCOPE;
             static Config::CGradientValueData GRAD{CHyprColor{Theme::SHADOW}};

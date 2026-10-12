@@ -93,10 +93,15 @@ namespace NAwesome::Shell {
         return CBox{global}.translate(-mon->m_position).scale(scale).round();
     }
 
+    // The bar's paints count in the gate's draw profile like the cards'
+    // (AW_PAINT_SCOPE), and never hand the renderer an empty box (it
+    // asserts).
     void SPaint::rect(const CBox& global, const CHyprColor& c, int round, float rp) const {
         if (!paints())
             return;
-        g_pHyprOpenGL->renderRect(*rctx, toPhys(global), c, {.round = round, .roundingPower = rp});
+        AW_PAINT_SCOPE;
+        if (const auto B = toPhys(global); B.w > 0 && B.h > 0)
+            g_pHyprOpenGL->renderRect(*rctx, B, c, {.round = round, .roundingPower = rp});
     }
 
     // Semantic container paint. Opaque defaults make the fork skip blur;
@@ -104,13 +109,24 @@ namespace NAwesome::Shell {
     void SPaint::glass(const CBox& global, const CHyprColor& c, int round, float rp) const {
         if (!paints())
             return;
-        g_pHyprOpenGL->renderRect(*rctx, toPhys(global), c, {.round = round, .roundingPower = rp, .blur = NAwesome::blurOn()});
+        AW_PAINT_SCOPE;
+        if (const auto B = toPhys(global); B.w > 0 && B.h > 0)
+            g_pHyprOpenGL->renderRect(*rctx, B, c, {.round = round, .roundingPower = rp, .blur = NAwesome::blurOn()});
     }
 
     void SPaint::border(const CBox& global, const CHyprColor& c, int round, int sizePx, float rp) const {
         if (!paints())
             return;
-        g_pHyprOpenGL->renderBorder(*rctx, toPhys(global), Config::CGradientValueData{c}, {.round = round, .roundingPower = rp, .borderSize = sizePx});
+        AW_PAINT_SCOPE;
+        const auto B = toPhys(global);
+        if (B.w <= 0 || B.h <= 0)
+            return;
+        // the gradient ctor heap-allocates and OkLab-converts: one per color
+        static std::unordered_map<uint64_t, Config::CGradientValueData> grads;
+        auto                                                            IT = grads.find(c.getAsHex());
+        if (IT == grads.end())
+            IT = grads.emplace(c.getAsHex(), Config::CGradientValueData{c}).first;
+        g_pHyprOpenGL->renderBorder(*rctx, B, IT->second, {.round = round, .roundingPower = rp, .borderSize = sizePx});
     }
 
     void SPaint::tex(const SP<ITexture>& t, const CBox& physBox) const {
