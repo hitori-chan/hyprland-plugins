@@ -48,23 +48,55 @@ visible transitions.
   spend the token; in vanilla awesome the app activates itself after
   the click, and the plugin makes that unconditional. A sender that DID
   spend the token just lands on its already-focused window.
-  Menus support updates, cascades, scrolling, and check/radio state;
-  providers may emit a leading, doubled, or trailing separator and the
-  parse trims them. Keyboard navigation, tooltips, and overlay icons
-  are not implemented.
+  Every item's and menu's signals arrive through ONE connection-wide
+  match installed asynchronously (a per-item subscription is a
+  synchronous round trip on the compositor thread), routed by sender
+  and path; an item fetches one icon at a time, a NewIcon storm folding
+  into one more fetch. Item strings are bounded, icon names resolve
+  through the core resolver (an item's own `IconThemePath` first), and
+  a pixmap is picked for the densest monitor's scale. Menus support
+  updates, cascades, scrolling, and check/radio state; an inline
+  `icon-data` PNG is size-checked before decoding (256 px a side, 64 per
+  menu reply); providers may emit a leading, doubled, or trailing
+  separator and the parse trims them. A menu or the prompt on a monitor
+  that goes away closes. Keyboard navigation, tooltips, and overlay
+  icons are not implemented.
 - **Bell**: reads the notify model directly (same process — no bus
   seam). A click toggles the shade; pointer hover does nothing.
-- **Battery** watches the udev battery packs (a dual-pack laptop reads as one); the clock ticks on the wall clock's minute, and a resume or a clock step updates it at once.
+- **Battery** watches the udev battery packs (a dual-pack laptop reads as one; a USB-C port's or a headset's battery uevent is ignored); the clock ticks on the wall clock's minute, re-reads the timezone each tick, and a resume or a clock step updates it at once.
+- Labels are one line: a client's title or menu label has its control
+  characters replaced before it is rastered (a newline per paragraph
+  once made a texture tens of thousands of px tall), and a raster the
+  cache refuses is remembered as empty rather than rebuilt each frame.
 
 ### The launcher (menubar)
 
 Desktop discovery and completion run in a bounded cancellable helper
 process. The compositor drains framed results through the event loop;
-queue backpressure pauses the helper, and teardown closes the pipe and
-terminates its private process group without joining filesystem work.
-Desktop Entry strings are decoded before use; `Exec=` preserves its
-quoting and field-code grammar before passing argument boundaries to
-the executor.
+queue backpressure pauses the helper (a frame too large for the queue's
+room waits whole, never truncating the scan), and teardown closes the
+pipe and signals its private process group through a pidfd, without
+joining filesystem work. Symlinked roots are followed. The app index
+rescans on the next open once an applications directory changed (an
+app installed or removed since). Desktop Entry strings are decoded
+before use (space around `=` is ignored, per the spec); `Exec=`
+preserves its quoting and field-code grammar before passing argument
+boundaries to the executor.
+
+The typed line runs through the executor's `/bin/sh -c`, so a
+completed name is inserted as one escaped word (a file named
+`x$(cmd)` stays a file name; spaces, quotes and `=` are backslashed),
+and a name with a control or bidi character is never offered. An
+escaped space keeps a word whole for the next completion. Every launch
+carries a compositor-minted activation token (`XDG_ACTIVATION_TOKEN`
+and `DESKTOP_STARTUP_ID` in the environment, `activation-token` in a
+D-Bus `Activate`'s platform data): the Enter that ran it was swallowed,
+so an already-running app could not otherwise raise itself. Held keys
+repeat at the keyboard's own delay and rate (the compositor repeats
+only its binds). An exclusive-keyboard layer (a launcher or power menu
+a Super bind opened over the prompt) closes the prompt instead of
+losing its keys to it, and so does the prompt's monitor being disabled
+or removed. The prompt shows a window of the query around the cursor.
 
 | Keys | Action |
 |---|---|
@@ -77,7 +109,8 @@ the executor.
 | `C-v` | paste asynchronously |
 | `Escape` or pointer click | close |
 
-Typed and pasted input shares a 4 KiB UTF-8 limit. Clipboard transfer
+Typed and pasted input shares a 4 KiB UTF-8 limit (completions too);
+a paste drops control and bidi characters. Clipboard transfer
 is nonblocking with a 1.5-second deadline; closing or tearing down the
 launcher removes the fd and invalidates the callback. History lives in
 the plugin's one state file (see State).
@@ -142,11 +175,15 @@ the plugin's one state file (see State).
     restore is a user action (chip click, `Mod+Ctrl+N`).
   - Focus clears the urgency mark (EWMH / FS#1310; the fork's
     FocusState does it), as in awesome's client focus handler.
+  - A FORCED activation — a taskbar's or a window switcher's pick
+    (wlr-foreign-toplevel `activate`) — is the user's own and focuses
+    wherever the window is, in both gate modes. A taskbar's
+    minimize/unminimize (wlr-foreign-toplevel) runs through the same
+    minimize state machine as a client's own minimize button.
   - `focus_on_activate = true` switches to vanilla awesome / KWin-token
     behavior: an ask on a VISIBLE window focuses it (the not-visible
     and minimized branches above are unchanged). The user's live config
-    leaves the value at the fork default (attention-only); the nested
-    gate battery tests that mode.
+    leaves the value at the fork default (attention-only).
   - X11 `_NET_ACTIVE_WINDOW` is urgency ONLY in both gate modes (the
     fork's XWM, documented there): X11 cannot authenticate a gesture,
     and Wine/Proton send it on every internal SetForegroundWindow. A
@@ -202,12 +239,20 @@ corners).
 `body`, `body-markup`, `body-hyperlinks`, `body-images`,
 `icon-static`, `inline-reply`, `persistence`, `sound`.
 
+All signals leave in the order the cards produced them (a card's close
+never overtakes its action). `ActionInvoked`, `ActivationToken` and
+`NotificationReplied` go to the notification's SENDER only, never
+broadcast: what the user types into a reply, and a token that can take
+the focus, are nobody else's on the session bus. `NotificationClosed`
+stays a broadcast.
+
 - `replaces_id` updates a card in place, keeping its stack slot; an
   unknown id creates the card under that id. The 9990s are the private
-  OSD band: a FRESH (non-replacing) id chosen inside it only sticks
-  when the hints carry `x-notify-osd` (bool), so an ordinary client
-  cannot pin a band id and hijack the OSD that replaces it. Fresh ids
-  outside the band are minted from a low counter.
+  OSD band: a FRESH (non-replacing) id chosen inside it only sticks for
+  the plugin's own in-process posts (the system module's OSD cards), so
+  no client can pin a band id, hijack the OSD that replaces it, or ride
+  the band's DND bypass. Fresh ids outside the band are minted from a
+  low counter.
 - `expire_timeout`: 0 → sticky, >0 → ms. −1 (server decides) → normal
   and critical cards are sticky until dismissed — a message waits to be
   read; self-declared ephemerals (low urgency, `transient`, `value`
@@ -217,7 +262,9 @@ corners).
   volume/brightness OSD); `image-data`/`image_data`/`icon_data` raw
   pixmaps; `image-path`/`image_path`; `desktop-entry`; `action-icons`;
   `resident`; `transient`; `sound-file`/`sound-name`/`suppress-sound`;
-  `x-notify-osd`; `x-canonical-append`; `x-notify-group-key`.
+  `x-canonical-append`; `x-notify-group-key`. A boolean hint is read
+  the way clients send it: a bool, an int or a byte (`notify-send -h
+  int:transient:1`), or a string.
 - Structured-conversation hints (neither name form sits in the
   published spec's hint table; the plain name is tried first, the
   `x-notify-*` alias second — the message-time alias alone is
@@ -279,20 +326,32 @@ to load keeps its `alt` text as a one-line body entry.
 
 **Images and icons.** Precedence: `image-data` beats `image-path`
 beats `app_icon` beats `desktop-entry`. Each of `app_icon` /
-`image-path` / `desktop-entry` may be a file path (`file://` too) OR a
-freedesktop icon name, resolved against the GTK icon theme, then
-hicolor, then `/usr/share/pixmaps`. A `desktop-entry` hint additionally
+`image-path` / `desktop-entry` may be a file path (a `file://` URI too,
+percent-decoded, `localhost` allowed, any query or fragment dropped)
+OR a freedesktop icon name, resolved against the GTK icon theme, then
+hicolor, then `/usr/share/pixmaps` — the one resolver the bar uses too
+(core/icons.hpp): plausible names only, a two-generation memo, and at
+most 32 uncached theme walks a second (a burst of distinct names from a
+sender resolves to nothing past that, uncached, instead of stalling the
+compositor). A `desktop-entry` hint additionally
 resolves the .desktop file's own `Icon=` (all `$XDG_DATA_DIRS/
 applications` entries are indexed once at plugin start by a bounded
 helper process, keyed by the file name and `StartupWMClass`), which
 beats an icon-name collision; while the index has not reached the
 entry, the icon-name stand-in draws and the index upgrades the live
-card when it lands. Decoding is hyprgraphics: PNG/JPEG/WEBP/BMP/AVIF/
-JXL + SVG (no GIF); big images downscale once at load, not per frame.
-File icons decode off the render thread on the compositor's async
-resource gatherer (a bounded share of its queue; symbolic icons and SVG
-heroes stay synchronous): a card whose icon is still decoding shows
-its fallback face until the decode lands and re-warms. Screenshot-sized
+card when it lands. Decoding is hyprgraphics: PNG/JPEG/WEBP/BMP + SVG
+(no GIF; AVIF and JXL files are refused — the admission reads a
+bounded raster size from the header, and those headers do not carry
+one it parses); big images downscale once at load, not per frame. A
+file is opened ONCE, non-blocking, and judged on that open descriptor
+(a regular file, bounded size, a bounded declared raster); the decoder
+reads the same file (/proc/self/fd), never the path again, so a FIFO
+or a swap after the check cannot reach it. File icons decode off the
+render thread on the compositor's async resource gatherer (a bounded
+share of its queue, one decode shared by every card asking for the
+same file; symbolic icons and SVG heroes stay synchronous): a card
+whose icon is still decoding keeps the icon column reserved — the text
+does not re-flow when it lands. Screenshot-sized
 images (256 px in both dimensions) render card-width as a
 cover-cropped hero in any capture shape. Iconless cards draw a random
 face from `fallback_icon_dir`, and when that dir is empty (or a face
@@ -394,8 +453,9 @@ semantics).
 - Sound: `sound-file`/`sound-name` play through a player
   (`sound_command`, empty disables); `suppress-sound` mutes one
   arrival. The compositor has no audio backend, so this shells out,
-  reaped off the event loop: at most 4 players at once (each killed
-  after 30 s), a budget of their own — a sound flood never takes the
+  reaped off the event loop: at most 4 players at once (each one's
+  process group killed after 30 s, so a wrapper script's player goes
+  with it), a budget of their own — a sound flood never takes the
   volume keys' helpers.
 - DND (`hl.plugin.awesome.suspend()`): arrivals collect
   silently with timeouts held, and resume renders the queue newest-first
@@ -420,20 +480,28 @@ pragmatic scan (GTK theme → hicolor → pixmaps), not a full
 
 ### System
 
-- **Brightness** reads `/sys/class/backlight`, applies 5% linear steps
-  with a raw floor of 2, and writes through logind
+- **Brightness** reads `/sys/class/backlight` (several devices: the
+  firmware one, then platform, then raw — the systemd rule), applies 5%
+  linear steps with a raw floor of 2, and writes through logind
   `Session.SetBrightness` on the system bus — no root, no udev rule.
-- **Volume and microphone** use bounded `wpctl` set/readback chains.
-  PipeWire process I/O stays off render and input callbacks (the core
-  Jobs pool: pidfd-watched, capped, generation-checked); readback
-  rejects malformed or non-finite output.
+  One write is in flight at a time; presses meanwhile add up into the
+  next.
+- **Volume and microphone**: `wpctl` reads the current value and writes
+  the new one inside its own process, so two sets at once lose a step
+  (or fold two mute toggles into one). Each device runs ONE set at a
+  time, then a readback for the card; presses while it runs accumulate
+  (steps sum into the next set, toggles fold to their parity). PipeWire
+  process I/O stays off render and input callbacks (the core Jobs pool:
+  pidfd-watched, capped, generation-checked); readback rejects
+  malformed or non-finite output.
 - **Touchpad policy**: the touchpad turns off while an external
   (USB/Bluetooth) mouse is present and back on when it's unplugged;
   `XF86TouchpadToggle` flips it by hand. Hotplug rides the
   compositor's own device signals (a settle timer coalesces the
   burst); the flip writes the compositor's per-device config store
   through `hl.device`, so nothing fights the next config re-apply, and
-  a reload re-checks.
+  a reload re-checks — silently: a card answers only a change the user
+  can see, or the manual flip.
 - Every action's feedback is a card posted straight into the notify
   model: fixed ids (pad 9991, brightness 9992, volume 9993, mic 9995)
   replace in place, low urgency, 1200 ms expiry, a `value` bar, and the
@@ -472,7 +540,7 @@ to the compositor): the first stop when a click goes missing.
 
 47 keys under `plugin:awesome:<module>:<key>` — shell 20, notify 24,
 windows 3. The table (kinds, defaults, clamps) is
-[`core/schema.cpp`](core/schema.cpp); the defaults are the glass·ink
+[`core/schema.hpp`](core/schema.hpp); the defaults are the glass·ink
 theme tokens, so an empty config still looks right.
 
 | module | keys |
