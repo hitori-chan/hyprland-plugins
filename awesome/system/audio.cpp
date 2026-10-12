@@ -4,9 +4,9 @@
 // value hints and replace-in-place semantics are the contract; the OSD
 // band lives in the model, so no OSD hint is needed.
 //
-// The wpctl readback chain (set -> get -> parse -> card) rides the core's
-// Jobs (pidfd-watched, bounded, generation-checked). The chain's state is
-// therefore just (mic, generation): the children are Jobs' children.
+// Each audio device runs one wpctl set at a time, then a readback (set ->
+// get -> parse -> card), on the core's Jobs (pidfd-watched, bounded,
+// generation-checked); presses meanwhile accumulate into the next set.
 //
 // Brightness stays fork-free: /sys/class/backlight for current/max,
 // ±5% linear steps (the shown percent IS current/max), floor 2 raw so
@@ -45,7 +45,6 @@ namespace NAwesome::System {
     inline constexpr int      OSD_TIMEOUT   = 1200;
 
     constexpr size_t MAX_ACTION_QUEUE = 128; // a key-repeat storm must back off, not fork
-    constexpr size_t MAX_ACTIVE_CHAINS = 16;
 
     // ---- the system bus (logind only; the cards need no bus at all) ----
 
@@ -136,10 +135,6 @@ namespace NAwesome::System {
     static int             lastSetRaw = -1;
     static Time::steady_tp lastSetAt;
     static uint64_t        brightnessGeneration = 0;
-    static uint64_t        volumeGeneration     = 0;
-    static uint64_t        micGeneration        = 0;
-    static uint64_t        volumeFeedback       = 0;
-    static uint64_t        micFeedback          = 0;
 
     static const char* volumeIcon(int pct) {
         if (pct <= 33)
@@ -216,29 +211,29 @@ namespace NAwesome::System {
         lastSetAt  = Time::steadyNow();
     }
 
-    // ---- volume / mic (wpctl, sequenced on the event loop) ----
+    // ---- volume / mic (wpctl, one set in flight per device) ----
 
-    // A readback in flight: the set-child (Jobs-tracked) hands to the
-    // get-child (Jobs-piped), whose stdout is the authoritative state.
-    // Chains overlap freely under key repeat — every set runs (each IS a
-    // step), a late get just shows the final state; the feedback
-    // generations decide which cards earn their draw.
-    static std::vector<uint64_t> liveChains; // the live generations
+    // wpctl reads the current value and writes the new one inside its own
+    // process: two sets at once read the same value and write the same
+    // result (a held key lost steps, two mute toggles collapsed into one,
+    // up/down raced). So each device runs ONE set at a time; presses while
+    // it runs ACCUMULATE — volume steps sum into the next set ("15%+"),
+    // toggles fold to their parity — and every finished set is read back,
+    // the readback being the card's authoritative state.
+    struct SDevice {
+        const char* node;
+        bool        mic;
+        bool        busy    = false;
+        int         steps   = 0; // ±1 per press, applied as ±5% each
+        int         toggles = 0;
+        uint64_t    generation = 0; // a teardown or a newer readback outdates replies
+    };
+    static SDevice sink{.node = "@DEFAULT_AUDIO_SINK@", .mic = false}, source{.node = "@DEFAULT_AUDIO_SOURCE@", .mic = true};
 
-    static bool canTrackChain() {
-        return liveChains.size() < MAX_ACTIVE_CHAINS;
-    }
-
-    static void dropChain(uint64_t gen) {
-        std::erase_if(liveChains, [gen](uint64_t g) { return g == gen; });
-    }
-
-    static void postReadback(bool mic, uint64_t generation, const Wpctl::SReadback* rb) {
-        uint64_t& feedback = mic ? micFeedback : volumeFeedback;
-        if (!rb || generation <= feedback)
-            return; // no parseable readback, or a newer chain already showed
-        feedback = generation;
-        if (mic) {
+    static void showReadback(const SDevice& d, const Wpctl::SReadback* rb) {
+        if (!rb)
+            return; // no parseable readback: no card beats a wrong one
+        if (d.mic) {
             if (rb->muted || rb->value >= 0)
                 Notify::Model::postCard({.id = ID_MIC, .icon = rb->muted ? "microphone-sensitivity-muted" : "microphone-sensitivity-high", .summary = "Microphone", .body = rb->muted ? "muted" : "live", .expireTimeout = OSD_TIMEOUT});
             return;
@@ -252,38 +247,62 @@ namespace NAwesome::System {
             Notify::Model::postCard({.id = ID_VOLUME, .icon = volumeIcon(PCT), .summary = "Volume", .body = (std::to_string(PCT) + "%").c_str(), .expireTimeout = OSD_TIMEOUT, .value = std::min(PCT, 100)});
     }
 
-    static void wpctlAction(eAction a) { // the eAction four — ARGV below indexes them
-        static const std::vector<const char*> ARGV[] = {
-            {"wpctl", "set-volume", "-l", "1.0", "@DEFAULT_AUDIO_SINK@", "5%+", nullptr},
-            {"wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "5%-", nullptr},
-            {"wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle", nullptr},
-            {"wpctl", "set-mute", "@DEFAULT_AUDIO_SOURCE@", "toggle", nullptr},
-        };
+    static void pump(SDevice& d);
 
-        if (!canTrackChain())
+    static void readBack(SDevice& d) {
+        const uint64_t GEN = ++d.generation;
+        const bool     OK  = Jobs::inst().spawnPiped(Jobs::CONTROL, {"wpctl", "get-volume", d.node, nullptr}, [&d, GEN](Jobs::SPipedResult R) {
+            if (GEN != d.generation)
+                return; // a teardown, or a newer set already reads back
+            d.busy        = false;
+            const auto RB = Wpctl::parseReadback(R.out);
+            showReadback(d, RB.has_value() ? &*RB : nullptr);
+            pump(d);
+        });
+        if (!OK) {
+            d.busy = false;
+            pump(d);
+        }
+    }
+
+    static void pump(SDevice& d) {
+        if (d.busy)
             return;
-        const bool     MIC  = a == MIC_MUTE;
-        const uint64_t GEN  = ++(MIC ? micGeneration : volumeGeneration);
-        liveChains.push_back(GEN);
-        if (!Jobs::inst().spawnChecked(Jobs::CONTROL, ARGV[a], [MIC, GEN](int) {
-                // the set is done; the readback is the authoritative state.
-                // Indexed by MIC like the ARGV table: [0] = the volume
-                // chain reads the SINK, [1] = the mic chain reads the
-                // SOURCE. (Inverted here once: the volume card then showed
-                // the mic's fixed 1.00 — the always-100% OSD.)
-                static const std::vector<const char*> GET[] = {
-                    {"wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@", nullptr},
-                    {"wpctl", "get-volume", "@DEFAULT_AUDIO_SOURCE@", nullptr},
-                };
-                const bool OK = Jobs::inst().spawnPiped(Jobs::CONTROL, GET[MIC], [MIC, GEN](Jobs::SPipedResult R) {
-                    dropChain(GEN);
-                    const auto RB = Wpctl::parseReadback(R.out);
-                    postReadback(MIC, GEN, RB.has_value() ? &*RB : nullptr);
-                });
-                if (!OK)
-                    dropChain(GEN);
+        std::string amount; // outlives the spawn: the argv is copied there
+        std::vector<const char*> argv;
+        if (d.toggles % 2 != 0)
+            argv = {"wpctl", "set-mute", d.node, "toggle", nullptr};
+        else if (d.steps != 0) {
+            amount = std::to_string(std::min(std::abs(d.steps) * 5, 100)) + (d.steps > 0 ? "%+" : "%-");
+            if (d.steps > 0)
+                argv = {"wpctl", "set-volume", "-l", "1.0", d.node, amount.c_str(), nullptr};
+            else
+                argv = {"wpctl", "set-volume", d.node, amount.c_str(), nullptr};
+        }
+        d.toggles = 0; // an even count is no change
+        if (argv.empty())
+            return;
+        // the mute toggle and the steps are separate sets: a toggle runs
+        // first, the steps wait for the next pump
+        if (argv[1] == std::string_view{"set-volume"})
+            d.steps = 0;
+        d.busy         = true;
+        const uint64_t GEN = d.generation;
+        if (!Jobs::inst().spawnChecked(Jobs::CONTROL, argv, [&d, GEN](int) {
+                if (GEN == d.generation)
+                    readBack(d);
             }))
-            dropChain(GEN);
+            d.busy = false; // the class budget is full: the presses stay pending for the next one
+    }
+
+    static void wpctlAction(eAction a) {
+        SDevice& d = a == MIC_MUTE ? source : sink;
+        switch (a) {
+            case VOL_UP: d.steps = std::min(d.steps + 1, 20); break;
+            case VOL_DOWN: d.steps = std::max(d.steps - 1, -20); break;
+            default: d.toggles++; break;
+        }
+        pump(d);
     }
 
     // ---- the action queue (the Lua face's door) ----
@@ -316,12 +335,13 @@ namespace NAwesome::System {
         // go with the loop — in-flight callbacks are generation-checked by
         // the teardown bump below.
         queued.reset();
-        liveChains.clear();
+        for (auto* D : {&sink, &source}) {
+            ++D->generation; // a late wpctl callback finds itself outdated
+            D->busy    = false;
+            D->steps   = 0;
+            D->toggles = 0;
+        }
         ++brightnessGeneration;
-        ++volumeGeneration;
-        ++micGeneration;
-        ++volumeFeedback;
-        ++micFeedback;
         brightnessBusy    = false;
         brightnessPending = 0;
         lastSetRaw        = -1;

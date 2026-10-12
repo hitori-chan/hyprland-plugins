@@ -10,10 +10,11 @@ fi
 
 case "${1:-}" in
 set-volume)
-	case "$*" in
-	"set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"|"set-volume @DEFAULT_AUDIO_SINK@ 5%-") ;;
-	*) exit 64 ;;
-	esac
+	# a step is 5%; presses during a set accumulate into the next one
+	# (N*5%, capped at 100%)
+	if [[ ! "$*" =~ ^set-volume\ -l\ 1\.0\ @DEFAULT_AUDIO_SINK@\ (5|[1-9][05]|100)%\+$ && ! "$*" =~ ^set-volume\ @DEFAULT_AUDIO_SINK@\ (5|[1-9][05]|100)%-$ ]]; then
+		exit 64
+	fi
 	sleep 0.05
 	;;
 set-mute)

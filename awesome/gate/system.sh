@@ -1,5 +1,5 @@
 # awesome/gate/system.sh — the system module's behavior battery: the wpctl
-# process path (volume/mic), the readback caps, the repeat backpressure,
+# process path (volume/mic), the readback caps, the repeat serialization,
 # the logind brightness path (a fake logind + backlight), and the touchpad
 # policy probe. Nothing reaches the host: the fake wpctl shadows the
 # nested's PATH (the live PipeWire sink is never touched), and the
@@ -34,7 +34,14 @@ hq awesome clear >/dev/null; sleep 0.4
 
 : > "$STATE/wpctl.log"
 dsp "(function() for _ = 1, 32 do hl.plugin.awesome.volume_up() end return hl.dsp.no_op() end)()"; sleep 0.8
-chk "system: repeat backpressure caps active chains" test "$(grep -c '^set-volume ' "$STATE/wpctl.log")" = 16
+# one set in flight per device: the first press runs, the other 31
+# accumulate (capped at 20 steps) into ONE more set — never 32 racing
+# read-modify-writes inside wpctl
+burst_serialized() {
+	[[ "$(grep -c '^set-volume ' "$STATE/wpctl.log")" == 2 ]] &&
+		[[ "$(grep '^set-volume ' "$STATE/wpctl.log" | tail -1)" == "set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 100%+" ]]
+}
+chk "system: a repeat burst serializes into one accumulated set" burst_serialized
 chk "system: the capped chains still produced one card" test "$(st)" = "center:0 live:1 dnd:0"
 hq awesome clear >/dev/null; sleep 0.4
 
