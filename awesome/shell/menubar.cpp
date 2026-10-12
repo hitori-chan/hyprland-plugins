@@ -405,7 +405,7 @@ namespace NAwesome::Shell {
             histSel = -1;
             sel = first = 0;
             refilter();
-            barChanged();
+            promptChanged();
         }
 
         static void exitCategory() { // the typed query survives, like awesome
@@ -413,7 +413,7 @@ namespace NAwesome::Shell {
             refilter();
             sel   = std::clamp(prevSel, 0, (int)shown.size() - 1);
             first = 0;
-            barChanged();
+            promptChanged();
         }
 
         static void activateDbus(const SApp& app) {
@@ -520,7 +520,7 @@ namespace NAwesome::Shell {
             cursor  = compStart + compLen;
             histSel = -1;
             refilter();
-            barChanged();
+            promptChanged();
         }
 
         static bool pollCompletion() {
@@ -626,7 +626,7 @@ namespace NAwesome::Shell {
                 typed = history.entries[histSel];
             cursor = typed.size();
             refilter();
-            barChanged();
+            promptChanged();
         }
 
         // While open the prompt owns the keyboard: key presses are swallowed
@@ -695,7 +695,7 @@ namespace NAwesome::Shell {
             const auto edited = [&]() { // any edit detaches the history walk
                 histSel = -1;
                 refilter();
-                barChanged();
+                promptChanged();
             };
             const auto delBack = [&](size_t from) {
                 typed.erase(from, cursor - from);
@@ -729,7 +729,7 @@ namespace NAwesome::Shell {
                     cursor += text.size();
                     histSel = -1;
                     refilter();
-                    barChanged();
+                    promptChanged();
                 });
             };
 
@@ -759,19 +759,19 @@ namespace NAwesome::Shell {
 
                 case XKB_KEY_Left: // selection never wraps, like awesome
                     sel = std::max(sel - 1, 0);
-                    barChanged();
+                    promptChanged();
                     return;
                 case XKB_KEY_Right:
                     sel = std::min(sel + 1, (int)shown.size() - 1);
-                    barChanged();
+                    promptChanged();
                     return;
                 case XKB_KEY_Home:
                     sel = first = 0;
-                    barChanged();
+                    promptChanged();
                     return;
                 case XKB_KEY_End:
                     sel = (int)shown.size() - 1;
-                    barChanged();
+                    promptChanged();
                     return;
 
                 case XKB_KEY_Tab: // shell completion, never selection (awesome parity)
@@ -805,29 +805,29 @@ namespace NAwesome::Shell {
                 switch (SYM) {
                     case XKB_KEY_j: // awesome: C-j/C-k double Left/Right
                         sel = std::max(sel - 1, 0);
-                        barChanged();
+                        promptChanged();
                         return;
                     case XKB_KEY_k:
                         sel = std::min(sel + 1, (int)shown.size() - 1);
-                        barChanged();
+                        promptChanged();
                         return;
                     case XKB_KEY_p: histGo(-1); return;
                     case XKB_KEY_n: histGo(1); return;
                     case XKB_KEY_a:
                         cursor = 0;
-                        barChanged();
+                        promptChanged();
                         return;
                     case XKB_KEY_e:
                         cursor = typed.size();
-                        barChanged();
+                        promptChanged();
                         return;
                     case XKB_KEY_b:
                         cursor = prevChar(cursor);
-                        barChanged();
+                        promptChanged();
                         return;
                     case XKB_KEY_f:
                         cursor = nextChar(cursor);
-                        barChanged();
+                        promptChanged();
                         return;
                     case XKB_KEY_d:
                         if (cursor < typed.size()) {
@@ -850,11 +850,11 @@ namespace NAwesome::Shell {
                 switch (SYM) {
                     case XKB_KEY_b:
                         cursor = prevWord(cursor);
-                        barChanged();
+                        promptChanged();
                         return;
                     case XKB_KEY_f:
                         cursor = nextWord(cursor);
-                        barChanged();
+                        promptChanged();
                         return;
                     case XKB_KEY_d:
                         typed.erase(cursor, nextWord(cursor) - cursor);
@@ -1011,7 +1011,7 @@ namespace NAwesome::Shell {
                     if (isOpen && (APPS || COMP)) {
                         refilter();
                         restoreSelection();
-                        barChanged();
+                        promptChanged();
                     }
                     self->updateTimeout((appScanning || compScanning) ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
                 },

@@ -485,6 +485,27 @@ namespace NAwesome::Shell {
         });
     }
 
+    // The launcher's own changes (a keystroke, a selection, a scan landing):
+    // the popup layer on the prompt's monitor and the prompt band only — a
+    // full bar change warmed every layer on every monitor and damaged every
+    // bar, per keystroke.
+    static NAwesome::CHop pendingPromptChange;
+    void promptChanged() {
+        pendingPromptChange.arm([]() {
+            const auto M = Menubar::mon.lock();
+            if (!M || !Menubar::isOpen) {
+                warmBars();
+                damageBars();
+                return;
+            }
+            NAwesome::Canvas::inst().warmAll(M, &popupLayer());
+            if (g_pHyprRenderer) {
+                const auto MB = M->logicalBox();
+                g_pHyprRenderer->damageBox(CBox{MB.x, MB.y + barHeight(), MB.w, barHeight()});
+            }
+        });
+    }
+
     bool isTaskOn(const PHLWINDOW& w, const PHLWORKSPACE& ws) {
         // minimized windows are hidden but still belong to their tag, like
         // awesome — keep their row; other hidden windows (swallowed) stay out.

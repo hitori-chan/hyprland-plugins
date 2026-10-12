@@ -136,6 +136,7 @@ namespace NAwesome::Shell {
     // would break. A monitor scopes the walk to it; a scoped warm marks what
     // it touches but never advances or evicts the cache generation.
     void warmBars(PHLMONITOR only = nullptr);
+    void promptChanged(); // the launcher's prompt band only (see strip.cpp)
     void stripInit(); // register the strip's canvas layer (the module's init)
     void stripExit(); // clear the strip's caches (the module's teardown)
 

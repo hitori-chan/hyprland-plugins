@@ -475,19 +475,33 @@ namespace NAwesome {
         // cycle — a texture built during a frame cannot be painted by that
         // same frame, wherever in it it was built. No-ops inside a render so
         // callers never have to check.
-        void warmAll(PHLMONITOR only = nullptr) {
+        //
+        // `layer` scopes the walk to one layer (a launcher keystroke has no
+        // business re-laying-out the bar or the cards); `force` is the stale
+        // rewarm's: a layer that keeps its own warms (the cards warm on
+        // their own changes, not on the bar's) must build here too.
+        void warmAll(PHLMONITOR only = nullptr, ILayer* layer = nullptr, bool force = false) {
             if (!m_gate.beginWarm())
                 return;
-            const bool SCOPED = only != nullptr;
+            const bool SCOPED = only != nullptr || layer != nullptr;
+            m_forced          = force;
             for (auto* L : m_layers)
-                L->warmBegin(SCOPED);
+                if (!layer || L == layer)
+                    L->warmBegin(SCOPED);
             for (const auto& M : State::monitorState()->monitors())
                 if (!only || M == only)
                     for (auto* L : m_layers)
-                        L->warm(M);
+                        if (!layer || L == layer)
+                            L->warm(M);
             for (auto* L : m_layers)
-                L->warmEnd(SCOPED);
+                if (!layer || L == layer)
+                    L->warmEnd(SCOPED);
+            m_forced = false;
             m_gate.endWarm();
+        }
+        // inside a warmAll(…, force): every layer builds
+        bool forcedWarm() const {
+            return m_forced;
         }
 
         // The pass elements register on RENDER_POST_WINDOWS. The context is
@@ -546,6 +560,7 @@ namespace NAwesome {
         std::vector<ILayer*> m_layers; // paint order
         std::vector<eLayerZ> m_z;      // each layer's level, parallel
         CWarmGate            m_gate;
+        bool                 m_forced = false;
 #ifdef AWESOME_GATE
         uint64_t m_draws = 0, m_drawNs = 0;
 #endif
@@ -580,7 +595,7 @@ namespace NAwesome {
                 // warm it and repaint. Never build here — that is the bug
                 // this all guards.
                 C.m_gate.rewarmIfStale([]() {
-                    Canvas::inst().warmAll();
+                    Canvas::inst().warmAll(nullptr, nullptr, true);
                     for (auto* L : Canvas::inst().m_layers)
                         L->damage();
                 });

@@ -220,9 +220,14 @@ namespace NAwesome::Notify {
         }
 
         // The canvas bracket is already open here (its warmAll owns it).
-        // The cards lay out on their one monitor: warm once, for it — a warm
-        // per monitor re-ran the whole stack's layout N times.
+        // The cards warm on THEIR changes (notifChanged, the age and decode
+        // ticks), never on the bar's: a clock tick or a title change re-ran
+        // the whole stack's layout, every row measured. Only the stale
+        // rewarm (a draw that found a texture missing) reaches them here.
+        // They lay out on their one monitor: warm once, for it.
         void warm(PHLMONITOR mon) override {
+            if (!NAwesome::Canvas::inst().forcedWarm())
+                return;
             const auto ON = anythingToDraw() ? layoutMonitor() : nullptr;
             if (!ON || mon == ON)
                 warmNotifs();
