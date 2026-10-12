@@ -9,17 +9,11 @@
 N_EDGE=10
 N_W=348
 CENTER_W=360
-N_OFFSET=34
-N_MARGIN=6
-ROW_H=59
-ISL_X=$((MON_W - N_EDGE - N_W))
 PANEL_X=$((MON_W - N_EDGE - CENTER_W))
 ROWX=$((PANEL_X + 10 + 80))
 ROWY=64
 CHVX=$((MON_W - 10 - 10 - 12 - 12))
-ROWMID_X=$((MON_W - 200))
 POPX=$((MON_W - N_EDGE - N_W / 2))
-DND_X=$((PANEL_X + 10 + 17))
 
 # ---- input -------------------------------------------------------------------
 click() {
@@ -30,11 +24,6 @@ click() {
 tap() {
 	printf 'tap %s\nsleep 250\n' "$1" | vk
 	sleep 0.6
-}
-swipe() {
-	printf 'move %s %s\nsleep 60\nscroll 1 %s\nsleep 30\nscroll 1 %s\nsleep 30\nscroll 1 %s\nsleep 200\n' "$1" "$2" "$3" "$3" "$3" |
-		vp
-	sleep 0.9
 }
 wheel() {
 	printf 'move %s %s\nsleep 60\nscroll 0 %s\nsleep 200\n' "$ROWX" "$ROWY" "$1" |
@@ -71,23 +60,6 @@ print(0)
 PY
 }
 bell_frame() { capture_nested "$STATE/bell-probe.png"; }
-bell_hover() { # bell_hover <true|false> — the real pointer over/off the bell
-	# Two moves, not one: the compositor dedups a motion whose floored
-	# position equals the last DELIVERED one, and that remembered position is
-	# frozen at the last non-cancelled point (every move over the bar is
-	# cancelled, so it never advances). A first move to a fresh off-bar
-	# position guarantees the final move to the bell is a distinct event.
-	local on=$1 bx
-	bell_frame || return 1
-	bx="$(bell_x "$STATE/bell-probe.png")"
-	[[ "$bx" -gt 0 ]] || return 1
-	if [[ "$on" == true ]]; then
-		printf 'move %s %s\nsleep 120\nmove %s 13\nsleep 600\n' \
-		"$(( (bx + MON_W / 2) / 2 ))" "$(( MON_H / 2 ))" "$bx" | vp
-	else
-		printf 'move %s %s\nsleep 900\n' "$((MON_W / 2))" "$((MON_H / 2))" | vp
-	fi
-}
 
 # ---- bounded waits ----------------------------------------------------------------
 # until_is <seconds> <want> <cmd...>: poll until the command prints `want` —
@@ -116,12 +88,6 @@ bd() { hq awesome badge; }
 nbus() { DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user "$@"; }
 
 # ---- sends -----------------------------------------------------------------------
-nfy() {
-	local app=$1 sum=$2 body=${3-body}
-	DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user call org.freedesktop.Notifications \
-		/org/freedesktop/Notifications org.freedesktop.Notifications \
-		Notify 'susssasa{sv}i' "$app" 0 "" "$sum" "$body" 0 0 30000 >/dev/null 2>&1
-}
 nfyact() {
 	local app=$1 sum=$2; shift 2
 	local nacts=$1 acts=(); shift
@@ -135,14 +101,6 @@ nfyact() {
 		"$nacts" ${acts[@]+"${acts[@]}"} "$nhints" ${hints[@]+"${hints[@]}"} \
 		30000 >/dev/null 2>&1
 }
-psend() {
-	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
-		Notify susssasa\{sv\}i "$1" 0 "" "$2" body 0 2 desktop-entry s "$1" category s "$3" 30000 >/dev/null 2>&1
-}
-pcid() {
-	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
-		Notify susssasa\{sv\}i "$1" 0 "" "$2" body 0 3 desktop-entry s "$1" category s im.received conversation-id s "$3" 30000 >/dev/null 2>&1
-}
 pcidb() {
 	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
 		Notify susssasa\{sv\}i "$1" 0 "" "$2" "$4" 0 3 desktop-entry s "$1" category s im.received conversation-id s "$3" 30000 >/dev/null 2>&1
@@ -153,38 +111,10 @@ tdgrp() {
 	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
 		Notify susssasa\{sv\}i "Telegram" 0 "" "$1" "$body" 0 3 suppress-sound b true category s im.received desktop-entry s telegram-desktop 30000 >/dev/null 2>&1
 }
-pcrit() {
-	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
-		Notify susssasa\{sv\}i "$1" 0 "" "$2" body 0 2 desktop-entry s "$1" urgency y 2 30000 >/dev/null 2>&1
-}
-ptran() {
-	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
-		Notify susssasa\{sv\}i "$1" 0 "" "$2" body 0 3 desktop-entry s "$1" category s im.received transient b true 30000 >/dev/null 2>&1
-}
-conv_notify() {
-	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
-		Notify susssasa\{sv\}i "$1" 0 "" "$2" "$3" 0 2 desktop-entry s "$1" category s im.received 30000 >/dev/null 2>&1
-}
 conv_reply_notify() {
 	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
 		Notify susssasa\{sv\}i "$1" 0 "" "$2" "$3" 2 inline-reply Reply 1 category s im.received 60000 >/dev/null 2>&1
 }
-nfyid() {
-	local app=$1 sum=$2
-	DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user call org.freedesktop.Notifications \
-		/org/freedesktop/Notifications org.freedesktop.Notifications \
-		Notify 'susssasa{sv}i' "$app" 0 "" "$sum" body 0 0 30000 2>/dev/null |
-		awk 'NR==1{print $2}'
-}
-closeid() {
-	DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user call org.freedesktop.Notifications \
-		/org/freedesktop/Notifications org.freedesktop.Notifications \
-		CloseNotification u "$1" >/dev/null 2>&1
-}
-
-# ---- center ---------------------------------------------------------------------------
-center_off() { [[ "$(st)" == center:1* ]] && { hq awesome center >/dev/null; sleep 0.4; }; }
-center_on() { [[ "$(st)" != center:1* ]] && { hq awesome center >/dev/null; sleep 0.5; }; }
 
 # ---- pixels ------------------------------------------------------------------------
 panel_bottom() {
@@ -213,25 +143,6 @@ for y in range(top, H):
         break
 print(bot)
 PY
-}
-settle_frame() {
-	local out=$1 want=$2 pb
-	for _ in $(seq 1 12); do
-		capture_nested "$out" || return 1
-		pb="$(panel_bottom "$out")"
-		[[ $((pb - 26)) -eq "$want" ]] && return 0
-		sleep 0.12
-	done
-	return 1
-}
-expect_panel() {
-	if settle_frame "$2" "$3"; then
-		ok "$1"
-	else
-		local pb; pb="$(panel_bottom "$2")"
-		command cp -f "$2" "/tmp/capfail-$(basename "$2")" 2>/dev/null
-		bad "$1 (want panel h $3, got $((pb - 26)))"
-	fi
 }
 
 # ---- the strip (shell) ----------------------------------------------------------------
