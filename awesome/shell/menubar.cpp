@@ -759,6 +759,14 @@ namespace NAwesome::Shell {
                 return;
             }
 
+            // An exclusive-keyboard layer (a launcher or a power menu a Super
+            // bind opened over the prompt) owns the keyboard natively: the
+            // prompt steps aside instead of eating what is typed into it.
+            if (g_pInputManager && !g_pInputManager->m_exclusiveKeyboardLSes.empty()) {
+                close();
+                return;
+            }
+
             // Releases pass through UNTOUCHED: the keybind layer tracks
             // pressed keys (m_pressedKeys), and eating the release of the
             // very Mod+P that opened the prompt left its 'p' marked held —
