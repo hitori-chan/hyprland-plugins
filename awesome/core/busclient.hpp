@@ -106,9 +106,13 @@ namespace NAwesome {
             if (!m_conn)
                 return;
             try {
-                int  n    = 0;
-                bool MORE = false;
-                while (n++ < 64 && (MORE = m_conn->processPendingEvent())) {} // cap: a flooding client must not stall the frame
+                // capped by count AND time: a flooding client must not stall
+                // the frame, and 64 messages whose handlers each cost a few
+                // ms (an icon lookup, a decode) are a stall all the same
+                int        n        = 0;
+                bool       MORE     = false;
+                const auto DEADLINE = std::chrono::steady_clock::now() + std::chrono::milliseconds(4);
+                while (n++ < 64 && (MORE = m_conn->processPendingEvent()) && std::chrono::steady_clock::now() < DEADLINE) {}
                 const auto PD = m_conn->getEventLoopPollData();
                 if (m_src)
                     wl_event_source_fd_update(m_src, ((PD.events & POLLIN) ? WL_EVENT_READABLE : 0) | ((PD.events & POLLOUT) ? WL_EVENT_WRITABLE : 0));
