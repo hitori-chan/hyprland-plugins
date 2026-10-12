@@ -64,6 +64,7 @@ namespace NAwesome::Notify {
         uint8_t      part;   // the SHover part codes: 0 body, 1 chevron, 2 close, 3 reply field, 4 send
         std::string  action; // non-empty: a specific action button
         std::string  href;   // non-empty: a body hyperlink
+        uint64_t     rev     = 0;     // the card's revision at the press: its layout's actions are that revision's
         bool         outside = false; // the click fell outside every surface (closes the shade)
     };
     static void           drainHits(std::vector<SHit>& batch);
@@ -129,14 +130,21 @@ namespace NAwesome::Notify {
     // shade goes exactly when the card does. A card with no action at all
     // launches nothing: that click is a dismissal, and dismissing never
     // closes the shade, here or on a phone.
-    static void invokeLive(uint32_t id, const std::string& actionOverride) {
+    static void invokeLive(uint32_t id, const std::string& actionOverride, std::optional<uint64_t> rev = std::nullopt) {
         std::string action   = actionOverride;
         std::string sender; // the X11 activation lookup, captured before close-on-act
         bool        resident = false, live = false;
         for (const auto& N : notifs)
             if (N->id == id) {
+                // replaced between the press and this deferred click: the
+                // pressed button belonged to what the card WAS (a reused id
+                // may be another chat now) — fire nothing
+                if (rev && N->rev != *rev)
+                    return;
                 if (action.empty())
                     action = N->defaultAction;
+                else if (std::ranges::none_of(N->actions, [&](const SAction& A) { return A.id == action; }))
+                    return;
                 resident = N->resident;
                 sender   = N->sender;
                 live     = true;
@@ -184,7 +192,7 @@ namespace NAwesome::Notify {
                         NAwesome::Jobs::inst().spawn(NAwesome::Jobs::OPEN, {"xdg-open", H.href.c_str(), nullptr});
                         continue;
                     }
-                    invokeLive(H.id, H.action);
+                    invokeLive(H.id, H.action, H.rev);
                     continue;
                 }
                 case SCard::ROW:
@@ -217,7 +225,7 @@ namespace NAwesome::Notify {
                         continue;
                     }
                     if (!H.action.empty()) {
-                        invokeLive(H.id, H.action);
+                        invokeLive(H.id, H.action, H.rev);
                         continue;
                     }
                     if (!H.href.empty()) { // a link in the body: open it, keep the card
@@ -225,7 +233,7 @@ namespace NAwesome::Notify {
                         setCenter(false); // but not the shade: a browser is coming up over it
                         continue;
                     }
-                    invokeLive(H.id, ""); // the body IS the card's primary, as on the banner
+                    invokeLive(H.id, "", H.rev); // the body IS the card's primary, as on the banner
                     continue;
                 }
                 case SCard::DIGEST: {
@@ -351,6 +359,8 @@ namespace NAwesome::Notify {
             else if (const int L = linkAt(*CARD, COORDS); L >= 0)
                 h.href = CARD->links[L].href;
         }
+        if (const auto N = Model::byId(h.id))
+            h.rev = N->rev;
 
         queueHit(std::move(h));
     }
