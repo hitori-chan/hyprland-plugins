@@ -180,7 +180,14 @@ namespace NAwesome::Shell {
                         try {
                             auto pixmaps = v.get<std::vector<sdbus::Struct<int32_t, int32_t, std::vector<uint8_t>>>>();
 
-                            // smallest one still >= 22 px, else the biggest available
+                            // smallest one still >= the cell's PHYSICAL size (22 px
+                            // at the densest monitor's scale: a 22 px pixmap
+                            // stretched to 44 on a scale-2 panel is a blur when
+                            // the app offers 48), else the biggest available
+                            double scale = 1.0;
+                            for (const auto& M : State::monitorState()->monitors())
+                                scale = std::max(scale, (double)M->m_scale);
+                            const int                   WANT = (int)std::ceil(22 * scale);
                             const std::vector<uint8_t>* best = nullptr;
                             int                         bw = 0, bh = 0;
                             for (const auto& P : pixmaps) {
@@ -189,7 +196,7 @@ namespace NAwesome::Shell {
                                 const uint64_t AREA = (W > 0 && H > 0) ? (uint64_t)W * (uint64_t)H : 0;
                                 if (W <= 0 || H <= 0 || W > MAX_PIXMAP_DIM || H > MAX_PIXMAP_DIM || AREA > MAX_PIXMAP_PIXELS || DATA.size() != AREA * 4)
                                     continue;
-                                if (!best || (bw < 22 && W > bw) || (W >= 22 && bw >= 22 && W < bw) || (W >= 22 && bw < 22)) {
+                                if (!best || (bw < WANT && W > bw) || (W >= WANT && bw >= WANT && W < bw) || (W >= WANT && bw < WANT)) {
                                     best = &std::get<2>(P);
                                     bw   = W;
                                     bh   = H;
