@@ -538,6 +538,8 @@ namespace NAwesome::Notify {
             return;
         }
         if (SYM == XKB_KEY_Up || SYM == XKB_KEY_Down) {
+            if (notifs.empty())
+                return; // nothing to select: the keys stay the focused window's
             info.cancelled = true;
             centerSelectMove(SYM == XKB_KEY_Down ? 1 : -1); // local state + a deferred warm: safe here
             return;
