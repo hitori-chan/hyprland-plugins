@@ -8,6 +8,7 @@
 #include "shell.hpp"
 
 #include "shell/shell.hpp"
+#include "windows/state.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 
@@ -68,6 +69,11 @@ namespace NAwesome::Shell {
         Tray::init();
         Bell::init(); // the badge hook: the model's funnel repaints the strip
         Menubar::init();
+        // the windows module's minimize and restore paths call this: a
+        // background minimize (a taskbar's, an X11 iconify while unfocused)
+        // emits nothing the listeners below hear, and the muted chip is
+        // part of the frame
+        Windows::Tasklist::taskChangedHook() = []() { barChanged(); };
 
         auto& EV = Event::bus()->m_events;
         // Anything that changes what the bar shows -> warm + damage the
@@ -144,6 +150,7 @@ namespace NAwesome::Shell {
         if (minuteFd >= 0)
             close(minuteFd);
         minuteFd = -1;
+        Windows::Tasklist::taskChangedHook() = nullptr;
         Menubar::exit();
         Menu::exit();
         Tray::exit();
