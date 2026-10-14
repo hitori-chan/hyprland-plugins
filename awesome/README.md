@@ -182,8 +182,9 @@ the plugin's one state file (see State).
     urgency only: no focus, no workspace switch — awesome's
     `isvisible` branch, performed in the fork's `CWindow::activate`
     (`m_workspace->visible()` is the fork's own idiom for "on a
-    monitor"). An ask on a MINIMIZED window tints the chip; the
-    restore is a user action (chip click, `Mod+Ctrl+N`).
+    monitor"). An ask on a MINIMIZED window tints the chip; with
+    `focus_on_activate` off the restore is a user action (chip click,
+    `Mod+Ctrl+N`).
   - Focus clears the urgency mark (EWMH / FS#1310; the fork's
     FocusState does it), as in awesome's client focus handler.
   - A FORCED activation — a taskbar's or a window switcher's pick
@@ -191,10 +192,13 @@ the plugin's one state file (see State).
     wherever the window is, in both gate modes. A taskbar's
     minimize/unminimize (wlr-foreign-toplevel) runs through the same
     minimize state machine as a client's own minimize button.
-  - `focus_on_activate = true` switches to vanilla awesome / KWin-token
-    behavior: an ask on a VISIBLE window focuses it (the not-visible
-    and minimized branches above are unchanged). The user's live config
-    leaves the value at the fork default (attention-only).
+  - `focus_on_activate = true` (or the window's own rule) switches to
+    vanilla awesome / KWin-token behavior: an ask on a VISIBLE window
+    focuses it, and a Wayland ask on a MINIMIZED one restores and
+    focuses it (awesome's `permissions.activate` un-minimizes; X11 asks
+    stay urgency-only, below). An ask on another workspace is still
+    urgency only. The user's live config leaves the value at the fork
+    default (attention-only).
   - X11 `_NET_ACTIVE_WINDOW` is urgency ONLY in both gate modes (the
     fork's XWM, documented there): X11 cannot authenticate a gesture,
     and Wine/Proton send it on every internal SetForegroundWindow. A
