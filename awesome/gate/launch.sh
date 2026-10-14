@@ -87,10 +87,12 @@ echo "launch: $BIN -c $CFG (host $HOST_WL, private session + system bus)"
 # AW_GATE_NESTED marks the instance (live.sh: is_nested_pid matches it
 # positively, never by exclusion); the wrapper records the nested's exit
 # status as $HARNESS/nested.exit.<pid> (harness.sh: nested_exit_check).
+# HYPRLAND_NO_RT: a user allowed realtime (the `realtime` group) would put
+# every nested on SCHED_RR at the live compositor's priority.
 (
 	ulimit -c unlimited 2>/dev/null
 	exec setsid env -u DISPLAY -u WAYLAND_SOCKET -u HYPRLAND_INSTANCE_SIGNATURE -u XDG_SESSION_ID -u SWAYSOCK \
-		LIBSEAT_BACKEND=seatd LD_LIBRARY_PATH="$AQ_LIB" DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" \
+		HYPRLAND_NO_RT=1 LIBSEAT_BACKEND=seatd LD_LIBRARY_PATH="$AQ_LIB" DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" \
 		AW_BACKLIGHT_DIR="$SYSBUS_BACKLIGHT" WAYLAND_DISPLAY="$NESTED_WL" AW_GATE_NESTED=1 \
 		dbus-run-session -- env WAYLAND_DISPLAY="$HOST_WL" \
 		sh -c '"$0" -c "$1" & p=$!; wait "$p"; echo "$?" >"$2/nested.exit.$p"' "$BIN" "$CFG" "$HARNESS_DIR"
