@@ -495,7 +495,13 @@ semantics).
 - Residency (`persistence`): an expired banner RETREATS into the shade
   rather than closing, and waits there until dismissed or acted on —
   the shade is the safety net. There is no history and no recall: a
-  dismissed card is gone. `hyprctl awesome count` answers the live
+  dismissed card is gone.
+- A `transient` card (the spec's "bypass persistence": a screenshot
+  tool's preview, a client's own OSD) is feedback, never a
+  notification: it shows as a popup while it lasts, then vanishes —
+  no shade row, no residency, no badge. Opening the shade (or a
+  popup's middle-click park) ends a live one. A critical transient
+  card is an ordinary alert. `hyprctl awesome count` answers the live
   total (the lockscreen bell reads it).
 - Session lock: cards never render above the lockscreen. Input
   listeners guard-and-reset first; whatever survives the lock repaints
@@ -539,7 +545,12 @@ pragmatic scan (GTK theme → hicolor → pixmaps), not a full
 - Every action's feedback is a card posted straight into the notify
   model: fixed ids (pad 9991, brightness 9992, volume 9993, mic 9995)
   replace in place, low urgency, 1200 ms expiry, a `value` bar, and the
-  matching identity icon.
+  matching identity icon. Such an OSD card is feedback, never a
+  notification: no shade row, no history, no badge; opening the shade
+  drops a live one, and a press while the shade is open shows none (the
+  shade replaces the popup column it would show on). A critical battery
+  alert, posted in the same band, is an alert: it waits under the shade
+  like any banner.
 
 ## Lua API
 

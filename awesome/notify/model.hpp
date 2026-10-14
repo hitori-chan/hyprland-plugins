@@ -258,6 +258,9 @@ namespace NAwesome::Notify {
         // app's next instance may continue them) and their reply field
         void       senderGone(const std::string& name);
         bool       vanishes(const SP<SNotif>& n); // opts out of residency: expiry takes the whole card
+        // never a shade row, never on the badge: the OSD band, and a
+        // non-critical transient card (the spec's "bypass persistence")
+        bool       offShade(const SP<SNotif>& n);
 
         // a Notify payload becomes (or refreshes) a card; returns its id
         // `osd`: an in-process post (postCard) — only those may pin a fresh

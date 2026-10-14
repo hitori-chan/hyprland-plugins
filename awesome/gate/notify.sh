@@ -2,7 +2,7 @@
 # expiry and residency, coalescing, the conversation merge, topline, overflow
 # paging, the hero preview, the shade's click model, close-on-act,
 # hover-hold, the bell click, keyboard nav, banners-over-fullscreen, repop,
-# DND, the reply protocol, and the sound-spawn backpressure.
+# DND, the reply protocol, the sound-spawn backpressure, and transient cards.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # ---- notification cap ---------------------------------------------------
@@ -354,6 +354,19 @@ xargs -r kill 2>/dev/null <"$STATE/hang-sound.pid"
 rm -f "$STATE/hang-sound" "${STATE}/hang-sound.pid"
 nclear
 chk "sound: the flood cleared" test "$(st)" = "center:0 live:0 dnd:0"
+
+# ---- a transient card is feedback, never a shade row ------------------------
+# A screenshot tool's preview: on screen while it lasts, never history. The
+# shade opening over it ends it rather than parking it as a row.
+nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
+	Notify susssasa\{sv\}i "shot" 0 "" "Screenshot" "copied" 0 1 transient b true 30000 >/dev/null 2>&1
+sleep 0.6
+chk "transient: the card is live" test "$(st)" = "center:0 live:1 dnd:0"
+chk "transient: no banner or resident on the badge" test "$(bd)" = "banners:0 resident:0"
+hq awesome center >/dev/null; sleep 0.4
+chk "transient: opening the shade ends the card" test "$(st)" = "center:1 live:0 dnd:0"
+hq awesome center >/dev/null; sleep 0.4
+chk "transient: closing the shade brings nothing back" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- the module leaves the plugin exactly as the preflight found it --------
 chk "notifications: final clean state" test "$(st)" = "center:0 live:0 dnd:0"

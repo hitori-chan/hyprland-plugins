@@ -239,7 +239,7 @@ namespace NAwesome::Notify {
         src.clear();
         owners.clear();
         for (const auto& N : notifs)
-            if (!N->waiting && !inOsdBand(N->id))
+            if (!N->waiting && !Model::offShade(N))
                 src.push_back(N);
         // notifs is newest-first; a STABLE sort by tier keeps that inside each
         std::ranges::stable_sort(src, [](const auto& a, const auto& b) { return tier(a) < tier(b); });
@@ -532,7 +532,7 @@ namespace NAwesome::Notify {
         { // "Clear all" — the global sweep; greys when the shade is empty
             const double CW = X + CENTER_W - BAR_PADX - bx;
             const CBox   B{bx, BARY, CW, BAR_BTN};
-            const bool   TARGET = std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && !inOsdBand(N->id); });
+            const bool   TARGET = std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && !Model::offShade(N); });
             const auto   L      = cachedText("Clear all", TARGET ? COLFG : COLSUB.modifyA(0.35f), T.bar, (int)(CW * P.scale), -1, 0, false, 600);
             if (!P.warm) {
                 const bool HOV = hovered.kind == SCard::BTN_CLEAR;

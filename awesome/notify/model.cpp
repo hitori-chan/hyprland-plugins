@@ -141,12 +141,12 @@ namespace NAwesome::Notify {
         }
 
         // the badge's truth is the shade: bannered popups + resident cards.
-        // Never the DND queue (invisible until the resume), never the OSD
-        // band (a volume card is an OSD, not a notification).
+        // Never the DND queue (invisible until the resume), never what is
+        // off the shade (a volume card is an OSD, not a notification).
         std::pair<uint32_t, uint32_t> badgeCounts() {
             uint32_t live = 0, kept = 0;
             for (const auto& N : notifs) {
-                if (N->waiting || inOsdBand(N->id))
+                if (N->waiting || offShade(N))
                     continue;
                 (N->banner ? live : kept)++;
             }
@@ -162,7 +162,7 @@ namespace NAwesome::Notify {
         // the stress gate's single-card batteries make it the top row too
         std::string toplineString() {
             for (const auto& N : notifs)
-                if (!N->waiting && !inOsdBand(N->id))
+                if (!N->waiting && !offShade(N))
                     return collapsedLine(N);
             return {};
         }
@@ -205,7 +205,25 @@ namespace NAwesome::Notify {
             return false;
         }
 
+        // Feedback, never a notification: the OSD band (volume, brightness,
+        // mic, touchpad, the battery blips) and a client's transient card
+        // (the spec's "bypass persistence": a screenshot's preview, a
+        // client's own OSD). Neither is a shade row or history, nor on the
+        // badge. Opening the shade, which replaces the popup column they
+        // show on, ends the live ones (absorbPopped), and an OSD posted
+        // while it is open makes no card. Critical stays an alert: a band
+        // alert waits under the shade like any banner (never a row), a
+        // critical transient card is an ordinary one.
+        bool offShade(const SP<SNotif>& n) {
+            return inOsdBand(n->id) || (n->transient && n->urgency < 2);
+        }
+        static bool momentary(const SP<SNotif>& n) {
+            return offShade(n) && n->urgency < 2;
+        }
+
         void postCard(const SPostCard& c) {
+            if (inOsdBand(c.id) && c.urgency < 2 && centerVisible())
+                return; // nothing to show it on, and the shade never holds one
             std::map<std::string, sdbus::Variant> hints;
             if (c.value >= 0)
                 hints.emplace("value", sdbus::Variant{std::clamp(c.value, 0, 100)});
@@ -290,11 +308,23 @@ namespace NAwesome::Notify {
         // stands down into a parked shade row, so closing the center never
         // re-pops it. The unread count is unchanged (popped + parked both
         // count) — only the on-screen banners go. Ephemerals (transient,
-        // progress/OSD) keep their banners so the expiry timer still vanishes
-        // them on their own clocks; nothing here emits a close (the cards are
-        // parked, not dismissed).
+        // progress) keep their banners so the expiry timer still vanishes
+        // them on their own clocks; nothing here emits a close for them (the
+        // cards are parked, not dismissed). An OSD or a transient card goes
+        // for good (momentary).
         void absorbPopped() {
-            bool changed = false;
+            bool                  changed = false;
+            std::vector<uint32_t> gone;
+            for (const auto& N : notifs)
+                if (momentary(N))
+                    gone.push_back(N->id);
+            for (const auto ID : gone) {
+                std::erase_if(notifs, [&](const auto& N) { return N->id == ID; });
+                Bus::emitClosed(ID, R_EXPIRED);
+                changed = true;
+            }
+            if (!gone.empty())
+                rearmExpiry();
             for (const auto& N : notifs) {
                 if (!N->banner || N->waiting)
                     continue;
