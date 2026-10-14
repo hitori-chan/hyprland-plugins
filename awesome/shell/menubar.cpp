@@ -4,6 +4,7 @@
 #include "../core/bounded.hpp"
 #include "../core/clipboard.hpp"
 #include "../core/fileindex.hpp"
+#include "../core/keys.hpp"
 #include "../core/persist.hpp"
 #include "../core/state.hpp"
 
@@ -35,7 +36,7 @@ namespace NAwesome::Shell {
         static bool       parsed = false;
         static NAwesome::CAsyncFileIndex appIndex, completionIndex;
         static SP<CEventLoopTimer>           indexPoll;
-        static void                          stopRepeat(); // the held-key repeat (see onKey)
+        static NAwesome::Keys::CRepeat       repeat; // the held-key repeat (see onKey)
         static uint64_t                      appGeneration = 0, completionGeneration = 0;
         static uint64_t                      activationGeneration = 0;
         static NAwesome::CClipboardRead     clipboard;
@@ -396,7 +397,7 @@ namespace NAwesome::Shell {
         }
 
         void close() {
-            stopRepeat();
+            repeat.stop();
             if (!isOpen)
                 return;
             // damage NOW, while still open: the coalesced barChanged runs
@@ -707,48 +708,22 @@ namespace NAwesome::Shell {
 
         // ---- key repeat ----
         //
-        // The compositor repeats only its own binds; clients repeat on their
-        // side, and the prompt is no client. A held key repeats here, at the
-        // keyboard's own delay and rate, from the event loop (never inside an
-        // emission), until its release, another press, the close, a lock or
-        // an input capture. Releases are never touched (invariant 3).
-        static SP<CEventLoopTimer> repeatTimer;
-        static uint32_t            repeatKey = 0; // evdev code; 0 = none
-        static int                 repeatGap = 0; // ms between repeats
-
-        static void stopRepeat() {
-            if (!repeatKey)
-                return; // nothing armed: every key press anywhere lands here
-            repeatKey = 0;
-            if (repeatTimer)
-                repeatTimer->updateTimeout(std::nullopt);
-        }
-
+        // core/keys.hpp's repeat replays a held key's press through
+        // handleKey; the keys that act once never start one.
         static void handleKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info);
 
-        static void startRepeat(uint32_t keycode, xkb_keysym_t sym, bool ctrl) {
-            const auto KB = g_pSeatManager ? g_pSeatManager->m_keyboard.lock() : nullptr;
-            if (!KB || !KB->m_xkbState || KB->m_repeatRate <= 0 || !repeatTimer)
-                return;
-            // keys that act once: run, close, complete, paste
-            if (sym == XKB_KEY_Return || sym == XKB_KEY_KP_Enter || sym == XKB_KEY_Escape || sym == XKB_KEY_Tab || sym == XKB_KEY_ISO_Left_Tab || (ctrl && sym == XKB_KEY_v))
-                return;
-            if (!xkb_keymap_key_repeats(xkb_state_get_keymap(KB->m_xkbState), keycode + 8))
-                return;
-            repeatKey = keycode;
-            repeatGap = std::max(1, 1000 / KB->m_repeatRate);
-            repeatTimer->updateTimeout(std::chrono::milliseconds(std::max(KB->m_repeatDelay, 1)));
-        }
-
-        static void onRepeat() {
-            if (!repeatKey || !isOpen || NAwesome::sessionLocked() || NAwesome::nativeInputCaptureActive()) {
-                stopRepeat();
+        static void onRepeat(uint32_t keycode) {
+            if (!isOpen) {
+                repeat.stop();
                 return;
             }
             Event::SCallbackInfo info;
-            handleKey(IKeyboard::SKeyEvent{.keycode = repeatKey, .state = WL_KEYBOARD_KEY_STATE_PRESSED}, info);
-            if (repeatKey && repeatTimer)
-                repeatTimer->updateTimeout(std::chrono::milliseconds(repeatGap));
+            handleKey(IKeyboard::SKeyEvent{.keycode = keycode, .state = WL_KEYBOARD_KEY_STATE_PRESSED}, info);
+        }
+
+        // keys that act once: run, close, complete, paste
+        static bool actsOnce(xkb_keysym_t sym, bool ctrl) {
+            return sym == XKB_KEY_Return || sym == XKB_KEY_KP_Enter || sym == XKB_KEY_Escape || sym == XKB_KEY_Tab || sym == XKB_KEY_ISO_Left_Tab || (ctrl && sym == XKB_KEY_v);
         }
 
         // While open the prompt owns the keyboard: key presses are swallowed
@@ -759,17 +734,14 @@ namespace NAwesome::Shell {
         // modifier-safe — mods reach clients via the separate onKeyboardMod
         // path, never through these key events.
         void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
-            if (e.state != WL_KEYBOARD_KEY_STATE_PRESSED) {
-                if (e.keycode == repeatKey)
-                    stopRepeat();
-            } else
-                stopRepeat(); // another press ends the repeat, like a keyboard's
+            repeat.onKey(e);
             handleKey(e, info);
             if (e.state == WL_KEYBOARD_KEY_STATE_PRESSED && info.cancelled && isOpen) {
-                const auto KB = g_pSeatManager ? g_pSeatManager->m_keyboard.lock() : nullptr;
-                if (KB && KB->m_xkbState)
-                    startRepeat(e.keycode, xkb_state_key_get_one_sym(KB->m_xkbState, e.keycode + 8),
-                                xkb_state_mod_name_is_active(KB->m_xkbState, XKB_MOD_NAME_CTRL, XKB_STATE_MODS_EFFECTIVE) == 1);
+                const auto KB = NAwesome::Keys::keyboardFor(e.keycode);
+                if (KB && KB->m_xkbState &&
+                    !actsOnce(xkb_state_key_get_one_sym(KB->m_xkbState, e.keycode + 8),
+                              xkb_state_mod_name_is_active(KB->m_xkbState, XKB_MOD_NAME_CTRL, XKB_STATE_MODS_EFFECTIVE) == 1))
+                    repeat.start(KB, e.keycode);
             }
         }
 
@@ -802,7 +774,7 @@ namespace NAwesome::Shell {
             // An exclusive-keyboard layer (a launcher or a power menu a Super
             // bind opened over the prompt) owns the keyboard natively: the
             // prompt steps aside instead of eating what is typed into it.
-            if (g_pInputManager && !g_pInputManager->m_exclusiveKeyboardLSes.empty()) {
+            if (NAwesome::Keys::exclusiveLayer()) {
                 close();
                 return;
             }
@@ -816,7 +788,7 @@ namespace NAwesome::Shell {
             if (e.state != WL_KEYBOARD_KEY_STATE_PRESSED)
                 return;
 
-            const auto KB = g_pSeatManager ? g_pSeatManager->m_keyboard.lock() : nullptr;
+            const auto KB = NAwesome::Keys::keyboardFor(e.keycode);
             if (!KB || !KB->m_xkbState)
                 return;
 
@@ -1184,8 +1156,7 @@ namespace NAwesome::Shell {
                 },
                 nullptr);
             g_pEventLoopManager->addTimer(indexPoll);
-            repeatTimer = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { onRepeat(); }, nullptr);
-            g_pEventLoopManager->addTimer(repeatTimer);
+            repeat.init(onRepeat);
         }
 
         // hl.plugin.awesome.menubar(), deferred out of the Lua call
@@ -1205,10 +1176,7 @@ namespace NAwesome::Shell {
             if (indexPoll && g_pEventLoopManager)
                 g_pEventLoopManager->removeTimer(indexPoll);
             indexPoll.reset();
-            repeatKey = 0;
-            if (repeatTimer && g_pEventLoopManager)
-                g_pEventLoopManager->removeTimer(repeatTimer);
-            repeatTimer.reset();
+            repeat.teardown();
             appIndex.exit();
             completionIndex.exit();
             apps.clear();
