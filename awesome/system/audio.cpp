@@ -303,9 +303,14 @@ namespace NAwesome::System {
     static void pump(SDevice& d) {
         if (d.busy)
             return;
+        if (d.toggles % 2 == 0)
+            d.toggles = 0; // an even count is no change
+        // the mute toggle and the steps are separate sets: a toggle runs
+        // first, the steps wait for the next pump
+        const bool TOGGLE = d.toggles != 0;
         std::string amount; // outlives the spawn: the argv is copied there
         std::vector<const char*> argv;
-        if (d.toggles % 2 != 0)
+        if (TOGGLE)
             argv = {"wpctl", "set-mute", d.node, "toggle", nullptr};
         else if (d.steps != 0) {
             amount = std::to_string(std::min(std::abs(d.steps) * 5, 100)) + (d.steps > 0 ? "%+" : "%-");
@@ -314,20 +319,18 @@ namespace NAwesome::System {
             else
                 argv = {"wpctl", "set-volume", d.node, amount.c_str(), nullptr};
         }
-        d.toggles = 0; // an even count is no change
         if (argv.empty())
             return;
-        // the mute toggle and the steps are separate sets: a toggle runs
-        // first, the steps wait for the next pump
-        if (argv[1] == std::string_view{"set-volume"})
-            d.steps = 0;
         d.busy         = true;
         const uint64_t GEN = d.generation;
         if (!Jobs::inst().spawnChecked(Jobs::CONTROL, argv, [&d, GEN](int) {
                 if (GEN == d.generation)
                     readBack(d);
-            }))
+            })) {
             d.busy = false; // the class budget is full: the presses stay pending for the next one
+            return;
+        }
+        (TOGGLE ? d.toggles : d.steps) = 0; // in flight now; a refused spawn kept them
     }
 
     static void wpctlAction(eAction a) {

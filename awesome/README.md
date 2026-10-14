@@ -498,7 +498,8 @@ pragmatic scan (GTK theme → hicolor → pixmaps), not a full
   the new one inside its own process, so two sets at once lose a step
   (or fold two mute toggles into one). Each device runs ONE set at a
   time, then a readback for the card; presses while it runs accumulate
-  (steps sum into the next set, toggles fold to their parity). PipeWire
+  (steps sum into the next set, toggles fold to their parity; a set
+  the runner refuses keeps them pending). PipeWire
   process I/O stays off render and input callbacks (the core Jobs pool:
   pidfd-watched, capped, generation-checked); readback rejects
   malformed or non-finite output.
