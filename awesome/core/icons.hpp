@@ -296,21 +296,36 @@ namespace NAwesome {
     }
 
     // An uncached resolve walks the theme tree: ~650 stats for a name the
-    // GTK theme has, ~2000 for one nobody has — on the compositor thread,
-    // and any session-bus sender names them (a Notify's app_icon and four
-    // more hints, an SNI IconName). Past this many walks a second the rest
-    // resolve to nothing, uncached, so they are tried again later: a burst
-    // of distinct names costs a bounded stall, never one per name.
-    inline constexpr int MAX_ICON_WALKS_PER_SEC = 32;
-    inline bool          iconWalkBudget() {
+    // GTK theme has, ~2000 for one nobody has (~3 ms) — on the compositor
+    // thread, and any session-bus sender names them (a Notify's app_icon
+    // and four more hints, an SNI IconName). Past this many walks a window
+    // the rest resolve to nothing, uncached, so they are tried again later:
+    // a burst of distinct names costs a bounded stall, never one per name.
+    // A short window (32 a second on average) keeps one burst to ~25 ms,
+    // where 32 back to back were ~100 ms in one loop turn.
+    inline constexpr int  MAX_ICON_WALKS_PER_WINDOW = 8;
+    inline constexpr auto ICON_WALK_WINDOW          = std::chrono::milliseconds(250);
+    // Set by a resolve the budget refused: the name is unresolved FOR NOW,
+    // not missing. A caller that memoizes misses clears it before a lookup
+    // and must not memoize a deferral (it would stay blank until a reload).
+    inline bool& iconDeferred() {
+        static bool B = false;
+        return B;
+    }
+    inline bool iconWalkBudget() {
         static auto WINDOW = std::chrono::steady_clock::now();
         static int  walks  = 0;
         const auto  NOW    = std::chrono::steady_clock::now();
-        if (NOW - WINDOW >= std::chrono::seconds(1)) {
+        if (NOW - WINDOW >= ICON_WALK_WINDOW) {
             WINDOW = NOW;
             walks  = 0;
         }
-        return walks++ < MAX_ICON_WALKS_PER_SEC;
+        if (walks < MAX_ICON_WALKS_PER_WINDOW) {
+            walks++;
+            return true;
+        }
+        iconDeferred() = true;
+        return false;
     }
 
     struct SThemeName {

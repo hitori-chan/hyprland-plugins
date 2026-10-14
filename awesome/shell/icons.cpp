@@ -200,6 +200,22 @@ namespace NAwesome::Shell {
             m.clear();
     }
 
+    // A deferred lookup (core: iconDeferred) is not a miss: it stays out of
+    // the caches, and one warm a beat later picks it up — when the budgets
+    // have room again.
+    static SP<CEventLoopTimer> retry;
+    template <class MAP>
+    static SP<ITexture> remember(MAP& m, const std::string& key, SP<ITexture> tex) {
+        if (!tex && NAwesome::iconDeferred()) {
+            if (retry && !retry->armed())
+                retry->updateTimeout(std::chrono::milliseconds(300));
+            return nullptr;
+        }
+        boundIconCache(m);
+        m[key] = tex;
+        return tex;
+    }
+
     // symbolic SVGs bake col_fg into their pixels (loadIcon), so a foreground
     // change invalidates every icon cache — checked at the caches' entrances
     static void dropStaleTint();
@@ -215,14 +231,11 @@ namespace NAwesome::Shell {
         if (!warmGate().mayBuild()) // the texture rule: only the warm builds
             return nullptr;
 
+        NAwesome::iconDeferred() = false;
         auto path = resolveIconPath(klass);
         if (path.empty())
             path = resolveIconPath(desktopIconName(klass));
-
-        SP<ITexture> tex    = path.empty() ? nullptr : loadIcon(path);
-        boundIconCache(appIconCache);
-        appIconCache[klass] = tex;
-        return tex;
+        return remember(appIconCache, klass, path.empty() ? nullptr : loadIcon(path));
     }
 
     // icon name or absolute path (a .desktop Icon= value) -> texture; nullptr cached too
@@ -236,11 +249,9 @@ namespace NAwesome::Shell {
         if (!warmGate().mayBuild()) // the texture rule: only the warm builds
             return nullptr;
 
-        const auto   path    = resolveIconPath(name);
-        SP<ITexture> tex     = path.empty() ? nullptr : loadIcon(path);
-        boundIconCache(namedIconCache);
-        namedIconCache[name] = tex;
-        return tex;
+        NAwesome::iconDeferred() = false;
+        const auto path = resolveIconPath(name);
+        return remember(namedIconCache, name, path.empty() ? nullptr : loadIcon(path));
     }
 
     // tray icon name (+ the item's own theme dir) -> texture; nullptr cached
@@ -267,6 +278,7 @@ namespace NAwesome::Shell {
         if (!warmGate().mayBuild()) // the texture rule: only the warm builds
             return nullptr;
 
+        NAwesome::iconDeferred() = false;
         auto path = resolveIconPath(name, themePath);
         if (path.empty())
             path = resolveIconPath(desktopIconName(name), themePath);
@@ -274,10 +286,7 @@ namespace NAwesome::Shell {
             path = resolveIconPath(id, themePath);
         if (path.empty())
             path = resolveIconPath(desktopIconName(id), themePath);
-        SP<ITexture> tex   = path.empty() ? nullptr : loadIcon(path);
-        boundIconCache(trayIconCache);
-        trayIconCache[KEY] = tex;
-        return tex;
+        return remember(trayIconCache, KEY, path.empty() ? nullptr : loadIcon(path));
     }
 
     // A reload may follow a GTK theme switch, and everything above was
@@ -292,6 +301,8 @@ namespace NAwesome::Shell {
     }
 
     void iconsInit() {
+        retry = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { barChanged(); }, nullptr);
+        g_pEventLoopManager->addTimer(retry);
         // the shared .desktop index (core) grew: new entries can only fill
         // MISSES (cached nulls) — a resolved icon stays resolved; clearing
         // everything per batch re-decoded every task and tray icon dozens of
@@ -307,6 +318,9 @@ namespace NAwesome::Shell {
     }
 
     void iconsExit() {
+        if (retry && g_pEventLoopManager)
+            g_pEventLoopManager->removeTimer(retry);
+        retry.reset();
         appIconCache.clear();
         namedIconCache.clear();
         trayIconCache.clear();

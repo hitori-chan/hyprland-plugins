@@ -70,6 +70,9 @@ visible transitions.
   characters replaced before it is rastered (a newline per paragraph
   once made a texture tens of thousands of px tall), and a raster the
   cache refuses is remembered as empty rather than rebuilt each frame.
+- Task, tray and launcher icons resolve on the compositor thread: a
+  lookup the theme-walk budget refuses is not a miss — it stays
+  uncached and a warm 300 ms later tries again.
 
 ### The launcher (menubar)
 
@@ -337,7 +340,7 @@ percent-decoded, `localhost` allowed, any query or fragment dropped)
 OR a freedesktop icon name, resolved against the GTK icon theme, then
 hicolor, then `/usr/share/pixmaps` — the one resolver the bar uses too
 (core/icons.hpp): plausible names only, a two-generation memo, and at
-most 32 uncached theme walks a second (a burst of distinct names from a
+most 8 uncached theme walks per 250 ms (a burst of distinct names from a
 sender resolves to nothing past that, uncached, instead of stalling the
 compositor). A `desktop-entry` hint additionally
 resolves the .desktop file's own `Icon=` (all `$XDG_DATA_DIRS/

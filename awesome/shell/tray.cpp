@@ -1,6 +1,7 @@
 // awesome/shell/tray.cpp — the in-compositor StatusNotifierWatcher/Host and its items
 
 #include "../core/activate.hpp"
+#include "../core/icons.hpp" // iconDeferred: a budget-deferred icon is retried
 
 
 
@@ -537,8 +538,10 @@ namespace NAwesome::Shell {
                         IT->tex.reset();
                         if (!IT->pixels.empty())
                             IT->tex = g_pHyprRenderer->createTexture(DRM_FORMAT_ARGB8888, IT->pixels.data(), IT->pw * 4, Vector2D{(double)IT->pw, (double)IT->ph});
-                        if ((!IT->tex || IT->tex->m_texID == 0) && (!IT->iconName.empty() || !IT->id.empty()))
-                            IT->tex = trayIcon(IT->iconName, IT->themePath, IT->id);
+                        if ((!IT->tex || IT->tex->m_texID == 0) && (!IT->iconName.empty() || !IT->id.empty())) {
+                            IT->tex   = trayIcon(IT->iconName, IT->themePath, IT->id);
+                            IT->dirty = !IT->tex && NAwesome::iconDeferred(); // budget-deferred: the retry warm tries again
+                        }
                     }
 
                     const CBox CELL{right - P.h, box.y, P.h, P.h};

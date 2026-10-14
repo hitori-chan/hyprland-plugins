@@ -103,9 +103,10 @@ atomics; ordering is program order plus the hop queue.
   shared text engine for both is open work.
 - **Icons** — one freedesktop name resolver in `core/icons.hpp` for the
   bar and the cards (GTK theme → hicolor → pixmaps; plausible names
-  only; a two-generation memo; at most 32 uncached theme walks a second,
-  past which a lookup resolves to nothing, uncached — a burst of
-  distinct names costs a bounded stall). One file admission: a file is
+  only; a two-generation memo; at most 8 uncached theme walks per
+  250 ms, past which a lookup is deferred: nothing, uncached, and the
+  bar retries it a beat later — a burst of distinct names costs a
+  bounded stall). One file admission: a file is
   opened ONCE, non-blocking, and judged on that fd (a regular file under
   32 MiB, 2 MiB for an SVG, a bounded declared raster); a synchronous
   decoder decodes the bytes read from it, the cards' async decodes (the
@@ -160,7 +161,7 @@ atomics; ordering is program order plus the hop queue.
   are cut at a codepoint boundary (`clipToUtf8Boundary`,
   `BoundedString<N>` where a string is stored as one), image data is
   decimated while unpacked, raster caches are capped in bytes, and work
-  is bounded too (theme walks a second, decodes a reply, messages a
+  is bounded too (theme walks a window, decodes a reply, messages a
   dispatch). `BoundedQueue<T, N>` (eviction policy in the type) is the
   helper for an evicting queue.
 
