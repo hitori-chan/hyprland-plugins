@@ -65,11 +65,21 @@ namespace NAwesome::Notify {
         if (s_id == id)
             return;
         const auto N = Model::byId(id);
-        if (!N)
+        if (!N || !N->canReply) // replaced since its chip was laid out
             return;
         s_id     = id;
         s_target = replyTarget(*N);
         s_text.clear();
+        notifChanged();
+    }
+
+    void replySendRefused(uint32_t id, const std::string& text, const std::string& target) {
+        const auto N = Model::byId(id);
+        if (!N || !N->canReply || replyTarget(*N) != target || !centerVisible() || (s_id && s_id != id))
+            return; // the card moved on (or another field is armed): nothing to put back into
+        s_id     = id;
+        s_target = target;
+        s_text   = text;
         notifChanged();
     }
 
@@ -136,7 +146,11 @@ namespace NAwesome::Notify {
                 auto       TX = s_text; // replyClose wipes the buffer under us
                 auto       TG = s_target;
                 replyClose();
-                s_pendingSend.arm([ID, TX = std::move(TX), TG = std::move(TG)]() { Bus::sendReply(ID, TX, TG); });
+                if (!TX.empty())
+                    s_pendingSend.arm([ID, TX = std::move(TX), TG = std::move(TG)]() {
+                        if (!Bus::sendReply(ID, TX, TG))
+                            replySendRefused(ID, TX, TG);
+                    });
                 return true;
             }
             case XKB_KEY_BackSpace: {

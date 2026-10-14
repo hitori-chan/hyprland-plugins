@@ -132,18 +132,19 @@ namespace NAwesome::Notify::Bus {
     // sender may reuse the id for another chat while the user types), and
     // a reply that could not be queued leaves the card — and the user's
     // chance to retry — in place.
-    void sendReply(uint32_t id, const std::string& text, const std::string& target) {
+    bool sendReply(uint32_t id, const std::string& text, const std::string& target) {
         if (text.empty())
-            return;
+            return false;
         const auto N = Model::byId(id);
         if (!N || !N->canReply || replyTarget(*N) != target)
-            return;
+            return false;
         if (!queueOut({.kind = SOut::REPLY, .id = id, .text = text, .sender = N->sender}))
-            return;
+            return false;
         if (!N->resident)
             Model::closeOne(id, Model::R_DISMISSED);
         else
             notifChanged();
+        return true;
     }
 
     void init() {

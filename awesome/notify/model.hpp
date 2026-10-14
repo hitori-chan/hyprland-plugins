@@ -320,8 +320,9 @@ namespace NAwesome::Notify {
         void exit();
         void invokeAction(uint32_t id, const std::string& key, const std::string& sender);
         // NotificationReplied to the sender, then close unless resident;
-        // nothing unless the card is still `target` (replyTarget)
-        void sendReply(uint32_t id, const std::string& text, const std::string& target);
+        // nothing unless the card is still `target` (replyTarget). false =
+        // not sent (the card changed, or the outbound queue refused it)
+        bool sendReply(uint32_t id, const std::string& text, const std::string& target);
         void emitClosed(uint32_t id, uint32_t reason);        // the model's outbound half of a card's death
     }
 
@@ -448,6 +449,9 @@ namespace NAwesome::Notify {
     bool               replyHeld();
     bool               replyArmed();
     void               replyOpen(uint32_t id);
+    // a send that did not go out (Bus::sendReply false): the sentence goes
+    // back into the card's field, if the card still takes it
+    void               replySendRefused(uint32_t id, const std::string& text, const std::string& target);
     void               replyClose();
     const std::string& replyText();
     const std::string& replyTargetKey(); // the armed card's replyTarget at arm time
