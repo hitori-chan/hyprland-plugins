@@ -62,6 +62,28 @@ bool test_proc() {
         AW_CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 7); // survives SA_NOCLDWAIT
     }
     {
+        // the pipe's write end on a stdio fd (a compositor started without
+        // stdio): the /dev/null opens must not clobber it before its dup2
+        int pfd[2];
+        AW_CHECK(pipe2(pfd, O_CLOEXEC) == 0);
+        const int SAVED = dup(STDIN_FILENO);
+        AW_CHECK(dup3(pfd[1], STDIN_FILENO, O_CLOEXEC) == STDIN_FILENO);
+        close(pfd[1]);
+        const char* ARGV[] = {"sh", "-c", "echo lifted", nullptr};
+        const auto  CHILD  = NAwesome::Proc::spawn(ARGV, {.stdoutFd = STDIN_FILENO});
+        dup2(SAVED, STDIN_FILENO); // our write end goes: EOF once the child exits
+        close(SAVED);
+        std::string out;
+        char        buf[64];
+        for (ssize_t n; (n = read(pfd[0], buf, sizeof(buf))) > 0;)
+            out.append(buf, (size_t)n);
+        close(pfd[0]);
+        AW_CHECK(out == "lifted\n");
+        NAwesome::Proc::reap(CHILD.pidfd);
+        if (CHILD.pidfd >= 0)
+            close(CHILD.pidfd);
+    }
+    {
         const char* ARGV[] = {"/nonexistent/helper", nullptr};
         const auto  CHILD  = NAwesome::Proc::spawn(ARGV);
         AW_CHECK(!CHILD);

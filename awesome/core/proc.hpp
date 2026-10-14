@@ -60,12 +60,27 @@ namespace NAwesome::Proc {
         if (!argv || !argv[0])
             return {};
 
+        // a pipe end on 0..2 (a compositor started without stdio) would be
+        // clobbered by the /dev/null opens below before its dup2, and
+        // dup2 onto itself keeps FD_CLOEXEC: lift it above stderr first
+        int outFd = opt.stdoutFd, lifted = -1;
+        if (outFd >= 0 && outFd <= STDERR_FILENO) {
+            if ((lifted = fcntl(outFd, F_DUPFD_CLOEXEC, STDERR_FILENO + 1)) < 0)
+                return {};
+            outFd = lifted;
+        }
+
         posix_spawn_file_actions_t fa;
         posix_spawnattr_t          attr;
-        if (posix_spawn_file_actions_init(&fa) != 0)
+        if (posix_spawn_file_actions_init(&fa) != 0) {
+            if (lifted >= 0)
+                close(lifted);
             return {};
+        }
         if (posix_spawnattr_init(&attr) != 0) {
             posix_spawn_file_actions_destroy(&fa);
+            if (lifted >= 0)
+                close(lifted);
             return {};
         }
 
@@ -85,8 +100,8 @@ namespace NAwesome::Proc {
             (!opt.ownGroup || posix_spawnattr_setpgroup(&attr, 0) == 0) && posix_spawnattr_setflags(&attr, flags) == 0;
 
         ok = ok && posix_spawn_file_actions_addopen(&fa, STDIN_FILENO, "/dev/null", O_RDONLY, 0) == 0;
-        if (opt.stdoutFd >= 0)
-            ok = ok && posix_spawn_file_actions_adddup2(&fa, opt.stdoutFd, STDOUT_FILENO) == 0;
+        if (outFd >= 0)
+            ok = ok && posix_spawn_file_actions_adddup2(&fa, outFd, STDOUT_FILENO) == 0;
         else
             ok = ok && posix_spawn_file_actions_addopen(&fa, STDOUT_FILENO, "/dev/null", O_WRONLY, 0) == 0;
         ok = ok && posix_spawn_file_actions_addopen(&fa, STDERR_FILENO, "/dev/null", O_WRONLY, 0) == 0;
@@ -106,6 +121,8 @@ namespace NAwesome::Proc {
 
         posix_spawn_file_actions_destroy(&fa);
         posix_spawnattr_destroy(&attr);
+        if (lifted >= 0)
+            close(lifted);
 
         if (child.pid > 0 && opt.userFacing) {
             rlimit cur{};
