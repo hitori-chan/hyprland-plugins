@@ -57,7 +57,9 @@ visible transitions.
   into one more fetch. Item strings are bounded, icon names resolve
   through the core resolver (an item's own `IconThemePath` first), and
   a pixmap is picked for the densest monitor's scale. Menus support
-  updates, cascades, scrolling, and check/radio state; an inline
+  updates, cascades, scrolling, and check/radio state; a level with no
+  rows says "(empty)", or "(unavailable)" when its layout call failed,
+  instead of the loading "…" forever; an inline
   `icon-data` PNG is size-checked before decoding (256 px a side, 64 per
   menu reply); providers may emit a leading, doubled, or trailing
   separator and the parse trims them. A menu or the prompt on a monitor

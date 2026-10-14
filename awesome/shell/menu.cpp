@@ -50,7 +50,7 @@ namespace NAwesome::Shell {
             for (const auto& E : l.entries)
                 h += E.separator ? SEPH : ROWH;
             if (l.entries.empty())
-                h += ROWH; // the "…" loading row
+                h += ROWH; // the placeholder row: loading, empty or unavailable
             return h;
         }
 
@@ -304,8 +304,16 @@ namespace NAwesome::Shell {
                         lvl->loading = false;
                         if (std::exchange(lvl->reloadAgain, false))
                             loadLevel(parentId, session); // the updates that came in meanwhile
-                        if (e)
+                        if (e) {
+                            // a level already shown keeps its rows; an empty
+                            // one stops promising a load that never comes
+                            if (lvl->entries.empty() && lvl->load != SLevel::LOAD_FAILED) {
+                                lvl->load = SLevel::LOAD_FAILED;
+                                damageMenu();
+                            }
                             return;
+                        }
+                        lvl->load = SLevel::LOAD_DONE;
                         lvl->entries.clear();
                         lvl->hover = -1; // scrollTop stays: live updates must not yank a browsed list to its top
                         SWarmToken WARM; // we resolve icon-name textures here, in a DBus reply — not a render
@@ -678,7 +686,8 @@ namespace NAwesome::Shell {
                 }
 
                 if (L.entries.empty())
-                    PAINT.texIn(textTex("…", COLEMPTY, PAINT.pt), CBox{mx, my, mw, ROWH});
+                    PAINT.texIn(textTex(L.load == Menu::SLevel::LOAD_PENDING ? "…" : L.load == Menu::SLevel::LOAD_FAILED ? "(unavailable)" : "(empty)", COLEMPTY, PAINT.pt),
+                                CBox{mx, my, mw, ROWH});
 
                 bool moreBelow = false;
                 for (size_t i = L.scrollTop; i < L.entries.size(); i++) {

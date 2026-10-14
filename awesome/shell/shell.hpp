@@ -367,6 +367,13 @@ namespace NAwesome::Shell {
             // flipping rows every few ms) re-requests once when it lands
             bool                              loading     = false;
             bool                              reloadAgain = false;
+            // what an empty level's one row says: "…" until a reply lands,
+            // then "(empty)" — or "(unavailable)" when GetLayout failed
+            enum eLoad : uint8_t {
+                LOAD_PENDING,
+                LOAD_DONE,
+                LOAD_FAILED,
+            } load = LOAD_PENDING;
             int                               hover     = -1;
             int                               scrollTop = 0;     // first visible entry when overflowing
             int                               maxScroll = 0;     // set at render: the last scrollTop that still fills the panel
