@@ -319,17 +319,29 @@ namespace NAwesome::Shell {
     }
 
     // A reload may follow a GTK theme switch, and everything above was
-    // resolved against the old one: drop the caches; the next warm resolves
-    // again. (resetIconNameCache forgets the memoized theme name and the
-    // resolver's memo — core/icons.hpp.)
-    void iconsReload() {
-        NAwesome::resetIconNameCache();
+    // resolved against the old one: then drop the caches; the next warm
+    // resolves again. The same theme keeps what it resolved (a reload per
+    // config save re-decoded every icon) and drops only the misses, so an
+    // icon installed since can still land.
+    static uint64_t seenThemeGeneration = 0;
+    bool            iconsReload() {
+        NAwesome::refreshIconTheme();
+        if (NAwesome::iconThemeGeneration() == seenThemeGeneration) {
+            std::erase_if(appIconCache, [](const auto& E) { return !E.second; });
+            std::erase_if(namedIconCache, [](const auto& E) { return !E.second; });
+            std::erase_if(trayIconCache, [](const auto& E) { return !E.second; });
+            return false;
+        }
+        seenThemeGeneration = NAwesome::iconThemeGeneration();
         appIconCache.clear();
         namedIconCache.clear();
         trayIconCache.clear();
+        return true;
     }
 
     void iconsInit() {
+        NAwesome::refreshIconTheme();
+        seenThemeGeneration = NAwesome::iconThemeGeneration();
         retry = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { barChanged(); }, nullptr);
         g_pEventLoopManager->addTimer(retry);
         // the shared .desktop index (core) grew: new entries can only fill

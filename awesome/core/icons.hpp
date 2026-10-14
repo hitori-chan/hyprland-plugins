@@ -6,9 +6,9 @@
 //
 // Pure name -> path; rasterizing stays per module (each has its own texture
 // rules and caches). Misses are cached too, so a nonexistent name never
-// rescans the theme. Call resetIconNameCache() on config reload — it forgets
-// the memoized GTK theme name along with the paths, since a theme switch is
-// exactly what makes the old resolutions wrong.
+// rescans the theme. Call refreshIconTheme() on config reload: it re-reads
+// the GTK theme name, and a switch (exactly what makes the old resolutions
+// wrong) forgets the paths and bumps iconThemeGeneration().
 #pragma once
 
 #include <algorithm>
@@ -337,9 +337,9 @@ namespace NAwesome {
         return T;
     }
 
-    inline void resetIconNameCache() {
-        iconNameCache().clear();
-        iconThemeName() = {};
+    inline uint64_t& iconThemeGeneration() {
+        static uint64_t G = 0;
+        return G;
     }
 
     // The GTK icon theme is this system's source of truth (Qt follows it). Read
@@ -369,6 +369,26 @@ namespace NAwesome {
                 }
         }
         return T.value;
+    }
+
+    // A config reload may follow a theme switch. Re-read the theme name;
+    // only a switch forgets the memo and bumps the generation, which each
+    // module compares to the one it last saw (several modules refresh per
+    // reload: the first one to see a switch must not hide it from the rest).
+    // Same theme: only the misses go, so icons installed since resolve.
+    inline void refreshIconTheme() {
+        auto&      T    = iconThemeName();
+        const auto WAS  = T;
+        T               = {};
+        const auto NOW  = gtkIconThemeName();
+        auto&      MEMO = iconNameCache();
+        if (WAS.read && WAS.value == NOW) {
+            std::erase_if(MEMO.young, [](const auto& E) { return E.second.empty(); });
+            std::erase_if(MEMO.old, [](const auto& E) { return E.second.empty(); });
+            return;
+        }
+        MEMO.clear();
+        ++iconThemeGeneration();
     }
 
     // Look for <dir>/name.ext directly and one category level down

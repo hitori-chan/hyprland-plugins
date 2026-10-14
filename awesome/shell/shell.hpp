@@ -149,7 +149,7 @@ namespace NAwesome::Shell {
     SP<ITexture> appIcon(const std::string& klass);
     SP<ITexture> namedIcon(const std::string& name);
     SP<ITexture> trayIcon(const std::string& name, const std::string& theme, const std::string& id = "");
-    void         iconsReload(); // config reload: re-probe the dirs, drop every resolved icon
+    bool         iconsReload(); // config reload: true = the icon theme switched, every resolved icon dropped
     void         iconsExit();
 
     // ---- tray.cpp ----

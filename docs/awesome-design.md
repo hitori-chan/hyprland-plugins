@@ -106,7 +106,7 @@ atomics; ordering is program order plus the hop queue.
   only; a two-generation memo; at most 8 uncached theme walks per
   250 ms, past which a lookup is deferred: nothing, uncached, and the
   bar retries it a beat later — a burst of distinct names costs a
-  bounded stall). One file admission: a file is
+  bounded stall; a reload flushes the memo only on a theme switch). One file admission: a file is
   opened ONCE, non-blocking, and judged on that fd (a regular file under
   32 MiB, 2 MiB for an SVG, a bounded declared raster); a synchronous
   decoder decodes the bytes read from it, the cards' async decodes (the

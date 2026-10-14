@@ -111,7 +111,7 @@ namespace NAwesome::Notify {
                 notifChanged();
         });
         supervisor().listen(EV.config.reloaded, []() {
-            NAwesome::resetIconNameCache();
+            NAwesome::refreshIconTheme();
             resetFallbackCache();
             if (!notifs.empty() || centerVisible())
                 notifChanged(); // a live theme reload re-keys the texture caches

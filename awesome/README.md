@@ -74,7 +74,9 @@ visible transitions.
   work is budgeted: an icon file is held to 1024 px a side, at most two
   large decodes (past 256² px, an SVG past 64 KiB) run per 250 ms, and a
   lookup the theme-walk budget refuses is not a miss — it stays
-  uncached and a warm 300 ms later tries again.
+  uncached and a warm 300 ms later tries again. A config reload keeps
+  the resolved icons unless the GTK icon theme changed; only the misses
+  are dropped (an icon installed since then still lands).
 
 ### The launcher (menubar)
 

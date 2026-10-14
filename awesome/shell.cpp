@@ -124,9 +124,9 @@ namespace NAwesome::Shell {
         // Desktop discovery is worker-owned and independent of the theme, so
         // a config reload does not restart it.
         supervisor().listen(EV.config.reloaded, []() {
-            iconsReload();
-            for (const auto& I : Tray::items)
-                I->dirty = true; // their textures came out of the theme we just dropped
+            if (iconsReload())
+                for (const auto& I : Tray::items)
+                    I->dirty = true; // their textures came out of the theme we just dropped
             barChanged();
         });
 
