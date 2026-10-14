@@ -17,6 +17,7 @@
 #include <hyprland/src/workspace/HLWorkspace.hpp>
 #include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/protocols/XDGShell.hpp>
+#include <hyprland/src/protocols/core/Compositor.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
 #include <hyprland/src/layout/target/WindowTarget.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>

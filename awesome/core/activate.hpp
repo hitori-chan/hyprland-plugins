@@ -17,6 +17,8 @@
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>
 
+#include "queries.hpp"
+
 #include <cstdint>
 #include <functional>
 
@@ -37,6 +39,10 @@ inline std::function<bool(const PHLWINDOW&)>& restoreMinimizedHook() {
 // tray return re-maps a moment later and takes the new-window focus, as in
 // awesome).
 inline bool activateAppWindow(uint32_t pid) {
+    // the pid lookup is a bus round trip a lock can land inside: nothing
+    // is raised, focused or un-minimized under the lockscreen
+    if (sessionLocked())
+        return false;
     const auto& WINDOWS = Desktop::windowState()->windows(); // Z-order: the LAST match is topmost
     PHLWINDOW   best;
     for (const auto& W : WINDOWS)
