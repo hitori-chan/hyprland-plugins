@@ -2,6 +2,8 @@
 
 #include "shell/shell.hpp"
 
+#include <array>
+
 namespace NAwesome::Shell {
 
     static const char* KANJI[9] = {"一", "二", "三", "四", "五", "六", "七", "八", "九"};
@@ -119,12 +121,30 @@ namespace NAwesome::Shell {
             void onScrollSteps(int steps, PHLMONITOR mon) override {
                 if (!mon)
                     return;
-                // awful.tag.viewnext/viewprev, wrapping
+                // awful.tag.viewnext/viewprev, wrapping through THIS screen's
+                // tags. Tags are global here: one another monitor shows or
+                // holds is not this screen's, so the wheel skips it instead
+                // of stopping there (a missing tag is created here, so it
+                // counts).
                 auto CUR = mon->m_activeWorkspace ? mon->m_activeWorkspace->numberedID().value_or(1) : 1;
                 if (CUR < 1 || CUR > 9)
                     CUR = 1;
-                const int T = (int)((CUR - 1 + (steps % 9) + 9) % 9) + 1;
-                auto ws = State::workspaceState()->find(State::Workspace::STarget{.id = Workspace::SWorkspaceNumberedID{(uint32_t)T}, .address = std::to_string(T)});
+                const auto FIND = [](int t) {
+                    return State::workspaceState()->find(State::Workspace::STarget{.id = Workspace::SWorkspaceNumberedID{(uint32_t)t}, .address = std::to_string(t)});
+                };
+                std::array<int, 9> local{};
+                long               count = 0, at = 0;
+                for (int t = 1; t <= 9; ++t) {
+                    if (const auto W = FIND(t); W && W->m_monitor.lock() != mon)
+                        continue;
+                    if ((uint32_t)t == CUR)
+                        at = count;
+                    local[count++] = t;
+                }
+                if (count == 0)
+                    return;
+                const int T  = local[((at + steps) % count + count) % count];
+                auto      ws = FIND(T);
                 if (!ws)
                     ws = State::workspaceState()->createNumbered(Workspace::SWorkspaceNumberedID{(uint32_t)T}, mon);
                 if (!ws || ws->m_monitor.lock() != mon || mon->m_activeWorkspace == ws)
