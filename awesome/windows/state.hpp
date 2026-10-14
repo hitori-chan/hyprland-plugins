@@ -16,6 +16,7 @@
 #include "core/queries.hpp"
 
 #include <hyprland/src/desktop/state/FocusState.hpp>
+#include <hyprland/src/desktop/history/WindowHistoryTracker.hpp>
 #include <hyprland/src/desktop/view/window/WindowGroupMembership.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
@@ -90,21 +91,46 @@ namespace NAwesome::Windows::Tasklist {
     // quirks shape this: setHidden's own focus reset resets a COPY of the
     // focused window (focusState()->window() returns by value) and changes
     // nothing, so minimizing the FOCUSED window leaves focus on it; and a
-    // plain fullWindowFocus won't
-    // move focus off a just-hidden window here. refocus() at the
-    // successor's own center is the authoritative input path and lands right
-    // regardless of where the real cursor sits (a click leaves it on the
-    // bar). m_windows is bottom-first, so walk it reversed to pick the
-    // topmost task.
+    // plain fullWindowFocus won't move focus off a just-hidden window here.
+    // refocus() at the successor's own center is the authoritative input
+    // path and lands right regardless of where the real cursor sits (a
+    // click leaves it on the bar) — but it focuses what lies on TOP there,
+    // so it runs only when that is the successor: a smaller window over
+    // its center would take the focus AND the focus history's head (the
+    // next minimize then went back to it). The successor is focused
+    // unraised (awesome's autofocus activates with raise=false): a
+    // desktop-state-change focus, which the keyboard-focus raise
+    // (click.hpp) leaves alone. The successor is awesome's: the most recently
+    // focused task here (awful.focus.history), else the topmost (m_windows
+    // is bottom-first); hover focus doesn't raise, so the topmost is often
+    // not the last used.
     inline void focusNextAfterMinimize(const PHLWINDOW& gone, const PHLWORKSPACE& ws) {
         if (!ws || !g_pInputManager)
             return;
+        const auto CANDIDATE = [&](const PHLWINDOW& W) {
+            return W && W != gone && isClient(W) && !W->isHidden() && W->m_workspace && W->m_workspace->id() == ws->id();
+        };
+        const auto FOCUS = [](const PHLWINDOW& W) {
+            const auto TOP = Desktop::viewState()->hitTest().windowAt(W->middle(), Desktop::View::ALLOW_FLOATING | Desktop::View::RESERVED_EXTENTS |
+                                                                                      Desktop::View::INPUT_EXTENTS);
+            if (TOP == W)
+                g_pInputManager->refocus(W->middle());
+            if (Desktop::focusState() && Desktop::focusState()->window() != W)
+                Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_DESKTOP_STATE_CHANGE, W->wlSurface()->resource());
+        };
+        // the tracker is ordered old -> new: the most recent is at the BACK
+        const auto& HIST = Desktop::History::windowTracker()->fullHistory();
+        for (auto it = HIST.rbegin(); it != HIST.rend(); ++it)
+            if (const auto W = it->lock(); CANDIDATE(W)) {
+                FOCUS(W);
+                return;
+            }
         const auto& WINS = Desktop::windowState()->windows();
         for (size_t i = WINS.size(); i-- > 0;) {
-            const auto& W = WINS[i];
-            if (W == gone || !isClient(W) || W->isHidden() || !W->m_workspace || W->m_workspace->id() != ws->id())
+            const PHLWINDOW W = WINS[i];
+            if (!CANDIDATE(W))
                 continue;
-            g_pInputManager->refocus(W->middle());
+            FOCUS(W);
             return;
         }
         // nothing left on the workspace: clear focus so it isn't stranded on

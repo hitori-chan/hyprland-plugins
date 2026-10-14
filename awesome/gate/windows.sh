@@ -2,6 +2,7 @@
 # placement, the CSD geometry battery (a real GTK3 client included), and
 # maximize/minimize/restore round-trips. A geometry change runs this file
 # alone (-b windows).
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh" # until_is
 
 # ---- placement memory ---------------------------------------------------
 # The harness seeds foot's spot at (100,100). Memory is the POSITION; the
@@ -445,6 +446,49 @@ chk "that jump was announced: workspace previous returns to 2" test "$(ws)" = 2
 dsp "hl.dsp.focus({workspace=\"1\"})"; sleep 0.4
 
 [[ -n "$FF" ]] && dsp "hl.dsp.window.close({window=\"address:$FF\"})"; sleep 0.5
+
+# ---- minimize: the successor is the exact window -----------------------
+# awesome's autofocus focuses the most recently focused task. The input
+# path at the successor's center focused what lay on top there: a small
+# window over it (hover focus doesn't raise) took the focus instead.
+# By app id: the shell in a foot rewrites its title at the first prompt.
+class_addr() {
+	clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class'] == sys.argv[1]), ''))" "$1"
+}
+active_class() { hq activewindow -j | python3 -c 'import json,sys;print(json.load(sys.stdin).get("class",""))'; }
+w1_count() { clients | python3 -c "import json,sys;print(sum(1 for c in json.load(sys.stdin) if c['class'] in ('w1base','w1over','w1gone','w1prev')))"; }
+hover() { printf 'move %s %s\nsleep 60\n' "$1" "$2" | vp; sleep 0.4; }
+dsp "hl.dsp.exec_cmd('foot --app-id=w1base --window-size-pixels=600x400')"
+dsp "hl.dsp.exec_cmd('foot --app-id=w1over --window-size-pixels=200x120')"
+dsp "hl.dsp.exec_cmd('foot --app-id=w1gone --window-size-pixels=240x160')"
+dsp "hl.dsp.exec_cmd('foot --app-id=w1prev --window-size-pixels=240x160')"
+until_is 10 4 w1_count
+W1BASE="$(class_addr w1base)" W1OVER="$(class_addr w1over)" W1GONE="$(class_addr w1gone)" W1PREV="$(class_addr w1prev)"
+dsp "hl.dsp.window.move({x = 100, y = 100, window = \"address:$W1BASE\"})"
+dsp "hl.dsp.window.move({x = 300, y = 240, window = \"address:$W1OVER\"})"
+dsp "hl.dsp.window.move({x = 800, y = 100, window = \"address:$W1GONE\"})"
+dsp "hl.dsp.window.move({x = 800, y = 400, window = \"address:$W1PREV\"})"; sleep 0.8
+hover 400 300 # the base's center: the small window is on top there
+chk "minimize successor: the small window covers the base's center" test "$(active_class)" = w1over
+hover 900 480
+hover 150 150
+hover 900 150
+chk "minimize successor: focus went over, prev, base, then the one to go" test "$(active_class)" = w1gone
+dsp "hl.plugin.awesome.minimize()"; sleep 0.8
+chk "minimize successor: the most recent window takes the focus, not the one over its center" test "$(active_class)" = w1base
+expect "minimize successor: it is focused unraised (the small window stays over it)" \
+	"[c['class'] for c in cs].index('w1over') > [c['class'] for c in cs].index('w1base')"
+# the first minimize never focused the window over the base's center:
+# the history still has prev before base, not over
+dsp "hl.plugin.awesome.minimize()"; sleep 0.8
+chk "minimize successor: a second minimize goes back past the covering window" test "$(active_class)" = w1prev
+for a in "$W1BASE" "$W1OVER" "$W1GONE" "$W1PREV"; do
+	[[ -n "$a" ]] && dsp "hl.dsp.window.close({window=\"address:$a\"})"
+done
+until_is 5 0 w1_count
+chk "minimize successor: its windows are closed" test "$(w1_count)" = 0
 chk "windows: its foot is closed at the battery's end" \
 	test "$(pyc "sum(1 for c in cs if c['class']=='foot')")" = 0
 

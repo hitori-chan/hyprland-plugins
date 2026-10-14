@@ -174,7 +174,10 @@ the plugin's one state file (see State).
   ended at once. Windowed geometry is restored from the store,
   constrained by the current workarea and the client's size hints. A
   grouped window is neither minimized nor plugin-maximized (its layout
-  slot is the group's). A plugin reload keeps both states: minimized
+  slot is the group's). Minimizing the focused window focuses the
+  workspace's most recently focused task (awesome's autofocus), that
+  exact window and unraised, even where another window lies over its
+  center. A plugin reload keeps both states: minimized
   windows are shown again as the plugin stops (nothing else would know
   to), and the next instance adopts the windows still told maximized.
 - **Click policy**: a plain left click raises the target; clicking a
