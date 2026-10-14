@@ -16,6 +16,27 @@ namespace NAwesome::Notify {
     double             lastContentH = 0;
     double             lastContentW = 0;
 
+    // Cards are rebuilt every frame; their hit-rect vectors and group key
+    // keep their capacity across frames through this pool (renderAll
+    // recycles, the painters take), so redrawing a shape already seen does
+    // not allocate them again. Bounded like the cards themselves.
+    static std::vector<SCard> cardPool;
+    constexpr size_t          MAX_CARD_POOL = 256;
+    SCard                     recycledCard() {
+        if (cardPool.empty())
+            return {};
+        SCard old = std::move(cardPool.back());
+        cardPool.pop_back();
+        SCard fresh;
+        fresh.buttons = std::move(old.buttons);
+        fresh.links   = std::move(old.links);
+        fresh.group   = std::move(old.group);
+        fresh.buttons.clear();
+        fresh.links.clear();
+        fresh.group.clear();
+        return fresh;
+    }
+
     static CBox                lastBox; // last damaged layout, global logical (already expanded)
     static SP<CEventLoopTimer> ageTick; // 30s: re-buckets the age lines
     static SP<CEventLoopTimer> motionTick; // ~16ms while something animates
@@ -69,6 +90,9 @@ namespace NAwesome::Notify {
 
         const auto T = typeScale(mon->m_scale); // P.warm is set by the caller
 
+        for (auto& C : cards)
+            if (cardPool.size() < MAX_CARD_POOL)
+                cardPool.push_back(std::move(C));
         cards.clear(); // capacity retained: no per-frame allocations
         cardsMon = mon;
 

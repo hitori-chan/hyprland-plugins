@@ -653,16 +653,22 @@ namespace NAwesome::Notify {
             return;
         }
 
-        SHover h;
-        h.kind  = CARD->kind;
-        h.id    = CARD->id;
-        h.group = CARD->group;
-        h.btn   = buttonAt(*CARD, P);
-        h.part  = h.btn >= 0 ? 0 : partAt(*CARD, P);
-        setHovered(h);
+        // per motion: the hover (and its group key's copy) is rebuilt only
+        // when it changed
+        const int     BTN  = buttonAt(*CARD, P);
+        const uint8_t PART = BTN >= 0 ? 0 : partAt(*CARD, P);
+        if (hovered.kind != CARD->kind || hovered.id != CARD->id || hovered.btn != BTN || hovered.part != PART || hovered.group != CARD->group) {
+            SHover h;
+            h.kind  = CARD->kind;
+            h.id    = CARD->id;
+            h.group = CARD->group;
+            h.btn   = BTN;
+            h.part  = PART;
+            setHovered(h);
+        }
         info.cancelled = true;
 
-        const bool ONLINK = h.btn < 0 && h.part == 0 && linkAt(*CARD, P) >= 0; // a hyperlink shows the hand (GTK convention)
+        const bool ONLINK = BTN < 0 && PART == 0 && linkAt(*CARD, P) >= 0; // a hyperlink shows the hand (GTK convention)
 
         const bool ENTERING = !pointerOwned;
         if (ENTERING) {

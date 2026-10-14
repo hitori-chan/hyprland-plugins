@@ -222,7 +222,7 @@ namespace NAwesome::Notify {
 
             const double                 TX = X + PADX + (ICONW > 0 ? ICONW + ICON_GAP : 0);
             double                       ty = HERO ? y + HEROH + PADY : y + PADY;
-            std::vector<SCard::SLinkHit> cardLinks;
+            SCard                        card = recycledCard();
             if (HEADER)
                 CP.tex(HEADER->tex, TX, ty);
             ty += HH + (HH > 0 ? HEAD_GAP : 0);
@@ -232,7 +232,7 @@ namespace NAwesome::Notify {
             if (BODY) {
                 CP.tex(BODY->tex, TX, ty);
                 for (const auto& L : BODY->links) // physical -> global logical
-                    cardLinks.push_back({CBox{TX + L.rel.x / P.scale, ty + L.rel.y / P.scale, L.rel.w / P.scale, L.rel.h / P.scale}, L.href});
+                    card.links.push_back({CBox{TX + L.rel.x / P.scale, ty + L.rel.y / P.scale, L.rel.w / P.scale, L.rel.h / P.scale}, L.href});
                 ty += BH;
             }
             if (!imgBoxes.empty()) {
@@ -261,7 +261,6 @@ namespace NAwesome::Notify {
 
             // actions: borderless tinted text buttons, labels aligned to the
             // content column (the -BTN_PADX optical pull)
-            std::vector<SCard::SBtn> cardBtns;
             if (!btnBoxes.empty()) {
                 ty += BTN_ROW_GAP;
                 const double BX0 = TX - BTN_PADX;
@@ -281,16 +280,13 @@ namespace NAwesome::Notify {
                     const auto LBL = cachedText(LB, COLACC, T.action, TEXTWPX, -1, 0, true, 600);
                     if (LBL && LBL->tex)
                         CP.tex(LBL->tex, cx, BOX.y + (BOX.h - LBL->tex->m_size.y / P.scale) / 2);
-                    cardBtns.push_back({BOX, A.id});
+                    card.buttons.push_back({BOX, A.id});
                 }
             }
 
-            SCard card;
-            card.kind    = SCard::POPUP;
-            card.box     = CARD;
-            card.id      = N->id;
-            card.buttons = std::move(cardBtns);
-            card.links   = std::move(cardLinks);
+            card.kind = SCard::POPUP;
+            card.box  = CARD;
+            card.id   = N->id;
 
             // the hover-✕ (the desktop analog of swipe), revealed while the
             // pointer is on the card; its glyph builds in both modes

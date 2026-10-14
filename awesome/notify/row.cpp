@@ -285,7 +285,9 @@ namespace NAwesome::Notify {
     double measureRow(const SPaint& P, const SType& T, const SP<SNotif>& N, double w, bool open, const SRowStyle& ST) {
         SPaint MP = P;
         MP.warm   = true; // paints nothing; it does NOT license a texture build
-        SCard scratch;
+        static SCard scratch; // a measure fills hit rects too: reused, never kept
+        scratch.buttons.clear();
+        scratch.links.clear();
         return renderRow(MP, T, N, CBox{0, 0, w, 0}, open, true, ST, scratch, false);
     }
 
@@ -294,7 +296,7 @@ namespace NAwesome::Notify {
     void paintSingle(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box, bool open, bool more) {
         const bool HOV = hovered.kind == SCard::ROW && hovered.id == N->id && hovered.btn < 0 && hovered.part == 0;
         P.rect(box, HOV ? tAccentDim() : tFill(), rRow(P.scale), rPow());
-        SCard card;
+        SCard card = recycledCard();
         renderRow(P, T, N, CBox{box.x, box.y, box.w, 0}, open, more, ROW_SINGLE, card, false);
         cards.push_back(std::move(card));
     }
@@ -387,7 +389,7 @@ namespace NAwesome::Notify {
             py += LH;
         }
 
-        SCard card;
+        SCard card = recycledCard();
         card.kind  = SCard::DIGEST;
         card.box   = box;
         card.group = D.key;
@@ -456,7 +458,7 @@ namespace NAwesome::Notify {
             P.tex(HL->tex, TX, box.y + ROW_PADT + (CHILD_ICON - texH(HL, P.scale)) / 2);
 
         {
-            SCard card;
+            SCard card = recycledCard();
             card.kind  = SCard::GHEAD;
             card.box   = CBox{box.x, box.y, box.w, HEADRH};
             card.group = D.key;
@@ -472,7 +474,7 @@ namespace NAwesome::Notify {
             const double CH2  = k < childH.size() ? childH[k] : measureRow(P, T, N, box.w, true, ROW_CHILD);
             const bool   CHOV = hovered.kind == SCard::CHILD && hovered.id == N->id && hovered.btn < 0 && hovered.part == 0;
             P.rect(CBox{box.x, cy, box.w, CH2}, CHOV ? tAccentDim() : tFill(), rJoint(P.scale), RP);
-            SCard card;
+            SCard card = recycledCard();
             card.group = D.key;
             renderRow(P, T, N, CBox{box.x, cy, box.w, 0}, true, false, ROW_CHILD, card, true);
             cards.push_back(std::move(card));

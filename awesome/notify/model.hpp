@@ -423,6 +423,7 @@ namespace NAwesome::Notify {
     };
     extern std::vector<SCard> cards;
     extern PHLMONITORREF      cardsMon; // the monitor the layout ran on
+    SCard                     recycledCard(); // an empty card whose vectors keep last frame's capacity
 
     // hover affordance: rows/buttons warm under the pointer. `btn` -1 = the
     // surface itself, >= 0 = that action button; `part` distinguishes the
