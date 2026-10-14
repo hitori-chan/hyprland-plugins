@@ -62,8 +62,10 @@ namespace NAwesome {
             return std::pair{BE32(16), BE32(20)};
         if (n >= 10 && (!memcmp(d, "GIF87a", 6) || !memcmp(d, "GIF89a", 6)))
             return std::pair{LE16(6), LE16(8)};
-        if (n >= 26 && d[0] == 'B' && d[1] == 'M')
-            return std::pair{LE32(18), (uint32_t)std::abs((int32_t)LE32(22))};
+        if (n >= 26 && d[0] == 'B' && d[1] == 'M') {
+            const uint32_t H = LE32(22); // signed: negative is top-down; INT_MIN's magnitude stays 2^31 (rejected)
+            return std::pair{LE32(18), (int32_t)H < 0 ? 0u - H : H};
+        }
         if (n >= 30 && !memcmp(d, "RIFF", 4) && !memcmp(d + 8, "WEBP", 4)) {
             if (!memcmp(d + 12, "VP8X", 4))
                 return std::pair{LE24(24) + 1, LE24(27) + 1};
