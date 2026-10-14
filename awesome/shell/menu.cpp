@@ -761,7 +761,9 @@ namespace NAwesome::Shell {
     // A dbusmenu signal from any client, through the tray connection's one
     // async match (tray.cpp): only the open menu's own sender and path
     // count. Apps mutate their menu while it is up (scans, state flips):
-    // reload any open level the update touches.
+    // reload any open level the update touches. LayoutUpdated names the
+    // parent of the changed subtree: its open level and every cascade
+    // below it reload (parent 0, the whole layout, reloads them all).
     void Tray::onMenuSignal(sdbus::Message& m) {
         using namespace Menu;
         const uint64_t SESSION = menuSession;
@@ -778,11 +780,12 @@ namespace NAwesome::Shell {
                 uint32_t revision = 0;
                 int32_t  parent   = 0;
                 m >> revision >> parent;
+                std::vector<int32_t> reload;
                 for (const auto& L : levels)
-                    if (L.parentId == parent) {
-                        loadLevel(parent, SESSION);
-                        break;
-                    }
+                    if (!reload.empty() || L.parentId == parent)
+                        reload.push_back(L.parentId);
+                for (const auto P : reload)
+                    loadLevel(P, SESSION);
             } else if (NAME == "ItemsPropertiesUpdated") {
                 std::vector<sdbus::Struct<int32_t, std::map<std::string, sdbus::Variant>>> changed;
                 std::vector<sdbus::Struct<int32_t, std::vector<std::string>>>             removed;
