@@ -251,9 +251,12 @@ done
         }
 
         bool prepare(SRequest& request) {
-            if (request.maxEntries == 0 || request.roots.empty() || request.roots.size() > MAX_ROOTS || !validText(request.namePrefix, MAX_PREFIX_BYTES) ||
-                request.extensions.size() > MAX_EXTENSIONS)
+            if (request.maxEntries == 0 || request.roots.empty() || !validText(request.namePrefix, MAX_PREFIX_BYTES) || request.extensions.size() > MAX_EXTENSIONS)
                 return false;
+            // past the bound the first roots win (callers list them in
+            // precedence order: a long XDG_DATA_DIRS loses its tail, not all)
+            if (request.roots.size() > MAX_ROOTS)
+                request.roots.resize(MAX_ROOTS);
             request.maxEntries   = std::min(request.maxEntries, MAX_ENTRIES);
             request.maxFileBytes = std::min(request.maxFileBytes, MAX_FILE_BYTES);
             if (request.maxVisited == 0)
