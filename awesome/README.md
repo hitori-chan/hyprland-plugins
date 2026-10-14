@@ -24,7 +24,9 @@ The strip, launcher, and tray menus are compositor-drawn on the focused
 monitor. Before intercepting any input the pipeline rechecks session
 lock and native input ownership (layers, popups, IME, grabs,
 input-capture); native wins and resets the plugin's partial input
-state. Geometry and hitboxes are monitor-local; fixed widget slots and
+state. The pipeline takes pointer and keyboard input only: touch stays
+native, so a touch on the bar, a card or a menu reaches whatever
+native surface lies beneath it. Geometry and hitboxes are monitor-local; fixed widget slots and
 tray clipping protect the task area on narrow outputs. Textures follow
 the canvas warm/draw gate: warm on the event loop, draw no earlier than
 the next frame, scissor to damage, damage both old and new geometry for
