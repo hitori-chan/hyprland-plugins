@@ -389,9 +389,14 @@ namespace NAwesome::Notify {
                         victim = it;
                         break;
                     }
-                const auto VID = (*victim)->id;
+                const auto VID   = (*victim)->id;
+                const bool SHOWN = !(*victim)->waiting;
                 notifs.erase(victim);
                 Bus::emitClosed(VID, R_UNDEFINED);
+                // a DND-held arrival warms nothing itself: the shown card it
+                // pushed out must still leave the screen
+                if (SHOWN)
+                    notifChanged();
             }
         }
 
