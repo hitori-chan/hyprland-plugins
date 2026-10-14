@@ -576,14 +576,18 @@ namespace NAwesome {
                 const auto T0 = std::chrono::steady_clock::now();
 #endif
                 C.m_gate.inRender = true;
-                if (const auto MON = m_mon.lock()) {
-                    SPaint ctx;
-                    ctx.mon   = MON;
-                    ctx.scale = MON->m_scale;
-                    ctx.mb    = MON->logicalBox();
-                    ctx.rctx  = &rctx;
-                    m_layer->draw(MON, ctx);
-                }
+                // a throwing layer loses this frame's paint, not the
+                // compositor, and never leaves the gate marked in-render
+                try {
+                    if (const auto MON = m_mon.lock()) {
+                        SPaint ctx;
+                        ctx.mon   = MON;
+                        ctx.scale = MON->m_scale;
+                        ctx.mb    = MON->logicalBox();
+                        ctx.rctx  = &rctx;
+                        m_layer->draw(MON, ctx);
+                    }
+                } catch (...) {}
                 C.m_gate.inRender = false;
 #ifdef AWESOME_GATE
                 C.m_drawNs += std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - T0).count();

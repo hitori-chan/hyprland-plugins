@@ -69,8 +69,11 @@ namespace NAwesome {
         if (m_poll)
             m_poll->updateTimeout(m_scanning ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
         if (m_icons.size() != BEFORE)
-            for (const auto& fn : m_subs)
-                fn();
+            for (const auto& fn : m_subs) {
+                try {
+                    fn();
+                } catch (...) {} // a timer callback: nothing may unwind into the loop
+            }
     }
 
     // Icon= and StartupWMClass= from the [Desktop Entry] group, keyed by the

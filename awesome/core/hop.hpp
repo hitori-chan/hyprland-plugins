@@ -46,7 +46,12 @@ namespace NAwesome {
         void  arm(std::function<void()> fn) {
             if (tearingDown() || !g_pEventLoopManager)
                 return;
-            m_lock = g_pEventLoopManager->doLaterLock(std::move(fn));
+            // the idle dispatch is libwayland's C: nothing may unwind into it
+            m_lock = g_pEventLoopManager->doLaterLock([fn = std::move(fn)]() {
+                try {
+                    fn();
+                } catch (...) {}
+            });
         }
         void reset() {
             m_lock.reset();

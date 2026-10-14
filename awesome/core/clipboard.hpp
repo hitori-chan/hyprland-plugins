@@ -154,8 +154,10 @@ namespace NAwesome {
                 close(m_fd);
             m_fd = -1;
             m_maxBytes = 0;
-            if (DONE)
-                DONE(std::move(DATA));
+            try {
+                if (DONE)
+                    DONE(std::move(DATA));
+            } catch (...) {} // fd and timer callbacks: nothing may unwind into the loop
         }
 
         int                              m_fd = -1;
