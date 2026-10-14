@@ -378,7 +378,10 @@ share of its queue, one decode shared by every card asking for the
 same file; a sender's SVG too, rastered at the hero width when it
 may be one, and a symbolic icon tinted on a copy): a card whose icon is
 still decoding keeps the icon column reserved — the text does not
-re-flow when it lands. Screenshot-sized
+re-flow when it lands. A decode lands full size and scales on the
+compositor thread, box-averaged first to within 2x of the card; past
+4 MP, one such scale runs per 100 ms and the rest wait for a later
+warm. Screenshot-sized
 images (256 px in both dimensions) render card-width as a
 cover-cropped hero in any capture shape. Iconless cards draw a random
 face from `fallback_icon_dir`, and when that dir is empty (or a face

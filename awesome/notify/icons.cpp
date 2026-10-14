@@ -97,7 +97,18 @@ namespace NAwesome::Notify {
     static SP<CEventLoopTimer>       decodePoll;
     static bool                      slotFreed           = false;
     static bool                      waitedForDecodeSlot = false;
+    static bool                      scaleDeferred       = false; // a ready decode waits for the scale budget
 
+    // A decode lands full size (the gatherer ignores the hint for rasters)
+    // and scales on this thread. Past 4 MP one such scale costs tens of ms
+    // even boxed first (scaledTex): one per window, the rest wait for the
+    // next — a burst of screenshots costs a few short stalls, not one long
+    constexpr double                      SCALE_LARGE_PIXELS = 4.0 * 1024 * 1024;
+    constexpr auto                        SCALE_WINDOW       = std::chrono::milliseconds(100);
+    static std::chrono::steady_clock::time_point lastLargeScale;
+    static bool                           largeScaleOpen() {
+        return std::chrono::steady_clock::now() - lastLargeScale >= SCALE_WINDOW;
+    }
 
     // one face per (identity, name, font, size, bg): the facepile never
     // shows a blank square for a faceless sender. The cache is an LRU, not a
@@ -119,7 +130,9 @@ namespace NAwesome::Notify {
         if (!decodePoll)
             return;
         const bool PENDING = std::ranges::any_of(decodeJobs, [](const auto& job) { return !resourceReady(job); });
-        decodePoll->updateTimeout(PENDING ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
+        decodePoll->updateTimeout(PENDING ? std::optional{std::chrono::milliseconds(16)} :
+                                      scaleDeferred ? std::optional<std::chrono::milliseconds>{SCALE_WINDOW} :
+                                                      std::nullopt);
     }
 
     // find-or-enqueue the gatherer's job for (source, svg viewport). nullptr:
@@ -173,10 +186,12 @@ namespace NAwesome::Notify {
             becameReady |= READY && !job.readyAtPoll;
             job.readyAtPoll |= READY;
         }
-        const bool SLOT = slotFreed;
-        slotFreed       = false;
+        const bool SLOT     = slotFreed;
+        const bool DEFERRED = scaleDeferred && largeScaleOpen(); // not before its window: no warm per 16 ms tick
+        scaleDeferred &= !DEFERRED;
+        slotFreed           = false;
         armDecodePoll();
-        if (becameReady || (waitedForDecodeSlot && SLOT))
+        if (becameReady || DEFERRED || (waitedForDecodeSlot && SLOT))
             notifChanged();
     }
 
@@ -284,6 +299,55 @@ namespace NAwesome::Notify {
         return AIT->second.first;
     }
 
+    // cairo's GOOD filter costs ~6 ns per SOURCE pixel on a large
+    // downscale (a 16 MP screenshot: ~90 ms on the compositor thread). An
+    // integer box average first, to within 2x of the target, costs ~2 and
+    // keeps every source pixel's weight; GOOD then does the exact fraction.
+    // Premultiplied ARGB32 averages channel-wise; RGB24 gets opaque alpha.
+    // nullptr: under 4x there is nothing to gain (or a format it skips).
+    static cairo_surface_t* boxDecimate(cairo_surface_t* src, double sw, double sh, double tw, double th) {
+        const int    K   = (int)std::min(sw / (2 * tw), sh / (2 * th));
+        const auto   FMT = cairo_image_surface_get_format(src);
+        if (K < 2 || (FMT != CAIRO_FORMAT_ARGB32 && FMT != CAIRO_FORMAT_RGB24))
+            return nullptr;
+        const int OW = (int)sw / K, OH = (int)sh / K;
+        auto*     dst = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, OW, OH);
+        if (cairo_surface_status(dst) != CAIRO_STATUS_SUCCESS) {
+            cairo_surface_destroy(dst);
+            return nullptr;
+        }
+        cairo_surface_flush(src);
+        const uint8_t*        S   = cairo_image_surface_get_data(src);
+        const size_t          SST = cairo_image_surface_get_stride(src);
+        uint8_t*              D   = cairo_image_surface_get_data(dst);
+        const size_t          DST = cairo_image_surface_get_stride(dst);
+        const uint32_t        N   = (uint32_t)K * K; // 255 * N fits: K is at most half the shorter side of a <=16 MP raster
+        std::vector<uint32_t> acc((size_t)OW * 4);
+        for (int oy = 0; oy < OH; oy++) {
+            std::ranges::fill(acc, 0u);
+            for (int y = oy * K; y < (oy + 1) * K; y++) {
+                const uint8_t* p = S + (size_t)y * SST;
+                for (int ox = 0; ox < OW; ox++) {
+                    uint32_t* a = &acc[(size_t)ox * 4];
+                    for (int x = 0; x < K; x++, p += 4) {
+                        a[0] += p[0];
+                        a[1] += p[1];
+                        a[2] += p[2];
+                        a[3] += p[3];
+                    }
+                }
+            }
+            uint8_t* out = D + (size_t)oy * DST;
+            for (size_t i = 0; i < acc.size(); i++)
+                out[i] = (uint8_t)(acc[i] / N);
+            if (FMT == CAIRO_FORMAT_RGB24)
+                for (int ox = 0; ox < OW; ox++)
+                    out[(size_t)ox * 4 + 3] = 255; // native-endian ARGB: alpha is the 4th byte on little-endian
+        }
+        cairo_surface_mark_dirty(dst);
+        return dst;
+    }
+
     // Anything bigger than the card's icon box is downscaled ONCE on the CPU
     // at load — a 4K pixmap kept full-size would hold megabytes of VRAM to
     // paint <=100 logical px, and its GL upload would stall the main thread.
@@ -295,6 +359,12 @@ namespace NAwesome::Notify {
         const int    W     = std::max(1, (int)std::lround(sw * SCALE));
         const int    H     = std::max(1, (int)std::lround(sh * SCALE));
 
+        auto* BOX = boxDecimate(src, sw, sh, W, H);
+        if (BOX) {
+            src = BOX;
+            sw  = cairo_image_surface_get_width(BOX);
+            sh  = cairo_image_surface_get_height(BOX);
+        }
         auto*        SMALL = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
         auto*        CR    = cairo_create(SMALL);
         cairo_scale(CR, W / sw, H / sh);
@@ -303,6 +373,8 @@ namespace NAwesome::Notify {
         cairo_paint(CR);
         cairo_destroy(CR);
         cairo_surface_flush(SMALL);
+        if (BOX)
+            cairo_surface_destroy(BOX);
 
         auto tex = g_pHyprRenderer->createTexture(SMALL);
         cairo_surface_destroy(SMALL);
@@ -313,6 +385,12 @@ namespace NAwesome::Notify {
     // center-cropped (the hero treatment for previews). When the source
     // aspect matches, cover == fit and nothing is lost.
     static SP<ITexture> coverTex(cairo_surface_t* src, double sw, double sh, int W, int H) {
+        auto* BOX = boxDecimate(src, sw, sh, sw * std::max(W / sw, H / sh), sh * std::max(W / sw, H / sh));
+        if (BOX) {
+            src = BOX;
+            sw  = cairo_image_surface_get_width(BOX);
+            sh  = cairo_image_surface_get_height(BOX);
+        }
         auto*        SMALL = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
         auto*        CR    = cairo_create(SMALL);
         const double S     = std::max(W / sw, H / sh);
@@ -323,6 +401,8 @@ namespace NAwesome::Notify {
         cairo_paint(CR);
         cairo_destroy(CR);
         cairo_surface_flush(SMALL);
+        if (BOX)
+            cairo_surface_destroy(BOX);
 
         auto tex = g_pHyprRenderer->createTexture(SMALL);
         cairo_surface_destroy(SMALL);
@@ -425,6 +505,17 @@ namespace NAwesome::Notify {
         // card asking for the same file in the same warm (an app's cards,
         // the same fallback face) takes the same decode instead of queueing
         // its own, one after another
+        if (!JOB->rejected && JOB->resource) {
+            const auto SURF = JOB->resource->m_asset.cairoSurface;
+            if (SURF && SURF->status() == CAIRO_STATUS_SUCCESS && (double)SURF->size().x * SURF->size().y > SCALE_LARGE_PIXELS) {
+                if (!largeScaleOpen()) {
+                    scaleDeferred = true; // the job stays wanted; the poll re-warms past the window
+                    armDecodePoll();
+                    return {};
+                }
+                lastLargeScale = std::chrono::steady_clock::now();
+            }
+        }
         const bool REJECTED = JOB->rejected;
         const auto RESOURCE = JOB->resource;
         JOB->consumed       = true;
@@ -812,6 +903,7 @@ namespace NAwesome::Notify {
         generatedAvatars.clear();
         waitedForDecodeSlot = false;
         slotFreed           = false;
+        scaleDeferred       = false;
     }
 
 } // namespace NAwesome::Notify
