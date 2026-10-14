@@ -330,7 +330,10 @@ stays a broadcast.
   alone. A replace without the hint keeps the group for the same app.
 
 **Markup.** Body and title render the whitelisted Pango subset
-`<b> <i> <u> <span> <br>`; other tags are dropped and a stray `<`/`&`
+`<b> <i> <u> <span> <br>`, a `<span>` keeping only its color,
+weight, style, underline and strikethrough attributes (a font, face,
+size or lang per span is a fontconfig match per value on the
+compositor thread); other tags are dropped and a stray `<`/`&`
 that forms no tag or entity survives as literal text, so a
 markup-aware sender and a naive one both come out right. Malformed
 markup falls back to plain text. `<a href>` in the body is a

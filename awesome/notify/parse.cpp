@@ -24,6 +24,28 @@ namespace NAwesome::Notify::Parse {
         return name == "b" || name == "i" || name == "u" || name == "span" || name == "br" || (allowLinks && name == "a");
     }
 
+    // A <span> rebuilt from the attributes that only color or decorate. A
+    // font, face, size or lang per span made Pango run a fontconfig match
+    // per distinct value on the compositor thread, and a 32 KB body holds a
+    // thousand spans. Values are kept plain (no quote, entity or bracket).
+    static std::string spanTag(const std::string& tag) {
+        static const std::string KEEP[] = {"foreground", "fgcolor", "color", "background", "bgcolor", "alpha", "fgalpha", "bgalpha", "weight", "style",
+                                           "underline", "underline_color", "strikethrough", "strikethrough_color"};
+        std::string out = "<span";
+        for (const auto& A : KEEP) {
+            const auto V = attrValue(tag, A);
+            if (V.empty() || V.size() > 64 || V.find_first_of("\"'<>&") != std::string::npos)
+                continue;
+            out += ' ';
+            out += A;
+            out += "=\"";
+            out += V;
+            out += '"';
+        }
+        out += '>';
+        return out;
+    }
+
     // Linear in the input: a stranger's text full of '<x' or '&' that never
     // close must not rescan to the end for each one (a 130 KB summary of
     // '&' was ~0.5 s on the compositor thread per call). A tag can only end
@@ -46,11 +68,24 @@ namespace NAwesome::Notify::Parse {
                     if (END != std::string::npos) {
                         std::string name = in.substr(NS, j - NS);
                         std::ranges::transform(name, name.begin(), [](unsigned char c) { return std::tolower(c); });
+                        // a live tag is re-emitted from what it means: Pango's
+                        // names are lowercase, b/i/u take no attributes, and a
+                        // self-closed one formats nothing; <a> stays verbatim
+                        // (text.cpp reads its href)
                         if (name == "br")
                             out += '\n'; // a line break, whatever the card does with it
-                        else if (allowedTag(name, allowLinks))
-                            out += in.substr(i, END - i + 1); // live tag, verbatim (Pango validates attrs)
-                        // else: disallowed tag, dropped
+                        else if (!allowedTag(name, allowLinks))
+                            ; // disallowed tag, dropped
+                        else if (NS > i + 1)
+                            out += "</" + name + ">";
+                        else if (name == "a")
+                            out += in.substr(i, END - i + 1);
+                        else if (in[END - 1] == '/')
+                            ; // self-closed
+                        else if (name == "span")
+                            out += spanTag(in.substr(i, END - i + 1));
+                        else
+                            out += "<" + name + ">";
                         i = END + 1;
                         continue;
                     }
