@@ -113,20 +113,35 @@ namespace NAwesome {
                 bool       MORE     = false;
                 const auto DEADLINE = std::chrono::steady_clock::now() + std::chrono::milliseconds(4);
                 while (n++ < 64 && (MORE = m_conn->processPendingEvent()) && std::chrono::steady_clock::now() < DEADLINE) {}
+                if (MORE) {
+                    // cap hit: more queued. Both fds stay readable (sd-bus
+                    // clears its eventfd only once drained), so armed
+                    // sources would re-enter on the next loop turn and the
+                    // loop would never sleep: mask them until the tick
+                    // (the next sync re-arms them)
+                    if (m_src)
+                        wl_event_source_fd_update(m_src, 0);
+                    if (m_evtSrc)
+                        wl_event_source_fd_update(m_evtSrc, 0);
+                    m_poll->updateTimeout(std::chrono::milliseconds(2));
+                    return;
+                }
                 const auto PD = m_conn->getEventLoopPollData();
                 if (m_src)
                     wl_event_source_fd_update(m_src, ((PD.events & POLLIN) ? WL_EVENT_READABLE : 0) | ((PD.events & POLLOUT) ? WL_EVENT_WRITABLE : 0));
+                if (m_evtSrc)
+                    wl_event_source_fd_update(m_evtSrc, WL_EVENT_READABLE);
                 const auto REL = PD.getRelativeTimeout();
-                if (MORE) // cap hit: more queued, come back next tick
-                    m_poll->updateTimeout(std::chrono::milliseconds(2));
-                else if (REL == std::chrono::microseconds::max())
+                if (REL == std::chrono::microseconds::max())
                     m_poll->updateTimeout(std::nullopt);
                 else
                     m_poll->updateTimeout(std::max(std::chrono::duration_cast<std::chrono::milliseconds>(REL), std::chrono::milliseconds(1)));
             } catch (const std::exception& E) {
                 if (m_conn && g_pEventLoopManager && !m_pendingDrop.armed()) {
-                    if (onLost)
-                        onLost(E.what());
+                    try {
+                        if (onLost)
+                            onLost(E.what());
+                    } catch (...) {} // inside libwayland's C dispatch: nothing may unwind
                     m_pendingDrop.arm([this]() {
                         teardown();
                         if (afterTeardown)
