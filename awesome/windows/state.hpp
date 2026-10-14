@@ -217,13 +217,15 @@ namespace NAwesome::Windows::Tasklist {
     // other window gets focused. With the real surface the guard can never
     // match a half-focused window, and a focused-but-obscured one still
     // raises.
-    inline void raiseAndFocus(const PHLWINDOW& w) {
+    // by value: a caller's reference into the compositor's window list would
+    // see raise() rotate another window into its slot before the focus
+    inline void raiseAndFocus(PHLWINDOW w) {
         Desktop::windowState()->raise(w);
         if (Desktop::focusState())
             Desktop::focusState()->fullWindowFocus(w, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW, w->wlSurface()->resource());
     }
 
-    inline void restore(const PHLWINDOW& w) {
+    inline void restore(PHLWINDOW w) {
         if (!w)
             return;
         bool                        tiled = false, found = false;

@@ -46,7 +46,9 @@ inline bool activateAppWindow(uint32_t pid) {
         if (!restoreMinimizedHook())
             return false;
         for (size_t i = WINDOWS.size(); i-- > 0;) {
-            const auto& W = WINDOWS[i];
+            // a copy, never a reference into the list: the restore raises,
+            // which rotates the compositor's window vector under slot i
+            const PHLWINDOW W = WINDOWS[i];
             if (W->mapped() && W->isHidden() && W->backend().pid() == static_cast<pid_t>(pid) && restoreMinimizedHook()(W))
                 return true;
         }
