@@ -491,7 +491,9 @@ pragmatic scan (GTK theme → hicolor → pixmaps), not a full
   linear steps with a raw floor of 2, and writes through logind
   `Session.SetBrightness` on the system bus — no root, no udev rule.
   One write is in flight at a time; presses meanwhile add up into the
-  next.
+  next. A device that is missing or stops reading is looked up again on
+  the next press (a late driver, a GPU switch); with none, or no system
+  bus, the press answers with an "unavailable" card.
 - **Volume and microphone**: `wpctl` reads the current value and writes
   the new one inside its own process, so two sets at once lose a step
   (or fold two mute toggles into one). Each device runs ONE set at a

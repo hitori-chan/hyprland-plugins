@@ -53,13 +53,17 @@ namespace NAwesome::System {
         return L;
     }
     static std::unique_ptr<sdbus::IProxy> logindProxy;
+    static void                           brightnessDropped();
 
     static void systemBusInit() {
         auto& L = systemBus();
         L.onLost = [](const std::string& err) {
             HyprlandAPI::addNotification(supervisor().handle(), "[awesome] system bus lost: " + err, CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
         };
-        L.dropOwned = []() { logindProxy.reset(); };
+        L.dropOwned = []() {
+            logindProxy.reset(); // its pending SetBrightness dies unanswered
+            brightnessDropped();
+        };
         try {
             L.open(true);
             L.sync();
@@ -75,7 +79,11 @@ namespace NAwesome::System {
     static int         backlightMax = 0;
     static std::string logindSessionPath; // explicit over "auto": see findLogindSession
 
+    // at init, and again when the device is missing or stops reading (a
+    // driver loaded late, a GPU switch, a ddcci monitor plugged in)
     static void findBacklight() {
+        backlightDev.clear();
+        backlightMax = 0;
 #ifdef AWESOME_GATE
         // the gate's fake backlight class dir, driven by a fake logind on the
         // nested's private system bus: its battery never moves the panel
@@ -89,7 +97,9 @@ namespace NAwesome::System {
         const auto RANK = [](const std::string& type) { return type == "firmware" ? 0 : type == "platform" ? 1 : type == "raw" ? 2 : 3; };
         int        best = 4;
         std::error_code ec;
-        for (const auto& e : std::filesystem::directory_iterator(backlightRoot, ec)) {
+        // increment(ec): the range-for's operator++ throws
+        for (auto it = std::filesystem::directory_iterator(backlightRoot, ec); !ec && it != std::filesystem::end(it); it.increment(ec)) {
+            const auto&   e   = *it;
             int           max = 0;
             std::ifstream m(e.path() / "max_brightness");
             if (!m || !(m >> max) || max <= 0)
@@ -150,6 +160,23 @@ namespace NAwesome::System {
     static bool brightnessBusy    = false;
     static int  brightnessPending = 0;
 
+    static void brightnessDropped() {
+        ++brightnessGeneration;
+        brightnessBusy = false;
+    }
+
+    static void brightnessUnavailable() {
+        Notify::Model::postCard({.id = ID_BRIGHTNESS, .icon = "display-brightness-symbolic", .summary = "Brightness", .body = "unavailable", .expireTimeout = OSD_TIMEOUT});
+    }
+
+    static std::optional<int> readBrightness() {
+        int           raw = -1;
+        std::ifstream b(backlightRoot + "/" + backlightDev + "/brightness");
+        if (!b || !(b >> raw) || raw < 0)
+            return std::nullopt;
+        return raw;
+    }
+
     static void brightnessApply();
     static void brightnessStep(int dir) {
         brightnessPending = std::clamp(brightnessPending + dir, -20, 20);
@@ -162,16 +189,24 @@ namespace NAwesome::System {
         if (dir == 0)
             return;
         const uint64_t GENERATION = ++brightnessGeneration;
-        if (backlightDev.empty() || !systemBus().conn())
-            return;
+        if (!systemBus().conn())
+            return brightnessUnavailable();
 
         int raw = -1;
         if (lastSetRaw >= 0 && Time::steadyNow() - lastSetAt < std::chrono::milliseconds(500))
             raw = lastSetRaw;
         else {
-            std::ifstream b(backlightRoot + "/" + backlightDev + "/brightness");
-            if (!b || !(b >> raw) || raw < 0)
-                return;
+            auto now = backlightDev.empty() ? std::nullopt : readBrightness();
+            if (!now) {
+                // gone or never found: look again, once per press
+                findBacklight();
+                lastSetRaw = -1;
+                if (!backlightDev.empty())
+                    now = readBrightness();
+            }
+            if (!now)
+                return brightnessUnavailable();
+            raw = *now;
         }
 
         // ±5% of max, linear, floored at 2 raw (the old brightnessctl -n2)
