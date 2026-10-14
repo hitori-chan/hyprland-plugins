@@ -510,7 +510,8 @@ pragmatic scan (GTK theme → hicolor → pixmaps), not a full
   burst); the flip writes the compositor's per-device config store
   through `hl.device`, so nothing fights the next config re-apply, and
   a reload re-checks — silently: a card answers only a change the user
-  can see, or the manual flip.
+  can see, or the manual flip. A touchpad already in the wanted state is
+  left alone (`hl.device` re-runs the device setup, a keymap compile).
 - Every action's feedback is a card posted straight into the notify
   model: fixed ids (pad 9991, brightness 9992, volume 9993, mic 9995)
   replace in place, low urgency, 1200 ms expiry, a `value` bar, and the

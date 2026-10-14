@@ -156,8 +156,17 @@ namespace NAwesome::System {
                     // else every mouse hotplug re-spams it (WANT is 0/1, appliedState stuck at -1)
         }
         const int WANT = externalMousePresent() ? 0 : 1;
-        if (WANT != appliedState || appliedTouchpad.lock() != TOUCHPAD)
-            applyEnabled(WANT == 1, TOUCHPAD);
+        if (WANT == appliedState && appliedTouchpad.lock() == TOUCHPAD)
+            return;
+        // already there (every config save reloads, and the config's own
+        // state is usually the wanted one): record it without the eval —
+        // hl.device re-runs the device setup, an XKB keymap compile
+        if (touchpadEnabled() == (WANT == 1)) {
+            appliedState    = WANT;
+            appliedTouchpad = TOUCHPAD;
+            return;
+        }
+        applyEnabled(WANT == 1, TOUCHPAD);
     }
 
     // Removal is observable in-process: every pointer's destroy signal arms
