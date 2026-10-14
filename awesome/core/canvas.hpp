@@ -534,13 +534,6 @@ namespace NAwesome {
                 }
         }
 
-        bool anyLayerVisible(PHLMONITOR mon) const {
-            for (auto* L : m_layers)
-                if (L->boundingBox(mon))
-                    return true;
-            return false;
-        }
-
 #ifdef AWESOME_GATE
         // the gate's draw profile (`hyprctl awesome drawstats`): time inside
         // the canvas pass's draw — layout and the paint calls it issues —
@@ -634,17 +627,5 @@ namespace NAwesome {
             ILayer*       m_layer; // a static module layer: outlives every frame's pass
         };
     };
-
-    // Damage a global box on every renderer; the margin covers hairlines
-    // riding outside boxes, the glass's blur radius, and shadow range.
-    inline void damageBox(const CBox& global) {
-        if (!g_pHyprRenderer)
-            return;
-        g_pHyprRenderer->damageBox(global);
-    }
-    inline void damageMonitor(PHLMONITOR mon) {
-        if (g_pHyprRenderer && mon)
-            g_pHyprRenderer->damageMonitor(mon);
-    }
 
 } // namespace NAwesome
