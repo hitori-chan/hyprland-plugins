@@ -383,8 +383,10 @@ namespace NAwesome::Notify {
 
     // Scale into exactly W x H, covering the box: the overflowing axis is
     // center-cropped (the hero treatment for previews). When the source
-    // aspect matches, cover == fit and nothing is lost.
-    static SP<ITexture> coverTex(cairo_surface_t* src, double sw, double sh, int W, int H) {
+    // aspect matches, cover == fit and nothing is lost. `thumb` also gets a
+    // thumbPx square cover of the whole image (the shade row's face of a
+    // hero), cut from the decimated copy so the source is read once.
+    static SP<ITexture> coverTex(cairo_surface_t* src, double sw, double sh, int W, int H, int thumbPx = 0, SP<ITexture>* thumb = nullptr) {
         auto* BOX = boxDecimate(src, sw, sh, sw * std::max(W / sw, H / sh), sh * std::max(W / sw, H / sh));
         if (BOX) {
             src = BOX;
@@ -401,6 +403,8 @@ namespace NAwesome::Notify {
         cairo_paint(CR);
         cairo_destroy(CR);
         cairo_surface_flush(SMALL);
+        if (thumb && thumbPx > 0)
+            *thumb = coverTex(src, sw, sh, thumbPx, thumbPx);
         if (BOX)
             cairo_surface_destroy(BOX);
 
@@ -446,6 +450,7 @@ namespace NAwesome::Notify {
 
     struct SFileTexResult {
         SP<ITexture> texture;
+        SP<ITexture> thumb;           // a hero's icon-box face (coverTex)
         bool         settled = false; // false: an async decode is in flight
         bool         hero    = false;
     };
@@ -454,7 +459,7 @@ namespace NAwesome::Notify {
     // size transiently and get scaled here. The synchronous path: always
     // settled, used without the compositor's gatherer and for the generic
     // mark (a fixed theme name, not a sender's file).
-    static SP<ITexture> syncFileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool& hero, bool tintSymbolic = false) {
+    static SP<ITexture> syncFileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool& hero, bool tintSymbolic = false, SP<ITexture>* thumb = nullptr) {
         const int  HINT  = std::max(iconPx, heroWPx);
         const auto BYTES = NAwesome::readImageFile(path); // one non-blocking open; these bytes are what decodes
         if (!BYTES)
@@ -482,7 +487,7 @@ namespace NAwesome::Notify {
 
         hero = heroWorthy(SZ.x, SZ.y, heroWPx);
         if (hero)
-            return coverTex(SURF->cairo(), SZ.x, SZ.y, heroWPx, std::min((int)std::lround(heroWPx * SZ.y / SZ.x), heroHCapPx));
+            return coverTex(SURF->cairo(), SZ.x, SZ.y, heroWPx, std::min((int)std::lround(heroWPx * SZ.y / SZ.x), heroHCapPx), iconPx, thumb);
         return scaledTex(SURF->cairo(), SZ.x, SZ.y, iconPx);
     }
 
@@ -495,8 +500,10 @@ namespace NAwesome::Notify {
     // (the decode is shared by every card asking for the file).
     static SFileTexResult fileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool tintSymbolic = false) {
         if (!g_pAsyncResourceGatherer) {
-            bool hero = false;
-            return {.texture = syncFileTex(path, iconPx, heroWPx, heroHCapPx, hero, tintSymbolic), .settled = true, .hero = hero};
+            bool         hero = false;
+            SP<ITexture> thumb;
+            auto         tex = syncFileTex(path, iconPx, heroWPx, heroHCapPx, hero, tintSymbolic, &thumb);
+            return {.texture = std::move(tex), .thumb = std::move(thumb), .settled = true, .hero = hero};
         }
         const auto JOB = decodeJobFor(path, heroWPx > 0 ? std::max(iconPx, heroWPx) : iconPx);
         if (!JOB || !resourceReady(*JOB))
@@ -543,7 +550,7 @@ namespace NAwesome::Notify {
         }
         result.hero = heroWorthy(SZ.x, SZ.y, heroWPx);
         if (result.hero)
-            result.texture = coverTex(src, SZ.x, SZ.y, heroWPx, std::min((int)std::lround((double)heroWPx * SZ.y / SZ.x), heroHCapPx));
+            result.texture = coverTex(src, SZ.x, SZ.y, heroWPx, std::min((int)std::lround((double)heroWPx * SZ.y / SZ.x), heroHCapPx), iconPx, &result.thumb);
         else
             result.texture = scaledTex(src, SZ.x, SZ.y, iconPx);
         if (tinted)
@@ -722,6 +729,7 @@ namespace NAwesome::Notify {
             h          = fnv1a(&n.pw, sizeof(n.pw), h);
             h          = fnv1a(&n.ph, sizeof(n.ph), h);
             if (!n.iconTex || n.pixelsFor != h) {
+                n.thumbTex.reset();
                 n.heroTex = heroWorthy(n.pw, n.ph, heroWPx);
                 if (n.heroTex || n.pw > iconPx || n.ph > iconPx) {
                     // stride pw*4 is how unpackImageData lays the buffer out
@@ -729,7 +737,7 @@ namespace NAwesome::Notify {
                     if (cairo_surface_status(SRC) != CAIRO_STATUS_SUCCESS)
                         n.iconTex = nullptr;
                     else if (n.heroTex)
-                        n.iconTex = coverTex(SRC, n.pw, n.ph, heroWPx, std::min((int)std::lround((double)heroWPx * n.ph / n.pw), heroHCapPx));
+                        n.iconTex = coverTex(SRC, n.pw, n.ph, heroWPx, std::min((int)std::lround((double)heroWPx * n.ph / n.pw), heroHCapPx), iconPx, &n.thumbTex);
                     else
                         n.iconTex = scaledTex(SRC, n.pw, n.ph, iconPx);
                     cairo_surface_destroy(SRC);
@@ -747,6 +755,7 @@ namespace NAwesome::Notify {
             // no content image: the card shows its identity (or the rolled
             // fallback face) alone — content has no fallback of its own
             n.iconTex.reset();
+            n.thumbTex.reset();
             n.imageFor.clear();
             n.pixelsFor = 0;
             n.heroTex   = false;
@@ -755,6 +764,7 @@ namespace NAwesome::Notify {
         }
         if (n.imageFor != n.image || n.imageIconPx != iconPx) {
             n.iconTex.reset();
+            n.thumbTex.reset();
             n.imageFor     = n.image;
             n.imageIconPx  = iconPx;
             n.pixelsFor    = 0;
@@ -764,6 +774,7 @@ namespace NAwesome::Notify {
             const auto TEX = fileTex(n.image, iconPx, heroWPx, heroHCapPx, false);
             if (TEX.settled) {
                 n.iconTex      = TEX.texture;
+                n.thumbTex     = TEX.thumb;
                 n.imageSettled = true; // a known-bad source: no disk retry per warm
                 n.heroTex      = TEX.hero;
                 if (!n.iconTex) {

@@ -91,10 +91,12 @@ namespace NAwesome::Notify {
 
     // shared card recipes — the progress pill and the content-first icon
     // column (lead avatar wearing the identity corner badge); layout code
-    // computes presence itself via hasLeadIcon
-    bool   hasLeadIcon(const SNotif& n);
-    void   paintProgress(const SPaint& P, double x, double y, double w, int pct, bool critical);
-    void   paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool withBadge, float rp);
+    // computes presence itself via hasLeadIcon. `shade`: a shade row, which
+    // leads with a hero's thumbnail where a banner shows the hero
+    const SP<ITexture>& contentFace(const SNotif& n, bool shade);
+    bool                hasLeadIcon(const SNotif& n, bool shade = false);
+    void                paintProgress(const SPaint& P, double x, double y, double w, int pct, bool critical);
+    void                paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool withBadge, float rp, bool shade = false);
 
     float  easeOutCubic(float t);
     float  easeOutBack(float t); // the spatial overshoot

@@ -93,7 +93,7 @@ chk "overflow: wheeling down keeps every card" test "$(st)" = "center:1 live:15 
 hq awesome center >/dev/null; sleep 0.4
 nclear
 
-# ---- the center hero: the shade's face of the banner preview -------------
+# ---- the hero: the banner's preview, the shade row's thumbnail -----------
 HEROIMG=$STATE/hero-probe-aw.png
 python3 - "$HEROIMG" <<'PY'
 import sys
@@ -130,23 +130,25 @@ PY
 }
 dsp "hl.dsp.exec_cmd('notify-send -a heroapp -t 2000 -i $HEROIMG \"Screenshot\" saved')"; sleep 1
 chk "hero: the image card pops with its banner" test "$(bd)" = "banners:1 resident:0"
+capture_nested $STATE/hero-0-aw.png
+chk "hero: the banner leads with the card-wide preview" test "$(hero_px $STATE/hero-0-aw.png)" -gt 8000
+chk "hero: the banner's preview is the capped strip, not the full image" test "$(hero_span $STATE/hero-0-aw.png)" -ge 104 -a "$(hero_span $STATE/hero-0-aw.png)" -le 116
 hq awesome center >/dev/null; sleep 0.4
 capture_nested $STATE/hero-1-aw.png
-chk "hero: the center row (open by default) shows the preview" test "$(hero_px $STATE/hero-1-aw.png)" -gt 8000
-chk "hero: the preview is the capped strip, not the full image" test "$(hero_span $STATE/hero-1-aw.png)" -ge 104 -a "$(hero_span $STATE/hero-1-aw.png)" -le 116
+chk "hero: the shade row shows no card-wide preview" test "$(hero_px $STATE/hero-1-aw.png)" -lt 3000
+chk "hero: the shade row leads with the image's thumbnail" test "$(hero_px $STATE/hero-1-aw.png)" -gt 200
+chk "hero: the thumbnail is icon-sized" test "$(hero_span $STATE/hero-1-aw.png)" -ge 30 -a "$(hero_span $STATE/hero-1-aw.png)" -le 50
 PB1="$(panel_bottom $STATE/hero-1-aw.png)"
-click $CHVX 174 272
+click $CHVX $ROWY 272
 capture_nested $STATE/hero-2-aw.png
-chk "hero: the folded row keeps the preview" test "$(hero_px $STATE/hero-2-aw.png)" -gt 8000
+chk "hero: the folded row keeps the thumbnail" test "$(hero_px $STATE/hero-2-aw.png)" -gt 200
 PB2="$(panel_bottom $STATE/hero-2-aw.png)"
 chk "hero: the panel follows the fold (the body height moves)" test $(( PB2 > PB1 ? PB2 - PB1 : PB1 - PB2 )) -ge 18
-sleep 1.5
-capture_nested $STATE/hero-3-aw.png
-chk "hero: the preview survives the banner retreating" test "$(hero_px $STATE/hero-3-aw.png)" -gt 8000
-chk "hero: the card is a resident, its banner is down" test "$(bd)" = "banners:0 resident:1"
-click $CHVX 174 272
-sleep 0.4
+click $CHVX $ROWY 272
 hq awesome center >/dev/null; sleep 0.4
+chk "hero: the explicit close re-pops the banner" test "$(bd)" = "banners:1 resident:0"
+capture_nested $STATE/hero-3-aw.png
+chk "hero: the re-popped banner shows the preview again" test "$(hero_px $STATE/hero-3-aw.png)" -gt 8000
 nclear
 chk "hero: reset after the center-hero battery" test "$(st)" = "center:0 live:0 dnd:0"
 

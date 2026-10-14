@@ -382,8 +382,10 @@ re-flow when it lands. A decode lands full size and scales on the
 compositor thread, box-averaged first to within 2x of the card; past
 4 MP, one such scale runs per 100 ms and the rest wait for a later
 warm. Screenshot-sized
-images (256 px in both dimensions) render card-width as a
-cover-cropped hero in any capture shape. Iconless cards draw a random
+images (256 px in both dimensions) render popup-width as a
+cover-cropped hero in any capture shape; the shade keeps its rows
+compact and shows the same image as a square-cropped thumbnail in the
+icon column (AOSP's collapsed BigPicture). Iconless cards draw a random
 face from `fallback_icon_dir`, and when that dir is empty (or a face
 fails to load) a deterministic generic application mark, so no card is
 faceless. The icon column is Android's conversation container: the

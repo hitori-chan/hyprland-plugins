@@ -56,13 +56,23 @@ namespace NAwesome::Notify {
     // ---- shared card recipes (popups and center rows drifted apart once —
     //      the badge and the progress pill draw from ONE place now) ----
 
+    // The content image in an icon column: the avatar, or in the shade
+    // (which shows no hero) a hero's square thumbnail. A banner's hero
+    // leaves its column to the identity.
+    const SP<ITexture>& contentFace(const SNotif& n, bool shade) {
+        static const SP<ITexture> NONE;
+        if (!n.iconTex)
+            return NONE;
+        return !n.heroTex ? n.iconTex : shade ? n.thumbTex : NONE;
+    }
+
     // An icon still decoding reserves its column: the text laid out full
     // width and re-laid narrower when the decode landed, a visible jump and
-    // every text rastered twice. (A content image that turns out hero-wide
-    // still swaps the column for the hero when it lands.)
-    bool hasLeadIcon(const SNotif& n) {
+    // every text rastered twice. (A banner's content image that turns out
+    // hero-wide still swaps the column for the hero when it lands.)
+    bool hasLeadIcon(const SNotif& n, bool shade) {
         const bool PENDING = (!n.identity.empty() && !n.identSettled) || (!n.fallbackPick.empty() && !n.identSettled) || (!n.image.empty() && !n.imageSettled);
-        return PENDING || (n.iconTex && !n.heroTex) || (n.identTex && n.identTex->m_texID != 0);
+        return PENDING || contentFace(n, shade) || (n.identTex && n.identTex->m_texID != 0);
     }
 
     void paintProgress(const SPaint& P, double x, double y, double w, int pct, bool critical) {
@@ -82,10 +92,11 @@ namespace NAwesome::Notify {
     // content image leads with its identity (or the rolled fallback face) and
     // wears no badge — there would be nothing to distinguish it from.
     // Callers gate their layout on hasLeadIcon.
-    void paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool withBadge, float rp) {
+    void paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool withBadge, float rp, bool shade) {
         const bool  HASIDENT = n.identTex && n.identTex->m_texID != 0;
-        const bool  AVATAR   = n.iconTex && n.iconTex->m_texID != 0 && !n.heroTex;
-        const auto& LEAD     = AVATAR ? n.iconTex : n.identTex;
+        const auto& FACE     = contentFace(n, shade);
+        const bool  AVATAR   = FACE && FACE->m_texID != 0;
+        const auto& LEAD     = AVATAR ? FACE : n.identTex;
         if (!LEAD || LEAD->m_texID == 0)
             return;
 

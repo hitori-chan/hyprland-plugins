@@ -198,6 +198,7 @@ namespace NAwesome::Notify {
         // Text rasters live in text.cpp's keyed cache; only the decoded
         // images cache here (their sources don't re-key per age tick).
         SP<ITexture> iconTex;  // content avatar (or hero)
+        SP<ITexture> thumbTex; // a hero's icon-box face: the shade row leads with it, the hero is the popup's
         SP<ITexture> identTex; // identity icon: the corner badge, or the lead icon when no content
         std::string  imageFor, identFor;
         bool         heroTex      = false; // iconTex was built for the hero layout
@@ -335,7 +336,8 @@ namespace NAwesome::Notify {
     // (Re)build n.iconTex (content) and n.identTex (identity) when their
     // sources changed. iconPx caps the icon-box raster; screenshot-sized
     // content (256 px both ways, at least half the hero box) raster to
-    // heroWPx instead, cover-cropped to heroHCapPx, and set heroTex.
+    // heroWPx instead, cover-cropped to heroHCapPx, and set heroTex (with
+    // thumbTex, the whole image square-cropped to iconPx).
     void resetFallbackCache(); // forget the fallback_icon_dir listing (a config reload rescans)
     void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx);
     void ensureAvatarTex(SParticipant& p, int px);

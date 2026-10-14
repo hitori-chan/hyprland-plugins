@@ -40,12 +40,12 @@ namespace NAwesome::Notify {
                     ensureAvatarTex(PA, (int)std::lround(FACEPILE_D * P.scale));
         }
 
-        // the center face of the banner hero (popups.cpp): a hero-worthy content
-        // image leads the row full-width and suppresses the icon column — AOSP
-        // hides the large icon the same way when its BigPicture is up
-        const bool   HERO     = N->iconTex && N->heroTex;
-        const double HEROH    = HERO ? box.w * N->iconTex->m_size.y / std::max(1.0, N->iconTex->m_size.x) : 0; // the aspect at the row's width (popups.cpp)
-        const bool   LEADICON = !HERO && hasLeadIcon(*N);
+        // the hero is the banner's (popups.cpp): a row keeps the shade a
+        // compact list, so a hero-worthy image leads it as a thumbnail in
+        // the icon column, like AOSP's collapsed BigPicture. Rows still pass
+        // the hero width above: the texture they warm is the one a re-popped
+        // banner shows.
+        const bool   LEADICON = hasLeadIcon(*N, true);
         const double ICONW    = LEADICON ? ST.iconPx : 0;
         const double TX       = box.x + ROW_PADX + (ICONW > 0 ? ICONW + ROW_ICON_GAP : 0);
         const bool   CHEVRON  = ST.hasChevron && (open || more);
@@ -54,7 +54,7 @@ namespace NAwesome::Notify {
         const int    TEXTWPX  = std::max(1, (int)std::floor(TEXTW * P.scale));
 
         double       th = 0;
-        const double TY = HERO ? box.y + HEROH + PADY : box.y + ROW_PADT;
+        const double TY = box.y + ROW_PADT;
 
         if (!open) {
             // collapsed: bold "title • age" + the newest body line (+progress)
@@ -249,20 +249,17 @@ namespace NAwesome::Notify {
 
         }
 
-        const double ROWH = (HERO ? HEROH + PADY : ROW_PADT) + std::max(th, ICONW) + ROW_PADB;
-
-        if (!P.warm && HERO)
-            P.texFit(N->iconTex, CBox{box.x, box.y, box.w, HEROH}, (int)std::lround(rRow(P.scale) * P.scale), RP);
+        const double ROWH = ROW_PADT + std::max(th, ICONW) + ROW_PADB;
 
         if (!P.warm && LEADICON) {
             // collapsed rows center the icon; expanded top-pin it
             const double IY = open ? TY : box.y + (ROWH - ICONW) / 2;
-            paintIconColumn(P, *N, CBox{box.x + ROW_PADX, IY, ICONW, ICONW}, ST.withBadge, RP);
+            paintIconColumn(P, *N, CBox{box.x + ROW_PADX, IY, ICONW, ICONW}, ST.withBadge, RP, true);
         }
         // the chevron circle: an INDICATOR that the row folds, and a second
         // hit target for it — the whole row is the first one
         if (CHEVRON) {
-            const double CY = open ? TY : (HERO ? TY + (std::max(th, ICONW) - CHEV) / 2 : box.y + (ROWH - CHEV) / 2);
+            const double CY = open ? TY : box.y + (ROWH - CHEV) / 2;
             const CBox   CB{box.x + box.w - ROW_PADX - CHEV, CY, CHEV, CHEV};
             const auto   G = chevronTex(open ? 1 : 0, COLFG, (int)std::lround(CHEV * P.scale)); // built in BOTH modes
             if (!P.warm) {
@@ -323,7 +320,7 @@ namespace NAwesome::Notify {
         if (NAwesome::Canvas::inst().gate().warming)
             ensureIconTex(*NEWEST, (int)std::lround(NAwesome::cfg().getI("plugin:awesome:notify:max_icon") * P.scale),
                           (int)std::lround(box.w * P.scale), (int)std::lround(HERO_CAP * P.scale));
-        const auto& IDT = NEWEST->identTex && NEWEST->identTex->m_texID ? NEWEST->identTex : NEWEST->iconTex;
+        const auto& IDT = NEWEST->identTex && NEWEST->identTex->m_texID ? NEWEST->identTex : contentFace(*NEWEST, true);
         if (IDT)
             P.texFit(IDT, CBox{box.x + ROW_PADX, box.y + ROW_PADT, ROW_ICON, ROW_ICON}, (int)std::lround(ROW_ICON * 10.0 / 44.0 * P.scale), RP);
 
@@ -370,7 +367,8 @@ namespace NAwesome::Notify {
             // each child's OWN face: a bundle's children all share one
             // app icon, so leading with the identity drew the same
             // glyph on every preview line
-            const SP<ITexture> PV = (N->iconTex && N->iconTex->m_texID && !N->heroTex) ? N->iconTex : N->identTex;
+            const auto&        FACE = contentFace(*N, true);
+            const SP<ITexture> PV   = (FACE && FACE->m_texID) ? FACE : N->identTex;
             if (PV && PV->m_texID) {
                 P.texFit(PV, CBox{px, py + (LH - PREV_ICON) / 2, PREV_ICON, PREV_ICON}, (int)std::lround(PREV_ICON / 2 * P.scale), 2.f);
                 px += PREV_ICON + 6;
@@ -411,7 +409,7 @@ namespace NAwesome::Notify {
         if (NAwesome::Canvas::inst().gate().warming)
             ensureIconTex(*NEWEST, (int)std::lround(NAwesome::cfg().getI("plugin:awesome:notify:max_icon") * P.scale),
                           (int)std::lround(box.w * P.scale), (int)std::lround(HERO_CAP * P.scale));
-        const auto& IDT = NEWEST->identTex && NEWEST->identTex->m_texID ? NEWEST->identTex : NEWEST->iconTex;
+        const auto& IDT = NEWEST->identTex && NEWEST->identTex->m_texID ? NEWEST->identTex : contentFace(*NEWEST, true);
         if (IDT)
             P.texFit(IDT, CBox{box.x + ROW_PADX, box.y + ROW_PADT, CHILD_ICON, CHILD_ICON}, (int)std::lround(CHILD_ICON * 10.0 / 44.0 * P.scale), RP);
 
