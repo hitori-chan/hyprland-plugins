@@ -14,7 +14,6 @@
 #include <string>
 #include <string_view>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <unistd.h>
 #include <utility>
 #include <vector>
@@ -332,7 +331,6 @@ done
             }
 
             m_fd     = pipefd[0];
-            m_pid    = CHILD.pid;
             m_pidfd  = CHILD.pidfd;
             m_source = wl_event_loop_add_fd(m_loop, m_fd, WL_EVENT_READABLE, onPipe, this);
             if (m_source)
@@ -472,7 +470,7 @@ done
                 return;
             }
             closePipe();
-            reapNoWait();
+            Proc::reap(m_pidfd);
             m_complete = true;
         }
 
@@ -495,28 +493,18 @@ done
             m_paused = false;
         }
 
-        void reapNoWait() {
-            if (m_pid <= 0)
-                return;
-            for (;;) {
-                const pid_t result = waitpid(m_pid, nullptr, WNOHANG);
-                if (result < 0 && errno == EINTR)
-                    continue;
-                break;
-            }
-            m_pid = -1;
-        }
-
         void stopHelper(bool terminate) {
             closePipe();
             // the Bash worker and its find child share this owned group
             if (terminate && m_pidfd >= 0)
                 pidfd_send_signal(m_pidfd, SIGTERM, nullptr, PIDFD_SIGNAL_PROCESS_GROUP);
+            // by pidfd, never by pid: the compositor's SA_NOCLDWAIT may have
+            // reaped it already and the pid gone to another of its children
+            Proc::reap(m_pidfd);
             if (m_pidfd >= 0) {
                 close(m_pidfd);
                 m_pidfd = -1;
             }
-            reapNoWait();
             m_eof = false;
         }
 
@@ -529,7 +517,6 @@ done
         wl_event_loop*                      m_loop         = nullptr;
         wl_event_source*                    m_source       = nullptr;
         int                                 m_fd           = -1;
-        pid_t                               m_pid          = -1;
         int                                 m_pidfd        = -1;
         uint64_t                            m_generation   = 0;
         size_t                              m_maxFileBytes = 0;
