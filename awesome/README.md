@@ -375,9 +375,10 @@ reads the same file (/proc/self/fd), never the path again, so a FIFO
 or a swap after the check cannot reach it. File icons decode off the
 render thread on the compositor's async resource gatherer (a bounded
 share of its queue, one decode shared by every card asking for the
-same file; symbolic icons and SVG heroes stay synchronous): a card
-whose icon is still decoding keeps the icon column reserved — the text
-does not re-flow when it lands. Screenshot-sized
+same file; a sender's SVG too, rastered at the hero width when it
+may be one, and a symbolic icon tinted on a copy): a card whose icon is
+still decoding keeps the icon column reserved — the text does not
+re-flow when it lands. Screenshot-sized
 images (256 px in both dimensions) render card-width as a
 cover-cropped hero in any capture shape. Iconless cards draw a random
 face from `fallback_icon_dir`, and when that dir is empty (or a face

@@ -125,9 +125,10 @@ namespace NAwesome::Notify {
     // find-or-enqueue the gatherer's job for (source, svg viewport). nullptr:
     // the slot is taken — the caller keeps the card unsettled and a freed
     // slot re-warms (a decode cannot be cancelled after enqueue, so the cap
-    // also bounds replaced and deleted cards)
+    // also bounds replaced and deleted cards). An SVG's viewport is the
+    // size it rasters at: an icon's, or a hero's box width.
     static SDecodeJob* decodeJobFor(const std::string& source, int svgPx) {
-        const int SVG_PX = NAwesome::isSvgIconPath(source) ? std::clamp(svgPx, 1, 256) : 0;
+        const int SVG_PX = NAwesome::isSvgIconPath(source) ? std::clamp(svgPx, 1, 1024) : 0;
         if (const auto IT = std::ranges::find_if(decodeJobs, [&](const auto& job) { return job.source == source && job.svgPx == SVG_PX; }); IT != decodeJobs.end()) {
             IT->wanted = true;
             return &*IT;
@@ -371,9 +372,8 @@ namespace NAwesome::Notify {
 
     // CImage's size hint only bounds SVG rasters; raster formats decode full
     // size transiently and get scaled here. The synchronous path: always
-    // settled, used for symbolic icons (the tint would bake into the
-    // gatherer's shared surface) and SVG heroes (a 256 px async viewport
-    // could never cover them).
+    // settled, used without the compositor's gatherer and for the generic
+    // mark (a fixed theme name, not a sender's file).
     static SP<ITexture> syncFileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool& hero, bool tintSymbolic = false) {
         const int  HINT  = std::max(iconPx, heroWPx);
         const auto BYTES = NAwesome::readImageFile(path); // one non-blocking open; these bytes are what decodes
@@ -409,17 +409,16 @@ namespace NAwesome::Notify {
     // The async front door: a file icon decodes on the gatherer's worker and
     // the warm pass only scales the ready result. settled=false means "ask
     // again after the next warm" — the 16 ms poll re-warms when the
-    // resource lands.
+    // resource lands. SVGs too, a sender's included (up to 2 MiB of XML to
+    // parse): a hero candidate rasters at the hero box's width, as the
+    // synchronous path's hint did, and a symbolic icon is tinted on a copy
+    // (the decode is shared by every card asking for the file).
     static SFileTexResult fileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool tintSymbolic = false) {
-        if (tintSymbolic || (heroWPx > 0 && NAwesome::isSvgIconPath(path))) {
+        if (!g_pAsyncResourceGatherer) {
             bool hero = false;
             return {.texture = syncFileTex(path, iconPx, heroWPx, heroHCapPx, hero, tintSymbolic), .settled = true, .hero = hero};
         }
-        if (!g_pAsyncResourceGatherer) {
-            bool hero = false;
-            return {.texture = syncFileTex(path, iconPx, heroWPx, heroHCapPx, hero), .settled = true, .hero = hero};
-        }
-        const auto JOB = decodeJobFor(path, iconPx);
+        const auto JOB = decodeJobFor(path, heroWPx > 0 ? std::max(iconPx, heroWPx) : iconPx);
         if (!JOB || !resourceReady(*JOB))
             return {}; // the slot is taken, or the decode is in flight
         // The job stays until this warm ends (decodeWarmEnd): every other
@@ -438,11 +437,26 @@ namespace NAwesome::Notify {
         const auto SZ = SURF->size();
         if (SZ.x <= 0 || SZ.y <= 0 || (double)SZ.x * SZ.y > MAX_DECODED_IMAGE_PIXELS)
             return result;
+        cairo_surface_t* src    = SURF->cairo();
+        cairo_surface_t* tinted = nullptr;
+        if (tintSymbolic && isSymbolicIconPath(path)) {
+            tinted  = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, (int)SZ.x, (int)SZ.y);
+            auto* CR = cairo_create(tinted);
+            cairo_set_operator(CR, CAIRO_OPERATOR_SOURCE);
+            cairo_set_source_surface(CR, src, 0, 0);
+            cairo_paint(CR);
+            cairo_destroy(CR);
+            cairo_surface_flush(tinted);
+            tintSurface(tinted, NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg")));
+            src = tinted;
+        }
         result.hero = heroWorthy(SZ.x, SZ.y, heroWPx);
         if (result.hero)
-            result.texture = coverTex(SURF->cairo(), SZ.x, SZ.y, heroWPx, std::min((int)std::lround((double)heroWPx * SZ.y / SZ.x), heroHCapPx));
+            result.texture = coverTex(src, SZ.x, SZ.y, heroWPx, std::min((int)std::lround((double)heroWPx * SZ.y / SZ.x), heroHCapPx));
         else
-            result.texture = scaledTex(SURF->cairo(), SZ.x, SZ.y, iconPx);
+            result.texture = scaledTex(src, SZ.x, SZ.y, iconPx);
+        if (tinted)
+            cairo_surface_destroy(tinted);
         return result;
     }
 
