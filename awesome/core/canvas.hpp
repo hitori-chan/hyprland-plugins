@@ -108,9 +108,13 @@ namespace NAwesome {
         // damages — and so warms — from inside the token its dbusmenu reply
         // holds, and while that counted as re-entry the warm silently
         // no-opped. Hence the separate pass flag, and the saved permission.
-        bool beginWarm() {
+        // change: a real change brings this warm (not the stale rewarm), so a
+        // texture that failed to build gets its chances again
+        bool beginWarm(bool change = true) {
             if (inPass || inRender || !g_pCompositor)
                 return false;
+            if (change)
+                m_staleStreak = 0;
             inPass          = true;
             m_tokenPermit   = warming;
             warming         = true;
@@ -126,14 +130,13 @@ namespace NAwesome {
         // draw found missing, then repaint — we are inside the render when
         // we notice, so it must be deferred. Bounded: a texture no warm can
         // build (a raster that fails every time) would otherwise rewarm and
-        // repaint at refresh rate forever. A frame drawn without a miss
-        // resets the streak; past the bound the miss waits for the next
-        // warm a real change brings.
+        // repaint at refresh rate forever. Only a warm a real change brings
+        // resets the streak (beginWarm), never a clean draw: with several
+        // layers one draws clean every frame while another keeps missing.
+        // Past the bound the miss waits for that next real warm.
         void rewarmIfStale(std::function<void()> warmRepaint) {
-            if (!texStale) {
-                m_staleStreak = 0;
+            if (!texStale)
                 return;
-            }
             if (m_rewarmPending)
                 return; // this frame's rewarm is already queued
             if (++m_staleStreak > MAX_STALE_STREAK) {
@@ -481,7 +484,7 @@ namespace NAwesome {
         // rewarm's: a layer that keeps its own warms (the cards warm on
         // their own changes, not on the bar's) must build here too.
         void warmAll(PHLMONITOR only = nullptr, ILayer* layer = nullptr, bool force = false) {
-            if (!m_gate.beginWarm())
+            if (!m_gate.beginWarm(!force))
                 return;
             const bool SCOPED = only != nullptr || layer != nullptr;
             m_forced          = force;
