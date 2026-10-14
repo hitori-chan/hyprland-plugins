@@ -113,11 +113,10 @@ namespace NAwesome {
         // stop() BEFORE any module teardown (a listener firing mid-teardown
         // could re-queue a hop that outlives the .so — crash class 6).
         // Every listener is wrapped in detail::ListenerGate: once the
-        // COMPOSITOR begins shutting down, cleanup() clears the
-        // window/workspace/monitor state with the plugin still loaded
-        // (unload comes after the renderer), so ~CWindow emissions still
-        // reach us into a half-dead state — warming the bar there SEGVs
-        // (crash class 8). The gate makes those emissions no-ops.
+        // COMPOSITOR begins shutting down (crash class 8), every emission
+        // that still reaches us is a no-op — warming the bar in that
+        // half-dead state SEGV'd when cleanup() cleared the window state
+        // before unloading (see compositorShuttingDown()).
         template <typename S, typename F>
         void listen(S& signal, F&& fn) {
             m_listeners.emplace_back(signal.listen(detail::ListenerGate<S>::make(std::forward<F>(fn))));

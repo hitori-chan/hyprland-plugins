@@ -47,16 +47,15 @@ namespace NAwesome {
         return w && w->mapped() && !w->backend().traits().overrideRedirect;
     }
 
-    // The compositor-side teardown: CCompositor::cleanup() destroys the
-    // workspace/window/monitor state while the plugin is still loaded —
-    // the unload deliberately happens LATER (the renderer holds smart
-    // refs into the .so, and plugin-held textures must die with GL alive),
-    // so ~CWindow & co. still emit bus events into our listeners while the
-    // monitors' GL resources are dying. A listener that warms the bar into
-    // that half-dead state SEGVs on a released CSharedPointer owner (the
-    // 2026-10-01 "input storm SEGV": every nested teardown, 100%). Every
-    // event-driven path must no-op from the moment this is true; the
-    // supervisor gates its state listeners on it.
+    // The compositor-side teardown (invariant 8): CCompositor::cleanup()
+    // sets this before it unloads the plugins, and the unload runs in that
+    // half-dead state. Upstream now unloads before it clears the
+    // workspace/window/monitor state; an older order emitted ~CWindow & co.
+    // into our still-loaded listeners while GL resources died, and a
+    // listener warming the bar there SEGV'd on every nested teardown (the
+    // 2026-10-01 "input storm SEGV"). Every event-driven path still no-ops
+    // from the moment this is true; the supervisor gates its state
+    // listeners on it.
     inline bool compositorShuttingDown() {
         return g_pCompositor && g_pCompositor->m_isShuttingDown;
     }
