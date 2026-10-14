@@ -2,27 +2,41 @@
 #include "store.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdlib>
+#include <fcntl.h>
 #include <filesystem>
-#include <fstream>
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace fs = std::filesystem;
 
 namespace NAwesome::detail {
 
     std::string readBoundedFile(const fs::path& path, size_t maxBytes) {
-        std::error_code statusError;
-        if (!fs::is_regular_file(path, statusError))
+        // open first, then check what was opened: a FIFO swapped in after a
+        // path check would block the open, and the compositor with it
+        const int FD = ::open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC | O_NOCTTY);
+        if (FD < 0)
             return {};
-        std::ifstream f(path, std::ios::binary);
-        if (!f)
-            return {};
-        std::string contents(maxBytes + 1, '\0');
-        f.read(contents.data(), static_cast<std::streamsize>(contents.size()));
-        const auto READ = static_cast<size_t>(f.gcount());
-        if (READ > maxBytes)
-            return {};
-        contents.resize(READ);
+        std::string contents;
+        struct stat st {};
+        if (fstat(FD, &st) == 0 && S_ISREG(st.st_mode)) {
+            contents.resize(maxBytes + 1);
+            size_t got = 0;
+            while (got < contents.size()) {
+                const auto N = ::read(FD, contents.data() + got, contents.size() - got);
+                if (N < 0 && errno == EINTR)
+                    continue;
+                if (N < 0)
+                    got = contents.size(); // an error reads as too large: rejected
+                if (N <= 0)
+                    break;
+                got += (size_t)N;
+            }
+            contents.resize(got > maxBytes ? 0 : got);
+        }
+        close(FD);
         return contents;
     }
 

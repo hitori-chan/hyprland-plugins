@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <cstdlib>
 #include <fstream>
+#include <sys/stat.h>
 
 #include "harness.hpp"
 
@@ -181,6 +182,19 @@ bool test_store() {
             setenv("XDG_STATE_HOME", ORIG_STATE, 1);
         else
             unsetenv("XDG_STATE_HOME");
+    }
+
+    // ---- the bounded read: regular files only, opened before the check ----
+    {
+        const auto F = TDIR / "bounded";
+        AW_CHECK(writeFile(F, "row\n"));
+        AW_CHECK(detail::readBoundedFile(F, 4) == "row\n");
+        AW_CHECK(detail::readBoundedFile(F, 3).empty()); // past the bound: nothing
+        // a FIFO (no writer) neither blocks the open nor reads
+        const auto Q = TDIR / "fifo";
+        AW_CHECK(mkfifo(Q.c_str(), 0600) == 0);
+        AW_CHECK(detail::readBoundedFile(Q, 64).empty());
+        AW_CHECK(detail::readBoundedFile(TDIR, 64).empty()); // a directory
     }
 
     fs::remove_all(TDIR, ec);
