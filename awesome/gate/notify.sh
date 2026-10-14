@@ -299,7 +299,16 @@ REPLIED="$STATE/replied.log"
 rm -f "$REPLIED"
 ( DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 60 busctl --user monitor --match "type='signal',member='NotificationReplied'" >"$REPLIED" 2>&1 & )
 sleep 0.5
-conv_reply_notify Telegram "Alice" "are you around?"
+conv_reply_notify Telegram "Alice" "gone already"
+sleep 1
+hq awesome center >/dev/null; sleep 0.7
+tap down
+tap tab
+tap esc
+chk "reply: a card whose sender left the bus opens no field (esc closes the shade)" test "$(st)" = "center:0 live:1 dnd:0"
+nclear
+chk "reply: PyGObject for a sender that stays on the bus" python3 -c 'from gi.repository import Gio'
+conv_reply_sender Telegram "Alice" "are you around?"
 sleep 1
 hq awesome center >/dev/null; sleep 0.7
 chk "reply: the chat card is in the shade" test "$(st)" = "center:1 live:1 dnd:0"
@@ -317,6 +326,7 @@ tap enter
 sleep 0.6
 chk "reply: enter sent it and the card went" test "$(st)" = "center:1 live:0 dnd:0"
 chk "reply: NotificationReplied carried the typed text" grep -q 'STRING "hi"' "$REPLIED"
+kill "$REPLY_SENDER" 2>/dev/null; wait "$REPLY_SENDER" 2>/dev/null
 hq awesome center >/dev/null; sleep 0.4
 nclear
 

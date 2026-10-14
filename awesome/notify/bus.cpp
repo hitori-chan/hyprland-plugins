@@ -198,6 +198,15 @@ namespace NAwesome::Notify::Bus {
                            sdbus::registerSignal("NotificationReplied").withParameters<uint32_t, std::string>("id", "text"))
                 .forInterface(IFACE);
 
+            // a card belongs to its sender's unique name (Model::arrive): one
+            // leaving the bus orphans its cards, so the app's next instance
+            // may continue them
+            busProbe = sdbus::createProxy(*g_bus.conn(), sdbus::ServiceName{"org.freedesktop.DBus"}, sdbus::ObjectPath{"/org/freedesktop/DBus"});
+            busProbe->uponSignal("NameOwnerChanged").onInterface("org.freedesktop.DBus").call([](std::string name, std::string, std::string newOwner) {
+                if (!name.empty() && name.front() == ':' && newOwner.empty())
+                    Model::senderGone(name);
+            });
+
             g_bus.sync(); // drain anything queued during setup — the vtable is registered, nothing dispatches early
         } catch (const std::exception& E) {
             // most likely another daemon owns the name (dunst still

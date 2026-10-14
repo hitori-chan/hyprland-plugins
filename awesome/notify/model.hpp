@@ -138,6 +138,7 @@ namespace NAwesome::Notify {
         std::string          appName;
         std::string          appKey;  // grouping identity: desktop-entry, else the app name
         std::string          sender;  // the bus name that sent this Notify (the X11 activation lookup)
+        bool                 orphaned = false; // its sender left the bus: any sender of the app may take the card over
         std::string          summary; // newlines flattened, whitelisted markup
         std::string          body;    // whitelisted markup (Pango subset)
         // structured conversation metadata: a sender with a stable
@@ -252,6 +253,9 @@ namespace NAwesome::Notify {
         void       init();
         void       exit();
         SP<SNotif> byId(uint32_t id);
+        // a unique bus name left the bus: its cards lose their owner (the
+        // app's next instance may continue them) and their reply field
+        void       senderGone(const std::string& name);
         bool       vanishes(const SP<SNotif>& n); // opts out of residency: expiry takes the whole card
 
         // a Notify payload becomes (or refreshes) a card; returns its id

@@ -217,6 +217,19 @@ namespace NAwesome::Notify {
             arrive("osd", c.id, c.icon ? c.icon : "", c.summary ? c.summary : "", c.body ? c.body : "", "", {}, hints, c.expireTimeout, c.osd || inOsdBand(c.id));
         }
 
+        void senderGone(const std::string& name) {
+            bool changed = false;
+            for (const auto& N : notifs) {
+                if (N->sender != name || N->orphaned)
+                    continue;
+                N->orphaned = true;
+                // nobody is listening for the reply any more: drop the field
+                changed |= std::exchange(N->canReply, false);
+            }
+            if (changed)
+                notifChanged();
+        }
+
         bool closeOne(uint32_t id, uint32_t reason) {
             const auto BEFORE = notifs.size();
             std::erase_if(notifs, [&](const auto& N) { return N->id == id; });
@@ -457,6 +470,18 @@ namespace NAwesome::Notify {
                         bool osd) {
             uint32_t id = replacesId;
 
+            // A card belongs to the bus name that created it: its replies,
+            // actions and activation token go there. A replaces_id or a
+            // merge from another client would rebind it (the user's next
+            // reply typed into a hijacked chat), so another client's id
+            // starts a fresh card instead (as Plasma does). A card whose
+            // sender left the bus is ownerless: the app's next instance
+            // continues it. In-process posts (sender "") own theirs.
+            const auto TAKEABLE = [&sender](const SNotif& N) { return N.sender == sender || N.orphaned; };
+            if (id != 0)
+                if (const auto N = byId(id); N && !TAKEABLE(*N))
+                    id = 0;
+
             // cap the wire strings before they become card members (see the
             // MAX_*_BYTES above)
             const std::string APP     = clipUtf8(appName, MAX_APP_NAME_BYTES);
@@ -604,7 +629,7 @@ namespace NAwesome::Notify {
             if (id == 0) {
                 if (!CONV_ID.empty()) {
                     for (const auto& N : notifs)
-                        if (!inOsdBand(N->id) && !vanishes(N) && Pixel::matchesConversation(APPKEY, CONV_ID, N->appKey, N->conversationId)) {
+                        if (!inOsdBand(N->id) && !vanishes(N) && TAKEABLE(*N) && Pixel::matchesConversation(APPKEY, CONV_ID, N->appKey, N->conversationId)) {
                             id = N->id;
                             break;
                         }
@@ -619,7 +644,7 @@ namespace NAwesome::Notify {
                         // rebuilt from its message log, and a joined body
                         // upserted as one message duplicated the transcript
                         for (const auto& N : notifs)
-                            if (!inOsdBand(N->id) && !vanishes(N) && N->conversationId.empty() && N->appKey == APPKEY && N->summary == KEY) {
+                            if (!inOsdBand(N->id) && !vanishes(N) && TAKEABLE(*N) && N->conversationId.empty() && N->appKey == APPKEY && N->summary == KEY) {
                                 id         = N->id;
                                 appendOnto = N->body;
                                 break;
@@ -628,11 +653,11 @@ namespace NAwesome::Notify {
                 }
             }
 
-            // The reserved band is not a capability: a fresh chosen id in
-            // it is for our in-process OSD posts only, so a client can't pin
-            // a band id and hijack the OSD that replaces it (nor ride the
-            // band's DND bypass).
-            if (id != 0 && !byId(id) && inOsdBand(id) && !osd)
+            // The reserved band is not a capability: its ids are for our
+            // in-process OSD posts only, live or not, so a client can't pin a
+            // band id, take over the volume card on screen, or ride the
+            // band's DND bypass.
+            if (inOsdBand(id) && !osd)
                 id = 0;
 
             if (id == 0) {
@@ -690,7 +715,8 @@ namespace NAwesome::Notify {
             n->banner   = true;
             n->absorbed = false; // a re-arrival re-banners, whatever parked the previous one
             n->appName = APP;
-            n->sender = sender; // the X11 activation lookup resolves the app's window by this pid
+            n->sender   = sender; // the X11 activation lookup resolves the app's window by this pid
+            n->orphaned = false;
             n->summary = Parse::oneLine(Parse::sanitizeMarkup(SUM));
             std::string bodyText = TXT;
             n->bodyImages.clear();

@@ -115,6 +115,22 @@ conv_reply_notify() {
 	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
 		Notify susssasa\{sv\}i "$1" 0 "" "$2" "$3" 2 inline-reply Reply 1 category s im.received 60000 >/dev/null 2>&1
 }
+# The same card from a sender that stays on the bus, as a chat app does: a
+# card whose sender left (busctl's one-shot call above) is ownerless and
+# opens no reply field. Sets REPLY_SENDER; the caller kills it.
+conv_reply_sender() {
+	DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 60 python3 - "$1" "$2" "$3" <<'PY' &
+import sys
+from gi.repository import Gio, GLib
+bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "Notify",
+              GLib.Variant("(susssasa{sv}i)", (sys.argv[1], 0, "", sys.argv[2], sys.argv[3], ["inline-reply", "Reply"],
+                                               {"category": GLib.Variant("s", "im.received")}, 60000)),
+              None, Gio.DBusCallFlags.NONE, -1, None)
+GLib.MainLoop().run()
+PY
+	REPLY_SENDER=$!
+}
 
 # ---- pixels ------------------------------------------------------------------------
 panel_bottom() {

@@ -247,12 +247,16 @@ the focus, are nobody else's on the session bus. `NotificationClosed`
 stays a broadcast.
 
 - `replaces_id` updates a card in place, keeping its stack slot; an
-  unknown id creates the card under that id. The 9990s are the private
-  OSD band: a FRESH (non-replacing) id chosen inside it only sticks for
-  the plugin's own in-process posts (the system module's OSD cards), so
-  no client can pin a band id, hijack the OSD that replaces it, or ride
-  the band's DND bypass. Fresh ids outside the band are minted from a
-  low counter.
+  unknown id creates the card under that id. A card belongs to the bus
+  name that created it (its replies, actions and token go there): another
+  client's `replaces_id`, or a conversation merge from it, starts a fresh
+  card instead, as Plasma does. A card whose sender left the bus is
+  ownerless, and the app's next instance continues it (its reply field
+  closes meanwhile). The 9990s are the private OSD band: its ids, live or
+  not, are the plugin's own in-process posts (the system module's OSD
+  cards), so no client can pin a band id, take over the volume card on
+  screen, or ride the band's DND bypass. Fresh ids outside the band are
+  minted from a low counter.
 - `expire_timeout`: 0 → sticky, >0 → ms. −1 (server decides) → normal
   and critical cards are sticky until dismissed — a message waits to be
   read; self-declared ephemerals (low urgency, `transient`, `value`
