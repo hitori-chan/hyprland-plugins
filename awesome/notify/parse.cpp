@@ -318,14 +318,20 @@ namespace NAwesome::Notify::Parse {
     std::string joinAppend(const std::string& oldBody, const std::string& add) {
         std::string joined = oldBody.empty() ? add : oldBody + "\n" + add;
         constexpr size_t CAP = 8192;
-        while (joined.size() > CAP) {
-            const auto NL = joined.find('\n');
-            if (NL == std::string::npos) {
-                joined.erase(0, joined.size() - CAP); // keep the newest tail
-                break;
-            }
-            joined.erase(0, NL + 1); // the oldest line plus its separator
-        }
+        if (joined.size() <= CAP)
+            return joined;
+        // whole oldest lines go: the first line break at or past the excess
+        // ends the cut (one erase — a line at a time was quadratic in a
+        // body of thousands of tiny lines). No break there: the newest tail,
+        // started on a codepoint.
+        const size_t EXCESS = joined.size() - CAP;
+        size_t       cut    = joined.find('\n', EXCESS - 1);
+        if (cut != std::string::npos)
+            cut++;
+        else
+            for (cut = EXCESS; cut < joined.size() && ((unsigned char)joined[cut] & 0xc0) == 0x80;)
+                cut++;
+        joined.erase(0, cut);
         return joined;
     }
 
