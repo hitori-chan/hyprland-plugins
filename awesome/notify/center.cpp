@@ -165,6 +165,10 @@ namespace NAwesome::Notify {
         notifChanged();
     }
 
+    bool centerHasRows() {
+        return !s_disp.empty();
+    }
+
     bool centerSelection(uint32_t& id, std::string& group) {
         if (s_sel < 0 || (size_t)s_sel >= s_disp.size())
             return false;

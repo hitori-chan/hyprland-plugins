@@ -549,8 +549,11 @@ namespace NAwesome::Notify {
             return;
         }
         if (SYM == XKB_KEY_Up || SYM == XKB_KEY_Down) {
-            if (notifs.empty())
-                return; // nothing to select: the keys stay the focused window's
+            // the shade's rows, not the model: DND-held and OSD cards are
+            // cards but never rows, so with only those there is nothing to
+            // select and the keys stay the focused window's
+            if (!centerHasRows())
+                return;
             info.cancelled = true;
             centerSelectMove(SYM == XKB_KEY_Down ? 1 : -1); // local state + a deferred warm: safe here
             return;

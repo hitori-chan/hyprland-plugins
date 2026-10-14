@@ -371,6 +371,7 @@ namespace NAwesome::Notify {
     void centerToggleGroup(const std::string& appKey);
     void centerToggleRow(uint32_t id);
     void centerSelectMove(int dir);                         // ↑/↓: move the keyboard selection, paging to keep it on screen
+    bool centerHasRows();                                   // the shade lists something a selection can land on
     void centerDeselect();
     bool centerSelection(uint32_t& id, std::string& group); // the selected item; group non-empty = a bundle. false = none
 
