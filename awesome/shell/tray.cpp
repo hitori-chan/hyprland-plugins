@@ -279,7 +279,11 @@ namespace NAwesome::Shell {
                     return;
                 if (!e)
                     try {
-                        it->menuPath = v.get<sdbus::ObjectPath>();
+                        // "/" and KDE's "/NO_DBUSMENU" mean "no menu": the item
+                        // then gets ContextMenu on a right click, not a panel
+                        // stuck on its first layout call
+                        const std::string PATH = v.get<sdbus::ObjectPath>();
+                        it->menuPath           = PATH == "/" || PATH == "/NO_DBUSMENU" ? "" : PATH;
                     } catch (...) {}
             });
             it->proxy->getPropertyAsync("ItemIsMenu").onInterface(SNI).uponReplyInvoke([it, REQUEST](std::optional<sdbus::Error> e, sdbus::Variant v) {
