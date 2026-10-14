@@ -700,7 +700,12 @@ namespace NAwesome::Notify {
             // x-canonical-append is a conversation by definition: its body is
             // the joined transcript, chronological, like the category's
             const bool CONVERSATION = CATEGORY_CONVERSATION || canonicalAppend || !EFFECTIVE_CONV_ID.empty() || (SAME_CONVERSATION && n->conversation);
-            ++n->rev; // the arrival below may rewrite messages and kind
+            // the arrival below may rewrite messages and kind. One serial for
+            // every card, not a per-card count: a closed id that a client
+            // reuses starts a new card, whose first rev must not equal the
+            // old card's in a stale click
+            static uint64_t revSerial = 0;
+            n->rev = ++revSerial;
             if (!SAME_CONVERSATION) {
                 n->messages.clear();
                 n->unreadCount = 0;
