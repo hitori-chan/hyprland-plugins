@@ -161,8 +161,8 @@ atomics; ordering is program order plus the hop queue.
   are cut at a codepoint boundary (`clipToUtf8Boundary`,
   `BoundedString<N>` where a string is stored as one), image data is
   decimated while unpacked, raster caches are capped in bytes, and work
-  is bounded too (theme walks a window, decodes a reply, messages a
-  dispatch). `BoundedQueue<T, N>` (eviction policy in the type) is the
+  is bounded too (theme walks and large bar decodes a window, decodes a
+  reply, messages a dispatch). `BoundedQueue<T, N>` (eviction policy in the type) is the
   helper for an evicting queue.
 
 Crash-class invariants → structure:

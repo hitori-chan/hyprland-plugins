@@ -62,11 +62,40 @@ namespace NAwesome::Shell {
         return tex;
     }
 
+    // Decodes run on the compositor thread, inside a warm: a 1024² PNG is
+    // ~20 ms, a large SVG as much. Past this many LARGE decodes (declared
+    // past 256² px, an SVG past 64 KiB) a window, the rest wait — deferred
+    // like a refused theme walk (uncached, retried) — so a bar of large
+    // icons fills over a few frames instead of stalling one. Small icons,
+    // the theme's usual 16-48 px, are never held back.
+    constexpr int  MAX_LARGE_DECODES_PER_WINDOW = 2;
+    constexpr auto LARGE_DECODE_WINDOW          = std::chrono::milliseconds(250);
+    static bool    largeDecodeBudget() {
+        static auto WINDOW = std::chrono::steady_clock::now();
+        static int  used   = 0;
+        const auto  NOW    = std::chrono::steady_clock::now();
+        if (NOW - WINDOW >= LARGE_DECODE_WINDOW) {
+            WINDOW = NOW;
+            used   = 0;
+        }
+        if (used < MAX_LARGE_DECODES_PER_WINDOW) {
+            used++;
+            return true;
+        }
+        NAwesome::iconDeferred() = true;
+        return false;
+    }
+
     SP<ITexture> loadPng(const std::string& path) {
         // the bytes come from ONE non-blocking open (core/icons.hpp): an
-        // absolute SNI IconName reaches here
+        // absolute SNI IconName reaches here. A bar cell is <=40 px: 1024 a
+        // side is room for any app's largest icon, at a bounded decode.
         const auto BYTES = NAwesome::readImageFile(path);
-        return BYTES ? pngTexture(*BYTES, 4096) : nullptr;
+        if (!BYTES)
+            return nullptr;
+        if (const auto DIMS = NAwesome::rasterDims(BYTES->data(), BYTES->size()); DIMS && (uint64_t)DIMS->first * DIMS->second > 256 * 256 && !largeDecodeBudget())
+            return nullptr;
+        return pngTexture(*BYTES, 1024);
     }
 
     // dbusmenu "icon-data" is a PNG shipped inline (nm-applet composites its
@@ -88,7 +117,7 @@ namespace NAwesome::Shell {
     // shape in some theme-chosen color — repaint them with the bar's fg.
     static SP<ITexture> loadSvg(const std::string& path, bool recolor, const CHyprColor& col) {
         const auto BYTES = NAwesome::readImageFile(path); // one non-blocking open, size-bounded
-        if (!BYTES)
+        if (!BYTES || (BYTES->size() > (64u << 10) && !largeDecodeBudget()))
             return nullptr;
         RsvgHandle* handle = rsvg_handle_new_from_data(BYTES->data(), BYTES->size(), nullptr);
         if (!handle)
