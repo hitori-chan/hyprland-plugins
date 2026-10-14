@@ -493,7 +493,7 @@ namespace NAwesome::Shell {
             for (const auto& W : Desktop::windowState()->windows()) {
                 // minimized windows stay listed (awesome's client_list un-minimizes) —
                 // mirror isTaskOn; only genuinely-hidden (swallowed) ones drop out
-                if (W->mapped() && (!W->isHidden() || NAwesome::Windows::Tasklist::isMinimized(W)))
+                if (NAwesome::isClient(W) && (!W->isHidden() || NAwesome::Windows::Tasklist::isMinimized(W)))
                     ws.emplace_back(NAwesome::winOrder().seqOf(W.get()), W);
             }
             if (ws.empty())

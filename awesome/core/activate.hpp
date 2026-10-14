@@ -46,7 +46,7 @@ inline bool activateAppWindow(uint32_t pid) {
     const auto& WINDOWS = Desktop::windowState()->windows(); // Z-order: the LAST match is topmost
     PHLWINDOW   best;
     for (const auto& W : WINDOWS)
-        if (W->mapped() && !W->isHidden() && W->backend().pid() == static_cast<pid_t>(pid))
+        if (isClient(W) && !W->isHidden() && W->backend().pid() == static_cast<pid_t>(pid))
             best = W;
     if (!best) {
         if (!restoreMinimizedHook())

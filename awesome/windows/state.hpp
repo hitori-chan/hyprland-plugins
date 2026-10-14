@@ -102,7 +102,7 @@ namespace NAwesome::Windows::Tasklist {
         const auto& WINS = Desktop::windowState()->windows();
         for (size_t i = WINS.size(); i-- > 0;) {
             const auto& W = WINS[i];
-            if (W == gone || !W || !W->mapped() || W->isHidden() || !W->m_workspace || W->m_workspace->id() != ws->id())
+            if (W == gone || !isClient(W) || W->isHidden() || !W->m_workspace || W->m_workspace->id() != ws->id())
                 continue;
             g_pInputManager->refocus(W->middle());
             return;

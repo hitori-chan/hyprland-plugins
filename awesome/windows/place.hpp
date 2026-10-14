@@ -156,7 +156,7 @@ namespace NAwesome::Windows::Place {
             const auto        PARENT = w->backend().parent();
             std::vector<CBox> blockers;
             for (const auto& O : Desktop::windowState()->windows()) {
-                if (O == w || O == PARENT || !O->mapped() || O->isHidden() || !O->isFloating() || !O->windowTarget())
+                if (O == w || O == PARENT || !isClient(O) || O->isHidden() || !O->isFloating() || !O->windowTarget())
                     continue;
                 if (O->m_workspace != WS && !(isPinned(O) && O->m_monitor.lock() == MON))
                     continue;

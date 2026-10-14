@@ -292,7 +292,7 @@ namespace NAwesome::Windows::Snap {
                     static std::vector<CBox> OUT; // reused: this runs on every motion of a drag
                     OUT.clear();
                     for (const auto& O : Desktop::windowState()->windows()) {
-                        if (!O->mapped() || O->isHidden() || !O->isFloating() || !O->windowTarget() || O->windowTarget().get() == self.get())
+                        if (!isClient(O) || O->isHidden() || !O->isFloating() || !O->windowTarget() || O->windowTarget().get() == self.get())
                             continue;
                         if (O->m_workspace != WS && !(isPinned(O) && O->m_monitor.lock() == MON))
                             continue;

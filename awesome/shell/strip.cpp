@@ -236,7 +236,7 @@ namespace NAwesome::Shell {
         F.ws = WS;
         tasks.clear();
         for (const auto& W : Desktop::windowState()->windows()) {
-            if (W->mapped() && W->m_workspace) {
+            if (NAwesome::isClient(W) && W->m_workspace) {
                 const auto NUM = W->m_workspace->numberedID();
                 if (NUM && *NUM >= 1 && *NUM <= 9) {
                     F.windows[*NUM]++;
@@ -514,7 +514,7 @@ namespace NAwesome::Shell {
     bool isTaskOn(const PHLWINDOW& w, const PHLWORKSPACE& ws) {
         // minimized windows are hidden but still belong to their tag, like
         // awesome — keep their row; other hidden windows (swallowed) stay out.
-        return w && ws && w->mapped() && w->m_workspace && w->m_workspace->id() == ws->id() && (!w->isHidden() || NAwesome::Windows::Tasklist::isMinimized(w));
+        return NAwesome::isClient(w) && ws && w->m_workspace && w->m_workspace->id() == ws->id() && (!w->isHidden() || NAwesome::Windows::Tasklist::isMinimized(w));
     }
 
     std::string lower(std::string s) {

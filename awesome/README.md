@@ -37,7 +37,9 @@ visible transitions.
   participation and remembers its fullscreen, maximize, and floating
   state for restoration. Tasks stay in arrival order; focus cycling
   skips minimized windows. A task's minimize/restore repaints through
-  the task-changed hook.
+  the task-changed hook. X11 override-redirect surfaces (menus,
+  tooltips, dropdowns) are not clients, as in awesome: never a task, a
+  tag occupant, a focus stop, a snap edge or a placement blocker.
 - **Tray**: owns the StatusNotifier/dbusmenu connection. A tray click
   is the activation — after the SNI `Activate` call the bar resolves
   the item's bus PID and focuses the app's own topmost window, for

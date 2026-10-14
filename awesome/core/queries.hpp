@@ -39,6 +39,14 @@ namespace NAwesome {
         return g_pSessionLockManager && g_pSessionLockManager->isSessionLocked();
     }
 
+    // A client in awesome's sense. X11 override-redirect surfaces (menus,
+    // tooltips, dropdowns of Steam, Wine, Java) map as windows too, but
+    // they are never tasks, tag occupants or focus targets: awesome does
+    // not manage them, and the compositor's own taskbar protocol skips them.
+    inline bool isClient(const PHLWINDOW& w) {
+        return w && w->mapped() && !w->backend().traits().overrideRedirect;
+    }
+
     // The compositor-side teardown: CCompositor::cleanup() destroys the
     // workspace/window/monitor state while the plugin is still loaded —
     // the unload deliberately happens LATER (the renderer holds smart

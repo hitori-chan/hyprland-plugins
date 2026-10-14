@@ -23,6 +23,8 @@
 #include <hyprland/src/desktop/view/window/Window.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>
 
+#include "queries.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <unordered_map>
@@ -58,7 +60,7 @@ namespace NAwesome {
             if (!ws)
                 return out;
             for (const auto& W : Desktop::windowState()->windows()) {
-                if (!W || !W->mapped() || W->isHidden() || !W->m_workspace || W->m_workspace->id() != ws->id())
+                if (!isClient(W) || W->isHidden() || !W->m_workspace || W->m_workspace->id() != ws->id())
                     continue;
                 if (!keep(W))
                     continue;
