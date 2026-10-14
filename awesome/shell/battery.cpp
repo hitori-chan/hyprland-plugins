@@ -119,7 +119,9 @@ namespace NAwesome::Shell {
     static void findBatteries() {
         batteryDirs.clear();
         std::error_code ec;
-        for (const auto& e : std::filesystem::directory_iterator("/sys/class/power_supply", ec)) {
+        // increment(ec): the range-for's operator++ throws
+        for (auto it = std::filesystem::directory_iterator("/sys/class/power_supply", ec); !ec && it != std::filesystem::end(it); it.increment(ec)) {
+            const auto&   e = *it;
             std::ifstream t(e.path() / "type");
             std::string   type;
             if (!t || !std::getline(t, type) || type != "Battery")
