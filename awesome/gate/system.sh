@@ -45,6 +45,16 @@ chk "system: a repeat burst serializes into one accumulated set" burst_serialize
 chk "system: the capped chains still produced one card" test "$(st)" = "center:0 live:1 dnd:0"
 hq awesome clear >/dev/null; sleep 0.4
 
+# a level already past 100% (set elsewhere) is never pulled down to it: the
+# first press reads 1.50 back, the second limits at that level, not at 1.0
+printf '1.50\n' > "$STATE/wpctl-level"
+: > "$STATE/wpctl.log"
+dsp "hl.plugin.awesome.volume_up()"; sleep 0.4
+dsp "hl.plugin.awesome.volume_up()"; sleep 0.4
+chk "system: volume up keeps a level past 100%" grep -Fxq "set-volume -l 1.505 @DEFAULT_AUDIO_SINK@ 5%+" "$STATE/wpctl.log"
+rm -f "$STATE/wpctl-level"
+hq awesome clear >/dev/null; sleep 0.4
+
 # an OSD is never in the shade: opening it drops the live one, and a press
 # under it makes no card (the shade replaces the popup column it shows on)
 dsp "hl.plugin.awesome.volume_up()"; sleep 0.4

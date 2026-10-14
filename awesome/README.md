@@ -538,7 +538,11 @@ pragmatic scan (GTK theme → hicolor → pixmaps), not a full
   (or fold two mute toggles into one). Each device runs ONE set at a
   time, then a readback for the card; presses while it runs accumulate
   (steps sum into the next set, toggles fold to their parity; a set
-  the runner refuses keeps them pending). PipeWire
+  the runner refuses keeps them pending). Raising stops at 100%, but a
+  volume already past it (set elsewhere) is never pulled down: a raise
+  reads the level first unless a readback from the last second has it
+  (another mixer, a new default device), and the card shows the true
+  percent past 100% over a full bar. PipeWire
   process I/O stays off render and input callbacks (the core Jobs pool:
   pidfd-watched, capped, generation-checked); readback rejects
   malformed or non-finite output.

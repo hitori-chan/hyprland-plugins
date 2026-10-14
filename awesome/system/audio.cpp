@@ -31,6 +31,7 @@
 #include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <optional>
 #include <string>
@@ -261,8 +262,14 @@ namespace NAwesome::System {
         bool        busy    = false;
         int         steps   = 0; // ±1 per press, applied as ±5% each
         int         toggles = 0;
+        double      level   = -1; // the last readback's volume (1.0 = 100%); < 0: never read
+        Time::steady_tp levelAt; // when it was read: the default device or another mixer may have moved it since
         uint64_t    generation = 0; // a teardown or a newer readback outdates replies
     };
+    // A raise caps at 100% unless the device is already past it, so it needs
+    // the level as it is now: a readback older than this is re-read first. A
+    // held key's sets read back one after another and stay within it.
+    static constexpr auto LEVEL_TRUST = std::chrono::seconds(1);
     static SDevice sink{.node = "@DEFAULT_AUDIO_SINK@", .mic = false}, source{.node = "@DEFAULT_AUDIO_SOURCE@", .mic = true};
 
     static void showReadback(const SDevice& d, const Wpctl::SReadback* rb) {
@@ -277,25 +284,32 @@ namespace NAwesome::System {
             Notify::Model::postCard({.id = ID_VOLUME, .icon = "audio-volume-muted", .summary = "Volume", .body = "muted", .expireTimeout = OSD_TIMEOUT});
             return;
         }
-        const int PCT = rb->value >= 1.0 ? 100 : (int)std::lround(rb->value * 100.0);
+        const int PCT = (int)std::lround(rb->value * 100.0); // past 100% says so; the bar stops full
         if (PCT >= 0)
             Notify::Model::postCard({.id = ID_VOLUME, .icon = volumeIcon(PCT), .summary = "Volume", .body = (std::to_string(PCT) + "%").c_str(), .expireTimeout = OSD_TIMEOUT, .value = std::min(PCT, 100)});
     }
 
     static void pump(SDevice& d);
 
-    static void readBack(SDevice& d) {
+    // show: the card follows a set; a raise's read of the level ahead of its
+    // set shows nothing (the set's own readback is the card)
+    static void readBack(SDevice& d, bool show = true) {
         const uint64_t GEN = ++d.generation;
-        const bool     OK  = Jobs::inst().spawnPiped(Jobs::CONTROL, {"wpctl", "get-volume", d.node, nullptr}, [&d, GEN](Jobs::SPipedResult R) {
+        const bool     OK  = Jobs::inst().spawnPiped(Jobs::CONTROL, {"wpctl", "get-volume", d.node, nullptr}, [&d, GEN, show](Jobs::SPipedResult R) {
             if (GEN != d.generation)
                 return; // a teardown, or a newer set already reads back
             d.busy        = false;
             const auto RB = Wpctl::parseReadback(R.out);
-            showReadback(d, RB.has_value() ? &*RB : nullptr);
+            d.level       = RB ? RB->value : std::max(d.level, 0.0);
+            d.levelAt     = Time::steadyNow();
+            if (show)
+                showReadback(d, RB.has_value() ? &*RB : nullptr);
             pump(d);
         });
         if (!OK) {
-            d.busy = false;
+            d.busy    = false;
+            d.level   = std::max(d.level, 0.0); // unreadable: the plain limit
+            d.levelAt = Time::steadyNow();
             pump(d);
         }
     }
@@ -308,15 +322,23 @@ namespace NAwesome::System {
         // the mute toggle and the steps are separate sets: a toggle runs
         // first, the steps wait for the next pump
         const bool TOGGLE = d.toggles != 0;
-        std::string amount; // outlives the spawn: the argv is copied there
+        if (!TOGGLE && d.steps > 0 && (d.level < 0 || Time::steadyNow() - d.levelAt > LEVEL_TRUST)) {
+            d.busy = true; // the limit below needs the level as it is now: read it first
+            return readBack(d, /*show=*/false);
+        }
+        std::string amount, limit; // outlive the spawn: the argv is copied there
         std::vector<const char*> argv;
         if (TOGGLE)
             argv = {"wpctl", "set-mute", d.node, "toggle", nullptr};
         else if (d.steps != 0) {
             amount = std::to_string(std::min(std::abs(d.steps) * 5, 100)) + (d.steps > 0 ? "%+" : "%-");
-            if (d.steps > 0)
-                argv = {"wpctl", "set-volume", "-l", "1.0", d.node, amount.c_str(), nullptr};
-            else
+            if (d.steps > 0) {
+                // the keys stop at 100%, but a volume already past it (set
+                // elsewhere) is never pulled down to it: the limit is then
+                // the current level (+0.005: the readback rounds to 0.01)
+                limit = d.level > 1.0 ? std::format("{:.3f}", d.level + 0.005) : "1.0";
+                argv  = {"wpctl", "set-volume", "-l", limit.c_str(), d.node, amount.c_str(), nullptr};
+            } else
                 argv = {"wpctl", "set-volume", d.node, amount.c_str(), nullptr};
         }
         if (argv.empty())
@@ -378,6 +400,7 @@ namespace NAwesome::System {
             D->busy    = false;
             D->steps   = 0;
             D->toggles = 0;
+            D->level   = -1;
         }
         ++brightnessGeneration;
         brightnessBusy    = false;
