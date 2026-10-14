@@ -60,9 +60,9 @@ make -C devtools HL=/path/to/Hyprland
   D-Bus address must all belong to the nested compositor; injectors
   always receive the nested `WAYLAND_DISPLAY`.
 - Never rebuild the plugin while the nested compositor maps its `.so`.
-- Run the gate from a process rooted in the LIVE login session, not from
-  a long-lived tmux server (the cgroup root is what poisons a
-  session-outlived tmux; see `awesome/gate/preflight.sh`).
+- Run the gate in tmux or in the background, from a tmux server started
+  in the current login session (a server that outlived its session
+  keeps that session's stale environment).
 - A "dead" Wayland display is verified with `flock`, never by the lock
   file (empty flock files — `rm`-ing one breaks a live session).
 - The clean-teardown check reads the nested's exit status (launch.sh's
