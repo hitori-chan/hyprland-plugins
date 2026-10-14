@@ -14,6 +14,7 @@
 
 #include <hyprland/src/helpers/memory/Memory.hpp>
 
+#include <chrono>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -67,6 +68,7 @@ namespace NAwesome {
         std::unordered_map<std::string, std::string> m_icons;
         std::vector<std::function<void()>>           m_subs;
         SP<CEventLoopTimer>                          m_poll;
+        std::chrono::steady_clock::time_point        m_deadline;
         uint64_t                                     m_generation = 0;
         bool                                         m_scanning   = false;
     };

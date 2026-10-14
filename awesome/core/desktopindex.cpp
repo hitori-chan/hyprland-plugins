@@ -17,6 +17,9 @@ namespace NAwesome {
         // entries folded per poll: parsing one is microseconds, and 8 per
         // 16 ms tick stretched a full scan over seconds of fallback icons
         constexpr size_t ENTRIES_PER_POLL = 32;
+        // a hung mount in XDG_DATA_DIRS stalls the helper, not the loop; the
+        // scan then gives up and keeps what it found instead of polling on
+        constexpr auto SCAN_DEADLINE = std::chrono::seconds(30);
     }
 
     void CDesktopIcons::start() {
@@ -27,6 +30,7 @@ namespace NAwesome {
 
         m_icons.clear();
         m_scanning = true;
+        m_deadline = std::chrono::steady_clock::now() + SCAN_DEADLINE;
         CAsyncFileIndex::SRequest request;
         request.generation   = ++m_generation;
         request.extensions   = {".desktop"};
@@ -58,6 +62,10 @@ namespace NAwesome {
         for (const auto& entry : entries)
             index(entry);
         m_scanning = !COMPLETE;
+        if (m_scanning && std::chrono::steady_clock::now() > m_deadline) {
+            m_index.cancel(++m_generation);
+            m_scanning = false;
+        }
         if (m_poll)
             m_poll->updateTimeout(m_scanning ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
         if (m_icons.size() != BEFORE)
