@@ -364,7 +364,11 @@ entry, the icon-name stand-in draws and the index upgrades the live
 card when it lands. Decoding is hyprgraphics: PNG/JPEG/WEBP/BMP + SVG
 (no GIF; AVIF and JXL files are refused — the admission reads a
 bounded raster size from the header, and those headers do not carry
-one it parses); big images downscale once at load, not per frame. A
+one it parses); big images downscale once at load, not per frame.
+`image-data` is box-decimated while it is unpacked, to the hero cap;
+a card holds those pixels until its first upload, and past 32 MiB of
+them model-wide (coalesced, resident, DND-held cards) the oldest
+keep an icon's size instead. A
 file is opened ONCE, non-blocking, and judged on that open descriptor
 (a regular file, bounded size, a bounded declared raster); the decoder
 reads the same file (/proc/self/fd), never the path again, so a FIFO

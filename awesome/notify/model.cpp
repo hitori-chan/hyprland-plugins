@@ -400,6 +400,26 @@ namespace NAwesome::Notify {
             }
         }
 
+        // image-data a card keeps until its first upload — and a coalesced,
+        // resident, DND-held or below-the-fold card is not uploaded for as
+        // long as it lives (up to the hero cap, ~2 MB, each). Past this many
+        // bytes model-wide the oldest give up the hero size for an icon's.
+        constexpr size_t MAX_RETAINED_PIXEL_BYTES = 32u << 20;
+        static void      boundRetainedPixels(int iconPx) {
+            size_t total = 0;
+            for (const auto& N : notifs)
+                total += N->pixels.size();
+            const size_t ICON_BYTES = (size_t)iconPx * iconPx * 4;
+            for (auto it = notifs.rbegin(); it != notifs.rend() && total > MAX_RETAINED_PIXEL_BYTES; ++it) {
+                auto& N = **it;
+                if (N.pixels.size() <= ICON_BYTES)
+                    continue;
+                const size_t BEFORE = N.pixels.size();
+                shrinkPixels(N, iconPx);
+                total -= BEFORE - N.pixels.size();
+            }
+        }
+
         // the conversation's display body: the latest `limit` kept messages,
         // CHRONOLOGICAL — the oldest line leads and the newest ENDS the body,
         // so an arrival lands at the bottom and pushes the oldest out of the
@@ -837,6 +857,8 @@ namespace NAwesome::Notify {
                     try {
                         Parse::unpackImageData(*n, IT->second.get<Parse::ImageData>(), PIXCAP);
                     } catch (...) {}
+            if (!n->pixels.empty())
+                boundRetainedPixels(ICONPX);
             if (n->pixels.empty()) {
                 std::string cand;
                 for (const auto* KEY : {"image-path", "image_path"})
