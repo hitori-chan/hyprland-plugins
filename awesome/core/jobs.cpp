@@ -33,6 +33,10 @@ namespace NAwesome {
         // the retained-output cap is also the work cap (see onPipeReadable)
         constexpr size_t MAX_PIPED_OUTPUT = 4096;
 
+        // a child killed at its deadline gets this long to exit and close its
+        // pipe before the pipe is cut and it is delivered anyway
+        constexpr auto KILL_GRACE = 1s;
+
         // a SOUND child leads its own group: a sound_command wrapper script
         // must not leave its player behind
         void killChild(int pidfd, bool group = false) {
@@ -222,7 +226,9 @@ namespace NAwesome {
     // Past the deadline: kill it. Its pidfd turns readable and the normal
     // exit path delivers (truncated, status of the kill). A child already
     // gone whose pipe a grandchild still holds is delivered here, its pipe
-    // closed: the deadline holds until delivery, so no slot is kept forever.
+    // closed. A killed child gets a grace deadline rather than none: its
+    // grandchild may hold the pipe too, and the next pass cuts that off —
+    // so no slot is kept forever.
     void Jobs::onDeadline() {
         const auto     NOW = std::chrono::steady_clock::now();
         std::vector<SChild*> stuck;
@@ -230,11 +236,13 @@ namespace NAwesome {
             if (!undelivered(c) || c->deadline > NOW)
                 continue;
             c->truncated = true;
-            c->deadline  = std::chrono::steady_clock::time_point::max(); // once
-            if (!c->exited)
+            if (!c->exited) {
                 killChild(c->pidfd, c->cls == SOUND);
-            else
+                c->deadline = NOW + KILL_GRACE;
+            } else {
+                c->deadline = std::chrono::steady_clock::time_point::max(); // once
                 stuck.push_back(c.get());
+            }
         }
         for (auto* c : stuck) {
             if (c->outSrc)
