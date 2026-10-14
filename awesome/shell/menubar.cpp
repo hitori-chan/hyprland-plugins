@@ -717,6 +717,8 @@ namespace NAwesome::Shell {
         static int                 repeatGap = 0; // ms between repeats
 
         static void stopRepeat() {
+            if (!repeatKey)
+                return; // nothing armed: every key press anywhere lands here
             repeatKey = 0;
             if (repeatTimer)
                 repeatTimer->updateTimeout(std::nullopt);
