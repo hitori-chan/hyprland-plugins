@@ -52,7 +52,10 @@ Cross-module rules:
 
 Single-threaded by the fork's guarantee: the compositor event loop
 drives input, dispatch, frame callbacks, and rendering. No locks, no
-atomics; ordering is program order plus the hop queue.
+atomics; ordering is program order plus the hop queue. One exception,
+walled off: the Store's disk writer thread takes a serialized snapshot
+through a mutex and runs only the file syscalls; it never reads plugin
+or compositor state.
 
 - **FrameContext** — per frame: frame number, session generation,
   session-locked flag, native input-capture flag, focused window,
@@ -127,8 +130,10 @@ atomics; ordering is program order plus the hop queue.
   `spot <x> <y> <key>`, `windowed <x> <y> <w> <h> <key>`,
   `launches <count> <name>`, `history <query>`, positions relative to
   their monitor's origin), one durable atomic write (a private 0600
-  temp, never through a link, fdatasync, rename, directory fsync), all
-  rows admitted or
+  temp, never through a link, fdatasync, rename, directory fsync) run
+  by a writer thread (a disk stalled behind a heavy writer never stalls
+  the compositor; the newest snapshot wins, and the stop's save joins
+  it); all rows admitted or
   skipped (fixed file/row/key/entry bounds; a hostile file can never
   take the session down; the least recently remembered row goes at a
   bound). The four module stores (spawn spots, last-windowed boxes,

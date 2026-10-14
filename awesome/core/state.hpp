@@ -36,6 +36,8 @@ namespace NAwesome {
         ListStore       history;
     };
 
+    class CDiskWriter;
+
     class StateStore {
       public:
         static StateStore& inst();
@@ -47,7 +49,8 @@ namespace NAwesome {
         void load();
 
         // Coalesced atomic save (one write per burst, out of the
-        // dirtying event); flush() writes immediately (teardown).
+        // dirtying event, synced to disk off the compositor thread);
+        // flush() saves now and returns once it is on disk (teardown).
         void dirty();
         void flush();
         bool writeBlocked() const {
@@ -61,8 +64,10 @@ namespace NAwesome {
 
       private:
         StateStore();
-        AppState m_data{};
-        Saver    m_saver;
+        ~StateStore();
+        AppState                     m_data{};
+        std::unique_ptr<CDiskWriter> m_writer; // before m_saver: the saver's flush posts to it
+        Saver                        m_saver;
         bool     m_loaded       = false;
         bool     m_writeBlocked = false;
     };

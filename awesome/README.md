@@ -614,7 +614,9 @@ spot remembered on one monitor lands at the same place on whichever
 monitor the app opens on next. Each kind is kept oldest-first and bounded
 (1024 keys, 50 queries): at the bound the least recently remembered row
 goes, never a new one. The windows still open when the plugin stops (a
-logout) are recorded as closing. One atomic write (temp + rename); every
+logout) are recorded as closing. One atomic write (temp + rename),
+synced to disk on a writer thread so a slow disk never stalls the
+compositor; the save at stop is on disk before the plugin unloads. Every
 row is admitted or skipped (a hostile file can never take the session
 down); a file that exists but cannot be read blocks every write (a
 notification says so) — the user's memory is never replaced by a session

@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "harness.hpp"
 
@@ -159,6 +160,30 @@ bool test_store() {
         AW_CHECK(writeFile(O, "spot\t1\t2\tfoot\n" + std::string(MAX_STATE_FILE_BYTES, 'x')));
         AppState R3;
         AW_CHECK(!StateStore::read(O, R3) && R3.spot.empty());
+    }
+
+    // ---- the save path: written by the disk writer, on disk once flush() returns ----
+    // (before the load case below: load runs once per process, and that one blocks writes)
+    {
+        char* ORIG_STATE = std::getenv("XDG_STATE_HOME");
+        setenv("XDG_STATE_HOME", (TDIR / "saved").c_str(), 1);
+        const auto P = StateStore::path();
+        StateStore::inst().data().spot.put("first", {1, 2, 0, 0});
+        StateStore::inst().dirty();
+        StateStore::inst().flush();
+        StateStore::inst().data().spot.put("second", {3, 4, 0, 0});
+        StateStore::inst().dirty();
+        StateStore::inst().flush(); // a writer that ran dry starts again
+        AppState R;
+        AW_CHECK(StateStore::read(P, R));
+        AW_CHECK(R.spot.size() == 2 && R.spot.find("second") && *R.spot.find("second") == (Box{3, 4, 0, 0}));
+        AW_CHECK(!fs::exists(P.string() + ".tmp." + std::to_string((long long)getpid())));
+        StateStore::inst().data() = AppState{};
+
+        if (ORIG_STATE)
+            setenv("XDG_STATE_HOME", ORIG_STATE, 1);
+        else
+            unsetenv("XDG_STATE_HOME");
     }
 
     // ---- load (runs once per process): an unreadable file blocks writes ----

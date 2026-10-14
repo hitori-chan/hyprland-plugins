@@ -5,10 +5,15 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
+#include <optional>
 #include <sstream>
+#include <thread>
 
 #include <cerrno>
+#include <csignal>
 #include <fcntl.h>
+#include <pthread.h>
 #include <unistd.h>
 
 namespace fs = std::filesystem;
@@ -55,6 +60,88 @@ namespace NAwesome {
         }
 
     } // namespace
+
+    // The disk half of a save runs on a writer thread: fdatasync waits on
+    // the filesystem's journal, and behind a heavy writer (a build, a copy)
+    // that is seconds — once per window close, with every frame and input
+    // event queued behind it. One write in flight, the newest snapshot
+    // wins; the thread exits when it runs dry. drain() joins it: teardown
+    // never unloads the plugin under a running write, and a flushed save
+    // is on disk when flush() returns.
+    class CDiskWriter {
+      public:
+        ~CDiskWriter() {
+            drain();
+        }
+
+        void post(fs::path path, std::string contents) {
+            {
+                std::lock_guard lk(m_lock);
+                m_next = SJob{std::move(path), std::move(contents)};
+                if (m_running)
+                    return; // the running loop takes it next
+            }
+            drain(); // a thread that ran dry and exited
+            m_running = true;
+            try {
+                // process signals stay with the compositor's threads: the
+                // writer inherits a mask blocking all but the faults (a
+                // crash in it still reaches the crash handler)
+                sigset_t mask, old;
+                sigfillset(&mask);
+                for (const int SIG : {SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGTRAP, SIGSYS, SIGABRT})
+                    sigdelset(&mask, SIG);
+                pthread_sigmask(SIG_SETMASK, &mask, &old);
+                try {
+                    m_thread = std::thread([this]() {
+                        pthread_setname_np(pthread_self(), "awesome-state");
+                        run();
+                    });
+                } catch (...) {
+                    pthread_sigmask(SIG_SETMASK, &old, nullptr);
+                    throw;
+                }
+                pthread_sigmask(SIG_SETMASK, &old, nullptr);
+            } catch (...) {
+                m_running = false; // no thread to be had: write it here
+                run();
+            }
+        }
+
+        void drain() {
+            if (m_thread.joinable())
+                m_thread.join();
+        }
+
+      private:
+        struct SJob {
+            fs::path    path;
+            std::string contents;
+        };
+
+        void run() {
+            for (;;) {
+                std::optional<SJob> job;
+                {
+                    std::lock_guard lk(m_lock);
+                    if (!m_next) {
+                        m_running = false;
+                        return;
+                    }
+                    job = std::move(m_next);
+                    m_next.reset();
+                }
+                try {
+                    writeAtomic(job->path, job->contents);
+                } catch (...) {} // nothing may escape a thread: std::terminate
+            }
+        }
+
+        std::mutex          m_lock;
+        std::optional<SJob> m_next;
+        bool                m_running = false; // under m_lock once a thread exists
+        std::thread         m_thread;
+    };
 
     namespace {
 
@@ -129,7 +216,7 @@ namespace NAwesome {
         return true;
     }
 
-    bool StateStore::write(const fs::path& path, const AppState& data) {
+    static std::string serialize(const AppState& data) {
         std::ostringstream out;
         for (const auto& [K, B] : data.spot)
             out << "spot\t" << B.x << '\t' << B.y << '\t' << K << '\n';
@@ -139,7 +226,11 @@ namespace NAwesome {
             out << "launches\t" << C << '\t' << K << '\n';
         for (const auto& E : data.history.entries)
             out << "history\t" << E << '\n';
-        return writeAtomic(path, out.str());
+        return std::move(out).str();
+    }
+
+    bool StateStore::write(const fs::path& path, const AppState& data) {
+        return writeAtomic(path, serialize(data));
     }
 
     StateStore& StateStore::inst() {
@@ -181,11 +272,14 @@ namespace NAwesome {
     }
     void StateStore::flush() {
         m_saver.flush();
+        m_writer->drain();
     }
 
-    StateStore::StateStore() : m_saver([this]() {
+    StateStore::StateStore() : m_writer(std::make_unique<CDiskWriter>()), m_saver([this]() {
         if (!this->m_writeBlocked)
-            this->write(path(), this->m_data);
+            this->m_writer->post(path(), serialize(this->m_data));
     }) {}
+
+    StateStore::~StateStore() = default;
 
 } // namespace NAwesome
