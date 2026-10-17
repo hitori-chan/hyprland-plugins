@@ -771,7 +771,10 @@ namespace NAwesome::Notify {
             n.imageSettled = false;
         }
         if (!n.imageSettled) {
-            const auto TEX = fileTex(n.image, iconPx, heroWPx, heroHCapPx, false);
+            // a vector has no size of its own: rastered at the hero width it
+            // always measured hero-worthy, and an icon (a theme's SVG named
+            // as the image) became a card-wide strip cut from its middle
+            const auto TEX = fileTex(n.image, iconPx, NAwesome::isSvgIconPath(n.image) ? 0 : heroWPx, heroHCapPx, false);
             if (TEX.settled) {
                 n.iconTex      = TEX.texture;
                 n.thumbTex     = TEX.thumb;
