@@ -40,6 +40,7 @@ namespace NAwesome::Notify::Bus {
         uint32_t    reason = 0;
         std::string text;   // the action key, or the reply
         std::string sender; // ACTION/REPLY: the one client that hears them
+        bool        raise = true; // ACTION: the sender's window comes up (see invokeLive)
     };
     static std::vector<SOut> s_out;
     static bool              s_outPosted = false;
@@ -102,7 +103,7 @@ namespace NAwesome::Notify::Bus {
                     emitTo(O.sender, O.kind == SOut::ACTION ? "ActionInvoked" : "NotificationReplied", O.id, O.text);
                 }
             } catch (...) {}
-            if (O.kind == SOut::ACTION)
+            if (O.kind == SOut::ACTION && O.raise)
                 focusSender(O.sender);
         }
         g_bus.pollSoon();
@@ -121,8 +122,8 @@ namespace NAwesome::Notify::Bus {
         queueOut({.kind = SOut::CLOSED, .id = id, .reason = reason});
     }
 
-    void invokeAction(uint32_t id, const std::string& key, const std::string& sender) {
-        queueOut({.kind = SOut::ACTION, .id = id, .text = key, .sender = sender});
+    void invokeAction(uint32_t id, const std::string& key, const std::string& sender, bool raise) {
+        queueOut({.kind = SOut::ACTION, .id = id, .text = key, .sender = sender, .raise = raise});
     }
 
     // The user typed a reply: hand it back and close the card, the same

@@ -324,7 +324,9 @@ namespace NAwesome::Notify {
     namespace Bus {
         void init();
         void exit();
-        void invokeAction(uint32_t id, const std::string& key, const std::string& sender);
+        // raise: the sender's own window comes up (an action that keeps the
+        // user here, a resident card's, raises nothing; its token still goes)
+        void invokeAction(uint32_t id, const std::string& key, const std::string& sender, bool raise);
         // NotificationReplied to the sender, then close unless resident;
         // nothing unless the card is still `target` (replyTarget). false =
         // not sent (the card changed, or the outbound queue refused it)

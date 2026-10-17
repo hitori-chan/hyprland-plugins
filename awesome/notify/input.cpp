@@ -159,9 +159,9 @@ namespace NAwesome::Notify {
             Model::closeOne(id, Model::R_DISMISSED);
             return;
         }
-        Bus::invokeAction(id, action, sender);
+        Bus::invokeAction(id, action, sender, /*raise=*/!resident);
         if (resident)
-            return; // the card stays, and so does the shade behind it
+            return; // the card stays, and so does the shade behind it — and nothing comes up over it
         setCenter(false); // no re-pop: the app the action raises is coming up over the parked stack
         Model::closeOne(id, Model::R_DISMISSED);
     }
