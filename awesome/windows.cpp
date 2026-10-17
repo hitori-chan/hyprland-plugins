@@ -121,6 +121,10 @@ namespace NAwesome::Windows {
             static auto FOCUS_ON_ACTIVATE = CConfigValue<Config::INTEGER>("misc:focus_on_activate");
             if (!w || w->backend().isX11() || !w->m_ruleApplicator->focusOnActivate().valueOr(*FOCUS_ON_ACTIVATE) || !w->isHidden() || !Tasklist::isMinimized(w))
                 return;
+            // minimized on a workspace no monitor shows: an ask there is
+            // urgency only in both modes, as for a shown window
+            if (!w->m_workspace || !w->m_workspace->visible())
+                return;
             pendingActivates.push(PHLWINDOWREF{w});
         });
         // A taskbar's minimize (wlr-foreign-toplevel set/unset_minimized):
