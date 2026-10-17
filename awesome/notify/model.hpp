@@ -158,8 +158,6 @@ namespace NAwesome::Notify {
         std::string          conversationId; // stable chat identity; "" = no merge contract
         std::string          conversationTitle;
         std::string          conversationKind; // "one-to-one" or "group"
-        std::string          conversationIconSource; // the raw conversation-icon
-        std::string          conversationIcon;       // resolved path
         std::string          declaredGroupKey; // x-notify-group-key: the app's own grouping
         std::vector<SMessage>     messages;     // oldest first, bounded
         // renewed by every arrival that touches the card (messages,

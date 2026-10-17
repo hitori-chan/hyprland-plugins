@@ -739,7 +739,6 @@ namespace NAwesome::Notify {
             const auto        CONV_ID_HINT        = optStrHint("conversation-id", "x-notify-conversation-id", MAX_CONV_ID_BYTES, true);
             const auto        CONV_TITLE_HINT     = optStrHint("conversation-title", "x-notify-conversation-title", 512);
             const auto        CONV_KIND_HINT      = optStrHint("conversation-kind", "x-notify-conversation-kind", MAX_CONV_KIND_BYTES, true);
-            const auto        CONV_ICON_HINT      = optStrHint("conversation-icon", "x-notify-conversation-icon", 512, true);
             const auto        SENDER_ID_HINT      = optStrHint("sender-id", "x-notify-sender-id", MAX_SENDER_ID_BYTES, true);
             const auto        SENDER_NAME_HINT    = optStrHint("sender-name", "x-notify-sender-name", MAX_SENDER_NAME_BYTES);
             const auto        SENDER_ICON_HINT    = optStrHint("sender-icon", "x-notify-sender-icon", 512, true);
@@ -896,14 +895,6 @@ namespace NAwesome::Notify {
                 n->conversationKind = !EFFECTIVE_CONV_ID.empty() ? "one-to-one" : "";
             if (n->conversationKind.empty() && !EFFECTIVE_CONV_ID.empty())
                 n->conversationKind = "one-to-one";
-            if (CONV_ICON_HINT)
-                n->conversationIconSource = *CONV_ICON_HINT;
-            else if (!SAME_CONVERSATION) {
-                n->conversationIconSource.clear();
-                n->conversationIcon.clear();
-            }
-            if (CONV_ICON_HINT)
-                n->conversationIcon = Parse::resolveImage(n->conversationIconSource, ICONPX);
             if (DECLARED_GROUP_HINT) {
                 n->declaredGroupKey = *DECLARED_GROUP_HINT;
                 std::erase_if(n->declaredGroupKey, [](unsigned char c) { return c < 0x20; }); // the \x1f join, as the app key

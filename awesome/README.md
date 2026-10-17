@@ -291,7 +291,7 @@ stays a broadcast.
   `x-notify-*` alias second — the message-time alias alone is
   `x-notify-message-timestamp`): `conversation-id` (the merge
   contract), `conversation-title`, `conversation-kind`
-  (`one-to-one`/`group`/`call`), `conversation-icon`,
+  (`one-to-one`/`group`/`call`),
   `sender-id`/`sender-name`/`sender-icon`, `message-id`,
   `message-time` (int64, ms epoch), `message-historic` (bool),
   `unread-count` (uint, capped at 999).
