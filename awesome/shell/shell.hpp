@@ -139,6 +139,9 @@ namespace NAwesome::Shell {
     void warmBars(PHLMONITOR only = nullptr);
     void promptChanged(); // the launcher's prompt band only (see strip.cpp)
     void menuHoverChanged(); // the open menu's panels only (see strip.cpp)
+    // the menu's hover and cascade intent from a pointer position: motion,
+    // and a layout reply that moved the rows under a resting pointer
+    void menuHoverAt(const Vector2D& pos);
     void stripInit(); // register the strip's canvas layer (the module's init)
     void stripExit(); // clear the strip's caches (the module's teardown)
 

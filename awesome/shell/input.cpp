@@ -382,36 +382,40 @@ namespace NAwesome::Shell {
         Pointer::Cursor::overrideController->unsetOverride(Pointer::Cursor::CURSOR_OVERRIDE_SPECIAL_ACTION);
     }
 
+    void menuHoverAt(const Vector2D& pos) {
+        if (!Menu::isOpen)
+            return;
+        // the pointer's (level, row), deepest panel first
+        size_t pl = Menu::levels.size();
+        int    pr = -1;
+        for (size_t li = Menu::levels.size(); li-- > 0;) {
+            if (!Menu::levels[li].box.containsPoint(pos))
+                continue;
+            pl = li;
+            for (const auto& [ROW, IDX] : Menu::levels[li].rows)
+                if (ROW.containsPoint(pos)) {
+                    pr = IDX;
+                    break;
+                }
+            break;
+        }
+        bool changed = false;
+        for (size_t li = 0; li < Menu::levels.size(); li++) {
+            const int want = li == pl ? pr : -1;
+            if (Menu::levels[li].hover != want) {
+                Menu::levels[li].hover = want;
+                changed                = true;
+            }
+        }
+        if (changed)
+            menuHoverChanged();
+        Menu::hoverIntent(pl, pr); // open/close cascades on GTK's popup delay
+    }
+
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info) {
         const bool GRABBED = heldButtons > 0 || NAwesome::nativePointerGrabActive() || (g_layoutManager && g_layoutManager->dragController()->target());
 
-        if (Menu::isOpen) {
-            // the pointer's (level, row), deepest panel first
-            size_t pl = Menu::levels.size();
-            int    pr = -1;
-            for (size_t li = Menu::levels.size(); li-- > 0;) {
-                if (!Menu::levels[li].box.containsPoint(pos))
-                    continue;
-                pl = li;
-                for (const auto& [ROW, IDX] : Menu::levels[li].rows)
-                    if (ROW.containsPoint(pos)) {
-                        pr = IDX;
-                        break;
-                    }
-                break;
-            }
-            bool changed = false;
-            for (size_t li = 0; li < Menu::levels.size(); li++) {
-                const int want = li == pl ? pr : -1;
-                if (Menu::levels[li].hover != want) {
-                    Menu::levels[li].hover = want;
-                    changed                = true;
-                }
-            }
-            if (changed)
-                menuHoverChanged();
-            Menu::hoverIntent(pl, pr); // open/close cascades on GTK's popup delay
-        }
+        menuHoverAt(pos);
 
         // the held-button / live-drag gates first: they are two loads, while
         // barOwnsPoint walks the monitors and fetches the bar height — and a

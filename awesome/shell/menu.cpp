@@ -6,6 +6,8 @@
 
 #include "../windows/state.hpp"
 
+#include <hyprland/src/managers/input/InputManager.hpp>
+
 namespace NAwesome::Shell {
 
     // ---- dbusmenu: a native menu renderer for tray items ----
@@ -136,12 +138,18 @@ namespace NAwesome::Shell {
         static size_t              glideLevel = 0;
         static int                 glideDir   = 0; // ±1 row per tick, 0 = idle
 
-        static void                glideTick() {
-            if (!isOpen || glideDir == 0 || glideLevel >= levels.size())
+        static void glideStop();
+
+        static void glideTick() {
+            // off the strip (or the strip gone with an update): stop for
+            // real, so resting on it again restarts the glide (a stale
+            // direction made hoverIntent skip the restart)
+            if (!isOpen || glideDir == 0 || glideLevel >= levels.size() || !levels[glideLevel].overflow ||
+                levels[glideLevel].hover != (glideDir < 0 ? SCROLL_UP : SCROLL_DOWN)) {
+                glideStop();
                 return;
+            }
             auto& L = levels[glideLevel];
-            if (L.hover != (glideDir < 0 ? SCROLL_UP : SCROLL_DOWN))
-                return;
             const int NEXT = std::clamp(L.scrollTop + glideDir, 0, L.maxScroll);
             if (NEXT != L.scrollTop) {
                 L.scrollTop = NEXT;
@@ -245,6 +253,9 @@ namespace NAwesome::Shell {
             const auto KB = NAwesome::Keys::keyboardFor(e.keycode);
             if (!KB || !KB->m_xkbState || xkb_state_key_get_one_sym(KB->m_xkbState, e.keycode + 8) != XKB_KEY_Escape)
                 return false;
+            for (const char* M : {XKB_MOD_NAME_CTRL, XKB_MOD_NAME_ALT, XKB_MOD_NAME_LOGO})
+                if (xkb_state_mod_name_is_active(KB->m_xkbState, M, XKB_STATE_MODS_EFFECTIVE) > 0)
+                    return false;
             close();
             info.cancelled = true;
             return true;
@@ -336,8 +347,18 @@ namespace NAwesome::Shell {
                             return;
                         }
                         lvl->load = SLevel::LOAD_DONE;
+                        // the hovered row survives the update by id (nm-applet
+                        // re-lays its menu every few seconds: the pill vanished
+                        // under a resting pointer and its cascade never opened);
+                        // a ▴/▾ strip stays hovered. scrollTop stays too: live
+                        // updates must not yank a browsed list to its top. Once
+                        // laid out, the pointer settles it: a re-sorted list
+                        // (nm-applet's scan) moves the row away from it.
+                        const int                    HOVER = lvl->hover;
+                        const std::optional<int32_t> HOVER_ID =
+                            HOVER >= 0 && (size_t)HOVER < lvl->entries.size() ? std::optional{lvl->entries[HOVER].id} : std::nullopt;
                         lvl->entries.clear();
-                        lvl->hover = -1; // scrollTop stays: live updates must not yank a browsed list to its top
+                        lvl->hover = HOVER == SCROLL_UP || HOVER == SCROLL_DOWN ? HOVER : -1;
                         SWarmToken WARM; // we resolve icon-name textures here, in a DBus reply — not a render
                         size_t retained = 0;
                         for (const auto& L : levels)
@@ -428,10 +449,20 @@ namespace NAwesome::Shell {
                             lvl->entries = std::move(CLEAN); // a pendingSep with no row after it dies here
                         }
                         lvl->width = 0;
+                        const size_t K = (size_t)(lvl - levels.data());
+                        if (HOVER_ID)
+                            if (const auto IT = std::ranges::find_if(lvl->entries, [&](const SEntry& E) { return E.id == *HOVER_ID && !E.separator; }); IT != lvl->entries.end())
+                                lvl->hover = (int)(IT - lvl->entries.begin());
+                        // a pending cascade intent named the row by index
+                        if (intentArmed && intentLevel == K && intentIdx >= 0) {
+                            if (intentIdx == HOVER && lvl->hover >= 0)
+                                intentIdx = lvl->hover;
+                            else
+                                disarm();
+                        }
                         // the open cascade hangs off its parent row by INDEX:
                         // re-find that row by id (rows above it may have come
                         // or gone), or close the cascade with it
-                        const size_t K = (size_t)(lvl - levels.data());
                         if (K + 1 < levels.size()) {
                             auto&      NEXT = levels[K + 1];
                             const auto IT   = std::ranges::find_if(lvl->entries, [&](const SEntry& E) { return E.id == NEXT.parentId && E.submenu; });
@@ -441,6 +472,8 @@ namespace NAwesome::Shell {
                                 NEXT.parentIdx = (int)(IT - lvl->entries.begin());
                         }
                         damageMenu();
+                        if (g_pInputManager)
+                            menuHoverAt(g_pInputManager->getMouseCoordsInternal());
                     });
                 Tray::pollSoon(); // don't leave the layout reply waiting on a poll tick
             } catch (...) {} // dying bus: teardown is already pending
