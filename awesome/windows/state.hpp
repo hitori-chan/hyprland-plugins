@@ -149,6 +149,7 @@ namespace NAwesome::Windows::Tasklist {
                 return false;
             if (m.tiled && W->mapped() && g_layoutManager && W->m_workspace) // a no-op when already laid out
                 g_layoutManager->newTarget(W->layoutTarget(), W->m_workspace->space());
+            W->backend().setMinimized(false);
             return true;
         });
     }
@@ -178,6 +179,11 @@ namespace NAwesome::Windows::Tasklist {
         if (TILED && WS)
             w->layoutTarget()->setSpaceGhost(WS->space());
         w->setHidden(true); // unrendered, xdg-suspended, no frame callbacks
+        // an X11 client is told (_NET_WM_STATE_HIDDEN): the XWM resolves a
+        // client's "toggle hidden" against this, and a minimized Wine or
+        // Java window toggling itself back was minimized again (a no-op
+        // for Wayland, which has no minimized state to send)
+        w->backend().setMinimized(true);
         // setHidden issues NO damage. A tiled window's ghosting reflow
         // repaints the vacated area for free, but a floating window leaves
         // its last frame stale on screen until something else damages it —
@@ -243,6 +249,7 @@ namespace NAwesome::Windows::Tasklist {
             }
         if (!found || !w->mapped())
             return;
+        w->backend().setMinimized(false);
         if (!w->isHidden()) {
             // the compositor showed it already (see isMinimized): the
             // entry was stale, and a re-slot would add a second target
@@ -352,6 +359,7 @@ namespace NAwesome::Windows::Tasklist {
             return;
         S.erase(IT);
         w->setHidden(false);
+        w->backend().setMinimized(false);
         if (taskChangedHook())
             taskChangedHook()();
     }
@@ -368,6 +376,7 @@ namespace NAwesome::Windows::Tasklist {
                 if (!W || !W->mapped() || !W->isHidden())
                     continue;
                 W->setHidden(false);
+                W->backend().setMinimized(false);
                 if (M.tiled && g_layoutManager && W->m_workspace)
                     g_layoutManager->newTarget(W->layoutTarget(), W->m_workspace->space());
                 if (g_pHyprRenderer)
