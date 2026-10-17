@@ -609,10 +609,12 @@ hl.plugin.awesome.touchpad_toggle()
 `hyprctl awesome <verb>` routes to the owning module: notify serves
 `count`, `center`, `state`, `badge`, `topline`, `clear`; system serves
 `pad`. `trace` (the input pipeline) prints the last 32 button, axis and
-key events and who took each — a module, `blocked` (session lock or
-input capture), `upstream` (cancelled before the plugin) or `-` (passed
-to the compositor; `- (a passed press holds it)` for a release a module
-would have swallowed): the first stop when a click goes missing.
+key events (a run of scroll events on one axis, taken by the same owner,
+is one entry with its count) and who took each — a module, `blocked`
+(session lock or input capture), `upstream` (cancelled before the
+plugin) or `-` (passed to the compositor; `- (a passed press holds it)`
+for a release a module would have swallowed): the first stop when a
+click goes missing.
 
 ## Configuration
 

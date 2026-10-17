@@ -264,7 +264,7 @@ namespace NAwesome {
                 const auto& T = m_trace[(m_traceHead + i) % TRACE_N];
                 if (!T.what)
                     continue;
-                out += std::format("{} {} {} {} by {}\n", T.ms, T.what, T.a, T.b, T.by);
+                out += std::format("{} {} {} {} by {}{}\n", T.ms, T.what, T.a, T.b, T.by, T.n > 1 ? std::format(" x{}", T.n) : "");
             }
             return out.empty() ? "no input yet\n" : out;
         }
@@ -301,6 +301,7 @@ namespace NAwesome {
             const char* what = nullptr; // nullptr = empty slot (and motion: untraced)
             uint32_t    a = 0, b = 0;
             const char* by = "";
+            uint32_t    n  = 1; // a run of axis events folded into one entry
         };
         static constexpr size_t TRACE_N = 32;
 
@@ -308,6 +309,15 @@ namespace NAwesome {
             if (!what)
                 return;
             const auto NOW = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+            // a scroll burst is one entry: a touchpad's frames flushed the
+            // whole ring, and the click being debugged with it
+            if (auto& LAST = m_trace[(m_traceHead + TRACE_N - 1) % TRACE_N];
+                LAST.what && std::string_view{what} == "axis" && std::string_view{LAST.what} == "axis" && LAST.a == a && std::string_view{LAST.by} == by) {
+                LAST.ms = (uint64_t)NOW;
+                LAST.b  = b;
+                LAST.n++;
+                return;
+            }
             m_trace[m_traceHead] = {.ms = (uint64_t)NOW, .what = what, .a = a, .b = b, .by = by};
             m_traceHead          = (m_traceHead + 1) % TRACE_N;
         }
