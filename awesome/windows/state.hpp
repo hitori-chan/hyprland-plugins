@@ -322,11 +322,6 @@ namespace NAwesome::Windows::Tasklist {
         });
     }
 
-    inline void minimizeFocused() {
-        if (const auto W = Desktop::focusState() ? Desktop::focusState()->window() : nullptr)
-            minimize(W);
-    }
-
     inline void restoreLast() {
         // awful.client.restore(s): the most-recently minimized window on a
         // tag the FOCUSED screen views, so it returns where you are — never

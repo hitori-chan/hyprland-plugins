@@ -37,18 +37,28 @@ namespace NAwesome::Windows {
                 Tasklist::restore(W); // un-hides, re-slots if tiled, raises and focuses
     });
     static CHop pendingFocusAway;
+    // the restore bind, out of the keybind's dispatch like every focus change
+    // (invariant 6) and never under the lockscreen
+    static CHop pendingRestoreLast;
 
     namespace {
         int luaMaximize(lua_State*) {
             Max::requestToggle();
             return 0;
         }
+        // A bind runs inside the keyboard emission, under a lock too (a
+        // bindl): the window is taken at the press, the hide and the focus
+        // move run deferred, and the drains refuse under the lockscreen.
         int luaMinimize(lua_State*) {
-            Tasklist::minimizeFocused();
+            if (const auto W = Desktop::focusState() ? Desktop::focusState()->window() : nullptr)
+                Tasklist::minReqs().push({PHLWINDOWREF{W}, true});
             return 0;
         }
         int luaRestore(lua_State*) {
-            Tasklist::restoreLast();
+            pendingRestoreLast.arm([]() {
+                if (!sessionLocked())
+                    Tasklist::restoreLast();
+            });
             return 0;
         }
         int luaFocusNext(lua_State*) {
@@ -166,6 +176,7 @@ namespace NAwesome::Windows {
         // reset by the supervisor)
         pendingActivates.reset();
         pendingFocusAway.reset();
+        pendingRestoreLast.reset();
         restoreMinimizedHook() = nullptr;
         Snap::teardown();
         Place::teardown();
