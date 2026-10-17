@@ -463,9 +463,13 @@ namespace NAwesome::Notify {
     void               replyClose();
     const std::string& replyText();
     const std::string& replyTargetKey(); // the armed card's replyTarget at arm time
-    // a key while armed. Returns false when the key is not ours to eat.
-    bool               replyKey(xkb_state* state, uint32_t keycode);
-    void               replyExit();
+    // a key press while armed (evdev code, the keyboard that typed it).
+    // Returns false when the key is not ours to eat.
+    bool               replyKey(const SP<IKeyboard>& kb, uint32_t keycode, bool repeating = false);
+    void               replyKeyEvent(const IKeyboard::SKeyEvent& e); // every key event: ends a held key's repeat
+    void               replyExit(); // disarm: a lock, the panel gone
+    void               replyInit(); // the repeat timer
+    void               replyTeardown();
 
     // ---- input.cpp ----
 

@@ -41,6 +41,7 @@
 #include "ui.hpp"
 
 #include "../core/jobs.hpp"
+#include "../core/keys.hpp"
 
 #include <hyprland/src/pointer/cursor/CursorShapeOverrideController.hpp>
 
@@ -482,6 +483,7 @@ namespace NAwesome::Notify {
             replyExit();
             return;
         }
+        replyKeyEvent(e); // a press or the held key's release ends its repeat
         if (!centerVisible() || info.cancelled)
             return;
         // input-capture-v1 is fed after the plugin emissions: while a client
@@ -491,7 +493,13 @@ namespace NAwesome::Notify {
         // releases pass untouched (crash class 3: never cancel key releases)
         if (e.state != WL_KEYBOARD_KEY_STATE_PRESSED)
             return;
-        const auto KB = g_pSeatManager ? g_pSeatManager->m_keyboard.lock() : nullptr;
+        // an exclusive-keyboard layer (a launcher a bind opened over the
+        // shade) owns typing natively: the shade and its field step aside,
+        // the field keeps its text for when the layer goes
+        if (NAwesome::Keys::exclusiveLayer())
+            return;
+        // the keyboard that typed it, with its own layout and modifiers
+        const auto KB = NAwesome::Keys::keyboardFor(e.keycode);
         if (!KB || !KB->m_xkbState)
             return;
 
@@ -499,7 +507,7 @@ namespace NAwesome::Notify {
         // sentence, and every nav key below would otherwise steal a letter.
         const bool HELD = replyHeld();
         if (replyArmed()) {
-            if (replyKey(KB->m_xkbState, e.keycode + 8))
+            if (replyKey(KB, e.keycode))
                 info.cancelled = true;
             return;
         }

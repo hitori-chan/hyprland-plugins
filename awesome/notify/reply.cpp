@@ -21,6 +21,7 @@
 #include "ui.hpp"
 
 #include "../core/hop.hpp"
+#include "../core/keys.hpp"
 
 #include <xkbcommon/xkbcommon-keysyms.h>
 #include <xkbcommon/xkbcommon-names.h>
@@ -32,6 +33,7 @@ namespace NAwesome::Notify {
     static std::string s_target; // replyTarget of the card when armed
     // the send changes the model (the card goes): out of the key emission
     static NAwesome::CHop s_pendingSend;
+    static NAwesome::Keys::CRepeat s_repeat; // a held key types on (core/keys.hpp)
 
     // Self-healing: the card can be dismissed, expire or be swept while the
     // user is mid-sentence, and the shade can close under it. A stale arm
@@ -46,6 +48,7 @@ namespace NAwesome::Notify {
                     return true;
         s_id = 0;
         s_text.clear();
+        s_repeat.stop();
         return false;
     }
     bool replyHeld() {
@@ -84,6 +87,7 @@ namespace NAwesome::Notify {
     }
 
     void replyClose() {
+        s_repeat.stop();
         if (!s_id)
             return;
         s_id = 0;
@@ -91,17 +95,48 @@ namespace NAwesome::Notify {
         notifChanged();
     }
 
-    void replyExit() { // teardown: no notifChanged, the model is going away
+    void replyExit() { // a lock, the panel gone, teardown: no notifChanged
         s_id = 0;
         s_text.clear();
         s_pendingSend.reset();
+        s_repeat.stop();
+    }
+
+    static void replyRepeat(uint32_t keycode) {
+        if (!replyArmed()) {
+            s_repeat.stop();
+            return;
+        }
+        replyKey(NAwesome::Keys::keyboardFor(keycode), keycode, /*repeating=*/true);
+    }
+
+    void replyInit() {
+        s_repeat.init(replyRepeat);
+    }
+
+    void replyTeardown() {
+        replyExit();
+        s_repeat.teardown();
+    }
+
+    void replyKeyEvent(const IKeyboard::SKeyEvent& e) {
+        s_repeat.onKey(e);
     }
 
     // A key press while the field is armed. False means "not ours" — the
     // caller passes it on, so a chord the user bound still works.
-    bool replyKey(xkb_state* state, uint32_t keycode) {
+    bool replyKey(const SP<IKeyboard>& KB, uint32_t evdev, bool repeating) {
+        xkb_state* const state = KB ? KB->m_xkbState : nullptr;
         if (!s_id || !state)
             return false;
+        const xkb_keycode_t keycode = evdev + 8;
+        // a key that types (or erases) keeps typing while held
+        const auto typed = [&]() {
+            if (!repeating)
+                s_repeat.start(KB, evdev);
+            notifChanged();
+            return true;
+        };
 
         const auto SYM = xkb_state_key_get_one_sym(state, keycode);
         const bool CTRL = xkb_state_mod_name_is_active(state, XKB_MOD_NAME_CTRL, XKB_STATE_MODS_EFFECTIVE) > 0;
@@ -159,8 +194,7 @@ namespace NAwesome::Notify {
                     s_text.pop_back();
                 if (!s_text.empty())
                     s_text.pop_back();
-                notifChanged();
-                return true;
+                return typed();
             }
             default: break;
         }
@@ -173,10 +207,13 @@ namespace NAwesome::Notify {
         if (N > 0 && (size_t)N < sizeof buf && (unsigned char)buf[0] >= 0x20 && buf[0] != 0x7f) {
             if (s_text.size() < 2000) // a reply, not a document
                 s_text.append(buf, (size_t)N);
-            notifChanged();
-            return true;
+            return typed();
         }
-        // a key with no character and no meaning here (F-keys, arrows): the
+        // function and media keys are the user's binds (the shade's own F12
+        // toggle, volume, brightness): they pass while the field is armed
+        if ((SYM >= XKB_KEY_F1 && SYM <= XKB_KEY_F35) || (SYM >> 16) == 0x1008)
+            return false;
+        // a key with no character and no meaning here (arrows, Home): the
         // field swallows it rather than letting it act on the window beneath,
         // because the user is typing, not driving the desktop
         return true;

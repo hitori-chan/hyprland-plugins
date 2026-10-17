@@ -91,6 +91,7 @@ namespace NAwesome::Notify {
         Bus::init();
         surfaceInit(); // the tick timers, the canvas layer
         iconsInit(); // the async decode poll and the .desktop index scan start now
+        replyInit();
 
         auto& EV = Event::bus()->m_events;
         // The cards arrive on the FOCUSED monitor and stay there
@@ -130,7 +131,7 @@ namespace NAwesome::Notify {
         Bus::exit(); // the connection first: nothing may arrive mid-teardown
         Model::exit(); // then the cards, and their textures with them
         inputExit();
-        replyExit();
+        replyTeardown();
         centerExit();
         iconsExit(); // the decode poll and the index helper out with the plugin
         surfaceExit();
