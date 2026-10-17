@@ -548,7 +548,12 @@ pragmatic scan (GTK theme → hicolor → pixmaps), not a full
   malformed or non-finite output.
 - **Touchpad policy**: the touchpad turns off while an external
   (USB/Bluetooth) mouse is present and back on when it's unplugged;
-  `XF86TouchpadToggle` flips it by hand. Hotplug rides the
+  `XF86TouchpadToggle` flips it by hand, and the flip holds until a
+  pointer is plugged or unplugged (a config save re-applies it). A
+  USB/Bluetooth pointer counts as a mouse once it moves or clicks: a
+  receiver with only a keyboard paired, a gaming keyboard's mouse
+  interface or a presenter never does. With an external trackpad too,
+  the policy drives the built-in one. Hotplug rides the
   compositor's own device signals (a settle timer coalesces the
   burst); the flip writes the compositor's per-device config store
   through `hl.device`, so nothing fights the next config re-apply, and

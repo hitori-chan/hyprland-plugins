@@ -234,8 +234,9 @@ cards through it (fixed IDs, low urgency, value bar).
 
 Audio and brightness controls (bounded wpctl set/readback chains,
 logind `SetBrightness`, /sys reads) and the touchpad policy (disabled
-while a physical mouse is present, 400 ms coalesced recheck, manual
-toggle until hotplug). Every action's feedback is a notify card:
+while a physical mouse is present — one that has moved or clicked —
+400 ms coalesced recheck, manual toggle until hotplug, across config
+reloads). Every action's feedback is a notify card:
 fixed IDs replace in place, 1200 ms expiry, native identities. All
 process I/O through Jobs; readbacks reject malformed output.
 

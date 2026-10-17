@@ -11,9 +11,16 @@
 //   the device list is stale mid-signal — handlers only (re)arm a settle
 //   timer, which also coalesces one plug's burst into a single re-check.
 // - External mouse = a non-virtual, non-touchpad pointer whose libinput
-//   bus type is USB or Bluetooth. The touchpad is the m_isTouchpad entry
-//   (the compositor's own capability predicate — a pointer with a size),
-//   not a name substring; its m_hlName is what hl.device keys on.
+//   bus type is USB or Bluetooth, once it has moved or clicked: a
+//   Unifying/Bolt receiver with only a keyboard paired, a gaming
+//   keyboard's mouse interface or a presenter exposes a pointer that never
+//   does. The touchpad is the m_isTouchpad entry (the compositor's own
+//   capability predicate — a pointer with a size), the built-in one
+//   before an external trackpad, not a name substring; its m_hlName is
+//   what hl.device keys on.
+// - A manual flip holds until the pointer set changes (a hotplug): every
+//   config save reloads, and the automatic pass used to put the mouse
+//   policy back over the user's own choice.
 // - The flip is Config::Lua::mgr()->eval("hl.device({...})") — it writes
 //   the compositor's per-device config store, so nothing fights the next
 //   config re-apply. A reload wipes that runtime state: config.reloaded
@@ -37,9 +44,11 @@
 #include <libinput.h>
 #include <linux/input.h>
 
+#include <algorithm>
 #include <chrono>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace NAwesome::System {
@@ -52,8 +61,12 @@ namespace NAwesome::System {
     static SP<CEventLoopTimer> settle;
     // per live pointer, rebuilt on every device re-check — dynamic lifetime,
     // deliberately not in the supervisor's listener registry (it is rebuilt,
-    // not cleared)
-    static std::vector<Hyprutils::Signal::CHyprSignalListener> lDestroy;
+    // not cleared): every pointer's destroy, and an unproven external
+    // pointer's first motion or click
+    static std::vector<Hyprutils::Signal::CHyprSignalListener> lDestroy, lProve;
+    static std::vector<WP<IPointer>>                           proven; // external pointers seen acting as a mouse
+    static bool                                                hotplugged  = false; // the pointer set changed since the last check
+    static int                                                 manualState = -1;    // the user's own flip, until a hotplug; -1 none
 
     // The last state and actual touchpad object this module applied it to. A
     // replacement must receive policy even when the desired boolean matches.
@@ -78,13 +91,29 @@ namespace NAwesome::System {
         return out;
     }
 
+    static bool onExternalBus(const SP<IPointer>& P) {
+        const auto  AQ = P->aq();
+        auto* const H  = AQ ? AQ->getLibinputHandle() : nullptr;
+        if (!H)
+            return false;
+        const auto BUS = libinput_device_get_id_bustype(H);
+        return BUS == BUS_USB || BUS == BUS_BLUETOOTH;
+    }
+
+    // the built-in touchpad, else any (an external trackpad alone)
     static SP<IPointer> touchpad() {
         if (!g_pInputManager)
             return nullptr;
-        for (const auto& P : g_pInputManager->m_pointers)
-            if (P->m_isTouchpad)
+        SP<IPointer> any;
+        for (const auto& P : g_pInputManager->m_pointers) {
+            if (!P->m_isTouchpad)
+                continue;
+            if (!onExternalBus(P))
                 return P;
-        return nullptr;
+            if (!any)
+                any = P;
+        }
+        return any;
     }
 
     // m_connected is the compositor's actual pointer attachment state. It is
@@ -96,21 +125,18 @@ namespace NAwesome::System {
         return TOUCHPAD ? std::optional<bool>{TOUCHPAD->m_connected} : std::nullopt;
     }
 
+    static bool isExternalMouse(const SP<IPointer>& P) {
+        return !P->isVirtual() && !P->m_isTouchpad && onExternalBus(P);
+    }
+
+    static bool isProven(const SP<IPointer>& P) {
+        return std::ranges::any_of(proven, [&](const auto& W) { return W.lock() == P; });
+    }
+
     static bool externalMousePresent() {
         if (!g_pInputManager)
             return false;
-        for (const auto& P : g_pInputManager->m_pointers) {
-            if (P->isVirtual() || P->m_isTouchpad)
-                continue;
-            const auto  AQ = P->aq();
-            auto* const H  = AQ ? AQ->getLibinputHandle() : nullptr;
-            if (!H)
-                continue;
-            const auto BUS = libinput_device_get_id_bustype(H);
-            if (BUS == BUS_USB || BUS == BUS_BLUETOOTH)
-                return true;
-        }
-        return false;
+        return std::ranges::any_of(g_pInputManager->m_pointers, [](const auto& P) { return isExternalMouse(P) && isProven(P); });
     }
 
     // The state the user was last SHOWN: an automatic re-apply that changes
@@ -155,7 +181,7 @@ namespace NAwesome::System {
             return; // nothing to auto-manage — the "not found" card belongs to the manual toggle,
                     // else every mouse hotplug re-spams it (WANT is 0/1, appliedState stuck at -1)
         }
-        const int WANT = externalMousePresent() ? 0 : 1;
+        const int WANT = manualState >= 0 ? manualState : externalMousePresent() ? 0 : 1;
         if (WANT == appliedState && appliedTouchpad.lock() == TOUCHPAD)
             return;
         // already there (every config save reloads, and the config's own
@@ -169,25 +195,51 @@ namespace NAwesome::System {
         applyEnabled(WANT == 1, TOUCHPAD);
     }
 
+    static void hotplug() {
+        hotplugged = true;
+        if (settle)
+            settle->updateTimeout(SETTLE);
+    }
+
+    // an unproven external pointer acted: it is a mouse now. The listener
+    // stays until the re-check rebuilds them (a listener must not drop
+    // itself mid-emission); later events find it proven and do nothing.
+    static void markProven(const WP<IPointer>& wp) {
+        const auto P = wp.lock();
+        if (!P || isProven(P))
+            return;
+        proven.push_back(wp);
+        if (settle)
+            settle->updateTimeout(SETTLE);
+    }
+
     // Removal is observable in-process: every pointer's destroy signal arms
     // the settle timer. Rebuilt each re-check — aq() is already dead inside
-    // a destroy emission, so handlers must never touch the device.
+    // a destroy emission, so handlers must never touch the device. An
+    // unproven external pointer is also watched for its first motion or
+    // click (proven ones cost nothing per motion).
     static void watchPointers() {
         lDestroy.clear();
+        lProve.clear();
+        std::erase_if(proven, [](const auto& W) { return W.expired(); });
         if (!g_pInputManager)
             return;
         lDestroy.reserve(g_pInputManager->m_pointers.size());
-        for (const auto& P : g_pInputManager->m_pointers)
-            lDestroy.push_back(P->m_events.destroy.listen([]() {
-                if (settle)
-                    settle->updateTimeout(SETTLE);
-            }));
+        for (const auto& P : g_pInputManager->m_pointers) {
+            lDestroy.push_back(P->m_events.destroy.listen([]() { hotplug(); }));
+            if (!isExternalMouse(P) || isProven(P))
+                continue;
+            lProve.push_back(P->m_pointerEvents.motion.listen([wp = WP<IPointer>{P}](const IPointer::SMotionEvent&) { markProven(wp); }));
+            lProve.push_back(P->m_pointerEvents.button.listen([wp = WP<IPointer>{P}](const IPointer::SButtonEvent&) { markProven(wp); }));
+        }
     }
 
     void padInit() {
         settle = makeShared<CEventLoopTimer>(
             std::nullopt,
             [](SP<CEventLoopTimer>, void*) {
+                if (std::exchange(hotplugged, false))
+                    manualState = -1; // a new pointer set: the policy is automatic again
                 watchPointers();
                 autoApply();
             },
@@ -195,13 +247,10 @@ namespace NAwesome::System {
         g_pEventLoopManager->addTimer(settle);
 
         if (g_pCompositor && g_pCompositor->m_aqBackend)
-            supervisor().listen(g_pCompositor->m_aqBackend->events.newPointer, [](const SP<Aquamarine::IPointer>&) {
-                if (settle)
-                    settle->updateTimeout(SETTLE);
-            });
+            supervisor().listen(g_pCompositor->m_aqBackend->events.newPointer, [](const SP<Aquamarine::IPointer>&) { hotplug(); });
 
         // a reload wiped the runtime hl.device state: forget what was applied
-        // and re-check
+        // and re-check (a manual flip is re-applied, not forgotten)
         supervisor().listen(Event::bus()->m_events.config.reloaded, []() {
             appliedState    = -1;
             appliedTouchpad.reset();
@@ -222,17 +271,24 @@ namespace NAwesome::System {
             return;
         if (settle)
             settle->updateTimeout(std::nullopt);
+        hotplugged = false; // the flip comes after it: the user's choice wins
         // the cancelled re-check also attached the destroy listeners: a
         // mouse plugged in just before this toggle must still be heard
         // leaving
         watchPointers();
         const bool CURRENT = touchpadEnabled().value_or(appliedState == 1);
         applyEnabled(!CURRENT, nullptr, true);
+        if (appliedState == (CURRENT ? 0 : 1))
+            manualState = appliedState; // held until a hotplug, across config reloads
     });
 
     void padExit() {
         toggles.reset();
         lDestroy.clear();
+        lProve.clear();
+        proven.clear();
+        hotplugged  = false;
+        manualState = -1;
         appliedState    = -1;
         announcedState  = -1;
         appliedTouchpad.reset();
