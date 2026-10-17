@@ -164,11 +164,12 @@ namespace NAwesome {
                                                         Desktop::View::ALLOW_FLOATING | Desktop::View::RESERVED_EXTENTS | Desktop::View::INPUT_EXTENTS);
     }
 
-    // Super/Meta down on the seat's keyboard — the modifier every grab chord
-    // in the shell is built on.
+    // Super/Meta down on ANY keyboard — the modifier every grab chord in the
+    // shell is built on. The bind layer matches a mouse bind against every
+    // keyboard's modifiers; the seat's alone missed Super held on a second
+    // keyboard, and the click went on to start the drag it should block.
     inline bool superHeld() {
-        const auto KB = g_pSeatManager ? g_pSeatManager->m_keyboard.lock() : nullptr;
-        return KB && (KB->getModifiers() & Input::HL_MODIFIER_META) != Input::HL_MODIFIER_NONE;
+        return g_pInputManager && (g_pInputManager->getModsFromAllKBs() & Input::HL_MODIFIER_META) != Input::HL_MODIFIER_NONE;
     }
 
     // The client-facing xdg toplevel, or nullptr for X11 windows, unmapped
