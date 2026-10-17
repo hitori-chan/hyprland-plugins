@@ -515,7 +515,8 @@ semantics).
   listeners guard-and-reset first; whatever survives the lock repaints
   at unlock.
 - Overflow: `max_notifs` caps the model — overflow evicts the oldest
-  non-critical card (critical last) with `NotificationClosed`.
+  short-lived card (transient, progress, OSD), else the oldest
+  non-critical one (critical last), with `NotificationClosed`.
 
 **Limitations.** GIF images don't decode (hyprgraphics has no GIF
 codec). No animated icons (`icon-multi`). Icon-theme resolution is a

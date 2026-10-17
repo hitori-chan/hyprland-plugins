@@ -420,18 +420,24 @@ namespace NAwesome::Notify {
             return (float)NAwesome::cfg().getI("plugin:awesome:notify:timeout_normal");
         }
 
-        // Cap the stack: the oldest non-critical goes first; only an
-        // all-critical stack starts losing its oldest critical. The newest
-        // card at begin() always survives (the scan stops short of it).
+        // Cap the stack: the oldest short-lived card goes first (one that
+        // vanishes on expiry anyway: an OSD script posting a new value card
+        // per key step must not push the shade's notifications out), then
+        // the oldest non-critical; only an all-critical stack starts losing
+        // its oldest critical. The newest card at begin() always survives
+        // (the scan stops short of it).
         static void evictOverflow() {
             const size_t CAP = (size_t)std::max(1, NAwesome::cfg().getI("plugin:awesome:notify:max_notifs"));
             while (notifs.size() > CAP) {
                 auto victim = notifs.end() - 1;
-                for (auto it = notifs.end() - 1; it != notifs.begin(); --it)
-                    if ((*it)->urgency < 2) {
+                int  rank   = 2; // 0 short-lived, 1 non-critical, 2 critical: the lowest goes
+                for (auto it = notifs.end() - 1; it != notifs.begin() && rank > 0; --it) {
+                    const int R = (*it)->urgency >= 2 ? 2 : vanishes(*it) ? 0 : 1;
+                    if (R < rank) {
+                        rank   = R;
                         victim = it;
-                        break;
                     }
+                }
                 const auto VID   = (*victim)->id;
                 const bool SHOWN = !(*victim)->waiting;
                 notifs.erase(victim);
