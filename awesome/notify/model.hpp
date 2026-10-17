@@ -292,6 +292,7 @@ namespace NAwesome::Notify {
         void       dismissAllLive(bool offShadeToo = false); // "Clear all": every shade row goes; the DND queue stays
         void       dismissApp(const std::string& key);    // a bundle's right-click; the key may be (app, group)
         std::string groupKeyOf(const SP<SNotif>& n);       // the bundle's identity: the app key, sub-keyed by the declared group
+        bool       bundleable(const SP<SNotif>& n);       // may join an app bundle: conversations never do
         void       absorbPopped();                        // opening the shade parks the popped stack
         void       repopAbsorbed();                       // closing it returns the parked stack to banners
         // the transcript of the latest `limit` kept messages, chronological

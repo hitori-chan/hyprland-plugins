@@ -289,15 +289,15 @@ namespace NAwesome::Notify {
             return n->declaredGroupKey.empty() ? n->appKey : n->appKey + "\x1f" + n->declaredGroupKey;
         }
 
+        bool bundleable(const SP<SNotif>& n) {
+            return !n->conversation && !n->appKey.empty();
+        }
+
         void dismissApp(const std::string& key) {
-            // a bundle's key may be (app, group): dismiss exactly that group,
-            // never the app's other groups
-            std::string app = key, group;
-            if (const auto P = key.find('\x1f'); P != std::string::npos) {
-                app   = key.substr(0, P);
-                group = key.substr(P + 1);
-            }
-            const auto MATCH = [&](const auto& N) { return visible(N) && N->appKey == app && (group.empty() || N->declaredGroupKey == group); };
+            // exactly the bundle's members: its (app, declared group) key,
+            // never the app's other groups, its chats (conversations never
+            // bundle) or what is off the shade
+            const auto MATCH  = [&](const auto& N) { return visible(N) && !offShade(N) && bundleable(N) && groupKeyOf(N) == key; };
             const auto BEFORE = notifs.size();
             for (const auto& N : notifs)
                 if (MATCH(N))

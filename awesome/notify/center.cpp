@@ -216,10 +216,6 @@ namespace NAwesome::Notify {
         return 3;
     }
 
-    static bool bundleable(const SP<SNotif>& n) {
-        return !n->conversation && !n->appKey.empty();
-    }
-
     // How many bundleable cards one (app, declared group) holds, and where
     // its digest landed. Even at the model cap the distinct keys are a
     // handful, so one linear scan beats the two string-keyed trees this used
@@ -253,11 +249,11 @@ namespace NAwesome::Notify {
         };
 
         for (const auto& N : src) // conversations never bundle
-            if (bundleable(N))
+            if (Model::bundleable(N))
                 owners[ownerOf(Model::groupKeyOf(N))].count++;
 
         for (const auto& N : src) {
-            if (bundleable(N)) {
+            if (Model::bundleable(N)) {
                 auto& O = owners[ownerOf(Model::groupKeyOf(N))];
                 if (O.count >= AUTOGROUP_AT) {
                     if (O.first != (size_t)-1) {
