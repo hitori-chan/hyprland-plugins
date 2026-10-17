@@ -713,7 +713,7 @@ namespace NAwesome::Notify {
                     if (append) {
                         // the CLIPPED summary, as stored: the raw one was both
                         // unbounded work and never equal past the clip
-                        const auto KEY = Parse::oneLine(Parse::sanitizeMarkup(SUM));
+                        const auto KEY = Parse::oneLine(Parse::sanitizeMarkup(SUM, false, /*plainText=*/true));
                         // never onto a structured conversation: its body is
                         // rebuilt from its message log, and a joined body
                         // upserted as one message duplicated the transcript
@@ -796,7 +796,7 @@ namespace NAwesome::Notify {
             n->appName = APP;
             n->sender   = sender; // the X11 activation lookup resolves the app's window by this pid
             n->orphaned = false;
-            n->summary = Parse::oneLine(Parse::sanitizeMarkup(SUM));
+            n->summary = Parse::oneLine(Parse::sanitizeMarkup(SUM, false, /*plainText=*/true));
             std::string bodyText = TXT;
             n->bodyImages.clear();
             for (const auto& P : Parse::extractImages(bodyText, std::max(64, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon") * 2), MAX_BODY_IMAGES))
@@ -817,7 +817,7 @@ namespace NAwesome::Notify {
             const int ICONPX = std::max(8, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon"));
             n->conversationId = EFFECTIVE_CONV_ID;
             if (CONV_TITLE_HINT)
-                n->conversationTitle = CONV_TITLE_HINT->empty() ? n->summary : Parse::oneLine(Parse::sanitizeMarkup(*CONV_TITLE_HINT));
+                n->conversationTitle = CONV_TITLE_HINT->empty() ? n->summary : Parse::oneLine(Parse::sanitizeMarkup(*CONV_TITLE_HINT, false, /*plainText=*/true));
             else if (!SAME_CONVERSATION)
                 n->conversationTitle = n->summary;
             if (CONV_KIND_HINT) {

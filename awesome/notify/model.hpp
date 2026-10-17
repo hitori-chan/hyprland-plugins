@@ -222,7 +222,8 @@ namespace NAwesome::Notify {
         // bits_per_sample, channels, RGB(A) bytes
         using ImageData = sdbus::Struct<int32_t, int32_t, int32_t, bool, int32_t, int32_t, std::vector<uint8_t>>;
 
-        std::string              sanitizeMarkup(const std::string& in, bool allowLinks = false);
+        // plainText: a summary — a tag that does not format stays literal
+        std::string              sanitizeMarkup(const std::string& in, bool allowLinks = false, bool plainText = false);
         std::string              attrValue(const std::string& tag, const std::string& attr); // one quoted attr, case-insensitive name
         std::string              oneLine(std::string s);
         std::string              resolveImage(std::string s, int sizePx); // path, file://, or a themed icon NAME

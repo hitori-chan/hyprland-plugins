@@ -19,7 +19,10 @@ namespace NAwesome::Notify::Parse {
     // '&'/'<' that forms no entity/tag is escaped so Pango renders it
     // verbatim either way. Disallowed tags are dropped (spec: "filter them
     // out"); allowLinks adds <a> (hyperlinks phase). <img> never reaches
-    // here — it is extracted before sanitizing (body-images phase).
+    // here — it is extracted before sanitizing (body-images phase). A
+    // summary is the spec's plain text (only the body carries markup): a
+    // tag it does not format with stays literal text there, so "Mail from
+    // Ann <ann@x.org>" keeps the address instead of losing it as a tag.
     static bool allowedTag(const std::string& name, bool allowLinks) {
         return name == "b" || name == "i" || name == "u" || name == "span" || name == "br" || (allowLinks && name == "a");
     }
@@ -50,7 +53,7 @@ namespace NAwesome::Notify::Parse {
     // close must not rescan to the end for each one (a 130 KB summary of
     // '&' was ~0.5 s on the compositor thread per call). A tag can only end
     // at or before the LAST '>', and an entity is at most 10 bytes.
-    std::string sanitizeMarkup(const std::string& in, bool allowLinks) {
+    std::string sanitizeMarkup(const std::string& in, bool allowLinks, bool plainText) {
         std::string out;
         out.reserve(in.size() + 16);
         const size_t LASTGT = in.rfind('>');
@@ -72,6 +75,11 @@ namespace NAwesome::Notify::Parse {
                         // names are lowercase, b/i/u take no attributes, and a
                         // self-closed one formats nothing; <a> stays verbatim
                         // (text.cpp reads its href)
+                        if (plainText && !allowedTag(name, allowLinks)) {
+                            out += "&lt;"; // literal: the scan goes on inside it, its '&'s escaped as ever
+                            i++;
+                            continue;
+                        }
                         if (name == "br")
                             out += '\n'; // a line break, whatever the card does with it
                         else if (!allowedTag(name, allowLinks))
