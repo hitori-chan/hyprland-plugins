@@ -79,7 +79,10 @@ or compositor state.
   with consume/pass semantics. The chain is a table in one file. A
   claimed MOVE still reaches the later modules (with the claim set) so
   they let go of hover and pointer ownership: motion is state, not an
-  action.
+  action. The modules' swallow masks are per button, not per device, so
+  the head lets a release through while a press of that button reached
+  the compositor (another device's): a swallowed release there left the
+  button held, the app saw it stuck and the bar ignored every press.
 - **Canvas** — per-monitor scene. Modules contribute layers (bar
   strip, menus, card stack, shade, OSD cards, snap indicator) with
   stable geometry, at an explicit level (`eLayerZ`: bar, cards, snap,
@@ -181,7 +184,7 @@ Crash-class invariants → structure:
 |---|---|
 | 1 window list | no module interface exposes compositor window-list mutation |
 | 2 plugin unload | hyprpm owns deployment; teardown cancels hops before bus close |
-| 3 key releases | the pipeline head owns swallow masks; locked/capture resets all |
+| 3 key releases | the pipeline head owns swallow masks; locked/capture resets all; no button release is cancelled while a press of its button that reached the compositor is held |
 | 4 texture frame | the canvas enforces the warm/draw gate for every layer |
 | 5 mapped .so | build process; never overwritten in place |
 | 6 deferrals | the single hop queue; teardown cancels and no-ops arming |

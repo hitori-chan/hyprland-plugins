@@ -197,8 +197,40 @@ namespace NAwesome {
         // Every button, axis and key event lands in the input trace with who
         // took it (motion stays out: it would flush the ring at once).
 
+        // A module's swallow masks are per button, not per device: one
+        // device's swallowed press could take another device's release of
+        // the same button. The compositor then kept the button held — the
+        // app saw it stuck, and the bar and cards ignored every press while
+        // the "native grab" lasted. So a release is never cancelled while a
+        // press of its button that reached the compositor is outstanding;
+        // a release with no press behind it is harmless there.
         void dispatchButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
+            const bool UPSTREAM = info.cancelled;
+            // the compositor holds nothing: no count can be live (a device
+            // unplugged mid-press never sends its release)
+            if (g_pInputManager && !g_pInputManager->hasHeldButtons())
+                m_passedPresses.clear();
             dispatch(info, "button", e.button, e.state, [&](IModule* M) { M->onPointerButton(e, info); });
+            if (UPSTREAM)
+                return; // the compositor never sees it either way
+            auto PASSED = std::ranges::find_if(m_passedPresses, [&](const auto& P) { return P.first == e.button; });
+            if (e.state == WL_POINTER_BUTTON_STATE_PRESSED) {
+                if (info.cancelled)
+                    return;
+                if (PASSED != m_passedPresses.end())
+                    PASSED->second++;
+                else if (m_passedPresses.size() < 32) // a few buttons at once; past that, untracked
+                    m_passedPresses.emplace_back(e.button, 1u);
+                return;
+            }
+            if (PASSED == m_passedPresses.end())
+                return;
+            if (info.cancelled) {
+                info.cancelled                                 = false;
+                m_trace[(m_traceHead + TRACE_N - 1) % TRACE_N].by = "- (a passed press holds it)";
+            }
+            if (--PASSED->second == 0)
+                m_passedPresses.erase(PASSED);
         }
         // Every module hears a move, claimed or not: the cards under a
         // pointer that slid onto the bar once never heard it leave (their ✕
@@ -281,6 +313,7 @@ namespace NAwesome {
         }
 
         std::array<STrace, TRACE_N>                   m_trace{};
+        std::vector<std::pair<uint32_t, uint32_t>>    m_passedPresses; // button -> presses the compositor holds
         size_t                                        m_traceHead = 0;
         HANDLE                                        m_handle = nullptr;
         std::vector<IModule*>                         m_modules;

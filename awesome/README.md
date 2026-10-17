@@ -611,7 +611,8 @@ hl.plugin.awesome.touchpad_toggle()
 `pad`. `trace` (the input pipeline) prints the last 32 button, axis and
 key events and who took each — a module, `blocked` (session lock or
 input capture), `upstream` (cancelled before the plugin) or `-` (passed
-to the compositor): the first stop when a click goes missing.
+to the compositor; `- (a passed press holds it)` for a release a module
+would have swallowed): the first stop when a click goes missing.
 
 ## Configuration
 
