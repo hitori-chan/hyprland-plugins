@@ -67,7 +67,7 @@ visible transitions.
   an app may export its menu late) before the item gets `ContextMenu`
   — for that click only: not after another click, with a menu open
   since, or more than a second after it.
-  Menus support
+  A foreground colour change re-tints the cells at once. Menus support
   updates, cascades, scrolling, and check/radio state; a level with no
   rows says "(empty)", or "(unavailable)" when its layout call failed,
   instead of the loading "…" forever; an inline

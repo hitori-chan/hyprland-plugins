@@ -335,6 +335,13 @@ namespace NAwesome::Shell {
         appIconCache.clear();
         namedIconCache.clear();
         trayIconCache.clear();
+        // the tray cells hold textures from the dropped cache: they kept the
+        // old tint until their app changed its icon
+        if (!Tray::items.empty()) {
+            for (const auto& IT : Tray::items)
+                IT->dirty = true;
+            barChanged(); // a deferred rewarm: this runs inside one
+        }
     }
 
     SP<ITexture> trayIcon(const std::string& name, const std::string& themePath, const std::string& id) {
