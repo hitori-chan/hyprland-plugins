@@ -5,6 +5,7 @@
 // into core/canvas.hpp's cache — see there for why the key needs no
 // staleness bookkeeping and why the bound is a grace generation.
 
+#include "textcut.hpp"
 #include "ui.hpp"
 
 #include "../core/config.hpp"
@@ -347,15 +348,28 @@ namespace NAwesome::Notify {
     // line ellipsized); < 0 is pango's one line per paragraph, ellipsized —
     // text that must be ONE line is flattened before it gets here (the
     // collapsed rows).
-    static SP<ITexture> buildText(const std::string& text, const CHyprColor& col, int pt, int maxWidthPx, int maxHeightPx, float lineSpacing, bool markup, int weight,
+    static SP<ITexture> buildText(const std::string& fullText, const CHyprColor& col, int pt, int maxWidthPx, int maxHeightPx, float lineSpacing, bool markup, int weight,
                                   const CHyprColor* linkCol = nullptr, std::vector<std::pair<std::string, CBox>>* outLinks = nullptr, bool headCut = false) {
+        const std::string FAMILY{NAwesome::cfg().getS("plugin:awesome:notify:font")};
+        // the lines this raster shows: a pixel budget's whole lines, or the
+        // negative height's lines of one paragraph
+        int LINEH = 0, ADV = 0, LINES = 1;
+        if (maxHeightPx >= 0)
+            LINES = lineMetric(FAMILY, pt, weight, lineSpacing, LINEH, ADV) ? std::max(1, (maxHeightPx - LINEH) / ADV + 1) : std::max(1, maxHeightPx / std::max(pt, 1) + 1);
+        else
+            LINES = -maxHeightPx;
+        // a start-ellipsized line shows its END: only an end cut is safe
+        const auto CUT = headCut ? std::string{} :
+                                   cutToLines(fullText, markup, 2 * (size_t)LINES * ((size_t)std::max(maxWidthPx, 1) * 5 / std::max(pt, 1) + 1) + 64,
+                                              maxHeightPx >= 0 ? (size_t)LINES + 1 : SIZE_MAX);
+        const std::string& text = CUT.empty() ? fullText : CUT;
+
         PangoFontMap*         fontMap = pango_cairo_font_map_get_default();
         PangoContext*         context = pango_font_map_create_context(fontMap);
         PangoLayout*          layout  = pango_layout_new(context);
         PangoFontDescription* fd      = pango_font_description_new();
         g_object_unref(context);
 
-        const std::string FAMILY{NAwesome::cfg().getS("plugin:awesome:notify:font")};
         pango_font_description_set_family_static(fd, FAMILY.c_str());
         pango_font_description_set_absolute_size(fd, pt * PANGO_SCALE);
         if (weight != 400)
@@ -397,12 +411,8 @@ namespace NAwesome::Notify {
             // otherwise make a thousand of them (a 27000 px texture)
             pango_layout_set_single_paragraph_mode(layout, TRUE);
         } else {
-            int LINEH = 0, ADV = 0;
-            int HEIGHT = std::max(maxHeightPx, pt);
-            if (lineMetric(FAMILY, pt, weight, lineSpacing, LINEH, ADV)) {
-                const int LINES = std::max(1, (maxHeightPx - LINEH) / ADV + 1); // whole lines that fit
-                HEIGHT          = LINEH + (LINES - 1) * ADV;
-            }
+            // whole lines that fit
+            const int HEIGHT = LINEH > 0 ? LINEH + (LINES - 1) * ADV : std::max(maxHeightPx, pt);
             pango_layout_set_height(layout, HEIGHT * PANGO_SCALE);
         }
         pango_layout_set_ellipsize(layout, headCut ? PANGO_ELLIPSIZE_START : PANGO_ELLIPSIZE_END);
