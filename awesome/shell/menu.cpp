@@ -391,7 +391,7 @@ namespace NAwesome::Shell {
                                         }
                                 if (!en.icon && deferred)
                                     en.iconRetry = std::move(iconName);
-                                en.display = en.label + (en.submenu ? "  ▸" : "");
+                                en.display = en.label; // a submenu's ▸ has its own column (render)
                                 if (en.icon && en.icon->m_texID != 0 && en.toggle != TG_NONE && en.toggleState == 1)
                                     en.display = (en.toggle == TG_RADIO ? "● " : "✓ ") + en.display;
                                 lvl->entries.push_back(std::move(en));
@@ -613,31 +613,64 @@ namespace NAwesome::Shell {
                 auto& L = Menu::levels[li];
                 L.rows.clear();
 
+                // an icon a budget deferred at build time: the warm the
+                // budget's retry triggers asks again, until it lands or is
+                // a true miss
+                if (PAINT.warm)
+                    for (auto& E : L.entries)
+                        if (!E.icon && !E.iconRetry.empty()) {
+                            NAwesome::iconDeferred() = false;
+                            E.icon                   = E.iconOfApp ? appIcon(E.iconRetry) : namedIcon(E.iconRetry);
+                            if (E.icon || !NAwesome::iconDeferred())
+                                E.iconRetry.clear();
+                        }
+
+                // labels share one leading column when any row in this level
+                // has an icon or a check/radio state, ragged otherwise — how
+                // GTK's own menus aligned
+                bool anyIcon = false, anyToggle = false;
+                for (const auto& E : L.entries) {
+                    anyIcon   = anyIcon || (E.icon && E.icon->m_texID != 0);
+                    anyToggle = anyToggle || E.toggle != Menu::TG_NONE;
+                }
+
+                const double IS   = ROWH - 8;
+                const double COLW = anyIcon ? IS : anyToggle ? 14 : 0;
+                const double LX   = COLW > 0 ? 8 + COLW + 6 : 12;
+
+                // a submenu row's ▸ sits in a right-hand column of its own: as
+                // the label's tail it was measured out of the panel and
+                // ellipsized away
+                constexpr double ARW = 18;
+                const auto       capPx = [&](const Menu::SEntry& E) { return (int)std::lround((380.0 - LX - 12 - (E.submenu ? ARW : 0)) * PAINT.scale); };
+
                 double mw = 250;
                 if (!Menu::isLocal) {
+                    // the widest row as drawn (label, its arrow column), at
+                    // most the panel's cap: an app's 4 KiB label would raster
+                    // at full length, and the walk stops once a row reaches
+                    // it. The columns before it are added per render: an
+                    // icon landing later moves them.
+                    double textW = 0;
                     if (L.width > 0 && L.widthPt == PAINT.pt)
-                        mw = L.width;
+                        textW = L.width;
                     else {
-                        mw = 180;
-                        // a label is measured at most at the panel's cap (an
-                        // app's 4 KiB label would raster at full length), and
-                        // the walk stops once a row reaches it
-                        const int CAPPX = (int)std::lround((380.0 - 48) * PAINT.scale);
                         for (const auto& E : L.entries) {
                             if (E.separator)
                                 continue;
-                            if (const auto T = textTex(E.label, COLFG, PAINT.pt, CAPPX); T)
-                                mw = std::max(mw, T->m_size.x / PAINT.scale + 48);
-                            if (mw >= 380.0)
+                            if (const auto T = textTex(E.display, COLFG, PAINT.pt, capPx(E)); T)
+                                textW = std::max(textW, T->m_size.x / PAINT.scale + (E.submenu ? ARW : 0));
+                            if (textW + LX + 12 >= 380.0)
                                 break;
                         }
-                        mw = std::min(mw, 380.0);
                         if (PAINT.warm) { // a draw can hit texture misses -> a short measure
-                            L.width   = mw;
+                            L.width   = textW;
                             L.widthPt = PAINT.pt;
                         }
                     }
+                    mw = std::clamp(textW + LX + 12, 180.0, 380.0);
                 }
+
                 // A narrow output must shrink the panel before anchoring it;
                 // clamping only the x coordinate leaves the right edge past
                 // the output and steals the tasklist's input region.
@@ -679,31 +712,6 @@ namespace NAwesome::Shell {
                 PAINT.glass(L.box, COLBG, RPANEL, RP);
                 PAINT.border(L.box, COLFRAME, RPANEL, BORDER, RP);
 
-                // an icon a budget deferred at build time: the warm the
-                // budget's retry triggers asks again, until it lands or is
-                // a true miss
-                if (PAINT.warm)
-                    for (auto& E : L.entries)
-                        if (!E.icon && !E.iconRetry.empty()) {
-                            NAwesome::iconDeferred() = false;
-                            E.icon                   = E.iconOfApp ? appIcon(E.iconRetry) : namedIcon(E.iconRetry);
-                            if (E.icon || !NAwesome::iconDeferred())
-                                E.iconRetry.clear();
-                        }
-
-                // labels share one leading column when any row in this level
-                // has an icon or a check/radio state, ragged otherwise — how
-                // GTK's own menus aligned
-                bool anyIcon = false, anyToggle = false;
-                for (const auto& E : L.entries) {
-                    anyIcon   = anyIcon || (E.icon && E.icon->m_texID != 0);
-                    anyToggle = anyToggle || E.toggle != Menu::TG_NONE;
-                }
-
-                const double IS   = ROWH - 8;
-                const double COLW = anyIcon ? IS : anyToggle ? 14 : 0;
-                const double LX   = COLW > 0 ? 8 + COLW + 6 : 12;
-
                 double       my    = my0 + PAD;
                 double       myEnd = my0 + mh - PAD;
                 if (SCROLL) {
@@ -730,7 +738,8 @@ namespace NAwesome::Shell {
                     PAINT.texIn(textTex(L.load == Menu::SLevel::LOAD_PENDING ? "…" : L.load == Menu::SLevel::LOAD_FAILED ? "(unavailable)" : "(empty)", COLEMPTY, PAINT.pt),
                                 CBox{mx, my, mw, ROWH});
 
-                bool moreBelow = false;
+                const bool FITS      = L.width > 0 && mw + 0.5 >= L.width + LX + 12;
+                bool       moreBelow = false;
                 for (size_t i = L.scrollTop; i < L.entries.size(); i++) {
                     const auto& E = L.entries[i];
                     if (my + (E.separator ? SEPH : ROWH) > myEnd + 0.5) {
@@ -770,12 +779,17 @@ namespace NAwesome::Shell {
                             PAINT.texIn(textTex(G, fg, PAINT.pt), CBox{mx + 8, my, COLW, ROWH});
                     }
 
-                    const auto T = textTex(E.display, fg, PAINT.pt, (int)std::round((mw - LX - 12) * PAINT.scale));
+                    // the measure's own raster while the panel holds its widest
+                    // row (a narrow output shrinks it below that)
+                    const int  ROOMPX = (int)std::round((mw - LX - 12 - (E.submenu ? ARW : 0)) * PAINT.scale);
+                    const auto T      = textTex(E.display, fg, PAINT.pt, Menu::isLocal ? ROOMPX : FITS ? capPx(E) : ROOMPX);
                     if (T && T->m_texID != 0) {
                         const auto P = PAINT.toPhys(ROW);
                         CBox       b{P.x + std::round(LX * PAINT.scale), P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y};
                         PAINT.tex(T, b.round());
                     }
+                    if (E.submenu)
+                        PAINT.texIn(textTex("▸", fg, PAINT.pt), CBox{mx + mw - 8 - ARW, my, ARW, ROWH});
                     L.rows.push_back({ROW, (int)i});
                     my += ROWH;
                 }

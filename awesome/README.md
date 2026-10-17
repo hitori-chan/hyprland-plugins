@@ -68,7 +68,8 @@ visible transitions.
   — for that click only: not after another click, with a menu open
   since, or more than a second after it.
   A foreground colour change re-tints the cells at once. Menus support
-  updates, cascades, scrolling, and check/radio state; a level with no
+  updates, cascades, scrolling, and check/radio state; a submenu's `▸`
+  has a column of its own, never ellipsized away; a level with no
   rows says "(empty)", or "(unavailable)" when its layout call failed,
   instead of the loading "…" forever; an inline
   `icon-data` PNG is size-checked before decoding (256 px a side, 64 per
