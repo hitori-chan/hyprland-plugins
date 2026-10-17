@@ -384,9 +384,11 @@ namespace NAwesome::Notify {
             swipeOn              = 0;
             return;
         }
-        if (heldButtons > 0 || NAwesome::nativePointerGrabActive() || NAwesome::nativeLayerOwnsPointer())
+        // the cheap tests first: every wheel notch and touchpad frame lands
+        // here, and the native hit-test walks the layer and popup stacks
+        if (!centerVisible() || cards.empty() || info.cancelled || heldButtons > 0)
             return;
-        if (!centerVisible() || cards.empty() || info.cancelled)
+        if (NAwesome::nativePointerGrabActive() || NAwesome::nativeLayerOwnsPointer())
             return;
         const auto POS  = g_pInputManager->getMouseCoordsInternal();
         const auto CARD = cardAt(POS);
