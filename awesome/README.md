@@ -268,8 +268,9 @@ stays a broadcast.
   name that created it (its replies, actions and token go there): another
   client's `replaces_id`, or a conversation merge from it, starts a fresh
   card instead, as Plasma does. A card whose sender left the bus is
-  ownerless, and the app's next instance continues it (its reply field
-  closes meanwhile). The 9990s are the private OSD band: its ids, live or
+  ownerless, and the app's next instance continues it (meanwhile its
+  reply field, buttons and primary are gone: they would reach nobody).
+  The 9990s are the private OSD band: its ids, live or
   not, are the plugin's own in-process posts (the system module's OSD
   cards), so no client can pin a band id, take over the volume card on
   screen, or ride the band's DND bypass. Fresh ids outside the band are

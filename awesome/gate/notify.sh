@@ -249,6 +249,7 @@ click $ROWX $ROWY 272
 chk "close-on-act: a resident card's action keeps card and shade both" test "$(st)" = "center:1 live:1 dnd:0"
 hq awesome center >/dev/null; sleep 0.4
 nclear
+nfyact_done
 chk "close-on-act: reset after the battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- hover holds a banner's clock ------------------------------------------

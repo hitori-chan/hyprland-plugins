@@ -88,18 +88,35 @@ bd() { hq awesome badge; }
 nbus() { DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user "$@"; }
 
 # ---- sends -----------------------------------------------------------------------
+# A card with actions from a sender that STAYS on the bus, as an app does: a
+# departed sender's card loses its actions (busctl's one-shot call would
+# leave before the click). Hints are name/type/value triples (s b i u y).
+# The sender lives until nfyact_done or its timeout.
+NFYACT_SENDERS=()
 nfyact() {
-	local app=$1 sum=$2; shift 2
-	local nacts=$1 acts=(); shift
-	local i
-	for i in $(seq 1 "$nacts"); do acts+=("$1"); shift; done
-	local nhints=$1 hints=(); shift
-	for i in $(seq 1 $((nhints * 3))); do hints+=("$1"); shift; done
-	DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user call org.freedesktop.Notifications \
-		/org/freedesktop/Notifications org.freedesktop.Notifications \
-		Notify 'susssasa{sv}i' "$app" 0 "" "$sum" body \
-		"$nacts" ${acts[@]+"${acts[@]}"} "$nhints" ${hints[@]+"${hints[@]}"} \
-		30000 >/dev/null 2>&1
+	DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 60 python3 - "$@" <<'PY' &
+import sys
+from gi.repository import Gio, GLib
+a = sys.argv[1:]
+app, summary, a = a[0], a[1], a[2:]
+n = int(a[0]); acts, a = a[1:1 + n], a[1 + n:]
+n = int(a[0]); a = a[1:]
+def hint(t, v):
+    return GLib.Variant(t, v == "true" if t == "b" else int(v) if t in "iuy" else v)
+hints = {a[3 * i]: hint(a[3 * i + 1], a[3 * i + 2]) for i in range(n)}
+bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "Notify",
+              GLib.Variant("(susssasa{sv}i)", (app, 0, "", summary, "body", acts, hints, 30000)),
+              None, Gio.DBusCallFlags.NONE, -1, None)
+GLib.MainLoop().run()
+PY
+	NFYACT_SENDERS+=($!)
+}
+nfyact_done() {
+	((${#NFYACT_SENDERS[@]})) || return 0
+	kill "${NFYACT_SENDERS[@]}" 2>/dev/null
+	wait "${NFYACT_SENDERS[@]}" 2>/dev/null
+	NFYACT_SENDERS=()
 }
 pcidb() {
 	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \

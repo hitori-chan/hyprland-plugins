@@ -244,8 +244,14 @@ namespace NAwesome::Notify {
                 if (N->sender != name || N->orphaned)
                     continue;
                 N->orphaned = true;
-                // nobody is listening for the reply any more: drop the field
-                changed |= std::exchange(N->canReply, false);
+                // nobody listens for a reply or an action any more: the field,
+                // the buttons and the primary go, and a click is a plain
+                // dismissal (it closed the shade for a signal nobody got).
+                // The app's next instance brings its own when it continues
+                // the card.
+                changed |= std::exchange(N->canReply, false) || !N->actions.empty() || !N->defaultAction.empty();
+                N->actions.clear();
+                N->defaultAction.clear();
             }
             if (changed)
                 notifChanged();
