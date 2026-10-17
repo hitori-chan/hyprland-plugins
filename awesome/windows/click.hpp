@@ -327,7 +327,9 @@ namespace NAwesome::Windows {
             const auto& HIST = Desktop::History::windowTracker()->fullHistory();
             for (auto it = HIST.rbegin(); it != HIST.rend(); ++it) {
                 const auto W = it->lock();
-                if (!W || W == FOCUS || !W->mapped() || W->isHidden() || W->m_workspace != WS)
+                // isClient: a focusable X11 override-redirect popup is in
+                // the history too, and is no window to go back to
+                if (!W || W == FOCUS || !isClient(W) || !W->mapped() || W->isHidden() || W->m_workspace != WS)
                     continue;
 
                 queueFocus(PHLWINDOWREF{W});
