@@ -311,17 +311,31 @@ namespace NAwesome::Notify {
                 bool         open       = false;
                 double       h          = DH;
                 if (!FORCE_FOLD && (FORCE_OPEN || TOP || used + LEAD + DH < bodyCap)) {
-                    double              oh = groupHeadH();
+                    // Children are measured down to the page's fold, never
+                    // past it: a bundle that does not fit stays a digest,
+                    // and one the user opened shows the children that fit
+                    // and counts the rest in a tail (a 50-card bundle
+                    // measured and painted every child, the ones below the
+                    // screen included: tens of ms per shade open)
+                    const double        ROOM = bodyCap - used - LEAD;
+                    const double        TAIL = FORCE_OPEN ? CHILD_GAP + groupTailH() : 0;
+                    double              oh   = groupHeadH();
+                    bool                cut  = false;
                     std::vector<double> ch;
-                    ch.reserve(D.items.size());
-                    for (const auto& N : D.items) {
-                        const double C = measureRow(P, T, N, contentW, true, ROW_CHILD); // expanded children are always open
+                    for (size_t k = 0; k < D.items.size() && !cut; k++) {
+                        const double C    = measureRow(P, T, D.items[k], contentW, true, ROW_CHILD); // expanded children are always open
+                        const bool   LAST = k + 1 == D.items.size();
+                        if (!ch.empty() && oh + CHILD_GAP + C + (LAST ? 0 : TAIL) > ROOM) {
+                            cut = true;
+                            break;
+                        }
                         ch.push_back(C);
                         oh += CHILD_GAP + C;
+                        cut = !FORCE_OPEN && oh > ROOM; // it cannot open: stop measuring
                     }
-                    if (FORCE_OPEN || used + LEAD + oh <= bodyCap) {
+                    if (FORCE_OPEN || (!cut && oh <= ROOM)) {
                         open        = true;
-                        h           = oh;
+                        h           = oh + (ch.size() < D.items.size() ? CHILD_GAP + groupTailH() : 0);
                         s_childH[i] = std::move(ch);
                     }
                 }

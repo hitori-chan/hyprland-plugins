@@ -169,6 +169,23 @@ chk "hero: an image-data screenshot previews card-wide" test "$(hero_px $STATE/h
 chk "hero: the image-data preview is the capped strip" test "$(hero_span $STATE/hero-4-aw.png)" -ge 104 -a "$(hero_span $STATE/hero-4-aw.png)" -le 116
 nclear
 
+# ---- an expanded bundle keeps to the page ------------------------------------
+# 30 three-line cards of one app: expanded, they would run far past the
+# screen; the page shows the children that fit and counts the rest
+for i in $(seq 1 30); do
+	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications Notify \
+		susssasa{sv}i bulk 0 "" "build $i" $'step one\nstep two\nstep three' 0 0 30000 >/dev/null
+done
+sleep 0.5
+hq awesome center >/dev/null; sleep 0.6
+chk "bundle: thirty cards wait in the shade" test "$(st)" = "center:1 live:30 dnd:0"
+click $ROWX $ROWY 272
+capture_nested $STATE/bundle-aw.png
+chk "bundle: the expanded bundle ends on the screen" test "$(panel_bottom $STATE/bundle-aw.png)" -lt $((MON_H - 4))
+chk "bundle: expanding acted on nothing" test "$(st)" = "center:1 live:30 dnd:0"
+hq awesome center >/dev/null; sleep 0.4
+nclear
+
 # ---- the shade's click model ---------------------------------------------
 dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"read me\" body')"; sleep 1
 chk "shade: one card waiting" test "$(st)" = "center:0 live:1 dnd:0"

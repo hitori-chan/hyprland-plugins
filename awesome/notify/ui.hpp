@@ -185,6 +185,7 @@ namespace NAwesome::Notify {
 
     double digestH(const SType& T, size_t count, double scale); // the folded bundle's height
     double groupHeadH(); // an expanded bundle's header row
+    double groupTailH(); // an expanded bundle's "+N more" row, past the page
 
     // ---- popups.cpp / center.cpp: the two surfaces ----
 

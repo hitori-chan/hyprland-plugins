@@ -437,7 +437,9 @@ semantics).
   opens, a button acts. Rows open by default, so the click is spent
   acting rather than revealing; the CHEVRON is the only fold target.
   Right dismisses; middle is "Clear all". On an app bundle left
-  expands and right (or the header ✕) dismisses the whole app. The
+  expands and right (or the header ✕) dismisses the whole app; an
+  expanded bundle taller than the page shows the children that fit and
+  a "+N more" line, and dismissing a child brings the next one in. The
   paging chips (⌃ above the fold, ⌄ N below it) are their own targets:
   a click pages a screenful, like the wheel.
 - `max_height` bounds a popup by priority: header, title, one body

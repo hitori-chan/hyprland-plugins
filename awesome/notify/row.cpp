@@ -306,6 +306,10 @@ namespace NAwesome::Notify {
         return ROW_PADT + CHILD_ICON + ROW_PADB;
     }
 
+    double groupTailH() {
+        return 26;
+    }
+
     // The folded bundle: the app's identity, a count pill, and the two newest
     // cards previewed a line each — enough to decide whether to open it.
     void paintDigest(const SPaint& P, const SType& T, const SDisp& D, const CBox& box) {
@@ -464,12 +468,14 @@ namespace NAwesome::Notify {
             cards.push_back(std::move(card));
         }
 
-        // the children, each fully readable (no third fold state)
-        double cy = box.y + HEADRH;
-        for (size_t k = 0; k < D.items.size(); k++) {
+        // the children the page holds, each fully readable (no third fold
+        // state); the budget measured exactly these
+        double       cy    = box.y + HEADRH;
+        const size_t SHOWN = std::min(childH.size(), D.items.size());
+        for (size_t k = 0; k < SHOWN; k++) {
             const auto& N = D.items[k];
             cy += CHILD_GAP;
-            const double CH2  = k < childH.size() ? childH[k] : measureRow(P, T, N, box.w, true, ROW_CHILD);
+            const double CH2  = childH[k];
             const bool   CHOV = hovered.kind == SCard::CHILD && hovered.id == N->id && hovered.btn < 0 && hovered.part == 0;
             P.rect(CBox{box.x, cy, box.w, CH2}, CHOV ? tAccentDim() : tFill(), rJoint(P.scale), RP);
             SCard card = recycledCard();
@@ -477,6 +483,20 @@ namespace NAwesome::Notify {
             renderRow(P, T, N, CBox{box.x, cy, box.w, 0}, true, false, ROW_CHILD, card, true);
             cards.push_back(std::move(card));
             cy += CH2;
+        }
+
+        // the rest, counted: dismissing a shown child brings the next in
+        if (SHOWN < D.items.size()) {
+            cy += CHILD_GAP;
+            const CBox TB{box.x, cy, box.w, groupTailH()};
+            P.rect(TB, tFill(), rJoint(P.scale), RP);
+            auto& MB = scratch();
+            MB += "+";
+            MB += std::to_string(D.items.size() - SHOWN);
+            MB += " more";
+            const auto ML = cachedText(MB, COLSUB, T.small, std::max(1, (int)((box.w - 2 * ROW_PADX) * P.scale)), -1, 0, false, 500);
+            if (!P.warm && ML && ML->tex)
+                P.tex(ML->tex, TX, TB.y + (TB.h - texH(ML, P.scale)) / 2);
         }
     }
 
