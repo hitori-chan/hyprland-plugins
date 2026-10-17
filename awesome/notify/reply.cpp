@@ -36,16 +36,17 @@ namespace NAwesome::Notify {
     static NAwesome::Keys::CRepeat s_repeat; // a held key types on (core/keys.hpp)
 
     // Self-healing: the card can be dismissed, expire or be swept while the
-    // user is mid-sentence, and the shade can close under it. A stale arm
-    // would go on eating every keystroke in the session, so the check IS the
-    // liveness test rather than something a caller has to remember.
+    // user is mid-sentence, the shade can close under it, its sender can
+    // leave the bus (canReply drops) and a replace can move it to another
+    // conversation. A stale arm would go on eating every keystroke in the
+    // session and send into nowhere, so the check IS the liveness test
+    // rather than something a caller has to remember.
     bool               replyArmed() {
         if (!s_id)
             return false;
         if (centerVisible())
-            for (const auto& N : notifs)
-                if (N->id == s_id)
-                    return true;
+            if (const auto N = Model::byId(s_id); N && N->canReply && replyTarget(*N) == s_target)
+                return true;
         s_id = 0;
         s_text.clear();
         s_repeat.stop();

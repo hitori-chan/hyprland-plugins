@@ -415,6 +415,12 @@ namespace NAwesome::Notify {
         // change nothing they depend on, and every model/fold change warms
         // first (notifChanged). The draw side lays out without measuring twice.
         if (P.warm) {
+            // A field that died (its card left, its sender left the bus, a
+            // replace moved it to another chat) goes now, not at the next
+            // key, and takes the selection with it: a key typed for it must
+            // not act on a row.
+            if (replyHeld() && !replyArmed())
+                s_sel = -1;
             buildDisplay(s_disp);
             s_skip = s_disp.empty() ? 0 : std::min(s_skip, s_disp.size() - 1);
             // a dismissal shrinks the list under the selection: keeping the
