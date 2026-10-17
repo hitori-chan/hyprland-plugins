@@ -182,7 +182,7 @@ namespace NAwesome::Notify {
             switch (H.kind) {
                 case SCard::POPUP: {
                     if (H.bit == 4u) {
-                        Model::absorbPopped(); // middle: park the stack into the shade (no dismiss)
+                        Model::absorbPopped(/*repopOnClose=*/false); // middle: park the stack into the shade (no dismiss)
                         return;              // the rest reference now-parked cards
                     }
                     if (H.bit == 2u || H.part == 2) {

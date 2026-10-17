@@ -316,8 +316,9 @@ namespace NAwesome::Notify {
         // progress) keep their banners so the expiry timer still vanishes
         // them on their own clocks; nothing here emits a close for them (the
         // cards are parked, not dismissed). An OSD or a transient card goes
-        // for good (momentary).
-        void absorbPopped() {
+        // for good (momentary). `repopOnClose` false parks for good: the
+        // popup's middle click, with no shade whose close would return them.
+        void absorbPopped(bool repopOnClose) {
             bool                  changed = false;
             std::vector<uint32_t> gone;
             for (const auto& N : notifs)
@@ -336,7 +337,7 @@ namespace NAwesome::Notify {
                 if (vanishes(N))
                     continue;
                 N->banner   = false;
-                N->absorbed = true;
+                N->absorbed = repopOnClose;
                 changed     = true;
             }
             if (changed)
@@ -350,15 +351,19 @@ namespace NAwesome::Notify {
         // left the whole stack invisible — the notifications sat in the now
         // closed panel, nowhere on screen. Expiry-parked cards are not
         // absorbed and stay parked: an expired banner does not re-pop because
-        // the user closed the panel.
-        void repopAbsorbed() {
+        // the user closed the panel. A close that does not re-pop (an action
+        // leaving) parks them for good: a flag left behind re-popped them at
+        // some later, unrelated close.
+        void repopAbsorbed(bool repop) {
             const auto NOW     = Time::steadyNow();
             bool       changed = false;
             for (const auto& N : notifs) {
                 if (!N->absorbed)
                     continue;
                 N->absorbed = false;
-                changed     = true;
+                if (!repop)
+                    continue;
+                changed = true;
                 if (N->waiting || vanishes(N))
                     continue;
                 N->banner = !(NAwesome::cfg().getI("plugin:awesome:notify:coalesce_popups") && N->urgency < 2 && appHasBanner(N));

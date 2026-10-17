@@ -185,8 +185,7 @@ namespace NAwesome::Notify {
         if (!on) {
             resetVisit();
             replyExit(); // a field cannot outlive the panel it was drawn in
-            if (repop)
-                Model::repopAbsorbed(); // an explicit close returns the parked stack
+            Model::repopAbsorbed(repop); // an explicit close returns the parked stack
         } else {
             // Opening absorbs the popped stack — the banners stand down into
             // parked shade rows; an explicit close re-pops them (the user
