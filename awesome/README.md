@@ -419,6 +419,10 @@ semantics).
   default, then dismisses; right dismisses; middle parks the stack into
   the shade. The cards own the pointer over them — hover never leaks to
   the window beneath.
+- One popup per app (`coalesce_popups`): while an app's banner runs
+  its clock, the app's next non-critical card lands in the shade
+  silently (badge-counted, no sound). A banner with no clock (sticky,
+  critical) is no cooldown, and two chats are two cards: each alerts.
 - Popup hover HOLDS the timeout: the card under the pointer stops
   counting down, and leaving restarts its full clock rather than
   resuming the sliver that was left. Only one card can be held, because

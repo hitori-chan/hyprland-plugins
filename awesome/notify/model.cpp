@@ -197,10 +197,13 @@ namespace NAwesome::Notify {
         // one live popup per app: does another card already hold a banner for
         // this app? A new same-app arrival then lands resident instead of
         // stacking a second popup — the shade folds the extras, the badge
-        // counts them (the banner's own timeout is the cooldown window).
+        // counts them (the banner's own timeout is the cooldown window). A
+        // banner with no timeout (sticky, critical) is no cooldown: it would
+        // silence the app until dismissed. Two conversation cards are two
+        // chats (one chat is one card), and each chat alerts on its own.
         static bool appHasBanner(const SP<SNotif>& self) {
             for (const auto& O : notifs)
-                if (O != self && !O->waiting && O->banner && !vanishes(O) && O->appKey == self->appKey)
+                if (O != self && !O->waiting && O->banner && O->timeoutMs > 0 && !vanishes(O) && O->appKey == self->appKey && !(O->conversation && self->conversation))
                     return true;
             return false;
         }
