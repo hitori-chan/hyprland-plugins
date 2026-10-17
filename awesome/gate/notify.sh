@@ -186,6 +186,39 @@ chk "bundle: expanding acted on nothing" test "$(st)" = "center:1 live:30 dnd:0"
 hq awesome center >/dev/null; sleep 0.4
 nclear
 
+# ---- the fallback face: listed by the helper, then worn ----------------------
+# An iconless card starts the listing (a helper process, never the loop) and
+# wears the generic mark until it lands; the warm it triggers re-rolls the
+# card onto the one face in the dir.
+FACES=$STATE/faces
+mkdir -p "$FACES"
+python3 - "$FACES/face.png" <<'PY'
+import sys
+from PIL import Image
+Image.new("RGB", (64, 64), (250, 120, 20)).save(sys.argv[1])
+PY
+face_px() {
+	python3 - "$1" "$MON_W" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+px = im.load()
+n = 0
+for y in range(30, 200):
+    for x in range(int(sys.argv[2]) - 362, int(sys.argv[2]) - 16):
+        r, g, b = px[x, y]
+        if r > 220 and 90 < g < 150 and b < 60:
+            n += 1
+print(n)
+PY
+}
+hq eval "hl.config({ plugin = { awesome = { notify = { fallback_icon_dir = \"$FACES\" } } } })" >/dev/null
+dsp "hl.dsp.exec_cmd('notify-send -t 4000 faceless \"no icon\"')"; sleep 1.2
+capture_nested $STATE/face-aw.png
+chk "face: an iconless card wears the listed face" test "$(face_px $STATE/face-aw.png)" -gt 200
+hq eval "hl.config({ plugin = { awesome = { notify = { fallback_icon_dir = \"\" } } } })" >/dev/null
+nclear
+
 # ---- the shade's click model ---------------------------------------------
 dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"read me\" body')"; sleep 1
 chk "shade: one card waiting" test "$(st)" = "center:0 live:1 dnd:0"

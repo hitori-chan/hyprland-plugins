@@ -5,11 +5,11 @@
 
 #include "../core/config.hpp"
 #include "../core/desktopindex.hpp"
+#include "../core/fileindex.hpp"
 
 #include <hyprland/src/render/AsyncResourceGatherer.hpp>
 
 #include <cstring>
-#include <filesystem>
 #include <iterator>
 #include <list>
 #include <random>
@@ -19,41 +19,75 @@
 namespace NAwesome::Notify {
 
     // ---- fallback_icon_dir: iconless cards wear a face (the left identity) ----
+    //
+    // One roll per card (bus keeps the pick across in-place replaces). The
+    // listing comes from the core's file-index helper, a process: walked on
+    // this thread, a pictures folder cost tens of ms of the warm, seconds
+    // cold, and a hung mount held the loop. Until it lands an iconless card
+    // wears the generic mark, and the warm the listing triggers re-rolls it.
+    // Scanned once per config life (a reload rescans).
 
-    static std::vector<std::string> fallbackFiles;
-    static bool                     fallbackScanned = false;
+    static NAwesome::CAsyncFileIndex     fallbackIndex;
+    static SP<CEventLoopTimer>           fallbackPoll;
+    static std::vector<std::string>      fallbackFiles;
+    static uint64_t                      fallbackGen = 0;
+    static std::chrono::steady_clock::time_point fallbackDeadline;
+    enum class EFallbackScan : uint8_t {
+        NONE,
+        SCANNING,
+        DONE,
+    };
+    static EFallbackScan fallbackScan = EFallbackScan::NONE;
 
-    void                            resetFallbackCache() {
+    void                 resetFallbackCache() {
+        fallbackIndex.cancel(++fallbackGen);
         fallbackFiles.clear();
-        fallbackScanned = false;
+        fallbackScan = EFallbackScan::NONE;
+        if (fallbackPoll)
+            fallbackPoll->updateTimeout(std::nullopt);
     }
 
-    // One roll per card (bus keeps the pick across in-place replaces). The
-    // listing is scanned once per config life, from the warm pass — never
-    // the render or a bus dispatch. The scan is visit-bounded: the directory
-    // is config-chosen, but a pathological mount (deep or FUSE-synthesized)
-    // must not hold the event loop mid-warm.
+    static void pollFallback() {
+        if (fallbackScan != EFallbackScan::SCANNING)
+            return;
+        std::vector<NAwesome::CAsyncFileIndex::SEntry> entries;
+        const bool COMPLETE = fallbackIndex.poll(fallbackGen, entries, 256);
+        for (const auto& E : entries)
+            if (!E.directory)
+                fallbackFiles.push_back(E.path.string());
+        if (!COMPLETE && std::chrono::steady_clock::now() < fallbackDeadline) {
+            fallbackPoll->updateTimeout(std::chrono::milliseconds(16));
+            return;
+        }
+        if (!COMPLETE)
+            fallbackIndex.cancel(++fallbackGen); // a hung mount: keep what came
+        fallbackScan = EFallbackScan::DONE;
+        if (!fallbackFiles.empty())
+            notifChanged();
+    }
+
     static std::string pickFallback() {
         const auto DIR = std::string{NAwesome::cfg().getS("plugin:awesome:notify:fallback_icon_dir")};
         if (DIR.empty())
             return "";
-        if (!fallbackScanned) {
-            fallbackScanned = true;
-            constexpr size_t MAX_VISITS = 65536;
-            std::error_code  ec;
-            size_t           visited = 0;
-            for (auto it = std::filesystem::recursive_directory_iterator(DIR, std::filesystem::directory_options::skip_permission_denied, ec); !ec && it != std::filesystem::end(it) && visited < MAX_VISITS;
-                 it.increment(ec)) {
-                visited++;
-                if (!it->is_regular_file(ec))
-                    continue;
-                auto ext = it->path().extension().string();
-                std::ranges::transform(ext, ext.begin(), [](unsigned char c) { return std::tolower(c); });
-                if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".webp" || ext == ".bmp" || ext == ".avif" || ext == ".jxl" || ext == ".svg")
-                    fallbackFiles.push_back(it->path().string());
-            }
+        if (fallbackScan == EFallbackScan::NONE) {
+            fallbackScan = EFallbackScan::DONE; // without the loop: no faces
+            if (!fallbackPoll)
+                return "";
+            NAwesome::CAsyncFileIndex::SRequest request;
+            request.generation = ++fallbackGen;
+            request.roots      = {DIR};
+            request.extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".avif", ".jxl", ".svg"};
+            request.maxEntries = 4096;
+            request.maxVisited = 65536;
+            request.recursive  = true;
+            fallbackIndex.request(std::move(request));
+            fallbackScan     = EFallbackScan::SCANNING;
+            fallbackDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+            fallbackPoll->updateTimeout(std::chrono::milliseconds(2));
+            return "";
         }
-        if (fallbackFiles.empty())
+        if (fallbackScan != EFallbackScan::DONE || fallbackFiles.empty())
             return "";
         static std::mt19937 rng{std::random_device{}()};
         return fallbackFiles[std::uniform_int_distribution<size_t>{0, fallbackFiles.size() - 1}(rng)];
@@ -860,6 +894,10 @@ namespace NAwesome::Notify {
             return;
         decodePoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { pollDecodeJobs(); }, nullptr);
         g_pEventLoopManager->addTimer(decodePoll);
+        if (fallbackIndex.init(g_pCompositor->m_wlEventLoop)) {
+            fallbackPoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { pollFallback(); }, nullptr);
+            g_pEventLoopManager->addTimer(fallbackPoll);
+        }
         NAwesome::CDesktopIcons::inst().subscribe(onDesktopEntries);
     }
 
@@ -867,6 +905,12 @@ namespace NAwesome::Notify {
         if (decodePoll && g_pEventLoopManager)
             g_pEventLoopManager->removeTimer(decodePoll);
         decodePoll.reset();
+        if (fallbackPoll && g_pEventLoopManager)
+            g_pEventLoopManager->removeTimer(fallbackPoll);
+        fallbackPoll.reset();
+        fallbackIndex.exit(); // its helper's group is signalled and reaped
+        fallbackFiles.clear();
+        fallbackScan = EFallbackScan::NONE;
         // A decode still on the gatherer's worker opens /proc/self/fd/N after
         // this: closing N would let the number be reused, and the worker
         // open whatever got it (a pipe would block the compositor's shared

@@ -393,9 +393,10 @@ images (256 px in both dimensions) render popup-width as a
 cover-cropped hero in any capture shape; the shade keeps its rows
 compact and shows the same image as a square-cropped thumbnail in the
 icon column (AOSP's collapsed BigPicture). Iconless cards draw a random
-face from `fallback_icon_dir`, and when that dir is empty (or a face
-fails to load) a deterministic generic application mark, so no card is
-faceless. The icon column is Android's conversation container: the
+face from `fallback_icon_dir` (listed recursively by a helper process,
+up to 4096 images; until the listing lands they wear the generic mark),
+and when that dir is empty (or a face fails to load) a deterministic
+generic application mark, so no card is faceless. The icon column is Android's conversation container: the
 CONTENT image leads as the avatar (a true circle for a conversation, a
 squircle otherwise) and the IDENTITY (`app_icon`/`desktop-entry`)
 rides its bottom-right corner as a badge sized by AOSP's ratios off the
