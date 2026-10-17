@@ -76,6 +76,12 @@ namespace NAwesome::Notify {
     // the card arrived upgrades it in place.
 
     static constexpr size_t MAX_PENDING_IMAGE_RESOURCES = 24; // the gatherer is shared with the compositor
+    // ...and so is its ONE worker: the compositor's own renderText (the
+    // config error bar, the debug overlay) enqueues there and blocks its
+    // thread until the job is done — behind every decode of ours queued
+    // ahead of it (a screenshot's 100-300 ms, longer under load). Two in
+    // flight keep the worker busy; the rest wait here, not there.
+    static constexpr size_t MAX_DECODES_IN_FLIGHT = 2;
     static constexpr double MAX_DECODED_IMAGE_PIXELS    = 16.0 * 1024 * 1024;
 
     struct SDecodeJob {
@@ -146,8 +152,9 @@ namespace NAwesome::Notify {
             IT->wanted = true;
             return &*IT;
         }
-        if (decodeJobs.size() >= MAX_PENDING_IMAGE_RESOURCES) {
-            waitedForDecodeSlot = true;
+        if (decodeJobs.size() >= MAX_PENDING_IMAGE_RESOURCES ||
+            (size_t)std::ranges::count_if(decodeJobs, [](const auto& job) { return !resourceReady(job); }) >= MAX_DECODES_IN_FLIGHT) {
+            waitedForDecodeSlot = true; // a landing decode re-warms (the poll), a freed slot too
             return nullptr;
         }
         auto file = NAwesome::openAdmissibleImage(source);
