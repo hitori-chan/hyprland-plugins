@@ -230,13 +230,15 @@ namespace NAwesome::Shell {
 
         // ONE walk of the window list for all its consumers: per-workspace
         // urgency + occupancy (taglist) and this workspace's tasks (tasklist,
-        // in arrival order).
+        // in arrival order). A tag another monitor owns is not this screen's
+        // (awesome's tags are per screen; its clicks and wheel skip it here),
+        // so its windows neither fill nor flag this taglist.
         static std::vector<std::pair<uint64_t, PHLWINDOW>> tasks; // reused; main thread only
         SFrame                                             F;
         F.ws = WS;
         tasks.clear();
         for (const auto& W : Desktop::windowState()->windows()) {
-            if (NAwesome::isClient(W) && W->m_workspace) {
+            if (NAwesome::isClient(W) && W->m_workspace && W->m_workspace->m_monitor.lock() == mon) {
                 const auto NUM = W->m_workspace->numberedID();
                 if (NUM && *NUM >= 1 && *NUM <= 9) {
                     F.windows[*NUM]++;
