@@ -2,6 +2,7 @@
 
 #include "../core/activate.hpp"
 #include "../core/icons.hpp" // iconDeferred: a budget-deferred icon is retried
+#include "../core/raster.hpp"
 
 
 
@@ -22,6 +23,42 @@ namespace NAwesome::Shell {
         // before multiplying or allocating anything.
         constexpr int      MAX_PIXMAP_DIM    = 1024;
         constexpr uint64_t MAX_PIXMAP_PIXELS = 4ull << 20;
+
+        // SNI ARGB (network order) -> premultiplied BGRA within cap a side.
+        // An app that ships only a large pixmap (some send 512-1024 px) cost
+        // a full-size premultiply, compare and upload per icon change for a
+        // 22 px cell: box-averaged by an integer K while premultiplying (to
+        // within 2x of the cap), then fitted exactly.
+        static SPixels sniPixels(const std::vector<uint8_t>& src, int w, int h, int cap) {
+            const int K  = std::max(1, std::max(w, h) / std::max(1, cap * 2));
+            const int OW = std::max(1, w / K), OH = std::max(1, h / K);
+            SPixels   out{.px = std::vector<uint8_t>((size_t)OW * OH * 4), .w = OW, .h = OH};
+            for (int oy = 0; oy < OH; oy++)
+                for (int ox = 0; ox < OW; ox++) {
+                    // the box clamped to the source: a side shorter than K
+                    // (a 1024x1 strip) has fewer rows than the box
+                    const int Y1 = std::min(h, (oy + 1) * K), X1 = std::min(w, (ox + 1) * K);
+                    uint64_t  sb = 0, sg = 0, sr = 0, sa = 0;
+                    for (int y = oy * K; y < Y1; y++)
+                        for (int x = ox * K; x < X1; x++) {
+                            const uint8_t* P = &src[((size_t)y * w + x) * 4];
+                            const uint32_t A = P[0];
+                            sr += P[1] * A;
+                            sg += P[2] * A;
+                            sb += P[3] * A;
+                            sa += A;
+                        }
+                    const uint64_t N = (uint64_t)(Y1 - oy * K) * (X1 - ox * K);
+                    uint8_t*       D = &out.px[((size_t)oy * OW + ox) * 4];
+                    D[0]             = (uint8_t)(sb / (255 * N));
+                    D[1]             = (uint8_t)(sg / (255 * N));
+                    D[2]             = (uint8_t)(sr / (255 * N));
+                    D[3]             = (uint8_t)(sa / N);
+                }
+            if (out.w > cap || out.h > cap)
+                return Raster::fit(Raster::view(out), cap);
+            return out;
+        }
 
         NAwesome::CBusLink                  bus; // menu.cpp borrows the connection for its dbusmenu proxies
         static std::unique_ptr<sdbus::IObject> watcher;
@@ -209,17 +246,11 @@ namespace NAwesome::Shell {
 
                             if (best) {
                                 // SNI pixmaps are ARGB32 in network byte order (A,R,G,B);
-                                // DRM_FORMAT_ARGB8888 wants B,G,R,A. Premultiply on the way.
-                                px.resize((size_t)bw * bh * 4);
-                                for (size_t i = 0; i < (size_t)bw * bh; i++) {
-                                    const uint8_t A = (*best)[i * 4], R = (*best)[i * 4 + 1], G = (*best)[i * 4 + 2], B = (*best)[i * 4 + 3];
-                                    px[i * 4]     = (uint8_t)(B * A / 255);
-                                    px[i * 4 + 1] = (uint8_t)(G * A / 255);
-                                    px[i * 4 + 2] = (uint8_t)(R * A / 255);
-                                    px[i * 4 + 3] = A;
-                                }
-                                pw = bw;
-                                ph = bh;
+                                // DRM_FORMAT_ARGB8888 wants B,G,R,A, premultiplied
+                                auto P = sniPixels(*best, bw, bh, WANT * 2);
+                                px     = std::move(P.px);
+                                pw     = P.w;
+                                ph     = P.h;
                             }
                         } catch (...) {}
                     }

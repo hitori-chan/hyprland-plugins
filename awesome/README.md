@@ -80,7 +80,8 @@ visible transitions.
   250 ms, all decodes together get 4 ms per 16 ms (the rest fill in over
   the next frames), and a lookup a budget refuses is not a miss — it
   stays uncached and a warm a beat later tries again (a menu row keeps
-  the name to ask with). A config reload keeps
+  the name to ask with). A tray pixmap is scaled to twice its cell as it
+  arrives. A config reload keeps
   the resolved icons unless the GTK icon theme changed; only the misses
   are dropped (an icon installed since then still lands).
 
