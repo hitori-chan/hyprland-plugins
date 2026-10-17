@@ -415,16 +415,29 @@ namespace NAwesome::Notify {
         // change nothing they depend on, and every model/fold change warms
         // first (notifChanged). The draw side lays out without measuring twice.
         if (P.warm) {
+            // the selection follows its card (or bundle) across the rebuild:
+            // a card landing above must not shift Enter/Delete onto a
+            // neighbor. One whose card left keeps its INDEX — the card that
+            // took the dismissed one's place, as a list does after a delete.
             // A field that died (its card left, its sender left the bus, a
             // replace moved it to another chat) goes now, not at the next
             // key, and takes the selection with it: a key typed for it must
             // not act on a row.
             if (replyHeld() && !replyArmed())
                 s_sel = -1;
+            uint32_t    selId = 0;
+            std::string selGroup;
+            const bool  SELECTED = centerSelection(selId, selGroup);
             buildDisplay(s_disp);
+            if (SELECTED)
+                for (size_t i = 0; i < s_disp.size(); i++) {
+                    const auto& D = s_disp[i];
+                    if (selGroup.empty() ? std::ranges::any_of(D.items, [&](const auto& N) { return N->id == selId; }) : D.items.size() > 1 && D.key == selGroup) {
+                        s_sel = (int)i;
+                        break;
+                    }
+                }
             s_skip = s_disp.empty() ? 0 : std::min(s_skip, s_disp.size() - 1);
-            // a dismissal shrinks the list under the selection: keeping the
-            // INDEX lands it on the card that took the dismissed one's place
             if (s_sel >= (int)s_disp.size())
                 s_sel = s_disp.empty() ? -1 : (int)s_disp.size() - 1;
             s_itemH.assign(s_disp.size(), 0.0);
