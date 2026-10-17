@@ -138,6 +138,7 @@ namespace NAwesome::Shell {
     // it touches but never advances or evicts the cache generation.
     void warmBars(PHLMONITOR only = nullptr);
     void promptChanged(); // the launcher's prompt band only (see strip.cpp)
+    void menuHoverChanged(); // the open menu's panels only (see strip.cpp)
     void stripInit(); // register the strip's canvas layer (the module's init)
     void stripExit(); // clear the strip's caches (the module's teardown)
 
@@ -398,6 +399,7 @@ namespace NAwesome::Shell {
 
         double                     levelHeight(const SLevel& l);
         void                       damageMenu();
+        void                       damagePanels(); // the open panels, frame ring included, and the ones they replaced
         void                       close();
         void                       exit(); // close + tear the hover timer out of the event loop
         void                       openFor(SP<Tray::SItem> it, double ax, PHLMONITORREF m);

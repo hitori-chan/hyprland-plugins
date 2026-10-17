@@ -426,14 +426,38 @@ namespace NAwesome::Shell {
                 if (const auto B = boundingBox(M))
                     g_pHyprRenderer->damageBox(CBox{*B}.translate(M->logicalBox().pos()));
         }
+        // The prompt band and the menu's panels as last laid out (a level
+        // change warms before it damages), their frame ring included. The
+        // whole monitor made every damage on it re-run the menu's layout
+        // and live-blur the screen behind it while a menu was open.
         std::optional<CBox> boundingBox(PHLMONITOR mon) const override {
             if (!popupsOn(mon))
                 return std::nullopt;
-            // cascades anchor anywhere below the bar — cover it all, an
-            // undersized box clips
-            if (Menu::isOpen && Menu::mon.lock() == mon)
-                return CBox{0, 0, mon->logicalBox().w, mon->logicalBox().h};
-            return CBox{0, barHeight(), mon->logicalBox().w, barHeight()};
+            const auto MB = mon->logicalBox();
+            double     x0 = MB.w, y0 = MB.h, x1 = 0, y1 = 0;
+            const auto ADD = [&](const CBox& B) {
+                x0 = std::min(x0, B.x);
+                y0 = std::min(y0, B.y);
+                x1 = std::max(x1, B.x + B.w);
+                y1 = std::max(y1, B.y + B.h);
+            };
+            if (Menubar::isOpen && Menubar::mon.lock() == mon)
+                ADD(CBox{0, barHeight(), MB.w, barHeight()});
+            if (Menu::isOpen && Menu::mon.lock() == mon) {
+                const double MARGIN = std::ceil(mon->m_scale) + 1.0;
+                for (const auto& L : Menu::levels) {
+                    if (L.box.w <= 0 || L.box.h <= 0)
+                        return CBox{0, 0, MB.w, MB.h}; // not laid out yet: an undersized box clips
+                    ADD(CBox{L.box}.translate(Vector2D{-MB.x, -MB.y}).expand(MARGIN));
+                }
+            }
+            x0 = std::max(x0, 0.0);
+            y0 = std::max(y0, 0.0);
+            x1 = std::min(x1, MB.w);
+            y1 = std::min(y1, MB.h);
+            if (x1 <= x0 || y1 <= y0)
+                return CBox{0, 0, MB.w, MB.h};
+            return CBox{x0, y0, x1 - x0, y1 - y0};
         }
         // the open menubar is awesome's ontop wibox: it paints over a
         // fullscreen client
@@ -547,6 +571,21 @@ namespace NAwesome::Shell {
                 const auto MB = M->logicalBox();
                 g_pHyprRenderer->damageBox(CBox{MB.x, MB.y + barHeight(), MB.w, barHeight()});
             }
+        });
+    }
+
+    // A menu hover moved: the popup layer on the menu's monitor, once per
+    // event-loop turn — damageMenu warmed every layer on the monitor per
+    // row the pointer crossed. A hover moves no panel: the boxes and rows
+    // the hit-tests read stay as they are.
+    static NAwesome::CHop pendingMenuHover;
+    void menuHoverChanged() {
+        pendingMenuHover.arm([]() {
+            const auto M = Menu::mon.lock();
+            if (!M || !Menu::isOpen)
+                return;
+            NAwesome::Canvas::inst().warmAll(M, &popupLayer());
+            Menu::damagePanels(); // the ring and a panel the warm resized too
         });
     }
 

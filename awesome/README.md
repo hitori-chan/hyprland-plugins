@@ -78,7 +78,9 @@ visible transitions.
   that goes away closes. Esc closes an open tray or client-list menu
   (its press only; the release passes; a modified Esc is a user bind
   passing through); other keyboard navigation,
-  tooltips, and overlay icons are not implemented.
+  tooltips, and overlay icons are not implemented. A hover warms the
+  menu's own layer alone, and the menu paints in the panels' box, not
+  the whole monitor.
 - **Bell**: reads the notify model directly (same process — no bus
   seam). A click toggles the shade; pointer hover does nothing.
 - **Battery** watches the udev battery packs (a dual-pack laptop reads as one; a USB-C port's or a headset's battery uevent is ignored); the clock ticks on the wall clock's minute, re-reads the timezone each tick, and a resume or a clock step updates it at once.

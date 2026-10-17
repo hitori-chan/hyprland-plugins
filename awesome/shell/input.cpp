@@ -409,7 +409,7 @@ namespace NAwesome::Shell {
                 }
             }
             if (changed)
-                Menu::damageMenu();
+                menuHoverChanged();
             Menu::hoverIntent(pl, pr); // open/close cascades on GTK's popup delay
         }
 

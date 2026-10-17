@@ -63,6 +63,10 @@ namespace NAwesome::Shell {
             // fullscreen), which is exactly when building would break. The warm
             // also lays the panels out, so the boxes below are current.
             warmBars(mon.lock());
+            damagePanels();
+        }
+
+        void damagePanels() {
             if (!g_pHyprRenderer)
                 return;
             // renderBorder draws the frame ring OUTSIDE L.box (it grows the box
