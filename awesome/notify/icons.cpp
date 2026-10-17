@@ -39,7 +39,10 @@ namespace NAwesome::Notify {
     };
     static EFallbackScan fallbackScan = EFallbackScan::NONE;
 
+    static std::unordered_map<std::string, SP<ITexture>> genericMarks;
+
     void                 resetFallbackCache() {
+        genericMarks.clear();
         fallbackIndex.cancel(++fallbackGen);
         fallbackFiles.clear();
         fallbackScan = EFallbackScan::NONE;
@@ -577,8 +580,25 @@ namespace NAwesome::Notify {
     // the deterministic generic mark an iconless card wears (identity empty
     // AND the fallback face dir empty): the theme's application-default-icon
     // when it exists, else an apps-grid glyph in the theme ink — no card is
-    // ever faceless
+    // ever faceless. One per (size, ink, plate), shared: every iconless card
+    // built its own, a theme lookup, an SVG raster and an upload each. A
+    // reload drops them (the theme may have changed).
+    static SP<ITexture> genericMarkNow(int px);
     static SP<ITexture> genericMark(int px) {
+        const auto KEY = std::to_string(px) + "|" + std::to_string(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg")) + "|" +
+            std::to_string(NAwesome::cfg().getColor("plugin:awesome:notify:col_frame"));
+        if (const auto IT = genericMarks.find(KEY); IT != genericMarks.end())
+            return IT->second;
+        auto TEX = genericMarkNow(px);
+        if (!TEX)
+            return nullptr;
+        if (genericMarks.size() >= 8)
+            genericMarks.clear();
+        genericMarks.emplace(KEY, TEX);
+        return TEX;
+    }
+
+    static SP<ITexture> genericMarkNow(int px) {
         if (const auto PATH = Parse::resolveImage("application-default-icon", px); !PATH.empty())
             return syncFileTex(PATH, px, 0, 0).texture; // a small theme SVG: decode here, not on the worker
 
@@ -911,6 +931,7 @@ namespace NAwesome::Notify {
         fallbackIndex.exit(); // its helper's group is signalled and reaped
         fallbackFiles.clear();
         fallbackScan = EFallbackScan::NONE;
+        genericMarks.clear();
         // A decode still on the gatherer's worker opens /proc/self/fd/N after
         // this: closing N would let the number be reused, and the worker
         // open whatever got it (a pipe would block the compositor's shared
