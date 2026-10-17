@@ -347,6 +347,8 @@ namespace NAwesome::Notify::Parse {
         const auto NL = body.find('\n', CLOSE);
         if (NL == std::string::npos)
             return body; // no message line after the sender: leave as-is
+        if (body.find_first_not_of(" \t", CLOSE + 4) != NL)
+            return body; // a line that goes on past the name ("<b>Bob</b> sent a photo") is no bare sender
         std::string out;
         out.reserve(body.size());
         out.append(body, 0, CLOSE + 4); // through the '>' of "</b>"
