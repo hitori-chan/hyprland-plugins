@@ -56,11 +56,18 @@ visible transitions.
   match installed asynchronously (a per-item subscription is a
   synchronous round trip on the compositor thread), routed by sender
   and path; an item fetches one icon at a time, a NewIcon storm folding
-  into one more fetch. Item strings are bounded, icon names resolve
-  through the core resolver (an item's own `IconThemePath` first), and
-  a pixmap is picked for the densest monitor's scale. A
-  `NeedsAttention` item shows its attention icon, or its plain one when
-  it offers none. Menus support
+  into one more fetch (`NewIconThemePath` and `NewMenu` fold the same
+  way). Item strings are bounded, icon names resolve
+  through the core resolver (an item's own `IconThemePath` first,
+  re-read on `NewIconThemePath`), and a pixmap is picked for the
+  densest monitor's scale. A `NeedsAttention` item shows its attention
+  icon, or its plain one when it offers none. The right button (the
+  left too for an `ItemIsMenu` item) opens the item's dbusmenu; with no
+  menu path the path is read again (`NewMenu` re-reads it as well, and
+  an app may export its menu late) before the item gets `ContextMenu`
+  — for that click only: not after another click, with a menu open
+  since, or more than a second after it.
+  Menus support
   updates, cascades, scrolling, and check/radio state; a level with no
   rows says "(empty)", or "(unavailable)" when its layout call failed,
   instead of the loading "…" forever; an inline

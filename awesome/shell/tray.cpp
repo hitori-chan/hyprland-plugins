@@ -8,6 +8,7 @@
 
 #include "shell/shell.hpp"
 
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <unistd.h>
@@ -68,6 +69,10 @@ namespace NAwesome::Shell {
         static std::unordered_map<std::string, std::string> hosts; // service -> unique owner
         static std::string                                  hostService;
         static bool                                          hostNameOwned = false;
+
+        // bumped by every tray click: a deferred menu open answers only the
+        // click that asked for it
+        static uint64_t clickSerial = 0;
 
         constexpr size_t MAX_ITEMS            = 256;
         constexpr size_t MAX_ITEMS_PER_SERVICE = 32;
@@ -291,6 +296,86 @@ namespace NAwesome::Shell {
             fetchIconSet(it, ATTN, ATTN, ++it->iconRequest);
         }
 
+        // The theme path the item's icon names resolve in. NewIconThemePath
+        // re-reads it, and the icon with it (an app moving its theme dir
+        // renames into it too). One read in flight, like fetchIcon: a
+        // signal storm queues one more, not a request per signal.
+        static void fetchThemePath(SP<SItem> it, bool thenIcon) {
+            if (it->themeFetching) {
+                it->themeAgain = true;
+                return;
+            }
+            it->themeFetching      = true;
+            const uint64_t REQUEST = it->propertyRequest;
+            it->proxy->getPropertyAsync("IconThemePath").onInterface(SNI).uponReplyInvoke([it, REQUEST, thenIcon](std::optional<sdbus::Error> e, sdbus::Variant v) {
+                it->themeFetching = false;
+                const bool AGAIN  = std::exchange(it->themeAgain, false);
+                if (!it->active || !it->proxy)
+                    return;
+                if (AGAIN) { // the newer read answers, the icon after it
+                    fetchThemePath(it, true);
+                    return;
+                }
+                if (it->propertyRequest != REQUEST)
+                    return;
+                if (!e)
+                    try {
+                        const auto THEME = boundedProp(v.get<std::string>());
+                        if (THEME != it->themePath) {
+                            it->themePath = THEME;
+                            it->dirty     = true;
+                            barChanged();
+                        }
+                    } catch (...) {}
+                if (thenIcon)
+                    fetchIcon(it);
+            });
+            pollSoon();
+        }
+
+        // The dbusmenu path. An app may export its menu after registering
+        // (the property has no change signal but KDE's NewMenu), so a click
+        // that finds none reads it again before giving up on a menu: `then`
+        // runs on the reply, whatever it held. Unprompted reads (NewMenu,
+        // the first props) fold like the theme path; a click's goes out.
+        static void fetchMenuPath(SP<SItem> it, std::function<void()> then) {
+            const bool FOLDS = !then;
+            if (FOLDS) {
+                if (it->menuFetching) {
+                    it->menuAgain = true;
+                    return;
+                }
+                it->menuFetching = true;
+            }
+            const uint64_t REQUEST = it->propertyRequest;
+            it->proxy->getPropertyAsync("Menu").onInterface(SNI).uponReplyInvoke([it, REQUEST, FOLDS, then = std::move(then)](std::optional<sdbus::Error> e, sdbus::Variant v) {
+                bool again = false;
+                if (FOLDS) {
+                    it->menuFetching = false;
+                    again            = std::exchange(it->menuAgain, false);
+                }
+                if (!it->active || !it->proxy)
+                    return;
+                if (again) {
+                    fetchMenuPath(it, nullptr);
+                    return;
+                }
+                if (it->propertyRequest != REQUEST)
+                    return;
+                if (!e)
+                    try {
+                        // "/" and KDE's "/NO_DBUSMENU" mean "no menu": the item
+                        // then gets ContextMenu on a right click, not a panel
+                        // stuck on its first layout call
+                        const std::string PATH = v.get<sdbus::ObjectPath>();
+                        it->menuPath           = PATH == "/" || PATH == "/NO_DBUSMENU" ? "" : PATH;
+                    } catch (...) {}
+                if (then)
+                    then();
+            });
+            pollSoon();
+        }
+
         static void fetchProps(SP<SItem> it) {
             if (!it || !it->active || !it->proxy)
                 return;
@@ -312,31 +397,8 @@ namespace NAwesome::Shell {
             // context change (= every window focus), and rebuilding textures +
             // redrawing the bar for identical content made the bar flicker like
             // it was reloading during any window action.
-            it->proxy->getPropertyAsync("IconThemePath").onInterface(SNI).uponReplyInvoke([it, REQUEST](std::optional<sdbus::Error> e, sdbus::Variant v) {
-                if (!it->active || !it->proxy || it->propertyRequest != REQUEST)
-                    return;
-                if (!e)
-                    try {
-                        const auto THEME = boundedProp(v.get<std::string>());
-                        if (THEME != it->themePath) {
-                            it->themePath = THEME;
-                            it->dirty = true;
-                            barChanged();
-                        }
-                    } catch (...) {}
-            });
-            it->proxy->getPropertyAsync("Menu").onInterface(SNI).uponReplyInvoke([it, REQUEST](std::optional<sdbus::Error> e, sdbus::Variant v) {
-                if (!it->active || !it->proxy || it->propertyRequest != REQUEST)
-                    return;
-                if (!e)
-                    try {
-                        // "/" and KDE's "/NO_DBUSMENU" mean "no menu": the item
-                        // then gets ContextMenu on a right click, not a panel
-                        // stuck on its first layout call
-                        const std::string PATH = v.get<sdbus::ObjectPath>();
-                        it->menuPath           = PATH == "/" || PATH == "/NO_DBUSMENU" ? "" : PATH;
-                    } catch (...) {}
-            });
+            fetchThemePath(it, false);
+            fetchMenuPath(it, nullptr);
             it->proxy->getPropertyAsync("ItemIsMenu").onInterface(SNI).uponReplyInvoke([it, REQUEST](std::optional<sdbus::Error> e, sdbus::Variant v) {
                 if (!it->active || !it->proxy || it->propertyRequest != REQUEST)
                     return;
@@ -382,6 +444,10 @@ namespace NAwesome::Shell {
                 const std::string_view NAME{MEMBER};
                 if (NAME == "NewIcon" || NAME == "NewAttentionIcon") // NewIcon changes only the icon (SNI); Menu/Status don't
                     fetchIcon(I);
+                else if (NAME == "NewIconThemePath")
+                    fetchThemePath(I, true);
+                else if (NAME == "NewMenu")
+                    fetchMenuPath(I, nullptr);
                 else if (NAME == "NewStatus") {
                     std::string st;
                     try {
@@ -620,6 +686,7 @@ namespace NAwesome::Shell {
                 const auto IT = h.tray.lock();
                 if (!IT || !IT->proxy)
                     return;
+                const uint64_t CLICK = ++Tray::clickSerial;
                 const int32_t X = Tray::sniCoord(h.clickX), Y = Tray::sniCoord(h.clickY);
                 if (bit == 4u) { // middle: the SNI SecondaryActivate call
                     Tray::post([IT, X, Y]() {
@@ -635,8 +702,9 @@ namespace NAwesome::Shell {
                     });
                     return;
                 }
-                const bool HASMENU = !IT->menuPath.empty();
-                if (bit == 1u && !(IT->itemIsMenu && HASMENU)) {
+                // ItemIsMenu: the item has no activation of its own, a left
+                // click shows its menu too (SNI spec)
+                if (bit == 1u && !IT->itemIsMenu) {
                     Tray::post([IT, X, Y]() {
                         if (!IT->active || !IT->proxy)
                             return;
@@ -655,21 +723,40 @@ namespace NAwesome::Shell {
                     });
                     return;
                 }
-                if (HASMENU)
+                if (!IT->menuPath.empty()) {
                     Menu::openFor(IT, h.anchorX, h.mon);
-                else if (bit == 2u) {
-                    Tray::post([IT, X, Y]() {
-                        if (!IT->active || !IT->proxy)
-                            return;
-                        try {
-                            IT->proxy->callMethodAsync("ContextMenu")
-                                .onInterface(Tray::SNI)
-                                .withArguments(X, Y)
-                                .uponReplyInvoke([](std::optional<sdbus::Error>) {});
-                            Tray::pollSoon();
-                        } catch (...) {}
-                    });
+                    return;
                 }
+                if (bit != 1u && bit != 2u)
+                    return;
+                // no menu path yet: read it again (an app may export its menu
+                // after registering), then the menu or the item's own
+                // ContextMenu — for this click only: not after another click
+                // or with a menu open since (a second click opened twice, a
+                // slow reply closed the menu the user had moved on to), and
+                // not a second after it (sd-bus waits up to 25 s)
+                Tray::post([IT, X, Y, AX = h.anchorX, MON = h.mon, CLICK, AT = std::chrono::steady_clock::now()]() {
+                    if (!IT->active || !IT->proxy)
+                        return;
+                    try {
+                        Tray::fetchMenuPath(IT, [IT, X, Y, AX, MON, CLICK, AT]() {
+                            if (NAwesome::sessionLocked() || CLICK != Tray::clickSerial || Menu::isOpen ||
+                                std::chrono::steady_clock::now() - AT > std::chrono::seconds(1))
+                                return;
+                            if (!IT->menuPath.empty()) {
+                                Menu::openFor(IT, AX, MON);
+                                return;
+                            }
+                            try {
+                                IT->proxy->callMethodAsync("ContextMenu")
+                                    .onInterface(Tray::SNI)
+                                    .withArguments(X, Y)
+                                    .uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                                Tray::pollSoon();
+                            } catch (...) {}
+                        });
+                    } catch (...) {} // dying bus: teardown is already pending
+                });
             }
 
             void onScroll(const SHit& h, int steps) override {
