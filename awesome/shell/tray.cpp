@@ -621,16 +621,17 @@ namespace NAwesome::Shell {
                 }
             }
 
-            void onScroll(const SHit& h, int dir) override {
-                // the SNI Scroll call (the XEmbed systray let apps see scroll too)
+            void onScroll(const SHit& h, int steps) override {
+                // the SNI Scroll call (the XEmbed systray let apps see scroll too),
+                // one wheel detent = 120 as KDE's host sends it
                 if (const auto TI = h.tray.lock(); TI && TI->proxy) {
-                    Tray::post([TI, dir]() {
+                    Tray::post([TI, steps]() {
                         if (!TI->active || !TI->proxy)
                             return;
                         try {
                             TI->proxy->callMethodAsync("Scroll")
                                 .onInterface(Tray::SNI)
-                                .withArguments((int32_t)(dir > 0 ? -120 : 120), std::string{"vertical"})
+                                .withArguments((int32_t)(-120 * steps), std::string{"vertical"})
                                 .uponReplyInvoke([](std::optional<sdbus::Error>) {});
                             Tray::pollSoon();
                         } catch (...) {} // dying bus: teardown is already pending

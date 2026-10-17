@@ -313,8 +313,9 @@ namespace NAwesome::Shell {
         }
         virtual void onScrollSteps(int steps, PHLMONITOR mon) {}
         // ...anything else acts immediately and must be async-safe: never a
-        // workspace/focus change inside the emission
-        virtual void onScroll(const SHit& h, int dir) {}
+        // workspace/focus change inside the emission. steps: whole notches,
+        // positive = up
+        virtual void onScroll(const SHit& h, int steps) {}
     };
 
     // the widget instances, one per unit (function-local statics: no

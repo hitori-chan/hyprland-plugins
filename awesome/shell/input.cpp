@@ -235,6 +235,32 @@ namespace NAwesome::Shell {
         });
     }
 
+    // Whole notches, signed like the axis (negative = up): awesome hears
+    // button 4/5 once per wheel detent and once per 15 units of touchpad
+    // travel (libinput's X11 scroll distance), never once per event. A
+    // high-resolution wheel sends a detent as several partial v120 events
+    // and a touchpad swipe as dozens of small deltas; both used to step on
+    // every one (a notch spun 8 tags, a swipe ran through all of them).
+    // The remainder resets on a direction flip, a source change and a
+    // touchpad's lift (its axis stop: delta 0).
+    static int scrollNotches(const IPointer::SAxisEvent& e) {
+        static double                 acc    = 0; // main thread only
+        static wl_pointer_axis_source source = WL_POINTER_AXIS_SOURCE_WHEEL;
+        if (e.source != source) {
+            source = e.source;
+            acc    = 0;
+        }
+        const bool   WHEEL = e.source == WL_POINTER_AXIS_SOURCE_WHEEL;
+        const double V     = WHEEL ? (e.deltaDiscrete != 0 ? (double)e.deltaDiscrete : e.delta * 8.0) : e.delta;
+        const double UNIT  = WHEEL ? 120.0 : 15.0;
+        if (V == 0.0 || (acc != 0.0 && (acc < 0) != (V < 0)))
+            acc = 0;
+        acc += V;
+        const int N = (int)(acc / UNIT);
+        acc -= N * UNIT;
+        return N;
+    }
+
     void onMouseAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
         const auto POS = g_pInputManager->getMouseCoordsInternal();
         const auto MON = monitorAt(POS);
@@ -284,10 +310,9 @@ namespace NAwesome::Shell {
 
         if (e.axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
             return;
-        const double D = e.delta != 0.0 ? e.delta : (double)e.deltaDiscrete;
-        if (D == 0.0)
+        const int STEPS = -scrollNotches(e); // wheel up: awesome binds button 4 = next/byidx(1)
+        if (STEPS == 0)
             return;
-        const bool UP = D < 0; // wheel up: awesome binds button 4 = next/byidx(1)
 
         const auto IT = hitboxes.find(MON->m_id);
         if (IT == hitboxes.end())
@@ -298,10 +323,10 @@ namespace NAwesome::Shell {
             if (!HIT.widget)
                 break;
             if (HIT.widget->accumulatesScroll()) {
-                scrollAcc[HIT.widget] += UP ? 1 : -1;
+                scrollAcc[HIT.widget] += STEPS;
                 queueScrollHop(MON);
             } else
-                HIT.widget->onScroll(HIT, UP ? 1 : -1);
+                HIT.widget->onScroll(HIT, STEPS);
             break;
         }
     }
