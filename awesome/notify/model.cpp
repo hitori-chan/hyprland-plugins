@@ -265,12 +265,17 @@ namespace NAwesome::Notify {
             return !n->waiting;
         }
 
-        void dismissAllLive() {
+        void dismissAllLive(bool offShadeToo) {
+            // the user's Clear all sweeps the shade's rows: an OSD or a
+            // critical band alert waiting under the shade is none of them
+            // (the button's target and the badge exclude it too); the
+            // scripted reset sweeps everything shown
+            const auto SWEPT  = [offShadeToo](const auto& N) { return visible(N) && (offShadeToo || !offShade(N)); };
             const auto BEFORE = notifs.size();
             for (const auto& N : notifs)
-                if (visible(N))
+                if (SWEPT(N))
                     Bus::emitClosed(N->id, R_DISMISSED);
-            std::erase_if(notifs, [](const auto& N) { return visible(N); });
+            std::erase_if(notifs, SWEPT);
             if (notifs.size() == BEFORE)
                 return;
             notifChanged();

@@ -289,7 +289,7 @@ namespace NAwesome::Notify {
         void postCard(const SPostCard& c);
 
         bool       closeOne(uint32_t id, uint32_t reason);
-        void       dismissAllLive();                      // "Clear all": every visible card goes; the DND queue stays
+        void       dismissAllLive(bool offShadeToo = false); // "Clear all": every shade row goes; the DND queue stays
         void       dismissApp(const std::string& key);    // a bundle's right-click; the key may be (app, group)
         std::string groupKeyOf(const SP<SNotif>& n);       // the bundle's identity: the app key, sub-keyed by the declared group
         void       absorbPopped();                        // opening the shade parks the popped stack

@@ -174,7 +174,7 @@ namespace NAwesome::Notify {
             return Model::toplineString();
         if (verb == "clear") { // the scripted reset
             static NAwesome::CHop pendingClear;
-            pendingClear.arm([]() { Model::dismissAllLive(); });
+            pendingClear.arm([]() { Model::dismissAllLive(/*offShadeToo=*/true); });
             return "ok";
         }
         return std::nullopt;
