@@ -129,6 +129,7 @@ namespace NAwesome::Notify {
         std::string  name;
         std::string  iconSource; // the raw sender-icon
         std::string  icon;       // resolved path
+        bool         iconRetry = false; // the walk budget deferred iconSource: the warm resolves it again
         SP<ITexture> avatarTex;
         std::string  avatarFor;
         int          avatarPx = 0;
@@ -178,6 +179,14 @@ namespace NAwesome::Notify {
         std::string          identity; // IDENTITY source (app_icon/desktop-entry), resolved path, "" = none
         std::string          desktopEntry;     // the raw desktop-entry hint (the F2 index's key)
         bool                 identityFromDesktop = false; // identity rides the hint: the index may upgrade it
+        // Names the theme-walk budget deferred at arrival (core:
+        // iconDeferred) are not misses: the warm resolves them again until
+        // they land or truly miss. imageRetry: the image-path name;
+        // identityRetry: the identity chain is re-run from this app_icon.
+        bool                 namesDeferred = false;
+        std::string          imageRetry;
+        bool                 identityRetry = false;
+        std::string          appIconSource; // the raw app_icon, for an identity retry
         std::vector<uint8_t> pixels;   // image-data, premultiplied BGRA (DRM ARGB8888); freed once uploaded
         bool                 hasPixels = false; // the LAST Notify carried image-data (outlives the freed buffer)
         int                  pw = 0, ph = 0;
@@ -364,6 +373,10 @@ namespace NAwesome::Notify {
     void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx);
     void ensureAvatarTex(SParticipant& p, int px);
     std::string resolveDesktopEntryIcon(const std::string& entry, int sizePx);
+    // The warm's retry of a card's deferred names (SNotif::namesDeferred);
+    // iconNamesDeferred re-warms the cards one walk window later.
+    void retryDeferredNames(SNotif& n);
+    void iconNamesDeferred();
     void        iconsInit();
     void        iconsExit();
 

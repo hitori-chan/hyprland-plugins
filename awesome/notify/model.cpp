@@ -584,6 +584,38 @@ namespace NAwesome::Notify {
             return out;
         }
 
+        // A name resolve whose miss may only be the walk budget's: true when
+        // it deferred (the caller keeps the name for the warm's retry).
+        static std::string resolveName(const std::string& name, int iconPx, bool& deferred) {
+            NAwesome::iconDeferred() = false;
+            auto P = Parse::resolveImage(name, iconPx);
+            deferred |= P.empty() && NAwesome::iconDeferred();
+            return P;
+        }
+
+        // the identity: app_icon, else the desktop entry's own Icon= (the
+        // index's), else the entry's name as an icon name. True: a resolve
+        // was deferred and the identity is still empty.
+        static bool resolveIdentity(SNotif& n, int iconPx) {
+            bool deferred          = false;
+            n.identityFromDesktop  = false;
+            n.identity             = resolveName(n.appIconSource, iconPx, deferred);
+            if (n.identity.empty() && !n.desktopEntry.empty()) {
+                // the entry's own Icon= (the F2 index) beats an icon-name
+                // collision; while the index has not reached the entry the
+                // name stand-in holds, and pollDesktopIndex upgrades it
+                NAwesome::iconDeferred() = false;
+                if (const auto I = resolveDesktopEntryIcon(n.desktopEntry, iconPx); !I.empty())
+                    n.identity = I;
+                else {
+                    deferred |= NAwesome::iconDeferred();
+                    n.identity            = resolveName(n.desktopEntry, iconPx, deferred);
+                    n.identityFromDesktop = true;
+                }
+            }
+            return deferred && n.identity.empty();
+        }
+
         // the distinct senders of the kept messages, newest first, capped —
         // their textures ride on the participants, not on the messages
         static void rebuildConversationParticipants(SNotif& n, int iconPx) {
@@ -597,8 +629,11 @@ namespace NAwesome::Notify {
                 if (const auto OLD = std::ranges::find_if(previous, [&](const auto& item) { return item.key == P.key && item.name == P.name && item.iconSource == P.iconSource; });
                     OLD != previous.end())
                     P = std::move(*OLD);
-                else
-                    P.icon = Parse::resolveImage(P.iconSource, iconPx);
+                else {
+                    bool deferred = false;
+                    P.icon        = resolveName(P.iconSource, iconPx, deferred);
+                    P.iconRetry   = deferred;
+                }
                 n.participants.push_back(std::move(P));
             }
         }
@@ -925,6 +960,8 @@ namespace NAwesome::Notify {
             n->pixelsJob  = 0; // a job for the replaced image lands on no card
             n->pixelsHash = 0;
             n->scaled.reset();
+            n->imageRetry.clear();
+            n->identityRetry = false;
 
             if (const auto IT = hints.find("urgency"); IT != hints.end())
                 try {
@@ -977,22 +1014,17 @@ namespace NAwesome::Notify {
                         } catch (...) {}
                 if (!cand.empty())
                     cand = clipUtf8(std::move(cand), MAX_SOURCE_BYTES);
-                n->image = Parse::resolveImage(cand, ICONPX);
+                bool deferred = false;
+                n->image      = resolveName(cand, ICONPX, deferred);
+                if (deferred)
+                    n->imageRetry = std::move(cand);
             }
-            n->desktopEntry = DESKTOP;
-            n->identityFromDesktop = false;
-            n->identity = Parse::resolveImage(APPICON, ICONPX);
-            if (n->identity.empty() && !DESKTOP.empty()) {
-                // the entry's own Icon= (the F2 index) beats an icon-name
-                // collision; while the index has not reached the entry the
-                // name stand-in holds, and pollDesktopIndex upgrades it
-                if (const auto I = resolveDesktopEntryIcon(DESKTOP, ICONPX); !I.empty())
-                    n->identity = I;
-                else {
-                    n->identity = Parse::resolveImage(DESKTOP, ICONPX);
-                    n->identityFromDesktop = true;
-                }
-            }
+            n->desktopEntry  = DESKTOP;
+            n->appIconSource = APPICON;
+            n->identityRetry = resolveIdentity(*n, ICONPX);
+            n->namesDeferred = n->identityRetry || !n->imageRetry.empty() || std::ranges::any_of(n->participants, [](const auto& P) { return P.iconRetry; });
+            if (n->namesDeferred)
+                iconNamesDeferred();
             n->appKey = APPKEY;
 
             // The inline-reply protocol (KDE's, which Telegram/Fractal
@@ -1147,6 +1179,34 @@ namespace NAwesome::Notify {
             suspended  = false;
             heldBanner = 0;
         }
+    }
+
+    void retryDeferredNames(SNotif& n) {
+        if (!n.namesDeferred)
+            return;
+        const int ICONPX = std::max(8, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon"));
+        bool      again  = false;
+        if (!n.imageRetry.empty()) {
+            bool deferred = false;
+            n.image       = Model::resolveName(n.imageRetry, ICONPX, deferred);
+            if (!deferred)
+                n.imageRetry.clear(); // landed, or a true miss
+            again |= deferred;
+        }
+        if (n.identityRetry) {
+            n.identityRetry = Model::resolveIdentity(n, ICONPX);
+            again |= n.identityRetry;
+        }
+        for (auto& P : n.participants)
+            if (P.iconRetry) {
+                bool deferred = false;
+                P.icon        = Model::resolveName(P.iconSource, ICONPX, deferred);
+                P.iconRetry   = deferred;
+                again |= deferred;
+            }
+        n.namesDeferred = again;
+        if (again)
+            iconNamesDeferred();
     }
 
 } // namespace NAwesome::Notify

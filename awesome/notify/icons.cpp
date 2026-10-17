@@ -647,7 +647,16 @@ namespace NAwesome::Notify {
         n.pixels.shrink_to_fit();
     }
 
+    // one re-warm a walk window after a name the budget deferred (cards,
+    // participants, actions): the warm resolves them again
+    static SP<CEventLoopTimer> namesPoll;
+    void                       iconNamesDeferred() {
+        if (namesPoll && !namesPoll->armed())
+            namesPoll->updateTimeout(NAwesome::ICON_WALK_WINDOW + std::chrono::milliseconds(10));
+    }
+
     void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx) {
+        retryDeferredNames(n);
         // IDENTITY (the left lead): the app_icon/desktop-entry, drawn at every
         // size it appears (lead avatar, group header). An iconless card rolls a
         // face from fallback_icon_dir so a sender is never faceless; the roll
@@ -815,7 +824,9 @@ namespace NAwesome::Notify {
             a.iconPx = 0;
             return;
         }
-        std::string path = Parse::resolveImage(a.id, iconPx); // a path, a file:// URI or a themed name
+        NAwesome::iconDeferred() = false;
+        std::string path         = Parse::resolveImage(a.id, iconPx); // a path, a file:// URI or a themed name
+        const bool  DEFERRED     = path.empty() && NAwesome::iconDeferred();
 
         // a symbolic action bakes colFg into its pixels: same fg-carrying key
         // as the identity; the bare id keeps remembering failed resolves
@@ -830,7 +841,10 @@ namespace NAwesome::Notify {
         if (a.iconSettled)
             return;
         if (path.empty()) {
-            a.iconSettled = true; // a failed resolve stays failed: no rescan per warm
+            if (DEFERRED)
+                iconNamesDeferred(); // the walk budget's, not a miss: the next window asks again
+            else
+                a.iconSettled = true; // a failed resolve stays failed: no rescan per warm
             return;
         }
         const auto TEX = fileTex(path, iconPx, 0, 0, SYM); // icon box only, never hero
@@ -914,6 +928,8 @@ namespace NAwesome::Notify {
             return;
         decodePoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { pollDecodeJobs(); }, nullptr);
         g_pEventLoopManager->addTimer(decodePoll);
+        namesPoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { notifChanged(); }, nullptr);
+        g_pEventLoopManager->addTimer(namesPoll);
         if (fallbackIndex.init(g_pCompositor->m_wlEventLoop)) {
             fallbackPoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { pollFallback(); }, nullptr);
             g_pEventLoopManager->addTimer(fallbackPoll);
@@ -925,6 +941,9 @@ namespace NAwesome::Notify {
         if (decodePoll && g_pEventLoopManager)
             g_pEventLoopManager->removeTimer(decodePoll);
         decodePoll.reset();
+        if (namesPoll && g_pEventLoopManager)
+            g_pEventLoopManager->removeTimer(namesPoll);
+        namesPoll.reset();
         if (fallbackPoll && g_pEventLoopManager)
             g_pEventLoopManager->removeTimer(fallbackPoll);
         fallbackPoll.reset();

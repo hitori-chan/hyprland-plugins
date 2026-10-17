@@ -357,7 +357,8 @@ hicolor, then `/usr/share/pixmaps` — the one resolver the bar uses too
 (core/icons.hpp): plausible names only, a two-generation memo, and at
 most 8 uncached theme walks per 250 ms (a burst of distinct names from a
 sender resolves to nothing past that, uncached, instead of stalling the
-compositor). A `desktop-entry` hint additionally
+compositor; the card keeps the name and resolves it again a window
+later, its sender faces and action icons too). A `desktop-entry` hint additionally
 resolves the .desktop file's own `Icon=` (all `$XDG_DATA_DIRS/
 applications` entries are indexed once at plugin start by a bounded
 helper process, keyed by the file name and `StartupWMClass`), which
