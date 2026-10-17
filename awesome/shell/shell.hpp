@@ -406,6 +406,7 @@ namespace NAwesome::Shell {
         void                       closeDeeperThan(size_t level);
         void                       hoverIntent(size_t level, int row); // GTK's popup delay: open/close cascades
         void                       activate(const SEntry& en);         // leaf rows only
+        bool                       onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info); // Esc closes; true = taken
     }
 
     // ---- menubar.cpp ----

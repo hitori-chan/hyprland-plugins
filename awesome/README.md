@@ -74,8 +74,10 @@ visible transitions.
   `icon-data` PNG is size-checked before decoding (256 px a side, 64 per
   menu reply); providers may emit a leading, doubled, or trailing
   separator and the parse trims them. A menu or the prompt on a monitor
-  that goes away closes. Keyboard navigation, tooltips, and overlay
-  icons are not implemented.
+  that goes away closes. Esc closes an open tray or client-list menu
+  (its press only; the release passes; a modified Esc is a user bind
+  passing through); other keyboard navigation,
+  tooltips, and overlay icons are not implemented.
 - **Bell**: reads the notify model directly (same process — no bus
   seam). A click toggles the shade; pointer hover does nothing.
 - **Battery** watches the udev battery packs (a dual-pack laptop reads as one; a USB-C port's or a headset's battery uevent is ignored); the clock ticks on the wall clock's minute, re-reads the timezone each tick, and a resume or a clock step updates it at once.

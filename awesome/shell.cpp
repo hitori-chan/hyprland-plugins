@@ -176,6 +176,9 @@ namespace NAwesome::Shell {
         onMouseAxis(e, info);
     }
     void CModule::onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
+        // an open menu sits over the prompt: Esc closes the innermost first
+        if (Menu::onKey(e, info))
+            return;
         Menubar::onKey(e, info);
     }
     void CModule::onInputBlocked() {

@@ -1,6 +1,7 @@
 // awesome/shell/menu.cpp — the menu renderer: dbusmenu for tray items, local mode for the client list
 
 #include "../core/icons.hpp" // iconDeferred: a budget-deferred icon is retried
+#include "../core/keys.hpp"
 #include "shell/shell.hpp"
 
 #include "../windows/state.hpp"
@@ -227,6 +228,22 @@ namespace NAwesome::Shell {
             damageMenu();
             releaseProxy(); // also drops the LayoutUpdated/ItemsPropertiesUpdated subscriptions
             item.reset();
+        }
+
+        // Esc closes an open menu, its press swallowed (the release passes:
+        // invariant 3). No other key is the menu's: it has no keyboard
+        // navigation, and the prompt and the apps keep theirs; a modified
+        // chord (Super+Esc) is a user bind passing through, as in the shade.
+        bool onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
+            if (!isOpen || info.cancelled || e.state != WL_KEYBOARD_KEY_STATE_PRESSED || NAwesome::sessionLocked() || NAwesome::nativeInputCaptureActive() ||
+                NAwesome::Keys::exclusiveLayer())
+                return false;
+            const auto KB = NAwesome::Keys::keyboardFor(e.keycode);
+            if (!KB || !KB->m_xkbState || xkb_state_key_get_one_sym(KB->m_xkbState, e.keycode + 8) != XKB_KEY_Escape)
+                return false;
+            close();
+            info.cancelled = true;
+            return true;
         }
 
         void exit() {

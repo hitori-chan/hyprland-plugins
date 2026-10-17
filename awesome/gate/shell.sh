@@ -245,6 +245,16 @@ capture_nested "$STATE/tray-closed.png"
 chk "tray: outside click closed every panel" \
 	test "$(panel_extent "$STATE/tray-closed.png" | awk '{print $1}')" -le 10
 
+# Esc closes an open menu
+printf 'move %s %s\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' "$IX" "$IY" | vp
+sleep 1.2
+capture_nested "$STATE/tray-reopen.png"
+chk "tray: the menu reopened for esc" test "$(panel_extent "$STATE/tray-reopen.png" | awk '{print $1}')" -ge 120
+tap esc
+sleep 0.8
+capture_nested "$STATE/tray-esc.png"
+chk "tray: esc closed the menu" test "$(panel_extent "$STATE/tray-esc.png" | awk '{print $1}')" -le 10
+
 # attention with no attention icon of its own (most apps): the plain one
 # stays, not a blank cell
 kill -USR1 "$FAKE_PID" 2>/dev/null
