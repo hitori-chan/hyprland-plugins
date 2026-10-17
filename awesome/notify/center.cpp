@@ -53,6 +53,7 @@ namespace NAwesome::Notify {
     static std::vector<uint8_t>             s_itemOpen; // the budget's verdict, per display item
     static std::vector<uint8_t>             s_itemMore; // the open form shows more than the collapsed one
     static std::vector<std::vector<double>> s_childH;
+    static const std::vector<double>        NO_CHILDREN;
     // resolved open state from the last warm, keyed by identity: the click
     // handlers flip THIS, so a toggle means the same thing the eye just saw
     static std::unordered_map<uint32_t, bool>    s_rowState;
@@ -231,29 +232,36 @@ namespace NAwesome::Notify {
         out.clear();
         static std::vector<SP<SNotif>> src;    // reused; main thread only
         static std::vector<SOwner>     owners; // ditto
+        // key -> owner: a linear scan per card was quadratic in distinct
+        // keys (a sender rotating its app name at max_notifs 512)
+        static std::unordered_map<std::string, size_t> ownerIdx;   // ditto
+        static std::vector<size_t>                     ownerOfSrc; // src[i]'s owner, -1: never bundles
         src.clear();
         owners.clear();
+        ownerIdx.clear();
+        ownerOfSrc.clear();
         for (const auto& N : notifs)
             if (!N->waiting && !Model::offShade(N))
                 src.push_back(N);
         // notifs is newest-first; a STABLE sort by tier keeps that inside each
         std::ranges::stable_sort(src, [](const auto& a, const auto& b) { return tier(a) < tier(b); });
 
-        const auto ownerOf = [](const std::string& k) {
-            for (size_t i = 0; i < owners.size(); i++)
-                if (owners[i].key == k)
-                    return i;
-            owners.push_back(SOwner{.key = k});
-            return owners.size() - 1;
-        };
+        for (const auto& N : src) { // conversations never bundle
+            if (!Model::bundleable(N)) {
+                ownerOfSrc.push_back((size_t)-1);
+                continue;
+            }
+            const auto [IT, NEW] = ownerIdx.try_emplace(Model::groupKeyOf(N), owners.size());
+            if (NEW)
+                owners.push_back(SOwner{.key = IT->first});
+            owners[IT->second].count++;
+            ownerOfSrc.push_back(IT->second);
+        }
 
-        for (const auto& N : src) // conversations never bundle
-            if (Model::bundleable(N))
-                owners[ownerOf(Model::groupKeyOf(N))].count++;
-
-        for (const auto& N : src) {
-            if (Model::bundleable(N)) {
-                auto& O = owners[ownerOf(Model::groupKeyOf(N))];
+        for (size_t i = 0; i < src.size(); i++) {
+            const auto& N = src[i];
+            if (ownerOfSrc[i] != (size_t)-1) {
+                auto& O = owners[ownerOfSrc[i]];
                 if (O.count >= AUTOGROUP_AT) {
                     if (O.first != (size_t)-1) {
                         out[O.first].items.push_back(N);
@@ -264,7 +272,7 @@ namespace NAwesome::Notify {
             }
             // the key rides the fold state, hover and selection — a bundle
             // head carries the (app, group) identity, singles the app
-            out.push_back(SDisp{.items = {N}, .key = Model::groupKeyOf(N)});
+            out.push_back(SDisp{.items = {N}, .key = ownerOfSrc[i] != (size_t)-1 ? owners[ownerOfSrc[i]].key : Model::groupKeyOf(N)});
         }
         // the buffer is reused, its references are not: a dismissed card
         // (and its textures) must not live on until the shade next opens
@@ -525,8 +533,8 @@ namespace NAwesome::Notify {
                 paintSingle(P, T, D.items.front(), SLOT, OPEN, MORE);
             else if (!OPEN)
                 paintDigest(P, T, D, SLOT);
-            else
-                paintGroup(P, T, D, SLOT, IDX < s_childH.size() ? s_childH[IDX] : std::vector<double>{});
+            else // a ternary against a temporary copied the heights every frame
+                paintGroup(P, T, D, SLOT, IDX < s_childH.size() ? s_childH[IDX] : NO_CHILDREN);
 
             // the keyboard selection: a hairline in the accent, drawn over the
             // whole item (an open bundle's header and children together) so it
