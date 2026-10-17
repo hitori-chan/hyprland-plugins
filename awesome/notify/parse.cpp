@@ -285,51 +285,57 @@ namespace NAwesome::Notify::Parse {
         return out;
     }
 
-    void unpackImageData(SNotif& n, const ImageData& d, int capPx) {
+    std::pair<int, int> imageDataSize(const ImageData& d) {
         const int32_t W = std::get<0>(d), H = std::get<1>(d), STRIDE = std::get<2>(d), BPS = std::get<4>(d), CH = std::get<5>(d);
         const auto&   DATA = std::get<6>(d);
         // STRIDE must cover a row: a lying stride (0) would let a tiny
-        // message claim gigapixel W*H and the resize below map it all.
+        // message claim gigapixel W*H and the unpack below read it all.
         // The 16 MP cap bounds a genuine ~128 MB image-data (the D-Bus
-        // message max) that would otherwise map + premultiply in full.
+        // message max) that would otherwise premultiply in full.
         if (W <= 0 || H <= 0 || (int64_t)W * H > (16 << 20) || BPS != 8 || (CH != 3 && CH != 4) || (int64_t)STRIDE < (int64_t)W * CH || DATA.size() < (size_t)STRIDE * (H - 1) + (size_t)W * CH)
-            return;
+            return {0, 0};
+        return {W, H};
+    }
+
+    SPixels unpackImageData(const ImageData& d, int capPx) {
+        const auto [W, H] = imageDataSize(d);
+        if (W <= 0)
+            return {};
+        const int32_t STRIDE = std::get<2>(d), CH = std::get<5>(d);
+        const auto&   DATA   = std::get<6>(d);
         // Box-decimate by an integer factor K while unpacking: a card paints
         // at most capPx, so a screenshot notification (up to 16 MP) never
-        // allocates or premultiplies at full size inside the D-Bus handler.
-        // K keeps >= 2x the cap; shrinkPixels does the exact final scale.
+        // allocates or premultiplies at full size. K keeps >= 2x the cap;
+        // the fit below does the exact final scale.
         const int32_t K  = std::max<int32_t>(1, std::max(W, H) / std::max(1, capPx * 2));
         const int32_t OW = std::max<int32_t>(1, W / K), OH = std::max<int32_t>(1, H / K);
-        n.pixels.resize((size_t)OW * OH * 4);
+        SPixels       out{.px = std::vector<uint8_t>((size_t)OW * OH * 4), .w = OW, .h = OH};
         for (int32_t oy = 0; oy < OH; oy++) {
-            uint8_t* out = n.pixels.data() + (size_t)oy * OW * 4;
+            uint8_t* row = out.px.data() + (size_t)oy * OW * 4;
             for (int32_t ox = 0; ox < OW; ox++) {
                 uint64_t sb = 0, sg = 0, sr = 0, sa = 0; // premultiplied sums
                 for (int32_t y = oy * K; y < std::min(H, (oy + 1) * K); y++) {
-                    const uint8_t* row = DATA.data() + (size_t)y * STRIDE;
+                    const uint8_t* src = DATA.data() + (size_t)y * STRIDE;
                     for (int32_t x = ox * K; x < std::min(W, (ox + 1) * K); x++) {
-                        const uint32_t A = CH == 4 ? row[x * CH + 3] : 255;
-                        sr += row[x * CH] * A;
-                        sg += row[x * CH + 1] * A;
-                        sb += row[x * CH + 2] * A;
+                        const uint32_t A = CH == 4 ? src[x * CH + 3] : 255;
+                        sr += src[x * CH] * A;
+                        sg += src[x * CH + 1] * A;
+                        sb += src[x * CH + 2] * A;
                         sa += A;
                     }
                 }
                 const uint64_t N = (uint64_t)(std::min(H, (oy + 1) * K) - oy * K) * (std::min(W, (ox + 1) * K) - ox * K);
-                out[ox * 4]     = (uint8_t)(sb / (255 * N));
-                out[ox * 4 + 1] = (uint8_t)(sg / (255 * N));
-                out[ox * 4 + 2] = (uint8_t)(sr / (255 * N));
-                out[ox * 4 + 3] = (uint8_t)(sa / N);
+                row[ox * 4]     = (uint8_t)(sb / (255 * N));
+                row[ox * 4 + 1] = (uint8_t)(sg / (255 * N));
+                row[ox * 4 + 2] = (uint8_t)(sr / (255 * N));
+                row[ox * 4 + 3] = (uint8_t)(sa / N);
             }
         }
-        n.pw        = OW;
-        n.ph        = OH;
-        n.hasPixels = true;
-        // keep only what a card can ever paint: warm frees visible cards'
-        // buffers after upload, but an off-screen card would hold its
-        // full-size pixmap until it scrolls on. The caller's cap covers the
-        // hero layout at any monitor scale; warm still scales exactly.
-        shrinkPixels(n, capPx);
+        // keep only what a card can ever paint: the caller's cap covers the
+        // hero layout at any monitor scale; the warm still scales exactly
+        if (out.w > capPx || out.h > capPx)
+            return Raster::fit(Raster::view(out), capPx);
+        return out;
     }
 
     // XDG conversation clients (Telegram Desktop's) embed the sender as a

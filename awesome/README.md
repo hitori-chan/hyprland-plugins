@@ -367,8 +367,11 @@ card when it lands. Decoding is hyprgraphics: PNG/JPEG/WEBP/BMP + SVG
 (no GIF; AVIF and JXL files are refused — the admission reads a
 bounded raster size from the header, and those headers do not carry
 one it parses); big images downscale once at load, not per frame.
-`image-data` is box-decimated while it is unpacked, to the hero cap;
-a card holds those pixels until its first upload, and past 32 MiB of
+`image-data` is box-decimated while it is unpacked, to the hero cap
+(past 512×512 on the plugin's raster worker thread, not in the
+Notify dispatch; up to 64 MiB of payloads wait for it, past that an
+arrival unpacks inline). A card holds those pixels until its first
+upload, and past 32 MiB of
 them model-wide (coalesced, resident, DND-held cards) the oldest
 keep an icon's size instead. A
 file is opened ONCE, non-blocking, and judged on that open descriptor
@@ -380,9 +383,11 @@ share of its queue, one decode shared by every card asking for the
 same file; a sender's SVG too, rastered at the hero width when it
 may be one, and a symbolic icon tinted on a copy): a card whose icon is
 still decoding keeps the icon column reserved — the text does not
-re-flow when it lands. A decode lands full size and scales on the
-compositor thread, box-averaged first to within 2x of the card; past
-4 MP, one such scale runs per 100 ms and the rest wait for a later
+re-flow when it lands. A decode lands full size and is scaled once,
+box-averaged first to within 2x of the card: past 512×512 on the
+raster worker (the compositor thread only uploads the result). When
+the worker's queue (32 jobs) is full the scale runs inline, and past
+4 MP one such scale runs per 100 ms and the rest wait for a later
 warm. Screenshot-sized
 images (256 px in both dimensions) render popup-width as a
 cover-cropped hero in any capture shape; the shade keeps its rows

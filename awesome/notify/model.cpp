@@ -469,6 +469,72 @@ namespace NAwesome::Notify {
             }
         }
 
+        // Raw image-data waiting on the worker, model-wide: past this many
+        // bytes an arrival unpacks inline (a burst of screenshots is a burst
+        // of stalls, not an unbounded backlog of payloads held in memory).
+        // Counted down by the done's capture, whether it runs or is dropped.
+        constexpr size_t MAX_UNPACK_BYTES_IN_FLIGHT = 64u << 20;
+        static size_t    unpackBytesInFlight        = 0;
+        struct SUnpackBytes {
+            size_t n;
+            ~SUnpackBytes() {
+                unpackBytesInFlight -= n;
+            }
+        };
+
+        // A card's image-data: a large payload unpacks on the raster worker
+        // (premultiplying and decimating a screenshot is tens of ms of the
+        // dispatch); the card leads with a reserved column until it lands.
+        static void takeImageData(SNotif& n, Parse::ImageData&& d, int capPx, int iconPx) {
+            const auto [W, H] = Parse::imageDataSize(d);
+            if (W <= 0)
+                return; // malformed or oversized: the card falls back to image-path
+            const size_t BYTES = std::get<6>(d).size();
+            if ((int64_t)W * H > ASYNC_IMAGE_PIXELS && unpackBytesInFlight + BYTES <= MAX_UNPACK_BYTES_IN_FLIGHT) {
+                auto           SRC    = std::make_shared<Parse::ImageData>(std::move(d));
+                auto           OUT    = std::make_shared<std::pair<SPixels, uint64_t>>();
+                const uint64_t TICKET = imageJobTicket();
+                unpackBytesInFlight += BYTES;
+                auto       HELD   = std::make_shared<SUnpackBytes>(BYTES);
+                const bool QUEUED = NAwesome::CRasterWorker::inst().submit(
+                    [SRC, OUT, capPx]() mutable {
+                        OUT->first  = Parse::unpackImageData(*SRC, capPx);
+                        OUT->second = Raster::hash(OUT->first);
+                        SRC.reset(); // the payload is freed here, not on the loop
+                    },
+                    [OUT, TICKET, HELD, iconPx]() {
+                        for (const auto& N : notifs)
+                            if (N->pixelsJob == TICKET) {
+                                N->pixelsJob = 0;
+                                if (OUT->first.valid()) {
+                                    N->pixels     = std::move(OUT->first.px);
+                                    N->pw         = OUT->first.w;
+                                    N->ph         = OUT->first.h;
+                                    N->pixelsHash = OUT->second;
+                                    boundRetainedPixels(iconPx);
+                                } else
+                                    N->hasPixels = false; // the card keeps its identity
+                                notifChanged();
+                                return;
+                            }
+                    });
+                if (QUEUED) {
+                    n.hasPixels = true;
+                    n.pixelsJob = TICKET;
+                    return;
+                }
+                d = std::move(*SRC); // refused: unpack it here
+            }
+            auto P = Parse::unpackImageData(d, capPx);
+            if (!P.valid())
+                return;
+            n.pixelsHash = Raster::hash(P);
+            n.pixels     = std::move(P.px);
+            n.pw         = P.w;
+            n.ph         = P.h;
+            n.hasPixels  = true;
+        }
+
         // the conversation's display body: the latest `limit` kept messages,
         // CHRONOLOGICAL — the oldest line leads and the newest ENDS the body,
         // so an arrival lands at the bottom and pushes the oldest out of the
@@ -865,6 +931,9 @@ namespace NAwesome::Notify {
             n->pixels.clear();
             n->hasPixels = false;
             n->pw = n->ph = 0;
+            n->pixelsJob  = 0; // a job for the replaced image lands on no card
+            n->pixelsHash = 0;
+            n->scaled.reset();
 
             if (const auto IT = hints.find("urgency"); IT != hints.end())
                 try {
@@ -902,13 +971,13 @@ namespace NAwesome::Notify {
             // content. Nothing at all = a text-only card.
             const int PIXCAP = std::max((int)NAwesome::cfg().getI("plugin:awesome:notify:width") * 2, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon") * 3);
             for (const auto* KEY : {"image-data", "image_data", "icon_data"})
-                if (const auto IT = hints.find(KEY); IT != hints.end() && n->pixels.empty())
+                if (const auto IT = hints.find(KEY); IT != hints.end() && !n->hasPixels)
                     try {
-                        Parse::unpackImageData(*n, IT->second.get<Parse::ImageData>(), PIXCAP);
+                        takeImageData(*n, IT->second.get<Parse::ImageData>(), PIXCAP, ICONPX);
                     } catch (...) {}
             if (!n->pixels.empty())
                 boundRetainedPixels(ICONPX);
-            if (n->pixels.empty()) {
+            if (!n->hasPixels) {
                 std::string cand;
                 for (const auto* KEY : {"image-path", "image_path"})
                     if (const auto IT = hints.find(KEY); IT != hints.end() && cand.empty())

@@ -84,6 +84,26 @@ namespace NAwesome::Notify {
     static constexpr size_t MAX_DECODES_IN_FLIGHT = 2;
     static constexpr double MAX_DECODED_IMAGE_PIXELS    = 16.0 * 1024 * 1024;
 
+    // What a source becomes for one card's ask: its icon-box face, or a
+    // hero cover plus the square thumbnail the shade row leads with (cut
+    // from the whole image); a symbolic icon repainted in the ink
+    struct SScaleSpec {
+        int        iconPx = 0, heroW = 0, heroH = 0;
+        bool       hero = false, tint = false;
+        CHyprColor ink;
+        bool       operator==(const SScaleSpec& o) const {
+            return iconPx == o.iconPx && heroW == o.heroW && heroH == o.heroH && hero == o.hero && tint == o.tint && (!tint || ink == o.ink);
+        }
+    };
+
+    // one ask's scale of a large decode on the raster worker: out lands with
+    // its done, and the job is kept until it has (decodeWarmEnd)
+    struct SScaleReq {
+        SScaleSpec                    spec;
+        uint64_t                      ticket = 0;
+        std::shared_ptr<SScaledImage> out;
+    };
+
     struct SDecodeJob {
         std::string                                                    source;
         int                                                            svgPx   = 0;
@@ -97,6 +117,7 @@ namespace NAwesome::Notify {
         bool                                                           readyAtPoll = false;
         bool                                                           wanted      = false; // asked for by the current warm
         bool                                                           consumed    = false; // a card built from it: it goes when the warm ends
+        std::vector<SScaleReq>                                         scales;
     };
 
     static std::vector<SDecodeJob>   decodeJobs;
@@ -106,9 +127,10 @@ namespace NAwesome::Notify {
     static bool                      scaleDeferred       = false; // a ready decode waits for the scale budget
 
     // A decode lands full size (the gatherer ignores the hint for rasters)
-    // and scales on this thread. Past 4 MP one such scale costs tens of ms
-    // even boxed first (scaledTex): one per window, the rest wait for the
-    // next — a burst of screenshots costs a few short stalls, not one long
+    // and a large one scales on the raster worker. When the worker refuses
+    // (a full queue), it scales here; past 4 MP that costs tens of ms even
+    // boxed first: one per window, the rest wait for the next — a burst of
+    // screenshots costs a few short stalls, not one long
     constexpr double                      SCALE_LARGE_PIXELS = 4.0 * 1024 * 1024;
     constexpr auto                        SCALE_WINDOW       = std::chrono::milliseconds(100);
     static std::chrono::steady_clock::time_point lastLargeScale;
@@ -182,7 +204,8 @@ namespace NAwesome::Notify {
             job.wanted = false;
     }
     void decodeWarmEnd() {
-        if (std::erase_if(decodeJobs, [](const auto& job) { return (job.consumed || !job.wanted) && resourceReady(job); }) > 0)
+        const auto SETTLED = [](const SDecodeJob& job) { return resourceReady(job) && std::ranges::all_of(job.scales, [](const auto& r) { return r.out != nullptr; }); };
+        if (std::erase_if(decodeJobs, [&](const auto& job) { return (job.consumed || !job.wanted) && SETTLED(job); }) > 0)
             slotFreed = true;
     }
 
@@ -306,118 +329,19 @@ namespace NAwesome::Notify {
         return AIT->second.first;
     }
 
-    // cairo's GOOD filter costs ~6 ns per SOURCE pixel on a large
-    // downscale (a 16 MP screenshot: ~90 ms on the compositor thread). An
-    // integer box average first, to within 2x of the target, costs ~2 and
-    // keeps every source pixel's weight; GOOD then does the exact fraction.
-    // Premultiplied ARGB32 averages channel-wise; RGB24 gets opaque alpha.
-    // nullptr: under 4x there is nothing to gain (or a format it skips).
-    static cairo_surface_t* boxDecimate(cairo_surface_t* src, double sw, double sh, double tw, double th) {
-        const int    K   = (int)std::min(sw / (2 * tw), sh / (2 * th));
-        const auto   FMT = cairo_image_surface_get_format(src);
-        if (K < 2 || (FMT != CAIRO_FORMAT_ARGB32 && FMT != CAIRO_FORMAT_RGB24))
-            return nullptr;
-        const int OW = (int)sw / K, OH = (int)sh / K;
-        auto*     dst = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, OW, OH);
-        if (cairo_surface_status(dst) != CAIRO_STATUS_SUCCESS) {
-            cairo_surface_destroy(dst);
-            return nullptr;
-        }
-        cairo_surface_flush(src);
-        const uint8_t*        S   = cairo_image_surface_get_data(src);
-        const size_t          SST = cairo_image_surface_get_stride(src);
-        uint8_t*              D   = cairo_image_surface_get_data(dst);
-        const size_t          DST = cairo_image_surface_get_stride(dst);
-        const uint32_t        N   = (uint32_t)K * K; // 255 * N fits: K is at most half the shorter side of a <=16 MP raster
-        std::vector<uint32_t> acc((size_t)OW * 4);
-        for (int oy = 0; oy < OH; oy++) {
-            std::ranges::fill(acc, 0u);
-            for (int y = oy * K; y < (oy + 1) * K; y++) {
-                const uint8_t* p = S + (size_t)y * SST;
-                for (int ox = 0; ox < OW; ox++) {
-                    uint32_t* a = &acc[(size_t)ox * 4];
-                    for (int x = 0; x < K; x++, p += 4) {
-                        a[0] += p[0];
-                        a[1] += p[1];
-                        a[2] += p[2];
-                        a[3] += p[3];
-                    }
-                }
-            }
-            uint8_t* out = D + (size_t)oy * DST;
-            for (size_t i = 0; i < acc.size(); i++)
-                out[i] = (uint8_t)(acc[i] / N);
-            if (FMT == CAIRO_FORMAT_RGB24)
-                for (int ox = 0; ox < OW; ox++)
-                    out[(size_t)ox * 4 + 3] = 255; // native-endian ARGB: alpha is the 4th byte on little-endian
-        }
-        cairo_surface_mark_dirty(dst);
-        return dst;
-    }
-
-    // Anything bigger than the card's icon box is downscaled ONCE on the CPU
-    // at load — a 4K pixmap kept full-size would hold megabytes of VRAM to
-    // paint <=100 logical px, and its GL upload would stall the main thread.
-    static SP<ITexture> scaledTex(cairo_surface_t* src, double sw, double sh, int maxPx) {
-        if (sw <= maxPx && sh <= maxPx)
-            return g_pHyprRenderer->createTexture(src);
-
-        const double SCALE = std::min(maxPx / sw, maxPx / sh);
-        const int    W     = std::max(1, (int)std::lround(sw * SCALE));
-        const int    H     = std::max(1, (int)std::lround(sh * SCALE));
-
-        auto* BOX = boxDecimate(src, sw, sh, W, H);
-        if (BOX) {
-            src = BOX;
-            sw  = cairo_image_surface_get_width(BOX);
-            sh  = cairo_image_surface_get_height(BOX);
-        }
-        auto*        SMALL = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
-        auto*        CR    = cairo_create(SMALL);
-        cairo_scale(CR, W / sw, H / sh);
-        cairo_set_source_surface(CR, src, 0, 0);
-        cairo_pattern_set_filter(cairo_get_source(CR), CAIRO_FILTER_GOOD);
-        cairo_paint(CR);
-        cairo_destroy(CR);
-        cairo_surface_flush(SMALL);
-        if (BOX)
-            cairo_surface_destroy(BOX);
-
-        auto tex = g_pHyprRenderer->createTexture(SMALL);
-        cairo_surface_destroy(SMALL);
-        return tex;
-    }
-
-    // Scale into exactly W x H, covering the box: the overflowing axis is
-    // center-cropped (the hero treatment for previews). When the source
-    // aspect matches, cover == fit and nothing is lost. `thumb` also gets a
-    // thumbPx square cover of the whole image (the shade row's face of a
-    // hero), cut from the decimated copy so the source is read once.
-    static SP<ITexture> coverTex(cairo_surface_t* src, double sw, double sh, int W, int H, int thumbPx = 0, SP<ITexture>* thumb = nullptr) {
-        auto* BOX = boxDecimate(src, sw, sh, sw * std::max(W / sw, H / sh), sh * std::max(W / sw, H / sh));
-        if (BOX) {
-            src = BOX;
-            sw  = cairo_image_surface_get_width(BOX);
-            sh  = cairo_image_surface_get_height(BOX);
-        }
-        auto*        SMALL = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
-        auto*        CR    = cairo_create(SMALL);
-        const double S     = std::max(W / sw, H / sh);
-        cairo_translate(CR, (W - sw * S) / 2.0, (H - sh * S) / 2.0);
-        cairo_scale(CR, S, S);
-        cairo_set_source_surface(CR, src, 0, 0);
-        cairo_pattern_set_filter(cairo_get_source(CR), CAIRO_FILTER_GOOD);
-        cairo_paint(CR);
-        cairo_destroy(CR);
-        cairo_surface_flush(SMALL);
-        if (thumb && thumbPx > 0)
-            *thumb = coverTex(src, sw, sh, thumbPx, thumbPx);
-        if (BOX)
-            cairo_surface_destroy(BOX);
-
-        auto tex = g_pHyprRenderer->createTexture(SMALL);
-        cairo_surface_destroy(SMALL);
-        return tex;
+    // ---- scaling: inline below a size, on the raster worker above it ----
+    //
+    // A card's image is scaled ONCE on the CPU to what it paints (a 4K
+    // pixmap kept full size would hold megabytes of VRAM to paint <=100
+    // logical px, and its upload would stall the compositor thread). Past
+    // ASYNC_IMAGE_PIXELS source pixels the scale leaves the compositor
+    // thread for the raster worker: a box-and-GOOD scale of a 512² source
+    // is about a millisecond, of a screenshot tens of them. Smaller ones
+    // scale inline, in the warm that asked. The upload stays in a warm
+    // either way.
+    uint64_t imageJobTicket() {
+        static uint64_t serial = 0;
+        return ++serial;
     }
 
     // A screenshot-sized source takes the hero layout: 256 px in both
@@ -428,6 +352,56 @@ namespace NAwesome::Notify {
         return heroWPx > 0 && sw >= 256 && sh >= 256 && sw * 2 >= heroWPx;
     }
 
+    static SScaleSpec specFor(double sw, double sh, int iconPx, int heroWPx, int heroHCapPx, bool tint) {
+        SScaleSpec s{.iconPx = iconPx, .hero = heroWorthy(sw, sh, heroWPx), .tint = tint};
+        if (s.hero) {
+            s.heroW = heroWPx;
+            s.heroH = std::min((int)std::lround((double)heroWPx * sh / sw), heroHCapPx);
+        }
+        if (tint)
+            s.ink = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg"));
+        return s;
+    }
+
+    // Repaint a rasterized symbolic icon to col, premultiplied (the same
+    // pixel math as the shell's loadSvg recolor; alpha untouched).
+    static void tintPixels(SPixels& p, const CHyprColor& col) {
+        const uint8_t R = (uint8_t)(col.r * 255), G = (uint8_t)(col.g * 255), B = (uint8_t)(col.b * 255);
+        for (size_t i = 0; i + 3 < p.px.size(); i += 4) {
+            const uint8_t A = p.px[i + 3];
+            p.px[i]         = (uint8_t)(B * A / 255);
+            p.px[i + 1]     = (uint8_t)(G * A / 255);
+            p.px[i + 2]     = (uint8_t)(R * A / 255);
+        }
+    }
+
+    // the CPU half, any thread: reads src, writes only its result
+    static SScaledImage scaleFor(const Raster::SView& src, const SScaleSpec& s) {
+        SScaledImage out{.hero = s.hero};
+        if (s.hero) {
+            out.main  = Raster::cover(src, s.heroW, s.heroH);
+            out.thumb = Raster::cover(src, s.iconPx, s.iconPx);
+        } else
+            out.main = Raster::fit(src, s.iconPx);
+        if (s.tint) {
+            tintPixels(out.main, s.ink);
+            tintPixels(out.thumb, s.ink);
+        }
+        return out;
+    }
+
+    static Raster::SView viewOf(cairo_surface_t* s) {
+        cairo_surface_flush(s);
+        return {cairo_image_surface_get_data(s), cairo_image_surface_get_width(s), cairo_image_surface_get_height(s), cairo_image_surface_get_stride(s),
+                cairo_image_surface_get_format(s)};
+    }
+
+    static SP<ITexture> upload(const SPixels& p) {
+        if (!p.valid() || !g_pHyprRenderer)
+            return nullptr;
+        return g_pHyprRenderer->createTexture(DRM_FORMAT_ARGB8888, const_cast<uint8_t*>(p.px.data()), p.w * 4, Vector2D{(double)p.w, (double)p.h});
+    }
+
     // The freedesktop symbolic convention, shared with the shell's loadIcon:
     // a pure-shape mark the toolkit repaints with the widget's foreground.
     // Adwaita bakes them near-black, so on a dark card the brightness OSD
@@ -436,41 +410,26 @@ namespace NAwesome::Notify {
         return NAwesome::isSvgIconPath(path) && (path.find("-symbolic") != std::string::npos || path.find("/symbolic/") != std::string::npos);
     }
 
-    // Repaint a rasterized symbolic surface to col, premultiplied (the same
-    // pixel math as the shell's loadSvg recolor; alpha untouched).
-    static void tintSurface(cairo_surface_t* SURF, const CHyprColor& col) {
-        const uint8_t R = (uint8_t)(col.r * 255), G = (uint8_t)(col.g * 255), B = (uint8_t)(col.b * 255);
-        auto*         D      = cairo_image_surface_get_data(SURF);
-        const int     W      = cairo_image_surface_get_width(SURF), H = cairo_image_surface_get_height(SURF);
-        const int     STRIDE = cairo_image_surface_get_stride(SURF);
-        for (int y = 0; y < H; y++) {
-            auto* row = D + (size_t)y * STRIDE;
-            for (int x = 0; x < W; x++) {
-                const uint8_t A = row[x * 4 + 3];
-                row[x * 4]      = (uint8_t)(B * A / 255);
-                row[x * 4 + 1]  = (uint8_t)(G * A / 255);
-                row[x * 4 + 2]  = (uint8_t)(R * A / 255);
-            }
-        }
-        cairo_surface_mark_dirty(SURF);
-    }
-
     struct SFileTexResult {
         SP<ITexture> texture;
-        SP<ITexture> thumb;           // a hero's icon-box face (coverTex)
-        bool         settled = false; // false: an async decode is in flight
+        SP<ITexture> thumb;           // a hero's icon-box face
+        bool         settled = false; // false: an async decode or scale is in flight
         bool         hero    = false;
     };
+
+    static SFileTexResult uploaded(const SScaledImage& s) {
+        return {.texture = upload(s.main), .thumb = s.hero ? upload(s.thumb) : nullptr, .settled = true, .hero = s.hero};
+    }
 
     // CImage's size hint only bounds SVG rasters; raster formats decode full
     // size transiently and get scaled here. The synchronous path: always
     // settled, used without the compositor's gatherer and for the generic
     // mark (a fixed theme name, not a sender's file).
-    static SP<ITexture> syncFileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool& hero, bool tintSymbolic = false, SP<ITexture>* thumb = nullptr) {
+    static SFileTexResult syncFileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool tintSymbolic = false) {
         const int  HINT  = std::max(iconPx, heroWPx);
         const auto BYTES = NAwesome::readImageFile(path); // one non-blocking open; these bytes are what decodes
         if (!BYTES)
-            return nullptr;
+            return {.settled = true};
         // the format named, not sniffed: AUTO loads libmagic's database per
         // image, on this thread
         const auto FORMAT = NAwesome::isSvgIconPath(path)                                                                          ? Hyprgraphics::IMAGE_FORMAT_SVG :
@@ -479,39 +438,27 @@ namespace NAwesome::Notify {
                                                                                                                              Hyprgraphics::IMAGE_FORMAT_AUTO;
         Hyprgraphics::CImage image(std::span<const uint8_t>{*BYTES}, FORMAT, Vector2D{(double)HINT, (double)HINT});
         if (!image.success())
-            return nullptr;
-
+            return {.settled = true};
         const auto SURF = image.cairoSurface();
         if (!SURF || SURF->status() != CAIRO_STATUS_SUCCESS)
-            return nullptr;
-
+            return {.settled = true};
         const auto SZ = SURF->size();
         if (SZ.x <= 0 || SZ.y <= 0)
-            return nullptr;
-
-        if (tintSymbolic && isSymbolicIconPath(path))
-            tintSurface(SURF->cairo(), NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg")));
-
-        hero = heroWorthy(SZ.x, SZ.y, heroWPx);
-        if (hero)
-            return coverTex(SURF->cairo(), SZ.x, SZ.y, heroWPx, std::min((int)std::lround(heroWPx * SZ.y / SZ.x), heroHCapPx), iconPx, thumb);
-        return scaledTex(SURF->cairo(), SZ.x, SZ.y, iconPx);
+            return {.settled = true};
+        return uploaded(scaleFor(viewOf(SURF->cairo()), specFor(SZ.x, SZ.y, iconPx, heroWPx, heroHCapPx, tintSymbolic && isSymbolicIconPath(path))));
     }
 
-    // The async front door: a file icon decodes on the gatherer's worker and
-    // the warm pass only scales the ready result. settled=false means "ask
-    // again after the next warm" — the 16 ms poll re-warms when the
-    // resource lands. SVGs too, a sender's included (up to 2 MiB of XML to
-    // parse): a hero candidate rasters at the hero box's width, as the
-    // synchronous path's hint did, and a symbolic icon is tinted on a copy
-    // (the decode is shared by every card asking for the file).
+    // The async front door: a file icon decodes on the gatherer's worker,
+    // and a large one scales on the raster worker; the warm uploads what
+    // landed. settled=false means "ask again after the next warm" — the
+    // decode poll and the scale's done re-warm. SVGs too, a sender's
+    // included (up to 2 MiB of XML to parse): a hero candidate rasters at
+    // the hero box's width, as the synchronous path's hint did, and a
+    // symbolic icon is tinted on its scaled copy (the decode is shared by
+    // every card asking for the file).
     static SFileTexResult fileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool tintSymbolic = false) {
-        if (!g_pAsyncResourceGatherer) {
-            bool         hero = false;
-            SP<ITexture> thumb;
-            auto         tex = syncFileTex(path, iconPx, heroWPx, heroHCapPx, hero, tintSymbolic, &thumb);
-            return {.texture = std::move(tex), .thumb = std::move(thumb), .settled = true, .hero = hero};
-        }
+        if (!g_pAsyncResourceGatherer)
+            return syncFileTex(path, iconPx, heroWPx, heroHCapPx, tintSymbolic);
         const auto JOB = decodeJobFor(path, heroWPx > 0 ? std::max(iconPx, heroWPx) : iconPx);
         if (!JOB || !resourceReady(*JOB))
             return {}; // the slot is taken, or the decode is in flight
@@ -519,97 +466,74 @@ namespace NAwesome::Notify {
         // card asking for the same file in the same warm (an app's cards,
         // the same fallback face) takes the same decode instead of queueing
         // its own, one after another
-        if (!JOB->rejected && JOB->resource) {
-            const auto SURF = JOB->resource->m_asset.cairoSurface;
-            if (SURF && SURF->status() == CAIRO_STATUS_SUCCESS && (double)SURF->size().x * SURF->size().y > SCALE_LARGE_PIXELS) {
-                if (!largeScaleOpen()) {
-                    scaleDeferred = true; // the job stays wanted; the poll re-warms past the window
-                    armDecodePoll();
-                    return {};
-                }
-                lastLargeScale = std::chrono::steady_clock::now();
+        if (JOB->rejected) {
+            JOB->consumed = true;
+            return {.settled = true};
+        }
+        const auto SURF = JOB->resource->m_asset.cairoSurface;
+        const auto SZ   = SURF && SURF->status() == CAIRO_STATUS_SUCCESS ? SURF->size() : Vector2D{};
+        if (SZ.x <= 0 || SZ.y <= 0 || SZ.x * SZ.y > MAX_DECODED_IMAGE_PIXELS) {
+            JOB->consumed = true;
+            return {.settled = true};
+        }
+        const auto SPEC = specFor(SZ.x, SZ.y, iconPx, heroWPx, heroHCapPx, tintSymbolic && isSymbolicIconPath(path));
+        if ((int64_t)SZ.x * (int64_t)SZ.y <= ASYNC_IMAGE_PIXELS) {
+            JOB->consumed = true;
+            return uploaded(scaleFor(viewOf(SURF->cairo()), SPEC));
+        }
+
+        // large: this ask's scale on the raster worker, once
+        auto REQ = std::ranges::find_if(JOB->scales, [&](const auto& r) { return r.spec == SPEC; });
+        if (REQ != JOB->scales.end()) {
+            if (!REQ->out)
+                return {}; // in flight: its done re-warms
+            JOB->consumed = true;
+            return uploaded(*REQ->out);
+        }
+        const uint64_t TICKET = imageJobTicket();
+        const auto     SRC    = viewOf(SURF->cairo());
+        auto           OUT    = std::make_shared<SScaledImage>();
+        // the work holds the decode alive through the gatherer's atomic
+        // pointer and reads its pixels in place; nothing else crosses
+        const bool QUEUED = NAwesome::CRasterWorker::inst().submit([RES = JOB->resource, SRC, SPEC, OUT]() { *OUT = scaleFor(SRC, SPEC); },
+                                                                   [RES = JOB->resource, OUT, TICKET, SOURCE = JOB->source, SVGPX = JOB->svgPx]() {
+                                                                       for (auto& job : decodeJobs)
+                                                                           if (job.source == SOURCE && job.svgPx == SVGPX)
+                                                                               for (auto& r : job.scales)
+                                                                                   if (r.ticket == TICKET)
+                                                                                       r.out = OUT;
+                                                                       notifChanged();
+                                                                   });
+        if (QUEUED) {
+            JOB->scales.push_back({.spec = SPEC, .ticket = TICKET});
+            return {};
+        }
+        // the worker refused (full, or stopped): inline, at most one very
+        // large scale per window
+        if (SZ.x * SZ.y > SCALE_LARGE_PIXELS) {
+            if (!largeScaleOpen()) {
+                scaleDeferred = true; // the job stays wanted; the poll re-warms past the window
+                armDecodePoll();
+                return {};
             }
+            lastLargeScale = std::chrono::steady_clock::now();
         }
-        const bool REJECTED = JOB->rejected;
-        const auto RESOURCE = JOB->resource;
-        JOB->consumed       = true;
-        SFileTexResult result{.settled = true};
-        if (REJECTED)
-            return result;
-        const auto SURF = RESOURCE->m_asset.cairoSurface;
-        if (!SURF || SURF->status() != CAIRO_STATUS_SUCCESS)
-            return result;
-        const auto SZ = SURF->size();
-        if (SZ.x <= 0 || SZ.y <= 0 || (double)SZ.x * SZ.y > MAX_DECODED_IMAGE_PIXELS)
-            return result;
-        cairo_surface_t* src    = SURF->cairo();
-        cairo_surface_t* tinted = nullptr;
-        if (tintSymbolic && isSymbolicIconPath(path)) {
-            tinted  = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, (int)SZ.x, (int)SZ.y);
-            auto* CR = cairo_create(tinted);
-            cairo_set_operator(CR, CAIRO_OPERATOR_SOURCE);
-            cairo_set_source_surface(CR, src, 0, 0);
-            cairo_paint(CR);
-            cairo_destroy(CR);
-            cairo_surface_flush(tinted);
-            tintSurface(tinted, NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg")));
-            src = tinted;
-        }
-        result.hero = heroWorthy(SZ.x, SZ.y, heroWPx);
-        if (result.hero)
-            result.texture = coverTex(src, SZ.x, SZ.y, heroWPx, std::min((int)std::lround((double)heroWPx * SZ.y / SZ.x), heroHCapPx), iconPx, &result.thumb);
-        else
-            result.texture = scaledTex(src, SZ.x, SZ.y, iconPx);
-        if (tinted)
-            cairo_surface_destroy(tinted);
-        return result;
+        JOB->consumed = true;
+        return uploaded(scaleFor(SRC, SPEC));
     }
 
-    // CPU-side cap for image-data buffers at unpack time (bus.cpp) — same
-    // premultiplied-BGRA layout in and out, so warm's hash/upload path is
-    // untouched. Row-copied out: cairo's stride is its own business.
+    // CPU-side cap for image-data buffers (the model's retained-pixel
+    // budget) — same premultiplied-BGRA layout in and out
     void shrinkPixels(SNotif& n, int maxPx) {
         if (n.pixels.empty() || (n.pw <= maxPx && n.ph <= maxPx))
             return;
-
-        auto* SRC = cairo_image_surface_create_for_data(n.pixels.data(), CAIRO_FORMAT_ARGB32, n.pw, n.ph, n.pw * 4);
-        if (cairo_surface_status(SRC) != CAIRO_STATUS_SUCCESS) {
-            cairo_surface_destroy(SRC);
+        auto out = Raster::fit({n.pixels.data(), n.pw, n.ph, n.pw * 4, CAIRO_FORMAT_ARGB32}, maxPx);
+        if (!out.valid())
             return;
-        }
-
-        const double SCALE = std::min((double)maxPx / n.pw, (double)maxPx / n.ph);
-        const int    W     = std::max(1, (int)std::lround(n.pw * SCALE));
-        const int    H     = std::max(1, (int)std::lround(n.ph * SCALE));
-
-        auto*        DST = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
-        auto*        CR  = cairo_create(DST);
-        cairo_scale(CR, (double)W / n.pw, (double)H / n.ph);
-        cairo_set_source_surface(CR, SRC, 0, 0);
-        cairo_pattern_set_filter(cairo_get_source(CR), CAIRO_FILTER_GOOD);
-        cairo_paint(CR);
-        cairo_destroy(CR);
-        cairo_surface_flush(DST);
-        cairo_surface_destroy(SRC);
-
-        if (cairo_surface_status(DST) == CAIRO_STATUS_SUCCESS) {
-            const int   STRIDE = cairo_image_surface_get_stride(DST);
-            const auto* DATA   = cairo_image_surface_get_data(DST);
-            std::vector<uint8_t> out((size_t)W * H * 4);
-            for (int y = 0; y < H; y++)
-                std::memcpy(out.data() + (size_t)y * W * 4, DATA + (size_t)y * STRIDE, (size_t)W * 4);
-            n.pixels = std::move(out);
-            n.pw     = W;
-            n.ph     = H;
-        }
-        cairo_surface_destroy(DST);
-    }
-
-    static uint64_t fnv1a(const void* data, size_t len, uint64_t h) {
-        const auto* P = (const uint8_t*)data;
-        for (size_t i = 0; i < len; i++)
-            h = (h ^ P[i]) * 0x100000001b3ULL;
-        return h;
+        n.pixels     = std::move(out.px);
+        n.pw         = out.w;
+        n.ph         = out.h;
+        n.pixelsHash = Raster::hash(SPixels{.px = n.pixels, .w = n.pw, .h = n.ph});
     }
 
     // The icon anatomy: n.iconTex carries the CONTENT (image-data pixmap or
@@ -621,10 +545,8 @@ namespace NAwesome::Notify {
     // when it exists, else an apps-grid glyph in the theme ink — no card is
     // ever faceless
     static SP<ITexture> genericMark(int px) {
-        if (const auto PATH = Parse::resolveImage("application-default-icon", px); !PATH.empty()) {
-            bool hero = false;
-            return syncFileTex(PATH, px, 0, 0, hero); // a small theme SVG: decode here, not on the worker
-        }
+        if (const auto PATH = Parse::resolveImage("application-default-icon", px); !PATH.empty())
+            return syncFileTex(PATH, px, 0, 0).texture; // a small theme SVG: decode here, not on the worker
 
         auto*        SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, px, px);
         auto*        CT   = cairo_create(SURF);
@@ -653,9 +575,22 @@ namespace NAwesome::Notify {
             cairo_surface_destroy(SURF);
             return nullptr;
         }
-        auto TEX = scaledTex(SURF, px, px, px);
+        cairo_surface_flush(SURF);
+        auto TEX = g_pHyprRenderer->createTexture(SURF);
         cairo_surface_destroy(SURF);
         return TEX;
+    }
+
+    // an image-data card's face is uploaded: what it was built from is no
+    // longer kept (the hash keeps an identical replace from rebuilding it)
+    static void setPixelsFace(SNotif& n, SFileTexResult&& face) {
+        n.iconTex   = std::move(face.texture);
+        n.thumbTex  = std::move(face.thumb);
+        n.heroTex   = face.hero;
+        n.pixelsFor = n.pixelsHash;
+        n.imageFor.clear();
+        n.pixels.clear();
+        n.pixels.shrink_to_fit();
     }
 
     void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx) {
@@ -729,32 +664,53 @@ namespace NAwesome::Notify {
         }
 
         if (n.hasPixels) {
+            if (n.pixelsJob)
+                return; // its unpack or scale is on the worker: the done re-warms
+            if (n.scaled) {
+                const auto S = std::move(n.scaled);
+                setPixelsFace(n, uploaded(*S));
+                return;
+            }
             if (n.pixels.empty())
                 return; // uploaded by an earlier warm; the texture carries it now
-
-            uint64_t h = fnv1a(n.pixels.data(), n.pixels.size(), 0xcbf29ce484222325ULL);
-            h          = fnv1a(&n.pw, sizeof(n.pw), h);
-            h          = fnv1a(&n.ph, sizeof(n.ph), h);
-            if (!n.iconTex || n.pixelsFor != h) {
-                n.thumbTex.reset();
-                n.heroTex = heroWorthy(n.pw, n.ph, heroWPx);
-                if (n.heroTex || n.pw > iconPx || n.ph > iconPx) {
-                    // stride pw*4 is how unpackImageData lays the buffer out
-                    auto* SRC = cairo_image_surface_create_for_data(n.pixels.data(), CAIRO_FORMAT_ARGB32, n.pw, n.ph, n.pw * 4);
-                    if (cairo_surface_status(SRC) != CAIRO_STATUS_SUCCESS)
-                        n.iconTex = nullptr;
-                    else if (n.heroTex)
-                        n.iconTex = coverTex(SRC, n.pw, n.ph, heroWPx, std::min((int)std::lround((double)heroWPx * n.ph / n.pw), heroHCapPx), iconPx, &n.thumbTex);
-                    else
-                        n.iconTex = scaledTex(SRC, n.pw, n.ph, iconPx);
-                    cairo_surface_destroy(SRC);
-                } else
-                    n.iconTex = g_pHyprRenderer->createTexture(DRM_FORMAT_ARGB8888, n.pixels.data(), n.pw * 4, Vector2D{(double)n.pw, (double)n.ph});
-                n.pixelsFor = h;
-                n.imageFor.clear();
+            if (n.iconTex && n.pixelsFor == n.pixelsHash) {
+                // a replace that carried the same image-data keeps its face
+                n.pixels.clear();
+                n.pixels.shrink_to_fit();
+                return;
             }
-            n.pixels.clear();
-            n.pixels.shrink_to_fit();
+            SPixels    src{.px = std::move(n.pixels), .w = n.pw, .h = n.ph};
+            const auto SPEC = specFor(src.w, src.h, iconPx, heroWPx, heroHCapPx, false);
+            if ((int64_t)src.w * src.h > ASYNC_IMAGE_PIXELS) {
+                // the buffer moves into the job; the done finds its card by
+                // the ticket (a replace or a dismissal has dropped it)
+                auto           SRC    = std::make_shared<SPixels>(std::move(src));
+                auto           OUT    = std::make_shared<SScaledImage>();
+                const uint64_t TICKET = imageJobTicket();
+                const bool     QUEUED = NAwesome::CRasterWorker::inst().submit(
+                    [SRC, OUT, SPEC]() mutable {
+                        *OUT = scaleFor(Raster::view(*SRC), SPEC);
+                        SRC.reset();
+                    },
+                    [OUT, TICKET]() {
+                        for (const auto& N : notifs)
+                            if (N->pixelsJob == TICKET) {
+                                N->pixelsJob = 0;
+                                N->scaled    = std::make_unique<SScaledImage>(std::move(*OUT));
+                                notifChanged();
+                                return;
+                            }
+                    });
+                if (QUEUED) {
+                    n.pixelsJob = TICKET;
+                    return;
+                }
+                src = std::move(*SRC); // refused: scale it here
+            }
+            if (!SPEC.hero && src.w <= iconPx && src.h <= iconPx)
+                setPixelsFace(n, {.texture = upload(src), .settled = true});
+            else
+                setPixelsFace(n, uploaded(scaleFor(Raster::view(src), SPEC)));
             return;
         }
 

@@ -152,6 +152,11 @@ or compositor state.
   unwind into the C dispatch — and the file index's helper spawns
   through it too, its group signalled through the pidfd. The launcher's `Exec=` goes through the compositor's
   executor (exec rules, activation tokens).
+- **Raster worker** — `core/raster.hpp`: one on-demand thread for pixel
+  work on bytes already in memory (unpack, scale, crop), so no image
+  burst runs on the realtime compositor thread. Work captures only its
+  own buffers and atomic pointers; dones run on the event loop; a full
+  queue refuses and the caller works inline; teardown joins one job.
 - **Bus** — the fd.o Notifications daemon (spec 1.3), kept
   asynchronous off hot paths (`post()` for bus-originated work,
   `pollSoon()` dispatch, a dispatch capped at 64 messages and 4 ms).
@@ -287,9 +292,14 @@ stays in lockstep between `core/version.hpp` and `hyprpm.toml`.
   typed value read — no hash, no allocation, no RTTI.
 - No bus round-trips on any live path (badge counts, DND state, OSD
   posts are in-process calls), and no synchronous AddMatch anywhere.
-- Notification images are box-decimated while unpacked (still on the
-  main thread, inside the Notify dispatch: tens of ms for a
-  screenshot-sized image-data; off-thread unpacking is open work).
+- Notification images are unpacked and scaled on one plugin worker
+  thread (`core/raster.hpp`) past 512×512: the compositor thread runs
+  on a realtime budget, and a screenshot is tens of ms of CPU. The
+  worker touches only bytes in memory (never a file, the GL context or
+  compositor state), starts on demand, exits when idle and is joined at
+  teardown; its results land on the event loop, are matched to their
+  card by a ticket, and are uploaded in the card's next warm. A full
+  queue (32 jobs) does the work inline.
 - The draw re-runs the layout per frame, deliberately: measured with the
   gate's `drawstats` (a card over a window redrawing every frame), the
   worst case is ~90 us for the card and ~90 us for the bar when the

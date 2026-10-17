@@ -149,7 +149,8 @@ Numbered because source comments cite them; never renumber, append.
 
 - Extend the `core/` helper that owns a concern instead of recreating it
   (spawning: `core/proc.hpp` + `Jobs`; deferral: `CHop`; drawing: the
-  canvas; persistence: `StateStore`).
+  canvas; persistence: `StateStore`; pixel work off the compositor
+  thread: `CRasterWorker`).
 - Module symbols live in their namespace (`NAwesome::Shell`, `::Windows`,
   `::Notify`, `::System`); platform symbols in `NAwesome`; a required
   global `PHANDLE` is a documented ABI exception.
@@ -174,7 +175,8 @@ dispatches button/move/axis/key to the modules in a fixed order), no
 inter-module bus.
 
 - `core`: supervisor, input pipeline, hops, canvas (warm/draw gate),
-  config schema, stores, process runner and jobs, fd.o bus client.
+  config schema, stores, process runner and jobs, raster worker, fd.o
+  bus client.
 - `shell`: the bar — workspaces, tasks, tray, bell, battery, clock,
   menubar launcher. Owns bar/menu input.
 - `windows`: the window state machine and all placement —

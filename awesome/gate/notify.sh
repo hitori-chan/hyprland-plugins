@@ -98,7 +98,7 @@ HEROIMG=$STATE/hero-probe-aw.png
 python3 - "$HEROIMG" <<'PY'
 import sys
 from PIL import Image
-Image.new("RGB", (640, 360), (30, 160, 240)).save(sys.argv[1])
+Image.new("RGB", (1280, 720), (30, 160, 240)).save(sys.argv[1]) # past 512²: scaled on the raster worker
 PY
 hero_px() {
 	python3 - "$1" "$MON_W" <<'PY'
@@ -151,6 +151,23 @@ capture_nested $STATE/hero-3-aw.png
 chk "hero: the re-popped banner shows the preview again" test "$(hero_px $STATE/hero-3-aw.png)" -gt 8000
 nclear
 chk "hero: reset after the center-hero battery" test "$(st)" = "center:0 live:0 dnd:0"
+# the same preview as raw image-data: unpacked and scaled on the worker
+DBUS_SESSION_BUS_ADDRESS="$NBUS" python3 - <<'PY'
+from gi.repository import Gio, GLib
+W, H = 1280, 720
+i32 = GLib.Variant.new_int32
+data = GLib.Variant.new_from_bytes(GLib.VariantType.new("ay"), GLib.Bytes.new(bytes((30, 160, 240)) * (W * H)), True)
+img = GLib.Variant.new_tuple(i32(W), i32(H), i32(W * 3), GLib.Variant.new_boolean(False), i32(8), i32(3), data)
+args = GLib.Variant.new_tuple(GLib.Variant("s", "heroapp"), GLib.Variant("u", 0), GLib.Variant("s", ""), GLib.Variant("s", "Screenshot"),
+                              GLib.Variant("s", "pixels"), GLib.Variant("as", []), GLib.Variant("a{sv}", {"image-data": img}), i32(2000))
+Gio.bus_get_sync(Gio.BusType.SESSION).call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications",
+                                               "Notify", args, GLib.VariantType.new("(u)"), Gio.DBusCallFlags.NONE, 5000, None)
+PY
+sleep 1
+capture_nested $STATE/hero-4-aw.png
+chk "hero: an image-data screenshot previews card-wide" test "$(hero_px $STATE/hero-4-aw.png)" -gt 8000
+chk "hero: the image-data preview is the capped strip" test "$(hero_span $STATE/hero-4-aw.png)" -ge 104 -a "$(hero_span $STATE/hero-4-aw.png)" -le 116
+nclear
 
 # ---- the shade's click model ---------------------------------------------
 dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"read me\" body')"; sleep 1

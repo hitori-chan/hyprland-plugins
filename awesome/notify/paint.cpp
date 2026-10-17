@@ -71,7 +71,7 @@ namespace NAwesome::Notify {
     // every text rastered twice. (A banner's content image that turns out
     // hero-wide still swaps the column for the hero when it lands.)
     bool hasLeadIcon(const SNotif& n, bool shade) {
-        const bool PENDING = (!n.identity.empty() && !n.identSettled) || (!n.fallbackPick.empty() && !n.identSettled) || (!n.image.empty() && !n.imageSettled);
+        const bool PENDING = (!n.identity.empty() && !n.identSettled) || (!n.fallbackPick.empty() && !n.identSettled) || (!n.image.empty() && !n.imageSettled) || n.pixelsJob != 0;
         return PENDING || contentFace(n, shade) || (n.identTex && n.identTex->m_texID != 0);
     }
 

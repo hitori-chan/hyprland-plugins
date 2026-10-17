@@ -29,6 +29,8 @@
 
 #include "pixel_model.hpp"
 
+#include "../core/raster.hpp"
+
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
@@ -133,6 +135,14 @@ namespace NAwesome::Notify {
         bool         avatarSettled = false;
     };
 
+    // a content image scaled for its card, off the compositor thread: the
+    // icon-box or hero face and a hero's square thumbnail, CPU-side until the
+    // card's next warm uploads them (the texture rule)
+    struct SScaledImage {
+        SPixels main, thumb;
+        bool    hero = false;
+    };
+
     struct SNotif {
         uint32_t             id = 0;
         std::string          appName;
@@ -173,6 +183,12 @@ namespace NAwesome::Notify {
         std::vector<uint8_t> pixels;   // image-data, premultiplied BGRA (DRM ARGB8888); freed once uploaded
         bool                 hasPixels = false; // the LAST Notify carried image-data (outlives the freed buffer)
         int                  pw = 0, ph = 0;
+        uint64_t             pixelsHash = 0; // Raster::hash of `pixels`, set with them
+        // an unpack or a scale of this card's image-data on the raster
+        // worker: its ticket (one model-wide serial), 0 = none. A replace or
+        // a dismissal outdates it; its result lands only on a matching card.
+        uint64_t                      pixelsJob = 0;
+        std::unique_ptr<SScaledImage> scaled; // the worker's result, waiting for the warm's upload
         std::string          defaultAction; // the "default" action key, "" = none; a body click fires it, never a button
         bool                 canReply = false;   // the sender offered an "inline-reply" action
         std::string          replyPlaceholder;   // x-kde-reply-placeholder-text
@@ -235,7 +251,11 @@ namespace NAwesome::Notify {
             std::string alt;
         };
         std::vector<SImgRef> extractImages(std::string& body, int sizePx, size_t maxImages); // pulls <img src> out of the body
-        void                     unpackImageData(SNotif& n, const ImageData& d, int capPx); // -> premultiplied BGRA
+        // image-data -> premultiplied BGRA within capPx: pure, any thread.
+        // Invalid for a malformed or oversized payload. imageDataSize: the
+        // payload's own size, {0, 0} when it would not unpack.
+        SPixels                  unpackImageData(const ImageData& d, int capPx);
+        std::pair<int, int>      imageDataSize(const ImageData& d);
         std::string              joinAppend(const std::string& oldBody, const std::string& add);
         std::string              foldSenderPrefix(std::string body); // "<b>S</b>\nmsg" -> "<b>S</b>: msg"
     }
@@ -357,8 +377,17 @@ namespace NAwesome::Notify {
     // decoded raster.
     void ensureBodyImage(SBodyImage& im, int maxPx);
 
-    // Downscale n.pixels in place when it exceeds maxPx (unpack-time cap).
+    // Downscale n.pixels in place when it exceeds maxPx (the retained-pixel
+    // budget's cap).
     void shrinkPixels(SNotif& n, int maxPx);
+
+    // Past this many source pixels an image's unpack or scale runs on the
+    // raster worker (core/raster.hpp), not in the dispatch or warm that
+    // asked: tens of ms for a screenshot, under a realtime budget.
+    constexpr int64_t ASYNC_IMAGE_PIXELS = 512 * 512;
+    // a fresh ticket for a worker job on a card's image (SNotif::pixelsJob)
+    // or a decode's scale: one serial, never 0
+    uint64_t imageJobTicket();
 
     // ---- surface.cpp ----
 

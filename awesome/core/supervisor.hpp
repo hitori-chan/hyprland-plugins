@@ -15,6 +15,7 @@
 #include "hop.hpp"
 #include "jobs.hpp"
 #include "queries.hpp"
+#include "raster.hpp"
 #include "state.hpp"
 
 #include <hyprland/src/Compositor.hpp>
@@ -132,6 +133,7 @@ namespace NAwesome {
                                              CHyprColor{1.0, 0.6, 0.2, 1.0}, 10000);
             // the shared .desktop icon index, before the modules subscribe
             CDesktopIcons::inst().start();
+            CRasterWorker::inst().start(); // the pixel worker the modules' images ride
             // A throwing init (bad_alloc, a bus that refuses us) ejects the
             // plugin WITHOUT PLUGIN_EXIT: tear down whatever did start —
             // including the thrower's partial init — so no listener, timer,
@@ -148,6 +150,7 @@ namespace NAwesome {
                 for (size_t i = std::min(started + 1, m_modules.size()); i-- > 0;)
                     m_modules[i]->teardown();
                 Jobs::inst().teardown();
+                CRasterWorker::inst().stop();
                 CDesktopIcons::inst().stop();
                 throw;
             }
@@ -182,6 +185,7 @@ namespace NAwesome {
             for (auto IT = m_modules.rbegin(); IT != m_modules.rend(); ++IT)
                 (*IT)->teardown();
             Jobs::inst().teardown(); // helpers after the modules that spawned them
+            CRasterWorker::inst().stop(); // joins a running job; the rest are dropped, dones unrun
             CDesktopIcons::inst().stop(); // its helper and subscribers, after the modules
         }
 
