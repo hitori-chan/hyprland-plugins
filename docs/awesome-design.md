@@ -284,7 +284,8 @@ stays in lockstep between `core/version.hpp` and `hyprpm.toml`.
   claims live blur only while its layer paints translucent glass (the
   bar's default is opaque, the cards' glass is not).
 - Warms coalesce: one bar warm per event-loop turn however many events
-  arrived; the cards warm once, on their monitor, and only on their own
+  arrived, and a title change (the one input a client drives at will)
+  warms the strip layer alone, at most once per 16 ms; the cards warm once, on their monitor, and only on their own
   changes (a clock tick or a title change no longer re-measures the
   shade); the launcher's keystrokes warm its layer on its monitor and
   damage the prompt band. The shade measures no row past the fold.

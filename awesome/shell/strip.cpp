@@ -450,11 +450,48 @@ namespace NAwesome::Shell {
         return L;
     }
 
+    // A title is the one bar input a client drives at will: a terminal or a
+    // player can retitle every frame or faster, and each change warmed every
+    // layer on every monitor once per event-loop turn — a kHz title kept the
+    // compositor thread busy. Titles warm the strip alone, at most once per
+    // TITLE_GAP: the first at once, a burst's last one gap after.
+    static constexpr auto                 TITLE_GAP = std::chrono::milliseconds(16);
+    static SP<CEventLoopTimer>            titleTimer;
+    static bool                           titleArmed = false;
+    static std::chrono::steady_clock::time_point lastTitleWarm;
+
+    static void                           titleWarm() {
+        titleArmed    = false;
+        lastTitleWarm = std::chrono::steady_clock::now();
+        NAwesome::Canvas::inst().warmAll(nullptr, &stripLayer());
+        damageBars();
+    }
+
+    void titleChanged() {
+        if (!titleTimer) {
+            barChanged();
+            return;
+        }
+        if (titleArmed)
+            return;
+        titleArmed       = true;
+        const auto SINCE = std::chrono::steady_clock::now() - lastTitleWarm;
+        titleTimer->updateTimeout(SINCE >= TITLE_GAP ? std::chrono::milliseconds(0) : std::chrono::ceil<std::chrono::milliseconds>(TITLE_GAP - SINCE));
+    }
+
     void stripInit() {
         NAwesome::Canvas::inst().addLayer(&stripLayer(), NAwesome::eLayerZ::BAR);
         NAwesome::Canvas::inst().addLayer(&popupLayer(), NAwesome::eLayerZ::POPUPS);
+        if (g_pEventLoopManager) {
+            titleTimer = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { titleWarm(); }, nullptr);
+            g_pEventLoopManager->addTimer(titleTimer);
+        }
     }
     void stripExit() {
+        if (titleTimer && g_pEventLoopManager)
+            g_pEventLoopManager->removeTimer(titleTimer);
+        titleTimer.reset();
+        titleArmed = false;
         stripLayer().exit();
     }
 

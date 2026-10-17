@@ -89,7 +89,7 @@ namespace NAwesome::Shell {
             // a hidden workspace's titles render nowhere; workspace.active re-warms the switch
             if (w && w->m_workspace && !w->m_workspace->visible())
                 return;
-            barChanged();
+            titleChanged();
         });
         supervisor().listen(EV.window.urgent, [](PHLWINDOW) { barChanged(); });
         supervisor().listen(EV.window.pin, [](PHLWINDOW) { barChanged(); });         // the tasklist's ⌃ marker

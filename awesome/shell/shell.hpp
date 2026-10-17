@@ -108,6 +108,7 @@ namespace NAwesome::Shell {
     double      barHeight();
     void        damageBars(); // covers the menubar's prompt strip while it's open
     void        barChanged(); // warm + damage: the bar's content changed, event loop only
+    void        titleChanged(); // a visible title: the strip alone, rate-limited
     std::string lower(std::string s);
 
     // Is this window a task of WS? By workspace ID, NEVER by pointer: while a
