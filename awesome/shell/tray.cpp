@@ -182,39 +182,39 @@ namespace NAwesome::Shell {
         // per item: a NewIcon storm (fcitx fires one per input-context
         // change) only marks the item for one more fetch when the current
         // one lands, instead of a request chain per signal.
-        static void fetchIcon(SP<SItem> it) {
-            if (!it || !it->active || !it->proxy)
-                return;
-            if (it->iconFetching) {
-                it->iconAgain = true;
-                return;
-            }
-            it->iconFetching = true;
+        static void fetchIcon(SP<SItem> it);
+
+        // One icon set: its name, then its pixmap (SET: the attention set,
+        // else the plain one). ATTN is the status the chain started under.
+        // An attention set with neither (most apps implement no attention
+        // icon) shows the plain set: the cell went blank on NeedsAttention.
+        static void fetchIconSet(SP<SItem> it, bool ATTN, bool SET, uint64_t REQUEST) {
             // the chain's end, whatever the outcome: run the one queued
             const auto done = [](const SP<SItem>& it) {
                 it->iconFetching = false;
                 if (std::exchange(it->iconAgain, false))
                     fetchIcon(it);
             };
-            // a NeedsAttention item shows its attention icon set (SNI spec)
-            const bool     ATTN    = it->status == "NeedsAttention";
-            const char*    PNAME   = ATTN ? "AttentionIconName" : "IconName";
-            const char*    PPIX    = ATTN ? "AttentionIconPixmap" : "IconPixmap";
-            const uint64_t REQUEST = ++it->iconRequest;
-            it->proxy->getPropertyAsync(PNAME).onInterface(SNI).uponReplyInvoke([it, PPIX, ATTN, REQUEST, done](std::optional<sdbus::Error> eN, sdbus::Variant vN) {
-                if (!it->active || !it->proxy || it->iconRequest != REQUEST || (it->status == "NeedsAttention") != ATTN) {
+            const auto stale = [ATTN, REQUEST](const SP<SItem>& it) {
+                return !it->active || !it->proxy || it->iconRequest != REQUEST || (it->status == "NeedsAttention") != ATTN;
+            };
+            it->proxy->getPropertyAsync(SET ? "AttentionIconName" : "IconName").onInterface(SNI).uponReplyInvoke([it, ATTN, SET, REQUEST, done, stale](std::optional<sdbus::Error> eN, sdbus::Variant vN) {
+                if (stale(it)) {
                     done(it);
                     return;
                 }
-                auto name = it->iconName; // an errored reply keeps the current name
+                // an errored reply keeps the current name; the attention set
+                // has none of its own to keep
+                auto name = SET ? std::string{} : it->iconName;
                 if (!eN)
                     try {
                         name = boundedProp(vN.get<std::string>());
                     } catch (...) {}
-                it->proxy->getPropertyAsync(PPIX).onInterface(SNI).uponReplyInvoke([it, name, ATTN, REQUEST, done](std::optional<sdbus::Error> e, sdbus::Variant v) {
-                    done(it);
-                    if (!it->active || !it->proxy || it->iconRequest != REQUEST || (it->status == "NeedsAttention") != ATTN)
+                it->proxy->getPropertyAsync(SET ? "AttentionIconPixmap" : "IconPixmap").onInterface(SNI).uponReplyInvoke([it, name, ATTN, SET, REQUEST, done, stale](std::optional<sdbus::Error> e, sdbus::Variant v) {
+                    if (stale(it)) {
+                        done(it);
                         return;
+                    }
                     std::vector<uint8_t> px;
                     int                  pw = 0, ph = 0;
                     if (!e) {
@@ -254,6 +254,13 @@ namespace NAwesome::Shell {
                             }
                         } catch (...) {}
                     }
+                    if (SET && name.empty() && px.empty()) {
+                        fetchIconSet(it, ATTN, false, REQUEST); // the chain goes on: its end runs done
+                        return;
+                    }
+                    done(it);
+                    if (it->iconRequest != REQUEST)
+                        return; // done started the queued fetch: it commits instead
                     // An empty/absent reply must CLEAR old pixels (fcitx's idle
                     // state has no pixmap) — stale ones shadow the new IconName
                     // in the rebuild and the icon sticks on the previous state.
@@ -269,6 +276,19 @@ namespace NAwesome::Shell {
                 pollSoon(); // the pixmap fetch was just sent
             });
             pollSoon();
+        }
+
+        static void fetchIcon(SP<SItem> it) {
+            if (!it || !it->active || !it->proxy)
+                return;
+            if (it->iconFetching) {
+                it->iconAgain = true;
+                return;
+            }
+            it->iconFetching = true;
+            // a NeedsAttention item shows its attention icon set (SNI spec)
+            const bool ATTN = it->status == "NeedsAttention";
+            fetchIconSet(it, ATTN, ATTN, ++it->iconRequest);
         }
 
         static void fetchProps(SP<SItem> it) {

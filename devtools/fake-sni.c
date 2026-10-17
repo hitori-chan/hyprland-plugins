@@ -7,6 +7,9 @@
 // gate can assert the bar's renderer draws none of them (height, pixels).
 //
 //   fake-sni            — register with the session bus's watcher, serve /menu
+//   kill -USR1 <pid>    — ask for attention: Status NeedsAttention and
+//                         NewStatus, with no attention icon of its own (as
+//                         most apps do)
 //
 // The icon is a solid 22x22 magenta pixmap (SNI ARGB32, network byte order)
 // so the gate can locate the item in the bar band by color, theme-free.
@@ -61,6 +64,13 @@ static volatile sig_atomic_t stop = 0;
 
 static void on_signal(int) {
 	stop = 1;
+}
+
+static volatile sig_atomic_t attention = 0;
+static const char *          status    = "Active";
+
+static void on_attention(int) {
+	attention = 1;
 }
 
 // ---- dbusmenu layout ------------------------------------------------------
@@ -191,15 +201,15 @@ static DBusHandlerResult handle_menu(DBusConnection *c, DBusMessage *m, void *) 
 
 // ---- SNI object ------------------------------------------------------------
 
-// One (iiay) pixmap element into `arr` (an array-position iterator).
-// `alpha` 0 = fully transparent ("empty" slot), 255 = solid magenta.
+// One (iiay) pixmap element into `arr` (an array-position iterator), solid
+// magenta.
 // Bytes go in one by one: append_fixed_array(BYTE) is broken here (see
 // the header notes).
-static void pixmap_element(DBusMessageIter *arr, int alpha) {
+static void pixmap_element(DBusMessageIter *arr) {
 	int32_t w = 22, h = 22;
 	uint8_t px[22 * 22 * 4];
 	for (size_t i = 0; i < 22 * 22; i++) {
-		px[i * 4]     = (uint8_t)alpha;
+		px[i * 4]     = 0xFF;
 		px[i * 4 + 1] = 0xFF;
 		px[i * 4 + 2] = 0x00;
 		px[i * 4 + 3] = 0xFF;
@@ -223,7 +233,8 @@ static void pixmap_prop(DBusMessageIter *map, const char *key, int empty) {
 	dbus_message_iter_append_basic(&ent, DBUS_TYPE_STRING, &key);
 	dbus_message_iter_open_container(&ent, DBUS_TYPE_VARIANT, "a(iiay)", &v);
 	dbus_message_iter_open_container(&v, DBUS_TYPE_ARRAY, "(iiay)", &arr);
-	pixmap_element(&arr, empty ? 0 : 255);
+	if (!empty) // an unset icon is an empty array, as Qt and KStatusNotifierItem send it
+		pixmap_element(&arr);
 	dbus_message_iter_close_container(&v, &arr);
 	dbus_message_iter_close_container(&ent, &v);
 	dbus_message_iter_close_container(map, &ent);
@@ -235,7 +246,8 @@ static void pixmap_value(DBusMessageIter *it, int empty) {
 	DBusMessageIter v, arr;
 	dbus_message_iter_open_container(it, DBUS_TYPE_VARIANT, "a(iiay)", &v);
 	dbus_message_iter_open_container(&v, DBUS_TYPE_ARRAY, "(iiay)", &arr);
-	pixmap_element(&arr, empty ? 0 : 255);
+	if (!empty)
+		pixmap_element(&arr);
 	dbus_message_iter_close_container(&v, &arr);
 	dbus_message_iter_close_container(it, &v);
 }
@@ -270,7 +282,7 @@ static DBusHandlerResult handle_sni(DBusConnection *c, DBusMessage *m, void *) {
 			kv(&map, "Title", DBUS_TYPE_STRING, (void **)&v);
 		}
 		{
-			const char *v = "Active";
+			const char *v = status;
 			kv(&map, "Status", DBUS_TYPE_STRING, (void **)&v);
 		}
 		{
@@ -321,7 +333,7 @@ static DBusHandlerResult handle_sni(DBusConnection *c, DBusMessage *m, void *) {
 			dbus_message_iter_append_basic(&v, DBUS_TYPE_STRING, &s);
 			dbus_message_iter_close_container(&it, &v);
 		} else if (strcmp(want, "Status") == 0) {
-			const char *s = "Active";
+			const char *s = status;
 			dbus_message_iter_open_container(&it, DBUS_TYPE_VARIANT, "s", &v);
 			dbus_message_iter_append_basic(&v, DBUS_TYPE_STRING, &s);
 			dbus_message_iter_close_container(&it, &v);
@@ -395,6 +407,7 @@ static void try_register(void) {
 int main(void) {
 	signal(SIGTERM, on_signal);
 	signal(SIGINT, on_signal);
+	signal(SIGUSR1, on_attention);
 	signal(SIGPIPE, SIG_IGN);
 
 	bus = dbus_bus_get(DBUS_BUS_SESSION, nullptr);
@@ -420,6 +433,16 @@ int main(void) {
 		dbus_connection_read_write_dispatch(bus, 200);
 		if (!registered)
 			try_register();
+		if (attention == 1) {
+			attention = 2;
+			status    = "NeedsAttention";
+			DBusMessage *sig = dbus_message_new_signal("/StatusNotifierItem", "org.kde.StatusNotifierItem", "NewStatus");
+			if (sig) {
+				dbus_message_append_args(sig, DBUS_TYPE_STRING, &status, DBUS_TYPE_INVALID);
+				dbus_connection_send(bus, sig, nullptr);
+				dbus_message_unref(sig);
+			}
+		}
 	}
 
 	// bus came from dbus_bus_get (a shared connection): close() on a shared

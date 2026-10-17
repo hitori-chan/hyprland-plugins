@@ -245,6 +245,14 @@ capture_nested "$STATE/tray-closed.png"
 chk "tray: outside click closed every panel" \
 	test "$(panel_extent "$STATE/tray-closed.png" | awk '{print $1}')" -le 10
 
+# attention with no attention icon of its own (most apps): the plain one
+# stays, not a blank cell
+kill -USR1 "$FAKE_PID" 2>/dev/null
+sleep 1.2
+capture_nested "$STATE/tray-attn.png"
+ICON="$(icon_box "$STATE/tray-attn.png")"
+chk "tray: an attention item without an attention icon keeps its own" bash -c "[[ -n '$ICON' && '${ICON:0:1}' != '0' ]]"
+
 # teardown: the item leaves the strip
 kill "$FAKE_PID" 2>/dev/null
 for _ in $(seq 1 30); do

@@ -58,7 +58,9 @@ visible transitions.
   and path; an item fetches one icon at a time, a NewIcon storm folding
   into one more fetch. Item strings are bounded, icon names resolve
   through the core resolver (an item's own `IconThemePath` first), and
-  a pixmap is picked for the densest monitor's scale. Menus support
+  a pixmap is picked for the densest monitor's scale. A
+  `NeedsAttention` item shows its attention icon, or its plain one when
+  it offers none. Menus support
   updates, cascades, scrolling, and check/radio state; a level with no
   rows says "(empty)", or "(unavailable)" when its layout call failed,
   instead of the loading "…" forever; an inline
