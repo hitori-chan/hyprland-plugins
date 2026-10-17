@@ -1,5 +1,6 @@
 // awesome/shell/menu.cpp — the menu renderer: dbusmenu for tray items, local mode for the client list
 
+#include "../core/icons.hpp" // iconDeferred: a budget-deferred icon is retried
 #include "shell/shell.hpp"
 
 #include "../windows/state.hpp"
@@ -355,10 +356,15 @@ namespace NAwesome::Shell {
                                     en.toggleState = it->second.get<int32_t>();
                                 if (auto it = P.find("disposition"); it != P.end())
                                     en.alert = it->second.get<std::string>() == "warning" || it->second.get<std::string>() == "alert";
+                                std::string iconName;
+                                bool        deferred = false;
                                 if (auto it = P.find("icon-name"); it != P.end()) {
-                                    const auto NAME = it->second.get<std::string>();
-                                    if (NAME.size() <= MAX_LABEL_BYTES)
-                                        en.icon = namedIcon(NAME);
+                                    iconName = it->second.get<std::string>();
+                                    if (iconName.size() <= MAX_LABEL_BYTES) {
+                                        NAwesome::iconDeferred() = false;
+                                        en.icon                  = namedIcon(iconName);
+                                        deferred                 = !en.icon && NAwesome::iconDeferred();
+                                    }
                                 }
                                 if (!en.icon && inlineDecodes < MAX_INLINE_DECODES) // nm-applet ships its signal-strength icons inline
                                     if (auto it = P.find("icon-data"); it != P.end())
@@ -366,6 +372,8 @@ namespace NAwesome::Shell {
                                             inlineDecodes++;
                                             en.icon = loadPngBytes(DATA);
                                         }
+                                if (!en.icon && deferred)
+                                    en.iconRetry = std::move(iconName);
                                 en.display = en.label + (en.submenu ? "  ▸" : "");
                                 if (en.icon && en.icon->m_texID != 0 && en.toggle != TG_NONE && en.toggleState == 1)
                                     en.display = (en.toggle == TG_RADIO ? "● " : "✓ ") + en.display;
@@ -512,7 +520,11 @@ namespace NAwesome::Shell {
             for (const auto& [SEQ, W] : ws) {
                 std::string lbl;
                 Tasklist::label(W, lbl);
-                L.entries.push_back({.label = lbl, .display = std::move(lbl), .win = W, .icon = appIcon(W->metadata().appID())});
+                NAwesome::iconDeferred() = false;
+                const auto& APP          = W->metadata().appID();
+                auto        ICON         = appIcon(APP);
+                const bool  DEFERRED     = !ICON && NAwesome::iconDeferred();
+                L.entries.push_back({.label = lbl, .display = std::move(lbl), .win = W, .icon = std::move(ICON), .iconRetry = DEFERRED ? APP : "", .iconOfApp = true});
             }
             ws.clear(); // drop the strong refs now — entries hold weak ones
             anchorX = ax;
@@ -649,6 +661,18 @@ namespace NAwesome::Shell {
                 // corner seam, and 5 rects are 2 calls
                 PAINT.glass(L.box, COLBG, RPANEL, RP);
                 PAINT.border(L.box, COLFRAME, RPANEL, BORDER, RP);
+
+                // an icon a budget deferred at build time: the warm the
+                // budget's retry triggers asks again, until it lands or is
+                // a true miss
+                if (PAINT.warm)
+                    for (auto& E : L.entries)
+                        if (!E.icon && !E.iconRetry.empty()) {
+                            NAwesome::iconDeferred() = false;
+                            E.icon                   = E.iconOfApp ? appIcon(E.iconRetry) : namedIcon(E.iconRetry);
+                            if (E.icon || !NAwesome::iconDeferred())
+                                E.iconRetry.clear();
+                        }
 
                 // labels share one leading column when any row in this level
                 // has an icon or a check/radio state, ragged otherwise — how

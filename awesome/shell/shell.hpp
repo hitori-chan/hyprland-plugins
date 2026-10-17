@@ -355,6 +355,10 @@ namespace NAwesome::Shell {
             bool         alert       = false; // disposition warning/alert
             PHLWINDOWREF win;                 // client-list mode: the window this row jumps to
             SP<ITexture> icon;                // client-list app icon / dbusmenu icon-name or icon-data
+            // an icon a budget deferred (a theme walk, a decode): the name
+            // (or the app id, iconOfApp) the menu's warm asks for again
+            std::string iconRetry;
+            bool        iconOfApp = false;
         };
 
         // one open panel; a submenu cascades out as the next level, GTK-style

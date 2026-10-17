@@ -86,6 +86,36 @@ namespace NAwesome::Shell {
         return false;
     }
 
+    // Every decode here runs on the compositor thread, the small ones too: a
+    // launcher's first open decoded its 12-20 visible icons in one warm, a
+    // tray menu up to 512 named ones in one reply. Past DECODE_BUDGET of
+    // decode time in a DECODE_WINDOW the rest defer like a refused walk
+    // (uncached, retried a beat later), so they fill in over a few frames.
+    constexpr auto                        DECODE_BUDGET = std::chrono::microseconds(4000);
+    constexpr auto                        DECODE_WINDOW = std::chrono::milliseconds(16);
+    static std::chrono::steady_clock::time_point decodeWindow;
+    static std::chrono::nanoseconds       decodeSpent{0};
+    static bool                           decodeRefused = false; // the retry comes back a window later, not a walk's
+    static bool                           decodeBudgetOpen() {
+        const auto NOW = std::chrono::steady_clock::now();
+        if (NOW - decodeWindow >= DECODE_WINDOW) {
+            decodeWindow = NOW;
+            decodeSpent  = {};
+        }
+        if (decodeSpent < DECODE_BUDGET)
+            return true;
+        NAwesome::iconDeferred() = true;
+        decodeRefused            = true;
+        return false;
+    }
+    template <class FN>
+    static SP<ITexture> timedDecode(FN&& fn) {
+        const auto T0  = std::chrono::steady_clock::now();
+        auto       TEX = fn();
+        decodeSpent += std::chrono::steady_clock::now() - T0;
+        return TEX;
+    }
+
     SP<ITexture> loadPng(const std::string& path) {
         // the bytes come from ONE non-blocking open (core/icons.hpp): an
         // absolute SNI IconName reaches here. A bar cell is <=40 px: 1024 a
@@ -108,7 +138,8 @@ namespace NAwesome::Shell {
         constexpr size_t MAX_ENCODED = 4u << 20;
         if (data.empty() || data.size() > MAX_ENCODED)
             return nullptr;
-        return pngTexture(data, 256);
+        // charged, never refused: an inline icon has no name to retry by
+        return timedDecode([&] { return pngTexture(data, 256); });
     }
 
     // SVG -> texture via librsvg (alacritty ships nothing but an SVG; tray icon
@@ -154,7 +185,14 @@ namespace NAwesome::Shell {
         return tex;
     }
 
+    static SP<ITexture> loadIconNow(const std::string& path);
     static SP<ITexture> loadIcon(const std::string& path) {
+        if (!decodeBudgetOpen())
+            return nullptr;
+        return timedDecode([&] { return loadIconNow(path); });
+    }
+
+    static SP<ITexture> loadIconNow(const std::string& path) {
         if (path.ends_with(".svg")) {
             const bool SYMBOLIC = path.find("-symbolic") != std::string::npos || path.find("/symbolic/") != std::string::npos;
             return loadSvg(path, SYMBOLIC, color(cfg().getColor("plugin:awesome:shell:col_fg")));
@@ -237,7 +275,8 @@ namespace NAwesome::Shell {
     static SP<ITexture> remember(MAP& m, const std::string& key, SP<ITexture> tex) {
         if (!tex && NAwesome::iconDeferred()) {
             if (retry && !retry->armed())
-                retry->updateTimeout(std::chrono::milliseconds(300));
+                retry->updateTimeout(decodeRefused ? std::chrono::milliseconds(20) : std::chrono::milliseconds(300));
+            decodeRefused = false;
             return nullptr;
         }
         boundIconCache(m);
