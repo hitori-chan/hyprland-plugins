@@ -273,6 +273,7 @@ namespace NAwesome::Notify {
 
         card.box  = CBox{box.x, box.y, box.w, ROWH};
         card.id   = N->id;
+        card.rev  = N->rev;
         card.kind = child ? SCard::CHILD : SCard::ROW;
         return ROWH;
     }

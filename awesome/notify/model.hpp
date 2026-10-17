@@ -454,6 +454,7 @@ namespace NAwesome::Notify {
         eKind       kind = POPUP;
         CBox        box;
         uint32_t    id   = 0; // live identity
+        uint64_t    rev  = 0; // the card's revision this layout drew: a click acts on what it saw
         std::string group;    // DIGEST/GHEAD/CHILD: the app key
         CBox        chevron;      // ROW: the 24Ø fold indicator; w = 0 -> none
         CBox        close;        // POPUP hover-✕ / GHEAD ✕; w = 0 -> none

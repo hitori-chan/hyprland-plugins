@@ -287,6 +287,7 @@ namespace NAwesome::Notify {
             card.kind = SCard::POPUP;
             card.box  = CARD;
             card.id   = N->id;
+            card.rev  = N->rev;
 
             // the hover-✕ (the desktop analog of swipe), revealed while the
             // pointer is on the card; its glyph builds in both modes

@@ -361,8 +361,9 @@ namespace NAwesome::Notify {
             else if (const int L = linkAt(*CARD, COORDS); L >= 0)
                 h.href = CARD->links[L].href;
         }
-        if (const auto N = Model::byId(h.id))
-            h.rev = N->rev;
+        // the revision the press's layout drew, not the model's now: a
+        // replace that landed after the last frame must not take the click
+        h.rev = CARD->rev;
 
         queueHit(std::move(h));
     }
@@ -449,6 +450,7 @@ namespace NAwesome::Notify {
         int      verb = 0; // 1 fold, 2 the primary, 3 dismiss
         uint32_t    id   = 0;
         std::string group; // non-empty: a bundle
+        std::optional<uint64_t> rev; // enter: the revision the selected row drew
     };
     static void drainKeys(std::vector<SKeyAct>& batch) {
         for (const auto& A : batch) {
@@ -459,7 +461,7 @@ namespace NAwesome::Notify {
                 else
                     centerToggleRow(A.id);
             } else if (A.verb == 2)
-                invokeLive(A.id, ""); // enter on a card: its primary, the body click's twin
+                invokeLive(A.id, "", A.rev); // enter on a card: its primary, the body click's twin
             else if (A.verb == 3) {
                 if (GROUP)
                     Model::dismissApp(A.group);
@@ -579,6 +581,11 @@ namespace NAwesome::Notify {
         // space still belongs to whatever holds focus
         if (!centerSelection(a.id, a.group))
             return;
+        // enter acts on what the row drew, like a click: a replace that
+        // landed since the last frame must not take it
+        if (a.verb == 2 && a.group.empty())
+            if (const auto IT = std::ranges::find_if(cards, [&](const SCard& c) { return c.id == a.id && (c.kind == SCard::ROW || c.kind == SCard::CHILD); }); IT != cards.end())
+                a.rev = IT->rev;
 
         info.cancelled = true;
         keys.push(std::move(a));
