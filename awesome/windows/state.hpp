@@ -328,13 +328,17 @@ namespace NAwesome::Windows::Tasklist {
     }
 
     inline void restoreLast() {
-        // awful.client.restore: the most-recently minimized window whose tag
-        // is currently viewed (isVisible), so it returns where you are.
+        // awful.client.restore(s): the most-recently minimized window on a
+        // tag the FOCUSED screen views, so it returns where you are — never
+        // one a second monitor shows, which would pull focus across
         prune();
+        const auto WS = shownWorkspace(Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr);
+        if (!WS)
+            return;
         auto& S = minStack();
         for (size_t i = S.size(); i-- > 0;) {
             const auto W = S[i].w.lock();
-            if (W && W->mapped() && W->m_workspace && W->m_workspace->visible()) {
+            if (W && W->mapped() && W->m_workspace == WS) {
                 restore(W);
                 return;
             }
