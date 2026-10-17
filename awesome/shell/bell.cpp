@@ -19,6 +19,11 @@ namespace NAwesome::Shell {
     static std::unordered_map<int, SBellTex> bellCache;
 
     namespace Bell {
+        // the count the bar last warmed for: the funnel fires on every model
+        // change (each step of a volume sweep), and only a moved count
+        // changes what the bell draws
+        static uint32_t shownCount = UINT32_MAX;
+
         void init() {
             // the model's funnel fires this on the event loop after every
             // change that can move the badge: the bell warms + damages the
@@ -26,7 +31,14 @@ namespace NAwesome::Shell {
             // registered before any model event can be dispatched (the bus
             // link opens in the notify module's init, which runs after this
             // module's init returns).
-            NAwesome::Notify::Model::badgeChangedHook() = []() { barChanged(); };
+            shownCount                                  = UINT32_MAX;
+            NAwesome::Notify::Model::badgeChangedHook() = []() {
+                const auto [LIVE, KEPT] = NAwesome::Notify::Model::badgeCounts();
+                if (LIVE + KEPT == shownCount)
+                    return;
+                shownCount = LIVE + KEPT;
+                barChanged();
+            };
         }
 
         void exit() {
