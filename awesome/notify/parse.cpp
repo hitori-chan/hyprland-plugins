@@ -7,6 +7,7 @@
 // it is the one worth reading on its own.
 
 #include "model.hpp"
+#include "textcut.hpp"
 
 #include "../core/icons.hpp"
 
@@ -372,18 +373,12 @@ namespace NAwesome::Notify::Parse {
         if (joined.size() <= CAP)
             return joined;
         // whole oldest lines go: the first line break at or past the excess
-        // ends the cut (one erase — a line at a time was quadratic in a
-        // body of thousands of tiny lines). No break there: the newest tail,
-        // started on a codepoint.
+        // ends the cut (one cut — a line at a time was quadratic in a body
+        // of thousands of tiny lines). No break there: the newest tail. The
+        // cut falls between tags and reopens the ones open there.
         const size_t EXCESS = joined.size() - CAP;
-        size_t       cut    = joined.find('\n', EXCESS - 1);
-        if (cut != std::string::npos)
-            cut++;
-        else
-            for (cut = EXCESS; cut < joined.size() && ((unsigned char)joined[cut] & 0xc0) == 0x80;)
-                cut++;
-        joined.erase(0, cut);
-        return joined;
+        const size_t NL     = joined.find('\n', EXCESS - 1);
+        return capMarkupTail(joined, NL != std::string::npos ? NL + 1 : EXCESS);
     }
 
 } // namespace NAwesome::Notify::Parse

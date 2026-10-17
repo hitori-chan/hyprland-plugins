@@ -18,6 +18,7 @@
 // or a suppressed banner strands a card no sweep will ever reach.
 
 #include "model.hpp"
+#include "textcut.hpp"
 
 #include "../core/jobs.hpp"
 
@@ -78,8 +79,9 @@ namespace NAwesome::Notify {
             return s;
         }
 
-        static std::string capUtf8(std::string s) {
-            return clipUtf8(std::move(s), 8192);
+        // sanitized markup's 8 KiB cap, cut between tags (textcut.hpp)
+        static std::string capMarkup(const std::string& s) {
+            return capMarkupHead(s, 8192);
         }
 
         SP<SNotif>                 byId(uint32_t id) {
@@ -570,7 +572,7 @@ namespace NAwesome::Notify {
                     line += ": ";
                 }
                 line += M.text;
-                LINES.push_back(capUtf8(std::move(line)));
+                LINES.push_back(capMarkup(line));
             }
             // the 8 KB cap evicts from the OLDEST end — the newest message is
             // what the card exists to show (n ≤ 7, so the rebuild is cheap)
@@ -907,7 +909,7 @@ namespace NAwesome::Notify {
             n->bodyImages.clear();
             for (const auto& P : Parse::extractImages(bodyText, std::max(64, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon") * 2), MAX_BODY_IMAGES))
                 n->bodyImages.push_back(SBodyImage{.src = P.src, .alt = P.alt});
-            n->body = capUtf8(Parse::sanitizeMarkup(bodyText, /*allowLinks=*/true));
+            n->body = capMarkup(Parse::sanitizeMarkup(bodyText, /*allowLinks=*/true));
             if (CONVERSATION) {
                 // the conversation's lines must stay one message each: the
                 // sender's leading bold line would otherwise be the body's

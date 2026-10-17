@@ -52,5 +52,41 @@ bool test_textcut() {
     AW_CHECK(cutToLines(std::string(20, '<'), false, 4, ANY) == "<<<<");
     // malformed markup is left for the parse fallback
     AW_CHECK(cutToLines("<b" + std::string(500, 'x'), true, 10, ANY).empty());
+
+    using NAwesome::Notify::capMarkupHead;
+    using NAwesome::Notify::capMarkupTail;
+    // the head cap: within the bytes, never inside a tag or an entity,
+    // the open tags closed inside the cap
+    AW_CHECK(capMarkupHead("short", 10) == "short");
+    {
+        const std::string S = "<span foreground=\"#ffffff\">" + std::string(100, 'x') + "</span>";
+        const auto        OUT = capMarkupHead(S, 40);
+        AW_CHECK(OUT.size() <= 40);
+        AW_CHECK(OUT == "<span foreground=\"#ffffff\">" + std::string(40 - 27 - 7, 'x') + "</span>");
+    }
+    AW_CHECK(capMarkupHead("ab<span foreground=\"#fff\">cd</span>", 10) == "ab"); // the tag does not fit whole
+    AW_CHECK(capMarkupHead("a&amp;b&amp;c", 8) == "a&amp;b");                       // never half an entity
+    AW_CHECK(capMarkupHead("\xc3\xa9\xc3\xa9\xc3\xa9", 5) == "\xc3\xa9\xc3\xa9");      // never half a codepoint
+    // a deep nest: closed within the cap, every opener matched
+    {
+        std::string deep, want;
+        for (int i = 0; i < 5000; i++)
+            deep += "<b>";
+        deep += "x";
+        for (int i = 0; i < 5000; i++)
+            deep += "</b>";
+        for (int i = 0; i < 14; i++)
+            want += "<b>";
+        for (int i = 0; i < 14; i++)
+            want += "</b>";
+        AW_CHECK(capMarkupHead(deep, 100) == want);
+    }
+    // the tail cap: the tags open at the cut are reopened in front
+    AW_CHECK(capMarkupTail("<b>one\ntwo</b>", 4) == "<b>ne\ntwo</b>");
+    AW_CHECK(capMarkupTail("<b>one</b>\ntwo", 11) == "two");
+    // a cut inside a tag moves past it, and the tag is reopened
+    AW_CHECK(capMarkupTail("<span foreground=\"#fff\">ab</span>cd", 5) == "<span foreground=\"#fff\">ab</span>cd");
+    AW_CHECK(capMarkupTail("x&amp;y", 2) == "y"); // an entity is skipped whole
+    AW_CHECK(capMarkupTail("abc", 0) == "abc");
     return true;
 }

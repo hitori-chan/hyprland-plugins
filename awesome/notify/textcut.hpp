@@ -1,5 +1,5 @@
-// awesome/notify/textcut.hpp — the cut a card's text takes before pango
-// lays it out: pure and testable.
+// awesome/notify/textcut.hpp — the cuts a card's text takes (before pango,
+// at its byte caps): pure and testable.
 #pragma once
 
 #include <string>
@@ -56,6 +56,98 @@ namespace NAwesome::Notify {
             out += *it;
             out += '>';
         }
+        return out;
+    }
+
+    namespace TextCut {
+        struct STag {
+            std::string_view name, text; // the element name, the whole opening tag
+        };
+        struct SOpen {
+            std::vector<STag> tags;
+            size_t            closers = 0; // the bytes their closing tags take
+        };
+
+        // One token of sanitized markup from i: a whole tag (the open-tag
+        // stack follows it), a whole entity or one codepoint. False: a tag
+        // that never closes.
+        inline bool step(const std::string& s, size_t& i, SOpen& open) {
+            if (s[i] == '<') {
+                const auto END = s.find('>', i);
+                if (END == std::string::npos)
+                    return false;
+                const std::string_view TAG(s.data() + i + 1, END - i - 1);
+                if (!TAG.empty() && TAG.front() == '/') {
+                    if (!open.tags.empty()) {
+                        open.closers -= open.tags.back().name.size() + 3;
+                        open.tags.pop_back();
+                    }
+                } else if (!TAG.empty() && TAG.back() != '/') {
+                    const auto NAME = TAG.substr(0, TAG.find_first_of(" \t\n"));
+                    open.tags.push_back({NAME, std::string_view(s.data() + i, END + 1 - i)});
+                    open.closers += NAME.size() + 3;
+                }
+                i = END + 1;
+                return true;
+            }
+            if (s[i] == '&')
+                if (const auto SEMI = std::string_view(s).substr(i, 13).find(';'); SEMI != std::string_view::npos) {
+                    i += SEMI + 1;
+                    return true;
+                }
+            for (i++; i < s.size() && ((unsigned char)s[i] & 0xC0) == 0x80; i++) {}
+            return true;
+        }
+    }
+
+    // Sanitized markup within maxBytes, its head kept. A byte cut could land
+    // inside a tag or an entity: the parse failed and the plain fallback
+    // leaked the tag's tail (`oreground="#fff">`). The cut falls between
+    // tokens and the tags still open are closed, within the cap.
+    inline std::string capMarkupHead(const std::string& s, size_t maxBytes) {
+        if (s.size() <= maxBytes)
+            return s;
+        TextCut::SOpen open;
+        size_t         i = 0, best = 0;
+        while (i < s.size() && i <= maxBytes) {
+            if (i + open.closers <= maxBytes)
+                best = i;
+            if (!TextCut::step(s, i, open))
+                break;
+        }
+        // the tags open at the cut: a second pass up to it (a copy of the
+        // stack at every candidate was quadratic in a deep nest)
+        TextCut::SOpen atBest;
+        for (size_t j = 0; j < best;)
+            TextCut::step(s, j, atBest);
+        std::string out = s.substr(0, best);
+        for (auto it = atBest.tags.rbegin(); it != atBest.tags.rend(); ++it) {
+            out += "</";
+            out += it->name;
+            out += '>';
+        }
+        return out;
+    }
+
+    // Sanitized markup from the first token boundary at or past `from`, its
+    // tail kept: the tags open at the cut are reopened in front, so their
+    // closers still match.
+    inline std::string capMarkupTail(const std::string& s, size_t from) {
+        if (from == 0)
+            return s;
+        TextCut::SOpen open;
+        size_t         i = 0;
+        while (i < s.size() && i < from)
+            if (!TextCut::step(s, i, open)) {
+                // malformed: the codepoint-aligned byte cut, as before
+                for (i = from; i < s.size() && ((unsigned char)s[i] & 0xC0) == 0x80;)
+                    i++;
+                return s.substr(std::min(i, s.size()));
+            }
+        std::string out;
+        for (const auto& T : open.tags)
+            out += T.text;
+        out.append(s, std::min(i, s.size()));
         return out;
     }
 
