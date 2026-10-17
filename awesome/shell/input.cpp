@@ -427,7 +427,8 @@ namespace NAwesome::Shell {
             pointerOwned = true;
             g_pSeatManager->setPointerFocus(nullptr, {}); // the app under the strip gets its leave
             Pointer::Cursor::overrideController->setOverride("left_ptr", Pointer::Cursor::CURSOR_OVERRIDE_SPECIAL_ACTION);
-        }
+        } else if (!g_pSeatManager->m_state.pointerFocus.expired())
+            g_pSeatManager->setPointerFocus(nullptr, {}); // a native re-send (a map, a group add) entered the app beneath
     }
 
     // the pipeline head's reset (crash class 3/7): the session is locked or a

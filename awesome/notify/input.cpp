@@ -671,9 +671,11 @@ namespace NAwesome::Notify {
         const bool ONLINK = BTN < 0 && PART == 0 && linkAt(*CARD, P) >= 0; // a hyperlink shows the hand (GTK convention)
 
         const bool ENTERING = !pointerOwned;
-        if (ENTERING) {
+        if (ENTERING || !g_pSeatManager->m_state.pointerFocus.expired()) {
             pointerOwned = true;
-            g_pSeatManager->setPointerFocus(nullptr, {}); // the app under the surface gets its leave
+            // the app under the surface gets its leave — on entry, and again
+            // after a native re-send (a map, a group add) entered it beneath
+            g_pSeatManager->setPointerFocus(nullptr, {});
         }
         // set the shape on entry, and re-set only when it flips (a still stream
         // of motion must not re-assert the override every event)
