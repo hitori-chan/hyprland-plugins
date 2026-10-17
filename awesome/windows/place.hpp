@@ -48,6 +48,7 @@
 #include <cmath>
 #include <limits>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -245,13 +246,21 @@ namespace NAwesome::Windows::Place {
             // have no gap and settle into the corners). One pass, no
             // cascade, no center pile.
             if (!pos) {
+                // The score counts the topmost MAX_SCORED windows (the list
+                // is in stacking order, top last): (2n+1)^2 grid points
+                // times n windows grew cubically, ~10 ms per window opened
+                // over a hundred, all on the compositor thread. Past that
+                // many the screen has no clear gap to find anyway; fits()
+                // still sees every window.
+                constexpr size_t     MAX_SCORED = 24;
+                const std::span<const CBox> SCORED{blockers.data() + (blockers.size() > MAX_SCORED ? blockers.size() - MAX_SCORED : 0),
+                                                   std::min(blockers.size(), MAX_SCORED)};
                 // cutoff: only a strictly better score wins, so the running
-                // total can disqualify a point the moment it reaches it — a
-                // busy screen scores (2n+1)^2 grid points, and the losers
-                // stop early
+                // total can disqualify a point the moment it reaches it — the
+                // losers stop early
                 const auto overlapAt = [&](const Vector2D& p, double cutoff) {
                     double sum = 0.0;
-                    for (const auto& B : blockers) {
+                    for (const auto& B : SCORED) {
                         const double ix = std::min(p.x + size.x, B.x + B.w) - std::max(p.x, B.x);
                         const double iy = std::min(p.y + size.y, B.y + B.h) - std::max(p.y, B.y);
                         if (ix > 0 && iy > 0) {
@@ -266,7 +275,7 @@ namespace NAwesome::Windows::Place {
                 // dedup so an aligned grid of windows stays a few
                 // coordinates
                 std::vector<double> xs{WA.x}, ys{WA.y};
-                for (const auto& B : blockers) {
+                for (const auto& B : SCORED) {
                     xs.insert(xs.end(), {B.x, B.x + B.w});
                     ys.insert(ys.end(), {B.y, B.y + B.h});
                 }

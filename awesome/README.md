@@ -214,7 +214,7 @@ the plugin's one state file (see State).
 - **Spawn placement** is per-class: the last free position from the
   store (relative to the monitor it was on, applied on the monitor the
   window opens on), else least-overlap for a second window of the same
-  class.
+  class (scored against the topmost 24 windows of the workspace).
   Placement only moves a window: its size is always the client's own
   (the initial configure stays 0x0, so apps restore their own sizes and
   dialogs open at their natural size). The one size the plugin supplies
