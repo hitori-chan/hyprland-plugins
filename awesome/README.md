@@ -278,11 +278,12 @@ stays a broadcast.
   cards), so no client can pin a band id, take over the volume card on
   screen, or ride the band's DND bypass. Fresh ids outside the band are
   minted from a low counter.
-- `expire_timeout`: 0 → sticky, >0 → ms. −1 (server decides) → normal
-  and critical cards are sticky until dismissed — a message waits to be
-  read; self-declared ephemerals (low urgency, `transient`, `value`
-  cards) run `timeout_low`. `timeout_normal` > 0 restores a clock for
-  the rest.
+- `expire_timeout`: 0 → sticky, >0 → ms; −1 (server decides) →
+  `timeout_low` (4 s) for self-declared ephemerals (low urgency,
+  `transient`, `value` cards) and `timeout_normal` (5 s) for the rest,
+  after which the banner retreats to the shade (either set to 0:
+  sticky). A critical card sticks until dismissed, whatever it asks
+  for.
 - Hints honored: `urgency`; `value` (0–100) draws the progress bar (the
   volume/brightness OSD); `image-data`/`image_data`/`icon_data` raw
   pixmaps; `image-path`/`image_path`; `desktop-entry`; `action-icons`;

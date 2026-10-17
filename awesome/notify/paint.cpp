@@ -57,8 +57,8 @@ namespace NAwesome::Notify {
     //      the badge and the progress pill draw from ONE place now) ----
 
     // The content image in an icon column: the avatar, or in the shade
-    // (which shows no hero) a hero's square thumbnail. A banner's hero
-    // leaves its column to the identity.
+    // (which shows no hero) a hero's square thumbnail. A banner with a hero
+    // has no icon column at all (popups.cpp): the preview takes the width.
     const SP<ITexture>& contentFace(const SNotif& n, bool shade) {
         static const SP<ITexture> NONE;
         if (!n.iconTex)
