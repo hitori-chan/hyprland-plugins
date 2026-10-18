@@ -65,6 +65,9 @@ batteries against a nested Hyprland. Default tier `quick` (~1 min);
 `-b windows` alone for a geometry/CSD change; `-b all` for a bump or a
 release. Keep it lean: retire a check once its code is battle-tested,
 gate new behavior with discriminating checks.
+`bash awesome/gate/sweep.sh origin/main HEAD` builds and unit-tests every
+unpushed commit against the staged headers: run it before a push and
+after any history rewrite (it skips build inputs it already verified).
 
 - Isolation is absolute: the nested runs inside a private headless labwc
   (`gate/host.sh`) with its own session bus, its own system bus (a fake
