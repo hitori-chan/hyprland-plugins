@@ -72,10 +72,12 @@ namespace NAwesome {
             m_generation = request.generation;
             m_complete   = false;
             m_eof        = false;
+            m_ended      = false;
+            m_failed     = false;
             m_roots.clear();
 
             if (!m_loop || !prepare(request)) {
-                m_complete = true;
+                m_complete = m_failed = true;
                 return;
             }
 
@@ -89,7 +91,7 @@ namespace NAwesome {
 
             m_maxFileBytes = request.maxFileBytes;
             if (!spawn(std::move(request)))
-                m_complete = true;
+                m_complete = m_failed = true;
         }
 
         // A cancellation is another generation, so an old helper's records
@@ -101,6 +103,7 @@ namespace NAwesome {
             m_generation = generation;
             m_complete   = true;
             m_eof        = false;
+            m_failed     = false;
         }
 
         // Move at most max entries onto the event loop. True means this
@@ -124,6 +127,13 @@ namespace NAwesome {
             return m_generation == generation && !m_complete;
         }
 
+        // The generation completed WITHOUT walking its roots to the end: no
+        // helper, a malformed stream, or a helper killed (the OOM killer)
+        // between two frames — its clean EOF is told apart by the end mark.
+        bool failed(uint64_t generation) const {
+            return m_generation == generation && m_failed;
+        }
+
         void exit() {
             stopHelper(true);
             clearResults();
@@ -131,6 +141,7 @@ namespace NAwesome {
             m_generation   = 0;
             m_complete     = true;
             m_eof          = false;
+            m_failed       = false;
             m_loop         = nullptr;
             m_maxFileBytes = 0;
         }
@@ -146,7 +157,7 @@ namespace NAwesome {
         static constexpr size_t MAX_PREFIX_BYTES    = 4096;
         static constexpr size_t MAX_EXTENSIONS      = 16;
         static constexpr size_t MAX_EXTENSION_BYTES = 64;
-        static constexpr size_t HEADER_BYTES        = 25; // three 8-digit hex fields + directory bit
+        static constexpr size_t HEADER_BYTES        = 25; // three 8-digit hex fields + kind (0 file, 1 dir, 2 end)
         static constexpr size_t READ_BYTES          = 4096;
         static constexpr size_t READS_PER_DISPATCH  = 16;
 
@@ -239,6 +250,7 @@ for root in "$@"; do
     (( stop )) && break
     (( ++root_index ))
 done
+printf '%08X%08X%08X%d' 0 0 0 2
 )BASH";
 
         struct SResult {
@@ -399,7 +411,16 @@ done
                 const size_t available = m_buffer.size() - consumed;
                 if (available < HEADER_BYTES)
                     break;
+                if (m_ended) { // nothing follows the end mark
+                    fail();
+                    return false;
+                }
                 const std::string_view header{m_buffer.data() + consumed, HEADER_BYTES};
+                if (header == "0000000000000000000000002") {
+                    m_ended = true;
+                    consumed += HEADER_BYTES;
+                    continue;
+                }
                 uint32_t pathBytes = 0, rootIndex = 0, contentsBytes = 0;
                 if (!parseHex(header.substr(0, 8), pathBytes) || !parseHex(header.substr(8, 8), rootIndex) || !parseHex(header.substr(16, 8), contentsBytes) ||
                     (header[24] != '0' && header[24] != '1') || pathBytes == 0 || pathBytes > MAX_PATH_BYTES || rootIndex >= m_roots.size() || contentsBytes > m_maxFileBytes) {
@@ -468,7 +489,7 @@ done
                 return;
             if (m_blocked)
                 return; // frames still buffered: the consumer's next poll finishes
-            if (!m_buffer.empty()) {
+            if (!m_buffer.empty() || !m_ended) {
                 fail();
                 return;
             }
@@ -514,7 +535,7 @@ done
         void fail() {
             stopHelper(true);
             clearResults();
-            m_complete = true;
+            m_complete = m_failed = true;
         }
 
         wl_event_loop*                      m_loop         = nullptr;
@@ -528,6 +549,8 @@ done
         bool                                m_eof          = false;
         bool                                m_paused       = false;
         bool                                m_blocked      = false; // a buffered whole frame waits for queue room
+        bool                                m_ended        = false; // the helper's end mark arrived
+        bool                                m_failed       = false;
         std::vector<std::filesystem::path> m_roots;
         std::string                         m_buffer;
         std::deque<SResult>                m_results;
