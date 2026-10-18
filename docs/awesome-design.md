@@ -312,7 +312,8 @@ stays in lockstep between `core/version.hpp` and `hyprpm.toml`.
   the display list was declined). A cached display list would save
   ~100 us at the cost of a stale-content risk across every state source.
 - One .desktop index for the whole plugin (core), shared by the bar's
-  icons and the cards' sender identities. Open: the bar decodes its icons
+  icons, the cards' sender identities and the launcher's list; a refresh
+  builds aside and swaps in whole. Open: the bar decodes its icons
   synchronously on the warm (once per class), not on the async gatherer.
 
 ## 6. devtools — re-derived, not patched

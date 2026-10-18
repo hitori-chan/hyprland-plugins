@@ -98,6 +98,85 @@ namespace NAwesome::DesktopExec {
         return out;
     }
 
+    // One [Desktop Entry] group, string-level unescaped (Exec= keeps its
+    // field codes and quoting for the grammar below).
+    struct SEntry {
+        std::string              name, icon, wmClass, exec;
+        std::vector<std::string> onlyShowIn, notShowIn, categories;
+        bool                     application = false, hidden = false, terminal = false, dbusActivatable = false;
+        bool                     malformed = false; // a value that would not unescape: never listed
+    };
+
+    // The file's [Desktop Entry] group; nullopt when it has none. Space
+    // around '=' is ignored (the spec), a key's first occurrence wins, and
+    // localized keys (Name[de]) are skipped.
+    inline std::optional<SEntry> parseEntry(std::string_view contents) {
+        SEntry     E;
+        bool       inEntry = false, sawEntry = false, sawExec = false;
+        const auto str     = [&](std::string_view value, std::string& out) {
+            if (auto U = unescapeString(value))
+                out = std::move(*U);
+            else
+                E.malformed = true;
+        };
+        const auto list = [&](std::string_view value, std::vector<std::string>& out) {
+            if (auto U = unescapeList(value))
+                out = std::move(*U);
+            else
+                E.malformed = true;
+        };
+        for (size_t p = 0; p < contents.size();) {
+            const auto       NL   = contents.find('\n', p);
+            std::string_view line = contents.substr(p, NL == std::string_view::npos ? contents.size() - p : NL - p);
+            p                     = NL == std::string_view::npos ? contents.size() : NL + 1;
+            if (!line.empty() && line.back() == '\r')
+                line.remove_suffix(1);
+            if (line.starts_with('[')) {
+                if (inEntry)
+                    break; // only [Desktop Entry] matters
+                inEntry  = line == "[Desktop Entry]";
+                sawEntry = sawEntry || inEntry;
+                continue;
+            }
+            if (!inEntry || line.starts_with('#'))
+                continue;
+            const auto EQ = line.find('=');
+            if (EQ == std::string_view::npos)
+                continue;
+            size_t keyEnd = EQ, valStart = EQ + 1;
+            while (keyEnd > 0 && line[keyEnd - 1] == ' ')
+                keyEnd--;
+            while (valStart < line.size() && line[valStart] == ' ')
+                valStart++;
+            const auto KEY = line.substr(0, keyEnd), VALUE = line.substr(valStart);
+            if (KEY == "Name" && E.name.empty())
+                str(VALUE, E.name);
+            else if (KEY == "Exec" && !std::exchange(sawExec, true))
+                E.exec = unescapeExec(VALUE);
+            else if (KEY == "Icon" && E.icon.empty())
+                str(VALUE, E.icon);
+            else if (KEY == "StartupWMClass" && E.wmClass.empty())
+                str(VALUE, E.wmClass);
+            else if (KEY == "Terminal")
+                E.terminal = VALUE == "true";
+            else if (KEY == "DBusActivatable")
+                E.dbusActivatable = VALUE == "true";
+            else if (KEY == "Type")
+                E.application = VALUE == "Application";
+            else if ((KEY == "NoDisplay" || KEY == "Hidden") && VALUE == "true")
+                E.hidden = true;
+            else if (KEY == "OnlyShowIn")
+                list(VALUE, E.onlyShowIn);
+            else if (KEY == "NotShowIn")
+                list(VALUE, E.notShowIn);
+            else if (KEY == "Categories")
+                list(VALUE, E.categories);
+        }
+        if (!sawEntry)
+            return std::nullopt;
+        return E;
+    }
+
     struct SToken {
         std::string       value;
         std::vector<bool> quoted;

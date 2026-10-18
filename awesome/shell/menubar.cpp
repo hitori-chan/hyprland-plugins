@@ -3,6 +3,7 @@
 
 #include "../core/bounded.hpp"
 #include "../core/clipboard.hpp"
+#include "../core/desktopindex.hpp"
 #include "../core/fileindex.hpp"
 #include "../core/keys.hpp"
 #include "../core/persist.hpp"
@@ -32,17 +33,24 @@ namespace NAwesome::Shell {
         };
         const int         NCATS = (int)(sizeof(CATEGORIES) / sizeof(*CATEGORIES));
 
-        std::vector<SApp> apps; // parsed on first open, sorted by name
-        static bool       parsed = false;
-        static NAwesome::CAsyncFileIndex appIndex, completionIndex;
+        std::vector<SApp> apps; // from the core's desktop index, sorted by name
+        static uint64_t   appsVersion = 0; // the index version apps were built from
+        static bool       appsBuilt   = false;
+        static NAwesome::CAsyncFileIndex completionIndex;
         static SP<CEventLoopTimer>           indexPoll;
         static NAwesome::Keys::CRepeat       repeat; // the held-key repeat (see onKey)
-        static uint64_t                      appGeneration = 0, completionGeneration = 0;
+        static uint64_t                      completionGeneration = 0;
         static uint64_t                      activationGeneration = 0;
         static NAwesome::CClipboardRead     clipboard;
-        static bool                          appScanning = false;
-        static std::unordered_set<std::string> appSeen;
-        static std::string                   pendingSelectionId;
+        // the selected row across a rebuild, by identity (its index moves
+        // when a refresh lands): an app by desktop id, a category, or the
+        // Exec entry — Enter on "Exec:" must not launch the app slid there
+        struct SSelectionKey {
+            std::string appId;
+            int         cat  = -1;
+            bool        exec = false;
+        };
+        static std::optional<SSelectionKey> pendingSelection;
 
         bool              isOpen = false;
         std::string       typed;
@@ -96,13 +104,6 @@ namespace NAwesome::Shell {
             return out;
         }
 
-        static std::string desktopBusName(std::string id) {
-            if (id.ends_with(".desktop"))
-                id.resize(id.size() - 8);
-            std::ranges::replace(id, '/', '-');
-            return id;
-        }
-
         static std::optional<sdbus::ObjectPath> desktopObjectPath(const std::string& name) {
             if (name.empty() || name.front() == '.' || name.back() == '.')
                 return std::nullopt;
@@ -139,78 +140,10 @@ namespace NAwesome::Shell {
 
         static std::vector<std::string> desktops; // XDG_CURRENT_DESKTOP entries, for OnlyShowIn/NotShowIn
 
-        static void                     parseFile(const NAwesome::CAsyncFileIndex::SEntry& entry, std::unordered_set<std::string>& seen) {
-            const auto& path = entry.path;
-            const auto  id   = entry.relative.generic_string();
-            if (!seen.insert(id).second)
-                return; // an earlier (higher-precedence) dir already provides this id
-
-            std::istringstream F(entry.contents);
-
-            SApp                     app;
-            app.desktopId = desktopBusName(id);
-            std::string              line, rawExec;
-            std::vector<std::string> onlyShowIn, notShowIn, categories;
-            bool                     inEntry = false, hidden = false, isApp = false, malformed = false;
-            const auto               stringValue = [&](std::string_view value, std::string& out) {
-                const auto UNESCAPED = NAwesome::DesktopExec::unescapeString(value);
-                if (!UNESCAPED) {
-                    malformed = true;
-                    return;
-                }
-                out = *UNESCAPED;
-            };
-            const auto listValue = [&](std::string_view value, std::vector<std::string>& out) {
-                const auto UNESCAPED = NAwesome::DesktopExec::unescapeList(value);
-                if (!UNESCAPED) {
-                    malformed = true;
-                    return;
-                }
-                out = *UNESCAPED;
-            };
-            while (std::getline(F, line)) {
-                if (!line.empty() && line.back() == '\r')
-                    line.pop_back();
-                if (line.starts_with("[")) {
-                    if (inEntry)
-                        break; // only [Desktop Entry] matters
-                    inEntry = line == "[Desktop Entry]";
-                    continue;
-                }
-                if (!inEntry)
-                    continue;
-                // the spec: space before and after the '=' is ignored
-                if (const auto EQ = line.find('='); EQ != std::string::npos && !line.starts_with('#')) {
-                    size_t keyEnd = EQ, valStart = EQ + 1;
-                    while (keyEnd > 0 && line[keyEnd - 1] == ' ')
-                        keyEnd--;
-                    while (valStart < line.size() && line[valStart] == ' ')
-                        valStart++;
-                    if (keyEnd != EQ || valStart != EQ + 1)
-                        line = line.substr(0, keyEnd) + "=" + line.substr(valStart);
-                }
-                if (line.starts_with("Name=") && app.name.empty())
-                    stringValue(std::string_view{line}.substr(5), app.name);
-                else if (line.starts_with("Exec="))
-                    rawExec = NAwesome::DesktopExec::unescapeExec(std::string_view{line}.substr(5));
-                else if (line.starts_with("Icon="))
-                    stringValue(std::string_view{line}.substr(5), app.icon);
-                else if (line.starts_with("Terminal="))
-                    app.terminal = line.substr(9) == "true";
-                else if (line.starts_with("DBusActivatable="))
-                    app.dbusActivatable = line.substr(16) == "true";
-                else if (line.starts_with("Type="))
-                    isApp = line.substr(5) == "Application";
-                else if ((line.starts_with("NoDisplay=") || line.starts_with("Hidden=")) && line.ends_with("=true"))
-                    hidden = true;
-                else if (line.starts_with("OnlyShowIn="))
-                    listValue(std::string_view{line}.substr(11), onlyShowIn);
-                else if (line.starts_with("NotShowIn="))
-                    listValue(std::string_view{line}.substr(10), notShowIn);
-                else if (line.starts_with("Categories="))
-                    listValue(std::string_view{line}.substr(11), categories);
-            }
-            if (malformed || !isApp || hidden || (!app.dbusActivatable && rawExec.empty()))
+        // an index entry the launcher lists: an application, shown here,
+        // with something to run
+        static void addApp(const NAwesome::SDesktopEntry& E) {
+            if (E.malformed || !E.application || E.hidden || (!E.dbusActivatable && E.exec.empty()))
                 return;
 
             // honor OnlyShowIn/NotShowIn against this desktop (awesome checks
@@ -221,16 +154,20 @@ namespace NAwesome::Shell {
                         return true;
                 return false;
             };
-            if (!onlyShowIn.empty() && !HERE(onlyShowIn))
+            if (!E.onlyShowIn.empty() && !HERE(E.onlyShowIn))
                 return;
-            if (HERE(notShowIn))
+            if (HERE(E.notShowIn))
                 return;
 
-            if (app.name.empty())
-                app.name = "[" + path.stem().string() + "]"; // awesome's nameless fallback
+            SApp app;
+            app.desktopId       = E.id;
+            app.name            = E.name.empty() ? "[" + std::filesystem::path{E.path}.stem().string() + "]" : E.name; // awesome's nameless fallback
+            app.icon            = E.icon;
+            app.terminal        = E.terminal;
+            app.dbusActivatable = E.dbusActivatable;
 
             // the first Categories= token that maps files the app there
-            for (const auto& T : categories) {
+            for (const auto& T : E.categories) {
                 for (int i = 0; app.category < 0 && i < NCATS; i++)
                     if (T == CATEGORIES[i].appType)
                         app.category = i;
@@ -239,8 +176,8 @@ namespace NAwesome::Shell {
             }
 
             std::string plainExec; // the words as typed, unquoted: what a query matches
-            if (!rawExec.empty()) {
-                const auto WORDS = NAwesome::DesktopExec::expand(rawExec, app.name, path.string(), app.icon);
+            if (!E.exec.empty()) {
+                const auto WORDS = NAwesome::DesktopExec::expand(E.exec, app.name, E.path, app.icon);
                 if (!WORDS && !app.dbusActivatable)
                     return;
                 if (WORDS) {
@@ -257,92 +194,42 @@ namespace NAwesome::Shell {
             apps.push_back(std::move(app));
         }
 
-        static std::vector<std::string> appDirs() {
-            std::vector<std::string> dirs; // user dirs first: their ids win
-            const auto               addDir = [&](const std::string& d) {
-                if (!d.empty() && std::find(dirs.begin(), dirs.end(), d) == dirs.end())
-                    dirs.push_back(d);
-            };
-            const char* HOME = std::getenv("HOME");
-            if (const char* XDH = std::getenv("XDG_DATA_HOME"); XDH && *XDH)
-                addDir(std::string{XDH} + "/applications");
-            else if (HOME)
-                addDir(std::string{HOME} + "/.local/share/applications");
-            if (HOME)
-                addDir(std::string{HOME} + "/.local/share/flatpak/exports/share/applications");
-            const char* DATA_DIRS = std::getenv("XDG_DATA_DIRS");
-            for (const auto& D : splitList(DATA_DIRS && *DATA_DIRS ? DATA_DIRS : "/usr/local/share:/usr/share", ':'))
-                addDir(D + (D.back() == '/' ? "applications" : "/applications"));
-            addDir("/var/lib/flatpak/exports/share/applications");
-            return dirs;
-        }
-
-        // The application directories as last scanned: an app installed (or
-        // removed) since changes its directory's mtime, and the next open
-        // rescans — the index is not built once per compositor lifetime
-        // (restarting awesome was cheap; relogging is not).
-        static std::vector<int64_t> appDirStamps;
-        static std::vector<int64_t> stampsOf(const std::vector<std::string>& dirs) {
-            std::vector<int64_t> out;
-            out.reserve(dirs.size());
-            for (const auto& D : dirs) {
-                std::error_code ec;
-                const auto      T = std::filesystem::last_write_time(D, ec);
-                out.push_back(ec ? 0 : (int64_t)T.time_since_epoch().count());
+        // apps from the index as it stands (a no-op while it has not
+        // changed); the open launcher keeps its selection across a rebuild
+        static void buildApps() {
+            const auto& INDEX = NAwesome::CDesktopIndex::inst();
+            if (appsBuilt && appsVersion == INDEX.version())
+                return;
+            appsBuilt   = true;
+            appsVersion = INDEX.version();
+            if (isOpen && sel >= 0 && sel < (int)shown.size()) {
+                const auto& S    = shown[sel];
+                pendingSelection = S.app >= 0 ? SSelectionKey{.appId = apps[S.app].desktopId} : SSelectionKey{.cat = S.cat, .exec = S.cat < 0};
             }
-            return out;
-        }
-
-        static void parseApps() {
-            apps.clear();
-            appSeen.clear();
             if (const char* XCD = std::getenv("XDG_CURRENT_DESKTOP"); XCD && *XCD)
                 desktops = splitList(XCD, ':');
             else
                 desktops = {"Hyprland"};
-
-            const auto dirs = appDirs();
-            appDirStamps    = stampsOf(dirs);
-
-            appScanning = true;
-            NAwesome::CAsyncFileIndex::SRequest request;
-            request.generation   = ++appGeneration;
-            request.extensions   = {".desktop"};
-            request.maxEntries   = 4096;
-            request.maxVisited   = 65536;
-            request.maxFileBytes = NAwesome::DesktopExec::MAX_DESKTOP_FILE_BYTES;
-            request.recursive    = true;
-            for (const auto& directory : dirs)
-                request.roots.emplace_back(directory);
-            appIndex.request(std::move(request));
-        }
-
-        static bool pollApps() {
-            if (!appScanning)
-                return false;
-            std::vector<NAwesome::CAsyncFileIndex::SEntry> entries;
-            const bool COMPLETE = appIndex.poll(appGeneration, entries, 8);
-            const size_t BEFORE = apps.size();
-            for (const auto& entry : entries)
-                parseFile(entry, appSeen);
-            appScanning = !COMPLETE;
-            if (COMPLETE) {
-                if (isOpen && sel >= 0 && sel < (int)shown.size() && shown[sel].app >= 0)
-                    pendingSelectionId = apps[shown[sel].app].desktopId;
-                std::sort(apps.begin(), apps.end(), [](const auto& a, const auto& b) { return a.lname < b.lname; });
-            }
-            return apps.size() != BEFORE || COMPLETE;
+            apps.clear();
+            shown.clear(); // its entries index into apps: the caller refilters
+            for (const auto& E : INDEX.entries())
+                addApp(E);
+            std::ranges::sort(apps, [](const auto& a, const auto& b) { return a.lname < b.lname; });
         }
 
         static void restoreSelection() {
-            if (pendingSelectionId.empty())
+            if (!pendingSelection)
                 return;
-            for (int i = 0; i < (int)shown.size(); i++)
-                if (shown[i].app >= 0 && apps[shown[i].app].desktopId == pendingSelectionId) {
+            const auto KEY = *std::exchange(pendingSelection, std::nullopt);
+            for (int i = 0; i < (int)shown.size(); i++) {
+                const auto& S = shown[i];
+                if (KEY.exec          ? S.app < 0 && S.cat < 0 :
+                        !KEY.appId.empty() ? S.app >= 0 && apps[S.app].desktopId == KEY.appId :
+                                             S.app < 0 && S.cat == KEY.cat) {
                     sel = i;
                     break;
                 }
-            pendingSelectionId.clear();
+            }
         }
 
         // awesome's menulist_update: case-insensitive substring match on the
@@ -425,12 +312,10 @@ namespace NAwesome::Shell {
             if (!M)
                 return;
             Menu::close();
-            if (!parsed || stampsOf(appDirs()) != appDirStamps) {
-                parseApps();
-                parsed = true;
-                if (indexPoll)
-                    indexPoll->updateTimeout(std::chrono::milliseconds(2));
-            }
+            // an app installed or removed since the last scan rescans
+            // (the index swaps the new set in whole when it lands)
+            NAwesome::CDesktopIndex::inst().refreshIfStale();
+            buildApps();
             loadFiles();
             clipboard.cancel();
             typed.clear();
@@ -594,9 +479,9 @@ namespace NAwesome::Shell {
             promptChanged();
         }
 
-        static bool pollCompletion() {
+        static void pollCompletion() {
             if (!compScanning)
-                return false;
+                return;
             std::vector<NAwesome::CAsyncFileIndex::SEntry> entries;
             const bool COMPLETE = completionIndex.poll(completionGeneration, entries, 64);
             for (const auto& entry : entries) {
@@ -627,7 +512,6 @@ namespace NAwesome::Shell {
                 compList.erase(std::unique(compList.begin(), compList.end()), compList.end());
                 applyCompletion(compBackward); // it repaints; an empty list stays as typed
             }
-            return false; // nothing shows before then
         }
 
         // Tab completion (awful.completion.shell, natively): the word under
@@ -1152,23 +1036,30 @@ namespace NAwesome::Shell {
 
     namespace Menubar {
         void init() {
-            if (!g_pEventLoopManager || !g_pCompositor || !appIndex.init(g_pCompositor->m_wlEventLoop) || !completionIndex.init(g_pCompositor->m_wlEventLoop))
+            if (!g_pEventLoopManager || !g_pCompositor || !completionIndex.init(g_pCompositor->m_wlEventLoop))
                 return;
             ++activationGeneration;
             indexPoll = makeShared<CEventLoopTimer>(
                 std::nullopt,
                 [](SP<CEventLoopTimer> self, void*) {
-                    const bool APPS = pollApps();
-                    const bool COMP = pollCompletion();
-                    if (isOpen && (APPS || COMP)) {
-                        refilter();
-                        restoreSelection();
-                        promptChanged();
-                    }
-                    self->updateTimeout((appScanning || compScanning) ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
+                    pollCompletion();
+                    self->updateTimeout(compScanning ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
                 },
                 nullptr);
             g_pEventLoopManager->addTimer(indexPoll);
+            // the index changed (its first scan's batches, a refresh landing):
+            // an open launcher lists it now, a closed one at its next open
+            NAwesome::CDesktopIndex::inst().subscribe([]() {
+                // the first scan's batches land once, at its end: rebuilding
+                // and repainting the whole list per 32-file batch made a
+                // launcher opened at login quadratic in the entries
+                if (!isOpen || NAwesome::CDesktopIndex::inst().scanning())
+                    return;
+                buildApps();
+                refilter();
+                restoreSelection();
+                promptChanged();
+            });
             repeat.init(onRepeat);
         }
 
@@ -1190,15 +1081,13 @@ namespace NAwesome::Shell {
                 g_pEventLoopManager->removeTimer(indexPoll);
             indexPoll.reset();
             repeat.teardown();
-            appIndex.exit();
             completionIndex.exit();
             apps.clear();
             shown.clear(); // its entries index into apps
             desktops.clear();
-            appSeen.clear();
-            pendingSelectionId.clear();
-            parsed = false;
-            appScanning = compScanning = false;
+            pendingSelection.reset();
+            appsBuilt    = false;
+            compScanning = false;
             launchCounts.clear();
             history.entries.clear();
             filesLoaded = false;

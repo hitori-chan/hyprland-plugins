@@ -121,5 +121,24 @@ bool test_desktop_exec() {
     AW_CHECK(DE::typeableText("ok\x01\xe2\x80\xaeyes\xff") == "okyes");
     AW_CHECK(DE::typeableText("ünï") == "ünï");
 
+    // ---- parseEntry: the [Desktop Entry] group ----
+    {
+        const auto E = DE::parseEntry("# a comment\n[Desktop Entry]\r\nType = Application\nName=Files\nName[de]=Dateien\nName=Second\n"
+                                      "Exec=thunar %U\nIcon=org.xfce.thunar\nStartupWMClass=Thunar\nCategories=System;FileManager;\n"
+                                      "Terminal=false\nNoDisplay=false\n[Desktop Action window]\nName=Other\nExec=other\n");
+        AW_CHECK(E.has_value());
+        AW_CHECK(E->application);                                  // space around '=' is ignored
+        AW_CHECK(E->name == "Files");                              // the first wins; a localized key is not the key
+        AW_CHECK(E->exec == "thunar %U");                          // field codes stay for the expander
+        AW_CHECK(E->icon == "org.xfce.thunar" && E->wmClass == "Thunar");
+        AW_CHECK(E->categories == (std::vector<std::string>{"System", "FileManager"}));
+        AW_CHECK(!E->hidden && !E->terminal && !E->malformed);
+    }
+    AW_CHECK(!DE::parseEntry("[Desktop Action x]\nName=x\n").has_value()); // no entry group
+    AW_CHECK(DE::parseEntry("[Desktop Entry]\nHidden=true\n")->hidden);
+    AW_CHECK(DE::parseEntry("[Desktop Entry]\nName=bad\\q\n")->malformed); // an unknown escape
+    AW_CHECK(DE::parseEntry("[Desktop Entry]\nIcon=x\n#Icon=y\n")->icon == "x");
+    AW_CHECK(!DE::parseEntry("[Desktop Entry]\nType=Link\n")->application);
+
     return true;
 }

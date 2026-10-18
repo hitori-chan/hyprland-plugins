@@ -132,7 +132,7 @@ namespace NAwesome {
                 HyprlandAPI::addNotification(handle, "[awesome] " + StateStore::path().string() + " is unreadable: left untouched, nothing is remembered this session",
                                              CHyprColor{1.0, 0.6, 0.2, 1.0}, 10000);
             // the shared .desktop icon index, before the modules subscribe
-            CDesktopIcons::inst().start();
+            CDesktopIndex::inst().start();
             CRasterWorker::inst().start(); // the pixel worker the modules' images ride
             // A throwing init (bad_alloc, a bus that refuses us) ejects the
             // plugin WITHOUT PLUGIN_EXIT: tear down whatever did start —
@@ -151,7 +151,7 @@ namespace NAwesome {
                     m_modules[i]->teardown();
                 Jobs::inst().teardown();
                 CRasterWorker::inst().stop();
-                CDesktopIcons::inst().stop();
+                CDesktopIndex::inst().stop();
                 throw;
             }
 
@@ -186,7 +186,7 @@ namespace NAwesome {
                 (*IT)->teardown();
             Jobs::inst().teardown(); // helpers after the modules that spawned them
             CRasterWorker::inst().stop(); // joins a running job; the rest are dropped, dones unrun
-            CDesktopIcons::inst().stop(); // its helper and subscribers, after the modules
+            CDesktopIndex::inst().stop(); // its helper and subscribers, after the modules
         }
 
         // ---- the pipeline ----

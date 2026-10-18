@@ -106,9 +106,16 @@ process. The compositor drains framed results through the event loop;
 queue backpressure pauses the helper (a frame too large for the queue's
 room waits whole, never truncating the scan), and teardown closes the
 pipe and signals its private process group through a pidfd, without
-joining filesystem work. Symlinked roots are followed. The app index
-rescans on the next open once an applications directory changed (an
-app installed or removed since). Desktop Entry strings are decoded
+joining filesystem work. Symlinked roots are followed. The launcher
+lists the plugin's one desktop index (core, shared with the bar's and
+the cards' icons), scanned once at plugin start; the next open after an
+applications directory changed (an app installed or removed since)
+rescans it, and the new set swaps in whole when it lands, the old one
+listed meanwhile; a scan cut short (its 30 s deadline, a failed or
+killed helper) swaps nothing and is retried at the next open. A
+launcher open during the first scan lists what has landed and the
+rest once the scan ends; a rebuild keeps the selected row (an app, a
+category, or the Exec entry). Desktop Entry strings are decoded
 before use (space around `=` is ignored, per the spec); `Exec=`
 preserves its quoting and field-code grammar before passing argument
 boundaries to the executor.
@@ -385,7 +392,8 @@ compositor; the card keeps the name and resolves it again a window
 later, its sender faces and action icons too). A `desktop-entry` hint additionally
 resolves the .desktop file's own `Icon=` (all `$XDG_DATA_DIRS/
 applications` entries are indexed once at plugin start by a bounded
-helper process, keyed by the file name and `StartupWMClass`), which
+helper process, keyed by the desktop id, the file name and
+`StartupWMClass`), which
 beats an icon-name collision; while the index has not reached the
 entry, the icon-name stand-in draws and the index upgrades the live
 card when it lands. Decoding is hyprgraphics: PNG/JPEG/WEBP/BMP + SVG

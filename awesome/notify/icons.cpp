@@ -293,7 +293,7 @@ namespace NAwesome::Notify {
     // the desktop entry's own Icon= (the index's value), resolved to a file.
     // Empty while the index has not reached the entry.
     std::string resolveDesktopEntryIcon(const std::string& entry, int sizePx) {
-        const auto* ICON = NAwesome::CDesktopIcons::inst().find(lowerKey(entry));
+        const auto* ICON = NAwesome::CDesktopIndex::inst().findIcon(lowerKey(entry));
         return ICON ? Parse::resolveImage(*ICON, sizePx) : "";
     }
 
@@ -934,7 +934,7 @@ namespace NAwesome::Notify {
             fallbackPoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { pollFallback(); }, nullptr);
             g_pEventLoopManager->addTimer(fallbackPoll);
         }
-        NAwesome::CDesktopIcons::inst().subscribe(onDesktopEntries);
+        NAwesome::CDesktopIndex::inst().subscribe(onDesktopEntries);
     }
 
     void iconsExit() {

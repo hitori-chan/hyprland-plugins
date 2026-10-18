@@ -235,9 +235,9 @@ namespace NAwesome::Shell {
     // org.qbittorrent.qBittorrent.desktop) — the spec's StartupWMClass field
     // is the canonical association, so scan for it when the basename misses.
     static std::string desktopIconName(const std::string& identifier) {
-        const auto& INDEX = NAwesome::CDesktopIcons::inst();
+        const auto& INDEX = NAwesome::CDesktopIndex::inst();
         const auto  ID    = lower(identifier);
-        if (const auto* ICON = INDEX.find(ID))
+        if (const auto* ICON = INDEX.findIcon(ID))
             return *ICON;
 
         // SNI Id is stable but not required to be a desktop-file id. Accept a
@@ -246,7 +246,7 @@ namespace NAwesome::Shell {
         // match an unrelated "application" id.
         const std::string* best = nullptr;
         size_t             bestLength = 0;
-        for (const auto& [key, icon] : INDEX.entries()) {
+        for (const auto& [key, icon] : INDEX.icons()) {
             if (key.size() <= bestLength || !NAwesome::iconIdentityPrefixMatch(ID, key))
                 continue;
             best       = &icon;
@@ -394,7 +394,7 @@ namespace NAwesome::Shell {
         // MISSES (cached nulls) — a resolved icon stays resolved; clearing
         // everything per batch re-decoded every task and tray icon dozens of
         // times while the index loaded
-        NAwesome::CDesktopIcons::inst().subscribe([]() {
+        NAwesome::CDesktopIndex::inst().subscribe([]() {
             std::erase_if(appIconCache, [](const auto& E) { return !E.second; });
             std::erase_if(trayIconCache, [](const auto& E) { return !E.second; });
             for (const auto& item : Tray::items)

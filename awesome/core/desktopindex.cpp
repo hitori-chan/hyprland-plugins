@@ -1,34 +1,112 @@
 // awesome/core/desktopindex.cpp — see desktopindex.hpp.
 #include "desktopindex.hpp"
 #include "desktop_exec.hpp"
-#include "icons.hpp"
 
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopTimer.hpp>
 
-#include <sstream>
+#include <algorithm>
+#include <filesystem>
 
 namespace NAwesome {
 
     namespace {
         constexpr size_t MAX_DESKTOP_FILES   = 4096;
-        constexpr size_t MAX_DESKTOP_VISITED = 16384;
-        // entries folded per poll: parsing one is microseconds, and 8 per
-        // 16 ms tick stretched a full scan over seconds of fallback icons
-        constexpr size_t ENTRIES_PER_POLL = 32;
+        constexpr size_t MAX_DESKTOP_VISITED = 65536;
+        // files folded per poll: one is tens of microseconds (a group with
+        // every translation is a thousand lines), and 8 per 16 ms tick
+        // stretched a full scan over seconds of fallback icons
+        constexpr size_t FILES_PER_POLL = 32;
         // a hung mount in XDG_DATA_DIRS stalls the helper, not the loop; the
         // scan then gives up and keeps what it found instead of polling on
         constexpr auto SCAN_DEADLINE = std::chrono::seconds(30);
+
+        std::vector<std::string> splitDirs(std::string_view s) {
+            std::vector<std::string> out;
+            for (size_t p = 0; p < s.size();) {
+                const auto E = s.find(':', p);
+                if (const auto D = s.substr(p, E == std::string_view::npos ? s.size() - p : E - p); !D.empty())
+                    out.emplace_back(D);
+                if (E == std::string_view::npos)
+                    break;
+                p = E + 1;
+            }
+            return out;
+        }
+
+        // the applications dirs in precedence order (user dirs first: their
+        // ids win), flatpak's exports included whatever XDG_DATA_DIRS says
+        std::vector<std::string> applicationDirs() {
+            std::vector<std::string> dirs;
+            const auto               addDir = [&](const std::string& d) {
+                if (!d.empty() && std::ranges::find(dirs, d) == dirs.end())
+                    dirs.push_back(d);
+            };
+            const char* HOME = std::getenv("HOME");
+            if (const char* XDH = std::getenv("XDG_DATA_HOME"); XDH && *XDH)
+                addDir(std::string{XDH} + "/applications");
+            else if (HOME)
+                addDir(std::string{HOME} + "/.local/share/applications");
+            if (HOME)
+                addDir(std::string{HOME} + "/.local/share/flatpak/exports/share/applications");
+            const char* DATA_DIRS = std::getenv("XDG_DATA_DIRS");
+            for (const auto& D : splitDirs(DATA_DIRS && *DATA_DIRS ? DATA_DIRS : "/usr/local/share:/usr/share"))
+                addDir(D + (D.back() == '/' ? "applications" : "/applications"));
+            addDir("/var/lib/flatpak/exports/share/applications");
+            return dirs;
+        }
+
+        std::vector<int64_t> stampsOf(const std::vector<std::string>& dirs) {
+            std::vector<int64_t> out;
+            out.reserve(dirs.size());
+            for (const auto& D : dirs) {
+                std::error_code ec;
+                const auto      T = std::filesystem::last_write_time(D, ec);
+                out.push_back(ec ? 0 : (int64_t)T.time_since_epoch().count());
+            }
+            return out;
+        }
     }
 
-    void CDesktopIcons::start() {
+    void CDesktopIndex::start() {
         if (!g_pCompositor || !g_pEventLoopManager || !m_index.init(g_pCompositor->m_wlEventLoop))
             return;
-        m_poll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { CDesktopIcons::inst().poll(); }, nullptr);
+        m_poll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { CDesktopIndex::inst().poll(); }, nullptr);
         g_pEventLoopManager->addTimer(m_poll);
+        request(false);
+    }
 
-        m_icons.clear();
+    void CDesktopIndex::stop() {
+        if (m_poll && g_pEventLoopManager)
+            g_pEventLoopManager->removeTimer(m_poll);
+        m_poll.reset();
+        m_index.exit();
+        m_live     = {};
+        m_next     = {};
+        m_subs.clear();
+        m_scanning = m_aside = false;
+    }
+
+    void CDesktopIndex::refreshIfStale() {
+        // not started, or a scan under way (it reads the dirs as they are)
+        if (!m_poll || m_scanning)
+            return;
+        const auto DIRS = applicationDirs();
+        if (DIRS == m_dirs && stampsOf(DIRS) == m_stamps)
+            return;
+        request(true);
+    }
+
+    void CDesktopIndex::request(bool aside) {
+        m_dirs     = applicationDirs();
+        m_stamps   = stampsOf(m_dirs);
+        m_aside    = aside;
+        // not `(aside ? m_next : m_live) = {}`: GCC 16.2 zero-fills an
+        // aggregate assigned {} through a conditional, constructing nothing
+        // (both tables kept 0 buckets: SIGFPE at the first insert)
+        auto& SET  = aside ? m_next : m_live;
+        SET        = SSet{};
         m_scanning = true;
         m_deadline = std::chrono::steady_clock::now() + SCAN_DEADLINE;
         CAsyncFileIndex::SRequest request;
@@ -37,84 +115,88 @@ namespace NAwesome {
         request.maxEntries   = MAX_DESKTOP_FILES;
         request.maxVisited   = MAX_DESKTOP_VISITED;
         request.maxFileBytes = DesktopExec::MAX_DESKTOP_FILE_BYTES;
-        for (auto& dir : xdgDataDirs())
-            request.roots.emplace_back(dir + "/applications");
+        request.recursive    = true; // a subdir's files are ids too (kde4/x.desktop is kde4-x)
+        for (const auto& D : m_dirs)
+            request.roots.emplace_back(D);
         m_index.request(std::move(request));
-        m_poll->updateTimeout(std::chrono::milliseconds(2));
+        if (m_poll)
+            m_poll->updateTimeout(std::chrono::milliseconds(2));
     }
 
-    void CDesktopIcons::stop() {
-        if (m_poll && g_pEventLoopManager)
-            g_pEventLoopManager->removeTimer(m_poll);
-        m_poll.reset();
-        m_index.exit();
-        m_icons.clear();
-        m_subs.clear();
-        m_scanning = false;
-    }
-
-    void CDesktopIcons::poll() {
+    void CDesktopIndex::poll() {
         if (!m_scanning)
             return;
-        std::vector<CAsyncFileIndex::SEntry> entries;
-        const bool   COMPLETE = m_index.poll(m_generation, entries, ENTRIES_PER_POLL);
-        const size_t BEFORE   = m_icons.size();
-        for (const auto& entry : entries)
-            index(entry);
+        std::vector<CAsyncFileIndex::SEntry> files;
+        const bool   COMPLETE = m_index.poll(m_generation, files, FILES_PER_POLL);
+        auto&        SET      = m_aside ? m_next : m_live;
+        const size_t BEFORE   = SET.entries.size();
+        for (const auto& F : files)
+            add(F, SET);
         m_scanning = !COMPLETE;
+        // cut short: the helper failed, or the deadline gave up on it
+        bool cut = COMPLETE && m_index.failed(m_generation);
         if (m_scanning && std::chrono::steady_clock::now() > m_deadline) {
             m_index.cancel(++m_generation);
             m_scanning = false;
+            cut        = true;
         }
+        // a cut scan proves nothing about the dirs: forget their stamps, so
+        // the next refreshIfStale scans again instead of trusting a partial
+        // index for the session
+        if (cut)
+            m_stamps.clear();
         if (m_poll)
             m_poll->updateTimeout(m_scanning ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
-        if (m_icons.size() != BEFORE)
-            for (const auto& fn : m_subs) {
-                try {
-                    fn();
-                } catch (...) {} // a timer callback: nothing may unwind into the loop
-            }
+        if (!m_aside) {
+            // and once as it ends: a subscriber may wait for the whole scan
+            if (m_live.entries.size() != BEFORE || !m_scanning)
+                notify();
+            return;
+        }
+        if (m_scanning)
+            return;
+        // a refresh lands whole; one cut short keeps the live index (a hung
+        // mount or a killed helper must not empty the launcher)
+        if (!cut) {
+            m_live = std::move(m_next);
+            notify();
+        }
+        m_next  = {};
+        m_aside = false;
     }
 
-    // Icon= and StartupWMClass= from the [Desktop Entry] group, keyed by the
-    // file's basename AND its StartupWMClass: a window's class rarely equals
-    // its desktop-file name (ente's class is "ente", its file
-    // ente-desktop.desktop; qBittorrent's is "qbittorrent" under
-    // org.qbittorrent.qBittorrent.desktop). The first entry wins a key (the
-    // XDG dirs are walked in precedence order).
-    void CDesktopIcons::index(const CAsyncFileIndex::SEntry& entry) {
-        std::istringstream F(entry.contents);
-        std::string        icon, wmClass, line;
-        bool               inEntry = false;
-        while (std::getline(F, line)) {
-            if (!line.empty() && line.back() == '\r')
-                line.pop_back();
-            if (line.starts_with("[")) {
-                if (inEntry)
-                    break;
-                inEntry = line == "[Desktop Entry]";
-                continue;
-            }
-            if (!inEntry)
-                continue;
-            if (icon.empty() && line.starts_with("Icon=")) {
-                if (const auto VALUE = DesktopExec::unescapeString(std::string_view{line}.substr(5)))
-                    icon = *VALUE;
-            } else if (wmClass.empty() && line.starts_with("StartupWMClass=")) {
-                if (const auto VALUE = DesktopExec::unescapeString(std::string_view{line}.substr(15)))
-                    wmClass = *VALUE;
-            }
-            if (!icon.empty() && !wmClass.empty())
-                break;
+    void CDesktopIndex::notify() {
+        ++m_version;
+        for (const auto& fn : m_subs) {
+            try {
+                fn();
+            } catch (...) {} // a timer callback: nothing may unwind into the loop
         }
-        if (icon.empty())
+    }
+
+    // The file's [Desktop Entry] group (DesktopExec::parseEntry). Its Icon=
+    // is keyed by the desktop id, the file's basename AND its
+    // StartupWMClass: a window's class rarely equals its desktop-file name
+    // (ente's class is "ente", its file ente-desktop.desktop; qBittorrent's
+    // is "qbittorrent" under org.qbittorrent.qBittorrent.desktop). The first
+    // file wins an id and a key (the dirs are walked in precedence order).
+    void CDesktopIndex::add(const CAsyncFileIndex::SEntry& file, SSet& set) {
+        std::string id = file.relative.generic_string();
+        if (id.ends_with(".desktop"))
+            id.resize(id.size() - 8);
+        std::ranges::replace(id, '/', '-');
+        if (id.empty() || set.ids.contains(id))
             return;
-        const auto remember = [&](const std::string& key) {
-            if (!key.empty())
-                m_icons.try_emplace(asciiLower(key), icon);
-        };
-        remember(entry.path.stem().string());
-        remember(wmClass);
+
+        auto PARSED = DesktopExec::parseEntry(file.contents);
+        if (!PARSED)
+            return;
+        set.ids.insert(id);
+        if (!PARSED->icon.empty())
+            for (const auto& KEY : {id, file.path.stem().string(), PARSED->wmClass})
+                if (!KEY.empty())
+                    set.icons.try_emplace(asciiLower(KEY), PARSED->icon);
+        set.entries.push_back(SDesktopEntry{std::move(*PARSED), std::move(id), file.path.string()});
     }
 
 } // namespace NAwesome
