@@ -306,6 +306,37 @@ close_menubar
 capture_nested "$STATE/menubar-closed.png"
 chk "menubar: esc closes the prompt" test "$(menubar_band "$STATE/menubar-closed.png")" -le 50
 
+# Tab on a command word typed as a path completes from its own directory,
+# executables only ($PATH holds no slashed names): the run marker proves
+# the completed line ran, and the plain file sorting first was skipped
+vtype() { # lowercase letters, digits, '/', '-' and '.' as vkbd taps
+	local s=$1 i c
+	for ((i = 0; i < ${#s}; i++)); do
+		c=${s:i:1}
+		case $c in
+		/) echo "tap 53" ;;
+		-) echo "tap 12" ;;
+		.) echo "tap 52" ;;
+		0) echo "tap 11" ;;
+		[1-9]) echo "tap $((c + 1))" ;;
+		[a-z]) echo "tap $c" ;;
+		*) return 1 ;;
+		esac
+	done
+}
+mkdir -p "$STATE/tabrun"
+printf '#!/bin/sh\n: > "%s/tabrun/ran"\n' "$STATE" >"$STATE/tabrun/gatetabrun"
+chmod +x "$STATE/tabrun/gatetabrun"
+: >"$STATE/tabrun/gatetabdoc"
+rm -f "$STATE/tabrun/ran"
+open_menubar
+{ vtype "$STATE/tabrun/gatetab"; printf 'sleep 100\ntap tab\nsleep 500\ntap enter\nsleep 200\n'; } | vk
+for _ in $(seq 1 30); do
+	[[ -e "$STATE/tabrun/ran" ]] && break
+	sleep 0.1
+done
+chk "menubar: tab completes a command typed as a path" test -e "$STATE/tabrun/ran"
+
 # the launcher's shared clipboard: the 4 KiB UTF-8 query budget, on the
 # monolith's history store. Execute a comment-only tail so the paste is
 # side-effect free.

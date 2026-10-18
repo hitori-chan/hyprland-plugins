@@ -74,6 +74,10 @@ namespace NAwesome::Shell {
         static size_t                   compStart = 0, compLen = 0;
         static bool                     compScanning = false, compBackward = false, compHideDotfiles = false;
         static std::string              compPrefix;
+        // a stalled mount in $PATH (or under a typed path) stalls the
+        // helper: past this the Tab completes from what it gathered
+        constexpr auto                        COMPLETION_DEADLINE = std::chrono::seconds(2);
+        static std::chrono::steady_clock::time_point compDeadline;
 
         static void cancelCompletion();
 
@@ -595,7 +599,6 @@ namespace NAwesome::Shell {
                 return false;
             std::vector<NAwesome::CAsyncFileIndex::SEntry> entries;
             const bool COMPLETE = completionIndex.poll(completionGeneration, entries, 64);
-            const std::string SELECTED = compActive ? compList[compIdx] : "";
             for (const auto& entry : entries) {
                 const auto name = entry.path.filename().string();
                 if (compHideDotfiles && name.starts_with("."))
@@ -610,23 +613,30 @@ namespace NAwesome::Shell {
                     continue; // the prompt's bound holds for completions too
                 compList.push_back(std::move(candidate));
             }
-            if (!entries.empty()) {
+            bool done = COMPLETE;
+            if (!done && std::chrono::steady_clock::now() > compDeadline) {
+                completionIndex.cancel(++completionGeneration);
+                done = true;
+            }
+            compScanning = !done;
+            // the first completion waits for the whole scan (or its cap, or
+            // its deadline): the first batch's first was not the list's, and
+            // the cycle began mid-list
+            if (done) {
                 std::sort(compList.begin(), compList.end());
                 compList.erase(std::unique(compList.begin(), compList.end()), compList.end());
-                if (compActive) {
-                    if (const auto it = std::ranges::find(compList, SELECTED); it != compList.end())
-                        compIdx = (int)std::distance(compList.begin(), it);
-                } else
-                    applyCompletion(compBackward);
+                applyCompletion(compBackward); // it repaints; an empty list stays as typed
             }
-            compScanning = !COMPLETE;
-            return !entries.empty();
+            return false; // nothing shows before then
         }
 
         // Tab completion (awful.completion.shell, natively): the word under
         // the cursor completes from $PATH executables when it is the command
-        // word, from filenames otherwise. Enumeration is worker-owned; the
-        // prompt only receives bounded batches through pollCompletion().
+        // word, from filenames otherwise; a command word typed as a path
+        // (./run, ~/bin/x) completes from its directory, executables and
+        // the directories to walk on, as the shell does. Enumeration is
+        // worker-owned; the prompt only receives bounded batches through
+        // pollCompletion().
         static void complete(bool backward) {
             if (compActive) {
                 applyCompletion(backward);
@@ -651,7 +661,8 @@ namespace NAwesome::Shell {
             request.generation = ++completionGeneration;
             request.maxEntries = 512;
             request.maxVisited = 8192;
-            if (typed.find_first_not_of(' ') >= start) { // the command word
+            const bool COMMAND = typed.find_first_not_of(' ') >= start;
+            if (COMMAND && NAwesome::DesktopExec::unescapeWord(STEM).find('/') == std::string::npos) { // a bare command word
                 const char* PATH = std::getenv("PATH");
                 for (const auto& dir : splitList(PATH ? PATH : "", ':'))
                     request.roots.emplace_back(dir);
@@ -668,6 +679,7 @@ namespace NAwesome::Shell {
                 request.roots.emplace_back(DIR);
                 request.namePrefix = SLASH == std::string::npos ? expanded : expanded.substr(SLASH + 1);
                 request.directories = true;
+                request.executable  = COMMAND;
                 const auto TSLASH = STEM.rfind('/');
                 compPrefix = TSLASH == std::string::npos ? std::string{} : STEM.substr(0, TSLASH + 1);
                 compHideDotfiles = !request.namePrefix.starts_with(".");
@@ -679,6 +691,7 @@ namespace NAwesome::Shell {
             compLen      = end - start;
             compBackward = backward;
             compScanning = true;
+            compDeadline = std::chrono::steady_clock::now() + COMPLETION_DEADLINE;
             completionIndex.request(std::move(request));
             if (indexPoll)
                 indexPoll->updateTimeout(std::chrono::milliseconds(2));

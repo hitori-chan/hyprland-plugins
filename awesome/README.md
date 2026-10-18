@@ -117,7 +117,12 @@ The typed line runs through the executor's `/bin/sh -c`, so a
 completed name is inserted as one escaped word (a file named
 `x$(cmd)` stays a file name; spaces, quotes and `=` are backslashed),
 and a name with a control or bidi character is never offered. An
-escaped space keeps a word whole for the next completion. Every launch
+escaped space keeps a word whole for the next completion. The command
+word completes from `$PATH`, or from its own directory when it is
+typed as a path (`./run`, `~/bin/x`: executables and directories);
+the first Tab applies the first of the whole sorted scan (or its 512
+cap, or what two seconds gathered from a stalled mount), not of the
+first batch to land. Every launch
 carries a compositor-minted activation token (`XDG_ACTIVATION_TOKEN`
 and `DESKTOP_STARTUP_ID` in the environment, `activation-token` in a
 D-Bus `Activate`'s platform data): the Enter that ran it was swallowed,
