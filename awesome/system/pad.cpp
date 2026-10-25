@@ -73,8 +73,8 @@ namespace NAwesome::System {
     static int          appliedState = -1;
     static WP<IPointer> appliedTouchpad;
 
-    static void postPad(const char* icon, const char* body, int timeoutMs) {
-        Notify::Model::postCard({.id = ID_TOUCHPAD, .icon = icon, .summary = "Touchpad", .body = body, .expireTimeout = timeoutMs});
+    static void postPad(const char* icon, const char* body, int timeoutMs, Glyph::eGlyph glyph, bool alarm = false) {
+        Notify::Model::postCard({.id = ID_TOUCHPAD, .icon = icon, .summary = "Touchpad", .body = body, .expireTimeout = timeoutMs, .glyph = glyph, .alarm = alarm});
     }
 
     // ---- the device side ----
@@ -151,7 +151,7 @@ namespace NAwesome::System {
         if (!target) {
             appliedState    = -1;
             appliedTouchpad.reset();
-            postPad("input-touchpad-symbolic", "not found", PAD_TIMEOUT);
+            postPad("input-touchpad-symbolic", "Not Found", PAD_TIMEOUT, Glyph::eGlyph::TOUCHPAD_OFF, true);
             return;
         }
         // the manager lives in a unique pointer: its weak can NEVER lock()
@@ -170,7 +170,7 @@ namespace NAwesome::System {
         announcedState = appliedState;
         // symbolic, not the plain names: "touchpad-disabled" ships in the
         // HighContrast theme only (unprobed) and would render iconless
-        postPad(on ? "input-touchpad-symbolic" : "touchpad-disabled-symbolic", on ? "enabled" : "disabled", PAD_TIMEOUT);
+        postPad(on ? "input-touchpad-symbolic" : "touchpad-disabled-symbolic", on ? "On" : "Off", PAD_TIMEOUT, on ? Glyph::eGlyph::TOUCHPAD : Glyph::eGlyph::TOUCHPAD_OFF);
     }
 
     static void autoApply() {

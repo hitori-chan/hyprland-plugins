@@ -167,7 +167,8 @@ namespace NAwesome::System {
     }
 
     static void brightnessUnavailable() {
-        Notify::Model::postCard({.id = ID_BRIGHTNESS, .icon = "display-brightness-symbolic", .summary = "Brightness", .body = "unavailable", .expireTimeout = OSD_TIMEOUT});
+        Notify::Model::postCard({.id = ID_BRIGHTNESS, .icon = "display-brightness-symbolic", .summary = "Brightness", .body = "Unavailable", .expireTimeout = OSD_TIMEOUT,
+                                 .glyph = Glyph::eGlyph::SUN, .alarm = true});
     }
 
     static std::optional<int> readBrightness() {
@@ -234,7 +235,8 @@ namespace NAwesome::System {
                         return; // a teardown owns the state now
                     brightnessBusy = false;
                     if (!err)
-                        Notify::Model::postCard({.id = ID_BRIGHTNESS, .icon = "display-brightness-symbolic", .summary = "Brightness", .body = (std::to_string(PCT) + "%").c_str(), .expireTimeout = OSD_TIMEOUT, .value = PCT});
+                        Notify::Model::postCard({.id = ID_BRIGHTNESS, .icon = "display-brightness-symbolic", .summary = "Brightness", .body = (std::to_string(PCT) + "%").c_str(),
+                                                 .expireTimeout = OSD_TIMEOUT, .value = PCT, .glyph = Glyph::eGlyph::SUN});
                     else
                         lastSetRaw = -1; // logind refused: drop the trust window so the next press re-reads sysfs
                     brightnessApply(); // what was pressed meanwhile
@@ -277,16 +279,21 @@ namespace NAwesome::System {
             return; // no parseable readback: no card beats a wrong one
         if (d.mic) {
             if (rb->muted || rb->value >= 0)
-                Notify::Model::postCard({.id = ID_MIC, .icon = rb->muted ? "microphone-sensitivity-muted" : "microphone-sensitivity-high", .summary = "Microphone", .body = rb->muted ? "muted" : "live", .expireTimeout = OSD_TIMEOUT});
+                Notify::Model::postCard({.id = ID_MIC, .icon = rb->muted ? "microphone-sensitivity-muted" : "microphone-sensitivity-high", .summary = "Microphone", .body = rb->muted ? "Off" : "On",
+                                         .expireTimeout = OSD_TIMEOUT, .glyph = rb->muted ? Glyph::eGlyph::MIC_OFF : Glyph::eGlyph::MIC, .alarm = rb->muted});
             return;
         }
         if (rb->muted) {
-            Notify::Model::postCard({.id = ID_VOLUME, .icon = "audio-volume-muted", .summary = "Volume", .body = "muted", .expireTimeout = OSD_TIMEOUT});
+            // the level stays on the dimmed track: unmuting returns to it
+            const int LEVEL = rb->value >= 0 ? std::min((int)std::lround(rb->value * 100.0), 100) : -1;
+            Notify::Model::postCard({.id = ID_VOLUME, .icon = "audio-volume-muted", .summary = "Volume", .body = "Muted", .expireTimeout = OSD_TIMEOUT, .value = LEVEL,
+                                     .glyph = Glyph::eGlyph::SPEAKER_MUTED, .alarm = true});
             return;
         }
         const int PCT = (int)std::lround(rb->value * 100.0); // past 100% says so; the bar stops full
         if (PCT >= 0)
-            Notify::Model::postCard({.id = ID_VOLUME, .icon = volumeIcon(PCT), .summary = "Volume", .body = (std::to_string(PCT) + "%").c_str(), .expireTimeout = OSD_TIMEOUT, .value = std::min(PCT, 100)});
+            Notify::Model::postCard({.id = ID_VOLUME, .icon = volumeIcon(PCT), .summary = "Volume", .body = (std::to_string(PCT) + "%").c_str(), .expireTimeout = OSD_TIMEOUT,
+                                     .value = std::min(PCT, 100), .glyph = Glyph::eGlyph::SPEAKER});
     }
 
     static void pump(SDevice& d);
