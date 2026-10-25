@@ -106,7 +106,12 @@ or compositor state.
   control characters before rastering, the cards lay a single line out
   in Pango's single-paragraph mode, and every card raster is clamped to
   its slot (stacked combining marks reach far past the line box). One
-  shared text engine for both is open work.
+  shared text engine for both is open work. Both share this thread's
+  Pango font map, and a face's first layout loads it (~10 ms a weight
+  and size): `core/fontwarm.hpp` loads the faces the boards use (both
+  modules' families, four weights, the type roles' sizes, each
+  monitor's scale, a first emoji) one per event-loop turn, 1.5 s after
+  start, so a session's first notification does not pay them.
 - **Icons** — one freedesktop name resolver in `core/icons.hpp` for the
   bar and the cards (GTK theme → hicolor → pixmaps; plausible names
   only; a two-generation memo). A theme dir with a fresh

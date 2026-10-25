@@ -11,6 +11,7 @@
 
 #include "canvas.hpp"
 #include "desktopindex.hpp"
+#include "fontwarm.hpp"
 #include "config.hpp"
 #include "hop.hpp"
 #include "jobs.hpp"
@@ -155,6 +156,8 @@ namespace NAwesome {
                 throw;
             }
 
+            CFontWarm::inst().start(); // the faces' first use, before a notification pays it
+
             auto& EV = Event::bus()->m_events;
             m_listenRenderStage = EV.render.stage.listen([](const Event::SRenderStageEvent& ev) { Canvas::inst().onRenderStage(ev); });
             m_listenSolitary    = EV.monitor.blockSolitary.listen([](PHLMONITOR mon, bool& block) { Canvas::inst().onBlockSolitary(mon, block); });
@@ -182,6 +185,7 @@ namespace NAwesome {
             for (auto* M : m_modules)
                 M->persist();
             StateStore::inst().flush();
+            CFontWarm::inst().stop();
             for (auto IT = m_modules.rbegin(); IT != m_modules.rend(); ++IT)
                 (*IT)->teardown();
             Jobs::inst().teardown(); // helpers after the modules that spawned them
