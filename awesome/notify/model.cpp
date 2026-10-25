@@ -167,6 +167,19 @@ namespace NAwesome::Notify {
             return held;
         }
 
+        bool unseen() {
+            for (const auto& N : notifs)
+                if (!N->seen && !N->waiting && !offShade(N))
+                    return true;
+            return false;
+        }
+
+        void markSeen() {
+            for (const auto& N : notifs)
+                if (!N->waiting && !offShade(N))
+                    N->seen = true;
+        }
+
         std::string badgeString() {
             const auto [LIVE, KEPT] = badgeCounts();
             return "banners:" + std::to_string(LIVE) + " resident:" + std::to_string(KEPT);
@@ -944,7 +957,8 @@ namespace NAwesome::Notify {
             // reuses starts a new card, whose first rev must not equal the
             // old card's in a stale click
             static uint64_t revSerial = 0;
-            n->rev = ++revSerial;
+            n->rev  = ++revSerial;
+            n->seen = false; // new content: the bell's dot until the center shows it
             if (!SAME_CONVERSATION) {
                 n->messages.clear();
                 n->unreadCount = 0;

@@ -9,14 +9,13 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 # never paints in the frame that creates a texture); wait for it to draw,
 # bounded — a strip that never draws still fails the check below.
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-	if capture_nested "$STATE/quick-strip.png" && [[ "$(bar_bright "$STATE/quick-strip.png")" -gt 300 ]]; then
+	if capture_nested "$STATE/quick-strip.png" && strip_drawn "$STATE/quick-strip.png"; then
 		break
 	fi
 	sleep 0.5
 done
-echo "quick: strip bright=$(bar_bright "$STATE/quick-strip.png")" >&2
-chk "quick: the strip is on screen (clock + tags draw)" \
-	test "$(bar_bright "$STATE/quick-strip.png")" -gt 250
+echo "quick: strip bright=$(bar_bright "$STATE/quick-strip.png") bell=$(bell_x "$STATE/quick-strip.png")" >&2
+chk "quick: the strip is on screen (clock, bell and viewed tag draw)" strip_drawn "$STATE/quick-strip.png"
 
 # ---- one window lifecycle ---------------------------------------------------
 # the title draws IN the strip's task band (lib.sh task_band): baseline

@@ -211,6 +211,7 @@ namespace NAwesome::Notify {
         std::string             fallbackPick;         // the rolled identity face; survives in-place replaces
 
         bool                 waiting = false; // arrived while suspended (DND): collected, not shown, timeout held
+        bool                 seen    = false; // the open center has listed this revision: no dot on the bell for it
         bool                 banner  = true;  // the popup is up; expiry drops only this — the card stays resident
 
         float                timeoutMs = 0; // resolved; 0 = sticky
@@ -349,7 +350,12 @@ namespace NAwesome::Notify {
         void       toggleSuspend();         // DND; resume renders the queue, fresh timeouts
         bool       suspendedNow();
         std::pair<uint32_t, uint32_t> badgeCounts(); // {bannered, resident} — the bell's two numbers
-        uint32_t                      heldCount();   // the DND queue — the bell's count while DND holds
+        uint32_t                      heldCount();   // the DND queue — the bell's dot while DND holds
+        // The bell's dot: a card the center lists that it has not shown since
+        // the card arrived or changed. Opening and closing the center marks
+        // what it lists (never the DND queue, which it does not list).
+        bool                          unseen();
+        void                          markSeen();
 
         // The shell's bell repaints when the badge numbers can have moved:
         // the shell registers the hook at init; it fires from notifChanged,

@@ -39,43 +39,52 @@ outside_click() { click "$((MON_W / 2))" "$((MON_H / 2))" 272; }
 
 # ---- the bell, pointer-driven ------------------------------------------------
 # The monolith's bell is a no-op on hover and toggles the shade on click;
-# both are REAL pointer events over the widget. Its count is the one filled
-# accent shape in the strip (accent is text everywhere else), so the pill is
-# found by pixel: the clock, the battery and the tray change width under the
-# gate and would drift a fixed inset.
-pill() { # pill <frame> — "<center x> <filled px>" of the bell's count pill (0 0 when absent)
-	python3 - "$1" "$MON_W" "$BAR_H" <<'PY'
+# both are REAL pointer events over the widget. The right slot is [tray]
+# [battery][bell][clock], 20 px apart (shell/strip.cpp RIGHT_GAP): the
+# clock is the last run of white ink from the screen's right edge, the bell
+# the one before it — found by pixel, as the clock, the battery and the tray
+# change width under the gate. White ink is every channel past 150, so
+# neither the green dot nor the accent counts — and so with the center
+# CLOSED only: an open center lights the bell in the accent.
+bell_x() { # bell_x <frame> — the bell glyph's center x (0 when not found)
+	python3 - "$1" "$MON_W" <<'PY'
 import sys
 from PIL import Image
-im = Image.open(sys.argv[1]).convert("RGB"); px = im.load()
-w, bh = int(sys.argv[2]), int(sys.argv[3])
-def acc(x, y):
-    r, g, b = px[x, y]
-    return b > 200 and g > 150 and r < 80 # col_active 0xff00ccff
-# a fill's rows are 10+ px of unbroken accent (the pill is 16+ wide); a
-# 13 px accent glyph's strokes never are
+im = Image.open(sys.argv[1]).convert("RGB"); px = im.load(); w = int(sys.argv[2])
+# the clock's word spaces leave ~8 px of no ink; the gaps between widgets 20+
 runs = []
-for y in range(0, bh):
-    x = w // 2
-    while x < w:
-        if acc(x, y):
-            x0 = x
-            while x < w and acc(x, y):
-                x += 1
-            if x - x0 >= 10:
-                runs.append((x0, x - 1))
-        x += 1
-if not runs:
-    print(0, 0)
-    raise SystemExit
-# the rightmost shape: its runs overlap the rightmost run's span
-r = max(runs, key=lambda t: t[1])
-grp = [t for t in runs if t[0] <= r[1] and t[1] >= r[0]]
-print((min(t[0] for t in grp) + max(t[1] for t in grp)) // 2, sum(t[1] - t[0] + 1 for t in grp))
+for x in range(w - 1, w // 2, -1):
+    if any(min(px[x, y]) > 150 for y in range(6, 23)):
+        if runs and runs[-1][0] - x < 12:
+            runs[-1][0] = x
+        else:
+            runs.append([x, x])
+print((runs[1][0] + runs[1][1]) // 2 if len(runs) >= 2 else 0)
 PY
 }
-bell_x() { local p; p=$(pill "$1"); echo "${p% *}"; }  # bell_x <frame> — the pill's center x (0 when absent)
-pill_px() { local p; p=$(pill "$1"); echo "${p#* }"; } # pill_px <frame> — its filled pixels
+# the bell's dot: col_dot green (0xff32d74b) in the bell's cell; the battery
+# sits a gap and more to its left (a charging fill is the same green)
+dot_px() { # dot_px <frame> — green pixels on the bell (0 when no dot)
+	python3 - "$1" "$(bell_x "$1")" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB"); px = im.load(); bx = int(sys.argv[2])
+if bx <= 0:
+    print(0); raise SystemExit
+n = 0
+for x in range(max(0, bx - 10), min(im.width, bx + 12)):
+    for y in range(0, 28):
+        r, g, b = px[x, y]
+        n += g > 170 and r < 120 and b < 140
+print(n)
+PY
+}
+# strip_drawn <frame> — the strip finished its warm: the clock and the bell
+# draw at its right end (bell_x finds the bell past the clock) and the viewed
+# tag draws in the accent at its left. Structure, not a brightness count: a
+# count moves with the theme, the face and the hardware, and a mid-warm frame
+# lacks whole glyphs.
+strip_drawn() { [[ "$(bell_x "$1")" -gt 0 && "$(accent_px "$1" 8 34)" -gt 6 ]]; } # 一 is one stroke: ~10 px
 bell_frame() { capture_nested "$STATE/bell-probe.png"; }
 
 # ---- bounded waits ----------------------------------------------------------------

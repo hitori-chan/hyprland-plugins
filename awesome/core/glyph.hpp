@@ -1,8 +1,8 @@
 // awesome/core/glyph.hpp — the shell's vector glyphs: the bell, the OSD's
-// speaker/sun/mic/touchpad, the battery outline, chevrons, the moon. Small
-// inline SVGs rastered by librsvg at the exact physical size, tinted, and
-// cached for the session — the shell and the cards draw the same shapes
-// from here instead of each carrying a path player.
+// speaker/sun/mic/touchpad, the battery outline, chevrons, the moon, the
+// unseen dot. Small inline SVGs rastered by librsvg at the exact physical
+// size, tinted, and cached for the session — the shell and the cards draw
+// the same shapes from here instead of each carrying a path player.
 //
 // The texture rule holds (crash class 4): a miss builds only inside a warm
 // (or a token); a draw-side miss returns null and flags the rewarm.

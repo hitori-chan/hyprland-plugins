@@ -444,13 +444,12 @@ nclear
 # ---- the bell (pointer-driven) ------------------------------------------------
 # The shade opens on a CLICK only: hover is a no-op (the hover-peek was
 # removed by user request, 2026-09-30). The bell is a real widget — the
-# hover and the click are real pointer events over it, at its count pill
-# (lib.sh bell_x).
+# hover and the click are real pointer events over it (lib.sh bell_x).
 dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"ring me\" body')"; sleep 1
 chk "bell: a banner is up and the shade is shut" test "$(st)" = "center:0 live:1 dnd:0"
 bell_frame || true
 BELLX="$(bell_x "$STATE/bell-probe.png")"
-chk "bell: the count pill is found in the strip" test "$BELLX" -gt 0
+chk "bell: the bell is found in the strip" test "$BELLX" -gt 0
 printf 'move %s %s\nsleep 120\nmove %s 13\nsleep 60\npress 272\nsleep 40\nrelease 272\nsleep 80\n' \
     "$(( (BELLX + MON_W / 2) / 2 ))" "$(( MON_H / 2 ))" "$BELLX" | vp
 sleep 1

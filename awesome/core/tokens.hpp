@@ -19,11 +19,12 @@ namespace NAwesome::Theme {
     inline constexpr uint32_t SUB       = 0x8cebebf5; // secondary: meta, kickers, 55 %
     inline constexpr uint32_t DIM       = 0x57ebebf5; // tertiary: empty tags, minimized, 34 %
     inline constexpr uint32_t ACCENT    = 0xff00ccff; // selection and focus — text, never a fill
-    inline constexpr uint32_t ON_ACCENT = 0xff00141a; // the bell badge's count (the one accent fill)
+    inline constexpr uint32_t ON_ACCENT = 0xff00141a; // dark ink on the accent: the live send arrow
     inline constexpr uint32_t URGENT    = 0xffff6159; // critical, urgent, low battery
     inline constexpr uint32_t LINK      = 0xff7db4ff; // body hyperlinks
     inline constexpr uint32_t CHARGING  = 0xff32d74b;
     inline constexpr uint32_t SAVER     = 0xffffd60a;
+    inline constexpr uint32_t DOT       = 0xff32d74b; // the bell's unseen dot (macOS green)
 
     // ---- fills over glass ----
     inline constexpr uint32_t FILL        = 0x1fffffff; // buttons, chips, fields: white 12 %
