@@ -65,6 +65,28 @@ capture_nested "$STATE/strip-task-gone.png"
 chk "shell: the chip leaves with the window" \
 	test "$(task_band "$STATE/strip-task-gone.png")" -le $(( TASKBAND0 + 100 ))
 
+# ---- the window list: right-click a task -----------------------------------
+# every window, any tag (shell/menu.cpp): a row reads as its task does
+# (focused accent), and a right-hand column names its workspace's tag. The
+# panel is 250 wide, centered on the click, its rows 28 from y 37.
+dsp "hl.dsp.focus({workspace=\"2\"})"; sleep 0.4
+dsp "hl.dsp.exec_cmd('foot -a wlother --window-size-pixels=400x200')"; wait_class wlother
+dsp "hl.dsp.focus({workspace=\"1\"})"; sleep 0.4
+dsp "hl.dsp.exec_cmd('foot -a wlhere --window-size-pixels=400x200')"; wait_class wlhere; sleep 0.4
+click 400 13 273
+sleep 0.4
+capture_nested "$STATE/winlist.png"
+WLX=$((400 - 125))
+chk "winlist: the other workspace's window wears its tag" test "$(lit_px "$STATE/winlist.png" $((WLX + 250 - 30)) $((WLX + 250 - 12)) 37 65)" -gt 10
+chk "winlist: the focused window's row is accent" test "$(accent_px "$STATE/winlist.png" "$WLX" $((WLX + 250)) 65 93)" -gt 20
+chk "winlist: the other window's row is not" test "$(accent_px "$STATE/winlist.png" "$WLX" $((WLX + 250)) 37 65)" = 0
+tap esc
+for a in $(clients | python3 -c "import json,sys
+print(' '.join(c['address'] for c in json.load(sys.stdin) if c['class'] in ('wlother','wlhere')))"); do
+	dsp "hl.dsp.window.close({window=\"address:$a\"})"
+done; sleep 0.8
+chk "winlist: its windows are closed" test "$(pyc "sum(1 for c in cs if c['class'] in ('wlother','wlhere'))")" = 0
+
 # ---- the bell badge: the counts the bell reads from the model --------------
 dsp "hl.dsp.exec_cmd('notify-send -a bellp -t 30000 \"badge probe\" body')"; sleep 1.2
 capture_nested "$STATE/bell-badge.png"

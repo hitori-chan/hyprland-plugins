@@ -326,6 +326,7 @@ namespace NAwesome::Shell {
     // the widget instances, one per unit (function-local statics: no
     // cross-TU construction order, and a same-map reload re-enters clean)
     IWidget& taglistWidget();   // taglist.cpp
+    std::string tagName(const PHLWORKSPACE& ws); // taglist.cpp: a workspace's tag ("一".."九", a number past them, "" special)
     IWidget& tasklistWidget();  // tasklist.cpp
     IWidget& trayWidget();      // tray.cpp
     IWidget& bellWidget();      // bell.cpp
@@ -365,6 +366,9 @@ namespace NAwesome::Shell {
             int32_t      toggleState = 0;     // 0 off, 1 on, anything else indeterminate
             bool         alert       = false; // disposition warning/alert
             PHLWINDOWREF win;                 // client-list mode: the window this row jumps to
+            std::string  tag;                 // client-list mode: its workspace's tag, a right-hand column
+            bool         current = false;     // client-list mode: the focused window (accent, as its task)
+            bool         dim     = false;     // client-list mode: minimized (dim, as its task)
             SP<ITexture> icon;                // client-list app icon / dbusmenu icon-name or icon-data
             // an icon a budget deferred (a theme walk, a decode): the name
             // (or the app id, iconOfApp) the menu's warm asks for again

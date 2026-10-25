@@ -139,4 +139,11 @@ namespace NAwesome::Shell {
         return W;
     }
 
+    std::string tagName(const PHLWORKSPACE& ws) {
+        const auto N = ws ? ws->numberedID() : std::nullopt; // none for a special or named workspace
+        if (!N || *N == 0)
+            return {};
+        return *N <= 9 ? KANJI[*N - 1] : std::to_string(*N);
+    }
+
 } // namespace NAwesome::Shell

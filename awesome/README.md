@@ -42,7 +42,10 @@ visible transitions.
 - **Tasks**: a 14 px icon and the title, ⌃ for a pinned window and +
   for a maximized one before it. The focused task is accent text, an
   urgent one red text, a minimized one dim — never a fill; a hovered
-  task takes a light ground.
+  task takes a light ground. Right-click a task for awesome's client
+  list: every window, any tag, each row its icon and title read as its
+  task, its workspace's tag in a right-hand column; a click goes to it
+  (a minimized one is restored).
 - **Tasks**: Hyprland has no plugin-owned minimized state, so the
   windows module removes a minimized window from layout/render
   participation and remembers its fullscreen, maximize, and floating

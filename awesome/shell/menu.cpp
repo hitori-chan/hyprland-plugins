@@ -570,6 +570,7 @@ namespace NAwesome::Shell {
             std::sort(ws.begin(), ws.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
             auto&      L = levels.emplace_back();
             SWarmToken WARM; // appIcon builds a texture, and we are in a deferred click, not a render
+            const auto FOCUS = Desktop::focusState() ? Desktop::focusState()->window() : nullptr;
             for (const auto& [SEQ, W] : ws) {
                 std::string lbl;
                 Tasklist::label(W, lbl);
@@ -577,7 +578,19 @@ namespace NAwesome::Shell {
                 const auto& APP          = W->metadata().appID();
                 auto        ICON         = appIcon(APP);
                 const bool  DEFERRED     = !ICON && NAwesome::iconDeferred();
-                L.entries.push_back({.label = lbl, .display = std::move(lbl), .win = W, .icon = std::move(ICON), .iconRetry = DEFERRED ? APP : "", .iconOfApp = true});
+                // a row reads as its task does: minimized wins over focus
+                // (the focus fallback can rest on a hidden window)
+                const bool MIN = NAwesome::Windows::Tasklist::isMinimized(W);
+                L.entries.push_back({.label     = lbl,
+                                     .display   = std::move(lbl),
+                                     .alert     = !MIN && W != FOCUS && (W->m_hints & Desktop::View::WINDOW_HINT_URGENT),
+                                     .win       = W,
+                                     .tag       = tagName(W->m_workspace),
+                                     .current   = !MIN && W == FOCUS,
+                                     .dim       = MIN,
+                                     .icon      = std::move(ICON),
+                                     .iconRetry = DEFERRED ? APP : "",
+                                     .iconOfApp = true});
             }
             ws.clear(); // drop the strong refs now — entries hold weak ones
             anchorX = ax;
@@ -681,6 +694,11 @@ namespace NAwesome::Shell {
                 // and ellipsized away
                 constexpr double ARW = 18;
                 const auto       capPx = [&](const Menu::SEntry& E) { return (int)std::lround((380.0 - LX - 12 - (E.submenu ? ARW : 0)) * PAINT.scale); };
+                // the client list's tags: a right-hand column one size down
+                // in the quiet ink, or the row's own colour when it has one
+                const bool       anyTag = std::ranges::any_of(L.entries, [](const Menu::SEntry& E) { return !E.tag.empty(); });
+                const double     TAGW   = anyTag ? 26 : 0;
+                const int        TAGPT  = std::max(1, PAINT.pt - (int)std::lround(PAINT.scale));
 
                 double mw = 250;
                 if (!Menu::isLocal) {
@@ -792,10 +810,16 @@ namespace NAwesome::Shell {
                     // warning/alert rows take the urgent colour
                     const bool OPENSUB = li + 1 < Menu::levels.size() && Menu::levels[li + 1].parentIdx == (int)i;
                     const bool LIT     = ((int)i == L.hover || OPENSUB) && E.enabled;
-                    CHyprColor fg      = !E.enabled ? COLEMPTY : LIT ? COLFOCUS : E.alert ? COLURGENT : COLFG;
+                    CHyprColor fg      = !E.enabled ? COLEMPTY : LIT || E.current ? COLFOCUS : E.alert ? COLURGENT : E.dim ? COLEMPTY : COLFG;
 
-                    if (E.icon && E.icon->m_texID != 0)
-                        PAINT.texFit(E.icon, CBox{mx + 10, my + (ROWH - IS) / 2, IS, IS});
+                    if (E.icon && E.icon->m_texID != 0) {
+                        if (E.dim && !LIT) { // a minimized window's icon fades with its row
+                            auto FADED = PAINT;
+                            FADED.alpha *= 0.5f;
+                            FADED.texFit(E.icon, CBox{mx + 10, my + (ROWH - IS) / 2, IS, IS});
+                        } else
+                            PAINT.texFit(E.icon, CBox{mx + 10, my + (ROWH - IS) / 2, IS, IS});
+                    }
                     else if (E.toggle == Menu::TG_CHECK && E.toggleState == 1)
                         PAINT.texIn(G::tex(G::eGlyph::CHECK, fg, GLYPHPX), CBox{mx + 10, my, COLW, ROWH});
                     else if (E.toggle == Menu::TG_RADIO && E.toggleState == 1) {
@@ -806,7 +830,7 @@ namespace NAwesome::Shell {
 
                     // the measure's own raster while the panel holds its widest
                     // row (a narrow output shrinks it below that)
-                    const int  ROOMPX = (int)std::round((mw - LX - 12 - (E.submenu ? ARW : 0)) * PAINT.scale);
+                    const int  ROOMPX = (int)std::round((mw - LX - 12 - TAGW - (E.submenu ? ARW : 0)) * PAINT.scale);
                     const auto T      = textTex(E.display, fg, PAINT.pt, Menu::isLocal ? ROOMPX : FITS ? capPx(E) : ROOMPX);
                     if (T && T->m_texID != 0) {
                         const auto P = PAINT.toPhys(ROW);
@@ -815,6 +839,11 @@ namespace NAwesome::Shell {
                     }
                     if (E.submenu)
                         PAINT.texIn(G::tex(G::eGlyph::CHEVRON_RIGHT, fg, GLYPHPX), CBox{mx + mw - 8 - ARW, my, ARW, ROWH});
+                    if (!E.tag.empty()) {
+                        const bool PLAIN = !LIT && !E.current && !E.alert && !E.dim;
+                        if (const auto TT = textTex(E.tag, PLAIN ? NAwesome::tSub() : fg, TAGPT); TT && TT->m_texID != 0)
+                            PAINT.texIn(TT, CBox{mx + mw - 12 - TAGW + 8, my, TAGW - 8, ROWH});
+                    }
                     L.rows.push_back({ROW, (int)i});
                     my += ROWH;
                 }
