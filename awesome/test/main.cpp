@@ -13,6 +13,7 @@ int main() {
         {"proc", test_proc},
         {"textcut", test_textcut},
         {"iconcache", test_iconcache},
+        {"glyph", test_glyph},
     };
     for (const auto& C : CASES)
         std::printf("[case] %s\n", C.name), C.fn();

@@ -96,7 +96,7 @@ TEST_INCLUDES := $(filter -I%,$(HL_CFLAGS))
 	$(CXX) -std=c++26 -Wall -MMD -MP -I.. -I. $(TEST_INCLUDES) -c $< -o $@
 
 .build-test/awesome-test: $(TEST_OBJS)
-	$(CXX) $(TEST_OBJS) -o $@
+	$(CXX) $(TEST_OBJS) -o $@ $(shell pkg-config --libs librsvg-2.0)
 
 test: .build-test/awesome-test
 	.build-test/awesome-test

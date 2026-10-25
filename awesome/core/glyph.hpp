@@ -12,31 +12,9 @@
 #include <hyprland/src/helpers/memory/Memory.hpp>
 #include <hyprland/src/render/Texture.hpp>
 
-#include <cstdint>
+#include "glyph_shapes.hpp"
 
 namespace NAwesome::Glyph {
-
-    enum class eGlyph : uint8_t {
-        NONE = 0,
-        BELL,
-        BELL_OFF,
-        MOON,
-        SPEAKER,
-        SPEAKER_MUTED,
-        SUN,
-        MIC,
-        MIC_OFF,
-        TOUCHPAD,
-        TOUCHPAD_OFF,
-        BATTERY, // the outline only (22:11); the level is a rect the caller paints
-        CHEVRON_UP,
-        CHEVRON_DOWN,
-        CHEVRON_RIGHT,
-        CLOSE,
-        SEND,
-        CHECK,
-        COUNT_,
-    };
 
     // the glyph rastered at w x h physical px (h 0: square), tinted `col`
     SP<Render::ITexture> tex(eGlyph g, const CHyprColor& col, int w, int h = 0);
