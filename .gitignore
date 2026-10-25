@@ -10,6 +10,8 @@ CLAUDE.md
 HANDOFF.md
 TODO.md
 .claude/
+# local staging: config waiting for the user's deploy, its backups
+local/
 
 # local visual studies; keep generated demos out of repository history
 docs/demos/
