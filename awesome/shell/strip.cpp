@@ -241,9 +241,11 @@ namespace NAwesome::Shell {
         // awesome's align layout: the left slot, the tasklist filling the
         // middle, the right slot laid from the edge inwards ([tray]
         // [battery][bell][clock]). Widgets whose fit comes back 0 are
-        // hidden this frame. The Frost rhythm: the strip's 8 px inset, 14
-        // between the slots and the tasks, 14 between the right widgets.
-        constexpr double INSET = 8, SLOT_GAP = 14, RIGHT_INSET = 14;
+        // hidden this frame. The strip's 8 px inset and 14 between the slots
+        // and the tasks; the right slot keeps macOS's menu-extra rhythm,
+        // measured off its 2x menu bar: 20 between the widgets (the tray's
+        // own icons as far apart, shell:tray_spacing) and 16 off the edge.
+        constexpr double INSET = 8, SLOT_GAP = 14, RIGHT_GAP = 20, RIGHT_INSET = 16;
         IWidget* const   LEFT[]  = {&taglistWidget()};
         IWidget* const   RIGHT[] = {&trayWidget(), &batteryWidget(), &bellWidget(), &clockWidget()};
 
@@ -261,7 +263,7 @@ namespace NAwesome::Shell {
             // Keep the right slot inside the space left by the taglist. If a
             // narrow output cannot fit every widget, leftmost right-side
             // widgets yield first and no cell can overlap the tasklist.
-            const double GAP = first ? 0 : SLOT_GAP;
+            const double GAP = first ? 0 : RIGHT_GAP;
             const double WD  = std::min(RIGHT[i]->fit(P, F), std::max(0.0, right - GAP - x - SLOT_GAP));
             if (WD > 0) {
                 right -= GAP + WD;
