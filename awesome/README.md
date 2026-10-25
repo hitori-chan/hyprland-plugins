@@ -432,11 +432,13 @@ beats `app_icon` beats `desktop-entry`. Each of `app_icon` /
 percent-decoded, `localhost` allowed, any query or fragment dropped)
 OR a freedesktop icon name, resolved against the GTK icon theme, then
 hicolor, then `/usr/share/pixmaps` — the one resolver the bar uses too
-(core/icons.hpp): plausible names only, a two-generation memo, and at
-most 8 uncached theme walks per 250 ms (a burst of distinct names from a
-sender resolves to nothing past that, uncached, instead of stalling the
-compositor; the card keeps the name and resolves it again a window
-later, its sender faces and action icons too). A `desktop-entry` hint additionally
+(core/icons.hpp): plausible names only, a two-generation memo, and a
+theme with a fresh `icon-theme.cache` (GTK's own index, rewritten by
+the package manager's hook) answers from it in a few reads. A theme dir
+without one is walked, at most 8 walks per 250 ms (a burst of distinct
+names from a sender resolves to nothing past that, uncached, instead of
+stalling the compositor; the card keeps the name and resolves it again
+a window later, its sender faces and action icons too). A `desktop-entry` hint additionally
 resolves the .desktop file's own `Icon=` (all `$XDG_DATA_DIRS/
 applications` entries are indexed once at plugin start by a bounded
 helper process, keyed by the desktop id, the file name and
@@ -633,7 +635,7 @@ semantics).
 
 **Limitations.** GIF images don't decode (hyprgraphics has no GIF
 codec). No animated icons (`icon-multi`). Icon-theme resolution is a
-pragmatic scan (GTK theme → hicolor → pixmaps), not a full
+pragmatic chain (GTK theme → hicolor → pixmaps), not a full
 `index.theme` inheritance engine.
 
 ### System

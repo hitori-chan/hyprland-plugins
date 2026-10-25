@@ -8,3 +8,4 @@ bool test_wpctl();
 bool test_desktop_exec();
 bool test_proc();
 bool test_textcut();
+bool test_iconcache();

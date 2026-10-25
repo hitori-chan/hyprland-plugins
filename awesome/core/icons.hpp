@@ -20,6 +20,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -295,8 +296,8 @@ namespace NAwesome {
         return C;
     }
 
-    // An uncached resolve walks the theme tree: ~650 stats for a name the
-    // GTK theme has, ~2000 for one nobody has (~3 ms) — on the compositor
+    // A theme dir without a usable icon cache is walked: ~650 stats for a
+    // name the theme has, ~2000 for one nobody has — on the compositor
     // thread, and any session-bus sender names them (a Notify's app_icon
     // and four more hints, an SNI IconName). Past this many walks a window
     // the rest resolve to nothing, uncached, so they are tried again later:
@@ -371,6 +372,216 @@ namespace NAwesome {
         return T.value;
     }
 
+    // the misses go (an icon installed since resolves); hits stay
+    inline void dropIconMisses() {
+        auto& MEMO = iconNameCache();
+        std::erase_if(MEMO.young, [](const auto& E) { return E.second.empty(); });
+        std::erase_if(MEMO.old, [](const auto& E) { return E.second.empty(); });
+    }
+
+    // GTK's index of a theme dir, icon-theme.cache (gtk-update-icon-cache;
+    // the package manager's hook rewrites every packaged theme's): a name is
+    // a hash bucket and a few short reads, where the walk is hundreds of
+    // stats and a miss thousands — 35 ms warm, 180 ms cold for a name breeze
+    // and hicolor both lack, on the compositor thread. Trusted as GTK trusts
+    // it: only when no older than its dir. Read with pread on a held fd,
+    // never mapped (a cache truncated under a mapping would SIGBUS the
+    // compositor), every offset checked against the size at open: a corrupt
+    // one answers nothing, never a read out of bounds or an endless chain.
+    class CIconThemeCache {
+      public:
+        static constexpr uint16_t HAS_XPM = 1, HAS_SVG = 2, HAS_PNG = 4;
+
+        CIconThemeCache()                                  = default;
+        CIconThemeCache(const CIconThemeCache&)            = delete;
+        CIconThemeCache& operator=(const CIconThemeCache&) = delete;
+        ~CIconThemeCache() {
+            if (m_fd >= 0)
+                ::close(m_fd);
+        }
+
+        // false: no cache, a stale one, or one that does not parse
+        bool open(const std::string& themeDir) {
+            struct stat dir{}, st{};
+            if (::stat(themeDir.c_str(), &dir) != 0 || !S_ISDIR(dir.st_mode))
+                return false;
+            m_fd = ::open((themeDir + "/icon-theme.cache").c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC | O_NOCTTY);
+            if (m_fd < 0 || fstat(m_fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size < 12 || (uintmax_t)st.st_size > MAX_BYTES || st.st_mtime < dir.st_mtime)
+                return false;
+            m_size           = (size_t)st.st_size;
+            uint32_t version = 0, dirList = 0, nDirs = 0;
+            // version 1.0 only, as GTK reads it
+            if (!u32(0, version) || version != 0x00010000 || !u32(4, m_hash) || !u32(8, dirList) || !u32(m_hash, m_buckets) || m_buckets == 0 ||
+                m_buckets > (m_size - m_hash - 4) / 4 || !u32(dirList, nDirs) || nDirs > MAX_DIRS)
+                return false;
+            m_dirs.reserve(nDirs);
+            for (uint32_t i = 0; i < nDirs; i++) {
+                uint32_t off = 0;
+                if (!u32(dirList + 4ull + 4ull * i, off))
+                    return false;
+                m_dirs.push_back(str(off));
+            }
+            return true;
+        }
+
+        // every image the cache lists for name: its dir under the theme and
+        // which of .svg/.png/.xpm it has there
+        template <class FN>
+        void images(const std::string& name, FN&& each) const {
+            if (m_fd < 0 || m_buckets == 0 || name.empty() || name.size() > MAX_NAME)
+                return;
+            uint32_t chain = 0;
+            if (!u32(m_hash + 4ull + 4ull * (hash(name) % m_buckets), chain))
+                return;
+            char got[MAX_NAME + 1];
+            for (int hop = 0; chain != 0xffffffffu && hop < MAX_CHAIN; hop++) {
+                uint32_t next = 0, nameAt = 0, list = 0;
+                if (!u32(chain, next) || !u32(chain + 4ull, nameAt) || !u32(chain + 8ull, list))
+                    return;
+                if (read(nameAt, got, name.size() + 1) && got[name.size()] == '\0' && !memcmp(got, name.data(), name.size())) {
+                    uint32_t n = 0;
+                    if (!u32(list, n))
+                        return;
+                    for (uint32_t i = 0; i < std::min(n, MAX_IMAGES); i++) {
+                        uint8_t im[4];
+                        if (!read(list + 4ull + 8ull * i, im, sizeof im))
+                            return;
+                        const uint16_t DIR = im[0] << 8 | im[1], FLAGS = im[2] << 8 | im[3];
+                        if (DIR < m_dirs.size() && !m_dirs[DIR].empty())
+                            each(m_dirs[DIR], FLAGS);
+                    }
+                    return;
+                }
+                chain = next;
+            }
+        }
+
+      private:
+        static constexpr uintmax_t MAX_BYTES  = 64u << 20;
+        static constexpr uint32_t  MAX_DIRS   = 4096;
+        static constexpr int       MAX_CHAIN  = 4096; // a corrupt chain's cycle ends here
+        static constexpr uint32_t  MAX_IMAGES = 1024;
+        static constexpr size_t    MAX_NAME   = 128; // plausibleIconName's bound
+
+        // GTK's icon_name_hash, over signed chars
+        static uint32_t hash(const std::string& s) {
+            uint32_t h = (uint32_t)(signed char)s[0];
+            for (size_t i = 1; i < s.size(); i++)
+                h = (h << 5) - h + (uint32_t)(signed char)s[i];
+            return h;
+        }
+        bool read(uint64_t off, void* to, size_t n) const {
+            if (off + n > m_size)
+                return false;
+            for (size_t got = 0; got < n;) {
+                const ssize_t R = ::pread(m_fd, (char*)to + got, n - got, (off_t)(off + got));
+                if (R < 0 && errno == EINTR)
+                    continue;
+                if (R <= 0)
+                    return false; // truncated since open
+                got += (size_t)R;
+            }
+            return true;
+        }
+        bool u32(uint64_t off, uint32_t& v) const {
+            uint8_t b[4];
+            if (!read(off, b, sizeof b))
+                return false;
+            v = (uint32_t)b[0] << 24 | (uint32_t)b[1] << 16 | (uint32_t)b[2] << 8 | b[3];
+            return true;
+        }
+        // a dir name, NUL-terminated within 256 bytes; else "" (never matches)
+        std::string str(uint64_t off) const {
+            char         buf[256];
+            const size_t N = off < m_size ? (size_t)std::min<uint64_t>(sizeof buf, m_size - off) : 0;
+            if (!N || !read(off, buf, N))
+                return "";
+            const auto* END = (const char*)memchr(buf, '\0', N);
+            return END ? std::string(buf, (size_t)(END - buf)) : "";
+        }
+
+        int                      m_fd   = -1;
+        size_t                   m_size = 0;
+        uint32_t                 m_hash = 0, m_buckets = 0;
+        std::vector<std::string> m_dirs;
+    };
+
+    // Each theme dir the chain names, as last probed: absent, indexed by a
+    // fresh cache, or walked. Re-probed at most every ICON_DIR_PROBE (an
+    // install rewrites hicolor's cache: a new inode, a new mtime); a change
+    // drops the memo's misses, so what the new cache holds resolves.
+    struct SIconDirSig {
+        bool    dir = false, cache = false;
+        dev_t   dev    = 0;
+        ino_t   dirIno = 0, ino = 0;
+        off_t   size     = 0;
+        int64_t dirMtime = 0, mtime = 0;
+        bool    operator==(const SIconDirSig&) const = default;
+    };
+    struct SIconThemeDir {
+        enum eKind : uint8_t {
+            ABSENT,
+            CACHED,
+            WALKED,
+        } kind = ABSENT;
+        std::unique_ptr<CIconThemeCache>      cache;
+        SIconDirSig                           sig;
+        std::chrono::steady_clock::time_point probed;
+    };
+    inline constexpr auto                                  ICON_DIR_PROBE      = std::chrono::seconds(5);
+    inline constexpr size_t                                MAX_ICON_THEME_DIRS = 256; // themes x bases; the env names the bases
+    inline std::unordered_map<std::string, SIconThemeDir>& iconThemeDirs() {
+        static std::unordered_map<std::string, SIconThemeDir> D;
+        return D;
+    }
+    inline SIconDirSig iconDirSig(const std::string& themeDir) {
+        SIconDirSig S;
+        struct stat st{};
+        const auto  NS = [](const struct timespec& t) { return (int64_t)t.tv_sec * 1000000000 + t.tv_nsec; };
+        if (::stat(themeDir.c_str(), &st) != 0 || !S_ISDIR(st.st_mode))
+            return S;
+        S.dir      = true;
+        S.dirIno   = st.st_ino;
+        S.dirMtime = NS(st.st_mtim);
+        if (::stat((themeDir + "/icon-theme.cache").c_str(), &st) == 0 && S_ISREG(st.st_mode)) {
+            S.cache = true;
+            S.dev   = st.st_dev;
+            S.ino   = st.st_ino;
+            S.size  = st.st_size;
+            S.mtime = NS(st.st_mtim);
+        }
+        return S;
+    }
+    inline const SIconThemeDir& iconThemeDir(const std::string& themeDir) {
+        auto&      DIRS = iconThemeDirs();
+        const auto NOW  = std::chrono::steady_clock::now();
+        auto       IT   = DIRS.find(themeDir);
+        if (IT != DIRS.end() && NOW - IT->second.probed < ICON_DIR_PROBE)
+            return IT->second;
+        const auto SIG = iconDirSig(themeDir);
+        if (IT != DIRS.end() && IT->second.sig == SIG) {
+            IT->second.probed = NOW;
+            return IT->second;
+        }
+        if (IT == DIRS.end()) {
+            if (DIRS.size() >= MAX_ICON_THEME_DIRS)
+                DIRS.clear();
+            IT = DIRS.emplace(themeDir, SIconThemeDir{}).first;
+        } else
+            dropIconMisses();
+        auto& D  = IT->second;
+        D        = SIconThemeDir{};
+        D.sig    = SIG;
+        D.probed = NOW;
+        if (SIG.dir) {
+            auto C = std::make_unique<CIconThemeCache>();
+            D.kind = C->open(themeDir) ? SIconThemeDir::CACHED : SIconThemeDir::WALKED;
+            if (D.kind == SIconThemeDir::CACHED)
+                D.cache = std::move(C);
+        }
+        return D;
+    }
+
     // A config reload may follow a theme switch. Re-read the theme name;
     // only a switch forgets the memo and bumps the generation, which each
     // module compares to the one it last saw (several modules refresh per
@@ -382,13 +593,30 @@ namespace NAwesome {
         T               = {};
         const auto NOW  = gtkIconThemeName();
         auto&      MEMO = iconNameCache();
+        iconThemeDirs().clear(); // re-probed on the next resolve
         if (WAS.read && WAS.value == NOW) {
-            std::erase_if(MEMO.young, [](const auto& E) { return E.second.empty(); });
-            std::erase_if(MEMO.old, [](const auto& E) { return E.second.empty(); });
+            dropIconMisses();
             return;
         }
         MEMO.clear();
         ++iconThemeGeneration();
+    }
+
+    // Resolve a freedesktop icon NAME to a file path via themed lookup; "" if
+    // unresolved or if the string is already a path. Cached per name AND
+    // size: the requested size leads sizeDirs below, so in a PNG-only theme
+    // it CHOOSES the file — keyed on the name alone, whichever caller asked
+    // first pinned the size for every later one (the notify module wants a card
+    // icon at max_icon and an action icon at ~15px).
+    // Names come from session-bus senders (a notification's app_icon, an
+    // SNI IconName): only a plausible freedesktop icon name is worth a theme
+    // scan, and the memo is bounded (cleared at the bound: a re-resolution
+    // is a few stats, an unbounded map is a leak a sender controls).
+    inline constexpr size_t MAX_ICON_NAME_CACHE = 2048;
+    inline bool plausibleIconName(const std::string& name) {
+        if (name.empty() || name.size() > 128)
+            return false;
+        return std::ranges::all_of(name, [](unsigned char c) { return std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '+' || c == '@'; });
     }
 
     // Look for <dir>/name.ext directly and one category level down
@@ -409,21 +637,103 @@ namespace NAwesome {
         return "";
     }
 
-    // Resolve a freedesktop icon NAME to a file path via themed lookup; "" if
-    // unresolved or if the string is already a path. Cached per name AND
-    // size: the requested size leads sizeDirs below, so in a PNG-only theme
-    // it CHOOSES the file — keyed on the name alone, whichever caller asked
-    // first pinned the size for every later one (the notify module wants a card
-    // icon at max_icon and an action icon at ~15px).
-    // Names come from session-bus senders (a notification's app_icon, an
-    // SNI IconName): only a plausible freedesktop icon name is worth a theme
-    // scan, and the memo is bounded (cleared at the bound: a re-resolution
-    // is a few stats, an unbounded map is a leak a sender controls).
-    inline constexpr size_t MAX_ICON_NAME_CACHE = 2048;
-    inline bool plausibleIconName(const std::string& name) {
-        if (name.empty() || name.size() > 128)
-            return false;
-        return std::ranges::all_of(name, [](unsigned char c) { return std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '+' || c == '@'; });
+    // The order a theme dir is searched in, the walk's and the cache's
+    // alike. sizeDirs: <size>/[<context>/]name, hicolor's layout. Small
+    // sizes in proximity order, the large ones LAST: an app that ships a
+    // single large icon (discord ships 256x256 only) must still resolve, but
+    // when both exist a source near the request wins. 22 is load-bearing,
+    // not a nicety: nm-applet's whole nm-* notification set (nm-signal-*,
+    // nm-stage*, nm-tech-*) is 22x22 only. Adwaita stores symbolic marks as
+    // symbolic/<context>/name.svg: symbolic counts as a size dir. ctxSizes:
+    // <context>/<size>/name, breeze's (KDE's) layout, after every size dir.
+    inline constexpr const char* ICON_CONTEXTS[] = {"status", "apps", "devices", "actions", "categories", "mimetypes", "legacy", "symbolic"};
+    struct SIconSearch {
+        std::vector<std::string> sizeDirs, ctxSizes;
+    };
+    inline SIconSearch iconSearch(int sizePx) {
+        SIconSearch S{.sizeDirs = {"scalable", "symbolic"}, .ctxSizes = {"symbolic", "scalable"}};
+        for (const int SZ : {sizePx, 64, 48, 96, 128, 256, 72, 36, 32, 24, 22, 20, 16, 192, 384, 512, 1024})
+            S.sizeDirs.push_back(std::to_string(SZ) + "x" + std::to_string(SZ));
+        for (const int SZ : {sizePx, 64, 48, 32, 24, 22, 20, 16, 96, 128, 256, 512})
+            S.ctxSizes.push_back(std::to_string(SZ));
+        return S;
+    }
+
+    inline std::string walkThemeDir(const std::string& themeDir, const std::string& name, const SIconSearch& S) {
+        for (const auto& SD : S.sizeDirs)
+            if (auto found = findIconInDir(themeDir + "/" + SD, name); !found.empty())
+                return found;
+        std::error_code ec;
+        for (const char* CTX : ICON_CONTEXTS) {
+            if (!std::filesystem::is_directory(themeDir + "/" + CTX, ec))
+                continue;
+            for (const auto& SZ : S.ctxSizes)
+                for (const char* E : {".svg", ".png"})
+                    if (auto P = themeDir + "/" + CTX + "/" + SZ + "/" + name + E; std::filesystem::exists(P, ec))
+                        return P;
+        }
+        return "";
+    }
+
+    // where the walk finds a file in this dir, as a rank (lower first): a
+    // size dir before the context layout, a file directly in a size dir
+    // before one a context down. nullopt: a dir the walk never looks in.
+    inline std::optional<size_t> iconDirRank(std::string_view dir, const SIconSearch& S) {
+        const auto SLASH = dir.find('/');
+        const auto HEAD  = dir.substr(0, SLASH);
+        const auto TAIL  = SLASH == std::string_view::npos ? std::string_view{} : dir.substr(SLASH + 1);
+        if (TAIL.find('/') != std::string_view::npos)
+            return std::nullopt;
+        if (const auto IT = std::ranges::find(S.sizeDirs, HEAD); IT != S.sizeDirs.end())
+            return (size_t)(IT - S.sizeDirs.begin()) * 2 + (TAIL.empty() ? 0 : 1);
+        if (TAIL.empty())
+            return std::nullopt;
+        const auto CTX = std::ranges::find(ICON_CONTEXTS, HEAD);
+        const auto SZ  = std::ranges::find(S.ctxSizes, TAIL);
+        if (CTX == std::end(ICON_CONTEXTS) || SZ == S.ctxSizes.end())
+            return std::nullopt;
+        return S.sizeDirs.size() * 2 + (size_t)(CTX - std::begin(ICON_CONTEXTS)) * S.ctxSizes.size() + (size_t)(SZ - S.ctxSizes.begin());
+    }
+
+    // name in one theme dir, into found: from its cache when it has a fresh
+    // one (the best-ranked listed file still there; .svg before .png before
+    // .xpm, as the walk probes), else by the walk, which the budget meters
+    // once per resolve. false: the budget refused the walk.
+    inline bool findInThemeDir(const std::string& themeDir, const std::string& name, const SIconSearch& S, bool& walked, std::string& found) {
+        const auto& D = iconThemeDir(themeDir);
+        if (D.kind == SIconThemeDir::ABSENT)
+            return true;
+        if (D.kind == SIconThemeDir::CACHED) {
+            std::vector<std::pair<size_t, std::string>> hits;
+            D.cache->images(name, [&](const std::string& dir, uint16_t flags) {
+                const auto RANK = iconDirRank(dir, S);
+                if (!RANK)
+                    return;
+                const bool CONTEXT_LAYOUT = *RANK >= S.sizeDirs.size() * 2;
+                size_t     e              = 0;
+                for (const auto& [FLAG, EXT] :
+                     {std::pair{CIconThemeCache::HAS_SVG, ".svg"}, std::pair{CIconThemeCache::HAS_PNG, ".png"}, std::pair{CIconThemeCache::HAS_XPM, ".xpm"}}) {
+                    if ((flags & FLAG) && !(CONTEXT_LAYOUT && FLAG == CIconThemeCache::HAS_XPM))
+                        hits.emplace_back(*RANK * 4 + e, themeDir + "/" + dir + "/" + name + EXT);
+                    e++;
+                }
+            });
+            std::ranges::sort(hits);
+            std::error_code ec;
+            for (auto& [RANK, P] : hits)
+                if (std::filesystem::exists(P, ec)) {
+                    found = std::move(P);
+                    break;
+                }
+            return true;
+        }
+        if (!walked) {
+            if (!iconWalkBudget())
+                return false;
+            walked = true;
+        }
+        found = walkThemeDir(themeDir, name, S);
+        return true;
     }
 
     inline std::string resolveIconName(const std::string& name, int sizePx) {
@@ -438,14 +748,6 @@ namespace NAwesome {
             CACHE.old.erase(IT);
             return CACHE.young.emplace(KEY, std::move(found)).first->second;
         }
-        if (!iconWalkBudget())
-            return "";
-        if (CACHE.young.size() >= MAX_ICON_NAME_CACHE / 2) {
-            CACHE.old = std::move(CACHE.young);
-            CACHE.young.clear();
-        }
-
-        const auto               bases = xdgIconBases();
 
         std::vector<std::string> themes;
         if (const auto GT = gtkIconThemeName(); !GT.empty()) {
@@ -460,55 +762,16 @@ namespace NAwesome {
         themes.push_back("Adwaita"); // the freedesktop-name last resorts
         themes.push_back("AdwaitaLegacy");
 
-        // Adwaita stores symbolic marks as symbolic/<context>/name.svg,
-        // unlike themes that use scalable/<context>/ or size/<context>/.
-        // Treat symbolic as a size directory so findIconInDir also probes the
-        // context below it.
-        std::vector<std::string> sizeDirs = {"scalable", "symbolic"};
-        // Small sizes in proximity order, the large ones LAST: an app that
-        // ships a single large icon (discord ships 256x256 only) must still
-        // resolve, but when both exist a source near the request wins. 22 is
-        // load-bearing, not a nicety: nm-applet's whole nm-* notification
-        // set (nm-signal-*, nm-stage*, nm-tech-*) is 22x22 only.
-        for (const int S : {sizePx, 64, 48, 96, 128, 256, 72, 36, 32, 24, 22, 20, 16, 192, 384, 512, 1024})
-            sizeDirs.push_back(std::to_string(S) + "x" + std::to_string(S));
-
-        // breeze (and KDE themes generally) lay out <context>/<size> instead
-        // of <size>x<size>/<context> — probe the common contexts too
-        static const char*       CTXS[]   = {"status", "apps", "devices", "actions", "categories", "mimetypes", "legacy", "symbolic"};
-        std::vector<std::string> ctxSizes = {"symbolic", "scalable"};
-        for (const int S : {sizePx, 64, 48, 32, 24, 22, 20, 16, 96, 128, 256, 512})
-            ctxSizes.push_back(std::to_string(S));
-
+        const auto  BASES  = xdgIconBases();
+        const auto  SEARCH = iconSearch(sizePx);
         std::string found;
+        bool        walked = false;
         for (const auto& THEME : themes) {
-            for (const auto& BASE : bases) {
-                const auto      TDIR = BASE + "/" + THEME;
-                std::error_code ec;
-                if (!std::filesystem::is_directory(TDIR, ec))
-                    continue;
-                for (const auto& SD : sizeDirs)
-                    if (found = findIconInDir(TDIR + "/" + SD, name); !found.empty())
-                        break;
-                for (const char* CTX : CTXS) {
-                    if (!found.empty())
-                        break;
-                    if (!std::filesystem::is_directory(TDIR + "/" + CTX, ec))
-                        continue;
-                    for (const auto& SZ : ctxSizes) {
-                        static const char* EXT[] = {".svg", ".png"};
-                        for (const char* E : EXT)
-                            if (std::filesystem::exists(TDIR + "/" + CTX + "/" + SZ + "/" + name + E, ec)) {
-                                found = TDIR + "/" + CTX + "/" + SZ + "/" + name + E;
-                                break;
-                            }
-                        if (!found.empty())
-                            break;
-                    }
-                }
-                if (!found.empty())
+            for (const auto& BASE : BASES)
+                if (!findInThemeDir(BASE + "/" + THEME, name, SEARCH, walked, found))
+                    return ""; // deferred (iconDeferred), not memoized
+                else if (!found.empty())
                     break;
-            }
             if (!found.empty())
                 break;
         }
@@ -524,6 +787,10 @@ namespace NAwesome {
                     break;
             }
 
+        if (CACHE.young.size() >= MAX_ICON_NAME_CACHE / 2) {
+            CACHE.old = std::move(CACHE.young);
+            CACHE.young.clear();
+        }
         CACHE.young[KEY] = found;
         return found;
     }

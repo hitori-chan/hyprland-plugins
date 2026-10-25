@@ -12,6 +12,7 @@ int main() {
         {"desktop-exec", test_desktop_exec},
         {"proc", test_proc},
         {"textcut", test_textcut},
+        {"iconcache", test_iconcache},
     };
     for (const auto& C : CASES)
         std::printf("[case] %s\n", C.name), C.fn();
