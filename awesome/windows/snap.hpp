@@ -88,11 +88,6 @@ namespace NAwesome::Windows::Snap {
             return B;
         }
 
-        std::array<CBox, 4> zoneStrips(const CBox& Z) {
-            constexpr double BW = 1;
-            return {CBox{Z.x, Z.y, Z.w, BW}, CBox{Z.x, Z.y + Z.h - BW, Z.w, BW}, CBox{Z.x, Z.y + BW, BW, Z.h - 2 * BW}, CBox{Z.x + Z.w - BW, Z.y + BW, BW, Z.h - 2 * BW}};
-        }
-
         void damageZone() {
             if (!zoneBox())
                 return;
@@ -485,12 +480,18 @@ namespace NAwesome::Windows::Snap {
             if (const auto RAW = cfg().getColor("plugin:awesome:windows:col_frame"); RAW != colRaw) {
                 colRaw = RAW;
                 col    = CHyprColor{RAW};
-                fill   = CHyprColor(col.r, col.g, col.b, 0.10); // a 1px ring alone gets lost over busy content
+                fill   = CHyprColor(col.r, col.g, col.b, 0.10); // a ring alone gets lost over busy content
             }
 
-            ctx.rect(*zoneBox(), fill);
-            for (const auto& R : zoneStrips(*zoneBox()))
-                ctx.rect(R, col);
+            // clear, never frosted: the preview shows the window's future
+            // edges over what will be under it — a tint and a 1.5 px rim
+            // inside the zone, at the windows' own corner radius
+            static auto      ROUNDING = CConfigValue<Config::INTEGER>("decoration:rounding");
+            static auto      POWER    = CConfigValue<Config::FLOAT>("decoration:rounding_power");
+            const int        R        = (int)std::lround(std::max<int64_t>(0, *ROUNDING) * ctx.scale);
+            constexpr double RIM      = 1.5;
+            ctx.rect(*zoneBox(), fill, R, *POWER);
+            ctx.ring(CBox{*zoneBox()}.expand(-RIM), col, std::max(0, R - (int)std::lround(RIM * ctx.scale)), *POWER, RIM);
         }
         std::optional<CBox> boundingBox(PHLMONITOR mon) const override {
             if (!zoneBox() || mon != zoneMon().lock())

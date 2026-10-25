@@ -93,7 +93,7 @@ namespace NAwesome {
         // ---- windows ----
         {"plugin:awesome:windows:edge", "distance from an output edge that arms a snap zone", Kind::Int, 16, 0, {}, 0, 0, 128},
         {"plugin:awesome:windows:snap_distance", "magnetic pull distance", Kind::Int, 8, 0, {}, 0, 0, 128},
-        {"plugin:awesome:windows:col_frame", "snap preview outline", Kind::Color, 0, 0, {}, 0xff9acbff},
+        {"plugin:awesome:windows:col_frame", "snap preview outline (its tint is the same colour at 10 %)", Kind::Color, 0, 0, {}, 0xff00ccff},
     };
     inline constexpr size_t SPEC_COUNT = std::size(SPECS);
 
