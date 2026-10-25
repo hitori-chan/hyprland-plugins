@@ -1,6 +1,9 @@
-// awesome/shell/clock.cpp — awesome's textclock: the state (one string) and its widget
+// awesome/shell/clock.cpp — awesome's textclock: the state (one string) and its
+// widget. As macOS's menu-bar clock, a click opens the notification center.
 
 #include "shell/shell.hpp"
+
+#include "notify/model.hpp"
 
 #include <locale.h>
 
@@ -29,9 +32,9 @@ namespace NAwesome::Shell {
                 return false;
             if (!std::exchange(timeLocaleTried, true))
                 timeLocale = newlocale(LC_TIME_MASK, "", (locale_t)0);
-            // the Frost clock: "Sun 25 Oct  12:26", the time set off by a
-            // double space
-            constexpr const char* FMT = "%a %d %b  %H:%M";
+            // "Mon Oct 26 01:12": the user's clock, as macOS writes its own
+            // (the day unpadded, glibc's %-d)
+            constexpr const char* FMT = "%a %b %-d %H:%M";
             const size_t          N   = timeLocale ? strftime_l(buf, sizeof(buf), FMT, &tm, timeLocale) : std::strftime(buf, sizeof(buf), FMT, &tm);
             if (N == 0)
                 return false;
@@ -54,11 +57,21 @@ namespace NAwesome::Shell {
         class CClockWidget : public IWidget {
           public:
             double fit(const SPaint& P, const SFrame& F) override {
-                const auto TEX = textTex(clockText, F.fg, P.pt, 0, "", 500);
+                const auto TEX = textTex(clockText, F.fg, P.pt);
                 return TEX ? TEX->m_size.x / P.scale : 0;
             }
             void draw(const SPaint& P, const SFrame& F, const CBox& box) override {
-                P.texIn(textTex(clockText, F.fg, P.pt, 0, "", 500), box);
+                P.texIn(textTex(clockText, F.fg, P.pt), box);
+                SHit h;
+                h.box    = box;
+                h.widget = this;
+                P.hits->push_back(h);
+            }
+            void onHit(const SHit& hit, uint32_t bit, bool) override {
+                if (bit != 1u)
+                    return;
+                // the bell's door (bell.cpp): deferred, on the clicked bar's monitor
+                NAwesome::Notify::queueCenterToggle(hit.mon.lock());
             }
         };
     } // namespace
