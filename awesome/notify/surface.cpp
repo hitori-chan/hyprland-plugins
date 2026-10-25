@@ -13,7 +13,6 @@ namespace NAwesome::Notify {
     std::vector<SCard> cards;
     PHLMONITORREF      cardsMon;
     SHover             hovered;
-    CBox               lastScrim;
 
     // Cards are rebuilt every frame; their hit-rect vectors and group key
     // keep their capacity across frames through this pool (renderAll
@@ -99,7 +98,6 @@ namespace NAwesome::Notify {
         // the center and the banners never coexist: opening the center folds
         // the live cards into its column (same textures, different layout).
         // The capsules (system feedback) show over either.
-        lastScrim = {};
         if (centerVisible())
             renderCenter(P, T);
         else
@@ -110,8 +108,8 @@ namespace NAwesome::Notify {
 
     // ---- damage ----
 
-    // everything the last layout drew, global logical: the cards, the
-    // capsules, the center's dusk
+    // everything the last layout drew, global logical: the cards and the
+    // capsules
     static CBox contentBox() {
         if (cards.empty())
             return {};
@@ -126,8 +124,6 @@ namespace NAwesome::Notify {
         const double MENU_EXTRA = SPaint::frostReach(SPaint::eDepth::MENU) - SPaint::frostReach();
         for (const auto& C : cards)
             ADD(C.kind == SCard::MENU ? CBox{C.box}.expand(MENU_EXTRA) : C.box);
-        if (lastScrim.w > 0)
-            ADD(lastScrim);
         return CBox{x0, y0, x1 - x0, y1 - y0};
     }
 
@@ -196,7 +192,6 @@ namespace NAwesome::Notify {
             // must not linger to swallow clicks over nothing; the next card
             // arrives on the focused monitor
             cards.clear();
-            lastScrim = {};
             layoutMon.reset();
         } else {
             textCacheTick();
@@ -357,7 +352,6 @@ namespace NAwesome::Notify {
         cardsMon.reset();
         layoutMon.reset();
         textCacheClear();
-        lastScrim = {};
         auto& G   = NAwesome::Canvas::inst().gate();
         G.warming      = false;
         G.texStale     = false;

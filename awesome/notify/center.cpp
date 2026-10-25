@@ -4,8 +4,8 @@
 // holds, and a dismissed card is gone (Android's shade has no recall either).
 //
 // This unit decides WHAT is shown and WHERE; card.cpp and bundle.cpp draw
-// it. The center is the banners' own column under a heading, over a dusk
-// that keeps the glass legible on any wallpaper.
+// it. The center is the banners' own column, its controls on glass capsules
+// above it; as macOS's, it draws no backdrop: the desktop is never darkened.
 //
 // RANKING — Android's, without the dividers: critical, then conversations,
 // then normal, then silent; newest first inside each tier. An app's cards
@@ -501,12 +501,6 @@ namespace NAwesome::Notify {
         s_lastVis = placed.empty() ? s_skip : placed.back().idx;
         const bool EMPTY = disp.empty();
 
-        // ---- the dusk: the column's backdrop, darkening to the edge ----
-        const double WAY = MB.y + (P.mon->logicalBoxMinusReserved().y - MB.y);
-        lastScrim        = CBox{MB.x + MB.w - SCRIM_W, WAY, SCRIM_W, MB.y + MB.h - WAY};
-        if (const auto S = scrimTex(); S && S->tex)
-            P.texStretch(S->tex, lastScrim);
-
         // the column swallows its clicks and owns the wheel, gaps included
         {
             SCard pc;
@@ -515,30 +509,37 @@ namespace NAwesome::Notify {
             cards.push_back(pc);
         }
 
-        // ---- the heading: "Notifications", the moon, "Clear All" ----
+        // ---- the controls: Do Not Disturb and Clear All ----
+        // macOS's center draws no backdrop and no heading; what it offers
+        // sits on glass of its own (its Show Less capsule), legible over any
+        // wallpaper without darkening one.
         {
-            const auto HEAD = cachedText("Notifications", COLTITLE, T.heading, (int)std::lround(W * P.scale), -1, 0, false, 600);
-            if (HEAD && HEAD->tex)
-                P.tex(HEAD->tex, X + 4, Y0 + (HEADER_H - texH(HEAD, P.scale)) / 2);
+            const double CAP_H = 24, CAP_PADX = 10, CAP_GAP = 6, MOON_PX = 14;
+            const double CY    = Y0 + (HEADER_H - CAP_H) / 2;
+            const int    ROUND = (int)std::lround(CAP_H / 2 * P.scale);
 
-            const bool TARGET = std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && !Model::offShade(N); });
-            const bool CHOV   = hovered.kind == SCard::BTN_CLEAR && TARGET;
-            const auto CLEAR  = cachedText("Clear All", TARGET ? (CHOV ? COLTITLE : COLSUB) : COLSUB.modifyA(COLSUB.a * 0.5f), T.meta, (int)std::lround(W * P.scale), -1, 0,
-                                           false, 500);
-            const double CW = texW(CLEAR, P.scale);
-            const CBox   CB{X + W - 4 - CW - 6, Y0, CW + 12, HEADER_H};
+            const bool   TARGET = std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && !Model::offShade(N); });
+            const bool   CHOV   = hovered.kind == SCard::BTN_CLEAR && TARGET;
+            const auto   CLEAR  = cachedText("Clear All", TARGET ? COLTITLE : COLSUB, T.meta, (int)std::lround(W * P.scale), -1, 0, false, 500);
+            const double CW     = texW(CLEAR, P.scale) + 2 * CAP_PADX;
+            const CBox   CB{X + W - CW, CY, CW, CAP_H};
+            P.frost(CB, COLBG, COLRIM, ROUND, 2.f);
+            if (CHOV)
+                P.rect(CB, tFill(), ROUND, 2.f);
             texCentered(P, CLEAR, CB);
             SCard cc;
             cc.kind = SCard::BTN_CLEAR;
             cc.box  = CB;
             cards.push_back(cc);
 
-            // Do Not Disturb: the moon lit in the accent while it holds
+            // the moon, lit in the accent while Do Not Disturb holds
             const bool LIT  = Model::suspendedNow();
             const bool DHOV = hovered.kind == SCard::BTN_DND;
-            const auto MOON = Glyph::tex(Glyph::eGlyph::MOON, LIT ? COLACC : DHOV ? COLTITLE : COLSUB, (int)std::lround(14 * P.scale));
-            const CBox DB{CB.x - 4 - HEADER_H, Y0, HEADER_H, HEADER_H};
-            if (MOON)
+            const CBox DB{CB.x - CAP_GAP - CAP_H, CY, CAP_H, CAP_H};
+            P.frost(DB, COLBG, COLRIM, ROUND, 2.f);
+            if (DHOV)
+                P.rect(DB, tFill(), ROUND, 2.f);
+            if (const auto MOON = Glyph::tex(Glyph::eGlyph::MOON, LIT ? COLACC : COLTITLE, (int)std::lround(MOON_PX * P.scale)))
                 P.texIn(MOON, DB);
             SCard dc;
             dc.kind = SCard::BTN_DND;

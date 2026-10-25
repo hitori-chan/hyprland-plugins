@@ -546,35 +546,6 @@ namespace NAwesome::Notify {
         return texCache.insert(KEY, std::move(entry));
     }
 
-    // ---- the Material chevron ----
-
-    // The center's dusk: black ramping in from transparent toward the
-    // screen's edge, a 256 x 1 strip the pass stretches over the backdrop
-    // (the renderer has no gradient fill). Same warm-gate contract as
-    // cachedText — built only on a warm pass, drawn on a later frame.
-    const SCachedText* scrimTex() {
-        static const std::string KEY = "scrim";
-        if (const auto* HIT = texCache.find(KEY))
-            return HIT;
-        if (!NAwesome::Canvas::inst().gate().mayBuild())
-            return nullptr;
-        constexpr int W    = 256;
-        auto*         SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, 1);
-        auto*         D    = cairo_image_surface_get_data(SURF);
-        for (int x = 0; x < W; x++) {
-            const double T = (double)x / (W - 1);
-            const double R = std::min(1.0, T / 0.45); // full by the column's left edge
-            const auto   A = (uint8_t)std::lround(255 * 0.45 * R * R * (3 - 2 * R)); // smoothstep: no visible start
-            D[x * 4] = D[x * 4 + 1] = D[x * 4 + 2] = 0;
-            D[x * 4 + 3]                           = A;
-        }
-        cairo_surface_mark_dirty(SURF);
-        SCachedText entry;
-        entry.tex = g_pHyprRenderer->createTexture(SURF);
-        cairo_surface_destroy(SURF);
-        return texCache.insert(KEY, std::move(entry));
-    }
-
     double texH(const SCachedText* e, double scale) {
         return e && e->tex ? e->tex->m_size.y / scale : 0;
     }

@@ -67,15 +67,14 @@ namespace NAwesome::Notify {
     inline constexpr double BADGE_D = 18.0 / 36.0, BADGE_OUT = 3.0 / 36.0, BADGE_RING = 1.5 / 18.0;
 
     // the center
-    inline constexpr double HEADER_H = 28, HEADER_GAP = 4; // "Notifications", the moon, "Clear All"
+    inline constexpr double HEADER_H = 28, HEADER_GAP = 4; // the controls' row: the moon, "Clear All"
     inline constexpr double GROUP_HEAD_H = 40, GROUP_ICON = 20, CIRCLE = 22, TAIL_H = 30; // a bundle's header and its "+N more"
-    inline constexpr double SCRIM_W = 640; // the dusk behind the column, from the screen's right edge
     inline constexpr double EMPTY_H = 56;
 
     // ---- paint.cpp: the type scale, motion, radii, card recipes ----
 
     struct SType { // per-frame type roles, physical px
-        int meta, title, body, small, action, heading;
+        int meta, title, body, small, action;
     };
     SType typeScale(double scale);
 
@@ -130,8 +129,6 @@ namespace NAwesome::Notify {
     // (the caret's end) must stay in view.
     const SCachedText* cachedText(const std::string& text, const CHyprColor& col, int pt, int maxWpx, int maxHpx, float lineSp, bool markup, int weight,
                                   const CHyprColor* linkCol = nullptr, bool headCut = false);
-
-    const SCachedText* scrimTex(); // the center's dusk, a horizontal ramp
 
     double texH(const SCachedText* e, double scale);
     double texW(const SCachedText* e, double scale);
@@ -211,9 +208,5 @@ namespace NAwesome::Notify {
     // the current hover (surface.cpp owns it; setHovered is its door) —
     // the drawing units read it for fills and reveals
     extern SHover hovered;
-
-    // the center's dusk behind its column, global logical; w 0 = none
-    // (center.cpp writes it, surface.cpp's bounds and damage read it)
-    extern CBox lastScrim;
 
 } // namespace NAwesome::Notify
