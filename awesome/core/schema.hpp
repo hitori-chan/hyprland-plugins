@@ -11,11 +11,12 @@
 //
 // Ranges are soft: wide enough that every value the old plugins accepted
 // stays valid. They exist so a hostile or typo'd value clamps instead of
-// shaping geometry, not to enforce aesthetics. Colors are raw hex in the
-// fork's byte order (#AABBGGRR as typed in config).
+// shaping geometry, not to enforce aesthetics. Colors are raw
+// 0xAARRGGBB; the defaults are core/tokens.hpp's.
 #pragma once
 
 #include "bounded.hpp"
+#include "tokens.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -47,23 +48,23 @@ namespace NAwesome {
         {"plugin:awesome:shell:height", "bar height in logical px (reserve it: monitor reserved top)", Kind::Int, 28, 0, {}, 0, 16, 64},
         {"plugin:awesome:shell:font_size", "text size in logical px (monitor scale applies at raster time)", Kind::Int, 13, 0, {}, 0, 6, 48},
         {"plugin:awesome:shell:tray_spacing", "px between tray icons", Kind::Int, 10, 0, {}, 0, 0, 64},
-        {"plugin:awesome:shell:font", "font family", Kind::String, 0, 0, "Inter"},
+        {"plugin:awesome:shell:font", "font family", Kind::String, 0, 0, Theme::FONT},
         {"plugin:awesome:shell:terminal", "terminal that runs Terminal=true launcher entries", Kind::String, 0, 0, "alacritty"},
-        {"plugin:awesome:shell:col_bg", "the bar's and the launcher's thin glass (the alpha IS the glass)", Kind::Color, 0, 0, {}, 0x6b1c1c20},
-        {"plugin:awesome:shell:col_menu_bg", "menus' thicker glass", Kind::Color, 0, 0, {}, 0xad28282e},
-        {"plugin:awesome:shell:col_fg", "bar text", Kind::Color, 0, 0, {}, 0xdbebebf5},
-        {"plugin:awesome:shell:col_focus", "the launcher's and the menus' selection (text)", Kind::Color, 0, 0, {}, 0xff00ccff},
-        {"plugin:awesome:shell:col_active", "the viewed tag, the focused task (text) and the bell's badge", Kind::Color, 0, 0, {}, 0xff00ccff},
-        {"plugin:awesome:shell:col_active_bg", "the viewed tag's ground", Kind::Color, 0, 0, {}, 0x4d000000},
-        {"plugin:awesome:shell:col_on_active", "the count on the bell's badge", Kind::Color, 0, 0, {}, 0xff00141a},
-        {"plugin:awesome:shell:col_empty", "empty tags, minimized tasks, disabled rows", Kind::Color, 0, 0, {}, 0x57ebebf5},
-        {"plugin:awesome:shell:col_urgent", "urgent tags and tasks (text)", Kind::Color, 0, 0, {}, 0xffff6159},
-        {"plugin:awesome:shell:col_frame", "the glass rim", Kind::Color, 0, 0, {}, 0x1affffff},
-        {"plugin:awesome:shell:col_charging", "battery fill charging/defender", Kind::Color, 0, 0, {}, 0xff32d74b},
-        {"plugin:awesome:shell:col_low", "battery low", Kind::Color, 0, 0, {}, 0xffff6159},
-        {"plugin:awesome:shell:col_powersave", "battery fill power save", Kind::Color, 0, 0, {}, 0xffffd60a},
+        {"plugin:awesome:shell:col_bg", "the bar's and the launcher's thin glass (the alpha IS the glass)", Kind::Color, 0, 0, {}, Theme::BAR_GLASS},
+        {"plugin:awesome:shell:col_menu_bg", "menus' thicker glass", Kind::Color, 0, 0, {}, Theme::MENU_GLASS},
+        {"plugin:awesome:shell:col_fg", "bar text", Kind::Color, 0, 0, {}, Theme::INK},
+        {"plugin:awesome:shell:col_focus", "the launcher's and the menus' selection (text)", Kind::Color, 0, 0, {}, Theme::ACCENT},
+        {"plugin:awesome:shell:col_active", "the viewed tag, the focused task (text) and the bell's badge", Kind::Color, 0, 0, {}, Theme::ACCENT},
+        {"plugin:awesome:shell:col_active_bg", "the viewed tag's ground", Kind::Color, 0, 0, {}, Theme::GROUND},
+        {"plugin:awesome:shell:col_on_active", "the count on the bell's badge", Kind::Color, 0, 0, {}, Theme::ON_ACCENT},
+        {"plugin:awesome:shell:col_empty", "empty tags, minimized tasks, disabled rows", Kind::Color, 0, 0, {}, Theme::DIM},
+        {"plugin:awesome:shell:col_urgent", "urgent tags and tasks (text)", Kind::Color, 0, 0, {}, Theme::URGENT},
+        {"plugin:awesome:shell:col_frame", "the glass rim", Kind::Color, 0, 0, {}, Theme::RIM},
+        {"plugin:awesome:shell:col_charging", "battery fill charging/defender", Kind::Color, 0, 0, {}, Theme::CHARGING},
+        {"plugin:awesome:shell:col_low", "battery low", Kind::Color, 0, 0, {}, Theme::URGENT},
+        {"plugin:awesome:shell:col_powersave", "battery fill power save", Kind::Color, 0, 0, {}, Theme::SAVER},
         // ---- notify ----
-        {"plugin:awesome:notify:font", "font family", Kind::String, 0, 0, "Inter"},
+        {"plugin:awesome:notify:font", "font family", Kind::String, 0, 0, Theme::FONT},
         {"plugin:awesome:notify:font_size", "body text size in logical px (the type roles derive from it)", Kind::Int, 13, 0, {}, 0, 6, 48},
         {"plugin:awesome:notify:width", "card width in logical px: the banners' and the center's column", Kind::Int, 356, 0, {}, 0, 128, 1024},
         {"plugin:awesome:notify:max_height", "banner height cap in logical px", Kind::Int, 320, 0, {}, 0, 96, 1024},
@@ -75,23 +76,23 @@ namespace NAwesome {
         {"plugin:awesome:notify:coalesce_popups", "live popups per app (0 = no cap); same-app extras land silent in the shade", Kind::Int, 3, 0, {}, 0, 0, 9},
         {"plugin:awesome:notify:max_notifs", "model cap; overflow evicts the oldest non-critical card", Kind::Int, 50, 0, {}, 0, 1, 512},
         {"plugin:awesome:notify:ignore_dbusclose", "ignore app-initiated CloseNotification (dunst's knob)", Kind::Int, 0, 0, {}, 0, 0, 1},
-        {"plugin:awesome:notify:rounding", "card radius in logical px", Kind::Int, 18, 0, {}, 0, 0, 128},
+        {"plugin:awesome:notify:rounding", "card radius in logical px", Kind::Int, Theme::RAD_CARD, 0, {}, 0, 0, 128},
         {"plugin:awesome:notify:rounding_power", "corner superellipse exponent", Kind::Double, 0, 3.0, {}, 0, 0, 1 << 20, 1.0, 8.0},
         {"plugin:awesome:notify:sound_command", "libcanberra player for sound hints; empty disables", Kind::String, 0, 0, "canberra-gtk-play"},
         {"plugin:awesome:notify:fallback_icon_dir", "iconless cards draw a random identity face from this directory", Kind::String, 0, 0, ""},
-        {"plugin:awesome:notify:col_bg", "glass fill (the alpha IS the glass)", Kind::Color, 0, 0, {}, 0x8a26262c},
-        {"plugin:awesome:notify:col_menu_bg", "the card menu's thicker glass", Kind::Color, 0, 0, {}, 0xad28282e},
-        {"plugin:awesome:notify:col_fg", "body text", Kind::Color, 0, 0, {}, 0xc7ebebf5},
-        {"plugin:awesome:notify:col_title", "titles, buttons, the capsules' words", Kind::Color, 0, 0, {}, 0xffededf0},
-        {"plugin:awesome:notify:col_kicker", "meta and secondary text", Kind::Color, 0, 0, {}, 0x8cebebf5},
-        {"plugin:awesome:notify:col_frame", "the glass rim", Kind::Color, 0, 0, {}, 0x1affffff},
-        {"plugin:awesome:notify:col_urgent", "critical: the meta, its progress, an alarmed capsule", Kind::Color, 0, 0, {}, 0xffff6159},
-        {"plugin:awesome:notify:col_highlight", "the accent: progress, the selection, the reply field", Kind::Color, 0, 0, {}, 0xff00ccff},
-        {"plugin:awesome:notify:col_link", "body hyperlinks", Kind::Color, 0, 0, {}, 0xff7db4ff},
+        {"plugin:awesome:notify:col_bg", "glass fill (the alpha IS the glass)", Kind::Color, 0, 0, {}, Theme::GLASS},
+        {"plugin:awesome:notify:col_menu_bg", "the card menu's thicker glass", Kind::Color, 0, 0, {}, Theme::MENU_GLASS},
+        {"plugin:awesome:notify:col_fg", "body text", Kind::Color, 0, 0, {}, Theme::BODY},
+        {"plugin:awesome:notify:col_title", "titles, buttons, the capsules' words", Kind::Color, 0, 0, {}, Theme::TITLE},
+        {"plugin:awesome:notify:col_kicker", "meta and secondary text", Kind::Color, 0, 0, {}, Theme::SUB},
+        {"plugin:awesome:notify:col_frame", "the glass rim", Kind::Color, 0, 0, {}, Theme::RIM},
+        {"plugin:awesome:notify:col_urgent", "critical: the meta, its progress, an alarmed capsule", Kind::Color, 0, 0, {}, Theme::URGENT},
+        {"plugin:awesome:notify:col_highlight", "the accent: progress, the selection, the reply field", Kind::Color, 0, 0, {}, Theme::ACCENT},
+        {"plugin:awesome:notify:col_link", "body hyperlinks", Kind::Color, 0, 0, {}, Theme::LINK},
         // ---- windows ----
         {"plugin:awesome:windows:edge", "distance from an output edge that arms a snap zone", Kind::Int, 16, 0, {}, 0, 0, 128},
         {"plugin:awesome:windows:snap_distance", "magnetic pull distance", Kind::Int, 8, 0, {}, 0, 0, 128},
-        {"plugin:awesome:windows:col_frame", "snap preview outline (its tint is the same colour at 10 %)", Kind::Color, 0, 0, {}, 0xff00ccff},
+        {"plugin:awesome:windows:col_frame", "snap preview outline (its tint is the same colour at 10 %)", Kind::Color, 0, 0, {}, Theme::ACCENT},
     };
     inline constexpr size_t SPEC_COUNT = std::size(SPECS);
 
