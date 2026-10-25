@@ -184,6 +184,7 @@ namespace NAwesome::Notify {
     void setCenter(bool on, bool repop) {
         if (on == s_on)
             return;
+        CardMenu::close(); // the layout it was opened over is going
         s_on = on;
         if (!on) {
             resetVisit();
@@ -556,6 +557,7 @@ namespace NAwesome::Notify {
             if (D.items.size() < 2) {
                 SCard card = recycledCard();
                 renderCard(P, T, D.items.front(), SLOT, SCardForm{.where = SCardForm::CENTER, .open = OPEN}, card);
+                card.folded = !OPEN && IDX < s_itemMore.size() && s_itemMore[IDX];
                 cards.push_back(std::move(card));
             } else if (!OPEN)
                 paintDigest(P, T, D, SLOT);

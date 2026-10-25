@@ -187,6 +187,20 @@ namespace NAwesome {
             return out.put(row.substr(T + 1), count);
         }
 
+        // "<unix seconds>\t<key>"
+        bool parseTime(std::string_view row, CRecentMap<int64_t>& out) {
+            const auto T = row.find('\t');
+            if (T == 0 || T == std::string_view::npos || T > 12)
+                return false;
+            int64_t t = 0;
+            for (size_t i = 0; i < T; i++) {
+                if (row[i] < '0' || row[i] > '9')
+                    return false;
+                t = t * 10 + (row[i] - '0');
+            }
+            return out.put(row.substr(T + 1), t);
+        }
+
     } // namespace
 
     std::filesystem::path StateStore::path() {
@@ -212,6 +226,10 @@ namespace NAwesome {
                 parseCount(ROW, out.launches);
             else if (KIND == "history")
                 out.history.remember(ROW);
+            else if (KIND == "notify-app")
+                parseCount(ROW, out.notifyApp);
+            else if (KIND == "notify-mute")
+                parseTime(ROW, out.notifyMute);
         });
         return true;
     }
@@ -226,6 +244,10 @@ namespace NAwesome {
             out << "launches\t" << C << '\t' << K << '\n';
         for (const auto& E : data.history.entries)
             out << "history\t" << E << '\n';
+        for (const auto& [K, F] : data.notifyApp)
+            out << "notify-app\t" << F << '\t' << K << '\n';
+        for (const auto& [K, T] : data.notifyMute)
+            out << "notify-mute\t" << T << '\t' << K << '\n';
         return std::move(out).str();
     }
 

@@ -92,6 +92,7 @@ namespace NAwesome::Notify {
         surfaceInit(); // the tick timers, the canvas layer
         iconsInit(); // the async decode poll and the .desktop index scan start now
         replyInit();
+        inputInit(); // the hold timer
 
         auto& EV = Event::bus()->m_events;
         // The cards arrive on the FOCUSED monitor and stay there

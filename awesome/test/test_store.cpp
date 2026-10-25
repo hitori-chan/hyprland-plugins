@@ -102,6 +102,8 @@ bool test_store() {
         D.launches.put("org;app", 3);
         D.history.remember("first");
         D.history.remember("second\tquery");
+        D.notifyApp.put("org.telegram.desktop", 3);
+        D.notifyMute.put("org.telegram.desktop\x1f" "chat 42", 1760000000);
 
         const auto P = TDIR / "state-roundtrip.tsv";
         AW_CHECK(StateStore::write(P, D));
@@ -109,6 +111,7 @@ bool test_store() {
         AW_CHECK(StateStore::read(P, R));
         AW_CHECK(R.spot == D.spot && R.windowed == D.windowed && R.launches == D.launches);
         AW_CHECK(R.history.entries == D.history.entries);
+        AW_CHECK(R.notifyApp == D.notifyApp && R.notifyMute == D.notifyMute);
 
         AppState E;
         AW_CHECK(!StateStore::read(TDIR / "nope-state.tsv", E));
@@ -131,6 +134,12 @@ bool test_store() {
                                           "launches\t99999999\thuge\n"
                                           "history\tquery one\n"
                                           "history\tquery\twith\ttabs\n"
+                                          "notify-app\t2\tmail\n"
+                                          "notify-app\t-1\tsigned\n"
+                                          "notify-mute\t1760000000\tchat\n"
+                                          "notify-mute\t0\tepoch\n"           // not a mute's end
+                                          "notify-mute\t9999999999999\tfar\n" // past the field's width
+                                          "notify-mute\t17x\tmangled\n"
                                           "no-tab-line\n"
                                           "spot\t1\t2\tnul"} + std::string(1, '\0') + "class\n"));
         AppState R;
@@ -139,6 +148,8 @@ bool test_store() {
         AW_CHECK(R.windowed.empty());
         AW_CHECK(R.launches.size() == 1 && *R.launches.find("ok") == 5);
         AW_CHECK(R.history.entries.size() == 2 && R.history.entries[1] == "query\twith\ttabs");
+        AW_CHECK(R.notifyApp.size() == 1 && *R.notifyApp.find("mail") == 2);
+        AW_CHECK(R.notifyMute.size() == 1 && *R.notifyMute.find("chat") == 1760000000);
 
         // over the bound a read keeps the MOST RECENT rows (the file's tail)
         std::string caps;

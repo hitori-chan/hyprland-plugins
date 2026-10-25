@@ -155,6 +155,18 @@ namespace NAwesome::Notify {
             return {live, kept};
         }
 
+        // the DND queue: held arrivals the resume will surface (an OSD or a
+        // transient card never does). Not on badgeCounts — the gate's
+        // banners/resident split stays the shade's — but on the bell, which
+        // shows what waits for you while DND hides it.
+        uint32_t heldCount() {
+            uint32_t held = 0;
+            for (const auto& N : notifs)
+                if (N->waiting && !offShade(N))
+                    held++;
+            return held;
+        }
+
         std::string badgeString() {
             const auto [LIVE, KEPT] = badgeCounts();
             return "banners:" + std::to_string(LIVE) + " resident:" + std::to_string(KEPT);
@@ -196,18 +208,30 @@ namespace NAwesome::Notify {
             return std::nullopt;
         }
 
-        // one live popup per app: does another card already hold a banner for
-        // this app? A new same-app arrival then lands resident instead of
-        // stacking a second popup — the shade folds the extras, the badge
-        // counts them (the banner's own timeout is the cooldown window). A
-        // banner with no timeout (sticky, critical) is no cooldown: it would
-        // silence the app until dismissed. Two conversation cards are two
-        // chats (one chat is one card), and each chat alerts on its own.
-        static bool appHasBanner(const SP<SNotif>& self) {
+        // at most coalesce_popups live popups per app: do other cards already
+        // hold that many banners for this app? A new same-app arrival then
+        // lands resident instead of stacking past the cap — the shade folds
+        // the extras, the badge counts them (the banners' own timeouts are
+        // the cooldown window). A banner with no timeout (sticky, critical)
+        // is no cooldown: it would silence the app until dismissed. Two
+        // conversation cards are two chats (one chat is one card), and each
+        // chat alerts on its own. 0 lifts the cap.
+        static bool appBannersFull(const SP<SNotif>& self) {
+            const int CAP = NAwesome::cfg().getI("plugin:awesome:notify:coalesce_popups");
+            if (CAP <= 0)
+                return false;
+            int shown = 0;
             for (const auto& O : notifs)
-                if (O != self && !O->waiting && O->banner && O->timeoutMs > 0 && !vanishes(O) && O->appKey == self->appKey && !(O->conversation && self->conversation))
+                if (O != self && !O->waiting && O->banner && O->timeoutMs > 0 && !vanishes(O) && O->appKey == self->appKey && !(O->conversation && self->conversation) &&
+                    ++shown >= CAP)
                     return true;
             return false;
+        }
+
+        // the banner a card resumes or re-pops with: the per-app cap, and
+        // the card menu's switches (critical punches through both)
+        static bool earnsBanner(const SP<SNotif>& n) {
+            return !(n->urgency < 2 && appBannersFull(n)) && !Policy::bannersOff(*n);
         }
 
         // Feedback, never a notification: the OSD band (volume, brightness,
@@ -310,6 +334,32 @@ namespace NAwesome::Notify {
             return !n->conversation && !n->appKey.empty();
         }
 
+        void dismissAppAll(const std::string& appKey) {
+            const auto MATCH  = [&](const auto& N) { return visible(N) && !offShade(N) && !appKey.empty() && N->appKey == appKey; };
+            const auto BEFORE = notifs.size();
+            for (const auto& N : notifs)
+                if (MATCH(N))
+                    Bus::emitClosed(N->id, R_DISMISSED);
+            std::erase_if(notifs, MATCH);
+            if (notifs.size() == BEFORE)
+                return;
+            notifChanged();
+            rearmExpiry();
+        }
+
+        void lowerBanners(const std::string& appKey) {
+            bool changed = false;
+            for (const auto& N : notifs)
+                if (N->appKey == appKey && N->banner && !N->waiting && !vanishes(N) && Policy::bannersOff(*N)) {
+                    N->banner = false; // parked, not dismissed: the shade still holds it
+                    changed   = true;
+                }
+            if (!changed)
+                return;
+            notifChanged();
+            rearmExpiry();
+        }
+
         void dismissApp(const std::string& key) {
             // exactly the bundle's members: its (app, declared group) key,
             // never the app's other groups, its chats (conversations never
@@ -362,8 +412,8 @@ namespace NAwesome::Notify {
         }
 
         // Closing the shade returns what the open parked: an absorbed card
-        // gets its banner back, or stays parked under the same one-per-app
-        // cap the DND resume applies. Without this, an outside click next to
+        // gets its banner back, or stays parked under the same per-app cap
+        // (and menu switches) the DND resume applies. Without this, an outside click next to
         // the panel (the offset strip, the screen edge) closed the shade and
         // left the whole stack invisible — the notifications sat in the now
         // closed panel, nowhere on screen. Expiry-parked cards are not
@@ -383,7 +433,7 @@ namespace NAwesome::Notify {
                 changed = true;
                 if (N->waiting || vanishes(N))
                     continue;
-                N->banner = !(NAwesome::cfg().getI("plugin:awesome:notify:coalesce_popups") && N->urgency < 2 && appHasBanner(N));
+                N->banner = earnsBanner(N);
                 if (N->banner && N->timeoutMs > 0)
                     N->deadline = NOW + std::chrono::milliseconds((int64_t)N->timeoutMs);
             }
@@ -400,14 +450,14 @@ namespace NAwesome::Notify {
                 return;         // visible cards live out their timeouts; new arrivals queue
             }
             const auto NOW = Time::steadyNow();
-            // newest-first, so the freshest per app takes the one popup slot
-            // and the rest resume resident — the same one-per-app cap the
-            // live arrival path applies, so DND-off never floods the screen
+            // newest-first, so the freshest per app take the popup slots and
+            // the rest resume resident — the same per-app cap the live
+            // arrival path applies, so DND-off never floods the screen
             for (const auto& N : notifs) {
                 if (!N->waiting)
                     continue;
                 N->waiting = false;
-                N->banner  = !(NAwesome::cfg().getI("plugin:awesome:notify:coalesce_popups") && N->urgency < 2 && !vanishes(N) && appHasBanner(N)); // never seen: resume shows one banner per app
+                N->banner  = vanishes(N) || earnsBanner(N); // never seen: the resume applies the cap and the switches
                 if (N->banner && N->timeoutMs > 0)
                     N->deadline = NOW + std::chrono::milliseconds((int64_t)N->timeoutMs);
             }
@@ -1099,29 +1149,34 @@ namespace NAwesome::Notify {
             if (n->timeoutMs > 0 && !n->waiting) // a queued card's clock starts at the resume
                 n->deadline = Time::steadyNow() + std::chrono::milliseconds((int64_t)n->timeoutMs);
 
-            // one live popup per app: while this app already shows a banner,
-            // a new non-critical arrival is born resident — it lands
-            // silently in the shade (folded, badge-counted), no second
+            // the per-app popup cap: while this app already shows its cap of
+            // banners, a new non-critical arrival is born resident — it lands
+            // silently in the shade (folded, badge-counted), no further
             // popup, no repeat sound. A replace re-alerting its own live
-            // card is not a second banner (appHasBanner skips self).
-            // Critical always punches through. Banners show over a
-            // fullscreen window too — the ecosystem default; DND and the
-            // shade are the user's escape hatches.
+            // card is not another banner (appBannersFull skips self). The
+            // card menu's switches land an arrival in the shade the same
+            // way: the app's banners off, or its chat muted. Critical always
+            // punches through. Banners show over a fullscreen window too —
+            // the ecosystem default; DND and the shade are the user's
+            // escape hatches.
             const bool SOFT      = !n->waiting && n->urgency < 2 && !vanishes(n);
-            const bool COALESCED = SOFT && NAwesome::cfg().getI("plugin:awesome:notify:coalesce_popups") && appHasBanner(n);
-            if (COALESCED)
+            const bool COALESCED = SOFT && appBannersFull(n);
+            if (COALESCED || (SOFT && Policy::bannersOff(*n)))
                 n->banner = false;
 
             if (!n->waiting) // a suspended arrival is invisible: no warm, no damage
                 notifChanged();
+            else if (badgeChangedHook()) // ...but the bell counts the DND queue
+                badgeChangedHook()();
 
             // sound: a shown arrival plays sound-file/sound-name through the
             // libcanberra player unless the client suppresses it. DND-queued
             // (waiting) arrivals stay silent; the resume doesn't replay.
             if (!n->waiting) {
-                // a coalesced or DND-quiet arrival announces itself neither;
-                // the hint can only add silence, never lift ours
-                const bool  suppress = COALESCED || quiet || hintFlag(hints, "suppress-sound").value_or(false);
+                // a coalesced or DND-quiet arrival announces itself neither,
+                // nor does a silenced app or a muted chat; the hint can only
+                // add silence, never lift ours
+                const bool  suppress = COALESCED || quiet || Policy::soundsOff(*n) || hintFlag(hints, "suppress-sound").value_or(false);
                 std::string soundFile, soundName;
                 if (const auto IT = hints.find("sound-file"); IT != hints.end())
                     try {
@@ -1150,6 +1205,7 @@ namespace NAwesome::Notify {
         // ---- lifecycle ----
 
         void init() {
+            Policy::prune();
             expiry = makeShared<CEventLoopTimer>(
                 std::nullopt,
                 [](SP<CEventLoopTimer>, void*) {

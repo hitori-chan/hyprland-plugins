@@ -1,5 +1,5 @@
 // awesome/notify/ui.hpp — the surface machinery shared by the notify
-// drawing units (popups.cpp, center.cpp, row.cpp, surface.cpp). Private to
+// drawing units (popups, center, card, bundle, menu, surface). Private to
 // the module: the public map lives in notify.hpp.
 //
 // "center" throughout means the SHADE: one list of live cards, Android's
@@ -193,6 +193,20 @@ namespace NAwesome::Notify {
     void renderCenter(const SPaint& P, const SType& T);
     bool popupsAnimating(); // any arrival spring still running
     bool centerAnimating(); // the open spring still running
+
+    // ---- menu.cpp: the card menu (hold left on a card) ----
+
+    namespace CardMenu {
+        bool     canOpen(uint32_t id); // a notification (never feedback) the user can see
+        bool     open(uint32_t id, const Vector2D& at);
+        void     close();
+        bool     isOpen();
+        uint32_t owner(); // the card it belongs to; 0 = none open
+        void     pick(int index); // from the click drain
+        void     sync();          // after a model change: its card died -> close
+        void     render(const SPaint& P, const SType& T); // its panel, then its rows (hit first)
+        void     exit();          // teardown: forget it, no damage, no warm
+    }
 
     // the current hover (surface.cpp owns it; setHovered is its door) —
     // the drawing units read it for fills and reveals

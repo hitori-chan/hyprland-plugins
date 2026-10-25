@@ -15,8 +15,8 @@ static_assert(CfgKey{"plugin:awesome:shell:height"}.index < SPEC_COUNT);
 static_assert(specIndex("plugin:awesome:windows:col_frame") == SPEC_COUNT - 1);
 
 bool test_schema() {
-    // the surface: 47 keys, unique, all namespaced
-    AW_CHECK(SPEC_COUNT == 47);
+    // the surface: 48 keys, unique, all namespaced
+    AW_CHECK(SPEC_COUNT == 48);
     for (const auto& A : SPECS) {
         const auto K = std::string_view{A.key};
         AW_CHECK(K.starts_with("plugin:awesome:"));
@@ -46,7 +46,7 @@ bool test_schema() {
             if (std::string_view{K.key}.starts_with(std::string{"plugin:awesome:"} + MODULES[i] + ":"))
                 perModule[i]++;
     }
-    AW_CHECK(perModule[0] == 20 && perModule[1] == 3 && perModule[2] == 24);
+    AW_CHECK(perModule[0] == 20 && perModule[1] == 3 && perModule[2] == 25);
     AW_CHECK(findSpec("plugin:awesome:shell:nope") == nullptr);
 
     // defaults are the glass·ink tokens

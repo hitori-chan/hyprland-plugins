@@ -87,6 +87,7 @@ namespace NAwesome::Notify {
         SCard card = recycledCard();
         card.kind  = SCard::DIGEST;
         card.box   = box;
+        card.id    = D.items.front()->id; // the newest: the card menu's target
         card.group = D.key;
         cards.push_back(std::move(card));
     }
@@ -106,6 +107,7 @@ namespace NAwesome::Notify {
             SCard card   = recycledCard();
             card.kind    = SCard::GHEAD;
             card.box     = CBox{box.x, box.y, box.w, GROUP_HEAD_H};
+            card.id      = D.items.front()->id;
             card.group   = D.key;
             card.close   = XB;
             card.chevron = CHV;

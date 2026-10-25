@@ -12,6 +12,7 @@
 #include "box.hpp"
 #include "bounded.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <iterator>
@@ -36,8 +37,8 @@ namespace NAwesome {
     // one hostile file must not cost more than a bounded number of rows
     // to parse
     inline constexpr size_t MAX_STATE_ROWS = 16384;
-    // what the writer can produce at the caps above (3 x 1024 rows of
-    // 512-byte keys, 50 history rows of 4 KiB: ~1.9 MB): the reader must
+    // what the writer can produce at the caps above (5 x 1024 rows of
+    // 512-byte keys, 50 history rows of 4 KiB: ~2.9 MB): the reader must
     // accept anything the writer wrote
     inline constexpr size_t MAX_STATE_FILE_BYTES = 4u << 20;
 
@@ -50,6 +51,11 @@ namespace NAwesome {
     }
     inline bool validStoreValue(int count) {
         return count >= 0 && count <= MAX_LAUNCH_COUNT;
+    }
+    // a unix time (a mute's end): after the epoch, before the year 10000
+    inline constexpr int64_t MAX_STORE_TIME = 253402300800;
+    inline bool              validStoreValue(int64_t t) {
+        return t > 0 && t < MAX_STORE_TIME;
     }
 
     namespace detail {

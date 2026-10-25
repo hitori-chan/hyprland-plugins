@@ -1,14 +1,17 @@
-// awesome/notify/input.cpp — clicks, wheel paging, esc and pointer ownership
-// over the popups and the shade. Implements the interaction map exactly:
+// awesome/notify/input.cpp — clicks, the hold, wheel paging, esc and
+// pointer ownership over the cards, the shade and the card menu. The
+// interaction map, exactly:
 //
-//   popup    left = action/link/default → dismiss · right = dismiss ·
-//            middle = park the stack into the shade · hover reveals ✕
-//   row      a shade row IS its banner: left on the body fires the card's
+//   any card left = act (on the release, over the card it pressed) ·
+//            HOLD left = the card menu (menu.cpp) · right = dismiss ·
+//            middle = nothing (swallowed: the card is ours, not the
+//            window's under it — a terminal must not get a paste)
+//   popup    left = action/link/default → dismiss
+//   row      a shade card IS its banner: left on the body fires the card's
 //            primary (the fd.o `default`) and dismisses unless resident,
-//            same as the popup — rows open by default, so the click is
-//            spent on acting rather than on revealing. The CHEVRON is the
-//            only fold target · a link opens · a button acts · right =
-//            dismiss · middle = Clear all
+//            same as the popup — cards open by default, so the click is
+//            spent on acting rather than on revealing; a card the budget
+//            folded opens instead · a link opens · a button acts
 //   leaving  anything that RAISES something else closes the shade with it —
 //            the primary, an action button, a link (invokeLive below has
 //            the AOSP citation). Everything that keeps you here does not:
@@ -18,12 +21,13 @@
 //   child    a bundle child is a row without the fold: body, links, buttons
 //   digest   left expands the app's bundle · right dismisses
 //   ghead    left collapses · the ✕ / right dismisses the bundle
-//   footer   ⊖ = DND · "Clear all" = the global sweep
-//   wheel    vertical pages the shade — captured only inside the panel box.
-//            HORIZONTAL AWAY on a row is the phone's swipe-to-dismiss. Strictly
-//            an addition — a mouse without a horizontal wheel never reaches it
-//            and loses no verb.
-//   keys     while the shade is open it owns the nav set and nothing else:
+//   header   the moon = DND · "Clear All" = the global sweep
+//   menu     a row is picked on the left RELEASE — press, hold, slide onto
+//            a row and let go, or click one on the open menu; any other
+//            press closes it, swallowed
+//   wheel    vertical pages the shade — captured only inside the panel box
+//   keys     esc closes an open menu first. While the shade is open it
+//            owns the nav set and nothing else:
 //            esc closes · ↑/↓ move the selection · space folds it (the click's
 //            twin) · enter fires the primary · delete dismisses · tab opens its
 //            reply field, and while one is armed EVERY key is the field's
@@ -67,8 +71,11 @@ namespace NAwesome::Notify {
         std::string  href;   // non-empty: a body hyperlink
         uint64_t     rev     = 0;     // the card's revision at the press: its layout's actions are that revision's
         bool         outside = false; // the click fell outside every surface (closes the shade)
+        bool         folded  = false; // a center card the budget folded: the click opens it
+        bool operator==(const SHit&) const = default;
     };
     static void           drainHits(std::vector<SHit>& batch);
+    static void           releaseLeft(const Vector2D& pos);
     // clicks deferred out of the input emission; 32 pending is far past a
     // human's clicks per turn
     static NAwesome::CHopQueue<SHit, 32> hits(drainHits);
@@ -111,6 +118,62 @@ namespace NAwesome::Notify {
         if (c.replyField.w > 0 && c.replyField.containsPoint(pos))
             return 3;
         return 0;
+    }
+
+    // what a press at `pos` would do: the press and its release each ask,
+    // and a click is the two agreeing
+    static SHit hitAt(const SCard& c, const Vector2D& pos, uint32_t bit) {
+        SHit h;
+        h.kind   = c.kind;
+        h.id     = c.id;
+        h.group  = c.group;
+        h.bit    = bit;
+        h.part   = partAt(c, pos);
+        h.folded = c.folded;
+        if (bit == 1u && h.part == 0) {
+            if (const int B = buttonAt(c, pos); B >= 0)
+                h.action = c.buttons[B].id;
+            else if (const int L = linkAt(c, pos); L >= 0)
+                h.href = c.links[L].href;
+        }
+        // the revision the press's layout drew, not the model's now: a
+        // replace that landed after the last frame must not take the click
+        h.rev = c.rev;
+        return h;
+    }
+
+    // ---- the hold ----
+    //
+    // A left press on a notification waits: let go and it is a click,
+    // hold HOLD and the card menu opens under the pointer. Drifting past
+    // SLOP keeps the click and drops the hold. The timer runs on the event
+    // loop, never inside an emission; every reset path drops the press.
+    static struct {
+        SHit     hit;
+        Vector2D at;
+        bool     live = false;
+    } press;
+    static SP<CEventLoopTimer> holdTimer;
+    constexpr auto             HOLD = std::chrono::milliseconds(450);
+    constexpr double           SLOP = 6; // logical px
+
+    static void dropPress() {
+        if (!press.live)
+            return;
+        press.live = false;
+        if (holdTimer)
+            holdTimer->updateTimeout(std::nullopt);
+    }
+
+    static bool holdable(const SCard& c, const SHit& h) {
+        switch (c.kind) {
+            case SCard::POPUP:
+            case SCard::ROW:
+            case SCard::CHILD:
+            case SCard::DIGEST:
+            case SCard::GHEAD: return h.part != 3 && h.part != 4 && CardMenu::canOpen(c.id); // the reply field is typed in, never held
+            default: return false;
+        }
     }
 
     // ---- the deferred drain: what each surface DOES ----
@@ -181,14 +244,12 @@ namespace NAwesome::Notify {
             }
             switch (H.kind) {
                 case SCard::POPUP: {
-                    if (H.bit == 4u) {
-                        Model::absorbPopped(/*repopOnClose=*/false); // middle: park the stack into the shade (no dismiss)
-                        return;              // the rest reference now-parked cards
-                    }
-                    if (H.bit == 2u || H.part == 2) {
+                    if (H.bit == 2u) {
                         Model::closeOne(H.id, Model::R_DISMISSED);
                         continue;
                     }
+                    if (H.bit != 1u)
+                        continue;
                     if (!H.href.empty()) { // left on a hyperlink: open it, keep the card up
                         NAwesome::Jobs::inst().spawn(NAwesome::Jobs::OPEN, {"xdg-open", H.href.c_str(), nullptr});
                         continue;
@@ -198,17 +259,13 @@ namespace NAwesome::Notify {
                 }
                 case SCard::ROW:
                 case SCard::CHILD: {
-                    if (H.bit == 4u) {
-                        Model::dismissAllLive();
-                        return; // the rest of the queue references swept cards
-                    }
                     if (H.bit == 2u) {
                         Model::closeOne(H.id, Model::R_DISMISSED);
                         continue;
                     }
                     if (H.bit != 1u)
                         continue;
-                    if (H.part == 1) { // the chevron, and only it, folds
+                    if (H.folded) { // a folded card opens before it acts
                         centerToggleRow(H.id);
                         continue;
                     }
@@ -247,25 +304,15 @@ namespace NAwesome::Notify {
                         Model::dismissApp(H.group);
                         continue;
                     }
-                    if (H.bit == 4u) {
-                        Model::dismissAllLive();
-                        return;
-                    }
                     continue;
                 }
                 case SCard::GHEAD: {
-                    if (H.part == 2 || H.bit == 2u) { // the static ✕ / right: the whole bundle goes
+                    if (H.bit == 2u || (H.bit == 1u && H.part == 2)) { // right / the ✕: the whole bundle goes
                         Model::dismissApp(H.group);
                         continue;
                     }
-                    if (H.bit == 1u) {
+                    if (H.bit == 1u)
                         centerToggleGroup(H.group); // collapse
-                        continue;
-                    }
-                    if (H.bit == 4u) {
-                        Model::dismissAllLive();
-                        return;
-                    }
                     continue;
                 }
                 case SCard::BTN_CLEAR: // the footer: the global sweep
@@ -278,6 +325,8 @@ namespace NAwesome::Notify {
                     continue;
                 case SCard::PANEL: continue; // dead panel space swallows silently
                 case SCard::CAPSULE: continue; // never hit (cardAt skips it)
+                case SCard::MENU: CardMenu::close(); continue; // a press off its rows
+                case SCard::MENU_ITEM: CardMenu::pick((int)H.id); continue;
                 case SCard::PAGE_UP:
                 case SCard::PAGE_DOWN:
                     if (H.bit == 1u)
@@ -307,6 +356,8 @@ namespace NAwesome::Notify {
             if (BIT && (swallowRelease & BIT)) {
                 swallowRelease &= ~BIT;
                 info.cancelled = true;
+                if (BIT == 1u)
+                    releaseLeft(g_pInputManager->getMouseCoordsInternal());
             } else if (!info.cancelled) // a release the shell module swallowed ends a press we never counted
                 heldButtons = std::max(0, heldButtons - 1);
             return;
@@ -320,16 +371,35 @@ namespace NAwesome::Notify {
 
         const auto COORDS = g_pInputManager->getMouseCoordsInternal();
         const auto CARD   = BIT ? cardAt(COORDS) : nullptr;
+        const bool MENU   = CardMenu::isOpen();
 
         // A live implicit or seat grab, or a native layer surface at the
         // point, stays authoritative over every drawn surface (the bar's
-        // strip does the same): the press goes through, the cards only watch
+        // strip does the same): the press goes through, the cards only
+        // watch — and an open menu closes, as for any press off it
         if (heldButtons > 0 || NAwesome::nativePointerGrabActive()) {
             heldButtons++;
+            if (MENU)
+                queueHit({.kind = SCard::MENU});
             return;
         }
-        if (NAwesome::nativeLayerOwnsPointer())
+        if (NAwesome::nativeLayerOwnsPointer()) {
+            if (MENU)
+                queueHit({.kind = SCard::MENU});
             return;
+        }
+
+        // The open menu owns every press: a row is picked on its release,
+        // any other press closes it, swallowed like the tray menu's
+        if (MENU) {
+            if (BIT) {
+                info.cancelled = true;
+                swallowRelease |= BIT;
+            }
+            if (!CARD || (CARD->kind != SCard::MENU && CARD->kind != SCard::MENU_ITEM))
+                queueHit({.kind = SCard::MENU});
+            return;
+        }
 
         if (!CARD) {
             // Android closes the shade on an outside tap; the closing click
@@ -349,45 +419,51 @@ namespace NAwesome::Notify {
 
         info.cancelled = true; // the surface is ours: the press must not reach the window beneath
         swallowRelease |= BIT;
+        if (BIT == 4u)
+            return; // middle: no verb
 
-        SHit h;
-        h.kind  = CARD->kind;
-        h.id    = CARD->id;
-        h.group = CARD->group;
-        h.bit   = BIT;
-        h.part  = partAt(*CARD, COORDS);
-        if (BIT == 1u && h.part == 0) {
-            if (const int B = buttonAt(*CARD, COORDS); B >= 0)
-                h.action = CARD->buttons[B].id;
-            else if (const int L = linkAt(*CARD, COORDS); L >= 0)
-                h.href = CARD->links[L].href;
+        auto h = hitAt(*CARD, COORDS, BIT);
+        if (BIT == 1u && holdable(*CARD, h) && holdTimer) {
+            dropPress();
+            press.hit  = std::move(h);
+            press.at   = COORDS;
+            press.live = true;
+            holdTimer->updateTimeout(HOLD);
+            return;
         }
-        // the revision the press's layout drew, not the model's now: a
-        // replace that landed after the last frame must not take the click
-        h.rev = CARD->rev;
-
         queueHit(std::move(h));
+    }
+
+    // The left release: a pending press clicks if it ends where it began
+    // (the same card, the same button or link); a menu row under the
+    // release is picked — the press-hold-slide-release gesture, or a plain
+    // click on the open menu.
+    static void releaseLeft(const Vector2D& pos) {
+        if (press.live) {
+            const SHit H = std::move(press.hit);
+            dropPress();
+            if (const auto CARD = cardAt(pos); CARD && hitAt(*CARD, pos, 1u) == H)
+                queueHit(H);
+            return;
+        }
+        if (CardMenu::isOpen())
+            if (const auto CARD = cardAt(pos); CARD && CARD->kind == SCard::MENU_ITEM)
+                queueHit({.kind = SCard::MENU_ITEM, .id = CARD->id, .bit = 1u});
     }
 
     // ---- wheel: page the center, only inside the panel box ----
 
-    static double scrollAcc = 0, swipeAcc = 0;
-    static uint32_t swipeOn = 0; // the row the current horizontal gesture belongs to
+    static double scrollAcc = 0;
 
-    void            onMouseAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
-        if (NAwesome::sessionLocked()) {
-            scrollAcc = swipeAcc = 0;
-            swipeOn              = 0;
-            return;
-        }
-        if (NAwesome::nativeInputCaptureActive()) {
-            scrollAcc = swipeAcc = 0;
-            swipeOn              = 0;
+    void          onMouseAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
+        if (NAwesome::sessionLocked() || NAwesome::nativeInputCaptureActive()) {
+            scrollAcc = 0;
             return;
         }
         // the cheap tests first: every wheel notch and touchpad frame lands
         // here, and the native hit-test walks the layer and popup stacks
-        if (!centerVisible() || cards.empty() || info.cancelled || heldButtons > 0)
+        const bool MENU = CardMenu::isOpen();
+        if ((!centerVisible() && !MENU) || cards.empty() || info.cancelled || heldButtons > 0)
             return;
         if (NAwesome::nativePointerGrabActive() || NAwesome::nativeLayerOwnsPointer())
             return;
@@ -396,46 +472,11 @@ namespace NAwesome::Notify {
         if (!CARD)
             return; // outside the panel: windows scroll normally
         info.cancelled = true;
+        // under an open menu the shade holds still: a page would slide its
+        // card out from under it
+        if (MENU || e.axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
+            return;
         const double DELTA = e.delta != 0.0 ? e.delta : e.deltaDiscrete / 120.0 * 15.0;
-
-        // HORIZONTAL AWAY on a row is the phone's swipe-to-dismiss. It is
-        // strictly an ADDITION: a mouse with no horizontal wheel never
-        // reaches here, and right-click is the same verb without the gesture.
-        if (e.axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL) {
-            const bool ROW = CARD->kind == SCard::ROW || CARD->kind == SCard::CHILD;
-            if (!ROW || CARD->id == 0) {
-                swipeAcc = 0;
-                swipeOn  = 0;
-                return;
-            }
-            if (swipeOn != CARD->id) { // the pointer moved to another row mid-gesture
-                swipeOn  = CARD->id;
-                swipeAcc = 0;
-            }
-            swipeAcc += DELTA;
-            constexpr double SWIPE = 60.0; // a deliberate flick, not a nudge
-            // Both verbs go through the CLICK queue rather than acting here:
-            // a dismissal reflows the layout and emits on the bus, and nothing
-            // may do that inside an input emission (crash class 6). A swipe is
-            // an alias for a click that already exists, so it drains down the
-            // very same path.
-            if (swipeAcc >= SWIPE || swipeAcc <= -SWIPE) {
-                const bool AWAY = swipeAcc > 0;
-                swipeAcc        = 0; // bounded either way; only away acts
-                if (AWAY) {
-                    SHit h;
-                    h.kind = CARD->kind;
-                    h.id   = CARD->id;
-                    h.bit  = 2u; // the swipe IS the right-click
-                    h.part = 0;
-                    queueHit(std::move(h));
-                }
-            }
-            return;
-        }
-        if (e.axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
-            return;
-        swipeAcc = 0; // a vertical scroll ends any half-made flick
         scrollAcc += DELTA;
         if (const int STEP = (int)(scrollAcc / 15.0); STEP != 0) {
             scrollAcc -= STEP * 15.0;
@@ -489,7 +530,8 @@ namespace NAwesome::Notify {
             return;
         }
         replyKeyEvent(e); // a press or the held key's release ends its repeat
-        if (!centerVisible() || info.cancelled)
+        const bool MENU = CardMenu::isOpen();
+        if ((!centerVisible() && !MENU) || info.cancelled)
             return;
         // input-capture-v1 is fed after the plugin emissions: while a client
         // owns the physical stream, the shade must not cancel a key first
@@ -507,6 +549,21 @@ namespace NAwesome::Notify {
         const auto KB = NAwesome::Keys::keyboardFor(e.keycode);
         if (!KB || !KB->m_xkbState)
             return;
+
+        // An open menu peels first: Esc closes it before the field or the
+        // shade see the key; nothing else is the menu's
+        if (MENU) {
+            bool chord = false;
+            for (const char* M : {XKB_MOD_NAME_CTRL, XKB_MOD_NAME_ALT, XKB_MOD_NAME_LOGO})
+                chord = chord || xkb_state_mod_name_is_active(KB->m_xkbState, M, XKB_STATE_MODS_EFFECTIVE) > 0;
+            if (!chord && xkb_state_key_get_one_sym(KB->m_xkbState, e.keycode + 8) == XKB_KEY_Escape) {
+                info.cancelled = true;
+                pendingEsc.arm([]() { CardMenu::close(); });
+                return;
+            }
+            if (!centerVisible())
+                return;
+        }
 
         // An armed reply field owns the keyboard first: the user is typing a
         // sentence, and every nav key below would otherwise steal a letter.
@@ -601,8 +658,9 @@ namespace NAwesome::Notify {
         const bool LOCK = NAwesome::sessionLocked();
         swallowRelease = 0;
         heldButtons    = 0;
-        scrollAcc = swipeAcc = 0;
-        swipeOn = 0;
+        scrollAcc      = 0;
+        dropPress();
+        CardMenu::close(); // half-tracked input state: its press may never come back up
         if (LOCK) {
             // a lock discards every half-tracked input state (crash class 7):
             // a queued shade action or pending esc must not drain after unlock,
@@ -662,7 +720,9 @@ namespace NAwesome::Notify {
 
         // the exact position, as the press tests it: the event's is floored,
         // and a card edge at a fractional scale falls between the two
-        const auto P    = g_pInputManager ? g_pInputManager->getMouseCoordsInternal() : pos;
+        const auto P = g_pInputManager ? g_pInputManager->getMouseCoordsInternal() : pos;
+        if (press.live && holdTimer && P.distance(press.at) > SLOP)
+            holdTimer->updateTimeout(std::nullopt); // drifted: still a click, never a hold
         const auto CARD = cardAt(P);
         if (!CARD || heldButtons > 0 || NAwesome::nativePointerGrabActive() || NAwesome::nativeLayerOwnsPointer() ||
             (g_layoutManager && g_layoutManager->dragController()->target())) {
@@ -728,10 +788,30 @@ namespace NAwesome::Notify {
         g_pInputManager->simulateMouseMovement(); // the window beneath gets its enter back
     }
 
+    void inputInit() {
+        holdTimer = makeShared<CEventLoopTimer>(
+            std::nullopt,
+            [](SP<CEventLoopTimer>, void*) {
+                // the press it was armed for, still down; a lock or a native
+                // capture since dropped it (onInputBlocked)
+                if (!press.live)
+                    return;
+                press.live = false;
+                CardMenu::open(press.hit.id, press.at);
+            },
+            nullptr);
+        g_pEventLoopManager->addTimer(holdTimer);
+    }
+
     void inputExit() {
         hits.reset();
         pendingEsc.reset();
         keys.reset();
+        dropPress();
+        if (holdTimer && g_pEventLoopManager)
+            g_pEventLoopManager->removeTimer(holdTimer);
+        holdTimer.reset();
+        CardMenu::exit();
         swallowRelease = 0;
         heldButtons    = 0;
         scrollAcc      = 0;

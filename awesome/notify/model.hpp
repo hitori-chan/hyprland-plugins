@@ -327,6 +327,8 @@ namespace NAwesome::Notify {
         bool       closeOne(uint32_t id, uint32_t reason);
         void       dismissAllLive(bool offShadeToo = false); // "Clear all": every shade row goes; the DND queue stays
         void       dismissApp(const std::string& key);    // a bundle's right-click; the key may be (app, group)
+        void       dismissAppAll(const std::string& appKey); // the card menu's "Close All": every shade card of the app, its chats too
+        void       lowerBanners(const std::string& appKey);  // a menu switch silenced the app (or a chat): its soft banners go to the shade now
         std::string groupKeyOf(const SP<SNotif>& n);       // the bundle's identity: the app key, sub-keyed by the declared group
         bool       bundleable(const SP<SNotif>& n);       // may join an app bundle: conversations never do
         void       absorbPopped(bool repopOnClose = true); // opening the shade parks the popped stack
@@ -342,6 +344,7 @@ namespace NAwesome::Notify {
         void       toggleSuspend();         // DND; resume renders the queue, fresh timeouts
         bool       suspendedNow();
         std::pair<uint32_t, uint32_t> badgeCounts(); // {bannered, resident} — the bell's two numbers
+        uint32_t                      heldCount();   // the DND queue — the bell's count while DND holds
 
         // The shell's bell repaints when the badge numbers can have moved:
         // the shell registers the hook at init; it fires from notifChanged,
@@ -353,6 +356,26 @@ namespace NAwesome::Notify {
         std::string                   stateString(); // "center:N live:N dnd:N" — raw model counts, the debug line
         std::string                   badgeString(); // "banners:N resident:N" — the popup/shade split the bell reads
         std::string                   toplineString(); // the newest card's collapsed one-liner — the gate's text probe
+    }
+
+    // ---- policy.cpp: the card menu's persisted switches ----
+    //
+    // Per app: banners off (an arrival lands silently in the shade, the bell
+    // still counts it) and sounds off. Per chat: a mute until a time — no
+    // banner, no sound. Critical punches through all three, as through DND.
+    namespace Policy {
+        enum eFlag : int {
+            BANNERS_OFF = 1,
+            SOUNDS_OFF  = 2,
+        };
+        int         appFlags(const std::string& appKey);
+        void        setAppFlag(const std::string& appKey, int flag, bool on);
+        std::string chatKey(const SNotif& n);                   // "" = not a chat: only a conversation mutes
+        int64_t     mutedUntil(const std::string& chat);        // 0 = not muted
+        void        mute(const std::string& chat, int64_t until); // until <= now unmutes
+        bool        bannersOff(const SNotif& n); // the app's switch, or its chat muted
+        bool        soundsOff(const SNotif& n);
+        void        prune(); // forget the mutes that ended
     }
 
     // ---- bus.cpp: the connection ----
@@ -459,6 +482,8 @@ namespace NAwesome::Notify {
             PAGE_UP,   // the center's paging chips (drawn over the edge cards)
             PAGE_DOWN,
             CAPSULE,   // an OSD capsule: damage and bounds only, never hit
+            MENU,      // the card menu's panel: swallows, never acts
+            MENU_ITEM, // one of its rows (id = the row's index)
         };
         eKind       kind = POPUP;
         CBox        box;
@@ -469,6 +494,7 @@ namespace NAwesome::Notify {
         CBox        close;        // GHEAD: the ✕ circle; w = 0 -> none
         CBox        replyField;   // ROW: the armed inline-reply box (swallows, never acts)
         CBox        replySend;    // ROW: its send circle
+        bool        folded = false; // ROW: the budget folded it and the open form shows more (a click unfolds)
         struct SBtn {
             CBox        box;
             std::string id;
@@ -537,6 +563,7 @@ namespace NAwesome::Notify {
     void onInputBlocked();
     void releasePointer();
     void refreshPointerOwnership(); // the hovered card vanished under a still pointer
+    void inputInit(); // the hold timer
     void inputExit();
 
 } // namespace NAwesome::Notify

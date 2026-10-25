@@ -64,6 +64,7 @@ namespace NAwesome::Notify {
     void placeCardsOn(PHLMONITOR mon) {
         if (!mon || layoutMon.lock() == mon)
             return;
+        CardMenu::close(); // its anchor was on the other monitor
         layoutMon = mon;
         notifChanged(); // warms there and damages the old and new spots
     }
@@ -73,7 +74,7 @@ namespace NAwesome::Notify {
     // gates on this — the pass element, the scanout inhibit, the age tick —
     // or two resident cards would composite fullscreen video forever.
     static bool anythingToDraw() {
-        if (centerVisible())
+        if (centerVisible() || CardMenu::isOpen())
             return true;
         for (const auto& N : notifs)
             if (!N->waiting && N->banner)
@@ -104,6 +105,7 @@ namespace NAwesome::Notify {
         else
             renderPopups(P, T);
         renderCapsules(P, T);
+        CardMenu::render(P, T); // last: drawn over its card, hit first
     }
 
     // ---- damage ----
@@ -120,8 +122,10 @@ namespace NAwesome::Notify {
             x1 = std::max(x1, B.x + B.w);
             y1 = std::max(y1, B.y + B.h);
         };
+        // the menu floats higher: its drop reaches past the cards' margin
+        const double MENU_EXTRA = SPaint::frostReach(SPaint::eDepth::MENU) - SPaint::frostReach();
         for (const auto& C : cards)
-            ADD(C.box);
+            ADD(C.kind == SCard::MENU ? CBox{C.box}.expand(MENU_EXTRA) : C.box);
         if (lastScrim.w > 0)
             ADD(lastScrim);
         return CBox{x0, y0, x1 - x0, y1 - y0};
@@ -145,7 +149,8 @@ namespace NAwesome::Notify {
     void setHovered(const SHover& h) {
         if (h == hovered)
             return;
-        Model::holdBanner(h.kind == SCard::POPUP ? h.id : 0); // reading a banner stops its clock
+        // reading a banner stops its clock; an open menu holds its own card's
+        Model::holdBanner(CardMenu::isOpen() ? CardMenu::owner() : h.kind == SCard::POPUP ? h.id : 0);
         if (g_pHyprRenderer) {
             const auto   M      = cardsMon.lock();
             const double MARGIN = (M ? std::ceil(M->m_scale) : 1.0) + 1.0;
@@ -211,6 +216,7 @@ namespace NAwesome::Notify {
     void notifChanged() {
         // one hop: bursts (an OSD volume sweep, a batch of closes) coalesce
         pendingWarm.arm([]() {
+            CardMenu::sync(); // a menu whose card went closes with this same warm
             warmNotifs();
             damageNotifs();
             refreshPointerOwnership();
