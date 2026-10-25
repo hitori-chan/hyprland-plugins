@@ -454,9 +454,9 @@ wait_launch_toast() {
 import sys
 from PIL import Image
 im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
-x0 = int(sys.argv[2]) - 392 + 2
-x1 = int(sys.argv[2]) - 12
-clear = all(min(px[x, y]) <= 5 for y in range(26, 64) for x in range(x0, x1, 3))
+x0 = int(sys.argv[2]) - 12 - 356 + 2
+x1 = int(sys.argv[2]) - 12 - 2
+clear = all(min(px[x, y]) <= 5 for y in range(29, 72) for x in range(x0, x1, 3))
 raise SystemExit(0 if clear else 1)
 PY
 		sleep 0.5

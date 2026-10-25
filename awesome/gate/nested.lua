@@ -4,10 +4,10 @@
 -- portal/dbus restarts, NO exec-once. Runs under its own session and
 -- system buses and the Wayland backend.
 --
--- The glass·ink theme ships as the plugin's C++ defaults (core/theme.hpp),
--- so the nested instance sets NO plugin values — it tests exactly the
--- defaults the design decided. Blur is on because the islands/cards are
--- glass.
+-- The Frost look ships as the plugin's C++ defaults (core/tokens.hpp), so
+-- the nested instance sets NO plugin values — it tests exactly the
+-- defaults the design decided. Blur is on because the bar and the cards
+-- are glass.
 
 -- load the plugin we BUILD in the repo, so the nested instance tests local
 -- changes — not the stale hyprpm cache. Override the source dir with

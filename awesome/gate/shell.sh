@@ -1,8 +1,8 @@
 # awesome/gate/shell.sh — the shell module's behavior battery: the strip's
 # presence and state (tags, tasks, the bell badge, the clock), the tray
 # lifecycle against the bar, and the menubar/launcher. Helpers:
-# capture_nested, vp, vk, chk, hq, ws, dsp from the harness; strip_band,
-# bar_bright, bell_x from lib.sh.
+# capture_nested, vp, vk, chk, hq, ws, dsp from the harness; bar_bright,
+# task_band, accent_px, pill_px, tag_cx from lib.sh.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # ---- the strip -------------------------------------------------------------
@@ -19,87 +19,43 @@ done
 # one reading for the log either way: a failed canary must say HOW dark
 # the strip was (0 = never drew; 150-250 = mid-warm), not just "dark".
 # The threshold counts bright pixels of the whole band and is render-
-# hardware sensitive: the fully drawn strip settles at 283-296 on this
-# i915/Mesa 26.2.3 box, so the floor sits under the lowest settled
-# reading. A mid-warm frame lacks
+# hardware sensitive: the fully drawn Frost strip settles near 400 on this
+# i915/Mesa box, so the floor sits well under the settled reading. A
+# mid-warm frame lacks
 # most of its glyphs and scores far below; the poll loop above retries
 # through the warm, and the glyph checks that follow are the real
 # presence test either way.
 echo "shell: strip bright=$(bar_bright "$STATE/strip-base.png")" >&2
 chk "shell: the strip is on screen (clock + tags draw)" \
 	test "$(bar_bright "$STATE/strip-base.png")" -gt 250
-BELL0="$(bell_x "$STATE/strip-base.png")"
-chk "shell: the bell glyph is the leftmost bright run of the right cluster" test "$BELL0" -gt 400
+chk "shell: no count pill with nothing bannered" test "$(pill_px "$STATE/strip-base.png")" = 0
 
 # ---- tags: the click switches the viewed workspace -------------------------
-# The tag cells are glyph + 12px padding, so their centers are not a fixed
-# pitch: the Nth tag's cell is found by its glyph's bright run in the
-# strip's left half (the first 9 runs are the nine kanji).
-tag_x() { # tag_x <frame> <n> — the n-th tag's glyph center x (0 if absent)
-	python3 - "$1" "$2" <<'PY'
-import sys
-from PIL import Image
-im = Image.open(sys.argv[1]).convert("RGB"); px = im.load()
-w = im.size[0]
-n = int(sys.argv[2])
-runs, inrun = [], False
-for x in range(0, w // 2):
-    bright = any(min(px[x, y][:3]) > 120 for y in range(4, 23))
-    if bright and not inrun:
-        start = x; inrun = True
-    elif not bright and inrun:
-        runs.append((start, x - 1)); inrun = False
-if inrun:
-    runs.append((start, w // 2 - 1))
-if len(runs) < n:
-    print(0); sys.exit()
-a, b = runs[n - 1]
-print((a + b) // 2)
-PY
-}
 chk "shell: starts on workspace 1" test "$(ws)" = 1
-TAG3_X="$(tag_x "$STATE/strip-base.png" 3)"
-chk "shell: tag 3's glyph is found in the strip" test "$TAG3_X" -gt 0
-printf 'move %s 13\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' "$TAG3_X" | vp
+printf 'move %s 13\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' "$(tag_cx 3)" | vp
 sleep 1.2
 chk "shell: clicking tag 三 switches to workspace 3" test "$(ws)" = 3
 capture_nested "$STATE/strip-ws3.png"
-chk "shell: the viewed tag carries the focus background" \
-	python3 - "$STATE/strip-ws3.png" "$TAG3_X" <<'PY'
-import sys
-from PIL import Image
-im = Image.open(sys.argv[1]).convert("RGB"); px = im.load()
-cx = int(sys.argv[2])
-# tag 3's cell around its glyph: col_active_bg (0x339acbff) over col_bg
-# (0xff132732) composites to ~(46,72,91) — a slate the bar's own background
-# (19,39,50) and the bright text (238,243,245) are both far from, so the hue
-# isolates the fill.
-n = 0
-for y in range(4, 22):
-    for x in range(cx - 14, cx + 15):
-        r, g, b = px[x, y]
-        if r < 60 and g > 55 and b > 75 and b > g:
-            n += 1
-sys.exit(0 if n > 100 else 1)
-PY
+# the viewed tag is accent text on a quiet ground, the rest never accent
+chk "shell: the viewed tag draws in the accent" test "$(accent_px "$STATE/strip-ws3.png" 64 90)" -gt 15
+chk "shell: a tag not viewed draws no accent" test "$(accent_px "$STATE/strip-ws3.png" 8 34)" = 0
 dsp "hl.dsp.focus({workspace=\"1\"})"; sleep 0.8
 chk "shell: back on workspace 1" test "$(ws)" = 1
 
-# ---- tasks: the chip appears with the window, dims with minimize -----------
-# Band window: the chip's x follows the taglist width (workspace count),
-# 222 without the old ws99 park tag, ~250 with; 210 covers both (2026-10-02).
-TASKBAND0="$(strip_band "$STATE/strip-base.png" 210 600 100)"
+# ---- tasks: the title appears with the window, dims with minimize ----------
+# focused accent, minimized DIM: task_band counts lit titles (max channel)
+TASKBAND0="$(task_band "$STATE/strip-base.png")"
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x300')"; sleep 2
 capture_nested "$STATE/strip-task.png"
-TASKBAND1="$(strip_band "$STATE/strip-task.png" 210 600 100)"
+TASKBAND1="$(task_band "$STATE/strip-task.png")"
 chk "shell: the task chip draws with the window" test "$TASKBAND1" -gt $(( TASKBAND0 + 100 ))
 dsp "hl.plugin.awesome.minimize()"; sleep 1
 capture_nested "$STATE/strip-task-min.png"
-TASKBAND2="$(strip_band "$STATE/strip-task-min.png" 210 600 100)"
+TASKBAND2="$(task_band "$STATE/strip-task-min.png")"
 chk "shell: minimizing dims the chip" test "$TASKBAND2" -lt "$TASKBAND1"
 dsp "hl.plugin.awesome.restore()"; sleep 1
 capture_nested "$STATE/strip-task-restore.png"
-TASKBAND3="$(strip_band "$STATE/strip-task-restore.png" 210 600 100)"
+TASKBAND3="$(task_band "$STATE/strip-task-restore.png")"
 chk "shell: restoring re-brightens the chip" test "$TASKBAND3" -gt "$TASKBAND2"
 FT="$(clients | python3 -c "
 import json,sys
@@ -107,44 +63,22 @@ print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), '
 [[ -n "$FT" ]] && dsp "hl.dsp.window.close({window=\"address:$FT\"})"; sleep 1
 capture_nested "$STATE/strip-task-gone.png"
 chk "shell: the chip leaves with the window" \
-	test "$(strip_band "$STATE/strip-task-gone.png" 210 600 100)" -le $(( TASKBAND0 + 100 ))
+	test "$(task_band "$STATE/strip-task-gone.png")" -le $(( TASKBAND0 + 100 ))
 
 # ---- the bell badge: the counts the bell reads from the model --------------
-BELLBAND() { # bellband <img> — the badge fill in the bell's badge box
-	# the badge is col_active (0xff9acbff = 154,203,255, a lavender) rounded
-	# rect with the dark count on it: the lavender is far from the strip bg
-	# (19,39,50) and the bright text (238,243,245, whose r breaks the test).
-	python3 - "$1" "$2" <<'PY'
-import sys
-from PIL import Image
-im = Image.open(sys.argv[1]).convert("RGB"); px = im.load()
-bx = int(sys.argv[2])
-n = 0
-for y in range(1, 20):
-    for x in range(max(0, bx - 6), min(im.size[0], bx + 22)):
-        r, g, b = px[x, y]
-        if 130 < r < 185 and 180 < g < 230 and b > 235:
-            n += 1
-print(n)
-PY
-}
 dsp "hl.dsp.exec_cmd('notify-send -a bellp -t 30000 \"badge probe\" body')"; sleep 1.2
 capture_nested "$STATE/bell-badge.png"
-chk "shell: the badge appears with a bannered card" \
-	test "$(BELLBAND "$STATE/bell-badge.png" "$BELL0")" -gt 30
+chk "shell: the badge appears with a bannered card" test "$(pill_px "$STATE/bell-badge.png")" -gt 30
 dsp "hl.dsp.exec_cmd('notify-send -a bellp -u critical -t 30000 \"badge probe 2\" body')"; sleep 1.2
 capture_nested "$STATE/bell-badge2.png"
-# the count itself is the MODEL's business (asserted via state: the badge
-# draws LIVE+KEPT, which IS the state live count). The badge holds a 15px
-# minimum width below three digits and the 9px glyph moves only ~2 px of
-# ink between "1" and "2" — a pixel count cannot see the growth, so the
-# pixel side asserts the badge still stands, the state side the number.
-badge_grew() { [[ "$(st)" == "center:0 live:2 dnd:0" && "$(BELLBAND "$STATE/bell-badge2.png" "$BELL0")" -gt 30 ]]; }
+# the count itself is the MODEL's business (the pill draws LIVE+KEPT, which
+# IS the state's live count): a "1" and a "2" move ~2 px of ink, so the
+# pixel side asserts the pill still stands, the state side the number
+badge_grew() { [[ "$(st)" == "center:0 live:2 dnd:0" && "$(pill_px "$STATE/bell-badge2.png")" -gt 30 ]]; }
 chk "shell: the badge count grows with a second card" badge_grew
 hq awesome clear >/dev/null; sleep 1.2
 capture_nested "$STATE/bell-badge0.png"
-chk "shell: the badge leaves at zero" \
-	test "$(BELLBAND "$STATE/bell-badge0.png" "$BELL0")" -lt 20
+chk "shell: the badge leaves at zero" test "$(pill_px "$STATE/bell-badge0.png")" = 0
 
 # ---- the tray: the StatusNotifierItem lifecycle -----------------------------
 SNIBIN="$REPO/devtools/fake-sni"
@@ -158,7 +92,7 @@ import sys
 from PIL import Image
 im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
 w = im.size[0]
-pts = [(x, y) for x in range(w // 2, w) for y in range(26)
+pts = [(x, y) for x in range(w // 2, w) for y in range(28)
        if px[x, y][0] > 150 and px[x, y][1] < 90 and px[x, y][2] > 150]
 if len(pts) < 50:
     print("0 0"); sys.exit()
@@ -174,7 +108,7 @@ im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
 w, h = im.size
 good = []
 for x in range(w):
-    run = [y for y in range(27, h) if min(px[x, y][:3]) > 5]
+    run = [y for y in range(29, h) if min(px[x, y][:3]) > 5]
     if len(run) > 20 and max(run) - min(run) > 40:
         good.append((x, min(run), max(run)))
 if not good:
@@ -191,7 +125,7 @@ import sys
 from PIL import Image
 im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
 x = min(int(sys.argv[2]), im.size[0] - 1)
-run = [y for y in range(27, im.size[1]) if min(px[x, y][:3]) > 5]
+run = [y for y in range(29, im.size[1]) if min(px[x, y][:3]) > 5]
 print(max(run) - min(run) + 1 if len(run) > 20 and max(run) - min(run) > 40 else 0)
 PY
 }
@@ -219,12 +153,14 @@ read -r RW RX0 RX1 RYT RYB <<<"$(panel_extent "$STATE/tray-root.png")"
 chk "tray: one panel span open (root only)" test "$RW" -ge 120
 chk "tray: one panel span open (root only, no cascade)" test "$RW" -le 260
 ROOT_H="$(col_h "$STATE/tray-root.png" "$(( (RX0 + RX1) / 2 ))")"
-chk "tray: root panel height 112 (4 rows + 1 collapsed separator)" test "$ROOT_H" -ge 110
-chk "tray: root panel height 112 (upper bound)" test "$ROOT_H" -le 116
+# shell.hpp's menu: 2 x PAD 5 + 4 rows x 28 + 1 separator 9 = 131, + the rim;
+# a kept doubled or trailing separator is another 9
+chk "tray: root panel height 133 (4 rows + 1 collapsed separator)" test "$ROOT_H" -ge 129
+chk "tray: root panel height 133 (upper bound)" test "$ROOT_H" -le 137
 
 # the submenu cascade
 printf 'move %s %s\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' \
-	"$((RX0 + 20))" "$((RYT + 92))" | vp
+	"$((RX0 + 20))" "$((RYT + 112))" | vp
 sleep 1.5
 capture_nested "$STATE/tray-sub.png"
 read -r SW SX0 SX1 SYT SYB <<<"$(panel_extent "$STATE/tray-sub.png")"
@@ -235,8 +171,8 @@ else
 	SUBX=$((RX1 + 40))
 fi
 SUB_H="$(col_h "$STATE/tray-sub.png" "$SUBX")"
-chk "tray: sub panel height 56 (trailing separator trimmed)" test "$SUB_H" -ge 54
-chk "tray: sub panel height 56 (upper bound)" test "$SUB_H" -le 60
+chk "tray: sub panel height 68 (trailing separator trimmed)" test "$SUB_H" -ge 64
+chk "tray: sub panel height 68 (upper bound)" test "$SUB_H" -le 71
 
 # outside click closes both
 printf 'move 300 400\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' | vp
@@ -275,17 +211,17 @@ capture_nested "$STATE/tray-gone.png"
 chk "tray: icon left the strip" test "$(icon_box "$STATE/tray-gone.png")" = "0 0"
 
 # ---- the menubar: the launcher ---------------------------------------------
-# The prompt is a single 26px strip directly under the bar (awesome's
+# The prompt is a single bar-high strip directly under the bar (awesome's
 # menubar wibox), so it is measured as a band, not a column span.
 open_menubar() { dsp "hl.plugin.awesome.menubar()"; sleep 1; }
 close_menubar() { printf 'tap esc\nsleep 400\n' | vk; sleep 0.6; }
-menubar_band() { # menubar_band <frame> — bright count in the prompt band (y 27..52)
+menubar_band() { # menubar_band <frame> — bright count in the prompt band (y 29..56)
 	python3 - "$1" <<'PY'
 import sys
 from PIL import Image
 im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
 n = 0
-for y in range(27, 52):
+for y in range(29, 56):
     for x in range(0, im.size[0], 2):
         if min(px[x, y][:3]) > 60:
             n += 1

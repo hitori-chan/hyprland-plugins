@@ -19,14 +19,14 @@ chk "quick: the strip is on screen (clock + tags draw)" \
 	test "$(bar_bright "$STATE/quick-strip.png")" -gt 250
 
 # ---- one window lifecycle ---------------------------------------------------
-# the chip draws IN the strip's task band (x 210-600 of the 30px strip):
-# baseline from the strip capture above, then the chip must add bright there
-CHIP0="$(strip_band "$STATE/quick-strip.png" 210 600 100)"
+# the title draws IN the strip's task band (lib.sh task_band): baseline
+# from the strip capture above, then the window's title must add lit pixels
+CHIP0="$(task_band "$STATE/quick-strip.png")"
 dsp "hl.dsp.exec_cmd('foot --window-size-pixels=600x300')"; sleep 2
 expect "quick: the spawn keeps its requested 600x300 at the remembered (100,100)" \
 	"any(c['class']=='foot' and c['at']==[100,100] and c['size']==[600,300] for c in cs)"
 capture_nested "$STATE/quick-chip.png"
-CHIP1="$(strip_band "$STATE/quick-chip.png" 210 600 100)"
+CHIP1="$(task_band "$STATE/quick-chip.png")"
 chk "quick: the task chip draws with the window" \
 	test "$CHIP1" -gt $(( CHIP0 + 100 ))
 # the float rule (stress cfg) makes foot floating; maximize/unmaximize must

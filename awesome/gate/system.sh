@@ -55,16 +55,19 @@ chk "system: volume up keeps a level past 100%" grep -Fxq "set-volume -l 1.505 @
 rm -f "$STATE/wpctl-level"
 hq awesome clear >/dev/null; sleep 0.4
 
-# an OSD is never in the shade: opening it drops the live one, and a press
-# under it makes no card (the shade replaces the popup column it shows on)
+# an OSD is never a shade row: opening the shade drops the live capsule,
+# and a press with it open shows a capsule over it (top center, clear of
+# the column) that leaves no row behind
 dsp "hl.plugin.awesome.volume_up()"; sleep 0.4
-chk "system: the OSD card is up before the shade opens" test "$(st)" = "center:0 live:1 dnd:0"
+chk "system: the capsule is up before the shade opens" test "$(st)" = "center:0 live:1 dnd:0"
 hq awesome center >/dev/null; sleep 0.4
-chk "system: opening the shade drops the OSD card" test "$(st)" = "center:1 live:0 dnd:0"
+chk "system: opening the shade drops the capsule" test "$(st)" = "center:1 live:0 dnd:0"
 dsp "hl.plugin.awesome.volume_up()"; sleep 0.4
-chk "system: an OSD press under the open shade makes no card" test "$(st)" = "center:1 live:0 dnd:0"
+chk "system: a press under the open shade shows its capsule" test "$(st)" = "center:1 live:1 dnd:0"
+chk "system: the capsule is no row (nothing on the badge)" test "$(bd)" = "banners:0 resident:0"
 hq awesome center >/dev/null; sleep 0.4
-chk "system: the shade closes with no OSD behind it" test "$(st)" = "center:0 live:0 dnd:0"
+nclear
+chk "system: the shade closes clean" test "$(st)" = "center:0 live:0 dnd:0"
 
 : > "$STATE/wpctl.log"
 dsp "hl.plugin.awesome.mute()"; sleep 0.4

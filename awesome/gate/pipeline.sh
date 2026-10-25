@@ -57,7 +57,6 @@ sleep 0.5
 # clicking it, run the storm (bar clicks only), then the post-storm click must
 # still raise + focus storma — a stuck swallow would eat it and leave stormb
 # as the mru-last client.
-wait_class() { for _ in $(seq 1 40); do [[ "$(pyc "any(c['class']=='$1' for c in cs)")" = 1 ]] && return 0; sleep 0.25; done; return 1; }
 center_of() { clients | python3 -c "
 import json,sys
 c = next(c for c in json.load(sys.stdin) if c['class'] == '$1')
@@ -76,10 +75,10 @@ chk "storm probes up: stormb focused by its own click" test "$(pyc "cs[-1]['clas
 	for i in $(seq 1 30); do echo "move $(( (i * 97) % MON_W )) $(( 30 + (i * 61) % (MON_H - 40) ))"; echo "sleep 10"; done
 	for i in $(seq 1 8); do echo "move 500 13"; echo "sleep 15"; echo "scroll 0 1"; echo "sleep 25"; done
 	for i in $(seq 1 5); do
-		echo "move 34 13"; echo "sleep 15"; echo "press 272"; echo "sleep 20"; echo "release 272"; echo "sleep 35"
-		echo "move 59 13"; echo "sleep 15"; echo "press 272"; echo "sleep 20"; echo "release 272"; echo "sleep 35"
+		echo "move $(tag_cx 2) 13"; echo "sleep 15"; echo "press 272"; echo "sleep 20"; echo "release 272"; echo "sleep 35"
+		echo "move $(tag_cx 3) 13"; echo "sleep 15"; echo "press 272"; echo "sleep 20"; echo "release 272"; echo "sleep 35"
 	done
-	echo "move 12 13"; echo "sleep 30"; echo "press 272"; echo "sleep 30"; echo "release 272"; echo "sleep 100"
+	echo "move $(tag_cx 1) 13"; echo "sleep 30"; echo "press 272"; echo "sleep 30"; echo "release 272"; echo "sleep 100"
 } | vp
 sleep 1
 chk "input storm: the monolith is alive" test "$(hq plugin list | grep -c Plugin)" = 1
@@ -89,10 +88,10 @@ expect "post-storm click still raises + focuses (no stuck swallow)" \
 	"cs[-1]['class']=='storma' if cs else False"
 
 # ---- surface ownership: the bar's surfaces beat the window policy ----------
-# The shade sits over the focused window. A click INSIDE the shade (on a row
-# with no card there, i.e. the empty body area below the rows) must be the
-# shade's (close it) and must not reach the window beneath it as a focus
-# raise — and the window's focus must survive the whole exchange.
+# The shade sits over the focused window. A click on the shade's dead space
+# (its heading row, between "Notifications" and the moon) is the shade's:
+# swallowed whole — the shade stays, nothing acts, and the window beneath
+# never sees it.
 dsp "hl.dsp.exec_cmd('foot -a prec --window-size-pixels=500x300')"
 wait_class prec
 PFX="$(clients | python3 -c "
@@ -104,13 +103,10 @@ chk "ownership: prec focused by its own click" test "$(pyc "cs[-1]['class']=='pr
 dsp "hl.dsp.exec_cmd('notify-send -t 60000 \"ownership\" body')"; sleep 1
 hq awesome center >/dev/null; sleep 0.7
 chk "ownership: the shade is open over the focused window" test "$(st)" = "center:1 live:1 dnd:0"
-# an empty strip of the shade below the single row: 8 px above the measured
-# panel bottom is inside the panel and below the row's hit box (44..103)
-capture_nested "$STATE/own-panel.png"
-PB_OW="$(panel_bottom "$STATE/own-panel.png")"
-click $(( PANEL_X + 40 )) $(( PB_OW - 8 )) 272
-chk "ownership: the shade took the click (it closed)" test "$(st)" = "center:0 live:1 dnd:0"
+click $((PANEL_X + 150)) $((N_TOP + 14)) 272
+chk "ownership: the shade swallowed the click (open, nothing acted)" test "$(st)" = "center:1 live:1 dnd:0"
 chk "ownership: the window beneath kept its focus" test "$(pyc "cs[-1]['class']=='prec' if cs else False")" = 1
+hq awesome center >/dev/null; sleep 0.4
 hq awesome clear >/dev/null; sleep 0.5
 for a in $(clients | python3 -c "import json,sys
 print(' '.join(c['address'] for c in json.load(sys.stdin) if c['class'] in ('storma','stormb','prec')))"); do

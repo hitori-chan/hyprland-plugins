@@ -42,17 +42,16 @@ chk "center: closing neither re-pops nor drops a card" test "$(st)" = "center:0 
 nclear
 chk "center: Clear all sweeps every visible card" test "$(st)" = "center:0 live:0 dnd:0"
 
-# ---- popup coalescing: one live banner per app -------------------------
+# ---- popup coalescing: coalesce_popups (3) live banners per app ----------
 dsp "hl.dsp.exec_cmd('notify-send -a chatty -t 30000 first body')"; sleep 1
 chk "coalesce: the first same-app arrival pops a banner" test "$(bd)" = "banners:1 resident:0"
-dsp "hl.dsp.exec_cmd('notify-send -a chatty second body')"
-dsp "hl.dsp.exec_cmd('notify-send -a chatty third body')"; sleep 1
-chk "coalesce: the same-app burst lands resident, one banner stands" test "$(bd)" = "banners:1 resident:2"
-chk "coalesce: every card is kept and counted" test "$(st)" = "center:0 live:3 dnd:0"
+for m in second third fourth; do dsp "hl.dsp.exec_cmd('notify-send -a chatty -t 30000 $m body')"; done; sleep 1
+chk "coalesce: the app's fourth card lands resident, three banners stand" test "$(bd)" = "banners:3 resident:1"
+chk "coalesce: every card is kept and counted" test "$(st)" = "center:0 live:4 dnd:0"
 dsp "hl.dsp.exec_cmd('notify-send -a chatty -u critical urgent body')"; sleep 1
-chk "coalesce: a critical from the same app punches through" test "$(bd)" = "banners:2 resident:2"
+chk "coalesce: a critical from the same app punches through" test "$(bd)" = "banners:4 resident:1"
 dsp "hl.dsp.exec_cmd('notify-send -a other elsewhere body')"; sleep 1
-chk "coalesce: a different app gets its own banner" test "$(bd)" = "banners:3 resident:2"
+chk "coalesce: a different app gets its own banner" test "$(bd)" = "banners:5 resident:1"
 nclear
 
 # ---- the conversation merge (Android's MessagingStyle) ------------------
@@ -106,9 +105,9 @@ import sys
 from PIL import Image
 im = Image.open(sys.argv[1]).convert("RGB")
 px = im.load()
-x0, x1 = int(sys.argv[2]) - 362, int(sys.argv[2]) - 16
+x0, x1 = int(sys.argv[2]) - 12 - 356, int(sys.argv[2]) - 12
 n = 0
-for y in range(46, 152):
+for y in range(40, 280):
     for x in range(x0, x1, 2):
         r, g, b = px[x, y]
         if b > 200 and r < 100 and 120 < g < 200:
@@ -122,8 +121,8 @@ import sys
 from PIL import Image
 im = Image.open(sys.argv[1]).convert("RGB")
 px = im.load()
-x0, x1 = int(sys.argv[2]) - 362, int(sys.argv[2]) - 16
-ys = [y for y in range(40, 170)
+x0, x1 = int(sys.argv[2]) - 12 - 356, int(sys.argv[2]) - 12
+ys = [y for y in range(40, 280)
       if any(b > 200 and r < 100 and 120 < g < 200 for r, g, b in (px[x, y] for x in range(x0, x1, 8)))]
 print(max(ys) - min(ys) + 1 if ys else 0)
 PY
@@ -132,19 +131,13 @@ dsp "hl.dsp.exec_cmd('notify-send -a heroapp -t 2000 -i $HEROIMG \"Screenshot\" 
 chk "hero: the image card pops with its banner" test "$(bd)" = "banners:1 resident:0"
 capture_nested $STATE/hero-0-aw.png
 chk "hero: the banner leads with the card-wide preview" test "$(hero_px $STATE/hero-0-aw.png)" -gt 8000
-chk "hero: the banner's preview is the capped strip, not the full image" test "$(hero_span $STATE/hero-0-aw.png)" -ge 104 -a "$(hero_span $STATE/hero-0-aw.png)" -le 116
+# a 1280x720 image at the card's 328 px is 184 tall: HERO_CAP holds it to 160
+chk "hero: the banner's preview is the capped strip, not the full image" test "$(hero_span $STATE/hero-0-aw.png)" -ge 150 -a "$(hero_span $STATE/hero-0-aw.png)" -le 166
 hq awesome center >/dev/null; sleep 0.4
 capture_nested $STATE/hero-1-aw.png
 chk "hero: the shade row shows no card-wide preview" test "$(hero_px $STATE/hero-1-aw.png)" -lt 3000
 chk "hero: the shade row leads with the image's thumbnail" test "$(hero_px $STATE/hero-1-aw.png)" -gt 200
 chk "hero: the thumbnail is icon-sized" test "$(hero_span $STATE/hero-1-aw.png)" -ge 30 -a "$(hero_span $STATE/hero-1-aw.png)" -le 50
-PB1="$(panel_bottom $STATE/hero-1-aw.png)"
-click $CHVX $ROWY 272
-capture_nested $STATE/hero-2-aw.png
-chk "hero: the folded row keeps the thumbnail" test "$(hero_px $STATE/hero-2-aw.png)" -gt 200
-PB2="$(panel_bottom $STATE/hero-2-aw.png)"
-chk "hero: the panel follows the fold (the body height moves)" test $(( PB2 > PB1 ? PB2 - PB1 : PB1 - PB2 )) -ge 18
-click $CHVX $ROWY 272
 hq awesome center >/dev/null; sleep 0.4
 chk "hero: the explicit close re-pops the banner" test "$(bd)" = "banners:1 resident:0"
 capture_nested $STATE/hero-3-aw.png
@@ -166,7 +159,7 @@ PY
 sleep 1
 capture_nested $STATE/hero-4-aw.png
 chk "hero: an image-data screenshot previews card-wide" test "$(hero_px $STATE/hero-4-aw.png)" -gt 8000
-chk "hero: the image-data preview is the capped strip" test "$(hero_span $STATE/hero-4-aw.png)" -ge 104 -a "$(hero_span $STATE/hero-4-aw.png)" -le 116
+chk "hero: the image-data preview is the capped strip" test "$(hero_span $STATE/hero-4-aw.png)" -ge 150 -a "$(hero_span $STATE/hero-4-aw.png)" -le 166
 nclear
 
 # ---- an expanded bundle keeps to the page ------------------------------------
@@ -181,7 +174,8 @@ hq awesome center >/dev/null; sleep 0.6
 chk "bundle: thirty cards wait in the shade" test "$(st)" = "center:1 live:30 dnd:0"
 click $ROWX $ROWY 272
 capture_nested $STATE/bundle-aw.png
-chk "bundle: the expanded bundle ends on the screen" test "$(panel_bottom $STATE/bundle-aw.png)" -lt $((MON_H - 4))
+# expanded, it runs past mid-screen and still ends on it
+chk "bundle: the expanded bundle ends on the screen" test "$(panel_bottom $STATE/bundle-aw.png)" -gt $((MON_H / 2)) -a "$(panel_bottom $STATE/bundle-aw.png)" -lt $((MON_H - 4))
 chk "bundle: expanding acted on nothing" test "$(st)" = "center:1 live:30 dnd:0"
 hq awesome center >/dev/null; sleep 0.4
 nclear
@@ -220,13 +214,24 @@ hq eval "hl.config({ plugin = { awesome = { notify = { fallback_icon_dir = \"\" 
 nclear
 
 # ---- the shade's click model ---------------------------------------------
-dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"read me\" body')"; sleep 1
+# A folded card opens on a click before it acts. The top card opens by
+# itself, so the keys fold it first; four lines fold to one.
+nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications Notify \
+	susssasa{sv}i gate 0 "" "read me" $'line one\nline two\nline three\nline four' 0 0 30000 >/dev/null
+sleep 1
 chk "shade: one card waiting" test "$(st)" = "center:0 live:1 dnd:0"
 hq awesome center >/dev/null; sleep 0.6
-click $CHVX $ROWY 272
-chk "shade: the chevron only folds — nothing invoked, nothing dismissed" test "$(st)" = "center:1 live:1 dnd:0"
-click $CHVX $ROWY 272
-chk "shade: the chevron unfolds again, still nothing dismissed" test "$(st)" = "center:1 live:1 dnd:0"
+tap down
+tap space
+capture_nested $STATE/shade-fold-aw.png
+PB1="$(panel_bottom $STATE/shade-fold-aw.png)"
+click $ROWX $ROWY 272
+chk "shade: a click on a folded card only opens it — nothing invoked, nothing dismissed" test "$(st)" = "center:1 live:1 dnd:0"
+capture_nested $STATE/shade-open-aw.png
+PB2="$(panel_bottom $STATE/shade-open-aw.png)"
+chk "shade: the opened card shows its whole body" test $(( PB2 - PB1 )) -ge 30
+printf 'move %s %s\nsleep 40\npress 274\nsleep 40\nrelease 274\nsleep 80\n' "$ROWX" "$ROWY" | vp; sleep 0.35
+chk "shade: middle on a row does nothing" test "$(st)" = "center:1 live:1 dnd:0"
 click $ROWX $ROWY 272
 chk "shade: left on an actionless BODY dismisses it, shade stays" test "$(st)" = "center:1 live:0 dnd:0"
 dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"right me\" body')"; sleep 1
@@ -256,7 +261,7 @@ chk "close-on-act: reset after the battery" test "$(st)" = "center:0 live:0 dnd:
 dsp "hl.dsp.exec_cmd('notify-send -t 1200 \"hold me\" body')"; sleep 0.4
 capture_nested $STATE/banner-aw.png
 chk "banner: it is on screen (the card's pixels)" test "$(banner_px $STATE/banner-aw.png)" -gt 150
-printf 'move %s 64\nsleep 2400\n' "$POPX" | vp
+printf 'move %s %s\nsleep 2400\n' "$POPX" "$((N_TOP + 20))" | vp
 chk "hover: the pointer holds the banner past its own clock" test "$(bd)" = "banners:1 resident:0"
 printf 'move %s %s\nsleep 150\n' "$((MON_W / 2))" "$((MON_H / 2))" | vp
 sleep 0.4
@@ -265,16 +270,82 @@ sleep 1.4
 chk "hover: once the restarted clock runs out it retreats" test "$(bd)" = "banners:0 resident:1"
 nclear
 
+# ---- the card menu: hold left ------------------------------------------------
+# A hold opens the card's switches at the pointer: near the right edge the
+# menu flips left of it, so its rows run from the pointer's y down, under
+# HX - 100. Rows (notify/menu.cpp): PAD 5, 28 each, separators 9; a chat
+# leads with its two mute rows and a separator. The switches persist as
+# state.tsv rows.
+HX=$POPX HY=$((N_TOP + 22))
+hold_menu() { printf 'move %s %s\nsleep 40\npress 272\nsleep 700\n' "$1" "$2" | vp; sleep 0.3; } # the button stays down
+release_left() { printf 'release 272\nsleep 80\n' | vp; sleep 0.3; }
+mrow() { echo $(($1 + 5 + 14 + 28 * $2 + 9 * $3)); } # mrow <menu y> <row> <separators above>
+pcidb gatechat Alice alice "are you coming"; sleep 1
+chk "menu: a chat banner is up" test "$(bd)" = "banners:1 resident:0"
+hold_menu "$HX" "$HY"
+chk "menu: the hold fired no click" test "$(st)" = "center:0 live:1 dnd:0"
+release_left
+chk "menu: releasing on its corner picks nothing" test "$(bd)" = "banners:1 resident:0"
+tap esc
+click "$HX" "$HY" 272
+chk "menu: esc closed it (the next click acts on the card)" test "$(st)" = "center:0 live:0 dnd:0"
+pcidb gatechat Alice alice "one"; sleep 1
+hold_menu "$HX" "$HY"; release_left
+click $((HX - 100)) "$(mrow "$HY" 2 1)" 272
+chk "menu: Turn Off Banners lowered the app's banner" until_is 3 "banners:0 resident:1" bd
+pcidb gatechat Bob bob "ping"; sleep 0.8
+chk "menu: the app's next arrival lands silent" test "$(bd)" = "banners:0 resident:2"
+chk "menu: the switch persisted" grep -aqx $'notify-app\t1\tgatechat' "$AW_STATE"
+# back on from the center: the menu opens down-right of a pointer that
+# leaves it room
+hq awesome center >/dev/null; sleep 0.6
+hold_menu "$ROWX" "$ROWY"; release_left
+click $((ROWX + 100)) "$(mrow "$ROWY" 2 1)" 272
+chk "menu: Turn On from the center drops the row" bash -c "! grep -aq '^notify-app' '$AW_STATE'"
+chk "menu: a pick acts on no card" test "$(st)" = "center:1 live:2 dnd:0"
+hq awesome center >/dev/null; sleep 0.4
+nclear
+# a chat's mute is the chat's alone
+pcidb gatechat Alice alice "one"; sleep 1
+hold_menu "$HX" "$HY"; release_left
+click $((HX - 100)) "$(mrow "$HY" 0 0)" 272
+chk "menu: Mute for 1 Hour lowered the chat" until_is 3 "banners:0 resident:1" bd
+pcidb gatechat Alice alice "two"; sleep 0.8
+chk "menu: the muted chat's next message lands silent" test "$(bd)" = "banners:0 resident:1"
+pcidb gatechat Bob bob "hi"; sleep 0.8
+chk "menu: another chat of the app still banners" test "$(bd)" = "banners:1 resident:1"
+chk "menu: the mute persisted" grep -aq $'^notify-mute\t[0-9]*\tgatechat\x1falice$' "$AW_STATE"
+nclear
+pcidb gatechat Alice alice "three"; sleep 0.8
+hq awesome center >/dev/null; sleep 0.6
+hold_menu "$ROWX" "$ROWY"; release_left
+click $((ROWX + 100)) "$(mrow "$ROWY" 0 0)" 272
+chk "menu: Unmute drops the row" bash -c "! grep -aq '^notify-mute' '$AW_STATE'"
+hq awesome center >/dev/null; sleep 0.4
+nclear
+# press, hold, slide onto the last row, release: Close All from the app
+# the middle banner is a mailer's whichever way the stack runs
+dsp "hl.dsp.exec_cmd('notify-send -a other -t 30000 \"stays\" body')"; sleep 0.4
+dsp "hl.dsp.exec_cmd('notify-send -a mailer -t 30000 \"report\" body')"; sleep 0.4
+dsp "hl.dsp.exec_cmd('notify-send -a mailer -t 30000 \"disk\" body')"; sleep 1
+chk "menu: three banners from two apps" test "$(bd)" = "banners:3 resident:0"
+MX=$POPX MY=$((N_TOP + 68 + 22))
+hold_menu "$MX" "$MY"
+printf 'move %s %s\nsleep 120\n' $((MX - 100)) "$(mrow "$MY" 2 1)" | vp
+release_left
+chk "menu: slide-release Close All took only that app's cards" until_is 3 "center:0 live:1 dnd:0" st
+nclear
+
 # ---- the bell (pointer-driven) ------------------------------------------------
 # The shade opens on a CLICK only: hover is a no-op (the hover-peek was
 # removed by user request, 2026-09-30). The bell is a real widget — the
-# hover and the click are real pointer events over the glyph, found by
-# pixel.
+# hover and the click are real pointer events over it, at its count pill
+# (lib.sh bell_x).
 dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"ring me\" body')"; sleep 1
 chk "bell: a banner is up and the shade is shut" test "$(st)" = "center:0 live:1 dnd:0"
 bell_frame || true
 BELLX="$(bell_x "$STATE/bell-probe.png")"
-chk "bell: the bell glyph is found in the strip" test "$BELLX" -gt 0
+chk "bell: the count pill is found in the strip" test "$BELLX" -gt 0
 printf 'move %s %s\nsleep 120\nmove %s 13\nsleep 60\npress 272\nsleep 40\nrelease 272\nsleep 80\n' \
     "$(( (BELLX + MON_W / 2) / 2 ))" "$(( MON_H / 2 ))" "$BELLX" | vp
 sleep 1
@@ -330,12 +401,11 @@ nclear
 # ---- DND -----------------------------------------------------------------------
 dsp "hl.plugin.awesome.suspend()"; sleep 0.5
 chk "DND arms" hq_matches 'dnd:1' awesome state
-dsp "hl.dsp.exec_cmd('notify-send -a q one body')"
-dsp "hl.dsp.exec_cmd('notify-send -a q two body')"; sleep 0.8
-chk "DND: two same-app arrivals queued, none shown" test "$(bd)" = "banners:0 resident:0"
+for m in one two three four; do dsp "hl.dsp.exec_cmd('notify-send -a q $m body')"; done; sleep 0.8
+chk "DND: four same-app arrivals queued, none shown" test "$(bd)" = "banners:0 resident:0"
 dsp "hl.plugin.awesome.suspend()"; sleep 0.6
-chk "DND resume: one popped, the sibling resumed resident (one per app)" test "$(bd)" = "banners:1 resident:1"
-chk "DND resume: dnd off, both cards kept" hq_matches '^center:0 live:2 dnd:0$' awesome state
+chk "DND resume: three popped, the fourth resumed resident (the per-app cap)" test "$(bd)" = "banners:3 resident:1"
+chk "DND resume: dnd off, every card kept" hq_matches '^center:0 live:4 dnd:0$' awesome state
 nclear
 
 # ---- DND holds a merge onto an existing card ------------------------------------

@@ -92,9 +92,9 @@ sleep 1.2
 retarget || { echo "nested retarget FAILED after reload"; exit 1; }
 chk "reload: the monolith is alive (one plugin)" test "$(hq plugin list | grep -c Plugin)" = 1
 chk "reload: the model still answers" hq_matches '^center:' awesome state
-printf "move 59 13\nsleep 30\npress 272\nsleep 30\nrelease 272\nsleep 120\n" | vp; sleep 0.6
+printf "move %s 13\nsleep 30\npress 272\nsleep 30\nrelease 272\nsleep 120\n" "$(tag_cx 3)" | vp; sleep 0.6
 chk "reload: the strip still takes a click (tag 3)" test "$(ws)" = 3
-printf "move 12 13\nsleep 30\npress 272\nsleep 30\nrelease 272\nsleep 120\n" | vp; sleep 0.6
+printf "move %s 13\nsleep 30\npress 272\nsleep 30\nrelease 272\nsleep 120\n" "$(tag_cx 1)" | vp; sleep 0.6
 chk "reload: and back on tag 1" test "$(ws)" = 1
 
 # ---- log hygiene ----------------------------------------------------------
