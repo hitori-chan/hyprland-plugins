@@ -1018,7 +1018,7 @@ namespace NAwesome::Shell {
                     double tx = px + 8;
                     if (ITEX && ITEX->m_texID != 0) {
                         const auto P = PAINT.toPhys(CBox{tx, MY + 3, ICON, ICON});
-                        PAINT.tex(ITEX, P);
+                        PAINT.texAt(ITEX, P);
                     }
                     tx += ICON + 6;
 
@@ -1026,7 +1026,7 @@ namespace NAwesome::Shell {
                     if (T && T->m_texID != 0) {
                         const auto P = PAINT.toPhys(CBox{tx, MY, 1, PAINT.h});
                         CBox       b{P.x, P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y};
-                        PAINT.tex(T, b.round());
+                        PAINT.texAt(T, b.round());
                     }
                     px += W;
                 }

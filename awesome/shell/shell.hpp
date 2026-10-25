@@ -2,8 +2,8 @@
 // translation units. The module: the strip and its widgets, the menubar
 // prompt, the dbusmenu renderer.
 //
-//   strip.cpp       the strip's SKELETON: the texture cache, the SPaint
-//                   context, the canvas layer, one window walk (SFrame)
+//   strip.cpp       the strip's SKELETON: the texture cache, the paint
+//                   context (paintFor), the canvas layer, one window walk (SFrame)
 //                   and the widget slots — awesome's wibox
 //   taglist.cpp     the nine kanji tags                 (widget)
 //   tasklist.cpp    the state-marker labels and the middle (widget view —
@@ -223,39 +223,23 @@ namespace NAwesome::Shell {
         void label(const PHLWINDOW& w, std::string& out);
     }
 
-    // ---- painting a surface (strip.cpp) ----
+    // ---- painting a surface ----
     //
     // Handed to each surface's own renderer so the strip, the menubar strip
     // and the menu panels paint themselves next to their state instead of
-    // inside one function reaching into all three. The helpers are no-ops
-    // during the warm pass, so ONE layout serves both modes — the texture
-    // rule. (The canvas keeps its own SPaint for the card surface; the shell
-    // needs the SHit-carrying context, so this is the strip's own copy.)
+    // inside one function reaching into all three. The core context's
+    // primitives no-op during the warm pass, so ONE layout serves both
+    // modes — the texture rule. The shell adds its hit cells and metrics.
     struct SHit;
-    struct SPaint {
-        PHLMONITOR         mon;
-        std::vector<SHit>* hits  = nullptr; // clickable regions, appended as we go
-        bool               warm  = false;
-        double             scale = 1.0;
-        CBox               mb;           // the monitor's logical box
-        double             h  = 0;       // bar height
-        int                pt = 0;       // text size in pt, already scaled
-        size_t*            fp = nullptr; // frame fingerprint: widgets whose drawn content
-                                         // can change without damage fold a hash in here
-        Render::CRenderContext* rctx = nullptr; // the frame's render session; null = paint nothing
-
-        bool paints() const {
-            return !warm && rctx;
-        }
-
-        CBox toPhys(const CBox& global) const; // global logical -> monitor physical
-        void rect(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f) const;
-        void glass(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f) const;          // opaque fast path or configured translucent blur
-        void border(const CBox& global, const CHyprColor& c, int round, int sizePx, float rp = 2.f) const; // frame ring: one call, not four rects
-        void tex(const SP<ITexture>& t, const CBox& physBox) const;                       // pre-computed physical box
-        void texIn(const SP<ITexture>& t, const CBox& cell) const;                        // centered in a logical cell, native size
-        void texFit(const SP<ITexture>& t, const CBox& cell) const;                       // aspect-preserving contain, centered in a logical cell
+    struct SPaint : NAwesome::SPaint {
+        std::vector<SHit>* hits = nullptr; // clickable regions, appended as we go
+        double             h    = 0;       // bar height
+        int                pt   = 0;       // text size in pt, already scaled
+        size_t*            fp   = nullptr; // frame fingerprint: widgets whose drawn content
+                                           // can change without damage fold a hash in here
     };
+    // the bar's metrics on this monitor; null rctx = a warm
+    SPaint paintFor(PHLMONITOR mon, Render::CRenderContext* rctx);
 
     // Text -> cached GPU texture. Built ONLY by the warm pass; a miss during a
     // draw returns null rather than building (the texture rule).

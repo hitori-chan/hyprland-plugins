@@ -92,76 +92,16 @@ namespace NAwesome::Shell {
         return nullptr;
     }
 
-    // ---- the paint context (shell/shell.hpp) ----
-
-    CBox SPaint::toPhys(const CBox& global) const {
-        return CBox{global}.translate(-mon->m_position).scale(scale).round();
-    }
-
-    // The bar's paints count in the gate's draw profile like the cards'
-    // (AW_PAINT_SCOPE), and never hand the renderer an empty box (it
-    // asserts).
-    void SPaint::rect(const CBox& global, const CHyprColor& c, int round, float rp) const {
-        if (!paints())
-            return;
-        AW_PAINT_SCOPE;
-        if (const auto B = toPhys(global); B.w > 0 && B.h > 0)
-            g_pHyprOpenGL->renderRect(*rctx, B, c, {.round = round, .roundingPower = rp});
-    }
-
-    // Semantic container paint. Opaque defaults make the fork skip blur;
-    // configured alpha below 1 retains the rounded live-glass path.
-    void SPaint::glass(const CBox& global, const CHyprColor& c, int round, float rp) const {
-        if (!paints())
-            return;
-        AW_PAINT_SCOPE;
-        if (const auto B = toPhys(global); B.w > 0 && B.h > 0)
-            g_pHyprOpenGL->renderRect(*rctx, B, c, {.round = round, .roundingPower = rp, .blur = NAwesome::blurOn()});
-    }
-
-    void SPaint::border(const CBox& global, const CHyprColor& c, int round, int sizePx, float rp) const {
-        if (!paints())
-            return;
-        AW_PAINT_SCOPE;
-        const auto B = toPhys(global);
-        if (B.w <= 0 || B.h <= 0)
-            return;
-        // the gradient ctor heap-allocates and OkLab-converts: one per color
-        static std::unordered_map<uint64_t, Config::CGradientValueData> grads;
-        auto                                                            IT = grads.find(c.getAsHex());
-        if (IT == grads.end())
-            IT = grads.emplace(c.getAsHex(), Config::CGradientValueData{c}).first;
-        g_pHyprOpenGL->renderBorder(*rctx, B, IT->second, {.round = round, .roundingPower = rp, .borderSize = sizePx});
-    }
-
-    void SPaint::tex(const SP<ITexture>& t, const CBox& physBox) const {
-        if (!paints() || !t || t->m_texID == 0)
-            return;
-        g_pHyprOpenGL->renderTexture(*rctx, t, physBox, {});
-    }
-
-    void SPaint::texIn(const SP<ITexture>& t, const CBox& cell) const {
-        if (!paints() || !t || t->m_texID == 0)
-            return;
-        const auto B = toPhys(cell);
-        CBox       b{B.x + (B.w - t->m_size.x) / 2.0, B.y + (B.h - t->m_size.y) / 2.0, t->m_size.x, t->m_size.y};
-        g_pHyprOpenGL->renderTexture(*rctx, t, b.round(), {});
-    }
-
-    // Contain-fit: scale to fill the cell as far as aspect allows, centered.
-    // renderTexture stretches to its box, so a non-square icon handed a square
-    // cell comes out squashed — fit keeps the icon's proportions instead.
-    void SPaint::texFit(const SP<ITexture>& t, const CBox& cell) const {
-        if (!paints() || !t || t->m_texID == 0)
-            return;
-        const double TW = t->m_size.x, TH = t->m_size.y;
-        if (TW <= 0 || TH <= 0)
-            return;
-        const auto   B = toPhys(cell);
-        const double S = std::min(B.w / TW, B.h / TH);
-        const double W = TW * S, H = TH * S;
-        CBox         b{B.x + (B.w - W) / 2.0, B.y + (B.h - H) / 2.0, W, H};
-        g_pHyprOpenGL->renderTexture(*rctx, t, b.round(), {});
+    SPaint paintFor(PHLMONITOR mon, Render::CRenderContext* rctx) {
+        SPaint P;
+        P.mon   = mon;
+        P.warm  = rctx == nullptr;
+        P.scale = mon->m_scale;
+        P.mb    = mon->logicalBox();
+        P.rctx  = rctx;
+        P.h     = barHeight();
+        P.pt    = std::max(6, (int)std::round((double)cfg().getI("plugin:awesome:shell:font_size") * P.scale));
+        return P;
     }
 
     // ---- rendering ----
@@ -210,10 +150,6 @@ namespace NAwesome::Shell {
                     // except the open menubar: awesome's is an ontop wibox
         }
 
-        const double SCALE = mon->m_scale;
-        const auto   MB    = mon->logicalBox();
-        const double H     = barHeight();
-        const int    PT    = std::max(6, (int)std::round((double)cfg().getI("plugin:awesome:shell:font_size") * SCALE));
 
         // A tasklist label can flip without any bar event or strip damage (pin
         // damages only the window; the xdg maximized bit has no event at all):
@@ -224,7 +160,11 @@ namespace NAwesome::Shell {
         // out anything else may have been clipped — repaint the strip.
         size_t frameFp = 0;
 
-        const SPaint P{.mon = mon, .hits = &hits, .warm = warm, .scale = SCALE, .mb = MB, .h = H, .pt = PT, .fp = &frameFp, .rctx = rctx};
+        auto P = paintFor(mon, rctx);
+        P.hits = &hits;
+        P.fp   = &frameFp;
+        const auto   MB = P.mb;
+        const double H  = P.h;
 
         P.glass(CBox{MB.x, MB.y, MB.w, H}, color(cfg().getColor("plugin:awesome:shell:col_bg")));
 
@@ -323,9 +263,7 @@ namespace NAwesome::Shell {
         // shows (session lock, real fullscreen) before this one runs
         if (!popupsOn(mon))
             return;
-        const double SCALE = mon->m_scale;
-        const int    PT    = std::max(6, (int)std::round((double)cfg().getI("plugin:awesome:shell:font_size") * SCALE));
-        const SPaint P{.mon = mon, .warm = rctx == nullptr, .scale = SCALE, .mb = mon->logicalBox(), .h = barHeight(), .pt = PT, .rctx = rctx};
+        const auto P = paintFor(mon, rctx);
 
         // -- the menubar: its own strip right BELOW the bar, the bar stays
         // visible (awesome's menubar is a separate wibox at the workarea top,

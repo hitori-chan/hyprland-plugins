@@ -288,22 +288,20 @@ namespace NAwesome {
         Measure                                  m_measure;
     };
 
-    // ---- the paint context (the union of the old bar's and cards') ----
+    // ---- the paint context: every surface's one set of primitives ----
 
+    // The shell extends it with its hit cells (Shell::SPaint); the helpers
+    // are no-ops during a warm, so ONE layout serves both modes.
     struct SPaint {
-        PHLMONITOR              mon   = nullptr;
-        std::vector<CBox>*      hits  = nullptr; // per-monitor hit cells, global px
-        bool                    warm  = false;
-        double                  scale = 1.0;
-        float                   alpha = 1.f; // motion: the arriving surface fades in
-        double                  dy    = 0;   // motion: slide offset, painting only — hit boxes stay final
-        CBox                    mb{};  // the monitor's logical box
-        double                  h     = 0; // the shell strip height (bar layers)
-        int                     pt    = 12; // the base type role, physical
-        size_t*                 fp    = nullptr; // layout fingerprint sink (shell)
+        PHLMONITOR mon   = nullptr;
+        bool       warm  = false;
+        double     scale = 1.0;
+        float      alpha = 1.f; // motion: the arriving surface fades in
+        double     dy    = 0;   // motion: slide offset, painting only — hit boxes stay final
+        CBox       mb{};        // the monitor's logical box
         // the frame's render session, borrowed for the pass element's draw;
         // null outside a draw (a warm or a measure paints nothing)
-        Render::CRenderContext* rctx  = nullptr;
+        Render::CRenderContext* rctx = nullptr;
 
         bool paints() const {
             return !warm && rctx;
@@ -322,6 +320,15 @@ namespace NAwesome {
         CHyprColor faded(const CHyprColor& c) const {
             return alpha >= 1.f ? c : c.modifyA(c.a * alpha);
         }
+        // the gradient ctor heap-allocates and OkLab-converts: one per color
+        static const Config::CGradientValueData& gradient(const CHyprColor& c) {
+            static std::unordered_map<uint64_t, Config::CGradientValueData> grads;
+            const auto                                                      KEY = c.getAsHex();
+            auto                                                            IT  = grads.find(KEY);
+            if (IT == grads.end())
+                IT = grads.emplace(KEY, Config::CGradientValueData{c}).first;
+            return IT->second;
+        }
         void rect(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f) const {
             if (!paints())
                 return;
@@ -331,7 +338,7 @@ namespace NAwesome {
         }
         // Semantic container paint. Opaque defaults make the fork skip blur;
         // configured alpha below 1 retains the rounded live-glass path.
-        void glass(const CBox& global, const CHyprColor& c, int round, float rp) const {
+        void glass(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f) const {
             if (!paints())
                 return;
             AW_PAINT_SCOPE;
@@ -345,20 +352,20 @@ namespace NAwesome {
             const auto B = toPhys(global);
             if (!drawable(B))
                 return;
-            // the gradient ctor heap-allocates and OkLab-converts — memoize per color
-            static std::unordered_map<uint64_t, Config::CGradientValueData> grads;
-            const auto                                                      KEY = c.getAsHex();
-            auto                                                            IT  = grads.find(KEY);
-            if (IT == grads.end())
-                IT = grads.emplace(KEY, Config::CGradientValueData{c}).first;
-            g_pHyprOpenGL->renderBorder(*rctx, B, IT->second, {.round = round, .roundingPower = rp, .borderSize = std::max(1, (int)std::lround(px * scale)), .a = alpha});
+            g_pHyprOpenGL->renderBorder(*rctx, B, gradient(c), {.round = round, .roundingPower = rp, .borderSize = std::max(1, (int)std::lround(px * scale)), .a = alpha});
         }
-        void shadow(const CBox& global, int round, float rp, int range) const {
+        void shadow(const CBox& global, int round, float rp, int range, const CHyprColor& c = tShadow()) const {
             if (!paints() || !drawable(toPhys(global)))
                 return;
             AW_PAINT_SCOPE;
-            static Config::CGradientValueData GRAD{CHyprColor{Theme::SHADOW}};
-            g_pHyprOpenGL->renderRoundedShadow(*rctx, toPhys(global), round, rp, (int)std::lround(range * scale), GRAD, alpha, Render::SWindowRenderPresentation{});
+            g_pHyprOpenGL->renderRoundedShadow(*rctx, toPhys(global), round, rp, (int)std::lround(range * scale), gradient(c), alpha, Render::SWindowRenderPresentation{});
+        }
+        // a pre-computed physical box (the bar's labels, laid out in px)
+        void texAt(const SP<ITexture>& t, const CBox& phys) const {
+            if (!paints() || !t || t->m_texID == 0)
+                return;
+            AW_PAINT_SCOPE;
+            g_pHyprOpenGL->renderTexture(*rctx, t, phys, {.a = alpha});
         }
         // native px at a logical position
         void tex(const SP<ITexture>& t, double gx, double gy) const {

@@ -102,6 +102,10 @@ namespace NAwesome {
         static const CHyprColor C{Theme::ON_ACCENT};
         return C;
     }
+    inline const CHyprColor& tShadow() {
+        static const CHyprColor C{Theme::SHADOW};
+        return C;
+    }
 
     // animations=0 is the shell's motion kill switch
     inline bool animationsOn() {

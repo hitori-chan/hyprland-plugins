@@ -641,7 +641,6 @@ namespace NAwesome::Shell {
             namespace Th       = NAwesome::Theme;
             const int   RPANEL = Th::RAD_CARD, RROW = Th::RAD_ROW;
             const float RP     = (float)Th::ROUNDING_POWER;
-            const int   BORDER = std::max(1, (int)std::lround(PAINT.scale));
 
             const double ROWH = Menu::ROWH, SEPH = Menu::SEPH, PAD = Menu::PAD;
             const double MTOP = PAINT.mb.y + PAINT.h, MBOT = PAINT.mb.y + PAINT.mb.h - 2;
@@ -747,7 +746,7 @@ namespace NAwesome::Shell {
                 // fill under the whole panel, frame ring over its edge: no
                 // corner seam, and 5 rects are 2 calls
                 PAINT.glass(L.box, COLBG, RPANEL, RP);
-                PAINT.border(L.box, COLFRAME, RPANEL, BORDER, RP);
+                PAINT.ring(L.box, COLFRAME, RPANEL, RP);
 
                 double       my    = my0 + PAD;
                 double       myEnd = my0 + mh - PAD;
@@ -803,7 +802,7 @@ namespace NAwesome::Shell {
 
                     if (E.icon && E.icon->m_texID != 0) {
                         auto IP = PAINT.toPhys(CBox{mx + 8, my + 4, IS, IS});
-                        PAINT.tex(E.icon, IP.round());
+                        PAINT.texAt(E.icon, IP.round());
                     } else if (E.toggle != Menu::TG_NONE) {
                         // the leading column: ✓/– for checkmarks, ●/○ for radios
                         const char* G = E.toggle == Menu::TG_RADIO ? (E.toggleState == 1     ? "●" :
@@ -823,7 +822,7 @@ namespace NAwesome::Shell {
                     if (T && T->m_texID != 0) {
                         const auto P = PAINT.toPhys(ROW);
                         CBox       b{P.x + std::round(LX * PAINT.scale), P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y};
-                        PAINT.tex(T, b.round());
+                        PAINT.texAt(T, b.round());
                     }
                     if (E.submenu)
                         PAINT.texIn(textTex("▸", fg, PAINT.pt), CBox{mx + mw - 8 - ARW, my, ARW, ROWH});

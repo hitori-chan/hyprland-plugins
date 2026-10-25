@@ -184,7 +184,7 @@ namespace NAwesome::Shell {
                 if (CACHE.tex && CACHE.tex->m_texID != 0) {
                     const auto B = P.toPhys(box);
                     CBox       b{B.x + (B.w - CACHE.tex->m_size.x) / 2.0, B.y + (B.h - CACHE.tex->m_size.y) / 2.0, CACHE.tex->m_size.x, CACHE.tex->m_size.y};
-                    P.tex(CACHE.tex, b.round());
+                    P.texAt(CACHE.tex, b.round());
                 }
 
                 // the badge: bannered + resident, hidden at zero; min-w 15,

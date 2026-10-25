@@ -96,7 +96,7 @@ namespace NAwesome::Shell {
                     if (TEX && TEX->m_texID != 0) {
                         const auto B = P.toPhys(CBox{tx, box.y, 1, P.h});
                         CBox       b{B.x, B.y + (B.h - TEX->m_size.y) / 2.0, TEX->m_size.x, TEX->m_size.y};
-                        P.tex(TEX, b.round());
+                        P.texAt(TEX, b.round());
                     }
 
                     SHit h;
