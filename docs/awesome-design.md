@@ -110,7 +110,11 @@ memory only); neither reads plugin or compositor state.
   in Pango's single-paragraph mode, and every card raster is clamped to
   its slot (stacked combining marks reach far past the line box). One
   shared text engine for both is open work. Both share this thread's
-  Pango font map, and a face's first layout loads it (~10 ms a weight
+  Pango font map and one set of font options (`core/text.hpp`: full
+  hinting, hinted metrics, whole-pixel glyph positions) for every
+  raster, measured and drawn alike — the compositor's `renderText` sets
+  none, and its fractional placement read soft beside a terminal at 1x.
+  A face's first layout loads it (~10 ms a weight
   and size): `core/fontwarm.hpp` loads the faces the boards use (both
   modules' families, four weights, the type roles' sizes, each
   monitor's scale, a first emoji) one per event-loop turn, 1.5 s after
@@ -252,15 +256,28 @@ schema's defaults name them; `theme.lua` overrides them):
   the bar and the launcher, regular for cards, the center and the
   capsules, thick for menus. Cards and menus add a soft drop, a light
   top edge and a 10 % white rim; a menu floats higher (a deeper drop).
-- Ink is one white at four strengths (86 % bar text, 78 % body, 55 %
-  meta, 34 % empty); the accent `#00CCFF` is TEXT — the viewed tag, the
-  focused task, a selection. It fills only what is live: the bell's
-  count, a caret, the reply's send circle, a progress bar (the snap
-  preview is its 10 % tint and ring). Urgent is `#FF6159`, as text.
+- Ink is one white at four strengths (the title white for titles and
+  the bar's text and glyphs, 78 % body, 55 % meta, 34 % empty); the
+  accent `#00CCFF` is TEXT — the viewed tag, the focused task, a
+  selection, the bell while its center is open. It fills only what is
+  live: a caret, the reply's send circle, a progress bar (the snap
+  preview is its 10 % tint and ring). Urgent is `#FF6159`, as text. The
+  one green is the bell's unseen dot.
 - Radii: cards 18, menus 12, rows and tags 6, buttons and app icons 9;
   windows keep the user's `decoration:rounding`.
-- Glyphs are the boards' own outline icons (`core/glyph.cpp`), drawn
-  white and tinted at raster time.
+- Glyphs are the boards' own outline icons (`core/glyph_shapes.hpp`,
+  each parsed by the unit harness: librsvg refuses a malformed shape
+  whole, and the glyph silently never draws), drawn white and tinted at
+  raster time; the bell sits on the 16 px grid it rasters at, its stems
+  on half-pixel centres. Icons and tray pixmaps raster at the monitor's
+  device size, never a larger raster shrunk on the GPU.
+- The bar's right end follows macOS 27's menu bar, measured off its 2x
+  screenshot: 20 px between items, the battery its stadium with the
+  number cut out in the bar's face (`shell/battery_pill.hpp`, pure
+  cairo), the bell SF Symbols' bell.badge with no count. Each end of the
+  strip owns its screen edge (Fitts).
+- No surface darkens the desktop: the center draws no backdrop, and
+  what floats over a wallpaper carries its own glass.
 - The mouse on a card: left acts on its release, a held left opens the
   card menu, right dismisses, middle does nothing.
 
@@ -269,8 +286,9 @@ schema's defaults name them; `theme.lua` overrides them):
 The strip (workspaces, tasks, tray, bell, battery, clock), the menubar
 launcher, and their input. Tasks are VIEWS of `windows` state;
 minimize/restore/focus are requests to `windows`, not state operations
-in the bar. The bell reads the `notify` model directly (count, DND,
-shade state) and calls `notify.center()`; no bus. Launcher: the shared
+in the bar. The bell reads the `notify` model directly (the unseen
+dot, DND, center state) and calls `notify.center()`; no bus — the clock
+calls it too. Launcher: the shared
 desktop index, history, completion, 4 KiB UTF-8 paste limit.
 
 ### windows
@@ -362,7 +380,7 @@ as in every gate run, upstream's lazy shader-variant compiles add
   The shade measures no row past the fold.
 - Config reads are an index (the key resolved at compile time) and a
   typed value read — no hash, no allocation, no RTTI.
-- No bus round-trips on any live path (badge counts, DND state, OSD
+- No bus round-trips on any live path (the bell's dot, DND state, OSD
   posts are in-process calls), and no synchronous AddMatch anywhere.
 - First uses are paid early or once: font faces by the preload, icon
   names from GTK's caches, image pixels on the raster worker; the

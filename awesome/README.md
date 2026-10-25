@@ -32,21 +32,26 @@ client-list menu on the bar it was opened from. Geometry and hitboxes
 are monitor-local; fixed widget slots and tray clipping protect the
 task area on narrow outputs.
 
-- The strip is 28 px of thin glass: the tags at its left, the tasks
-  splitting the middle 14 px off either side, and at its right, 14
-  apart, the tray, the battery, the bell and the clock.
+- The strip is 28 px of thin glass in the bar's face (Fira Code, the
+  kanji in IBM Plex Sans JP): the tags at its left, the tasks splitting
+  the middle 14 px off either side, and at its right, 20 apart as macOS
+  spaces its menu extras, the tray, the battery, the bell and the clock.
+  The slot at each end owns its screen edge — the top-left pixel is tag
+  一, the top-right the clock — and the right slot's cells meet across
+  their gaps, so no click on the strip lands between two targets.
 - **Workspaces** are the nine kanji tags in 26 x 22 cells: the viewed
-  one accent text on a dark ground, occupied ones the bar's text, empty
-  ones dim, an urgent one red text (no occupancy marks: the text's
-  strength says it). A hovered tag takes a light ground. awesome's
+  one accent text, occupied ones the bar's text, empty ones dim, an
+  urgent one red text — never a ground, and no occupancy marks: the
+  text's strength says it. A hovered tag's text lifts. awesome's
   taglist buttons: a click views the tag (creating it on that monitor;
   a tag another monitor owns is left alone), `Mod`+click sends the
   focused window there without following, and the wheel steps through
   this monitor's tags, wrapping.
-- **Tasks**: a 14 px icon and the title, ⌃ for a pinned window and +
+- **Tasks**: a 16 px icon and the title, ⌃ for a pinned window and +
   for a maximized one before it, in arrival order. The focused task is
-  accent text, an urgent one red text, a minimized one dim — never a
-  fill; a hovered task takes a light ground. awesome's tasklist
+  accent text, an urgent one red text, a minimized one dim with its icon
+  at half strength — never a fill; a hovered task's text lifts.
+  awesome's tasklist
   buttons: a click on the focused task minimizes it, on a minimized one
   restores it, on any other raises and focuses it; the wheel cycles the
   focus through this workspace's tasks (minimized ones are listed, not
@@ -56,7 +61,10 @@ task area on narrow outputs.
   restored). X11 override-redirect surfaces (menus, tooltips,
   dropdowns) are not clients, as in awesome: never a task, a tag
   occupant, a focus stop, a snap edge or a placement blocker.
-- **Tray**: 16 px icons, `tray_spacing` apart. It owns the
+- **Tray**: 16 px icons in their own colours, `tray_spacing` apart, each
+  rastered at the monitor's own pixel size (a theme's 16 px drawing where
+  it has one, an SVG at that size, a pixmap box-filtered down to it):
+  never a larger raster shrunk on the GPU. It owns the
   StatusNotifier/dbusmenu connection. A tray click is the activation —
   after the SNI `Activate` call the bar resolves the item's bus PID and
   focuses the app's own topmost window, for
@@ -100,22 +108,30 @@ task area on narrow outputs.
   tooltips, and overlay icons are not implemented. A hover warms the
   menu's own layer alone, and the menu paints in the panels' box, not
   the whole monitor.
-- **Bell**: an outline bell and the unread count in an accent pill;
-  under Do Not Disturb the bell is struck through and the count is
-  plain text, the held queue included. It reads the notify model
-  directly (same process — no bus seam). A click (the count is part of
-  its target) toggles the shade on the clicked bar's monitor: opening
-  absorbs the live banners into parked rows, a later explicit close
-  re-pops them. Pointer hover does nothing.
-- **Battery**: the level and an outline cell filled to it — red text and
-  level at 20 % or below, a green level charging (or held at the charge
-  limit), amber in power save. It watches the udev battery packs (a
+- **Bell**: SF Symbols' bell.badge, no count — a green dot (`col_dot`)
+  on the bell's shoulder while the center holds a card it has not shown
+  since the card arrived or changed. Opening the center (and closing
+  it) marks what it lists as seen; the DND queue, which it does not
+  list, stays unseen. Under Do Not Disturb the bell is the moon, dotted
+  while cards wait in the queue; while the center is open the bell is
+  lit in the accent and wears no dot. It reads the notify model
+  directly (same process — no bus seam). A click toggles the center on
+  the clicked bar's monitor: opening absorbs the live banners into
+  parked rows, a later explicit close re-pops them. Pointer hover does
+  nothing.
+- **Battery**: macOS 27's menu-bar battery — a 21 x 12 stadium filled to
+  the level, the number cut out of it in the bar's face (bold), a short
+  cap one unit off — white, red at 20 % or below, green charging (the
+  bolt after the cap) or held at the charge limit (the shield), yellow
+  in power save; an unknown level draws the question. It watches the
+  udev battery packs (a
   dual-pack laptop reads as one; a USB-C port's or a headset's battery
   uevent is ignored); plugging and unplugging post a capsule, and 20 %
   and 5 % post the low and critical cards.
-- **Clock**: "Sun 25 Oct  12:26" in the session's `LC_TIME`. It ticks
-  on the wall clock's minute, re-reads the timezone each tick, and a
-  resume or a clock step updates it at once.
+- **Clock**: "Mon Oct 26 01:12" in the session's `LC_TIME`. As macOS's,
+  a click toggles the center. It ticks on the wall clock's minute,
+  re-reads the timezone each tick, and a resume or a clock step updates
+  it at once.
 - Labels are one line: a client's title or menu label has its control
   characters replaced before it is rastered (a newline per paragraph
   once made a texture tens of thousands of px tall), and a raster the
@@ -131,7 +147,7 @@ task area on narrow outputs.
 awesome's Mod+P prompt, dmenu-style: a strip of the bar's own glass
 right under it — a quiet "Run:" (or the drilled-into category), the
 query around a drawn accent caret, then the matches 20 px apart, each a
-14 px icon and its name, the selection in accent text.
+16 px icon and its name, the selection in accent text.
 
 The launcher lists the plugin's one desktop index (shared with the
 bar's and the cards' icons), scanned once at plugin start in a helper
@@ -506,21 +522,22 @@ semantics).
   Esc, the lock or a native capture closes it, and it holds its card's
   banner while up. The switches persist in the state file
   (`notify-app`, `notify-mute`): an app with banners off, or a muted
-  chat, lands its arrivals silently in the shade (badge-counted; a
-  muted chat makes no sound either), and turning banners off sends the
+  chat, lands its arrivals silently in the shade (the bell's dot marks
+  them; a muted chat makes no sound either), and turning banners off sends the
   app's live banners there at once. Critical punches through.
 - Popups per app (`coalesce_popups`, 3): while an app shows that many
   banners on their clocks, its next non-critical card lands in the
-  shade silently (badge-counted, no sound). A banner with no clock
+  shade silently (the bell's dot marks it, no sound). A banner with no clock
   (sticky, critical) is no cooldown, and two chats are two cards: each
   alerts.
 - Popup hover HOLDS the timeout: the card under the pointer stops
   counting down, and leaving restarts its full clock rather than
   resuming the sliver that was left. Only one card can be held, because
   only one can be hovered.
-- The center: "Notifications" over its column, the moon (Do Not
-  Disturb, lit in the accent while it holds) and "Clear All" at its
-  right, over a dusk that keeps the glass legible on any wallpaper.
+- The center: the banners' column, its controls above it on glass
+  capsules of their own — the moon (Do Not Disturb, lit in the accent
+  while it holds) and "Clear All". As macOS's, it draws no backdrop and
+  no heading: the desktop is never darkened.
   Cards show their clock time where banners show an age. A card
   behaves as its banner did — left on the body fires the primary, a
   link opens, a button acts. Cards open by default as the page has
@@ -553,7 +570,8 @@ semantics).
   does not re-pop.
 - Inline reply (KDE's protocol, which Telegram Desktop speaks): an
   action keyed `inline-reply` is not a button — it grows a reply field
-  in the open shade row, and sending emits `NotificationReplied(id,
+  in the open shade row (a dark well whose send circle turns the accent
+  once there is text), and sending emits `NotificationReplied(id,
   text)` and closes the card unless `resident`.
   `x-kde-reply-placeholder-text` and `x-kde-reply-submit-button-text`
   are honored. The field takes the whole keyboard while armed (there is
@@ -601,7 +619,7 @@ semantics).
 - A `transient` card (the spec's "bypass persistence": a screenshot
   tool's preview, a client's own OSD) is feedback, never a
   notification: it shows as a popup while it lasts, then vanishes —
-  no shade row, no residency, no badge. Opening the shade ends a live
+  no shade row, no residency, no dot on the bell. Opening the shade ends a live
   one. A critical transient
   card is an ordinary alert. `hyprctl awesome count` answers the live
   total (the lockscreen bell reads it).
@@ -670,7 +688,8 @@ pragmatic chain (GTK theme → hicolor → pixmaps), not a full
   it shows as a capsule at the top center: the glyph, a level track and
   its number for a value, the words otherwise; a muted volume or
   microphone reads "Muted" / "Off" in the urgent colour. Such a card is
-  feedback, never a notification: no shade row, no history, no badge;
+  feedback, never a notification: no shade row, no history, no dot
+  on the bell;
   the capsules show over the open shade too, and opening the shade
   drops a live one. A critical battery alert, posted in the same band,
   is an alert: it waits under the shade like any banner.
@@ -709,7 +728,7 @@ click goes missing.
 
 ## Configuration
 
-46 keys under `plugin:awesome:<module>:<key>` — shell 18, notify 25,
+45 keys under `plugin:awesome:<module>:<key>` — shell 17, notify 25,
 windows 3, as [`core/schema.hpp`](core/schema.hpp) declares them (kinds,
 clamps; out-of-range values clamp). "Frost" marks a colour whose
 default is a Frost token ([`core/tokens.hpp`](core/tokens.hpp)), so an
@@ -718,23 +737,22 @@ empty config still looks right; the user's `theme.lua` overrides them.
 | `shell` | default | |
 |---|---|---|
 | `height` | 28 | bar height in logical px (reserve it: monitor reserved top) |
-| `font_size` | 13 | text size in logical px (monitor scale applies at raster time) |
-| `tray_spacing` | 10 | px between tray icons |
-| `font` | `Inter` | font family |
+| `font_size` | 12 | text size in logical px (monitor scale applies at raster time) |
+| `tray_spacing` | 20 | px between tray icons (macOS's menu-extra rhythm) |
+| `font` | `Fira Code, IBM Plex Sans JP` | font family, or a Pango family list (the kanji tags take the first face that has them) |
 | `terminal` | `alacritty` | terminal that runs Terminal=true launcher entries |
 | `col_bg` | Frost | the bar's and the launcher's thin glass (the alpha IS the glass) |
 | `col_menu_bg` | Frost | menus' thicker glass |
-| `col_fg` | Frost | bar text |
+| `col_fg` | Frost | bar text and glyphs: the clock, the bell, symbolic tray icons, occupied tags |
 | `col_focus` | Frost | the launcher's and the menus' selection (text) |
-| `col_active` | Frost | the viewed tag, the focused task (text) and the bell's badge |
-| `col_active_bg` | Frost | the viewed tag's ground |
-| `col_on_active` | Frost | the count on the bell's badge |
+| `col_active` | Frost | the viewed tag and the focused task (text), the bell while the center is open |
+| `col_dot` | Frost | the bell's dot: cards the center has not shown |
 | `col_empty` | Frost | empty tags, minimized tasks, disabled rows |
 | `col_urgent` | Frost | urgent tags and tasks (text) |
 | `col_frame` | Frost | the glass rim |
-| `col_charging` | Frost | battery fill charging/defender |
-| `col_low` | Frost | battery low |
-| `col_powersave` | Frost | battery fill power save |
+| `col_charging` | Frost | the battery's fill charging or held at the charge limit |
+| `col_low` | Frost | the battery's fill at 20 % or below |
+| `col_powersave` | Frost | the battery's fill in power save |
 
 | `notify` | default | |
 |---|---|---|
