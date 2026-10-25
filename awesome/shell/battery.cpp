@@ -1,10 +1,10 @@
 // awesome/shell/battery.cpp — the battery: gauge state from sysfs, the old
-// battery-watch.sh alerts, and its widget (the level and the outline cell)
+// battery-watch.sh alerts, and the widget drawing macOS's menu-bar battery
+// (shell/battery_pill.hpp)
 #include "shell/shell.hpp"
-#include "shell/battery_state.hpp"
+#include "shell/battery_pill.hpp"
 
 #include "core/glyph.hpp"
-#include "core/theme.hpp"
 #include "notify/model.hpp"
 
 namespace NAwesome::Shell {
@@ -20,7 +20,7 @@ namespace NAwesome::Shell {
     static std::vector<std::string> batteryDirs;
     constexpr size_t                MAX_PACKS = 8;
     // the gauge is read ONCE per event (uevent or minute tick) and both
-    // consumers — the widget's display state and the alerts' edge detection —
+    // consumers — the pill's display state and the alerts' edge detection —
     // read the result: the raw status string is what the alerts key off, and
     // reading it twice meant four sysfs opens per event for one sample
     static std::string batteryStatus;
@@ -157,6 +157,24 @@ namespace NAwesome::Shell {
             std::getline(f, s);
         return s;
     }
+
+    // the pill as a texture: battery_pill.hpp rasters it, the renderer
+    // takes it from the warm (the gate's caller)
+    static SP<ITexture> batteryPill(const Battery::SPillSpec& spec) {
+        auto* SURF = Battery::rasterPill(spec);
+        if (!SURF)
+            return nullptr;
+        auto tex = g_pHyprRenderer->createTexture(SURF);
+        cairo_surface_destroy(SURF);
+        return tex;
+    }
+
+    // per physical height, so mixed-scale monitors don't evict each other
+    struct SPill {
+        SP<ITexture> tex;
+        uint64_t     key = 0;
+    };
+    static std::unordered_map<int, SPill> pillCache;
 
     // ---- gauge refresh + the alerts (the old scripts/battery-watch.sh) ----
 
@@ -384,6 +402,7 @@ namespace NAwesome::Shell {
             g_batterySrc = nullptr;
             g_udevMon    = nullptr;
             g_udev       = nullptr;
+            pillCache.clear();
             batteryPercent = -1;
             batteryPlugged = batteryDefend = batterySave = batteryUnknown = false;
             batteryDirs.clear();
@@ -398,62 +417,48 @@ namespace NAwesome::Shell {
     namespace {
         class CBatteryWidget : public IWidget {
           public:
-            // "62%", 6 apart, then the outline cell with the level inside:
-            // red text and level when low, a green level charging (and held
-            // at the limit), amber in power save
-            static constexpr double GLYPH_W = 22, GLYPH_H = 11, GAP = 6;
-            // the cell's inside (the glyph's 18 x 9.6 body under a 1.2 stroke)
-            static constexpr double LEVEL_X = 2.4, LEVEL_Y = 2.4, LEVEL_W = 14.6, LEVEL_H = 6.2, LEVEL_MIN = 2.2;
-
-            struct SLook {
-                CHyprColor text, level;
-            };
-            static SLook look(const SFrame& F) {
-                const auto STATE = Battery::visualState(batteryPercent, batteryUnknown, batterySave, batteryDefend, batteryPlugged);
-                switch (STATE.color) {
-                    case Battery::eColor::Error: {
-                        const auto LOW = color(cfg().getColor("plugin:awesome:shell:col_low"));
-                        return {LOW, LOW};
-                    }
-                    case Battery::eColor::Active: return {F.fg, color(cfg().getColor("plugin:awesome:shell:col_charging"))};
-                    case Battery::eColor::Warning: return {F.fg, color(cfg().getColor("plugin:awesome:shell:col_powersave"))};
-                    case Battery::eColor::None: break;
-                }
-                return {F.fg, F.fg};
-            }
-
-            static SP<ITexture> label(const SPaint& P, const SLook& L) {
-                if (batteryPercent < 0)
-                    return nullptr;
-                static std::string TXT; // reused; main thread only
-                TXT = std::to_string(batteryPercent);
-                TXT += '%';
-                return textTex(TXT, L.text, P.pt, 0, "", 500);
-            }
-
-            static SP<ITexture> cell(const SPaint& P) {
-                return NAwesome::Glyph::tex(NAwesome::Glyph::eGlyph::BATTERY, NAwesome::tSub(), (int)std::lround(GLYPH_W * P.scale));
-            }
-
             double fit(const SPaint& P, const SFrame& F) override {
                 if (!hasBattery())
                     return 0; // no system pack: hidden
-                cell(P); // the warm builds what the draw paints
-                const auto T = label(P, look(F));
-                return (T ? T->m_size.x / P.scale + GAP : 0) + GLYPH_W;
+                const int  H     = bodyPx(P);
+                const auto STATE = Battery::visualState(batteryPercent, batteryUnknown, batterySave, batteryDefend, batteryPlugged);
+                const CHyprColor FILL = STATE.color == Battery::eColor::Active ? color(cfg().getColor("plugin:awesome:shell:col_charging")) :
+                    STATE.color == Battery::eColor::Warning                    ? color(cfg().getColor("plugin:awesome:shell:col_powersave")) :
+                    STATE.color == Battery::eColor::Error                      ? color(cfg().getColor("plugin:awesome:shell:col_low")) :
+                                                                                 CHyprColor{1.f, 1.f, 1.f, 1.f};
+                const std::string FAMILY = cfg().getS("plugin:awesome:shell:font");
+                // everything the raster reads: a theme or font change re-keys it
+                const uint64_t KEY = std::hash<std::string>{}(FAMILY) ^ ((uint64_t)(batteryPercent + 1) << 1) ^ ((uint64_t)STATE.attribution << 9) ^
+                    (FILL.getAsHex() * 0x9E3779B97F4A7C15ull) ^ (F.fg.getAsHex() * 0xC2B2AE3D27D4EB4Full);
+                auto& PILL = pillCache[H];
+                // the gate, not P.warm: "this pass paints nothing" and "this
+                // pass may create a texture" are different questions, and only
+                // the gate answers the second one (mayBuild flags texStale when
+                // it refuses — a level that moved under a scissored repaint
+                // gets its warm and its repaint from that).
+                if (PILL.key != KEY && warmGate().mayBuild()) {
+                    PILL.tex = batteryPill({.level       = batteryPercent,
+                                            .attribution = STATE.attribution,
+                                            .heightPx    = H,
+                                            .fill        = {FILL.r, FILL.g, FILL.b, FILL.a},
+                                            .glyph       = {F.fg.r, F.fg.g, F.fg.b, F.fg.a},
+                                            .family      = FAMILY});
+                    PILL.key = KEY; // stamp even if the build returns null, so a persistent null can't rewarm-storm
+                }
+                // logical px: the strip's gaps do the spacing, as macOS's menu extras
+                return (PILL.tex ? PILL.tex->m_size.x : Battery::geometry(H, STATE.attribution).width) / P.scale;
             }
 
-            void draw(const SPaint& P, const SFrame& F, const CBox& box) override {
-                const auto L = look(F);
-                double     x = box.x;
-                if (const auto T = label(P, L); T && T->m_texID != 0) {
-                    P.texIn(T, CBox{x, box.y, T->m_size.x / P.scale, P.h});
-                    x += T->m_size.x / P.scale + GAP;
-                }
-                const CBox G{x, box.y + (P.h - GLYPH_H) / 2, GLYPH_W, GLYPH_H};
-                P.texIn(cell(P), G);
-                if (batteryPercent >= 0)
-                    P.rect(CBox{G.x + LEVEL_X, G.y + LEVEL_Y, std::max(LEVEL_MIN, LEVEL_W * batteryPercent / 100.0), LEVEL_H}, L.level, (int)std::lround(P.scale), 2.f);
+            void draw(const SPaint& P, const SFrame&, const CBox& box) override {
+                const auto& PILL = pillCache[bodyPx(P)];
+                P.texIn(PILL.tex, box);
+            }
+
+          private:
+            // the body as tall as the bar's text size, rounded to an even
+            // count of device px: it centres on the 28 px bar with no seam
+            static int bodyPx(const SPaint& P) {
+                return std::max(8, 2 * (int)std::lround(P.pt / 2.0));
             }
         };
     } // namespace
