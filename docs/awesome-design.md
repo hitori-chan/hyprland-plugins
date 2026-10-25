@@ -272,8 +272,10 @@ while a physical mouse is present — one that has moved or clicked —
 400 ms coalesced recheck, manual toggle until hotplug, across config
 reloads). Every action's feedback is a notify capsule:
 fixed IDs replace in place, 1200 ms expiry, a glyph and a level or
-words. All
-process I/O through Jobs; readbacks reject malformed output.
+words. A Bluetooth headset's own volume change (BlueZ's transport
+`Volume` on the system bus, no key) reads the sink back and shows the
+capsule only when something moved. All process I/O through Jobs;
+readbacks reject malformed output.
 
 ## 4. API (no legacy)
 

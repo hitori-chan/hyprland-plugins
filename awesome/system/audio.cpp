@@ -6,7 +6,9 @@
 //
 // Each audio device runs one wpctl set at a time, then a readback (set ->
 // get -> parse -> card), on the core's Jobs (pidfd-watched, bounded,
-// generation-checked); presses meanwhile accumulate into the next set.
+// generation-checked); presses meanwhile accumulate into the next set. A
+// Bluetooth headset's own volume change (BlueZ, the system bus) reads the
+// sink back too, and shows only what moved.
 //
 // Brightness stays fork-free: /sys/class/backlight for current/max,
 // ±5% linear steps (the shown percent IS current/max), floor 2 raw so
@@ -33,6 +35,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <map>
 #include <optional>
 #include <string>
 
@@ -54,6 +57,7 @@ namespace NAwesome::System {
         return L;
     }
     static std::unique_ptr<sdbus::IProxy> logindProxy;
+    static sdbus::Slot                    transportMatch; // the headset volume watch (below)
     static void                           brightnessDropped();
 
     static void systemBusInit() {
@@ -63,6 +67,7 @@ namespace NAwesome::System {
         };
         L.dropOwned = []() {
             logindProxy.reset(); // its pending SetBrightness dies unanswered
+            transportMatch = {};
             brightnessDropped();
         };
         try {
@@ -265,8 +270,17 @@ namespace NAwesome::System {
         int         steps   = 0; // ±1 per press, applied as ±5% each
         int         toggles = 0;
         double      level   = -1; // the last readback's volume (1.0 = 100%); < 0: never read
+        bool        muted   = false; // the last readback's mute
         Time::steady_tp levelAt; // when it was read: the default device or another mixer may have moved it since
         uint64_t    generation = 0; // a teardown or a newer readback outdates replies
+    };
+    // what a readback's card does: follow a set, stay quiet (the level a
+    // raise needs), or show only a change (a headset moved it, or our own
+    // set's echo, which then shows nothing)
+    enum class eShow : uint8_t {
+        ALWAYS,
+        NEVER,
+        CHANGED,
     };
     // A raise caps at 100% unless the device is already past it, so it needs
     // the level as it is now: a readback older than this is re-read first. A
@@ -297,27 +311,35 @@ namespace NAwesome::System {
     }
 
     static void pump(SDevice& d);
+    static void headsetReadDone();
 
-    // show: the card follows a set; a raise's read of the level ahead of its
-    // set shows nothing (the set's own readback is the card)
-    static void readBack(SDevice& d, bool show = true) {
+    // the card follows a set; a raise's read of the level ahead of its set
+    // shows nothing (the set's own readback is the card)
+    static void readBack(SDevice& d, eShow show = eShow::ALWAYS) {
         const uint64_t GEN = ++d.generation;
         const bool     OK  = Jobs::inst().spawnPiped(Jobs::CONTROL, {"wpctl", "get-volume", d.node, nullptr}, [&d, GEN, show](Jobs::SPipedResult R) {
             if (GEN != d.generation)
                 return; // a teardown, or a newer set already reads back
             d.busy        = false;
             const auto RB = Wpctl::parseReadback(R.out);
-            d.level       = RB ? RB->value : std::max(d.level, 0.0);
-            d.levelAt     = Time::steadyNow();
-            if (show)
+            // a change is 0.005 or more: the readback prints two decimals
+            const bool MOVED = RB && (d.level < 0 || std::abs(RB->value - d.level) >= 0.005 || RB->muted != d.muted);
+            d.level          = RB ? RB->value : std::max(d.level, 0.0);
+            d.muted          = RB ? RB->muted : d.muted;
+            d.levelAt        = Time::steadyNow();
+            if (show == eShow::ALWAYS || (show == eShow::CHANGED && MOVED))
                 showReadback(d, RB.has_value() ? &*RB : nullptr);
             pump(d);
+            if (&d == &sink)
+                headsetReadDone();
         });
         if (!OK) {
             d.busy    = false;
             d.level   = std::max(d.level, 0.0); // unreadable: the plain limit
             d.levelAt = Time::steadyNow();
             pump(d);
+            if (&d == &sink)
+                headsetReadDone();
         }
     }
 
@@ -331,7 +353,7 @@ namespace NAwesome::System {
         const bool TOGGLE = d.toggles != 0;
         if (!TOGGLE && d.steps > 0 && (d.level < 0 || Time::steadyNow() - d.levelAt > LEVEL_TRUST)) {
             d.busy = true; // the limit below needs the level as it is now: read it first
-            return readBack(d, /*show=*/false);
+            return readBack(d, eShow::NEVER);
         }
         std::string amount, limit; // outlive the spawn: the argv is copied there
         std::vector<const char*> argv;
@@ -372,6 +394,72 @@ namespace NAwesome::System {
         pump(d);
     }
 
+    // ---- a headset's own volume (Bluetooth absolute volume) ----
+
+    // A headset that sets its own volume (its buttons, a touch strip) does
+    // it over AVRCP: no key reaches the binds, so no action runs. BlueZ
+    // announces the transport's new Volume, which schedules a readback of
+    // the default sink. The readback stays the truth — the transport may
+    // feed another sink, and PipeWire applies the change only after BlueZ
+    // announces it — and the capsule shows only a level or a mute that
+    // moved: our own sets echo here and show nothing twice. A headset
+    // without absolute volume sends volume keys instead (BlueZ's AVRCP
+    // input device), and those reach the binds.
+    static SP<CEventLoopTimer> headsetSettle;
+    static bool                headsetArmed = false, headsetAgain = false;
+    // PipeWire reacts to the same announcement within this; a held button's
+    // burst reads back at most this often
+    static constexpr auto HEADSET_SETTLE = std::chrono::milliseconds(120);
+
+    static void headsetMoved() {
+        if (compositorShuttingDown() || !headsetSettle || headsetArmed)
+            return;
+        headsetArmed = true;
+        headsetSettle->updateTimeout(HEADSET_SETTLE);
+    }
+
+    static void headsetRead() {
+        headsetArmed = false;
+        if (sink.busy) { // one wpctl at a time: the change reads back after it
+            headsetAgain = true;
+            return;
+        }
+        sink.busy = true;
+        readBack(sink, eShow::CHANGED);
+    }
+
+    // after every sink readback: a change announced while it ran may be
+    // newer than what it read
+    static void headsetReadDone() {
+        if (std::exchange(headsetAgain, false))
+            headsetMoved();
+    }
+
+    static void headsetInit() {
+        headsetSettle = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { headsetRead(); }, nullptr);
+        g_pEventLoopManager->addTimer(headsetSettle);
+        auto& L = systemBus();
+        if (!L.conn())
+            return;
+        try {
+            // sender: only bluetoothd may own org.bluez on the system bus
+            transportMatch = L.conn()->addMatchAsync(
+                "type='signal',sender='org.bluez',path_namespace='/org/bluez',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',"
+                "arg0='org.bluez.MediaTransport1'",
+                [](sdbus::Message m) {
+                    std::string                           iface;
+                    std::map<std::string, sdbus::Variant> changed;
+                    try {
+                        m >> iface >> changed;
+                    } catch (...) { return; }
+                    if (iface == "org.bluez.MediaTransport1" && changed.contains("Volume"))
+                        headsetMoved();
+                },
+                [](sdbus::Message) {}, sdbus::return_slot);
+            L.pollSoon();
+        } catch (...) {}
+    }
+
     // ---- the action queue (the Lua face's door) ----
 
     // Actions queue and drain from the event loop, never inside the bind's
@@ -393,6 +481,7 @@ namespace NAwesome::System {
 
     void audioInit() {
         systemBusInit();
+        headsetInit();
         findBacklight();
         findLogindSession();
     }
@@ -402,12 +491,17 @@ namespace NAwesome::System {
         // go with the loop — in-flight callbacks are generation-checked by
         // the teardown bump below.
         queued.reset();
+        if (headsetSettle && g_pEventLoopManager)
+            g_pEventLoopManager->removeTimer(headsetSettle);
+        headsetSettle.reset();
+        headsetArmed = headsetAgain = false;
         for (auto* D : {&sink, &source}) {
             ++D->generation; // a late wpctl callback finds itself outdated
             D->busy    = false;
             D->steps   = 0;
             D->toggles = 0;
             D->level   = -1;
+            D->muted   = false;
         }
         ++brightnessGeneration;
         brightnessBusy    = false;

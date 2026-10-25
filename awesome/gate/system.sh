@@ -1,9 +1,10 @@
 # awesome/gate/system.sh — the system module's behavior battery: the wpctl
 # process path (volume/mic), the readback caps, the repeat serialization,
-# the logind brightness path (a fake logind + backlight), and the touchpad
-# policy probe. Nothing reaches the host: the fake wpctl shadows the
-# nested's PATH (the live PipeWire sink is never touched), and the
-# brightness path talks to the nested's private system bus.
+# the logind brightness path (a fake logind + backlight), a headset's own
+# volume (a fake BlueZ signal), and the touchpad policy probe. Nothing
+# reaches the host: the fake wpctl shadows the nested's PATH (the live
+# PipeWire sink is never touched), and the brightness and headset paths
+# talk to the nested's private system bus.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # ---- the wpctl process path ------------------------------------------------
@@ -68,6 +69,42 @@ chk "system: the capsule is no row (nothing on the badge)" test "$(bd)" = "banne
 hq awesome center >/dev/null; sleep 0.4
 nclear
 chk "system: the shade closes clean" test "$(st)" = "center:0 live:0 dnd:0"
+
+# a Bluetooth headset's own volume (AVRCP absolute volume): no key reaches
+# the binds; BlueZ announces the transport's Volume on the system bus, and
+# the capsule follows the sink's readback — only when something moved
+bt_volume() { # bt_volume <0..127> [own] — a transport's PropertiesChanged, as org.bluez when "own"
+	DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" python3 - "$1" "${2:-own}" <<'PY'
+import sys
+from gi.repository import Gio, GLib
+bus = Gio.DBusConnection.new_for_address_sync(
+    __import__("os").environ["DBUS_SYSTEM_BUS_ADDRESS"],
+    Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION, None, None)
+if sys.argv[2] == "own":
+    bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "RequestName",
+                  GLib.Variant("(su)", ("org.bluez", 4)), GLib.VariantType.new("(u)"), Gio.DBusCallFlags.NONE, 2000, None)
+bus.emit_signal(None, "/org/bluez/hci0/dev_00_00_00_00_00_01/sep1/fd0", "org.freedesktop.DBus.Properties", "PropertiesChanged",
+                GLib.Variant("(sa{sv}as)", ("org.bluez.MediaTransport1", {"Volume": GLib.Variant("q", int(sys.argv[1]))}, [])))
+bus.flush_sync(None)
+PY
+}
+printf '0.42\n' > "$STATE/wpctl-level"
+: > "$STATE/wpctl.log"
+bt_volume 53
+chk "headset: its own volume change shows the capsule" until_is 3 "center:0 live:1 dnd:0" st
+chk "headset: the capsule came from a readback, not a set" bash -c "grep -Fxq 'get-volume @DEFAULT_AUDIO_SINK@' '$STATE/wpctl.log' && ! grep -q '^set-' '$STATE/wpctl.log'"
+nclear
+bt_volume 53
+sleep 0.6
+chk "headset: an announcement that moved nothing shows nothing" test "$(st)" = "center:0 live:0 dnd:0"
+printf '0.37\n' > "$STATE/wpctl-level"
+bt_volume 47 other
+sleep 0.6
+chk "headset: a sender that is not BlueZ moves nothing" test "$(st)" = "center:0 live:0 dnd:0"
+bt_volume 47
+chk "headset: the next real change shows again" until_is 3 "center:0 live:1 dnd:0" st
+rm -f "$STATE/wpctl-level"
+nclear
 
 : > "$STATE/wpctl.log"
 dsp "hl.plugin.awesome.mute()"; sleep 0.4

@@ -653,6 +653,15 @@ pragmatic scan (GTK theme → hicolor → pixmaps), not a full
   process I/O stays off render and input callbacks (the core Jobs pool:
   pidfd-watched, capped, generation-checked); readback rejects
   malformed or non-finite output.
+- **A headset's own volume**: a Bluetooth headset that sets its volume
+  itself (its buttons, a touch strip — AVRCP absolute volume) presses no
+  key, so no action runs. BlueZ announces the transport's new `Volume`
+  on the system bus (only `org.bluez` is heard), and that reads the
+  default sink back: the capsule shows only a level or a mute that
+  moved, so a change on another sink, or the echo of the keys' own set,
+  shows nothing. A burst reads back at most every 120 ms, one wpctl at a
+  time with the keys. A headset without absolute volume sends volume
+  keys (BlueZ's AVRCP input device), which reach the binds.
 - **Touchpad policy**: the touchpad turns off while an external
   (USB/Bluetooth) mouse is present and back on when it's unplugged;
   `XF86TouchpadToggle` flips it by hand, and the flip holds until a
