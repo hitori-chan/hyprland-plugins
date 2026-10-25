@@ -31,6 +31,10 @@ namespace NAwesome::Theme {
     inline constexpr uint32_t FILL_HOVER  = 0x33ffffff; // the same under the pointer, 20 %
     inline constexpr uint32_t TRACK       = 0x29ffffff; // a progress or level track, 16 %
     inline constexpr uint32_t HAIRLINE    = 0x1affffff; // separators, 10 %
+    inline constexpr uint32_t WELL        = 0x38000000; // a field sunk into the glass: the reply field, black 22 %
+    inline constexpr uint32_t WELL_RIM    = 0x14ffffff; // its inner edge, 8 %
+    inline constexpr uint32_t SEND        = 0x24ffffff; // the send circle at rest, 14 %
+    inline constexpr uint32_t SEND_ARROW  = 0xb3ebebf5; // its arrow at rest, 70 %
     inline constexpr uint32_t RIM         = 0x1affffff; // the glass edge, 10 %
     inline constexpr uint32_t LIGHT       = 0x1affffff; // the top edge catching light, 10 %
     inline constexpr uint32_t SHADOW      = 0x47000000; // a card's drop, 28 %
