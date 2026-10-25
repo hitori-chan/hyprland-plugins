@@ -92,8 +92,8 @@ namespace NAwesome::Shell {
             titleChanged();
         });
         supervisor().listen(EV.window.urgent, [](PHLWINDOW) { barChanged(); });
-        supervisor().listen(EV.window.pin, [](PHLWINDOW) { barChanged(); });         // the tasklist's ⌃ marker
-        supervisor().listen(EV.window.floating, [](PHLWINDOW) { barChanged(); });   // the ✈ marker
+        // the tasklist's ⌃ and ✈ markers; one coalesced event after the layout settled
+        supervisor().listen(EV.window.updateState, [](PHLWINDOW, const Desktop::View::SWindowStateUpdate&) { barChanged(); });
         supervisor().listen(EV.window.class_, [](PHLWINDOW) { barChanged(); });     // the task icon re-resolves
         supervisor().listen(EV.window.fullscreen, [](PHLWINDOW) { barChanged(); });
         supervisor().listen(EV.window.moveToWorkspace, [](PHLWINDOW, PHLWORKSPACE) { barChanged(); });
