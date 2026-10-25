@@ -47,7 +47,7 @@ namespace NAwesome {
         // ---- shell ----
         {"plugin:awesome:shell:height", "bar height in logical px (reserve it: monitor reserved top)", Kind::Int, 28, 0, {}, 0, 16, 64},
         {"plugin:awesome:shell:font_size", "text size in logical px (monitor scale applies at raster time)", Kind::Int, 12, 0, {}, 0, 6, 48},
-        {"plugin:awesome:shell:tray_spacing", "px between tray icons", Kind::Int, 10, 0, {}, 0, 0, 64},
+        {"plugin:awesome:shell:tray_spacing", "px between tray icons (macOS's menu-extra rhythm)", Kind::Int, 20, 0, {}, 0, 0, 64},
         {"plugin:awesome:shell:font", "font family, or a Pango family list (the kanji tags take the first face that has them)", Kind::String, 0, 0, Theme::BAR_FONT},
         {"plugin:awesome:shell:terminal", "terminal that runs Terminal=true launcher entries", Kind::String, 0, 0, "alacritty"},
         {"plugin:awesome:shell:col_bg", "the bar's and the launcher's thin glass (the alpha IS the glass)", Kind::Color, 0, 0, {}, Theme::BAR_GLASS},
