@@ -1,30 +1,31 @@
 // awesome/notify/model.hpp — the notify module: the freedesktop notification
-// daemon, the card model, the surfaces (popups, the shade, the
+// daemon, the card model, the surfaces (the banners, the center, the
 // inline-reply field), and the input they own.
 //
-// The full picture lives at the top of notify.cpp; per-module docs at the
-// top of each unit:
+// Per-unit docs at the top of each unit:
 //
 //   bus.cpp     the org.freedesktop.Notifications connection
 //   parse.cpp   the untrusted payload: markup, images, appended bodies
 //   model.cpp   the cards: arrival, residency, merging, DND, the expiry
+//   policy.cpp  the card menu's persisted switches: banners, sounds, mutes
 //   icons.cpp   notification images: content avatars, identity icons,
 //               raw image-data
 //   text.cpp    the pango rasterizer + the keyed text cache + markup
 //               helpers
-//   paint.hpp   the shared card recipes and type scale (on the canvas
+//   paint.cpp   the shared card recipes and type scale (on the canvas
 //               paint context)
-//   popups.cpp  the banner column (the one-card anatomy, hover-✕, springs)
-//   row.cpp     one shade row in its two states, and the bundle recipes
-//   center.cpp  the shade: the display list, the expansion budget, the panel
-//   surface.cpp the canvas layer: warm/draw, damage, ticks
-//   input.cpp   clicks, wheel paging, esc, pointer ownership
-//   reply.cpp   the inline-reply field: its state, its keys, its drawing
+//   card.cpp    one card, banner or center, with its hover chrome
+//   popups.cpp  the banner column and the OSD capsules
+//   stack.cpp   an app's stack: the deck, the spread stack's header
+//   center.cpp  the center: the display list, the expansion budget
+//   menu.cpp    the card menu (Options, or hold left)
+//   surface.cpp the canvas layer: warm/draw, damage, ticks, hover
+//   input.cpp   clicks, the hold, wheel paging, keys, pointer ownership
+//   reply.cpp   the inline-reply field: its state and its keys
 //
 // Everything lives in NAwesome::Notify. The only D-Bus in the plugin is
-// this fd.o daemon (plus the system module's logind reads): the old
-// the old private bus bridge is gone — the shell's bell reads the model
-// directly.
+// this fd.o daemon (plus the system module's logind reads): the old private
+// bus bridge is gone — the shell's bell reads the model directly.
 #pragma once
 
 #include "pixel_model.hpp"
@@ -84,14 +85,10 @@ namespace NAwesome::Notify {
 
     // ---- the model (model.cpp) ----
 
-    // a non-"default" action: a clickable text button on the card
+    // a non-"default" action: a row of the card's Options menu
     struct SAction {
-        std::string  id;      // ActionInvoked key; also the icon name under action-icons
-        std::string  label;   // localized button text
-        SP<ITexture> iconTex; // resolved action-icon (warm; action-icons only)
-        std::string  iconFor; // staleness: the id the icon was resolved from
-        bool         iconSettled = false; // a pending async decode stays false
-        int          iconPx = 0;
+        std::string id;    // ActionInvoked key
+        std::string label; // localized row text
     };
 
     // a body hyperlink (<a href>): a clickable region opening its URL
@@ -197,16 +194,15 @@ namespace NAwesome::Notify {
         // a dismissal outdates it; its result lands only on a matching card.
         uint64_t                      pixelsJob = 0;
         std::unique_ptr<SScaledImage> scaled; // the worker's result, waiting for the warm's upload
-        std::string          defaultAction; // the "default" action key, "" = none; a body click fires it, never a button
+        std::string          defaultAction; // the "default" action key, "" = none; a body click fires it, never a menu row
         bool                 canReply = false;   // the sender offered an "inline-reply" action
         std::string          replyPlaceholder;   // x-kde-reply-placeholder-text
         std::string          replySubmitText;    // x-kde-reply-submit-button-text, else the action's own label
-        std::vector<SAction>    actions;    // non-default actions -> buttons, in Notify order
+        std::vector<SAction>    actions;    // non-default actions -> the Options menu's rows, in Notify order
         std::vector<SBodyImage> bodyImages; // body <img src> thumbnails
-        bool                    actionIcons = false; // the action-icons hint: button ids are icon names
         bool                    resident    = false; // the resident hint: an action keeps the card
         bool                    transient   = false; // the transient hint: bypass history AND residency
-        bool                    conversation = false; // fd.o category im.*/call.*: outranks ordinary cards, never bundles, merges by sender
+        bool                    conversation = false; // fd.o category im.*/call.*: outranks ordinary cards, merges by sender
         bool                    absorbed     = false; // the open shade parked this banner; the close returns it
         std::string             fallbackPick;         // the rolled identity face; survives in-place replaces
 
@@ -332,11 +328,11 @@ namespace NAwesome::Notify {
 
         bool       closeOne(uint32_t id, uint32_t reason);
         void       dismissAllLive(bool offShadeToo = false); // "Clear all": every shade row goes; the DND queue stays
-        void       dismissApp(const std::string& key);    // a bundle's right-click; the key may be (app, group)
+        void       dismissApp(const std::string& key);    // a stack's close button or right-click; the key may be (app, group)
         void       dismissAppAll(const std::string& appKey); // the card menu's "Close All": every shade card of the app, its chats too
         void       lowerBanners(const std::string& appKey);  // a menu switch silenced the app (or a chat): its soft banners go to the shade now
-        std::string groupKeyOf(const SP<SNotif>& n);       // the bundle's identity: the app key, sub-keyed by the declared group
-        bool       bundleable(const SP<SNotif>& n);       // may join an app bundle: conversations never do
+        std::string groupKeyOf(const SP<SNotif>& n);       // the stack's identity: the app key, sub-keyed by the declared group
+        bool       stackable(const SP<SNotif>& n);        // may join its app's stack: a card with an app
         void       absorbPopped();                // opening the shade parks the popped stack
         void       repopAbsorbed(bool repop = true);      // closing it returns the parked stack to banners (or parks it for good)
         // the transcript of the latest `limit` kept messages, chronological
@@ -422,10 +418,6 @@ namespace NAwesome::Notify {
     void        iconsInit();
     void        iconsExit();
 
-    // (Re)build an action button's icon when action-icons is set and its id (an
-    // icon name or a path) changed; clears it when the hint is off.
-    void ensureActionIcon(SNotif& n, SAction& a, int iconPx);
-
     // (Re)build a body <img> thumbnail when its src changed. maxPx caps the
     // decoded raster.
     void ensureBodyImage(SBodyImage& im, int maxPx);
@@ -465,7 +457,7 @@ namespace NAwesome::Notify {
     void centerSelectMove(int dir);                         // ↑/↓: move the keyboard selection, paging to keep it on screen
     bool centerHasRows();                                   // the shade lists something a selection can land on
     void centerDeselect();
-    bool centerSelection(uint32_t& id, std::string& group); // the selected item; group non-empty = a bundle. false = none
+    bool centerSelection(uint32_t& id, std::string& group); // the selected item; group non-empty = a stack. false = none
 
     // the click door (Lua, the bell, `hyprctl awesome center`): deferred and
     // accumulating
@@ -483,10 +475,10 @@ namespace NAwesome::Notify {
     struct SCard {
         enum eKind : uint8_t {
             POPUP = 0,
-            ROW,       // a center card
-            DIGEST,    // a folded app bundle (group = app key)
-            GHEAD,     // an open bundle's header
-            CHILD,     // a bundle's child
+            ROW,       // a center card (group = its stack's key inside an expanded stack)
+            DECK,      // a collapsed stack: its top card and the deck (group = the app key)
+            SHEAD,     // an expanded stack's header: Show Less and its close button
+            CLOSE,     // a card's hover close button (group set: it closes the stack)
             BTN_CLEAR, // the center header's "Clear All": the global sweep
             BTN_DND,   // the center header's moon (do-not-disturb)
             PANEL,     // the center's column: swallows clicks, owns the wheel
@@ -500,17 +492,13 @@ namespace NAwesome::Notify {
         CBox        box;
         uint32_t    id   = 0; // live identity
         uint64_t    rev  = 0; // the card's revision this layout drew: a click acts on what it saw
-        std::string group;    // DIGEST/GHEAD/CHILD: the app key
-        CBox        chevron;      // GHEAD: the fold circle; w = 0 -> none
-        CBox        close;        // GHEAD: the ✕ circle; w = 0 -> none
-        CBox        replyField;   // ROW: the armed inline-reply box (swallows, never acts)
-        CBox        replySend;    // ROW: its send circle
+        std::string group;    // DECK/SHEAD, a stacked ROW, a stack's CLOSE: the app key
+        CBox        less;         // SHEAD: Show Less; w = 0 -> none
+        CBox        close;        // SHEAD: its close button; a card: its hover close button (pushed as a CLOSE)
+        CBox        options;      // POPUP/ROW/DECK: the hover Options button; w = 0 -> none
+        CBox        replyField;   // POPUP/ROW: the armed inline-reply box (swallows, never acts)
+        CBox        replySend;    // POPUP/ROW: its send circle
         bool        folded = false; // ROW: the budget folded it and the open form shows more (a click unfolds)
-        struct SBtn {
-            CBox        box;
-            std::string id;
-        };
-        std::vector<SBtn> buttons; // action-button hit rects (global logical)
         struct SLinkHit {
             CBox        box;
             std::string href;
@@ -520,6 +508,9 @@ namespace NAwesome::Notify {
     extern std::vector<SCard> cards;
     extern PHLMONITORREF      cardsMon; // the monitor the layout ran on
     SCard                     recycledCard(); // an empty card whose vectors keep last frame's capacity
+    // a laid-out card into `cards`, then its hover close button (a CLOSE) if
+    // it drew one
+    void                      pushCard(SCard&& c);
 
     // hover affordance: rows/buttons warm under the pointer. `btn` -1 = the
     // surface itself, >= 0 = that action button; `part` distinguishes the
@@ -528,21 +519,27 @@ namespace NAwesome::Notify {
         uint32_t     id = 0;
         std::string  group;
         SCard::eKind kind = SCard::POPUP;
-        int          btn  = -1;
-        // 0 body, 1 chevron, 2 close, 3 reply field, 4 send
+        // 0 body, 1 Show Less, 2 close, 3 reply field, 4 send, 5 Options
         uint8_t      part = 0;
         bool         operator==(const SHover&) const = default;
     };
     void setHovered(const SHover& h);
+    // The one banner whose clock stops (Model::holdBanner): the card whose
+    // menu is open, else the one a reply is being typed into, else the one
+    // under the pointer. Every change to those three calls it.
+    void refreshBannerHold();
 
     // ---- reply.cpp: the inline-reply field ----
     //
-    // A card whose sender offered "inline-reply" grows a text field in its
-    // open shade row. While one is armed the shade owns EVERY key (the same
-    // grab the shell's menubar prompt takes) — there is no keyboard focus to
-    // hand it, so it takes the keys and gives back what it does not use.
+    // A card whose sender offered "inline-reply" opens a text field under its
+    // words when Reply is picked from its Options (or Tab in the center), in
+    // the banner or the center card alike. While one is armed the notify
+    // layer owns EVERY key (the same grab the shell's menubar prompt takes) —
+    // there is no keyboard focus to hand it, so it takes the keys and gives
+    // back what it does not use.
 
     bool               replyArmedOn(uint32_t id); // this card's field is the armed one
+    uint32_t           replyId();                 // the card the held arm is on; 0 = none
     // an arm is held, live or not: replyArmed() is the liveness test, and a
     // field that died since disarms there
     bool               replyHeld();

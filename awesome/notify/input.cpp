@@ -5,28 +5,33 @@
 //   any card left = act (on the release, over the card it pressed) ·
 //            HOLD left = the card menu (menu.cpp) · right = dismiss ·
 //            middle = nothing (swallowed: the card is ours, not the
-//            window's under it — a terminal must not get a paste)
-//   popup    left = action/link/default → dismiss
-//   row      a shade card IS its banner: left on the body fires the card's
+//            window's under it — a terminal must not get a paste). Under
+//            the pointer (macOS): the close button on the corner dismisses,
+//            Options drops the card menu, its actions first
+//   popup    left = link/default → dismiss · in an opened reply field:
+//            keep typing · its send circle sends
+//   row      a center card IS its banner: left on the body fires the card's
 //            primary (the fd.o `default`) and dismisses unless resident,
 //            same as the popup — cards open by default, so the click is
 //            spent on acting rather than on revealing; a card the budget
-//            folded opens instead · a link opens · a button acts
-//   leaving  anything that RAISES something else closes the shade with it —
-//            the primary, an action button, a link (invokeLive below has
-//            the AOSP citation). Everything that keeps you here does not:
-//            a dismissal, a fold, DND, Clear all, and a `resident` card's
+//            folded opens instead · a link opens
+//   leaving  anything that RAISES something else closes the center with
+//            it — the primary, an action, a link (invokeLive below has the
+//            AOSP citation). Everything that keeps you here does not: a
+//            dismissal, a fold, DND, Clear all, and a `resident` card's
 //            actions, which is the spec's own way of saying the action does
 //            not take you away.
-//   child    a bundle child is a row without the fold: body, links, buttons
-//   digest   left expands the app's bundle · right dismisses
-//   ghead    left collapses · the ✕ / right dismisses the bundle
+//   deck     a collapsed stack: left spreads it · right / its close button
+//            dismisses the stack · Options is its top card's
+//   shead    an expanded stack's header: Show Less collapses · its close
+//            button / right dismisses the stack; its cards are rows
 //   header   the moon = DND · "Clear All" = the global sweep
 //   menu     a row is picked on the left RELEASE — press, hold, slide onto
 //            a row and let go, or click one on the open menu; any other
 //            press closes it, swallowed
 //   wheel    vertical pages the shade — captured only inside the panel box
-//   keys     esc closes an open menu first. While the shade is open it
+//   keys     esc closes an open menu first; an opened reply field (a
+//            banner's too) takes every key. While the center is open it
 //            owns the nav set and nothing else:
 //            esc closes · ↑/↓ move the selection · space folds it (the click's
 //            twin) · enter fires the primary · delete dismisses · tab opens its
@@ -66,8 +71,8 @@ namespace NAwesome::Notify {
         uint32_t     id;
         std::string  group;
         uint32_t     bit;
-        uint8_t      part;   // the SHover part codes: 0 body, 1 chevron, 2 close, 3 reply field, 4 send
-        std::string  action; // non-empty: a specific action button
+        uint8_t      part;   // the SHover part codes: 0 body, 1 Show Less, 2 close, 3 reply field, 4 send, 5 Options
+        CBox         anchor; // part 5: the Options button the menu drops from
         std::string  href;   // non-empty: a body hyperlink
         uint64_t     rev     = 0;     // the card's revision at the press: its layout's actions are that revision's
         bool         outside = false; // the click fell outside every surface (closes the shade)
@@ -81,7 +86,7 @@ namespace NAwesome::Notify {
     static NAwesome::CHopQueue<SHit, 32> hits(drainHits);
     static NAwesome::CHop pendingEsc;
 
-    // most-specific-first: rows/buttons are pushed after the panel they sit on
+    // most-specific-first: rows and their close buttons are pushed after the panel they sit on
     static const SCard* cardAt(const Vector2D& pos) {
         if (cards.empty())
             return nullptr;
@@ -94,13 +99,6 @@ namespace NAwesome::Notify {
         return nullptr;
     }
 
-    static int buttonAt(const SCard& c, const Vector2D& pos) {
-        for (size_t i = 0; i < c.buttons.size(); i++)
-            if (c.buttons[i].box.containsPoint(pos))
-                return (int)i;
-        return -1;
-    }
-
     static int linkAt(const SCard& c, const Vector2D& pos) {
         for (size_t i = 0; i < c.links.size(); i++)
             if (c.links[i].box.containsPoint(pos))
@@ -109,10 +107,14 @@ namespace NAwesome::Notify {
     }
 
     static uint8_t partAt(const SCard& c, const Vector2D& pos) {
-        if (c.chevron.w > 0 && c.chevron.containsPoint(pos))
-            return 1;
-        if (c.close.w > 0 && c.close.containsPoint(pos))
+        if (c.kind == SCard::CLOSE)
             return 2;
+        if (c.less.w > 0 && c.less.containsPoint(pos))
+            return 1;
+        if (c.kind == SCard::SHEAD && c.close.w > 0 && c.close.containsPoint(pos))
+            return 2;
+        if (c.options.w > 0 && c.options.containsPoint(pos))
+            return 5;
         if (c.replySend.w > 0 && c.replySend.containsPoint(pos))
             return 4;
         if (c.replyField.w > 0 && c.replyField.containsPoint(pos))
@@ -130,12 +132,11 @@ namespace NAwesome::Notify {
         h.bit    = bit;
         h.part   = partAt(c, pos);
         h.folded = c.folded;
-        if (bit == 1u && h.part == 0) {
-            if (const int B = buttonAt(c, pos); B >= 0)
-                h.action = c.buttons[B].id;
-            else if (const int L = linkAt(c, pos); L >= 0)
+        if (h.part == 5)
+            h.anchor = c.options;
+        if (bit == 1u && h.part == 0)
+            if (const int L = linkAt(c, pos); L >= 0)
                 h.href = c.links[L].href;
-        }
         // the revision the press's layout drew, not the model's now: a
         // replace that landed after the last frame must not take the click
         h.rev = c.rev;
@@ -169,16 +170,14 @@ namespace NAwesome::Notify {
         switch (c.kind) {
             case SCard::POPUP:
             case SCard::ROW:
-            case SCard::CHILD:
-            case SCard::DIGEST:
-            case SCard::GHEAD: return h.part != 3 && h.part != 4 && CardMenu::canOpen(c.id); // the reply field is typed in, never held
+            case SCard::DECK: return h.part == 0 && CardMenu::canOpen(c.id); // the reply field is typed in, Options clicked, never held
             default: return false;
         }
     }
 
     // ---- the deferred drain: what each surface DOES ----
 
-    // Firing a card's primary (or one of its buttons) LEAVES: the sender
+    // Firing a card's primary (or one of its actions) LEAVES: the sender
     // raises itself over the very shade the click was made in, so the shade
     // must get out of the way. Android does exactly this —
     // StatusBarNotificationActivityStarter collapses the shade on a
@@ -194,7 +193,7 @@ namespace NAwesome::Notify {
     // shade goes exactly when the card does. A card with no action at all
     // launches nothing: that click is a dismissal, and dismissing never
     // closes the shade, here or on a phone.
-    static void invokeLive(uint32_t id, const std::string& actionOverride, std::optional<uint64_t> rev = std::nullopt) {
+    void invokeLive(uint32_t id, const std::string& actionOverride, std::optional<uint64_t> rev) {
         std::string action   = actionOverride;
         std::string sender; // the X11 activation lookup, captured before close-on-act
         bool        resident = false, live = false;
@@ -236,6 +235,20 @@ namespace NAwesome::Notify {
         hits.push(std::move(h));
     }
 
+    // an opened reply field's parts: true when the click was the field's
+    static bool replyPart(const SHit& H) {
+        if (H.part == 3) // inside the field: keep typing
+            return true;
+        if (H.part != 4)
+            return false;
+        const auto TX = replyText(); // its send circle
+        const auto TG = replyTargetKey();
+        replyClose();
+        if (!TX.empty() && !Bus::sendReply(H.id, TX, TG))
+            replySendRefused(H.id, TX, TG);
+        return true;
+    }
+
     static void drainHits(std::vector<SHit>& batch) {
         for (const auto& H : batch) {
             if (H.outside) { // a click off every surface closes the center
@@ -250,71 +263,74 @@ namespace NAwesome::Notify {
                     }
                     if (H.bit != 1u)
                         continue;
+                    if (H.part == 5) {
+                        CardMenu::openBelow(H.id, H.anchor);
+                        continue;
+                    }
+                    if (replyPart(H))
+                        continue;
                     if (!H.href.empty()) { // left on a hyperlink: open it, keep the card up
                         NAwesome::Jobs::inst().spawn(NAwesome::Jobs::OPEN, {"xdg-open", H.href.c_str(), nullptr});
                         continue;
                     }
-                    invokeLive(H.id, H.action, H.rev);
+                    invokeLive(H.id, "", H.rev);
                     continue;
                 }
-                case SCard::ROW:
-                case SCard::CHILD: {
+                case SCard::ROW: {
                     if (H.bit == 2u) {
                         Model::closeOne(H.id, Model::R_DISMISSED);
                         continue;
                     }
                     if (H.bit != 1u)
                         continue;
+                    if (H.part == 5) {
+                        CardMenu::openBelow(H.id, H.anchor);
+                        continue;
+                    }
                     if (H.folded) { // a folded card opens before it acts
                         centerToggleRow(H.id);
                         continue;
                     }
-                    if (H.part == 3) // inside the armed field: keep typing
+                    if (replyPart(H))
                         continue;
-                    if (H.part == 4) { // its send pill
-                        const auto TX = replyText();
-                        const auto TG = replyTargetKey();
-                        replyClose();
-                        if (!TX.empty() && !Bus::sendReply(H.id, TX, TG))
-                            replySendRefused(H.id, TX, TG);
-                        continue;
-                    }
-                    if (H.action == "inline-reply") { // the chip arms the field
-                        replyOpen(H.id);
-                        continue;
-                    }
-                    if (!H.action.empty()) {
-                        invokeLive(H.id, H.action, H.rev);
-                        continue;
-                    }
                     if (!H.href.empty()) { // a link in the body: open it, keep the card
                         NAwesome::Jobs::inst().spawn(NAwesome::Jobs::OPEN, {"xdg-open", H.href.c_str(), nullptr});
-                        setCenter(false); // but not the shade: a browser is coming up over it
+                        setCenter(false); // but not the center: a browser is coming up over it
                         continue;
                     }
                     invokeLive(H.id, "", H.rev); // the body IS the card's primary, as on the banner
                     continue;
                 }
-                case SCard::DIGEST: {
-                    if (H.bit == 1u) { // left expands the app's bundle
-                        centerToggleGroup(H.group);
-                        continue;
-                    }
-                    if (H.bit == 2u) { // right: the whole bundle goes
+                case SCard::DECK: {
+                    if (H.bit == 2u) { // right: the whole stack goes
                         Model::dismissApp(H.group);
                         continue;
                     }
+                    if (H.bit != 1u)
+                        continue;
+                    if (H.part == 5)
+                        CardMenu::openBelow(H.id, H.anchor); // its top card's
+                    else
+                        centerToggleGroup(H.group); // left spreads the stack
                     continue;
                 }
-                case SCard::GHEAD: {
-                    if (H.bit == 2u || (H.bit == 1u && H.part == 2)) { // right / the ✕: the whole bundle goes
+                case SCard::SHEAD: {
+                    if (H.bit == 2u || (H.bit == 1u && H.part == 2)) { // right / its close button: the whole stack goes
                         Model::dismissApp(H.group);
                         continue;
                     }
-                    if (H.bit == 1u)
-                        centerToggleGroup(H.group); // collapse
+                    if (H.bit == 1u && H.part == 1)
+                        centerToggleGroup(H.group); // Show Less
                     continue;
                 }
+                case SCard::CLOSE: // a card's close button; a deck's closes its stack
+                    if (H.bit == 1u || H.bit == 2u) {
+                        if (H.group.empty())
+                            Model::closeOne(H.id, Model::R_DISMISSED);
+                        else
+                            Model::dismissApp(H.group);
+                    }
+                    continue;
                 case SCard::BTN_CLEAR: // the footer: the global sweep
                     if (H.bit == 1u)
                         Model::dismissAllLive();
@@ -493,13 +509,13 @@ namespace NAwesome::Notify {
     struct SKeyAct {
         int      verb = 0; // 1 fold, 2 the primary, 3 dismiss
         uint32_t    id   = 0;
-        std::string group; // non-empty: a bundle
+        std::string group; // non-empty: a stack
         std::optional<uint64_t> rev; // enter: the revision the selected row drew
     };
     static void drainKeys(std::vector<SKeyAct>& batch) {
         for (const auto& A : batch) {
             const bool GROUP = !A.group.empty();
-            if (A.verb == 1 || (A.verb == 2 && GROUP)) { // space, and enter on a bundle: fold
+            if (A.verb == 1 || (A.verb == 2 && GROUP)) { // space, and enter on a stack: spread or collapse
                 if (GROUP)
                     centerToggleGroup(A.group);
                 else
@@ -531,7 +547,7 @@ namespace NAwesome::Notify {
         }
         replyKeyEvent(e); // a press or the held key's release ends its repeat
         const bool MENU = CardMenu::isOpen();
-        if ((!centerVisible() && !MENU) || info.cancelled)
+        if ((!centerVisible() && !MENU && !replyHeld()) || info.cancelled)
             return;
         // input-capture-v1 is fed after the plugin emissions: while a client
         // owns the physical stream, the shade must not cancel a key first
@@ -561,7 +577,7 @@ namespace NAwesome::Notify {
                 pendingEsc.arm([]() { CardMenu::close(); });
                 return;
             }
-            if (!centerVisible())
+            if (!centerVisible() && !replyHeld())
                 return;
         }
 
@@ -586,6 +602,8 @@ namespace NAwesome::Notify {
                 info.cancelled = true;
             return;
         }
+        if (!centerVisible())
+            return; // a banner's field, gone: the rest is the center's
 
         // a modified chord is a user bind passing through, never the shade's
         for (const char* M : {XKB_MOD_NAME_CTRL, XKB_MOD_NAME_ALT, XKB_MOD_NAME_LOGO})
@@ -644,7 +662,7 @@ namespace NAwesome::Notify {
         // enter acts on what the row drew, like a click: a replace that
         // landed since the last frame must not take it
         if (a.verb == 2 && a.group.empty())
-            if (const auto IT = std::ranges::find_if(cards, [&](const SCard& c) { return c.id == a.id && (c.kind == SCard::ROW || c.kind == SCard::CHILD); }); IT != cards.end())
+            if (const auto IT = std::ranges::find_if(cards, [&](const SCard& c) { return c.id == a.id && c.kind == SCard::ROW; }); IT != cards.end())
                 a.rev = IT->rev;
 
         info.cancelled = true;
@@ -733,20 +751,18 @@ namespace NAwesome::Notify {
 
         // per motion: the hover (and its group key's copy) is rebuilt only
         // when it changed
-        const int     BTN  = buttonAt(*CARD, P);
-        const uint8_t PART = BTN >= 0 ? 0 : partAt(*CARD, P);
-        if (hovered.kind != CARD->kind || hovered.id != CARD->id || hovered.btn != BTN || hovered.part != PART || hovered.group != CARD->group) {
+        const uint8_t PART = partAt(*CARD, P);
+        if (hovered.kind != CARD->kind || hovered.id != CARD->id || hovered.part != PART || hovered.group != CARD->group) {
             SHover h;
             h.kind  = CARD->kind;
             h.id    = CARD->id;
             h.group = CARD->group;
-            h.btn   = BTN;
             h.part  = PART;
             setHovered(h);
         }
         info.cancelled = true;
 
-        const bool ONLINK = BTN < 0 && PART == 0 && linkAt(*CARD, P) >= 0; // a hyperlink shows the hand (GTK convention)
+        const bool ONLINK = PART == 0 && linkAt(*CARD, P) >= 0; // a hyperlink shows the hand (GTK convention)
 
         const bool ENTERING = !pointerOwned;
         if (ENTERING || !g_pSeatManager->m_state.pointerFocus.expired()) {
@@ -777,8 +793,7 @@ namespace NAwesome::Notify {
             h.kind  = CARD->kind;
             h.id    = CARD->id;
             h.group = CARD->group;
-            h.btn   = buttonAt(*CARD, COORDS);
-            h.part  = h.btn >= 0 ? 0 : partAt(*CARD, COORDS);
+            h.part  = partAt(*CARD, COORDS);
             setHovered(h);
         } else
             setHovered({});

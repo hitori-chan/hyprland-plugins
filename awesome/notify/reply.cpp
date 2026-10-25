@@ -4,11 +4,15 @@
 // that sees the "inline-reply" capability adds an action keyed `inline-reply`
 // and waits for a NotificationReplied signal. Telegram Desktop checks the
 // capability and offers NO reply affordance at all when it is missing, so
-// advertising it is the whole difference between replying from the shade and
+// advertising it is the whole difference between replying from a banner and
 // having to raise the app.
 //
+// As on macOS the field opens on demand — Reply in the card's Options (or
+// Tab on the center's selection) — under the card's words, in the banner or
+// the center card alike; the banner holds its clock while it is open.
+//
 // The hard part is that we have no keyboard focus to give a text field: the
-// shade is drawn by the compositor, not by a layer surface with
+// cards are drawn by the compositor, not by a layer surface with
 // keyboard_interactivity. So the field TAKES the keyboard the way the shell's
 // menubar prompt does — while one is armed every key press is ours, and the
 // ones we have no use for are simply dropped rather than leaking into
@@ -35,8 +39,13 @@ namespace NAwesome::Notify {
     static NAwesome::CHop s_pendingSend;
     static NAwesome::Keys::CRepeat s_repeat; // a held key types on (core/keys.hpp)
 
+    // the card's field can show: it is a banner, or a card of the open center
+    static bool onScreen(const SP<SNotif>& n) {
+        return !n->waiting && (centerVisible() ? !Model::offShade(n) : n->banner);
+    }
+
     // Self-healing: the card can be dismissed, expire or be swept while the
-    // user is mid-sentence, the shade can close under it, its sender can
+    // user is mid-sentence, the center can close under it, its sender can
     // leave the bus (canReply drops) and a replace can move it to another
     // conversation. A stale arm would go on eating every keystroke in the
     // session and send into nowhere, so the check IS the liveness test
@@ -44,13 +53,15 @@ namespace NAwesome::Notify {
     bool               replyArmed() {
         if (!s_id)
             return false;
-        if (centerVisible())
-            if (const auto N = Model::byId(s_id); N && N->canReply && replyTarget(*N) == s_target)
-                return true;
+        if (const auto N = Model::byId(s_id); N && N->canReply && replyTarget(*N) == s_target && onScreen(N))
+            return true;
         s_id = 0;
         s_text.clear();
         s_repeat.stop();
         return false;
+    }
+    uint32_t replyId() {
+        return s_id;
     }
     bool replyHeld() {
         return s_id != 0;
@@ -69,21 +80,24 @@ namespace NAwesome::Notify {
         if (s_id == id)
             return;
         const auto N = Model::byId(id);
-        if (!N || !N->canReply) // replaced since its chip was laid out
+        if (!N || !N->canReply || !onScreen(N)) // replaced or gone since its menu was laid out
             return;
+        s_repeat.stop();
         s_id     = id;
         s_target = replyTarget(*N);
         s_text.clear();
+        refreshBannerHold(); // a banner holds its clock while its field is open
         notifChanged();
     }
 
     void replySendRefused(uint32_t id, const std::string& text, const std::string& target) {
         const auto N = Model::byId(id);
-        if (!N || !N->canReply || replyTarget(*N) != target || !centerVisible() || (s_id && s_id != id))
+        if (!N || !N->canReply || replyTarget(*N) != target || !onScreen(N) || (s_id && s_id != id))
             return; // the card moved on (or another field is armed): nothing to put back into
         s_id     = id;
         s_target = target;
         s_text   = text;
+        refreshBannerHold();
         notifChanged();
     }
 
@@ -93,6 +107,7 @@ namespace NAwesome::Notify {
             return;
         s_id = 0;
         s_text.clear();
+        refreshBannerHold();
         notifChanged();
     }
 

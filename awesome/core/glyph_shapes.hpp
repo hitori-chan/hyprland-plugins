@@ -32,6 +32,8 @@ namespace NAwesome::Glyph {
         CLOSE,
         SEND,
         CHECK,
+        DISMISS,  // the hover close button's cross, drawn at 8 px on its own 10-unit grid
+        DISCLOSE, // the Options button's chevron, likewise
         COUNT_,
     };
 
@@ -75,6 +77,8 @@ namespace NAwesome::Glyph {
         {16, 16, "<path " AW_STROKE " d=\"M4.5 4.5l7 7M11.5 4.5l-7 7\"/>"},
         {16, 16, "<path " AW_STROKE_W("1.7") " d=\"M8 12.6V3.8M4.6 7.1L8 3.7l3.4 3.4\"/>"},
         {16, 16, "<path " AW_STROKE_W("1.6") " d=\"M3.4 8.4l3 3 6.2-6.6\"/>"},
+        {10, 10, "<path " AW_STROKE_W("1.6") " d=\"M2 2l6 6M8 2l-6 6\"/>"},
+        {10, 10, "<path " AW_STROKE_W("1.5") " d=\"M2.2 3.8L5 6.6l2.8-2.8\"/>"},
     }};
 #undef AW_STROKE
 #undef AW_STROKE_W

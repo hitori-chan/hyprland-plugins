@@ -7,12 +7,12 @@
 
 # ---- geometry (derived from notify/ui.hpp, notify/center.cpp) ------------
 # the column's right inset, a card's width, the center's top; the first
-# center card starts under its 28 px header + 4 px gap
+# center card starts under its 28 px controls row + the 8 px gap
 N_EDGE=12
 N_W=356
 N_TOP=40
 PANEL_X=$((MON_W - N_EDGE - N_W))
-CARD_Y=$((N_TOP + 28 + 4))
+CARD_Y=$((N_TOP + 28 + 8))
 ROWX=$((PANEL_X + 90))
 ROWY=$((CARD_Y + 24))
 POPX=$((MON_W - N_EDGE - N_W / 2))
@@ -179,8 +179,8 @@ PY
 
 # ---- pixels ------------------------------------------------------------------------
 panel_bottom() { # panel_bottom <frame> — the center column's last lit row (0 when empty)
-	# from inside the first card down: the heading above it is text, not a
-	# fill, and the cards stand 8 px apart (a gap past 12 rows ends it)
+	# from inside the first card down: the controls row above it is left
+	# out, and the cards stand 8 px apart (a gap past 12 rows ends it)
 	python3 - "$1" "$MON_W" "$CARD_Y" <<'PY'
 import sys
 from PIL import Image

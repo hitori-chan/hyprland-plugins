@@ -1,6 +1,6 @@
 // awesome/notify/ui.hpp — the surface machinery shared by the notify
-// drawing units (popups, center, card, bundle, menu, surface). Private to
-// the module: the public map lives in notify.hpp.
+// drawing units (popups, center, card, stack, menu, surface). Private to
+// the module: its map lives at the top of model.hpp.
 //
 // "center" throughout means the SHADE: one list of live cards, Android's
 // notification shade.
@@ -50,17 +50,25 @@ namespace NAwesome::Notify {
     }
 
     // the card
-    inline constexpr double PADX = 14, PADY = 12, CHILD_PADY = 9, ICON_GAP = 12;
+    inline constexpr double PADX = 14, PADY = 12, ICON_GAP = 12;
     inline constexpr double META_GAP = 8;   // title -> the meta at the row's right
     inline constexpr double ROW_GAP = 2;    // the title row -> the body
-    inline constexpr double BLOCK_GAP = 10; // the full-width blocks: hero, buttons, the reply field
+    inline constexpr double BLOCK_GAP = 10; // the full-width blocks: the hero, the reply field
     inline constexpr double PROGRESS_H = 4, PROGRESS_GAP = 8;
     inline constexpr double HERO_CAP = 160;
-    inline constexpr double BTN_H = 28, BTN_PADX = 10, BTN_GAP = 6, BTN_ICON = 15, BTN_ICON_GAP = 6;
     inline constexpr double BODYIMG_H = 96, IMG_GAP = 6, IMG_ROW_GAP = 8;
     inline constexpr double FIELD_H = 30, SEND_D = 22, SEND_ARROW = 12; // the reply field, its send circle and arrow
     inline constexpr double FIELD_PADL = 12, FIELD_GAP = 6, FIELD_PADR = 4; // the text's inset, its room before the circle, the circle's off the end
     inline constexpr double PILL_H = 16;               // the unread count beside a chat's title
+
+    // macOS's hover chrome: the close button overhanging the card's top-left
+    // corner, and Options in the meta's place on a card with actions
+    inline constexpr double CLOSE_D = 20, CLOSE_OUT = 7, CLOSE_GLYPH = 8;
+    inline constexpr double OPT_H = 20, OPT_PADL = 9, OPT_PADR = 7, OPT_GAP = 4, OPT_GLYPH = 8;
+    // how far that chrome reaches past its card: the overhang and its drop
+    // (paintChip), so a hover change damages all of it
+    inline constexpr double CHIP_DROP = 8, CHIP_SINK = 3;
+    inline constexpr double CHROME_REACH = CLOSE_OUT + CHIP_DROP + CHIP_SINK;
 
     // The identity badge, as ratios of the avatar it rides: an 18 px disc on
     // a 36 px face whose white ring (1.5 px) cuts the app glyph free of
@@ -68,9 +76,14 @@ namespace NAwesome::Notify {
     inline constexpr double BADGE_D = 18.0 / 36.0, BADGE_OUT = 3.0 / 36.0, BADGE_RING = 1.5 / 18.0;
 
     // the center
-    inline constexpr double HEADER_H = 28, HEADER_GAP = 4; // the controls' row: the moon, "Clear All"
-    inline constexpr double GROUP_HEAD_H = 40, GROUP_ICON = 20, CIRCLE = 22, TAIL_H = 30; // a bundle's header and its "+N more"
+    inline constexpr double HEADER_H = 28, HEADER_GAP = 8; // the controls' row (the moon, "Clear All"), then the column's 8 px
+    inline constexpr double CAP_H = 24, CAP_PADX = 10, CAP_GAP = 6; // its glass capsules, and a stack's
     inline constexpr double EMPTY_H = 56;
+    // A collapsed stack (macOS): its newest card over a deck of up to two
+    // layers, each 12 px narrower a side and 8 px lower than the one above;
+    // only their bottom 30 px ever shows past the card.
+    inline constexpr double DECK_INSET = 12, DECK_STEP = 8, DECK_H = 30, DECK_ROUND = 16;
+    inline constexpr size_t DECK_LAYERS = 2;
 
     // ---- paint.cpp: the type scale, motion, radii, card recipes ----
 
@@ -97,8 +110,11 @@ namespace NAwesome::Notify {
     bool                hasLeadIcon(const SNotif& n, bool shade = false);
     void                paintProgress(const SPaint& P, double x, double y, double w, int pct, bool critical);
     void                paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool withBadge, float rp, bool shade = false);
-    // a glass button: a filled pill, its label (and icon) centered
-    void                paintButton(const SPaint& P, const CBox& box, const SCachedText* label, const SP<ITexture>& icon, bool hover);
+    // a small control floating on glass (the close button, a stack's Show
+    // Less): its own drop, the chip glass, the rim
+    void                paintChip(const SPaint& P, const CBox& box, bool hover);
+    // the glass under the pointer lifts a step, as macOS's platter does
+    CHyprColor          liftedGlass(const CHyprColor& c);
     // a centered texture in a logical cell
     void                texCentered(const SPaint& P, const SCachedText* t, const CBox& cell);
 
@@ -158,12 +174,16 @@ namespace NAwesome::Notify {
     struct SCardForm {
         enum eWhere : uint8_t {
             BANNER, // the column: relative age, the hero, inline images, max_height
-            CENTER, // the center: clock time, the reply field, folds
-            CHILD,  // inside a bundle: no icon, no glass of its own
+            CENTER, // the center: clock time, folds
         };
         eWhere where = BANNER;
-        bool   open  = true; // CENTER: folded = the title row and the newest line
+        bool   open  = true;  // CENTER: folded = the title row and the newest line
+        bool   deck  = false; // CENTER: a collapsed stack's top card — its hit is the stack's
     };
+
+    // the card's hover chrome shows: the pointer is on it or its close
+    // button, or its menu is open
+    bool chromeOn(uint32_t id, SCard::eKind kind);
 
     // Lays out and (outside a warm) paints one card at box.x/y, box.w wide;
     // returns its height and fills `hit`.
@@ -171,18 +191,25 @@ namespace NAwesome::Notify {
     // the same code with a context that draws nothing — the budget's ruler
     double measureCard(const SPaint& P, const SType& T, const SP<SNotif>& N, double w, const SCardForm& F);
 
-    // ---- bundle.cpp: an app's cards folded into one ----
+    // ---- stack.cpp: an app's cards stacked under the newest ----
 
-    // a display item: one card, or an app's bundle of them (newest first)
+    // a display item: one card, or an app's stack of them (newest first)
     struct SDisp {
         std::vector<SP<SNotif>> items;
-        std::string             key; // the app key (bundles)
+        std::string             key; // the app key (stacks)
     };
 
-    double digestH(const SType& T, size_t count, double scale); // the folded bundle's height
-    double groupChromeH(bool cut);                              // an open bundle's header (+ its tail when cut)
-    void   paintDigest(const SPaint& P, const SType& T, const SDisp& D, const CBox& box);
-    void   paintGroup(const SPaint& P, const SType& T, const SDisp& D, const CBox& box, const std::vector<double>& childH);
+    // the deck's layers under a collapsed stack of `count` cards, and how far
+    // they reach below its top card
+    size_t deckLayers(size_t count);
+    double deckDepth(size_t count);
+    // the deck under a top card at `top` (paint it first: the card covers it)
+    void   paintDeck(const SPaint& P, const CBox& top, size_t count);
+    // an expanded stack's header: Show Less and the close button, right-aligned
+    // on glass of their own; pushes its hit
+    void   paintStackHead(const SPaint& P, const SType& T, const SDisp& D, const CBox& row);
+    // "+N more" under an expanded stack the page cuts
+    void   paintStackTail(const SPaint& P, const SType& T, size_t more, const CBox& row);
 
     // ---- popups.cpp / center.cpp: the surfaces ----
 
@@ -192,11 +219,18 @@ namespace NAwesome::Notify {
     bool popupsAnimating(); // any arrival spring still running
     bool centerAnimating(); // the open spring still running
 
-    // ---- menu.cpp: the card menu (hold left on a card) ----
+    // ---- input.cpp: acting on a card ----
+
+    // fire the card's action (empty: its primary) as the revision `rev` drew
+    // it, closing it unless resident; the center goes with it (input.cpp)
+    void invokeLive(uint32_t id, const std::string& action, std::optional<uint64_t> rev = std::nullopt);
+
+    // ---- menu.cpp: the card menu (Options, or hold left on a card) ----
 
     namespace CardMenu {
         bool     canOpen(uint32_t id); // a notification (never feedback) the user can see
-        bool     open(uint32_t id, const Vector2D& at);
+        bool     open(uint32_t id, const Vector2D& at); // the hold: its corner at the pointer
+        bool     openBelow(uint32_t id, const CBox& anchor); // Options: dropped from the button, right edges aligned
         void     close();
         bool     isOpen();
         uint32_t owner(); // the card it belongs to; 0 = none open

@@ -158,7 +158,7 @@ namespace NAwesome::Notify::Bus {
     // block; the model's other hints are basic values, cheap as Variants;
     // every other value is walked past without a copy (skipOne), and so is
     // every hint past MAX_HINTS kept and every action string past
-    // MAX_ACTION_STRINGS (the model keeps 8 buttons, the default and the
+    // MAX_ACTION_STRINGS (the model keeps 8 menu rows, the default and the
     // reply). A walk is linear in elements (~0.2-1 us each): past
     // MAX_WALKED of them a call is refused, the defined behavior at a bound
     // only a hostile sender reaches.
@@ -399,7 +399,7 @@ namespace NAwesome::Notify::Bus {
                                    throw sdbus::Error{sdbus::Error::Name{"org.freedesktop.Notifications.Error"}, "Unknown notification ID"};
                            }),
                            sdbus::registerMethod("GetCapabilities").withOutputParamNames("capabilities").implementedAs([]() {
-                               return std::vector<std::string>{"actions", "action-icons", "body", "body-markup", "body-hyperlinks", "body-images", "icon-static", "inline-reply", "persistence", "sound"};
+                               return std::vector<std::string>{"actions", "body", "body-markup", "body-hyperlinks", "body-images", "icon-static", "inline-reply", "persistence", "sound"};
                            }),
                            sdbus::registerMethod("GetServerInformation").withOutputParamNames("name", "vendor", "version", "spec_version").implementedAs([]() {
                                return std::tuple<std::string, std::string, std::string, std::string>{"awesome", "hitori", NAwesome::VERSION, "1.3"};

@@ -131,17 +131,20 @@ namespace NAwesome::Notify {
             P.tex(t->tex, cell.x + (cell.w - t->tex->m_size.x / P.scale) / 2, cell.y + (cell.h - t->tex->m_size.y / P.scale) / 2);
     }
 
-    void paintButton(const SPaint& P, const CBox& box, const SCachedText* label, const SP<ITexture>& icon, bool hover) {
-        P.rect(box, hover ? tFillHover() : tFill(), (int)std::lround(Theme::RAD_BUTTON * P.scale), rPow());
-        const double LW = texW(label, P.scale);
-        const double IW = icon && icon->m_texID ? BTN_ICON + (LW > 0 ? BTN_ICON_GAP : 0) : 0;
-        double       x  = box.x + (box.w - IW - LW) / 2;
-        if (IW > 0) {
-            P.texFit(icon, CBox{x, box.y + (box.h - BTN_ICON) / 2, BTN_ICON, BTN_ICON}, 0);
-            x += IW;
-        }
-        if (label && label->tex)
-            P.tex(label->tex, x, box.y + (box.h - label->tex->m_size.y / P.scale) / 2);
+    void paintChip(const SPaint& P, const CBox& box, bool hover) {
+        const int R = (int)std::lround(std::min(box.w, box.h) / 2 * P.scale);
+        P.shadow(CBox{box}.expand(CHIP_DROP).translate(Vector2D{0.0, CHIP_SINK}), R, 2.f, (int)CHIP_DROP);
+        P.glass(box, tChip(), R, 2.f);
+        if (hover)
+            P.rect(box, tFill(), R, 2.f);
+        P.ring(box, NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_frame")), R, 2.f);
+    }
+
+    // macOS's platter under the pointer: a touch lighter, a touch thicker
+    // (rgba 38,38,44,.56 -> 44,44,52,.62 on its board)
+    CHyprColor liftedGlass(const CHyprColor& c) {
+        const auto UP = [](double v, double by) { return (float)std::min(1.0, v + by); };
+        return CHyprColor{UP(c.r, 6 / 255.0), UP(c.g, 6 / 255.0), UP(c.b, 8 / 255.0), UP(c.a, 0.06)};
     }
 
 } // namespace NAwesome::Notify
