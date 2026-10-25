@@ -249,16 +249,28 @@ namespace NAwesome::Shell {
         IWidget* const   LEFT[]  = {&taglistWidget()};
         IWidget* const   RIGHT[] = {&trayWidget(), &batteryWidget(), &bellWidget(), &clockWidget()};
 
-        double           x = MB.x + INSET;
+        // Fitts: a pointer thrown into a screen corner stops there, so the
+        // corners are the bar's easiest targets — the slot at each end owns
+        // its edge, never a dead inset. Every hit spans the bar's height.
+        const size_t LEFT_HITS = P.hits->size();
+        double       x         = MB.x + INSET;
         for (auto* const W : LEFT) {
             const double WD = std::min(W->fit(P, F), std::max(0.0, MB.x + MB.w - x));
             if (WD > 0)
                 W->draw(P, F, CBox{x, MB.y, WD, H});
             x += WD;
         }
+        if (P.hits->size() > LEFT_HITS) {
+            auto& FIRST = (*P.hits)[LEFT_HITS].box;
+            FIRST.w += FIRST.x - MB.x;
+            FIRST.x = MB.x;
+            auto& LAST = P.hits->back().box;
+            LAST.w     = std::max(LAST.w, x + SLOT_GAP / 2 - LAST.x);
+        }
 
-        double right = MB.x + MB.w - RIGHT_INSET;
-        bool   first = true;
+        const size_t RIGHT_HITS = P.hits->size();
+        double       right      = MB.x + MB.w - RIGHT_INSET;
+        bool         first      = true;
         for (size_t i = std::size(RIGHT); i-- > 0;) {
             // Keep the right slot inside the space left by the taglist. If a
             // narrow output cannot fit every widget, leftmost right-side
@@ -270,6 +282,27 @@ namespace NAwesome::Shell {
                 RIGHT[i]->draw(P, F, CBox{right, MB.y, WD, H});
                 first = false;
             }
+        }
+        // the right slot's cells meet halfway across each gap, the leftmost
+        // reaches half a gap out, the rightmost (the clock) the screen's edge
+        if (P.hits->size() > RIGHT_HITS) {
+            const auto BEGIN = P.hits->begin() + (std::ptrdiff_t)RIGHT_HITS;
+            std::sort(BEGIN, P.hits->end(), [](const SHit& a, const SHit& b) { return a.box.x < b.box.x; });
+            for (auto it = BEGIN; it + 1 != P.hits->end(); ++it) {
+                auto&        A   = it->box;
+                auto&        B   = (it + 1)->box;
+                const double MID = std::round((A.x + A.w + B.x) / 2);
+                if (MID > A.x + A.w && MID < B.x) {
+                    A.w = MID - A.x;
+                    B.w += B.x - MID;
+                    B.x = MID;
+                }
+            }
+            auto& L = BEGIN->box;
+            L.w += RIGHT_GAP / 2;
+            L.x -= RIGHT_GAP / 2;
+            auto& R = P.hits->back().box;
+            R.w     = MB.x + MB.w - R.x;
         }
 
         // the tasklist splits the whole leftover strip, 14 px off each slot

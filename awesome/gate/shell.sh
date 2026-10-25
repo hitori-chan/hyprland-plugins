@@ -31,8 +31,10 @@ capture_nested "$STATE/strip-ws3.png"
 # the viewed tag is accent text, the rest never accent
 chk "shell: the viewed tag draws in the accent" test "$(accent_px "$STATE/strip-ws3.png" 64 90)" -gt 15
 chk "shell: a tag not viewed draws no accent" test "$(accent_px "$STATE/strip-ws3.png" 8 34)" = 0
-dsp "hl.dsp.focus({workspace=\"1\"})"; sleep 0.8
-chk "shell: back on workspace 1" test "$(ws)" = 1
+# Fitts: the screen's corner is tag 一's — a click thrown into it views 1
+printf 'move 0 0\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' | vp
+sleep 1.2
+chk "shell: a click in the top-left corner views workspace 1" test "$(ws)" = 1
 
 # ---- tags: hover lifts the text, never a ground ------------------------------
 # an empty tag's dim kanji lights to the bar's text under the pointer, and
