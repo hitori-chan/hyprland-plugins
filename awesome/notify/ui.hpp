@@ -58,7 +58,8 @@ namespace NAwesome::Notify {
     inline constexpr double HERO_CAP = 160;
     inline constexpr double BTN_H = 28, BTN_PADX = 10, BTN_GAP = 6, BTN_ICON = 15, BTN_ICON_GAP = 6;
     inline constexpr double BODYIMG_H = 96, IMG_GAP = 6, IMG_ROW_GAP = 8;
-    inline constexpr double FIELD_H = 32, SEND_D = 24; // the reply field and its send circle
+    inline constexpr double FIELD_H = 30, SEND_D = 22, SEND_ARROW = 12; // the reply field, its send circle and arrow
+    inline constexpr double FIELD_PADL = 12, FIELD_GAP = 6, FIELD_PADR = 4; // the text's inset, its room before the circle, the circle's off the end
     inline constexpr double PILL_H = 16;               // the unread count beside a chat's title
 
     // The identity badge, as ratios of the avatar it rides: an 18 px disc on

@@ -249,7 +249,7 @@ namespace NAwesome::Notify {
         const SCachedText*       ENTRY = nullptr;
         const SCachedText*       HINT  = nullptr;
         if (REPLY) {
-            const int FIELDPX = std::max(1, (int)std::floor((INNERW - 2 * BTN_PADX - SEND_D) * P.scale));
+            const int FIELDPX = std::max(1, (int)std::floor((INNERW - FIELD_PADL - FIELD_GAP - SEND_D - FIELD_PADR) * P.scale));
             const auto& TXT   = ARMED ? replyText() : PLACEHOLDER; // the field shows its text only while armed
             if (ARMED && !TXT.empty())
                 ENTRY = cachedText(TXT, COLTITLE, T.action, FIELDPX, -1, 0, false, 400, nullptr, true);
@@ -345,14 +345,16 @@ namespace NAwesome::Notify {
         if (REPLY) {
             by += BLOCK_GAP;
             const CBox FB{X + PADX, by, INNERW, FIELD_H};
-            const CBox SB{FB.x + FB.w - 4 - SEND_D, FB.y + (FIELD_H - SEND_D) / 2, SEND_D, SEND_D};
-            const int  RB = (int)std::lround(FIELD_H / 2 * P.scale);
-            const bool LIVE = ARMED && !replyText().empty();
-            const auto ARROW = Glyph::tex(Glyph::eGlyph::SEND, LIVE ? tOnAccent() : COLSUB, (int)std::lround(14 * P.scale));
-            P.rect(FB, tFill(), RB, 2.f);
+            const CBox SB{FB.x + FB.w - FIELD_PADR - SEND_D, FB.y + (FIELD_H - SEND_D) / 2, SEND_D, SEND_D};
+            const int  RB    = (int)std::lround(FIELD_H / 2 * P.scale);
+            const bool LIVE  = ARMED && !replyText().empty();
+            const auto ARROW = Glyph::tex(Glyph::eGlyph::SEND, LIVE ? tOnAccent() : tSendArrow(), (int)std::lround(SEND_ARROW * P.scale));
+            // a well sunk into the glass: dark, its inner edge catching light
+            P.rect(FB, tWell(), RB, 2.f);
+            P.ring(CBox{FB}.expand(-1.0 / P.scale), tWellRim(), RB - 1, 2.f);
             if (ARMED)
                 P.ring(FB, COLACC, RB, 2.f); // armed: the field wears the accent
-            double cx = FB.x + BTN_PADX;
+            double cx = FB.x + FIELD_PADL;
             if (const auto* SHOW = ENTRY ? ENTRY : HINT; SHOW && SHOW->tex) {
                 P.tex(SHOW->tex, cx, FB.y + (FIELD_H - texH(SHOW, P.scale)) / 2);
                 if (ENTRY)
@@ -360,7 +362,7 @@ namespace NAwesome::Notify {
             }
             if (ARMED) // the caret sits at the end: editing is append + backspace
                 P.rect(CBox{std::min(cx + 1, SB.x - 3), FB.y + 8, 1.5, FIELD_H - 16}, COLACC);
-            P.rect(SB, LIVE ? COLACC : tFill(), (int)std::lround(SEND_D / 2 * P.scale), 2.f);
+            P.rect(SB, LIVE ? COLACC : tSend(), (int)std::lround(SEND_D / 2 * P.scale), 2.f);
             if (ARROW)
                 P.texIn(ARROW, SB);
             if (ARMED) {
