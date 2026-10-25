@@ -2,35 +2,35 @@
 
 One native C++26 Hyprland plugin for the exact
 [`hitori-chan/Hyprland`](https://github.com/hitori-chan/Hyprland) fork
-ABI. Five modules, one `PLUGIN_INIT`, one input pipeline, no
-inter-module bus:
-
-| module | owns |
-|---|---|
-| `core` | the platform: supervisor, input pipeline, hop queue, canvas (warm/draw gate), config schema, stores, jobs, fd.o bus client |
-| `shell` | the bar: workspaces, tasks (views), tray, bell, battery, clock, menubar launcher |
-| `windows` | the window state machine and all placement: maximize/minimize/restore, click/focus policy, spawn placement, drag snap |
-| `notify` | the `org.freedesktop.Notifications` daemon: cards, conversations, shade, popups, inline reply, sound |
-| `system` | volume/mic (wpctl), brightness (logind), touchpad policy — every action's feedback is a notify card |
+ABI: the bar (`shell`), window policy (`windows`), the notification
+daemon (`notify`) and the system controls (`system`) over one platform
+(`core`). This file is the behavior reference — what the plugin does,
+its Lua API, `hyprctl` verbs, configuration and state file; the
+architecture and the reasons live in
+[`docs/awesome-design.md`](../docs/awesome-design.md).
 
 The plugin owns `org.freedesktop.Notifications`; disable another
 daemon (dunst, mako) before enabling it.
+
+Input reaches the plugin in one order: the bar (its strip, launcher
+and menus) first, then the cards, then window policy, then the system
+controls — so an open menu takes a press before the card under it,
+and a card before the window beneath. Before intercepting anything the
+plugin yields to native ownership: the session lock and an
+input-capture session first, then layer surfaces, popups, IME, seat and
+implicit grabs; native wins and the plugin drops its partial input
+state. Pointer and keyboard only (touch is not a goal): a touch on the
+bar, a card or a menu reaches whatever native surface lies beneath it.
 
 ## Behavior
 
 ### The bar (shell)
 
-The strip, launcher, and tray menus are compositor-drawn on the focused
-monitor. Before intercepting any input the pipeline rechecks session
-lock and native input ownership (layers, popups, IME, grabs,
-input-capture); native wins and resets the plugin's partial input
-state. The pipeline takes pointer and keyboard input only (touch is not
-a goal): a touch on the bar, a card or a menu reaches whatever native
-surface lies beneath it. Geometry and hitboxes are monitor-local; fixed widget slots and
-tray clipping protect the task area on narrow outputs. Textures follow
-the canvas warm/draw gate: warm on the event loop, draw no earlier than
-the next frame, scissor to damage, damage both old and new geometry for
-visible transitions.
+The strip is compositor-drawn on every monitor, showing that monitor's
+tags and tasks; the launcher opens on the focused monitor, a tray or
+client-list menu on the bar it was opened from. Geometry and hitboxes
+are monitor-local; fixed widget slots and tray clipping protect the
+task area on narrow outputs.
 
 - The strip is 28 px of thin glass: the tags at its left, the tasks
   splitting the middle 14 px off either side, and at its right, 14
@@ -38,22 +38,24 @@ visible transitions.
 - **Workspaces** are the nine kanji tags in 26 x 22 cells: the viewed
   one accent text on a dark ground, occupied ones the bar's text, empty
   ones dim, an urgent one red text (no occupancy marks: the text's
-  strength says it). A hovered tag takes a light ground.
+  strength says it). A hovered tag takes a light ground. awesome's
+  taglist buttons: a click views the tag (creating it on that monitor;
+  a tag another monitor owns is left alone), `Mod`+click sends the
+  focused window there without following, and the wheel steps through
+  this monitor's tags, wrapping.
 - **Tasks**: a 14 px icon and the title, ⌃ for a pinned window and +
-  for a maximized one before it. The focused task is accent text, an
-  urgent one red text, a minimized one dim — never a fill; a hovered
-  task takes a light ground. Right-click a task for awesome's client
-  list: every window, any tag, each row its icon and title read as its
-  task, its workspace's tag in a right-hand column; a click goes to it
-  (a minimized one is restored).
-- **Tasks**: Hyprland has no plugin-owned minimized state, so the
-  windows module removes a minimized window from layout/render
-  participation and remembers its fullscreen, maximize, and floating
-  state for restoration. Tasks stay in arrival order; focus cycling
-  skips minimized windows. A task's minimize/restore repaints through
-  the task-changed hook. X11 override-redirect surfaces (menus,
-  tooltips, dropdowns) are not clients, as in awesome: never a task, a
-  tag occupant, a focus stop, a snap edge or a placement blocker.
+  for a maximized one before it, in arrival order. The focused task is
+  accent text, an urgent one red text, a minimized one dim — never a
+  fill; a hovered task takes a light ground. awesome's tasklist
+  buttons: a click on the focused task minimizes it, on a minimized one
+  restores it, on any other raises and focuses it; the wheel cycles the
+  focus through this workspace's tasks (minimized ones are listed, not
+  walked). Right-click for awesome's client list: every window, any
+  tag, each row its icon and title read as its task, its workspace's
+  tag in a right-hand column; a click goes to it (a minimized one is
+  restored). X11 override-redirect surfaces (menus, tooltips,
+  dropdowns) are not clients, as in awesome: never a task, a tag
+  occupant, a focus stop, a snap edge or a placement blocker.
 - **Tray**: 16 px icons, `tray_spacing` apart. It owns the
   StatusNotifier/dbusmenu connection. A tray click is the activation —
   after the SNI `Activate` call the bar resolves the item's bus PID and
@@ -64,13 +66,11 @@ visible transitions.
   fork maps it to urgency only), and a Wayland sender may simply never
   spend the token; in vanilla awesome the app activates itself after
   the click, and the plugin makes that unconditional. A sender that DID
-  spend the token just lands on its already-focused window.
-  Every item's and menu's signals arrive through ONE connection-wide
-  match installed asynchronously (a per-item subscription is a
-  synchronous round trip on the compositor thread), routed by sender
-  and path; an item fetches one icon at a time, a NewIcon storm folding
-  into one more fetch (`NewIconThemePath` and `NewMenu` fold the same
-  way). Item strings are bounded, icon names resolve
+  spend the token just lands on its already-focused window. A middle
+  click is the item's `SecondaryActivate`. An item fetches one icon at
+  a time, a NewIcon storm folding into one more fetch
+  (`NewIconThemePath` and `NewMenu` fold the same way). Item strings
+  are bounded, icon names resolve
   through the core resolver (an item's own `IconThemePath` first,
   re-read on `NewIconThemePath`), and a pixmap is picked for the
   densest monitor's scale. A `NeedsAttention` item shows its attention
@@ -102,9 +102,11 @@ visible transitions.
   the whole monitor.
 - **Bell**: an outline bell and the unread count in an accent pill;
   under Do Not Disturb the bell is struck through and the count is
-  plain, the held queue included. It reads the
-  notify model directly (same process — no bus seam). A click toggles
-  the shade; pointer hover does nothing.
+  plain text, the held queue included. It reads the notify model
+  directly (same process — no bus seam). A click (the count is part of
+  its target) toggles the shade on the clicked bar's monitor: opening
+  absorbs the live banners into parked rows, a later explicit close
+  re-pops them. Pointer hover does nothing.
 - **Battery**: the level and an outline cell filled to it — red text and
   level at 20 % or below, a green level charging (or held at the charge
   limit), amber in power save. It watches the udev battery packs (a
@@ -118,16 +120,11 @@ visible transitions.
   characters replaced before it is rastered (a newline per paragraph
   once made a texture tens of thousands of px tall), and a raster the
   cache refuses is remembered as empty rather than rebuilt each frame.
-- Task, tray, menu and launcher icons decode on the compositor thread,
-  so the work is budgeted: an icon file is held to 1024 px a side, at
-  most two large decodes (past 256² px, an SVG past 64 KiB) run per
-  250 ms, all decodes together get 4 ms per 16 ms (the rest fill in over
-  the next frames), and a lookup a budget refuses is not a miss — it
-  stays uncached and a warm a beat later tries again (a menu row keeps
-  the name to ask with). A tray pixmap is scaled to twice its cell as it
-  arrives. A config reload keeps
-  the resolved icons unless the GTK icon theme changed; only the misses
-  are dropped (an icon installed since then still lands).
+- Task, tray, menu and launcher icons decode under a time budget: a
+  menu or launcher full of new icons fills in over a few frames rather
+  than stalling one. A config reload keeps the resolved icons unless
+  the GTK icon theme changed; only the misses are dropped (an icon
+  installed since then still lands).
 
 ### The launcher (menubar)
 
@@ -136,21 +133,16 @@ right under it — a quiet "Run:" (or the drilled-into category), the
 query around a drawn accent caret, then the matches 20 px apart, each a
 14 px icon and its name, the selection in accent text.
 
-Desktop discovery and completion run in a bounded cancellable helper
-process. The compositor drains framed results through the event loop;
-queue backpressure pauses the helper (a frame too large for the queue's
-room waits whole, never truncating the scan), and teardown closes the
-pipe and signals its private process group through a pidfd, without
-joining filesystem work. Symlinked roots are followed. The launcher
-lists the plugin's one desktop index (core, shared with the bar's and
-the cards' icons), scanned once at plugin start; the next open after an
+The launcher lists the plugin's one desktop index (shared with the
+bar's and the cards' icons), scanned once at plugin start in a helper
+process (symlinked roots followed); the next open after an
 applications directory changed (an app installed or removed since)
-rescans it, and the new set swaps in whole when it lands, the old one
-listed meanwhile; a scan cut short (its 30 s deadline, a failed or
-killed helper) swaps nothing and is retried at the next open. A
-launcher open during the first scan lists what has landed and the
-rest once the scan ends; a rebuild keeps the selected row (an app, a
-category, or the Exec entry). Desktop Entry strings are decoded
+rescans it, the old list shown until the new one lands whole; a scan
+cut short (its 30 s deadline, a failed helper) is retried at the next
+open. A launcher open during the first scan lists what has landed and
+the rest once the scan ends; a rebuild keeps the selected row (an app,
+a category, or the Exec entry). Completion runs in the same kind of
+helper. Desktop Entry strings are decoded
 before use (space around `=` is ignored, per the spec); `Exec=`
 preserves its quoting and field-code grammar before passing argument
 boundaries to the executor.
@@ -182,9 +174,10 @@ or removed. The prompt shows a window of the query around the cursor.
 | `C-Return`, `C-M-Return` | run raw query directly or in a terminal |
 | `Tab`, `Shift-Tab` | complete command/path |
 | `Up/Down`, `C-p/n` | history |
-| `C-a/e/b/f/d/h/u/w`, `M-b/f/d`, `C-BackSpace` | edit |
+| `C-a/e/b/f/d/h/u/w`, `M-b/f/d`, `C-BackSpace`, `Delete` | edit |
 | `C-v` | paste asynchronously |
-| `Escape` or pointer click | close |
+| `Escape`, or `BackSpace` on an empty query | leave an opened category |
+| `Escape` (no category) or pointer click | close |
 
 Typed and pasted input shares a 4 KiB UTF-8 limit (completions too);
 a paste drops control and bidi characters. Clipboard transfer
@@ -194,6 +187,10 @@ the plugin's one state file (see State).
 
 ### Windows
 
+- **Minimize**: Hyprland has no minimized state of its own, so the
+  windows module takes a minimized window out of layout and render and
+  remembers its fullscreen, maximize and floating state for the
+  restore. Focus cycling skips minimized windows.
 - **Maximize** is per-window and does not consume Hyprland's
   fullscreen slot: the window fills the current workarea and carries
   the native xdg maximized state; app- or compositor-maximized windows
@@ -359,12 +356,12 @@ stays a broadcast.
   `x-canonical-append`; `x-notify-group-key`. A boolean hint is read
   the way clients send it: a bool, an int or a byte (`notify-send -h
   int:transient:1`), or a string.
-- `Notify` is read by hand, not as typed hint Variants (sdbus-c++
-  copies each Variant element by element: a 1080p screenshot held the
-  dispatch ~0.65 s). An image hint's header is checked first and its
-  pixels leave the message in one block; the hints above are basic
-  values (64 kept at most, the rest passed over); any other value is
-  passed over, without a copy where its type allows.
+- A hint of a type the daemon does not read is ignored, and so is
+  every basic hint past the 64th and every action string past the 64th.
+  A `Notify` past the daemon's walk bound (65,536 elements it would
+  pass over, or a big-endian sender's image-data past 256 KiB) is refused
+  with a D-Bus error rather than stalling the compositor; how the call
+  is read is in the design doc (Bus).
 - Structured-conversation hints (neither name form sits in the
   published spec's hint table; the plain name is tried first, the
   `x-notify-*` alias second — the message-time alias alone is
@@ -409,14 +406,16 @@ stays a broadcast.
   and the digest, the fold and the dismissal all act on that group
   alone. A replace without the hint keeps the group for the same app.
 
-**Markup.** Body and title render the whitelisted Pango subset
-`<b> <i> <u> <span> <br>`, a `<span>` keeping only its color,
-weight, style, underline and strikethrough attributes (a font, face,
-size or lang per span is a fontconfig match per value on the
-compositor thread); other tags are dropped and a stray `<`/`&`
-that forms no tag or entity survives as literal text, so a
-markup-aware sender and a naive one both come out right. Malformed
-markup falls back to plain text. `<a href>` in the body is a
+**Markup.** The body renders the whitelisted Pango subset
+`<b> <i> <u> <span> <br>`, a `<span>` keeping only its colours
+(foreground, background, their alphas), weight, style, underline and
+strikethrough attributes (a font, face, size or lang per span is a
+fontconfig match per value on the compositor thread); other tags are
+dropped and a stray `<`/`&` that forms no tag or entity survives as
+literal text, so a markup-aware sender and a naive one both come out
+right. Malformed markup falls back to plain text. The title is the
+spec's plain text: a tag there stays literal ("Mail from Ann
+<ann@x.org>" keeps the address). `<a href>` in the body is a
 hyperlink (rewritten to a styled span and hit-tested by its
 stripped-text byte offset) when it is an `http(s)://` or `mailto:` link
 — any other scheme stays plain text, since any sender writes these
@@ -432,13 +431,10 @@ beats `app_icon` beats `desktop-entry`. Each of `app_icon` /
 percent-decoded, `localhost` allowed, any query or fragment dropped)
 OR a freedesktop icon name, resolved against the GTK icon theme, then
 hicolor, then `/usr/share/pixmaps` — the one resolver the bar uses too
-(core/icons.hpp): plausible names only, a two-generation memo, and a
-theme with a fresh `icon-theme.cache` (GTK's own index, rewritten by
-the package manager's hook) answers from it in a few reads. A theme dir
-without one is walked, at most 8 walks per 250 ms (a burst of distinct
-names from a sender resolves to nothing past that, uncached, instead of
-stalling the compositor; the card keeps the name and resolves it again
-a window later, its sender faces and action icons too). A `desktop-entry` hint additionally
+(core/icons.hpp, from GTK's own `icon-theme.cache` where a theme has
+one). A burst of distinct names a theme without a cache would be
+walked for resolves the rest a beat later: the card keeps the name and
+resolves it again, its sender faces and action icons too. A `desktop-entry` hint additionally
 resolves the .desktop file's own `Icon=` (all `$XDG_DATA_DIRS/
 applications` entries are indexed once at plugin start by a bounded
 helper process, keyed by the desktop id, the file name and
@@ -448,29 +444,17 @@ entry, the icon-name stand-in draws and the index upgrades the live
 card when it lands. Decoding is hyprgraphics: PNG/JPEG/WEBP/BMP + SVG
 (no GIF; AVIF and JXL files are refused — the admission reads a
 bounded raster size from the header, and those headers do not carry
-one it parses); big images downscale once at load, not per frame.
-`image-data` is box-decimated while it is unpacked, to the hero cap
-(past 512×512 on the plugin's raster worker thread, not in the
-Notify dispatch; up to 64 MiB of payloads wait for it, past that an
-arrival unpacks inline). A card holds those pixels until its first
-upload, and past 32 MiB of
-them model-wide (coalesced, resident, DND-held cards) the oldest
-keep an icon's size instead. A
-file is opened ONCE, non-blocking, and judged on that open descriptor
-(a regular file, bounded size, a bounded declared raster); the decoder
-reads the same file (/proc/self/fd), never the path again, so a FIFO
-or a swap after the check cannot reach it. File icons decode off the
-render thread on the compositor's async resource gatherer (a bounded
-share of its queue, one decode shared by every card asking for the
-same file; a sender's SVG too, rastered at the hero width when it
-may be one, and a symbolic icon tinted on a copy): a card whose icon is
-still decoding keeps the icon column reserved — the text does not
-re-flow when it lands. A decode lands full size and is scaled once,
-box-averaged first to within 2x of the card: past 512×512 on the
-raster worker (the compositor thread only uploads the result). When
-the worker's queue (32 jobs) is full the scale runs inline, and past
-4 MP one such scale runs per 100 ms and the rest wait for a later
-warm. Screenshot-sized
+one it parses); big images downscale once at load, not per frame, off
+the compositor thread (the design doc's raster worker). A card holds
+`image-data` pixels until its first upload, and past 32 MiB of them
+model-wide (coalesced, resident, DND-held cards) the oldest keep an
+icon's size instead. A file is opened once and judged on that open
+descriptor (a regular file, bounded size, a bounded declared raster),
+so a FIFO or a swap after the check cannot reach the decoder. File
+icons decode asynchronously (a sender's SVG too, rastered at the hero
+width when it may be one; a symbolic icon tinted on a copy): a card
+whose icon is still decoding keeps the icon column reserved — the text
+does not re-flow when it lands. Screenshot-sized
 images (256 px in both dimensions) render popup-width as a
 cover-cropped hero in any capture shape; the shade keeps its rows
 compact and shows the same image as a square-cropped thumbnail in the
@@ -586,11 +570,6 @@ semantics).
   chips drops the selection (Enter and Delete never act off screen).
   Modified chords pass through as user binds, and so does any key with
   nothing to act on.
-- Bell: a click speaks Toggle (opening absorbs the banners into parked
-  rows, a later explicit close re-pops them) and opens the shade on the
-  clicked bar's monitor; the count is part of its target. Pointer hover
-  is a no-op. Under DND the bell is struck through and its count is
-  plain text that includes the held queue.
 - Over fullscreen: banners show over a real fullscreen window too — the
   ecosystem default, no quiet-while-fullscreen policy. While a card is
   up over a fullscreen window, the plugin blocks the monitor's solitary
@@ -686,7 +665,8 @@ pragmatic chain (GTK theme → hicolor → pixmaps), not a full
   left alone (`hl.device` re-runs the device setup, a keymap compile).
 - Every action's feedback is a card posted straight into the notify
   model (fixed ids — pad 9991, brightness 9992, volume 9993, mic 9995 —
-  replace in place, low urgency, 1200 ms expiry) that names a glyph, so
+  replace in place, low urgency, 1200 ms expiry, the touchpad's
+  1500 ms) that names a glyph, so
   it shows as a capsule at the top center: the glyph, a level track and
   its number for a value, the words otherwise; a muted volume or
   microphone reads "Muted" / "Off" in the urgent colour. Such a card is
@@ -730,19 +710,65 @@ click goes missing.
 ## Configuration
 
 46 keys under `plugin:awesome:<module>:<key>` — shell 18, notify 25,
-windows 3. The table (kinds, defaults, clamps) is
-[`core/schema.hpp`](core/schema.hpp); the defaults are the Frost tokens
-([`core/tokens.hpp`](core/tokens.hpp)), so an empty config still looks
-right.
+windows 3, as [`core/schema.hpp`](core/schema.hpp) declares them (kinds,
+clamps; out-of-range values clamp). "Frost" marks a colour whose
+default is a Frost token ([`core/tokens.hpp`](core/tokens.hpp)), so an
+empty config still looks right; the user's `theme.lua` overrides them.
 
-| module | keys |
-|---|---|
-| shell | `height`, `font_size`, `tray_spacing`, `font`, `terminal`, `col_bg`, `col_menu_bg`, `col_fg`, `col_focus`, `col_active`, `col_active_bg`, `col_on_active`, `col_empty`, `col_urgent`, `col_frame`, `col_charging`, `col_low`, `col_powersave` |
-| notify | `font`, `font_size`, `width`, `max_height`, `max_icon`, `margin`, `offset_y`, `timeout_low`, `timeout_normal`, `coalesce_popups`, `max_notifs`, `ignore_dbusclose`, `rounding`, `rounding_power`, `sound_command`, `fallback_icon_dir`, `col_bg`, `col_menu_bg`, `col_fg`, `col_title`, `col_kicker`, `col_frame`, `col_urgent`, `col_highlight`, `col_link` |
-| windows | `edge`, `snap_distance`, `col_frame` |
+| `shell` | default | |
+|---|---|---|
+| `height` | 28 | bar height in logical px (reserve it: monitor reserved top) |
+| `font_size` | 13 | text size in logical px (monitor scale applies at raster time) |
+| `tray_spacing` | 10 | px between tray icons |
+| `font` | `Inter` | font family |
+| `terminal` | `alacritty` | terminal that runs Terminal=true launcher entries |
+| `col_bg` | Frost | the bar's and the launcher's thin glass (the alpha IS the glass) |
+| `col_menu_bg` | Frost | menus' thicker glass |
+| `col_fg` | Frost | bar text |
+| `col_focus` | Frost | the launcher's and the menus' selection (text) |
+| `col_active` | Frost | the viewed tag, the focused task (text) and the bell's badge |
+| `col_active_bg` | Frost | the viewed tag's ground |
+| `col_on_active` | Frost | the count on the bell's badge |
+| `col_empty` | Frost | empty tags, minimized tasks, disabled rows |
+| `col_urgent` | Frost | urgent tags and tasks (text) |
+| `col_frame` | Frost | the glass rim |
+| `col_charging` | Frost | battery fill charging/defender |
+| `col_low` | Frost | battery low |
+| `col_powersave` | Frost | battery fill power save |
 
-Colors and fonts arrive from the user's `theme.lua`; the C++ defaults
-mirror it.
+| `notify` | default | |
+|---|---|---|
+| `font` | `Inter` | font family |
+| `font_size` | 13 | body text size in logical px (the type roles derive from it) |
+| `width` | 356 | card width in logical px: the banners' and the center's column |
+| `max_height` | 320 | banner height cap in logical px |
+| `max_icon` | 36 | the card's icon column in logical px |
+| `margin` | 8 | inter-card gap in logical px |
+| `offset_y` | 40 | the column's and the capsules' distance from the monitor top |
+| `timeout_low` | 4000 | ephemeral timeout in ms (low urgency, transient, progress cards) |
+| `timeout_normal` | 5000 | normal banner timeout in ms, then it retreats to the shade; 0 = sticky |
+| `coalesce_popups` | 3 | live popups per app (0 = no cap); same-app extras land silent in the shade |
+| `max_notifs` | 50 | model cap; overflow evicts the oldest non-critical card |
+| `ignore_dbusclose` | 0 | ignore app-initiated CloseNotification (dunst's knob) |
+| `rounding` | 18 | card radius in logical px |
+| `rounding_power` | 3.0 | corner superellipse exponent |
+| `sound_command` | `canberra-gtk-play` | libcanberra player for sound hints; empty disables |
+| `fallback_icon_dir` | empty | iconless cards draw a random identity face from this directory |
+| `col_bg` | Frost | glass fill (the alpha IS the glass) |
+| `col_menu_bg` | Frost | the card menu's thicker glass |
+| `col_fg` | Frost | body text |
+| `col_title` | Frost | titles, buttons, the capsules' words |
+| `col_kicker` | Frost | meta and secondary text |
+| `col_frame` | Frost | the glass rim |
+| `col_urgent` | Frost | critical: the meta, its progress, an alarmed capsule |
+| `col_highlight` | Frost | the accent: progress, the selection, the reply field |
+| `col_link` | Frost | body hyperlinks |
+
+| `windows` | default | |
+|---|---|---|
+| `edge` | 16 | distance from an output edge that arms a snap zone |
+| `snap_distance` | 8 | magnetic pull distance |
+| `col_frame` | Frost | snap preview outline (its tint is the same colour at 10 %) |
 
 ## State
 
@@ -777,7 +803,7 @@ that could not see it. Modules reach the stores through the core's
 ```sh
 make -C awesome            # the release plugin (needs the fork headers)
 make -C awesome GATE=1     # awesome-gate.so: the gate's variant (test seams)
-make -C awesome test       # headless core harness, no fork headers
+make -C awesome test       # headless core harness (fork headers, no compositor)
 make -C awesome gate ARGS="-s ~/repo/Hyprland -b quick|all"
 ```
 

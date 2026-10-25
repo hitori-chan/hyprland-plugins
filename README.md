@@ -40,7 +40,8 @@ make gate ARGS=...  # the nested integration gate (see awesome/gate/)
 ```
 
 Before deployment, run the nested gate described in
-[`awesome/gate/gate.sh`](awesome/gate/gate.sh) and require its final
-`ALL CHECKS PASSED` line. The gate drives the shared input fixtures in
+[`awesome/gate/gate.sh`](awesome/gate/gate.sh)
+(`make gate ARGS="-s /path/to/Hyprland -b all"`; the default tier is
+`quick`) and require its final `ALL N CHECKS PASSED` line. The gate drives the shared input fixtures in
 [`devtools/`](devtools/README.md). Never rebuild or replace the plugin
 while a compositor has it mapped.

@@ -190,8 +190,10 @@ inter-module bus.
   every action's feedback is a notify card.
 
 The pipeline order is a behavior contract (the bar claims its strip and
-menus before window policy; notification input beats the window below);
-it lives in the supervisor and must agree with `awesome/README.md`.
+menus before window policy; notification input beats the window below):
+shell, notify, windows, system, as `awesome/main.cpp` registers them; the
+supervisor dispatches in that order, and it must agree with
+`awesome/README.md`.
 
 ## Git and versions
 
