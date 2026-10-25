@@ -278,8 +278,14 @@ schema's defaults name them; `theme.lua` overrides them):
   strip owns its screen edge (Fitts).
 - No surface darkens the desktop: the center draws no backdrop, and
   what floats over a wallpaper carries its own glass.
+- Cards follow macOS 27's notifications: no buttons at rest; under the
+  pointer a close button on the top-left corner and "Options" where the
+  time was, its menu the sender's rows (Reply, the actions) over the
+  system's switches; an app's cards stack in the center under a deck.
+  The chrome's textures are warm before the pointer arrives (a hover
+  damages, never rewarms: invariant 4).
 - The mouse on a card: left acts on its release, a held left opens the
-  card menu, right dismisses, middle does nothing.
+  card menu, right dismisses (a stack whole), middle does nothing.
 
 ### shell
 
@@ -324,8 +330,11 @@ The daemon and the model exactly as the behavior docs specify
 (conversation merge, the 9990s band, grouping, DND, persistence,
 ranking, the icon anatomy, the pixel model). Surfaces: the banners, the
 center and the OSD capsules on the shared canvas — one card renderer
-for the banner, the center and a bundle's child — and the card menu,
-drawn last and hit first on the notify layer. The menu's switches (an
+for the banner, the center and a card in a stack (`notify/stack.cpp`
+draws the deck and the spread stack's header around it) — and the card
+menu, drawn last and hit first on the notify layer. The close button
+overhangs its card, so it is a target of its own, pushed after the card
+and hit before it. The menu's switches (an
 app's banners and sounds, a chat's mute) persist through the core's
 `StateStore` and gate the arrival, the DND resume and the re-pop alike.
 Inline reply, sound through Jobs. The model API is the module's public

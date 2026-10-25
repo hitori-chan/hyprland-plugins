@@ -327,7 +327,7 @@ carries them). They start `offset_y` below the monitor top, never above
 the workarea, so a taller strip never runs under them. An open tray menu
 or the menubar paints over the cards, as it takes the press first.
 Newest at the top, in the Frost material: one card shape everywhere (a
-banner, a center card, a bundle's child), 356 px of regular glass at an
+banner, a center card, a card in a stack), 356 px of regular glass at an
 18 px superellipse radius, a soft drop and a light rim. The system's
 feedback (volume, brightness, microphone, touchpad, the plug edges) is a
 capsule instead: 256 x 36 at the top center, a glyph and a level with
@@ -336,9 +336,10 @@ its number, or a glyph and words — "Muted" in the urgent colour.
 **Spec surface.** Methods `Notify`, `CloseNotification`,
 `GetCapabilities`, `GetServerInformation` (spec 1.3); signals
 `NotificationClosed`, `ActionInvoked`, `ActivationToken`,
-`NotificationReplied`. Capabilities: `actions`, `action-icons`,
-`body`, `body-markup`, `body-hyperlinks`, `body-images`,
-`icon-static`, `inline-reply`, `persistence`, `sound`.
+`NotificationReplied`. Capabilities: `actions`, `body`,
+`body-markup`, `body-hyperlinks`, `body-images`, `icon-static`,
+`inline-reply`, `persistence`, `sound` (no `action-icons`: as macOS's,
+actions are menu rows, and a row is words).
 
 All signals leave in the order the cards produced them (a card's close
 never overtakes its action). `ActionInvoked`, `ActivationToken` and
@@ -353,7 +354,7 @@ stays a broadcast.
   client's `replaces_id`, or a conversation merge from it, starts a fresh
   card instead, as Plasma does. A card whose sender left the bus is
   ownerless, and the app's next instance continues it (meanwhile its
-  reply field, buttons and primary are gone: they would reach nobody).
+  reply field, menu actions and primary are gone: they would reach nobody).
   The 9990s are the private OSD band: its ids, live or
   not, are the plugin's own in-process posts (the system module's OSD
   cards), so no client can pin a band id, take over the volume card on
@@ -367,8 +368,8 @@ stays a broadcast.
   for.
 - Hints honored: `urgency`; `value` (0–100) draws the progress bar (the
   volume/brightness OSD); `image-data`/`image_data`/`icon_data` raw
-  pixmaps; `image-path`/`image_path`; `desktop-entry`; `action-icons`;
-  `resident`; `transient`; `sound-file`/`sound-name`/`suppress-sound`;
+  pixmaps; `image-path`/`image_path`; `desktop-entry`; `resident`;
+  `transient`; `sound-file`/`sound-name`/`suppress-sound`;
   `x-canonical-append`; `x-notify-group-key`. A boolean hint is read
   the way clients send it: a bool, an int or a byte (`notify-send -h
   int:transient:1`), or a string.
@@ -417,10 +418,11 @@ stays a broadcast.
   conversation categories (`im.*`/`call.*`, where the summary is the
   sender or the room) or `x-canonical-append`. Cards that vanish on
   expiry never merge.
-- `x-notify-group-key` (opaque, ≤512 bytes) sub-keys the app's bundle:
-  four or more cards of one app share ONE digest per declared group,
-  and the digest, the fold and the dismissal all act on that group
-  alone. A replace without the hint keeps the group for the same app.
+- `x-notify-group-key` (opaque, ≤512 bytes) sub-keys the app's stack
+  (macOS's thread identifier): two or more cards of one app stack in
+  the center per declared group, and the deck, the spread and the
+  dismissal all act on that group alone. A replace without the hint
+  keeps the group for the same app.
 
 **Markup.** The body renders the whitelisted Pango subset
 `<b> <i> <u> <span> <br>`, a `<span>` keeping only its colours
@@ -450,7 +452,7 @@ hicolor, then `/usr/share/pixmaps` — the one resolver the bar uses too
 (core/icons.hpp, from GTK's own `icon-theme.cache` where a theme has
 one). A burst of distinct names a theme without a cache would be
 walked for resolves the rest a beat later: the card keeps the name and
-resolves it again, its sender faces and action icons too. A `desktop-entry` hint additionally
+resolves it again, its sender faces too. A `desktop-entry` hint additionally
 resolves the .desktop file's own `Icon=` (all `$XDG_DATA_DIRS/
 applications` entries are indexed once at plugin start by a bounded
 helper process, keyed by the desktop id, the file name and
@@ -489,12 +491,19 @@ image leads with its identity and wears no badge. A group chat leads
 with a facepile of two participants. One column says both who sent it
 and which app carried it.
 
-**Actions.** Non-`default` actions render as a clickable button row; a
-left click emits `ActionInvoked` and dismisses the card unless the
-`resident` hint holds it. Under the `action-icons` hint each action id
-is a freedesktop icon name drawn on the button. The `default` action
-(and a lone action) fire on a body left click, on BOTH surfaces, and
-are never drawn as a button. `ActivationToken` precedes each invoke (a
+**Actions.** As macOS 27's, a card wears no buttons at rest. Under the
+pointer it shows a close button on its top-left corner (a click
+dismisses the card, or on a stack's deck the stack) and, when the
+sender offers actions or a reply, an "Options" chip where its time
+was. Options drops the card menu under it: the sender's own rows first
+— Reply, then each non-`default` action in the sender's order — over
+the system's switches. A row emits `ActionInvoked` and dismisses the
+card unless the `resident` hint holds it. The `default` action (and a
+lone action, which keeps its row too) fires on a body left click, on
+BOTH surfaces, and gets no row. The chrome is drawn from textures warm
+before the pointer arrives, so a hover only damages; the title keeps
+the width Options needs, so it never re-wraps as the pointer crosses.
+`ActivationToken` precedes each invoke (a
 compositor-minted xdg-activation token, spec 1.3 ordering); the invoke
 also focuses the sender's own window itself, for every backend — a
 Wayland sender that spends the token lands on its already-focused
@@ -506,14 +515,15 @@ semantics).
 **Behavior.**
 
 - The mouse, on every card: LEFT acts, on its release over the card it
-  pressed — the action button, the link, or the card's primary (the
-  `default`), then the card goes unless `resident`; a card the center
-  folded opens instead. HOLD left (450 ms) opens the card menu at the
-  pointer. RIGHT dismisses (a bundle's header or digest: the whole
-  bundle). MIDDLE does nothing — swallowed, so the window under a card
-  never gets a paste. The cards own the pointer over them; hover never
-  leaks to the window beneath.
-- The card menu (macOS's notification menu, what fd.o can do): "Mute
+  pressed — the close button, Options, the link, or the card's primary
+  (the `default`), then the card goes unless `resident`; a card the
+  center folded opens instead, and a stack's deck spreads. HOLD left
+  (450 ms) opens the card menu at the pointer. RIGHT dismisses (a
+  stack's deck or header: the whole stack). MIDDLE does nothing —
+  swallowed, so the window under a card never gets a paste. The cards
+  own the pointer over them; hover never leaks to the window beneath.
+- The card menu (macOS's notification menu, what fd.o can do): the
+  sender's Reply and actions, then "Mute
   <chat> for 1 Hour" and "Mute <chat> Until Tomorrow" (08:00) for a
   conversation, "Unmute <chat>" while one holds; "Turn Off <App>
   Banners" and "Silence <App> Sounds", which read "Turn On…" and
@@ -540,21 +550,25 @@ semantics).
   no heading: the desktop is never darkened.
   Cards show their clock time where banners show an age. A card
   behaves as its banner did — left on the body fires the primary, a
-  link opens, a button acts. Cards open by default as the page has
+  link opens, Options acts. Cards open by default as the page has
   room; one the budget folded shows its title and newest line, and a
-  click (or Space) opens it. On an app bundle left expands and right
-  (or the header ✕) dismisses the whole bundle; an expanded bundle
-  taller than the page shows the children that fit and a "+N more"
-  line, and dismissing a child brings the next one in. The paging
+  click (or Space) opens it. An app's cards stack, as macOS's do (two
+  or more, its chats among them, each chat its own card): collapsed,
+  the newest card stands over a deck of up to two slivers, 8 px a
+  layer; a click spreads the stack under a header of "Show Less" and a
+  close button, and right on the deck (or the header's close)
+  dismisses it whole. A stack holding the armed reply stays spread. A
+  spread stack taller than the page shows the cards that fit and a
+  "+N more" line, and dismissing a card brings the next one in. The paging
   chips (above the fold, and below it with a count) are their own
   targets: a click pages a screenful, like the wheel.
-- `max_height` bounds a popup by priority: header, title, one body
-  line, progress and the action buttons first, then the images, then
+- `max_height` bounds a popup by priority: header, title, an open
+  reply field, one body line and progress first, then the images, then
   their alt text; the body takes the rest. A block that doesn't fit is
   dropped whole, never painted past the card. A wrapped body link is
   hit on exactly the text it covers, line by line.
-- Acting CLOSES the shade: firing a card's primary, pressing one of its
-  buttons or opening a body link all raise something over the panel
+- Acting CLOSES the shade: firing a card's primary, one of its menu's
+  actions or opening a body link all raise something over the panel
   the click was made in, so the panel gets out of the way. fd.o has no
   `isActivity`, and `resident` is the nearest thing it does have, so
   the shade goes exactly when the card goes. Everything that keeps you
@@ -569,18 +583,21 @@ semantics).
   action-driven close (the sender is coming up over the parked stack)
   does not re-pop.
 - Inline reply (KDE's protocol, which Telegram Desktop speaks): an
-  action keyed `inline-reply` is not a button — it grows a reply field
-  in the open shade row (a dark well whose send circle turns the accent
-  once there is text), and sending emits `NotificationReplied(id,
-  text)` and closes the card unless `resident`.
+  action keyed `inline-reply` is the menu's Reply (labelled with the
+  sender's submit text). Reply, or Tab on the center's selection, opens
+  the field in the card — a banner or a center card alike (a dark well
+  whose send circle turns the accent once there is text) — and sending
+  emits `NotificationReplied(id, text)` and closes the card unless
+  `resident`.
   `x-kde-reply-placeholder-text` and `x-kde-reply-submit-button-text`
   are honored. The field takes the whole keyboard while armed (there is
   no focus to give it); editing is append-and-backspace plus C-u / C-w,
   and a text wider than the field shows its newest end. The armed row
-  stays open and on the page; folding it closes the field. A card that
-  dies mid-reply (the sender closed it) disarms the field: the key that
-  finds it gone is swallowed and the selection dropped, so no keystroke
-  reaches another card. Banners have no field.
+  stays open and on the page; folding it closes the field. An armed
+  banner holds its clock, as the hovered one does, and Esc closes its
+  field. A card that dies mid-reply (the sender closed it) disarms the
+  field: the key that finds it gone is swallowed and the selection
+  dropped, so no keystroke reaches another card.
 - Shade keys, while it is open and only then: Esc closes (an open card
   menu first), ↑/↓ move a selection (an accent ring; the page follows
   it, however tall the next row), Space folds, Enter fires the primary,
@@ -775,7 +792,7 @@ empty config still looks right; the user's `theme.lua` overrides them.
 | `col_bg` | Frost | glass fill (the alpha IS the glass) |
 | `col_menu_bg` | Frost | the card menu's thicker glass |
 | `col_fg` | Frost | body text |
-| `col_title` | Frost | titles, buttons, the capsules' words |
+| `col_title` | Frost | titles, the hover chrome (Options, the close button), the capsules' words |
 | `col_kicker` | Frost | meta and secondary text |
 | `col_frame` | Frost | the glass rim |
 | `col_urgent` | Frost | critical: the meta, its progress, an alarmed capsule |
