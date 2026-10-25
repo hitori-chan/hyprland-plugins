@@ -262,7 +262,8 @@ namespace NAwesome::Notify {
             // We ARE the in-tree OSD sender: being in-process is the pass
             // that lets a FRESH band id pin its replace-in-place slot (a
             // foreign client gets its band id zeroed)
-            const auto ID = arrive("osd", c.id, c.icon ? c.icon : "", c.summary ? c.summary : "", c.body ? c.body : "", "", {}, hints, c.expireTimeout, c.osd || inOsdBand(c.id));
+            const auto ID = arrive("osd", c.id, c.icon ? c.icon : "", c.summary ? c.summary : "", c.body ? c.body : "", "", {}, hints, c.expireTimeout, std::nullopt,
+                                   c.osd || inOsdBand(c.id));
             // the capsule face rides the card; the warm this arrival armed
             // has not run yet
             if (const auto N = byId(ID)) {
@@ -706,7 +707,7 @@ namespace NAwesome::Notify {
 
         uint32_t arrive(const std::string& appName, uint32_t replacesId, const std::string& appIcon, const std::string& summary, const std::string& body,
                         const std::string& sender, const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout,
-                        bool osd) {
+                        std::optional<Parse::ImageData> image, bool osd) {
             uint32_t id = replacesId;
 
             // A card belongs to the bus name that created it: its replies,
@@ -1063,11 +1064,8 @@ namespace NAwesome::Notify {
             // rides it as a corner badge — or leads alone when there is no
             // content. Nothing at all = a text-only card.
             const int PIXCAP = std::max((int)NAwesome::cfg().getI("plugin:awesome:notify:width") * 2, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon") * 3);
-            for (const auto* KEY : {"image-data", "image_data", "icon_data"})
-                if (const auto IT = hints.find(KEY); IT != hints.end() && !n->hasPixels)
-                    try {
-                        takeImageData(*n, IT->second.get<Parse::ImageData>(), PIXCAP, ICONPX);
-                    } catch (...) {}
+            if (image && !n->hasPixels)
+                takeImageData(*n, std::move(*image), PIXCAP, ICONPX);
             if (!n->pixels.empty())
                 boundRetainedPixels(ICONPX);
             if (!n->hasPixels) {

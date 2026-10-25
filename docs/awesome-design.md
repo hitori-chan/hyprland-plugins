@@ -163,6 +163,11 @@ or compositor state.
 - **Bus** — the fd.o Notifications daemon (spec 1.3), kept
   asynchronous off hot paths (`post()` for bus-originated work,
   `pollSoon()` dispatch, a dispatch capped at 64 messages and 4 ms).
+  `Notify` is a raw method handler: sdbus-c++'s typed read copies each
+  hint Variant element by element (0.2–0.65 s for a screenshot's
+  image-data), so the image header is validated and its pixels read
+  zero-copy then copied once; only basic-typed hints become Variants,
+  64 at most, and every other value is passed over.
   The daemon's signals leave in order from one queue; the action, the
   activation token and a reply go to the sender only. The tray installs
   ONE async match per signal interface, routed by sender and path,

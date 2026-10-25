@@ -162,6 +162,111 @@ chk "hero: an image-data screenshot previews card-wide" test "$(hero_px $STATE/h
 chk "hero: the image-data preview is the capped strip" test "$(hero_span $STATE/hero-4-aw.png)" -ge 150 -a "$(hero_span $STATE/hero-4-aw.png)" -le 166
 nclear
 
+# ---- the Notify reader (notify/bus.cpp) ---------------------------------------
+# The call is read by hand: image-data's pixels leave the message in one
+# block once its header checks out, a fixed-type array under any other key
+# is passed over without a copy. The reply's round trip times the dispatch
+# (the typed read took 0.65 s for a 1080p frame).
+notify_raw() { # notify_raw <hint key> <w> <h> <stride|auto> — prints the reply's ms
+	DBUS_SESSION_BUS_ADDRESS="$NBUS" python3 - "$@" <<'PY'
+import sys, time
+from gi.repository import Gio, GLib
+key, W, H, stride = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
+i32 = GLib.Variant.new_int32
+raw = GLib.Bytes.new(bytes((30, 160, 240, 255)) * (W * H))
+if key.startswith("x-"):
+    hint = GLib.Variant.new_from_bytes(GLib.VariantType.new("ay"), raw, True)
+else:
+    data = GLib.Variant.new_from_bytes(GLib.VariantType.new("ay"), raw, True)
+    hint = GLib.Variant.new_tuple(i32(W), i32(H), i32(W * 4 if stride == "auto" else int(stride)), GLib.Variant.new_boolean(True), i32(8), i32(4), data)
+args = GLib.Variant.new_tuple(GLib.Variant("s", "heroapp"), GLib.Variant("u", 0), GLib.Variant("s", ""), GLib.Variant("s", "Screenshot"),
+                              GLib.Variant("s", "raw"), GLib.Variant("as", []), GLib.Variant("a{sv}", {key: hint}), i32(4000))
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+t0 = time.monotonic()
+bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications",
+              "Notify", args, GLib.VariantType.new("(u)"), Gio.DBusCallFlags.NONE, 10000, None)
+print(int((time.monotonic() - t0) * 1000))
+PY
+}
+MS="$(notify_raw image-data 1920 1080 auto)"; echo "reader: 1080p image-data answered in ${MS} ms" >&2
+chk "reader: a 1080p image-data answers within 250 ms" test "${MS:-9999}" -lt 250
+sleep 1
+capture_nested $STATE/reader-1-aw.png
+chk "reader: and previews card-wide" test "$(hero_px $STATE/reader-1-aw.png)" -gt 8000
+nclear
+MS="$(notify_raw x-gate-junk 1920 1080 auto)"; echo "reader: an 8 MB unknown hint answered in ${MS} ms" >&2
+chk "reader: an 8 MB array under an unknown key is passed over (within 250 ms)" test "${MS:-9999}" -lt 250
+chk "reader: its card landed" until_is 3 "center:0 live:1 dnd:0" st
+nclear
+notify_raw icon_data 1280 720 auto >/dev/null; sleep 1
+capture_nested $STATE/reader-2-aw.png
+chk "reader: the spec 1.0 name (icon_data) still previews" test "$(hero_px $STATE/reader-2-aw.png)" -gt 8000
+nclear
+notify_raw image-data 1280 720 0 >/dev/null; sleep 1
+capture_nested $STATE/reader-3-aw.png
+chk "reader: a lying header (stride 0) lands the card" test "$(st)" = "center:0 live:1 dnd:0"
+chk "reader: with no preview" test "$(hero_px $STATE/reader-3-aw.png)" -lt 200
+nclear
+# an fd array under a hint (sd-bus reads no fd array as a block): passed
+# over like any other value, the card still lands
+DBUS_SESSION_BUS_ADDRESS="$NBUS" python3 - <<'PY'
+import os
+from gi.repository import Gio, GLib
+V = GLib.Variant
+r, w = os.pipe()
+fds = Gio.UnixFDList.new()
+i = fds.append(r)
+os.close(r); os.close(w)
+args = V.new_tuple(V("s", "fdapp"), V("u", 0), V("s", ""), V("s", "fds"), V("s", "fd array"), V("as", []), V("a{sv}", {"x-fds": V("ah", [i])}), V.new_int32(4000))
+Gio.bus_get_sync(Gio.BusType.SESSION).call_with_unix_fd_list_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications",
+                                                                  "Notify", args, GLib.VariantType.new("(u)"), Gio.DBusCallFlags.NONE, 5000, fds, None)
+PY
+chk "reader: an fd array under a hint still lands the card" until_is 3 "center:0 live:1 dnd:0" st
+nclear
+# shapes past the fast path: a value wrapped in containers is walked past
+# without a copy; a big-endian sender's image-data (sd-bus serves it no
+# block) is read byte by byte up to 256 KiB, refused past it (a header
+# declaring more before the walk, a lying one at the bound); a walk past
+# its element budget is refused, never a stall
+notify_shape() { # notify_shape wrapped|be-small|be-big|be-lying|walk-past — prints "<ms> ok|err"
+	DBUS_SESSION_BUS_ADDRESS="$NBUS" python3 - "$1" <<'PY'
+import sys, time
+from gi.repository import Gio, GLib
+V, i32, shape = GLib.Variant, GLib.Variant.new_int32, sys.argv[1]
+def ay(n): return V.new_from_bytes(GLib.VariantType.new("ay"), GLib.Bytes.new(bytes((30, 160, 240, 255)) * (n // 4)), True)
+def img(w, n=0): return V.new_tuple(i32(w), i32(w), i32(w * 4), V.new_boolean(True), i32(8), i32(4), ay(n or w * w * 4))
+hints = {"wrapped": {"x-wrapped": V("v", ay(8 << 20))}, "be-small": {"image-data": img(256)}, "be-big": {"image-data": img(1024)},
+         "be-lying": {"image-data": img(16, 1 << 20)},
+         "walk-past": {"x-many": V("as", ["x"] * 100000)}}[shape]
+msg = Gio.DBusMessage.new_method_call("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "Notify")
+msg.set_body(V.new_tuple(V("s", "shapeapp"), V("u", 0), V("s", ""), V("s", "shape"), V("s", shape), V("as", []), V("a{sv}", hints), i32(4000)))
+if shape.startswith("be-"):
+    msg.set_byte_order(Gio.DBusMessageByteOrder.BIG_ENDIAN)
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+blob = msg.to_blob(Gio.DBusCapabilityFlags.NONE)  # serialize before the clock starts
+t0 = time.monotonic()
+reply, _ = bus.send_message_with_reply_sync(msg, Gio.DBusSendMessageFlags.NONE, 10000, None)
+print(int((time.monotonic() - t0) * 1000), "err" if reply.get_message_type() == Gio.DBusMessageType.ERROR else "ok")
+PY
+}
+read -r MS R <<<"$(notify_shape wrapped)"; echo "reader: 8 MB in two variants answered in ${MS} ms ($R)" >&2
+chk "reader: an 8 MB array in two variants is walked past (within 250 ms)" test "$R" = ok -a "${MS:-9999}" -lt 250
+nclear
+read -r MS R <<<"$(notify_shape be-small)"; sleep 1
+capture_nested $STATE/reader-4-aw.png
+chk "reader: a big-endian sender's image-data previews" test "$R" = ok -a "$(hero_px $STATE/reader-4-aw.png)" -gt 8000
+nclear
+read -r MS R <<<"$(notify_shape be-big)"; echo "reader: a 4 MiB big-endian image-data answered in ${MS} ms ($R)" >&2
+chk "reader: a big-endian image-data past 256 KiB is refused, not stalled" test "$R" = err -a "${MS:-9999}" -lt 250
+read -r MS R <<<"$(notify_shape be-lying)"; echo "reader: a 16x16 header over 1 MiB, big-endian, answered in ${MS} ms ($R)" >&2
+chk "reader: and so is one whose header understates it" test "$R" = err -a "${MS:-9999}" -lt 250
+read -r MS R <<<"$(notify_shape walk-past)"; echo "reader: 100k strings answered in ${MS} ms ($R)" >&2
+chk "reader: a hint past the walk budget is refused, not stalled" test "$R" = err -a "${MS:-9999}" -lt 250
+DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user call org.freedesktop.Notifications /org/freedesktop/Notifications \
+	org.freedesktop.Notifications Notify susssasa{sv}i after 0 "" "after" "still serving" 0 0 4000 >/dev/null
+chk "reader: and the daemon still serves" until_is 3 "center:0 live:1 dnd:0" st
+nclear
+
 # ---- an expanded bundle keeps to the page ------------------------------------
 # 30 three-line cards of one app: expanded, they would run far past the
 # screen; the page shows the children that fit and counts the rest

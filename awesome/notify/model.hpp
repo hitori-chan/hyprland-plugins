@@ -267,6 +267,9 @@ namespace NAwesome::Notify {
         // payload's own size, {0, 0} when it would not unpack.
         SPixels                  unpackImageData(const ImageData& d, int capPx);
         std::pair<int, int>      imageDataSize(const ImageData& d);
+        // the same check off the header alone: the bus reader runs it before
+        // it copies a byte
+        std::pair<int, int>      imageDataSize(int32_t w, int32_t h, int32_t stride, int32_t bitsPerSample, int32_t channels, size_t bytes);
         std::string              joinAppend(const std::string& oldBody, const std::string& add);
         std::string              foldSenderPrefix(std::string body); // "<b>S</b>\nmsg" -> "<b>S</b>: msg"
     }
@@ -298,9 +301,11 @@ namespace NAwesome::Notify {
         // a Notify payload becomes (or refreshes) a card; returns its id
         // `osd`: an in-process post (postCard) — only those may pin a fresh
         // id in the OSD band; no wire hint grants it
+        // `image`: the payload's image-data, read apart from the hints (the
+        // bus reader takes it out of the message in one block)
         uint32_t arrive(const std::string& appName, uint32_t replacesId, const std::string& appIcon, const std::string& summary, const std::string& body,
                         const std::string& sender, const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout,
-                        bool osd = false);
+                        std::optional<Parse::ImageData> image = std::nullopt, bool osd = false);
 
         // In-process card posting (the system module's feedback: audio,
         // pad; the shell's battery alerts). The bus face is for

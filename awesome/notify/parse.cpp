@@ -286,16 +286,18 @@ namespace NAwesome::Notify::Parse {
         return out;
     }
 
-    std::pair<int, int> imageDataSize(const ImageData& d) {
-        const int32_t W = std::get<0>(d), H = std::get<1>(d), STRIDE = std::get<2>(d), BPS = std::get<4>(d), CH = std::get<5>(d);
-        const auto&   DATA = std::get<6>(d);
+    std::pair<int, int> imageDataSize(int32_t W, int32_t H, int32_t STRIDE, int32_t BPS, int32_t CH, size_t bytes) {
         // STRIDE must cover a row: a lying stride (0) would let a tiny
         // message claim gigapixel W*H and the unpack below read it all.
         // The 16 MP cap bounds a genuine ~128 MB image-data (the D-Bus
         // message max) that would otherwise premultiply in full.
-        if (W <= 0 || H <= 0 || (int64_t)W * H > (16 << 20) || BPS != 8 || (CH != 3 && CH != 4) || (int64_t)STRIDE < (int64_t)W * CH || DATA.size() < (size_t)STRIDE * (H - 1) + (size_t)W * CH)
+        if (W <= 0 || H <= 0 || (int64_t)W * H > (16 << 20) || BPS != 8 || (CH != 3 && CH != 4) || (int64_t)STRIDE < (int64_t)W * CH || bytes < (size_t)STRIDE * (H - 1) + (size_t)W * CH)
             return {0, 0};
         return {W, H};
+    }
+
+    std::pair<int, int> imageDataSize(const ImageData& d) {
+        return imageDataSize(std::get<0>(d), std::get<1>(d), std::get<2>(d), std::get<4>(d), std::get<5>(d), std::get<6>(d).size());
     }
 
     SPixels unpackImageData(const ImageData& d, int capPx) {

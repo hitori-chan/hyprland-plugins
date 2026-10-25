@@ -148,6 +148,213 @@ namespace NAwesome::Notify::Bus {
         return true;
     }
 
+    // ---- Notify, read by hand ----
+
+    // sdbus-c++'s typed handler reads the hints into Variants, and a Variant
+    // copies its value element by element into a message of its own: a
+    // screenshot's image-data held the dispatch 0.2 s (1280x720 RGB) to
+    // 0.65 s (1080p RGBA) before the model saw a byte of it. Read here, the
+    // image header is checked first and its pixels leave the message in one
+    // block; the model's other hints are basic values, cheap as Variants;
+    // every other value is walked past without a copy (skipOne), and so is
+    // every hint past MAX_HINTS kept and every action string past
+    // MAX_ACTION_STRINGS (the model keeps 8 buttons, the default and the
+    // reply). A walk is linear in elements (~0.2-1 us each): past
+    // MAX_WALKED of them a call is refused, the defined behavior at a bound
+    // only a hostile sender reaches.
+    constexpr size_t MAX_HINTS          = 64;
+    constexpr size_t MAX_ACTION_STRINGS = 64;
+    constexpr size_t MAX_WALKED         = 1 << 16;
+    // A big-endian sender's image-data is read byte by byte (~0.1 us
+    // each, ~26 ms at the bound): a header declaring more is refused
+    // before the walk, a walk reaching it is refused at it (a 256x256
+    // RGBA icon fits; 1 MiB walked ~0.1 s against the 150 ms RT budget)
+    constexpr size_t         MAX_SWAPPED_IMAGE_BYTES = 256 << 10;
+
+    [[noreturn]] static void refuse(const char* why) {
+        throw sdbus::Error{sdbus::Error::Name{"org.freedesktop.DBus.Error.LimitsExceeded"}, why};
+    }
+
+    // the spec's three names for it, newest first
+    static int imageRank(std::string_view key) {
+        return key == "image-data" ? 0 : key == "image_data" ? 1 : key == "icon_data" ? 2 : -1;
+    }
+
+    static bool basicType(std::string_view sig) {
+        return sig.size() == 1 && std::string_view{"ybnqiuxtdsog"}.find(sig[0]) != std::string_view::npos;
+    }
+
+    // the element types sd-bus reads as one block; it serves none from a
+    // message that needs byte-swapping (a big-endian sender), and an fd
+    // array is not one
+    static bool trivialType(char t) {
+        return std::string_view{"ybnqiuxtd"}.find(t) != std::string_view::npos;
+    }
+
+    // Past the next complete value, copying nothing: a trivial array is one
+    // block (element by element from a big-endian sender), a string a
+    // pointer into the message. sd-bus can leave no container unread, so
+    // this is a walk, linear in the value's elements, never a copy; the
+    // nesting is the signature's, which sd-bus bounds. `budget` counts the
+    // elements left to walk this call.
+    static void skipOne(sdbus::MethodCall& m, size_t& budget) {
+        if (budget-- == 0)
+            refuse("a Notify value past the size the daemon walks");
+        const auto [TYPE, CONTENTS] = m.peekType();
+        const auto READ             = [&]<class T>() {
+            T v{};
+            m >> v;
+        };
+        switch (TYPE) {
+            case 'y': return READ.operator()<uint8_t>();
+            case 'b': return READ.operator()<bool>();
+            case 'n': return READ.operator()<int16_t>();
+            case 'q': return READ.operator()<uint16_t>();
+            case 'i': return READ.operator()<int32_t>();
+            case 'u': return READ.operator()<uint32_t>();
+            case 'x': return READ.operator()<int64_t>();
+            case 't': return READ.operator()<uint64_t>();
+            case 'd': return READ.operator()<double>();
+            case 's': {
+                char* v = nullptr;
+                m >> v;
+                return;
+            }
+            case 'o': return READ.operator()<sdbus::ObjectPath>();
+            case 'g': return READ.operator()<sdbus::Signature>();
+            case 'h': return READ.operator()<sdbus::UnixFd>();
+            case 'v':
+                m.enterVariant(CONTENTS);
+                skipOne(m, budget);
+                m.exitVariant();
+                return;
+            case 'a': {
+                const std::string_view C{CONTENTS ? CONTENTS : ""};
+                if (C.size() == 1 && trivialType(C[0])) {
+                    try {
+                        const void* p = nullptr;
+                        size_t      n = 0;
+                        m.readArray(C[0], &p, &n);
+                        return;
+                    } catch (const sdbus::Error&) {} // a big-endian sender: walked below
+                }
+                m.enterContainer(CONTENTS);
+                while (!m.isAtEnd(false))
+                    skipOne(m, budget);
+                m.exitContainer();
+                return;
+            }
+            case 'r':
+                m.enterStruct(CONTENTS);
+                while (!m.isAtEnd(false))
+                    skipOne(m, budget);
+                m.exitStruct();
+                return;
+            case 'e':
+                m.enterDictEntry(CONTENTS);
+                skipOne(m, budget);
+                skipOne(m, budget);
+                m.exitDictEntry();
+                return;
+            default: throw sdbus::Error{sdbus::Error::Name{"org.freedesktop.DBus.Error.InvalidArgs"}, "unreadable hint value"};
+        }
+    }
+
+    // at an image entry's variant; nullopt when the header would not unpack
+    static std::optional<Parse::ImageData> readImage(sdbus::MethodCall& m, bool keep) {
+        int32_t              w = 0, h = 0, stride = 0, bps = 0, ch = 0;
+        bool                 alpha = false;
+        const void*          px    = nullptr;
+        size_t               bytes = 0;
+        std::vector<uint8_t> swapped; // a big-endian sender's bytes, read one by one
+        m.enterVariant("(iiibiiay)");
+        m.enterStruct("iiibiiay");
+        m >> w >> h >> stride >> alpha >> bps >> ch;
+        try {
+            m.readArray('y', &px, &bytes);
+        } catch (const sdbus::Error&) {
+            const size_t DECLARED = w > 0 && h > 0 && stride > 0 && ch > 0 ? (size_t)stride * (h - 1) + (size_t)w * ch : 0;
+            if (DECLARED > MAX_SWAPPED_IMAGE_BYTES)
+                refuse("a big-endian image-data past 256 KiB");
+            swapped.reserve(DECLARED);
+            m.enterContainer("y");
+            while (!m.isAtEnd(false)) {
+                if (swapped.size() >= MAX_SWAPPED_IMAGE_BYTES)
+                    refuse("a big-endian image-data past 256 KiB");
+                uint8_t b = 0;
+                m >> b;
+                swapped.push_back(b);
+            }
+            m.exitContainer();
+            px    = swapped.data();
+            bytes = swapped.size();
+        }
+        m.exitStruct();
+        m.exitVariant();
+        if (!keep || Parse::imageDataSize(w, h, stride, bps, ch, bytes).first <= 0)
+            return std::nullopt;
+        Parse::ImageData d;
+        std::get<0>(d)    = w;
+        std::get<1>(d)    = h;
+        std::get<2>(d)    = stride;
+        std::get<3>(d)    = alpha;
+        std::get<4>(d)    = bps;
+        std::get<5>(d)    = ch;
+        const size_t NEED = (size_t)stride * (h - 1) + (size_t)w * ch; // what the unpack reads (checked above)
+        const auto*  FROM = static_cast<const uint8_t*>(px);
+        std::get<6>(d).assign(FROM, FROM + NEED);
+        return d;
+    }
+
+    static void onNotify(sdbus::MethodCall call) {
+        std::string                           appName, appIcon, summary, body;
+        uint32_t                              replacesId    = 0;
+        int32_t                               expireTimeout = -1;
+        std::vector<std::string>              actions;
+        std::map<std::string, sdbus::Variant> hints;
+        std::optional<Parse::ImageData>       image;
+        int                                   imageAt = 3; // the best name read so far
+        size_t                                budget  = MAX_WALKED;
+        call >> appName >> replacesId >> appIcon >> summary >> body;
+        call.enterContainer("s");
+        while (!call.isAtEnd(false))
+            if (actions.size() < MAX_ACTION_STRINGS) {
+                std::string a;
+                call >> a;
+                actions.push_back(std::move(a));
+            } else
+                skipOne(call, budget);
+        call.exitContainer();
+        call.enterContainer("{sv}");
+        while (call.enterDictEntry("sv")) {
+            std::string key;
+            call >> key;
+            const auto [TYPE, CONTENTS] = call.peekType();
+            const std::string_view SIG{CONTENTS ? CONTENTS : ""};
+            if (const int RANK = imageRank(key); RANK >= 0 && SIG == "(iiibiiay)") {
+                if (auto d = readImage(call, RANK < imageAt)) {
+                    image   = std::move(d);
+                    imageAt = RANK;
+                }
+            } else if (hints.size() < MAX_HINTS && basicType(SIG)) {
+                sdbus::Variant v;
+                call >> v;
+                hints.emplace(std::move(key), std::move(v)); // a repeated key keeps its first, as the typed read did
+            } else
+                skipOne(call, budget);
+            call.exitDictEntry();
+        }
+        call.clearFlags();
+        call.exitContainer();
+        call >> expireTimeout;
+
+        const char* SENDER = call.getSender();
+        const auto  ID     = Model::arrive(appName, replacesId, appIcon, summary, body, SENDER ? SENDER : "", actions, hints, expireTimeout, std::move(image));
+        auto        reply  = call.createReply();
+        reply << ID;
+        reply.send();
+    }
+
     void init() {
         g_bus.onLost = [](const std::string& err) {
             HyprlandAPI::addNotification(NAwesome::supervisor().handle(), "[awesome] bus lost, notifications disabled: " + err, CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
@@ -163,19 +370,22 @@ namespace NAwesome::Notify::Bus {
             g_bus.open(false, "org.freedesktop.Notifications");
             obj = sdbus::createObject(*g_bus.conn(), sdbus::ObjectPath{"/org/freedesktop/Notifications"});
 
-            obj->addVTable(sdbus::registerMethod("Notify")
-                               .withInputParamNames("app_name", "replaces_id", "app_icon", "summary", "body", "actions", "hints", "expire_timeout")
-                               .withOutputParamNames("id")
-                               .implementedAs([](std::string appName, uint32_t replacesId, std::string appIcon, std::string summary, std::string body,
-                                                 std::vector<std::string> actions, std::map<std::string, sdbus::Variant> hints,
-                                                 int32_t expireTimeout) {
-                                   std::string sender;
-                                   if (g_bus.conn())
-                                       try {
-                                           sender = g_bus.conn()->getCurrentlyProcessedMessage().getSender();
-                                       } catch (...) {}
-                                   return Model::arrive(appName, replacesId, appIcon, summary, body, sender, actions, hints, expireTimeout);
-                               }),
+            obj->addVTable(sdbus::MethodVTableItem{.name             = sdbus::MethodName{"Notify"},
+                                                   .inputSignature   = sdbus::Signature{"susssasa{sv}i"},
+                                                   .inputParamNames  = {"app_name", "replaces_id", "app_icon", "summary", "body", "actions", "hints", "expire_timeout"},
+                                                   .outputSignature  = sdbus::Signature{"u"},
+                                                   .outputParamNames = {"id"},
+                                                   .callbackHandler =
+                                                       [](sdbus::MethodCall call) {
+                                                           // a malformed body is the caller's error, never an
+                                                           // exception through sd-bus's C frames
+                                                           try {
+                                                               onNotify(std::move(call));
+                                                           } catch (const sdbus::Error&) { throw; } catch (const std::exception& E) {
+                                                               throw sdbus::Error{sdbus::Error::Name{"org.freedesktop.DBus.Error.InvalidArgs"}, E.what()};
+                                                           }
+                                                       },
+                                                   .flags = {}},
                            // ignore_dbusclose (dunst's knob): an app revoking
                            // its own notification (Telegram on read-elsewhere)
                            // is ignored — the card lives out its banner and

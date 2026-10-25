@@ -359,6 +359,12 @@ stays a broadcast.
   `x-canonical-append`; `x-notify-group-key`. A boolean hint is read
   the way clients send it: a bool, an int or a byte (`notify-send -h
   int:transient:1`), or a string.
+- `Notify` is read by hand, not as typed hint Variants (sdbus-c++
+  copies each Variant element by element: a 1080p screenshot held the
+  dispatch ~0.65 s). An image hint's header is checked first and its
+  pixels leave the message in one block; the hints above are basic
+  values (64 kept at most, the rest passed over); any other value is
+  passed over, without a copy where its type allows.
 - Structured-conversation hints (neither name form sits in the
   published spec's hint table; the plain name is tried first, the
   `x-notify-*` alias second — the message-time alias alone is
