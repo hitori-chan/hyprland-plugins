@@ -383,9 +383,8 @@ namespace NAwesome::Notify {
         // progress) keep their banners so the expiry timer still vanishes
         // them on their own clocks; nothing here emits a close for them (the
         // cards are parked, not dismissed). An OSD or a transient card goes
-        // for good (momentary). `repopOnClose` false parks for good: the
-        // popup's middle click, with no shade whose close would return them.
-        void absorbPopped(bool repopOnClose) {
+        // for good (momentary).
+        void absorbPopped() {
             bool                  changed = false;
             std::vector<uint32_t> gone;
             for (const auto& N : notifs)
@@ -404,7 +403,7 @@ namespace NAwesome::Notify {
                 if (vanishes(N))
                     continue;
                 N->banner   = false;
-                N->absorbed = repopOnClose;
+                N->absorbed = true;
                 changed     = true;
             }
             if (changed)

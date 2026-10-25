@@ -331,7 +331,7 @@ namespace NAwesome::Notify {
         void       lowerBanners(const std::string& appKey);  // a menu switch silenced the app (or a chat): its soft banners go to the shade now
         std::string groupKeyOf(const SP<SNotif>& n);       // the bundle's identity: the app key, sub-keyed by the declared group
         bool       bundleable(const SP<SNotif>& n);       // may join an app bundle: conversations never do
-        void       absorbPopped(bool repopOnClose = true); // opening the shade parks the popped stack
+        void       absorbPopped();                // opening the shade parks the popped stack
         void       repopAbsorbed(bool repop = true);      // closing it returns the parked stack to banners (or parks it for good)
         // the transcript of the latest `limit` kept messages, chronological
         // (oldest leads, newest ends): the banner previews five, the shade

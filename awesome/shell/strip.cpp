@@ -195,7 +195,6 @@ namespace NAwesome::Shell {
         // Focus is global, but the bar is rendered once per output. A window
         // focused on another output must not mark this monitor's tag/task.
         F.focus   = GLOBALFOCUS && GLOBALFOCUS->m_monitor.lock() == mon ? GLOBALFOCUS : nullptr;
-        F.focusWs = F.focus && F.focus->m_workspace ? F.focus->m_workspace->numberedID().value_or(0) : 0;
 
         // one palette fetch per frame: color() memoizes the conversion but
         // still hashes per call, and the widgets make dozens

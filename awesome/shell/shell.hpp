@@ -275,7 +275,6 @@ namespace NAwesome::Shell {
     struct SFrame {
         PHLWORKSPACE                                       ws;    // the monitor's active workspace
         PHLWINDOW                                          focus; // frame-scoped strong refs: SFrame never outlives renderBar
-        uint32_t                                           focusWs     = 0;    // focused window's numbered workspace, 0 = none
         bool                                               urgent[10]  = {}; // workspaces 1..9
         int                                                windows[10] = {};
         const std::vector<std::pair<uint64_t, PHLWINDOW>>* tasks       = nullptr; // this workspace's tasks, arrival order
