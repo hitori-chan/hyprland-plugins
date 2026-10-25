@@ -135,7 +135,7 @@ namespace NAwesome {
             // the shared .desktop icon index, before the modules subscribe
             CDesktopIndex::inst().start();
             CRasterWorker::inst().start(); // the pixel worker the modules' images ride
-            // A throwing init (bad_alloc, a bus that refuses us) ejects the
+            // A throwing start (bad_alloc, a bus that refuses us) ejects the
             // plugin WITHOUT PLUGIN_EXIT: tear down whatever did start —
             // including the thrower's partial init — so no listener, timer,
             // hop or event source is left pointing into the unmapped .so.
@@ -143,7 +143,24 @@ namespace NAwesome {
             try {
                 for (; started < m_modules.size(); ++started)
                     m_modules[started]->init();
+
+                auto& EV = Event::bus()->m_events;
+                m_listenRenderStage = EV.render.stage.listen([](const Event::SRenderStageEvent& ev) { Canvas::inst().onRenderStage(ev); });
+                m_listenSolitary    = EV.monitor.blockSolitary.listen([](PHLMONITOR mon, bool& block) { Canvas::inst().onBlockSolitary(mon, block); });
+                m_listenButton      = EV.input.mouse.button.listen([](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { Supervisor::inst().dispatchButton(e, info); });
+                m_listenMove        = EV.input.mouse.move.listen([](Vector2D pos, Event::SCallbackInfo& info) { Supervisor::inst().dispatchMove(pos, info); });
+                m_listenAxis        = EV.input.mouse.axis.listen([](IPointer::SAxisEvent e, Event::SCallbackInfo& info) { Supervisor::inst().dispatchAxis(e, info); });
+                m_listenKey         = EV.input.keyboard.key.listen([](IKeyboard::SKeyEvent e, Event::SCallbackInfo& info) { Supervisor::inst().dispatchKey(e, info); });
+
+                CFontWarm::inst().start(); // the faces' first use, before a notification pays it
             } catch (...) {
+                CFontWarm::inst().stop();
+                m_listenRenderStage.reset();
+                m_listenSolitary.reset();
+                m_listenButton.reset();
+                m_listenMove.reset();
+                m_listenAxis.reset();
+                m_listenKey.reset();
                 for (auto& L : m_listeners)
                     L.reset();
                 m_listeners.clear();
@@ -155,16 +172,6 @@ namespace NAwesome {
                 CDesktopIndex::inst().stop();
                 throw;
             }
-
-            CFontWarm::inst().start(); // the faces' first use, before a notification pays it
-
-            auto& EV = Event::bus()->m_events;
-            m_listenRenderStage = EV.render.stage.listen([](const Event::SRenderStageEvent& ev) { Canvas::inst().onRenderStage(ev); });
-            m_listenSolitary    = EV.monitor.blockSolitary.listen([](PHLMONITOR mon, bool& block) { Canvas::inst().onBlockSolitary(mon, block); });
-            m_listenButton      = EV.input.mouse.button.listen([](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { Supervisor::inst().dispatchButton(e, info); });
-            m_listenMove        = EV.input.mouse.move.listen([](Vector2D pos, Event::SCallbackInfo& info) { Supervisor::inst().dispatchMove(pos, info); });
-            m_listenAxis        = EV.input.mouse.axis.listen([](IPointer::SAxisEvent e, Event::SCallbackInfo& info) { Supervisor::inst().dispatchAxis(e, info); });
-            m_listenKey         = EV.input.keyboard.key.listen([](IKeyboard::SKeyEvent e, Event::SCallbackInfo& info) { Supervisor::inst().dispatchKey(e, info); });
         }
 
         // The only safe order: listeners, then hops, then modules — reverse
