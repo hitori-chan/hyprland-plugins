@@ -67,6 +67,7 @@
 
 #include "../core/canvas.hpp"
 #include "../core/config.hpp"
+#include "../core/glyph.hpp"
 #include "../core/icons.hpp"
 #include "../core/queries.hpp"
 #include "../core/supervisor.hpp"
@@ -215,6 +216,9 @@ namespace NAwesome::Notify {
         float                timeoutMs = 0; // resolved; 0 = sticky
         Time::steady_tp      deadline;      // meaningful when banner && timeoutMs > 0 and not waiting
         Time::steady_tp      arrived;       // Notify arrival (a replace refreshes it); the age lines
+        std::time_t          arrivedWall = 0; // the same moment on the wall clock: the center's times
+        uint8_t              osdGlyph = 0;    // a capsule's Glyph::eGlyph (postCard), 0 = a card
+        bool                 osdAlarm = false;
         Time::steady_tp      born;          // creation only (a replace keeps it); the arrival spring's key
 
         // image textures — built ONLY by the warm pass (the texture rule).
@@ -313,6 +317,10 @@ namespace NAwesome::Notify {
             int value = -1;            // the value hint, 0..100; -1 = none
             uint8_t urgency = 1;       // 0 low / 1 normal / 2 critical (sticky)
             bool osd = false;          // an OSD-band post: may pin a fresh band id
+            // a non-NONE glyph draws the post as a capsule, top center (the
+            // system's feedback); alarm: its words in the urgent colour
+            Glyph::eGlyph glyph = Glyph::eGlyph::NONE;
+            bool          alarm = false;
         };
         void postCard(const SPostCard& c);
 
@@ -441,25 +449,26 @@ namespace NAwesome::Notify {
     struct SCard {
         enum eKind : uint8_t {
             POPUP = 0,
-            ROW,       // a shade row
+            ROW,       // a center card
             DIGEST,    // a folded app bundle (group = app key)
-            GHEAD,     // an expanded bundle's header row
-            CHILD,     // a bundle child row
-            BTN_CLEAR, // footer "Clear all": the global sweep
-            BTN_DND,   // footer ⊖ (do-not-disturb)
-            PANEL,     // the shade panel body: swallows clicks, owns the wheel
-            PAGE_UP,   // the shade's paging chips (drawn over the edge rows)
+            GHEAD,     // an open bundle's header
+            CHILD,     // a bundle's child
+            BTN_CLEAR, // the center header's "Clear All": the global sweep
+            BTN_DND,   // the center header's moon (do-not-disturb)
+            PANEL,     // the center's column: swallows clicks, owns the wheel
+            PAGE_UP,   // the center's paging chips (drawn over the edge cards)
             PAGE_DOWN,
+            CAPSULE,   // an OSD capsule: damage and bounds only, never hit
         };
         eKind       kind = POPUP;
         CBox        box;
         uint32_t    id   = 0; // live identity
         uint64_t    rev  = 0; // the card's revision this layout drew: a click acts on what it saw
         std::string group;    // DIGEST/GHEAD/CHILD: the app key
-        CBox        chevron;      // ROW: the 24Ø fold indicator; w = 0 -> none
-        CBox        close;        // POPUP hover-✕ / GHEAD ✕; w = 0 -> none
+        CBox        chevron;      // GHEAD: the fold circle; w = 0 -> none
+        CBox        close;        // GHEAD: the ✕ circle; w = 0 -> none
         CBox        replyField;   // ROW: the armed inline-reply box (swallows, never acts)
-        CBox        replySend;    // ROW: its send pill
+        CBox        replySend;    // ROW: its send circle
         struct SBtn {
             CBox        box;
             std::string id;

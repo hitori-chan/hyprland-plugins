@@ -3,7 +3,9 @@
 // lifecycle sections and no history view: what you can see is what the model
 // holds, and a dismissed card is gone (Android's shade has no recall either).
 //
-// This unit decides WHAT is shown and WHERE; row.cpp draws it.
+// This unit decides WHAT is shown and WHERE; card.cpp and bundle.cpp draw
+// it. The center is the banners' own column under a heading, over a dusk
+// that keeps the glass legible on any wallpaper.
 //
 // RANKING — Android's, without the dividers: critical, then conversations,
 // then normal, then silent; newest first inside each tier. An app's cards
@@ -285,24 +287,24 @@ namespace NAwesome::Notify {
     // row always opens (Android's one guarantee); a user override wins over
     // the budget in both directions. Rows past the fold are only measured
     // COLLAPSED — their open form would raster text no frame can show.
-    static void runBudget(const SPaint& P, const SType& T, double contentW, double bodyCap) {
+    static void runBudget(const SPaint& P, const SType& T, double contentW, double bodyCap, double gap) {
         double used = 0;
         for (size_t i = s_skip; i < s_disp.size(); i++) {
             const auto&  D    = s_disp[i];
-            const double LEAD = i == s_skip ? 0 : STACK_GAP;
+            const double LEAD = i == s_skip ? 0 : gap;
             const bool   TOP  = i == s_skip;
 
             if (D.items.size() < 2) {
                 const auto&  N          = D.items.front();
-                const double CH         = measureRow(P, T, N, contentW, false, ROW_SINGLE);
-                // an armed reply field is drawn in the open row only: its
-                // row is open whatever the budget or a fold says
+                const double CH         = measureCard(P, T, N, contentW, SCardForm{.where = SCardForm::CENTER, .open = false});
+                // an armed reply field is drawn in the open card only: its
+                // card is open whatever the budget or a fold says
                 const bool   ARMED      = replyArmedOn(N->id);
                 const bool   FORCE_OPEN = ARMED || s_openedRow.contains(N->id), FORCE_FOLD = !ARMED && s_foldedRow.contains(N->id);
                 bool         open = false, more = true;
                 double       h = CH;
                 if (!FORCE_FOLD && (FORCE_OPEN || TOP || used + LEAD + CH < bodyCap)) {
-                    const double OH = measureRow(P, T, N, contentW, true, ROW_SINGLE);
+                    const double OH = measureCard(P, T, N, contentW, SCardForm{.where = SCardForm::CENTER, .open = true});
                     more            = OH > CH + 0.5;
                     open            = more && (FORCE_OPEN || TOP || used + LEAD + OH <= bodyCap);
                     if (open)
@@ -313,7 +315,7 @@ namespace NAwesome::Notify {
                 s_itemMore[i]     = more;
                 s_rowState[N->id] = open;
             } else {
-                // a bundle: the digest card, or a header + readable children
+                // a bundle: the digest, or a header and readable children
                 const double DH         = digestH(T, D.items.size(), P.scale);
                 const bool   FORCE_OPEN = s_openedGroup.contains(D.key), FORCE_FOLD = s_foldedGroup.contains(D.key);
                 bool         open       = false;
@@ -324,26 +326,26 @@ namespace NAwesome::Notify {
                     // and one the user opened shows the children that fit
                     // and counts the rest in a tail (a 50-card bundle
                     // measured and painted every child, the ones below the
-                    // screen included: tens of ms per shade open)
+                    // screen included: tens of ms per center open)
                     const double        ROOM = bodyCap - used - LEAD;
-                    const double        TAIL = FORCE_OPEN ? CHILD_GAP + groupTailH() : 0;
-                    double              oh   = groupHeadH();
+                    const double        TAIL = FORCE_OPEN ? TAIL_H : 0;
+                    double              oh   = groupChromeH(false);
                     bool                cut  = false;
                     std::vector<double> ch;
                     for (size_t k = 0; k < D.items.size() && !cut; k++) {
-                        const double C    = measureRow(P, T, D.items[k], contentW, true, ROW_CHILD); // expanded children are always open
+                        const double C    = measureCard(P, T, D.items[k], contentW, SCardForm{.where = SCardForm::CHILD});
                         const bool   LAST = k + 1 == D.items.size();
-                        if (!ch.empty() && oh + CHILD_GAP + C + (LAST ? 0 : TAIL) > ROOM) {
+                        if (!ch.empty() && oh + C + (LAST ? 0 : TAIL) > ROOM) {
                             cut = true;
                             break;
                         }
                         ch.push_back(C);
-                        oh += CHILD_GAP + C;
+                        oh += C;
                         cut = !FORCE_OPEN && oh > ROOM; // it cannot open: stop measuring
                     }
                     if (FORCE_OPEN || (!cut && oh <= ROOM)) {
                         open        = true;
-                        h           = oh + (ch.size() < D.items.size() ? CHILD_GAP + groupTailH() : 0);
+                        h           = oh + (ch.size() < D.items.size() ? TAIL_H : 0);
                         s_childH[i] = std::move(ch);
                     }
                 }
@@ -353,10 +355,10 @@ namespace NAwesome::Notify {
                 s_groupState[D.key] = open;
             }
             used += LEAD + s_itemH[i];
-            // past the fold: no later row is on this page, and measuring
+            // past the fold: no later card is on this page, and measuring
             // them rastered two texts and queued an icon decode each for
             // content nothing draws (the age tick re-rastered them all).
-            // Unmeasured rows never fit; paging re-runs the budget from the
+            // Unmeasured cards never fit; paging re-runs the budget from the
             // new top.
             if (i > s_skip && used > bodyCap) {
                 for (size_t k = i + 1; k < s_disp.size(); k++)
@@ -368,11 +370,11 @@ namespace NAwesome::Notify {
 
     // The last row placed from s_skip down at these heights (the draw's
     // placement, ahead of it).
-    static size_t lastFit(double bodyCap) {
+    static size_t lastFit(double bodyCap, double gap) {
         double used = 0;
         size_t last = s_skip;
         for (size_t i = s_skip; i < s_itemH.size(); i++) {
-            const double LEAD = i == s_skip ? 0 : STACK_GAP;
+            const double LEAD = i == s_skip ? 0 : gap;
             if (i > s_skip && used + LEAD + s_itemH[i] > bodyCap)
                 break;
             used += LEAD + s_itemH[i];
@@ -391,11 +393,11 @@ namespace NAwesome::Notify {
         return s_sel;
     }
 
-    // ---- the panel ----
+    // ---- the center ----
 
     void renderCenter(const SPaint& PIN, const SType& T) {
         SPaint P = PIN;
-        if (s_animating) { // the open spring: fade + a 6px rise
+        if (s_animating) { // the open spring: fade + a 6 px rise
             const float AT = animT(s_openedAt, Theme::MOTION_SPATIAL);
             if (AT >= 1.f)
                 s_animating = false;
@@ -405,27 +407,26 @@ namespace NAwesome::Notify {
             }
         }
 
-        const auto  MB     = P.mon->logicalBox();
-        const int   RPANEL = rPanel(P.scale), RROW = rRow(P.scale);
-        const float RP     = rPow();
+        const auto  MB = P.mon->logicalBox();
+        const float RP = rPow();
+        const auto  COLTITLE = color(cfg().getColor("plugin:awesome:notify:col_title")), COLSUB = color(cfg().getColor("plugin:awesome:notify:col_kicker")),
+                   COLACC = color(cfg().getColor("plugin:awesome:notify:col_highlight")), COLBG = color(cfg().getColor("plugin:awesome:notify:col_bg")),
+                   COLRIM = color(cfg().getColor("plugin:awesome:notify:col_frame"));
 
-        const auto  COLBG = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_bg")), COLFG = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg")), COLSUB = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_kicker")), COLACC = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_highlight"));
-
-        const double X  = MB.x + MB.w - EDGE - CENTER_W;
+        const double W   = std::max((double)cfg().getI("plugin:awesome:notify:width"), 120.0);
+        const double GAP = std::max((double)cfg().getI("plugin:awesome:notify:margin"), 0.0);
+        const double X   = MB.x + MB.w - EDGE - W;
         const double TOP = cardsTop(P.mon);
         const double Y0  = MB.y + TOP;
+        const double CY0 = Y0 + HEADER_H + HEADER_GAP; // the cards' top
 
-        const double CONTENT_X = X + BODY_PADX, CONTENT_W = CENTER_W - 2 * BODY_PADX;
-
-        const double BAR_H = BAR_PADT + BAR_BTN + BAR_PADB;
-        // The shade runs to what the monitor leaves below offset_y (a margin of
-        // air) — Android's shade is the screen, and the expansion budget spends
-        // exactly this. Overflow past it becomes wheel paging, never off-screen
-        // bleed; renderRow caps a row's body at 4 lines (7 for a chat), so no
-        // single row can exceed the cap and the always-place-the-first-row rule
-        // can't spill.
-        const double AVAILH  = MB.h - TOP - cardsBottomReserved(P.mon) - (double)NAwesome::cfg().getI("plugin:awesome:notify:margin");
-        const double BODYCAP = std::max(ROW_ICON, AVAILH - BAR_H - BODY_PADT - BODY_PADB);
+        // The column runs to what the monitor leaves below offset_y (a margin
+        // of air), and the expansion budget spends exactly this. Overflow
+        // becomes wheel paging, never off-screen bleed; a card caps its body
+        // (card.cpp), so no single card can exceed the cap and the
+        // always-place-the-first rule can't spill.
+        const double AVAILH  = MB.h - TOP - cardsBottomReserved(P.mon) - GAP;
+        const double BODYCAP = std::max(64.0, AVAILH - HEADER_H - HEADER_GAP);
 
         // The display list, every height AND every fold verdict are decided
         // once per WARM and reused by the draws between warms: hover fills
@@ -439,7 +440,7 @@ namespace NAwesome::Notify {
             // A field that died (its card left, its sender left the bus, a
             // replace moved it to another chat) goes now, not at the next
             // key, and takes the selection with it: a key typed for it must
-            // not act on a row.
+            // not act on a card.
             if (replyHeld() && !replyArmed())
                 s_sel = -1;
             uint32_t    selId = 0;
@@ -463,22 +464,22 @@ namespace NAwesome::Notify {
             s_childH.assign(s_disp.size(), {});
             s_rowState.clear();
             s_groupState.clear();
-            runBudget(P, T, CONTENT_W, BODYCAP);
-            // the keyboard's row stays on the page: a step past the last row
-            // pages by one, and a taller next row (or rows the new top
+            runBudget(P, T, W, BODYCAP, GAP);
+            // the keyboard's card stays on the page: a step past the last one
+            // pages by one, and a taller next card (or cards the new top
             // re-opened) can still leave it below the fold
-            for (const int KEEP = keyboardRow(); KEEP > (int)s_skip && (size_t)KEEP > lastFit(BODYCAP);) {
+            for (const int KEEP = keyboardRow(); KEEP > (int)s_skip && (size_t)KEEP > lastFit(BODYCAP, GAP);) {
                 ++s_skip;
                 s_rowState.clear();
                 s_groupState.clear();
-                runBudget(P, T, CONTENT_W, BODYCAP);
+                runBudget(P, T, W, BODYCAP, GAP);
             }
         }
         const auto& disp = s_disp;
         s_items          = disp.size();
         s_skip           = disp.empty() ? 0 : std::min(s_skip, disp.size() - 1);
 
-        // place the items that fit; STACK_GAP joins the cards into one column
+        // place the items that fit
         struct SPlaced {
             size_t idx;
             double h;
@@ -487,148 +488,121 @@ namespace NAwesome::Notify {
         placed.clear();
         double usedH = 0;
         for (size_t i = s_skip; i < disp.size() && i < s_itemH.size(); i++) {
-            const double LEAD = placed.empty() ? 0 : STACK_GAP;
+            const double LEAD = placed.empty() ? 0 : GAP;
             if (!placed.empty() && usedH + LEAD + s_itemH[i] > BODYCAP)
                 break;
             usedH += LEAD + s_itemH[i];
             placed.push_back({i, s_itemH[i]});
         }
         s_lastVis = placed.empty() ? s_skip : placed.back().idx;
+        const bool EMPTY = disp.empty();
 
-        const bool   EMPTY  = disp.empty();
-        const double EMPTYH = 46;
-        const double BODYH  = EMPTY ? EMPTYH : usedH;
-        const double PANELH = BODY_PADT + BODYH + BODY_PADB + BAR_H;
-        const CBox   PANEL{X, Y0, CENTER_W, PANELH};
+        // ---- the dusk: the column's backdrop, darkening to the edge ----
+        const double WAY = MB.y + (P.mon->logicalBoxMinusReserved().y - MB.y);
+        lastScrim        = CBox{MB.x + MB.w - SCRIM_W, WAY, SCRIM_W, MB.y + MB.h - WAY};
+        if (const auto S = scrimTex(); S && S->tex)
+            P.texStretch(S->tex, lastScrim);
 
-        P.shadow(PANEL, RPANEL, RP, 22);
-        P.glass(PANEL, COLBG, RPANEL, RP);
+        // the column swallows its clicks and owns the wheel, gaps included
         {
             SCard pc;
             pc.kind = SCard::PANEL;
-            pc.box  = PANEL;
+            pc.box  = CBox{X, Y0, W, HEADER_H + HEADER_GAP + (EMPTY ? EMPTY_H : usedH)};
             cards.push_back(pc);
         }
 
-        double y = Y0 + BODY_PADT;
+        // ---- the heading: "Notifications", the moon, "Clear All" ----
+        {
+            const auto HEAD = cachedText("Notifications", COLTITLE, T.heading, (int)std::lround(W * P.scale), -1, 0, false, 600);
+            if (HEAD && HEAD->tex)
+                P.tex(HEAD->tex, X + 4, Y0 + (HEADER_H - texH(HEAD, P.scale)) / 2);
 
-        if (EMPTY) {
-            const auto E = cachedText("You're all caught up!", COLSUB, T.body, (int)(CENTER_W * P.scale), -1, 0, false, 500);
-            if (!P.warm && E && E->tex)
-                P.tex(E->tex, X + (CENTER_W - E->tex->m_size.x / P.scale) / 2, y + (EMPTYH - E->tex->m_size.y / P.scale) / 2);
-            y += EMPTYH;
+            const bool TARGET = std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && !Model::offShade(N); });
+            const bool CHOV   = hovered.kind == SCard::BTN_CLEAR && TARGET;
+            const auto CLEAR  = cachedText("Clear All", TARGET ? (CHOV ? COLTITLE : COLSUB) : COLSUB.modifyA(COLSUB.a * 0.5f), T.meta, (int)std::lround(W * P.scale), -1, 0,
+                                           false, 500);
+            const double CW = texW(CLEAR, P.scale);
+            const CBox   CB{X + W - 4 - CW - 6, Y0, CW + 12, HEADER_H};
+            texCentered(P, CLEAR, CB);
+            SCard cc;
+            cc.kind = SCard::BTN_CLEAR;
+            cc.box  = CB;
+            cards.push_back(cc);
+
+            // Do Not Disturb: the moon lit in the accent while it holds
+            const bool LIT  = Model::suspendedNow();
+            const bool DHOV = hovered.kind == SCard::BTN_DND;
+            const auto MOON = Glyph::tex(Glyph::eGlyph::MOON, LIT ? COLACC : DHOV ? COLTITLE : COLSUB, (int)std::lround(14 * P.scale));
+            const CBox DB{CB.x - 4 - HEADER_H, Y0, HEADER_H, HEADER_H};
+            if (MOON)
+                P.texIn(MOON, DB);
+            SCard dc;
+            dc.kind = SCard::BTN_DND;
+            dc.box  = DB;
+            cards.push_back(dc);
         }
 
-        bool first = true;
+        if (EMPTY) {
+            const CBox EB{X, CY0, W, EMPTY_H};
+            P.frost(EB, COLBG, COLRIM, rCard(P.scale), RP);
+            texCentered(P, cachedText("No Notifications", COLSUB, T.body, (int)std::lround(W * P.scale), -1, 0, false, 500), EB);
+        }
+
+        double y = CY0;
         for (const auto& [IDX, IH] : placed) {
             const auto& D    = disp[IDX];
             const bool  OPEN = IDX < s_itemOpen.size() && s_itemOpen[IDX];
-            const bool  MORE = IDX < s_itemMore.size() && s_itemMore[IDX];
-            if (!first)
-                y += STACK_GAP;
-            first = false;
-
-            const CBox SLOT{CONTENT_X, y, CONTENT_W, IH};
-            if (D.items.size() < 2)
-                paintSingle(P, T, D.items.front(), SLOT, OPEN, MORE);
-            else if (!OPEN)
+            const CBox  SLOT{X, y, W, IH};
+            if (D.items.size() < 2) {
+                SCard card = recycledCard();
+                renderCard(P, T, D.items.front(), SLOT, SCardForm{.where = SCardForm::CENTER, .open = OPEN}, card);
+                cards.push_back(std::move(card));
+            } else if (!OPEN)
                 paintDigest(P, T, D, SLOT);
             else // a ternary against a temporary copied the heights every frame
                 paintGroup(P, T, D, SLOT, IDX < s_childH.size() ? s_childH[IDX] : NO_CHILDREN);
 
-            // the keyboard selection: a hairline in the accent, drawn over the
-            // whole item (an open bundle's header and children together) so it
-            // never reads as a hover, which is a fill
+            // the keyboard's selection: the accent around the whole item, so
+            // it never reads as a hover
             if ((int)IDX == s_sel)
-                P.ring(SLOT, COLACC, RROW, RP);
-            y += IH;
-        }
-
-        // ---- the footer: ⊖ DND · a global "Clear all" ----
-        const double BARY = Y0 + PANELH - BAR_PADB - BAR_BTN;
-        double       bx   = X + BAR_PADX;
-
-        { // ⊖ do-not-disturb
-            const CBox B{bx, BARY, BAR_BTN, BAR_BTN};
-            const bool LIT = Model::suspendedNow();
-            const auto G   = cachedText("⊖", LIT ? tOnAccent() : COLFG, T.bar, 64, -1, 0, false, 600);
-            if (!P.warm) {
-                const bool HOV = hovered.kind == SCard::BTN_DND;
-                P.rect(B, LIT ? COLACC : HOV ? tAccentDim() : tFill2(), (int)std::lround(BAR_BTN / 2 * P.scale));
-                if (G && G->tex)
-                    P.tex(G->tex, B.x + (B.w - G->tex->m_size.x / P.scale) / 2, B.y + (B.h - G->tex->m_size.y / P.scale) / 2);
-            }
-            SCard c;
-            c.kind = SCard::BTN_DND;
-            c.box  = B;
-            cards.push_back(c);
-            bx += BAR_BTN + BAR_GAP;
-        }
-
-        { // "Clear all" — the global sweep; greys when the shade is empty
-            const double CW = X + CENTER_W - BAR_PADX - bx;
-            const CBox   B{bx, BARY, CW, BAR_BTN};
-            const bool   TARGET = std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && !Model::offShade(N); });
-            const auto   L      = cachedText("Clear all", TARGET ? COLFG : COLSUB.modifyA(0.35f), T.bar, (int)(CW * P.scale), -1, 0, false, 600);
-            if (!P.warm) {
-                const bool HOV = hovered.kind == SCard::BTN_CLEAR;
-                P.rect(B, HOV && TARGET ? tAccentDim() : tFill2().modifyA(TARGET ? 0.09f : 0.035f), (int)std::lround(BAR_BTN / 2 * P.scale));
-                if (L && L->tex)
-                    P.tex(L->tex, B.x + (B.w - L->tex->m_size.x / P.scale) / 2, B.y + (B.h - L->tex->m_size.y / P.scale) / 2);
-            }
-            SCard c;
-            c.kind = SCard::BTN_CLEAR;
-            c.box  = B;
-            cards.push_back(c);
+                P.ring(SLOT, COLACC, rCard(P.scale), RP, 1.5);
+            y += IH + GAP;
         }
 
         // Paging cues: a wheel-scroll is invisible otherwise. An up chevron
-        // when rows sit above the fold, a "chevron N" chip when N
-        // notifications sit below. They are drawn over the edge rows, so
-        // they take their own clicks (a page, like the wheel) — pushed last,
-        // they are hit first; informational-only once let a click on the
-        // chip act on the row beneath it. Both live inside the already-
-        // damaged panel box, so no extra damage.
+        // when cards sit above the fold, a "chevron N" chip when N sit below.
+        // Drawn over the edge cards, they take their own clicks (a page, like
+        // the wheel) — pushed last, they are hit first.
         if (!EMPTY) {
             size_t below = 0;
             for (size_t i = (placed.empty() ? 0 : placed.back().idx + 1); i < disp.size(); i++)
                 below += disp[i].items.size();
+            const double CHIP_H = 24;
             if (s_skip > 0) {
-                const auto U = chevronTex(1, COLSUB, (int)std::lround(T.small * 2.0));
-                if (U && U->tex) {
-                    const double UW = U->tex->m_size.x / P.scale, UH = U->tex->m_size.y / P.scale, UX = X + (CENTER_W - UW) / 2;
-                    if (!P.warm)
-                        P.tex(U->tex, UX, Y0 + 2);
-                    SCard c;
-                    c.kind = SCard::PAGE_UP;
-                    c.box  = CBox{UX - 8, Y0, UW + 16, UH + 4};
-                    cards.push_back(c);
-                }
+                const CBox UP{X + (W - 44) / 2, CY0 - CHIP_H / 2, 44, CHIP_H};
+                P.frost(UP, COLBG, COLRIM, (int)std::lround(CHIP_H / 2 * P.scale), 2.f);
+                if (const auto G = Glyph::tex(Glyph::eGlyph::CHEVRON_UP, COLTITLE, (int)std::lround(14 * P.scale)))
+                    P.texIn(G, UP);
+                SCard c;
+                c.kind = SCard::PAGE_UP;
+                c.box  = UP;
+                cards.push_back(c);
             }
             if (below > 0) {
-                const auto NUM = cachedText(std::to_string(below), COLSUB, T.small, 128, -1, 0, false, 500);
-                const auto DCH = chevronTex(0, COLSUB, (int)std::lround(T.small * 2.0));
-                if (NUM && NUM->tex && DCH && DCH->tex) {
-                    const double NW = NUM->tex->m_size.x / P.scale, NH = NUM->tex->m_size.y / P.scale;
-                    const double CW = DCH->tex->m_size.x / P.scale, CHH = DCH->tex->m_size.y / P.scale;
-                    const double CH = std::max(NH, CHH), TOT = CW + 3 + NW;
-                    const double cx = X + (CENTER_W - TOT) / 2, cy = BARY - CH - 3;
-                    const CBox   CHIP{cx - 8, cy - 2, TOT + 16, CH + 4};
-                    if (!P.warm) {
-                        P.rect(CHIP, tFill2(), (int)std::lround((CH / 2 + 2) * P.scale));
-                        P.tex(DCH->tex, cx, cy + (CH - CHH) / 2);
-                        P.tex(NUM->tex, cx + CW + 3, cy + (CH - NH) / 2);
-                    }
-                    SCard c;
-                    c.kind = SCard::PAGE_DOWN;
-                    c.box  = CHIP;
-                    cards.push_back(c);
-                }
+                const auto   NUM = cachedText(std::to_string(below), COLTITLE, T.small, 128, -1, 0, false, 600);
+                const double CW  = 14 + 4 + texW(NUM, P.scale) + 24;
+                const CBox   DN{X + (W - CW) / 2, CY0 + usedH - CHIP_H / 2, CW, CHIP_H};
+                P.frost(DN, COLBG, COLRIM, (int)std::lround(CHIP_H / 2 * P.scale), 2.f);
+                if (const auto G = Glyph::tex(Glyph::eGlyph::CHEVRON_DOWN, COLTITLE, (int)std::lround(14 * P.scale)))
+                    P.texIn(G, CBox{DN.x + 12, DN.y, 14, CHIP_H});
+                if (NUM && NUM->tex)
+                    P.tex(NUM->tex, DN.x + 12 + 14 + 4, DN.y + (CHIP_H - texH(NUM, P.scale)) / 2);
+                SCard c;
+                c.kind = SCard::PAGE_DOWN;
+                c.box  = DN;
+                cards.push_back(c);
             }
         }
-
-        lastContentH = PANELH;
-        lastContentW = CENTER_W;
     }
 
 } // namespace NAwesome::Notify

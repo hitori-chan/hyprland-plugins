@@ -6,7 +6,7 @@
 // is an index into the registered values, no hash, no allocation. The
 // plugin-side loader (core/config.cpp) registers every row with the fork
 // once at init; modules read through the typed getters and never touch the
-// config system directly. Defaults are the glass·ink tokens: an unset shell
+// config system directly. Defaults are the Frost tokens: an unset shell
 // inherits the whole material.
 //
 // Ranges are soft: wide enough that every value the old plugins accepted
@@ -65,29 +65,29 @@ namespace NAwesome {
         {"plugin:awesome:shell:col_low", "battery fill low", Kind::Color, 0, 0, {}, 0xffff0e01},
         {"plugin:awesome:shell:col_powersave", "battery fill power save", Kind::Color, 0, 0, {}, 0xffffc917},
         // ---- notify ----
-        {"plugin:awesome:notify:font", "font family", Kind::String, 0, 0, "IBM Plex Sans"},
-        {"plugin:awesome:notify:font_size", "body text size in logical px (the type roles derive from it)", Kind::Int, 12, 0, {}, 0, 6, 48},
-        {"plugin:awesome:notify:width", "popup card width in logical px", Kind::Int, 348, 0, {}, 0, 128, 1024},
-        {"plugin:awesome:notify:max_height", "popup card height cap in logical px", Kind::Int, 300, 0, {}, 0, 96, 1024},
-        {"plugin:awesome:notify:max_icon", "popup icon column in logical px (shade rows raster at this cap)", Kind::Int, 44, 0, {}, 0, 16, 256},
-        {"plugin:awesome:notify:margin", "inter-card gap in logical px", Kind::Int, 6, 0, {}, 0, 0, 64},
-        {"plugin:awesome:notify:offset_y", "popups' and the shade's distance from the monitor top", Kind::Int, 34, 0, {}, 0, 0, 512},
+        {"plugin:awesome:notify:font", "font family", Kind::String, 0, 0, "Inter"},
+        {"plugin:awesome:notify:font_size", "body text size in logical px (the type roles derive from it)", Kind::Int, 13, 0, {}, 0, 6, 48},
+        {"plugin:awesome:notify:width", "card width in logical px: the banners' and the center's column", Kind::Int, 356, 0, {}, 0, 128, 1024},
+        {"plugin:awesome:notify:max_height", "banner height cap in logical px", Kind::Int, 320, 0, {}, 0, 96, 1024},
+        {"plugin:awesome:notify:max_icon", "the card's icon column in logical px", Kind::Int, 36, 0, {}, 0, 16, 256},
+        {"plugin:awesome:notify:margin", "inter-card gap in logical px", Kind::Int, 8, 0, {}, 0, 0, 64},
+        {"plugin:awesome:notify:offset_y", "the column's and the capsules' distance from the monitor top", Kind::Int, 40, 0, {}, 0, 0, 512},
         {"plugin:awesome:notify:timeout_low", "ephemeral timeout in ms (low urgency, transient, progress cards)", Kind::Int, 4000, 0, {}, 0, 0, 600000},
         {"plugin:awesome:notify:timeout_normal", "normal banner timeout in ms, then it retreats to the shade; 0 = sticky", Kind::Int, 5000, 0, {}, 0, 0, 600000},
         {"plugin:awesome:notify:coalesce_popups", "1 = at most one live popup per app; same-app extras land silent in the shade", Kind::Int, 1, 0, {}, 0, 0, 1},
         {"plugin:awesome:notify:max_notifs", "model cap; overflow evicts the oldest non-critical card", Kind::Int, 50, 0, {}, 0, 1, 512},
         {"plugin:awesome:notify:ignore_dbusclose", "ignore app-initiated CloseNotification (dunst's knob)", Kind::Int, 0, 0, {}, 0, 0, 1},
-        {"plugin:awesome:notify:rounding", "card radius in logical px (panel +6 and rows -2 derive)", Kind::Int, 16, 0, {}, 0, 0, 128},
+        {"plugin:awesome:notify:rounding", "card radius in logical px", Kind::Int, 18, 0, {}, 0, 0, 128},
         {"plugin:awesome:notify:rounding_power", "corner superellipse exponent", Kind::Double, 0, 3.0, {}, 0, 0, 1 << 20, 1.0, 8.0},
         {"plugin:awesome:notify:sound_command", "libcanberra player for sound hints; empty disables", Kind::String, 0, 0, "canberra-gtk-play"},
         {"plugin:awesome:notify:fallback_icon_dir", "iconless cards draw a random identity face from this directory", Kind::String, 0, 0, ""},
-        {"plugin:awesome:notify:col_bg", "glass fill (the alpha IS the glass)", Kind::Color, 0, 0, {}, 0x9e0f1218},
-        {"plugin:awesome:notify:col_fg", "body text", Kind::Color, 0, 0, {}, 0xffe4e8ee},
-        {"plugin:awesome:notify:col_title", "card titles", Kind::Color, 0, 0, {}, 0xffeef1f5},
-        {"plugin:awesome:notify:col_kicker", "header/age/secondary text", Kind::Color, 0, 0, {}, 0xff98a2ac},
-        {"plugin:awesome:notify:col_frame", "hairlines", Kind::Color, 0, 0, {}, 0x17dcebff},
-        {"plugin:awesome:notify:col_urgent", "critical ring/progress/urgent fills", Kind::Color, 0, 0, {}, 0xffff8a5c},
-        {"plugin:awesome:notify:col_highlight", "the accent: progress, actions, selections", Kind::Color, 0, 0, {}, 0xff32d6ff},
+        {"plugin:awesome:notify:col_bg", "glass fill (the alpha IS the glass)", Kind::Color, 0, 0, {}, 0x8a26262c},
+        {"plugin:awesome:notify:col_fg", "body text", Kind::Color, 0, 0, {}, 0xc7ebebf5},
+        {"plugin:awesome:notify:col_title", "titles, buttons, the capsules' words", Kind::Color, 0, 0, {}, 0xffededf0},
+        {"plugin:awesome:notify:col_kicker", "meta and secondary text", Kind::Color, 0, 0, {}, 0x8cebebf5},
+        {"plugin:awesome:notify:col_frame", "the glass rim", Kind::Color, 0, 0, {}, 0x1affffff},
+        {"plugin:awesome:notify:col_urgent", "critical: the meta, its progress, an alarmed capsule", Kind::Color, 0, 0, {}, 0xffff6159},
+        {"plugin:awesome:notify:col_highlight", "the accent: progress, the selection, the reply field", Kind::Color, 0, 0, {}, 0xff00ccff},
         {"plugin:awesome:notify:col_link", "body hyperlinks", Kind::Color, 0, 0, {}, 0xff7db4ff},
         // ---- windows ----
         {"plugin:awesome:windows:edge", "distance from an output edge that arms a snap zone", Kind::Int, 16, 0, {}, 0, 0, 128},

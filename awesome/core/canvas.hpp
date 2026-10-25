@@ -345,6 +345,8 @@ namespace NAwesome {
             if (const auto B = toPhys(global); drawable(B))
                 g_pHyprOpenGL->renderRect(*rctx, B, faded(c), {.round = round, .roundingPower = rp, .blur = blurOn(), .blurA = alpha});
         }
+        // a hairline OUTSIDE the box (the fork grows the box by the border);
+        // px is logical — renderBorder applies the monitor scale itself
         void ring(const CBox& global, const CHyprColor& c, int round, float rp, double px = 1.0) const {
             if (!paints())
                 return;
@@ -352,7 +354,7 @@ namespace NAwesome {
             const auto B = toPhys(global);
             if (!drawable(B))
                 return;
-            g_pHyprOpenGL->renderBorder(*rctx, B, gradient(c), {.round = round, .roundingPower = rp, .borderSize = std::max(1, (int)std::lround(px * scale)), .a = alpha});
+            g_pHyprOpenGL->renderBorder(*rctx, B, gradient(c), {.round = round, .roundingPower = rp, .borderSize = std::max(1, (int)std::lround(px)), .a = alpha});
         }
         void shadow(const CBox& global, int round, float rp, int range, const CHyprColor& c = tShadow()) const {
             if (!paints() || !drawable(toPhys(global)))
@@ -360,6 +362,33 @@ namespace NAwesome {
             AW_PAINT_SCOPE;
             g_pHyprOpenGL->renderRoundedShadow(*rctx, toPhys(global), round, rp, (int)std::lround(range * scale), gradient(c), alpha, Render::SWindowRenderPresentation{});
         }
+        // ---- the Frost material: the one recipe every floating surface wears ----
+        //
+        // A soft drop (the shader fades inside the box it is given, so the
+        // box grows by the range and sinks by the offset), the blurred glass,
+        // the top edge catching light, the rim. The drop darkens what the
+        // glass samples beneath it — part of the look, not a leak.
+        enum class eDepth : uint8_t {
+            CARD, // cards, the center, capsules
+            MENU, // menus and popovers float higher
+        };
+        void frost(const CBox& global, const CHyprColor& fill, const CHyprColor& rim, int round, float rp, eDepth depth = eDepth::CARD) const {
+            if (!paints())
+                return;
+            const bool   MENU  = depth == eDepth::MENU;
+            const double RANGE = MENU ? 28 : 20, SINK = MENU ? 10 : 6;
+            shadow(CBox{global}.expand(RANGE).translate(Vector2D{0.0, SINK}), round, rp, (int)RANGE, MENU ? tMenuShadow() : tShadow()); // the shader adds the range to the radius
+            glass(global, fill, round, rp);
+            const double R = round / scale;
+            if (global.w > 2 * R + 2)
+                rect(CBox{global.x + R, global.y, global.w - 2 * R, 1.0 / scale}, tLight());
+            ring(global, rim, round, rp);
+        }
+        // how far frost() reaches past its box (damage, bounding boxes)
+        static double frostReach(eDepth depth = eDepth::CARD) {
+            return depth == eDepth::MENU ? 28 + 10 : 20 + 6;
+        }
+
         // a pre-computed physical box (the bar's labels, laid out in px)
         void texAt(const SP<ITexture>& t, const CBox& phys) const {
             if (!paints() || !t || t->m_texID == 0)

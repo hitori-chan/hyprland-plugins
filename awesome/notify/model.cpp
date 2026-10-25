@@ -227,8 +227,8 @@ namespace NAwesome::Notify {
         }
 
         void postCard(const SPostCard& c) {
-            if (inOsdBand(c.id) && c.urgency < 2 && centerVisible())
-                return; // nothing to show it on, and the shade never holds one
+            if (inOsdBand(c.id) && c.urgency < 2 && c.glyph == Glyph::eGlyph::NONE && centerVisible())
+                return; // nothing to show it on (capsules show over the center), and the center never holds one
             std::map<std::string, sdbus::Variant> hints;
             if (c.value >= 0)
                 hints.emplace("value", sdbus::Variant{std::clamp(c.value, 0, 100)});
@@ -237,7 +237,13 @@ namespace NAwesome::Notify {
             // We ARE the in-tree OSD sender: being in-process is the pass
             // that lets a FRESH band id pin its replace-in-place slot (a
             // foreign client gets its band id zeroed)
-            arrive("osd", c.id, c.icon ? c.icon : "", c.summary ? c.summary : "", c.body ? c.body : "", "", {}, hints, c.expireTimeout, c.osd || inOsdBand(c.id));
+            const auto ID = arrive("osd", c.id, c.icon ? c.icon : "", c.summary ? c.summary : "", c.body ? c.body : "", "", {}, hints, c.expireTimeout, c.osd || inOsdBand(c.id));
+            // the capsule face rides the card; the warm this arrival armed
+            // has not run yet
+            if (const auto N = byId(ID)) {
+                N->osdGlyph = (uint8_t)c.glyph;
+                N->osdAlarm = c.alarm;
+            }
         }
 
         void senderGone(const std::string& name) {
@@ -895,7 +901,8 @@ namespace NAwesome::Notify {
 
             // before the re-alert below: DND puts a shown card back as it was
             const bool WAS_WAITING = EXISTING && n->waiting, WAS_BANNER = EXISTING && n->banner, WAS_ABSORBED = EXISTING && n->absorbed;
-            n->arrived = Time::steadyNow(); // a replace refreshes the age, like a new arrival would
+            n->arrived     = Time::steadyNow(); // a replace refreshes the age, like a new arrival would
+            n->arrivedWall = std::time(nullptr);
             // A replace re-alerts (the OSD sweep relies on it); the merge
             // above keeps aiming a chat's new messages at the card that holds
             // it, so one card stays the whole conversation.

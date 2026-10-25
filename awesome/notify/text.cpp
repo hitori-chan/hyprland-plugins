@@ -63,6 +63,16 @@ namespace NAwesome::Notify {
     }
 
     // bucketed so a texture key only moves when the display would
+    std::string clockString(std::time_t t) {
+        std::tm    at{}, today{};
+        const auto NOW = std::time(nullptr);
+        localtime_r(&t, &at);
+        localtime_r(&NOW, &today);
+        char buf[32];
+        const bool SAMEDAY = at.tm_year == today.tm_year && at.tm_yday == today.tm_yday;
+        return std::string{buf, std::strftime(buf, sizeof(buf), SAMEDAY ? "%H:%M" : "%d %b", &at)};
+    }
+
     std::string ageString(const Time::steady_tp& t) {
         const auto S = std::chrono::duration_cast<std::chrono::seconds>(Time::steadyNow() - t).count();
         if (S < 60)
@@ -411,8 +421,10 @@ namespace NAwesome::Notify {
             // otherwise make a thousand of them (a 27000 px texture)
             pango_layout_set_single_paragraph_mode(layout, TRUE);
         } else {
-            // whole lines that fit
-            const int HEIGHT = LINEH > 0 ? LINEH + (LINES - 1) * ADV : std::max(maxHeightPx, pt);
+            // whole lines that fit; the pixel slack covers the metrics'
+            // rounding (exactly N lines' height dropped the Nth), and is
+            // far less than another line's advance
+            const int HEIGHT = LINEH > 0 ? LINEH + (LINES - 1) * ADV + 1 : std::max(maxHeightPx, pt);
             pango_layout_set_height(layout, HEIGHT * PANGO_SCALE);
         }
         pango_layout_set_ellipsize(layout, headCut ? PANGO_ELLIPSIZE_START : PANGO_ELLIPSIZE_END);
@@ -537,53 +549,30 @@ namespace NAwesome::Notify {
 
     // ---- the Material chevron ----
 
-    // A stroked chevron, not a font glyph: Pixel's expand_more/less is two
-    // 45° strokes with round caps, and a glyph's weight is the font's, never
-    // ours. Same warm-gate contract as cachedText — built only on a warm
-    // pass, drawn on a later frame.
-    static SP<ITexture> buildChevron(int dir, const CHyprColor& col, int px) {
-        if (px <= 4)
-            return nullptr;
-        const double S = px / 24.0; // Material's 24dp canvas
-        auto*        SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, px, px);
-        auto*        CR   = cairo_create(SURF);
-        cairo_set_source_rgba(CR, col.r, col.g, col.b, col.a);
-        cairo_set_line_width(CR, 2.0 * S);
-        cairo_set_line_cap(CR, CAIRO_LINE_CAP_ROUND);
-        cairo_set_line_join(CR, CAIRO_LINE_JOIN_ROUND);
-        // 12dp wide, 6dp tall, centered on the canvas
-        if (dir > 0) { // up
-            cairo_move_to(CR, 6.0 * S, 14.0 * S);
-            cairo_line_to(CR, 12.0 * S, 8.0 * S);
-            cairo_line_to(CR, 18.0 * S, 14.0 * S);
-        } else { // down
-            cairo_move_to(CR, 6.0 * S, 10.0 * S);
-            cairo_line_to(CR, 12.0 * S, 16.0 * S);
-            cairo_line_to(CR, 18.0 * S, 10.0 * S);
-        }
-        cairo_stroke(CR);
-        cairo_surface_flush(SURF);
-        auto tex = g_pHyprRenderer->createTexture(SURF);
-        cairo_destroy(CR);
-        cairo_surface_destroy(SURF);
-        return tex;
-    }
-
-    const SCachedText* chevronTex(int dir, const CHyprColor& col, int px) {
-        if (px <= 4)
-            return nullptr;
-        char      meta[64];
-        const int METALEN = std::snprintf(meta, sizeof(meta), "chevron|%d|%llx|%d", dir, (unsigned long long)col.getAsHex(), px);
-        static std::string KEY; // reused; main thread only
-        KEY.clear();
-        KEY.assign(meta, METALEN > 0 ? (size_t)METALEN : 0);
-
+    // The center's dusk: black ramping in from transparent toward the
+    // screen's edge, a 256 x 1 strip the pass stretches over the backdrop
+    // (the renderer has no gradient fill). Same warm-gate contract as
+    // cachedText — built only on a warm pass, drawn on a later frame.
+    const SCachedText* scrimTex() {
+        static const std::string KEY = "scrim";
         if (const auto* HIT = texCache.find(KEY))
             return HIT;
         if (!NAwesome::Canvas::inst().gate().mayBuild())
             return nullptr;
+        constexpr int W    = 256;
+        auto*         SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, 1);
+        auto*         D    = cairo_image_surface_get_data(SURF);
+        for (int x = 0; x < W; x++) {
+            const double T = (double)x / (W - 1);
+            const double R = std::min(1.0, T / 0.45); // full by the column's left edge
+            const auto   A = (uint8_t)std::lround(255 * 0.45 * R * R * (3 - 2 * R)); // smoothstep: no visible start
+            D[x * 4] = D[x * 4 + 1] = D[x * 4 + 2] = 0;
+            D[x * 4 + 3]                           = A;
+        }
+        cairo_surface_mark_dirty(SURF);
         SCachedText entry;
-        entry.tex = buildChevron(dir, col, px);
+        entry.tex = g_pHyprRenderer->createTexture(SURF);
+        cairo_surface_destroy(SURF);
         return texCache.insert(KEY, std::move(entry));
     }
 

@@ -51,13 +51,13 @@ bool test_schema() {
 
     // defaults are the glass·ink tokens
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:shell:height"}.index].ival == 26);
-    AW_CHECK(SPECS[CfgKey{"plugin:awesome:notify:width"}.index].ival == 348);
+    AW_CHECK(SPECS[CfgKey{"plugin:awesome:notify:width"}.index].ival == 356);
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:windows:edge"}.index].ival == 16);
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:notify:rounding_power"}.index].dval == 3.0);
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:shell:col_focus"}.index].cval == 0xff9acbffu);
-    AW_CHECK(SPECS[CfgKey{"plugin:awesome:notify:col_bg"}.index].cval == 0x9e0f1218u);
+    AW_CHECK(SPECS[CfgKey{"plugin:awesome:notify:col_bg"}.index].cval == 0x8a26262cu);
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:shell:font"}.index].sval == "Roboto");
-    AW_CHECK(SPECS[CfgKey{"plugin:awesome:notify:font"}.index].sval == "IBM Plex Sans");
+    AW_CHECK(SPECS[CfgKey{"plugin:awesome:notify:font"}.index].sval == "Inter");
 
     // the loader's clamps: out-of-range delivers, the getter clamps
     const auto& HEIGHT = SPECS[CfgKey{"plugin:awesome:shell:height"}.index];

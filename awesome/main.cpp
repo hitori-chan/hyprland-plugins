@@ -6,6 +6,7 @@
 // is the fork's own cross-build guard; the layout matching is the real
 // protection, this is the fast, loud half.
 #include "core/config.hpp"
+#include "core/glyph.hpp"
 #include "core/supervisor.hpp"
 #include "core/version.hpp"
 
@@ -74,6 +75,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
 APICALL EXPORT void PLUGIN_EXIT() {
     NAwesome::supervisor().stop(); // listeners, hops, then modules in reverse
+    NAwesome::Glyph::clear();      // the glyph textures every module drew from
     if (ctlCmd)
         HyprlandAPI::unregisterHyprCtlCommand(PHANDLE, ctlCmd);
     ctlCmd.reset();

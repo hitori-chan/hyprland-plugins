@@ -16,17 +16,19 @@
 #include "model.hpp"
 
 #include "../core/canvas.hpp"
+#include "../core/glyph.hpp"
 #include "../core/theme.hpp"
 
 namespace NAwesome::Notify {
 
-    // the paint context is the canvas' (toPhys/rect/glass/border/ring/
-    // shadow/tex/texIn/texFit/texStretch); the warm gate is the canvas'
+    // the paint context is the canvas' (rect/glass/frost/ring/shadow/tex/
+    // texIn/texFit/texStretch); the warm gate is the canvas'
     using SPaint = NAwesome::SPaint;
+    struct SCachedText;
 
-    // ---- layout constants (logical px; the decided spec) ----
+    // ---- layout constants (logical px; the Frost spec) ----
 
-    inline constexpr double EDGE = 10; // right screen inset
+    inline constexpr double EDGE = 12; // the column's right screen inset
 
     // The cards' top below the monitor's top: offset_y, but never above the
     // workarea — the strip reserves its band, and a card over it would be
@@ -37,8 +39,8 @@ namespace NAwesome::Notify {
         return mon ? std::max(OFF, mon->logicalBoxMinusReserved().y - mon->logicalBox().y) : OFF;
     }
     // what the monitor reserves at its bottom edge (a dock, a bottom bar):
-    // the shade stops above it, or its footer sits under the dock and the
-    // dock takes the presses
+    // the center stops above it, or its last card sits under the dock and
+    // the dock takes the presses
     inline double cardsBottomReserved(const PHLMONITOR& mon) {
         if (!mon)
             return 0;
@@ -46,57 +48,59 @@ namespace NAwesome::Notify {
         const auto WA = mon->logicalBoxMinusReserved();
         return std::max(0.0, (MB.y + MB.h) - (WA.y + WA.h));
     }
-    inline constexpr double PADX = 14, PADY = 11, ICON_GAP = 12; // popup card padding
-    inline constexpr double HEAD_GAP = 3, TITLE_GAP = 4; // header -> title -> body
-    inline constexpr double PROGRESS_H = 5, PROGRESS_GAP = 8;
-    inline constexpr double HERO_CAP = 110, HERO_TEXT_MIN = 60;
-    inline constexpr double BTN_H = 26, BTN_PADX = 10, BTN_GAP = 4, BTN_ROW_GAP = 6, BTN_ICON = 15, BTN_ICON_GAP = 5;
+
+    // the card
+    inline constexpr double PADX = 14, PADY = 12, CHILD_PADY = 9, ICON_GAP = 12;
+    inline constexpr double META_GAP = 8;   // title -> the meta at the row's right
+    inline constexpr double ROW_GAP = 2;    // the title row -> the body
+    inline constexpr double BLOCK_GAP = 10; // the full-width blocks: hero, buttons, the reply field
+    inline constexpr double PROGRESS_H = 4, PROGRESS_GAP = 8;
+    inline constexpr double HERO_CAP = 160;
+    inline constexpr double BTN_H = 28, BTN_PADX = 10, BTN_GAP = 6, BTN_ICON = 15, BTN_ICON_GAP = 6;
     inline constexpr double BODYIMG_H = 96, IMG_GAP = 6, IMG_ROW_GAP = 8;
-    inline constexpr double XCIRC = 20; // the hover-✕ / group-✕ circle
+    inline constexpr double FIELD_H = 32, SEND_D = 24; // the reply field and its send circle
+    inline constexpr double PILL_H = 16;               // the unread count beside a chat's title
 
-    // The identity badge, as ratios of the avatar box it rides — AOSP's 2025
-    // notification_2025_conversation_icon_container.xml: a 40dp avatar wearing
-    // a 20dp badge, of which 16dp is the app glyph and 2dp on each side is the
-    // rim, positioned so the GLYPH sits flush with the avatar's bottom-right
-    // corner (AOSP writes that margin out as 40 - 16 - 2 = 22dp) and only the
-    // rim protrudes. AOSP halved the rim and grew the glyph.
-    inline constexpr double BADGE_D = 20.0 / 40.0, BADGE_PROT = 2.0 / 40.0, BADGE_INSET = 2.0 / 20.0;
+    // The identity badge, as ratios of the avatar it rides: an 18 px disc on
+    // a 36 px face whose white ring (1.5 px) cuts the app glyph free of
+    // whatever the face is, overhanging the corner by 3 px.
+    inline constexpr double BADGE_D = 18.0 / 36.0, BADGE_OUT = 3.0 / 36.0, BADGE_RING = 1.5 / 18.0;
 
-    inline constexpr double CENTER_W = 360; // the shade's width; its height is the monitor's
-    inline constexpr double ROW_PADT = 9, ROW_PADX = 12, ROW_PADB = 10, ROW_ICON = 40, ROW_ICON_GAP = 10;
-    inline constexpr double CHEV = 24; // the fold chevron circle
-    inline constexpr double CHILD_ICON = 28, CHILD_GAP = 2; // segmented group children
-    inline constexpr double PREV_ICON = 16; // digest preview avatars
-    inline constexpr double PILL_H = 20; // the count pill
-    inline constexpr double BAR_BTN = 34, BAR_PADT = 4, BAR_PADX = 10, BAR_PADB = 12, BAR_GAP = 8;
-    inline constexpr double BODY_PADT = 10, BODY_PADX = 10, BODY_PADB = 10;
-    inline constexpr double STACK_GAP = 3; // the joint gap that merges the rows into one column
+    // the center
+    inline constexpr double HEADER_H = 28, HEADER_GAP = 4; // "Notifications", the moon, "Clear All"
+    inline constexpr double GROUP_HEAD_H = 40, GROUP_ICON = 20, CIRCLE = 22, TAIL_H = 30; // a bundle's header and its "+N more"
+    inline constexpr double SCRIM_W = 640; // the dusk behind the column, from the screen's right edge
+    inline constexpr double EMPTY_H = 56;
 
     // ---- paint.cpp: the type scale, motion, radii, card recipes ----
 
-    struct SType { // per-frame type roles, physical pt
-        int header, title, body, small, action, bar;
+    struct SType { // per-frame type roles, physical px
+        int meta, title, body, small, action, heading;
     };
     SType typeScale(double scale);
 
     double damageMargin(PHLMONITOR m);
 
-    // The radius family. ONE configured card radius; the panel that wraps the
-    // rows is rounder, a row inside it is tighter, and the joint that merges
-    // stacked children is tighter still. Physical px, so they take the scale.
+    // the configured card radius and its superellipse; physical px
     float  rPow();
-    int    rPanel(double scale);
-    int    rRow(double scale);
-    int    rJoint(double scale);
+    int    rCard(double scale);
 
-    // shared card recipes — the progress pill and the content-first icon
-    // column (lead avatar wearing the identity corner badge); layout code
-    // computes presence itself via hasLeadIcon. `shade`: a shade row, which
-    // leads with a hero's thumbnail where a banner shows the hero
+    // one load per card for every surface that shows it: the banner and the
+    // center ask for the same sizes, so a card moving between them reuses
+    // its textures
+    void   prepareCard(const SP<SNotif>& n, double scale);
+
+    // shared card recipes; layout code computes presence via hasLeadIcon.
+    // `shade`: a center card, which leads with a hero's thumbnail where a
+    // banner shows the hero itself
     const SP<ITexture>& contentFace(const SNotif& n, bool shade);
     bool                hasLeadIcon(const SNotif& n, bool shade = false);
     void                paintProgress(const SPaint& P, double x, double y, double w, int pct, bool critical);
     void                paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool withBadge, float rp, bool shade = false);
+    // a glass button: a filled pill, its label (and icon) centered
+    void                paintButton(const SPaint& P, const CBox& box, const SCachedText* label, const SP<ITexture>& icon, bool hover);
+    // a centered texture in a logical cell
+    void                texCentered(const SPaint& P, const SCachedText* t, const CBox& cell);
 
     float  easeOutCubic(float t);
     float  easeOutBack(float t); // the spatial overshoot
@@ -126,8 +130,8 @@ namespace NAwesome::Notify {
     // (the caret's end) must stay in view.
     const SCachedText* cachedText(const std::string& text, const CHyprColor& col, int pt, int maxWpx, int maxHpx, float lineSp, bool markup, int weight,
                                   const CHyprColor* linkCol = nullptr, bool headCut = false);
-    // dir 0 = down, 1 = up; a px-square canvas, the Material chevron centered
-    const SCachedText* chevronTex(int dir, const CHyprColor& col, int px);
+
+    const SCachedText* scrimTex(); // the center's dusk, a horizontal ramp
 
     double texH(const SCachedText* e, double scale);
     double texW(const SCachedText* e, double scale);
@@ -141,6 +145,7 @@ namespace NAwesome::Notify {
     // small shared helpers
     std::string        hexOf(const CHyprColor& c);
     std::string        ageString(const Time::steady_tp& t); // bucketed: "now", "5m", "2h", "3d"
+    std::string        clockString(std::time_t t);          // the center's: "14:02" today, "24 Oct" before
     std::string        lastLine(const std::string& body); // any body's newest line ends it
 
     // the layout passes compose row strings per frame: build them into a
@@ -150,7 +155,25 @@ namespace NAwesome::Notify {
     void               appendEsc(std::string& dst, const std::string& raw);
     const std::string& hexOfCached(const CHyprColor& c);
 
-    // ---- row.cpp: one shade row, and the two faces of an app bundle ----
+    // ---- card.cpp: one card, wherever it shows ----
+
+    struct SCardForm {
+        enum eWhere : uint8_t {
+            BANNER, // the column: relative age, the hero, inline images, max_height
+            CENTER, // the center: clock time, the reply field, folds
+            CHILD,  // inside a bundle: no icon, no glass of its own
+        };
+        eWhere where = BANNER;
+        bool   open  = true; // CENTER: folded = the title row and the newest line
+    };
+
+    // Lays out and (outside a warm) paints one card at box.x/y, box.w wide;
+    // returns its height and fills `hit`.
+    double renderCard(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box, const SCardForm& F, SCard& hit);
+    // the same code with a context that draws nothing — the budget's ruler
+    double measureCard(const SPaint& P, const SType& T, const SP<SNotif>& N, double w, const SCardForm& F);
+
+    // ---- bundle.cpp: an app's cards folded into one ----
 
     // a display item: one card, or an app's bundle of them (newest first)
     struct SDisp {
@@ -158,38 +181,15 @@ namespace NAwesome::Notify {
         std::string             key; // the app key (bundles)
     };
 
-    // Singles and bundle children are the same row in different clothes.
-    struct SRowStyle {
-        double iconPx; // 40 rows, 28 children
-        bool   withBadge; // children ride plain avatars — the header owns identity
-        bool   headerHasApp; // singles: "App • age"; children: age only
-        bool   hasChevron; // singles fold; expanded-bundle children are always open
-        bool   canReply; // the inline-reply field; conversations never bundle, so children never need it
-    };
-    inline constexpr SRowStyle ROW_SINGLE{ROW_ICON, true, true, true, true};
-    inline constexpr SRowStyle ROW_CHILD{CHILD_ICON, false, false, false, false};
-
-    // Lays out (and outside the warm paints) one row; returns its height and
-    // fills the card's hit boxes. `more` drives the chevron: an open row can
-    // always be folded, a collapsed one only offers it when there is
-    // something behind it.
-    double renderRow(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box, bool open, bool more, const SRowStyle& ST, SCard& card, bool child);
-    // the same code with a context that draws nothing — the budget's ruler
-    double measureRow(const SPaint& P, const SType& T, const SP<SNotif>& N, double w, bool open, const SRowStyle& ST);
-
-    // the three things the placement pass can put in a slot; each paints its
-    // own fill and pushes its own hit card
-    void   paintSingle(const SPaint& P, const SType& T, const SP<SNotif>& N, const CBox& box, bool open, bool more);
+    double digestH(const SType& T, size_t count, double scale); // the folded bundle's height
+    double groupChromeH(bool cut);                              // an open bundle's header (+ its tail when cut)
     void   paintDigest(const SPaint& P, const SType& T, const SDisp& D, const CBox& box);
     void   paintGroup(const SPaint& P, const SType& T, const SDisp& D, const CBox& box, const std::vector<double>& childH);
 
-    double digestH(const SType& T, size_t count, double scale); // the folded bundle's height
-    double groupHeadH(); // an expanded bundle's header row
-    double groupTailH(); // an expanded bundle's "+N more" row, past the page
-
-    // ---- popups.cpp / center.cpp: the two surfaces ----
+    // ---- popups.cpp / center.cpp: the surfaces ----
 
     void renderPopups(const SPaint& P, const SType& T);
+    void renderCapsules(const SPaint& P, const SType& T); // the OSD band, top center
     void renderCenter(const SPaint& P, const SType& T);
     bool popupsAnimating(); // any arrival spring still running
     bool centerAnimating(); // the open spring still running
@@ -198,9 +198,8 @@ namespace NAwesome::Notify {
     // the drawing units read it for fills and reveals
     extern SHover hovered;
 
-    // the last layout's extents, logical (popups.cpp / center.cpp write
-    // them; surface.cpp's boundingBox reads them for the pass)
-    extern double lastContentH;
-    extern double lastContentW;
+    // the center's dusk behind its column, global logical; w 0 = none
+    // (center.cpp writes it, surface.cpp's bounds and damage read it)
+    extern CBox lastScrim;
 
 } // namespace NAwesome::Notify

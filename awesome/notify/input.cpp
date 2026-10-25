@@ -82,7 +82,7 @@ namespace NAwesome::Notify {
         if (!MON || !MON->logicalBox().containsPoint(pos))
             return nullptr;
         for (size_t i = cards.size(); i-- > 0;)
-            if (cards[i].box.containsPoint(pos))
+            if (cards[i].kind != SCard::CAPSULE && cards[i].box.containsPoint(pos))
                 return &cards[i];
         return nullptr;
     }
@@ -277,6 +277,7 @@ namespace NAwesome::Notify {
                         Model::toggleSuspend();
                     continue;
                 case SCard::PANEL: continue; // dead panel space swallows silently
+                case SCard::CAPSULE: continue; // never hit (cardAt skips it)
                 case SCard::PAGE_UP:
                 case SCard::PAGE_DOWN:
                     if (H.bit == 1u)
