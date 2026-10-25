@@ -534,6 +534,9 @@ semantics).
   render and direct scanout through the compositor's
   `monitor.blockSolitary` hook, so the card composites over it; scanout
   re-engages once the last card clears. The open menubar does the same.
+- Captures: a monitor capture shows the bar, menus and cards (they are
+  part of its scene); a workspace capture (the image-capture source of
+  one workspace's windows) never does.
 - Critical: urgent-colored frame and progress fill, never expires.
 - Sound: `sound-file`/`sound-name` play through a player
   (`sound_command`, empty disables); `suppress-sound` mutes one

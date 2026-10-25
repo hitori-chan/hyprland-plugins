@@ -516,8 +516,14 @@ namespace NAwesome {
         // a busy window no longer re-runs the bar's whole layout (one union
         // element did: ~190 us of a ~300 us draw, every frame). A layer with
         // nothing on this monitor adds no element at all.
+        //
+        // Never into a workspace capture (m_renderingCapture): the stage
+        // runs for its scene too, and a client that asked for a workspace's
+        // windows must not receive the bar or a notification card. The
+        // event does not say windows-only from with-shell, so none carries
+        // the plugin's chrome.
         void onRenderStage(const Event::SRenderStageEvent& ev) {
-            if (ev.stage != RENDER_POST_WINDOWS || !ev.monitor || !ev.context)
+            if (ev.stage != RENDER_POST_WINDOWS || !ev.monitor || !ev.context || ev.context->get().m_renderingCapture)
                 return;
             for (auto* L : m_layers)
                 if (L->boundingBox(ev.monitor))
