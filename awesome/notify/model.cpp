@@ -239,10 +239,11 @@ namespace NAwesome::Notify {
         // (the spec's "bypass persistence": a screenshot's preview, a
         // client's own OSD). Neither is a shade row or history, nor on the
         // badge. Opening the shade, which replaces the popup column they
-        // show on, ends the live ones (absorbPopped), and an OSD posted
-        // while it is open makes no card. Critical stays an alert: a band
-        // alert waits under the shade like any banner (never a row), a
-        // critical transient card is an ordinary one.
+        // show on, ends the live ones (absorbPopped); an OSD posted while it
+        // is open shows only as a capsule, which sits clear of the column
+        // (postCard). Critical stays an alert: a band alert waits under the
+        // shade like any banner (never a row), a critical transient card is
+        // an ordinary one.
         bool offShade(const SP<SNotif>& n) {
             return inOsdBand(n->id) || (n->transient && n->urgency < 2);
         }

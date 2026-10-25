@@ -32,8 +32,17 @@ the canvas warm/draw gate: warm on the event loop, draw no earlier than
 the next frame, scissor to damage, damage both old and new geometry for
 visible transitions.
 
-- **Workspaces** render as tag cells, **tasks** as view cells, both
-  pixel-drawn at their own measured widths (nothing fixed-pitch).
+- The strip is 28 px of thin glass: the tags at its left, the tasks
+  splitting the middle 14 px off either side, and at its right, 14
+  apart, the tray, the battery, the bell and the clock.
+- **Workspaces** are the nine kanji tags in 26 x 22 cells: the viewed
+  one accent text on a dark ground, occupied ones the bar's text, empty
+  ones dim, an urgent one red text (no occupancy marks: the text's
+  strength says it). A hovered tag takes a light ground.
+- **Tasks**: a 14 px icon and the title, ⌃ for a pinned window and +
+  for a maximized one before it. The focused task is accent text, an
+  urgent one red text, a minimized one dim — never a fill; a hovered
+  task takes a light ground.
 - **Tasks**: Hyprland has no plugin-owned minimized state, so the
   windows module removes a minimized window from layout/render
   participation and remembers its fullscreen, maximize, and floating
@@ -42,9 +51,10 @@ visible transitions.
   the task-changed hook. X11 override-redirect surfaces (menus,
   tooltips, dropdowns) are not clients, as in awesome: never a task, a
   tag occupant, a focus stop, a snap edge or a placement blocker.
-- **Tray**: owns the StatusNotifier/dbusmenu connection. A tray click
-  is the activation — after the SNI `Activate` call the bar resolves
-  the item's bus PID and focuses the app's own topmost window, for
+- **Tray**: 16 px icons, `tray_spacing` apart. It owns the
+  StatusNotifier/dbusmenu connection. A tray click is the activation —
+  after the SNI `Activate` call the bar resolves the item's bus PID and
+  focuses the app's own topmost window, for
   every backend (core/activate.hpp). The plugin performs the raise
   itself because no backend can be trusted to: an X11 client's
   SetForegroundWindow arrives as an urgency ping (unauthenticated — the
@@ -67,13 +77,16 @@ visible transitions.
   an app may export its menu late) before the item gets `ContextMenu`
   — for that click only: not after another click, with a menu open
   since, or more than a second after it.
-  A foreground colour change re-tints the cells at once. Menus support
-  updates, cascades, scrolling, and check/radio state; a live update
+  A foreground colour change re-tints the cells at once. Menus are the
+  card menu's thick glass (`col_menu_bg`): 28 px rows, the hovered row
+  in accent text with no fill, hairline separators, a check glyph or a
+  dot for check/radio state. They support
+  updates, cascades, scrolling and that state; a live update
   keeps the hovered row (by its dbusmenu id), then the pointer settles
   it (a re-sorted list moves the row away from a resting pointer), and
-  a submenu's `▸` has a
+  a submenu's chevron has a
   column of its own, never ellipsized away; a level with no
-  rows says "(empty)", or "(unavailable)" when its layout call failed,
+  rows says "Empty", or "Unavailable" when its layout call failed,
   instead of the loading "…" forever; an inline
   `icon-data` PNG is size-checked before decoding (256 px a side, 64 per
   menu reply); providers may emit a leading, doubled, or trailing
@@ -84,9 +97,20 @@ visible transitions.
   tooltips, and overlay icons are not implemented. A hover warms the
   menu's own layer alone, and the menu paints in the panels' box, not
   the whole monitor.
-- **Bell**: reads the notify model directly (same process — no bus
-  seam). A click toggles the shade; pointer hover does nothing.
-- **Battery** watches the udev battery packs (a dual-pack laptop reads as one; a USB-C port's or a headset's battery uevent is ignored); the clock ticks on the wall clock's minute, re-reads the timezone each tick, and a resume or a clock step updates it at once.
+- **Bell**: an outline bell and the unread count in an accent pill;
+  under Do Not Disturb the bell is struck through and the count is
+  plain, the held queue included. It reads the
+  notify model directly (same process — no bus seam). A click toggles
+  the shade; pointer hover does nothing.
+- **Battery**: the level and an outline cell filled to it — red text and
+  level at 20 % or below, a green level charging (or held at the charge
+  limit), amber in power save. It watches the udev battery packs (a
+  dual-pack laptop reads as one; a USB-C port's or a headset's battery
+  uevent is ignored); plugging and unplugging post a capsule, and 20 %
+  and 5 % post the low and critical cards.
+- **Clock**: "Sun 25 Oct  12:26" in the session's `LC_TIME`. It ticks
+  on the wall clock's minute, re-reads the timezone each tick, and a
+  resume or a clock step updates it at once.
 - Labels are one line: a client's title or menu label has its control
   characters replaced before it is rastered (a newline per paragraph
   once made a texture tens of thousands of px tall), and a raster the
@@ -103,6 +127,11 @@ visible transitions.
   are dropped (an icon installed since then still lands).
 
 ### The launcher (menubar)
+
+awesome's Mod+P prompt, dmenu-style: a strip of the bar's own glass
+right under it — a quiet "Run:" (or the drilled-into category), the
+query around a drawn accent caret, then the matches 20 px apart, each a
+14 px icon and its name, the selection in accent text.
 
 Desktop discovery and completion run in a bounded cancellable helper
 process. The compositor drains framed results through the event loop;
@@ -281,8 +310,12 @@ where they are (drawn and clickable there alike until a deliberate move
 carries them). They start `offset_y` below the monitor top, never above
 the workarea, so a taller strip never runs under them. An open tray menu
 or the menubar paints over the cards, as it takes the press first.
-Newest at the top, glass·ink skin (frosted graphite, superellipse
-corners).
+Newest at the top, in the Frost material: one card shape everywhere (a
+banner, a center card, a bundle's child), 356 px of regular glass at an
+18 px superellipse radius, a soft drop and a light rim. The system's
+feedback (volume, brightness, microphone, touchpad, the plug edges) is a
+capsule instead: 256 x 36 at the top center, a glyph and a level with
+its number, or a glyph and words — "Muted" in the urgent colour.
 
 **Spec surface.** Methods `Notify`, `CloseNotification`,
 `GetCapabilities`, `GetServerInformation` (spec 1.3); signals
@@ -351,11 +384,10 @@ stays a broadcast.
   (32 retained). Group senders are prefixed by name, all under an 8 KB
   cap that evicts from the oldest end. `message-id` upserts (an edit
   replaces in place), `message-time` orders, `message-historic` marks a
-  backfill (it does not grow the unread count). `unread-count` shows
-  the header pill; the header also shows a
-  facepile of the distinct senders of the kept messages (max three)
-  for `group` chats, each avatar its `sender-icon` or a deterministic
-  initials face.
+  backfill (it does not grow the unread count). An unread count past
+  one shows as a pill beside the title; a `group` chat leads with a
+  facepile of two of the distinct senders of the kept messages, each
+  avatar its `sender-icon` or a deterministic initials face.
 - Without a conversation-id the legacy merge stands: a fresh `Notify`
   whose app + summary matches a live card is joined onto it, bodies
   joined chronologically (newest appended at the end) under the same
@@ -437,12 +469,14 @@ up to 4096 images; until the listing lands they wear the generic mark),
 and when that dir is empty (or a face fails to load) a deterministic
 generic application mark, so no card is faceless. The icon column is Android's conversation container: the
 CONTENT image leads as the avatar (a true circle for a conversation, a
-squircle otherwise) and the IDENTITY (`app_icon`/`desktop-entry`)
-rides its bottom-right corner as a badge sized by AOSP's ratios off the
-40 dp avatar — a 20 dp badge of which 16 dp is the app glyph and 2 dp
-on each side is the rim, so only the rim protrudes. A card with no
-content image leads with its identity and wears no badge. One column
-says both who sent it and which app carried it.
+rounded square otherwise) and the IDENTITY (`app_icon`/`desktop-entry`)
+rides its bottom-right corner as a round badge: an 18 px disc on the
+36 px face, a 1.5 px white ring that cuts it free of a light face and a
+dark one alike, the app glyph on a graphite ground. Only a real
+identity that differs from the face badges; a card with no content
+image leads with its identity and wears no badge. A group chat leads
+with a facepile of two participants. One column says both who sent it
+and which app carried it.
 
 **Actions.** Non-`default` actions render as a clickable button row; a
 left click emits `ActionInvoked` and dismisses the card unless the
@@ -460,28 +494,48 @@ semantics).
 
 **Behavior.**
 
-- Popup clicks: left invokes the action / opens the link / fires the
-  default, then dismisses; right dismisses; middle parks the stack into
-  the shade. The cards own the pointer over them — hover never leaks to
-  the window beneath.
-- One popup per app (`coalesce_popups`): while an app's banner runs
-  its clock, the app's next non-critical card lands in the shade
-  silently (badge-counted, no sound). A banner with no clock (sticky,
-  critical) is no cooldown, and two chats are two cards: each alerts.
+- The mouse, on every card: LEFT acts, on its release over the card it
+  pressed — the action button, the link, or the card's primary (the
+  `default`), then the card goes unless `resident`; a card the center
+  folded opens instead. HOLD left (450 ms) opens the card menu at the
+  pointer. RIGHT dismisses (a bundle's header or digest: the whole
+  bundle). MIDDLE does nothing — swallowed, so the window under a card
+  never gets a paste. The cards own the pointer over them; hover never
+  leaks to the window beneath.
+- The card menu (macOS's notification menu, what fd.o can do): "Mute
+  <chat> for 1 Hour" and "Mute <chat> Until Tomorrow" (08:00) for a
+  conversation, "Unmute <chat>" while one holds; "Turn Off <App>
+  Banners" and "Silence <App> Sounds", which read "Turn On…" and
+  "Allow…" once off; "Close All from <App>". Press, hold, slide onto a
+  row and let go, or click a row of the open menu; any other press,
+  Esc, the lock or a native capture closes it, and it holds its card's
+  banner while up. The switches persist in the state file
+  (`notify-app`, `notify-mute`): an app with banners off, or a muted
+  chat, lands its arrivals silently in the shade (badge-counted; a
+  muted chat makes no sound either), and turning banners off sends the
+  app's live banners there at once. Critical punches through.
+- Popups per app (`coalesce_popups`, 3): while an app shows that many
+  banners on their clocks, its next non-critical card lands in the
+  shade silently (badge-counted, no sound). A banner with no clock
+  (sticky, critical) is no cooldown, and two chats are two cards: each
+  alerts.
 - Popup hover HOLDS the timeout: the card under the pointer stops
   counting down, and leaving restarts its full clock rather than
   resuming the sliver that was left. Only one card can be held, because
   only one can be hovered.
-- Shade clicks: a row behaves as its banner did — left on the body
-  fires the card's primary and dismisses unless `resident`, a link
-  opens, a button acts. Rows open by default, so the click is spent
-  acting rather than revealing; the CHEVRON is the only fold target.
-  Right dismisses; middle is "Clear all". On an app bundle left
-  expands and right (or the header ✕) dismisses the whole app; an
-  expanded bundle taller than the page shows the children that fit and
-  a "+N more" line, and dismissing a child brings the next one in. The
-  paging chips (⌃ above the fold, ⌄ N below it) are their own targets:
-  a click pages a screenful, like the wheel.
+- The center: "Notifications" over its column, the moon (Do Not
+  Disturb, lit in the accent while it holds) and "Clear All" at its
+  right, over a dusk that keeps the glass legible on any wallpaper.
+  Cards show their clock time where banners show an age. A card
+  behaves as its banner did — left on the body fires the primary, a
+  link opens, a button acts. Cards open by default as the page has
+  room; one the budget folded shows its title and newest line, and a
+  click (or Space) opens it. On an app bundle left expands and right
+  (or the header ✕) dismisses the whole bundle; an expanded bundle
+  taller than the page shows the children that fit and a "+N more"
+  line, and dismissing a child brings the next one in. The paging
+  chips (above the fold, and below it with a count) are their own
+  targets: a click pages a screenful, like the wheel.
 - `max_height` bounds a popup by priority: header, title, one body
   line, progress and the action buttons first, then the images, then
   their alt text; the body takes the rest. A block that doesn't fit is
@@ -494,11 +548,11 @@ semantics).
   the shade goes exactly when the card goes. Everything that keeps you
   here keeps the shade: a dismissal, a fold, DND, "Clear all", the
   reply field, and a card with no action to fire.
-- The close returns the absorbed stack: opening the shade (and a
-  popup's middle-click park) stands the live banners down into parked
-  shade rows. An EXPLICIT close — an outside click, Esc, the toggle —
-  pops those cards back to banners, one per app under the same cap the
-  DND resume applies, on fresh timeouts; a close that leaves the
+- The close returns the absorbed stack: opening the shade stands the
+  live banners down into parked shade rows. An EXPLICIT close — an
+  outside click, Esc, the toggle — pops those cards back to banners,
+  under the same per-app cap and switches the DND resume applies, on
+  fresh timeouts; a close that leaves the
   notifications invisible is a lost-notification bug. An
   action-driven close (the sender is coming up over the parked stack)
   does not re-pop.
@@ -514,20 +568,18 @@ semantics).
   dies mid-reply (the sender closed it) disarms the field: the key that
   finds it gone is swallowed and the selection dropped, so no keystroke
   reaches another card. Banners have no field.
-- Shade keys, while it is open and only then: Esc closes, ↑/↓ move a
-  selection (an accent hairline; the page follows it, however tall the
-  next row), Space folds, Enter fires the primary, Tab arms the selected
-  card's reply field, Delete dismisses. Paging with the wheel or the
+- Shade keys, while it is open and only then: Esc closes (an open card
+  menu first), ↑/↓ move a selection (an accent ring; the page follows
+  it, however tall the next row), Space folds, Enter fires the primary,
+  Tab arms the selected card's reply field, Delete dismisses. Paging with the wheel or the
   chips drops the selection (Enter and Delete never act off screen).
   Modified chords pass through as user binds, and so does any key with
   nothing to act on.
-- Swipe: a horizontal wheel on a row, away to dismiss. It goes through
-  the click queue rather than acting in the emission (crash class 6) —
-  a swipe is an alias for a click that already exists.
 - Bell: a click speaks Toggle (opening absorbs the banners into parked
   rows, a later explicit close re-pops them) and opens the shade on the
-  clicked bar's monitor; the badge is part of its target. Pointer hover
-  is a no-op.
+  clicked bar's monitor; the count is part of its target. Pointer hover
+  is a no-op. Under DND the bell is struck through and its count is
+  plain text that includes the held queue.
 - Over fullscreen: banners show over a real fullscreen window too — the
   ecosystem default, no quiet-while-fullscreen policy. While a card is
   up over a fullscreen window, the plugin blocks the monitor's solitary
@@ -537,7 +589,8 @@ semantics).
 - Captures: a monitor capture shows the bar, menus and cards (they are
   part of its scene); a workspace capture (the image-capture source of
   one workspace's windows) never does.
-- Critical: urgent-colored frame and progress fill, never expires.
+- Critical: "Critical" in the urgent colour where the meta goes, an
+  urgent progress fill, never expires.
 - Sound: `sound-file`/`sound-name` play through a player
   (`sound_command`, empty disables); `suppress-sound` mutes one
   arrival. The compositor has no audio backend, so this shells out,
@@ -545,11 +598,12 @@ semantics).
   process group killed after 30 s, so a wrapper script's player goes
   with it), a budget of their own — a sound flood never takes the
   volume keys' helpers.
-- DND (`hl.plugin.awesome.suspend()`): arrivals collect
-  silently with timeouts held, and resume renders the queue newest-first
-  on fresh timeouts. An update or a conversation message onto a card
-  already shown (a banner, or a row in the shade) updates it in place,
-  silently, as it was.
+- DND (`hl.plugin.awesome.suspend()`, or the center's moon): arrivals
+  collect silently with timeouts held, and resume renders the queue
+  newest-first on fresh timeouts, under the per-app cap and switches.
+  An update or a conversation message onto a card already shown (a
+  banner, or a row in the shade) updates it in place, silently, as it
+  was.
 - Residency (`persistence`): an expired banner RETREATS into the shade
   rather than closing, and waits there until dismissed or acted on —
   the shade is the safety net. There is no history and no recall: a
@@ -557,8 +611,8 @@ semantics).
 - A `transient` card (the spec's "bypass persistence": a screenshot
   tool's preview, a client's own OSD) is feedback, never a
   notification: it shows as a popup while it lasts, then vanishes —
-  no shade row, no residency, no badge. Opening the shade (or a
-  popup's middle-click park) ends a live one. A critical transient
+  no shade row, no residency, no badge. Opening the shade ends a live
+  one. A critical transient
   card is an ordinary alert. `hyprctl awesome count` answers the live
   total (the lockscreen bell reads it).
 - Session lock: cards never render above the lockscreen. Input
@@ -611,14 +665,15 @@ pragmatic scan (GTK theme → hicolor → pixmaps), not a full
   can see, or the manual flip. A touchpad already in the wanted state is
   left alone (`hl.device` re-runs the device setup, a keymap compile).
 - Every action's feedback is a card posted straight into the notify
-  model: fixed ids (pad 9991, brightness 9992, volume 9993, mic 9995)
-  replace in place, low urgency, 1200 ms expiry, a `value` bar, and the
-  matching identity icon. Such an OSD card is feedback, never a
-  notification: no shade row, no history, no badge; opening the shade
-  drops a live one, and a press while the shade is open shows none (the
-  shade replaces the popup column it would show on). A critical battery
-  alert, posted in the same band, is an alert: it waits under the shade
-  like any banner.
+  model (fixed ids — pad 9991, brightness 9992, volume 9993, mic 9995 —
+  replace in place, low urgency, 1200 ms expiry) that names a glyph, so
+  it shows as a capsule at the top center: the glyph, a level track and
+  its number for a value, the words otherwise; a muted volume or
+  microphone reads "Muted" / "Off" in the urgent colour. Such a card is
+  feedback, never a notification: no shade row, no history, no badge;
+  the capsules show over the open shade too, and opening the shade
+  drops a live one. A critical battery alert, posted in the same band,
+  is an alert: it waits under the shade like any banner.
 
 ## Lua API
 
@@ -654,15 +709,16 @@ click goes missing.
 
 ## Configuration
 
-47 keys under `plugin:awesome:<module>:<key>` — shell 20, notify 24,
+46 keys under `plugin:awesome:<module>:<key>` — shell 18, notify 25,
 windows 3. The table (kinds, defaults, clamps) is
-[`core/schema.hpp`](core/schema.hpp); the defaults are the glass·ink
-theme tokens, so an empty config still looks right.
+[`core/schema.hpp`](core/schema.hpp); the defaults are the Frost tokens
+([`core/tokens.hpp`](core/tokens.hpp)), so an empty config still looks
+right.
 
 | module | keys |
 |---|---|
-| shell | `height`, `font_size`, `tray_spacing`, `font`, `terminal`, `col_bg`, `col_fg`, `col_focus`, `col_active`, `col_active_bg`, `col_on_active`, `col_empty`, `col_urgent`, `col_urgent_bg`, `col_square_sel`, `col_square_unsel`, `col_frame`, `col_charging`, `col_low`, `col_powersave` |
-| notify | `font`, `font_size`, `width`, `max_height`, `max_icon`, `margin`, `offset_y`, `timeout_low`, `timeout_normal`, `coalesce_popups`, `max_notifs`, `ignore_dbusclose`, `rounding`, `rounding_power`, `sound_command`, `fallback_icon_dir`, `col_bg`, `col_fg`, `col_title`, `col_kicker`, `col_frame`, `col_urgent`, `col_highlight`, `col_link` |
+| shell | `height`, `font_size`, `tray_spacing`, `font`, `terminal`, `col_bg`, `col_menu_bg`, `col_fg`, `col_focus`, `col_active`, `col_active_bg`, `col_on_active`, `col_empty`, `col_urgent`, `col_frame`, `col_charging`, `col_low`, `col_powersave` |
+| notify | `font`, `font_size`, `width`, `max_height`, `max_icon`, `margin`, `offset_y`, `timeout_low`, `timeout_normal`, `coalesce_popups`, `max_notifs`, `ignore_dbusclose`, `rounding`, `rounding_power`, `sound_command`, `fallback_icon_dir`, `col_bg`, `col_menu_bg`, `col_fg`, `col_title`, `col_kicker`, `col_frame`, `col_urgent`, `col_highlight`, `col_link` |
 | windows | `edge`, `snap_distance`, `col_frame` |
 
 Colors and fonts arrive from the user's `theme.lua`; the C++ defaults
@@ -679,6 +735,8 @@ tab-separated rows, the key last:
 | `windowed <x> <y> <w> <h> <class>` | its last windowed box: the restore of a window born maximized |
 | `launches <count> <name>` | the launcher's ranking, by .desktop Name |
 | `history <query>` | the prompt history, newest last |
+| `notify-app <flags> <app>` | the card menu's per-app switches: 1 banners off, 2 sounds off |
+| `notify-mute <until> <chat>` | a muted chat, until a unix time (a mute that ended is dropped) |
 
 Positions are relative to the origin of the monitor the window was on: a
 spot remembered on one monitor lands at the same place on whichever

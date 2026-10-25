@@ -19,7 +19,7 @@ removes them.
 | `shell` | the persistent chrome: workspaces, tasks (views), tray, bell, battery, clock, launcher |
 | `windows` | the window state machine and all placement: normal/minimized/maximized (told-state, adopt, restore), focus policy (vanilla activation semantics, raise, corpse guard, cycling, the urgent-restore hop for minimized asks), spawn placement (lastspot, least-overlap, fixed-size exclusion), drag snapping (arm/preview/commit, indicator layer) |
 | `notify` | the `org.freedesktop.Notifications` daemon, the card model (conversations, grouping, DND, OSD band 9990s), popups, shade, inline reply, sound |
-| `system` | machine-state controls — volume/mic (wpctl), brightness (logind), touchpad policy (mouse presence) — each action renders its feedback as a notify card (fixed IDs, value bar) |
+| `system` | machine-state controls — volume/mic (wpctl), brightness (logind), touchpad policy (mouse presence) — each action renders its feedback as a notify capsule (fixed IDs, a glyph, a level) |
 
 Legacy → new:
 
@@ -192,6 +192,27 @@ Crash-class invariants → structure:
 
 ## 3. Modules
 
+### The look (Frost)
+
+One material for every surface, its tokens in `core/tokens.hpp` (the
+schema's defaults name them; `theme.lua` overrides them):
+
+- Glass at three thicknesses over the compositor's live blur: thin for
+  the bar and the launcher, regular for cards, the center and the
+  capsules, thick for menus. Cards and menus add a soft drop, a light
+  top edge and a 10 % white rim; a menu floats higher (a deeper drop).
+- Ink is one white at four strengths (86 % bar text, 78 % body, 55 %
+  meta, 34 % empty); the accent `#00CCFF` is TEXT — the viewed tag, the
+  focused task, a selection. It fills only what is live: the bell's
+  count, a caret, the reply's send circle, a progress bar (the snap
+  preview is its 10 % tint and ring). Urgent is `#FF6159`, as text.
+- Radii: cards 18, menus 12, rows and tags 6, buttons and app icons 9;
+  windows keep the user's `decoration:rounding`.
+- Glyphs are the boards' own outline icons (`core/glyph.cpp`), drawn
+  white and tinted at raster time.
+- The mouse on a card: left acts on its release, a held left opens the
+  card menu, right dismisses, middle does nothing.
+
 ### shell
 
 The strip (workspaces, tasks, tray, bell, battery, clock), the menubar
@@ -233,10 +254,15 @@ on a floating CSD window up-left by its shadow margin).
 
 The daemon and the model exactly as the behavior docs specify
 (conversation merge, the 9990s band, grouping, DND, persistence,
-ranking, the AOSP icon anatomy, the pixel model). Surfaces: popups and
-the shade on the shared canvas. Inline reply, sound through Jobs. The
-model API is the module's public face — `system` posts its feedback
-cards through it (fixed IDs, low urgency, value bar).
+ranking, the icon anatomy, the pixel model). Surfaces: the banners, the
+center and the OSD capsules on the shared canvas — one card renderer
+for the banner, the center and a bundle's child — and the card menu,
+drawn last and hit first on the notify layer. The menu's switches (an
+app's banners and sounds, a chat's mute) persist through the core's
+`StateStore` and gate the arrival, the DND resume and the re-pop alike.
+Inline reply, sound through Jobs. The model API is the module's public
+face — `system` posts its feedback cards through it (fixed IDs, low
+urgency, a value, a glyph that makes it a capsule).
 
 ### system
 
@@ -244,8 +270,9 @@ Audio and brightness controls (bounded wpctl set/readback chains,
 logind `SetBrightness`, /sys reads) and the touchpad policy (disabled
 while a physical mouse is present — one that has moved or clicked —
 400 ms coalesced recheck, manual toggle until hotplug, across config
-reloads). Every action's feedback is a notify card:
-fixed IDs replace in place, 1200 ms expiry, native identities. All
+reloads). Every action's feedback is a notify capsule:
+fixed IDs replace in place, 1200 ms expiry, a glyph and a level or
+words. All
 process I/O through Jobs; readbacks reject malformed output.
 
 ## 4. API (no legacy)
@@ -284,8 +311,8 @@ stays in lockstep between `core/version.hpp` and `hyprpm.toml`.
 
 - One canvas pass element per layer and monitor, each with its own box:
   the renderer culls a layer the frame's damage misses, and an element
-  claims live blur only while its layer paints translucent glass (the
-  bar's default is opaque, the cards' glass is not).
+  claims live blur only while its layer paints translucent glass (every
+  Frost default is; an opaque `col_bg` draws plain and claims none).
 - Warms coalesce: one bar warm per event-loop turn however many events
   arrived, and a title change (the one input a client drives at will)
   warms the strip layer alone, at most once per 16 ms; the cards warm once, on their monitor, and only on their own
