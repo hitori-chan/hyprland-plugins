@@ -28,7 +28,7 @@ namespace NAwesome::Shell {
         // SNI ARGB (network order) -> premultiplied BGRA within cap a side.
         // An app that ships only a large pixmap (some send 512-1024 px) cost
         // a full-size premultiply, compare and upload per icon change for a
-        // 22 px cell: box-averaged by an integer K while premultiplying (to
+        // 16 px cell: box-averaged by an integer K while premultiplying (to
         // within 2x of the cap), then fitted exactly.
         static SPixels sniPixels(const std::vector<uint8_t>& src, int w, int h, int cap) {
             const int K  = std::max(1, std::max(w, h) / std::max(1, cap * 2));
@@ -226,14 +226,11 @@ namespace NAwesome::Shell {
                         try {
                             auto pixmaps = v.get<std::vector<sdbus::Struct<int32_t, int32_t, std::vector<uint8_t>>>>();
 
-                            // smallest one still >= the cell's PHYSICAL size (22 px
-                            // at the densest monitor's scale: a 22 px pixmap
-                            // stretched to 44 on a scale-2 panel is a blur when
-                            // the app offers 48), else the biggest available
-                            double scale = 1.0;
-                            for (const auto& M : State::monitorState()->monitors())
-                                scale = std::max(scale, (double)M->m_scale);
-                            const int                   WANT = (int)std::ceil(22 * scale);
+                            // smallest one still >= the cell's PHYSICAL size (at the
+                            // densest monitor's scale: a 16 px pixmap stretched to
+                            // 32 on a scale-2 panel is a blur when the app offers
+                            // 32), else the biggest available
+                            const int                   WANT = iconDevicePx();
                             const std::vector<uint8_t>* best = nullptr;
                             int                         bw = 0, bh = 0;
                             for (const auto& P : pixmaps) {
@@ -252,7 +249,7 @@ namespace NAwesome::Shell {
                             if (best) {
                                 // SNI pixmaps are ARGB32 in network byte order (A,R,G,B);
                                 // DRM_FORMAT_ARGB8888 wants B,G,R,A, premultiplied
-                                auto P = sniPixels(*best, bw, bh, WANT * 2);
+                                auto P = sniPixels(*best, bw, bh, WANT); // box-filtered to the cell: drawn 1:1, never GL-shrunk
                                 px     = std::move(P.px);
                                 pw     = P.w;
                                 ph     = P.h;
@@ -624,7 +621,7 @@ namespace NAwesome::Shell {
     namespace {
         class CTrayWidget : public IWidget {
           public:
-            static constexpr double ICON = 16; // the Frost bar's glyph size
+            static constexpr double ICON = ICON_CELL;
 
             double fit(const SPaint& P, const SFrame&) override {
                 const double SPACING = std::max(0.0, (double)cfg().getI("plugin:awesome:shell:tray_spacing"));

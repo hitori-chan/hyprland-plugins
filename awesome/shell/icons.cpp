@@ -9,11 +9,19 @@ namespace NAwesome::Shell {
 
     // ---- icons (tasklist + tray) ----
 
+    int iconDevicePx() {
+        double scale = 1.0;
+        for (const auto& M : State::monitorState()->monitors())
+            scale = std::max(scale, (double)M->m_scale);
+        return (int)std::ceil(ICON_CELL * scale);
+    }
+
     // PNG bytes -> a texture: the declared size checked before cairo decodes
-    // the whole raster, and a large icon downscaled once on the CPU (a bar
-    // cell is <=40 px; apps that ship a single 256-1024 px icon must not
-    // ride to GL full size — the notify module's scaledTex rule)
-    static SP<ITexture> pngTexture(const std::vector<uint8_t>& data, uint32_t maxDim) {
+    // the whole raster, then box-filtered once on the CPU to the cell's
+    // device size (px): GL's bilinear sampling would alias a 24 px icon into
+    // a 16 px cell, and apps that ship a single 256-1024 px icon must not
+    // ride to GL full size — the notify module's scaledTex rule
+    static SP<ITexture> pngTexture(const std::vector<uint8_t>& data, uint32_t maxDim, int px) {
         const auto DIMS = NAwesome::rasterDims(data.data(), data.size());
         if (!DIMS || DIMS->first == 0 || DIMS->second == 0 || DIMS->first > maxDim || DIMS->second > maxDim ||
             (uint64_t)DIMS->first * DIMS->second > NAwesome::MAX_DECODE_PIXELS)
@@ -42,9 +50,8 @@ namespace NAwesome::Shell {
             cairo_surface_destroy(SURF);
             return nullptr;
         }
-        constexpr int CAP = 128;
-        if (W > CAP || H > CAP) {
-            const double SCALE = std::min((double)CAP / W, (double)CAP / H);
+        if (W != px || H != px) { // contain-fit: the longer side becomes px
+            const double SCALE = std::min((double)px / W, (double)px / H);
             const int    DW = std::max(1, (int)std::lround(W * SCALE)), DH = std::max(1, (int)std::lround(H * SCALE));
             auto*        SMALL = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, DW, DH);
             auto*        CR    = cairo_create(SMALL);
@@ -125,7 +132,7 @@ namespace NAwesome::Shell {
             return nullptr;
         if (const auto DIMS = NAwesome::rasterDims(BYTES->data(), BYTES->size()); DIMS && (uint64_t)DIMS->first * DIMS->second > 256 * 256 && !largeDecodeBudget())
             return nullptr;
-        return pngTexture(*BYTES, 1024);
+        return pngTexture(*BYTES, 1024, iconDevicePx());
     }
 
     // dbusmenu "icon-data" is a PNG shipped inline (nm-applet composites its
@@ -139,12 +146,12 @@ namespace NAwesome::Shell {
         if (data.empty() || data.size() > MAX_ENCODED)
             return nullptr;
         // charged, never refused: an inline icon has no name to retry by
-        return timedDecode([&] { return pngTexture(data, 256); });
+        return timedDecode([&] { return pngTexture(data, 256, iconDevicePx()); });
     }
 
     // SVG -> texture via librsvg (alacritty ships nothing but an SVG; tray icon
     // names like input-keyboard-symbolic only exist as theme SVGs). Rasterized
-    // bigger than any bar cell; GL scales down. Symbolic icons are a pure alpha
+    // at the cell's device size, drawn 1:1. Symbolic icons are a pure alpha
     // shape in some theme-chosen color — repaint them with the bar's fg.
     static SP<ITexture> loadSvg(const std::string& path, bool recolor, const CHyprColor& col) {
         const auto BYTES = NAwesome::readImageFile(path); // one non-blocking open, size-bounded
@@ -154,10 +161,10 @@ namespace NAwesome::Shell {
         if (!handle)
             return nullptr;
 
-        constexpr int SZ   = 64;
+        const int     SZ   = iconDevicePx();
         auto*         SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, SZ, SZ);
         auto*         CR   = cairo_create(SURF);
-        RsvgRectangle viewport{0, 0, SZ, SZ};
+        RsvgRectangle viewport{0, 0, (double)SZ, (double)SZ};
         rsvg_handle_render_document(handle, CR, &viewport, nullptr);
         cairo_destroy(CR);
         g_object_unref(handle);
@@ -221,11 +228,11 @@ namespace NAwesome::Shell {
                     if (const auto P = extraDir + "/" + N + EXT; NAwesome::admissibleImageFile(P))
                         return P;
 
-        constexpr int BAR_ICON_PX = 24; // the strip's icon cells, the size a lookup prefers
-        if (auto P = NAwesome::resolveIconName(name, BAR_ICON_PX); !P.empty())
+        const int PX = iconDevicePx(); // a theme's own drawing at the cell's size (breeze's 16 px set) beats a scaled one
+        if (auto P = NAwesome::resolveIconName(name, PX); !P.empty())
             return P;
         if (const auto LOWER = lower(name); LOWER != name)
-            return NAwesome::resolveIconName(LOWER, BAR_ICON_PX);
+            return NAwesome::resolveIconName(LOWER, PX);
         return "";
     }
 
@@ -284,8 +291,9 @@ namespace NAwesome::Shell {
         return tex;
     }
 
-    // symbolic SVGs bake col_fg into their pixels (loadIcon), so a foreground
-    // change invalidates every icon cache — checked at the caches' entrances
+    // symbolic SVGs bake col_fg into their pixels (loadIcon) and every icon is
+    // rasterized at the cell's device size, so a foreground or a scale change
+    // invalidates every icon cache — checked at the caches' entrances
     static void dropStaleTint();
 
     // class -> texture; nullptr is cached too (= leave the icon cell empty).
@@ -328,10 +336,13 @@ namespace NAwesome::Shell {
     // file from disk inside the render pass.
     static void                                          dropStaleTint() {
         static uint64_t lastFg = 0;
+        static int      lastPx = 0;
         const auto      FG     = (uint64_t)cfg().getColor("plugin:awesome:shell:col_fg");
-        if (FG == lastFg)
+        const int       PX     = iconDevicePx(); // and the device size every texture was rasterized at
+        if (FG == lastFg && PX == lastPx)
             return;
         lastFg = FG;
+        lastPx = PX;
         appIconCache.clear();
         namedIconCache.clear();
         trayIconCache.clear();

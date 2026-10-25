@@ -4,6 +4,7 @@
 #include "ui.hpp"
 
 #include "../core/config.hpp"
+#include "../core/text.hpp"
 #include "../core/desktopindex.hpp"
 #include "../core/fileindex.hpp"
 
@@ -331,6 +332,7 @@ namespace NAwesome::Notify {
         cairo_set_source_rgb(CR, TINT.r, TINT.g, TINT.b);
         cairo_paint(CR);
         auto*      LAYOUT = pango_cairo_create_layout(CR);
+        NAwesome::applyTextOptions(LAYOUT);
         const auto LABEL  = Pixel::initials(name.empty() ? identity : name);
         pango_layout_set_text(LAYOUT, LABEL.c_str(), -1);
         auto* FONT = pango_font_description_from_string(std::string{NAwesome::cfg().getS("plugin:awesome:notify:font")}.c_str());

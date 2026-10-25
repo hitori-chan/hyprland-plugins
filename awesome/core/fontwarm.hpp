@@ -12,6 +12,7 @@
 #pragma once
 
 #include "config.hpp"
+#include "text.hpp"
 
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopTimer.hpp>
@@ -108,6 +109,7 @@ namespace NAwesome {
             auto* surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
             auto* cr   = cairo_create(surf);
             auto* lay  = pango_cairo_create_layout(cr);
+            applyTextOptions(lay); // the scaled fonts the rasters will ask for
             auto* fd   = pango_font_description_new();
             pango_font_description_set_family(fd, f.family.c_str());
             pango_font_description_set_weight(fd, (PangoWeight)f.weight);

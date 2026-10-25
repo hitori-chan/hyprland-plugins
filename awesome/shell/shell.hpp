@@ -147,6 +147,12 @@ namespace NAwesome::Shell {
 
     // ---- icons.cpp ----
 
+    // Every icon cell — tasks, tray, menu rows, the launcher — is this many
+    // logical px; icons.cpp rasterizes at its device size (iconDevicePx), so
+    // a texture lands 1:1 instead of being shrunk by the GPU (aliased).
+    inline constexpr double ICON_CELL = 16;
+    int                     iconDevicePx(); // ICON_CELL at the densest monitor's scale
+
     SP<ITexture> loadPng(const std::string& path);
     SP<ITexture> loadPngBytes(const std::vector<uint8_t>& data); // dbusmenu icon-data blobs
     std::string  resolveIconPath(const std::string& name, const std::string& extraDir = "");

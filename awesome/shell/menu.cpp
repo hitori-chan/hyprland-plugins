@@ -685,7 +685,7 @@ namespace NAwesome::Shell {
                     anyToggle = anyToggle || E.toggle != Menu::TG_NONE;
                 }
 
-                const double IS   = 16;
+                const double IS   = ICON_CELL;
                 const double COLW = anyIcon ? IS : anyToggle ? 14 : 0;
                 const double LX   = COLW > 0 ? 10 + COLW + 8 : 12;
 

@@ -56,7 +56,7 @@ namespace NAwesome::Shell {
                     return;
                 // awesome tasklist behavior: the windows split the WHOLE free
                 // strip between taglist and tray — one window = one huge item
-                constexpr double GAP = 4, ROW_H = 22, PADX = 10, ICON = 14, ICON_GAP = 8;
+                constexpr double GAP = 4, ROW_H = 22, PADX = 10, ICON = ICON_CELL, ICON_GAP = 8;
                 const double     N     = (double)F.tasks->size();
                 const double     ITEMW = std::max(1.0, (box.w - GAP * (N - 1)) / N);
                 const int        R     = (int)std::lround(NAwesome::Theme::RAD_ROW * P.scale);
@@ -81,7 +81,7 @@ namespace NAwesome::Shell {
                     if (barHover.widget == this && barHover.window == W.get() && barHover.mon == P.mon->m_id)
                         P.rect(CELL, NAwesome::tGroundHover(), R, (float)NAwesome::Theme::ROUNDING_POWER);
 
-                    // [10][icon 14][8][title][10]
+                    // [10][icon 16][8][title][10]
                     double tx = x + PADX;
                     if (const auto ITEX = appIcon(W->metadata().appID()); ITEX && ITEX->m_texID != 0)
                         P.texFit(ITEX, CBox{tx, CELL.y + (ROW_H - ICON) / 2, ICON, ICON});

@@ -985,10 +985,10 @@ namespace NAwesome::Shell {
                     return namedIcon("system-run");
                 };
 
-                // entry: [icon 14][6][text], 20 apart; the cell is always
+                // entry: [icon 16][6][text], 20 apart; the cell is always
                 // reserved, even when no icon resolves, so row geometry
                 // stays stable and names never jump
-                constexpr double ICON = 14, ICON_GAP = 6, SPACING = 20;
+                constexpr double ICON = ICON_CELL, ICON_GAP = 6, SPACING = 20;
                 const auto       cellW = [&](const SP<ITexture>& t) { return ICON + ICON_GAP + (t ? t->m_size.x / PAINT.scale : 0); };
                 // an entry never outgrows half the strip (the Exec row
                 // echoes the whole query)

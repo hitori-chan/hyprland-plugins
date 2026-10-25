@@ -5,6 +5,7 @@
 #include "shell/shell.hpp"
 
 #include "../windows/state.hpp"
+#include "core/text.hpp"
 #include "core/theme.hpp"
 
 #include <cmath>
@@ -51,6 +52,40 @@ namespace NAwesome::Shell {
         return warmFont;
     }
 
+    // The compositor's renderText, under the plugin's text options (core/
+    // text.hpp): the same extents, ellipsizing and premultiplied ARGB32.
+    static SP<ITexture> rasterText(const std::string& text, const CHyprColor& col, int pt, int maxWidth, const std::string& family, int weight) {
+        PangoContext*         ctx    = newTextContext();
+        PangoLayout*          layout = pango_layout_new(ctx);
+        PangoFontDescription* fd     = pango_font_description_new();
+        g_object_unref(ctx);
+        pango_font_description_set_family(fd, family.c_str());
+        pango_font_description_set_absolute_size(fd, pt * PANGO_SCALE);
+        pango_font_description_set_weight(fd, (PangoWeight)weight);
+        pango_layout_set_font_description(layout, fd);
+        pango_layout_set_text(layout, text.c_str(), -1);
+        if (maxWidth > 0) {
+            pango_layout_set_width(layout, maxWidth * PANGO_SCALE);
+            pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
+        }
+        PangoRectangle ink = {}, log = {};
+        pango_layout_get_pixel_extents(layout, &ink, &log);
+        const int W = std::max(1, std::max(log.width, ink.x + ink.width)), H = std::max(1, std::max(log.height, ink.y + ink.height));
+
+        auto*     SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
+        auto*     CR   = cairo_create(SURF);
+        cairo_set_source_rgba(CR, col.r, col.g, col.b, col.a);
+        cairo_move_to(CR, 0, 0);
+        pango_cairo_show_layout(CR, layout);
+        pango_font_description_free(fd);
+        g_object_unref(layout);
+        cairo_surface_flush(SURF);
+        auto tex = g_pHyprRenderer->createTexture(SURF);
+        cairo_destroy(CR);
+        cairo_surface_destroy(SURF);
+        return tex;
+    }
+
     SP<ITexture> textTex(const std::string& rawText, const CHyprColor& col, int pt, int maxWidth, const std::string& font, int weight) {
         // One line, always: every label here is a client's string (a title,
         // a tray or menu label) and the bar and its menus have one line per
@@ -87,7 +122,7 @@ namespace NAwesome::Shell {
         if (!warmGate().mayBuild())
             return nullptr;
 
-        if (const auto* ENTRY = texCache.insert(KEY, g_pHyprRenderer->renderText(text, col, pt, false, F, maxWidth, weight)))
+        if (const auto* ENTRY = texCache.insert(KEY, rasterText(text, col, pt, maxWidth, F, weight)))
             return *ENTRY;
         return nullptr;
     }

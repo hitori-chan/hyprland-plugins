@@ -9,6 +9,7 @@
 #include "ui.hpp"
 
 #include "../core/config.hpp"
+#include "../core/text.hpp"
 
 #include <cctype>
 #include <functional>
@@ -298,8 +299,7 @@ namespace NAwesome::Notify {
             adv   = IT->second.adv;
             return true;
         }
-        PangoFontMap* fontMap = pango_cairo_font_map_get_default();
-        PangoContext* context = pango_font_map_create_context(fontMap);
+        PangoContext* context = NAwesome::newTextContext();
         const auto    measure = [](const char* text, PangoContext* ctx, const char* fam, int size, int wt, float sp) -> int {
             PangoLayout*          l  = pango_layout_new(ctx);
             PangoFontDescription* f  = pango_font_description_new();
@@ -374,8 +374,7 @@ namespace NAwesome::Notify {
                                               maxHeightPx >= 0 ? (size_t)LINES + 1 : SIZE_MAX);
         const std::string& text = CUT.empty() ? fullText : CUT;
 
-        PangoFontMap*         fontMap = pango_cairo_font_map_get_default();
-        PangoContext*         context = pango_font_map_create_context(fontMap);
+        PangoContext*         context = NAwesome::newTextContext();
         PangoLayout*          layout  = pango_layout_new(context);
         PangoFontDescription* fd      = pango_font_description_new();
         g_object_unref(context);
