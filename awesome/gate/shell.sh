@@ -1,8 +1,8 @@
 # awesome/gate/shell.sh — the shell module's behavior battery: the strip's
-# presence and state (tags, tasks, the bell badge, the clock), the tray
+# presence and state (tags, tasks, the bell's dot, the clock), the tray
 # lifecycle against the bar, and the menubar/launcher. Helpers:
 # capture_nested, vp, vk, chk, hq, ws, dsp from the harness; bar_bright,
-# task_band, accent_px, pill_px, tag_cx from lib.sh.
+# task_band, accent_px, dot_px, tag_cx from lib.sh.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # ---- the strip -------------------------------------------------------------
@@ -11,24 +11,16 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 # mid-warm counts the absent glyphs. Wait for the strip to actually draw —
 # bounded, so a strip that never draws still fails the check below.
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-	if capture_nested "$STATE/strip-base.png" && [[ "$(bar_bright "$STATE/strip-base.png")" -gt 300 ]]; then
+	if capture_nested "$STATE/strip-base.png" && strip_drawn "$STATE/strip-base.png"; then
 		break
 	fi
 	sleep 0.5
 done
-# one reading for the log either way: a failed canary must say HOW dark
-# the strip was (0 = never drew; 150-250 = mid-warm), not just "dark".
-# The threshold counts bright pixels of the whole band and is render-
-# hardware sensitive: the fully drawn Frost strip settles near 400 on this
-# i915/Mesa box, so the floor sits well under the settled reading. A
-# mid-warm frame lacks
-# most of its glyphs and scores far below; the poll loop above retries
-# through the warm, and the glyph checks that follow are the real
-# presence test either way.
-echo "shell: strip bright=$(bar_bright "$STATE/strip-base.png")" >&2
-chk "shell: the strip is on screen (clock + tags draw)" \
-	test "$(bar_bright "$STATE/strip-base.png")" -gt 250
-chk "shell: no count pill with nothing bannered" test "$(pill_px "$STATE/strip-base.png")" = 0
+# one reading for the log either way: a failed canary says how much of the
+# strip drew (0 = nothing; a theme or face change moves the count)
+echo "shell: strip bright=$(bar_bright "$STATE/strip-base.png") bell=$(bell_x "$STATE/strip-base.png")" >&2
+chk "shell: the strip is on screen (clock, bell and viewed tag draw)" strip_drawn "$STATE/strip-base.png"
+chk "shell: no dot on the bell with nothing to see" test "$(dot_px "$STATE/strip-base.png")" = 0
 
 # ---- tags: the click switches the viewed workspace -------------------------
 chk "shell: starts on workspace 1" test "$(ws)" = 1
@@ -108,20 +100,22 @@ print(' '.join(c['address'] for c in json.load(sys.stdin) if c['class'] in ('wlo
 done; sleep 0.8
 chk "winlist: its windows are closed" test "$(pyc "sum(1 for c in cs if c['class'] in ('wlother','wlhere'))")" = 0
 
-# ---- the bell badge: the counts the bell reads from the model --------------
+# ---- the bell's dot: a card the center has not shown -----------------------
 dsp "hl.dsp.exec_cmd('notify-send -a bellp -t 30000 \"badge probe\" body')"; sleep 1.2
 capture_nested "$STATE/bell-badge.png"
-chk "shell: the badge appears with a bannered card" test "$(pill_px "$STATE/bell-badge.png")" -gt 30
+chk "shell: an unseen card dots the bell" test "$(dot_px "$STATE/bell-badge.png")" -gt 8
+# the center shows it: open, close (the banner re-pops), and the dot is out
+hq awesome center >/dev/null; sleep 0.6
+hq awesome center >/dev/null; sleep 0.8
+capture_nested "$STATE/bell-seen.png"
+seen_out() { [[ "$(st)" == "center:0 live:1 dnd:0" && "$(dot_px "$STATE/bell-seen.png")" = 0 ]]; }
+chk "shell: the center showed it: the dot is out, the card stays" seen_out
 dsp "hl.dsp.exec_cmd('notify-send -a bellp -u critical -t 30000 \"badge probe 2\" body')"; sleep 1.2
 capture_nested "$STATE/bell-badge2.png"
-# the count itself is the MODEL's business (the pill draws LIVE+KEPT, which
-# IS the state's live count): a "1" and a "2" move ~2 px of ink, so the
-# pixel side asserts the pill still stands, the state side the number
-badge_grew() { [[ "$(st)" == "center:0 live:2 dnd:0" && "$(pill_px "$STATE/bell-badge2.png")" -gt 30 ]]; }
-chk "shell: the badge count grows with a second card" badge_grew
+chk "shell: a new card lights it again" test "$(dot_px "$STATE/bell-badge2.png")" -gt 8
 hq awesome clear >/dev/null; sleep 1.2
 capture_nested "$STATE/bell-badge0.png"
-chk "shell: the badge leaves at zero" test "$(pill_px "$STATE/bell-badge0.png")" = 0
+chk "shell: the dot leaves with the last card" test "$(dot_px "$STATE/bell-badge0.png")" = 0
 
 # ---- the tray: the StatusNotifierItem lifecycle -----------------------------
 SNIBIN="$REPO/devtools/fake-sni"

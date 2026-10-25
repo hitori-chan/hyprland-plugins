@@ -185,6 +185,9 @@ namespace NAwesome::Notify {
         if (on == s_on)
             return;
         CardMenu::close(); // the layout it was opened over is going
+        // what the center listed while open, and lists as it opens, has been
+        // seen: the bell's dot goes out (the funnel below repaints it)
+        Model::markSeen();
         s_on = on;
         if (!on) {
             resetVisit();
