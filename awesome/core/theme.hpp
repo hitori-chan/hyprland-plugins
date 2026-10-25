@@ -54,7 +54,7 @@ namespace NAwesome {
     AW_THEME_COLOR(tTrack, TRACK)
     AW_THEME_COLOR(tHairline, HAIRLINE)
     AW_THEME_COLOR(tLight, LIGHT)
-    AW_THEME_COLOR(tGroundHover, GROUND_HOVER)
+    AW_THEME_COLOR(tTitle, TITLE)
     AW_THEME_COLOR(tShadow, SHADOW)
     AW_THEME_COLOR(tMenuShadow, MENU_SHADOW)
     AW_THEME_COLOR(tOnAccent, ON_ACCENT)

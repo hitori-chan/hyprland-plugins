@@ -13,38 +13,46 @@ namespace NAwesome::Shell {
     namespace {
         class CTaglistWidget : public IWidget {
           public:
-            // The Frost state matrix: the viewed tag is accent text on a
-            // dark ground; an urgent one red text; an occupied one the bar's
-            // text, an empty one dim. No occupancy marks: the text's
-            // strength says it. A hovered tag gets a light ground.
+            // The state matrix lives in the text alone: the viewed tag is
+            // accent at semibold, an urgent one red, an occupied one the
+            // bar's text, an empty one dim — no ground, no occupancy marks.
+            // A hovered tag's text lifts a step (dim -> the bar's text ->
+            // white). Hover damages but never rewarms (crash class 4), so the
+            // warm builds both variants of every tag.
             static constexpr double CELL_W = 26, CELL_H = 22, GAP = 2;
+            static constexpr int    WEIGHT = 400, WEIGHT_VIEWED = 600;
 
-            static CHyprColor ink(const SFrame& F, int i) {
-                if (F.ws && F.ws->numberedID() == i)
+            static bool             viewed(const SFrame& F, int i) {
+                return F.ws && F.ws->numberedID() == i;
+            }
+            static CHyprColor ink(const SFrame& F, int i, bool hover) {
+                if (viewed(F, i))
                     return F.active;
                 if (F.urgent[i])
                     return F.urgentFg;
-                return F.windows[i] > 0 ? F.fg : F.empty;
+                if (F.windows[i] > 0)
+                    return hover ? NAwesome::tTitle() : F.fg;
+                return hover ? F.fg : F.empty;
+            }
+            static SP<ITexture> label(const SPaint& P, const SFrame& F, int i, bool hover) {
+                return textTex(KANJI[i - 1], ink(F, i, hover), P.pt, 0, "", viewed(F, i) ? WEIGHT_VIEWED : WEIGHT);
             }
 
             double fit(const SPaint& P, const SFrame& F) override {
                 // the warm builds exactly the variants the draw paints
-                for (int i = 1; i <= 9; i++)
-                    textTex(KANJI[i - 1], ink(F, i), P.pt, 0, "", 500);
+                for (int i = 1; i <= 9; i++) {
+                    label(P, F, i, false);
+                    label(P, F, i, true);
+                }
                 return 9 * CELL_W + 8 * GAP;
             }
 
             void draw(const SPaint& P, const SFrame& F, const CBox& box) override {
-                const int   R  = (int)std::lround(NAwesome::Theme::RAD_ROW * P.scale);
-                const float RP = (float)NAwesome::Theme::ROUNDING_POWER;
-                double      x  = box.x;
+                double x = box.x;
                 for (int i = 1; i <= 9; i++) {
                     const CBox CELL{x, box.y + (P.h - CELL_H) / 2, CELL_W, CELL_H};
-                    if (F.ws && F.ws->numberedID() == i)
-                        P.rect(CELL, F.activeBg, R, RP);
-                    else if (barHover.widget == this && barHover.tag == i && barHover.mon == P.mon->m_id)
-                        P.rect(CELL, NAwesome::tGroundHover(), R, RP);
-                    P.texIn(textTex(KANJI[i - 1], ink(F, i), P.pt, 0, "", 500), CELL);
+                    const bool HOVER = barHover.widget == this && barHover.tag == i && barHover.mon == P.mon->m_id;
+                    P.texIn(label(P, F, i, HOVER), CELL);
 
                     // the hit spans the bar's height and the gap: no dead
                     // pixel between two tags

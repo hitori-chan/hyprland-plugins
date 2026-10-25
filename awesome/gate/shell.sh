@@ -36,11 +36,32 @@ printf 'move %s 13\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' "$(t
 sleep 1.2
 chk "shell: clicking tag 三 switches to workspace 3" test "$(ws)" = 3
 capture_nested "$STATE/strip-ws3.png"
-# the viewed tag is accent text on a quiet ground, the rest never accent
+# the viewed tag is accent text, the rest never accent
 chk "shell: the viewed tag draws in the accent" test "$(accent_px "$STATE/strip-ws3.png" 64 90)" -gt 15
 chk "shell: a tag not viewed draws no accent" test "$(accent_px "$STATE/strip-ws3.png" 8 34)" = 0
 dsp "hl.dsp.focus({workspace=\"1\"})"; sleep 0.8
 chk "shell: back on workspace 1" test "$(ws)" = 1
+
+# ---- tags: hover lifts the text, never a ground ------------------------------
+# an empty tag's dim kanji lights to the bar's text under the pointer, and
+# the cell's corners stay the strip's own ground
+tag_cell() { # tag_cell <frame> <tag> — "<lit glyph px> <corner max channel>"
+	python3 - "$1" "$(tag_cx "$2")" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert('RGB'); px = im.load(); cx = int(sys.argv[2])
+lit = sum(1 for y in range(3, 25) for x in range(cx - 13, cx + 13) if max(px[x, y]) > 120)
+print(lit, max(max(px[cx - 12, 4]), max(px[cx + 11, 23])))
+PY
+}
+read -r LIT0 CORNER0 <<<"$(tag_cell "$STATE/strip-base.png" 5)"
+printf 'move %s 13\nsleep 60\n' "$(tag_cx 5)" | vp; sleep 0.5
+capture_nested "$STATE/strip-hover5.png"
+read -r LIT1 CORNER1 <<<"$(tag_cell "$STATE/strip-hover5.png" 5)"
+echo "shell: tag 5 lit $LIT0 -> $LIT1, corner $CORNER0 -> $CORNER1" >&2
+chk "shell: hovering an empty tag lifts its text" test "$LIT1" -gt $(( LIT0 + 15 ))
+chk "shell: and paints no ground" test $(( CORNER1 - CORNER0 )) -le 3 -a $(( CORNER0 - CORNER1 )) -le 3
+printf 'move 900 500\nsleep 60\n' | vp; sleep 0.3
 
 # ---- tasks: the title appears with the window, dims with minimize ----------
 # focused accent, minimized DIM: task_band counts lit titles (max channel)

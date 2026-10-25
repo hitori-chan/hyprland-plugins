@@ -286,7 +286,7 @@ namespace NAwesome::Shell {
         const std::vector<std::pair<uint64_t, PHLWINDOW>>* tasks       = nullptr; // this workspace's tasks, arrival order
         // the frame palette, fetched once — color() memoizes but still
         // hashes per call, and the taglist alone makes dozens
-        CHyprColor fg, active, activeBg, urgentFg, empty;
+        CHyprColor fg, active, urgentFg, empty;
     };
 
     // The bar cell under the pointer (input.cpp tracks it): its widget

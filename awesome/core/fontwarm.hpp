@@ -87,6 +87,9 @@ namespace NAwesome {
                         ADD(FAMILY, W, SIZE + D, "Ag");
                 ADD(FAMILY, 400, SIZE, "\xF0\x9F\x98\x80"); // U+1F600
             }
+            // the kanji tags: the shell's CJK face, at both tag weights
+            for (const int W : {400, 600})
+                ADD(MODULES[0].first, W, MODULES[0].second, "\xE4\xB8\x80"); // 一
         }
 
         void step() {

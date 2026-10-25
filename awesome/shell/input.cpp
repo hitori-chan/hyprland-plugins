@@ -376,8 +376,9 @@ namespace NAwesome::Shell {
         return MON;
     }
 
-    // A hover ground is a rect: the change damages the two cells and warms
-    // nothing (crash class 4)
+    // Hover lifts a tag's or a task's text to a variant the warm already
+    // built: the change damages the two cells and warms nothing (crash
+    // class 4)
     static void setBarHover(const SBarHover& h) {
         if (h == barHover)
             return;
@@ -390,8 +391,8 @@ namespace NAwesome::Shell {
         barHover = h;
     }
 
-    // the cell a tag or a task paints its hover in: only those two widgets
-    // draw one (the tray, the bell and the clock have no ground)
+    // the cell whose text a hover lifts: only tags and tasks have one (the
+    // tray, the bell and the clock do not react)
     static void barHoverAt(const PHLMONITOR& mon, const Vector2D& pos) {
         SBarHover h;
         if (const auto IT = hitboxes.find(mon->m_id); IT != hitboxes.end() && pos.y < mon->logicalBox().y + barHeight())

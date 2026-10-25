@@ -235,7 +235,6 @@ namespace NAwesome::Shell {
         // still hashes per call, and the widgets make dozens
         F.fg       = color(cfg().getColor("plugin:awesome:shell:col_fg"));
         F.active   = color(cfg().getColor("plugin:awesome:shell:col_active"));
-        F.activeBg = color(cfg().getColor("plugin:awesome:shell:col_active_bg"));
         F.urgentFg = color(cfg().getColor("plugin:awesome:shell:col_urgent"));
         F.empty    = color(cfg().getColor("plugin:awesome:shell:col_empty"));
 

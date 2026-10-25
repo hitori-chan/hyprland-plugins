@@ -59,7 +59,6 @@ namespace NAwesome::Shell {
                 constexpr double GAP = 4, ROW_H = 22, PADX = 10, ICON = ICON_CELL, ICON_GAP = 8;
                 const double     N     = (double)F.tasks->size();
                 const double     ITEMW = std::max(1.0, (box.w - GAP * (N - 1)) / N);
-                const int        R     = (int)std::lround(NAwesome::Theme::RAD_ROW * P.scale);
                 // an unfocused task reads quieter than the bar's text: the
                 // board's 62 % from its 86 %
                 const CHyprColor QUIET = F.fg.modifyA(F.fg.a * 0.72f);
@@ -67,31 +66,47 @@ namespace NAwesome::Shell {
                 double           x = box.x;
                 for (const auto& [SEQ, W] : *F.tasks) {
                     const CBox CELL{x, box.y + (P.h - ROW_H) / 2, ITEMW, ROW_H};
-                    // focus is accent text, urgent red text — never a fill.
-                    // Minimized wins over focus: a minimized window is never
-                    // truly focused, but the compositor's focus fallback can
-                    // leave focus on a hidden one — it must still read muted.
-                    CHyprColor fg = QUIET;
-                    if (WT::isMinimized(W))
-                        fg = F.empty;
-                    else if (W == F.focus)
-                        fg = F.active;
-                    else if (W->m_hints & Desktop::View::WINDOW_HINT_URGENT)
-                        fg = F.urgentFg;
-                    if (barHover.widget == this && barHover.window == W.get() && barHover.mon == P.mon->m_id)
-                        P.rect(CELL, NAwesome::tGroundHover(), R, (float)NAwesome::Theme::ROUNDING_POWER);
+                    // focus is accent text at medium, urgent red text — never
+                    // a fill. Minimized wins over focus: a minimized window is
+                    // never truly focused, but the compositor's focus fallback
+                    // can leave focus on a hidden one — it must still read
+                    // muted. A hovered task's text lifts a step (dim -> quiet
+                    // -> the bar's text), never a ground; hover damages but
+                    // never rewarms (crash class 4), so the warm builds both.
+                    const bool MIN    = WT::isMinimized(W);
+                    const bool FOCUS  = !MIN && W == F.focus;
+                    const bool URGENT = !MIN && !FOCUS && (W->m_hints & Desktop::View::WINDOW_HINT_URGENT);
+                    const auto inkOf  = [&](bool hover) -> CHyprColor {
+                        if (FOCUS)
+                            return F.active;
+                        if (URGENT)
+                            return F.urgentFg;
+                        if (MIN)
+                            return hover ? QUIET : F.empty;
+                        return hover ? F.fg : QUIET;
+                    };
+                    const bool HOVER = barHover.widget == this && barHover.window == W.get() && barHover.mon == P.mon->m_id;
 
-                    // [10][icon 16][8][title][10]
+                    // [10][icon 16][8][title][10]; a minimized task's icon fades with its text
                     double tx = x + PADX;
-                    if (const auto ITEX = appIcon(W->metadata().appID()); ITEX && ITEX->m_texID != 0)
-                        P.texFit(ITEX, CBox{tx, CELL.y + (ROW_H - ICON) / 2, ICON, ICON});
+                    if (const auto ITEX = appIcon(W->metadata().appID()); ITEX && ITEX->m_texID != 0) {
+                        auto PI = P;
+                        if (MIN)
+                            PI.alpha *= 0.5f;
+                        PI.texFit(ITEX, CBox{tx, CELL.y + (ROW_H - ICON) / 2, ICON, ICON});
+                    }
                     tx += ICON + ICON_GAP;
 
                     static std::string LBL; // reused; main thread only
                     Tasklist::label(W, LBL);
                     if (P.fp)
                         *P.fp = *P.fp * 1099511628211ULL + std::hash<std::string>{}(LBL);
-                    const auto TEX = textTex(LBL, fg, P.pt, std::max(1, (int)std::round((ITEMW - (tx - x) - PADX) * P.scale)), "", 500); // floor >0: a non-positive width disables ellipsization and overflows the cell
+                    const int MAXW =
+                        std::max(1, (int)std::round((ITEMW - (tx - x) - PADX) * P.scale)); // floor >0: a non-positive width disables ellipsization and overflows the cell
+                    const int WEIGHT = FOCUS ? 500 : 400;
+                    if (P.warm)
+                        textTex(LBL, inkOf(!HOVER), P.pt, MAXW, "", WEIGHT);
+                    const auto TEX = textTex(LBL, inkOf(HOVER), P.pt, MAXW, "", WEIGHT);
                     if (TEX && TEX->m_texID != 0) {
                         const auto B = P.toPhys(CBox{tx, box.y, 1, P.h});
                         CBox       b{B.x, B.y + (B.h - TEX->m_size.y) / 2.0, TEX->m_size.x, TEX->m_size.y};

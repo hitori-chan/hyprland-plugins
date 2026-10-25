@@ -32,8 +32,6 @@ namespace NAwesome::Theme {
     inline constexpr uint32_t HAIRLINE    = 0x1affffff; // separators, 10 %
     inline constexpr uint32_t RIM         = 0x1affffff; // the glass edge, 10 %
     inline constexpr uint32_t LIGHT       = 0x1affffff; // the top edge catching light, 10 %
-    inline constexpr uint32_t GROUND      = 0x4d000000; // the viewed tag's dark ground, 30 %
-    inline constexpr uint32_t GROUND_HOVER = 0x1affffff; // a hovered tag or row, 10 %
     inline constexpr uint32_t SHADOW      = 0x47000000; // a card's drop, 28 %
     inline constexpr uint32_t MENU_SHADOW = 0x6b000000; // a menu floats higher, 42 %
     inline constexpr uint32_t BADGE_RIM   = 0xffffffff; // the identity badge's ring
