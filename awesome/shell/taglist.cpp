@@ -2,6 +2,8 @@
 
 #include "shell/shell.hpp"
 
+#include "core/theme.hpp"
+
 #include <array>
 
 namespace NAwesome::Shell {
@@ -11,72 +13,47 @@ namespace NAwesome::Shell {
     namespace {
         class CTaglistWidget : public IWidget {
           public:
-            // awesome's exact state matrix: the viewed tag gets the focus
-            // colors, an urgent one the urgent colors, and everything else —
-            // occupied or empty — the plain text color; occupancy shows as
-            // the little corner square instead, filled when the tag holds
-            // the focused window, hollow otherwise.
-            struct SCell {
-                CHyprColor fg, bg;
-                bool       hasBg = false;
-            };
-            static SCell cell(const SFrame& F, int i) {
-                SCell c{.fg = F.fg};
-                if (F.ws && F.ws->numberedID() == i) {
-                    c.bg    = F.activeBg;
-                    c.hasBg = true;
-                    c.fg    = F.active;
-                } else if (F.urgent[i]) {
-                    c.bg    = F.urgentBg;
-                    c.hasBg = true;
-                    c.fg    = F.urgentFg;
-                }
-                return c;
+            // The Frost state matrix: the viewed tag is accent text on a
+            // dark ground; an urgent one red text; an occupied one the bar's
+            // text, an empty one dim. No occupancy marks: the text's
+            // strength says it. A hovered tag gets a light ground.
+            static constexpr double CELL_W = 26, CELL_H = 22, GAP = 2;
+
+            static CHyprColor ink(const SFrame& F, int i) {
+                if (F.ws && F.ws->numberedID() == i)
+                    return F.active;
+                if (F.urgent[i])
+                    return F.urgentFg;
+                return F.windows[i] > 0 ? F.fg : F.empty;
             }
 
             double fit(const SPaint& P, const SFrame& F) override {
-                // awesome's tag button width (text + 12) — the warm pass
-                // builds exactly the color variants the draw will paint, so
-                // the measure walks the same state matrix
-                double w = 0;
-                for (int i = 1; i <= 9; i++) {
-                    const auto TEX = textTex(KANJI[i - 1], cell(F, i).fg, P.pt);
-                    w += (TEX ? TEX->m_size.x / P.scale : P.h) + 12;
-                }
-                return w;
+                // the warm builds exactly the variants the draw paints
+                for (int i = 1; i <= 9; i++)
+                    textTex(KANJI[i - 1], ink(F, i), P.pt, 0, "", 500);
+                return 9 * CELL_W + 8 * GAP;
             }
 
             void draw(const SPaint& P, const SFrame& F, const CBox& box) override {
-                double     x  = box.x;
-                const auto SQ = std::round(P.h * 4.0 / 19.0); // the 4px square of a 19px wibar, scaled
+                const int   R  = (int)std::lround(NAwesome::Theme::RAD_ROW * P.scale);
+                const float RP = (float)NAwesome::Theme::ROUNDING_POWER;
+                double      x  = box.x;
                 for (int i = 1; i <= 9; i++) {
-                    const auto   C   = cell(F, i);
-                    const auto   TEX = textTex(KANJI[i - 1], C.fg, P.pt);
-                    const double TW  = TEX ? TEX->m_size.x / P.scale : P.h;
-                    const CBox   CELL{x, box.y, TW + 12, P.h};
+                    const CBox CELL{x, box.y + (P.h - CELL_H) / 2, CELL_W, CELL_H};
+                    if (F.ws && F.ws->numberedID() == i)
+                        P.rect(CELL, F.activeBg, R, RP);
+                    else if (barHover.widget == this && barHover.tag == i && barHover.mon == P.mon->m_id)
+                        P.rect(CELL, NAwesome::tGroundHover(), R, RP);
+                    P.texIn(textTex(KANJI[i - 1], ink(F, i), P.pt, 0, "", 500), CELL);
 
-                    if (C.hasBg)
-                        P.rect(CELL, C.bg);
-
-                    if (F.windows[i] > 0) {
-                        if (F.focusWs == (uint32_t)i)
-                            P.rect(CBox{x, box.y, SQ, SQ}, F.squareSel);
-                        else { // hollow
-                            P.rect(CBox{x, box.y, SQ, 1}, F.squareUnsel);
-                            P.rect(CBox{x, box.y + SQ - 1, SQ, 1}, F.squareUnsel);
-                            P.rect(CBox{x, box.y, 1, SQ}, F.squareUnsel);
-                            P.rect(CBox{x + SQ - 1, box.y, 1, SQ}, F.squareUnsel);
-                        }
-                    }
-
-                    P.texIn(TEX, CELL);
-
+                    // the hit spans the bar's height and the gap: no dead
+                    // pixel between two tags
                     SHit h;
-                    h.box    = CELL;
+                    h.box    = CBox{x, box.y, CELL_W + (i < 9 ? GAP : 0), P.h};
                     h.widget = this;
                     h.tag    = i;
                     P.hits->push_back(h);
-                    x += CELL.w;
+                    x += CELL_W + GAP;
                 }
             }
 

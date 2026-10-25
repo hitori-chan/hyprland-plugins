@@ -900,25 +900,27 @@ namespace NAwesome::Shell {
                 return;
 
             // one palette fetch per render: color() memoizes but still hashes per call
-            const CHyprColor COLBG = color(cfg().getColor("plugin:awesome:shell:col_bg")), COLFG = color(cfg().getColor("plugin:awesome:shell:col_fg")), COLACTIVEBG = color(cfg().getColor("plugin:awesome:shell:col_active_bg")), COLFOCUS = color(cfg().getColor("plugin:awesome:shell:col_focus"));
+            const CHyprColor COLBG = color(cfg().getColor("plugin:awesome:shell:col_bg")), COLFG = color(cfg().getColor("plugin:awesome:shell:col_fg")),
+                             COLFOCUS = color(cfg().getColor("plugin:awesome:shell:col_focus"));
 
-            const double     MY = PAINT.mb.y + PAINT.h;
+            // the bar's own thin glass, a hairline where it meets the bar
+            const double MY = PAINT.mb.y + PAINT.h;
             PAINT.glass(CBox{PAINT.mb.x, MY, PAINT.mb.w, PAINT.h}, COLBG);
+            PAINT.rect(CBox{PAINT.mb.x, MY, PAINT.mb.w, 1.0 / PAINT.scale}, NAwesome::tHairline());
 
             double px = PAINT.mb.x + 8;
 
-            // "Run: " (or the drilled-into category) with the cursor in place —
-            // a ▏ glyph: renderText takes plain text only (no pango markup),
-            // so awesome's inverse-video block cursor can't be drawn natively
+            // "Run:" (or the drilled-into category), quiet and bold
             static std::string PROMPTBUF; // reused; the strip renders on the main thread only
-            PROMPTBUF.clear();
-            if (Menubar::currentCat >= 0) {
-                PROMPTBUF += Menubar::CATEGORIES[Menubar::currentCat].name;
-                PROMPTBUF += ": ";
-            } else
-                PROMPTBUF += "Run: ";
-            // a window of the query around the cursor, and a raster no wider
-            // than the monitor: a 4 KiB query rasterized whole was tens of
+            PROMPTBUF.assign(Menubar::currentCat >= 0 ? Menubar::CATEGORIES[Menubar::currentCat].name : "Run").append(":");
+            const auto LABEL = textTex(PROMPTBUF, NAwesome::tSub(), PAINT.pt, 0, "", 600);
+            const double LW  = LABEL ? LABEL->m_size.x / PAINT.scale : 0;
+            PAINT.texIn(LABEL, CBox{px, MY, LW, PAINT.h});
+            px += LW + 8;
+
+            // the query around the caret, the caret a drawn accent bar
+            // between its halves. A window of it, and a raster no wider than
+            // the monitor: a 4 KiB query rasterized whole was tens of
             // thousands of px, past what GL can upload
             {
                 constexpr size_t BEFORE = 160, AFTER = 96; // bytes either side of the cursor
@@ -930,18 +932,24 @@ namespace NAwesome::Shell {
                     from--;
                 while (to < Q.size() && ((unsigned char)Q[to] & 0xC0) == 0x80)
                     to++;
-                if (from > 0)
-                    PROMPTBUF += "…";
-                PROMPTBUF.append(Q, from, CUR - from);
-                PROMPTBUF += "▏";
-                PROMPTBUF.append(Q, CUR, to - CUR);
-                if (to < Q.size())
-                    PROMPTBUF += "…";
+                const int MAXPX = (int)(PAINT.mb.w * PAINT.scale);
+                PROMPTBUF.assign(from > 0 ? "…" : "").append(Q, from, CUR - from);
+                const auto HEAD = PROMPTBUF.empty() ? nullptr : textTex(PROMPTBUF, COLFG, PAINT.pt, MAXPX);
+                PROMPTBUF.assign(Q, CUR, to - CUR).append(to < Q.size() ? "…" : "");
+                const auto TAIL = PROMPTBUF.empty() ? nullptr : textTex(PROMPTBUF, COLFG, PAINT.pt, MAXPX);
+                const auto PUT  = [&](const SP<ITexture>& t) {
+                    if (!t)
+                        return;
+                    PAINT.texIn(t, CBox{px, MY, t->m_size.x / PAINT.scale, PAINT.h});
+                    px += t->m_size.x / PAINT.scale;
+                };
+                PUT(HEAD);
+                constexpr double CARET_W = 1.5, CARET_H = 15;
+                PAINT.rect(CBox{px, MY + (PAINT.h - CARET_H) / 2, CARET_W, CARET_H}, COLFOCUS);
+                px += CARET_W;
+                PUT(TAIL);
             }
-            const auto   PROMPT = textTex(PROMPTBUF, COLFG, PAINT.pt, (int)(PAINT.mb.w * PAINT.scale));
-            const double PW     = PROMPT ? PROMPT->m_size.x / PAINT.scale : 0;
-            PAINT.texIn(PROMPT, CBox{px, MY, PW, PAINT.h});
-            px += PW + 12;
+            px += 18;
 
             auto& SH = Menubar::shown;
             if (!SH.empty()) {
@@ -977,22 +985,23 @@ namespace NAwesome::Shell {
                     return namedIcon("system-run");
                 };
 
-                // entry: [8][icon][6][text][8], icon on the 3px-inset rhythm;
-                // the cell is always reserved, even when no icon resolves, so
-                // row geometry stays stable and names never jump.
-                const double ICON  = PAINT.h - 6;
-                const auto   cellW = [&](const SP<ITexture>& t) { return 8 + ICON + 6 + (t ? t->m_size.x / PAINT.scale : 0) + 8; };
+                // entry: [icon 14][6][text], 20 apart; the cell is always
+                // reserved, even when no icon resolves, so row geometry
+                // stays stable and names never jump
+                constexpr double ICON = 14, ICON_GAP = 6, SPACING = 20;
+                const auto       cellW = [&](const SP<ITexture>& t) { return ICON + ICON_GAP + (t ? t->m_size.x / PAINT.scale : 0); };
                 // an entry never outgrows half the strip (the Exec row
                 // echoes the whole query)
-                const int    ENTRYMAX = (int)(PAINT.mb.w * PAINT.scale / 2);
+                const int ENTRYMAX = (int)(PAINT.mb.w * PAINT.scale / 2);
+                const double RIGHT = PAINT.mb.x + PAINT.mb.w - 8;
 
                 { // keep the selection on screen: page-jump to it when it won't fit
                     // (the first overflow decides it: End from the top would
                     // otherwise raster every entry in one warm)
                     double w = 0;
                     for (int i = Menubar::first; i <= Menubar::sel; i++) {
-                        w += cellW(textTex(entryName(i), COLFG, PAINT.pt, ENTRYMAX));
-                        if (px + w > PAINT.mb.x + PAINT.mb.w) {
+                        w += cellW(textTex(entryName(i), COLFG, PAINT.pt, ENTRYMAX)) + (i > Menubar::first ? SPACING : 0);
+                        if (px + w > RIGHT) {
                             Menubar::first = Menubar::sel;
                             break;
                         }
@@ -1001,34 +1010,21 @@ namespace NAwesome::Shell {
 
                 for (int i = Menubar::first; i < (int)SH.size(); i++) {
                     const auto&  NAME = entryName(i);
-                    const auto   ITEX = entryIcon(i);
                     const auto   WT   = textTex(NAME, COLFG, PAINT.pt, ENTRYMAX);
                     const double W    = cellW(WT);
-                    if (px + W > PAINT.mb.x + PAINT.mb.w)
+                    if (px + W > RIGHT)
                         break;
 
-                    // awesome's menubar item colors: fg_normal, the selected
-                    // one fg_focus on bg_focus
-                    CHyprColor fg = COLFG;
-                    if (i == Menubar::sel) {
-                        PAINT.rect(CBox{px, MY, W, PAINT.h}, COLACTIVEBG);
-                        fg = COLFOCUS;
-                    }
-
-                    double tx = px + 8;
-                    if (ITEX && ITEX->m_texID != 0) {
-                        const auto P = PAINT.toPhys(CBox{tx, MY + 3, ICON, ICON});
-                        PAINT.texAt(ITEX, P);
-                    }
-                    tx += ICON + 6;
-
-                    const auto T = i == Menubar::sel ? textTex(NAME, fg, PAINT.pt, ENTRYMAX) : WT;
+                    // the selection is the accent text, never a fill
+                    if (const auto ITEX = entryIcon(i); ITEX && ITEX->m_texID != 0)
+                        PAINT.texFit(ITEX, CBox{px, MY + (PAINT.h - ICON) / 2, ICON, ICON});
+                    const auto T = i == Menubar::sel ? textTex(NAME, COLFOCUS, PAINT.pt, ENTRYMAX) : WT;
                     if (T && T->m_texID != 0) {
-                        const auto P = PAINT.toPhys(CBox{tx, MY, 1, PAINT.h});
+                        const auto P = PAINT.toPhys(CBox{px + ICON + ICON_GAP, MY, 1, PAINT.h});
                         CBox       b{P.x, P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y};
                         PAINT.texAt(T, b.round());
                     }
-                    px += W;
+                    px += W + SPACING;
                 }
             }
         }

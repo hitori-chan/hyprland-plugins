@@ -51,7 +51,7 @@ namespace NAwesome::Shell {
         return warmFont;
     }
 
-    SP<ITexture> textTex(const std::string& rawText, const CHyprColor& col, int pt, int maxWidth, const std::string& font) {
+    SP<ITexture> textTex(const std::string& rawText, const CHyprColor& col, int pt, int maxWidth, const std::string& font, int weight) {
         // One line, always: every label here is a client's string (a title,
         // a tray or menu label) and the bar and its menus have one line per
         // cell. Pango makes a paragraph of each newline — ~4000 of them in a
@@ -72,8 +72,8 @@ namespace NAwesome::Shell {
         // font change
         const std::string& F = font.empty() ? shellFont() : font;
 
-        char               meta[48]; // the non-text key parts in one stack write — no to_string churn per call
-        const int          METALEN = std::snprintf(meta, sizeof(meta), "|%llx|%d|%d|", (unsigned long long)col.getAsHex(), pt, maxWidth);
+        char               meta[64]; // the non-text key parts in one stack write — no to_string churn per call
+        const int          METALEN = std::snprintf(meta, sizeof(meta), "|%llx|%d|%d|%d|", (unsigned long long)col.getAsHex(), pt, maxWidth, weight);
 
         static std::string KEY; // reused; main thread only
         KEY.clear();
@@ -87,7 +87,7 @@ namespace NAwesome::Shell {
         if (!warmGate().mayBuild())
             return nullptr;
 
-        if (const auto* ENTRY = texCache.insert(KEY, g_pHyprRenderer->renderText(text, col, pt, false, F, maxWidth)))
+        if (const auto* ENTRY = texCache.insert(KEY, g_pHyprRenderer->renderText(text, col, pt, false, F, maxWidth, weight)))
             return *ENTRY;
         return nullptr;
     }
@@ -199,23 +199,22 @@ namespace NAwesome::Shell {
 
         // one palette fetch per frame: color() memoizes the conversion but
         // still hashes per call, and the widgets make dozens
-        F.fg          = color(cfg().getColor("plugin:awesome:shell:col_fg"));
-        F.active      = color(cfg().getColor("plugin:awesome:shell:col_active"));
-        F.activeBg    = color(cfg().getColor("plugin:awesome:shell:col_active_bg"));
-        F.urgentFg    = color(cfg().getColor("plugin:awesome:shell:col_urgent"));
-        F.urgentBg    = color(cfg().getColor("plugin:awesome:shell:col_urgent_bg"));
-        F.squareSel   = color(cfg().getColor("plugin:awesome:shell:col_square_sel"));
-        F.squareUnsel = color(cfg().getColor("plugin:awesome:shell:col_square_unsel"));
-        F.minimized   = color(cfg().getColor("plugin:awesome:shell:col_empty")); // awesome's tasklist_fg_minimize: muted
+        F.fg       = color(cfg().getColor("plugin:awesome:shell:col_fg"));
+        F.active   = color(cfg().getColor("plugin:awesome:shell:col_active"));
+        F.activeBg = color(cfg().getColor("plugin:awesome:shell:col_active_bg"));
+        F.urgentFg = color(cfg().getColor("plugin:awesome:shell:col_urgent"));
+        F.empty    = color(cfg().getColor("plugin:awesome:shell:col_empty"));
 
         // awesome's align layout: the left slot, the tasklist filling the
-        // middle, the right slot laid from the edge inwards (awesome's order
-        // is [systray][battery][clock]). Widgets whose fit comes back 0 are
-        // hidden this frame.
-        IWidget* const LEFT[]  = {&taglistWidget()};
-        IWidget* const RIGHT[] = {&trayWidget(), &bellWidget(), &batteryWidget(), &clockWidget()};
+        // middle, the right slot laid from the edge inwards ([tray]
+        // [battery][bell][clock]). Widgets whose fit comes back 0 are
+        // hidden this frame. The Frost rhythm: the strip's 8 px inset, 14
+        // between the slots and the tasks, 14 between the right widgets.
+        constexpr double INSET = 8, SLOT_GAP = 14, RIGHT_INSET = 14;
+        IWidget* const   LEFT[]  = {&taglistWidget()};
+        IWidget* const   RIGHT[] = {&trayWidget(), &batteryWidget(), &bellWidget(), &clockWidget()};
 
-        double         x = MB.x;
+        double           x = MB.x + INSET;
         for (auto* const W : LEFT) {
             const double WD = std::min(W->fit(P, F), std::max(0.0, MB.x + MB.w - x));
             if (WD > 0)
@@ -223,21 +222,24 @@ namespace NAwesome::Shell {
             x += WD;
         }
 
-        double right = MB.x + MB.w;
+        double right = MB.x + MB.w - RIGHT_INSET;
+        bool   first = true;
         for (size_t i = std::size(RIGHT); i-- > 0;) {
             // Keep the right slot inside the space left by the taglist. If a
             // narrow output cannot fit every widget, leftmost right-side
             // widgets yield first and no cell can overlap the tasklist.
-            const double WD = std::min(RIGHT[i]->fit(P, F), std::max(0.0, right - x - 8.0));
+            const double GAP = first ? 0 : SLOT_GAP;
+            const double WD  = std::min(RIGHT[i]->fit(P, F), std::max(0.0, right - GAP - x - SLOT_GAP));
             if (WD > 0) {
-                right -= WD;
+                right -= GAP + WD;
                 RIGHT[i]->draw(P, F, CBox{right, MB.y, WD, H});
+                first = false;
             }
         }
 
-        // the tasklist splits the whole leftover strip, 8px off the right slot
-        if (const double TASKW = std::max(0.0, right - 8.0 - x); TASKW > 0)
-            tasklistWidget().draw(P, F, CBox{x, MB.y, TASKW, H});
+        // the tasklist splits the whole leftover strip, 14 px off each slot
+        if (const double TASKW = std::max(0.0, right - x - 2 * SLOT_GAP); TASKW > 0)
+            tasklistWidget().draw(P, F, CBox{x + SLOT_GAP, MB.y, TASKW, H});
 
         auto& FP = lastTaskFp[mon->m_id];
         if (warm)
@@ -365,7 +367,7 @@ namespace NAwesome::Shell {
                     g_pHyprRenderer->damageBox(CBox{*B}.translate(M->logicalBox().pos()));
         }
         // The prompt band and the menu's panels as last laid out (a level
-        // change warms before it damages), their frame ring included. The
+        // change warms before it damages), their rim and drop included. The
         // whole monitor made every damage on it re-run the menu's layout
         // and live-blur the screen behind it while a menu was open.
         std::optional<CBox> boundingBox(PHLMONITOR mon) const override {
@@ -382,7 +384,7 @@ namespace NAwesome::Shell {
             if (Menubar::isOpen && Menubar::mon.lock() == mon)
                 ADD(CBox{0, barHeight(), MB.w, barHeight()});
             if (Menu::isOpen && Menu::mon.lock() == mon) {
-                const double MARGIN = std::ceil(mon->m_scale) + 1.0;
+                const double MARGIN = Menu::reach(mon);
                 for (const auto& L : Menu::levels) {
                     if (L.box.w <= 0 || L.box.h <= 0)
                         return CBox{0, 0, MB.w, MB.h}; // not laid out yet: an undersized box clips

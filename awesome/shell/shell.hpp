@@ -218,7 +218,7 @@ namespace NAwesome::Shell {
     // The state (minimized, the arrival order) lives in the windows module;
     // the markers are presentation, so the label builder is here.
     namespace Tasklist {
-        // awesome's tasklist text: "⌃"/"+"/"✈" state markers, then the title;
+        // awesome's tasklist text: "⌃"/"+" state markers, then the title;
         // fills a caller-owned buffer (it runs per task per frame)
         void label(const PHLWINDOW& w, std::string& out);
     }
@@ -243,7 +243,7 @@ namespace NAwesome::Shell {
 
     // Text -> cached GPU texture. Built ONLY by the warm pass; a miss during a
     // draw returns null rather than building (the texture rule).
-    SP<ITexture> textTex(const std::string& text, const CHyprColor& col, int pt, int maxWidth = 0, const std::string& font = "");
+    SP<ITexture> textTex(const std::string& text, const CHyprColor& col, int pt, int maxWidth = 0, const std::string& font = "", int weight = 400);
 
     // ---- clickable regions, rebuilt each frame by strip.cpp ----
 
@@ -281,8 +281,23 @@ namespace NAwesome::Shell {
         const std::vector<std::pair<uint64_t, PHLWINDOW>>* tasks       = nullptr; // this workspace's tasks, arrival order
         // the frame palette, fetched once — color() memoizes but still
         // hashes per call, and the taglist alone makes dozens
-        CHyprColor fg, active, activeBg, urgentFg, urgentBg, squareSel, squareUnsel, minimized;
+        CHyprColor fg, active, activeBg, urgentFg, empty;
     };
+
+    // The bar cell under the pointer (input.cpp tracks it): its widget
+    // paints a hover ground there. Damage only — a ground is a rect, so the
+    // warmed texture set never changes with it (crash class 4).
+    struct SBarHover {
+        MONITORID      mon    = MONITOR_INVALID;
+        const IWidget* widget = nullptr;
+        int            tag    = 0;
+        const void*    window = nullptr;
+        CBox           box; // global logical, for the damage
+        bool           operator==(const SBarHover& o) const {
+            return mon == o.mon && widget == o.widget && tag == o.tag && window == o.window;
+        }
+    };
+    extern SBarHover barHover;
 
     struct IWidget {
         virtual ~IWidget() = default;
@@ -323,7 +338,14 @@ namespace NAwesome::Shell {
     namespace Menu {
         void render(const SPaint& P); // menu.cpp — the open panels, cascade by cascade
 
-        inline constexpr double ROWH = 24, SEPH = 8, PAD = 4, ARROWH = 16;
+        // the Frost menu: 5 px of glass around 28 px rows, 9 px separators
+        inline constexpr double ROWH = 28, SEPH = 9, PAD = 5, ARROWH = 18, GAP = 4; // GAP: under the bar
+
+        // how far a panel paints past its box: the frost drop, or the blur
+        // its glass samples — every damage and bound grows by it
+        inline double reach(const PHLMONITOR& m) {
+            return (m ? std::ceil(m->m_scale) : 1.0) + 1.0 + std::max(NAwesome::blurRadius(), NAwesome::SPaint::frostReach(NAwesome::SPaint::eDepth::MENU));
+        }
 
         // per-level rows sentinel indices for the scroll arrows of an overflowing panel
         inline constexpr int SCROLL_UP = -2, SCROLL_DOWN = -3;

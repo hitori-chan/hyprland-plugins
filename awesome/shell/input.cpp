@@ -7,6 +7,7 @@
 namespace NAwesome::Shell {
 
     std::map<uint64_t, std::vector<SHit>> hitboxes;
+    SBarHover                             barHover;
     static uint32_t                       swallowRelease = 0; // bits: 1 left, 2 right, 4 middle
 
     // ---- click dispatch ----
@@ -375,7 +376,36 @@ namespace NAwesome::Shell {
         return MON;
     }
 
+    // A hover ground is a rect: the change damages the two cells and warms
+    // nothing (crash class 4)
+    static void setBarHover(const SBarHover& h) {
+        if (h == barHover)
+            return;
+        if (g_pHyprRenderer) {
+            if (barHover.widget)
+                g_pHyprRenderer->damageBox(CBox{barHover.box}.expand(1));
+            if (h.widget)
+                g_pHyprRenderer->damageBox(CBox{h.box}.expand(1));
+        }
+        barHover = h;
+    }
+
+    // the cell a tag or a task paints its hover in: only those two widgets
+    // draw one (the tray, the bell and the clock have no ground)
+    static void barHoverAt(const PHLMONITOR& mon, const Vector2D& pos) {
+        SBarHover h;
+        if (const auto IT = hitboxes.find(mon->m_id); IT != hitboxes.end() && pos.y < mon->logicalBox().y + barHeight())
+            for (const auto& HIT : IT->second | std::views::reverse)
+                if (HIT.box.containsPoint(pos)) {
+                    if (HIT.widget == &taglistWidget() || HIT.widget == &tasklistWidget())
+                        h = {.mon = mon->m_id, .widget = HIT.widget, .tag = HIT.tag, .window = HIT.window.get(), .box = HIT.box};
+                    break;
+                }
+        setBarHover(h);
+    }
+
     void releasePointer() {
+        setBarHover({});
         if (!pointerOwned)
             return;
         pointerOwned = false;
@@ -427,6 +457,7 @@ namespace NAwesome::Shell {
         }
 
         info.cancelled = true;
+        barHoverAt(MON, pos);
         if (!pointerOwned) {
             pointerOwned = true;
             g_pSeatManager->setPointerFocus(nullptr, {}); // the app under the strip gets its leave

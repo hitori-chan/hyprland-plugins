@@ -624,13 +624,15 @@ namespace NAwesome::Shell {
     namespace {
         class CTrayWidget : public IWidget {
           public:
+            static constexpr double ICON = 16; // the Frost bar's glyph size
+
             double fit(const SPaint& P, const SFrame&) override {
                 const double SPACING = std::max(0.0, (double)cfg().getI("plugin:awesome:shell:tray_spacing"));
                 int n = 0;
                 for (const auto& IT : Tray::items)
                     if (IT->status != "Passive")
                         n++;
-                return n ? n * P.h + (n - 1) * SPACING : 0;
+                return n ? n * ICON + (n - 1) * SPACING : 0;
             }
 
             void draw(const SPaint& P, const SFrame&, const CBox& box) override {
@@ -649,7 +651,7 @@ namespace NAwesome::Shell {
                     // Keep the cell and hitbox wholly inside the width the
                     // layout assigned to this widget; an SNI item must never
                     // paint over the tasklist or another right-side widget.
-                    if (right - P.h < box.x)
+                    if (right - ICON < box.x)
                         break;
                     // The pixmap is a texture too, so the rule applies: rebuild it on
                     // the warm only. A dirty item reaching a draw keeps its old icon
@@ -665,20 +667,19 @@ namespace NAwesome::Shell {
                         }
                     }
 
-                    const CBox CELL{right - P.h, box.y, P.h, P.h};
+                    const CBox ICONBOX{right - ICON, box.y + (P.h - ICON) / 2, ICON, ICON};
                     if (IT->tex && IT->tex->m_texID != 0)
-                        // 3px inset: SNI pixmaps lack the internal padding XEmbed
-                        // icons carried, full-bleed reads as cramped. Fit, not
-                        // stretch — a non-square pixmap keeps its proportions.
-                        P.texFit(IT->tex, CBox{CELL.x + 3, CELL.y + 3, P.h - 6, P.h - 6});
+                        // fit, not stretch: a non-square pixmap keeps its proportions
+                        P.texFit(IT->tex, ICONBOX);
+                    // the hit spans the bar's height and half of each gap
                     SHit h;
-                    h.box     = CELL;
+                    h.box     = CBox{ICONBOX.x - SPACING / 2, box.y, ICON + SPACING, P.h};
                     h.widget  = this;
                     h.tray    = IT;
-                    h.anchorX = CELL.x + P.h / 2.0;
+                    h.anchorX = ICONBOX.x + ICON / 2.0;
                     h.mon     = P.mon;
                     P.hits->push_back(h);
-                    right -= P.h;
+                    right -= ICON;
                 }
             }
 

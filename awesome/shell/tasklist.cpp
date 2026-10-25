@@ -7,6 +7,7 @@
 
 #include "../windows/state.hpp"
 #include "core/queries.hpp"
+#include "core/theme.hpp"
 
 namespace NAwesome::Shell {
 
@@ -21,10 +22,8 @@ namespace NAwesome::Shell {
     //      pin presents as the ontop it replaces — ▪ would read as wrong.
     //   +  maximized (awesome drew it bold; plain here — markup would need
     //      escaping every title).
-    //   ✈  floating, in maximized's else exactly like awesome. The
-    //      floating-only rule floats every window, so today every
-    //      unmaximized task carries it; it starts discriminating when
-    //      other layouts arrive.
+    //   ✈  floating is dropped: the floating-only rule floats every window,
+    //      so the mark sat on every task and said nothing.
     //   ▴/▾/⬌/⬍ have no Hyprland analog.
     void Tasklist::label(const PHLWINDOW& w, std::string& out) {
         out.clear();
@@ -42,8 +41,6 @@ namespace NAwesome::Shell {
             maximized = Fullscreen::controller()->getFullscreenModes(w).internal == Fullscreen::FSMODE_MAXIMIZED;
         if (maximized)
             out += "+";
-        else if (w->isFloating())
-            out += "✈";
         out += w->metadata().title().empty() ? "<untitled>" : w->metadata().title();
     }
 
@@ -59,40 +56,42 @@ namespace NAwesome::Shell {
                     return;
                 // awesome tasklist behavior: the windows split the WHOLE free
                 // strip between taglist and tray — one window = one huge item
-                const double ITEMW = box.w / (double)F.tasks->size();
+                constexpr double GAP = 4, ROW_H = 22, PADX = 10, ICON = 14, ICON_GAP = 8;
+                const double     N     = (double)F.tasks->size();
+                const double     ITEMW = std::max(1.0, (box.w - GAP * (N - 1)) / N);
+                const int        R     = (int)std::lround(NAwesome::Theme::RAD_ROW * P.scale);
+                // an unfocused task reads quieter than the bar's text: the
+                // board's 62 % from its 86 %
+                const CHyprColor QUIET = F.fg.modifyA(F.fg.a * 0.72f);
 
-                double       x = box.x;
+                double           x = box.x;
                 for (const auto& [SEQ, W] : *F.tasks) {
-                    const CBox CELL{x, box.y, ITEMW, P.h};
-                    // The focused task is primary TEXT on the plain bar
-                    // (tasklist_bg_focus = bg_normal, no box); urgent gets the
-                    // error container — focus wins over urgent, like awesome.
-                    CHyprColor fg = F.fg;
-                    // minimized wins over focus: a minimized window is never
+                    const CBox CELL{x, box.y + (P.h - ROW_H) / 2, ITEMW, ROW_H};
+                    // focus is accent text, urgent red text — never a fill.
+                    // Minimized wins over focus: a minimized window is never
                     // truly focused, but the compositor's focus fallback can
                     // leave focus on a hidden one — it must still read muted.
+                    CHyprColor fg = QUIET;
                     if (WT::isMinimized(W))
-                        fg = F.minimized; // awesome's fg_minimize: muted, no bg
+                        fg = F.empty;
                     else if (W == F.focus)
                         fg = F.active;
-                    else if (W->m_hints & Desktop::View::WINDOW_HINT_URGENT) {
-                        P.rect(CELL, F.urgentBg);
+                    else if (W->m_hints & Desktop::View::WINDOW_HINT_URGENT)
                         fg = F.urgentFg;
-                    }
+                    if (barHover.widget == this && barHover.window == W.get() && barHover.mon == P.mon->m_id)
+                        P.rect(CELL, NAwesome::tGroundHover(), R, (float)NAwesome::Theme::ROUNDING_POWER);
 
-                    // [4][icon][4][title] — awesome's item margins, icon on
-                    // the bar's 3px-inset rhythm
-                    const double ICON = P.h - 6;
-                    double       tx   = x + 4;
+                    // [10][icon 14][8][title][10]
+                    double tx = x + PADX;
                     if (const auto ITEX = appIcon(W->metadata().appID()); ITEX && ITEX->m_texID != 0)
-                        P.texFit(ITEX, CBox{tx, box.y + 3, ICON, ICON});
-                    tx += ICON + 4;
+                        P.texFit(ITEX, CBox{tx, CELL.y + (ROW_H - ICON) / 2, ICON, ICON});
+                    tx += ICON + ICON_GAP;
 
                     static std::string LBL; // reused; main thread only
                     Tasklist::label(W, LBL);
                     if (P.fp)
                         *P.fp = *P.fp * 1099511628211ULL + std::hash<std::string>{}(LBL);
-                    const auto TEX = textTex(LBL, fg, P.pt, std::max(1, (int)std::round((ITEMW - (tx - x) - 4) * P.scale))); // floor >0: a non-positive width disables ellipsization and overflows the cell
+                    const auto TEX = textTex(LBL, fg, P.pt, std::max(1, (int)std::round((ITEMW - (tx - x) - PADX) * P.scale)), "", 500); // floor >0: a non-positive width disables ellipsization and overflows the cell
                     if (TEX && TEX->m_texID != 0) {
                         const auto B = P.toPhys(CBox{tx, box.y, 1, P.h});
                         CBox       b{B.x, B.y + (B.h - TEX->m_size.y) / 2.0, TEX->m_size.x, TEX->m_size.y};
@@ -100,11 +99,11 @@ namespace NAwesome::Shell {
                     }
 
                     SHit h;
-                    h.box    = CELL;
+                    h.box    = CBox{x, box.y, ITEMW + GAP, P.h};
                     h.widget = this;
                     h.window = W;
                     P.hits->push_back(h);
-                    x += ITEMW;
+                    x += ITEMW + GAP;
                 }
             }
 

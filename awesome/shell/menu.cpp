@@ -1,7 +1,9 @@
 // awesome/shell/menu.cpp — the menu renderer: dbusmenu for tray items, local mode for the client list
 
 #include "../core/icons.hpp" // iconDeferred: a budget-deferred icon is retried
+#include "../core/glyph.hpp"
 #include "../core/keys.hpp"
+#include "../core/theme.hpp"
 #include "shell/shell.hpp"
 
 #include "../windows/state.hpp"
@@ -71,13 +73,10 @@ namespace NAwesome::Shell {
         void damagePanels() {
             if (!g_pHyprRenderer)
                 return;
-            // renderBorder draws the frame ring OUTSIDE L.box (it grows the box
-            // by the border width on every side), so damaging only L.box leaves
-            // that ring untouched: unpainted on open until an unrelated damage
-            // sweeps it, and stranded when the panel closes — the level-0 ring
-            // lands up on the bar strip. Cover it on every panel, old and new.
-            const auto   M      = mon.lock();
-            const double MARGIN = (M ? std::ceil(M->m_scale) : 1.0) + 1.0;
+            // the rim rides outside L.box and the drop reaches further:
+            // damaging only L.box left both stranded when a panel closed.
+            // Cover them on every panel, old and new.
+            const double MARGIN = reach(mon.lock());
 
             static std::vector<CBox> last; // the previous panels: a close/resize must damage them too
             for (auto B : last)
@@ -632,18 +631,21 @@ namespace NAwesome::Shell {
                 return;
 
             // one palette fetch per render: color() memoizes but still hashes per call
-            const CHyprColor COLBG = color(cfg().getColor("plugin:awesome:shell:col_bg")), COLFG = color(cfg().getColor("plugin:awesome:shell:col_fg")), COLEMPTY = color(cfg().getColor("plugin:awesome:shell:col_empty")), COLURGENT = color(cfg().getColor("plugin:awesome:shell:col_urgent")), COLFOCUS = color(cfg().getColor("plugin:awesome:shell:col_focus")),
-                             COLSTATE = color(cfg().getColor("plugin:awesome:shell:col_active_bg")), COLFRAME = color(cfg().getColor("plugin:awesome:shell:col_frame"));
+            const CHyprColor COLMENU = color(cfg().getColor("plugin:awesome:shell:col_menu_bg")), COLFG = color(cfg().getColor("plugin:awesome:shell:col_fg")),
+                             COLEMPTY = color(cfg().getColor("plugin:awesome:shell:col_empty")), COLURGENT = color(cfg().getColor("plugin:awesome:shell:col_urgent")),
+                             COLFOCUS = color(cfg().getColor("plugin:awesome:shell:col_focus")), COLFRAME = color(cfg().getColor("plugin:awesome:shell:col_frame"));
 
-            // the shell's Material geometry (theme.hpp): a card-radius panel
-            // with row-radius hover pills and circular corners, shared with the
-            // notification geometry family.
+            // the Frost menu: thick glass at the menu radius, the selection
+            // the accent TEXT (never a fill), hairline separators, glyph
+            // checks and chevrons — the card menu's look (notify/menu.cpp)
             namespace Th       = NAwesome::Theme;
-            const int   RPANEL = Th::RAD_CARD, RROW = Th::RAD_ROW;
+            namespace G        = NAwesome::Glyph;
+            const int   RPANEL = (int)std::lround(Th::RAD_MENU * PAINT.scale);
             const float RP     = (float)Th::ROUNDING_POWER;
+            const int   GLYPHPX = (int)std::lround(14 * PAINT.scale);
 
             const double ROWH = Menu::ROWH, SEPH = Menu::SEPH, PAD = Menu::PAD;
-            const double MTOP = PAINT.mb.y + PAINT.h, MBOT = PAINT.mb.y + PAINT.mb.h - 2;
+            const double MTOP = PAINT.mb.y + PAINT.h + Menu::GAP, MBOT = PAINT.mb.y + PAINT.mb.h - 8;
 
             for (size_t li = 0; li < Menu::levels.size(); li++) {
                 auto& L = Menu::levels[li];
@@ -670,13 +672,13 @@ namespace NAwesome::Shell {
                     anyToggle = anyToggle || E.toggle != Menu::TG_NONE;
                 }
 
-                const double IS   = ROWH - 8;
+                const double IS   = 16;
                 const double COLW = anyIcon ? IS : anyToggle ? 14 : 0;
-                const double LX   = COLW > 0 ? 8 + COLW + 6 : 12;
+                const double LX   = COLW > 0 ? 10 + COLW + 8 : 12;
 
-                // a submenu row's ▸ sits in a right-hand column of its own: as
-                // the label's tail it was measured out of the panel and
-                // ellipsized away
+                // a submenu row's chevron sits in a right-hand column of its
+                // own: as the label's tail it was measured out of the panel
+                // and ellipsized away
                 constexpr double ARW = 18;
                 const auto       capPx = [&](const Menu::SEntry& E) { return (int)std::lround((380.0 - LX - 12 - (E.submenu ? ARW : 0)) * PAINT.scale); };
 
@@ -704,27 +706,27 @@ namespace NAwesome::Shell {
                             L.widthPt = PAINT.pt;
                         }
                     }
-                    mw = std::clamp(textW + LX + 12, 180.0, 380.0);
+                    mw = std::clamp(textW + LX + 12, 200.0, 380.0);
                 }
 
                 // A narrow output must shrink the panel before anchoring it;
                 // clamping only the x coordinate leaves the right edge past
                 // the output and steals the tasklist's input region.
-                mw = std::min(mw, std::max(1.0, PAINT.mb.w - 4.0));
+                mw = std::min(mw, std::max(1.0, PAINT.mb.w - 16.0));
 
                 // level 0 opens under the bar at the click; a cascade sits
                 // beside its parent panel, top-aligned with the row it hangs
                 // off, flipped to the left when the right edge won't fit
                 double mx, my0;
                 if (li == 0) {
-                    // not std::clamp: lo > hi (UB) once a panel is wider than the monitor (< ~384px logical)
-                    mx  = std::max(PAINT.mb.x + 2.0, std::min(Menu::anchorX - mw / 2, PAINT.mb.x + PAINT.mb.w - mw - 2));
+                    // not std::clamp: lo > hi (UB) once a panel is wider than the monitor
+                    mx  = std::max(PAINT.mb.x + 8.0, std::min(Menu::anchorX - mw / 2, PAINT.mb.x + PAINT.mb.w - mw - 8));
                     my0 = MTOP;
                 } else {
                     const auto& P = Menu::levels[li - 1];
-                    mx            = P.box.x + P.box.w - 1; // share the 1px frame
-                    if (mx + mw > PAINT.mb.x + PAINT.mb.w - 2)
-                        mx = std::max(P.box.x - mw + 1, PAINT.mb.x + 2.0);
+                    mx            = P.box.x + P.box.w + 2;
+                    if (mx + mw > PAINT.mb.x + PAINT.mb.w - 8)
+                        mx = std::max(P.box.x - mw - 2, PAINT.mb.x + 8.0);
                     my0 = P.box.y;
                     for (const auto& [RB, RI] : P.rows)
                         if (RI == L.parentIdx) {
@@ -734,7 +736,7 @@ namespace NAwesome::Shell {
                 }
 
                 // taller than the screen (nm-applet's wifi list): clamp and
-                // scroll between ▴/▾ arrow strips, as GTK did under X11;
+                // scroll between chevron strips, as GTK did under X11;
                 // shorter panels shift up instead until they fit
                 const double fullH  = Menu::levelHeight(L);
                 const double mh     = std::min(fullH, std::max(1.0, MBOT - MTOP));
@@ -743,13 +745,10 @@ namespace NAwesome::Shell {
                 my0                 = std::clamp(my0, MTOP, std::max(MTOP, MBOT - mh));
                 L.box               = CBox{mx, my0, mw, mh};
 
-                // fill under the whole panel, frame ring over its edge: no
-                // corner seam, and 5 rects are 2 calls
-                PAINT.glass(L.box, COLBG, RPANEL, RP);
-                PAINT.ring(L.box, COLFRAME, RPANEL, RP);
+                PAINT.frost(L.box, COLMENU, COLFRAME, RPANEL, RP, NAwesome::SPaint::eDepth::MENU);
 
-                double       my    = my0 + PAD;
-                double       myEnd = my0 + mh - PAD;
+                double my    = my0 + PAD;
+                double myEnd = my0 + mh - PAD;
                 if (SCROLL) {
                     my += Menu::ARROWH;
                     myEnd -= Menu::ARROWH;
@@ -771,7 +770,7 @@ namespace NAwesome::Shell {
                 }
 
                 if (L.entries.empty())
-                    PAINT.texIn(textTex(L.load == Menu::SLevel::LOAD_PENDING ? "…" : L.load == Menu::SLevel::LOAD_FAILED ? "(unavailable)" : "(empty)", COLEMPTY, PAINT.pt),
+                    PAINT.texIn(textTex(L.load == Menu::SLevel::LOAD_PENDING ? "…" : L.load == Menu::SLevel::LOAD_FAILED ? "Unavailable" : "Empty", COLEMPTY, PAINT.pt),
                                 CBox{mx, my, mw, ROWH});
 
                 const bool FITS      = L.width > 0 && mw + 0.5 >= L.width + LX + 12;
@@ -783,37 +782,27 @@ namespace NAwesome::Shell {
                         break;
                     }
                     if (E.separator) {
-                        PAINT.rect(CBox{mx + 8, my + SEPH / 2, mw - 16, 1}, COLFRAME);
+                        PAINT.rect(CBox{mx + 12, my + SEPH / 2, mw - 24, 1.0 / PAINT.scale}, NAwesome::tHairline());
                         my += SEPH;
                         continue;
                     }
                     const CBox ROW{mx, my, mw, ROWH};
-                    // awful.menu item_enter: fg_focus on bg_focus; the row a
-                    // cascade hangs off stays lit while the cascade is open;
-                    // disposition warning/alert rows take the urgent color
+                    // the hovered row, and the row a cascade hangs off while
+                    // the cascade is open, wear the accent text; disposition
+                    // warning/alert rows take the urgent colour
                     const bool OPENSUB = li + 1 < Menu::levels.size() && Menu::levels[li + 1].parentIdx == (int)i;
-                    CHyprColor fg      = !E.enabled ? COLEMPTY : E.alert ? COLURGENT : COLFG;
-                    if (((int)i == L.hover || OPENSUB) && E.enabled) {
-                        // the hover row floats off the frame: 4px inset, the
-                        // shell's accent-dim fill (the center rows wear it too)
-                        PAINT.rect(CBox{ROW.x + 4, ROW.y, ROW.w - 8, ROW.h}, COLSTATE, RROW, RP);
-                        fg = COLFOCUS;
-                    }
+                    const bool LIT     = ((int)i == L.hover || OPENSUB) && E.enabled;
+                    CHyprColor fg      = !E.enabled ? COLEMPTY : LIT ? COLFOCUS : E.alert ? COLURGENT : COLFG;
 
-                    if (E.icon && E.icon->m_texID != 0) {
-                        auto IP = PAINT.toPhys(CBox{mx + 8, my + 4, IS, IS});
-                        PAINT.texAt(E.icon, IP.round());
-                    } else if (E.toggle != Menu::TG_NONE) {
-                        // the leading column: ✓/– for checkmarks, ●/○ for radios
-                        const char* G = E.toggle == Menu::TG_RADIO ? (E.toggleState == 1     ? "●" :
-                                                                          E.toggleState == 0 ? "○" :
-                                                                                               "–") :
-                                                                     (E.toggleState == 1     ? "✓" :
-                                                                          E.toggleState == 0 ? "" :
-                                                                                               "–");
-                        if (*G)
-                            PAINT.texIn(textTex(G, fg, PAINT.pt), CBox{mx + 8, my, COLW, ROWH});
-                    }
+                    if (E.icon && E.icon->m_texID != 0)
+                        PAINT.texFit(E.icon, CBox{mx + 10, my + (ROWH - IS) / 2, IS, IS});
+                    else if (E.toggle == Menu::TG_CHECK && E.toggleState == 1)
+                        PAINT.texIn(G::tex(G::eGlyph::CHECK, fg, GLYPHPX), CBox{mx + 10, my, COLW, ROWH});
+                    else if (E.toggle == Menu::TG_RADIO && E.toggleState == 1) {
+                        constexpr double DOT = 6;
+                        PAINT.rect(CBox{mx + 10 + (COLW - DOT) / 2, my + (ROWH - DOT) / 2, DOT, DOT}, fg, (int)std::lround(DOT / 2 * PAINT.scale), 2.f);
+                    } else if (E.toggle != Menu::TG_NONE && E.toggleState != 0)
+                        PAINT.texIn(textTex("–", fg, PAINT.pt), CBox{mx + 10, my, COLW, ROWH}); // indeterminate
 
                     // the measure's own raster while the panel holds its widest
                     // row (a narrow output shrinks it below that)
@@ -825,25 +814,21 @@ namespace NAwesome::Shell {
                         PAINT.texAt(T, b.round());
                     }
                     if (E.submenu)
-                        PAINT.texIn(textTex("▸", fg, PAINT.pt), CBox{mx + mw - 8 - ARW, my, ARW, ROWH});
+                        PAINT.texIn(G::tex(G::eGlyph::CHEVRON_RIGHT, fg, GLYPHPX), CBox{mx + mw - 8 - ARW, my, ARW, ROWH});
                     L.rows.push_back({ROW, (int)i});
                     my += ROWH;
                 }
 
                 if (SCROLL) {
-                    // GTK's scroll arrows: full-width strips, dimmed at their
-                    // end of the list, click steps like a wheel notch
-                    const auto arrow = [&](const CBox& B, int id, bool on, const char* glyph) {
-                        CHyprColor fg = on ? COLFG : COLEMPTY;
-                        if (L.hover == id && on) {
-                            PAINT.rect(CBox{B.x + 4, B.y, B.w - 8, B.h}, COLSTATE, RROW, RP);
-                            fg = COLFOCUS;
-                        }
-                        PAINT.texIn(textTex(glyph, fg, PAINT.pt), B);
+                    // GTK's scroll strips, dimmed at their end of the list;
+                    // a click steps like a wheel notch
+                    const auto arrow = [&](const CBox& B, int id, bool on, G::eGlyph glyph) {
+                        const CHyprColor fg = !on ? COLEMPTY : L.hover == id ? COLFOCUS : COLFG;
+                        PAINT.texIn(G::tex(glyph, fg, GLYPHPX), B);
                         L.rows.push_back({B, id});
                     };
-                    arrow(CBox{mx, my0 + PAD, mw, Menu::ARROWH}, Menu::SCROLL_UP, L.scrollTop > 0, "▴");
-                    arrow(CBox{mx, my0 + mh - PAD - Menu::ARROWH, mw, Menu::ARROWH}, Menu::SCROLL_DOWN, moreBelow, "▾");
+                    arrow(CBox{mx, my0 + PAD, mw, Menu::ARROWH}, Menu::SCROLL_UP, L.scrollTop > 0, G::eGlyph::CHEVRON_UP);
+                    arrow(CBox{mx, my0 + mh - PAD - Menu::ARROWH, mw, Menu::ARROWH}, Menu::SCROLL_DOWN, moreBelow, G::eGlyph::CHEVRON_DOWN);
                 }
             }
         }

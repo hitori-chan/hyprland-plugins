@@ -29,9 +29,10 @@ namespace NAwesome::Shell {
                 return false;
             if (!std::exchange(timeLocaleTried, true))
                 timeLocale = newlocale(LC_TIME_MASK, "", (locale_t)0);
-            // awesome's default format, trimmed — padding is the widget's
-            // explicit margin, not spaces baked into the text
-            const size_t N = timeLocale ? strftime_l(buf, sizeof(buf), "%a %b %d, %H:%M", &tm, timeLocale) : std::strftime(buf, sizeof(buf), "%a %b %d, %H:%M", &tm);
+            // the Frost clock: "Sun 25 Oct  12:26", the time set off by a
+            // double space
+            constexpr const char* FMT = "%a %d %b  %H:%M";
+            const size_t          N   = timeLocale ? strftime_l(buf, sizeof(buf), FMT, &tm, timeLocale) : std::strftime(buf, sizeof(buf), FMT, &tm);
             if (N == 0)
                 return false;
             if (clockText == buf)
@@ -53,12 +54,11 @@ namespace NAwesome::Shell {
         class CClockWidget : public IWidget {
           public:
             double fit(const SPaint& P, const SFrame& F) override {
-                // 6px each side, the bar's text pad
-                const auto TEX = textTex(clockText, F.fg, P.pt);
-                return TEX ? TEX->m_size.x / P.scale + 12 : 0;
+                const auto TEX = textTex(clockText, F.fg, P.pt, 0, "", 500);
+                return TEX ? TEX->m_size.x / P.scale : 0;
             }
             void draw(const SPaint& P, const SFrame& F, const CBox& box) override {
-                P.texIn(textTex(clockText, F.fg, P.pt), box);
+                P.texIn(textTex(clockText, F.fg, P.pt, 0, "", 500), box);
             }
         };
     } // namespace

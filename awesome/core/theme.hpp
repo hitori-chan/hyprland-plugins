@@ -95,6 +95,7 @@ namespace NAwesome {
         static const CHyprColor C{Theme::TOKEN};                                                                                                                          \
         return C;                                                                                                                                                         \
     }
+    AW_THEME_COLOR(tSub, SUB)
     AW_THEME_COLOR(tFill, FILL)
     AW_THEME_COLOR(tFillHover, FILL_HOVER)
     AW_THEME_COLOR(tTrack, TRACK)
