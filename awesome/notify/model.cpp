@@ -42,9 +42,10 @@ namespace NAwesome::Notify {
         static bool                suspended  = false; // DND
         static uint32_t            heldBanner = 0;     // the popup under the pointer: its countdown is paused
 
-        // a hostile sender's payload caps: buttons and <img> rows beyond
-        // these would draw past the clamped card into the next card's glass,
-        // so they are dropped, not clipped
+        // a hostile sender's payload caps: menu rows and <img> rows beyond
+        // these would run the Options menu off the screen or draw past the
+        // clamped card into the next card's glass, so they are dropped, not
+        // clipped
         constexpr size_t MAX_ACTIONS     = 8;
         constexpr size_t MAX_BODY_IMAGES = 4;
         // structured conversation identity: hostile senders can't grow these
@@ -292,7 +293,7 @@ namespace NAwesome::Notify {
                     continue;
                 N->orphaned = true;
                 // nobody listens for a reply or an action any more: the field,
-                // the buttons and the primary go, and a click is a plain
+                // the menu's actions and the primary go, and a click is a plain
                 // dismissal (it closed the shade for a signal nobody got).
                 // The app's next instance brings its own when it continues
                 // the card.
@@ -324,7 +325,7 @@ namespace NAwesome::Notify {
         void dismissAllLive(bool offShadeToo) {
             // the user's Clear all sweeps the shade's rows: an OSD or a
             // critical band alert waiting under the shade is none of them
-            // (the button's target and the badge exclude it too); the
+            // (the bell's dot excludes them too); the
             // scripted reset sweeps everything shown
             const auto SWEPT  = [offShadeToo](const auto& N) { return visible(N) && (offShadeToo || !offShade(N)); };
             const auto BEFORE = notifs.size();
@@ -338,15 +339,17 @@ namespace NAwesome::Notify {
             rearmExpiry();
         }
 
-        // the bundle's identity: the app key, sub-keyed by the declared
-        // group when one is in force — the digest, the fold state and the
-        // dismissal all ride on this one string
+        // the stack's identity: the app key, sub-keyed by the declared group
+        // when one is in force (macOS's thread identifier) — the deck, the
+        // fold state and the dismissal all ride on this one string
         std::string groupKeyOf(const SP<SNotif>& n) {
             return n->declaredGroupKey.empty() ? n->appKey : n->appKey + "\x1f" + n->declaredGroupKey;
         }
 
-        bool bundleable(const SP<SNotif>& n) {
-            return !n->conversation && !n->appKey.empty();
+        // macOS stacks an app's notifications, its chats with the rest: each
+        // chat stays its own card inside the stack
+        bool stackable(const SP<SNotif>& n) {
+            return !n->appKey.empty();
         }
 
         void dismissAppAll(const std::string& appKey) {
@@ -376,10 +379,9 @@ namespace NAwesome::Notify {
         }
 
         void dismissApp(const std::string& key) {
-            // exactly the bundle's members: its (app, declared group) key,
-            // never the app's other groups, its chats (conversations never
-            // bundle) or what is off the shade
-            const auto MATCH  = [&](const auto& N) { return visible(N) && !offShade(N) && bundleable(N) && groupKeyOf(N) == key; };
+            // exactly the stack's members: its (app, declared group) key,
+            // never the app's other groups or what is off the shade
+            const auto MATCH  = [&](const auto& N) { return visible(N) && !offShade(N) && stackable(N) && groupKeyOf(N) == key; };
             const auto BEFORE = notifs.size();
             for (const auto& N : notifs)
                 if (MATCH(N))
@@ -836,7 +838,7 @@ namespace NAwesome::Notify {
             };
 
             const std::string DESKTOP = clipUtf8(strHint("desktop-entry"), MAX_SOURCE_BYTES);
-            // grouping identity; control bytes out — the bundle key joins
+            // grouping identity; control bytes out — the stack key joins
             // (app, group) on \x1f, and an app named with one split wrong
             const std::string APPKEY = [&] {
                 std::string k = !DESKTOP.empty() ? DESKTOP : APP;
@@ -1107,18 +1109,18 @@ namespace NAwesome::Notify {
             // The inline-reply protocol (KDE's, which Telegram/Fractal
             // speak): the sender adds an action keyed "inline-reply" only
             // when the server advertises the capability, and expects
-            // NotificationReplied back. It is NOT a button — it opens the
-            // row's reply field.
+            // NotificationReplied back. It is NOT an action row — it is the
+            // menu's Reply, which opens the card's field.
             n->canReply         = false;
             n->replyPlaceholder = clipUtf8(strHint("x-kde-reply-placeholder-text"), MAX_REPLY_TEXT_BYTES);
             n->replySubmitText  = clipUtf8(strHint("x-kde-reply-submit-button-text"), MAX_REPLY_TEXT_BYTES);
 
             // actions arrive as [id0,label0, id1,label1, ...]. Every named
-            // pair becomes a button; "default" is the card's primary and gets
-            // NO button on either surface — the spec defines it as "the
-            // default action (usually invoked by clicking the
-            // notification)" and says implementations are free not to
-            // display it, so a body click is what fires it and a button would
+            // pair becomes a row of the card's Options menu; "default" is the
+            // card's primary and gets NO row on either surface — the spec
+            // defines it as "the default action (usually invoked by clicking
+            // the notification)" and says implementations are free not to
+            // display it, so a body click is what fires it and a row would
             // only duplicate that.
             n->defaultAction.clear();
             n->actions.clear();
@@ -1130,23 +1132,22 @@ namespace NAwesome::Notify {
                     n->canReply = true;
                     if (n->replySubmitText.empty())
                         n->replySubmitText = clipUtf8(actions[i + 1], MAX_REPLY_TEXT_BYTES); // the sender's own "Reply" label
-                } else if (!actions[i + 1].empty() && n->actions.size() < MAX_ACTIONS) { // an empty label has no button to draw
+                } else if (!actions[i + 1].empty() && n->actions.size() < MAX_ACTIONS) { // an empty label has no row to draw
                     const auto LBL = clipUtf8(actions[i + 1], MAX_ACTION_KEY_BYTES);
                     n->actions.push_back(SAction{.id = std::move(AID), .label = std::move(LBL)});
                 }
             }
             // a lone named action doubles as the body-click default; it keeps
-            // its own button too, since it was given a label to show
+            // its own row too, since it was given a label to show
             if (n->defaultAction.empty() && n->actions.size() == 1)
                 n->defaultAction = n->actions.front().id;
 
             n->resident    = hintFlag(hints, "resident").value_or(false);
-            n->actionIcons = hintFlag(hints, "action-icons").value_or(false);
             n->transient   = hintFlag(hints, "transient").value_or(false);
 
             // Conversation identity (an fd.o category or a stable
-            // conversation-id) outranks ordinary cards and never bundles
-            // into an app digest (Android keeps every chat its own card).
+            // conversation-id) outranks ordinary cards and keeps every chat
+            // its own card, stacked with its app's others in the center.
             // Ordering and merging only — no per-app casing.
             n->conversation = CONVERSATION;
 

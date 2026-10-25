@@ -818,44 +818,6 @@ namespace NAwesome::Notify {
         }
     }
 
-    void ensureActionIcon(SNotif& n, SAction& a, int iconPx) {
-        if (!n.actionIcons) {
-            a.iconTex.reset();
-            a.iconFor.clear(); // so re-enabling the hint rebuilds
-            a.iconSettled = false;
-            a.iconPx = 0;
-            return;
-        }
-        NAwesome::iconDeferred() = false;
-        std::string path         = Parse::resolveImage(a.id, iconPx); // a path, a file:// URI or a themed name
-        const bool  DEFERRED     = path.empty() && NAwesome::iconDeferred();
-
-        // a symbolic action bakes colFg into its pixels: same fg-carrying key
-        // as the identity; the bare id keeps remembering failed resolves
-        const auto SYM = isSymbolicIconPath(path);
-        const auto KEY = SYM ? a.id + "\x1f" + std::to_string(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg")) : a.id;
-        if (a.iconFor != KEY || a.iconPx != iconPx) {
-            a.iconFor     = KEY;
-            a.iconPx      = iconPx;
-            a.iconTex.reset();
-            a.iconSettled = false;
-        }
-        if (a.iconSettled)
-            return;
-        if (path.empty()) {
-            if (DEFERRED)
-                iconNamesDeferred(); // the walk budget's, not a miss: the next window asks again
-            else
-                a.iconSettled = true; // a failed resolve stays failed: no rescan per warm
-            return;
-        }
-        const auto TEX = fileTex(path, iconPx, 0, 0, SYM); // icon box only, never hero
-        if (TEX.settled) {
-            a.iconTex     = TEX.texture;
-            a.iconSettled = true;
-        }
-    }
-
     void ensureBodyImage(SBodyImage& im, int maxPx) {
         if (im.src.empty()) {
             im.tex.reset();

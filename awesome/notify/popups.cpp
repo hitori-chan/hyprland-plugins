@@ -50,7 +50,7 @@ namespace NAwesome::Notify {
 
             SCard        card = recycledCard();
             const double H    = renderCard(CP, T, N, CBox{X, y, W, 0}, SCardForm{.where = SCardForm::BANNER}, card);
-            cards.push_back(std::move(card));
+            pushCard(std::move(card));
             y += H + GAP;
         }
     }

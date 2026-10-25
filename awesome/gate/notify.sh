@@ -267,21 +267,21 @@ DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user call org.freedesktop.Notification
 chk "reader: and the daemon still serves" until_is 3 "center:0 live:1 dnd:0" st
 nclear
 
-# ---- an expanded bundle keeps to the page ------------------------------------
-# 30 three-line cards of one app: expanded, they would run far past the
-# screen; the page shows the children that fit and counts the rest
+# ---- a spread stack keeps to the page ----------------------------------------
+# 30 three-line cards of one app: spread, they would run far past the
+# screen; the page shows the cards that fit and counts the rest
 for i in $(seq 1 30); do
 	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications Notify \
 		susssasa{sv}i bulk 0 "" "build $i" $'step one\nstep two\nstep three' 0 0 30000 >/dev/null
 done
 sleep 0.5
 hq awesome center >/dev/null; sleep 0.6
-chk "bundle: thirty cards wait in the shade" test "$(st)" = "center:1 live:30 dnd:0"
+chk "stack: thirty cards wait in the center" test "$(st)" = "center:1 live:30 dnd:0"
 click $ROWX $ROWY 272
-capture_nested $STATE/bundle-aw.png
-# expanded, it runs past mid-screen and still ends on it
-chk "bundle: the expanded bundle ends on the screen" test "$(panel_bottom $STATE/bundle-aw.png)" -gt $((MON_H / 2)) -a "$(panel_bottom $STATE/bundle-aw.png)" -lt $((MON_H - 4))
-chk "bundle: expanding acted on nothing" test "$(st)" = "center:1 live:30 dnd:0"
+capture_nested $STATE/stack30-aw.png
+# spread, it runs past mid-screen and still ends on it
+chk "stack: the spread stack ends on the screen" test "$(panel_bottom $STATE/stack30-aw.png)" -gt $((MON_H / 2)) -a "$(panel_bottom $STATE/stack30-aw.png)" -lt $((MON_H - 4))
+chk "stack: spreading acted on nothing" test "$(st)" = "center:1 live:30 dnd:0"
 hq awesome center >/dev/null; sleep 0.4
 nclear
 
@@ -362,6 +362,73 @@ nclear
 nfyact_done
 chk "close-on-act: reset after the battery" test "$(st)" = "center:0 live:0 dnd:0"
 
+# ---- macOS: the hover chrome and Options -------------------------------------
+# Under the pointer a card wears its close button on its top-left corner
+# (notify/ui.hpp: CLOSE_D 20, CLOSE_OUT 7) and, with actions, Options in the
+# meta's place (OPT_H 20, 14 off the card's right, centred on the title
+# row 12 down); its menu drops 3 px under it, right edges aligned
+# (notify/menu.cpp: PAD 5, ROWH 28), the sender's actions first.
+XC=$((PANEL_X - 7 + 10)) YC=$((N_TOP - 7 + 10))
+OPTX=$((MON_W - N_EDGE - 14 - 12)) OPTY=$((N_TOP + 12 + 8))
+OPTROW=$((OPTY + 10 + 3 + 5 + 14)) # the menu's first row
+lit_px() { # lit_px <frame> <x0> <y0> <x1> <y1> — near-white pixels in the box
+	python3 - "$@" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
+x0, y0, x1, y1 = map(int, sys.argv[2:6])
+print(sum(1 for y in range(y0, y1) for x in range(x0, x1) if min(px[x, y]) > 170))
+PY
+}
+# the pointer off the column first: the battery before left it on a card
+printf 'move %s %s\nsleep 60\n' "$((MON_W / 2))" "$((MON_H / 2))" | vp
+dsp "hl.dsp.exec_cmd('notify-send -a hov -t 30000 \"close me\" body')"; sleep 1
+capture_nested $STATE/chrome-rest.png
+printf 'move %s %s\nsleep 200\n' "$POPX" "$((N_TOP + 30))" | vp; sleep 0.4
+capture_nested $STATE/chrome-hover.png
+R0=$(lit_px $STATE/chrome-rest.png $((XC - 6)) $((YC - 6)) $((XC + 6)) $((YC + 6)))
+R1=$(lit_px $STATE/chrome-hover.png $((XC - 6)) $((YC - 6)) $((XC + 6)) $((YC + 6)))
+echo "chrome: corner lit $R0 -> $R1" >&2
+chk "chrome: hover puts the close button on the card's corner" test "$R1" -gt $((R0 + 6))
+printf 'move %s %s\nsleep 120\npress 272\nsleep 40\nrelease 272\nsleep 80\n' "$XC" "$YC" | vp; sleep 0.5
+chk "chrome: the close button dismisses the banner" test "$(st)" = "center:0 live:0 dnd:0"
+INVOKED="$STATE/invoked.log"
+rm -f "$INVOKED"
+( DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 30 busctl --user monitor --match "type='signal',member='ActionInvoked'" >"$INVOKED" 2>&1 & )
+sleep 0.4
+nfyact actapp "act on me" 4 default Open later "Remind Me" 0; sleep 1
+printf 'move %s %s\nsleep 200\n' "$POPX" "$((N_TOP + 30))" | vp; sleep 0.3
+click "$OPTX" "$OPTY" 272
+chk "options: the click opens the menu and acts on nothing" test "$(st)" = "center:0 live:1 dnd:0"
+click $((OPTX - 60)) "$OPTROW" 272
+chk "options: the action's row fired it, and the card went" until_is 3 "center:0 live:0 dnd:0" st
+chk "options: ActionInvoked carried the action's key" grep -q 'STRING "later"' "$INVOKED"
+nfyact_done
+nclear
+
+# ---- the center stacks an app's cards (macOS) --------------------------------
+# Two cards of one app are one stack: collapsed, the newest over its deck
+# (8 px a layer); a click spreads it under a header (Show Less and a close
+# button, 24 px, right-aligned: notify/stack.cpp); right dismisses it whole.
+dsp "hl.dsp.exec_cmd('notify-send -a stk -t 30000 first body')"; sleep 0.3
+dsp "hl.dsp.exec_cmd('notify-send -a stk -t 30000 second body')"; sleep 1
+hq awesome center >/dev/null; sleep 0.6
+capture_nested $STATE/stack-deck.png
+PD="$(panel_bottom $STATE/stack-deck.png)"
+click $ROWX $ROWY 272
+chk "stack: a click spreads it and acts on nothing" test "$(st)" = "center:1 live:2 dnd:0"
+capture_nested $STATE/stack-spread.png
+PS="$(panel_bottom $STATE/stack-spread.png)"
+echo "stack: bottom collapsed $PD, spread $PS" >&2
+chk "stack: spread, its header and both cards stand" test $((PS - PD)) -ge 40
+click $((PANEL_X + N_W - 24 - 6 - 30)) $((CARD_Y + 12)) 272
+capture_nested $STATE/stack-less.png
+chk "stack: Show Less folds it back" test "$(panel_bottom $STATE/stack-less.png)" -le $((PD + 2))
+click $ROWX $ROWY 273
+chk "stack: right on the deck dismisses the whole stack" test "$(st)" = "center:1 live:0 dnd:0"
+hq awesome center >/dev/null; sleep 0.4
+nclear
+
 # ---- hover holds a banner's clock ------------------------------------------
 dsp "hl.dsp.exec_cmd('notify-send -t 1200 \"hold me\" body')"; sleep 0.4
 capture_nested $STATE/banner-aw.png
@@ -378,13 +445,14 @@ nclear
 # ---- the card menu: hold left ------------------------------------------------
 # A hold opens the card's switches at the pointer: near the right edge the
 # menu flips left of it, so its rows run from the pointer's y down, under
-# HX - 100. Rows (notify/menu.cpp): PAD 5, 28 each, separators 9; a chat
-# leads with its two mute rows and a separator. The switches persist as
+# HX - 100. Rows (notify/menu.cpp): PAD 5, 28 each, separators 11; a chat
+# leads with its two mute rows and a separator (these chats offer no
+# actions, so no Reply or action rows come first). The switches persist as
 # state.tsv rows.
 HX=$POPX HY=$((N_TOP + 22))
 hold_menu() { printf 'move %s %s\nsleep 40\npress 272\nsleep 700\n' "$1" "$2" | vp; sleep 0.3; } # the button stays down
 release_left() { printf 'release 272\nsleep 80\n' | vp; sleep 0.3; }
-mrow() { echo $(($1 + 5 + 14 + 28 * $2 + 9 * $3)); } # mrow <menu y> <row> <separators above>
+mrow() { echo $(($1 + 5 + 14 + 28 * $2 + 11 * $3)); } # mrow <menu y> <row> <separators above>
 pcidb gatechat Alice alice "are you coming"; sleep 1
 chk "menu: a chat banner is up" test "$(bd)" = "banners:1 resident:0"
 hold_menu "$HX" "$HY"
@@ -461,8 +529,9 @@ nclear
 chk "bell: reset after the bell battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- the shade's keyboard nav ----------------------------------------------
-dsp "hl.dsp.exec_cmd('notify-send -t 60000 -A default=Open \"key one\" body')"; sleep 0.6
-dsp "hl.dsp.exec_cmd('notify-send -t 60000 \"key two\" body')"; sleep 1
+# two apps: one app's two cards would stack, and the keys would act on the stack
+dsp "hl.dsp.exec_cmd('notify-send -a keya -t 60000 -A default=Open \"key one\" body')"; sleep 0.6
+dsp "hl.dsp.exec_cmd('notify-send -a keyb -t 60000 \"key two\" body')"; sleep 1
 hq awesome center >/dev/null; sleep 0.7
 chk "keys: two rows with the shade open" test "$(st)" = "center:1 live:2 dnd:0"
 tap down
@@ -572,6 +641,27 @@ chk "reply: enter sent it and the card went" test "$(st)" = "center:1 live:0 dnd
 chk "reply: NotificationReplied carried the typed text" grep -q 'STRING "hi"' "$REPLIED"
 kill "$REPLY_SENDER" 2>/dev/null; wait "$REPLY_SENDER" 2>/dev/null
 hq awesome center >/dev/null; sleep 0.4
+nclear
+
+# Reply from a banner's Options (macOS): the field opens in the banner, which
+# holds its clock and takes the typing; Enter sends from there
+REPLIED2="$STATE/replied-banner.log"
+rm -f "$REPLIED2"
+( DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 60 busctl --user monitor --match "type='signal',member='NotificationReplied'" >"$REPLIED2" 2>&1 & )
+sleep 0.5
+conv_reply_sender Telegram "Alice" "are you around?"
+sleep 1
+printf 'move %s %s\nsleep 200\n' "$POPX" "$((N_TOP + 30))" | vp; sleep 0.3
+click "$OPTX" "$OPTY" 272
+click $((OPTX - 60)) "$OPTROW" 272
+tap 35
+tap 23
+chk "reply: a banner's field takes the typing and acts on nothing" test "$(st)" = "center:0 live:1 dnd:0"
+tap enter
+sleep 0.6
+chk "reply: enter sent it from the banner and the card went" test "$(st)" = "center:0 live:0 dnd:0"
+chk "reply: NotificationReplied carried the banner's text" grep -q 'STRING "hi"' "$REPLIED2"
+kill "$REPLY_SENDER" 2>/dev/null; wait "$REPLY_SENDER" 2>/dev/null
 nclear
 
 # ---- sound-spawn backpressure ------------------------------------------------------

@@ -3,23 +3,22 @@
 // lifecycle sections and no history view: what you can see is what the model
 // holds, and a dismissed card is gone (Android's shade has no recall either).
 //
-// This unit decides WHAT is shown and WHERE; card.cpp and bundle.cpp draw
+// This unit decides WHAT is shown and WHERE; card.cpp and stack.cpp draw
 // it. The center is the banners' own column, its controls on glass capsules
 // above it; as macOS's, it draws no backdrop: the desktop is never darkened.
 //
 // RANKING — Android's, without the dividers: critical, then conversations,
 // then normal, then silent; newest first inside each tier. An app's cards
-// BUNDLE into one digest only once it has AUTOGROUP_AT of them (Android's
-// GroupHelper.AUTOGROUP_AT_COUNT); below that every card stands alone.
-// Conversations never bundle — each chat keeps its own card, and the model
-// merges that chat's messages into it.
+// STACK under their newest once it has two (macOS), its chats with the rest
+// — each chat keeps its own card, and the model merges that chat's messages
+// into it. A stack stands where its newest card ranks, collapsed until a
+// click spreads it.
 //
-// THE EXPANSION BUDGET — rows open by DEFAULT, not on demand. The walk starts
-// at the top of the page and opens each row while the panel still has room,
-// so the shade is readable the instant it appears instead of costing a click
-// per card. Android expands only its top card; a desktop shade is far taller,
-// so we keep going and fold only what would overflow. A row whose open form
-// shows nothing the collapsed one doesn't gets no chevron at all.
+// THE EXPANSION BUDGET — cards open by DEFAULT, not on demand. The walk
+// starts at the top of the page and opens each card while the panel still
+// has room, so the center is readable the instant it appears instead of
+// costing a click per card; it folds only what would overflow. Stacks are
+// the exception: macOS spreads one only when asked.
 //
 // This unit owns the shade's transient state (paging, every fold override) —
 // all of it resets when the shade closes, Android-style.
@@ -28,9 +27,8 @@
 
 namespace NAwesome::Notify {
 
-    // Android's GroupHelper.AUTOGROUP_AT_COUNT: an app's notifications
-    // auto-bundle at four, not at two.
-    inline constexpr size_t AUTOGROUP_AT = 4;
+    // macOS stacks an app's notifications as soon as there are two
+    inline constexpr size_t AUTOGROUP_AT = 2;
 
     // ---- state ----
 
@@ -48,14 +46,21 @@ namespace NAwesome::Notify {
     static int      s_sel     = -1;
     static size_t   s_lastVis = 0;
 
+    // the budget's verdict on one card it placed
+    struct SPlacedCard {
+        double h    = 0;
+        bool   open = false; // drawn open
+        bool   more = false; // its open form shows more than the folded one (a click unfolds)
+    };
+
     // the warm-measured layout cache (see renderCenter); dropped on close so
     // no strong SNotif refs (and their textures) outlive the visit
-    static std::vector<SDisp>               s_disp;
-    static std::vector<double>              s_itemH;
-    static std::vector<uint8_t>             s_itemOpen; // the budget's verdict, per display item
-    static std::vector<uint8_t>             s_itemMore; // the open form shows more than the collapsed one
-    static std::vector<std::vector<double>> s_childH;
-    static const std::vector<double>        NO_CHILDREN;
+    static std::vector<SDisp>                    s_disp;
+    static std::vector<double>                   s_itemH;
+    static std::vector<uint8_t>                  s_itemSpread; // a stack shown spread out
+    // per item, the cards it shows: a single's, a collapsed stack's top
+    // card, a spread stack's cards down to the page's fold
+    static std::vector<std::vector<SPlacedCard>> s_cardsOf;
     // resolved open state from the last warm, keyed by identity: the click
     // handlers flip THIS, so a toggle means the same thing the eye just saw
     static std::unordered_map<uint32_t, bool>    s_rowState;
@@ -91,9 +96,8 @@ namespace NAwesome::Notify {
         s_lastVis   = 0;
         s_disp.clear();
         s_itemH.clear();
-        s_itemOpen.clear();
-        s_itemMore.clear();
-        s_childH.clear();
+        s_itemSpread.clear();
+        s_cardsOf.clear();
     }
 
     void centerExit() {
@@ -208,7 +212,7 @@ namespace NAwesome::Notify {
         //  now reads the model in the same .so — nothing to broadcast)
     }
 
-    // ---- the display list: one ranked list, apps bundled at four ----
+    // ---- the display list: one ranked list, an app's cards stacked ----
 
     // Android's shade ranking, minus the visible dividers: urgent things,
     // then the people, then everything else, then the quiet ones.
@@ -222,12 +226,9 @@ namespace NAwesome::Notify {
         return 3;
     }
 
-    // How many bundleable cards one (app, declared group) holds, and where
-    // its digest landed. Even at the model cap the distinct keys are a
-    // handful, so one linear scan beats the two string-keyed trees this used
-    // to build from scratch on every warm AND every draw. A group's 4+ runs
-    // inside the group, not across it: different x-notify-group-key
-    // values never merge, and each owns its own digest and fold state.
+    // How many stackable cards one (app, declared group) holds, and where its
+    // stack landed. Different x-notify-group-key values (macOS's thread
+    // identifiers) never merge: each owns its own stack and fold state.
     struct SOwner {
         std::string        key;
         size_t             count = 0;
@@ -241,7 +242,7 @@ namespace NAwesome::Notify {
         // key -> owner: a linear scan per card was quadratic in distinct
         // keys (a sender rotating its app name at max_notifs 512)
         static std::unordered_map<std::string, size_t> ownerIdx;   // ditto
-        static std::vector<size_t>                     ownerOfSrc; // src[i]'s owner, -1: never bundles
+        static std::vector<size_t>                     ownerOfSrc; // src[i]'s owner, -1: never stacks
         src.clear();
         owners.clear();
         ownerIdx.clear();
@@ -252,8 +253,8 @@ namespace NAwesome::Notify {
         // notifs is newest-first; a STABLE sort by tier keeps that inside each
         std::ranges::stable_sort(src, [](const auto& a, const auto& b) { return tier(a) < tier(b); });
 
-        for (const auto& N : src) { // conversations never bundle
-            if (!Model::bundleable(N)) {
+        for (const auto& N : src) {
+            if (!Model::stackable(N)) {
                 ownerOfSrc.push_back((size_t)-1);
                 continue;
             }
@@ -276,8 +277,8 @@ namespace NAwesome::Notify {
                     O.first = out.size();
                 }
             }
-            // the key rides the fold state, hover and selection — a bundle
-            // head carries the (app, group) identity, singles the app
+            // the key rides the fold state, hover and selection — a stack
+            // carries the (app, group) identity, singles the app
             out.push_back(SDisp{.items = {N}, .key = ownerOfSrc[i] != (size_t)-1 ? owners[ownerOfSrc[i]].key : Model::groupKeyOf(N)});
         }
         // the buffer is reused, its references are not: a dismissed card
@@ -288,75 +289,74 @@ namespace NAwesome::Notify {
     // ---- the expansion budget ----
     //
     // Walks the page from its top row down, opening what still fits. The top
-    // row always opens (Android's one guarantee); a user override wins over
-    // the budget in both directions. Rows past the fold are only measured
-    // COLLAPSED — their open form would raster text no frame can show.
+    // card always opens (Android's one guarantee); a user override wins over
+    // the budget in both directions. Cards past the fold are only measured
+    // FOLDED — their open form would raster text no frame can show.
+
+    // one card's verdict: `extra` is what must still fit under it (a deck's
+    // depth), `force` the open it must take (an armed field, the user's
+    // unfold) or must not (the user's fold)
+    static SPlacedCard budgetCard(const SPaint& P, const SType& T, const SP<SNotif>& N, double w, double room, double extra, bool top, bool deck) {
+        const bool  ARMED = replyArmedOn(N->id); // a field shows only on the open card
+        const bool  OPEN  = ARMED || s_openedRow.contains(N->id), FOLD = !ARMED && s_foldedRow.contains(N->id);
+        SPlacedCard c;
+        c.h    = measureCard(P, T, N, w, SCardForm{.where = SCardForm::CENTER, .open = false, .deck = deck});
+        c.more = true;
+        if (!FOLD && (OPEN || top || c.h + extra < room)) {
+            const double OH = measureCard(P, T, N, w, SCardForm{.where = SCardForm::CENTER, .open = true, .deck = deck});
+            c.more          = OH > c.h + 0.5;
+            c.open          = c.more && (OPEN || top || OH + extra <= room);
+            if (c.open)
+                c.h = OH;
+        }
+        return c;
+    }
+
     static void runBudget(const SPaint& P, const SType& T, double contentW, double bodyCap, double gap) {
         double used = 0;
         for (size_t i = s_skip; i < s_disp.size(); i++) {
             const auto&  D    = s_disp[i];
             const double LEAD = i == s_skip ? 0 : gap;
             const bool   TOP  = i == s_skip;
+            const double ROOM = bodyCap - used - LEAD;
+            auto&        CS   = s_cardsOf[i];
 
             if (D.items.size() < 2) {
-                const auto&  N          = D.items.front();
-                const double CH         = measureCard(P, T, N, contentW, SCardForm{.where = SCardForm::CENTER, .open = false});
-                // an armed reply field is drawn in the open card only: its
-                // card is open whatever the budget or a fold says
-                const bool   ARMED      = replyArmedOn(N->id);
-                const bool   FORCE_OPEN = ARMED || s_openedRow.contains(N->id), FORCE_FOLD = !ARMED && s_foldedRow.contains(N->id);
-                bool         open = false, more = true;
-                double       h = CH;
-                if (!FORCE_FOLD && (FORCE_OPEN || TOP || used + LEAD + CH < bodyCap)) {
-                    const double OH = measureCard(P, T, N, contentW, SCardForm{.where = SCardForm::CENTER, .open = true});
-                    more            = OH > CH + 0.5;
-                    open            = more && (FORCE_OPEN || TOP || used + LEAD + OH <= bodyCap);
-                    if (open)
-                        h = OH;
-                }
-                s_itemH[i]        = h;
-                s_itemOpen[i]     = open;
-                s_itemMore[i]     = more;
-                s_rowState[N->id] = open;
+                CS.push_back(budgetCard(P, T, D.items.front(), contentW, ROOM, 0, TOP, false));
+                s_itemH[i]                      = CS.back().h;
+                s_rowState[D.items.front()->id] = CS.back().open;
             } else {
-                // a bundle: the digest, or a header and readable children
-                const double DH         = digestH(T, D.items.size(), P.scale);
-                const bool   FORCE_OPEN = s_openedGroup.contains(D.key), FORCE_FOLD = s_foldedGroup.contains(D.key);
-                bool         open       = false;
-                double       h          = DH;
-                if (!FORCE_FOLD && (FORCE_OPEN || TOP || used + LEAD + DH < bodyCap)) {
-                    // Children are measured down to the page's fold, never
-                    // past it: a bundle that does not fit stays a digest,
-                    // and one the user opened shows the children that fit
-                    // and counts the rest in a tail (a 50-card bundle
-                    // measured and painted every child, the ones below the
-                    // screen included: tens of ms per center open)
-                    const double        ROOM = bodyCap - used - LEAD;
-                    const double        TAIL = FORCE_OPEN ? TAIL_H : 0;
-                    double              oh   = groupChromeH(false);
-                    bool                cut  = false;
-                    std::vector<double> ch;
-                    for (size_t k = 0; k < D.items.size() && !cut; k++) {
-                        const double C    = measureCard(P, T, D.items[k], contentW, SCardForm{.where = SCardForm::CHILD});
+                // a stack: collapsed unless the user spread it, or a field
+                // being typed into is one of its cards
+                const auto ARMED  = std::ranges::find_if(D.items, [](const auto& N) { return replyArmedOn(N->id); });
+                const bool SPREAD = ARMED != D.items.end() || (s_openedGroup.contains(D.key) && !s_foldedGroup.contains(D.key));
+                if (!SPREAD) {
+                    const double DEPTH = deckDepth(D.items.size());
+                    CS.push_back(budgetCard(P, T, D.items.front(), contentW, ROOM, DEPTH, TOP, true));
+                    s_itemH[i] = CS.back().h + DEPTH;
+                } else {
+                    // the header, then the cards the page holds, readable
+                    // whole; the rest counted in a tail ("+N more"). One the
+                    // user spread shows its first card even past the fold,
+                    // and the card being replied to is never cut.
+                    const size_t KEEP = ARMED != D.items.end() ? (size_t)(ARMED - D.items.begin()) : 0;
+                    double       h    = CAP_H;
+                    for (size_t k = 0; k < D.items.size(); k++) {
                         const bool   LAST = k + 1 == D.items.size();
-                        if (!ch.empty() && oh + C + (LAST ? 0 : TAIL) > ROOM) {
-                            cut = true;
+                        const double TAIL = LAST ? 0 : gap + CAP_H;
+                        const auto   C    = budgetCard(P, T, D.items[k], contentW, ROOM - h - gap - TAIL, 0, TOP && k == 0, false);
+                        if (k > KEEP && h + gap + C.h + TAIL > ROOM)
                             break;
-                        }
-                        ch.push_back(C);
-                        oh += C;
-                        cut = !FORCE_OPEN && oh > ROOM; // it cannot open: stop measuring
+                        CS.push_back(C);
+                        s_rowState[D.items[k]->id] = C.open;
+                        h += gap + C.h;
                     }
-                    if (FORCE_OPEN || (!cut && oh <= ROOM)) {
-                        open        = true;
-                        h           = oh + (ch.size() < D.items.size() ? TAIL_H : 0);
-                        s_childH[i] = std::move(ch);
-                    }
+                    if (CS.size() < D.items.size())
+                        h += gap + CAP_H;
+                    s_itemH[i] = h;
                 }
-                s_itemH[i]          = h;
-                s_itemOpen[i]       = open;
-                s_itemMore[i]       = 1;
-                s_groupState[D.key] = open;
+                s_itemSpread[i]     = SPREAD;
+                s_groupState[D.key] = SPREAD;
             }
             used += LEAD + s_itemH[i];
             // past the fold: no later card is on this page, and measuring
@@ -437,7 +437,7 @@ namespace NAwesome::Notify {
         // change nothing they depend on, and every model/fold change warms
         // first (notifChanged). The draw side lays out without measuring twice.
         if (P.warm) {
-            // the selection follows its card (or bundle) across the rebuild:
+            // the selection follows its card (or stack) across the rebuild:
             // a card landing above must not shift Enter/Delete onto a
             // neighbor. One whose card left keeps its INDEX — the card that
             // took the dismissed one's place, as a list does after a delete.
@@ -463,9 +463,8 @@ namespace NAwesome::Notify {
             if (s_sel >= (int)s_disp.size())
                 s_sel = s_disp.empty() ? -1 : (int)s_disp.size() - 1;
             s_itemH.assign(s_disp.size(), 0.0);
-            s_itemOpen.assign(s_disp.size(), 0);
-            s_itemMore.assign(s_disp.size(), 0);
-            s_childH.assign(s_disp.size(), {});
+            s_itemSpread.assign(s_disp.size(), 0);
+            s_cardsOf.assign(s_disp.size(), {});
             s_rowState.clear();
             s_groupState.clear();
             runBudget(P, T, W, BODYCAP, GAP);
@@ -474,6 +473,8 @@ namespace NAwesome::Notify {
             // re-opened) can still leave it below the fold
             for (const int KEEP = keyboardRow(); KEEP > (int)s_skip && (size_t)KEEP > lastFit(BODYCAP, GAP);) {
                 ++s_skip;
+                for (auto& CS : s_cardsOf)
+                    CS.clear();
                 s_rowState.clear();
                 s_groupState.clear();
                 runBudget(P, T, W, BODYCAP, GAP);
@@ -514,8 +515,8 @@ namespace NAwesome::Notify {
         // sits on glass of its own (its Show Less capsule), legible over any
         // wallpaper without darkening one.
         {
-            const double CAP_H = 24, CAP_PADX = 10, CAP_GAP = 6, MOON_PX = 14;
-            const double CY    = Y0 + (HEADER_H - CAP_H) / 2;
+            constexpr double MOON_PX = 14;
+            const double     CY      = Y0 + (HEADER_H - CAP_H) / 2;
             const int    ROUND = (int)std::lround(CAP_H / 2 * P.scale);
 
             const bool   TARGET = std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && !Model::offShade(N); });
@@ -555,23 +556,47 @@ namespace NAwesome::Notify {
 
         double y = CY0;
         for (const auto& [IDX, IH] : placed) {
-            const auto& D    = disp[IDX];
-            const bool  OPEN = IDX < s_itemOpen.size() && s_itemOpen[IDX];
-            const CBox  SLOT{X, y, W, IH};
+            const auto& D = disp[IDX];
+            if (IDX >= s_cardsOf.size() || s_cardsOf[IDX].empty()) { // a draw ahead of its warm: nothing measured to place
+                y += IH + GAP;
+                continue;
+            }
+            const auto& CS = s_cardsOf[IDX];
+            CBox        ring{X, y, W, IH}; // the keyboard's selection goes around this
             if (D.items.size() < 2) {
                 SCard card = recycledCard();
-                renderCard(P, T, D.items.front(), SLOT, SCardForm{.where = SCardForm::CENTER, .open = OPEN}, card);
-                card.folded = !OPEN && IDX < s_itemMore.size() && s_itemMore[IDX];
-                cards.push_back(std::move(card));
-            } else if (!OPEN)
-                paintDigest(P, T, D, SLOT);
-            else // a ternary against a temporary copied the heights every frame
-                paintGroup(P, T, D, SLOT, IDX < s_childH.size() ? s_childH[IDX] : NO_CHILDREN);
+                renderCard(P, T, D.items.front(), CBox{X, y, W, 0}, SCardForm{.where = SCardForm::CENTER, .open = CS.front().open}, card);
+                card.folded = !CS.front().open && CS.front().more;
+                pushCard(std::move(card));
+            } else if (!s_itemSpread[IDX]) {
+                // the deck first: the top card's glass covers all but its edges
+                const double DEPTH = deckDepth(D.items.size());
+                ring.h             = IH - DEPTH;
+                paintDeck(P, ring, D.items.size());
+                SCard card = recycledCard();
+                renderCard(P, T, D.items.front(), CBox{X, y, W, 0}, SCardForm{.where = SCardForm::CENTER, .open = CS.front().open, .deck = true}, card);
+                card.box.h += DEPTH; // the deck answers for the stack too
+                card.group = D.key;
+                pushCard(std::move(card));
+            } else {
+                paintStackHead(P, T, D, CBox{X, y, W, CAP_H});
+                double cy = y + CAP_H + GAP;
+                for (size_t k = 0; k < CS.size() && k < D.items.size(); k++) {
+                    SCard card = recycledCard();
+                    renderCard(P, T, D.items[k], CBox{X, cy, W, 0}, SCardForm{.where = SCardForm::CENTER, .open = CS[k].open}, card);
+                    card.folded = !CS[k].open && CS[k].more;
+                    card.group  = D.key;
+                    pushCard(std::move(card));
+                    cy += CS[k].h + GAP;
+                }
+                if (CS.size() < D.items.size())
+                    paintStackTail(P, T, D.items.size() - CS.size(), CBox{X, cy, W, CAP_H});
+            }
 
             // the keyboard's selection: the accent around the whole item, so
             // it never reads as a hover
             if ((int)IDX == s_sel)
-                P.ring(SLOT, COLACC, rCard(P.scale), RP, 1.5);
+                P.ring(ring, COLACC, rCard(P.scale), RP, 1.5);
             y += IH + GAP;
         }
 
