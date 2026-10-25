@@ -489,6 +489,45 @@ for a in "$W1BASE" "$W1OVER" "$W1GONE" "$W1PREV"; do
 done
 until_is 5 0 w1_count
 chk "minimize successor: its windows are closed" test "$(w1_count)" = 0
+# ---- maximize: the entry follows its window out of floating -------------
+# A swap with a tiled window trades the two floating states without the
+# layout manager's toggle event: the maximized window turns tiled, and its
+# entry has to leave with it. A stale one turns the next Mod+M on the
+# refloated window into a restore of the old box instead of a maximize.
+# (w2tile is not in the harness float rule, w2max is.)
+w2_count() { clients | python3 -c "import json,sys;print(sum(1 for c in json.load(sys.stdin) if c['class'] in ('w2tile','w2max')))"; }
+w2_state() { # w2_state <class> <floating|tiled|wide>: 1 when the window is so
+	clients | python3 -c "
+import json,sys
+c = next((c for c in json.load(sys.stdin) if c['class'] == sys.argv[1]), None)
+w = {'floating': c and c['floating'], 'tiled': c and not c['floating'], 'wide': c and c['size'][0] > $((MON_W-8))}[sys.argv[2]]
+print(1 if w else 0)" "$1" "$2"
+}
+dsp "hl.dsp.exec_cmd('foot --app-id=w2tile --window-size-pixels=500x300')"
+dsp "hl.dsp.exec_cmd('foot --app-id=w2max --window-size-pixels=500x300')"
+until_is 10 2 w2_count
+W2TILE="$(class_addr w2tile)" W2MAX="$(class_addr w2max)"
+chk "maximize exit: w2tile tiles, w2max floats" \
+	test "$(w2_state w2tile tiled)$(w2_state w2max floating)" = 11
+dsp "hl.dsp.focus({window=\"address:$W2MAX\"})"
+dsp "hl.plugin.awesome.maximize()"
+until_is 5 1 w2_state w2max wide
+chk "maximize exit: w2max fills the workarea" test "$(w2_state w2max wide)" = 1
+dsp "hl.dsp.window.swap({window=\"address:$W2MAX\", target=\"address:$W2TILE\"})"
+until_is 5 1 w2_state w2max tiled
+chk "maximize exit: the swap tiled w2max" test "$(w2_state w2max tiled)" = 1
+dsp "hl.dsp.window.float({action=\"enable\", window=\"address:$W2MAX\"})"
+until_is 5 1 w2_state w2max floating; sleep 0.5
+dsp "hl.dsp.focus({window=\"address:$W2MAX\"})"
+dsp "hl.plugin.awesome.maximize()"
+until_is 5 1 w2_state w2max wide
+chk "maximize exit: floated again, Mod+M maximizes it (no stale entry)" \
+	test "$(w2_state w2max floating)$(w2_state w2max wide)" = 11
+for a in "$W2TILE" "$W2MAX"; do
+	[[ -n "$a" ]] && dsp "hl.dsp.window.close({window=\"address:$a\"})"
+done
+until_is 5 0 w2_count
+
 chk "windows: its foot is closed at the battery's end" \
 	test "$(pyc "sum(1 for c in cs if c['class']=='foot')")" = 0
 

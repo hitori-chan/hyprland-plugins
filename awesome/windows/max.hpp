@@ -33,6 +33,7 @@
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include <hyprland/src/layout/LayoutManager.hpp>
 #include <hyprland/src/layout/target/WindowTarget.hpp>
+#include <hyprland/src/desktop/view/window/WindowStateTracker.hpp>
 
 #include <algorithm>
 #include <filesystem>
@@ -223,7 +224,7 @@ namespace NAwesome::Windows {
         }
 
         // plugin maximize is a floating state: an entry of a window that left
-        // floating is on its way out (window.floating), never immovable
+        // floating is on its way out (window.updateState), never immovable
         inline bool maximizedAny(PHLWINDOW w) {
             return (pluginMaximized(w) && w->isFloating()) || Fullscreen::controller()->isFullscreen(w);
         }
@@ -538,8 +539,12 @@ namespace NAwesome::Windows {
                 }
                 maximized().erase(IT);
             });
-            supervisor().listen(Event::bus()->m_events.window.floating, [](PHLWINDOW w) {
-                if (w && !w->isFloating())
+            // updateState, not window.floating: that one is emitted only by
+            // the layout manager's own toggle, while a group merge or a
+            // tiled algorithm's forced float leave floating just the same —
+            // and this one arrives after the layout has settled
+            supervisor().listen(Event::bus()->m_events.window.updateState, [](PHLWINDOW w, const Desktop::View::SWindowStateUpdate& U) {
+                if (w && U.floating == false)
                     dropMaximize(w);
             });
             supervisor().listen(Event::bus()->m_events.window.close, [](PHLWINDOW w) {
