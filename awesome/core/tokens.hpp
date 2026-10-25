@@ -47,6 +47,10 @@ namespace NAwesome::Theme {
     inline constexpr double ROUNDING_POWER = 3.0;
 
     inline constexpr const char* FONT = "Inter";
+    // the bar, its menus and the launcher: the terminals' face; Fira Code has
+    // no CJK, and fontconfig's fallback for the kanji tags is a bitmap
+    // Chinese face — IBM Plex Sans JP is drawn for them
+    inline constexpr const char* BAR_FONT = "Fira Code, IBM Plex Sans JP";
 
     // ---- motion (ms) ----
     inline constexpr int MOTION_SPATIAL = 320; // panel open/close, card arrival

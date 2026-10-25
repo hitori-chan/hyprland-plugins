@@ -56,7 +56,7 @@ bool test_schema() {
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:notify:rounding_power"}.index].dval == 3.0);
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:shell:col_focus"}.index].cval == 0xff00ccffu);
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:notify:col_bg"}.index].cval == 0x8a26262cu);
-    AW_CHECK(SPECS[CfgKey{"plugin:awesome:shell:font"}.index].sval == "Inter");
+    AW_CHECK(SPECS[CfgKey{"plugin:awesome:shell:font"}.index].sval == "Fira Code, IBM Plex Sans JP");
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:notify:font"}.index].sval == "Inter");
 
     // the loader's clamps: out-of-range delivers, the getter clamps
