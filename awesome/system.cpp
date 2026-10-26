@@ -1,10 +1,13 @@
-// awesome/system.cpp — the system module: the one CModule over the two
-// units (audio.cpp — volume/mic/the lights; pad.cpp — the touchpad
-// policy). The feedback bus is the notify model, the Lua face is the flat
-// hl.plugin.awesome.* names, the control center's doors are registered in
-// core/controls.hpp.
+// awesome/system.cpp — the system module: the one CModule over its three
+// units (audio.cpp — volume/mic; light.cpp — the display's and the
+// keyboard's lights; pad.cpp — the touchpad policy) and the system bus
+// they share. The feedback bus is the notify model, the Lua face is the
+// flat hl.plugin.awesome.* names, the control center's doors are
+// registered in core/controls.hpp.
 
 #include "system.hpp"
+
+#include "core/busclient.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 
@@ -13,6 +16,28 @@ namespace NAwesome::System {
     CModule& module() {
         static CModule M;
         return M;
+    }
+
+    CBusLink& systemBus() {
+        static CBusLink L;
+        return L;
+    }
+
+    static void systemBusInit() {
+        auto& L = systemBus();
+        L.onLost = [](const std::string& err) {
+            HyprlandAPI::addNotification(supervisor().handle(), "[awesome] system bus lost: " + err, CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
+        };
+        L.dropOwned = []() {
+            lightBusDropped();
+            audioBusDropped();
+        };
+        try {
+            L.open(true);
+            L.sync();
+        } catch (const std::exception& E) {
+            HyprlandAPI::addNotification(supervisor().handle(), std::string{"[awesome] no system bus, brightness off: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
+        }
     }
 
     namespace {
@@ -59,7 +84,9 @@ namespace NAwesome::System {
     }
 
     void CModule::init() {
-        audioInit(); // the system bus and the lights' scan first
+        systemBusInit(); // before the units that talk on it
+        lightInit();
+        audioInit();
         padInit(); // the settle timer stands before any hotplug can land
         Controls::doors() = {
             .setLevel = setLevel,
@@ -73,6 +100,7 @@ namespace NAwesome::System {
             .setMuted = setMuted,
             .refresh =
                 []() {
+                    lightRefresh();
                     audioRefresh();
                     padPublish();
                 },
@@ -93,13 +121,17 @@ namespace NAwesome::System {
     void CModule::teardown() {
         // this module tears down FIRST (reverse priority): the units go
         // out in the order their pending work can still fire — the settle
-        // timer (pad) before the Jobs callbacks (audio), whose in-flight
-        // deliveries are voided by the generation bumps inside audioExit
-        // before the notify model dies a beat later. The control center's
-        // doors close first and its values go last.
+        // timer (pad) before the Jobs callbacks (audio) and the logind
+        // replies (light), whose in-flight deliveries are voided by the
+        // generation bumps inside their exits before the notify model dies
+        // a beat later; then the bus (fd sources out BEFORE the connection
+        // dies). The control center's doors close first and its values go
+        // last.
         Controls::doors() = {};
         padExit();
         audioExit();
+        lightExit();
+        systemBus().close();
         Controls::state() = {};
     }
 
