@@ -126,11 +126,11 @@ namespace NAwesome::Notify::Policy {
     }
 
     bool bannersOff(const SNotif& n) {
-        return n.urgency < 2 && ((appFlags(n.appKey) & BANNERS_OFF) || mutedUntil(chatKey(n)) > 0);
+        return n.urgency < 2 && ((appFlags(n.appKey) & BANNERS_OFF) || mutedUntil(chatKey(n)) > 0 || Quiet::now());
     }
 
     bool soundsOff(const SNotif& n) {
-        return n.urgency < 2 && ((appFlags(n.appKey) & SOUNDS_OFF) || mutedUntil(chatKey(n)) > 0);
+        return n.urgency < 2 && ((appFlags(n.appKey) & SOUNDS_OFF) || mutedUntil(chatKey(n)) > 0 || Quiet::now());
     }
 
 } // namespace NAwesome::Notify::Policy

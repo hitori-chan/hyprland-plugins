@@ -76,6 +76,8 @@ namespace NAwesome::Notify {
         }
     }
 
+    static NAwesome::CHop pendingQuiet;
+
     // Where the last pointer MOTION landed. A pointer crossing onto another
     // monitor moves first and focuses the monitor after; a keyboard focus
     // move warps the pointer (no motion) and then focuses: only the motion
@@ -127,6 +129,12 @@ namespace NAwesome::Notify {
             if (!notifs.empty() || centerVisible())
                 notifChanged();
         });
+        // quiet automatically: a share starting or ending, a window going
+        // fullscreen, the focus landing on one — rechecked out of the
+        // emission (a share's comes from inside a frame copy)
+        supervisor().listen(EV.screenshare.state, [](bool, uint8_t, const std::string&) { pendingQuiet.arm(Quiet::refresh); });
+        supervisor().listen(EV.window.fullscreen, [](PHLWINDOW) { pendingQuiet.arm(Quiet::refresh); });
+        supervisor().listen(EV.window.active, [](PHLWINDOW, Desktop::eFocusReason) { pendingQuiet.arm(Quiet::refresh); });
         supervisor().listen(EV.config.reloaded, []() {
             NAwesome::refreshIconTheme();
             resetFallbackCache();
@@ -143,6 +151,7 @@ namespace NAwesome::Notify {
     void CModule::teardown() {
         lastMovePos = {-1, -1};
         pendingSuspend.reset();
+        pendingQuiet.reset();
         suspendPresses = 0;
         suspendSet.reset();
         pendingCenter.reset();
@@ -197,6 +206,8 @@ namespace NAwesome::Notify {
                     return N->messages.empty() ? N->body : N->fitMemo.rev == N->rev ? N->fitMemo.body : std::string{};
             return std::string{};
         }
+        if (verb == "quiet") // "now:N hushed:N" — an arrival would hold; a critical banner shows without its words
+            return std::format("now:{} hushed:{}", Quiet::now() ? 1 : 0, Quiet::hushed() ? 1 : 0);
 #endif
         if (verb == "clear") { // the scripted reset
             static NAwesome::CHop pendingClear;

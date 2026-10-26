@@ -321,7 +321,7 @@ in the bar. The bell reads the `notify` model directly (the unseen
 dot, DND, center state) and calls `notify.center()`; no bus. Its right
 click opens a local menu (the client list's kind: rows the plugin
 builds, each with its action or its cascade) over notify's own doors:
-DND for a while, the silenced apps and chats. Launcher: the shared
+DND for a while, quiet automatically, the silenced apps and chats. Launcher: the shared
 desktop index, history, completion, 4 KiB UTF-8 paste limit.
 
 ### windows
@@ -369,7 +369,14 @@ growing window took several. It is memoized on the card per revision,
 width, line budget and font, and refit in the warm, never per frame. The
 menu's switches (an app's banners and sounds, a chat's mute) persist
 through the core's
-`StateStore` and gate the arrival, the DND resume and the re-pop alike.
+`StateStore` and gate the arrival, the DND resume and the re-pop alike;
+quiet automatically (`notify/quiet.cpp`) joins that gate while its
+options hold — a focused fullscreen window, a monitor or region share
+with a consumer (`outputCopyFBState`: a frame copied within half a
+second, or one waiting on a still screen; never the session alone, which
+a wlr-screencopy client keeps until it disconnects). The share is cached
+for the render, so a critical banner's hushed layout agrees between warm
+and draw.
 Inline reply, sound through Jobs. The model API is the module's public
 face — `system` posts its feedback cards through it (fixed IDs, low
 urgency, a value, a glyph that makes it a capsule).

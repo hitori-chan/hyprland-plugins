@@ -30,6 +30,7 @@
 
 #include "pixel_model.hpp"
 
+#include "../core/options.hpp"
 #include "../core/raster.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
@@ -345,7 +346,7 @@ namespace NAwesome::Notify {
         void       dismissAllLive(bool offShadeToo = false); // "Clear all": every shade row goes; the DND queue stays
         void       dismissApp(const std::string& key);    // a stack's close button or right-click; the key may be (app, group)
         void       dismissAppAll(const std::string& appKey); // the card menu's "Close All": every shade card of the app, its chats too
-        void       lowerBanners(const std::string& appKey);  // a menu switch silenced the app (or a chat): its soft banners go to the shade now
+        void       lowerBanners(const std::string& appKey);  // a menu switch silenced the app (or a chat), "" quiet began: the soft banners go to the shade now
         std::string groupKeyOf(const SP<SNotif>& n);       // the stack's identity: the app key, sub-keyed by the declared group
         bool       stackable(const SP<SNotif>& n);        // may join its app's stack: a card with an app
         void       absorbPopped();                // opening the shade parks the popped stack
@@ -399,7 +400,7 @@ namespace NAwesome::Notify {
         int64_t     mutedUntil(const std::string& chat); // 0 = not muted
         // until <= now unmutes
         void        mute(const std::string& chat, int64_t until, std::string_view label = {});
-        bool        bannersOff(const SNotif& n); // the app's switch, or its chat muted
+        bool        bannersOff(const SNotif& n); // the app's switch, its chat muted, or quiet automatically
         bool        soundsOff(const SNotif& n);
         void        prune(); // forget the mutes that ended
 
@@ -413,6 +414,20 @@ namespace NAwesome::Notify {
         inline constexpr size_t MAX_SILENCED = 64;
         std::vector<SSilenced>  silenced();
         void                    restore(const SSilenced& s); // the app's switches back on, or the chat unmuted
+    }
+
+    // ---- quiet.cpp: quiet automatically ----
+    //
+    // Two remembered switches (core/options.hpp), off until the bell's menu
+    // turns them on: banners and sounds hold while the focused window is
+    // fullscreen, or while a display (or a region of one) is shared.
+    namespace Quiet {
+        bool on(eOption o);
+        void set(eOption o, bool enable); // QUIET_FULLSCREEN or QUIET_SHARING
+        bool now();                       // an arrival holds now (critical aside)
+        bool hushed();                    // a share is up: a critical banner shows without its words
+        void refresh();                   // a share, a fullscreen or the focus moved (deferred out of its emission)
+        void exit();
     }
 
     // ---- bus.cpp: the connection ----

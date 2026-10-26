@@ -524,6 +524,13 @@ cleanup_harness_core() {
 	[[ "${HARNESS_CLEANED:-0}" == 1 ]] && return
 	HARNESS_CLEANED=1
 	stop_capture
+	if [[ -n "${SHARE_PID:-}" ]]; then
+		if grep -Fzxq -- "$REPO/devtools/sharehold" "/proc/$SHARE_PID/cmdline" 2>/dev/null; then
+			kill "$SHARE_PID" 2>/dev/null || true
+			wait "$SHARE_PID" 2>/dev/null || true
+		fi
+		SHARE_PID=""
+	fi
 	if [[ -n "${CLIP_PID:-}" ]]; then
 		if grep -Fzxq -- "$REPO/devtools/cliphold" "/proc/$CLIP_PID/cmdline" 2>/dev/null; then
 			kill "$CLIP_PID" 2>/dev/null || true
@@ -599,6 +606,7 @@ write_stress_cfg() {
 		echo 'hl.permission(".*input-capture$", "input-capture", "allow")'
 		echo 'hl.permission(".*vkbd$", "keyboard", "allow")'
 		echo 'hl.permission(".*grim$", "screencopy", "allow")'
+		echo 'hl.permission(".*sharehold$", "screencopy", "allow")'
 		awk '{ print } /misc = \{/ { print "\t\tdisable_watchdog_warning = 1," }' "$GATE_DIR/nested.lua"
 		echo 'hl.window_rule({ match = { class = "foot|mpv|corpseA|corpseB|tuckmax|tuckfloat|tuckfs|csdfollow|csdfall|csdmem|csdsmall|exitfoot|w1base|w1over|w1gone|w1prev|w2max|glassprobe" }, float = true })'
 	} > "$CFG"
