@@ -235,7 +235,8 @@ close_wait "$(csdsmall_addr)"
 # above — and the solver measured the parent from box + margin).
 if python3 -c 'import gi; gi.require_version("Gtk", "3.0"); gi.require_version("Gdk", "3.0"); from gi.repository import Gdk, Gtk' 2>/dev/null; then
 	GG_LOG="$STATE/gtkgrid.log" GG_WL="$STATE/gtkgrid.wl"
-	GG_BLOCKS="red=255,0,0 green=0,255,0 blue=0,0,255 yellow=255,255,0 magenta=255,0,255 cyan=0,255,255"
+	# opposite corners of the grid: an offset or a scale error misses one
+	GG_BLOCKS="red=255,0,0 cyan=0,255,255"
 	# one pointer device for the whole section: a popup's grab must survive
 	# from the press that opened it to the click on its item
 	rm -f "$STATE/vp.fifo"; mkfifo "$STATE/vp.fifo"
@@ -293,7 +294,7 @@ print(next((c['address'] for c in json.load(sys.stdin) if c['title']=='gtkgrid')
 				bad "[$1] a click on the drawn $name block hits it (client: '$got')"
 		done < <(gg_shot "$1" 500 $GG_BLOCKS)
 		# a failed capture or a crashed finder yields no blocks at all: that
-		# ran zero checks, which must not read as six passes
+		# ran zero checks, which must not read as passes
 		((found > 0)) || bad "[$1] the color blocks were searched for in the capture"
 	}
 	gg_menu() { # gg_menu <label>: open the menu by its drawn button, click the drawn violet item
