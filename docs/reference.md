@@ -46,8 +46,8 @@ capture), `upstream` (cancelled before the plugin) or `-` (passed to the
 compositor). A run of scroll events on one axis is one entry with its
 count. It is the first stop when a click goes missing.
 
-The gate build adds `shown`, `menu`, `quiet`, `controls`, `outputs` and
-`drawstats` ([testing](testing.md)).
+The gate build adds `cells`, `shown`, `menu`, `quiet`, `controls` and
+`outputs` ([testing](testing.md)).
 
 ## Configuration
 

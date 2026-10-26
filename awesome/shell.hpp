@@ -18,9 +18,7 @@ namespace NAwesome::Shell {
         void onPointerAxis(const IPointer::SAxisEvent&, Event::SCallbackInfo&) override;
         void onKey(const IKeyboard::SKeyEvent&, Event::SCallbackInfo&) override;
         void onInputBlocked() override;
-#ifdef AWESOME_GATE
-        std::optional<std::string> handleCtl(const std::string& verb) const override;
-#endif
+        std::optional<std::string> handleCtl(const std::string& verb) const override; // the gate's verbs
     };
     CModule& module();
 }

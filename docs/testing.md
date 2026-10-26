@@ -105,10 +105,11 @@ All in `awesome/gate/`, runnable from a clone as-is:
 | `shot.sh [out.png]` | screenshot the nested, plus a 2x crop of the bar |
 | `sweep.sh BASE TIP` | build and unit-test every commit in the range against the staged headers; run before a push and after a history rewrite |
 
-The gate build adds `hyprctl awesome` verbs for the batteries: `shown`
-(the newest card's body as drawn), `menu` (the open card menu's rows),
-`quiet` (the quiet state), `controls` (the control center's values),
-`outputs` (the volume's sinks) and `drawstats` (draw timings).
+The gate build adds `hyprctl awesome` verbs for the batteries: `cells`
+(the bar's click cells), `shown` (the newest card's body as drawn),
+`menu` (the open card menu's rows), `quiet` (the quiet state),
+`controls` (the control center's values) and `outputs` (the volume's
+sinks).
 
 The Wayland fixtures and D-Bus fakes the batteries drive are in
 [`devtools/`](../devtools/README.md).

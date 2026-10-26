@@ -453,7 +453,8 @@ warm (cold, upstream's lazy shader compiles add ~100 ms to its draw).
 - First uses are paid early: font faces by the preload, icon names from
   GTK's caches, image pixels on the raster worker. The plugin's load
   warms the bar once (~62 ms, mostly the CJK fallback for the tags).
-- The draw re-runs layout each frame on purpose: the gate's `drawstats`
-  measures ~90 µs for a card and ~90 µs for the bar at worst, about 1 %
-  of a 60 Hz frame. A cached display list would save ~100 µs at the cost
-  of stale-content risk across every state source.
+- The draw re-runs layout each frame on purpose: a draw profile in the
+  gate build (2026-10-25) measured ~90 µs for a card and ~90 µs for the
+  bar at worst, about 1 % of a 60 Hz frame. A cached display list would
+  save ~100 µs at the cost of stale-content risk across every state
+  source.
