@@ -22,6 +22,10 @@
 #include "transcript.hpp"
 
 #include "../core/jobs.hpp"
+#include "../core/state.hpp"
+#include "../core/walltimer.hpp"
+
+#include <ctime>
 
 namespace NAwesome::Notify {
 
@@ -44,7 +48,8 @@ namespace NAwesome::Notify {
     namespace Model {
         static SP<CEventLoopTimer> expiry;
         static uint32_t            nextId     = 1;
-        static bool                suspended  = false; // DND
+        static bool                suspended  = false; // DND: the remembered option, as last applied
+        static CWallTimer          dndEnd;             // a timed DND's end, through a suspend too
         static uint32_t            heldBanner = 0;     // the popup under the pointer: its countdown is paused
 
         // a hostile sender's payload caps: menu rows and <img> rows beyond
@@ -547,8 +552,24 @@ namespace NAwesome::Notify {
             }
         }
 
-        void toggleSuspend() {
-            suspended = !suspended;
+        // DND is the option row: the live state follows it here — at init
+        // (a relog or an update keeps it), on every change, and when a
+        // timed one's end comes.
+        static void applySuspend() {
+            auto& O   = StateStore::inst().data().options;
+            auto  END = O.get(eOption::DND);
+            if (END > 0 && END <= (int64_t)std::time(nullptr)) {
+                O.set(eOption::DND, 0);
+                StateStore::inst().dirty();
+                END = 0;
+            }
+            dndEnd.arm(END > 0 ? END : 0);
+            if ((END != 0) == suspended) {
+                if (suspended)
+                    notifChanged(); // still on, to a new end
+                return;
+            }
+            suspended = END != 0;
             if (suspended) {
                 notifChanged(); // the shade's ⊖ lights up
                 return;         // visible cards live out their timeouts; new arrivals queue
@@ -569,8 +590,22 @@ namespace NAwesome::Notify {
             rearmExpiry();
         }
 
+        void setSuspend(int64_t until) {
+            if (StateStore::inst().data().options.set(eOption::DND, until))
+                StateStore::inst().dirty();
+            applySuspend();
+        }
+
+        void toggleSuspend() {
+            setSuspend(suspended ? 0 : -1);
+        }
+
         bool suspendedNow() {
             return suspended;
+        }
+
+        int64_t suspendEnd() {
+            return suspended ? StateStore::inst().data().options.get(eOption::DND) : 0;
         }
 
         // The client sent -1: critical always sticks
@@ -1437,14 +1472,17 @@ namespace NAwesome::Notify {
                 },
                 nullptr);
             g_pEventLoopManager->addTimer(expiry);
+            dndEnd.start(applySuspend);
+            applySuspend(); // the remembered DND holds from the first arrival
         }
 
         void exit() {
             if (expiry && g_pEventLoopManager)
                 g_pEventLoopManager->removeTimer(expiry);
             expiry.reset();
+            dndEnd.stop();
             notifs.clear();
-            suspended  = false;
+            suspended  = false; // the option stays: the next load applies it
             heldBanner = 0;
         }
     }

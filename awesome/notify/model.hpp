@@ -352,8 +352,13 @@ namespace NAwesome::Notify {
         void       repopAbsorbed(bool repop = true);      // closing it returns the parked stack to banners (or parks it for good)
         void       rearmExpiry();
         void       holdBanner(uint32_t id); // the hovered popup's countdown pauses; 0 releases (and restarts it)
-        void       toggleSuspend();         // DND; resume renders the queue, fresh timeouts
-        bool       suspendedNow();
+        // DND, remembered across sessions: 0 off, -1 until turned off, else
+        // its end (unix seconds; one already past turns it off). The resume
+        // renders the queue on fresh timeouts.
+        void                          setSuspend(int64_t until);
+        void                          toggleSuspend(); // off, or on until turned off
+        bool                          suspendedNow();
+        int64_t                       suspendEnd();  // while on: -1, or its end
         std::pair<uint32_t, uint32_t> badgeCounts(); // {bannered, resident} — the bell's two numbers
         uint32_t                      heldCount();   // the DND queue — the bell's dot while DND holds
         // The bell's dot: a card the center lists that it has not shown since
