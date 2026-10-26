@@ -162,6 +162,16 @@ namespace NAwesome::Shell {
         const auto WS = mon->m_activeWorkspace;
         return WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN && !(Menubar::isOpen && Menubar::mon.lock() == mon);
     }
+    // The work area starts below the strip: under it lie only the wallpaper
+    // and the shadows of the windows beneath (macOS's menu bar over the
+    // desktop picture), so its glass samples the wallpaper's precomputed
+    // blur — a live blur of it shimmered at the edge of every partial
+    // repaint, a terminal taking typing right below the bar. Not over a
+    // fullscreen client (the open menubar).
+    static bool stripOverWallpaper(PHLMONITOR mon) {
+        const auto WS = mon ? mon->m_activeWorkspace : nullptr;
+        return !WS || Fullscreen::controller()->getFullscreenModes(WS).internal != Fullscreen::FSMODE_FULLSCREEN;
+    }
 
     static void renderBar(PHLMONITOR mon, Render::CRenderContext* rctx) {
         const bool warm = rctx == nullptr;
@@ -201,7 +211,7 @@ namespace NAwesome::Shell {
         const auto   MB = P.mb;
         const double H  = P.h;
 
-        P.glass(CBox{MB.x, MB.y, MB.w, H}, color(cfg().getColor("plugin:awesome:shell:col_bg")));
+        P.glass(CBox{MB.x, MB.y, MB.w, H}, color(cfg().getColor("plugin:awesome:shell:col_bg")), 0, 2.f, stripOverWallpaper(mon));
 
         // ONE walk of the window list for all its consumers: per-workspace
         // urgency + occupancy (taglist) and this workspace's tasks (tasklist,
@@ -417,6 +427,9 @@ namespace NAwesome::Shell {
             // the renderer blur and disable occlusion under the strip for a
             // result nobody sees
             return NAwesome::blurOn() && !barHidden(mon) && color(cfg().getColor("plugin:awesome:shell:col_bg")).a < 1.0;
+        }
+        bool wallpaperGlass(PHLMONITOR mon) const override {
+            return stripOverWallpaper(mon);
         }
 
         void exit() {
