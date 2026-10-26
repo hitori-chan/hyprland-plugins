@@ -12,7 +12,8 @@ fi
 # the gate for a level "set elsewhere" and by an absolute set; else 0.56)
 # and the muted nodes (AW_WPCTL_MUTES_FILE's words "sink" and "source";
 # absent, the source alone). A relative step leaves the level: the step
-# checks read the command.
+# checks read the command. Two sinks, 41 and 42, the default 41 until
+# set-default writes AW_WPCTL_DEFAULT_FILE.
 level() {
 	local l=0.56
 	[[ -n "${AW_WPCTL_LEVEL_FILE:-}" && -s "$AW_WPCTL_LEVEL_FILE" ]] && l="$(<"$AW_WPCTL_LEVEL_FILE")"
@@ -35,7 +36,46 @@ mute() { # mute <sink|source> <0|1|toggle>
 	printf '%s' "$out" > "$AW_WPCTL_MUTES_FILE"
 }
 
+default_sink() {
+	local d=41
+	[[ -n "${AW_WPCTL_DEFAULT_FILE:-}" && -s "$AW_WPCTL_DEFAULT_FILE" ]] && d="$(<"$AW_WPCTL_DEFAULT_FILE")"
+	printf '%s' "$d"
+}
+star() { [[ "$(default_sink)" == "$1" ]] && printf '*' || printf ' '; }
+
 case "${1:-}" in
+status)
+	# the tree as WirePlumber prints it: Clients first, then Audio
+	cat <<-EOF
+	PipeWire 'pipewire-0' [1.4.9, gate@gate, cookie:1]
+	 └─ Clients:
+	        33. WirePlumber                         [1.4.9, gate@gate, pid:1]
+
+	Audio
+	 ├─ Devices:
+	 │      40. Gate Audio                          [alsa]
+	 │
+	 ├─ Sinks:
+	 │  $(star 41)   41. Gate Speakers                       [vol: $(level)]
+	 │  $(star 42)   42. Gate Headset                        [vol: 0.80]
+	 │
+	 ├─ Sources:
+	 │  *   43. Gate Microphone                     [vol: 1.00]
+	 │
+	 ├─ Filters:
+	 │
+	 └─ Streams:
+
+	Video
+	 ├─ Devices:
+	 │
+	 └─ Streams:
+	EOF
+	;;
+set-default)
+	[[ "$*" =~ ^set-default\ (41|42)$ ]] || exit 64
+	[[ -n "${AW_WPCTL_DEFAULT_FILE:-}" ]] && printf '%s\n' "${BASH_REMATCH[1]}" > "$AW_WPCTL_DEFAULT_FILE"
+	;;
 set-volume)
 	# a step is 5%; presses during a set accumulate into the next one
 	# (N*5%, capped at 100%); the limit is 1.0, or the level past it. The
