@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+# devtools/fakes/fake-sysbus — the services of the gate's PRIVATE system
+# bus (DBUS_SYSTEM_BUS_ADDRESS), so the battery exercises the plugin's real
+# D-Bus paths without ever touching the host's lights or sensors:
+#
+# - org.freedesktop.login1: the light paths call Session.SetBrightness;
+#   here it writes the fake device under $AW_BACKLIGHT_DIR/<name>/brightness
+#   ("backlight") or $AW_LEDS_DIR/<name>/brightness ("leds", the
+#   keyboard's) and logs the call to $AW_LOGIND_LOG. Any session path
+#   answers (auto, session-N, _3N).
+# - net.hadess.SensorProxy (iio-sensor-proxy): an ambient light sensor in
+#   lux whose reading is the number in $AW_ALS_FILE (no file: no sensor).
+#   LightLevel moves only while a client holds a claim, as the daemon's
+#   does: the file is polled and a change is announced by PropertiesChanged.
+#   ClaimLight / ReleaseLight are logged to $AW_LOGIND_LOG too.
+import os
+import sys
+import warnings
+
+from gi.repository import Gio, GLib
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)  # register_object: fine for a fake
+
+BUS_NAME = "org.freedesktop.login1"
+XML = """
+<node>
+  <interface name="org.freedesktop.login1.Session">
+    <method name="SetBrightness">
+      <arg type="s" name="subsystem" direction="in"/>
+      <arg type="s" name="name" direction="in"/>
+      <arg type="u" name="brightness" direction="in"/>
+    </method>
+  </interface>
+  <interface name="org.freedesktop.login1.Manager">
+    <method name="GetSession">
+      <arg type="s" name="id" direction="in"/>
+      <arg type="o" name="path" direction="out"/>
+    </method>
+  </interface>
+</node>
+"""
+BACKLIGHT = os.environ.get("AW_BACKLIGHT_DIR", "")
+LEDS = os.environ.get("AW_LEDS_DIR", "")
+LOG = os.environ.get("AW_LOGIND_LOG", "")
+ALS = os.environ.get("AW_ALS_FILE", "")
+NODE = Gio.DBusNodeInfo.new_for_xml(XML)
+SENSOR_XML = """
+<node>
+  <interface name="net.hadess.SensorProxy">
+    <method name="ClaimLight"/>
+    <method name="ReleaseLight"/>
+    <property name="HasAmbientLight" type="b" access="read"/>
+    <property name="LightLevelUnit" type="s" access="read"/>
+    <property name="LightLevel" type="d" access="read"/>
+  </interface>
+</node>
+"""
+SENSOR = Gio.DBusNodeInfo.new_for_xml(SENSOR_XML).interfaces[0]
+SENSOR_PATH = "/net/hadess/SensorProxy"
+claims = set()
+reading = None  # the lux last announced
+
+
+def log(line):
+    if LOG:
+        with open(LOG, "a") as f:
+            f.write(line + "\n")
+
+
+def on_call(conn, sender, path, iface, method, params, invocation):
+    if method == "SetBrightness":
+        subsystem, name, value = params.unpack()
+        root = {"backlight": BACKLIGHT, "leds": LEDS}.get(subsystem, "")
+        target = os.path.join(root, name, "brightness")
+        if not root or "/" in name or not os.path.exists(target):
+            invocation.return_dbus_error("org.freedesktop.login1.NoSuchDevice", f"no {subsystem} {name}")
+            return
+        with open(target, "w") as f:
+            f.write(str(value))
+        log(f"SetBrightness {path} {name} {value}")
+        invocation.return_value(None)
+    elif method == "GetSession":
+        invocation.return_value(GLib.Variant("(o)", ("/org/freedesktop/login1/session/auto",)))
+    else:
+        invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)
+
+
+def lux():
+    try:
+        with open(ALS) as f:
+            return float(f.read().strip())
+    except (OSError, ValueError):
+        return 0.0
+
+
+def on_sensor_call(conn, sender, path, iface, method, params, invocation):
+    global reading
+    if method == "ClaimLight":
+        claims.add(sender)
+        reading = lux()
+        log("ClaimLight")
+    elif method == "ReleaseLight":
+        claims.discard(sender)
+        log("ReleaseLight")
+    else:
+        invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)
+        return
+    invocation.return_value(None)
+
+
+def on_sensor_get(conn, sender, path, iface, prop):
+    if prop == "HasAmbientLight":
+        return GLib.Variant("b", bool(ALS) and os.path.exists(ALS))
+    if prop == "LightLevelUnit":
+        return GLib.Variant("s", "lux")
+    if prop == "LightLevel":
+        return GLib.Variant("d", reading if reading is not None else 0.0)
+    return None
+
+
+def poll_sensor(conn):
+    global reading
+    if claims and ALS:
+        now = lux()
+        if now != reading:
+            reading = now
+            conn.emit_signal(None, SENSOR_PATH, "org.freedesktop.DBus.Properties", "PropertiesChanged",
+                             GLib.Variant("(sa{sv}as)", ("net.hadess.SensorProxy", {"LightLevel": GLib.Variant("d", now)}, [])))
+    return True
+
+
+def main():
+    addr = os.environ.get("DBUS_SYSTEM_BUS_ADDRESS")
+    if not addr:
+        sys.exit("fake-sysbus: DBUS_SYSTEM_BUS_ADDRESS is not set (refusing the real system bus)")
+    conn = Gio.DBusConnection.new_for_address_sync(
+        addr, Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION, None, None)
+    conn.register_object("/org/freedesktop/login1", NODE.interfaces[1], on_call)
+    # the plugin addresses its own session explicitly when its cgroup names
+    # one, else "auto": register both shapes it can produce
+    session = NODE.interfaces[0]
+    conn.register_object("/org/freedesktop/login1/session/auto", session, on_call)
+    for line in open("/proc/self/cgroup"):
+        mark = line.rfind("session-")
+        if mark >= 0 and line.strip().endswith(".scope"):
+            sid = line.strip()[mark + len("session-"):-len(".scope")]
+            if sid.isdigit():
+                conn.register_object(f"/org/freedesktop/login1/session/{sid}", session, on_call)
+    Gio.bus_own_name_on_connection(conn, BUS_NAME, Gio.BusNameOwnerFlags.NONE, None, None)
+    conn.register_object(SENSOR_PATH, SENSOR, on_sensor_call, on_sensor_get, None)
+    Gio.bus_own_name_on_connection(conn, "net.hadess.SensorProxy", Gio.BusNameOwnerFlags.NONE, None, None)
+    GLib.timeout_add(100, poll_sensor, conn)
+    GLib.MainLoop().run()
+
+
+main()

@@ -11,8 +11,9 @@
 #     and SNI watcher own their names there, and every bus-activated
 #     service (portals, dconf) sees the NESTED display, never the host's
 #     or the user's;
-#   * a private system bus with a fake logind: the brightness path runs
-#     its real D-Bus calls against a fake backlight, never the panel;
+#   * a private system bus with fake services (devtools/fakes/fake-sysbus):
+#     the light paths run their real D-Bus calls against fake lights and a
+#     fake light sensor, never the host's;
 #   * the caller's XDG_STATE/CACHE/CONFIG_HOME (the harness points them at
 #     its scratch state, so real apps in the nested keep their settings
 #     there, not in the user's xfconf/dconf).
