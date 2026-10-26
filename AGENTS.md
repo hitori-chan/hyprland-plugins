@@ -65,7 +65,8 @@ stages the fork build's headers, builds both variants, and runs the
 batteries against a nested Hyprland. Default tier `quick` (~1 min);
 `-b windows` alone for a geometry/CSD change; `-b all` for a bump or a
 release. Keep it lean: retire a check once its code is battle-tested,
-gate new behavior with discriminating checks.
+gate new behavior with discriminating checks, and wait on state, never
+the clock (`docs/testing.md`, Waiting; `-p` profiles a run).
 `bash awesome/gate/sweep.sh origin/main HEAD` builds and unit-tests every
 unpushed commit against the staged headers: run it before a push and
 after any history rewrite (it skips build inputs it already verified).

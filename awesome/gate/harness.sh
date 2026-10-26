@@ -138,6 +138,12 @@ hq() {
 	timeout 10 hyprctl -i "$SIG" "$@"
 }
 dsp()     { hq dispatch "$1" >/dev/null 2>&1; }
+# settle: what the last input or request armed has run. libwayland drains
+# the idle callbacks (every hop, and a hop's own hops) after each dispatch,
+# so a request read later sees their work: one round trip is the barrier.
+# Asynchronous effects (a helper process, a D-Bus answer, a client's
+# commit, a timer) are not covered: poll for those (until_is).
+settle()  { hq awesome count >/dev/null 2>&1; }
 clients() { hq clients -j 2>/dev/null; }
 ws()      { hq activeworkspace -j | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])'; }
 reserved() { hq monitors -j | python3 -c 'import json,sys;print(",".join(map(str,json.load(sys.stdin)[0]["reserved"])))'; }
@@ -242,7 +248,6 @@ launch_warmup() {
 }
 vp() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" "$MON_W" "$MON_H" >/dev/null 2>&1; }
 vk() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vkbd" >/dev/null 2>&1; } # keys need no extent
-CAPTURE_DIR=1 # the jitter's direction, alternated across captures (not reset per call)
 # The private host's output: the nested's PRESENTED swapchain buffers, which
 # a screencopy of the nested cannot show (it reads the nested's mirror copy,
 # or renders a fresh frame for it). Never the live session's display.
@@ -252,37 +257,40 @@ capture_host() { # capture_host <output>
 	[[ -n "$host" && "$host" != "${LIVE_WL:-}" ]] || return 1
 	timeout 3 env WAYLAND_DISPLAY="$host" grim "$1" >/dev/null 2>&1
 }
+# png_size <file>: "W H" from the PNG's IHDR
+png_size() {
+	local -a b
+	read -ra b < <(od -An -tu1 -j16 -N8 "$1" 2>/dev/null)
+	((${#b[@]} == 8)) || return 1
+	echo "$(((b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3])) $(((b[4] << 24) | (b[5] << 16) | (b[6] << 8) | b[7]))"
+}
 capture_nested() { # capture_nested <output>: tolerate a transient screencopy denial
-	local out=$1
-	# The nested renders on damage: start grim, then jitter the
-	# virtual pointer so a frame is produced while the screencopy waits. An
-	# idle nested session can otherwise starve the capture to a timeout.
-	# The jitter MUST be a real delta: a fresh nested parks its pointer at
-	# the output center, so the old absolute 'move 640 400' was a no-op with
-	# no damage and the whole launch starved (17-min transparent window).
-	# Alternate direction so repeated captures do not drift the pointer.
-	local jitter_pid=""
+	local out=$1 gpid jpid
+	# The nested renders on damage: grim waits for a frame, so the virtual
+	# pointer jitters (a real 2 px out and back, every 50 ms) until grim
+	# has one. A fresh nested parks its pointer at the output center, so an
+	# absolute move there is no damage and starves the capture (the old
+	# 'move 640 400': a 17-min transparent launch window). Low compression:
+	# the frame lives on tmpfs for a few reads.
 	for _ in 1 2 3; do
-		timeout 8 env WAYLAND_DISPLAY="$WL" grim "$out" >/dev/null 2>&1 &
-		local gpid=$!
-		( sleep 0.4; printf 'rel %d %d\nsleep 10\n' $((CAPTURE_DIR * 2)) $((CAPTURE_DIR * 2)) | vp ) &
-		jitter_pid=$!
-		CAPTURE_DIR=$((-CAPTURE_DIR))
+		timeout 8 env WAYLAND_DISPLAY="$WL" grim -l 1 "$out" >/dev/null 2>&1 &
+		gpid=$!
+		(while kill -0 "$gpid" 2>/dev/null; do
+			printf 'rel 2 2\nsleep 25\nrel -2 -2\nsleep 25\n'
+			sleep 0.05
+		done | vp) &
+		jpid=$!
 		if wait "$gpid"; then
-			wait "$jitter_pid" 2>/dev/null
+			wait "$jpid" 2>/dev/null
 			# A capture of a different size is a broken assumption, not a
 			# transient error: every pixel metric derives from MON_WxMON_H, so
 			# a drifted frame would poison downstream measurements silently.
 			# Drop it and retry.
-			python3 -c 'import sys
-from PIL import Image
-sys.exit(0 if Image.open(sys.argv[1]).size == (int(sys.argv[2]), int(sys.argv[3])) else 1)' "$out" "$MON_W" "$MON_H" 2>/dev/null || {
-				rm -f -- "$out"
-				continue
-			}
-			return 0
+			[[ "$(png_size "$out")" == "$MON_W $MON_H" ]] && return 0
+			rm -f -- "$out"
+			continue
 		fi
-		kill "$jitter_pid" 2>/dev/null
+		wait "$jpid" 2>/dev/null
 		sleep 0.2
 	done
 	return 1
@@ -294,6 +302,9 @@ cs=json.load(sys.stdin)
 print(1 if ($1) else 0)" ; }
 expect() { # expect <name> <python-expr-over-cs>
 	[[ "$(pyc "$2")" == "1" ]] && ok "$1" || bad "$1"
+}
+expect_by() { # expect_by <seconds> <name> <python-expr-over-cs>: a final state a client reaches
+	until_is "$1" 1 pyc "$3" && ok "$2" || bad "$2"
 }
 
 # Per-battery accounting: the gate brackets each battery with
@@ -326,8 +337,8 @@ battery_end() {
 # loop BEFORE battery_end so the result counts into this battery; lifecycle
 # is exempt (its tail tears the nested down itself, so the query is empty
 # for the wrong reason).
+client_classes() { clients | python3 -c 'import json,sys;print(" ".join(sorted({c["class"] for c in json.load(sys.stdin)})))' 2>/dev/null; }
 assert_desktop_clean() {
-	sleep 0.5
 	local who
 	# a dead nested has no clients either: that is a failure, never "clean"
 	if ! validated_nested_pid >/dev/null 2>&1; then
@@ -335,7 +346,9 @@ assert_desktop_clean() {
 		GUARD_CHECKS=$((GUARD_CHECKS + 1))
 		return
 	fi
-	who="$(clients | python3 -c 'import json,sys;print(" ".join(sorted({c["class"] for c in json.load(sys.stdin)})))' 2>/dev/null)"
+	# a close the battery sent last may still be unmapping
+	until_is 2 "" client_classes
+	who="$(client_classes)"
 	if [[ -z "$who" ]]; then
 		ok "$1: leaves the nested client-free"
 	else

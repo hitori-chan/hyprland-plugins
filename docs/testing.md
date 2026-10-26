@@ -40,9 +40,10 @@ make -C awesome gate ARGS="-s ~/repo/Hyprland [-b quick|all|LIST] [-k LIST]"
 - `-s DIR` stages that fork build's headers (and verifies its
   `version.h`), builds both variants against them, and runs
   `DIR/build/Hyprland`.
-- `-b` picks the batteries: `quick` (the default, ~1 min smoke), `all`,
-  or a list of `shell`, `windows`, `notify`, `system`, `pipeline`,
-  `lifecycle` (run in that order). `-k` skips some.
+- `-b` picks the batteries: `quick` (the default, ~1 min smoke), `all`
+  (~2.5 min with a warm build cache), or a list of `shell`, `windows`,
+  `notify`, `system`, `pipeline`, `lifecycle` (run in that order). `-k`
+  skips some.
 - Run `-b windows` alone for a geometry change and `-b all` for a fork
   bump or a release.
 
@@ -55,6 +56,22 @@ signal death fails the gate and keeps the evidence), not by log greps.
 New behavior gets a discriminating check, one that fails against the old
 code. A check is retired once its code stops changing; dropping one is a
 reviewable diff.
+
+### Waiting
+
+A battery waits on what it checks, never on the clock:
+
+- `settle` (one `hyprctl` round trip) is the barrier for anything that
+  runs through a hop: libwayland drains the compositor's idle callbacks
+  after every dispatch.
+- What runs past a hop (a subprocess, a D-Bus reply, a timer, an image
+  decode, a client's configure, a texture's warm-up) is polled:
+  `until_is`/`until_ok` on state, `settled CLASS` for a window's box,
+  `shot_until` for the frame that draws a change, `hyprctl awesome busy`
+  for the wpctl chains. A poll waits for every condition its frame is
+  judged on, so a check of what must not draw reads the new frame.
+- A fixed wait stays only where nothing is observable: that something
+  did not happen after an asynchronous trigger.
 
 `-p TRACE` writes a per-line timing trace of the batteries;
 `python3 awesome/gate/profile.py TRACE [N]` ranks the battery lines and
