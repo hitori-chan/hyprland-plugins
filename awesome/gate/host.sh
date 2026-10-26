@@ -105,7 +105,7 @@ aq_pinned_libdir() {
 		rm -rf "$src" "$src.build" && mkdir -p "$src" &&
 			git -C "$AQ_SRC" archive "$rev" | tar -x -C "$src" &&
 			cmake -S "$src" -B "$src.build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" >/dev/null &&
-			cmake --build "$src.build" -j"$(nproc)" >/dev/null && cmake --install "$src.build" >/dev/null || {
+			cmake --build "$src.build" -j"${HYPR_HARNESS_JOBS:-1}" >/dev/null && cmake --install "$src.build" >/dev/null || {
 			echo "host: building aquamarine $rev failed" >&2
 			return 1
 		}

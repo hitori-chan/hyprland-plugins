@@ -21,6 +21,7 @@
 # system bus) goes to $HYPR_HARNESS, default ~/.local/share/hypr-nested.
 set -u
 
+source "$(dirname "${BASH_SOURCE[0]}")/memcap.sh" # the run's memory cap: before anything builds or launches
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HARNESS_DIR="${HYPR_HARNESS:-$HOME/.local/share/hypr-nested}"
 mkdir -p "$HARNESS_DIR"
