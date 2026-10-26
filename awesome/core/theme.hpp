@@ -37,6 +37,14 @@ namespace NAwesome {
         return M.col;
     }
 
+    // a hover's step for an ink already at full strength (the accent, the
+    // urgent red): toward white, its alpha kept. Not per draw call: the
+    // ctor converts to OkLab (the bar lifts its palette once a frame).
+    inline CHyprColor lifted(const CHyprColor& c) {
+        constexpr double K = 0.4;
+        return CHyprColor{(float)(c.r + (1 - c.r) * K), (float)(c.g + (1 - c.g) * K), (float)(c.b + (1 - c.b) * K), (float)c.a};
+    }
+
     // the SP form: the schema's color values are held as ConfigValue handles
     inline CHyprColor color(const SP<Config::Values::CColorValue>& v) {
         return color(v->value());

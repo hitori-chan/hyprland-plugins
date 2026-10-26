@@ -71,16 +71,17 @@ namespace NAwesome::Shell {
                     // never truly focused, but the compositor's focus fallback
                     // can leave focus on a hidden one — it must still read
                     // muted. A hovered task's text lifts a step (dim -> quiet
-                    // -> the bar's text), never a ground; hover damages but
-                    // never rewarms (crash class 4), so the warm builds both.
+                    // -> the bar's text; the accent and the red toward white),
+                    // never a ground; hover damages but never rewarms (crash
+                    // class 4), so the warm builds both.
                     const bool MIN    = WT::isMinimized(W);
                     const bool FOCUS  = !MIN && W == F.focus;
                     const bool URGENT = !MIN && !FOCUS && (W->m_hints & Desktop::View::WINDOW_HINT_URGENT);
                     const auto inkOf  = [&](bool hover) -> CHyprColor {
                         if (FOCUS)
-                            return F.active;
+                            return hover ? F.activeHover : F.active;
                         if (URGENT)
-                            return F.urgentFg;
+                            return hover ? F.urgentHover : F.urgentFg;
                         if (MIN)
                             return hover ? QUIET : F.empty;
                         return hover ? F.fg : QUIET;

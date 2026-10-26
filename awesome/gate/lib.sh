@@ -271,6 +271,21 @@ for y in range(y0, y1):
 print(n)
 PY
 }
+lifted_px() { # lifted_px <frame> <x0> <x1> [y0 y1] — the accent lifted toward white (hover) in a box
+	python3 - "$1" "$2" "$3" "${4:-0}" "${5:-$BAR_H}" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
+x0, x1, y0, y1 = (int(v) for v in sys.argv[2:6])
+n = 0
+for y in range(y0, y1):
+    for x in range(x0, x1):
+        r, g, b = px[x, y]
+        if b > 200 and g > 190 and 80 <= r <= 150:
+            n += 1
+print(n)
+PY
+}
 lit_px() { # lit_px <frame> <x0> <x1> <y0> <y1> — ink pixels (any channel past 60) in a box
 	python3 - "$1" "$2" "$3" "$4" "$5" <<'PY'
 import sys

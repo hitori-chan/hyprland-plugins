@@ -17,7 +17,7 @@ namespace NAwesome::Shell {
             // accent at semibold, an urgent one red, an occupied one the
             // bar's text, an empty one dim — no ground, no occupancy marks.
             // A hovered tag's text lifts a step (dim -> the bar's text ->
-            // white). Hover damages but never rewarms (crash class 4), so the
+            // white; the accent and the red toward white). Hover damages but never rewarms (crash class 4), so the
             // warm builds both variants of every tag.
             static constexpr double CELL_W = 26, CELL_H = 22, GAP = 2;
             static constexpr int    WEIGHT = 400, WEIGHT_VIEWED = 600;
@@ -27,9 +27,9 @@ namespace NAwesome::Shell {
             }
             static CHyprColor ink(const SFrame& F, int i, bool hover) {
                 if (viewed(F, i))
-                    return F.active;
+                    return hover ? F.activeHover : F.active;
                 if (F.urgent[i])
-                    return F.urgentFg;
+                    return hover ? F.urgentHover : F.urgentFg;
                 if (F.windows[i] > 0)
                     return hover ? NAwesome::tTitle() : F.fg;
                 return hover ? F.fg : F.empty;

@@ -233,10 +233,12 @@ namespace NAwesome::Shell {
 
         // one palette fetch per frame: color() memoizes the conversion but
         // still hashes per call, and the widgets make dozens
-        F.fg       = color(cfg().getColor("plugin:awesome:shell:col_fg"));
-        F.active   = color(cfg().getColor("plugin:awesome:shell:col_active"));
-        F.urgentFg = color(cfg().getColor("plugin:awesome:shell:col_urgent"));
-        F.empty    = color(cfg().getColor("plugin:awesome:shell:col_empty"));
+        F.fg          = color(cfg().getColor("plugin:awesome:shell:col_fg"));
+        F.active      = color(cfg().getColor("plugin:awesome:shell:col_active"));
+        F.urgentFg    = color(cfg().getColor("plugin:awesome:shell:col_urgent"));
+        F.empty       = color(cfg().getColor("plugin:awesome:shell:col_empty"));
+        F.activeHover = lifted(F.active);
+        F.urgentHover = lifted(F.urgentFg);
 
         // awesome's align layout: the left slot, the tasklist filling the
         // middle, the right slot laid from the edge inwards ([tray]

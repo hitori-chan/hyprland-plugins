@@ -27,6 +27,8 @@ chk "shell: starts on workspace 1" test "$(ws)" = 1
 printf 'move %s 13\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' "$(tag_cx 3)" | vp
 sleep 1.2
 chk "shell: clicking tag 三 switches to workspace 3" test "$(ws)" = 3
+# off the strip: under the pointer the viewed tag's accent lifts toward white
+printf 'move 900 500\nsleep 60\n' | vp; sleep 0.3
 capture_nested "$STATE/strip-ws3.png"
 # the viewed tag is accent text, the rest never accent
 chk "shell: the viewed tag draws in the accent" test "$(accent_px "$STATE/strip-ws3.png" 64 90)" -gt 15
@@ -55,6 +57,11 @@ read -r LIT1 CORNER1 <<<"$(tag_cell "$STATE/strip-hover5.png" 5)"
 echo "shell: tag 5 lit $LIT0 -> $LIT1, corner $CORNER0 -> $CORNER1" >&2
 chk "shell: hovering an empty tag lifts its text" test "$LIT1" -gt $(( LIT0 + 15 ))
 chk "shell: and paints no ground" test $(( CORNER1 - CORNER0 )) -le 3 -a $(( CORNER0 - CORNER1 )) -le 3
+# the viewed tag lifts as well: its accent steps toward white
+printf 'move %s 13\nsleep 60\n' "$(tag_cx 1)" | vp; sleep 0.5
+capture_nested "$STATE/strip-hover1.png"
+chk "shell: hovering the viewed tag lifts its accent" \
+	test "$(accent_px "$STATE/strip-hover1.png" 8 34)" -le 2 -a "$(lifted_px "$STATE/strip-hover1.png" 8 34)" -gt 6
 printf 'move 900 500\nsleep 60\n' | vp; sleep 0.3
 
 # ---- tasks: the title appears with the window, dims with minimize ----------
@@ -72,6 +79,14 @@ dsp "hl.plugin.awesome.restore()"; sleep 1
 capture_nested "$STATE/strip-task-restore.png"
 TASKBAND3="$(task_band "$STATE/strip-task-restore.png")"
 chk "shell: restoring re-brightens the chip" test "$TASKBAND3" -gt "$TASKBAND2"
+# the focused task is accent text, and lifts under the pointer as the rest do
+ACC0="$(accent_px "$STATE/strip-task-restore.png" 280 900)"
+chk "shell: the focused task draws in the accent" test "$ACC0" -gt 20
+printf 'move 400 13\nsleep 60\n' | vp; sleep 0.5
+capture_nested "$STATE/strip-task-hover.png"
+chk "shell: hovering the focused task lifts its accent" \
+	test "$(accent_px "$STATE/strip-task-hover.png" 280 900)" -le 2 -a "$(lifted_px "$STATE/strip-task-hover.png" 280 900)" -gt 20
+printf 'move 900 500\nsleep 60\n' | vp; sleep 0.3
 FT="$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), ''))")"
