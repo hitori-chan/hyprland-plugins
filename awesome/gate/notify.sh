@@ -134,7 +134,9 @@ ys = [y for y in range(int(sys.argv[3]), int(sys.argv[4]))
 print(max(ys) - min(ys) + 1 if ys else 0)
 PY
 }
-dsp "hl.dsp.exec_cmd('notify-send -a heroapp -t 2000 -i $HEROIMG \"Screenshot\" saved')"; sleep 1
+# its clock outlives the capture and the scans before the center opens
+# (~1.5 s): a banner that expired first is resident, and nothing re-pops
+dsp "hl.dsp.exec_cmd('notify-send -a heroapp -t 6000 -i $HEROIMG \"Screenshot\" saved')"; sleep 1
 chk "hero: the image card pops with its banner" test "$(bd)" = "banners:1 resident:0"
 capture_nested $STATE/hero-0-aw.png
 chk "hero: the banner leads with the card-wide preview" test "$(hero_px $STATE/hero-0-aw.png $BANNER_BAND)" -gt 8000
@@ -457,15 +459,18 @@ hq awesome center >/dev/null; sleep 0.4
 nclear
 
 # ---- hover holds a banner's clock ------------------------------------------
-dsp "hl.dsp.exec_cmd('notify-send -t 1200 \"hold me\" body')"; sleep 0.4
+# its 2 s clock outlives the capture and the scan before the pointer lands
+# (~1 s); after the leave, the check at ~1.35 s is past what was left of
+# it (a resumed clock would be out) and inside a restarted one
+dsp "hl.dsp.exec_cmd('notify-send -t 2000 \"hold me\" body')"; sleep 0.4
 capture_nested $STATE/banner-aw.png
 chk "banner: it is on screen (the card's pixels)" test "$(banner_px $STATE/banner-aw.png)" -gt 150
-printf 'move %s %s\nsleep 2400\n' "$POPX" "$((N_TOP + 20))" | vp
+printf 'move %s %s\nsleep 3200\n' "$POPX" "$((N_TOP + 20))" | vp
 chk "hover: the pointer holds the banner past its own clock" test "$(bd)" = "banners:1 resident:0"
 printf 'move %s %s\nsleep 150\n' "$((MON_W / 2))" "$((MON_H / 2))" | vp
-sleep 0.4
+sleep 1.2
 chk "hover: leaving restarts the clock, it has not expired yet" test "$(bd)" = "banners:1 resident:0"
-sleep 1.4
+sleep 1.2
 chk "hover: once the restarted clock runs out it retreats" test "$(bd)" = "banners:0 resident:1"
 nclear
 
