@@ -318,7 +318,10 @@ The strip (workspaces, tasks, tray, bell, battery, clock), the menubar
 launcher, and their input. Tasks are VIEWS of `windows` state;
 minimize/restore/focus are requests to `windows`, not state operations
 in the bar. The bell reads the `notify` model directly (the unseen
-dot, DND, center state) and calls `notify.center()`; no bus. Launcher: the shared
+dot, DND, center state) and calls `notify.center()`; no bus. Its right
+click opens a local menu (the client list's kind: rows the plugin
+builds, each with its action or its cascade) over notify's own doors:
+DND for a while, the silenced apps and chats. Launcher: the shared
 desktop index, history, completion, 4 KiB UTF-8 paste limit.
 
 ### windows

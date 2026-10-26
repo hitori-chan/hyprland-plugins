@@ -102,6 +102,29 @@ namespace NAwesome::Notify::Policy {
         prune(); // every write sweeps the mutes that ended
     }
 
+    std::vector<SSilenced> silenced() {
+        prune();
+        std::vector<SSilenced> out;
+        const auto&            APPS  = state().notifyApp;
+        const auto&            MUTES = state().notifyMute;
+        for (auto it = APPS.end(); it != APPS.begin() && out.size() < MAX_SILENCED;) {
+            --it;
+            out.push_back({it->first, it->second.label, it->second.value, 0});
+        }
+        for (auto it = MUTES.end(); it != MUTES.begin() && out.size() < MAX_SILENCED;) {
+            --it;
+            out.push_back({it->first, it->second.label, 0, it->second.value});
+        }
+        return out;
+    }
+
+    void restore(const SSilenced& s) {
+        if (s.until > 0)
+            mute(s.key, 0);
+        else
+            setAppFlag(s.key, BANNERS_OFF | SOUNDS_OFF, false);
+    }
+
     bool bannersOff(const SNotif& n) {
         return n.urgency < 2 && ((appFlags(n.appKey) & BANNERS_OFF) || mutedUntil(chatKey(n)) > 0);
     }

@@ -402,6 +402,17 @@ namespace NAwesome::Notify {
         bool        bannersOff(const SNotif& n); // the app's switch, or its chat muted
         bool        soundsOff(const SNotif& n);
         void        prune(); // forget the mutes that ended
+
+        // what the bell's Silenced Apps lists: the apps with a switch off,
+        // then the muted chats, each kind newest first (MAX_SILENCED rows)
+        struct SSilenced {
+            std::string key, label;
+            int         flags = 0; // an app's
+            int64_t     until = 0; // a chat's mute end (0: an app)
+        };
+        inline constexpr size_t MAX_SILENCED = 64;
+        std::vector<SSilenced>  silenced();
+        void                    restore(const SSilenced& s); // the app's switches back on, or the chat unmuted
     }
 
     // ---- bus.cpp: the connection ----
