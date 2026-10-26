@@ -115,7 +115,7 @@ namespace NAwesome::Windows {
         // the compositor is running its own activation from.
         supervisor().listen(Event::bus()->m_events.window.urgent, [](PHLWINDOW w) {
             // X11 asks (_NET_ACTIVE_WINDOW, DEMANDS_ATTENTION) are urgency-only
-            // in both modes (README): Wine sends them on every internal
+            // in both modes (docs/windows.md): Wine sends them on every internal
             // SetForegroundWindow, so they never restore. The per-window rule
             // gates like the compositor's own activate().
             static auto FOCUS_ON_ACTIVATE = CConfigValue<Config::INTEGER>("misc:focus_on_activate");

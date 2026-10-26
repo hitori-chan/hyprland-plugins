@@ -1,14 +1,16 @@
 # devtools
 
-Shared input and window fixtures for the plugin's nested gate
-(`awesome/gate/`). Sources are tracked; binaries and generated protocol
-glue are ignored build artifacts.
+The Wayland fixtures and D-Bus fakes the nested gate drives
+([testing](../docs/testing.md)). Sources are tracked; binaries and the
+generated protocol glue are build artifacts.
 
 Build the helpers from the exact fork protocol XML:
 
 ```sh
 make -C devtools HL=/path/to/Hyprland
 ```
+
+## Wayland fixtures
 
 - `vptr WIDTH HEIGHT` reads virtual pointer commands: `move`, `rel`,
   `press`, `release`, `scroll`, and `sleep`. One process owns one
@@ -71,18 +73,3 @@ make -C devtools HL=/path/to/Hyprland
   ambient light sensor reading the lux in `AW_ALS_FILE` while claimed;
   both log to `AW_LOGIND_LOG` (the system battery's light checks, never
   the host's lights or sensors).
-
-## Gate safety (still binds)
-
-- The signature, socket, runtime directory, config, Wayland display, and
-  D-Bus address must all belong to the nested compositor; injectors
-  always receive the nested `WAYLAND_DISPLAY`.
-- Never rebuild the plugin while the nested compositor maps its `.so`.
-- Run the gate in tmux or in the background, from a tmux server started
-  in the current login session (a server that outlived its session
-  keeps that session's stale environment).
-- A "dead" Wayland display is verified with `flock`, never by the lock
-  file (empty flock files — `rm`-ing one breaks a live session).
-- The clean-teardown check reads the nested's exit status (launch.sh's
-  wrapper records it); it needs no core dump and no `core_pattern`.
-- The faked helpers never touch live devices.
