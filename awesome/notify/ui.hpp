@@ -72,7 +72,7 @@ namespace NAwesome::Notify {
     inline constexpr double BADGE_D = 18.0 / 36.0, BADGE_OUT = 3.0 / 36.0, BADGE_RING = 1.5 / 18.0;
 
     // the center
-    inline constexpr double HEADER_H = 28, HEADER_GAP = 8; // the controls' row (the moon, "Clear All"), then the column's 8 px
+    inline constexpr double HEADER_H = 28, HEADER_GAP = 8; // the heading's row ("Notifications", the moon, "Clear All"), then the column's 8 px
     inline constexpr double CAP_H = 24, CAP_PADX = 10, CAP_GAP = 6; // its glass capsules, and a stack's
     inline constexpr double EMPTY_H = 56;
     // A collapsed stack (macOS): its newest card over a deck of up to two
@@ -84,7 +84,7 @@ namespace NAwesome::Notify {
     // ---- paint.cpp: the type scale, motion, radii, card recipes ----
 
     struct SType { // per-frame type roles, physical px
-        int meta, title, body, small, action;
+        int meta, title, body, small, action, heading;
     };
     SType typeScale(double scale);
 
@@ -123,6 +123,7 @@ namespace NAwesome::Notify {
     struct SCachedText {
         SP<ITexture>       tex; // null = rastered to nothing; still a cached result
         std::vector<SLink> links; // physical px rel rects (body markup only)
+        int                pad = 0; // physical px of shadow margin around the text (shadowed text only)
     };
 
     // The body line's REAL metrics (the font's own, measured once per
@@ -140,8 +141,10 @@ namespace NAwesome::Notify {
     // paragraph, ellipsized. linkCol non-null collects <a href> rects.
     // headCut ellipsizes at the START: an entry, whose newest characters
     // (the caret's end) must stay in view.
+    // shadow: a soft drop shadow in a margin of SCachedText::pad (text
+    // that sits bare on the desktop; plain text only, no links)
     const SCachedText* cachedText(const std::string& text, const CHyprColor& col, int pt, int maxWpx, int maxHpx, float lineSp, bool markup, int weight,
-                                  const CHyprColor* linkCol = nullptr, bool headCut = false);
+                                  const CHyprColor* linkCol = nullptr, bool headCut = false, bool shadow = false);
 
     double texH(const SCachedText* e, double scale);
     double texW(const SCachedText* e, double scale);

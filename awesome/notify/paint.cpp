@@ -42,8 +42,9 @@ namespace NAwesome::Notify {
     SType typeScale(double scale) {
         const double FS = (double)NAwesome::cfg().getI("plugin:awesome:notify:font_size");
         const auto   PX = [&](double logical) { return std::max(1, (int)std::lround(logical * scale)); };
-        // off the 13 px base: meta 12, title/body/actions 13, counts 11
-        return SType{.meta = PX(FS - 1), .title = PX(FS), .body = PX(FS), .small = PX(FS - 2), .action = PX(FS)};
+        // off the 13 px base: meta 12, title/body/actions 13, counts 11,
+        // the center's heading 15
+        return SType{.meta = PX(FS - 1), .title = PX(FS), .body = PX(FS), .small = PX(FS - 2), .action = PX(FS), .heading = PX(FS + 2)};
     }
 
     // ---- shared card recipes ----

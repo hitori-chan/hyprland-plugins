@@ -358,8 +358,33 @@ namespace NAwesome::Notify {
     // line ellipsized); < 0 is pango's one line per paragraph, ellipsized —
     // text that must be ONE line is flattened before it gets here (the
     // collapsed rows).
+    // Three box passes each way approximate a gaussian of sigma ~1.4 r
+    // over an A8 coverage plane in place; edges clamp. Shadows are a
+    // handful of short words, built once into the cache.
+    static void blurA8(unsigned char* px, int w, int h, int stride, int r) {
+        std::vector<int> line(std::max(w, h));
+        const auto pass = [&](unsigned char* base, int n, int step) {
+            for (int i = 0; i < n; i++)
+                line[i] = base[i * step];
+            int sum = 0;
+            for (int i = -r; i <= r; i++)
+                sum += line[std::clamp(i, 0, n - 1)];
+            for (int i = 0; i < n; i++) {
+                base[i * step] = (unsigned char)(sum / (2 * r + 1));
+                sum += line[std::min(i + r + 1, n - 1)] - line[std::max(i - r, 0)];
+            }
+        };
+        for (int it = 0; it < 3; it++) {
+            for (int y = 0; y < h; y++)
+                pass(px + y * stride, w, 1);
+            for (int x = 0; x < w; x++)
+                pass(px + x, h, stride);
+        }
+    }
+
     static SP<ITexture> buildText(const std::string& fullText, const CHyprColor& col, int pt, int maxWidthPx, int maxHeightPx, float lineSpacing, bool markup, int weight,
-                                  const CHyprColor* linkCol = nullptr, std::vector<std::pair<std::string, CBox>>* outLinks = nullptr, bool headCut = false) {
+                                  const CHyprColor* linkCol = nullptr, std::vector<std::pair<std::string, CBox>>* outLinks = nullptr, bool headCut = false,
+                                  int* shadowPad = nullptr) {
         const std::string FAMILY{NAwesome::cfg().getS("plugin:awesome:notify:font")};
         // the lines this raster shows: a pixel budget's whole lines, or the
         // negative height's lines of one paragraph
@@ -444,7 +469,7 @@ namespace NAwesome::Notify {
         if (markup && (W > std::max(maxWidthPx, 1) + 4 * pt || H > pango_layout_get_line_count(layout) * pt * 3 + pt)) {
             pango_font_description_free(fd);
             g_object_unref(layout); // owns the attr list now
-            return buildText(stripMarkupTags(text), col, pt, maxWidthPx, maxHeightPx, lineSpacing, false, weight);
+            return buildText(stripMarkupTags(text), col, pt, maxWidthPx, maxHeightPx, lineSpacing, false, weight, nullptr, nullptr, false, shadowPad);
         }
         if (W <= 0 || H <= 0) {
             pango_font_description_free(fd);
@@ -487,10 +512,35 @@ namespace NAwesome::Notify {
             pango_layout_iter_free(IT);
         }
 
-        auto* SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
+        // a shadow, as macOS's desktop text: the text's coverage blurred
+        // (r 3 px at 15 px type), 1 px down, black at 0.8 — what still reads
+        // over a white patch of the wallpaper — in a margin the caller steps
+        // back by
+        const int R   = shadowPad ? std::max(1, (int)std::lround(pt * 0.2)) : 0;
+        const int DY  = shadowPad ? std::max(1, (int)std::lround(pt * 0.07)) : 0;
+        const int PAD = shadowPad ? 3 * R + DY : 0;
+        if (shadowPad)
+            *shadowPad = PAD;
+
+        auto* SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W + 2 * PAD, H + 2 * PAD);
         auto* CR   = cairo_create(SURF);
+        if (shadowPad) {
+            auto* MASK = cairo_image_surface_create(CAIRO_FORMAT_A8, W + 2 * PAD, H + 2 * PAD);
+            auto* MCR  = cairo_create(MASK);
+            cairo_move_to(MCR, PAD, PAD + DY);
+            pango_cairo_show_layout(MCR, layout);
+            cairo_destroy(MCR);
+            cairo_surface_flush(MASK);
+            if (cairo_surface_status(MASK) == CAIRO_STATUS_SUCCESS) {
+                blurA8(cairo_image_surface_get_data(MASK), W + 2 * PAD, H + 2 * PAD, cairo_image_surface_get_stride(MASK), R);
+                cairo_surface_mark_dirty(MASK);
+                cairo_set_source_rgba(CR, 0, 0, 0, 0.8);
+                cairo_mask_surface(CR, MASK, 0, 0);
+            }
+            cairo_surface_destroy(MASK);
+        }
         cairo_set_source_rgba(CR, col.r, col.g, col.b, col.a);
-        cairo_move_to(CR, 0, 0);
+        cairo_move_to(CR, PAD, PAD);
         pango_cairo_show_layout(CR, layout);
 
         pango_font_description_free(fd);
@@ -513,17 +563,17 @@ namespace NAwesome::Notify {
     }};
 
     const SCachedText* cachedText(const std::string& text, const CHyprColor& col, int pt, int maxWpx, int maxHpx, float lineSp, bool markup, int weight,
-                                  const CHyprColor* linkCol, bool headCut) {
+                                  const CHyprColor* linkCol, bool headCut, bool shadow) {
         if (text.empty())
             return nullptr;
         // wide enough for every conversion at ITS widest (two 16-digit hex,
-        // seven 11-char signed decimals, the separators): snprintf reports what
+        // eight 11-char signed decimals, the separators): snprintf reports what
         // it WOULD have written, so a buffer the key outgrew would be read
         // past its end — and a truncated key would alias two styles onto one
         // texture. The append clamps anyway, for the next field added here.
-        char      meta[128];
-        const int METALEN = std::snprintf(meta, sizeof(meta), "|%llx|%d|%d|%d|%d|%d|%d|%llx|%d", (unsigned long long)col.getAsHex(), pt, maxWpx, maxHpx, (int)(lineSp * 100), markup,
-                                          weight, linkCol ? (unsigned long long)linkCol->getAsHex() : 0ULL, headCut);
+        char      meta[160];
+        const int METALEN = std::snprintf(meta, sizeof(meta), "|%llx|%d|%d|%d|%d|%d|%d|%llx|%d|%d", (unsigned long long)col.getAsHex(), pt, maxWpx, maxHpx, (int)(lineSp * 100),
+                                          markup, weight, linkCol ? (unsigned long long)linkCol->getAsHex() : 0ULL, headCut, shadow);
 
         static std::string KEY; // reused; main thread only
         KEY.clear();
@@ -542,7 +592,7 @@ namespace NAwesome::Notify {
             for (auto& [HREF, R] : lrects)
                 entry.links.push_back({HREF, R}); // physical px; the drawing unit descales
         } else
-            entry.tex = buildText(text, col, pt, maxWpx, maxHpx, lineSp, markup, weight, nullptr, nullptr, headCut);
+            entry.tex = buildText(text, col, pt, maxWpx, maxHpx, lineSp, markup, weight, nullptr, nullptr, headCut, shadow ? &entry.pad : nullptr);
         return texCache.insert(KEY, std::move(entry));
     }
 

@@ -4,8 +4,9 @@
 // holds, and a dismissed card is gone (Android's shade has no recall either).
 //
 // This unit decides WHAT is shown and WHERE; card.cpp and stack.cpp draw
-// it. The center is the banners' own column, its controls on glass capsules
-// above it; as macOS's, it draws no backdrop: the desktop is never darkened.
+// it. The center is the banners' own column under a heading, its controls on
+// glass capsules beside it; as macOS's, it draws no backdrop: the desktop is
+// never darkened.
 //
 // RANKING — Android's, without the dividers: critical, then conversations,
 // then normal, then silent; newest first inside each tier. An app's cards
@@ -510,11 +511,18 @@ namespace NAwesome::Notify {
             cards.push_back(pc);
         }
 
-        // ---- the controls: Do Not Disturb and Clear All ----
-        // macOS's center draws no backdrop and no heading; what it offers
-        // sits on glass of its own (its Show Less capsule), legible over any
-        // wallpaper without darkening one.
+        // ---- the heading's row: "Notifications", Do Not Disturb, Clear All ----
+        // No backdrop darkens the desktop, as on macOS: the controls sit on
+        // glass of their own (its Show Less capsule), and the heading bare on
+        // the desktop as its stack headers do, a soft shadow keeping it
+        // legible over any wallpaper or window.
         {
+            if (const auto HEAD = cachedText("Notifications", COLTITLE, T.heading, (int)std::lround(W * P.scale), -1, 0, false, 600, nullptr, false, /*shadow=*/true);
+                HEAD && HEAD->tex) {
+                const double PAD = HEAD->pad / P.scale;
+                P.tex(HEAD->tex, X + 4 - PAD, Y0 + (HEADER_H - (texH(HEAD, P.scale) - 2 * PAD)) / 2 - PAD);
+            }
+
             constexpr double MOON_PX = 14;
             const double     CY      = Y0 + (HEADER_H - CAP_H) / 2;
             const int    ROUND = (int)std::lround(CAP_H / 2 * P.scale);
