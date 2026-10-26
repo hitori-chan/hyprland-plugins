@@ -23,6 +23,14 @@ export PKG_CONFIG_PATH
 
 CXX       ?= g++
 CXXFLAGS  ?= -O2
+# A compiler launcher (ccache): the gate's entry points set it
+# (gate/memcap.sh), so unchanged sources (a rebase's fresh mtimes, a
+# re-staged header set, the sweep revisiting a commit) compile from the
+# cache; hyprpm's build stays the plain compiler. A launcher, not the
+# compiler: it stays out of the target stamp. Paths under the checkout
+# hash relative, so every worktree shares the hits.
+CCACHE    ?=
+export CCACHE_BASEDIR := $(abspath ..)
 HL_CFLAGS := $(shell pkg-config --cflags $(PKGS) $(PKGS_EXTRA))
 CXXFLAGS  += -std=c++26 -Wall -fPIC -fno-gnu-unique -MMD -MP -I. $(HL_CFLAGS)
 LDFLAGS   += -shared -Wl,--version-script=plugin.ver
@@ -75,7 +83,7 @@ $(TARGET): $(OBJS) plugin.ver $(LINK_STAMP)
 # the target's
 $(OBJDIR)/%.o: %.cpp Makefile $(STAMP) | $(OBJDIR)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CCACHE) $(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(OBJDIR):
 	@mkdir -p $@
@@ -93,7 +101,7 @@ TEST_INCLUDES := $(filter -I%,$(HL_CFLAGS))
 
 .build-test/%.o: %.cpp Makefile $(STAMP)
 	@mkdir -p $(dir $@)
-	$(CXX) -std=c++26 -Wall -MMD -MP -I.. -I. $(TEST_INCLUDES) -c $< -o $@
+	$(CCACHE) $(CXX) -std=c++26 -Wall -MMD -MP -I.. -I. $(TEST_INCLUDES) -c $< -o $@
 
 .build-test/awesome-test: $(TEST_OBJS)
 	$(CXX) $(TEST_OBJS) -o $@ $(shell pkg-config --libs librsvg-2.0)

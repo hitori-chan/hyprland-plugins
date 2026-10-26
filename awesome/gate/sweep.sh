@@ -30,7 +30,9 @@ PKG=$ROOT/fork-pkg
 [[ -f $PKG/include/hyprland/src/version.h ]] || { echo "sweep.sh: no staged headers in $PKG: run the gate with -s first" >&2; exit 2; }
 export PKG_CONFIG_PATH=$PKG/share/pkgconfig
 export CXXFLAGS=-O0 # the environment, not a make argument: the Makefile's += still applies
-command -v ccache >/dev/null && export CXX="ccache g++"
+# the compiler itself carries ccache: a swept commit's Makefile may predate
+# the CCACHE launcher (memcap.sh), and a newer one must not wrap it twice
+command -v ccache >/dev/null && export CXX="ccache g++" CCACHE=
 OK=$ROOT/sweep-ok.keys
 mkdir -p "$ROOT" && touch "$OK"
 

@@ -13,6 +13,11 @@ Both variants need the fork's headers. Test seams are compile-time only
 binary. The build stamps its target (compiler, flags, the headers'
 `version.h`), so switching header sets rebuilds everything by itself.
 
+The gate's entry points compile through ccache when it is installed
+(`gate/memcap.sh` sets the Makefile's `CCACHE` launcher): a source with no
+gate seam compiles once for both variants, and sweep worktrees share the
+hits. hyprpm's build stays the plain compiler.
+
 ## Unit tests
 
 One headless C++26 harness. No compositor runs: it compiles against the
