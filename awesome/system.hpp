@@ -44,8 +44,8 @@ namespace NAwesome::System {
         KBD_DOWN
     };
 
-    // the module's system bus (system.cpp): logind for the lights, BlueZ's
-    // signal for a headset's own volume
+    // the module's system bus (system.cpp): logind for the lights, the
+    // room's light sensor, BlueZ's signal for a headset's own volume
     CBusLink& systemBus();
 
     // the units (audio.cpp, light.cpp, pad.cpp); a BusDropped resets what
@@ -60,6 +60,7 @@ namespace NAwesome::System {
     void lightKey(Controls::eLevel l, int dir); // a key's ±5 % step, its capsule
     void lightAsk(Controls::eLevel l, int pct); // the panel's percent
     void lightRefresh();                        // both lights as sysfs has them
+    void lightFollowRoom(bool on);              // the keyboard light follows the room's, or stops
     void padInit();
     void padExit();
     void padToggle();

@@ -15,8 +15,9 @@
 //
 // The switches persist (policy.cpp). A right click on a level in the
 // control center opens the same menu for that control: the keyboard
-// light's (Follow the Room) and the volume's (its outputs, the default
-// checked); the system module's values, picked through its doors.
+// light's (Follow the Room, dim without a light sensor) and the volume's
+// (its outputs, the default checked); the system module's values, picked
+// through its doors.
 //
 // The menu is the notify layer's own,
 // drawn last and hit first: it holds its card's banner while up, and
@@ -41,7 +42,8 @@ namespace NAwesome::Notify::CardMenu {
         BANNERS,
         SOUNDS,
         CLOSE_APP,
-        OUTPUT, // a control's: SItem::output becomes the default sink
+        FOLLOW_ROOM, // the keyboard light's: follow the room's light, or stop
+        OUTPUT,      // the volume's: SItem::output becomes the default sink
     };
 
     struct SItem {
@@ -142,7 +144,10 @@ namespace NAwesome::Notify::CardMenu {
     // sync() while open, so a list that lands late shows
     static void buildControl(Controls::eLevel l) {
         s_items.clear();
-        if (l == Controls::eLevel::VOLUME) {
+        if (l == Controls::eLevel::KEYBOARD) {
+            const auto ROOM = Controls::state().switches[(size_t)Controls::eSwitch::ROOM];
+            s_items.push_back({.verb = FOLLOW_ROOM, .label = "Follow the Room", .check = (int8_t)(ROOM == 1 ? 1 : 0), .dim = ROOM < 0, .key = "room"});
+        } else if (l == Controls::eLevel::VOLUME) {
             for (const auto& O : Controls::state().outputs)
                 s_items.push_back({.verb = OUTPUT, .label = O.name, .output = O.id, .check = (int8_t)(O.current ? 1 : 0), .key = "out:" + std::to_string(O.id)});
             if (s_items.empty())
@@ -151,7 +156,7 @@ namespace NAwesome::Notify::CardMenu {
     }
 
     bool openControl(Controls::eLevel l, const Vector2D& at) {
-        if (l != Controls::eLevel::VOLUME)
+        if (l != Controls::eLevel::KEYBOARD && l != Controls::eLevel::VOLUME)
             return false;
         close();
         s_open    = true;
@@ -233,6 +238,7 @@ namespace NAwesome::Notify::CardMenu {
         const auto VERB = s_items[index].verb;
         const auto KEY  = s_items[index].action;
         const auto OUT  = s_items[index].output;
+        const bool ON   = s_items[index].check == 1;
         const auto APP  = s_app;
         const auto CHAT = s_chat;
         const auto APPL = s_appLabel, CHATL = s_chatLabel;
@@ -261,6 +267,10 @@ namespace NAwesome::Notify::CardMenu {
             }
             case SOUNDS: Policy::setAppFlag(APP, Policy::SOUNDS_OFF, !(Policy::appFlags(APP) & Policy::SOUNDS_OFF), APPL); return;
             case CLOSE_APP: Model::dismissAppAll(APP); return;
+            case FOLLOW_ROOM:
+                if (Controls::doors().setSwitch)
+                    Controls::doors().setSwitch(Controls::eSwitch::ROOM, !ON);
+                return;
             case OUTPUT:
                 if (Controls::doors().setOutput)
                     Controls::doors().setOutput(OUT);

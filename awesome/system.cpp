@@ -96,6 +96,8 @@ namespace NAwesome::System {
                         setMic(on);
                     else if (s == Controls::eSwitch::TOUCHPAD)
                         padSet(on);
+                    else if (s == Controls::eSwitch::ROOM)
+                        lightFollowRoom(on);
                 },
             .setMuted  = setMuted,
             .setOutput = setOutput,
@@ -142,14 +144,14 @@ namespace NAwesome::System {
         if (verb == "pad")
             return padState();
 #ifdef AWESOME_GATE
-        if (verb == "controls") { // "display:P keyboard:P volume:P[m] mic:S touchpad:S" (-1: none)
+        if (verb == "controls") { // "display:P keyboard:P volume:P[m] mic:S touchpad:S room:S" (-1: none)
             const auto& S = Controls::state();
             const auto  L = [&](Controls::eLevel l) {
                 const auto& V = S.levels[(size_t)l];
                 return std::to_string(V.pct) + (V.muted ? "m" : "");
             };
             return "display:" + L(Controls::eLevel::DISPLAY) + " keyboard:" + L(Controls::eLevel::KEYBOARD) + " volume:" + L(Controls::eLevel::VOLUME) +
-                " mic:" + std::to_string(S.switches[(size_t)Controls::eSwitch::MIC]) + " touchpad:" + std::to_string(S.switches[(size_t)Controls::eSwitch::TOUCHPAD]);
+                " mic:" + std::to_string(S.switches[(size_t)Controls::eSwitch::MIC]) + " touchpad:" + std::to_string(S.switches[(size_t)Controls::eSwitch::TOUCHPAD]) + " room:" + std::to_string(S.switches[(size_t)Controls::eSwitch::ROOM]);
         }
         if (verb == "outputs") { // "41 *42": the sinks by id, the default starred
             std::string out;

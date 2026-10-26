@@ -102,6 +102,7 @@ bool test_store() {
         AW_CHECK(!optionNamed("DND") && !optionNamed(""));
         AW_CHECK(!O.on(eOption::KBD_FOLLOWS_ROOM)); // the room is opt-in
         AW_CHECK(O.set(eOption::KBD_FOLLOWS_ROOM, 1) && !O.set(eOption::KBD_FOLLOWS_ROOM, 1) && O.on(eOption::KBD_FOLLOWS_ROOM));
+        AW_CHECK(!O.set(eOption::KBD_LEVEL, 101) && O.set(eOption::KBD_LEVEL, 30) && O.get(eOption::KBD_LEVEL) == 30);
         AW_CHECK(!O.set(eOption::QUIET_FULLSCREEN, 2) && !O.set(eOption::DND, -2) && !O.set(eOption::DND, MAX_STORE_TIME));
         AW_CHECK(O.set(eOption::DND, 1760000000) && O.get(eOption::DND) == 1760000000);
     }
