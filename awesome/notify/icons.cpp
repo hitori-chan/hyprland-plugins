@@ -385,12 +385,14 @@ namespace NAwesome::Notify {
         return ++serial;
     }
 
-    // A screenshot-sized source takes the hero layout: 256 px in both
-    // dimensions and at least half the hero box wide, so any capture shape
-    // (wide, square, portrait) previews full-bleed while a true app icon
-    // never blows up to card width.
+    // A picture takes the hero layout: 256 px in both dimensions, at least
+    // half the hero box wide, and a picture's shape — a fifth longer one way
+    // than the other, as a capture or a photo is (wide or portrait). A
+    // square is a face or an icon at any size: Firefox posts a page's icon
+    // at its own size (a 512 px app icon, a contact's avatar), and as a
+    // hero it was cut into a card-wide strip of its middle.
     static bool heroWorthy(double sw, double sh, int heroWPx) {
-        return heroWPx > 0 && sw >= 256 && sh >= 256 && sw * 2 >= heroWPx;
+        return heroWPx > 0 && sw >= 256 && sh >= 256 && sw * 2 >= heroWPx && std::max(sw, sh) >= 1.2 * std::min(sw, sh);
     }
 
     static SScaleSpec specFor(double sw, double sh, int iconPx, int heroWPx, int heroHCapPx, bool tint, int badgePx = 0) {

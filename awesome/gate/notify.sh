@@ -164,6 +164,26 @@ capture_nested $STATE/hero-4-aw.png
 chk "hero: an image-data screenshot previews card-wide" test "$(hero_px $STATE/hero-4-aw.png)" -gt 8000
 chk "hero: the image-data preview is the capped strip" test "$(hero_span $STATE/hero-4-aw.png)" -ge 150 -a "$(hero_span $STATE/hero-4-aw.png)" -le 166
 nclear
+# a square is a face at any size: Firefox posts a page's icon at its own
+# size (a 512 px app icon, a contact's avatar), and as a hero it was cut
+# into a card-wide strip of its middle
+DBUS_SESSION_BUS_ADDRESS="$NBUS" python3 - <<'PY'
+from gi.repository import Gio, GLib
+W = 512
+i32 = GLib.Variant.new_int32
+data = GLib.Variant.new_from_bytes(GLib.VariantType.new("ay"), GLib.Bytes.new(bytes((30, 160, 240, 255)) * (W * W)), True)
+img = GLib.Variant.new_tuple(i32(W), i32(W), i32(W * 4), GLib.Variant.new_boolean(True), i32(8), i32(4), data)
+args = GLib.Variant.new_tuple(GLib.Variant("s", "Firefox"), GLib.Variant("u", 0), GLib.Variant("s", ""), GLib.Variant("s", "GitHub"),
+                              GLib.Variant("s", "you were mentioned"), GLib.Variant("as", ["default", "Activate"]),
+                              GLib.Variant("a{sv}", {"image-data": img, "desktop-entry": GLib.Variant("s", "firefox")}), i32(5000))
+Gio.bus_get_sync(Gio.BusType.SESSION).call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications",
+                                               "Notify", args, GLib.VariantType.new("(u)"), Gio.DBusCallFlags.NONE, 5000, None)
+PY
+sleep 1
+capture_nested $STATE/hero-5-aw.png
+chk "hero: a square page icon is no card-wide preview" test "$(hero_px $STATE/hero-5-aw.png)" -lt 3000
+chk "hero: it leads the card as its face" test "$(hero_px $STATE/hero-5-aw.png)" -gt 200
+nclear
 
 # ---- the Notify reader (notify/bus.cpp) ---------------------------------------
 # The call is read by hand: image-data's pixels leave the message in one
@@ -257,7 +277,8 @@ chk "reader: an 8 MB array in two variants is walked past (within 250 ms)" test 
 nclear
 read -r MS R <<<"$(notify_shape be-small)"; sleep 1
 capture_nested $STATE/reader-4-aw.png
-chk "reader: a big-endian sender's image-data previews" test "$R" = ok -a "$(hero_px $STATE/reader-4-aw.png)" -gt 8000
+# square, as the 256 KiB bound keeps it: the card's face, not a preview
+chk "reader: a big-endian sender's image-data shows" test "$R" = ok -a "$(hero_px $STATE/reader-4-aw.png)" -gt 200
 nclear
 read -r MS R <<<"$(notify_shape be-big)"; echo "reader: a 4 MiB big-endian image-data answered in ${MS} ms ($R)" >&2
 chk "reader: a big-endian image-data past 256 KiB is refused, not stalled" test "$R" = err -a "${MS:-9999}" -lt 250

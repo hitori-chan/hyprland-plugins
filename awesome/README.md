@@ -483,9 +483,11 @@ so a FIFO or a swap after the check cannot reach the decoder. File
 icons decode asynchronously (a sender's SVG too, rastered at the hero
 width when it may be one; a symbolic icon tinted on a copy): a card
 whose icon is still decoding keeps the icon column reserved — the text
-does not re-flow when it lands. Screenshot-sized
-images (256 px in both dimensions) render popup-width as a
-cover-cropped hero in any capture shape; the shade keeps its rows
+does not re-flow when it lands. A picture — 256 px in both dimensions
+and a picture's shape, a fifth longer one way than the other, wide or
+portrait — renders popup-width as a cover-cropped hero; a square is a
+face or an icon at any size (Firefox posts a page's icon at its own
+size, 512 px app icons and avatars among them). The shade keeps its rows
 compact and shows the same image as a square-cropped thumbnail in the
 icon column (AOSP's collapsed BigPicture). Iconless cards draw a random
 face from `fallback_icon_dir` (listed recursively by a helper process,
