@@ -54,9 +54,11 @@ make -C devtools HL=/path/to/Hyprland
   `DBUS_SESSION_BUS_ADDRESS` — the tray battery points it at the nested
   instance's PRIVATE session bus (never the live one) and asserts the
   strip, the parse-time separator trim, and the cascade against it.
-- `fakes/wpctl` logs its arguments, and hangs or floods on demand
-  through `AW_WPCTL_*` marker files (the system battery's
-  process-path checks).
+- `fakes/wpctl` logs its arguments, models a sink's level and the two
+  nodes' mutes (`AW_WPCTL_LEVEL_FILE`, `AW_WPCTL_MUTES_FILE`: what an
+  absolute set or a mute wrote is what the next readback says), and
+  hangs or floods on demand through `AW_WPCTL_*` marker files (the
+  system battery's process-path and panel checks).
 - `fakes/canberra-gtk-play` records its invocation and hangs on demand
   through `AW_SOUND_HANG_FILE` (the notify battery's sound
   checks).
