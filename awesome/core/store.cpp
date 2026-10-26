@@ -57,6 +57,16 @@ namespace NAwesome {
         return k.find_first_of(std::string_view{"\t\r\n\0", 4}) == std::string_view::npos;
     }
 
+    std::string storeLabel(std::string_view s) {
+        std::string out{s.substr(0, clipToUtf8Boundary(s, MAX_STORE_LABEL_BYTES))};
+        std::ranges::replace_if(out, [](char c) { return c == '\t' || c == '\r' || c == '\n' || c == '\0'; }, ' ');
+        return out;
+    }
+
+    bool validStoreLabel(std::string_view s) {
+        return s.size() <= MAX_STORE_LABEL_BYTES && s.find_first_of(std::string_view{"\t\r\n\0", 4}) == std::string_view::npos;
+    }
+
     bool ListStore::remember(std::string_view entry) {
         // a line break would end the row early and smuggle the rest in as
         // a row of its own

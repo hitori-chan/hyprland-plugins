@@ -37,9 +37,12 @@ namespace NAwesome {
     // one hostile file must not cost more than a bounded number of rows
     // to parse
     inline constexpr size_t MAX_STATE_ROWS = 16384;
+    // a row's display label (the name the silence menu lists a silenced
+    // app or chat by): display text, clipped, never identity
+    inline constexpr size_t MAX_STORE_LABEL_BYTES = 128;
     // what the writer can produce at the caps above (5 x 1024 rows of
-    // 512-byte keys, 50 history rows of 4 KiB: ~2.9 MB): the reader must
-    // accept anything the writer wrote
+    // 512-byte keys, two kinds of them labelled, 50 history rows of 4 KiB:
+    // ~3.3 MB): the reader must accept anything the writer wrote
     inline constexpr size_t MAX_STATE_FILE_BYTES = 4u << 20;
 
     // A key: non-empty, bounded, free of the row format's separators (tab,
@@ -56,6 +59,24 @@ namespace NAwesome {
     inline constexpr int64_t MAX_STORE_TIME = 253402300800;
     inline bool              validStoreValue(int64_t t) {
         return t > 0 && t < MAX_STORE_TIME;
+    }
+
+    // Display text as a label: the row format's separators (tab, CR, LF)
+    // and NUL blanked, clipped at a codepoint boundary. A valid label is
+    // what storeLabel returns (empty included).
+    std::string storeLabel(std::string_view s);
+    bool        validStoreLabel(std::string_view s);
+
+    // a value with the name it is listed by
+    template <typename V>
+    struct SLabeled {
+        V           value{};
+        std::string label;
+        bool        operator==(const SLabeled&) const = default;
+    };
+    template <typename V>
+    bool validStoreValue(const SLabeled<V>& l) {
+        return validStoreValue(l.value) && validStoreLabel(l.label);
     }
 
     namespace detail {

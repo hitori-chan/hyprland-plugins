@@ -172,11 +172,17 @@ memory only); neither reads plugin or compositor state.
   stalls the compositor; the newest snapshot wins, and the stop's save
   joins it); all rows admitted or skipped (fixed file/row/key/entry
   bounds; a hostile file can never take the session down; the least
-  recently remembered row goes at a bound). The six kinds (spawn spots,
+  recently remembered row goes at a bound). The seven kinds (spawn spots,
   last-windowed boxes, launcher counts, prompt history, the card menu's
-  per-app switches and chat mutes) are one in-memory `AppState` owned by
-  the core's `StateStore` — the documented cross-module seam for
-  persisted state. An unreadable file blocks writes.
+  per-app switches and chat mutes, each listed by a label, and the
+  remembered options) are one in-memory `AppState` owned by the core's
+  `StateStore` — the documented cross-module seam for persisted state.
+  An unreadable file blocks writes. Options are the choices made from a
+  menu (Do Not Disturb, quiet automatically, the keyboard light
+  following the room): one schema (`core/options.hpp`: name, default,
+  range), only values off their default written. The config files stay
+  read-only to the plugin, and no option is both a config key and a
+  remembered choice.
 - **Processes** — `core/proc.hpp` is the one spawn primitive
   (`pidfd_spawnp`: an empty signal mask and default dispositions,
   stdin/stderr on /dev/null, every fd above 2 closed, a race-free pidfd,

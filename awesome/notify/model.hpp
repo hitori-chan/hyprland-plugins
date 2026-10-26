@@ -384,11 +384,16 @@ namespace NAwesome::Notify {
             BANNERS_OFF = 1,
             SOUNDS_OFF  = 2,
         };
+        // the names a row is listed by: the app's own, the chat's title
+        std::string appLabel(const SNotif& n);
+        std::string chatLabel(const SNotif& n);
         int         appFlags(const std::string& appKey);
-        void        setAppFlag(const std::string& appKey, int flag, bool on);
-        std::string chatKey(const SNotif& n);                   // "" = not a chat: only a conversation mutes
-        int64_t     mutedUntil(const std::string& chat);        // 0 = not muted
-        void        mute(const std::string& chat, int64_t until); // until <= now unmutes
+        // a row's label is set from a non-empty `label`, else kept
+        void        setAppFlag(const std::string& appKey, int flag, bool on, std::string_view label = {});
+        std::string chatKey(const SNotif& n);            // "" = not a chat: only a conversation mutes
+        int64_t     mutedUntil(const std::string& chat); // 0 = not muted
+        // until <= now unmutes
+        void        mute(const std::string& chat, int64_t until, std::string_view label = {});
         bool        bannersOff(const SNotif& n); // the app's switch, or its chat muted
         bool        soundsOff(const SNotif& n);
         void        prune(); // forget the mutes that ended

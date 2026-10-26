@@ -43,25 +43,34 @@ namespace NAwesome::Notify::Policy {
         return CHAT.empty() ? std::string{} : storeKey(n.appKey + '\x1f' + CHAT);
     }
 
+    std::string appLabel(const SNotif& n) {
+        return storeLabel(n.appName.empty() ? n.appKey : n.appName);
+    }
+
+    std::string chatLabel(const SNotif& n) {
+        return storeLabel(n.conversationTitle.empty() ? n.summary : n.conversationTitle);
+    }
+
     int appFlags(const std::string& appKey) {
         if (appKey.empty())
             return 0;
         const auto* F = state().notifyApp.find(storeKey(appKey));
-        return F ? *F : 0;
+        return F ? F->value : 0;
     }
 
-    void setAppFlag(const std::string& appKey, int flag, bool on) {
+    void setAppFlag(const std::string& appKey, int flag, bool on, std::string_view label) {
         if (appKey.empty())
             return;
-        const auto KEY = storeKey(appKey);
-        const int  WAS = appFlags(appKey), NEXT = on ? (WAS | flag) : (WAS & ~flag);
-        if (NEXT == WAS)
+        const auto  KEY = storeKey(appKey);
+        auto&       M   = state().notifyApp;
+        const auto* WAS = M.find(KEY);
+        const int   OLD = WAS ? WAS->value : 0, NEXT = on ? (OLD | flag) : (OLD & ~flag);
+        if (NEXT == OLD)
             return;
-        auto& M = state().notifyApp;
         if (NEXT == 0) // an app back to the defaults keeps no row
-            M.eraseIf([&](const std::string& k, int) { return k == KEY; });
+            M.eraseIf([&](const std::string& k, const SLabeled<int>&) { return k == KEY; });
         else
-            M.put(KEY, NEXT);
+            M.put(KEY, {NEXT, label.empty() && WAS ? WAS->label : storeLabel(label)});
         StateStore::inst().dirty();
     }
 
@@ -69,25 +78,26 @@ namespace NAwesome::Notify::Policy {
         if (chat.empty())
             return 0;
         const auto* T = state().notifyMute.find(chat);
-        return T && *T > now() ? *T : 0;
+        return T && T->value > now() ? T->value : 0;
     }
 
     void prune() {
         const auto NOW     = now();
         bool       dropped = false;
-        state().notifyMute.eraseIf([&](const std::string&, int64_t t) { return t <= NOW && (dropped = true); });
+        state().notifyMute.eraseIf([&](const std::string&, const SLabeled<int64_t>& t) { return t.value <= NOW && (dropped = true); });
         if (dropped)
             StateStore::inst().dirty();
     }
 
-    void mute(const std::string& chat, int64_t until) {
+    void mute(const std::string& chat, int64_t until, std::string_view label) {
         if (chat.empty())
             return;
         auto& M = state().notifyMute;
-        if (until > now())
-            M.put(chat, until);
-        else
-            M.eraseIf([&](const std::string& k, int64_t) { return k == chat; });
+        if (until > now()) {
+            const auto* WAS = M.find(chat);
+            M.put(chat, {until, label.empty() && WAS ? WAS->label : storeLabel(label)});
+        } else
+            M.eraseIf([&](const std::string& k, const SLabeled<int64_t>&) { return k == chat; });
         StateStore::inst().dirty();
         prune(); // every write sweeps the mutes that ended
     }
