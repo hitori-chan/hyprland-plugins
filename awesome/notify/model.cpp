@@ -650,6 +650,14 @@ namespace NAwesome::Notify {
             }
         };
 
+        // clear corners: the picture brings its own shape (a chat face keeps it)
+        static bool shapedPixels(const SPixels& p) {
+            if (!p.valid())
+                return false;
+            const auto ALPHA = [&](int x, int y) { return p.px[((size_t)y * p.w + x) * 4 + 3]; };
+            return ALPHA(0, 0) == 0 && ALPHA(p.w - 1, 0) == 0 && ALPHA(0, p.h - 1) == 0 && ALPHA(p.w - 1, p.h - 1) == 0;
+        }
+
         // A card's image-data: a large payload unpacks on the raster worker
         // (premultiplying and decimating a screenshot is tens of ms of the
         // dispatch); the card leads with a reserved column until it lands.
@@ -675,6 +683,7 @@ namespace NAwesome::Notify {
                             if (N->pixelsJob == TICKET) {
                                 N->pixelsJob = 0;
                                 if (OUT->first.valid()) {
+                                    N->faceShaped = shapedPixels(OUT->first);
                                     N->pixels     = std::move(OUT->first.px);
                                     N->pw         = OUT->first.w;
                                     N->ph         = OUT->first.h;
@@ -697,6 +706,7 @@ namespace NAwesome::Notify {
             if (!P.valid())
                 return;
             n.pixelsHash = Raster::hash(P);
+            n.faceShaped = shapedPixels(P);
             n.pixels     = std::move(P.px);
             n.pw         = P.w;
             n.ph         = P.h;
@@ -1207,6 +1217,7 @@ namespace NAwesome::Notify {
             n->identity.clear();
             n->pixels.clear();
             n->hasPixels = false;
+            n->faceShaped = false;
             n->pw = n->ph = 0;
             n->pixelsJob  = 0; // a job for the replaced image lands on no card
             n->pixelsHash = 0;

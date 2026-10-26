@@ -455,9 +455,10 @@ stays a broadcast.
   replaces in place), `message-time` orders, `message-historic` marks a
   backfill (it does not grow the unread count). The count beside the
   title is `unread-count`, else the messages that arrived (a closed one
-  leaves it); past one it shows as a pill. A `group` chat leads with a
-  facepile of its two newest distinct senders, each avatar its
-  `sender-icon` or a deterministic initials face.
+  leaves it); past one it shows as a pill. A `group` chat with no
+  picture of its own leads with a facepile of its two newest distinct
+  senders, each avatar its `sender-icon` or a deterministic initials
+  face; a chat that sent its picture leads with it.
 - `x-notify-group-key` (opaque, ≤512 bytes) sub-keys the app's stack
   (macOS's thread identifier): two or more cards of one app stack in
   the center per declared group, and the deck, the spread and the
@@ -523,15 +524,17 @@ face from `fallback_icon_dir` (listed recursively by a helper process,
 up to 4096 images; until the listing lands they wear the generic mark),
 and when that dir is empty (or a face fails to load) a deterministic
 generic application mark, so no card is faceless. The icon column is Android's conversation container: the
-CONTENT image leads as the avatar (a true circle for a conversation, a
-rounded square otherwise) and the IDENTITY (`app_icon`/`desktop-entry`)
-rides its bottom-right corner as a round badge: an 18 px disc on the
+CONTENT image leads as the avatar (a true circle for a conversation —
+unless the picture came shaped, its corners clear, as Telegram's forum
+pictures are rounded squares — a rounded square otherwise) and the
+IDENTITY (`app_icon`/`desktop-entry`) rides its bottom-right corner as
+a round badge: an 18 px disc on the
 36 px face, a 1.5 px white ring that cuts it free of a light face and a
 dark one alike, the app glyph on a graphite ground. Only a real
 identity that differs from the face badges; a card with no content
-image leads with its identity and wears no badge. A group chat leads
-with a facepile of two participants. One column says both who sent it
-and which app carried it.
+image leads with its identity and wears no badge. A group chat without
+a picture leads with a facepile of two participants. One column says
+both who sent it and which app carried it.
 
 **Actions.** As macOS 27's, a card wears no buttons at rest, and none
 under the pointer either: macOS's hover close button and Options chip

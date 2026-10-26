@@ -105,9 +105,12 @@ namespace NAwesome::Notify {
         if (!LEAD || LEAD->m_texID == 0)
             return;
 
-        // a radius of half the box is a circle: rounding power 2
-        const bool   ROUNDFACE = AVATAR && n.conversation;
-        const double R         = ROUNDFACE ? cell.w / 2 : Theme::RAD_BUTTON * cell.w / 36.0;
+        // a radius of half the box is a circle: rounding power 2. A chat's
+        // face is cut round unless its picture came shaped (Telegram's
+        // forums are rounded squares): then its own alpha is the shape.
+        const bool   SHAPED    = AVATAR && n.conversation && n.hasPixels && n.faceShaped;
+        const bool   ROUNDFACE = AVATAR && n.conversation && !SHAPED;
+        const double R         = SHAPED ? 0 : ROUNDFACE ? cell.w / 2 : Theme::RAD_BUTTON * cell.w / 36.0;
         P.texFit(LEAD, cell, (int)std::lround(R * P.scale), ROUNDFACE ? 2.f : rp);
 
         // only a real app identity badges, and only a face that is not the

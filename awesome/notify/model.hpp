@@ -194,6 +194,10 @@ namespace NAwesome::Notify {
         bool                 hasPixels = false; // the LAST Notify carried image-data (outlives the freed buffer)
         int                  pw = 0, ph = 0;
         uint64_t             pixelsHash = 0; // Raster::hash of `pixels`, set with them
+        // the image-data brings its own shape (its corners are clear): a
+        // chat's face keeps it — Telegram's forum pictures are rounded
+        // squares — where an opaque square is cut to a circle
+        bool                 faceShaped = false;
         // an unpack or a scale of this card's image-data on the raster
         // worker: its ticket (one model-wide serial), 0 = none. A replace or
         // a dismissal outdates it; its result lands only on a matching card.

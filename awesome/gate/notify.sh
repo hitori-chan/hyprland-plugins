@@ -753,6 +753,39 @@ chk "chat: its messages join one card" test "$(st)" = "center:0 live:1 dnd:0"
 nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications CloseNotification u "$R1"
 chk "chat: closing the one id closes the whole chat" until_is 3 "center:0 live:0 dnd:0" st
 nclear
+# a forum's picture comes shaped (a rounded square, its corners clear) and
+# keeps its shape; an opaque square is cut round. The point 4 px into the
+# face's box lies inside the rounded square (inked from 3 px) and outside
+# the circle (whose anti-aliased edge is 5 px in).
+python3 - "$STATE/tg-forum.raw" "$STATE/tg-square.raw" <<'PY'
+import sys
+W, R, INK = 64, 19, bytes((230, 40, 200, 255))
+def px(x, y):
+    cx, cy = min(max(x + 0.5, R), W - R), min(max(y + 0.5, R), W - R)
+    return INK if (x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= R * R else bytes(4)
+open(sys.argv[1], "wb").write(b"".join(px(x, y) for y in range(W) for x in range(W)))
+open(sys.argv[2], "wb").write(INK * (W * W))
+PY
+face_corner() { # face_corner <frame>: 1 when the face's ink covers its box's corner
+	python3 - "$1" "$((PANEL_X + 14 + 4))" "$((N_TOP + 12 + 4))" <<'PY'
+import sys
+from PIL import Image
+r, g, b = Image.open(sys.argv[1]).convert("RGB").getpixel((int(sys.argv[2]), int(sys.argv[3])))
+print(1 if r > 150 and b > 120 and g < 110 else 0)
+PY
+}
+tgchat "$TGIDS" "Releases (Dev)|Mira|v1 is tagged" "@$STATE/tg-forum.raw"
+sleep 1.2
+capture_nested $STATE/tg-forum.png
+chk "tg: a shaped chat picture keeps its shape" test "$(face_corner $STATE/tg-forum.png)" = 1
+nfyact_done
+nclear
+tgchat "$TGIDS" "Plain Group|Mira|hello" "@$STATE/tg-square.raw"
+sleep 1.2
+capture_nested $STATE/tg-square.png
+chk "tg: an opaque square chat picture is cut round" test "$(face_corner $STATE/tg-square.png)" = 0
+nfyact_done
+nclear
 
 # ---- sound-spawn backpressure ------------------------------------------------------
 # The sound path is ARRIVAL-triggered (the sound-file/sound-name hints): a

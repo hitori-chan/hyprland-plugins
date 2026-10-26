@@ -71,10 +71,15 @@ namespace NAwesome::Notify {
         // every build gates on the canvas gate, never on P.warm: a measuring
         // pass forces P.warm on to paint nothing, and a build there would be
         // a build inside a render (crash class 4)
+        // a group with no picture of its own shows its two newest senders'
+        // faces; the chat's picture, when it sent one, says more than any
+        // two faces rolled from initials
+        const bool OWNFACE = N.hasPixels || !N.image.empty();
         prepareCard(NP, P.scale);
         if (GATE.warming) {
-            for (auto& PA : NP->participants)
-                ensureAvatarTex(PA, (int)std::lround(ICONPX * 0.66 * P.scale));
+            if (N.conversationKind == "group" && !OWNFACE)
+                for (size_t i = 0; i < std::min<size_t>(2, NP->participants.size()); i++)
+                    ensureAvatarTex(NP->participants[i], (int)std::lround(ICONPX * 0.66 * P.scale));
             if (BANNER)
                 for (auto& IM : NP->bodyImages)
                     ensureBodyImage(IM, (int)std::lround(BODYIMG_H * P.scale));
@@ -84,7 +89,7 @@ namespace NAwesome::Notify {
         // a group chat with two faces shows both, overlapping; otherwise the
         // lead face (a banner's hero leaves it the app's identity)
         const bool   HERO  = BANNER && N.iconTex && N.heroTex;
-        const bool   PILE  = N.conversationKind == "group" && N.participants.size() >= 2 && N.participants[0].avatarTex && N.participants[1].avatarTex;
+        const bool   PILE  = N.conversationKind == "group" && !OWNFACE && N.participants.size() >= 2 && N.participants[0].avatarTex && N.participants[1].avatarTex;
         const bool   LEAD  = PILE || hasLeadIcon(N, !BANNER);
         const double ICONW = LEAD ? ICONPX : 0;
         const double TX    = X + PADX + (LEAD ? ICONW + ICON_GAP : 0);
