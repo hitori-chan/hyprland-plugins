@@ -233,6 +233,24 @@ dsp "hl.plugin.awesome.keyboard_light_down()"
 chk "panel: closed, a key posts its capsule again" until_is 3 "center:0 live:1 dnd:0" st
 hq awesome clear >/dev/null; sleep 0.4
 
+# ---- dark displays put the keyboard out (system/light.cpp) ------------------
+# Every display off takes the keyboard light with it, quietly; the first one
+# back gives the level back exactly; a choice made in the dark stands.
+K0="$(KBT)"
+chk "dark: the keyboard is lit going in" test "${K0:-0}" -gt 0
+dsp "hl.dsp.dpms({action = 'off'})"
+chk "dark: the last display off puts the keyboard out" until_is 4 0 KBT
+chk "dark: ...quietly (no capsule)" test "$(st)" = "center:0 live:0 dnd:0"
+dsp "hl.dsp.dpms({action = 'on'})"
+chk "dark: the wake gives its level back" until_is 4 "$K0" KBT
+dsp "hl.dsp.dpms({action = 'off'})"
+until_is 4 0 KBT >/dev/null
+dsp "hl.plugin.awesome.keyboard_light_up()"
+chk "dark: a key in the dark lights it" until_is 4 10 KBT
+dsp "hl.dsp.dpms({action = 'on'})"; sleep 0.8
+chk "dark: ...and the wake keeps that choice" test "$(KBT)" = 10
+hq awesome clear >/dev/null; sleep 0.4
+
 # ---- the touchpad policy ------------------------------------------------------
 PSTART="$(hq awesome pad)"
 case "$PSTART" in

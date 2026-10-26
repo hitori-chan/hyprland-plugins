@@ -8,6 +8,9 @@
 // module's system bus — no root, no udev rule. A key's step answers with a
 // capsule (ids 9992/9994) unless the control center shows the slider it
 // moved; every level is published to the control center as logind acks it.
+//
+// The keyboard's light goes out while every display is off and comes back
+// with the first one, unless a choice was made in the dark.
 
 #include "system.hpp"
 
@@ -15,8 +18,12 @@
 
 #include "core/busclient.hpp"
 #include "core/controls.hpp"
+#include "core/hop.hpp"
+#include "core/queries.hpp"
 
 #include <hyprland/src/helpers/time/Time.hpp>
+#include <hyprland/src/output/Monitor.hpp>
+#include <hyprland/src/state/MonitorState.hpp>
 
 #include <sdbus-c++/sdbus-c++.h>
 
@@ -28,6 +35,7 @@
 #include <fstream>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace NAwesome::System {
 
@@ -56,7 +64,7 @@ namespace NAwesome::System {
         int                max     = 0;
         bool               busy    = false;
         int                pending = 0; // key steps, signed (±5 % of max each)
-        std::optional<int> target;      // a percent the slider asked for
+        std::optional<int> target;      // an absolute raw level (the slider's percent converted, the dark's)
         // A keypress bases its step on what the previous one just asked
         // for: logind's write is asynchronous, so a fast repeat would read
         // stale sysfs and re-step from the same value. Half a second of
@@ -175,11 +183,20 @@ namespace NAwesome::System {
             lightApply(L);
     }
 
-    static void lightSet(SLight& L, int pct) {
-        L.target  = std::clamp(pct, 0, 100);
-        L.pending = 0; // the slider's choice is absolute
+    static void lightSetRaw(SLight& L, int raw) {
+        L.target  = std::max(0, raw);
+        L.pending = 0; // an absolute choice replaces the steps
         if (!L.busy)
             lightApply(L);
+    }
+
+    // the raw level the slider's percent means (a device not found yet is
+    // looked for: the slider shows only a light that answered once)
+    static void lightSet(SLight& L, int pct) {
+        if (L.dev.empty())
+            findLight(L);
+        if (L.max > 0)
+            lightSetRaw(L, (int)std::lround(L.max * std::clamp(pct, 0, 100) / 100.0));
     }
 
     static void lightApply(SLight& L) {
@@ -217,12 +234,12 @@ namespace NAwesome::System {
             raw = *now;
         }
 
-        // the slider's percent, then the key steps on top: ±5% of max,
+        // the absolute level, then the key steps on top: ±5% of max,
         // linear, floored (the display at 2 raw: the old brightnessctl -n2)
         // — a floor never above the device's own max (a 0..1 panel), and a
         // step down never raises a device already under it
         if (TARGET)
-            raw = (int)std::lround(L.max * *TARGET / 100.0);
+            raw = *TARGET;
         const int STEP  = std::max(1, (int)std::lround(L.max * 0.05));
         const int FLOOR = std::min({L.floor, L.max, !TARGET && DIR < 0 ? raw : L.floor});
         raw             = std::clamp(raw + DIR * STEP, FLOOR, L.max);
@@ -265,16 +282,71 @@ namespace NAwesome::System {
         L.lastSetAt  = Time::steadyNow();
     }
 
+    // ---- dark displays put the keyboard out ----
+
+    // While every display is off (DPMS: an idle daemon's blank, the
+    // dispatcher), the keyboard light is the last light on the desk: it goes
+    // out with the last display and comes back, exactly as it was, with the
+    // first. A choice made in the dark (a key, the slider) stands: the wake
+    // leaves it. A blank walks every display, one emission each: they
+    // coalesce into one check on the next turn, which also rewatches the
+    // displays a hotplug changed.
+    static std::vector<Hyprutils::Signal::CHyprSignalListener> dpmsWatch;
+    static CHop                                                 pendingDark;
+    static bool                                                 darkArmed = false, dark = false;
+    static int                                                  darkKept  = -1; // the raw level the dark took; -1: nothing to give back
+
+    static void darkCheck();
+    static void darkSoon() {
+        if (compositorShuttingDown() || std::exchange(darkArmed, true))
+            return;
+        pendingDark.arm(darkCheck);
+    }
+
+    static void darkCheck() {
+        darkArmed = false;
+        if (compositorShuttingDown())
+            return;
+        const auto& MONS = State::monitorState()->monitors();
+        dpmsWatch.clear();
+        for (const auto& M : MONS)
+            if (M)
+                dpmsWatch.push_back(M->m_events.dpmsChanged.listen([]() { darkSoon(); }));
+        // no display at all is no verdict (the start before outputs, a
+        // closed lid's last panel): the light stays as it is
+        if (MONS.empty())
+            return;
+        const bool DARK = std::ranges::none_of(MONS, [](const PHLMONITOR& M) { return M && M->m_dpmsStatus; });
+        if (DARK == dark)
+            return;
+        dark = DARK;
+        if (keyboard.dev.empty())
+            return;
+        if (dark) {
+            // what it shows: an ask still in flight is newer than sysfs
+            const int NOW = keyboard.target ? *keyboard.target : keyboard.busy && keyboard.lastSetRaw >= 0 ? keyboard.lastSetRaw : readLight(keyboard).value_or(0);
+            darkKept      = NOW > 0 ? NOW : -1;
+            if (darkKept > 0)
+                lightSetRaw(keyboard, 0);
+        } else if (darkKept > 0)
+            lightSetRaw(keyboard, std::exchange(darkKept, -1));
+    }
+
     static SLight* lightOf(Controls::eLevel l) {
         return l == Controls::eLevel::DISPLAY ? &display : l == Controls::eLevel::KEYBOARD ? &keyboard : nullptr;
     }
 
+    // the user's own moves: a keyboard choice made in the dark stands
     void lightKey(Controls::eLevel l, int dir) {
+        if (l == Controls::eLevel::KEYBOARD)
+            darkKept = -1;
         if (auto* L = lightOf(l))
             lightStep(*L, dir);
     }
 
     void lightAsk(Controls::eLevel l, int pct) {
+        if (l == Controls::eLevel::KEYBOARD)
+            darkKept = -1;
         if (auto* L = lightOf(l))
             lightSet(*L, pct);
     }
@@ -291,6 +363,10 @@ namespace NAwesome::System {
     void lightInit() {
         findLogindSession();
         lightRefresh();
+        // the displays as they are, and as they come and go
+        supervisor().listen(Event::bus()->m_events.monitor.added, [](PHLMONITOR) { darkSoon(); });
+        supervisor().listen(Event::bus()->m_events.monitor.removed, [](PHLMONITOR) { darkSoon(); });
+        darkSoon();
     }
 
     // the bus went (lost, or the module's teardown): its pending
@@ -304,6 +380,10 @@ namespace NAwesome::System {
     }
 
     void lightExit() {
+        dpmsWatch.clear();
+        pendingDark.reset();
+        darkArmed = dark = false;
+        darkKept         = -1;
         for (auto* L : {&display, &keyboard}) {
             ++L->generation; // a late SetBrightness reply finds itself outdated
             L->busy    = false;

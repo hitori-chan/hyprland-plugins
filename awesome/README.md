@@ -746,6 +746,11 @@ pragmatic chain (GTK theme → hicolor → pixmaps), not a full
   GPU switch); with none, or no system bus, the press answers with an
   "unavailable" card. Keyboards with light keys bind
   `keyboard_light_up` / `keyboard_light_down`.
+- **The keyboard light in the dark**: while every display is off (DPMS —
+  an idle daemon's blank, `hl.dsp.dpms`), the keyboard light is out,
+  quietly; the first display back gives it its level back exactly. A
+  choice made in the dark (a key, the slider) stands: the wake leaves
+  it. A locked screen keeps its light: a password is typed in the dark.
 - **Volume and microphone**: `wpctl` reads the current value and writes
   the new one inside its own process, so two sets at once lose a step
   (or fold two mute toggles into one). Each device runs ONE set at a
