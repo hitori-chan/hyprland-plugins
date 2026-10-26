@@ -259,7 +259,7 @@ namespace NAwesome::Notify {
     namespace CardMenu {
         bool     canOpen(uint32_t id); // a notification (never feedback) the user can see
         bool     open(uint32_t id, const Vector2D& at); // the hold: its corner at the pointer
-        bool     openControl(Controls::eLevel l, const Vector2D& at); // a level's right click (the volume's outputs)
+        bool     openControl(Controls::eLevel l, const Vector2D& at); // a level's right click (the keyboard's room, the volume's outputs)
         void     close();
         bool     isOpen();
         uint32_t owner(); // the card it belongs to; 0 = none open

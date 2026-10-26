@@ -398,7 +398,12 @@ while a physical mouse is present — one that has moved or clicked —
 400 ms coalesced recheck, manual toggle until hotplug, across config
 reloads). The keyboard's light goes out while every display is off and
 comes back with the first (the displays' own `dpmsChanged`, one check a
-turn; a choice made in the dark stands). Every action's feedback is a
+turn; a choice made in the dark stands). With its option on, it follows
+the room: iio-sensor-proxy's `net.hadess.SensorProxy` on the system bus,
+claimed only while followed, read in lux with a margin (20/60) and a
+settle (5 s) so it never flickers; a choice by hand holds until the zone
+changes, and the on level is the user's last (`kbd-level`, remembered at
+logind's ack). Every action's feedback is a
 notify capsule: fixed IDs
 replace in place (1200 ms; the touchpad's 1500 ms), a glyph and a
 level or words. A Bluetooth headset's own volume change (BlueZ's

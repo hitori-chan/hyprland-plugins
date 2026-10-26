@@ -27,6 +27,7 @@ namespace NAwesome::Controls {
     enum class eSwitch : uint8_t {
         MIC,
         TOUCHPAD,
+        ROOM, // the keyboard light follows the room's light (-1: no light sensor)
         COUNT_,
     };
 
@@ -50,7 +51,7 @@ namespace NAwesome::Controls {
 
     struct SState {
         std::array<SLevel, (size_t)eLevel::COUNT_>  levels{};
-        std::array<int8_t, (size_t)eSwitch::COUNT_> switches{-1, -1}; // -1 none, 0 off, 1 on
+        std::array<int8_t, (size_t)eSwitch::COUNT_> switches{-1, -1, -1}; // -1 none, 0 off, 1 on
         std::vector<SOutput>                        outputs;
     };
 

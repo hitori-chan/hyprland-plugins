@@ -605,7 +605,8 @@ semantics).
   shows its number over a full track: the wheel never raises it, and a
   notch down lands at 100. A right click on the volume lists its outputs
   (`wpctl status`'s sinks, the default checked) and a pick makes one the
-  default. A key that moves a level while the center is open moves its
+  default; on the keyboard light it offers Follow the Room (dim without
+  a light sensor). A key that moves a level while the center is open moves its
   slider, and no capsule covers the panel. Under the
   block, "Notifications" at its left, bare on the desktop with a soft
   shadow (as macOS sets text on the desktop), and at its right "Clear
@@ -753,6 +754,15 @@ pragmatic chain (GTK theme → hicolor → pixmaps), not a full
   quietly; the first display back gives it its level back exactly. A
   choice made in the dark (a key, the slider) stands: the wake leaves
   it. A locked screen keeps its light: a password is typed in the dark.
+- **Follow the Room** (the keyboard light's menu; off until chosen, and
+  remembered): the keyboard light is on in a dark room and off in
+  daylight, as iio-sensor-proxy's ambient light sensor reads it (claimed
+  only while followed). Dark is under 20 lux, light over 60, and a new
+  reading must hold 5 s before the light follows, so a hand over the
+  sensor never flickers it. On is the level you last chose (50 % before
+  any). A choice by hand (a key, the slider) stands until the room
+  actually changes; dark displays win over the room. A sensor that
+  reports no lux has no scale to judge by: the option stays dim.
 - **Volume and microphone**: `wpctl` reads the current value and writes
   the new one inside its own process, so two sets at once lose a step
   (or fold two mute toggles into one). Each device runs ONE set at a

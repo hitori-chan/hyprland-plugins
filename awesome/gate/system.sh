@@ -1,6 +1,6 @@
 # awesome/gate/system.sh — the system module's behavior battery: the wpctl
 # process path (volume/mic), the readback caps, the repeat serialization,
-# the logind light paths (a fake logind, backlight and keyboard LED), a
+# the light paths (a fake logind, backlight, keyboard LED and light sensor), a
 # headset's own volume (a fake BlueZ signal), the values published to the
 # control center, and the touchpad policy probe. Nothing reaches the host:
 # the fake wpctl shadows the nested's PATH (the live PipeWire sink is never
@@ -261,6 +261,52 @@ chk "dark: a key in the dark lights it" until_is 4 10 KBT
 dsp "hl.dsp.dpms({action = 'on'})"; sleep 0.8
 chk "dark: ...and the wake keeps that choice" test "$(KBT)" = 10
 hq awesome clear >/dev/null; sleep 0.4
+
+# ---- the keyboard light follows the room (system/light.cpp) -----------------
+# Opt-in from the keyboard slider's menu. The fake sensor reads the room in
+# $STATE/als (lux; seeded lit) while claimed: daylight puts the keyboard
+# out, the dark lights it at the user's level (5 %, the key's in the dark
+# above) once the zone held (600 ms in the gate); a flicker moves nothing;
+# a choice by hand holds until the room changes; dark displays still win.
+ALS="$STATE/als"
+krow() { echo $(($(level_cy 1) + 5 + 14)); } # the keyboard menu's one row, under the pointer
+chk "room: a light sensor is found, the room not followed" test "$(ctl_part room)" = 0
+hq awesome center >/dev/null; sleep 0.8
+click "$((PANEL_X + 60))" "$(level_cy 1)" 273
+chk "room: the keyboard's right click offers Follow the Room" until_is 3 "Follow the Room" hq awesome menu
+click "$((PANEL_X + 120))" "$(krow)" 272
+chk "room: picking it follows the room" until_is 3 1 ctl_part room
+chk "room: ...claiming the sensor" grep -qx "ClaimLight" "$STATE/logind.log"
+chk "room: a lit room puts the keyboard out" until_is 4 0 KBT
+hq awesome center >/dev/null; sleep 0.4
+printf '5
+' > "$ALS"
+chk "room: a dark room lights it at the user's level" until_is 4 10 KBT
+printf '300
+' > "$ALS"; sleep 0.25; printf '5
+' > "$ALS"; sleep 1.2
+chk "room: a flicker shorter than the settle moves nothing" test "$(KBT)" = 10
+dsp "hl.plugin.awesome.keyboard_light_down()"
+chk "room: a key turns it off by hand" until_is 4 0 KBT
+dsp "hl.dsp.dpms({action = 'off'})"; sleep 0.5
+dsp "hl.dsp.dpms({action = 'on'})"; sleep 0.8
+chk "room: ...a choice the dark room's wake leaves" test "$(KBT)" = 0
+printf '300
+' > "$ALS"; sleep 1.2; printf '5
+' > "$ALS"
+chk "room: once the room changed, its dark lights it again" until_is 4 10 KBT
+dsp "hl.dsp.dpms({action = 'off'})"
+chk "room: dark displays still win" until_is 4 0 KBT
+dsp "hl.dsp.dpms({action = 'on'})"
+chk "room: the wake lights it as the room says" until_is 4 10 KBT
+hq awesome clear >/dev/null; sleep 0.4
+hq awesome center >/dev/null; sleep 0.8
+click "$((PANEL_X + 60))" "$(level_cy 1)" 273
+chk "room: the menu checks it" until_is 3 "Follow the Room*" hq awesome menu
+click "$((PANEL_X + 120))" "$(krow)" 272
+chk "room: picking it again stops following" until_is 3 0 ctl_part room
+chk "room: ...releasing the sensor" grep -qx "ReleaseLight" "$STATE/logind.log"
+hq awesome center >/dev/null; sleep 0.4
 
 # ---- the touchpad policy ------------------------------------------------------
 PSTART="$(hq awesome pad)"

@@ -29,7 +29,8 @@
 //            (Do Not Disturb, the microphone, the touchpad) · a left press
 //            on a level's track drags it until the release · the wheel
 //            moves a level 5 % a notch · the volume's glyph mutes · right
-//            on the volume opens its outputs
+//            on the keyboard light opens Follow the Room, on the volume
+//            its outputs
 //   menu     a row is picked on the left RELEASE — press, hold, slide onto
 //            a row and let go, or click one on the open menu; any other
 //            press closes it, swallowed
