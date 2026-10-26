@@ -360,17 +360,22 @@ the focus, are nobody else's on the session bus. `NotificationClosed`
 stays a broadcast.
 
 - `replaces_id` updates a card in place, keeping its stack slot; an
-  unknown id creates the card under that id. A card belongs to the bus
-  name that created it (its replies, actions and token go there): another
-  client's `replaces_id`, or a conversation merge from it, starts a fresh
-  card instead, as Plasma does. A card whose sender left the bus is
+  unknown id creates the card under that id. In a chat card each message
+  is a notification of its own (below): its id names that message, which
+  a replace rewrites in place and `CloseNotification` takes alone. A
+  replace always answers with its `replaces_id`: a new `message-id` it
+  brings joins the chat sharing that id, so a client that keeps one id
+  for its chat closes all of it. A card belongs to the bus name that
+  created it (its replies, actions and token go there): another client's
+  `replaces_id`, or a conversation merge from it, starts a fresh card
+  instead, as Plasma does. A card whose sender left the bus is
   ownerless, and the app's next instance continues it (meanwhile its
-  reply field, menu actions and primary are gone: they would reach nobody).
-  The 9990s are the private OSD band: its ids, live or
-  not, are the plugin's own in-process posts (the system module's OSD
-  cards), so no client can pin a band id, take over the volume card on
-  screen, or ride the band's DND bypass. Fresh ids outside the band are
-  minted from a low counter.
+  reply field, menu actions and primary are gone: they would reach
+  nobody). The 9990s are the private OSD band: its ids, live or not, are
+  the plugin's own in-process posts (the system module's OSD cards), so
+  no client can pin a band id, take over the volume card on screen, or
+  ride the band's DND bypass. Fresh ids outside the band are minted from
+  a low counter.
 - `expire_timeout`: 0 → sticky, >0 → ms; −1 (server decides) →
   `timeout_low` (4 s) for self-declared ephemerals (low urgency,
   `transient`, `value` cards) and `timeout_normal` (5 s) for the rest,
@@ -410,25 +415,49 @@ stays a broadcast.
   category alone are not a contract — two chats can share a title. The
   id is opaque and rejected above 512 bytes (clipping it would merge
   two different chats).
-- When a conversation-id is in force, the card's body is the
-  TRANSCRIPT: the latest kept messages, CHRONOLOGICAL — the oldest line
-  leads and the newest ends the body, so an arrival lands at the bottom
-  and pushes the oldest out of the top of the window. The banner
-  previews the five newest messages; the shade renders the full seven
-  (32 retained). Group senders are prefixed by name, all under an 8 KB
-  cap that evicts from the oldest end. `message-id` upserts (an edit
-  replaces in place), `message-time` orders, `message-historic` marks a
-  backfill (it does not grow the unread count). An unread count past
-  one shows as a pill beside the title; a `group` chat leads with a
-  facepile of two of the distinct senders of the kept messages, each
-  avatar its `sender-icon` or a deterministic initials face.
 - Without a conversation-id the legacy merge stands: a fresh `Notify`
-  whose app + summary matches a live card is joined onto it, bodies
-  joined chronologically (newest appended at the end) under the same
-  cap — triggered by the fd.o
-  conversation categories (`im.*`/`call.*`, where the summary is the
-  sender or the room) or `x-canonical-append`. Cards that vanish on
-  expiry never merge.
+  whose app + summary matches a live chat card joins it — triggered by
+  the fd.o conversation categories (`im.*`/`call.*`, where the summary
+  is the sender or the room) or `x-canonical-append`. This is how
+  Telegram Desktop posts: a `Notify` per message, the chat's name as
+  the summary, the sender as a bold line of its own leading a group's
+  message (`<b>Alice</b>` then the message), the chat's picture (never
+  the sender's) as `image-data`. Cards that vanish on expiry never merge.
+- Every chat card, whichever contract merged it, keeps a LOG of its
+  messages (32 retained), and each message is a notification of its
+  own: its `Notify` gets its own id back (the card's first message the
+  card's id). The card acts as its newest message, as macOS's stack
+  acts as its top notification: Reply quotes it, Open and Mark as read
+  act on it. A sender closing one id takes the messages that answer
+  for it, the card going with its last; the card's own id, once its
+  message is gone (closed, or out of the 32), closes nothing. The
+  card's dismissal closes every id it holds. (Telegram keeps a record
+  per message and answers a signal
+  with the first record holding its id: one shared id made Reply quote
+  the chat's oldest message.)
+- The card's body is the TRANSCRIPT, CHRONOLOGICAL: the newest message
+  ends it. Each message is one paragraph — a group's sender leading it
+  in bold, its own line breaks kept inside it, every line that
+  continues it hanging 12 px, so a line at the margin always begins a
+  message. The banner and the center show what fits of the seven
+  newest from the newest END, measured by the very layout that draws
+  them: the newest whole (cut at its end only when it alone overflows),
+  older ones above it while they fit, the first that does not keeping
+  the head that fits (its sender and at least 12 characters) behind an
+  ellipsis — never a message's tail. A message that repeats the one
+  before it, sender and all (Telegram's hidden preview, "You have a new
+  message", for each), shows once. A folded card shows the newest
+  message on one line, its sender inline.
+- A new message is news: the chat moves to the front of the banner
+  column and the center, springing in when it rises (one already
+  leading the column changes its words in place); an edit, a replace
+  or a progress step keeps its place. `message-id` upserts (an edit
+  replaces in place), `message-time` orders, `message-historic` marks a
+  backfill (it does not grow the unread count). The count beside the
+  title is `unread-count`, else the messages that arrived (a closed one
+  leaves it); past one it shows as a pill. A `group` chat leads with a
+  facepile of its two newest distinct senders, each avatar its
+  `sender-icon` or a deterministic initials face.
 - `x-notify-group-key` (opaque, ≤512 bytes) sub-keys the app's stack
   (macOS's thread identifier): two or more cards of one app stack in
   the center per declared group, and the deck, the spread and the

@@ -218,7 +218,15 @@ memory only); neither reads plugin or compositor state.
   (~26 ms; a header declaring more is refused before the walk), the
   call is refused with a D-Bus error, the defined behavior at a bound
   only a hostile sender reaches. The daemon's signals leave in order from one queue; the
-  action, the activation token and a reply go to the sender only. The
+  action, the activation token and a reply go to the sender only. A
+  chat card answers for an id per message (Telegram keeps a record per
+  message and acts on the first holding a signal's id): its action and
+  reply leave on the newest message's id, a sender's close of an id
+  takes the messages holding it (a replace answers with its
+  `replaces_id`, a message it adds sharing that id), a dismissal closes
+  every id the card holds — so the queue holds a Clear all of
+  `max_notifs`' ceiling of chats with full logs (512 × 33 signals,
+  plus room for the clicks). The
   tray installs ONE async match per signal interface, routed by sender
   and path, never a per-proxy (synchronous) AddMatch.
 - **Bounds** — every externally sized structure has a bound and a
@@ -337,8 +345,16 @@ ranking, the icon anatomy, the pixel model). Surfaces: the banners, the
 center and the OSD capsules on the shared canvas — one card renderer
 for the banner, the center and a card in a stack (`notify/stack.cpp`
 draws the deck and the spread stack's header around it) — and the card
-menu, drawn last and hit first on the notify layer. The menu's switches (an
-app's banners and sounds, a chat's mute) persist through the core's
+menu, drawn last and hit first on the notify layer. A chat's window is
+fitted from its newest end (`notify/transcript.hpp`, pure) with the
+layout its raster draws (`fittedTranscript`), so the raster never cuts
+what the fit kept: counted one paragraph a layout (lines add up across
+paragraphs) and checked once whole, the exact fit only when a taller
+line fails the check — about a millisecond, where laying out the
+growing window took several. It is memoized on the card per revision,
+width, line budget and font, and refit in the warm, never per frame. The
+menu's switches (an app's banners and sounds, a chat's mute) persist
+through the core's
 `StateStore` and gate the arrival, the DND resume and the re-pop alike.
 Inline reply, sound through Jobs. The model API is the module's public
 face — `system` posts its feedback cards through it (fixed IDs, low

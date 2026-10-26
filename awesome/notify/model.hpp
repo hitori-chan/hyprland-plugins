@@ -107,9 +107,12 @@ namespace NAwesome::Notify {
         int          builtPx = 0;
     };
 
-    // one structured message of a conversation (the message-id upsert keeps
-    // the log bounded; see pixel_model.hpp)
+    // one message of a chat card's log (the upsert keeps it bounded; see
+    // pixel_model.hpp). Every message is a notification of its own on the
+    // wire: the Notify that posted it got `nid` back, and the sender may
+    // close it alone (Telegram does as a message is read or deleted).
     struct SMessage {
+        uint32_t    nid = 0;
         std::string id;
         std::string senderId;
         std::string senderName;
@@ -150,26 +153,27 @@ namespace NAwesome::Notify {
         std::string          sender;  // the bus name that sent this Notify (the X11 activation lookup)
         bool                 orphaned = false; // its sender left the bus: any sender of the app may take the card over
         std::string          summary; // newlines flattened, whitelisted markup
-        std::string          body;    // whitelisted markup (Pango subset)
-        // structured conversation metadata: a sender with a stable
-        // conversation-id grows
-        // ONE card per chat, its message log kept and its body rebuilt from
-        // the latest of it
-        std::string          conversationId; // stable chat identity; "" = no merge contract
+        std::string          body;    // whitelisted markup (Pango subset); a chat's: one paragraph per message
+        // A chat is ONE card: its messages, merged by conversation-id or by
+        // app and summary (the legacy contract), keep a log the body is
+        // rebuilt from
+        std::string          conversationId; // stable chat identity; "" = the legacy merge
         std::string          conversationTitle;
         std::string          conversationKind; // "one-to-one" or "group"
         std::string          declaredGroupKey; // x-notify-group-key: the app's own grouping
-        std::vector<SMessage>     messages;     // oldest first, bounded
-        // renewed by every arrival that touches the card (messages,
-        // conversation kind), from one model-wide serial: conversationBody's
-        // memo key — the banner rebuilt the transcript body, sanitizing every
-        // message, per frame — and a click's proof it saw this content
+        std::vector<SMessage>     messages;     // oldest first, bounded; empty = not a chat
+        // renewed by every change to what the card says (an arrival, a
+        // message closed), from one model-wide serial: the fitted window's
+        // memo key and a click's proof it saw this content
         uint64_t                  rev = 0;
+        // the window a chat card last showed, fitted from its newest end at
+        // one width and line budget (text.cpp's fittedTranscript)
         struct {
-            uint64_t    rev   = ~0ull;
-            size_t      limit = 0;
+            uint64_t    rev = ~0ull, gen = 0;
+            int         pt = 0, w = 0, cap = 0, indent = 0;
+            bool        links = false;
             std::string body;
-        } convMemo;
+        } fitMemo;
         std::vector<SParticipant> participants; // latest distinct senders, bounded
         uint32_t             unreadCount = 0;
         uint8_t              urgency  = 1;
@@ -269,14 +273,11 @@ namespace NAwesome::Notify {
         // the same check off the header alone: the bus reader runs it before
         // it copies a byte
         std::pair<int, int>      imageDataSize(int32_t w, int32_t h, int32_t stride, int32_t bitsPerSample, int32_t channels, size_t bytes);
-        std::string              joinAppend(const std::string& oldBody, const std::string& add);
-        std::string              foldSenderPrefix(std::string body); // "<b>S</b>\nmsg" -> "<b>S</b>: msg"
     }
 
-    // the collapsed row's one-liner: every card body is chronological
-    // (transcript, legacy join and ordinary alike), so the newest message
-    // ENDS it. Renderer and the topline probe share this so they cannot
-    // drift apart.
+    // the collapsed row's one-liner: a chat's newest message, its sender
+    // inline, else the newest line of the body. Renderer and the topline
+    // probe share this so they cannot drift apart.
     std::string lastLine(const std::string& body); // the newest line of any body ends it
     std::string collapsedLine(const SP<SNotif>& n);
 
@@ -289,6 +290,13 @@ namespace NAwesome::Notify {
         void       init();
         void       exit();
         SP<SNotif> byId(uint32_t id);
+        // The id the card answers for on the wire: a chat's newest message
+        // (Reply quotes it, Open and Mark as read act on it, as macOS's
+        // stack acts as its top notification), else the card's own.
+        uint32_t   wireId(const SNotif& n);
+        // CloseNotification: one message of a chat goes (the card with its
+        // last), any other id takes its card. False: no such id.
+        bool       closeWire(uint32_t id, uint32_t reason);
         // a unique bus name left the bus: its cards lose their owner (the
         // app's next instance may continue them) and their reply field
         void       senderGone(const std::string& name);
@@ -297,7 +305,8 @@ namespace NAwesome::Notify {
         // non-critical transient card (the spec's "bypass persistence")
         bool       offShade(const SP<SNotif>& n);
 
-        // a Notify payload becomes (or refreshes) a card; returns its id
+        // a Notify payload becomes (or refreshes) a card; returns the id the
+        // sender gets: the card's, or a chat message's own
         // `osd`: an in-process post (postCard) — only those may pin a fresh
         // id in the OSD band; no wire hint grants it
         // `image`: the payload's image-data, read apart from the hints (the
@@ -328,7 +337,7 @@ namespace NAwesome::Notify {
         };
         void postCard(const SPostCard& c);
 
-        bool       closeOne(uint32_t id, uint32_t reason);
+        bool       closeOne(uint32_t id, uint32_t reason); // the card goes, every id it answers for closed
         void       dismissAllLive(bool offShadeToo = false); // "Clear all": every shade row goes; the DND queue stays
         void       dismissApp(const std::string& key);    // a stack's close button or right-click; the key may be (app, group)
         void       dismissAppAll(const std::string& appKey); // the card menu's "Close All": every shade card of the app, its chats too
@@ -337,12 +346,6 @@ namespace NAwesome::Notify {
         bool       stackable(const SP<SNotif>& n);        // may join its app's stack: a card with an app
         void       absorbPopped();                // opening the shade parks the popped stack
         void       repopAbsorbed(bool repop = true);      // closing it returns the parked stack to banners (or parks it for good)
-        // the transcript of the latest `limit` kept messages, chronological
-        // (oldest leads, newest ends): the banner previews five, the shade
-        // renders all seven through the card's stored body
-        // a reference into the card (its body, or the memo): valid while the
-        // card lives and its revision stands
-        const std::string& conversationBody(const SP<SNotif>& n, size_t limit);
         void       rearmExpiry();
         void       holdBanner(uint32_t id); // the hovered popup's countdown pauses; 0 releases (and restarts it)
         void       toggleSuspend();         // DND; resume renders the queue, fresh timeouts

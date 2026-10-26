@@ -6,6 +6,7 @@
 // staleness bookkeeping and why the bound is a grace generation.
 
 #include "textcut.hpp"
+#include "transcript.hpp"
 #include "ui.hpp"
 
 #include "../core/config.hpp"
@@ -382,57 +383,94 @@ namespace NAwesome::Notify {
         }
     }
 
-    static SP<ITexture> buildText(const std::string& fullText, const CHyprColor& col, int pt, int maxWidthPx, int maxHeightPx, float lineSpacing, bool markup, int weight,
-                                  const CHyprColor* linkCol = nullptr, std::vector<std::pair<std::string, CBox>>* outLinks = nullptr, bool headCut = false,
-                                  int* shadowPad = nullptr) {
-        const std::string FAMILY{NAwesome::cfg().getS("plugin:awesome:notify:font")};
-        // the lines this raster shows: a pixel budget's whole lines, or the
-        // negative height's lines of one paragraph
-        int LINEH = 0, ADV = 0, LINES = 1;
-        if (maxHeightPx >= 0)
-            LINES = lineMetric(FAMILY, pt, weight, lineSpacing, LINEH, ADV) ? std::max(1, (maxHeightPx - LINEH) / ADV + 1) : std::max(1, maxHeightPx / std::max(pt, 1) + 1);
-        else
-            LINES = -maxHeightPx;
-        // a start-ellipsized line shows its END: only an end cut is safe
-        const auto CUT = headCut ? std::string{} :
-                                   cutToLines(fullText, markup, 2 * (size_t)LINES * ((size_t)std::max(maxWidthPx, 1) * 5 / std::max(pt, 1) + 1) + 64,
-                                              maxHeightPx >= 0 ? (size_t)LINES + 1 : SIZE_MAX);
-        const std::string& text = CUT.empty() ? fullText : CUT;
+    // The whole lines a pixel budget holds at this font's real advance, and
+    // the height pango is asked to keep within for them: the pixel slack
+    // covers the metrics' rounding (exactly N lines' height dropped the Nth)
+    // and is far less than another line's advance. maxHeightPx < 0 is that
+    // many lines of one paragraph; the height is then 0 (none).
+    static int heightBudget(const std::string& family, int pt, int weight, float lineSpacing, int maxHeightPx, int& lines) {
+        int LINEH = 0, ADV = 0;
+        if (maxHeightPx < 0) {
+            lines = -maxHeightPx;
+            return 0;
+        }
+        if (!lineMetric(family, pt, weight, lineSpacing, LINEH, ADV)) {
+            lines = std::max(1, maxHeightPx / std::max(pt, 1) + 1);
+            return std::max(maxHeightPx, pt);
+        }
+        lines = std::max(1, (maxHeightPx - LINEH) / ADV + 1);
+        return LINEH + (lines - 1) * ADV + 1;
+    }
 
+    // A layout as every raster and every measure of one builds it: the
+    // font, the markup (links recoloured when asked, an unparseable one
+    // laid out plain, its tags stripped), the width, the wrap, the spacing
+    // and the hanging indent. The fit (fittedTranscript) measures with the
+    // very layout the raster draws, so the raster never cuts what it kept.
+    static PangoLayout* newLayout(const std::string& text, int pt, int maxWidthPx, float lineSpacing, bool markup, int weight, int indentPx, const CHyprColor* linkCol,
+                                  std::vector<SLinkSpan>* linkSpans) {
+        const std::string     FAMILY{NAwesome::cfg().getS("plugin:awesome:notify:font")};
         PangoContext*         context = NAwesome::newTextContext();
         PangoLayout*          layout  = pango_layout_new(context);
         PangoFontDescription* fd      = pango_font_description_new();
         g_object_unref(context);
 
-        pango_font_description_set_family_static(fd, FAMILY.c_str());
+        pango_font_description_set_family(fd, FAMILY.c_str());
         pango_font_description_set_absolute_size(fd, pt * PANGO_SCALE);
         if (weight != 400)
             pango_font_description_set_weight(fd, (PangoWeight)weight);
         pango_layout_set_font_description(layout, fd);
+        pango_font_description_free(fd);
 
-        PangoAttrList*         attrs = nullptr;
-        std::vector<SLinkSpan> linkSpans;
         if (markup) {
-            std::string md = text;
-            if (outLinks && linkCol)
-                md = convertLinks(text, hexOf(*linkCol), linkSpans);
-            char*   stripped = nullptr;
-            GError* err      = nullptr;
+            std::vector<SLinkSpan> spans;
+            std::string            md = text;
+            if (linkCol)
+                md = convertLinks(text, hexOf(*linkCol), spans);
+            PangoAttrList* attrs    = nullptr;
+            char*          stripped = nullptr;
+            GError*        err      = nullptr;
             if (pango_parse_markup(md.c_str(), -1, 0, &attrs, &stripped, nullptr, &err)) {
                 pango_layout_set_text(layout, stripped, -1);
                 g_free(stripped);
+                pango_layout_set_attributes(layout, attrs);
+                pango_attr_list_unref(attrs);
+                if (linkSpans)
+                    *linkSpans = std::move(spans);
             } else {
                 if (err)
                     g_error_free(err);
                 const std::string PLAIN = stripMarkupTags(text); // never show raw <span>/<a> syntax
                 pango_layout_set_text(layout, PLAIN.c_str(), -1);
-                linkSpans.clear(); // offsets are meaningless if the markup didn't parse
             }
         } else
             pango_layout_set_text(layout, text.c_str(), -1);
 
         pango_layout_set_width(layout, std::max(maxWidthPx, 1) * PANGO_SCALE);
         pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
+        if (lineSpacing > 0)
+            pango_layout_set_line_spacing(layout, lineSpacing);
+        if (indentPx > 0)
+            pango_layout_set_indent(layout, -indentPx * PANGO_SCALE); // hanging: every line but a paragraph's first
+        return layout;
+    }
+
+    static SP<ITexture> buildText(const std::string& fullText, const CHyprColor& col, int pt, int maxWidthPx, int maxHeightPx, float lineSpacing, bool markup, int weight,
+                                  const CHyprColor* linkCol = nullptr, std::vector<std::pair<std::string, CBox>>* outLinks = nullptr, bool headCut = false,
+                                  int* shadowPad = nullptr, int indentPx = 0) {
+        const std::string FAMILY{NAwesome::cfg().getS("plugin:awesome:notify:font")};
+        // the lines this raster shows: a pixel budget's whole lines, or the
+        // negative height's lines of one paragraph
+        int       LINES  = 1;
+        const int HEIGHT = heightBudget(FAMILY, pt, weight, lineSpacing, maxHeightPx, LINES);
+        // a start-ellipsized line shows its END: only an end cut is safe
+        const auto CUT = headCut ? std::string{} :
+                                   cutToLines(fullText, markup, 2 * (size_t)LINES * ((size_t)std::max(maxWidthPx, 1) * 5 / std::max(pt, 1) + 1) + 64,
+                                              maxHeightPx >= 0 ? (size_t)LINES + 1 : SIZE_MAX);
+        const std::string& text = CUT.empty() ? fullText : CUT;
+
+        std::vector<SLinkSpan> linkSpans;
+        PangoLayout*           layout = newLayout(text, pt, maxWidthPx, lineSpacing, markup, weight, indentPx, outLinks ? linkCol : nullptr, &linkSpans);
         // the pixel budget is a count of WHOLE lines at this font's real
         // advance: the old 1.35x-body constant undershot the default font
         // by ~10%, so a seven-line transcript rendered six (the clip took
@@ -444,20 +482,9 @@ namespace NAwesome::Notify {
             // lines of each paragraph, and a sender's &#10; or U+2029 would
             // otherwise make a thousand of them (a 27000 px texture)
             pango_layout_set_single_paragraph_mode(layout, TRUE);
-        } else {
-            // whole lines that fit; the pixel slack covers the metrics'
-            // rounding (exactly N lines' height dropped the Nth), and is
-            // far less than another line's advance
-            const int HEIGHT = LINEH > 0 ? LINEH + (LINES - 1) * ADV + 1 : std::max(maxHeightPx, pt);
+        } else
             pango_layout_set_height(layout, HEIGHT * PANGO_SCALE);
-        }
         pango_layout_set_ellipsize(layout, headCut ? PANGO_ELLIPSIZE_START : PANGO_ELLIPSIZE_END);
-        if (attrs) {
-            pango_layout_set_attributes(layout, attrs);
-            pango_attr_list_unref(attrs);
-        }
-        if (lineSpacing > 0)
-            pango_layout_set_line_spacing(layout, lineSpacing);
 
         PangoRectangle ink = {}, log = {};
         pango_layout_get_pixel_extents(layout, &ink, &log);
@@ -467,12 +494,10 @@ namespace NAwesome::Notify {
         // keeps a line within ~3x the type size and wraps inside the width:
         // past that the markup goes, and the plain text lays out instead.
         if (markup && (W > std::max(maxWidthPx, 1) + 4 * pt || H > pango_layout_get_line_count(layout) * pt * 3 + pt)) {
-            pango_font_description_free(fd);
             g_object_unref(layout); // owns the attr list now
-            return buildText(stripMarkupTags(text), col, pt, maxWidthPx, maxHeightPx, lineSpacing, false, weight, nullptr, nullptr, false, shadowPad);
+            return buildText(stripMarkupTags(text), col, pt, maxWidthPx, maxHeightPx, lineSpacing, false, weight, nullptr, nullptr, false, shadowPad, indentPx);
         }
         if (W <= 0 || H <= 0) {
-            pango_font_description_free(fd);
             g_object_unref(layout);
             return nullptr;
         }
@@ -543,7 +568,6 @@ namespace NAwesome::Notify {
         cairo_move_to(CR, PAD, PAD);
         pango_cairo_show_layout(CR, layout);
 
-        pango_font_description_free(fd);
         g_object_unref(layout);
         cairo_surface_flush(SURF);
         auto tex = g_pHyprRenderer->createTexture(SURF);
@@ -563,7 +587,7 @@ namespace NAwesome::Notify {
     }};
 
     const SCachedText* cachedText(const std::string& text, const CHyprColor& col, int pt, int maxWpx, int maxHpx, float lineSp, bool markup, int weight,
-                                  const CHyprColor* linkCol, bool headCut, bool shadow) {
+                                  const CHyprColor* linkCol, bool headCut, bool shadow, int indentPx) {
         if (text.empty())
             return nullptr;
         // wide enough for every conversion at ITS widest (two 16-digit hex,
@@ -571,9 +595,9 @@ namespace NAwesome::Notify {
         // it WOULD have written, so a buffer the key outgrew would be read
         // past its end — and a truncated key would alias two styles onto one
         // texture. The append clamps anyway, for the next field added here.
-        char      meta[160];
-        const int METALEN = std::snprintf(meta, sizeof(meta), "|%llx|%d|%d|%d|%d|%d|%d|%llx|%d|%d", (unsigned long long)col.getAsHex(), pt, maxWpx, maxHpx, (int)(lineSp * 100),
-                                          markup, weight, linkCol ? (unsigned long long)linkCol->getAsHex() : 0ULL, headCut, shadow);
+        char      meta[176];
+        const int METALEN = std::snprintf(meta, sizeof(meta), "|%llx|%d|%d|%d|%d|%d|%d|%llx|%d|%d|%d", (unsigned long long)col.getAsHex(), pt, maxWpx, maxHpx, (int)(lineSp * 100),
+                                          markup, weight, linkCol ? (unsigned long long)linkCol->getAsHex() : 0ULL, headCut, shadow, indentPx);
 
         static std::string KEY; // reused; main thread only
         KEY.clear();
@@ -588,11 +612,11 @@ namespace NAwesome::Notify {
         SCachedText entry;
         if (linkCol) {
             std::vector<std::pair<std::string, CBox>> lrects;
-            entry.tex = buildText(text, col, pt, maxWpx, maxHpx, lineSp, markup, weight, linkCol, &lrects);
+            entry.tex = buildText(text, col, pt, maxWpx, maxHpx, lineSp, markup, weight, linkCol, &lrects, false, nullptr, indentPx);
             for (auto& [HREF, R] : lrects)
                 entry.links.push_back({HREF, R}); // physical px; the drawing unit descales
         } else
-            entry.tex = buildText(text, col, pt, maxWpx, maxHpx, lineSp, markup, weight, nullptr, nullptr, headCut, shadow ? &entry.pad : nullptr);
+            entry.tex = buildText(text, col, pt, maxWpx, maxHpx, lineSp, markup, weight, nullptr, nullptr, headCut, shadow ? &entry.pad : nullptr, indentPx);
         return texCache.insert(KEY, std::move(entry));
     }
 
@@ -603,6 +627,43 @@ namespace NAwesome::Notify {
         return e && e->tex ? e->tex->m_size.x / scale : 0;
     }
 
+    // ---- a chat card's window ----
+
+    // a font or theme change re-fits every window (the texture cache's own
+    // clear is the same moment)
+    static uint64_t fitGen = 1;
+
+    const std::string& fittedTranscript(const SP<SNotif>& n, int pt, int widthPx, int capPx, int indentPx, const CHyprColor* linkCol) {
+        auto& M = n->fitMemo;
+        if (M.rev == n->rev && M.gen == fitGen && M.pt == pt && M.w == widthPx && M.cap == capPx && M.indent == indentPx && M.links == (linkCol != nullptr))
+            return M.body;
+        M = {.rev = n->rev, .gen = fitGen, .pt = pt, .w = widthPx, .cap = capPx, .indent = indentPx, .links = linkCol != nullptr};
+        std::vector<std::string> paras;
+        for (size_t at = 0; at <= n->body.size();) {
+            const auto NL = std::min(n->body.find('\n', at), n->body.size());
+            if (NL > at)
+                paras.emplace_back(n->body, at, NL - at);
+            at = NL + 1;
+        }
+        int        lines  = 0;
+        const int  HEIGHT = heightBudget(std::string{NAwesome::cfg().getS("plugin:awesome:notify:font")}, pt, 400, 1.1f, capPx, lines);
+        const auto LINES  = [&](const std::string& s) {
+            PangoLayout* L = newLayout(s, pt, widthPx, 1.1f, true, 400, indentPx, linkCol, nullptr);
+            const auto   N = (size_t)pango_layout_get_line_count(L);
+            g_object_unref(L);
+            return N;
+        };
+        const auto FITS = [&](const std::string& s) {
+            PangoLayout* L = newLayout(s, pt, widthPx, 1.1f, true, 400, indentPx, linkCol, nullptr);
+            PangoRectangle log{};
+            pango_layout_get_pixel_extents(L, nullptr, &log);
+            g_object_unref(L);
+            return log.height <= HEIGHT;
+        };
+        M.body = Transcript::fitTail(paras, (size_t)lines, LINES, FITS);
+        return M.body;
+    }
+
     void textCacheTick() {
         texCache.tick();
     }
@@ -611,6 +672,7 @@ namespace NAwesome::Notify {
     }
     void textCacheClear() {
         texCache.clear();
+        fitGen++;
     }
 
 } // namespace NAwesome::Notify

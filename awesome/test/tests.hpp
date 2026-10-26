@@ -11,3 +11,4 @@ bool test_textcut();
 bool test_iconcache();
 bool test_glyph();
 bool test_battery();
+bool test_transcript();

@@ -15,6 +15,7 @@ int main() {
         {"iconcache", test_iconcache},
         {"glyph", test_glyph},
         {"battery", test_battery},
+        {"transcript", test_transcript},
     };
     for (const auto& C : CASES)
         std::printf("[case] %s\n", C.name), C.fn();

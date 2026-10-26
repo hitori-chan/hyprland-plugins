@@ -16,8 +16,7 @@
 namespace NAwesome::Notify::Pixel {
 
     inline constexpr size_t   MAX_CONVERSATION_MESSAGES           = 32; // the retained log
-    inline constexpr size_t   MAX_PRESENTED_CONVERSATION_MESSAGES = 7;  // the shade's full transcript
-    inline constexpr size_t   MAX_PREVIEWED_CONVERSATION_MESSAGES = 5;  // the banner's preview
+    inline constexpr size_t   MAX_PRESENTED_CONVERSATION_MESSAGES = 7;  // the stored window: what a card can fit
     inline constexpr size_t   MAX_CONVERSATION_PARTICIPANTS       = 16;
     inline constexpr uint32_t MAX_UNREAD_COUNT                    = 999;
 
@@ -49,7 +48,7 @@ namespace NAwesome::Notify::Pixel {
     inline eMessageMutation upsertMessage(std::vector<T>& messages, std::string_view messageId, std::string_view text,
                                           const std::optional<std::string_view> senderId = std::nullopt, const std::optional<std::string_view> senderName = std::nullopt,
                                           const std::optional<std::string_view> senderIcon = std::nullopt, const std::optional<int64_t> timestampMs = std::nullopt,
-                                          const std::optional<bool> historic = std::nullopt) {
+                                          const std::optional<bool> historic = std::nullopt, std::vector<uint32_t>* evicted = nullptr) {
         if (text.empty() && messageId.empty())
             return eMessageMutation::NONE;
 
@@ -80,9 +79,14 @@ namespace NAwesome::Notify::Pixel {
             return AT < BT;
         });
 
+        // past the bound the oldest backfill goes, else the oldest message;
+        // its wire id is reported, the sender's notification closed with it
         while (messages.size() > MAX_CONVERSATION_MESSAGES) {
             const auto HISTORIC = std::ranges::find_if(messages, [](const auto& entry) { return entry.historic; });
-            messages.erase(HISTORIC != messages.end() ? HISTORIC : messages.begin());
+            const auto GONE     = HISTORIC != messages.end() ? HISTORIC : messages.begin();
+            if (evicted && GONE->nid)
+                evicted->push_back(GONE->nid);
+            messages.erase(GONE);
         }
         return MUTATION;
     }

@@ -140,11 +140,13 @@ namespace NAwesome::Notify {
         }
 
         // ---- the body ----
-        // a banner previews the newest five messages of a chat, the center
-        // shows the card's stored window; folded, the newest line alone
-        const std::string FOLDLINE = FOLDED ? collapsedLine(NP) : std::string{};
-        const std::string& BODYSRC = FOLDED ? FOLDLINE : BANNER && N.conversation ? Model::conversationBody(NP, Pixel::MAX_PREVIEWED_CONVERSATION_MESSAGES) : N.body;
-        const int          LINEPX  = bodyBudgetPx(P.scale, 1);
+        // a chat shows what fits of its newest messages, banner and center
+        // alike (the window is fitted below, once the lines are known);
+        // folded, the newest message alone
+        const std::string  FOLDLINE = FOLDED ? collapsedLine(NP) : std::string{};
+        const std::string& RAWBODY  = FOLDED ? FOLDLINE : N.body;
+        const bool         CHAT     = !FOLDED && !N.messages.empty();
+        const int          LINEPX   = bodyBudgetPx(P.scale, 1);
         const double       PROGH   = N.progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0;
         double             heroH   = HERO ? std::min(HERO_CAP, INNERW * N.iconTex->m_size.y / std::max(1.0, N.iconTex->m_size.x)) : 0;
         int                bodyCap = LINEPX;
@@ -156,7 +158,7 @@ namespace NAwesome::Notify {
             // whole, from the end — painted past the glass once, it covered
             // whatever lay below and took none of its clicks.
             const double MAXH = std::max((double)cfg().getI("plugin:awesome:notify:max_height"), 60.0);
-            double       room = MAXH - 2 * PY - ROWH - (BODYSRC.empty() ? 0 : ROW_GAP + LINEPX / P.scale) - PROGH - (REPLY ? BLOCK_GAP + FIELD_H : 0);
+            double       room = MAXH - 2 * PY - ROWH - (RAWBODY.empty() ? 0 : ROW_GAP + LINEPX / P.scale) - PROGH - (REPLY ? BLOCK_GAP + FIELD_H : 0);
             const auto   take = [&](double h) {
                 if (h <= 0 || h > room + 0.5)
                     return false;
@@ -188,8 +190,11 @@ namespace NAwesome::Notify {
         // linkCol collects the <a href> rects: a click meant for a URL must
         // not fire the card's default action (a deck's click expands its
         // stack, whatever it lands on)
-        const bool   LINKS = !FOLDED && !F.deck;
-        const auto   BODY  = BODYSRC.empty() ? nullptr : cachedText(BODYSRC, COLFG, T.body, TWPX, bodyCap, 1.1f, true, 400, LINKS ? &COLLINK : nullptr);
+        const bool         LINKS   = !FOLDED && !F.deck;
+        // a chat's messages hang: a line at the margin begins one
+        const int          HANGPX  = CHAT ? (int)std::lround(HANG * P.scale) : 0;
+        const std::string& BODYSRC = CHAT ? fittedTranscript(NP, T.body, TWPX, bodyCap, HANGPX, LINKS ? &COLLINK : nullptr) : RAWBODY;
+        const auto         BODY    = BODYSRC.empty() ? nullptr : cachedText(BODYSRC, COLFG, T.body, TWPX, bodyCap, 1.1f, true, 400, LINKS ? &COLLINK : nullptr, false, false, HANGPX);
         const double BH   = texH(BODY, P.scale);
         double       altH = 0;
         for (const auto& A : altLines)

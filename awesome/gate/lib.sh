@@ -191,6 +191,61 @@ conv_reply_notify() {
 	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
 		Notify susssasa\{sv\}i "$1" 0 "" "$2" "$3" 2 inline-reply Reply 1 category s im.received 60000 >/dev/null 2>&1
 }
+# A chat as Telegram Desktop's Linux manager posts one: a Notify per
+# message, the chat's name the summary, "<b>Sender</b>\nmessage" in a group,
+# the chat's picture as image-data, x-canonical-append, Open / Mark as read
+# / Reply. Each message is "chat|sender|text" (no sender: a one-to-one
+# chat's); a face file (64 px RGBA, raw) may follow a message as "@file".
+# The ids the daemon answered go to the ids file, one a line. The sender
+# stays on the bus (its cards keep their actions) until nfyact_done.
+tgchat() { # tgchat <ids-file> <chat|sender|text>...
+	DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 90 python3 - "$@" <<'PY' &
+import html, sys
+from gi.repository import Gio, GLib
+bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+def face(raw): # the pixels as one GBytes: an "ay" from bytes is built one element at a time
+    ay = GLib.Variant.new_from_bytes(GLib.VariantType.new("ay"), GLib.Bytes.new(raw), True)
+    return GLib.Variant.new_tuple(*(GLib.Variant("i", v) for v in (64, 64, 256)), GLib.Variant("b", True), GLib.Variant("i", 8), GLib.Variant("i", 4), ay)
+plain = face(bytes((200, 120, 60, 255)) * 4096)
+args, out = sys.argv[2:], open(sys.argv[1], "w")
+for i, m in enumerate(args):
+    if m.startswith("@"):
+        continue
+    chat, sender, text = m.split("|", 2)
+    pic = face(open(args[i + 1][1:], "rb").read()) if i + 1 < len(args) and args[i + 1].startswith("@") else plain
+    body = html.escape(text, quote=False)
+    if sender:
+        body = "<b>%s</b>\n%s" % (html.escape(sender, quote=False), body)
+    hints = {"category": GLib.Variant("s", "im.received"), "desktop-entry": GLib.Variant("s", "org.telegram.desktop"),
+             "x-canonical-append": GLib.Variant("s", "true"), "suppress-sound": GLib.Variant("b", True), "image-data": pic}
+    r = bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "Notify",
+                      GLib.Variant("(susssasa{sv}i)", ("Telegram Desktop", 0, "", chat, body,
+                                                       ["default", "Open", "mail-mark-read", "Mark as read", "inline-reply", "Reply"], hints, 30000)),
+                      None, Gio.DBusCallFlags.NONE, -1, None)
+    print(r.unpack()[0], file=out, flush=True)
+GLib.MainLoop().run()
+PY
+	NFYACT_SENDERS+=($!)
+}
+# the fd.o signals a `busctl monitor` log saw, "<member> <id> <arg>" a line
+sigs() { # sigs <monitor-log>
+	python3 - "$1" <<'PY'
+import re, sys
+member, vals = None, []
+for line in open(sys.argv[1], errors="replace"):
+    m = re.search(r"Member=(\w+)", line)
+    if m:
+        if member and vals:
+            print(member, *vals)
+        member, vals = m.group(1), []
+        continue
+    v = re.match(r'\s*(?:UINT32|STRING) "?(.*?)"?;$', line)
+    if v and member:
+        vals.append(v.group(1))
+if member and vals:
+    print(member, *vals)
+PY
+}
 # The same card from a sender that stays on the bus, as a chat app does: a
 # card whose sender left (busctl's one-shot call above) is ownerless and
 # opens no reply field. Sets REPLY_SENDER; the caller kills it.

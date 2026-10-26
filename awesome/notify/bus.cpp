@@ -29,7 +29,9 @@ namespace NAwesome::Notify::Bus {
     // drops the action after it), which two separate posts allowed. Batched:
     // a Clear all over 400 cards was 400 posts against the link's 256 bound
     // once, and the tail's closes were dropped. Bounded: past MAX_OUT queued
-    // signals a push is refused.
+    // signals a push is refused — room for a Clear all at max_notifs' ceiling
+    // (512) of chats holding their whole log (a close per message), with the
+    // clicks around it.
     struct SOut {
         enum eKind : uint8_t {
             CLOSED,
@@ -44,7 +46,7 @@ namespace NAwesome::Notify::Bus {
     };
     static std::vector<SOut> s_out;
     static bool              s_outPosted = false;
-    constexpr size_t         MAX_OUT     = 8192;
+    constexpr size_t         MAX_OUT     = 512 * (Pixel::MAX_CONVERSATION_MESSAGES + 1) + 256;
 
     // The action, its activation token and a reply's text concern the
     // sender alone: sent to it, never broadcast (any session-bus listener
@@ -122,8 +124,10 @@ namespace NAwesome::Notify::Bus {
         queueOut({.kind = SOut::CLOSED, .id = id, .reason = reason});
     }
 
+    // a card's action speaks for its wire id: a chat's newest message
     void invokeAction(uint32_t id, const std::string& key, const std::string& sender, bool raise) {
-        queueOut({.kind = SOut::ACTION, .id = id, .text = key, .sender = sender, .raise = raise});
+        const auto N = Model::byId(id);
+        queueOut({.kind = SOut::ACTION, .id = N ? Model::wireId(*N) : id, .text = key, .sender = sender, .raise = raise});
     }
 
     // The user typed a reply: hand it back and close the card, the same
@@ -139,7 +143,8 @@ namespace NAwesome::Notify::Bus {
         const auto N = Model::byId(id);
         if (!N || !N->canReply || replyTarget(*N) != target)
             return false;
-        if (!queueOut({.kind = SOut::REPLY, .id = id, .text = text, .sender = N->sender}))
+        // a chat's reply quotes its newest message, the one above the field
+        if (!queueOut({.kind = SOut::REPLY, .id = Model::wireId(*N), .text = text, .sender = N->sender}))
             return false;
         if (!N->resident)
             Model::closeOne(id, Model::R_DISMISSED);
@@ -390,12 +395,13 @@ namespace NAwesome::Notify::Bus {
                            // its own notification (Telegram on read-elsewhere)
                            // is ignored — the card lives out its banner and
                            // waits in the shade. Only the bus path is gated;
-                           // user dismissals and expiry are untouched.
+                           // user dismissals and expiry are untouched. A
+                           // chat's message id takes its line alone.
                            sdbus::registerMethod("CloseNotification").withInputParamNames("id").implementedAs([](uint32_t id) {
                                if (NAwesome::cfg().getI("plugin:awesome:notify:ignore_dbusclose"))
                                    return;
                                // spec: an unknown ID is an error, not a silent no-op
-                               if (!Model::closeOne(id, Model::R_CLOSED))
+                               if (!Model::closeWire(id, Model::R_CLOSED))
                                    throw sdbus::Error{sdbus::Error::Name{"org.freedesktop.Notifications.Error"}, "Unknown notification ID"};
                            }),
                            sdbus::registerMethod("GetCapabilities").withOutputParamNames("capabilities").implementedAs([]() {
