@@ -115,16 +115,20 @@ aq_pinned_libdir() {
 }
 
 # --- the private system bus -------------------------------------------------
-# A dbus-daemon of the nested's own with a fake logind (devtools/fakes):
-# the plugin's brightness path sends its real SetBrightness calls, the fake
-# writes a fake backlight class dir ($AW_BACKLIGHT_DIR, read by the plugin)
-# and a fake keyboard LED ($AW_LEDS_DIR), and the host's lights never move. Nothing else on it: the nested's other
-# system-bus clients (power-profiles, apps) find no service and degrade.
+# A dbus-daemon of the nested's own with its fake services
+# (devtools/fakes/fake-sysbus): the plugin's light paths send their real
+# SetBrightness calls, the fake writes a fake backlight class dir
+# ($AW_BACKLIGHT_DIR, read by the plugin) and a fake keyboard LED
+# ($AW_LEDS_DIR), its light sensor reads the room from $AW_ALS_FILE, and
+# the host's lights and sensors never move. Nothing else is on it: the
+# nested's other system-bus clients (power-profiles, apps) find no service
+# and degrade.
 SYSBUS_DIR="$HARNESS_DIR/sysbus"
 SYSBUS_ADDR="unix:path=$SYSBUS_DIR/bus"
 SYSBUS_BACKLIGHT="${AW_BACKLIGHT_DIR:-$SYSBUS_DIR/backlight}"
 SYSBUS_LEDS="${AW_LEDS_DIR:-$SYSBUS_DIR/leds}"
-SYSBUS_FAKE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/devtools/fakes/fake-logind"
+SYSBUS_ALS="${AW_ALS_FILE:-$SYSBUS_DIR/als}"
+SYSBUS_FAKE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/devtools/fakes/fake-sysbus"
 
 sysbus_alive() {
 	_owns_pid "$SYSBUS_DIR/daemon.pid" cmdline "--config-file=$SYSBUS_DIR/bus.conf" >/dev/null &&
@@ -142,6 +146,8 @@ sysbus_start() {
 		mkdir -p "$SYSBUS_LEDS/gate::kbd_backlight" && printf '200\n' >"$SYSBUS_LEDS/gate::kbd_backlight/max_brightness"
 	fi
 	printf '100\n' >"$SYSBUS_LEDS/gate::kbd_backlight/brightness"
+	# the room: a lit one (lux)
+	printf '300\n' >"$SYSBUS_ALS"
 	sysbus_alive && return 0
 	sysbus_stop
 	mkdir -p "$SYSBUS_DIR"
@@ -164,14 +170,14 @@ sysbus_start() {
 	setsid dbus-daemon --config-file="$SYSBUS_DIR/bus.conf" --nofork --nopidfile >"$SYSBUS_DIR/daemon.log" 2>&1 9>&- &
 	printf '%s\n' "$!" >"$SYSBUS_DIR/daemon.pid"
 	for _ in $(seq 1 30); do [[ -S "$SYSBUS_DIR/bus" ]] && break; sleep 0.1; done
-	DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" AW_BACKLIGHT_DIR="$SYSBUS_BACKLIGHT" AW_LEDS_DIR="$SYSBUS_LEDS" AW_LOGIND_LOG="${AW_LOGIND_LOG:-$SYSBUS_DIR/logind.log}" \
+	DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" AW_BACKLIGHT_DIR="$SYSBUS_BACKLIGHT" AW_LEDS_DIR="$SYSBUS_LEDS" AW_ALS_FILE="$SYSBUS_ALS" AW_LOGIND_LOG="${AW_LOGIND_LOG:-$SYSBUS_DIR/logind.log}" \
 		setsid python3 "$SYSBUS_FAKE" >"$SYSBUS_DIR/logind.stderr" 2>&1 9>&- &
 	printf '%s\n' "$!" >"$SYSBUS_DIR/logind.pid"
 	for _ in $(seq 1 30); do
 		DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" timeout 1 busctl --system status org.freedesktop.login1 >/dev/null 2>&1 && return 0
 		sleep 0.1
 	done
-	echo "host: the private system bus / fake logind did not come up — $SYSBUS_DIR" >&2
+	echo "host: the private system bus / its fakes did not come up — $SYSBUS_DIR" >&2
 	return 1
 }
 

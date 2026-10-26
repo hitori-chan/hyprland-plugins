@@ -473,7 +473,8 @@ as in every gate run, upstream's lazy shader-variant compiles add
 
 - **Isolation** — the nested Hyprland runs inside a private headless
   labwc (`gate/host.sh`), with its own session bus, a private system bus
-  carrying a fake logind and backlight (`devtools/fakes/fake-logind`),
+  carrying a fake logind, backlight and light sensor
+  (`devtools/fakes/fake-sysbus`),
   scratch XDG dirs, and aquamarine at the fork's `flake.lock` pin. The
   live session receives nothing; the isolation check (structural at each
   launch, observed at the end) fails the gate on any trace.

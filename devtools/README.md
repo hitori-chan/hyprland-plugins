@@ -64,11 +64,13 @@ make -C devtools HL=/path/to/Hyprland
 - `fakes/canberra-gtk-play` records its invocation and hangs on demand
   through `AW_SOUND_HANG_FILE` (the notify battery's sound
   checks).
-- `fakes/fake-logind` serves `org.freedesktop.login1` on the host's
-  private system bus: `SetBrightness` writes a fake backlight under
-  `AW_BACKLIGHT_DIR` (and the keyboard's LED under `AW_LEDS_DIR`) and
-  logs to `AW_LOGIND_LOG` (the system battery's
-  brightness checks, never the host's backlight).
+- `fakes/fake-sysbus` serves the host's private system bus:
+  `org.freedesktop.login1`, whose `SetBrightness` writes a fake
+  backlight under `AW_BACKLIGHT_DIR` (and the keyboard's LED under
+  `AW_LEDS_DIR`), and iio-sensor-proxy's `net.hadess.SensorProxy`, an
+  ambient light sensor reading the lux in `AW_ALS_FILE` while claimed;
+  both log to `AW_LOGIND_LOG` (the system battery's light checks, never
+  the host's lights or sensors).
 
 ## Gate safety (still binds)
 
