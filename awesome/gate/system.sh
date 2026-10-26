@@ -1,11 +1,17 @@
 # awesome/gate/system.sh — the system module's behavior battery: the wpctl
 # process path (volume/mic), the readback caps, the repeat serialization,
-# the logind brightness path (a fake logind + backlight), a headset's own
-# volume (a fake BlueZ signal), and the touchpad policy probe. Nothing
-# reaches the host: the fake wpctl shadows the nested's PATH (the live
-# PipeWire sink is never touched), and the brightness and headset paths
-# talk to the nested's private system bus.
+# the logind light paths (a fake logind, backlight and keyboard LED), a
+# headset's own volume (a fake BlueZ signal), the values published to the
+# control center, and the touchpad policy probe. Nothing reaches the host:
+# the fake wpctl shadows the nested's PATH (the live PipeWire sink is never
+# touched), and the light and headset paths talk to the nested's private
+# system bus.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+ctl_part() { hq awesome controls | tr ' ' '\n' | grep "^$1:" | cut -d: -f2; } # ctl_part <name>: a published value
+
+# the load reads every level the control center shows (the fake sink's
+# 0.56, its source muted)
+chk "system: the volume and the mic are published at load" test "$(ctl_part volume) $(ctl_part mic)" = "56 0"
 
 # ---- the wpctl process path ------------------------------------------------
 : > "$STATE/wpctl.log"
@@ -92,6 +98,7 @@ printf '0.42\n' > "$STATE/wpctl-level"
 : > "$STATE/wpctl.log"
 bt_volume 53
 chk "headset: its own volume change shows the capsule" until_is 3 "center:0 live:1 dnd:0" st
+chk "headset: the readback is published to the control center" until_is 3 42 ctl_part volume
 chk "headset: the capsule came from a readback, not a set" bash -c "grep -Fxq 'get-volume @DEFAULT_AUDIO_SINK@' '$STATE/wpctl.log' && ! grep -q '^set-' '$STATE/wpctl.log'"
 nclear
 bt_volume 53
@@ -151,6 +158,23 @@ dsp "hl.plugin.awesome.brightness_down()"; sleep 0.4
 BAFTER_DOWN="$(brt_wait down "$BAFTER_UP")"
 chk "system: brightness_down moved it back" test "$BAFTER_DOWN" = 500
 chk "system: brightness_down posts the percent card" test "$(st)" = "center:0 live:1 dnd:0"
+hq awesome clear >/dev/null; sleep 0.4
+
+# ---- the keyboard light: the kernel's *kbd_backlight LED, the same path ----
+KDIR="$STATE/leds/gate::kbd_backlight"
+KBT() { cat "$KDIR/brightness" 2>/dev/null; }
+chk "system: the fake keyboard light is seeded (100 of 200)" test "$(KBT)" = 100
+chk "system: the control center learns both lights at load" test "$(ctl_part display) $(ctl_part keyboard)" = "50 50"
+dsp "hl.plugin.awesome.keyboard_light_up()"
+chk "system: keyboard_light_up sets +5% through logind" until_is 4 110 KBT
+chk "system: the keyboard's set names the LED" grep -q "SetBrightness /org/freedesktop/login1/session/[a-z0-9]* gate::kbd_backlight 110" "$STATE/logind.log"
+chk "system: it posts the percent card" until_is 3 "center:0 live:1 dnd:0" st
+chk "system: ...and publishes the level" until_is 3 55 ctl_part keyboard
+hq awesome clear >/dev/null; sleep 0.4
+dsp "hl.plugin.awesome.keyboard_light_down()"
+dsp "hl.plugin.awesome.keyboard_light_down()"
+chk "system: two steps down land at 90" until_is 4 90 KBT
+chk "system: the display's level never moved with it" test "$(ctl_part display)" = 50
 hq awesome clear >/dev/null; sleep 0.4
 
 # ---- the touchpad policy ------------------------------------------------------

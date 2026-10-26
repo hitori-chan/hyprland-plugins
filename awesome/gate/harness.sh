@@ -483,7 +483,7 @@ launch_nested() {
 	_harness_launch() {
 		PATH="$REPO/devtools/fakes:$PATH" AW_WPCTL_LOG="$STATE/wpctl.log" \
 			AW_WPCTL_HANG_FILE="$STATE/hang-wpctl" AW_WPCTL_FLOOD_FILE="$STATE/flood-wpctl" AW_WPCTL_LEVEL_FILE="$STATE/wpctl-level" AW_SOUND_HANG_FILE="$STATE/hang-sound" \
-			AW_BACKLIGHT_DIR="$STATE/backlight" AW_LOGIND_LOG="$STATE/logind.log" \
+			AW_BACKLIGHT_DIR="$STATE/backlight" AW_LEDS_DIR="$STATE/leds" AW_LOGIND_LOG="$STATE/logind.log" \
 			HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" XDG_CACHE_HOME="$STATE/cache" XDG_CONFIG_HOME="$STATE/config" \
 			bash "$GATE_DIR/launch.sh" >>"$HARNESS/launch.log" 2>&1
 	}

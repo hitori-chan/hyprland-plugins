@@ -1,7 +1,8 @@
 // awesome/system.cpp — the system module: the one CModule over the two
-// units (audio.cpp — volume/mic/brightness; pad.cpp — the touchpad
+// units (audio.cpp — volume/mic/the lights; pad.cpp — the touchpad
 // policy). The feedback bus is the notify model, the Lua face is the flat
-// hl.plugin.awesome.* names.
+// hl.plugin.awesome.* names, the control center's doors are registered in
+// core/controls.hpp.
 
 #include "system.hpp"
 
@@ -17,7 +18,8 @@ namespace NAwesome::System {
     namespace {
         // The flat face, nil-guarded in the user config like the old
         // namespaces: volume_up, volume_down, mute, mic_mute,
-        // brightness_up, brightness_down, touchpad_toggle.
+        // brightness_up, brightness_down, keyboard_light_up,
+        // keyboard_light_down, touchpad_toggle.
         int luaVolumeUp(lua_State*) {
             enqueueAction(VOL_UP);
             return 0;
@@ -42,6 +44,14 @@ namespace NAwesome::System {
             enqueueAction(BRI_DOWN);
             return 0;
         }
+        int luaKeyboardLightUp(lua_State*) {
+            enqueueAction(KBD_UP);
+            return 0;
+        }
+        int luaKeyboardLightDown(lua_State*) {
+            enqueueAction(KBD_DOWN);
+            return 0;
+        }
         int luaTouchpadToggle(lua_State*) {
             padToggle();
             return 0;
@@ -49,8 +59,24 @@ namespace NAwesome::System {
     }
 
     void CModule::init() {
-        audioInit(); // the system bus and the backlight scan first
+        audioInit(); // the system bus and the lights' scan first
         padInit(); // the settle timer stands before any hotplug can land
+        Controls::doors() = {
+            .setLevel = setLevel,
+            .setSwitch =
+                [](Controls::eSwitch s, bool on) {
+                    if (s == Controls::eSwitch::MIC)
+                        setMic(on);
+                    else if (s == Controls::eSwitch::TOUCHPAD)
+                        padSet(on);
+                },
+            .setMuted = setMuted,
+            .refresh =
+                []() {
+                    audioRefresh();
+                    padPublish();
+                },
+        };
 
         HANDLE H = supervisor().handle();
         HyprlandAPI::addLuaFunction(H, "awesome", "volume_up", luaVolumeUp);
@@ -59,6 +85,8 @@ namespace NAwesome::System {
         HyprlandAPI::addLuaFunction(H, "awesome", "mic_mute", luaMicMute);
         HyprlandAPI::addLuaFunction(H, "awesome", "brightness_up", luaBrightnessUp);
         HyprlandAPI::addLuaFunction(H, "awesome", "brightness_down", luaBrightnessDown);
+        HyprlandAPI::addLuaFunction(H, "awesome", "keyboard_light_up", luaKeyboardLightUp);
+        HyprlandAPI::addLuaFunction(H, "awesome", "keyboard_light_down", luaKeyboardLightDown);
         HyprlandAPI::addLuaFunction(H, "awesome", "touchpad_toggle", luaTouchpadToggle);
     }
 
@@ -67,15 +95,30 @@ namespace NAwesome::System {
         // out in the order their pending work can still fire — the settle
         // timer (pad) before the Jobs callbacks (audio), whose in-flight
         // deliveries are voided by the generation bumps inside audioExit
-        // before the notify model dies a beat later
+        // before the notify model dies a beat later. The control center's
+        // doors close first and its values go last.
+        Controls::doors() = {};
         padExit();
         audioExit();
+        Controls::state() = {};
     }
 
-    // `hyprctl awesome <verb>`: the gate's probe for the touchpad policy
+    // `hyprctl awesome <verb>`: the gate's probes for the touchpad policy
+    // and the values the control center shows
     std::optional<std::string> CModule::handleCtl(const std::string& verb) const {
         if (verb == "pad")
             return padState();
+#ifdef AWESOME_GATE
+        if (verb == "controls") { // "display:P keyboard:P volume:P[m] mic:S touchpad:S" (-1: none)
+            const auto& S = Controls::state();
+            const auto  L = [&](Controls::eLevel l) {
+                const auto& V = S.levels[(size_t)l];
+                return std::to_string(V.pct) + (V.muted ? "m" : "");
+            };
+            return "display:" + L(Controls::eLevel::DISPLAY) + " keyboard:" + L(Controls::eLevel::KEYBOARD) + " volume:" + L(Controls::eLevel::VOLUME) +
+                " mic:" + std::to_string(S.switches[(size_t)Controls::eSwitch::MIC]) + " touchpad:" + std::to_string(S.switches[(size_t)Controls::eSwitch::TOUCHPAD]);
+        }
+#endif
         return std::nullopt;
     }
 

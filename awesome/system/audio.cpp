@@ -1,8 +1,12 @@
-// awesome/system/audio.cpp — volume, mic, and brightness.
+// awesome/system/audio.cpp — volume, mic, and the lights (the display's
+// brightness, the keyboard's).
 //
-// The cards post straight into the notify model — ids 9992/9993/9995,
+// The cards post straight into the notify model — ids 9992/9993/9994/9995,
 // value hints and replace-in-place semantics are the contract; the OSD
-// band lives in the model, so no OSD hint is needed.
+// band lives in the model, so no OSD hint is needed. Every level and the
+// mic's state are published to the control center (core/controls.hpp) as
+// they are learned; while its panel shows, its sliders are the feedback
+// and no capsule covers them.
 //
 // Each audio device runs one wpctl set at a time, then a readback (set ->
 // get -> parse -> card), on the core's Jobs (pidfd-watched, bounded,
@@ -10,9 +14,10 @@
 // Bluetooth headset's own volume change (BlueZ, the system bus) reads the
 // sink back too, and shows only what moved.
 //
-// Brightness stays fork-free: /sys/class/backlight for current/max,
-// ±5% linear steps (the shown percent IS current/max), floor 2 raw so
-// the panel never goes black, the write through logind
+// The lights stay fork-free: sysfs for current/max (/sys/class/backlight,
+// the keyboard's *kbd_backlight LED), ±5% linear steps or the slider's
+// percent (the shown percent IS current/max), the display floored at 2
+// raw so the panel never goes black, the write through logind
 // Session.SetBrightness on the system bus — no root, no udev rule.
 
 #include "system.hpp"
@@ -20,6 +25,8 @@
 #include "notify/model.hpp" // NAwesome::Notify::Notify::Model::postCard (the in-process seam)
 
 #include "core/busclient.hpp"
+#include "core/controls.hpp"
+#include "core/hop.hpp"
 #include "core/jobs.hpp"
 #include "system/wpctl.hpp"
 
@@ -45,6 +52,7 @@ namespace NAwesome::System {
     // 9990-9999 gives them replace-in-place, no history, no grouping).
     inline constexpr uint32_t ID_BRIGHTNESS = 9992;
     inline constexpr uint32_t ID_VOLUME     = 9993;
+    inline constexpr uint32_t ID_KEYBOARD   = 9994;
     inline constexpr uint32_t ID_MIC        = 9995;
     inline constexpr int      OSD_TIMEOUT   = 1200;
 
@@ -58,7 +66,7 @@ namespace NAwesome::System {
     }
     static std::unique_ptr<sdbus::IProxy> logindProxy;
     static sdbus::Slot                    transportMatch; // the headset volume watch (below)
-    static void                           brightnessDropped();
+    static void                           lightsDropped();
 
     static void systemBusInit() {
         auto& L = systemBus();
@@ -68,7 +76,7 @@ namespace NAwesome::System {
         L.dropOwned = []() {
             logindProxy.reset(); // its pending SetBrightness dies unanswered
             transportMatch = {};
-            brightnessDropped();
+            lightsDropped();
         };
         try {
             L.open(true);
@@ -78,48 +86,111 @@ namespace NAwesome::System {
         }
     }
 
-    // ---- brightness (sysfs + logind, zero forks) ----
+    // ---- the lights: the display's backlight and the keyboard's (sysfs + logind, zero forks) ----
 
-    static std::string backlightRoot = "/sys/class/backlight";
-    static std::string backlightDev; // <backlightRoot>/<dev>, name only
-    static int         backlightMax = 0;
     static std::string logindSessionPath; // explicit over "auto": see findLogindSession
 
+    // One light: the device its sysfs class offers, and ONE SetBrightness in
+    // flight (presses meanwhile add up into the next one; a stalled logind
+    // would otherwise collect a call per press until its 25 s timeout). A
+    // slider's absolute choice replaces the steps pending.
+    struct SLight {
+        const char*        subsystem; // logind's: "backlight", "leds"
+        std::string        root;      // the sysfs class dir
+        Controls::eLevel   level;
+        uint32_t           cardId;
+        const char*        title;
+        const char*        icon;
+        Glyph::eGlyph      glyph;
+        int                floor; // raw: a panel never goes black, a keyboard light goes off
+        std::string        dev;   // <root>/<dev>, name only
+        int                max     = 0;
+        bool               busy    = false;
+        int                pending = 0; // key steps, signed (±5 % of max each)
+        std::optional<int> target;      // a percent the slider asked for
+        // A keypress bases its step on what the previous one just asked
+        // for: logind's write is asynchronous, so a fast repeat would read
+        // stale sysfs and re-step from the same value. Half a second of
+        // trust, then sysfs is the truth again (external tools, resume).
+        int             lastSetRaw = -1;
+        Time::steady_tp lastSetAt;
+        uint64_t        generation = 0; // a teardown or a bus loss outdates replies
+    };
+    static SLight             display{.subsystem = "backlight",
+                                      .root      = "/sys/class/backlight",
+                                      .level     = Controls::eLevel::DISPLAY,
+                                      .cardId    = ID_BRIGHTNESS,
+                                      .title     = "Brightness",
+                                      .icon      = "display-brightness-symbolic",
+                                      .glyph     = Glyph::eGlyph::SUN,
+                                      .floor     = 2};
+    static SLight             keyboard{.subsystem = "leds",
+                                       .root      = "/sys/class/leds",
+                                       .level     = Controls::eLevel::KEYBOARD,
+                                       .cardId    = ID_KEYBOARD,
+                                       .title     = "Keyboard",
+                                       .icon      = "keyboard-brightness-symbolic",
+                                       .glyph     = Glyph::eGlyph::KEYBOARD_LIGHT,
+                                       .floor     = 0};
+
+    static std::optional<int> readSysfsInt(const std::string& path) {
+        int           v = -1;
+        std::ifstream f(path);
+        if (!f || !(f >> v) || v < 0)
+            return std::nullopt;
+        return v;
+    }
+
     // at init, and again when the device is missing or stops reading (a
-    // driver loaded late, a GPU switch, a ddcci monitor plugged in)
-    static void findBacklight() {
-        backlightDev.clear();
-        backlightMax = 0;
+    // driver loaded late, a GPU switch, a ddcci monitor plugged in, the
+    // keyboard's driver bound after the session started)
+    static void findLight(SLight& L) {
+        L.dev.clear();
+        L.max          = 0;
+        const bool KBD = &L == &keyboard;
 #ifdef AWESOME_GATE
-        // the gate's fake backlight class dir, driven by a fake logind on the
-        // nested's private system bus: its battery never moves the panel
-        if (const char* DIR = std::getenv("AW_BACKLIGHT_DIR"); DIR && *DIR)
-            backlightRoot = DIR;
+        // the gate's fake classes, driven by a fake logind on the nested's
+        // private system bus: its battery never moves the panel or the keys
+        if (const char* DIR = std::getenv(KBD ? "AW_LEDS_DIR" : "AW_BACKLIGHT_DIR"); DIR && *DIR)
+            L.root = DIR;
 #endif
-        // Several devices (acpi_video0 beside the native panel, a GPU's,
+        // Several backlights (acpi_video0 beside the native panel, a GPU's,
         // ddcci): the systemd rule — firmware, then platform, then raw;
         // directory order only breaks a tie. The firmware interface is the
-        // one that reliably moves the panel.
+        // one that reliably moves the panel. The keyboard's LED is the one
+        // the kernel names *kbd_backlight (asahi's kbd_backlight,
+        // tpacpi::kbd_backlight, ...), the first in name order.
         const auto RANK = [](const std::string& type) { return type == "firmware" ? 0 : type == "platform" ? 1 : type == "raw" ? 2 : 3; };
         int        best = 4;
         std::error_code ec;
         // increment(ec): the range-for's operator++ throws
-        for (auto it = std::filesystem::directory_iterator(backlightRoot, ec); !ec && it != std::filesystem::end(it); it.increment(ec)) {
-            const auto&   e   = *it;
-            int           max = 0;
-            std::ifstream m(e.path() / "max_brightness");
-            if (!m || !(m >> max) || max <= 0)
+        for (auto it = std::filesystem::directory_iterator(L.root, ec); !ec && it != std::filesystem::end(it); it.increment(ec)) {
+            const auto NAME = it->path().filename().string();
+            if (KBD && !NAME.ends_with("kbd_backlight"))
                 continue;
-            std::string   type;
-            std::ifstream t(e.path() / "type");
-            if (t)
-                t >> type;
-            if (RANK(type) < best) {
-                best         = RANK(type);
-                backlightDev = e.path().filename();
-                backlightMax = max;
+            const auto MAX = readSysfsInt(it->path() / "max_brightness");
+            if (!MAX || *MAX <= 0)
+                continue;
+            std::string type;
+            if (!KBD)
+                std::ifstream(it->path() / "type") >> type;
+            const int R = KBD ? 0 : RANK(type);
+            if (R < best || (R == best && KBD && NAME < L.dev)) {
+                best  = R;
+                L.dev = NAME;
+                L.max = *MAX;
             }
         }
+    }
+
+    static std::optional<int> readLight(const SLight& L) {
+        return L.dev.empty() ? std::nullopt : readSysfsInt(L.root + "/" + L.dev + "/brightness");
+    }
+
+    // the light as sysfs has it now: the panel's slider starts there
+    static void publishLight(SLight& L) {
+        const auto RAW = readLight(L);
+        Controls::publish(L.level, {.pct = RAW && L.max > 0 ? (int)std::lround(100.0 * *RAW / L.max) : -1});
     }
 
     // The old plugin wrote through /session/auto — logind resolves that
@@ -144,14 +215,6 @@ namespace NAwesome::System {
         }
     }
 
-    // A keypress bases its step on what the previous one just asked for:
-    // logind's write is asynchronous, so a fast repeat would read stale
-    // sysfs and re-step from the same value. Half a second of trust, then
-    // sysfs is the truth again (external tools, resume).
-    static int             lastSetRaw = -1;
-    static Time::steady_tp lastSetAt;
-    static uint64_t        brightnessGeneration = 0;
-
     static const char* volumeIcon(int pct) {
         if (pct <= 33)
             return "audio-volume-low";
@@ -160,98 +223,112 @@ namespace NAwesome::System {
         return "audio-volume-high";
     }
 
-    // One SetBrightness in flight: presses while it runs add up into the
-    // next one (a stalled logind would otherwise collect a call per press
-    // until its 25 s timeout)
-    static bool brightnessBusy    = false;
-    static int  brightnessPending = 0;
-
-    static void brightnessDropped() {
-        ++brightnessGeneration;
-        brightnessBusy = false;
+    static void lightsDropped() {
+        for (auto* L : {&display, &keyboard}) {
+            ++L->generation;
+            L->busy = false;
+        }
     }
 
-    static void brightnessUnavailable() {
-        Notify::Model::postCard({.id = ID_BRIGHTNESS, .icon = "display-brightness-symbolic", .summary = "Brightness", .body = "Unavailable", .expireTimeout = OSD_TIMEOUT,
-                                 .glyph = Glyph::eGlyph::SUN, .alarm = true});
+    static void lightUnavailable(const SLight& L) {
+        Notify::Model::postCard({.id = L.cardId, .icon = L.icon, .summary = L.title, .body = "Unavailable", .expireTimeout = OSD_TIMEOUT, .glyph = L.glyph, .alarm = true});
     }
 
-    static std::optional<int> readBrightness() {
-        int           raw = -1;
-        std::ifstream b(backlightRoot + "/" + backlightDev + "/brightness");
-        if (!b || !(b >> raw) || raw < 0)
-            return std::nullopt;
-        return raw;
+    static void lightApply(SLight& L);
+    static void lightStep(SLight& L, int dir) {
+        L.pending = std::clamp(L.pending + dir, -20, 20);
+        if (!L.busy)
+            lightApply(L);
     }
 
-    static void brightnessApply();
-    static void brightnessStep(int dir) {
-        brightnessPending = std::clamp(brightnessPending + dir, -20, 20);
-        if (!brightnessBusy)
-            brightnessApply();
+    static void lightSet(SLight& L, int pct) {
+        L.target  = std::clamp(pct, 0, 100);
+        L.pending = 0; // the slider's choice is absolute
+        if (!L.busy)
+            lightApply(L);
     }
 
-    static void brightnessApply() {
-        const int dir = std::exchange(brightnessPending, 0); // the steps, signed
-        if (dir == 0)
+    static void lightApply(SLight& L) {
+        const int  DIR    = std::exchange(L.pending, 0); // the steps, signed
+        const auto TARGET = std::exchange(L.target, std::nullopt);
+        if (DIR == 0 && !TARGET)
             return;
-        const uint64_t GENERATION = ++brightnessGeneration;
-        if (!systemBus().conn())
-            return brightnessUnavailable();
+        const uint64_t GENERATION = ++L.generation;
+        // a key's step answers with a capsule unless the panel shows the
+        // slider it moved; a slider's own set is its own feedback
+        const bool ANNOUNCE = DIR != 0 && !Controls::panelShowing();
+        if (!systemBus().conn()) {
+            if (ANNOUNCE)
+                lightUnavailable(L);
+            return;
+        }
 
         int raw = -1;
-        if (lastSetRaw >= 0 && Time::steadyNow() - lastSetAt < std::chrono::milliseconds(500))
-            raw = lastSetRaw;
+        if (L.lastSetRaw >= 0 && Time::steadyNow() - L.lastSetAt < std::chrono::milliseconds(500))
+            raw = L.lastSetRaw;
         else {
-            auto now = backlightDev.empty() ? std::nullopt : readBrightness();
+            auto now = readLight(L);
             if (!now) {
                 // gone or never found: look again, once per press
-                findBacklight();
-                lastSetRaw = -1;
-                if (!backlightDev.empty())
-                    now = readBrightness();
+                findLight(L);
+                L.lastSetRaw = -1;
+                now          = readLight(L);
             }
-            if (!now)
-                return brightnessUnavailable();
+            if (!now) {
+                Controls::publish(L.level, {});
+                if (ANNOUNCE)
+                    lightUnavailable(L);
+                return;
+            }
             raw = *now;
         }
 
-        // ±5% of max, linear, floored at 2 raw (the old brightnessctl -n2)
-        // — a floor never above the panel's own max (a 0..1 panel), and a
-        // step down never raises a panel already under the floor
-        const int STEP  = std::max(1, (int)std::lround(backlightMax * 0.05));
-        const int FLOOR = std::min({2, backlightMax, dir < 0 ? raw : 2});
-        raw             = std::clamp(raw + dir * STEP, FLOOR, backlightMax);
+        // the slider's percent, then the key steps on top: ±5% of max,
+        // linear, floored (the display at 2 raw: the old brightnessctl -n2)
+        // — a floor never above the device's own max (a 0..1 panel), and a
+        // step down never raises a device already under it
+        if (TARGET)
+            raw = (int)std::lround(L.max * *TARGET / 100.0);
+        const int STEP  = std::max(1, (int)std::lround(L.max * 0.05));
+        const int FLOOR = std::min({L.floor, L.max, !TARGET && DIR < 0 ? raw : L.floor});
+        raw             = std::clamp(raw + DIR * STEP, FLOOR, L.max);
 
-        const int PCT = (int)std::lround(100.0 * raw / backlightMax);
+        const int PCT = (int)std::lround(100.0 * raw / L.max);
         try {
-            auto& L = systemBus();
+            auto& B = systemBus();
             if (!logindProxy)
-                logindProxy = sdbus::createProxy(*L.conn(), sdbus::ServiceName{"org.freedesktop.login1"}, sdbus::ObjectPath{logindSessionPath});
+                logindProxy = sdbus::createProxy(*B.conn(), sdbus::ServiceName{"org.freedesktop.login1"}, sdbus::ObjectPath{logindSessionPath});
             // the card waits for logind's ack: a refused write must not
             // flash a percent that never applied (the reply lands on this
             // event loop; sending from a dispatch callback is fine, only
             // draining is not)
             logindProxy->callMethodAsync("SetBrightness")
                 .onInterface("org.freedesktop.login1.Session")
-                .withArguments(std::string{"backlight"}, backlightDev, (uint32_t)raw)
-                .uponReplyInvoke([PCT, GENERATION](std::optional<sdbus::Error> err) {
-                    if (GENERATION != brightnessGeneration)
+                .withArguments(std::string{L.subsystem}, L.dev, (uint32_t)raw)
+                .uponReplyInvoke([&L, PCT, GENERATION, ANNOUNCE](std::optional<sdbus::Error> err) {
+                    if (GENERATION != L.generation)
                         return; // a teardown owns the state now
-                    brightnessBusy = false;
-                    if (!err)
-                        Notify::Model::postCard({.id = ID_BRIGHTNESS, .icon = "display-brightness-symbolic", .summary = "Brightness", .body = (std::to_string(PCT) + "%").c_str(),
-                                                 .expireTimeout = OSD_TIMEOUT, .value = PCT, .glyph = Glyph::eGlyph::SUN});
-                    else
-                        lastSetRaw = -1; // logind refused: drop the trust window so the next press re-reads sysfs
-                    brightnessApply(); // what was pressed meanwhile
+                    L.busy = false;
+                    if (!err) {
+                        Controls::publish(L.level, {.pct = PCT});
+                        if (ANNOUNCE)
+                            Notify::Model::postCard({.id            = L.cardId,
+                                                     .icon          = L.icon,
+                                                     .summary       = L.title,
+                                                     .body          = (std::to_string(PCT) + "%").c_str(),
+                                                     .expireTimeout = OSD_TIMEOUT,
+                                                     .value         = PCT,
+                                                     .glyph         = L.glyph});
+                    } else
+                        L.lastSetRaw = -1; // logind refused: drop the trust window so the next press re-reads sysfs
+                    lightApply(L);         // what was pressed meanwhile
                 });
-            brightnessBusy = true;
-            L.pollSoon();
+            L.busy = true;
+            B.pollSoon();
         } catch (...) { return; }
 
-        lastSetRaw = raw;
-        lastSetAt  = Time::steadyNow();
+        L.lastSetRaw = raw;
+        L.lastSetAt  = Time::steadyNow();
     }
 
     // ---- volume / mic (wpctl, one set in flight per device) ----
@@ -271,6 +348,10 @@ namespace NAwesome::System {
         int         toggles = 0;
         double      level   = -1; // the last readback's volume (1.0 = 100%); < 0: never read
         bool        muted   = false; // the last readback's mute
+        // the panel's absolute asks, run before the keys' (a slider's level
+        // replaces the steps pending)
+        std::optional<double> target; // 1.0 = 100%
+        std::optional<bool>   muteTo;
         Time::steady_tp levelAt; // when it was read: the default device or another mixer may have moved it since
         uint64_t    generation = 0; // a teardown or a newer readback outdates replies
     };
@@ -327,7 +408,12 @@ namespace NAwesome::System {
             d.level          = RB ? RB->value : std::max(d.level, 0.0);
             d.muted          = RB ? RB->muted : d.muted;
             d.levelAt        = Time::steadyNow();
-            if (show == eShow::ALWAYS || (show == eShow::CHANGED && MOVED))
+            if (RB && d.mic)
+                Controls::publish(Controls::eSwitch::MIC, RB->muted ? 0 : 1);
+            else if (RB)
+                Controls::publish(Controls::eLevel::VOLUME, {.pct = (int)std::lround(RB->value * 100.0), .muted = RB->muted});
+            // the open panel's slider (or switch) is the feedback
+            if ((show == eShow::ALWAYS || (show == eShow::CHANGED && MOVED)) && !Controls::panelShowing())
                 showReadback(d, RB.has_value() ? &*RB : nullptr);
             pump(d);
             if (&d == &sink)
@@ -348,16 +434,22 @@ namespace NAwesome::System {
             return;
         if (d.toggles % 2 == 0)
             d.toggles = 0; // an even count is no change
-        // the mute toggle and the steps are separate sets: a toggle runs
-        // first, the steps wait for the next pump
-        const bool TOGGLE = d.toggles != 0;
-        if (!TOGGLE && d.steps > 0 && (d.level < 0 || Time::steadyNow() - d.levelAt > LEVEL_TRUST)) {
+        // every kind of ask is a set of its own, in this order: the panel's
+        // mute, its level, a key's mute toggle, the key steps; the rest
+        // wait for the next pump
+        const bool MUTETO = d.muteTo.has_value(), TARGET = !MUTETO && d.target.has_value(), TOGGLE = !MUTETO && !TARGET && d.toggles != 0;
+        if (!MUTETO && !TARGET && !TOGGLE && d.steps > 0 && (d.level < 0 || Time::steadyNow() - d.levelAt > LEVEL_TRUST)) {
             d.busy = true; // the limit below needs the level as it is now: read it first
             return readBack(d, eShow::NEVER);
         }
         std::string amount, limit; // outlive the spawn: the argv is copied there
         std::vector<const char*> argv;
-        if (TOGGLE)
+        if (MUTETO)
+            argv = {"wpctl", "set-mute", d.node, *d.muteTo ? "1" : "0", nullptr};
+        else if (TARGET) {
+            amount = std::format("{:.2f}", std::clamp(*d.target, 0.0, 1.0));
+            argv   = {"wpctl", "set-volume", d.node, amount.c_str(), nullptr};
+        } else if (TOGGLE)
             argv = {"wpctl", "set-mute", d.node, "toggle", nullptr};
         else if (d.steps != 0) {
             amount = std::to_string(std::min(std::abs(d.steps) * 5, 100)) + (d.steps > 0 ? "%+" : "%-");
@@ -381,7 +473,13 @@ namespace NAwesome::System {
             d.busy = false; // the class budget is full: the presses stay pending for the next one
             return;
         }
-        (TOGGLE ? d.toggles : d.steps) = 0; // in flight now; a refused spawn kept them
+        // in flight now; a refused spawn kept them
+        if (MUTETO)
+            d.muteTo.reset();
+        else if (TARGET)
+            d.target.reset();
+        else
+            (TOGGLE ? d.toggles : d.steps) = 0;
     }
 
     static void wpctlAction(eAction a) {
@@ -470,7 +568,9 @@ namespace NAwesome::System {
     static CHopQueue<uint8_t, MAX_ACTION_QUEUE> queued([](std::vector<uint8_t>& batch) {
         for (const auto A : batch)
             if (A == BRI_UP || A == BRI_DOWN)
-                brightnessStep(A == BRI_UP ? 1 : -1);
+                lightStep(display, A == BRI_UP ? 1 : -1);
+            else if (A == KBD_UP || A == KBD_DOWN)
+                lightStep(keyboard, A == KBD_UP ? 1 : -1);
             else
                 wpctlAction((eAction)A);
     });
@@ -479,11 +579,92 @@ namespace NAwesome::System {
         queued.push(a);
     }
 
+    // ---- the panel's asks (the control center's doors) ----
+
+    // A slider drag asks per motion: only the newest ask per level stands,
+    // applied on the next event-loop turn (out of the input emission, the
+    // D-Bus call and the spawn with it); each device then runs one set at
+    // a time and takes the newest ask when it finishes.
+    static std::array<std::optional<int>, (size_t)Controls::eLevel::COUNT_> levelAsks;
+    static std::optional<bool>                                              micAsk, muteAsk;
+    static CHop                                                             pendingAsks;
+    static bool                                                             asksArmed = false; // one hop per batch, not one per motion
+
+    static void applyAsks() {
+        asksArmed = false;
+        for (size_t i = 0; i < levelAsks.size(); i++) {
+            const auto PCT = std::exchange(levelAsks[i], std::nullopt);
+            if (!PCT)
+                continue;
+            switch ((Controls::eLevel)i) {
+                case Controls::eLevel::DISPLAY: lightSet(display, *PCT); break;
+                case Controls::eLevel::KEYBOARD: lightSet(keyboard, *PCT); break;
+                case Controls::eLevel::VOLUME:
+                    sink.target = *PCT / 100.0;
+                    sink.steps  = 0;
+                    if (sink.muted && *PCT > 0)
+                        sink.muteTo = false; // a slider moved off zero is heard, as macOS's
+                    pump(sink);
+                    break;
+                case Controls::eLevel::COUNT_: break;
+            }
+        }
+        if (const auto MUTED = std::exchange(muteAsk, std::nullopt)) {
+            sink.muteTo  = *MUTED;
+            sink.toggles = 0;
+            pump(sink);
+        }
+        if (const auto ON = std::exchange(micAsk, std::nullopt)) {
+            source.muteTo  = !*ON;
+            source.toggles = 0;
+            pump(source);
+        }
+    }
+
+    static void armAsks() {
+        if (std::exchange(asksArmed, true))
+            return;
+        pendingAsks.arm(applyAsks);
+    }
+
+    void setLevel(Controls::eLevel l, int pct) {
+        if (l >= Controls::eLevel::COUNT_)
+            return;
+        levelAsks[(size_t)l] = std::clamp(pct, 0, 100);
+        armAsks();
+    }
+
+    void setMic(bool on) {
+        micAsk = on;
+        armAsks();
+    }
+
+    void setMuted(bool muted) {
+        muteAsk = muted;
+        armAsks();
+    }
+
+    // the load, and the panel opening: every level as it is now (the volume
+    // and the mic read back quietly; one already reading answers with
+    // that), so the panel opens on what it shows and never grows a row
+    void audioRefresh() {
+        for (auto* L : {&display, &keyboard}) {
+            if (L->dev.empty())
+                findLight(*L);
+            publishLight(*L);
+        }
+        for (auto* D : {&sink, &source})
+            if (!D->busy) {
+                D->busy = true;
+                readBack(*D, eShow::NEVER);
+            }
+    }
+
     void audioInit() {
         systemBusInit();
         headsetInit();
-        findBacklight();
         findLogindSession();
+        audioRefresh();
     }
 
     void audioExit() {
@@ -491,6 +672,11 @@ namespace NAwesome::System {
         // go with the loop — in-flight callbacks are generation-checked by
         // the teardown bump below.
         queued.reset();
+        pendingAsks.reset();
+        asksArmed = false;
+        levelAsks.fill(std::nullopt);
+        micAsk.reset();
+        muteAsk.reset();
         if (headsetSettle && g_pEventLoopManager)
             g_pEventLoopManager->removeTimer(headsetSettle);
         headsetSettle.reset();
@@ -502,13 +688,18 @@ namespace NAwesome::System {
             D->toggles = 0;
             D->level   = -1;
             D->muted   = false;
+            D->target.reset();
+            D->muteTo.reset();
         }
-        ++brightnessGeneration;
-        brightnessBusy    = false;
-        brightnessPending = 0;
-        lastSetRaw        = -1;
-        backlightDev.clear();
-        backlightMax = 0;
+        for (auto* L : {&display, &keyboard}) {
+            ++L->generation; // a late SetBrightness reply finds itself outdated
+            L->busy    = false;
+            L->pending = 0;
+            L->target.reset();
+            L->lastSetRaw = -1;
+            L->dev.clear();
+            L->max = 0;
+        }
         systemBus().close(); // fd sources out BEFORE the connection dies
         logindProxy.reset();
     }

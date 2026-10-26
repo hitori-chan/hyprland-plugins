@@ -723,14 +723,18 @@ pragmatic chain (GTK theme → hicolor → pixmaps), not a full
 
 ### System
 
-- **Brightness** reads `/sys/class/backlight` (several devices: the
-  firmware one, then platform, then raw — the systemd rule), applies 5%
-  linear steps with a raw floor of 2, and writes through logind
-  `Session.SetBrightness` on the system bus — no root, no udev rule.
-  One write is in flight at a time; presses meanwhile add up into the
-  next. A device that is missing or stops reading is looked up again on
-  the next press (a late driver, a GPU switch); with none, or no system
-  bus, the press answers with an "unavailable" card.
+- **The lights**: the display's brightness reads `/sys/class/backlight`
+  (several devices: the firmware one, then platform, then raw — the
+  systemd rule), the keyboard light the LED the kernel names
+  `*kbd_backlight` (`/sys/class/leds`, the first by name). Both apply 5%
+  linear steps (the display with a raw floor of 2, the keyboard down to
+  off) and write through logind `Session.SetBrightness` on the system
+  bus — no root, no udev rule. One write is in flight per light;
+  presses meanwhile add up into the next. A device that is missing or
+  stops reading is looked up again on the next press (a late driver, a
+  GPU switch); with none, or no system bus, the press answers with an
+  "unavailable" card. Keyboards with light keys bind
+  `keyboard_light_up` / `keyboard_light_down`.
 - **Volume and microphone**: `wpctl` reads the current value and writes
   the new one inside its own process, so two sets at once lose a step
   (or fold two mute toggles into one). Each device runs ONE set at a
@@ -768,7 +772,8 @@ pragmatic chain (GTK theme → hicolor → pixmaps), not a full
   can see, or the manual flip. A touchpad already in the wanted state is
   left alone (`hl.device` re-runs the device setup, a keymap compile).
 - Every action's feedback is a card posted straight into the notify
-  model (fixed ids — pad 9991, brightness 9992, volume 9993, mic 9995 —
+  model (fixed ids — pad 9991, brightness 9992, volume 9993, keyboard
+  light 9994, mic 9995 —
   replace in place, low urgency, 1200 ms expiry, the touchpad's
   1500 ms) that names a glyph, so
   it shows as a capsule at the top center: the glyph, a level track and
@@ -797,6 +802,7 @@ hl.plugin.awesome.suspend()                -- toggles DND; suspend(minutes) hold
 hl.plugin.awesome.clear_all()
 hl.plugin.awesome.volume_up()              -- volume_down, mute, mic_mute
 hl.plugin.awesome.brightness_up()          -- brightness_down
+hl.plugin.awesome.keyboard_light_up()      -- keyboard_light_down
 hl.plugin.awesome.touchpad_toggle()
 ```
 
