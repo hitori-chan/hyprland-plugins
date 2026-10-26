@@ -238,6 +238,53 @@ capture_nested "$STATE/tray-attn.png"
 ICON="$(icon_box "$STATE/tray-attn.png")"
 chk "tray: an attention item without an attention icon keeps its own" bash -c "[[ -n '$ICON' && '${ICON:0:1}' != '0' ]]"
 
+# ---- the strip's cells: every widget owns its own ---------------------------
+# A widget with nothing to click still owns its cell (shell/strip.cpp): the
+# battery's clicks once went to the tray item beside it, and the clock's
+# opened the center. With a task on the strip, the cells tile it from edge
+# to edge — none overlapping (the tray's outer icons once reached into the
+# last task), no dead pixel between them (once 7 px between the tags and
+# the tasks). `cells` is the gate build's map.
+dsp "hl.dsp.exec_cmd('foot -a cellsprobe --window-size-pixels=400x200')"; wait_class cellsprobe; sleep 0.8
+CELLS="$(hq awesome cells)"
+echo "cells: $(tr '\n' ';' <<<"$CELLS")" >&2
+cells_tile() {
+	python3 -c '
+import sys
+w = int(sys.argv[1])
+cells = [l.split() for l in sys.stdin.read().splitlines()]
+cells = [(c[0], int(c[1]), int(c[2])) for c in cells if len(c) == 3]
+names = [n for n, _, _ in cells]
+ok = cells and cells[0][1] == 0 and cells[-1][2] == w and "task" in names and names[-1] == "clock"
+ok = ok and all(a < b for _, a, b in cells) and all(cells[i][1] == cells[i - 1][2] for i in range(1, len(cells)))
+print(1 if ok else 0)
+' "$MON_W" <<<"$CELLS"
+}
+cell_mid() { awk -v w="$1" '$1 == w { print int(($2 + $3) / 2); exit }' <<<"$CELLS"; }
+chk "cells: they tile the strip edge to edge, none overlapping" test "$(cells_tile)" = 1
+# the clicks over the bare desktop: a tray menu is measured below the strip,
+# where the probe's window would read as one (the right slot's cells stay)
+CP="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='cellsprobe'), ''))")"
+[[ -n "$CP" ]] && dsp "hl.dsp.window.close({window=\"address:$CP\"})"; sleep 0.8
+if compgen -G "/sys/class/power_supply/BAT*" >/dev/null; then
+	BATX="$(cell_mid battery)"
+	chk "cells: the battery owns a cell" test -n "$BATX"
+	click "${BATX:-0}" 13 272
+	sleep 1
+	capture_nested "$STATE/cells-battery.png"
+	chk "cells: a click on the battery opens no tray menu" test "$(panel_extent "$STATE/cells-battery.png" | awk '{print $1}')" -le 10
+	tap esc; sleep 0.4
+else
+	echo "cells: this host has no system battery (its click is not checked)" >&2
+fi
+click "$(cell_mid clock)" 13 272
+sleep 1
+center_shut() { [[ "$(st)" == "center:0 "* ]]; }
+chk "cells: a click on the clock leaves the center shut" center_shut
+center_shut || { hq awesome center >/dev/null; sleep 0.5; }
+
 # teardown: the item leaves the strip
 kill "$FAKE_PID" 2>/dev/null
 for _ in $(seq 1 30); do

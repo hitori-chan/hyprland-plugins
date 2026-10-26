@@ -1,9 +1,7 @@
 // awesome/shell/clock.cpp — awesome's textclock: the state (one string) and its
-// widget. As macOS's menu-bar clock, a click opens the notification center.
+// widget. A click does nothing: the bell is the center's one door.
 
 #include "shell/shell.hpp"
-
-#include "notify/model.hpp"
 
 #include <locale.h>
 
@@ -62,16 +60,6 @@ namespace NAwesome::Shell {
             }
             void draw(const SPaint& P, const SFrame& F, const CBox& box) override {
                 P.texIn(textTex(clockText, F.fg, P.pt), box);
-                SHit h;
-                h.box    = box;
-                h.widget = this;
-                P.hits->push_back(h);
-            }
-            void onHit(const SHit& hit, uint32_t bit, bool) override {
-                if (bit != 1u)
-                    return;
-                // the bell's door (bell.cpp): deferred, on the clicked bar's monitor
-                NAwesome::Notify::queueCenterToggle(hit.mon.lock());
             }
         };
     } // namespace

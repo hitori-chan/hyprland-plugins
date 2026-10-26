@@ -279,7 +279,14 @@ namespace NAwesome::Shell {
             const double WD  = std::min(RIGHT[i]->fit(P, F), std::max(0.0, right - GAP - x - SLOT_GAP));
             if (WD > 0) {
                 right -= GAP + WD;
-                RIGHT[i]->draw(P, F, CBox{right, MB.y, WD, H});
+                const CBox   CELL{right, MB.y, WD, H};
+                const size_t BEFORE = P.hits->size();
+                RIGHT[i]->draw(P, F, CELL);
+                // a widget with nothing to click (the battery) still owns
+                // its cell: without one its neighbours' cells met across it,
+                // and its clicks went to them
+                if (P.hits->size() == BEFORE)
+                    P.hits->push_back(SHit{.box = CELL, .widget = RIGHT[i]});
                 first = false;
             }
         }
@@ -305,9 +312,20 @@ namespace NAwesome::Shell {
             R.w     = MB.x + MB.w - R.x;
         }
 
-        // the tasklist splits the whole leftover strip, 14 px off each slot
+        // the tasklist splits the whole leftover strip, 14 px off each slot;
+        // its outer cells reach across those gaps to meet the slots' cells
+        const size_t TASK_HITS = P.hits->size();
         if (const double TASKW = std::max(0.0, right - x - 2 * SLOT_GAP); TASKW > 0)
             tasklistWidget().draw(P, F, CBox{x + SLOT_GAP, MB.y, TASKW, H});
+        if (P.hits->size() > TASK_HITS) {
+            const double LEFT_EDGE  = RIGHT_HITS > LEFT_HITS ? (*P.hits)[RIGHT_HITS - 1].box.x + (*P.hits)[RIGHT_HITS - 1].box.w : MB.x;
+            const double RIGHT_EDGE = TASK_HITS > RIGHT_HITS ? (*P.hits)[RIGHT_HITS].box.x : MB.x + MB.w; // sorted: the slot's leftmost
+            auto&        FIRST      = (*P.hits)[TASK_HITS].box;
+            FIRST.w += FIRST.x - LEFT_EDGE;
+            FIRST.x    = LEFT_EDGE;
+            auto& LAST = P.hits->back().box;
+            LAST.w     = RIGHT_EDGE - LAST.x;
+        }
 
         auto& FP = lastTaskFp[mon->m_id];
         if (warm)
