@@ -53,6 +53,7 @@ namespace NAwesome::Notify::CardMenu {
     static uint32_t           s_owner = 0;
     static uint64_t           s_rev   = 0;   // the card's revision the menu was opened over
     static std::string        s_app, s_chat; // the targets, captured at the open
+    static std::string        s_appLabel, s_chatLabel; // ... and the names their rows keep
     static Vector2D           s_at;
     static std::vector<SItem> s_items;
     static CBox               s_box; // global logical, as last laid out
@@ -105,9 +106,9 @@ namespace NAwesome::Notify::CardMenu {
             s_items.push_back({ACTION, clipName(A.label), A.id});
         if (!s_items.empty())
             s_items.push_back({SEP, {}, {}});
-        const auto APP = clipName(n.appName.empty() ? n.appKey : n.appName);
+        const auto APP = clipName(s_appLabel);
         if (!s_chat.empty()) {
-            const auto CHAT = clipName(n.conversationTitle.empty() ? n.summary : n.conversationTitle);
+            const auto CHAT = clipName(s_chatLabel);
             if (Policy::mutedUntil(s_chat) > 0)
                 s_items.push_back({UNMUTE, "Unmute " + CHAT, {}});
             else {
@@ -132,6 +133,8 @@ namespace NAwesome::Notify::CardMenu {
         s_rev   = N->rev;
         s_app   = N->appKey;
         s_chat  = Policy::chatKey(*N);
+        s_appLabel  = Policy::appLabel(*N);
+        s_chatLabel = Policy::chatLabel(*N);
         s_at    = at;
         s_box   = {};
         build(*N);
@@ -157,6 +160,8 @@ namespace NAwesome::Notify::CardMenu {
         s_items.clear();
         s_app.clear();
         s_chat.clear();
+        s_appLabel.clear();
+        s_chatLabel.clear();
         s_box = {};
     }
 
@@ -172,6 +177,7 @@ namespace NAwesome::Notify::CardMenu {
         const auto KEY  = s_items[index].action;
         const auto APP  = s_app;
         const auto CHAT = s_chat;
+        const auto APPL = s_appLabel, CHATL = s_chatLabel;
         const auto ID   = s_owner;
         const auto REV  = s_rev;
         close();
@@ -180,22 +186,22 @@ namespace NAwesome::Notify::CardMenu {
             case REPLY: replyOpen(ID); return;
             case ACTION: invokeLive(ID, KEY, REV); return;
             case MUTE_HOUR:
-                Policy::mute(CHAT, (int64_t)std::time(nullptr) + 3600);
+                Policy::mute(CHAT, (int64_t)std::time(nullptr) + 3600, CHATL);
                 Model::lowerBanners(APP);
                 return;
             case MUTE_TOMORROW:
-                Policy::mute(CHAT, tomorrowMorning());
+                Policy::mute(CHAT, tomorrowMorning(), CHATL);
                 Model::lowerBanners(APP);
                 return;
             case UNMUTE: Policy::mute(CHAT, 0); return;
             case BANNERS: {
                 const bool OFF = !(Policy::appFlags(APP) & Policy::BANNERS_OFF);
-                Policy::setAppFlag(APP, Policy::BANNERS_OFF, OFF);
+                Policy::setAppFlag(APP, Policy::BANNERS_OFF, OFF, APPL);
                 if (OFF)
                     Model::lowerBanners(APP);
                 return;
             }
-            case SOUNDS: Policy::setAppFlag(APP, Policy::SOUNDS_OFF, !(Policy::appFlags(APP) & Policy::SOUNDS_OFF)); return;
+            case SOUNDS: Policy::setAppFlag(APP, Policy::SOUNDS_OFF, !(Policy::appFlags(APP) & Policy::SOUNDS_OFF), APPL); return;
             case CLOSE_APP: Model::dismissAppAll(APP); return;
         }
     }

@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <sstream>
@@ -173,32 +174,65 @@ namespace NAwesome {
             return out.put(std::string_view{p, (size_t)(END - p)}, n == 4 ? Box{I(0), I(1), I(2), I(3)} : Box{I(0), I(1), 0, 0});
         }
 
-        // "<count>\t<name>"
-        bool parseCount(std::string_view row, CRecentMap<int>& out) {
+        // the row's next field, up to its tab; none when no tab follows (a
+        // row's key comes last: a field is always followed by more)
+        std::optional<std::string_view> field(std::string_view& row) {
             const auto T = row.find('\t');
-            if (T == 0 || T == std::string_view::npos || T > 7)
-                return false;
-            int count = 0;
-            for (size_t i = 0; i < T; i++) {
-                if (row[i] < '0' || row[i] > '9')
-                    return false;
-                count = count * 10 + (row[i] - '0');
-            }
-            return out.put(row.substr(T + 1), count);
+            if (T == std::string_view::npos)
+                return std::nullopt;
+            const auto F = row.substr(0, T);
+            row.remove_prefix(T + 1);
+            return F;
         }
 
-        // "<unix seconds>\t<key>"
-        bool parseTime(std::string_view row, CRecentMap<int64_t>& out) {
-            const auto T = row.find('\t');
-            if (T == 0 || T == std::string_view::npos || T > 12)
-                return false;
-            int64_t t = 0;
-            for (size_t i = 0; i < T; i++) {
-                if (row[i] < '0' || row[i] > '9')
-                    return false;
-                t = t * 10 + (row[i] - '0');
+        // a decimal integer in [lo, hi]: digits after an optional minus,
+        // nothing around them, 18 digits at most (never overflows)
+        std::optional<int64_t> integer(std::optional<std::string_view> f, int64_t lo, int64_t hi) {
+            if (!f)
+                return std::nullopt;
+            auto       d   = *f;
+            const bool NEG = d.starts_with('-');
+            d.remove_prefix(NEG ? 1 : 0);
+            if (d.empty() || d.size() > 18)
+                return std::nullopt;
+            int64_t v = 0;
+            for (const char C : d) {
+                if (C < '0' || C > '9')
+                    return std::nullopt;
+                v = v * 10 + (C - '0');
             }
-            return out.put(row.substr(T + 1), t);
+            v = NEG ? -v : v;
+            return v < lo || v > hi ? std::nullopt : std::optional{v};
+        }
+
+        // narrowed only once inside V: a wrapped value could pass the
+        // store's own check
+        template <typename V>
+        std::optional<V> number(std::optional<std::string_view> f) {
+            const auto N = integer(f, std::numeric_limits<V>::min(), std::numeric_limits<V>::max());
+            return N ? std::optional<V>{(V)*N} : std::nullopt;
+        }
+
+        // "<number>\t<key>"
+        template <typename V>
+        bool parseNumber(std::string_view row, CRecentMap<V>& out) {
+            const auto N = number<V>(field(row));
+            return N && out.put(row, *N);
+        }
+
+        // "<number>\t<label>\t<key>"
+        template <typename V>
+        bool parseLabeled(std::string_view row, CRecentMap<SLabeled<V>>& out) {
+            const auto N = number<V>(field(row));
+            const auto L = field(row);
+            return N && L && out.put(row, SLabeled<V>{*N, std::string{*L}});
+        }
+
+        // "<value>\t<name>": an option the schema names, in its range
+        bool parseOption(std::string_view row, COptions& out) {
+            const auto V = number<int64_t>(field(row));
+            const auto O = optionNamed(row);
+            return V && O && out.set(*O, *V);
         }
 
     } // namespace
@@ -223,13 +257,15 @@ namespace NAwesome {
             else if (KIND == "windowed")
                 parseBox(ROW, 4, out.windowed);
             else if (KIND == "launches")
-                parseCount(ROW, out.launches);
+                parseNumber(ROW, out.launches);
             else if (KIND == "history")
                 out.history.remember(ROW);
             else if (KIND == "notify-app")
-                parseCount(ROW, out.notifyApp);
+                parseLabeled(ROW, out.notifyApp);
             else if (KIND == "notify-mute")
-                parseTime(ROW, out.notifyMute);
+                parseLabeled(ROW, out.notifyMute);
+            else if (KIND == "option")
+                parseOption(ROW, out.options);
         });
         return true;
     }
@@ -245,9 +281,12 @@ namespace NAwesome {
         for (const auto& E : data.history.entries)
             out << "history\t" << E << '\n';
         for (const auto& [K, F] : data.notifyApp)
-            out << "notify-app\t" << F << '\t' << K << '\n';
+            out << "notify-app\t" << F.value << '\t' << F.label << '\t' << K << '\n';
         for (const auto& [K, T] : data.notifyMute)
-            out << "notify-mute\t" << T << '\t' << K << '\n';
+            out << "notify-mute\t" << T.value << '\t' << T.label << '\t' << K << '\n';
+        for (size_t i = 0; i < OPTION_SPECS.size(); i++)
+            if (const auto V = data.options.get((eOption)i); V != OPTION_SPECS[i].def)
+                out << "option\t" << V << '\t' << OPTION_SPECS[i].name << '\n';
         return std::move(out).str();
     }
 

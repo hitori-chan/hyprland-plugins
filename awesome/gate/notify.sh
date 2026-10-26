@@ -485,7 +485,7 @@ click $((HX - 100)) "$(mrow "$HY" 2 1)" 272
 chk "menu: Turn Off Banners lowered the app's banner" until_is 3 "banners:0 resident:1" bd
 pcidb gatechat Bob bob "ping"; sleep 0.8
 chk "menu: the app's next arrival lands silent" test "$(bd)" = "banners:0 resident:2"
-chk "menu: the switch persisted" grep -aqx $'notify-app\t1\tgatechat' "$AW_STATE"
+chk "menu: the switch persisted, listed by the app's name" grep -aqx $'notify-app\t1\tgatechat\tgatechat' "$AW_STATE"
 # back on from the center: the menu opens down-right of a pointer that
 # leaves it room
 hq awesome center >/dev/null; sleep 0.6
@@ -504,7 +504,7 @@ pcidb gatechat Alice alice "two"; sleep 0.8
 chk "menu: the muted chat's next message lands silent" test "$(bd)" = "banners:0 resident:1"
 pcidb gatechat Bob bob "hi"; sleep 0.8
 chk "menu: another chat of the app still banners" test "$(bd)" = "banners:1 resident:1"
-chk "menu: the mute persisted" grep -aq $'^notify-mute\t[0-9]*\tgatechat\x1falice$' "$AW_STATE"
+chk "menu: the mute persisted, listed by the chat's title" grep -aq $'^notify-mute\t[0-9]*\tAlice\tgatechat\x1falice$' "$AW_STATE"
 nclear
 pcidb gatechat Alice alice "three"; sleep 0.8
 hq awesome center >/dev/null; sleep 0.6

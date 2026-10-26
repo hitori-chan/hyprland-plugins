@@ -80,6 +80,32 @@ bool test_store() {
         AW_CHECK(L.entries[0].size() == 4 * (MAX_STORE_STRING_BYTES / 4));
     }
 
+    // ---- labels: display text, made safe for a row ----
+    {
+        AW_CHECK(storeLabel("Linh\tand\r\nBob") == "Linh and  Bob");
+        AW_CHECK(storeLabel(std::string_view{"a\0b", 3}) == "a b");
+        const auto LONG = storeLabel(std::string(MAX_STORE_LABEL_BYTES - 1, 'x') + "é");
+        AW_CHECK(LONG.size() == MAX_STORE_LABEL_BYTES - 1 && validStoreLabel(LONG)); // é does not fit whole
+        AW_CHECK(validStoreLabel("") && !validStoreLabel("a\tb") && !validStoreLabel(std::string(MAX_STORE_LABEL_BYTES + 1, 'x')));
+        CRecentMap<SLabeled<int>> M;
+        AW_CHECK(M.put("app", {1, "App"}) && !M.put("app", {1, "App"}) && M.put("app", {1, "Renamed"}));
+        AW_CHECK(!M.put("bad", {1, "a\nb"}) && !M.put("neg", {-1, "Neg"}));
+    }
+
+    // ---- options: the schema's names, defaults and ranges ----
+    {
+        COptions O;
+        for (size_t i = 0; i < OPTION_SPECS.size(); i++) {
+            AW_CHECK(O.get((eOption)i) == OPTION_SPECS[i].def);
+            AW_CHECK(optionNamed(OPTION_SPECS[i].name) == (eOption)i);
+        }
+        AW_CHECK(!optionNamed("DND") && !optionNamed(""));
+        AW_CHECK(!O.on(eOption::KBD_FOLLOWS_ROOM)); // the room is opt-in
+        AW_CHECK(O.set(eOption::KBD_FOLLOWS_ROOM, 1) && !O.set(eOption::KBD_FOLLOWS_ROOM, 1) && O.on(eOption::KBD_FOLLOWS_ROOM));
+        AW_CHECK(!O.set(eOption::QUIET_FULLSCREEN, 2) && !O.set(eOption::DND, -2) && !O.set(eOption::DND, MAX_STORE_TIME));
+        AW_CHECK(O.set(eOption::DND, 1760000000) && O.get(eOption::DND) == 1760000000);
+    }
+
     // ---- launch counts ----
     {
         CRecentMap<int> C;
@@ -102,8 +128,11 @@ bool test_store() {
         D.launches.put("org;app", 3);
         D.history.remember("first");
         D.history.remember("second\tquery");
-        D.notifyApp.put("org.telegram.desktop", 3);
-        D.notifyMute.put("org.telegram.desktop\x1f" "chat 42", 1760000000);
+        D.notifyApp.put("org.telegram.desktop", {3, "Telegram"});
+        D.notifyApp.put("unnamed", {1, ""}); // a label may be empty
+        D.notifyMute.put("org.telegram.desktop\x1f" "chat 42", {1760000000, "Linh · Đà Lạt"});
+        AW_CHECK(D.options.set(eOption::DND, -1));
+        AW_CHECK(D.options.set(eOption::QUIET_SHARING, 1));
 
         const auto P = TDIR / "state-roundtrip.tsv";
         AW_CHECK(StateStore::write(P, D));
@@ -112,6 +141,11 @@ bool test_store() {
         AW_CHECK(R.spot == D.spot && R.windowed == D.windowed && R.launches == D.launches);
         AW_CHECK(R.history.entries == D.history.entries);
         AW_CHECK(R.notifyApp == D.notifyApp && R.notifyMute == D.notifyMute);
+        AW_CHECK(R.options == D.options && R.options.get(eOption::DND) == -1 && R.options.on(eOption::QUIET_SHARING));
+        // an option at its default writes no row
+        const auto TEXT = detail::readBoundedFile(P, MAX_STATE_FILE_BYTES);
+        AW_CHECK(TEXT.find("option\t-1\tdnd\n") != std::string::npos && TEXT.find("quiet-fullscreen") == std::string::npos);
+        AW_CHECK(StateStore::write(P, AppState{}) && detail::readBoundedFile(P, MAX_STATE_FILE_BYTES).empty());
 
         AppState E;
         AW_CHECK(!StateStore::read(TDIR / "nope-state.tsv", E));
@@ -134,12 +168,20 @@ bool test_store() {
                                           "launches\t99999999\thuge\n"
                                           "history\tquery one\n"
                                           "history\tquery\twith\ttabs\n"
-                                          "notify-app\t2\tmail\n"
-                                          "notify-app\t-1\tsigned\n"
-                                          "notify-mute\t1760000000\tchat\n"
-                                          "notify-mute\t0\tepoch\n"           // not a mute's end
-                                          "notify-mute\t9999999999999\tfar\n" // past the field's width
-                                          "notify-mute\t17x\tmangled\n"
+                                          "notify-app\t2\tMail\tmail\n"
+                                          "notify-app\t1\tunlabelled\n"            // no label field
+                                          "notify-app\t-1\tSigned\tsigned\n"
+                                          "notify-app\t4294967298\tWrap\twrap\n"   // wraps to 2 as an int
+                                          "notify-mute\t1760000000\tLinh\tchat\n"
+                                          "notify-mute\t0\tEpoch\tepoch\n"         // not a mute's end
+                                          "notify-mute\t9999999999999\tFar\tfar\n"
+                                          "notify-mute\t17x\tMangled\tmangled\n"
+                                          "option\t1\tquiet-fullscreen\n"
+                                          "option\t2\tquiet-sharing\n"             // out of its range
+                                          "option\t1\tno-such-option\n"
+                                          "option\t-2\tdnd\n"
+                                          "option\t+1\tkbd-follows-room\n"         // only a minus sign
+                                          "option\t1\n"
                                           "no-tab-line\n"
                                           "spot\t1\t2\tnul"} + std::string(1, '\0') + "class\n"));
         AppState R;
@@ -148,8 +190,11 @@ bool test_store() {
         AW_CHECK(R.windowed.empty());
         AW_CHECK(R.launches.size() == 1 && *R.launches.find("ok") == 5);
         AW_CHECK(R.history.entries.size() == 2 && R.history.entries[1] == "query\twith\ttabs");
-        AW_CHECK(R.notifyApp.size() == 1 && *R.notifyApp.find("mail") == 2);
-        AW_CHECK(R.notifyMute.size() == 1 && *R.notifyMute.find("chat") == 1760000000);
+        AW_CHECK(R.notifyApp.size() == 1 && (*R.notifyApp.find("mail") == SLabeled<int>{2, "Mail"}));
+        AW_CHECK(R.notifyMute.size() == 1 && (*R.notifyMute.find("chat") == SLabeled<int64_t>{1760000000, "Linh"}));
+        COptions want;
+        want.set(eOption::QUIET_FULLSCREEN, 1);
+        AW_CHECK(R.options == want);
 
         // over the bound a read keeps the MOST RECENT rows (the file's tail)
         std::string caps;

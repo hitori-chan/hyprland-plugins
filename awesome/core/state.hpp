@@ -9,14 +9,16 @@
 //                                      restore of a window born maximized)
 //   launches <count> <name>           (launcher ranking, by .desktop Name)
 //   history  <query>                  (launcher queries, newest last)
-//   notify-app  <flags> <app>         (the card menu's per-app switches:
+//   notify-app  <flags> <label> <app> (the card menu's per-app switches:
 //                                      1 banners off, 2 sounds off)
-//   notify-mute <until> <chat>        (a muted chat, until a unix time)
+//   notify-mute <until> <label> <chat> (a muted chat, until a unix time)
+//   option   <value> <name>           (a remembered choice: core/options.hpp,
+//                                      written only off its default)
 // Positions are relative to the origin of the monitor the window was on:
 // a spot remembered on one monitor lands at the same place on whichever
 // monitor the app opens on next, never clamped against a far edge. The
 // key (class, name) is the row's last field: app ids contain spaces and
-// colons, never tabs.
+// colons, never tabs. A label is the name a menu lists the row by.
 //
 // load() runs once, before any module inits. A file that exists but cannot
 // be read blocks every later write (writeBlocked(), which the supervisor
@@ -27,18 +29,20 @@
 // cross-module seam for anything persisted.
 #pragma once
 
+#include "options.hpp"
 #include "persist.hpp"
 #include "store.hpp"
 
 namespace NAwesome {
 
     struct AppState {
-        CRecentMap<Box>     spot; // w, h unused (0): the client picks its size
-        CRecentMap<Box>     windowed;
-        CRecentMap<int>     launches;
-        ListStore           history;
-        CRecentMap<int>     notifyApp;  // app key -> Notify::Policy flags
-        CRecentMap<int64_t> notifyMute; // chat key -> the mute's end
+        CRecentMap<Box>               spot; // w, h unused (0): the client picks its size
+        CRecentMap<Box>               windowed;
+        CRecentMap<int>               launches;
+        ListStore                     history;
+        CRecentMap<SLabeled<int>>     notifyApp;  // app key -> Notify::Policy flags
+        CRecentMap<SLabeled<int64_t>> notifyMute; // chat key -> the mute's end
+        COptions                      options;
     };
 
     class CDiskWriter;

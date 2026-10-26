@@ -861,14 +861,18 @@ tab-separated rows, the key last:
 | `windowed <x> <y> <w> <h> <class>` | its last windowed box: the restore of a window born maximized |
 | `launches <count> <name>` | the launcher's ranking, by .desktop Name |
 | `history <query>` | the prompt history, newest last |
-| `notify-app <flags> <app>` | the card menu's per-app switches: 1 banners off, 2 sounds off |
-| `notify-mute <until> <chat>` | a muted chat, until a unix time (a mute that ended is dropped) |
+| `notify-app <flags> <label> <app>` | the card menu's per-app switches (1 banners off, 2 sounds off), listed by the app's name |
+| `notify-mute <until> <label> <chat>` | a muted chat until a unix time, listed by its title (a mute that ended is dropped) |
+| `option <value> <name>` | a choice the user made from a menu, written only off its default ([`core/options.hpp`](core/options.hpp)): `dnd` (-1 until turned off, else its end), `quiet-fullscreen`, `quiet-sharing`, `kbd-follows-room` (1 on) |
 
 Positions are relative to the origin of the monitor the window was on: a
 spot remembered on one monitor lands at the same place on whichever
-monitor the app opens on next. Each kind is kept oldest-first and bounded
-(1024 keys, 50 queries): at the bound the least recently remembered row
-goes, never a new one. The windows still open when the plugin stops (a
+monitor the app opens on next. A label is display text (128 bytes, its
+tabs and line breaks blanked). An option row the schema does not name,
+or out of its range, is dropped; the config files stay the user's, and
+no option is both a config key and a row. Each kind is kept oldest-first
+and bounded (1024 keys, 50 queries): at the bound the least recently
+remembered row goes, never a new one. The windows still open when the plugin stops (a
 logout) are recorded as closing. One atomic write (temp + rename),
 synced to disk on a writer thread so a slow disk never stalls the
 compositor; the save at stop is on disk before the plugin unloads. Every
