@@ -669,8 +669,13 @@ namespace NAwesome::Shell {
                         // fit, not stretch: a non-square pixmap keeps its proportions
                         P.texFit(IT->tex, ICONBOX);
                     // the hit spans the bar's height and half of each gap
-                    SHit h;
-                    h.box     = CBox{ICONBOX.x - SPACING / 2, box.y, ICON + SPACING, P.h};
+                    // between icons; the outer ones stop at the tray's own
+                    // edges, where the strip splits the gaps to its neighbours
+                    // evenly (reaching past them gave the tray 15 of the 20
+                    // px to the battery, and the last task's pixels)
+                    const double HX0 = std::max(box.x, ICONBOX.x - SPACING / 2), HX1 = std::min(box.x + box.w, ICONBOX.x + ICON + SPACING / 2);
+                    SHit         h;
+                    h.box     = CBox{HX0, box.y, HX1 - HX0, P.h};
                     h.widget  = this;
                     h.tray    = IT;
                     h.anchorX = ICONBOX.x + ICON / 2.0;

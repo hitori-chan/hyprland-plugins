@@ -185,4 +185,31 @@ namespace NAwesome::Shell {
         Shell::onInputBlocked();
     }
 
+#ifdef AWESOME_GATE
+    // `hyprctl awesome cells`: the first bar's click cells, left to right,
+    // one "<widget> <x0> <x1>" a line — the gate's map of what a press hits
+    std::optional<std::string> CModule::handleCtl(const std::string& verb) const {
+        if (verb != "cells")
+            return std::nullopt;
+        const auto IT = hitboxes.begin();
+        if (IT == hitboxes.end())
+            return std::string{};
+        const auto NAME = [](const IWidget* w) {
+            return w == &taglistWidget() ? "tag" :
+                w == &tasklistWidget()   ? "task" :
+                w == &trayWidget()       ? "tray" :
+                w == &batteryWidget()    ? "battery" :
+                w == &bellWidget()       ? "bell" :
+                w == &clockWidget()      ? "clock" :
+                                           "?";
+        };
+        auto cells = IT->second;
+        std::ranges::sort(cells, {}, [](const SHit& h) { return h.box.x; });
+        std::string out;
+        for (const auto& H : cells)
+            out += std::format("{} {} {}\n", NAME(H.widget), (int)std::lround(H.box.x), (int)std::lround(H.box.x + H.box.w));
+        return out;
+    }
+#endif
+
 } // namespace NAwesome::Shell
