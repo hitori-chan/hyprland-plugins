@@ -69,9 +69,9 @@ build_aw() { # build_aw <gate 0|1> <strip PKG_CONFIG_PATH 0|1>
 	local force=()
 	[[ -n "${GATE_FORCE_BUILD:-}" ]] && force+=(-B)
 	if [[ $2 == 1 ]]; then
-		env -u PKG_CONFIG_PATH make "${force[@]}" -j"$(nproc)" -C "$REPO/awesome" GATE="$1" >/dev/null 2>&1
+		env -u PKG_CONFIG_PATH make "${force[@]}" -j"$HYPR_HARNESS_JOBS" -C "$REPO/awesome" GATE="$1" >/dev/null 2>&1
 	else
-		make "${force[@]}" -j"$(nproc)" -C "$REPO/awesome" GATE="$1" >/dev/null 2>&1
+		make "${force[@]}" -j"$HYPR_HARNESS_JOBS" -C "$REPO/awesome" GATE="$1" >/dev/null 2>&1
 	fi
 }
 if [[ -n "${HYPR_DEPLOY_PKG_CONFIG_PATH:-}" ]]; then

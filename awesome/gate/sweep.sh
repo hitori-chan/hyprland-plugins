@@ -14,12 +14,16 @@
 #  - -O0: the build has no -Werror and the unit tests build at -O0
 #    already, so pass/fail is the same; the -O2 binary is the gate's
 #  - WORKERS (default 3) worktrees take contiguous chunks in order, each
-#    one incremental; make's load limit shares the cores between them
+#    one incremental; they split the memory cap's job budget
+#    (memcap.sh) and make's load limit shares the cores between them
 # One line per commit (ok / skip / FAIL), the summary line last; exit 1 on
 # any failure. Build logs: $HYPR_GATE_TMP/sweep-w*-{build,test}.log.
 set -u
 [[ $# -ge 2 ]] || { echo "usage: sweep.sh BASE TIP [WORKERS]" >&2; exit 2; }
+source "$(dirname "${BASH_SOURCE[0]}")/memcap.sh" # the run's memory cap: before anything builds or launches
 BASE=$1 TIP=$2 W=${3:-3}
+J=$((HYPR_HARNESS_JOBS / W)) # the scope's build budget, shared by the workers
+((J < 1)) && J=1
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ROOT=${HYPR_GATE_TMP:-/tmp/hypr-gate}
 PKG=$ROOT/fork-pkg
@@ -58,7 +62,7 @@ worker() { # worker N "COMMIT KEY"... — in order, incremental, in its own work
 		local c=${ck% *} k=${ck#* } subj
 		git -C "$wt" checkout -q --detach "$c"
 		subj=$(git -C "$wt" log -1 --format=%s)
-		if ! make -C "$wt/awesome" -j"$(nproc)" -l"$(nproc)" > "$ROOT/sweep-w$n-build.log" 2>&1; then
+		if ! make -C "$wt/awesome" -j"$J" -l"$(nproc)" > "$ROOT/sweep-w$n-build.log" 2>&1; then
 			echo "$c FAIL build  ${c:0:7} $subj" >> "$out"
 			continue
 		fi

@@ -78,6 +78,10 @@ after any history rewrite (it skips build inputs it already verified).
 - Run gates and long builds in tmux; temporary artifacts go under
   `/tmp/hypr-gate/` (tmpfs); runtime state under `$HYPR_HARNESS`
   (default `~/.local/share/hypr-nested`). Keep `~` free of scratch files.
+- Memory is capped: every entry point runs in its own scope
+  (`gate/memcap.sh`); a hand-run build or test goes through
+  `systemd-run --user --scope -p MemoryMax=1536M -p MemorySwapMax=0`,
+  serial. A host OOM here kills the live compositor (2026-10-26).
 - Never edit gate scripts, rebuild the plugin, or run launch/stop by hand
   while a gate runs (bash reads battery scripts as it goes; the nested
   maps the `.so`).

@@ -9,6 +9,7 @@
 # instead — it runs the gate's full preflight and executes a probe body.
 set -u
 
+source "$(dirname "${BASH_SOURCE[0]}")/memcap.sh" # the run's memory cap: before anything builds or launches
 HARNESS="${HYPR_HARNESS:-$HOME/.local/share/hypr-nested}"
 # One run at a time: every entry point shares $HARNESS (the nested's
 # signature, the host, the system bus) and kills every nested it finds —
