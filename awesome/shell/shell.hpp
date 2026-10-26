@@ -287,6 +287,7 @@ namespace NAwesome::Shell {
         // the frame palette, fetched once — color() memoizes but still
         // hashes per call, and the taglist alone makes dozens
         CHyprColor fg, active, urgentFg, empty;
+        CHyprColor activeHover, urgentHover; // lifted(): the accent and red under the pointer
     };
 
     // The bar cell under the pointer (input.cpp tracks it): its widget
