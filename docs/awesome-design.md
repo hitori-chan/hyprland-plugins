@@ -383,8 +383,9 @@ urgency, a value, a glyph that makes it a capsule).
 
 ### system
 
-Audio and brightness controls (bounded wpctl set/readback chains,
-logind `SetBrightness`, /sys reads) and the touchpad policy (disabled
+Audio and the lights (bounded wpctl set/readback chains, logind
+`SetBrightness` for the backlight and the keyboard's LED, /sys reads)
+and the touchpad policy (disabled
 while a physical mouse is present — one that has moved or clicked —
 400 ms coalesced recheck, manual toggle until hotplug, across config
 reloads). Every action's feedback is a notify capsule: fixed IDs
@@ -392,7 +393,12 @@ replace in place (1200 ms; the touchpad's 1500 ms), a glyph and a
 level or words. A Bluetooth headset's own volume change (BlueZ's
 transport `Volume` on the system bus, no key) reads the sink back and
 shows the capsule only when something moved. All process I/O through
-Jobs; readbacks reject malformed output.
+Jobs; readbacks reject malformed output. Every level and switch the
+control center shows is published into `core/controls.hpp` as it is
+learned (a readback, logind's ack, a touchpad pass), and the center moves
+them through the doors the module registers there — absolute percents
+and switches, deferred out of the input emission, one set in flight per
+device with the newest ask winning; no module reads another's state.
 
 ## 4. Interfaces
 

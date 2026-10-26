@@ -33,6 +33,7 @@ namespace NAwesome::Glyph {
         SEND,
         CHECK,
         DISMISS, // a stack header's close cross, drawn at 8 px on its own 10-unit grid
+        KEYBOARD_LIGHT, // a half sun risen over a baseline: the keys' own light
         COUNT_,
     };
 
@@ -77,6 +78,7 @@ namespace NAwesome::Glyph {
         {16, 16, "<path " AW_STROKE_W("1.7") " d=\"M8 12.6V3.8M4.6 7.1L8 3.7l3.4 3.4\"/>"},
         {16, 16, "<path " AW_STROKE_W("1.6") " d=\"M3.4 8.4l3 3 6.2-6.6\"/>"},
         {10, 10, "<path " AW_STROKE_W("1.6") " d=\"M2 2l6 6M8 2l-6 6\"/>"},
+        {16, 16, "<path fill=\"#fff\" d=\"M4.4 11.6a3.6 3.6 0 0 1 7.2 0z\"/><path " AW_STROKE " d=\"M1.6 11.6h12.8M8 6.4V4.6M4.32 7.92l-1.27-1.27M11.68 7.92l1.27-1.27\"/>"},
     }};
 #undef AW_STROKE
 #undef AW_STROKE_W

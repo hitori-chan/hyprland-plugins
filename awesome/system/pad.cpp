@@ -28,8 +28,11 @@
 // - Auto re-checks are change-detected against the last applied state: an
 //   unrelated hotplug re-checks but applies nothing.
 
+#include "system.hpp"
+
 #include "notify/model.hpp"
 
+#include "core/controls.hpp"
 #include "core/jobs.hpp"
 
 #include <hyprland/src/Compositor.hpp>
@@ -145,13 +148,21 @@ namespace NAwesome::System {
     // always answers.
     static int announcedState = -1;
 
+    // the control center's switch: the touchpad's live state, -1 with none
+    void padPublish() {
+        const auto E = touchpadEnabled();
+        Controls::publish(Controls::eSwitch::TOUCHPAD, E ? (*E ? 1 : 0) : -1);
+    }
+
     static void applyEnabled(bool on, SP<IPointer> target = nullptr, bool manual = false) {
         if (!target)
             target = touchpad();
         if (!target) {
             appliedState    = -1;
             appliedTouchpad.reset();
-            postPad("input-touchpad-symbolic", "Not Found", PAD_TIMEOUT, Glyph::eGlyph::TOUCHPAD_OFF, true);
+            padPublish();
+            if (!Controls::panelShowing())
+                postPad("input-touchpad-symbolic", "Not Found", PAD_TIMEOUT, Glyph::eGlyph::TOUCHPAD_OFF, true);
             return;
         }
         // the manager lives in a unique pointer: its weak can NEVER lock()
@@ -165,9 +176,12 @@ namespace NAwesome::System {
         }
         appliedState    = on ? 1 : 0;
         appliedTouchpad = target;
+        padPublish();
         if (!manual && announcedState == appliedState)
             return;
         announcedState = appliedState;
+        if (Controls::panelShowing())
+            return; // the panel's switch is the feedback
         // symbolic, not the plain names: "touchpad-disabled" ships in the
         // HighContrast theme only (unprobed) and would render iconless
         postPad(on ? "input-touchpad-symbolic" : "touchpad-disabled-symbolic", on ? "On" : "Off", PAD_TIMEOUT, on ? Glyph::eGlyph::TOUCHPAD : Glyph::eGlyph::TOUCHPAD_OFF);
@@ -190,6 +204,7 @@ namespace NAwesome::System {
         if (touchpadEnabled() == (WANT == 1)) {
             appliedState    = WANT;
             appliedTouchpad = TOUCHPAD;
+            padPublish();
             return;
         }
         applyEnabled(WANT == 1, TOUCHPAD);
@@ -264,11 +279,16 @@ namespace NAwesome::System {
     }
 
     // queued, never a lone doLaterLock: two flips can arm in one dispatch
-    // and overwriting the lock cancels the unfired one; only the parity
-    // survives the drain (an even batch nets to no change)
+    // and overwriting the lock cancels the unfired one. A flip ('t') or the
+    // panel's switch ('0', '1') each move the wanted state in order; an
+    // even run of flips nets to no change.
     static CHopQueue<char, 16> toggles([](std::vector<char>& batch) {
-        if (batch.size() % 2 == 0)
-            return;
+        const bool CURRENT = touchpadEnabled().value_or(appliedState == 1);
+        bool       want    = CURRENT;
+        for (const char C : batch)
+            want = C == 't' ? !want : C == '1';
+        if (want == CURRENT)
+            return; // an even run of flips, or a switch asking for what is
         if (settle)
             settle->updateTimeout(std::nullopt);
         hotplugged = false; // the flip comes after it: the user's choice wins
@@ -276,9 +296,8 @@ namespace NAwesome::System {
         // mouse plugged in just before this toggle must still be heard
         // leaving
         watchPointers();
-        const bool CURRENT = touchpadEnabled().value_or(appliedState == 1);
-        applyEnabled(!CURRENT, nullptr, true);
-        if (appliedState == (CURRENT ? 0 : 1))
+        applyEnabled(want, nullptr, true);
+        if (appliedState == (want ? 1 : 0))
             manualState = appliedState; // held until a hotplug, across config reloads
     });
 
@@ -301,7 +320,12 @@ namespace NAwesome::System {
     // emission; the manual flip also cancels a pending auto re-check so it
     // isn't overridden a beat later.
     void padToggle() {
-        toggles.push(0);
+        toggles.push('t');
+    }
+
+    // the control center's switch: the user's own choice, like a flip
+    void padSet(bool on) {
+        toggles.push(on ? '1' : '0');
     }
 
     // the gate's probe: the touchpad's live state, not the policy's memory

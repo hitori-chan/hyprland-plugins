@@ -1,7 +1,8 @@
-// awesome/system.hpp — the system module: audio and brightness (feedback
-// as notify cards) and the touchpad policy.
+// awesome/system.hpp — the system module: audio and the lights (feedback
+// as notify cards, values for the control center) and the touchpad policy.
 #pragma once
 
+#include "core/controls.hpp"
 #include "core/supervisor.hpp"
 
 #include <cstdint>
@@ -23,15 +24,16 @@ namespace NAwesome::System {
     CModule& module();
 
     // the actions the Lua face enqueues (audio.cpp executes them on the
-    // event loop; the wpctl four are indexed by it, the two brightness
-    // steps named)
+    // event loop; the wpctl four are indexed by it, the light steps named)
     enum eAction : uint8_t {
         VOL_UP,
         VOL_DOWN,
         VOL_MUTE,
         MIC_MUTE,
         BRI_UP,
-        BRI_DOWN
+        BRI_DOWN,
+        KBD_UP,
+        KBD_DOWN
     };
 
     // the units (audio.cpp, pad.cpp)
@@ -42,4 +44,13 @@ namespace NAwesome::System {
     void padExit();
     void padToggle();
     std::string padState();
+
+    // the control center's doors (core/controls.hpp), each deferred out of
+    // the caller's emission
+    void setLevel(Controls::eLevel l, int pct);
+    void setMic(bool on);
+    void setMuted(bool muted);
+    void audioRefresh();  // every level as it is now (the panel opened)
+    void padSet(bool on); // the user's own choice, like a flip
+    void padPublish();
 }
