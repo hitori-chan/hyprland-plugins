@@ -7,15 +7,12 @@
 // shell only watches what it paints.
 #include "shell.hpp"
 
+#include "core/walltimer.hpp"
 #include "shell/shell.hpp"
 #include "windows/state.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 
-#include <sys/timerfd.h>
-#include <unistd.h>
-
-#include <cerrno>
 #include <ctime>
 
 namespace NAwesome::Shell {
@@ -26,33 +23,21 @@ namespace NAwesome::Shell {
     }
 
     namespace {
-        // The clock/battery minute tick rides the WALL clock: the event
-        // loop's timers are CLOCK_MONOTONIC, which stands still through a
-        // suspend — a resume showed the time the laptop went to sleep for up
-        // to a minute. An absolute realtime timer at the next minute fires at
-        // once on resume, and CANCEL_ON_SET wakes it on a clock step (NTP,
-        // a manual set).
-        int              minuteFd  = -1;
-        wl_event_source* minuteSrc = nullptr;
+        // The clock/battery minute tick rides the wall clock (a resume
+        // showed the time the laptop went to sleep for up to a minute):
+        // the next minute, re-armed on every wakeup — a clock step's too.
+        CWallTimer minute;
 
         void armMinute() {
-            timespec now{};
-            clock_gettime(CLOCK_REALTIME, &now);
-            itimerspec its{};
-            its.it_value.tv_sec = (now.tv_sec / 60 + 1) * 60;
-            timerfd_settime(minuteFd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET, &its, nullptr);
+            minute.arm(((int64_t)std::time(nullptr) / 60 + 1) * 60);
         }
 
-        int onMinute(int fd, uint32_t, void*) {
-            uint64_t expirations = 0;
-            if (read(fd, &expirations, sizeof expirations) < 0 && errno != ECANCELED && errno != EAGAIN)
-                return 0;
+        void onMinute() {
             const bool CLK = Clock::refresh(), BAT = Battery::refresh();
             if (CLK || BAT)
                 barChanged();
             Battery::alerts();
             armMinute();
-            return 0;
         }
     } // namespace
 
@@ -130,11 +115,8 @@ namespace NAwesome::Shell {
             barChanged();
         });
 
-        minuteFd = timerfd_create(CLOCK_REALTIME, TFD_NONBLOCK | TFD_CLOEXEC);
-        if (minuteFd >= 0) {
-            minuteSrc = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, minuteFd, WL_EVENT_READABLE, onMinute, nullptr);
+        if (minute.start(onMinute))
             armMinute();
-        }
 
         HyprlandAPI::addLuaFunction(supervisor().handle(), "awesome", "menubar", luaMenubar);
 
@@ -144,12 +126,7 @@ namespace NAwesome::Shell {
     void CModule::teardown() {
         // reverse of init; the supervisor has already dropped the listeners
         // and every hop, so the units below only unwind their own state
-        if (minuteSrc)
-            wl_event_source_remove(minuteSrc); // the source before the fd it watches
-        minuteSrc = nullptr;
-        if (minuteFd >= 0)
-            close(minuteFd);
-        minuteFd = -1;
+        minute.stop();
         Windows::Tasklist::taskChangedHook() = nullptr;
         Menubar::exit();
         Menu::exit();
