@@ -8,6 +8,7 @@
 #include "system.hpp"
 
 #include "core/busclient.hpp"
+#include "core/jobs.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 
@@ -154,6 +155,8 @@ namespace NAwesome::System {
             return "display:" + L(Controls::eLevel::DISPLAY) + " keyboard:" + L(Controls::eLevel::KEYBOARD) + " volume:" + L(Controls::eLevel::VOLUME) +
                 " mic:" + std::to_string(S.switches[(size_t)Controls::eSwitch::MIC]) + " touchpad:" + std::to_string(S.switches[(size_t)Controls::eSwitch::TOUCHPAD]) + " room:" + std::to_string(S.switches[(size_t)Controls::eSwitch::ROOM]);
         }
+        if (verb == "busy") // the wpctl commands in flight: 0 once every set has been read back
+            return std::to_string(Jobs::inst().live(Jobs::CONTROL));
         if (verb == "outputs") { // "41 *42": the sinks by id, the default starred
             std::string out;
             for (const auto& O : Controls::state().outputs)
