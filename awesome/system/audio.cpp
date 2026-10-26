@@ -284,6 +284,55 @@ namespace NAwesome::System {
         } catch (...) {}
     }
 
+    // ---- the outputs (the volume's menu in the control center) ----
+
+    // `wpctl status` names the sinks and stars the default: read at the
+    // load, when the panel opens and after a pick, one read at a time (an
+    // ask meanwhile reads again when it lands). Its Audio tree follows a row
+    // per client, so the read takes more than a readback's cap.
+    static constexpr size_t STATUS_CAP = 32 * 1024;
+    static bool             outputsBusy = false, outputsAgain = false;
+    static uint64_t         outputsGen = 0, audioEpoch = 0; // the read's; the unit's life (a teardown bumps both)
+
+    static void outputsRead() {
+        if (outputsBusy) {
+            outputsAgain = true;
+            return;
+        }
+        const uint64_t GEN = ++outputsGen;
+        outputsBusy        = Jobs::inst().spawnPiped(
+            Jobs::CONTROL, {"wpctl", "status", nullptr},
+            [GEN](Jobs::SPipedResult R) {
+                if (GEN != outputsGen)
+                    return; // a teardown owns the state now
+                outputsBusy = false;
+                std::vector<Controls::SOutput> outs;
+                for (auto& S : Wpctl::parseSinks(R.out))
+                    outs.push_back({.id = S.id, .name = std::move(S.name), .current = S.current});
+                // a read cut short before the sinks keeps the list it had
+                if (!outs.empty() || !R.truncated)
+                    Controls::publish(std::move(outs));
+                if (std::exchange(outputsAgain, false))
+                    outputsRead();
+            },
+            STATUS_CAP);
+    }
+
+    // the pick: the default moves, then the sink reads back as after a
+    // headset's own change (the volume is now the new sink's) and the list
+    // reads again (its star moved)
+    static void setDefaultOutput(uint32_t id) {
+        const std::string ID    = std::to_string(id); // outlives the spawn: the argv is copied there
+        const uint64_t    EPOCH = audioEpoch;
+        Jobs::inst().spawnChecked(Jobs::CONTROL, {"wpctl", "set-default", ID.c_str(), nullptr}, [EPOCH](int) {
+            if (EPOCH != audioEpoch)
+                return;
+            sink.level = -1; // another sink: the next raise reads its level first
+            headsetMoved();
+            outputsRead();
+        });
+    }
+
     // ---- the action queue (the Lua face's door) ----
 
     // Actions queue and drain from the event loop, never inside the bind's
@@ -313,6 +362,7 @@ namespace NAwesome::System {
     // a time and takes the newest ask when it finishes.
     static std::array<std::optional<int>, (size_t)Controls::eLevel::COUNT_> levelAsks;
     static std::optional<bool>                                              micAsk, muteAsk;
+    static std::optional<uint32_t>                                          outputAsk;
     static CHop                                                             pendingAsks;
     static bool                                                             asksArmed = false; // one hop per batch, not one per motion
 
@@ -345,6 +395,8 @@ namespace NAwesome::System {
             source.toggles = 0;
             pump(source);
         }
+        if (const auto ID = std::exchange(outputAsk, std::nullopt))
+            setDefaultOutput(*ID);
     }
 
     static void armAsks() {
@@ -370,15 +422,21 @@ namespace NAwesome::System {
         armAsks();
     }
 
-    // the load, and the panel opening: the volume and the mic as they are
-    // now, read back quietly (one already reading answers with that), so
-    // the panel opens on what it shows and never grows a row
+    void setOutput(uint32_t id) {
+        outputAsk = id;
+        armAsks();
+    }
+
+    // the load, and the panel opening: the volume, the mic and the outputs
+    // as they are now, read back quietly (one already reading answers with
+    // that), so the panel opens on what it shows and never grows a row
     void audioRefresh() {
         for (auto* D : {&sink, &source})
             if (!D->busy) {
                 D->busy = true;
                 readBack(*D, eShow::NEVER);
             }
+        outputsRead();
     }
 
     void audioInit() {
@@ -400,6 +458,10 @@ namespace NAwesome::System {
         levelAsks.fill(std::nullopt);
         micAsk.reset();
         muteAsk.reset();
+        outputAsk.reset();
+        ++outputsGen; // a late status or set-default finds itself outdated
+        ++audioEpoch;
+        outputsBusy = outputsAgain = false;
         if (headsetSettle && g_pEventLoopManager)
             g_pEventLoopManager->removeTimer(headsetSettle);
         headsetSettle.reset();

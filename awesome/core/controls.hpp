@@ -1,7 +1,8 @@
 // awesome/core/controls.hpp — the control center's seam. The system module
 // owns the levels (the display's brightness, the keyboard light, the
-// volume) and the switches (the microphone, the touchpad): it publishes
-// them here as it learns them and registers the doors that move them. The
+// volume), the switches (the microphone, the touchpad) and the outputs the
+// volume can go to: it publishes them here as it learns them and registers
+// the doors that move them. The
 // notify center draws them and sends the user's moves through those doors.
 // Neither module reads the other's state: the values live here.
 //
@@ -12,6 +13,8 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <string>
+#include <vector>
 
 namespace NAwesome::Controls {
 
@@ -36,9 +39,19 @@ namespace NAwesome::Controls {
         bool operator==(const SLevel&) const = default;
     };
 
+    // a sink the volume can play through (the system module bounds the list)
+    struct SOutput {
+        uint32_t    id = 0;
+        std::string name;
+        bool        current = false; // the default
+
+        bool operator==(const SOutput&) const = default;
+    };
+
     struct SState {
         std::array<SLevel, (size_t)eLevel::COUNT_>  levels{};
         std::array<int8_t, (size_t)eSwitch::COUNT_> switches{-1, -1}; // -1 none, 0 off, 1 on
+        std::vector<SOutput>                        outputs;
     };
 
     inline SState& state() {
@@ -51,8 +64,9 @@ namespace NAwesome::Controls {
     struct SDoors {
         std::function<void(eLevel, int)>   setLevel; // a percent, 0..100
         std::function<void(eSwitch, bool)> setSwitch;
-        std::function<void(bool)>          setMuted; // the volume's
-        std::function<void()>              refresh;  // read every device again (the panel opened)
+        std::function<void(bool)>          setMuted;  // the volume's
+        std::function<void(uint32_t)>      setOutput; // the default sink, by its id
+        std::function<void()>              refresh;   // read every device again (the panel opened)
     };
     inline SDoors& doors() {
         static SDoors D;
@@ -86,6 +100,14 @@ namespace NAwesome::Controls {
         if (S == v)
             return;
         S = v;
+        if (changedHook())
+            changedHook()();
+    }
+
+    inline void publish(std::vector<SOutput> v) {
+        if (state().outputs == v)
+            return;
+        state().outputs = std::move(v);
         if (changedHook())
             changedHook()();
     }

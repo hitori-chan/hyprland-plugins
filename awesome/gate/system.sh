@@ -227,7 +227,18 @@ chk "panel: a click on the volume's track sets it there" until_is 3 40 ctl_part 
 click "$((PANEL_X + 14 + 8))" "$(level_cy 2)" 272
 chk "panel: the speaker mutes" until_is 3 1 wlog_has "set-mute @DEFAULT_AUDIO_SINK@ 1"
 chk "panel: ...and the slider reads it back muted" until_is 3 40m ctl_part volume
-rm -f "$STATE/wpctl-level" "$STATE/wpctl-mutes"
+# right on the volume: its outputs at the pointer, the default checked; a
+# pick moves the default and the list reads it back
+chk "panel: the outputs are read with the panel" test "$(hq awesome outputs)" = "*41 42"
+click "$((PANEL_X + 60))" "$(level_cy 2)" 273
+chk "panel: the volume's right click lists its outputs, the default checked" until_is 3 "Gate Speakers*;Gate Headset" hq awesome menu
+click "$((PANEL_X + 120))" "$(($(level_cy 2) + 5 + 28 + 14))" 272
+chk "panel: a pick makes it the default" until_is 3 1 wlog_has "set-default 42"
+chk "panel: ...the outputs read it back" until_is 3 "41 *42" hq awesome outputs
+chk "panel: ...and the menu closed on the pick" test -z "$(hq awesome menu)"
+click "$((PANEL_X + 60))" "$(level_cy 0)" 273; sleep 0.4
+chk "panel: the display's right click opens no menu" test -z "$(hq awesome menu)"
+rm -f "$STATE/wpctl-level" "$STATE/wpctl-mutes" "$STATE/wpctl-default"
 hq awesome center >/dev/null; sleep 0.4
 dsp "hl.plugin.awesome.keyboard_light_down()"
 chk "panel: closed, a key posts its capsule again" until_is 3 "center:0 live:1 dnd:0" st

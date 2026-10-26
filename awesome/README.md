@@ -603,8 +603,10 @@ semantics).
   track sets the level there and drags it; the wheel moves it 5 % a
   notch; the speaker's glyph mutes. A level past 100 % (set elsewhere)
   shows its number over a full track: the wheel never raises it, and a
-  notch down lands at 100. A key that moves a level while the center is
-  open moves its slider, and no capsule covers the panel. Under the
+  notch down lands at 100. A right click on the volume lists its outputs
+  (`wpctl status`'s sinks, the default checked) and a pick makes one the
+  default. A key that moves a level while the center is open moves its
+  slider, and no capsule covers the panel. Under the
   block, "Notifications" at its left, bare on the desktop with a soft
   shadow (as macOS sets text on the desktop), and at its right "Clear
   All" on a glass capsule. As macOS's, it draws no backdrop: the

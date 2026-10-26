@@ -50,15 +50,18 @@ namespace NAwesome {
         bool spawnChecked(eClass cls, std::vector<const char*> argv, std::function<void(int)> onExit);
 
         // A child whose STDOUT and exit a callback consumes: stdout drains on
-        // the event loop into a bounded buffer; at the cap the read end
-        // closes and the child is killed. The callback runs once, after EOF
-        // (or the cap, or the deadline).
+        // the event loop into a bounded buffer (cap bytes, PIPED_CAP unless
+        // the caller reads more, never past MAX_PIPED_CAP); at the cap the
+        // read end closes and the child is killed. The retained output is
+        // also the work cap. The callback runs once, after EOF (or the cap,
+        // or the deadline).
+        static constexpr size_t PIPED_CAP = 4096, MAX_PIPED_CAP = 64 * 1024;
         struct SPipedResult {
             std::string out;
             bool        truncated = false; // the cap or the deadline cut it short
             int         status    = -1;    // the wait status, -1 = unknown
         };
-        bool spawnPiped(eClass cls, std::vector<const char*> argv, std::function<void(SPipedResult)> onDone);
+        bool spawnPiped(eClass cls, std::vector<const char*> argv, std::function<void(SPipedResult)> onDone, size_t cap = PIPED_CAP);
 
         // EXIT: kill and release every tracked child, pull every source.
         void teardown();
@@ -75,6 +78,7 @@ namespace NAwesome {
             bool                              exited    = false;
             bool                              pipeDone  = false; // EOF, error, the cap, or the deadline
             bool                              truncated = false;
+            size_t                            cap       = PIPED_CAP;
             std::string                       out;
             std::function<void(int)>          onExit;
             std::function<void(SPipedResult)> onPiped;

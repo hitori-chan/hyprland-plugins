@@ -381,7 +381,10 @@ and draw. The center opens on the control center's block
 `core/controls.hpp`, snapshotted by the warm and painted as snapshotted;
 a dragged slider shows what it asked until the device reports that level
 (1.5 s at most), so a set in flight never snaps it back, and while the
-block shows, `system` posts no capsule for what it shows.
+block shows, `system` posts no capsule for what it shows. A right click
+on the volume opens the card menu for that control (`CardMenu::
+openControl`): the outputs `system` read from `wpctl status`, the
+default checked, rebuilt while open so a late read shows.
 Inline reply, sound through Jobs. The model API is the module's public
 face — `system` posts its feedback cards through it (fixed IDs, low
 urgency, a value, a glyph that makes it a capsule).

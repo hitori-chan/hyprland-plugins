@@ -97,7 +97,8 @@ namespace NAwesome::System {
                     else if (s == Controls::eSwitch::TOUCHPAD)
                         padSet(on);
                 },
-            .setMuted = setMuted,
+            .setMuted  = setMuted,
+            .setOutput = setOutput,
             .refresh =
                 []() {
                     lightRefresh();
@@ -149,6 +150,12 @@ namespace NAwesome::System {
             };
             return "display:" + L(Controls::eLevel::DISPLAY) + " keyboard:" + L(Controls::eLevel::KEYBOARD) + " volume:" + L(Controls::eLevel::VOLUME) +
                 " mic:" + std::to_string(S.switches[(size_t)Controls::eSwitch::MIC]) + " touchpad:" + std::to_string(S.switches[(size_t)Controls::eSwitch::TOUCHPAD]);
+        }
+        if (verb == "outputs") { // "41 *42": the sinks by id, the default starred
+            std::string out;
+            for (const auto& O : Controls::state().outputs)
+                out += (out.empty() ? "" : " ") + std::string{O.current ? "*" : ""} + std::to_string(O.id);
+            return out;
         }
 #endif
         return std::nullopt;

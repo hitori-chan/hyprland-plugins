@@ -30,9 +30,6 @@ namespace NAwesome {
             {32, 0ms}, // OPEN: bounded by user clicks; a browser may live for hours
         };
 
-        // the retained-output cap is also the work cap (see onPipeReadable)
-        constexpr size_t MAX_PIPED_OUTPUT = 4096;
-
         // a child killed at its deadline gets this long to exit and close its
         // pipe before the pipe is cut and it is delivered anyway
         constexpr auto KILL_GRACE = 1s;
@@ -64,7 +61,7 @@ namespace NAwesome {
         return spawnTracked(cls, argv, std::move(c));
     }
 
-    bool Jobs::spawnPiped(eClass cls, std::vector<const char*> argv, std::function<void(SPipedResult)> onDone) {
+    bool Jobs::spawnPiped(eClass cls, std::vector<const char*> argv, std::function<void(SPipedResult)> onDone, size_t cap) {
         if (!onDone)
             return false;
         int pfd[2];
@@ -80,6 +77,7 @@ namespace NAwesome {
         }
         auto c     = makeUnique<SChild>();
         c->outFd   = pfd[0];
+        c->cap     = std::clamp<size_t>(cap, 1, MAX_PIPED_CAP);
         c->onPiped = std::move(onDone);
         // spawnTracked dup2s the write end onto the child's stdout; it lives
         // in the child only
@@ -142,7 +140,7 @@ namespace NAwesome {
         for (;;) {
             const auto N = read(fd, buf, sizeof(buf));
             if (N > 0) {
-                if ((size_t)N > MAX_PIPED_OUTPUT - std::min(MAX_PIPED_OUTPUT, c->out.size())) {
+                if ((size_t)N > c->cap - std::min(c->cap, c->out.size())) {
                     // the cap: stop reading NOW, close the read end, and end
                     // the producer (a closed pipe alone leaves it running)
                     c->truncated = true;
