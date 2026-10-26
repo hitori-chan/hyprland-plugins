@@ -128,10 +128,11 @@ task area on narrow outputs.
   parked rows, a later explicit close re-pops them. A right click opens
   the notification options, built as they stand: Do Not Disturb ▸ (For
   30 Minutes, For 1 Hour, For 3 Hours, Until Turned Off; while on, the
-  row says until when and Turn Off leads) and Silenced Apps ▸, every app
-  switch and chat mute the card menus turned off, listed by name and
-  what is off; a click turns that one back on (dim with nothing
-  silenced). Pointer hover does nothing.
+  row says until when and Turn Off leads), Quiet Automatically ▸ (When an
+  App Is Fullscreen, While Sharing the Screen; both off until checked)
+  and Silenced Apps ▸, every app switch and chat mute the card menus
+  turned off, listed by name and what is off; a click turns that one
+  back on (dim with nothing silenced). Pointer hover does nothing.
 - **Battery**: Pixel's battery, transcribed from SystemUI's Compose
   battery — a 24 x 13 round-rect body (13 px beside the bar's 12 px
   text) filled to the level over a translucent track, the number inside
@@ -655,8 +656,22 @@ semantics).
   chips drops the selection (Enter and Delete never act off screen).
   Modified chords pass through as user binds, and so does any key with
   nothing to act on.
-- Over fullscreen: banners show over a real fullscreen window too — the
-  ecosystem default, no quiet-while-fullscreen policy. While a card is
+- Quiet automatically (the bell's menu; both off by default, each an
+  option row): over a focused fullscreen window, or while a display or a
+  region of one is shared, banners and sounds hold — an arrival lands in
+  the shade and the bell dots, as an app with banners off does, and the
+  soft banners already up retreat there when the quiet begins (a share's
+  once it has held a second, so a screenshot never moves them). Critical
+  punches through, as through DND; over a share it shows its face and
+  title without its words (no body, messages or images). A share is the
+  compositor's own test for a consumer: a frame copied within its half
+  second, or one waiting for a still screen to change; a capture client
+  that stopped asking (a screenshot tool, the portal after a call) is no
+  share, though the compositor keeps its session. It is rechecked each
+  second while one is up. A window share never shows a card, so it never
+  quiets anything.
+- Over fullscreen: with quiet automatically off, banners show over a
+  real fullscreen window — the ecosystem default. While a card is
   up over a fullscreen window, the plugin blocks the monitor's solitary
   render and direct scanout through the compositor's
   `monitor.blockSolitary` hook, so the card composites over it; scanout

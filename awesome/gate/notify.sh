@@ -521,7 +521,7 @@ hold_menu "$HX" "$HY"; release_left
 click $((HX - 100)) "$(mrow "$HY" 2 1)" 272
 chk "silenced: the app's banners are off" until_is 3 1 app_rows
 nclear
-bell_open; bell_cascade 1
+bell_open; bell_cascade 2
 click "$BCX" "$(crow 0 0)" 272
 chk "silenced: a click in the bell's list turns them back on" until_is 3 0 app_rows
 pcidb gatechat Alice alice "five"; sleep 1
@@ -586,6 +586,78 @@ chk "fs-banner: the banner shows over the fullscreen window" test "$(bd)" = "ban
 nclear
 dsp "hl.dsp.window.close()"; sleep 1
 
+# ---- quiet automatically ------------------------------------------------------
+# The bell's Quiet Automatically ▸ (When an App Is Fullscreen, While Sharing
+# the Screen; both off until turned on): banners and sounds hold, the
+# arrival waits in the shade, the banners already up retreat there when
+# the quiet begins (a share's once it held a second: a screenshot never
+# moves them); critical punches through, over a share without its words. The switches are option rows. Menus first: the bar hides over a
+# fullscreen window, and the capture that measures a menu reads any window.
+opt_row() { grep -a $'\t'"$1"'$' "$AW_STATE" | cut -f2; }
+bell_open; bell_cascade 1
+click "$BCX" "$(crow 0 0)" 272
+chk "quiet: When an App Is Fullscreen turns on, remembered" until_is 3 1 opt_row quiet-fullscreen
+dsp "hl.dsp.exec_cmd('foot -a quietfs --window-size-pixels=600x400')"; wait_class quietfs
+dsp "hl.dsp.exec_cmd('notify-send -a q2 -t 30000 before body')"; sleep 1.2
+chk "quiet: a banner up before the fullscreen" test "$(bd)" = "banners:1 resident:0"
+dsp "hl.dsp.window.fullscreen()"; sleep 1
+chk "quiet: going fullscreen sends it to the shade" until_is 3 "banners:0 resident:1" bd
+dsp "hl.dsp.exec_cmd('notify-send -a q2 -t 30000 held body')"; sleep 1.2
+chk "quiet: over a fullscreen focus an arrival waits in the shade" test "$(bd)" = "banners:0 resident:2"
+chk "quiet: the probe agrees" test "$(hq awesome quiet)" = "now:1 hushed:0"
+dsp "hl.dsp.exec_cmd('notify-send -a q2 -u critical -t 30000 urgent body')"; sleep 1.2
+chk "quiet: critical punches through" test "$(bd)" = "banners:1 resident:2"
+nclear
+dsp "hl.dsp.window.fullscreen()"; sleep 1
+dsp "hl.dsp.exec_cmd('notify-send -a q2 -t 30000 free body')"; sleep 1.2
+chk "quiet: out of fullscreen it banners again" test "$(bd)" = "banners:1 resident:0"
+nclear
+dsp "hl.dsp.window.close()"; sleep 1
+bell_open; bell_cascade 1
+click "$BCX" "$(crow 0 0)" 272
+chk "quiet: turned off, the row goes" until_is 3 "" opt_row quiet-fullscreen
+# shares: the fixture copies the nested's output over wlr-screencopy (the
+# portal's protocol); the nested renders on damage, so the pointer jitters
+# until a frame is copied
+share_start() { # share_start <log> [sharehold flags]: SHARE_PID holds it
+	local log=$1 _
+	shift
+	WAYLAND_DISPLAY="$WL" "$REPO/devtools/sharehold" "$@" >"$log" 2>&1 & SHARE_PID=$!
+	for _ in $(seq 1 25); do
+		grep -q READY "$log" && return 0
+		printf 'rel 2 0\nsleep 40\nrel -2 0\nsleep 40\n' | vp; sleep 0.1
+	done
+	return 1
+}
+share_stop() { kill "$SHARE_PID" 2>/dev/null; wait "$SHARE_PID" 2>/dev/null; SHARE_PID=""; }
+bell_open; bell_cascade 1
+click "$BCX" "$(crow 1 0)" 272
+chk "quiet: While Sharing the Screen turns on, remembered" until_is 3 1 opt_row quiet-sharing
+dsp "hl.dsp.exec_cmd('notify-send -a q3 -t 30000 before body')"; sleep 1.2
+chk "quiet: a banner up before the share" test "$(bd)" = "banners:1 resident:0"
+# a screenshot: one frame, its client still connected (its session stays)
+chk "quiet: a one-frame screenshot is copied" share_start "$STATE/shot.log" -n 1
+sleep 1.6
+chk "quiet: the screenshot leaves the banner up" test "$(bd)" = "banners:1 resident:0"
+chk "quiet: ...and is no share once copied" until_is 3 "now:0 hushed:0" hq awesome quiet
+share_stop
+# a screencast: copies with damage, so a still screen keeps a frame waiting
+chk "quiet: a screencast is copied" share_start "$STATE/share.log" -d
+chk "quiet: the share sends the banner to the shade" until_is 4 "banners:0 resident:1" bd
+sleep 1.5
+chk "quiet: a still screen stays shared" test "$(hq awesome quiet)" = "now:1 hushed:1"
+dsp "hl.dsp.exec_cmd('notify-send -a q3 -t 30000 held body')"; sleep 1.2
+chk "quiet: while shared an arrival waits in the shade" test "$(bd)" = "banners:0 resident:2"
+dsp "hl.dsp.exec_cmd('notify-send -a q3 -u critical -t 30000 urgent secret')"; sleep 1.2
+chk "quiet: critical punches through the share" test "$(bd)" = "banners:1 resident:2"
+chk "quiet: ...holding its words back" test "$(hq awesome quiet)" = "now:1 hushed:1"
+share_stop
+chk "quiet: the share's end gives the words back" until_is 4 "now:0 hushed:0" hq awesome quiet
+nclear
+bell_open; bell_cascade 1
+click "$BCX" "$(crow 1 0)" 272
+chk "quiet: sharing off, the row goes" until_is 3 "" opt_row quiet-sharing
+
 # ---- bus: closing an unknown ID is an error --------------------------------
 dsp "hl.dsp.exec_cmd('notify-send -a unk -t 30000 unknown \"close probe body\"')"; sleep 1.2
 chk "bus-close: a live card for the probe" test "$(bd)" = "banners:1 resident:0"
@@ -631,7 +703,7 @@ nclear
 # ---- the bell's options: a right click ----------------------------------------
 # A menu at the bell (shell/bell.cpp): Do Not Disturb ▸ (For 30 Minutes, For
 # 1 Hour, For 3 Hours, Until Turned Off; Turn Off and a separator lead
-# while on) and Silenced Apps ▸.
+# while on), Quiet Automatically ▸ and Silenced Apps ▸.
 dnd_in_hour() { local v; v="$(dndrow)"; [[ "$v" =~ ^[0-9]+$ ]] && ((v - $(date +%s) > 3500 && v - $(date +%s) <= 3600)); }
 bell_open
 chk "bell: a right click opens its options" test $((BRX1 - BRX0)) -ge 190

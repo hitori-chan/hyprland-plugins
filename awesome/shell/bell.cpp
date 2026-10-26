@@ -6,7 +6,8 @@
 // card it has not shown (Model::unseen). Under Do Not Disturb the bell is the
 // moon, as macOS shows a Focus, dotted while cards wait in the DND queue.
 // A right click opens the notification options: Do Not Disturb for a while,
-// and the apps and chats the card menus silenced, each a click from back on.
+// quiet automatically (over a fullscreen app, while sharing the screen), and
+// the apps and chats the card menus silenced, each a click from back on.
 
 #include "shell/shell.hpp"
 
@@ -124,6 +125,22 @@ namespace NAwesome::Shell {
             return e;
         }
 
+        // Quiet Automatically ▸: its two switches, checked while on (both
+        // start off)
+        Menu::SEntry quietRow() {
+            namespace Q = NAwesome::Notify::Quiet;
+            auto e      = row("Quiet Automatically", {});
+            e.submenu   = true;
+            for (const auto& [LABEL, OPT] : {std::pair{"When an App Is Fullscreen", eOption::QUIET_FULLSCREEN}, {"While Sharing the Screen", eOption::QUIET_SHARING}}) {
+                const bool ON = Q::on(OPT);
+                auto       r  = row(LABEL, [OPT, ON]() { Q::set(OPT, !ON); });
+                r.toggle      = Menu::TG_CHECK;
+                r.toggleState = ON;
+                e.children.push_back(std::move(r));
+            }
+            return e;
+        }
+
         // Silenced Apps ▸: every switch the card menus turned off, each row
         // a click from back on; dim with nothing silenced
         Menu::SEntry silencedRow() {
@@ -175,7 +192,7 @@ namespace NAwesome::Shell {
 
             void onHit(const SHit& hit, uint32_t bit, bool) override {
                 if (bit == 2u) { // the options, built as they stand now
-                    Menu::openLocal({dndRow(), silencedRow()}, hit.clickX, hit.mon);
+                    Menu::openLocal({dndRow(), quietRow(), silencedRow()}, hit.clickX, hit.mon);
                     return;
                 }
                 if (bit != 1u)

@@ -88,7 +88,9 @@ namespace NAwesome::Notify {
         // ---- the icon column ----
         // a group chat with two faces shows both, overlapping; otherwise the
         // lead face (a banner's hero leaves it the app's identity)
-        const bool   HERO  = BANNER && N.iconTex && N.heroTex;
+        // a critical banner over a share: its face and title, never its words
+        const bool   HUSH  = BANNER && N.urgency >= 2 && Quiet::hushed();
+        const bool   HERO  = BANNER && !HUSH && N.iconTex && N.heroTex;
         const bool   PILE  = N.conversationKind == "group" && !OWNFACE && N.participants.size() >= 2 && N.participants[0].avatarTex && N.participants[1].avatarTex;
         const bool   LEAD  = PILE || hasLeadIcon(N, !BANNER);
         const double ICONW = LEAD ? ICONPX : 0;
@@ -118,7 +120,7 @@ namespace NAwesome::Notify {
         imgBoxes.clear();
         altLines.clear();
         double imgH = 0;
-        if (BANNER) {
+        if (BANNER && !HUSH) {
             double bx = 0, rowY = 0;
             for (const auto& IM : N.bodyImages) {
                 if (!IM.tex)
@@ -147,10 +149,10 @@ namespace NAwesome::Notify {
         // ---- the body ----
         // a chat shows what fits of its newest messages, banner and center
         // alike (the window is fitted below, once the lines are known);
-        // folded, the newest message alone
-        const std::string  FOLDLINE = FOLDED ? collapsedLine(NP) : std::string{};
-        const std::string& RAWBODY  = FOLDED ? FOLDLINE : N.body;
-        const bool         CHAT     = !FOLDED && !N.messages.empty();
+        // folded, the newest message alone; hushed, none
+        const std::string  FOLDLINE = FOLDED && !HUSH ? collapsedLine(NP) : std::string{};
+        const std::string& RAWBODY  = FOLDED || HUSH ? FOLDLINE : N.body;
+        const bool         CHAT     = !FOLDED && !HUSH && !N.messages.empty();
         const int          LINEPX   = bodyBudgetPx(P.scale, 1);
         const double       PROGH   = N.progress >= 0 ? PROGRESS_GAP + PROGRESS_H : 0;
         double             heroH   = HERO ? std::min(HERO_CAP, INNERW * N.iconTex->m_size.y / std::max(1.0, N.iconTex->m_size.x)) : 0;

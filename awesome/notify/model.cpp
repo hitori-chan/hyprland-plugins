@@ -463,7 +463,7 @@ namespace NAwesome::Notify {
         void lowerBanners(const std::string& appKey) {
             bool changed = false;
             for (const auto& N : notifs)
-                if (N->appKey == appKey && N->banner && !N->waiting && !vanishes(N) && Policy::bannersOff(*N)) {
+                if ((appKey.empty() || N->appKey == appKey) && N->banner && !N->waiting && !vanishes(N) && Policy::bannersOff(*N)) {
                     N->banner = false; // parked, not dismissed: the shade still holds it
                     changed   = true;
                 }
@@ -1383,10 +1383,10 @@ namespace NAwesome::Notify {
             // popup, no repeat sound. A replace re-alerting its own live
             // card is not another banner (appBannersFull skips self). The
             // card menu's switches land an arrival in the shade the same
-            // way: the app's banners off, or its chat muted. Critical always
-            // punches through. Banners show over a fullscreen window too —
-            // the ecosystem default; DND and the shade are the user's
-            // escape hatches.
+            // way: the app's banners off, its chat muted, or quiet
+            // automatically (a fullscreen focus, a share; both opt-in).
+            // Critical always punches through. Banners show over a
+            // fullscreen window by default — the ecosystem's.
             const bool SOFT      = !n->waiting && n->urgency < 2 && !vanishes(n);
             const bool COALESCED = SOFT && appBannersFull(n);
             if (COALESCED || (SOFT && Policy::bannersOff(*n)))
@@ -1481,6 +1481,7 @@ namespace NAwesome::Notify {
                 g_pEventLoopManager->removeTimer(expiry);
             expiry.reset();
             dndEnd.stop();
+            Quiet::exit();
             notifs.clear();
             suspended  = false; // the option stays: the next load applies it
             heldBanner = 0;
