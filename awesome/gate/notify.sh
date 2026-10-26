@@ -37,6 +37,9 @@ chk "ephemerals: only the critical banner is still up" test "$(bd)" = "banners:1
 hq awesome center >/dev/null; sleep 0.5
 chk "center: opening absorbs the banner into the shade" test "$(bd)" = "banners:0 resident:3"
 chk "center: opening dismisses nothing" test "$(st)" = "center:1 live:3 dnd:0"
+capture_nested "$STATE/center-head.png"
+chk "center: the heading names the column, left of its controls" \
+	test "$(lit_px "$STATE/center-head.png" $((PANEL_X + 4)) $((PANEL_X + 150)) $((N_TOP + 4)) $((N_TOP + 24)))" -gt 80
 hq awesome center >/dev/null; sleep 0.5
 chk "center: closing neither re-pops nor drops a card" test "$(st)" = "center:0 live:3 dnd:0"
 nclear
