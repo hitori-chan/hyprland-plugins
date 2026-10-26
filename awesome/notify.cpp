@@ -12,6 +12,9 @@
 #include "notify.hpp"
 
 #include "notify/model.hpp"
+#ifdef AWESOME_GATE
+#include "notify/ui.hpp" // the gate's menu probe
+#endif
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 
@@ -208,6 +211,8 @@ namespace NAwesome::Notify {
                     return N->messages.empty() ? N->body : N->fitMemo.rev == N->rev ? N->fitMemo.body : std::string{};
             return std::string{};
         }
+        if (verb == "menu") // the open card menu's rows ("label;label*;(label)": checked, dim)
+            return CardMenu::describe();
         if (verb == "quiet") // "now:N hushed:N" — an arrival would hold; a critical banner shows without its words
             return std::format("now:{} hushed:{}", Quiet::now() ? 1 : 0, Quiet::hushed() ? 1 : 0);
 #endif

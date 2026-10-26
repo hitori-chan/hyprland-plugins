@@ -70,6 +70,7 @@ namespace NAwesome::System {
     void setLevel(Controls::eLevel l, int pct);
     void setMic(bool on);
     void setMuted(bool muted);
+    void setOutput(uint32_t id); // the default sink
     void audioRefresh();  // the volume and the mic as they are now (the panel opened)
     void padSet(bool on); // the user's own choice, like a flip
     void padPublish();

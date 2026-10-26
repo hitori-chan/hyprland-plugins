@@ -259,13 +259,17 @@ namespace NAwesome::Notify {
     namespace CardMenu {
         bool     canOpen(uint32_t id); // a notification (never feedback) the user can see
         bool     open(uint32_t id, const Vector2D& at); // the hold: its corner at the pointer
+        bool     openControl(Controls::eLevel l, const Vector2D& at); // a level's right click (the volume's outputs)
         void     close();
         bool     isOpen();
         uint32_t owner(); // the card it belongs to; 0 = none open
-        void     pick(int index); // from the click drain
+        void     pick(int index, const std::string& key); // from the click drain; a control's row by its key
         void     sync();          // after a model change: its card died -> close
         void     render(const SPaint& P, const SType& T); // its panel, then its rows (hit first)
         void     exit();          // teardown: forget it, no damage, no warm
+#ifdef AWESOME_GATE
+        std::string describe(); // the gate's: the open menu's rows
+#endif
     }
 
     // the current hover (surface.cpp owns it; setHovered is its door) —

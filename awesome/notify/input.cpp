@@ -28,7 +28,8 @@
 //   controls the block atop the center: a tile's click flips its switch
 //            (Do Not Disturb, the microphone, the touchpad) · a left press
 //            on a level's track drags it until the release · the wheel
-//            moves a level 5 % a notch · the volume's glyph mutes
+//            moves a level 5 % a notch · the volume's glyph mutes · right
+//            on the volume opens its outputs
 //   menu     a row is picked on the left RELEASE — press, hold, slide onto
 //            a row and let go, or click one on the open menu; any other
 //            press closes it, swallowed
@@ -79,6 +80,7 @@ namespace NAwesome::Notify {
         uint64_t     rev     = 0;     // the card's revision at the press: its layout's actions are that revision's
         bool         outside = false; // the click fell outside every surface (closes the shade)
         bool         folded  = false; // a center card the budget folded: the click opens it
+        Vector2D     at;              // a level's right click: where its menu opens (set past hitAt: a left release compares hits)
         bool operator==(const SHit&) const = default;
     };
     static void           drainHits(std::vector<SHit>& batch);
@@ -329,11 +331,13 @@ namespace NAwesome::Notify {
                 case SCard::CTRL_SLIDER: // a track's press drags in place; only the volume's glyph clicks
                     if (H.bit == 1u && H.part == 1)
                         controlsToggleMute();
+                    else if (H.bit == 2u) // right: the control's menu at the pointer
+                        CardMenu::openControl((Controls::eLevel)H.id, H.at);
                     continue;
                 case SCard::PANEL: continue; // dead panel space swallows silently
                 case SCard::CAPSULE: continue; // never hit (cardAt skips it)
                 case SCard::MENU: CardMenu::close(); continue; // a press off its rows
-                case SCard::MENU_ITEM: CardMenu::pick((int)H.id); continue;
+                case SCard::MENU_ITEM: CardMenu::pick((int)H.id, H.group); continue;
                 case SCard::PAGE_UP:
                 case SCard::PAGE_DOWN:
                     if (H.bit == 1u)
@@ -436,6 +440,8 @@ namespace NAwesome::Notify {
             controlsDragStart(*CARD, COORDS);
             return;
         }
+        if (BIT == 2u && CARD->kind == SCard::CTRL_SLIDER)
+            h.at = COORDS;
         if (BIT == 1u && holdable(*CARD, h) && holdTimer) {
             dropPress();
             press.hit  = std::move(h);
@@ -465,7 +471,7 @@ namespace NAwesome::Notify {
         }
         if (CardMenu::isOpen())
             if (const auto CARD = cardAt(pos); CARD && CARD->kind == SCard::MENU_ITEM)
-                queueHit({.kind = SCard::MENU_ITEM, .id = CARD->id, .bit = 1u});
+                queueHit({.kind = SCard::MENU_ITEM, .id = CARD->id, .group = CARD->group, .bit = 1u});
     }
 
     // ---- wheel: page the center, only inside the panel box ----

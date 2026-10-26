@@ -13,7 +13,12 @@
 //   ───
 //   Close All from <App>
 //
-// The switches persist (policy.cpp). The menu is the notify layer's own,
+// The switches persist (policy.cpp). A right click on a level in the
+// control center opens the same menu for that control: the keyboard
+// light's (Follow the Room) and the volume's (its outputs, the default
+// checked); the system module's values, picked through its doors.
+//
+// The menu is the notify layer's own,
 // drawn last and hit first: it holds its card's banner while up, and
 // closes on a pick, a press anywhere else, Esc, the lock or a native
 // capture, the shade opening or closing, the cards moving monitor, and its
@@ -36,21 +41,30 @@ namespace NAwesome::Notify::CardMenu {
         BANNERS,
         SOUNDS,
         CLOSE_APP,
+        OUTPUT, // a control's: SItem::output becomes the default sink
     };
 
     struct SItem {
         eVerb       verb;
         std::string label;
         std::string action;
+        uint32_t    output = 0;
+        int8_t      check  = -1;    // a control's row: 0 unchecked, 1 checked; -1 no check column
+        bool        dim    = false; // shown, never picked (nothing to choose)
+        std::string key;            // a control's row: who it is across a rebuild (the pick finds it by this)
     };
 
     // the board's menu: 5 px of padding, 28 px rows whose labels sit 15 px
     // in, 11 px separators (a hairline 5 px off either row)
     constexpr double PAD = 5, ROWH = 28, SEPH = 11, LABEL_X = 15, MIN_W = 200, MAX_W = 320;
+    // a menu with checks: the mark's 12 px glyph centered in a column 10 px
+    // in, the labels after it
+    constexpr double CHECK_X = 10, CHECK_W = 14, CHECK_GLYPH = 12, CHECKED_LABEL_X = 30;
     constexpr size_t NAME_CP = 24; // a name past this many code points ellipsizes: the verb must stay readable
 
-    static bool               s_open = false;
-    static uint32_t           s_owner = 0;
+    static bool                            s_open = false;
+    static uint32_t                        s_owner = 0;
+    static std::optional<Controls::eLevel> s_control; // a control's menu, not a card's
     static uint64_t           s_rev   = 0;   // the card's revision the menu was opened over
     static std::string        s_app, s_chat; // the targets, captured at the open
     static std::string        s_appLabel, s_chatLabel; // ... and the names their rows keep
@@ -124,12 +138,39 @@ namespace NAwesome::Notify::CardMenu {
         s_items.push_back({CLOSE_APP, "Close All from " + APP, {}});
     }
 
+    // a control's rows, from what the system module published; rebuilt by
+    // sync() while open, so a list that lands late shows
+    static void buildControl(Controls::eLevel l) {
+        s_items.clear();
+        if (l == Controls::eLevel::VOLUME) {
+            for (const auto& O : Controls::state().outputs)
+                s_items.push_back({.verb = OUTPUT, .label = O.name, .output = O.id, .check = (int8_t)(O.current ? 1 : 0), .key = "out:" + std::to_string(O.id)});
+            if (s_items.empty())
+                s_items.push_back({.verb = OUTPUT, .label = "No Output Devices", .dim = true});
+        }
+    }
+
+    bool openControl(Controls::eLevel l, const Vector2D& at) {
+        if (l != Controls::eLevel::VOLUME)
+            return false;
+        close();
+        s_open    = true;
+        s_owner   = 0;
+        s_control = l;
+        s_at      = at;
+        s_box     = {};
+        buildControl(l);
+        notifChanged(); // warm the labels, then damage
+        return true;
+    }
+
     bool open(uint32_t id, const Vector2D& at) {
         const auto N = target(id);
         if (!N)
             return false;
-        s_open  = true;
-        s_owner = id;
+        s_open    = true;
+        s_owner   = id;
+        s_control.reset();
         s_rev   = N->rev;
         s_app   = N->appKey;
         s_chat  = Policy::chatKey(*N);
@@ -148,6 +189,7 @@ namespace NAwesome::Notify::CardMenu {
             return;
         s_open  = false;
         s_owner = 0;
+        s_control.reset();
         s_items.clear();
         s_box = {};
         refreshBannerHold(); // back to a reply's or the pointer's hold, if any
@@ -157,6 +199,7 @@ namespace NAwesome::Notify::CardMenu {
     void exit() {
         s_open  = false;
         s_owner = 0;
+        s_control.reset();
         s_items.clear();
         s_app.clear();
         s_chat.clear();
@@ -166,15 +209,30 @@ namespace NAwesome::Notify::CardMenu {
     }
 
     void sync() {
-        if (s_open && !target(s_owner))
+        if (s_open && s_control)
+            buildControl(*s_control);
+        else if (s_open && !target(s_owner))
             close(); // its card died (closed, expired away, replaced into feedback)
     }
 
-    void pick(int index) {
-        if (!s_open || index < 0 || (size_t)index >= s_items.size())
+    void pick(int index, const std::string& key) {
+        if (!s_open)
+            return;
+        // a control's rows rebuild with every warm (a sink came or went
+        // between the draw and the pick): the row is the one with its key
+        if (!key.empty()) {
+            const auto IT = std::ranges::find(s_items, key, &SItem::key);
+            if (IT == s_items.end())
+                return close();
+            index = (int)(IT - s_items.begin());
+        }
+        if (index < 0 || (size_t)index >= s_items.size())
+            return;
+        if (s_items[index].dim)
             return;
         const auto VERB = s_items[index].verb;
         const auto KEY  = s_items[index].action;
+        const auto OUT  = s_items[index].output;
         const auto APP  = s_app;
         const auto CHAT = s_chat;
         const auto APPL = s_appLabel, CHATL = s_chatLabel;
@@ -203,8 +261,26 @@ namespace NAwesome::Notify::CardMenu {
             }
             case SOUNDS: Policy::setAppFlag(APP, Policy::SOUNDS_OFF, !(Policy::appFlags(APP) & Policy::SOUNDS_OFF), APPL); return;
             case CLOSE_APP: Model::dismissAppAll(APP); return;
+            case OUTPUT:
+                if (Controls::doors().setOutput)
+                    Controls::doors().setOutput(OUT);
+                return;
         }
     }
+
+#ifdef AWESOME_GATE
+    // "label;label*;(label)": the open menu's rows, a check starred, a dim
+    // row in parentheses ("" while closed)
+    std::string describe() {
+        std::string out;
+        for (const auto& I : s_items) {
+            if (I.verb == SEP)
+                continue;
+            out += (out.empty() ? "" : ";") + (I.dim ? "(" + I.label + ")" : I.label + (I.check == 1 ? "*" : ""));
+        }
+        return s_open ? out : std::string{};
+    }
+#endif
 
     // macOS opens a context menu with its corner at the pointer, one that
     // would leave the monitor flipping to the pointer's other side
@@ -213,13 +289,16 @@ namespace NAwesome::Notify::CardMenu {
             return;
         const auto COLMENU = color(cfg().getColor("plugin:awesome:notify:col_menu_bg")), COLRIM = color(cfg().getColor("plugin:awesome:notify:col_frame")),
                    COLTITLE = color(cfg().getColor("plugin:awesome:notify:col_title")), COLACC = color(cfg().getColor("plugin:awesome:notify:col_highlight"));
-        const int  CAPPX = (int)std::lround((MAX_W - 2 * LABEL_X) * P.scale);
+        const auto COLDIM = COLTITLE.modifyA(COLTITLE.a * 0.4);
+        const bool CHECKS = std::ranges::any_of(s_items, [](const SItem& I) { return I.check >= 0; });
+        const double LX    = CHECKS ? CHECKED_LABEL_X : LABEL_X;
+        const int  CAPPX = (int)std::lround((MAX_W - LX - LABEL_X) * P.scale);
 
         double w = MIN_W, h = 2 * PAD;
         for (const auto& I : s_items) {
             h += I.verb == SEP ? SEPH : ROWH;
             if (I.verb != SEP)
-                w = std::max(w, texW(cachedText(I.label, COLTITLE, T.body, CAPPX, -1, 0, false, 400), P.scale) + 2 * LABEL_X);
+                w = std::max(w, texW(cachedText(I.label, I.dim ? COLDIM : COLTITLE, T.body, CAPPX, -1, 0, false, 400), P.scale) + LX + LABEL_X);
         }
         w = std::min(w, MAX_W);
 
@@ -247,6 +326,12 @@ namespace NAwesome::Notify::CardMenu {
                 continue;
             }
             const CBox ROW{x, ry, w, ROWH};
+            if (I.dim) { // never lit, never hit: a press on it lands on the panel
+                if (const auto LBL = cachedText(I.label, COLDIM, T.body, CAPPX, -1, 0, false, 400); LBL && LBL->tex)
+                    P.tex(LBL->tex, x + LX, ry + (ROWH - texH(LBL, P.scale)) / 2);
+                ry += ROWH;
+                continue;
+            }
             // the selection is the accent text, never a fill (the Frost
             // rule). Both faces are asked for on every pass: a hover only
             // damages, so the lit one must already be warm (crash class 4)
@@ -254,11 +339,18 @@ namespace NAwesome::Notify::CardMenu {
             const auto LIT = cachedText(I.label, COLACC, T.body, CAPPX, -1, 0, false, 400);
             const auto LBL = HOV ? LIT : cachedText(I.label, COLTITLE, T.body, CAPPX, -1, 0, false, 400);
             if (LBL && LBL->tex)
-                P.tex(LBL->tex, x + LABEL_X, ry + (ROWH - texH(LBL, P.scale)) / 2);
+                P.tex(LBL->tex, x + LX, ry + (ROWH - texH(LBL, P.scale)) / 2);
+            if (I.check == 1) {
+                const auto MARK = Glyph::tex(Glyph::eGlyph::CHECK, COLACC, (int)std::lround(CHECK_GLYPH * P.scale));
+                const auto PLAIN = Glyph::tex(Glyph::eGlyph::CHECK, COLTITLE, (int)std::lround(CHECK_GLYPH * P.scale));
+                if (const auto G = HOV ? MARK : PLAIN)
+                    P.texIn(G, CBox{x + CHECK_X, ry, CHECK_W, ROWH});
+            }
             SCard row = recycledCard();
             row.kind  = SCard::MENU_ITEM;
             row.box   = ROW;
             row.id    = (uint32_t)i;
+            row.group = I.key;
             cards.push_back(std::move(row));
             ry += ROWH;
         }
