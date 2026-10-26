@@ -127,10 +127,11 @@ namespace NAwesome::Notify {
     // from the whole image); a symbolic icon repainted in the ink
     struct SScaleSpec {
         int        iconPx = 0, heroW = 0, heroH = 0;
+        int        badgePx = 0; // > 0: compose the identity's corner badge too
         bool       hero = false, tint = false;
         CHyprColor ink;
         bool       operator==(const SScaleSpec& o) const {
-            return iconPx == o.iconPx && heroW == o.heroW && heroH == o.heroH && hero == o.hero && tint == o.tint && (!tint || ink == o.ink);
+            return iconPx == o.iconPx && heroW == o.heroW && heroH == o.heroH && badgePx == o.badgePx && hero == o.hero && tint == o.tint && (!tint || ink == o.ink);
         }
     };
 
@@ -281,6 +282,7 @@ namespace NAwesome::Notify {
                 continue;
             N->identity            = ICON; // the entry's own Icon= is authoritative
             N->identTex.reset();
+            N->badgeTex.reset();
             N->identFor.clear();
             N->identIconPx         = 0;
             N->identSettled        = false;
@@ -391,8 +393,8 @@ namespace NAwesome::Notify {
         return heroWPx > 0 && sw >= 256 && sh >= 256 && sw * 2 >= heroWPx;
     }
 
-    static SScaleSpec specFor(double sw, double sh, int iconPx, int heroWPx, int heroHCapPx, bool tint) {
-        SScaleSpec s{.iconPx = iconPx, .hero = heroWorthy(sw, sh, heroWPx), .tint = tint};
+    static SScaleSpec specFor(double sw, double sh, int iconPx, int heroWPx, int heroHCapPx, bool tint, int badgePx = 0) {
+        SScaleSpec s{.iconPx = iconPx, .badgePx = badgePx, .hero = heroWorthy(sw, sh, heroWPx), .tint = tint};
         if (s.hero) {
             s.heroW = heroWPx;
             s.heroH = std::min((int)std::lround((double)heroWPx * sh / sw), heroHCapPx);
@@ -414,6 +416,59 @@ namespace NAwesome::Notify {
         }
     }
 
+    // The identity's corner badge as one raster at its device size: a white
+    // disc, and inside a ring of whole pixels the app's mark — a colour icon
+    // cropped to what it draws and covering the disc (a round icon meets
+    // the ring edge to edge, nothing dark between them), a symbolic one in
+    // the graphite ink, centred on the white. Every edge lies over white:
+    // the GPU's three layers (white, a graphite ground, the icon clipped)
+    // each antialiased their own circle, and the ground showed through as
+    // a dark fringe and round an icon's transparent margin.
+    static SPixels composeBadge(const Raster::SView& src, int d, bool symbolic) {
+        const int RING = badgeRingPx(d), IN = d - 2 * RING;
+        SPixels   mark;
+        if (symbolic) {
+            mark = Raster::fit(src, std::max(1, (int)std::lround(IN * 0.64)));
+            tintPixels(mark, tBadgeGround());
+        } else {
+            Raster::SView v = src;
+            if (src.format == CAIRO_FORMAT_ARGB32) { // what the icon draws: its bounds at alpha past 24
+                int x0 = src.w, y0 = src.h, x1 = -1, y1 = -1;
+                for (int y = 0; y < src.h; y++)
+                    for (int x = 0; x < src.w; x++)
+                        if (src.data[(size_t)y * src.stride + (size_t)x * 4 + 3] > 24)
+                            x0 = std::min(x0, x), x1 = std::max(x1, x), y0 = std::min(y0, y), y1 = std::max(y1, y);
+                if (x1 >= x0 && y1 >= y0) {
+                    v.data += (size_t)y0 * src.stride + (size_t)x0 * 4;
+                    v.w = x1 - x0 + 1;
+                    v.h = y1 - y0 + 1;
+                }
+            }
+            mark = Raster::cover(v, IN, IN);
+        }
+        SPixels     out{.px = std::vector<uint8_t>((size_t)d * d * 4), .w = d, .h = d};
+        auto*       SURF = cairo_image_surface_create_for_data(out.px.data(), CAIRO_FORMAT_ARGB32, d, d, d * 4);
+        auto*       CR   = cairo_create(SURF);
+        const auto& RIM  = tBadgeRim();
+        cairo_arc(CR, d / 2.0, d / 2.0, d / 2.0, 0, 2 * M_PI);
+        cairo_set_source_rgba(CR, RIM.r, RIM.g, RIM.b, RIM.a);
+        cairo_fill(CR);
+        if (mark.valid()) {
+            auto* MARK = cairo_image_surface_create_for_data(mark.px.data(), CAIRO_FORMAT_ARGB32, mark.w, mark.h, mark.w * 4);
+            if (!symbolic) {
+                cairo_arc(CR, d / 2.0, d / 2.0, IN / 2.0, 0, 2 * M_PI);
+                cairo_clip(CR);
+            }
+            cairo_set_source_surface(CR, MARK, (d - mark.w) / 2, (d - mark.h) / 2);
+            cairo_paint(CR);
+            cairo_surface_destroy(MARK);
+        }
+        cairo_destroy(CR);
+        cairo_surface_flush(SURF);
+        cairo_surface_destroy(SURF);
+        return out;
+    }
+
     // the CPU half, any thread: reads src, writes only its result
     static SScaledImage scaleFor(const Raster::SView& src, const SScaleSpec& s) {
         SScaledImage out{.hero = s.hero};
@@ -422,6 +477,8 @@ namespace NAwesome::Notify {
             out.thumb = Raster::cover(src, s.iconPx, s.iconPx);
         } else
             out.main = Raster::fit(src, s.iconPx);
+        if (s.badgePx > 0)
+            out.badge = composeBadge(src, s.badgePx, s.tint);
         if (s.tint) {
             tintPixels(out.main, s.ink);
             tintPixels(out.thumb, s.ink);
@@ -452,19 +509,20 @@ namespace NAwesome::Notify {
     struct SFileTexResult {
         SP<ITexture> texture;
         SP<ITexture> thumb;           // a hero's icon-box face
+        SP<ITexture> badge;           // an identity's corner badge
         bool         settled = false; // false: an async decode or scale is in flight
         bool         hero    = false;
     };
 
     static SFileTexResult uploaded(const SScaledImage& s) {
-        return {.texture = upload(s.main), .thumb = s.hero ? upload(s.thumb) : nullptr, .settled = true, .hero = s.hero};
+        return {.texture = upload(s.main), .thumb = s.hero ? upload(s.thumb) : nullptr, .badge = s.badge.valid() ? upload(s.badge) : nullptr, .settled = true, .hero = s.hero};
     }
 
     // CImage's size hint only bounds SVG rasters; raster formats decode full
     // size transiently and get scaled here. The synchronous path: always
     // settled, used without the compositor's gatherer and for the generic
     // mark (a fixed theme name, not a sender's file).
-    static SFileTexResult syncFileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool tintSymbolic = false) {
+    static SFileTexResult syncFileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool tintSymbolic = false, int badgePx = 0) {
         const int  HINT  = std::max(iconPx, heroWPx);
         const auto BYTES = NAwesome::readImageFile(path); // one non-blocking open; these bytes are what decodes
         if (!BYTES)
@@ -484,7 +542,7 @@ namespace NAwesome::Notify {
         const auto SZ = SURF->size();
         if (SZ.x <= 0 || SZ.y <= 0)
             return {.settled = true};
-        return uploaded(scaleFor(viewOf(SURF->cairo()), specFor(SZ.x, SZ.y, iconPx, heroWPx, heroHCapPx, tintSymbolic && isSymbolicIconPath(path))));
+        return uploaded(scaleFor(viewOf(SURF->cairo()), specFor(SZ.x, SZ.y, iconPx, heroWPx, heroHCapPx, tintSymbolic && isSymbolicIconPath(path), badgePx)));
     }
 
     // The async front door: a file icon decodes on the gatherer's worker,
@@ -495,9 +553,9 @@ namespace NAwesome::Notify {
     // the hero box's width, as the synchronous path's hint did, and a
     // symbolic icon is tinted on its scaled copy (the decode is shared by
     // every card asking for the file).
-    static SFileTexResult fileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool tintSymbolic = false) {
+    static SFileTexResult fileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool tintSymbolic = false, int badgePx = 0) {
         if (!g_pAsyncResourceGatherer)
-            return syncFileTex(path, iconPx, heroWPx, heroHCapPx, tintSymbolic);
+            return syncFileTex(path, iconPx, heroWPx, heroHCapPx, tintSymbolic, badgePx);
         const auto JOB = decodeJobFor(path, heroWPx > 0 ? std::max(iconPx, heroWPx) : iconPx);
         if (!JOB || !resourceReady(*JOB))
             return {}; // the slot is taken, or the decode is in flight
@@ -515,7 +573,7 @@ namespace NAwesome::Notify {
             JOB->consumed = true;
             return {.settled = true};
         }
-        const auto SPEC = specFor(SZ.x, SZ.y, iconPx, heroWPx, heroHCapPx, tintSymbolic && isSymbolicIconPath(path));
+        const auto SPEC = specFor(SZ.x, SZ.y, iconPx, heroWPx, heroHCapPx, tintSymbolic && isSymbolicIconPath(path), badgePx);
         if ((int64_t)SZ.x * (int64_t)SZ.y <= ASYNC_IMAGE_PIXELS) {
             JOB->consumed = true;
             return uploaded(scaleFor(viewOf(SURF->cairo()), SPEC));
@@ -673,14 +731,16 @@ namespace NAwesome::Notify {
             const auto KEY = SYM ? n.identity + "\x1f" + std::to_string(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg")) : n.identity;
             if (n.identFor != KEY || n.identIconPx != iconPx) {
                 n.identTex.reset();
+                n.badgeTex.reset();
                 n.identFor     = KEY;
                 n.identIconPx  = iconPx;
                 n.identSettled = false;
             }
             if (!n.identSettled) {
-                const auto TEX = fileTex(n.identity, iconPx, 0, 0, SYM);
+                const auto TEX = fileTex(n.identity, iconPx, 0, 0, SYM, badgePx(iconPx));
                 if (TEX.settled) {
                     n.identTex     = TEX.texture;
+                    n.badgeTex     = TEX.badge;
                     n.identSettled = true; // a failed load stays failed: no disk retry per warm
                     if (!n.identTex) {
                         // a resolved path can disappear or fail to decode: the
@@ -703,6 +763,7 @@ namespace NAwesome::Notify {
                 const auto GENERIC = "__awesome_generic__\x1f" + std::to_string(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg"));
                 if (n.identFor != GENERIC || n.identIconPx != iconPx) {
                     n.identTex.reset();
+                    n.badgeTex.reset();
                     n.identFor     = GENERIC;
                     n.identIconPx  = iconPx;
                     n.identSettled = false;
@@ -713,6 +774,7 @@ namespace NAwesome::Notify {
                 }
             } else if (n.identFor != n.fallbackPick || n.identIconPx != iconPx) {
                 n.identTex.reset();
+                n.badgeTex.reset();
                 n.identFor     = n.fallbackPick;
                 n.identIconPx  = iconPx;
                 n.identSettled = false;

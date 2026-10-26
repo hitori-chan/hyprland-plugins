@@ -68,8 +68,16 @@ namespace NAwesome::Notify {
 
     // The identity badge, as ratios of the avatar it rides: an 18 px disc on
     // a 36 px face whose white ring (1.5 px) cuts the app glyph free of
-    // whatever the face is, overhanging the corner by 3 px.
+    // whatever the face is, overhanging the corner by 3 px. It is one raster
+    // at its device size (icons.cpp's composeBadge): an even diameter, so
+    // the disc centres on a pixel corner, and a ring of whole pixels.
     inline constexpr double BADGE_D = 18.0 / 36.0, BADGE_OUT = 3.0 / 36.0, BADGE_RING = 1.5 / 18.0;
+    inline int              badgePx(int facePx) {
+        return std::max(8, 2 * (int)std::lround(facePx * BADGE_D / 2));
+    }
+    inline int badgeRingPx(int badgePx) {
+        return std::max(1, (int)std::lround(badgePx * BADGE_RING));
+    }
 
     // the center
     inline constexpr double HEADER_H = 28, HEADER_GAP = 8; // the heading's row ("Notifications", the moon, "Clear All"), then the column's 8 px
