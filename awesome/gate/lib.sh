@@ -146,6 +146,60 @@ st() { hq awesome state; }
 bd() { hq awesome badge; }
 # the remembered DND's state.tsv value (empty: no row, DND off)
 dndrow() { grep -a $'\tdnd$' "$AW_STATE" | cut -f2; }
+
+# ---- the shell's menus ---------------------------------------------------------
+# panel_extent <frame>: "<width> <x0> <x1> <top> <bottom>" of the open menu
+# panels below the strip (zeros when none)
+panel_extent() {
+	python3 - "$1" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
+w, h = im.size
+good = []
+for x in range(w):
+    run = [y for y in range(29, h) if min(px[x, y][:3]) > 5]
+    if len(run) > 20 and max(run) - min(run) > 40:
+        good.append((x, min(run), max(run)))
+if not good:
+    print("0 0 0 0 0"); sys.exit()
+x0, x1 = good[0][0], good[-1][0]
+yt = min(g[1] for g in good)
+yb = max(g[2] for g in good)
+print(x1 - x0 + 1, x0, x1, yt, yb)
+PY
+}
+# srow <row> <separators above>: a shell menu row's center y (shell.hpp:
+# rows 28 from y 37, separators 9)
+srow() { echo $((37 + 14 + 28 * $1 + 9 * $2)); }
+# bell_open: right-click the bell; BRX0/BRX1 span its menu
+bell_open() {
+	capture_nested "$STATE/bell-at.png"
+	click "$(bell_x "$STATE/bell-at.png")" 13 273; sleep 0.6
+	capture_nested "$STATE/bell-root.png"
+	read -r _ BRX0 BRX1 _ _ <<<"$(panel_extent "$STATE/bell-root.png")"
+}
+# bell_cascade <row>: click a root row; BCX is then a point inside its
+# cascade (flipped left of the root when the right edge has no room),
+# whose rows start level with that root row: crow <row> <separators above>.
+# The cascade is found on that first row, not by panel_extent: a one-row
+# cascade is too short for its height floor.
+bell_cascade() {
+	BCR=$1
+	local y; y=$(srow "$1" 0)
+	click $(((BRX0 + BRX1) / 2)) "$y" 272; sleep 0.6
+	capture_nested "$STATE/bell-sub.png"
+	BCX=$(python3 - "$STATE/bell-sub.png" "$y" "$BRX0" "$BRX1" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
+y, r0, r1 = map(int, sys.argv[2:])
+xs = [x for x in range(im.size[0]) if not r0 <= x <= r1 and min(px[x, y]) > 5]
+print((min(xs) + 40 if max(xs) < r0 else max(xs) - 40) if xs else 0)
+PY
+)
+}
+crow() { srow $((BCR + $1)) "$2"; }
 nbus() { DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user "$@"; }
 
 # ---- sends -----------------------------------------------------------------------

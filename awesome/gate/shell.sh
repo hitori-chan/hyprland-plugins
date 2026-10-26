@@ -154,25 +154,6 @@ xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
 print((min(xs) + max(xs)) // 2, (min(ys) + max(ys)) // 2)
 PY
 }
-panel_extent() {
-	python3 - "$1" <<'PY'
-import sys
-from PIL import Image
-im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
-w, h = im.size
-good = []
-for x in range(w):
-    run = [y for y in range(29, h) if min(px[x, y][:3]) > 5]
-    if len(run) > 20 and max(run) - min(run) > 40:
-        good.append((x, min(run), max(run)))
-if not good:
-    print("0 0 0 0 0"); sys.exit()
-x0, x1 = good[0][0], good[-1][0]
-yt = min(g[1] for g in good)
-yb = max(g[2] for g in good)
-print(x1 - x0 + 1, x0, x1, yt, yb)
-PY
-}
 col_h() {
 	python3 - "$1" "$2" <<'PY'
 import sys

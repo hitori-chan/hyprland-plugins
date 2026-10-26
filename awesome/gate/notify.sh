@@ -513,6 +513,20 @@ click $((ROWX + 100)) "$(mrow "$ROWY" 0 0)" 272
 chk "menu: Unmute drops the row" bash -c "! grep -aq '^notify-mute' '$AW_STATE'"
 hq awesome center >/dev/null; sleep 0.4
 nclear
+# the bell's Silenced Apps lists what the card menus turned off; a click
+# turns that one back on
+app_rows() { grep -ac '^notify-app' "$AW_STATE"; }
+pcidb gatechat Alice alice "four"; sleep 1
+hold_menu "$HX" "$HY"; release_left
+click $((HX - 100)) "$(mrow "$HY" 2 1)" 272
+chk "silenced: the app's banners are off" until_is 3 1 app_rows
+nclear
+bell_open; bell_cascade 1
+click "$BCX" "$(crow 0 0)" 272
+chk "silenced: a click in the bell's list turns them back on" until_is 3 0 app_rows
+pcidb gatechat Alice alice "five"; sleep 1
+chk "silenced: the app banners again" test "$(bd)" = "banners:1 resident:0"
+nclear
 # press, hold, slide onto the last row, release: Close All from the app
 # the middle banner is a mailer's whichever way the stack runs
 dsp "hl.dsp.exec_cmd('notify-send -a other -t 30000 \"stays\" body')"; sleep 0.4
@@ -613,6 +627,26 @@ chk "DND timed: the end resumes it by itself" until_is 10 "banners:1 resident:0"
 chk "DND timed: off, its row gone" until_is 3 "" dndrow
 chk "DND timed: dnd off" test "$(st)" = "center:0 live:1 dnd:0"
 nclear
+
+# ---- the bell's options: a right click ----------------------------------------
+# A menu at the bell (shell/bell.cpp): Do Not Disturb ▸ (For 30 Minutes, For
+# 1 Hour, For 3 Hours, Until Turned Off; Turn Off and a separator lead
+# while on) and Silenced Apps ▸.
+dnd_in_hour() { local v; v="$(dndrow)"; [[ "$v" =~ ^[0-9]+$ ]] && ((v - $(date +%s) > 3500 && v - $(date +%s) <= 3600)); }
+bell_open
+chk "bell: a right click opens its options" test $((BRX1 - BRX0)) -ge 190
+chk "bell: the right click left the center shut" test "$(st)" = "center:0 live:0 dnd:0"
+bell_cascade 0
+click "$BCX" "$(crow 1 0)" 272
+chk "bell: For 1 Hour turns DND on" until_is 3 "center:0 live:0 dnd:1" st
+chk "bell: ...until an hour from now, remembered" dnd_in_hour
+bell_open; bell_cascade 0
+click "$BCX" "$(crow 4 1)" 272
+chk "bell: Until Turned Off holds it with no end" until_is 3 "-1" dndrow
+bell_open; bell_cascade 0
+click "$BCX" "$(crow 0 0)" 272
+chk "bell: Turn Off ends it" until_is 3 "center:0 live:0 dnd:0" st
+chk "bell: off keeps no row" until_is 3 "" dndrow
 
 # ---- DND holds a merge onto an existing card ------------------------------------
 # A conversation's first message retreats to the shade; with DND armed the

@@ -5,12 +5,15 @@
 // bell.badge, a green dot on the bell's shoulder while the center holds a
 // card it has not shown (Model::unseen). Under Do Not Disturb the bell is the
 // moon, as macOS shows a Focus, dotted while cards wait in the DND queue.
+// A right click opens the notification options: Do Not Disturb for a while,
+// and the apps and chats the card menus silenced, each a click from back on.
 
 #include "shell/shell.hpp"
 
 #include "core/glyph.hpp"
 #include "notify/model.hpp"
 
+#include <ctime>
 #include <optional>
 
 namespace NAwesome::Shell {
@@ -60,6 +63,85 @@ namespace NAwesome::Shell {
         }
     } // namespace Bell
 
+    // ---- the options menu ----
+
+    namespace {
+        namespace M = NAwesome::Notify::Model;
+        namespace P = NAwesome::Notify::Policy;
+
+        // the local date's day number: noon keeps a DST shift off the edge
+        int dayOf(time_t t) {
+            std::tm d{};
+            localtime_r(&t, &d);
+            d.tm_hour  = 12;
+            d.tm_min   = 0;
+            d.tm_sec   = 0;
+            d.tm_isdst = -1;
+            return (int)(std::mktime(&d) / 86400);
+        }
+
+        // when something ends, as the bar's clock writes time: "14:30"
+        // today, "Tomorrow 08:00", the weekday within a week, else the date
+        std::string untilText(int64_t end) {
+            const time_t T = (time_t)end;
+            std::tm      at{};
+            localtime_r(&T, &at);
+            const int   DAYS = dayOf(T) - dayOf(std::time(nullptr));
+            const char* FMT  = DAYS <= 0 ? "%H:%M" : DAYS == 1 ? "Tomorrow %H:%M" : DAYS < 7 ? "%A %H:%M" : "%b %-d %H:%M";
+            char        buf[64];
+            return std::strftime(buf, sizeof buf, FMT, &at) ? buf : "";
+        }
+
+        Menu::SEntry row(std::string label, std::function<void()> action) {
+            Menu::SEntry e{.label = label, .display = std::move(label)};
+            e.action = std::move(action);
+            return e;
+        }
+
+        Menu::SEntry separator() {
+            return {.separator = true};
+        }
+
+        // Do Not Disturb ▸: on, it says until when and offers Turn Off
+        // first; the lengths start it anew from now
+        Menu::SEntry dndRow() {
+            const bool ON  = M::suspendedNow();
+            const auto END = M::suspendEnd();
+            auto       e   = row(END > 0 ? "Do Not Disturb Until " + untilText(END) : "Do Not Disturb", {});
+            e.submenu      = true;
+            e.toggle       = Menu::TG_CHECK;
+            e.toggleState  = ON;
+            if (ON) {
+                e.children.push_back(row("Turn Off", []() { M::setSuspend(0); }));
+                e.children.push_back(separator());
+            }
+            for (const auto& [LABEL, MINUTES] : {std::pair{"For 30 Minutes", 30}, {"For 1 Hour", 60}, {"For 3 Hours", 180}})
+                e.children.push_back(row(LABEL, [MINUTES]() { M::setSuspend((int64_t)std::time(nullptr) + MINUTES * 60); }));
+            auto forever        = row("Until Turned Off", []() { M::setSuspend(-1); });
+            forever.toggle      = Menu::TG_CHECK;
+            forever.toggleState = END == -1;
+            e.children.push_back(std::move(forever));
+            return e;
+        }
+
+        // Silenced Apps ▸: every switch the card menus turned off, each row
+        // a click from back on; dim with nothing silenced
+        Menu::SEntry silencedRow() {
+            auto e = row("Silenced Apps", {});
+            for (const auto& S : P::silenced()) {
+                const auto NAME = S.label.empty() ? S.key : S.label;
+                const auto WHAT = S.until > 0                               ? "Muted Until " + untilText(S.until) :
+                    (S.flags & P::BANNERS_OFF) && (S.flags & P::SOUNDS_OFF) ? std::string{"Banners and Sounds Off"} :
+                    (S.flags & P::BANNERS_OFF)                              ? std::string{"Banners Off"} :
+                                                                              std::string{"Sounds Off"};
+                e.children.push_back(row(NAME + " — " + WHAT, [S]() { P::restore(S); }));
+            }
+            e.submenu = !e.children.empty();
+            e.enabled = e.submenu;
+            return e;
+        }
+    } // namespace
+
     // ---- the widget ----
 
     namespace {
@@ -92,6 +174,10 @@ namespace NAwesome::Shell {
             }
 
             void onHit(const SHit& hit, uint32_t bit, bool) override {
+                if (bit == 2u) { // the options, built as they stand now
+                    Menu::openLocal({dndRow(), silencedRow()}, hit.clickX, hit.mon);
+                    return;
+                }
                 if (bit != 1u)
                     return;
                 // the shared click door: deferred (the monolith's center is a

@@ -372,7 +372,6 @@ namespace NAwesome::Shell {
             uint8_t      toggle      = TG_NONE;
             int32_t      toggleState = 0;     // 0 off, 1 on, anything else indeterminate
             bool         alert       = false; // disposition warning/alert
-            PHLWINDOWREF win;                 // client-list mode: the window this row jumps to
             std::string  tag;                 // client-list mode: its workspace's tag, a right-hand column
             bool         current = false;     // client-list mode: the focused window (accent, as its task)
             bool         dim     = false;     // client-list mode: minimized (dim, as its task)
@@ -381,6 +380,10 @@ namespace NAwesome::Shell {
             // (or the app id, iconOfApp) the menu's warm asks for again
             std::string iconRetry;
             bool        iconOfApp = false;
+            // a local menu's row (no dbusmenu behind it): what a click runs
+            // once the menu closed, or the rows its cascade shows
+            std::function<void()> action;
+            std::vector<SEntry>   children;
         };
 
         // one open panel; a submenu cascades out as the next level, GTK-style
@@ -403,6 +406,7 @@ namespace NAwesome::Shell {
                 LOAD_FAILED,
             } load = LOAD_PENDING;
             int                               hover     = -1;
+            double                            fixedWidth = 0;     // a local list's own width (the client list's); 0 = measured
             int                               scrollTop = 0;     // first visible entry when overflowing
             int                               maxScroll = 0;     // set at render: the last scrollTop that still fills the panel
             bool                              overflow  = false; // set at render: taller than the screen, scrolls
@@ -411,7 +415,7 @@ namespace NAwesome::Shell {
         };
 
         extern bool                isOpen;
-        extern bool                isLocal; // client list, no dbus behind it
+        extern bool                isLocal; // built by the plugin (the client list, the bell's options): no dbus behind it
         extern std::vector<SLevel> levels;
         extern double              anchorX;
         extern PHLMONITORREF       mon;
@@ -423,6 +427,9 @@ namespace NAwesome::Shell {
         void                       exit(); // close + tear the hover timer out of the event loop
         void                       openFor(SP<Tray::SItem> it, double ax, PHLMONITORREF m);
         void                       openClients(double ax, PHLMONITORREF m);
+        // a menu the plugin builds: rows with actions and cascades, at the
+        // click; width 0 measures the rows
+        void                       openLocal(std::vector<SEntry> rows, double ax, PHLMONITORREF m, double width = 0);
         void                       openSub(size_t level, int entryIdx); // cascade that row's children
         void                       closeDeeperThan(size_t level);
         void                       hoverIntent(size_t level, int row); // GTK's popup delay: open/close cascades

@@ -110,7 +110,7 @@ task area on narrow outputs.
   `icon-data` PNG is size-checked before decoding (256 px a side, 64 per
   menu reply); providers may emit a leading, doubled, or trailing
   separator and the parse trims them. A menu or the prompt on a monitor
-  that goes away closes. Esc closes an open tray or client-list menu
+  that goes away closes. Esc closes an open tray, client-list or bell menu
   (its press only; the release passes; a modified Esc is a user bind
   passing through); other keyboard navigation,
   tooltips, and overlay icons are not implemented. A hover warms the
@@ -125,8 +125,13 @@ task area on narrow outputs.
   lit in the accent and wears no dot. It reads the notify model
   directly (same process — no bus seam). A click toggles the center on
   the clicked bar's monitor: opening absorbs the live banners into
-  parked rows, a later explicit close re-pops them. Pointer hover does
-  nothing.
+  parked rows, a later explicit close re-pops them. A right click opens
+  the notification options, built as they stand: Do Not Disturb ▸ (For
+  30 Minutes, For 1 Hour, For 3 Hours, Until Turned Off; while on, the
+  row says until when and Turn Off leads) and Silenced Apps ▸, every app
+  switch and chat mute the card menus turned off, listed by name and
+  what is off; a click turns that one back on (dim with nothing
+  silenced). Pointer hover does nothing.
 - **Battery**: Pixel's battery, transcribed from SystemUI's Compose
   battery — a 24 x 13 round-rect body (13 px beside the bar's 12 px
   text) filled to the level over a translucent track, the number inside

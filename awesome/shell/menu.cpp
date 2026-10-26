@@ -182,7 +182,7 @@ namespace NAwesome::Shell {
             } else
                 glideStop();
 
-            if (!isOpen || isLocal || level >= levels.size() || row < 0 || (size_t)row >= levels[level].entries.size()) {
+            if (!isOpen || level >= levels.size() || row < 0 || (size_t)row >= levels[level].entries.size()) {
                 disarm();
                 return;
             }
@@ -528,7 +528,7 @@ namespace NAwesome::Shell {
         // its children out into a new panel beside the parent, like the GTK
         // menus these were under X11.
         void openSub(size_t level, int entryIdx) {
-            if (!isOpen || isLocal || !proxy || level >= levels.size())
+            if (!isOpen || (!isLocal && !proxy) || level >= levels.size())
                 return;
             if (levels.size() >= MAX_LEVELS)
                 return;
@@ -538,6 +538,7 @@ namespace NAwesome::Shell {
             if (level + 1 < levels.size() && levels[level + 1].parentIdx == entryIdx)
                 return;                                // already open
             const int32_t ID = L.entries[entryIdx].id; // before emplace_back can move the vector
+            auto           CHILDREN = isLocal ? L.entries[entryIdx].children : std::vector<SEntry>{};
             const uint64_t SESSION = menuSession;
             disarm();
             closeDeeperThan(level);
@@ -546,10 +547,34 @@ namespace NAwesome::Shell {
             auto& N     = levels.emplace_back();
             N.parentId  = ID;
             N.parentIdx = entryIdx;
+            if (isLocal) { // its rows came with it
+                N.entries = std::move(CHILDREN);
+                N.load    = SLevel::LOAD_DONE;
+                damageMenu();
+                return;
+            }
             menuEvent(ID, "opened");
             aboutToShow(ID, SESSION);
             loadLevel(ID, SESSION);
             damageMenu();
+        }
+
+        // a client-list row's jump: view its workspace, then focus + raise
+        // (nothing when the window closed under the open menu)
+        static void jumpTo(const PHLWINDOW& w) {
+            if (!w || !w->mapped())
+                return;
+            if (w->m_workspace && !w->m_workspace->visible())
+                std::ignore = Config::Actions::changeWorkspace(w->m_workspace);
+            // a minimized target must be un-minimized, not focused while
+            // hidden — restore() unhides, re-tiles, raises, focuses and
+            // re-enters any fullscreen it held
+            if (NAwesome::Windows::Tasklist::isMinimized(w))
+                NAwesome::Windows::Tasklist::restore(w);
+            else {
+                Desktop::windowState()->raise(w);
+                Desktop::focusState()->fullWindowFocus(w, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW, w->wlSurface()->resource());
+            }
         }
 
         // right-click on a task, awesome's awful.menu.client_list: every mapped
@@ -568,7 +593,7 @@ namespace NAwesome::Shell {
             if (ws.empty())
                 return;
             std::sort(ws.begin(), ws.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-            auto&      L = levels.emplace_back();
+            std::vector<SEntry> rows;
             SWarmToken WARM; // appIcon builds a texture, and we are in a deferred click, not a render
             const auto FOCUS = Desktop::focusState() ? Desktop::focusState()->window() : nullptr;
             for (const auto& [SEQ, W] : ws) {
@@ -581,44 +606,43 @@ namespace NAwesome::Shell {
                 // a row reads as its task does: minimized wins over focus
                 // (the focus fallback can rest on a hidden window)
                 const bool MIN = NAwesome::Windows::Tasklist::isMinimized(W);
-                L.entries.push_back({.label     = lbl,
-                                     .display   = std::move(lbl),
-                                     .alert     = !MIN && W != FOCUS && (W->m_hints & Desktop::View::WINDOW_HINT_URGENT),
-                                     .win       = W,
-                                     .tag       = tagName(W->m_workspace),
-                                     .current   = !MIN && W == FOCUS,
-                                     .dim       = MIN,
-                                     .icon      = std::move(ICON),
-                                     .iconRetry = DEFERRED ? APP : "",
-                                     .iconOfApp = true});
+                rows.push_back({.label     = lbl,
+                                .display   = std::move(lbl),
+                                .alert     = !MIN && W != FOCUS && (W->m_hints & Desktop::View::WINDOW_HINT_URGENT),
+                                .tag       = tagName(W->m_workspace),
+                                .current   = !MIN && W == FOCUS,
+                                .dim       = MIN,
+                                .icon      = std::move(ICON),
+                                .iconRetry = DEFERRED ? APP : "",
+                                .iconOfApp = true,
+                                .action    = [REF = PHLWINDOWREF{W}]() { jumpTo(REF.lock()); }});
             }
-            ws.clear(); // drop the strong refs now — entries hold weak ones
-            anchorX = ax;
-            mon     = m;
-            isOpen  = true;
-            isLocal = true;
+            ws.clear(); // drop the strong refs now — rows hold weak ones
+            openLocal(std::move(rows), ax, m, 250);
+        }
+
+        void openLocal(std::vector<SEntry> rows, double ax, PHLMONITORREF m, double width) {
+            close();
+            if (rows.empty())
+                return;
+            auto& L      = levels.emplace_back();
+            L.entries    = std::move(rows);
+            L.fixedWidth = width;
+            L.load       = SLevel::LOAD_DONE;
+            anchorX      = ax;
+            mon          = m;
+            isOpen       = true;
+            isLocal      = true;
             damageMenu();
         }
 
         // leaf rows only — submenu rows cascade via openSub (hover or click)
         void activate(const SEntry& en) {
-            if (const auto W = en.win.lock(); W && W->mapped()) { // client-list row: jump to it
-                if (W->m_workspace && !W->m_workspace->visible())
-                    std::ignore = Config::Actions::changeWorkspace(W->m_workspace);
-                // a minimized target must be un-minimized, not focused while
-                // hidden — restore() unhides, re-tiles, raises, focuses and
-                // re-enters any fullscreen it held
-                if (NAwesome::Windows::Tasklist::isMinimized(W))
-                    NAwesome::Windows::Tasklist::restore(W);
-                else {
-                    Desktop::windowState()->raise(W);
-                    Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW, W->wlSurface()->resource());
-                }
+            if (isLocal) { // the row's own action, once the menu is gone
+                const auto ACTION = en.action;
                 close();
-                return;
-            }
-            if (isLocal) { // a client-list row whose window closed: nothing to jump to
-                close();
+                if (ACTION)
+                    ACTION();
                 return;
             }
             if (!proxy)
@@ -700,8 +724,8 @@ namespace NAwesome::Shell {
                 const double     TAGW   = anyTag ? 26 : 0;
                 const int        TAGPT  = std::max(1, PAINT.pt - (int)std::lround(PAINT.scale));
 
-                double mw = 250;
-                if (!Menu::isLocal) {
+                double           mw = L.fixedWidth;
+                if (mw <= 0) {
                     // the widest row as drawn (label, its arrow column), at
                     // most the panel's cap: an app's 4 KiB label would raster
                     // at full length, and the walk stops once a row reaches
@@ -831,7 +855,7 @@ namespace NAwesome::Shell {
                     // the measure's own raster while the panel holds its widest
                     // row (a narrow output shrinks it below that)
                     const int  ROOMPX = (int)std::round((mw - LX - 12 - TAGW - (E.submenu ? ARW : 0)) * PAINT.scale);
-                    const auto T      = textTex(E.display, fg, PAINT.pt, Menu::isLocal ? ROOMPX : FITS ? capPx(E) : ROOMPX);
+                    const auto T      = textTex(E.display, fg, PAINT.pt, L.fixedWidth > 0 ? ROOMPX : FITS ? capPx(E) : ROOMPX);
                     if (T && T->m_texID != 0) {
                         const auto P = PAINT.toPhys(ROW);
                         CBox       b{P.x + std::round(LX * PAINT.scale), P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y};
