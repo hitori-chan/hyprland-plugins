@@ -1,47 +1,53 @@
 # hyprland-plugins
 
-One native C++26 Hyprland plugin for the exact
-[`hitori-chan/Hyprland`](https://github.com/hitori-chan/Hyprland) fork
-ABI: [`awesome`](awesome/), the awesome shell as a monolith.
+`awesome`: an AwesomeWM-flavoured desktop shell for Hyprland as one
+native C++26 plugin — a bar and launcher, window policy, a notification
+daemon with a control center, and the system controls.
 
-| module | owns |
-|---|---|
-| `core` | the platform: supervisor, input pipeline, hop queue, canvas (warm/draw gate), config schema, stores, jobs, fd.o bus client |
-| `shell` | the bar: workspaces, tasks (views), tray, bell, battery, clock, menubar launcher |
-| `windows` | the window state machine and all placement: maximize/minimize/restore, click/focus policy, spawn placement, drag snap |
-| `notify` | the `org.freedesktop.Notifications` daemon: cards, conversations, shade, popups, inline reply, sound |
-| `system` | volume/mic (wpctl), brightness (logind), touchpad policy — every action's feedback is a notify card |
-
-The behavior docs live in [`awesome/README.md`](awesome/README.md);
-the design contract in
-[`docs/awesome-design.md`](docs/awesome-design.md).
+It is built against the exact
+[`hitori-chan/Hyprland`](https://github.com/hitori-chan/Hyprland) fork,
+not upstream Hyprland.
 
 ## Install
 
 ```sh
+hyprpm update --hl-url https://github.com/hitori-chan/Hyprland
 hyprpm add https://github.com/hitori-chan/hyprland-plugins
 hyprpm enable awesome
 ```
 
-The plugin owns `org.freedesktop.Notifications`; disable another daemon
-such as dunst or mako before enabling it. Point `hyprpm` at the matching
-fork before an update:
+The plugin is the session's notification daemon: stop dunst, mako or
+any other before enabling it.
 
-```sh
-hyprpm update --hl-url https://github.com/hitori-chan/Hyprland
+## Use
+
+```lua
+hl.bind("SUPER + P", function() hl.plugin.awesome.menubar() end)
+hl.bind("F12", function() hl.plugin.awesome.center() end)
+hl.bind("XF86AudioRaiseVolume", function() hl.plugin.awesome.volume_up() end)
+
+hl.config({ plugin = { awesome = { shell = { terminal = "foot" } } } })
 ```
+
+Every function, `hyprctl` verb, config key and remembered state is in
+the [reference](docs/reference.md).
+
+## Docs
+
+- [Shell](docs/shell.md) — the bar and the launcher
+- [Windows](docs/windows.md) — minimize, maximize, focus, placement, snap
+- [Notifications](docs/notify.md) — cards, conversations, the center
+- [System](docs/system.md) — lights, sound, touchpad
+- [Reference](docs/reference.md) — Lua API, `hyprctl`, configuration, state
+- [Design](docs/design.md) — architecture, invariants, performance
+- [Testing](docs/testing.md) — building, unit tests, the nested gate
 
 ## Development
 
 ```sh
-make              # the plugin
-make test         # headless core harness
-make gate ARGS=...  # the nested integration gate (see awesome/gate/)
+make          # the plugin
+make test     # unit tests
+make gate ARGS="-s ~/repo/Hyprland -b all"   # the nested integration gate
 ```
 
-Before deployment, run the nested gate described in
-[`awesome/gate/gate.sh`](awesome/gate/gate.sh)
-(`make gate ARGS="-s /path/to/Hyprland -b all"`; the default tier is
-`quick`) and require its final `ALL N CHECKS PASSED` line. The gate drives the shared input fixtures in
-[`devtools/`](devtools/README.md). Never rebuild or replace the plugin
-while a compositor has it mapped.
+Contributors and coding agents start at [`AGENTS.md`](AGENTS.md).

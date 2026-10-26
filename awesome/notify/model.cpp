@@ -1366,7 +1366,7 @@ namespace NAwesome::Notify {
             // Ordering and merging only — no per-app casing.
             n->conversation = CONVERSATION;
 
-            if (n->urgency >= 2) // critical never expires on its own (spec; README)
+            if (n->urgency >= 2) // critical never expires on its own (spec; docs/notify.md)
                 n->timeoutMs = 0;
             else if (expireTimeout > 0)
                 n->timeoutMs = expireTimeout;
