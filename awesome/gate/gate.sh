@@ -39,7 +39,7 @@ SELECTED=()
 
 usage() {
 	cat >&2 <<'EOF'
-usage: gate.sh [-s FORK-DIR] [-b TIER|LIST] [-k LIST] [compositor-bin]
+usage: gate.sh [-s FORK-DIR] [-b TIER|LIST] [-k LIST] [-p TRACE] [compositor-bin]
   -s DIR    a built fork checkout (e.g. ~/repo/Hyprland): stage its build's
             header set (cmake --install to $HYPR_GATE_TMP/fork-pkg, .pc
             prefix normalized, version.h verified) as the target headers,
@@ -51,6 +51,8 @@ usage: gate.sh [-s FORK-DIR] [-b TIER|LIST] [-k LIST] [compositor-bin]
               quick shell windows notify system pipeline lifecycle
             (canonical order enforced regardless of user order)
   -k LIST   comma-separated batteries to SKIP from the selected set
+  -p TRACE  trace the batteries' wall time into TRACE; gate/profile.py
+            TRACE names the lines it went to
 EOF
 }
 
@@ -80,6 +82,7 @@ die_unknown() {
 # 'gate.sh BIN -b shell' would silently run the full gate.
 B_SPEC=""
 K_SPEC=""
+PROFILE=""
 BIN=""
 FORK_SRC=""
 while [[ $# -gt 0 ]]; do
@@ -88,6 +91,7 @@ while [[ $# -gt 0 ]]; do
 	-b*) B_SPEC=${1#-b}; shift ;;
 	-k)  [[ $# -ge 2 ]] || { usage; exit 2; }; K_SPEC=$2; shift 2 ;;
 	-k*) K_SPEC=${1#-k}; shift ;;
+	-p)  [[ $# -ge 2 ]] || { usage; exit 2; }; PROFILE=$2; shift 2 ;;
 	-s)  [[ $# -ge 2 ]] || { usage; exit 2; }; FORK_SRC=$2; shift 2 ;;
 	-h|--help) usage; exit 0 ;;
 	-*) usage; exit 2 ;;
@@ -185,6 +189,13 @@ source "$GATE_DIR/preflight.sh"
 # Batteries execute on source. When lifecycle.sh is among the selected, its
 # tail prints the final summary, calls cleanup_harness, and exits — ending
 # this script here; the fallback summary below is then unreachable.
+# -p: every main-shell line with its time and call stack (profile.py)
+if [[ -n "$PROFILE" ]]; then
+	exec 6>"$PROFILE"
+	BASH_XTRACEFD=6
+	PS4=$'+${BASH_SUBSHELL}\t${EPOCHREALTIME}\t${BASH_SOURCE[*]}\t${LINENO} ${BASH_LINENO[*]}\t'
+	set -x
+fi
 for _name in "${CANONICAL_BATTERIES[@]}"; do
 	is_selected "$_name" || continue
 	battery_begin "$_name"

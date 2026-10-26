@@ -56,6 +56,10 @@ New behavior gets a discriminating check, one that fails against the old
 code. A check is retired once its code stops changing; dropping one is a
 reviewable diff.
 
+`-p TRACE` writes a per-line timing trace of the batteries;
+`python3 awesome/gate/profile.py TRACE [N]` ranks the battery lines and
+the helper lines the time went to.
+
 ### Isolation
 
 The nested runs inside a private headless labwc (`gate/host.sh`;
