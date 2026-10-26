@@ -1,7 +1,6 @@
-// awesome/shell/battery_state.hpp — the battery's display state, pure: the
-// attribution ladder and its colour (Pixel SystemUI's, which macOS agrees
-// with: charging green, Low Power yellow, low red). Its drawing is
-// shell/battery_pill.hpp.
+// awesome/shell/battery_state.hpp — the battery's display state, pure: Pixel
+// SystemUI's attribution ladder and its colour (charging green, power save
+// yellow, low red). Its drawing is shell/battery_pill.hpp.
 #pragma once
 
 #include <algorithm>
