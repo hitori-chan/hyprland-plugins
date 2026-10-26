@@ -90,6 +90,7 @@ namespace NAwesome::System {
         padInit(); // the settle timer stands before any hotplug can land
         Controls::doors() = {
             .setLevel = setLevel,
+            .step     = stepLevel,
             .setSwitch =
                 [](Controls::eSwitch s, bool on) {
                     if (s == Controls::eSwitch::MIC)

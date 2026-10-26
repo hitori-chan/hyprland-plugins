@@ -216,11 +216,13 @@ chk "panel: ...and its slider holds there" until_is 3 75 ctl_part display
 chk "panel: a drag posts no capsule" test "$(st)" = "center:1 live:0 dnd:0"
 click "$((PANEL_X + 22))" "$(level_cy 0)" 272; sleep 0.4
 chk "panel: a press on the display's glyph moves nothing" test "$(ctl_part display)" = 75
+printf 'move %s %s\nsleep 60\nscroll 0 -15\nsleep 200\n' "$(knob_x 20)" "$(level_cy 0)" | vp
+chk "panel: the wheel steps the display as its key does" until_is 4 800 BRT
 dsp "hl.plugin.awesome.keyboard_light_up()" # from the 45 % the keyboard's checks left
 chk "panel: a key moves the keyboard's slider" until_is 4 50 ctl_part keyboard
 chk "panel: ...and posts no capsule over it" test "$(st)" = "center:1 live:0 dnd:0"
 printf 'move %s %s\nsleep 60\nscroll 0 -15\nsleep 200\n' "$(knob_x 20)" "$(level_cy 2)" | vp; sleep 0.4
-chk "panel: the wheel raises the volume 5 %" until_is 3 1 wlog_has "set-volume @DEFAULT_AUDIO_SINK@ 0.55"
+chk "panel: the wheel raises the volume as its key does" until_is 3 1 wlog_has "set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"
 chk "panel: ...and its slider reads 55 back" until_is 3 55 ctl_part volume
 click "$(knob_x 40)" "$(level_cy 2)" 272
 chk "panel: a click on the volume's track sets it there" until_is 3 40 ctl_part volume

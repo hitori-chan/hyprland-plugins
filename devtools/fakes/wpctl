@@ -11,8 +11,9 @@ fi
 # The two nodes' state: the sink's level (AW_WPCTL_LEVEL_FILE, written by
 # the gate for a level "set elsewhere" and by an absolute set; else 0.56)
 # and the muted nodes (AW_WPCTL_MUTES_FILE's words "sink" and "source";
-# absent, the source alone). A relative step leaves the level: the step
-# checks read the command. Two sinks, 41 and 42, the default 41 until
+# absent, the source alone). A relative step moves a kept level (one the
+# file holds) up to its limit; without one it leaves the default: the
+# step checks read the command. Two sinks, 41 and 42, the default 41 until
 # set-default writes AW_WPCTL_DEFAULT_FILE.
 level() {
 	local l=0.56
@@ -82,7 +83,15 @@ set-volume)
 	# panel sets the level itself, 0.00..1.00.
 	if [[ "$*" =~ ^set-volume\ @DEFAULT_AUDIO_SINK@\ (0\.[0-9]{2}|1\.00)$ ]]; then
 		[[ -n "${AW_WPCTL_LEVEL_FILE:-}" ]] && printf '%s\n' "${BASH_REMATCH[1]}" > "$AW_WPCTL_LEVEL_FILE"
-	elif [[ ! "$*" =~ ^set-volume\ -l\ (1\.0|[1-9]\.[0-9]{3})\ @DEFAULT_AUDIO_SINK@\ (5|[1-9][05]|100)%\+$ && ! "$*" =~ ^set-volume\ @DEFAULT_AUDIO_SINK@\ (5|[1-9][05]|100)%-$ ]]; then
+	elif [[ "$*" =~ ^set-volume\ -l\ (1\.0|[1-9]\.[0-9]{3})\ @DEFAULT_AUDIO_SINK@\ (5|[1-9][05]|100)%\+$ ]]; then
+		[[ -n "${AW_WPCTL_LEVEL_FILE:-}" && -s "$AW_WPCTL_LEVEL_FILE" ]] &&
+			awk -v l="$(level)" -v s="${BASH_REMATCH[2]}" -v m="${BASH_REMATCH[1]}" 'BEGIN { v = l + s / 100; if (v > m) v = m; printf "%.2f\n", v }' > "$AW_WPCTL_LEVEL_FILE.new" &&
+			mv "$AW_WPCTL_LEVEL_FILE.new" "$AW_WPCTL_LEVEL_FILE"
+	elif [[ "$*" =~ ^set-volume\ @DEFAULT_AUDIO_SINK@\ (5|[1-9][05]|100)%-$ ]]; then
+		[[ -n "${AW_WPCTL_LEVEL_FILE:-}" && -s "$AW_WPCTL_LEVEL_FILE" ]] &&
+			awk -v l="$(level)" -v s="${BASH_REMATCH[1]}" 'BEGIN { v = l - s / 100; if (v < 0) v = 0; printf "%.2f\n", v }' > "$AW_WPCTL_LEVEL_FILE.new" &&
+			mv "$AW_WPCTL_LEVEL_FILE.new" "$AW_WPCTL_LEVEL_FILE"
+	else
 		exit 64
 	fi
 	sleep 0.05

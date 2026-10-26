@@ -69,6 +69,7 @@ namespace NAwesome::System {
     // the control center's doors (core/controls.hpp), each deferred out of
     // the caller's emission
     void setLevel(Controls::eLevel l, int pct);
+    void stepLevel(Controls::eLevel l, int steps); // the keys' steps (the wheel)
     void setMic(bool on);
     void setMuted(bool muted);
     void setOutput(uint32_t id); // the default sink

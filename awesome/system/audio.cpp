@@ -363,6 +363,7 @@ namespace NAwesome::System {
     static std::array<std::optional<int>, (size_t)Controls::eLevel::COUNT_> levelAsks;
     static std::optional<bool>                                              micAsk, muteAsk;
     static std::optional<uint32_t>                                          outputAsk;
+    static std::array<int, (size_t)Controls::eLevel::COUNT_>                levelSteps{}; // the wheel's, signed
     static CHop                                                             pendingAsks;
     static bool                                                             asksArmed = false; // one hop per batch, not one per motion
 
@@ -384,6 +385,16 @@ namespace NAwesome::System {
                     break;
                 case Controls::eLevel::COUNT_: break;
             }
+        }
+        for (size_t i = 0; i < levelSteps.size(); i++) {
+            const int N = std::exchange(levelSteps[i], 0);
+            if (N == 0)
+                continue;
+            if ((Controls::eLevel)i == Controls::eLevel::VOLUME) {
+                sink.steps = std::clamp(sink.steps + N, -20, 20);
+                pump(sink);
+            } else
+                lightKey((Controls::eLevel)i, N);
         }
         if (const auto MUTED = std::exchange(muteAsk, std::nullopt)) {
             sink.muteTo  = *MUTED;
@@ -409,6 +420,13 @@ namespace NAwesome::System {
         if (l >= Controls::eLevel::COUNT_)
             return;
         levelAsks[(size_t)l] = std::clamp(pct, 0, 100);
+        armAsks();
+    }
+
+    void stepLevel(Controls::eLevel l, int steps) {
+        if (l >= Controls::eLevel::COUNT_)
+            return;
+        levelSteps[(size_t)l] = std::clamp(levelSteps[(size_t)l] + steps, -20, 20);
         armAsks();
     }
 
@@ -456,6 +474,7 @@ namespace NAwesome::System {
         pendingAsks.reset();
         asksArmed = false;
         levelAsks.fill(std::nullopt);
+        levelSteps.fill(0);
         micAsk.reset();
         muteAsk.reset();
         outputAsk.reset();

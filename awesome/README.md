@@ -600,10 +600,10 @@ semantics).
   such device — and a row per level the system module knows: the
   display's brightness, the keyboard light, the volume (a device that
   does not answer has no row). A click on a tile flips it; a press on a
-  track sets the level there and drags it; the wheel moves it 5 % a
-  notch; the speaker's glyph mutes. A level past 100 % (set elsewhere)
-  shows its number over a full track: the wheel never raises it, and a
-  notch down lands at 100. A right click on the volume lists its outputs
+  track sets the level there and drags it (a press on a glyph or the
+  number moves nothing); the wheel steps it as its keys do; the
+  speaker's glyph mutes. A level past 100 % (set elsewhere) shows its
+  number over a full track. A right click on the volume lists its outputs
   (`wpctl status`'s sinks, the default checked) and a pick makes one the
   default; on the keyboard light it offers Follow the Room (dim without
   a light sensor). A key that moves a level while the center is open moves its
