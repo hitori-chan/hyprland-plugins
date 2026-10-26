@@ -56,9 +56,9 @@ make -C devtools HL=/path/to/Hyprland
   strip, the parse-time separator trim, and the cascade against it.
 - `fakes/wpctl` logs its arguments, models a sink's level, the two
   nodes' mutes and two sinks' default (`AW_WPCTL_LEVEL_FILE`,
-  `AW_WPCTL_MUTES_FILE`, `AW_WPCTL_DEFAULT_FILE`: what an absolute set,
-  a mute or `set-default` wrote is what the next readback or `status`
-  says), and
+  `AW_WPCTL_MUTES_FILE`, `AW_WPCTL_DEFAULT_FILE`: what a set, a mute or
+  `set-default` wrote is what the next readback or `status` says; a
+  relative step moves only a level the file keeps), and
   hangs or floods on demand through `AW_WPCTL_*` marker files (the
   system battery's process-path and panel checks).
 - `fakes/canberra-gtk-play` records its invocation and hangs on demand

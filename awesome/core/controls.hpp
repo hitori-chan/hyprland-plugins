@@ -64,6 +64,7 @@ namespace NAwesome::Controls {
     // its work out of the caller's emission
     struct SDoors {
         std::function<void(eLevel, int)>   setLevel; // a percent, 0..100
+        std::function<void(eLevel, int)>   step;     // a key's steps, signed (the wheel)
         std::function<void(eSwitch, bool)> setSwitch;
         std::function<void(bool)>          setMuted;  // the volume's
         std::function<void(uint32_t)>      setOutput; // the default sink, by its id

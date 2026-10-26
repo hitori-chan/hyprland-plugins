@@ -27,8 +27,6 @@ namespace NAwesome::Notify {
     inline constexpr double TILE_H = 52, TILE_GAP = 8, TILE_GLYPH = 18, TILE_GLYPH_Y = 9, TILE_LABEL_Y = 31, TILE_LABEL_H = 16;
     inline constexpr double ROWS_GAP = 8; // the tiles -> the first level
     inline constexpr double SLIDER_H = 30, SLIDER_GLYPH = 16, SLIDER_GAP = 12, TRACK_H = 6, KNOB_D = 14, NUM_W = 26;
-    // a level moves 5 % a wheel notch, as a key moves it
-    inline constexpr int    STEP_PCT = 5;
     // what a slider asked shows this long while its device answers
     constexpr auto          HOLD = std::chrono::milliseconds(1500);
 
@@ -202,14 +200,15 @@ namespace NAwesome::Notify {
         drag.live = false;
     }
 
+    // a notch steps a level as its key does — 5 %, at least one step of a
+    // coarse light (an absolute percent can round back to where it was),
+    // a volume past 100 % never pulled down — and the slider follows the
+    // device's answer
     void controlsWheel(eLevel l, int steps) {
-        const int CUR = shownPct(l);
-        if (CUR < 0 || steps == 0)
+        if (steps == 0 || Controls::state().levels[(size_t)l].pct < 0 || !Controls::doors().step)
             return;
-        // a level past 100 % (set elsewhere) is never pulled to it by a raise
-        if (CUR >= 100 && steps > 0)
-            return;
-        ask(l, CUR + steps * STEP_PCT);
+        held[(size_t)l] = {}; // a drag's hold must not mask the steps
+        Controls::doors().step(l, steps);
     }
 
     // a tile's click, from the hit drain
