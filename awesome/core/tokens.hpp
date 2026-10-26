@@ -43,7 +43,7 @@ namespace NAwesome::Theme {
     inline constexpr uint32_t SHADOW      = 0x47000000; // a card's drop, 28 %
     inline constexpr uint32_t MENU_SHADOW = 0x6b000000; // a menu floats higher, 42 %
     inline constexpr uint32_t BADGE_RIM   = 0xffffffff; // the identity badge's ring
-    inline constexpr uint32_t BADGE_GROUND = 0xff2c2c32; // under its glyph: a symbolic icon stays legible
+    inline constexpr uint32_t BADGE_GROUND = 0xff2c2c32; // a symbolic icon's ink on the badge's white
 
     // ---- geometry (logical px) ----
     inline constexpr int    RAD_CARD   = 18; // notify:rounding's default

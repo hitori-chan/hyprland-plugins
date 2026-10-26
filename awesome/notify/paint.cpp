@@ -117,14 +117,12 @@ namespace NAwesome::Notify {
             return; // the lead icon is the whole column
         // the white ring cuts the glyph free of a light face and a dark one
         // alike: glass has no one colour to borrow, as a phone's card does.
-        // A graphite disc under the glyph keeps a symbolic (white) icon read.
-        const double D = cell.w * BADGE_D, OUT = cell.w * BADGE_OUT, RING = D * BADGE_RING;
-        const CBox   BB{cell.x + cell.w + OUT - D, cell.y + cell.h + OUT - D, D, D};
-        const CBox   IN{BB.x + RING, BB.y + RING, D - 2 * RING, D - 2 * RING};
-        const int    RIN = (int)std::lround((D / 2 - RING) * P.scale);
-        P.rect(BB, tBadgeRim(), (int)std::lround(D / 2 * P.scale), 2.f);
-        P.rect(IN, tBadgeGround(), RIN, 2.f);
-        P.texFit(n.identTex, IN, RIN, 2.f);
+        // One raster at native size (icons.cpp's composeBadge), its corner
+        // overhanging the face's by BADGE_OUT.
+        if (!n.badgeTex || n.badgeTex->m_texID == 0)
+            return;
+        const double D = n.badgeTex->m_size.x / P.scale, OUT = cell.w * BADGE_OUT;
+        P.tex(n.badgeTex, cell.x + cell.w + OUT - D, cell.y + cell.h + OUT - D);
     }
 
     void texCentered(const SPaint& P, const SCachedText* t, const CBox& cell) {

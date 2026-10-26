@@ -139,6 +139,7 @@ namespace NAwesome::Notify {
     // card's next warm uploads them (the texture rule)
     struct SScaledImage {
         SPixels main, thumb;
+        SPixels badge; // an identity's corner badge, composed at its device size
         bool    hero = false;
     };
 
@@ -223,7 +224,8 @@ namespace NAwesome::Notify {
         // images cache here (their sources don't re-key per age tick).
         SP<ITexture> iconTex;  // content avatar (or hero)
         SP<ITexture> thumbTex; // a hero's icon-box face: the shade row leads with it, the hero is the popup's
-        SP<ITexture> identTex; // identity icon: the corner badge, or the lead icon when no content
+        SP<ITexture> identTex; // identity icon: the lead icon when no content
+        SP<ITexture> badgeTex; // the identity as the corner badge on a content face, one raster (paint.cpp)
         std::string  imageFor, identFor;
         bool         heroTex      = false; // iconTex was built for the hero layout
         uint64_t     pixelsFor    = 0;
