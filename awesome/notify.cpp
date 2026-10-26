@@ -110,6 +110,7 @@ namespace NAwesome::Notify {
         iconsInit(); // the async decode poll and the .desktop index scan start now
         replyInit();
         inputInit(); // the hold timer
+        controlsInit(); // the levels' hook: a published change repaints the open shade
 
         auto& EV = Event::bus()->m_events;
         // The cards arrive on the FOCUSED monitor and stay there
@@ -158,6 +159,7 @@ namespace NAwesome::Notify {
         Bus::exit(); // the connection first: nothing may arrive mid-teardown
         Model::exit(); // then the cards, and their textures with them
         inputExit();
+        controlsExit();
         replyTeardown();
         centerExit();
         iconsExit(); // the decode poll and the index helper out with the plugin

@@ -63,15 +63,14 @@ rm -f "$STATE/wpctl-level"
 hq awesome clear >/dev/null; sleep 0.4
 
 # an OSD is never a shade row: opening the shade drops the live capsule,
-# and a press with it open shows a capsule over it (top center, clear of
-# the column) that leaves no row behind
+# and a press with it open moves the shade's slider and posts no capsule
 dsp "hl.plugin.awesome.volume_up()"; sleep 0.4
 chk "system: the capsule is up before the shade opens" test "$(st)" = "center:0 live:1 dnd:0"
 hq awesome center >/dev/null; sleep 0.4
 chk "system: opening the shade drops the capsule" test "$(st)" = "center:1 live:0 dnd:0"
 dsp "hl.plugin.awesome.volume_up()"; sleep 0.4
-chk "system: a press under the open shade shows its capsule" test "$(st)" = "center:1 live:1 dnd:0"
-chk "system: the capsule is no row (nothing on the badge)" test "$(bd)" = "banners:0 resident:0"
+chk "system: a press under the open shade moves its slider, no capsule" test "$(st)" = "center:1 live:0 dnd:0"
+chk "system: ...and leaves no row (nothing on the badge)" test "$(bd)" = "banners:0 resident:0"
 hq awesome center >/dev/null; sleep 0.4
 nclear
 chk "system: the shade closes clean" test "$(st)" = "center:0 live:0 dnd:0"
@@ -175,6 +174,63 @@ dsp "hl.plugin.awesome.keyboard_light_down()"
 dsp "hl.plugin.awesome.keyboard_light_down()"
 chk "system: two steps down land at 90" until_is 4 90 KBT
 chk "system: the display's level never moved with it" test "$(ctl_part display)" = 50
+hq awesome clear >/dev/null; sleep 0.4
+
+# ---- the control center's block atop the shade (notify/controls.cpp) -------
+# Its tiles flip the switches, a press on a level's track drags it, the
+# wheel moves it 5 % a notch, the volume's glyph mutes; the values are the
+# system module's, and while the shade shows them no capsule covers it.
+printf '0.50\n' > "$STATE/wpctl-level" # the sink reads 50 % when the shade opens
+: > "$STATE/wpctl.log"
+wlog_has() { grep -Fxq "$1" "$STATE/wpctl.log" && echo 1; } # wlog_has <line>: the fake wpctl ran it
+hq awesome center >/dev/null; sleep 0.8
+chk "panel: the shade opens on the volume as it is now" until_is 3 50 ctl_part volume
+capture_nested "$STATE/panel.png"
+chk "panel: three tiles and three levels are drawn" python3 - "$STATE/panel.png" "$(tile_cx 0)" "$(tile_cx 1)" "$(tile_cx 2)" "$TILE_CY" \
+	"$TRACK_X0" "$((TRACK_X0 + TRACK_W))" "$(level_cy 0)" "$(level_cy 1)" "$(level_cy 2)" <<'PY'
+import sys
+from PIL import Image
+px = Image.open(sys.argv[1]).convert('RGB').load()
+a = [int(v) for v in sys.argv[2:]]
+lit = lambda x0, x1, y0, y1: sum(1 for y in range(y0, y1) for x in range(x0, x1) if max(px[x, y]) > 60)
+tiles = all(lit(x - 40, x + 40, a[3] - 20, a[3] + 20) > 40 for x in a[0:3])
+levels = all(lit(a[4], a[5], y - 3, y + 4) > 40 for y in a[6:9])
+sys.exit(0 if tiles and levels else 1)
+PY
+click "$(tile_cx 0)" "$TILE_CY" 272
+chk "panel: the moon's tile turns Do Not Disturb on" until_is 3 "center:1 live:0 dnd:1" st
+click "$(tile_cx 0)" "$TILE_CY" 272
+chk "panel: ...and off" until_is 3 "center:1 live:0 dnd:0" st
+click "$(tile_cx 1)" "$TILE_CY" 272
+chk "panel: the microphone's tile unmutes the muted source" until_is 3 1 wlog_has "set-mute @DEFAULT_AUDIO_SOURCE@ 0"
+chk "panel: ...and its tile reads it back live" until_is 3 1 ctl_part mic
+click "$(tile_cx 2)" "$TILE_CY" 272
+chk "panel: no touchpad: its tile is inert" test "$(hq awesome pad)" = none
+chk "panel: ...and no switch posted a capsule" test "$(st)" = "center:1 live:0 dnd:0"
+# the display's row: press its knob (50 %) and drag to three quarters
+printf 'move %s %s\nsleep 60\npress 272\nsleep 60\nmove %s %s\nsleep 60\nmove %s %s\nsleep 60\nrelease 272\nsleep 80\n' \
+	"$(knob_x 50)" "$(level_cy 0)" "$(knob_x 60)" "$(level_cy 0)" "$(knob_x 75)" "$(level_cy 0)" | vp
+chk "panel: dragging the display's row sets the backlight" until_is 4 750 BRT
+chk "panel: ...through logind" grep -q "SetBrightness /org/freedesktop/login1/session/[a-z0-9]* gate0 750" "$STATE/logind.log"
+chk "panel: ...and its slider holds there" until_is 3 75 ctl_part display
+chk "panel: a drag posts no capsule" test "$(st)" = "center:1 live:0 dnd:0"
+click "$((PANEL_X + 22))" "$(level_cy 0)" 272; sleep 0.4
+chk "panel: a press on the display's glyph moves nothing" test "$(ctl_part display)" = 75
+dsp "hl.plugin.awesome.keyboard_light_up()" # from the 45 % the keyboard's checks left
+chk "panel: a key moves the keyboard's slider" until_is 4 50 ctl_part keyboard
+chk "panel: ...and posts no capsule over it" test "$(st)" = "center:1 live:0 dnd:0"
+printf 'move %s %s\nsleep 60\nscroll 0 -15\nsleep 200\n' "$(knob_x 20)" "$(level_cy 2)" | vp; sleep 0.4
+chk "panel: the wheel raises the volume 5 %" until_is 3 1 wlog_has "set-volume @DEFAULT_AUDIO_SINK@ 0.55"
+chk "panel: ...and its slider reads 55 back" until_is 3 55 ctl_part volume
+click "$(knob_x 40)" "$(level_cy 2)" 272
+chk "panel: a click on the volume's track sets it there" until_is 3 40 ctl_part volume
+click "$((PANEL_X + 14 + 8))" "$(level_cy 2)" 272
+chk "panel: the speaker mutes" until_is 3 1 wlog_has "set-mute @DEFAULT_AUDIO_SINK@ 1"
+chk "panel: ...and the slider reads it back muted" until_is 3 40m ctl_part volume
+rm -f "$STATE/wpctl-level" "$STATE/wpctl-mutes"
+hq awesome center >/dev/null; sleep 0.4
+dsp "hl.plugin.awesome.keyboard_light_down()"
+chk "panel: closed, a key posts its capsule again" until_is 3 "center:0 live:1 dnd:0" st
 hq awesome clear >/dev/null; sleep 0.4
 
 # ---- the touchpad policy ------------------------------------------------------

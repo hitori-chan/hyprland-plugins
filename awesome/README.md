@@ -593,12 +593,22 @@ semantics).
   counting down, and leaving restarts its full clock rather than
   resuming the sliver that was left. Only one card can be held, because
   only one can be hovered.
-- The center: the banners' column under a row of its own —
-  "Notifications" at its left, bare on the desktop with a soft shadow
-  (as macOS sets text on the desktop), and at its right the controls on
-  glass capsules — the moon (Do Not Disturb, lit in the accent while it
-  holds) and "Clear All". As macOS's, it draws no backdrop: the desktop
-  is never darkened.
+- The center: the control center's block, then the banners' column
+  under a row of its own. The block is one glass panel the column's
+  width: three tiles — Do Not Disturb, Microphone, Touchpad, each lit in
+  the accent while on (the microphone while live), dim and inert with no
+  such device — and a row per level the system module knows: the
+  display's brightness, the keyboard light, the volume (a device that
+  does not answer has no row). A click on a tile flips it; a press on a
+  track sets the level there and drags it; the wheel moves it 5 % a
+  notch; the speaker's glyph mutes. A level past 100 % (set elsewhere)
+  shows its number over a full track: the wheel never raises it, and a
+  notch down lands at 100. A key that moves a level while the center is
+  open moves its slider, and no capsule covers the panel. Under the
+  block, "Notifications" at its left, bare on the desktop with a soft
+  shadow (as macOS sets text on the desktop), and at its right "Clear
+  All" on a glass capsule. As macOS's, it draws no backdrop: the
+  desktop is never darkened.
   Cards show their clock time where banners show an age. A card
   behaves as its banner did — left on the body fires the primary, a
   link opens, the hold opens its menu. Cards open by default as the page has
@@ -688,7 +698,8 @@ semantics).
   process group killed after 30 s, so a wrapper script's player goes
   with it), a budget of their own — a sound flood never takes the
   volume keys' helpers.
-- DND (`hl.plugin.awesome.suspend()`, or the center's moon): arrivals
+- DND (`hl.plugin.awesome.suspend()`, the center's tile, or the bell's
+  right click): arrivals
   collect silently with timeouts held, and resume renders the queue
   newest-first on fresh timeouts, under the per-app cap and switches.
   DND is remembered (the `dnd` option): a relog or a plugin update keeps
@@ -781,8 +792,8 @@ pragmatic chain (GTK theme → hicolor → pixmaps), not a full
   microphone reads "Muted" / "Off" in the urgent colour. Such a card is
   feedback, never a notification: no shade row, no history, no dot
   on the bell;
-  the capsules show over the open shade too, and opening the shade
-  drops a live one. A critical battery alert, posted in the same band,
+  while the shade is open, its block shows the change instead and no
+  capsule covers it; opening the shade drops a live one. A critical battery alert, posted in the same band,
   is an alert: it waits under the shade like any banner.
 
 ## Lua API

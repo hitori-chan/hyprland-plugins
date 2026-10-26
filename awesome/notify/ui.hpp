@@ -16,6 +16,7 @@
 #include "model.hpp"
 
 #include "../core/canvas.hpp"
+#include "../core/controls.hpp"
 #include "../core/glyph.hpp"
 #include "../core/theme.hpp"
 
@@ -81,7 +82,7 @@ namespace NAwesome::Notify {
     }
 
     // the center
-    inline constexpr double HEADER_H = 28, HEADER_GAP = 8; // the heading's row ("Notifications", the moon, "Clear All"), then the column's 8 px
+    inline constexpr double HEADER_H = 28, HEADER_GAP = 8; // the heading's row ("Notifications", "Clear All"), then the column's 8 px
     inline constexpr double CAP_H = 24, CAP_PADX = 10, CAP_GAP = 6; // its glass capsules, and a stack's
     inline constexpr double EMPTY_H = 56;
     // A collapsed stack (macOS): its newest card over a deck of up to two
@@ -232,6 +233,20 @@ namespace NAwesome::Notify {
     void renderCenter(const SPaint& P, const SType& T);
     bool popupsAnimating(); // any arrival spring still running
     bool centerAnimating(); // the open spring still running
+
+    // ---- controls.cpp: the control center's block atop the shade ----
+
+    double controlsHeight(bool warm); // the warm snapshots the values; both ask the height
+    void   renderControls(const SPaint& P, const SType& T, const CBox& block); // draws it, pushes its hits
+    void   controlsDragStart(const SCard& c, const Vector2D& pos); // a left press on a level's track
+    void   controlsDragMove(const Vector2D& pos);
+    bool   controlsDragging();
+    void   controlsDragEnd(); // the release, a lock, the shade closing: the last ask holds
+    void   controlsWheel(Controls::eLevel l, int steps); // 5 % a notch, up raises
+    void   controlsSwitch(uint32_t tile);                // a tile's click
+    void   controlsToggleMute();                         // the volume's glyph
+    void   controlsOpened(); // a fresh read, and no capsule over the levels
+    void   controlsClosed();
 
     // ---- input.cpp: acting on a card ----
 

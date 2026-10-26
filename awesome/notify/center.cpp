@@ -4,9 +4,9 @@
 // holds, and a dismissed card is gone (Android's shade has no recall either).
 //
 // This unit decides WHAT is shown and WHERE; card.cpp and stack.cpp draw
-// it. The center is the banners' own column under a heading, its controls on
-// glass capsules beside it; as macOS's, it draws no backdrop: the desktop is
-// never darkened.
+// it. The center is the banners' own column under the control center's
+// block (controls.cpp) and a heading with Clear All on a glass capsule; as
+// macOS's, it draws no backdrop: the desktop is never darkened.
 //
 // RANKING — Android's, without the dividers: critical, then conversations,
 // then normal, then silent; newest first inside each tier. An app's cards
@@ -104,6 +104,7 @@ namespace NAwesome::Notify {
     void centerExit() {
         s_on = false;
         resetVisit();
+        controlsClosed();
     }
 
     void centerToggleRow(uint32_t id) {
@@ -196,9 +197,11 @@ namespace NAwesome::Notify {
         s_on = on;
         if (!on) {
             resetVisit();
+            controlsClosed();
             replyExit(); // a field cannot outlive the panel it was drawn in
             Model::repopAbsorbed(repop); // an explicit close returns the parked stack
         } else {
+            controlsOpened();
             // Opening absorbs the popped stack — the banners stand down into
             // parked shade rows; an explicit close re-pops them (the user
             // must not lose sight of what the shade swallowed).
@@ -420,10 +423,12 @@ namespace NAwesome::Notify {
 
         const double W   = std::max((double)cfg().getI("plugin:awesome:notify:width"), 120.0);
         const double GAP = std::max((double)cfg().getI("plugin:awesome:notify:margin"), 0.0);
-        const double X   = MB.x + MB.w - EDGE - W;
-        const double TOP = cardsTop(P.mon);
-        const double Y0  = MB.y + TOP;
-        const double CY0 = Y0 + HEADER_H + HEADER_GAP; // the cards' top
+        const double X    = MB.x + MB.w - EDGE - W;
+        const double TOP  = cardsTop(P.mon);
+        const double Y0   = MB.y + TOP;
+        const double CTLH = controlsHeight(P.warm); // the control center's block heads the column
+        const double HY   = Y0 + CTLH + GAP;        // the heading's row
+        const double CY0  = HY + HEADER_H + HEADER_GAP; // the cards' top
 
         // The column runs to what the monitor leaves below offset_y (a margin
         // of air), and the expansion budget spends exactly this. Overflow
@@ -431,7 +436,7 @@ namespace NAwesome::Notify {
         // (card.cpp), so no single card can exceed the cap and the
         // always-place-the-first rule can't spill.
         const double AVAILH  = MB.h - TOP - cardsBottomReserved(P.mon) - GAP;
-        const double BODYCAP = std::max(64.0, AVAILH - HEADER_H - HEADER_GAP);
+        const double BODYCAP = std::max(64.0, AVAILH - CTLH - GAP - HEADER_H - HEADER_GAP);
 
         // The display list, every height AND every fold verdict are decided
         // once per WARM and reused by the draws between warms: hover fills
@@ -507,11 +512,13 @@ namespace NAwesome::Notify {
         {
             SCard pc;
             pc.kind = SCard::PANEL;
-            pc.box  = CBox{X, Y0, W, HEADER_H + HEADER_GAP + (EMPTY ? EMPTY_H : usedH)};
+            pc.box  = CBox{X, Y0, W, CTLH + GAP + HEADER_H + HEADER_GAP + (EMPTY ? EMPTY_H : usedH)};
             cards.push_back(pc);
         }
 
-        // ---- the heading's row: "Notifications", Do Not Disturb, Clear All ----
+        renderControls(P, T, CBox{X, Y0, W, CTLH});
+
+        // ---- the heading's row: "Notifications", Clear All ----
         // No backdrop darkens the desktop, as on macOS: the controls sit on
         // glass of their own (its Show Less capsule), and the heading bare on
         // the desktop as its stack headers do, a soft shadow keeping it
@@ -520,11 +527,10 @@ namespace NAwesome::Notify {
             if (const auto HEAD = cachedText("Notifications", COLTITLE, T.heading, (int)std::lround(W * P.scale), -1, 0, false, 600, nullptr, false, /*shadow=*/true);
                 HEAD && HEAD->tex) {
                 const double PAD = HEAD->pad / P.scale;
-                P.tex(HEAD->tex, X + 4 - PAD, Y0 + (HEADER_H - (texH(HEAD, P.scale) - 2 * PAD)) / 2 - PAD);
+                P.tex(HEAD->tex, X + 4 - PAD, HY + (HEADER_H - (texH(HEAD, P.scale) - 2 * PAD)) / 2 - PAD);
             }
 
-            constexpr double MOON_PX = 14;
-            const double     CY      = Y0 + (HEADER_H - CAP_H) / 2;
+            const double CY    = HY + (HEADER_H - CAP_H) / 2;
             const int    ROUND = (int)std::lround(CAP_H / 2 * P.scale);
 
             const bool   TARGET = std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && !Model::offShade(N); });
@@ -540,20 +546,6 @@ namespace NAwesome::Notify {
             cc.kind = SCard::BTN_CLEAR;
             cc.box  = CB;
             cards.push_back(cc);
-
-            // the moon, lit in the accent while Do Not Disturb holds
-            const bool LIT  = Model::suspendedNow();
-            const bool DHOV = hovered.kind == SCard::BTN_DND;
-            const CBox DB{CB.x - CAP_GAP - CAP_H, CY, CAP_H, CAP_H};
-            P.frost(DB, COLBG, COLRIM, ROUND, 2.f);
-            if (DHOV)
-                P.rect(DB, tFill(), ROUND, 2.f);
-            if (const auto MOON = Glyph::tex(Glyph::eGlyph::MOON, LIT ? COLACC : COLTITLE, (int)std::lround(MOON_PX * P.scale)))
-                P.texIn(MOON, DB);
-            SCard dc;
-            dc.kind = SCard::BTN_DND;
-            dc.box  = DB;
-            cards.push_back(dc);
         }
 
         if (EMPTY) {

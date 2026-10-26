@@ -6,13 +6,25 @@
 # Pure definitions only — no side effects, no battery code.
 
 # ---- geometry (derived from notify/ui.hpp, notify/center.cpp) ------------
-# the column's right inset, a card's width, the center's top; the first
-# center card starts under its 28 px controls row + the 8 px gap
+# the column's right inset, a card's width, the center's top; the center
+# opens on the control center's block (notify/controls.cpp: 12 px of
+# padding, three 52 px tiles, 8 px, a 30 px row per level — all three in
+# the gate — and 5 px), then 8 px, the 28 px heading row and 8 px more
 N_EDGE=12
 N_W=356
 N_TOP=40
 PANEL_X=$((MON_W - N_EDGE - N_W))
-CARD_Y=$((N_TOP + 28 + 8))
+CTL_H=$((12 + 52 + 8 + 3 * 30 + 5))
+HEAD_Y=$((N_TOP + CTL_H + 8))
+CARD_Y=$((HEAD_Y + 28 + 8))
+# the block's controls: tile <0..2> (Do Not Disturb, Microphone, Touchpad),
+# level row <0..2> (display, keyboard, volume), the knob's x at a percent
+tile_cx() { echo $((PANEL_X + 14 + $1 * (104 + 8) + 52)); }
+TILE_CY=$((N_TOP + 12 + 26))
+level_cy() { echo $((N_TOP + 12 + 52 + 8 + $1 * 30 + 15)); }
+TRACK_X0=$((PANEL_X + 14 + 16 + 12))
+TRACK_W=$((N_W - 28 - 16 - 12 - 26 - 12))
+knob_x() { echo $((TRACK_X0 + 7 + (TRACK_W - 14) * $1 / 100)); }
 ROWX=$((PANEL_X + 90))
 ROWY=$((CARD_Y + 24))
 POPX=$((MON_W - N_EDGE - N_W / 2))
