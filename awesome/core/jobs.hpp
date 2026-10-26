@@ -66,6 +66,9 @@ namespace NAwesome {
         // EXIT: kill and release every tracked child, pull every source.
         void teardown();
 
+        // the class's children not yet delivered (running, or draining)
+        size_t live(eClass cls) const;
+
       private:
         Jobs() = default;
         struct SChild {
@@ -85,7 +88,6 @@ namespace NAwesome {
         };
 
         bool                spawnTracked(eClass cls, std::vector<const char*>& argv, UP<SChild> child, int stdoutFd = -1);
-        size_t              live(eClass cls) const;
         void                release(SChild* c); // pull sources, close fds, erase
         void                maybeFinish(SChild* c);
         void                armDeadline();
