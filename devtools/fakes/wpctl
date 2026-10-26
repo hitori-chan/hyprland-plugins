@@ -8,20 +8,50 @@ if [[ -n "${AW_WPCTL_HANG_FILE:-}" && -e "$AW_WPCTL_HANG_FILE" ]]; then
 	exec sleep 30
 fi
 
+# The two nodes' state: the sink's level (AW_WPCTL_LEVEL_FILE, written by
+# the gate for a level "set elsewhere" and by an absolute set; else 0.56)
+# and the muted nodes (AW_WPCTL_MUTES_FILE's words "sink" and "source";
+# absent, the source alone). A relative step leaves the level: the step
+# checks read the command.
+level() {
+	local l=0.56
+	[[ -n "${AW_WPCTL_LEVEL_FILE:-}" && -s "$AW_WPCTL_LEVEL_FILE" ]] && l="$(<"$AW_WPCTL_LEVEL_FILE")"
+	printf '%s' "$l"
+}
+muted() { # muted <sink|source>
+	if [[ -n "${AW_WPCTL_MUTES_FILE:-}" && -e "$AW_WPCTL_MUTES_FILE" ]]; then
+		grep -qxF "$1" "$AW_WPCTL_MUTES_FILE"
+	else
+		[[ $1 == source ]]
+	fi
+}
+mute() { # mute <sink|source> <0|1|toggle>
+	[[ -n "${AW_WPCTL_MUTES_FILE:-}" ]] || return 0
+	local want=$2 n out=""
+	if [[ $want == toggle ]]; then muted "$1" && want=0 || want=1; fi
+	for n in sink source; do
+		if [[ $n == "$1" ]]; then [[ $want == 1 ]] && out+="$n"$'\n'; elif muted "$n"; then out+="$n"$'\n'; fi
+	done
+	printf '%s' "$out" > "$AW_WPCTL_MUTES_FILE"
+}
+
 case "${1:-}" in
 set-volume)
 	# a step is 5%; presses during a set accumulate into the next one
-	# (N*5%, capped at 100%); the limit is 1.0, or the level past it
-	if [[ ! "$*" =~ ^set-volume\ -l\ (1\.0|[1-9]\.[0-9]{3})\ @DEFAULT_AUDIO_SINK@\ (5|[1-9][05]|100)%\+$ && ! "$*" =~ ^set-volume\ @DEFAULT_AUDIO_SINK@\ (5|[1-9][05]|100)%-$ ]]; then
+	# (N*5%, capped at 100%); the limit is 1.0, or the level past it. The
+	# panel sets the level itself, 0.00..1.00.
+	if [[ "$*" =~ ^set-volume\ @DEFAULT_AUDIO_SINK@\ (0\.[0-9]{2}|1\.00)$ ]]; then
+		[[ -n "${AW_WPCTL_LEVEL_FILE:-}" ]] && printf '%s\n' "${BASH_REMATCH[1]}" > "$AW_WPCTL_LEVEL_FILE"
+	elif [[ ! "$*" =~ ^set-volume\ -l\ (1\.0|[1-9]\.[0-9]{3})\ @DEFAULT_AUDIO_SINK@\ (5|[1-9][05]|100)%\+$ && ! "$*" =~ ^set-volume\ @DEFAULT_AUDIO_SINK@\ (5|[1-9][05]|100)%-$ ]]; then
 		exit 64
 	fi
 	sleep 0.05
 	;;
 set-mute)
-	case "$*" in
-	"set-mute @DEFAULT_AUDIO_SINK@ toggle"|"set-mute @DEFAULT_AUDIO_SOURCE@ toggle") ;;
-	*) exit 64 ;;
-	esac
+	[[ "$*" =~ ^set-mute\ @DEFAULT_AUDIO_(SINK|SOURCE)@\ (0|1|toggle)$ ]] || exit 64
+	node=sink
+	[[ ${BASH_REMATCH[1]} == SOURCE ]] && node=source
+	mute "$node" "${BASH_REMATCH[2]}"
 	;;
 get-volume)
 	if [[ -n "${AW_WPCTL_FLOOD_FILE:-}" && -e "$AW_WPCTL_FLOOD_FILE" ]]; then
@@ -36,13 +66,8 @@ get-volume)
 		exit 0
 	fi
 	case "${2:-}" in
-	"@DEFAULT_AUDIO_SINK@")
-		# a level set "elsewhere" (the gate writes it), else the default
-		level=0.56
-		[[ -n "${AW_WPCTL_LEVEL_FILE:-}" && -s "$AW_WPCTL_LEVEL_FILE" ]] && level="$(<"$AW_WPCTL_LEVEL_FILE")"
-		printf 'Volume: %s\n' "$level"
-		;;
-	"@DEFAULT_AUDIO_SOURCE@") printf 'Volume: 1.00 [MUTED]\n' ;;
+	"@DEFAULT_AUDIO_SINK@") printf 'Volume: %s%s\n' "$(level)" "$(muted sink && printf ' [MUTED]')" ;;
+	"@DEFAULT_AUDIO_SOURCE@") printf 'Volume: 1.00%s\n' "$(muted source && printf ' [MUTED]')" ;;
 	*) exit 64 ;;
 	esac
 	;;
