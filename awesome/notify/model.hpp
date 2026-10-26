@@ -14,11 +14,11 @@
 //               helpers
 //   paint.cpp   the shared card recipes and type scale (on the canvas
 //               paint context)
-//   card.cpp    one card, banner or center, with its hover chrome
+//   card.cpp    one card, banner or center
 //   popups.cpp  the banner column and the OSD capsules
 //   stack.cpp   an app's stack: the deck, the spread stack's header
 //   center.cpp  the center: the display list, the expansion budget
-//   menu.cpp    the card menu (Options, or hold left)
+//   menu.cpp    the card menu (hold left)
 //   surface.cpp the canvas layer: warm/draw, damage, ticks, hover
 //   input.cpp   clicks, the hold, wheel paging, keys, pointer ownership
 //   reply.cpp   the inline-reply field: its state and its keys
@@ -85,7 +85,7 @@ namespace NAwesome::Notify {
 
     // ---- the model (model.cpp) ----
 
-    // a non-"default" action: a row of the card's Options menu
+    // a non-"default" action: a row of the card menu
     struct SAction {
         std::string id;    // ActionInvoked key
         std::string label; // localized row text
@@ -198,7 +198,7 @@ namespace NAwesome::Notify {
         bool                 canReply = false;   // the sender offered an "inline-reply" action
         std::string          replyPlaceholder;   // x-kde-reply-placeholder-text
         std::string          replySubmitText;    // x-kde-reply-submit-button-text, else the action's own label
-        std::vector<SAction>    actions;    // non-default actions -> the Options menu's rows, in Notify order
+        std::vector<SAction>    actions;    // non-default actions -> the card menu's rows, in Notify order
         std::vector<SBodyImage> bodyImages; // body <img src> thumbnails
         bool                    resident    = false; // the resident hint: an action keeps the card
         bool                    transient   = false; // the transient hint: bypass history AND residency
@@ -478,7 +478,6 @@ namespace NAwesome::Notify {
             ROW,       // a center card (group = its stack's key inside an expanded stack)
             DECK,      // a collapsed stack: its top card and the deck (group = the app key)
             SHEAD,     // an expanded stack's header: Show Less and its close button
-            CLOSE,     // a card's hover close button (group set: it closes the stack)
             BTN_CLEAR, // the center header's "Clear All": the global sweep
             BTN_DND,   // the center header's moon (do-not-disturb)
             PANEL,     // the center's column: swallows clicks, owns the wheel
@@ -492,10 +491,9 @@ namespace NAwesome::Notify {
         CBox        box;
         uint32_t    id   = 0; // live identity
         uint64_t    rev  = 0; // the card's revision this layout drew: a click acts on what it saw
-        std::string group;    // DECK/SHEAD, a stacked ROW, a stack's CLOSE: the app key
+        std::string group;    // DECK/SHEAD, a stacked ROW: the app key
         CBox        less;         // SHEAD: Show Less; w = 0 -> none
-        CBox        close;        // SHEAD: its close button; a card: its hover close button (pushed as a CLOSE)
-        CBox        options;      // POPUP/ROW/DECK: the hover Options button; w = 0 -> none
+        CBox        close;        // SHEAD: its close button
         CBox        replyField;   // POPUP/ROW: the armed inline-reply box (swallows, never acts)
         CBox        replySend;    // POPUP/ROW: its send circle
         bool        folded = false; // ROW: the budget folded it and the open form shows more (a click unfolds)
@@ -508,9 +506,6 @@ namespace NAwesome::Notify {
     extern std::vector<SCard> cards;
     extern PHLMONITORREF      cardsMon; // the monitor the layout ran on
     SCard                     recycledCard(); // an empty card whose vectors keep last frame's capacity
-    // a laid-out card into `cards`, then its hover close button (a CLOSE) if
-    // it drew one
-    void                      pushCard(SCard&& c);
 
     // hover affordance: rows/buttons warm under the pointer. `btn` -1 = the
     // surface itself, >= 0 = that action button; `part` distinguishes the
@@ -519,7 +514,7 @@ namespace NAwesome::Notify {
         uint32_t     id = 0;
         std::string  group;
         SCard::eKind kind = SCard::POPUP;
-        // 0 body, 1 Show Less, 2 close, 3 reply field, 4 send, 5 Options
+        // 0 body, 1 Show Less, 2 a stack's close, 3 reply field, 4 send
         uint8_t      part = 0;
         bool         operator==(const SHover&) const = default;
     };
@@ -532,7 +527,7 @@ namespace NAwesome::Notify {
     // ---- reply.cpp: the inline-reply field ----
     //
     // A card whose sender offered "inline-reply" opens a text field under its
-    // words when Reply is picked from its Options (or Tab in the center), in
+    // words when Reply is picked from its menu (or Tab in the center), in
     // the banner or the center card alike. While one is armed the notify
     // layer owns EVERY key (the same grab the shell's menubar prompt takes) —
     // there is no keyboard focus to hand it, so it takes the keys and gives

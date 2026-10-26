@@ -4,12 +4,12 @@
 // wearing the app's badge, or a group chat's two faces), the title row
 // (title, the unread count, the meta flush right), the body and the
 // progress track; below, across the card's whole inner width, a banner's
-// hero and an opened reply field. At rest a card is its face, its words and
-// its time, as macOS draws it: the sender's actions live in its Options
-// menu. Under the pointer the glass lifts, the close button rides the
-// card's top-left corner and, on a card with actions, Options takes the
-// time's place. A banner and the center card it retreats into must never
-// say different things — so they are one function.
+// hero and an opened reply field. A card is its face, its words and its
+// time, as macOS draws it at rest, and it grows no buttons under the
+// pointer (the user's hold and right click do that work): the glass lifts,
+// and the sender's actions live in the card menu. A banner and the center
+// card it retreats into must never say different things — so they are one
+// function.
 //
 // Layout requests every texture unconditionally and paints only through
 // the paint context, which no-ops inside a warm (the texture rule, crash
@@ -47,12 +47,6 @@ namespace NAwesome::Notify {
                 out += " · ";
             }
             out += banner ? ageString(N.arrived) : clockString(N.arrivedWall);
-        }
-
-        // what Options would offer beyond the menu every card has: the
-        // sender's own actions, or a reply
-        bool hasOptions(const SNotif& N) {
-            return !N.actions.empty() || N.canReply;
         }
     }
 
@@ -102,25 +96,15 @@ namespace NAwesome::Notify {
         composeMeta(MB, N, BANNER);
         const auto   META  = cachedText(MB, N.urgency >= 2 ? COLURGENT : COLSUB, T.meta, TWPX / 2, -1, 0, true, 500);
         const double METAW = texW(META, P.scale);
-        // the hover chrome, requested whether or not the pointer is here: a
-        // hover only damages, so what it shows must already be warm (crash
-        // class 4) — and the title keeps the width Options needs, so it never
-        // re-rasters as the pointer crosses the card
-        const bool   OPTS  = hasOptions(N);
-        const auto   OPT   = OPTS ? cachedText("Options", COLTITLE, T.meta, 256, -1, 0, false, 550) : nullptr;
-        const double OPTW  = OPTS ? OPT_PADL + texW(OPT, P.scale) + OPT_GAP + OPT_GLYPH + OPT_PADR : 0;
-        const auto   XG    = Glyph::tex(Glyph::eGlyph::DISMISS, COLTITLE, (int)std::lround(CLOSE_GLYPH * P.scale));
-        const auto   DG    = OPTS ? Glyph::tex(Glyph::eGlyph::DISCLOSE, COLTITLE, (int)std::lround(OPT_GLYPH * P.scale)) : nullptr;
-        const double RIGHTW = std::max(METAW, OPTW);
         const auto   COUNT = N.conversation && N.unreadCount > 1 ? cachedText(std::to_string(N.unreadCount), COLTITLE, T.small, 64, -1, 0, false, 600) : nullptr;
         const double PILLW = COUNT && COUNT->tex ? std::max(PILL_H, texW(COUNT, P.scale) + 10) : 0;
         const auto&  TSRC  = !N.conversationTitle.empty() ? N.conversationTitle : N.summary;
-        const int    TTLPX = std::max(1, (int)std::floor((TEXTW - (RIGHTW > 0 ? RIGHTW + META_GAP : 0) - (PILLW > 0 ? PILLW + 6 : 0)) * P.scale));
+        const int    TTLPX = std::max(1, (int)std::floor((TEXTW - (METAW > 0 ? METAW + META_GAP : 0) - (PILLW > 0 ? PILLW + 6 : 0)) * P.scale));
         const auto   TITLE = TSRC.empty() ? nullptr : cachedText(TSRC, COLTITLE, T.title, TTLPX, -1, 0, true, 600);
         const double ROWH  = std::max({texH(TITLE, P.scale), texH(META, P.scale), PILLW > 0 ? PILL_H : 0.0});
 
-        // the reply field, once Reply (Options, or Tab in the center) opened
-        // it: a chat answers in place, in the banner or the center card
+        // the reply field, once Reply (the card menu, or Tab in the center)
+        // opened it: a chat answers in place, in the banner or the center card
         const bool REPLY = N.canReply && replyArmedOn(N.id);
 
         // ---- a banner's inline images and their alt lines ----
@@ -231,8 +215,7 @@ namespace NAwesome::Notify {
         const CBox   CARD{X, Y, W, H};
 
         // ---- paint ----
-        const bool CHROME = chromeOn(N.id, KIND);
-        P.frost(CARD, CHROME ? liftedGlass(COLBG) : COLBG, COLRIM, ROUND, RP);
+        P.frost(CARD, cardLit(N.id, KIND) ? liftedGlass(COLBG) : COLBG, COLRIM, ROUND, RP);
 
         const double TOPY = Y + PY;
         if (PILE) {
@@ -259,17 +242,7 @@ namespace NAwesome::Notify {
             P.rect(PB, tFill(), (int)std::lround(PILL_H / 2 * P.scale), 2.f);
             texCentered(P, COUNT, PB);
         }
-        if (CHROME && OPTS) {
-            // Options in the time's place, lit while its menu is open
-            const CBox OB{X + W - PADX - OPTW, TOPY + (ROWH - OPT_H) / 2, OPTW, OPT_H};
-            const bool LIT = CardMenu::owner() == N.id || (hovered.kind == KIND && hovered.id == N.id && hovered.part == 5);
-            P.rect(OB, LIT ? tFillHover() : tControl(), (int)std::lround(OPT_H / 2 * P.scale), 2.f);
-            if (OPT && OPT->tex)
-                P.tex(OPT->tex, OB.x + OPT_PADL, OB.y + (OPT_H - texH(OPT, P.scale)) / 2);
-            if (DG)
-                P.texIn(DG, CBox{OB.x + OB.w - OPT_PADR - OPT_GLYPH, OB.y, OPT_GLYPH, OPT_H});
-            hit.options = OB;
-        } else if (META && META->tex)
+        if (META && META->tex)
             P.tex(META->tex, X + W - PADX - METAW, TOPY + (ROWH - texH(META, P.scale)) / 2);
 
         double ty = TOPY + ROWH;
@@ -332,15 +305,6 @@ namespace NAwesome::Notify {
                 P.texIn(ARROW, SB);
             hit.replyField = FB;
             hit.replySend  = SB;
-        }
-
-        // the close button on the corner, over everything the card drew
-        if (CHROME) {
-            const CBox CB{X - CLOSE_OUT, Y - CLOSE_OUT, CLOSE_D, CLOSE_D};
-            paintChip(P, CB, hovered.kind == SCard::CLOSE && hovered.id == N.id);
-            if (XG)
-                P.texIn(XG, CB);
-            hit.close = CB;
         }
 
         hit.box  = CARD;

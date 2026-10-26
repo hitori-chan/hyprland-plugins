@@ -5,9 +5,8 @@
 //   any card left = act (on the release, over the card it pressed) ·
 //            HOLD left = the card menu (menu.cpp) · right = dismiss ·
 //            middle = nothing (swallowed: the card is ours, not the
-//            window's under it — a terminal must not get a paste). Under
-//            the pointer (macOS): the close button on the corner dismisses,
-//            Options drops the card menu, its actions first
+//            window's under it — a terminal must not get a paste). No
+//            buttons ride a card: the hold is the menu, right the dismiss
 //   popup    left = link/default → dismiss · in an opened reply field:
 //            keep typing · its send circle sends
 //   row      a center card IS its banner: left on the body fires the card's
@@ -21,8 +20,8 @@
 //            dismissal, a fold, DND, Clear all, and a `resident` card's
 //            actions, which is the spec's own way of saying the action does
 //            not take you away.
-//   deck     a collapsed stack: left spreads it · right / its close button
-//            dismisses the stack · Options is its top card's
+//   deck     a collapsed stack: left spreads it · right dismisses the
+//            stack · the hold is its top card's menu
 //   shead    an expanded stack's header: Show Less collapses · its close
 //            button / right dismisses the stack; its cards are rows
 //   header   the moon = DND · "Clear All" = the global sweep
@@ -71,8 +70,7 @@ namespace NAwesome::Notify {
         uint32_t     id;
         std::string  group;
         uint32_t     bit;
-        uint8_t      part;   // the SHover part codes: 0 body, 1 Show Less, 2 close, 3 reply field, 4 send, 5 Options
-        CBox         anchor; // part 5: the Options button the menu drops from
+        uint8_t      part;   // the SHover part codes: 0 body, 1 Show Less, 2 a stack's close, 3 reply field, 4 send
         std::string  href;   // non-empty: a body hyperlink
         uint64_t     rev     = 0;     // the card's revision at the press: its layout's actions are that revision's
         bool         outside = false; // the click fell outside every surface (closes the shade)
@@ -86,7 +84,7 @@ namespace NAwesome::Notify {
     static NAwesome::CHopQueue<SHit, 32> hits(drainHits);
     static NAwesome::CHop pendingEsc;
 
-    // most-specific-first: rows and their close buttons are pushed after the panel they sit on
+    // most-specific-first: rows are pushed after the panel they sit on
     static const SCard* cardAt(const Vector2D& pos) {
         if (cards.empty())
             return nullptr;
@@ -107,14 +105,10 @@ namespace NAwesome::Notify {
     }
 
     static uint8_t partAt(const SCard& c, const Vector2D& pos) {
-        if (c.kind == SCard::CLOSE)
-            return 2;
         if (c.less.w > 0 && c.less.containsPoint(pos))
             return 1;
         if (c.kind == SCard::SHEAD && c.close.w > 0 && c.close.containsPoint(pos))
             return 2;
-        if (c.options.w > 0 && c.options.containsPoint(pos))
-            return 5;
         if (c.replySend.w > 0 && c.replySend.containsPoint(pos))
             return 4;
         if (c.replyField.w > 0 && c.replyField.containsPoint(pos))
@@ -132,8 +126,6 @@ namespace NAwesome::Notify {
         h.bit    = bit;
         h.part   = partAt(c, pos);
         h.folded = c.folded;
-        if (h.part == 5)
-            h.anchor = c.options;
         if (bit == 1u && h.part == 0)
             if (const int L = linkAt(c, pos); L >= 0)
                 h.href = c.links[L].href;
@@ -170,7 +162,7 @@ namespace NAwesome::Notify {
         switch (c.kind) {
             case SCard::POPUP:
             case SCard::ROW:
-            case SCard::DECK: return h.part == 0 && CardMenu::canOpen(c.id); // the reply field is typed in, Options clicked, never held
+            case SCard::DECK: return h.part == 0 && CardMenu::canOpen(c.id); // the reply field is typed in, never held
             default: return false;
         }
     }
@@ -263,10 +255,6 @@ namespace NAwesome::Notify {
                     }
                     if (H.bit != 1u)
                         continue;
-                    if (H.part == 5) {
-                        CardMenu::openBelow(H.id, H.anchor);
-                        continue;
-                    }
                     if (replyPart(H))
                         continue;
                     if (!H.href.empty()) { // left on a hyperlink: open it, keep the card up
@@ -283,10 +271,6 @@ namespace NAwesome::Notify {
                     }
                     if (H.bit != 1u)
                         continue;
-                    if (H.part == 5) {
-                        CardMenu::openBelow(H.id, H.anchor);
-                        continue;
-                    }
                     if (H.folded) { // a folded card opens before it acts
                         centerToggleRow(H.id);
                         continue;
@@ -306,11 +290,7 @@ namespace NAwesome::Notify {
                         Model::dismissApp(H.group);
                         continue;
                     }
-                    if (H.bit != 1u)
-                        continue;
-                    if (H.part == 5)
-                        CardMenu::openBelow(H.id, H.anchor); // its top card's
-                    else
+                    if (H.bit == 1u)
                         centerToggleGroup(H.group); // left spreads the stack
                     continue;
                 }
@@ -323,14 +303,6 @@ namespace NAwesome::Notify {
                         centerToggleGroup(H.group); // Show Less
                     continue;
                 }
-                case SCard::CLOSE: // a card's close button; a deck's closes its stack
-                    if (H.bit == 1u || H.bit == 2u) {
-                        if (H.group.empty())
-                            Model::closeOne(H.id, Model::R_DISMISSED);
-                        else
-                            Model::dismissApp(H.group);
-                    }
-                    continue;
                 case SCard::BTN_CLEAR: // the footer: the global sweep
                     if (H.bit == 1u)
                         Model::dismissAllLive();

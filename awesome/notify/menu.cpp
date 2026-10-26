@@ -1,6 +1,6 @@
-// awesome/notify/menu.cpp — the card menu, macOS's Options. A card with
-// actions drops it from its Options button; holding left on any card (a
-// banner, a center card, a stack) opens it at the pointer:
+// awesome/notify/menu.cpp — the card menu, what macOS's Options offers.
+// Holding left on any card (a banner, a center card, a stack) opens it at
+// the pointer:
 //
 //   Reply                          a card that takes a reply: opens its field
 //   <the sender's actions>         in Notify order ("Mark as read")
@@ -47,7 +47,6 @@ namespace NAwesome::Notify::CardMenu {
     // the board's menu: 5 px of padding, 28 px rows whose labels sit 15 px
     // in, 11 px separators (a hairline 5 px off either row)
     constexpr double PAD = 5, ROWH = 28, SEPH = 11, LABEL_X = 15, MIN_W = 200, MAX_W = 320;
-    constexpr double DROP = 3; // Options: the menu's top under its button
     constexpr size_t NAME_CP = 24; // a name past this many code points ellipsizes: the verb must stay readable
 
     static bool               s_open = false;
@@ -55,7 +54,6 @@ namespace NAwesome::Notify::CardMenu {
     static uint64_t           s_rev   = 0;   // the card's revision the menu was opened over
     static std::string        s_app, s_chat; // the targets, captured at the open
     static Vector2D           s_at;
-    static CBox               s_anchor; // Options: the button it drops from; w = 0 -> at s_at
     static std::vector<SItem> s_items;
     static CBox               s_box; // global logical, as last laid out
 
@@ -125,30 +123,21 @@ namespace NAwesome::Notify::CardMenu {
         s_items.push_back({CLOSE_APP, "Close All from " + APP, {}});
     }
 
-    static bool openOn(uint32_t id, const Vector2D& at, const CBox& anchor) {
+    bool open(uint32_t id, const Vector2D& at) {
         const auto N = target(id);
         if (!N)
             return false;
-        s_open   = true;
-        s_owner  = id;
-        s_rev    = N->rev;
-        s_app    = N->appKey;
-        s_chat   = Policy::chatKey(*N);
-        s_at     = at;
-        s_anchor = anchor;
-        s_box    = {};
+        s_open  = true;
+        s_owner = id;
+        s_rev   = N->rev;
+        s_app   = N->appKey;
+        s_chat  = Policy::chatKey(*N);
+        s_at    = at;
+        s_box   = {};
         build(*N);
         refreshBannerHold(); // the banner under the menu must not expire out from under it
         notifChanged();      // warm the labels, then damage
         return true;
-    }
-
-    bool open(uint32_t id, const Vector2D& at) {
-        return openOn(id, at, {});
-    }
-
-    bool openBelow(uint32_t id, const CBox& anchor) {
-        return openOn(id, Vector2D{anchor.x, anchor.y + anchor.h}, anchor);
     }
 
     void close() {
@@ -212,9 +201,7 @@ namespace NAwesome::Notify::CardMenu {
     }
 
     // macOS opens a context menu with its corner at the pointer, one that
-    // would leave the monitor flipping to the pointer's other side; Options
-    // drops its menu from the button, right edges aligned, and lifts it over
-    // the button where the screen ends below
+    // would leave the monitor flipping to the pointer's other side
     void render(const SPaint& P, const SType& T) {
         if (!s_open || s_items.empty())
             return;
@@ -232,17 +219,10 @@ namespace NAwesome::Notify::CardMenu {
 
         const auto MB = P.mon->logicalBox();
         double     x  = s_at.x, y = s_at.y;
-        if (s_anchor.w > 0) {
-            x = std::max(MB.x + EDGE, s_anchor.x + s_anchor.w - w);
-            y = s_anchor.y + s_anchor.h + DROP;
-            if (y + h > MB.y + MB.h - EDGE)
-                y = std::max(MB.y + EDGE, s_anchor.y - DROP - h);
-        } else {
-            if (x + w > MB.x + MB.w - EDGE)
-                x = std::max(MB.x + EDGE, s_at.x - w);
-            if (y + h > MB.y + MB.h - EDGE)
-                y = std::max(MB.y + EDGE, s_at.y - h);
-        }
+        if (x + w > MB.x + MB.w - EDGE)
+            x = std::max(MB.x + EDGE, s_at.x - w);
+        if (y + h > MB.y + MB.h - EDGE)
+            y = std::max(MB.y + EDGE, s_at.y - h);
         s_box = CBox{x, y, w, h};
 
         P.frost(s_box, COLMENU, COLRIM, (int)std::lround(Theme::RAD_MENU * P.scale), (float)Theme::ROUNDING_POWER, SPaint::eDepth::MENU);
