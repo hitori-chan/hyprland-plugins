@@ -19,6 +19,13 @@ make -C devtools HL=/path/to/Hyprland
   through the fork's input-capture protocol and EIS.
 - `cliphold DELAY_MS TEXT` owns the nested clipboard and delays or
   indefinitely holds a transfer to test cancellation and teardown.
+- `sharehold [-d] [-n FRAMES] [INTERVAL_MS]` holds a screen share of the
+  first output (a wlr-screencopy client copying frames until it is
+  killed) and prints READY at the first copied frame: the notify
+  battery's quiet-while-sharing checks. `-d` copies with damage, as a
+  screencast does (a still screen keeps a frame waiting); `-n` stops
+  after that many frames and stays connected, as a screenshot tool
+  leaves its session.
 - `fixwin WIDTH HEIGHT [TITLE]` maps a fixed-size xdg-toplevel (min ==
   max, the dialog/splash shape) to test placement of windows that refuse
   to resize.

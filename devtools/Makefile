@@ -5,6 +5,7 @@ XML    := $(HL)/protocols/wlr-virtual-pointer-unstable-v1.xml
 KXML   := $(HL)/protocols/virtual-keyboard-unstable-v1.xml
 CXML   := $(HL)/subprojects/hyprland-protocols/protocols/hyprland-input-capture-v1.xml
 DXML   := $(HL)/protocols/wlr-data-control-unstable-v1.xml
+SXML   := $(HL)/protocols/wlr-screencopy-unstable-v1.xml
 XXML   := /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml
 CFLAGS += -O2 -Wall $(shell pkg-config --cflags wayland-client)
 LDLIBS += $(shell pkg-config --libs wayland-client)
@@ -12,7 +13,7 @@ KLIBS  := $(shell pkg-config --libs xkbcommon)
 EICFLAGS := $(shell pkg-config --cflags libei-1.0)
 EILIBS   := $(shell pkg-config --libs libei-1.0)
 
-all: vptr vkbd input-capture cliphold fixwin splashwin fake-sni
+all: vptr vkbd input-capture cliphold sharehold fixwin splashwin fake-sni
 
 vptr: vptr.c vptr-proto.c vptr-proto.h
 	$(CC) $(CFLAGS) vptr.c vptr-proto.c -o $@ $(LDLIBS)
@@ -25,6 +26,9 @@ input-capture: input-capture.c input-capture-proto.c input-capture-proto.h
 
 cliphold: cliphold.c cliphold-proto.c cliphold-proto.h
 	$(CC) $(CFLAGS) cliphold.c cliphold-proto.c -o $@ $(LDLIBS)
+
+sharehold: sharehold.c sharehold-proto.c sharehold-proto.h
+	$(CC) $(CFLAGS) sharehold.c sharehold-proto.c -o $@ $(LDLIBS)
 
 splashwin: splashwin.c fixwin-protocol.h fixwin-proto.c
 	$(CC) $(CFLAGS) splashwin.c fixwin-proto.c -o $@ $(LDLIBS)
@@ -53,12 +57,16 @@ cliphold-proto.h: $(DXML)
 	wayland-scanner client-header $< $@
 cliphold-proto.c: $(DXML)
 	wayland-scanner private-code $< $@
+sharehold-proto.h: $(SXML)
+	wayland-scanner client-header $< $@
+sharehold-proto.c: $(SXML)
+	wayland-scanner private-code $< $@
 fixwin-protocol.h: $(XXML)
 	wayland-scanner client-header $< $@
 fixwin-proto.c: $(XXML)
 	wayland-scanner private-code $< $@
 
 clean:
-	rm -f vptr vkbd input-capture cliphold fixwin splashwin fake-sni vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c fixwin-protocol.h fixwin-proto.c
+	rm -f vptr vkbd input-capture cliphold sharehold fixwin splashwin fake-sni vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c sharehold-proto.h sharehold-proto.c fixwin-protocol.h fixwin-proto.c
 
 .PHONY: all clean
