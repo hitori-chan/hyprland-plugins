@@ -44,7 +44,7 @@ outside_click() { click "$((MON_W / 2))" "$((MON_H / 2))" 272; }
 # clock is the last run of white ink from the screen's right edge, the bell
 # the one before it — found by pixel, as the clock, the battery and the tray
 # change width under the gate. White ink is every channel past 150, so
-# neither the green dot nor the accent counts — and so with the center
+# neither the blue dot nor the accent counts — and so with the center
 # CLOSED only: an open center lights the bell in the accent.
 bell_x() { # bell_x <frame> — the bell glyph's center x (0 when not found)
 	python3 - "$1" "$MON_W" <<'PY'
@@ -62,9 +62,9 @@ for x in range(w - 1, w // 2, -1):
 print((runs[1][0] + runs[1][1]) // 2 if len(runs) >= 2 else 0)
 PY
 }
-# the bell's dot: col_dot green (0xff32d74b) in the bell's cell; the battery
-# sits a gap and more to its left (a charging fill is the same green)
-dot_px() { # dot_px <frame> — green pixels on the bell (0 when no dot)
+# the bell's dot: col_dot, the accent (0xff00ccff), in the bell's cell —
+# with the center CLOSED, when the bell itself is white
+dot_px() { # dot_px <frame> — accent pixels on the bell (0 when no dot)
 	python3 - "$1" "$(bell_x "$1")" <<'PY'
 import sys
 from PIL import Image
@@ -75,7 +75,7 @@ n = 0
 for x in range(max(0, bx - 10), min(im.width, bx + 12)):
     for y in range(0, 28):
         r, g, b = px[x, y]
-        n += g > 170 and r < 120 and b < 140
+        n += b > 200 and g > 150 and r < 80
 print(n)
 PY
 }
