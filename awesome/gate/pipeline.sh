@@ -61,12 +61,11 @@ center_of() { clients | python3 -c "
 import json,sys
 c = next(c for c in json.load(sys.stdin) if c['class'] == '$1')
 print(c['at'][0] + c['size'][0] // 2, c['at'][1] + c['size'][1] // 2)"; }
-click_at() { printf 'move %s %s\nsleep 50\npress 272\nsleep 40\nrelease 272\nsleep 100\n' "$1" "$2" | vp; sleep 0.8; }
+click_at() { printf 'move %s %s\nsleep 50\npress 272\nsleep 40\nrelease 272\nsleep 100\n' "$1" "$2" | vp; settle; }
 dsp "hl.dsp.exec_cmd('foot -a storma --window-size-pixels=300x200')"
-wait_class storma
+settled storma
 dsp "hl.dsp.exec_cmd('foot -a stormb --window-size-pixels=300x200')"
-wait_class stormb
-sleep 0.5
+settled stormb
 read -r BBX BBY <<< "$(center_of stormb)"; click_at "$BBX" "$BBY"
 chk "storm probes up: stormb focused by its own click" test "$(pyc "cs[-1]['class']=='stormb' if cs else False")" = 1
 {
@@ -80,9 +79,8 @@ chk "storm probes up: stormb focused by its own click" test "$(pyc "cs[-1]['clas
 	done
 	echo "move $(tag_cx 1) 13"; echo "sleep 30"; echo "press 272"; echo "sleep 30"; echo "release 272"; echo "sleep 100"
 } | vp
-sleep 1
 chk "input storm: the monolith is alive" test "$(hq plugin list | grep -c Plugin)" = 1
-chk "input storm: the final taglist click registered (ws 1)" test "$(ws)" = 1
+chk "input storm: the final taglist click registered (ws 1)" until_is 3 1 ws
 read -r BAX BAY <<< "$(center_of storma)"; click_at "$BAX" "$BAY"
 expect "post-storm click still raises + focuses (no stuck swallow)" \
 	"cs[-1]['class']=='storma' if cs else False"
@@ -93,24 +91,24 @@ expect "post-storm click still raises + focuses (no stuck swallow)" \
 # swallowed whole — the shade stays, nothing acts, and the window beneath
 # never sees it.
 dsp "hl.dsp.exec_cmd('foot -a prec --window-size-pixels=500x300')"
-wait_class prec
+settled prec
 PFX="$(clients | python3 -c "
 import json,sys
 c = next(c for c in json.load(sys.stdin) if c['class']=='prec')
 print(c['at'][0] + c['size'][0] // 2, c['at'][1] + c['size'][1] // 2)")"
 click_at ${PFX% *} ${PFX#* }
 chk "ownership: prec focused by its own click" test "$(pyc "cs[-1]['class']=='prec' if cs else False")" = 1
-dsp "hl.dsp.exec_cmd('notify-send -t 60000 \"ownership\" body')"; sleep 1
-hq awesome center >/dev/null; sleep 0.7
+nsend -t 60000 ownership body
+hq awesome center >/dev/null
 chk "ownership: the shade is open over the focused window" test "$(st)" = "center:1 live:1 dnd:0"
 click $((PANEL_X + 150)) $((HEAD_Y + 14)) 272
 chk "ownership: the shade swallowed the click (open, nothing acted)" test "$(st)" = "center:1 live:1 dnd:0"
 chk "ownership: the window beneath kept its focus" test "$(pyc "cs[-1]['class']=='prec' if cs else False")" = 1
-hq awesome center >/dev/null; sleep 0.4
-hq awesome clear >/dev/null; sleep 0.5
+hq awesome center >/dev/null
+hq awesome clear >/dev/null
 for a in $(clients | python3 -c "import json,sys
 print(' '.join(c['address'] for c in json.load(sys.stdin) if c['class'] in ('storma','stormb','prec')))"); do
 	dsp "hl.dsp.window.close({window=\"address:$a\"})"
-done; sleep 0.5
+done
 chk "pipeline: its windows are closed before the teardown battery" \
-	test "$(pyc "sum(1 for c in cs if c['class'] in ('storma','stormb','prec'))")" = 0
+	until_is 5 0 pyc "sum(1 for c in cs if c['class'] in ('storma','stormb','prec'))"

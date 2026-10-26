@@ -9,90 +9,82 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 storm_jobs=()
 for i in $(seq 1 65); do
 	u=normal; [[ $((i % 6)) == 0 ]] && u=critical
-	dsp "hl.dsp.exec_cmd('notify-send -u $u \"stress $i\" body')" & storm_jobs+=("$!")
+	nsend -u $u "stress $i" body & storm_jobs+=("$!")
 done; [[ ${#storm_jobs[@]} -gt 0 ]] && wait "${storm_jobs[@]}" || true
-until_is 8 50 hq awesome count; sleep 0.5 # and nothing past the cap lands late
+# every sender was answered: nothing past the cap can land late
 chk "notif storm: cap holds at exactly 50/65" test "$(hq awesome count)" = 50
 nclear
 # wrong-typed hints make sdbus-c++ throw inside the parse — the catch must
 # survive (exercises exception unwinding across the .so boundary).
-dsp "hl.dsp.exec_cmd('notify-send -h int:transient:1 -h string:urgency:critical typed-hint-abuse body')"; sleep 1.5
+nsend -h int:transient:1 -h string:urgency:critical typed-hint-abuse body
 chk "wrong-typed hints survived (sdbus::Error thrown + caught)" bash -c "hyprctl -i $SIG awesome count | grep -qE '^[0-9]+$'"
 nclear
 
 # ---- expiry, residency & the center ------------------------------------
 chk "notif reset: clean state line" test "$(st)" = "center:0 live:0 dnd:0"
-dsp "hl.dsp.exec_cmd('notify-send -a crit -u critical \"urgent\" body')"
-sleep 1
+nsend -a crit -u critical "urgent" body
 chk "critical: a sticky banner, nothing kept yet" test "$(bd)" = "banners:1 resident:0"
-dsp "hl.dsp.exec_cmd('notify-send -a norm -t 600 normal body')"
-sleep 1.2
-chk "residency: the expired normal banner retreated to a resident row" test "$(bd)" = "banners:1 resident:1"
+nsend -a norm -t 600 normal body
+chk "residency: the expired normal banner retreated to a resident row" until_is 3 "banners:1 resident:1" bd
 chk "residency: the retreated card stays in the model, not lost" test "$(st)" = "center:0 live:2 dnd:0"
-dsp "hl.dsp.exec_cmd('notify-send -a low -u low -t 600 lowcard body')"
-dsp "hl.dsp.exec_cmd('notify-send -a tran -e -t 600 trans body')"
-sleep 1.2
-chk "ephemerals: transient vanished, low parked resident" test "$(st)" = "center:0 live:3 dnd:0"
+nsend -a low -u low -t 600 lowcard body
+nsend -a tran -e -t 600 trans body
+chk "ephemerals: transient vanished, low parked resident" until_is 3 "center:0 live:3 dnd:0" st
 chk "ephemerals: only the critical banner is still up" test "$(bd)" = "banners:1 resident:2"
-hq awesome center >/dev/null; sleep 0.5
+hq awesome center >/dev/null
 chk "center: opening absorbs the banner into the shade" test "$(bd)" = "banners:0 resident:3"
 chk "center: opening dismisses nothing" test "$(st)" = "center:1 live:3 dnd:0"
 capture_nested "$STATE/center-head.png"
 chk "center: the heading names the column, under the controls" \
 	test "$(lit_px "$STATE/center-head.png" $((PANEL_X + 4)) $((PANEL_X + 150)) $((HEAD_Y + 4)) $((HEAD_Y + 24)))" -gt 80
-hq awesome center >/dev/null; sleep 0.5
+hq awesome center >/dev/null
 chk "center: closing neither re-pops nor drops a card" test "$(st)" = "center:0 live:3 dnd:0"
 nclear
 chk "center: Clear all sweeps every visible card" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- popup coalescing: coalesce_popups (3) live banners per app ----------
-dsp "hl.dsp.exec_cmd('notify-send -a chatty -t 30000 first body')"; sleep 1
+nsend -a chatty -t 30000 first body
 chk "coalesce: the first same-app arrival pops a banner" test "$(bd)" = "banners:1 resident:0"
-for m in second third fourth; do dsp "hl.dsp.exec_cmd('notify-send -a chatty -t 30000 $m body')"; done; sleep 1
+for m in second third fourth; do nsend -a chatty -t 30000 $m body; done
 chk "coalesce: the app's fourth card lands resident, three banners stand" test "$(bd)" = "banners:3 resident:1"
 chk "coalesce: every card is kept and counted" test "$(st)" = "center:0 live:4 dnd:0"
-dsp "hl.dsp.exec_cmd('notify-send -a chatty -u critical urgent body')"; sleep 1
+nsend -a chatty -u critical urgent body
 chk "coalesce: a critical from the same app punches through" test "$(bd)" = "banners:4 resident:1"
-dsp "hl.dsp.exec_cmd('notify-send -a other elsewhere body')"; sleep 1
+nsend -a other elsewhere body
 chk "coalesce: a different app gets its own banner" test "$(bd)" = "banners:5 resident:1"
 nclear
 
 # ---- the conversation merge (Android's MessagingStyle) ------------------
-for m in one two three; do dsp "hl.dsp.exec_cmd('notify-send -a tg -c im.received -t 30000 Alice \"$m\"')"; sleep 0.4; done
-sleep 0.8
+for m in one two three; do nsend -a tg -c im.received -t 30000 Alice "$m"; done
 chk "merge: 3 messages from one sender collapse to 1 card" test "$(st)" = "center:0 live:1 dnd:0"
-dsp "hl.dsp.exec_cmd('notify-send -a tg -c im.received -t 30000 Bob hello')"; sleep 1
+nsend -a tg -c im.received -t 30000 Bob hello
 chk "merge: a different sender keeps its own card" test "$(st)" = "center:0 live:2 dnd:0"
-dsp "hl.dsp.exec_cmd('notify-send -a tg -t 30000 \"plain one\" body')"
-dsp "hl.dsp.exec_cmd('notify-send -a tg -t 30000 \"plain two\" body')"; sleep 1
+nsend -a tg -t 30000 "plain one" body
+nsend -a tg -t 30000 "plain two" body
 chk "merge: no category, no merging — same app still stacks" test "$(st)" = "center:0 live:4 dnd:0"
 nclear
 
 # ---- the collapsed one-liner: the NEWEST message --------------------------
 pcidb toplineapp "Carol" cid-t1 "first message"
-sleep 1
 pcidb toplineapp "Carol" cid-t1 "second message"
 pcidb toplineapp "Carol" cid-t1 "third message"
-sleep 1.2
-chk "topline: a transcript card's one-liner is the newest message" test "$(hq awesome topline)" = "third message"
+chk "topline: a transcript card's one-liner is the newest message" until_is 3 "third message" hq awesome topline
 nclear
 tdgrp "Design Team" Alice "sketched the new logo"
-sleep 0.6
 tdgrp "Design Team" Bob "looks great, ship it"
 tdgrp "Design Team" Alice "uploading the final files now"
-sleep 1.2
 chk "topline: the group card merged to one card" test "$(st)" = "center:0 live:1 dnd:0"
-chk "topline: the group card's one-liner is the newest message, sender inline" test "$(hq awesome topline)" = "<b>Alice</b>: uploading the final files now"
+chk "topline: the group card's one-liner is the newest message, sender inline" until_is 3 "<b>Alice</b>: uploading the final files now" hq awesome topline
 nclear
 
 # ---- shade overflow ------------------------------------------------------
-for i in $(seq 1 15); do dsp "hl.dsp.exec_cmd('notify-send -a ovf$i -t 30000 \"row $i\" body')"; done; sleep 1.5
-hq awesome center >/dev/null; sleep 0.6
+for i in $(seq 1 15); do nsend -a ovf$i -t 30000 "row $i" body; done
+hq awesome center >/dev/null
 chk "overflow: a 15-item center renders paged, keeps every card" test "$(st)" = "center:1 live:15 dnd:0"
 wheel 120
 wheel 120
 chk "overflow: wheeling down keeps every card" test "$(st)" = "center:1 live:15 dnd:0"
-hq awesome center >/dev/null; sleep 0.4
+hq awesome center >/dev/null
 nclear
 
 # ---- the hero: the banner's preview, the shade row's thumbnail -----------
@@ -122,6 +114,15 @@ for y in range(int(sys.argv[3]), int(sys.argv[4])):
 print(n)
 PY
 }
+# hero_in <frame> <y0> <y1> <px over> <px under> [<span min> <span max>]
+hero_in() {
+	local n s
+	n="$(hero_px "$1" "$2" "$3")"
+	((n > $4 && n < $5)) || return 1
+	[[ -z "${6:-}" ]] && return 0
+	s="$(hero_span "$1" "$2" "$3")"
+	((s >= $6 && s <= $7))
+}
 hero_span() {
 	python3 - "$1" "$MON_W" "$2" "$3" <<'PY'
 import sys
@@ -136,20 +137,20 @@ PY
 }
 # its clock outlives the capture and the scans before the center opens
 # (~1.5 s): a banner that expired first is resident, and nothing re-pops
-dsp "hl.dsp.exec_cmd('notify-send -a heroapp -t 6000 -i $HEROIMG \"Screenshot\" saved')"; sleep 1
-chk "hero: the image card pops with its banner" test "$(bd)" = "banners:1 resident:0"
-capture_nested $STATE/hero-0-aw.png
+nsend -a heroapp -t 6000 -i $HEROIMG "Screenshot" saved
+chk "hero: the image card pops with its banner" until_is 3 "banners:1 resident:0" bd
+shot_until 3 $STATE/hero-0-aw.png hero_in $STATE/hero-0-aw.png $BANNER_BAND 8000 999999 150 166
 chk "hero: the banner leads with the card-wide preview" test "$(hero_px $STATE/hero-0-aw.png $BANNER_BAND)" -gt 8000
 # a 1280x720 image at the card's 328 px is 184 tall: HERO_CAP holds it to 160
 chk "hero: the banner's preview is the capped strip, not the full image" test "$(hero_span $STATE/hero-0-aw.png $BANNER_BAND)" -ge 150 -a "$(hero_span $STATE/hero-0-aw.png $BANNER_BAND)" -le 166
-hq awesome center >/dev/null; sleep 0.4
-capture_nested $STATE/hero-1-aw.png
+hq awesome center >/dev/null
+shot_until 3 $STATE/hero-1-aw.png hero_in $STATE/hero-1-aw.png $SHADE_BAND 200 3000 30 50
 chk "hero: the shade row shows no card-wide preview" test "$(hero_px $STATE/hero-1-aw.png $SHADE_BAND)" -lt 3000
 chk "hero: the shade row leads with the image's thumbnail" test "$(hero_px $STATE/hero-1-aw.png $SHADE_BAND)" -gt 200
 chk "hero: the thumbnail is icon-sized" test "$(hero_span $STATE/hero-1-aw.png $SHADE_BAND)" -ge 30 -a "$(hero_span $STATE/hero-1-aw.png $SHADE_BAND)" -le 50
-hq awesome center >/dev/null; sleep 0.4
+hq awesome center >/dev/null
 chk "hero: the explicit close re-pops the banner" test "$(bd)" = "banners:1 resident:0"
-capture_nested $STATE/hero-3-aw.png
+shot_until 3 $STATE/hero-3-aw.png hero_in $STATE/hero-3-aw.png $BANNER_BAND 8000 999999
 chk "hero: the re-popped banner shows the preview again" test "$(hero_px $STATE/hero-3-aw.png $BANNER_BAND)" -gt 8000
 nclear
 chk "hero: reset after the center-hero battery" test "$(st)" = "center:0 live:0 dnd:0"
@@ -165,8 +166,7 @@ args = GLib.Variant.new_tuple(GLib.Variant("s", "heroapp"), GLib.Variant("u", 0)
 Gio.bus_get_sync(Gio.BusType.SESSION).call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications",
                                                "Notify", args, GLib.VariantType.new("(u)"), Gio.DBusCallFlags.NONE, 5000, None)
 PY
-sleep 1
-capture_nested $STATE/hero-4-aw.png
+shot_until 3 $STATE/hero-4-aw.png hero_in $STATE/hero-4-aw.png $BANNER_BAND 8000 999999 150 166
 chk "hero: an image-data screenshot previews card-wide" test "$(hero_px $STATE/hero-4-aw.png $BANNER_BAND)" -gt 8000
 chk "hero: the image-data preview is the capped strip" test "$(hero_span $STATE/hero-4-aw.png $BANNER_BAND)" -ge 150 -a "$(hero_span $STATE/hero-4-aw.png $BANNER_BAND)" -le 166
 nclear
@@ -185,8 +185,7 @@ args = GLib.Variant.new_tuple(GLib.Variant("s", "Firefox"), GLib.Variant("u", 0)
 Gio.bus_get_sync(Gio.BusType.SESSION).call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications",
                                                "Notify", args, GLib.VariantType.new("(u)"), Gio.DBusCallFlags.NONE, 5000, None)
 PY
-sleep 1
-capture_nested $STATE/hero-5-aw.png
+shot_until 3 $STATE/hero-5-aw.png hero_in $STATE/hero-5-aw.png $BANNER_BAND 200 3000
 chk "hero: a square page icon is no card-wide preview" test "$(hero_px $STATE/hero-5-aw.png $BANNER_BAND)" -lt 3000
 chk "hero: it leads the card as its face" test "$(hero_px $STATE/hero-5-aw.png $BANNER_BAND)" -gt 200
 nclear
@@ -219,16 +218,15 @@ PY
 }
 MS="$(notify_raw image-data 1920 1080 auto)"; echo "reader: 1080p image-data answered in ${MS} ms" >&2
 chk "reader: a 1080p image-data answers within 250 ms" test "${MS:-9999}" -lt 250
-sleep 1
-capture_nested $STATE/reader-1-aw.png
+shot_until 3 $STATE/reader-1-aw.png hero_in $STATE/reader-1-aw.png $BANNER_BAND 8000 999999
 chk "reader: and previews card-wide" test "$(hero_px $STATE/reader-1-aw.png $BANNER_BAND)" -gt 8000
 nclear
 MS="$(notify_raw x-gate-junk 1920 1080 auto)"; echo "reader: an 8 MB unknown hint answered in ${MS} ms" >&2
 chk "reader: an 8 MB array under an unknown key is passed over (within 250 ms)" test "${MS:-9999}" -lt 250
 chk "reader: its card landed" until_is 3 "center:0 live:1 dnd:0" st
 nclear
-notify_raw icon_data 1280 720 auto >/dev/null; sleep 1
-capture_nested $STATE/reader-2-aw.png
+notify_raw icon_data 1280 720 auto >/dev/null
+shot_until 3 $STATE/reader-2-aw.png hero_in $STATE/reader-2-aw.png $BANNER_BAND 8000 999999
 chk "reader: the spec 1.0 name (icon_data) still previews" test "$(hero_px $STATE/reader-2-aw.png $BANNER_BAND)" -gt 8000
 nclear
 notify_raw image-data 1280 720 0 >/dev/null; sleep 1
@@ -281,8 +279,8 @@ PY
 read -r MS R <<<"$(notify_shape wrapped)"; echo "reader: 8 MB in two variants answered in ${MS} ms ($R)" >&2
 chk "reader: an 8 MB array in two variants is walked past (within 250 ms)" test "$R" = ok -a "${MS:-9999}" -lt 250
 nclear
-read -r MS R <<<"$(notify_shape be-small)"; sleep 1
-capture_nested $STATE/reader-4-aw.png
+read -r MS R <<<"$(notify_shape be-small)"
+shot_until 3 $STATE/reader-4-aw.png hero_in $STATE/reader-4-aw.png $BANNER_BAND 200 999999
 # square, as the 256 KiB bound keeps it: the card's face, not a preview
 chk "reader: a big-endian sender's image-data shows" test "$R" = ok -a "$(hero_px $STATE/reader-4-aw.png $BANNER_BAND)" -gt 200
 nclear
@@ -304,15 +302,15 @@ for i in $(seq 1 30); do
 	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications Notify \
 		susssasa{sv}i bulk 0 "" "build $i" $'step one\nstep two\nstep three' 0 0 30000 >/dev/null
 done
-sleep 0.5
-hq awesome center >/dev/null; sleep 0.6
+hq awesome center >/dev/null
 chk "stack: thirty cards wait in the center" test "$(st)" = "center:1 live:30 dnd:0"
 click $ROWX $ROWY 272
-capture_nested $STATE/stack30-aw.png
+on_page() { local b; b="$(panel_bottom "$1")"; ((b > MON_H / 2 && b < MON_H - 4)); }
+shot_until 3 $STATE/stack30-aw.png on_page $STATE/stack30-aw.png
 # spread, it runs past mid-screen and still ends on it
 chk "stack: the spread stack ends on the screen" test "$(panel_bottom $STATE/stack30-aw.png)" -gt $((MON_H / 2)) -a "$(panel_bottom $STATE/stack30-aw.png)" -lt $((MON_H - 4))
 chk "stack: spreading acted on nothing" test "$(st)" = "center:1 live:30 dnd:0"
-hq awesome center >/dev/null; sleep 0.4
+hq awesome center >/dev/null
 nclear
 
 # ---- the fallback face: listed by the helper, then worn ----------------------
@@ -342,8 +340,9 @@ print(n)
 PY
 }
 hq eval "hl.config({ plugin = { awesome = { notify = { fallback_icon_dir = \"$FACES\" } } } })" >/dev/null
-dsp "hl.dsp.exec_cmd('notify-send -t 4000 faceless \"no icon\"')"; sleep 1.2
-capture_nested $STATE/face-aw.png
+nsend -t 4000 faceless "no icon"
+faced() { (($(face_px "$1") > 200)); }
+shot_until 3 $STATE/face-aw.png faced $STATE/face-aw.png
 chk "face: an iconless card wears the listed face" test "$(face_px $STATE/face-aw.png)" -gt 200
 hq eval "hl.config({ plugin = { awesome = { notify = { fallback_icon_dir = \"\" } } } })" >/dev/null
 nclear
@@ -353,9 +352,8 @@ nclear
 # itself, so the keys fold it first; four lines fold to one.
 nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications Notify \
 	susssasa{sv}i gate 0 "" "read me" $'line one\nline two\nline three\nline four' 0 0 30000 >/dev/null
-sleep 1
 chk "shade: one card waiting" test "$(st)" = "center:0 live:1 dnd:0"
-hq awesome center >/dev/null; sleep 0.6
+hq awesome center >/dev/null
 tap down
 tap space
 capture_nested $STATE/shade-fold-aw.png
@@ -365,29 +363,29 @@ chk "shade: a click on a folded card only opens it — nothing invoked, nothing 
 capture_nested $STATE/shade-open-aw.png
 PB2="$(panel_bottom $STATE/shade-open-aw.png)"
 chk "shade: the opened card shows its whole body" test $(( PB2 - PB1 )) -ge 30
-printf 'move %s %s\nsleep 40\npress 274\nsleep 40\nrelease 274\nsleep 80\n' "$ROWX" "$ROWY" | vp; sleep 0.35
+printf 'move %s %s\nsleep 40\npress 274\nsleep 40\nrelease 274\nsleep 80\n' "$ROWX" "$ROWY" | vp; settle
 chk "shade: middle on a row does nothing" test "$(st)" = "center:1 live:1 dnd:0"
 click $ROWX $ROWY 272
 chk "shade: left on an actionless BODY dismisses it, shade stays" test "$(st)" = "center:1 live:0 dnd:0"
-dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"right me\" body')"; sleep 1
+nsend -t 30000 "right me" body
 click $ROWX $ROWY 273
 chk "shade: right on a row dismisses it" test "$(st)" = "center:1 live:0 dnd:0"
-hq awesome center >/dev/null; sleep 0.4
+hq awesome center >/dev/null
 nclear
 chk "hardening: reset after the shade click battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- acting CLOSES the shade (Android's collapse-on-click) ------------------
-nfyact gatechat "open me" 2 default Open 0; sleep 1
-hq awesome center >/dev/null; sleep 0.6
+nfyact gatechat "open me" 2 default Open 0; sent_wait
+hq awesome center >/dev/null
 chk "close-on-act: the shade is open with the firing card in it" test "$(st)" = "center:1 live:1 dnd:0"
 click $ROWX $ROWY 272
 chk "close-on-act: the primary took the card AND the shade with it" test "$(st)" = "center:0 live:0 dnd:0"
-nfyact gatechat "stay me" 2 default Open 1 resident b true; sleep 1
-hq awesome center >/dev/null; sleep 0.6
+nfyact gatechat "stay me" 2 default Open 1 resident b true; sent_wait
+hq awesome center >/dev/null
 chk "close-on-act: the resident card is in an open shade" test "$(st)" = "center:1 live:1 dnd:0"
 click $ROWX $ROWY 272
 chk "close-on-act: a resident card's action keeps card and shade both" test "$(st)" = "center:1 live:1 dnd:0"
-hq awesome center >/dev/null; sleep 0.4
+hq awesome center >/dev/null
 nclear
 nfyact_done
 chk "close-on-act: reset after the battery" test "$(st)" = "center:0 live:0 dnd:0"
@@ -399,8 +397,9 @@ chk "close-on-act: reset after the battery" test "$(st)" = "center:0 live:0 dnd:
 # flips left of it, its rows running down from the pointer's y under its
 # x - 100 (notify/menu.cpp: PAD 5, rows 28, separators 11) — the sender's
 # actions first.
-hold_menu() { printf 'move %s %s\nsleep 40\npress 272\nsleep 700\n' "$1" "$2" | vp; sleep 0.3; } # the button stays down
-release_left() { printf 'release 272\nsleep 80\n' | vp; sleep 0.3; }
+menu_up() { [[ -n "$(hq awesome menu)" ]]; }
+hold_menu() { printf 'move %s %s\nsleep 40\npress 272\n' "$1" "$2" | vp; until_ok 2 menu_up; } # the button stays down
+release_left() { printf 'release 272\nsleep 80\n' | vp; settle; }
 mrow() { echo $(($1 + 5 + 14 + 28 * $2 + 11 * $3)); } # mrow <menu y> <row> <separators above>
 corner_px() { # corner_px <frame> — near-white pixels where macOS's close button would ride
 	python3 - "$1" "$PANEL_X" "$N_TOP" <<'PY'
@@ -414,9 +413,10 @@ PY
 HX=$POPX HY=$((N_TOP + 22))
 # the pointer off the column first: the battery before left it on a card
 printf 'move %s %s\nsleep 60\n' "$((MON_W / 2))" "$((MON_H / 2))" | vp
-dsp "hl.dsp.exec_cmd('notify-send -a hov -t 30000 \"hover me\" body')"; sleep 1
-capture_nested $STATE/bare-rest.png
-printf 'move %s %s\nsleep 200\n' "$HX" "$((N_TOP + 30))" | vp; sleep 0.4
+nsend -a hov -t 30000 "hover me" body
+bannered() { (($(banner_px "$1") > 150)); }
+shot_until 3 $STATE/bare-rest.png bannered $STATE/bare-rest.png
+printf 'move %s %s\nsleep 200\n' "$HX" "$((N_TOP + 30))" | vp; settle
 capture_nested $STATE/bare-hover.png
 R0=$(corner_px $STATE/bare-rest.png) R1=$(corner_px $STATE/bare-hover.png)
 echo "bare: corner lit $R0 -> $R1" >&2
@@ -424,9 +424,8 @@ chk "bare: hover puts no close button on the card's corner" test "$R1" -le $((R0
 nclear
 INVOKED="$STATE/invoked.log"
 rm -f "$INVOKED"
-( DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 30 busctl --user monitor --match "type='signal',member='ActionInvoked'" >"$INVOKED" 2>&1 & )
-sleep 0.4
-nfyact actapp "act on me" 4 default Open later "Remind Me" 0; sleep 1
+bus_watch "$INVOKED" "type='signal',member='ActionInvoked'"
+nfyact actapp "act on me" 4 default Open later "Remind Me" 0; sent_wait
 hold_menu "$HX" "$HY"; release_left
 chk "actions: the hold opens the menu and acts on nothing" test "$(st)" = "center:0 live:1 dnd:0"
 click $((HX - 100)) "$(mrow "$HY" 0 0)" 272
@@ -439,30 +438,34 @@ nclear
 # Two cards of one app are one stack: collapsed, the newest over its deck
 # (8 px a layer); a click spreads it under a header (Show Less and a close
 # button, 24 px, right-aligned: notify/stack.cpp); right dismisses it whole.
-dsp "hl.dsp.exec_cmd('notify-send -a stk -t 30000 first body')"; sleep 0.3
-dsp "hl.dsp.exec_cmd('notify-send -a stk -t 30000 second body')"; sleep 1
-hq awesome center >/dev/null; sleep 0.6
-capture_nested $STATE/stack-deck.png
+nsend -a stk -t 30000 first body
+nsend -a stk -t 30000 second body
+hq awesome center >/dev/null
+# the deck's measure once two frames agree on it (the shade warms in)
+deck_steady() { local b; b="$(panel_bottom "$1")"; ((b > 0)) && [[ "$b" == "${PD_LAST:-}" ]] || { PD_LAST=$b; false; }; }
+shot_until 3 $STATE/stack-deck.png deck_steady $STATE/stack-deck.png
 PD="$(panel_bottom $STATE/stack-deck.png)"
 click $ROWX $ROWY 272
 chk "stack: a click spreads it and acts on nothing" test "$(st)" = "center:1 live:2 dnd:0"
-capture_nested $STATE/stack-spread.png
+bottom_over() { (($(panel_bottom "$1") > $2)); }
+bottom_under() { (($(panel_bottom "$1") < $2)); }
+shot_until 3 $STATE/stack-spread.png bottom_over $STATE/stack-spread.png $((PD + 39))
 PS="$(panel_bottom $STATE/stack-spread.png)"
 echo "stack: bottom collapsed $PD, spread $PS" >&2
 chk "stack: spread, its header and both cards stand" test $((PS - PD)) -ge 40
 click $((PANEL_X + N_W - 24 - 6 - 30)) $((CARD_Y + 12)) 272
-capture_nested $STATE/stack-less.png
+shot_until 3 $STATE/stack-less.png bottom_under $STATE/stack-less.png $((PD + 3))
 chk "stack: Show Less folds it back" test "$(panel_bottom $STATE/stack-less.png)" -le $((PD + 2))
 click $ROWX $ROWY 273
 chk "stack: right on the deck dismisses the whole stack" test "$(st)" = "center:1 live:0 dnd:0"
-hq awesome center >/dev/null; sleep 0.4
+hq awesome center >/dev/null
 nclear
 
 # ---- hover holds a banner's clock ------------------------------------------
 # its 2 s clock outlives the capture and the scan before the pointer lands
 # (~1 s); after the leave, the check at ~1.35 s is past what was left of
 # it (a resumed clock would be out) and inside a restarted one
-dsp "hl.dsp.exec_cmd('notify-send -t 2000 \"hold me\" body')"; sleep 0.4
+nsend -t 2000 "hold me" body; sleep 0.8
 capture_nested $STATE/banner-aw.png
 chk "banner: it is on screen (the card's pixels)" test "$(banner_px $STATE/banner-aw.png)" -gt 150
 printf 'move %s %s\nsleep 3200\n' "$POPX" "$((N_TOP + 20))" | vp
@@ -479,7 +482,7 @@ nclear
 # chat leads with its two mute rows and a separator (these chats offer no
 # actions, so no Reply or action rows come first). The switches persist as
 # state.tsv rows.
-pcidb gatechat Alice alice "are you coming"; sleep 1
+pcidb gatechat Alice alice "are you coming"
 chk "menu: a chat banner is up" test "$(bd)" = "banners:1 resident:0"
 hold_menu "$HX" "$HY"
 chk "menu: the hold fired no click" test "$(st)" = "center:0 live:1 dnd:0"
@@ -488,44 +491,44 @@ chk "menu: releasing on its corner picks nothing" test "$(bd)" = "banners:1 resi
 tap esc
 click "$HX" "$HY" 272
 chk "menu: esc closed it (the next click acts on the card)" test "$(st)" = "center:0 live:0 dnd:0"
-pcidb gatechat Alice alice "one"; sleep 1
+pcidb gatechat Alice alice "one"
 hold_menu "$HX" "$HY"; release_left
 click $((HX - 100)) "$(mrow "$HY" 2 1)" 272
 chk "menu: Turn Off Banners lowered the app's banner" until_is 3 "banners:0 resident:1" bd
-pcidb gatechat Bob bob "ping"; sleep 0.8
+pcidb gatechat Bob bob "ping"
 chk "menu: the app's next arrival lands silent" test "$(bd)" = "banners:0 resident:2"
 chk "menu: the switch persisted, listed by the app's name" grep -aqx $'notify-app\t1\tgatechat\tgatechat' "$AW_STATE"
 # back on from the center: the menu opens down-right of a pointer that
 # leaves it room
-hq awesome center >/dev/null; sleep 0.6
+hq awesome center >/dev/null
 hold_menu "$ROWX" "$ROWY"; release_left
 click $((ROWX + 100)) "$(mrow "$ROWY" 2 1)" 272
 chk "menu: Turn On from the center drops the row" bash -c "! grep -aq '^notify-app' '$AW_STATE'"
 chk "menu: a pick acts on no card" test "$(st)" = "center:1 live:2 dnd:0"
-hq awesome center >/dev/null; sleep 0.4
+hq awesome center >/dev/null
 nclear
 # a chat's mute is the chat's alone
-pcidb gatechat Alice alice "one"; sleep 1
+pcidb gatechat Alice alice "one"
 hold_menu "$HX" "$HY"; release_left
 click $((HX - 100)) "$(mrow "$HY" 0 0)" 272
 chk "menu: Mute for 1 Hour lowered the chat" until_is 3 "banners:0 resident:1" bd
-pcidb gatechat Alice alice "two"; sleep 0.8
+pcidb gatechat Alice alice "two"
 chk "menu: the muted chat's next message lands silent" test "$(bd)" = "banners:0 resident:1"
-pcidb gatechat Bob bob "hi"; sleep 0.8
+pcidb gatechat Bob bob "hi"
 chk "menu: another chat of the app still banners" test "$(bd)" = "banners:1 resident:1"
 chk "menu: the mute persisted, listed by the chat's title" grep -aq $'^notify-mute\t[0-9]*\tAlice\tgatechat\x1falice$' "$AW_STATE"
 nclear
-pcidb gatechat Alice alice "three"; sleep 0.8
-hq awesome center >/dev/null; sleep 0.6
+pcidb gatechat Alice alice "three"
+hq awesome center >/dev/null
 hold_menu "$ROWX" "$ROWY"; release_left
 click $((ROWX + 100)) "$(mrow "$ROWY" 0 0)" 272
 chk "menu: Unmute drops the row" bash -c "! grep -aq '^notify-mute' '$AW_STATE'"
-hq awesome center >/dev/null; sleep 0.4
+hq awesome center >/dev/null
 nclear
 # the bell's Silenced Apps lists what the card menus turned off; a click
 # turns that one back on
 app_rows() { grep -ac '^notify-app' "$AW_STATE"; }
-pcidb gatechat Alice alice "four"; sleep 1
+pcidb gatechat Alice alice "four"
 hold_menu "$HX" "$HY"; release_left
 click $((HX - 100)) "$(mrow "$HY" 2 1)" 272
 chk "silenced: the app's banners are off" until_is 3 1 app_rows
@@ -533,14 +536,14 @@ nclear
 bell_open; bell_cascade 2
 click "$BCX" "$(crow 0 0)" 272
 chk "silenced: a click in the bell's list turns them back on" until_is 3 0 app_rows
-pcidb gatechat Alice alice "five"; sleep 1
+pcidb gatechat Alice alice "five"
 chk "silenced: the app banners again" test "$(bd)" = "banners:1 resident:0"
 nclear
 # press, hold, slide onto the last row, release: Close All from the app
 # the middle banner is a mailer's whichever way the stack runs
-dsp "hl.dsp.exec_cmd('notify-send -a other -t 30000 \"stays\" body')"; sleep 0.4
-dsp "hl.dsp.exec_cmd('notify-send -a mailer -t 30000 \"report\" body')"; sleep 0.4
-dsp "hl.dsp.exec_cmd('notify-send -a mailer -t 30000 \"disk\" body')"; sleep 1
+nsend -a other -t 30000 "stays" body
+nsend -a mailer -t 30000 "report" body
+nsend -a mailer -t 30000 "disk" body
 chk "menu: three banners from two apps" test "$(bd)" = "banners:3 resident:0"
 MX=$POPX MY=$((N_TOP + 68 + 22))
 hold_menu "$MX" "$MY"
@@ -553,26 +556,27 @@ nclear
 # The shade opens on a CLICK only: hover is a no-op (the hover-peek was
 # removed by user request, 2026-09-30). The bell is a real widget — the
 # hover and the click are real pointer events over it (lib.sh bell_x).
-dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"ring me\" body')"; sleep 1
+nsend -t 30000 "ring me" body
 chk "bell: a banner is up and the shade is shut" test "$(st)" = "center:0 live:1 dnd:0"
 bell_frame || true
 BELLX="$(bell_x "$STATE/bell-probe.png")"
 chk "bell: the bell is found in the strip" test "$BELLX" -gt 0
 printf 'move %s %s\nsleep 120\nmove %s 13\nsleep 60\npress 272\nsleep 40\nrelease 272\nsleep 80\n' \
     "$(( (BELLX + MON_W / 2) / 2 ))" "$(( MON_H / 2 ))" "$BELLX" | vp
-sleep 1
+settle
 chk "bell: a click opens the shade and absorbs the banner" test "$(st)" = "center:1 live:1 dnd:0"
 chk "bell: the absorption parked the banner" test "$(bd)" = "banners:0 resident:1"
-hq awesome center >/dev/null; sleep 0.5
+hq awesome center >/dev/null
 chk "bell: the explicit close re-pops the parked banner" test "$(bd)" = "banners:1 resident:0"
 nclear
 chk "bell: reset after the bell battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- the shade's keyboard nav ----------------------------------------------
 # two apps: one app's two cards would stack, and the keys would act on the stack
-dsp "hl.dsp.exec_cmd('notify-send -a keya -t 60000 -A default=Open \"key one\" body')"; sleep 0.6
-dsp "hl.dsp.exec_cmd('notify-send -a keyb -t 60000 \"key two\" body')"; sleep 1
-hq awesome center >/dev/null; sleep 0.7
+nsend -a keya -t 60000 -A default=Open "key one" body >/dev/null &
+until_is 3 1 hq awesome count
+nsend -a keyb -t 60000 "key two" body
+hq awesome center >/dev/null
 chk "keys: two rows with the shade open" test "$(st)" = "center:1 live:2 dnd:0"
 tap down
 chk "keys: down only SELECTS — nothing acted, nothing dismissed" test "$(st)" = "center:1 live:2 dnd:0"
@@ -582,18 +586,18 @@ tap delete
 chk "keys: delete dismisses the selected row" test "$(st)" = "center:1 live:1 dnd:0"
 tap enter
 chk "keys: enter fires the primary, taking the card and the shade" test "$(st)" = "center:0 live:0 dnd:0"
-hq awesome center >/dev/null; sleep 0.5
+hq awesome center >/dev/null
 chk "keys: a fresh shade for esc to close" test "$(st)" = "center:1 live:0 dnd:0"
 tap esc
 chk "keys: esc closes the shade" test "$(st)" = "center:0 live:0 dnd:0"
 # ---- banners over fullscreen ------------------------------------------------
-dsp "hl.dsp.exec_cmd('foot --window-size-pixels=600x400')"; sleep 2
-dsp "hl.dsp.window.fullscreen()"; sleep 1
-dsp "hl.dsp.exec_cmd('notify-send -a q1 -t 30000 over-fullscreen body')"; sleep 1.2
+dsp "hl.dsp.exec_cmd('foot --window-size-pixels=600x400')"; settled foot
+dsp "hl.dsp.window.fullscreen()"; settled foot
+nsend -a q1 -t 30000 over-fullscreen body
 expect "fs-banner: a window really is fullscreen" "any(c['fullscreen'] == 2 for c in cs)"
 chk "fs-banner: the banner shows over the fullscreen window" test "$(bd)" = "banners:1 resident:0"
 nclear
-dsp "hl.dsp.window.close()"; sleep 1
+dsp "hl.dsp.window.close()"; until_is 5 0 pyc "sum(1 for c in cs if c['class'] == 'foot')"
 
 # ---- quiet automatically ------------------------------------------------------
 # The bell's Quiet Automatically ▸ (When an App Is Fullscreen, While Sharing
@@ -607,21 +611,21 @@ bell_open; bell_cascade 1
 click "$BCX" "$(crow 0 0)" 272
 chk "quiet: When an App Is Fullscreen turns on, remembered" until_is 3 1 opt_row quiet-fullscreen
 dsp "hl.dsp.exec_cmd('foot -a quietfs --window-size-pixels=600x400')"; wait_class quietfs
-dsp "hl.dsp.exec_cmd('notify-send -a q2 -t 30000 before body')"; sleep 1.2
+nsend -a q2 -t 30000 before body
 chk "quiet: a banner up before the fullscreen" test "$(bd)" = "banners:1 resident:0"
-dsp "hl.dsp.window.fullscreen()"; sleep 1
+dsp "hl.dsp.window.fullscreen()"
 chk "quiet: going fullscreen sends it to the shade" until_is 3 "banners:0 resident:1" bd
-dsp "hl.dsp.exec_cmd('notify-send -a q2 -t 30000 held body')"; sleep 1.2
+nsend -a q2 -t 30000 held body
 chk "quiet: over a fullscreen focus an arrival waits in the shade" test "$(bd)" = "banners:0 resident:2"
 chk "quiet: the probe agrees" test "$(hq awesome quiet)" = "now:1 hushed:0"
-dsp "hl.dsp.exec_cmd('notify-send -a q2 -u critical -t 30000 urgent body')"; sleep 1.2
+nsend -a q2 -u critical -t 30000 urgent body
 chk "quiet: critical punches through" test "$(bd)" = "banners:1 resident:2"
 nclear
-dsp "hl.dsp.window.fullscreen()"; sleep 1
-dsp "hl.dsp.exec_cmd('notify-send -a q2 -t 30000 free body')"; sleep 1.2
+dsp "hl.dsp.window.fullscreen()"; settled quietfs
+nsend -a q2 -t 30000 free body
 chk "quiet: out of fullscreen it banners again" test "$(bd)" = "banners:1 resident:0"
 nclear
-dsp "hl.dsp.window.close()"; sleep 1
+dsp "hl.dsp.window.close()"; until_is 5 0 pyc "sum(1 for c in cs if c['class'] == 'quietfs')"
 bell_open; bell_cascade 1
 click "$BCX" "$(crow 0 0)" 272
 chk "quiet: turned off, the row goes" until_is 3 "" opt_row quiet-fullscreen
@@ -642,7 +646,7 @@ share_stop() { kill "$SHARE_PID" 2>/dev/null; wait "$SHARE_PID" 2>/dev/null; SHA
 bell_open; bell_cascade 1
 click "$BCX" "$(crow 1 0)" 272
 chk "quiet: While Sharing the Screen turns on, remembered" until_is 3 1 opt_row quiet-sharing
-dsp "hl.dsp.exec_cmd('notify-send -a q3 -t 30000 before body')"; sleep 1.2
+nsend -a q3 -t 30000 before body
 chk "quiet: a banner up before the share" test "$(bd)" = "banners:1 resident:0"
 # a screenshot: one frame, its client still connected (its session stays)
 chk "quiet: a one-frame screenshot is copied" share_start "$STATE/shot.log" -n 1
@@ -655,9 +659,9 @@ chk "quiet: a screencast is copied" share_start "$STATE/share.log" -d
 chk "quiet: the share sends the banner to the shade" until_is 4 "banners:0 resident:1" bd
 sleep 1.5
 chk "quiet: a still screen stays shared" test "$(hq awesome quiet)" = "now:1 hushed:1"
-dsp "hl.dsp.exec_cmd('notify-send -a q3 -t 30000 held body')"; sleep 1.2
+nsend -a q3 -t 30000 held body
 chk "quiet: while shared an arrival waits in the shade" test "$(bd)" = "banners:0 resident:2"
-dsp "hl.dsp.exec_cmd('notify-send -a q3 -u critical -t 30000 urgent secret')"; sleep 1.2
+nsend -a q3 -u critical -t 30000 urgent secret
 chk "quiet: critical punches through the share" test "$(bd)" = "banners:1 resident:2"
 chk "quiet: ...holding its words back" test "$(hq awesome quiet)" = "now:1 hushed:1"
 share_stop
@@ -668,28 +672,28 @@ click "$BCX" "$(crow 1 0)" 272
 chk "quiet: sharing off, the row goes" until_is 3 "" opt_row quiet-sharing
 
 # ---- bus: closing an unknown ID is an error --------------------------------
-dsp "hl.dsp.exec_cmd('notify-send -a unk -t 30000 unknown \"close probe body\"')"; sleep 1.2
+nsend -a unk -t 30000 unknown "close probe body"
 chk "bus-close: a live card for the probe" test "$(bd)" = "banners:1 resident:0"
 chk "bus-close: unknown id is an error" bash -c "nbus() { DBUS_SESSION_BUS_ADDRESS='$NBUS' busctl --user \"\$@\"; }; nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications CloseNotification u 4294967000 2>&1 | grep -q 'Call failed: Unknown notification ID'"
 chk "bus-close: the failed close touched nothing" test "$(st)" = "center:0 live:1 dnd:0"
 nclear
 
 # ---- repop ---------------------------------------------------------------------
-dsp "hl.dsp.exec_cmd('notify-send -t 30000 \"repop me\" body')"; sleep 1
+nsend -t 30000 "repop me" body
 chk "repop: a live banner before the open" test "$(bd)" = "banners:1 resident:0"
-hq awesome center >/dev/null; sleep 0.7
+hq awesome center >/dev/null
 chk "repop: the open absorbed it" test "$(bd)" = "banners:0 resident:1"
-outside_click; sleep 0.8
+outside_click
 chk "repop: the outside-click close popped it back" test "$(bd)" = "banners:1 resident:0"
 nclear
 
 # ---- DND -----------------------------------------------------------------------
-dsp "hl.plugin.awesome.suspend()"; sleep 0.5
+dsp "hl.plugin.awesome.suspend()"
 chk "DND arms" hq_matches 'dnd:1' awesome state
 chk "DND: remembered while it holds (until turned off)" until_is 3 "-1" dndrow
-for m in one two three four; do dsp "hl.dsp.exec_cmd('notify-send -a q $m body')"; done; sleep 0.8
+for m in one two three four; do nsend -a q $m body; done
 chk "DND: four same-app arrivals queued, none shown" test "$(bd)" = "banners:0 resident:0"
-dsp "hl.plugin.awesome.suspend()"; sleep 0.6
+dsp "hl.plugin.awesome.suspend()"
 chk "DND resume: three popped, the fourth resumed resident (the per-app cap)" test "$(bd)" = "banners:3 resident:1"
 chk "DND resume: dnd off, every card kept" hq_matches '^center:0 live:4 dnd:0$' awesome state
 chk "DND: off keeps no row" until_is 3 "" dndrow
@@ -699,10 +703,10 @@ nclear
 # suspend(minutes) holds DND to a wall-clock end, which the row keeps; the
 # end comes by itself and resumes the queue.
 dnd_end_ahead() { local v; v="$(dndrow)"; [[ "$v" =~ ^[0-9]+$ ]] && ((v > $(date +%s))); }
-dsp "hl.plugin.awesome.suspend(0.1)"; sleep 0.4
+dsp "hl.plugin.awesome.suspend(0.05)"
 chk "DND timed: arms" test "$(st)" = "center:0 live:0 dnd:1"
 chk "DND timed: remembered with its end" dnd_end_ahead
-dsp "hl.dsp.exec_cmd('notify-send -a q held body')"; sleep 0.6
+nsend -a q held body
 chk "DND timed: an arrival waits" test "$(bd)" = "banners:0 resident:0"
 chk "DND timed: the end resumes it by itself" until_is 10 "banners:1 resident:0" bd
 chk "DND timed: off, its row gone" until_is 3 "" dndrow
@@ -736,18 +740,17 @@ chk "bell: off keeps no row" until_is 3 "" dndrow
 nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
 	Notify susssasa\{sv\}i dndchat 0 "" Alice one 0 3 desktop-entry s dndchat category s im.received conversation-id s cid-dnd 600 >/dev/null 2>&1
 until_is 3 "banners:0 resident:1" bd
-dsp "hl.plugin.awesome.suspend()"; sleep 0.4
+dsp "hl.plugin.awesome.suspend()"
 nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
 	Notify susssasa\{sv\}i dndchat 0 "" Alice two 0 3 desktop-entry s dndchat category s im.received conversation-id s cid-dnd 30000 >/dev/null 2>&1
-sleep 1
 chk "DND: a merge onto a shaded card stays in the shade" test "$(bd)" = "banners:0 resident:1"
 chk "DND: the merge landed on the one card" test "$(st)" = "center:0 live:1 dnd:1"
-dsp "hl.plugin.awesome.suspend()"; sleep 0.4
+dsp "hl.plugin.awesome.suspend()"
 nclear
 
 # ---- hostile hints ---------------------------------------------------------------
-dsp "hl.dsp.exec_cmd('notify-send -h int:category:5 \"badcat\" body')"
-dsp "hl.dsp.exec_cmd('notify-send -h string:category:im.received \"convo\" body')"; sleep 1
+nsend -h int:category:5 "badcat" body
+nsend -h string:category:im.received "convo" body
 chk "hostile: wrong-typed category survived, both cards landed" test "$(st)" = "center:0 live:2 dnd:0"
 nclear
 
@@ -758,11 +761,9 @@ chk "reply: NotificationReplied is on the interface" \
 	bash -c "nbus() { DBUS_SESSION_BUS_ADDRESS='$NBUS' busctl --user \"\$@\"; }; nbus introspect org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications | grep -q NotificationReplied"
 REPLIED="$STATE/replied.log"
 rm -f "$REPLIED"
-( DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 60 busctl --user monitor --match "type='signal',member='NotificationReplied'" >"$REPLIED" 2>&1 & )
-sleep 0.5
+bus_watch "$REPLIED" "type='signal',member='NotificationReplied'"
 conv_reply_notify Telegram "Alice" "gone already"
-sleep 1
-hq awesome center >/dev/null; sleep 0.7
+hq awesome center >/dev/null
 tap down
 tap tab
 tap esc
@@ -770,8 +771,8 @@ chk "reply: a card whose sender left the bus opens no field (esc closes the shad
 nclear
 chk "reply: PyGObject for a sender that stays on the bus" python3 -c 'from gi.repository import Gio'
 conv_reply_sender Telegram "Alice" "are you around?"
-sleep 1
-hq awesome center >/dev/null; sleep 0.7
+sent_wait
+hq awesome center >/dev/null
 chk "reply: the chat card is in the shade" test "$(st)" = "center:1 live:1 dnd:0"
 tap down
 tap tab
@@ -784,30 +785,27 @@ tap tab
 tap 35
 tap 23
 tap enter
-sleep 0.6
 chk "reply: enter sent it and the card went" test "$(st)" = "center:1 live:0 dnd:0"
-chk "reply: NotificationReplied carried the typed text" grep -q 'STRING "hi"' "$REPLIED"
+chk "reply: NotificationReplied carried the typed text" until_ok 3 grep -q 'STRING "hi"' "$REPLIED"
 kill "$REPLY_SENDER" 2>/dev/null; wait "$REPLY_SENDER" 2>/dev/null
-hq awesome center >/dev/null; sleep 0.4
+hq awesome center >/dev/null
 nclear
 
 # Reply from a banner's menu (its first row): the field opens in the banner,
 # which holds its clock and takes the typing; Enter sends from there
 REPLIED2="$STATE/replied-banner.log"
 rm -f "$REPLIED2"
-( DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 60 busctl --user monitor --match "type='signal',member='NotificationReplied'" >"$REPLIED2" 2>&1 & )
-sleep 0.5
+bus_watch "$REPLIED2" "type='signal',member='NotificationReplied'"
 conv_reply_sender Telegram "Alice" "are you around?"
-sleep 1
+sent_wait
 hold_menu "$HX" "$HY"; release_left
 click $((HX - 100)) "$(mrow "$HY" 0 0)" 272
 tap 35
 tap 23
 chk "reply: a banner's field takes the typing and acts on nothing" test "$(st)" = "center:0 live:1 dnd:0"
 tap enter
-sleep 0.6
-chk "reply: enter sent it from the banner and the card went" test "$(st)" = "center:0 live:0 dnd:0"
-chk "reply: NotificationReplied carried the banner's text" grep -q 'STRING "hi"' "$REPLIED2"
+chk "reply: enter sent it from the banner and the card went" until_is 3 "center:0 live:0 dnd:0" st
+chk "reply: NotificationReplied carried the banner's text" until_ok 3 grep -q 'STRING "hi"' "$REPLIED2"
 kill "$REPLY_SENDER" 2>/dev/null; wait "$REPLY_SENDER" 2>/dev/null
 nclear
 
@@ -821,18 +819,19 @@ nclear
 # fits from the newest end, and lets the sender close one message alone.
 TGIDS=$STATE/tg-ids TGSIG=$STATE/tg-signals.log
 rm -f "$TGIDS" "$TGSIG"
-( DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 60 busctl --user monitor --match "type='signal',interface='org.freedesktop.Notifications'" >"$TGSIG" 2>&1 & )
-sleep 0.4
+bus_watch "$TGSIG" "type='signal',interface='org.freedesktop.Notifications'"
 tgchat "$TGIDS" "Rice Club|Alice|anyone tried the new blur passes?" "Rice Club|Bob|yeah, size 5 with 2 passes looks clean" \
 	"Rice Club|Alice|screenshot pls" "Rice Club|Minh|Photo" \
 	"Rice Club|Bob|also turn off new_optimizations if your wallpaper is animated, otherwise the blur under the bar lags a frame behind and looks like it breathes" \
 	"Rice Club|Charlotte|ok" "Rice Club|Bob|reacted to your message" "Rice Club|Alice|nice, thanks Bob!"
 until_is 5 8 bash -c "wc -l <'$TGIDS'"
-sleep 0.8
 chk "tg: eight messages, one card" test "$(st)" = "center:0 live:1 dnd:0"
 chk "tg: every message answers for an id of its own" test "$(sort -u "$TGIDS" | wc -l)" -eq 8
+# a card with a picture waits for its pixels, and "shown" is "" until a
+# frame painted it: these read what is drawn once it is
+shown_ends() { local s; s="$(hq awesome shown)"; [[ "${s##*$'\n'}" == "$1" ]]; }
+chk "tg: the banner ends on the newest message" until_ok 3 shown_ends "<b>Alice</b>: nice, thanks Bob!"
 SHOWN="$(hq awesome shown)"
-chk "tg: the banner ends on the newest message" test "${SHOWN##*$'\n'}" = "<b>Alice</b>: nice, thanks Bob!"
 # the stored log holds seven; the banner's lines hold fewer of them
 chk "tg: the window is fitted, the stored log's oldest left out" test "${SHOWN#*yeah, size 5}" = "$SHOWN"
 hold_menu "$HX" "$HY"; release_left
@@ -840,18 +839,16 @@ click $((HX - 100)) "$(mrow "$HY" 0 0)" 272
 tap 35
 tap 23
 tap enter
-sleep 0.6
-chk "tg: Reply quoted the newest message" test "$(sigs "$TGSIG" | awk '$1 == "NotificationReplied" { print $2; exit }')" = "$(tail -1 "$TGIDS")"
+tg_replied() { [[ "$(sigs "$TGSIG" | awk '$1 == "NotificationReplied" { print $2; exit }')" == "$(tail -1 "$TGIDS")" ]]; }
+chk "tg: Reply quoted the newest message" until_ok 3 tg_replied
 chk "tg: the card's close closed every message's notification" test "$(sigs "$TGSIG" | awk '$1 == "NotificationClosed" && $3 == 2 { print $2 }' | sort -u | wc -l)" -eq 8
 nfyact_done
 nclear
 tgchat "$TGIDS" "Trip|Linh|bus leaves at 7:30" "Trip|Quang|packing list" "Trip|Linh|see you there"
 until_is 5 3 bash -c "wc -l <'$TGIDS'"
 nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications CloseNotification u "$(tail -1 "$TGIDS")"
-sleep 0.6
 chk "tg: the sender closing one message keeps its chat" test "$(st)" = "center:0 live:1 dnd:0"
-SHOWN="$(hq awesome shown)"
-chk "tg: and takes that message's line alone" test "${SHOWN##*$'\n'}" = "<b>Quang</b>: packing list"
+chk "tg: and takes that message's line alone" until_ok 3 shown_ends "<b>Quang</b>: packing list"
 for i in 1 2; do
 	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications CloseNotification u "$(sed -n ${i}p "$TGIDS")"
 done
@@ -859,14 +856,12 @@ chk "tg: the chat's last message takes its card" until_is 3 "center:0 live:0 dnd
 nfyact_done
 tgchat "$TGIDS" "Chat A|Xu|one" "Chat B|Yo|two" "Chat A|Xu|three"
 until_is 5 3 bash -c "wc -l <'$TGIDS'"
-sleep 0.4
-chk "tg: a chat's news leads the column" test "$(hq awesome topline)" = "<b>Xu</b>: three"
+chk "tg: a chat's news leads the column" until_is 3 "<b>Xu</b>: three" hq awesome topline
 nfyact_done
 nclear
 tgchat "$TGIDS" "Telegram Desktop||You have a new message" "Telegram Desktop||You have a new message" "Telegram Desktop||You have a new message"
 until_is 5 3 bash -c "wc -l <'$TGIDS'"
-sleep 0.6
-chk "tg: a hidden preview's repeats show once" test "$(hq awesome shown)" = "You have a new message"
+chk "tg: a hidden preview's repeats show once" until_is 3 "You have a new message" hq awesome shown
 nfyact_done
 nclear
 # a client that keeps one id for its chat replaces it with every message
@@ -906,13 +901,13 @@ print(1 if r > 150 and b > 120 and g < 110 else 0)
 PY
 }
 tgchat "$TGIDS" "Releases (Dev)|Mira|v1 is tagged" "@$STATE/tg-forum.raw"
-sleep 1.2
+until_is 5 1 bash -c "wc -l <'$TGIDS'"
 capture_nested $STATE/tg-forum.png
 chk "tg: a shaped chat picture keeps its shape" test "$(face_corner $STATE/tg-forum.png)" = 1
 nfyact_done
 nclear
 tgchat "$TGIDS" "Plain Group|Mira|hello" "@$STATE/tg-square.raw"
-sleep 1.2
+until_is 5 1 bash -c "wc -l <'$TGIDS'"
 capture_nested $STATE/tg-square.png
 chk "tg: an opaque square chat picture is cut round" test "$(face_corner $STATE/tg-square.png)" = 0
 nfyact_done
@@ -931,13 +926,14 @@ for i in $(seq 1 20); do
 	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
 		Notify susssasa\{sv\}i "flood$i" 0 "" "sound" body 0 1 sound-name s gate 30000 >/dev/null 2>&1
 done
-sleep 1.5
+until_is 3 4 bash -c "wc -l < '$STATE/hang-sound.pid'"
+sleep 0.5 # a fifth spawn would land in this beat
 chk "sound: the spawn cap holds" test "$(wc -l < "$STATE/hang-sound.pid" 2>/dev/null || echo 0)" -eq 4
 chk "sound: the capped spawns still carried every card" test "$(st)" = "center:0 live:20 dnd:0"
 # every SOUND slot is held: the volume keys still have theirs
 : > "$STATE/wpctl.log"
-dsp "hl.plugin.awesome.volume_up()"; sleep 0.5
-chk "sound: a sound flood leaves the volume keys their own slots" grep -Fxq "set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+" "$STATE/wpctl.log"
+dsp "hl.plugin.awesome.volume_up()"
+chk "sound: a sound flood leaves the volume keys their own slots" until_ok 3 grep -Fxq "set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+" "$STATE/wpctl.log"
 xargs -r kill 2>/dev/null <"$STATE/hang-sound.pid"
 rm -f "$STATE/hang-sound" "${STATE}/hang-sound.pid"
 nclear
@@ -948,12 +944,11 @@ chk "sound: the flood cleared" test "$(st)" = "center:0 live:0 dnd:0"
 # shade opening over it ends it rather than parking it as a row.
 nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
 	Notify susssasa\{sv\}i "shot" 0 "" "Screenshot" "copied" 0 1 transient b true 30000 >/dev/null 2>&1
-sleep 0.6
 chk "transient: the card is live" test "$(st)" = "center:0 live:1 dnd:0"
 chk "transient: no banner or resident on the badge" test "$(bd)" = "banners:0 resident:0"
-hq awesome center >/dev/null; sleep 0.4
+hq awesome center >/dev/null
 chk "transient: opening the shade ends the card" test "$(st)" = "center:1 live:0 dnd:0"
-hq awesome center >/dev/null; sleep 0.4
+hq awesome center >/dev/null
 chk "transient: closing the shade brings nothing back" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- the module leaves the plugin exactly as the preflight found it --------

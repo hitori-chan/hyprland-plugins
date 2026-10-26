@@ -7,14 +7,14 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 # the tail of a fast double-click on a click-to-close window (Telegram's
 # image viewer backdrop) lands after the unmap: it must be swallowed, not
 # focus-and-raise whatever sat beneath (it flipped the live stack).
-dsp "hl.dsp.exec_cmd('foot -a corpseA')"; sleep 1.6
+dsp "hl.dsp.exec_cmd('foot -a corpseA')"; settled corpseA
 # The placement store intentionally remembers the same class geometry. Move
 # these two viewers apart after spawn so the dying viewer always has an
 # exposed corner to receive the tail of the click burst.
-dsp "hl.dsp.window.move({x=$((MON_W / 10)), y=$((MON_H / 6))})"; sleep 0.4
-dsp "hl.dsp.exec_cmd('foot -a corpseB')"; sleep 1.6
-dsp "hl.dsp.window.move({x=$((MON_W / 2)), y=$((MON_H / 8))})"; sleep 0.4
-dsp "hl.dsp.exec_cmd('foot -a corpseB -F')"; sleep 1.6
+dsp "hl.dsp.window.move({x=$((MON_W / 10)), y=$((MON_H / 6))})"; settled corpseA
+dsp "hl.dsp.exec_cmd('foot -a corpseB')"; settled corpseB
+dsp "hl.dsp.window.move({x=$((MON_W / 2)), y=$((MON_H / 8))})"; settled corpseB
+dsp "hl.dsp.exec_cmd('foot -a corpseB -F')"; settled corpseB 2
 # a point over corpseA that corpseB doesn't cover: the press that must die
 P="$(clients | python3 -c "
 import json,sys
@@ -33,32 +33,32 @@ print(next(c['address'] for c in json.load(sys.stdin) if c['fullscreen']==2))")"
 ( { printf "move ${P% *} ${P#* }\nsleep 30\n"; for i in 1 2 3 4 5; do printf "press 272\nsleep 40\nrelease 272\nsleep 110\n"; done; } | vp ) &
 burst_pid=$!
 sleep 0.12; dsp "hl.dsp.window.close({window=\"address:$V\"})"
-wait "$burst_pid" 2>/dev/null; sleep 0.9
+wait "$burst_pid" 2>/dev/null; until_ok 3 gone "$V"; settle
 expect "corpse guard: click burst through a dying viewer keeps the stack" \
 	"cs[-1]['class']=='corpseB'"
 chk "corpse guard: focus stayed with the viewer's app" active_window_class_is corpseB
 for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in json.load(sys.stdin) if c['class'] in ('corpseA','corpseB')]"); do
 	dsp "hl.dsp.window.close({window=\"address:$a\"})"
 done
-sleep 0.8
+until_is 5 0 pyc "sum(1 for c in cs if c['class'] in ('corpseA','corpseB'))"
 
 # ---- fullscreen tuck (the click policy) -----------------------------------
 # clicking a fullscreen window tucks a floater flagged above it (the
 # compositor's pointer-focus raise sets that flag mid-viewer) back behind —
 # by FLAG ONLY: its stack position must survive the viewer, or it comes
 # back buried under every maximized window (reproduced live).
-dsp "hl.dsp.exec_cmd('foot -a tuckmax')"; sleep 1.6
-dsp "hl.plugin.awesome.maximize()"; sleep 0.5
-dsp "hl.dsp.exec_cmd('foot -a tuckfloat')"; sleep 1.6
-dsp "hl.dsp.window.move({x=500, y=300})"; dsp "hl.dsp.window.resize({x=500, y=300})"; sleep 0.4
-dsp "hl.dsp.exec_cmd('foot -a tuckfs -F')"; sleep 1.6
+dsp "hl.dsp.exec_cmd('foot -a tuckmax')"; settled tuckmax
+dsp "hl.plugin.awesome.maximize()"; settled tuckmax
+dsp "hl.dsp.exec_cmd('foot -a tuckfloat')"; settled tuckfloat
+dsp "hl.dsp.window.move({x=500, y=300})"; dsp "hl.dsp.window.resize({x=500, y=300})"; settled tuckfloat
+dsp "hl.dsp.exec_cmd('foot -a tuckfs -F')"; settled tuckfs
 TF="$(clients | python3 -c "
 import json,sys
 print(next(c['address'] for c in json.load(sys.stdin) if c['class']=='tuckfloat'))")"
 V="$(clients | python3 -c "
 import json,sys
 print(next(c['address'] for c in json.load(sys.stdin) if c['fullscreen']==2))")"
-dsp "hl.dsp.window.alter_zorder({mode=\"top\", window=\"address:$TF\"})"; sleep 0.3
+dsp "hl.dsp.window.alter_zorder({mode=\"top\", window=\"address:$TF\"})"
 # a point the floater does not cover: the raise-click must resolve to the
 # fullscreen window and fire the tuck
 P="$(clients | python3 -c "
@@ -67,15 +67,15 @@ F=next(c for c in json.load(sys.stdin) if c['class']=='tuckfloat')
 x = F['at'][0]-80 if F['at'][0] >= 110 else F['at'][0]+F['size'][0]+80
 print(int(x), int(F['at'][1]+50))")"
 printf "move ${P% *} ${P#* }\nsleep 30\npress 272\nsleep 40\nrelease 272\nsleep 60\n" | vp
-sleep 0.6
-dsp "hl.dsp.window.close({window=\"address:$V\"})"; sleep 0.9
+settle
+dsp "hl.dsp.window.close({window=\"address:$V\"})"; until_ok 3 gone "$V"; settle
 expect "fullscreen tuck: the flagged floater survives the viewer on top" \
 	"[c['class'] for c in cs if c['class'].startswith('tuck')][-1]=='tuckfloat'"
 chk "fullscreen tuck: floater focused after the viewer closes" active_window_class_is tuckfloat
 for a in $(clients | python3 -c "import json,sys;[print(c['address']) for c in json.load(sys.stdin) if c['class'].startswith('tuck')]"); do
 	dsp "hl.dsp.window.close({window=\"address:$a\"})"
 done
-sleep 0.8
+until_is 5 0 pyc "sum(1 for c in cs if c['class'].startswith('tuck'))"
 
 # ---- config reload --------------------------------------------------------
 # The shell re-resolves its disk-loaded icons from config.reloaded: the bar
@@ -92,10 +92,10 @@ sleep 1.2
 retarget || { echo "nested retarget FAILED after reload"; exit 1; }
 chk "reload: the monolith is alive (one plugin)" test "$(hq plugin list | grep -c Plugin)" = 1
 chk "reload: the model still answers" hq_matches '^center:' awesome state
-printf "move %s 13\nsleep 30\npress 272\nsleep 30\nrelease 272\nsleep 120\n" "$(tag_cx 3)" | vp; sleep 0.6
-chk "reload: the strip still takes a click (tag 3)" test "$(ws)" = 3
-printf "move %s 13\nsleep 30\npress 272\nsleep 30\nrelease 272\nsleep 120\n" "$(tag_cx 1)" | vp; sleep 0.6
-chk "reload: and back on tag 1" test "$(ws)" = 1
+printf "move %s 13\nsleep 30\npress 272\nsleep 30\nrelease 272\nsleep 120\n" "$(tag_cx 3)" | vp
+chk "reload: the strip still takes a click (tag 3)" until_is 3 3 ws
+printf "move %s 13\nsleep 30\npress 272\nsleep 30\nrelease 272\nsleep 120\n" "$(tag_cx 1)" | vp
+chk "reload: and back on tag 1" until_is 3 1 ws
 
 # ---- log hygiene ----------------------------------------------------------
 # a missing or empty log is no evidence of a clean one
@@ -123,11 +123,11 @@ chk "teardown: the monolith owns an active sound helper" test -s "$STATE/hang-so
 # plugin hears: its spot is recorded as the plugin stops, before the final
 # state flush.
 dsp "hl.dsp.exec_cmd('foot -a exitfoot --window-size-pixels=400x300')"
-for _ in $(seq 1 30); do clients | grep -q '"class": *"exitfoot"' && break; sleep 0.1; done
+settled exitfoot
 EF="$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='exitfoot'), ''))")"
-dsp "hl.dsp.window.move({x = 140, y = 160, window = \"address:$EF\"})"; sleep 0.5
+dsp "hl.dsp.window.move({x = 140, y = 160, window = \"address:$EF\"})"; settled exitfoot
 NESTED_PID="$(validated_nested_pid 2>/dev/null)"
 chk "teardown: nested compositor pid is known" test -n "$NESTED_PID"
 kill_nested

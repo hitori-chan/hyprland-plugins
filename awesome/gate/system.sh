@@ -8,6 +8,9 @@
 # system bus.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 ctl_part() { hq awesome controls | tr ' ' '\n' | grep "^$1:" | cut -d: -f2; } # ctl_part <name>: a published value
+# idle: every wpctl set has run and been read back (a readback's card is
+# posted in the same dispatch that retires it)
+idle() { until_is 5 0 hq awesome busy; }
 
 # the load reads every level the control center shows (the fake sink's
 # 0.56, its source muted)
@@ -15,13 +18,13 @@ chk "system: the volume and the mic are published at load" test "$(ctl_part volu
 
 # ---- the wpctl process path ------------------------------------------------
 : > "$STATE/wpctl.log"
-dsp "hl.plugin.awesome.volume_up()"; sleep 0.4
+dsp "hl.plugin.awesome.volume_up()"; idle
 chk "system: volume up uses the capped relative wpctl command" grep -Fxq "set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+" "$STATE/wpctl.log"
 chk "system: volume up readback produces a card" test "$(st)" = "center:0 live:1 dnd:0"
-hq awesome clear >/dev/null; sleep 0.4
+hq awesome clear >/dev/null
 
 : > "$STATE/flood-wpctl"
-dsp "hl.plugin.awesome.volume_up()"; sleep 0.5
+dsp "hl.plugin.awesome.volume_up()"; idle
 flood_stopped() { # the reader closed the pipe, or killed the producer
 	local pid
 	[[ -s "$STATE/flood-wpctl.closed" ]] && return 0
@@ -34,13 +37,13 @@ chk "system: flood leaves the nested compositor responsive" hq_matches '^center:
 rm -f "$STATE/flood-wpctl" "$STATE/flood-wpctl.closed" "$STATE/flood-wpctl.pid"
 
 : > "$STATE/wpctl.log"
-dsp "hl.plugin.awesome.volume_down()"; sleep 0.4
+dsp "hl.plugin.awesome.volume_down()"; idle
 chk "system: volume down uses the relative wpctl command" grep -Fxq "set-volume @DEFAULT_AUDIO_SINK@ 5%-" "$STATE/wpctl.log"
 chk "system: volume down readback produces a card" test "$(st)" = "center:0 live:1 dnd:0"
-hq awesome clear >/dev/null; sleep 0.4
+hq awesome clear >/dev/null
 
 : > "$STATE/wpctl.log"
-dsp "(function() for _ = 1, 32 do hl.plugin.awesome.volume_up() end return hl.dsp.no_op() end)()"; sleep 0.8
+dsp "(function() for _ = 1, 32 do hl.plugin.awesome.volume_up() end return hl.dsp.no_op() end)()"; idle
 # one set in flight per device: the first press runs, the other 31
 # accumulate (capped at 20 steps) into ONE more set — never 32 racing
 # read-modify-writes inside wpctl
@@ -50,28 +53,31 @@ burst_serialized() {
 }
 chk "system: a repeat burst serializes into one accumulated set" burst_serialized
 chk "system: the capped chains still produced one card" test "$(st)" = "center:0 live:1 dnd:0"
-hq awesome clear >/dev/null; sleep 0.4
+hq awesome clear >/dev/null
 
 # a level already past 100% (set elsewhere) is never pulled down to it: the
-# first press reads 1.50 back, the second limits at that level, not at 1.0
+# first press reads 1.50 back, the second limits at that level, not at 1.0.
+# Elsewhere is later than the last readback's trust (system/audio.cpp's
+# LEVEL_TRUST, 1 s): within it a raise limits at the level it read.
 printf '1.50\n' > "$STATE/wpctl-level"
+sleep 1.1
 : > "$STATE/wpctl.log"
-dsp "hl.plugin.awesome.volume_up()"; sleep 0.4
-dsp "hl.plugin.awesome.volume_up()"; sleep 0.4
+dsp "hl.plugin.awesome.volume_up()"; idle
+dsp "hl.plugin.awesome.volume_up()"; idle
 chk "system: volume up keeps a level past 100%" grep -Fxq "set-volume -l 1.505 @DEFAULT_AUDIO_SINK@ 5%+" "$STATE/wpctl.log"
 rm -f "$STATE/wpctl-level"
-hq awesome clear >/dev/null; sleep 0.4
+hq awesome clear >/dev/null
 
 # an OSD is never a shade row: opening the shade drops the live capsule,
 # and a press with it open moves the shade's slider and posts no capsule
-dsp "hl.plugin.awesome.volume_up()"; sleep 0.4
+dsp "hl.plugin.awesome.volume_up()"; idle
 chk "system: the capsule is up before the shade opens" test "$(st)" = "center:0 live:1 dnd:0"
-hq awesome center >/dev/null; sleep 0.4
+hq awesome center >/dev/null
 chk "system: opening the shade drops the capsule" test "$(st)" = "center:1 live:0 dnd:0"
-dsp "hl.plugin.awesome.volume_up()"; sleep 0.4
+dsp "hl.plugin.awesome.volume_up()"; idle
 chk "system: a press under the open shade moves its slider, no capsule" test "$(st)" = "center:1 live:0 dnd:0"
 chk "system: ...and leaves no row (nothing on the badge)" test "$(bd)" = "banners:0 resident:0"
-hq awesome center >/dev/null; sleep 0.4
+hq awesome center >/dev/null
 nclear
 chk "system: the shade closes clean" test "$(st)" = "center:0 live:0 dnd:0"
 
@@ -113,19 +119,19 @@ rm -f "$STATE/wpctl-level"
 nclear
 
 : > "$STATE/wpctl.log"
-dsp "hl.plugin.awesome.mute()"; sleep 0.4
+dsp "hl.plugin.awesome.mute()"; idle
 chk "system: mute uses the sink toggle" grep -Fxq "set-mute @DEFAULT_AUDIO_SINK@ toggle" "$STATE/wpctl.log"
 chk "system: the mute readback posts a volume card" test "$(st)" = "center:0 live:1 dnd:0"
-dsp "hl.plugin.awesome.mute()"; sleep 0.4
+dsp "hl.plugin.awesome.mute()"; idle
 chk "system: the second mute readback replaces it (one fixed-id card)" test "$(st)" = "center:0 live:1 dnd:0"
-hq awesome clear >/dev/null; sleep 0.4
+hq awesome clear >/dev/null
 
 : > "$STATE/wpctl.log"
-dsp "hl.plugin.awesome.mic_mute()"; sleep 0.4
+dsp "hl.plugin.awesome.mic_mute()"; idle
 chk "system: mic mute uses the source toggle" grep -Fxq "set-mute @DEFAULT_AUDIO_SOURCE@ toggle" "$STATE/wpctl.log"
 chk "system: the mic readback posts a card" test "$(st)" = "center:0 live:1 dnd:0"
-dsp "hl.plugin.awesome.mic_mute()"; sleep 0.4
-hq awesome clear >/dev/null; sleep 0.4
+dsp "hl.plugin.awesome.mic_mute()"; idle
+hq awesome clear >/dev/null
 
 # ---- the logind brightness path --------------------------------------------
 # The plugin's real path — sysfs read, logind SetBrightness over the system
@@ -147,17 +153,17 @@ brt_wait() { # brt_wait <up|down> <base> — poll until the fake backlight moved
 }
 BSTART="$(BRT)"
 chk "system: the fake backlight is seeded (500 of 1000)" test "$BSTART" = 500
-dsp "hl.plugin.awesome.brightness_up()"; sleep 0.4
+dsp "hl.plugin.awesome.brightness_up()"
 BAFTER_UP="$(brt_wait up "$BSTART")"
 chk "system: brightness_up sets +5% through logind" test "$BAFTER_UP" = 550
 chk "system: the set went through the logind session path" grep -q "SetBrightness /org/freedesktop/login1/session/[a-z0-9]* gate0 550" "$STATE/logind.log"
-chk "system: brightness_up posts the percent card on logind's ack" test "$(st)" = "center:0 live:1 dnd:0"
-hq awesome clear >/dev/null; sleep 0.4
-dsp "hl.plugin.awesome.brightness_down()"; sleep 0.4
+chk "system: brightness_up posts the percent card on logind's ack" until_is 3 "center:0 live:1 dnd:0" st
+hq awesome clear >/dev/null
+dsp "hl.plugin.awesome.brightness_down()"
 BAFTER_DOWN="$(brt_wait down "$BAFTER_UP")"
 chk "system: brightness_down moved it back" test "$BAFTER_DOWN" = 500
-chk "system: brightness_down posts the percent card" test "$(st)" = "center:0 live:1 dnd:0"
-hq awesome clear >/dev/null; sleep 0.4
+chk "system: brightness_down posts the percent card" until_is 3 "center:0 live:1 dnd:0" st
+hq awesome clear >/dev/null
 
 # ---- the keyboard light: the kernel's *kbd_backlight LED, the same path ----
 KDIR="$STATE/leds/gate::kbd_backlight"
@@ -169,7 +175,7 @@ chk "system: keyboard_light_up sets +5% through logind" until_is 4 110 KBT
 chk "system: the keyboard's set names the LED" grep -q "SetBrightness /org/freedesktop/login1/session/[a-z0-9]* gate::kbd_backlight 110" "$STATE/logind.log"
 chk "system: it posts the percent card" until_is 3 "center:0 live:1 dnd:0" st
 chk "system: ...and publishes the level" until_is 3 55 ctl_part keyboard
-hq awesome clear >/dev/null; sleep 0.4
+hq awesome clear >/dev/null
 dsp "hl.plugin.awesome.keyboard_light_down()"
 dsp "hl.plugin.awesome.keyboard_light_down()"
 chk "system: two steps down land at 90" until_is 4 90 KBT
@@ -183,7 +189,7 @@ hq awesome clear >/dev/null; sleep 0.4
 printf '0.50\n' > "$STATE/wpctl-level" # the sink reads 50 % when the shade opens
 : > "$STATE/wpctl.log"
 wlog_has() { grep -Fxq "$1" "$STATE/wpctl.log" && echo 1; } # wlog_has <line>: the fake wpctl ran it
-hq awesome center >/dev/null; sleep 0.8
+hq awesome center >/dev/null
 chk "panel: the shade opens on the volume as it is now" until_is 3 50 ctl_part volume
 capture_nested "$STATE/panel.png"
 chk "panel: three tiles and three levels are drawn" python3 - "$STATE/panel.png" "$(tile_cx 0)" "$(tile_cx 1)" "$(tile_cx 2)" "$TILE_CY" \
@@ -221,7 +227,7 @@ chk "panel: the wheel steps the display as its key does" until_is 4 800 BRT
 dsp "hl.plugin.awesome.keyboard_light_up()" # from the 45 % the keyboard's checks left
 chk "panel: a key moves the keyboard's slider" until_is 4 50 ctl_part keyboard
 chk "panel: ...and posts no capsule over it" test "$(st)" = "center:1 live:0 dnd:0"
-printf 'move %s %s\nsleep 60\nscroll 0 -15\nsleep 200\n' "$(knob_x 20)" "$(level_cy 2)" | vp; sleep 0.4
+printf 'move %s %s\nsleep 60\nscroll 0 -15\nsleep 200\n' "$(knob_x 20)" "$(level_cy 2)" | vp
 chk "panel: the wheel raises the volume as its key does" until_is 3 1 wlog_has "set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"
 chk "panel: ...and its slider reads 55 back" until_is 3 55 ctl_part volume
 click "$(knob_x 40)" "$(level_cy 2)" 272
@@ -238,13 +244,13 @@ click "$((PANEL_X + 120))" "$(($(level_cy 2) + 5 + 28 + 14))" 272
 chk "panel: a pick makes it the default" until_is 3 1 wlog_has "set-default 42"
 chk "panel: ...the outputs read it back" until_is 3 "41 *42" hq awesome outputs
 chk "panel: ...and the menu closed on the pick" test -z "$(hq awesome menu)"
-click "$((PANEL_X + 60))" "$(level_cy 0)" 273; sleep 0.4
+click "$((PANEL_X + 60))" "$(level_cy 0)" 273
 chk "panel: the display's right click opens no menu" test -z "$(hq awesome menu)"
 rm -f "$STATE/wpctl-level" "$STATE/wpctl-mutes" "$STATE/wpctl-default"
-hq awesome center >/dev/null; sleep 0.4
+hq awesome center >/dev/null
 dsp "hl.plugin.awesome.keyboard_light_down()"
 chk "panel: closed, a key posts its capsule again" until_is 3 "center:0 live:1 dnd:0" st
-hq awesome clear >/dev/null; sleep 0.4
+hq awesome clear >/dev/null
 
 # ---- dark displays put the keyboard out (system/light.cpp) ------------------
 # Every display off takes the keyboard light with it, quietly; the first one
@@ -273,14 +279,14 @@ hq awesome clear >/dev/null; sleep 0.4
 ALS="$STATE/als"
 krow() { echo $(($(level_cy 1) + 5 + 14)); } # the keyboard menu's one row, under the pointer
 chk "room: a light sensor is found, the room not followed" test "$(ctl_part room)" = 0
-hq awesome center >/dev/null; sleep 0.8
+hq awesome center >/dev/null
 click "$((PANEL_X + 60))" "$(level_cy 1)" 273
 chk "room: the keyboard's right click offers Follow the Room" until_is 3 "Follow the Room" hq awesome menu
 click "$((PANEL_X + 120))" "$(krow)" 272
 chk "room: picking it follows the room" until_is 3 1 ctl_part room
 chk "room: ...claiming the sensor" grep -qx "ClaimLight" "$STATE/logind.log"
 chk "room: a lit room puts the keyboard out" until_is 4 0 KBT
-hq awesome center >/dev/null; sleep 0.4
+hq awesome center >/dev/null
 printf '5
 ' > "$ALS"
 chk "room: a dark room lights it at the user's level" until_is 4 10 KBT
@@ -302,13 +308,13 @@ chk "room: dark displays still win" until_is 4 0 KBT
 dsp "hl.dsp.dpms({action = 'on'})"
 chk "room: the wake lights it as the room says" until_is 4 10 KBT
 hq awesome clear >/dev/null; sleep 0.4
-hq awesome center >/dev/null; sleep 0.8
+hq awesome center >/dev/null
 click "$((PANEL_X + 60))" "$(level_cy 1)" 273
 chk "room: the menu checks it" until_is 3 "Follow the Room*" hq awesome menu
 click "$((PANEL_X + 120))" "$(krow)" 272
 chk "room: picking it again stops following" until_is 3 0 ctl_part room
 chk "room: ...releasing the sensor" grep -qx "ReleaseLight" "$STATE/logind.log"
-hq awesome center >/dev/null; sleep 0.4
+hq awesome center >/dev/null
 
 # ---- the touchpad policy ------------------------------------------------------
 PSTART="$(hq awesome pad)"

@@ -36,16 +36,16 @@ tag_cx() { echo $((8 + ($1 - 1) * 28 + 13)); }
 click() {
 	printf 'move %s %s\nsleep 40\npress %s\nsleep 40\nrelease %s\nsleep 80\n' "$1" "$2" "$3" "$3" |
 		vp
-	sleep 0.35
+	settle
 }
-tap() {
-	printf 'tap %s\nsleep 250\n' "$1" | vk
-	sleep 0.6
+tap() { # vkbd round-trips before it exits: the key has landed
+	printf 'tap %s\n' "$1" | vk
+	settle
 }
 wheel() {
 	printf 'move %s %s\nsleep 60\nscroll 0 %s\nsleep 200\n' "$ROWX" "$ROWY" "$1" |
 		vp
-	sleep 0.3
+	settle
 }
 outside_click() { click "$((MON_W / 2))" "$((MON_H / 2))" 272; }
 
@@ -131,17 +131,76 @@ strip_drawn() { [[ "$(bell_x "$1")" -gt 0 && "$(accent_px "$1" 8 34)" -gt 6 ]]; 
 bell_frame() { capture_nested "$STATE/bell-probe.png"; }
 
 # ---- bounded waits ----------------------------------------------------------------
+# shot_until <seconds> <png> <cmd...>: capture into png until cmd (which
+# reads it) succeeds — the frame a change draws, however many frames that
+# takes (the warm/draw gate, the raster worker, a D-Bus round trip). False
+# at the bound, the last capture left for the checks. Poll for every check
+# made on the frame, so a check of what must NOT draw reads the new frame.
+shot_until() {
+	local png=$2 now end
+	now=${EPOCHREALTIME//[.,]/}
+	end=$((now / 1000 + $1 * 1000))
+	shift 2
+	while :; do
+		capture_nested "$png" && "$@" 2>/dev/null && return 0
+		now=${EPOCHREALTIME//[.,]/}
+		((now / 1000 < end)) || return 1
+		sleep 0.05
+	done
+}
+# bus_watch <log> <match>: a signal monitor on the nested's bus, returning
+# once it is subscribed (busctl reports it after BecomeMonitor answered)
+bus_watch() {
+	( DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 60 busctl --user monitor --match "$2" >"$1" 2>&1 & )
+	until_ok 3 grep -q '^Monitoring bus message stream' "$1"
+}
+# boxes <class>: its windows' "x y w h", one a line, sorted
+boxes() { clients | python3 -c "
+import json,sys
+print('\n'.join(sorted(' '.join(map(str, c['at'] + c['size'])) for c in json.load(sys.stdin) if c['class'] == sys.argv[1])))" "$1"; }
+# settled <class> [count]: that many of its windows are mapped and their
+# boxes held still across 150 ms — the map, the placement and the client's
+# configure answer have landed
+settled() {
+	local want=${2:-1} a b n=50
+	while ((n-- > 0)); do
+		a="$(boxes "$1")"
+		if [[ -n "$a" ]] && (($(grep -c . <<<"$a") == want)); then
+			sleep 0.15
+			b="$(boxes "$1")"
+			[[ "$a" == "$b" ]] && return 0
+		else
+			sleep 0.1
+		fi
+	done
+	return 1
+}
+# gone <address>: that window is closed; close_wait closes one and waits
+gone() { ! clients | grep -qF "\"address\": \"$1\","; }
+close_wait() { [[ -n "$1" ]] || return 0; dsp "hl.dsp.window.close({window=\"address:$1\"})"; until_ok 5 gone "$1"; }
 # wait_class <class>: a window of that class (its app id) is mapped
-wait_class() { for _ in $(seq 1 40); do [[ "$(pyc "any(c['class']=='$1' for c in cs)")" = 1 ]] && return 0; sleep 0.25; done; return 1; }
+has_class() { clients | grep -qF "\"class\": \"$1\","; }
+wait_class() { until_ok 10 has_class "$1"; }
 # until_is <seconds> <want> <cmd...>: poll until the command prints `want` —
 # an asynchronous effect landing (an arrival, a sweep) — false on timeout.
 # For final states only: a "nothing happened" check keeps a fixed settle.
 until_is() {
-	local n=$(($1 * 10)) want=$2
+	local n=$(($1 * 20)) want=$2
 	shift 2
 	while ((n-- > 0)); do
 		[[ "$("$@" 2>/dev/null)" == "$want" ]] && return 0
-		sleep 0.1
+		sleep 0.05
+	done
+	return 1
+}
+# until_ok <seconds> <cmd...>: poll until the command succeeds (a log line
+# landing, a file filling) — the same contract as until_is
+until_ok() {
+	local n=$(($1 * 20))
+	shift
+	while ((n-- > 0)); do
+		"$@" 2>/dev/null && return 0
+		sleep 0.05
 	done
 	return 1
 }
@@ -150,7 +209,6 @@ nclear() {
 	hq awesome clear >/dev/null 2>&1
 	local n=30
 	while ((n-- > 0)) && [[ "$(st)" != *" live:0 "* ]]; do sleep 0.1; done
-	sleep 0.2
 }
 
 # ---- model strings -------------------------------------------------------------
@@ -165,29 +223,30 @@ dndrow() { grep -a $'\tdnd$' "$AW_STATE" | cut -f2; }
 panel_extent() {
 	python3 - "$1" <<'PY'
 import sys
+import numpy as np
 from PIL import Image
-im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
-w, h = im.size
-good = []
-for x in range(w):
-    run = [y for y in range(29, h) if min(px[x, y][:3]) > 5]
-    if len(run) > 20 and max(run) - min(run) > 40:
-        good.append((x, min(run), max(run)))
-if not good:
+# a column belongs to a panel when it holds more than 20 lit pixels below
+# the strip, spanning more than 40 rows
+lit = np.asarray(Image.open(sys.argv[1]).convert('RGB'))[29:].min(axis=2) > 5
+n = lit.sum(axis=0)
+top = lit.argmax(axis=0)
+bot = lit.shape[0] - 1 - lit[::-1].argmax(axis=0)
+xs = np.flatnonzero((n > 20) & (bot - top > 40))
+if not xs.size:
     print("0 0 0 0 0"); sys.exit()
-x0, x1 = good[0][0], good[-1][0]
-yt = min(g[1] for g in good)
-yb = max(g[2] for g in good)
-print(x1 - x0 + 1, x0, x1, yt, yb)
+x0, x1 = int(xs[0]), int(xs[-1])
+print(x1 - x0 + 1, x0, x1, int(top[xs].min()) + 29, int(bot[xs].max()) + 29)
 PY
 }
 # srow <row> <separators above>: a shell menu row's center y (shell.hpp:
 # rows 28 from y 37, separators 9)
 srow() { echo $((37 + 14 + 28 * $1 + 9 * $2)); }
+# bell_cx: the bell's cell center, from the gate's cell map (where a press
+# lands; bell_x checks where the glyph draws)
+bell_cx() { hq awesome cells | awk '$1 == "bell" { print int(($2 + $3) / 2); exit }'; }
 # bell_open: right-click the bell; BRX0/BRX1 span its menu
 bell_open() {
-	capture_nested "$STATE/bell-at.png"
-	click "$(bell_x "$STATE/bell-at.png")" 13 273; sleep 0.6
+	click "$(bell_cx)" 13 273
 	capture_nested "$STATE/bell-root.png"
 	read -r _ BRX0 BRX1 _ _ <<<"$(panel_extent "$STATE/bell-root.png")"
 }
@@ -199,7 +258,7 @@ bell_open() {
 bell_cascade() {
 	BCR=$1
 	local y; y=$(srow "$1" 0)
-	click $(((BRX0 + BRX1) / 2)) "$y" 272; sleep 0.6
+	click $(((BRX0 + BRX1) / 2)) "$y" 272
 	capture_nested "$STATE/bell-sub.png"
 	BCX=$(python3 - "$STATE/bell-sub.png" "$y" "$BRX0" "$BRX1" <<'PY'
 import sys
@@ -213,6 +272,10 @@ PY
 }
 crow() { srow $((BCR + $1)) "$2"; }
 nbus() { DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user "$@"; }
+# nsend <notify-send args>: a notification on the nested's bus, back once
+# the daemon answered — and it answers after the card arrived (notify/bus.cpp:
+# Model::arrive, then the reply), so the next check needs no settle
+nsend() { DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 10 notify-send "$@"; }
 
 # ---- sends -----------------------------------------------------------------------
 # A card with actions from a sender that STAYS on the bus, as an app does: a
@@ -220,9 +283,22 @@ nbus() { DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user "$@"; }
 # leave before the click). Hints are name/type/value triples (s b i u y).
 # The sender lives until nfyact_done or its timeout.
 NFYACT_SENDERS=()
+# The senders that stay on the bus run in the background: each touches
+# $SENT once the daemon answered its Notify (the card has arrived), and
+# sent_wait takes that instead of a fixed settle.
+SENT="$STATE/sent.flag"
+sent_wait() {
+	local n=100
+	while ((n-- > 0)); do
+		[[ -e "$SENT" ]] && { rm -f -- "$SENT"; return 0; }
+		sleep 0.02
+	done
+	return 1
+}
 nfyact() {
-	DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 60 python3 - "$@" <<'PY' &
-import sys
+	rm -f -- "$SENT"
+	SENT="$SENT" DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 60 python3 - "$@" <<'PY' &
+import os, sys
 from gi.repository import Gio, GLib
 a = sys.argv[1:]
 app, summary, a = a[0], a[1], a[2:]
@@ -235,6 +311,7 @@ bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
 bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "Notify",
               GLib.Variant("(susssasa{sv}i)", (app, 0, "", summary, "body", acts, hints, 30000)),
               None, Gio.DBusCallFlags.NONE, -1, None)
+open(os.environ["SENT"], "w").close()
 GLib.MainLoop().run()
 PY
 	NFYACT_SENDERS+=($!)
@@ -318,14 +395,16 @@ PY
 # card whose sender left (busctl's one-shot call above) is ownerless and
 # opens no reply field. Sets REPLY_SENDER; the caller kills it.
 conv_reply_sender() {
-	DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 60 python3 - "$1" "$2" "$3" <<'PY' &
-import sys
+	rm -f -- "$SENT"
+	SENT="$SENT" DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 60 python3 - "$1" "$2" "$3" <<'PY' &
+import os, sys
 from gi.repository import Gio, GLib
 bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
 bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "Notify",
               GLib.Variant("(susssasa{sv}i)", (sys.argv[1], 0, "", sys.argv[2], sys.argv[3], ["inline-reply", "Reply"],
                                                {"category": GLib.Variant("s", "im.received")}, 60000)),
               None, Gio.DBusCallFlags.NONE, -1, None)
+open(os.environ["SENT"], "w").close()
 GLib.MainLoop().run()
 PY
 	REPLY_SENDER=$!
