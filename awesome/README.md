@@ -38,11 +38,18 @@ task area on narrow outputs.
   spaces its menu extras, the tray, the battery, the bell and the clock.
   The slot at each end owns its screen edge — the top-left pixel is tag
   一, the top-right the clock — and the right slot's cells meet across
-  their gaps, so no click on the strip lands between two targets.
+  their gaps, so no click on the strip lands between two targets. Every
+  widget owns its cell, one with nothing to click (the battery, the
+  clock) included: a click there does nothing, never its neighbour's.
+  As macOS's menu bar, the glass frosts the desktop picture alone: the
+  work area starts below it, so it blurs the wallpaper (that blur
+  computed once per wallpaper change), never the shadow of the window
+  beneath, and holds still while that window repaints.
 - **Workspaces** are the nine kanji tags in 26 x 22 cells: the viewed
   one accent text, occupied ones the bar's text, empty ones dim, an
   urgent one red text — never a ground, and no occupancy marks: the
-  text's strength says it. A hovered tag's text lifts. awesome's
+  text's strength says it. A hovered tag's text lifts, the viewed one's
+  accent toward white. awesome's
   taglist buttons: a click views the tag (creating it on that monitor;
   a tag another monitor owns is left alone), `Mod`+click sends the
   focused window there without following, and the wheel steps through
@@ -50,7 +57,8 @@ task area on narrow outputs.
 - **Tasks**: a 16 px icon and the title, ⌃ for a pinned window and +
   for a maximized one before it, in arrival order. The focused task is
   accent text, an urgent one red text, a minimized one dim with its icon
-  at half strength — never a fill; a hovered task's text lifts.
+  at half strength — never a fill; a hovered task's text lifts, the
+  focused one's accent toward white.
   awesome's tasklist
   buttons: a click on the focused task minimizes it, on a minimized one
   restores it, on any other raises and focuses it; the wheel cycles the
@@ -108,7 +116,7 @@ task area on narrow outputs.
   tooltips, and overlay icons are not implemented. A hover warms the
   menu's own layer alone, and the menu paints in the panels' box, not
   the whole monitor.
-- **Bell**: SF Symbols' bell.badge, no count — a green dot (`col_dot`)
+- **Bell**: SF Symbols' bell.badge, no count — a blue dot (`col_dot`, the accent)
   on the bell's shoulder while the center holds a card it has not shown
   since the card arrived or changed. Opening the center (and closing
   it) marks what it lists as seen; the DND queue, which it does not
@@ -119,17 +127,20 @@ task area on narrow outputs.
   the clicked bar's monitor: opening absorbs the live banners into
   parked rows, a later explicit close re-pops them. Pointer hover does
   nothing.
-- **Battery**: macOS 27's menu-bar battery — a 21 x 12 stadium filled to
-  the level, the number cut out of it in the bar's face (bold), a short
-  cap one unit off — white, red at 20 % or below, green charging (the
-  bolt after the cap) or held at the charge limit (the shield), yellow
-  in power save; an unknown level draws the question. It watches the
+- **Battery**: Pixel's battery, transcribed from SystemUI's Compose
+  battery — a 24 x 13 round-rect body (13 px beside the bar's 12 px
+  text) filled to the level over a translucent track, the number inside
+  in BatteryGlyph's own digits, the cap one unit off — white, red at
+  20 % or below, green charging (the bolt) or held at the charge limit
+  (the shield), yellow in power save (the plus); an unknown level draws
+  the question. The glyph overlaps the body inside a ring cut out of it,
+  so the bar's glass shows through. A click does nothing. It watches the
   udev battery packs (a
   dual-pack laptop reads as one; a USB-C port's or a headset's battery
   uevent is ignored); plugging and unplugging post a capsule, and 20 %
   and 5 % post the low and critical cards.
-- **Clock**: "Mon Oct 26 01:12" in the session's `LC_TIME`. As macOS's,
-  a click toggles the center. It ticks on the wall clock's minute,
+- **Clock**: "Mon Oct 26 01:12" in the session's `LC_TIME`. A click does
+  nothing: the bell is the center's door. It ticks on the wall clock's minute,
   re-reads the timezone each tick, and a resume or a clock step updates
   it at once.
 - Labels are one line: a client's title or menu label has its control
@@ -491,18 +502,16 @@ image leads with its identity and wears no badge. A group chat leads
 with a facepile of two participants. One column says both who sent it
 and which app carried it.
 
-**Actions.** As macOS 27's, a card wears no buttons at rest. Under the
-pointer it shows a close button on its top-left corner (a click
-dismisses the card, or on a stack's deck the stack) and, when the
-sender offers actions or a reply, an "Options" chip where its time
-was. Options drops the card menu under it: the sender's own rows first
-— Reply, then each non-`default` action in the sender's order — over
-the system's switches. A row emits `ActionInvoked` and dismisses the
-card unless the `resident` hint holds it. The `default` action (and a
-lone action, which keeps its row too) fires on a body left click, on
-BOTH surfaces, and gets no row. The chrome is drawn from textures warm
-before the pointer arrives, so a hover only damages; the title keeps
-the width Options needs, so it never re-wraps as the pointer crosses.
+**Actions.** As macOS 27's, a card wears no buttons at rest, and none
+under the pointer either: macOS's hover close button and Options chip
+are left out, the hold and the right click doing their work (the
+glass alone lifts under the pointer). The card menu — held left —
+lists what Options would: the sender's own rows first — Reply, then
+each non-`default` action in the sender's order — over the system's
+switches. A row emits `ActionInvoked` and dismisses the card unless
+the `resident` hint holds it. The `default` action (and a lone action,
+which keeps its row too) fires on a body left click, on BOTH surfaces,
+and gets no row.
 `ActivationToken` precedes each invoke (a
 compositor-minted xdg-activation token, spec 1.3 ordering); the invoke
 also focuses the sender's own window itself, for every backend — a
@@ -515,7 +524,7 @@ semantics).
 **Behavior.**
 
 - The mouse, on every card: LEFT acts, on its release over the card it
-  pressed — the close button, Options, the link, or the card's primary
+  pressed — the link, or the card's primary
   (the `default`), then the card goes unless `resident`; a card the
   center folded opens instead, and a stack's deck spreads. HOLD left
   (450 ms) opens the card menu at the pointer. RIGHT dismisses (a
@@ -544,13 +553,15 @@ semantics).
   counting down, and leaving restarts its full clock rather than
   resuming the sliver that was left. Only one card can be held, because
   only one can be hovered.
-- The center: the banners' column, its controls above it on glass
-  capsules of their own — the moon (Do Not Disturb, lit in the accent
-  while it holds) and "Clear All". As macOS's, it draws no backdrop and
-  no heading: the desktop is never darkened.
+- The center: the banners' column under a row of its own —
+  "Notifications" at its left, bare on the desktop with a soft shadow
+  (as macOS sets text on the desktop), and at its right the controls on
+  glass capsules — the moon (Do Not Disturb, lit in the accent while it
+  holds) and "Clear All". As macOS's, it draws no backdrop: the desktop
+  is never darkened.
   Cards show their clock time where banners show an age. A card
   behaves as its banner did — left on the body fires the primary, a
-  link opens, Options acts. Cards open by default as the page has
+  link opens, the hold opens its menu. Cards open by default as the page has
   room; one the budget folded shows its title and newest line, and a
   click (or Space) opens it. An app's cards stack, as macOS's do (two
   or more, its chats among them, each chat its own card): collapsed,
@@ -792,7 +803,7 @@ empty config still looks right; the user's `theme.lua` overrides them.
 | `col_bg` | Frost | glass fill (the alpha IS the glass) |
 | `col_menu_bg` | Frost | the card menu's thicker glass |
 | `col_fg` | Frost | body text |
-| `col_title` | Frost | titles, the hover chrome (Options, the close button), the capsules' words |
+| `col_title` | Frost | titles, a stack header's chips, the capsules' words |
 | `col_kicker` | Frost | meta and secondary text |
 | `col_frame` | Frost | the glass rim |
 | `col_urgent` | Frost | critical: the meta, its progress, an alarmed capsule |

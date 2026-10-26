@@ -252,17 +252,18 @@ Crash-class invariants (numbered in AGENTS.md) → structure:
 One material for every surface, its tokens in `core/tokens.hpp` (the
 schema's defaults name them; `theme.lua` overrides them):
 
-- Glass at three thicknesses over the compositor's live blur: thin for
-  the bar and the launcher, regular for cards, the center and the
-  capsules, thick for menus. Cards and menus add a soft drop, a light
+- Glass at three thicknesses over the compositor's blur: thin for the
+  bar (over the wallpaper's precomputed blur: nothing else lies under
+  it) and the launcher, regular for cards, the center and the capsules,
+  thick for menus. Cards and menus add a soft drop, a light
   top edge and a 10 % white rim; a menu floats higher (a deeper drop).
 - Ink is one white at four strengths (the title white for titles and
   the bar's text and glyphs, 78 % body, 55 % meta, 34 % empty); the
   accent `#00CCFF` is TEXT — the viewed tag, the focused task, a
   selection, the bell while its center is open. It fills only what is
   live: a caret, the reply's send circle, a progress bar (the snap
-  preview is its 10 % tint and ring). Urgent is `#FF6159`, as text. The
-  one green is the bell's unseen dot.
+  preview is its 10 % tint and ring) — and marks one thing, the bell's
+  unseen dot. Urgent is `#FF6159`, as text.
 - Radii: cards 18, menus 12, rows and tags 6, buttons and app icons 9;
   windows keep the user's `decoration:rounding`.
 - Glyphs are the boards' own outline icons (`core/glyph_shapes.hpp`,
@@ -272,18 +273,23 @@ schema's defaults name them; `theme.lua` overrides them):
   on half-pixel centres. Icons and tray pixmaps raster at the monitor's
   device size, never a larger raster shrunk on the GPU.
 - The bar's right end follows macOS 27's menu bar, measured off its 2x
-  screenshot: 20 px between items, the battery its stadium with the
-  number cut out in the bar's face (`shell/battery_pill.hpp`, pure
-  cairo), the bell SF Symbols' bell.badge with no count. Each end of the
-  strip owns its screen edge (Fitts).
+  screenshot: 20 px between items, the bell SF Symbols' bell.badge with
+  no count. The battery is Pixel's, SystemUI's Compose battery
+  transcribed (`shell/battery_pill.hpp`, pure cairo): the number inside
+  the body in its own vector digits. Each end of the strip owns its
+  screen edge (Fitts), and every widget its cell: a widget with nothing
+  to click swallows its clicks rather than lending them to a neighbour.
+- Hover lifts text a step, never a ground: dim to the bar's text, and
+  the accent (the viewed tag, the focused task) toward white.
 - No surface darkens the desktop: the center draws no backdrop, and
-  what floats over a wallpaper carries its own glass.
-- Cards follow macOS 27's notifications: no buttons at rest; under the
-  pointer a close button on the top-left corner and "Options" where the
-  time was, its menu the sender's rows (Reply, the actions) over the
-  system's switches; an app's cards stack in the center under a deck.
-  The chrome's textures are warm before the pointer arrives (a hover
-  damages, never rewarms: invariant 4).
+  what floats over a wallpaper carries its own glass — or, for the
+  center's "Notifications" heading, a soft text shadow.
+- Cards follow macOS 27's notifications, without its hover buttons: no
+  close button and no Options under the pointer (the user's hold and
+  right click do that work; the glass alone lifts). The card menu (held
+  left) lists the sender's rows (Reply, the actions) over the system's
+  switches; an app's cards stack in the center under a deck. A hover
+  damages, never rewarms (invariant 4).
 - The mouse on a card: left acts on its release, a held left opens the
   card menu, right dismisses (a stack whole), middle does nothing.
 
@@ -293,8 +299,7 @@ The strip (workspaces, tasks, tray, bell, battery, clock), the menubar
 launcher, and their input. Tasks are VIEWS of `windows` state;
 minimize/restore/focus are requests to `windows`, not state operations
 in the bar. The bell reads the `notify` model directly (the unseen
-dot, DND, center state) and calls `notify.center()`; no bus — the clock
-calls it too. Launcher: the shared
+dot, DND, center state) and calls `notify.center()`; no bus. Launcher: the shared
 desktop index, history, completion, 4 KiB UTF-8 paste limit.
 
 ### windows
@@ -332,9 +337,7 @@ ranking, the icon anatomy, the pixel model). Surfaces: the banners, the
 center and the OSD capsules on the shared canvas — one card renderer
 for the banner, the center and a card in a stack (`notify/stack.cpp`
 draws the deck and the spread stack's header around it) — and the card
-menu, drawn last and hit first on the notify layer. The close button
-overhangs its card, so it is a target of its own, pushed after the card
-and hit before it. The menu's switches (an
+menu, drawn last and hit first on the notify layer. The menu's switches (an
 app's banners and sounds, a chat's mute) persist through the core's
 `StateStore` and gate the arrival, the DND resume and the re-pop alike.
 Inline reply, sound through Jobs. The model API is the module's public
@@ -380,6 +383,16 @@ as in every gate run, upstream's lazy shader-variant compiles add
   the renderer culls a layer the frame's damage misses, and an element
   claims live blur only while its layer paints translucent glass (every
   Frost default is; an opaque `col_bg` draws plain and claims none).
+- The bar's glass samples the wallpaper's precomputed blur instead
+  (`ILayer::wallpaperGlass`; blurred once per wallpaper change, the
+  pre-blur kept queued while the bar paints): the work area starts
+  below it. A live blur re-blurred the strip on every repaint and, under
+  partial damage, read the ring each swapchain buffer kept from its last
+  frame, so over a terminal taking typing the presented frames
+  alternated between two bars (upstream's FIXME in
+  `CRenderPass::render`). A frame the precomputed blur is stale for (the
+  first after load) falls back to the live one; over a fullscreen client
+  (the open menubar) the strip stays live.
 - Warms coalesce: one bar warm per event-loop turn however many events
   arrived, and a title change (the one input a client drives at will)
   warms the strip layer alone, at most once per 16 ms; the cards warm
@@ -397,8 +410,8 @@ as in every gate run, upstream's lazy shader-variant compiles add
   for the kanji tags).
 - The draw re-runs the layout per frame, deliberately: measured with the
   gate's `drawstats` (a card over a window redrawing every frame), the
-  worst case is ~90 us for the card and ~90 us for the bar when the
-  glass's blur damage reaches it — about 1% of a 60 Hz frame. A cached
+  worst case is ~90 us for the card and ~90 us for the bar when damage
+  reaches it — about 1% of a 60 Hz frame. A cached
   display list would save ~100 us at the cost of a stale-content risk
   across every state source.
 
