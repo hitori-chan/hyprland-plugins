@@ -591,11 +591,27 @@ nclear
 # ---- DND -----------------------------------------------------------------------
 dsp "hl.plugin.awesome.suspend()"; sleep 0.5
 chk "DND arms" hq_matches 'dnd:1' awesome state
+chk "DND: remembered while it holds (until turned off)" until_is 3 "-1" dndrow
 for m in one two three four; do dsp "hl.dsp.exec_cmd('notify-send -a q $m body')"; done; sleep 0.8
 chk "DND: four same-app arrivals queued, none shown" test "$(bd)" = "banners:0 resident:0"
 dsp "hl.plugin.awesome.suspend()"; sleep 0.6
 chk "DND resume: three popped, the fourth resumed resident (the per-app cap)" test "$(bd)" = "banners:3 resident:1"
 chk "DND resume: dnd off, every card kept" hq_matches '^center:0 live:4 dnd:0$' awesome state
+chk "DND: off keeps no row" until_is 3 "" dndrow
+nclear
+
+# ---- DND for a while ------------------------------------------------------------
+# suspend(minutes) holds DND to a wall-clock end, which the row keeps; the
+# end comes by itself and resumes the queue.
+dnd_end_ahead() { local v; v="$(dndrow)"; [[ "$v" =~ ^[0-9]+$ ]] && ((v > $(date +%s))); }
+dsp "hl.plugin.awesome.suspend(0.1)"; sleep 0.4
+chk "DND timed: arms" test "$(st)" = "center:0 live:0 dnd:1"
+chk "DND timed: remembered with its end" dnd_end_ahead
+dsp "hl.dsp.exec_cmd('notify-send -a q held body')"; sleep 0.6
+chk "DND timed: an arrival waits" test "$(bd)" = "banners:0 resident:0"
+chk "DND timed: the end resumes it by itself" until_is 10 "banners:1 resident:0" bd
+chk "DND timed: off, its row gone" until_is 3 "" dndrow
+chk "DND timed: dnd off" test "$(st)" = "center:0 live:1 dnd:0"
 nclear
 
 # ---- DND holds a merge onto an existing card ------------------------------------

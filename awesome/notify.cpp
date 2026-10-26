@@ -13,8 +13,12 @@
 
 #include "notify/model.hpp"
 
-
 #include <hyprland/src/plugins/PluginAPI.hpp>
+
+#include <lua.hpp>
+
+#include <cmath>
+#include <ctime>
 
 namespace NAwesome::Notify {
 
@@ -26,18 +30,29 @@ namespace NAwesome::Notify {
     }
 
     namespace {
-        // hl.plugin.awesome.suspend() — the DND chord. Deferred out of the
-        // bind's input emission (the resume reflows and repaints). Presses
-        // ACCUMULATE: overwriting the lock cancels the unfired toggle, and
-        // two presses in one dispatch would net zero instead of two toggles.
-        static NAwesome::CHop pendingSuspend;
-        static int            suspendPresses = 0;
-        int                   luaSuspend(lua_State*) {
+        // hl.plugin.awesome.suspend([minutes]) — the DND chord. Bare, it
+        // toggles (off, or on until turned off); with minutes, DND holds
+        // that long from now (0 ends it, math.huge never does). Deferred out
+        // of the bind's input emission (the resume reflows and repaints).
+        // Presses ACCUMULATE — two in one dispatch are two toggles, not one
+        // — and a timed call replaces whatever was pending before it.
+        static NAwesome::CHop         pendingSuspend;
+        static int                    suspendPresses = 0;
+        static std::optional<int64_t> suspendSet; // a timed call's setSuspend value, before the presses
+        int                           luaSuspend(lua_State* L) {
             if (!g_pEventLoopManager)
                 return 0; // presses must not accumulate with no drain to run them
-            if (++suspendPresses > 1)
-                return 0; // a drain is already queued
+            if (lua_gettop(L) >= 1 && lua_type(L, 1) == LUA_TNUMBER) {
+                const double MIN = lua_tonumber(L, 1);
+                if (std::isnan(MIN))
+                    return 0;
+                suspendSet     = MIN <= 0 ? 0 : MIN >= 1e7 ? -1 : (int64_t)std::time(nullptr) + std::max<int64_t>(1, std::llround(MIN * 60));
+                suspendPresses = 0;
+            } else
+                suspendPresses++;
             pendingSuspend.arm([]() {
+                if (const auto SET = std::exchange(suspendSet, std::nullopt))
+                    Model::setSuspend(*SET);
                 if (std::exchange(suspendPresses, 0) & 1)
                     Model::toggleSuspend();
             });
@@ -128,6 +143,8 @@ namespace NAwesome::Notify {
     void CModule::teardown() {
         lastMovePos = {-1, -1};
         pendingSuspend.reset();
+        suspendPresses = 0;
+        suspendSet.reset();
         pendingCenter.reset();
         Bus::exit(); // the connection first: nothing may arrive mid-teardown
         Model::exit(); // then the cards, and their textures with them

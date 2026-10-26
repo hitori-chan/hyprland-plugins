@@ -671,6 +671,10 @@ semantics).
 - DND (`hl.plugin.awesome.suspend()`, or the center's moon): arrivals
   collect silently with timeouts held, and resume renders the queue
   newest-first on fresh timeouts, under the per-app cap and switches.
+  DND is remembered (the `dnd` option): a relog or a plugin update keeps
+  it. `suspend(minutes)` holds it that long from now (0 ends it); the
+  end is a wall-clock time, so a laptop asleep past it wakes with DND
+  off, and the end resumes the queue by itself.
   An update or a conversation message onto a card already shown (a
   banner, or a row in the shade) updates it in place, silently, as it
   was.
@@ -769,7 +773,7 @@ hl.plugin.awesome.focus_next()
 hl.plugin.awesome.focus_prev()
 hl.plugin.awesome.focus_prev_here()
 hl.plugin.awesome.center()                 -- toggles the shade
-hl.plugin.awesome.suspend()                -- toggles DND
+hl.plugin.awesome.suspend()                -- toggles DND; suspend(minutes) holds it that long
 hl.plugin.awesome.clear_all()
 hl.plugin.awesome.volume_up()              -- volume_down, mute, mic_mute
 hl.plugin.awesome.brightness_up()          -- brightness_down

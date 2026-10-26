@@ -144,6 +144,8 @@ nclear() {
 # ---- model strings -------------------------------------------------------------
 st() { hq awesome state; }
 bd() { hq awesome badge; }
+# the remembered DND's state.tsv value (empty: no row, DND off)
+dndrow() { grep -a $'\tdnd$' "$AW_STATE" | cut -f2; }
 nbus() { DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user "$@"; }
 
 # ---- sends -----------------------------------------------------------------------
