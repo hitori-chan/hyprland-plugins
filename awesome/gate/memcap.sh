@@ -16,7 +16,8 @@
 #   HYPR_HARNESS_MEM_FLOOR  MemAvailable+SwapFree, MiB, below which the
 #                           watchdog kills the run (default 1024)
 #   HYPR_HARNESS_MEM_WAIT   seconds to wait for the budget (default 600)
-# Exports HYPR_HARNESS_JOBS: the build parallelism the budget affords.
+# Exports HYPR_HARNESS_JOBS: the build parallelism the budget affords,
+# and CCACHE (ccache, when installed) as the build's compiler launcher.
 
 _mem_left() { awk '/^MemAvailable:/ { a = $2 } /^SwapFree:/ { s = $2 } END { print int((a + s) / 1024) }' /proc/meminfo; }
 
@@ -47,6 +48,8 @@ if [[ -z "${HYPR_HARNESS_JOBS:-}" ]]; then
 	((HYPR_HARNESS_JOBS < 1)) && HYPR_HARNESS_JOBS=1
 	((HYPR_HARNESS_JOBS > $(nproc))) && HYPR_HARNESS_JOBS=$(nproc)
 	export HYPR_HARNESS_JOBS
+	# the Makefile's compiler launcher: unchanged sources are cache hits
+	export CCACHE="${CCACHE-$(command -v ccache 2>/dev/null)}"
 	_cg="/sys/fs/cgroup$(sed -n 's/^0:://p' /proc/self/cgroup)"
 	# The watchdog lives as long as anything else in the scope (a manual
 	# launch leaves its nested behind), ignores the run's ^C (its teardown
