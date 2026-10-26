@@ -567,7 +567,7 @@ namespace NAwesome::Notify {
                 SCard card = recycledCard();
                 renderCard(P, T, D.items.front(), CBox{X, y, W, 0}, SCardForm{.where = SCardForm::CENTER, .open = CS.front().open}, card);
                 card.folded = !CS.front().open && CS.front().more;
-                pushCard(std::move(card));
+                cards.push_back(std::move(card));
             } else if (!s_itemSpread[IDX]) {
                 // the deck first: the top card's glass covers all but its edges
                 const double DEPTH = deckDepth(D.items.size());
@@ -577,7 +577,7 @@ namespace NAwesome::Notify {
                 renderCard(P, T, D.items.front(), CBox{X, y, W, 0}, SCardForm{.where = SCardForm::CENTER, .open = CS.front().open, .deck = true}, card);
                 card.box.h += DEPTH; // the deck answers for the stack too
                 card.group = D.key;
-                pushCard(std::move(card));
+                cards.push_back(std::move(card));
             } else {
                 paintStackHead(P, T, D, CBox{X, y, W, CAP_H});
                 double cy = y + CAP_H + GAP;
@@ -586,7 +586,7 @@ namespace NAwesome::Notify {
                     renderCard(P, T, D.items[k], CBox{X, cy, W, 0}, SCardForm{.where = SCardForm::CENTER, .open = CS[k].open}, card);
                     card.folded = !CS[k].open && CS[k].more;
                     card.group  = D.key;
-                    pushCard(std::move(card));
+                    cards.push_back(std::move(card));
                     cy += CS[k].h + GAP;
                 }
                 if (CS.size() < D.items.size())

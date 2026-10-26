@@ -61,14 +61,10 @@ namespace NAwesome::Notify {
     inline constexpr double FIELD_PADL = 12, FIELD_GAP = 6, FIELD_PADR = 4; // the text's inset, its room before the circle, the circle's off the end
     inline constexpr double PILL_H = 16;               // the unread count beside a chat's title
 
-    // macOS's hover chrome: the close button overhanging the card's top-left
-    // corner, and Options in the meta's place on a card with actions
-    inline constexpr double CLOSE_D = 20, CLOSE_OUT = 7, CLOSE_GLYPH = 8;
-    inline constexpr double OPT_H = 20, OPT_PADL = 9, OPT_PADR = 7, OPT_GAP = 4, OPT_GLYPH = 8;
-    // how far that chrome reaches past its card: the overhang and its drop
-    // (paintChip), so a hover change damages all of it
+    // a stack header's close button: its cross, 8 px on a 10-unit grid
+    inline constexpr double CLOSE_GLYPH = 8;
+    // a chip's drop under it (paintChip)
     inline constexpr double CHIP_DROP = 8, CHIP_SINK = 3;
-    inline constexpr double CHROME_REACH = CLOSE_OUT + CHIP_DROP + CHIP_SINK;
 
     // The identity badge, as ratios of the avatar it rides: an 18 px disc on
     // a 36 px face whose white ring (1.5 px) cuts the app glyph free of
@@ -110,8 +106,8 @@ namespace NAwesome::Notify {
     bool                hasLeadIcon(const SNotif& n, bool shade = false);
     void                paintProgress(const SPaint& P, double x, double y, double w, int pct, bool critical);
     void                paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool withBadge, float rp, bool shade = false);
-    // a small control floating on glass (the close button, a stack's Show
-    // Less): its own drop, the chip glass, the rim
+    // a small control floating on glass (a stack's Show Less and close
+    // button, "+N more"): its own drop, the chip glass, the rim
     void                paintChip(const SPaint& P, const CBox& box, bool hover);
     // the glass under the pointer lifts a step, as macOS's platter does
     CHyprColor          liftedGlass(const CHyprColor& c);
@@ -181,9 +177,8 @@ namespace NAwesome::Notify {
         bool   deck  = false; // CENTER: a collapsed stack's top card — its hit is the stack's
     };
 
-    // the card's hover chrome shows: the pointer is on it or its close
-    // button, or its menu is open
-    bool chromeOn(uint32_t id, SCard::eKind kind);
+    // the card's glass lifts: the pointer is on it, or its menu is open
+    bool cardLit(uint32_t id, SCard::eKind kind);
 
     // Lays out and (outside a warm) paints one card at box.x/y, box.w wide;
     // returns its height and fills `hit`.
@@ -225,12 +220,11 @@ namespace NAwesome::Notify {
     // it, closing it unless resident; the center goes with it (input.cpp)
     void invokeLive(uint32_t id, const std::string& action, std::optional<uint64_t> rev = std::nullopt);
 
-    // ---- menu.cpp: the card menu (Options, or hold left on a card) ----
+    // ---- menu.cpp: the card menu (hold left on a card) ----
 
     namespace CardMenu {
         bool     canOpen(uint32_t id); // a notification (never feedback) the user can see
         bool     open(uint32_t id, const Vector2D& at); // the hold: its corner at the pointer
-        bool     openBelow(uint32_t id, const CBox& anchor); // Options: dropped from the button, right edges aligned
         void     close();
         bool     isOpen();
         uint32_t owner(); // the card it belongs to; 0 = none open

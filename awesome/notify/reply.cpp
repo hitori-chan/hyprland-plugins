@@ -7,8 +7,8 @@
 // advertising it is the whole difference between replying from a banner and
 // having to raise the app.
 //
-// As on macOS the field opens on demand — Reply in the card's Options (or
-// Tab on the center's selection) — under the card's words, in the banner or
+// As on macOS the field opens on demand — Reply in the card menu (or Tab
+// on the center's selection) — under the card's words, in the banner or
 // the center card alike; the banner holds its clock while it is open.
 //
 // The hard part is that we have no keyboard focus to give a text field: the

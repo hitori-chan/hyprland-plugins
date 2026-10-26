@@ -43,7 +43,7 @@ namespace NAwesome::Notify {
         static uint32_t            heldBanner = 0;     // the popup under the pointer: its countdown is paused
 
         // a hostile sender's payload caps: menu rows and <img> rows beyond
-        // these would run the Options menu off the screen or draw past the
+        // these would run the card menu off the screen or draw past the
         // clamped card into the next card's glass, so they are dropped, not
         // clipped
         constexpr size_t MAX_ACTIONS     = 8;
@@ -1116,7 +1116,7 @@ namespace NAwesome::Notify {
             n->replySubmitText  = clipUtf8(strHint("x-kde-reply-submit-button-text"), MAX_REPLY_TEXT_BYTES);
 
             // actions arrive as [id0,label0, id1,label1, ...]. Every named
-            // pair becomes a row of the card's Options menu; "default" is the
+            // pair becomes a row of the card menu; "default" is the
             // card's primary and gets NO row on either surface — the spec
             // defines it as "the default action (usually invoked by clicking
             // the notification)" and says implementations are free not to

@@ -33,28 +33,10 @@ namespace NAwesome::Notify {
         return fresh;
     }
 
-    void pushCard(SCard&& c) {
-        const CBox CLOSE = c.close;
-        const auto ID    = c.id;
-        const bool DECK  = c.kind == SCard::DECK;
-        cards.push_back(std::move(c));
-        if (CLOSE.w <= 0)
-            return;
-        // pushed after its card, the button is hit first, its overhang past
-        // the card's corner included; a deck's closes the whole stack
-        SCard x = recycledCard();
-        x.kind  = SCard::CLOSE;
-        x.box   = CLOSE;
-        x.id    = ID;
-        if (DECK)
-            x.group = cards.back().group;
-        cards.push_back(std::move(x));
-    }
-
-    bool chromeOn(uint32_t id, SCard::eKind kind) {
+    bool cardLit(uint32_t id, SCard::eKind kind) {
         if (CardMenu::owner() == id)
             return true; // its menu is up: the card keeps the look it was opened from
-        return hovered.id == id && (hovered.kind == kind || hovered.kind == SCard::CLOSE);
+        return hovered.id == id && hovered.kind == kind;
     }
 
     void refreshBannerHold() {
@@ -63,7 +45,7 @@ namespace NAwesome::Notify {
             id = CardMenu::owner();
         else if (replyHeld())
             id = replyId();
-        else if (hovered.kind == SCard::POPUP || hovered.kind == SCard::CLOSE)
+        else if (hovered.kind == SCard::POPUP)
             id = hovered.id;
         Model::holdBanner(id);
     }
@@ -174,23 +156,18 @@ namespace NAwesome::Notify {
     }
 
     // the hover affordance repaints exactly the cards whose look changed —
-    // their lifted glass and their chrome (the close button overhangs the
-    // corner: CHROME_REACH); no textures move, so no warm — plain damage from
-    // the motion listener
+    // their lifted glass, a stack header's chips; no textures move, so no
+    // warm — plain damage from the motion listener
     void setHovered(const SHover& h) {
         if (h == hovered)
             return;
         if (g_pHyprRenderer) {
             const auto   M      = cardsMon.lock();
             const double MARGIN = (M ? std::ceil(M->m_scale) : 1.0) + 1.0;
-            const auto   TOUCH  = [](const SCard& C, const SHover& H) {
-                // a card's close button is the card's: hovering it keeps the
-                // chrome up, leaving it takes the chrome down
-                return C.id == H.id && (C.kind == H.kind || (H.kind == SCard::CLOSE && C.kind != SCard::MENU_ITEM)) && (C.group == H.group || H.kind == SCard::CLOSE);
-            };
+            const auto   TOUCH  = [](const SCard& C, const SHover& H) { return C.id == H.id && C.kind == H.kind && C.group == H.group; };
             for (const auto& C : cards)
                 if (TOUCH(C, hovered) || TOUCH(C, h))
-                    g_pHyprRenderer->damageBox(CBox{C.box}.expand(MARGIN + CHROME_REACH));
+                    g_pHyprRenderer->damageBox(CBox{C.box}.expand(MARGIN + CHIP_DROP + CHIP_SINK));
         }
         hovered = h;
         refreshBannerHold(); // reading a banner stops its clock

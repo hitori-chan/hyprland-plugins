@@ -362,47 +362,46 @@ nclear
 nfyact_done
 chk "close-on-act: reset after the battery" test "$(st)" = "center:0 live:0 dnd:0"
 
-# ---- macOS: the hover chrome and Options -------------------------------------
-# Under the pointer a card wears its close button on its top-left corner
-# (notify/ui.hpp: CLOSE_D 20, CLOSE_OUT 7) and, with actions, Options in the
-# meta's place (OPT_H 20, 14 off the card's right, centred on the title
-# row 12 down); its menu drops 3 px under it, right edges aligned
-# (notify/menu.cpp: PAD 5, ROWH 28), the sender's actions first.
-XC=$((PANEL_X - 7 + 10)) YC=$((N_TOP - 7 + 10))
-OPTX=$((MON_W - N_EDGE - 14 - 12)) OPTY=$((N_TOP + 12 + 8))
-OPTROW=$((OPTY + 10 + 3 + 5 + 14)) # the menu's first row
-lit_px() { # lit_px <frame> <x0> <y0> <x1> <y1> — near-white pixels in the box
-	python3 - "$@" <<'PY'
+# ---- no buttons ride a card: the hold is its menu ---------------------------
+# macOS's hover close button and Options are left out (the hold and the
+# right click do their work): under the pointer the card's corner stays
+# bare, and the held card menu opens at the pointer — near the right edge it
+# flips left of it, its rows running down from the pointer's y under its
+# x - 100 (notify/menu.cpp: PAD 5, rows 28, separators 11) — the sender's
+# actions first.
+hold_menu() { printf 'move %s %s\nsleep 40\npress 272\nsleep 700\n' "$1" "$2" | vp; sleep 0.3; } # the button stays down
+release_left() { printf 'release 272\nsleep 80\n' | vp; sleep 0.3; }
+mrow() { echo $(($1 + 5 + 14 + 28 * $2 + 11 * $3)); } # mrow <menu y> <row> <separators above>
+corner_px() { # corner_px <frame> — near-white pixels where macOS's close button would ride
+	python3 - "$1" "$PANEL_X" "$N_TOP" <<'PY'
 import sys
 from PIL import Image
 im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
-x0, y0, x1, y1 = map(int, sys.argv[2:6])
-print(sum(1 for y in range(y0, y1) for x in range(x0, x1) if min(px[x, y]) > 170))
+x, y = int(sys.argv[2]), int(sys.argv[3])
+print(sum(1 for yy in range(y - 7, y + 13) for xx in range(x - 7, x + 13) if min(px[xx, yy]) > 170))
 PY
 }
+HX=$POPX HY=$((N_TOP + 22))
 # the pointer off the column first: the battery before left it on a card
 printf 'move %s %s\nsleep 60\n' "$((MON_W / 2))" "$((MON_H / 2))" | vp
-dsp "hl.dsp.exec_cmd('notify-send -a hov -t 30000 \"close me\" body')"; sleep 1
-capture_nested $STATE/chrome-rest.png
-printf 'move %s %s\nsleep 200\n' "$POPX" "$((N_TOP + 30))" | vp; sleep 0.4
-capture_nested $STATE/chrome-hover.png
-R0=$(lit_px $STATE/chrome-rest.png $((XC - 6)) $((YC - 6)) $((XC + 6)) $((YC + 6)))
-R1=$(lit_px $STATE/chrome-hover.png $((XC - 6)) $((YC - 6)) $((XC + 6)) $((YC + 6)))
-echo "chrome: corner lit $R0 -> $R1" >&2
-chk "chrome: hover puts the close button on the card's corner" test "$R1" -gt $((R0 + 6))
-printf 'move %s %s\nsleep 120\npress 272\nsleep 40\nrelease 272\nsleep 80\n' "$XC" "$YC" | vp; sleep 0.5
-chk "chrome: the close button dismisses the banner" test "$(st)" = "center:0 live:0 dnd:0"
+dsp "hl.dsp.exec_cmd('notify-send -a hov -t 30000 \"hover me\" body')"; sleep 1
+capture_nested $STATE/bare-rest.png
+printf 'move %s %s\nsleep 200\n' "$HX" "$((N_TOP + 30))" | vp; sleep 0.4
+capture_nested $STATE/bare-hover.png
+R0=$(corner_px $STATE/bare-rest.png) R1=$(corner_px $STATE/bare-hover.png)
+echo "bare: corner lit $R0 -> $R1" >&2
+chk "bare: hover puts no close button on the card's corner" test "$R1" -le $((R0 + 2))
+nclear
 INVOKED="$STATE/invoked.log"
 rm -f "$INVOKED"
 ( DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 30 busctl --user monitor --match "type='signal',member='ActionInvoked'" >"$INVOKED" 2>&1 & )
 sleep 0.4
 nfyact actapp "act on me" 4 default Open later "Remind Me" 0; sleep 1
-printf 'move %s %s\nsleep 200\n' "$POPX" "$((N_TOP + 30))" | vp; sleep 0.3
-click "$OPTX" "$OPTY" 272
-chk "options: the click opens the menu and acts on nothing" test "$(st)" = "center:0 live:1 dnd:0"
-click $((OPTX - 60)) "$OPTROW" 272
-chk "options: the action's row fired it, and the card went" until_is 3 "center:0 live:0 dnd:0" st
-chk "options: ActionInvoked carried the action's key" grep -q 'STRING "later"' "$INVOKED"
+hold_menu "$HX" "$HY"; release_left
+chk "actions: the hold opens the menu and acts on nothing" test "$(st)" = "center:0 live:1 dnd:0"
+click $((HX - 100)) "$(mrow "$HY" 0 0)" 272
+chk "actions: the action's row fired it, and the card went" until_is 3 "center:0 live:0 dnd:0" st
+chk "actions: ActionInvoked carried the action's key" grep -q 'STRING "later"' "$INVOKED"
 nfyact_done
 nclear
 
@@ -443,16 +442,10 @@ chk "hover: once the restarted clock runs out it retreats" test "$(bd)" = "banne
 nclear
 
 # ---- the card menu: hold left ------------------------------------------------
-# A hold opens the card's switches at the pointer: near the right edge the
-# menu flips left of it, so its rows run from the pointer's y down, under
-# HX - 100. Rows (notify/menu.cpp): PAD 5, 28 each, separators 11; a chat
-# leads with its two mute rows and a separator (these chats offer no
+# A hold opens the card's switches at the pointer (hold_menu, mrow above); a
+# chat leads with its two mute rows and a separator (these chats offer no
 # actions, so no Reply or action rows come first). The switches persist as
 # state.tsv rows.
-HX=$POPX HY=$((N_TOP + 22))
-hold_menu() { printf 'move %s %s\nsleep 40\npress 272\nsleep 700\n' "$1" "$2" | vp; sleep 0.3; } # the button stays down
-release_left() { printf 'release 272\nsleep 80\n' | vp; sleep 0.3; }
-mrow() { echo $(($1 + 5 + 14 + 28 * $2 + 11 * $3)); } # mrow <menu y> <row> <separators above>
 pcidb gatechat Alice alice "are you coming"; sleep 1
 chk "menu: a chat banner is up" test "$(bd)" = "banners:1 resident:0"
 hold_menu "$HX" "$HY"
@@ -643,17 +636,16 @@ kill "$REPLY_SENDER" 2>/dev/null; wait "$REPLY_SENDER" 2>/dev/null
 hq awesome center >/dev/null; sleep 0.4
 nclear
 
-# Reply from a banner's Options (macOS): the field opens in the banner, which
-# holds its clock and takes the typing; Enter sends from there
+# Reply from a banner's menu (its first row): the field opens in the banner,
+# which holds its clock and takes the typing; Enter sends from there
 REPLIED2="$STATE/replied-banner.log"
 rm -f "$REPLIED2"
 ( DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 60 busctl --user monitor --match "type='signal',member='NotificationReplied'" >"$REPLIED2" 2>&1 & )
 sleep 0.5
 conv_reply_sender Telegram "Alice" "are you around?"
 sleep 1
-printf 'move %s %s\nsleep 200\n' "$POPX" "$((N_TOP + 30))" | vp; sleep 0.3
-click "$OPTX" "$OPTY" 272
-click $((OPTX - 60)) "$OPTROW" 272
+hold_menu "$HX" "$HY"; release_left
+click $((HX - 100)) "$(mrow "$HY" 0 0)" 272
 tap 35
 tap 23
 chk "reply: a banner's field takes the typing and acts on nothing" test "$(st)" = "center:0 live:1 dnd:0"

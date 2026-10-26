@@ -33,9 +33,9 @@ namespace NAwesome::Theme {
     inline constexpr uint32_t HAIRLINE    = 0x1affffff; // separators, 10 %
     inline constexpr uint32_t WELL        = 0x38000000; // a field sunk into the glass: the reply field, black 22 %
     inline constexpr uint32_t WELL_RIM    = 0x14ffffff; // its inner edge, 8 %
-    inline constexpr uint32_t CONTROL     = 0x24ffffff; // a control on a card at rest: Options, the send circle, 14 %
+    inline constexpr uint32_t CONTROL     = 0x24ffffff; // a control on a card at rest: the send circle, 14 %
     inline constexpr uint32_t SEND_ARROW  = 0xb3ebebf5; // the send arrow at rest, 70 %
-    inline constexpr uint32_t CHIP        = 0xb83a3a42; // a small control floating on glass: the close button, Show Less, 72 %
+    inline constexpr uint32_t CHIP        = 0xb83a3a42; // a small control floating on glass: Show Less, a stack's close, 72 %
     inline constexpr uint32_t DECK_1      = 0x8a46464e; // a collapsed stack's first layer under its top card, 54 %
     inline constexpr uint32_t DECK_2      = 0x753e3e46; // its second, dimmer and darker, 46 %
     inline constexpr uint32_t RIM         = 0x1affffff; // the glass edge, 10 %
