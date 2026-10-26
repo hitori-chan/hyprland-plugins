@@ -173,6 +173,14 @@ namespace NAwesome::Notify {
             return Model::badgeString();
         if (verb == "topline") // the gate's text probe: the newest card's collapsed one-liner
             return Model::toplineString();
+#ifdef AWESOME_GATE
+        if (verb == "shown") { // the newest card's body as drawn: a chat's fitted window, "" until painted
+            for (const auto& N : notifs)
+                if (!N->waiting && !Model::offShade(N))
+                    return N->messages.empty() ? N->body : N->fitMemo.rev == N->rev ? N->fitMemo.body : std::string{};
+            return std::string{};
+        }
+#endif
         if (verb == "clear") { // the scripted reset
             static NAwesome::CHop pendingClear;
             pendingClear.arm([]() { Model::dismissAllLive(/*offShadeToo=*/true); });

@@ -680,6 +680,80 @@ chk "reply: NotificationReplied carried the banner's text" grep -q 'STRING "hi"'
 kill "$REPLY_SENDER" 2>/dev/null; wait "$REPLY_SENDER" 2>/dev/null
 nclear
 
+# ---- a Telegram group: one card, a notification per message ---------------------
+# Telegram Desktop posts each message on its own and keeps a record per
+# message: a signal goes to the FIRST record holding its id, and a group's
+# reply is sent as a reply to that record's message. One shared id made the
+# card's Reply quote the chat's oldest message, and the banner, which kept
+# the joined text's head, never showed the newest. Each merged message now
+# answers for an id of its own, the card acts for the newest, shows what
+# fits from the newest end, and lets the sender close one message alone.
+TGIDS=$STATE/tg-ids TGSIG=$STATE/tg-signals.log
+rm -f "$TGIDS" "$TGSIG"
+( DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 60 busctl --user monitor --match "type='signal',interface='org.freedesktop.Notifications'" >"$TGSIG" 2>&1 & )
+sleep 0.4
+tgchat "$TGIDS" "Rice Club|Alice|anyone tried the new blur passes?" "Rice Club|Bob|yeah, size 5 with 2 passes looks clean" \
+	"Rice Club|Alice|screenshot pls" "Rice Club|Minh|Photo" \
+	"Rice Club|Bob|also turn off new_optimizations if your wallpaper is animated, otherwise the blur under the bar lags a frame behind and looks like it breathes" \
+	"Rice Club|Charlotte|ok" "Rice Club|Bob|reacted to your message" "Rice Club|Alice|nice, thanks Bob!"
+until_is 5 8 bash -c "wc -l <'$TGIDS'"
+sleep 0.8
+chk "tg: eight messages, one card" test "$(st)" = "center:0 live:1 dnd:0"
+chk "tg: every message answers for an id of its own" test "$(sort -u "$TGIDS" | wc -l)" -eq 8
+SHOWN="$(hq awesome shown)"
+chk "tg: the banner ends on the newest message" test "${SHOWN##*$'\n'}" = "<b>Alice</b>: nice, thanks Bob!"
+# the stored log holds seven; the banner's lines hold fewer of them
+chk "tg: the window is fitted, the stored log's oldest left out" test "${SHOWN#*yeah, size 5}" = "$SHOWN"
+hold_menu "$HX" "$HY"; release_left
+click $((HX - 100)) "$(mrow "$HY" 0 0)" 272
+tap 35
+tap 23
+tap enter
+sleep 0.6
+chk "tg: Reply quoted the newest message" test "$(sigs "$TGSIG" | awk '$1 == "NotificationReplied" { print $2; exit }')" = "$(tail -1 "$TGIDS")"
+chk "tg: the card's close closed every message's notification" test "$(sigs "$TGSIG" | awk '$1 == "NotificationClosed" && $3 == 2 { print $2 }' | sort -u | wc -l)" -eq 8
+nfyact_done
+nclear
+tgchat "$TGIDS" "Trip|Linh|bus leaves at 7:30" "Trip|Quang|packing list" "Trip|Linh|see you there"
+until_is 5 3 bash -c "wc -l <'$TGIDS'"
+nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications CloseNotification u "$(tail -1 "$TGIDS")"
+sleep 0.6
+chk "tg: the sender closing one message keeps its chat" test "$(st)" = "center:0 live:1 dnd:0"
+SHOWN="$(hq awesome shown)"
+chk "tg: and takes that message's line alone" test "${SHOWN##*$'\n'}" = "<b>Quang</b>: packing list"
+for i in 1 2; do
+	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications CloseNotification u "$(sed -n ${i}p "$TGIDS")"
+done
+chk "tg: the chat's last message takes its card" until_is 3 "center:0 live:0 dnd:0" st
+nfyact_done
+tgchat "$TGIDS" "Chat A|Xu|one" "Chat B|Yo|two" "Chat A|Xu|three"
+until_is 5 3 bash -c "wc -l <'$TGIDS'"
+sleep 0.4
+chk "tg: a chat's news leads the column" test "$(hq awesome topline)" = "<b>Xu</b>: three"
+nfyact_done
+nclear
+tgchat "$TGIDS" "Telegram Desktop||You have a new message" "Telegram Desktop||You have a new message" "Telegram Desktop||You have a new message"
+until_is 5 3 bash -c "wc -l <'$TGIDS'"
+sleep 0.6
+chk "tg: a hidden preview's repeats show once" test "$(hq awesome shown)" = "You have a new message"
+nfyact_done
+nclear
+# a client that keeps one id for its chat replaces it with every message
+# (conversation-id and message-id hints): each Notify answers with that
+# id, as the spec has it, and closing it closes the whole chat
+onechat() { # onechat <replaces> <message-id> <text>: prints the id answered
+	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications \
+		Notify susssasa\{sv\}i onechat "$1" "" Room "$3" 0 3 category s im.received conversation-id s cid-one message-id s "$2" 30000 2>/dev/null | awk '{ print $2 }'
+}
+R1="$(onechat 0 m1 first)"
+R2="$(onechat "$R1" m2 second)"
+R3="$(onechat "$R1" m3 third)"
+chk "chat: a replace answers with its replaces_id" test "$R2:$R3" = "$R1:$R1"
+chk "chat: its messages join one card" test "$(st)" = "center:0 live:1 dnd:0"
+nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications CloseNotification u "$R1"
+chk "chat: closing the one id closes the whole chat" until_is 3 "center:0 live:0 dnd:0" st
+nclear
+
 # ---- sound-spawn backpressure ------------------------------------------------------
 # The sound path is ARRIVAL-triggered (the sound-file/sound-name hints): a
 # hostile sender with a steady stream of sound-hinted notifications would

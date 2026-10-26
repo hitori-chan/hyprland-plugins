@@ -60,6 +60,7 @@ namespace NAwesome::Notify {
     inline constexpr double FIELD_H = 30, SEND_D = 22, SEND_ARROW = 12; // the reply field, its send circle and arrow
     inline constexpr double FIELD_PADL = 12, FIELD_GAP = 6, FIELD_PADR = 4; // the text's inset, its room before the circle, the circle's off the end
     inline constexpr double PILL_H = 16;               // the unread count beside a chat's title
+    inline constexpr double HANG = 12; // a chat's hanging indent: every line that continues a message
 
     // a stack header's close button: its cross, 8 px on a 10-unit grid
     inline constexpr double CLOSE_GLYPH = 8;
@@ -151,8 +152,15 @@ namespace NAwesome::Notify {
     // (the caret's end) must stay in view.
     // shadow: a soft drop shadow in a margin of SCachedText::pad (text
     // that sits bare on the desktop; plain text only, no links)
+    // indentPx: a hanging indent, every line of a paragraph but its first
     const SCachedText* cachedText(const std::string& text, const CHyprColor& col, int pt, int maxWpx, int maxHpx, float lineSp, bool markup, int weight,
-                                  const CHyprColor* linkCol = nullptr, bool headCut = false, bool shadow = false);
+                                  const CHyprColor* linkCol = nullptr, bool headCut = false, bool shadow = false, int indentPx = 0);
+
+    // A chat card's body (one paragraph per message), fitted from the
+    // newest end into capPx (Transcript::fitTail) by the layout the body's
+    // raster uses — the same width, links and hanging indent. Memoized on
+    // the card (SNotif::fitMemo).
+    const std::string& fittedTranscript(const SP<SNotif>& n, int pt, int widthPx, int capPx, int indentPx, const CHyprColor* linkCol);
 
     double texH(const SCachedText* e, double scale);
     double texW(const SCachedText* e, double scale);

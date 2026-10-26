@@ -19,6 +19,7 @@
 
 #include "model.hpp"
 #include "textcut.hpp"
+#include "transcript.hpp"
 
 #include "../core/jobs.hpp"
 
@@ -26,11 +27,15 @@ namespace NAwesome::Notify {
 
     std::vector<SP<SNotif>> notifs;
 
-    // The transcript and the legacy join are both chronological (oldest
-    // leads, newest ends), and an ordinary body ends on its newest line too —
-    // the newest message sits at the END of every card body. The collapsed
-    // row must always print the newest.
+    // The newest message sits at the END of every card body: a chat's
+    // transcript is chronological, and an ordinary body ends on its newest
+    // line too. The collapsed row prints a chat's newest message whole, on
+    // one line, its sender inline.
     std::string collapsedLine(const SP<SNotif>& n) {
+        for (auto it = n->messages.rbegin(); it != n->messages.rend(); ++it)
+            if (!it->text.empty())
+                return Transcript::flatten(
+                    Transcript::paragraph(n->conversationKind == "group" ? Parse::oneLine(Parse::sanitizeMarkup(it->senderName)) : std::string{}, it->text));
         if (n->body.empty())
             return {};
         return lastLine(n->body);
@@ -91,6 +96,57 @@ namespace NAwesome::Notify {
                     return N;
             return nullptr;
         }
+
+        // the chat card one of whose messages answers for this id
+        static SP<SNotif> messageOwner(uint32_t nid) {
+            for (const auto& N : notifs)
+                for (const auto& M : N->messages)
+                    if (M.nid == nid)
+                        return N;
+            return nullptr;
+        }
+
+        static bool hasMessage(const SNotif& n, uint32_t nid) {
+            return std::ranges::any_of(n.messages, [nid](const auto& M) { return M.nid == nid; });
+        }
+
+        // a card's id or a message's: neither is minted again while it lives
+        static bool idTaken(uint32_t id) {
+            return byId(id) || messageOwner(id);
+        }
+
+        uint32_t wireId(const SNotif& n) {
+            for (auto it = n.messages.rbegin(); it != n.messages.rend(); ++it)
+                if (it->nid)
+                    return it->nid;
+            return n.id;
+        }
+
+        // the ids a chat's messages answer for, each once: a replacing
+        // client's messages share its one id
+        static std::vector<uint32_t> messageIds(const SNotif& n) {
+            std::vector<uint32_t> ids;
+            for (const auto& M : n.messages)
+                if (M.nid && std::ranges::find(ids, M.nid) == ids.end())
+                    ids.push_back(M.nid);
+            return ids;
+        }
+
+        // A card's death is the death of every notification it answers for:
+        // a chat's every message, else the card. Telegram keeps one record
+        // per message and forgets only the one a NotificationClosed names.
+        static void emitClosedAll(const SNotif& n, uint32_t reason) {
+            const auto IDS = messageIds(n);
+            for (const auto ID : IDS)
+                Bus::emitClosed(ID, reason);
+            if (IDS.empty())
+                Bus::emitClosed(n.id, reason);
+        }
+
+        // one model-wide serial for every card's revision: a closed id that
+        // a client reuses starts a new card, whose first rev must not equal
+        // the old card's in a stale click
+        static uint64_t revSerial = 0;
 
         // Cards that OPT OUT of residency: they vanish on expiry and never
         // park as a shade row. So they must never coalesce either — a
@@ -306,11 +362,45 @@ namespace NAwesome::Notify {
         }
 
         bool closeOne(uint32_t id, uint32_t reason) {
-            const auto BEFORE = notifs.size();
-            std::erase_if(notifs, [&](const auto& N) { return N->id == id; });
-            if (notifs.size() == BEFORE)
+            const auto IT = std::ranges::find_if(notifs, [&](const auto& N) { return N->id == id; });
+            if (IT == notifs.end())
                 return false; // spec: unknown IDs must be reportable
+            const auto N = *IT;
+            notifs.erase(IT);
+            emitClosedAll(*N, reason);
+            notifChanged();
+            rearmExpiry();
+            return true;
+        }
+
+        static std::string buildConversationBody(const SP<SNotif>& n, size_t limit);
+        static void        rebuildConversationParticipants(SNotif& n, int iconPx);
+
+        // One message of a chat goes: its line and its share of the count,
+        // the card with its last message. No signal: the caller's.
+        static void dropMessage(const SP<SNotif>& N, uint32_t nid) {
+            const auto GONE = (uint32_t)std::erase_if(N->messages, [nid](const auto& M) { return M.nid == nid; });
+            if (N->messages.empty()) {
+                std::erase(notifs, N);
+                return;
+            }
+            N->rev         = ++revSerial;
+            N->body        = buildConversationBody(N, Pixel::MAX_PRESENTED_CONVERSATION_MESSAGES);
+            N->unreadCount = N->unreadCount > GONE ? N->unreadCount - GONE : 0;
+            rebuildConversationParticipants(*N, std::max(8, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon")));
+        }
+
+        bool closeWire(uint32_t id, uint32_t reason) {
+            const auto N = messageOwner(id);
+            if (!N) {
+                // a chat card's own id, its message already gone (expired out
+                // of the log, closed): the card answers for its other messages
+                if (const auto C = byId(id); C && !C->messages.empty())
+                    return false;
+                return closeOne(id, reason);
+            }
             Bus::emitClosed(id, reason);
+            dropMessage(N, id);
             notifChanged();
             rearmExpiry();
             return true;
@@ -331,7 +421,7 @@ namespace NAwesome::Notify {
             const auto BEFORE = notifs.size();
             for (const auto& N : notifs)
                 if (SWEPT(N))
-                    Bus::emitClosed(N->id, R_DISMISSED);
+                    emitClosedAll(*N, R_DISMISSED);
             std::erase_if(notifs, SWEPT);
             if (notifs.size() == BEFORE)
                 return;
@@ -357,7 +447,7 @@ namespace NAwesome::Notify {
             const auto BEFORE = notifs.size();
             for (const auto& N : notifs)
                 if (MATCH(N))
-                    Bus::emitClosed(N->id, R_DISMISSED);
+                    emitClosedAll(*N, R_DISMISSED);
             std::erase_if(notifs, MATCH);
             if (notifs.size() == BEFORE)
                 return;
@@ -385,7 +475,7 @@ namespace NAwesome::Notify {
             const auto BEFORE = notifs.size();
             for (const auto& N : notifs)
                 if (MATCH(N))
-                    Bus::emitClosed(N->id, R_DISMISSED);
+                    emitClosedAll(*N, R_DISMISSED);
             std::erase_if(notifs, MATCH);
             if (notifs.size() == BEFORE)
                 return;
@@ -402,18 +492,16 @@ namespace NAwesome::Notify {
         // cards are parked, not dismissed). An OSD or a transient card goes
         // for good (momentary).
         void absorbPopped() {
-            bool                  changed = false;
-            std::vector<uint32_t> gone;
-            for (const auto& N : notifs)
-                if (momentary(N))
-                    gone.push_back(N->id);
-            for (const auto ID : gone) {
-                std::erase_if(notifs, [&](const auto& N) { return N->id == ID; });
-                Bus::emitClosed(ID, R_EXPIRED);
+            bool changed = false;
+            if (std::erase_if(notifs, [](const auto& N) {
+                    if (!momentary(N))
+                        return false;
+                    emitClosedAll(*N, R_EXPIRED);
+                    return true;
+                }) > 0) {
                 changed = true;
-            }
-            if (!gone.empty())
                 rearmExpiry();
+            }
             for (const auto& N : notifs) {
                 if (!N->banner || N->waiting)
                     continue;
@@ -518,10 +606,10 @@ namespace NAwesome::Notify {
                         victim = it;
                     }
                 }
-                const auto VID   = (*victim)->id;
-                const bool SHOWN = !(*victim)->waiting;
+                const auto VICTIM = *victim;
+                const bool SHOWN  = !VICTIM->waiting;
                 notifs.erase(victim);
-                Bus::emitClosed(VID, R_UNDEFINED);
+                emitClosedAll(*VICTIM, R_UNDEFINED);
                 // a DND-held arrival warms nothing itself: the shown card it
                 // pushed out must still leave the screen
                 if (SHOWN)
@@ -615,36 +703,24 @@ namespace NAwesome::Notify {
             n.hasPixels  = true;
         }
 
-        // the conversation's display body: the latest `limit` kept messages,
-        // CHRONOLOGICAL — the oldest line leads and the newest ENDS the body,
-        // so an arrival lands at the bottom and pushes the oldest out of the
-        // top of the window. Group senders are prefixed by name.
-        static std::string buildConversationBody(const SP<SNotif>& n, size_t limit);
-
-        const std::string& conversationBody(const SP<SNotif>& n, size_t limit) {
-            if (n->messages.empty())
-                return n->body;
-            if (n->convMemo.rev == n->rev && n->convMemo.limit == limit)
-                return n->convMemo.body;
-            n->convMemo = {.rev = n->rev, .limit = limit, .body = buildConversationBody(n, limit)};
-            return n->convMemo.body;
-        }
-
+        // A chat's body: its latest `limit` messages, CHRONOLOGICAL — the
+        // newest ENDS it, so an arrival lands at the bottom and pushes the
+        // oldest out of the top — one paragraph each (Transcript::paragraph),
+        // a group's senders leading their messages in bold. A message that
+        // repeats the one before it, sender and all, shows once: Telegram's
+        // hidden preview posts "You have a new message" for every message,
+        // and the count beside the title says how many came.
         static std::string buildConversationBody(const SP<SNotif>& n, size_t limit) {
-
             std::vector<std::string> LINES;
+            const SMessage*          prev  = nullptr;
+            const bool               GROUP = n->conversationKind == "group";
             const size_t             START = Pixel::presentedMessageStart(n->messages, limit);
             for (size_t i = START; i < n->messages.size(); i++) {
                 const auto& M = n->messages[i];
-                if (M.text.empty())
+                if (M.text.empty() || (prev && prev->text == M.text && prev->senderName == M.senderName))
                     continue;
-                std::string line;
-                if (n->conversationKind == "group" && !M.senderName.empty()) {
-                    line += Parse::oneLine(Parse::sanitizeMarkup(M.senderName));
-                    line += ": ";
-                }
-                line += M.text;
-                LINES.push_back(capMarkup(line));
+                prev = &M;
+                LINES.push_back(capMarkup(Transcript::paragraph(GROUP ? Parse::oneLine(Parse::sanitizeMarkup(M.senderName)) : std::string{}, M.text)));
             }
             // the 8 KB cap evicts from the OLDEST end — the newest message is
             // what the card exists to show (n ≤ 7, so the rebuild is cheap)
@@ -720,6 +796,23 @@ namespace NAwesome::Notify {
 
         // ---- arrival ----
 
+        // Fresh ids count up from a low counter and skip any still in use (a
+        // card's, or a chat message's), so they never collide with a
+        // displayed notification. Crucially the counter is NOT dragged up to
+        // a seen replaces_id (as it once was): the OSD scripts pin ids in the
+        // 9990s, and bumping past 9991 handed the next fresh notification
+        // 9992 — the brightness OSD's id — so a keypress hijacked it. Low
+        // fresh ids and the pinned band stay disjoint.
+        static uint32_t freshId() {
+            uint32_t id = 0;
+            do {
+                id = nextId++;
+                if (nextId == 0)
+                    nextId = 1; // wrap: 0 means "no id"
+            } while (idTaken(id) || inOsdBand(id));
+            return id;
+        }
+
         uint32_t arrive(const std::string& appName, uint32_t replacesId, const std::string& appIcon, const std::string& summary, const std::string& body,
                         const std::string& sender, const std::vector<std::string>& actions, const std::map<std::string, sdbus::Variant>& hints, int32_t expireTimeout,
                         std::optional<Parse::ImageData> image, bool osd) {
@@ -733,9 +826,26 @@ namespace NAwesome::Notify {
             // sender left the bus is ownerless: the app's next instance
             // continues it. In-process posts (sender "") own theirs.
             const auto TAKEABLE = [&sender](const SNotif& N) { return N.sender == sender || N.orphaned; };
-            if (id != 0)
-                if (const auto N = byId(id); N && !TAKEABLE(*N))
-                    id = 0;
+            // replaces_id names a card, or one message of a chat card: that
+            // message is replaced in place (replaceNid), its card the target
+            uint32_t   replaceNid = 0;
+            SP<SNotif> replaceOwner; // the message's card, when the id is not the card's own
+            if (id != 0) {
+                if (const auto N = byId(id)) {
+                    if (!TAKEABLE(*N))
+                        id = 0;
+                    else if (hasMessage(*N, id))
+                        replaceNid = id;
+                } else if (const auto O = messageOwner(id)) {
+                    if (!TAKEABLE(*O))
+                        id = 0;
+                    else {
+                        replaceNid   = id;
+                        replaceOwner = O;
+                        id           = O->id;
+                    }
+                }
+            }
 
             // cap the wire strings before they become card members (see the
             // MAX_*_BYTES above)
@@ -868,18 +978,37 @@ namespace NAwesome::Notify {
             const bool        HISTORIC       = HISTORIC_HINT.value_or(false);
 
             // THE CONVERSATION MERGE (Android's MessagingStyle): every message
-            // of one chat is ONE card. The primary contract is the sender's
-            // stable conversation-id: display text and category alone are
-            // insufficient — two Telegram chats can share a title, and a
-            // browser can reuse visible text for unrelated site alerts.
-            // Without a conversation-id the legacy contract stands: a fresh
-            // Notify whose app + summary matches a live card rides the replace
-            // path with the bodies joined (the fd.o conversation categories —
-            // the summary IS the sender or the room — and x-canonical-append).
+            // of one chat is ONE card, its messages a log. The primary
+            // contract is the sender's stable conversation-id: display text
+            // and category alone are insufficient — two Telegram chats can
+            // share a title, and a browser can reuse visible text for
+            // unrelated site alerts. Without a conversation-id the legacy
+            // contract stands: a fresh Notify whose app + summary matches a
+            // live chat card joins it (the fd.o conversation categories — the
+            // summary IS the sender or the room — and x-canonical-append).
             // Cards that vanish never merge (a suppressed banner would strand
             // them), nor does the OSD band.
-            std::string appendOnto;
-            bool        canonicalAppend = false; // x-canonical-append: this card joins a conversation
+            const bool CANONICAL_APPEND = hintFlag(hints, "x-canonical-append").value_or(false);
+            // the CLIPPED summary, as stored: the raw one was both unbounded
+            // work and never equal past the clip
+            const auto SUMKEY = Parse::oneLine(Parse::sanitizeMarkup(SUM, false, /*plainText=*/true));
+            // whether this arrival continues a card's chat: the card's (or
+            // the hint's) conversation-id, else the legacy app and summary
+            const auto continuesChat = [&](const SNotif& N) {
+                if (N.appKey != APPKEY)
+                    return false;
+                const std::string& EFF = CONV_ID_HINT ? CONV_ID : N.conversationId;
+                if (!EFF.empty())
+                    return N.conversationId == EFF;
+                return N.conversationId.empty() && N.conversation && (CATEGORY_CONVERSATION || CANONICAL_APPEND) && N.summary == SUMKEY;
+            };
+            // a replaced message that no longer belongs to its chat leaves it
+            // as a card of its own: the id lives on, so nothing closes
+            if (replaceOwner && !continuesChat(*replaceOwner)) {
+                dropMessage(replaceOwner, replaceNid);
+                id         = replaceNid;
+                replaceNid = 0;
+            }
             if (id == 0) {
                 if (!CONV_ID.empty()) {
                     for (const auto& N : notifs)
@@ -887,23 +1016,13 @@ namespace NAwesome::Notify {
                             id = N->id;
                             break;
                         }
-                } else {
-                    const bool append = CATEGORY_CONVERSATION || hintFlag(hints, "x-canonical-append").value_or(false);
-                    canonicalAppend = append;
-                    if (append) {
-                        // the CLIPPED summary, as stored: the raw one was both
-                        // unbounded work and never equal past the clip
-                        const auto KEY = Parse::oneLine(Parse::sanitizeMarkup(SUM, false, /*plainText=*/true));
-                        // never onto a structured conversation: its body is
-                        // rebuilt from its message log, and a joined body
-                        // upserted as one message duplicated the transcript
-                        for (const auto& N : notifs)
-                            if (!inOsdBand(N->id) && !vanishes(N) && TAKEABLE(*N) && N->conversationId.empty() && N->appKey == APPKEY && N->summary == KEY) {
-                                id         = N->id;
-                                appendOnto = N->body;
-                                break;
-                            }
-                    }
+                } else if (CATEGORY_CONVERSATION || CANONICAL_APPEND) {
+                    // only onto a legacy chat: a structured one keys on its id
+                    for (const auto& N : notifs)
+                        if (!inOsdBand(N->id) && !vanishes(N) && TAKEABLE(*N) && N->conversation && N->conversationId.empty() && N->appKey == APPKEY && N->summary == SUMKEY) {
+                            id = N->id;
+                            break;
+                        }
                 }
             }
 
@@ -914,21 +1033,8 @@ namespace NAwesome::Notify {
             if (inOsdBand(id) && !osd)
                 id = 0;
 
-            if (id == 0) {
-                // Fresh ids count up from a low counter and skip any that's
-                // still live, so they never collide with a displayed
-                // notification. Crucially the counter is NOT dragged up to a
-                // seen replaces_id (as it once was): the OSD scripts pin ids
-                // in the 9990s, and bumping past 9991 handed the next fresh
-                // notification 9992 — the brightness OSD's id — so a
-                // keypress hijacked it. Low fresh ids and the pinned band
-                // stay disjoint.
-                do {
-                    id = nextId++;
-                    if (nextId == 0)
-                        nextId = 1; // wrap: 0 means "no id"
-                } while (byId(id) || inOsdBand(id));
-            }
+            if (id == 0)
+                id = freshId();
 
             auto       n        = byId(id);
             const bool EXISTING = n != nullptr;
@@ -952,22 +1058,31 @@ namespace NAwesome::Notify {
             const std::string EFFECTIVE_CONV_ID = CONV_ID_HINT ? CONV_ID : SAME_APP ? n->conversationId : std::string{};
             const bool        SAME_CONVERSATION = EXISTING && !EFFECTIVE_CONV_ID.empty() && SAME_APP && n->conversationId == EFFECTIVE_CONV_ID;
             // x-canonical-append is a conversation by definition: its body is
-            // the joined transcript, chronological, like the category's
-            const bool CONVERSATION = CATEGORY_CONVERSATION || canonicalAppend || !EFFECTIVE_CONV_ID.empty() || (SAME_CONVERSATION && n->conversation);
-            // the arrival below may rewrite messages and kind. One serial for
-            // every card, not a per-card count: a closed id that a client
-            // reuses starts a new card, whose first rev must not equal the
-            // old card's in a stale click
-            static uint64_t revSerial = 0;
+            // the chat's transcript, chronological, like the category's
+            const bool CONVERSATION = CATEGORY_CONVERSATION || CANONICAL_APPEND || !EFFECTIVE_CONV_ID.empty() || (SAME_CONVERSATION && n->conversation);
+            // the chat goes on: its log stays and this message joins it
+            const bool KEEP_LOG = EXISTING && continuesChat(*n);
+            // the arrival below may rewrite messages and kind
             n->rev  = ++revSerial;
             n->seen = false; // new content: the bell's dot until the center shows it
-            if (!SAME_CONVERSATION) {
+            if (!KEEP_LOG) {
+                // another chat (or none) takes the card: the old one's
+                // messages go and their notifications close — the card's own
+                // id lives on in the new content
+                for (const auto NID : messageIds(*n))
+                    if (NID != n->id)
+                        Bus::emitClosed(NID, R_UNDEFINED);
                 n->messages.clear();
                 n->unreadCount = 0;
+                replaceNid     = 0;
             }
 
             // before the re-alert below: DND puts a shown card back as it was
             const bool WAS_WAITING = EXISTING && n->waiting, WAS_BANNER = EXISTING && n->banner, WAS_ABSORBED = EXISTING && n->absorbed;
+            // the card the banner column leads with: a chat's news already
+            // there changes its words in place, anywhere else it springs in
+            const auto LEAD_BANNER = std::ranges::find_if(notifs, [](const auto& N) { return !N->waiting && N->banner && N->osdGlyph == 0; });
+            const bool WAS_LEAD    = WAS_BANNER && LEAD_BANNER != notifs.end() && *LEAD_BANNER == n;
             n->arrived     = Time::steadyNow(); // a replace refreshes the age, like a new arrival would
             n->arrivedWall = std::time(nullptr);
             // A replace re-alerts (the OSD sweep relies on it); the merge
@@ -984,31 +1099,22 @@ namespace NAwesome::Notify {
             for (const auto& P : Parse::extractImages(bodyText, std::max(64, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon") * 2), MAX_BODY_IMAGES))
                 n->bodyImages.push_back(SBodyImage{.src = P.src, .alt = P.alt});
             n->body = capMarkup(Parse::sanitizeMarkup(bodyText, /*allowLinks=*/true));
-            if (CONVERSATION) {
-                // the conversation's lines must stay one message each: the
-                // sender's leading bold line would otherwise be the body's
-                // newest line, hiding the message under it
-                n->body = Parse::foldSenderPrefix(std::move(n->body));
-            }
-            if (!appendOnto.empty())
-                n->body = Parse::joinAppend(appendOnto, n->body);
 
-            // the structured conversation state: identity, kind, icon, the
-            // app's declared group, and — when a conversation-id is in force
-            // — the bounded message log the body is rebuilt from
+            // the chat state: identity, kind, the app's declared group, and
+            // the bounded message log the body is rebuilt from
             const int ICONPX = std::max(8, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon"));
             n->conversationId = EFFECTIVE_CONV_ID;
             if (CONV_TITLE_HINT)
                 n->conversationTitle = CONV_TITLE_HINT->empty() ? n->summary : Parse::oneLine(Parse::sanitizeMarkup(*CONV_TITLE_HINT, false, /*plainText=*/true));
-            else if (!SAME_CONVERSATION)
+            else if (!KEEP_LOG)
                 n->conversationTitle = n->summary;
             if (CONV_KIND_HINT) {
                 const auto KIND = Pixel::normalizeConversationKind(*CONV_KIND_HINT);
                 if (!KIND.empty())
                     n->conversationKind = KIND;
-                else if (!SAME_CONVERSATION)
+                else if (!KEEP_LOG)
                     n->conversationKind.clear();
-            } else if (!SAME_CONVERSATION)
+            } else if (!KEEP_LOG)
                 n->conversationKind = !EFFECTIVE_CONV_ID.empty() ? "one-to-one" : "";
             if (n->conversationKind.empty() && !EFFECTIVE_CONV_ID.empty())
                 n->conversationKind = "one-to-one";
@@ -1018,19 +1124,82 @@ namespace NAwesome::Notify {
             } else if (!SAME_APP)
                 n->declaredGroupKey.clear();
 
-            if (!EFFECTIVE_CONV_ID.empty()) {
+            // THE LOG, whichever contract merged the chat. The structured
+            // hints name the sender; a legacy client leads its body with the
+            // sender's bold line (Telegram Desktop's group form), which only
+            // a group's message carries. Every message answers for an id of
+            // its own (SMessage::nid): the card's first takes the card's.
+            uint32_t wire  = id;    // what this Notify answers with
+            bool     fresh = false; // a new message: news, the chat moves up
+            if (CONVERSATION) {
                 const auto viewOf = [](const std::optional<std::string>& value) -> std::optional<std::string_view> {
                     return value ? std::optional<std::string_view>{*value} : std::nullopt;
                 };
-                const auto SENDER_NAME_VIEW = SENDER_NAME_HINT ? std::optional<std::string_view>{SENDER_NAME} : std::nullopt;
-                const auto MUTATION = Pixel::upsertMessage(n->messages, MESSAGE_ID, n->body, viewOf(SENDER_ID_HINT), SENDER_NAME_VIEW, viewOf(SENDER_ICON_HINT), MESSAGE_TIME_HINT, HISTORIC_HINT);
+                std::string                text = n->body;
+                std::optional<std::string> name = SENDER_NAME_HINT ? std::optional<std::string>{SENDER_NAME} : std::nullopt;
+                if (auto L = Transcript::senderLead(text)) {
+                    text = std::move(L->text);
+                    if (!name)
+                        name = clipUtf8(Parse::oneLine(L->sender), MAX_SENDER_NAME_BYTES);
+                    if (!CONV_KIND_HINT && EFFECTIVE_CONV_ID.empty())
+                        n->conversationKind = "group";
+                }
+                std::vector<uint32_t> evicted;
+                auto                  mutation = Pixel::eMessageMutation::NONE;
+                // the message the sender's replaces_id named (of those sharing
+                // it, the newest), rewritten in place
+                auto REPLACED = n->messages.end();
+                if (replaceNid && MESSAGE_ID.empty())
+                    for (auto it = n->messages.begin(); it != n->messages.end(); ++it)
+                        if (it->nid == replaceNid)
+                            REPLACED = it;
+                if (REPLACED != n->messages.end()) {
+                    REPLACED->text = text;
+                    if (name)
+                        REPLACED->senderName = *name;
+                    if (SENDER_ID_HINT)
+                        REPLACED->senderId = *SENDER_ID_HINT;
+                    if (SENDER_ICON_HINT)
+                        REPLACED->senderIcon = *SENDER_ICON_HINT;
+                    mutation = Pixel::eMessageMutation::REPLACED;
+                    wire     = replaceNid;
+                } else {
+                    const bool FIRST = n->messages.empty();
+                    mutation = Pixel::upsertMessage(n->messages, MESSAGE_ID, text, viewOf(SENDER_ID_HINT), name ? std::optional<std::string_view>{*name} : std::nullopt,
+                                                    viewOf(SENDER_ICON_HINT), MESSAGE_TIME_HINT, HISTORIC_HINT, &evicted);
+                    // a replace of the card's own id, its message gone, keeps it
+                    const bool OWN = FIRST || (replacesId == n->id && !hasMessage(*n, n->id));
+                    for (auto& M : n->messages)
+                        if (M.nid == 0)
+                            wire = M.nid = replaceNid ? replaceNid : OWN ? n->id : freshId();
+                        else if (mutation == Pixel::eMessageMutation::REPLACED && !MESSAGE_ID.empty() && M.id == MESSAGE_ID)
+                            wire = M.nid;
+                    // A replace answers with its replaces_id (the spec): the
+                    // message it adds shares the id with the one it named, so a
+                    // client that keeps one id for its chat closes all of it.
+                    if (replaceNid)
+                        wire = replaceNid;
+                }
+                for (const auto NID : evicted)
+                    if (!hasMessage(*n, NID)) // a shared id lives on in the newer messages
+                        Bus::emitClosed(NID, R_EXPIRED);
+                fresh = EXISTING && mutation == Pixel::eMessageMutation::INSERTED && !HISTORIC;
                 rebuildConversationParticipants(*n, ICONPX);
-                n->body        = conversationBody(n, Pixel::MAX_PRESENTED_CONVERSATION_MESSAGES);
-                n->unreadCount = Pixel::updatedUnreadCount(n->unreadCount, UNREAD_HINT, HISTORIC, MUTATION);
+                n->body        = buildConversationBody(n, Pixel::MAX_PRESENTED_CONVERSATION_MESSAGES);
+                n->unreadCount = Pixel::updatedUnreadCount(n->unreadCount, UNREAD_HINT, HISTORIC, mutation);
             } else {
                 n->unreadCount = 0;
                 n->participants.clear();
             }
+
+            // a chat's new message is news: the card leads the column and the
+            // center as a new arrival would (a plain replace, a progress
+            // step, an edit keeps its place)
+            if (fresh)
+                if (const auto IT = std::ranges::find(notifs, n); IT != notifs.begin()) {
+                    notifs.erase(IT);
+                    notifs.insert(notifs.begin(), n);
+                }
 
             n->urgency  = 1;
             n->progress = -1;
@@ -1176,6 +1345,10 @@ namespace NAwesome::Notify {
             const bool COALESCED = SOFT && appBannersFull(n);
             if (COALESCED || (SOFT && Policy::bannersOff(*n)))
                 n->banner = false;
+            // a chat's news rising to the top of the column (or back onto
+            // it) springs in like an arrival
+            if (fresh && n->banner && !n->waiting && !quiet && !WAS_LEAD)
+                n->born = Time::steadyNow();
 
             if (!n->waiting) // a suspended arrival is invisible: no warm, no damage
                 notifChanged();
@@ -1212,7 +1385,7 @@ namespace NAwesome::Notify {
             }
 
             rearmExpiry();
-            return id;
+            return wire;
         }
 
         // ---- lifecycle ----
@@ -1226,14 +1399,14 @@ namespace NAwesome::Notify {
                     // and hides only the popup — the card stays in the
                     // shade until dismissed/acted. Transient and progress
                     // (OSD) cards vanish entirely.
-                    const auto            NOW     = Time::steadyNow();
-                    bool                  changed = false;
-                    std::vector<uint32_t> gone;
+                    const auto              NOW     = Time::steadyNow();
+                    bool                    changed = false;
+                    std::vector<SP<SNotif>> gone;
                     for (const auto& N : notifs) {
                         if (!N->banner || N->timeoutMs <= 0 || N->waiting || N->id == heldBanner || N->deadline > NOW)
                             continue;
                         if (vanishes(N)) {
-                            gone.push_back(N->id);
+                            gone.push_back(N);
                             continue;
                         }
                         // into the shade: it still exists (we advertise
@@ -1243,9 +1416,9 @@ namespace NAwesome::Notify {
                         N->banner = false;
                         changed   = true;
                     }
-                    for (const auto ID : gone) {
-                        std::erase_if(notifs, [&](const auto& N) { return N->id == ID; });
-                        Bus::emitClosed(ID, R_EXPIRED);
+                    for (const auto& N : gone) {
+                        std::erase(notifs, N);
+                        emitClosedAll(*N, R_EXPIRED);
                     }
                     if (changed || !gone.empty())
                         notifChanged();
