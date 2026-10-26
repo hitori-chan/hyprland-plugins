@@ -38,8 +38,8 @@ hq awesome center >/dev/null; sleep 0.5
 chk "center: opening absorbs the banner into the shade" test "$(bd)" = "banners:0 resident:3"
 chk "center: opening dismisses nothing" test "$(st)" = "center:1 live:3 dnd:0"
 capture_nested "$STATE/center-head.png"
-chk "center: the heading names the column, left of its controls" \
-	test "$(lit_px "$STATE/center-head.png" $((PANEL_X + 4)) $((PANEL_X + 150)) $((N_TOP + 4)) $((N_TOP + 24)))" -gt 80
+chk "center: the heading names the column, under the controls" \
+	test "$(lit_px "$STATE/center-head.png" $((PANEL_X + 4)) $((PANEL_X + 150)) $((HEAD_Y + 4)) $((HEAD_Y + 24)))" -gt 80
 hq awesome center >/dev/null; sleep 0.5
 chk "center: closing neither re-pops nor drops a card" test "$(st)" = "center:0 live:3 dnd:0"
 nclear
@@ -102,15 +102,19 @@ import sys
 from PIL import Image
 Image.new("RGB", (1280, 720), (30, 160, 240)).save(sys.argv[1]) # past 512²: scaled on the raster worker
 PY
+# hero_px/hero_span <frame> <y0> <y1>: the band a capture holds its card in
+# (the banner column's top, or the shade's first card under the control
+# center's block); one band per scan keeps each scan short
+BANNER_BAND="$N_TOP 280" SHADE_BAND="$CARD_Y $((CARD_Y + 240))"
 hero_px() {
-	python3 - "$1" "$MON_W" <<'PY'
+	python3 - "$1" "$MON_W" "$2" "$3" <<'PY'
 import sys
 from PIL import Image
 im = Image.open(sys.argv[1]).convert("RGB")
 px = im.load()
 x0, x1 = int(sys.argv[2]) - 12 - 356, int(sys.argv[2]) - 12
 n = 0
-for y in range(40, 280):
+for y in range(int(sys.argv[3]), int(sys.argv[4])):
     for x in range(x0, x1, 2):
         r, g, b = px[x, y]
         if b > 200 and r < 100 and 120 < g < 200:
@@ -119,13 +123,13 @@ print(n)
 PY
 }
 hero_span() {
-	python3 - "$1" "$MON_W" <<'PY'
+	python3 - "$1" "$MON_W" "$2" "$3" <<'PY'
 import sys
 from PIL import Image
 im = Image.open(sys.argv[1]).convert("RGB")
 px = im.load()
 x0, x1 = int(sys.argv[2]) - 12 - 356, int(sys.argv[2]) - 12
-ys = [y for y in range(40, 280)
+ys = [y for y in range(int(sys.argv[3]), int(sys.argv[4]))
       if any(b > 200 and r < 100 and 120 < g < 200 for r, g, b in (px[x, y] for x in range(x0, x1, 8)))]
 print(max(ys) - min(ys) + 1 if ys else 0)
 PY
@@ -133,18 +137,18 @@ PY
 dsp "hl.dsp.exec_cmd('notify-send -a heroapp -t 2000 -i $HEROIMG \"Screenshot\" saved')"; sleep 1
 chk "hero: the image card pops with its banner" test "$(bd)" = "banners:1 resident:0"
 capture_nested $STATE/hero-0-aw.png
-chk "hero: the banner leads with the card-wide preview" test "$(hero_px $STATE/hero-0-aw.png)" -gt 8000
+chk "hero: the banner leads with the card-wide preview" test "$(hero_px $STATE/hero-0-aw.png $BANNER_BAND)" -gt 8000
 # a 1280x720 image at the card's 328 px is 184 tall: HERO_CAP holds it to 160
-chk "hero: the banner's preview is the capped strip, not the full image" test "$(hero_span $STATE/hero-0-aw.png)" -ge 150 -a "$(hero_span $STATE/hero-0-aw.png)" -le 166
+chk "hero: the banner's preview is the capped strip, not the full image" test "$(hero_span $STATE/hero-0-aw.png $BANNER_BAND)" -ge 150 -a "$(hero_span $STATE/hero-0-aw.png $BANNER_BAND)" -le 166
 hq awesome center >/dev/null; sleep 0.4
 capture_nested $STATE/hero-1-aw.png
-chk "hero: the shade row shows no card-wide preview" test "$(hero_px $STATE/hero-1-aw.png)" -lt 3000
-chk "hero: the shade row leads with the image's thumbnail" test "$(hero_px $STATE/hero-1-aw.png)" -gt 200
-chk "hero: the thumbnail is icon-sized" test "$(hero_span $STATE/hero-1-aw.png)" -ge 30 -a "$(hero_span $STATE/hero-1-aw.png)" -le 50
+chk "hero: the shade row shows no card-wide preview" test "$(hero_px $STATE/hero-1-aw.png $SHADE_BAND)" -lt 3000
+chk "hero: the shade row leads with the image's thumbnail" test "$(hero_px $STATE/hero-1-aw.png $SHADE_BAND)" -gt 200
+chk "hero: the thumbnail is icon-sized" test "$(hero_span $STATE/hero-1-aw.png $SHADE_BAND)" -ge 30 -a "$(hero_span $STATE/hero-1-aw.png $SHADE_BAND)" -le 50
 hq awesome center >/dev/null; sleep 0.4
 chk "hero: the explicit close re-pops the banner" test "$(bd)" = "banners:1 resident:0"
 capture_nested $STATE/hero-3-aw.png
-chk "hero: the re-popped banner shows the preview again" test "$(hero_px $STATE/hero-3-aw.png)" -gt 8000
+chk "hero: the re-popped banner shows the preview again" test "$(hero_px $STATE/hero-3-aw.png $BANNER_BAND)" -gt 8000
 nclear
 chk "hero: reset after the center-hero battery" test "$(st)" = "center:0 live:0 dnd:0"
 # the same preview as raw image-data: unpacked and scaled on the worker
@@ -161,8 +165,8 @@ Gio.bus_get_sync(Gio.BusType.SESSION).call_sync("org.freedesktop.Notifications",
 PY
 sleep 1
 capture_nested $STATE/hero-4-aw.png
-chk "hero: an image-data screenshot previews card-wide" test "$(hero_px $STATE/hero-4-aw.png)" -gt 8000
-chk "hero: the image-data preview is the capped strip" test "$(hero_span $STATE/hero-4-aw.png)" -ge 150 -a "$(hero_span $STATE/hero-4-aw.png)" -le 166
+chk "hero: an image-data screenshot previews card-wide" test "$(hero_px $STATE/hero-4-aw.png $BANNER_BAND)" -gt 8000
+chk "hero: the image-data preview is the capped strip" test "$(hero_span $STATE/hero-4-aw.png $BANNER_BAND)" -ge 150 -a "$(hero_span $STATE/hero-4-aw.png $BANNER_BAND)" -le 166
 nclear
 # a square is a face at any size: Firefox posts a page's icon at its own
 # size (a 512 px app icon, a contact's avatar), and as a hero it was cut
@@ -181,8 +185,8 @@ Gio.bus_get_sync(Gio.BusType.SESSION).call_sync("org.freedesktop.Notifications",
 PY
 sleep 1
 capture_nested $STATE/hero-5-aw.png
-chk "hero: a square page icon is no card-wide preview" test "$(hero_px $STATE/hero-5-aw.png)" -lt 3000
-chk "hero: it leads the card as its face" test "$(hero_px $STATE/hero-5-aw.png)" -gt 200
+chk "hero: a square page icon is no card-wide preview" test "$(hero_px $STATE/hero-5-aw.png $BANNER_BAND)" -lt 3000
+chk "hero: it leads the card as its face" test "$(hero_px $STATE/hero-5-aw.png $BANNER_BAND)" -gt 200
 nclear
 
 # ---- the Notify reader (notify/bus.cpp) ---------------------------------------
@@ -215,7 +219,7 @@ MS="$(notify_raw image-data 1920 1080 auto)"; echo "reader: 1080p image-data ans
 chk "reader: a 1080p image-data answers within 250 ms" test "${MS:-9999}" -lt 250
 sleep 1
 capture_nested $STATE/reader-1-aw.png
-chk "reader: and previews card-wide" test "$(hero_px $STATE/reader-1-aw.png)" -gt 8000
+chk "reader: and previews card-wide" test "$(hero_px $STATE/reader-1-aw.png $BANNER_BAND)" -gt 8000
 nclear
 MS="$(notify_raw x-gate-junk 1920 1080 auto)"; echo "reader: an 8 MB unknown hint answered in ${MS} ms" >&2
 chk "reader: an 8 MB array under an unknown key is passed over (within 250 ms)" test "${MS:-9999}" -lt 250
@@ -223,12 +227,12 @@ chk "reader: its card landed" until_is 3 "center:0 live:1 dnd:0" st
 nclear
 notify_raw icon_data 1280 720 auto >/dev/null; sleep 1
 capture_nested $STATE/reader-2-aw.png
-chk "reader: the spec 1.0 name (icon_data) still previews" test "$(hero_px $STATE/reader-2-aw.png)" -gt 8000
+chk "reader: the spec 1.0 name (icon_data) still previews" test "$(hero_px $STATE/reader-2-aw.png $BANNER_BAND)" -gt 8000
 nclear
 notify_raw image-data 1280 720 0 >/dev/null; sleep 1
 capture_nested $STATE/reader-3-aw.png
 chk "reader: a lying header (stride 0) lands the card" test "$(st)" = "center:0 live:1 dnd:0"
-chk "reader: with no preview" test "$(hero_px $STATE/reader-3-aw.png)" -lt 200
+chk "reader: with no preview" test "$(hero_px $STATE/reader-3-aw.png $BANNER_BAND)" -lt 200
 nclear
 # an fd array under a hint (sd-bus reads no fd array as a block): passed
 # over like any other value, the card still lands
@@ -278,7 +282,7 @@ nclear
 read -r MS R <<<"$(notify_shape be-small)"; sleep 1
 capture_nested $STATE/reader-4-aw.png
 # square, as the 256 KiB bound keeps it: the card's face, not a preview
-chk "reader: a big-endian sender's image-data shows" test "$R" = ok -a "$(hero_px $STATE/reader-4-aw.png)" -gt 200
+chk "reader: a big-endian sender's image-data shows" test "$R" = ok -a "$(hero_px $STATE/reader-4-aw.png $BANNER_BAND)" -gt 200
 nclear
 read -r MS R <<<"$(notify_shape be-big)"; echo "reader: a 4 MiB big-endian image-data answered in ${MS} ms ($R)" >&2
 chk "reader: a big-endian image-data past 256 KiB is refused, not stalled" test "$R" = err -a "${MS:-9999}" -lt 250

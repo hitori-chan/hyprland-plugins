@@ -89,7 +89,7 @@ expect "post-storm click still raises + focuses (no stuck swallow)" \
 
 # ---- surface ownership: the bar's surfaces beat the window policy ----------
 # The shade sits over the focused window. A click on the shade's dead space
-# (its heading row, between "Notifications" and the moon) is the shade's:
+# (its heading row, between "Notifications" and Clear All) is the shade's:
 # swallowed whole — the shade stays, nothing acts, and the window beneath
 # never sees it.
 dsp "hl.dsp.exec_cmd('foot -a prec --window-size-pixels=500x300')"
@@ -103,7 +103,7 @@ chk "ownership: prec focused by its own click" test "$(pyc "cs[-1]['class']=='pr
 dsp "hl.dsp.exec_cmd('notify-send -t 60000 \"ownership\" body')"; sleep 1
 hq awesome center >/dev/null; sleep 0.7
 chk "ownership: the shade is open over the focused window" test "$(st)" = "center:1 live:1 dnd:0"
-click $((PANEL_X + 150)) $((N_TOP + 14)) 272
+click $((PANEL_X + 150)) $((HEAD_Y + 14)) 272
 chk "ownership: the shade swallowed the click (open, nothing acted)" test "$(st)" = "center:1 live:1 dnd:0"
 chk "ownership: the window beneath kept its focus" test "$(pyc "cs[-1]['class']=='prec' if cs else False")" = 1
 hq awesome center >/dev/null; sleep 0.4

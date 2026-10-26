@@ -524,13 +524,14 @@ namespace NAwesome::Notify {
             DECK,      // a collapsed stack: its top card and the deck (group = the app key)
             SHEAD,     // an expanded stack's header: Show Less and its close button
             BTN_CLEAR, // the center header's "Clear All": the global sweep
-            BTN_DND,   // the center header's moon (do-not-disturb)
             PANEL,     // the center's column: swallows clicks, owns the wheel
             PAGE_UP,   // the center's paging chips (drawn over the edge cards)
             PAGE_DOWN,
             CAPSULE,   // an OSD capsule: damage and bounds only, never hit
             MENU,      // the card menu's panel: swallows, never acts
             MENU_ITEM, // one of its rows (id = the row's index)
+            CTRL_SWITCH, // a switch tile atop the center (id = controls.cpp's tile)
+            CTRL_SLIDER, // a level's row atop the center (id = Controls::eLevel)
         };
         eKind       kind = POPUP;
         CBox        box;
@@ -541,6 +542,7 @@ namespace NAwesome::Notify {
         CBox        close;        // SHEAD: its close button
         CBox        replyField;   // POPUP/ROW: the armed inline-reply box (swallows, never acts)
         CBox        replySend;    // POPUP/ROW: its send circle
+        CBox        track;        // CTRL_SLIDER: the track a press drags along
         bool        folded = false; // ROW: the budget folded it and the open form shows more (a click unfolds)
         struct SLinkHit {
             CBox        box;
@@ -613,5 +615,7 @@ namespace NAwesome::Notify {
     void refreshPointerOwnership(); // the hovered card vanished under a still pointer
     void inputInit(); // the hold timer
     void inputExit();
+    void controlsInit(); // controls.cpp: the control center's block (its hook, its hold timer)
+    void controlsExit();
 
 } // namespace NAwesome::Notify

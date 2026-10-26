@@ -24,7 +24,11 @@
 //            stack · the hold is its top card's menu
 //   shead    an expanded stack's header: Show Less collapses · its close
 //            button / right dismisses the stack; its cards are rows
-//   header   the moon = DND · "Clear All" = the global sweep
+//   header   "Clear All" = the global sweep
+//   controls the block atop the center: a tile's click flips its switch
+//            (Do Not Disturb, the microphone, the touchpad) · a left press
+//            on a level's track drags it until the release · the wheel
+//            moves a level 5 % a notch · the volume's glyph mutes
 //   menu     a row is picked on the left RELEASE — press, hold, slide onto
 //            a row and let go, or click one on the open menu; any other
 //            press closes it, swallowed
@@ -104,7 +108,18 @@ namespace NAwesome::Notify {
         return -1;
     }
 
+    // a press this far past a level's track still grabs it (logical px)
+    constexpr double TRACK_SLOP = 4;
+
     static uint8_t partAt(const SCard& c, const Vector2D& pos) {
+        // a level's row: its track drags (0), the volume's glyph mutes (1),
+        // the rest is dead (2) — a press on a glyph or the number never
+        // throws the level to an end
+        if (c.kind == SCard::CTRL_SLIDER) {
+            if (pos.x >= c.track.x - TRACK_SLOP && pos.x <= c.track.x + c.track.w + TRACK_SLOP)
+                return 0;
+            return c.id == (uint32_t)Controls::eLevel::VOLUME && pos.x < c.track.x ? 1 : 2;
+        }
         if (c.less.w > 0 && c.less.containsPoint(pos))
             return 1;
         if (c.kind == SCard::SHEAD && c.close.w > 0 && c.close.containsPoint(pos))
@@ -307,9 +322,13 @@ namespace NAwesome::Notify {
                     if (H.bit == 1u)
                         Model::dismissAllLive();
                     continue;
-                case SCard::BTN_DND:
+                case SCard::CTRL_SWITCH:
                     if (H.bit == 1u)
-                        Model::toggleSuspend();
+                        controlsSwitch(H.id);
+                    continue;
+                case SCard::CTRL_SLIDER: // a track's press drags in place; only the volume's glyph clicks
+                    if (H.bit == 1u && H.part == 1)
+                        controlsToggleMute();
                     continue;
                 case SCard::PANEL: continue; // dead panel space swallows silently
                 case SCard::CAPSULE: continue; // never hit (cardAt skips it)
@@ -411,6 +430,12 @@ namespace NAwesome::Notify {
             return; // middle: no verb
 
         auto h = hitAt(*CARD, COORDS, BIT);
+        // a level's track: the level follows the pointer from the press to
+        // the release (motion and release below), each move a deferred ask
+        if (BIT == 1u && CARD->kind == SCard::CTRL_SLIDER && h.part == 0) {
+            controlsDragStart(*CARD, COORDS);
+            return;
+        }
         if (BIT == 1u && holdable(*CARD, h) && holdTimer) {
             dropPress();
             press.hit  = std::move(h);
@@ -427,6 +452,10 @@ namespace NAwesome::Notify {
     // release is picked — the press-hold-slide-release gesture, or a plain
     // click on the open menu.
     static void releaseLeft(const Vector2D& pos) {
+        if (controlsDragging()) {
+            controlsDragEnd();
+            return;
+        }
         if (press.live) {
             const SHit H = std::move(press.hit);
             dropPress();
@@ -441,11 +470,11 @@ namespace NAwesome::Notify {
 
     // ---- wheel: page the center, only inside the panel box ----
 
-    static double scrollAcc = 0;
+    static double scrollAcc = 0, levelAcc = 0;
 
     void          onMouseAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
         if (NAwesome::sessionLocked() || NAwesome::nativeInputCaptureActive()) {
-            scrollAcc = 0;
+            scrollAcc = levelAcc = 0;
             return;
         }
         // the cheap tests first: every wheel notch and touchpad frame lands
@@ -465,6 +494,17 @@ namespace NAwesome::Notify {
         if (MENU || e.axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
             return;
         const double DELTA = e.delta != 0.0 ? e.delta : e.deltaDiscrete / 120.0 * 15.0;
+        // over a level the wheel moves it (up raises); over a switch, nothing
+        if (CARD->kind == SCard::CTRL_SLIDER) {
+            levelAcc += DELTA;
+            if (const int STEP = (int)(levelAcc / 15.0); STEP != 0) {
+                levelAcc -= STEP * 15.0;
+                controlsWheel((Controls::eLevel)CARD->id, -STEP);
+            }
+            return;
+        }
+        if (CARD->kind == SCard::CTRL_SWITCH)
+            return;
         scrollAcc += DELTA;
         if (const int STEP = (int)(scrollAcc / 15.0); STEP != 0) {
             scrollAcc -= STEP * 15.0;
@@ -648,8 +688,9 @@ namespace NAwesome::Notify {
         const bool LOCK = NAwesome::sessionLocked();
         swallowRelease = 0;
         heldButtons    = 0;
-        scrollAcc      = 0;
+        scrollAcc = levelAcc = 0;
         dropPress();
+        controlsDragEnd(); // its release may never come back up
         CardMenu::close(); // half-tracked input state: its press may never come back up
         if (LOCK) {
             // a lock discards every half-tracked input state (crash class 7):
@@ -688,6 +729,14 @@ namespace NAwesome::Notify {
         if (NAwesome::nativeInputCaptureActive()) {
             setHovered({});
             releasePointer();
+            return;
+        }
+
+        // a level being dragged follows the pointer wherever it goes, the
+        // bar included, until the release
+        if (controlsDragging()) {
+            controlsDragMove(g_pInputManager ? g_pInputManager->getMouseCoordsInternal() : pos);
+            info.cancelled = true;
             return;
         }
 
@@ -799,9 +848,10 @@ namespace NAwesome::Notify {
             g_pEventLoopManager->removeTimer(holdTimer);
         holdTimer.reset();
         CardMenu::exit();
+        controlsDragEnd();
         swallowRelease = 0;
         heldButtons    = 0;
-        scrollAcc      = 0;
+        scrollAcc = levelAcc = 0;
         releasePointer();
     }
 
