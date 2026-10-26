@@ -243,6 +243,15 @@ launch_warmup() {
 vp() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" "$MON_W" "$MON_H" >/dev/null 2>&1; }
 vk() { WAYLAND_DISPLAY="$WL" "$REPO/devtools/vkbd" >/dev/null 2>&1; } # keys need no extent
 CAPTURE_DIR=1 # the jitter's direction, alternated across captures (not reset per call)
+# The private host's output: the nested's PRESENTED swapchain buffers, which
+# a screencopy of the nested cannot show (it reads the nested's mirror copy,
+# or renders a fresh frame for it). Never the live session's display.
+capture_host() { # capture_host <output>
+	local host
+	host="$(cat "$HOST_DIR/wl" 2>/dev/null)"
+	[[ -n "$host" && "$host" != "${LIVE_WL:-}" ]] || return 1
+	timeout 3 env WAYLAND_DISPLAY="$host" grim "$1" >/dev/null 2>&1
+}
 capture_nested() { # capture_nested <output>: tolerate a transient screencopy denial
 	local out=$1
 	# The nested renders on damage: start grim, then jitter the
@@ -591,6 +600,6 @@ write_stress_cfg() {
 		echo 'hl.permission(".*vkbd$", "keyboard", "allow")'
 		echo 'hl.permission(".*grim$", "screencopy", "allow")'
 		awk '{ print } /misc = \{/ { print "\t\tdisable_watchdog_warning = 1," }' "$GATE_DIR/nested.lua"
-		echo 'hl.window_rule({ match = { class = "foot|mpv|corpseA|corpseB|tuckmax|tuckfloat|tuckfs|csdfollow|csdfall|csdmem|csdsmall|exitfoot|w1base|w1over|w1gone|w1prev|w2max" }, float = true })'
+		echo 'hl.window_rule({ match = { class = "foot|mpv|corpseA|corpseB|tuckmax|tuckfloat|tuckfs|csdfollow|csdfall|csdmem|csdsmall|exitfoot|w1base|w1over|w1gone|w1prev|w2max|glassprobe" }, float = true })'
 	} > "$CFG"
 }

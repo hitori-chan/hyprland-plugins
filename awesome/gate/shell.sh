@@ -300,6 +300,35 @@ center_shut() { [[ "$(st)" == "center:0 "* ]]; }
 chk "cells: a click on the clock leaves the center shut" center_shut
 center_shut || { hq awesome center >/dev/null; sleep 0.5; }
 
+# ---- the strip's glass: steady over a terminal taking typing ---------------
+# The work area starts below the strip, so its glass samples the
+# wallpaper's precomputed blur (shell/strip.cpp). A live blur shimmered:
+# every keystroke repaints a band of the terminal's top rows, the blur's
+# sample ring read what each swapchain buffer kept from its last frame, and
+# the presented frames alternated between two strips. Only the private
+# host's output shows the presented buffers; at rest it must show the same
+# strip as the nested's own capture (else the host's view moved and the
+# check would measure nothing).
+dsp "hl.dsp.exec_cmd('foot -a glassprobe --window-size-pixels=400x200')"; wait_class glassprobe; sleep 0.8
+dsp "hl.plugin.awesome.maximize()"; sleep 0.8
+printf 'move %d %d\nsleep 60\n' $((MON_W / 2)) $((MON_H / 2)) | vp; sleep 0.4
+capture_nested "$STATE/glass-nested.png"
+capture_host "$STATE/glass-rest.png"
+chk "glass: the host shows the nested's strip" test "$(strip_diff "$STATE/glass-nested.png" "$STATE/glass-rest.png")" -le 3
+printf 'tap a\nsleep 45\n%.0s' $(seq 1 80) | vk &
+TYPER=$!
+sleep 0.3
+for i in $(seq -w 1 24); do capture_host "$STATE/glass-$i.png"; done
+wait "$TYPER" 2>/dev/null
+read -r GS GF <<<"$(strip_states "$STATE"/glass-[0-9]*.png)"
+echo "glass: $GS strip states over $GF distinct frames" >&2
+chk "glass: the typing presented frames" test "${GF:-0}" -ge 8
+chk "glass: the strip holds still over a terminal taking typing" test "${GS:-0}" = 1
+GP="$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='glassprobe'), ''))")"
+[[ -n "$GP" ]] && dsp "hl.dsp.window.close({window=\"address:$GP\"})"; sleep 0.8
+
 # teardown: the item leaves the strip
 kill "$FAKE_PID" 2>/dev/null
 for _ in $(seq 1 30); do

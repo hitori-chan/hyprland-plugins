@@ -37,6 +37,37 @@ wheel() {
 }
 outside_click() { click "$((MON_W / 2))" "$((MON_H / 2))" 272; }
 
+# the strip's left half (the tags and the tasks: no clock ticking) across a
+# run of frames: "<distinct strips> <distinct frames>"
+strip_states() { # strip_states <frame>...
+	python3 - "$BAR_H" "$@" <<'PY'
+import hashlib, sys
+from PIL import Image
+h = int(sys.argv[1]); strips, frames = set(), set()
+for f in sys.argv[2:]:
+    im = Image.open(f).convert('RGB')
+    frames.add(hashlib.md5(im.tobytes()).digest())
+    strips.add(hashlib.md5(im.crop((0, 0, im.width // 2, h)).tobytes()).digest())
+print(len(strips), len(frames))
+PY
+}
+# mean abs difference of two frames' strips (left half), in 8-bit levels
+# (each over black: the nested's bare background is transparent, so its
+# screencopy keeps the glass's alpha, which the presented XRGB buffer drops)
+strip_diff() { # strip_diff <a> <b>
+	python3 - "$BAR_H" "$1" "$2" <<'PY'
+import sys
+from PIL import Image, ImageChops, ImageStat
+h = int(sys.argv[1])
+def flat(f):
+    im = Image.open(f).convert('RGBA')
+    return Image.alpha_composite(Image.new('RGBA', im.size, (0, 0, 0, 255)), im).convert('L')
+a, b = (flat(f) for f in sys.argv[2:4])
+box = (0, 0, min(a.width, b.width) // 2, h)
+print(int(ImageStat.Stat(ImageChops.difference(a.crop(box), b.crop(box))).mean[0]))
+PY
+}
+
 # ---- the bell, pointer-driven ------------------------------------------------
 # The monolith's bell is a no-op on hover and toggles the shade on click;
 # both are REAL pointer events over the widget. The right slot is [tray]
