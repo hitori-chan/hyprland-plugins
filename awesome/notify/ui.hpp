@@ -267,9 +267,7 @@ namespace NAwesome::Notify {
         void     sync();          // after a model change: its card died -> close
         void     render(const SPaint& P, const SType& T); // its panel, then its rows (hit first)
         void     exit();          // teardown: forget it, no damage, no warm
-#ifdef AWESOME_GATE
-        std::string describe(); // the gate's: the open menu's rows
-#endif
+        std::string describe(); // the gate's: the open menu's rows (defined in its build only)
     }
 
     // the current hover (surface.cpp owns it; setHovered is its door) —
