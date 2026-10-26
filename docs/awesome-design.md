@@ -68,6 +68,11 @@ memory only); neither reads plugin or compositor state.
   Every deferred callback captures the session generation; the queue
   drops callbacks from a dead generation. Modules have no direct
   `doLater` access.
+- **Wall clock** — `core/walltimer.hpp`: a deadline that is a time of
+  day (the clock's next minute, a timed Do Not Disturb's end) is an
+  absolute realtime timerfd. The event loop's monotonic timers stand
+  still through a suspend; this one fires at once on resume and wakes on
+  a clock step, so the owner re-arms against the new time.
 - **Input pipeline** — one compositor listener per event class
   (pointer button/motion/scroll, key). The head: an event upstream
   already cancelled passes; session lock or a native input-capture

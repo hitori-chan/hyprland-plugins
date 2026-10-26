@@ -157,7 +157,7 @@ Numbered because source comments cite them; never renumber, append.
 - Extend the `core/` helper that owns a concern instead of recreating it
   (spawning: `core/proc.hpp` + `Jobs`; deferral: `CHop`; drawing: the
   canvas; persistence: `StateStore`; pixel work off the compositor
-  thread: `CRasterWorker`).
+  thread: `CRasterWorker`; time-of-day deadlines: `CWallTimer`).
 - Module symbols live in their namespace (`NAwesome::Shell`, `::Windows`,
   `::Notify`, `::System`); platform symbols in `NAwesome`; a required
   global `PHANDLE` is a documented ABI exception.
