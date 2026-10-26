@@ -1,5 +1,5 @@
 // awesome/shell/battery.cpp — the battery: gauge state from sysfs, the old
-// battery-watch.sh alerts, and the widget drawing macOS's menu-bar battery
+// battery-watch.sh alerts, and the widget drawing Pixel's battery
 // (shell/battery_pill.hpp)
 #include "shell/shell.hpp"
 #include "shell/battery_pill.hpp"
@@ -426,10 +426,9 @@ namespace NAwesome::Shell {
                     STATE.color == Battery::eColor::Warning                    ? color(cfg().getColor("plugin:awesome:shell:col_powersave")) :
                     STATE.color == Battery::eColor::Error                      ? color(cfg().getColor("plugin:awesome:shell:col_low")) :
                                                                                  CHyprColor{1.f, 1.f, 1.f, 1.f};
-                const std::string FAMILY = cfg().getS("plugin:awesome:shell:font");
-                // everything the raster reads: a theme or font change re-keys it
-                const uint64_t KEY = std::hash<std::string>{}(FAMILY) ^ ((uint64_t)(batteryPercent + 1) << 1) ^ ((uint64_t)STATE.attribution << 9) ^
-                    (FILL.getAsHex() * 0x9E3779B97F4A7C15ull) ^ (F.fg.getAsHex() * 0xC2B2AE3D27D4EB4Full);
+                // everything the raster reads: a theme change re-keys it
+                const uint64_t KEY = ((uint64_t)(batteryPercent + 1) << 1) ^ ((uint64_t)STATE.attribution << 9) ^ (FILL.getAsHex() * 0x9E3779B97F4A7C15ull) ^
+                    (F.fg.getAsHex() * 0xC2B2AE3D27D4EB4Full);
                 auto& PILL = pillCache[H];
                 // the gate, not P.warm: "this pass paints nothing" and "this
                 // pass may create a texture" are different questions, and only
@@ -441,11 +440,10 @@ namespace NAwesome::Shell {
                                             .attribution = STATE.attribution,
                                             .heightPx    = H,
                                             .fill        = {FILL.r, FILL.g, FILL.b, FILL.a},
-                                            .glyph       = {F.fg.r, F.fg.g, F.fg.b, F.fg.a},
-                                            .family      = FAMILY});
+                                            .glyph       = {F.fg.r, F.fg.g, F.fg.b, F.fg.a}});
                     PILL.key = KEY; // stamp even if the build returns null, so a persistent null can't rewarm-storm
                 }
-                // logical px: the strip's gaps do the spacing, as macOS's menu extras
+                // logical px: the strip's gaps do the spacing
                 return (PILL.tex ? PILL.tex->m_size.x : Battery::geometry(H, STATE.attribution).width) / P.scale;
             }
 
@@ -455,10 +453,11 @@ namespace NAwesome::Shell {
             }
 
           private:
-            // the body as tall as the bar's text size, rounded to an even
-            // count of device px: it centres on the 28 px bar with no seam
+            // 13 px beside the bar's 12 px text, one device px a viewport
+            // unit (Android's 13sp beside 14sp text would give 11 px, whose
+            // fractional units blur the digits); it scales with the text
             static int bodyPx(const SPaint& P) {
-                return std::max(8, 2 * (int)std::lround(P.pt / 2.0));
+                return std::max(8, Battery::pixelRound(P.pt * Battery::VIEW_H / 12.0));
             }
         };
     } // namespace
