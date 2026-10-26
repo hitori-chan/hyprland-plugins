@@ -62,7 +62,8 @@ make -C devtools HL=/path/to/Hyprland
   checks).
 - `fakes/fake-logind` serves `org.freedesktop.login1` on the host's
   private system bus: `SetBrightness` writes a fake backlight under
-  `AW_BACKLIGHT_DIR` and logs to `AW_LOGIND_LOG` (the system battery's
+  `AW_BACKLIGHT_DIR` (and the keyboard's LED under `AW_LEDS_DIR`) and
+  logs to `AW_LOGIND_LOG` (the system battery's
   brightness checks, never the host's backlight).
 
 ## Gate safety (still binds)
