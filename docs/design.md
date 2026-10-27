@@ -435,14 +435,14 @@ warm (cold, upstream's lazy shader compiles add ~100 ms to its draw).
 - One pass element per layer and monitor, each with its own box: the
   renderer culls a layer the damage misses, and an element claims live
   blur only while its layer paints translucent glass.
-- **The bar's glass** samples the wallpaper's precomputed blur
-  (`ILayer::wallpaperGlass`, blurred once per wallpaper change). A live
-  blur re-blurred the strip on every repaint and, under partial damage,
-  read the ring each swapchain buffer kept from its last frame, so over
-  a terminal taking input the presented frames alternated between two
-  bars (upstream's FIXME in `CRenderPass::render`). A frame the
-  precomputed blur is stale for falls back to the live one, as does the
-  strip over a fullscreen client.
+- **Glass repaints whole.** The pass repaints only the damaged part of
+  a live-blurred box, and that part's blur samples the rest of the box
+  as the swapchain buffer kept it, its own old glass: the buffers drift
+  apart and the glass shimmers (the bar over a terminal taking input;
+  upstream's FIXME in `CRenderPass::render`). Damage within the blur
+  radius of a glass layer therefore repaints the whole layer
+  (`Canvas::wholeGlass`, from the buffer's damage, so every buffer
+  repaints its own copy).
 - **Warms coalesce**: one bar warm per event-loop turn; a title change
   warms the strip alone, at most once per 16 ms; the cards warm on their
   monitor and only on their own changes; the launcher warms its layer.

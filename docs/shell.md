@@ -16,9 +16,9 @@ extras.
   gaps, so a click on the strip never lands between two targets. A
   click on a widget with nothing to do (the battery, the clock) does
   nothing; it never reaches a neighbour.
-- The glass frosts the wallpaper alone. The work area starts below the
-  strip, so no window's shadow shows through it and it holds still while
-  the window beneath repaints.
+- The glass frosts whatever lies under it, as the cards and menus do: the
+  wallpaper, a window's shadow, a window floated up under the strip. It
+  holds still while a window right beneath it repaints.
 - Geometry is monitor-local: fixed widget slots and tray clipping keep
   the task area usable on a narrow output.
 

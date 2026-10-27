@@ -50,17 +50,22 @@ wheel() {
 outside_click() { click "$((MON_W / 2))" "$((MON_H / 2))" 272; }
 
 # the strip's left half (the tags and the tasks: no clock ticking) across a
-# run of frames: "<distinct strips> <distinct frames>"
+# run of frames: "<distinct strips> <distinct frames> <returns>". A return:
+# a frame shows a strip that an earlier frame showed and a later one left
+# (a shimmer); content that only moves on never returns.
 strip_states() { # strip_states <frame>...
 	python3 - "$BAR_H" "$@" <<'PY'
 import hashlib, sys
 from PIL import Image
-h = int(sys.argv[1]); strips, frames = set(), set()
+h = int(sys.argv[1]); frames, seen, last, returns = set(), set(), None, 0
 for f in sys.argv[2:]:
     im = Image.open(f).convert('RGB')
     frames.add(hashlib.md5(im.tobytes()).digest())
-    strips.add(hashlib.md5(im.crop((0, 0, im.width // 2, h)).tobytes()).digest())
-print(len(strips), len(frames))
+    k = hashlib.md5(im.crop((0, 0, im.width // 2, h)).tobytes()).digest()
+    if k != last and k in seen:
+        returns += 1
+    seen.add(k); last = k
+print(len(seen), len(frames), returns)
 PY
 }
 # mean abs difference of two frames' strips (left half), in 8-bit levels
