@@ -533,8 +533,7 @@ hold_menu "$HX" "$HY"; release_left
 click $((HX - 100)) "$(mrow "$HY" 2 1)" 272
 chk "silenced: the app's banners are off" until_is 3 1 app_rows
 nclear
-bell_open; bell_cascade 2
-click "$BCX" "$(crow 0 0)" 272
+bell_open; bell_pick 2
 chk "silenced: a click in the bell's list turns them back on" until_is 3 0 app_rows
 pcidb gatechat Alice alice "five"
 chk "silenced: the app banners again" test "$(bd)" = "banners:1 resident:0"
@@ -600,15 +599,14 @@ nclear
 dsp "hl.dsp.window.close()"; until_is 5 0 pyc "sum(1 for c in cs if c['class'] == 'foot')"
 
 # ---- quiet automatically ------------------------------------------------------
-# The bell's Quiet Automatically ▸ (When an App Is Fullscreen, While Sharing
+# The bell's Quiet Automatically (When an App Is Fullscreen, While Sharing
 # the Screen; both off until turned on): banners and sounds hold, the
 # arrival waits in the shade, the banners already up retreat there when
 # the quiet begins (a share's once it held a second: a screenshot never
 # moves them); critical punches through, over a share without its words. The switches are option rows. Menus first: the bar hides over a
 # fullscreen window, and the capture that measures a menu reads any window.
 opt_row() { grep -a $'\t'"$1"'$' "$AW_STATE" | cut -f2; }
-bell_open; bell_cascade 1
-click "$BCX" "$(crow 0 0)" 272
+bell_open; bell_pick 0
 chk "quiet: When an App Is Fullscreen turns on, remembered" until_is 3 1 opt_row quiet-fullscreen
 dsp "hl.dsp.exec_cmd('foot -a quietfs --window-size-pixels=600x400')"; wait_class quietfs
 nsend -a q2 -t 30000 before body
@@ -626,8 +624,7 @@ nsend -a q2 -t 30000 free body
 chk "quiet: out of fullscreen it banners again" test "$(bd)" = "banners:1 resident:0"
 nclear
 dsp "hl.dsp.window.close()"; until_is 5 0 pyc "sum(1 for c in cs if c['class'] == 'quietfs')"
-bell_open; bell_cascade 1
-click "$BCX" "$(crow 0 0)" 272
+bell_open; bell_pick 0
 chk "quiet: turned off, the row goes" until_is 3 "" opt_row quiet-fullscreen
 # shares: the fixture copies the nested's output over wlr-screencopy (the
 # portal's protocol); the nested renders on damage, so the pointer jitters
@@ -643,8 +640,7 @@ share_start() { # share_start <log> [sharehold flags]: SHARE_PID holds it
 	return 1
 }
 share_stop() { kill "$SHARE_PID" 2>/dev/null; wait "$SHARE_PID" 2>/dev/null; SHARE_PID=""; }
-bell_open; bell_cascade 1
-click "$BCX" "$(crow 1 0)" 272
+bell_open; bell_pick 1
 chk "quiet: While Sharing the Screen turns on, remembered" until_is 3 1 opt_row quiet-sharing
 nsend -a q3 -t 30000 before body
 chk "quiet: a banner up before the share" test "$(bd)" = "banners:1 resident:0"
@@ -667,8 +663,7 @@ chk "quiet: ...holding its words back" test "$(hq awesome quiet)" = "now:1 hushe
 share_stop
 chk "quiet: the share's end gives the words back" until_is 4 "now:0 hushed:0" hq awesome quiet
 nclear
-bell_open; bell_cascade 1
-click "$BCX" "$(crow 1 0)" 272
+bell_open; bell_pick 1
 chk "quiet: sharing off, the row goes" until_is 3 "" opt_row quiet-sharing
 
 # ---- bus: closing an unknown ID is an error --------------------------------
@@ -714,24 +709,15 @@ chk "DND timed: dnd off" test "$(st)" = "center:0 live:1 dnd:0"
 nclear
 
 # ---- the bell's options: a right click ----------------------------------------
-# A menu at the bell (shell/bell.cpp): Do Not Disturb ▸ (For 30 Minutes, For
-# 1 Hour, For 3 Hours, Until Turned Off; Turn Off and a separator lead
-# while on), Quiet Automatically ▸ and Silenced Apps ▸.
-dnd_in_hour() { local v; v="$(dndrow)"; [[ "$v" =~ ^[0-9]+$ ]] && ((v - $(date +%s) > 3500 && v - $(date +%s) <= 3600)); }
+# One flat menu at the bell (shell/bell.cpp): Quiet Automatically's header
+# and its two switches, a separator, Silenced Apps' header and its rows —
+# "None" here. Do Not Disturb is the control center's alone.
 bell_open
 chk "bell: a right click opens its options" test $((BRX1 - BRX0)) -ge 190
 chk "bell: the right click left the center shut" test "$(st)" = "center:0 live:0 dnd:0"
-bell_cascade 0
-click "$BCX" "$(crow 1 0)" 272
-chk "bell: For 1 Hour turns DND on" until_is 3 "center:0 live:0 dnd:1" st
-chk "bell: ...until an hour from now, remembered" dnd_in_hour
-bell_open; bell_cascade 0
-click "$BCX" "$(crow 4 1)" 272
-chk "bell: Until Turned Off holds it with no end" until_is 3 "-1" dndrow
-bell_open; bell_cascade 0
-click "$BCX" "$(crow 0 0)" 272
-chk "bell: Turn Off ends it" until_is 3 "center:0 live:0 dnd:0" st
-chk "bell: off keeps no row" until_is 3 "" dndrow
+# 2 x 5 + 2 headers x 22 + 3 rows x 28 + a separator 9 = 147, + the rims
+chk "bell: the options are one flat panel (no cascade)" test $((BRY1 - BRY0 + 1)) -ge 145 -a $((BRY1 - BRY0 + 1)) -le 153
+click 640 400 272
 
 # ---- DND holds a merge onto an existing card ------------------------------------
 # A conversation's first message retreats to the shade; with DND armed the

@@ -54,7 +54,7 @@ namespace NAwesome::Shell {
         double levelHeight(const SLevel& l) {
             double h = PAD * 2;
             for (const auto& E : l.entries)
-                h += E.separator ? SEPH : ROWH;
+                h += rowHeight(E);
             if (l.entries.empty())
                 h += ROWH; // the placeholder row: loading, empty or unavailable
             return h;
@@ -190,7 +190,7 @@ namespace NAwesome::Shell {
             const bool  OPENHERE = level + 1 < levels.size() && levels[level + 1].parentIdx == row;
             if (E.submenu && E.enabled && !OPENHERE)
                 arm(level, row); // open this row's cascade
-            else if (!E.submenu && !E.separator && level + 1 < levels.size())
+            else if (!E.submenu && !E.separator && !E.header && level + 1 < levels.size())
                 arm(level, -1); // resting on a sibling: close the cascade
             else
                 disarm();
@@ -723,6 +723,20 @@ namespace NAwesome::Shell {
                 const bool       anyTag = std::ranges::any_of(L.entries, [](const Menu::SEntry& E) { return !E.tag.empty(); });
                 const double     TAGW   = anyTag ? 26 : 0;
                 const int        TAGPT  = std::max(1, PAINT.pt - (int)std::lround(PAINT.scale));
+                // a section header starts where the leading column does
+                const double     HX     = COLW > 0 ? 10 : 12;
+                const auto       headTex = [&](const Menu::SEntry& E) { return textTex(E.display, NAwesome::tSub(), TAGPT, capPx(E), "", 600); };
+                // a row's right-hand words: both faces every pass (the warm
+                // builds the lit one too, so the label's room — and so its
+                // raster's key — is the same in the warm and the draw)
+                constexpr double DETAIL_GAP = 16;
+                const auto       detailW = [&](const Menu::SEntry& E) {
+                    if (E.detail.empty() && E.hint.empty())
+                        return 0.0;
+                    const double D = E.detail.empty() ? 0 : textInkW(textTex(E.detail, NAwesome::tSub(), TAGPT), TAGPT, PAINT.scale);
+                    const double H = E.hint.empty() ? 0 : textInkW(textTex(E.hint, COLFOCUS, TAGPT), TAGPT, PAINT.scale);
+                    return std::max(D, H) + DETAIL_GAP;
+                };
 
                 double           mw = L.fixedWidth;
                 if (mw <= 0) {
@@ -738,8 +752,13 @@ namespace NAwesome::Shell {
                         for (const auto& E : L.entries) {
                             if (E.separator)
                                 continue;
+                            if (E.header) {
+                                if (const auto T = headTex(E); T)
+                                    textW = std::max(textW, textInkW(T, TAGPT, PAINT.scale) - (LX - HX));
+                                continue;
+                            }
                             if (const auto T = textTex(E.display, COLFG, PAINT.pt, capPx(E)); T)
-                                textW = std::max(textW, textInkW(T, PAINT.pt, PAINT.scale) + (E.submenu ? ARW : 0));
+                                textW = std::max(textW, textInkW(T, PAINT.pt, PAINT.scale) + (E.submenu ? ARW : 0) + detailW(E));
                             if (textW + LX + 12 >= 380.0)
                                 break;
                         }
@@ -799,7 +818,7 @@ namespace NAwesome::Shell {
                     int    minTop = (int)L.entries.size() - 1;
                     double acc    = 0;
                     for (int i = (int)L.entries.size() - 1; i >= 0; i--) {
-                        acc += L.entries[i].separator ? SEPH : ROWH;
+                        acc += Menu::rowHeight(L.entries[i]);
                         if (acc > myEnd - my + 0.5)
                             break;
                         minTop = i;
@@ -819,13 +838,21 @@ namespace NAwesome::Shell {
                 bool       moreBelow = false;
                 for (size_t i = L.scrollTop; i < L.entries.size(); i++) {
                     const auto& E = L.entries[i];
-                    if (my + (E.separator ? SEPH : ROWH) > myEnd + 0.5) {
+                    if (my + Menu::rowHeight(E) > myEnd + 0.5) {
                         moreBelow = true;
                         break;
                     }
                     if (E.separator) {
                         PAINT.rect(CBox{mx + 12, my + SEPH / 2, mw - 24, 1.0 / PAINT.scale}, NAwesome::tHairline());
                         my += SEPH;
+                        continue;
+                    }
+                    if (E.header) { // sits a pixel low: it belongs to the rows under it
+                        if (const auto T = headTex(E); T && T->m_texID != 0) {
+                            const auto P = PAINT.toPhys(CBox{mx, my + 1, mw, Menu::HEADH});
+                            PAINT.texAt(T, CBox{P.x + std::round(HX * PAINT.scale) - textPad(TAGPT), P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y}.round());
+                        }
+                        my += Menu::HEADH;
                         continue;
                     }
                     const CBox ROW{mx, my, mw, ROWH};
@@ -854,7 +881,8 @@ namespace NAwesome::Shell {
 
                     // the measure's own raster while the panel holds its widest
                     // row (a narrow output shrinks it below that)
-                    const int  ROOMPX = (int)std::round((mw - LX - 12 - TAGW - (E.submenu ? ARW : 0)) * PAINT.scale);
+                    const double DETW   = detailW(E);
+                    const int    ROOMPX = (int)std::round((mw - LX - 12 - TAGW - (E.submenu ? ARW : 0) - DETW) * PAINT.scale);
                     const auto T      = textTex(E.display, fg, PAINT.pt, L.fixedWidth > 0 ? ROOMPX : FITS ? capPx(E) : ROOMPX);
                     if (T && T->m_texID != 0) {
                         const auto P = PAINT.toPhys(ROW);
@@ -863,6 +891,13 @@ namespace NAwesome::Shell {
                     }
                     if (E.submenu)
                         PAINT.texIn(G::tex(G::eGlyph::CHEVRON_RIGHT, fg, GLYPHPX), CBox{mx + mw - 8 - ARW, my, ARW, ROWH});
+                    if (DETW > 0) {
+                        const bool HINT = LIT && !E.hint.empty();
+                        if (const auto DT = HINT ? textTex(E.hint, COLFOCUS, TAGPT) : E.detail.empty() ? nullptr : textTex(E.detail, NAwesome::tSub(), TAGPT); DT && DT->m_texID != 0) {
+                            const double W = textInkW(DT, TAGPT, PAINT.scale);
+                            PAINT.texIn(DT, CBox{mx + mw - 12 - W, my, W, ROWH});
+                        }
+                    }
                     if (!E.tag.empty()) {
                         const bool PLAIN = !LIT && !E.current && !E.alert && !E.dim;
                         if (const auto TT = textTex(E.tag, PLAIN ? NAwesome::tSub() : fg, TAGPT); TT && TT->m_texID != 0)
