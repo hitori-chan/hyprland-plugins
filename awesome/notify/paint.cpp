@@ -136,7 +136,7 @@ namespace NAwesome::Notify {
     void paintChip(const SPaint& P, const CBox& box, bool hover) {
         const int R = (int)std::lround(std::min(box.w, box.h) / 2 * P.scale);
         P.shadow(CBox{box}.expand(CHIP_DROP).translate(Vector2D{0.0, CHIP_SINK}), R, 2.f, (int)CHIP_DROP);
-        P.glass(box, tChip(), R, 2.f);
+        P.glass(box, NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:theme:col_glass")), R, 2.f);
         if (hover)
             P.rect(box, tFill(), R, 2.f);
         P.ring(box, NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:theme:col_rim")), R, 2.f);

@@ -279,12 +279,20 @@ unpacked, raster caches are capped in bytes, and work is bounded too
 One material for every surface, its tokens in `core/tokens.hpp` (the
 schema's defaults name them; the user's `theme.lua` overrides them).
 
-- **Glass**, one thickness over the compositor's blur for every surface:
-  the bar, the launcher, cards, the center, capsules and menus all wear
-  `theme:col_glass` (48 %). Cards and menus add a soft drop, a light top
-  edge and a 10 % white rim; a menu floats higher.
+- **Glass** (Crystal), one thickness over the compositor's blur for every
+  surface: the bar, the launcher, cards, the center, capsules, chips, a
+  stack's deck and menus all wear `theme:col_glass`, a 6 % tint. The
+  darkening is the blur's (the user's `decoration:blur`: size 2, passes 2,
+  contrast 1, brightness 0.43, vibrancy 0.6): a darker blur keeps the
+  backdrop's detail and colour where a grey tint flattened them (titles
+  4.7:1 and secondary 3.1:1 over a white page, measured on the mocks,
+  against 4.3 and 2.4 at a 48 % tint). Cards and menus add a soft drop, a
+  24 % top edge catching light and an 18 % white rim; a menu floats higher.
+- **Text** over glass wears a soft drop (`core/text.hpp`: CSS's `0 1px 2px`
+  black at 35 %, scaled with the type); the center's heading, bare on the
+  wallpaper, keeps the stronger desktop-label drop.
 - **Ink** is one white at four strengths (titles and the bar 100 %, body
-  78 %, meta 55 %, empty 34 %). The accent `#00CCFF` is text: the viewed
+  86 %, meta 68 %, empty 34 %). The accent `#00CCFF` is text: the viewed
   tag, the focused task, a selection, the bell or the control center's
   switches while their panel is open. It fills only what is live (a
   caret, the reply's send circle, progress; the snap preview is its 10 %

@@ -9,13 +9,17 @@ namespace NAwesome::Theme {
 
     // ---- the glass (0xAARRGGBB, config default form): one material for the
     //      bar, the cards, the center, the capsules, menus and the launcher ----
-    inline constexpr uint32_t GLASS = 0x7a26262c; // 48 %
+    // Crystal: a 6 % tint over the compositor's blur, which darkens what it
+    // samples (decoration:blur brightness 0.43, contrast 1, vibrancy 0.6 —
+    // the user's config): darkening the blur keeps the backdrop's detail and
+    // colour where a grey tint flattened them (titles 4.7:1 and secondary
+    // 3.1:1 over a white page, measured on the mocks; 4.3 and 2.4 at 48 %)
+    inline constexpr uint32_t GLASS = 0x0f1c1c20; // 6 %
 
     // ---- ink: one white at four strengths, the blue as text only ----
     inline constexpr uint32_t TITLE     = 0xffededf0; // primary
-    inline constexpr uint32_t INK       = 0xdbebebf5; // the bar's text, 86 %
-    inline constexpr uint32_t BODY      = 0xc7ebebf5; // body text, 78 %
-    inline constexpr uint32_t SUB       = 0x8cebebf5; // secondary: meta, kickers, 55 %
+    inline constexpr uint32_t BODY      = 0xdbebebf5; // body text, 86 %
+    inline constexpr uint32_t SUB       = 0xadebebf5; // secondary: meta, kickers, 68 %
     inline constexpr uint32_t DIM       = 0x57ebebf5; // tertiary: empty tags, minimized, 34 %
     inline constexpr uint32_t ACCENT    = 0xff00ccff; // selection and focus — text, never a ground (the bell's dot is the one mark)
     inline constexpr uint32_t ON_ACCENT = 0xff00141a; // dark ink on the accent: the live send arrow
@@ -35,11 +39,8 @@ namespace NAwesome::Theme {
     inline constexpr uint32_t WELL_RIM    = 0x14ffffff; // its inner edge, 8 %
     inline constexpr uint32_t CONTROL     = 0x24ffffff; // a control on a card at rest: the send circle, 14 %
     inline constexpr uint32_t SEND_ARROW  = 0xb3ebebf5; // the send arrow at rest, 70 %
-    inline constexpr uint32_t CHIP        = 0xb83a3a42; // a small control floating on glass: Show Less, a stack's close, 72 %
-    inline constexpr uint32_t DECK_1      = 0x8a46464e; // a collapsed stack's first layer under its top card, 54 %
-    inline constexpr uint32_t DECK_2      = 0x753e3e46; // its second, dimmer and darker, 46 %
-    inline constexpr uint32_t RIM         = 0x1affffff; // the glass edge, 10 %
-    inline constexpr uint32_t LIGHT       = 0x1affffff; // the top edge catching light, 10 %
+    inline constexpr uint32_t RIM         = 0x2effffff; // the glass edge, 18 %
+    inline constexpr uint32_t LIGHT       = 0x3dffffff; // the top edge catching light, 24 %
     inline constexpr uint32_t SHADOW      = 0x47000000; // a card's drop, 28 %
     inline constexpr uint32_t MENU_SHADOW = 0x6b000000; // a menu floats higher, 42 %
     inline constexpr uint32_t BADGE_RIM   = 0xffffffff; // the identity badge's ring

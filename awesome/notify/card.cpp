@@ -201,7 +201,7 @@ namespace NAwesome::Notify {
         // a chat's messages hang: a line at the margin begins one
         const int          HANGPX  = CHAT ? (int)std::lround(HANG * P.scale) : 0;
         const std::string& BODYSRC = CHAT ? fittedTranscript(NP, T.body, TWPX, bodyCap, HANGPX, LINKS ? &COLLINK : nullptr) : RAWBODY;
-        const auto         BODY    = BODYSRC.empty() ? nullptr : cachedText(BODYSRC, COLFG, T.body, TWPX, bodyCap, 1.1f, true, 400, LINKS ? &COLLINK : nullptr, false, false, HANGPX);
+        const auto         BODY    = BODYSRC.empty() ? nullptr : cachedText(BODYSRC, COLFG, T.body, TWPX, bodyCap, 1.1f, true, 400, LINKS ? &COLLINK : nullptr, false, eShadow::SOFT, HANGPX);
         const double BH   = texH(BODY, P.scale);
         double       altH = 0;
         for (const auto& A : altLines)
@@ -246,7 +246,7 @@ namespace NAwesome::Notify {
         // the title row, its pieces centred on one line
         double tx = TX;
         if (TITLE && TITLE->tex) {
-            P.tex(TITLE->tex, tx, TOPY + (ROWH - texH(TITLE, P.scale)) / 2);
+            texAt(P, TITLE, tx, TOPY + (ROWH - texH(TITLE, P.scale)) / 2);
             tx += texW(TITLE, P.scale) + 6;
         }
         if (PILLW > 0) {
@@ -255,12 +255,12 @@ namespace NAwesome::Notify {
             texCentered(P, COUNT, PB);
         }
         if (META && META->tex)
-            P.tex(META->tex, X + W - PADX - METAW, TOPY + (ROWH - texH(META, P.scale)) / 2);
+            texAt(P, META, X + W - PADX - METAW, TOPY + (ROWH - texH(META, P.scale)) / 2);
 
         double ty = TOPY + ROWH;
         if (BODY) {
             ty += ROW_GAP;
-            P.tex(BODY->tex, TX, ty);
+            texAt(P, BODY, TX, ty);
             for (const auto& L : BODY->links) // physical -> global logical, in both modes
                 hit.links.push_back({CBox{TX + L.rel.x / P.scale, ty + L.rel.y / P.scale, L.rel.w / P.scale, L.rel.h / P.scale}, L.href});
             ty += BH;
@@ -279,7 +279,7 @@ namespace NAwesome::Notify {
             ty += IMG_ROW_GAP;
             for (const auto& A : altLines)
                 if (A.tex && A.tex->tex) {
-                    P.tex(A.tex->tex, TX, ty + (A.h - texH(A.tex, P.scale)) / 2);
+                    texAt(P, A.tex, TX, ty + (A.h - texH(A.tex, P.scale)) / 2);
                     ty += A.h;
                 }
         }
@@ -306,7 +306,7 @@ namespace NAwesome::Notify {
             P.ring(FB, COLACC, RB, 2.f); // it holds the keyboard: the field wears the accent
             double cx = FB.x + FIELD_PADL;
             if (const auto* SHOW = ENTRY ? ENTRY : HINT; SHOW && SHOW->tex) {
-                P.tex(SHOW->tex, cx, FB.y + (FIELD_H - texH(SHOW, P.scale)) / 2);
+                texAt(P, SHOW, cx, FB.y + (FIELD_H - texH(SHOW, P.scale)) / 2);
                 if (ENTRY)
                     cx += texW(ENTRY, P.scale);
             }

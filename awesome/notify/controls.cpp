@@ -228,9 +228,9 @@ namespace NAwesome::Notify {
             const auto   STATE = cachedText(dndText(), COLSUB, T.meta, PX(TW), -1, 0, false, 400);
             const double NH = texH(NAME, P.scale), SH = texH(STATE, P.scale), TY = CAP.y + (ROW_H - NH - 1 - SH) / 2;
             if (NAME && NAME->tex)
-                P.tex(NAME->tex, TX, TY);
+                texAt(P, NAME, TX, TY);
             if (STATE && STATE->tex)
-                P.tex(STATE->tex, TX, TY + NH + 1);
+                texAt(P, STATE, TX, TY + NH + 1);
             TILE(TILE_DND, CAP);
 
             for (const auto [T_, GLYPH_ON, GLYPH_OFF, SLOT] : {std::tuple{TILE_MIC, Glyph::eGlyph::MIC, Glyph::eGlyph::MIC_OFF, 0},
@@ -266,9 +266,9 @@ namespace NAwesome::Notify {
 
             static constexpr std::array<const char*, 3> NAME = {"Display", "Keyboard", "Sound"};
             if (const auto N = cachedText(NAME[l], COLTITLE, T.title, PX(W), -1, 0, false, 600); N && N->tex)
-                P.tex(N->tex, MOD.x + MOD_PADX, MOD.y + TITLE_Y + (TITLE_H - texH(N, P.scale)) / 2);
+                texAt(P, N, MOD.x + MOD_PADX, MOD.y + TITLE_Y + (TITLE_H - texH(N, P.scale)) / 2);
             if (const auto VT = cachedText(valueText(LEVEL, V), MUTED ? COLURGENT : COLSUB, T.title, PX(W / 2), -1, 0, false, 400); VT && VT->tex)
-                P.tex(VT->tex, RIGHT - texW(VT, P.scale), MOD.y + TITLE_Y + (TITLE_H - texH(VT, P.scale)) / 2);
+                texAt(P, VT, RIGHT - texW(VT, P.scale), MOD.y + TITLE_Y + (TITLE_H - texH(VT, P.scale)) / 2);
 
             // the slider: low glyph, track, high glyph
             const auto LOW = LEVEL == eLevel::DISPLAY ? Glyph::eGlyph::SUN_LOW :

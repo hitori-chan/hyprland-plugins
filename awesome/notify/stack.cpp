@@ -25,7 +25,7 @@ namespace NAwesome::Notify {
     }
 
     void paintDeck(const SPaint& P, const CBox& top, size_t count) {
-        const auto  RIM = color(cfg().getColor("plugin:awesome:theme:col_rim"));
+        const auto  RIM = color(cfg().getColor("plugin:awesome:theme:col_rim")), GLASS = color(cfg().getColor("plugin:awesome:theme:col_glass"));
         const int   R   = (int)std::lround(DECK_ROUND * P.scale);
         const float RP  = rPow();
         // deepest first: each layer shows below the one over it, and the top
@@ -34,7 +34,7 @@ namespace NAwesome::Notify {
             const double I = DECK_INSET * (double)d;
             const CBox   L{top.x + I, top.y + top.h + DECK_STEP * (double)d - DECK_H, top.w - 2 * I, DECK_H};
             P.shadow(CBox{L}.expand(DECK_DROP).translate(Vector2D{0.0, DECK_SINK}), R, RP, (int)DECK_DROP);
-            P.glass(L, d == 1 ? tDeck1() : tDeck2(), R, RP);
+            P.glass(L, GLASS, R, RP);
             P.ring(L, RIM.modifyA(RIM.a * (1.f - 0.2f * (float)d)), R, RP);
         }
     }

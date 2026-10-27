@@ -235,7 +235,8 @@ import sys
 import numpy as np
 from PIL import Image
 # a column belongs to a panel when it holds more than 20 lit pixels below
-# the strip, spanning more than 40 rows
+# the strip, spanning more than 40 rows: its side rims (the Crystal glass
+# is a 6 % tint, its inside dark over the nested's black)
 lit = np.asarray(Image.open(sys.argv[1]).convert('RGB'))[29:].min(axis=2) > 5
 n = lit.sum(axis=0)
 top = lit.argmax(axis=0)

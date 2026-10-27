@@ -56,7 +56,7 @@ namespace NAwesome::Shell {
           public:
             double fit(const SPaint& P, const SFrame& F) override {
                 const auto TEX = textTex(clockText, F.fg, P.pt);
-                return TEX ? TEX->m_size.x / P.scale : 0;
+                return textInkW(TEX, P.pt, P.scale);
             }
             void draw(const SPaint& P, const SFrame& F, const CBox& box) override {
                 P.texIn(textTex(clockText, F.fg, P.pt), box);
