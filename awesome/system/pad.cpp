@@ -103,12 +103,22 @@ namespace NAwesome::System {
         return BUS == BUS_USB || BUS == BUS_BLUETOOTH;
     }
 
+#ifdef AWESOME_GATE
+    // the gate's stand-in: a virtual pointer by name (the nested has no
+    // libinput device), set by `hyprctl awesome pad NAME`
+    static std::string standIn;
+#endif
+
     // the built-in touchpad, else any (an external trackpad alone)
     static SP<IPointer> touchpad() {
         if (!g_pInputManager)
             return nullptr;
         SP<IPointer> any;
         for (const auto& P : g_pInputManager->m_pointers) {
+#ifdef AWESOME_GATE
+            if (!standIn.empty() && P->m_hlName == standIn)
+                return P;
+#endif
             if (!P->m_isTouchpad)
                 continue;
             if (!onExternalBus(P))
@@ -119,13 +129,21 @@ namespace NAwesome::System {
         return any;
     }
 
-    // m_connected is the compositor's actual pointer attachment state. It is
-    // updated together with libinput's send-events mode by setPointerConfigs,
-    // so a manual toggle can read the live state even when no automatic pass
-    // has populated appliedState yet.
+    // The state the compositor converges on, as setPointerConfigs applies it:
+    // a device config's `enabled` (true when unset), else m_connected for a
+    // pointer with no config. hl.device only records the value and schedules
+    // REFRESH_INPUT_DEVICES, so m_connected lags a flip until that refresh:
+    // read alone, it published the old state after every flip, and the
+    // panel's next press asked for the state the touchpad was already in.
     static std::optional<bool> touchpadEnabled() {
         const auto TOUCHPAD = touchpad();
-        return TOUCHPAD ? std::optional<bool>{TOUCHPAD->m_connected} : std::nullopt;
+        if (!TOUCHPAD)
+            return std::nullopt;
+        const auto  MGR  = Config::Lua::mgr();
+        const auto& NAME = TOUCHPAD->m_hlName;
+        if (MGR && MGR->deviceConfigExists(NAME))
+            return !MGR->deviceConfigExplicitlySet(NAME, "enabled") || MGR->getDeviceInt(NAME, "enabled") != 0;
+        return TOUCHPAD->m_connected;
     }
 
     static bool isExternalMouse(const SP<IPointer>& P) {
@@ -328,12 +346,21 @@ namespace NAwesome::System {
         toggles.push(on ? '1' : '0');
     }
 
-    // the gate's probe: the touchpad's live state, not the policy's memory
+    // the gate's probe: the touchpad's state, not the policy's memory
     std::string padState() {
         const auto E = touchpadEnabled();
         if (!E)
             return "none";
         return *E ? "on" : "off";
+    }
+
+    void padStandIn(const std::string& name) {
+#ifdef AWESOME_GATE
+        standIn = name;
+        padPublish();
+#else
+        (void)name;
+#endif
     }
 
 } // namespace NAwesome::System

@@ -2,7 +2,7 @@
 # process path (volume/mic), the readback caps, the repeat serialization,
 # the light paths (a fake logind, backlight, keyboard LED and light sensor), a
 # headset's own volume (a fake BlueZ signal), the values published to the
-# control center, and the touchpad policy probe. Nothing reaches the host:
+# control center, and the touchpad's switch. Nothing reaches the host:
 # the fake wpctl shadows the nested's PATH (the live PipeWire sink is never
 # touched), and the light and headset paths talk to the nested's private
 # system bus.
@@ -316,24 +316,43 @@ chk "room: picking it again stops following" until_is 3 0 ctl_part room
 chk "room: ...releasing the sensor" grep -qx "ReleaseLight" "$STATE/logind.log"
 hq awesome center >/dev/null
 
-# ---- the touchpad policy ------------------------------------------------------
-PSTART="$(hq awesome pad)"
-case "$PSTART" in
-none)
-	chk "system: no touchpad device — the policy reports none" test "$PSTART" = none
-	;;
-*)
-	# Two toggles always return the live touchpad to the state the battery
-	# found it in; the state string flipping between them is the behavior.
-	PFLIP="$( [[ "$PSTART" == on ]] && echo off || echo on )"
-	dsp "hl.plugin.awesome.touchpad_toggle()"; sleep 0.5
-	chk "system: the toggle flipped the live touchpad ($PSTART -> $PFLIP)" test "$(hq awesome pad)" = "$PFLIP"
-	chk "system: the toggle posts the state card" test "$(st)" = "center:0 live:1 dnd:0"
-	hq awesome clear >/dev/null; sleep 0.4
-	dsp "hl.plugin.awesome.touchpad_toggle()"; sleep 0.5
-	chk "system: the second toggle restores the start state" test "$(hq awesome pad)" = "$PSTART"
-	hq awesome clear >/dev/null; sleep 0.4
-	;;
-esac
+# ---- the touchpad (system/pad.cpp) -------------------------------------------
+# The nested has no libinput device: a second virtual pointer stands in
+# (the gate build's `pad NAME`). hl.device records a flip and applies it on
+# a scheduled input refresh, so the state is the device config's, not the
+# lagging attachment: the switch shows a flip at once, and its next press
+# flips it back (it asked for the state the touchpad was already in). The
+# stand-in ends on: its config outlives it, and every virtual pointer
+# shares its name.
+chk "touchpad: none without one" test "$(hq awesome pad)" = none
+mice() { hq devices -j | python3 -c 'import json,sys;[print(m["name"]) for m in json.load(sys.stdin)["mice"]]' | sort; }
+M0="$(mice)"
+exec {PADFD}> >(WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" "$MON_W" "$MON_H" >/dev/null 2>&1)
+standin() { comm -13 <(echo "$M0") <(mice) | head -1; }
+has_standin() { [[ -n "$(standin)" ]]; }
+until_ok 3 has_standin
+PADN="$(standin)"
+chk "touchpad: a virtual pointer stands in" test -n "$PADN"
+hq awesome pad "$PADN" >/dev/null
+chk "touchpad: the stand-in reads on" test "$(hq awesome pad)" = on
+hq awesome center >/dev/null
+chk "touchpad: the switch reads it on" until_is 3 1 ctl_part touchpad
+click "$(tile_cx 2)" "$TILE_CY" 272
+chk "touchpad: a press turns it off, the switch at once" until_is 2 0 ctl_part touchpad
+chk "touchpad: ...in the compositor's device config" test "$(hq awesome pad)" = off
+click "$(tile_cx 2)" "$TILE_CY" 272
+chk "touchpad: the next press turns it back on" until_is 2 1 ctl_part touchpad
+chk "touchpad: ...and no press posted a capsule under the panel" test "$(st)" = "center:1 live:0 dnd:0"
+hq awesome center >/dev/null
+dsp "hl.plugin.awesome.touchpad_toggle()"
+chk "touchpad: the key turns it off" until_is 3 off hq awesome pad
+chk "touchpad: ...with its capsule" until_is 3 "center:0 live:1 dnd:0" st
+hq awesome clear >/dev/null
+dsp "hl.plugin.awesome.touchpad_toggle()"
+chk "touchpad: the key turns it back on" until_is 3 on hq awesome pad
+hq awesome clear >/dev/null
+hq awesome pad - >/dev/null
+exec {PADFD}>&-
+chk "touchpad: the stand-in leaves" until_is 3 none hq awesome pad
 
 chk "system: final clean state" test "$(st)" = "center:0 live:0 dnd:0"
