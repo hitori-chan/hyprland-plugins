@@ -32,6 +32,7 @@
 #include "core/hop.hpp"
 #include "core/queries.hpp"
 #include "core/supervisor.hpp"
+#include "core/text.hpp"
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/Compositor.hpp>
@@ -250,6 +251,15 @@ namespace NAwesome::Shell {
     // Text -> cached GPU texture. Built ONLY by the warm pass; a miss during a
     // draw returns null rather than building (the texture rule).
     SP<ITexture> textTex(const std::string& text, const CHyprColor& col, int pt, int maxWidth = 0, const std::string& font = "", int weight = 400);
+    // The texture is the ink grown by its shadow's margin on every side
+    // (core/text.hpp): centering ignores it; a left-aligned place steps back
+    // by it and a measure leaves it out. Physical px.
+    inline int textPad(int pt) {
+        return textShadow(eShadow::SOFT, pt).pad();
+    }
+    inline double textInkW(const SP<ITexture>& t, int pt, double scale) {
+        return t ? (t->m_size.x - 2 * textPad(pt)) / scale : 0;
+    }
 
     // ---- clickable regions, rebuilt each frame by strip.cpp ----
 

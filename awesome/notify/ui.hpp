@@ -116,8 +116,8 @@ namespace NAwesome::Notify {
     bool                hasLeadIcon(const SNotif& n, bool shade = false);
     void                paintProgress(const SPaint& P, double x, double y, double w, int pct, bool critical);
     void                paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool withBadge, float rp, bool shade = false);
-    // a small control floating on glass (a stack's Show Less and close
-    // button, "+N more"): its own drop, the chip glass, the rim
+    // a small control floating on glass (a stack's Show Less, "+N more"):
+    // its own drop, the glass, the rim
     void                paintChip(const SPaint& P, const CBox& box, bool hover);
     // the glass under the pointer lifts a step, as macOS's platter does
     CHyprColor          liftedGlass(const CHyprColor& c);
@@ -151,11 +151,12 @@ namespace NAwesome::Notify {
     // paragraph, ellipsized. linkCol non-null collects <a href> rects.
     // headCut ellipsizes at the START: an entry, whose newest characters
     // (the caret's end) must stay in view.
-    // shadow: a soft drop shadow in a margin of SCachedText::pad (text
-    // that sits bare on the desktop; plain text only, no links)
+    // shadow: the drop the text wears (core/text.hpp), in a margin of
+    // SCachedText::pad: SOFT over glass, DESKTOP bare on the wallpaper.
+    // texW/texH are the ink's size; texAt and texCentered place the ink.
     // indentPx: a hanging indent, every line of a paragraph but its first
     const SCachedText* cachedText(const std::string& text, const CHyprColor& col, int pt, int maxWpx, int maxHpx, float lineSp, bool markup, int weight,
-                                  const CHyprColor* linkCol = nullptr, bool headCut = false, bool shadow = false, int indentPx = 0);
+                                  const CHyprColor* linkCol = nullptr, bool headCut = false, eShadow shadow = eShadow::SOFT, int indentPx = 0);
 
     // A chat card's body (one paragraph per message), fitted from the
     // newest end into capPx (Transcript::fitTail) by the layout the body's
@@ -165,6 +166,7 @@ namespace NAwesome::Notify {
 
     double texH(const SCachedText* e, double scale);
     double texW(const SCachedText* e, double scale);
+    void   texAt(const SPaint& P, const SCachedText* e, double x, double y); // the ink's top-left at (x, y)
 
     void   textCacheTick(); // a full warm begins: advance the grace generation
     void   textCacheSweep(); // a full warm ended: evict what no recent warm wanted

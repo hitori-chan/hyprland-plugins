@@ -112,9 +112,9 @@ namespace NAwesome::Notify {
                 if (N->progress > 0)
                     P.rect(CBox{TRK.x, TRK.y, std::max(TRACK_H, TRK.w * std::min(N->progress, 100) / 100.0), TRACK_H}, ALARM ? tFillHover() : COLTITLE, TR, 2.f);
                 if (WORDS && WORDS->tex)
-                    P.tex(WORDS->tex, CAP.x + CAP.w - CAP_PADR - WW, CAP.y + (CAP_H - texH(WORDS, P.scale)) / 2);
+                    texAt(P, WORDS, CAP.x + CAP.w - CAP_PADR - WW, CAP.y + (CAP_H - texH(WORDS, P.scale)) / 2);
             } else if (WORDS && WORDS->tex)
-                P.tex(WORDS->tex, GX + GLYPH + 12, CAP.y + (CAP_H - texH(WORDS, P.scale)) / 2);
+                texAt(P, WORDS, GX + GLYPH + 12, CAP.y + (CAP_H - texH(WORDS, P.scale)) / 2);
 
             // a capsule takes no input: it is pushed for the damage and the
             // pass's bounds, and the hit-tests skip it

@@ -338,7 +338,7 @@ namespace NAwesome::Notify::CardMenu {
             const CBox ROW{x, ry, w, ROWH};
             if (I.dim) { // never lit, never hit: a press on it lands on the panel
                 if (const auto LBL = cachedText(I.label, COLDIM, T.body, CAPPX, -1, 0, false, 400); LBL && LBL->tex)
-                    P.tex(LBL->tex, x + LX, ry + (ROWH - texH(LBL, P.scale)) / 2);
+                    texAt(P, LBL, x + LX, ry + (ROWH - texH(LBL, P.scale)) / 2);
                 ry += ROWH;
                 continue;
             }
@@ -349,7 +349,7 @@ namespace NAwesome::Notify::CardMenu {
             const auto LIT = cachedText(I.label, COLACC, T.body, CAPPX, -1, 0, false, 400);
             const auto LBL = HOV ? LIT : cachedText(I.label, COLTITLE, T.body, CAPPX, -1, 0, false, 400);
             if (LBL && LBL->tex)
-                P.tex(LBL->tex, x + LX, ry + (ROWH - texH(LBL, P.scale)) / 2);
+                texAt(P, LBL, x + LX, ry + (ROWH - texH(LBL, P.scale)) / 2);
             if (I.check == 1) {
                 const auto MARK = Glyph::tex(Glyph::eGlyph::CHECK, COLACC, (int)std::lround(CHECK_GLYPH * P.scale));
                 const auto PLAIN = Glyph::tex(Glyph::eGlyph::CHECK, COLTITLE, (int)std::lround(CHECK_GLYPH * P.scale));

@@ -520,11 +520,8 @@ namespace NAwesome::Notify {
         // the desktop as its stack headers do, a soft shadow keeping it
         // legible over any wallpaper or window.
         {
-            if (const auto HEAD = cachedText("Notifications", COLTITLE, T.heading, (int)std::lround(W * P.scale), -1, 0, false, 600, nullptr, false, /*shadow=*/true);
-                HEAD && HEAD->tex) {
-                const double PAD = HEAD->pad / P.scale;
-                P.tex(HEAD->tex, X + 4 - PAD, HY + (HEADER_H - (texH(HEAD, P.scale) - 2 * PAD)) / 2 - PAD);
-            }
+            if (const auto HEAD = cachedText("Notifications", COLTITLE, T.heading, (int)std::lround(W * P.scale), -1, 0, false, 600, nullptr, false, eShadow::DESKTOP))
+                texAt(P, HEAD, X + 4, HY + (HEADER_H - texH(HEAD, P.scale)) / 2);
 
             const double CY    = HY + (HEADER_H - CAP_H) / 2;
             const int    ROUND = (int)std::lround(CAP_H / 2 * P.scale);
@@ -623,7 +620,7 @@ namespace NAwesome::Notify {
                 if (const auto G = Glyph::tex(Glyph::eGlyph::CHEVRON_DOWN, COLTITLE, (int)std::lround(14 * P.scale)))
                     P.texIn(G, CBox{DN.x + 12, DN.y, 14, CHIP_H});
                 if (NUM && NUM->tex)
-                    P.tex(NUM->tex, DN.x + 12 + 14 + 4, DN.y + (CHIP_H - texH(NUM, P.scale)) / 2);
+                    texAt(P, NUM, DN.x + 12 + 14 + 4, DN.y + (CHIP_H - texH(NUM, P.scale)) / 2);
                 SCard c;
                 c.kind = SCard::PAGE_DOWN;
                 c.box  = DN;

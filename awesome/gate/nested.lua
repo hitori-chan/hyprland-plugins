@@ -26,8 +26,12 @@ hl.monitor({
 
 hl.config({
 	general = { gaps_in = 0, gaps_out = 0, border_size = 1 },
-	-- blur 20 ≈ size 5 x 2 passes; the glass needs it
-	decoration = { shadow = { enabled = false }, blur = { enabled = true, size = 5, passes = 2 } },
+	-- the Crystal glass's blur (the user's config: a 6 % tint over a blur
+	-- that does the darkening); size 2 x 2 passes ≈ 8
+	decoration = {
+		shadow = { enabled = false },
+		blur = { enabled = true, size = 2, passes = 2, contrast = 1.0, brightness = 0.43, vibrancy = 0.6 },
+	},
 	animations = { enabled = false },
 	misc = {
 		disable_hyprland_logo = true,

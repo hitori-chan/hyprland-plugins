@@ -154,6 +154,9 @@ xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
 print((min(xs) + max(xs)) // 2, (min(ys) + max(ys)) // 2)
 PY
 }
+# col_h <frame> <x>: a panel's height down one column, rim to rim (the
+# Crystal glass is a 6 % tint: over the nested's black only its rim, its
+# top edge and its words are lit)
 col_h() {
 	python3 - "$1" "$2" <<'PY'
 import sys
@@ -161,7 +164,7 @@ from PIL import Image
 im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
 x = min(int(sys.argv[2]), im.size[0] - 1)
 run = [y for y in range(29, im.size[1]) if min(px[x, y][:3]) > 5]
-print(max(run) - min(run) + 1 if len(run) > 20 and max(run) - min(run) > 40 else 0)
+print(max(run) - min(run) + 1 if len(run) >= 2 and max(run) - min(run) > 40 else 0)
 PY
 }
 

@@ -53,7 +53,8 @@ namespace NAwesome::Shell {
     }
 
     // The compositor's renderText, under the plugin's text options (core/
-    // text.hpp): the same extents, ellipsizing and premultiplied ARGB32.
+    // text.hpp): the same extents, ellipsizing and premultiplied ARGB32,
+    // over the soft shadow every text over glass wears (textPad).
     static SP<ITexture> rasterText(const std::string& text, const CHyprColor& col, int pt, int maxWidth, const std::string& family, int weight) {
         PangoContext*         ctx    = newTextContext();
         PangoLayout*          layout = pango_layout_new(ctx);
@@ -70,13 +71,12 @@ namespace NAwesome::Shell {
         }
         PangoRectangle ink = {}, log = {};
         pango_layout_get_pixel_extents(layout, &ink, &log);
-        const int W = std::max(1, std::max(log.width, ink.x + ink.width)), H = std::max(1, std::max(log.height, ink.y + ink.height));
+        const int  W = std::max(1, std::max(log.width, ink.x + ink.width)), H = std::max(1, std::max(log.height, ink.y + ink.height));
+        const auto SH = textShadow(eShadow::SOFT, pt);
 
-        auto*     SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
-        auto*     CR   = cairo_create(SURF);
-        cairo_set_source_rgba(CR, col.r, col.g, col.b, col.a);
-        cairo_move_to(CR, 0, 0);
-        pango_cairo_show_layout(CR, layout);
+        auto*      SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W + 2 * SH.pad(), H + 2 * SH.pad());
+        auto*      CR   = cairo_create(SURF);
+        showShadowedLayout(CR, layout, W, H, SH, col.r, col.g, col.b, col.a);
         pango_font_description_free(fd);
         g_object_unref(layout);
         cairo_surface_flush(SURF);

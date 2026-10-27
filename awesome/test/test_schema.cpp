@@ -56,7 +56,7 @@ bool test_schema() {
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:windows:edge"}.index].ival == 16);
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:notify:rounding_power"}.index].dval == 3.0);
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:shell:col_focus"}.index].cval == 0xff00ccffu);
-    AW_CHECK(SPECS[CfgKey{"plugin:awesome:theme:col_glass"}.index].cval == 0x7a26262cu);
+    AW_CHECK(SPECS[CfgKey{"plugin:awesome:theme:col_glass"}.index].cval == 0x0f1c1c20u);
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:shell:font"}.index].sval == "Fira Code, IBM Plex Sans JP");
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:notify:font"}.index].sval == "Inter");
 

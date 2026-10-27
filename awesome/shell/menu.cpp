@@ -739,7 +739,7 @@ namespace NAwesome::Shell {
                             if (E.separator)
                                 continue;
                             if (const auto T = textTex(E.display, COLFG, PAINT.pt, capPx(E)); T)
-                                textW = std::max(textW, T->m_size.x / PAINT.scale + (E.submenu ? ARW : 0));
+                                textW = std::max(textW, textInkW(T, PAINT.pt, PAINT.scale) + (E.submenu ? ARW : 0));
                             if (textW + LX + 12 >= 380.0)
                                 break;
                         }
@@ -858,7 +858,7 @@ namespace NAwesome::Shell {
                     const auto T      = textTex(E.display, fg, PAINT.pt, L.fixedWidth > 0 ? ROOMPX : FITS ? capPx(E) : ROOMPX);
                     if (T && T->m_texID != 0) {
                         const auto P = PAINT.toPhys(ROW);
-                        CBox       b{P.x + std::round(LX * PAINT.scale), P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y};
+                        CBox       b{P.x + std::round(LX * PAINT.scale) - textPad(PAINT.pt), P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y};
                         PAINT.texAt(T, b.round());
                     }
                     if (E.submenu)
