@@ -134,12 +134,11 @@ namespace NAwesome::System {
             d.level          = RB ? RB->value : std::max(d.level, 0.0);
             d.muted          = RB ? RB->muted : d.muted;
             d.levelAt        = Time::steadyNow();
-            if (RB && d.mic)
-                Controls::publish(Controls::eSwitch::MIC, RB->muted ? 0 : 1);
-            else if (RB)
+            if (RB && !d.mic)
                 Controls::publish(Controls::eLevel::VOLUME, {.pct = (int)std::lround(RB->value * 100.0), .muted = RB->muted});
-            // the open panel's slider (or switch) is the feedback
-            if ((show == eShow::ALWAYS || (show == eShow::CHANGED && MOVED)) && !Controls::panelShowing())
+            // the open panel's slider is the volume's feedback (the mic
+            // has none there: its card shows over the panel)
+            if ((show == eShow::ALWAYS || (show == eShow::CHANGED && MOVED)) && (d.mic || !Controls::panelShowing()))
                 showReadback(d, RB.has_value() ? &*RB : nullptr);
             pump(d);
             if (&d == &sink)
@@ -361,7 +360,7 @@ namespace NAwesome::System {
     // D-Bus call and the spawn with it); each device then runs one set at
     // a time and takes the newest ask when it finishes.
     static std::array<std::optional<int>, (size_t)Controls::eLevel::COUNT_> levelAsks;
-    static std::optional<bool>                                              micAsk, muteAsk;
+    static std::optional<bool>                                              muteAsk;
     static std::optional<uint32_t>                                          outputAsk;
     static std::array<int, (size_t)Controls::eLevel::COUNT_>                levelSteps{}; // the wheel's, signed
     static CHop                                                             pendingAsks;
@@ -401,11 +400,6 @@ namespace NAwesome::System {
             sink.toggles = 0;
             pump(sink);
         }
-        if (const auto ON = std::exchange(micAsk, std::nullopt)) {
-            source.muteTo  = !*ON;
-            source.toggles = 0;
-            pump(source);
-        }
         if (const auto ID = std::exchange(outputAsk, std::nullopt))
             setDefaultOutput(*ID);
     }
@@ -430,11 +424,6 @@ namespace NAwesome::System {
         armAsks();
     }
 
-    void setMic(bool on) {
-        micAsk = on;
-        armAsks();
-    }
-
     void setMuted(bool muted) {
         muteAsk = muted;
         armAsks();
@@ -445,15 +434,14 @@ namespace NAwesome::System {
         armAsks();
     }
 
-    // the load, and the panel opening: the volume, the mic and the outputs
-    // as they are now, read back quietly (one already reading answers with
-    // that), so the panel opens on what it shows and never grows a row
+    // the load, and the panel opening: the volume and the outputs as they
+    // are now, read back quietly (one already reading answers with that),
+    // so the panel opens on what it shows and never grows a row
     void audioRefresh() {
-        for (auto* D : {&sink, &source})
-            if (!D->busy) {
-                D->busy = true;
-                readBack(*D, eShow::NEVER);
-            }
+        if (!sink.busy) {
+            sink.busy = true;
+            readBack(sink, eShow::NEVER);
+        }
         outputsRead();
     }
 
@@ -475,7 +463,6 @@ namespace NAwesome::System {
         asksArmed = false;
         levelAsks.fill(std::nullopt);
         levelSteps.fill(0);
-        micAsk.reset();
         muteAsk.reset();
         outputAsk.reset();
         ++outputsGen; // a late status or set-default finds itself outdated

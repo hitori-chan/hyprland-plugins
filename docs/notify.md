@@ -66,8 +66,9 @@ pointer; the hold and the right click do that work.
 The sender's rows first: Reply, then each non-`default` action in the
 sender's order. Then the system's switches:
 
-- Mute *chat* for 1 Hour · Mute *chat* Until Tomorrow (08:00) — for a
-  conversation; Unmute *chat* while one holds.
+- Mute *chat* for 1 Hour · Mute *chat* Until Tomorrow (the next 08:00;
+  "Until 08:00" after midnight) — for a conversation; Unmute *chat*
+  while one holds.
 - Turn Off *App* Banners · Silence *App* Sounds (Turn On… / Allow…
   once off).
 - Close All from *App*.
@@ -149,42 +150,72 @@ time where banners show an age, and behave as their banner did.
 The bar's switches (right of the bell), `hl.plugin.awesome.control_center()`
 or `hyprctl awesome controlcenter` open it on that bar's monitor, in the
 cards' column; it and the center share the column, one open at a time.
-Banners keep coming, under it. An outside click, Esc or its switches
-close it. macOS's modules, each its own glass:
+Banners keep coming, 12 px under it. An outside click, Esc or its
+switches close it. Every control shows only with its hardware, checked
+again whenever the panel opens and as devices come and go.
 
-- a first row: **Do Not Disturb**'s capsule (its circle, its name, Off,
-  On or "Until 21:30"), then the **Microphone**'s and the **Touchpad**'s
-  round buttons. A control that is on is white with the accent deepened
-  for its glyph; one with no device is dim and inert. A click flips one.
-- a module per level the system knows: the **Display**, the
-  **Keyboard** light, the **Sound**. Each shows its name and value over
-  a track between its low and high glyphs; a device that does not
-  answer has no module. A light of few levels (a ThinkPad's keyboard:
-  off, low, high) is a stepped slider, a notch per level, its value
-  named (Off, Low, High).
-- corner buttons: the keyboard light's follows the room (lit while on;
-  shown with a light sensor, see [system](system.md#follow-the-room)),
-  the sound's lists the outputs (shown with two or more).
+**The levels** share one glass card, a section per level a device
+answers for: the **Display** (a backlight), the **Keyboard** light (a
+`*kbd_backlight` LED) and the **Sound**. A section reads its name and
+value ("45%", "Muted") over a slider: a glyph, then the track to the
+card's right edge with a white knob. A light of ten levels or fewer (a
+ThinkPad's keyboard: off, low, high) snaps its knob to them and still
+reads a percent.
+
+- the keyboard's glyph (a half sun on a line) puts its light out, and
+  back on at the level it last had;
+- the speaker mutes and unmutes; its waves follow the level, crossed
+  while silent;
+- **Follow the Room**, a disc in the keyboard's title row (lit while on;
+  shown with a light sensor, see [system](system.md#follow-the-room));
+- the **output** pill in the sound's title row (the current output's
+  kind and a chevron; shown with two outputs or more) opens **Output**:
+  `wpctl status`'s sinks, the default checked, each with its kind; a
+  pick makes one the default.
 
 | On a level | Action |
 |---|---|
 | press on the track | set the level there (a stepped light: the nearest level), and drag it |
-| press on a glyph, the name or the value | nothing (the sound's low glyph mutes) |
+| press on the name or the value | nothing |
 | wheel | step it as its keys do |
-| right click on the sound | its outputs (`wpctl status`'s sinks, the default checked); a pick makes one the default |
-| right click on the keyboard light | Follow the Room (dim without a light sensor) |
 
 A level past 100 % (set elsewhere) shows its number over a full track. A
 key that moves a level while the control center is open moves its
-slider, and no capsule covers the panel.
+slider, and no capsule covers the panel; the microphone's and the
+touchpad's keys keep their capsules (the panel has neither).
+
+**The capsules**, under the card: **Bluetooth** left (with an adapter;
+see [system](system.md#bluetooth)) and **Do Not Disturb** right, alone
+across without an adapter. A capsule's circle switches it (white with
+the accent deepened for its glyph while on); its words — the name over
+its state and a chevron — open its menu, the state brightening under the
+pointer (the glass never lightens):
+
+- Bluetooth's state is Off, On, the one connected device's name, "2
+  Devices" or "Connecting…". Its **Devices** menu lists the paired ones
+  ("· Bluetooth is off" in the header while off): the device's kind in
+  a disc, lit while connected, its name, and on the right "Connecting…"
+  or, while connected, its battery ("80%" beside a battery glyph, red at
+  20 % or less). A
+  pick disconnects a connected device, else connects it (powering the
+  radio first while off).
+- Do Not Disturb's state is Off, On or "Until 21:30". Its menu: For 30
+  Minutes · For 1 Hour · For 3 Hours · Until Tomorrow (08:00) (after
+  midnight, "Until 08:00": the next 08:00) · Until Turned Off.
+
+**Names**: the small buttons (the keyboard's glyph, the speaker, Follow
+the Room, the output pill) name themselves after the pointer rests 500 ms
+on them — "Light Off", "Unmute", "Follow the Room", "Output · Speakers"
+— in a dark note to their left, outside the panel for a slider's glyph.
+A click hides the name until the pointer comes back.
 
 ## Do Not Disturb
 
-From the control center's capsule, the bell's right click, or
-`hl.plugin.awesome.suspend([minutes])`. Arrivals collect silently with
-their timeouts held; turning it off shows the queue newest first, on
-fresh timeouts, under the per-app cap and switches. An update to a card
-already shown changes it in place, silently.
+From the control center's capsule (its circle, or a duration from its
+words) or `hl.plugin.awesome.suspend([minutes])`. Arrivals collect
+silently with their timeouts held; turning it off shows the queue
+newest first, on fresh timeouts, under the per-app cap and switches. An
+update to a card already shown changes it in place, silently.
 
 DND is remembered across a relog or a plugin update. A timed DND ends at
 a wall-clock time: a laptop asleep past it wakes with DND off and the

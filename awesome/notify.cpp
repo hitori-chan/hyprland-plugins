@@ -248,6 +248,8 @@ namespace NAwesome::Notify {
         }
         if (verb == "menu") // the open card menu's rows ("label;label*;(label)": checked, dim)
             return CardMenu::describe();
+        if (verb == "controls-tip") // the control center button whose name shows ("" none)
+            return controlsTip();
         if (verb == "quiet") // "now:N hushed:N" — an arrival would hold; a critical banner shows without its words
             return std::format("now:{} hushed:{}", Quiet::now() ? 1 : 0, Quiet::hushed() ? 1 : 0);
 #endif

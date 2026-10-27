@@ -28,7 +28,7 @@ in window-geometry space, the session-lock grab check.
 | `shell` | the bar (tags, tasks, tray, bell, battery, clock) and the launcher |
 | `windows` | the window state machine (normal, minimized, maximized: told state, adoption, restore), focus policy, spawn placement, drag snap |
 | `notify` | the fd.o daemon, the card model (conversations, grouping, DND, quiet, the capsule band), banners, the center, the control center, inline reply, sound |
-| `system` | the lights (logind), volume and microphone (wpctl), the touchpad policy; feedback as notify capsules |
+| `system` | the lights (logind), volume and microphone (wpctl), Bluetooth (BlueZ), the touchpad policy; feedback as notify capsules |
 
 - Modules talk through `core` interfaces and direct C++ calls; there is
   no bus between them. The plugin's D-Bus is external only: the fd.o
@@ -198,11 +198,11 @@ The dir stats that decide a refresh still run on the compositor thread
   event-loop turn. The config files stay read-only to the plugin, and
   nothing is both a config key and an option.
 - **Controls** (`core/controls.hpp`): the control center's seam. `system`
-  publishes the levels, switches and outputs as it learns them and
-  registers the doors that move them; `notify` draws them and sends the
-  user's moves through the doors. A changed hook repaints the open
-  center; a panel flag tells `system` the center shows a level, so it
-  posts no capsule for it.
+  publishes the levels, Follow the Room, the outputs and Bluetooth as it
+  learns them and registers the doors that move them; `notify` draws them
+  and sends the user's moves through the doors. A changed hook repaints
+  the open center; a panel flag tells `system` the center shows the
+  levels, so it posts no level capsule.
 
 ### Processes and pixels
 
@@ -413,15 +413,16 @@ it); the card menu is drawn last and hit first on the notify layer.
   output). A headset's own volume (BlueZ's transport `Volume`) reads the
   sink back at most every 120 ms.
 - **Touchpad** (`system/pad.cpp`): hotplug rides the compositor's device
-  signals behind a 400 ms settle; the switch writes the per-device config
+  signals behind a 400 ms settle; a flip writes the per-device config
   store through `hl.device`, and a touchpad already in the wanted state
   is left alone (`hl.device` re-runs the device setup, a keymap compile).
 - **Feedback**: capsule ids 9991 touchpad, 9992 display, 9993 volume,
   9994 keyboard light, 9995 microphone; low urgency, a glyph, a value.
 - **The control center**: every value is published into
-  `core/controls.hpp` as it is learned (a readback, logind's ack, a
-  touchpad pass); the doors take absolute percents, relative steps and
-  switches, deferred out of the input emission, newest ask winning.
+  `core/controls.hpp` as it is learned (a readback, logind's ack, a BlueZ
+  signal); the doors take absolute percents, relative steps, Follow the
+  Room, the radio and a device's connection, deferred out of the input
+  emission, newest ask winning.
 
 ## Interfaces
 

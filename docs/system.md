@@ -1,9 +1,9 @@
 # System
 
 The `system` module: the display and keyboard lights, volume and
-microphone, Bluetooth, and the touchpad. Its levels, switches and devices
-show in the [control center](notify.md#the-control-center); its keys
-answer with a capsule.
+microphone, Bluetooth, and the touchpad. Its levels and devices show in
+the [control center](notify.md#the-control-center); its keys answer with
+a capsule.
 
 ## Lights
 
@@ -55,8 +55,8 @@ parity).
 - Raising stops at 100 %, but a volume already past it (set elsewhere)
   is never pulled down; the capsule and the slider show the true
   percent over a full bar.
-- The volume slider's right click lists the outputs and makes one the
-  default.
+- The output pill in the control center's Sound row lists the outputs
+  and makes one the default.
 - **A headset's own buttons**: a Bluetooth headset that sets its volume
   itself (AVRCP absolute volume) presses no key. BlueZ announces the
   change on the system bus, the default sink is read back, and the
@@ -90,11 +90,10 @@ present, and back on when it is unplugged.
   only a keyboard paired, a gaming keyboard's mouse interface or a
   presenter never does. With an external trackpad too, the policy drives
   the built-in one.
-- `touchpad_toggle` (`XF86TouchpadToggle`) and the control center's
-  switch flip it by hand; the flip holds until a mouse or trackpad is
-  plugged or unplugged (a virtual pointer, from remote input or
-  automation, is neither).
-- The switch writes the compositor's per-device config (`hl.device`),
+- `touchpad_toggle` (`XF86TouchpadToggle`) flips it by hand; the flip
+  holds until a mouse or trackpad is plugged or unplugged (a virtual
+  pointer, from remote input or automation, is neither).
+- The flip writes the compositor's per-device config (`hl.device`),
   so a config reload keeps it. A reload re-checks silently: a capsule
   answers only a change you can see, or the manual flip.
 
@@ -106,7 +105,9 @@ level track and its number, or words; a muted volume or microphone reads
 per control), last 1.2 s (the touchpad 1.5 s), and are feedback, never
 notifications: no center row and no dot.
 
-While the center is open its sliders show the change instead, and no
-capsule covers them; opening the center drops a live capsule. The
+While the control center is open its sliders show a level's change
+instead, and no capsule covers them; opening it drops a live level
+capsule. The microphone's and the touchpad's keys keep their capsules
+there (the panel has no control for either). The
 battery's critical alert shares the capsules' id band but is a real
 alert: it waits in the center like any banner.

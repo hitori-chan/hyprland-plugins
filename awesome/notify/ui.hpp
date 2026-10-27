@@ -238,6 +238,13 @@ namespace NAwesome::Notify {
 
     // ---- controls.cpp: the control center ----
 
+    // its three menus (the card menu's panel, opened under what opened them)
+    enum class ePanelMenu : uint8_t {
+        OUTPUT,    // the output pill's: the sinks
+        DND,       // Do Not Disturb's words: its durations
+        BLUETOOTH, // Bluetooth's words: the paired devices
+    };
+
     bool   controlsAnimating(); // its open spring still running
     double controlsHeight(bool warm); // the warm snapshots the values; both ask the height
     double controlsReach(); // how far the open panel pushes the banners down (0 shut)
@@ -248,7 +255,11 @@ namespace NAwesome::Notify {
     void   controlsDragEnd(); // the release, a lock, the panel closing: the last ask holds
     void   controlsWheel(Controls::eLevel l, int steps); // 5 % a notch, up raises
     void   controlsSwitch(uint32_t tile);                // a button's click
-    void   controlsToggleMute();                         // the volume's low glyph
+    void   controlsHover();                              // the hover moved: a button's name shows after a rest
+    // a sink's kind by its name (headphones, else a loudspeaker): the pill's
+    // glyph and the output menu's
+    Glyph::eGlyph outputGlyph(const std::string& name);
+    std::string   controlsTip(); // the gate's: the button name showing ("" none; defined in its build only)
 
     // ---- input.cpp: acting on a card ----
 
@@ -261,7 +272,10 @@ namespace NAwesome::Notify {
     namespace CardMenu {
         bool     canOpen(uint32_t id); // a notification (never feedback) the user can see
         bool     open(uint32_t id, const Vector2D& at); // the hold: its corner at the pointer
-        bool     openControl(Controls::eLevel l, const Vector2D& at); // a level's right click (the keyboard's room, the volume's outputs)
+        // a control center menu, 6 px under `anchor`, its right edge on the
+        // anchor's or its left
+        bool     openControl(ePanelMenu m, const CBox& anchor, bool alignRight);
+        std::optional<ePanelMenu> openControlMenu(); // which one is open, if any
         void     close();
         bool     isOpen();
         uint32_t owner(); // the card it belongs to; 0 = none open

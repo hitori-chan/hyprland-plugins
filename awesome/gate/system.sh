@@ -1,8 +1,8 @@
 # awesome/gate/system.sh — the system module's behavior battery: the wpctl
 # process path (volume/mic), the readback caps, the repeat serialization,
 # the light paths (a fake logind, backlight, keyboard LED and light sensor), a
-# headset's own volume (a fake BlueZ signal), the values published to the
-# control center, and the touchpad's switch. Nothing reaches the host:
+# headset's own volume and Bluetooth (a fake bluetoothd), the control
+# center, and the touchpad policy. Nothing reaches the host:
 # the fake wpctl shadows the nested's PATH (the live PipeWire sink is never
 # touched), and the light and headset paths talk to the nested's private
 # system bus.
@@ -12,9 +12,8 @@ ctl_part() { hq awesome controls | tr ' ' '\n' | grep "^$1:" | cut -d: -f2; } # 
 # posted in the same dispatch that retires it)
 idle() { until_is 5 0 hq awesome busy; }
 
-# the load reads every level the control center shows (the fake sink's
-# 0.56, its source muted)
-chk "system: the volume and the mic are published at load" test "$(ctl_part volume) $(ctl_part mic)" = "56 0"
+# the load reads every level the control center shows (the fake sink's 0.56)
+chk "system: the volume is published at load" test "$(ctl_part volume)" = 56
 
 # ---- the wpctl process path ------------------------------------------------
 : > "$STATE/wpctl.log"
@@ -209,11 +208,13 @@ chk "system: the display's level never moved with it" test "$(ctl_part display)"
 hq awesome clear >/dev/null; sleep 0.4
 
 # ---- the control center (notify/controls.cpp) -------------------------------
-# The bar's switches open it (shell.sh clicks them; here the verb): its
-# buttons flip the switches, a press on a level's track drags it, the wheel
-# moves it 5 % a notch, the volume's low glyph mutes, its corner lists the
-# outputs; the values are the system module's, and while the panel shows
-# them no capsule covers it.
+# The bar's switches open it (shell.sh clicks them; here the verb): one card
+# of levels — a press on a track drags it, the wheel moves it 5 % a notch,
+# the speaker mutes, the keyboard's glyph puts its light out and back — a
+# title row's own control (the volume's output pill opens its menu), then
+# the capsules: Bluetooth's and Do Not Disturb's circles switch them, their
+# words open their menus. A button rested on names itself. The values are
+# the system module's, and while the panel shows them no capsule covers it.
 printf '0.50\n' > "$STATE/wpctl-level" # the sink reads 50 % when the panel opens
 : > "$STATE/wpctl.log"
 wlog_has() { grep -Fxq "$1" "$STATE/wpctl.log" && echo 1; } # wlog_has <line>: the fake wpctl ran it
@@ -221,27 +222,53 @@ hq awesome controlcenter >/dev/null
 chk "panel: the control center opens" until_is 3 1 hq awesome controlcenter-shown
 chk "panel: it opens on the volume as it is now" until_is 3 50 ctl_part volume
 capture_nested "$STATE/panel.png"
-chk "panel: its first row and three level modules are drawn" python3 - "$STATE/panel.png" "$DND_CX" "$(cc_btn_cx 0)" "$(cc_btn_cx 1)" "$CC_CY" \
-	"$TRACK_X0" "$(level_cy 0)" "$(level_cy 1)" "$(level_cy 2)" <<'PY'
+chk "panel: three level sections and both capsules are drawn" python3 - "$STATE/panel.png" "$TRACK_X0" "$(level_cy 0)" "$(level_cy 1)" "$(level_cy 2)" \
+	"$BT_DOT_X" "$DND_DOT_X" "$CAPS_CY" <<'PY'
 import sys
 from PIL import Image
 px = Image.open(sys.argv[1]).convert('RGB').load()
 a = [int(v) for v in sys.argv[2:]]
 lit = lambda x0, x1, y0, y1: sum(1 for y in range(y0, y1) for x in range(x0, x1) if max(px[x, y]) > 60)
-row = all(lit(x - 24, x + 24, a[3] - 24, a[3] + 24) > 40 for x in a[0:3])
-levels = all(lit(a[4], a[4] + 100, y - 3, y + 4) > 40 for y in a[5:8])
-sys.exit(0 if row and levels else 1)
+levels = all(lit(a[0] - 8, a[0] + 100, y - 3, y + 4) > 40 for y in a[1:4])
+capsules = all(lit(x - 20, x + 20, a[6] - 20, a[6] + 20) > 40 for x in a[4:6])
+sys.exit(0 if levels and capsules else 1)
 PY
-click "$DND_CX" "$CC_CY" 272
-chk "panel: Do Not Disturb's capsule turns it on" until_is 3 "center:0 live:0 dnd:1" st
-click "$DND_CX" "$CC_CY" 272
+click "$DND_DOT_X" "$CAPS_CY" 272
+chk "panel: Do Not Disturb's circle turns it on" until_is 3 "center:0 live:0 dnd:1" st
+click "$DND_DOT_X" "$CAPS_CY" 272
 chk "panel: ...and off" until_is 3 "center:0 live:0 dnd:0" st
-click "$(cc_btn_cx 0)" "$CC_CY" 272
-chk "panel: the microphone's button unmutes the muted source" until_is 3 1 wlog_has "set-mute @DEFAULT_AUDIO_SOURCE@ 0"
-chk "panel: ...and reads it back live" until_is 3 1 ctl_part mic
-click "$(cc_btn_cx 1)" "$CC_CY" 272
-chk "panel: no touchpad: its button is inert" test "$(hq awesome pad)" = none
-chk "panel: ...and no button posted a capsule" test "$(st)" = "center:0 live:0 dnd:0"
+# its words: the durations, 6 px under the capsule row, at its right edge
+# (220 wide; rows 28 under 5 px of glass)
+dnd_pick() { click "$DND_WORDS_X" "$CAPS_CY" 272; until_ok 3 hq_matches '^For 30' awesome menu; click $((PANEL_X + 250)) $((MENU_Y + 5 + 14 + 28 * $1)) 272; }
+dnd_in_hour() { local v; v="$(dndrow)"; [[ "$v" =~ ^[0-9]+$ ]] && ((v - $(date +%s) > 3500 && v - $(date +%s) <= 3600)); }
+dnd_morning() { local v; v="$(dndrow)"; [[ "$v" =~ ^[0-9]+$ ]] && [[ "$(date -d "@$v" +%H:%M)" == 08:00 ]] && ((v - $(date +%s) <= 86400)); }
+click "$DND_WORDS_X" "$CAPS_CY" 272
+chk "panel: its words list the durations" until_ok 3 hq_matches '^For 30 Minutes;For 1 Hour;For 3 Hours;Until (Tomorrow \(08:00\)|08:00);Until Turned Off$' awesome menu
+tap esc
+dnd_pick 1
+chk "panel: For 1 Hour turns it on" until_is 3 "center:0 live:0 dnd:1" st
+chk "panel: ...until an hour from now, remembered" dnd_in_hour
+dnd_pick 3
+chk "panel: Until Tomorrow ends at the next 08:00" until_ok 3 dnd_morning
+dnd_pick 4
+chk "panel: Until Turned Off holds it with no end" until_is 3 "-1" dndrow
+click "$DND_DOT_X" "$CAPS_CY" 272
+chk "panel: the circle ends it" until_is 3 "center:0 live:0 dnd:0" st
+chk "panel: ...and keeps no row" until_is 3 "" dndrow
+# Bluetooth's words: the paired devices, 6 px under the row at its left
+# edge (a 22 px header, 36 px rows); the bt battery left both off
+click "$BT_WORDS_X" "$CAPS_CY" 272
+chk "panel: Bluetooth's words list the paired devices" until_is 3 "Gate Buds;Gate Mouse" hq awesome menu
+click $((PANEL_X + 100)) $((MENU_Y + 5 + 22 + 18)) 272
+chk "panel: a device's row connects it" until_is 3 "on Gate Buds=c35 Gate Mouse=n" hq awesome bt
+click "$BT_WORDS_X" "$CAPS_CY" 272
+chk "panel: ...its row checked, its battery beside" until_is 3 "Gate Buds* 35%;Gate Mouse" hq awesome menu
+tap esc
+click "$BT_DOT_X" "$CAPS_CY" 272
+chk "panel: Bluetooth's circle turns the radio off" until_is 3 "off Gate Buds=n35 Gate Mouse=n" hq awesome bt
+click "$BT_DOT_X" "$CAPS_CY" 272
+chk "panel: ...and on" until_is 3 "on Gate Buds=n35 Gate Mouse=n" hq awesome bt
+chk "panel: no switch posted a capsule" test "$(st)" = "center:0 live:0 dnd:0"
 # the display's: press its track at its level (50 %) and drag to three quarters
 printf 'move %s %s\nsleep 60\npress 272\nsleep 60\nmove %s %s\nsleep 60\nmove %s %s\nsleep 60\nrelease 272\nsleep 80\n' \
 	"$(track_x 0 50)" "$(level_cy 0)" "$(track_x 0 60)" "$(level_cy 0)" "$(track_x 0 75)" "$(level_cy 0)" | vp
@@ -249,38 +276,55 @@ chk "panel: dragging the display's slider sets the backlight" until_is 4 750 BRT
 chk "panel: ...through logind" grep -q "SetBrightness /org/freedesktop/login1/session/[a-z0-9]* gate0 750" "$STATE/logind.log"
 chk "panel: ...and its slider holds there" until_is 3 75 ctl_part display
 chk "panel: a drag posts no capsule" test "$(st)" = "center:0 live:0 dnd:0"
-click "$LOW_X" "$(level_cy 0)" 272
-click "$(track_x 0 20)" "$(($(mod_y 0) + 20))" 272; sleep 0.4
-chk "panel: a press on the display's glyph or over its track's name row moves nothing" test "$(ctl_part display)" = 75
+click "$GLYPH_X" "$(level_cy 0)" 272
+click "$(track_x 0 20)" "$(head_cy 0)" 272; sleep 0.4
+chk "panel: a press on the display's glyph or its title row moves nothing" test "$(ctl_part display)" = 75
 printf 'move %s %s\nsleep 60\nscroll 0 -15\nsleep 200\n' "$(track_x 0 20)" "$(level_cy 0)" | vp
 chk "panel: the wheel steps the display as its key does" until_is 4 800 BRT
 dsp "hl.plugin.awesome.keyboard_light_up()" # from the 45 % the keyboard's checks left
 chk "panel: a key moves the keyboard's slider" until_is 4 50 ctl_part keyboard
 chk "panel: ...and posts no capsule over it" test "$(st)" = "center:0 live:0 dnd:0"
+dsp "hl.plugin.awesome.mic_mute()"; idle
+chk "panel: the mic's key posts its capsule over it (the panel has no mic)" until_is 3 "center:0 live:1 dnd:0" st
+hq awesome clear >/dev/null
+dsp "hl.plugin.awesome.mic_mute()"; idle
+hq awesome clear >/dev/null
+click "$GLYPH_X" "$(level_cy 1)" 272
+chk "panel: the keyboard's glyph puts its light out" until_is 4 0 KBT
+click "$GLYPH_X" "$(level_cy 1)" 272
+chk "panel: ...and back to its level" until_is 4 50 ctl_part keyboard
 printf 'move %s %s\nsleep 60\nscroll 0 -15\nsleep 200\n' "$(track_x 2 20)" "$(level_cy 2)" | vp
 chk "panel: the wheel raises the volume as its key does" until_is 3 1 wlog_has "set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"
 chk "panel: ...and its slider reads 55 back" until_is 3 55 ctl_part volume
 click "$(track_x 2 40)" "$(level_cy 2)" 272
 chk "panel: a click on the volume's track sets it there" until_is 3 40 ctl_part volume
-click "$LOW_X" "$(level_cy 2)" 272
+click "$GLYPH_X" "$(level_cy 2)" 272
 chk "panel: the speaker mutes" until_is 3 1 wlog_has "set-mute @DEFAULT_AUDIO_SINK@ 1"
 chk "panel: ...and the slider reads it back muted" until_is 3 40m ctl_part volume
-# right on the volume: its outputs at the pointer, the default checked; a
-# pick moves the default and the list reads it back
+# its click hid the name until the pointer comes back to it
+printf 'move %s %s\nsleep 60\nmove %s %s\nsleep 60\n' "$(track_x 2 60)" "$(level_cy 2)" "$GLYPH_X" "$(level_cy 2)" | vp
+chk "panel: a button rested on names itself" until_is 3 "Unmute" hq awesome controls-tip
+capture_nested "$STATE/panel-tip.png"
+printf 'move %s %s\nsleep 60\n' "$(track_x 2 60)" "$(level_cy 2)" | vp
+chk "panel: ...and leaving it hides the name" until_is 3 "" hq awesome controls-tip
+# the volume's output pill: its outputs, the default checked; a pick moves
+# the default and the list reads it back. Its menu hangs 6 px under the
+# pill at its right edge: a 22 px header, then 28 px rows.
 chk "panel: the outputs are read with the panel" test "$(hq awesome outputs)" = "*41 42"
-click "$((PANEL_X + 60))" "$(level_cy 2)" 273
-chk "panel: the volume's right click lists its outputs, the default checked" until_is 3 "Gate Speakers*;Gate Headset" hq awesome menu
-click "$((PANEL_X + 120))" "$(($(level_cy 2) + 5 + 28 + 14))" 272
+click "$OUT_CX" "$(head_cy 2)" 272
+chk "panel: the output pill lists the outputs, the default checked" until_is 3 "Gate Speakers*;Gate Headset" hq awesome menu
+capture_nested "$STATE/panel-menu.png"
+click $((PANEL_X + 230)) $(($(sec_y 2) + 24 + 6 + 5 + 22 + 28 + 14)) 272
 chk "panel: a pick makes it the default" until_is 3 1 wlog_has "set-default 42"
 chk "panel: ...the outputs read it back" until_is 3 "41 *42" hq awesome outputs
 chk "panel: ...and the menu closed on the pick" test -z "$(hq awesome menu)"
-click "$CORNER_CX" "$(corner_cy 2)" 272
-chk "panel: the volume's corner lists the outputs too" until_is 3 "Gate Speakers;Gate Headset*" hq awesome menu
+click "$OUT_CX" "$(head_cy 2)" 272
+chk "panel: the pill opens it again" until_is 3 "Gate Speakers;Gate Headset*" hq awesome menu
 tap esc
 cc_menu() { echo "$(hq awesome controlcenter-shown) $(hq awesome menu)"; } # "<panel shown> <menu rows>"
 chk "panel: ...and Esc closes its menu, the panel stays" until_is 3 "1 " cc_menu
-click "$((PANEL_X + 60))" "$(level_cy 0)" 273
-chk "panel: the display's right click opens no menu" test -z "$(hq awesome menu)"
+click "$((PANEL_X + 60))" "$(level_cy 2)" 273
+chk "panel: a level's right click opens no menu" test -z "$(hq awesome menu)"
 rm -f "$STATE/wpctl-level" "$STATE/wpctl-mutes" "$STATE/wpctl-default"
 
 # A light this coarse (a ThinkPad's keyboard: off, low, high) is a stepped
@@ -329,19 +373,16 @@ chk "dark: ...and the wake keeps that choice" test "$(KBT)" = 10
 hq awesome clear >/dev/null; sleep 0.4
 
 # ---- the keyboard light follows the room (system/light.cpp) -----------------
-# Opt-in from the keyboard slider's menu or its module's corner button. The fake sensor reads the room in
+# Opt-in from the keyboard's title row in the control center. The fake sensor reads the room in
 # $STATE/als (lux; seeded lit) while claimed: daylight puts the keyboard
 # out, the dark lights it at the user's level (5 %, the key's in the dark
 # above) once the zone held (600 ms in the gate); a flicker moves nothing;
 # a choice by hand holds until the room changes; dark displays still win.
 ALS="$STATE/als"
-krow() { echo $(($(level_cy 1) + 5 + 14)); } # the keyboard menu's one row, under the pointer
 chk "room: a light sensor is found, the room not followed" test "$(ctl_part room)" = 0
 hq awesome controlcenter >/dev/null
-click "$((PANEL_X + 60))" "$(level_cy 1)" 273
-chk "room: the keyboard's right click offers Follow the Room" until_is 3 "Follow the Room" hq awesome menu
-click "$((PANEL_X + 120))" "$(krow)" 272
-chk "room: picking it follows the room" until_is 3 1 ctl_part room
+click "$ROOM_CX" "$(head_cy 1)" 272
+chk "room: the keyboard's button follows the room" until_is 3 1 ctl_part room
 chk "room: ...claiming the sensor" grep -qx "ClaimLight" "$STATE/logind.log"
 chk "room: a lit room puts the keyboard out" until_is 4 0 KBT
 hq awesome controlcenter >/dev/null
@@ -367,26 +408,20 @@ dsp "hl.dsp.dpms({action = 'on'})"
 chk "room: the wake lights it as the room says" until_is 4 10 KBT
 hq awesome clear >/dev/null; sleep 0.4
 hq awesome controlcenter >/dev/null
-click "$((PANEL_X + 60))" "$(level_cy 1)" 273
-chk "room: the menu checks it" until_is 3 "Follow the Room*" hq awesome menu
-click "$((PANEL_X + 120))" "$(krow)" 272
-chk "room: picking it again stops following" until_is 3 0 ctl_part room
+printf 'move %s %s\nsleep 60\n' "$ROOM_CX" "$(head_cy 1)" | vp
+chk "room: its button names itself" until_is 3 "Follow the Room" hq awesome controls-tip
+click "$ROOM_CX" "$(head_cy 1)" 272
+chk "room: a second press stops following" until_is 3 0 ctl_part room
 chk "room: ...releasing the sensor" grep -qx "ReleaseLight" "$STATE/logind.log"
-click "$CORNER_CX" "$(corner_cy 1)" 272
-chk "room: the keyboard's corner button follows it too" until_is 3 1 ctl_part room
-click "$CORNER_CX" "$(corner_cy 1)" 272
-chk "room: ...and stops" until_is 3 0 ctl_part room
 hq awesome controlcenter >/dev/null
 
 # ---- the touchpad (system/pad.cpp) -------------------------------------------
 # The nested has no libinput device: a second virtual pointer stands in
 # (the gate build's `pad NAME`). hl.device records a flip and applies it on
 # a scheduled input refresh, so the state is the device config's, not the
-# lagging attachment: the switch shows a flip at once, and its next press
-# flips it back (it asked for the state the touchpad was already in). The
-# click's own virtual pointer leaving is no hotplug: the flip outlives the
-# re-check it used to arm (400 ms). The stand-in ends on: its config
-# outlives it, and every virtual pointer shares its name.
+# lagging attachment. Its key answers with a capsule, under the open
+# control center too (the panel has no touchpad). The stand-in ends on: its
+# config outlives it, and every virtual pointer shares its name.
 chk "touchpad: none without one" test "$(hq awesome pad)" = none
 mice() { hq devices -j | python3 -c 'import json,sys;[print(m["name"]) for m in json.load(sys.stdin)["mice"]]' | sort; }
 M0="$(mice)"
@@ -399,20 +434,11 @@ chk "touchpad: a virtual pointer stands in" test -n "$PADN"
 hq awesome pad "$PADN" >/dev/null
 chk "touchpad: the stand-in reads on" test "$(hq awesome pad)" = on
 hq awesome controlcenter >/dev/null
-chk "touchpad: the switch reads it on" until_is 3 1 ctl_part touchpad
-click "$(cc_btn_cx 1)" "$CC_CY" 272
-chk "touchpad: a press turns it off, the switch at once" until_is 2 0 ctl_part touchpad
-chk "touchpad: ...in the compositor's device config" test "$(hq awesome pad)" = off
-sleep 0.6 # past the policy's settle: nothing may put it back
-chk "touchpad: ...and the click's pointer leaving keeps the choice" test "$(hq awesome pad)" = off
-click "$(cc_btn_cx 1)" "$CC_CY" 272
-chk "touchpad: the next press turns it back on" until_is 2 1 ctl_part touchpad
-chk "touchpad: ...and no press posted a capsule under the panel" test "$(st)" = "center:0 live:0 dnd:0"
-hq awesome controlcenter >/dev/null
 dsp "hl.plugin.awesome.touchpad_toggle()"
-chk "touchpad: the key turns it off" until_is 3 off hq awesome pad
-chk "touchpad: ...with its capsule" until_is 3 "center:0 live:1 dnd:0" st
+chk "touchpad: the key turns it off, under the open panel too" until_is 3 off hq awesome pad
+chk "touchpad: ...with its capsule (the panel has no touchpad)" until_is 3 "center:0 live:1 dnd:0" st
 hq awesome clear >/dev/null
+hq awesome controlcenter >/dev/null
 dsp "hl.plugin.awesome.touchpad_toggle()"
 chk "touchpad: the key turns it back on" until_is 3 on hq awesome pad
 hq awesome clear >/dev/null

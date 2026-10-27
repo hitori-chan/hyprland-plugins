@@ -1,7 +1,7 @@
 // awesome/core/controls.hpp — the control center's seam. The system module
 // owns the levels (the display's brightness, the keyboard light, the
-// volume), the switches (the microphone, the touchpad), the outputs the
-// volume can go to and Bluetooth (the adapter, its paired devices): it
+// volume), the keyboard light's Follow the Room, the outputs the volume
+// can go to and Bluetooth (the adapter, its paired devices): it
 // publishes them here as it learns them and registers the doors that move
 // them. The
 // notify center draws them and sends the user's moves through those doors.
@@ -26,8 +26,6 @@ namespace NAwesome::Controls {
         COUNT_,
     };
     enum class eSwitch : uint8_t {
-        MIC,
-        TOUCHPAD,
         ROOM, // the keyboard light follows the room's light (-1: no light sensor)
         COUNT_,
     };
@@ -84,7 +82,7 @@ namespace NAwesome::Controls {
 
     struct SState {
         std::array<SLevel, (size_t)eLevel::COUNT_>  levels{};
-        std::array<int8_t, (size_t)eSwitch::COUNT_> switches{-1, -1, -1}; // -1 none, 0 off, 1 on
+        std::array<int8_t, (size_t)eSwitch::COUNT_> switches{-1}; // -1 none, 0 off, 1 on
         std::vector<SOutput>                        outputs;
         SBluetooth                                  bluetooth;
     };
