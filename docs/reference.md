@@ -51,7 +51,8 @@ The gate build adds `cells`, `shown`, `menu`, `quiet`, `controls`,
 
 ## Configuration
 
-45 keys, `plugin:awesome:<module>:<key>`, declared in
+41 keys, `plugin:awesome:<group>:<key>` (a module's, or `theme`'s for
+the material they share), declared in
 [`core/schema.hpp`](../awesome/core/schema.hpp). Out-of-range values
 clamp. In Lua:
 
@@ -66,6 +67,15 @@ Colours marked Frost default to the Frost palette
 ([`core/tokens.hpp`](../awesome/core/tokens.hpp)), so an empty config
 already looks right.
 
+### theme
+
+The material every module's surfaces share.
+
+| Key | Default | |
+|---|---|---|
+| `col_glass` | Frost | the glass of the bar, cards, the center, menus and the launcher (the alpha is the glass) |
+| `col_rim` | Frost | the glass rim |
+
 ### shell
 
 | Key | Default | |
@@ -75,15 +85,12 @@ already looks right.
 | `tray_spacing` | 20 | px between tray icons |
 | `font` | `Fira Code, IBM Plex Sans JP` | font family or Pango family list (the kanji tags take the first face that has them) |
 | `terminal` | `alacritty` | runs the launcher's `Terminal=true` entries |
-| `col_bg` | Frost | the bar's and the launcher's glass (the alpha is the glass) |
-| `col_menu_bg` | Frost | menus' thicker glass |
 | `col_fg` | Frost | bar text and glyphs: the clock, the bell, symbolic tray icons, occupied tags |
 | `col_focus` | Frost | the launcher's and the menus' selection |
 | `col_active` | Frost | the viewed tag, the focused task, the bell while the center is open |
 | `col_dot` | Frost | the bell's dot |
 | `col_empty` | Frost | empty tags, minimized tasks, disabled rows |
 | `col_urgent` | Frost | urgent tags and tasks |
-| `col_frame` | Frost | the glass rim |
 | `col_charging` | Frost | the battery charging, or held at its charge limit |
 | `col_low` | Frost | the battery at 20 % or below |
 | `col_powersave` | Frost | the battery in power save |
@@ -108,12 +115,9 @@ already looks right.
 | `rounding_power` | 3.0 | the corners' superellipse exponent |
 | `sound_command` | `canberra-gtk-play` | the player for sound hints; empty disables |
 | `fallback_icon_dir` | empty | iconless cards draw a random face from here |
-| `col_bg` | Frost | the cards' glass (the alpha is the glass) |
-| `col_menu_bg` | Frost | the card menu's thicker glass |
 | `col_fg` | Frost | body text |
 | `col_title` | Frost | titles, a stack header's chips, the capsules' words |
 | `col_kicker` | Frost | meta and secondary text |
-| `col_frame` | Frost | the glass rim |
 | `col_urgent` | Frost | critical: its meta, its progress, an alarmed capsule |
 | `col_highlight` | Frost | the accent: progress, the selection, the reply field |
 | `col_link` | Frost | body links |

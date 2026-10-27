@@ -4,7 +4,7 @@ The `shell` module: the bar on every monitor and the launcher.
 
 ## The bar
 
-A 28 px strip of thin glass at the top of every monitor, showing that
+A 28 px strip of glass at the top of every monitor, showing that
 monitor's tags and tasks. From left to right: the tags, the tasks
 (splitting the middle, 14 px off either side), then the tray, the
 battery, the bell and the clock, 20 px apart as macOS spaces its menu
@@ -71,7 +71,7 @@ down). An item that needs attention shows its attention icon.
   item's dbusmenu. An app that exports its menu late is re-read; an item
   with no menu gets `ContextMenu` instead, for that click only.
 
-Tray menus (the client list's and the bell's too) are thick glass with
+Tray menus (the client list's and the bell's too) are glass with
 28 px rows. The hovered row is accent text with no fill; check and radio
 items show a check or a dot; a submenu's chevron has a column of its
 own. They follow live updates (the hovered row stays hovered by its id),

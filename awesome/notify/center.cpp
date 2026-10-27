@@ -418,8 +418,8 @@ namespace NAwesome::Notify {
         const auto  MB = P.mon->logicalBox();
         const float RP = rPow();
         const auto  COLTITLE = color(cfg().getColor("plugin:awesome:notify:col_title")), COLSUB = color(cfg().getColor("plugin:awesome:notify:col_kicker")),
-                   COLACC = color(cfg().getColor("plugin:awesome:notify:col_highlight")), COLBG = color(cfg().getColor("plugin:awesome:notify:col_bg")),
-                   COLRIM = color(cfg().getColor("plugin:awesome:notify:col_frame"));
+                   COLACC = color(cfg().getColor("plugin:awesome:notify:col_highlight")), COLBG = color(cfg().getColor("plugin:awesome:theme:col_glass")),
+                   COLRIM = color(cfg().getColor("plugin:awesome:theme:col_rim"));
 
         const double W   = std::max((double)cfg().getI("plugin:awesome:notify:width"), 120.0);
         const double GAP = std::max((double)cfg().getI("plugin:awesome:notify:margin"), 0.0);

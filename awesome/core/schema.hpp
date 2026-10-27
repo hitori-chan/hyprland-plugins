@@ -31,7 +31,7 @@ namespace NAwesome {
     enum class Kind { Int, Double, String, Color };
 
     struct Spec {
-        const char*      key; // "plugin:awesome:<module>:<name>"
+        const char*      key; // "plugin:awesome:<group>:<name>": a module, or theme
         const char*      desc; // config validation and error messages
         Kind             kind;
         int              ival = 0; // Int default
@@ -44,21 +44,21 @@ namespace NAwesome {
 
     // Field order: key, desc, kind, ival, dval, sval, cval, imin, imax, dmin, dmax.
     inline constexpr Spec SPECS[] = {
+        // ---- theme: the material every module's surfaces share ----
+        {"plugin:awesome:theme:col_glass", "the glass of every surface: the bar, cards, the center, menus, the launcher (the alpha IS the glass)", Kind::Color, 0, 0, {}, Theme::GLASS},
+        {"plugin:awesome:theme:col_rim", "the glass rim", Kind::Color, 0, 0, {}, Theme::RIM},
         // ---- shell ----
         {"plugin:awesome:shell:height", "bar height in logical px (reserve it: monitor reserved top)", Kind::Int, 28, 0, {}, 0, 16, 64},
         {"plugin:awesome:shell:font_size", "text size in logical px (monitor scale applies at raster time)", Kind::Int, 12, 0, {}, 0, 6, 48},
         {"plugin:awesome:shell:tray_spacing", "px between tray icons (macOS's menu-extra rhythm)", Kind::Int, 20, 0, {}, 0, 0, 64},
         {"plugin:awesome:shell:font", "font family, or a Pango family list (the kanji tags take the first face that has them)", Kind::String, 0, 0, Theme::BAR_FONT},
         {"plugin:awesome:shell:terminal", "terminal that runs Terminal=true launcher entries", Kind::String, 0, 0, "alacritty"},
-        {"plugin:awesome:shell:col_bg", "the bar's and the launcher's thin glass (the alpha IS the glass)", Kind::Color, 0, 0, {}, Theme::BAR_GLASS},
-        {"plugin:awesome:shell:col_menu_bg", "menus' thicker glass", Kind::Color, 0, 0, {}, Theme::MENU_GLASS},
         {"plugin:awesome:shell:col_fg", "bar text and glyphs: the clock, the bell, symbolic tray icons, occupied tags", Kind::Color, 0, 0, {}, Theme::TITLE},
         {"plugin:awesome:shell:col_focus", "the launcher's and the menus' selection (text)", Kind::Color, 0, 0, {}, Theme::ACCENT},
         {"plugin:awesome:shell:col_active", "the viewed tag and the focused task (text)", Kind::Color, 0, 0, {}, Theme::ACCENT},
         {"plugin:awesome:shell:col_dot", "the bell's dot: cards the center has not shown", Kind::Color, 0, 0, {}, Theme::DOT},
         {"plugin:awesome:shell:col_empty", "empty tags, minimized tasks, disabled rows", Kind::Color, 0, 0, {}, Theme::DIM},
         {"plugin:awesome:shell:col_urgent", "urgent tags and tasks (text)", Kind::Color, 0, 0, {}, Theme::URGENT},
-        {"plugin:awesome:shell:col_frame", "the glass rim", Kind::Color, 0, 0, {}, Theme::RIM},
         {"plugin:awesome:shell:col_charging", "battery fill charging/defender", Kind::Color, 0, 0, {}, Theme::CHARGING},
         {"plugin:awesome:shell:col_low", "battery low", Kind::Color, 0, 0, {}, Theme::URGENT},
         {"plugin:awesome:shell:col_powersave", "battery fill power save", Kind::Color, 0, 0, {}, Theme::SAVER},
@@ -79,12 +79,9 @@ namespace NAwesome {
         {"plugin:awesome:notify:rounding_power", "corner superellipse exponent", Kind::Double, 0, 3.0, {}, 0, 0, 1 << 20, 1.0, 8.0},
         {"plugin:awesome:notify:sound_command", "libcanberra player for sound hints; empty disables", Kind::String, 0, 0, "canberra-gtk-play"},
         {"plugin:awesome:notify:fallback_icon_dir", "iconless cards draw a random identity face from this directory", Kind::String, 0, 0, ""},
-        {"plugin:awesome:notify:col_bg", "glass fill (the alpha IS the glass)", Kind::Color, 0, 0, {}, Theme::GLASS},
-        {"plugin:awesome:notify:col_menu_bg", "the card menu's thicker glass", Kind::Color, 0, 0, {}, Theme::MENU_GLASS},
         {"plugin:awesome:notify:col_fg", "body text", Kind::Color, 0, 0, {}, Theme::BODY},
         {"plugin:awesome:notify:col_title", "titles, buttons, the capsules' words", Kind::Color, 0, 0, {}, Theme::TITLE},
         {"plugin:awesome:notify:col_kicker", "meta and secondary text", Kind::Color, 0, 0, {}, Theme::SUB},
-        {"plugin:awesome:notify:col_frame", "the glass rim", Kind::Color, 0, 0, {}, Theme::RIM},
         {"plugin:awesome:notify:col_urgent", "critical: the meta, its progress, an alarmed capsule", Kind::Color, 0, 0, {}, Theme::URGENT},
         {"plugin:awesome:notify:col_highlight", "the accent: progress, the selection, the reply field", Kind::Color, 0, 0, {}, Theme::ACCENT},
         {"plugin:awesome:notify:col_link", "body hyperlinks", Kind::Color, 0, 0, {}, Theme::LINK},

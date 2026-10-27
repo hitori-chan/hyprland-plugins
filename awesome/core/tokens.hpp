@@ -7,10 +7,9 @@
 
 namespace NAwesome::Theme {
 
-    // ---- the three glass thicknesses (0xAARRGGBB, config default form) ----
-    inline constexpr uint32_t BAR_GLASS  = 0x6b1c1c20; // thin: the bar
-    inline constexpr uint32_t GLASS      = 0x8a26262c; // regular: cards, the center, capsules
-    inline constexpr uint32_t MENU_GLASS = 0xad28282e; // thick: menus
+    // ---- the glass (0xAARRGGBB, config default form): one material for the
+    //      bar, the cards, the center, the capsules, menus and the launcher ----
+    inline constexpr uint32_t GLASS = 0x7a26262c; // 48 %
 
     // ---- ink: one white at four strengths, the blue as text only ----
     inline constexpr uint32_t TITLE     = 0xffededf0; // primary

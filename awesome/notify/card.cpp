@@ -59,7 +59,7 @@ namespace NAwesome::Notify {
         const double       PY     = PADY;
         const double       INNERW = W - 2 * PADX;
 
-        const auto   COLBG = color(cfg().getColor("plugin:awesome:notify:col_bg")), COLRIM = color(cfg().getColor("plugin:awesome:notify:col_frame")),
+        const auto   COLBG = color(cfg().getColor("plugin:awesome:theme:col_glass")), COLRIM = color(cfg().getColor("plugin:awesome:theme:col_rim")),
                    COLFG = color(cfg().getColor("plugin:awesome:notify:col_fg")), COLTITLE = color(cfg().getColor("plugin:awesome:notify:col_title")),
                    COLSUB = color(cfg().getColor("plugin:awesome:notify:col_kicker")), COLURGENT = color(cfg().getColor("plugin:awesome:notify:col_urgent")),
                    COLACC = color(cfg().getColor("plugin:awesome:notify:col_highlight")), COLLINK = color(cfg().getColor("plugin:awesome:notify:col_link"));

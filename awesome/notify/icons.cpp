@@ -303,7 +303,7 @@ namespace NAwesome::Notify {
     // one deterministic initials face per (identity, name, font, size): the
     // facepile never shows a blank square for a faceless sender
     static SP<ITexture> generatedAvatar(const std::string& identity, const std::string& name, int iconPx) {
-        const auto BG   = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_bg"));
+        const auto BG   = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:theme:col_glass"));
         const bool DARK = BG.r + BG.g + BG.b < 1.5f;
         const auto TINT = Pixel::avatarColor(identity, DARK);
         const int  PX   = std::clamp(iconPx, 16, 128);
@@ -648,7 +648,7 @@ namespace NAwesome::Notify {
     static SP<ITexture> genericMarkNow(int px);
     static SP<ITexture> genericMark(int px) {
         const auto KEY = std::to_string(px) + "|" + std::to_string(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg")) + "|" +
-            std::to_string(NAwesome::cfg().getColor("plugin:awesome:notify:col_frame"));
+            std::to_string(NAwesome::cfg().getColor("plugin:awesome:theme:col_rim"));
         if (const auto IT = genericMarks.find(KEY); IT != genericMarks.end())
             return IT->second;
         auto TEX = genericMarkNow(px);
@@ -666,7 +666,7 @@ namespace NAwesome::Notify {
 
         auto*        SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, px, px);
         auto*        CT   = cairo_create(SURF);
-        const auto   INK  = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg")), PLATE = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_frame"));
+        const auto   INK  = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg")), PLATE = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:theme:col_rim"));
         auto         rounded = [&](double x, double y, double w, double h, double r) {
             cairo_new_sub_path(CT);
             cairo_arc(CT, x + w - r, y + r, r, -M_PI_2, 0);
@@ -916,7 +916,7 @@ namespace NAwesome::Notify {
             // fg-carrying key, initials edition. Without it a dark->light
             // switch kept the dark-tinted face on every faceless sender.
             const std::string KEY = "__awesome_avatar:\x1f" + p.key + "\x1f" + p.name + "\x1f" + std::string{NAwesome::cfg().getS("plugin:awesome:notify:font")} + "\x1f" + std::to_string(px) + "\x1f" +
-                                    std::to_string(NAwesome::cfg().getColor("plugin:awesome:notify:col_bg"));
+                                    std::to_string(NAwesome::cfg().getColor("plugin:awesome:theme:col_glass"));
             if (p.avatarFor == KEY)
                 return;
             p.avatarTex     = generatedAvatar(p.key, p.name, px);

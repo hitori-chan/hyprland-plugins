@@ -668,11 +668,11 @@ namespace NAwesome::Shell {
                 return;
 
             // one palette fetch per render: color() memoizes but still hashes per call
-            const CHyprColor COLMENU = color(cfg().getColor("plugin:awesome:shell:col_menu_bg")), COLFG = color(cfg().getColor("plugin:awesome:shell:col_fg")),
+            const CHyprColor COLMENU = color(cfg().getColor("plugin:awesome:theme:col_glass")), COLFG = color(cfg().getColor("plugin:awesome:shell:col_fg")),
                              COLEMPTY = color(cfg().getColor("plugin:awesome:shell:col_empty")), COLURGENT = color(cfg().getColor("plugin:awesome:shell:col_urgent")),
-                             COLFOCUS = color(cfg().getColor("plugin:awesome:shell:col_focus")), COLFRAME = color(cfg().getColor("plugin:awesome:shell:col_frame"));
+                             COLFOCUS = color(cfg().getColor("plugin:awesome:shell:col_focus")), COLFRAME = color(cfg().getColor("plugin:awesome:theme:col_rim"));
 
-            // the Frost menu: thick glass at the menu radius, the selection
+            // the Frost menu: the glass at the menu radius, the selection
             // the accent TEXT (never a fill), hairline separators, glyph
             // checks and chevrons — the card menu's look (notify/menu.cpp)
             namespace Th       = NAwesome::Theme;
