@@ -155,10 +155,16 @@ namespace NAwesome::System {
         return L.dev.empty() ? std::nullopt : readSysfsInt(L.root + "/" + L.dev + "/brightness");
     }
 
+    // a light this coarse is stepped (a ThinkPad's keyboard: off, low,
+    // high): its slider snaps to the levels
+    static int stepsOf(const SLight& L) {
+        return L.max > 0 && L.max <= 10 ? L.max : 0;
+    }
+
     // the light as sysfs has it now: the panel's slider starts there
     static void publishLight(SLight& L) {
         const auto RAW = readLight(L);
-        Controls::publish(L.level, {.pct = RAW && L.max > 0 ? (int)std::lround(100.0 * *RAW / L.max) : -1});
+        Controls::publish(L.level, {.pct = RAW && L.max > 0 ? (int)std::lround(100.0 * *RAW / L.max) : -1, .steps = stepsOf(L)});
     }
 
     // The old plugin wrote through /session/auto — logind resolves that
@@ -278,7 +284,7 @@ namespace NAwesome::System {
                         return; // a teardown owns the state now
                     L.busy = false;
                     if (!err) {
-                        Controls::publish(L.level, {.pct = PCT});
+                        Controls::publish(L.level, {.pct = PCT, .steps = stepsOf(L)});
                         if (BYUSER && &L == &keyboard && PCT > 0)
                             rememberKeyboard(PCT);
                         if (ANNOUNCE)

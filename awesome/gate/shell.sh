@@ -294,6 +294,25 @@ center_shut() { [[ "$(st)" == "center:0 "* ]]; }
 chk "cells: a click on the clock leaves the center shut" center_shut
 center_shut || hq awesome center >/dev/null
 
+# ---- the control center's door: the bar's switches -------------------------
+# Left of the bell (shell/bell.cpp): a click opens the control center on its
+# bar's monitor and lights the glyph (the accent, as text); one panel holds
+# the column at a time, the bell taking it back; a click off every surface
+# closes it.
+CCX="$(cell_mid controls)"
+chk "controls: the switches own a cell, left of the bell" test "${CCX:-0}" -gt 0 -a "${CCX:-0}" -lt "$(cell_mid bell)"
+cols() { echo "$(st | cut -d' ' -f1) $(hq awesome controlcenter-shown)"; } # "center:<0|1> <control center 0|1>"
+click "${CCX:-0}" 13 272
+chk "controls: a click on the switches opens the control center" until_is 3 "center:0 1" cols
+cc_lit() { (($(accent_px "$1" $((CCX - 8)) $((CCX + 8))) > 10)); }
+chk "controls: ...and lights them" shot_until 3 "$STATE/cc-lit.png" cc_lit "$STATE/cc-lit.png"
+click "$(cell_mid bell)" 13 272
+chk "controls: the bell takes the column: the center opens, the control center shuts" until_is 3 "center:1 0" cols
+click "${CCX:-0}" 13 272
+chk "controls: ...and the switches take it back" until_is 3 "center:0 1" cols
+outside_click
+chk "controls: a click off every surface closes it" until_is 3 "center:0 0" cols
+
 # ---- the strip's glass: live over a terminal taking typing -----------------
 # The glass live-blurs what lies under it: the prompt's row right below
 # reaches its blur, and each keystroke moves the strip on. A partial

@@ -27,7 +27,7 @@ in window-geometry space, the session-lock grab check.
 | `core` | the platform (below) |
 | `shell` | the bar (tags, tasks, tray, bell, battery, clock) and the launcher |
 | `windows` | the window state machine (normal, minimized, maximized: told state, adoption, restore), focus policy, spawn placement, drag snap |
-| `notify` | the fd.o daemon, the card model (conversations, grouping, DND, quiet, the capsule band), banners, the center and its control block, inline reply, sound |
+| `notify` | the fd.o daemon, the card model (conversations, grouping, DND, quiet, the capsule band), banners, the center, the control center, inline reply, sound |
 | `system` | the lights (logind), volume and microphone (wpctl), the touchpad policy; feedback as notify capsules |
 
 - Modules talk through `core` interfaces and direct C++ calls; there is
@@ -285,10 +285,12 @@ schema's defaults name them; the user's `theme.lua` overrides them).
   edge and a 10 % white rim; a menu floats higher.
 - **Ink** is one white at four strengths (titles and the bar 100 %, body
   78 %, meta 55 %, empty 34 %). The accent `#00CCFF` is text: the viewed
-  tag, the focused task, a selection, the bell while the center is open.
-  It fills only what is live (a caret, the reply's send circle, progress,
-  a lit tile; the snap preview is its 10 % tint) and marks one thing, the
-  bell's dot. Urgent is `#FF6159`, as text.
+  tag, the focused task, a selection, the bell or the control center's
+  switches while their panel is open. It fills only what is live (a
+  caret, the reply's send circle, progress; the snap preview is its 10 %
+  tint) and marks one thing, the bell's dot. A control center control
+  that is on is white, its glyph the accent deepened to read on it
+  (`#0089AD`). Urgent is `#FF6159`, as text.
 - **Radii**: cards 18, menus 12, rows and tags 6, buttons and app icons 9;
   windows keep the user's `decoration:rounding`.
 - **Glyphs** are the boards' own outline icons

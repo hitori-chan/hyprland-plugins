@@ -36,6 +36,7 @@ namespace NAwesome::Controls {
     struct SLevel {
         int  pct   = -1;
         bool muted = false; // the volume's
+        int  steps = 0;     // a light of few levels: how many above off (its slider snaps to them); 0 continuous
 
         bool operator==(const SLevel&) const = default;
     };

@@ -18,6 +18,7 @@ hl.bind("SUPER + M", function() hl.plugin.awesome.maximize() end)
 | `focus_next()`, `focus_prev()` | cycle the focus in arrival order |
 | `focus_prev_here()` | toggle between the two most recent windows on this workspace |
 | `center()` | toggle the [center](notify.md#the-center) |
+| `control_center()` | toggle the [control center](notify.md#the-control-center) |
 | `suspend([minutes])` | toggle Do Not Disturb; with minutes, hold it that long from now (0 ends it, `math.huge` never does) |
 | `clear_all()` | dismiss every live card |
 | `volume_up()`, `volume_down()`, `mute()` | the default output |
@@ -34,6 +35,8 @@ hl.bind("SUPER + M", function() hl.plugin.awesome.maximize() end)
 |---|---|
 | `count` | the number of live cards (a lock screen's bell can read it) |
 | `center` | toggles the center; `ok` |
+| `controlcenter` | toggles the control center; `ok` |
+| `controlcenter-shown` | `1` while the control center is open, else `0` |
 | `state` | `center:0 live:N dnd:0` |
 | `badge` | `banners:N resident:N`: what the center lists |
 | `topline` | the newest card's one-line form |
@@ -87,7 +90,7 @@ The material every module's surfaces share.
 | `terminal` | `alacritty` | runs the launcher's `Terminal=true` entries |
 | `col_fg` | Frost | bar text and glyphs: the clock, the bell, symbolic tray icons, occupied tags |
 | `col_focus` | Frost | the launcher's and the menus' selection |
-| `col_active` | Frost | the viewed tag, the focused task, the bell while the center is open |
+| `col_active` | Frost | the viewed tag, the focused task, the bell or the control center's switches while their panel is open |
 | `col_dot` | Frost | the bell's dot |
 | `col_empty` | Frost | empty tags, minimized tasks, disabled rows |
 | `col_urgent` | Frost | urgent tags and tasks |

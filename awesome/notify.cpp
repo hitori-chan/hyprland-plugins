@@ -25,7 +25,8 @@
 
 namespace NAwesome::Notify {
 
-    void queueCenterToggle(PHLMONITOR on); // defined below; the Lua door calls it first
+    void queueCenterToggle(PHLMONITOR on);   // defined below; the Lua doors call them first
+    void queueControlsToggle(PHLMONITOR on);
 
     CModule& module() {
         static CModule M;
@@ -72,6 +73,16 @@ namespace NAwesome::Notify {
             queueCenterToggle(nullptr);
             return 0;
         }
+        // the control center's toggle: its bar glyph, a user bind
+        // (hl.plugin.awesome.control_center()), `hyprctl awesome
+        // controlcenter` — deferred and accumulating as the center's
+        static int            controlsPresses = 0;
+        static PHLMONITORREF  controlsOn;
+        static NAwesome::CHop pendingControls;
+        int                   luaControls(lua_State*) {
+            queueControlsToggle(nullptr);
+            return 0;
+        }
         int luaClearAll(lua_State*) {
             static NAwesome::CHop pendingClear;
             pendingClear.arm([]() { Model::dismissAllLive(); });
@@ -106,6 +117,21 @@ namespace NAwesome::Notify {
         });
     }
 
+    void queueControlsToggle(PHLMONITOR on) {
+        if (!g_pEventLoopManager)
+            return;
+        controlsOn = on;
+        if (++controlsPresses > 1)
+            return;
+        pendingControls.arm([]() {
+            if (!(std::exchange(controlsPresses, 0) & 1))
+                return;
+            if (!controlsVisible())
+                placeCardsOn(controlsOn.lock()); // the clicked glyph's monitor: the banners follow the panel there
+            setControls(!controlsVisible());
+        });
+    }
+
     void CModule::init() {
         Model::init(); // the expiry timer stands before anything can arrive
         Bus::init();
@@ -113,7 +139,7 @@ namespace NAwesome::Notify {
         iconsInit(); // the async decode poll and the .desktop index scan start now
         replyInit();
         inputInit(); // the hold timer
-        controlsInit(); // the levels' hook: a published change repaints the open shade
+        controlsInit(); // the levels' hook: a published change repaints the open control center
 
         auto& EV = Event::bus()->m_events;
         // The cards arrive on the FOCUSED monitor and stay there
@@ -148,6 +174,7 @@ namespace NAwesome::Notify {
 
         HANDLE H = supervisor().handle();
         HyprlandAPI::addLuaFunction(H, "awesome", "center", luaCenter); // F12 is the reserved bind
+        HyprlandAPI::addLuaFunction(H, "awesome", "control_center", luaControls);
         HyprlandAPI::addLuaFunction(H, "awesome", "suspend", luaSuspend);
         HyprlandAPI::addLuaFunction(H, "awesome", "clear_all", luaClearAll);
     }
@@ -159,6 +186,8 @@ namespace NAwesome::Notify {
         suspendPresses = 0;
         suspendSet.reset();
         pendingCenter.reset();
+        pendingControls.reset();
+        controlsPresses = 0;
         Bus::exit(); // the connection first: nothing may arrive mid-teardown
         Model::exit(); // then the cards, and their textures with them
         inputExit();
@@ -198,6 +227,12 @@ namespace NAwesome::Notify {
             queueCenterToggle(nullptr);
             return "ok";
         }
+        if (verb == "controlcenter") {
+            queueControlsToggle(nullptr);
+            return "ok";
+        }
+        if (verb == "controlcenter-shown")
+            return controlsVisible() ? "1" : "0";
         if (verb == "state")
             return Model::stateString();
         if (verb == "badge")

@@ -7,8 +7,8 @@ The `shell` module: the bar on every monitor and the launcher.
 A 28 px strip of glass at the top of every monitor, showing that
 monitor's tags and tasks. From left to right: the tags, the tasks
 (splitting the middle, 14 px off either side), then the tray, the
-battery, the bell and the clock, 20 px apart as macOS spaces its menu
-extras.
+battery, the control center's switches, the bell and the clock, 20 px
+apart as macOS spaces its menu extras.
 
 - The slot at each end owns its screen edge: the top-left pixel is the
   first tag, the top-right the clock.
@@ -91,7 +91,8 @@ SF Symbols' bell, without a count:
 - lit in the accent while the center is open.
 
 **Left click** toggles the [center](notify.md#the-center) on the clicked
-bar's monitor. **Right click** opens the notification options:
+bar's monitor (closing the control center). **Right click** opens the
+notification options:
 
 - **Do Not Disturb** ▸ For 30 Minutes · For 1 Hour · For 3 Hours · Until
   Turned Off. While it is on, the first row says until when and Turn Off
@@ -102,6 +103,13 @@ bar's monitor. **Right click** opens the notification options:
 - **Silenced Apps** ▸ every app whose banners or sounds the card menu
   turned off and every muted chat, by name and what is off. A click
   turns that one back on; the row is dim when nothing is silenced.
+
+### Control center
+
+macOS's switch.2: two switches, the lower one on. A **left click**
+toggles the [control center](notify.md#the-control-center) on the
+clicked bar's monitor (closing the center); it is lit in the accent
+while the panel is open.
 
 ### Battery
 
