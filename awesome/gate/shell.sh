@@ -272,6 +272,12 @@ print(1 if ok else 0)
 }
 cell_mid() { awk -v w="$1" '$1 == w { print int(($2 + $3) / 2); exit }' <<<"$CELLS"; }
 chk "cells: they tile the strip edge to edge, none overlapping" test "$(cells_tile)" = 1
+# the right slot's order, macOS's: the bell, the switches, the battery (where
+# the host has one), the clock at the edge
+right_order() { awk '$1 ~ /^(bell|controls|battery|clock)$/ { printf "%s ", $1 }' <<<"$CELLS"; }
+RIGHT_WANT="bell controls clock "
+compgen -G "/sys/class/power_supply/BAT*" >/dev/null && RIGHT_WANT="bell controls battery clock "
+chk "cells: the right slot runs bell, switches, battery, clock" test "$(right_order)" = "$RIGHT_WANT"
 # the clicks over the bare desktop: a tray menu is measured below the strip,
 # where the probe's window would read as one (the right slot's cells stay)
 CP="$(clients | python3 -c "
@@ -295,12 +301,12 @@ chk "cells: a click on the clock leaves the center shut" center_shut
 center_shut || hq awesome center >/dev/null
 
 # ---- the control center's door: the bar's switches -------------------------
-# Left of the bell (shell/bell.cpp): a click opens the control center on its
+# Right of the bell (shell/bell.cpp): a click opens the control center on its
 # bar's monitor and lights the glyph (the accent, as text); one panel holds
 # the column at a time, the bell taking it back; a click off every surface
 # closes it.
 CCX="$(cell_mid controls)"
-chk "controls: the switches own a cell, left of the bell" test "${CCX:-0}" -gt 0 -a "${CCX:-0}" -lt "$(cell_mid bell)"
+chk "controls: the switches own a cell" test "${CCX:-0}" -gt 0
 cols() { echo "$(st | cut -d' ' -f1) $(hq awesome controlcenter-shown)"; } # "center:<0|1> <control center 0|1>"
 click "${CCX:-0}" 13 272
 chk "controls: a click on the switches opens the control center" until_is 3 "center:0 1" cols

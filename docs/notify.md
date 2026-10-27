@@ -146,7 +146,7 @@ time where banners show an age, and behave as their banner did.
 
 ## The control center
 
-The bar's switches (left of the bell), `hl.plugin.awesome.control_center()`
+The bar's switches (right of the bell), `hl.plugin.awesome.control_center()`
 or `hyprctl awesome controlcenter` open it on that bar's monitor, in the
 cards' column; it and the center share the column, one open at a time.
 Banners keep coming, under it. An outside click, Esc or its switches
