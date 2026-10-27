@@ -54,6 +54,10 @@ for c in "${ALL[@]}"; do
 	todo+=("$c $k")
 done
 
+# the worktrees live on tmpfs: a reboot takes them but not their
+# registration, and `worktree add` refuses a registered path
+git -C "$REPO" worktree prune
+
 worker() { # worker N "COMMIT KEY"... — in order, incremental, in its own worktree
 	local n=$1
 	shift
