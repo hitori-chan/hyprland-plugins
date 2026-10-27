@@ -95,28 +95,26 @@ PY
 # ---- the bell, pointer-driven ------------------------------------------------
 # The monolith's bell is a no-op on hover and toggles the shade on click;
 # both are REAL pointer events over the widget. The right slot is [tray]
-# [battery][bell][clock], 20 px apart (shell/strip.cpp RIGHT_GAP): the
-# clock is the last run of white ink from the screen's right edge, the bell
-# the one before it — found by pixel, as the clock, the battery and the tray
-# change width under the gate. White ink is every channel past 150, so
-# neither the blue dot nor the accent counts — and so with the center
-# CLOSED only: an open center lights the bell in the accent.
-bell_x() { # bell_x <frame> — the bell glyph's center x (0 when not found)
-	python3 - "$1" "$MON_W" <<'PY'
+# [bell][control center][battery][clock], 20 px apart (shell/strip.cpp
+# RIGHT_GAP), its cells meeting halfway across the gaps: a widget's glyph is
+# the white ink inside its cell (`hyprctl awesome cells`, the gate's build)
+# — found by pixel, so it proves the glyph draws where a press lands. White
+# ink is every channel past 150, so neither the blue dot nor the accent
+# counts — and so with the panels CLOSED only: an open panel lights its door
+# in the accent.
+ink_x() { # ink_x <frame> <widget> — the widget's ink center x (0 when none)
+	python3 - "$1" "$(hq awesome cells | awk -v w="$2" '$1 == w { print $2 ":" $3; exit }')" <<'PY'
 import sys
 from PIL import Image
-im = Image.open(sys.argv[1]).convert("RGB"); px = im.load(); w = int(sys.argv[2])
-# the clock's word spaces leave ~8 px of no ink; the gaps between widgets 20+
-runs = []
-for x in range(w - 1, w // 2, -1):
-    if any(min(px[x, y]) > 150 for y in range(6, 23)):
-        if runs and runs[-1][0] - x < 12:
-            runs[-1][0] = x
-        else:
-            runs.append([x, x])
-print((runs[1][0] + runs[1][1]) // 2 if len(runs) >= 2 else 0)
+if ":" not in sys.argv[2]:
+    print(0); raise SystemExit
+x0, x1 = map(int, sys.argv[2].split(":"))
+im = Image.open(sys.argv[1]).convert("RGB"); px = im.load()
+xs = [x for x in range(max(0, x0), min(im.width, x1)) if any(min(px[x, y]) > 150 for y in range(6, 23))]
+print((xs[0] + xs[-1]) // 2 if xs else 0)
 PY
 }
+bell_x() { ink_x "$1" bell; } # bell_x <frame> — the bell glyph's center x
 # the bell's dot: col_dot, the accent (0xff00ccff), in the bell's cell —
 # with the center CLOSED, when the bell itself is white
 dot_px() { # dot_px <frame> — accent pixels on the bell (0 when no dot)
@@ -135,11 +133,10 @@ print(n)
 PY
 }
 # strip_drawn <frame> — the strip finished its warm: the clock and the bell
-# draw at its right end (bell_x finds the bell past the clock) and the viewed
-# tag draws in the accent at its left. Structure, not a brightness count: a
-# count moves with the theme, the face and the hardware, and a mid-warm frame
-# lacks whole glyphs.
-strip_drawn() { [[ "$(bell_x "$1")" -gt 0 && "$(accent_px "$1" 8 34)" -gt 6 ]]; } # 一 is one stroke: ~10 px
+# draw in their cells and the viewed tag draws in the accent at the left.
+# Structure, not a brightness count: a count moves with the theme, the face
+# and the hardware, and a mid-warm frame lacks whole glyphs.
+strip_drawn() { [[ "$(ink_x "$1" clock)" -gt 0 && "$(bell_x "$1")" -gt 0 && "$(accent_px "$1" 8 34)" -gt 6 ]]; } # 一 is one stroke: ~10 px
 bell_frame() { capture_nested "$STATE/bell-probe.png"; }
 
 # ---- bounded waits ----------------------------------------------------------------

@@ -6,9 +6,9 @@ The `shell` module: the bar on every monitor and the launcher.
 
 A 28 px strip of glass at the top of every monitor, showing that
 monitor's tags and tasks. From left to right: the tags, the tasks
-(splitting the middle, 14 px off either side), then the tray, the
-battery, the control center's switches, the bell and the clock, 20 px
-apart as macOS spaces its menu extras.
+(splitting the middle, 14 px off either side), then the tray, the bell,
+the control center's switches, the battery and the clock, 20 px apart as
+macOS spaces its menu extras.
 
 - The slot at each end owns its screen edge: the top-left pixel is the
   first tag, the top-right the clock.
