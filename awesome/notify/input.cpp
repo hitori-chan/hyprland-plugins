@@ -81,7 +81,6 @@ namespace NAwesome::Notify {
         uint64_t     rev     = 0;     // the card's revision at the press: its layout's actions are that revision's
         bool         outside = false; // the click fell outside every surface (closes the shade)
         bool         folded  = false; // a center card the budget folded: the click opens it
-        Vector2D     at;              // a level's right click: where its menu opens (set past hitAt: a left release compares hits)
         bool operator==(const SHit&) const = default;
     };
     static void           drainHits(std::vector<SHit>& batch);
