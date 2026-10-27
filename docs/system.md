@@ -16,8 +16,8 @@ keyboard down to off) and write through logind's
 
 One write runs per light at a time; presses meanwhile add up into the
 next. A device that is missing or stops answering is looked up again on
-the next press (a late driver, a GPU switch); with none, the press
-answers "unavailable".
+the next press or when the control center opens (a late driver, a GPU
+switch); with none, the press answers "unavailable".
 
 ### The keyboard in the dark
 

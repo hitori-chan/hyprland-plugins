@@ -112,6 +112,7 @@ namespace NAwesome::System {
     static void findLight(SLight& L) {
         L.dev.clear();
         L.max          = 0;
+        L.lastSetRaw   = -1; // the trust window is the old device's: the one found next reads its own sysfs
         const bool KBD = &L == &keyboard;
 #ifdef AWESOME_GATE
         // the gate's fake classes, driven by a fake logind on the nested's
@@ -239,8 +240,7 @@ namespace NAwesome::System {
             if (!now) {
                 // gone or never found: look again, once per press
                 findLight(L);
-                L.lastSetRaw = -1;
-                now          = readLight(L);
+                now = readLight(L);
             }
             if (!now) {
                 Controls::publish(L.level, {});
@@ -614,10 +614,11 @@ namespace NAwesome::System {
         }
     }
 
-    // the load, and the panel opening: both lights as sysfs has them
+    // the load, and the panel opening: both lights as sysfs has them, each
+    // looked for again when it is missing or stopped reading
     void lightRefresh() {
         for (auto* L : {&display, &keyboard}) {
-            if (L->dev.empty())
+            if (L->dev.empty() || !readLight(*L))
                 findLight(*L);
             publishLight(*L);
         }
