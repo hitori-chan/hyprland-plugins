@@ -313,9 +313,9 @@ namespace NAwesome::Notify {
 
         bool needsBlur(PHLMONITOR mon) const override {
             // the glass samples what's beneath, live — only while it paints,
-            // and only while it is translucent (an opaque col_bg draws plain)
+            // and only while it is translucent (an opaque col_glass draws plain)
             return blurOn() && anythingToDraw() && mon && mon == cardsMon.lock() &&
-                NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_bg")).a < 1.0;
+                NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:theme:col_glass")).a < 1.0;
         }
 
         // Notifications are on top: a VISIBLE card (or the open center)

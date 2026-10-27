@@ -65,7 +65,7 @@ namespace NAwesome::Notify {
     void renderCapsules(const SPaint& P, const SType& T) {
         constexpr double CAP_W = 256, CAP_H = 36, CAP_PADL = 16, CAP_PADR = 16, GLYPH = 16, TRACK_H = 6;
         const auto       MB     = P.mon->logicalBox();
-        const auto       COLBG = color(cfg().getColor("plugin:awesome:notify:col_bg")), COLRIM = color(cfg().getColor("plugin:awesome:notify:col_frame")),
+        const auto       COLBG = color(cfg().getColor("plugin:awesome:theme:col_glass")), COLRIM = color(cfg().getColor("plugin:awesome:theme:col_rim")),
                    COLTITLE = color(cfg().getColor("plugin:awesome:notify:col_title")), COLURGENT = color(cfg().getColor("plugin:awesome:notify:col_urgent"));
         const double GAP = std::max((double)cfg().getI("plugin:awesome:notify:margin"), 0.0);
         double       y   = MB.y + cardsTop(P.mon);

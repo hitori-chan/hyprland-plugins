@@ -15,12 +15,12 @@ static_assert(CfgKey{"plugin:awesome:shell:height"}.index < SPEC_COUNT);
 static_assert(specIndex("plugin:awesome:windows:col_frame") == SPEC_COUNT - 1);
 
 bool test_schema() {
-    // the surface: 45 keys, unique, all namespaced
-    AW_CHECK(SPEC_COUNT == 45);
+    // the surface: 41 keys, unique, all namespaced
+    AW_CHECK(SPEC_COUNT == 41);
     for (const auto& A : SPECS) {
         const auto K = std::string_view{A.key};
         AW_CHECK(K.starts_with("plugin:awesome:"));
-        // "plugin:awesome:<module>:<name>": a module segment must follow
+        // "plugin:awesome:<group>:<name>": a group segment must follow
         AW_CHECK(K.find(':', K.find(':') + 1) != K.npos);
         for (const auto& B : SPECS)
             if (&A != &B)
@@ -36,17 +36,18 @@ bool test_schema() {
         if (A.kind == Kind::Double)
             AW_CHECK(A.dval >= A.dmin && A.dval <= A.dmax);
     }
-    // every key resolves; the config-bearing modules are shell, windows
-    // and notify (system takes no config)
-    const char* MODULES[] = {"shell", "windows", "notify"};
-    size_t      perModule[3] = {0, 0, 0};
+    // every key resolves; the groups are the shared theme and the
+    // config-bearing modules shell, windows and notify (system takes no
+    // config)
+    const char* GROUPS[] = {"theme", "shell", "windows", "notify"};
+    size_t      perGroup[4] = {0, 0, 0, 0};
     for (const auto& K : SPECS) {
         AW_CHECK(findSpec(K.key) == &K);
-        for (int i = 0; i < 3; i++)
-            if (std::string_view{K.key}.starts_with(std::string{"plugin:awesome:"} + MODULES[i] + ":"))
-                perModule[i]++;
+        for (int i = 0; i < 4; i++)
+            if (std::string_view{K.key}.starts_with(std::string{"plugin:awesome:"} + GROUPS[i] + ":"))
+                perGroup[i]++;
     }
-    AW_CHECK(perModule[0] == 17 && perModule[1] == 3 && perModule[2] == 25);
+    AW_CHECK(perGroup[0] == 2 && perGroup[1] == 14 && perGroup[2] == 3 && perGroup[3] == 22);
     AW_CHECK(findSpec("plugin:awesome:shell:nope") == nullptr);
 
     // defaults are the glass·ink tokens
@@ -55,7 +56,7 @@ bool test_schema() {
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:windows:edge"}.index].ival == 16);
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:notify:rounding_power"}.index].dval == 3.0);
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:shell:col_focus"}.index].cval == 0xff00ccffu);
-    AW_CHECK(SPECS[CfgKey{"plugin:awesome:notify:col_bg"}.index].cval == 0x8a26262cu);
+    AW_CHECK(SPECS[CfgKey{"plugin:awesome:theme:col_glass"}.index].cval == 0x7a26262cu);
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:shell:font"}.index].sval == "Fira Code, IBM Plex Sans JP");
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:notify:font"}.index].sval == "Inter");
 

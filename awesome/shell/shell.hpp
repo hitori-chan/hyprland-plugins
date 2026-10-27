@@ -99,7 +99,7 @@ namespace NAwesome::Shell {
     using Render::GL::g_pHyprOpenGL;
 
     // config reads, through the schema (the old cfg.* struct is gone):
-    // `color(cfg().getColor("plugin:awesome:shell:col_bg"))` et al.
+    // `color(cfg().getColor("plugin:awesome:theme:col_glass"))` et al.
     using NAwesome::color;
     using NAwesome::cfg;
 

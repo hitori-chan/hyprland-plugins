@@ -279,10 +279,10 @@ unpacked, raster caches are capped in bytes, and work is bounded too
 One material for every surface, its tokens in `core/tokens.hpp` (the
 schema's defaults name them; the user's `theme.lua` overrides them).
 
-- **Glass** at three thicknesses over the compositor's blur: thin for the
-  bar and the launcher, regular for cards, the center and capsules, thick
-  for menus. Cards and menus add a soft drop, a light top edge and a 10 %
-  white rim; a menu floats higher.
+- **Glass**, one thickness over the compositor's blur for every surface:
+  the bar, the launcher, cards, the center, capsules and menus all wear
+  `theme:col_glass` (48 %). Cards and menus add a soft drop, a light top
+  edge and a 10 % white rim; a menu floats higher.
 - **Ink** is one white at four strengths (titles and the bar 100 %, body
   78 %, meta 55 %, empty 34 %). The accent `#00CCFF` is text: the viewed
   tag, the focused task, a selection, the bell while the center is open.

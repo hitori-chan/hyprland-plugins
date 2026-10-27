@@ -201,7 +201,7 @@ namespace NAwesome::Shell {
         const auto   MB = P.mb;
         const double H  = P.h;
 
-        P.glass(CBox{MB.x, MB.y, MB.w, H}, color(cfg().getColor("plugin:awesome:shell:col_bg")), 0, 2.f);
+        P.glass(CBox{MB.x, MB.y, MB.w, H}, color(cfg().getColor("plugin:awesome:theme:col_glass")), 0, 2.f);
 
         // ONE walk of the window list for all its consumers: per-workspace
         // urgency + occupancy (taglist) and this workspace's tasks (tasklist,
@@ -412,11 +412,11 @@ namespace NAwesome::Shell {
         bool needsBlur(PHLMONITOR mon) const override {
             // only while the band actually paints — never claim a live blur of
             // a strip that is hidden under a fullscreen window (blur for nothing)
-            // and only while its glass is translucent: an opaque col_bg (the
-            // default) draws without blur, so claiming live blur would make
+            // and only while its glass is translucent: an opaque col_glass
+            // draws without blur, so claiming live blur would make
             // the renderer blur and disable occlusion under the strip for a
             // result nobody sees
-            return NAwesome::blurOn() && !barHidden(mon) && color(cfg().getColor("plugin:awesome:shell:col_bg")).a < 1.0;
+            return NAwesome::blurOn() && !barHidden(mon) && color(cfg().getColor("plugin:awesome:theme:col_glass")).a < 1.0;
         }
 
         void exit() {
@@ -493,7 +493,7 @@ namespace NAwesome::Shell {
             return Menubar::isOpen && Menubar::mon.lock() == mon;
         }
         bool needsBlur(PHLMONITOR mon) const override {
-            return NAwesome::blurOn() && popupsOn(mon) && color(cfg().getColor("plugin:awesome:shell:col_bg")).a < 1.0;
+            return NAwesome::blurOn() && popupsOn(mon) && color(cfg().getColor("plugin:awesome:theme:col_glass")).a < 1.0;
         }
     };
 

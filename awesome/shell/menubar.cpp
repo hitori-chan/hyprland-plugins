@@ -900,10 +900,10 @@ namespace NAwesome::Shell {
                 return;
 
             // one palette fetch per render: color() memoizes but still hashes per call
-            const CHyprColor COLBG = color(cfg().getColor("plugin:awesome:shell:col_bg")), COLFG = color(cfg().getColor("plugin:awesome:shell:col_fg")),
+            const CHyprColor COLBG = color(cfg().getColor("plugin:awesome:theme:col_glass")), COLFG = color(cfg().getColor("plugin:awesome:shell:col_fg")),
                              COLFOCUS = color(cfg().getColor("plugin:awesome:shell:col_focus"));
 
-            // the bar's own thin glass, a hairline where it meets the bar
+            // the bar's own glass, a hairline where it meets the bar
             const double MY = PAINT.mb.y + PAINT.h;
             PAINT.glass(CBox{PAINT.mb.x, MY, PAINT.mb.w, PAINT.h}, COLBG);
             PAINT.rect(CBox{PAINT.mb.x, MY, PAINT.mb.w, 1.0 / PAINT.scale}, NAwesome::tHairline());

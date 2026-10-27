@@ -139,7 +139,7 @@ namespace NAwesome::Notify {
         P.glass(box, tChip(), R, 2.f);
         if (hover)
             P.rect(box, tFill(), R, 2.f);
-        P.ring(box, NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_frame")), R, 2.f);
+        P.ring(box, NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:theme:col_rim")), R, 2.f);
     }
 
     // macOS's platter under the pointer: a touch lighter, a touch thicker

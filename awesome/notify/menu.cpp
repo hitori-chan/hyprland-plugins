@@ -297,7 +297,7 @@ namespace NAwesome::Notify::CardMenu {
     void render(const SPaint& P, const SType& T) {
         if (!s_open || s_items.empty())
             return;
-        const auto COLMENU = color(cfg().getColor("plugin:awesome:notify:col_menu_bg")), COLRIM = color(cfg().getColor("plugin:awesome:notify:col_frame")),
+        const auto COLMENU = color(cfg().getColor("plugin:awesome:theme:col_glass")), COLRIM = color(cfg().getColor("plugin:awesome:theme:col_rim")),
                    COLTITLE = color(cfg().getColor("plugin:awesome:notify:col_title")), COLACC = color(cfg().getColor("plugin:awesome:notify:col_highlight"));
         const auto COLDIM = COLTITLE.modifyA(COLTITLE.a * 0.4);
         const bool CHECKS = std::ranges::any_of(s_items, [](const SItem& I) { return I.check >= 0; });

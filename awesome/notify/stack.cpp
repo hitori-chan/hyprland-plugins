@@ -25,7 +25,7 @@ namespace NAwesome::Notify {
     }
 
     void paintDeck(const SPaint& P, const CBox& top, size_t count) {
-        const auto  RIM = color(cfg().getColor("plugin:awesome:notify:col_frame"));
+        const auto  RIM = color(cfg().getColor("plugin:awesome:theme:col_rim"));
         const int   R   = (int)std::lround(DECK_ROUND * P.scale);
         const float RP  = rPow();
         // deepest first: each layer shows below the one over it, and the top

@@ -107,8 +107,8 @@ namespace NAwesome::Notify {
     void renderControls(const SPaint& P, const SType& T, const CBox& block) {
         const double X = block.x, Y = block.y, W = block.w;
         const auto COLTITLE = color(cfg().getColor("plugin:awesome:notify:col_title")), COLSUB = color(cfg().getColor("plugin:awesome:notify:col_kicker")),
-                   COLACC = color(cfg().getColor("plugin:awesome:notify:col_highlight")), COLBG = color(cfg().getColor("plugin:awesome:notify:col_bg")),
-                   COLRIM = color(cfg().getColor("plugin:awesome:notify:col_frame")), COLURGENT = color(cfg().getColor("plugin:awesome:notify:col_urgent"));
+                   COLACC = color(cfg().getColor("plugin:awesome:notify:col_highlight")), COLBG = color(cfg().getColor("plugin:awesome:theme:col_glass")),
+                   COLRIM = color(cfg().getColor("plugin:awesome:theme:col_rim")), COLURGENT = color(cfg().getColor("plugin:awesome:notify:col_urgent"));
         const auto COLDIM = COLSUB.modifyA(COLSUB.a * 0.6);
         const auto PX     = [&](double logical) { return (int)std::lround(logical * P.scale); };
 
