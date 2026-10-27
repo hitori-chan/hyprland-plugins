@@ -1,6 +1,6 @@
 // awesome/shell/battery.cpp — the battery: gauge state from sysfs, the old
-// battery-watch.sh alerts, and the widget drawing Pixel's battery
-// (shell/battery_pill.hpp)
+// battery-watch.sh alerts, the widget drawing Pixel's battery
+// (shell/battery_pill.hpp), and the note it shows under the pointer
 #include "shell/shell.hpp"
 #include "shell/battery_pill.hpp"
 
@@ -28,6 +28,74 @@ namespace NAwesome::Shell {
     // battery's state so exit() leaves nothing latched
     static std::string alertLastStatus;
     static bool        alertWarned = false, alertCritical = false;
+
+    // The note's rate: the packs' summed draw (power over energy, else
+    // current over charge), smoothed across the samples (the uevents and
+    // the minute tick: no timer of its own) and started over when the
+    // power state flips. A draw under 1 mW (1 mA) is no rate.
+    static double      rateEma = 0;
+    static std::string rateStatus;
+    static int         noteMinutes = -1, noteFullAt = -1, noteLimit = -1;
+
+    static void sampleRate(const std::string& status, double draw, double now, double full, int limit) {
+        noteLimit = limit;
+        if (status != rateStatus) {
+            rateStatus = status;
+            rateEma    = 0;
+        }
+        const bool MOVING = status == "Charging" || status == "Discharging";
+        if (MOVING && draw >= 1000)
+            rateEma = rateEma > 0 ? rateEma * 0.7 + draw * 0.3 : draw;
+        noteMinutes = noteFullAt = -1;
+        if (!MOVING || rateEma <= 0 || full <= 0)
+            return;
+        // charging stops at the limit when one holds
+        const double LEFT = status == "Discharging" ? now : std::max(0.0, full * (limit > 0 ? limit : 100) / 100.0 - now);
+        noteMinutes       = (int)std::clamp(std::lround(LEFT / rateEma * 60.0), 0L, 99L * 60 + 59);
+        if (status == "Charging") {
+            const time_t AT = std::time(nullptr) + (time_t)noteMinutes * 60;
+            std::tm      at{};
+            localtime_r(&AT, &at);
+            noteFullAt = at.tm_hour * 60 + at.tm_min;
+        }
+    }
+
+    // the note (below): its state up here with the rest
+    static SP<CEventLoopTimer> noteTimer;
+    static bool                noteShown = false;
+    static MONITORID           noteMon   = MONITOR_INVALID;
+    static CBox                notePill;  // the pill as last drawn on noteMon, global logical
+    static std::string         noteLine;  // the words as the last warm composed them
+    static std::string         noteFont;  // the cards' face: a note reads as the control center's do
+    constexpr auto             NOTE_DELAY = std::chrono::milliseconds(500);
+    constexpr double           NOTE_H = 24, NOTE_PADX = 9, NOTE_GAP = 6, NOTE_OUT = 8, NOTE_MAXW = 360;
+
+    static PHLMONITOR noteMonitor() {
+        for (const auto& M : State::monitorState()->monitors())
+            if (M && M->m_id == noteMon)
+                return M;
+        return nullptr;
+    }
+
+    // the note `w` wide, under the bar, its right edge past the pill's
+    static CBox noteBoxOf(const PHLMONITOR& mon, double w) {
+        const auto   MB = mon->logicalBox();
+        const double R  = std::min(notePill.x + notePill.w + NOTE_OUT, MB.x + MB.w - 4);
+        return CBox{R - w, MB.y + barHeight() + NOTE_GAP, w, NOTE_H};
+    }
+
+    static void damageNote() {
+        if (const auto M = noteMonitor(); M && g_pHyprRenderer)
+            g_pHyprRenderer->damageBox(noteBoxOf(M, NOTE_MAXW).expand(NAwesome::SPaint::noteReach() + 1));
+    }
+
+    static void hideNote() {
+        if (noteTimer)
+            noteTimer->updateTimeout(std::nullopt);
+        if (noteShown)
+            damageNote();
+        noteShown = false;
+    }
 
     // Power Profiles Daemon is the Linux-wide explicit power-save state. It
     // owns a separate system-bus link because tray's link is session-local.
@@ -187,8 +255,9 @@ namespace NAwesome::Shell {
                 // the packs as ONE battery, upower's display device: the
                 // level weighted by each pack's energy (charge where a pack
                 // reports no energy), the status the most telling of theirs
-                long long eNow = 0, eFull = 0, cNow = 0, cFull = 0;
-                bool      allEnergy = true, allCharge = true;
+                long long eNow = 0, eFull = 0, cNow = 0, cFull = 0, pNow = 0, iNow = 0;
+                bool      allEnergy = true, allCharge = true, allPower = true, allCurrent = true;
+                int       limit = -1; // the lowest charge limit a pack holds to
                 int       capSum = 0, capN = 0;
                 bool      anyCharging = false, anyDischarging = false, anyHolding = false, allFull = true, anyRead = false;
                 for (const auto& D : batteryDirs) {
@@ -208,6 +277,17 @@ namespace NAwesome::Shell {
                         cNow += *CN;
                         cFull += *CF;
                     }
+                    // a driver may sign the draw by its direction
+                    const auto PN = readSysInt(D + "/power_now"), IN = readSysInt(D + "/current_now");
+                    allPower   = allPower && PN;
+                    allCurrent = allCurrent && IN;
+                    if (allPower)
+                        pNow += std::llabs(*PN);
+                    if (allCurrent)
+                        iNow += std::llabs(*IN);
+                    const auto LIM = readSysInt(D + "/charge_control_end_threshold");
+                    if (LIM && *LIM > 0 && *LIM < 100)
+                        limit = limit < 0 ? (int)*LIM : std::min(limit, (int)*LIM);
                     const auto S = readSysLine(D + "/status");
                     if (S.empty() || S == "Unknown")
                         continue;
@@ -222,9 +302,8 @@ namespace NAwesome::Shell {
                     // top-off) into the limiter's hold state — including the
                     // start/end hysteresis band, where capacity sits below
                     // the threshold.
-                    if (S == "Not charging")
-                        if (const auto LIM = readSysInt(D + "/charge_control_end_threshold"); LIM && *LIM < 100)
-                            defend = true;
+                    if (S == "Not charging" && LIM && *LIM < 100)
+                        defend = true;
                 }
                 if (batteryDirs.size() == 1)
                     pc = capN ? capSum : -1; // one pack: its own gauge, as every other UI shows it
@@ -244,6 +323,8 @@ namespace NAwesome::Shell {
                 defend        = defend && status == "Not charging";
                 batteryStatus = status;
                 unknown       = pc < 0 || status == "Unknown";
+                const bool ENERGY = allEnergy && allPower && eFull > 0, CHARGE = !ENERGY && allCharge && allCurrent && cFull > 0;
+                sampleRate(status, ENERGY ? (double)pNow : CHARGE ? (double)iNow : 0, ENERGY ? (double)eNow : (double)cNow, ENERGY ? (double)eFull : (double)cFull, limit);
             }
             if (batteryPercent == pc && batteryPlugged == plugged && batteryDefend == defend && batteryUnknown == unknown)
                 return false;
@@ -360,6 +441,7 @@ namespace NAwesome::Shell {
             findBatteries();
         if (Battery::refresh())
             barChanged(); // a uevent lands in the event loop: warm now, no deferral needed
+        Battery::noteChanged();
         Battery::alerts();
         return 0;
     }
@@ -382,6 +464,19 @@ namespace NAwesome::Shell {
                 if (FD >= 0)
                     g_batterySrc = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, FD, WL_EVENT_READABLE, onBatteryUevent, nullptr);
             }
+            if (g_pEventLoopManager) {
+                noteTimer = makeShared<CEventLoopTimer>(
+                    std::nullopt,
+                    [](SP<CEventLoopTimer>, void*) {
+                        if (NAwesome::compositorShuttingDown() || NAwesome::sessionLocked() || noteMon == MONITOR_INVALID)
+                            return;
+                        noteShown = true;
+                        barChanged(); // the popup layer warms the words
+                        damageNote();
+                    },
+                    nullptr);
+                g_pEventLoopManager->addTimer(noteTimer);
+            }
             if (!g_batterySrc) { // setup failed partway: the minute tick still refreshes
                 if (g_udevMon)
                     udev_monitor_unref(g_udevMon);
@@ -392,6 +487,16 @@ namespace NAwesome::Shell {
         }
 
         void exit() {
+            if (noteTimer && g_pEventLoopManager)
+                g_pEventLoopManager->removeTimer(noteTimer);
+            noteTimer.reset();
+            noteShown = false;
+            noteMon   = MONITOR_INVALID;
+            noteLine.clear();
+            noteFont.clear();
+            rateEma = 0;
+            rateStatus.clear();
+            noteMinutes = noteFullAt = noteLimit = -1;
             powerProfilesBus.close(); // fd sources out before the proxy and system connection die
             if (g_batterySrc)
                 wl_event_source_remove(g_batterySrc); // before the monitor that owns the fd
@@ -410,6 +515,73 @@ namespace NAwesome::Shell {
             alertLastStatus.clear();
             alertWarned = alertCritical = false;
         }
+    } // namespace Battery
+
+    // ---- the note: the pill's state in words after a rest ----
+    //
+    // A dark note under the bar, its right edge 8 px past the pill's; gone
+    // when the pointer leaves, on the lock (the hover resets), under a real
+    // fullscreen and while a menu is open (strip.cpp's popupsOn). Its words
+    // are composed by the popup layer's warm; a click still does nothing.
+
+    namespace Battery {
+        void hover(const SBarHover& h) {
+            const bool ON = h.widget == &batteryWidget();
+            if (ON && h.mon == noteMon && noteMon != MONITOR_INVALID)
+                return; // still resting on it (a move inside the cell)
+            hideNote();
+            noteMon = ON ? h.mon : MONITOR_INVALID;
+            if (ON && noteTimer)
+                noteTimer->updateTimeout(NOTE_DELAY);
+        }
+
+        bool noteWanted(const PHLMONITOR& mon) {
+            return noteShown && mon && mon->m_id == noteMon && hasBattery();
+        }
+
+        std::optional<CBox> noteReach(const PHLMONITOR& mon) {
+            if (!noteWanted(mon))
+                return std::nullopt;
+            return noteBoxOf(mon, NOTE_MAXW).expand(NAwesome::SPaint::noteReach());
+        }
+
+        void noteChanged() {
+            if (!noteShown)
+                return;
+            barChanged();
+            damageNote();
+        }
+
+        void renderNote(const SPaint& P) {
+            if (P.warm) {
+                const auto STATE = visualState(batteryPercent, batteryUnknown, batterySave, batteryDefend, batteryPlugged);
+                const auto POWER = batteryStatus == "Charging" ? ePower::CHARGING :
+                    batteryStatus == "Full" || (batteryPlugged && batteryPercent >= 100) ? ePower::FULL :
+                    batteryPlugged                                                        ? ePower::HOLDING :
+                                                                                            ePower::BATTERY;
+                noteLine = noteText({.level     = batteryPercent,
+                                     .unknown   = STATE.attribution == eAttribution::Unknown,
+                                     .powerSave = batterySave,
+                                     .defender  = batteryDefend,
+                                     .power     = POWER,
+                                     .minutes   = noteMinutes,
+                                     .fullAt    = noteFullAt,
+                                     .limit     = noteLimit});
+                noteFont = std::string{cfg().getS("plugin:awesome:notify:font")};
+            }
+            const auto   TEX = textTex(noteLine, NAwesome::tTitle(), P.pt, (int)std::lround((NOTE_MAXW - 2 * NOTE_PADX) * P.scale), noteFont, 500);
+            const double W   = textInkW(TEX, P.pt, P.scale) + 2 * NOTE_PADX;
+            const CBox   B   = noteBoxOf(P.mon, W);
+            P.note(B);
+            if (TEX)
+                P.tex(TEX, B.x + (B.w - TEX->m_size.x / P.scale) / 2, B.y + (B.h - TEX->m_size.y / P.scale) / 2);
+        }
+
+#ifdef AWESOME_GATE
+        std::string noteDescribe() {
+            return noteShown ? noteLine : std::string{};
+        }
+#endif
     } // namespace Battery
 
     // ---- the widget ----
@@ -450,6 +622,8 @@ namespace NAwesome::Shell {
             void draw(const SPaint& P, const SFrame&, const CBox& box) override {
                 const auto& PILL = pillCache[bodyPx(P)];
                 P.texIn(PILL.tex, box);
+                if (P.mon && P.mon->m_id == noteMon)
+                    notePill = box; // the note's anchor
             }
 
           private:

@@ -208,11 +208,18 @@ namespace NAwesome::Shell {
     }
 
     // ---- battery.cpp ----
+    struct SBarHover;
     namespace Battery {
         void init(); // find the gauge, first read, arm the udev watch
         bool refresh();
         void alerts(); // battery-watch.sh folded in: edge-triggered plug/low/critical
         void exit();
+        // the note: the pill's state in words after the pointer rests on it
+        void                hover(const SBarHover& h);            // the bar's hover moved (input.cpp)
+        bool                noteWanted(const PHLMONITOR& mon);    // it shows on this monitor (strip.cpp adds the bar's own conditions)
+        std::optional<CBox> noteReach(const PHLMONITOR& mon);     // what it can cover while it shows, global logical
+        void                noteChanged();                        // a sample landed: its words follow
+        std::string         noteDescribe(); // the gate's: the words showing, "" none (defined in its build only)
     }
 
     // ---- clock.cpp ----
@@ -247,6 +254,9 @@ namespace NAwesome::Shell {
     };
     // the bar's metrics on this monitor; null rctx = a warm
     SPaint paintFor(PHLMONITOR mon, Render::CRenderContext* rctx);
+    namespace Battery {
+        void renderNote(const SPaint& P); // the popup layer's: composes it (warm) and paints it
+    }
 
     // Text -> cached GPU texture. Built ONLY by the warm pass; a miss during a
     // draw returns null rather than building (the texture rule).

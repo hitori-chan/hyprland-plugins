@@ -295,6 +295,17 @@ if compgen -G "/sys/class/power_supply/BAT*" >/dev/null; then
 	capture_nested "$STATE/cells-battery.png"
 	chk "cells: a click on the battery opens no tray menu" test "$(panel_extent "$STATE/cells-battery.png" | awk '{print $1}')" -le 10
 	tap esc
+	# the pointer resting on it names its state in a note under the bar
+	# (shell/battery.cpp: after 500 ms, its right edge 8 px past the pill's);
+	# leaving takes it away
+	printf 'move %s %s\nsleep 40\n' "$((BATX + 1))" 13 | vp
+	note_said() { [[ "$(hq awesome battery-note)" =~ ^([0-9]+%( · .+)?|Held\ at\ [0-9]+%\ to\ spare\ the\ battery|Battery\ status\ unknown)$ ]]; }
+	chk "battery: resting on it names its state" until_ok 3 note_said
+	echo "battery: the note says '$(hq awesome battery-note)'" >&2
+	note_drawn() { (($(lit_px "$1" $((BATX - 240)) $((BATX + 40)) $((BAR_H + 6)) $((BAR_H + 30))) > 60)); }
+	chk "battery: ...in a note under the bar" shot_until 3 "$STATE/battery-note.png" note_drawn "$STATE/battery-note.png"
+	printf 'move %s %s\nsleep 40\n' "$((MON_W / 2))" "$((MON_H / 2))" | vp
+	chk "battery: leaving takes the note away" until_is 3 "" hq awesome battery-note
 else
 	echo "cells: this host has no system battery (its click is not checked)" >&2
 fi

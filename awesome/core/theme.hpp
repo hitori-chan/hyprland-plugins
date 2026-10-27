@@ -73,6 +73,8 @@ namespace NAwesome {
     AW_THEME_COLOR(tLitInk, LIT_INK)
     AW_THEME_COLOR(tBadgeRim, BADGE_RIM)
     AW_THEME_COLOR(tBadgeGround, BADGE_GROUND)
+    AW_THEME_COLOR(tNote, NOTE)
+    AW_THEME_COLOR(tNoteShadow, NOTE_SHADOW)
 #undef AW_THEME_COLOR
 
     // animations=0 is the shell's motion kill switch

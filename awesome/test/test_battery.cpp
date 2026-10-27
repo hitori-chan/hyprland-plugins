@@ -1,7 +1,8 @@
 // awesome/test/test_battery.cpp — the Pixel pill (shell/battery_pill.hpp):
 // BatteryMeasurePolicy's widths at the bar's 13 px, and the raster's parts
 // where they belong — the fill to ceil(level * 24 / 100) units, the digits
-// inside the body, the attribution's ring cut out of it, a full body.
+// inside the body, the attribution's ring cut out of it, a full body. Then
+// the note's words (shell/battery_state.hpp), state by state.
 #include "../shell/battery_pill.hpp"
 
 #include "harness.hpp"
@@ -74,5 +75,19 @@ bool test_battery() {
         ok &= AW_CHECK(at(S, 10, 6).a > 100 && at(S, 10, 6).a < 125); // 0.45
         cairo_surface_destroy(S);
     }
+    // the note: the ladder's order, the time only with a rate
+    ok &= AW_CHECK(noteText({.level = 76, .minutes = 192}) == "76% · 3:12 left");
+    ok &= AW_CHECK(noteText({.level = 76}) == "76%");
+    ok &= AW_CHECK(noteText({.level = 63, .power = ePower::CHARGING, .minutes = 40, .fullAt = 22 * 60 + 40}) == "63% · Charging · full at 22:40");
+    ok &= AW_CHECK(noteText({.level = 63, .power = ePower::CHARGING}) == "63% · Charging");
+    ok &= AW_CHECK(noteText({.level = 100, .power = ePower::FULL}) == "100% · Charged");
+    ok &= AW_CHECK(noteText({.level = 92, .power = ePower::HOLDING}) == "92% · Not charging");
+    ok &= AW_CHECK(noteText({.level = 34, .powerSave = true, .minutes = 125}) == "34% · Power Saver · 2:05 left");
+    ok &= AW_CHECK(noteText({.level = 78, .defender = true, .power = ePower::HOLDING, .limit = 80}) == "Held at 80% to spare the battery");
+    ok &= AW_CHECK(noteText({.level = 78, .defender = true}) == "Held at 78% to spare the battery");
+    ok &= AW_CHECK(noteText({.level = 50, .unknown = true, .minutes = 10}) == "Battery status unknown");
+    ok &= AW_CHECK(noteText({.level = -1}) == "Battery status unknown");
+    ok &= AW_CHECK(durationText(0) == "0:00" && durationText(605) == "10:05" && durationText(1000000) == "99:59");
+    ok &= AW_CHECK(clockText(0) == "00:00" && clockText(9 * 60 + 5) == "09:05" && clockText(1440 + 61) == "01:01");
     return ok;
 }

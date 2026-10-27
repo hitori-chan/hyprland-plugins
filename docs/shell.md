@@ -125,6 +125,27 @@ It reads the udev battery packs: a dual-pack laptop reads as one, and a
 USB-C port's or a headset's battery is ignored. Plugging and unplugging
 post a capsule; 20 % and 5 % post the low and critical cards.
 
+Resting the pointer on it for half a second names its state in a dark
+note under the bar, its right edge 8 px past the pill's; leaving, the
+lock, a real fullscreen window or an open menu takes it away, and a
+click still does nothing:
+
+| State | The note |
+|---|---|
+| on battery | 76% · 3:12 left |
+| power save | 34% · Power Saver · 2:05 left |
+| charging | 63% · Charging · full at 22:40 |
+| charged | 100% · Charged |
+| held at the charge limit | Held at 80% to spare the battery |
+| on the cable, not charging | 92% · Not charging |
+| unknown | Battery status unknown |
+
+The time comes from the packs' draw (`power_now` over the energy, else
+`current_now` over the charge), smoothed over the samples the gauge
+already takes (its udev events and the minute tick) and started over
+when the power state flips; charging runs to the charge limit when one
+holds. Until a draw is known the time is left out.
+
 ### Clock
 
 "Mon Oct 26 01:12" in the session's `LC_TIME`. It ticks on the wall
