@@ -35,8 +35,9 @@ Android's conversation layout does:
   bottom-right corner as an 18 px badge on a graphite disc, ringed in
   white;
 - a card with no content image leads with its identity and wears no
-  badge; a group chat without a picture leads with a facepile of its two
-  newest senders;
+  badge; a group chat without a picture leads with its initials (the
+  first letters of its title's first and last words) on a colour its
+  chat key picks, wearing the app's badge;
 - an iconless card draws a random face from `fallback_icon_dir`, or a
   generic application mark, so no card is faceless.
 
@@ -129,16 +130,38 @@ as banners on fresh timeouts, under the same per-app cap and switches.
 It draws no backdrop: the desktop is never darkened.
 
 "Notifications" heads the column, bare on the desktop with a soft
-shadow, and "Clear All" sits on a glass capsule. Cards show their clock
-time where banners show an age, and behave as their banner did.
+shadow, and "Clear All" sits on a glass capsule (gone with nothing to
+clear; its word turns the accent under the pointer). Cards show their
+clock time where banners show an age, and behave as their banner did; a
+card the center had not shown when it opened wears its time in the
+accent for the visit.
 
+- **The order**: critical, then the conversations, then the rest, newest
+  first in each, 16 px apart where a group ends (8 between cards); no
+  labels.
+- **Silent cards** fold into one row at the bottom: low urgency, an app
+  whose banners the card menu turned off, a muted chat (read live: a
+  switch turned back on lifts its cards out). The row shows two of their
+  apps' icons and "3 silent from Chat and Games"; a click (or Enter)
+  spreads them for the visit, and a reply being typed into one keeps
+  them spread. Quiet automatically holds banners a while and is no
+  silence.
+- **The status line**: while Do Not Disturb holds, a line under the
+  heading says so ("until 22:30" or "until turned off", and how many
+  arrivals wait); while quiet automatically holds, "Quiet" and why
+  ("while an app is fullscreen", "while you share the screen").
+- **Clear All** hides every card at once and reads **Undo** for 5 s;
+  Undo brings them back. The window's end closes them for good
+  (`NotificationClosed`, dismissed), and so does closing the center. An
+  arrival meanwhile shows as ever. The scripted `clear_all()` and
+  `hyprctl awesome clear` sweep at once, with no undo.
 - Cards open as the page has room; a folded one shows its title and
   newest line, and a click (or Space) opens it.
 - An app's cards stack (two or more, each chat its own card): the newest
   stands over a deck of up to two slivers. A click spreads the stack
-  under a header with Show Less and a close button; right on the deck,
-  or the header's close, dismisses it whole. A stack holding the armed
-  reply stays spread.
+  under a header with the app's name and Show Less; right on the deck or
+  the header dismisses it whole. A stack holding the armed reply stays
+  spread.
 - `x-notify-group-key` splits an app's stack by thread, as macOS's
   thread identifier does.
 - A spread stack taller than the page shows what fits and "+N more";

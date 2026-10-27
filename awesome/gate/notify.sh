@@ -436,8 +436,8 @@ nclear
 
 # ---- the center stacks an app's cards (macOS) --------------------------------
 # Two cards of one app are one stack: collapsed, the newest over its deck
-# (8 px a layer); a click spreads it under a header (Show Less and a close
-# button, 24 px, right-aligned: notify/stack.cpp); right dismisses it whole.
+# (8 px a layer); a click spreads it under a 28 px header (the app's name,
+# Show Less flush right: notify/stack.cpp); right dismisses it whole.
 nsend -a stk -t 30000 first body
 nsend -a stk -t 30000 second body
 hq awesome center >/dev/null
@@ -453,11 +453,83 @@ shot_until 3 $STATE/stack-spread.png bottom_over $STATE/stack-spread.png $((PD +
 PS="$(panel_bottom $STATE/stack-spread.png)"
 echo "stack: bottom collapsed $PD, spread $PS" >&2
 chk "stack: spread, its header and both cards stand" test $((PS - PD)) -ge 40
-click $((PANEL_X + N_W - 24 - 6 - 30)) $((CARD_Y + 12)) 272
+click $((PANEL_X + N_W - 30)) $((CARD_Y + 14)) 272
 shot_until 3 $STATE/stack-less.png bottom_under $STATE/stack-less.png $((PD + 3))
 chk "stack: Show Less folds it back" test "$(panel_bottom $STATE/stack-less.png)" -le $((PD + 2))
 click $ROWX $ROWY 273
 chk "stack: right on the deck dismisses the whole stack" test "$(st)" = "center:1 live:0 dnd:0"
+hq awesome center >/dev/null
+nclear
+
+# ---- the center's ranking, its silent fold -----------------------------------
+# Critical, then the chats, then the rest, 16 px apart where a group ends;
+# the silent (low urgency, or silenced by the card menu: below) fold into
+# one 44 px row at the bottom until a click spreads them for the visit
+# (notify/center.cpp).
+nsend -a rka -t 30000 plainrk body
+nsend -a rkb -u low -t 30000 hushrk body
+nsend -a rkc -c im.received -t 30000 chatrk body
+nsend -a rkd -u critical urgentrk body
+hq awesome center >/dev/null
+chk "rank: critical, the chat, the rest, the silent folded" until_is 3 "- | !urgentrk @chatrk -plainrk silent:1" rows
+shot_until 3 $STATE/rank.png bottom_over $STATE/rank.png $((CARD_Y + 200))
+FB="$(panel_bottom $STATE/rank.png)"
+click "$ROWX" $((FB - 22)) 272
+chk "rank: a click on the fold spreads it" until_is 3 "- | !urgentrk @chatrk -plainrk ~hushrk" rows
+chk "rank: ...acting on nothing" test "$(st)" = "center:1 live:4 dnd:0"
+
+# Clear All hides the rows for 5 s and reads Undo meanwhile; Undo brings
+# them back; the window's end, or the center's close, closes them
+CLX=$((PANEL_X + N_W - 20)) CLY=$((HEAD_Y + 14))
+click $CLX $CLY 272
+chk "undo: Clear All hides every row at once" until_is 3 "- undo |" rows
+chk "undo: ...closing none yet" test "$(st)" = "center:1 live:4 dnd:0"
+chk "undo: ...nor counting them on the bell" test "$(bd)" = "banners:0 resident:0"
+click $CLX $CLY 272
+chk "undo: Undo brings every row back" until_is 3 "- | !urgentrk @chatrk -plainrk ~hushrk" rows
+click $CLX $CLY 272
+chk "undo: the window's end closes them for good" until_is 8 "center:1 live:0 dnd:0" st
+nsend -a rka -t 30000 again body
+click $CLX $CLY 272
+chk "undo: an arrival is hidden by the next Clear All" until_is 3 "- undo |" rows
+hq awesome center >/dev/null
+chk "undo: closing the center closes them at once" until_is 2 "center:0 live:0 dnd:0" st
+
+# a card the center had not shown wears its time in the accent for the
+# visit; seen, it reads plain at the next
+nsend -a fresh -t 30000 freshrk body
+hq awesome center >/dev/null
+fresh_lit() { (($(accent_px "$1" $((PANEL_X + N_W - 90)) $((PANEL_X + N_W - 10)) $((CARD_Y + 6)) $((CARD_Y + 34))) >= 8)); }
+fresh_dim() {
+	(($(accent_px "$1" $((PANEL_X + N_W - 90)) $((PANEL_X + N_W - 10)) $((CARD_Y + 6)) $((CARD_Y + 34))) == 0)) &&
+		(($(lit_px "$1" $((PANEL_X + 50)) $((PANEL_X + 200)) $((CARD_Y + 8)) $((CARD_Y + 34))) > 40))
+}
+chk "fresh: an unseen card's time wears the accent" shot_until 3 $STATE/fresh.png fresh_lit $STATE/fresh.png
+hq awesome center >/dev/null
+until_is 2 "center:0 live:1 dnd:0" st
+hq awesome center >/dev/null
+chk "fresh: seen, its time reads plain at the next visit" shot_until 3 $STATE/fresh2.png fresh_dim $STATE/fresh2.png
+hq awesome center >/dev/null
+nclear
+
+# a group chat with no picture wears its initials on a flat colour of its
+# own (two senders' faces once stood there)
+flat_face() { # flat_face <frame>: the face cell is one tint, round, past half full
+	python3 - "$1" $((PANEL_X + 14)) $((CARD_Y + 12)) <<'PY'
+import sys
+from PIL import Image
+px = Image.open(sys.argv[1]).convert('RGB').load()
+x0, y0 = int(sys.argv[2]), int(sys.argv[3])
+ref = px[x0 + 18, y0 + 31] # under the letters, inside the disc
+same = sum(1 for y in range(y0, y0 + 36) for x in range(x0, x0 + 36) if max(abs(a - b) for a, b in zip(px[x, y], ref)) <= 8)
+corner = px[x0 + 1, y0 + 1]
+sys.exit(0 if max(ref) - min(ref) > 40 and same > 500 and max(abs(a - b) for a, b in zip(corner, ref)) > 30 else 1)
+PY
+}
+nsend -a grp -c im.received -h string:x-notify-conversation-id:grp1 -h string:x-notify-conversation-kind:group \
+	-h "string:x-notify-conversation-title:Weekend trip" -h string:x-notify-sender-name:Lan -t 30000 "Weekend trip" "train at 7:40"
+hq awesome center >/dev/null
+chk "initials: a pictureless group wears its initials' face" shot_until 3 $STATE/initials.png flat_face $STATE/initials.png
 hq awesome center >/dev/null
 nclear
 
@@ -498,9 +570,14 @@ chk "menu: Turn Off Banners lowered the app's banner" until_is 3 "banners:0 resi
 pcidb gatechat Bob bob "ping"
 chk "menu: the app's next arrival lands silent" test "$(bd)" = "banners:0 resident:2"
 chk "menu: the switch persisted, listed by the app's name" grep -aqx $'notify-app\t1\tgatechat\tgatechat' "$AW_STATE"
-# back on from the center: the menu opens down-right of a pointer that
+# back on from the center: the silenced app's cards fold at the bottom; a
+# click spreads them, and the menu opens down-right of a pointer that
 # leaves it room
 hq awesome center >/dev/null
+chk "menu: the silenced app's cards fold into the silent row" until_is 3 "- | silent:2" rows
+click "$ROWX" "$ROWY" 272
+spread_rows() { [[ "$(rows)" == "- | ~"* ]]; }
+chk "menu: a click spreads the fold" until_ok 3 spread_rows
 hold_menu "$ROWX" "$ROWY"; release_left
 click $((ROWX + 100)) "$(mrow "$ROWY" 2 1)" 272
 chk "menu: Turn On from the center drops the row" bash -c "! grep -aq '^notify-app' '$AW_STATE'"
@@ -520,6 +597,9 @@ chk "menu: the mute persisted, listed by the chat's title" grep -aq $'^notify-mu
 nclear
 pcidb gatechat Alice alice "three"
 hq awesome center >/dev/null
+chk "menu: the muted chat folds into the silent row" until_is 3 "- | silent:1" rows
+click "$ROWX" "$ROWY" 272
+chk "menu: ...spread by a click" until_ok 3 spread_rows
 hold_menu "$ROWX" "$ROWY"; release_left
 click $((ROWX + 100)) "$(mrow "$ROWY" 0 0)" 272
 chk "menu: Unmute drops the row" bash -c "! grep -aq '^notify-mute' '$AW_STATE'"
@@ -660,6 +740,9 @@ chk "quiet: while shared an arrival waits in the shade" test "$(bd)" = "banners:
 nsend -a q3 -u critical -t 30000 urgent secret
 chk "quiet: critical punches through the share" test "$(bd)" = "banners:1 resident:2"
 chk "quiet: ...holding its words back" test "$(hq awesome quiet)" = "now:1 hushed:1"
+hq awesome center >/dev/null
+chk "quiet: the open center says why arrivals hold" until_is 3 "quiet:while you share the screen" rows_status
+hq awesome center >/dev/null
 share_stop
 chk "quiet: the share's end gives the words back" until_is 4 "now:0 hushed:0" hq awesome quiet
 nclear
@@ -692,6 +775,17 @@ dsp "hl.plugin.awesome.suspend()"
 chk "DND resume: three popped, the fourth resumed resident (the per-app cap)" test "$(bd)" = "banners:3 resident:1"
 chk "DND resume: dnd off, every card kept" hq_matches '^center:0 live:4 dnd:0$' awesome state
 chk "DND: off keeps no row" until_is 3 "" dndrow
+nclear
+# while DND holds, the center's status line says so, and how many wait
+dsp "hl.plugin.awesome.suspend()"
+nsend -a q waiting body
+hq awesome center >/dev/null
+chk "status: the center says why arrivals hold, and how many wait" until_is 3 "dnd:until turned off · 1 waiting |" rows
+status_drawn() { (($(lit_px "$1" $((PANEL_X + 8)) $((PANEL_X + 28)) $((CARD_Y + 8)) $((CARD_Y + 28))) > 250)); }
+chk "status: its line stands under the heading" shot_until 3 $STATE/status.png status_drawn $STATE/status.png
+hq awesome center >/dev/null
+dsp "hl.plugin.awesome.suspend()"
+chk "status: DND off" hq_matches 'dnd:0' awesome state
 nclear
 
 # ---- DND for a while ------------------------------------------------------------

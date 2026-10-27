@@ -9,12 +9,19 @@
 // shares the column, one open at a time. As macOS's, it draws no backdrop:
 // the desktop is never darkened.
 //
-// RANKING — Android's, without the dividers: critical, then conversations,
-// then normal, then silent; newest first inside each tier. An app's cards
-// STACK under their newest once it has two (macOS), its chats with the rest
-// — each chat keeps its own card, and the model merges that chat's messages
+// RANKING — Android's, without the dividers (labels faded over a bright
+// wallpaper): critical, then conversations, then the rest; newest first
+// inside each group, a wider gap where a group ends. An app's cards STACK
+// under their newest once it has two (macOS), its chats with the rest —
+// each chat keeps its own card, and the model merges that chat's messages
 // into it. A stack stands where its newest card ranks, collapsed until a
-// click spreads it.
+// click spreads it. The silent cards (low urgency, or silenced by the user)
+// fold into one row at the bottom until a click spreads them.
+//
+// Above the cards, a status line says why arrivals are holding (Do Not
+// Disturb, quiet automatically); Clear All hides the cards for an undo
+// window (Model::clearLive); a card the center had not shown when it opened
+// wears its time in the accent.
 //
 // THE EXPANSION BUDGET — cards open by DEFAULT, not on demand. The walk
 // starts at the top of the page and opens each card while the panel still
@@ -26,6 +33,8 @@
 // all of it resets when the shade closes, Android-style.
 
 #include "ui.hpp"
+
+#include "../core/walltimer.hpp"
 
 namespace NAwesome::Notify {
 
@@ -41,6 +50,21 @@ namespace NAwesome::Notify {
     static std::set<std::string> s_openedGroup, s_foldedGroup; // ditto, per app key
     static Time::steady_tp       s_openedAt;
     static bool                  s_animating = false;
+    static const std::string CLEAR_WORD = "Clear All", UNDO_WORD = "Undo";
+
+    // what the center had not shown when this visit opened: their times
+    // wear the accent until it closes
+    static std::set<uint32_t>    s_fresh;
+
+    // the silent fold's identity in the fold state: no app key starts with
+    // a control character
+    static const std::string SILENT_KEY = "\x1e" "silent";
+
+    // the status line as the last warm read it (the draws between reuse it)
+    static struct {
+        bool        on = false, dnd = false;
+        std::string sub;
+    } s_status;
 
     // keyboard navigation: an index into s_disp, -1 until an arrow key claims
     // the shade (so a mouse-only visit shows no selection at all). s_lastVis
@@ -87,6 +111,7 @@ namespace NAwesome::Notify {
     // and all, at static-destruction time with the renderer already gone.
     static void resetVisit() {
         s_skip = s_items = 0;
+        s_fresh.clear();
         s_openedRow.clear();
         s_foldedRow.clear();
         s_openedGroup.clear();
@@ -182,7 +207,7 @@ namespace NAwesome::Notify {
         if (s_sel < 0 || (size_t)s_sel >= s_disp.size())
             return false;
         const auto& D = s_disp[s_sel];
-        group         = D.items.size() > 1 ? D.key : "";
+        group         = D.fold || D.items.size() > 1 ? D.key : "";
         id            = D.items.front()->id;
         return true;
     }
@@ -191,6 +216,12 @@ namespace NAwesome::Notify {
         if (on == s_on)
             return;
         CardMenu::close(); // the layout it was opened over is going
+        if (on) {
+            for (const auto& N : notifs)
+                if (!N->seen && !N->waiting && !Model::offShade(N))
+                    s_fresh.insert(N->id);
+        } else
+            Model::commitClear(); // the undo window ends with the visit
         // what the center listed while open, and lists as it opens, has been
         // seen: the bell's dot goes out (the funnel below repaints it)
         Model::markSeen();
@@ -218,15 +249,20 @@ namespace NAwesome::Notify {
     // ---- the display list: one ranked list, an app's cards stacked ----
 
     // Android's shade ranking, minus the visible dividers: urgent things,
-    // then the people, then everything else, then the quiet ones.
-    static int tier(const SP<SNotif>& n) {
+    // then the people, then everything else; the quiet ones fold below.
+    static uint8_t tier(const SP<SNotif>& n) {
         if (n->urgency >= 2)
             return 0;
-        if (n->urgency == 0)
-            return 4;
-        if (n->conversation)
-            return 2;
-        return 3;
+        return n->conversation ? 1 : 2;
+    }
+    inline constexpr uint8_t TIER_SILENT = 3;
+
+    // Asked for no banner (low urgency), or silenced by the user (its app's
+    // banners off, its chat muted), read live: the fold at the bottom.
+    // Quiet automatically holds banners a while and is no silence; critical
+    // never folds.
+    static bool silent(const SNotif& n) {
+        return n.urgency == 0 || Policy::silenced(n);
     }
 
     // How many stackable cards one (app, declared group) holds, and where its
@@ -238,24 +274,16 @@ namespace NAwesome::Notify {
         size_t             first = (size_t)-1; // index in out, once one is placed
     };
 
-    static void buildDisplay(std::vector<SDisp>& out) {
-        out.clear();
-        static std::vector<SP<SNotif>> src;    // reused; main thread only
-        static std::vector<SOwner>     owners; // ditto
+    // `src` ranked, an app's cards stacked under its newest
+    static void appendStacked(std::vector<SDisp>& out, const std::vector<SP<SNotif>>& src, bool quiet) {
+        static std::vector<SOwner> owners; // reused; main thread only
         // key -> owner: a linear scan per card was quadratic in distinct
         // keys (a sender rotating its app name at max_notifs 512)
         static std::unordered_map<std::string, size_t> ownerIdx;   // ditto
         static std::vector<size_t>                     ownerOfSrc; // src[i]'s owner, -1: never stacks
-        src.clear();
         owners.clear();
         ownerIdx.clear();
         ownerOfSrc.clear();
-        for (const auto& N : notifs)
-            if (!N->waiting && !Model::offShade(N))
-                src.push_back(N);
-        // notifs is newest-first; a STABLE sort by tier keeps that inside each
-        std::ranges::stable_sort(src, [](const auto& a, const auto& b) { return tier(a) < tier(b); });
-
         for (const auto& N : src) {
             if (!Model::stackable(N)) {
                 ownerOfSrc.push_back((size_t)-1);
@@ -282,11 +310,38 @@ namespace NAwesome::Notify {
             }
             // the key rides the fold state, hover and selection — a stack
             // carries the (app, group) identity, singles the app
-            out.push_back(SDisp{.items = {N}, .key = ownerOfSrc[i] != (size_t)-1 ? owners[ownerOfSrc[i]].key : Model::groupKeyOf(N)});
+            out.push_back(SDisp{.items = {N}, .key = ownerOfSrc[i] != (size_t)-1 ? owners[ownerOfSrc[i]].key : Model::groupKeyOf(N), .tier = quiet ? TIER_SILENT : tier(N)});
         }
-        // the buffer is reused, its references are not: a dismissed card
+    }
+
+    static void buildDisplay(std::vector<SDisp>& out) {
+        out.clear();
+        static std::vector<SP<SNotif>> src, quiet; // reused; main thread only
+        for (const auto& N : notifs)
+            if (!N->waiting && !Model::offShade(N))
+                (silent(*N) ? quiet : src).push_back(N);
+        // notifs is newest-first; a STABLE sort by tier keeps that inside each
+        std::ranges::stable_sort(src, [](const auto& a, const auto& b) { return tier(a) < tier(b); });
+        appendStacked(out, src, false);
+        if (!quiet.empty()) {
+            // spread by a click, or around a field being typed into
+            if (s_openedGroup.contains(SILENT_KEY) || std::ranges::any_of(quiet, [](const auto& N) { return replyArmedOn(N->id); }))
+                appendStacked(out, quiet, true);
+            else
+                out.push_back(SDisp{.items = quiet, .key = SILENT_KEY, .tier = TIER_SILENT, .fold = true});
+        }
+        // the buffers are reused, their references are not: a dismissed card
         // (and its textures) must not live on until the shade next opens
         src.clear();
+        quiet.clear();
+    }
+
+    // the room above item i: none at the page's top, the gap between items,
+    // and a wider one where a group of the ranking ends
+    static double leadOf(size_t i, double gap) {
+        if (i == s_skip || i == 0)
+            return 0;
+        return gap + (s_disp[i].tier != s_disp[i - 1].tier ? TIER_GAP : 0);
     }
 
     // ---- the expansion budget ----
@@ -302,11 +357,12 @@ namespace NAwesome::Notify {
     static SPlacedCard budgetCard(const SPaint& P, const SType& T, const SP<SNotif>& N, double w, double room, double extra, bool top, bool deck) {
         const bool  ARMED = replyArmedOn(N->id); // a field shows only on the open card
         const bool  OPEN  = ARMED || s_openedRow.contains(N->id), FOLD = !ARMED && s_foldedRow.contains(N->id);
+        const bool  FRESH = s_fresh.contains(N->id);
         SPlacedCard c;
-        c.h    = measureCard(P, T, N, w, SCardForm{.where = SCardForm::CENTER, .open = false, .deck = deck});
+        c.h    = measureCard(P, T, N, w, SCardForm{.where = SCardForm::CENTER, .open = false, .deck = deck, .fresh = FRESH});
         c.more = true;
         if (!FOLD && (OPEN || top || c.h + extra < room)) {
-            const double OH = measureCard(P, T, N, w, SCardForm{.where = SCardForm::CENTER, .open = true, .deck = deck});
+            const double OH = measureCard(P, T, N, w, SCardForm{.where = SCardForm::CENTER, .open = true, .deck = deck, .fresh = FRESH});
             c.more          = OH > c.h + 0.5;
             c.open          = c.more && (OPEN || top || OH + extra <= room);
             if (c.open)
@@ -319,12 +375,15 @@ namespace NAwesome::Notify {
         double used = 0;
         for (size_t i = s_skip; i < s_disp.size(); i++) {
             const auto&  D    = s_disp[i];
-            const double LEAD = i == s_skip ? 0 : gap;
+            const double LEAD = leadOf(i, gap);
             const bool   TOP  = i == s_skip;
             const double ROOM = bodyCap - used - LEAD;
             auto&        CS   = s_cardsOf[i];
 
-            if (D.items.size() < 2) {
+            if (D.fold) {
+                s_itemH[i]          = FOLD_H;
+                s_groupState[D.key] = false;
+            } else if (D.items.size() < 2) {
                 CS.push_back(budgetCard(P, T, D.items.front(), contentW, ROOM, 0, TOP, false));
                 s_itemH[i]                      = CS.back().h;
                 s_rowState[D.items.front()->id] = CS.back().open;
@@ -343,7 +402,7 @@ namespace NAwesome::Notify {
                     // user spread shows its first card even past the fold,
                     // and the card being replied to is never cut.
                     const size_t KEEP = ARMED != D.items.end() ? (size_t)(ARMED - D.items.begin()) : 0;
-                    double       h    = CAP_H;
+                    double       h    = SHEAD_H;
                     for (size_t k = 0; k < D.items.size(); k++) {
                         const bool   LAST = k + 1 == D.items.size();
                         const double TAIL = LAST ? 0 : gap + CAP_H;
@@ -381,7 +440,7 @@ namespace NAwesome::Notify {
         double used = 0;
         size_t last = s_skip;
         for (size_t i = s_skip; i < s_itemH.size(); i++) {
-            const double LEAD = i == s_skip ? 0 : gap;
+            const double LEAD = leadOf(i, gap);
             if (i > s_skip && used + LEAD + s_itemH[i] > bodyCap)
                 break;
             used += LEAD + s_itemH[i];
@@ -420,13 +479,30 @@ namespace NAwesome::Notify {
                    COLACC = color(cfg().getColor("plugin:awesome:notify:col_highlight")), COLBG = color(cfg().getColor("plugin:awesome:theme:col_glass")),
                    COLRIM = color(cfg().getColor("plugin:awesome:theme:col_rim"));
 
+        // why arrivals are holding, read once per warm: Do Not Disturb, else
+        // quiet automatically (its reason)
+        if (P.warm) {
+            const auto WHY = Quiet::why();
+            s_status.dnd   = Model::suspendedNow();
+            s_status.on    = s_status.dnd || WHY != Quiet::eWhy::NONE;
+            s_status.sub.clear();
+            if (s_status.dnd) {
+                const auto END = Model::suspendEnd();
+                s_status.sub   = END > 0 ? "until " + untilText(END) : "until turned off";
+                if (const auto HELD = Model::heldCount(); HELD > 0)
+                    s_status.sub += " · " + std::to_string(HELD) + " waiting";
+            } else if (s_status.on)
+                s_status.sub = WHY == Quiet::eWhy::SHARING ? "while you share the screen" : "while an app is fullscreen";
+        }
+
         const double W   = std::max((double)cfg().getI("plugin:awesome:notify:width"), 120.0);
         const double GAP = std::max((double)cfg().getI("plugin:awesome:notify:margin"), 0.0);
         const double X    = MB.x + MB.w - EDGE - W;
         const double TOP  = cardsTop(P.mon);
         const double Y0   = MB.y + TOP;
         const double HY   = Y0;                         // the heading's row heads the column
-        const double CY0  = HY + HEADER_H + HEADER_GAP; // the cards' top
+        const double SY   = HY + HEADER_H + HEADER_GAP; // the status line's top
+        const double CY0  = SY + (s_status.on ? STATUS_H + HEADER_GAP : 0); // the cards' top
 
         // The column runs to what the monitor leaves below offset_y (a margin
         // of air), and the expansion budget spends exactly this. Overflow
@@ -434,7 +510,7 @@ namespace NAwesome::Notify {
         // (card.cpp), so no single card can exceed the cap and the
         // always-place-the-first rule can't spill.
         const double AVAILH  = MB.h - TOP - cardsBottomReserved(P.mon) - GAP;
-        const double BODYCAP = std::max(64.0, AVAILH - HEADER_H - HEADER_GAP);
+        const double BODYCAP = std::max(64.0, AVAILH - (CY0 - Y0));
 
         // The display list, every height AND every fold verdict are decided
         // once per WARM and reused by the draws between warms: hover fills
@@ -458,7 +534,7 @@ namespace NAwesome::Notify {
             if (SELECTED)
                 for (size_t i = 0; i < s_disp.size(); i++) {
                     const auto& D = s_disp[i];
-                    if (selGroup.empty() ? std::ranges::any_of(D.items, [&](const auto& N) { return N->id == selId; }) : D.items.size() > 1 && D.key == selGroup) {
+                    if (selGroup.empty() ? std::ranges::any_of(D.items, [&](const auto& N) { return N->id == selId; }) : (D.fold || D.items.size() > 1) && D.key == selGroup) {
                         s_sel = (int)i;
                         break;
                     }
@@ -491,17 +567,17 @@ namespace NAwesome::Notify {
         // place the items that fit
         struct SPlaced {
             size_t idx;
-            double h;
+            double lead, h;
         };
         static std::vector<SPlaced> placed; // reused
         placed.clear();
         double usedH = 0;
         for (size_t i = s_skip; i < disp.size() && i < s_itemH.size(); i++) {
-            const double LEAD = placed.empty() ? 0 : GAP;
+            const double LEAD = placed.empty() ? 0 : leadOf(i, GAP);
             if (!placed.empty() && usedH + LEAD + s_itemH[i] > BODYCAP)
                 break;
             usedH += LEAD + s_itemH[i];
-            placed.push_back({i, s_itemH[i]});
+            placed.push_back({i, LEAD, s_itemH[i]});
         }
         s_lastVis = placed.empty() ? s_skip : placed.back().idx;
         const bool EMPTY = disp.empty();
@@ -510,7 +586,7 @@ namespace NAwesome::Notify {
         {
             SCard pc;
             pc.kind = SCard::PANEL;
-            pc.box  = CBox{X, Y0, W, HEADER_H + HEADER_GAP + (EMPTY ? EMPTY_H : usedH)};
+            pc.box  = CBox{X, Y0, W, CY0 - Y0 + (EMPTY ? EMPTY_H : usedH)};
             cards.push_back(pc);
         }
 
@@ -523,22 +599,41 @@ namespace NAwesome::Notify {
             if (const auto HEAD = cachedText("Notifications", COLTITLE, T.heading, (int)std::lround(W * P.scale), -1, 0, false, 600, nullptr, false, eShadow::DESKTOP))
                 texAt(P, HEAD, X + 4, HY + (HEADER_H - texH(HEAD, P.scale)) / 2);
 
-            const double CY    = HY + (HEADER_H - CAP_H) / 2;
-            const int    ROUND = (int)std::lround(CAP_H / 2 * P.scale);
+            // Clear All, or Undo while what it hid waits on its window;
+            // gone with nothing to clear. The pointer turns its word the
+            // accent (both faces warm: a hover only damages).
+            const bool PENDING = Model::clearPending();
+            if (PENDING || !EMPTY) {
+                const std::string& WORD   = PENDING ? UNDO_WORD : CLEAR_WORD;
+                const auto         CLEAR  = cachedText(WORD, COLTITLE, T.meta, (int)std::lround(W * P.scale), -1, 0, false, 600);
+                const auto         LIT    = cachedText(WORD, COLACC, T.meta, (int)std::lround(W * P.scale), -1, 0, false, 600);
+                const double       CW     = texW(CLEAR, P.scale) + 2 * CAP_PADX;
+                const CBox         CB{X + W - CW, HY + (HEADER_H - CAP_H) / 2, CW, CAP_H};
+                P.frost(CB, COLBG, COLRIM, (int)std::lround(CAP_H / 2 * P.scale), 2.f);
+                texCentered(P, hovered.kind == SCard::BTN_CLEAR ? LIT : CLEAR, CB);
+                SCard cc;
+                cc.kind = SCard::BTN_CLEAR;
+                cc.box  = CB;
+                cc.id   = PENDING; // what the click saw: a window that ended since must not turn Undo into a clear
+                cards.push_back(cc);
+            }
+        }
 
-            const bool   TARGET = std::ranges::any_of(notifs, [](const auto& N) { return !N->waiting && !Model::offShade(N); });
-            const bool   CHOV   = hovered.kind == SCard::BTN_CLEAR && TARGET;
-            const auto   CLEAR  = cachedText("Clear All", TARGET ? COLTITLE : COLSUB, T.meta, (int)std::lround(W * P.scale), -1, 0, false, 500);
-            const double CW     = texW(CLEAR, P.scale) + 2 * CAP_PADX;
-            const CBox   CB{X + W - CW, CY, CW, CAP_H};
-            P.frost(CB, COLBG, COLRIM, ROUND, 2.f);
-            if (CHOV)
-                P.rect(CB, tFill(), ROUND, 2.f);
-            texCentered(P, CLEAR, CB);
-            SCard cc;
-            cc.kind = SCard::BTN_CLEAR;
-            cc.box  = CB;
-            cards.push_back(cc);
+        // ---- the status line: why arrivals are holding ----
+        if (s_status.on) {
+            const CBox SB{X, SY, W, STATUS_H};
+            P.frost(SB, COLBG, COLRIM, (int)std::lround(STATUS_H / 2 * P.scale), 2.f);
+            const CBox DISC{SB.x + 6, SB.y + (STATUS_H - 24) / 2, 24, 24};
+            P.rect(DISC, COLTITLE, (int)std::lround(12 * P.scale), 2.f);
+            if (const auto G = Glyph::tex(Glyph::eGlyph::MOON, tLitInk(), (int)std::lround(12 * P.scale)))
+                P.texIn(G, DISC);
+            double tx = DISC.x + DISC.w + 8;
+            if (const auto TTL = cachedText(s_status.dnd ? "Do Not Disturb" : "Quiet", COLTITLE, T.title, (int)std::lround(W * P.scale), -1, 0, false, 600)) {
+                texAt(P, TTL, tx, SB.y + (STATUS_H - texH(TTL, P.scale)) / 2);
+                tx += texW(TTL, P.scale) + 8;
+            }
+            if (const auto SUB = cachedText(s_status.sub, COLSUB, T.meta, std::max(1, (int)std::floor((SB.x + W - 14 - tx) * P.scale)), -1, 0, false, 400))
+                texAt(P, SUB, tx, SB.y + (STATUS_H - texH(SUB, P.scale)) / 2);
         }
 
         if (EMPTY) {
@@ -548,17 +643,29 @@ namespace NAwesome::Notify {
         }
 
         double y = CY0;
-        for (const auto& [IDX, IH] : placed) {
+        for (const auto& [IDX, LEAD, IH] : placed) {
+            y += LEAD;
             const auto& D = disp[IDX];
+            if (D.fold) {
+                const CBox FB{X, y, W, IH};
+                paintSilentFold(P, T, D, FB);
+                if ((int)IDX == s_sel)
+                    P.ring(FB, COLACC, (int)std::lround(FOLD_H / 2 * P.scale), 2.f, 1.5);
+                y += IH;
+                continue;
+            }
             if (IDX >= s_cardsOf.size() || s_cardsOf[IDX].empty()) { // a draw ahead of its warm: nothing measured to place
-                y += IH + GAP;
+                y += IH;
                 continue;
             }
             const auto& CS = s_cardsOf[IDX];
             CBox        ring{X, y, W, IH}; // the keyboard's selection goes around this
+            const auto  form = [&](const SP<SNotif>& N, bool open, bool deck) {
+                return SCardForm{.where = SCardForm::CENTER, .open = open, .deck = deck, .fresh = s_fresh.contains(N->id)};
+            };
             if (D.items.size() < 2) {
                 SCard card = recycledCard();
-                renderCard(P, T, D.items.front(), CBox{X, y, W, 0}, SCardForm{.where = SCardForm::CENTER, .open = CS.front().open}, card);
+                renderCard(P, T, D.items.front(), CBox{X, y, W, 0}, form(D.items.front(), CS.front().open, false), card);
                 card.folded = !CS.front().open && CS.front().more;
                 cards.push_back(std::move(card));
             } else if (!s_itemSpread[IDX]) {
@@ -567,16 +674,16 @@ namespace NAwesome::Notify {
                 ring.h             = IH - DEPTH;
                 paintDeck(P, ring, D.items.size());
                 SCard card = recycledCard();
-                renderCard(P, T, D.items.front(), CBox{X, y, W, 0}, SCardForm{.where = SCardForm::CENTER, .open = CS.front().open, .deck = true}, card);
+                renderCard(P, T, D.items.front(), CBox{X, y, W, 0}, form(D.items.front(), CS.front().open, true), card);
                 card.box.h += DEPTH; // the deck answers for the stack too
                 card.group = D.key;
                 cards.push_back(std::move(card));
             } else {
-                paintStackHead(P, T, D, CBox{X, y, W, CAP_H});
-                double cy = y + CAP_H + GAP;
+                paintStackHead(P, T, D, CBox{X, y, W, SHEAD_H});
+                double cy = y + SHEAD_H + GAP;
                 for (size_t k = 0; k < CS.size() && k < D.items.size(); k++) {
                     SCard card = recycledCard();
-                    renderCard(P, T, D.items[k], CBox{X, cy, W, 0}, SCardForm{.where = SCardForm::CENTER, .open = CS[k].open}, card);
+                    renderCard(P, T, D.items[k], CBox{X, cy, W, 0}, form(D.items[k], CS[k].open, false), card);
                     card.folded = !CS[k].open && CS[k].more;
                     card.group  = D.key;
                     cards.push_back(std::move(card));
@@ -590,7 +697,7 @@ namespace NAwesome::Notify {
             // it never reads as a hover
             if ((int)IDX == s_sel)
                 P.ring(ring, COLACC, rCard(P.scale), RP, 1.5);
-            y += IH + GAP;
+            y += IH;
         }
 
         // Paging cues: a wheel-scroll is invisible otherwise. An up chevron
@@ -628,5 +735,30 @@ namespace NAwesome::Notify {
             }
         }
     }
+
+#ifdef AWESOME_GATE
+    // the gate's: "<status> [undo] | <rows>" — the status line ("-", or
+    // "dnd:"/"quiet:" and what it says), then each row as its group's mark
+    // (! critical, @ chat, - app, ~ spread silent) and its newest title,
+    // "+N" for a stack, or "silent:N" for the fold
+    std::string centerDescribe() {
+        std::string out = !s_status.on ? "-" : (s_status.dnd ? "dnd:" : "quiet:") + s_status.sub;
+        if (Model::clearPending())
+            out += " undo";
+        out += " |";
+        for (const auto& D : s_disp) {
+            out += ' ';
+            if (D.fold) {
+                out += "silent:" + std::to_string(D.items.size());
+                continue;
+            }
+            out += "!@-~"[std::min<size_t>(D.tier, 3)];
+            out += D.items.front()->summary;
+            if (D.items.size() > 1)
+                out += "+" + std::to_string(D.items.size() - 1);
+        }
+        return out;
+    }
+#endif
 
 } // namespace NAwesome::Notify

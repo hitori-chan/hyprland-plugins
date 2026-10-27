@@ -47,6 +47,7 @@ namespace NAwesome::Notify {
 
     namespace Model {
         static SP<CEventLoopTimer> expiry;
+        static SP<CEventLoopTimer> clearWindow; // Clear All's undo window
         static uint32_t            nextId     = 1;
         static bool                suspended  = false; // DND: the remembered option, as last applied
         static CWallTimer          dndEnd;             // a timed DND's end, through a suspend too
@@ -319,11 +320,13 @@ namespace NAwesome::Notify {
         // (postCard). Critical stays an alert: a band alert waits under the
         // shade like any banner (never a row), a critical transient card is
         // an ordinary one.
+        // A card Clear All hid is off the shade until Undo or the window's
+        // end, and no moment: its close is the window's to send.
         bool offShade(const SP<SNotif>& n) {
-            return inOsdBand(n->id) || (n->transient && n->urgency < 2);
+            return inOsdBand(n->id) || (n->transient && n->urgency < 2) || n->cleared;
         }
         static bool momentary(const SP<SNotif>& n) {
-            return offShade(n) && n->urgency < 2;
+            return offShade(n) && n->urgency < 2 && !n->cleared;
         }
 
         void postCard(const SPostCard& c) {
@@ -418,10 +421,11 @@ namespace NAwesome::Notify {
         }
 
         void dismissAllLive(bool offShadeToo) {
-            // the user's Clear all sweeps the shade's rows: an OSD or a
-            // critical band alert waiting under the shade is none of them
-            // (the bell's dot excludes them too); the
-            // scripted reset sweeps everything shown
+            // the sweep sweeps the shade's rows: an OSD or a critical band
+            // alert waiting under the shade is none of them (the bell's dot
+            // excludes them too); the scripted reset sweeps everything shown.
+            // What Clear All hid goes first, closed as the click meant.
+            commitClear();
             const auto SWEPT  = [offShadeToo](const auto& N) { return visible(N) && (offShadeToo || !offShade(N)); };
             const auto BEFORE = notifs.size();
             for (const auto& N : notifs)
@@ -429,6 +433,49 @@ namespace NAwesome::Notify {
                     emitClosedAll(*N, R_DISMISSED);
             std::erase_if(notifs, SWEPT);
             if (notifs.size() == BEFORE)
+                return;
+            notifChanged();
+            rearmExpiry();
+        }
+
+        bool clearPending() {
+            return std::ranges::any_of(notifs, [](const auto& N) { return N->cleared; });
+        }
+
+        void clearLive() {
+            commitClear(); // one window at a time
+            bool hid = false;
+            for (const auto& N : notifs)
+                if (visible(N) && !offShade(N))
+                    hid = N->cleared = true;
+            if (!hid)
+                return;
+            if (clearWindow)
+                clearWindow->updateTimeout(UNDO_WINDOW);
+            notifChanged();
+        }
+
+        void undoClear() {
+            if (clearWindow)
+                clearWindow->updateTimeout(std::nullopt);
+            bool back = false;
+            for (const auto& N : notifs)
+                if (N->cleared) {
+                    N->cleared = false;
+                    back       = true;
+                }
+            if (back)
+                notifChanged();
+        }
+
+        void commitClear() {
+            if (clearWindow)
+                clearWindow->updateTimeout(std::nullopt);
+            const auto HIDDEN = [](const auto& N) { return N->cleared; };
+            for (const auto& N : notifs)
+                if (HIDDEN(N))
+                    emitClosedAll(*N, R_DISMISSED);
+            if (std::erase_if(notifs, HIDDEN) == 0)
                 return;
             notifChanged();
             rearmExpiry();
@@ -1108,8 +1155,9 @@ namespace NAwesome::Notify {
             // the chat goes on: its log stays and this message joins it
             const bool KEEP_LOG = EXISTING && continuesChat(*n);
             // the arrival below may rewrite messages and kind
-            n->rev  = ++revSerial;
-            n->seen = false; // new content: the bell's dot until the center shows it
+            n->rev     = ++revSerial;
+            n->seen    = false; // new content: the bell's dot until the center shows it
+            n->cleared = false; // an arrival shows, whatever Clear All hid
             if (!KEEP_LOG) {
                 // another chat (or none) takes the card: the old one's
                 // messages go and their notifications close — the card's own
@@ -1472,6 +1520,14 @@ namespace NAwesome::Notify {
                 },
                 nullptr);
             g_pEventLoopManager->addTimer(expiry);
+            clearWindow = makeShared<CEventLoopTimer>(
+                std::nullopt,
+                [](SP<CEventLoopTimer>, void*) {
+                    if (!NAwesome::compositorShuttingDown())
+                        commitClear();
+                },
+                nullptr);
+            g_pEventLoopManager->addTimer(clearWindow);
             dndEnd.start(applySuspend);
             applySuspend(); // the remembered DND holds from the first arrival
         }
@@ -1480,6 +1536,10 @@ namespace NAwesome::Notify {
             if (expiry && g_pEventLoopManager)
                 g_pEventLoopManager->removeTimer(expiry);
             expiry.reset();
+            // the bus went first: the hidden cards die with the rest, unsent
+            if (clearWindow && g_pEventLoopManager)
+                g_pEventLoopManager->removeTimer(clearWindow);
+            clearWindow.reset();
             dndEnd.stop();
             Quiet::exit();
             notifs.clear();

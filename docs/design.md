@@ -375,6 +375,16 @@ it); the card menu is drawn last and hit first on the notify layer.
 - **The arrival gate**: the menu's switches (an app's banners and
   sounds, a chat's mute), DND and quiet automatically gate the arrival,
   the DND resume and the re-pop alike.
+- **The center's ranking** (`notify/center.cpp`): each warm partitions
+  the live cards into the ranked list and the silent ones (low urgency,
+  `Policy::silenced`, read live) and stacks each part apart, so an app's
+  silent card never rides its loud stack. The fold and the spread stacks
+  are visit state, dropped on close.
+- **The undo window**: Clear All marks its cards `cleared` (off the shade
+  for every view: rows, the bell, the menus) and arms one timer; Undo
+  clears the marks, the timer or the center's close sends their
+  `NotificationClosed` and erases them, and an arrival into a marked card
+  unmarks it. Teardown drops the timer after the bus: nothing is sent.
 - **Quiet automatically** (`notify/quiet.cpp`): a share is a consumer the
   compositor's `outputCopyFBState` reports (a frame copied within half a
   second, or one waiting on a still screen), never the session alone,
@@ -384,10 +394,12 @@ it); the card menu is drawn last and hit first on the notify layer.
 - **The control block** (`notify/controls.cpp`): the warm snapshots
   `core/controls.hpp` and the draw paints the snapshot. A dragged slider
   shows what it asked until the device reports that level (1.5 s at
-  most), so a set in flight never snaps it back. A right click opens the
-  card menu for that control (`CardMenu::openControl`), rebuilt while
-  open so a late read shows; a pick finds its row by key, not index, so
-  a rebuild cannot shift it.
+  most), so a set in flight never snaps it back. The output pill and a
+  capsule's words open the card menu's panel for that control
+  (`CardMenu::openControl`), rebuilt while open so a late read shows; a
+  pick finds its row by key, not index, so a rebuild cannot shift it. A
+  button's name is a note pushed as a capsule card (damage only), its
+  text warmed with the rest.
 - **Capsules**: ids 9990–9999 are the plugin's own in-process posts, so
   no client can pin one, take over the volume card or ride the band's
   DND bypass. Fresh client ids come from a low counter outside it.

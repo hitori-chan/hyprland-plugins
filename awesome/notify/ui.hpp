@@ -63,8 +63,6 @@ namespace NAwesome::Notify {
     inline constexpr double PILL_H = 16;               // the unread count beside a chat's title
     inline constexpr double HANG = 12; // a chat's hanging indent: every line that continues a message
 
-    // a stack header's close button: its cross, 8 px on a 10-unit grid
-    inline constexpr double CLOSE_GLYPH = 8;
     // a chip's drop under it (paintChip)
     inline constexpr double CHIP_DROP = 8, CHIP_SINK = 3;
 
@@ -83,8 +81,12 @@ namespace NAwesome::Notify {
 
     // the center
     inline constexpr double HEADER_H = 28, HEADER_GAP = 8; // the heading's row ("Notifications", "Clear All"), then the column's 8 px
-    inline constexpr double CAP_H = 24, CAP_PADX = 10, CAP_GAP = 6; // its glass capsules, and a stack's
+    inline constexpr double CAP_H = 24, CAP_PADX = 10; // its glass capsules, and a stack's
     inline constexpr double EMPTY_H = 56;
+    inline constexpr double STATUS_H = 36; // the status line under the heading while DND or quiet holds
+    inline constexpr double TIER_GAP = 8;  // added between the ranking's groups (critical, chats, apps, silent)
+    inline constexpr double FOLD_H   = 44; // the silent fold's row
+    inline constexpr double SHEAD_H  = 28; // a spread stack's header: its app's name, Show Less
     // A collapsed stack (macOS): its newest card over a deck of up to two
     // layers, each 12 px narrower a side and 8 px lower than the one above;
     // only their bottom 30 px ever shows past the card.
@@ -116,6 +118,8 @@ namespace NAwesome::Notify {
     bool                hasLeadIcon(const SNotif& n, bool shade = false);
     void                paintProgress(const SPaint& P, double x, double y, double w, int pct, bool critical);
     void                paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool withBadge, float rp, bool shade = false);
+    // the app's identity on the corner of a face filling `cell`
+    void                paintBadge(const SPaint& P, const SNotif& n, const CBox& cell);
     // a small control floating on glass (a stack's Show Less, "+N more"):
     // its own drop, the glass, the rim
     void                paintChip(const SPaint& P, const CBox& box, bool hover);
@@ -197,6 +201,7 @@ namespace NAwesome::Notify {
         eWhere where = BANNER;
         bool   open  = true;  // CENTER: folded = the title row and the newest line
         bool   deck  = false; // CENTER: a collapsed stack's top card — its hit is the stack's
+        bool   fresh = false; // CENTER: new since the center last showed it: its time wears the accent
     };
 
     // the card's glass lifts: the pointer is on it, or its menu is open
@@ -210,10 +215,13 @@ namespace NAwesome::Notify {
 
     // ---- stack.cpp: an app's cards stacked under the newest ----
 
-    // a display item: one card, or an app's stack of them (newest first)
+    // a display item: one card, an app's stack of them (newest first), or
+    // the silent fold
     struct SDisp {
         std::vector<SP<SNotif>> items;
-        std::string             key; // the app key (stacks)
+        std::string             key;  // the app key (stacks)
+        uint8_t                 tier = 0; // its group in the ranking: a wider gap where it changes
+        bool                    fold = false; // the silent fold: its items are every silent card
     };
 
     // the deck's layers under a collapsed stack of `count` cards, and how far
@@ -222,9 +230,12 @@ namespace NAwesome::Notify {
     double deckDepth(size_t count);
     // the deck under a top card at `top` (paint it first: the card covers it)
     void   paintDeck(const SPaint& P, const CBox& top, size_t count);
-    // an expanded stack's header: Show Less and the close button, right-aligned
-    // on glass of their own; pushes its hit
+    // an expanded stack's header: its app's name, Show Less right-aligned on
+    // glass of its own; pushes its hit
     void   paintStackHead(const SPaint& P, const SType& T, const SDisp& D, const CBox& row);
+    // the silent fold's row: two of its apps' icons, the count and the apps,
+    // a chevron; pushes its hit
+    void   paintSilentFold(const SPaint& P, const SType& T, const SDisp& D, const CBox& row);
     // "+N more" under an expanded stack the page cuts
     void   paintStackTail(const SPaint& P, const SType& T, size_t more, const CBox& row);
 
@@ -233,6 +244,7 @@ namespace NAwesome::Notify {
     void renderPopups(const SPaint& P, const SType& T);
     void renderCapsules(const SPaint& P, const SType& T); // the OSD band, top center
     void renderCenter(const SPaint& P, const SType& T);
+    std::string centerDescribe(); // the gate's: the status line and the rows as the last warm built them (defined in its build only)
     bool popupsAnimating(); // any arrival spring still running
     bool centerAnimating(); // the open spring still running
 
