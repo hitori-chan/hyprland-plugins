@@ -246,11 +246,14 @@ namespace NAwesome::System {
             settle->updateTimeout(SETTLE);
     }
 
-    // Removal is observable in-process: every pointer's destroy signal arms
-    // the settle timer. Rebuilt each re-check — aq() is already dead inside
-    // a destroy emission, so handlers must never touch the device. An
-    // unproven external pointer is also watched for its first motion or
-    // click (proven ones cost nothing per motion).
+    // Removal is observable in-process: every device pointer's destroy
+    // signal arms the settle timer. Rebuilt each re-check — aq() is already
+    // dead inside a destroy emission, so handlers must never touch the
+    // device. A virtual pointer (remote input, automation, the gate's
+    // clicks) is never a mouse here, so its coming and going is no hotplug:
+    // its teardown used to reset the user's flip 400 ms after the click that
+    // made it. An unproven external pointer is also watched for its first
+    // motion or click (proven ones cost nothing per motion).
     static void watchPointers() {
         lDestroy.clear();
         lProve.clear();
@@ -259,6 +262,8 @@ namespace NAwesome::System {
             return;
         lDestroy.reserve(g_pInputManager->m_pointers.size());
         for (const auto& P : g_pInputManager->m_pointers) {
+            if (P->isVirtual())
+                continue;
             lDestroy.push_back(P->m_events.destroy.listen([]() { hotplug(); }));
             if (!isExternalMouse(P) || isProven(P))
                 continue;
