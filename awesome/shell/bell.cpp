@@ -6,10 +6,11 @@
 // SF Symbols' bell.badge, a dot on its shoulder while the center holds a
 // card it has not shown (Model::unseen). Under Do Not Disturb the bell is
 // the moon, as macOS shows a Focus, dotted while cards wait in the DND
-// queue. A right click on the bell opens the notification options: Do Not
-// Disturb for a while, quiet automatically (over a fullscreen app, while
-// sharing the screen), and the apps and chats the card menus silenced, each
-// a click from back on. The control center's glyph is macOS's switch.2;
+// queue. A right click on the bell opens the notification options, flat:
+// quiet automatically (over a fullscreen app, while sharing the screen),
+// and the apps and chats the card menus silenced, each a click from back
+// on. Do Not Disturb's one home is the control center; the moon echoes it.
+// The control center's glyph is macOS's switch.2;
 // either door lights (the accent, as text) while its panel is open.
 
 #include "shell/shell.hpp"
@@ -84,59 +85,49 @@ namespace NAwesome::Shell {
             return {.separator = true};
         }
 
-        // Do Not Disturb ▸: on, it says until when and offers Turn Off
-        // first; the lengths start it anew from now
-        Menu::SEntry dndRow() {
-            const bool ON  = M::suspendedNow();
-            const auto END = M::suspendEnd();
-            auto       e   = row(END > 0 ? "Do Not Disturb Until " + untilText(END) : "Do Not Disturb", {});
-            e.submenu      = true;
-            e.toggle       = Menu::TG_CHECK;
-            e.toggleState  = ON;
-            if (ON) {
-                e.children.push_back(row("Turn Off", []() { M::setSuspend(0); }));
-                e.children.push_back(separator());
-            }
-            for (const auto& [LABEL, MINUTES] : {std::pair{"For 30 Minutes", 30}, {"For 1 Hour", 60}, {"For 3 Hours", 180}})
-                e.children.push_back(row(LABEL, [MINUTES]() { M::setSuspend((int64_t)std::time(nullptr) + MINUTES * 60); }));
-            auto forever        = row("Until Turned Off", []() { M::setSuspend(-1); });
-            forever.toggle      = Menu::TG_CHECK;
-            forever.toggleState = END == -1;
-            e.children.push_back(std::move(forever));
+        Menu::SEntry header(std::string label) {
+            Menu::SEntry e{.label = label, .display = std::move(label)};
+            e.header = true;
             return e;
         }
 
-        // Quiet Automatically ▸: its two switches, checked while on (both
-        // start off)
-        Menu::SEntry quietRow() {
+        // The options, flat (Do Not Disturb is the control center's): the
+        // two switches that quiet the banners by themselves, checked while
+        // on (both start off); then every switch the card menus turned off,
+        // a row each — the app's icon, its name, what is off — a click from
+        // back on (the hint says so while lit).
+        std::vector<Menu::SEntry> optionRows() {
             namespace Q = NAwesome::Notify::Quiet;
-            auto e      = row("Quiet Automatically", {});
-            e.submenu   = true;
+            std::vector<Menu::SEntry> rows;
+            rows.push_back(header("Quiet Automatically"));
             for (const auto& [LABEL, OPT] : {std::pair{"When an App Is Fullscreen", eOption::QUIET_FULLSCREEN}, {"While Sharing the Screen", eOption::QUIET_SHARING}}) {
                 const bool ON = Q::on(OPT);
                 auto       r  = row(LABEL, [OPT, ON]() { Q::set(OPT, !ON); });
                 r.toggle      = Menu::TG_CHECK;
                 r.toggleState = ON;
-                e.children.push_back(std::move(r));
+                rows.push_back(std::move(r));
             }
-            return e;
-        }
-
-        // Silenced Apps ▸: every switch the card menus turned off, each row
-        // a click from back on; dim with nothing silenced
-        Menu::SEntry silencedRow() {
-            auto e = row("Silenced Apps", {});
-            for (const auto& S : P::silenced()) {
-                const auto NAME = S.label.empty() ? S.key : S.label;
-                const auto WHAT = S.until > 0                               ? "Muted Until " + untilText(S.until) :
-                    (S.flags & P::BANNERS_OFF) && (S.flags & P::SOUNDS_OFF) ? std::string{"Banners and Sounds Off"} :
-                    (S.flags & P::BANNERS_OFF)                              ? std::string{"Banners Off"} :
-                                                                              std::string{"Sounds Off"};
-                e.children.push_back(row(NAME + " — " + WHAT, [S]() { P::restore(S); }));
+            rows.push_back(separator());
+            rows.push_back(header("Silenced Apps"));
+            const auto SILENCED = P::silenced();
+            for (const auto& S : SILENCED) {
+                auto r = row(S.label.empty() ? S.key : S.label, [S]() { P::restore(S); });
+                r.detail = S.until > 0                                        ? "Muted until " + untilText(S.until) :
+                    (S.flags & P::BANNERS_OFF) && (S.flags & P::SOUNDS_OFF) ? std::string{"Banners and sounds off"} :
+                    (S.flags & P::BANNERS_OFF)                              ? std::string{"Banners off"} :
+                                                                              std::string{"Sounds off"};
+                r.hint   = S.until > 0 ? "Unmute" : "Turn On";
+                // a chat's key leads with its app's (policy.cpp chatKey)
+                r.iconRetry = S.key.substr(0, S.key.find('\x1f'));
+                r.iconOfApp = true;
+                rows.push_back(std::move(r));
             }
-            e.submenu = !e.children.empty();
-            e.enabled = e.submenu;
-            return e;
+            if (SILENCED.empty()) {
+                auto none    = row("None", {});
+                none.enabled = false;
+                rows.push_back(std::move(none));
+            }
+            return rows;
         }
     } // namespace
 
@@ -173,7 +164,7 @@ namespace NAwesome::Shell {
 
             void onHit(const SHit& hit, uint32_t bit, bool) override {
                 if (bit == 2u) { // the options, built as they stand now
-                    Menu::openLocal({dndRow(), quietRow(), silencedRow()}, hit.clickX, hit.mon);
+                    Menu::openLocal(optionRows(), hit.clickX, hit.mon);
                     return;
                 }
                 if (bit != 1u)

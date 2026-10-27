@@ -254,33 +254,21 @@ srow() { echo $((37 + 14 + 28 * $1 + 9 * $2)); }
 # bell_cx: the bell's cell center, from the gate's cell map (where a press
 # lands; bell_x checks where the glyph draws)
 bell_cx() { hq awesome cells | awk '$1 == "bell" { print int(($2 + $3) / 2); exit }'; }
-# bell_open: right-click the bell; BRX0/BRX1 span its menu
+# bell_open: right-click the bell; BRX0/BRX1 span its menu, BRY0/BRY1 its
+# rims
 bell_open() {
 	click "$(bell_cx)" 13 273
 	capture_nested "$STATE/bell-root.png"
-	read -r _ BRX0 BRX1 _ _ <<<"$(panel_extent "$STATE/bell-root.png")"
+	read -r _ BRX0 BRX1 BRY0 BRY1 <<<"$(panel_extent "$STATE/bell-root.png")"
 }
-# bell_cascade <row>: click a root row; BCX is then a point inside its
-# cascade (flipped left of the root when the right edge has no room),
-# whose rows start level with that root row: crow <row> <separators above>.
-# The cascade is found on that first row, not by panel_extent: a one-row
-# cascade is too short for its height floor.
-bell_cascade() {
-	BCR=$1
-	local y; y=$(srow "$1" 0)
+# bell_pick <row>: click a row of the bell's flat options (shell/bell.cpp):
+# its header (22), the two quiet switches (rows 0, 1), a separator, the
+# second header, then the silenced rows (2 on)
+bell_pick() {
+	local y
+	if (($1 < 2)); then y=$((37 + 22 + 14 + 28 * $1)); else y=$((37 + 22 + 56 + 9 + 22 + 14 + 28 * ($1 - 2))); fi
 	click $(((BRX0 + BRX1) / 2)) "$y" 272
-	capture_nested "$STATE/bell-sub.png"
-	BCX=$(python3 - "$STATE/bell-sub.png" "$y" "$BRX0" "$BRX1" <<'PY'
-import sys
-from PIL import Image
-im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
-y, r0, r1 = map(int, sys.argv[2:])
-xs = [x for x in range(im.size[0]) if not r0 <= x <= r1 and min(px[x, y]) > 5]
-print((min(xs) + 40 if max(xs) < r0 else max(xs) - 40) if xs else 0)
-PY
-)
 }
-crow() { srow $((BCR + $1)) "$2"; }
 nbus() { DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user "$@"; }
 # nsend <notify-send args>: a notification on the nested's bus, back once
 # the daemon answered — and it answers after the card arrived (notify/bus.cpp:

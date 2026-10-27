@@ -356,8 +356,9 @@ namespace NAwesome::Shell {
     namespace Menu {
         void render(const SPaint& P); // menu.cpp — the open panels, cascade by cascade
 
-        // the Frost menu: 5 px of glass around 28 px rows, 9 px separators
-        inline constexpr double ROWH = 28, SEPH = 9, PAD = 5, ARROWH = 18, GAP = 4; // GAP: under the bar
+        // the Frost menu: 5 px of glass around 28 px rows, 9 px separators,
+        // 22 px section headers
+        inline constexpr double ROWH = 28, SEPH = 9, HEADH = 22, PAD = 5, ARROWH = 18, GAP = 4; // GAP: under the bar
 
         // how far a panel paints past its box: the frost drop, or the blur
         // its glass samples — every damage and bound grows by it
@@ -384,6 +385,11 @@ namespace NAwesome::Shell {
             int32_t      toggleState = 0;     // 0 off, 1 on, anything else indeterminate
             bool         alert       = false; // disposition warning/alert
             std::string  tag;                 // client-list mode: its workspace's tag, a right-hand column
+            // a local menu's section title: quiet, never lit, never hit
+            bool         header = false;
+            // a local menu's right-hand words: what the row is (the quiet
+            // ink), and what a click on it does, in the accent while lit
+            std::string  detail, hint;
             bool         current = false;     // client-list mode: the focused window (accent, as its task)
             bool         dim     = false;     // client-list mode: minimized (dim, as its task)
             SP<ITexture> icon;                // client-list app icon / dbusmenu icon-name or icon-data
@@ -396,6 +402,10 @@ namespace NAwesome::Shell {
             std::function<void()> action;
             std::vector<SEntry>   children;
         };
+
+        inline double rowHeight(const SEntry& e) {
+            return e.separator ? SEPH : e.header ? HEADH : ROWH;
+        }
 
         // one open panel; a submenu cascades out as the next level, GTK-style
         struct SLevel {

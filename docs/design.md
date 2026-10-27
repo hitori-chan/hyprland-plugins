@@ -320,8 +320,8 @@ Tasks are views of `windows` state: minimize, restore and focus are
 requests to `windows`, never state kept in the bar. The bell reads the
 notify model directly (the dot, DND, the center) and calls notify's
 center toggle. Its right-click menu is built locally (the client list's
-kind) over notify's own doors: timed DND, quiet automatically, the
-silenced apps.
+kind, with header rows and right-hand details) over notify's own doors:
+quiet automatically, the silenced apps.
 
 The tray fetches one icon per item at a time (a `NewIcon` storm folds
 into one more fetch; `NewIconThemePath` and `NewMenu` fold the same

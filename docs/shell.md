@@ -92,17 +92,20 @@ SF Symbols' bell, without a count:
 
 **Left click** toggles the [center](notify.md#the-center) on the clicked
 bar's monitor (closing the control center). **Right click** opens the
-notification options:
+notification options, one flat menu:
 
-- **Do Not Disturb** ▸ For 30 Minutes · For 1 Hour · For 3 Hours · Until
-  Turned Off. While it is on, the first row says until when and Turn Off
-  leads.
-- **Quiet Automatically** ▸ When an App Is Fullscreen · While Sharing
-  the Screen. Both are off until checked; see
-  [quiet automatically](notify.md#quiet-automatically).
-- **Silenced Apps** ▸ every app whose banners or sounds the card menu
-  turned off and every muted chat, by name and what is off. A click
-  turns that one back on; the row is dim when nothing is silenced.
+- **Quiet Automatically**, a header over its two switches: When an App
+  Is Fullscreen · While Sharing the Screen. Both are off until checked;
+  see [quiet automatically](notify.md#quiet-automatically).
+- **Silenced Apps**, a header over a row for every app whose banners or
+  sounds the card menu turned off and every muted chat: the app's icon,
+  its name and, on the right, what is off ("Banners off", "Muted until
+  08:00"). A click turns that one back on; while the pointer rests on a
+  row its right side says so ("Turn On", "Unmute"). "None" when nothing
+  is silenced.
+
+Do Not Disturb is not here: its one home is the control center (the bell
+only echoes it as the moon). Every option lives in one menu or panel.
 
 ### Control center
 
