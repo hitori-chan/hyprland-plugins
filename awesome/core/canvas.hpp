@@ -250,21 +250,6 @@ namespace NAwesome {
         Measure                                  m_measure;
     };
 
-    // The wallpaper's precomputed blur (the background and bottom layers,
-    // blurred once whenever they change) is fresh for this frame. Glass that
-    // only ever covers the wallpaper samples it instead of a live blur: under
-    // partial damage a live blur's sample ring reads what this swapchain
-    // buffer kept from its last frame, the buffers drift apart, and the glass
-    // shimmers frame to frame (the bar over a terminal taking typing;
-    // upstream's FIXME in CRenderPass::render). `plan`: the pass's question,
-    // asked before this frame's pre-blur runs; the paint asks after it.
-    inline bool wallpaperBlurFresh(PHLMONITOR mon, bool plan) {
-        static auto NEWOPT = CConfigValue<Config::INTEGER>("decoration:blur:new_optimizations");
-        if (!mon || !blurOn() || !*NEWOPT || g_pHyprRenderer->blurProviderRequiresLiveBlur())
-            return false;
-        return !mon->m_blurFBDirty || (plan && g_pHyprRenderer->preBlurQueued(mon));
-    }
-
     // ---- the paint context: every surface's one set of primitives ----
 
     // The shell extends it with its hit cells (Shell::SPaint); the helpers
@@ -314,14 +299,11 @@ namespace NAwesome {
         }
         // Semantic container paint. Opaque defaults make the fork skip blur;
         // configured alpha below 1 retains the rounded live-glass path.
-        // `wallpaper`: nothing but the wallpaper sits under it (its layer's
-        // wallpaperGlass), so it samples the precomputed blur while fresh.
-        void glass(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f, bool wallpaper = false) const {
+        void glass(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f) const {
             if (!paints())
                 return;
             if (const auto B = toPhys(global); drawable(B))
-                g_pHyprOpenGL->renderRect(*rctx, B, faded(c),
-                                          {.round = round, .roundingPower = rp, .blur = blurOn(), .blurA = alpha, .xray = wallpaper && wallpaperBlurFresh(mon, false)});
+                g_pHyprOpenGL->renderRect(*rctx, B, faded(c), {.round = round, .roundingPower = rp, .blur = blurOn(), .blurA = alpha});
         }
         // a hairline OUTSIDE the box (the fork grows the box by the border);
         // px is logical — renderBorder applies the monitor scale itself
@@ -450,12 +432,6 @@ namespace NAwesome {
         virtual bool needsBlur(PHLMONITOR mon) const {
             return false;
         }
-        // Its glass covers nothing but the wallpaper and paints with
-        // glass(..., wallpaper = true): the pass keeps the precomputed blur
-        // queued and claims a live one only on a frame it is not fresh for.
-        virtual bool wallpaperGlass(PHLMONITOR mon) const {
-            return false;
-        }
         // Must paint over a fullscreen client on this monitor right now: a
         // solitary/direct-scanout fullscreen client skips the scene render
         // (no RENDER_POST_WINDOWS), so the canvas blocks solitary while any
@@ -538,9 +514,46 @@ namespace NAwesome {
         void onRenderStage(const Event::SRenderStageEvent& ev) {
             if (ev.stage != RENDER_POST_WINDOWS || !ev.monitor || !ev.context || ev.context->get().m_renderingCapture)
                 return;
+            wholeGlass(ev.monitor, ev.context->get().m_data.damage);
             for (auto* L : m_layers)
                 if (L->boundingBox(ev.monitor))
                     Render::IHyprRenderer::addPassElement(ev.context->get(), makeUnique<CAwesomePassElement>(ev.monitor, L));
+        }
+
+        // A live blur reads everything within its radius, and the pass
+        // repaints only the damaged part of a glass box (upstream's FIXME in
+        // CRenderPass::render): the part's blur then samples the rest of the
+        // box as this swapchain buffer kept it, its own old glass, and the
+        // buffers drift apart — the bar shimmered over a terminal taking
+        // typing right below it. So damage that comes within the radius of a
+        // glass layer repaints the whole layer, which the pass grows by the
+        // radius again: every sample is fresh. The frame's damage is the
+        // buffer's (every change since it last presented), so each buffer
+        // repaints its own copy. A grown box can reach another glass layer
+        // (a menu over the bar): repeat until nothing grows.
+        void wholeGlass(PHLMONITOR mon, CRegion& damage) {
+            if (!blurOn() || damage.empty())
+                return;
+            uint64_t whole = 0; // bit i: layer i is repainted whole
+            for (bool grew = true; grew;) {
+                grew = false;
+                for (size_t i = 0; i < m_layers.size() && i < 64; i++) {
+                    if (whole & (1ULL << i) || !m_layers[i]->needsBlur(mon))
+                        continue;
+                    const auto BB = m_layers[i]->boundingBox(mon);
+                    if (!BB)
+                        continue;
+                    CRegion box{*BB};
+                    box.scale(mon->m_scale);
+                    CRegion reach = box.copy();
+                    g_pHyprRenderer->expandBlurDamage(reach);
+                    if (reach.intersect(damage).empty())
+                        continue;
+                    damage.add(box);
+                    whole |= 1ULL << i;
+                    grew = true;
+                }
+            }
         }
 
         void onBlockSolitary(PHLMONITOR mon, bool& block) const {
@@ -597,13 +610,10 @@ namespace NAwesome {
                 // only while the layer actually paints translucent glass —
                 // never claim a live blur of a region that is hidden
                 const auto MON = m_mon.lock();
-                return MON && blurOn() && m_layer->needsBlur(MON) && !(m_layer->wallpaperGlass(MON) && wallpaperBlurFresh(MON, true));
+                return MON && blurOn() && m_layer->needsBlur(MON);
             }
             virtual bool needsPrecomputeBlur(Render::CRenderContext&) override {
-                // queues the pre-blur, so a changed wallpaper is re-blurred
-                // ahead of the windows of the frame that paints over it
-                const auto MON = m_mon.lock();
-                return MON && blurOn() && m_layer->needsBlur(MON) && m_layer->wallpaperGlass(MON);
+                return false;
             }
             virtual std::optional<CBox> boundingBox(Render::CRenderContext&) override {
                 // monitor-local LOGICAL px
