@@ -1,5 +1,6 @@
 // awesome/system.hpp — the system module: audio and the lights (feedback
-// as notify cards, values for the control center) and the touchpad policy.
+// as notify cards, values for the control center), Bluetooth (for the
+// control center) and the touchpad policy.
 #pragma once
 
 #include "core/controls.hpp"
@@ -45,7 +46,8 @@ namespace NAwesome::System {
     };
 
     // the module's system bus (system.cpp): logind for the lights, the
-    // room's light sensor, BlueZ's signal for a headset's own volume
+    // room's light sensor, BlueZ (the adapter, its devices, a headset's own
+    // volume)
     CBusLink& systemBus();
 
     // the units (audio.cpp, light.cpp, pad.cpp); a BusDropped resets what
@@ -77,4 +79,14 @@ namespace NAwesome::System {
     void audioRefresh();  // the volume and the mic as they are now (the panel opened)
     void padSet(bool on); // the user's own choice, like a flip
     void padPublish();
+    // Bluetooth (bluetooth.cpp): the adapter's power, a device's connection
+    void bluetoothInit();
+    void bluetoothExit();
+    void bluetoothBusDropped();
+    void bluetoothRefresh(); // the tree read again (the panel opened)
+    void setBluetooth(bool on);
+    void connectDevice(const std::string& id, bool connect);
+#ifdef AWESOME_GATE
+    std::string bluetoothState();
+#endif
 }

@@ -1,7 +1,7 @@
-// awesome/system.cpp — the system module: the one CModule over its three
+// awesome/system.cpp — the system module: the one CModule over its four
 // units (audio.cpp — volume/mic; light.cpp — the display's and the
-// keyboard's lights; pad.cpp — the touchpad policy) and the system bus
-// they share. The feedback bus is the notify model, the Lua face is the
+// keyboard's lights; bluetooth.cpp — the adapter and its devices; pad.cpp
+// — the touchpad policy) and the system bus they share. The feedback bus is the notify model, the Lua face is the
 // flat hl.plugin.awesome.* names, the control center's doors are
 // registered in core/controls.hpp.
 
@@ -32,6 +32,7 @@ namespace NAwesome::System {
         L.dropOwned = []() {
             lightBusDropped();
             audioBusDropped();
+            bluetoothBusDropped();
         };
         try {
             L.open(true);
@@ -88,6 +89,7 @@ namespace NAwesome::System {
         systemBusInit(); // before the units that talk on it
         lightInit();
         audioInit();
+        bluetoothInit();
         padInit(); // the settle timer stands before any hotplug can land
         Controls::doors() = {
             .setLevel = setLevel,
@@ -108,7 +110,10 @@ namespace NAwesome::System {
                     lightRefresh();
                     audioRefresh();
                     padPublish();
+                    bluetoothRefresh();
                 },
+            .setBluetooth  = setBluetooth,
+            .connectDevice = connectDevice,
         };
 
         HANDLE H = supervisor().handle();
@@ -134,6 +139,7 @@ namespace NAwesome::System {
         // last.
         Controls::doors() = {};
         padExit();
+        bluetoothExit();
         audioExit();
         lightExit();
         systemBus().close();
@@ -159,6 +165,18 @@ namespace NAwesome::System {
             };
             return "display:" + L(Controls::eLevel::DISPLAY) + " keyboard:" + L(Controls::eLevel::KEYBOARD) + " volume:" + L(Controls::eLevel::VOLUME) +
                 " mic:" + std::to_string(S.switches[(size_t)Controls::eSwitch::MIC]) + " touchpad:" + std::to_string(S.switches[(size_t)Controls::eSwitch::TOUCHPAD]) + " room:" + std::to_string(S.switches[(size_t)Controls::eSwitch::ROOM]);
+        }
+        if (verb == "bt") // the published Bluetooth (bluetooth.cpp bluetoothState)
+            return bluetoothState();
+        if (verb.starts_with("bt ")) { // "bt power 0|1", "bt connect|disconnect NAME": the panel's doors, by name
+            const auto& B = Controls::state().bluetooth;
+            if (verb.starts_with("bt power "))
+                setBluetooth(verb.ends_with("1"));
+            else
+                for (const auto& D : B.devices)
+                    if (verb == "bt connect " + D.name || verb == "bt disconnect " + D.name)
+                        connectDevice(D.id, verb.starts_with("bt connect "));
+            return "ok";
         }
         if (verb == "busy") // the wpctl commands in flight: 0 once every set has been read back
             return std::to_string(Jobs::inst().live(Jobs::CONTROL));

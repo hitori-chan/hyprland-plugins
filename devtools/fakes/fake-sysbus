@@ -13,6 +13,14 @@
 #   LightLevel moves only while a client holds a claim, as the daemon's
 #   does: the file is polled and a change is announced by PropertiesChanged.
 #   ClaimLight / ReleaseLight are logged to $AW_LOGIND_LOG too.
+# - org.bluez (bluetoothd): an ObjectManager at / over one adapter (hci0,
+#   powered) and three devices — "Gate Buds" (headphones, paired, a 80 %
+#   battery), "Gate Mouse" (paired, connected) and "Stranger" (seen, never
+#   paired). Powered is settable (off drops every connection); Connect
+#   connects after 300 ms (NotReady while off), Disconnect at once; each
+#   is logged to $AW_LOGIND_LOG. The gate's own interface (org.awesome.Gate
+#   at /) emits a headset transport's Volume change, as bluetoothd does
+#   when the headset's own buttons move it, and moves a battery.
 import os
 import sys
 import warnings
@@ -129,6 +137,134 @@ def poll_sensor(conn):
     return True
 
 
+BLUEZ_XML = """
+<node>
+  <interface name="org.freedesktop.DBus.ObjectManager">
+    <method name="GetManagedObjects">
+      <arg type="a{oa{sa{sv}}}" name="objects" direction="out"/>
+    </method>
+    <signal name="InterfacesAdded"><arg type="o"/><arg type="a{sa{sv}}"/></signal>
+    <signal name="InterfacesRemoved"><arg type="o"/><arg type="as"/></signal>
+  </interface>
+  <interface name="org.awesome.Gate">
+    <method name="EmitVolume"><arg type="q" name="volume" direction="in"/></method>
+    <method name="SetBattery"><arg type="s" name="name" direction="in"/><arg type="y" name="percent" direction="in"/></method>
+  </interface>
+  <interface name="org.bluez.Adapter1">
+    <property name="Powered" type="b" access="readwrite"/>
+    <property name="Alias" type="s" access="read"/>
+  </interface>
+  <interface name="org.bluez.Device1">
+    <method name="Connect"/>
+    <method name="Disconnect"/>
+    <property name="Alias" type="s" access="read"/>
+    <property name="Icon" type="s" access="read"/>
+    <property name="Paired" type="b" access="read"/>
+    <property name="Connected" type="b" access="read"/>
+    <property name="Adapter" type="o" access="read"/>
+  </interface>
+  <interface name="org.bluez.Battery1">
+    <property name="Percentage" type="y" access="read"/>
+  </interface>
+</node>
+"""
+BLUEZ = {i.name: i for i in Gio.DBusNodeInfo.new_for_xml(BLUEZ_XML).interfaces}
+HCI = "/org/bluez/hci0"
+adapter = {"Powered": True, "Alias": "gate"}
+devices = {  # path -> its Device1 values, and Battery1's (None: none)
+    HCI + "/dev_00_00_00_00_00_01": [{"Alias": "Gate Buds", "Icon": "audio-headphones", "Paired": True, "Connected": False}, 80],
+    HCI + "/dev_00_00_00_00_00_02": [{"Alias": "Gate Mouse", "Icon": "input-mouse", "Paired": True, "Connected": True}, None],
+    HCI + "/dev_00_00_00_00_00_03": [{"Alias": "Stranger", "Icon": "phone", "Paired": False, "Connected": False}, None],
+}
+SIGS = {"Alias": "s", "Icon": "s", "Paired": "b", "Connected": "b", "Powered": "b"}
+
+
+def changed(conn, path, iface, props):
+    conn.emit_signal(None, path, "org.freedesktop.DBus.Properties", "PropertiesChanged",
+                     GLib.Variant("(sa{sv}as)", (iface, {k: GLib.Variant(SIGS.get(k, "y"), v) for k, v in props.items()}, [])))
+
+
+def device_props(path):
+    values, _ = devices[path]
+    out = {k: GLib.Variant(SIGS[k], v) for k, v in values.items()}
+    out["Adapter"] = GLib.Variant("o", HCI)
+    return out
+
+
+def on_bluez_call(conn, sender, path, iface, method, params, invocation):
+    if method == "GetManagedObjects":
+        objs = {HCI: {"org.bluez.Adapter1": {k: GLib.Variant(SIGS.get(k, "s"), v) for k, v in adapter.items()}}}
+        for p, (_, battery) in devices.items():
+            objs[p] = {"org.bluez.Device1": device_props(p)}
+            if battery is not None:
+                objs[p]["org.bluez.Battery1"] = {"Percentage": GLib.Variant("y", battery)}
+        invocation.return_value(GLib.Variant("(a{oa{sa{sv}}})", (objs,)))
+    elif method == "EmitVolume":
+        conn.emit_signal(None, HCI + "/dev_00_00_00_00_00_01/sep1/fd0", "org.freedesktop.DBus.Properties", "PropertiesChanged",
+                         GLib.Variant("(sa{sv}as)", ("org.bluez.MediaTransport1", {"Volume": GLib.Variant("q", params.unpack()[0])}, [])))
+        invocation.return_value(None)
+    elif method == "SetBattery":
+        name, pct = params.unpack()
+        for p, entry in devices.items():
+            if entry[0]["Alias"] == name:
+                entry[1] = pct
+                changed(conn, p, "org.bluez.Battery1", {"Percentage": pct})
+        invocation.return_value(None)
+    elif method in ("Connect", "Disconnect"):
+        values = devices[path][0]
+        log(f"{method} {values['Alias']}")
+        if method == "Connect" and not adapter["Powered"]:
+            invocation.return_dbus_error("org.bluez.Error.NotReady", "Resource Not Ready")
+            return
+
+        def settle():
+            if values["Connected"] != (method == "Connect"):
+                values["Connected"] = method == "Connect"
+                changed(conn, path, "org.bluez.Device1", {"Connected": values["Connected"]})
+            invocation.return_value(None)
+            return False
+        GLib.timeout_add(300 if method == "Connect" else 0, settle)
+    else:
+        invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)
+
+
+def on_bluez_get(conn, sender, path, iface, prop):
+    if iface == "org.bluez.Adapter1":
+        return GLib.Variant(SIGS.get(prop, "s"), adapter[prop])
+    if iface == "org.bluez.Device1":
+        return device_props(path).get(prop)
+    if iface == "org.bluez.Battery1" and devices[path][1] is not None:
+        return GLib.Variant("y", devices[path][1])
+    return None
+
+
+def on_bluez_set(conn, sender, path, iface, prop, value):
+    if iface != "org.bluez.Adapter1" or prop != "Powered":
+        return False
+    on = value.unpack()
+    log(f"Powered {int(on)}")
+    if adapter["Powered"] != on:
+        adapter["Powered"] = on
+        changed(conn, HCI, "org.bluez.Adapter1", {"Powered": on})
+        if not on:  # a radio off drops every connection
+            for p, (values, _) in devices.items():
+                if values["Connected"]:
+                    values["Connected"] = False
+                    changed(conn, p, "org.bluez.Device1", {"Connected": False})
+    return True
+
+
+def bluez_start(conn):
+    conn.register_object("/", BLUEZ["org.freedesktop.DBus.ObjectManager"], on_bluez_call)
+    conn.register_object("/", BLUEZ["org.awesome.Gate"], on_bluez_call)
+    conn.register_object(HCI, BLUEZ["org.bluez.Adapter1"], on_bluez_call, on_bluez_get, on_bluez_set)
+    for p, (_, battery) in devices.items():
+        conn.register_object(p, BLUEZ["org.bluez.Device1"], on_bluez_call, on_bluez_get, None)
+        if battery is not None:
+            conn.register_object(p, BLUEZ["org.bluez.Battery1"], on_bluez_call, on_bluez_get, None)
+    Gio.bus_own_name_on_connection(conn, "org.bluez", Gio.BusNameOwnerFlags.NONE, None, None)
+
+
 def main():
     addr = os.environ.get("DBUS_SYSTEM_BUS_ADDRESS")
     if not addr:
@@ -149,6 +285,7 @@ def main():
     Gio.bus_own_name_on_connection(conn, BUS_NAME, Gio.BusNameOwnerFlags.NONE, None, None)
     conn.register_object(SENSOR_PATH, SENSOR, on_sensor_call, on_sensor_get, None)
     Gio.bus_own_name_on_connection(conn, "net.hadess.SensorProxy", Gio.BusNameOwnerFlags.NONE, None, None)
+    bluez_start(conn)
     GLib.timeout_add(100, poll_sensor, conn)
     GLib.MainLoop().run()
 

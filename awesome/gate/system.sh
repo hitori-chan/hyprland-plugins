@@ -87,16 +87,18 @@ chk "system: the panels close clean" until_is 3 "center:0 live:0 dnd:0 0" panels
 # a Bluetooth headset's own volume (AVRCP absolute volume): no key reaches
 # the binds; BlueZ announces the transport's Volume on the system bus, and
 # the capsule follows the sink's readback — only when something moved
-bt_volume() { # bt_volume <0..127> [own] — a transport's PropertiesChanged, as org.bluez when "own"
-	DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" python3 - "$1" "${2:-own}" <<'PY'
-import sys
+sbus() { DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" busctl --system "$@"; }
+bt_volume() { # bt_volume <0..127> [other] — a transport's PropertiesChanged from the fake bluetoothd, or a stranger
+	if [[ "${2:-own}" == own ]]; then
+		sbus call org.bluez / org.awesome.Gate EmitVolume q "$1" >/dev/null
+		return
+	fi
+	DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" python3 - "$1" <<'PY'
+import os, sys
 from gi.repository import Gio, GLib
 bus = Gio.DBusConnection.new_for_address_sync(
-    __import__("os").environ["DBUS_SYSTEM_BUS_ADDRESS"],
+    os.environ["DBUS_SYSTEM_BUS_ADDRESS"],
     Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION, None, None)
-if sys.argv[2] == "own":
-    bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "RequestName",
-                  GLib.Variant("(su)", ("org.bluez", 4)), GLib.VariantType.new("(u)"), Gio.DBusCallFlags.NONE, 2000, None)
 bus.emit_signal(None, "/org/bluez/hci0/dev_00_00_00_00_00_01/sep1/fd0", "org.freedesktop.DBus.Properties", "PropertiesChanged",
                 GLib.Variant("(sa{sv}as)", ("org.bluez.MediaTransport1", {"Volume": GLib.Variant("q", int(sys.argv[1]))}, [])))
 bus.flush_sync(None)
@@ -120,6 +122,27 @@ bt_volume 47
 chk "headset: the next real change shows again" until_is 3 "center:0 live:1 dnd:0" st
 rm -f "$STATE/wpctl-level"
 nclear
+
+# ---- Bluetooth (system/bluetooth.cpp) --------------------------------------
+# The fake bluetoothd (devtools/fakes/fake-sysbus): hci0 powered, Gate Buds
+# (headphones, 80 %) and Gate Mouse (connected) paired, a stranger seen but
+# never paired. The panel's doors are driven by name through the gate's
+# verb; bluetoothd's own signals carry every change back.
+chk "bt: the paired devices, connected first, the stranger left out" until_is 3 "on Gate Mouse=c Gate Buds=n80" hq awesome bt
+: > "$STATE/logind.log"
+hq awesome bt connect Gate Buds >/dev/null
+chk "bt: a connect goes to bluetoothd" until_ok 3 grep -qx "Connect Gate Buds" "$STATE/logind.log"
+chk "bt: ...and lands connected, by name among the connected" until_is 3 "on Gate Buds=c80 Gate Mouse=c" hq awesome bt
+sbus call org.bluez / org.awesome.Gate SetBattery sy "Gate Buds" 35 >/dev/null
+chk "bt: a battery moves with bluetoothd's signal" until_is 3 "on Gate Buds=c35 Gate Mouse=c" hq awesome bt
+hq awesome bt power 0 >/dev/null
+chk "bt: power off drops every connection" until_is 3 "off Gate Buds=n35 Gate Mouse=n" hq awesome bt
+: > "$STATE/logind.log"
+hq awesome bt connect Gate Mouse >/dev/null
+chk "bt: a device picked while off powers the radio, then connects" until_is 3 "on Gate Mouse=c Gate Buds=n35" hq awesome bt
+chk "bt: ...in that order" bash -c "tr '\n' '|' < '$STATE/logind.log' | grep -q '^Powered 1|Connect Gate Mouse|'"
+hq awesome bt disconnect Gate Mouse >/dev/null
+chk "bt: a disconnect" until_is 3 "on Gate Buds=n35 Gate Mouse=n" hq awesome bt
 
 : > "$STATE/wpctl.log"
 dsp "hl.plugin.awesome.mute()"; idle
