@@ -146,6 +146,11 @@ namespace NAwesome::System {
         if (verb == "pad")
             return padState();
 #ifdef AWESOME_GATE
+        if (verb.starts_with("pad ")) { // "pad NAME": a virtual pointer stands in for the touchpad; "pad -": none
+            const auto NAME = verb.substr(4);
+            padStandIn(NAME == "-" ? "" : NAME);
+            return "ok";
+        }
         if (verb == "controls") { // "display:P keyboard:P volume:P[m] mic:S touchpad:S room:S" (-1: none)
             const auto& S = Controls::state();
             const auto  L = [&](Controls::eLevel l) {

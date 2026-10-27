@@ -130,7 +130,9 @@ The gate build adds `hyprctl awesome` verbs for the batteries: `cells`
 (the bar's click cells), `shown` (the newest card's body as drawn),
 `menu` (the open card menu's rows), `quiet` (the quiet state),
 `controls` (the control center's values), `outputs` (the volume's
-sinks) and `busy` (the wpctl commands in flight: a battery's barrier).
+sinks), `busy` (the wpctl commands in flight: a battery's barrier) and
+`pad NAME` (a virtual pointer stands in for the touchpad; `pad -` drops
+it).
 
 The Wayland fixtures and D-Bus fakes the batteries drive are in
 [`devtools/`](../devtools/README.md).

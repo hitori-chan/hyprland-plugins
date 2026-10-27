@@ -47,7 +47,7 @@ compositor). A run of scroll events on one axis is one entry with its
 count. It is the first stop when a click goes missing.
 
 The gate build adds `cells`, `shown`, `menu`, `quiet`, `controls`,
-`outputs` and `busy` ([testing](testing.md)).
+`outputs`, `busy` and `pad NAME` ([testing](testing.md)).
 
 ## Configuration
 

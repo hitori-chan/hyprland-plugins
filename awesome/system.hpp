@@ -65,6 +65,7 @@ namespace NAwesome::System {
     void padExit();
     void padToggle();
     std::string padState();
+    void        padStandIn(const std::string& name); // the gate build's touchpad stand-in; a no-op otherwise
 
     // the control center's doors (core/controls.hpp), each deferred out of
     // the caller's emission
