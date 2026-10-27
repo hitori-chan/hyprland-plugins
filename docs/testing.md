@@ -81,7 +81,8 @@ the helper lines the time went to.
 
 The nested runs inside a private headless labwc (`gate/host.sh`;
 install labwc once) with its own session bus, a private system bus
-carrying a fake logind, backlight, keyboard LED and light sensor, scratch
+carrying a fake logind, backlight, keyboard LED, light sensor and
+bluetoothd (one adapter, a paired headset and mouse), scratch
 XDG dirs, and aquamarine at the fork's `flake.lock` pin. The live session
 receives nothing: no output, workspace, window, focus, cursor,
 brightness or volume change. The isolation check (structural at each

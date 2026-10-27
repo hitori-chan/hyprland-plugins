@@ -41,6 +41,14 @@ namespace NAwesome::Glyph {
         SPEAKER_LOW,    // the volume's low end: the speaker without its waves
         ROOM,           // follow the room: an A in the sun's rays
         OUTPUT,         // the volume's output: a loudspeaker
+        LIGHT_ON,       // the keyboard light's button: a half sun on a line, its rays out
+        LIGHT_OFF,      // ... the rays gone
+        SPEAKER_1,      // the volume's button: the speaker, its waves by level (SPEAKER_LOW: none)
+        SPEAKER_2,
+        SPEAKER_3,
+        BLUETOOTH,      // the rune
+        HEADPHONES,     // an output or a device: headphones
+        MOUSE,          // a device: a mouse
         COUNT_,
     };
 
@@ -98,6 +106,19 @@ namespace NAwesome::Glyph {
         {16, 16, "<path " AW_STROKE_W("1.3") " d=\"M8 .9v1.5M8 13.6v1.5M.9 8h1.5M13.6 8h1.5M3 3l1 1M12 12l1 1M3 13l1-1M12 4l1-1\"/><path " AW_STROKE_W("1.3")
                  " d=\"M5.7 11.2L8 4.9l2.3 6.3M6.5 9.3h3\"/>"},
         {16, 16, "<rect " AW_STROKE " x=\"4\" y=\"1.5\" width=\"8\" height=\"13\" rx=\"2\"/><circle " AW_STROKE " cx=\"8\" cy=\"10\" r=\"2\"/><circle fill=\"#fff\" cx=\"8\" cy=\"4.8\" r=\".8\"/>"},
+#define AW_LIGHT "<path " AW_STROKE " d=\"M1.7 13.3h12.6\"/><path fill=\"#fff\" d=\"M4.6 12.6a3.4 3.4 0 0 1 6.8 0z\"/>"
+        {16, 16, AW_LIGHT "<path " AW_STROKE " d=\"M8 3.2v1.9M3.1 5.6l1.3 1.3M12.9 5.6l-1.3 1.3M.9 9.8h1.8M13.3 9.8h1.8\"/>"},
+        {16, 16, AW_LIGHT},
+#undef AW_LIGHT
+#define AW_SPEAKER "<path fill=\"#fff\" d=\"M2.2 6.1h2.7l3.4-2.9v9.6l-3.4-2.9H2.2z\"/>"
+        {16, 16, AW_SPEAKER "<path " AW_STROKE " d=\"M10.3 6.3a2.4 2.4 0 0 1 0 3.4\"/>"},
+        {16, 16, AW_SPEAKER "<path " AW_STROKE " d=\"M10.3 6.3a2.4 2.4 0 0 1 0 3.4M11.9 4.7a4.6 4.6 0 0 1 0 6.6\"/>"},
+        {16, 16, AW_SPEAKER "<path " AW_STROKE " d=\"M10.3 6.3a2.4 2.4 0 0 1 0 3.4M11.9 4.7a4.6 4.6 0 0 1 0 6.6M13.5 3.1a6.8 6.8 0 0 1 0 9.8\"/>"},
+#undef AW_SPEAKER
+        {16, 16, "<path " AW_STROKE " d=\"M4.6 5.2l6.6 5.6L8 13.6V2.4l3.2 2.8-6.6 5.6\"/>"},
+        {16, 16, "<path " AW_STROKE " d=\"M2.6 10.4V8.2a5.4 5.4 0 0 1 10.8 0v2.2\"/><rect fill=\"#fff\" x=\"1.9\" y=\"9.4\" width=\"3.3\" height=\"4.8\" rx=\"1.3\"/>"
+                 "<rect fill=\"#fff\" x=\"10.8\" y=\"9.4\" width=\"3.3\" height=\"4.8\" rx=\"1.3\"/>"},
+        {16, 16, "<rect " AW_STROKE " x=\"4.2\" y=\"1.8\" width=\"7.6\" height=\"12.4\" rx=\"3.8\"/><path " AW_STROKE " d=\"M8 4.3v2.2\"/>"},
     }};
 #undef AW_STROKE
 #undef AW_STROKE_W

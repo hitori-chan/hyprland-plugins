@@ -1,8 +1,9 @@
 // awesome/core/controls.hpp — the control center's seam. The system module
 // owns the levels (the display's brightness, the keyboard light, the
-// volume), the switches (the microphone, the touchpad) and the outputs the
-// volume can go to: it publishes them here as it learns them and registers
-// the doors that move them. The
+// volume), the switches (the microphone, the touchpad), the outputs the
+// volume can go to and Bluetooth (the adapter, its paired devices): it
+// publishes them here as it learns them and registers the doors that move
+// them. The
 // notify center draws them and sends the user's moves through those doors.
 // Neither module reads the other's state: the values live here.
 //
@@ -50,10 +51,42 @@ namespace NAwesome::Controls {
         bool operator==(const SOutput&) const = default;
     };
 
+    // a paired Bluetooth device (the system module bounds the list and the
+    // name, connected first, then by name)
+    struct SDevice {
+        enum eKind : uint8_t {
+            OTHER,
+            HEADPHONES,
+            SPEAKER,
+            MOUSE,
+            KEYBOARD,
+        };
+        std::string id; // BlueZ's object path: who it is across a rebuild
+        std::string name;
+        eKind       kind       = OTHER;
+        bool        connected  = false;
+        bool        connecting = false; // a connect or disconnect in flight
+        int8_t      battery    = -1;    // percent, -1 unknown
+
+        bool operator==(const SDevice&) const = default;
+    };
+    inline constexpr size_t MAX_DEVICES = 16;
+
+    // the first adapter: present 0 while there is none (no BlueZ, no
+    // radio), and the panel shows no Bluetooth
+    struct SBluetooth {
+        bool                 present = false;
+        bool                 powered = false;
+        std::vector<SDevice> devices;
+
+        bool operator==(const SBluetooth&) const = default;
+    };
+
     struct SState {
         std::array<SLevel, (size_t)eLevel::COUNT_>  levels{};
         std::array<int8_t, (size_t)eSwitch::COUNT_> switches{-1, -1, -1}; // -1 none, 0 off, 1 on
         std::vector<SOutput>                        outputs;
+        SBluetooth                                  bluetooth;
     };
 
     inline SState& state() {
@@ -70,6 +103,10 @@ namespace NAwesome::Controls {
         std::function<void(bool)>          setMuted;  // the volume's
         std::function<void(uint32_t)>      setOutput; // the default sink, by its id
         std::function<void()>              refresh;   // read every device again (the panel opened)
+        std::function<void(bool)>          setBluetooth; // the adapter's power
+        // a device by its id: connect it (powering the adapter first when
+        // off), or disconnect it
+        std::function<void(const std::string&, bool)> connectDevice;
     };
     inline SDoors& doors() {
         static SDoors D;
@@ -103,6 +140,14 @@ namespace NAwesome::Controls {
         if (S == v)
             return;
         S = v;
+        if (changedHook())
+            changedHook()();
+    }
+
+    inline void publish(SBluetooth v) {
+        if (state().bluetooth == v)
+            return;
+        state().bluetooth = std::move(v);
         if (changedHook())
             changedHook()();
     }

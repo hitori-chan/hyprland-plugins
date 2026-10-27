@@ -1,9 +1,9 @@
 # System
 
 The `system` module: the display and keyboard lights, volume and
-microphone, and the touchpad. Its levels and switches show in the
-[control center](notify.md#the-control-center); its keys answer with a
-capsule.
+microphone, Bluetooth, and the touchpad. Its levels, switches and devices
+show in the [control center](notify.md#the-control-center); its keys
+answer with a capsule.
 
 ## Lights
 
@@ -62,6 +62,24 @@ parity).
   change on the system bus, the default sink is read back, and the
   capsule shows only a level or a mute that actually moved. A headset
   without absolute volume sends volume keys, which reach your binds.
+
+## Bluetooth
+
+BlueZ's first adapter and its paired devices, over the system bus and
+never waiting on it: the tree is read when the plugin loads, when
+bluetoothd (re)starts and when the control center opens, and BlueZ's
+own signals keep it current in between. Without an adapter the control
+center shows no Bluetooth.
+
+- **Devices** are the paired ones (a device only seen in a scan is not
+  listed): connected first, then by name, at most 16, a name cut at 64
+  bytes. A device's battery shows where BlueZ reports one.
+- **Connecting** shows until bluetoothd answers (a headset bringing up
+  its profiles takes seconds; the call waits up to 30 s). A device
+  picked while the radio is off powers it on first, then connects.
+- **A headset's sink**: when an audio device connects or drops while the
+  control center is open, the outputs are read again once PipeWire has
+  caught up (1.5 s), so the output pill follows.
 
 ## Touchpad
 
