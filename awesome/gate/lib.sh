@@ -14,24 +14,32 @@ N_TOP=40
 PANEL_X=$((MON_W - N_EDGE - N_W))
 HEAD_Y=$N_TOP
 CARD_Y=$((HEAD_Y + 28 + 8))
-# The control center, in the same column: a 64 px first row (Do Not
-# Disturb's capsule, then the microphone's and the touchpad's 64 px
-# buttons, 12 apart), then a 64 px module per level (0 display, 1 keyboard,
-# 2 volume: all three in the gate), 12 apart. A module's slider row is
-# centred 45 px down, its track runs from 40 px in to its high glyph, and
-# a 28 px corner button sits 16 px off its right edge where the level has
-# one (the keyboard's room: the gate has a sensor; the volume's output:
-# the gate has two), which shortens the track by 40.
-CC_CY=$((N_TOP + 32))
-DND_CX=$((PANEL_X + 102))
-cc_btn_cx() { echo $((PANEL_X + 204 + 12 + $1 * 76 + 32)); } # cc_btn_cx <0 microphone | 1 touchpad>
-mod_y() { echo $((N_TOP + 64 + 12 + $1 * 76)); }
-level_cy() { echo $(($(mod_y "$1") + 45)); }
-CORNER_CX=$((PANEL_X + N_W - 16 - 14))
-corner_cy() { echo $(($(mod_y "$1") + 32)); }
-TRACK_X0=$((PANEL_X + 40))
-track_x() { echo $((TRACK_X0 + ($1 == 0 ? 272 : 232) * $2 / 100)); } # track_x <level> <percent>
-LOW_X=$((PANEL_X + 16 + 7)) # a level's low glyph: the volume's mutes
+# The control center, in the same column (notify/controls.cpp): the
+# levels' card, 10 over its first 46 px section, sections 10 apart (0
+# display, 1 keyboard, 2 volume: all three in the gate), 12 under the last
+# (180 tall); then the capsule row 12 under it, 64 tall: Bluetooth left,
+# Do Not Disturb right (the gate has an adapter), 172 px each, 12 apart.
+# A section's slider row is centred 36 px down: its glyph 24 px in (the
+# keyboard's and the speaker's are buttons), its track from 44 px in to 16
+# px off the right edge (296 px). A title row's own control (the
+# keyboard's room: the gate has a sensor; the volume's output pill: the
+# gate has two) sits flush right, centred 12 px down. A capsule's circle
+# is 32 px into it, its words past 64. Its menus hang 6 px under the row.
+sec_y() { echo $((N_TOP + 10 + $1 * 56)); }
+level_cy() { echo $(($(sec_y "$1") + 36)); }
+head_cy() { echo $(($(sec_y "$1") + 12)); }
+GLYPH_X=$((PANEL_X + 24))
+TRACK_X0=$((PANEL_X + 44))
+track_x() { echo $((TRACK_X0 + 296 * $2 / 100)); } # track_x <level> <percent>
+ROOM_CX=$((PANEL_X + N_W - 16 - 12))
+OUT_CX=$((PANEL_X + N_W - 16 - 18))
+CAPS_Y=$((N_TOP + 180 + 12))
+CAPS_CY=$((CAPS_Y + 32))
+BT_DOT_X=$((PANEL_X + 32))
+BT_WORDS_X=$((PANEL_X + 110))
+DND_DOT_X=$((PANEL_X + 184 + 32))
+DND_WORDS_X=$((PANEL_X + 184 + 110))
+MENU_Y=$((CAPS_Y + 64 + 6))
 ROWX=$((PANEL_X + 90))
 ROWY=$((CARD_Y + 24))
 POPX=$((MON_W - N_EDGE - N_W / 2))

@@ -116,16 +116,14 @@ namespace NAwesome::Notify {
     constexpr double TRACK_SLOP = 4, SLIDER_REACH = 13;
 
     static uint8_t partAt(const SCard& c, const Vector2D& pos) {
-        // a level's module: its slider's row drags along the track (0), the
-        // volume's low glyph mutes (1), the rest is dead (2) — a press on a
-        // glyph, the name or the value never throws the level to an end
+        // a level's section: its slider's row drags along the track (0),
+        // the rest is dead (2) — a press on the name or the value never
+        // throws the level to an end (its glyph is a button of its own)
         if (c.kind == SCard::CTRL_SLIDER) {
             const double MID = c.track.y + c.track.h / 2;
             if (std::abs(pos.y - MID) > SLIDER_REACH)
                 return 2;
-            if (pos.x >= c.track.x - TRACK_SLOP && pos.x <= c.track.x + c.track.w + TRACK_SLOP)
-                return 0;
-            return c.id == (uint32_t)Controls::eLevel::VOLUME && pos.x < c.track.x ? 1 : 2;
+            return pos.x >= c.track.x - TRACK_SLOP && pos.x <= c.track.x + c.track.w + TRACK_SLOP ? 0 : 2;
         }
         if (c.less.w > 0 && c.less.containsPoint(pos))
             return 1;
@@ -334,12 +332,7 @@ namespace NAwesome::Notify {
                     if (H.bit == 1u)
                         controlsSwitch(H.id);
                     continue;
-                case SCard::CTRL_SLIDER: // a track's press drags in place; only the volume's glyph clicks
-                    if (H.bit == 1u && H.part == 1)
-                        controlsToggleMute();
-                    else if (H.bit == 2u) // right: the control's menu at the pointer
-                        CardMenu::openControl((Controls::eLevel)H.id, H.at);
-                    continue;
+                case SCard::CTRL_SLIDER: continue; // a track's press drags in place
                 case SCard::PANEL: continue; // dead panel space swallows silently
                 case SCard::CAPSULE: continue; // never hit (cardAt skips it)
                 case SCard::MENU: CardMenu::close(); continue; // a press off its rows
@@ -446,8 +439,6 @@ namespace NAwesome::Notify {
             controlsDragStart(*CARD, COORDS);
             return;
         }
-        if (BIT == 2u && CARD->kind == SCard::CTRL_SLIDER)
-            h.at = COORDS;
         if (BIT == 1u && holdable(*CARD, h) && holdTimer) {
             dropPress();
             press.hit  = std::move(h);

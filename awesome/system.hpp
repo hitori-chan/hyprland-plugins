@@ -73,12 +73,9 @@ namespace NAwesome::System {
     // the caller's emission
     void setLevel(Controls::eLevel l, int pct);
     void stepLevel(Controls::eLevel l, int steps); // the keys' steps (the wheel)
-    void setMic(bool on);
     void setMuted(bool muted);
     void setOutput(uint32_t id); // the default sink
-    void audioRefresh();  // the volume and the mic as they are now (the panel opened)
-    void padSet(bool on); // the user's own choice, like a flip
-    void padPublish();
+    void audioRefresh();  // the volume and the outputs as they are now (the panel opened)
     // Bluetooth (bluetooth.cpp): the adapter's power, a device's connection
     void bluetoothInit();
     void bluetoothExit();

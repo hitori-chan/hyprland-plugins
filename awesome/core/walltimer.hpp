@@ -94,6 +94,24 @@ namespace NAwesome {
         return (int)(std::mktime(&d) / 86400);
     }
 
+    // the next 08:00 local: "until tomorrow morning" said after midnight
+    // means this morning, not a day and a half
+    inline int64_t nextMorning(time_t now = std::time(nullptr)) {
+        std::tm d{};
+        localtime_r(&now, &d);
+        if (d.tm_hour >= 8)
+            d.tm_mday += 1;
+        d.tm_hour  = 8;
+        d.tm_min   = 0;
+        d.tm_sec   = 0;
+        d.tm_isdst = -1;
+        return (int64_t)std::mktime(&d);
+    }
+    // its menu row: "Tomorrow (08:00)", or "08:00" while it is still today
+    inline std::string nextMorningText(time_t now = std::time(nullptr)) {
+        return localDay((time_t)nextMorning(now)) > localDay(now) ? "Tomorrow (08:00)" : "08:00";
+    }
+
     // when a deadline falls, as the bar's clock writes time: "14:30" today,
     // "Tomorrow 08:00", the weekday within a week, else the date
     inline std::string untilText(int64_t end) {
