@@ -98,10 +98,9 @@ namespace NAwesome::Notify {
     // with no content image leads with its identity (or the rolled fallback
     // face) and wears no badge. Faces are circles, app icons rounded squares.
     void paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool withBadge, float rp, bool shade) {
-        const bool  HASIDENT = n.identTex && n.identTex->m_texID != 0;
-        const auto& FACE     = contentFace(n, shade);
-        const bool  AVATAR   = FACE && FACE->m_texID != 0;
-        const auto& LEAD     = AVATAR ? FACE : n.identTex;
+        const auto& FACE   = contentFace(n, shade);
+        const bool  AVATAR = FACE && FACE->m_texID != 0;
+        const auto& LEAD   = AVATAR ? FACE : n.identTex;
         if (!LEAD || LEAD->m_texID == 0)
             return;
 
@@ -113,11 +112,16 @@ namespace NAwesome::Notify {
         const double R         = SHAPED ? 0 : ROUNDFACE ? cell.w / 2 : Theme::RAD_BUTTON * cell.w / 36.0;
         P.texFit(LEAD, cell, (int)std::lround(R * P.scale), ROUNDFACE ? 2.f : rp);
 
-        // only a real app identity badges, and only a face that is not the
-        // identity itself: the generic mark or a rolled face says nothing
-        // about the app
-        if (!withBadge || !AVATAR || !HASIDENT || n.identity.empty() || sameIcon(n.identity, n.image))
-            return; // the lead icon is the whole column
+        // only a face that is not the identity itself badges
+        if (withBadge && AVATAR && !sameIcon(n.identity, n.image))
+            paintBadge(P, n, cell);
+    }
+
+    void paintBadge(const SPaint& P, const SNotif& n, const CBox& cell) {
+        // only a real app identity badges: the generic mark or a rolled face
+        // says nothing about the app
+        if (n.identity.empty() || !n.identTex || n.identTex->m_texID == 0)
+            return;
         // the white ring cuts the glyph free of a light face and a dark one
         // alike: glass has no one colour to borrow, as a phone's card does.
         // One raster at native size (icons.cpp's composeBadge), its corner

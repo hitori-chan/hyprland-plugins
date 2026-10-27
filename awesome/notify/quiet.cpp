@@ -24,6 +24,7 @@ namespace NAwesome::Notify::Quiet {
     // over half a second after its last, while a still screen keeps a frame
     // waiting and copies none: while one is held, a poll rechecks.
     static bool                shared = false, settled = false;
+    static eWhy                shown  = eWhy::NONE; // what the open center's status line last said
     static SP<CEventLoopTimer> sharePoll;
     constexpr auto             POLL = std::chrono::seconds(1);
 
@@ -54,8 +55,14 @@ namespace NAwesome::Notify::Quiet {
         return false;
     }
 
+    eWhy why() {
+        if (on(eOption::QUIET_SHARING) && shareLive())
+            return eWhy::SHARING;
+        return on(eOption::QUIET_FULLSCREEN) && fullscreenFocused() ? eWhy::FULLSCREEN : eWhy::NONE;
+    }
+
     bool now() {
-        return (on(eOption::QUIET_FULLSCREEN) && fullscreenFocused()) || (on(eOption::QUIET_SHARING) && shareLive());
+        return why() != eWhy::NONE;
     }
 
     bool hushed() {
@@ -88,6 +95,11 @@ namespace NAwesome::Notify::Quiet {
         }
         if ((on(eOption::QUIET_FULLSCREEN) && fullscreenFocused()) || settled)
             Model::lowerBanners({});
+        if (const auto WHY = why(); WHY != shown) {
+            shown = WHY;
+            if (centerVisible())
+                notifChanged(); // its status line follows
+        }
     }
 
     static void poll() {
@@ -111,6 +123,7 @@ namespace NAwesome::Notify::Quiet {
             g_pEventLoopManager->removeTimer(sharePoll);
         sharePoll.reset();
         shared = settled = false;
+        shown            = eWhy::NONE;
     }
 
 } // namespace NAwesome::Notify::Quiet

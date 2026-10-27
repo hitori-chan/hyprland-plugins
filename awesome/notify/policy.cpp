@@ -125,8 +125,12 @@ namespace NAwesome::Notify::Policy {
             setAppFlag(s.key, BANNERS_OFF | SOUNDS_OFF, false);
     }
 
+    bool silenced(const SNotif& n) {
+        return n.urgency < 2 && ((appFlags(n.appKey) & BANNERS_OFF) || mutedUntil(chatKey(n)) > 0);
+    }
+
     bool bannersOff(const SNotif& n) {
-        return n.urgency < 2 && ((appFlags(n.appKey) & BANNERS_OFF) || mutedUntil(chatKey(n)) > 0 || Quiet::now());
+        return silenced(n) || (n.urgency < 2 && Quiet::now());
     }
 
     bool soundsOff(const SNotif& n) {

@@ -176,6 +176,7 @@ namespace NAwesome::Notify {
             std::string body;
         } fitMemo;
         std::vector<SParticipant> participants; // latest distinct senders, bounded
+        SParticipant              chatFace;     // a group chat with no picture of its own: its initials (card.cpp)
         uint32_t             unreadCount = 0;
         uint8_t              urgency  = 1;
         int                  progress = -1; // 0..100 from the "value" hint, -1 = none
@@ -218,6 +219,7 @@ namespace NAwesome::Notify {
 
         bool                 waiting = false; // arrived while suspended (DND): collected, not shown, timeout held
         bool                 seen    = false; // the open center has listed this revision: no dot on the bell for it
+        bool                 cleared = false; // Clear All hid it: off the shade, its close held for the undo window
         bool                 banner  = true;  // the popup is up; expiry drops only this — the card stays resident
 
         float                timeoutMs = 0; // resolved; 0 = sticky
@@ -343,7 +345,16 @@ namespace NAwesome::Notify {
         void postCard(const SPostCard& c);
 
         bool       closeOne(uint32_t id, uint32_t reason); // the card goes, every id it answers for closed
-        void       dismissAllLive(bool offShadeToo = false); // "Clear all": every shade row goes; the DND queue stays
+        void       dismissAllLive(bool offShadeToo = false); // every shade row goes now (a script's sweep); the DND queue stays
+        // Clear All's undo window (UNDO_WINDOW): the click hides every shade
+        // row and holds its NotificationClosed; Undo brings them back; the
+        // window's end, the center's close or a sweep closes them for good.
+        // An arrival into a hidden card shows it again, as any arrival.
+        inline constexpr auto UNDO_WINDOW = std::chrono::seconds(5);
+        void       clearLive();
+        void       undoClear();
+        void       commitClear();
+        bool       clearPending(); // a hidden card waits on the window
         void       dismissApp(const std::string& key);    // a stack's close button or right-click; the key may be (app, group)
         void       dismissAppAll(const std::string& appKey); // the card menu's "Close All": every shade card of the app, its chats too
         void       lowerBanners(const std::string& appKey);  // a menu switch silenced the app (or a chat), "" quiet began: the soft banners go to the shade now
@@ -400,7 +411,8 @@ namespace NAwesome::Notify {
         int64_t     mutedUntil(const std::string& chat); // 0 = not muted
         // until <= now unmutes
         void        mute(const std::string& chat, int64_t until, std::string_view label = {});
-        bool        bannersOff(const SNotif& n); // the app's switch, its chat muted, or quiet automatically
+        bool        silenced(const SNotif& n);   // the app's banners switched off, or its chat muted
+        bool        bannersOff(const SNotif& n); // silenced, or quiet automatically
         bool        soundsOff(const SNotif& n);
         void        prune(); // forget the mutes that ended
 
@@ -424,6 +436,12 @@ namespace NAwesome::Notify {
     namespace Quiet {
         bool on(eOption o);
         void set(eOption o, bool enable); // QUIET_FULLSCREEN or QUIET_SHARING
+        enum class eWhy : uint8_t {
+            NONE,
+            FULLSCREEN, // the focused window is fullscreen
+            SHARING,    // a display or a region of one is shared (named over a fullscreen)
+        };
+        eWhy why();                       // what holds the arrivals now (the center's status line)
         bool now();                       // an arrival holds now (critical aside)
         bool hushed();                    // a share is up: a critical banner shows without its words
         void refresh();                   // a share, a fullscreen or the focus moved (deferred out of its emission)
@@ -537,6 +555,7 @@ namespace NAwesome::Notify {
             MENU_ITEM, // one of its rows (id = the row's index)
             CTRL_SWITCH, // a control center button (id = controls.cpp's tile)
             CTRL_SLIDER, // a control center level's module (id = Controls::eLevel)
+            SILENT,      // the center's silent fold: a click spreads it (group = its key)
         };
         eKind       kind = POPUP;
         CBox        box;
@@ -544,7 +563,6 @@ namespace NAwesome::Notify {
         uint64_t    rev  = 0; // the card's revision this layout drew: a click acts on what it saw
         std::string group;    // DECK/SHEAD, a stacked ROW: the app key
         CBox        less;         // SHEAD: Show Less; w = 0 -> none
-        CBox        close;        // SHEAD: its close button
         CBox        replyField;   // POPUP/ROW: the armed inline-reply box (swallows, never acts)
         CBox        replySend;    // POPUP/ROW: its send circle
         CBox        track;        // CTRL_SLIDER: the track a press drags along
@@ -566,7 +584,7 @@ namespace NAwesome::Notify {
         uint32_t     id = 0;
         std::string  group;
         SCard::eKind kind = SCard::POPUP;
-        // 0 body, 1 Show Less, 2 a stack's close, 3 reply field, 4 send
+        // 0 body, 1 Show Less, 3 reply field, 4 send
         uint8_t      part = 0;
         bool         operator==(const SHover&) const = default;
     };

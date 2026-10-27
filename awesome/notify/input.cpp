@@ -76,7 +76,7 @@ namespace NAwesome::Notify {
         uint32_t     id;
         std::string  group;
         uint32_t     bit;
-        uint8_t      part;   // the SHover part codes: 0 body, 1 Show Less, 2 a stack's close, 3 reply field, 4 send
+        uint8_t      part;   // the SHover part codes: 0 body, 1 Show Less, 3 reply field, 4 send
         std::string  href;   // non-empty: a body hyperlink
         uint64_t     rev     = 0;     // the card's revision at the press: its layout's actions are that revision's
         bool         outside = false; // the click fell outside every surface (closes the shade)
@@ -127,8 +127,6 @@ namespace NAwesome::Notify {
         }
         if (c.less.w > 0 && c.less.containsPoint(pos))
             return 1;
-        if (c.kind == SCard::SHEAD && c.close.w > 0 && c.close.containsPoint(pos))
-            return 2;
         if (c.replySend.w > 0 && c.replySend.containsPoint(pos))
             return 4;
         if (c.replyField.w > 0 && c.replyField.containsPoint(pos))
@@ -316,7 +314,7 @@ namespace NAwesome::Notify {
                     continue;
                 }
                 case SCard::SHEAD: {
-                    if (H.bit == 2u || (H.bit == 1u && H.part == 2)) { // right / its close button: the whole stack goes
+                    if (H.bit == 2u) { // right: the whole stack goes
                         Model::dismissApp(H.group);
                         continue;
                     }
@@ -324,9 +322,17 @@ namespace NAwesome::Notify {
                         centerToggleGroup(H.group); // Show Less
                     continue;
                 }
-                case SCard::BTN_CLEAR: // the footer: the global sweep
+                case SCard::SILENT: // the silent fold spreads
                     if (H.bit == 1u)
-                        Model::dismissAllLive();
+                        centerToggleGroup(H.group);
+                    continue;
+                case SCard::BTN_CLEAR: // the heading's: Clear All hides, Undo (as it was drawn) brings back
+                    if (H.bit == 1u) {
+                        if (H.id)
+                            Model::undoClear();
+                        else
+                            Model::clearLive();
+                    }
                     continue;
                 case SCard::CTRL_SWITCH:
                     if (H.bit == 1u)

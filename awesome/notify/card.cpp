@@ -1,7 +1,7 @@
 // awesome/notify/card.cpp — ONE notification card, wherever it shows: a
 // banner in the column, a card in the center, alone or in its app's stack.
 // The anatomy is the same everywhere: the icon column (the sender's face
-// wearing the app's badge, or a group chat's two faces), the title row
+// wearing the app's badge, or a group chat's initials), the title row
 // (title, the unread count, the meta flush right), the body and the
 // progress track; below, across the card's whole inner width, a banner's
 // hero and an opened reply field. A card is its face, its words and its
@@ -29,8 +29,9 @@ namespace NAwesome::Notify {
         };
 
         // the meta at the title row's right: what state the card is in when
-        // that matters more than when it came
-        void composeMeta(std::string& out, const SNotif& N, bool banner) {
+        // that matters more than when it came. `fresh`: the accent its time
+        // wears (new since the center last showed it), null for none
+        void composeMeta(std::string& out, const SNotif& N, bool banner, const CHyprColor* fresh) {
             if (N.urgency >= 2) {
                 out += "Critical";
                 return;
@@ -46,7 +47,14 @@ namespace NAwesome::Notify {
                 appendEsc(out, N.appName);
                 out += " · ";
             }
+            if (fresh) {
+                out += "<span foreground=\"";
+                out += hexOfCached(*fresh);
+                out += "\">";
+            }
             out += banner ? ageString(N.arrived) : clockString(N.arrivedWall);
+            if (fresh)
+                out += "</span>";
         }
     }
 
@@ -71,15 +79,20 @@ namespace NAwesome::Notify {
         // every build gates on the canvas gate, never on P.warm: a measuring
         // pass forces P.warm on to paint nothing, and a build there would be
         // a build inside a render (crash class 4)
-        // a group with no picture of its own shows its two newest senders'
-        // faces; the chat's picture, when it sent one, says more than any
-        // two faces rolled from initials
-        const bool OWNFACE = N.hasPixels || !N.image.empty();
+        // a group with no picture of its own wears its initials on a colour
+        // of its own, the app's badge on the corner (two senders' faces
+        // under the badge hid one)
+        const bool GROUPFACE = N.conversationKind == "group" && !N.hasPixels && N.image.empty();
         prepareCard(NP, P.scale);
         if (GATE.warming) {
-            if (N.conversationKind == "group" && !OWNFACE)
-                for (size_t i = 0; i < std::min<size_t>(2, NP->participants.size()); i++)
-                    ensureAvatarTex(NP->participants[i], (int)std::lround(ICONPX * 0.66 * P.scale));
+            if (GROUPFACE) {
+                auto& F = NP->chatFace;
+                if (const auto& NAME = N.conversationTitle.empty() ? N.summary : N.conversationTitle; F.name != NAME) {
+                    F.name = NAME;
+                    F.key  = replyTarget(N);
+                }
+                ensureAvatarTex(F, (int)std::lround(ICONPX * P.scale));
+            }
             if (BANNER)
                 for (auto& IM : NP->bodyImages)
                     ensureBodyImage(IM, (int)std::lround(BODYIMG_H * P.scale));
@@ -91,8 +104,8 @@ namespace NAwesome::Notify {
         // a critical banner over a share: its face and title, never its words
         const bool   HUSH  = BANNER && N.urgency >= 2 && Quiet::hushed();
         const bool   HERO  = BANNER && !HUSH && N.iconTex && N.heroTex;
-        const bool   PILE  = N.conversationKind == "group" && !OWNFACE && N.participants.size() >= 2 && N.participants[0].avatarTex && N.participants[1].avatarTex;
-        const bool   LEAD  = PILE || hasLeadIcon(N, !BANNER);
+        const bool   INITIALS = GROUPFACE && N.chatFace.avatarTex;
+        const bool   LEAD     = INITIALS || hasLeadIcon(N, !BANNER);
         const double ICONW = LEAD ? ICONPX : 0;
         const double TX    = X + PADX + (LEAD ? ICONW + ICON_GAP : 0);
         const double TEXTW = X + W - PADX - TX;
@@ -100,7 +113,7 @@ namespace NAwesome::Notify {
 
         // ---- the title row: title, the unread count, the meta ----
         auto& MB = scratch();
-        composeMeta(MB, N, BANNER);
+        composeMeta(MB, N, BANNER, F.fresh ? &COLACC : nullptr);
         const auto   META  = cachedText(MB, N.urgency >= 2 ? COLURGENT : COLSUB, T.meta, TWPX / 2, -1, 0, true, 500);
         const double METAW = texW(META, P.scale);
         const auto   COUNT = N.conversation && N.unreadCount > 1 ? cachedText(std::to_string(N.unreadCount), COLTITLE, T.small, 64, -1, 0, false, 600) : nullptr;
@@ -230,16 +243,10 @@ namespace NAwesome::Notify {
         P.frost(CARD, cardLit(N.id, KIND) ? liftedGlass(COLBG) : COLBG, COLRIM, ROUND, RP);
 
         const double TOPY = Y + PY;
-        if (PILE) {
-            // the two newest faces, the second over the first's corner on a
-            // ring of the glass's own dark
-            const double D = ICONW * 0.66;
-            const auto&  A = N.participants[0].avatarTex;
-            const auto&  B = N.participants[1].avatarTex;
-            P.texFit(B, CBox{X + PADX, TOPY, D, D}, (int)std::lround(D / 2 * P.scale), 2.f);
-            const CBox SECOND{X + PADX + ICONW - D, TOPY + ICONW - D, D, D};
-            P.rect(CBox{SECOND}.expand(1.5), COLBG.modifyA(1.f), (int)std::lround((D / 2 + 1.5) * P.scale), 2.f);
-            P.texFit(A, SECOND, (int)std::lround(D / 2 * P.scale), 2.f);
+        if (INITIALS) {
+            const CBox FACE{X + PADX, TOPY, ICONW, ICONW};
+            P.texFit(N.chatFace.avatarTex, FACE, (int)std::lround(ICONW / 2 * P.scale), 2.f);
+            paintBadge(P, N, FACE);
         } else if (LEAD)
             paintIconColumn(P, N, CBox{X + PADX, TOPY, ICONW, ICONW}, true, RP, !BANNER);
 

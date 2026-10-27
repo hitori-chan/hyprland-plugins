@@ -231,6 +231,10 @@ nclear() {
 # ---- model strings -------------------------------------------------------------
 st() { hq awesome state; }
 bd() { hq awesome badge; }
+# the open center's status line and rows (notify/center.cpp's describe):
+# "<status> [undo] | <rows>"; rows_status the status alone
+rows() { hq awesome center-rows; }
+rows_status() { local r; r="$(rows)"; echo "${r%% |*}"; }
 # the remembered DND's state.tsv value (empty: no row, DND off)
 dndrow() { grep -a $'\tdnd$' "$AW_STATE" | cut -f2; }
 
@@ -419,7 +423,8 @@ PY
 # ---- pixels ------------------------------------------------------------------------
 panel_bottom() { # panel_bottom <frame> — the center column's last lit row (0 when empty)
 	# from inside the first card down: the heading row above it is left
-	# out, and the cards stand 8 px apart (a gap past 12 rows ends it)
+	# out, and the cards stand 8 px apart, 16 where a group of the ranking
+	# ends (a gap past 20 rows ends it)
 	python3 - "$1" "$MON_W" "$CARD_Y" <<'PY'
 import sys
 from PIL import Image
@@ -441,7 +446,7 @@ bot = top
 for y in range(top, H):
     if filled(y):
         bot = y
-    elif all(not filled(yy) for yy in range(y, min(y + 12, H))):
+    elif all(not filled(yy) for yy in range(y, min(y + 20, H))):
         break
 print(bot)
 PY
