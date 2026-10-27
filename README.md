@@ -36,8 +36,9 @@ the [reference](docs/reference.md).
 
 - [Shell](docs/shell.md) — the bar and the launcher
 - [Windows](docs/windows.md) — minimize, maximize, focus, placement, snap
-- [Notifications](docs/notify.md) — cards, conversations, the center
-- [System](docs/system.md) — lights, sound, touchpad
+- [Notifications](docs/notify.md) — cards, conversations, the center,
+  the control center
+- [System](docs/system.md) — lights, sound, Bluetooth, touchpad
 - [Reference](docs/reference.md) — Lua API, `hyprctl`, configuration, state
 - [Design](docs/design.md) — architecture, invariants, performance
 - [Testing](docs/testing.md) — building, unit tests, the nested gate
