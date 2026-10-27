@@ -70,8 +70,10 @@ present, and back on when it is unplugged.
   only a keyboard paired, a gaming keyboard's mouse interface or a
   presenter never does. With an external trackpad too, the policy drives
   the built-in one.
-- `touchpad_toggle` (`XF86TouchpadToggle`) flips it by hand; the flip
-  holds until a pointer is plugged or unplugged.
+- `touchpad_toggle` (`XF86TouchpadToggle`) and the control center's
+  switch flip it by hand; the flip holds until a mouse or trackpad is
+  plugged or unplugged (a virtual pointer, from remote input or
+  automation, is neither).
 - The switch writes the compositor's per-device config (`hl.device`),
   so a config reload keeps it. A reload re-checks silently: a capsule
   answers only a change you can see, or the manual flip.

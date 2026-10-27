@@ -322,8 +322,9 @@ hq awesome center >/dev/null
 # a scheduled input refresh, so the state is the device config's, not the
 # lagging attachment: the switch shows a flip at once, and its next press
 # flips it back (it asked for the state the touchpad was already in). The
-# stand-in ends on: its config outlives it, and every virtual pointer
-# shares its name.
+# click's own virtual pointer leaving is no hotplug: the flip outlives the
+# re-check it used to arm (400 ms). The stand-in ends on: its config
+# outlives it, and every virtual pointer shares its name.
 chk "touchpad: none without one" test "$(hq awesome pad)" = none
 mice() { hq devices -j | python3 -c 'import json,sys;[print(m["name"]) for m in json.load(sys.stdin)["mice"]]' | sort; }
 M0="$(mice)"
@@ -340,6 +341,8 @@ chk "touchpad: the switch reads it on" until_is 3 1 ctl_part touchpad
 click "$(tile_cx 2)" "$TILE_CY" 272
 chk "touchpad: a press turns it off, the switch at once" until_is 2 0 ctl_part touchpad
 chk "touchpad: ...in the compositor's device config" test "$(hq awesome pad)" = off
+sleep 0.6 # past the policy's settle: nothing may put it back
+chk "touchpad: ...and the click's pointer leaving keeps the choice" test "$(hq awesome pad)" = off
 click "$(tile_cx 2)" "$TILE_CY" 272
 chk "touchpad: the next press turns it back on" until_is 2 1 ctl_part touchpad
 chk "touchpad: ...and no press posted a capsule under the panel" test "$(st)" = "center:1 live:0 dnd:0"
