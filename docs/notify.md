@@ -1,8 +1,8 @@
 # Notifications
 
 The `notify` module is the session's `org.freedesktop.Notifications`
-daemon: banners, the center with the control center on top, chat
-conversations, inline reply and sounds. Disable any other daemon
+daemon: banners, the center, the control center, chat conversations,
+inline reply and sounds. Disable any other daemon
 (dunst, mako) before enabling the plugin.
 
 ## Cards
@@ -127,33 +127,9 @@ rows; an explicit close (an outside click, Esc, the bell) pops them back
 as banners on fresh timeouts, under the same per-app cap and switches.
 It draws no backdrop: the desktop is never darkened.
 
-### The control center
-
-One glass panel the column's width on top:
-
-- three tiles: **Do Not Disturb**, **Microphone**, **Touchpad**, each
-  lit in the accent while on (the microphone while live), dim and inert
-  without such a device. A click flips one.
-- a slider per level the system knows: the **display**, the **keyboard
-  light**, the **volume**. A device that does not answer has no row.
-
-| On a slider | Action |
-|---|---|
-| press on the track | set the level there, and drag it |
-| press on the glyph or the number | nothing (the speaker's glyph mutes) |
-| wheel | step it as its keys do |
-| right click on the volume | its outputs (`wpctl status`'s sinks, the default checked); a pick makes one the default |
-| right click on the keyboard light | Follow the Room (dim without a light sensor); see [system](system.md#follow-the-room) |
-
-A level past 100 % (set elsewhere) shows its number over a full track. A
-key that moves a level while the center is open moves its slider, and
-no capsule covers the panel.
-
-### The cards
-
-Under the panel, "Notifications" sits bare on the desktop with a soft
-shadow, and "Clear All" on a glass capsule. Cards show their clock time
-where banners show an age, and behave as their banner did.
+"Notifications" heads the column, bare on the desktop with a soft
+shadow, and "Clear All" sits on a glass capsule. Cards show their clock
+time where banners show an age, and behave as their banner did.
 
 - Cards open as the page has room; a folded one shows its title and
   newest line, and a click (or Space) opens it.
@@ -168,34 +144,43 @@ where banners show an age, and behave as their banner did.
   the paging chips above and below the fold page a screenful, like the
   wheel.
 
-### Keys
+## The control center
 
-While the center is open, and only then:
+The bar's switches (left of the bell), `hl.plugin.awesome.control_center()`
+or `hyprctl awesome controlcenter` open it on that bar's monitor, in the
+cards' column; it and the center share the column, one open at a time.
+Banners keep coming, under it. An outside click, Esc or its switches
+close it. macOS's modules, each its own glass:
 
-| Key | Action |
+- a first row: **Do Not Disturb**'s capsule (its circle, its name, Off,
+  On or "Until 21:30"), then the **Microphone**'s and the **Touchpad**'s
+  round buttons. A control that is on is white with the accent deepened
+  for its glyph; one with no device is dim and inert. A click flips one.
+- a module per level the system knows: the **Display**, the
+  **Keyboard** light, the **Sound**. Each shows its name and value over
+  a track between its low and high glyphs; a device that does not
+  answer has no module. A light of few levels (a ThinkPad's keyboard:
+  off, low, high) is a stepped slider, a notch per level, its value
+  named (Off, Low, High).
+- corner buttons: the keyboard light's follows the room (lit while on;
+  shown with a light sensor, see [system](system.md#follow-the-room)),
+  the sound's lists the outputs (shown with two or more).
+
+| On a level | Action |
 |---|---|
-| Esc | close (an open card menu first) |
-| ↑ / ↓ | move the selection; the page follows it |
-| Space | fold or open |
-| Enter | fire the primary action |
-| Tab | open the selected card's reply field |
-| Delete | dismiss |
+| press on the track | set the level there (a stepped light: the nearest level), and drag it |
+| press on a glyph, the name or the value | nothing (the sound's low glyph mutes) |
+| wheel | step it as its keys do |
+| right click on the sound | its outputs (`wpctl status`'s sinks, the default checked); a pick makes one the default |
+| right click on the keyboard light | Follow the Room (dim without a light sensor) |
 
-Paging drops the selection, so Enter and Delete never act off screen.
-Modified chords, and keys with nothing to act on, pass through to your
-binds.
-
-### Acting closes it
-
-Firing a primary action, a menu action or a link raises something over
-the center, so the center closes. Everything that keeps you there keeps
-it open: a dismissal, a fold, Do Not Disturb, Clear All, the reply
-field, a card with nothing to fire. An action-driven close does not pop
-the parked banners back (the sender is coming up over them).
+A level past 100 % (set elsewhere) shows its number over a full track. A
+key that moves a level while the control center is open moves its
+slider, and no capsule covers the panel.
 
 ## Do Not Disturb
 
-From the center's tile, the bell's right click, or
+From the control center's capsule, the bell's right click, or
 `hl.plugin.awesome.suspend([minutes])`. Arrivals collect silently with
 their timeouts held; turning it off shows the queue newest first, on
 fresh timeouts, under the per-app cap and switches. An update to a card

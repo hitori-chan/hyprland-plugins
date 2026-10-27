@@ -73,6 +73,7 @@ namespace NAwesome {
     AW_THEME_COLOR(tShadow, SHADOW)
     AW_THEME_COLOR(tMenuShadow, MENU_SHADOW)
     AW_THEME_COLOR(tOnAccent, ON_ACCENT)
+    AW_THEME_COLOR(tLitInk, LIT_INK)
     AW_THEME_COLOR(tBadgeRim, BADGE_RIM)
     AW_THEME_COLOR(tBadgeGround, BADGE_GROUND)
 #undef AW_THEME_COLOR

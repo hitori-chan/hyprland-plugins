@@ -17,7 +17,9 @@
 
 #include <cerrno>
 #include <cstdint>
+#include <ctime>
 #include <functional>
+#include <string>
 
 namespace NAwesome {
 
@@ -80,5 +82,28 @@ namespace NAwesome {
         wl_event_source*      m_src = nullptr;
         std::function<void()> m_fn;
     };
+
+    // the local date's day number: noon keeps a DST shift off the edge
+    inline int localDay(time_t t) {
+        std::tm d{};
+        localtime_r(&t, &d);
+        d.tm_hour  = 12;
+        d.tm_min   = 0;
+        d.tm_sec   = 0;
+        d.tm_isdst = -1;
+        return (int)(std::mktime(&d) / 86400);
+    }
+
+    // when a deadline falls, as the bar's clock writes time: "14:30" today,
+    // "Tomorrow 08:00", the weekday within a week, else the date
+    inline std::string untilText(int64_t end) {
+        const time_t T = (time_t)end;
+        std::tm      at{};
+        localtime_r(&T, &at);
+        const int   DAYS = localDay(T) - localDay(std::time(nullptr));
+        const char* FMT  = DAYS <= 0 ? "%H:%M" : DAYS == 1 ? "Tomorrow %H:%M" : DAYS < 7 ? "%A %H:%M" : "%b %-d %H:%M";
+        char        buf[64];
+        return std::strftime(buf, sizeof buf, FMT, &at) ? buf : "";
+    }
 
 } // namespace NAwesome

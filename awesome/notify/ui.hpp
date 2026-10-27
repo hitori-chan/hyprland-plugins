@@ -234,19 +234,19 @@ namespace NAwesome::Notify {
     bool popupsAnimating(); // any arrival spring still running
     bool centerAnimating(); // the open spring still running
 
-    // ---- controls.cpp: the control center's block atop the shade ----
+    // ---- controls.cpp: the control center ----
 
+    bool   controlsAnimating(); // its open spring still running
     double controlsHeight(bool warm); // the warm snapshots the values; both ask the height
-    void   renderControls(const SPaint& P, const SType& T, const CBox& block); // draws it, pushes its hits
+    double controlsReach(); // how far the open panel pushes the banners down (0 shut)
+    void   renderControls(const SPaint& P, const SType& T); // draws the panel, pushes its hits
     void   controlsDragStart(const SCard& c, const Vector2D& pos); // a left press on a level's track
     void   controlsDragMove(const Vector2D& pos);
     bool   controlsDragging();
-    void   controlsDragEnd(); // the release, a lock, the shade closing: the last ask holds
+    void   controlsDragEnd(); // the release, a lock, the panel closing: the last ask holds
     void   controlsWheel(Controls::eLevel l, int steps); // 5 % a notch, up raises
-    void   controlsSwitch(uint32_t tile);                // a tile's click
-    void   controlsToggleMute();                         // the volume's glyph
-    void   controlsOpened(); // a fresh read, and no capsule over the levels
-    void   controlsClosed();
+    void   controlsSwitch(uint32_t tile);                // a button's click
+    void   controlsToggleMute();                         // the volume's low glyph
 
     // ---- input.cpp: acting on a card ----
 

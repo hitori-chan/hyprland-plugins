@@ -5,26 +5,33 @@
 # events, there is no bus verb for either.
 # Pure definitions only — no side effects, no battery code.
 
-# ---- geometry (derived from notify/ui.hpp, notify/center.cpp) ------------
-# the column's right inset, a card's width, the center's top; the center
-# opens on the control center's block (notify/controls.cpp: 12 px of
-# padding, three 52 px tiles, 8 px, a 30 px row per level — all three in
-# the gate — and 5 px), then 8 px, the 28 px heading row and 8 px more
+# ---- geometry (derived from notify/ui.hpp, center.cpp, controls.cpp) ------
+# the column's right inset, a card's width, its top; the center opens on
+# its 28 px heading row, then 8 px
 N_EDGE=12
 N_W=356
 N_TOP=40
 PANEL_X=$((MON_W - N_EDGE - N_W))
-CTL_H=$((12 + 52 + 8 + 3 * 30 + 5))
-HEAD_Y=$((N_TOP + CTL_H + 8))
+HEAD_Y=$N_TOP
 CARD_Y=$((HEAD_Y + 28 + 8))
-# the block's controls: tile <0..2> (Do Not Disturb, Microphone, Touchpad),
-# level row <0..2> (display, keyboard, volume), the knob's x at a percent
-tile_cx() { echo $((PANEL_X + 14 + $1 * (104 + 8) + 52)); }
-TILE_CY=$((N_TOP + 12 + 26))
-level_cy() { echo $((N_TOP + 12 + 52 + 8 + $1 * 30 + 15)); }
-TRACK_X0=$((PANEL_X + 14 + 16 + 12))
-TRACK_W=$((N_W - 28 - 16 - 12 - 26 - 12))
-knob_x() { echo $((TRACK_X0 + 7 + (TRACK_W - 14) * $1 / 100)); }
+# The control center, in the same column: a 64 px first row (Do Not
+# Disturb's capsule, then the microphone's and the touchpad's 64 px
+# buttons, 12 apart), then a 64 px module per level (0 display, 1 keyboard,
+# 2 volume: all three in the gate), 12 apart. A module's slider row is
+# centred 45 px down, its track runs from 40 px in to its high glyph, and
+# a 28 px corner button sits 16 px off its right edge where the level has
+# one (the keyboard's room: the gate has a sensor; the volume's output:
+# the gate has two), which shortens the track by 40.
+CC_CY=$((N_TOP + 32))
+DND_CX=$((PANEL_X + 102))
+cc_btn_cx() { echo $((PANEL_X + 204 + 12 + $1 * 76 + 32)); } # cc_btn_cx <0 microphone | 1 touchpad>
+mod_y() { echo $((N_TOP + 64 + 12 + $1 * 76)); }
+level_cy() { echo $(($(mod_y "$1") + 45)); }
+CORNER_CX=$((PANEL_X + N_W - 16 - 14))
+corner_cy() { echo $(($(mod_y "$1") + 32)); }
+TRACK_X0=$((PANEL_X + 40))
+track_x() { echo $((TRACK_X0 + ($1 == 0 ? 272 : 232) * $2 / 100)); } # track_x <level> <percent>
+LOW_X=$((PANEL_X + 16 + 7)) # a level's low glyph: the volume's mutes
 ROWX=$((PANEL_X + 90))
 ROWY=$((CARD_Y + 24))
 POPX=$((MON_W - N_EDGE - N_W / 2))
@@ -417,7 +424,7 @@ PY
 
 # ---- pixels ------------------------------------------------------------------------
 panel_bottom() { # panel_bottom <frame> — the center column's last lit row (0 when empty)
-	# from inside the first card down: the controls row above it is left
+	# from inside the first card down: the heading row above it is left
 	# out, and the cards stand 8 px apart (a gap past 12 rows ends it)
 	python3 - "$1" "$MON_W" "$CARD_Y" <<'PY'
 import sys

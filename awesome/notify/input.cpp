@@ -111,14 +111,18 @@ namespace NAwesome::Notify {
         return -1;
     }
 
-    // a press this far past a level's track still grabs it (logical px)
-    constexpr double TRACK_SLOP = 4;
+    // a press this far past a level's track still grabs it, and this far
+    // above or below its middle (logical px: the slider's row)
+    constexpr double TRACK_SLOP = 4, SLIDER_REACH = 13;
 
     static uint8_t partAt(const SCard& c, const Vector2D& pos) {
-        // a level's row: its track drags (0), the volume's glyph mutes (1),
-        // the rest is dead (2) — a press on a glyph or the number never
-        // throws the level to an end
+        // a level's module: its slider's row drags along the track (0), the
+        // volume's low glyph mutes (1), the rest is dead (2) — a press on a
+        // glyph, the name or the value never throws the level to an end
         if (c.kind == SCard::CTRL_SLIDER) {
+            const double MID = c.track.y + c.track.h / 2;
+            if (std::abs(pos.y - MID) > SLIDER_REACH)
+                return 2;
             if (pos.x >= c.track.x - TRACK_SLOP && pos.x <= c.track.x + c.track.w + TRACK_SLOP)
                 return 0;
             return c.id == (uint32_t)Controls::eLevel::VOLUME && pos.x < c.track.x ? 1 : 2;
@@ -261,8 +265,9 @@ namespace NAwesome::Notify {
 
     static void drainHits(std::vector<SHit>& batch) {
         for (const auto& H : batch) {
-            if (H.outside) { // a click off every surface closes the center
+            if (H.outside) { // a click off every surface closes the open panel
                 setCenter(false, /*repop=*/true);
+                setControls(false);
                 continue;
             }
             switch (H.kind) {
@@ -419,7 +424,7 @@ namespace NAwesome::Notify {
             // (offset_y, the screen edge) is the most common stray click
             // next to a conversation — drainHits re-pops the absorbed stack
             // so the close does not leave the notifications invisible
-            if (centerVisible() && BIT) {
+            if ((centerVisible() || controlsVisible()) && BIT) {
                 info.cancelled = true;
                 swallowRelease |= BIT;
                 queueHit({.outside = true});
@@ -487,7 +492,7 @@ namespace NAwesome::Notify {
         // the cheap tests first: every wheel notch and touchpad frame lands
         // here, and the native hit-test walks the layer and popup stacks
         const bool MENU = CardMenu::isOpen();
-        if ((!centerVisible() && !MENU) || cards.empty() || info.cancelled || heldButtons > 0)
+        if ((!centerVisible() && !controlsVisible() && !MENU) || cards.empty() || info.cancelled || heldButtons > 0)
             return;
         if (NAwesome::nativePointerGrabActive() || NAwesome::nativeLayerOwnsPointer())
             return;
@@ -495,6 +500,10 @@ namespace NAwesome::Notify {
         const auto CARD = cardAt(POS);
         if (!CARD)
             return; // outside the panel: windows scroll normally
+        // under the control center the banners keep their own wheel (none):
+        // only the panel takes it
+        if (!centerVisible() && !MENU && CARD->kind != SCard::CTRL_SLIDER && CARD->kind != SCard::CTRL_SWITCH && CARD->kind != SCard::PANEL)
+            return;
         info.cancelled = true;
         // under an open menu the shade holds still: a page would slide its
         // card out from under it
@@ -510,7 +519,7 @@ namespace NAwesome::Notify {
             }
             return;
         }
-        if (CARD->kind == SCard::CTRL_SWITCH)
+        if (CARD->kind == SCard::CTRL_SWITCH || !centerVisible())
             return;
         scrollAcc += DELTA;
         if (const int STEP = (int)(scrollAcc / 15.0); STEP != 0) {
@@ -566,7 +575,7 @@ namespace NAwesome::Notify {
         }
         replyKeyEvent(e); // a press or the held key's release ends its repeat
         const bool MENU = CardMenu::isOpen();
-        if ((!centerVisible() && !MENU && !replyHeld()) || info.cancelled)
+        if ((!centerVisible() && !controlsVisible() && !MENU && !replyHeld()) || info.cancelled)
             return;
         // input-capture-v1 is fed after the plugin emissions: while a client
         // owns the physical stream, the shade must not cancel a key first
@@ -596,7 +605,7 @@ namespace NAwesome::Notify {
                 pendingEsc.arm([]() { CardMenu::close(); });
                 return;
             }
-            if (!centerVisible() && !replyHeld())
+            if (!centerVisible() && !controlsVisible() && !replyHeld())
                 return;
         }
 
@@ -621,8 +630,8 @@ namespace NAwesome::Notify {
                 info.cancelled = true;
             return;
         }
-        if (!centerVisible())
-            return; // a banner's field, gone: the rest is the center's
+        if (!centerVisible() && !controlsVisible())
+            return; // a banner's field, gone: the rest is the panels'
 
         // a modified chord is a user bind passing through, never the shade's
         for (const char* M : {XKB_MOD_NAME_CTRL, XKB_MOD_NAME_ALT, XKB_MOD_NAME_LOGO})
@@ -632,9 +641,15 @@ namespace NAwesome::Notify {
         const auto SYM = xkb_state_key_get_one_sym(KB->m_xkbState, e.keycode + 8);
         if (SYM == XKB_KEY_Escape) {
             info.cancelled = true;
-            pendingEsc.arm([]() { setCenter(false, /*repop=*/true); }); // deferred: the close reflows and refocuses
+            // deferred: the close reflows and refocuses
+            pendingEsc.arm([]() {
+                setCenter(false, /*repop=*/true);
+                setControls(false);
+            });
             return;
         }
+        if (!centerVisible())
+            return; // the control center takes Esc alone
         // Tab moves into the selected card's reply field, the way Tab moves
         // into any other control — the pointer has the chip, the keyboard
         // needs a way in that is not one of the acting keys.

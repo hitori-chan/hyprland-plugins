@@ -337,6 +337,7 @@ namespace NAwesome::Shell {
     IWidget& tasklistWidget();  // tasklist.cpp
     IWidget& trayWidget();      // tray.cpp
     IWidget& bellWidget();      // bell.cpp
+    IWidget& controlsWidget();  // bell.cpp: the control center's door
     IWidget& batteryWidget();   // battery.cpp
     IWidget& clockWidget();     // clock.cpp
 

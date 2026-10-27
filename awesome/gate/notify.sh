@@ -35,7 +35,7 @@ hq awesome center >/dev/null
 chk "center: opening absorbs the banner into the shade" test "$(bd)" = "banners:0 resident:3"
 chk "center: opening dismisses nothing" test "$(st)" = "center:1 live:3 dnd:0"
 capture_nested "$STATE/center-head.png"
-chk "center: the heading names the column, under the controls" \
+chk "center: the heading names the column, at its top" \
 	test "$(lit_px "$STATE/center-head.png" $((PANEL_X + 4)) $((PANEL_X + 150)) $((HEAD_Y + 4)) $((HEAD_Y + 24)))" -gt 80
 hq awesome center >/dev/null
 chk "center: closing neither re-pops nor drops a card" test "$(st)" = "center:0 live:3 dnd:0"

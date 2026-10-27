@@ -19,6 +19,7 @@ namespace NAwesome::Theme {
     inline constexpr uint32_t DIM       = 0x57ebebf5; // tertiary: empty tags, minimized, 34 %
     inline constexpr uint32_t ACCENT    = 0xff00ccff; // selection and focus — text, never a ground (the bell's dot is the one mark)
     inline constexpr uint32_t ON_ACCENT = 0xff00141a; // dark ink on the accent: the live send arrow
+    inline constexpr uint32_t LIT_INK   = 0xff0089ad; // a lit control's glyph on its white: the accent, deepened to read on it
     inline constexpr uint32_t URGENT    = 0xffff6159; // critical, urgent, low battery
     inline constexpr uint32_t LINK      = 0xff7db4ff; // body hyperlinks
     inline constexpr uint32_t CHARGING  = 0xff32d74b;

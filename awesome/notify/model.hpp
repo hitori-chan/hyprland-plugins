@@ -509,6 +509,11 @@ namespace NAwesome::Notify {
     // the shade opens on `on` when given (the bell clicked there), else
     // where the cards are
     void queueCenterToggle(PHLMONITOR on = nullptr);
+    // the control center (controls.cpp): the same column, the bar's switch
+    // glyph its door; one panel open at a time
+    bool controlsVisible();
+    void setControls(bool on); // event-loop only
+    void queueControlsToggle(PHLMONITOR on = nullptr);
     // move the cards (and the shade) to this monitor, damaging both spots
     void placeCardsOn(PHLMONITOR mon);
     void centerExit();
@@ -524,14 +529,14 @@ namespace NAwesome::Notify {
             DECK,      // a collapsed stack: its top card and the deck (group = the app key)
             SHEAD,     // an expanded stack's header: Show Less and its close button
             BTN_CLEAR, // the center header's "Clear All": the global sweep
-            PANEL,     // the center's column: swallows clicks, owns the wheel
+            PANEL,     // a panel's column (the center, the control center): swallows clicks, owns the wheel
             PAGE_UP,   // the center's paging chips (drawn over the edge cards)
             PAGE_DOWN,
             CAPSULE,   // an OSD capsule: damage and bounds only, never hit
             MENU,      // the card menu's panel: swallows, never acts
             MENU_ITEM, // one of its rows (id = the row's index)
-            CTRL_SWITCH, // a switch tile atop the center (id = controls.cpp's tile)
-            CTRL_SLIDER, // a level's row atop the center (id = Controls::eLevel)
+            CTRL_SWITCH, // a control center button (id = controls.cpp's tile)
+            CTRL_SLIDER, // a control center level's module (id = Controls::eLevel)
         };
         eKind       kind = POPUP;
         CBox        box;
