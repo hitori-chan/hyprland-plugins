@@ -316,6 +316,20 @@ schema's defaults name them; the user's `theme.lua` overrides them).
   (`SPaint::note`: a dark pill, 88 %, a hairline rim and a drop, no
   glass), after 500 ms: the control center's small buttons, the battery.
 
+## One home per option
+
+Every option has one control, in one place; an indicator may echo a
+state, never control it.
+
+| Option | Its home |
+|---|---|
+| Display, keyboard light, volume, output, Follow the Room | the control center's levels |
+| Bluetooth (the radio, a device's connection) | the control center's capsule |
+| Do Not Disturb (on, a duration) | the control center's capsule (`suspend()` for binds) |
+| Quiet automatically, silenced apps and chats (restore) | the bell's right click |
+| An app's banners and sounds, a chat's mute, Close All | the card menu (hold a card) |
+| The microphone, the touchpad | their keys (a capsule answers) |
+
 ## shell
 
 Tasks are views of `windows` state: minimize, restore and focus are
