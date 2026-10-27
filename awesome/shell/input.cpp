@@ -389,16 +389,18 @@ namespace NAwesome::Shell {
                 g_pHyprRenderer->damageBox(CBox{h.box}.expand(1));
         }
         barHover = h;
+        Battery::hover(h); // its note waits on a rest
     }
 
-    // the cell whose text a hover lifts: only tags and tasks have one (the
-    // tray, the bell and the clock do not react)
+    // the cell a hover reacts to: tags and tasks lift their text, the
+    // battery names its state after a rest (the tray, the bell and the clock
+    // do not react)
     static void barHoverAt(const PHLMONITOR& mon, const Vector2D& pos) {
         SBarHover h;
         if (const auto IT = hitboxes.find(mon->m_id); IT != hitboxes.end() && pos.y < mon->logicalBox().y + barHeight())
             for (const auto& HIT : IT->second | std::views::reverse)
                 if (HIT.box.containsPoint(pos)) {
-                    if (HIT.widget == &taglistWidget() || HIT.widget == &tasklistWidget())
+                    if (HIT.widget == &taglistWidget() || HIT.widget == &tasklistWidget() || HIT.widget == &batteryWidget())
                         h = {.mon = mon->m_id, .widget = HIT.widget, .tag = HIT.tag, .window = HIT.window.get(), .box = HIT.box};
                     break;
                 }

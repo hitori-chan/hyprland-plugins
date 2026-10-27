@@ -312,7 +312,9 @@ schema's defaults name them; the user's `theme.lua` overrides them).
   notifications without the hover buttons.
 - Hover lifts text a step, never a ground. Nothing darkens the desktop:
   what floats over the wallpaper carries its own glass, or a text
-  shadow.
+  shadow. What the pointer rests on may name itself in a **note**
+  (`SPaint::note`: a dark pill, 88 %, a hairline rim and a drop, no
+  glass), after 500 ms: the control center's small buttons, the battery.
 
 ## shell
 

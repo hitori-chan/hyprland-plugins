@@ -344,8 +344,15 @@ namespace NAwesome::Shell {
     // open menu or the menubar prompt owns every press, so it must also be
     // what's seen there. Their hit geometry is their own (Menu::levels, the
     // menubar strip), laid out by this same pass, warm and draw alike.
-    static bool popupsOn(PHLMONITOR mon) {
+    static bool menusOn(PHLMONITOR mon) {
         return mon && ((Menu::isOpen && Menu::mon.lock() == mon) || (Menubar::isOpen && Menubar::mon.lock() == mon));
+    }
+    // the battery's note: never over a menu, a fullscreen window or the lock
+    static bool noteOn(PHLMONITOR mon) {
+        return Battery::noteWanted(mon) && !menusOn(mon) && !barHidden(mon) && !NAwesome::sessionLocked();
+    }
+    static bool popupsOn(PHLMONITOR mon) {
+        return menusOn(mon) || noteOn(mon);
     }
 
     static void renderPopups(PHLMONITOR mon, Render::CRenderContext* rctx) {
@@ -365,6 +372,9 @@ namespace NAwesome::Shell {
         // themselves, and submenus cascade out beside their parent — like
         // the GTK menus these were under X11 --
         Menu::render(P);
+
+        if (noteOn(mon))
+            Battery::renderNote(P);
     }
 
     // ---- the canvas layer ----
@@ -471,6 +481,8 @@ namespace NAwesome::Shell {
             };
             if (Menubar::isOpen && Menubar::mon.lock() == mon)
                 ADD(CBox{0, barHeight(), MB.w, barHeight()});
+            if (const auto NOTE = Battery::noteReach(mon)) // while it shows, a menu over it too: its pixels go with it
+                ADD(CBox{*NOTE}.translate(Vector2D{-MB.x, -MB.y}));
             if (Menu::isOpen && Menu::mon.lock() == mon) {
                 const double MARGIN = Menu::reach(mon);
                 for (const auto& L : Menu::levels) {
@@ -493,7 +505,8 @@ namespace NAwesome::Shell {
             return Menubar::isOpen && Menubar::mon.lock() == mon;
         }
         bool needsBlur(PHLMONITOR mon) const override {
-            return NAwesome::blurOn() && popupsOn(mon) && color(cfg().getColor("plugin:awesome:theme:col_glass")).a < 1.0;
+            // the menus' glass; the note is no glass
+            return NAwesome::blurOn() && menusOn(mon) && color(cfg().getColor("plugin:awesome:theme:col_glass")).a < 1.0;
         }
     };
 

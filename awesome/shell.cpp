@@ -36,6 +36,7 @@ namespace NAwesome::Shell {
             const bool CLK = Clock::refresh(), BAT = Battery::refresh();
             if (CLK || BAT)
                 barChanged();
+            Battery::noteChanged();
             Battery::alerts();
             armMinute();
         }
@@ -164,12 +165,14 @@ namespace NAwesome::Shell {
 
     // `hyprctl awesome cells` (the gate's build): the first bar's click
     // cells, left to right, one "<widget> <x0> <x1>" a line — the gate's
-    // map of what a press hits
+    // map of what a press hits; `battery-note`: the battery's note
     std::optional<std::string> CModule::handleCtl(const std::string& verb) const {
 #ifndef AWESOME_GATE
         (void)verb;
         return std::nullopt;
 #else
+        if (verb == "battery-note") // the battery's note as it shows ("" none)
+            return Battery::noteDescribe();
         if (verb != "cells")
             return std::nullopt;
         const auto IT = hitboxes.begin();

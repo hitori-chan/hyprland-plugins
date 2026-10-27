@@ -45,6 +45,8 @@ namespace NAwesome::Theme {
     inline constexpr uint32_t MENU_SHADOW = 0x6b000000; // a menu floats higher, 42 %
     inline constexpr uint32_t BADGE_RIM   = 0xffffffff; // the identity badge's ring
     inline constexpr uint32_t BADGE_GROUND = 0xff2c2c32; // a symbolic icon's ink on the badge's white
+    inline constexpr uint32_t NOTE        = 0xe0121216; // a name or a state under the pointer: a dark note, 88 %
+    inline constexpr uint32_t NOTE_SHADOW = 0x4d000000; // its drop, 30 %
 
     // ---- geometry (logical px) ----
     inline constexpr int    RAD_CARD   = 18; // notify:rounding's default

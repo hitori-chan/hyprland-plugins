@@ -254,7 +254,7 @@ namespace NAwesome::Notify {
                    COLBODY = color(cfg().getColor("plugin:awesome:notify:col_fg")), COLBG = color(cfg().getColor("plugin:awesome:theme:col_glass")),
                    COLRIM = color(cfg().getColor("plugin:awesome:theme:col_rim"));
         static const CHyprColor KNOB_COL{1.0, 1.0, 1.0, 1.0}, KNOB_DROP{0.0, 0.0, 0.0, 0.4}, MUTED_FILL{235 / 255.0, 235 / 255.0, 245 / 255.0, 0.38},
-            PILL_OPEN{1.0, 1.0, 1.0, 0.2}, TIP_GROUND{18 / 255.0, 18 / 255.0, 22 / 255.0, 0.88}, TIP_DROP{0.0, 0.0, 0.0, 0.3};
+            PILL_OPEN{1.0, 1.0, 1.0, 0.2};
         const auto PX   = [&](double logical) { return (int)std::lround(logical * P.scale); };
         const auto HOV  = [&](eTile t) { return hovered.kind == SCard::CTRL_SWITCH && hovered.id == t; };
         const auto MENU = CardMenu::openControlMenu();
@@ -423,13 +423,11 @@ namespace NAwesome::Notify {
             const bool   HEAD = TT == TILE_ROOM || TT == TILE_OUTPUT;
             const double TW   = texW(TEXT, P.scale) + 2 * TIP_PADX;
             const CBox   TB{(HEAD ? A.x - TIP_GAP : A.x - TIP_OUT) - TW, HEAD ? A.y : A.y + (A.h - TIP_H) / 2, TW, TIP_H};
-            P.shadow(CBox{TB}.expand(12).translate(Vector2D{0.0, 4.0}), PX(TIP_H / 2), 2.f, 12, TIP_DROP);
-            P.rect(TB, TIP_GROUND, PX(TIP_H / 2), 2.f);
-            P.ring(TB, tHairline(), PX(TIP_H / 2), 2.f);
+            P.note(TB);
             texCentered(P, TEXT, TB);
             SCard c; // its damage and bounds; never hit
             c.kind = SCard::CAPSULE;
-            c.box  = CBox{TB}.expand(12);
+            c.box  = CBox{TB}.expand(SPaint::noteReach());
             cards.push_back(c);
         }
     }
