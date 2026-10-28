@@ -240,8 +240,9 @@ pointer (the glass never lightens):
   device's kind in a disc, lit while connected, its name, and on the
   right "Connecting…",
   "Disconnecting…" or, while connected, its battery ("80%" beside a
-  battery glyph, red at 20 % or less). A refused connect's row says why
-  under the name ("Didn't answer." in red, then "Is it on and nearby?").
+  battery glyph, red at 20 % or less). A refused connect's row says
+  what happened under the name, in red, and no more ("Didn't answer.",
+  "Didn't connect.", "Pairing lost."): its click tries again.
   A pick disconnects a connected device, else connects it (powering the
   radio first while off). A right-click on a device asks, in place of
   its row, "Forget it? Using it again takes pairing it again." —
@@ -257,8 +258,8 @@ pointer (the glass never lightens):
   in place of its row the code to type on it ("Type this code on it, then
   press Return", the digits already typed dimmed) or to compare ("Does it
   show the same code?" — **Pair** or **Cancel**). A paired device is
-  trusted, then connected; a refused pairing reads "Pairing failed. Is it
-  in pairing mode?". The menu closing stops the scan, forgets what it
+  trusted, then connected; a refused pairing reads "Pairing failed.".
+  The menu closing stops the scan, forgets what it
   found and cancels a pairing that was asking; one that asks nothing
   runs on.
 - Do Not Disturb's state is Off, On or "Until 21:30". Its menu: For 30

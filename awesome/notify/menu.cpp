@@ -194,14 +194,15 @@ namespace NAwesome::Notify::CardMenu {
         s_items.push_back({CLOSE_APP, "Close All from " + APP, {}});
     }
 
-    // a refused connect's line: what happened (in red), then what to check
-    static std::pair<const char*, const char*> failLine(uint8_t f) {
+    // a refused connect's line under the name: what happened, in red, and
+    // no advice (the row's own click is the retry)
+    static const char* failLine(uint8_t f) {
         switch (f) {
-            case Controls::SDevice::NO_ANSWER: return {"Didn't answer.", "Is it on and nearby?"};
-            case Controls::SDevice::PAIRING_LOST: return {"Pairing lost.", "Put it in pairing mode, then click to pair again."};
-            case Controls::SDevice::FAILED: return {"Didn't connect.", "Try it again."};
-            case Controls::SDevice::PAIR_FAILED: return {"Pairing failed.", "Is it in pairing mode?"};
-            default: return {nullptr, nullptr};
+            case Controls::SDevice::NO_ANSWER: return "Didn't answer.";
+            case Controls::SDevice::PAIRING_LOST: return "Pairing lost.";
+            case Controls::SDevice::FAILED: return "Didn't connect.";
+            case Controls::SDevice::PAIR_FAILED: return "Pairing failed.";
+            default: return nullptr;
         }
     }
 
@@ -579,7 +580,7 @@ namespace NAwesome::Notify::CardMenu {
             }
             out += (out.empty() ? "" : ";") +
                 (I.dim ? "(" + I.label + ")" :
-                         (I.shown.empty() ? I.label : I.shown) + (I.check == 1 ? "*" : "") + (I.detail.empty() ? "" : " " + I.detail) + (I.fail ? std::string{" !"} + failLine(I.fail).first : ""));
+                         (I.shown.empty() ? I.label : I.shown) + (I.check == 1 ? "*" : "") + (I.detail.empty() ? "" : " " + I.detail) + (I.fail ? std::string{" !"} + failLine(I.fail) : ""));
         }
         return s_open ? out : std::string{};
     }
@@ -625,12 +626,10 @@ namespace NAwesome::Notify::CardMenu {
             const double R = rightW(I);
             return R > 0 ? std::max(1, CAPPX - PX(R + 12)) : CAPPX;
         };
-        // a device's refusal: its head in the urgent colour, the hint after
+        // a device's refusal, in the urgent colour
         const auto failOf = [&](const SItem& I) -> const SCachedText* {
-            const auto [HEAD, HINT] = failLine(I.fail);
-            if (!HEAD || !I.disc)
-                return nullptr;
-            return cachedText(std::format("<span {}>{}</span> {}", inkMarkup(COLURGENT), HEAD, HINT), COLSUB, T.meta, CAPPX, T.meta * 3, 0, true, 400);
+            const auto HEAD = failLine(I.fail);
+            return HEAD && I.disc ? cachedText(HEAD, COLURGENT, T.meta, CAPPX, -1, 0, false, 400) : nullptr;
         };
         // an output's name past the label's room is cut in the middle (its
         // ends tell outputs apart); every other label is whole
