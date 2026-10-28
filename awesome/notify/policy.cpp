@@ -72,6 +72,7 @@ namespace NAwesome::Notify::Policy {
         else
             M.put(KEY, {NEXT, label.empty() && WAS ? WAS->label : storeLabel(label)});
         StateStore::inst().dirty();
+        notifChanged(); // the center's fold reads the switches live
     }
 
     int64_t mutedUntil(const std::string& chat) {
@@ -100,6 +101,7 @@ namespace NAwesome::Notify::Policy {
             M.eraseIf([&](const std::string& k, const SLabeled<int64_t>&) { return k == chat; });
         StateStore::inst().dirty();
         prune(); // every write sweeps the mutes that ended
+        notifChanged();
     }
 
     std::vector<SSilenced> silenced() {

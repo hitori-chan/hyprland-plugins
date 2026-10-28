@@ -785,6 +785,8 @@ hq awesome center >/dev/null
 chk "status: the center says why arrivals hold, and how many wait" until_is 3 "dnd:until turned off · 1 waiting |" rows
 status_drawn() { (($(lit_px "$1" $((PANEL_X + 8)) $((PANEL_X + 28)) $((CARD_Y + 8)) $((CARD_Y + 28))) > 250)); }
 chk "status: its line stands under the heading" shot_until 3 $STATE/status.png status_drawn $STATE/status.png
+nsend -a q waiting2 body
+chk "status: an arrival held meanwhile counts at once" until_is 3 "dnd:until turned off · 2 waiting |" rows
 hq awesome center >/dev/null
 dsp "hl.plugin.awesome.suspend()"
 chk "status: DND off" hq_matches 'dnd:0' awesome state

@@ -1417,12 +1417,18 @@ namespace NAwesome::Notify {
             const bool COALESCED = SOFT && appBannersFull(n);
             if (COALESCED || (SOFT && Policy::bannersOff(*n)))
                 n->banner = false;
+            // the open center lists it: parked like the banners the open
+            // absorbed, so the close treats it as them (an action's parks it)
+            if (n->banner && !n->waiting && !vanishes(n) && centerVisible()) {
+                n->banner   = false;
+                n->absorbed = true;
+            }
             // a chat's news rising to the top of the column (or back onto
             // it) springs in like an arrival
             if (fresh && n->banner && !n->waiting && !quiet && !WAS_LEAD)
                 n->born = Time::steadyNow();
 
-            if (!n->waiting) // a suspended arrival is invisible: no warm, no damage
+            if (!n->waiting || centerVisible()) // a suspended arrival is invisible but for the open center's count
                 notifChanged();
             else if (badgeChangedHook()) // ...but the bell counts the DND queue
                 badgeChangedHook()();
