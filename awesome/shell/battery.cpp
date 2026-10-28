@@ -102,7 +102,7 @@ namespace NAwesome::Shell {
     // owns a separate system-bus link because tray's link is session-local.
     static NAwesome::CBusLink         powerProfilesBus;
     static std::unique_ptr<sdbus::IProxy> powerProfilesProxy;
-    static std::unique_ptr<sdbus::IProxy> powerProfilesBroker;
+    static sdbus::Slot                    powerProfilesMatch, powerProfilesOwner; // async matches: no round trip at load
     static uint64_t                       powerProfileGeneration = 0;
 
     static constexpr const char* POWER_PROFILES_SERVICE = "net.hadess.PowerProfiles";
@@ -140,22 +140,27 @@ namespace NAwesome::Shell {
     static void initPowerProfiles() {
         powerProfilesBus.dropOwned = []() {
             ++powerProfileGeneration;
+            powerProfilesMatch.reset();
+            powerProfilesOwner.reset();
             powerProfilesProxy.reset();
-            powerProfilesBroker.reset();
         };
         powerProfilesBus.afterTeardown = []() { applyPowerSave(false); };
         try {
             powerProfilesBus.open(true);
             powerProfilesProxy.reset(sdbus::createProxy(*powerProfilesBus.conn(), sdbus::ServiceName{POWER_PROFILES_SERVICE}, sdbus::ObjectPath{POWER_PROFILES_PATH}).release());
-            powerProfilesBroker.reset(sdbus::createProxy(*powerProfilesBus.conn(), sdbus::ServiceName{"org.freedesktop.DBus"}, sdbus::ObjectPath{"/org/freedesktop/DBus"}).release());
-            powerProfilesProxy->uponSignal("PropertiesChanged")
-                .onInterface("org.freedesktop.DBus.Properties")
-                .call([](std::string iface, std::map<std::string, sdbus::Variant> changed, std::vector<std::string> invalidated) {
-                    if (iface != POWER_PROFILES_IFACE)
-                        return;
+            powerProfilesMatch = powerProfilesBus.conn()->addMatchAsync(
+                "type='signal',sender='net.hadess.PowerProfiles',path='/net/hadess/PowerProfiles',interface='org.freedesktop.DBus.Properties',"
+                "member='PropertiesChanged',arg0='net.hadess.PowerProfiles'",
+                [](sdbus::Message m) {
+                    std::string                           iface;
+                    std::map<std::string, sdbus::Variant> changed;
+                    std::vector<std::string>              invalidated;
+                    try {
+                        m >> iface >> changed >> invalidated;
+                    } catch (...) { return; }
                     const auto IT = changed.find("ActiveProfile");
                     if (IT == changed.end()) {
-                        if (std::find(invalidated.begin(), invalidated.end(), "ActiveProfile") != invalidated.end())
+                        if (std::ranges::contains(invalidated, std::string_view{"ActiveProfile"}))
                             refreshPowerProfile();
                         return;
                     }
@@ -165,17 +170,23 @@ namespace NAwesome::Shell {
                     } catch (...) {
                         refreshPowerProfile();
                     }
-                });
-            powerProfilesBroker->uponSignal("NameOwnerChanged").onInterface("org.freedesktop.DBus").call([](std::string name, std::string, std::string newOwner) {
-                if (name != POWER_PROFILES_SERVICE)
-                    return;
-                if (newOwner.empty()) {
-                    ++powerProfileGeneration;
-                    applyPowerSave(false);
-                    return;
-                }
-                refreshPowerProfile();
-            });
+                },
+                [](sdbus::Message) {}, sdbus::return_slot);
+            powerProfilesOwner = powerProfilesBus.conn()->addMatchAsync(
+                "type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='net.hadess.PowerProfiles'",
+                [](sdbus::Message m) {
+                    std::string name, from, to;
+                    try {
+                        m >> name >> from >> to;
+                    } catch (...) { return; }
+                    if (to.empty()) {
+                        ++powerProfileGeneration;
+                        applyPowerSave(false);
+                        return;
+                    }
+                    refreshPowerProfile();
+                },
+                [](sdbus::Message) {}, sdbus::return_slot);
             refreshPowerProfile();
             powerProfilesBus.sync();
         } catch (...) {
