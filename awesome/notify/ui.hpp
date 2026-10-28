@@ -291,6 +291,8 @@ namespace NAwesome::Notify {
         void     close();
         bool     isOpen();
         uint32_t owner(); // the card it belongs to; 0 = none open
+        // a row's right-click or Delete: Bluetooth's device asks to be forgotten
+        void secondary(int index, const std::string& key);
         void     pick(int index, const std::string& key); // from the click drain; a control's row by its key
         void     sync();          // after a model change: its card died -> close
         void     render(const SPaint& P, const SType& T); // its panel, then its rows (hit first)

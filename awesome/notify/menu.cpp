@@ -20,8 +20,9 @@
 // Disturb's words (its durations) and Bluetooth's words (Devices: the
 // paired ones, a lit disc while connected, "Connecting…",
 // "Disconnecting…" or the battery on the right, a refused connect's
-// reason under the name; a pick connects or disconnects). Their rows come
-// from the system module's published values and rebuild with every warm.
+// reason under the name; a pick connects or disconnects, a right-click or
+// Delete asks to forget it, in place of its row). Their rows come from
+// the system module's published values and rebuild with every warm.
 //
 // The menu is the notify layer's own,
 // drawn last and hit first: it holds its card's banner while up, and
@@ -54,6 +55,8 @@ namespace NAwesome::Notify::CardMenu {
         DND_MORNING, // ... until the next 08:00
         DND_FOREVER, // ... until turned off
         DEVICE,      // Bluetooth's: SItem::key's device connects, or disconnects (check 1)
+        NOTE,        // a quiet line of advice: never lit, never hit
+        PROMPT,      // a question in place of a device's row, its buttons hit by their own keys
     };
 
     struct SItem {
@@ -73,6 +76,8 @@ namespace NAwesome::Notify::CardMenu {
         std::string   detail;
         int8_t        battery = -1;
         uint8_t       fail    = 0; // a device's Controls::SDevice::eFail: a line under its name
+        // a prompt's buttons, right to left from its last: "btn:<verb>:<id>"
+        std::vector<std::pair<std::string, std::string>> buttons; // key, words
     };
 
     // the board's menu: 5 px of padding, 28 px rows whose labels sit 15 px
@@ -88,6 +93,10 @@ namespace NAwesome::Notify::CardMenu {
     constexpr double BAT_W = 22, BAT_H = 11, BAT_GAP = 5;
     // a device row with a refusal: 5 px over its name, its reason 2 under
     constexpr double DEV_PADY = 5, FAIL_GAP = 2;
+    // a note: 6 over its words, 4 under; a prompt: its device's line (26),
+    // 4, the question, 6, its 26 px buttons 6 apart, 8 under
+    constexpr double NOTE_TOP = 6, NOTE_BOTTOM = 4, PROMPT_TOP = 5, PROMPT_LINE = 26, PROMPT_GAP = 4, PROMPT_ASK_GAP = 6, BTN_H = 26, BTN_GAP = 6,
+                     PROMPT_BOTTOM = 8, BTN_PADX = 13;
     constexpr size_t NAME_CP = 24; // a name past this many code points ellipsizes: the verb must stay readable
 
     static double rowH(const SItem& I) {
@@ -170,6 +179,9 @@ namespace NAwesome::Notify::CardMenu {
         }
     }
 
+    // the device whose row asks to forget it ("bt:" + its id; "" none)
+    static std::string s_forget;
+
     static Glyph::eGlyph deviceGlyph(Controls::SDevice::eKind k) {
         using K = Controls::SDevice::eKind;
         return k == K::HEADPHONES ? Glyph::eGlyph::HEADPHONES :
@@ -202,8 +214,21 @@ namespace NAwesome::Notify::CardMenu {
         } else {
             const auto& B = Controls::state().bluetooth;
             s_items.push_back({.verb = HEADER, .label = "Devices", .detail = B.powered ? "" : "· Bluetooth is off"});
+            bool asked = false;
             for (const auto& D : B.devices) {
                 const bool BUSY = D.busy != Controls::SDevice::IDLE;
+                if (!BUSY && s_forget == "bt:" + D.id) {
+                    asked = true;
+                    s_items.push_back({.verb    = PROMPT,
+                                       .label   = D.name,
+                                       .check   = (int8_t)(D.connected ? 1 : 0),
+                                       .key     = "bt:" + D.id,
+                                       .glyph   = deviceGlyph(D.kind),
+                                       .disc    = true,
+                                       .detail  = "Forget it? Using it again takes pairing it again.",
+                                       .buttons = {{"btn:forget:" + D.id, "Forget"}, {"btn:cancel:" + D.id, "Cancel"}}});
+                    continue;
+                }
                 s_items.push_back({.verb    = DEVICE,
                                    .label   = D.name,
                                    .check   = (int8_t)(D.connected ? 1 : 0),
@@ -218,8 +243,12 @@ namespace NAwesome::Notify::CardMenu {
                                    .battery = BUSY || !D.connected ? (int8_t)-1 : D.battery,
                                    .fail    = (uint8_t)D.fail});
             }
+            if (!asked)
+                s_forget.clear(); // its device went, or got busy
             if (B.devices.empty())
                 s_items.push_back({.verb = DEVICE, .label = "No Paired Devices", .dim = true});
+            else
+                s_items.push_back({.verb = NOTE, .label = "Right-click a device to forget it."});
         }
     }
 
@@ -263,6 +292,7 @@ namespace NAwesome::Notify::CardMenu {
     void close() {
         if (!s_open)
             return;
+        s_forget.clear();
         s_open  = false;
         s_owner = 0;
         s_control.reset();
@@ -273,6 +303,7 @@ namespace NAwesome::Notify::CardMenu {
     }
 
     void exit() {
+        s_forget.clear();
         s_open  = false;
         s_owner = 0;
         s_control.reset();
@@ -291,9 +322,37 @@ namespace NAwesome::Notify::CardMenu {
             close(); // its card died (closed, expired away, replaced into feedback)
     }
 
+    // a prompt's button: the menu stays, the row comes back (or goes, with
+    // its device)
+    static void press(const std::string& key) {
+        const auto ID = key.substr(key.find(':', 4) + 1);
+        if (key.starts_with("btn:forget:") && s_forget == "bt:" + ID && Controls::doors().forgetDevice)
+            Controls::doors().forgetDevice(ID);
+        s_forget.clear();
+        buildControl(ePanelMenu::BLUETOOTH);
+        notifChanged();
+    }
+
+    void secondary(int index, const std::string& key) {
+        (void)index;
+        if (!s_open || s_control != ePanelMenu::BLUETOOTH || !key.starts_with("bt:"))
+            return;
+        const auto IT = std::ranges::find(s_items, key, &SItem::key);
+        if (IT == s_items.end() || IT->verb != DEVICE)
+            return;
+        s_forget = key;
+        buildControl(ePanelMenu::BLUETOOTH);
+        notifChanged();
+    }
+
     void pick(int index, const std::string& key) {
         if (!s_open)
             return;
+        if (key.starts_with("btn:")) {
+            if (s_control == ePanelMenu::BLUETOOTH)
+                press(key);
+            return;
+        }
         // a control's rows rebuild with every warm (a sink came or went
         // between the draw and the pick): the row is the one with its key
         if (!key.empty()) {
@@ -309,6 +368,8 @@ namespace NAwesome::Notify::CardMenu {
         const auto VERB = s_items[index].verb;
         const auto KEY  = s_items[index].action;
         const auto ROW  = s_items[index].key;
+        if (VERB == NOTE || VERB == PROMPT)
+            return; // never hit: a press on one lands on the panel
         const auto OUT  = s_items[index].output;
         const bool ON   = s_items[index].check == 1;
         const auto APP  = s_app;
@@ -353,7 +414,9 @@ namespace NAwesome::Notify::CardMenu {
                         if ("bt:" + D.id == ROW && D.busy == Controls::SDevice::IDLE)
                             Controls::doors().connectDevice(D.id, !ON);
                 return;
-            case HEADER: return;
+            case HEADER:
+            case NOTE:
+            case PROMPT: return;
         }
     }
 
@@ -363,8 +426,14 @@ namespace NAwesome::Notify::CardMenu {
     std::string describe() {
         std::string out;
         for (const auto& I : s_items) {
-            if (I.verb == SEP || I.verb == HEADER)
+            if (I.verb == SEP || I.verb == HEADER || I.verb == NOTE)
                 continue;
+            if (I.verb == PROMPT) {
+                out += (out.empty() ? "" : ";") + I.label + " ?";
+                for (const auto& [_, WORDS] : I.buttons)
+                    out += " [" + WORDS + "]";
+                continue;
+            }
             out += (out.empty() ? "" : ";") +
                 (I.dim ? "(" + I.label + ")" :
                          I.label + (I.check == 1 ? "*" : "") + (I.detail.empty() ? "" : " " + I.detail) + (I.fail ? std::string{" !"} + failLine(I.fail).first : ""));
@@ -414,7 +483,13 @@ namespace NAwesome::Notify::CardMenu {
         };
         // the resting face of a row's label: its height sizes a refused row
         const auto restOf = [&](const SItem& I) { return cachedText(I.label, I.quiet ? COLSUB : COLTITLE, T.body, labelPx(I), -1, 0, false, 400); };
+        // a note's and a prompt's words wrap in the label's column
+        const auto noteOf = [&](const SItem& I) { return cachedText(I.verb == NOTE ? I.label : I.detail, COLSUB, T.meta, I.verb == NOTE ? PX((FIXED > 0 ? FIXED : MAX_W) - 2 * LABEL_X) : CAPPX, T.meta * 3, 0, false, 400); };
         const auto itemH  = [&](const SItem& I) {
+            if (I.verb == NOTE)
+                return NOTE_TOP + texH(noteOf(I), P.scale) + NOTE_BOTTOM;
+            if (I.verb == PROMPT)
+                return PROMPT_TOP + PROMPT_LINE + PROMPT_GAP + texH(noteOf(I), P.scale) + PROMPT_ASK_GAP + BTN_H + PROMPT_BOTTOM;
             const auto F = failOf(I);
             return F ? std::max(DEVH, 2 * DEV_PADY + texH(restOf(I), P.scale) + FAIL_GAP + texH(F, P.scale)) : rowH(I);
         };
@@ -422,7 +497,7 @@ namespace NAwesome::Notify::CardMenu {
         double w = FIXED > 0 ? FIXED : MIN_W, h = 2 * PAD;
         for (const auto& I : s_items) {
             h += itemH(I);
-            if (FIXED <= 0 && I.verb != SEP && I.verb != HEADER)
+            if (FIXED <= 0 && I.verb != SEP && I.verb != HEADER && I.verb != NOTE && I.verb != PROMPT)
                 w = std::max(w, texW(cachedText(I.label, I.dim ? COLDIM : COLTITLE, T.body, CAPPX, -1, 0, false, 400), P.scale) + LX + LABEL_X);
         }
         w = std::min(w, std::max(MAX_W, FIXED));
@@ -471,6 +546,54 @@ namespace NAwesome::Notify::CardMenu {
                 continue;
             }
             const CBox ROW{x, ry, w, RH};
+            if (I.verb == NOTE) { // never lit, never hit
+                if (const auto NT = noteOf(I))
+                    texAt(P, NT, x + LABEL_X, ry + NOTE_TOP);
+                ry += RH;
+                continue;
+            }
+            if (I.verb == PROMPT) { // the device's line, the question, its buttons
+                const CBox D{x + DISC_X, ry + PROMPT_TOP, DISC_D, DISC_D};
+                P.rect(D, I.check == 1 ? COLTITLE : tFill(), PX(DISC_D / 2), 2.f);
+                if (const auto G = Glyph::tex(I.glyph, I.check == 1 ? tLitInk() : COLTITLE, PX(DISC_GLYPH)))
+                    P.texIn(G, D);
+                if (const auto NAME = restOf(I))
+                    texAt(P, NAME, x + LX, D.y + (DISC_D - texH(NAME, P.scale)) / 2);
+                const auto   ASK = noteOf(I);
+                const double AY  = D.y + PROMPT_LINE + PROMPT_GAP;
+                if (ASK)
+                    texAt(P, ASK, x + LX, AY);
+                // a stray press on the question keeps it (its pick is a no-op);
+                // its buttons, pushed after, are hit first
+                SCard row = recycledCard();
+                row.kind  = SCard::MENU_ITEM;
+                row.box   = ROW;
+                row.id    = (uint32_t)i;
+                row.group = I.key;
+                cards.push_back(std::move(row));
+                double bx = x + w - DISC_X;
+                for (const auto& [KEY, WORDS] : I.buttons) {
+                    // Forget in red, everything else white on the fill;
+                    // both faces of the fill warm, its words once
+                    const bool BHOV  = hovered.kind == SCard::MENU_ITEM && hovered.group == KEY;
+                    const auto INK   = KEY.starts_with("btn:forget:") ? COLURGENT : COLTITLE;
+                    const auto WORDS_ = cachedText(WORDS, INK, T.meta, PX(w), -1, 0, false, 600);
+                    const double BW  = texW(WORDS_, P.scale) + 2 * BTN_PADX;
+                    const CBox   B{bx - BW, AY + texH(ASK, P.scale) + PROMPT_ASK_GAP, BW, BTN_H};
+                    P.rect(B, BHOV ? tFillHover() : tFill(), PX(BTN_H / 2), 2.f);
+                    if (WORDS_)
+                        texCentered(P, WORDS_, B);
+                    SCard btn = recycledCard();
+                    btn.kind  = SCard::MENU_ITEM;
+                    btn.box   = B;
+                    btn.id    = (uint32_t)i;
+                    btn.group = KEY;
+                    cards.push_back(std::move(btn));
+                    bx -= BW + BTN_GAP;
+                }
+                ry += RH;
+                continue;
+            }
             if (I.dim) { // never lit, never hit: a press on it lands on the panel
                 if (const auto LBL = cachedText(I.label, COLDIM, T.body, CAPPX, -1, 0, false, 400); LBL && LBL->tex)
                     texAt(P, LBL, x + LX, ry + (RH - texH(LBL, P.scale)) / 2);

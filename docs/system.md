@@ -86,6 +86,8 @@ center shows no Bluetooth.
   it until the panel closes; with the panel closed, a red capsule at the
   top says it for 3 s ("WH-1000XM4 Didn't Answer"). A refused power-on
   is "Didn't Turn On".
+- **Forget** removes the device from the adapter (`RemoveDevice`), its
+  keys with it; BlueZ's InterfacesRemoved takes it off the list.
 - **A headset's sink**: when an audio device connects or drops while the
   control center is open, the outputs are read again once PipeWire has
   caught up (1.5 s), so the output pill follows.

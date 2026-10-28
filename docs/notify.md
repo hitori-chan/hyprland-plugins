@@ -226,7 +226,10 @@ pointer (the glass never lightens):
   battery glyph, red at 20 % or less). A refused connect's row says why
   under the name ("Didn't answer." in red, then "Is it on and nearby?").
   A pick disconnects a connected device, else connects it (powering the
-  radio first while off).
+  radio first while off). A right-click on a device (or Delete with the
+  pointer on it) asks, in place of its row, "Forget it? Using it again
+  takes pairing it again." — **Forget** (red) unpairs it, **Cancel**
+  keeps it; the menu stays open.
 - Do Not Disturb's state is Off, On or "Until 21:30". Its menu: For 30
   Minutes · For 1 Hour · For 3 Hours · Until Tomorrow (08:00) (after
   midnight, "Until 08:00": the next 08:00) · Until Turned Off.

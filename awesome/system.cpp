@@ -109,6 +109,7 @@ namespace NAwesome::System {
                 },
             .setBluetooth  = setBluetooth,
             .connectDevice = connectDevice,
+            .forgetDevice  = forgetDevice,
             .panelClosed   = bluetoothPanelClosed,
         };
 

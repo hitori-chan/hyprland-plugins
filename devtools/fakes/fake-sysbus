@@ -22,6 +22,7 @@
 #   (org.awesome.Gate at /) emits a headset transport's Volume change, as
 #   bluetoothd does when the headset's own buttons move it, moves a
 #   battery, and fails a device's next Connect with a given error.
+#   Adapter1.RemoveDevice unpairs one (InterfacesRemoved; logged).
 import os
 import sys
 import warnings
@@ -153,6 +154,7 @@ BLUEZ_XML = """
     <method name="FailNext"><arg type="s" name="name" direction="in"/><arg type="s" name="error" direction="in"/><arg type="s" name="message" direction="in"/></method>
   </interface>
   <interface name="org.bluez.Adapter1">
+    <method name="RemoveDevice"><arg type="o" name="device" direction="in"/></method>
     <property name="Powered" type="b" access="readwrite"/>
     <property name="Alias" type="s" access="read"/>
   </interface>
@@ -213,6 +215,16 @@ def on_bluez_call(conn, sender, path, iface, method, params, invocation):
                 entry[1] = pct
                 changed(conn, p, "org.bluez.Battery1", {"Percentage": pct})
         invocation.return_value(None)
+    elif method == "RemoveDevice":
+        gone = params.unpack()[0]
+        if gone not in devices:
+            invocation.return_dbus_error("org.bluez.Error.DoesNotExist", "Does Not Exist")
+            return
+        values, battery = devices.pop(gone)
+        log(f"RemoveDevice {values['Alias']}")
+        ifaces = ["org.bluez.Device1"] + (["org.bluez.Battery1"] if battery is not None else [])
+        conn.emit_signal(None, "/", "org.freedesktop.DBus.ObjectManager", "InterfacesRemoved", GLib.Variant("(oas)", (gone, ifaces)))
+        invocation.return_value(None)
     elif method == "FailNext":
         name, error, message = params.unpack()
         fail_next[name] = (error, message)
@@ -244,6 +256,8 @@ def on_bluez_call(conn, sender, path, iface, method, params, invocation):
 
 
 def on_bluez_get(conn, sender, path, iface, prop):
+    if path != HCI and path not in devices:
+        return None  # removed: its object outlives it here
     if iface == "org.bluez.Adapter1":
         return GLib.Variant(SIGS.get(prop, "s"), adapter[prop])
     if iface == "org.bluez.Device1":

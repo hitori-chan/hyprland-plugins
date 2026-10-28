@@ -343,7 +343,12 @@ namespace NAwesome::Notify {
                 case SCard::PANEL: continue; // dead panel space swallows silently
                 case SCard::CAPSULE: continue; // never hit (cardAt skips it)
                 case SCard::MENU: CardMenu::close(); continue; // a press off its rows
-                case SCard::MENU_ITEM: CardMenu::pick((int)H.id, H.group); continue;
+                case SCard::MENU_ITEM:
+                    if (H.bit == 2u)
+                        CardMenu::secondary((int)H.id, H.group);
+                    else
+                        CardMenu::pick((int)H.id, H.group);
+                    continue;
                 case SCard::PAGE_UP:
                 case SCard::PAGE_DOWN:
                     if (H.bit == 1u)
@@ -410,6 +415,8 @@ namespace NAwesome::Notify {
             }
             if (!CARD || (CARD->kind != SCard::MENU && CARD->kind != SCard::MENU_ITEM))
                 queueHit({.kind = SCard::MENU});
+            else if (BIT == 2u && CARD->kind == SCard::MENU_ITEM) // a row's secondary: on the press, as a context menu opens
+                queueHit({.kind = SCard::MENU_ITEM, .id = CARD->id, .group = CARD->group, .bit = 2u});
             return;
         }
 
@@ -593,9 +600,16 @@ namespace NAwesome::Notify {
             bool chord = false;
             for (const char* M : {XKB_MOD_NAME_CTRL, XKB_MOD_NAME_ALT, XKB_MOD_NAME_LOGO})
                 chord = chord || xkb_state_mod_name_is_active(KB->m_xkbState, M, XKB_STATE_MODS_EFFECTIVE) > 0;
-            if (!chord && xkb_state_key_get_one_sym(KB->m_xkbState, e.keycode + 8) == XKB_KEY_Escape) {
+            const auto SYM = xkb_state_key_get_one_sym(KB->m_xkbState, e.keycode + 8);
+            if (!chord && SYM == XKB_KEY_Escape) {
                 info.cancelled = true;
                 pendingEsc.arm([]() { CardMenu::close(); });
+                return;
+            }
+            // Delete over a row is its right-click
+            if (!chord && (SYM == XKB_KEY_Delete || SYM == XKB_KEY_KP_Delete) && hovered.kind == SCard::MENU_ITEM) {
+                info.cancelled = true;
+                pendingEsc.arm([ID = hovered.id, KEY = hovered.group]() { CardMenu::secondary((int)ID, KEY); });
                 return;
             }
             if (!centerVisible() && !controlsVisible() && !replyHeld())

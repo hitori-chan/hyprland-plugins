@@ -84,6 +84,7 @@ namespace NAwesome::System {
     void bluetoothPanelClosed(); // the failures it showed are done
     void setBluetooth(bool on);
     void connectDevice(const std::string& id, bool connect);
+    void forgetDevice(const std::string& id);
 #ifdef AWESOME_GATE
     std::string bluetoothState();
 #endif
