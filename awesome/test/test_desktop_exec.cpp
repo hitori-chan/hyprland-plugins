@@ -120,6 +120,16 @@ bool test_desktop_exec() {
     AW_CHECK(!DE::escapedAt("a b", 1));
     AW_CHECK(DE::typeableText("ok\x01\xe2\x80\xaeyes\xff") == "okyes");
     AW_CHECK(DE::typeableText("ünï") == "ünï");
+    // a malformed byte goes alone: what follows it is read again
+    AW_CHECK(DE::typeableText("caf\xe9 au") == "caf au");
+    AW_CHECK(DE::typeableText("\xff" "abc") == "abc");
+    AW_CHECK(DE::typeableText("a\xf5\x80\x80\x80" "b") == "ab");
+    // overlong, surrogate and line-separator forms are refused
+    AW_CHECK(!DE::typeableName("\xc0\xaf"));
+    AW_CHECK(!DE::typeableName("\xe0\x80\xaf"));
+    AW_CHECK(!DE::typeableName("\xed\xa0\x80"));
+    AW_CHECK(!DE::typeableName("a\xe2\x80\xa8" "b"));
+    AW_CHECK(DE::typeableName("\xf0\x9f\x98\x80"));
 
     // ---- parseEntry: the [Desktop Entry] group ----
     {

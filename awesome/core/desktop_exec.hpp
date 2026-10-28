@@ -379,48 +379,64 @@ namespace NAwesome::DesktopExec {
 
     // ---- the launcher's typed command line (run through /bin/sh -c) ----
 
-    // A name that may be typed into a command line: no C0/C1 control (a
-    // newline ends the command) and no bidi control (it can hide or reorder
-    // what the prompt shows). Bytes are UTF-8; anything malformed is refused.
+    // One well-formed UTF-8 sequence at s[i]: its length, its code point in
+    // cp; 0 when malformed (a stray or bad lead, a short or bad tail, an
+    // overlong form, a surrogate, past U+10FFFF)
+    inline size_t utf8At(std::string_view s, size_t i, uint32_t& cp) {
+        const auto C = (unsigned char)s[i];
+        if (C < 0x80) {
+            cp = C;
+            return 1;
+        }
+        const size_t LEN = C >= 0xf0 && C < 0xf5 ? 4 : C >= 0xe0 && C < 0xf0 ? 3 : C >= 0xc2 && C < 0xe0 ? 2 : 0;
+        if (LEN == 0 || i + LEN > s.size())
+            return 0;
+        cp = C & (0xff >> (LEN + 1));
+        for (size_t k = 1; k < LEN; k++) {
+            const auto B = (unsigned char)s[i + k];
+            if ((B & 0xc0) != 0x80)
+                return 0;
+            cp = (cp << 6) | (B & 0x3f);
+        }
+        constexpr uint32_t MIN[] = {0, 0, 0x80, 0x800, 0x10000};
+        return cp < MIN[LEN] || (cp >= 0xd800 && cp <= 0xdfff) || cp > 0x10ffff ? 0 : LEN;
+    }
+
+    // a character the one-line prompt may hold: no C0/C1 control (a newline
+    // ends the command), no line or paragraph separator (it shows as one),
+    // no bidi control (it can hide or reorder what the prompt shows)
+    inline bool typeableChar(uint32_t cp) {
+        return cp >= 0x20 && cp != 0x7f && !(cp >= 0x80 && cp <= 0x9f) && cp != 0x61c && cp != 0x200e && cp != 0x200f && cp != 0x2028 && cp != 0x2029 &&
+            !(cp >= 0x202a && cp <= 0x202e) && !(cp >= 0x2066 && cp <= 0x2069);
+    }
+
+    // A name that may be typed into a command line: well-formed UTF-8 of
+    // typeable characters only
     inline bool typeableName(std::string_view s) {
         for (size_t i = 0; i < s.size();) {
-            const auto C = (unsigned char)s[i];
-            if (C < 0x20 || C == 0x7f)
-                return false;
-            if (C < 0x80) {
-                i++;
-                continue;
-            }
-            const size_t LEN = C >= 0xf0 ? 4 : C >= 0xe0 ? 3 : C >= 0xc2 ? 2 : 0;
-            if (LEN == 0 || i + LEN > s.size())
-                return false;
-            uint32_t cp = C & (0xff >> (LEN + 1));
-            for (size_t k = 1; k < LEN; k++) {
-                const auto B = (unsigned char)s[i + k];
-                if ((B & 0xc0) != 0x80)
-                    return false;
-                cp = (cp << 6) | (B & 0x3f);
-            }
-            if ((cp >= 0x80 && cp <= 0x9f) || cp == 0x61c || cp == 0x200e || cp == 0x200f || (cp >= 0x202a && cp <= 0x202e) || (cp >= 0x2066 && cp <= 0x2069))
+            uint32_t     cp  = 0;
+            const size_t LEN = utf8At(s, i, cp);
+            if (LEN == 0 || !typeableChar(cp))
                 return false;
             i += LEN;
         }
         return true;
     }
 
-    // Text that may be typed into a command line: `s` with every C0/C1 and
-    // bidi control and every malformed UTF-8 byte removed (see typeableName)
+    // Text that may be typed into a command line: `s` with every untypeable
+    // character and every malformed byte removed (one at a time: the bytes
+    // after a bad one are read again)
     inline std::string typeableText(std::string_view s) {
         std::string out;
         out.reserve(s.size());
         for (size_t i = 0; i < s.size();) {
-            const auto   C   = (unsigned char)s[i];
-            const size_t LEN = C < 0x80 ? 1 : C >= 0xf0 && C < 0xf5 ? 4 : C >= 0xe0 ? 3 : C >= 0xc2 ? 2 : 0;
-            if (LEN == 0 || i + LEN > s.size()) {
-                i++; // a stray byte
+            uint32_t     cp  = 0;
+            const size_t LEN = utf8At(s, i, cp);
+            if (LEN == 0) {
+                i++;
                 continue;
             }
-            if (typeableName(s.substr(i, LEN)))
+            if (typeableChar(cp))
                 out.append(s, i, LEN);
             i += LEN;
         }
