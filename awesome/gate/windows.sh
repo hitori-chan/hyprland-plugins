@@ -477,7 +477,10 @@ close_wait "$FF"
 active_class() { hq activewindow -j | python3 -c 'import json,sys;print(json.load(sys.stdin).get("class",""))'; }
 w1_count() { clients | python3 -c "import json,sys;print(sum(1 for c in json.load(sys.stdin) if c['class'] in ('w1base','w1over','w1gone','w1prev')))"; }
 hover() { printf 'move %s %s\nsleep 60\n' "$1" "$2" | vp; settle; }
+# the base maps first: the later ones stack over it (four spawned at once
+# arrived in any order, the base over the small window now and then)
 dsp "hl.dsp.exec_cmd('foot --app-id=w1base --window-size-pixels=600x400')"
+until_is 10 1 w1_count
 dsp "hl.dsp.exec_cmd('foot --app-id=w1over --window-size-pixels=200x120')"
 dsp "hl.dsp.exec_cmd('foot --app-id=w1gone --window-size-pixels=240x160')"
 dsp "hl.dsp.exec_cmd('foot --app-id=w1prev --window-size-pixels=240x160')"
@@ -487,12 +490,15 @@ dsp "hl.dsp.window.move({x = 100, y = 100, window = \"address:$W1BASE\"})"
 dsp "hl.dsp.window.move({x = 300, y = 240, window = \"address:$W1OVER\"})"
 dsp "hl.dsp.window.move({x = 800, y = 100, window = \"address:$W1GONE\"})"
 dsp "hl.dsp.window.move({x = 800, y = 400, window = \"address:$W1PREV\"})"
+# each hover's focus lands before the next: the history is that order
 hover 400 300 # the base's center: the small window is on top there
-chk "minimize successor: the small window covers the base's center" test "$(active_class)" = w1over
+chk "minimize successor: the small window covers the base's center" until_is 2 w1over active_class
 hover 900 480
+until_is 2 w1prev active_class
 hover 150 150
+until_is 2 w1base active_class
 hover 900 150
-chk "minimize successor: focus went over, prev, base, then the one to go" test "$(active_class)" = w1gone
+chk "minimize successor: focus went over, prev, base, then the one to go" until_is 2 w1gone active_class
 dsp "hl.plugin.awesome.minimize()"
 chk "minimize successor: the most recent window takes the focus, not the one over its center" until_is 2 w1base active_class
 expect "minimize successor: it is focused unraised (the small window stays over it)" \
