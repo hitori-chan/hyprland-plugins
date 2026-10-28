@@ -84,17 +84,13 @@ print(len(seen), len(frames), returns)
 PY
 }
 # mean abs difference of two frames' strips (left half), in 8-bit levels
-# (each over black: the nested's bare background is transparent, so its
-# screencopy keeps the glass's alpha, which the presented XRGB buffer drops)
+# (a nested capture is flattened over black, as the host presents it)
 strip_diff() { # strip_diff <a> <b>
 	python3 - "$BAR_H" "$1" "$2" <<'PY'
 import sys
 from PIL import Image, ImageChops, ImageStat
 h = int(sys.argv[1])
-def flat(f):
-    im = Image.open(f).convert('RGBA')
-    return Image.alpha_composite(Image.new('RGBA', im.size, (0, 0, 0, 255)), im).convert('L')
-a, b = (flat(f) for f in sys.argv[2:4])
+a, b = (Image.open(f).convert('L') for f in sys.argv[2:4])
 box = (0, 0, min(a.width, b.width) // 2, h)
 print(int(ImageStat.Stat(ImageChops.difference(a.crop(box), b.crop(box))).mean[0]))
 PY
