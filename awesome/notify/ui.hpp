@@ -15,6 +15,7 @@
 
 #include "model.hpp"
 
+#include "../core/bands.hpp"
 #include "../core/canvas.hpp"
 #include "../core/controls.hpp"
 #include "../core/glyph.hpp"
@@ -34,10 +35,11 @@ namespace NAwesome::Notify {
     // The cards' top below the monitor's top: offset_y, but never above the
     // workarea — the strip reserves its band, and a card over it would be
     // drawn where the strip takes the press (a taller shell:height than
-    // offset_y once put the top cards' clicks on the bar).
+    // offset_y once put the top cards' clicks on the bar). The open
+    // launcher's strip pushes them down by its height (core/bands.hpp).
     inline double cardsTop(const PHLMONITOR& mon) {
         const double OFF = (double)NAwesome::cfg().getI("plugin:awesome:notify:offset_y");
-        return mon ? std::max(OFF, mon->logicalBoxMinusReserved().y - mon->logicalBox().y) : OFF;
+        return mon ? std::max(OFF, mon->logicalBoxMinusReserved().y - mon->logicalBox().y) + Bands::below(mon->m_id) : OFF;
     }
     // what the monitor reserves at its bottom edge (a dock, a bottom bar):
     // the center stops above it, or its last card sits under the dock and

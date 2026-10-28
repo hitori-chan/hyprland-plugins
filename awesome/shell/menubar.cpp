@@ -1,6 +1,7 @@
 // awesome/shell/menubar.cpp — awesome's Mod+P launcher: .desktop apps, categories, prompt, completion, history
 
 
+#include "../core/bands.hpp"
 #include "../core/bounded.hpp"
 #include "../core/clipboard.hpp"
 #include "../core/desktopindex.hpp"
@@ -297,6 +298,7 @@ namespace NAwesome::Shell {
             damageBars();
             barChanged();
             isOpen = false;
+            Bands::publishLauncher({}); // the cards rise back under the bar
             clipboard.cancel();
             typed.clear();
             cursor     = 0;
@@ -327,6 +329,7 @@ namespace NAwesome::Shell {
             refilter();
             mon    = M;
             isOpen = true;
+            Bands::publishLauncher({.mon = M->m_id, .h = barHeight()}); // the cards drop under the strip
             barChanged();
         }
 

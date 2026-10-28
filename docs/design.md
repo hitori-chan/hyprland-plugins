@@ -38,7 +38,8 @@ in window-geometry space, the session-lock grab check.
 - A module never reaches into another's state. The seams live in `core`:
   `shell` asks `windows` to minimize; `system` posts capsules through the
   notify model API and publishes the control center's values through
-  `core/controls.hpp`; persisted state goes through `StateStore`.
+  `core/controls.hpp`; `shell` publishes the open launcher's strip
+  through `core/bands.hpp`; persisted state goes through `StateStore`.
 - The input order is the registration order in `main.cpp`: `shell` →
   `notify` → `windows` → `system`. The bar claims its strip and menus
   before the cards, the cards before window policy. The gate's pipeline
@@ -203,6 +204,9 @@ The dir stats that decide a refresh still run on the compositor thread
   and sends the user's moves through the doors. A changed hook repaints
   the open center; a panel flag tells `system` the center shows the
   levels, so it posts no level capsule.
+- **Bands** (`core/bands.hpp`): what lies across a monitor under the
+  bar. `shell` publishes the launcher's strip as it opens and shuts;
+  `notify` stacks its cards under it and restacks off the changed hook.
 
 ### Processes and pixels
 

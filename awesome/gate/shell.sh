@@ -438,6 +438,37 @@ chk "menubar: typing filters the completion list (the band narrows)" \
 close_menubar
 chk "menubar: esc closes the prompt" shot_until 3 "$STATE/menubar-closed.png" band_below "$STATE/menubar-closed.png" 51
 
+# The cards stack under the open strip (core/bands.hpp): a banner's first
+# ink row drops by the strip's height, and rises back once it shuts. Two
+# captures agree on a row before it counts (a card may still be sliding).
+ink_top() { # ink_top <frame> <y0> — the column's first row from y0 with ink past 150
+	python3 - "$1" "$PANEL_X" $((PANEL_X + N_W)) "$2" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
+x0, x1, y0 = (int(v) for v in sys.argv[2:5])
+print(next((y for y in range(y0, min(im.height, 320)) if any(min(px[x, y]) > 150 for x in range(x0 + 8, x1 - 8))), 0))
+PY
+}
+ink_agrees() { # ink_agrees <frame> <y0> <want|-> — the row settled (and is want)
+	local t
+	t="$(ink_top "$1" "$2")"
+	[[ "$t" != 0 && "$t" == "${INK_LAST:-}" && ("$3" == - || "$t" == "$3") ]] || { INK_LAST=$t; false; }
+}
+nsend -a bandp -t 30000 "band probe" body
+INK_LAST=
+shot_until 4 "$STATE/band-shut.png" ink_agrees "$STATE/band-shut.png" "$N_TOP" -
+BANNER_T0="$(ink_top "$STATE/band-shut.png" "$N_TOP")"
+open_menubar
+INK_LAST=
+chk "band: the open launcher drops the banner under its strip" \
+	shot_until 4 "$STATE/band-open.png" ink_agrees "$STATE/band-open.png" $((2 * BAR_H + 1)) $((BANNER_T0 + BAR_H)) ||
+	echo "band: the banner's ink at $BANNER_T0, then $(ink_top "$STATE/band-open.png" $((2 * BAR_H + 1)))" >&2
+close_menubar
+INK_LAST=
+chk "band: ...and it rises back once the strip shuts" shot_until 4 "$STATE/band-back.png" ink_agrees "$STATE/band-back.png" "$N_TOP" "$BANNER_T0"
+nclear
+
 # Tab on a command word typed as a path completes from its own directory,
 # executables only ($PATH holds no slashed names): the run marker proves
 # the completed line ran, and the plain file sorting first was skipped

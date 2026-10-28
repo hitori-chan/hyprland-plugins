@@ -352,11 +352,14 @@ namespace NAwesome::Notify {
             },
             nullptr);
         g_pEventLoopManager->addTimer(motionTick);
+        // the launcher's strip opened or shut: the cards restack under it
+        Bands::changedHook() = []() { notifChanged(); };
 
         NAwesome::Canvas::inst().addLayer(&CSurface::inst(), NAwesome::eLayerZ::CARDS);
     }
 
     void surfaceExit() {
+        Bands::changedHook() = nullptr;
         pendingWarm.reset();
         if (lastBox.w > 0 && g_pHyprRenderer)
             g_pHyprRenderer->damageBox(lastBox);

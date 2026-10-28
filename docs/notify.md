@@ -8,15 +8,18 @@ inline reply and sounds. Disable any other daemon
 ## Cards
 
 Cards appear top-right on the focused monitor, newest at the top,
-`offset_y` below the monitor's top and never above the work area. The
+`offset_y` below the monitor's top and never above the work area. While
+the launcher's strip is open under the bar on that monitor, the cards,
+the center and the control center sit its height lower, so a banner
+never covers the matches. The
 stack follows a keyboard or workspace focus change, but not one the
 pointer makes, so grazing the next monitor's corner leaves the cards
 where they are.
 
 One card shape serves every surface (a banner, a center card, a card in
 a stack): 356 px of regular glass with an 18 px superellipse radius, a
-soft drop shadow and a light rim. An open tray menu or the launcher
-paints over the cards, as it takes the press first.
+soft drop shadow and a light rim. An open tray menu paints over the
+cards, as it takes the press first.
 
 The system's own feedback (volume, brightness, microphone, touchpad,
 power plugged) is a **capsule** instead: 256 x 36 at the top center, a
