@@ -158,6 +158,7 @@ namespace NAwesome::Shell {
     SP<ITexture> loadPngBytes(const std::vector<uint8_t>& data); // dbusmenu icon-data blobs
     std::string  resolveIconPath(const std::string& name, const std::string& extraDir = "");
     void         iconsInit();
+    void         dropStaleTint(); // the bar's warm: a new tint or device size empties the icon caches
     SP<ITexture> appIcon(const std::string& klass);
     SP<ITexture> namedIcon(const std::string& name);
     SP<ITexture> trayIcon(const std::string& name, const std::string& theme, const std::string& id = "");
