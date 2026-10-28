@@ -8,6 +8,8 @@
 // else — no shell, no library, PipeWire stays out of the process.
 #pragma once
 
+#include "../core/bounded.hpp"
+
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -140,12 +142,7 @@ namespace NAwesome::System::Wpctl {
                 row.remove_suffix(1);
             if (row.empty())
                 continue;
-            if (row.size() > MAX_SINK_NAME) {
-                size_t cut = MAX_SINK_NAME;
-                while (cut > 0 && ((unsigned char)row[cut] & 0xC0) == 0x80)
-                    cut--;
-                row = row.substr(0, cut);
-            }
+            row = row.substr(0, clipToUtf8Boundary(row, MAX_SINK_NAME));
             s.name = std::string{row};
             out.push_back(std::move(s));
         }

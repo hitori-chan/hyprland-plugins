@@ -60,11 +60,6 @@ namespace NAwesome::Glyph {
         }
     }
 
-    double aspect(eGlyph g) {
-        const auto& S = SHAPES[(size_t)g];
-        return S.w / S.h;
-    }
-
     SP<Render::ITexture> tex(eGlyph g, const CHyprColor& col, int w, int h) {
         if (g == eGlyph::NONE || g >= eGlyph::COUNT_)
             return nullptr;
