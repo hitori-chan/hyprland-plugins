@@ -132,16 +132,17 @@ namespace NAwesome {
             if (StateStore::inst().writeBlocked())
                 HyprlandAPI::addNotification(handle, "[awesome] " + StateStore::path().string() + " is unreadable: left untouched, nothing is remembered this session",
                                              CHyprColor{1.0, 0.6, 0.2, 1.0}, 10000);
-            // the shared .desktop icon index, before the modules subscribe
-            CDesktopIndex::inst().start();
-            CRasterWorker::inst().start(); // the pixel worker the modules' images ride
             // A throwing start (bad_alloc, a bus that refuses us) ejects the
             // plugin WITHOUT PLUGIN_EXIT: tear down whatever did start —
             // including the thrower's partial init — so no listener, timer,
             // hop or event source is left pointing into the unmapped .so.
             size_t started = 0;
+            bool   begun   = false; // a module's init ran (a thrower's partial one too)
             try {
-                for (; started < m_modules.size(); ++started)
+                // the shared .desktop icon index, before the modules subscribe
+                CDesktopIndex::inst().start();
+                CRasterWorker::inst().start(); // the pixel worker the modules' images ride
+                for (begun = true; started < m_modules.size(); ++started)
                     m_modules[started]->init();
 
                 auto& EV = Event::bus()->m_events;
@@ -165,7 +166,7 @@ namespace NAwesome {
                     L.reset();
                 m_listeners.clear();
                 resetHops();
-                for (size_t i = std::min(started + 1, m_modules.size()); i-- > 0;)
+                for (size_t i = begun ? std::min(started + 1, m_modules.size()) : 0; i-- > 0;)
                     m_modules[i]->teardown();
                 Jobs::inst().teardown();
                 CRasterWorker::inst().stop();
