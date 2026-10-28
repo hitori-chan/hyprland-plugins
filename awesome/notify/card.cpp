@@ -163,7 +163,8 @@ namespace NAwesome::Notify {
         // a chat shows what fits of its newest messages, banner and center
         // alike (the window is fitted below, once the lines are known);
         // folded, the newest message alone; hushed, none
-        const std::string  FOLDLINE = FOLDED && !HUSH ? collapsedLine(NP) : std::string{};
+        static const std::string NONE;
+        const std::string& FOLDLINE = FOLDED && !HUSH ? foldedLine(NP) : NONE;
         const std::string& RAWBODY  = FOLDED || HUSH ? FOLDLINE : N.body;
         const bool         CHAT     = !FOLDED && !HUSH && !N.messages.empty();
         const int          LINEPX   = bodyBudgetPx(P.scale, 1);
