@@ -259,6 +259,8 @@ namespace NAwesome::System {
         }
     }
 
+    static CHop reapply; // a config reload's
+
     void padInit() {
         settle = makeShared<CEventLoopTimer>(
             std::nullopt,
@@ -274,13 +276,17 @@ namespace NAwesome::System {
         if (g_pCompositor && g_pCompositor->m_aqBackend)
             supervisor().listen(g_pCompositor->m_aqBackend->events.newPointer, [](const SP<Aquamarine::IPointer>&) { hotplug(); });
 
-        // a reload wiped the runtime hl.device state: forget what was applied
-        // and re-check (a manual flip is re-applied, not forgotten)
+        // a reload wiped the runtime hl.device state, and the input refresh
+        // it queued before this emission turns the pad back on: forget what
+        // was applied and re-apply right behind that refresh, not a settle
+        // later (a manual flip is re-applied, not forgotten)
         supervisor().listen(Event::bus()->m_events.config.reloaded, []() {
-            appliedState    = -1;
+            appliedState = -1;
             appliedTouchpad.reset();
-            if (settle)
-                settle->updateTimeout(SETTLE);
+            reapply.arm([]() {
+                watchPointers();
+                autoApply();
+            });
         });
 
         // the login check rides the settle timer too: by the time it fires the
@@ -310,6 +316,7 @@ namespace NAwesome::System {
 
     void padExit() {
         toggles.reset();
+        reapply.reset();
         lDestroy.clear();
         lProve.clear();
         proven.clear();
