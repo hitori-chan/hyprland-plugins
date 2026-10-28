@@ -452,6 +452,14 @@ namespace NAwesome::Windows::Snap {
         reset();
     }
 
+#ifdef AWESOME_GATE
+    inline std::string zoneDescribe() {
+        if (!zoneBox())
+            return {};
+        return std::string{zoneV() == V_TOP ? "top" : zoneV() == V_BOTTOM ? "bottom" : "-"} + " " + (zoneH() == H_LEFT ? "left" : zoneH() == H_RIGHT ? "right" : "-");
+    }
+#endif
+
     // ---- the canvas layer: the armed zone's outline, preview frames only ----
 
     class ZoneLayer : public ILayer {
