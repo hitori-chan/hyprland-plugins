@@ -45,6 +45,14 @@ namespace NAwesome::Notify {
         return lastLine(n->body);
     }
 
+    const std::string& foldedLine(const SP<SNotif>& n) {
+        if (n->foldMemo.rev != n->rev) {
+            n->foldMemo.line = collapsedLine(n);
+            n->foldMemo.rev  = n->rev;
+        }
+        return n->foldMemo.line;
+    }
+
     namespace Model {
         static SP<CEventLoopTimer> expiry;
         static SP<CEventLoopTimer> clearWindow; // Clear All's undo window

@@ -175,6 +175,10 @@ namespace NAwesome::Notify {
             bool        links = false;
             std::string body;
         } fitMemo;
+        struct {
+            uint64_t    rev = ~0ull;
+            std::string line;
+        } foldMemo; // collapsedLine's, drawn every frame a folded row shows
         std::vector<SParticipant> participants; // latest distinct senders, bounded
         SParticipant              chatFace;     // a group chat with no picture of its own: its initials (card.cpp)
         uint32_t             unreadCount = 0;
@@ -286,7 +290,8 @@ namespace NAwesome::Notify {
     // inline, else the newest line of the body. Renderer and the topline
     // probe share this so they cannot drift apart.
     std::string lastLine(const std::string& body); // the newest line of any body ends it
-    std::string collapsedLine(const SP<SNotif>& n);
+    std::string        collapsedLine(const SP<SNotif>& n);
+    const std::string& foldedLine(const SP<SNotif>& n); // collapsedLine, memoized on rev
 
     // ---- model.cpp: the cards and their lifetimes ----
 
