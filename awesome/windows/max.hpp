@@ -473,7 +473,7 @@ namespace NAwesome::Windows {
 
                 // the shell owns clicks on its strip; only a Super-grab can
                 // move a window, so only that needs swallowing
-                if (nativePointerGrabActive() || nativeLayerOwnsPointer() || !superHeld())
+                if (!superHeld() || nativePointerGrabActive() || nativeLayerOwnsPointer())
                     return;
 
                 const auto W = windowUnderCursor();
