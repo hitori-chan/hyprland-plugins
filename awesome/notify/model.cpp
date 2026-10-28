@@ -149,6 +149,20 @@ namespace NAwesome::Notify {
                 Bus::emitClosed(n.id, reason);
         }
 
+        // Close every card `pick` names, each with its signals.
+        template <class F>
+        static void closeWhere(const F& pick, uint32_t reason) {
+            const auto BEFORE = notifs.size();
+            for (const auto& N : notifs)
+                if (pick(N))
+                    emitClosedAll(*N, reason);
+            std::erase_if(notifs, pick);
+            if (notifs.size() == BEFORE)
+                return;
+            notifChanged();
+            rearmExpiry();
+        }
+
         // one model-wide serial for every card's revision: a closed id that
         // a client reuses starts a new card, whose first rev must not equal
         // the old card's in a stale click
@@ -426,16 +440,7 @@ namespace NAwesome::Notify {
             // excludes them too); the scripted reset sweeps everything shown.
             // What Clear All hid goes first, closed as the click meant.
             commitClear();
-            const auto SWEPT  = [offShadeToo](const auto& N) { return visible(N) && (offShadeToo || !offShade(N)); };
-            const auto BEFORE = notifs.size();
-            for (const auto& N : notifs)
-                if (SWEPT(N))
-                    emitClosedAll(*N, R_DISMISSED);
-            std::erase_if(notifs, SWEPT);
-            if (notifs.size() == BEFORE)
-                return;
-            notifChanged();
-            rearmExpiry();
+            closeWhere([offShadeToo](const auto& N) { return visible(N) && (offShadeToo || !offShade(N)); }, R_DISMISSED);
         }
 
         bool clearPending() {
@@ -471,14 +476,7 @@ namespace NAwesome::Notify {
         void commitClear() {
             if (clearWindow)
                 clearWindow->updateTimeout(std::nullopt);
-            const auto HIDDEN = [](const auto& N) { return N->cleared; };
-            for (const auto& N : notifs)
-                if (HIDDEN(N))
-                    emitClosedAll(*N, R_DISMISSED);
-            if (std::erase_if(notifs, HIDDEN) == 0)
-                return;
-            notifChanged();
-            rearmExpiry();
+            closeWhere([](const auto& N) { return N->cleared; }, R_DISMISSED);
         }
 
         // the stack's identity: the app key, sub-keyed by the declared group
@@ -495,16 +493,7 @@ namespace NAwesome::Notify {
         }
 
         void dismissAppAll(const std::string& appKey) {
-            const auto MATCH  = [&](const auto& N) { return visible(N) && !offShade(N) && !appKey.empty() && N->appKey == appKey; };
-            const auto BEFORE = notifs.size();
-            for (const auto& N : notifs)
-                if (MATCH(N))
-                    emitClosedAll(*N, R_DISMISSED);
-            std::erase_if(notifs, MATCH);
-            if (notifs.size() == BEFORE)
-                return;
-            notifChanged();
-            rearmExpiry();
+            closeWhere([&](const auto& N) { return visible(N) && !offShade(N) && !appKey.empty() && N->appKey == appKey; }, R_DISMISSED);
         }
 
         void lowerBanners(const std::string& appKey) {
@@ -520,19 +509,8 @@ namespace NAwesome::Notify {
             rearmExpiry();
         }
 
-        void dismissApp(const std::string& key) {
-            // exactly the stack's members: its (app, declared group) key,
-            // never the app's other groups or what is off the shade
-            const auto MATCH  = [&](const auto& N) { return visible(N) && !offShade(N) && stackable(N) && groupKeyOf(N) == key; };
-            const auto BEFORE = notifs.size();
-            for (const auto& N : notifs)
-                if (MATCH(N))
-                    emitClosedAll(*N, R_DISMISSED);
-            std::erase_if(notifs, MATCH);
-            if (notifs.size() == BEFORE)
-                return;
-            notifChanged();
-            rearmExpiry();
+        void dismissCards(const std::vector<SP<SNotif>>& cards) {
+            closeWhere([&](const auto& N) { return visible(N) && !offShade(N) && std::ranges::contains(cards, N); }, R_DISMISSED);
         }
 
         // Opening the center absorbs the popped stack: every bannered card

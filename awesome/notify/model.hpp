@@ -355,7 +355,7 @@ namespace NAwesome::Notify {
         void       undoClear();
         void       commitClear();
         bool       clearPending(); // a hidden card waits on the window
-        void       dismissApp(const std::string& key);    // a stack's close button or right-click; the key may be (app, group)
+        void       dismissCards(const std::vector<SP<SNotif>>& cards); // a stack's right-click or Delete: the cards it drew
         void       dismissAppAll(const std::string& appKey); // the card menu's "Close All": every shade card of the app, its chats too
         void       lowerBanners(const std::string& appKey);  // a menu switch silenced the app (or a chat), "" quiet began: the soft banners go to the shade now
         std::string groupKeyOf(const SP<SNotif>& n);       // the stack's identity: the app key, sub-keyed by the declared group
@@ -516,6 +516,7 @@ namespace NAwesome::Notify {
     void centerPage(int dir); // wheel: >0 towards older rows
     void centerPageScreen(int dir); // the paging chips: a screenful
     void centerToggleGroup(const std::string& appKey);
+    void centerDismissStack(const std::string& key);
     void centerToggleRow(uint32_t id);
     void centerSelectMove(int dir);                         // ↑/↓: move the keyboard selection, paging to keep it on screen
     bool centerHasRows();                                   // the shade lists something a selection can land on
