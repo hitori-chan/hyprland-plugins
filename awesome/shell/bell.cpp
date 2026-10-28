@@ -10,12 +10,14 @@
 // while sharing the screen), and the apps and chats the card menus
 // silenced, each a click from back on. Do Not Disturb's one home is the
 // control center; the moon echoes it. The control center's glyph is two
-// switches, the lower one on; either door lights (the accent, as text)
-// while its panel is open.
+// switches, the lower one on. A door sits on a white pill while its panel
+// is open (the bell's: the center or its options menu), its glyph white.
+// The accent stays text for where you are; the bell's dot is its one mark.
 
 #include "shell/shell.hpp"
 
 #include "core/glyph.hpp"
+#include "core/theme.hpp"
 #include "core/walltimer.hpp"
 #include "notify/model.hpp"
 
@@ -36,8 +38,8 @@ namespace NAwesome::Shell {
         const bool DND  = M::suspendedNow();
         const bool OPEN = NAwesome::Notify::centerVisible();
         // the open center is the place the dot points at: it never shows over
-        // it; the bell lights instead, as a door lights while its panel is
-        // open
+        // it; the bell sits on its pill instead, as a door does while its
+        // panel is open
         const bool DOT = !OPEN && (M::unseen() || (DND && M::heldCount() > 0));
         return {DOT, DND, OPEN, NAwesome::Notify::controlsVisible()};
     }
@@ -134,10 +136,18 @@ namespace NAwesome::Shell {
     // ---- the widget ----
 
     namespace {
+        // the glyph's own 16 px grid: whole pixels at 1x (core/glyph_shapes.hpp)
+        constexpr double GLYPH = 16;
+
+        // an open door: the pill under the glyph, 4 px past it either side,
+        // 22 tall on the strip's middle (a rect: nothing to warm)
+        void doorPill(const SPaint& P, const CBox& box) {
+            constexpr double W = 24, H = 22;
+            P.rect(CBox{box.x + (GLYPH - W) / 2, box.y + (P.h - H) / 2, W, H}, NAwesome::tPill(), (int)std::lround(NAwesome::Theme::RAD_ROW * P.scale), 2.f);
+        }
+
         class CBellWidget : public IWidget {
           public:
-            // the glyph's own 16 px grid: whole pixels at 1x (core/glyph_shapes.hpp)
-            static constexpr double GLYPH = 16;
 
             double fit(const SPaint&, const SFrame&) override {
                 return GLYPH;
@@ -146,12 +156,16 @@ namespace NAwesome::Shell {
             void draw(const SPaint& P, const SFrame& F, const CBox& box) override {
                 using NAwesome::Glyph::eGlyph;
                 const auto ST = bellState();
+                // the options menu is a door of its own bar's bell
+                const bool OPEN = ST.open || (Menu::isOpen && Menu::opener == this && Menu::mon.lock() == P.mon);
                 if (P.fp) // the state can move without a bar event
-                    *P.fp = *P.fp * 1099511628211ULL + ST.dot * 4 + ST.dnd * 2 + ST.open;
+                    *P.fp = *P.fp * 1099511628211ULL + ST.dot * 4 + ST.dnd * 2 + OPEN;
                 const int  PX   = (int)std::lround(GLYPH * P.scale);
                 const auto BASE = ST.dnd ? (ST.dot ? eGlyph::MOON_BADGE : eGlyph::MOON) : (ST.dot ? eGlyph::BELL_BADGE : eGlyph::BELL);
                 const CBox CELL{box.x, box.y, GLYPH, P.h};
-                P.texIn(NAwesome::Glyph::tex(BASE, ST.open ? F.active : F.fg, PX), CELL);
+                if (OPEN)
+                    doorPill(P, box);
+                P.texIn(NAwesome::Glyph::tex(BASE, F.fg, PX), CELL);
                 // the dot is its own glyph on the same grid, so the two
                 // rasters register to the pixel in the same cell
                 if (ST.dot)
@@ -164,7 +178,7 @@ namespace NAwesome::Shell {
 
             void onHit(const SHit& hit, uint32_t bit, bool) override {
                 if (bit == 2u) { // the options, built as they stand now
-                    Menu::openLocal(optionRows(), hit.clickX, hit.mon);
+                    Menu::openLocal(optionRows(), hit.clickX, hit.mon, 0, this);
                     return;
                 }
                 if (bit != 1u)
@@ -180,8 +194,6 @@ namespace NAwesome::Shell {
 
         class CControlsWidget : public IWidget {
           public:
-            static constexpr double GLYPH = 16;
-
             double fit(const SPaint&, const SFrame&) override {
                 return GLYPH;
             }
@@ -190,7 +202,9 @@ namespace NAwesome::Shell {
                 const bool OPEN = NAwesome::Notify::controlsVisible();
                 if (P.fp) // the panel can open without a bar event
                     *P.fp = *P.fp * 1099511628211ULL + OPEN;
-                P.texIn(NAwesome::Glyph::tex(NAwesome::Glyph::eGlyph::CONTROLS, OPEN ? F.active : F.fg, (int)std::lround(GLYPH * P.scale)), CBox{box.x, box.y, GLYPH, P.h});
+                if (OPEN)
+                    doorPill(P, box);
+                P.texIn(NAwesome::Glyph::tex(NAwesome::Glyph::eGlyph::CONTROLS, F.fg, (int)std::lround(GLYPH * P.scale)), CBox{box.x, box.y, GLYPH, P.h});
                 SHit h;
                 h.box    = box;
                 h.widget = this;

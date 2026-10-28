@@ -442,6 +442,7 @@ namespace NAwesome::Shell {
 
         extern bool                isOpen;
         extern bool                isLocal; // built by the plugin (the client list, the bell's options): no dbus behind it
+        extern const void*         opener;  // the bar widget a local menu hangs off (its door sits on the pill while open), or null
         extern std::vector<SLevel> levels;
         extern double              anchorX;
         extern PHLMONITORREF       mon;
@@ -454,8 +455,8 @@ namespace NAwesome::Shell {
         void                       openFor(SP<Tray::SItem> it, double ax, PHLMONITORREF m);
         void                       openClients(double ax, PHLMONITORREF m);
         // a menu the plugin builds: rows with actions and cascades, at the
-        // click; width 0 measures the rows
-        void                       openLocal(std::vector<SEntry> rows, double ax, PHLMONITORREF m, double width = 0);
+        // click; width 0 measures the rows; by: the door it hangs off
+        void                       openLocal(std::vector<SEntry> rows, double ax, PHLMONITORREF m, double width = 0, const void* by = nullptr);
         void                       openSub(size_t level, int entryIdx); // cascade that row's children
         void                       closeDeeperThan(size_t level);
         void                       hoverIntent(size_t level, int row); // GTK's popup delay: open/close cascades

@@ -89,7 +89,8 @@ A bell, without a count:
   shown since the card arrived or changed; opening the center marks what
   it lists as seen;
 - the moon under Do Not Disturb, dotted while cards wait in its queue;
-- lit in the accent while the center is open.
+- on a white pill (24 x 22, its glyph white) while the center or its
+  options menu is open.
 
 **Left click** toggles the [center](notify.md#the-center) on the clicked
 bar's monitor (closing the control center). **Right click** opens the
@@ -112,8 +113,8 @@ only echoes it as the moon). Every option lives in one menu or panel.
 
 Two switches, the lower one on. A **left click**
 toggles the [control center](notify.md#the-control-center) on the
-clicked bar's monitor (closing the center); it is lit in the accent
-while the panel is open.
+clicked bar's monitor (closing the center); it sits on a white pill,
+as the bell does, while the panel is open.
 
 ### Battery
 

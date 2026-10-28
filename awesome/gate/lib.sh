@@ -119,8 +119,8 @@ print((xs[0] + xs[-1]) // 2 if xs else 0)
 PY
 }
 bell_x() { ink_x "$1" bell; } # bell_x <frame> — the bell glyph's center x
-# the bell's dot: col_dot, the accent (0xff00ccff), in the bell's cell —
-# with the center CLOSED, when the bell itself is white
+# the bell's dot: col_dot, the accent (0xff00ccff), in the bell's cell (the
+# glyph itself is white, open or shut)
 dot_px() { # dot_px <frame> — accent pixels on the bell (0 when no dot)
 	python3 - "$1" "$(bell_x "$1")" <<'PY'
 import sys

@@ -29,6 +29,7 @@ namespace NAwesome::Shell {
 
         bool                                  isOpen  = false;
         bool                                  isLocal = false;
+        const void*                           opener  = nullptr;
         static SP<Tray::SItem>                item;
         static std::shared_ptr<sdbus::IProxy>  proxy;
         std::vector<SLevel>                   levels;
@@ -231,6 +232,10 @@ namespace NAwesome::Shell {
             }
             isOpen  = false;
             isLocal = false;
+            if (opener) { // its door lets go of the pill
+                opener = nullptr;
+                barChanged();
+            }
             disarm();
             glideStop();
             for (const auto& L : levels)
@@ -619,10 +624,12 @@ namespace NAwesome::Shell {
             openLocal(std::move(rows), ax, m, 250);
         }
 
-        void openLocal(std::vector<SEntry> rows, double ax, PHLMONITORREF m, double width) {
+        void openLocal(std::vector<SEntry> rows, double ax, PHLMONITORREF m, double width, const void* by) {
             close();
             if (rows.empty())
                 return;
+            if ((opener = by))
+                barChanged();
             auto& L      = levels.emplace_back();
             L.entries    = std::move(rows);
             L.fixedWidth = width;

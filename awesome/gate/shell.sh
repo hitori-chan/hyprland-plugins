@@ -322,22 +322,35 @@ center_shut || hq awesome center >/dev/null
 
 # ---- the control center's door: the bar's switches -------------------------
 # Right of the bell (shell/bell.cpp): a click opens the control center on its
-# bar's monitor and lights the glyph (the accent, as text); one panel holds
-# the column at a time, the bell taking it back; a click off every surface
-# closes it.
+# bar's monitor and sets the glyph on a white pill (24 x 22, the glyph
+# white: no accent); one panel holds the column at a time, the bell taking
+# it back; a click off every surface closes it. The bell's options menu is
+# its door too.
 CCX="$(cell_mid controls)"
 chk "controls: the switches own a cell" test "${CCX:-0}" -gt 0
 cols() { echo "$(st | cut -d' ' -f1) $(hq awesome controlcenter-shown)"; } # "center:<0|1> <control center 0|1>"
 click "${CCX:-0}" 13 272
 chk "controls: a click on the switches opens the control center" until_is 3 "center:0 1" cols
-cc_lit() { (($(accent_px "$1" $((CCX - 8)) $((CCX + 8))) > 10)); }
-chk "controls: ...and lights them" shot_until 3 "$STATE/cc-lit.png" cc_lit "$STATE/cc-lit.png"
+# the pill's sides past the glyph (x 9..11 off its center), clear of the
+# rounded corners
+door_on() { # door_on <frame> <glyph center x>
+	(($(ground_px "$1" $(($2 - 11)) $(($2 - 9)) 10 18 28 64) >= 12 && $(ground_px "$1" $(($2 + 9)) $(($2 + 11)) 10 18 28 64) >= 12 &&
+		$(accent_px "$1" $(($2 - 12)) $(($2 + 12))) == 0))
+}
+door_off() { (($(ground_px "$1" $(($2 - 11)) $(($2 - 9)) 10 18 28 64) == 0)); }
+chk "controls: ...and sets them on a pill" shot_until 3 "$STATE/cc-lit.png" door_on "$STATE/cc-lit.png" "$CCX"
 click "$(cell_mid bell)" 13 272
 chk "controls: the bell takes the column: the center opens, the control center shuts" until_is 3 "center:1 0" cols
 click "${CCX:-0}" 13 272
 chk "controls: ...and the switches take it back" until_is 3 "center:0 1" cols
 outside_click
 chk "controls: a click off every surface closes it" until_is 3 "center:0 0" cols
+chk "controls: ...and the door lets go of the pill" shot_until 3 "$STATE/cc-off.png" door_off "$STATE/cc-off.png" "$CCX"
+BELLX="$(cell_mid bell)"
+click "$BELLX" 13 273
+chk "bell: its options menu sets it on a pill" shot_until 3 "$STATE/bell-door.png" door_on "$STATE/bell-door.png" "$BELLX"
+tap esc
+chk "bell: ...let go once the menu shuts" shot_until 3 "$STATE/bell-door-off.png" door_off "$STATE/bell-door-off.png" "$BELLX"
 
 # ---- the strip's glass: live over a terminal taking typing -----------------
 # The glass live-blurs what lies under it: the prompt's row right below

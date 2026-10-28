@@ -90,7 +90,7 @@ The material every module's surfaces share.
 | `terminal` | `alacritty` | runs the launcher's `Terminal=true` entries |
 | `col_fg` | Frost | bar text and glyphs: the clock, the bell, symbolic tray icons, occupied tags |
 | `col_focus` | Frost | the launcher's selection and caret, the client list's focused window |
-| `col_active` | Frost | the viewed tag, the focused task, the bell or the control center's switches while their panel is open |
+| `col_active` | Frost | the viewed tag and the focused task (text) |
 | `col_dot` | Frost | the bell's dot |
 | `col_empty` | Frost | empty tags, minimized tasks, disabled rows |
 | `col_urgent` | Frost | urgent tags and tasks |
