@@ -78,14 +78,17 @@ namespace NAwesome::Shell {
 
                 // Workspace IDs are global in Hyprland. Create a missing tag
                 // on the monitor whose bar was clicked, but never create a
-                // second workspace for an ID already owned elsewhere.
+                // second workspace for an ID already owned elsewhere. A new
+                // one is ready (workspace.created) once the switch or the
+                // move landed, as the native string actions make it.
                 auto ws = State::workspaceState()->find(State::Workspace::STarget{.id = Workspace::SWorkspaceNumberedID{(uint32_t)h.tag}, .address = std::to_string(h.tag)});
                 if (!ws)
-                    ws = State::workspaceState()->createNumbered(Workspace::SWorkspaceNumberedID{(uint32_t)h.tag}, MON);
+                    ws = State::workspaceState()->createNumbered(Workspace::SWorkspaceNumberedID{(uint32_t)h.tag}, MON, {}, !super);
                 if (!ws)
                     return;
                 if (super) {
                     std::ignore = Config::Actions::moveToWorkspace(ws, true); // silent — move_to_tag never followed
+                    ws->ready();
                     return;
                 }
 
@@ -98,6 +101,7 @@ namespace NAwesome::Shell {
                     std::ignore = Config::Actions::changeWorkspace(ws);
                 else
                     MON->changeWorkspace(ws, false, true, true); // switch the background output without stealing focus
+                ws->ready();
             }
 
             bool accumulatesScroll() const override {
@@ -138,6 +142,7 @@ namespace NAwesome::Shell {
                     std::ignore = Config::Actions::changeWorkspace(ws);
                 else
                     mon->changeWorkspace(ws, false, true, true);
+                ws->ready();
             }
         };
     } // namespace

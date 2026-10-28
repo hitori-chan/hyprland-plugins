@@ -84,7 +84,7 @@ namespace NAwesome::Shell {
         supervisor().listen(EV.window.fullscreen, [](PHLWINDOW) { barChanged(); });
         supervisor().listen(EV.window.moveToWorkspace, [](PHLWINDOW, PHLWORKSPACE) { barChanged(); });
         supervisor().listen(EV.workspace.active, [](PHLWORKSPACE) { barChanged(); });
-        supervisor().listen(EV.workspace.created, [](PHLWORKSPACEREF) { barChanged(); });
+        supervisor().listen(EV.workspace.createdEarly, [](PHLWORKSPACEREF) { barChanged(); });
         supervisor().listen(EV.workspace.removed, [](PHLWORKSPACEREF) { barChanged(); });
         supervisor().listen(EV.workspace.moveToMonitor, [](PHLWORKSPACE, PHLMONITOR) { barChanged(); });
         supervisor().listen(EV.workspace.specialActive, [](PHLWORKSPACE, PHLMONITOR) { barChanged(); }); // its fullscreen hides the bar
