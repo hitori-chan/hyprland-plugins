@@ -92,8 +92,10 @@ open at their natural size).
 - A window of a class seen before opens where that class's last window
   closed, relative to the monitor it was on, applied on the monitor it
   opens on.
-- Otherwise a second window of a class takes the least-overlap position
-  among the workspace's 24 topmost windows.
+- Otherwise (no memory, or its spot is taken) a window takes the
+  least-overlap position among the workspace's 24 topmost windows,
+  starting from, and so preferring, its centered spot: a lone window
+  stays centered.
 - A window born maximized gets its remembered windowed box as the
   unmaximize restore: the one size the plugin supplies.
 - A fixed-size toplevel (min == max: a dialog, a splash) keeps the
