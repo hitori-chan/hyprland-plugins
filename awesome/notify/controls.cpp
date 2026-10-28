@@ -71,9 +71,9 @@ namespace NAwesome::Notify {
         Glyph::eGlyph                                        outGlyph = Glyph::eGlyph::OUTPUT;
         std::string                                          outName;
         bool                                                 dnd    = false;
-        int64_t                                              dndEnd = 0;
         bool                                                 bt = false, btOn = false; // an adapter; its power
         std::string                                          btText;
+        std::string                                          dndText; // its clock text, once per warm
     } snap;
 
     static struct {
@@ -163,10 +163,10 @@ namespace NAwesome::Notify {
         return l == eLevel::VOLUME && v.muted ? "Muted" : std::to_string(v.pct) + "%";
     }
 
-    static std::string dndText() {
-        if (!snap.dnd)
+    static std::string dndText(bool on, int64_t end) {
+        if (!on)
             return "Off";
-        return snap.dndEnd > 0 ? "Until " + untilText(snap.dndEnd) : "On";
+        return end > 0 ? "Until " + untilText(end) : "On";
     }
 
     // what Bluetooth's capsule says under its name
@@ -220,7 +220,7 @@ namespace NAwesome::Notify {
                     snap.outName = O.name;
             snap.outGlyph = outputGlyph(snap.outName);
             snap.dnd      = Model::suspendedNow();
-            snap.dndEnd   = snap.dnd ? Model::suspendEnd() : 0;
+            snap.dndText  = dndText(snap.dnd, snap.dnd ? Model::suspendEnd() : 0);
             snap.bt       = S.bluetooth.present;
             snap.btOn     = S.bluetooth.powered;
             snap.btText   = btText(S.bluetooth);
@@ -386,12 +386,14 @@ namespace NAwesome::Notify {
             const eTile  MT = bt ? TILE_BT_MENU : TILE_DND_MENU;
             const bool   LIT = HOV(MT) || MENU == (bt ? ePanelMenu::BLUETOOTH : ePanelMenu::DND);
             const double TX = CAP.x + CAP_TEXT_X, TW = CAP.w - CAP_TEXT_X - CAP_PADR;
-            const auto&  WORDS = bt ? snap.btText : dndText();
+            const auto&  WORDS = bt ? snap.btText : snap.dndText;
             const auto   NAME  = cachedText(bt ? "Bluetooth" : "Do Not Disturb", COLTITLE, T.title, PX(TW), -1, 0, false, 600);
             const auto   QUIET = cachedText(WORDS, COLSUB, T.meta, PX(TW - CHEV_GAP - CHEV), -1, 0, false, 400);
             const auto   LOUD  = cachedText(WORDS, COLBODY, T.meta, PX(TW - CHEV_GAP - CHEV), -1, 0, false, 400);
             const auto   STATE = LIT ? LOUD : QUIET;
-            const auto   CHEVT = Glyph::tex(Glyph::eGlyph::CHEVRON_DOWN, LIT ? COLBODY : COLSUB, PX(CHEV));
+            const auto   CHEVQ = Glyph::tex(Glyph::eGlyph::CHEVRON_DOWN, COLSUB, PX(CHEV));
+            const auto   CHEVL = Glyph::tex(Glyph::eGlyph::CHEVRON_DOWN, COLBODY, PX(CHEV));
+            const auto   CHEVT = LIT ? CHEVL : CHEVQ;
             const double NH = texH(NAME, P.scale), SH = texH(STATE, P.scale), TY = CAP.y + (CAPS_H - NH - SH) / 2;
             if (NAME)
                 texAt(P, NAME, TX, TY);

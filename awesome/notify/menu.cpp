@@ -446,7 +446,8 @@ namespace NAwesome::Notify::CardMenu {
             const bool HOV = hovered.kind == SCard::MENU_ITEM && hovered.id == (uint32_t)i;
             const int  LPX = labelPx(I);
             const auto LIT = cachedText(I.label, COLACC, T.body, LPX, -1, 0, false, 400);
-            const auto LBL = HOV ? LIT : cachedText(I.label, I.quiet ? COLSUB : COLTITLE, T.body, LPX, -1, 0, false, 400);
+            const auto RST = cachedText(I.label, I.quiet ? COLSUB : COLTITLE, T.body, LPX, -1, 0, false, 400);
+            const auto LBL = HOV ? LIT : RST;
             if (LBL && LBL->tex)
                 texAt(P, LBL, x + LX, ry + (RH - texH(LBL, P.scale)) / 2);
             if (I.disc) { // a device: its glyph in a disc, white while connected
