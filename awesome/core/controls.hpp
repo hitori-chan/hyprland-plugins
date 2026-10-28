@@ -49,8 +49,9 @@ namespace NAwesome::Controls {
         bool operator==(const SOutput&) const = default;
     };
 
-    // a paired Bluetooth device (the system module bounds the list and the
-    // name, connected first, then by name)
+    // a Bluetooth device: a paired one (connected first, then by name), or
+    // one a scan found (nearest first); the system module bounds the lists
+    // and the name
     struct SDevice {
         enum eKind : uint8_t {
             OTHER,
@@ -58,18 +59,22 @@ namespace NAwesome::Controls {
             SPEAKER,
             MOUSE,
             KEYBOARD,
+            PHONE,
         };
         enum eBusy : uint8_t {
             IDLE,
             CONNECTING,
             DISCONNECTING,
+            PAIRING,
         };
-        // why the last connect was refused, shown until the panel closes
+        // why the last connect or pairing was refused, shown until the panel
+        // closes
         enum eFail : uint8_t {
             NO_FAIL,
             NO_ANSWER,    // a page timeout: off, or out of reach
             PAIRING_LOST, // its key is gone on one side
             FAILED,       // anything else
+            PAIR_FAILED,  // a pairing that did not take
         };
         std::string id; // BlueZ's object path: who it is across a rebuild
         std::string name;
@@ -90,9 +95,24 @@ namespace NAwesome::Controls {
             case SDevice::NO_ANSWER: return "Didn't Answer";
             case SDevice::PAIRING_LOST: return "Pairing Lost";
             case SDevice::FAILED: return "Didn't Connect";
+            case SDevice::PAIR_FAILED: return "Pairing Failed";
             default: return "";
         }
     }
+
+    inline constexpr size_t MAX_FOUND = 6;
+
+    // what a pairing asks of the user: the code to type on the device
+    // (entered: the digits typed so far, -1 unknown), or whether the
+    // device shows the same code (confirm)
+    struct SPrompt {
+        std::string id; // the device's, "" none
+        std::string code;
+        int8_t      entered = -1;
+        bool        confirm = false;
+
+        bool operator==(const SPrompt&) const = default;
+    };
 
     // the first adapter: present 0 while there is none (no BlueZ, no
     // radio), and the panel shows no Bluetooth
@@ -100,7 +120,11 @@ namespace NAwesome::Controls {
         bool                 present     = false;
         bool                 powered     = false;
         bool                 powerFailed = false; // a power-on was refused, shown until the panel closes
+        bool                 scanning    = false; // the menu's scan runs
+        bool                 scanned     = false; // ... one ran since the menu opened: its list stays
         std::vector<SDevice> devices;
+        std::vector<SDevice> found; // unpaired, named, seen by the scan
+        SPrompt              prompt;
 
         bool operator==(const SBluetooth&) const = default;
     };
@@ -132,6 +156,14 @@ namespace NAwesome::Controls {
         std::function<void(const std::string&, bool)> connectDevice;
         std::function<void(const std::string&)>       forgetDevice; // unpair it: BlueZ removes it, its keys with it
         std::function<void()>                         panelClosed;  // the failures it showed are done
+        // Bluetooth's menu: scan (or stop), pair a found device (or pair a
+        // device whose pairing was lost again), answer the pairing's
+        // question, and its closing (the scan stops, its list goes, an
+        // unanswerable question cancels the pairing)
+        std::function<void(bool)>               scan;
+        std::function<void(const std::string&)> pairDevice;
+        std::function<void(bool)>               answerPairing;
+        std::function<void()>                   menuClosed;
     };
     inline SDoors& doors() {
         static SDoors D;

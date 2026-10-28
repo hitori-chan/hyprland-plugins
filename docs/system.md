@@ -88,6 +88,22 @@ center shows no Bluetooth.
   is "Didn't Turn On".
 - **Forget** removes the device from the adapter (`RemoveDevice`), its
   keys with it; BlueZ's InterfacesRemoved takes it off the list.
+- **Scan** is the menu's: `StartDiscovery` on Scan, `StopDiscovery` on
+  Stop, a pick, after a minute or when the menu closes. A device lists
+  once it is unpaired, has a name and was seen by the scan, ranked by the
+  signal it was first seen at (a later reading moves nothing: the rows
+  hold still under the pointer); its list stays until the menu closes.
+  Unpaired devices are held only while the menu's scan session lasts, at
+  most 32.
+- **Pairing** goes through the plugin's own agent
+  (`/org/awesome/bluetooth/agent`, capability DisplayYesNo: the menu shows
+  a code and has no field to type one), registered at the first pairing
+  and never made the default. BlueZ asks the agent of the client that
+  called `Pair`, so another app's pairing never reaches it; it answers
+  only bluetoothd, about the device being paired, and rejects the rest
+  (an incoming pairing, a service authorization). A legacy device's PIN
+  is ours, random, shown to be typed on it. A paired device is set
+  Trusted, then connected.
 - **A headset's sink**: when an audio device connects or drops while the
   control center is open, the outputs are read again once PipeWire has
   caught up (1.5 s), so the output pill follows.

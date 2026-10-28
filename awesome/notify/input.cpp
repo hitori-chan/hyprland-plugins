@@ -861,6 +861,7 @@ namespace NAwesome::Notify {
             },
             nullptr);
         g_pEventLoopManager->addTimer(holdTimer);
+        CardMenu::init(); // its tick; exit() takes it out
     }
 
     void inputExit() {

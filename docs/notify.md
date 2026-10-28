@@ -229,7 +229,22 @@ pointer (the glass never lightens):
   radio first while off). A right-click on a device (or Delete with the
   pointer on it) asks, in place of its row, "Forget it? Using it again
   takes pairing it again." — **Forget** (red) unpairs it, **Cancel**
-  keeps it; the menu stays open.
+  keeps it; the menu stays open. A row whose pairing was lost pairs it
+  again: its click forgets the stale keys, scans, and pairs the device
+  once the scan finds it.
+  Under the paired ones, while the radio is on, **Other Devices**: a
+  **Scan** pill (Stop while it runs, eight turning dots beside it) and
+  what the scan found, nearest first, at most 6; a note under them says
+  what to do ("Put a device in pairing mode, then scan.", "Looking for
+  devices in pairing mode…", "Nothing found. Is it in pairing mode?").
+  A found device's pick pairs it, the menu staying open: "Pairing…", or
+  in place of its row the code to type on it ("Type this code on it, then
+  press Return", the digits already typed dimmed) or to compare ("Does it
+  show the same code?" — **Pair** or **Cancel**). A paired device is
+  trusted, then connected; a refused pairing reads "Pairing failed. Is it
+  in pairing mode?". The menu closing stops the scan, forgets what it
+  found and cancels a pairing that was asking; one that asks nothing
+  runs on.
 - Do Not Disturb's state is Off, On or "Until 21:30". Its menu: For 30
   Minutes · For 1 Hour · For 3 Hours · Until Tomorrow (08:00) (after
   midnight, "Until 08:00": the next 08:00) · Until Turned Off.

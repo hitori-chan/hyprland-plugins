@@ -22,7 +22,13 @@
 #   (org.awesome.Gate at /) emits a headset transport's Volume change, as
 #   bluetoothd does when the headset's own buttons move it, moves a
 #   battery, and fails a device's next Connect with a given error.
-#   Adapter1.RemoveDevice unpairs one (InterfacesRemoved; logged).
+#   Adapter1.RemoveDevice unpairs one (InterfacesRemoved; logged): a later
+#   scan finds it again. StartDiscovery finds the strangers 300 ms later
+#   (InterfacesAdded, an RSSI each): "Gate Speaker" pairs as is, "Gate
+#   Keys" shows a code to type on it (the gate's Typed moves its digits),
+#   "Gate Phone" asks to compare one, a nameless one never names itself.
+#   Pairing calls the agent the pairing client registered with
+#   AgentManager1 (logged with its sender); Trusted is settable.
 import os
 import sys
 import warnings
@@ -148,20 +154,34 @@ BLUEZ_XML = """
     <signal name="InterfacesAdded"><arg type="o"/><arg type="a{sa{sv}}"/></signal>
     <signal name="InterfacesRemoved"><arg type="o"/><arg type="as"/></signal>
   </interface>
+  <interface name="org.bluez.AgentManager1">
+    <method name="RegisterAgent"><arg type="o" name="agent" direction="in"/><arg type="s" name="capability" direction="in"/></method>
+    <method name="UnregisterAgent"><arg type="o" name="agent" direction="in"/></method>
+    <method name="RequestDefaultAgent"><arg type="o" name="agent" direction="in"/></method>
+  </interface>
   <interface name="org.awesome.Gate">
+    <method name="Typed"><arg type="s" name="name" direction="in"/><arg type="q" name="entered" direction="in"/></method>
     <method name="EmitVolume"><arg type="q" name="volume" direction="in"/></method>
     <method name="SetBattery"><arg type="s" name="name" direction="in"/><arg type="y" name="percent" direction="in"/></method>
     <method name="FailNext"><arg type="s" name="name" direction="in"/><arg type="s" name="error" direction="in"/><arg type="s" name="message" direction="in"/></method>
   </interface>
   <interface name="org.bluez.Adapter1">
     <method name="RemoveDevice"><arg type="o" name="device" direction="in"/></method>
+    <method name="StartDiscovery"/>
+    <method name="StopDiscovery"/>
     <property name="Powered" type="b" access="readwrite"/>
+    <property name="Discovering" type="b" access="read"/>
     <property name="Alias" type="s" access="read"/>
   </interface>
   <interface name="org.bluez.Device1">
     <method name="Connect"/>
     <method name="Disconnect"/>
+    <method name="Pair"/>
+    <method name="CancelPairing"/>
     <property name="Alias" type="s" access="read"/>
+    <property name="Name" type="s" access="read"/>
+    <property name="RSSI" type="n" access="read"/>
+    <property name="Trusted" type="b" access="readwrite"/>
     <property name="Icon" type="s" access="read"/>
     <property name="Paired" type="b" access="read"/>
     <property name="Connected" type="b" access="read"/>
@@ -174,19 +194,50 @@ BLUEZ_XML = """
 """
 BLUEZ = {i.name: i for i in Gio.DBusNodeInfo.new_for_xml(BLUEZ_XML).interfaces}
 HCI = "/org/bluez/hci0"
-adapter = {"Powered": True, "Alias": "gate"}
+adapter = {"Powered": True, "Alias": "gate", "Discovering": False}
 devices = {  # path -> its Device1 values, and Battery1's (None: none)
     HCI + "/dev_00_00_00_00_00_01": [{"Alias": "Gate Buds", "Icon": "audio-headphones", "Paired": True, "Connected": False}, 80],
     HCI + "/dev_00_00_00_00_00_02": [{"Alias": "Gate Mouse", "Icon": "input-mouse", "Paired": True, "Connected": True}, None],
     HCI + "/dev_00_00_00_00_00_03": [{"Alias": "Stranger", "Icon": "phone", "Paired": False, "Connected": False}, None],
 }
-SIGS = {"Alias": "s", "Icon": "s", "Paired": "b", "Connected": "b", "Powered": "b"}
+# the strangers a scan finds: path -> [Device1 values, battery, its RSSI, how it pairs]
+strangers = {
+    HCI + "/dev_00_00_00_00_00_11": [{"Alias": "Gate Speaker", "Name": "Gate Speaker", "Icon": "audio-card", "Paired": False, "Connected": False}, None, -40, "just"],
+    HCI + "/dev_00_00_00_00_00_12": [{"Alias": "Gate Keys", "Name": "Gate Keys", "Icon": "input-keyboard", "Paired": False, "Connected": False}, None, -50, "passkey"],
+    HCI + "/dev_00_00_00_00_00_13": [{"Alias": "Gate Phone", "Name": "Gate Phone", "Icon": "phone", "Paired": False, "Connected": False}, None, -60, "confirm"],
+    HCI + "/dev_00_00_00_00_00_14": [{"Alias": "00-00-00-00-00-14", "Icon": "", "Paired": False, "Connected": False}, None, -30, "just"],
+}
+agent = None  # (sender, path) of the client that registered one
+pairing = {}  # path -> the Pair call waiting on the agent
+PASSKEY, COMPARE = 482917, 123456
+SIGS = {"Alias": "s", "Name": "s", "Icon": "s", "Paired": "b", "Connected": "b", "Powered": "b", "Discovering": "b", "RSSI": "n", "Trusted": "b"}
 fail_next = {}  # alias -> (error name, message): its next Connect answers that
 
 
 def changed(conn, path, iface, props):
     conn.emit_signal(None, path, "org.freedesktop.DBus.Properties", "PropertiesChanged",
                      GLib.Variant("(sa{sv}as)", (iface, {k: GLib.Variant(SIGS.get(k, "y"), v) for k, v in props.items()}, [])))
+
+
+def set_discovering(conn, on):
+    adapter["Discovering"] = on
+    changed(conn, HCI, "org.bluez.Adapter1", {"Discovering": on})
+
+
+def call_agent(conn, method, args, done=None):
+    if agent is None:
+        return
+    conn.call(agent[0], agent[1], "org.bluez.Agent1", method, args, None, Gio.DBusCallFlags.NONE, 90000, None, done)
+
+
+def paired(conn, path):
+    if path not in pairing:
+        return
+    values = devices[path][0]
+    values["Paired"] = True
+    strangers.pop(path, None)
+    changed(conn, path, "org.bluez.Device1", {"Paired": True})
+    pairing.pop(path).return_value(None)
 
 
 def device_props(path):
@@ -222,8 +273,91 @@ def on_bluez_call(conn, sender, path, iface, method, params, invocation):
             return
         values, battery = devices.pop(gone)
         log(f"RemoveDevice {values['Alias']}")
+        # forgotten, it is a stranger again: a scan finds it
+        values = dict(values, Paired=False, Connected=False, Name=values["Alias"])
+        values.pop("RSSI", None)
+        strangers[gone] = [values, battery, -70, "just"]
         ifaces = ["org.bluez.Device1"] + (["org.bluez.Battery1"] if battery is not None else [])
         conn.emit_signal(None, "/", "org.freedesktop.DBus.ObjectManager", "InterfacesRemoved", GLib.Variant("(oas)", (gone, ifaces)))
+        invocation.return_value(None)
+    elif method == "StartDiscovery":
+        log("StartDiscovery")
+        set_discovering(conn, True)
+
+        def find():
+            if not adapter["Discovering"]:
+                return False
+            for p, (values, battery, rssi, _) in strangers.items():
+                if p in devices:
+                    devices[p][0]["RSSI"] = rssi
+                    changed(conn, p, "org.bluez.Device1", {"RSSI": rssi})
+                    continue
+                values["RSSI"] = rssi
+                devices[p] = [values, battery]
+                props = {"org.bluez.Device1": device_props(p)}
+                if battery is not None:
+                    props["org.bluez.Battery1"] = {"Percentage": GLib.Variant("y", battery)}
+                conn.emit_signal(None, "/", "org.freedesktop.DBus.ObjectManager", "InterfacesAdded", GLib.Variant("(oa{sa{sv}})", (p, props)))
+            return False
+        GLib.timeout_add(300, find)
+        invocation.return_value(None)
+    elif method == "StopDiscovery":
+        log("StopDiscovery")
+        set_discovering(conn, False)
+        for p, (values, _) in devices.items():
+            if values.pop("RSSI", None) is not None:
+                conn.emit_signal(None, p, "org.freedesktop.DBus.Properties", "PropertiesChanged",
+                                 GLib.Variant("(sa{sv}as)", ("org.bluez.Device1", {}, ["RSSI"])))
+        invocation.return_value(None)
+    elif method == "RegisterAgent":
+        global agent
+        path, capability = params.unpack()
+        agent = (sender, path)
+        log(f"RegisterAgent {capability}")
+        log(f"Agent {sender} {path}")
+        invocation.return_value(None)
+    elif method in ("UnregisterAgent", "RequestDefaultAgent"):
+        log(method)
+        invocation.return_value(None)
+    elif method == "Pair":
+        values = devices[path][0]
+        log(f"Pair {values['Alias']}")
+        if values["Alias"] in fail_next:
+            error, message = fail_next.pop(values["Alias"])
+            GLib.timeout_add(300, lambda: invocation.return_dbus_error(error, message) and False)
+            return
+        how = strangers.get(path, [None, None, None, "just"])[3]
+        pairing[path] = invocation
+        if how == "just":
+            GLib.timeout_add(300, lambda: paired(conn, path) and False)
+        elif how == "passkey":
+            call_agent(conn, "DisplayPasskey", GLib.Variant("(ouq)", (path, PASSKEY, 0)))
+        else:
+            def answered(c, res):
+                try:
+                    c.call_finish(res)
+                except GLib.Error:
+                    log("Confirmation no")
+                    if path in pairing:
+                        pairing.pop(path).return_dbus_error("org.bluez.Error.AuthenticationRejected", "Authentication Rejected")
+                    return
+                log("Confirmation yes")
+                paired(conn, path)
+            call_agent(conn, "RequestConfirmation", GLib.Variant("(ou)", (path, COMPARE)), answered)
+    elif method == "CancelPairing":
+        values = devices[path][0]
+        log(f"CancelPairing {values['Alias']}")
+        if path in pairing:
+            call_agent(conn, "Cancel", None)
+            pairing.pop(path).return_dbus_error("org.bluez.Error.AuthenticationCanceled", "Authentication Canceled")
+        invocation.return_value(None)
+    elif method == "Typed":
+        name, entered = params.unpack()
+        for p in list(pairing):
+            if devices[p][0]["Alias"] == name:
+                call_agent(conn, "DisplayPasskey", GLib.Variant("(ouq)", (p, PASSKEY, entered)))
+                if entered >= 6:
+                    paired(conn, p)
         invocation.return_value(None)
     elif method == "FailNext":
         name, error, message = params.unpack()
@@ -268,6 +402,10 @@ def on_bluez_get(conn, sender, path, iface, prop):
 
 
 def on_bluez_set(conn, sender, path, iface, prop, value):
+    if iface == "org.bluez.Device1" and prop == "Trusted" and path in devices:
+        devices[path][0]["Trusted"] = value.unpack()
+        log(f"Trusted {devices[path][0]['Alias']}")
+        return True
     if iface != "org.bluez.Adapter1" or prop != "Powered":
         return False
     on = value.unpack()
@@ -287,8 +425,10 @@ def bluez_start(conn):
     conn.register_object("/", BLUEZ["org.freedesktop.DBus.ObjectManager"], on_bluez_call)
     conn.register_object("/", BLUEZ["org.awesome.Gate"], on_bluez_call)
     conn.register_object(HCI, BLUEZ["org.bluez.Adapter1"], on_bluez_call, on_bluez_get, on_bluez_set)
+    conn.register_object("/org/bluez", BLUEZ["org.bluez.AgentManager1"], on_bluez_call)
+    for p in list(devices) + list(strangers):
+        conn.register_object(p, BLUEZ["org.bluez.Device1"], on_bluez_call, on_bluez_get, on_bluez_set)
     for p, (_, battery) in devices.items():
-        conn.register_object(p, BLUEZ["org.bluez.Device1"], on_bluez_call, on_bluez_get, None)
         if battery is not None:
             conn.register_object(p, BLUEZ["org.bluez.Battery1"], on_bluez_call, on_bluez_get, None)
     Gio.bus_own_name_on_connection(conn, "org.bluez", Gio.BusNameOwnerFlags.NONE, None, None)

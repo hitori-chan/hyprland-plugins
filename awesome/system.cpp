@@ -111,6 +111,10 @@ namespace NAwesome::System {
             .connectDevice = connectDevice,
             .forgetDevice  = forgetDevice,
             .panelClosed   = bluetoothPanelClosed,
+            .scan          = scanDevices,
+            .pairDevice    = pairDevice,
+            .answerPairing = answerPairing,
+            .menuClosed    = bluetoothMenuClosed,
         };
 
         HANDLE H = supervisor().handle();
