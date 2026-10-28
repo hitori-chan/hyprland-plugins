@@ -18,8 +18,6 @@ namespace NAwesome::Glyph {
 
     // the glyph rastered at w x h physical px (h 0: square), tinted `col`
     SP<Render::ITexture> tex(eGlyph g, const CHyprColor& col, int w, int h = 0);
-    // a glyph's own aspect, width over height (the battery is 2:1)
-    double aspect(eGlyph g);
     void   clear(); // teardown: the textures go before the renderer does
 
 } // namespace NAwesome::Glyph

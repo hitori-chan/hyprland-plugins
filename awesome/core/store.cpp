@@ -72,9 +72,7 @@ namespace NAwesome {
         // a row of its own
         if (entry.empty() || entry.find_first_of(std::string_view{"\r\n\0", 3}) != std::string_view::npos)
             return false;
-        BoundedString<MAX_STORE_STRING_BYTES> B;
-        B.assignClipped(entry);
-        const auto& E = B.str();
+        const std::string E{entry.substr(0, clipToUtf8Boundary(entry, MAX_STORE_STRING_BYTES))};
         if (E.empty() || (!entries.empty() && entries.back() == E))
             return false;
         // re-running an entry moves it to most recent

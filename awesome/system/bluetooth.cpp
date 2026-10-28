@@ -18,6 +18,7 @@
 
 #include "system.hpp"
 
+#include "core/bounded.hpp"
 #include "core/busclient.hpp"
 #include "core/controls.hpp"
 #include "core/hop.hpp"
@@ -89,10 +90,7 @@ namespace NAwesome::System {
             if ((unsigned char)c < 0x20 || c == 0x7f)
                 c = ' ';
         if (s.size() > MAX_NAME) {
-            size_t cut = MAX_NAME;
-            while (cut > 0 && ((unsigned char)s[cut] & 0xC0) == 0x80)
-                cut--;
-            s.resize(cut);
+            s.resize(clipToUtf8Boundary(s, MAX_NAME));
             s += "…";
         }
         return s;
