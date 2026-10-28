@@ -186,11 +186,11 @@ namespace NAwesome::Shell {
                         plainExec.append(plainExec.empty() ? "" : " ").append(W);
                 }
             }
-            app.lname = lower(app.name);
+            app.lname = asciiLower(app.name);
             // matched like awesome: against the name AND the launch command
             // line — its plain words (the quoted form starts every word with
             // a quote, and the command-prefix rank never matched)
-            app.lexec = lower(app.terminal && !plainExec.empty() ? std::string(cfg().getS("plugin:awesome:shell:terminal")) + " -e " + plainExec : plainExec);
+            app.lexec = asciiLower(app.terminal && !plainExec.empty() ? std::string(cfg().getS("plugin:awesome:shell:terminal")) + " -e " + plainExec : plainExec);
             apps.push_back(std::move(app));
         }
 
@@ -237,7 +237,7 @@ namespace NAwesome::Shell {
         // query is typed, entries launched often rank first (launch counts).
         static void refilter() {
             shown.clear();
-            const auto Q = lower(typed);
+            const auto Q = asciiLower(typed);
 
             struct SRank {
                 SShown s;
@@ -256,7 +256,7 @@ namespace NAwesome::Shell {
             static const std::vector<std::string> LCATS = [] {
                 std::vector<std::string> v;
                 for (int i = 0; i < NCATS; i++)
-                    v.push_back(lower(CATEGORIES[i].name));
+                    v.push_back(asciiLower(CATEGORIES[i].name));
                 return v;
             }();
 

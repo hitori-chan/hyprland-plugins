@@ -223,7 +223,7 @@ namespace NAwesome::Shell {
             return "";
 
         if (!extraDir.empty())
-            for (const auto& N : {name, lower(name)})
+            for (const auto& N : {name, asciiLower(name)})
                 for (const char* EXT : {".png", ".svg"})
                     if (const auto P = extraDir + "/" + N + EXT; NAwesome::admissibleImageFile(P))
                         return P;
@@ -231,7 +231,7 @@ namespace NAwesome::Shell {
         const int PX = iconDevicePx(); // a theme's own drawing at the cell's size (breeze's 16 px set) beats a scaled one
         if (auto P = NAwesome::resolveIconName(name, PX); !P.empty())
             return P;
-        if (const auto LOWER = lower(name); LOWER != name)
+        if (const auto LOWER = asciiLower(name); LOWER != name)
             return NAwesome::resolveIconName(LOWER, PX);
         return "";
     }
@@ -243,7 +243,7 @@ namespace NAwesome::Shell {
     // is the canonical association, so scan for it when the basename misses.
     static std::string desktopIconName(const std::string& identifier) {
         const auto& INDEX = NAwesome::CDesktopIndex::inst();
-        const auto  ID    = lower(identifier);
+        const auto  ID    = asciiLower(identifier);
         if (const auto* ICON = INDEX.findIcon(ID))
             return *ICON;
 

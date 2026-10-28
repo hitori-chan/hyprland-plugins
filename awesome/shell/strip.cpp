@@ -638,10 +638,4 @@ namespace NAwesome::Shell {
         return NAwesome::isClient(w) && ws && w->m_workspace && w->m_workspace->id() == ws->id() && (!w->isHidden() || NAwesome::Windows::Tasklist::isMinimized(w));
     }
 
-    std::string lower(std::string s) {
-        for (auto& c : s)
-            c = std::tolower((unsigned char)c);
-        return s;
-    }
-
 } // namespace NAwesome::Shell

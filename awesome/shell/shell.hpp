@@ -110,7 +110,6 @@ namespace NAwesome::Shell {
     void        damageBars(); // covers the menubar's prompt strip while it's open
     void        barChanged(); // warm + damage: the bar's content changed, event loop only
     void        titleChanged(); // a visible title: the strip alone, rate-limited
-    std::string lower(std::string s);
 
     // Is this window a task of WS? By workspace ID, NEVER by pointer: while a
     // window closes, the monitor's active workspace and the windows' can
@@ -390,8 +389,7 @@ namespace NAwesome::Shell {
 
         struct SEntry {
             int32_t      id = 0;
-            std::string  label;
-            std::string  display; // label + toggle/submenu decorations, fixed at load
+            std::string  display; // the label + toggle decorations, fixed at load
             bool         enabled = true, separator = false, submenu = false;
             uint8_t      toggle      = TG_NONE;
             int32_t      toggleState = 0;     // 0 off, 1 on, anything else indeterminate
