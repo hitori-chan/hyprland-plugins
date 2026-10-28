@@ -52,6 +52,7 @@ hl.config({
 hl.bind("ALT + Return", hl.dsp.exec_cmd("foot"), { description = "terminal" })
 hl.bind("ALT + Q", hl.dsp.exit(), { description = "quit nested" })
 hl.bind("ALT + SHIFT + C", hl.dsp.window.close(), { description = "close window" })
+hl.bind("ALT + mouse:272", hl.dsp.window.drag(), { mouse = true }) -- the snap battery's move drag
 hl.bind("ALT + P", function()
 	if hl.plugin and hl.plugin.awesome then hl.plugin.awesome.menubar() end
 end, { description = "menubar" })

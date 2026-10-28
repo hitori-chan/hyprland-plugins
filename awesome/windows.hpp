@@ -19,6 +19,7 @@ namespace NAwesome::Windows {
         void onPointerMove(const Vector2D&, Event::SCallbackInfo&) override;
         void onKey(const IKeyboard::SKeyEvent&, Event::SCallbackInfo&) override;
         void onInputBlocked() override;
+        std::optional<std::string> handleCtl(const std::string& verb) const override;
     };
     CModule& module();
 }

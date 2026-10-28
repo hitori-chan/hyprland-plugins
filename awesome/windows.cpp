@@ -221,6 +221,19 @@ namespace NAwesome::Windows {
         Snap::onInputEndingDrag();
     }
 
+    // `hyprctl awesome snap-zone` (the gate's build): the armed snap zone,
+    // "<top|bottom|-> <left|right|->", "" with none
+    std::optional<std::string> CModule::handleCtl(const std::string& verb) const {
+#ifndef AWESOME_GATE
+        (void)verb;
+        return std::nullopt;
+#else
+        if (verb != "snap-zone")
+            return std::nullopt;
+        return Snap::zoneDescribe();
+#endif
+    }
+
     void CModule::onInputBlocked() {
         Max::onInputBlocked();
         Click::onInputBlocked();

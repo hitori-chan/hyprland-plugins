@@ -135,8 +135,9 @@ center's status line and rows), `menu` (the open card menu's rows),
 `controls-tip` (the control center button naming itself), `outputs`
 (the volume's sinks), `bt` (Bluetooth as read; `bt power 0|1`, `bt
 connect|disconnect NAME` drive it), `busy` (the wpctl commands in
-flight: a battery's barrier) and `pad NAME` (a virtual pointer stands in
-for the touchpad; `pad -` drops it).
+flight: a battery's barrier), `pad NAME` (a virtual pointer stands in
+for the touchpad; `pad -` drops it) and `snap-zone` (the armed snap
+zone, "<top|bottom|-> <left|right|->").
 
 The Wayland fixtures and D-Bus fakes the batteries drive are in
 [`devtools/`](../devtools/README.md).

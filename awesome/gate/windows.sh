@@ -589,6 +589,73 @@ for a in "$W3A" "$W3B" "$W3C"; do
 done
 until_is 5 0 w3_count
 
+# ---- snap: an output edge arms its half, two edges a quarter ---------------
+# (windows/snap.hpp) A floating move drag (Alt+drag here, the nested's own
+# bind) whose cursor comes within `edge` (16) of an output edge previews
+# that half of the workarea, of two edges that corner's quarter; the drop
+# commits it, border inside the slot. Letting go of the modifier first ends
+# the drag and commits the same.
+snap_box() { clients | python3 -c "
+import json,sys
+c = next((c for c in json.load(sys.stdin) if c['class'] == 'snapw'), None)
+print('%d,%d %dx%d' % (c['at'][0], c['at'][1], c['size'][0], c['size'][1]) if c else 'none')"; }
+slot() { # slot <left|right|topleft>: the expected box, border 1 inside the workarea's part
+	hq monitors -j | python3 -c "
+import json,sys
+m = json.load(sys.stdin)[0]; l, t, r, b = m['reserved']
+x, y, w, h = l, t, m['width'] - l - r, m['height'] - t - b
+part = {'left': (x, y, w // 2, h), 'right': (x + w - w // 2, y, w - w // 2, h), 'topleft': (x, y, w // 2, h // 2)}[sys.argv[1]]
+px, py, pw, ph = part
+print('%d,%d %dx%d' % (px + 1, py + 1, pw - 2, ph - 2))" "$1"
+}
+kbds() { hq devices -j | python3 -c 'import json,sys;print(len(json.load(sys.stdin)["keyboards"]))'; }
+kbd_more() { (($(kbds) > $1)); }
+zone() { hq awesome snap-zone; }
+snap_drag() { # snap_drag <x> <y> <zone> <alt-first: 0|1>: Alt+drag the window's middle to (x, y), its zone armed, drop
+	# one keyboard and one pointer for the whole gesture: a device that
+	# goes away mid-drag ends the drag with it
+	local kb ptr k0
+	k0="$(kbds)"
+	exec {kb}> >(WAYLAND_DISPLAY="$WL" "$REPO/devtools/vkbd" >/dev/null 2>&1)
+	exec {ptr}> >(WAYLAND_DISPLAY="$WL" "$REPO/devtools/vptr" "$MON_W" "$MON_H" >/dev/null 2>&1)
+	until_ok 3 kbd_more "$k0" # its keyboard is up: the Alt below lands before the press
+	printf 'press 56\nmods alt\nsleep 60\n' >&"$kb"
+	settle
+	printf 'move 640 420\nsleep 40\npress 272\nsleep 60\nmove 600 420\nsleep 30\nmove %s %s\nsleep 30\nmove %s %s\nsleep 30\n' \
+		$((($1 + 600) / 2)) $((($2 + 420) / 2)) "$1" "$2" >&"$ptr"
+	until_is 3 "$1, $2" hq cursorpos # the last motion landed: the drag is live there
+	until_is 3 "$3" zone
+	if [[ "$4" == 1 ]]; then
+		printf 'release 56\nmods none\nsleep 60\n' >&"$kb"
+		until_is 3 "" zone
+		printf 'release 272\nsleep 60\n' >&"$ptr"
+	else
+		printf 'release 272\nsleep 60\n' >&"$ptr"
+		until_is 3 "" zone
+		printf 'release 56\nmods none\nsleep 60\n' >&"$kb"
+	fi
+	exec {ptr}>&- {kb}>&-
+	settle
+}
+dsp "hl.dsp.exec_cmd('foot --app-id=snapw --window-size-pixels=400x300')"
+wait_class snapw
+SNAPW="$(class_addr snapw)"
+dsp "hl.dsp.window.move({x = 440, y = 270, window = \"address:$SNAPW\"})"
+settled snapw
+snap_drag 2 420 "- left" 0
+chk "snap: the left edge commits the left half" until_is 2 "$(slot left)" snap_box
+dsp "hl.dsp.window.move({x = 440, y = 270, window = \"address:$SNAPW\"})"
+snap_drag $((MON_W - 2)) 420 "- right" 1
+chk "snap: the right edge, the modifier let go first, commits the right half" until_is 2 "$(slot right)" snap_box
+dsp "hl.dsp.window.move({x = 440, y = 270, window = \"address:$SNAPW\"})"
+snap_drag 2 2 "top left" 0
+chk "snap: the top-left corner commits that quarter" until_is 2 "$(slot topleft)" snap_box
+dsp "hl.dsp.window.move({x = 440, y = 270, window = \"address:$SNAPW\"})"
+SNAPSZ="$(snap_box | cut -d' ' -f2)" # the quarter's: a move keeps a window's size
+snap_drag 400 400 "" 0
+chk "snap: a drop away from the edges commits no slot" until_is 2 "200,250 $SNAPSZ" snap_box
+close_wait "$SNAPW"
+
 chk "windows: its foot is closed at the battery's end" \
 	test "$(pyc "sum(1 for c in cs if c['class']=='foot')")" = 0
 
