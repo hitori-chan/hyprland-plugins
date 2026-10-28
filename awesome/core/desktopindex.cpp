@@ -57,13 +57,28 @@ namespace NAwesome {
             return dirs;
         }
 
+        // the dirs' mtimes and their subdirs' (the scan recurses: an entry
+        // added under wine/Programs/ changes only its own dir), bounded
         std::vector<int64_t> stampsOf(const std::vector<std::string>& dirs) {
+            constexpr size_t     MAX_SUBDIRS = 64;
             std::vector<int64_t> out;
             out.reserve(dirs.size());
-            for (const auto& D : dirs) {
+            const auto STAMP = [&](const std::filesystem::path& p) {
                 std::error_code ec;
-                const auto      T = std::filesystem::last_write_time(D, ec);
+                const auto      T = std::filesystem::last_write_time(p, ec);
                 out.push_back(ec ? 0 : (int64_t)T.time_since_epoch().count());
+            };
+            size_t subdirs = 0;
+            for (const auto& D : dirs) {
+                STAMP(D);
+                std::error_code ec;
+                // increment(ec): the range-for's operator++ throws
+                for (auto it = std::filesystem::recursive_directory_iterator(D, std::filesystem::directory_options::skip_permission_denied, ec);
+                     !ec && it != std::filesystem::recursive_directory_iterator() && subdirs < MAX_SUBDIRS; it.increment(ec))
+                    if (std::error_code dec; it->is_directory(dec)) {
+                        STAMP(it->path());
+                        subdirs++;
+                    }
             }
             return out;
         }
