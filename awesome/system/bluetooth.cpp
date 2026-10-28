@@ -141,8 +141,12 @@ namespace NAwesome::System {
         const std::string WAS = adapterPath;
         adapterPath           = adapters.empty() ? "" : adapters.begin()->first;
         if (adapterPath != WAS) {
+            // the old proxy's pending power reply dies with it: nothing
+            // would settle a device marked Connecting… behind it
             adapterProxy.reset();
             wantPower.reset();
+            for (auto& [_, D] : devices)
+                D.pending = false;
         }
     }
 
@@ -290,9 +294,14 @@ namespace NAwesome::System {
 
     static void connectNow(const std::string& path, bool connect) {
         const auto IT = devices.find(path);
-        auto*      P  = proxyOf(path);
-        if (IT == devices.end() || !P)
+        if (IT == devices.end())
             return;
+        auto* P = proxyOf(path);
+        if (!P) { // a power-on marked it Connecting…: settle it
+            if (std::exchange(IT->second.pending, false))
+                publishBluetooth();
+            return;
+        }
         IT->second.pending = true;
         publishBluetooth();
         const uint64_t GEN = gen;
