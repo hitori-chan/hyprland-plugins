@@ -69,7 +69,8 @@ does not steal what you are typing.
 - Focus clears urgency, as in awesome.
 - `Mod+U` is `hl.dsp.focus({ urgent_or_last = true })`: the urgent
   window wins over the last-window fallback, and the view follows it to
-  its workspace (awesome's `awful.client.urgent.jumpto`).
+  its workspace (awesome's `awful.client.urgent.jumpto`); a minimized
+  one is restored, as is any window a focus dispatch names.
 - `focus_on_activate = true` (globally or by window rule) gives vanilla
   awesome: an ask on a visible window focuses it, and a Wayland ask on a
   minimized one restores and focuses it. An ask on another workspace is
