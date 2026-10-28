@@ -606,12 +606,6 @@ namespace NAwesome::Notify {
                 pendingEsc.arm([]() { CardMenu::close(); });
                 return;
             }
-            // Delete over a row is its right-click
-            if (!chord && (SYM == XKB_KEY_Delete || SYM == XKB_KEY_KP_Delete) && hovered.kind == SCard::MENU_ITEM) {
-                info.cancelled = true;
-                pendingEsc.arm([ID = hovered.id, KEY = hovered.group]() { CardMenu::secondary((int)ID, KEY); });
-                return;
-            }
             if (!centerVisible() && !controlsVisible() && !replyHeld())
                 return;
         }
