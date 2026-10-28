@@ -263,16 +263,12 @@ namespace NAwesome::Windows::Snap {
         // window for this motion. A geometry change, no focus or workspace
         // change — fine inside the emission.
         void applyMagnet() {
-            if (cfg().getI("plugin:awesome:windows:snap_distance") <= 0)
+            const double D = (double)cfg().getI("plugin:awesome:windows:snap_distance");
+            // a lock engaging mid-drag (an idle timeout) is not an input
+            // event: never move windows under the lockscreen
+            if (D <= 0 || sessionLocked())
                 return;
             {
-                // a lock engaging mid-drag (an idle timeout) is not an input
-                // event: never move windows under the lockscreen
-                if (sessionLocked())
-                    return;
-                const double D = (double)cfg().getI("plugin:awesome:windows:snap_distance");
-                if (D <= 0)
-                    return;
                 const auto CURSOR = g_pInputManager->getMouseCoordsInternal();
                 const auto MON = monitorAt(CURSOR);
                 if (!MON)
@@ -354,10 +350,10 @@ namespace NAwesome::Windows::Snap {
                 const CBox RES{g.x + B, g.y + B, g.w - 2 * B, g.h - 2 * B};
                 const auto  MINRAW = T->minSize().value_or(Vector2D{Geometry::DEFAULT_MIN_WINDOW_SIZE, Geometry::DEFAULT_MIN_WINDOW_SIZE});
                 const auto  MAXRAW = T->maxSize().value_or(Math::VECTOR2D_MAX);
-                const double MINX  = std::max(1.0, std::isfinite(MINRAW.x) ? MINRAW.x : 1.0);
-                const double MINY  = std::max(1.0, std::isfinite(MINRAW.y) ? MINRAW.y : 1.0);
-                const double MAXX  = std::max(MINX, std::isfinite(MAXRAW.x) ? MAXRAW.x : std::numeric_limits<double>::max());
-                const double MAXY  = std::max(MINY, std::isfinite(MAXRAW.y) ? MAXRAW.y : std::numeric_limits<double>::max());
+                const double MINX  = Geometry::boundedMinimum(MINRAW.x);
+                const double MINY  = Geometry::boundedMinimum(MINRAW.y);
+                const double MAXX  = Geometry::boundedMaximum(MAXRAW.x, MINX);
+                const double MAXY  = Geometry::boundedMaximum(MAXRAW.y, MINY);
                 const Vector2D SIZE{std::clamp(RES.w, MINX, MAXX), std::clamp(RES.h, MINY, MAXY)};
                 Vector2D       NEWPOS{RES.x, RES.y};
                 if (EL && !ER)

@@ -69,50 +69,16 @@ namespace NAwesome::Windows {
     }
 
     namespace {
-        // queue+drain, never a lone doLaterLock: two raises/focuses can arm
-        // in one dispatch (a press plus the focus it caused, a scripted bind
-        // pair, an event backlog) and overwriting the lock cancels the
-        // unfired one
+        // queues, never a lone hop: two raises/focuses can arm in one
+        // dispatch (a press plus the focus it caused, a scripted bind pair,
+        // an event backlog) and re-arming a hop cancels the unfired one
         struct SRaiseJob {
             PHLWINDOWREF WR;
             bool         fullscreenOnly = false; // the press path: only fullscreen needs the allowed-over cleanup
         };
-        inline std::vector<SRaiseJob>& raiseJobs() {
-            static std::vector<SRaiseJob> J;
-            return J;
-        }
-        inline std::vector<PHLWINDOWREF>& focusJobs() {
-            static std::vector<PHLWINDOWREF> J;
-            return J;
-        }
-        inline bool& raiseQueued() {
-            static bool Q = false;
-            return Q;
-        }
-        inline bool& focusQueued() {
-            static bool Q = false;
-            return Q;
-        }
-        inline CHop& pendingRaise() {
-            static CHop H;
-            return H;
-        }
-        inline CHop& pendingFocus() {
-            static CHop H;
-            return H;
-        }
-
-        inline void queueRaise(const PHLWINDOWREF& WR, bool fullscreenOnly) {
-            if (raiseJobs().size() < 16)
-                raiseJobs().push_back({WR, fullscreenOnly});
-            if (raiseQueued())
-                return;
-            raiseQueued() = true;
-            pendingRaise().arm([]() {
-                raiseQueued() = false;
-                const auto Q = std::move(raiseJobs());
-                raiseJobs().clear();
-                for (const auto& J : Q) {
+        inline CHopQueue<SRaiseJob, 16>& raiseJobs() {
+            static CHopQueue<SRaiseJob, 16> Q([](std::vector<SRaiseJob>& batch) {
+                for (const auto& J : batch) {
                     if (sessionLocked())
                         return; // the lock can engage between the emission and this run
                     const auto W = J.WR.lock();
@@ -123,25 +89,26 @@ namespace NAwesome::Windows {
                     Click::raiseWindow(W);
                 }
             });
+            return Q;
         }
-
-        inline void queueFocus(const PHLWINDOWREF& TARGET) {
-            if (focusJobs().size() < 16)
-                focusJobs().push_back(TARGET);
-            if (focusQueued())
-                return;
-            focusQueued() = true;
-            pendingFocus().arm([]() {
-                focusQueued() = false;
-                const auto Q = std::move(focusJobs());
-                focusJobs().clear();
-                for (const auto& TARGET : Q) {
+        inline CHopQueue<PHLWINDOWREF, 16>& focusJobs() {
+            static CHopQueue<PHLWINDOWREF, 16> Q([](std::vector<PHLWINDOWREF>& batch) {
+                for (const auto& TARGET : batch) {
                     if (sessionLocked())
                         return; // the lock can engage between the emission and this run
                     if (const auto W = TARGET.lock(); W && W->mapped())
                         Desktop::focusState()->fullWindowFocus(W, Desktop::FOCUS_REASON_SWITCH_TO_WINDOW_HARD);
                 }
             });
+            return Q;
+        }
+
+        inline void queueRaise(const PHLWINDOWREF& WR, bool fullscreenOnly) {
+            raiseJobs().push({WR, fullscreenOnly});
+        }
+
+        inline void queueFocus(const PHLWINDOWREF& TARGET) {
+            focusJobs().push(TARGET);
         }
 
         // Corpse-guard gesture timing: a close this soon after a press on
@@ -363,7 +330,6 @@ namespace NAwesome::Windows {
                 if (w)
                     winOrder().seqOf(w.get()); // stamp arrival at map, not at first cycle
             });
-            supervisor().listen(Event::bus()->m_events.window.destroy, [](PHLWINDOWREF wr) { winOrder().forget(wr.get()); });
             supervisor().listen(Event::bus()->m_events.window.close, [](PHLWINDOW w) {
                 // the pressed window died right after the press:
                 // click-to-close. Arm the corpse guard over where the user
@@ -390,6 +356,8 @@ namespace NAwesome::Windows {
         }
 
         inline void teardown() {
+            raiseJobs().reset();
+            focusJobs().reset();
             swallowRelease() = 0;
             corpseUntil()    = {};
             corpseOwner().reset();

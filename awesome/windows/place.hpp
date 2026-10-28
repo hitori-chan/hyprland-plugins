@@ -94,19 +94,17 @@ namespace NAwesome::Windows::Place {
         // still pending, and do not mistake a compositor mode for a normal
         // client-chosen geometry. This mirrors the target's map-time state
         // sources instead of trying to infer them from a placeholder box.
-        // Read the REQUESTS, not the toplevel's applied states: a state
-        // check would read a grant the compositor has already told the
-        // client about, not one that is about to be applied — the request
-        // flags (plus the rule grants and the controller's modes) are the
-        // map-time sources of truth for "a grant is still in flight".
+        // Read the client's pending request, not the toplevel's applied
+        // states: a state check would read a grant the compositor has
+        // already told the client about, not one that is about to be
+        // applied — the pending request (plus the rule grants and the
+        // controller's modes) is the map-time source of truth for "a grant
+        // is still in flight". (The xdg request flags live only inside
+        // their stateChanged emission; this runs from a later hop.)
         inline bool hasFullscreenOrMaximizeGrant(PHLWINDOW w) {
             if (!w)
                 return false;
             if (w->fullscreenPolicy().pendingClientRequest().mode.has_value())
-                return true;
-
-            if (const auto TOP = xdgToplevel(w);
-                TOP && (TOP->m_state.requestsFullscreen.value_or(false) || TOP->m_state.requestsMaximize.value_or(false)))
                 return true;
 
             // X11: a fullscreen client state is a trait; its maximize and
