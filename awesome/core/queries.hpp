@@ -205,6 +205,19 @@ namespace NAwesome {
         return mon->m_activeSpecialWorkspace ? mon->m_activeSpecialWorkspace : mon->m_activeWorkspace;
     }
 
+    // A real fullscreen window owns the monitor, on its workspace or on an
+    // open special one (special windows render before the plugin's
+    // post-windows pass, so the bar would paint over them)
+    inline bool fullscreenOwns(const PHLMONITOR& mon) {
+        if (!mon)
+            return false;
+        const auto& FS = Fullscreen::controller();
+        for (const auto& WS : {mon->m_activeSpecialWorkspace, mon->m_activeWorkspace})
+            if (WS && FS->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN)
+                return true;
+        return false;
+    }
+
     // A window in the maximized presentation. Read the presentation, not
     // the xdg MAXIMIZED state: the compositor's internal FSMODE_MAXIMIZED
     // covers born/client maximize, and a float whose box covers the whole

@@ -87,6 +87,7 @@ namespace NAwesome::Shell {
         supervisor().listen(EV.workspace.created, [](PHLWORKSPACEREF) { barChanged(); });
         supervisor().listen(EV.workspace.removed, [](PHLWORKSPACEREF) { barChanged(); });
         supervisor().listen(EV.workspace.moveToMonitor, [](PHLWORKSPACE, PHLMONITOR) { barChanged(); });
+        supervisor().listen(EV.workspace.specialActive, [](PHLWORKSPACE, PHLMONITOR) { barChanged(); }); // its fullscreen hides the bar
         supervisor().listen(EV.monitor.layoutChanged, []() { barChanged(); });
         // An output going away (unplugged, or disabled with the lid shut)
         // takes what was open on it: a menu or a prompt drawn nowhere would
