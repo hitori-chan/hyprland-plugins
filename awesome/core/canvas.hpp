@@ -297,6 +297,31 @@ namespace NAwesome {
             if (const auto B = toPhys(global); drawable(B))
                 g_pHyprOpenGL->renderRect(*rctx, B, faded(c), {.round = round, .roundingPower = rp});
         }
+        // What follows paints inside `global` alone until the guard goes
+        // (a list scrolled in a window). The renderer's own clip: the render
+        // session's clipBox (CRenderContext::m_data, a field the compositor
+        // marks for removal: a dependency on its private state), honoured
+        // by rects without blur, textures, rings and shadows; glass and
+        // frost ignore it. A warm clips nothing.
+        class CClip {
+          public:
+            CClip(const SPaint& p, const CBox& global) : m_ctx(p.paints() ? p.rctx : nullptr) {
+                if (!m_ctx)
+                    return;
+                m_prev                 = m_ctx->m_data.clipBox;
+                m_ctx->m_data.clipBox = p.toPhys(global);
+            }
+            ~CClip() {
+                if (m_ctx)
+                    m_ctx->m_data.clipBox = m_prev;
+            }
+            CClip(const CClip&)            = delete;
+            CClip& operator=(const CClip&) = delete;
+
+          private:
+            Render::CRenderContext* m_ctx;
+            CBox                    m_prev;
+        };
         // Semantic container paint. Opaque defaults make the fork skip blur;
         // configured alpha below 1 retains the rounded live-glass path.
         void glass(const CBox& global, const CHyprColor& c, int round = 0, float rp = 2.f) const {

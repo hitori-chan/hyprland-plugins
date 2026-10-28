@@ -394,6 +394,24 @@ click $(menu_at "${DEV}_01") 272
 chk "pair: its click forgets it, scans, and pairs it again" until_ok 5 blog_order 'RemoveDevice Gate Buds|StartDiscovery|.*Pair Gate Buds|.*Connect Gate Buds|'
 chk "pair: ...back in the paired list" until_ok 3 hq_matches '^on Gate Buds=c35 ' awesome bt
 tap esc
+# What a scan finds scrolls in a window of six and a half rows (36 px):
+# a wheel notch moves it a row, clamped at its end, and a row scrolled
+# out takes no press. The menu's rows end ";@<px>" while the list
+# scrolls. The fake's crowd: eleven more, each farther than Gate Mouse.
+sbus call org.bluez / org.awesome.Gate Crowd q 11 >/dev/null
+click "$BT_WORDS_X" "$CAPS_CY" 272
+until_ok 3 hq_matches '\[Scan\]' awesome menu
+# shellcheck disable=SC2046
+click $(menu_at btn:scan) 272
+chk "scan: twelve found devices list from the nearest, scrolling" until_ok 3 hq_matches ';Gate Mouse;Gate Crowd 01;.*;Gate Crowd 11;@0$' awesome menu
+read -r MX MY <<<"$(menu_at "${DEV}_02")"
+printf 'move %s %s\nsleep 60\nscroll 0 15\nsleep 120\n' "$MX" "$MY" | vp
+chk "scan: a wheel notch moves it a row" until_ok 3 hq_matches ';@36$' awesome menu
+printf 'scroll 0 15\nsleep 40\n%.0s' $(seq 1 10) | vp
+chk "scan: ...and stops at its end" until_ok 3 hq_matches ';@198$' awesome menu
+chk "scan: a row scrolled out takes no press" test -z "$(menu_at "${DEV}_02")"
+tap esc
+sbus call org.bluez / org.awesome.Gate Crowd q 0 >/dev/null
 # rfkill: a hard block reads Blocked and the circle leaves it; the circle
 # lifts a soft block, then powers the radio once bluetoothd says it is free
 sbus call org.bluez / org.awesome.Gate Rfkill bb false true >/dev/null

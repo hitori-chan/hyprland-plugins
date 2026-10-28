@@ -251,8 +251,11 @@ pointer (the glass never lightens):
   once the scan finds it.
   Under the paired ones, while the radio is on, **Other Devices**: a
   **Scan** pill (Stop while it runs, eight turning dots beside it) and
-  what the scan found, nearest first, at most 6 ("No Devices Found", dim,
-  once a scan ended with none). The menu spells out no gestures: a
+  what the scan found, nearest first, at most 24 ("No Devices Found",
+  dim, once a scan ended with none). Past six and a half rows the found
+  list scrolls in its window, the paired list and Scan staying put: a
+  row the window cuts reads faint (the half row says more lies past
+  it), and the wheel moves it a row. The menu spells out no gestures: a
   device's right-click is its forget.
   A found device's pick pairs it, the menu staying open: "Pairing…", or
   in place of its row the code to type on it ("Type this code on it, then

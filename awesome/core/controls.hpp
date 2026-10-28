@@ -100,7 +100,7 @@ namespace NAwesome::Controls {
         }
     }
 
-    inline constexpr size_t MAX_FOUND = 6;
+    inline constexpr size_t MAX_FOUND = 24; // what a scan lists; the menu scrolls past six and a half
 
     // what a pairing asks of the user: the code to type on the device
     // (entered: the digits typed so far, -1 unknown), or whether the

@@ -120,6 +120,12 @@ namespace NAwesome::Notify::CardMenu {
     // words wrapping at 300 px (9 px in, 5 over and under), after a rest
     constexpr double NAME_NOTE_W = 300, NAME_NOTE_PADX = 9, NAME_NOTE_PADY = 5, NAME_NOTE_R = 10, NAME_NOTE_GAP = 14;
     constexpr auto   NAME_DELAY = std::chrono::milliseconds(500);
+    // what a scan found scrolls in a window of six and a half device rows (a
+    // pairing's question widens it by its own extra): the half row, faint
+    // as a row the window cuts, says more lies past the edge; a wheel notch
+    // moves it a row
+    constexpr double FOUND_ROWS = 6.5;
+    constexpr float  CUT_ALPHA  = 0.4f;
 
     static double rowH(const SItem& I) {
         return I.verb == SEP ? SEPH : I.verb == HEADER ? (I.buttons.empty() ? HEADH : HEAD_BTN_H) : I.disc ? DEVH : ROWH;
@@ -139,6 +145,25 @@ namespace NAwesome::Notify::CardMenu {
     // a cut output's row: the one the pointer rests on, the one whose name shows
     static std::string         s_nameWant, s_nameFor;
     static SP<CEventLoopTimer> s_nameTick;
+    // the found list's window: how far it scrolled, how far it can, where it
+    // was last laid out (global logical)
+    static double s_foundScroll = 0, s_foundMax = 0;
+    static CBox   s_foundWin;
+
+    // the first row of what a scan found (under Other Devices' header);
+    // none: the end
+    static size_t foundStart() {
+        if (s_control != ePanelMenu::BLUETOOTH)
+            return s_items.size();
+        for (size_t k = 0; k < s_items.size(); k++)
+            if (s_items[k].verb == HEADER && !s_items[k].buttons.empty() && s_items[k].buttons.front().first == "btn:scan")
+                return k + 1;
+        return s_items.size();
+    }
+    static void foundReset() {
+        s_foundScroll = s_foundMax = 0;
+        s_foundWin                 = {};
+    }
 
     static std::string clipName(const std::string& s) {
         size_t cp = 0;
@@ -359,8 +384,19 @@ namespace NAwesome::Notify::CardMenu {
             notifChanged();
     }
 
+    bool wheel(const Vector2D& pos, int steps) {
+        if (!s_open || s_foundMax <= 0 || !s_foundWin.containsPoint(pos))
+            return false;
+        if (const double TO = std::clamp(s_foundScroll + steps * DEVH, 0.0, s_foundMax); TO != s_foundScroll) {
+            s_foundScroll = TO;
+            notifChanged();
+        }
+        return true;
+    }
+
     bool openControl(ePanelMenu m, const CBox& anchor, bool alignRight) {
         close();
+        foundReset();
         s_open    = true;
         s_owner   = 0;
         s_control = m;
@@ -405,6 +441,7 @@ namespace NAwesome::Notify::CardMenu {
             Controls::doors().menuClosed();
         s_forget.clear();
         nameReset();
+        foundReset();
         s_open  = false;
         s_owner = 0;
         s_control.reset();
@@ -424,6 +461,7 @@ namespace NAwesome::Notify::CardMenu {
         if (s_nameTick && g_pEventLoopManager)
             g_pEventLoopManager->removeTimer(s_nameTick);
         s_nameTick.reset();
+        foundReset();
         s_forget.clear();
         s_open  = false;
         s_owner = 0;
@@ -448,6 +486,8 @@ namespace NAwesome::Notify::CardMenu {
     static void press(const std::string& key) {
         const auto& D = Controls::doors();
         if (key == "btn:scan") {
+            if (!Controls::state().bluetooth.scanning)
+                s_foundScroll = 0; // a new scan lists from the nearest
             if (D.scan)
                 D.scan(!Controls::state().bluetooth.scanning);
             return;
@@ -582,6 +622,8 @@ namespace NAwesome::Notify::CardMenu {
                 (I.dim ? "(" + I.label + ")" :
                          (I.shown.empty() ? I.label : I.shown) + (I.check == 1 ? "*" : "") + (I.detail.empty() ? "" : " " + I.detail) + (I.fail ? std::string{" !"} + failLine(I.fail) : ""));
         }
+        if (s_foundMax > 0) // the found list scrolls: how far
+            out += std::format(";@{}", (int)std::lround(s_foundScroll));
         return s_open ? out : std::string{};
     }
 
@@ -594,9 +636,10 @@ namespace NAwesome::Notify::CardMenu {
     // a context menu opens with its corner at the pointer, one that
     // would leave the monitor flipping to the pointer's other side; the
     // control center's hang 6 px under what opened them, at its edge
-    void render(const SPaint& P, const SType& T) {
+    void render(const SPaint& PIN, const SType& T) {
         if (!s_open || s_items.empty())
             return;
+        SPaint P = PIN; // a row the found window cuts paints fainter
         const auto COLMENU = color(cfg().getColor("plugin:awesome:theme:col_glass")), COLRIM = color(cfg().getColor("plugin:awesome:theme:col_rim")),
                    COLTITLE = color(cfg().getColor("plugin:awesome:notify:col_title")),
                    COLSUB = color(cfg().getColor("plugin:awesome:notify:col_kicker")), COLBODY = color(cfg().getColor("plugin:awesome:notify:col_fg")),
@@ -669,6 +712,17 @@ namespace NAwesome::Notify::CardMenu {
                 w = std::max(w, texW(cachedText(labelOf(I), I.dim ? COLDIM : COLTITLE, T.body, CAPPX, -1, 0, false, 400), P.scale) + LX + LABEL_X);
         }
         w = std::min(w, WMAX);
+        // what a scan found: its rows' height, and the window they scroll in
+        double foundH = 0, askExtra = 0;
+        for (size_t k = foundStart(); k < s_items.size(); k++) {
+            foundH += itemH(s_items[k]);
+            if (s_items[k].verb == PROMPT)
+                askExtra = std::max(askExtra, itemH(s_items[k]) - DEVH);
+        }
+        const double WIN_H = std::min(foundH, FOUND_ROWS * DEVH + askExtra);
+        s_foundMax         = foundH - WIN_H;
+        s_foundScroll      = std::clamp(s_foundScroll, 0.0, s_foundMax);
+        h -= foundH - WIN_H;
         // the bound: Bluetooth's list taller than the monitor keeps its first
         // paired rows and says how many more (a warm trims; the draw paints
         // what it left)
@@ -716,13 +770,27 @@ namespace NAwesome::Notify::CardMenu {
         panel.id    = s_owner;
         cards.push_back(std::move(panel));
 
-        double ry = y + PAD;
-        CBox   nameRow; // the cut row whose whole name shows
+        double                       ry = y + PAD;
+        CBox                         nameRow; // the cut row whose whole name shows
+        const size_t                 FOUND0 = foundStart(); // after the paired list's bound
+        const float                  ALPHA  = P.alpha;
+        std::optional<SPaint::CClip> clip; // the found window's, while its rows paint
+        size_t                       foundCards = cards.size();
+        CBox                         win;
         for (size_t i = 0; i < s_items.size(); i++) {
             const auto&  I  = s_items[i];
             const double RH = itemH(I);
             if (!s_nameFor.empty() && I.key == s_nameFor)
                 nameRow = CBox{x, ry, w, RH};
+            if (i == FOUND0 && s_foundMax > 0) {
+                win = CBox{x, ry, w, WIN_H};
+                ry -= s_foundScroll;
+                clip.emplace(P, win);
+                foundCards = cards.size();
+            }
+            // a found row the window cuts reads faint; one it hides is
+            // clipped away whole (the warm still rasters its words)
+            P.alpha = clip && (ry < win.y || ry + RH > win.y + win.h) ? ALPHA * CUT_ALPHA : ALPHA;
             if (I.verb == SEP) {
                 P.rect(CBox{x + LABEL_X, ry + SEPH / 2, w - 2 * LABEL_X, 1.0 / P.scale}, tHairline());
                 ry += SEPH;
@@ -857,6 +925,17 @@ namespace NAwesome::Notify::CardMenu {
             cards.push_back(std::move(row));
             ry += RH;
         }
+        P.alpha = ALPHA;
+        clip.reset();
+        // the found rows' presses stop at the window: a hidden row takes none
+        s_foundWin = win;
+        if (s_foundMax > 0)
+            for (size_t k = foundCards; k < cards.size();) {
+                if (const auto B = cards[k].box.intersection(win); B.empty())
+                    cards.erase(cards.begin() + (std::ptrdiff_t)k);
+                else
+                    cards[k++].box = B;
+            }
         // a cut output's whole name, in a note left of the menu: its words
         // warm with the warm its rest asked for
         if (nameRow.w > 0)

@@ -482,11 +482,11 @@ namespace NAwesome::Notify {
 
     // ---- wheel: page the center, only inside the panel box ----
 
-    static double scrollAcc = 0, levelAcc = 0;
+    static double scrollAcc = 0, levelAcc = 0, menuAcc = 0;
 
     void          onMouseAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
         if (NAwesome::sessionLocked() || NAwesome::nativeInputCaptureActive()) {
-            scrollAcc = levelAcc = 0;
+            scrollAcc = levelAcc = menuAcc = 0;
             return;
         }
         // the cheap tests first: every wheel notch and touchpad frame lands
@@ -505,11 +505,19 @@ namespace NAwesome::Notify {
         if (!centerVisible() && !MENU && CARD->kind != SCard::CTRL_SLIDER && CARD->kind != SCard::CTRL_SWITCH && CARD->kind != SCard::PANEL)
             return;
         info.cancelled = true;
-        // under an open menu the shade holds still: a page would slide its
-        // card out from under it
-        if (MENU || e.axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
+        if (e.axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
             return;
         const double DELTA = e.delta != 0.0 ? e.delta : e.deltaDiscrete / 120.0 * 15.0;
+        // under an open menu the shade holds still (a page would slide its
+        // card out from under it); what a scan found scrolls in its window
+        if (MENU) {
+            menuAcc += DELTA;
+            if (const int STEP = (int)(menuAcc / 15.0); STEP != 0) {
+                menuAcc -= STEP * 15.0;
+                CardMenu::wheel(POS, STEP);
+            }
+            return;
+        }
         // over a level the wheel moves it (up raises); over a switch, nothing
         if (CARD->kind == SCard::CTRL_SLIDER) {
             levelAcc += DELTA;
@@ -711,7 +719,7 @@ namespace NAwesome::Notify {
         const bool LOCK = NAwesome::sessionLocked();
         swallowRelease = 0;
         heldButtons    = 0;
-        scrollAcc = levelAcc = 0;
+        scrollAcc = levelAcc = menuAcc = 0;
         dropPress();
         controlsDragEnd(); // its release may never come back up
         CardMenu::close(); // half-tracked input state: its press may never come back up
@@ -870,7 +878,7 @@ namespace NAwesome::Notify {
         controlsDragEnd();
         swallowRelease = 0;
         heldButtons    = 0;
-        scrollAcc = levelAcc = 0;
+        scrollAcc = levelAcc = menuAcc = 0;
         releasePointer();
     }
 

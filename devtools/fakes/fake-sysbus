@@ -27,6 +27,9 @@
 #   (InterfacesAdded, an RSSI each): "Gate Speaker" pairs as is, "Gate
 #   Keys" shows a code to type on it (the gate's Typed moves its digits),
 #   "Gate Phone" asks to compare one, a nameless one never names itself.
+#   The gate's Crowd adds that many more ("Gate Crowd 01" on, each a step
+#   farther), or with 0 takes them away, so a scan finds more than the
+#   menu shows at once.
 #   Pairing calls the agent the pairing client registered with
 #   AgentManager1 (logged with its sender); Trusted is settable.
 # - rfkill: a unix socket at $AW_RFKILL speaks /dev/rfkill's events for one
@@ -172,6 +175,7 @@ BLUEZ_XML = """
     <method name="EmitVolume"><arg type="q" name="volume" direction="in"/></method>
     <method name="SetBattery"><arg type="s" name="name" direction="in"/><arg type="y" name="percent" direction="in"/></method>
     <method name="FailNext"><arg type="s" name="name" direction="in"/><arg type="s" name="error" direction="in"/><arg type="s" name="message" direction="in"/></method>
+    <method name="Crowd"><arg type="q" name="count" direction="in"/></method>
   </interface>
   <interface name="org.bluez.Adapter1">
     <method name="RemoveDevice"><arg type="o" name="device" direction="in"/></method>
@@ -379,6 +383,17 @@ def on_bluez_call(conn, sender, path, iface, method, params, invocation):
     elif method == "FailNext":
         name, error, message = params.unpack()
         fail_next[name] = (error, message)
+        invocation.return_value(None)
+    elif method == "Crowd":
+        (count,) = params.unpack()
+        crowd = [p for p in strangers if p.startswith(HCI + "/dev_00_00_00_00_01_")]
+        for p in crowd:
+            strangers.pop(p)
+            if devices.pop(p, None) is not None:
+                conn.emit_signal(None, "/", "org.freedesktop.DBus.ObjectManager", "InterfacesRemoved", GLib.Variant("(oas)", (p, ["org.bluez.Device1"])))
+        for k in range(1, count + 1):
+            name = f"Gate Crowd {k:02d}"
+            strangers[HCI + f"/dev_00_00_00_00_01_{k:02X}"] = [{"Alias": name, "Name": name, "Icon": "audio-card", "Paired": False, "Connected": False}, None, -70 - k, "just"]
         invocation.return_value(None)
     elif method in ("Connect", "Disconnect"):
         values = devices[path][0]

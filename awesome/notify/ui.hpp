@@ -307,6 +307,9 @@ namespace NAwesome::Notify {
         void     init();          // the scan activity's tick, the cut name's rest
         void     exit();          // teardown: forget it, no damage, no warm
         void     hoverChanged();  // the hover moved (surface.cpp): a cut output's name after a rest
+        // wheel steps (down: positive) over what a scan found: scrolls its
+        // window a row a step; false when pos is not over one that scrolls
+        bool     wheel(const Vector2D& pos, int steps);
         std::string describe();     // the gate's: the open menu's rows (defined in its build only)
         std::string describeName(); // the gate's: the whole name a cut row's note shows ("" none)
     }
