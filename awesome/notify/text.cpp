@@ -332,15 +332,6 @@ namespace NAwesome::Notify {
         return true;
     }
 
-    double bodyLineH(double scale) {
-        const auto T      = typeScale(scale);
-        const auto FAMILY = NAwesome::cfg().getS("plugin:awesome:notify:font");
-        int LINEH = 0, ADV = 0;
-        if (!lineMetric(FAMILY, T.body, 400, 1.1f, LINEH, ADV))
-            return (double)T.body / scale * 1.35;
-        return (double)LINEH / scale;
-    }
-
     int bodyBudgetPx(double scale, int lines) {
         if (lines <= 0)
             return 0;

@@ -22,15 +22,17 @@
 //            not take you away.
 //   deck     a collapsed stack: left spreads it · right dismisses the
 //            stack · the hold is its top card's menu
-//   shead    an expanded stack's header: Show Less collapses · its close
-//            button / right dismisses the stack; its cards are rows
-//   header   "Clear All" = the global sweep
-//   controls the block atop the center: a tile's click flips its switch
-//            (Do Not Disturb, the microphone, the touchpad) · a left press
-//            on a level's track drags it until the release · the wheel
-//            steps a level as its keys do · the volume's glyph mutes · right
-//            on the keyboard light opens Follow the Room, on the volume
-//            its outputs
+//   shead    an expanded stack's header: Show Less collapses · right
+//            dismisses the stack; its cards are rows
+//   silent   the silent fold: left spreads it
+//   header   "Clear All" hides the shade's cards for Model::UNDO_WINDOW;
+//            the same capsule's Undo brings them back
+//   controls its own card: a left press on a level's track drags it until
+//            the release · the wheel steps a level as its keys do · the
+//            keyboard's glyph puts its light out and back · the speaker
+//            mutes · Follow the Room flips · the output pill and the
+//            Bluetooth and DND capsules' words open their menus, their
+//            circles flip the switch
 //   menu     a row is picked on the left RELEASE — press, hold, slide onto
 //            a row and let go, or click one on the open menu; any other
 //            press closes it, swallowed
@@ -354,12 +356,7 @@ namespace NAwesome::Notify {
     void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
         // emissions precede the compositor's own lock handling: locked input
         // belongs to the lockscreen, and half-tracked state must not survive it
-        if (NAwesome::sessionLocked()) {
-            swallowRelease = 0;
-            heldButtons    = 0;
-            return;
-        }
-        if (NAwesome::nativeInputCaptureActive()) {
+        if (NAwesome::sessionLocked() || NAwesome::nativeInputCaptureActive()) {
             swallowRelease = 0;
             heldButtons    = 0;
             return;
@@ -739,12 +736,7 @@ namespace NAwesome::Notify {
     // Hands off while a button is held or a drag is live — implicit grabs and
     // drags keep flowing, as they would over a real layer-surface daemon.
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info) {
-        if (NAwesome::sessionLocked()) {
-            setHovered({});
-            releasePointer();
-            return;
-        }
-        if (NAwesome::nativeInputCaptureActive()) {
+        if (NAwesome::sessionLocked() || NAwesome::nativeInputCaptureActive()) {
             setHovered({});
             releasePointer();
             return;
