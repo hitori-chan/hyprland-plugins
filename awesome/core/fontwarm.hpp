@@ -25,6 +25,7 @@
 #include <cmath>
 #include <set>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -66,7 +67,7 @@ namespace NAwesome {
         // and type roles they use, at every monitor's scale, and the emoji
         // fallback a chat's first message reaches for
         void collect() {
-            std::set<std::tuple<std::string, int, int>> seen;
+            std::set<std::tuple<std::string, int, int, std::string_view>> seen; // the sample too: an emoji's face is its fallback font
             std::vector<double>                         scales;
             for (const auto& M : State::monitorState()->monitors())
                 scales.push_back(M->m_scale);
@@ -75,7 +76,7 @@ namespace NAwesome {
             const auto ADD = [&](const std::string& family, int weight, int logical, const char* sample) {
                 for (const double S : scales) {
                     const int PX = std::max(1, (int)std::lround(logical * S));
-                    if (seen.emplace(family, weight, PX).second)
+                    if (seen.emplace(family, weight, PX, sample).second)
                         m_faces.push_back({family, weight, PX, sample});
                 }
             };
