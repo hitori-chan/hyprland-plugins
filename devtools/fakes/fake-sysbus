@@ -17,10 +17,11 @@
 #   powered) and three devices — "Gate Buds" (headphones, paired, a 80 %
 #   battery), "Gate Mouse" (paired, connected) and "Stranger" (seen, never
 #   paired). Powered is settable (off drops every connection); Connect
-#   connects after 300 ms (NotReady while off), Disconnect at once; each
-#   is logged to $AW_LOGIND_LOG. The gate's own interface (org.awesome.Gate
-#   at /) emits a headset transport's Volume change, as bluetoothd does
-#   when the headset's own buttons move it, and moves a battery.
+#   connects after 300 ms (NotReady while off), Disconnect after 400 ms;
+#   each is logged to $AW_LOGIND_LOG. The gate's own interface
+#   (org.awesome.Gate at /) emits a headset transport's Volume change, as
+#   bluetoothd does when the headset's own buttons move it, moves a
+#   battery, and fails a device's next Connect with a given error.
 import os
 import sys
 import warnings
@@ -149,6 +150,7 @@ BLUEZ_XML = """
   <interface name="org.awesome.Gate">
     <method name="EmitVolume"><arg type="q" name="volume" direction="in"/></method>
     <method name="SetBattery"><arg type="s" name="name" direction="in"/><arg type="y" name="percent" direction="in"/></method>
+    <method name="FailNext"><arg type="s" name="name" direction="in"/><arg type="s" name="error" direction="in"/><arg type="s" name="message" direction="in"/></method>
   </interface>
   <interface name="org.bluez.Adapter1">
     <property name="Powered" type="b" access="readwrite"/>
@@ -177,6 +179,7 @@ devices = {  # path -> its Device1 values, and Battery1's (None: none)
     HCI + "/dev_00_00_00_00_00_03": [{"Alias": "Stranger", "Icon": "phone", "Paired": False, "Connected": False}, None],
 }
 SIGS = {"Alias": "s", "Icon": "s", "Paired": "b", "Connected": "b", "Powered": "b"}
+fail_next = {}  # alias -> (error name, message): its next Connect answers that
 
 
 def changed(conn, path, iface, props):
@@ -210,11 +213,23 @@ def on_bluez_call(conn, sender, path, iface, method, params, invocation):
                 entry[1] = pct
                 changed(conn, p, "org.bluez.Battery1", {"Percentage": pct})
         invocation.return_value(None)
+    elif method == "FailNext":
+        name, error, message = params.unpack()
+        fail_next[name] = (error, message)
+        invocation.return_value(None)
     elif method in ("Connect", "Disconnect"):
         values = devices[path][0]
         log(f"{method} {values['Alias']}")
         if method == "Connect" and not adapter["Powered"]:
             invocation.return_dbus_error("org.bluez.Error.NotReady", "Resource Not Ready")
+            return
+        if method == "Connect" and values["Alias"] in fail_next:
+            error, message = fail_next.pop(values["Alias"])
+
+            def refuse():
+                invocation.return_dbus_error(error, message)
+                return False
+            GLib.timeout_add(300, refuse)
             return
 
         def settle():
@@ -223,7 +238,7 @@ def on_bluez_call(conn, sender, path, iface, method, params, invocation):
                 changed(conn, path, "org.bluez.Device1", {"Connected": values["Connected"]})
             invocation.return_value(None)
             return False
-        GLib.timeout_add(300 if method == "Connect" else 0, settle)
+        GLib.timeout_add(300 if method == "Connect" else 400, settle)
     else:
         invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)
 

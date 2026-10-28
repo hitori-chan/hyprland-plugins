@@ -141,7 +141,16 @@ hq awesome bt connect Gate Mouse >/dev/null
 chk "bt: a device picked while off powers the radio, then connects" until_is 3 "on Gate Mouse=c Gate Buds=n35" hq awesome bt
 chk "bt: ...in that order" bash -c "tr '\n' '|' < '$STATE/logind.log' | grep -q '^Powered 1|Connect Gate Mouse|'"
 hq awesome bt disconnect Gate Mouse >/dev/null
+chk "bt: a disconnect reads Disconnecting… while it runs" until_is 1 "on Gate Mouse=d Gate Buds=n35" hq awesome bt
 chk "bt: a disconnect" until_is 3 "on Gate Buds=n35 Gate Mouse=n" hq awesome bt
+# a refused connect with the panel closed: a red capsule says why, once
+nclear
+sbus call org.bluez / org.awesome.Gate FailNext sss "Gate Buds" org.bluez.Error.Failed br-connection-page-timeout >/dev/null
+hq awesome bt connect Gate Buds >/dev/null
+chk "bt: a refused connect, the panel closed, posts its capsule" until_is 3 "center:0 live:1 dnd:0" st
+chk "bt: ...saying why" test "$(hq awesome capsule)" = "Gate Buds Didn't Answer"
+chk "bt: ...and the device keeps no failure" until_is 3 "on Gate Buds=n35 Gate Mouse=n" hq awesome bt
+nclear
 
 : > "$STATE/wpctl.log"
 dsp "hl.plugin.awesome.mute()"; idle
@@ -269,6 +278,18 @@ chk "panel: Bluetooth's circle turns the radio off" until_is 3 "off Gate Buds=n3
 click "$BT_DOT_X" "$CAPS_CY" 272
 chk "panel: ...and on" until_is 3 "on Gate Buds=n35 Gate Mouse=n" hq awesome bt
 chk "panel: no switch posted a capsule" test "$(st)" = "center:0 live:0 dnd:0"
+# a refused connect, the panel open: the row says why, the capsule's state
+# turns red, and no capsule covers the panel
+sbus call org.bluez / org.awesome.Gate FailNext sss "Gate Buds" org.bluez.Error.Failed "Host is down" >/dev/null
+click "$BT_WORDS_X" "$CAPS_CY" 272
+until_ok 3 hq_matches '^Gate Buds' awesome menu
+click $((PANEL_X + 100)) $((MENU_Y + 5 + 22 + 18)) 272
+chk "panel: a refused connect marks its device" until_is 3 "on Gate Buds=n35!answer Gate Mouse=n" hq awesome bt
+chk "panel: ...the capsule's state says it, in red" until_is 3 "Didn't Answer!" hq awesome controls-bt
+click "$BT_WORDS_X" "$CAPS_CY" 272
+chk "panel: ...and its row says why" until_is 3 "Gate Buds !Didn't answer.;Gate Mouse" hq awesome menu
+chk "panel: ...with no capsule over the panel" test "$(st)" = "center:0 live:0 dnd:0"
+tap esc
 # the display's: press its track at its level (50 %) and drag to three quarters
 printf 'move %s %s\nsleep 60\npress 272\nsleep 60\nmove %s %s\nsleep 60\nmove %s %s\nsleep 60\nrelease 272\nsleep 80\n' \
 	"$(track_x 0 50)" "$(level_cy 0)" "$(track_x 0 60)" "$(level_cy 0)" "$(track_x 0 75)" "$(level_cy 0)" | vp
@@ -333,6 +354,7 @@ rm -f "$STATE/wpctl-level" "$STATE/wpctl-mutes" "$STATE/wpctl-default"
 KPCT="$(ctl_part keyboard)"
 hq awesome controlcenter >/dev/null
 chk "panel: the verb closes it" until_is 3 0 hq awesome controlcenter-shown
+chk "panel: ...ending the failure it showed" until_is 3 "on Gate Buds=n35 Gate Mouse=n" hq awesome bt
 mv "$KDIR" "$STATE/leds/gone"
 K3="$STATE/leds/three::kbd_backlight"
 mkdir -p "$K3" && printf '2\n' > "$K3/max_brightness" && printf '1\n' > "$K3/brightness"

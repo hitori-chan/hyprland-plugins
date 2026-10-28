@@ -217,12 +217,15 @@ its state and a chevron — open its menu, the state brightening under the
 pointer (the glass never lightens):
 
 - Bluetooth's state is Off, On, the one connected device's name, "2
-  Devices" or "Connecting…". Its **Devices** menu lists the paired ones
-  ("· Bluetooth is off" in the header while off): the device's kind in
-  a disc, lit while connected, its name, and on the right "Connecting…"
-  or, while connected, its battery ("80%" beside a battery glyph, red at
-  20 % or less). A
-  pick disconnects a connected device, else connects it (powering the
+  Devices", "Connecting…" or "Disconnecting…"; a refusal in red ("Didn't
+  Answer", "Pairing Lost", "Didn't Connect", "Didn't Turn On") until the
+  panel closes. Its **Devices** menu lists the paired ones ("·
+  Bluetooth is off" in the header while off): the device's kind in a
+  disc, lit while connected, its name, and on the right "Connecting…",
+  "Disconnecting…" or, while connected, its battery ("80%" beside a
+  battery glyph, red at 20 % or less). A refused connect's row says why
+  under the name ("Didn't answer." in red, then "Is it on and nearby?").
+  A pick disconnects a connected device, else connects it (powering the
   radio first while off).
 - Do Not Disturb's state is Off, On or "Until 21:30". Its menu: For 30
   Minutes · For 1 Hour · For 3 Hours · Until Tomorrow (08:00) (after

@@ -10,13 +10,17 @@
 // register synchronously.
 //
 // A connect takes seconds (a headset brings up its profiles): the device
-// shows Connecting… until the reply, an error or Connected settles it.
-// Every reply carries the unit's generation: a teardown, a lost bus or a
-// new bluetoothd voids the ones in flight. A device's proxy lives with the
+// shows Connecting… (a disconnect, Disconnecting…) until the reply or
+// Connected settles it. A refused connect, or power-on, says why: in the
+// panel while it shows (until it closes), else in a capsule. Every reply
+// carries the unit's generation: a teardown, a lost bus or a new
+// bluetoothd voids the ones in flight. A device's proxy lives with the
 // device, dropped (its call cancelled) only from another proxy's callback
 // or a signal, never from its own reply.
 
 #include "system.hpp"
+
+#include "notify/model.hpp" // NAwesome::Notify::Model::postCard (the in-process seam)
 
 #include "core/bounded.hpp"
 #include "core/busclient.hpp"
@@ -54,18 +58,25 @@ namespace NAwesome::System {
         constexpr auto CONNECT_TIMEOUT = std::chrono::seconds(30);
         // a headset's sink reaches PipeWire after BlueZ says Connected
         constexpr auto SINK_SETTLE = std::chrono::milliseconds(1500);
+        // a refusal's capsule while the panel is closed: the OSD band's slot
+        // and how long it shows
+        constexpr uint32_t ID_BLUETOOTH = 9996;
+        constexpr int      FAIL_SHOWN   = 3000;
 
         using TProps   = std::map<std::string, sdbus::Variant>;
         using TIfaces  = std::map<std::string, TProps>;
         using TObjects = std::map<sdbus::ObjectPath, TIfaces>;
         using eKind    = Controls::SDevice::eKind;
+        using eBusy    = Controls::SDevice::eBusy;
+        using eFail    = Controls::SDevice::eFail;
 
         struct SDev {
             std::string                    name, adapter;
             eKind                          kind      = eKind::OTHER;
+            eBusy                          busy      = eBusy::IDLE; // a Connect/Disconnect in flight
+            eFail                          fail      = eFail::NO_FAIL;
             bool                           paired    = false;
             bool                           connected = false;
-            bool                           pending   = false; // a Connect/Disconnect in flight
             int8_t                         battery   = -1;
             std::unique_ptr<sdbus::IProxy> proxy; // made at the first call
         };
@@ -76,6 +87,7 @@ namespace NAwesome::System {
         std::map<std::string, bool>         adapters;    // path -> Powered
         std::map<std::string, SDev>         devices;     // path -> a paired device
         std::optional<bool>                 wantPower;   // a power switch in flight shows at once
+        bool                                powerFailed = false;
         sdbus::Slot                         addedMatch, removedMatch, propsMatch, ownerMatch;
         uint64_t                            gen     = 0;
         bool                                reading = false, readAgain = false;
@@ -119,9 +131,10 @@ namespace NAwesome::System {
         if (B.present) {
             const auto IT = adapters.find(adapterPath);
             B.powered     = wantPower.value_or(IT != adapters.end() && IT->second);
+            B.powerFailed = powerFailed;
             for (const auto& [PATH, D] : devices)
                 if (D.paired && D.adapter == adapterPath)
-                    B.devices.push_back({.id = PATH, .name = D.name, .kind = D.kind, .connected = D.connected, .connecting = D.pending, .battery = D.battery});
+                    B.devices.push_back({.id = PATH, .name = D.name, .kind = D.kind, .busy = D.busy, .fail = D.fail, .connected = D.connected, .battery = D.battery});
             // connected first, then by name: what the panel shows of a long list
             std::ranges::sort(B.devices, [](const Controls::SDevice& a, const Controls::SDevice& b) {
                 if (a.connected != b.connected)
@@ -143,8 +156,9 @@ namespace NAwesome::System {
             // would settle a device marked Connecting… behind it
             adapterProxy.reset();
             wantPower.reset();
+            powerFailed = false;
             for (auto& [_, D] : devices)
-                D.pending = false;
+                D.busy = eBusy::IDLE;
         }
     }
 
@@ -177,7 +191,9 @@ namespace NAwesome::System {
                     const bool WAS = D.connected;
                     D.connected    = V.get<bool>();
                     if (WAS != D.connected) {
-                        D.pending = false;
+                        D.busy = eBusy::IDLE;
+                        if (D.connected)
+                            D.fail = eFail::NO_FAIL;
                         // a headset's sink comes and goes with it: the output
                         // pill reads the sinks again once PipeWire caught up
                         if (audioKind(D.kind) && Controls::panelShowing() && sinkSettle)
@@ -290,36 +306,79 @@ namespace NAwesome::System {
         } catch (...) { return nullptr; }
     }
 
+    // what a refused connect tells the user. BlueZ answers org.bluez.Error.*
+    // with messages like "br-connection-page-timeout",
+    // "br-connection-key-missing" or strerror's "Host is down"; sd-bus's own
+    // timeout is NoReply
+    static eFail reasonOf(const sdbus::Error& e) {
+        const std::string& NAME = e.getName();
+        std::string        msg  = e.getMessage();
+        std::ranges::transform(msg, msg.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+        if (NAME == "org.bluez.Error.InProgress" || NAME == "org.bluez.Error.AlreadyConnected")
+            return eFail::NO_FAIL; // another connect runs: Connected settles it
+        if (NAME == "org.freedesktop.DBus.Error.NoReply" || NAME == "org.freedesktop.DBus.Error.Timeout" || msg.contains("timeout") || msg.contains("timed out") ||
+            msg.contains("host is down"))
+            return eFail::NO_ANSWER;
+        if (NAME.starts_with("org.bluez.Error.Authentication") || msg.contains("key-missing") || msg.contains("authentication"))
+            return eFail::PAIRING_LOST;
+        return eFail::FAILED;
+    }
+
+    static void say(const std::string& who, const char* words) {
+        Notify::Model::postCard({.id            = ID_BLUETOOTH,
+                                 .icon          = "bluetooth-active",
+                                 .summary       = who.c_str(),
+                                 .body          = words,
+                                 .expireTimeout = FAIL_SHOWN,
+                                 .glyph         = Glyph::eGlyph::BLUETOOTH,
+                                 .alarm         = true});
+    }
+
+    // a refusal shows once: on the device while the panel shows it, else
+    // in a capsule
+    static void failed(SDev& d, eFail f) {
+        if (f == eFail::NO_FAIL)
+            return;
+        if (Controls::panelShowing())
+            d.fail = f;
+        else
+            say(d.name, Controls::failWords(f));
+    }
+
     static void connectNow(const std::string& path, bool connect) {
         const auto IT = devices.find(path);
         if (IT == devices.end())
             return;
         auto* P = proxyOf(path);
         if (!P) { // a power-on marked it Connecting…: settle it
-            if (std::exchange(IT->second.pending, false))
+            if (std::exchange(IT->second.busy, eBusy::IDLE) != eBusy::IDLE)
                 publishBluetooth();
             return;
         }
-        IT->second.pending = true;
+        IT->second.busy = connect ? eBusy::CONNECTING : eBusy::DISCONNECTING;
+        IT->second.fail = eFail::NO_FAIL;
         publishBluetooth();
         const uint64_t GEN = gen;
         try {
             P->callMethodAsync(connect ? "Connect" : "Disconnect")
                 .onInterface(DEVICE)
                 .withTimeout(CONNECT_TIMEOUT)
-                .uponReplyInvoke([GEN, path](std::optional<sdbus::Error>) {
+                .uponReplyInvoke([GEN, path, connect](std::optional<sdbus::Error> err) {
                     if (GEN != gen || compositorShuttingDown())
                         return;
                     // the reply settles it either way: Connected (its signal)
-                    // says where it landed
-                    if (const auto IT = devices.find(path); IT != devices.end() && IT->second.pending) {
-                        IT->second.pending = false;
-                        publishBluetooth();
-                    }
+                    // says where it landed, a refused connect why
+                    const auto IT = devices.find(path);
+                    if (IT == devices.end())
+                        return;
+                    IT->second.busy = eBusy::IDLE;
+                    if (err && connect && !IT->second.connected)
+                        failed(IT->second, reasonOf(*err));
+                    publishBluetooth();
                 });
             systemBus().pollSoon();
         } catch (...) {
-            IT->second.pending = false;
+            IT->second.busy = eBusy::IDLE;
             publishBluetooth();
         }
     }
@@ -329,10 +388,11 @@ namespace NAwesome::System {
         auto* P = adapterPath.empty() ? nullptr : proxyOf(adapterPath);
         if (!P)
             return;
-        wantPower = on;
+        wantPower   = on;
+        powerFailed = false;
         if (!thenConnect.empty())
             if (const auto IT = devices.find(thenConnect); IT != devices.end())
-                IT->second.pending = true;
+                IT->second.busy = eBusy::CONNECTING;
         publishBluetooth();
         const uint64_t GEN = gen;
         try {
@@ -345,7 +405,11 @@ namespace NAwesome::System {
                     if (err) { // blocked (rfkill), or gone: back to what it is
                         wantPower.reset();
                         if (const auto IT = devices.find(thenConnect); IT != devices.end())
-                            IT->second.pending = false;
+                            IT->second.busy = eBusy::IDLE;
+                        if (on && Controls::panelShowing())
+                            powerFailed = true;
+                        else if (on)
+                            say("Bluetooth", "Didn't Turn On");
                         publishBluetooth();
                         return;
                     }
@@ -371,7 +435,7 @@ namespace NAwesome::System {
     void connectDevice(const std::string& id, bool connect) {
         pendingDoor.arm([id, connect]() {
             const auto IT = devices.find(id);
-            if (IT == devices.end() || IT->second.pending)
+            if (IT == devices.end() || IT->second.busy != eBusy::IDLE)
                 return;
             const auto A = adapters.find(adapterPath);
             if (connect && (A == adapters.end() || !A->second))
@@ -383,6 +447,14 @@ namespace NAwesome::System {
 
     void bluetoothRefresh() {
         readSoon();
+    }
+
+    void bluetoothPanelClosed() {
+        bool shown = std::exchange(powerFailed, false);
+        for (auto& [_, D] : devices)
+            shown |= std::exchange(D.fail, eFail::NO_FAIL) != eFail::NO_FAIL;
+        if (shown)
+            publishBluetooth();
     }
 
     void bluetoothInit() {
@@ -489,6 +561,7 @@ namespace NAwesome::System {
         pendingRead.reset();
         pendingDoor.reset();
         wantPower.reset();
+        powerFailed = false;
         devices.clear(); // their proxies with them
         adapters.clear();
         adapterPath.clear();
@@ -513,15 +586,22 @@ namespace NAwesome::System {
     }
 
 #ifdef AWESOME_GATE
-    // "none" without an adapter; else "on|off name=state[battery] ..." (state:
-    // c connected, p connecting, n neither), as published
+    // "none" without an adapter; else "on|off[!] name=state[battery][!why] ..."
+    // (state: c connected, p connecting, d disconnecting, n neither; why:
+    // answer, lost, failed; "off!" a refused power-on), as published
     std::string bluetoothState() {
         const auto& B = Controls::state().bluetooth;
         if (!B.present)
             return "none";
-        std::string out = B.powered ? "on" : "off";
+        static constexpr std::array<const char*, 4> WHY = {"", "!answer", "!lost", "!failed"};
+        std::string                                 out = B.powered ? "on" : B.powerFailed ? "off!" : "off";
         for (const auto& D : B.devices)
-            out += " " + D.name + "=" + (D.connecting ? "p" : D.connected ? "c" : "n") + (D.battery >= 0 ? std::to_string(D.battery) : "");
+            out += " " + D.name + "=" +
+                (D.busy == Controls::SDevice::CONNECTING ? "p" :
+                     D.busy == Controls::SDevice::DISCONNECTING ? "d" :
+                     D.connected                                 ? "c" :
+                                                                   "n") +
+                (D.battery >= 0 ? std::to_string(D.battery) : "") + WHY[D.fail];
         return out;
     }
 #endif

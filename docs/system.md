@@ -74,9 +74,18 @@ center shows no Bluetooth.
 - **Devices** are the paired ones (a device only seen in a scan is not
   listed): connected first, then by name, at most 16, a name cut at 64
   bytes. A device's battery shows where BlueZ reports one.
-- **Connecting** shows until bluetoothd answers (a headset bringing up
-  its profiles takes seconds; the call waits up to 30 s). A device
-  picked while the radio is off powers it on first, then connects.
+- **Connecting** (and **Disconnecting**) shows until bluetoothd answers
+  (a headset bringing up its profiles takes seconds; the call waits up to
+  30 s). A device picked while the radio is off powers it on first, then
+  connects.
+- **A refusal says why.** BlueZ's answer becomes a reason: a page
+  timeout, "Host is down" or no answer in 30 s is "Didn't Answer"; a
+  missing key or a failed authentication "Pairing Lost"; anything else
+  "Didn't Connect" (another connect already running is no refusal). While
+  the control center shows, the device's row and Bluetooth's capsule say
+  it until the panel closes; with the panel closed, a red capsule at the
+  top says it for 3 s ("WH-1000XM4 Didn't Answer"). A refused power-on
+  is "Didn't Turn On".
 - **A headset's sink**: when an audio device connects or drops while the
   control center is open, the outputs are read again once PipeWire has
   caught up (1.5 s), so the output pill follows.

@@ -59,22 +59,47 @@ namespace NAwesome::Controls {
             MOUSE,
             KEYBOARD,
         };
+        enum eBusy : uint8_t {
+            IDLE,
+            CONNECTING,
+            DISCONNECTING,
+        };
+        // why the last connect was refused, shown until the panel closes
+        enum eFail : uint8_t {
+            NO_FAIL,
+            NO_ANSWER,    // a page timeout: off, or out of reach
+            PAIRING_LOST, // its key is gone on one side
+            FAILED,       // anything else
+        };
         std::string id; // BlueZ's object path: who it is across a rebuild
         std::string name;
-        eKind       kind       = OTHER;
-        bool        connected  = false;
-        bool        connecting = false; // a connect or disconnect in flight
-        int8_t      battery    = -1;    // percent, -1 unknown
+        eKind       kind      = OTHER;
+        eBusy       busy      = IDLE;
+        eFail       fail      = NO_FAIL;
+        bool        connected = false;
+        int8_t      battery   = -1; // percent, -1 unknown
 
         bool operator==(const SDevice&) const = default;
     };
     inline constexpr size_t MAX_DEVICES = 16;
 
+    // a refusal as a state: Bluetooth's capsule says it, and so does the
+    // system's own capsule while the panel is closed
+    inline const char* failWords(SDevice::eFail f) {
+        switch (f) {
+            case SDevice::NO_ANSWER: return "Didn't Answer";
+            case SDevice::PAIRING_LOST: return "Pairing Lost";
+            case SDevice::FAILED: return "Didn't Connect";
+            default: return "";
+        }
+    }
+
     // the first adapter: present 0 while there is none (no BlueZ, no
     // radio), and the panel shows no Bluetooth
     struct SBluetooth {
-        bool                 present = false;
-        bool                 powered = false;
+        bool                 present     = false;
+        bool                 powered     = false;
+        bool                 powerFailed = false; // a power-on was refused, shown until the panel closes
         std::vector<SDevice> devices;
 
         bool operator==(const SBluetooth&) const = default;
@@ -105,6 +130,7 @@ namespace NAwesome::Controls {
         // a device by its id: connect it (powering the adapter first when
         // off), or disconnect it
         std::function<void(const std::string&, bool)> connectDevice;
+        std::function<void()>                         panelClosed; // the failures it showed are done
     };
     inline SDoors& doors() {
         static SDoors D;

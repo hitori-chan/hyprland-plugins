@@ -70,6 +70,7 @@ namespace NAwesome::Notify {
         std::string                                          outName;
         bool                                                 dnd    = false;
         bool                                                 bt = false, btOn = false; // an adapter; its power
+        bool                                                 btAlarm = false; // its state is a refusal: in red
         std::string                                          btText;
         std::string                                          dndText; // its clock text, once per warm
     } snap;
@@ -167,17 +168,34 @@ namespace NAwesome::Notify {
         return end > 0 ? "Until " + untilText(end) : "On";
     }
 
-    // what Bluetooth's capsule says under its name
-    static std::string btText(const Controls::SBluetooth& B) {
-        if (!B.powered)
-            return "Off";
-        size_t      on   = 0;
+    // what Bluetooth's capsule says under its name: what runs, then what was
+    // refused (alarm: in red), then what is connected
+    static std::string btText(const Controls::SBluetooth& B, bool& alarm) {
+        alarm = false;
+        if (!B.powered) {
+            alarm = B.powerFailed;
+            return alarm ? "Didn't Turn On" : "Off";
+        }
+        using D_ = Controls::SDevice;
+        size_t      on = 0;
+        bool        connecting = false, disconnecting = false;
+        D_::eFail   fail = D_::NO_FAIL;
         std::string name;
         for (const auto& D : B.devices) {
-            if (D.connecting)
-                return "Connecting…";
+            connecting |= D.busy == D_::CONNECTING;
+            disconnecting |= D.busy == D_::DISCONNECTING;
+            if (fail == D_::NO_FAIL)
+                fail = D.fail;
             if (D.connected && on++ == 0)
                 name = D.name;
+        }
+        if (connecting)
+            return "Connecting…";
+        if (disconnecting)
+            return "Disconnecting…";
+        if (fail != D_::NO_FAIL) {
+            alarm = true;
+            return Controls::failWords(fail);
         }
         return on == 1 ? name : on > 1 ? std::to_string(on) + " Devices" : "On";
     }
@@ -221,7 +239,7 @@ namespace NAwesome::Notify {
             snap.dndText  = dndText(snap.dnd, snap.dnd ? Model::suspendEnd() : 0);
             snap.bt       = S.bluetooth.present;
             snap.btOn     = S.bluetooth.powered;
-            snap.btText   = btText(S.bluetooth);
+            snap.btText   = btText(S.bluetooth, snap.btAlarm);
         }
         const double LH = levelsHeight();
         return (LH > 0 ? LH + PANEL_GAP : 0) + CAPS_H;
@@ -250,7 +268,7 @@ namespace NAwesome::Notify {
         const double H = controlsHeight(P.warm);
         const auto   COLTITLE = color(cfg().getColor("plugin:awesome:notify:col_title")), COLSUB = color(cfg().getColor("plugin:awesome:notify:col_kicker")),
                    COLBODY = color(cfg().getColor("plugin:awesome:notify:col_fg")), COLBG = color(cfg().getColor("plugin:awesome:theme:col_glass")),
-                   COLRIM = color(cfg().getColor("plugin:awesome:theme:col_rim"));
+                   COLRIM = color(cfg().getColor("plugin:awesome:theme:col_rim")), COLURGENT = color(cfg().getColor("plugin:awesome:notify:col_urgent"));
         static const CHyprColor KNOB_COL{1.0, 1.0, 1.0, 1.0}, KNOB_DROP{0.0, 0.0, 0.0, 0.4}, MUTED_FILL{235 / 255.0, 235 / 255.0, 245 / 255.0, 0.38},
             PILL_OPEN{1.0, 1.0, 1.0, 0.2};
         const auto PX   = [&](double logical) { return (int)std::lround(logical * P.scale); };
@@ -380,17 +398,18 @@ namespace NAwesome::Notify {
                 P.texIn(GT, DOT);
             // the words: the name over the state and its chevron, the state
             // brightening under the pointer or while its menu is open (the
-            // glass never lightens); both faces warm
+            // glass never lightens), a refusal in red; both faces warm
             const eTile  MT = bt ? TILE_BT_MENU : TILE_DND_MENU;
             const bool   LIT = HOV(MT) || MENU == (bt ? ePanelMenu::BLUETOOTH : ePanelMenu::DND);
+            const bool   ALARM = bt && snap.btAlarm;
             const double TX = CAP.x + CAP_TEXT_X, TW = CAP.w - CAP_TEXT_X - CAP_PADR;
             const auto&  WORDS = bt ? snap.btText : snap.dndText;
             const auto   NAME  = cachedText(bt ? "Bluetooth" : "Do Not Disturb", COLTITLE, T.title, PX(TW), -1, 0, false, 600);
-            const auto   QUIET = cachedText(WORDS, COLSUB, T.meta, PX(TW - CHEV_GAP - CHEV), -1, 0, false, 400);
-            const auto   LOUD  = cachedText(WORDS, COLBODY, T.meta, PX(TW - CHEV_GAP - CHEV), -1, 0, false, 400);
+            const auto   QUIET = cachedText(WORDS, ALARM ? COLURGENT : COLSUB, T.meta, PX(TW - CHEV_GAP - CHEV), -1, 0, false, 400);
+            const auto   LOUD  = cachedText(WORDS, ALARM ? COLURGENT : COLBODY, T.meta, PX(TW - CHEV_GAP - CHEV), -1, 0, false, 400);
             const auto   STATE = LIT ? LOUD : QUIET;
-            const auto   CHEVQ = Glyph::tex(Glyph::eGlyph::CHEVRON_DOWN, COLSUB, PX(CHEV));
-            const auto   CHEVL = Glyph::tex(Glyph::eGlyph::CHEVRON_DOWN, COLBODY, PX(CHEV));
+            const auto   CHEVQ = Glyph::tex(Glyph::eGlyph::CHEVRON_DOWN, ALARM ? COLURGENT : COLSUB, PX(CHEV));
+            const auto   CHEVL = Glyph::tex(Glyph::eGlyph::CHEVRON_DOWN, ALARM ? COLURGENT : COLBODY, PX(CHEV));
             const auto   CHEVT = LIT ? CHEVL : CHEVQ;
             const double NH = texH(NAME, P.scale), SH = texH(STATE, P.scale), TY = CAP.y + (CAPS_H - NH - SH) / 2;
             if (NAME)
@@ -528,6 +547,8 @@ namespace NAwesome::Notify {
 
     static void closed() {
         Controls::panelShowing() = false;
+        if (Controls::doors().panelClosed)
+            Controls::doors().panelClosed();
         drag.live                = false;
         s_animating              = false;
         s_tiles.fill({});
@@ -597,6 +618,11 @@ namespace NAwesome::Notify {
     // "<tile name>" of the button name showing ("" none): the gate's
     std::string controlsTip() {
         return s_tipFor == TILE_COUNT ? std::string{} : tipText(s_tipFor);
+    }
+
+    // Bluetooth's capsule state as the last warm drew it, "!" in red
+    std::string controlsBt() {
+        return snap.btText + (snap.btAlarm ? "!" : "");
     }
 #endif
 
