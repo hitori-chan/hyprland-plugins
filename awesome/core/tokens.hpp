@@ -23,7 +23,7 @@ namespace NAwesome::Theme {
     inline constexpr uint32_t BODY      = 0xe0ebebf5; // body text, 88 %
     inline constexpr uint32_t SUB       = 0xc7ebebf5; // secondary: meta, kickers, 78 %
     inline constexpr uint32_t DIM       = 0x57ebebf5; // tertiary: empty tags, minimized, 34 %
-    inline constexpr uint32_t ACCENT    = 0xff00ccff; // selection and focus — text, never a ground (the bell's dot is the one mark)
+    inline constexpr uint32_t ACCENT    = 0xff00ccff; // where you are — text, never a ground (the bell's dot is the one mark)
     inline constexpr uint32_t ON_ACCENT = 0xff00141a; // dark ink on the accent: the live send arrow
     inline constexpr uint32_t LIT_INK   = 0xff0089ad; // a lit control's glyph on its white: the accent, deepened to read on it
     inline constexpr uint32_t URGENT    = 0xffff6159; // critical, urgent, low battery
@@ -36,6 +36,7 @@ namespace NAwesome::Theme {
     inline constexpr uint32_t FILL        = 0x1fffffff; // buttons, chips, fields: white 12 %
     inline constexpr uint32_t FILL_HOVER  = 0x33ffffff; // the same under the pointer, 20 %
     inline constexpr uint32_t TRACK       = 0x29ffffff; // a progress or level track, 16 %
+    inline constexpr uint32_t PILL        = 0x29ffffff; // what you act on now: a menu's row under the pointer, an open door, the launcher's pick, 16 %
     inline constexpr uint32_t HAIRLINE    = 0x1affffff; // separators, 10 %
     inline constexpr uint32_t WELL        = 0x38000000; // a field sunk into the glass: the reply field, black 22 %
     inline constexpr uint32_t WELL_RIM    = 0x14ffffff; // its inner edge, 8 %

@@ -71,7 +71,9 @@ down). An item that needs attention shows its attention icon.
   with no menu gets `ContextMenu` instead, for that click only.
 
 Tray menus (the client list's and the bell's too) are glass with
-28 px rows. The hovered row is accent text with no fill; check and radio
+28 px rows. The row under the pointer, and the row an open submenu hangs
+off, sit on a white pill (16 %, 4 px off the panel's sides) in their own
+ink; the client list's focused window stays accent text. Check and radio
 items show a check or a dot; a submenu's chevron has a column of its
 own. They follow live updates (the hovered row stays hovered by its id),
 cascade and scroll. A level with no rows says "Empty", or "Unavailable"

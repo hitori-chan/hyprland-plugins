@@ -60,6 +60,7 @@ namespace NAwesome {
     AW_THEME_COLOR(tFill, FILL)
     AW_THEME_COLOR(tFillHover, FILL_HOVER)
     AW_THEME_COLOR(tTrack, TRACK)
+    AW_THEME_COLOR(tPill, PILL)
     AW_THEME_COLOR(tHairline, HAIRLINE)
     AW_THEME_COLOR(tWell, WELL)
     AW_THEME_COLOR(tWellRim, WELL_RIM)

@@ -112,6 +112,12 @@ shot_until 3 "$STATE/winlist.png" winlist_drawn "$STATE/winlist.png"
 chk "winlist: the other workspace's window wears its tag" test "$(lit_px "$STATE/winlist.png" $((WLX + 250 - 30)) $((WLX + 250 - 12)) 37 65)" -gt 10
 chk "winlist: the focused window's row is accent" test "$(accent_px "$STATE/winlist.png" "$WLX" $((WLX + 250)) 65 93)" -gt 20
 chk "winlist: the other window's row is not" test "$(accent_px "$STATE/winlist.png" "$WLX" $((WLX + 250)) 37 65)" = 0
+# the row under the pointer sits on the pill (4 px off the panel's sides,
+# its icon 10 in), in its own ink: its margin lifted over the glass at the
+# panel's edge, clear of the pill's rounded corners
+printf 'move %s 51\nsleep 60\n' $((WLX + 125)) | vp
+winlist_pill() { (($(pill_px "$1" $((WLX + 1)) $((WLX + 6)) $((WLX + 10)) 44 58) > 40 && $(accent_px "$1" "$WLX" $((WLX + 250)) 37 65) == 0)); }
+chk "winlist: the row under the pointer sits on a pill" shot_until 3 "$STATE/winlist-hover.png" winlist_pill "$STATE/winlist-hover.png"
 tap esc
 for a in $(clients | python3 -c "import json,sys
 print(' '.join(c['address'] for c in json.load(sys.stdin) if c['class'] in ('wlother','wlhere')))"); do

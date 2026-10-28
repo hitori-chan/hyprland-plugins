@@ -265,6 +265,12 @@ dnd_in_hour() { local v; v="$(dndrow)"; [[ "$v" =~ ^[0-9]+$ ]] && ((v - $(date +
 dnd_morning() { local v; v="$(dndrow)"; [[ "$v" =~ ^[0-9]+$ ]] && [[ "$(date -d "@$v" +%H:%M)" == 08:00 ]] && ((v - $(date +%s) <= 86400)); }
 click "$DND_WORDS_X" "$CAPS_CY" 272
 chk "panel: its words list the durations" until_ok 3 hq_matches '^For 30 Minutes;For 1 Hour;For 3 Hours;Until (Tomorrow \(08:00\)|08:00);Until Turned Off$' awesome menu
+# the row under the pointer sits on the pill (5 px off the menu's sides, the
+# words 15 in), its words in their own ink, never the accent
+printf 'move %s %s\nsleep 60\n' $((PANEL_X + 250)) $((MENU_Y + 5 + 14 + 28)) | vp
+DNDMX=$((PANEL_X + N_W - 220))
+dnd_pill() { (($(pill_px "$1" $((DNDMX + 2)) $((DNDMX + 8)) $((DNDMX + 12)) $((MENU_Y + 40)) $((MENU_Y + 54))) > 40 && $(accent_px "$1" "$DNDMX" $((DNDMX + 220)) $((MENU_Y + 33)) $((MENU_Y + 61))) == 0)); }
+chk "panel: the menu's row under the pointer sits on a pill" shot_until 3 "$STATE/dnd-hover.png" dnd_pill "$STATE/dnd-hover.png"
 tap esc
 dnd_pick 1
 chk "panel: For 1 Hour turns it on" until_is 3 "center:0 live:0 dnd:1" st

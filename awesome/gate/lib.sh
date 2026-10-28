@@ -550,3 +550,28 @@ x0, x1, y0, y1 = (int(v) for v in sys.argv[2:6])
 print(sum(1 for y in range(y0, y1) for x in range(x0, x1) if max(px[x, y]) > 60))
 PY
 }
+# a ground under a mark on the bar, flattened over the nested's black: the
+# pill (white 16 %) settles near 41, the bar's cell (8 %) near 20 — grey,
+# every channel within [lo, hi]
+ground_px() { # ground_px <frame> <x0> <x1> <y0> <y1> <lo> <hi> — grey ground pixels in a box
+	python3 - "$@" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
+x0, x1, y0, y1, lo, hi = (int(v) for v in sys.argv[2:8])
+print(sum(1 for y in range(y0, y1) for x in range(x0, x1) if lo <= min(px[x, y]) and max(px[x, y]) <= hi and max(px[x, y]) - min(px[x, y]) <= 10))
+PY
+}
+# a pill lifted over a menu's glass: pixels in a box whose every channel
+# sits 20 over the same row's glass just outside it (x out). Relative: the
+# glass blurs in what lies under it (over a terminal it reads teal, near
+# 31; the pill over it near 70)
+pill_px() { # pill_px <frame> <x out> <x0> <x1> <y0> <y1> — lifted pixels in a box
+	python3 - "$@" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
+xo, x0, x1, y0, y1 = (int(v) for v in sys.argv[2:7])
+print(sum(1 for y in range(y0, y1) for x in range(x0, x1) if all(px[x, y][c] >= px[xo, y][c] + 20 for c in range(3))))
+PY
+}

@@ -670,9 +670,9 @@ namespace NAwesome::Shell {
                              COLEMPTY = color(cfg().getColor("plugin:awesome:shell:col_empty")), COLURGENT = color(cfg().getColor("plugin:awesome:shell:col_urgent")),
                              COLFOCUS = color(cfg().getColor("plugin:awesome:shell:col_focus")), COLFRAME = color(cfg().getColor("plugin:awesome:theme:col_rim"));
 
-            // the Frost menu: the glass at the menu radius, the selection
-            // the accent TEXT (never a fill), hairline separators, glyph
-            // checks and chevrons — the card menu's look (notify/menu.cpp)
+            // the Frost menu: the glass at the menu radius, the row under the
+            // pointer on the pill, hairline separators, glyph checks and
+            // chevrons — the card menu's look (notify/menu.cpp)
             namespace Th       = NAwesome::Theme;
             namespace G        = NAwesome::Glyph;
             const int   RPANEL = (int)std::lround(Th::RAD_MENU * PAINT.scale);
@@ -680,6 +680,9 @@ namespace NAwesome::Shell {
             const int   GLYPHPX = (int)std::lround(14 * PAINT.scale);
 
             const double ROWH = Menu::ROWH, SEPH = Menu::SEPH, PAD = Menu::PAD;
+            // the pill under the row the pointer is on: 4 px off the panel's sides
+            constexpr double PILL_INSET = 4;
+            const int        PILL_R     = (int)std::lround(NAwesome::Theme::RAD_ROW * PAINT.scale);
             const double MTOP = PAINT.mb.y + PAINT.h + Menu::GAP, MBOT = PAINT.mb.y + PAINT.mb.h - 8;
 
             for (size_t li = 0; li < Menu::levels.size(); li++) {
@@ -732,7 +735,7 @@ namespace NAwesome::Shell {
                     if (E.detail.empty() && E.hint.empty())
                         return 0.0;
                     const double D = E.detail.empty() ? 0 : textInkW(textTex(E.detail, NAwesome::tSub(), TAGPT), PAINT.scale);
-                    const double H = E.hint.empty() ? 0 : textInkW(textTex(E.hint, COLFOCUS, TAGPT), PAINT.scale);
+                    const double H = E.hint.empty() ? 0 : textInkW(textTex(E.hint, COLFG, TAGPT), PAINT.scale);
                     return std::max(D, H) + DETAIL_GAP;
                 };
 
@@ -855,11 +858,15 @@ namespace NAwesome::Shell {
                     }
                     const CBox ROW{mx, my, mw, ROWH};
                     // the hovered row, and the row a cascade hangs off while
-                    // the cascade is open, wear the accent text; disposition
+                    // the cascade is open, sit on the pill in their own ink
+                    // (a dim one lifts); the current row (the focused window)
+                    // wears the accent text: where you are; disposition
                     // warning/alert rows take the urgent colour
                     const bool OPENSUB = li + 1 < Menu::levels.size() && Menu::levels[li + 1].parentIdx == (int)i;
                     const bool LIT     = ((int)i == L.hover || OPENSUB) && E.enabled;
-                    CHyprColor fg      = !E.enabled ? COLEMPTY : LIT || E.current ? COLFOCUS : E.alert ? COLURGENT : E.dim ? COLEMPTY : COLFG;
+                    if (LIT)
+                        PAINT.rect(CBox{mx + PILL_INSET, my, mw - 2 * PILL_INSET, ROWH}, NAwesome::tPill(), PILL_R, 2.f);
+                    CHyprColor fg = !E.enabled ? COLEMPTY : E.current ? COLFOCUS : E.alert ? COLURGENT : E.dim && !LIT ? COLEMPTY : COLFG;
 
                     if (E.icon && E.icon->m_texID != 0) {
                         if (E.dim && !LIT) { // a minimized window's icon fades with its row
@@ -891,7 +898,7 @@ namespace NAwesome::Shell {
                         PAINT.texIn(G::tex(G::eGlyph::CHEVRON_RIGHT, fg, GLYPHPX), CBox{mx + mw - 8 - ARW, my, ARW, ROWH});
                     if (DETW > 0) {
                         const bool HINT = LIT && !E.hint.empty();
-                        if (const auto DT = HINT ? textTex(E.hint, COLFOCUS, TAGPT) : E.detail.empty() ? nullptr : textTex(E.detail, NAwesome::tSub(), TAGPT); DT && DT->m_texID != 0) {
+                        if (const auto DT = HINT ? textTex(E.hint, COLFG, TAGPT) : E.detail.empty() ? nullptr : textTex(E.detail, NAwesome::tSub(), TAGPT); DT && DT->m_texID != 0) {
                             const double W = textInkW(DT, PAINT.scale);
                             PAINT.texIn(DT, CBox{mx + mw - 12 - W, my, W, ROWH});
                         }
@@ -909,7 +916,9 @@ namespace NAwesome::Shell {
                     // GTK's scroll strips, dimmed at their end of the list;
                     // a click steps like a wheel notch
                     const auto arrow = [&](const CBox& B, int id, bool on, G::eGlyph glyph) {
-                        const CHyprColor fg = !on ? COLEMPTY : L.hover == id ? COLFOCUS : COLFG;
+                        if (on && L.hover == id)
+                            PAINT.rect(CBox{B.x + PILL_INSET, B.y, B.w - 2 * PILL_INSET, B.h}, NAwesome::tPill(), PILL_R, 2.f);
+                        const CHyprColor fg = !on ? COLEMPTY : COLFG;
                         PAINT.texIn(G::tex(glyph, fg, GLYPHPX), B);
                         L.rows.push_back({B, id});
                     };

@@ -64,7 +64,9 @@ pointer; the hold and the right click do that work.
 
 ### The card menu
 
-The sender's rows first: Reply, then each non-`default` action in the
+The row under the pointer sits on a white pill (16 %), its words in their
+own ink; the control center's menus (Output, Do Not Disturb, Bluetooth)
+are the same panel. The sender's rows first: Reply, then each non-`default` action in the
 sender's order. Then the system's switches:
 
 - Mute *chat* for 1 Hour · Mute *chat* Until Tomorrow (the next 08:00;

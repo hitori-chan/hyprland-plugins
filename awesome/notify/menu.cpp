@@ -551,7 +551,7 @@ namespace NAwesome::Notify::CardMenu {
         if (!s_open || s_items.empty())
             return;
         const auto COLMENU = color(cfg().getColor("plugin:awesome:theme:col_glass")), COLRIM = color(cfg().getColor("plugin:awesome:theme:col_rim")),
-                   COLTITLE = color(cfg().getColor("plugin:awesome:notify:col_title")), COLACC = color(cfg().getColor("plugin:awesome:notify:col_highlight")),
+                   COLTITLE = color(cfg().getColor("plugin:awesome:notify:col_title")),
                    COLSUB = color(cfg().getColor("plugin:awesome:notify:col_kicker")), COLBODY = color(cfg().getColor("plugin:awesome:notify:col_fg")),
                    COLURGENT = color(cfg().getColor("plugin:awesome:notify:col_urgent"));
         const auto   COLDIM = COLTITLE.modifyA(COLTITLE.a * 0.4);
@@ -752,14 +752,12 @@ namespace NAwesome::Notify::CardMenu {
                 ry += RH;
                 continue;
             }
-            // the selection is the accent text, never a fill (the Frost
-            // rule). Both faces are asked for on every pass: a hover only
-            // damages, so the lit one must already be warm (crash class 4)
-            const bool HOV = hovered.kind == SCard::MENU_ITEM && hovered.id == (uint32_t)i;
-            const int  LPX = labelPx(I);
-            const auto LIT  = cachedText(I.label, COLACC, T.body, LPX, -1, 0, false, 400);
-            const auto RST  = restOf(I);
-            const auto LBL  = HOV ? LIT : RST;
+            // the row under the pointer sits on the pill, its words in their
+            // resting ink: a hover only damages, and no lit face needs warming
+            // (crash class 4)
+            if (hovered.kind == SCard::MENU_ITEM && hovered.id == (uint32_t)i)
+                P.rect(CBox{x + PAD, ry, w - 2 * PAD, RH}, tPill(), PX(Theme::RAD_ROW), 2.f);
+            const auto LBL  = restOf(I);
             const auto FAIL = failOf(I);
             const double LY = FAIL ? ry + DEV_PADY : ry + (RH - texH(LBL, P.scale)) / 2;
             if (LBL && LBL->tex)
@@ -772,12 +770,9 @@ namespace NAwesome::Notify::CardMenu {
                 if (const auto G = Glyph::tex(I.glyph, I.check == 1 ? tLitInk() : COLTITLE, PX(DISC_GLYPH)))
                     P.texIn(G, D);
             } else {
-                if (I.check == 1) {
-                    const auto MARK  = Glyph::tex(Glyph::eGlyph::CHECK, COLACC, (int)std::lround(CHECK_GLYPH * P.scale));
-                    const auto PLAIN = Glyph::tex(Glyph::eGlyph::CHECK, COLTITLE, (int)std::lround(CHECK_GLYPH * P.scale));
-                    if (const auto G = HOV ? MARK : PLAIN)
+                if (I.check == 1)
+                    if (const auto G = Glyph::tex(Glyph::eGlyph::CHECK, COLTITLE, (int)std::lround(CHECK_GLYPH * P.scale)))
                         P.texIn(G, CBox{x + CHECK_X, ry, CHECK_W, RH});
-                }
                 if (I.glyph != Glyph::eGlyph::NONE)
                     if (const auto G = Glyph::tex(I.glyph, COLBODY, PX(KIND_W)))
                         P.texIn(G, CBox{x + LX - KIND_GAP - KIND_W, ry, KIND_W, RH});
