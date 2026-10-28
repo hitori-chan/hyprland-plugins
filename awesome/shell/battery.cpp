@@ -63,6 +63,7 @@ namespace NAwesome::Shell {
     // the note (below): its state up here with the rest
     static SP<CEventLoopTimer> noteTimer;
     static bool                noteShown = false;
+    static bool                noteDrawn = false; // the last warm laid it out
     static MONITORID           noteMon   = MONITOR_INVALID;
     static CBox                notePill;  // the pill as last drawn on noteMon, global logical
     static std::string         noteLine;  // the words as the last warm composed them
@@ -453,17 +454,6 @@ namespace NAwesome::Shell {
             if (!hasBattery() || !g_pCompositor)
                 return;
             initPowerProfiles();
-            g_udev = udev_new();
-            if (!g_udev)
-                return;
-            g_udevMon = udev_monitor_new_from_netlink(g_udev, "udev");
-            if (g_udevMon) {
-                udev_monitor_filter_add_match_subsystem_devtype(g_udevMon, "power_supply", nullptr);
-                udev_monitor_enable_receiving(g_udevMon);
-                const int FD = udev_monitor_get_fd(g_udevMon);
-                if (FD >= 0)
-                    g_batterySrc = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, FD, WL_EVENT_READABLE, onBatteryUevent, nullptr);
-            }
             if (g_pEventLoopManager) {
                 noteTimer = makeShared<CEventLoopTimer>(
                     std::nullopt,
@@ -476,6 +466,17 @@ namespace NAwesome::Shell {
                     },
                     nullptr);
                 g_pEventLoopManager->addTimer(noteTimer);
+            }
+            g_udev = udev_new();
+            if (!g_udev)
+                return;
+            g_udevMon = udev_monitor_new_from_netlink(g_udev, "udev");
+            if (g_udevMon) {
+                udev_monitor_filter_add_match_subsystem_devtype(g_udevMon, "power_supply", nullptr);
+                udev_monitor_enable_receiving(g_udevMon);
+                const int FD = udev_monitor_get_fd(g_udevMon);
+                if (FD >= 0)
+                    g_batterySrc = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, FD, WL_EVENT_READABLE, onBatteryUevent, nullptr);
             }
             if (!g_batterySrc) { // setup failed partway: the minute tick still refreshes
                 if (g_udevMon)
@@ -490,7 +491,7 @@ namespace NAwesome::Shell {
             if (noteTimer && g_pEventLoopManager)
                 g_pEventLoopManager->removeTimer(noteTimer);
             noteTimer.reset();
-            noteShown = false;
+            noteShown = noteDrawn = false;
             noteMon   = MONITOR_INVALID;
             noteLine.clear();
             noteFont.clear();
@@ -539,6 +540,16 @@ namespace NAwesome::Shell {
             return noteShown && mon && mon->m_id == noteMon && hasBattery();
         }
 
+        void noteLaidOut(const PHLMONITOR& mon, bool on) {
+            if (!mon || mon->m_id != noteMon)
+                return;
+            // gone under a menu, the lock or a fullscreen window: its box
+            // hangs below what their own damage covers
+            if (noteDrawn && !on)
+                damageNote();
+            noteDrawn = on;
+        }
+
         std::optional<CBox> noteReach(const PHLMONITOR& mon) {
             if (!noteWanted(mon))
                 return std::nullopt;
@@ -559,14 +570,20 @@ namespace NAwesome::Shell {
                     batteryStatus == "Full" || (batteryPlugged && batteryPercent >= 100) ? ePower::FULL :
                     batteryPlugged                                                        ? ePower::HOLDING :
                                                                                             ePower::BATTERY;
-                noteLine = noteText({.level     = batteryPercent,
-                                     .unknown   = STATE.attribution == eAttribution::Unknown,
-                                     .powerSave = batterySave,
-                                     .defender  = batteryDefend,
-                                     .power     = POWER,
-                                     .minutes   = noteMinutes,
-                                     .fullAt    = noteFullAt,
-                                     .limit     = noteLimit});
+                auto LINE = noteText({.level     = batteryPercent,
+                                      .unknown   = STATE.attribution == eAttribution::Unknown,
+                                      .powerSave = batterySave,
+                                      .defender  = batteryDefend,
+                                      .power     = POWER,
+                                      .minutes   = noteMinutes,
+                                      .fullAt    = noteFullAt,
+                                      .limit     = noteLimit});
+                // new words under a resting pointer (a power profile, a
+                // uevent): the strip's own damage stops above the note
+                if (LINE != noteLine) {
+                    noteLine = std::move(LINE);
+                    damageNote();
+                }
                 noteFont = std::string{cfg().getS("plugin:awesome:notify:font")};
             }
             const auto   TEX = textTex(noteLine, NAwesome::tTitle(), P.pt, (int)std::lround((NOTE_MAXW - 2 * NOTE_PADX) * P.scale), noteFont, 500);
