@@ -30,8 +30,8 @@ namespace NAwesome::Shell {
                 return false;
             if (!std::exchange(timeLocaleTried, true))
                 timeLocale = newlocale(LC_TIME_MASK, "", (locale_t)0);
-            // "Mon Oct 26 01:12": the user's clock, as macOS writes its own
-            // (the day unpadded, glibc's %-d)
+            // "Mon Oct 26 01:12": the user's clock (the day unpadded, glibc's
+            // %-d)
             constexpr const char* FMT = "%a %b %-d %H:%M";
             const size_t          N   = timeLocale ? strftime_l(buf, sizeof(buf), FMT, &tm, timeLocale) : std::strftime(buf, sizeof(buf), FMT, &tm);
             if (N == 0)

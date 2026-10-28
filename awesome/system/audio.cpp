@@ -379,7 +379,7 @@ namespace NAwesome::System {
                     sink.target = *PCT / 100.0;
                     sink.steps  = 0;
                     if (sink.muted && *PCT > 0)
-                        sink.muteTo = false; // a slider moved off zero is heard, as macOS's
+                        sink.muteTo = false; // a slider moved off zero is heard
                     pump(sink);
                     break;
                 case Controls::eLevel::COUNT_: break;

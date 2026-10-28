@@ -87,7 +87,7 @@ namespace NAwesome::Notify {
     inline constexpr double TIER_GAP = 8;  // added between the ranking's groups (critical, chats, apps, silent)
     inline constexpr double FOLD_H   = 44; // the silent fold's row
     inline constexpr double SHEAD_H  = 28; // a spread stack's header: its app's name, Show Less
-    // A collapsed stack (macOS): its newest card over a deck of up to two
+    // A collapsed stack: its newest card over a deck of up to two
     // layers, each 12 px narrower a side and 8 px lower than the one above;
     // only their bottom 30 px ever shows past the card.
     inline constexpr double DECK_INSET = 12, DECK_STEP = 8, DECK_H = 30, DECK_ROUND = 16;
@@ -123,7 +123,7 @@ namespace NAwesome::Notify {
     // a small control floating on glass (a stack's Show Less, "+N more"):
     // its own drop, the glass, the rim
     void                paintChip(const SPaint& P, const CBox& box, bool hover);
-    // the glass under the pointer lifts a step, as macOS's platter does
+    // the glass under the pointer lifts a step
     CHyprColor          liftedGlass(const CHyprColor& c);
     // a centered texture in a logical cell
     void                texCentered(const SPaint& P, const SCachedText* t, const CBox& cell);

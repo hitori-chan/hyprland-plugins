@@ -488,14 +488,14 @@ namespace NAwesome::Notify {
         }
 
         // the stack's identity: the app key, sub-keyed by the declared group
-        // when one is in force (macOS's thread identifier) — the deck, the
+        // when one is in force (an app's thread) — the deck, the
         // fold state and the dismissal all ride on this one string
         std::string groupKeyOf(const SP<SNotif>& n) {
             return n->declaredGroupKey.empty() ? n->appKey : n->appKey + "\x1f" + n->declaredGroupKey;
         }
 
-        // macOS stacks an app's notifications, its chats with the rest: each
-        // chat stays its own card inside the stack
+        // an app's notifications stack, its chats with the rest: each chat
+        // stays its own card inside the stack
         bool stackable(const SP<SNotif>& n) {
             return !n->appKey.empty();
         }

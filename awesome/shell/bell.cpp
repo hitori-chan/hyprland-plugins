@@ -3,15 +3,15 @@
 // cross-module bus: both read the notify MODEL directly and repaint off its
 // badgeChangedHook (fired from the model's single change funnel). A click
 // toggles its panel — a function call, not a proxy. The bell has no count:
-// SF Symbols' bell.badge, a dot on its shoulder while the center holds a
-// card it has not shown (Model::unseen). Under Do Not Disturb the bell is
-// the moon, as macOS shows a Focus, dotted while cards wait in the DND
-// queue. A right click on the bell opens the notification options, flat:
-// quiet automatically (over a fullscreen app, while sharing the screen),
-// and the apps and chats the card menus silenced, each a click from back
-// on. Do Not Disturb's one home is the control center; the moon echoes it.
-// The control center's glyph is macOS's switch.2;
-// either door lights (the accent, as text) while its panel is open.
+// a dot on its shoulder while the center holds a card it has not shown
+// (Model::unseen). Under Do Not Disturb the bell is the moon, dotted while
+// cards wait in the DND queue. A right click on the bell opens the
+// notification options, flat: quiet automatically (over a fullscreen app,
+// while sharing the screen), and the apps and chats the card menus
+// silenced, each a click from back on. Do Not Disturb's one home is the
+// control center; the moon echoes it. The control center's glyph is two
+// switches, the lower one on; either door lights (the accent, as text)
+// while its panel is open.
 
 #include "shell/shell.hpp"
 
@@ -36,8 +36,8 @@ namespace NAwesome::Shell {
         const bool DND  = M::suspendedNow();
         const bool OPEN = NAwesome::Notify::centerVisible();
         // the open center is the place the dot points at: it never shows over
-        // it; the bell lights instead, as macOS lights the menu-bar item whose
-        // panel is open
+        // it; the bell lights instead, as a door lights while its panel is
+        // open
         const bool DOT = !OPEN && (M::unseen() || (DND && M::heldCount() > 0));
         return {DOT, DND, OPEN, NAwesome::Notify::controlsVisible()};
     }

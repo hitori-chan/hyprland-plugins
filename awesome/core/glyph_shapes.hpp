@@ -34,7 +34,7 @@ namespace NAwesome::Glyph {
         CHECK,
         DISMISS, // a stack header's close cross, drawn at 8 px on its own 10-unit grid
         KEYBOARD_LIGHT, // a half sun risen over a baseline: the keys' own light
-        CONTROLS,       // the control center's door on the bar: two switches, SF Symbols' switch.2
+        CONTROLS,       // the control center's door on the bar: two switches, the lower one on
         SUN_LOW,        // the display's low end: the sun, smaller, its rays short (SUN: its high end)
         KEYBOARD,       // a device: the keys
         SPEAKER_LOW,    // the volume's low end, its mute button: a small speaker without waves
@@ -64,7 +64,7 @@ namespace NAwesome::Glyph {
 // the bell drawn on the 16 px grid it rasters at on a 1x bar: its stems and
 // skirt sit on half-pixel centres, so each lands on whole pixels
 #define AW_BELL "<path " AW_STROKE " d=\"M4.5 11V7.5a3.5 3.5 0 0 1 7 0V11l1.5 1.5H3z\"/><path fill=\"#fff\" d=\"M6.8 13.9h2.4a1.2 1.2 0 0 1-2.4 0z\"/>"
-// SF Symbols' bell.badge: the dot on the upper-right shoulder, the shape
+// the bell's badge: the dot on the upper-right shoulder, the shape
 // cut back around it so the dot floats free of the stroke
 #define AW_BADGE_X "12.5"
 #define AW_BADGE_Y "3.5"

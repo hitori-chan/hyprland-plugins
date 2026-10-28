@@ -275,7 +275,7 @@ print(1 if ok else 0)
 }
 cell_mid() { awk -v w="$1" '$1 == w { print int(($2 + $3) / 2); exit }' <<<"$CELLS"; }
 chk "cells: they tile the strip edge to edge, none overlapping" test "$(cells_tile)" = 1
-# the right slot's order, macOS's: the bell, the switches, the battery (where
+# the right slot's order: the bell, the switches, the battery (where
 # the host has one), the clock at the edge
 right_order() { awk '$1 ~ /^(bell|controls|battery|clock)$/ { printf "%s ", $1 }' <<<"$CELLS"; }
 RIGHT_WANT="bell controls clock "

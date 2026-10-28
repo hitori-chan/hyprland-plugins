@@ -303,8 +303,8 @@ namespace NAwesome::Notify {
         void       exit();
         SP<SNotif> byId(uint32_t id);
         // The id the card answers for on the wire: a chat's newest message
-        // (Reply quotes it, Open and Mark as read act on it, as macOS's
-        // stack acts as its top notification), else the card's own.
+        // (Reply quotes it, Open and Mark as read act on it, as a stack
+        // acts as its top notification), else the card's own.
         uint32_t   wireId(const SNotif& n);
         // CloseNotification: one message of a chat goes (the card with its
         // last), any other id takes its card. False: no such id.

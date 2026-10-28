@@ -241,9 +241,9 @@ namespace NAwesome::Shell {
         // middle, the right slot laid from the edge inwards ([tray][bell]
         // [control center][battery][clock]). Widgets whose fit comes back 0
         // are hidden this frame. The strip's 8 px inset and 14 between the slots
-        // and the tasks; the right slot keeps macOS's menu-extra rhythm,
-        // measured off its 2x menu bar: 20 between the widgets (the tray's
-        // own icons as far apart, shell:tray_spacing) and 16 off the edge.
+        // and the tasks; the right slot's rhythm: 20 between the widgets (the
+        // tray's own icons as far apart, shell:tray_spacing) and 16 off the
+        // edge.
         constexpr double INSET = 8, SLOT_GAP = 14, RIGHT_GAP = 20, RIGHT_INSET = 16;
         IWidget* const   LEFT[]  = {&taglistWidget()};
         IWidget* const   RIGHT[] = {&trayWidget(), &bellWidget(), &controlsWidget(), &batteryWidget(), &clockWidget()};

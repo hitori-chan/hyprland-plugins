@@ -13,11 +13,11 @@
 //
 // Placement only ever MOVES a window; its size is the client's own. A
 // Wayland toplevel can't position itself, so the compositor remembers
-// where it was (memory-first, as macOS window restoration and Windows
-// SetWindowPlacement do for their apps); but it does choose its size —
-// the initial configure is 0x0, "you decide" — and real apps restore
-// their own (the GTK file chooser, Firefox, Thunar, Telegram), while a
-// dialog's natural size is its content's. Imposing a remembered size
+// where it was (memory-first, as Windows' SetWindowPlacement does for
+// its apps); but it does choose its size — the initial configure is 0x0,
+// "you decide" — and real apps restore their own (the GTK file chooser,
+// Firefox, Thunar, Telegram), while a dialog's natural size is its
+// content's. Imposing a remembered size
 // overrode both: every dialog of a class was born at the app's main-window
 // size (the portal file chooser at 1203x953). The unmaximize restore box
 // (max.hpp) is the one size the compositor supplies, because a window born

@@ -391,7 +391,7 @@ nfyact_done
 chk "close-on-act: reset after the battery" test "$(st)" = "center:0 live:0 dnd:0"
 
 # ---- no buttons ride a card: the hold is its menu ---------------------------
-# macOS's hover close button and Options are left out (the hold and the
+# A card grows no hover close button or Options (the hold and the
 # right click do their work): under the pointer the card's corner stays
 # bare, and the held card menu opens at the pointer — near the right edge it
 # flips left of it, its rows running down from the pointer's y under its
@@ -401,7 +401,7 @@ menu_up() { [[ -n "$(hq awesome menu)" ]]; }
 hold_menu() { printf 'move %s %s\nsleep 40\npress 272\n' "$1" "$2" | vp; until_ok 2 menu_up; } # the button stays down
 release_left() { printf 'release 272\nsleep 80\n' | vp; settle; }
 mrow() { echo $(($1 + 5 + 14 + 28 * $2 + 11 * $3)); } # mrow <menu y> <row> <separators above>
-corner_px() { # corner_px <frame> — near-white pixels where macOS's close button would ride
+corner_px() { # corner_px <frame> — near-white pixels where a hover close button would ride
 	python3 - "$1" "$PANEL_X" "$N_TOP" <<'PY'
 import sys
 from PIL import Image
@@ -434,7 +434,7 @@ chk "actions: ActionInvoked carried the action's key" grep -q 'STRING "later"' "
 nfyact_done
 nclear
 
-# ---- the center stacks an app's cards (macOS) --------------------------------
+# ---- the center stacks an app's cards ----------------------------------------
 # Two cards of one app are one stack: collapsed, the newest over its deck
 # (8 px a layer); a click spreads it under a 28 px header (the app's name,
 # Show Less flush right: notify/stack.cpp); right dismisses it whole.

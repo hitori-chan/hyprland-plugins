@@ -51,7 +51,7 @@ namespace NAwesome {
     //
     // Text over glass wears none: the glass is dense enough to read on.
     // Text bare on the desktop (the center's heading, a stack's name)
-    // keeps macOS's desktop-label drop. The raster grows by pad() physical
+    // keeps a desktop label's drop. The raster grows by pad() physical
     // px on every side: symmetric, so centering ignores it; every other
     // placement steps back by it.
     enum class eShadow : unsigned char {

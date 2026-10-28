@@ -5,9 +5,9 @@
 // (title, the unread count, the meta flush right), the body and the
 // progress track; below, across the card's whole inner width, a banner's
 // hero and an opened reply field. A card is its face, its words and its
-// time, as macOS draws it at rest, and it grows no buttons under the
-// pointer (the user's hold and right click do that work): the glass lifts,
-// and the sender's actions live in the card menu. A banner and the center
+// time at rest, and it grows no buttons under the pointer (the user's hold
+// and right click do that work): the glass lifts, and the sender's actions
+// live in the card menu. A banner and the center
 // card it retreats into must never say different things — so they are one
 // function.
 //

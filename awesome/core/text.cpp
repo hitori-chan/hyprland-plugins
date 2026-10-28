@@ -9,7 +9,7 @@ namespace NAwesome {
 
     STextShadow textShadow(eShadow s, int pt) {
         switch (s) {
-            // macOS's desktop text: r 3 px at 15 px type, 1 px down, black
+            // desktop text: r 3 px at 15 px type, 1 px down, black
             // at 0.8 — what still reads over a white patch of the wallpaper
             case eShadow::DESKTOP: return {.r = std::max(1, (int)std::lround(pt * 0.2)), .dy = std::max(1, (int)std::lround(pt * 0.07)), .a = 0.8};
             case eShadow::NONE: break;

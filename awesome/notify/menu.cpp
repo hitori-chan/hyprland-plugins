@@ -1,4 +1,4 @@
-// awesome/notify/menu.cpp — the card menu, what macOS's Options offers.
+// awesome/notify/menu.cpp — the card menu, a card's options.
 // Holding left on any card (a banner, a center card, a stack) opens it at
 // the pointer:
 //
@@ -158,8 +158,8 @@ namespace NAwesome::Notify::CardMenu {
 
     static void build(const SNotif& n) {
         s_items.clear();
-        // what the sender offers comes first, as macOS lists an app's own
-        // actions over the system's
+        // what the sender offers comes first: an app's own actions over the
+        // system's
         if (n.canReply)
             s_items.push_back({REPLY, n.replySubmitText.empty() ? "Reply" : clipName(n.replySubmitText), {}});
         for (const auto& A : n.actions)
@@ -552,7 +552,7 @@ namespace NAwesome::Notify::CardMenu {
     }
 #endif
 
-    // macOS opens a context menu with its corner at the pointer, one that
+    // a context menu opens with its corner at the pointer, one that
     // would leave the monitor flipping to the pointer's other side; the
     // control center's hang 6 px under what opened them, at its edge
     void render(const SPaint& P, const SType& T) {

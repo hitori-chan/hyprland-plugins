@@ -164,8 +164,7 @@ accent for the visit.
   under a header with the app's name and Show Less; right on the deck or
   the header dismisses it whole. A stack holding the armed reply stays
   spread.
-- `x-notify-group-key` splits an app's stack by thread, as macOS's
-  thread identifier does.
+- `x-notify-group-key` splits an app's stack by thread.
 - A spread stack taller than the page shows what fits and "+N more";
   the paging chips above and below the fold page a screenful, like the
   wheel.

@@ -1,11 +1,10 @@
-// awesome/notify/stack.cpp — an app's cards stacked under the newest, as
-// macOS's Notification Center draws them. COLLAPSED: the newest card over a
-// deck of up to two layers, each 12 px narrower a side and 8 px lower than
-// the one above it and a step darker — the depth says there is more, no
-// count does. EXPANDED: the app's name and Show Less above the stack, then
-// every card the page holds as itself (center.cpp lays those out), and "+N
-// more" counting the rest. The silent fold is drawn here too: the ranking's
-// quiet tail folded into one row.
+// awesome/notify/stack.cpp — an app's cards stacked under the newest.
+// COLLAPSED: the newest card over a deck of up to two layers, each 12 px
+// narrower a side and 8 px lower than the one above it and a step darker —
+// the depth says there is more, no count does. EXPANDED: the app's name
+// and Show Less above the stack, then every card the page holds as itself
+// (center.cpp lays those out), and "+N more" counting the rest. The silent
+// fold is drawn here too: the ranking's quiet tail folded into one row.
 //
 // The texture rule as everywhere: textures are requested unconditionally,
 // painting goes through the paint context, which no-ops inside a warm.

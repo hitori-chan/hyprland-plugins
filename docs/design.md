@@ -293,7 +293,7 @@ schema's defaults name them; the user's `theme.lua` overrides them).
   catching light and an 18 % white rim; a menu floats higher.
 - **Text** over glass wears no drop: the roll-off keeps the glass dark
   enough to read on, and a drop would only soften the type. The center's heading, bare on
-  the wallpaper, keeps macOS's desktop-label drop.
+  the wallpaper, keeps a desktop label's drop.
 - **Ink** is one white at four strengths (titles and the bar 100 %, body
   88 %, meta 78 %, empty 34 %). The accent `#00CCFF` is text: the viewed
   tag, the focused task, a selection, the bell or the control center's
@@ -309,10 +309,8 @@ schema's defaults name them; the user's `theme.lua` overrides them).
   refuses a malformed shape whole and the glyph silently never draws),
   drawn white and tinted at raster time. Icons raster at the monitor's
   device size, never a larger raster shrunk on the GPU.
-- **References**: the bar's right end follows macOS 27's menu bar,
-  measured off its 2x screenshot; the battery is Pixel's
-  (`shell/battery_pill.hpp`, pure cairo); cards follow macOS 27's
-  notifications without the hover buttons.
+- **References**: the battery is Pixel's (`shell/battery_pill.hpp`,
+  pure cairo); cards carry no hover buttons.
 - Hover lifts text a step, never a ground. Nothing darkens the desktop:
   what floats over the wallpaper carries its own glass, or a text
   shadow. What the pointer rests on may name itself in a **note**

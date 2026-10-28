@@ -70,10 +70,10 @@ namespace NAwesome::Shell::Battery {
 
     // ---- the note ----
     //
-    // One line under the pill after a rest, what macOS's battery menu heads
-    // with: the level, the state the ladder picked, and how long the charge
-    // lasts or when it is full ("76% · 3:12 left", "63% · Charging · full at
-    // 22:40"). The time is left out while no rate is known.
+    // One line under the pill after a rest: the level, the state the ladder
+    // picked, and how long the charge lasts or when it is full ("76% · 3:12
+    // left", "63% · Charging · full at 22:40"). The time is left out while
+    // no rate is known.
     enum class ePower : uint8_t {
         BATTERY,  // discharging
         CHARGING, // taking charge

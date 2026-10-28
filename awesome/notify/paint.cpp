@@ -146,7 +146,7 @@ namespace NAwesome::Notify {
         P.ring(box, NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:theme:col_rim")), R, 2.f);
     }
 
-    // macOS's platter under the pointer: a touch lighter, a touch thicker —
+    // the glass under the pointer: a touch lighter, a touch thicker —
     // a 6 % white veil over the glass, folded into one colour (the glass may
     // carry no tint at all)
     CHyprColor liftedGlass(const CHyprColor& c) {

@@ -6,16 +6,16 @@
 // This unit decides WHAT is shown and WHERE; card.cpp and stack.cpp draw
 // it. The center is the banners' own column under a heading with Clear All
 // on a glass capsule, the bell its door; the control center (controls.cpp)
-// shares the column, one open at a time. As macOS's, it draws no backdrop:
-// the desktop is never darkened.
+// shares the column, one open at a time. It draws no backdrop: the
+// desktop is never darkened.
 //
 // RANKING — Android's, without the dividers (labels faded over a bright
 // wallpaper): critical, then conversations, then the rest; newest first
 // inside each group, a wider gap where a group ends. An app's cards STACK
-// under their newest once it has two (macOS), its chats with the rest —
-// each chat keeps its own card, and the model merges that chat's messages
-// into it. A stack stands where its newest card ranks, collapsed until a
-// click spreads it. The silent cards (low urgency, or silenced by the user)
+// under their newest once it has two, its chats with the rest — each chat
+// keeps its own card, and the model merges that chat's messages into it.
+// A stack stands where its newest card ranks, collapsed until a click
+// spreads it. The silent cards (low urgency, or silenced by the user)
 // fold into one row at the bottom until a click spreads them.
 //
 // Above the cards, a status line says why arrivals are holding (Do Not
@@ -27,7 +27,7 @@
 // starts at the top of the page and opens each card while the panel still
 // has room, so the center is readable the instant it appears instead of
 // costing a click per card; it folds only what would overflow. Stacks are
-// the exception: macOS spreads one only when asked.
+// the exception: one spreads only when asked.
 //
 // This unit owns the shade's transient state (paging, every fold override) —
 // all of it resets when the shade closes, Android-style.
@@ -38,7 +38,7 @@
 
 namespace NAwesome::Notify {
 
-    // macOS stacks an app's notifications as soon as there are two
+    // an app's notifications stack as soon as there are two
     inline constexpr size_t AUTOGROUP_AT = 2;
 
     // ---- state ----
@@ -273,8 +273,8 @@ namespace NAwesome::Notify {
     }
 
     // How many stackable cards one (app, declared group) holds, and where its
-    // stack landed. Different x-notify-group-key values (macOS's thread
-    // identifiers) never merge: each owns its own stack and fold state.
+    // stack landed. Different x-notify-group-key values (an app's
+    // threads) never merge: each owns its own stack and fold state.
     struct SOwner {
         std::string        key;
         size_t             count = 0;
@@ -601,7 +601,7 @@ namespace NAwesome::Notify {
         }
 
         // ---- the heading's row: "Notifications", Clear All ----
-        // No backdrop darkens the desktop, as on macOS: Clear All sits on
+        // No backdrop darkens the desktop: Clear All sits on
         // glass of its own (as a stack's Show Less), and the heading bare on
         // the desktop as its stack headers do, a soft shadow keeping it
         // legible over any wallpaper or window.
