@@ -669,7 +669,7 @@ namespace NAwesome::Notify {
                 const auto VICTIM = *victim;
                 const bool SHOWN  = !VICTIM->waiting;
                 notifs.erase(victim);
-                emitClosedAll(*VICTIM, R_UNDEFINED);
+                emitClosedAll(*VICTIM, VICTIM->cleared ? R_DISMISSED : R_UNDEFINED); // Clear All already closed it
                 // a DND-held arrival warms nothing itself: the shown card it
                 // pushed out must still leave the screen
                 if (SHOWN)
