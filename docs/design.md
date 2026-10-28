@@ -14,9 +14,9 @@ has the provenance.
 
 **The fork surface it depends on**: `monitor.blockSolitary` (paint over a
 fullscreen window), `reservedChanged` (usable-area changes),
-`fullWindowFocus` landing the exact window across workspaces,
-compositor-minted activation tokens, and the born-fullscreen float's
-windowed-size ask. It assumes the fork's compositor fixes: activation as
+`fullWindowFocus` keeping the caller's reason and surface across
+workspaces, compositor-minted activation tokens, and the born-fullscreen
+float's windowed-size ask. It assumes the fork's compositor fixes: activation as
 urgency, the CSD content frame, the true maximize state, popup positions
 in window-geometry space, the session-lock grab check.
 
