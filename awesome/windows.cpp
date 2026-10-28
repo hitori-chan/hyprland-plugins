@@ -11,6 +11,7 @@
 #include "windows/max.hpp"
 #include "windows/place.hpp"
 #include "windows/snap.hpp"
+#include "windows/tile.hpp"
 
 #include "core/activate.hpp"
 
@@ -142,6 +143,7 @@ namespace NAwesome::Windows {
                 Tasklist::minReqs().push({PHLWINDOWREF{w}, minimized});
         });
 
+        Tile::init();
         Max::init();
         Click::init();
         Place::init();
@@ -194,6 +196,7 @@ namespace NAwesome::Windows {
         Place::teardown();
         Click::teardown();
         Max::teardown();
+        Tile::teardown();
         Tasklist::exit();
     }
 

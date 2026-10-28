@@ -35,6 +35,7 @@
 #pragma once
 
 #include "geometry.hpp"
+#include "tile.hpp"
 
 #include "core/canvas.hpp"
 #include "core/config.hpp"
@@ -387,6 +388,7 @@ namespace NAwesome::Windows::Snap {
 
             // resize drags magnetize too: the dragged edges alone
             if (const auto RT = resizingFloatingTarget()) {
+                Tile::snapped(RT->window(), false); // a resize lifts a tile out of its slot
                 if (!resizeStart())
                     resizeStart() = RT->position(); // emission precedes this motion's resize
             } else
@@ -394,6 +396,7 @@ namespace NAwesome::Windows::Snap {
             return;
         }
         resizeStart().reset();
+        Tile::snapped(T->window(), false); // the drag lifts a tile out of its slot
 
         const auto POS = g_pInputManager->getMouseCoordsInternal();
         const auto MON = monitorContaining(POS);
@@ -439,6 +442,10 @@ namespace NAwesome::Windows::Snap {
                     // here
                     T->setPositionGlobal(CBox{FINAL->x + B, FINAL->y + B, FINAL->w - 2 * B, FINAL->h - 2 * B});
                     T->warpPositionSize();
+                    // a tile only where it fills the slot: client limits
+                    // can keep it smaller, off the far edges
+                    const auto SLOT = slotFor(zoneV(), zoneH(), MON->logicalBoxMinusReserved());
+                    Tile::snapped(T->window(), SLOT && *SLOT == *FINAL);
                     // the controller assigns a dragged float the workspace
                     // its MIDDLE is over, and the cursor arms a zone before
                     // the middle crosses: a zone on another monitor must

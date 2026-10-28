@@ -25,6 +25,7 @@
 
 #include "geometry.hpp"
 #include "state.hpp"
+#include "tile.hpp"
 
 #include "core/persist.hpp"
 #include "core/queries.hpp"
@@ -137,6 +138,7 @@ namespace NAwesome::Windows {
             if (const auto B = windowedOn(W->metadata().appID(), MON))
                 restore = monLocal(boundedRestore(W, *B, WA), MON);
             maximized()[PHLWINDOWREF{W}] = restore;
+            Tile::maximized(W, true);
 
             if (auto TOP = xdgToplevel(W))
                 TOP->setMaximized(true);
@@ -281,6 +283,7 @@ namespace NAwesome::Windows {
             // a windowed size.
             if (!W->isFloating()) {
                 maximized().erase(WR);
+                Tile::maximized(W, false);
                 Fullscreen::controller()->setFullscreenMode(W, Fullscreen::FSMODE_MAXIMIZED, Fullscreen::FSMODE_MAXIMIZED);
                 return;
             }
@@ -304,6 +307,7 @@ namespace NAwesome::Windows {
             if (const auto IT = maximized().find(WR); IT != maximized().end()) {
                 const CBox STORED = monGlobal(IT->second, MON);
                 maximized().erase(IT);
+                Tile::maximized(W, false);
                 // tell the client the truth: a client never told it left
                 // maximized (notably GTK) stays in maximized mode — it
                 // saves "maximized" on close and reopens maximized, and
@@ -325,6 +329,7 @@ namespace NAwesome::Windows {
             } else {
                 const auto BOX = W->windowTarget()->position();
                 maximized().emplace(WR, monLocal(BOX, MON));
+                Tile::maximized(W, true);
                 rememberWindowed(W->metadata().appID(), BOX, W->m_monitor.lock());
                 setClientMaximized(true);
                 setGeom(W, WA);
@@ -421,6 +426,7 @@ namespace NAwesome::Windows {
             if (const auto B = windowedOn(w->metadata().appID(), MON))
                 restore = monLocal(boundedRestore(w, *B, WA), MON);
             maximized()[PHLWINDOWREF{w}] = restore;
+            Tile::maximized(w, true);
         }
 
         // A plugin-maximized window that leaves floating (togglefloating, a
@@ -436,6 +442,7 @@ namespace NAwesome::Windows {
             const auto MON = w->m_monitor.lock();
             rememberWindowed(w->metadata().appID(), monGlobal(IT->second, MON), MON);
             maximized().erase(IT);
+            Tile::maximized(w, false);
             if (auto TOP = xdgToplevel(w))
                 TOP->setMaximized(false);
         }

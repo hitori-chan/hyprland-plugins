@@ -397,6 +397,7 @@ for _ in $(seq 1 10); do
 done
 dsp "hl.plugin.awesome.maximize()"; settled foot
 MAX_BEFORE="$(box)"
+chk "maximize: a maximized window is a tile (no drop)" until_is 2 "0 1" tile_props "$(class_addr foot)"
 RESERVED_BEFORE="$(reserved)"
 ERROR_MESSAGE="reserved-area-probe $(printf 'wrapped-message-with-enough-width-to-force-a-second-line %.0s' {1..6})"
 hq seterror 'rgba(ff3030ff)' "$ERROR_MESSAGE" >/dev/null 2>&1
@@ -444,6 +445,7 @@ done
 chk "maximize: removing native reservation restores maximized workarea" test "$(box)" = "$MAX_BEFORE"
 dsp "hl.plugin.awesome.maximize()"; settled foot
 chk "maximize: reserved-area roundtrip preserves windowed restore" test "$(box)" = "$REF"
+chk "maximize: restored, it is a float again (its drop back)" until_is 2 "0 0" tile_props "$(class_addr foot)"
 for i in $(seq 1 10); do dsp "hl.plugin.awesome.maximize()"; done; settled foot
 chk "10 maximize toggles round-trip losslessly" test "$(box)" = "$REF"
 for i in $(seq 1 5); do dsp "hl.plugin.awesome.minimize()"; dsp "hl.plugin.awesome.restore()"; done; settled foot
@@ -632,6 +634,9 @@ snap_drag() { # snap_drag <x> <y> <zone> <alt-first: 0|1>: Alt+drag the window's
 	exec {ptr}>&- {kb}>&-
 	settle
 }
+# a window that fills its slot is a tile (windows/tile.hpp): square, no
+# drop; corners the nested draws, so the change is seen
+hq eval "hl.config({ decoration = { rounding = 6 } })" >/dev/null
 dsp "hl.dsp.exec_cmd('foot --app-id=snapw --window-size-pixels=400x300')"
 wait_class snapw
 SNAPW="$(class_addr snapw)"
@@ -639,6 +644,7 @@ dsp "hl.dsp.window.move({x = 440, y = 270, window = \"address:$SNAPW\"})"
 settled snapw
 snap_drag 2 420 "- left" 0
 chk "snap: the left edge commits the left half" until_is 2 "$(slot left)" snap_box
+chk "snap: the filled half is a tile (square, no drop)" until_is 2 "0 1" tile_props "$SNAPW"
 dsp "hl.dsp.window.move({x = 440, y = 270, window = \"address:$SNAPW\"})"
 snap_drag $((MON_W - 2)) 420 "- right" 1
 chk "snap: the right edge, the modifier let go first, commits the right half" until_is 2 "$(slot right)" snap_box
@@ -649,7 +655,9 @@ dsp "hl.dsp.window.move({x = 440, y = 270, window = \"address:$SNAPW\"})"
 SNAPSZ="$(snap_box | cut -d' ' -f2)" # the quarter's: a move keeps a window's size
 snap_drag 400 400 "" 0
 chk "snap: a drop away from the edges commits no slot" until_is 2 "200,250 $SNAPSZ" snap_box
+chk "snap: lifted out of its slot it is a float again (rounded, its drop back)" until_is 2 "6 0" tile_props "$SNAPW"
 close_wait "$SNAPW"
+hq eval "hl.config({ decoration = { rounding = 0 } })" >/dev/null
 
 # ---- the drop shadow: drawn where it reaches ------------------------------
 # A shadow's reach is learned only while a frame draws it: a new window's
