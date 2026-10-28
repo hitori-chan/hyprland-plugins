@@ -21,8 +21,10 @@
 // paired ones, a lit disc while connected, "Connecting…",
 // "Disconnecting…" or the battery on the right, a refused connect's
 // reason under the name; a pick connects or disconnects, a right-click or
-// Delete asks to forget it, in place of its row). Their rows come from
-// the system module's published values and rebuild with every warm.
+// Delete asks to forget it, in place of its row; under them, Other
+// Devices: Scan/Stop and what the scan found, a pick pairing one, its
+// question asked in place of its row). Their rows come from the system
+// module's published values and rebuild with every warm.
 //
 // The menu is the notify layer's own,
 // drawn last and hit first: it holds its card's banner while up, and
@@ -35,7 +37,10 @@
 
 #include "../core/walltimer.hpp"
 
+#include <cmath>
 #include <ctime>
+#include <format>
+#include <numbers>
 
 namespace NAwesome::Notify::CardMenu {
 
@@ -55,6 +60,7 @@ namespace NAwesome::Notify::CardMenu {
         DND_MORNING, // ... until the next 08:00
         DND_FOREVER, // ... until turned off
         DEVICE,      // Bluetooth's: SItem::key's device connects, or disconnects (check 1)
+        PAIR,        // Bluetooth's: SItem::key's found device pairs (the menu stays)
         NOTE,        // a quiet line of advice: never lit, never hit
         PROMPT,      // a question in place of a device's row, its buttons hit by their own keys
     };
@@ -76,8 +82,12 @@ namespace NAwesome::Notify::CardMenu {
         std::string   detail;
         int8_t        battery = -1;
         uint8_t       fail    = 0; // a device's Controls::SDevice::eFail: a line under its name
-        // a prompt's buttons, right to left from its last: "btn:<verb>:<id>"
+        // a prompt's buttons, right to left from its last: "btn:<verb>:<id>";
+        // a header's one (Scan)
         std::vector<std::pair<std::string, std::string>> buttons; // key, words
+        std::string                                      code;    // a pairing's code, its first `entered` digits typed
+        int8_t                                           entered = -1;
+        bool                                             spin    = false; // a header's activity: the scan runs
     };
 
     // the board's menu: 5 px of padding, 28 px rows whose labels sit 15 px
@@ -97,10 +107,15 @@ namespace NAwesome::Notify::CardMenu {
     // 4, the question, 6, its 26 px buttons 6 apart, 8 under
     constexpr double NOTE_TOP = 6, NOTE_BOTTOM = 4, PROMPT_TOP = 5, PROMPT_LINE = 26, PROMPT_GAP = 4, PROMPT_ASK_GAP = 6, BTN_H = 26, BTN_GAP = 6,
                      PROMPT_BOTTOM = 8, BTN_PADX = 13;
+    // a header with a button: 30 tall, its 24 px pill 4 px off the edge, the
+    // activity's 12 px dots 8 px left of it; a pairing's code at 20 px
+    constexpr double HEAD_BTN_H = 30, PILL_H = 24, PILL_PADX = 11, PILL_INSET = 4, SPIN = 12, SPIN_GAP = 8, CODE_PX = 20;
+    // the activity turns a dot every SPIN_STEP (its box damaged, nothing warmed)
+    constexpr auto SPIN_STEP = std::chrono::milliseconds(100);
     constexpr size_t NAME_CP = 24; // a name past this many code points ellipsizes: the verb must stay readable
 
     static double rowH(const SItem& I) {
-        return I.verb == SEP ? SEPH : I.verb == HEADER ? HEADH : I.disc ? DEVH : ROWH;
+        return I.verb == SEP ? SEPH : I.verb == HEADER ? (I.buttons.empty() ? HEADH : HEAD_BTN_H) : I.disc ? DEVH : ROWH;
     }
 
     static bool                            s_open = false;
@@ -173,14 +188,38 @@ namespace NAwesome::Notify::CardMenu {
     static std::pair<const char*, const char*> failLine(uint8_t f) {
         switch (f) {
             case Controls::SDevice::NO_ANSWER: return {"Didn't answer.", "Is it on and nearby?"};
-            case Controls::SDevice::PAIRING_LOST: return {"Pairing lost.", "Pair it again from its own settings."};
+            case Controls::SDevice::PAIRING_LOST: return {"Pairing lost.", "Put it in pairing mode, then click to pair again."};
             case Controls::SDevice::FAILED: return {"Didn't connect.", "Try it again."};
+            case Controls::SDevice::PAIR_FAILED: return {"Pairing failed.", "Is it in pairing mode?"};
             default: return {nullptr, nullptr};
         }
     }
 
     // the device whose row asks to forget it ("bt:" + its id; "" none)
     static std::string s_forget;
+    // the scan's activity: where it was drawn, its tick
+    static CBox                s_spinBox;
+    static bool                s_spinning = false;
+    static SP<CEventLoopTimer> s_spinTick;
+
+    // an ink as Pango markup's foreground and its alpha
+    static std::string inkMarkup(const CHyprColor& c) {
+        const auto TO8 = [](double v) { return (int)std::lround(std::clamp(v, 0.0, 1.0) * 255); };
+        return std::format("foreground=\"#{:02X}{:02X}{:02X}\" fgalpha=\"{}\"", TO8(c.r), TO8(c.g), TO8(c.b), std::max(1, (int)std::lround(std::clamp(c.a, 0.0, 1.0) * 65535)));
+    }
+
+    // the scan's activity: eight dots, the head turning a dot every SPIN_STEP
+    static void drawSpin(const SPaint& P, const CBox& box, const CHyprColor& ink) {
+        const auto   MS   = std::chrono::duration_cast<std::chrono::milliseconds>(Time::steadyNow().time_since_epoch()).count();
+        const int    HEAD = (int)(MS / SPIN_STEP.count() % 8);
+        const double R = box.w / 2 - 1.4, D = 2.4;
+        for (int k = 0; k < 8; k++) {
+            const double A   = k * std::numbers::pi / 4 - std::numbers::pi / 2;
+            const int    AGE = (HEAD - k + 8) % 8; // 0: the head
+            const CBox   DOT{box.x + box.w / 2 + R * std::cos(A) - D / 2, box.y + box.h / 2 + R * std::sin(A) - D / 2, D, D};
+            P.rect(DOT, ink.modifyA(ink.a * (1.0 - AGE * 0.11)), (int)std::lround(D / 2 * P.scale), 2.f);
+        }
+    }
 
     static Glyph::eGlyph deviceGlyph(Controls::SDevice::eKind k) {
         using K = Controls::SDevice::eKind;
@@ -188,6 +227,7 @@ namespace NAwesome::Notify::CardMenu {
             k == K::SPEAKER       ? Glyph::eGlyph::OUTPUT :
             k == K::MOUSE         ? Glyph::eGlyph::MOUSE :
             k == K::KEYBOARD      ? Glyph::eGlyph::KEYBOARD :
+            k == K::PHONE         ? Glyph::eGlyph::PHONE :
                                     Glyph::eGlyph::BLUETOOTH;
     }
 
@@ -249,6 +289,40 @@ namespace NAwesome::Notify::CardMenu {
                 s_items.push_back({.verb = DEVICE, .label = "No Paired Devices", .dim = true});
             else
                 s_items.push_back({.verb = NOTE, .label = "Right-click a device to forget it."});
+            if (!B.powered)
+                return;
+            // Other Devices: the scan's switch, what it found, its advice
+            s_items.push_back({.verb = SEP});
+            s_items.push_back({.verb = HEADER, .label = "Other Devices", .buttons = {{"btn:scan", B.scanning ? "Stop" : "Scan"}}, .spin = B.scanning});
+            for (const auto& D : B.found) {
+                const auto& Q = B.prompt;
+                if (Q.id == D.id && !Q.code.empty()) {
+                    s_items.push_back({.verb    = PROMPT,
+                                       .label   = D.name,
+                                       .key     = "bt:" + D.id,
+                                       .glyph   = deviceGlyph(D.kind),
+                                       .disc    = true,
+                                       .detail  = Q.confirm ? "Does it show the same code?" : "Type this code on it, then press Return",
+                                       .buttons = Q.confirm ? std::vector<std::pair<std::string, std::string>>{{"btn:pair:" + D.id, "Pair"}, {"btn:cancel:" + D.id, "Cancel"}} :
+                                                              std::vector<std::pair<std::string, std::string>>{{"btn:cancel:" + D.id, "Cancel"}},
+                                       .code    = Q.code,
+                                       .entered = Q.entered});
+                    continue;
+                }
+                s_items.push_back({.verb   = PAIR,
+                                   .label  = D.name,
+                                   .key    = "bt:" + D.id,
+                                   .glyph  = deviceGlyph(D.kind),
+                                   .disc   = true,
+                                   .detail = D.busy == Controls::SDevice::PAIRING ? "Pairing…" : "",
+                                   .fail   = (uint8_t)D.fail});
+            }
+            const bool ANY = !B.found.empty();
+            s_items.push_back({.verb  = NOTE,
+                               .label = B.scanning ? (ANY ? "Not listed? Put it in pairing mode." : "Looking for devices in pairing mode…") :
+                                   !B.scanned      ? "Put a device in pairing mode, then scan." :
+                                   ANY             ? "Not listed? Put it in pairing mode and scan again." :
+                                                     "Nothing found. Is it in pairing mode?"});
         }
     }
 
@@ -292,6 +366,9 @@ namespace NAwesome::Notify::CardMenu {
     void close() {
         if (!s_open)
             return;
+        // Bluetooth's scan, its list and its question go with its menu
+        if (s_control == ePanelMenu::BLUETOOTH && Controls::doors().menuClosed)
+            Controls::doors().menuClosed();
         s_forget.clear();
         s_open  = false;
         s_owner = 0;
@@ -303,6 +380,11 @@ namespace NAwesome::Notify::CardMenu {
     }
 
     void exit() {
+        if (s_spinTick && g_pEventLoopManager)
+            g_pEventLoopManager->removeTimer(s_spinTick);
+        s_spinTick.reset();
+        s_spinning = false;
+        s_spinBox  = {};
         s_forget.clear();
         s_open  = false;
         s_owner = 0;
@@ -325,9 +407,19 @@ namespace NAwesome::Notify::CardMenu {
     // a prompt's button: the menu stays, the row comes back (or goes, with
     // its device)
     static void press(const std::string& key) {
+        const auto& D = Controls::doors();
+        if (key == "btn:scan") {
+            if (D.scan)
+                D.scan(!Controls::state().bluetooth.scanning);
+            return;
+        }
         const auto ID = key.substr(key.find(':', 4) + 1);
-        if (key.starts_with("btn:forget:") && s_forget == "bt:" + ID && Controls::doors().forgetDevice)
-            Controls::doors().forgetDevice(ID);
+        if (key.starts_with("btn:forget:") && s_forget == "bt:" + ID && D.forgetDevice)
+            D.forgetDevice(ID);
+        else if (key.starts_with("btn:pair:") && D.answerPairing)
+            D.answerPairing(true);
+        else if (key.starts_with("btn:cancel:") && s_forget != "bt:" + ID && D.answerPairing)
+            D.answerPairing(false);
         s_forget.clear();
         buildControl(ePanelMenu::BLUETOOTH);
         notifChanged();
@@ -370,6 +462,13 @@ namespace NAwesome::Notify::CardMenu {
         const auto ROW  = s_items[index].key;
         if (VERB == NOTE || VERB == PROMPT)
             return; // never hit: a press on one lands on the panel
+        // a found device pairs, and a lost pairing pairs again: the menu
+        // stays, for the questions a pairing asks
+        if (VERB == PAIR || (VERB == DEVICE && s_items[index].fail == Controls::SDevice::PAIRING_LOST)) {
+            if (s_items[index].detail.empty() && Controls::doors().pairDevice)
+                Controls::doors().pairDevice(ROW.substr(3));
+            return;
+        }
         const auto OUT  = s_items[index].output;
         const bool ON   = s_items[index].check == 1;
         const auto APP  = s_app;
@@ -415,6 +514,7 @@ namespace NAwesome::Notify::CardMenu {
                             Controls::doors().connectDevice(D.id, !ON);
                 return;
             case HEADER:
+            case PAIR:
             case NOTE:
             case PROMPT: return;
         }
@@ -426,10 +526,16 @@ namespace NAwesome::Notify::CardMenu {
     std::string describe() {
         std::string out;
         for (const auto& I : s_items) {
-            if (I.verb == SEP || I.verb == HEADER || I.verb == NOTE)
+            if (I.verb == SEP || I.verb == NOTE || (I.verb == HEADER && I.buttons.empty()))
                 continue;
+            if (I.verb == HEADER) {
+                out += std::string{out.empty() ? "" : ";"} + "[" + I.buttons.front().second + "]";
+                continue;
+            }
             if (I.verb == PROMPT) {
                 out += (out.empty() ? "" : ";") + I.label + " ?";
+                if (!I.code.empty())
+                    out += " " + I.code + (I.entered >= 0 ? "/" + std::to_string(I.entered) : "");
                 for (const auto& [_, WORDS] : I.buttons)
                     out += " [" + WORDS + "]";
                 continue;
@@ -453,6 +559,9 @@ namespace NAwesome::Notify::CardMenu {
                    COLSUB = color(cfg().getColor("plugin:awesome:notify:col_kicker")), COLBODY = color(cfg().getColor("plugin:awesome:notify:col_fg")),
                    COLURGENT = color(cfg().getColor("plugin:awesome:notify:col_urgent"));
         const auto   COLDIM = COLTITLE.modifyA(COLTITLE.a * 0.4);
+        // the Pair button: the panel's lit white, its words dark
+        static const CHyprColor PAIR_INK{0x16 / 255.0, 0x16 / 255.0, 0x1a / 255.0, 1.0}, KNOB_WHITE{1.0, 1.0, 1.0, 1.0};
+        bool                    spun = false; // the scan's activity was drawn
         const auto   PX     = [&](double logical) { return (int)std::lround(logical * P.scale); };
         const bool   CHECKS = std::ranges::any_of(s_items, [](const SItem& I) { return I.check >= 0 && !I.disc; });
         const bool   KINDS  = std::ranges::any_of(s_items, [](const SItem& I) { return I.glyph != Glyph::eGlyph::NONE && !I.disc; });
@@ -477,12 +586,22 @@ namespace NAwesome::Notify::CardMenu {
             const auto [HEAD, HINT] = failLine(I.fail);
             if (!HEAD || !I.disc)
                 return nullptr;
-            const auto TO8 = [](double c) { return (int)std::lround(std::clamp(c, 0.0, 1.0) * 255); };
-            return cachedText(std::format("<span foreground=\"#{:02X}{:02X}{:02X}\">{}</span> {}", TO8(COLURGENT.r), TO8(COLURGENT.g), TO8(COLURGENT.b), HEAD, HINT), COLSUB,
-                              T.meta, CAPPX, T.meta * 3, 0, true, 400);
+            return cachedText(std::format("<span {}>{}</span> {}", inkMarkup(COLURGENT), HEAD, HINT), COLSUB, T.meta, CAPPX, T.meta * 3, 0, true, 400);
         };
         // the resting face of a row's label: its height sizes a refused row
         const auto restOf = [&](const SItem& I) { return cachedText(I.label, I.quiet ? COLSUB : COLTITLE, T.body, labelPx(I), -1, 0, false, 400); };
+        // a pairing's code, its typed digits dimmed
+        const auto codeOf = [&](const SItem& I) -> const SCachedText* {
+            if (I.code.empty())
+                return nullptr;
+            std::string esc;
+            for (const char C : I.code)
+                esc += C == '<' ? "&lt;" : C == '>' ? "&gt;" : C == '&' ? "&amp;" : std::string(1, C);
+            const size_t TYPED = I.entered > 0 ? std::min(esc.size(), (size_t)I.entered) : 0;
+            return cachedText(std::format("<span letter_spacing=\"{}\"><span {}>{}</span>{}</span>", (int)std::lround(0.08 * CODE_PX * P.scale * 1024), inkMarkup(COLSUB),
+                                          esc.substr(0, TYPED), esc.substr(TYPED)),
+                              COLTITLE, PX(CODE_PX), PX(FIXED > 0 ? FIXED : MAX_W), -1, 0, true, 600);
+        };
         // a note's and a prompt's words wrap in the label's column
         const auto noteOf = [&](const SItem& I) { return cachedText(I.verb == NOTE ? I.label : I.detail, COLSUB, T.meta, I.verb == NOTE ? PX((FIXED > 0 ? FIXED : MAX_W) - 2 * LABEL_X) : CAPPX, T.meta * 3, 0, false, 400); };
         const auto itemH  = [&](const SItem& I) {
@@ -501,6 +620,28 @@ namespace NAwesome::Notify::CardMenu {
                 w = std::max(w, texW(cachedText(I.label, I.dim ? COLDIM : COLTITLE, T.body, CAPPX, -1, 0, false, 400), P.scale) + LX + LABEL_X);
         }
         w = std::min(w, std::max(MAX_W, FIXED));
+        // the bound: Bluetooth's list taller than the monitor keeps its first
+        // paired rows and says how many more (a warm trims; the draw paints
+        // what it left)
+        if (const double ROOM = P.mon->logicalBox().h - 2 * EDGE; s_control == ePanelMenu::BLUETOOTH && h > ROOM) {
+            const auto LAST = [] {
+                for (size_t k = s_items.size(); k-- > 0;)
+                    if (s_items[k].verb == DEVICE && !s_items[k].dim)
+                        return k;
+                return s_items.size();
+            };
+            size_t more = 0, at = s_items.size();
+            for (size_t k = LAST(); h > ROOM - ROWH && k < s_items.size(); k = LAST()) {
+                h -= itemH(s_items[k]);
+                s_items.erase(s_items.begin() + (std::ptrdiff_t)k);
+                at = k;
+                more++;
+            }
+            if (more > 0) {
+                s_items.insert(s_items.begin() + (std::ptrdiff_t)at, SItem{.verb = DEVICE, .label = std::to_string(more) + " More", .dim = true});
+                h += ROWH;
+            }
+        }
 
         const auto MB = P.mon->logicalBox();
         double     x, y;
@@ -535,14 +676,34 @@ namespace NAwesome::Notify::CardMenu {
                 ry += SEPH;
                 continue;
             }
-            if (I.verb == HEADER) { // the label, then its note at a lighter weight
+            if (I.verb == HEADER) { // the label, then its note at a lighter weight, or its pill
                 const double HX = DISCS ? DISC_X + 2 : CHECK_X;
                 if (const auto HT = cachedText(I.label, COLSUB, T.small, CAPPX, -1, 0, false, 600)) {
-                    texAt(P, HT, x + HX, ry + (HEADH - texH(HT, P.scale)) / 2);
+                    texAt(P, HT, x + HX, ry + (RH - texH(HT, P.scale)) / 2);
                     if (const auto NT = I.detail.empty() ? nullptr : cachedText(I.detail, COLSUB, T.small, CAPPX, -1, 0, false, 500))
-                        texAt(P, NT, x + HX + texW(HT, P.scale) + 6, ry + (HEADH - texH(NT, P.scale)) / 2);
+                        texAt(P, NT, x + HX + texW(HT, P.scale) + 6, ry + (RH - texH(NT, P.scale)) / 2);
                 }
-                ry += HEADH;
+                for (const auto& [KEY, WORDS] : I.buttons) {
+                    const bool   BHOV = hovered.kind == SCard::MENU_ITEM && hovered.group == KEY;
+                    const auto   WT   = cachedText(WORDS, COLTITLE, T.meta, PX(w), -1, 0, false, 600);
+                    const double BW   = texW(WT, P.scale) + 2 * PILL_PADX;
+                    const CBox   B{x + w - PAD - PILL_INSET - BW, ry + (RH - PILL_H) / 2, BW, PILL_H};
+                    P.rect(B, BHOV ? tFillHover() : tFill(), PX(PILL_H / 2), 2.f);
+                    if (WT)
+                        texCentered(P, WT, B);
+                    SCard btn = recycledCard();
+                    btn.kind  = SCard::MENU_ITEM;
+                    btn.box   = B;
+                    btn.id    = (uint32_t)i;
+                    btn.group = KEY;
+                    cards.push_back(std::move(btn));
+                    if (I.spin) {
+                        s_spinBox = CBox{B.x - SPIN_GAP - SPIN, ry + (RH - SPIN) / 2, SPIN, SPIN};
+                        drawSpin(P, s_spinBox, COLSUB);
+                        spun = true;
+                    }
+                }
+                ry += RH;
                 continue;
             }
             const CBox ROW{x, ry, w, RH};
@@ -563,6 +724,8 @@ namespace NAwesome::Notify::CardMenu {
                 const double AY  = D.y + PROMPT_LINE + PROMPT_GAP;
                 if (ASK)
                     texAt(P, ASK, x + LX, AY);
+                if (const auto CODE = codeOf(I))
+                    texAt(P, CODE, x + LX, AY + texH(ASK, P.scale) + PROMPT_ASK_GAP + (BTN_H - texH(CODE, P.scale)) / 2);
                 // a stray press on the question keeps it (its pick is a no-op);
                 // its buttons, pushed after, are hit first
                 SCard row = recycledCard();
@@ -573,14 +736,15 @@ namespace NAwesome::Notify::CardMenu {
                 cards.push_back(std::move(row));
                 double bx = x + w - DISC_X;
                 for (const auto& [KEY, WORDS] : I.buttons) {
-                    // Forget in red, everything else white on the fill;
-                    // both faces of the fill warm, its words once
-                    const bool BHOV  = hovered.kind == SCard::MENU_ITEM && hovered.group == KEY;
-                    const auto INK   = KEY.starts_with("btn:forget:") ? COLURGENT : COLTITLE;
-                    const auto WORDS_ = cachedText(WORDS, INK, T.meta, PX(w), -1, 0, false, 600);
-                    const double BW  = texW(WORDS_, P.scale) + 2 * BTN_PADX;
+                    // Forget in red, Pair dark on white, Cancel white on
+                    // the fill; its words once, the fill by hover
+                    const bool   BHOV   = hovered.kind == SCard::MENU_ITEM && hovered.group == KEY;
+                    const bool   PAIRB  = KEY.starts_with("btn:pair:");
+                    const auto   INK    = KEY.starts_with("btn:forget:") ? COLURGENT : PAIRB ? PAIR_INK : COLTITLE;
+                    const auto   WORDS_ = cachedText(WORDS, INK, T.meta, PX(w), -1, 0, false, 600);
+                    const double BW     = texW(WORDS_, P.scale) + 2 * BTN_PADX;
                     const CBox   B{bx - BW, AY + texH(ASK, P.scale) + PROMPT_ASK_GAP, BW, BTN_H};
-                    P.rect(B, BHOV ? tFillHover() : tFill(), PX(BTN_H / 2), 2.f);
+                    P.rect(B, PAIRB ? (BHOV ? KNOB_WHITE : COLTITLE) : BHOV ? tFillHover() : tFill(), PX(BTN_H / 2), 2.f);
                     if (WORDS_)
                         texCentered(P, WORDS_, B);
                     SCard btn = recycledCard();
@@ -652,6 +816,25 @@ namespace NAwesome::Notify::CardMenu {
             cards.push_back(std::move(row));
             ry += RH;
         }
+        // the activity turns on its own tick: its box is damaged, nothing warms
+        s_spinning = spun;
+        if (!spun)
+            s_spinBox = {};
+        else if (s_spinTick && !s_spinTick->armed())
+            s_spinTick->updateTimeout(SPIN_STEP);
+    }
+
+    void init() {
+        s_spinTick = makeShared<CEventLoopTimer>(
+            std::nullopt,
+            [](SP<CEventLoopTimer> self, void*) {
+                if (!s_open || !s_spinning || s_spinBox.w <= 0 || !g_pHyprRenderer)
+                    return;
+                g_pHyprRenderer->damageBox(CBox{s_spinBox}.expand(1));
+                self->updateTimeout(SPIN_STEP);
+            },
+            nullptr);
+        g_pEventLoopManager->addTimer(s_spinTick);
     }
 
 } // namespace NAwesome::Notify::CardMenu

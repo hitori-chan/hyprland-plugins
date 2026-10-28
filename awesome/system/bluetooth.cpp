@@ -1,7 +1,20 @@
 // awesome/system/bluetooth.cpp — Bluetooth for the control center: BlueZ's
-// first adapter (its power) and its paired devices (connected, a battery),
-// published into core/controls.hpp; the doors power the adapter, connect
-// or disconnect a device, and forget one (Adapter1.RemoveDevice).
+// first adapter (its power), its paired devices (connected, a battery) and
+// what a scan finds, published into core/controls.hpp; the doors power the
+// adapter, connect or disconnect a device, forget one
+// (Adapter1.RemoveDevice), scan and pair.
+//
+// A scan is the menu's session: StartDiscovery on Scan, StopDiscovery on
+// Stop, a pick, a minute or the menu closing; what it found (unpaired,
+// named, seen by it) stays listed until the menu closes, ranked by the
+// signal it was first seen at, so the rows hold still under the pointer.
+// Strangers are tracked only during a session, and bounded. Pairing goes
+// through our own org.bluez.Agent1 (DisplayYesNo: the menu shows a code,
+// and has no field to type one into), registered at the first pairing and
+// never the default: BlueZ asks the agent of the client that called Pair,
+// so another app's pairing never reaches it, and it answers only
+// bluetoothd, about the device we pair. A paired device is trusted, then
+// connected.
 //
 // Asynchronous over the system bus only: the tree (GetManagedObjects) is
 // read when the unit starts, when bluetoothd (re)appears and when the
@@ -37,9 +50,11 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <format>
 #include <map>
 #include <memory>
 #include <optional>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -51,12 +66,20 @@ namespace NAwesome::System {
         constexpr const char* DEVICE  = "org.bluez.Device1";
         constexpr const char* BATTERY = "org.bluez.Battery1";
         constexpr const char* PROPS   = "org.freedesktop.DBus.Properties";
+        constexpr const char* AGENT   = "org.bluez.Agent1";
+        constexpr const char* AGENT_PATH = "/org/awesome/bluetooth/agent";
         // the paired devices held (bluetoothd lists every device it has
         // seen; only the paired ones are kept, at most this many), a name's
         // bytes
         constexpr size_t MAX_TRACKED = 64, MAX_NAME = 64;
+        // the strangers a scan session holds (named or not: a nameless one
+        // is held so its every advertisement does not read the tree again)
+        constexpr size_t MAX_STRANGERS = 32;
         // a connect brings up a headset's profiles: longer than sd-bus's 25 s
         constexpr auto CONNECT_TIMEOUT = std::chrono::seconds(30);
+        // a pairing waits on the user typing a code on the device; a scan
+        // runs at most this long
+        constexpr auto PAIR_TIMEOUT = std::chrono::seconds(90), SCAN_FOR = std::chrono::seconds(60);
         // a headset's sink reaches PipeWire after BlueZ says Connected
         constexpr auto SINK_SETTLE = std::chrono::milliseconds(1500);
         // a refusal's capsule while the panel is closed: the OSD band's slot
@@ -78,7 +101,13 @@ namespace NAwesome::System {
             eFail                          fail      = eFail::NO_FAIL;
             bool                           paired    = false;
             bool                           connected = false;
+            bool                           named     = false; // it has a Name (an Alias alone may be its address)
             int8_t                         battery   = -1;
+            int16_t                        rssi      = 0; // the scan's last reading, 0 none
+            // a stranger listed by the session: the order it showed up in,
+            // and the signal it showed up at (its rank)
+            uint32_t                       foundSeq  = 0;
+            int16_t                        rank      = 0;
             std::unique_ptr<sdbus::IProxy> proxy; // made at the first call
         };
 
@@ -89,10 +118,26 @@ namespace NAwesome::System {
         std::map<std::string, SDev>         devices;     // path -> a paired device
         std::optional<bool>                 wantPower;   // a power switch in flight shows at once
         bool                                powerFailed = false;
+        // the menu's scan session, its discovery, the order of its finds
+        bool                                session = false, scanning = false;
+        uint32_t                            foundSeq = 0;
+        SP<CEventLoopTimer>                 scanEnd;
+        // the device we pair; one whose lost pairing waits for the scan to
+        // find it again
+        std::string                         pairing, repair;
+        bool                                pairCancelled = false; // the user said no: no failure to show
+        Controls::SPrompt                   prompt;
+        std::optional<sdbus::Result<>>      confirmReply; // RequestConfirmation, waiting on the buttons
+        std::unique_ptr<sdbus::IObject>     agent;
+        bool                                agentRegistered = false;
+        // AgentManager1, and the bus itself (who owns org.bluez): made at
+        // their first call, dropped with the rest, never from a reply
+        std::unique_ptr<sdbus::IProxy>      managerProxy, dbusProxy;
+        std::string                         bluezOwner; // org.bluez's unique name: the agent answers only it
         sdbus::Slot                         addedMatch, removedMatch, propsMatch, ownerMatch;
         uint64_t                            gen     = 0;
         bool                                reading = false, readAgain = false;
-        CHop                                pendingRead, pendingDoor;
+        CHop                                pendingRead, pendingDoor, pendingScan, pendingRepair;
         SP<CEventLoopTimer>                 sinkSettle;
     }
 
@@ -119,6 +164,8 @@ namespace NAwesome::System {
             return eKind::MOUSE;
         if (icon == "input-keyboard")
             return eKind::KEYBOARD;
+        if (icon == "phone")
+            return eKind::PHONE;
         return eKind::OTHER;
     }
 
@@ -133,9 +180,28 @@ namespace NAwesome::System {
             const auto IT = adapters.find(adapterPath);
             B.powered     = wantPower.value_or(IT != adapters.end() && IT->second);
             B.powerFailed = powerFailed;
-            for (const auto& [PATH, D] : devices)
-                if (D.paired && D.adapter == adapterPath)
+            B.scanning    = scanning;
+            B.scanned     = session;
+            B.prompt      = prompt;
+            std::vector<std::pair<const SDev*, const std::string*>> found;
+            for (auto& [PATH, D] : devices) {
+                if (D.adapter != adapterPath)
+                    continue;
+                if (D.paired) {
                     B.devices.push_back({.id = PATH, .name = D.name, .kind = D.kind, .busy = D.busy, .fail = D.fail, .connected = D.connected, .battery = D.battery});
+                    continue;
+                }
+                // a stranger lists once the session saw it, named
+                if (session && D.named && D.foundSeq == 0 && D.rssi != 0) {
+                    D.foundSeq = ++foundSeq;
+                    D.rank     = D.rssi;
+                }
+                if (session && D.foundSeq != 0)
+                    found.emplace_back(&D, &PATH);
+            }
+            std::ranges::sort(found, [](const auto& a, const auto& b) { return a.first->rank != b.first->rank ? a.first->rank > b.first->rank : a.first->foundSeq < b.first->foundSeq; });
+            for (const auto& [D, PATH] : found | std::views::take(Controls::MAX_FOUND))
+                B.found.push_back({.id = *PATH, .name = D->name, .kind = D->kind, .busy = D->busy, .fail = D->fail});
             // connected first, then by name: what the panel shows of a long list
             std::ranges::sort(B.devices, [](const Controls::SDevice& a, const Controls::SDevice& b) {
                 if (a.connected != b.connected)
@@ -163,17 +229,24 @@ namespace NAwesome::System {
         }
     }
 
+    static size_t held(bool paired) {
+        return (size_t)std::ranges::count_if(devices, [paired](const auto& E) { return E.second.paired == paired; });
+    }
+
     // a device's properties as they arrive (GetManagedObjects, a signal):
     // false when the change is one the unit cannot apply in place
     static bool applyDevice(const std::string& path, const TProps& props) {
         auto IT = devices.find(path);
         try {
             if (IT == devices.end()) {
-                const auto P = props.find("Paired");
-                if (P == props.end() || !P->second.get<bool>())
-                    return true; // never paired: not ours
-                if (devices.size() >= MAX_TRACKED)
-                    return true; // the bound: a further device is not listed
+                const auto P      = props.find("Paired");
+                const bool PAIRED = P != props.end() && P->second.get<bool>();
+                // a stranger is ours only while a scan session lists them;
+                // either kind holds to its bound, a further one not listed
+                if (!PAIRED && (!session || held(false) >= MAX_STRANGERS))
+                    return true;
+                if (PAIRED && held(true) >= MAX_TRACKED)
+                    return true;
                 if (!props.contains("Adapter"))
                     return false; // a partial set (a signal): read the device whole
                 IT = devices.emplace(path, SDev{}).first;
@@ -182,8 +255,12 @@ namespace NAwesome::System {
             for (const auto& [KEY, V] : props) {
                 if (KEY == "Alias")
                     D.name = cleanName(V.get<std::string>());
-                else if (KEY == "Name" && D.name.empty())
-                    D.name = cleanName(V.get<std::string>());
+                else if (KEY == "Name") {
+                    D.named = true;
+                    if (D.name.empty())
+                        D.name = cleanName(V.get<std::string>());
+                } else if (KEY == "RSSI")
+                    D.rssi = V.get<int16_t>();
                 else if (KEY == "Icon")
                     D.kind = kindOf(V.get<std::string>());
                 else if (KEY == "Paired")
@@ -205,8 +282,13 @@ namespace NAwesome::System {
             }
             if (D.name.empty())
                 D.name = "Device";
-            if (!D.paired)
+            if (!D.paired && !session && path != pairing)
                 devices.erase(IT); // unpaired elsewhere: gone from the list
+            else if (!D.paired && path == repair && D.named) // the lost one is back: pair it
+                pendingRepair.arm([path]() {
+                    if (std::exchange(repair, {}) == path)
+                        pairDevice(path);
+                });
         } catch (...) {} // a wrong-typed property: the rest stands
         return true;
     }
@@ -323,6 +405,14 @@ namespace NAwesome::System {
         if (NAME.starts_with("org.bluez.Error.Authentication") || msg.contains("key-missing") || msg.contains("authentication"))
             return eFail::PAIRING_LOST;
         return eFail::FAILED;
+    }
+
+    // what a refused pairing tells the user: nothing, when the user said no
+    static eFail pairReasonOf(const sdbus::Error& e) {
+        const std::string& NAME = e.getName();
+        if (pairCancelled || NAME == "org.bluez.Error.AuthenticationCanceled" || NAME == "org.bluez.Error.AlreadyExists")
+            return eFail::NO_FAIL;
+        return eFail::PAIR_FAILED;
     }
 
     static void say(const std::string& who, const char* words) {
@@ -465,6 +555,264 @@ namespace NAwesome::System {
         readSoon();
     }
 
+    // ---- scan --------------------------------------------------------------
+
+    static void scanStop() {
+        if (scanEnd)
+            scanEnd->updateTimeout(std::nullopt);
+        if (!std::exchange(scanning, false))
+            return;
+        publishBluetooth();
+        if (auto* P = adapterPath.empty() ? nullptr : proxyOf(adapterPath)) {
+            try {
+                P->callMethodAsync("StopDiscovery").onInterface(ADAPTER).uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                systemBus().pollSoon();
+            } catch (...) {}
+        }
+    }
+
+    static void scanStart() {
+        const auto A = adapters.find(adapterPath);
+        auto*      P = adapterPath.empty() ? nullptr : proxyOf(adapterPath);
+        if (!P || A == adapters.end() || !A->second || scanning || !pairing.empty())
+            return;
+        session = scanning = true;
+        scanEnd->updateTimeout(SCAN_FOR);
+        publishBluetooth();
+        const uint64_t GEN = gen;
+        try {
+            P->callMethodAsync("StartDiscovery").onInterface(ADAPTER).uponReplyInvoke([GEN](std::optional<sdbus::Error> err) {
+                if (GEN != gen || compositorShuttingDown())
+                    return;
+                if (err && err->getName() != "org.bluez.Error.InProgress") {
+                    scanning = false;
+                    scanEnd->updateTimeout(std::nullopt);
+                    publishBluetooth();
+                    return;
+                }
+                readTree(); // what bluetoothd already knows is the session's to list now
+            });
+            systemBus().pollSoon();
+        } catch (...) {
+            scanning = false;
+            publishBluetooth();
+        }
+    }
+
+    void scanDevices(bool on) {
+        pendingScan.arm([on]() { on ? scanStart() : scanStop(); });
+    }
+
+    // ---- pair ----------------------------------------------------------------
+
+    static void promptClear() {
+        if (confirmReply) {
+            try {
+                confirmReply->returnError(sdbus::Error{sdbus::Error::Name{"org.bluez.Error.Canceled"}, "Canceled"});
+            } catch (...) {}
+            confirmReply.reset();
+        }
+        if (std::exchange(prompt, {}) != Controls::SPrompt{})
+            publishBluetooth();
+    }
+
+    // the agent hears only bluetoothd, about the device we pair
+    static bool fromBluez(const std::string& device) {
+        return agent && !pairing.empty() && device == pairing && !bluezOwner.empty() && agent->getCurrentlyProcessedMessage().getSender() == bluezOwner;
+    }
+    static sdbus::Error rejected() {
+        return sdbus::Error{sdbus::Error::Name{"org.bluez.Error.Rejected"}, "Rejected"};
+    }
+    static void ask(const std::string& device, std::string code, int entered, bool confirm) {
+        prompt = {.id = device, .code = std::move(code), .entered = (int8_t)std::clamp(entered, -1, 16), .confirm = confirm};
+        publishBluetooth();
+    }
+
+    static void agentUp() {
+        auto& B = systemBus();
+        if (agentRegistered || !B.conn())
+            return;
+        try {
+            if (!agent) {
+                agent = sdbus::createObject(*B.conn(), sdbus::ObjectPath{AGENT_PATH});
+                agent
+                    ->addVTable(sdbus::registerMethod("Release").implementedAs([]() { promptClear(); }),
+                                sdbus::registerMethod("RequestPinCode").withInputParamNames("device").withOutputParamNames("pincode").implementedAs([](sdbus::ObjectPath dev) {
+                                    if (!fromBluez(dev))
+                                        throw rejected();
+                                    // a legacy device: our code, shown to be typed on it
+                                    std::random_device rd;
+                                    auto CODE = std::format("{:06}", std::uniform_int_distribution<uint32_t>{0, 999999}(rd));
+                                    ask(dev, CODE, -1, false);
+                                    return CODE;
+                                }),
+                                sdbus::registerMethod("DisplayPinCode").withInputParamNames("device", "pincode").implementedAs([](sdbus::ObjectPath dev, std::string pin) {
+                                    if (!fromBluez(dev))
+                                        throw rejected();
+                                    ask(dev, cleanName(pin.substr(0, 16)), -1, false);
+                                }),
+                                sdbus::registerMethod("RequestPasskey").withInputParamNames("device").withOutputParamNames("passkey").implementedAs([](sdbus::ObjectPath) -> uint32_t {
+                                    throw rejected(); // DisplayYesNo: never asked to type one
+                                }),
+                                sdbus::registerMethod("DisplayPasskey")
+                                    .withInputParamNames("device", "passkey", "entered")
+                                    .implementedAs([](sdbus::ObjectPath dev, uint32_t key, uint16_t entered) {
+                                        if (!fromBluez(dev))
+                                            throw rejected();
+                                        ask(dev, std::format("{:06}", key % 1000000), entered, false);
+                                    }),
+                                sdbus::registerMethod("RequestConfirmation")
+                                    .withInputParamNames("device", "passkey")
+                                    .implementedAs([](sdbus::Result<>&& result, sdbus::ObjectPath dev, uint32_t key) {
+                                        if (!fromBluez(dev)) {
+                                            result.returnError(rejected());
+                                            return;
+                                        }
+                                        promptClear();
+                                        confirmReply.emplace(std::move(result));
+                                        ask(dev, std::format("{:06}", key % 1000000), -1, true);
+                                    }),
+                                sdbus::registerMethod("RequestAuthorization").withInputParamNames("device").implementedAs([](sdbus::ObjectPath) { throw rejected(); }),
+                                sdbus::registerMethod("AuthorizeService").withInputParamNames("device", "uuid").implementedAs([](sdbus::ObjectPath, std::string) {
+                                    throw rejected();
+                                }),
+                                sdbus::registerMethod("Cancel").implementedAs([]() { promptClear(); }))
+                    .forInterface(AGENT);
+            }
+            if (!managerProxy)
+                managerProxy = sdbus::createProxy(*B.conn(), sdbus::ServiceName{BLUEZ}, sdbus::ObjectPath{"/org/bluez"});
+            managerProxy->callMethodAsync("RegisterAgent")
+                .onInterface("org.bluez.AgentManager1")
+                .withArguments(sdbus::ObjectPath{AGENT_PATH}, std::string{"DisplayYesNo"})
+                .uponReplyInvoke([GEN = gen](std::optional<sdbus::Error> err) {
+                    if (GEN == gen) // refused: the next pairing asks again
+                        agentRegistered = !err || err->getName() == "org.bluez.Error.AlreadyExists";
+                });
+            agentRegistered = true; // a pairing right behind it rides the same queue
+            B.pollSoon();
+        } catch (...) {}
+    }
+
+    static void trustThenConnect(const std::string& path) {
+        auto* P = proxyOf(path);
+        if (!P)
+            return;
+        try {
+            P->callMethodAsync("Set")
+                .onInterface(PROPS)
+                .withArguments(std::string{DEVICE}, std::string{"Trusted"}, sdbus::Variant{true})
+                .uponReplyInvoke([GEN = gen, path](std::optional<sdbus::Error>) {
+                    if (GEN == gen && !compositorShuttingDown())
+                        connectNow(path, true);
+                });
+            systemBus().pollSoon();
+        } catch (...) {}
+    }
+
+    static void pairNow(const std::string& path) {
+        const auto IT = devices.find(path);
+        auto*      P  = IT == devices.end() ? nullptr : proxyOf(path);
+        if (!P || !pairing.empty())
+            return;
+        scanStop(); // pairing goes faster without the inquiry, and it is what the scan was for
+        agentUp();
+        pairing             = path;
+        pairCancelled       = false;
+        IT->second.busy     = eBusy::PAIRING;
+        IT->second.fail     = eFail::NO_FAIL;
+        publishBluetooth();
+        try {
+            P->callMethodAsync("Pair").onInterface(DEVICE).withTimeout(PAIR_TIMEOUT).uponReplyInvoke([GEN = gen, path](std::optional<sdbus::Error> err) {
+                if (GEN != gen || compositorShuttingDown())
+                    return;
+                pairing.clear();
+                promptClear();
+                const auto IT = devices.find(path);
+                if (IT == devices.end()) {
+                    publishBluetooth();
+                    return;
+                }
+                IT->second.busy = eBusy::IDLE;
+                if (err) {
+                    failed(IT->second, pairReasonOf(*err));
+                    publishBluetooth();
+                    return;
+                }
+                IT->second.paired = true; // its signal may trail the reply
+                publishBluetooth();
+                trustThenConnect(path);
+            });
+            systemBus().pollSoon();
+        } catch (...) {
+            pairing.clear();
+            IT->second.busy = eBusy::IDLE;
+            publishBluetooth();
+        }
+    }
+
+    static void cancelPairing() {
+        if (pairing.empty())
+            return;
+        pairCancelled = true;
+        promptClear();
+        if (auto* P = proxyOf(pairing)) {
+            try {
+                P->callMethodAsync("CancelPairing").onInterface(DEVICE).uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                systemBus().pollSoon();
+            } catch (...) {}
+        }
+    }
+
+    // a found device pairs; a paired one whose pairing was lost forgets its
+    // stale keys and pairs once the scan finds it again
+    void pairDevice(const std::string& id) {
+        pendingDoor.arm([id]() {
+            const auto IT = devices.find(id);
+            if (IT == devices.end() || IT->second.busy != eBusy::IDLE || !pairing.empty())
+                return;
+            if (!IT->second.paired)
+                return pairNow(id);
+            auto* A = adapterPath.empty() ? nullptr : proxyOf(adapterPath);
+            if (IT->second.fail != eFail::PAIRING_LOST || !A)
+                return;
+            repair = id;
+            try {
+                A->callMethodAsync("RemoveDevice").onInterface(ADAPTER).withArguments(sdbus::ObjectPath{id}).uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                systemBus().pollSoon();
+            } catch (...) {}
+            scanStart();
+        });
+    }
+
+    void answerPairing(bool yes) {
+        pendingScan.arm([yes]() {
+            if (!yes)
+                return cancelPairing();
+            if (confirmReply) {
+                try {
+                    confirmReply->returnResults();
+                } catch (...) {}
+                confirmReply.reset();
+                prompt = {}; // Pairing… until bluetoothd answers
+                publishBluetooth();
+            }
+        });
+    }
+
+    // the menu closed: its scan, the list it found and a question nobody can
+    // answer now go; a pairing that asks nothing runs on
+    void bluetoothMenuClosed() {
+        scanStop();
+        if (!prompt.id.empty())
+            cancelPairing();
+        session = false;
+        repair.clear();
+        std::erase_if(devices, [](const auto& E) { return !E.second.paired && E.first != pairing; });
+        for (auto& [_, D] : devices)
+            D.foundSeq = 0;
+        publishBluetooth();
+    }
+
     void bluetoothPanelClosed() {
         bool shown = std::exchange(powerFailed, false);
         for (auto& [_, D] : devices)
@@ -473,9 +821,30 @@ namespace NAwesome::System {
             publishBluetooth();
     }
 
+    // org.bluez's unique name: the agent answers only it
+    static void readOwner() {
+        auto& B = systemBus();
+        if (!B.conn())
+            return;
+        try {
+            if (!dbusProxy)
+                dbusProxy = sdbus::createProxy(*B.conn(), sdbus::ServiceName{"org.freedesktop.DBus"}, sdbus::ObjectPath{"/org/freedesktop/DBus"});
+            dbusProxy->callMethodAsync("GetNameOwner")
+                .onInterface("org.freedesktop.DBus")
+                .withArguments(std::string{BLUEZ})
+                .uponReplyInvoke([GEN = gen](std::optional<sdbus::Error> err, std::string owner) {
+                    if (GEN == gen && !err)
+                        bluezOwner = owner;
+                });
+            B.pollSoon();
+        } catch (...) {}
+    }
+
     void bluetoothInit() {
         sinkSettle = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { audioRefresh(); }, nullptr);
         g_pEventLoopManager->addTimer(sinkSettle);
+        scanEnd = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { scanStop(); }, nullptr);
+        g_pEventLoopManager->addTimer(scanEnd);
         auto& B = systemBus();
         if (!B.conn())
             return publishBluetooth();
@@ -517,7 +886,7 @@ namespace NAwesome::System {
                         if (I == ADAPTER) {
                             adapters.erase(path);
                             pickAdapter();
-                        } else if (I == DEVICE)
+                        } else if (I == DEVICE && path != pairing) // a pairing's proxy dies with its reply, not under it
                             devices.erase(path);
                         else if (I == BATTERY)
                             if (const auto IT = devices.find(path); IT != devices.end())
@@ -542,8 +911,17 @@ namespace NAwesome::System {
                     if (iface == ADAPTER)
                         applyAdapter(PATH, changed);
                     else if (iface == DEVICE) {
+                        // an advertisement (a signal reading) moves nothing
+                        // the panel shows once its device is placed
+                        const auto IT    = devices.find(PATH);
+                        const bool QUIET = IT != devices.end() && (IT->second.paired || IT->second.foundSeq != 0 || !IT->second.named) &&
+                            std::ranges::all_of(changed, [](const auto& E) {
+                                               return E.first == "RSSI" || E.first == "TxPower" || E.first == "ManufacturerData" || E.first == "ServiceData";
+                                           });
                         if (!applyDevice(PATH, changed))
                             readSoon();
+                        if (QUIET)
+                            return;
                     } else if (iface == BATTERY)
                         applyBattery(PATH, changed);
                     else
@@ -554,11 +932,23 @@ namespace NAwesome::System {
             // a new bluetoothd holds nothing of the old one's: start over
             ownerMatch = B.conn()->addMatchAsync(
                 "type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='org.bluez'",
-                [](sdbus::Message) {
+                [](sdbus::Message m) {
                     if (compositorShuttingDown())
                         return;
+                    std::string name, was, now;
+                    try {
+                        m >> name >> was >> now;
+                    } catch (...) {}
                     ++gen;
                     reading = readAgain = false;
+                    bluezOwner = now;
+                    // its agents and its scans died with it
+                    agentRegistered = false;
+                    session = scanning = false;
+                    pairing.clear();
+                    repair.clear();
+                    confirmReply.reset();
+                    prompt = {};
                     adapters.clear();
                     devices.clear();
                     pickAdapter();
@@ -568,6 +958,7 @@ namespace NAwesome::System {
                 [](sdbus::Message) {}, sdbus::return_slot);
             B.pollSoon();
         } catch (...) {}
+        readOwner();
         readTree();
     }
 
@@ -576,8 +967,22 @@ namespace NAwesome::System {
         reading = readAgain = false;
         pendingRead.reset();
         pendingDoor.reset();
+        pendingScan.reset();
+        pendingRepair.reset();
         wantPower.reset();
         powerFailed = false;
+        session = scanning = false;
+        pairing.clear();
+        repair.clear();
+        prompt = {};
+        confirmReply.reset(); // unanswered: bluetoothd times it out
+        agent.reset();        // it borrows the connection
+        agentRegistered = false;
+        managerProxy.reset();
+        dbusProxy.reset();
+        bluezOwner.clear();
+        if (scanEnd)
+            scanEnd->updateTimeout(std::nullopt);
         devices.clear(); // their proxies with them
         adapters.clear();
         adapterPath.clear();
@@ -596,28 +1001,40 @@ namespace NAwesome::System {
 
     void bluetoothExit() {
         forget();
-        if (sinkSettle && g_pEventLoopManager)
-            g_pEventLoopManager->removeTimer(sinkSettle);
-        sinkSettle.reset();
+        for (auto* T : {&sinkSettle, &scanEnd}) {
+            if (*T && g_pEventLoopManager)
+                g_pEventLoopManager->removeTimer(*T);
+            T->reset();
+        }
     }
 
 #ifdef AWESOME_GATE
-    // "none" without an adapter; else "on|off[!] name=state[battery][!why] ..."
-    // (state: c connected, p connecting, d disconnecting, n neither; why:
-    // answer, lost, failed; "off!" a refused power-on), as published
+    // "none" without an adapter; else "on|off[!] name=state[battery][!why] ...
+    // [| found...]" (state: c connected, p connecting, d disconnecting, a
+    // pairing, n neither; why: answer, lost, failed, pair; "off!" a refused
+    // power-on; the found ones after a bar while a scan's list shows), as
+    // published
     std::string bluetoothState() {
         const auto& B = Controls::state().bluetooth;
         if (!B.present)
             return "none";
-        static constexpr std::array<const char*, 4> WHY = {"", "!answer", "!lost", "!failed"};
-        std::string                                 out = B.powered ? "on" : B.powerFailed ? "off!" : "off";
-        for (const auto& D : B.devices)
-            out += " " + D.name + "=" +
+        static constexpr std::array<const char*, 5> WHY = {"", "!answer", "!lost", "!failed", "!pair"};
+        const auto                                  ONE = [](const Controls::SDevice& D) {
+            return " " + D.name + "=" +
                 (D.busy == Controls::SDevice::CONNECTING ? "p" :
                      D.busy == Controls::SDevice::DISCONNECTING ? "d" :
+                     D.busy == Controls::SDevice::PAIRING       ? "a" :
                      D.connected                                 ? "c" :
                                                                    "n") +
                 (D.battery >= 0 ? std::to_string(D.battery) : "") + WHY[D.fail];
+        };
+        std::string out = B.powered ? "on" : B.powerFailed ? "off!" : "off";
+        for (const auto& D : B.devices)
+            out += ONE(D);
+        if (B.scanned)
+            out += B.scanning ? " | scanning" : " |";
+        for (const auto& D : B.found)
+            out += ONE(D);
         return out;
     }
 #endif

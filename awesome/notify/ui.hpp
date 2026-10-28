@@ -296,6 +296,7 @@ namespace NAwesome::Notify {
         void     pick(int index, const std::string& key); // from the click drain; a control's row by its key
         void     sync();          // after a model change: its card died -> close
         void     render(const SPaint& P, const SType& T); // its panel, then its rows (hit first)
+        void     init();          // the scan activity's tick
         void     exit();          // teardown: forget it, no damage, no warm
         std::string describe(); // the gate's: the open menu's rows (defined in its build only)
     }

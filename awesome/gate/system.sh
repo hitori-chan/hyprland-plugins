@@ -267,11 +267,11 @@ chk "panel: ...and keeps no row" until_is 3 "" dndrow
 # Bluetooth's words: the paired devices, 6 px under the row at its left
 # edge (a 22 px header, 36 px rows); the bt battery left both off
 click "$BT_WORDS_X" "$CAPS_CY" 272
-chk "panel: Bluetooth's words list the paired devices" until_is 3 "Gate Buds;Gate Mouse" hq awesome menu
+chk "panel: Bluetooth's words list the paired devices" until_is 3 "Gate Buds;Gate Mouse;[Scan]" hq awesome menu
 click $((PANEL_X + 100)) $((MENU_Y + 5 + 22 + 18)) 272
 chk "panel: a device's row connects it" until_is 3 "on Gate Buds=c35 Gate Mouse=n" hq awesome bt
 click "$BT_WORDS_X" "$CAPS_CY" 272
-chk "panel: ...its row checked, its battery beside" until_is 3 "Gate Buds* 35%;Gate Mouse" hq awesome menu
+chk "panel: ...its row checked, its battery beside" until_is 3 "Gate Buds* 35%;Gate Mouse;[Scan]" hq awesome menu
 tap esc
 click "$BT_DOT_X" "$CAPS_CY" 272
 chk "panel: Bluetooth's circle turns the radio off" until_is 3 "off Gate Buds=n35 Gate Mouse=n" hq awesome bt
@@ -287,7 +287,7 @@ click $((PANEL_X + 100)) $((MENU_Y + 5 + 22 + 18)) 272
 chk "panel: a refused connect marks its device" until_is 3 "on Gate Buds=n35!answer Gate Mouse=n" hq awesome bt
 chk "panel: ...the capsule's state says it, in red" until_is 3 "Didn't Answer!" hq awesome controls-bt
 click "$BT_WORDS_X" "$CAPS_CY" 272
-chk "panel: ...and its row says why" until_is 3 "Gate Buds !Didn't answer.;Gate Mouse" hq awesome menu
+chk "panel: ...and its row says why" until_is 3 "Gate Buds !Didn't answer.;Gate Mouse;[Scan]" hq awesome menu
 chk "panel: ...with no capsule over the panel" test "$(st)" = "center:0 live:0 dnd:0"
 tap esc
 # forget: a device's right-click (or Delete over it) asks in place of its
@@ -298,19 +298,90 @@ click "$BT_WORDS_X" "$CAPS_CY" 272
 until_ok 3 hq_matches '^Gate Buds' awesome menu
 # shellcheck disable=SC2046 # "x y"
 click $(menu_at "$MOUSE_ROW") 273
-chk "panel: a device's right-click asks to forget it" until_is 3 "Gate Buds !Didn't answer.;Gate Mouse ? [Forget] [Cancel]" hq awesome menu
+chk "panel: a device's right-click asks to forget it" until_is 3 "Gate Buds !Didn't answer.;Gate Mouse ? [Forget] [Cancel];[Scan]" hq awesome menu
 # shellcheck disable=SC2046
 click $(menu_at btn:cancel:) 272
-chk "panel: ...Cancel keeps it, the menu open" until_is 3 "Gate Buds !Didn't answer.;Gate Mouse" hq awesome menu
+chk "panel: ...Cancel keeps it, the menu open" until_is 3 "Gate Buds !Didn't answer.;Gate Mouse;[Scan]" hq awesome menu
 printf 'move %s\nsleep 60\n' "$(menu_at "$MOUSE_ROW")" | vp
 tap delete
-chk "panel: Delete over a device asks too" until_is 3 "Gate Buds !Didn't answer.;Gate Mouse ? [Forget] [Cancel]" hq awesome menu
+chk "panel: Delete over a device asks too" until_is 3 "Gate Buds !Didn't answer.;Gate Mouse ? [Forget] [Cancel];[Scan]" hq awesome menu
 : > "$STATE/logind.log"
 # shellcheck disable=SC2046
 click $(menu_at btn:forget:) 272
 chk "panel: Forget unpairs it" until_ok 3 grep -qx "RemoveDevice Gate Mouse" "$STATE/logind.log"
-chk "panel: ...it leaves the list, the menu open" until_is 3 "Gate Buds !Didn't answer." hq awesome menu
+chk "panel: ...it leaves the list, the menu open" until_is 3 "Gate Buds !Didn't answer.;[Scan]" hq awesome menu
 tap esc
+# scan and pair (the fake: Gate Speaker pairs as is, Gate Keys shows a code
+# to type on it, Gate Phone one to compare, the forgotten Gate Mouse is
+# found again; a nameless one and the never-seen Stranger stay unlisted).
+# The menu stays open through a pairing, for its questions.
+DEV="bt:/org/bluez/hci0/dev_00_00_00_00_00"
+blog_order() { tr '\n' '|' < "$STATE/logind.log" | grep -q "$1"; } # blog_order <regex over "line|line|">
+: > "$STATE/logind.log"
+click "$BT_WORDS_X" "$CAPS_CY" 272
+chk "pair: Other Devices waits for a scan" until_is 3 "Gate Buds !Didn't answer.;[Scan]" hq awesome menu
+# shellcheck disable=SC2046
+click $(menu_at btn:scan) 272
+chk "pair: Scan starts discovery" until_ok 3 grep -qx StartDiscovery "$STATE/logind.log"
+chk "pair: ...the named ones it sees list, nearest first" until_is 3 "Gate Buds !Didn't answer.;[Stop];Gate Speaker;Gate Keys;Gate Phone;Gate Mouse" hq awesome menu
+# shellcheck disable=SC2046
+click $(menu_at btn:scan) 272
+chk "pair: Stop ends it" until_ok 3 grep -qx StopDiscovery "$STATE/logind.log"
+chk "pair: ...and the list stays" until_is 3 "Gate Buds !Didn't answer.;[Scan];Gate Speaker;Gate Keys;Gate Phone;Gate Mouse" hq awesome menu
+# shellcheck disable=SC2046
+click $(menu_at "${DEV}_11") 272
+chk "pair: a found device pairs, is trusted, then connects" until_ok 4 blog_order 'Pair Gate Speaker|.*Trusted Gate Speaker|Connect Gate Speaker|'
+chk "pair: ...through our agent, never the default one" bash -c "grep -qx 'RegisterAgent DisplayYesNo' '$STATE/logind.log' && ! grep -q RequestDefaultAgent '$STATE/logind.log'"
+chk "pair: ...and joins the paired list, the menu open" until_is 3 "on Gate Speaker=c Gate Buds=n35!answer | Gate Keys=n Gate Phone=n Gate Mouse=n" hq awesome bt
+# shellcheck disable=SC2046
+click $(menu_at "${DEV}_12") 272
+chk "pair: a keyboard's code shows in place of its row" until_ok 3 hq_matches ';Gate Keys \? 482917/0 \[Cancel\];' awesome menu
+sbus call org.bluez / org.awesome.Gate Typed sq "Gate Keys" 3 >/dev/null
+chk "pair: ...the digits typed on it dim" until_ok 3 hq_matches ';Gate Keys \? 482917/3 \[Cancel\];' awesome menu
+sbus call org.bluez / org.awesome.Gate Typed sq "Gate Keys" 6 >/dev/null
+chk "pair: ...and the last one pairs it" until_ok 4 grep -qx "Connect Gate Keys" "$STATE/logind.log"
+# shellcheck disable=SC2046
+click $(menu_at "${DEV}_13") 272
+chk "pair: a phone's code asks to be compared" until_ok 3 hq_matches ';Gate Phone \? 123456 \[Pair\] \[Cancel\];' awesome menu
+# shellcheck disable=SC2046
+click $(menu_at btn:cancel:) 272
+chk "pair: Cancel refuses it" until_ok 3 grep -qx "Confirmation no" "$STATE/logind.log"
+chk "pair: ...and shows no failure" until_ok 3 hq_matches '\| Gate Phone=n Gate Mouse=n$' awesome bt
+AGENT="$(sed -n 's/^Agent \(:[0-9.]*\) .*/\1/p' "$STATE/logind.log" | tail -1)"
+chk "pair: the agent refuses a caller that is not bluetoothd" bash -c "[[ -n '$AGENT' ]] && ! DBUS_SYSTEM_BUS_ADDRESS='$SYSBUS_ADDR' busctl --system call '$AGENT' /org/awesome/bluetooth/agent org.bluez.Agent1 DisplayPasskey ouq ${DEV#bt:}_13 1 0 2>/dev/null"
+chk "pair: ...and shows nothing" bash -c "! hq awesome menu | grep -q '?'"
+# shellcheck disable=SC2046
+click $(menu_at "${DEV}_13") 272
+until_ok 3 hq_matches 'Gate Phone \? 123456' awesome menu
+# shellcheck disable=SC2046
+click $(menu_at btn:pair:) 272
+chk "pair: Pair confirms the code" until_ok 3 grep -qx "Confirmation yes" "$STATE/logind.log"
+chk "pair: ...and it connects" until_ok 4 grep -qx "Connect Gate Phone" "$STATE/logind.log"
+# shellcheck disable=SC2046
+click $(menu_at btn:scan) 272
+until_ok 3 hq_matches '\| scanning' awesome bt
+tap esc
+chk "pair: the menu closing stops the scan" until_is 3 2 grep -c StopDiscovery "$STATE/logind.log"
+chk "pair: ...and its list goes" until_is 3 "on Gate Keys=c Gate Phone=c Gate Speaker=c Gate Buds=n35!answer" hq awesome bt
+# a lost pairing: the row says so; a click forgets the stale keys, scans, and
+# pairs the device once the scan finds it again
+sbus call org.bluez / org.awesome.Gate FailNext sss "Gate Buds" org.bluez.Error.Failed br-connection-key-missing >/dev/null
+hq awesome bt connect Gate Buds >/dev/null
+chk "pair: a missing key reads Pairing Lost" until_ok 3 hq_matches 'Gate Buds=n35!lost' awesome bt
+: > "$STATE/logind.log"
+click "$BT_WORDS_X" "$CAPS_CY" 272
+until_ok 3 hq_matches 'Gate Buds !Pairing lost' awesome menu
+# shellcheck disable=SC2046
+click $(menu_at "${DEV}_01") 272
+chk "pair: its click forgets it, scans, and pairs it again" until_ok 5 blog_order 'RemoveDevice Gate Buds|StartDiscovery|.*Pair Gate Buds|.*Connect Gate Buds|'
+chk "pair: ...back in the paired list" until_ok 3 hq_matches '^on Gate Buds=c35 ' awesome bt
+tap esc
+# one more refusal for the panel's closing to end
+sbus call org.bluez / org.awesome.Gate FailNext sss "Gate Phone" org.bluez.Error.Failed "Host is down" >/dev/null
+hq awesome bt disconnect Gate Phone >/dev/null
+until_ok 3 hq_matches 'Gate Phone=n' awesome bt
+hq awesome bt connect Gate Phone >/dev/null
+until_ok 3 hq_matches 'Gate Phone=n!answer' awesome bt
 # the display's: press its track at its level (50 %) and drag to three quarters
 printf 'move %s %s\nsleep 60\npress 272\nsleep 60\nmove %s %s\nsleep 60\nmove %s %s\nsleep 60\nrelease 272\nsleep 80\n' \
 	"$(track_x 0 50)" "$(level_cy 0)" "$(track_x 0 60)" "$(level_cy 0)" "$(track_x 0 75)" "$(level_cy 0)" | vp
@@ -375,7 +446,7 @@ rm -f "$STATE/wpctl-level" "$STATE/wpctl-mutes" "$STATE/wpctl-default"
 KPCT="$(ctl_part keyboard)"
 hq awesome controlcenter >/dev/null
 chk "panel: the verb closes it" until_is 3 0 hq awesome controlcenter-shown
-chk "panel: ...ending the failure it showed" until_is 3 "on Gate Buds=n35" hq awesome bt
+chk "panel: ...ending the failure it showed" until_is 3 "on Gate Buds=c35 Gate Keys=c Gate Speaker=c Gate Phone=n" hq awesome bt
 mv "$KDIR" "$STATE/leds/gone"
 K3="$STATE/leds/three::kbd_backlight"
 mkdir -p "$K3" && printf '2\n' > "$K3/max_brightness" && printf '1\n' > "$K3/brightness"

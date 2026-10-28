@@ -85,6 +85,10 @@ namespace NAwesome::System {
     void setBluetooth(bool on);
     void connectDevice(const std::string& id, bool connect);
     void forgetDevice(const std::string& id);
+    void scanDevices(bool on);
+    void pairDevice(const std::string& id);
+    void answerPairing(bool yes);
+    void bluetoothMenuClosed();
 #ifdef AWESOME_GATE
     std::string bluetoothState();
 #endif

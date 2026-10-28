@@ -49,6 +49,7 @@ namespace NAwesome::Glyph {
         BLUETOOTH,      // the rune
         HEADPHONES,     // an output or a device: headphones
         MOUSE,          // a device: a mouse
+        PHONE,          // a device: a phone
         COUNT_,
     };
 
@@ -119,6 +120,7 @@ namespace NAwesome::Glyph {
         {16, 16, "<path " AW_STROKE " d=\"M2.6 10.4V8.2a5.4 5.4 0 0 1 10.8 0v2.2\"/><rect fill=\"#fff\" x=\"1.9\" y=\"9.4\" width=\"3.3\" height=\"4.8\" rx=\"1.3\"/>"
                  "<rect fill=\"#fff\" x=\"10.8\" y=\"9.4\" width=\"3.3\" height=\"4.8\" rx=\"1.3\"/>"},
         {16, 16, "<rect " AW_STROKE " x=\"4.2\" y=\"1.8\" width=\"7.6\" height=\"12.4\" rx=\"3.8\"/><path " AW_STROKE " d=\"M8 4.3v2.2\"/>"},
+        {16, 16, "<rect " AW_STROKE " x=\"4.3\" y=\"1.5\" width=\"7.4\" height=\"13\" rx=\"1.9\"/><path " AW_STROKE " d=\"M7 12.1h2\"/>"},
     }};
 #undef AW_STROKE
 #undef AW_STROKE_W
