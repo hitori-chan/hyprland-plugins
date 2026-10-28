@@ -220,7 +220,7 @@ hq awesome clear >/dev/null; sleep 0.4
 # The bar's switches open it (shell.sh clicks them; here the verb): a module
 # per level — a press on a track drags it, the wheel moves it 5 % a notch,
 # the speaker mutes, the keyboard's glyph puts its light out and back — a
-# title row's own control (the volume's output pill opens its menu), then
+# module's own disc (the volume's output opens its menu), then
 # the capsules: Bluetooth's and Do Not Disturb's circles switch them, their
 # words open their menus. A button rested on names itself. The values are
 # the system module's, and while the panel shows them no capsule covers it.
@@ -241,6 +241,18 @@ lit = lambda x0, x1, y0, y1: sum(1 for y in range(y0, y1) for x in range(x0, x1)
 levels = all(lit(a[0] - 8, a[0] + 100, y - 3, y + 4) > 40 for y in a[1:4])
 capsules = all(lit(x - 20, x + 20, a[6] - 20, a[6] + 20) > 40 for x in a[4:6])
 sys.exit(0 if levels and capsules else 1)
+PY
+# the knob shows only on a track under the pointer: resting on the
+# display's shows its knob at its level (50 %), the volume's has none
+printf 'move %s %s\nsleep 60\n' "$(track_x 0 20)" "$(level_cy 0)" | vp
+capture_nested "$STATE/panel-knob.png"
+chk "panel: a knob shows only on the track under the pointer" python3 - "$STATE/panel-knob.png" "$(track_x 0 50)" "$(level_cy 0)" "$(track_x 2 50)" "$(level_cy 2)" <<'PY'
+import sys
+from PIL import Image
+px = Image.open(sys.argv[1]).convert('RGB').load()
+a = [int(v) for v in sys.argv[2:]]
+white = lambda x, y: sum(1 for dy in range(-6, -2) for dx in range(-3, 4) if min(px[x + dx, y + dy]) > 225)
+sys.exit(0 if white(a[0], a[1]) >= 20 and white(a[2], a[3]) == 0 else 1)
 PY
 click "$DND_DOT_X" "$CAPS_CY" 272
 chk "panel: Do Not Disturb's circle turns it on" until_is 3 "center:0 live:0 dnd:1" st
@@ -433,19 +445,20 @@ chk "panel: a button rested on names itself" until_is 3 "Unmute" hq awesome cont
 capture_nested "$STATE/panel-tip.png"
 printf 'move %s %s\nsleep 60\n' "$(track_x 2 60)" "$(level_cy 2)" | vp
 chk "panel: ...and leaving it hides the name" until_is 3 "" hq awesome controls-tip
-# the volume's output pill: its outputs, the default checked; a pick moves
+# the volume's output disc: its outputs, the default checked; a pick moves
 # the default and the list reads it back. Its menu hangs 6 px under the
-# pill at its right edge: a 22 px header, then 28 px rows.
+# disc (its bottom 46 px down the section) at its right edge: a 22 px
+# header, then 28 px rows.
 chk "panel: the outputs are read with the panel" test "$(hq awesome outputs)" = "*41 42"
-click "$OUT_CX" "$(head_cy 2)" 272
-chk "panel: the output pill lists the outputs, the default checked" until_is 3 "Gate Speakers*;Gate Headset" hq awesome menu
+click "$DISC_CX" "$(level_cy 2)" 272
+chk "panel: the output disc lists the outputs, the default checked" until_is 3 "Gate Speakers*;Gate Headset" hq awesome menu
 capture_nested "$STATE/panel-menu.png"
-click $((PANEL_X + 230)) $(($(sec_y 2) + 24 + 6 + 5 + 22 + 28 + 14)) 272
+click $((PANEL_X + 230)) $(($(sec_y 2) + 46 + 6 + 5 + 22 + 28 + 14)) 272
 chk "panel: a pick makes it the default" until_is 3 1 wlog_has "set-default 42"
 chk "panel: ...the outputs read it back" until_is 3 "41 *42" hq awesome outputs
 chk "panel: ...and the menu closed on the pick" test -z "$(hq awesome menu)"
-click "$OUT_CX" "$(head_cy 2)" 272
-chk "panel: the pill opens it again" until_is 3 "Gate Speakers;Gate Headset*" hq awesome menu
+click "$DISC_CX" "$(level_cy 2)" 272
+chk "panel: the disc opens it again" until_is 3 "Gate Speakers;Gate Headset*" hq awesome menu
 tap esc
 cc_menu() { echo "$(hq awesome controlcenter-shown) $(hq awesome menu)"; } # "<panel shown> <menu rows>"
 chk "panel: ...and Esc closes its menu, the panel stays" until_is 3 "1 " cc_menu
@@ -500,7 +513,7 @@ chk "dark: ...and the wake keeps that choice" test "$(KBT)" = 10
 hq awesome clear >/dev/null; sleep 0.4
 
 # ---- the keyboard light follows the room (system/light.cpp) -----------------
-# Opt-in from the keyboard's title row in the control center. The fake sensor reads the room in
+# Opt-in from the keyboard's disc in the control center. The fake sensor reads the room in
 # $STATE/als (lux; seeded lit) while claimed: daylight puts the keyboard
 # out, the dark lights it at the user's level (5 %, the key's in the dark
 # above) once the zone held (600 ms in the gate); a flicker moves nothing;
@@ -508,7 +521,7 @@ hq awesome clear >/dev/null; sleep 0.4
 ALS="$STATE/als"
 chk "room: a light sensor is found, the room not followed" test "$(ctl_part room)" = 0
 hq awesome controlcenter >/dev/null
-click "$ROOM_CX" "$(head_cy 1)" 272
+click "$DISC_CX" "$(level_cy 1)" 272
 chk "room: the keyboard's button follows the room" until_is 3 1 ctl_part room
 chk "room: ...claiming the sensor" grep -qx "ClaimLight" "$STATE/logind.log"
 chk "room: a lit room puts the keyboard out" until_is 4 0 KBT
@@ -535,9 +548,9 @@ dsp "hl.dsp.dpms({action = 'on'})"
 chk "room: the wake lights it as the room says" until_is 4 10 KBT
 hq awesome clear >/dev/null; sleep 0.4
 hq awesome controlcenter >/dev/null
-printf 'move %s %s\nsleep 60\n' "$ROOM_CX" "$(head_cy 1)" | vp
+printf 'move %s %s\nsleep 60\n' "$DISC_CX" "$(level_cy 1)" | vp
 chk "room: its button names itself" until_is 3 "Follow the Room" hq awesome controls-tip
-click "$ROOM_CX" "$(head_cy 1)" 272
+click "$DISC_CX" "$(level_cy 1)" 272
 chk "room: a second press stops following" until_is 3 0 ctl_part room
 chk "room: ...releasing the sensor" grep -qx "ReleaseLight" "$STATE/logind.log"
 hq awesome controlcenter >/dev/null

@@ -1,12 +1,14 @@
 // awesome/notify/controls.cpp — the control center: the panel under the
 // bar's switch glyph, in the cards' column. A glass module per level a
 // device answers for (the display, the keyboard light, the volume): its
-// name and value, then a button-glyph and the track to the right edge, a
-// white knob on it — with the keyboard's Follow the Room (a light sensor)
-// and the volume's output pill (two outputs or more) in the module's title
-// row. Under the modules, the capsule row: Bluetooth left (an adapter only) and Do Not Disturb right, alone
-// across without an adapter; a capsule's circle switches it, its words
-// open its menu (the paired devices; the durations). The small buttons
+// name and value over its slider row — the low end's glyph (the
+// keyboard's and the speaker's are buttons), the track, the high end's
+// glyph, then the module's own disc: the keyboard's Follow the Room (a
+// light sensor), the volume's output (two outputs or more). The knob shows
+// only under the pointer or a drag. Under the modules, the capsule row:
+// Bluetooth left (an adapter only) and Do Not Disturb right, alone across
+// without an adapter; a capsule's circle switches it, its words open its
+// menu (the paired devices; the durations). The small buttons
 // name themselves after a 500 ms rest. The values are the system module's,
 // published into core/controls.hpp as it learns them, and a move goes back
 // through the doors it registered there; Do Not Disturb is the model's
@@ -32,18 +34,17 @@ namespace NAwesome::Notify {
     using Controls::eLevel;
     using Controls::eSwitch;
 
-    // the panel (logical px): a 64 px module per level, 12 apart — 9 px over
-    // a 24 px title row, 2, a 20 px slider row — then the capsule row 12
-    // under the last, 64 tall, its two capsules 12 apart
-    inline constexpr double MOD_H = 64, MOD_TOP = 9, SEC_PADX = 16;
-    inline constexpr double TITLE_H = 24, SLIDE_Y = 26, SLIDE_H = 20, TRACK_H = 6, KNOB = 16, VALUE_GAP = 6;
-    // a slider's glyph and its button (28 round it), the track 12 after it
-    inline constexpr double GLYPH = 16, BTN = 28, GLYPH_GAP = 12;
-    // a title row's own control: a 24 px disc, or the output's pill
-    inline constexpr double HEAD_D = 24, HEAD_GLYPH = 14, HEAD_REACH = 4, PILL_PADL = 7, PILL_PADR = 5, CHEV = 10;
-    inline constexpr double PANEL_GAP = 12, CAPS_H = 64, CAP_DOT = 40, CAP_INSET = 12, CAP_GLYPH = 18, CAP_TEXT_X = 64, CAP_PADR = 10, CHEV_GAP = 3;
-    // a button's name: a dark note left of it (outside the panel for a
-    // slider's, 24 px off its glyph)
+    // the panel (logical px): a 64 px module per level, 12 apart — 10 px
+    // over a 20 px title row, 4, a 20 px slider row — then the capsule row
+    // 12 under the last, 64 tall, its two capsules 12 apart
+    inline constexpr double MOD_H = 64, MOD_R = 24, MOD_TOP = 10, SEC_PADX = 16;
+    inline constexpr double TITLE_H = 20, SLIDE_Y = 24, SLIDE_H = 20, TRACK_H = 4, KNOB = 14, VALUE_GAP = 6;
+    // the slider row, 10 apart: the low end's glyph (a button's 28 round
+    // it), the track, the high end's glyph, a module's own 24 px disc
+    inline constexpr double GLYPH = 16, BTN = 28, SLIDE_GAP = 10, END_D = 24, END_GLYPH = 14, END_REACH = 4;
+    inline constexpr double PANEL_GAP = 12, CAPS_H = 64, CAP_DOT = 40, CAP_INSET = 12, CAP_GLYPH = 18, CAP_TEXT_X = 64, CAP_PADR = 10, CHEV = 10, CHEV_GAP = 3;
+    // a button's name: a dark note left of it (a low end's outside the
+    // panel, 24 px off its glyph)
     inline constexpr double TIP_H = 24, TIP_PADX = 9, TIP_GAP = 6, TIP_OUT = 24;
     // what a slider asked shows this long while its device answers; a
     // button rests this long under the pointer before it names itself
@@ -54,10 +55,10 @@ namespace NAwesome::Notify {
         TILE_DND_MENU, // ... its words: the durations
         TILE_BT,       // Bluetooth's circle
         TILE_BT_MENU,  // ... its words: the devices
-        TILE_ROOM,     // the keyboard's title row: follow the room
-        TILE_OUTPUT,   // the volume's title row: the outputs
-        TILE_KBD,      // the keyboard light's glyph: off, or back on
-        TILE_MUTE,     // the speaker: mute
+        TILE_ROOM,     // the keyboard's disc: follow the room
+        TILE_OUTPUT,   // the volume's disc: the outputs
+        TILE_KBD,      // the keyboard light's low end: off, or back on
+        TILE_MUTE,     // the volume's low end: mute
         TILE_COUNT,
     };
 
@@ -65,7 +66,7 @@ namespace NAwesome::Notify {
     static struct {
         std::array<Controls::SLevel, (size_t)eLevel::COUNT_> levels{}; // pct -1: no device, no section
         int8_t                                               room     = -1; // the keyboard's room: -1 no sensor
-        bool                                                 outputs  = false; // two or more: the pill
+        bool                                                 outputs  = false; // two or more: the disc
         Glyph::eGlyph                                        outGlyph = Glyph::eGlyph::OUTPUT;
         std::string                                          outName;
         bool                                                 dnd    = false;
@@ -273,8 +274,7 @@ namespace NAwesome::Notify {
         const auto   COLTITLE = color(cfg().getColor("plugin:awesome:notify:col_title")), COLSUB = color(cfg().getColor("plugin:awesome:notify:col_kicker")),
                    COLBODY = color(cfg().getColor("plugin:awesome:notify:col_fg")), COLBG = color(cfg().getColor("plugin:awesome:theme:col_glass")),
                    COLRIM = color(cfg().getColor("plugin:awesome:theme:col_rim")), COLURGENT = color(cfg().getColor("plugin:awesome:notify:col_urgent"));
-        static const CHyprColor KNOB_COL{1.0, 1.0, 1.0, 1.0}, KNOB_DROP{0.0, 0.0, 0.0, 0.4}, MUTED_FILL{235 / 255.0, 235 / 255.0, 245 / 255.0, 0.38},
-            PILL_OPEN{1.0, 1.0, 1.0, 0.2};
+        static const CHyprColor KNOB_COL{1.0, 1.0, 1.0, 1.0}, KNOB_DROP{0.0, 0.0, 0.0, 0.4}, MUTED_FILL{235 / 255.0, 235 / 255.0, 245 / 255.0, 0.38}, DISC_OPEN{1.0, 1.0, 1.0, 0.2};
         const auto PX   = [&](double logical) { return (int)std::lround(logical * P.scale); };
         const auto HOV  = [&](eTile t) { return hovered.kind == SCard::CTRL_SWITCH && hovered.id == t; };
         const auto MENU = CardMenu::openControlMenu();
@@ -304,16 +304,22 @@ namespace NAwesome::Notify {
             if (V.pct < 0)
                 continue;
             const CBox MOD{X, my, W, MOD_H};
-            P.frost(MOD, COLBG, COLRIM, rCard(P.scale), rPow());
+            // circular corners, as the capsules': the cards' squarer
+            // superellipse reads boxy at a module's height
+            P.frost(MOD, COLBG, COLRIM, PX(MOD_R), 2.f);
             my += MOD_H + PANEL_GAP;
             const double sy    = MOD.y + MOD_TOP;
             const auto   LEVEL = (eLevel)l;
-            const bool   MUTED = LEVEL == eLevel::VOLUME && V.muted;
+            const bool   KBD = LEVEL == eLevel::KEYBOARD, VOL = LEVEL == eLevel::VOLUME;
+            const bool   MUTED = VOL && V.muted;
+            const bool   ROOM = KBD && snap.room >= 0, OUT = VOL && snap.outputs;
             const int    PCT   = std::clamp(V.pct, 0, 100); // past 100 % (a level set elsewhere) the track stops full
-            const double RY    = sy + SLIDE_Y;
-            const CBox   G{X + SEC_PADX, RY + (SLIDE_H - GLYPH) / 2, GLYPH, GLYPH};
-            const double TX0 = G.x + GLYPH + GLYPH_GAP;
-            const CBox   TRK{TX0, RY + (SLIDE_H - TRACK_H) / 2, std::max(TRACK_H * 2, X + W - SEC_PADX - TX0), TRACK_H};
+            const double RY = sy + SLIDE_Y, GY = RY + (SLIDE_H - GLYPH) / 2;
+            const CBox   D{X + W - SEC_PADX - END_D, RY + (SLIDE_H - END_D) / 2, END_D, END_D};
+            const CBox   LO{X + SEC_PADX, GY, GLYPH, GLYPH};
+            const CBox   HI{(ROOM || OUT ? D.x - SLIDE_GAP : X + W - SEC_PADX) - GLYPH, GY, GLYPH, GLYPH};
+            const double TX0 = LO.x + GLYPH + SLIDE_GAP;
+            const CBox   TRK{TX0, RY + (SLIDE_H - TRACK_H) / 2, std::max(TRACK_H * 2, HI.x - SLIDE_GAP - TX0), TRACK_H};
 
             // the module is the wheel's and the drag's (a press on its
             // track); its buttons, pushed after, are hit before it
@@ -332,63 +338,50 @@ namespace NAwesome::Notify {
                     texAt(P, VT, X + SEC_PADX + texW(N, P.scale) + VALUE_GAP, sy + (TITLE_H - texH(VT, P.scale)) / 2);
             }
 
-            // ... and its own control, flush with the track's end
-            if (LEVEL == eLevel::KEYBOARD && snap.room >= 0) {
-                const CBox D{X + W - SEC_PADX - HEAD_D, sy, HEAD_D, HEAD_D};
-                P.rect(D, snap.room ? COLTITLE : HOV(TILE_ROOM) ? tFillHover() : tFill(), PX(HEAD_D / 2), 2.f);
-                if (const auto GT = Glyph::tex(Glyph::eGlyph::ROOM, snap.room ? tLitInk() : COLTITLE, PX(HEAD_GLYPH)))
+            // the slider row: the low end (the keyboard's puts its light out
+            // and back, the speaker's mutes), the high end, the module's disc
+            if (KBD || VOL) {
+                const eTile BT = KBD ? TILE_KBD : TILE_MUTE;
+                const CBox  BTNBOX{LO.x - (BTN - GLYPH) / 2, LO.y - (BTN - GLYPH) / 2, BTN, BTN};
+                if (HOV(BT))
+                    P.rect(BTNBOX, tFill(), PX(BTN / 2), 2.f);
+                TILE(BT, BTNBOX);
+                tipAt[BT] = s_tiles[BT] = LO;
+            }
+            using G_     = Glyph::eGlyph;
+            const G_ LOW = KBD ? (V.pct > 0 ? G_::LIGHT_LOW : G_::LIGHT_LOW_OFF) : VOL ? (MUTED || V.pct == 0 ? G_::SPEAKER_LOW_MUTED : G_::SPEAKER_LOW) : G_::SUN_LOW;
+            if (const auto GT = Glyph::tex(LOW, COLTITLE, PX(GLYPH)))
+                P.texIn(GT, LO);
+            if (const auto GT = Glyph::tex(KBD ? G_::LIGHT_HIGH : VOL ? G_::SPEAKER_HIGH : G_::SUN, COLTITLE, PX(GLYPH)))
+                P.texIn(GT, HI);
+            if (ROOM) {
+                P.rect(D, snap.room ? COLTITLE : HOV(TILE_ROOM) ? tFillHover() : tFill(), PX(END_D / 2), 2.f);
+                if (const auto GT = Glyph::tex(G_::ROOM, snap.room ? tLitInk() : COLTITLE, PX(END_GLYPH)))
                     P.texIn(GT, D);
-                TILE(TILE_ROOM, CBox{D}.expand(HEAD_REACH));
+                TILE(TILE_ROOM, CBox{D}.expand(END_REACH));
                 tipAt[TILE_ROOM] = s_tiles[TILE_ROOM] = D;
-            } else if (LEVEL == eLevel::VOLUME && snap.outputs) {
-                const double PW = PILL_PADL + HEAD_GLYPH + 1 + CHEV + PILL_PADR;
-                const CBox   PB{X + W - SEC_PADX - PW, sy, PW, HEAD_D};
-                P.rect(PB, MENU == ePanelMenu::OUTPUT ? PILL_OPEN : HOV(TILE_OUTPUT) ? tFillHover() : tFill(), PX(HEAD_D / 2), 2.f);
-                if (const auto GT = Glyph::tex(snap.outGlyph, COLTITLE, PX(HEAD_GLYPH)))
-                    P.texIn(GT, CBox{PB.x + PILL_PADL, PB.y, HEAD_GLYPH, HEAD_D});
-                if (const auto GT = Glyph::tex(Glyph::eGlyph::CHEVRON_DOWN, COLTITLE, PX(CHEV)))
-                    P.texIn(GT, CBox{PB.x + PILL_PADL + HEAD_GLYPH + 1, PB.y, CHEV, HEAD_D});
-                TILE(TILE_OUTPUT, CBox{PB}.expand(HEAD_REACH));
-                tipAt[TILE_OUTPUT] = s_tiles[TILE_OUTPUT] = PB;
+            } else if (OUT) {
+                P.rect(D, MENU == ePanelMenu::OUTPUT ? DISC_OPEN : HOV(TILE_OUTPUT) ? tFillHover() : tFill(), PX(END_D / 2), 2.f);
+                if (const auto GT = Glyph::tex(snap.outGlyph, COLTITLE, PX(END_GLYPH)))
+                    P.texIn(GT, D);
+                TILE(TILE_OUTPUT, CBox{D}.expand(END_REACH));
+                tipAt[TILE_OUTPUT] = s_tiles[TILE_OUTPUT] = D;
             }
 
-            // the slider row: the glyph (the keyboard's and the speaker's are
-            // buttons), the track, the fill, the knob
-            const CBox BTNBOX{G.x - (BTN - GLYPH) / 2, G.y - (BTN - GLYPH) / 2, BTN, BTN};
-            if (LEVEL == eLevel::DISPLAY) {
-                if (const auto GT = Glyph::tex(Glyph::eGlyph::SUN, COLTITLE, PX(GLYPH)))
-                    P.texIn(GT, G);
-            } else if (LEVEL == eLevel::KEYBOARD) {
-                if (HOV(TILE_KBD))
-                    P.rect(BTNBOX, tFill(), PX(BTN / 2), 2.f);
-                if (const auto GT = Glyph::tex(V.pct > 0 ? Glyph::eGlyph::LIGHT_ON : Glyph::eGlyph::LIGHT_OFF, COLTITLE, PX(GLYPH)))
-                    P.texIn(GT, G);
-                TILE(TILE_KBD, BTNBOX);
-                tipAt[TILE_KBD] = s_tiles[TILE_KBD] = G;
-            } else {
-                if (HOV(TILE_MUTE))
-                    P.rect(BTNBOX, tFill(), PX(BTN / 2), 2.f);
-                // its waves by level, the ones above it faint; silent, crossed
-                if (!MUTED && V.pct > 0) {
-                    const auto WAVES = V.pct > 66 ? Glyph::eGlyph::SPEAKER_3 : V.pct > 33 ? Glyph::eGlyph::SPEAKER_2 : Glyph::eGlyph::SPEAKER_1;
-                    if (WAVES != Glyph::eGlyph::SPEAKER_3)
-                        if (const auto GT = Glyph::tex(Glyph::eGlyph::SPEAKER_3, COLTITLE.modifyA(COLTITLE.a * 0.3f), PX(GLYPH)))
-                            P.texIn(GT, G);
-                    if (const auto GT = Glyph::tex(WAVES, COLTITLE, PX(GLYPH)))
-                        P.texIn(GT, G);
-                } else if (const auto GT = Glyph::tex(Glyph::eGlyph::SPEAKER_MUTED, COLTITLE, PX(GLYPH)))
-                    P.texIn(GT, G);
-                TILE(TILE_MUTE, BTNBOX);
-                tipAt[TILE_MUTE] = s_tiles[TILE_MUTE] = G;
-            }
+            // the track and its fill; the knob only under the pointer or a
+            // drag, else the fill's end is the value. Not warmed: a hover
+            // repaints its module (surface.cpp), and a drag's asks repaint
+            // the panel
             const int    TR = PX(TRACK_H / 2);
             const double FW = TRK.w * PCT / 100.0;
             P.rect(TRK, tTrack(), TR, 2.f);
             if (FW > 0.5)
                 P.rect(CBox{TRK.x, TRK.y, FW, TRACK_H}, MUTED ? MUTED_FILL : COLTITLE, TR, 2.f);
-            const CBox KB{TRK.x + FW - KNOB / 2, RY + (SLIDE_H - KNOB) / 2, KNOB, KNOB};
-            P.shadow(CBox{KB}.expand(4).translate(Vector2D{0.0, 1.0}), PX(KNOB / 2), 2.f, 4, KNOB_DROP);
-            P.rect(KB, KNOB_COL, PX(KNOB / 2), 2.f);
+            if ((drag.live && drag.level == LEVEL) || (hovered.kind == SCard::CTRL_SLIDER && hovered.id == l && hovered.part == 0)) {
+                const CBox KB{TRK.x + FW - KNOB / 2, RY + (SLIDE_H - KNOB) / 2, KNOB, KNOB};
+                P.shadow(CBox{KB}.expand(4).translate(Vector2D{0.0, 1.0}), PX(KNOB / 2), 2.f, 4, KNOB_DROP);
+                P.rect(KB, KNOB_COL, PX(KNOB / 2), 2.f);
+            }
         }
 
         // ---- the capsule row: Bluetooth left, Do Not Disturb right ----
@@ -443,9 +436,9 @@ namespace NAwesome::Notify {
             if (TT != s_tipFor || !TEXT)
                 continue;
             const CBox&  A    = tipAt[TT];
-            const bool   HEAD = TT == TILE_ROOM || TT == TILE_OUTPUT;
+            const bool   DISC = TT == TILE_ROOM || TT == TILE_OUTPUT;
             const double TW   = texW(TEXT, P.scale) + 2 * TIP_PADX;
-            const CBox   TB{(HEAD ? A.x - TIP_GAP : A.x - TIP_OUT) - TW, HEAD ? A.y : A.y + (A.h - TIP_H) / 2, TW, TIP_H};
+            const CBox   TB{(DISC ? A.x - TIP_GAP : A.x - TIP_OUT) - TW, A.y + (A.h - TIP_H) / 2, TW, TIP_H};
             P.note(TB);
             texCentered(P, TEXT, TB);
             SCard c; // its damage and bounds; never hit

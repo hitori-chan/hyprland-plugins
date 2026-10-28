@@ -15,7 +15,7 @@
 //   Close All from <App>
 //
 // The switches persist (policy.cpp). The control center's three menus are
-// the same panel, opened under what opened them: the output pill's
+// the same panel, opened under what opened them: the output disc's
 // (Output: the sinks, the default checked, each with its kind), Do Not
 // Disturb's words (its durations) and Bluetooth's words (Devices: the
 // paired ones, a lit disc while connected, "Connecting…",

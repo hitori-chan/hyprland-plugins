@@ -16,23 +16,23 @@ HEAD_Y=$N_TOP
 CARD_Y=$((HEAD_Y + 28 + 8))
 # The control center, in the same column (notify/controls.cpp): a 64 px
 # module per level, 12 apart (0 display, 1 keyboard, 2 volume: all three in
-# the gate), its section 9 px down (216 tall in all); then the capsule row
+# the gate), its section 10 px down (216 tall in all); then the capsule row
 # 12 under the last, 64 tall: Bluetooth left, Do Not Disturb right (the
 # gate has an adapter), 172 px each, 12 apart.
-# A section's slider row is centred 36 px down: its glyph 24 px in (the
-# keyboard's and the speaker's are buttons), its track from 44 px in to 16
-# px off the right edge (296 px). A title row's own control (the
-# keyboard's room: the gate has a sensor; the volume's output pill: the
-# gate has two) sits flush right, centred 12 px down. A capsule's circle
-# is 32 px into it, its words past 64. Its menus hang 6 px under the row.
-sec_y() { echo $((N_TOP + 9 + $1 * 76)); }
-level_cy() { echo $(($(sec_y "$1") + 36)); }
-head_cy() { echo $(($(sec_y "$1") + 12)); }
+# A section's title row is centred 10 px down, its slider row 34: the low
+# end's glyph 24 px in (the keyboard's and the speaker's are buttons), the
+# track from 42 px in to 42 px off the right edge (272 px), or to 76 off it
+# (238 px) where a module's own 24 px disc ends the row, flush right: the
+# keyboard's room (the gate has a sensor) and the volume's output (the gate
+# has two). A capsule's circle is 32 px into it, its words past 64. Its
+# menus hang 6 px under the row.
+sec_y() { echo $((N_TOP + 10 + $1 * 76)); }
+level_cy() { echo $(($(sec_y "$1") + 34)); }
+head_cy() { echo $(($(sec_y "$1") + 10)); }
 GLYPH_X=$((PANEL_X + 24))
-TRACK_X0=$((PANEL_X + 44))
-track_x() { echo $((TRACK_X0 + 296 * $2 / 100)); } # track_x <level> <percent>
-ROOM_CX=$((PANEL_X + N_W - 16 - 12))
-OUT_CX=$((PANEL_X + N_W - 16 - 18))
+TRACK_X0=$((PANEL_X + 42))
+track_x() { echo $((TRACK_X0 + ($1 == 0 ? 272 : 238) * $2 / 100)); } # track_x <level> <percent>
+DISC_CX=$((PANEL_X + N_W - 16 - 12))
 CAPS_Y=$((N_TOP + 216 + 12))
 CAPS_CY=$((CAPS_Y + 32))
 BT_DOT_X=$((PANEL_X + 32))

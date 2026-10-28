@@ -251,7 +251,7 @@ namespace NAwesome::Notify {
 
     // its three menus (the card menu's panel, opened under what opened them)
     enum class ePanelMenu : uint8_t {
-        OUTPUT,    // the output pill's: the sinks
+        OUTPUT,    // the output disc's: the sinks
         DND,       // Do Not Disturb's words: its durations
         BLUETOOTH, // Bluetooth's words: the paired devices
     };
@@ -267,7 +267,7 @@ namespace NAwesome::Notify {
     void   controlsWheel(Controls::eLevel l, int steps); // 5 % a notch, up raises
     void   controlsSwitch(uint32_t tile);                // a button's click
     void   controlsHover();                              // the hover moved: a button's name shows after a rest
-    // a sink's kind by its name (headphones, else a loudspeaker): the pill's
+    // a sink's kind by its name (headphones, else a loudspeaker): the disc's
     // glyph and the output menu's
     Glyph::eGlyph outputGlyph(const std::string& name);
     std::string   controlsTip(); // the gate's: the button name showing ("" none; defined in its build only)

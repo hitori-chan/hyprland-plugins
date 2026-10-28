@@ -182,21 +182,22 @@ again whenever the panel opens and as devices come and go.
 **The levels**: a glass module per level a device answers for, 12 px
 apart: the **Display** (a backlight), the **Keyboard** light (a
 `*kbd_backlight` LED) and the **Sound**. A module reads its name and
-value ("45%", "Muted") over a slider: a glyph, then the track to the
-module's right edge with a white knob. A light of ten levels or fewer (a
+value ("45%", "Muted") over its slider row: the low end's small
+glyph, a thin track, the high end's glyph, then the module's own disc
+when it has one. The white knob shows only under the pointer or a drag;
+at rest the fill's end is the value. A light of ten levels or fewer (a
 ThinkPad's keyboard: off, low, high) snaps its knob to them and still
 reads a percent.
 
-- the keyboard's glyph (a half sun on a line) puts its light out, and
-  back on at the level it last had;
-- the speaker mutes and unmutes; its waves follow the level, crossed
-  while silent;
-- **Follow the Room**, a disc in the keyboard's title row (lit while on;
-  shown with a light sensor, see [system](system.md#follow-the-room));
-- the **output** pill in the sound's title row (the current output's
-  kind and a chevron; shown with two outputs or more) opens **Output**:
-  `wpctl status`'s sinks, the default checked, each with its kind; a
-  pick makes one the default.
+- the keyboard's low end (a small half sun on a line) puts its light
+  out, and back on at the level it last had;
+- the speaker's low end mutes and unmutes, crossed while silent;
+- **Follow the Room**, the keyboard's disc (lit while on; shown with a
+  light sensor, see [system](system.md#follow-the-room));
+- the **output** disc, the sound's (the current output's kind; shown
+  with two outputs or more), opens **Output**: `wpctl status`'s sinks,
+  the default checked, each with its kind; a pick makes one the
+  default.
 
 | On a level | Action |
 |---|---|
@@ -252,10 +253,10 @@ pointer (the glass never lightens):
   Minutes · For 1 Hour · For 3 Hours · Until Tomorrow (08:00) (after
   midnight, "Until 08:00": the next 08:00) · Until Turned Off.
 
-**Names**: the small buttons (the keyboard's glyph, the speaker, Follow
-the Room, the output pill) name themselves after the pointer rests 500 ms
-on them — "Light Off", "Unmute", "Follow the Room", "Output · Speakers"
-— in a dark note to their left, outside the panel for a slider's glyph.
+**Names**: the small buttons (the keyboard's and the speaker's low ends,
+the two discs) name themselves after the pointer rests 500 ms on them —
+"Light Off", "Unmute", "Follow the Room", "Output · Speakers" — in a
+dark note to their left, outside the panel for a low end.
 A click hides the name until the pointer comes back.
 
 ## Do Not Disturb
