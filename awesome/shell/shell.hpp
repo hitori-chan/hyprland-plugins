@@ -218,6 +218,7 @@ namespace NAwesome::Shell {
         void                hover(const SBarHover& h);            // the bar's hover moved (input.cpp)
         bool                noteWanted(const PHLMONITOR& mon);    // it shows on this monitor (strip.cpp adds the bar's own conditions)
         std::optional<CBox> noteReach(const PHLMONITOR& mon);     // what it can cover while it shows, global logical
+        void                noteLaidOut(const PHLMONITOR& mon, bool on); // the popup warm's verdict: a note leaving damages its box
         void                noteChanged();                        // a sample landed: its words follow
         std::string         noteDescribe(); // the gate's: the words showing, "" none (defined in its build only)
     }

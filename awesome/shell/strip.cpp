@@ -357,6 +357,8 @@ namespace NAwesome::Shell {
     static void renderPopups(PHLMONITOR mon, Render::CRenderContext* rctx) {
         // the bar's pass (a layer below) closes a menu its bar no longer
         // shows (session lock, real fullscreen) before this one runs
+        if (!rctx)
+            Battery::noteLaidOut(mon, noteOn(mon));
         if (!popupsOn(mon))
             return;
         const auto P = paintFor(mon, rctx);
