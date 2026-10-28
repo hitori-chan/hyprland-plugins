@@ -230,10 +230,9 @@ pointer (the glass never lightens):
   battery glyph, red at 20 % or less). A refused connect's row says why
   under the name ("Didn't answer." in red, then "Is it on and nearby?").
   A pick disconnects a connected device, else connects it (powering the
-  radio first while off). A right-click on a device (or Delete with the
-  pointer on it) asks, in place of its row, "Forget it? Using it again
-  takes pairing it again." — **Forget** (red) unpairs it, **Cancel**
-  keeps it; the menu stays open. A row whose pairing was lost pairs it
+  radio first while off). A right-click on a device asks, in place of
+  its row, "Forget it? Using it again takes pairing it again." —
+  **Forget** (red) unpairs it, **Cancel** keeps it; the menu stays open. A row whose pairing was lost pairs it
   again: its click forgets the stale keys, scans, and pairs the device
   once the scan finds it.
   Under the paired ones, while the radio is on, **Other Devices**: a

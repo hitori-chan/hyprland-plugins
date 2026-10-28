@@ -20,11 +20,11 @@
 // Disturb's words (its durations) and Bluetooth's words (Devices: the
 // paired ones, a lit disc while connected, "Connecting…",
 // "Disconnecting…" or the battery on the right, a refused connect's
-// reason under the name; a pick connects or disconnects, a right-click or
-// Delete asks to forget it, in place of its row; under them, Other
-// Devices: Scan/Stop and what the scan found, a pick pairing one, its
-// question asked in place of its row). Their rows come from the system
-// module's published values and rebuild with every warm.
+// reason under the name; a pick connects or disconnects, a right-click
+// asks to forget it, in place of its row; under them, Other Devices:
+// Scan/Stop and what the scan found, a pick pairing one, its question
+// asked in place of its row). Their rows come from the system module's
+// published values and rebuild with every warm.
 //
 // The menu is the notify layer's own,
 // drawn last and hit first: it holds its card's banner while up, and
