@@ -548,6 +548,47 @@ for a in "$W2TILE" "$W2MAX"; do
 done
 until_is 5 0 w2_count
 
+# ---- a switch to a minimized window restores it -------------------------
+# Mod+U (urgent_or_last) or a focus dispatch naming a minimized window is
+# the user's pick: restored and focused, as awesome's jump_to un-minimizes.
+# The compositor's focus once landed on the hidden window and the plugin
+# bounced it: the window stayed minimized. Two restores in one dispatch
+# restore two windows (one re-armed hop once dropped the first).
+hidden_of() { clients | python3 -c "
+import json,sys
+print(next((int(c['hidden']) for c in json.load(sys.stdin) if c['class'] == sys.argv[1]), -1))" "$1"; }
+w3_count() { clients | python3 -c "import json,sys;print(sum(1 for c in json.load(sys.stdin) if c['class'] in ('w3a','w3b','w3c')))"; }
+w3b_state() { echo "$(hidden_of w3b) $(active_class)"; } # hidden, and who has the focus
+w3_hidden() { echo "$(hidden_of w3b) $(hidden_of w3c)"; }
+# one at a time: the focus history's order is the opening order (Mod+U's
+# "last" is the minimized w3b below whichever end the history counts from)
+for c in w3a w3b w3c; do
+	dsp "hl.dsp.exec_cmd('foot --app-id=$c --window-size-pixels=300x200')"
+	wait_class "$c"
+	until_is 2 "$c" active_class
+done
+W3A="$(class_addr w3a)" W3B="$(class_addr w3b)" W3C="$(class_addr w3c)"
+dsp "hl.dsp.focus({window=\"address:$W3B\"})"
+until_is 2 w3b active_class
+dsp "hl.plugin.awesome.minimize()"
+chk "jump: the minimized window hides and hands the focus on" until_is 2 "1 w3c" w3b_state
+dsp "hl.dsp.focus({urgent_or_last=true})"
+chk "jump: Mod+U to the minimized last window restores and focuses it" until_is 2 "0 w3b" w3b_state
+dsp "hl.plugin.awesome.minimize()"
+until_is 2 "1 w3c" w3b_state
+dsp "hl.dsp.focus({window=\"address:$W3B\"})"
+chk "jump: a focus dispatch naming a minimized window restores it" until_is 2 "0 w3b" w3b_state
+dsp "hl.plugin.awesome.minimize()"
+until_is 2 w3c active_class
+dsp "hl.plugin.awesome.minimize()"
+until_is 2 "1 1" w3_hidden
+hq eval "hl.plugin.awesome.restore(); hl.plugin.awesome.restore()" >/dev/null 2>&1
+chk "restore: two in one dispatch restore both" until_is 2 "0 0" w3_hidden
+for a in "$W3A" "$W3B" "$W3C"; do
+	[[ -n "$a" ]] && dsp "hl.dsp.window.close({window=\"address:$a\"})"
+done
+until_is 5 0 w3_count
+
 chk "windows: its foot is closed at the battery's end" \
 	test "$(pyc "sum(1 for c in cs if c['class']=='foot')")" = 0
 

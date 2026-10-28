@@ -38,8 +38,12 @@ namespace NAwesome::Windows {
     });
     static CHop pendingFocusAway;
     // the restore bind, out of the keybind's dispatch like every focus change
-    // (invariant 6) and never under the lockscreen
-    static CHop pendingRestoreLast;
+    // (invariant 6) and never under the lockscreen; a queue, not one hop:
+    // two presses in one dispatch restore two windows
+    static CHopQueue<char, 16> pendingRestoreLast([](std::vector<char>& batch) {
+        for (size_t i = 0; i < batch.size() && !sessionLocked(); i++)
+            Tasklist::restoreLast();
+    });
 
     namespace {
         int luaMaximize(lua_State*) {
@@ -55,10 +59,7 @@ namespace NAwesome::Windows {
             return 0;
         }
         int luaRestore(lua_State*) {
-            pendingRestoreLast.arm([]() {
-                if (!sessionLocked())
-                    Tasklist::restoreLast();
-            });
+            pendingRestoreLast.push(0);
             return 0;
         }
         int luaFocusNext(lua_State*) {
@@ -84,13 +85,20 @@ namespace NAwesome::Windows {
             Tasklist::onMap(w);
             Tasklist::watchMinimize(w);
         });
-        // Focus landed on a minimized (hidden) window — the compositor's
-        // fallback does not know our minimize. Bounce it, deferred: a focus
-        // change inside the focus emission nests a second rawWindowFocus and
-        // later listeners see the stale one (invariant 6).
-        supervisor().listen(Event::bus()->m_events.window.active, [](PHLWINDOW w, Desktop::eFocusReason) {
+        // Focus landed on a minimized (hidden) window. A switch to that
+        // window by name (Mod+U on an urgent one, a focus dispatch) restores
+        // it, as awesome's jump_to un-minimizes; the compositor's fallbacks
+        // do not know our minimize, so they bounce. Deferred: a focus change
+        // inside the focus emission nests a second rawWindowFocus and later
+        // listeners see the stale one (invariant 6).
+        supervisor().listen(Event::bus()->m_events.window.active, [](PHLWINDOW w, Desktop::eFocusReason reason) {
+            using enum Desktop::eFocusReason;
             if (!w || !w->isHidden() || !Tasklist::isMinimized(w))
                 return;
+            if (reason == FOCUS_REASON_DISPATCH_FOCUSWINDOW || reason == FOCUS_REASON_SWITCH_TO_WINDOW_SOFT || reason == FOCUS_REASON_SWITCH_TO_WINDOW_HARD) {
+                pendingActivates.push(PHLWINDOWREF{w});
+                return;
+            }
             pendingFocusAway.arm([WR = PHLWINDOWREF{w}]() {
                 if (const auto W = WR.lock())
                     Tasklist::focusAwayFromHidden(W);
