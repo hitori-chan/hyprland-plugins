@@ -123,7 +123,7 @@ namespace NAwesome::Shell {
             // menu) would open what the hidden bar's warm closes at once.
             // The press closed the launcher; that is all it does.
             if (MBM == MON && POS.y >= MON->logicalBox().y && POS.y < MON->logicalBox().y + barHeight())
-                if (const auto WS = MON->m_activeWorkspace; WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN) {
+                if (NAwesome::fullscreenOwns(MON)) {
                     info.cancelled = true;
                     swallowRelease |= BIT;
                     return;
@@ -169,8 +169,7 @@ namespace NAwesome::Shell {
 
         // bar hidden under real fullscreen: the strip belongs to the window then
         // (swallowing here would make the top rows of fullscreen apps click-dead)
-        if (const auto WS = MON->m_activeWorkspace;
-            !MENUBAR_HERE && WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN) {
+        if (!MENUBAR_HERE && NAwesome::fullscreenOwns(MON)) {
             heldButtons++;
             return;
         }
@@ -302,7 +301,7 @@ namespace NAwesome::Shell {
             info.cancelled = true; // the prompt strip swallows scroll, no action
             return;
         }
-        if (const auto WS = MON->m_activeWorkspace; WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN)
+        if (NAwesome::fullscreenOwns(MON))
             return; // bar hidden, strip belongs to the fullscreen window
         if (POS.y >= MON->logicalBox().y + barHeight())
             return;
@@ -370,8 +369,7 @@ namespace NAwesome::Shell {
         if (NAwesome::nativeLayerOwnsPointer())
             return nullptr;
 
-        const auto WS = MON->m_activeWorkspace;
-        if (WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN)
+        if (NAwesome::fullscreenOwns(MON))
             return Menubar::isOpen && Menubar::mon.lock() == MON ? MON : nullptr; // hidden bar — only the open menubar floats above fullscreen
         return MON;
     }

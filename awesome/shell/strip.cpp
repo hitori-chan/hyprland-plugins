@@ -159,8 +159,7 @@ namespace NAwesome::Shell {
     static bool barHidden(PHLMONITOR mon) {
         if (!mon)
             return true;
-        const auto WS = mon->m_activeWorkspace;
-        return WS && Fullscreen::controller()->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN && !(Menubar::isOpen && Menubar::mon.lock() == mon);
+        return NAwesome::fullscreenOwns(mon) && !(Menubar::isOpen && Menubar::mon.lock() == mon);
     }
 
     static void renderBar(PHLMONITOR mon, Render::CRenderContext* rctx) {
