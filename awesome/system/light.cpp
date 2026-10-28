@@ -110,7 +110,7 @@ namespace NAwesome::System {
     // keyboard's driver bound after the session started); the room's
     // switch follows the keyboard's presence
     static void findLight(SLight& L) {
-        L.dev.clear();
+        const auto WAS = std::exchange(L.dev, std::string{});
         L.max          = 0;
         L.lastSetRaw   = -1; // the trust window is the old device's: the one found next reads its own sysfs
         const bool KBD = &L == &keyboard;
@@ -146,6 +146,12 @@ namespace NAwesome::System {
                 L.dev = NAME;
                 L.max = *MAX;
             }
+        }
+        // another device: a set in flight was the old one's, its percent
+        // of the old range (a reply must not publish or remember it)
+        if (L.dev != WAS) {
+            ++L.generation;
+            L.busy = false;
         }
         if (KBD)
             publishRoom();
