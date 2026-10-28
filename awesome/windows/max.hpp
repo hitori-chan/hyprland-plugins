@@ -584,6 +584,9 @@ namespace NAwesome::Windows {
             supervisor().listen(EV.window.moveToWorkspace, [](PHLWINDOW, PHLWORKSPACE) { queueReflow(); });
             supervisor().listen(EV.workspace.active, [](PHLWORKSPACE) { queueReflow(); });
             supervisor().listen(EV.workspace.moveToMonitor, [](PHLWORKSPACE, PHLMONITOR) { queueReflow(); });
+            // a special workspace opening on another output carries its
+            // windows there with a bare move: refit them to that work area
+            supervisor().listen(EV.workspace.specialActive, [](PHLWORKSPACE, PHLMONITOR) { queueReflow(); });
             supervisor().listen(EV.monitor.layoutChanged, []() { queueReflow(); });
             supervisor().listen(EV.monitor.reservedChanged, [](PHLMONITOR) { queueReflow(); });
         }
