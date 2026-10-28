@@ -253,7 +253,7 @@ namespace NAwesome::Notify {
 
     // its three menus (the card menu's panel, opened under what opened them)
     enum class ePanelMenu : uint8_t {
-        OUTPUT,    // the output disc's: the sinks
+        OUTPUT,    // the output capsule's: the sinks
         DND,       // Do Not Disturb's words: its durations
         BLUETOOTH, // Bluetooth's words: the paired devices
     };

@@ -419,6 +419,11 @@ printf 'move %s %s\nsleep 60\npress 272\nsleep 60\nmove %s %s\nsleep 60\nmove %s
 chk "panel: dragging the display's slider sets the backlight" until_is 4 750 BRT
 chk "panel: ...through logind" grep -q "SetBrightness /org/freedesktop/login1/session/[a-z0-9]* gate0 750" "$STATE/logind.log"
 chk "panel: ...and its slider holds there" until_is 3 75 ctl_part display
+# its one glyph steps with it: the sun at 75 % (its high step) spreads
+# past the one at 50 % (its middle; 80 lit px to 64 on black)
+sun_px() { lit_px "$1" $((GLYPH_X - 8)) $((GLYPH_X + 8)) $(($(level_cy 0) - 8)) $(($(level_cy 0) + 8)); }
+sun_up() { (($(sun_px "$1") > $(sun_px "$STATE/panel.png") + 8)); }
+chk "panel: ...its glyph stepping up with it" shot_until 3 "$STATE/panel-sun75.png" sun_up "$STATE/panel-sun75.png"
 chk "panel: a drag posts no capsule" test "$(st)" = "center:0 live:0 dnd:0"
 click "$GLYPH_X" "$(level_cy 0)" 272
 click "$(track_x 0 20)" "$(head_cy 0)" 272; sleep 0.4
@@ -451,20 +456,20 @@ chk "panel: a button rested on names itself" until_is 3 "Unmute" hq awesome cont
 capture_nested "$STATE/panel-tip.png"
 printf 'move %s %s\nsleep 60\n' "$(track_x 2 60)" "$(level_cy 2)" | vp
 chk "panel: ...and leaving it hides the name" until_is 3 "" hq awesome controls-tip
-# the volume's output disc: its outputs, the default checked; a pick moves
-# the default and the list reads it back. Its menu hangs 6 px under the
-# disc (its bottom 46 px down the section) at its right edge: a 22 px
-# header, then 28 px rows.
+# the volume's output capsule: its outputs, the default checked; a pick
+# moves the default and the list reads it back. Its menu hangs 6 px under
+# the capsule (its bottom 21 px down the section) at its right edge: 5 px
+# of glass, a 22 px header, then 28 px rows.
 chk "panel: the outputs are read with the panel" test "$(hq awesome outputs)" = "*41 42"
-click "$DISC_CX" "$(level_cy 2)" 272
-chk "panel: the output disc lists the outputs, the default checked" until_is 3 "Gate Speakers*;Gate Headset" hq awesome menu
+click "$DISC_CX" "$(head_cy 2)" 272
+chk "panel: the output capsule lists the outputs, the default checked" until_is 3 "Gate Speakers*;Gate Headset" hq awesome menu
 capture_nested "$STATE/panel-menu.png"
-click $((PANEL_X + 230)) $(($(sec_y 2) + 46 + 6 + 5 + 22 + 28 + 14)) 272
+click $((PANEL_X + 230)) $(($(sec_y 2) + 21 + 6 + 5 + 22 + 28 + 14)) 272
 chk "panel: a pick makes it the default" until_is 3 1 wlog_has "set-default 42"
 chk "panel: ...the outputs read it back" until_is 3 "41 *42" hq awesome outputs
 chk "panel: ...and the menu closed on the pick" test -z "$(hq awesome menu)"
-click "$DISC_CX" "$(level_cy 2)" 272
-chk "panel: the disc opens it again" until_is 3 "Gate Speakers;Gate Headset*" hq awesome menu
+click "$DISC_CX" "$(head_cy 2)" 272
+chk "panel: the capsule opens it again" until_is 3 "Gate Speakers;Gate Headset*" hq awesome menu
 tap esc
 cc_menu() { echo "$(hq awesome controlcenter-shown) $(hq awesome menu)"; } # "<panel shown> <menu rows>"
 chk "panel: ...and Esc closes its menu, the panel stays" until_is 3 "1 " cc_menu
@@ -527,7 +532,7 @@ hq awesome clear >/dev/null; sleep 0.4
 ALS="$STATE/als"
 chk "room: a light sensor is found, the room not followed" test "$(ctl_part room)" = 0
 hq awesome controlcenter >/dev/null
-click "$DISC_CX" "$(level_cy 1)" 272
+click "$DISC_CX" "$(head_cy 1)" 272
 chk "room: the keyboard's button follows the room" until_is 3 1 ctl_part room
 chk "room: ...claiming the sensor" grep -qx "ClaimLight" "$STATE/logind.log"
 chk "room: a lit room puts the keyboard out" until_is 4 0 KBT
@@ -554,9 +559,9 @@ dsp "hl.dsp.dpms({action = 'on'})"
 chk "room: the wake lights it as the room says" until_is 4 10 KBT
 hq awesome clear >/dev/null; sleep 0.4
 hq awesome controlcenter >/dev/null
-printf 'move %s %s\nsleep 60\n' "$DISC_CX" "$(level_cy 1)" | vp
+printf 'move %s %s\nsleep 60\n' "$DISC_CX" "$(head_cy 1)" | vp
 chk "room: its button names itself" until_is 3 "Follow the Room" hq awesome controls-tip
-click "$DISC_CX" "$(level_cy 1)" 272
+click "$DISC_CX" "$(head_cy 1)" 272
 chk "room: a second press stops following" until_is 3 0 ctl_part room
 chk "room: ...releasing the sensor" grep -qx "ReleaseLight" "$STATE/logind.log"
 hq awesome controlcenter >/dev/null

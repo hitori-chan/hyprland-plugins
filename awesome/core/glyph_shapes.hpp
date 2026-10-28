@@ -35,20 +35,26 @@ namespace NAwesome::Glyph {
         DISMISS, // a stack header's close cross, drawn at 8 px on its own 10-unit grid
         KEYBOARD_LIGHT, // a half sun risen over a baseline: the keys' own light
         CONTROLS,       // the control center's door on the bar: two switches, the lower one on
-        SUN_LOW,        // the display's low end: the sun, smaller, its rays short (SUN: its high end)
-        KEYBOARD,       // a device: the keys
-        SPEAKER_LOW,    // the volume's low end, its mute button: a small speaker without waves
-        SPEAKER_LOW_MUTED, // ... crossed out
-        ROOM,           // follow the room: an A in the sun's rays
-        OUTPUT,         // the volume's output: a loudspeaker
-        LIGHT_LOW,      // the keyboard light's low end, its off button: a small half sun, rays short
-        LIGHT_LOW_OFF,  // ... the rays gone
-        LIGHT_HIGH,     // its high end: a half sun on a line, its rays long
-        SPEAKER_HIGH,   // the volume's high end: the speaker, three waves
+        // a level's one glyph steps with it (to 33 %, to 66 %, past): the
+        // sun grows, the light's half sun grows, the speaker gains waves
+        SUN_LOW,         // the display, low: the sun small, its rays short (SUN: high)
+        KEYBOARD,        // a device: the keys
+        SPEAKER_1,       // the volume, low, its mute button: the speaker, one wave
+        SPEAKER_0_MUTED, // ... muted or at 0: crossed out
+        ROOM,            // follow the room: an A in the sun's rays
+        OUTPUT,          // the volume's output: a loudspeaker
+        LIGHT_LOW,       // the keyboard light, low, its off button: a small half sun on a line, rays short
+        LIGHT_OFF,       // ... off: the half sun hollow, no rays
+        LIGHT_HIGH,      // ... high: the half sun large, its rays long
+        SPEAKER_3,       // the volume, high: three waves
         BLUETOOTH,      // the rune
         HEADPHONES,     // an output or a device: headphones
         MOUSE,          // a device: a mouse
         PHONE,          // a device: a phone
+        SUN_MID,        // the display, middle
+        LIGHT_MID,      // the keyboard light, middle
+        SPEAKER_2,      // the volume, middle: two waves
+        CHEVRON_SMALL,  // CHEVRON_DOWN drawn at 9 px (the output's door): its stroke heavier to hold a pixel
         COUNT_,
     };
 
@@ -100,28 +106,41 @@ namespace NAwesome::Glyph {
         {16, 16, "<circle fill=\"#fff\" cx=\"8\" cy=\"8\" r=\"2.3\"/><path " AW_STROKE_W("1.2")
                  " d=\"M8 3.5v1M8 11.5v1M3.5 8h1M11.5 8h1M4.8 4.8l.7.7M10.5 10.5l.7.7M4.8 11.2l.7-.7M10.5 5.5l.7-.7\"/>"},
         {16, 16, "<rect " AW_STROKE " x=\"1.5\" y=\"6\" width=\"13\" height=\"8\" rx=\"1.8\"/><path " AW_STROKE " d=\"M4.5 9h.01M8 9h.01M11.5 9h.01M5.5 11.5h5\"/>"},
-#define AW_SPEAKER_LOW "<path fill=\"#fff\" d=\"M3.4 6.3h2.2l2.9-2.5v8.4l-2.9-2.5H3.4z\"/>"
-        {16, 16, AW_SPEAKER_LOW},
-        {16, 16, AW_SPEAKER_LOW "<path " AW_STROKE_W("1.3") " d=\"M10.7 6.4l3.2 3.2M13.9 6.4l-3.2 3.2\"/>"},
-#undef AW_SPEAKER_LOW
+// the speaker's body, one for every step; its waves (or the cross) at 1.3
+#define AW_SPEAKER "<path fill=\"#fff\" d=\"M1.6 6.1h2.7l3.4-2.9v9.6l-3.4-2.9H1.6z\"/>"
+#define AW_WAVE_1 "M9.7 6.3a2.4 2.4 0 0 1 0 3.4"
+#define AW_WAVE_2 "M11.3 4.7a4.6 4.6 0 0 1 0 6.6"
+        {16, 16, AW_SPEAKER "<path " AW_STROKE_W("1.3") " d=\"" AW_WAVE_1 "\"/>"},
+        {16, 16, AW_SPEAKER "<path " AW_STROKE_W("1.3") " d=\"M10.2 6.4l3.2 3.2M13.4 6.4l-3.2 3.2\"/>"},
         {16, 16, "<path " AW_STROKE_W("1.3") " d=\"M8 .9v1.5M8 13.6v1.5M.9 8h1.5M13.6 8h1.5M3 3l1 1M12 12l1 1M3 13l1-1M12 4l1-1\"/><path " AW_STROKE_W("1.3")
                  " d=\"M5.7 11.2L8 4.9l2.3 6.3M6.5 9.3h3\"/>"},
         {16, 16, "<rect " AW_STROKE " x=\"4\" y=\"1.5\" width=\"8\" height=\"13\" rx=\"2\"/><circle " AW_STROKE " cx=\"8\" cy=\"10\" r=\"2\"/><circle fill=\"#fff\" cx=\"8\" cy=\"4.8\" r=\".8\"/>"},
-#define AW_LIGHT_LOW "<path " AW_STROKE_W("1.3") " d=\"M2.6 13.3h10.8\"/><path fill=\"#fff\" d=\"M5.2 12.6a2.8 2.8 0 0 1 5.6 0z\"/>"
-        {16, 16, AW_LIGHT_LOW "<path " AW_STROKE_W("1.2") " d=\"M8 6.2v1.1M4.7 7.9l.8.8M11.3 7.9l-.8.8M2.9 10.6h1.2M11.9 10.6h1.2\"/>"},
-        {16, 16, AW_LIGHT_LOW},
-#undef AW_LIGHT_LOW
+// the low light's sill and half-disc: off strokes the disc hollow
+#define AW_LIGHT_SILL "<path " AW_STROKE_W("1.2") " d=\"M2.6 13.3h10.8\"/>"
+#define AW_LIGHT_DISC "d=\"M5.2 12.6a2.8 2.8 0 0 1 5.6 0z\"/>"
+        {16, 16, AW_LIGHT_SILL "<path fill=\"#fff\" " AW_LIGHT_DISC "<path " AW_STROKE_W("1.2") " d=\"M8 6.2v1.1M4.7 7.9l.8.8M11.3 7.9l-.8.8M2.9 10.6h1.2M11.9 10.6h1.2\"/>"},
+        {16, 16, AW_LIGHT_SILL "<path " AW_STROKE_W("1.2") " " AW_LIGHT_DISC},
+#undef AW_LIGHT_SILL
+#undef AW_LIGHT_DISC
         {16, 16, "<path " AW_STROKE " d=\"M1.7 13.3h12.6\"/><path fill=\"#fff\" d=\"M4.6 12.6a3.4 3.4 0 0 1 6.8 0z\"/><path " AW_STROKE
                  " d=\"M8 3.2v1.9M3.1 5.6l1.3 1.3M12.9 5.6l-1.3 1.3M.9 9.8h1.8M13.3 9.8h1.8\"/>"},
         // the outer wave's bulge ends inside the 16 px box
-        {16, 16, "<path fill=\"#fff\" d=\"M1.6 6.1h2.7l3.4-2.9v9.6l-3.4-2.9H1.6z\"/><path " AW_STROKE_W("1.3")
-                 " d=\"M9.7 6.3a2.4 2.4 0 0 1 0 3.4M11.3 4.7a4.6 4.6 0 0 1 0 6.6M12.9 3.1a6.8 6.8 0 0 1 0 9.8\"/>"},
+        {16, 16, AW_SPEAKER "<path " AW_STROKE_W("1.3") " d=\"" AW_WAVE_1 AW_WAVE_2 "M12.9 3.1a6.8 6.8 0 0 1 0 9.8\"/>"},
         {16, 16, "<path " AW_STROKE " d=\"M4.6 5.2l6.6 5.6L8 13.6V2.4l3.2 2.8-6.6 5.6\"/>"},
         {16, 16, "<path " AW_STROKE " d=\"M2.6 10.4V8.2a5.4 5.4 0 0 1 10.8 0v2.2\"/><rect fill=\"#fff\" x=\"1.9\" y=\"9.4\" width=\"3.3\" height=\"4.8\" rx=\"1.3\"/>"
                  "<rect fill=\"#fff\" x=\"10.8\" y=\"9.4\" width=\"3.3\" height=\"4.8\" rx=\"1.3\"/>"},
         {16, 16, "<rect " AW_STROKE " x=\"4.2\" y=\"1.8\" width=\"7.6\" height=\"12.4\" rx=\"3.8\"/><path " AW_STROKE " d=\"M8 4.3v2.2\"/>"},
         {16, 16, "<rect " AW_STROKE " x=\"4.3\" y=\"1.5\" width=\"7.4\" height=\"13\" rx=\"1.9\"/><path " AW_STROKE " d=\"M7 12.1h2\"/>"},
+        {16, 16, "<circle fill=\"#fff\" cx=\"8\" cy=\"8\" r=\"2.6\"/><path " AW_STROKE_W("1.3")
+                 " d=\"M8 2.5v1.2M8 12.3v1.2M2.5 8h1.2M12.3 8h1.2M4.11 4.11l.85.85M11.04 11.04l.85.85M4.11 11.89l.85-.85M11.04 4.96l.85-.85\"/>"},
+        {16, 16, "<path " AW_STROKE_W("1.3") " d=\"M2.15 13.3h11.7\"/><path fill=\"#fff\" d=\"M4.9 12.6a3.1 3.1 0 0 1 6.2 0z\"/><path " AW_STROKE_W("1.3")
+                 " d=\"M8 4.7v1.5M3.9 6.75l1.05 1.05M12.1 6.75l-1.05 1.05M1.9 10.2h1.5M12.6 10.2h1.5\"/>"},
+        {16, 16, AW_SPEAKER "<path " AW_STROKE_W("1.3") " d=\"" AW_WAVE_1 AW_WAVE_2 "\"/>"},
+        {16, 16, "<path " AW_STROKE_W("1.8") " d=\"M4 6l4 4 4-4\"/>"},
     }};
+#undef AW_SPEAKER
+#undef AW_WAVE_1
+#undef AW_WAVE_2
 #undef AW_STROKE
 #undef AW_STROKE_W
 #undef AW_BADGE_X

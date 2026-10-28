@@ -31,7 +31,8 @@ the dark.
 
 ### Follow the room
 
-The keyboard's disc in the control center, off until chosen. The light is
+The keyboard's door in the control center (a disc on its title row),
+off until chosen. The light is
 on in a dark room and off in daylight, as iio-sensor-proxy's ambient
 light sensor reads it; the sensor is claimed only while the option is
 on.
@@ -55,8 +56,8 @@ parity).
 - Raising stops at 100 %, but a volume already past it (set elsewhere)
   is never pulled down; the capsule and the slider show the true
   percent over a full bar.
-- The output disc in the control center's Sound module lists the outputs
-  and makes one the default.
+- The output capsule on the control center's Sound module lists the
+  outputs and makes one the default.
 - **A headset's own buttons**: a Bluetooth headset that sets its volume
   itself (AVRCP absolute volume) presses no key. BlueZ announces the
   change on the system bus, the default sink is read back, and the
@@ -112,7 +113,7 @@ center shows no Bluetooth.
   Trusted, then connected.
 - **A headset's sink**: when an audio device connects or drops while the
   control center is open, the outputs are read again once PipeWire has
-  caught up (1.5 s), so the output disc follows.
+  caught up (1.5 s), so the output capsule follows.
 
 ## Touchpad
 

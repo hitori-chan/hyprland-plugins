@@ -417,8 +417,8 @@ it); the card menu is drawn last and hit first on the notify layer.
 - **The control block** (`notify/controls.cpp`): the warm snapshots
   `core/controls.hpp` and the draw paints the snapshot. A dragged slider
   shows what it asked until the device reports that level (1.5 s at
-  most), so a set in flight never snaps it back. The output disc and a
-  capsule's words open the card menu's panel for that control
+  most), so a set in flight never snaps it back. The output's capsule
+  and a capsule's words open the card menu's panel for that control
   (`CardMenu::openControl`), rebuilt while open so a late read shows; a
   pick finds its row by key, not index, so a rebuild cannot shift it. A
   button's name is a note pushed as a capsule card (damage only), its

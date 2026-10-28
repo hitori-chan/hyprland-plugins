@@ -186,22 +186,26 @@ again whenever the panel opens and as devices come and go.
 **The levels**: a glass module per level a device answers for, 12 px
 apart: the **Display** (a backlight), the **Keyboard** light (a
 `*kbd_backlight` LED) and the **Sound**. A module reads its name and
-value ("45%", "Muted") over its slider row: the low end's small
-glyph, a thin track, the high end's glyph, then the module's own disc
-when it has one. The white knob shows only under the pointer or a drag;
-at rest the fill's end is the value. A light of ten levels or fewer (a
-ThinkPad's keyboard: off, low, high) snaps its knob to them and still
-reads a percent.
+value ("45%", "Muted") on its title row, the module's own door at that
+row's right end when it has one, over the track's end. Under it the
+slider row: the level's one glyph, then a thin track to the module's
+padding. The glyph steps with the level (to 33 %, to 66 %, past it):
+the sun grows, the keyboard's half sun grows (hollow and rayless while
+off), the speaker gains a wave (crossed while muted or at 0). The white
+knob shows only under the pointer or a drag; at rest the fill's end is
+the value. A light of ten levels or fewer (a ThinkPad's keyboard: off,
+low, high) snaps its knob to them and still reads a percent.
 
-- the keyboard's low end (a small half sun on a line) puts its light
-  out, and back on at the level it last had;
-- the speaker's low end mutes and unmutes, crossed while silent;
-- **Follow the Room**, the keyboard's disc (lit while on; shown with a
-  light sensor, see [system](system.md#follow-the-room));
-- the **output** disc, the sound's (the current output's kind; shown
-  with two outputs or more), opens **Output**: `wpctl status`'s sinks,
-  the default checked, each with its kind; a pick makes one the
-  default.
+- the keyboard's glyph puts its light out, and back on at the level it
+  last had;
+- the speaker's glyph mutes and unmutes;
+- **Follow the Room**, the keyboard's door: a 22 px disc (lit while on;
+  shown with a light sensor, see
+  [system](system.md#follow-the-room));
+- the **output**, the sound's door: a 22 px capsule, the current
+  output's kind and a chevron (shown with two outputs or more), opens
+  **Output** under it: `wpctl status`'s sinks, the default checked,
+  each with its kind; a pick makes one the default.
 
 | On a level | Action |
 |---|---|
@@ -257,10 +261,10 @@ pointer (the glass never lightens):
   Minutes · For 1 Hour · For 3 Hours · Until Tomorrow (08:00) (after
   midnight, "Until 08:00": the next 08:00) · Until Turned Off.
 
-**Names**: the small buttons (the keyboard's and the speaker's low ends,
-the two discs) name themselves after the pointer rests 500 ms on them —
+**Names**: the small buttons (the keyboard's and the speaker's glyphs,
+the two doors) name themselves after the pointer rests 500 ms on them —
 "Light Off", "Unmute", "Follow the Room", "Output · Speakers" — in a
-dark note to their left, outside the panel for a low end.
+dark note to their left, outside the panel for a glyph.
 A click hides the name until the pointer comes back.
 
 ## Do Not Disturb

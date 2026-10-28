@@ -19,20 +19,21 @@ CARD_Y=$((HEAD_Y + 28 + 8))
 # the gate), its section 10 px down (216 tall in all); then the capsule row
 # 12 under the last, 64 tall: Bluetooth left, Do Not Disturb right (the
 # gate has an adapter), 172 px each, 12 apart.
-# A section's title row is centred 10 px down, its slider row 34: the low
-# end's glyph 24 px in (the keyboard's and the speaker's are buttons), the
-# track from 42 px in to 42 px off the right edge (272 px), or to 76 off it
-# (238 px) where a module's own 24 px disc ends the row, flush right: the
-# keyboard's room (the gate has a sensor) and the volume's output (the gate
-# has two). A capsule's circle is 32 px into it, its words past 64. Its
+# A section's title row is centred 10 px down, its slider row 34: the
+# level's glyph 24 px in (the keyboard's and the speaker's are buttons), the
+# track from 42 px in to the module's 16 px padding (298 px). A module's
+# door sits on its title row, 22 tall, its right edge 13 px off the
+# module's: the keyboard's room disc (the gate has a sensor), its centre
+# 24 px in, and the volume's output capsule (the gate has two outputs),
+# 34 wide. A capsule's circle is 32 px into it, its words past 64. Its
 # menus hang 6 px under the row.
 sec_y() { echo $((N_TOP + 10 + $1 * 76)); }
 level_cy() { echo $(($(sec_y "$1") + 34)); }
 head_cy() { echo $(($(sec_y "$1") + 10)); }
 GLYPH_X=$((PANEL_X + 24))
 TRACK_X0=$((PANEL_X + 42))
-track_x() { echo $((TRACK_X0 + ($1 == 0 ? 272 : 238) * $2 / 100)); } # track_x <level> <percent>
-DISC_CX=$((PANEL_X + N_W - 16 - 12))
+track_x() { echo $((TRACK_X0 + 298 * $2 / 100)); } # track_x <level> <percent>
+DISC_CX=$((PANEL_X + N_W - 24))
 CAPS_Y=$((N_TOP + 216 + 12))
 CAPS_CY=$((CAPS_Y + 32))
 BT_DOT_X=$((PANEL_X + 32))
