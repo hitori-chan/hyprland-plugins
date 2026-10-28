@@ -656,6 +656,43 @@ snap_drag 400 400 "" 0
 chk "snap: a drop away from the edges commits no slot" until_is 2 "200,250 $SNAPSZ" snap_box
 close_wait "$SNAPW"
 
+# ---- the drop shadow: drawn where it reaches ------------------------------
+# A shadow's reach is learned only while a frame draws it: a new window's
+# first frames were damaged without it, and its shadow stayed undrawn
+# until unrelated damage landed there (the fork's "damage the drop shadow
+# where it draws"; seen live as shadows blinking under a typing terminal
+# or a moving pointer). Only the private host shows the presented buffers.
+# Sharp, opaque and red over the near-black background; nothing moves
+# meanwhile (a move damages the reach it knows).
+hq eval "hl.config({ decoration = { shadow = { enabled = true, range = 12, sharp = true, color = 0xffff0000 } } })" >/dev/null
+printf 'move %d %d\nsleep 60\n' $((MON_W - 20)) $((MON_H - 20)) | vp
+# shadow_red <x> <y>...: a fresh host frame shows the shadow at every point
+# (what it saw: $STATE/shadow.txt)
+shadow_red() {
+	capture_host "$STATE/shadow.png" || return 1
+	python3 - "$STATE/shadow.png" "$@" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+pts = list(map(int, sys.argv[2:]))
+ok, saw = True, []
+for x, y in zip(pts[::2], pts[1::2]):
+    r, g, b = im.getpixel((x, y))
+    ok &= r > 200 and g < 60 and b < 60
+    saw.append(f"({x},{y})={r},{g},{b}")
+open(sys.argv[1][:-4] + ".txt", "w").write(" ".join(saw) + "\n")
+sys.exit(0 if ok else 1)
+PY
+}
+dsp "hl.dsp.exec_cmd('foot --app-id=shadowa --window-size-pixels=300x200')"
+settled shadowa
+read -r SX SY SW SH <<<"$(boxes shadowa)"
+chk "shadow: a new window's shadow reaches all around it" \
+	until_ok 3 shadow_red $((SX - 6)) $((SY + SH / 2)) $((SX + SW / 2)) $((SY - 6)) $((SX + SW + 5)) $((SY + SH / 2)) $((SX + SW / 2)) $((SY + SH + 5)) ||
+	echo "shadow: at $SX,$SY ${SW}x$SH, $(cat "$STATE/shadow.txt")" >&2
+close_wait "$(class_addr shadowa)"
+hq eval "hl.config({ decoration = { shadow = { enabled = false } } })" >/dev/null
+
 chk "windows: its foot is closed at the battery's end" \
 	test "$(pyc "sum(1 for c in cs if c['class']=='foot')")" = 0
 
