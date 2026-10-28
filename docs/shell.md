@@ -201,6 +201,6 @@ category), the query and its caret, then the matches 20 px apart, each a
   closes the prompt instead of stealing its keys; so does its monitor
   going away.
 - **Limits**: typed, pasted and completed input share a 4 KiB UTF-8
-  limit; a paste drops control and bidi characters and gives up after
-  1.5 s. History and the ranking live in the
+  limit; a paste drops control, bidi and line-separator characters and
+  malformed bytes, and gives up after 1.5 s. History and the ranking live in the
   [state file](reference.md#state).
