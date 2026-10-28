@@ -130,7 +130,8 @@ namespace NAwesome::Controls {
         // a device by its id: connect it (powering the adapter first when
         // off), or disconnect it
         std::function<void(const std::string&, bool)> connectDevice;
-        std::function<void()>                         panelClosed; // the failures it showed are done
+        std::function<void(const std::string&)>       forgetDevice; // unpair it: BlueZ removes it, its keys with it
+        std::function<void()>                         panelClosed;  // the failures it showed are done
     };
     inline SDoors& doors() {
         static SDoors D;

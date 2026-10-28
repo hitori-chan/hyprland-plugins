@@ -258,6 +258,13 @@ namespace NAwesome::Notify {
                     return N->summary + " " + N->body;
             return std::string{};
         }
+        if (verb.starts_with("menu-at ")) { // "x y": the middle of the open menu's part whose key starts so ("" none)
+            const auto PREFIX = verb.substr(8);
+            for (const auto& C : cards)
+                if (C.kind == SCard::MENU_ITEM && C.group.starts_with(PREFIX))
+                    return std::format("{} {}", (int)std::lround(C.box.x + C.box.w / 2), (int)std::lround(C.box.y + C.box.h / 2));
+            return std::string{};
+        }
         if (verb == "center-rows") // the open center's status line and rows ("<status> [undo] | <rows>")
             return centerDescribe();
         if (verb == "quiet") // "now:N hushed:N" — an arrival would hold; a critical banner shows without its words

@@ -290,6 +290,27 @@ click "$BT_WORDS_X" "$CAPS_CY" 272
 chk "panel: ...and its row says why" until_is 3 "Gate Buds !Didn't answer.;Gate Mouse" hq awesome menu
 chk "panel: ...with no capsule over the panel" test "$(st)" = "center:0 live:0 dnd:0"
 tap esc
+# forget: a device's right-click (or Delete over it) asks in place of its
+# row; Cancel keeps it, Forget unpairs it, and the menu stays open
+MOUSE_ROW="bt:/org/bluez/hci0/dev_00_00_00_00_00_02"
+menu_at() { hq awesome menu-at "$1"; } # menu_at <key prefix>: "x y" of the open menu's part
+click "$BT_WORDS_X" "$CAPS_CY" 272
+until_ok 3 hq_matches '^Gate Buds' awesome menu
+# shellcheck disable=SC2046 # "x y"
+click $(menu_at "$MOUSE_ROW") 273
+chk "panel: a device's right-click asks to forget it" until_is 3 "Gate Buds !Didn't answer.;Gate Mouse ? [Forget] [Cancel]" hq awesome menu
+# shellcheck disable=SC2046
+click $(menu_at btn:cancel:) 272
+chk "panel: ...Cancel keeps it, the menu open" until_is 3 "Gate Buds !Didn't answer.;Gate Mouse" hq awesome menu
+printf 'move %s\nsleep 60\n' "$(menu_at "$MOUSE_ROW")" | vp
+tap delete
+chk "panel: Delete over a device asks too" until_is 3 "Gate Buds !Didn't answer.;Gate Mouse ? [Forget] [Cancel]" hq awesome menu
+: > "$STATE/logind.log"
+# shellcheck disable=SC2046
+click $(menu_at btn:forget:) 272
+chk "panel: Forget unpairs it" until_ok 3 grep -qx "RemoveDevice Gate Mouse" "$STATE/logind.log"
+chk "panel: ...it leaves the list, the menu open" until_is 3 "Gate Buds !Didn't answer." hq awesome menu
+tap esc
 # the display's: press its track at its level (50 %) and drag to three quarters
 printf 'move %s %s\nsleep 60\npress 272\nsleep 60\nmove %s %s\nsleep 60\nmove %s %s\nsleep 60\nrelease 272\nsleep 80\n' \
 	"$(track_x 0 50)" "$(level_cy 0)" "$(track_x 0 60)" "$(level_cy 0)" "$(track_x 0 75)" "$(level_cy 0)" | vp
@@ -354,7 +375,7 @@ rm -f "$STATE/wpctl-level" "$STATE/wpctl-mutes" "$STATE/wpctl-default"
 KPCT="$(ctl_part keyboard)"
 hq awesome controlcenter >/dev/null
 chk "panel: the verb closes it" until_is 3 0 hq awesome controlcenter-shown
-chk "panel: ...ending the failure it showed" until_is 3 "on Gate Buds=n35 Gate Mouse=n" hq awesome bt
+chk "panel: ...ending the failure it showed" until_is 3 "on Gate Buds=n35" hq awesome bt
 mv "$KDIR" "$STATE/leds/gone"
 K3="$STATE/leds/three::kbd_backlight"
 mkdir -p "$K3" && printf '2\n' > "$K3/max_brightness" && printf '1\n' > "$K3/brightness"

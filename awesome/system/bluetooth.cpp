@@ -1,13 +1,14 @@
 // awesome/system/bluetooth.cpp — Bluetooth for the control center: BlueZ's
 // first adapter (its power) and its paired devices (connected, a battery),
-// published into core/controls.hpp; the doors power the adapter and connect
-// or disconnect a device. Asynchronous over the system bus only: the tree
-// (GetManagedObjects) is read when the unit starts, when bluetoothd
-// (re)appears and when the panel opens; InterfacesAdded/Removed and one
-// PropertiesChanged match under /org/bluez keep it current between reads,
-// and a change it cannot apply in place (a device newly paired) reads the
-// tree again. sdbus's ObjectManager proxy is not used: its handlers
-// register synchronously.
+// published into core/controls.hpp; the doors power the adapter, connect
+// or disconnect a device, and forget one (Adapter1.RemoveDevice).
+//
+// Asynchronous over the system bus only: the tree (GetManagedObjects) is
+// read when the unit starts, when bluetoothd (re)appears and when the
+// panel opens; InterfacesAdded/Removed and one PropertiesChanged match
+// under /org/bluez keep it current between reads, and a change it cannot
+// apply in place (a device newly paired) reads the tree again. sdbus's
+// ObjectManager proxy is not used: its handlers register synchronously.
 //
 // A connect takes seconds (a headset brings up its profiles): the device
 // shows Connecting… (a disconnect, Disconnecting…) until the reply or
@@ -442,6 +443,21 @@ namespace NAwesome::System {
                 powerNow(true, id);
             else
                 connectNow(id, connect);
+        });
+    }
+
+    // the adapter drops the device and its keys; its InterfacesRemoved takes
+    // it off the list
+    void forgetDevice(const std::string& id) {
+        pendingDoor.arm([id]() {
+            const auto IT = devices.find(id);
+            auto*      P  = adapterPath.empty() ? nullptr : proxyOf(adapterPath);
+            if (IT == devices.end() || IT->second.busy != eBusy::IDLE || IT->second.adapter != adapterPath || !P)
+                return;
+            try {
+                P->callMethodAsync("RemoveDevice").onInterface(ADAPTER).withArguments(sdbus::ObjectPath{id}).uponReplyInvoke([](std::optional<sdbus::Error>) {});
+                systemBus().pollSoon();
+            } catch (...) {}
         });
     }
 
