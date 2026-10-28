@@ -208,8 +208,8 @@ chk "system: the display's level never moved with it" test "$(ctl_part display)"
 hq awesome clear >/dev/null; sleep 0.4
 
 # ---- the control center (notify/controls.cpp) -------------------------------
-# The bar's switches open it (shell.sh clicks them; here the verb): one card
-# of levels — a press on a track drags it, the wheel moves it 5 % a notch,
+# The bar's switches open it (shell.sh clicks them; here the verb): a module
+# per level — a press on a track drags it, the wheel moves it 5 % a notch,
 # the speaker mutes, the keyboard's glyph puts its light out and back — a
 # title row's own control (the volume's output pill opens its menu), then
 # the capsules: Bluetooth's and Do Not Disturb's circles switch them, their
