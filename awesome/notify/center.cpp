@@ -146,6 +146,12 @@ namespace NAwesome::Notify {
         notifChanged();
     }
 
+    // a stack's right-click or Delete: exactly the cards it drew
+    void centerDismissStack(const std::string& key) {
+        if (const auto IT = std::ranges::find_if(s_disp, [&](const SDisp& D) { return !D.fold && D.key == key; }); IT != s_disp.end())
+            Model::dismissCards(IT->items);
+    }
+
     void centerToggleGroup(const std::string& appKey) {
         const auto IT = s_groupState.find(appKey);
         if (IT != s_groupState.end() && IT->second) {
@@ -308,9 +314,11 @@ namespace NAwesome::Notify {
                     O.first = out.size();
                 }
             }
-            // the key rides the fold state, hover and selection — a stack
-            // carries the (app, group) identity, singles the app
-            out.push_back(SDisp{.items = {N}, .key = ownerOfSrc[i] != (size_t)-1 ? owners[ownerOfSrc[i]].key : Model::groupKeyOf(N), .tier = quiet ? TIER_SILENT : tier(N)});
+            // the key rides the fold state, hover, selection and dismissal —
+            // a stack carries the (app, group) identity, singles the app; the
+            // silent section's stacks key apart from the same app's ranked one
+            const auto KEY = ownerOfSrc[i] != (size_t)-1 ? owners[ownerOfSrc[i]].key : Model::groupKeyOf(N);
+            out.push_back(SDisp{.items = {N}, .key = quiet ? SILENT_KEY + "\x1f" + KEY : KEY, .tier = quiet ? TIER_SILENT : tier(N)});
         }
     }
 

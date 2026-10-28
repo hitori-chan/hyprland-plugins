@@ -305,7 +305,7 @@ namespace NAwesome::Notify {
                 }
                 case SCard::DECK: {
                     if (H.bit == 2u) { // right: the whole stack goes
-                        Model::dismissApp(H.group);
+                        centerDismissStack(H.group);
                         continue;
                     }
                     if (H.bit == 1u)
@@ -314,7 +314,7 @@ namespace NAwesome::Notify {
                 }
                 case SCard::SHEAD: {
                     if (H.bit == 2u) { // right: the whole stack goes
-                        Model::dismissApp(H.group);
+                        centerDismissStack(H.group);
                         continue;
                     }
                     if (H.bit == 1u && H.part == 1)
@@ -548,7 +548,7 @@ namespace NAwesome::Notify {
                 invokeLive(A.id, "", A.rev); // enter on a card: its primary, the body click's twin
             else if (A.verb == 3) {
                 if (GROUP)
-                    Model::dismissApp(A.group);
+                    centerDismissStack(A.group);
                 else
                     Model::closeOne(A.id, Model::R_DISMISSED);
             }

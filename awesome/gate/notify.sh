@@ -438,6 +438,8 @@ nclear
 # Two cards of one app are one stack: collapsed, the newest over its deck
 # (8 px a layer); a click spreads it under a 28 px header (the app's name,
 # Show Less flush right: notify/stack.cpp); right dismisses it whole.
+# the app's silent card folds apart: the stack's dismissal never takes it
+nsend -a stk -u low -t 30000 hushstk body
 nsend -a stk -t 30000 first body
 nsend -a stk -t 30000 second body
 hq awesome center >/dev/null
@@ -446,7 +448,7 @@ deck_steady() { local b; b="$(panel_bottom "$1")"; ((b > 0)) && [[ "$b" == "${PD
 shot_until 3 $STATE/stack-deck.png deck_steady $STATE/stack-deck.png
 PD="$(panel_bottom $STATE/stack-deck.png)"
 click $ROWX $ROWY 272
-chk "stack: a click spreads it and acts on nothing" test "$(st)" = "center:1 live:2 dnd:0"
+chk "stack: a click spreads it and acts on nothing" test "$(st)" = "center:1 live:3 dnd:0"
 bottom_over() { (($(panel_bottom "$1") > $2)); }
 bottom_under() { (($(panel_bottom "$1") < $2)); }
 shot_until 3 $STATE/stack-spread.png bottom_over $STATE/stack-spread.png $((PD + 39))
@@ -457,7 +459,7 @@ click $((PANEL_X + N_W - 30)) $((CARD_Y + 14)) 272
 shot_until 3 $STATE/stack-less.png bottom_under $STATE/stack-less.png $((PD + 3))
 chk "stack: Show Less folds it back" test "$(panel_bottom $STATE/stack-less.png)" -le $((PD + 2))
 click $ROWX $ROWY 273
-chk "stack: right on the deck dismisses the whole stack" test "$(st)" = "center:1 live:0 dnd:0"
+chk "stack: right on the deck dismisses the whole stack, not the app's silent card" until_is 3 "- | silent:1" rows
 hq awesome center >/dev/null
 nclear
 
