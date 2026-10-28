@@ -62,7 +62,8 @@ worker() { # worker N "COMMIT KEY"... — in order, incremental, in its own work
 	local n=$1
 	shift
 	local wt=$ROOT/sweep-$n out=$ROOT/sweep-w$n.out
-	[[ -d $wt ]] || git -C "$REPO" worktree add -q --detach "$wt" HEAD
+	# a tmp cleaner can take the .git link and leave the tree: rebuild it
+	[[ -e $wt/.git ]] || { rm -rf "$wt" && git -C "$REPO" worktree prune && git -C "$REPO" worktree add -q --detach "$wt" HEAD; }
 	: > "$out"
 	for ck in "$@"; do
 		local c=${ck% *} k=${ck#* } subj
