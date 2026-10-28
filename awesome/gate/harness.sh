@@ -621,6 +621,6 @@ write_stress_cfg() {
 		echo 'hl.permission(".*grim$", "screencopy", "allow")'
 		echo 'hl.permission(".*sharehold$", "screencopy", "allow")'
 		awk '{ print } /misc = \{/ { print "\t\tdisable_watchdog_warning = 1," }' "$GATE_DIR/nested.lua"
-		echo 'hl.window_rule({ match = { class = "foot|mpv|corpseA|corpseB|tuckmax|tuckfloat|tuckfs|csdfollow|csdfall|csdmem|csdsmall|exitfoot|w1base|w1over|w1gone|w1prev|w2max|w3a|w3b|w3c|snapw|glassprobe" }, float = true })'
+		echo 'hl.window_rule({ match = { class = "foot|mpv|corpseA|corpseB|tuckmax|tuckfloat|tuckfs|csdfollow|csdfall|csdmem|csdsmall|exitfoot|w1base|w1over|w1gone|w1prev|w2max|w3a|w3b|w3c|snapw|glassprobe|shadowa" }, float = true })'
 	} > "$CFG"
 }
