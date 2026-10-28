@@ -125,8 +125,10 @@ Apps. Critical cards punch through.
 
 The bell's left click (or `hl.plugin.awesome.center()`) opens the center
 on that bar's monitor. Opening it absorbs the live banners into parked
-rows; an explicit close (an outside click, Esc, the bell) pops them back
-as banners on fresh timeouts, under the same per-app cap and switches.
+rows, and so does what arrives while it shows; an explicit close (an
+outside click, Esc, the bell) pops them back as banners on fresh
+timeouts, under the same per-app cap and switches, while a card's action
+closing it (the app comes up) leaves them parked.
 It draws no backdrop: the desktop is never darkened.
 
 "Notifications" heads the column, bare on the desktop with a soft
