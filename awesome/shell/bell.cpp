@@ -76,7 +76,7 @@ namespace NAwesome::Shell {
         namespace P = NAwesome::Notify::Policy;
 
         Menu::SEntry row(std::string label, std::function<void()> action) {
-            Menu::SEntry e{.label = label, .display = std::move(label)};
+            Menu::SEntry e{.display = std::move(label)};
             e.action = std::move(action);
             return e;
         }
@@ -86,7 +86,7 @@ namespace NAwesome::Shell {
         }
 
         Menu::SEntry header(std::string label) {
-            Menu::SEntry e{.label = label, .display = std::move(label)};
+            Menu::SEntry e{.display = std::move(label)};
             e.header = true;
             return e;
         }

@@ -385,7 +385,7 @@ namespace NAwesome::Shell {
                                     const auto LABEL = it->second.get<std::string>();
                                     if (LABEL.size() > MAX_LABEL_BYTES)
                                         continue;
-                                    en.label = cleanLabel(LABEL);
+                                    en.display = cleanLabel(LABEL); // a submenu's ▸ has its own column (render)
                                 }
                                 if (auto it = P.find("enabled"); it != P.end())
                                     en.enabled = it->second.get<bool>();
@@ -415,7 +415,6 @@ namespace NAwesome::Shell {
                                         }
                                 if (!en.icon && deferred)
                                     en.iconRetry = std::move(iconName);
-                                en.display = en.label; // a submenu's ▸ has its own column (render)
                                 if (en.icon && en.icon->m_texID != 0 && en.toggle != TG_NONE && en.toggleState == 1)
                                     en.display = (en.toggle == TG_RADIO ? "● " : "✓ ") + en.display;
                                 lvl->entries.push_back(std::move(en));
@@ -606,8 +605,7 @@ namespace NAwesome::Shell {
                 // a row reads as its task does: minimized wins over focus
                 // (the focus fallback can rest on a hidden window)
                 const bool MIN = NAwesome::Windows::Tasklist::isMinimized(W);
-                rows.push_back({.label     = lbl,
-                                .display   = std::move(lbl),
+                rows.push_back({.display   = std::move(lbl),
                                 .alert     = !MIN && W != FOCUS && (W->m_hints & Desktop::View::WINDOW_HINT_URGENT),
                                 .tag       = tagName(W->m_workspace),
                                 .current   = !MIN && W == FOCUS,
