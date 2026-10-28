@@ -424,7 +424,7 @@ namespace NAwesome::Notify {
 
     static SP<ITexture> buildText(const std::string& fullText, const CHyprColor& col, int pt, int maxWidthPx, int maxHeightPx, float lineSpacing, bool markup, int weight,
                                   const CHyprColor* linkCol = nullptr, std::vector<std::pair<std::string, CBox>>* outLinks = nullptr, bool headCut = false,
-                                  eShadow shadow = eShadow::SOFT, int* padOut = nullptr, int indentPx = 0) {
+                                  eShadow shadow = eShadow::NONE, int* padOut = nullptr, int indentPx = 0) {
         const std::string FAMILY{NAwesome::cfg().getS("plugin:awesome:notify:font")};
         // the lines this raster shows: a pixel budget's whole lines, or the
         // negative height's lines of one paragraph

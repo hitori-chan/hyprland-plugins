@@ -914,7 +914,7 @@ namespace NAwesome::Shell {
             static std::string PROMPTBUF; // reused; the strip renders on the main thread only
             PROMPTBUF.assign(Menubar::currentCat >= 0 ? Menubar::CATEGORIES[Menubar::currentCat].name : "Run").append(":");
             const auto LABEL = textTex(PROMPTBUF, NAwesome::tSub(), PAINT.pt, 0, "", 600);
-            const double LW  = textInkW(LABEL, PAINT.pt, PAINT.scale);
+            const double LW  = textInkW(LABEL, PAINT.scale);
             PAINT.texIn(LABEL, CBox{px, MY, LW, PAINT.h});
             px += LW + 8;
 
@@ -940,7 +940,7 @@ namespace NAwesome::Shell {
                 const auto PUT  = [&](const SP<ITexture>& t) {
                     if (!t)
                         return;
-                    const double TW = textInkW(t, PAINT.pt, PAINT.scale);
+                    const double TW = textInkW(t, PAINT.scale);
                     PAINT.texIn(t, CBox{px, MY, TW, PAINT.h});
                     px += TW;
                 };
@@ -990,7 +990,7 @@ namespace NAwesome::Shell {
                 // reserved, even when no icon resolves, so row geometry
                 // stays stable and names never jump
                 constexpr double ICON = ICON_CELL, ICON_GAP = 6, SPACING = 20;
-                const auto       cellW = [&](const SP<ITexture>& t) { return ICON + ICON_GAP + textInkW(t, PAINT.pt, PAINT.scale); };
+                const auto       cellW = [&](const SP<ITexture>& t) { return ICON + ICON_GAP + textInkW(t, PAINT.scale); };
                 // an entry never outgrows half the strip (the Exec row
                 // echoes the whole query)
                 const int ENTRYMAX = (int)(PAINT.mb.w * PAINT.scale / 2);
@@ -1022,7 +1022,7 @@ namespace NAwesome::Shell {
                     const auto T = i == Menubar::sel ? textTex(NAME, COLFOCUS, PAINT.pt, ENTRYMAX) : WT;
                     if (T && T->m_texID != 0) {
                         const auto P = PAINT.toPhys(CBox{px + ICON + ICON_GAP, MY, 1, PAINT.h});
-                        CBox       b{P.x - textPad(PAINT.pt), P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y};
+                        CBox       b{P.x, P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y};
                         PAINT.texAt(T, b.round());
                     }
                     px += W + SPACING;

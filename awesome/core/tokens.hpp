@@ -9,17 +9,17 @@ namespace NAwesome::Theme {
 
     // ---- the glass (0xAARRGGBB, config default form): one material for the
     //      bar, the cards, the center, the capsules, menus and the launcher ----
-    // Crystal: a 6 % tint over the compositor's blur, which darkens what it
-    // samples (decoration:blur brightness 0.43, contrast 1, vibrancy 0.6 —
-    // the user's config): darkening the blur keeps the backdrop's detail and
-    // colour where a grey tint flattened them (titles 4.7:1 and secondary
-    // 3.1:1 over a white page, measured on the mocks; 4.3 and 2.4 at 48 %)
-    inline constexpr uint32_t GLASS = 0x0f1c1c20; // 6 %
+    // Mist: a 54 % grey over the compositor's blur, which darkens what it
+    // samples (decoration:blur size 3, passes 2, brightness 0.48, contrast
+    // 1, vibrancy 0.6 — the user's config). About a fifth of the backdrop
+    // shows through, and the text needs no drop: titles 4.7:1 and
+    // secondary 3.4:1 over a white page (measured on the mocks)
+    inline constexpr uint32_t GLASS = 0x8a58585e; // 54 %
 
     // ---- ink: one white at four strengths, the blue as text only ----
     inline constexpr uint32_t TITLE     = 0xffededf0; // primary
     inline constexpr uint32_t BODY      = 0xdbebebf5; // body text, 86 %
-    inline constexpr uint32_t SUB       = 0xadebebf5; // secondary: meta, kickers, 68 %
+    inline constexpr uint32_t SUB       = 0xbdebebf5; // secondary: meta, kickers, 74 %
     inline constexpr uint32_t DIM       = 0x57ebebf5; // tertiary: empty tags, minimized, 34 %
     inline constexpr uint32_t ACCENT    = 0xff00ccff; // selection and focus — text, never a ground (the bell's dot is the one mark)
     inline constexpr uint32_t ON_ACCENT = 0xff00141a; // dark ink on the accent: the live send arrow

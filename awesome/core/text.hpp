@@ -49,16 +49,13 @@ namespace NAwesome {
 
     // ---- the shadow text wears ----
     //
-    // Crystal glass is a 6 % tint over a darkened blur: text over it reads
-    // over whatever the blur brings up, so every text over glass wears a
-    // soft drop (CSS 0 1px 2px rgba(0,0,0,.35) at 13 px type, the mocks'
-    // measured recipe). The center's heading sits bare on the desktop and
-    // keeps macOS's stronger desktop-label drop. The raster grows by pad()
-    // physical px on every side: symmetric, so centering ignores it; every
-    // other placement steps back by it.
+    // Text over glass wears none: the glass is dense enough to read on.
+    // Text bare on the desktop (the center's heading, a stack's name)
+    // keeps macOS's desktop-label drop. The raster grows by pad() physical
+    // px on every side: symmetric, so centering ignores it; every other
+    // placement steps back by it.
     enum class eShadow : unsigned char {
         NONE,
-        SOFT,    // text over glass
         DESKTOP, // text bare on the wallpaper
     };
     struct STextShadow {

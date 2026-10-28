@@ -215,7 +215,7 @@ namespace NAwesome::Notify {
         // a chat's messages hang: a line at the margin begins one
         const int          HANGPX  = CHAT ? (int)std::lround(HANG * P.scale) : 0;
         const std::string& BODYSRC = CHAT ? fittedTranscript(NP, T.body, TWPX, bodyCap, HANGPX, LINKS ? &COLLINK : nullptr) : RAWBODY;
-        const auto         BODY    = BODYSRC.empty() ? nullptr : cachedText(BODYSRC, COLFG, T.body, TWPX, bodyCap, 1.1f, true, 400, LINKS ? &COLLINK : nullptr, false, eShadow::SOFT, HANGPX);
+        const auto         BODY    = BODYSRC.empty() ? nullptr : cachedText(BODYSRC, COLFG, T.body, TWPX, bodyCap, 1.1f, true, 400, LINKS ? &COLLINK : nullptr, false, eShadow::NONE, HANGPX);
         const double BH   = texH(BODY, P.scale);
         double       altH = 0;
         for (const auto& A : altLines)

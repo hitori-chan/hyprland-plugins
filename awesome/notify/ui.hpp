@@ -155,11 +155,11 @@ namespace NAwesome::Notify {
     // headCut ellipsizes at the START: an entry, whose newest characters
     // (the caret's end) must stay in view.
     // shadow: the drop the text wears (core/text.hpp), in a margin of
-    // SCachedText::pad: SOFT over glass, DESKTOP bare on the wallpaper.
+    // SCachedText::pad: DESKTOP bare on the wallpaper, none over glass.
     // texW/texH are the ink's size; texAt and texCentered place the ink.
     // indentPx: a hanging indent, every line of a paragraph but its first
     const SCachedText* cachedText(const std::string& text, const CHyprColor& col, int pt, int maxWpx, int maxHpx, float lineSp, bool markup, int weight,
-                                  const CHyprColor* linkCol = nullptr, bool headCut = false, eShadow shadow = eShadow::SOFT, int indentPx = 0);
+                                  const CHyprColor* linkCol = nullptr, bool headCut = false, eShadow shadow = eShadow::NONE, int indentPx = 0);
 
     // A chat card's body (one paragraph per message), fitted from the
     // newest end into capPx (Transcript::fitTail) by the layout the body's

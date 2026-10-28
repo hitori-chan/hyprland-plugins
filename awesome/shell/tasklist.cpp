@@ -110,7 +110,7 @@ namespace NAwesome::Shell {
                     const auto TEX = textTex(LBL, inkOf(HOVER), P.pt, MAXW, "", WEIGHT);
                     if (TEX && TEX->m_texID != 0) {
                         const auto B = P.toPhys(CBox{tx, box.y, 1, P.h});
-                        CBox       b{B.x - textPad(P.pt), B.y + (B.h - TEX->m_size.y) / 2.0, TEX->m_size.x, TEX->m_size.y};
+                        CBox       b{B.x, B.y + (B.h - TEX->m_size.y) / 2.0, TEX->m_size.x, TEX->m_size.y};
                         P.texAt(TEX, b.round());
                     }
 

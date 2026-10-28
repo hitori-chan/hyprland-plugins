@@ -731,8 +731,8 @@ namespace NAwesome::Shell {
                 const auto       detailW = [&](const Menu::SEntry& E) {
                     if (E.detail.empty() && E.hint.empty())
                         return 0.0;
-                    const double D = E.detail.empty() ? 0 : textInkW(textTex(E.detail, NAwesome::tSub(), TAGPT), TAGPT, PAINT.scale);
-                    const double H = E.hint.empty() ? 0 : textInkW(textTex(E.hint, COLFOCUS, TAGPT), TAGPT, PAINT.scale);
+                    const double D = E.detail.empty() ? 0 : textInkW(textTex(E.detail, NAwesome::tSub(), TAGPT), PAINT.scale);
+                    const double H = E.hint.empty() ? 0 : textInkW(textTex(E.hint, COLFOCUS, TAGPT), PAINT.scale);
                     return std::max(D, H) + DETAIL_GAP;
                 };
 
@@ -752,11 +752,11 @@ namespace NAwesome::Shell {
                                 continue;
                             if (E.header) {
                                 if (const auto T = headTex(E); T)
-                                    textW = std::max(textW, textInkW(T, TAGPT, PAINT.scale) - (LX - HX));
+                                    textW = std::max(textW, textInkW(T, PAINT.scale) - (LX - HX));
                                 continue;
                             }
                             if (const auto T = textTex(E.display, COLFG, PAINT.pt, capPx(E)); T)
-                                textW = std::max(textW, textInkW(T, PAINT.pt, PAINT.scale) + (E.submenu ? ARW : 0) + detailW(E));
+                                textW = std::max(textW, textInkW(T, PAINT.scale) + (E.submenu ? ARW : 0) + detailW(E));
                             if (textW + LX + 12 >= 380.0)
                                 break;
                         }
@@ -848,7 +848,7 @@ namespace NAwesome::Shell {
                     if (E.header) { // sits a pixel low: it belongs to the rows under it
                         if (const auto T = headTex(E); T && T->m_texID != 0) {
                             const auto P = PAINT.toPhys(CBox{mx, my + 1, mw, Menu::HEADH});
-                            PAINT.texAt(T, CBox{P.x + std::round(HX * PAINT.scale) - textPad(TAGPT), P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y}.round());
+                            PAINT.texAt(T, CBox{P.x + std::round(HX * PAINT.scale), P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y}.round());
                         }
                         my += Menu::HEADH;
                         continue;
@@ -884,7 +884,7 @@ namespace NAwesome::Shell {
                     const auto T      = textTex(E.display, fg, PAINT.pt, L.fixedWidth > 0 ? ROOMPX : FITS ? capPx(E) : ROOMPX);
                     if (T && T->m_texID != 0) {
                         const auto P = PAINT.toPhys(ROW);
-                        CBox       b{P.x + std::round(LX * PAINT.scale) - textPad(PAINT.pt), P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y};
+                        CBox       b{P.x + std::round(LX * PAINT.scale), P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y};
                         PAINT.texAt(T, b.round());
                     }
                     if (E.submenu)
@@ -892,7 +892,7 @@ namespace NAwesome::Shell {
                     if (DETW > 0) {
                         const bool HINT = LIT && !E.hint.empty();
                         if (const auto DT = HINT ? textTex(E.hint, COLFOCUS, TAGPT) : E.detail.empty() ? nullptr : textTex(E.detail, NAwesome::tSub(), TAGPT); DT && DT->m_texID != 0) {
-                            const double W = textInkW(DT, TAGPT, PAINT.scale);
+                            const double W = textInkW(DT, PAINT.scale);
                             PAINT.texIn(DT, CBox{mx + mw - 12 - W, my, W, ROWH});
                         }
                     }
