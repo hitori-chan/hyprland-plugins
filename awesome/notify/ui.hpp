@@ -145,7 +145,6 @@ namespace NAwesome::Notify {
     // undershot the default font by ~7% — a seven-line transcript
     // rendered six, and the clip took the newest line once the order went
     // chronological.
-    double bodyLineH(double scale);         // logical px, one body line
     int    bodyBudgetPx(double scale, int lines); // physical px for whole lines
 
     // Content + style + width IS the key: a replace or an age-bucket move
