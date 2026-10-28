@@ -193,6 +193,13 @@ gone() { ! clients | grep -qF "\"address\": \"$1\","; }
 close_wait() { [[ -n "$1" ]] || return 0; dsp "hl.dsp.window.close({window=\"address:$1\"})"; until_ok 5 gone "$1"; }
 # wait_class <class>: a window of that class (its app id) is mapped
 has_class() { clients | grep -qF "\"class\": \"$1\","; }
+# class_addr <class>: the first such window's address (by app id: the shell
+# in a foot rewrites its title at the first prompt)
+class_addr() {
+	clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class'] == sys.argv[1]), ''))" "$1"
+}
 wait_class() { until_ok 10 has_class "$1"; }
 # until_is <seconds> <want> <cmd...>: poll until the command prints `want` —
 # an asynchronous effect landing (an arrival, a sweep) — false on timeout.
@@ -243,8 +250,8 @@ import sys
 import numpy as np
 from PIL import Image
 # a column belongs to a panel when it holds more than 20 lit pixels below
-# the strip, spanning more than 40 rows: its side rims (the Crystal glass
-# is a 6 % tint, its inside dark over the nested's black)
+# the strip, spanning more than 40 rows: its side rims (the glass has no
+# tint, its inside dark over the nested's black)
 lit = np.asarray(Image.open(sys.argv[1]).convert('RGB'))[29:].min(axis=2) > 5
 n = lit.sum(axis=0)
 top = lit.argmax(axis=0)

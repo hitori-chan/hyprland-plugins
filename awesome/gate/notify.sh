@@ -551,6 +551,31 @@ sleep 1.2
 chk "hover: once the restarted clock runs out it retreats" test "$(bd)" = "banners:0 resident:1"
 nclear
 
+# ---- the glass: the blur's highlights roll off, the drop stays clear --------
+# A card carries no tint: over a white window its glass is the blur's
+# roll-off of white, 104/255 at highlights 0.46. Without the roll-off it
+# reads white; with the card's own drop under it (the drop is cut clear
+# of the glass, the fork's "let a shadow clear the shape it drops from")
+# about 93. The pointer rests mid-screen: a hovered card lifts.
+dsp "hl.dsp.exec_cmd('foot -a glasswhite -o colors-dark.background=ffffff --window-size-pixels=400x200')"; settled glasswhite
+dsp "hl.plugin.awesome.maximize()"; settled glasswhite
+nsend -t 30000 "glass" body
+glass_white() { # the card's right padding, a short column's median
+	capture_nested "$STATE/glass-white.png" && python3 - "$STATE/glass-white.png" $((MON_W - N_EDGE - 5)) "$N_TOP" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
+x, top = int(sys.argv[2]), int(sys.argv[3])
+v = sorted(round(sum(px[x, y]) / 3) for y in range(top + 8, top + 20))
+open(sys.argv[1][:-4] + '.txt', 'w').write(f'{v}\n')
+sys.exit(0 if 96 <= v[len(v) // 2] <= 112 else 1)
+PY
+}
+chk "glass: over white it settles at the roll-off's ceiling, its drop clear of it" until_ok 3 glass_white ||
+	echo "glass: over white $(cat "$STATE/glass-white.txt")" >&2
+nclear
+close_wait "$(class_addr glasswhite)"
+
 # ---- the card menu: hold left ------------------------------------------------
 # A hold opens the card's switches at the pointer (hold_menu, mrow above); a
 # chat leads with its two mute rows and a separator (these chats offer no

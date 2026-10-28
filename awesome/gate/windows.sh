@@ -472,11 +472,6 @@ close_wait "$FF"
 # path at the successor's center focused what lay on top there: a small
 # window over it (hover focus doesn't raise) took the focus instead.
 # By app id: the shell in a foot rewrites its title at the first prompt.
-class_addr() {
-	clients | python3 -c "
-import json,sys
-print(next((c['address'] for c in json.load(sys.stdin) if c['class'] == sys.argv[1]), ''))" "$1"
-}
 active_class() { hq activewindow -j | python3 -c 'import json,sys;print(json.load(sys.stdin).get("class",""))'; }
 w1_count() { clients | python3 -c "import json,sys;print(sum(1 for c in json.load(sys.stdin) if c['class'] in ('w1base','w1over','w1gone','w1prev')))"; }
 hover() { printf 'move %s %s\nsleep 60\n' "$1" "$2" | vp; settle; }

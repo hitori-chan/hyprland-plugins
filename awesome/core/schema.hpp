@@ -45,7 +45,7 @@ namespace NAwesome {
     // Field order: key, desc, kind, ival, dval, sval, cval, imin, imax, dmin, dmax.
     inline constexpr Spec SPECS[] = {
         // ---- theme: the material every module's surfaces share ----
-        {"plugin:awesome:theme:col_glass", "the glass of every surface: the bar, cards, the center, menus, the launcher (the alpha IS the glass)", Kind::Color, 0, 0, {}, Theme::GLASS},
+        {"plugin:awesome:theme:col_glass", "the glass of every surface: the bar, cards, the center, menus, the launcher (a tint over the blur; the default has none)", Kind::Color, 0, 0, {}, Theme::GLASS},
         {"plugin:awesome:theme:col_rim", "the glass rim", Kind::Color, 0, 0, {}, Theme::RIM},
         // ---- shell ----
         {"plugin:awesome:shell:height", "bar height in logical px (reserve it: monitor reserved top)", Kind::Int, 28, 0, {}, 0, 16, 64},

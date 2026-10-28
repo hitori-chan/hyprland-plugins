@@ -155,8 +155,8 @@ print((min(xs) + max(xs)) // 2, (min(ys) + max(ys)) // 2)
 PY
 }
 # col_h <frame> <x>: a panel's height down one column, rim to rim (the
-# Crystal glass is a 6 % tint: over the nested's black only its rim, its
-# top edge and its words are lit)
+# glass has no tint: over the nested's black only its rim, its top edge
+# and its words are lit)
 col_h() {
 	python3 - "$1" "$2" <<'PY'
 import sys
@@ -361,10 +361,7 @@ echo "glass: $GS strip states over $GF distinct frames, $GR returns" >&2
 chk "glass: the typing presented frames" test "${GF:-0}" -ge 8
 chk "glass: the strip frosts the terminal under it (it follows the typing)" test "${GS:-0}" -ge 2
 chk "glass: the strip never shimmers back to a state it left" test "${GR:-1}" = 0
-GP="$(clients | python3 -c "
-import json,sys
-print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='glassprobe'), ''))")"
-close_wait "$GP"
+close_wait "$(class_addr glassprobe)"
 
 # teardown: the item leaves the strip
 kill "$FAKE_PID" 2>/dev/null
@@ -381,7 +378,7 @@ chk "tray: icon left the strip" shot_until 3 "$STATE/tray-gone.png" icon_out "$S
 open_menubar() { dsp "hl.plugin.awesome.menubar()"; settle; } # it opens through a hop
 close_menubar() { tap esc; }
 # menubar_band <frame> — the ink in the prompt band (y 29..56): every channel
-# past 150, as the bell's (the Mist glass under the labels reads past 60)
+# past 150, as the bell's (the glass under the labels stays far below)
 menubar_band() {
 	python3 - "$1" <<'PY'
 import sys

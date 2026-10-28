@@ -76,7 +76,7 @@ The material every module's surfaces share.
 
 | Key | Default | |
 |---|---|---|
-| `col_glass` | Frost | the glass of the bar, cards, the center, menus and the launcher (the alpha is the glass) |
+| `col_glass` | Frost | the glass of the bar, cards, the center, menus and the launcher: a tint over `decoration:blur` (Frost's has none; its alpha 0 keeps the RGB as the glass's dark) |
 | `col_rim` | Frost | the glass rim |
 
 ### shell

@@ -315,17 +315,20 @@ namespace NAwesome {
                 return;
             g_pHyprOpenGL->renderBorder(*rctx, B, gradient(c), {.round = round, .roundingPower = rp, .borderSize = std::max(1, (int)std::lround(px)), .a = alpha});
         }
-        void shadow(const CBox& global, int round, float rp, int range, const CHyprColor& c = tShadow()) const {
+        // a drop; `clear` is the glass it falls from, drawn first and kept out
+        // of it: a clear glass shows its backdrop, never its own drop
+        void shadow(const CBox& global, int round, float rp, int range, const CHyprColor& c = tShadow(), std::optional<CBox> clear = {}) const {
             if (!paints() || !drawable(toPhys(global)))
                 return;
-            g_pHyprOpenGL->renderRoundedShadow(*rctx, toPhys(global), round, rp, (int)std::lround(range * scale), gradient(c), alpha, Render::SWindowRenderPresentation{});
+            g_pHyprOpenGL->renderRoundedShadow(*rctx, toPhys(global), round, rp, (int)std::lround(range * scale), gradient(c), alpha, Render::SWindowRenderPresentation{},
+                                               clear ? std::optional{toPhys(*clear)} : std::nullopt);
         }
         // ---- the Frost material: the one recipe every floating surface wears ----
         //
-        // A soft drop (the shader fades inside the box it is given, so the
-        // box grows by the range and sinks by the offset), the blurred glass,
-        // the top edge catching light, the rim. The drop darkens what the
-        // glass samples beneath it — part of the look, not a leak.
+        // The blurred glass, then a soft drop around it (the shader fades
+        // inside the box it is given, so the box grows by the range and
+        // sinks by the offset; the glass's shape stays clear of it), the top
+        // edge catching light, the rim.
         enum class eDepth : uint8_t {
             CARD, // cards, the center, capsules
             MENU, // menus and popovers float higher
@@ -335,8 +338,8 @@ namespace NAwesome {
                 return;
             const bool   MENU  = depth == eDepth::MENU;
             const double RANGE = MENU ? 28 : 20, SINK = MENU ? 10 : 6;
-            shadow(CBox{global}.expand(RANGE).translate(Vector2D{0.0, SINK}), round, rp, (int)RANGE, MENU ? tMenuShadow() : tShadow()); // the shader adds the range to the radius
             glass(global, fill, round, rp);
+            shadow(CBox{global}.expand(RANGE).translate(Vector2D{0.0, SINK}), round, rp, (int)RANGE, MENU ? tMenuShadow() : tShadow(), global); // the shader adds the range to the radius
             const double R = round / scale;
             if (global.w > 2 * R + 2)
                 rect(CBox{global.x + R, global.y, global.w - 2 * R, 1.0 / scale}, tLight());

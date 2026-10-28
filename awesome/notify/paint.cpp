@@ -139,18 +139,21 @@ namespace NAwesome::Notify {
 
     void paintChip(const SPaint& P, const CBox& box, bool hover) {
         const int R = (int)std::lround(std::min(box.w, box.h) / 2 * P.scale);
-        P.shadow(CBox{box}.expand(CHIP_DROP).translate(Vector2D{0.0, CHIP_SINK}), R, 2.f, (int)CHIP_DROP);
         P.glass(box, NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:theme:col_glass")), R, 2.f);
+        P.shadow(CBox{box}.expand(CHIP_DROP).translate(Vector2D{0.0, CHIP_SINK}), R, 2.f, (int)CHIP_DROP, tShadow(), box);
         if (hover)
             P.rect(box, tFill(), R, 2.f);
         P.ring(box, NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:theme:col_rim")), R, 2.f);
     }
 
-    // macOS's platter under the pointer: a touch lighter, a touch thicker
-    // (rgba 38,38,44,.56 -> 44,44,52,.62 on its board)
+    // macOS's platter under the pointer: a touch lighter, a touch thicker —
+    // a 6 % white veil over the glass, folded into one colour (the glass may
+    // carry no tint at all)
     CHyprColor liftedGlass(const CHyprColor& c) {
-        const auto UP = [](double v, double by) { return (float)std::min(1.0, v + by); };
-        return CHyprColor{UP(c.r, 6 / 255.0), UP(c.g, 6 / 255.0), UP(c.b, 8 / 255.0), UP(c.a, 0.06)};
+        constexpr double VEIL = 0.06;
+        const double     A    = VEIL + c.a * (1 - VEIL);
+        const auto       OVER = [&](double v) { return (float)((VEIL + v * c.a * (1 - VEIL)) / A); };
+        return CHyprColor{OVER(c.r), OVER(c.g), OVER(c.b), (float)A};
     }
 
 } // namespace NAwesome::Notify
