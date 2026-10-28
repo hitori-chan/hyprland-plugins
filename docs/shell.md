@@ -169,8 +169,10 @@ after a resume or a clock change.
 
 awesome's Mod+P prompt (`hl.plugin.awesome.menubar()`), dmenu-style: a
 strip of the bar's glass right under it with "Run:" (or the opened
-category), the query and its caret, then the matches 20 px apart, each a
-16 px icon and its name, the selection in accent text.
+category), the query and its accent caret, then the matches 20 px apart,
+each a 16 px icon and its name. The selection sits on a white pill
+(16 %, 6 px past its icon and its name, 22 tall), its name staying
+white.
 
 | Keys | Action |
 |---|---|

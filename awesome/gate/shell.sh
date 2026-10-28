@@ -425,6 +425,11 @@ mb_full() { band_above "$1" 200 && [[ "$(menubar_band "$1")" == "${MB_LAST:-}" ]
 shot_until 4 "$STATE/menubar-open.png" mb_full "$STATE/menubar-open.png"
 MB_OPEN="$(menubar_band "$STATE/menubar-open.png")"
 chk "menubar: the prompt opens below the strip" test "$MB_OPEN" -gt 200
+# the pick sits on the pill (white 16 %: its top rows, y 32..33, lie above
+# the icons and the text), its name the bar's text: the accent is the
+# caret's alone (~15 px; a name in it ran past 40)
+mb_pick() { (($(ground_px "$1" 0 "$MON_W" 32 34 28 64) > 60 && $(accent_px "$1" 0 "$MON_W" 29 56) < 40)); }
+chk "menubar: the pick sits on a pill, the accent the caret's alone" mb_pick "$STATE/menubar-open.png"
 # type a filter: the completion list narrows (fewer labels in the band)
 printf 'tap c\ntap a\ntap l\ntap c\n' | vk
 chk "menubar: typing filters the completion list (the band narrows)" \

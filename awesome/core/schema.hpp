@@ -54,7 +54,7 @@ namespace NAwesome {
         {"plugin:awesome:shell:font", "font family, or a Pango family list (the kanji tags take the first face that has them)", Kind::String, 0, 0, Theme::BAR_FONT},
         {"plugin:awesome:shell:terminal", "terminal that runs Terminal=true launcher entries", Kind::String, 0, 0, "alacritty"},
         {"plugin:awesome:shell:col_fg", "bar text and glyphs: the clock, the bell, symbolic tray icons, occupied tags", Kind::Color, 0, 0, {}, Theme::TITLE},
-        {"plugin:awesome:shell:col_focus", "the launcher's selection and caret, the client list's focused window (text)", Kind::Color, 0, 0, {}, Theme::ACCENT},
+        {"plugin:awesome:shell:col_focus", "the launcher's caret, the client list's focused window (text)", Kind::Color, 0, 0, {}, Theme::ACCENT},
         {"plugin:awesome:shell:col_active", "the viewed tag and the focused task (text)", Kind::Color, 0, 0, {}, Theme::ACCENT},
         {"plugin:awesome:shell:col_dot", "the bell's dot: cards the center has not shown", Kind::Color, 0, 0, {}, Theme::DOT},
         {"plugin:awesome:shell:col_empty", "empty tags, minimized tasks, disabled rows", Kind::Color, 0, 0, {}, Theme::DIM},
