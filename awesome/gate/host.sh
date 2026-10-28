@@ -128,6 +128,7 @@ SYSBUS_ADDR="unix:path=$SYSBUS_DIR/bus"
 SYSBUS_BACKLIGHT="${AW_BACKLIGHT_DIR:-$SYSBUS_DIR/backlight}"
 SYSBUS_LEDS="${AW_LEDS_DIR:-$SYSBUS_DIR/leds}"
 SYSBUS_ALS="${AW_ALS_FILE:-$SYSBUS_DIR/als}"
+SYSBUS_RFKILL="$SYSBUS_DIR/rfkill" # the fake's rfkill socket (the gate build reads it, never /dev/rfkill)
 SYSBUS_FAKE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/devtools/fakes/fake-sysbus"
 
 sysbus_alive() {
@@ -170,7 +171,7 @@ sysbus_start() {
 	setsid dbus-daemon --config-file="$SYSBUS_DIR/bus.conf" --nofork --nopidfile >"$SYSBUS_DIR/daemon.log" 2>&1 9>&- &
 	printf '%s\n' "$!" >"$SYSBUS_DIR/daemon.pid"
 	for _ in $(seq 1 30); do [[ -S "$SYSBUS_DIR/bus" ]] && break; sleep 0.1; done
-	DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" AW_BACKLIGHT_DIR="$SYSBUS_BACKLIGHT" AW_LEDS_DIR="$SYSBUS_LEDS" AW_ALS_FILE="$SYSBUS_ALS" AW_LOGIND_LOG="${AW_LOGIND_LOG:-$SYSBUS_DIR/logind.log}" \
+	DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" AW_BACKLIGHT_DIR="$SYSBUS_BACKLIGHT" AW_LEDS_DIR="$SYSBUS_LEDS" AW_ALS_FILE="$SYSBUS_ALS" AW_LOGIND_LOG="${AW_LOGIND_LOG:-$SYSBUS_DIR/logind.log}" AW_RFKILL="$SYSBUS_RFKILL" \
 		setsid python3 "$SYSBUS_FAKE" >"$SYSBUS_DIR/logind.stderr" 2>&1 9>&- &
 	printf '%s\n' "$!" >"$SYSBUS_DIR/logind.pid"
 	for _ in $(seq 1 30); do

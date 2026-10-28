@@ -29,7 +29,14 @@
 #   "Gate Phone" asks to compare one, a nameless one never names itself.
 #   Pairing calls the agent the pairing client registered with
 #   AgentManager1 (logged with its sender); Trusted is settable.
+# - rfkill: a unix socket at $AW_RFKILL speaks /dev/rfkill's events for one
+#   Bluetooth radio (an ADD on connect, a CHANGE per move). A client's
+#   CHANGE_ALL sets the soft block (logged); the gate's Rfkill sets both. A
+#   block powers the adapter off and its PowerState reads off-blocked; a
+#   power-on while blocked is refused, as bluetoothd refuses it.
 import os
+import socket
+import struct
 import sys
 import warnings
 
@@ -161,6 +168,7 @@ BLUEZ_XML = """
   </interface>
   <interface name="org.awesome.Gate">
     <method name="Typed"><arg type="s" name="name" direction="in"/><arg type="q" name="entered" direction="in"/></method>
+    <method name="Rfkill"><arg type="b" name="soft" direction="in"/><arg type="b" name="hard" direction="in"/></method>
     <method name="EmitVolume"><arg type="q" name="volume" direction="in"/></method>
     <method name="SetBattery"><arg type="s" name="name" direction="in"/><arg type="y" name="percent" direction="in"/></method>
     <method name="FailNext"><arg type="s" name="name" direction="in"/><arg type="s" name="error" direction="in"/><arg type="s" name="message" direction="in"/></method>
@@ -171,6 +179,7 @@ BLUEZ_XML = """
     <method name="StopDiscovery"/>
     <property name="Powered" type="b" access="readwrite"/>
     <property name="Discovering" type="b" access="read"/>
+    <property name="PowerState" type="s" access="read"/>
     <property name="Alias" type="s" access="read"/>
   </interface>
   <interface name="org.bluez.Device1">
@@ -194,7 +203,10 @@ BLUEZ_XML = """
 """
 BLUEZ = {i.name: i for i in Gio.DBusNodeInfo.new_for_xml(BLUEZ_XML).interfaces}
 HCI = "/org/bluez/hci0"
-adapter = {"Powered": True, "Alias": "gate", "Discovering": False}
+adapter = {"Powered": True, "Alias": "gate", "Discovering": False, "PowerState": "on"}
+RFKILL = os.environ.get("AW_RFKILL", "")
+radio = {"soft": False, "hard": False}
+rfkill_clients = []
 devices = {  # path -> its Device1 values, and Battery1's (None: none)
     HCI + "/dev_00_00_00_00_00_01": [{"Alias": "Gate Buds", "Icon": "audio-headphones", "Paired": True, "Connected": False}, 80],
     HCI + "/dev_00_00_00_00_00_02": [{"Alias": "Gate Mouse", "Icon": "input-mouse", "Paired": True, "Connected": True}, None],
@@ -210,7 +222,8 @@ strangers = {
 agent = None  # (sender, path) of the client that registered one
 pairing = {}  # path -> the Pair call waiting on the agent
 PASSKEY, COMPARE = 482917, 123456
-SIGS = {"Alias": "s", "Name": "s", "Icon": "s", "Paired": "b", "Connected": "b", "Powered": "b", "Discovering": "b", "RSSI": "n", "Trusted": "b"}
+SIGS = {"Alias": "s", "Name": "s", "Icon": "s", "Paired": "b", "Connected": "b", "Powered": "b", "Discovering": "b", "RSSI": "n", "Trusted": "b",
+        "PowerState": "s"}
 fail_next = {}  # alias -> (error name, message): its next Connect answers that
 
 
@@ -359,6 +372,10 @@ def on_bluez_call(conn, sender, path, iface, method, params, invocation):
                 if entered >= 6:
                     paired(conn, p)
         invocation.return_value(None)
+    elif method == "Rfkill":
+        soft, hard = params.unpack()
+        set_radio(conn, soft, hard)
+        invocation.return_value(None)
     elif method == "FailNext":
         name, error, message = params.unpack()
         fail_next[name] = (error, message)
@@ -401,6 +418,74 @@ def on_bluez_get(conn, sender, path, iface, prop):
     return None
 
 
+def rfkill_event(op):  # struct rfkill_event: idx, type (2: Bluetooth), op, soft, hard
+    return struct.pack("=IBBBB", 0, 2, op, int(radio["soft"]), int(radio["hard"]))
+
+
+def set_radio(conn, soft, hard):
+    radio["soft"], radio["hard"] = soft, hard
+    for c in list(rfkill_clients):
+        try:
+            c.send(rfkill_event(2))
+        except OSError:
+            rfkill_clients.remove(c)
+    blocked = soft or hard
+    state = "off-blocked" if blocked else ("on" if adapter["Powered"] else "off")
+    if blocked and adapter["Powered"]:
+        power(conn, False)
+    if adapter["PowerState"] != state:
+        adapter["PowerState"] = state
+        changed(conn, HCI, "org.bluez.Adapter1", {"PowerState": state})
+
+
+def rfkill_start(conn):
+    if not RFKILL:
+        return
+    try:
+        os.unlink(RFKILL)
+    except FileNotFoundError:
+        pass
+    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    srv.bind(RFKILL)
+    srv.listen(4)
+
+    def accepted(fd, cond):
+        c, _ = srv.accept()
+        c.send(rfkill_event(0))
+        rfkill_clients.append(c)
+
+        def wrote(fd2, cond2):
+            data = c.recv(64)
+            if not data:
+                rfkill_clients.remove(c)
+                c.close()
+                return False
+            for off in range(0, len(data) - 7, 8):
+                _, kind, op, soft, _ = struct.unpack("=IBBBB", data[off:off + 8])
+                if op == 3 and kind in (0, 2):  # CHANGE_ALL, all radios or Bluetooth's
+                    log(f"rfkill soft={soft}")
+                    set_radio(conn, bool(soft), radio["hard"])
+            return True
+        GLib.io_add_watch(c.fileno(), GLib.IO_IN | GLib.IO_HUP, wrote)
+        return True
+    GLib.io_add_watch(srv.fileno(), GLib.IO_IN, accepted)
+    rfkill_start.server = srv  # held for the process's life
+
+
+def power(conn, on):
+    adapter["Powered"] = on
+    changed(conn, HCI, "org.bluez.Adapter1", {"Powered": on})
+    state = "on" if on else ("off-blocked" if radio["soft"] or radio["hard"] else "off")
+    if adapter["PowerState"] != state:
+        adapter["PowerState"] = state
+        changed(conn, HCI, "org.bluez.Adapter1", {"PowerState": state})
+    if not on:  # a radio off drops every connection
+        for p, (values, _) in devices.items():
+            if values["Connected"]:
+                values["Connected"] = False
+                changed(conn, p, "org.bluez.Device1", {"Connected": False})
+
+
 def on_bluez_set(conn, sender, path, iface, prop, value):
     if iface == "org.bluez.Device1" and prop == "Trusted" and path in devices:
         devices[path][0]["Trusted"] = value.unpack()
@@ -410,14 +495,10 @@ def on_bluez_set(conn, sender, path, iface, prop, value):
         return False
     on = value.unpack()
     log(f"Powered {int(on)}")
+    if on and (radio["soft"] or radio["hard"]):
+        return False  # bluetoothd: "Blocked through rfkill"
     if adapter["Powered"] != on:
-        adapter["Powered"] = on
-        changed(conn, HCI, "org.bluez.Adapter1", {"Powered": on})
-        if not on:  # a radio off drops every connection
-            for p, (values, _) in devices.items():
-                if values["Connected"]:
-                    values["Connected"] = False
-                    changed(conn, p, "org.bluez.Device1", {"Connected": False})
+        power(conn, on)
     return True
 
 
@@ -455,6 +536,7 @@ def main():
     conn.register_object(SENSOR_PATH, SENSOR, on_sensor_call, on_sensor_get, None)
     Gio.bus_own_name_on_connection(conn, "net.hadess.SensorProxy", Gio.BusNameOwnerFlags.NONE, None, None)
     bluez_start(conn)
+    rfkill_start(conn)
     GLib.timeout_add(100, poll_sensor, conn)
     GLib.MainLoop().run()
 

@@ -172,6 +172,10 @@ namespace NAwesome::Notify {
     // refused (alarm: in red), then what is connected
     static std::string btText(const Controls::SBluetooth& B, bool& alarm) {
         alarm = false;
+        if (B.block == Controls::SBluetooth::HARD_BLOCKED) {
+            alarm = true;
+            return "Blocked";
+        }
         if (!B.powered) {
             alarm = B.powerFailed;
             return alarm ? "Didn't Turn On" : "Off";
@@ -520,8 +524,8 @@ namespace NAwesome::Notify {
         switch (tile) {
             case TILE_DND: Model::toggleSuspend(); break;
             case TILE_DND_MENU: CardMenu::openControl(ePanelMenu::DND, s_tiles[TILE_DND_MENU], /*alignRight=*/true); break;
-            case TILE_BT:
-                if (S.bluetooth.present && D.setBluetooth)
+            case TILE_BT: // a hard block is its owner's switch: the capsule says so
+                if (S.bluetooth.present && S.bluetooth.block != Controls::SBluetooth::HARD_BLOCKED && D.setBluetooth)
                     D.setBluetooth(!S.bluetooth.powered);
                 break;
             case TILE_BT_MENU: CardMenu::openControl(ePanelMenu::BLUETOOTH, s_tiles[TILE_BT_MENU], /*alignRight=*/false); break;

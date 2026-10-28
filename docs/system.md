@@ -78,6 +78,12 @@ center shows no Bluetooth.
   (a headset bringing up its profiles takes seconds; the call waits up to
   30 s). A device picked while the radio is off powers it on first, then
   connects.
+- **The kill switch** is the kernel's: `/dev/rfkill`, read as its
+  events come. A hard block (a switch, the firmware) reads Blocked; a
+  soft one the circle lifts (the seat's user may write rfkill, logind's
+  uaccess), and the adapter powers on once BlueZ's PowerState leaves
+  off-blocked. Without a writable rfkill a blocked radio's power-on is
+  "Didn't Turn On".
 - **A refusal says why.** BlueZ's answer becomes a reason: a page
   timeout, "Host is down" or no answer in 30 s is "Didn't Answer"; a
   missing key or a failed authentication "Pairing Lost"; anything else
