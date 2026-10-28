@@ -391,6 +391,7 @@ namespace NAwesome::Shell {
         // must not age them)
         void warmBegin(bool scoped) override {
             warmFont = cfg().getS("plugin:awesome:shell:font");
+            dropStaleTint(); // never mid-draw: a cleared cache blanked the icons for a frame
             if (!scoped)
                 texCache.tick();
         }

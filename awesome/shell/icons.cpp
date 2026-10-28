@@ -294,13 +294,11 @@ namespace NAwesome::Shell {
     // symbolic SVGs bake col_fg into their pixels (loadIcon) and every icon is
     // rasterized at the cell's device size, so a foreground or a scale change
     // invalidates every icon cache — checked at the caches' entrances
-    static void dropStaleTint();
 
     // class -> texture; nullptr is cached too (= leave the icon cell empty).
     SP<ITexture>                                         appIcon(const std::string& klass) {
         if (klass.empty())
             return nullptr;
-        dropStaleTint();
         if (const auto IT = appIconCache.find(klass); IT != appIconCache.end())
             return IT->second;
 
@@ -318,7 +316,6 @@ namespace NAwesome::Shell {
     SP<ITexture>                                         namedIcon(const std::string& name) {
         if (name.empty())
             return nullptr;
-        dropStaleTint();
         if (const auto IT = namedIconCache.find(name); IT != namedIconCache.end())
             return IT->second;
 
@@ -334,7 +331,7 @@ namespace NAwesome::Shell {
     // too. fcitx REALLY flips its icon on every IM toggle / input context
     // change — without this cache every flip re-resolved and re-rasterized the
     // file from disk inside the render pass.
-    static void                                          dropStaleTint() {
+    void dropStaleTint() {
         static uint64_t lastFg = 0;
         static int      lastPx = 0;
         const auto      FG     = (uint64_t)cfg().getColor("plugin:awesome:shell:col_fg");
@@ -357,7 +354,6 @@ namespace NAwesome::Shell {
 
     SP<ITexture> trayIcon(const std::string& name, const std::string& themePath, const std::string& id) {
         const auto KEY = name + "|" + themePath + "|" + id;
-        dropStaleTint();
         if (const auto IT = trayIconCache.find(KEY); IT != trayIconCache.end())
             return IT->second;
 
