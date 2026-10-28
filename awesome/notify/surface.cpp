@@ -176,6 +176,7 @@ namespace NAwesome::Notify {
         hovered = h;
         refreshBannerHold(); // reading a banner stops its clock
         controlsHover();     // a control center button names itself after a rest
+        CardMenu::hoverChanged(); // ... and a cut output's row its whole name
     }
 
     // ---- the tick timers ----

@@ -14,7 +14,8 @@ fi
 # absent, the source alone). A relative step moves a kept level (one the
 # file holds) up to its limit; without one it leaves the default: the
 # step checks read the command. Two sinks, 41 and 42, the default 41 until
-# set-default writes AW_WPCTL_DEFAULT_FILE.
+# set-default writes AW_WPCTL_DEFAULT_FILE; 42 takes a long PipeWire name
+# (an HDA codec's HDMI port) while AW_WPCTL_LONG_FILE exists.
 level() {
 	local l=0.56
 	[[ -n "${AW_WPCTL_LEVEL_FILE:-}" && -s "$AW_WPCTL_LEVEL_FILE" ]] && l="$(<"$AW_WPCTL_LEVEL_FILE")"
@@ -43,6 +44,13 @@ default_sink() {
 	printf '%s' "$d"
 }
 star() { [[ "$(default_sink)" == "$1" ]] && printf '*' || printf ' '; }
+sink42() {
+	if [[ -n "${AW_WPCTL_LONG_FILE:-}" && -e "$AW_WPCTL_LONG_FILE" ]]; then
+		printf 'Tiger Lake-LP Smart Sound Technology Audio Controller HDMI / DisplayPort 1 Output'
+	else
+		printf 'Gate Headset                       '
+	fi
+}
 
 case "${1:-}" in
 status)
@@ -58,7 +66,7 @@ status)
 	 │
 	 ├─ Sinks:
 	 │  $(star 41)   41. Gate Speakers                       [vol: $(level)]
-	 │  $(star 42)   42. Gate Headset                        [vol: 0.80]
+	 │  $(star 42)   42. $(sink42) [vol: 0.80]
 	 │
 	 ├─ Sources:
 	 │  *   43. Gate Microphone                     [vol: 1.00]

@@ -2,6 +2,8 @@
 // at its byte caps): pure and testable.
 #pragma once
 
+#include <algorithm>
+#include <cctype>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -149,6 +151,70 @@ namespace NAwesome::Notify {
             out += T.text;
         out.append(s, std::min(i, s.size()));
         return out;
+    }
+
+    // A name too wide for its room, cut in the middle between whole words,
+    // its end kept first: the end tells outputs apart ("…Speaker +
+    // Headphones" from "…HDMI / DisplayPort 1 Output"). The first word, " …
+    // ", the last; then words grow from the end and the start while they
+    // fit, and a bare "/" or "+" never borders the cut. A name whose first
+    // and last words alone overflow is cut by characters (55 % head, 45 %
+    // tail). fits(text): whether the text fits the room.
+    template <typename F>
+    std::string midCut(const std::string& name, F&& fits) {
+        if (fits(name))
+            return name;
+        std::vector<std::string_view> w;
+        for (size_t i = 0; i < name.size();) {
+            const size_t END = std::min(name.find(' ', i), name.size());
+            if (END > i)
+                w.emplace_back(name.data() + i, END - i);
+            i = END + 1;
+        }
+        const size_t N    = w.size();
+        const auto   join = [&](size_t h, size_t t) {
+            std::string s;
+            for (size_t i = 0; i < h; i++)
+                s.append(i ? " " : "").append(w[i]);
+            s.append(" \u2026 ");
+            for (size_t i = N - t; i < N; i++)
+                s.append(i > N - t ? " " : "").append(w[i]);
+            return s;
+        };
+        // no letter or digit: a UTF-8 letter counts as one
+        const auto bare = [](std::string_view x) { return std::ranges::none_of(x, [](unsigned char c) { return c >= 0x80 || std::isalnum(c); }); };
+        if (N > 2 && fits(join(1, 1))) {
+            size_t h = 1, t = 1;
+            for (bool grew = true; grew;) {
+                grew = false;
+                if (h + t < N && fits(join(h, t + 1)))
+                    t++, grew = true;
+                if (h + t < N && fits(join(h + 1, t)))
+                    h++, grew = true;
+            }
+            while (t > 1 && bare(w[N - t]))
+                t--;
+            while (h > 1 && bare(w[h - 1]))
+                h--;
+            while (h + t < N && !bare(w[h]) && fits(join(h + 1, t)))
+                h++;
+            return join(h, t);
+        }
+        std::vector<size_t> cp; // each code point's byte offset
+        for (size_t i = 0; i < name.size(); i++)
+            if (((unsigned char)name[i] & 0xC0) != 0x80)
+                cp.push_back(i);
+        const auto at = [&](size_t k) { return k < cp.size() ? cp[k] : name.size(); };
+        for (size_t k = cp.size(); k-- > 2;) {
+            std::string_view head(name.data(), at((k * 55 + 99) / 100)), tail(name.data() + at(cp.size() - k * 45 / 100), name.size() - at(cp.size() - k * 45 / 100));
+            while (!head.empty() && head.back() == ' ')
+                head.remove_suffix(1);
+            while (!tail.empty() && tail.front() == ' ')
+                tail.remove_prefix(1);
+            if (const auto CUT = std::string{head}.append("\u2026").append(tail); fits(CUT))
+                return CUT;
+        }
+        return name.substr(0, at(1)) + "\u2026";
     }
 
 } // namespace NAwesome::Notify

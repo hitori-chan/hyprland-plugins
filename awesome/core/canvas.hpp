@@ -352,11 +352,12 @@ namespace NAwesome {
 
         // A dark note naming what the pointer rests on (a button's name, the
         // battery's state): no glass, so it reads over any panel; a pill
-        // with a hairline rim and a drop. Its words go on top.
-        void note(const CBox& global) const {
+        // with a hairline rim and a drop (a note of wrapped lines: rounded
+        // by `radius`). Its words go on top.
+        void note(const CBox& global, double radius = -1) const {
             if (!paints())
                 return;
-            const int R = (int)std::lround(global.h / 2 * scale);
+            const int R = (int)std::lround((radius < 0 ? global.h / 2 : radius) * scale);
             shadow(CBox{global}.expand(NOTE_RANGE).translate(Vector2D{0.0, 4.0}), R, 2.f, (int)NOTE_RANGE, tNoteShadow());
             rect(global, tNote(), R, 2.f);
             ring(global, tHairline(), R, 2.f);

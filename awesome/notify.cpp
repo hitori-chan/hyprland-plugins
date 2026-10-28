@@ -250,6 +250,8 @@ namespace NAwesome::Notify {
             return CardMenu::describe();
         if (verb == "controls-tip") // the control center button whose name shows ("" none)
             return controlsTip();
+        if (verb == "menu-name") // the whole name a cut output's note shows ("" none)
+            return CardMenu::describeName();
         if (verb == "controls-bt") // Bluetooth's capsule state ("Didn't Answer!": in red)
             return controlsBt();
         if (verb == "capsule") { // the live capsule's words ("<summary> <body>"; "" none)

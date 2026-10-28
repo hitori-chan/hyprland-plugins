@@ -475,7 +475,30 @@ cc_menu() { echo "$(hq awesome controlcenter-shown) $(hq awesome menu)"; } # "<p
 chk "panel: ...and Esc closes its menu, the panel stays" until_is 3 "1 " cc_menu
 click "$((PANEL_X + 60))" "$(level_cy 2)" 273
 chk "panel: a level's right click opens no menu" test -z "$(hq awesome menu)"
-rm -f "$STATE/wpctl-level" "$STATE/wpctl-mutes" "$STATE/wpctl-default"
+# A long name (an HDA codec's HDMI port's): Output widens to the panel's
+# width, then cuts the name in the middle between words, its ends kept (a
+# bare "/" never borders the cut); resting on the row names it whole in a
+# note left of the menu, and leaving it takes the note away. The panel
+# reads the outputs again as it opens.
+LONG="Tiger Lake-LP Smart Sound Technology Audio Controller HDMI / DisplayPort 1 Output"
+: >"$STATE/wpctl-long"
+hq awesome controlcenter >/dev/null
+chk "panel: ...closed for the long name" until_is 3 0 hq awesome controlcenter-shown
+hq awesome controlcenter >/dev/null
+chk "panel: ...and open again" until_is 3 1 hq awesome controlcenter-shown
+click "$DISC_CX" "$(head_cy 2)" 272
+long_cut() { local m; m="$(hq awesome menu)"; [[ "$m" =~ ^Gate\ Speakers\;Tiger\ .+\ …\ .+\ Output\*$ && "$m" != *"/ …"* && "$m" != *"… /"* ]]; }
+chk "panel: a long output name is cut in the middle, between words" until_ok 3 long_cut ||
+	echo "panel: the output menu read '$(hq awesome menu)'" >&2
+LONG_Y=$(($(sec_y 2) + 21 + 6 + 5 + 22 + 28 + 14))
+printf 'move %s %s\nsleep 60\n' $((PANEL_X + 230)) "$LONG_Y" | vp
+chk "panel: ...resting on it names it whole" until_is 3 "$LONG" hq awesome menu-name
+name_note() { (($(lit_px "$1" $((PANEL_X - 200)) $((PANEL_X - 20)) $((LONG_Y - 8)) $((LONG_Y + 8))) > 60)); }
+chk "panel: ...in a note left of the menu" shot_until 3 "$STATE/panel-name.png" name_note "$STATE/panel-name.png"
+printf 'move %s %s\nsleep 60\n' $((PANEL_X + 230)) $((LONG_Y - 28)) | vp
+chk "panel: ...leaving the row takes the note away" until_is 3 "" hq awesome menu-name
+tap esc
+rm -f "$STATE/wpctl-level" "$STATE/wpctl-mutes" "$STATE/wpctl-default" "$STATE/wpctl-long"
 
 # A light this coarse (a ThinkPad's keyboard: off, low, high) is a stepped
 # slider: a press lands on the nearest level. The panel opening finds a

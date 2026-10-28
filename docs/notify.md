@@ -205,7 +205,11 @@ low, high) snaps its knob to them and still reads a percent.
 - the **output**, the sound's door: a 22 px capsule, the current
   output's kind and a chevron (shown with two outputs or more), opens
   **Output** under it: `wpctl status`'s sinks, the default checked,
-  each with its kind; a pick makes one the default.
+  each with its kind; a pick makes one the default. The menu widens to
+  its names, up to the panel's width (232 to 343 px); a name longer
+  still is cut in the middle between whole words, both ends kept (they
+  tell "…Speaker + Headphones" from "…HDMI / DisplayPort 1 Output"), and
+  resting 500 ms on its row names it whole in a note left of the menu.
 
 | On a level | Action |
 |---|---|
@@ -264,7 +268,8 @@ pointer (the glass never lightens):
 **Names**: the small buttons (the keyboard's and the speaker's glyphs,
 the two doors) name themselves after the pointer rests 500 ms on them —
 "Light Off", "Unmute", "Follow the Room", "Output · Speakers" — in a
-dark note to their left, outside the panel for a glyph.
+dark note to their left, outside the panel for a glyph. The output's
+name past 220 px is cut in the middle, as its menu's rows are.
 A click hides the name until the pointer comes back.
 
 ## Do Not Disturb

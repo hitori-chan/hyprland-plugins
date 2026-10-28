@@ -87,6 +87,7 @@ namespace NAwesome::Notify::CardMenu {
         std::string                                      code;    // a pairing's code, its first `entered` digits typed
         int8_t                                           entered = -1;
         bool                                             spin    = false; // a header's activity: the scan runs
+        std::string                                      shown;           // an output's label as the last layout drew it (cut to fit)
     };
 
     // the board's menu: 5 px of padding, 28 px rows whose labels sit 15 px
@@ -112,6 +113,13 @@ namespace NAwesome::Notify::CardMenu {
     // the activity turns a dot every SPIN_STEP (its box damaged, nothing warmed)
     constexpr auto SPIN_STEP = std::chrono::milliseconds(100);
     constexpr size_t NAME_CP = 24; // a name past this many code points ellipsizes: the verb must stay readable
+    // the control center's menus have their board widths; Output's fits its
+    // names between 232 and the panel's width from its capsule's right edge
+    constexpr double OUT_MIN_W = 232, OUT_MAX_W = 343, DND_W = 220, BT_W = 280;
+    // a cut output's whole name: a dark note 14 px left of the menu, its
+    // words wrapping at 300 px (9 px in, 5 over and under), after a rest
+    constexpr double NAME_NOTE_W = 300, NAME_NOTE_PADX = 9, NAME_NOTE_PADY = 5, NAME_NOTE_R = 10, NAME_NOTE_GAP = 14;
+    constexpr auto   NAME_DELAY = std::chrono::milliseconds(500);
 
     static double rowH(const SItem& I) {
         return I.verb == SEP ? SEPH : I.verb == HEADER ? (I.buttons.empty() ? HEADH : HEAD_BTN_H) : I.disc ? DEVH : ROWH;
@@ -128,6 +136,9 @@ namespace NAwesome::Notify::CardMenu {
     static Vector2D           s_at;
     static std::vector<SItem> s_items;
     static CBox               s_box; // global logical, as last laid out
+    // a cut output's row: the one the pointer rests on, the one whose name shows
+    static std::string         s_nameWant, s_nameFor;
+    static SP<CEventLoopTimer> s_nameTick;
 
     static std::string clipName(const std::string& s) {
         size_t cp = 0;
@@ -323,6 +334,30 @@ namespace NAwesome::Notify::CardMenu {
         }
     }
 
+    // the cut name's rest: disarmed, its note gone with the next warm
+    static void nameReset() {
+        if (s_nameTick)
+            s_nameTick->updateTimeout(std::nullopt);
+        s_nameWant.clear();
+        s_nameFor.clear();
+    }
+
+    void hoverChanged() {
+        std::string want;
+        if (s_open && s_control == ePanelMenu::OUTPUT && hovered.kind == SCard::MENU_ITEM && hovered.id < s_items.size())
+            if (const auto& I = s_items[hovered.id]; I.verb == OUTPUT && !I.shown.empty() && I.shown != I.label)
+                want = I.key;
+        if (want == s_nameWant)
+            return;
+        const bool SHOWN = !s_nameFor.empty();
+        nameReset();
+        s_nameWant = std::move(want);
+        if (!s_nameWant.empty() && s_nameTick)
+            s_nameTick->updateTimeout(NAME_DELAY);
+        if (SHOWN)
+            notifChanged();
+    }
+
     bool openControl(ePanelMenu m, const CBox& anchor, bool alignRight) {
         close();
         s_open    = true;
@@ -344,6 +379,7 @@ namespace NAwesome::Notify::CardMenu {
         const auto N = target(id);
         if (!N)
             return false;
+        nameReset();
         s_open    = true;
         s_owner   = id;
         s_control.reset();
@@ -367,6 +403,7 @@ namespace NAwesome::Notify::CardMenu {
         if (s_control == ePanelMenu::BLUETOOTH && Controls::doors().menuClosed)
             Controls::doors().menuClosed();
         s_forget.clear();
+        nameReset();
         s_open  = false;
         s_owner = 0;
         s_control.reset();
@@ -382,6 +419,10 @@ namespace NAwesome::Notify::CardMenu {
         s_spinTick.reset();
         s_spinning = false;
         s_spinBox  = {};
+        nameReset();
+        if (s_nameTick && g_pEventLoopManager)
+            g_pEventLoopManager->removeTimer(s_nameTick);
+        s_nameTick.reset();
         s_forget.clear();
         s_open  = false;
         s_owner = 0;
@@ -538,9 +579,14 @@ namespace NAwesome::Notify::CardMenu {
             }
             out += (out.empty() ? "" : ";") +
                 (I.dim ? "(" + I.label + ")" :
-                         I.label + (I.check == 1 ? "*" : "") + (I.detail.empty() ? "" : " " + I.detail) + (I.fail ? std::string{" !"} + failLine(I.fail).first : ""));
+                         (I.shown.empty() ? I.label : I.shown) + (I.check == 1 ? "*" : "") + (I.detail.empty() ? "" : " " + I.detail) + (I.fail ? std::string{" !"} + failLine(I.fail).first : ""));
         }
         return s_open ? out : std::string{};
+    }
+
+    std::string describeName() {
+        const auto IT = s_nameFor.empty() ? s_items.end() : std::ranges::find(s_items, s_nameFor, &SItem::key);
+        return IT == s_items.end() ? std::string{} : IT->label;
     }
 #endif
 
@@ -563,9 +609,11 @@ namespace NAwesome::Notify::CardMenu {
         const bool   KINDS  = std::ranges::any_of(s_items, [](const SItem& I) { return I.glyph != Glyph::eGlyph::NONE && !I.disc; });
         const bool   DISCS  = std::ranges::any_of(s_items, [](const SItem& I) { return I.disc; });
         const double LX     = DISCS ? DISC_X + DISC_D + DISC_GAP : (CHECKS ? CHECKED_LABEL_X : LABEL_X) + (KINDS ? KIND_W + KIND_GAP : 0);
-        // the control center's menus have their board widths
-        const double FIXED = !s_control ? 0 : *s_control == ePanelMenu::OUTPUT ? 232 : *s_control == ePanelMenu::DND ? 220 : 280;
-        const int    CAPPX = (int)std::lround(((FIXED > 0 ? FIXED : MAX_W) - LX - LABEL_X) * P.scale);
+        const auto [WMIN, WMAX] = !s_control                       ? std::pair{MIN_W, MAX_W} :
+                    *s_control == ePanelMenu::OUTPUT ? std::pair{OUT_MIN_W, OUT_MAX_W} :
+                    *s_control == ePanelMenu::DND    ? std::pair{DND_W, DND_W} :
+                                                       std::pair{BT_W, BT_W};
+        const int    CAPPX = (int)std::lround((WMAX - LX - LABEL_X) * P.scale);
 
         // the right-hand words come first: the label's room is what they leave
         const auto detailOf = [&](const SItem& I) { return I.detail.empty() || I.verb == HEADER ? nullptr : cachedText(I.detail, COLSUB, T.meta, CAPPX, -1, 0, false, 400); };
@@ -584,8 +632,13 @@ namespace NAwesome::Notify::CardMenu {
                 return nullptr;
             return cachedText(std::format("<span {}>{}</span> {}", inkMarkup(COLURGENT), HEAD, HINT), COLSUB, T.meta, CAPPX, T.meta * 3, 0, true, 400);
         };
+        // an output's name past the label's room is cut in the middle (its
+        // ends tell outputs apart); every other label is whole
+        const auto labelOf = [&](const SItem& I) -> const std::string& {
+            return I.verb == OUTPUT && !I.dim ? fittedName(I.label, labelPx(I), T.body, 400) : I.label;
+        };
         // the resting face of a row's label: its height sizes a refused row
-        const auto restOf = [&](const SItem& I) { return cachedText(I.label, I.quiet ? COLSUB : COLTITLE, T.body, labelPx(I), -1, 0, false, 400); };
+        const auto restOf = [&](const SItem& I) { return cachedText(labelOf(I), I.quiet ? COLSUB : COLTITLE, T.body, labelPx(I), -1, 0, false, 400); };
         // a pairing's code, its typed digits dimmed
         const auto codeOf = [&](const SItem& I) -> const SCachedText* {
             if (I.code.empty())
@@ -596,7 +649,7 @@ namespace NAwesome::Notify::CardMenu {
             const size_t TYPED = I.entered > 0 ? std::min(esc.size(), (size_t)I.entered) : 0;
             return cachedText(std::format("<span letter_spacing=\"{}\"><span {}>{}</span>{}</span>", (int)std::lround(0.08 * CODE_PX * P.scale * 1024), inkMarkup(COLSUB),
                                           esc.substr(0, TYPED), esc.substr(TYPED)),
-                              COLTITLE, PX(CODE_PX), PX(FIXED > 0 ? FIXED : MAX_W), -1, 0, true, 600);
+                              COLTITLE, PX(CODE_PX), PX(WMAX), -1, 0, true, 600);
         };
         // a prompt's question wraps in the label's column
         const auto askOf = [&](const SItem& I) { return cachedText(I.detail, COLSUB, T.meta, CAPPX, T.meta * 3, 0, false, 400); };
@@ -607,13 +660,16 @@ namespace NAwesome::Notify::CardMenu {
             return F ? std::max(DEVH, 2 * DEV_PADY + texH(restOf(I), P.scale) + FAIL_GAP + texH(F, P.scale)) : rowH(I);
         };
 
-        double w = FIXED > 0 ? FIXED : MIN_W, h = 2 * PAD;
-        for (const auto& I : s_items) {
+        double w = WMIN, h = 2 * PAD;
+        for (auto& I : s_items) {
             h += itemH(I);
-            if (FIXED <= 0 && I.verb != SEP && I.verb != HEADER && I.verb != PROMPT)
-                w = std::max(w, texW(cachedText(I.label, I.dim ? COLDIM : COLTITLE, T.body, CAPPX, -1, 0, false, 400), P.scale) + LX + LABEL_X);
+            if (I.verb == OUTPUT && !I.dim) // what the gate reads back
+                if (const auto& SHOWN = labelOf(I); I.shown != SHOWN)
+                    I.shown = SHOWN;
+            if (WMIN < WMAX && I.verb != SEP && I.verb != HEADER && I.verb != PROMPT)
+                w = std::max(w, texW(cachedText(labelOf(I), I.dim ? COLDIM : COLTITLE, T.body, CAPPX, -1, 0, false, 400), P.scale) + LX + LABEL_X);
         }
-        w = std::min(w, std::max(MAX_W, FIXED));
+        w = std::min(w, WMAX);
         // the bound: Bluetooth's list taller than the monitor keeps its first
         // paired rows and says how many more (a warm trims; the draw paints
         // what it left)
@@ -662,9 +718,12 @@ namespace NAwesome::Notify::CardMenu {
         cards.push_back(std::move(panel));
 
         double ry = y + PAD;
+        CBox   nameRow; // the cut row whose whole name shows
         for (size_t i = 0; i < s_items.size(); i++) {
             const auto&  I  = s_items[i];
             const double RH = itemH(I);
+            if (!s_nameFor.empty() && I.key == s_nameFor)
+                nameRow = CBox{x, ry, w, RH};
             if (I.verb == SEP) {
                 P.rect(CBox{x + LABEL_X, ry + SEPH / 2, w - 2 * LABEL_X, 1.0 / P.scale}, tHairline());
                 ry += SEPH;
@@ -799,6 +858,20 @@ namespace NAwesome::Notify::CardMenu {
             cards.push_back(std::move(row));
             ry += RH;
         }
+        // a cut output's whole name, in a note left of the menu: its words
+        // warm with the warm its rest asked for
+        if (nameRow.w > 0)
+            if (const auto IT = std::ranges::find(s_items, s_nameFor, &SItem::key); IT != s_items.end())
+                if (const auto TXT = cachedText(IT->label, COLTITLE, T.meta, PX(NAME_NOTE_W - 2 * NAME_NOTE_PADX), T.meta * 4, 0, false, 500)) {
+                    const double TW = texW(TXT, P.scale) + 2 * NAME_NOTE_PADX, TH = texH(TXT, P.scale) + 2 * NAME_NOTE_PADY;
+                    const CBox   TB{std::max(MB.x + EDGE, x + PAD - NAME_NOTE_GAP - TW), nameRow.y + (nameRow.h - TH) / 2, TW, TH};
+                    P.note(TB, NAME_NOTE_R);
+                    texCentered(P, TXT, TB);
+                    SCard c; // its damage and bounds; never hit
+                    c.kind = SCard::CAPSULE;
+                    c.box  = CBox{TB}.expand(SPaint::noteReach());
+                    cards.push_back(c);
+                }
         // the activity turns on its own tick: its box is damaged, nothing warms
         s_spinning = spun;
         if (!spun)
@@ -818,6 +891,16 @@ namespace NAwesome::Notify::CardMenu {
             },
             nullptr);
         g_pEventLoopManager->addTimer(s_spinTick);
+        s_nameTick = makeShared<CEventLoopTimer>(
+            std::nullopt,
+            [](SP<CEventLoopTimer>, void*) {
+                if (!s_open || s_nameWant.empty() || s_nameFor == s_nameWant)
+                    return;
+                s_nameFor = s_nameWant;
+                notifChanged();
+            },
+            nullptr);
+        g_pEventLoopManager->addTimer(s_nameTick);
     }
 
 } // namespace NAwesome::Notify::CardMenu

@@ -53,7 +53,7 @@ namespace NAwesome::Notify {
     inline constexpr double PANEL_GAP = 12, CAPS_H = 64, CAP_DOT = 40, CAP_INSET = 12, CAP_GLYPH = 18, CAP_TEXT_X = 64, CAP_PADR = 10, CHEV = 10, CHEV_GAP = 3;
     // a button's name: a dark note left of it (a level's glyph's outside
     // the panel, 24 px off it)
-    inline constexpr double TIP_H = 24, TIP_PADX = 9, TIP_GAP = 6, TIP_OUT = 24;
+    inline constexpr double TIP_H = 24, TIP_PADX = 9, TIP_GAP = 6, TIP_OUT = 24, OUT_TIP_NAME = 220;
     // what a slider asked shows this long while its device answers; a
     // button rests this long under the pointer before it names itself
     constexpr auto HOLD = std::chrono::milliseconds(1500), TIP_DELAY = std::chrono::milliseconds(500);
@@ -443,11 +443,14 @@ namespace NAwesome::Notify {
             capsule(false, CBox{X, RY, W, CAPS_H});
 
         // ---- a button's name ----
-        // every present one's words are warm: the rest only shows them
+        // every present one's words are warm: the rest only shows them. The
+        // output's name past 220 px is cut in the middle (its menu's rows
+        // name it whole)
         for (const auto TT : {TILE_ROOM, TILE_OUTPUT, TILE_KBD, TILE_MUTE}) {
             if (tipAt[TT].w <= 0)
                 continue;
-            const auto TEXT = cachedText(tipText(TT), COLTITLE, T.meta, PX(W), -1, 0, false, 500);
+            const auto TEXT = cachedText(TT == TILE_OUTPUT ? "Output · " + fittedName(snap.outName, PX(OUT_TIP_NAME), T.meta, 500) : tipText(TT), COLTITLE, T.meta, PX(W),
+                                         -1, 0, false, 500);
             if (TT != s_tipFor || !TEXT)
                 continue;
             const CBox&  A    = tipAt[TT];

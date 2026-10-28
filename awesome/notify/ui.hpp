@@ -169,6 +169,12 @@ namespace NAwesome::Notify {
     // the card (SNotif::fitMemo).
     const std::string& fittedTranscript(const SP<SNotif>& n, int pt, int widthPx, int capPx, int indentPx, const CHyprColor* linkCol);
 
+    // A name fitted to maxWpx physical px at pt and weight, as one line of
+    // the notify font lays it out: whole, or cut in the middle between
+    // words (textcut.hpp midCut). Measured without a raster, memoized: an
+    // output's name, laid out every warm and draw.
+    const std::string& fittedName(const std::string& name, int maxWpx, int pt, int weight);
+
     double texH(const SCachedText* e, double scale);
     double texW(const SCachedText* e, double scale);
     void   texAt(const SPaint& P, const SCachedText* e, double x, double y); // the ink's top-left at (x, y)
@@ -298,9 +304,11 @@ namespace NAwesome::Notify {
         void     pick(int index, const std::string& key); // from the click drain; a control's row by its key
         void     sync();          // after a model change: its card died -> close
         void     render(const SPaint& P, const SType& T); // its panel, then its rows (hit first)
-        void     init();          // the scan activity's tick
+        void     init();          // the scan activity's tick, the cut name's rest
         void     exit();          // teardown: forget it, no damage, no warm
-        std::string describe(); // the gate's: the open menu's rows (defined in its build only)
+        void     hoverChanged();  // the hover moved (surface.cpp): a cut output's name after a rest
+        std::string describe();     // the gate's: the open menu's rows (defined in its build only)
+        std::string describeName(); // the gate's: the whole name a cut row's note shows ("" none)
     }
 
     // the current hover (surface.cpp owns it; setHovered is its door) —
