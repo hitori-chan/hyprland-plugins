@@ -63,6 +63,7 @@ namespace NAwesome::Notify {
     // the status line as the last warm read it (the draws between reuse it)
     static struct {
         bool        on = false, dnd = false;
+        bool        pending = false; // Clear All's hidden cards wait: the capsule says Undo
         std::string sub;
     } s_status;
 
@@ -490,7 +491,8 @@ namespace NAwesome::Notify {
         // why arrivals are holding, read once per warm: Do Not Disturb, else
         // quiet automatically (its reason)
         if (P.warm) {
-            const auto WHY = Quiet::why();
+            s_status.pending = Model::clearPending();
+            const auto WHY   = Quiet::why();
             s_status.dnd   = Model::suspendedNow();
             s_status.on    = s_status.dnd || WHY != Quiet::eWhy::NONE;
             s_status.sub.clear();
@@ -610,7 +612,7 @@ namespace NAwesome::Notify {
             // Clear All, or Undo while what it hid waits on its window;
             // gone with nothing to clear. The pointer turns its word the
             // accent (both faces warm: a hover only damages).
-            const bool PENDING = Model::clearPending();
+            const bool PENDING = s_status.pending; // the warm's: the draw asks for the faces it built
             if (PENDING || !EMPTY) {
                 const std::string& WORD   = PENDING ? UNDO_WORD : CLEAR_WORD;
                 const auto         CLEAR  = cachedText(WORD, COLTITLE, T.meta, (int)std::lround(W * P.scale), -1, 0, false, 600);
