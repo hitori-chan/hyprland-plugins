@@ -380,7 +380,9 @@ chk "tray: icon left the strip" shot_until 3 "$STATE/tray-gone.png" icon_out "$S
 # menubar wibox), so it is measured as a band, not a column span.
 open_menubar() { dsp "hl.plugin.awesome.menubar()"; settle; } # it opens through a hop
 close_menubar() { tap esc; }
-menubar_band() { # menubar_band <frame> — bright count in the prompt band (y 29..56)
+# menubar_band <frame> — the ink in the prompt band (y 29..56): every channel
+# past 150, as the bell's (the Mist glass under the labels reads past 60)
+menubar_band() {
 	python3 - "$1" <<'PY'
 import sys
 from PIL import Image
@@ -388,7 +390,7 @@ im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
 n = 0
 for y in range(29, 56):
     for x in range(0, im.size[0], 2):
-        if min(px[x, y][:3]) > 60:
+        if min(px[x, y][:3]) > 150:
             n += 1
 print(n)
 PY
@@ -405,7 +407,8 @@ chk "menubar: the prompt opens below the strip" test "$MB_OPEN" -gt 200
 # type a filter: the completion list narrows (fewer labels in the band)
 printf 'tap c\ntap a\ntap l\ntap c\n' | vk
 chk "menubar: typing filters the completion list (the band narrows)" \
-	shot_until 3 "$STATE/menubar-filter.png" band_below "$STATE/menubar-filter.png" "$MB_OPEN"
+	shot_until 3 "$STATE/menubar-filter.png" band_below "$STATE/menubar-filter.png" "$MB_OPEN" ||
+	echo "menubar: the band's bright pixels $MB_OPEN, then $(menubar_band "$STATE/menubar-filter.png")" >&2
 close_menubar
 chk "menubar: esc closes the prompt" shot_until 3 "$STATE/menubar-closed.png" band_below "$STATE/menubar-closed.png" 51
 

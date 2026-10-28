@@ -598,7 +598,7 @@ namespace NAwesome::Shell {
                 noteFont = std::string{cfg().getS("plugin:awesome:notify:font")};
             }
             const auto   TEX = textTex(noteLine, NAwesome::tTitle(), P.pt, (int)std::lround((NOTE_MAXW - 2 * NOTE_PADX) * P.scale), noteFont, 500);
-            const double W   = textInkW(TEX, P.pt, P.scale) + 2 * NOTE_PADX;
+            const double W   = textInkW(TEX, P.scale) + 2 * NOTE_PADX;
             const CBox   B   = noteBoxOf(P.mon, W);
             P.note(B);
             if (TEX)
