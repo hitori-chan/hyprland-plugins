@@ -33,6 +33,11 @@ shot_until 3 "$STATE/strip-ws3.png" ws3_drawn "$STATE/strip-ws3.png"
 # the viewed tag is accent text, the rest never accent
 chk "shell: the viewed tag draws in the accent" test "$(accent_px "$STATE/strip-ws3.png" 64 90)" -gt 15
 chk "shell: a tag not viewed draws no accent" test "$(accent_px "$STATE/strip-ws3.png" 8 34)" = 0
+# ...on awesome's bg_focus: a flat cell (white 8 %, near 20 over the
+# nested's black) the bar's full height; a tag not viewed stands on none
+tag_ground() { ground_px "$1" $(($(tag_cx "$2") - 12)) $(($(tag_cx "$2") - 10)) 1 27 12 32; }
+chk "shell: the viewed tag stands on a flat cell" test "$(tag_ground "$STATE/strip-ws3.png" 3)" -ge 40
+chk "shell: a tag not viewed stands on none" test "$(tag_ground "$STATE/strip-ws3.png" 1)" = 0
 # Fitts: the screen's corner is tag 一's — a click thrown into it views 1
 printf 'move 0 0\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' | vp
 chk "shell: a click in the top-left corner views workspace 1" until_is 3 1 ws

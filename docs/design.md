@@ -296,10 +296,10 @@ schema's defaults name them; the user's `theme.lua` overrides them).
   the wallpaper, keeps a desktop label's drop.
 - **Ink** is one white at four strengths (titles and the bar 100 %, body
   88 %, meta 78 %, empty 34 %). The accent `#00CCFF` is text: the viewed
-  tag, the focused task, a selection. What you act on now sits on a
-  white pill (16 %, radius 6) in its own ink: a menu's row under the
-  pointer, a door (the bell, the control center's switches) while its
-  panel is open. The accent fills only what is live (a caret, the
+  tag (on a flat cell, white 8 %, awesome's `bg_focus`), the focused
+  task, a selection. What you act on now sits on a white pill (16 %,
+  radius 6) in its own ink: a menu's row under the pointer, a door (the
+  bell, the control center's switches) while its panel is open. The accent fills only what is live (a caret, the
   reply's send circle, progress; the snap preview is its 10 % tint) and
   marks one thing, the bell's dot. A control center control that is on
   is white, its glyph the accent deepened to read on it (`#0089AD`).

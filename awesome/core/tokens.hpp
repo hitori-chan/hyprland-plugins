@@ -37,6 +37,7 @@ namespace NAwesome::Theme {
     inline constexpr uint32_t FILL_HOVER  = 0x33ffffff; // the same under the pointer, 20 %
     inline constexpr uint32_t TRACK       = 0x29ffffff; // a progress or level track, 16 %
     inline constexpr uint32_t PILL        = 0x29ffffff; // what you act on now: a menu's row under the pointer, an open door, the launcher's pick, 16 %
+    inline constexpr uint32_t CELL        = 0x14ffffff; // where you are on the bar: the viewed tag's flat cell (awesome's bg_focus), 8 %
     inline constexpr uint32_t HAIRLINE    = 0x1affffff; // separators, 10 %
     inline constexpr uint32_t WELL        = 0x38000000; // a field sunk into the glass: the reply field, black 22 %
     inline constexpr uint32_t WELL_RIM    = 0x14ffffff; // its inner edge, 8 %

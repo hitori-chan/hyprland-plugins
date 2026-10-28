@@ -13,12 +13,15 @@ namespace NAwesome::Shell {
     namespace {
         class CTaglistWidget : public IWidget {
           public:
-            // The state matrix lives in the text alone: the viewed tag is
-            // accent at semibold, an urgent one red, an occupied one the
-            // bar's text, an empty one dim — no ground, no occupancy marks.
-            // A hovered tag's text lifts a step (dim -> the bar's text ->
-            // white; the accent and the red toward white). Hover damages but never rewarms (crash class 4), so the
-            // warm builds both variants of every tag.
+            // The viewed tag stands on awesome's bg_focus: a flat cell the
+            // bar's full height (white 8 %, square), its text accent at
+            // semibold. The rest lives in the text alone: an urgent tag
+            // red, an occupied one the bar's text, an empty one dim — no
+            // occupancy marks. A hovered tag's text lifts a step (dim ->
+            // the bar's text -> white; the accent and the red toward
+            // white), never a ground. Hover damages but never rewarms
+            // (crash class 4), so the warm builds both variants of every
+            // tag.
             static constexpr double CELL_W = 26, CELL_H = 22, GAP = 2;
             static constexpr int    WEIGHT = 400, WEIGHT_VIEWED = 600;
 
@@ -52,6 +55,8 @@ namespace NAwesome::Shell {
                 for (int i = 1; i <= 9; i++) {
                     const CBox CELL{x, box.y + (P.h - CELL_H) / 2, CELL_W, CELL_H};
                     const bool HOVER = barHover.widget == this && barHover.tag == i && barHover.mon == P.mon->m_id;
+                    if (viewed(F, i))
+                        P.rect(CBox{x, box.y, CELL_W, P.h}, NAwesome::tCell());
                     P.texIn(label(P, F, i, HOVER), CELL);
 
                     // the hit spans the bar's height and the gap: no dead

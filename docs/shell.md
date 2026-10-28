@@ -23,10 +23,12 @@ the control center's switches, the battery and the clock, 20 px apart.
 
 ### Workspaces
 
-Nine kanji tags (一 to 九) in 26 x 22 cells. The viewed tag is accent
-text, an occupied one the bar's text, an empty one dim, an urgent one
-red. There is no ground and no occupancy mark: the text's strength
-says it. Hover lifts a tag's text a step.
+Nine kanji tags (一 to 九) in 26 px cells. The viewed tag stands on
+awesome's `bg_focus`: a flat cell the bar's full height (white 8 %,
+square), its text accent at semibold. An occupied tag is the bar's text,
+an empty one dim, an urgent one red; there is no other ground and no
+occupancy mark: the text's strength says it. Hover lifts a tag's text a
+step.
 
 | Input | Action (awesome's taglist buttons) |
 |---|---|
