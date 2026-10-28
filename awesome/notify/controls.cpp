@@ -1,11 +1,10 @@
 // awesome/notify/controls.cpp — the control center: the panel under the
-// bar's switch glyph, in the cards' column. Its levels share one glass
-// card — a section per level a device answers for (the display, the
-// keyboard light, the volume): its name and value, then a button-glyph and
-// the track to the right edge, a white knob on it — with the keyboard's
-// Follow the Room (a light sensor) and the volume's output pill (two
-// outputs or more) in the section's title row. Under the card, the capsule
-// row: Bluetooth left (an adapter only) and Do Not Disturb right, alone
+// bar's switch glyph, in the cards' column. A glass module per level a
+// device answers for (the display, the keyboard light, the volume): its
+// name and value, then a button-glyph and the track to the right edge, a
+// white knob on it — with the keyboard's Follow the Room (a light sensor)
+// and the volume's output pill (two outputs or more) in the module's title
+// row. Under the modules, the capsule row: Bluetooth left (an adapter only) and Do Not Disturb right, alone
 // across without an adapter; a capsule's circle switches it, its words
 // open its menu (the paired devices; the durations). The small buttons
 // name themselves after a 500 ms rest. The values are the system module's,
@@ -33,11 +32,10 @@ namespace NAwesome::Notify {
     using Controls::eLevel;
     using Controls::eSwitch;
 
-    // the panel (logical px): the levels' card — 10 over its first section,
-    // 12 under its last, 46 px sections 10 apart: a 24 px title row, 2, a
-    // 20 px slider row — then the capsule row 12 under it, 64 tall, its two
-    // capsules 12 apart
-    inline constexpr double LEV_TOP = 10, LEV_BOTTOM = 12, SEC_H = 46, SEC_GAP = 10, SEC_PADX = 16;
+    // the panel (logical px): a 64 px module per level, 12 apart — 9 px over
+    // a 24 px title row, 2, a 20 px slider row — then the capsule row 12
+    // under the last, 64 tall, its two capsules 12 apart
+    inline constexpr double MOD_H = 64, MOD_TOP = 9, SEC_PADX = 16;
     inline constexpr double TITLE_H = 24, SLIDE_Y = 26, SLIDE_H = 20, TRACK_H = 6, KNOB = 16, VALUE_GAP = 6;
     // a slider's glyph and its button (28 round it), the track 12 after it
     inline constexpr double GLYPH = 16, BTN = 28, GLYPH_GAP = 12;
@@ -200,7 +198,7 @@ namespace NAwesome::Notify {
 
     static double levelsHeight() {
         const size_t N = sections();
-        return N == 0 ? 0 : LEV_TOP + N * SEC_H + (N - 1) * SEC_GAP + LEV_BOTTOM;
+        return N == 0 ? 0 : N * MOD_H + (N - 1) * PANEL_GAP;
     }
 
     double controlsHeight(bool warm) {
@@ -276,15 +274,17 @@ namespace NAwesome::Notify {
         }
         s_tiles.fill({});
 
-        // ---- the levels' card ----
+        // ---- the levels' modules ----
         const double LH = levelsHeight();
-        if (LH > 0)
-            P.frost(CBox{X, Y, W, LH}, COLBG, COLRIM, rCard(P.scale), rPow());
-        double sy = Y + LEV_TOP;
+        double       my = Y;
         for (size_t l = 0; l < snap.levels.size(); l++) {
             const auto& V = snap.levels[l];
             if (V.pct < 0)
                 continue;
+            const CBox MOD{X, my, W, MOD_H};
+            P.frost(MOD, COLBG, COLRIM, rCard(P.scale), rPow());
+            my += MOD_H + PANEL_GAP;
+            const double sy    = MOD.y + MOD_TOP;
             const auto   LEVEL = (eLevel)l;
             const bool   MUTED = LEVEL == eLevel::VOLUME && V.muted;
             const int    PCT   = std::clamp(V.pct, 0, 100); // past 100 % (a level set elsewhere) the track stops full
@@ -293,12 +293,12 @@ namespace NAwesome::Notify {
             const double TX0 = G.x + GLYPH + GLYPH_GAP;
             const CBox   TRK{TX0, RY + (SLIDE_H - TRACK_H) / 2, std::max(TRACK_H * 2, X + W - SEC_PADX - TX0), TRACK_H};
 
-            // the section is the wheel's and the drag's (a press on its
+            // the module is the wheel's and the drag's (a press on its
             // track); its buttons, pushed after, are hit before it
             SCard c = recycledCard();
             c.kind  = SCard::CTRL_SLIDER;
             c.id    = (uint32_t)l;
-            c.box   = CBox{X, sy - SEC_GAP / 2, W, SEC_H + SEC_GAP};
+            c.box   = MOD;
             c.track = TRK;
             cards.push_back(std::move(c));
 
@@ -367,8 +367,6 @@ namespace NAwesome::Notify {
             const CBox KB{TRK.x + FW - KNOB / 2, RY + (SLIDE_H - KNOB) / 2, KNOB, KNOB};
             P.shadow(CBox{KB}.expand(4).translate(Vector2D{0.0, 1.0}), PX(KNOB / 2), 2.f, 4, KNOB_DROP);
             P.rect(KB, KNOB_COL, PX(KNOB / 2), 2.f);
-
-            sy += SEC_H + SEC_GAP;
         }
 
         // ---- the capsule row: Bluetooth left, Do Not Disturb right ----

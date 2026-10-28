@@ -179,11 +179,11 @@ Banners keep coming, 12 px under it. An outside click, Esc or its
 switches close it. Every control shows only with its hardware, checked
 again whenever the panel opens and as devices come and go.
 
-**The levels** share one glass card, a section per level a device
-answers for: the **Display** (a backlight), the **Keyboard** light (a
-`*kbd_backlight` LED) and the **Sound**. A section reads its name and
+**The levels**: a glass module per level a device answers for, 12 px
+apart: the **Display** (a backlight), the **Keyboard** light (a
+`*kbd_backlight` LED) and the **Sound**. A module reads its name and
 value ("45%", "Muted") over a slider: a glyph, then the track to the
-card's right edge with a white knob. A light of ten levels or fewer (a
+module's right edge with a white knob. A light of ten levels or fewer (a
 ThinkPad's keyboard: off, low, high) snaps its knob to them and still
 reads a percent.
 
@@ -209,7 +209,7 @@ key that moves a level while the control center is open moves its
 slider, and no capsule covers the panel; the microphone's and the
 touchpad's keys keep their capsules (the panel has neither).
 
-**The capsules**, under the card: **Bluetooth** left (with an adapter;
+**The capsules**, under the modules: **Bluetooth** left (with an adapter;
 see [system](system.md#bluetooth)) and **Do Not Disturb** right, alone
 across without an adapter. A capsule's circle switches it (white with
 the accent deepened for its glyph while on); its words — the name over
