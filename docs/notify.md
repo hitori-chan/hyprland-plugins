@@ -237,9 +237,9 @@ pointer (the glass never lightens):
   once the scan finds it.
   Under the paired ones, while the radio is on, **Other Devices**: a
   **Scan** pill (Stop while it runs, eight turning dots beside it) and
-  what the scan found, nearest first, at most 6; a note under them says
-  what to do ("Put a device in pairing mode, then scan.", "Looking for
-  devices in pairing mode…", "Nothing found. Is it in pairing mode?").
+  what the scan found, nearest first, at most 6 ("No Devices Found", dim,
+  once a scan ended with none). The menu spells out no gestures: a
+  device's right-click is its forget.
   A found device's pick pairs it, the menu staying open: "Pairing…", or
   in place of its row the code to type on it ("Type this code on it, then
   press Return", the digits already typed dimmed) or to compare ("Does it

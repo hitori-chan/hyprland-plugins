@@ -61,7 +61,6 @@ namespace NAwesome::Notify::CardMenu {
         DND_FOREVER, // ... until turned off
         DEVICE,      // Bluetooth's: SItem::key's device connects, or disconnects (check 1)
         PAIR,        // Bluetooth's: SItem::key's found device pairs (the menu stays)
-        NOTE,        // a quiet line of advice: never lit, never hit
         PROMPT,      // a question in place of a device's row, its buttons hit by their own keys
     };
 
@@ -103,9 +102,9 @@ namespace NAwesome::Notify::CardMenu {
     constexpr double BAT_W = 22, BAT_H = 11, BAT_GAP = 5;
     // a device row with a refusal: 5 px over its name, its reason 2 under
     constexpr double DEV_PADY = 5, FAIL_GAP = 2;
-    // a note: 6 over its words, 4 under; a prompt: its device's line (26),
-    // 4, the question, 6, its 26 px buttons 6 apart, 8 under
-    constexpr double NOTE_TOP = 6, NOTE_BOTTOM = 4, PROMPT_TOP = 5, PROMPT_LINE = 26, PROMPT_GAP = 4, PROMPT_ASK_GAP = 6, BTN_H = 26, BTN_GAP = 6,
+    // a prompt: its device's line (26), 4, the question, 6, its 26 px
+    // buttons 6 apart, 8 under
+    constexpr double PROMPT_TOP = 5, PROMPT_LINE = 26, PROMPT_GAP = 4, PROMPT_ASK_GAP = 6, BTN_H = 26, BTN_GAP = 6,
                      PROMPT_BOTTOM = 8, BTN_PADX = 13;
     // a header with a button: 30 tall, its 24 px pill 4 px off the edge, the
     // activity's 12 px dots 8 px left of it; a pairing's code at 20 px
@@ -291,11 +290,9 @@ namespace NAwesome::Notify::CardMenu {
                 s_forget.clear(); // its device went, or got busy
             if (B.devices.empty())
                 s_items.push_back({.verb = DEVICE, .label = "No Paired Devices", .dim = true});
-            else
-                s_items.push_back({.verb = NOTE, .label = "Right-click a device to forget it."});
             if (!B.powered)
                 return;
-            // Other Devices: the scan's switch, what it found, its advice
+            // Other Devices: the scan's switch and what it found
             s_items.push_back({.verb = SEP});
             s_items.push_back({.verb = HEADER, .label = "Other Devices", .buttons = {{"btn:scan", B.scanning ? "Stop" : "Scan"}}, .spin = B.scanning});
             for (const auto& D : B.found) {
@@ -321,12 +318,8 @@ namespace NAwesome::Notify::CardMenu {
                                    .detail = D.busy == Controls::SDevice::PAIRING ? "Pairing…" : "",
                                    .fail   = (uint8_t)D.fail});
             }
-            const bool ANY = !B.found.empty();
-            s_items.push_back({.verb  = NOTE,
-                               .label = B.scanning ? (ANY ? "Not listed? Put it in pairing mode." : "Looking for devices in pairing mode…") :
-                                   !B.scanned      ? "Put a device in pairing mode, then scan." :
-                                   ANY             ? "Not listed? Put it in pairing mode and scan again." :
-                                                     "Nothing found. Is it in pairing mode?"});
+            if (B.scanned && !B.scanning && B.found.empty())
+                s_items.push_back({.verb = PAIR, .label = "No Devices Found", .dim = true});
         }
     }
 
@@ -464,7 +457,7 @@ namespace NAwesome::Notify::CardMenu {
         const auto VERB = s_items[index].verb;
         const auto KEY  = s_items[index].action;
         const auto ROW  = s_items[index].key;
-        if (VERB == NOTE || VERB == PROMPT)
+        if (VERB == PROMPT)
             return; // never hit: a press on one lands on the panel
         // a found device pairs, and a lost pairing pairs again: the menu
         // stays, for the questions a pairing asks
@@ -519,7 +512,6 @@ namespace NAwesome::Notify::CardMenu {
                 return;
             case HEADER:
             case PAIR:
-            case NOTE:
             case PROMPT: return;
         }
     }
@@ -530,7 +522,7 @@ namespace NAwesome::Notify::CardMenu {
     std::string describe() {
         std::string out;
         for (const auto& I : s_items) {
-            if (I.verb == SEP || I.verb == NOTE || (I.verb == HEADER && I.buttons.empty()))
+            if (I.verb == SEP || (I.verb == HEADER && I.buttons.empty()))
                 continue;
             if (I.verb == HEADER) {
                 out += std::string{out.empty() ? "" : ";"} + "[" + I.buttons.front().second + "]";
@@ -606,13 +598,11 @@ namespace NAwesome::Notify::CardMenu {
                                           esc.substr(0, TYPED), esc.substr(TYPED)),
                               COLTITLE, PX(CODE_PX), PX(FIXED > 0 ? FIXED : MAX_W), -1, 0, true, 600);
         };
-        // a note's and a prompt's words wrap in the label's column
-        const auto noteOf = [&](const SItem& I) { return cachedText(I.verb == NOTE ? I.label : I.detail, COLSUB, T.meta, I.verb == NOTE ? PX((FIXED > 0 ? FIXED : MAX_W) - 2 * LABEL_X) : CAPPX, T.meta * 3, 0, false, 400); };
-        const auto itemH  = [&](const SItem& I) {
-            if (I.verb == NOTE)
-                return NOTE_TOP + texH(noteOf(I), P.scale) + NOTE_BOTTOM;
+        // a prompt's question wraps in the label's column
+        const auto askOf = [&](const SItem& I) { return cachedText(I.detail, COLSUB, T.meta, CAPPX, T.meta * 3, 0, false, 400); };
+        const auto itemH = [&](const SItem& I) {
             if (I.verb == PROMPT)
-                return PROMPT_TOP + PROMPT_LINE + PROMPT_GAP + texH(noteOf(I), P.scale) + PROMPT_ASK_GAP + BTN_H + PROMPT_BOTTOM;
+                return PROMPT_TOP + PROMPT_LINE + PROMPT_GAP + texH(askOf(I), P.scale) + PROMPT_ASK_GAP + BTN_H + PROMPT_BOTTOM;
             const auto F = failOf(I);
             return F ? std::max(DEVH, 2 * DEV_PADY + texH(restOf(I), P.scale) + FAIL_GAP + texH(F, P.scale)) : rowH(I);
         };
@@ -620,7 +610,7 @@ namespace NAwesome::Notify::CardMenu {
         double w = FIXED > 0 ? FIXED : MIN_W, h = 2 * PAD;
         for (const auto& I : s_items) {
             h += itemH(I);
-            if (FIXED <= 0 && I.verb != SEP && I.verb != HEADER && I.verb != NOTE && I.verb != PROMPT)
+            if (FIXED <= 0 && I.verb != SEP && I.verb != HEADER && I.verb != PROMPT)
                 w = std::max(w, texW(cachedText(I.label, I.dim ? COLDIM : COLTITLE, T.body, CAPPX, -1, 0, false, 400), P.scale) + LX + LABEL_X);
         }
         w = std::min(w, std::max(MAX_W, FIXED));
@@ -711,12 +701,6 @@ namespace NAwesome::Notify::CardMenu {
                 continue;
             }
             const CBox ROW{x, ry, w, RH};
-            if (I.verb == NOTE) { // never lit, never hit
-                if (const auto NT = noteOf(I))
-                    texAt(P, NT, x + LABEL_X, ry + NOTE_TOP);
-                ry += RH;
-                continue;
-            }
             if (I.verb == PROMPT) { // the device's line, the question, its buttons
                 const CBox D{x + DISC_X, ry + PROMPT_TOP, DISC_D, DISC_D};
                 P.rect(D, I.check == 1 ? COLTITLE : tFill(), PX(DISC_D / 2), 2.f);
@@ -724,7 +708,7 @@ namespace NAwesome::Notify::CardMenu {
                     P.texIn(G, D);
                 if (const auto NAME = restOf(I))
                     texAt(P, NAME, x + LX, D.y + (DISC_D - texH(NAME, P.scale)) / 2);
-                const auto   ASK = noteOf(I);
+                const auto   ASK = askOf(I);
                 const double AY  = D.y + PROMPT_LINE + PROMPT_GAP;
                 if (ASK)
                     texAt(P, ASK, x + LX, AY);
