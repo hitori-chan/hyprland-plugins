@@ -117,8 +117,16 @@ namespace NAwesome::Controls {
     // the first adapter: present 0 while there is none (no BlueZ, no
     // radio), and the panel shows no Bluetooth
     struct SBluetooth {
+        // the radio's kill switch (rfkill): a soft block the circle lifts, a
+        // hard one (a switch, the firmware) only its owner can
+        enum eBlock : uint8_t {
+            UNBLOCKED,
+            SOFT_BLOCKED,
+            HARD_BLOCKED,
+        };
         bool                 present     = false;
         bool                 powered     = false;
+        eBlock               block       = UNBLOCKED;
         bool                 powerFailed = false; // a power-on was refused, shown until the panel closes
         bool                 scanning    = false; // the menu's scan runs
         bool                 scanned     = false; // ... one ran since the menu opened: its list stays

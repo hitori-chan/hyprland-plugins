@@ -376,6 +376,19 @@ click $(menu_at "${DEV}_01") 272
 chk "pair: its click forgets it, scans, and pairs it again" until_ok 5 blog_order 'RemoveDevice Gate Buds|StartDiscovery|.*Pair Gate Buds|.*Connect Gate Buds|'
 chk "pair: ...back in the paired list" until_ok 3 hq_matches '^on Gate Buds=c35 ' awesome bt
 tap esc
+# rfkill: a hard block reads Blocked and the circle leaves it; the circle
+# lifts a soft block, then powers the radio once bluetoothd says it is free
+sbus call org.bluez / org.awesome.Gate Rfkill bb false true >/dev/null
+chk "rfkill: a hard block turns the radio off" until_ok 3 hq_matches '^hard ' awesome bt
+chk "rfkill: ...the capsule says Blocked, in red" until_is 3 "Blocked!" hq awesome controls-bt
+: > "$STATE/logind.log"
+click "$BT_DOT_X" "$CAPS_CY" 272
+sbus call org.bluez / org.awesome.Gate Rfkill bb true false >/dev/null
+chk "rfkill: a soft block reads off" until_ok 3 hq_matches '^soft ' awesome bt
+chk "rfkill: ...the circle left the hard one" bash -c "! grep -q 'rfkill\|Powered' '$STATE/logind.log'"
+click "$BT_DOT_X" "$CAPS_CY" 272
+chk "rfkill: the circle lifts it, then powers the radio" until_ok 3 blog_order 'rfkill soft=0|Powered 1|'
+chk "rfkill: ...on again" until_ok 3 hq_matches '^on ' awesome bt
 # one more refusal for the panel's closing to end
 sbus call org.bluez / org.awesome.Gate FailNext sss "Gate Phone" org.bluez.Error.Failed "Host is down" >/dev/null
 hq awesome bt disconnect Gate Phone >/dev/null
@@ -446,7 +459,7 @@ rm -f "$STATE/wpctl-level" "$STATE/wpctl-mutes" "$STATE/wpctl-default"
 KPCT="$(ctl_part keyboard)"
 hq awesome controlcenter >/dev/null
 chk "panel: the verb closes it" until_is 3 0 hq awesome controlcenter-shown
-chk "panel: ...ending the failure it showed" until_is 3 "on Gate Buds=c35 Gate Keys=c Gate Speaker=c Gate Phone=n" hq awesome bt
+chk "panel: ...ending the failure it showed" until_is 3 "on Gate Buds=n35 Gate Keys=n Gate Phone=n Gate Speaker=n" hq awesome bt
 mv "$KDIR" "$STATE/leds/gone"
 K3="$STATE/leds/three::kbd_backlight"
 mkdir -p "$K3" && printf '2\n' > "$K3/max_brightness" && printf '1\n' > "$K3/brightness"

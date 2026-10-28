@@ -16,6 +16,13 @@
 // bluetoothd, about the device we pair. A paired device is trusted, then
 // connected.
 //
+// The radio's kill switch is the kernel's (/dev/rfkill, read as its events
+// come, no polling): a hard block reads Blocked and the circle leaves it; a
+// soft block the circle lifts (the seat's user may write rfkill), and the
+// adapter powers on once BlueZ says it is unblocked (its PowerState leaves
+// off-blocked). The gate build reads the fake's socket instead, never the
+// host's radios.
+//
 // Asynchronous over the system bus only: the tree (GetManagedObjects) is
 // read when the unit starts, when bluetoothd (re)appears and when the
 // panel opens; InterfacesAdded/Removed and one PropertiesChanged match
@@ -47,6 +54,17 @@
 
 #include <sdbus-c++/sdbus-c++.h>
 
+#include <hyprland/src/Compositor.hpp>
+
+#include <cstdlib>
+#include <cstring>
+#include <fcntl.h>
+#include <linux/rfkill.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+#include <wayland-server-core.h>
+
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -75,6 +93,9 @@ namespace NAwesome::System {
         // the strangers a scan session holds (named or not: a nameless one
         // is held so its every advertisement does not read the tree again)
         constexpr size_t MAX_STRANGERS = 32;
+        // the Bluetooth radios rfkill lists (a laptop has one or two), the
+        // events read per wake
+        constexpr size_t MAX_RADIOS = 16, RFKILL_BURST = 64;
         // a connect brings up a headset's profiles: longer than sd-bus's 25 s
         constexpr auto CONNECT_TIMEOUT = std::chrono::seconds(30);
         // a pairing waits on the user typing a code on the device; a scan
@@ -115,6 +136,7 @@ namespace NAwesome::System {
         std::unique_ptr<sdbus::IProxy>      adapterProxy;
         std::string                         adapterPath; // the first adapter's, "" none
         std::map<std::string, bool>         adapters;    // path -> Powered
+        std::map<std::string, bool>         offBlocked;  // path -> PowerState off-blocked
         std::map<std::string, SDev>         devices;     // path -> a paired device
         std::optional<bool>                 wantPower;   // a power switch in flight shows at once
         bool                                powerFailed = false;
@@ -134,6 +156,17 @@ namespace NAwesome::System {
         // their first call, dropped with the rest, never from a reply
         std::unique_ptr<sdbus::IProxy>      managerProxy, dbusProxy;
         std::string                         bluezOwner; // org.bluez's unique name: the agent answers only it
+        // rfkill: its fd and source, each Bluetooth radio's (soft, hard), a
+        // half-read event, a power-on waiting on the unblock (and the device
+        // it then connects)
+        int                                 rfkillFd = -1;
+        bool                                rfkillWritable = false;
+        wl_event_source*                    rfkillSource = nullptr;
+        std::map<uint32_t, std::pair<bool, bool>> radios;
+        std::array<uint8_t, RFKILL_EVENT_SIZE_V1> rfkillPart{};
+        size_t                              rfkillHave = 0;
+        bool                                unblocking = false;
+        std::string                         unblockConnect;
         sdbus::Slot                         addedMatch, removedMatch, propsMatch, ownerMatch;
         uint64_t                            gen     = 0;
         bool                                reading = false, readAgain = false;
@@ -173,6 +206,15 @@ namespace NAwesome::System {
         return k == eKind::HEADPHONES || k == eKind::SPEAKER;
     }
 
+    static Controls::SBluetooth::eBlock blockNow() {
+        bool soft = false, hard = false;
+        for (const auto& [_, R] : radios) {
+            soft |= R.first;
+            hard |= R.second;
+        }
+        return hard ? Controls::SBluetooth::HARD_BLOCKED : soft ? Controls::SBluetooth::SOFT_BLOCKED : Controls::SBluetooth::UNBLOCKED;
+    }
+
     static void publishBluetooth() {
         Controls::SBluetooth B;
         B.present = !adapterPath.empty();
@@ -180,6 +222,7 @@ namespace NAwesome::System {
             const auto IT = adapters.find(adapterPath);
             B.powered     = wantPower.value_or(IT != adapters.end() && IT->second);
             B.powerFailed = powerFailed;
+            B.block       = blockNow();
             B.scanning    = scanning;
             B.scanned     = session;
             B.prompt      = prompt;
@@ -293,13 +336,19 @@ namespace NAwesome::System {
         return true;
     }
 
+    static void unblocked();
     static void applyAdapter(const std::string& path, const TProps& props) {
         try {
             bool& P = adapters[path];
             if (const auto IT = props.find("Powered"); IT != props.end()) {
                 P = IT->second.get<bool>();
-                if (path == adapterPath)
+                if (path == adapterPath && !unblocking)
                     wantPower.reset(); // the adapter says what it is now
+            }
+            if (const auto IT = props.find("PowerState"); IT != props.end()) {
+                offBlocked[path] = IT->second.get<std::string>() == "off-blocked";
+                if (path == adapterPath)
+                    unblocked();
             }
         } catch (...) {}
     }
@@ -474,11 +523,136 @@ namespace NAwesome::System {
         }
     }
 
+    // ---- rfkill ---------------------------------------------------------------
+
+    static void rfkillClose() {
+        if (rfkillSource)
+            wl_event_source_remove(rfkillSource); // before the fd it watches
+        rfkillSource = nullptr;
+        if (rfkillFd >= 0)
+            close(rfkillFd);
+        rfkillFd       = -1;
+        rfkillWritable = false;
+        rfkillHave     = 0;
+        radios.clear();
+    }
+
+    static int rfkillReadable(int fd, uint32_t mask, void*) {
+        if (compositorShuttingDown())
+            return 0;
+        bool moved = false;
+        for (size_t n = 0; n < RFKILL_BURST; n++) {
+            const ssize_t R = read(fd, rfkillPart.data() + rfkillHave, rfkillPart.size() - rfkillHave);
+            if (R == 0)
+                mask |= WL_EVENT_HANGUP; // the fake's socket closed
+            if (R <= 0)
+                break;
+            if ((rfkillHave += (size_t)R) < rfkillPart.size())
+                continue; // a socket may split an event
+            rfkillHave = 0;
+            rfkill_event ev{};
+            std::memcpy(&ev, rfkillPart.data(), sizeof ev);
+            if (ev.type != RFKILL_TYPE_BLUETOOTH)
+                continue;
+            if (ev.op == RFKILL_OP_DEL)
+                radios.erase(ev.idx);
+            else if ((ev.op == RFKILL_OP_ADD || ev.op == RFKILL_OP_CHANGE) && (radios.contains(ev.idx) || radios.size() < MAX_RADIOS))
+                radios[ev.idx] = {ev.soft != 0, ev.hard != 0};
+            moved = true;
+        }
+        if (mask & (WL_EVENT_HANGUP | WL_EVENT_ERROR)) {
+            rfkillClose(); // gone: no block known
+            moved = true;
+        }
+        if (moved) {
+            unblocked();
+            publishBluetooth();
+        }
+        return 0;
+    }
+
+    static void rfkillOpen() {
+        if (!g_pCompositor || !g_pCompositor->m_wlEventLoop)
+            return;
+        int fd = -1;
+#ifdef AWESOME_GATE
+        // the fake's socket: the gate never reads or writes the host's radios
+        const char* PATH = std::getenv("AW_RFKILL");
+        if (!PATH || !*PATH || std::strlen(PATH) >= sizeof(sockaddr_un::sun_path))
+            return;
+        fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+        sockaddr_un addr{.sun_family = AF_UNIX};
+        std::strcpy(addr.sun_path, PATH);
+        if (fd >= 0 && connect(fd, (const sockaddr*)&addr, sizeof addr) != 0) {
+            close(fd);
+            fd = -1;
+        }
+        rfkillWritable = fd >= 0;
+#else
+        // the seat's user may write it (logind's uaccess); else it is only read
+        fd             = open("/dev/rfkill", O_RDWR | O_NONBLOCK | O_CLOEXEC);
+        rfkillWritable = fd >= 0;
+        if (fd < 0)
+            fd = open("/dev/rfkill", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+#endif
+        if (fd < 0)
+            return;
+        rfkillFd     = fd;
+        rfkillSource = wl_event_loop_add_fd(g_pCompositor->m_wlEventLoop, fd, WL_EVENT_READABLE, rfkillReadable, nullptr);
+        if (!rfkillSource)
+            rfkillClose();
+    }
+
+    // lift the soft blocks on every Bluetooth radio
+    static bool rfkillUnblock() {
+        if (rfkillFd < 0 || !rfkillWritable)
+            return false;
+        rfkill_event ev{};
+        ev.type = RFKILL_TYPE_BLUETOOTH;
+        ev.op   = RFKILL_OP_CHANGE_ALL;
+        ev.soft = 0;
+        return write(rfkillFd, &ev, RFKILL_EVENT_SIZE_V1) == (ssize_t)RFKILL_EVENT_SIZE_V1;
+    }
+
+    static void powerNow(bool on, const std::string& thenConnect);
+
+    // a power-on waiting on the unblock goes once rfkill and BlueZ both say
+    // the radio is free
+    static void unblocked() {
+        if (!unblocking || blockNow() != Controls::SBluetooth::UNBLOCKED)
+            return;
+        if (const auto IT = offBlocked.find(adapterPath); IT != offBlocked.end() && IT->second)
+            return;
+        unblocking = false;
+        pendingDoor.arm([connect = std::exchange(unblockConnect, {})]() { powerNow(true, connect); });
+    }
+
     // the adapter's power, then (a device picked while it was off) the connect
     static void powerNow(bool on, const std::string& thenConnect) {
         auto* P = adapterPath.empty() ? nullptr : proxyOf(adapterPath);
         if (!P)
             return;
+        const auto BLOCK = blockNow();
+        if (on && BLOCK == Controls::SBluetooth::HARD_BLOCKED)
+            return; // its owner's switch: the capsule says Blocked
+        if (on && BLOCK == Controls::SBluetooth::SOFT_BLOCKED) {
+            if (!rfkillUnblock()) {
+                if (Controls::panelShowing())
+                    powerFailed = true;
+                else
+                    say("Bluetooth", "Didn't Turn On");
+                publishBluetooth();
+                return;
+            }
+            // shows On at once; the power-on follows the unblock
+            unblocking     = true;
+            unblockConnect = thenConnect;
+            wantPower      = true;
+            if (const auto IT = devices.find(thenConnect); IT != devices.end())
+                IT->second.busy = eBusy::CONNECTING;
+            publishBluetooth();
+            return;
+        }
         wantPower   = on;
         powerFailed = false;
         if (!thenConnect.empty())
@@ -959,6 +1133,7 @@ namespace NAwesome::System {
             B.pollSoon();
         } catch (...) {}
         readOwner();
+        rfkillOpen();
         readTree();
     }
 
@@ -983,6 +1158,9 @@ namespace NAwesome::System {
         bluezOwner.clear();
         if (scanEnd)
             scanEnd->updateTimeout(std::nullopt);
+        unblocking = false;
+        unblockConnect.clear();
+        offBlocked.clear();
         devices.clear(); // their proxies with them
         adapters.clear();
         adapterPath.clear();
@@ -1001,6 +1179,7 @@ namespace NAwesome::System {
 
     void bluetoothExit() {
         forget();
+        rfkillClose();
         for (auto* T : {&sinkSettle, &scanEnd}) {
             if (*T && g_pEventLoopManager)
                 g_pEventLoopManager->removeTimer(*T);
@@ -1009,7 +1188,7 @@ namespace NAwesome::System {
     }
 
 #ifdef AWESOME_GATE
-    // "none" without an adapter; else "on|off[!] name=state[battery][!why] ...
+    // "none" without an adapter; else "on|off[!]|soft|hard name=state[battery][!why] ...
     // [| found...]" (state: c connected, p connecting, d disconnecting, a
     // pairing, n neither; why: answer, lost, failed, pair; "off!" a refused
     // power-on; the found ones after a bar while a scan's list shows), as
@@ -1028,7 +1207,11 @@ namespace NAwesome::System {
                                                                    "n") +
                 (D.battery >= 0 ? std::to_string(D.battery) : "") + WHY[D.fail];
         };
-        std::string out = B.powered ? "on" : B.powerFailed ? "off!" : "off";
+        std::string out = B.block == Controls::SBluetooth::HARD_BLOCKED ? "hard" :
+            B.block == Controls::SBluetooth::SOFT_BLOCKED && !B.powered  ? "soft" :
+            B.powered                                                    ? "on" :
+            B.powerFailed                                                ? "off!" :
+                                                                           "off";
         for (const auto& D : B.devices)
             out += ONE(D);
         if (B.scanned)

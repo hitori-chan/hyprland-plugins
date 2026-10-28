@@ -253,7 +253,11 @@ namespace NAwesome::Notify::CardMenu {
             s_items.push_back({.verb = DND_FOREVER, .label = "Until Turned Off", .key = "dnd:off"});
         } else {
             const auto& B = Controls::state().bluetooth;
-            s_items.push_back({.verb = HEADER, .label = "Devices", .detail = B.powered ? "" : "· Bluetooth is off"});
+            s_items.push_back({.verb   = HEADER,
+                               .label  = "Devices",
+                               .detail = B.block == Controls::SBluetooth::HARD_BLOCKED ? "· Off by its hardware switch" :
+                                   B.powered                                          ? "" :
+                                                                                        "· Bluetooth is off"});
             bool asked = false;
             for (const auto& D : B.devices) {
                 const bool BUSY = D.busy != Controls::SDevice::IDLE;

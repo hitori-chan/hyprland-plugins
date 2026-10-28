@@ -219,9 +219,13 @@ pointer (the glass never lightens):
 - Bluetooth's state is Off, On, the one connected device's name, "2
   Devices", "Connecting…" or "Disconnecting…"; a refusal in red ("Didn't
   Answer", "Pairing Lost", "Didn't Connect", "Didn't Turn On") until the
-  panel closes. Its **Devices** menu lists the paired ones ("·
-  Bluetooth is off" in the header while off): the device's kind in a
-  disc, lit while connected, its name, and on the right "Connecting…",
+  panel closes; "Blocked", in red, while a hardware switch holds the
+  radio off (its circle leaves it, and the menu's header says "· Off by
+  its hardware switch"). A soft block (`rfkill block`, airplane mode) the
+  circle lifts, then powers the radio. Its **Devices** menu lists the
+  paired ones ("· Bluetooth is off" in the header while off): the
+  device's kind in a disc, lit while connected, its name, and on the
+  right "Connecting…",
   "Disconnecting…" or, while connected, its battery ("80%" beside a
   battery glyph, red at 20 % or less). A refused connect's row says why
   under the name ("Didn't answer." in red, then "Is it on and nearby?").
