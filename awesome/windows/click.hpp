@@ -179,8 +179,8 @@ namespace NAwesome::Windows {
             static PHLWINDOWREF W; // while it lives, presses resolving to it pass
             return W;
         }
-        inline uint32_t& corpseWs() {
-            static uint32_t W = 0; // numbered workspace of the corpse, 0 = none (IDs start at 1)
+        inline PHLWORKSPACEREF& corpseWs() {
+            static PHLWORKSPACEREF W; // the corpse's workspace (named and special ones included)
             return W;
         }
         inline std::chrono::steady_clock::time_point& corpseUntil() {
@@ -203,7 +203,7 @@ namespace NAwesome::Windows {
             } else
                 corpseBox() = box;
             corpseOwner() = w;
-            corpseWs()    = w->m_workspace ? w->m_workspace->numberedID().value_or(0) : 0;
+            corpseWs()    = w->m_workspace;
             corpseUntil() = NOW + GESTURE;
         }
     }
@@ -257,9 +257,8 @@ namespace NAwesome::Windows {
             // the window the press would land on (a special-workspace window
             // over the corpse box is not the corpse's).
             if (NOW < corpseUntil() && corpseBox().containsPoint(POS) && (!W || W != corpseOwner().lock())) {
-                const auto MON          = monitorAt(POS);
-                const bool ON_CORPSE_WS = W ? (W->m_workspace && W->m_workspace->numberedID().value_or(0) == corpseWs())
-                                            : (MON && MON->m_activeWorkspace && MON->m_activeWorkspace->numberedID().value_or(0) == corpseWs());
+                const auto WS           = corpseWs().lock();
+                const bool ON_CORPSE_WS = WS && (W ? W->m_workspace == WS : shownWorkspace(monitorAt(POS)) == WS);
                 if (ON_CORPSE_WS) {
                     info.cancelled = true;
                     swallowRelease() |= BIT;
@@ -295,6 +294,7 @@ namespace NAwesome::Windows {
             swallowRelease() = 0;
             corpseUntil()    = {};
             corpseOwner().reset();
+            corpseWs().reset();
             pressWindow().reset();
         }
 
@@ -393,6 +393,7 @@ namespace NAwesome::Windows {
             swallowRelease() = 0;
             corpseUntil()    = {};
             corpseOwner().reset();
+            corpseWs().reset();
             pressWindow().reset();
         }
     } // namespace Click
