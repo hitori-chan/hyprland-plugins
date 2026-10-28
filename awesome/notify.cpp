@@ -250,6 +250,14 @@ namespace NAwesome::Notify {
             return CardMenu::describe();
         if (verb == "controls-tip") // the control center button whose name shows ("" none)
             return controlsTip();
+        if (verb == "controls-bt") // Bluetooth's capsule state ("Didn't Answer!": in red)
+            return controlsBt();
+        if (verb == "capsule") { // the live capsule's words ("<summary> <body>"; "" none)
+            for (const auto& N : notifs)
+                if (inOsdBand(N->id) && N->banner)
+                    return N->summary + " " + N->body;
+            return std::string{};
+        }
         if (verb == "center-rows") // the open center's status line and rows ("<status> [undo] | <rows>")
             return centerDescribe();
         if (verb == "quiet") // "now:N hushed:N" — an arrival would hold; a critical banner shows without its words

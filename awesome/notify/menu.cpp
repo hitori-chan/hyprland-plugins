@@ -18,9 +18,10 @@
 // the same panel, opened under what opened them: the output pill's
 // (Output: the sinks, the default checked, each with its kind), Do Not
 // Disturb's words (its durations) and Bluetooth's words (Devices: the
-// paired ones, a lit disc while connected, "Connecting…" or the battery
-// on the right; a pick connects or disconnects). Their rows come from the
-// system module's published values and rebuild with every warm.
+// paired ones, a lit disc while connected, "Connecting…",
+// "Disconnecting…" or the battery on the right, a refused connect's
+// reason under the name; a pick connects or disconnects). Their rows come
+// from the system module's published values and rebuild with every warm.
 //
 // The menu is the notify layer's own,
 // drawn last and hit first: it holds its card's banner while up, and
@@ -71,6 +72,7 @@ namespace NAwesome::Notify::CardMenu {
         bool          quiet   = false; // the label in the secondary ink (Bluetooth off)
         std::string   detail;
         int8_t        battery = -1;
+        uint8_t       fail    = 0; // a device's Controls::SDevice::eFail: a line under its name
     };
 
     // the board's menu: 5 px of padding, 28 px rows whose labels sit 15 px
@@ -84,6 +86,8 @@ namespace NAwesome::Notify::CardMenu {
     constexpr double DISC_X = 8, DISC_D = 26, DISC_GLYPH = 14, DISC_GAP = 10;
     // the battery after a device's percent (the panel's 22:11 outline)
     constexpr double BAT_W = 22, BAT_H = 11, BAT_GAP = 5;
+    // a device row with a refusal: 5 px over its name, its reason 2 under
+    constexpr double DEV_PADY = 5, FAIL_GAP = 2;
     constexpr size_t NAME_CP = 24; // a name past this many code points ellipsizes: the verb must stay readable
 
     static double rowH(const SItem& I) {
@@ -156,6 +160,16 @@ namespace NAwesome::Notify::CardMenu {
         s_items.push_back({CLOSE_APP, "Close All from " + APP, {}});
     }
 
+    // a refused connect's line: what happened (in red), then what to check
+    static std::pair<const char*, const char*> failLine(uint8_t f) {
+        switch (f) {
+            case Controls::SDevice::NO_ANSWER: return {"Didn't answer.", "Is it on and nearby?"};
+            case Controls::SDevice::PAIRING_LOST: return {"Pairing lost.", "Pair it again from its own settings."};
+            case Controls::SDevice::FAILED: return {"Didn't connect.", "Try it again."};
+            default: return {nullptr, nullptr};
+        }
+    }
+
     static Glyph::eGlyph deviceGlyph(Controls::SDevice::eKind k) {
         using K = Controls::SDevice::eKind;
         return k == K::HEADPHONES ? Glyph::eGlyph::HEADPHONES :
@@ -188,7 +202,8 @@ namespace NAwesome::Notify::CardMenu {
         } else {
             const auto& B = Controls::state().bluetooth;
             s_items.push_back({.verb = HEADER, .label = "Devices", .detail = B.powered ? "" : "· Bluetooth is off"});
-            for (const auto& D : B.devices)
+            for (const auto& D : B.devices) {
+                const bool BUSY = D.busy != Controls::SDevice::IDLE;
                 s_items.push_back({.verb    = DEVICE,
                                    .label   = D.name,
                                    .check   = (int8_t)(D.connected ? 1 : 0),
@@ -196,8 +211,13 @@ namespace NAwesome::Notify::CardMenu {
                                    .glyph   = deviceGlyph(D.kind),
                                    .disc    = true,
                                    .quiet   = !B.powered,
-                                   .detail  = D.connecting ? "Connecting…" : D.connected && D.battery >= 0 ? std::to_string(D.battery) + "%" : "",
-                                   .battery = D.connecting || !D.connected ? (int8_t)-1 : D.battery});
+                                   .detail  = D.busy == Controls::SDevice::CONNECTING ? "Connecting…" :
+                                        D.busy == Controls::SDevice::DISCONNECTING   ? "Disconnecting…" :
+                                        D.connected && D.battery >= 0                ? std::to_string(D.battery) + "%" :
+                                                                                       "",
+                                   .battery = BUSY || !D.connected ? (int8_t)-1 : D.battery,
+                                   .fail    = (uint8_t)D.fail});
+            }
             if (B.devices.empty())
                 s_items.push_back({.verb = DEVICE, .label = "No Paired Devices", .dim = true});
         }
@@ -330,7 +350,7 @@ namespace NAwesome::Notify::CardMenu {
                 // its key is "bt:" + the device's id; a connect in flight is left be
                 if (const auto& B = Controls::state().bluetooth; Controls::doors().connectDevice)
                     for (const auto& D : B.devices)
-                        if ("bt:" + D.id == ROW && !D.connecting)
+                        if ("bt:" + D.id == ROW && D.busy == Controls::SDevice::IDLE)
                             Controls::doors().connectDevice(D.id, !ON);
                 return;
             case HEADER: return;
@@ -345,7 +365,9 @@ namespace NAwesome::Notify::CardMenu {
         for (const auto& I : s_items) {
             if (I.verb == SEP || I.verb == HEADER)
                 continue;
-            out += (out.empty() ? "" : ";") + (I.dim ? "(" + I.label + ")" : I.label + (I.check == 1 ? "*" : "") + (I.detail.empty() ? "" : " " + I.detail));
+            out += (out.empty() ? "" : ";") +
+                (I.dim ? "(" + I.label + ")" :
+                         I.label + (I.check == 1 ? "*" : "") + (I.detail.empty() ? "" : " " + I.detail) + (I.fail ? std::string{" !"} + failLine(I.fail).first : ""));
         }
         return s_open ? out : std::string{};
     }
@@ -368,7 +390,7 @@ namespace NAwesome::Notify::CardMenu {
         const bool   DISCS  = std::ranges::any_of(s_items, [](const SItem& I) { return I.disc; });
         const double LX     = DISCS ? DISC_X + DISC_D + DISC_GAP : (CHECKS ? CHECKED_LABEL_X : LABEL_X) + (KINDS ? KIND_W + KIND_GAP : 0);
         // the control center's menus have their board widths
-        const double FIXED = !s_control ? 0 : *s_control == ePanelMenu::OUTPUT ? 232 : *s_control == ePanelMenu::DND ? 220 : 268;
+        const double FIXED = !s_control ? 0 : *s_control == ePanelMenu::OUTPUT ? 232 : *s_control == ePanelMenu::DND ? 220 : 280;
         const int    CAPPX = (int)std::lround(((FIXED > 0 ? FIXED : MAX_W) - LX - LABEL_X) * P.scale);
 
         // the right-hand words come first: the label's room is what they leave
@@ -381,10 +403,25 @@ namespace NAwesome::Notify::CardMenu {
             const double R = rightW(I);
             return R > 0 ? std::max(1, CAPPX - PX(R + 12)) : CAPPX;
         };
+        // a device's refusal: its head in the urgent colour, the hint after
+        const auto failOf = [&](const SItem& I) -> const SCachedText* {
+            const auto [HEAD, HINT] = failLine(I.fail);
+            if (!HEAD || !I.disc)
+                return nullptr;
+            const auto TO8 = [](double c) { return (int)std::lround(std::clamp(c, 0.0, 1.0) * 255); };
+            return cachedText(std::format("<span foreground=\"#{:02X}{:02X}{:02X}\">{}</span> {}", TO8(COLURGENT.r), TO8(COLURGENT.g), TO8(COLURGENT.b), HEAD, HINT), COLSUB,
+                              T.meta, CAPPX, T.meta * 3, 0, true, 400);
+        };
+        // the resting face of a row's label: its height sizes a refused row
+        const auto restOf = [&](const SItem& I) { return cachedText(I.label, I.quiet ? COLSUB : COLTITLE, T.body, labelPx(I), -1, 0, false, 400); };
+        const auto itemH  = [&](const SItem& I) {
+            const auto F = failOf(I);
+            return F ? std::max(DEVH, 2 * DEV_PADY + texH(restOf(I), P.scale) + FAIL_GAP + texH(F, P.scale)) : rowH(I);
+        };
 
         double w = FIXED > 0 ? FIXED : MIN_W, h = 2 * PAD;
         for (const auto& I : s_items) {
-            h += rowH(I);
+            h += itemH(I);
             if (FIXED <= 0 && I.verb != SEP && I.verb != HEADER)
                 w = std::max(w, texW(cachedText(I.label, I.dim ? COLDIM : COLTITLE, T.body, CAPPX, -1, 0, false, 400), P.scale) + LX + LABEL_X);
         }
@@ -417,7 +454,7 @@ namespace NAwesome::Notify::CardMenu {
         double ry = y + PAD;
         for (size_t i = 0; i < s_items.size(); i++) {
             const auto&  I  = s_items[i];
-            const double RH = rowH(I);
+            const double RH = itemH(I);
             if (I.verb == SEP) {
                 P.rect(CBox{x + LABEL_X, ry + SEPH / 2, w - 2 * LABEL_X, 1.0 / P.scale}, tHairline());
                 ry += SEPH;
@@ -445,11 +482,15 @@ namespace NAwesome::Notify::CardMenu {
             // damages, so the lit one must already be warm (crash class 4)
             const bool HOV = hovered.kind == SCard::MENU_ITEM && hovered.id == (uint32_t)i;
             const int  LPX = labelPx(I);
-            const auto LIT = cachedText(I.label, COLACC, T.body, LPX, -1, 0, false, 400);
-            const auto RST = cachedText(I.label, I.quiet ? COLSUB : COLTITLE, T.body, LPX, -1, 0, false, 400);
-            const auto LBL = HOV ? LIT : RST;
+            const auto LIT  = cachedText(I.label, COLACC, T.body, LPX, -1, 0, false, 400);
+            const auto RST  = restOf(I);
+            const auto LBL  = HOV ? LIT : RST;
+            const auto FAIL = failOf(I);
+            const double LY = FAIL ? ry + DEV_PADY : ry + (RH - texH(LBL, P.scale)) / 2;
             if (LBL && LBL->tex)
-                texAt(P, LBL, x + LX, ry + (RH - texH(LBL, P.scale)) / 2);
+                texAt(P, LBL, x + LX, LY);
+            if (FAIL)
+                texAt(P, FAIL, x + LX, LY + texH(LBL, P.scale) + FAIL_GAP);
             if (I.disc) { // a device: its glyph in a disc, white while connected
                 const CBox D{x + DISC_X, ry + (RH - DISC_D) / 2, DISC_D, DISC_D};
                 P.rect(D, I.check == 1 ? COLTITLE : tFill(), PX(DISC_D / 2), 2.f);

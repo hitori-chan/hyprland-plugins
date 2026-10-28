@@ -271,6 +271,7 @@ namespace NAwesome::Notify {
     // glyph and the output menu's
     Glyph::eGlyph outputGlyph(const std::string& name);
     std::string   controlsTip(); // the gate's: the button name showing ("" none; defined in its build only)
+    std::string   controlsBt();  // the gate's: Bluetooth's capsule state ("!" in red)
 
     // ---- input.cpp: acting on a card ----
 

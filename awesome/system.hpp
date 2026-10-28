@@ -80,7 +80,8 @@ namespace NAwesome::System {
     void bluetoothInit();
     void bluetoothExit();
     void bluetoothBusDropped();
-    void bluetoothRefresh(); // the tree read again (the panel opened)
+    void bluetoothRefresh();     // the tree read again (the panel opened)
+    void bluetoothPanelClosed(); // the failures it showed are done
     void setBluetooth(bool on);
     void connectDevice(const std::string& id, bool connect);
 #ifdef AWESOME_GATE
