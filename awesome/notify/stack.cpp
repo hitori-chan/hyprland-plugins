@@ -34,8 +34,8 @@ namespace NAwesome::Notify {
         for (size_t d = deckLayers(count); d > 0; d--) {
             const double I = DECK_INSET * (double)d;
             const CBox   L{top.x + I, top.y + top.h + DECK_STEP * (double)d - DECK_H, top.w - 2 * I, DECK_H};
-            P.shadow(CBox{L}.expand(DECK_DROP).translate(Vector2D{0.0, DECK_SINK}), R, RP, (int)DECK_DROP);
             P.glass(L, GLASS, R, RP);
+            P.shadow(CBox{L}.expand(DECK_DROP).translate(Vector2D{0.0, DECK_SINK}), R, RP, (int)DECK_DROP, tShadow(), L);
             P.ring(L, RIM.modifyA(RIM.a * (1.f - 0.2f * (float)d)), R, RP);
         }
     }

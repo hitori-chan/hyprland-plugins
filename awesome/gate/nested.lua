@@ -26,11 +26,11 @@ hl.monitor({
 
 hl.config({
 	general = { gaps_in = 0, gaps_out = 0, border_size = 1 },
-	-- the Crystal glass's blur (the user's config: a 6 % tint over a blur
-	-- that does the darkening); size 2 x 2 passes ≈ 8
+	-- the Adaptive glass's blur (the user's config: no tint; the blur's
+	-- highlights roll off, black stays black); size 3 x 2 passes ≈ 12
 	decoration = {
 		shadow = { enabled = false },
-		blur = { enabled = true, size = 2, passes = 2, contrast = 1.0, brightness = 0.43, vibrancy = 0.6 },
+		blur = { enabled = true, size = 3, passes = 2, contrast = 1.0, brightness = 1.0, vibrancy = 0.6, highlights = 0.46 },
 	},
 	animations = { enabled = false },
 	misc = {
@@ -39,10 +39,12 @@ hl.config({
 		-- the activation gate is deliberately UNSET (fork default = the
 		-- user's live mode; the battery greps for its absence)
 		font_family = "IBM Plex Sans",
-		-- Keep it near-black (<=5): the stress panel-bottom detector keys on
-		-- min-channel > 5 to find the panel's edge, so the background must sit
-		-- below that threshold. The glass still samples a non-zero surface.
-		background_color = 0x050505, -- dark enough that panel_bottom resolves the edge
+		-- Keep it near-black (<=3): the panel detectors key on min-channel > 5
+		-- to find a panel's edge, and the clear glass passes the background
+		-- through with the blur's dither (about +-1.5), so background plus
+		-- dither must stay under that threshold. The glass still samples a
+		-- non-zero surface.
+		background_color = 0x030303, -- dark enough that panel_bottom resolves the edge
 	},
 })
 

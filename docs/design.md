@@ -279,20 +279,23 @@ unpacked, raster caches are capped in bytes, and work is bounded too
 One material for every surface, its tokens in `core/tokens.hpp` (the
 schema's defaults name them; the user's `theme.lua` overrides them).
 
-- **Glass** (Mist), one thickness over the compositor's blur for every
-  surface: the bar, the launcher, cards, the center, capsules, chips, a
-  stack's deck and menus all wear `theme:col_glass`, a 54 % grey
-  (`#58585E`) over the user's `decoration:blur` (size 3, passes 2,
-  contrast 1, brightness 0.48, vibrancy 0.6). About a fifth of the
-  backdrop shows through, and titles read 4.7:1 and secondary text 3.4:1
-  over a white page (measured on the mocks). Cards and menus add a soft
-  drop, a 24 % top edge catching light and an 18 % white rim; a menu
-  floats higher.
-- **Text** over glass wears no drop: the glass is dense enough to read on,
-  and a drop would only soften the type. The center's heading, bare on
+- **Glass** (Adaptive), one material over the compositor's blur for
+  every surface: the bar, the launcher, cards, the center, capsules,
+  chips, a stack's deck and menus all wear `theme:col_glass`, which
+  carries no tint: the material is the user's `decoration:blur` (size 3,
+  passes 2, contrast 1, brightness 1, vibrancy 0.6, highlights 0.46).
+  The fork's `highlights` rolls the blur's luminance off toward 0.46
+  (f(Y) = 0.46 (1 - e^(-Y/0.46))): black stays black, so the bar sinks
+  into a dark wallpaper or the letterbox band with no grey floor, while
+  white settles at 104/255, so titles read 4.9:1 over a white page
+  (measured on the previews). Cards and menus add a soft drop, kept clear
+  of the glass so it never darkens what the glass shows, a 24 % top edge
+  catching light and an 18 % white rim; a menu floats higher.
+- **Text** over glass wears no drop: the roll-off keeps the glass dark
+  enough to read on, and a drop would only soften the type. The center's heading, bare on
   the wallpaper, keeps macOS's desktop-label drop.
 - **Ink** is one white at four strengths (titles and the bar 100 %, body
-  86 %, meta 74 %, empty 34 %). The accent `#00CCFF` is text: the viewed
+  88 %, meta 78 %, empty 34 %). The accent `#00CCFF` is text: the viewed
   tag, the focused task, a selection, the bell or the control center's
   switches while their panel is open. It fills only what is live (a
   caret, the reply's send circle, progress; the snap preview is its 10 %
