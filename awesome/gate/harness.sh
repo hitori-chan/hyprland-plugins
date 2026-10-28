@@ -264,7 +264,21 @@ png_size() {
 	((${#b[@]} == 8)) || return 1
 	echo "$(((b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3])) $(((b[4] << 24) | (b[5] << 16) | (b[6] << 8) | b[7]))"
 }
-capture_nested() { # capture_nested <output>: tolerate a transient screencopy denial
+# flatten_png <png>: over black, as the screen shows it. The nested's bare
+# background is transparent, so its screencopy keeps the glass's alpha, and
+# the PNG stores straight alpha: a 34 % ink over a clear glass reads as full
+# white. The presented XRGB buffer drops the alpha of premultiplied pixels.
+flatten_png() {
+	python3 - "$1" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1])
+if im.mode != 'RGB':
+    im = Image.alpha_composite(Image.new('RGBA', im.size, (0, 0, 0, 255)), im.convert('RGBA')).convert('RGB')
+    im.save(sys.argv[1], compress_level=1)
+PY
+}
+capture_nested() { # capture_nested <output>: tolerate a transient screencopy denial; flattened
 	local out=$1 gpid jpid
 	# The nested renders on damage: grim waits for a frame, so the virtual
 	# pointer jitters (a real 2 px out and back, every 50 ms) until grim
@@ -286,7 +300,7 @@ capture_nested() { # capture_nested <output>: tolerate a transient screencopy de
 			# transient error: every pixel metric derives from MON_WxMON_H, so
 			# a drifted frame would poison downstream measurements silently.
 			# Drop it and retry.
-			[[ "$(png_size "$out")" == "$MON_W $MON_H" ]] && return 0
+			[[ "$(png_size "$out")" == "$MON_W $MON_H" ]] && flatten_png "$out" && return 0
 			rm -f -- "$out"
 			continue
 		fi
