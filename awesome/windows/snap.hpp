@@ -111,15 +111,19 @@ namespace NAwesome::Windows::Snap {
         }
 
         // the slot an armed edge/corner stands for: halves and quarters of
-        // the workarea
+        // the workarea, split on a whole pixel (an odd side's half is a
+        // half pixel a client sizes past or short of: a seam between two
+        // borderless tiles), the far one taking the odd pixel
         std::optional<CBox> slotFor(eEdgeV v, eEdgeH h, const CBox& WA) {
-            const double hw = WA.w / 2.0, hh = WA.h / 2.0;
+            const double hw = std::floor(WA.w / 2.0), hh = std::floor(WA.h / 2.0);
+            const double X = h == H_LEFT ? WA.x : WA.x + hw, W = h == H_LEFT ? hw : WA.w - hw;
+            const double Y = v == V_TOP ? WA.y : WA.y + hh, H = v == V_TOP ? hh : WA.h - hh;
             if (v != V_NONE && h != H_NONE)
-                return CBox{h == H_LEFT ? WA.x : WA.x + hw, v == V_TOP ? WA.y : WA.y + hh, hw, hh};
+                return CBox{X, Y, W, H};
             if (h != H_NONE)
-                return CBox{h == H_LEFT ? WA.x : WA.x + hw, WA.y, hw, WA.h};
+                return CBox{X, WA.y, W, WA.h};
             if (v != V_NONE)
-                return CBox{WA.x, v == V_TOP ? WA.y : WA.y + hh, WA.w, hh};
+                return CBox{WA.x, Y, WA.w, H};
             return std::nullopt;
         }
 
@@ -130,7 +134,8 @@ namespace NAwesome::Windows::Snap {
             return w ? std::max(0.0, (double)w->presentation().borderSize()) : 0.0;
         }
 
-        std::optional<CBox> constrainedZone(const SP<Layout::ITarget>& target, const PHLMONITOR& monitor, eEdgeV v, eEdgeH h) {
+        // border: the window's own unless given (a tile's is none)
+        std::optional<CBox> constrainedZone(const SP<Layout::ITarget>& target, const PHLMONITOR& monitor, eEdgeV v, eEdgeH h, std::optional<double> border = std::nullopt) {
             if (!target || !monitor)
                 return std::nullopt;
             const auto WA   = monitor->logicalBoxMinusReserved();
@@ -141,7 +146,7 @@ namespace NAwesome::Windows::Snap {
             const auto  HA = h == H_LEFT ? Geometry::EHorizontalAnchor::LEFT :
                 h == H_RIGHT ? Geometry::EHorizontalAnchor::RIGHT : Geometry::EHorizontalAnchor::CENTER;
             const auto VA = v == V_TOP ? Geometry::EVerticalAnchor::TOP : v == V_BOTTOM ? Geometry::EVerticalAnchor::BOTTOM : Geometry::EVerticalAnchor::CENTER;
-            return Geometry::constrainedSlot(*SLOT, target->minSize(), target->maxSize(), borderOf(target->window()), HA, VA);
+            return Geometry::constrainedSlot(*SLOT, target->minSize(), target->maxSize(), border.value_or(borderOf(target->window())), HA, VA);
         }
 
         struct SNearest {
@@ -431,21 +436,24 @@ namespace NAwesome::Windows::Snap {
             return;
         }
         if (zoneBox()) {
-            // the slot is the border box; the surface sits inside it, so the
-            // border stays on screen (maximize is the one full-bleed state)
-            const double B = borderOf(T ? T->window() : nullptr);
             // Re-read workarea and client constraints at drop: either can
             // change after the last pointer motion.
             if (const auto MON = zoneMon().lock(); MON) {
+                // a tile only where its surface fills the slot (a tile is
+                // borderless, tile.hpp): client limits can keep it smaller,
+                // off the far edges, a float that keeps its border
+                const auto SLOT = slotFor(zoneV(), zoneH(), MON->logicalBoxMinusReserved());
+                const auto BARE = constrainedZone(T, MON, zoneV(), zoneH(), 0.0);
+                Tile::snapped(T->window(), SLOT && BARE && *SLOT == *BARE);
                 if (const auto FINAL = constrainedZone(T, MON, zoneV(), zoneH()); FINAL) {
+                    // the slot is the border box; the surface sits inside
+                    // it, so a float's border stays on screen (a tile has
+                    // none)
+                    const double B = borderOf(T->window());
                     // dragEnd right after us commits the geometry we set
                     // here
                     T->setPositionGlobal(CBox{FINAL->x + B, FINAL->y + B, FINAL->w - 2 * B, FINAL->h - 2 * B});
                     T->warpPositionSize();
-                    // a tile only where it fills the slot: client limits
-                    // can keep it smaller, off the far edges
-                    const auto SLOT = slotFor(zoneV(), zoneH(), MON->logicalBoxMinusReserved());
-                    Tile::snapped(T->window(), SLOT && *SLOT == *FINAL);
                     // the controller assigns a dragged float the workspace
                     // its MIDDLE is over, and the cursor arms a zone before
                     // the middle crosses: a zone on another monitor must

@@ -27,7 +27,7 @@ state.
   changes, and the pointer follows the window's geometry, so a window
   that grows under a still cursor takes the next click.
 - A maximized window is a tile, as a snapped one is (see Snap): square
-  corners, no drop shadow and opaque edges.
+  corners, no drop shadow and no border.
 - A maximized window does not move, as in awesome's
   `mouse.client.move`: a `Mod`+drag is swallowed, and a drag the client
   starts from its own titlebar ends at once.
@@ -117,19 +117,19 @@ the preview whichever is let go first, the button or `Super`. Previews
 honour the client's size limits and keep the chosen edge anchored; the
 gap between two outputs arms no zone.
 
-A window that fills its slot is a tile, as awesome's placed clients are:
-square corners, no drop shadow and opaque edges, so halves and quarters
-meet the screen's edges and each other with nothing of the wallpaper
-between (rounded, they left it in notches at the corners and at both ends
-of a seam, and the focused one's drop fell across its neighbour; a
-see-through border showed it as a line round every tile, a grid between
-four quarters). The edges are awesome's `border_normal` and
-`border_focus`: `#3F3F3F`, and `#6F6F6F` on the focused tile, so the
-one taking the keys reads lighter. A drag or a resize lifts it out and
-gives its corners, drop and edges back; a client whose limits keep it
+A window that fills its slot is a tile: square corners, no drop shadow
+and no border, its surface the whole slot, so halves and quarters meet
+the screen's edges and each other with nothing between. Rounded, they
+left the wallpaper in notches at the corners and at both ends of a seam,
+and the focused one's drop fell across its neighbour; a border of any
+colour framed every tile and doubled every seam (see-through, a line of
+the wallpaper; opaque, a grid no float wears). A slot splits the work
+area on a whole pixel, the right or bottom one taking an odd one, so two
+tiles never leave a half-pixel seam. A drag or a resize lifts it out and
+gives its corners, drop and border back; a client whose limits keep it
 smaller than the slot stays a rounded float. The look sits at the
-layout's override priority, so window rules that set `rounding` or
-`no_shadow` still win. A plugin reload forgets which windows were
-snapped (maximized ones are adopted again).
+layout's override priority, so window rules that set `rounding`,
+`no_shadow` or `border_size` still win. A plugin reload forgets which
+windows were snapped (maximized ones are adopted again).
 
 Turn off Hyprland's own `general:snap` so the two do not compete.

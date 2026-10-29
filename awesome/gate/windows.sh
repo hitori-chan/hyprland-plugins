@@ -397,7 +397,7 @@ for _ in $(seq 1 10); do
 done
 dsp "hl.plugin.awesome.maximize()"; settled foot
 MAX_BEFORE="$(box)"
-chk "maximize: a maximized window is a tile (no drop)" until_is 2 "0 1" tile_props "$(class_addr foot)"
+chk "maximize: a maximized window is a tile (no drop, no border)" until_is 2 "0 1 0" tile_props "$(class_addr foot)"
 RESERVED_BEFORE="$(reserved)"
 ERROR_MESSAGE="reserved-area-probe $(printf 'wrapped-message-with-enough-width-to-force-a-second-line %.0s' {1..6})"
 hq seterror 'rgba(ff3030ff)' "$ERROR_MESSAGE" >/dev/null 2>&1
@@ -445,7 +445,7 @@ done
 chk "maximize: removing native reservation restores maximized workarea" test "$(box)" = "$MAX_BEFORE"
 dsp "hl.plugin.awesome.maximize()"; settled foot
 chk "maximize: reserved-area roundtrip preserves windowed restore" test "$(box)" = "$REF"
-chk "maximize: restored, it is a float again (its drop back)" until_is 2 "0 0" tile_props "$(class_addr foot)"
+chk "maximize: restored, it is a float again (its drop and border back)" until_is 2 "0 0 1" tile_props "$(class_addr foot)"
 for i in $(seq 1 10); do dsp "hl.plugin.awesome.maximize()"; done; settled foot
 chk "10 maximize toggles round-trip losslessly" test "$(box)" = "$REF"
 for i in $(seq 1 5); do dsp "hl.plugin.awesome.minimize()"; dsp "hl.plugin.awesome.restore()"; done; settled foot
@@ -596,20 +596,19 @@ until_is 5 0 w3_count
 # (windows/snap.hpp) A floating move drag (Alt+drag here, the nested's own
 # bind) whose cursor comes within `edge` (16) of an output edge previews
 # that half of the workarea, of two edges that corner's quarter; the drop
-# commits it, border inside the slot. Letting go of the modifier first ends
+# commits it, the surface the whole slot. Letting go of the modifier first ends
 # the drag and commits the same.
 snap_box() { clients | python3 -c "
 import json,sys
 c = next((c for c in json.load(sys.stdin) if c['class'] == 'snapw'), None)
 print('%d,%d %dx%d' % (c['at'][0], c['at'][1], c['size'][0], c['size'][1]) if c else 'none')"; }
-slot() { # slot <left|right|topleft>: the expected box, border 1 inside the workarea's part
+slot() { # slot <left|right|topleft>: the expected box, the workarea's part whole (a tile has no border)
 	hq monitors -j | python3 -c "
 import json,sys
 m = json.load(sys.stdin)[0]; l, t, r, b = m['reserved']
 x, y, w, h = l, t, m['width'] - l - r, m['height'] - t - b
-part = {'left': (x, y, w // 2, h), 'right': (x + w - w // 2, y, w - w // 2, h), 'topleft': (x, y, w // 2, h // 2)}[sys.argv[1]]
-px, py, pw, ph = part
-print('%d,%d %dx%d' % (px + 1, py + 1, pw - 2, ph - 2))" "$1"
+part = {'left': (x, y, w // 2, h), 'right': (x + w // 2, y, w - w // 2, h), 'topleft': (x, y, w // 2, h // 2)}[sys.argv[1]]
+print('%d,%d %dx%d' % part)" "$1"
 }
 kbds() { hq devices -j | python3 -c 'import json,sys;print(len(json.load(sys.stdin)["keyboards"]))'; }
 kbd_more() { (($(kbds) > $1)); }
@@ -652,8 +651,7 @@ dsp "hl.dsp.window.move({x = 440, y = 270, window = \"address:$SNAPW\"})"
 settled snapw
 snap_drag 2 420 "- left" 0
 chk "snap: the left edge commits the left half" until_is 2 "$(slot left)" snap_box
-chk "snap: the filled half is a tile (square, no drop)" until_is 2 "0 1" tile_props "$SNAPW"
-chk "snap: ...its edges opaque, the focused one lighter" until_is 2 "ff6f6f6f 0deg ff3f3f3f 0deg" tile_edges "$SNAPW"
+chk "snap: the filled half is a tile (square, no drop, no border)" until_is 2 "0 1 0" tile_props "$SNAPW"
 dsp "hl.dsp.window.move({x = 440, y = 270, window = \"address:$SNAPW\"})"
 snap_drag $((MON_W - 2)) 420 "- right" 1
 chk "snap: the right edge, the modifier let go first, commits the right half" until_is 2 "$(slot right)" snap_box
@@ -664,9 +662,7 @@ dsp "hl.dsp.window.move({x = 440, y = 270, window = \"address:$SNAPW\"})"
 SNAPSZ="$(snap_box | cut -d' ' -f2)" # the quarter's: a move keeps a window's size
 snap_drag 400 400 "" 0
 chk "snap: a drop away from the edges commits no slot" until_is 2 "200,250 $SNAPSZ" snap_box
-chk "snap: lifted out of its slot it is a float again (rounded, its drop back)" until_is 2 "6 0" tile_props "$SNAPW"
-edges_back() { [[ "$(tile_edges "$SNAPW")" != *ff3f3f3f* ]]; }
-chk "snap: ...its edges the config's again" until_ok 2 edges_back
+chk "snap: lifted out of its slot it is a float again (rounded, its drop and border back)" until_is 2 "6 0 1" tile_props "$SNAPW"
 close_wait "$SNAPW"
 hq eval "hl.config({ decoration = { rounding = 0 } })" >/dev/null
 

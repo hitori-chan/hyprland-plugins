@@ -52,12 +52,6 @@ namespace NAwesome::Theme {
     inline constexpr uint32_t NOTE        = 0xe0121216; // a name or a state under the pointer: a dark note, 88 %
     inline constexpr uint32_t NOTE_SHADOW = 0x4d000000; // its drop, 30 %
 
-    // ---- a tile's edges (windows/tile.hpp): opaque, awesome's border_normal
-    //      and border_focus. The floating look's see-through rim showed the
-    //      wallpaper as a line round every tile and down every seam ----
-    inline constexpr uint32_t TILE_EDGE       = 0xff3f3f3f;
-    inline constexpr uint32_t TILE_EDGE_FOCUS = 0xff6f6f6f; // the focused tile reads lighter
-
     // ---- geometry (logical px) ----
     inline constexpr int    RAD_CARD   = 18; // notify:rounding's default
     inline constexpr int    RAD_MENU   = 12;

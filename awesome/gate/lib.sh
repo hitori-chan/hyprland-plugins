@@ -194,17 +194,15 @@ gone() { ! clients | grep -qF "\"address\": \"$1\","; }
 close_wait() { [[ -n "$1" ]] || return 0; dsp "hl.dsp.window.close({window=\"address:$1\"})"; until_ok 5 gone "$1"; }
 # wait_class <class>: a window of that class (its app id) is mapped
 has_class() { clients | grep -qF "\"class\": \"$1\","; }
-# tile_props <address>: "<rounding> <no_shadow 0|1>" as the window draws
-# them (windows/tile.hpp: a snapped or maximized window is square, no drop)
+# tile_props <address>: "<rounding> <no_shadow 0|1> <border_size>" as the
+# window draws them (windows/tile.hpp: a snapped or maximized window is
+# square, no drop, no border)
 tile_props() {
-	local r s
-	r="$(hq getprop "address:$1" rounding)" s="$(hq getprop "address:$1" no_shadow)"
+	local r s b
+	r="$(hq getprop "address:$1" rounding)" s="$(hq getprop "address:$1" no_shadow)" b="$(hq getprop "address:$1" border_size)"
 	case $s in true) s=1 ;; false) s=0 ;; esac
-	echo "$r $s"
+	echo "$r $s $b"
 }
-# a window's border colours as getprop prints them: "<focused> <inactive>"
-# (each "aarrggbb 0deg")
-tile_edges() { echo "$(hq getprop "address:$1" active_border_color) $(hq getprop "address:$1" inactive_border_color)"; }
 # class_addr <class>: the first such window's address (by app id: the shell
 # in a foot rewrites its title at the first prompt)
 class_addr() {

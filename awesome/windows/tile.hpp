@@ -1,19 +1,18 @@
 // awesome/windows/tile.hpp — a window the plugin set into a slot of the
-// work area (a snap half or quarter, or maximized) is a flush tile, as
-// awesome's placed clients are: square corners, no drop shadow and opaque
-// edges (awesome's border_normal, a lighter border_focus). Rounded, two
-// snapped halves left wallpaper notches at the screen's corners and at
-// both ends of their seam, and the focused one's drop fell across its
-// neighbour; a see-through rim showed the wallpaper as a line round every
-// tile and down every seam (four quarters: a grid). The look is set at the
-// layout's override priority, so the user's window rules and setprop still
-// win, and it leaves with the slot: a drag lifts a snapped window out,
-// unmaximize restores it.
+// work area (a snap half or quarter, or maximized) is a flush tile: square
+// corners, no drop shadow and no border, its surface the whole slot.
+// Rounded, two snapped halves left wallpaper notches at the screen's
+// corners and at both ends of their seam, and the focused one's drop fell
+// across its neighbour; a border of any colour drew a frame round every
+// tile and a double line down every seam (see-through, the wallpaper's;
+// opaque, a grid no float wears). The look is set at the layout's override
+// priority, so the user's window rules and setprop still win, and it
+// leaves with the slot: a drag lifts a snapped window out, unmaximize
+// restores it.
 #pragma once
 
 #include "core/queries.hpp"
 #include "core/supervisor.hpp"
-#include "core/tokens.hpp"
 
 #include <hyprland/src/desktop/rule/windowRule/WindowRuleApplicator.hpp>
 #include <hyprland/src/desktop/state/ViewState.hpp>
@@ -40,16 +39,13 @@ namespace NAwesome::Windows::Tile {
             auto& R = *w->m_ruleApplicator;
             g_pHyprRenderer->damageWindow(w); // the corners and the drop it had
             if (flush) {
-                static const Config::CGradientValueData EDGE{CHyprColor{(uint64_t)Theme::TILE_EDGE}}, EDGE_FOCUS{CHyprColor{(uint64_t)Theme::TILE_EDGE_FOCUS}};
                 R.rounding().set(0, Desktop::Types::PRIORITY_LAYOUT);
                 R.noShadow().set(true, Desktop::Types::PRIORITY_LAYOUT);
-                R.activeBorderColor().set(EDGE_FOCUS, Desktop::Types::PRIORITY_LAYOUT);
-                R.inactiveBorderColor().set(EDGE, Desktop::Types::PRIORITY_LAYOUT);
+                R.borderSize().set(0, Desktop::Types::PRIORITY_LAYOUT);
             } else {
                 R.rounding().unset(Desktop::Types::PRIORITY_LAYOUT);
                 R.noShadow().unset(Desktop::Types::PRIORITY_LAYOUT);
-                R.activeBorderColor().unset(Desktop::Types::PRIORITY_LAYOUT);
-                R.inactiveBorderColor().unset(Desktop::Types::PRIORITY_LAYOUT);
+                R.borderSize().unset(Desktop::Types::PRIORITY_LAYOUT);
             }
             w->presentation().refreshValues();
             g_pHyprRenderer->damageWindow(w);
