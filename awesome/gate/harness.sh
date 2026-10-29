@@ -334,6 +334,8 @@ GUARD_CHECKS=0
 GUARDS_START=0
 battery_begin() {
 	BATTERY_NAME=$1
+	BATTERY_T0=$SECONDS
+	PREFLIGHT_S=${PREFLIGHT_S:-$SECONDS} # the build and the launch, once
 	PASS_START=$PASS
 	FAILED_START=${#FAILED[@]}
 	GUARDS_START=$GUARD_CHECKS
@@ -341,7 +343,7 @@ battery_begin() {
 	echo "== battery: $1 (${SECONDS} s in) =="
 }
 battery_end() {
-	BATTERY_SUMMARY+=("$1 $((PASS - PASS_START)) $(( ${#FAILED[@]} - FAILED_START )) $((GUARD_CHECKS - GUARDS_START))")
+	BATTERY_SUMMARY+=("$1 $((PASS - PASS_START)) $(( ${#FAILED[@]} - FAILED_START )) $((GUARD_CHECKS - GUARDS_START)) $((SECONDS - BATTERY_T0))")
 }
 # A battery must leave the nested client-free: the stress desktop starts
 # empty and every battery closes its own windows. A stray client at a
@@ -371,13 +373,14 @@ assert_desktop_clean() {
 	GUARD_CHECKS=$((GUARD_CHECKS + 1))
 }
 print_summary() { # the gate's final lines; the return code is the exit code
-	local entry n o f g real
+	local entry n o f g t real
 	if [[ ${#BATTERY_SUMMARY[@]} -gt 0 ]]; then
+		printf '   %-14s %s s (the builds, the launch)\n' preflight "${PREFLIGHT_S:-?}"
 		for entry in "${BATTERY_SUMMARY[@]}"; do
-			read -r n o f g <<<"$entry"
+			read -r n o f g t <<<"$entry"
 			g=${g:-0}
 			real=$((o + f - g))
-			printf '   %-14s %s ok, %s fail%s\n' "$n" "$o" "$f" "$([[ $g -gt 0 ]] && printf ' (+%s guard)' "$g")"
+			printf '   %-14s %s ok, %s fail%s, %s s\n' "$n" "$o" "$f" "$([[ $g -gt 0 ]] && printf ' (+%s guard)' "$g")" "${t:-?}"
 			[[ $real -gt 0 ]] || bad "battery $n ran no checks (empty battery — script dead or fully gated)"
 		done
 	fi

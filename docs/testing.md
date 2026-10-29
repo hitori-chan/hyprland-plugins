@@ -53,6 +53,9 @@ make -C awesome gate ARGS="-s ~/repo/Hyprland [-b quick|all|LIST] [-k LIST]"
   `system`, `pipeline`, `lifecycle` (run in that order). `-k` skips some.
 - Run `-b windows` alone for a geometry change and `-b all` for a fork
   bump or a release.
+- The summary times the preflight (the builds and the launch) and every
+  battery; `-p TRACE` with `gate/profile.py` names the lines the time
+  went to.
 
 The result is the summary line, `== stress: ALL N CHECKS PASSED in Ns ==`,
 not the exit code. A check whose precondition is missing is a skip,
