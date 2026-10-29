@@ -44,6 +44,7 @@ ifeq ($(GATE),1)
 CXXFLAGS += -DAWESOME_GATE
 OBJDIR   := .build-gate
 TARGET   := $(NAME)-gate.so
+PCH      := $(OBJDIR)/pch.hpp
 else
 OBJDIR   := .build
 TARGET   := $(NAME).so
@@ -79,11 +80,24 @@ $(LINK_STAMP): FORCE | $(OBJDIR)
 $(TARGET): $(OBJS) plugin.ver $(LINK_STAMP)
 	$(CXX) $(LDFLAGS) $(OBJS) -o $@ $(LDLIBS)
 
+# The gate variant's precompiled header (core/pch.hpp; the release build
+# stays plain): GCC takes $(PCH).gch for the -include'd copy beside it,
+# built with the units' own flags, and ccache caches units through it only
+# with these sloppiness bits
+ifdef PCH
+PCH_FLAGS := -include $(PCH) -Winvalid-pch
+export CCACHE_SLOPPINESS := pch_defines,time_macros
+$(PCH): core/pch.hpp | $(OBJDIR)
+	cp $< $@
+$(PCH).gch: $(PCH) Makefile $(STAMP)
+	$(CXX) $(CXXFLAGS) -x c++-header $< -o $@
+endif
+
 # one object per unit; -MMD tracks the plugin's own headers, the stamp
 # the target's
-$(OBJDIR)/%.o: %.cpp Makefile $(STAMP) | $(OBJDIR)
+$(OBJDIR)/%.o: %.cpp Makefile $(STAMP) $(if $(PCH),$(PCH).gch) | $(OBJDIR)
 	@mkdir -p $(dir $@)
-	$(CCACHE) $(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CCACHE) $(CXX) $(CXXFLAGS) $(PCH_FLAGS) -c $< -o $@
 
 $(OBJDIR):
 	@mkdir -p $@

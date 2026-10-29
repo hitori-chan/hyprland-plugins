@@ -48,7 +48,9 @@ compositor is built from.
 ## Build
 
 - `make -C awesome` builds the release plugin (what hyprpm ships).
-  `make -C awesome GATE=1` builds `awesome-gate.so`, the gate's variant.
+  `make -C awesome GATE=1` builds `awesome-gate.so`, the gate's variant,
+  through a precompiled header (`core/pch.hpp`); the release stays plain
+  so a missing include still fails there.
 - Test seams are compile-time only: `#ifdef AWESOME_GATE`, never an
   environment switch in the release binary.
 - Do not add `-fvisibility=hidden`: `awesome/plugin.ver` localizes plugin

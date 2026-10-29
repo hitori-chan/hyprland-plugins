@@ -14,9 +14,15 @@ binary. The build stamps its target (compiler, flags, the headers'
 `version.h`), so switching header sets rebuilds everything by itself.
 
 The gate's entry points compile through ccache when it is installed
-(`gate/memcap.sh` sets the Makefile's `CCACHE` launcher): a source with no
-gate seam compiles once for both variants, and sweep worktrees share the
-hits. hyprpm's build stays the plain compiler.
+(`gate/memcap.sh` sets the Makefile's `CCACHE` launcher), and sweep
+worktrees share the hits. hyprpm's build stays the plain compiler.
+
+The gate variant takes a precompiled header of the fork headers most
+units include (`core/pch.hpp`, forced in with `-include`): a unit
+compiles in about two thirds of the time and peaks near 600 MiB instead
+of 780, so the gate's 3 GiB scope builds four units at once instead of
+three (a cold gate build: 260 s before, 114 s with it). The release
+variant stays plain, so a unit that misses an include still fails there.
 
 ## Unit tests
 

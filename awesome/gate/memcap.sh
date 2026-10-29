@@ -42,12 +42,15 @@ fi
 
 if [[ -z "${HYPR_HARNESS_JOBS:-}" ]]; then
 	_max=${HYPR_HARNESS_SCOPE%%:*} _floor=${HYPR_HARNESS_SCOPE##*:}
-	# an -O2 translation unit peaks near 600 MiB; the nested is not up yet
-	# while the preflight builds
-	HYPR_HARNESS_JOBS=$(((_max - 512) / 768))
+	# an -O2 translation unit peaks near 780 MiB, 600 through the gate
+	# variant's precompiled header (core/pch.hpp); the nested is not up
+	# yet while the preflight builds
+	HYPR_HARNESS_JOBS=$(((_max - 512) / 768)) HYPR_HARNESS_GATE_JOBS=$(((_max - 512) / 600))
 	((HYPR_HARNESS_JOBS < 1)) && HYPR_HARNESS_JOBS=1
 	((HYPR_HARNESS_JOBS > $(nproc))) && HYPR_HARNESS_JOBS=$(nproc)
-	export HYPR_HARNESS_JOBS
+	((HYPR_HARNESS_GATE_JOBS < 1)) && HYPR_HARNESS_GATE_JOBS=1
+	((HYPR_HARNESS_GATE_JOBS > $(nproc))) && HYPR_HARNESS_GATE_JOBS=$(nproc)
+	export HYPR_HARNESS_JOBS HYPR_HARNESS_GATE_JOBS
 	# the Makefile's compiler launcher: unchanged sources are cache hits
 	export CCACHE="${CCACHE-$(command -v ccache 2>/dev/null)}"
 	_cg="/sys/fs/cgroup$(sed -n 's/^0:://p' /proc/self/cgroup)"
