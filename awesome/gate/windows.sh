@@ -93,34 +93,9 @@ chk "fixed-size battery left no windows" \
 dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 300 350 10 csdpin')"; settled csdpin
 expect "pinned CSD splash: box is the content frame (300x350), centered" \
 	"any(c['class']=='csdpin' and c['floating'] and c['size']==[300,350] and abs(c['at'][0]-$(( (MON_W-300)/2 )))<=14 and abs(c['at'][1]-$(( 30+(MON_H-30-350)/2 )))<=14 for c in cs)"
-box4() { clients | python3 -c "
-import json,sys
-c = next((c for c in json.load(sys.stdin) if c['class']=='$1'), None)
-print(f\"{c['at'][0]} {c['at'][1]} {c['size'][0]} {c['size'][1]}\") if c else print('none')" ; }
 capture_nested "$STATE/csd-pin.png"
-chk "pinned CSD: content fills the box, the margin is cropped" \
-	test "$(python3 - "$STATE/csd-pin.png" "$(box4 csdpin)" <<'PY'
-import sys
-from PIL import Image
-im = Image.open(sys.argv[1]).convert("RGB"); px = im.load()
-x, y, w, h = map(int, sys.argv[2].split())
-MAROON = (48, 32, 32)
-# 3px in from the box edge: content, at every corner and the center (the
-# 1px border sits on the box edge itself)
-content = lambda dx, dy: px[x + dx, y + dy] == MAROON
-ok = content(3, 3) and content(w - 4, 3) and content(3, h - 4) and content(w - 4, h - 4) \
-   and content(w // 2, h // 2)
-# 5px OUTSIDE the box edge: never content
-outside = lambda dx, dy: px[dx, dy] != MAROON
-ok = ok and outside(x - 5, y + h // 2) and outside(x + w + 5, y + h // 2) \
-      and outside(x + w // 2, y - 5) and outside(x + w // 2, y + h + 5)
-print(1 if ok else 0)
-PY
-)" = 1
-CP="$(clients | python3 -c "
-import json,sys
-print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdpin'), ''))")"
-close_wait "$CP"
+chk "pinned CSD: content fills the box, the margin is cropped" csd_cropped "$STATE/csd-pin.png" "$(box4 csdpin)"
+close_wait "$(class_addr csdpin)"
 # Input follows the content frame: the client's surface coords start at
 # the margin's outer corner, so a pointer at box-local (x, y) lands at
 # (x + m, y + m) in the client. (A GTK file chooser got every click shifted

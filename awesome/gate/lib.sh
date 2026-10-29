@@ -211,6 +211,32 @@ import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class'] == sys.argv[1]), ''))" "$1"
 }
 wait_class() { until_ok 10 has_class "$1"; }
+# box4 <class>: its first window's "x y w h" ("none" while unmapped)
+box4() { clients | python3 -c "
+import json,sys
+c = next((c for c in json.load(sys.stdin) if c['class']==sys.argv[1]), None)
+print(f\"{c['at'][0]} {c['at'][1]} {c['size'][0]} {c['size'][1]}\") if c else print('none')" "$1"; }
+# csd_cropped <frame> <"x y w h">: a splashwin CSD box is its content frame
+# (the 2026-10-04 bug): its maroon fills the box 3 px in from every edge
+# (a 1 px border sits on the edge itself) and never shows 5 px outside it —
+# the buffer's shadow margin is cropped at the box, never padding inside it
+csd_cropped() {
+	[[ "$(python3 - "$1" "$2" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB"); px = im.load()
+x, y, w, h = map(int, sys.argv[2].split())
+MAROON = (48, 32, 32)
+content = lambda dx, dy: px[x + dx, y + dy] == MAROON
+ok = content(3, 3) and content(w - 4, 3) and content(3, h - 4) and content(w - 4, h - 4) \
+   and content(w // 2, h // 2)
+outside = lambda dx, dy: px[dx, dy] != MAROON
+ok = ok and outside(x - 5, y + h // 2) and outside(x + w + 5, y + h // 2) \
+      and outside(x + w // 2, y - 5) and outside(x + w // 2, y + h + 5)
+print(1 if ok else 0)
+PY
+)" == 1 ]]
+}
 # until_is <seconds> <want> <cmd...>: poll until the command prints `want` —
 # an asynchronous effect landing (an arrival, a sweep) — false on timeout.
 # For final states only: a "nothing happened" check keeps a fixed settle.
