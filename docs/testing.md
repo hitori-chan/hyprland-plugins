@@ -44,12 +44,13 @@ make -C awesome gate ARGS="-s ~/repo/Hyprland [-b quick|all|LIST] [-k LIST]"
 ```
 
 - `-s DIR` stages that fork build's headers (and verifies its
-  `version.h`), builds both variants against them, and runs
-  `DIR/build/Hyprland`.
-- `-b` picks the batteries: `quick` (the default, ~1 min smoke), `all`
-  (~2.5 min with a warm build cache), or a list of `shell`, `windows`,
-  `notify`, `system`, `pipeline`, `lifecycle` (run in that order). `-k`
-  skips some.
+  `version.h`), builds the gate variant against them, and runs
+  `DIR/build/Hyprland`. The release variant's deploy rehearsal runs in
+  the `all` tier (or with `REHEARSE=1`); the sweep builds every commit's
+  release before a push.
+- `-b` picks the batteries: `quick` (the default, ~30 s smoke), `all`
+  (~3.5 min of batteries), or a list of `shell`, `windows`, `notify`,
+  `system`, `pipeline`, `lifecycle` (run in that order). `-k` skips some.
 - Run `-b windows` alone for a geometry change and `-b all` for a fork
   bump or a release.
 

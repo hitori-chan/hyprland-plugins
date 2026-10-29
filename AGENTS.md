@@ -63,10 +63,10 @@ compositor is built from.
 ## The gate
 
 `make -C awesome gate ARGS="-s ~/repo/Hyprland [-b quick|all|LIST]"`
-stages the fork build's headers, builds both variants, and runs the
-batteries against a nested Hyprland. Default tier `quick` (~1 min);
-`-b windows` alone for a geometry/CSD change; `-b all` for a bump or a
-release. Keep it lean: retire a check once its code is battle-tested,
+stages the fork build's headers, builds the gate variant (`-b all` adds
+the release build's deploy rehearsal), and runs the batteries against a
+nested Hyprland. Default tier `quick` (~30 s of checks); `-b windows`
+alone for a geometry/CSD change; `-b all` for a bump or a release. Keep it lean: retire a check once its code is battle-tested,
 gate new behavior with discriminating checks, and wait on state, never
 the clock (`docs/testing.md`, Waiting; `-p` profiles a run).
 `bash awesome/gate/sweep.sh origin/main HEAD` builds and unit-tests every

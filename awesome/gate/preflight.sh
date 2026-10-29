@@ -62,16 +62,20 @@ AW_TOML="$(awk '/^\[/ { s = ($0 == "[awesome]") } s && /^version[[:space:]]*=/ {
 kill_nested
 # Two variants of one tree, each with its own objects (incremental): the
 # RELEASE build is the deploy rehearsal — what hyprpm builds, no test
-# seams — and the GATE build (GATE=1, AWESOME_GATE seams compiled in) is
-# what the nested loads. A new header set rebuilds by itself (the
-# Makefile's target stamp); GATE_FORCE_BUILD=1 still forces -B.
+# seams, no precompiled header — and the GATE build (GATE=1, AWESOME_GATE
+# seams compiled in) is what the nested loads. The rehearsal runs in the
+# all tier (a bump, a release) and REHEARSE=1; a focused run builds the
+# gate variant alone, and the sweep builds every commit's release before a
+# push. A new header set rebuilds by itself (the Makefile's target stamp);
+# GATE_FORCE_BUILD=1 still forces -B.
 build_aw() { # build_aw <gate 0|1> <strip PKG_CONFIG_PATH 0|1>
-	local force=()
+	local force=() jobs=$HYPR_HARNESS_JOBS
 	[[ -n "${GATE_FORCE_BUILD:-}" ]] && force+=(-B)
+	[[ $1 == 1 ]] && jobs=$HYPR_HARNESS_GATE_JOBS
 	if [[ $2 == 1 ]]; then
-		env -u PKG_CONFIG_PATH make "${force[@]}" -j"$HYPR_HARNESS_JOBS" -C "$REPO/awesome" GATE="$1" >/dev/null 2>&1
+		env -u PKG_CONFIG_PATH make "${force[@]}" -j"$jobs" -C "$REPO/awesome" GATE="$1" >/dev/null 2>&1
 	else
-		make "${force[@]}" -j"$HYPR_HARNESS_JOBS" -C "$REPO/awesome" GATE="$1" >/dev/null 2>&1
+		make "${force[@]}" -j"$jobs" -C "$REPO/awesome" GATE="$1" >/dev/null 2>&1
 	fi
 }
 if [[ -n "${HYPR_DEPLOY_PKG_CONFIG_PATH:-}" ]]; then
@@ -80,10 +84,12 @@ else
 	# hyprpm builds against its installed header cache, not this run's
 	REHEARSAL_STRIP=1 DEPLOY_HEADERS="the installed header cache"
 fi
-build_aw 0 "$REHEARSAL_STRIP" && ok "deploy rehearsal: the release build compiles against $DEPLOY_HEADERS" || {
-	bad "deploy rehearsal: the release build compiles against $DEPLOY_HEADERS"
-	echo "plugin build FAILED"; exit 1
-}
+if [[ -n "${REHEARSE:-}" ]]; then
+	build_aw 0 "$REHEARSAL_STRIP" && ok "deploy rehearsal: the release build compiles against $DEPLOY_HEADERS" || {
+		bad "deploy rehearsal: the release build compiles against $DEPLOY_HEADERS"
+		echo "plugin build FAILED"; exit 1
+	}
+fi
 build_aw 1 0 && ok "the gate build (AWESOME_GATE seams) compiles" || { bad "the gate build compiles"; echo "plugin build FAILED"; exit 1; }
 if [[ -n "$DEPLOY_PC_SUM" ]]; then
 	chk "deploy pkg-config metadata remained untouched" test "$(sha256sum "$DEPLOY_PC_SOURCE" | cut -d' ' -f1)" = "$DEPLOY_PC_SUM"

@@ -46,7 +46,9 @@ usage: gate.sh [-s FORK-DIR] [-b TIER|LIST] [-k LIST] [-p TRACE] [compositor-bin
             and default the compositor to DIR/build/Hyprland
   -b        tiers:
               quick      the dev-loop smoke battery (DEFAULT)
-              all        shell windows notify system pipeline lifecycle
+              all        shell windows notify system pipeline lifecycle,
+                         and the release build's deploy rehearsal
+                         (REHEARSE=1 adds it to any tier)
             or a comma-separated battery list, from:
               quick shell windows notify system pipeline lifecycle
             (canonical order enforced regardless of user order)
@@ -137,6 +139,7 @@ if [[ -z "$B_SPEC" || "$B_SPEC" == "quick" ]]; then
 	SELECTED=("${QUICK_TIER[@]}")
 elif [[ "$B_SPEC" == "all" ]]; then
 	SELECTED=("${ALL_TIER[@]}")
+	export REHEARSE=1
 else
 	IFS=',' read -r -a REQUESTED <<< "$B_SPEC"
 	for _name in "${REQUESTED[@]}"; do
