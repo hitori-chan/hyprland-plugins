@@ -60,9 +60,13 @@ parity).
   outputs and makes one the default.
 - **A headset's own buttons**: a Bluetooth headset that sets its volume
   itself (AVRCP absolute volume) presses no key. BlueZ announces the
-  change on the system bus, the default sink is read back, and the
-  capsule shows only a level or a mute that actually moved. A headset
-  without absolute volume sends volume keys, which reach your binds.
+  change on the system bus, the default sink is read back once
+  PipeWire has taken it (250 ms after the last announcement: PipeWire
+  itself waits 200 ms), and the capsule shows only a level or a mute
+  that actually moved. A headset with coarser steps than the keys' 5 %
+  answers a key with its own nearest step, and the capsule follows to
+  it. A headset without absolute volume sends volume keys, which reach
+  your binds.
 
 ## Bluetooth
 

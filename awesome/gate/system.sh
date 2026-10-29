@@ -119,7 +119,15 @@ sleep 0.6
 chk "headset: a sender that is not BlueZ moves nothing" test "$(st)" = "center:0 live:0 dnd:0"
 bt_volume 47
 chk "headset: the next real change shows again" until_is 3 "center:0 live:1 dnd:0" st
-rm -f "$STATE/wpctl-level"
+nclear
+# PipeWire takes an A2DP headset's level 200 ms after the announcement (the
+# fake's .next file): read inside that, every swipe's capsule showed the
+# swipe before it
+printf '0.52\n' > "$STATE/wpctl-level.next"
+bt_volume 66
+chk "headset: the capsule shows the level PipeWire took, not the one before" until_is 3 52 ctl_part volume
+chk "headset: ...and it shows" until_is 3 "center:0 live:1 dnd:0" st
+rm -f "$STATE/wpctl-level" "$STATE/wpctl-level.next"
 nclear
 
 # ---- Bluetooth (system/bluetooth.cpp) --------------------------------------

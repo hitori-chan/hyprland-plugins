@@ -225,24 +225,27 @@ namespace NAwesome::System {
     // the default sink. The readback stays the truth — the transport may
     // feed another sink, and PipeWire applies the change only after BlueZ
     // announces it — and the capsule shows only a level or a mute that
-    // moved: our own sets echo here and show nothing twice. A headset
+    // moved: our own sets echo here and show nothing twice, and a headset
+    // that keeps a coarser scale than ours (one that answers a 5 % set
+    // with its own nearest step) shows the level it took. A headset
     // without absolute volume sends volume keys instead (BlueZ's AVRCP
     // input device), and those reach the binds.
     static SP<CEventLoopTimer> headsetSettle;
-    static bool                headsetArmed = false, headsetAgain = false;
-    // PipeWire reacts to the same announcement within this; a held button's
-    // burst reads back at most this often
-    static constexpr auto HEADSET_SETTLE = std::chrono::milliseconds(120);
+    static bool                headsetAgain = false;
+    // PipeWire applies an A2DP headset's announced volume 200 ms after the
+    // last announcement (TRANSPORT_VOLUME_TIMEOUT_MSEC, spa/plugins/bluez5,
+    // restarted by each one); a read inside it got the level before, and
+    // every capsule a swipe showed was the swipe before it. So the read
+    // waits as PipeWire does, past its wait, from the last announcement
+    static constexpr auto HEADSET_SETTLE = std::chrono::milliseconds(250);
 
     static void headsetMoved() {
-        if (compositorShuttingDown() || !headsetSettle || headsetArmed)
+        if (compositorShuttingDown() || !headsetSettle)
             return;
-        headsetArmed = true;
         headsetSettle->updateTimeout(HEADSET_SETTLE);
     }
 
     static void headsetRead() {
-        headsetArmed = false;
         if (sink.busy) { // one wpctl at a time: the change reads back after it
             headsetAgain = true;
             return;
@@ -471,7 +474,7 @@ namespace NAwesome::System {
         if (headsetSettle && g_pEventLoopManager)
             g_pEventLoopManager->removeTimer(headsetSettle);
         headsetSettle.reset();
-        headsetArmed = headsetAgain = false;
+        headsetAgain = false;
         for (auto* D : {&sink, &source}) {
             ++D->generation; // a late wpctl callback finds itself outdated
             D->busy    = false;

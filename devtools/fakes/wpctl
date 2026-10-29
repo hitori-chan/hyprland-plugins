@@ -16,9 +16,16 @@ fi
 # step checks read the command. Two sinks, 41 and 42, the default 41 until
 # set-default writes AW_WPCTL_DEFAULT_FILE; 42 takes a long PipeWire name
 # (an HDA codec's HDMI port) while AW_WPCTL_LONG_FILE exists.
+# A level PipeWire has yet to take (AW_WPCTL_LEVEL_FILE.next): an A2DP
+# headset's announced volume lands 200 ms after the announcement
+# (TRANSPORT_VOLUME_TIMEOUT_MSEC), and a read before that gets the level
+# before; the gate writes it just ahead of the announcement.
 level() {
-	local l=0.56
-	[[ -n "${AW_WPCTL_LEVEL_FILE:-}" && -s "$AW_WPCTL_LEVEL_FILE" ]] && l="$(<"$AW_WPCTL_LEVEL_FILE")"
+	local l=0.56 f="${AW_WPCTL_LEVEL_FILE:-}"
+	if [[ -n "$f" && -s "$f.next" ]] && awk -v n="$(date +%s.%N)" -v m="$(stat -c %.9Y "$f.next")" 'BEGIN { exit !(n - m >= 0.2) }'; then
+		mv -f "$f.next" "$f"
+	fi
+	[[ -n "$f" && -s "$f" ]] && l="$(<"$f")"
 	printf '%s' "$l"
 }
 muted() { # muted <sink|source>

@@ -446,7 +446,9 @@ it); the card menu is drawn last and hit first on the notify layer.
   malformed and non-finite output; `wpctl status` is parsed for the sinks
   (`system/wpctl.hpp`, bounded: 16 sinks, 96-byte names, 32 KiB of
   output). A headset's own volume (BlueZ's transport `Volume`) reads the
-  sink back at most every 120 ms.
+  sink back 250 ms after the last announcement, past PipeWire's own
+  200 ms wait before it applies one (a read inside it got the level
+  before).
 - **Touchpad** (`system/pad.cpp`): hotplug rides the compositor's device
   signals behind a 400 ms settle; a flip writes the per-device config
   store through `hl.device`, and a touchpad already in the wanted state
