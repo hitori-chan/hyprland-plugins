@@ -10,6 +10,7 @@
 
 #include "../core/activate.hpp"
 #include "../core/busclient.hpp"
+#include "../core/version.hpp"
 
 #include <hyprland/src/protocols/XDGActivation.hpp>
 

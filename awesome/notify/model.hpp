@@ -73,7 +73,6 @@
 #include "../core/icons.hpp"
 #include "../core/queries.hpp"
 #include "../core/supervisor.hpp"
-#include "../core/version.hpp"
 
 namespace NAwesome::Notify {
 
