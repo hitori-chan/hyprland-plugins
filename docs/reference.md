@@ -89,7 +89,7 @@ The material every module's surfaces share.
 | `font` | `Fira Code, IBM Plex Sans JP` | font family or Pango family list (the kanji tags take the first face that has them) |
 | `terminal` | `alacritty` | runs the launcher's `Terminal=true` entries |
 | `col_fg` | Frost | bar text and glyphs: the clock, the bell, symbolic tray icons, occupied tags |
-| `col_focus` | Frost | the launcher's caret, the client list's focused window |
+| `col_focus` | Frost | the launcher's pick and caret, the client list's focused window |
 | `col_active` | Frost | the viewed tag and the focused task (text) |
 | `col_dot` | Frost | the bell's dot |
 | `col_empty` | Frost | empty tags, minimized tasks, disabled rows |

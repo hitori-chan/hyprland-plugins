@@ -170,9 +170,9 @@ after a resume or a clock change.
 awesome's Mod+P prompt (`hl.plugin.awesome.menubar()`), dmenu-style: a
 strip of the bar's glass right under it with "Run:" (or the opened
 category), the query and its accent caret, then the matches 20 px apart,
-each a 16 px icon and its name. The selection sits on a white pill
-(16 %, 6 px past its icon and its name, 22 tall), its name staying
-white.
+each a 16 px icon and its name. The selection is awesome's: its name
+in accent on the viewed tag's flat cell (white 8 %, square, the strip's
+height, 6 px past its icon and its name).
 
 | Keys | Action |
 |---|---|

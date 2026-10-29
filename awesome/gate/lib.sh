@@ -579,3 +579,20 @@ xo, x0, x1, y0, y1 = (int(v) for v in sys.argv[2:7])
 print(sum(1 for y in range(y0, y1) for x in range(x0, x1) if all(px[x, y][c] >= px[xo, y][c] + 20 for c in range(3))))
 PY
 }
+# a fill lifted over a strip whose place along it is not known: pixels whose
+# every channel sits 10 over their row's median (the glass; white 8 % over
+# it lifts a dark channel ~18)
+lift_px() { # lift_px <frame> <x0> <x1> <y0> <y1> — lifted pixels in a box
+	python3 - "$@" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
+x0, x1, y0, y1 = (int(v) for v in sys.argv[2:6])
+n = 0
+for y in range(y0, y1):
+    row = [px[x, y] for x in range(x0, x1)]
+    med = [sorted(p[c] for p in row)[len(row) // 2] for c in range(3)]
+    n += sum(1 for p in row if all(p[c] >= med[c] + 10 for c in range(3)))
+print(n)
+PY
+}

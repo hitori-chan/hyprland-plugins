@@ -1019,20 +1019,22 @@ namespace NAwesome::Shell {
                     if (px + W > RIGHT)
                         break;
 
-                    // the pick sits on the pill, 6 px past its icon and its
-                    // name, 22 tall; its name keeps the bar's text (the
-                    // accent is the caret's)
-                    if (i == Menubar::sel) {
-                        constexpr double PICK_PAD = 6, PICK_H = 22;
-                        PAINT.rect(CBox{px - PICK_PAD, MY + (PAINT.h - PICK_H) / 2, W + 2 * PICK_PAD, PICK_H}, NAwesome::tPill(),
-                                   (int)std::lround(NAwesome::Theme::RAD_ROW * PAINT.scale), 2.f);
+                    // the pick, as awesome's menubar: its name the accent on
+                    // the bar's flat cell (bg_focus), 6 px past its icon and
+                    // its name, the strip's height under the hairline
+                    const bool PICK = i == Menubar::sel;
+                    if (PICK) {
+                        constexpr double PICK_PAD = 6;
+                        const double     HAIR     = 1.0 / PAINT.scale;
+                        PAINT.rect(CBox{px - PICK_PAD, MY + HAIR, W + 2 * PICK_PAD, PAINT.h - HAIR}, NAwesome::tCell());
                     }
                     if (const auto ITEX = entryIcon(i); ITEX && ITEX->m_texID != 0)
                         PAINT.texFit(ITEX, CBox{px, MY + (PAINT.h - ICON) / 2, ICON, ICON});
-                    if (WT && WT->m_texID != 0) {
+                    const auto T = PICK ? textTex(NAME, COLFOCUS, PAINT.pt, ENTRYMAX) : WT;
+                    if (T && T->m_texID != 0) {
                         const auto P = PAINT.toPhys(CBox{px + ICON + ICON_GAP, MY, 1, PAINT.h});
-                        CBox       b{P.x, P.y + (P.h - WT->m_size.y) / 2.0, WT->m_size.x, WT->m_size.y};
-                        PAINT.texAt(WT, b.round());
+                        CBox       b{P.x, P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y};
+                        PAINT.texAt(T, b.round());
                     }
                     px += W + SPACING;
                 }
