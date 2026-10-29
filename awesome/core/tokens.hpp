@@ -44,7 +44,6 @@ namespace NAwesome::Theme {
     inline constexpr uint32_t CONTROL     = 0x24ffffff; // a control on a card at rest: the send circle, 14 %
     inline constexpr uint32_t SEND_ARROW  = 0xb3ebebf5; // the send arrow at rest, 70 %
     inline constexpr uint32_t RIM         = 0x2effffff; // the glass edge, 18 %
-    inline constexpr uint32_t LIGHT       = 0x3dffffff; // the top edge catching light, 24 %
     inline constexpr uint32_t SHADOW      = 0x47000000; // a card's drop, 28 %
     inline constexpr uint32_t MENU_SHADOW = 0x6b000000; // a menu floats higher, 42 %
     inline constexpr uint32_t BADGE_RIM   = 0xffffffff; // the identity badge's ring

@@ -299,6 +299,26 @@ x0, x1 = int(xs[0]), int(xs[-1])
 print(x1 - x0 + 1, x0, x1, int(top[xs].min()) + 29, int(bot[xs].max()) + 29)
 PY
 }
+# edge_rows <frame> <x>: "<top> <bottom>", the rows the panel's edge runs at
+# its first and last lit pixel down column x below the strip (its inside is
+# dark over the nested's black); one rim all round reads "1 1"
+edge_rows() {
+	python3 - "$1" "$2" <<'PY'
+import sys
+import numpy as np
+from PIL import Image
+lit = np.asarray(Image.open(sys.argv[1]).convert('RGB'))[29:, int(sys.argv[2])].min(axis=1) > 5
+ys = np.flatnonzero(lit)
+if ys.size < 2:
+    print("0 0"); sys.exit()
+def run(y, step):
+    n = 0
+    while 0 <= y + n * step < lit.size and lit[y + n * step]:
+        n += 1
+    return n
+print(run(ys[0], 1), run(ys[-1], -1))
+PY
+}
 # srow <row> <separators above>: a shell menu row's center y (shell.hpp:
 # rows 28 from y 37, separators 9)
 srow() { echo $((37 + 14 + 28 * $1 + 9 * $2)); }

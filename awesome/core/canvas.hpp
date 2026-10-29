@@ -352,8 +352,9 @@ namespace NAwesome {
         //
         // The blurred glass, then a soft drop around it (the shader fades
         // inside the box it is given, so the box grows by the range and
-        // sinks by the offset; the glass's shape stays clear of it), the top
-        // edge catching light, the rim.
+        // sinks by the offset; the glass's shape stays clear of it), then
+        // the rim: one hairline all round (a light line inside the top edge
+        // doubled it there, a thicker top on every panel).
         enum class eDepth : uint8_t {
             CARD, // cards, the center, capsules
             MENU, // menus and popovers float higher
@@ -365,9 +366,6 @@ namespace NAwesome {
             const double RANGE = MENU ? 28 : 20, SINK = MENU ? 10 : 6;
             glass(global, fill, round, rp);
             shadow(CBox{global}.expand(RANGE).translate(Vector2D{0.0, SINK}), round, rp, (int)RANGE, MENU ? tMenuShadow() : tShadow(), global); // the shader adds the range to the radius
-            const double R = round / scale;
-            if (global.w > 2 * R + 2)
-                rect(CBox{global.x + R, global.y, global.w - 2 * R, 1.0 / scale}, tLight());
             ring(global, rim, round, rp);
         }
         // how far frost() reaches past its box (damage, bounding boxes)

@@ -293,8 +293,8 @@ schema's defaults name them; the user's `theme.lua` overrides them).
   into a dark wallpaper or the letterbox band with no grey floor, while
   white settles at 104/255, so titles read 4.9:1 over a white page
   (measured on the previews). Cards and menus add a soft drop, kept clear
-  of the glass so it never darkens what the glass shows, a 24 % top edge
-  catching light and an 18 % white rim; a menu floats higher.
+  of the glass so it never darkens what the glass shows, and an 18 %
+  white rim, one pixel all round; a menu floats higher.
 - **Text** over glass wears no drop: the roll-off keeps the glass dark
   enough to read on, and a drop would only soften the type. The center's heading, bare on
   the wallpaper, keeps a desktop label's drop.

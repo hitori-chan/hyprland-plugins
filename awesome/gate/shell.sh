@@ -166,8 +166,8 @@ print((min(xs) + max(xs)) // 2, (min(ys) + max(ys)) // 2)
 PY
 }
 # col_h <frame> <x>: a panel's height down one column, rim to rim (the
-# glass has no tint: over the nested's black only its rim, its top edge
-# and its words are lit)
+# glass has no tint: over the nested's black only its rim and its words
+# are lit)
 col_h() {
 	python3 - "$1" "$2" <<'PY'
 import sys
@@ -212,6 +212,10 @@ ROOT_H="$(col_h "$STATE/tray-root.png" "$(( (RX0 + RX1) / 2 ))")"
 # a kept doubled or trailing separator is another 9
 chk "tray: root panel height 133 (4 rows + 1 collapsed separator)" test "$ROOT_H" -ge 129
 chk "tray: root panel height 133 (upper bound)" test "$ROOT_H" -le 137
+# the glass's rim is one row all round: no second line inside its top
+chk "frost: the panel's top edge is as thin as its bottom" \
+	test "$(edge_rows "$STATE/tray-root.png" "$(((RX0 + RX1) / 2))")" = "1 1" ||
+	echo "  diag: edge rows '$(edge_rows "$STATE/tray-root.png" "$(((RX0 + RX1) / 2))")'" >&2
 
 # the submenu cascade
 printf 'move %s %s\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' \

@@ -67,7 +67,6 @@ namespace NAwesome {
     AW_THEME_COLOR(tWellRim, WELL_RIM)
     AW_THEME_COLOR(tControl, CONTROL)
     AW_THEME_COLOR(tSendArrow, SEND_ARROW)
-    AW_THEME_COLOR(tLight, LIGHT)
     AW_THEME_COLOR(tTitle, TITLE)
     AW_THEME_COLOR(tShadow, SHADOW)
     AW_THEME_COLOR(tMenuShadow, MENU_SHADOW)
