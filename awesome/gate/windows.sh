@@ -641,7 +641,9 @@ snap_drag() { # snap_drag <x> <y> <zone> <alt-first: 0|1>: Alt+drag the window's
 	settle
 }
 # a window that fills its slot is a tile (windows/tile.hpp): square, no
-# drop; corners the nested draws, so the change is seen
+# drop, opaque edges (awesome's border_normal and a lighter border_focus: a
+# see-through rim showed the wallpaper round every tile and down every
+# seam); corners the nested draws, so the change is seen
 hq eval "hl.config({ decoration = { rounding = 6 } })" >/dev/null
 dsp "hl.dsp.exec_cmd('foot --app-id=snapw --window-size-pixels=400x300')"
 wait_class snapw
@@ -651,6 +653,7 @@ settled snapw
 snap_drag 2 420 "- left" 0
 chk "snap: the left edge commits the left half" until_is 2 "$(slot left)" snap_box
 chk "snap: the filled half is a tile (square, no drop)" until_is 2 "0 1" tile_props "$SNAPW"
+chk "snap: ...its edges opaque, the focused one lighter" until_is 2 "ff6f6f6f 0deg ff3f3f3f 0deg" tile_edges "$SNAPW"
 dsp "hl.dsp.window.move({x = 440, y = 270, window = \"address:$SNAPW\"})"
 snap_drag $((MON_W - 2)) 420 "- right" 1
 chk "snap: the right edge, the modifier let go first, commits the right half" until_is 2 "$(slot right)" snap_box
@@ -662,6 +665,8 @@ SNAPSZ="$(snap_box | cut -d' ' -f2)" # the quarter's: a move keeps a window's si
 snap_drag 400 400 "" 0
 chk "snap: a drop away from the edges commits no slot" until_is 2 "200,250 $SNAPSZ" snap_box
 chk "snap: lifted out of its slot it is a float again (rounded, its drop back)" until_is 2 "6 0" tile_props "$SNAPW"
+edges_back() { [[ "$(tile_edges "$SNAPW")" != *ff3f3f3f* ]]; }
+chk "snap: ...its edges the config's again" until_ok 2 edges_back
 close_wait "$SNAPW"
 hq eval "hl.config({ decoration = { rounding = 0 } })" >/dev/null
 

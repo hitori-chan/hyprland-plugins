@@ -27,7 +27,7 @@ state.
   changes, and the pointer follows the window's geometry, so a window
   that grows under a still cursor takes the next click.
 - A maximized window is a tile, as a snapped one is (see Snap): square
-  corners and no drop shadow.
+  corners, no drop shadow and opaque edges.
 - A maximized window does not move, as in awesome's
   `mouse.client.move`: a `Mod`+drag is swallowed, and a drag the client
   starts from its own titlebar ends at once.
@@ -118,11 +118,15 @@ honour the client's size limits and keep the chosen edge anchored; the
 gap between two outputs arms no zone.
 
 A window that fills its slot is a tile, as awesome's placed clients are:
-square corners and no drop shadow, so two halves meet the screen's edges
-and each other with nothing between (rounded, they left the wallpaper in
-notches at the corners and at both ends of the seam, and the focused
-one's drop fell across its neighbour). A drag or a resize lifts it out
-and gives its corners and drop back; a client whose limits keep it
+square corners, no drop shadow and opaque edges, so halves and quarters
+meet the screen's edges and each other with nothing of the wallpaper
+between (rounded, they left it in notches at the corners and at both ends
+of a seam, and the focused one's drop fell across its neighbour; a
+see-through border showed it as a line round every tile, a grid between
+four quarters). The edges are awesome's `border_normal` and
+`border_focus`: `#3F3F3F`, and `#6F6F6F` on the focused tile, so the
+one taking the keys reads lighter. A drag or a resize lifts it out and
+gives its corners, drop and edges back; a client whose limits keep it
 smaller than the slot stays a rounded float. The look sits at the
 layout's override priority, so window rules that set `rounding` or
 `no_shadow` still win. A plugin reload forgets which windows were

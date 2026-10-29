@@ -202,6 +202,9 @@ tile_props() {
 	case $s in true) s=1 ;; false) s=0 ;; esac
 	echo "$r $s"
 }
+# a window's border colours as getprop prints them: "<focused> <inactive>"
+# (each "aarrggbb 0deg")
+tile_edges() { echo "$(hq getprop "address:$1" active_border_color) $(hq getprop "address:$1" inactive_border_color)"; }
 # class_addr <class>: the first such window's address (by app id: the shell
 # in a foot rewrites its title at the first prompt)
 class_addr() {
