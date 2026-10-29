@@ -179,7 +179,6 @@ print(max(run) - min(run) + 1 if len(run) >= 2 and max(run) - min(run) > 40 else
 PY
 }
 
-make -C "$REPO/devtools" fake-sni >/dev/null 2>&1
 setsid env DBUS_SESSION_BUS_ADDRESS="$NBUS" "$SNIBIN" >"$STATE/fake-sni.log" 2>&1 </dev/null &
 FAKE_PID=$!
 for _ in $(seq 1 50); do

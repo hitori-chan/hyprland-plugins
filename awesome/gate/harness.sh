@@ -441,7 +441,10 @@ kill_nested() { # kill any non-live instance running one of the harness cfgs
 		nested_exit_check "$k" "$sigkilled"
 	done
 	sweep_nested_dirs # their runtime dirs, keeping the last log
-	sleep 0.6
+	# a host window the dead one held lets go; with nothing killed there is
+	# nothing to wait for (the launch's own kill before every boot)
+	[[ -n "$killed" ]] && sleep 0.6
+	return 0
 }
 
 nested_exit_check() { # $1=killed pid, $2=1 if SIGKILL was needed

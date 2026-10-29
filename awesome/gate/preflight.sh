@@ -102,5 +102,4 @@ ok "nested monitor is ${MON_W}x${MON_H} (every coordinate below derives from it)
 chk "the monolith loaded (one plugin, named awesome)" \
 	bash -c "test \"\$(hyprctl -i '$SIG' plugin list | grep -c Plugin)\" = 1 && hyprctl -i '$SIG' plugin list | grep -q awesome"
 dsp "hl.dsp.window.close()" # the donate/updated screen, when present
-sleep 0.5
 chk "launch toast cleared before the batteries" wait_launch_toast

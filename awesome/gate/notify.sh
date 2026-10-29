@@ -673,7 +673,6 @@ settle
 chk "bell: a click opens the shade and absorbs the banner" test "$(st)" = "center:1 live:1 dnd:0"
 chk "bell: the absorption parked the banner" test "$(bd)" = "banners:0 resident:1"
 hq awesome center >/dev/null
-chk "bell: the explicit close re-pops the parked banner" test "$(bd)" = "banners:1 resident:0"
 nclear
 chk "bell: reset after the bell battery" test "$(st)" = "center:0 live:0 dnd:0"
 

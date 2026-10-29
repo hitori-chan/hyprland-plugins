@@ -222,7 +222,7 @@ dsp "hl.plugin.awesome.keyboard_light_down()"
 dsp "hl.plugin.awesome.keyboard_light_down()"
 chk "system: two steps down land at 90" until_is 4 90 KBT
 chk "system: the display's level never moved with it" test "$(ctl_part display)" = 50
-hq awesome clear >/dev/null; sleep 0.4
+nclear
 
 # ---- the control center (notify/controls.cpp) -------------------------------
 # The bar's switches open it (shell.sh clicks them; here the verb): a module
@@ -570,7 +570,7 @@ dsp "hl.plugin.awesome.keyboard_light_up()"
 chk "dark: a key in the dark lights it" until_is 4 10 KBT
 dsp "hl.dsp.dpms({action = 'on'})"; sleep 0.8
 chk "dark: ...and the wake keeps that choice" test "$(KBT)" = 10
-hq awesome clear >/dev/null; sleep 0.4
+nclear
 
 # ---- the keyboard light follows the room (system/light.cpp) -----------------
 # Opt-in from the keyboard's disc in the control center. The fake sensor reads the room in
@@ -606,7 +606,7 @@ dsp "hl.dsp.dpms({action = 'off'})"
 chk "room: dark displays still win" until_is 4 0 KBT
 dsp "hl.dsp.dpms({action = 'on'})"
 chk "room: the wake lights it as the room says" until_is 4 10 KBT
-hq awesome clear >/dev/null; sleep 0.4
+nclear
 hq awesome controlcenter >/dev/null
 printf 'move %s %s\nsleep 60\n' "$DISC_CX" "$(head_cy 1)" | vp
 chk "room: its button names itself" until_is 3 "Follow the Room" hq awesome controls-tip
