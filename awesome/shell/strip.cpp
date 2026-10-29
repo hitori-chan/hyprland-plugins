@@ -240,11 +240,12 @@ namespace NAwesome::Shell {
         // awesome's align layout: the left slot, the tasklist filling the
         // middle, the right slot laid from the edge inwards ([tray][bell]
         // [control center][battery][clock]). Widgets whose fit comes back 0
-        // are hidden this frame. The strip's 8 px inset and 14 between the slots
-        // and the tasks; the right slot's rhythm: 20 between the widgets (the
-        // tray's own icons as far apart, shell:tray_spacing) and 16 off the
-        // edge.
-        constexpr double INSET = 8, SLOT_GAP = 14, RIGHT_GAP = 20, RIGHT_INSET = 16;
+        // are hidden this frame. The tags start at the screen's edge, as
+        // awesome's taglist does; 14 between the slots and the tasks; the
+        // right slot's rhythm: 10 between the widgets (the tray's own icons
+        // as far apart, shell:tray_spacing, the old setup's
+        // systray_icon_spacing) and 8 off the edge.
+        constexpr double SLOT_GAP = 14, RIGHT_GAP = 10, RIGHT_INSET = 8;
         IWidget* const   LEFT[]  = {&taglistWidget()};
         IWidget* const   RIGHT[] = {&trayWidget(), &bellWidget(), &controlsWidget(), &batteryWidget(), &clockWidget()};
 
@@ -252,7 +253,7 @@ namespace NAwesome::Shell {
         // corners are the bar's easiest targets — the slot at each end owns
         // its edge, never a dead inset. Every hit spans the bar's height.
         const size_t LEFT_HITS = P.hits->size();
-        double       x         = MB.x + INSET;
+        double       x         = MB.x;
         for (auto* const W : LEFT) {
             const double WD = std::min(W->fit(P, F), std::max(0.0, MB.x + MB.w - x));
             if (WD > 0)
@@ -260,9 +261,6 @@ namespace NAwesome::Shell {
             x += WD;
         }
         if (P.hits->size() > LEFT_HITS) {
-            auto& FIRST = (*P.hits)[LEFT_HITS].box;
-            FIRST.w += FIRST.x - MB.x;
-            FIRST.x = MB.x;
             auto& LAST = P.hits->back().box;
             LAST.w     = std::max(LAST.w, x + SLOT_GAP / 2 - LAST.x);
         }

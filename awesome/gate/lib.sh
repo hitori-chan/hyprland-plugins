@@ -45,8 +45,10 @@ ROWX=$((PANEL_X + 90))
 ROWY=$((CARD_Y + 24))
 POPX=$((MON_W - N_EDGE - N_W / 2))
 BAR_H=28
-# shell/taglist.cpp: 26 px cells, 2 apart, from the bar's 8 px inset
-tag_cx() { echo $((8 + ($1 - 1) * 28 + 13)); }
+# shell/taglist.cpp: 26 px cells, 2 apart, from the screen's left edge;
+# tag_span: a tag's "x0 x1"
+tag_cx() { echo $((($1 - 1) * 28 + 13)); }
+tag_span() { echo $((($1 - 1) * 28)) $((($1 - 1) * 28 + 26)); }
 
 # ---- input -------------------------------------------------------------------
 click() {
@@ -141,7 +143,7 @@ PY
 # draw in their cells and the viewed tag draws in the accent at the left.
 # Structure, not a brightness count: a count moves with the theme, the face
 # and the hardware, and a mid-warm frame lacks whole glyphs.
-strip_drawn() { [[ "$(ink_x "$1" clock)" -gt 0 && "$(bell_x "$1")" -gt 0 && "$(accent_px "$1" 8 34)" -gt 6 ]]; } # 一 is one stroke: ~10 px
+strip_drawn() { [[ "$(ink_x "$1" clock)" -gt 0 && "$(bell_x "$1")" -gt 0 && "$(accent_px "$1" $(tag_span 1))" -gt 6 ]]; } # 一 is one stroke: ~10 px
 bell_frame() { capture_nested "$STATE/bell-probe.png"; }
 
 # ---- bounded waits ----------------------------------------------------------------

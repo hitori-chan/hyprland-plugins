@@ -2,7 +2,7 @@
 # presence and state (tags, tasks, the bell's dot, the clock), the tray
 # lifecycle against the bar, and the menubar/launcher. Helpers:
 # capture_nested, vp, vk, chk, hq, ws, dsp from the harness; bar_bright,
-# task_band, accent_px, dot_px, tag_cx from lib.sh.
+# task_band, accent_px, dot_px, tag_cx, tag_span from lib.sh.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # ---- the strip -------------------------------------------------------------
@@ -21,6 +21,23 @@ done
 echo "shell: strip bright=$(bar_bright "$STATE/strip-base.png") bell=$(bell_x "$STATE/strip-base.png")" >&2
 chk "shell: the strip is on screen (clock, bell and viewed tag draw)" strip_drawn "$STATE/strip-base.png"
 chk "shell: no dot on the bell with nothing to see" test "$(dot_px "$STATE/strip-base.png")" = 0
+# the ends meet the screen's edges as awesome's wibar did: tag 一's flat
+# cell from x 0 (an 8 px inset once stood before it), the clock's ink
+# 8 px off the right; the right slot's glyphs 10 apart (16 px each)
+ink_right() { # ink_right <frame> — the strip's rightmost lit column
+	python3 - "$1" <<'PY'
+import sys
+import numpy as np
+from PIL import Image
+lit = np.flatnonzero((np.asarray(Image.open(sys.argv[1]).convert('RGB'))[6:23].min(axis=2) > 150).any(axis=0))
+print(int(lit[-1]) if lit.size else 0)
+PY
+}
+chk "shell: tag 一's cell starts at the screen's left edge" test "$(ground_px "$STATE/strip-base.png" 0 2 1 27 12 32)" -ge 40
+EDGE_GAP=$((MON_W - 1 - $(ink_right "$STATE/strip-base.png")))
+BELL_STEP=$(($(ink_x "$STATE/strip-base.png" controls) - $(bell_x "$STATE/strip-base.png")))
+chk "shell: the right slot packs 10 apart, the clock 8 off the edge" test "$EDGE_GAP" -ge 6 -a "$EDGE_GAP" -le 11 -a "$BELL_STEP" -ge 24 -a "$BELL_STEP" -le 28 ||
+	echo "  diag: clock edge gap $EDGE_GAP, bell to switches $BELL_STEP" >&2
 
 # ---- tags: the click switches the viewed workspace -------------------------
 chk "shell: starts on workspace 1" test "$(ws)" = 1
@@ -28,11 +45,11 @@ printf 'move %s 13\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' "$(t
 chk "shell: clicking tag 三 switches to workspace 3" until_is 3 3 ws
 # off the strip: under the pointer the viewed tag's accent lifts toward white
 printf 'move 900 500\nsleep 60\n' | vp
-ws3_drawn() { (($(accent_px "$1" 64 90) > 15 && $(accent_px "$1" 8 34) == 0)); }
+ws3_drawn() { (($(accent_px "$1" $(tag_span 3)) > 15 && $(accent_px "$1" $(tag_span 1)) == 0)); }
 shot_until 3 "$STATE/strip-ws3.png" ws3_drawn "$STATE/strip-ws3.png"
 # the viewed tag is accent text, the rest never accent
-chk "shell: the viewed tag draws in the accent" test "$(accent_px "$STATE/strip-ws3.png" 64 90)" -gt 15
-chk "shell: a tag not viewed draws no accent" test "$(accent_px "$STATE/strip-ws3.png" 8 34)" = 0
+chk "shell: the viewed tag draws in the accent" test "$(accent_px "$STATE/strip-ws3.png" $(tag_span 3))" -gt 15
+chk "shell: a tag not viewed draws no accent" test "$(accent_px "$STATE/strip-ws3.png" $(tag_span 1))" = 0
 # ...on awesome's bg_focus: a flat cell (white 8 %, near 20 over the
 # nested's black) the bar's full height; a tag not viewed stands on none
 tag_ground() { ground_px "$1" $(($(tag_cx "$2") - 12)) $(($(tag_cx "$2") - 10)) 1 27 12 32; }
@@ -64,7 +81,7 @@ chk "shell: hovering an empty tag lifts its text" test "$LIT1" -gt $(( LIT0 + 15
 chk "shell: and paints no ground" test $(( CORNER1 - CORNER0 )) -le 3 -a $(( CORNER0 - CORNER1 )) -le 3
 # the viewed tag lifts as well: its accent steps toward white
 printf 'move %s 13\nsleep 60\n' "$(tag_cx 1)" | vp
-tag1_lifted() { (($(accent_px "$1" 8 34) <= 2 && $(lifted_px "$1" 8 34) > 6)); }
+tag1_lifted() { (($(accent_px "$1" $(tag_span 1)) <= 2 && $(lifted_px "$1" $(tag_span 1)) > 6)); }
 chk "shell: hovering the viewed tag lifts its accent" \
 	shot_until 3 "$STATE/strip-hover1.png" tag1_lifted "$STATE/strip-hover1.png"
 printf 'move 900 500\nsleep 60\n' | vp; settle

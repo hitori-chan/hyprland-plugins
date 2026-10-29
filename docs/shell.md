@@ -7,7 +7,9 @@ The `shell` module: the bar on every monitor and the launcher.
 A 28 px strip of glass at the top of every monitor, showing that
 monitor's tags and tasks. From left to right: the tags, the tasks
 (splitting the middle, 14 px off either side), then the tray, the bell,
-the control center's switches, the battery and the clock, 20 px apart.
+the control center's switches, the battery and the clock, 10 px apart.
+The first tag stands at the screen's left edge, the clock 8 px off the
+right one.
 
 - The slot at each end owns its screen edge: the top-left pixel is the
   first tag, the top-right the clock.
