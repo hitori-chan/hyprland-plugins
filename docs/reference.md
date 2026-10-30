@@ -85,7 +85,7 @@ The material every module's surfaces share.
 |---|---|---|
 | `height` | 28 | bar height, logical px (reserve it as the monitor's reserved top) |
 | `font_size` | 12 | text size, logical px |
-| `tray_spacing` | 10 | px between tray icons |
+| `tray_spacing` | 15 | px between tray icons |
 | `font` | `Fira Code, IBM Plex Sans JP` | font family or Pango family list (the kanji tags take the first face that has them) |
 | `terminal` | `alacritty` | runs the launcher's `Terminal=true` entries |
 | `col_fg` | Frost | bar text and glyphs: the clock, the bell, symbolic tray icons, occupied tags |

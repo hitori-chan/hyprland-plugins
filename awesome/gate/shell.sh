@@ -23,7 +23,7 @@ chk "shell: the strip is on screen (clock, bell and viewed tag draw)" strip_draw
 chk "shell: no dot on the bell with nothing to see" test "$(dot_px "$STATE/strip-base.png")" = 0
 # the ends meet the screen's edges as awesome's wibar did: tag 一's flat
 # cell from x 0 (an 8 px inset once stood before it), the clock's ink
-# 8 px off the right; the right slot's glyphs 10 apart (16 px each)
+# 8 px off the right; the right slot's glyphs 15 apart (16 px each)
 ink_right() { # ink_right <frame> — the strip's rightmost lit column
 	python3 - "$1" <<'PY'
 import sys
@@ -36,7 +36,7 @@ PY
 chk "shell: tag 一's cell starts at the screen's left edge" test "$(ground_px "$STATE/strip-base.png" 0 2 1 27 12 32)" -ge 40
 EDGE_GAP=$((MON_W - 1 - $(ink_right "$STATE/strip-base.png")))
 BELL_STEP=$(($(ink_x "$STATE/strip-base.png" controls) - $(bell_x "$STATE/strip-base.png")))
-chk "shell: the right slot packs 10 apart, the clock 8 off the edge" test "$EDGE_GAP" -ge 6 -a "$EDGE_GAP" -le 11 -a "$BELL_STEP" -ge 24 -a "$BELL_STEP" -le 28 ||
+chk "shell: the right slot packs 15 apart, the clock 8 off the edge" test "$EDGE_GAP" -ge 6 -a "$EDGE_GAP" -le 11 -a "$BELL_STEP" -ge 29 -a "$BELL_STEP" -le 33 ||
 	echo "  diag: clock edge gap $EDGE_GAP, bell to switches $BELL_STEP" >&2
 
 # ---- tags: the click switches the viewed workspace -------------------------

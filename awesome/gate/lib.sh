@@ -102,7 +102,7 @@ PY
 # ---- the bell, pointer-driven ------------------------------------------------
 # The monolith's bell is a no-op on hover and toggles the shade on click;
 # both are REAL pointer events over the widget. The right slot is [tray]
-# [bell][control center][battery][clock], 20 px apart (shell/strip.cpp
+# [bell][control center][battery][clock], 15 px apart (shell/strip.cpp
 # RIGHT_GAP), its cells meeting halfway across the gaps: a widget's glyph is
 # the white ink inside its cell (`hyprctl awesome cells`, the gate's build)
 # — found by pixel, so it proves the glyph draws where a press lands. White

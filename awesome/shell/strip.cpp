@@ -242,10 +242,9 @@ namespace NAwesome::Shell {
         // [control center][battery][clock]). Widgets whose fit comes back 0
         // are hidden this frame. The tags start at the screen's edge, as
         // awesome's taglist does; 14 between the slots and the tasks; the
-        // right slot's rhythm: 10 between the widgets (the tray's own icons
-        // as far apart, shell:tray_spacing, the old setup's
-        // systray_icon_spacing) and 8 off the edge.
-        constexpr double SLOT_GAP = 14, RIGHT_GAP = 10, RIGHT_INSET = 8;
+        // right slot's rhythm: 15 between the widgets (the tray's own icons
+        // as far apart, shell:tray_spacing) and 8 off the edge.
+        constexpr double SLOT_GAP = 14, RIGHT_GAP = 15, RIGHT_INSET = 8;
         IWidget* const   LEFT[]  = {&taglistWidget()};
         IWidget* const   RIGHT[] = {&trayWidget(), &bellWidget(), &controlsWidget(), &batteryWidget(), &clockWidget()};
 
