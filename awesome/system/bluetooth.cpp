@@ -1088,13 +1088,16 @@ namespace NAwesome::System {
                         // an advertisement (a signal reading) moves nothing
                         // the panel shows once its device is placed
                         const auto IT    = devices.find(PATH);
-                        const bool QUIET = IT != devices.end() && (IT->second.paired || IT->second.foundSeq != 0 || !IT->second.named) &&
+                        const bool KNOWN = IT != devices.end();
+                        const bool QUIET = KNOWN && (IT->second.paired || IT->second.foundSeq != 0 || !IT->second.named) &&
                             std::ranges::all_of(changed, [](const auto& E) {
                                                return E.first == "RSSI" || E.first == "TxPower" || E.first == "ManufacturerData" || E.first == "ServiceData";
                                            });
                         if (!applyDevice(PATH, changed))
                             readSoon();
-                        if (QUIET)
+                        // QUIET, or a device that is not ours (another
+                        // client's scan, past the bound): nothing to show
+                        if (QUIET || (!KNOWN && !devices.contains(PATH)))
                             return;
                     } else if (iface == BATTERY)
                         applyBattery(PATH, changed);
