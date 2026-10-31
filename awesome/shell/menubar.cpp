@@ -73,7 +73,6 @@ namespace NAwesome::Shell {
         static NAwesome::ListStore&  history      = NAwesome::StateStore::inst().data().history; // oldest first
         static int                  histSel = -1;       // -1 = editing the live query
         static std::string          histLive;           // the live query parked while walking history
-        static bool                 filesLoaded = false;
         constexpr size_t                  QUERY_MAX   = 4096;
 
         // Tab-completion cycle; survives only between consecutive Tabs
@@ -118,16 +117,6 @@ namespace NAwesome::Shell {
                     path += C;
             }
             return sdbus::ObjectPath{path};
-        }
-
-        // the launcher's state is the core's unified state file (the
-        // supervisor loads it before module inits); this is only the
-        // idempotent guard for a lazy first use.
-        static void loadFiles() {
-            if (filesLoaded)
-                return;
-            filesLoaded = true;
-            NAwesome::StateStore::inst().load();
         }
 
         static void saveCounts() {
@@ -318,7 +307,6 @@ namespace NAwesome::Shell {
             // (the index swaps the new set in whole when it lands)
             NAwesome::CDesktopIndex::inst().refreshIfStale();
             buildApps();
-            loadFiles();
             clipboard.cancel();
             typed.clear();
             cursor     = 0;
@@ -1096,9 +1084,6 @@ namespace NAwesome::Shell {
             pendingSelection.reset();
             appsBuilt    = false;
             compScanning = false;
-            launchCounts.clear();
-            history.entries.clear();
-            filesLoaded = false;
             compList.clear();
             compPrefix.clear();
             pendingExec.reset();
