@@ -3,7 +3,7 @@
 HL     ?= $(HOME)/repo/Hyprland
 XML    := $(HL)/protocols/wlr-virtual-pointer-unstable-v1.xml
 KXML   := $(HL)/protocols/virtual-keyboard-unstable-v1.xml
-CXML   := $(HL)/subprojects/hyprland-protocols/protocols/hyprland-input-capture-v1.xml
+CXML   := $(shell pkg-config --variable=pkgdatadir hyprland-protocols)/protocols/hyprland-input-capture-v1.xml
 DXML   := $(HL)/protocols/wlr-data-control-unstable-v1.xml
 SXML   := $(HL)/protocols/wlr-screencopy-unstable-v1.xml
 XXML   := /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml
