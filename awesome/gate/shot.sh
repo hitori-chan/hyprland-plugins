@@ -20,7 +20,7 @@ if ! timeout 8 env WAYLAND_DISPLAY="$WL" grim "$OUT" 2>/dev/null; then
 	exit 1
 fi
 # the bar's strip, logical px (BAR_H to override)
-BAR_H="${BAR_H:-26}"
+BAR_H="${BAR_H:-28}"
 BAR="${OUT%.png}-bar.png"
 magick "$OUT" -crop "x${BAR_H}+0+0" +repage -scale 200% "$BAR" 2>/dev/null
 echo "shot: $OUT ($(magick identify -format '%wx%h' "$OUT" 2>/dev/null))  bar: $BAR"
