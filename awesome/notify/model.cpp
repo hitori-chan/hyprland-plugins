@@ -21,6 +21,7 @@
 #include "textcut.hpp"
 #include "transcript.hpp"
 
+#include "../core/bounded.hpp"
 #include "../core/jobs.hpp"
 #include "../core/state.hpp"
 #include "../core/walltimer.hpp"
@@ -89,13 +90,7 @@ namespace NAwesome::Notify {
         // merged path caps at 8192, so a fresh one earns the same cut,
         // codepoint-safe
         static std::string clipUtf8(std::string s, size_t cap) {
-            if (s.size() <= cap)
-                return s;
-            s.resize(cap);
-            while (!s.empty() && ((unsigned char)s.back() & 0xc0) == 0x80)
-                s.pop_back();
-            if (!s.empty() && (unsigned char)s.back() >= 0xc2)
-                s.pop_back(); // a lead byte whose followers the cut took
+            s.resize(NAwesome::clipToUtf8Boundary(s, cap));
             return s;
         }
 
