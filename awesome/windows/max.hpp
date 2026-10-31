@@ -122,14 +122,12 @@ namespace NAwesome::Windows {
                 return;
 
             Fullscreen::controller()->setFullscreenMode(W, Fullscreen::FSMODE_NONE, Fullscreen::FSMODE_NONE);
-            // the exit just granted the client the size choice — the box is ours
+            // the exit just granted the client the size choice — the box is
+            // ours. The cancel also drops a born-fullscreen grant not yet
+            // made: the geometry change below re-enters the floating recalc,
+            // whose one-shot respawn would re-arm a 0x0 ask on top of the
+            // plugin box and let the client's answer resize it from under us
             W->cancelClientSize();
-            // the geometry change below re-enters the floating recalc, which
-            // would fire the one-shot respawnIfBornFullscreen and re-arm the
-            // 0x0 client-size grant on top of the plugin box; a client
-            // answering with its normal size would resize the
-            // plugin-maximized window out from under us
-            W->m_bornFullscreen = false;
 
             const auto WA = MON->logicalBoxMinusReserved();
             // empty restore box = no windowed geometry ever existed;
