@@ -6,9 +6,9 @@
 // The firmware names the band's height: the device tree's
 // apple,notch-height (a big-endian u32, panel px) on the enabled display
 // coprocessor node. Nothing names the notch's width, so it comes from
-// shell:notch_width, else from the height (NOTCH_ASPECT, provisional until
-// measured on the hardware). The notch shows when the mode is the 16:10
-// panel plus exactly that band (no rotation); it is centred.
+// shell:notch_width, else from the height (NOTCH_ASPECT). The notch shows
+// when the mode is the 16:10 panel plus exactly that band (no rotation);
+// it is centred.
 //
 // Pure: no compositor state (the shell binds it to a monitor).
 #pragma once
@@ -22,7 +22,9 @@
 
 namespace NAwesome::Notch {
 
-    inline constexpr double NOTCH_ASPECT = 5.7; // width / height, provisional
+    // width / band height: the 14" panel's notch measured 370 +- 2 panel px
+    // wide on its 74 px band, rounded up to cover the measurement
+    inline constexpr double NOTCH_ASPECT = 5.05;
 
     // the band's height in panel px under a device tree root, 0 = none
     inline int bandHeightPx(const std::filesystem::path& dt) {

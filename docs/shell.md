@@ -36,8 +36,9 @@ runs on underneath).
   `apple,notch-height` on the enabled display node); the notch shows
   when the mode is the 16:10 panel plus exactly that band, on the
   built-in panel (`eDP`), unrotated.
-- Nothing reports the notch's width: it is estimated from the height,
-  and `notch_width` sets it in logical px.
+- Nothing reports the notch's width: it follows the height at the
+  measured ratio (374 px on a 74 px band, 187 logical at scale 2), and
+  `notch_width` sets it in logical px.
 - A fullscreen window sits below the band, which stays black. Direct
   scanout still applies: the display places the window's buffer below
   the band and leaves the band black itself, so it costs no
