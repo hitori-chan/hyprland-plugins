@@ -150,16 +150,12 @@ namespace NAwesome {
     // once. LIFE (how many warms an untouched entry survives) differs per
     // surface: the bar warms on every clock tick and wants a longer grace
     // than the shade, which warms only when its model changes.
-    template <typename TValue, uint64_t LIFE = 32, size_t MAX_BYTES = 64ull << 20>
+    template <typename TValue, uint64_t LIFE = 32>
     class CGenCache {
       public:
         using Measure = std::function<size_t(const TValue&)>;
 
-        CGenCache() : CGenCache(MAX_BYTES, {}) {}
-        CGenCache(size_t maxBytes, Measure measure) : m_maxBytes(maxBytes), m_measure(std::move(measure)) {
-            if (!m_measure)
-                m_measure = [](const TValue&) { return sizeof(TValue); };
-        }
+        CGenCache(size_t maxBytes, Measure measure) : m_maxBytes(maxBytes), m_measure(std::move(measure)) {}
 
         // the entry if present, TOUCHED so this generation's sweep spares it
         TValue* find(const std::string& key) {
@@ -426,12 +422,6 @@ namespace NAwesome {
             const double W = TW * S, H = TH * S;
             CBox         b{B.x + (B.w - W) / 2.0, B.y + (B.h - H) / 2.0, W, H};
             g_pHyprOpenGL->renderTexture(*rctx, t, b.round(), {.a = alpha, .round = round, .roundingPower = rp});
-        }
-        // Fill the cell, aspect not preserved (the card's full-bleed images)
-        void texStretch(const SP<ITexture>& t, const CBox& cell, int round = 0, float rp = 2.f) const {
-            if (!paints() || !t || t->m_texID == 0)
-                return;
-            g_pHyprOpenGL->renderTexture(*rctx, t, toPhys(cell), {.a = alpha, .round = round, .roundingPower = rp});
         }
     };
 

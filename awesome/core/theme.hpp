@@ -22,19 +22,10 @@ namespace NAwesome {
     // CHyprColor's uint64 ctor OkLab-converts: constants must never be
     // constructed per draw call.
     inline CHyprColor color(uint64_t raw) {
-        struct SMemo {
-            uint64_t   key = 0;
-            bool       set = false;
-            CHyprColor col;
-        };
-        static std::unordered_map<uint64_t, SMemo> memo;
-        auto&                                        M = memo[raw];
-        if (!M.set || M.key != raw) {
-            M.key = raw;
-            M.set = true;
-            M.col = CHyprColor{raw};
-        }
-        return M.col;
+        static std::unordered_map<uint64_t, CHyprColor> memo;
+        if (const auto IT = memo.find(raw); IT != memo.end())
+            return IT->second;
+        return memo.emplace(raw, CHyprColor{raw}).first->second;
     }
 
     // a hover's step for an ink already at full strength (the accent, the

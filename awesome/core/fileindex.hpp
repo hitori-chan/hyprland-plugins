@@ -338,7 +338,7 @@ printf '%08X%08X%08X%d' 0 0 0 2
             // group is signalled through the pidfd: the compositor reaps on
             // its own (SA_NOCLDWAIT), so a bare pid may already be reused
             // by the time a cancel signals it.
-            const auto CHILD = Proc::spawn(argv.data(), {.stdoutFd = pipefd[1], .ownGroup = true, .pidfd = true});
+            const auto CHILD = Proc::spawn(argv.data(), {.stdoutFd = pipefd[1], .ownGroup = true});
             close(pipefd[1]);
             if (!CHILD) {
                 close(pipefd[0]);

@@ -38,7 +38,6 @@ namespace NAwesome::Proc {
         int  stdoutFd   = -1;    // dup2'd onto stdout; -1 = /dev/null
         bool ownGroup   = false; // its own process group: kill(-pid) reaches its children
         bool userFacing = false; // an app the user runs (browser, launcher entry): the session's soft NOFILE
-        bool pidfd      = true;  // hand back a pidfd (readable at exit); false = pid only
     };
 
     struct SChild {
@@ -109,14 +108,10 @@ namespace NAwesome::Proc {
 
         SChild child;
         if (ok) {
-            auto* const ARGV = const_cast<char* const*>(argv);
-            if (opt.pidfd) {
-                if (pidfd_spawnp(&child.pidfd, argv[0], &fa, &attr, ARGV, environ) == 0)
-                    child.pid = pidfd_getpid(child.pidfd);
-                else
-                    child.pidfd = -1;
-            } else if (posix_spawnp(&child.pid, argv[0], &fa, &attr, ARGV, environ) != 0)
-                child.pid = -1;
+            if (pidfd_spawnp(&child.pidfd, argv[0], &fa, &attr, const_cast<char* const*>(argv), environ) == 0)
+                child.pid = pidfd_getpid(child.pidfd);
+            else
+                child.pidfd = -1;
         }
 
         posix_spawn_file_actions_destroy(&fa);

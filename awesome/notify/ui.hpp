@@ -24,7 +24,7 @@
 namespace NAwesome::Notify {
 
     // the paint context is the canvas' (rect/glass/frost/ring/shadow/tex/
-    // texIn/texFit/texStretch); the warm gate is the canvas'
+    // texIn/texFit); the warm gate is the canvas'
     using SPaint = NAwesome::SPaint;
     struct SCachedText;
 
