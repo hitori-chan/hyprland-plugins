@@ -42,11 +42,13 @@ namespace NAwesome::Shell {
             }
 
             double fit(const SPaint& P, const SFrame& F) override {
-                // the warm builds exactly the variants the draw paints
-                for (int i = 1; i <= 9; i++) {
-                    label(P, F, i, false);
-                    label(P, F, i, true);
-                }
+                // the warm builds exactly the variants the draw paints (a
+                // draw's lookups would only repeat the draw's own)
+                if (P.warm)
+                    for (int i = 1; i <= 9; i++) {
+                        label(P, F, i, false);
+                        label(P, F, i, true);
+                    }
                 return 9 * CELL_W + 8 * GAP;
             }
 
