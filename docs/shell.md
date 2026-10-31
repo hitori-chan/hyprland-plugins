@@ -38,8 +38,12 @@ runs on underneath).
   built-in panel (`eDP`), unrotated.
 - Nothing reports the notch's width: it is estimated from the height,
   and `notch_width` sets it in logical px.
-- A fullscreen window still covers the whole panel, the notch's corners
-  included (its direct scanout needs the full mode).
+- A fullscreen window sits below the band, which stays black. Direct
+  scanout still applies: the display places the window's buffer below
+  the band and leaves the band black itself, so it costs no
+  compositing. The pointer in the band brings the bar back there, and
+  it stays while its menu or the center it opened is up; it covers only
+  the band, never the window.
 
 ### Workspaces
 

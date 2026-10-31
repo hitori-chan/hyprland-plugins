@@ -368,6 +368,27 @@ print(1 if ok else 0)
 }
 chk "notch: the strip splits around it, no cell under it" until_is 3 1 notch_split ||
 	echo "  diag: cells $(hq awesome cells | tr '\n' ';')" >&2
+# A fullscreen window sits below the band (the fork's fullscreen inset),
+# still drawn alone, the band black. The pointer in the band brings the
+# bar back there; leaving it takes the bar away.
+fs_box() { clients | python3 -c "import json,sys; c=next(c for c in json.load(sys.stdin) if c['class']=='notchprobe'); print(*c['at'], *c['size'])"; }
+solitary() { hq monitors -j | python3 -c 'import json,sys; print(0 if json.load(sys.stdin)[0]["solitary"] in ("0", "") else 1)'; }
+band_dark() { (($(lit_px "$1" 0 "$MON_W" 0 37) == 0)); }
+band_bar() { (($(lit_px "$1" 0 "$NOTCH_L" 0 37) > 20)); }
+printf 'move %s %s\nsleep 60\n' "$((MON_W / 2))" "$((MON_H / 2))" | vp # out of the band: a capture's jitter there reveals the bar
+settle
+dsp "hl.dsp.window.fullscreen()"
+chk "notch: fullscreen sits below the band" until_is 3 "0 37 $MON_W $((MON_H - 37))" fs_box
+chk "notch: ...still drawn alone" until_is 3 1 solitary ||
+	echo "  diag: $(hq monitors -j | python3 -c 'import json,sys; print(json.load(sys.stdin)[0].get("solitaryBlockedBy"))')" >&2
+chk "notch: ...over a black band" shot_until 3 "$STATE/notch-fs.png" band_dark "$STATE/notch-fs.png"
+printf 'move %s 10\nsleep 60\n' "$((MON_W - 40))" | vp
+settle
+chk "notch: the pointer in the band brings the bar back" shot_until 3 "$STATE/notch-reveal.png" band_bar "$STATE/notch-reveal.png"
+printf 'move %s %s\nsleep 60\n' "$((MON_W / 2))" "$((MON_H / 2))" | vp
+settle
+chk "notch: leaving the band takes it away" shot_until 3 "$STATE/notch-hide.png" band_dark "$STATE/notch-hide.png"
+dsp "hl.dsp.window.fullscreen()"
 hq awesome notch >/dev/null
 chk "notch: gone, the rule's band is back" until_is 3 "0,30,0,0" reserved
 close_wait "$(clients | python3 -c "

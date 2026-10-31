@@ -124,7 +124,7 @@ namespace NAwesome::Shell {
             // menu) would open what the hidden bar's warm closes at once.
             // The press closed the launcher; that is all it does.
             if (MBM == MON && POS.y >= MON->logicalBox().y && POS.y < MON->logicalBox().y + barHeight(MON))
-                if (NAwesome::fullscreenOwns(MON)) {
+                if (NAwesome::fullscreenOwns(MON) && !overFullscreenOn(MON)) {
                     info.cancelled = true;
                     swallowRelease |= BIT;
                     return;
@@ -170,7 +170,7 @@ namespace NAwesome::Shell {
 
         // bar hidden under real fullscreen: the strip belongs to the window then
         // (swallowing here would make the top rows of fullscreen apps click-dead)
-        if (!MENUBAR_HERE && NAwesome::fullscreenOwns(MON)) {
+        if (!MENUBAR_HERE && NAwesome::fullscreenOwns(MON) && !overFullscreenOn(MON)) {
             heldButtons++;
             return;
         }
@@ -301,7 +301,7 @@ namespace NAwesome::Shell {
             info.cancelled = true; // the prompt strip swallows scroll, no action
             return;
         }
-        if (NAwesome::fullscreenOwns(MON))
+        if (NAwesome::fullscreenOwns(MON) && !overFullscreenOn(MON))
             return; // bar hidden, strip belongs to the fullscreen window
         if (POS.y >= MON->logicalBox().y + barHeight(MON))
             return;
@@ -344,8 +344,7 @@ namespace NAwesome::Shell {
 
     // the monitor whose strip owns this point, null when none does (the caller
     // needs the monitor anyway, and finding it walks every one of them)
-    static PHLMONITOR barOwnsPoint(const Vector2D& pos) {
-        const auto MON = monitorAt(pos);
+    static PHLMONITOR barOwnsPoint(const PHLMONITOR& MON, const Vector2D& pos) {
         if (!MON)
             return nullptr;
 
@@ -370,7 +369,7 @@ namespace NAwesome::Shell {
             return nullptr;
 
         if (NAwesome::fullscreenOwns(MON))
-            return Menubar::isOpen && Menubar::mon.lock() == MON ? MON : nullptr; // hidden bar — only the open menubar floats above fullscreen
+            return overFullscreenOn(MON) ? MON : nullptr;
         return MON;
     }
 
@@ -443,15 +442,33 @@ namespace NAwesome::Shell {
         Menu::hoverIntent(pl, pr); // open/close cascades on GTK's popup delay
     }
 
+    // the pointer entering a notch's band under fullscreen brings the bar
+    // back; it stays while the pointer is anywhere on the bar
+    static void trackBand(const PHLMONITOR& at, const Vector2D& pos) {
+        PHLMONITOR in;
+        if (at && at->m_fullscreenInsetTop > 0 && NAwesome::fullscreenOwns(at) &&
+            pos.y < at->logicalBox().y + (bandMon.lock() == at ? barHeight(at) : at->m_fullscreenInsetTop))
+            in = at;
+        if (in == bandMon.lock())
+            return;
+        bandMon = in;
+        barChanged();
+    }
+
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info) {
         const bool GRABBED = heldButtons > 0 || NAwesome::nativePointerGrabActive() || (g_layoutManager && g_layoutManager->dragController()->target());
 
         menuHoverAt(pos);
 
         // the held-button / live-drag gates first: they are two loads, while
-        // barOwnsPoint walks the monitors and fetches the bar height — and a
+        // the bar's tests walk the monitors and fetch the bar height — and a
         // drag sweeping across the screen emits motion the whole way
-        const auto MON = GRABBED ? nullptr : barOwnsPoint(pos);
+        PHLMONITOR MON;
+        if (!GRABBED) {
+            const auto AT = monitorAt(pos);
+            trackBand(AT, pos);
+            MON = barOwnsPoint(AT, pos);
+        }
         if (!MON) {
             releasePointer();
             return;
@@ -480,6 +497,10 @@ namespace NAwesome::Shell {
         scrollAcc.clear();
         scrollQueued = false;
         releasePointer();
+        if (!bandMon.expired()) {
+            bandMon.reset();
+            barChanged();
+        }
         if (Menu::isOpen)
             Menu::close();
         if (Menubar::isOpen)
@@ -494,6 +515,7 @@ namespace NAwesome::Shell {
         hitboxes.clear();
         swallowRelease = 0;
         heldButtons    = 0;
+        bandMon.reset();
         releasePointer();
     }
 

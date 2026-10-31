@@ -110,6 +110,8 @@ namespace NAwesome::Shell {
     std::optional<Notch::SNotch> notchOf(const PHLMONITOR& mon);
     void                         reserveBars();   // the bar's band, the plugin's reserved type on every monitor
     void                         unreserveBars(); // teardown: the band goes back
+    extern PHLMONITORREF         bandMon;         // the monitor whose notch band the pointer is in, under fullscreen
+    bool                         overFullscreenOn(const PHLMONITOR& mon);
 #ifdef AWESOME_GATE
     extern std::optional<Notch::SNotch> gateNotch;
 #endif

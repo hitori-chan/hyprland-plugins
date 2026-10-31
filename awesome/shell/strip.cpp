@@ -5,6 +5,7 @@
 #include "shell/shell.hpp"
 
 #include "../windows/state.hpp"
+#include "notify/model.hpp"
 #include "core/text.hpp"
 #include "core/theme.hpp"
 
@@ -138,13 +139,28 @@ namespace NAwesome::Shell {
     // the texture key, so one window closing re-keys every task label at
     // once. warmBars() runs this same layout from the EVENT LOOP, a frame
     // ahead; by the time draw() runs, everything is a cache hit.
-    // the bar yields the whole output to a real fullscreen window (except an
-    // open menubar — awesome's ontop wibox): renderBar early-returns, so the
-    // layer must not claim a live blur of a strip it never paints
+    // Under a fullscreen window a notch's band stays black (the fork's
+    // fullscreen inset). The pointer in it brings the bar back there, as a
+    // menu bar comes back over fullscreen, and the bar stays while its menu
+    // or the center it opened is up; it covers only the band, never the
+    // window.
+    PHLMONITORREF bandMon;
+    static bool   revealed(const PHLMONITOR& mon) {
+        return mon->m_fullscreenInsetTop > 0 &&
+            (bandMon.lock() == mon || (Menu::isOpen && Menu::mon.lock() == mon) || (NAwesome::Notify::centerVisible() && NAwesome::Notify::cardsMon.lock() == mon));
+    }
+    // the bar over a fullscreen window: the open menubar (awesome's ontop
+    // wibox) or the revealed band
+    bool overFullscreenOn(const PHLMONITOR& mon) {
+        return mon && ((Menubar::isOpen && Menubar::mon.lock() == mon) || revealed(mon));
+    }
+    // otherwise the bar yields the output to a real fullscreen window:
+    // renderBar early-returns, so the layer must not claim a live blur of a
+    // strip it never paints
     static bool barHidden(PHLMONITOR mon) {
         if (!mon)
             return true;
-        return NAwesome::fullscreenOwns(mon) && !(Menubar::isOpen && Menubar::mon.lock() == mon);
+        return NAwesome::fullscreenOwns(mon) && !overFullscreenOn(mon);
     }
 
     static void renderBar(PHLMONITOR mon, Render::CRenderContext* rctx) {
@@ -403,10 +419,8 @@ namespace NAwesome::Shell {
                 return std::nullopt;
             return CBox{0, 0, mon->logicalBox().w, barHeight(mon)};
         }
-        // the open menubar is awesome's ontop wibox: it paints over a
-        // fullscreen client (barHidden() keeps the rest of the strip off)
         bool overFullscreen(PHLMONITOR mon) const override {
-            return Menubar::isOpen && Menubar::mon.lock() == mon;
+            return overFullscreenOn(mon);
         }
         bool needsBlur(PHLMONITOR mon) const override {
             // only while the band actually paints — never claim a live blur of
@@ -488,10 +502,8 @@ namespace NAwesome::Shell {
                 return CBox{0, 0, MB.w, MB.h};
             return CBox{x0, y0, x1 - x0, y1 - y0};
         }
-        // the open menubar is awesome's ontop wibox: it paints over a
-        // fullscreen client
         bool overFullscreen(PHLMONITOR mon) const override {
-            return Menubar::isOpen && Menubar::mon.lock() == mon;
+            return popupsOn(mon) && overFullscreenOn(mon);
         }
         bool needsBlur(PHLMONITOR mon) const override {
             // the menus' glass; the note is no glass
@@ -583,16 +595,20 @@ namespace NAwesome::Shell {
     // The bar's band, reserved per monitor as the plugin's own dynamic type
     // (the fork's RESERVED_DYNAMIC_TYPE_PLUGIN): windows and layer surfaces
     // lay out below it, and a notch's taller band follows. What a monitor
-    // rule already reserves at the top counts toward it.
+    // rule already reserves at the top counts toward it. A notch's band is
+    // also the fork's fullscreen inset: fullscreen windows sit below it.
     void reserveBars() {
         if (!g_pHyprRenderer || NAwesome::compositorShuttingDown())
             return;
         for (const auto& M : State::monitorState()->monitors()) {
             const double BEFORE = M->m_reservedArea.top();
             const double OWN    = std::max(0.0, barHeight(M) - M->m_activeMonitorRule.m_reservedArea.top());
+            const auto   N      = notchOf(M);
+            const double INSET  = N ? std::ceil(N->h) : 0.0;
+            const bool   MOVED  = std::exchange(M->m_fullscreenInsetTop, INSET) != INSET;
             M->m_reservedArea.resetType(Desktop::RESERVED_DYNAMIC_TYPE_PLUGIN);
             M->m_reservedArea.addType(Desktop::RESERVED_DYNAMIC_TYPE_PLUGIN, Vector2D{0.0, OWN}, Vector2D{0.0, 0.0});
-            if (M->m_reservedArea.top() != BEFORE)
+            if (M->m_reservedArea.top() != BEFORE || MOVED)
                 g_pHyprRenderer->arrangeLayersForMonitor(M->m_id);
         }
     }
@@ -602,8 +618,9 @@ namespace NAwesome::Shell {
             return;
         for (const auto& M : State::monitorState()->monitors()) {
             const double BEFORE = M->m_reservedArea.top();
+            const bool   MOVED  = std::exchange(M->m_fullscreenInsetTop, 0.0) != 0.0;
             M->m_reservedArea.resetType(Desktop::RESERVED_DYNAMIC_TYPE_PLUGIN);
-            if (M->m_reservedArea.top() != BEFORE)
+            if (M->m_reservedArea.top() != BEFORE || MOVED)
                 g_pHyprRenderer->arrangeLayersForMonitor(M->m_id);
         }
     }
