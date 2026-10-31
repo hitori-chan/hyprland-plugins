@@ -44,6 +44,11 @@ compositor is built from.
 - Dependencies come from distro packages at the fork's `flake.lock` pins;
   the user performs sudo installs and deploys (install + relog, then
   `hyprpm update`).
+- Two machines run it: a ThinkPad (x86, this host) and an Apple silicon
+  laptop (Asahi; a display notch, scale 2, a P3 panel). Hardware-shaped
+  behavior detects the machine at runtime and never hard-codes one
+  machine's values. The Apple laptop is reached only through its own
+  agent session (~/repo/asahilinux), which runs anything there.
 
 ## Build
 
