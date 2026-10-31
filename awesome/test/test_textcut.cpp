@@ -56,7 +56,6 @@ bool test_textcut() {
     AW_CHECK(cutToLines("<b" + std::string(500, 'x'), true, 10, ANY).empty());
 
     using NAwesome::Notify::capMarkupHead;
-    using NAwesome::Notify::capMarkupTail;
     // the head cap: within the bytes, never inside a tag or an entity,
     // the open tags closed inside the cap
     AW_CHECK(capMarkupHead("short", 10) == "short");
@@ -83,13 +82,6 @@ bool test_textcut() {
             want += "</b>";
         AW_CHECK(capMarkupHead(deep, 100) == want);
     }
-    // the tail cap: the tags open at the cut are reopened in front
-    AW_CHECK(capMarkupTail("<b>one\ntwo</b>", 4) == "<b>ne\ntwo</b>");
-    AW_CHECK(capMarkupTail("<b>one</b>\ntwo", 11) == "two");
-    // a cut inside a tag moves past it, and the tag is reopened
-    AW_CHECK(capMarkupTail("<span foreground=\"#fff\">ab</span>cd", 5) == "<span foreground=\"#fff\">ab</span>cd");
-    AW_CHECK(capMarkupTail("x&amp;y", 2) == "y"); // an entity is skipped whole
-    AW_CHECK(capMarkupTail("abc", 0) == "abc");
 
     // an output's name cut in the middle, between whole words, the end
     // kept first; here a room of n code points

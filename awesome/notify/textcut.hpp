@@ -131,28 +131,6 @@ namespace NAwesome::Notify {
         return out;
     }
 
-    // Sanitized markup from the first token boundary at or past `from`, its
-    // tail kept: the tags open at the cut are reopened in front, so their
-    // closers still match.
-    inline std::string capMarkupTail(const std::string& s, size_t from) {
-        if (from == 0)
-            return s;
-        TextCut::SOpen open;
-        size_t         i = 0;
-        while (i < s.size() && i < from)
-            if (!TextCut::step(s, i, open)) {
-                // malformed: the codepoint-aligned byte cut, as before
-                for (i = from; i < s.size() && ((unsigned char)s[i] & 0xC0) == 0x80;)
-                    i++;
-                return s.substr(std::min(i, s.size()));
-            }
-        std::string out;
-        for (const auto& T : open.tags)
-            out += T.text;
-        out.append(s, std::min(i, s.size()));
-        return out;
-    }
-
     // A name too wide for its room, cut in the middle between whole words,
     // its end kept first: the end tells outputs apart ("…Speaker +
     // Headphones" from "…HDMI / DisplayPort 1 Output"). The first word, " …

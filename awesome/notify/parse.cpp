@@ -341,46 +341,4 @@ namespace NAwesome::Notify::Parse {
         return out;
     }
 
-    // XDG conversation clients (Telegram Desktop's) embed the sender as a
-    // LEADING bold line: "<b>Alice</b>\nmessage". Fold the block to the one
-    // line "<b>Alice</b>: message" — the body stays one line per message,
-    // so the newest message (and its sender) stays first-line reachable:
-    // the collapsed row and the banner window read lines, and a bare-name
-    // first line would hide the message under it
-    std::string foldSenderPrefix(std::string body) {
-        if (!body.starts_with("<b>"))
-            return body;
-        const auto CLOSE = body.find("</b>");
-        if (CLOSE == std::string::npos)
-            return body;
-        const auto NL = body.find('\n', CLOSE);
-        if (NL == std::string::npos)
-            return body; // no message line after the sender: leave as-is
-        if (body.find_first_not_of(" \t", CLOSE + 4) != NL)
-            return body; // a line that goes on past the name ("<b>Bob</b> sent a photo") is no bare sender
-        std::string out;
-        out.reserve(body.size());
-        out.append(body, 0, CLOSE + 4); // through the '>' of "</b>"
-        out += ": ";
-        out += body.substr(NL + 1);
-        return out;
-    }
-
-    // chronological, like the transcript: the visible lines are the LATEST
-    // messages, the newest ends the body, and the cap drops the oldest (top)
-    // lines
-    std::string joinAppend(const std::string& oldBody, const std::string& add) {
-        std::string joined = oldBody.empty() ? add : oldBody + "\n" + add;
-        constexpr size_t CAP = 8192;
-        if (joined.size() <= CAP)
-            return joined;
-        // whole oldest lines go: the first line break at or past the excess
-        // ends the cut (one cut — a line at a time was quadratic in a body
-        // of thousands of tiny lines). No break there: the newest tail. The
-        // cut falls between tags and reopens the ones open there.
-        const size_t EXCESS = joined.size() - CAP;
-        const size_t NL     = joined.find('\n', EXCESS - 1);
-        return capMarkupTail(joined, NL != std::string::npos ? NL + 1 : EXCESS);
-    }
-
 } // namespace NAwesome::Notify::Parse
