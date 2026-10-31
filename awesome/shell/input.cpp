@@ -81,6 +81,11 @@ namespace NAwesome::Shell {
                 heldButtons = std::max(0, heldButtons - 1); // a press the apps saw ends
             return;
         }
+        // the compositor holds nothing: no count can be live (a pointer
+        // unplugged mid-press never sends its release, and the strip would
+        // pass every later press through as part of a grab)
+        if (g_pInputManager && !g_pInputManager->hasHeldButtons())
+            heldButtons = 0;
 
         // Side/extra buttons have no shell action. Pass them through as native
         // application input instead of making one catch-all swallow bit.

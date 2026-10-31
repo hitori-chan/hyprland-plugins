@@ -84,6 +84,15 @@ chk "input storm: the final taglist click registered (ws 1)" until_is 3 1 ws
 read -r BAX BAY <<< "$(center_of storma)"; click_at "$BAX" "$BAY"
 expect "post-storm click still raises + focuses (no stuck swallow)" \
 	"cs[-1]['class']=='storma' if cs else False"
+# A pointer unplugged mid-press: the compositor drops its held button with
+# no release event, and the bar's next click must still be its own (a stale
+# count passed it through as part of a grab until the next lock).
+printf 'move %s %s\nsleep 50\npress 272\nsleep 100\n' "$BAX" "$BAY" | vp
+settle
+printf 'move %s 13\nsleep 50\npress 272\nsleep 40\nrelease 272\nsleep 100\n' "$(tag_cx 2)" | vp
+chk "unplugged mid-press: the bar's next click is its own (ws 2)" until_is 3 2 ws
+printf 'move %s 13\nsleep 50\npress 272\nsleep 40\nrelease 272\nsleep 100\n' "$(tag_cx 1)" | vp
+chk "unplugged mid-press: back on ws 1" until_is 3 1 ws
 
 # ---- surface ownership: the bar's surfaces beat the window policy ----------
 # The shade sits over the focused window. A click on the shade's dead space

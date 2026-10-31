@@ -379,6 +379,10 @@ namespace NAwesome::Notify {
                 heldButtons = std::max(0, heldButtons - 1);
             return;
         }
+        // the compositor holds nothing: no count can be live (a pointer
+        // unplugged mid-press never sends its release)
+        if (g_pInputManager && !g_pInputManager->hasHeldButtons())
+            heldButtons = 0;
 
         // the shell module runs first: a press it swallowed (strip click, open tray
         // menu over the card region) was never ours — and never reached an
