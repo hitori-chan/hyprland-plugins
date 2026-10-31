@@ -53,7 +53,7 @@ namespace NAwesome::System {
     void lightInit();
     void lightExit();
     void lightBusDropped();
-    void lightKey(int dir); // a key's ±5 % step, its capsule
+    void lightKey(int dir); // a key's step (system:brightness_step), its capsule
     void padInit();
     void padExit();
     void padToggle();

@@ -9,8 +9,9 @@ keyboard light are left to their own tools (`bluetoothctl`,
 
 The display's backlight comes from `/sys/class/backlight` (the firmware
 device first, then platform, then raw, as systemd orders them). It steps
-in 5 % of its range, never below a raw level of 2, and writes through
-logind's `Session.SetBrightness`: no root, no udev rule.
+in `brightness_step` percent of its range (5), never below a raw level
+of 2, and writes through logind's `Session.SetBrightness`: no root, no
+udev rule.
 
 One write runs at a time; presses meanwhile add up into the next. A
 device that is missing or stops answering is looked up again on the next
@@ -25,9 +26,9 @@ would lose a step: each device runs one set at a time, then a readback,
 and presses meanwhile accumulate (steps sum, mute toggles fold to their
 parity).
 
-- Raising stops at 100 %, but a volume already past it (set elsewhere)
-  is never pulled down; the capsule shows the true percent over a full
-  bar.
+- A key moves `volume_step` percent (5). Raising stops at `volume_max`
+  (100 %), but a volume already past it (set elsewhere) is never pulled
+  down; the capsule shows the true percent over a full bar.
 - **A headset's own buttons**: a Bluetooth headset that sets its volume
   itself (AVRCP absolute volume) presses no key. BlueZ announces the
   change on the system bus, the default sink is read back once PipeWire

@@ -310,6 +310,17 @@ right_order() { awk '$1 ~ /^(bell|battery|clock)$/ { printf "%s ", $1 }' <<<"$CE
 RIGHT_WANT="bell clock "
 compgen -G "/sys/class/power_supply/BAT*" >/dev/null && RIGHT_WANT="bell battery clock "
 chk "cells: the right slot runs bell, battery, clock" test "$(right_order)" = "$RIGHT_WANT"
+# shell:clock_format applies at once (config.props_refreshed), not at the
+# next minute; an empty format shows the default
+clock_w() { hq awesome cells | awk '$1 == "clock" { print $3 - $2; exit }'; }
+CLOCK_W="$(clock_w)"
+clock_narrow() { local w; w="$(clock_w)"; [[ -n "$w" && "$w" -lt $((CLOCK_W / 2)) ]]; }
+clock_wide() { local w; w="$(clock_w)"; [[ -n "$w" && "$w" -ge $((CLOCK_W * 3 / 4)) ]]; }
+hq eval 'hl.config({ plugin = { awesome = { shell = { clock_format = "%Y" } } } })' >/dev/null
+chk "cells: clock_format redraws the clock at once" until_ok 3 clock_narrow
+hq eval 'hl.config({ plugin = { awesome = { shell = { clock_format = "" } } } })' >/dev/null
+chk "cells: an empty clock_format shows the default" until_ok 3 clock_wide
+hq eval 'hl.config({ plugin = { awesome = { shell = { clock_format = "%a %b %-d %H:%M" } } } })' >/dev/null
 # the clicks over the bare desktop: a tray menu is measured below the strip,
 # where the probe's window would read as one (the right slot's cells stay)
 CP="$(clients | python3 -c "

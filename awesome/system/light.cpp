@@ -1,7 +1,7 @@
 // The display's backlight.
 //
-// Fork-free: sysfs for current/max (/sys/class/backlight), ±5% linear
-// steps floored at 2 raw so the panel never goes black, the write through
+// Fork-free: sysfs for current/max (/sys/class/backlight), linear
+// brightness_step steps floored at 2 raw so the panel never goes black, the write through
 // logind Session.SetBrightness on the module's system bus — no root, no
 // udev rule. A key's step answers with a capsule (id 9992) at logind's
 // ack.
@@ -11,6 +11,7 @@
 #include "notify/model.hpp" // NAwesome::Notify::Model::postCard (the in-process seam)
 
 #include "core/busclient.hpp"
+#include "core/config.hpp"
 
 #include <hyprland/src/helpers/time/Time.hpp>
 
@@ -44,7 +45,7 @@ namespace NAwesome::System {
         std::string dev; // <root>/<dev>, name only
         int         max     = 0;
         bool        busy    = false;
-        int         pending = 0; // key steps, signed (±5 % of max each)
+        int         pending = 0; // key steps, signed (±brightness_step % of max each)
         // A keypress bases its step on what the previous one just asked
         // for: logind's write is asynchronous, so a fast repeat would read
         // stale sysfs and re-step from the same value. Half a second of
@@ -163,10 +164,10 @@ namespace NAwesome::System {
             raw = *now;
         }
 
-        // ±5% of max, linear, floored — a floor never above the device's
-        // own max (a 0..1 panel), and a step down never raises a device
-        // already under it
-        const int STEP  = std::max(1, (int)std::lround(L.max * 0.05));
+        // ±brightness_step % of max, linear, floored — a floor never above
+        // the device's own max (a 0..1 panel), and a step down never raises
+        // a device already under it
+        const int STEP  = std::max(1, (int)std::lround(L.max * cfg().getI("plugin:awesome:system:brightness_step") / 100.0));
         const int FLOOR = std::min({FLOOR_RAW, L.max, DIR < 0 ? raw : FLOOR_RAW});
         raw             = std::clamp(raw + DIR * STEP, FLOOR, L.max);
 

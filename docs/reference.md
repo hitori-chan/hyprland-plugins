@@ -47,7 +47,7 @@ adds its own verbs ([testing](testing.md#scripts)).
 
 ## Configuration
 
-42 keys, `plugin:awesome:<group>:<key>` (a module's, or `theme`'s for
+46 keys, `plugin:awesome:<group>:<key>` (a module's, or `theme`'s for
 the material they share), declared in
 [`core/schema.hpp`](../awesome/core/schema.hpp). Out-of-range values
 clamp. In Lua:
@@ -55,6 +55,7 @@ clamp. In Lua:
 ```lua
 hl.config({ plugin = { awesome = {
     shell  = { terminal = "foot", height = 28 },
+    system = { volume_step = 2, brightness_step = 10 },
     notify = { timeout_normal = 8000 },
 } } })
 ```
@@ -80,6 +81,7 @@ already looks right.
 | `tray_spacing` | 15 | px between tray icons |
 | `font` | `Fira Code, IBM Plex Sans JP` | font family or Pango family list (the kanji tags take the first face that has them) |
 | `terminal` | `alacritty` | runs the launcher's `Terminal=true` entries |
+| `clock_format` | `%a %b %-d %H:%M` | the clock's `strftime` format in the session's `LC_TIME`, redrawn each minute; an empty or overlong result shows the default |
 | `col_fg` | Frost | bar text and glyphs: the clock, the bell, symbolic tray icons, occupied tags |
 | `col_focus` | Frost | the launcher's pick and caret, the client list's focused window |
 | `col_active` | Frost | the viewed tag and the focused task (text) |
@@ -124,6 +126,14 @@ already looks right.
 | `edge` | 16 | distance from an output edge that arms a snap zone |
 | `snap_distance` | 8 | magnetic pull distance |
 | `col_frame` | Frost | the snap preview's outline (its fill is the same colour at 10 %) |
+
+### system
+
+| Key | Default | |
+|---|---|---|
+| `volume_step` | 5 | percent a volume key moves the default sink |
+| `volume_max` | 100 | percent the volume keys raise to; a level set past it elsewhere is kept |
+| `brightness_step` | 5 | percent of the backlight's range a brightness key moves |
 
 ## State
 

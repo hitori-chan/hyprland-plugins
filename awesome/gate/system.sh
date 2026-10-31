@@ -12,7 +12,7 @@ idle() { until_is 5 0 hq awesome busy; }
 # ---- the wpctl process path ------------------------------------------------
 : > "$STATE/wpctl.log"
 dsp "hl.plugin.awesome.volume_up()"; idle
-chk "system: volume up uses the capped relative wpctl command" grep -Fxq "set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+" "$STATE/wpctl.log"
+chk "system: volume up uses the capped relative wpctl command" grep -Fxq "set-volume -l 1.000 @DEFAULT_AUDIO_SINK@ 5%+" "$STATE/wpctl.log"
 chk "system: volume up readback produces a card" test "$(st)" = "center:0 live:1 dnd:0"
 hq awesome clear >/dev/null
 
@@ -35,6 +35,14 @@ chk "system: volume down uses the relative wpctl command" grep -Fxq "set-volume 
 chk "system: volume down readback produces a card" test "$(st)" = "center:0 live:1 dnd:0"
 hq awesome clear >/dev/null
 
+# the keys' step and ceiling are config (system:volume_step, volume_max)
+hq eval "hl.config({ plugin = { awesome = { system = { volume_step = 2, volume_max = 150 } } } })" >/dev/null
+: > "$STATE/wpctl.log"
+dsp "hl.plugin.awesome.volume_up()"; idle
+chk "system: volume_step and volume_max shape the set" grep -Fxq "set-volume -l 1.500 @DEFAULT_AUDIO_SINK@ 2%+" "$STATE/wpctl.log"
+hq eval "hl.config({ plugin = { awesome = { system = { volume_step = 5, volume_max = 100 } } } })" >/dev/null
+hq awesome clear >/dev/null
+
 : > "$STATE/wpctl.log"
 dsp "(function() for _ = 1, 32 do hl.plugin.awesome.volume_up() end return hl.dsp.no_op() end)()"; idle
 # one set in flight per device: the first press runs, the other 31
@@ -42,7 +50,7 @@ dsp "(function() for _ = 1, 32 do hl.plugin.awesome.volume_up() end return hl.ds
 # read-modify-writes inside wpctl
 burst_serialized() {
 	[[ "$(grep -c '^set-volume ' "$STATE/wpctl.log")" == 2 ]] &&
-		[[ "$(grep '^set-volume ' "$STATE/wpctl.log" | tail -1)" == "set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 100%+" ]]
+		[[ "$(grep '^set-volume ' "$STATE/wpctl.log" | tail -1)" == "set-volume -l 1.000 @DEFAULT_AUDIO_SINK@ 100%+" ]]
 }
 chk "system: a repeat burst serializes into one accumulated set" burst_serialized
 chk "system: the capped chains still produced one card" test "$(st)" = "center:0 live:1 dnd:0"
@@ -159,6 +167,18 @@ dsp "hl.plugin.awesome.brightness_down()"
 BAFTER_DOWN="$(brt_wait down "$BAFTER_UP")"
 chk "system: brightness_down moved it back" test "$BAFTER_DOWN" = 500
 chk "system: brightness_down posts the percent card" until_is 3 "center:0 live:1 dnd:0" st
+hq awesome clear >/dev/null
+# the step is config (system:brightness_step)
+hq eval "hl.config({ plugin = { awesome = { system = { brightness_step = 10 } } } })" >/dev/null
+dsp "hl.plugin.awesome.brightness_up()"
+BAFTER_STEP="$(brt_wait up "$BAFTER_DOWN")"
+chk "system: brightness_step sets the step (+10%)" test "$BAFTER_STEP" = 600
+until_is 3 "center:0 live:1 dnd:0" st >/dev/null
+hq awesome clear >/dev/null
+dsp "hl.plugin.awesome.brightness_down()"
+brt_wait down "$BAFTER_STEP" >/dev/null
+until_is 3 "center:0 live:1 dnd:0" st >/dev/null
+hq eval "hl.config({ plugin = { awesome = { system = { brightness_step = 5 } } } })" >/dev/null
 hq awesome clear >/dev/null
 
 # ---- the touchpad (system/pad.cpp) -------------------------------------------

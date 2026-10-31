@@ -30,11 +30,11 @@ namespace NAwesome::Shell {
                 return false;
             if (!std::exchange(timeLocaleTried, true))
                 timeLocale = newlocale(LC_TIME_MASK, "", (locale_t)0);
-            // "Mon Oct 26 01:12": the user's clock (the day unpadded, glibc's
-            // %-d)
-            constexpr const char* FMT = "%a %b %-d %H:%M";
-            const size_t          N   = timeLocale ? strftime_l(buf, sizeof(buf), FMT, &tm, timeLocale) : std::strftime(buf, sizeof(buf), FMT, &tm);
-            if (N == 0)
+            const auto FORMAT = [&](const char* fmt) { return timeLocale ? strftime_l(buf, sizeof(buf), fmt, &tm, timeLocale) : std::strftime(buf, sizeof(buf), fmt, &tm); };
+            // strftime answers 0 for an empty or overlong result: the
+            // default format stands in
+            if (FORMAT(cfg().getS("plugin:awesome:shell:clock_format").c_str()) == 0 &&
+                FORMAT(std::string{SPECS[CfgKey{"plugin:awesome:shell:clock_format"}.index].sval}.c_str()) == 0)
                 return false;
             if (clockText == buf)
                 return false;

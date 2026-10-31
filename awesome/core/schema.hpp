@@ -51,6 +51,7 @@ namespace NAwesome {
         {"plugin:awesome:shell:tray_spacing", "px between tray icons (the right slot's rhythm)", Kind::Int, 15, 0, {}, 0, 0, 64},
         {"plugin:awesome:shell:font", "font family, or a Pango family list (the kanji tags take the first face that has them)", Kind::String, 0, 0, Theme::BAR_FONT},
         {"plugin:awesome:shell:terminal", "terminal that runs Terminal=true launcher entries", Kind::String, 0, 0, "alacritty"},
+        {"plugin:awesome:shell:clock_format", "the clock's strftime format, in LC_TIME (an empty or overlong result shows the default)", Kind::String, 0, 0, "%a %b %-d %H:%M"},
         {"plugin:awesome:shell:col_fg", "bar text and glyphs: the clock, the bell, symbolic tray icons, occupied tags", Kind::Color, 0, 0, {}, Theme::TITLE},
         {"plugin:awesome:shell:col_focus", "the launcher's pick and caret, the client list's focused window (text)", Kind::Color, 0, 0, {}, Theme::ACCENT},
         {"plugin:awesome:shell:col_active", "the viewed tag and the focused task (text)", Kind::Color, 0, 0, {}, Theme::ACCENT},
@@ -85,6 +86,9 @@ namespace NAwesome {
         {"plugin:awesome:windows:edge", "distance from an output edge that arms a snap zone", Kind::Int, 16, 0, {}, 0, 0, 128},
         {"plugin:awesome:windows:snap_distance", "magnetic pull distance", Kind::Int, 8, 0, {}, 0, 0, 128},
         {"plugin:awesome:windows:col_frame", "snap preview outline (its tint is the same colour at 10 %)", Kind::Color, 0, 0, {}, Theme::ACCENT},
+        {"plugin:awesome:system:volume_step", "percent a volume key moves the default sink", Kind::Int, 5, 0, {}, 0, 1, 25},
+        {"plugin:awesome:system:volume_max", "percent the volume keys raise to; a level set past it elsewhere is kept", Kind::Int, 100, 0, {}, 0, 10, 150},
+        {"plugin:awesome:system:brightness_step", "percent of the backlight's range a brightness key moves", Kind::Int, 5, 0, {}, 0, 1, 25},
     };
     inline constexpr size_t SPEC_COUNT = std::size(SPECS);
 

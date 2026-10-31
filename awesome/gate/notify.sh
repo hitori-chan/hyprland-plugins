@@ -1088,7 +1088,7 @@ chk "sound: the capped spawns still carried every card" test "$(st)" = "center:0
 # every SOUND slot is held: the volume keys still have theirs
 : > "$STATE/wpctl.log"
 dsp "hl.plugin.awesome.volume_up()"
-chk "sound: a sound flood leaves the volume keys their own slots" until_ok 3 grep -Fxq "set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+" "$STATE/wpctl.log"
+chk "sound: a sound flood leaves the volume keys their own slots" until_ok 3 grep -Fxq "set-volume -l 1.000 @DEFAULT_AUDIO_SINK@ 5%+" "$STATE/wpctl.log"
 xargs -r kill 2>/dev/null <"$STATE/hang-sound.pid"
 rm -f "$STATE/hang-sound" "${STATE}/hang-sound.pid"
 nclear

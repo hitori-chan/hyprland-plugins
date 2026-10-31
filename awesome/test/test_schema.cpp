@@ -12,11 +12,11 @@ using namespace NAwesome;
 // a key compiles only if it is in the table (CfgKey is consteval): a typo
 // in a getter fails the BUILD
 static_assert(CfgKey{"plugin:awesome:shell:height"}.index < SPEC_COUNT);
-static_assert(specIndex("plugin:awesome:windows:col_frame") == SPEC_COUNT - 1);
+static_assert(specIndex("plugin:awesome:system:brightness_step") == SPEC_COUNT - 1);
 
 bool test_schema() {
-    // the surface: 42 keys, unique, all namespaced
-    AW_CHECK(SPEC_COUNT == 42);
+    // the surface: 46 keys, unique, all namespaced
+    AW_CHECK(SPEC_COUNT == 46);
     for (const auto& A : SPECS) {
         const auto K = std::string_view{A.key};
         AW_CHECK(K.starts_with("plugin:awesome:"));
@@ -36,18 +36,16 @@ bool test_schema() {
         if (A.kind == Kind::Double)
             AW_CHECK(A.dval >= A.dmin && A.dval <= A.dmax);
     }
-    // every key resolves; the groups are the shared theme and the
-    // config-bearing modules shell, windows and notify (system takes no
-    // config)
-    const char* GROUPS[] = {"theme", "shell", "windows", "notify"};
-    size_t      perGroup[4] = {0, 0, 0, 0};
+    // every key resolves; the groups are the shared theme and the modules
+    const char* GROUPS[]    = {"theme", "shell", "windows", "notify", "system"};
+    size_t      perGroup[5] = {0, 0, 0, 0, 0};
     for (const auto& K : SPECS) {
         AW_CHECK(findSpec(K.key) == &K);
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < 5; i++)
             if (std::string_view{K.key}.starts_with(std::string{"plugin:awesome:"} + GROUPS[i] + ":"))
                 perGroup[i]++;
     }
-    AW_CHECK(perGroup[0] == 2 && perGroup[1] == 15 && perGroup[2] == 3 && perGroup[3] == 22);
+    AW_CHECK(perGroup[0] == 2 && perGroup[1] == 16 && perGroup[2] == 3 && perGroup[3] == 22 && perGroup[4] == 3);
     AW_CHECK(findSpec("plugin:awesome:shell:nope") == nullptr);
 
     // defaults are the glass·ink tokens
@@ -59,6 +57,11 @@ bool test_schema() {
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:theme:col_glass"}.index].cval == 0x001e1e22u);
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:shell:font"}.index].sval == "Fira Code, IBM Plex Sans JP");
     AW_CHECK(SPECS[CfgKey{"plugin:awesome:notify:font"}.index].sval == "Inter");
+    // the system keys and the clock default to the behaviour before them
+    AW_CHECK(SPECS[CfgKey{"plugin:awesome:shell:clock_format"}.index].sval == "%a %b %-d %H:%M");
+    AW_CHECK(SPECS[CfgKey{"plugin:awesome:system:volume_step"}.index].ival == 5);
+    AW_CHECK(SPECS[CfgKey{"plugin:awesome:system:volume_max"}.index].ival == 100);
+    AW_CHECK(SPECS[CfgKey{"plugin:awesome:system:brightness_step"}.index].ival == 5);
 
     // the loader's clamps: out-of-range delivers, the getter clamps
     const auto& HEIGHT = SPECS[CfgKey{"plugin:awesome:shell:height"}.index];

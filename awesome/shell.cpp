@@ -122,6 +122,12 @@ namespace NAwesome::Shell {
             reserveBars(); // shell:height, a monitor rule's own reserve
             barChanged();
         });
+        // a runtime hl.config and a reload both end here: a new
+        // clock_format shows at once, not at the next minute
+        supervisor().listen(EV.config.props_refreshed, [](bool) {
+            if (Clock::refresh())
+                barChanged();
+        });
 
         if (minute.start(onMinute))
             armMinute();

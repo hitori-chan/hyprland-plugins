@@ -16,6 +16,7 @@
 #include "notify/model.hpp" // Notify::Model::postCard (the in-process seam)
 
 #include "core/busclient.hpp"
+#include "core/config.hpp"
 #include "core/hop.hpp"
 #include "core/jobs.hpp"
 #include "system/wpctl.hpp"
@@ -61,12 +62,11 @@ namespace NAwesome::System {
     // ACCUMULATE — volume steps sum into the next set ("15%+"), toggles fold
     // to their parity — and every finished set is read back, the readback
     // being the card's authoritative state.
-    // the readback being the card's authoritative state.
     struct SDevice {
         const char* node;
         bool        mic;
         bool        busy    = false;
-        int         steps   = 0; // ±1 per press, applied as ±5% each
+        int         steps   = 0; // ±1 per press, applied as ±volume_step % each
         int         toggles = 0;
         double      level   = -1; // the last readback's volume (1.0 = 100%); < 0: never read
         bool        muted   = false; // the last readback's mute
@@ -159,12 +159,13 @@ namespace NAwesome::System {
         if (TOGGLE)
             argv = {"wpctl", "set-mute", d.node, "toggle", nullptr};
         else if (d.steps != 0) {
-            amount = std::to_string(std::min(std::abs(d.steps) * 5, 100)) + (d.steps > 0 ? "%+" : "%-");
+            amount = std::to_string(std::min(std::abs(d.steps) * cfg().getI("plugin:awesome:system:volume_step"), 100)) + (d.steps > 0 ? "%+" : "%-");
             if (d.steps > 0) {
-                // the keys stop at 100%, but a volume already past it (set
-                // elsewhere) is never pulled down to it: the limit is then
-                // the current level (+0.005: the readback rounds to 0.01)
-                limit = d.level > 1.0 ? std::format("{:.3f}", d.level + 0.005) : "1.0";
+                // the keys stop at volume_max, but a volume already past it
+                // (set elsewhere) is never pulled down to it: the limit is
+                // then the current level (+0.005: the readback rounds to 0.01)
+                const double CAP = cfg().getI("plugin:awesome:system:volume_max") / 100.0;
+                limit            = std::format("{:.3f}", d.level > CAP ? d.level + 0.005 : CAP);
                 argv  = {"wpctl", "set-volume", "-l", limit.c_str(), d.node, amount.c_str(), nullptr};
             } else
                 argv = {"wpctl", "set-volume", d.node, amount.c_str(), nullptr};

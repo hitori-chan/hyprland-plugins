@@ -168,9 +168,10 @@ known the time is left out.
 
 ### Clock
 
-"Mon Oct 26 01:12" in the session's `LC_TIME`. It ticks on the wall
-clock's minute, re-reads the timezone each tick, and catches up at once
-after a resume or a clock change.
+`shell:clock_format` in the session's `LC_TIME`, by default "Mon Oct 26
+01:12"; a changed format shows at once. It ticks on the wall clock's
+minute, re-reads the timezone each tick, and catches up at once after a
+resume or a clock change.
 
 ## The launcher
 
