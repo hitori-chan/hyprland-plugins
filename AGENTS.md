@@ -43,11 +43,12 @@ compositor is built from.
   headers carry a stale hash the plugin's load guard rejects.
 - Dependencies come from distro packages at the fork's `flake.lock` pins,
   except Aquamarine: `hitori-chan/aquamarine`, whose `main` is the pin
-  plus its own patches (a scanout buffer placed at an offset; the soname
-  `libaquamarine.so.14.fork`, so the compositor never loads the distro
-  library). It installs under `/usr/local`; the fork configures with
-  `PKG_CONFIG_PATH=/usr/local/lib/pkgconfig` and
-  `-DCMAKE_INSTALL_RPATH=/usr/local/lib`. Its patches only append to
+  plus its own patches (a scanout buffer placed at an offset). It
+  installs under `/usr/local` beside the distro's library, same soname;
+  the fork configures with `PKG_CONFIG_PATH=/usr/local/lib/pkgconfig`
+  and `-DCMAKE_INSTALL_RPATH=/usr/local/lib`, and `ldd` on the installed
+  compositor must resolve `libaquamarine.so.14` from `/usr/local/lib`
+  (the distro's copy lacks the fork's fields). Its patches only append to
   structs, so a plugin built against the distro's headers (hyprpm) stays
   layout-compatible. A bump rebases it onto the new pin too.
 - The user performs sudo installs and deploys (Aquamarine, then the
