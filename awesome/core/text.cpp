@@ -1,4 +1,3 @@
-// awesome/core/text.cpp — see text.hpp.
 #include "text.hpp"
 
 #include <algorithm>

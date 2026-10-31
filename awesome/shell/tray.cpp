@@ -1,4 +1,4 @@
-// awesome/shell/tray.cpp — the in-compositor StatusNotifierWatcher/Host and its items
+// The in-compositor StatusNotifierWatcher/Host and its items
 
 #include "../core/activate.hpp"
 #include "../core/icons.hpp" // iconDeferred: a budget-deferred icon is retried
@@ -15,8 +15,6 @@
 
 namespace NAwesome::Shell {
 
-    // ---- tray: StatusNotifierWatcher + Host, in-compositor ----
-
     namespace Tray {
         static const sdbus::InterfaceName      WIFACE{"org.kde.StatusNotifierWatcher"};
         // SNI pixmaps are untrusted D-Bus payloads. The tray only paints a
@@ -26,10 +24,10 @@ namespace NAwesome::Shell {
         constexpr uint64_t MAX_PIXMAP_PIXELS = 4ull << 20;
 
         // SNI ARGB (network order) -> premultiplied BGRA within cap a side.
-        // An app that ships only a large pixmap (some send 512-1024 px) cost
-        // a full-size premultiply, compare and upload per icon change for a
-        // 16 px cell: box-averaged by an integer K while premultiplying (to
-        // within 2x of the cap), then fitted exactly.
+        // An app that ships only a large pixmap (some send 512-1024 px) is
+        // box-averaged by an integer K while premultiplying (to within 2x of
+        // the cap), then fitted exactly: never a full-size premultiply,
+        // compare and upload per icon change for a 16 px cell.
         static SPixels sniPixels(const std::vector<uint8_t>& src, int w, int h, int cap) {
             const int K  = std::max(1, std::max(w, h) / std::max(1, cap * 2));
             const int OW = std::max(1, w / K), OH = std::max(1, h / K);
@@ -172,7 +170,7 @@ namespace NAwesome::Shell {
         }
 
         // An item's string as stored: a hostile item cannot make one
-        // unbounded (a 10 MB IconName was copied per directory per lookup)
+        // unbounded (a 10 MB IconName would be copied per directory per lookup)
         static std::string boundedProp(std::string s) {
             constexpr size_t MAX_PROP_BYTES = 1024;
             if (s.size() > MAX_PROP_BYTES)
@@ -180,21 +178,18 @@ namespace NAwesome::Shell {
             return s;
         }
 
-        // Name and pixmap are fetched SERIALLY and committed as ONE change.
-        // They arrive as separate replies, and applying each on its own gave
-        // every REAL icon flip (fcitx idle <-> unikey — one per IM toggle /
-        // input-context change) an intermediate frame: the new name rendered
-        // from the theme file, then the item's own pixmap — a visible
-        // double-blink on the tray per window action. One fetch is in flight
-        // per item: a NewIcon storm (fcitx fires one per input-context
-        // change) only marks the item for one more fetch when the current
-        // one lands, instead of a request chain per signal.
+        // Name and pixmap are fetched SERIALLY and committed as ONE change:
+        // applied as separate replies, every real icon flip (fcitx's, one
+        // per input-context change) would show an intermediate frame, a
+        // visible double-blink. One fetch is in flight per item: a NewIcon
+        // storm only marks the item for one more fetch when the current one
+        // lands, instead of a request chain per signal.
         static void fetchIcon(SP<SItem> it);
 
         // One icon set: its name, then its pixmap (SET: the attention set,
         // else the plain one). ATTN is the status the chain started under.
         // An attention set with neither (most apps implement no attention
-        // icon) shows the plain set: the cell went blank on NeedsAttention.
+        // icon) shows the plain set.
         static void fetchIconSet(SP<SItem> it, bool ATTN, bool SET, uint64_t REQUEST) {
             // the chain's end, whatever the outcome: run the one queued
             const auto done = [](const SP<SItem>& it) {
@@ -266,8 +261,8 @@ namespace NAwesome::Shell {
                     if (it->iconRequest != REQUEST)
                         return; // done started the queued fetch: it commits instead
                     // An empty/absent reply must CLEAR old pixels (fcitx's idle
-                    // state has no pixmap) — stale ones shadow the new IconName
-                    // in the rebuild and the icon sticks on the previous state.
+                    // state has no pixmap): stale ones would shadow the new
+                    // IconName in the rebuild.
                     if (name == it->iconName && px == it->pixels && pw == it->pw && ph == it->ph)
                         return;
                     it->iconName = name;
@@ -393,9 +388,8 @@ namespace NAwesome::Shell {
                 } catch (...) {}
             });
             // Every reply is change-detected: fcitx fires NewIcon on every input
-            // context change (= every window focus), and rebuilding textures +
-            // redrawing the bar for identical content made the bar flicker like
-            // it was reloading during any window action.
+            // context change (= every window focus), and rebuilding for
+            // identical content would flicker the bar.
             fetchThemePath(it, false);
             fetchMenuPath(it, nullptr);
             it->proxy->getPropertyAsync("ItemIsMenu").onInterface(SNI).uponReplyInvoke([it, REQUEST](std::optional<sdbus::Error> e, sdbus::Variant v) {
@@ -429,8 +423,8 @@ namespace NAwesome::Shell {
         // asynchronously at init: a per-item uponSignal is a synchronous
         // AddMatch round trip on the compositor thread (three per item, in
         // the RegisterStatusNotifierItem handler), and a stalled broker
-        // froze the compositor for sd-bus's timeout. Routed by the sender's
-        // unique name and the item's path.
+        // would freeze the compositor for sd-bus's timeout. Routed by the
+        // sender's unique name and the item's path.
         static void onItemSignal(sdbus::Message& m) {
             const char* SENDER = m.getSender();
             const char* PATH   = m.getPath();
@@ -681,8 +675,7 @@ namespace NAwesome::Shell {
                     // the hit spans the bar's height and half of each gap
                     // between icons; the outer ones stop at the tray's own
                     // edges, where the strip splits the gaps to its neighbours
-                    // evenly (reaching past them gave the tray 15 of the 20
-                    // px to the battery, and the last task's pixels)
+                    // evenly
                     const double HX0 = std::max(box.x, ICONBOX.x - SPACING / 2), HX1 = std::min(box.x + box.w, ICONBOX.x + ICON + SPACING / 2);
                     SHit         h;
                     h.box     = CBox{HX0, box.y, HX1 - HX0, P.h};
@@ -745,9 +738,8 @@ namespace NAwesome::Shell {
                 // no menu path yet: read it again (an app may export its menu
                 // after registering), then the menu or the item's own
                 // ContextMenu — for this click only: not after another click
-                // or with a menu open since (a second click opened twice, a
-                // slow reply closed the menu the user had moved on to), and
-                // not a second after it (sd-bus waits up to 25 s)
+                // or with a menu open since, and not a second after it (sd-bus
+                // waits up to 25 s)
                 Tray::post([IT, X, Y, AX = h.anchorX, MON = h.mon, CLICK, AT = std::chrono::steady_clock::now()]() {
                     if (!IT->active || !IT->proxy)
                         return;

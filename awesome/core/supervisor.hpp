@@ -1,12 +1,10 @@
-// awesome/core/supervisor.hpp — the one PLUGIN_INIT/PLUGIN_EXIT, the
-// module table, the input pipeline, and the state-listener registry.
+// The one PLUGIN_INIT/PLUGIN_EXIT, the module table, the input pipeline,
+// and the state-listener registry.
 //
-// Registration order is the input priority order (the old load-order
-// contract, now in code, unbreakable by a manifest edit): the shell's
-// strip and menus first, the notify surfaces second, the windows policy
-// last. Teardown is the exact reverse, and the only order the plugin has
-// ever been safe in: state listeners first (nothing firing mid-teardown
-// can re-queue a hop), then the hops, then the modules.
+// Registration order is the input priority order: shell (the strip and
+// menus), notify, windows, system. Teardown is the exact reverse, the only
+// safe order: state listeners first (nothing firing mid-teardown can
+// re-queue a hop), then the hops, then the modules.
 #pragma once
 
 #include "canvas.hpp"
@@ -116,9 +114,7 @@ namespace NAwesome {
         // could re-queue a hop that outlives the .so — crash class 6).
         // Every listener is wrapped in detail::ListenerGate: once the
         // COMPOSITOR begins shutting down (crash class 8), every emission
-        // that still reaches us is a no-op — warming the bar in that
-        // half-dead state SEGV'd when cleanup() cleared the window state
-        // before unloading (see compositorShuttingDown()).
+        // that still reaches us is a no-op.
         template <typename S, typename F>
         void listen(S& signal, F&& fn) {
             m_listeners.emplace_back(signal.listen(detail::ListenerGate<S>::make(std::forward<F>(fn))));
@@ -201,8 +197,6 @@ namespace NAwesome {
             CDesktopIndex::inst().stop(); // its helper and subscribers, after the modules
         }
 
-        // ---- the pipeline ----
-        //
         // One shape for every event class: the head gates on the lock and on
         // native input capture (resetting every module's partial state), then
         // the modules run in priority order until one consumes the event.
@@ -211,11 +205,10 @@ namespace NAwesome {
 
         // A module's swallow masks are per button, not per device: one
         // device's swallowed press could take another device's release of
-        // the same button. The compositor then kept the button held — the
-        // app saw it stuck, and the bar and cards ignored every press while
-        // the "native grab" lasted. So a release is never cancelled while a
-        // press of its button that reached the compositor is outstanding;
-        // a release with no press behind it is harmless there.
+        // the same button and leave the compositor holding it. So a release
+        // is never cancelled while a press of its button that reached the
+        // compositor is outstanding; a release with no press behind it is
+        // harmless there.
         void dispatchButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
             const bool UPSTREAM = info.cancelled;
             // the compositor holds nothing: no count can be live (a device
@@ -244,10 +237,9 @@ namespace NAwesome {
             if (--PASSED->second == 0)
                 m_passedPresses.erase(PASSED);
         }
-        // Every module hears a move, claimed or not: the cards under a
-        // pointer that slid onto the bar once never heard it leave (their ✕
-        // stayed up, their timeout stayed paused) because the bar's claim
-        // ended the dispatch.
+        // Every module hears a move, claimed or not: a claim that ended the
+        // dispatch would leave the cards under a pointer that slid onto the
+        // bar never hearing it leave.
         void dispatchMove(const Vector2D& pos, Event::SCallbackInfo& info) {
             if (info.cancelled)
                 return; // claimed before the plugin saw it
@@ -321,8 +313,8 @@ namespace NAwesome {
             if (!what)
                 return;
             const auto NOW = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-            // a scroll burst is one entry: a touchpad's frames flushed the
-            // whole ring, and the click being debugged with it
+            // a scroll burst is one entry: a touchpad's frames would flush
+            // the whole ring
             if (auto& LAST = m_trace[(m_traceHead + TRACE_N - 1) % TRACE_N];
                 LAST.what && std::string_view{what} == "axis" && std::string_view{LAST.what} == "axis" && LAST.a == a && std::string_view{LAST.by} == by) {
                 LAST.ms = (uint64_t)NOW;

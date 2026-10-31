@@ -1,4 +1,4 @@
-// awesome/system/wpctl.hpp — the wpctl readback, pure and testable.
+// The wpctl readback, pure and testable.
 //
 // `wpctl get-volume @DEFAULT_AUDIO_SINK@` prints
 //   Volume: 0.85 [MUTED]

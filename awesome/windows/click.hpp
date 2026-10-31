@@ -1,4 +1,4 @@
-// awesome/windows/click.hpp — awesome's click and focus-raise policy.
+// Awesome's click and focus-raise policy.
 //
 // 1. Click-to-raise: a plain left click brings the clicked window to the
 //    top — over a maximized window too; clicking a fullscreen/maximized
@@ -21,8 +21,8 @@
 //    viewer's backdrop) is swallowed instead of focusing and raising
 //    whatever sat beneath.
 //
-// The pipeline puts this AFTER the max swallow (the old load-order edge):
-// a cancelled press never raises.
+// The pipeline puts this AFTER the max swallow: a cancelled press never
+// raises.
 #pragma once
 
 #include "state.hpp"
@@ -50,12 +50,11 @@ namespace NAwesome::Windows {
                 // floaters back behind it. Clear ONLY the allowed-over flag
                 // (under a fullscreen window the compositor shows floaters
                 // by flag, not stack position) — never lower(): the re-stack
-                // outlives a transient fullscreen viewer, and the chat
-                // window it was opened from ended buried under every
-                // maximized window on the workspace (the flag appears
-                // mid-viewer through the compositor's pointer-focus raise on
-                // press; reproduced live). Pinned windows stay above
-                // fullscreen by design, like awesome's ontop.
+                // would outlive a transient fullscreen viewer and bury the
+                // window it was opened from under every maximized window on
+                // the workspace (the flag appears mid-viewer through the
+                // compositor's pointer-focus raise on press). Pinned windows
+                // stay above fullscreen by design, like awesome's ontop.
                 for (const auto& OW : Desktop::windowState()->windows()) {
                     if (OW == w || !OW->mapped() || OW->m_workspace != w->m_workspace || !OW->isAllowedOverFullscreen() || isPinned(OW))
                         continue;
@@ -305,11 +304,7 @@ namespace NAwesome::Windows {
         }
 
         // focus_next/focus_prev — awesome's Mod+J/K (focus.byidx): cycle the
-        // workspace's windows in ARRIVAL order, wrapping. The native cycle
-        // walks the z-order list, which raise-on-focus rotates every press:
-        // forward still visits everything (the wrap always lands on the
-        // lowest window), but backward reads the second-from-top and bounces
-        // between the two newest raises.
+        // workspace's windows in ARRIVAL order (core/arrival.hpp), wrapping.
         inline void focusByIdx(bool next) {
             const auto MON = Desktop::focusState()->monitor();
             const auto WS  = shownWorkspace(MON);

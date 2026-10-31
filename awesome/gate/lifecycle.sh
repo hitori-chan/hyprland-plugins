@@ -1,12 +1,12 @@
-# awesome/gate/lifecycle.sh — the monolith's lifecycle battery: the corpse
-# guard (click/focus policy), the fullscreen tuck, the config reload, log
-# hygiene, and the bounded teardown with hung helpers.
+# The monolith's lifecycle battery: the corpse guard (click/focus policy),
+# the fullscreen tuck, the config reload, log hygiene, and the bounded
+# teardown with hung helpers.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # ---- corpse guard (the click policy) ------------------------------------
 # the tail of a fast double-click on a click-to-close window (Telegram's
 # image viewer backdrop) lands after the unmap: it must be swallowed, not
-# focus-and-raise whatever sat beneath (it flipped the live stack).
+# focus-and-raise whatever sat beneath.
 dsp "hl.dsp.exec_cmd('foot -a corpseA')"; settled corpseA
 # The placement store intentionally remembers the same class geometry. Move
 # these two viewers apart after spawn so the dying viewer always has an
@@ -46,7 +46,7 @@ until_is 5 0 pyc "sum(1 for c in cs if c['class'] in ('corpseA','corpseB'))"
 # clicking a fullscreen window tucks a floater flagged above it (the
 # compositor's pointer-focus raise sets that flag mid-viewer) back behind —
 # by FLAG ONLY: its stack position must survive the viewer, or it comes
-# back buried under every maximized window (reproduced live).
+# back buried under every maximized window.
 dsp "hl.dsp.exec_cmd('foot -a tuckmax')"; settled tuckmax
 dsp "hl.plugin.awesome.maximize()"; settled tuckmax
 dsp "hl.dsp.exec_cmd('foot -a tuckfloat')"; settled tuckfloat

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# awesome/gate/profile.py TRACE [N] — where a gate run's wall time went.
+# profile.py TRACE [N] — where a gate run's wall time went.
 #
 # gate.sh -p traces the batteries (xtrace, a timestamp and the call stack
 # per line, gate.sh's PS4) into TRACE. A main-shell line owns the time

@@ -1,11 +1,9 @@
-// awesome/core/box.hpp — the plugin's own geometry type. The fork's CBox
-// conversion happens at the module edges; core and the headless tests are
-// fork-header-free.
+// The plugin's own geometry type. The fork's CBox conversion happens at the
+// module edges; core and the headless tests are fork-header-free.
 //
-// Admission: coordinates and sizes
-// are integers strictly inside llround's representable domain (hostile
-// state must not invoke undefined behavior on the write path), sizes
-// non-negative.
+// Admission: coordinates and sizes are integers strictly inside llround's
+// representable domain (hostile state must not invoke undefined behavior on
+// the write path), sizes non-negative.
 #pragma once
 
 #include <cstdint>

@@ -1,6 +1,6 @@
-// awesome/windows.hpp — the windows module: the window-state machine
-// (normal / minimized / maximized), the focus policy, spawn placement,
-// edge snapping, and the snap indicator.
+// The windows module: the window-state machine (normal / minimized /
+// maximized), the focus policy, spawn placement, edge snapping, the snap
+// indicator.
 #pragma once
 
 #include "core/supervisor.hpp"

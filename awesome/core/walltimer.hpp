@@ -1,4 +1,4 @@
-// awesome/core/walltimer.hpp — a deadline on the WALL clock.
+// A deadline on the WALL clock.
 //
 // The event loop's timers are CLOCK_MONOTONIC, which stands still through
 // a suspend: a deadline that is a time of day (the minute the clock shows,

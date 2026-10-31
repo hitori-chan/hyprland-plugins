@@ -1,14 +1,13 @@
-// awesome/windows/tile.hpp — a window the plugin set into a slot of the
-// work area (a snap half or quarter, or maximized) is a flush tile: square
-// corners, no drop shadow and no border, its surface the whole slot.
-// Rounded, two snapped halves left wallpaper notches at the screen's
-// corners and at both ends of their seam, and the focused one's drop fell
-// across its neighbour; a border of any colour drew a frame round every
-// tile and a double line down every seam (see-through, the wallpaper's;
-// opaque, a grid no float wears). The look is set at the layout's override
-// priority, so the user's window rules and setprop still win, and it
-// leaves with the slot: a drag lifts a snapped window out, unmaximize
-// restores it.
+// A window the plugin set into a slot of the work area (a snap half or
+// quarter, or maximized) is a flush tile: square corners, no drop shadow
+// and no border, its surface the whole slot. Rounded, two snapped halves
+// would leave wallpaper notches at the screen's corners and at both ends
+// of their seam, and the focused one's drop would fall across its
+// neighbour; a border of any colour would draw a frame round every tile
+// and a double line down every seam. The look is set at the layout's
+// override priority, so the user's window rules and setprop still win,
+// and it leaves with the slot: a drag lifts a snapped window out,
+// unmaximize restores it.
 #pragma once
 
 #include "core/queries.hpp"

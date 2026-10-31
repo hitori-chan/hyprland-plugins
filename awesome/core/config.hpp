@@ -1,6 +1,6 @@
-// awesome/core/config.hpp — the fork-facing config registry: the schema
-// table registered with the compositor's config system, the live values,
-// and the clamped typed getters modules read through.
+// The fork-facing config registry: the schema table registered with the
+// compositor's config system, the live values, and the clamped typed
+// getters modules read through.
 //
 // Modules never touch the config system directly: cfg().getI("...") et al.
 // The key literal is checked when the call compiles (CfgKey, schema.hpp),
@@ -36,10 +36,8 @@ namespace NAwesome {
         double   getD(CfgKey key) const;
         uint32_t getColor(CfgKey key) const;
         // std::string BY VALUE: value() returns a temporary string, and a
-        // string_view into it would dangle the instant the return completes
-        // (callers then read freed memory — the 4 KiB launcher and the
-        // sound-command spawns were the first casualties). Bounded
-        // (MAX_STRING_VALUE_BYTES).
+        // string_view into it would dangle when the return completes.
+        // Bounded (MAX_STRING_VALUE_BYTES).
         std::string getS(CfgKey key) const;
 
       private:

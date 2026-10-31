@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# awesome/gate/gate.sh — the awesome plugin's integration gate.
+# The awesome plugin's integration gate.
 #
 # The plugin's behavioral contract: the scenario batteries run in this
 # shell and share one validated nested target and fixture state.

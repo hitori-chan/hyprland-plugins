@@ -1,8 +1,8 @@
-# awesome/gate/shell.sh — the shell module's behavior battery: the strip's
-# presence and state (tags, tasks, the bell's dot, the clock), the tray
-# lifecycle against the bar, and the menubar/launcher. Helpers:
-# capture_nested, vp, vk, chk, hq, ws, dsp from the harness; bar_bright,
-# task_band, accent_px, dot_px, tag_cx, tag_span from lib.sh.
+# The shell module's behavior battery: the strip's presence and state
+# (tags, tasks, the bell's dot, the clock), the tray lifecycle against the
+# bar, and the menubar/launcher. Helpers: capture_nested, vp, vk, chk, hq,
+# ws, dsp from the harness; bar_bright, task_band, accent_px, dot_px,
+# tag_cx, tag_span from lib.sh.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # ---- the strip -------------------------------------------------------------
@@ -22,8 +22,8 @@ echo "shell: strip bright=$(bar_bright "$STATE/strip-base.png") bell=$(bell_x "$
 chk "shell: the strip is on screen (clock, bell and viewed tag draw)" strip_drawn "$STATE/strip-base.png"
 chk "shell: no dot on the bell with nothing to see" test "$(dot_px "$STATE/strip-base.png")" = 0
 # the ends meet the screen's edges as awesome's wibar did: tag 一's flat
-# cell from x 0 (an 8 px inset once stood before it), the clock's ink
-# 8 px off the right; the right slot's widgets 15 apart
+# cell from x 0, the clock's ink 8 px off the right; the right slot's
+# widgets 15 apart
 ink_right() { # ink_right <frame> — the strip's rightmost lit column
 	python3 - "$1" <<'PY'
 import sys
@@ -284,12 +284,9 @@ ICON="$(icon_box "$STATE/tray-attn.png")"
 chk "tray: an attention item without an attention icon keeps its own" bash -c "[[ -n '$ICON' && '${ICON:0:1}' != '0' ]]"
 
 # ---- the strip's cells: every widget owns its own ---------------------------
-# A widget with nothing to click still owns its cell (shell/strip.cpp): the
-# battery's clicks once went to the tray item beside it, and the clock's
-# opened the center. With a task on the strip, the cells tile it from edge
-# to edge — none overlapping (the tray's outer icons once reached into the
-# last task), no dead pixel between them (once 7 px between the tags and
-# the tasks). `cells` is the gate build's map.
+# A widget with nothing to click still owns its cell (shell/strip.cpp).
+# With a task on the strip, the cells tile it from edge to edge: none
+# overlapping, no dead pixel between them. `cells` is the gate build's map.
 dsp "hl.dsp.exec_cmd('foot -a cellsprobe --window-size-pixels=400x200')"; settled cellsprobe
 CELLS="$(hq awesome cells)"
 echo "cells: $(tr '\n' ';' <<<"$CELLS")" >&2
@@ -403,13 +400,11 @@ chk "bell: ...let go once the menu shuts" shot_until 3 "$STATE/bell-door-off.png
 
 # ---- the strip's glass: live over a terminal taking typing -----------------
 # The glass live-blurs what lies under it: the prompt's row right below
-# reaches its blur, and each keystroke moves the strip on. A partial
-# repaint of it shimmered: the repainted part's blur sampled the rest of
-# the strip as each swapchain buffer kept it (its own old glass), and the
-# presented frames alternated between two strips (core/canvas.hpp,
-# wholeGlass). Only the private host's output shows the presented
-# buffers; at rest it must show the same strip as the nested's own capture
-# (else the host's view moved and the check would measure nothing).
+# reaches its blur, and each keystroke moves the strip on. A partial repaint
+# would shimmer (core/canvas.hpp, wholeGlass): the presented frames would
+# alternate between two strips. Only the private host's output shows the
+# presented buffers; at rest it must show the same strip as the nested's own
+# capture (else the host's view moved and the check would measure nothing).
 dsp "hl.dsp.exec_cmd('foot -a glassprobe --window-size-pixels=400x200')"; settled glassprobe
 dsp "hl.plugin.awesome.maximize()"; settled glassprobe
 printf 'move %d %d\nsleep 60\n' $((MON_W / 2)) $((MON_H / 2)) | vp

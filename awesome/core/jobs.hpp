@@ -1,7 +1,7 @@
-// awesome/core/jobs.hpp — the plugin's helper processes: bounded per
-// class, watched by pidfd, killed past a deadline. Every helper starts
-// through Proc::spawn (core/proc.hpp); the launcher's Exec= goes through
-// the compositor's own executor instead (exec rules, activation tokens).
+// The plugin's helper processes: bounded per class, watched by pidfd,
+// killed past a deadline. Every helper starts through Proc::spawn
+// (core/proc.hpp); the launcher's Exec= goes through the compositor's own
+// executor instead (exec rules, activation tokens).
 //
 // A child per pidfd, handled by an event-loop source when it dies: no
 // blocking, no zombies, and teardown pulls every source before the loop

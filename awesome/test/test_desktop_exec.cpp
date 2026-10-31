@@ -1,7 +1,6 @@
-// awesome/test/test_desktop_exec.cpp — the freedesktop Exec= grammar:
-// unescaping, the quote/escape tokenizer, and field-code expansion. This
-// builds the argv of spawned processes, so the grammar's rejection paths
-// are as important as its happy paths.
+// The freedesktop Exec= grammar: unescaping, the quote/escape tokenizer,
+// and field-code expansion. This builds the argv of spawned processes, so
+// the grammar's rejection paths are as important as its happy paths.
 #include "../core/desktop_exec.hpp"
 
 #include "harness.hpp"

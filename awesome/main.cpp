@@ -1,10 +1,6 @@
-// awesome/main.cpp — the one plugin entrypoint.
-//
-// One .so, one version, one deploy unit. The modules register themselves
-// into the supervisor in input-priority order (the old hyprpm load-order
-// contract, now in code): shell, notify, windows, system. The hash check
-// is the fork's own cross-build guard; the layout matching is the real
-// protection, this is the fast, loud half.
+// The plugin entrypoint. Modules register in input-priority order (shell,
+// notify, windows, system), the order the pipeline dispatches in. The hash
+// check is the fork's fast, loud cross-build guard.
 #include "core/config.hpp"
 #include "core/glyph.hpp"
 #include "core/supervisor.hpp"

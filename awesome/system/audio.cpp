@@ -1,5 +1,5 @@
-// awesome/system/audio.cpp — volume and the mic, and the module's action
-// queue (the brightness steps go on to light.cpp).
+// Volume and the mic, and the module's action queue (the brightness steps
+// go on to light.cpp).
 //
 // The cards post straight into the notify model — ids 9993/9995, value
 // hints and replace-in-place semantics are the contract; the OSD band
@@ -13,7 +13,7 @@
 
 #include "system.hpp"
 
-#include "notify/model.hpp" // NAwesome::Notify::Notify::Model::postCard (the in-process seam)
+#include "notify/model.hpp" // Notify::Model::postCard (the in-process seam)
 
 #include "core/busclient.hpp"
 #include "core/hop.hpp"
@@ -36,8 +36,8 @@
 
 namespace NAwesome::System {
 
-    // The OSD pin ids (the old scripts' contract; the model's OSD band
-    // 9990-9999 gives them replace-in-place, no history, no grouping).
+    // The OSD pin ids (the model's OSD band 9990-9999 gives them
+    // replace-in-place, no history, no grouping).
     inline constexpr uint32_t ID_VOLUME = 9993;
     inline constexpr uint32_t ID_MIC    = 9995;
 
@@ -54,13 +54,13 @@ namespace NAwesome::System {
     }
 
     // ---- volume / mic (wpctl, one set in flight per device) ----
-
     // wpctl reads the current value and writes the new one inside its own
     // process: two sets at once read the same value and write the same
-    // result (a held key lost steps, two mute toggles collapsed into one,
-    // up/down raced). So each device runs ONE set at a time; presses while
-    // it runs ACCUMULATE — volume steps sum into the next set ("15%+"),
-    // toggles fold to their parity — and every finished set is read back,
+    // result (a held key would lose steps, two mute toggles collapse into
+    // one). So each device runs ONE set at a time; presses while it runs
+    // ACCUMULATE — volume steps sum into the next set ("15%+"), toggles fold
+    // to their parity — and every finished set is read back, the readback
+    // being the card's authoritative state.
     // the readback being the card's authoritative state.
     struct SDevice {
         const char* node;
@@ -211,9 +211,9 @@ namespace NAwesome::System {
     static bool                headsetAgain = false;
     // PipeWire applies an A2DP headset's announced volume 200 ms after the
     // last announcement (TRANSPORT_VOLUME_TIMEOUT_MSEC, spa/plugins/bluez5,
-    // restarted by each one); a read inside it got the level before, and
-    // every capsule a swipe showed was the swipe before it. So the read
-    // waits as PipeWire does, past its wait, from the last announcement
+    // restarted by each one); a read inside it gets the level before. So
+    // the read waits as PipeWire does, past its wait, from the last
+    // announcement
     static constexpr auto HEADSET_SETTLE = std::chrono::milliseconds(250);
 
     static void headsetMoved() {

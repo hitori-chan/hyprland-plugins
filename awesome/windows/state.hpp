@@ -1,8 +1,8 @@
-// awesome/windows/state.hpp — awesome's client.minimized, which the
-// compositor has no flag for. The window-state machine: normal /
-// minimized (with the held fullscreen/maximize mode), plus the
-// self-minimize request routing (X11 WM_CHANGE_STATE, the CSD xdg
-// set_minimize button, which Hyprland's onUpdateState ignores).
+// Awesome's client.minimized, which the compositor has no flag for. The
+// window-state machine: normal / minimized (with the held
+// fullscreen/maximize mode), plus the self-minimize request routing (X11
+// WM_CHANGE_STATE, the CSD xdg set_minimize button, which Hyprland's
+// onUpdateState ignores).
 //
 // The bar keeps only the VIEWS and the click routing; the STATE lives
 // here, in the windows module, next to the maximize state it composes
@@ -31,8 +31,7 @@ namespace NAwesome::Windows {
 
     // Every geometry the module sets goes through here: a target can outlive
     // its layout space (a swallowed window keeps its target, its slot is
-    // removed), and the layout dereferences the space unchecked — a reflow
-    // of such a window segfaulted the compositor.
+    // removed), and the layout dereferences the space unchecked.
     inline bool setGeom(const PHLWINDOW& w, const CBox& box) {
         const auto T = w ? w->windowTarget() : nullptr;
         if (!T || !T->space() || !g_layoutManager)
@@ -68,7 +67,7 @@ namespace NAwesome::Windows::Tasklist {
     // A tiled window keeps its space as a GHOST while minimized (in the
     // space, not laid out — the compositor's own grouped-member state): a
     // target with no space at all is dereferenced unchecked by the layout's
-    // resize (a resize dispatch naming a minimized window crashed it).
+    // resize.
     // `fs` is the compositor fullscreen/maximize mode held at minimize: a
     // hidden window can't keep the workspace's one FS slot without stranding
     // it, so the mode is dropped before hiding and re-entered on restore —
@@ -96,14 +95,13 @@ namespace NAwesome::Windows::Tasklist {
     // path and lands right regardless of where the real cursor sits (a
     // click leaves it on the bar) — but it focuses what lies on TOP there,
     // so it runs only when that is the successor: a smaller window over
-    // its center would take the focus AND the focus history's head (the
-    // next minimize then went back to it). The successor is focused
-    // unraised (awesome's autofocus activates with raise=false): a
-    // desktop-state-change focus, which the keyboard-focus raise
-    // (click.hpp) leaves alone. The successor is awesome's: the most recently
-    // focused task here (awful.focus.history), else the topmost (m_windows
-    // is bottom-first); hover focus doesn't raise, so the topmost is often
-    // not the last used.
+    // its center would take the focus AND the focus history's head. The
+    // successor is focused unraised (awesome's autofocus activates with
+    // raise=false): a desktop-state-change focus, which the keyboard-focus
+    // raise (click.hpp) leaves alone. The successor is awesome's: the most
+    // recently focused task here (awful.focus.history), else the topmost
+    // (m_windows is bottom-first); hover focus doesn't raise, so the topmost
+    // is often not the last used.
     inline void focusNextAfterMinimize(const PHLWINDOW& gone, const PHLWORKSPACE& ws) {
         if (!ws || !g_pInputManager)
             return;
@@ -206,9 +204,8 @@ namespace NAwesome::Windows::Tasklist {
             w->layoutTarget()->setSpaceGhost(WS->space());
         w->setHidden(true); // unrendered, xdg-suspended, no frame callbacks
         // an X11 client is told (_NET_WM_STATE_HIDDEN): the XWM resolves a
-        // client's "toggle hidden" against this, and a minimized Wine or
-        // Java window toggling itself back was minimized again (a no-op
-        // for Wayland, which has no minimized state to send)
+        // client's "toggle hidden" against this (a no-op for Wayland, which
+        // has no minimized state to send)
         w->backend().setMinimized(true);
         // setHidden issues NO damage. A tiled window's ghosting reflow
         // repaints the vacated area for free, but a floating window leaves
@@ -239,16 +236,13 @@ namespace NAwesome::Windows::Tasklist {
     }
 
     // Raise, then focus with the window's REAL surface — not
-    // Actions::focus(): that goes through FocusState with surface=nullptr,
-    // and its already-focused guard compares (window, surface) ==
-    // (m_focusWindow, m_focusSurface). When a popup/layer that held the
-    // keyboard dies while the pointer sits on the bar (moves swallowed =
-    // FFM can't heal), m_focusSurface is left empty with m_focusWindow
-    // still set — nullptr == empty matches, the guard returns before the
-    // raise AND before keyboard focus, and the click looks dead until some
-    // other window gets focused. With the real surface the guard can never
-    // match a half-focused window, and a focused-but-obscured one still
-    // raises.
+    // Actions::focus(): its already-focused guard compares (window,
+    // surface) == (m_focusWindow, m_focusSurface) with surface=nullptr, and
+    // when a popup/layer that held the keyboard dies while the pointer sits
+    // on the bar, m_focusSurface is left empty with m_focusWindow still set:
+    // the guard would match and skip the raise AND the keyboard focus. With
+    // the real surface it can never match a half-focused window, and a
+    // focused-but-obscured one still raises.
     // by value: a caller's reference into the compositor's window list would
     // see raise() rotate another window into its slot before the focus
     inline void raiseAndFocus(PHLWINDOW w) {
@@ -289,8 +283,8 @@ namespace NAwesome::Windows::Tasklist {
             g_layoutManager->newTarget(w->layoutTarget(), w->m_workspace->space());
         else if (const auto NOW = w->m_monitor.lock(); NOW && NOW != then.lock() && w->isFloating() && w->windowTarget()) {
             // the compositor moves a workspace's floating windows with it
-            // only while they are shown: a hidden one kept the old monitor's
-            // coordinates. Carry it along, kept inside the workarea.
+            // only while they are shown: a hidden one keeps the old
+            // monitor's coordinates. Carry it along, kept inside the workarea.
             auto       box  = w->windowTarget()->position();
             const auto THEN = then.lock();
             if (THEN)
@@ -375,8 +369,8 @@ namespace NAwesome::Windows::Tasklist {
 
     // An X11 window unmapped and mapped again keeps its window object —
     // and the hidden flag its minimize set, which the map never clears: an
-    // app hiding to its tray and shown from there remapped invisible. A map
-    // is a fresh window: never minimized.
+    // app hiding to its tray and shown from there would remap invisible. A
+    // map is a fresh window: never minimized.
     inline void onMap(const PHLWINDOW& w) {
         auto& S = minStack();
         const auto IT = std::ranges::find_if(S, [&](const SMinimized& m) { return m.key == w.get(); });

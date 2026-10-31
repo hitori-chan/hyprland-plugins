@@ -1,7 +1,7 @@
-// awesome/core/notch.hpp — a display notch: the camera housing cut into the
-// top edge of a laptop panel (Apple silicon laptops booted with
-// appledrm.show_notch=1, whose mode then includes the band on either side
-// of the notch, the 16:10 picture below it).
+// A display notch: the camera housing cut into the top edge of a laptop
+// panel (Apple silicon laptops booted with appledrm.show_notch=1, whose mode
+// then includes the band on either side of the notch, the 16:10 picture
+// below it).
 //
 // The firmware names the band's height: the device tree's
 // apple,notch-height (a big-endian u32, panel px) on the enabled display

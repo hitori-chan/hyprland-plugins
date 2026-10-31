@@ -1,4 +1,3 @@
-// awesome/core/raster.cpp — see raster.hpp.
 #include "raster.hpp"
 
 #include <hyprland/src/Compositor.hpp>

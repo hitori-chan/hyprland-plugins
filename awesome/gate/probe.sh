@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# awesome/gate/probe.sh — isolated one-off probes against a live nested.
+# Isolated one-off probes against a live nested.
 #
 # Runs the gate's full preflight (build, launch, retarget — the SAME
 # machinery the batteries get, so a probe result is gate-valid), then
@@ -24,10 +24,7 @@ GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export GATE_DIR
 export HYPR_PLUGIN_DIR="$REPO"
 HARNESS="${HYPR_HARNESS:-$HOME/.local/share/hypr-nested}"
-# One run at a time: every entry point shares $HARNESS (the nested's
-# signature, the host, the system bus) and kills every nested it finds —
-# a second run would tear the first one's nested down mid-battery. The
-# lock fd is closed for the long-lived children (the nested, the host).
+# One run at a time (see gate.sh).
 if [[ -z "${HYPR_HARNESS_LOCKED:-}" ]]; then
 	mkdir -p "$HARNESS"
 	exec 9>"$HARNESS/.lock"
@@ -78,8 +75,8 @@ echo "== probe: $(basename "$PROBE") =="
 # shellcheck source=awesome/gate/preflight.sh
 source "$GATE_DIR/preflight.sh"
 # lib.sh AFTER the preflight: its geometry derives from the monitor size
-# the launch measured (sourced before, every coordinate was computed
-# from MON_W=0 and landed off-screen)
+# the launch measured (sourced before, every coordinate would derive from
+# MON_W=0)
 # shellcheck source=awesome/gate/lib.sh
 source "$GATE_DIR/lib.sh"
 source "$PROBE"

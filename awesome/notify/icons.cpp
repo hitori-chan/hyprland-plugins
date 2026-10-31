@@ -1,5 +1,5 @@
-// awesome/notify/icons.cpp — notification images: content avatars and identity
-// icons via hyprgraphics, raw image-data pixmaps
+// Notification images: content avatars and identity icons via
+// hyprgraphics, raw image-data pixmaps
 
 #include "ui.hpp"
 
@@ -23,10 +23,10 @@ namespace NAwesome::Notify {
     //
     // One roll per card (bus keeps the pick across in-place replaces). The
     // listing comes from the core's file-index helper, a process: walked on
-    // this thread, a pictures folder cost tens of ms of the warm, seconds
-    // cold, and a hung mount held the loop. Until it lands an iconless card
-    // wears the generic mark, and the warm the listing triggers re-rolls it.
-    // Scanned once per config life (a reload rescans).
+    // this thread, a pictures folder costs tens of ms of the warm (seconds
+    // cold), and a hung mount would hold the loop. Until it lands an
+    // iconless card wears the generic mark, and the warm the listing
+    // triggers re-rolls it. Scanned once per config life (a reload rescans).
 
     static NAwesome::CAsyncFileIndex     fallbackIndex;
     static SP<CEventLoopTimer>           fallbackPoll;
@@ -97,15 +97,14 @@ namespace NAwesome::Notify {
         return fallbackFiles[std::uniform_int_distribution<size_t>{0, fallbackFiles.size() - 1}(rng)];
     }
 
-    // ---- async decode + the desktop-entry index (F/F2) ----
+    // ---- async decode + the desktop-entry index ----
     //
-    // A file icon's decode used to happen on the compositor thread, inside
-    // the warm pass: one 4K app icon stalled every frame. The decode now
-    // rides the compositor's own async resource gatherer (one shared
-    // worker); the warm pass only scales an already-decoded bounded result
-    // and uploads it. A card whose icon is still decoding shows its fallback
-    // face (or the generic mark) until the 16 ms poll sees the resource
-    // ready and re-warms.
+    // A file icon decodes on the compositor's own async resource gatherer
+    // (one shared worker), never in the warm pass (one 4K app icon would
+    // stall every frame); the warm pass only scales an already-decoded
+    // bounded result and uploads it. A card whose icon is still decoding
+    // shows its fallback face (or the generic mark) until the 16 ms poll
+    // sees the resource ready and re-warms.
     //
     // The desktop-entry index is the same idea for the Icon= lookup: a
     // bounded enumeration of every $XDG_DATA_DIRS/applications *.desktop
@@ -177,14 +176,10 @@ namespace NAwesome::Notify {
         return std::chrono::steady_clock::now() - lastLargeScale >= SCALE_WINDOW;
     }
 
-    // one face per (identity, name, font, size, bg): the facepile never
-    // shows a blank square for a faceless sender. The cache is an LRU, not a
-    // size cap: a busy group outgrows it in DISTINCT senders, and evicting
-    // an arbitrary entry (unordered_map's begin()) dropped the faces the
-    // senders cycled back into a visible window — cairo + pango + a GL
-    // upload per re-request, the stall the async decode redesign removed.
-    // The working set is the senders the facepiles keep re-asking for, which
-    // LRU keeps hot.
+    // The initials faces' cache is an LRU, not a size cap: a busy group
+    // outgrows it in DISTINCT senders, and evicting an arbitrary entry would
+    // drop the faces the senders cycle back into a visible window (cairo +
+    // pango + a GL upload per re-request).
     static std::list<std::string> avatarLru; // most recently used at the back
     static std::unordered_map<std::string, std::pair<SP<ITexture>, std::list<std::string>::iterator>> generatedAvatars;
     static constexpr size_t       MAX_GENERATED_AVATARS = 128;
@@ -236,8 +231,7 @@ namespace NAwesome::Notify {
     // A finished decode no card asked for during a full warm is an orphan:
     // its card was replaced (notify-send -r, a player's next track), dismissed
     // or re-keyed while the decode ran, and nothing will ever ask again.
-    // Without this sweep each one held a slot for good, and at the cap every
-    // new file icon stayed on the fallback until reload.
+    // Without this sweep each one would hold a slot for good.
     void decodeWarmBegin() {
         for (auto& job : decodeJobs)
             job.wanted = false;
@@ -390,7 +384,7 @@ namespace NAwesome::Notify {
     // than the other, as a capture or a photo is (wide or portrait). A
     // square is a face or an icon at any size: Firefox posts a page's icon
     // at its own size (a 512 px app icon, a contact's avatar), and as a
-    // hero it was cut into a card-wide strip of its middle.
+    // hero it would be cut into a card-wide strip of its middle.
     static bool heroWorthy(double sw, double sh, int heroWPx) {
         return heroWPx > 0 && sw >= 256 && sh >= 256 && sw * 2 >= heroWPx && std::max(sw, sh) >= 1.2 * std::min(sw, sh);
     }
@@ -423,9 +417,8 @@ namespace NAwesome::Notify {
     // cropped to what it draws and covering the disc (a round icon meets
     // the ring edge to edge, nothing dark between them), a symbolic one in
     // the graphite ink, centred on the white. Every edge lies over white:
-    // the GPU's three layers (white, a graphite ground, the icon clipped)
-    // each antialiased their own circle, and the ground showed through as
-    // a dark fringe and round an icon's transparent margin.
+    // three GPU layers (white, a graphite ground, the icon clipped) would
+    // each antialias their own circle and fringe dark.
     static SPixels composeBadge(const Raster::SView& src, int d, bool symbolic) {
         const int RING = badgeRingPx(d), IN = d - 2 * RING;
         SPixels   mark;
@@ -502,8 +495,7 @@ namespace NAwesome::Notify {
 
     // The freedesktop symbolic convention, shared with the shell's loadIcon:
     // a pure-shape mark the toolkit repaints with the widget's foreground.
-    // Adwaita bakes them near-black, so on a dark card the brightness OSD
-    // icon was invisible until fileTex repaints it.
+    // Adwaita bakes them near-black: on a dark card fileTex repaints them.
     static bool isSymbolicIconPath(const std::string& path) {
         return NAwesome::isSvgIconPath(path) && (path.find("-symbolic") != std::string::npos || path.find("/symbolic/") != std::string::npos);
     }
@@ -642,8 +634,7 @@ namespace NAwesome::Notify {
     // the deterministic generic mark an iconless card wears (identity empty
     // AND the fallback face dir empty): the theme's application-default-icon
     // when it exists, else an apps-grid glyph in the theme ink — no card is
-    // ever faceless. One per (size, ink, plate), shared: every iconless card
-    // built its own, a theme lookup, an SVG raster and an upload each. A
+    // ever faceless. One per (size, ink, plate), shared across cards. A
     // reload drops them (the theme may have changed).
     static SP<ITexture> genericMarkNow(int px);
     static SP<ITexture> genericMark(int px) {
@@ -723,7 +714,7 @@ namespace NAwesome::Notify {
         // size it appears (lead avatar, group header). An iconless card rolls a
         // face from fallback_icon_dir so a sender is never faceless; the roll
         // is kept in fallbackPick across in-place replaces. heroWPx 0: an
-        // identity is icon-box only — a wide waifu never goes hero.
+        // identity is icon-box only — a wide one never goes hero.
         if (!n.identity.empty()) {
             n.fallbackPick.clear();
             // a symbolic identity bakes colFg into its pixels (fileTex): the
@@ -864,8 +855,8 @@ namespace NAwesome::Notify {
         }
         if (!n.imageSettled) {
             // a vector has no size of its own: rastered at the hero width it
-            // always measured hero-worthy, and an icon (a theme's SVG named
-            // as the image) became a card-wide strip cut from its middle
+            // would always measure hero-worthy, and a theme's SVG named as
+            // the image would turn into a card-wide strip
             const auto TEX = fileTex(n.image, iconPx, NAwesome::isSvgIconPath(n.image) ? 0 : heroWPx, heroHCapPx, false);
             if (TEX.settled) {
                 n.iconTex      = TEX.texture;

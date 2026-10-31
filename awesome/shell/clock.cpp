@@ -1,5 +1,5 @@
-// awesome/shell/clock.cpp — awesome's textclock: the state (one string) and its
-// widget. A click does nothing: the bell is the center's one door.
+// Awesome's textclock: the state (one string) and its widget. A click does
+// nothing: the bell is the center's one door.
 
 #include "shell/shell.hpp"
 
@@ -12,8 +12,8 @@ namespace NAwesome::Shell {
 
     static std::string clockText;
     // the user's LC_TIME: the compositor never calls setlocale, so a plain
-    // strftime spoke the C locale's English (awesome's os.date speaks the
-    // session's)
+    // strftime would speak the C locale's English (awesome's os.date speaks
+    // the session's)
     static locale_t    timeLocale      = (locale_t)0;
     static bool        timeLocaleTried = false;
 

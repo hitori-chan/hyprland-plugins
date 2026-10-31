@@ -1,4 +1,3 @@
-// awesome/core/desktopindex.cpp — see desktopindex.hpp.
 #include "desktopindex.hpp"
 #include "desktop_exec.hpp"
 
@@ -15,8 +14,8 @@ namespace NAwesome {
         constexpr size_t MAX_DESKTOP_FILES   = 4096;
         constexpr size_t MAX_DESKTOP_VISITED = 65536;
         // files folded per poll: one is tens of microseconds (a group with
-        // every translation is a thousand lines), and 8 per 16 ms tick
-        // stretched a full scan over seconds of fallback icons
+        // every translation is a thousand lines); fewer stretch a full scan
+        // over seconds of fallback icons
         constexpr size_t FILES_PER_POLL = 32;
         // a hung mount in XDG_DATA_DIRS stalls the helper, not the loop; the
         // scan then gives up and keeps what it found instead of polling on
@@ -192,9 +191,9 @@ namespace NAwesome {
     // The file's [Desktop Entry] group (DesktopExec::parseEntry). Its Icon=
     // is keyed by the desktop id, the file's basename AND its
     // StartupWMClass: a window's class rarely equals its desktop-file name
-    // (ente's class is "ente", its file ente-desktop.desktop; qBittorrent's
-    // is "qbittorrent" under org.qbittorrent.qBittorrent.desktop). The first
-    // file wins an id and a key (the dirs are walked in precedence order).
+    // (qBittorrent's is "qbittorrent" under
+    // org.qbittorrent.qBittorrent.desktop). The first file wins an id and a
+    // key (the dirs are walked in precedence order).
     void CDesktopIndex::add(const CAsyncFileIndex::SEntry& file, SSet& set) {
         std::string id = file.relative.generic_string();
         if (id.ends_with(".desktop"))

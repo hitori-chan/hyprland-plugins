@@ -1,8 +1,7 @@
-// awesome/system.cpp — the system module: the one CModule over its three
-// units (audio.cpp — volume/mic; light.cpp — the display's backlight;
-// pad.cpp — the touchpad policy) and the system bus they share. The
-// feedback bus is the notify model, the Lua face is the flat
-// hl.plugin.awesome.* names.
+// The system module: the one CModule over its three units (audio.cpp —
+// volume/mic; light.cpp — the display's backlight; pad.cpp — the touchpad
+// policy) and the system bus they share. The feedback bus is the notify
+// model, the Lua face is the flat hl.plugin.awesome.* names.
 
 #include "system.hpp"
 
@@ -41,9 +40,9 @@ namespace NAwesome::System {
     }
 
     namespace {
-        // The flat face, nil-guarded in the user config like the old
-        // namespaces: volume_up, volume_down, mute, mic_mute,
-        // brightness_up, brightness_down, touchpad_toggle.
+        // The flat face, nil-guarded in the user config: volume_up,
+        // volume_down, mute, mic_mute, brightness_up, brightness_down,
+        // touchpad_toggle.
         int luaVolumeUp(lua_State*) {
             enqueueAction(VOL_UP);
             return 0;

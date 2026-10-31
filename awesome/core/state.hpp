@@ -1,4 +1,4 @@
-// awesome/core/state.hpp — the plugin's single persistent state.
+// The plugin's single persistent state.
 //
 // One file, one load, one save path:
 //   $XDG_STATE_HOME/hyprland/plugin/awesome/state.tsv

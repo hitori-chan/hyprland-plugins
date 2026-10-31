@@ -1,4 +1,4 @@
-// input-capture - a small hyprland-input-capture-v1 receiver for the nested gate.
+// A hyprland-input-capture-v1 receiver for the nested gate.
 // It owns no compositor state: it only proves that an active native capture
 // session receives input after plugin listeners have had a chance to observe it.
 #define _POSIX_C_SOURCE 200809L

@@ -1,4 +1,3 @@
-// awesome/core/config.cpp
 #include "config.hpp"
 
 #include <hyprland/src/config/values/types/StringValue.hpp>
@@ -31,9 +30,8 @@ namespace NAwesome {
     }
 
     void ConfigRegistry::exit(HANDLE handle) {
-        // the fork owns removal: CConfigManager::onPluginUnload erases
-        // every value registered for this handle (there is no per-value
-        // remove API); we just drop our handles
+        // the fork owns removal: CConfigManager::onPluginUnload erases every
+        // value registered for this handle (no per-value remove API)
         m_slots = {};
     }
 

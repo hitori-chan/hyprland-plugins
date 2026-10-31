@@ -1,8 +1,7 @@
-// awesome/core/options.hpp — the choices the plugin remembers for the
-// user: what they picked from a menu (Do Not Disturb, quiet
-// automatically), never what they configured. The
-// config files stay the user's and read-only to the plugin; no option is
-// both a config key and a remembered choice.
+// The choices the plugin remembers for the user: what they picked from a
+// menu (Do Not Disturb, quiet automatically), never what they configured.
+// The config files stay the user's and read-only to the plugin; no option
+// is both a config key and a remembered choice.
 //
 // One schema row per option: its state.tsv name, default and range.
 // StateStore holds the values and writes only those off their default,

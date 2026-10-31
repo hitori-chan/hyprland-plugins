@@ -1,6 +1,5 @@
-// awesome/modules.hpp — the module singletons, in input-priority order
-// (the registration order main.cpp uses; the pipeline dispatches in this
-// order, so this list IS the input contract).
+// The module headers in input-priority order: keep in step with main.cpp's
+// registration order, which is the pipeline's dispatch order.
 #pragma once
 
 #include "core/supervisor.hpp"

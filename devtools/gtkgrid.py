@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# gtkgrid — a real GTK3 client as a render-vs-input oracle: a fixed-size
-# (floating) CSD window of solid color blocks and a menu button whose
-# GtkMenu is an xdg_popup of colored items. Every press prints what GTK
-# thinks it hit, so a click on what is DRAWN must name the same block.
+# A real GTK3 client as a render-vs-input oracle: a fixed-size (floating)
+# CSD window of solid color blocks and a menu button whose GtkMenu is an
+# xdg_popup of colored items. Every press prints what GTK thinks it hit, so
+# a click on what is DRAWN must name the same block.
 # usage: gtkgrid.py <log> [wayland|x11] [wayland-debug-log]
 #   log lines: READY | HIT <color> | MENU <color> | MENUBUTTON True|False
 import os

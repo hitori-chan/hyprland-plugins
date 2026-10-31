@@ -1,22 +1,17 @@
-// awesome/core/arrival.hpp — ARRIVAL order for windows, and the cycle that
-// walks it.
+// ARRIVAL order for windows, and the cycle that walks it.
 //
-// The compositor's window list is the Z-ORDER, and click-to-raise rewrites
-// it on every press: as a cycle order it makes forward stepping visit
-// everything but backward stepping bounce between the two newest raises.
-// awesome listed clients in arrival order, stable across raises, so the
-// modules that present or walk a window list (the shell's tasklist, the
-// windows module's focus.byidx) share one sequence here.
+// The compositor's window list is the Z-order, and click-to-raise rewrites
+// it on every press: as a cycle order it makes backward stepping bounce
+// between the two newest raises. awesome lists clients in arrival order,
+// stable across raises, so the tasklist and the windows module's
+// focus.byidx share one sequence here.
 //
 // Windows are keyed by raw pointer, dropped in forget() from
 // window.destroy before the address can be reused.
 //
-// CALL seqOf FROM window.open. A number is minted on first sight, so whatever
-// looks first defines the order: stamp at map and the sequence is arrival,
-// let a render walk or onWorkspace mint them (in visit order, before any
-// sort) and it is whatever order that walk happened to visit — which for a
-// batch seen at once is the Z-order this class exists to avoid, frozen
-// permanently.
+// Call seqOf from window.open. A number is minted on first sight, so
+// whatever looks first defines the order: a render walk or onWorkspace
+// minting a batch seen at once would freeze its Z-order permanently.
 #pragma once
 
 #include <hyprland/src/workspace/HLWorkspace.hpp>

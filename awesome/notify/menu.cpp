@@ -1,6 +1,5 @@
-// awesome/notify/menu.cpp — the card menu, a card's options.
-// Holding left on any card (a banner, a center card, a stack) opens it at
-// the pointer:
+// The card menu, a card's options. Holding left on any card (a banner, a
+// center card, a stack) opens it at the pointer:
 //
 //   Reply                          a card that takes a reply: opens its field
 //   <the sender's actions>         in Notify order ("Mark as read")

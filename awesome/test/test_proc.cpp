@@ -1,6 +1,6 @@
-// awesome/test/test_proc.cpp — Proc::spawn under the compositor's own
-// process state: SIGTERM blocked, SIGPIPE ignored, SA_NOCLDWAIT. The child
-// must start clean, and its exit status must survive the auto-reap.
+// Proc::spawn under the compositor's own process state: SIGTERM blocked,
+// SIGPIPE ignored, SA_NOCLDWAIT. The child must start clean, and its exit
+// status must survive the auto-reap.
 #include "../core/proc.hpp"
 
 #include "harness.hpp"

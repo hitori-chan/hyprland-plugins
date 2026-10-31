@@ -1,4 +1,4 @@
-// awesome/shell/menubar.cpp — awesome's Mod+P launcher: .desktop apps, categories, prompt, completion, history
+// Awesome's Mod+P launcher: .desktop apps, categories, prompt, completion, history
 
 
 #include "../core/bands.hpp"
@@ -17,8 +17,6 @@
 #include <hyprland/src/protocols/XDGActivation.hpp>
 
 namespace NAwesome::Shell {
-
-    // ---- menubar: awesome's Mod+P app launcher, drawn in the bar strip ----
 
     namespace Menubar {
         // The stock awesome categories (menubar/menu_gen.lua): an app files
@@ -179,7 +177,7 @@ namespace NAwesome::Shell {
             app.lname = asciiLower(app.name);
             // matched like awesome: against the name AND the launch command
             // line — its plain words (the quoted form starts every word with
-            // a quote, and the command-prefix rank never matched)
+            // a quote)
             app.lexec = asciiLower(app.terminal && !plainExec.empty() ? std::string(cfg().getS("plugin:awesome:shell:terminal")) + " -e " + plainExec : plainExec);
             apps.push_back(std::move(app));
         }
@@ -496,8 +494,7 @@ namespace NAwesome::Shell {
             }
             compScanning = !done;
             // the first completion waits for the whole scan (or its cap, or
-            // its deadline): the first batch's first was not the list's, and
-            // the cycle began mid-list
+            // its deadline): the first batch's first is not the list's
             if (done) {
                 std::sort(compList.begin(), compList.end());
                 compList.erase(std::unique(compList.begin(), compList.end()), compList.end());
@@ -594,10 +591,8 @@ namespace NAwesome::Shell {
             promptChanged();
         }
 
-        // ---- key repeat ----
-        //
-        // core/keys.hpp's repeat replays a held key's press through
-        // handleKey; the keys that act once never start one.
+        // Key repeat: core/keys.hpp's repeat replays a held key's press
+        // through handleKey; the keys that act once never start one.
         static void handleKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info);
 
         static void onRepeat(uint32_t keycode) {
@@ -667,12 +662,11 @@ namespace NAwesome::Shell {
                 return;
             }
 
-            // Releases pass through UNTOUCHED: the keybind layer tracks
-            // pressed keys (m_pressedKeys), and eating the release of the
-            // very Mod+P that opened the prompt left its 'p' marked held —
-            // the next Mod+P press wouldn't fire and the chord needed two
-            // presses. A stray release is harmless everywhere else (clients
-            // and the IME ignore a release whose press they never saw).
+            // Releases pass through UNTOUCHED (invariant 3): the keybind
+            // layer tracks pressed keys (m_pressedKeys), and eating the
+            // release of the Mod+P that opened the prompt would leave its 'p'
+            // held. A stray release is harmless everywhere else (clients and
+            // the IME ignore a release whose press they never saw).
             if (e.state != WL_KEYBOARD_KEY_STATE_PRESSED)
                 return;
 
@@ -911,7 +905,7 @@ namespace NAwesome::Shell {
 
             // the query around the caret, the caret a drawn accent bar
             // between its halves. A window of it, and a raster no wider than
-            // the monitor: a 4 KiB query rasterized whole was tens of
+            // the monitor: a 4 KiB query rasterized whole would be tens of
             // thousands of px, past what GL can upload
             {
                 constexpr size_t BEFORE = 160, AFTER = 96; // bytes either side of the cursor
@@ -951,9 +945,8 @@ namespace NAwesome::Shell {
                     Menubar::first = Menubar::sel;
 
                 // by reference: the row labels are already stored strings, and
-                // this runs per visible row per frame (warm AND draw) — copying
-                // them out was a handful of allocations per frame for nothing.
-                // Only the trailing Exec row composes, into a reused buffer.
+                // this runs per visible row per frame (warm AND draw). Only the
+                // trailing Exec row composes, into a reused buffer.
                 static const std::vector<std::string> CATNAMES = [] {
                     std::vector<std::string> v;
                     for (int i = 0; i < NCATS; i++)
@@ -1047,8 +1040,8 @@ namespace NAwesome::Shell {
             // an open launcher lists it now, a closed one at its next open
             NAwesome::CDesktopIndex::inst().subscribe([]() {
                 // the first scan's batches land once, at its end: rebuilding
-                // and repainting the whole list per 32-file batch made a
-                // launcher opened at login quadratic in the entries
+                // the whole list per batch would make a launcher opened at
+                // login quadratic in the entries
                 if (!isOpen || NAwesome::CDesktopIndex::inst().scanning())
                     return;
                 buildApps();

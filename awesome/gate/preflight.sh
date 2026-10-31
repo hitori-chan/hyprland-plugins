@@ -1,5 +1,5 @@
-# awesome/gate/preflight.sh — the gate's preflight: header/binary hash
-# match, deploy rehearsal, launch, toast. One plugin surface: `awesome`.
+# The gate's preflight: header/binary hash match, deploy rehearsal, launch,
+# toast. One plugin surface: `awesome`.
 echo "== gate: ${SELECTED[*]:-$(basename "$0" .sh)} =="
 
 # ---- preflight ----------------------------------------------------------
@@ -10,8 +10,7 @@ echo "== gate: ${SELECTED[*]:-$(basename "$0" .sh)} =="
 make -C "$REPO/devtools" HL="${FORK_SRC:-$HOME/repo/Hyprland}" >/dev/null || { echo "devtools build FAILED"; exit 1; }
 # Every pixel assertion goes through PIL. A missing python-pillow fails
 # SILENTLY, not here: the capture's size check errors, the frame is dropped,
-# and the launch warmup dies as a "starved render cycle" — a false symptom
-# that cost a whole fork-side diagnosis (2026-10-01).
+# and the launch warmup dies as a misleading "starved render cycle".
 python3 -c "import PIL" 2>/dev/null && ok "python3 sees PIL (every capture assertion)" || {
 	bad "python3 sees PIL (every capture assertion)"
 	echo "   install python-pillow: without it every capture is dropped and the warmup starves"; exit 1

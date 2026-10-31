@@ -1,12 +1,11 @@
-// awesome/notify/quiet.cpp — quiet automatically: two remembered switches,
-// both off until the user turns them on from the bell's menu. While the
-// focused window is fullscreen, or while a display or a region of one is
-// shared, banners and sounds hold: an arrival lands in the shade and the
-// bell dots, as an app with banners off does, and the soft banners already
-// up retreat there when the quiet begins (a share's once it has held a
-// second). Critical punches through, as through DND; over a share it shows
-// without its words. A window share never shows a card, so it never quiets
-// anything.
+// Quiet automatically: two remembered switches, both off until the user
+// turns them on from the bell's menu. While the focused window is
+// fullscreen, or while a display or a region of one is shared, banners and
+// sounds hold: an arrival lands in the shade and the bell dots, as an app
+// with banners off does, and the soft banners already up retreat there
+// when the quiet begins (a share's once it has held a second). Critical
+// punches through, as through DND; over a share it shows without its words.
+// A window share never shows a card, so it never quiets anything.
 #include "model.hpp"
 
 #include "../core/state.hpp"

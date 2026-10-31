@@ -1,6 +1,6 @@
-// awesome/shell/shell.hpp — shared declarations between the shell module's
-// translation units. The module: the strip and its widgets, the menubar
-// prompt, the dbusmenu renderer.
+// Shared declarations between the shell module's translation units. The
+// module: the strip and its widgets, the menubar prompt, the dbusmenu
+// renderer.
 //
 //   strip.cpp       the strip's SKELETON: the texture cache, the paint
 //                   context (paintFor), the canvas layer, one window walk (SFrame)
@@ -10,8 +10,8 @@
 //                   the STATE lives in the windows module)
 //   tray.cpp        StatusNotifierWatcher/Host (sdbus-c++) + its strip cells
 //   bell.cpp        the notification bell + badge, reading Notify::Model
-//                   directly — no bus (widget)
-//   battery.cpp     gauge state, alerts, Android's pill (widget)
+//                   directly (widget)
+//   battery.cpp     gauge state, alerts, the pill (widget)
 //   clock.cpp       awesome's textclock                (widget)
 //   icons.cpp       icon loading + resolution (GTK theme dirs, PNG/SVG)
 //   menu.cpp        the menu: dbusmenu for tray items + local client list
@@ -95,17 +95,14 @@
 
 namespace NAwesome::Shell {
 
-    // the render types are used unqualified in every shell unit (the old
-    // bar's header did the same, for the same reason)
+    // the render types are used unqualified in every shell unit
     using Render::ITexture;
     using Render::GL::g_pHyprOpenGL;
 
-    // config reads, through the schema (the old cfg.* struct is gone):
+    // config reads, through the schema:
     // `color(cfg().getColor("plugin:awesome:theme:col_glass"))` et al.
     using NAwesome::color;
     using NAwesome::cfg;
-
-    // ---- util ----
 
     // the bar's height on a monitor: shell:height, or a display notch's
     // band where it is taller (core/notch.hpp)
@@ -123,15 +120,10 @@ namespace NAwesome::Shell {
     // Is this window a task of WS? By workspace ID, NEVER by pointer: while a
     // window closes, the monitor's active workspace and the windows' can
     // briefly be two different objects sharing one id, and a pointer test
-    // then matches nothing — the whole tasklist blanked for that frame.
+    // would match nothing for that frame.
     bool isTaskOn(const PHLWINDOW& w, const PHLWORKSPACE& ws);
 
-    // ---- the texture rule (strip.cpp explains the why) ----
-    //
-    // A texture cannot be painted by the frame that created it, and creating
-    // one mid-draw silently swallows every later draw in the same element. So
-    // textures are built ONLY by the warm pass, one frame ahead, from the
-    // event loop — the state machine is the canvas's warm gate.
+    // the texture rule (core/canvas.hpp): the canvas's warm gate
     inline NAwesome::CWarmGate& warmGate() {
         return NAwesome::Canvas::inst().gate();
     }
@@ -211,7 +203,7 @@ namespace NAwesome::Shell {
         void onMenuSignal(sdbus::Message& msg);             // defined in menu.cpp: a dbusmenu signal from any client
     }
 
-    // ---- bell.cpp: the bell reads the notify MODEL, not a bus ----
+    // ---- bell.cpp: the bell reads the notify model ----
     namespace Bell {
         void init(); // register the badge hook (Notify::Model::badgeChangedHook)
         void exit();
@@ -222,7 +214,7 @@ namespace NAwesome::Shell {
     namespace Battery {
         void init(); // find the gauge, first read, arm the udev watch
         bool refresh();
-        void alerts(); // battery-watch.sh folded in: edge-triggered plug/low/critical
+        void alerts(); // edge-triggered plug/low/critical alerts
         void exit();
         // the note: the pill's state in words after the pointer rests on it
         void                hover(const SBarHover& h);            // the bar's hover moved (input.cpp)
@@ -251,10 +243,10 @@ namespace NAwesome::Shell {
     // ---- painting a surface ----
     //
     // Handed to each surface's own renderer so the strip, the menubar strip
-    // and the menu panels paint themselves next to their state instead of
-    // inside one function reaching into all three. The core context's
-    // primitives no-op during the warm pass, so ONE layout serves both
-    // modes — the texture rule. The shell adds its hit cells and metrics.
+    // and the menu panels paint themselves next to their state. The core
+    // context's primitives no-op during the warm pass, so ONE layout serves
+    // both modes — the texture rule. The shell adds its hit cells and
+    // metrics.
     struct SHit;
     struct SPaint : NAwesome::SPaint {
         std::vector<SHit>* hits = nullptr; // clickable regions, appended as we go

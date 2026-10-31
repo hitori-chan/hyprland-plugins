@@ -1,11 +1,8 @@
-// awesome/notify/surface.cpp — the canvas layer: warm/draw, damage, the
-// tick timers, hover bookkeeping, and the scanout/solitary latch. The
-// surfaces paint themselves (popups.cpp, center.cpp); text rasters live in
-// text.cpp's keyed cache.
-//
-// The old plugin registered its own pass element; now the canvas owns the
-// one pass and this file is its notify layer — same gates, same warm/draw
-// split, same texture rule (crash class 4).
+// The canvas layer: warm/draw, damage, the tick timers, hover bookkeeping,
+// and the scanout/solitary latch. The surfaces paint themselves (popups.cpp,
+// center.cpp); text rasters live in text.cpp's keyed cache. This is the
+// canvas's notify layer: same gates, same warm/draw split, same texture
+// rule (crash class 4).
 #include "ui.hpp"
 
 namespace NAwesome::Notify {
@@ -62,10 +59,9 @@ namespace NAwesome::Notify {
     // The monitor the cards live on: chosen where a damage of the old and
     // new spots follows (the first card's arrival, a deliberate focus move,
     // the shade opened from a monitor's bell — placeCardsOn) and reused by
-    // every other warm. Re-reading the focus in each warm let a bar warm
-    // (the pointer crossing monitors) move the hit boxes with no repaint:
-    // the old monitor kept a card that no longer took clicks, the new one
-    // took clicks on cards it never drew.
+    // every other warm. Re-reading the focus in each warm would let a bar
+    // warm (the pointer crossing monitors) move the hit boxes with no
+    // repaint.
     static PHLMONITORREF layoutMon;
 
     static PHLMONITOR layoutMonitor() {
@@ -121,8 +117,6 @@ namespace NAwesome::Notify {
         CardMenu::render(P, T); // last: drawn over its card, hit first
     }
 
-    // ---- damage ----
-
     // everything the last layout drew, global logical: the cards and the
     // capsules
     static CBox contentBox() {
@@ -173,8 +167,6 @@ namespace NAwesome::Notify {
         refreshBannerHold(); // reading a banner stops its clock
     }
 
-    // ---- the tick timers ----
-
     static void armAgeTick() {
         if (!ageTick)
             return;
@@ -189,8 +181,6 @@ namespace NAwesome::Notify {
         const bool WANT = animationsOn() && (centerAnimating() || (!centerVisible() && popupsAnimating()));
         motionTick->updateTimeout(WANT ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
     }
-
-    // ---- warm ----
 
     void warmNotifs() {
         // The canvas bracket runs during its own warmAll; a standalone
@@ -250,8 +240,6 @@ namespace NAwesome::Notify {
         });
     }
 
-    // ---- the canvas layer ----
-
     class CSurface : public NAwesome::ILayer {
       public:
         static CSurface& inst() {
@@ -265,10 +253,10 @@ namespace NAwesome::Notify {
 
         // The canvas bracket is already open here (its warmAll owns it).
         // The cards warm on THEIR changes (notifChanged, the age and decode
-        // ticks), never on the bar's: a clock tick or a title change re-ran
-        // the whole stack's layout, every row measured. Only the stale
-        // rewarm (a draw that found a texture missing) reaches them here.
-        // They lay out on their one monitor: warm once, for it.
+        // ticks), never on the bar's (a clock tick would re-run the whole
+        // stack's layout); only the stale rewarm (a draw that found a texture
+        // missing) reaches them here. They lay out on their one monitor:
+        // warm once, for it.
         void warm(PHLMONITOR mon) override {
             if (!NAwesome::Canvas::inst().forcedWarm())
                 return;

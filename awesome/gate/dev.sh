@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# awesome/gate/dev.sh — one iteration of the nested dev loop against the
-# monolith: stop the nested (its .so must not be mapped while it rebuilds),
-# build the plugin, relaunch the nested loading that build, spawn a probe
-# window so the strip has content, screenshot. Edit code, run dev.sh, look
-# at the -bar.png. No hyprpm, no relog.
+# One iteration of the nested dev loop against the monolith: stop the
+# nested (its .so must not be mapped while it rebuilds), build the plugin,
+# relaunch the nested loading that build, spawn a probe window so the strip
+# has content, screenshot. Edit code, run dev.sh, look at the -bar.png. No
+# hyprpm, no relog.
 #
 # For scripted scenarios (state checks, input, assertions) use probe.sh
 # instead — it runs the gate's full preflight and executes a probe body.
@@ -11,10 +11,7 @@ set -u
 
 source "$(dirname "${BASH_SOURCE[0]}")/memcap.sh" # the run's memory cap: before anything builds or launches
 HARNESS="${HYPR_HARNESS:-$HOME/.local/share/hypr-nested}"
-# One run at a time: every entry point shares $HARNESS (the nested's
-# signature, the host, the system bus) and kills every nested it finds —
-# a second run would tear the first one's nested down mid-battery. The
-# lock fd is closed for the long-lived children (the nested, the host).
+# One run at a time (see gate.sh).
 if [[ -z "${HYPR_HARNESS_LOCKED:-}" ]]; then
 	mkdir -p "$HARNESS"
 	exec 9>"$HARNESS/.lock"

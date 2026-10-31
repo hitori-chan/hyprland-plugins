@@ -1,4 +1,3 @@
-// awesome/core/jobs.cpp — see jobs.hpp.
 #include "jobs.hpp"
 #include "proc.hpp"
 
@@ -97,7 +96,7 @@ namespace NAwesome {
         if (live(cls) >= BUDGET[cls].live)
             return FAIL();
         if (argv.back())
-            argv.push_back(nullptr); // execv needs the null terminator
+            argv.push_back(nullptr);
 
         const auto CHILD = Proc::spawn(argv.data(), {.stdoutFd = stdoutFd, .ownGroup = cls == OPEN || cls == SOUND, .userFacing = cls == OPEN});
         if (CHILD.pidfd < 0)

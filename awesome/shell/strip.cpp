@@ -1,6 +1,6 @@
-// awesome/shell/strip.cpp — the bar's skeleton: the strip, the text cache,
-// the paint context, the canvas layer and the widget slots (each widget
-// lives in its own unit — see the module map in shell/shell.hpp)
+// The bar's skeleton: the strip, the text cache, the paint context, the
+// canvas layer and the widget slots (each widget lives in its own unit —
+// see the module map in shell/shell.hpp)
 
 #include "shell/shell.hpp"
 
@@ -37,10 +37,6 @@ namespace NAwesome::Shell {
         hitboxes.erase(id);
     }
 
-    // Built ONLY by the warm pass — see the texture rule in shell/shell.hpp. A
-    // miss during a draw returns null (that one label is missing for one
-    // frame) rather than building, which would paint nothing anyway AND
-    // swallow every later draw in the element.
     // The shell font, resolved once per warm (the config's string read
     // returns a fresh std::string — a copy per label per frame): every
     // texture build happens inside a warm, so draws between warms key on
@@ -87,9 +83,9 @@ namespace NAwesome::Shell {
     SP<ITexture> textTex(const std::string& rawText, const CHyprColor& col, int pt, int maxWidth, const std::string& font, int weight) {
         // One line, always: every label here is a client's string (a title,
         // a tray or menu label) and the bar and its menus have one line per
-        // cell. Pango makes a paragraph of each newline — ~4000 of them in a
-        // 4 KiB title rasterized a texture tens of thousands of px tall —
-        // so control characters become spaces before anything else.
+        // cell. Pango makes a paragraph of each newline (a 4 KiB title of
+        // them would raster a texture tens of thousands of px tall), so
+        // control characters become spaces before anything else.
         static std::string CLEAN; // reused; main thread only
         const bool         DIRTY = std::ranges::any_of(rawText, [](char c) { return (unsigned char)c < 0x20 || c == 0x7f; });
         if (DIRTY) {
@@ -101,8 +97,8 @@ namespace NAwesome::Shell {
         const std::string& text = DIRTY ? CLEAN : rawText;
 
         // key on the RESOLVED font: every caller passes "", and keying the
-        // empty string made old-font textures permanent hits across a
-        // font change
+        // empty string would keep old-font textures hitting across a font
+        // change
         const std::string& F = font.empty() ? shellFont() : font;
 
         char               meta[64]; // the non-text key parts in one stack write — no to_string churn per call
@@ -137,20 +133,11 @@ namespace NAwesome::Shell {
         return P;
     }
 
-    // ---- rendering ----
-
     // One layout, two modes. WARM builds every texture and paints nothing;
-    // DRAW paints and must never build.
-    //
-    // A texture returned by renderText()/createTexture() cannot be painted by
-    // the frame that created it — wherever in that frame it was created — and
-    // the miss silently swallows everything drawn after it too. Building them
-    // lazily mid-draw therefore blanked the strip from the first miss onward
-    // for exactly one frame. Since itemw is part of the texture cache key, one
-    // window closing re-keys every task label at once: the whole tasklist
-    // vanished on every open/close ("the bar blinks when I close a window").
-    // So warmBars() runs this same layout from the EVENT LOOP, a frame ahead;
-    // by the time draw() runs, everything is a cache hit.
+    // DRAW paints and must never build (the texture rule): itemw is part of
+    // the texture key, so one window closing re-keys every task label at
+    // once. warmBars() runs this same layout from the EVENT LOOP, a frame
+    // ahead; by the time draw() runs, everything is a cache hit.
     // the bar yields the whole output to a real fullscreen window (except an
     // open menubar — awesome's ontop wibox): renderBar early-returns, so the
     // layer must not claim a live blur of a strip it never paints
@@ -287,8 +274,7 @@ namespace NAwesome::Shell {
                 const size_t BEFORE = P.hits->size();
                 RIGHT[i]->draw(P, F, CELL);
                 // a widget with nothing to click (the battery) still owns
-                // its cell: without one its neighbours' cells met across it,
-                // and its clicks went to them
+                // its cell, or its neighbours' cells would meet across it
                 if (P.hits->size() == BEFORE)
                     P.hits->push_back(SHit{.box = CELL, .widget = RIGHT[i]});
                 first = false;
@@ -368,22 +354,18 @@ namespace NAwesome::Shell {
             return;
         const auto P = paintFor(mon, rctx);
 
-        // -- the menubar: its own strip right BELOW the bar, the bar stays
-        // visible (awesome's menubar is a separate wibox at the workarea top,
-        // which sits under the wibar — it never replaced it) --
+        // -- the menubar: its own strip right BELOW the bar --
         Menubar::render(P);
 
         // -- the open menu, panel by panel: the client list is fixed at 250
         // wide (the old rc's client_list width); dbusmenu levels size
-        // themselves, and submenus cascade out beside their parent — like
-        // the GTK menus these were under X11 --
+        // themselves, and submenus cascade out beside their parent,
+        // GTK-style --
         Menu::render(P);
 
         if (noteOn(mon))
             Battery::renderNote(P);
     }
-
-    // ---- the canvas layer ----
 
     class CStripLayer : public NAwesome::ILayer {
       public:
@@ -396,7 +378,7 @@ namespace NAwesome::Shell {
         // must not age them)
         void warmBegin(bool scoped) override {
             warmFont = cfg().getS("plugin:awesome:shell:font");
-            dropStaleTint(); // never mid-draw: a cleared cache blanked the icons for a frame
+            dropStaleTint(); // never mid-draw: a cleared cache would blank the icons for a frame
             if (!scoped)
                 texCache.tick();
         }
@@ -472,9 +454,9 @@ namespace NAwesome::Shell {
                     g_pHyprRenderer->damageBox(CBox{*B}.translate(M->logicalBox().pos()));
         }
         // The prompt band and the menu's panels as last laid out (a level
-        // change warms before it damages), their rim and drop included. The
-        // whole monitor made every damage on it re-run the menu's layout
-        // and live-blur the screen behind it while a menu was open.
+        // change warms before it damages), their rim and drop included —
+        // never the whole monitor, whose every damage would re-run the
+        // menu's layout and live-blur the screen behind it.
         std::optional<CBox> boundingBox(PHLMONITOR mon) const override {
             if (!popupsOn(mon))
                 return std::nullopt;
@@ -523,10 +505,9 @@ namespace NAwesome::Shell {
     }
 
     // A title is the one bar input a client drives at will: a terminal or a
-    // player can retitle every frame or faster, and each change warmed every
-    // layer on every monitor once per event-loop turn — a kHz title kept the
-    // compositor thread busy. Titles warm the strip alone, at most once per
-    // TITLE_GAP: the first at once, a burst's last one gap after.
+    // player can retitle every frame or faster. Titles warm the strip
+    // alone, at most once per TITLE_GAP: the first at once, a burst's last
+    // one gap after.
     static constexpr auto                 TITLE_GAP = std::chrono::milliseconds(16);
     static SP<CEventLoopTimer>            titleTimer;
     static bool                           titleArmed = false;
@@ -569,15 +550,13 @@ namespace NAwesome::Shell {
 
     void warmBars(PHLMONITOR only) {
         // the canvas owns the bracket (and warms every layer, the cards and
-        // the snap zone with it — the old plugins each warmed alone)
+        // the snap zone with it)
         NAwesome::Canvas::inst().warmAll(only);
     }
 
     void warmPopups(PHLMONITOR only) {
         NAwesome::Canvas::inst().warmAll(only, &popupLayer());
     }
-
-    // ---- util ----
 
 #ifdef AWESOME_GATE
     std::optional<Notch::SNotch> gateNotch; // `hyprctl awesome notch W H`: every monitor's
@@ -640,9 +619,9 @@ namespace NAwesome::Shell {
     }
 
     // Coalesced: one warm + damage per event-loop turn, however many bar
-    // events (title, focus, urgency, tray icons) arrived in it — each used to
-    // warm every layer on every monitor synchronously. A frame that renders
-    // first finds the stale texture and rewarms itself (the canvas gate).
+    // events (title, focus, urgency, tray icons) arrived in it. A frame that
+    // renders first finds the stale texture and rewarms itself (the canvas
+    // gate).
     static NAwesome::CHop pendingBarChange;
     void barChanged() {
         pendingBarChange.arm([]() {
@@ -652,9 +631,7 @@ namespace NAwesome::Shell {
     }
 
     // The launcher's own changes (a keystroke, a selection, a scan landing):
-    // the popup layer on the prompt's monitor and the prompt band only — a
-    // full bar change warmed every layer on every monitor and damaged every
-    // bar, per keystroke.
+    // the popup layer on the prompt's monitor and the prompt band only.
     static NAwesome::CHop pendingPromptChange;
     void promptChanged() {
         pendingPromptChange.arm([]() {
@@ -673,9 +650,8 @@ namespace NAwesome::Shell {
     }
 
     // A menu hover moved: the popup layer on the menu's monitor, once per
-    // event-loop turn — damageMenu warmed every layer on the monitor per
-    // row the pointer crossed. A hover moves no panel: the boxes and rows
-    // the hit-tests read stay as they are.
+    // event-loop turn. A hover moves no panel: the boxes and rows the
+    // hit-tests read stay as they are.
     static NAwesome::CHop pendingMenuHover;
     void menuHoverChanged() {
         pendingMenuHover.arm([]() {

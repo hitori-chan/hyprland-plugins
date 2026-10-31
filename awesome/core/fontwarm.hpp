@@ -1,14 +1,11 @@
-// awesome/core/fontwarm.hpp — a font face's first use, paid early and in
-// slices.
+// A font face's first use, paid early and in slices.
 //
 // A face's first layout loads it (the fontconfig match, the FreeType face,
-// the fallback fontset): ~10 ms per weight and size, and a first emoji is
-// a fallback search on top. Paid inside a real warm, a session's first
-// notification spent ~45 ms of one loop turn on it (its three texts, the
-// bell's count); after this, ~8 ms. Each face loads on an event-loop turn
-// of its own, a beat after startup, into the per-thread pango font map
-// every text raster on this thread shares (the cards' layouts and the
-// renderer's renderText alike).
+// the fallback fontset): ~10 ms per weight and size, more for a first
+// emoji, all inside one loop turn if a real warm paid it. Each face loads on
+// an event-loop turn of its own, a beat after startup, into the per-thread
+// pango font map every text raster on this thread shares (the cards'
+// layouts and the renderer's renderText alike).
 #pragma once
 
 #include "config.hpp"

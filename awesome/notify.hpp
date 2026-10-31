@@ -1,6 +1,5 @@
-// awesome/notify.hpp — the notify module's entry: the CModule wiring
-// (init/teardown order, the pipeline handlers, the Lua API, the hyprctl
-// verbs). The unit map lives in notify/model.hpp.
+// The notify module's CModule wiring: init/teardown order, the pipeline
+// handlers, the Lua API, the hyprctl verbs. The unit map is in model.hpp.
 #pragma once
 
 #include "core/supervisor.hpp"

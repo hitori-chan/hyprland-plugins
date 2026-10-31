@@ -1,4 +1,4 @@
-// awesome/core/fileindex.hpp -- bounded file enumeration without plugin-owned workers.
+// Bounded file enumeration without plugin-owned workers.
 #pragma once
 
 #include <algorithm>
@@ -334,10 +334,9 @@ printf '%08X%08X%08X%d' 0 0 0 2
 
             // its own group: cancel/exit signals bash and its find child
             // together; Proc::spawn gives both default signal dispositions
-            // (the compositor's blocked SIGTERM made the kill a no-op). The
-            // group is signalled through the pidfd: the compositor reaps on
-            // its own (SA_NOCLDWAIT), so a bare pid may already be reused
-            // by the time a cancel signals it.
+            // (the compositor blocks SIGTERM). The group is signalled through
+            // the pidfd: the compositor reaps on its own (SA_NOCLDWAIT), so a
+            // bare pid may already be reused by the time a cancel signals it.
             const auto CHILD = Proc::spawn(argv.data(), {.stdoutFd = pipefd[1], .ownGroup = true});
             close(pipefd[1]);
             if (!CHILD) {
@@ -462,9 +461,8 @@ printf '%08X%08X%08X%d' 0 0 0 2
         }
 
         // Paused means OFF the loop: epoll reports a hangup whatever the
-        // mask, so a masked source of a helper that already exited woke the
-        // loop on every iteration (a compositor thread at 100%) until the
-        // consumer drained.
+        // mask, so a masked source of an exited helper would wake the loop
+        // on every iteration until the consumer drained.
         void pause() {
             if (m_source && !m_paused) {
                 wl_event_source_remove(m_source);
@@ -522,8 +520,7 @@ printf '%08X%08X%08X%d' 0 0 0 2
             // the Bash worker and its find child share this owned group
             if (terminate && m_pidfd >= 0)
                 pidfd_send_signal(m_pidfd, SIGTERM, nullptr, PIDFD_SIGNAL_PROCESS_GROUP);
-            // by pidfd, never by pid: the compositor's SA_NOCLDWAIT may have
-            // reaped it already and the pid gone to another of its children
+            // by pidfd, never by pid (SA_NOCLDWAIT, above)
             Proc::reap(m_pidfd);
             if (m_pidfd >= 0) {
                 close(m_pidfd);

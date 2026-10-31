@@ -1,4 +1,4 @@
-// awesome/system/light.cpp — the display's backlight.
+// The display's backlight.
 //
 // Fork-free: sysfs for current/max (/sys/class/backlight), ±5% linear
 // steps floored at 2 raw so the panel never goes black, the write through
@@ -27,10 +27,10 @@
 
 namespace NAwesome::System {
 
-    // The OSD pin id (the old scripts' contract; the model's OSD band
-    // 9990-9999 gives it replace-in-place, no history, no grouping).
+    // The OSD pin id (the model's OSD band 9990-9999 gives it
+    // replace-in-place, no history, no grouping).
     inline constexpr uint32_t ID_BRIGHTNESS = 9992;
-    // raw: the panel never goes black (the old brightnessctl -n2)
+    // raw: the panel never goes black (brightnessctl's -n2)
     inline constexpr int FLOOR_RAW = 2;
 
     static std::unique_ptr<sdbus::IProxy> logindProxy;
@@ -108,12 +108,11 @@ namespace NAwesome::System {
         return light.dev.empty() ? std::nullopt : readSysfsInt(light.root + "/" + light.dev + "/brightness");
     }
 
-    // The old plugin wrote through /session/auto — logind resolves that
-    // from the caller's cgroup. That resolution is a SILENT NO-OP in some
-    // environments (the write acks, sysfs never moves), so do the
-    // resolution in the open: read our own cgroup's session-N.scope and
+    // logind resolves /session/auto from the caller's cgroup, and that is a
+    // SILENT NO-OP in some environments (the write acks, sysfs never moves),
+    // so resolve it in the open: read our own cgroup's session-N.scope and
     // address the session explicitly. An unparseable cgroup (a compositor
-    // outside any session scope) falls back to auto — the old behavior.
+    // outside any session scope) falls back to auto.
     static void findLogindSession() {
         logindSessionPath = "/org/freedesktop/login1/session/auto";
         std::ifstream cg("/proc/self/cgroup");

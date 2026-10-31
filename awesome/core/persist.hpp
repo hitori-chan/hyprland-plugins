@@ -1,5 +1,5 @@
-// awesome/core/persist.hpp — the store glue: the coalesced atomic write
-// (one drain per burst, flushed at exit) and the state paths.
+// The store glue: the coalesced atomic write (one drain per burst, flushed
+// at exit) and the state paths.
 #pragma once
 
 #include "hop.hpp"

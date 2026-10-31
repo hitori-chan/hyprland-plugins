@@ -1,21 +1,20 @@
-// awesome/notify/center.cpp — the shade: ONE list of live cards, newest first,
-// Android's notification shade drawn by the compositor. There are no
-// lifecycle sections and no history view: what you can see is what the model
-// holds, and a dismissed card is gone (Android's shade has no recall either).
+// The shade: ONE list of live cards, newest first, drawn by the compositor.
+// There are no lifecycle sections and no history view: what you can see is
+// what the model holds, and a dismissed card is gone.
 //
 // This unit decides WHAT is shown and WHERE; card.cpp and stack.cpp draw
 // it. The center is the banners' own column under a heading with Clear All
 // and Do Not Disturb's moon on glass, the bell its door. It draws no
 // backdrop: the desktop is never darkened.
 //
-// RANKING — Android's, without the dividers (labels faded over a bright
-// wallpaper): critical, then conversations, then the rest; newest first
-// inside each group, a wider gap where a group ends. An app's cards STACK
-// under their newest once it has two, its chats with the rest — each chat
-// keeps its own card, and the model merges that chat's messages into it.
-// A stack stands where its newest card ranks, collapsed until a click
-// spreads it. The silent cards (low urgency, or silenced by the user)
-// fold into one row at the bottom until a click spreads them.
+// RANKING, without dividers (labels would fade over a bright wallpaper):
+// critical, then conversations, then the rest; newest first inside each
+// group, a wider gap where a group ends. An app's cards STACK under their
+// newest once it has two, its chats with the rest — each chat keeps its own
+// card, and the model merges that chat's messages into it. A stack stands
+// where its newest card ranks, collapsed until a click spreads it. The
+// silent cards (low urgency, or silenced by the user) fold into one row at
+// the bottom until a click spreads them.
 //
 // Above the cards, a status line says why arrivals are holding (Do Not
 // Disturb, quiet automatically); Clear All hides the cards for an undo
@@ -28,8 +27,8 @@
 // costing a click per card; it folds only what would overflow. Stacks are
 // the exception: one spreads only when asked.
 //
-// This unit owns the shade's transient state (paging, every fold override) —
-// all of it resets when the shade closes, Android-style.
+// This unit owns the shade's transient state (paging, every fold
+// override); all of it resets when the shade closes.
 
 #include "ui.hpp"
 
@@ -39,8 +38,6 @@ namespace NAwesome::Notify {
 
     // an app's notifications stack as soon as there are two
     inline constexpr size_t AUTOGROUP_AT = 2;
-
-    // ---- state ----
 
     static bool                  s_on    = false;
     static size_t                s_skip  = 0; // wheel paging: top-level items skipped
@@ -104,11 +101,11 @@ namespace NAwesome::Notify {
         return s_animating;
     }
 
-    // Everything one visit accumulates. The close resets it (Android parity:
-    // paging and every fold start over), and so must PLUGIN_EXIT — s_disp
-    // holds STRONG card refs, so a session that exits with the shade open
-    // would otherwise carry them past Model::exit and destroy them, textures
-    // and all, at static-destruction time with the renderer already gone.
+    // Everything one visit accumulates. The close resets it (paging and
+    // every fold start over), and so must PLUGIN_EXIT — s_disp holds STRONG
+    // card refs, so a session that exits with the shade open would otherwise
+    // carry them past Model::exit and destroy them, textures and all, at
+    // static-destruction time with the renderer already gone.
     static void resetVisit() {
         s_skip = s_items = 0;
         s_fresh.clear();
@@ -247,14 +244,10 @@ namespace NAwesome::Notify {
             }
         }
         notifChanged();
-        // (the old org.hitori shell face emitted its state here; the bell
-        //  now reads the model in the same .so — nothing to broadcast)
     }
 
-    // ---- the display list: one ranked list, an app's cards stacked ----
-
-    // Android's shade ranking, minus the visible dividers: urgent things,
-    // then the people, then everything else; the quiet ones fold below.
+    // The ranking: urgent things, then the people, then everything else;
+    // the quiet ones fold below.
     static uint8_t tier(const SP<SNotif>& n) {
         if (n->urgency >= 2)
             return 0;
@@ -282,8 +275,8 @@ namespace NAwesome::Notify {
     // `src` ranked, an app's cards stacked under its newest
     static void appendStacked(std::vector<SDisp>& out, const std::vector<SP<SNotif>>& src, bool quiet) {
         static std::vector<SOwner> owners; // reused; main thread only
-        // key -> owner: a linear scan per card was quadratic in distinct
-        // keys (a sender rotating its app name at max_notifs 512)
+        // key -> owner: a linear scan per card would be quadratic in distinct
+        // keys (a sender rotating its app name)
         static std::unordered_map<std::string, size_t> ownerIdx;   // ditto
         static std::vector<size_t>                     ownerOfSrc; // src[i]'s owner, -1: never stacks
         owners.clear();
@@ -351,10 +344,8 @@ namespace NAwesome::Notify {
         return gap + (s_disp[i].tier != s_disp[i - 1].tier ? TIER_GAP : 0);
     }
 
-    // ---- the expansion budget ----
-    //
-    // Walks the page from its top row down, opening what still fits. The top
-    // card always opens (Android's one guarantee); a user override wins over
+    // The expansion budget walks the page from its top row down, opening
+    // what still fits. The top card always opens; a user override wins over
     // the budget in both directions. Cards past the fold are only measured
     // FOLDED — their open form would raster text no frame can show.
 
@@ -428,11 +419,10 @@ namespace NAwesome::Notify {
                 s_groupState[D.key] = SPREAD;
             }
             used += LEAD + s_itemH[i];
-            // past the fold: no later card is on this page, and measuring
-            // them rastered two texts and queued an icon decode each for
-            // content nothing draws (the age tick re-rastered them all).
-            // Unmeasured cards never fit; paging re-runs the budget from the
-            // new top.
+            // past the fold: no later card is on this page, and measuring one
+            // would raster its texts and queue an icon decode for content
+            // nothing draws. Unmeasured cards never fit; paging re-runs the
+            // budget from the new top.
             if (i > s_skip && used > bodyCap) {
                 for (size_t k = i + 1; k < s_disp.size(); k++)
                     s_itemH[k] = bodyCap + 1;
@@ -465,8 +455,6 @@ namespace NAwesome::Notify {
                     return (int)i;
         return s_sel;
     }
-
-    // ---- the center ----
 
     void renderCenter(const SPaint& PIN, const SType& T) {
         SPaint P = PIN;

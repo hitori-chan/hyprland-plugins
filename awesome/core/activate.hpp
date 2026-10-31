@@ -1,16 +1,14 @@
-// awesome/core/activate.hpp — explicit activation of an app's own window.
+// Explicit activation of an app's own window.
 //
-// The plugin that SAW the user's gesture (the tray icon click, the
-// notification action) performs the activation itself instead of trusting
-// the app: resolve the app's bus PID, raise + hard-focus its topmost
-// window. This is awesome's guarantee, made unconditional — on X11 the
+// The plugin that saw the user's gesture (the tray icon click, the
+// notification action) activates the app itself instead of trusting it:
+// resolve the app's bus PID, raise + hard-focus its topmost window. An X11
 // app's own activation (_NET_ACTIVE_WINDOW) is unauthenticated (with
-// focus_on_activate off, the default, it only marks urgent — the
-// Wine/Proton SetForegroundWindow spam would steal focus otherwise), and a
-// Wayland app may simply never spend the token the plugin minted for it. Both backends get the focus from
-// here; the app's follow-up xdg-activation (if any) lands on an
-// already-focused window and is a no-op. Focus here is compositor-side
-// (never gated): the user asked for this window.
+// focus_on_activate off, the default, it only marks urgent, or Wine/Proton
+// activation spam would steal focus), and a Wayland app may never spend the
+// token the plugin minted for it. The app's follow-up xdg-activation, if
+// any, lands on an already-focused window and is a no-op. Focus here is
+// compositor-side (never gated): the user asked for this window.
 #pragma once
 
 #include <hyprland/src/desktop/view/window/Window.hpp>

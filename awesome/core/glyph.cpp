@@ -1,6 +1,6 @@
-// awesome/core/glyph.cpp — see glyph.hpp. The shapes are the Frost boards'
-// own (16-unit canvases, 1.4-unit strokes), drawn white and tinted after
-// the raster so one source serves every colour.
+// The shapes are the Frost boards' own (16-unit canvases, 1.4-unit
+// strokes), drawn white and tinted after the raster so one source serves
+// every colour.
 #include "glyph.hpp"
 
 #include "canvas.hpp"

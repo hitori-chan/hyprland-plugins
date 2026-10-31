@@ -1,9 +1,6 @@
-// awesome/notify.cpp — the notify module: the freedesktop notification
-// daemon, the card model, the surfaces (popups, the shade, the
-// inline-reply field), and the input they own.
-//
-// The unit map lives in notify/model.hpp (bus, parse, model, icons,
-// text, paint, popups, row, center, surface, input, reply).
+// The notify module: the freedesktop notification daemon, the card model,
+// the surfaces (popups, the shade, the inline-reply field), and the input
+// they own. The unit map lives in notify/model.hpp.
 //
 // The pipeline order puts the shell first (its strip and menus claim
 // their pixels); notify's surfaces sit under nothing in the windows
@@ -167,8 +164,6 @@ namespace NAwesome::Notify {
         surfaceExit();
     }
 
-    // ---- the pipeline ----
-
     // The units' free functions share two names with the pipeline members
     // (onKey, onInputBlocked): the qualified calls reach the free ones.
     void CModule::onPointerButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
@@ -188,7 +183,6 @@ namespace NAwesome::Notify {
         NAwesome::Notify::onInputBlocked();
     }
 
-    // `hyprctl awesome <verb>`
     std::optional<std::string> CModule::handleCtl(const std::string& verb) const {
         if (verb == "count")
             return std::to_string(notifs.size());

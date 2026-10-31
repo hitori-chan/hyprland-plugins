@@ -1,7 +1,6 @@
-// awesome/notify/popups.cpp — the banner column (glass cards top-right on
-// the cards' monitor, newest first, the arrival spring) and the OSD band's
-// capsules (top center: the system's volume, brightness, mic, touchpad and
-// Do Not Disturb feedback).
+// The banner column (glass cards top-right on the cards' monitor, newest
+// first, the arrival spring) and the OSD band's capsules (top center: the
+// system's volume, brightness, mic, touchpad and Do Not Disturb feedback).
 //
 // Only cards whose banner is up show here (residency hides expired banners
 // into the center); while the center is open the column yields to it
@@ -55,13 +54,11 @@ namespace NAwesome::Notify {
         }
     }
 
-    // ---- the capsules ----
-    //
-    // 256 x 36 at the top center: the glyph, a level track and its number
-    // for a value, the words otherwise ("Muted" in the urgent colour). The
-    // system module still posts ordinary cards through the model — the
-    // band's replace-in-place, timeouts and the gate's state read stay one
-    // path; only their face differs.
+    // The capsules: 256 x 36 at the top center, the glyph, a level track and
+    // its number for a value, the words otherwise ("Muted" in the urgent
+    // colour). The system module posts ordinary cards through the model —
+    // the band's replace-in-place, timeouts and the gate's state read stay
+    // one path; only their face differs.
     void renderCapsules(const SPaint& P, const SType& T) {
         constexpr double CAP_W = 256, CAP_H = 36, CAP_PADL = 16, CAP_PADR = 16, GLYPH = 16, TRACK_H = 6;
         const auto       MB     = P.mon->logicalBox();

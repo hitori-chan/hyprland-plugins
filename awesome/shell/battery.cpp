@@ -1,6 +1,6 @@
-// awesome/shell/battery.cpp — the battery: gauge state from sysfs, the old
-// battery-watch.sh alerts, the widget drawing Pixel's battery
-// (shell/battery_pill.hpp), and the note it shows under the pointer
+// The battery: gauge state from sysfs, the plug/low/critical alerts, the
+// widget drawing the battery pill (shell/battery_pill.hpp), and the note it
+// shows under the pointer
 #include "shell/shell.hpp"
 #include "shell/battery_pill.hpp"
 
@@ -11,9 +11,9 @@ namespace NAwesome::Shell {
 
     static int         batteryPercent  = -1;    // -1 = unknown level; batteryDirs decides whether the widget exists
     static bool        batteryPlugged  = false; // known external-power status, never inferred from Unknown
-    static bool        batteryDefend   = false; // plugged but held at the charge limit (Android's defender)
+    static bool        batteryDefend   = false; // plugged but held at the charge limit
     static bool        batterySave     = false; // explicit power-profiles-daemon power-saver state
-    static bool        batteryUnknown  = false; // Pixel's question attribution; higher priority than every other state
+    static bool        batteryUnknown  = false; // the question attribution; higher priority than every other state
     // the system packs (/sys/class/power_supply/BATx), empty = none: a
     // dual-pack laptop drains one pack first, and the other one is half the
     // charge the user has
@@ -21,8 +21,7 @@ namespace NAwesome::Shell {
     constexpr size_t                MAX_PACKS = 8;
     // the gauge is read ONCE per event (uevent or minute tick) and both
     // consumers — the pill's display state and the alerts' edge detection —
-    // read the result: the raw status string is what the alerts key off, and
-    // reading it twice meant four sysfs opens per event for one sample
+    // read the result: the raw status string is what the alerts key off
     static std::string batteryStatus;
     // the alerts' edge state (alerts() below): out here with the rest of the
     // battery's state so exit() leaves nothing latched
@@ -256,7 +255,7 @@ namespace NAwesome::Shell {
     };
     static std::unordered_map<int, SPill> pillCache;
 
-    // ---- gauge refresh + the alerts (the old scripts/battery-watch.sh) ----
+    // ---- gauge refresh + the alerts ----
 
     namespace Battery {
         bool refresh() {
@@ -308,12 +307,12 @@ namespace NAwesome::Shell {
                     anyDischarging |= S == "Discharging";
                     anyHolding |= S == "Not charging";
                     allFull = allFull && S == "Full";
-                    // Android's defender = plugged but deliberately not
-                    // charging. A charge_control_end_threshold below 100
-                    // turns "Not charging" from a transient (thermal,
-                    // top-off) into the limiter's hold state — including the
-                    // start/end hysteresis band, where capacity sits below
-                    // the threshold.
+                    // Defended = plugged but deliberately not charging. A
+                    // charge_control_end_threshold below 100 turns "Not
+                    // charging" from a transient (thermal, top-off) into the
+                    // limiter's hold state — including the start/end
+                    // hysteresis band, where capacity sits below the
+                    // threshold.
                     if (S == "Not charging" && LIM && *LIM < 100)
                         defend = true;
                 }
@@ -348,10 +347,10 @@ namespace NAwesome::Shell {
         }
 
         // Edge-triggered off the same uevents as the gauge (the minute tick is
-        // the failsafe); thresholds are Android's lines (20 low / 5 critical —
-        // the pill's error red shares the 20 line). Never called at INIT:
-        // the shell module registers before the notify module, so the first
-        // minute tick — not init — is the first moment an alert can land.
+        // the failsafe); thresholds 20 low / 5 critical (the pill's error red
+        // shares the 20 line). Never called at INIT: the shell module
+        // registers before the notify module, so the first minute tick — not
+        // init — is the first moment an alert can land.
         void alerts() {
             // refresh() runs first at both call sites (the uevent and the
             // minute tick) and leaves this sample behind
@@ -364,7 +363,7 @@ namespace NAwesome::Shell {
 
             constexpr int WARN = 20, CRIT = 5;
 
-            // urgency 0/1/2; 9990 = the script's pinned replace-in-place id.
+            // urgency 0/1/2.
             // The semantic icon name keeps this fixed-id card on the native
             // battery mark instead of falling through to the generic app grid.
             // The plug edges are feedback, a capsule (the glyph); low and
@@ -431,8 +430,8 @@ namespace NAwesome::Shell {
                     break;
                 // Only the system's packs and the mains supply move the
                 // gauge: a USB-C port's or a headset's battery (scope
-                // Device) re-read every pack's sysfs for nothing — a read
-                // that can evaluate ACPI methods
+                // Device) must not re-read every pack's sysfs, a read that
+                // can evaluate ACPI methods
                 const char*            T      = udev_device_get_property_value(DEV, "POWER_SUPPLY_TYPE");
                 const char*            S      = udev_device_get_property_value(DEV, "POWER_SUPPLY_SCOPE");
                 const char*            A      = udev_device_get_action(DEV);
@@ -612,8 +611,6 @@ namespace NAwesome::Shell {
 #endif
     } // namespace Battery
 
-    // ---- the widget ----
-
     namespace {
         class CBatteryWidget : public IWidget {
           public:
@@ -656,8 +653,7 @@ namespace NAwesome::Shell {
 
           private:
             // 13 px beside the bar's 12 px text, one device px a viewport
-            // unit (Android's 13sp beside 14sp text would give 11 px, whose
-            // fractional units blur the digits); it scales with the text
+            // unit (fractional units blur the digits); it scales with the text
             static int bodyPx(const SPaint& P) {
                 return std::max(8, Battery::pixelRound(P.pt * Battery::VIEW_H / 12.0));
             }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# findcolors — where each color is DRAWN in a capture.
+# Where each color is DRAWN in a capture.
 # usage: findcolors.py <png> <name=r,g,b>...  ->  "<name> <cx> <cy> <pixels>"
 # per color (tolerance 10 per channel; -1 -1 0 when absent)
 import sys

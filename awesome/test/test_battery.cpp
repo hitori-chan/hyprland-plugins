@@ -1,8 +1,8 @@
-// awesome/test/test_battery.cpp — the Pixel pill (shell/battery_pill.hpp):
-// BatteryMeasurePolicy's widths at the bar's 13 px, and the raster's parts
-// where they belong — the fill to ceil(level * 24 / 100) units, the digits
-// inside the body, the attribution's ring cut out of it, a full body. Then
-// the note's words (shell/battery_state.hpp), state by state.
+// The battery pill (shell/battery_pill.hpp): BatteryMeasurePolicy's widths
+// at the bar's 13 px, and the raster's parts where they belong — the fill
+// to ceil(level * 24 / 100) units, the digits inside the body, the
+// attribution's ring cut out of it, a full body. Then the note's words
+// (shell/battery_state.hpp), state by state.
 #include "../shell/battery_pill.hpp"
 
 #include "harness.hpp"

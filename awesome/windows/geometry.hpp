@@ -1,6 +1,6 @@
-// awesome/windows/geometry.hpp — the window-state geometry math: the
-// restore-box bounding (maximize) and the constrained snap slot (snap).
-// One place for both — they share the client-hint clamping.
+// The window-state geometry math: the restore-box bounding (maximize) and
+// the constrained snap slot (snap). One place for both — they share the
+// client-hint clamping.
 #pragma once
 
 #include <hyprland/src/helpers/math/Math.hpp>

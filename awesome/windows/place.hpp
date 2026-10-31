@@ -1,4 +1,4 @@
-// awesome/windows/place.hpp — spawn placement for floating windows:
+// Spawn placement for floating windows:
 //
 //   1. an app reopens where its last window closed (per class, persisted
 //      across relogs): the remembered spot lands when it's free — a
@@ -6,22 +6,20 @@
 //      in maximized state carries the app's last windowed box (the
 //      maximize module's restore memory) into the spot, so an app that
 //      always closes maximized keeps its spawn memory
-//   2. otherwise the spot that overlaps the other windows the least —
-//      KWin's default. A lone window keeps the compositor's centered spot
-//      (nothing to overlap), a busy screen fills the gaps, and a full one
-//      lands where it hides the least. No cascade, no center pile.
+//   2. otherwise the spot that overlaps the other windows the least. A
+//      lone window keeps the compositor's centered spot (nothing to
+//      overlap), a busy screen fills the gaps, and a full one lands where
+//      it hides the least. No cascade, no center pile.
 //
 // Placement only ever MOVES a window; its size is the client's own. A
 // Wayland toplevel can't position itself, so the compositor remembers
-// where it was (memory-first, as Windows' SetWindowPlacement does for
-// its apps); but it does choose its size — the initial configure is 0x0,
-// "you decide" — and real apps restore their own (the GTK file chooser,
-// Firefox, Thunar, Telegram), while a dialog's natural size is its
-// content's. Imposing a remembered size
-// overrode both: every dialog of a class was born at the app's main-window
-// size (the portal file chooser at 1203x953). The unmaximize restore box
-// (max.hpp) is the one size the compositor supplies, because a window born
-// maximized has no windowed size of its own.
+// where it was; but it does choose its size — the initial configure is
+// 0x0, "you decide" — and real apps restore their own (the GTK file
+// chooser, Firefox, Thunar, Telegram), while a dialog's natural size is
+// its content's. A remembered size would override both: every dialog of a
+// class would be born at the app's main-window size. The unmaximize
+// restore box (max.hpp) is the one size the compositor supplies, because a
+// window born maximized has no windowed size of its own.
 //
 // Windows that chose their spot (X11, dialogs anchored to a parent) keep
 // it while it's free; a fixed-size toplevel (min == max — a dialog, a
@@ -83,8 +81,8 @@ namespace NAwesome::Windows::Place {
 
         // a float sized to (or past) the whole workarea is maximized in all
         // but state — it consumes no free space, and its close-spot is not a
-        // spot (a workarea-sized browser once blanked ALL free area, sending
-        // every spawn to the same center)
+        // spot (counted, it would blank ALL free area and send every spawn
+        // to the same center)
         inline bool coversWorkarea(const CBox& b, const CBox& wa) {
             return b.x <= wa.x && b.y <= wa.y && b.x + b.w >= wa.x + wa.w && b.y + b.h >= wa.y + wa.h;
         }
@@ -140,9 +138,9 @@ namespace NAwesome::Windows::Place {
             const auto CUR = w->windowTarget()->position();
 
             // a client-maximized or workarea-filling window is not ours to
-            // place or resize — symmetric with onWindowClose. Without this
-            // we reimpose a born-maximized app's old windowed box and
-            // silently un-maximize it (isFullscreen alone misses it: the
+            // place or resize — symmetric with onWindowClose. Otherwise a
+            // born-maximized app's old windowed box would be reimposed,
+            // silently un-maximizing it (isFullscreen alone misses it: the
             // maximize never enters compositor fullscreen).
             if (toldMaximized(w) || coversWorkarea(CUR, WA))
                 return;
@@ -150,8 +148,7 @@ namespace NAwesome::Windows::Place {
             // the visible floating windows to stay clear of; maximized and
             // fullscreen ones cover no free space, as in awesome. A dialog's
             // own parent is not an obstacle: the compositor centered it there
-            // on purpose, and counting the parent sent every parented dialog
-            // off it to the least-overlap spot.
+            // on purpose.
             const auto        PARENT = w->backend().parent();
             std::vector<CBox> blockers;
             for (const auto& O : Desktop::windowState()->windows()) {
@@ -234,22 +231,21 @@ namespace NAwesome::Windows::Place {
                 }
             }
 
-            // Memory missed (or its spot is taken): least-overlap placement,
-            // KWin's default. A least-overlap top-left always sits at a grid
-            // point of the windows' own edges (and the workarea corner), so
-            // score the window there and keep the clearest — starting from,
-            // and so preferring, its current centered spot. A lone window
-            // stays centered, a busy screen fills the gaps top-left first, a
-            // full one hides where it can (windows wider than the free space
-            // have no gap and settle into the corners). One pass, no
-            // cascade, no center pile.
+            // Memory missed (or its spot is taken): least-overlap placement.
+            // A least-overlap top-left always sits at a grid point of the
+            // windows' own edges (and the workarea corner), so score the
+            // window there and keep the clearest — starting from, and so
+            // preferring, its current centered spot. A lone window stays
+            // centered, a busy screen fills the gaps top-left first, a full
+            // one hides where it can (windows wider than the free space have
+            // no gap and settle into the corners). One pass, no cascade, no
+            // center pile.
             if (!pos) {
                 // The score counts the topmost MAX_SCORED windows (the list
                 // is in stacking order, top last): (2n+1)^2 grid points
-                // times n windows grew cubically, ~10 ms per window opened
-                // over a hundred, all on the compositor thread. Past that
-                // many the screen has no clear gap to find anyway; fits()
-                // still sees every window.
+                // times n windows grows cubically, on the compositor thread.
+                // Past that many the screen has no clear gap to find anyway;
+                // fits() still sees every window.
                 constexpr size_t     MAX_SCORED = 24;
                 const std::span<const CBox> SCORED{blockers.data() + (blockers.size() > MAX_SCORED ? blockers.size() - MAX_SCORED : 0),
                                                    std::min(blockers.size(), MAX_SCORED)};

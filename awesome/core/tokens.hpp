@@ -1,21 +1,20 @@
-// awesome/core/tokens.hpp — the Frost material's tokens: the config
-// defaults (core/schema.hpp's rows) and the fixed fills, radii and motion
-// the painters use. Dependency-free, so the schema can name them.
+// The Frost material's tokens: the config defaults (core/schema.hpp's rows)
+// and the fixed fills, radii and motion the painters use. Dependency-free,
+// so the schema can name them.
 #pragma once
 
 #include <cstdint>
 
 namespace NAwesome::Theme {
 
-    // ---- the glass (0xAARRGGBB, config default form): one material for the
-    //      bar, the cards, the center, the capsules, menus and the launcher ----
-    // Adaptive: no tint — the material is the compositor's blur, whose
-    // highlights roll off (decoration:blur size 3, passes 2, vibrancy 0.6,
-    // brightness 1, highlights 0.46 — the user's config): black stays
-    // black, white settles at 104/255, so the glass sinks into a dark
-    // wallpaper and still carries white text over a white page with no
-    // drop (titles 4.9:1, measured on the previews). The RGB names the
-    // glass's own dark: the facepile's ring, the avatars' dark/light split.
+    // The glass (0xAARRGGBB, config default form): one material for the bar,
+    // the cards, the center, the capsules, menus and the launcher. No tint:
+    // the material is the compositor's blur, whose highlights roll off
+    // (decoration:blur size 3, passes 2, vibrancy 0.6, brightness 1,
+    // highlights 0.46): black stays black, white settles at 104/255, so the
+    // glass sinks into a dark wallpaper and still carries white text over a
+    // white page with no drop. The RGB names the glass's own dark: the
+    // facepile's ring, the avatars' dark/light split.
     inline constexpr uint32_t GLASS = 0x001e1e22; // 0 %
 
     // ---- ink: one white at four strengths, the blue as text only ----
@@ -54,7 +53,7 @@ namespace NAwesome::Theme {
     // ---- geometry (logical px) ----
     inline constexpr int    RAD_CARD   = 18; // notify:rounding's default
     inline constexpr int    RAD_MENU   = 12;
-    inline constexpr int    RAD_ROW    = 6; // menu rows, tags, chips
+    inline constexpr int    RAD_ROW    = 6; // menu rows, the bell's door pill, body images
     inline constexpr int    RAD_BUTTON = 9; // card buttons, app icons
     inline constexpr double ROUNDING_POWER = 3.0;
 

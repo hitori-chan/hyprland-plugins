@@ -1,5 +1,5 @@
-// awesome/shell.hpp — the shell module: the strip (workspaces, tasks,
-// tray, bell, battery, clock), the menubar, the launcher.
+// The shell module: the strip (workspaces, tasks, tray, bell, battery,
+// clock), the menubar, the launcher.
 #pragma once
 
 #include "core/supervisor.hpp"

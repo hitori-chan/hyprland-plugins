@@ -1,10 +1,10 @@
-// awesome/notify/parse.cpp — the incoming payload, turned into things a card
-// can hold. Everything here is a pure transform of what an arbitrary D-Bus
-// peer sent us: markup we must not trust, an image buffer whose own header
-// may lie, a path that may be an icon name instead. It is deliberately
-// separate from the model (which decides what a card DOES) and from the bus
-// (which only carries the bytes) — this is the hostile-input surface, and
-// it is the one worth reading on its own.
+// The incoming payload, turned into things a card can hold. Everything
+// here is a pure transform of what an arbitrary D-Bus peer sent us: markup
+// we must not trust, an image buffer whose own header may lie, a path that
+// may be an icon name instead. It is deliberately separate from the model
+// (which decides what a card DOES) and from the bus (which only carries the
+// bytes) — this is the hostile-input surface, and it is the one worth
+// reading on its own.
 
 #include "model.hpp"
 #include "textcut.hpp"
@@ -19,19 +19,20 @@ namespace NAwesome::Notify::Parse {
     // chars ("a &amp;amp; b"), a naive one sends them raw ("a & b") — a bare
     // '&'/'<' that forms no entity/tag is escaped so Pango renders it
     // verbatim either way. Disallowed tags are dropped (spec: "filter them
-    // out"); allowLinks adds <a> (hyperlinks phase). <img> never reaches
-    // here — it is extracted before sanitizing (body-images phase). A
-    // summary is the spec's plain text (only the body carries markup): a
-    // tag it does not format with stays literal text there, so "Mail from
-    // Ann <ann@x.org>" keeps the address instead of losing it as a tag.
+    // out"); allowLinks adds <a>. <img> never reaches here — it is
+    // extracted before sanitizing. A summary is the spec's plain text (only
+    // the body carries markup): a tag it does not format with stays literal
+    // text there, so "Mail from Ann <ann@x.org>" keeps the address instead
+    // of losing it as a tag.
     static bool allowedTag(const std::string& name, bool allowLinks) {
         return name == "b" || name == "i" || name == "u" || name == "span" || name == "br" || (allowLinks && name == "a");
     }
 
     // A <span> rebuilt from the attributes that only color or decorate. A
-    // font, face, size or lang per span made Pango run a fontconfig match
-    // per distinct value on the compositor thread, and a 32 KB body holds a
-    // thousand spans. Values are kept plain (no quote, entity or bracket).
+    // font, face, size or lang per span would make Pango run a fontconfig
+    // match per distinct value on the compositor thread, and a 32 KB body
+    // holds a thousand spans. Values are kept plain (no quote, entity or
+    // bracket).
     static std::string spanTag(const std::string& tag) {
         static const std::string KEEP[] = {"foreground", "fgcolor", "color", "background", "bgcolor", "alpha", "fgalpha", "bgalpha", "weight", "style",
                                            "underline", "underline_color", "strikethrough", "strikethrough_color"};
@@ -51,9 +52,8 @@ namespace NAwesome::Notify::Parse {
     }
 
     // Linear in the input: a stranger's text full of '<x' or '&' that never
-    // close must not rescan to the end for each one (a 130 KB summary of
-    // '&' was ~0.5 s on the compositor thread per call). A tag can only end
-    // at or before the LAST '>', and an entity is at most 10 bytes.
+    // close must not rescan to the end for each one. A tag can only end at
+    // or before the LAST '>', and an entity is at most 10 bytes.
     std::string sanitizeMarkup(const std::string& in, bool allowLinks, bool plainText) {
         std::string out;
         out.reserve(in.size() + 16);
@@ -243,9 +243,8 @@ namespace NAwesome::Notify::Parse {
 
     // One linear pass: every <img> tag leaves the text, but only the first
     // `maxImages` srcs are even TRIED — a resolve can be a theme scan, a miss
-    // the most expensive one, and a body of 2000 distinct unresolvable tags
-    // once ran 2000 of them on the compositor thread (counting only the
-    // srcs that resolved never stopped a body of misses).
+    // the most expensive one, so counting only the srcs that resolved would
+    // never stop a body of misses.
     std::vector<SImgRef> extractImages(std::string& body, int sizePx, size_t maxImages) {
         std::vector<SImgRef> out;
         size_t               tried = 0;

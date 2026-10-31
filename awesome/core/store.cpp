@@ -1,4 +1,3 @@
-// awesome/core/store.cpp — see store.hpp.
 #include "store.hpp"
 
 #include <algorithm>

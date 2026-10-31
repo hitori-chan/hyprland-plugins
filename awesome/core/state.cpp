@@ -1,4 +1,3 @@
-// awesome/core/state.cpp — see state.hpp.
 #include "state.hpp"
 
 #include <cmath>
@@ -322,9 +321,7 @@ namespace NAwesome {
             return;
         }
         // there, but unreadable (EIO, EACCES, mangled past the bounds):
-        // never clobber it with this session's state — a failed read once
-        // looked like a missing file and the user's memory was overwritten
-        // empty
+        // never clobber it with this session's state
         m_writeBlocked = true;
     }
 

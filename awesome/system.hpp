@@ -1,6 +1,5 @@
-// awesome/system.hpp — the system module: the volume, the mic and the
-// display's brightness (their feedback as notify cards) and the touchpad
-// policy.
+// The system module: volume, mic and brightness (their feedback as notify
+// cards) and the touchpad policy.
 #pragma once
 
 #include "core/supervisor.hpp"
@@ -22,7 +21,6 @@ namespace NAwesome::System {
         void init() override;
         void teardown() override;
 
-        // `hyprctl awesome <verb>`
         std::optional<std::string> handleCtl(const std::string& verb) const override;
     };
     CModule& module();

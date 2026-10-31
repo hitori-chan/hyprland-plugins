@@ -1,6 +1,6 @@
-// vkbd — a zwp_virtual_keyboard_v1 injector, vptr's twin for keys. Reads a
-// script on stdin so a whole chord lives in one process (the keyboard dies
-// with it), which is what keeps a stuck modifier from outliving the test.
+// A zwp_virtual_keyboard_v1 injector, vptr's twin for keys. Reads a script
+// on stdin so a whole chord lives in one process (the keyboard dies with
+// it), which keeps a stuck modifier from outliving the test.
 //   stdin lines: tap KEY | press KEY | release KEY | sleep MS
 //   KEY = a name below, or a raw linux evdev code
 #define _GNU_SOURCE

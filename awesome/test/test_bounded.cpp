@@ -1,4 +1,3 @@
-// awesome/test/test_bounded.cpp
 #include "../core/bounded.hpp"
 
 #include "harness.hpp"

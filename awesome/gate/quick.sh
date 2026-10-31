@@ -1,8 +1,8 @@
-# awesome/gate/quick.sh — the dev-loop smoke battery (~30 s): the load,
-# the strip, one window lifecycle, the CSD content-frame box (the 2026-10-04
-# bug domain), one maximize round-trip and one notification. It is the
-# gate's default run; `-b all` adds the full module batteries. Every wait is
-# on state (lib.sh's bounded polls), none on the clock.
+# The dev-loop smoke battery (~30 s): the load, the strip, one window
+# lifecycle, the CSD content-frame box, one maximize round-trip and one
+# notification. It is the gate's default run; `-b all` adds the full module
+# batteries. Every wait is on state (lib.sh's bounded polls), none on the
+# clock.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # ---- the strip -------------------------------------------------------------
@@ -23,9 +23,8 @@ expect "quick: the spawn keeps its requested 600x300 at the remembered (100,100)
 chk "quick: the task chip draws with the window" shot_until 3 "$STATE/quick-chip.png" chip_lit "$STATE/quick-chip.png"
 # the float rule (stress cfg) makes foot floating; maximize/unmaximize must
 # round-trip its floating box exactly. Poll until the maximize actually
-# landed before unmaximizing: toggling before the first toggle registered
-# sent a second MAXIMIZE (a no-op), leaving the window floating at workarea
-# size (2026-10-04 quick battery)
+# landed before unmaximizing: a toggle before the first registered would
+# send a second MAXIMIZE (a no-op)
 REFBOX="$(box4 foot)"
 dsp "hl.plugin.awesome.maximize()"
 expect_by 3 "quick: maximize covers the workarea" \
@@ -40,7 +39,7 @@ dsp "hl.dsp.exec_cmd('foot --window-size-pixels=500x400')"; settled foot
 expect "quick: the spot round-trips after close+respawn, at the requested 500x400" \
 	"any(c['class']=='foot' and c['at']==[100,100] and c['size']==[500,400] for c in cs)"
 
-# ---- CSD content frame (the 2026-10-04 bug) --------------------------------
+# ---- CSD content frame ------------------------------------------------------
 dsp "hl.dsp.exec_cmd('$REPO/devtools/splashwin 300 350 10 quickcsd')"; settled quickcsd
 expect "quick: pinned CSD box is the content frame (300x350), centered" \
 	"any(c['class']=='quickcsd' and c['floating'] and c['size']==[300,350] and abs(c['at'][0]-$(( (MON_W-300)/2 )))<=14 and abs(c['at'][1]-$(( 30+(MON_H-30-350)/2 )))<=14 for c in cs)"
@@ -48,8 +47,7 @@ capture_nested "$STATE/quick-csd.png"
 chk "quick: CSD content fills the box, the margin is cropped" csd_cropped "$STATE/quick-csd.png" "$(box4 quickcsd)"
 
 # ---- one notification -------------------------------------------------------
-# polled, bounded: a fresh nested's private dbus session settles in; one
-# read racing the settle failed for the wrong reason (2026-10-04)
+# polled, bounded: a fresh nested's private dbus session settles in
 dsp "hl.dsp.exec_cmd('notify-send -a quick smoke body')"
 chk "quick: the notification pops as a banner" until_is 6 "banners:1 resident:0" hq awesome badge ||
 	echo "  diag: badge='$(hq awesome badge)' state='$(st)' count='$(hq awesome count)'" >&2

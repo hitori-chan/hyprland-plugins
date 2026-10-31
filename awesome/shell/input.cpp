@@ -1,4 +1,4 @@
-// awesome/shell/input.cpp — clicks, scrolls and pointer ownership over the strip
+// Clicks, scrolls and pointer ownership over the strip
 
 #include "shell/shell.hpp"
 
@@ -10,8 +10,6 @@ namespace NAwesome::Shell {
     SBarHover                             barHover;
     static uint32_t                       swallowRelease = 0; // bits: 1 left, 2 right, 4 middle
 
-    // ---- click dispatch ----
-    //
     // What a cell does lives with its widget (IWidget::onHit/onScroll);
     // this unit owns swallowing, the deferral out of the input emission,
     // and the notch coalescing.
@@ -57,8 +55,6 @@ namespace NAwesome::Shell {
     static void queueHitJob(SHitJob job) {
         hitJobs.push(std::move(job));
     }
-
-    // ---- input ----
 
     using NAwesome::monitorAt; // core/queries.hpp: allocation-free, runs per pointer motion
 
@@ -216,7 +212,7 @@ namespace NAwesome::Shell {
 
     // Batched notches ACCUMULATE into one deferred hop: axis events can
     // arrive several per dispatch, and overwriting the doLaterLock cancels
-    // the unfired hop — fast wheel spins were collapsing to a single step.
+    // the unfired hop.
     static std::unordered_map<IWidget*, int> scrollAcc; // reused; main thread only
     static bool                              scrollQueued = false;
 
@@ -244,10 +240,9 @@ namespace NAwesome::Shell {
     // button 4/5 once per wheel detent and once per 15 units of touchpad
     // travel (libinput's X11 scroll distance), never once per event. A
     // high-resolution wheel sends a detent as several partial v120 events
-    // and a touchpad swipe as dozens of small deltas; both used to step on
-    // every one (a notch spun 8 tags, a swipe ran through all of them).
-    // The remainder resets on a direction flip, a source change and a
-    // touchpad's lift (its axis stop: delta 0).
+    // and a touchpad swipe as dozens of small deltas; neither steps per
+    // event. The remainder resets on a direction flip, a source change and
+    // a touchpad's lift (its axis stop: delta 0).
     static int scrollNotches(const IPointer::SAxisEvent& e) {
         static double                 acc    = 0; // main thread only
         static wl_pointer_axis_source source = WL_POINTER_AXIS_SOURCE_WHEEL;
@@ -287,8 +282,8 @@ namespace NAwesome::Shell {
                 if (!L.box.containsPoint(POS))
                     continue;
                 info.cancelled = true; // the panel owns its scroll, nothing below may see it
-                // a panel taller than the screen scrolls — GTK's menus did, under
-                // X11. One wheel notch (delta 15) = 3 rows; touchpad deltas accumulate.
+                // a panel taller than the screen scrolls, GTK-style. One wheel
+                // notch (delta 15) = 3 rows; touchpad deltas accumulate.
                 if (L.overflow && e.axis == WL_POINTER_AXIS_VERTICAL_SCROLL) {
                     static double acc = 0; // main thread only, remainder is < one row
                     acc += e.delta != 0.0 ? e.delta : e.deltaDiscrete / 120.0 * 15.0;

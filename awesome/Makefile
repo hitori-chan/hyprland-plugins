@@ -1,15 +1,12 @@
 # awesome — the unified shell plugin.
 #
-# Standalone build: same header discipline — an inherited PKG_CONFIG_PATH
-# wins
-# (hyprpm's header cache, the gate's scratch headers), and with no fork
-# installed this falls through to the installed prefix, which must be the
-# fork's (/usr/local).
+# Standalone build: an inherited PKG_CONFIG_PATH wins (hyprpm's header
+# cache, the gate's scratch headers), and with no fork installed this falls
+# through to the installed prefix, which must be the fork's (/usr/local).
 #
 # Dependencies: Hyprland itself, plus sdbus-c++ (the fd.o notification
-# daemon), librsvg (icons), libudev
-# (battery uevents), and pangocairo (text) which Hyprland's .pc does not
-# carry.
+# daemon), librsvg (icons), libudev (battery uevents), and pangocairo
+# (text) which Hyprland's .pc does not carry.
 NAME       := awesome
 PKGS       := hyprland pixman-1 libdrm
 # libeis: the input-capture protocol header includes it, Hyprland's .pc

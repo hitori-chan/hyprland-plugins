@@ -1,18 +1,14 @@
 #!/usr/bin/env bash
-# awesome/gate/stop.sh — tear the nested dev environment down: the nested
-# instance (any harness-style launch, never the live compositor), its
-# private host and system bus, and the dead instances' runtime dirs. The
-# live session was never part of it, so there is nothing to restore there.
-#
-# The gate's own teardown (harness.sh) runs the same steps on its exit path;
-# this is the standalone version for a manual launch.
+# Tear the nested dev environment down: the nested instance (any
+# harness-style launch, never the live compositor), its private host and
+# system bus, and the dead instances' runtime dirs. The live session was
+# never part of it, so there is nothing to restore there. The gate's own
+# teardown (harness.sh) runs the same steps on its exit path; this is the
+# standalone version for a manual launch.
 set -u
 
 HARNESS="${HYPR_HARNESS:-$HOME/.local/share/hypr-nested}"
-# One run at a time: every entry point shares $HARNESS (the nested's
-# signature, the host, the system bus) and kills every nested it finds —
-# a second run would tear the first one's nested down mid-battery. The
-# lock fd is closed for the long-lived children (the nested, the host).
+# One run at a time (see gate.sh).
 if [[ -z "${HYPR_HARNESS_LOCKED:-}" ]]; then
 	mkdir -p "$HARNESS"
 	exec 9>"$HARNESS/.lock"

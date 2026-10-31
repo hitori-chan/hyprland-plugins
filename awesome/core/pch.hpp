@@ -1,7 +1,6 @@
-// awesome/core/pch.hpp — the gate variant's precompiled header: the fork
-// headers and the standard ones most units include. Parsing them was a
-// third of a unit's compile and a quarter of its memory peak (the gate
-// build fits four units in its scope instead of three).
+// The gate variant's precompiled header: the fork headers and the standard
+// ones most units include (it trims a unit's compile and memory peak;
+// memcap.sh budgets the gate's jobs by it).
 //
 // GATE=1 only (the Makefile forces it in with -include): the release build
 // (hyprpm's, the deploy rehearsal, the sweep) stays plain, so a unit that

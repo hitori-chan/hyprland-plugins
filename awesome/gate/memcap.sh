@@ -1,12 +1,10 @@
-# awesome/gate/memcap.sh — sourced first by every entry point that builds
-# or runs a nested (gate, probe, dev, launch, sweep): the run lives in a
-# memory-capped cgroup of its own.
+# Sourced first by every entry point that builds or runs a nested (gate,
+# probe, dev, launch, sweep): the run lives in a memory-capped cgroup of
+# its own.
 #
 # The host can sit near its limit (other workloads, swap nearly full). The
 # kernel's global OOM killer then takes whatever allocates next; under
-# vm.oom_kill_allocating_task that is often the LIVE compositor
-# (2026-10-26: a probe's one-file rebuild tipped such a host and killed
-# the session). So a run
+# vm.oom_kill_allocating_task that is often the LIVE compositor. So a run
 #   * waits to start until the host has its budget free;
 #   * runs in a systemd user scope with MemoryMax and no swap: a run that
 #     outgrows its budget is OOM-killed inside the scope, never outside;

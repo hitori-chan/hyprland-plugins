@@ -1,5 +1,4 @@
-// awesome/windows/max.hpp — awesome's per-window maximize as a native
-// plugin.
+// Awesome's per-window maximize as a native plugin.
 //
 // awesome's Mod+M: maximized is a PER-WINDOW flag there, any number at
 // once. The compositor's internal maximize enforces one per workspace
@@ -17,10 +16,9 @@
 // forgets its normal geometry across restarts).
 //
 // Maximized windows are immovable, like awesome's: Super+left/right-click
-// on one is swallowed whole — without this, the drag bind "picks the
-// window up" at press time, instantly unmaximizing it and yoinking it to
-// the cursor at its restored size. The pipeline puts this before the
-// click policy, so the swallow wins over click-to-raise.
+// on one is swallowed whole, or the drag bind would pick the window up at
+// press time, unmaximized, at its restored size. The pipeline puts this
+// before the click policy, so the swallow wins over click-to-raise.
 #pragma once
 
 #include "geometry.hpp"
@@ -153,10 +151,8 @@ namespace NAwesome::Windows {
         // maximize/fullscreen dispatchers: a window that grows under a
         // still cursor (an adopted born-maximized window, a restore) never
         // got the pointer — and a press on the already-focused window does
-        // not refocus it, so the first click went nowhere (2026-10-04: a
-        // reopened maximized firefox ignored the titlebar double-click).
-        // Called once per drain, from the event loop, never from an input
-        // emission.
+        // not refocus it, so the first click would go nowhere. Called once
+        // per drain, from the event loop, never from an input emission.
         inline void pointerFollowsGeometry() {
             if (g_pInputManager && !sessionLocked())
                 g_pInputManager->simulateMouseMovement();
@@ -309,10 +305,9 @@ namespace NAwesome::Windows {
                 // tell the client the truth: a client never told it left
                 // maximized (notably GTK) stays in maximized mode — it
                 // saves "maximized" on close and reopens maximized, and
-                // stops tracking its normal geometry (2026-10-03: firefox
-                // "always opens maximized"). Its windowed CSD shadow
-                // margin is cropped at the box by the fork's renderer;
-                // the fork no longer lies maximized at map to suppress it.
+                // stops tracking its normal geometry. Its windowed CSD
+                // shadow margin is cropped at the box by the fork's
+                // renderer.
                 setClientMaximized(false);
                 if (STORED.w > 5 && STORED.h > 5) {
                     const CBox R = boundedRestore(W, STORED, WA);
@@ -339,11 +334,10 @@ namespace NAwesome::Windows {
         // A client's own unmaximize (its titlebar restore button, a titlebar
         // double-click) on a plugin-maximized window. The compositor drops
         // it — it only honors an unmaximize for a window IT holds maximized,
-        // and the adoption cleared that — so the client stayed told
-        // maximized forever, saved "maximized" on close and reopened
-        // maximized (2026-10-04: firefox "always opens maximized"). The
-        // request flag is volatile, so it is read in the backend's emission;
-        // the restore is deferred out of it.
+        // and the adoption cleared that — so the client would stay told
+        // maximized forever (and reopen maximized). The request flag is
+        // volatile, so it is read in the backend's emission; the restore is
+        // deferred out of it.
         inline std::unordered_map<const void*, Hyprutils::Signal::CHyprSignalListener>& unmaxRequestListeners() {
             static std::unordered_map<const void*, Hyprutils::Signal::CHyprSignalListener> M;
             return M;
@@ -430,9 +424,10 @@ namespace NAwesome::Windows {
         // A plugin-maximized window that leaves floating (togglefloating, a
         // re-tile) or unmaps no longer owns the plugin box: drop the entry,
         // keep the windowed box it held as the app's remembered one, and
-        // tell the client it left maximize. Left in place, the entry made a
-        // tiled window immovable, turned its CSD unmaximize into a native
-        // maximize and snapped it back to the workarea once floated again.
+        // tell the client it left maximize. Left in place, the entry would
+        // make a tiled window immovable, turn its CSD unmaximize into a
+        // native maximize and snap it back to the workarea once floated
+        // again.
         inline void dropMaximize(const PHLWINDOW& w) {
             const auto IT = maximized().find(PHLWINDOWREF{w});
             if (IT == maximized().end())
@@ -458,8 +453,7 @@ namespace NAwesome::Windows {
         }
     }
 
-    // ---- the pipeline handlers (called by the module, before the click
-    // ---- policy — the old load-order edge, now in call order) ----
+    // ---- the pipeline handlers (called by the module, before the click policy) ----
 
     namespace Max {
         // Buttons whose press we swallowed; their release must be swallowed
@@ -560,11 +554,10 @@ namespace NAwesome::Windows {
             // The compositor recomputes the client-facing maximized bit from
             // ITS OWN fullscreen mode on every client-mode change
             // (updateClientMaximizedState) — and this maximize lives outside
-            // that machinery, so a video entering/leaving fullscreen
-            // stripped the told-maximized state and the browser came back
-            // unmaximized. The controller emits this event AFTER its sync, so
-            // reasserting here wins, and both changes flush in one configure
-            // — the client's belief never flickers.
+            // that machinery, so a video entering/leaving fullscreen would
+            // strip the told-maximized state. The controller emits this event
+            // AFTER its sync, so reasserting here wins, and both changes
+            // flush in one configure — the client's belief never flickers.
             //
             // The same event announces a compositor-granted maximize
             // (internal FSMODE_MAXIMIZED): adopt it, deferred — we are inside

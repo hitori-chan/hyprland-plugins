@@ -1,5 +1,5 @@
-// awesome/core/version.hpp — the one version constant; hyprpm.toml must
-// match it (the gate preflight enforces the lockstep).
+// The one version constant; hyprpm.toml must match it (the gate preflight
+// enforces the lockstep).
 #pragma once
 
 namespace NAwesome {

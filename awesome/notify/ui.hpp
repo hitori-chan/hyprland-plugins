@@ -1,9 +1,8 @@
-// awesome/notify/ui.hpp — the surface machinery shared by the notify
-// drawing units (popups, center, card, stack, menu, surface). Private to
-// the module: its map lives at the top of model.hpp.
+// The surface machinery shared by the notify drawing units (popups,
+// center, card, stack, menu, surface). Private to the module: its map lives
+// at the top of model.hpp.
 //
-// "center" throughout means the SHADE: one list of live cards, Android's
-// notification shade.
+// "center" throughout means the SHADE: one list of live cards.
 //
 // The texture rule (crash class 4) runs through everything: cachedText
 // builds only while the canvas gate allows it, SPaint paints only outside
@@ -144,10 +143,7 @@ namespace NAwesome::Notify {
     };
 
     // The body line's REAL metrics (the font's own, measured once per
-    // style): the layout used to estimate 1.35x the point size, which
-    // undershot the default font by ~7% — a seven-line transcript
-    // rendered six, and the clip took the newest line once the order went
-    // chronological.
+    // style), never a multiple of the point size.
     int    bodyBudgetPx(double scale, int lines); // physical px for whole lines
 
     // Content + style + width IS the key: a replace or an age-bucket move
@@ -180,7 +176,6 @@ namespace NAwesome::Notify {
     void   decodeWarmEnd();   // a full warm ended: free the finished decodes no card wanted
     void   textCacheClear();
 
-    // small shared helpers
     std::string        hexOf(const CHyprColor& c);
     std::string        ageString(const Time::steady_tp& t); // bucketed: "now", "5m", "2h", "3d"
     std::string        clockString(std::time_t t);          // the center's: "14:02" today, "24 Oct" before

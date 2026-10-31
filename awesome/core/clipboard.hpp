@@ -1,8 +1,8 @@
-// awesome/core/clipboard.hpp — bounded asynchronous reads from the current
-// Wayland clipboard selection. A compositor-drawn editor (the menubar
-// prompt's C-v) has no wl_data_device of its own, so it asks the seat's
-// public IDataSource directly, then drains the pipe from the Wayland event
-// loop. No read blocks compositor dispatch.
+// Bounded asynchronous reads from the current Wayland clipboard selection.
+// A compositor-drawn editor (the menubar prompt's C-v) has no
+// wl_data_device of its own, so it asks the seat's public IDataSource
+// directly, then drains the pipe from the Wayland event loop. No read
+// blocks compositor dispatch.
 #pragma once
 
 #include <hyprland/src/Compositor.hpp>

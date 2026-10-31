@@ -1,14 +1,12 @@
-# awesome/gate/host.sh — the nested's private host compositor. Sourced by
-# launch.sh and stop.sh.
+# The nested's private host compositor. Sourced by launch.sh and stop.sh.
 #
 # The nested Hyprland runs aquamarine's WAYLAND backend (its headless
 # backend cannot allocate buffers on its own), so it needs a parent
-# compositor. That parent used to be the user's LIVE session: an output,
-# a workspace and a window there, and the user's Super+N and cursor landed
-# on the gate (2026-10-04). Now the parent is a private headless labwc:
-# its own socket, no input devices, never connected to the live display,
-# rendering through the GPU render node. The live session is not a party
-# to any run.
+# compositor: a private headless labwc, never the user's live session (an
+# output, a workspace and a window there would catch the user's binds and
+# cursor). Its own socket, no input devices, never connected to the live
+# display, rendering through the GPU render node. The live session is not
+# a party to any run.
 #
 # The nested also loads aquamarine at the fork's flake.lock pin, built
 # once into $HYPR_GATE_TMP/deps: the distro 0.15.1 never flushes the
@@ -24,8 +22,7 @@ AQ_SRC="${HYPR_AQ_SRC:-$HOME/repo/aquamarine}"
 
 # A recorded pid is ours only while it still runs what WE started: the
 # process's environment or command line carries our private path (a pid
-# file outlives a crash and a reboot; the pid is then someone else's — a
-# name match alone once could have killed an unrelated python3).
+# file outlives a crash and a reboot; the pid is then someone else's).
 _owns_pid() { # _owns_pid <pidfile> <environ|cmdline> <needle>: prints the pid
 	local p
 	p="$(cat "$1" 2>/dev/null)"

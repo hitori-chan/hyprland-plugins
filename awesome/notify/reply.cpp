@@ -1,4 +1,4 @@
-// awesome/notify/reply.cpp — the inline-reply field.
+// The inline-reply field.
 //
 // KDE's inline-reply protocol is the one the Linux chat apps speak: a sender
 // that sees the "inline-reply" capability adds an action keyed `inline-reply`
@@ -7,9 +7,9 @@
 // advertising it is the whole difference between replying from a banner and
 // having to raise the app.
 //
-// The field opens on demand — Reply in the card menu (or Tab
-// on the center's selection) — under the card's words, in the banner or
-// the center card alike; the banner holds its clock while it is open.
+// The field opens on demand — Reply in the card menu (or Tab on the
+// center's selection) — under the card's words, in the banner or the center
+// card alike; the banner holds its clock while it is open.
 //
 // The hard part is that we have no keyboard focus to give a text field: the
 // cards are drawn by the compositor, not by a layer surface with

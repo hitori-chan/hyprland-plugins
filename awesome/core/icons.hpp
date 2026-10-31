@@ -1,8 +1,8 @@
-// awesome/core/icons.hpp — freedesktop icon-NAME resolution, shared by every
-// module that shows themed icons (the notify module's cards, the shell's task
-// chips and tray). One implementation: the GTK theme's size dirs (scalable
-// first, then size proximity), then hicolor, then flat pixmaps. Inheritance
-// beyond hicolor isn't followed — app icons live in hicolor in practice.
+// Freedesktop icon-NAME resolution, shared by every module that shows
+// themed icons (the notify module's cards, the shell's task chips and
+// tray). One implementation: the GTK theme's size dirs (scalable first,
+// then size proximity), then hicolor, then flat pixmaps. Inheritance beyond
+// hicolor isn't followed — app icons live in hicolor in practice.
 //
 // Pure name -> path; rasterizing stays per module (each has its own texture
 // rules and caches). Misses are cached too, so a nonexistent name never
@@ -282,8 +282,8 @@ namespace NAwesome {
 
     // The name memo, two generations: a hit in the old one moves to the
     // young one, and when the young one fills, the old one goes. Recent
-    // names survive the bound (a plain clear at the bound rescanned every
-    // live app's icon), and the memory stays two generations' worth.
+    // names survive the bound (a plain clear would rescan every live app's
+    // icon), and the memory stays two generations' worth.
     struct SIconNameMemo {
         std::unordered_map<std::string, std::string> young, old;
         void                                         clear() {
@@ -302,8 +302,7 @@ namespace NAwesome {
     // and four more hints, an SNI IconName). Past this many walks a window
     // the rest resolve to nothing, uncached, so they are tried again later:
     // a burst of distinct names costs a bounded stall, never one per name.
-    // A short window (32 a second on average) keeps one burst to ~25 ms,
-    // where 32 back to back were ~100 ms in one loop turn.
+    // A short window (32 a second on average) keeps one burst to ~25 ms.
     inline constexpr int  MAX_ICON_WALKS_PER_WINDOW = 8;
     inline constexpr auto ICON_WALK_WINDOW          = std::chrono::milliseconds(250);
     // Set by a resolve the budget refused: the name is unresolved FOR NOW,
@@ -382,10 +381,9 @@ namespace NAwesome {
     // GTK's index of a theme dir, icon-theme.cache (gtk-update-icon-cache;
     // the package manager's hook rewrites every packaged theme's): a name is
     // a hash bucket and a few short reads, where the walk is hundreds of
-    // stats and a miss thousands — 35 ms warm, 180 ms cold for a name breeze
-    // and hicolor both lack, on the compositor thread. Trusted as GTK trusts
-    // it: only when no older than its dir. Read with pread on a held fd,
-    // never mapped (a cache truncated under a mapping would SIGBUS the
+    // stats and a miss thousands, on the compositor thread. Trusted as GTK
+    // trusts it: only when no older than its dir. Read with pread on a held
+    // fd, never mapped (a cache truncated under a mapping would SIGBUS the
     // compositor), every offset checked against the size at open: a corrupt
     // one answers nothing, never a read out of bounds or an endless chain.
     class CIconThemeCache {
@@ -605,9 +603,8 @@ namespace NAwesome {
     // Resolve a freedesktop icon NAME to a file path via themed lookup; "" if
     // unresolved or if the string is already a path. Cached per name AND
     // size: the requested size leads sizeDirs below, so in a PNG-only theme
-    // it CHOOSES the file — keyed on the name alone, whichever caller asked
-    // first pinned the size for every later one (the notify module wants a card
-    // icon at max_icon and an action icon at ~15px).
+    // it CHOOSES the file (the notify module wants a card icon at max_icon
+    // and an action icon at ~15px).
     // Names come from session-bus senders (a notification's app_icon, an
     // SNI IconName): only a plausible freedesktop icon name is worth a theme
     // scan, and the memo is bounded (cleared at the bound: a re-resolution

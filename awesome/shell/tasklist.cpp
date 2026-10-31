@@ -1,7 +1,7 @@
-// awesome/shell/tasklist.cpp — awesome's tasklist VIEW: the state-marker
-// labels and the widget filling the bar's middle. The STATE (minimized, the
-// arrival order) lives in the windows module next to the maximize state it
-// composes with; this unit only draws and routes.
+// Awesome's tasklist VIEW: the state-marker labels and the widget filling
+// the bar's middle. The STATE (minimized, the arrival order) lives in the
+// windows module next to the maximize state it composes with; this unit
+// only draws and routes.
 
 #include "shell/shell.hpp"
 
@@ -17,13 +17,13 @@ namespace NAwesome::Shell {
     // is ▪ sticky, ⌃ ontop, ▴ above, ▾ below, + maximized, ⬌/⬍ maximized
     // h/v, ✈ floating — crosschecked against what exists here:
     //   ⌃  a PINNED window. Hyprland's pin is ontop AND sticky at once, but
-    //      the user's Super+T was awesome's `c.ontop` toggle (its tasklist
-    //      marker: ⌃) and nothing in their old config ever set sticky, so
-    //      pin presents as the ontop it replaces — ▪ would read as wrong.
+    //      it stands in for awesome's `c.ontop` toggle (Super+T, its
+    //      tasklist marker: ⌃), so pin presents as ontop — ▪ would read as
+    //      wrong.
     //   +  maximized (awesome drew it bold; plain here — markup would need
     //      escaping every title).
     //   ✈  floating is dropped: the floating-only rule floats every window,
-    //      so the mark sat on every task and said nothing.
+    //      so the mark would sit on every task and say nothing.
     //   ▴/▾/⬌/⬍ have no Hyprland analog.
     void Tasklist::label(const PHLWINDOW& w, std::string& out) {
         out.clear();

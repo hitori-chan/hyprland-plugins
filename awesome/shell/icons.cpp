@@ -1,4 +1,4 @@
-// awesome/shell/icons.cpp — icon loading and resolution: GTK theme dirs, PNG/SVG, per-use caches
+// Icon loading and resolution: GTK theme dirs, PNG/SVG, per-use caches
 
 #include "../core/icons.hpp" // the shared XDG walk + the GTK theme name
 #include "../core/desktopindex.hpp"
@@ -6,8 +6,6 @@
 #include "shell/shell.hpp"
 
 namespace NAwesome::Shell {
-
-    // ---- icons (tasklist + tray) ----
 
     int iconDevicePx() {
         double scale = 1.0;
@@ -20,7 +18,7 @@ namespace NAwesome::Shell {
     // the whole raster, then box-filtered once on the CPU to the cell's
     // device size (px): GL's bilinear sampling would alias a 24 px icon into
     // a 16 px cell, and apps that ship a single 256-1024 px icon must not
-    // ride to GL full size — the notify module's scaledTex rule
+    // ride to GL full size
     static SP<ITexture> pngTexture(const std::vector<uint8_t>& data, uint32_t maxDim, int px) {
         const auto DIMS = NAwesome::rasterDims(data.data(), data.size());
         if (!DIMS || DIMS->first == 0 || DIMS->second == 0 || DIMS->first > maxDim || DIMS->second > maxDim ||
@@ -94,8 +92,8 @@ namespace NAwesome::Shell {
     }
 
     // Every decode here runs on the compositor thread, the small ones too: a
-    // launcher's first open decoded its 12-20 visible icons in one warm, a
-    // tray menu up to 512 named ones in one reply. Past DECODE_BUDGET of
+    // launcher's first open decodes its visible icons in one warm, a tray
+    // menu up to 512 named ones in one reply. Past DECODE_BUDGET of
     // decode time in a DECODE_WINDOW the rest defer like a refused walk
     // (uncached, retried a beat later), so they fill in over a few frames.
     constexpr auto                        DECODE_BUDGET = std::chrono::microseconds(4000);
@@ -236,11 +234,9 @@ namespace NAwesome::Shell {
         return "";
     }
 
-    // Window class -> Icon= from the app's .desktop file. A window's class
-    // rarely equals its desktop-file basename (ente's class is "ente" but it
-    // ships ente-desktop.desktop; qBittorrent's is "qbittorrent" under
-    // org.qbittorrent.qBittorrent.desktop) — the spec's StartupWMClass field
-    // is the canonical association, so scan for it when the basename misses.
+    // Window class (or SNI Id) -> Icon= through the .desktop index, which
+    // keys each entry by its id, basename and StartupWMClass
+    // (core/desktopindex.cpp).
     static std::string desktopIconName(const std::string& identifier) {
         const auto& INDEX = NAwesome::CDesktopIndex::inst();
         const auto  ID    = asciiLower(identifier);
@@ -327,10 +323,6 @@ namespace NAwesome::Shell {
         return remember(namedIconCache, name, path.empty() ? nullptr : loadIcon(path));
     }
 
-    // tray icon name (+ the item's own theme dir) -> texture; nullptr cached
-    // too. fcitx REALLY flips its icon on every IM toggle / input context
-    // change — without this cache every flip re-resolved and re-rasterized the
-    // file from disk inside the render pass.
     void dropStaleTint() {
         static uint64_t lastFg = 0;
         static int      lastPx = 0;
@@ -343,8 +335,8 @@ namespace NAwesome::Shell {
         appIconCache.clear();
         namedIconCache.clear();
         trayIconCache.clear();
-        // the tray cells hold textures from the dropped cache: they kept the
-        // old tint until their app changed its icon
+        // the tray cells hold textures from the dropped cache: they would
+        // keep the old tint until their app changed its icon
         if (!Tray::items.empty()) {
             for (const auto& IT : Tray::items)
                 IT->dirty = true;
@@ -352,6 +344,8 @@ namespace NAwesome::Shell {
         }
     }
 
+    // tray icon name (+ the item's own theme dir) -> texture; nullptr cached
+    // too: fcitx flips its icon on every IM toggle / input context change
     SP<ITexture> trayIcon(const std::string& name, const std::string& themePath, const std::string& id) {
         const auto KEY = name + "|" + themePath + "|" + id;
         if (const auto IT = trayIconCache.find(KEY); IT != trayIconCache.end())
@@ -374,8 +368,8 @@ namespace NAwesome::Shell {
     // A reload may follow a GTK theme switch, and everything above was
     // resolved against the old one: then drop the caches; the next warm
     // resolves again. The same theme keeps what it resolved (a reload per
-    // config save re-decoded every icon) and drops only the misses, so an
-    // icon installed since can still land.
+    // config save must not re-decode every icon) and drops only the misses,
+    // so an icon installed since can still land.
     static uint64_t seenThemeGeneration = 0;
     bool            iconsReload() {
         NAwesome::refreshIconTheme();
@@ -399,8 +393,8 @@ namespace NAwesome::Shell {
         g_pEventLoopManager->addTimer(retry);
         // the shared .desktop index (core) grew: new entries can only fill
         // MISSES (cached nulls) — a resolved icon stays resolved; clearing
-        // everything per batch re-decoded every task and tray icon dozens of
-        // times while the index loaded
+        // everything per batch would re-decode every icon while the index
+        // loads
         NAwesome::CDesktopIndex::inst().subscribe([]() {
             std::erase_if(appIconCache, [](const auto& E) { return !E.second; });
             std::erase_if(trayIconCache, [](const auto& E) { return !E.second; });

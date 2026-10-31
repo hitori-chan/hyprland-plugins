@@ -1,8 +1,8 @@
-// awesome/test/test_iconcache.cpp — the icon theme cache reader: a cache
-// gtk-update-icon-cache wrote resolves as the walk would (when the tool is
-// installed), a stale one falls back to the walk, and a corrupt one answers
-// nothing. Temp themes live in a private /tmp/hypr-awesome-test-icons.*
-// (the sweep runs several harnesses at once).
+// The icon theme cache reader: a cache gtk-update-icon-cache wrote
+// resolves as the walk would (when the tool is installed), a stale one
+// falls back to the walk, and a corrupt one answers nothing. Temp themes
+// live in a private /tmp/hypr-awesome-test-icons.* (the sweep runs several
+// harnesses at once).
 #include "../core/icons.hpp"
 
 #include "harness.hpp"

@@ -1,14 +1,11 @@
-// awesome/notify/model.cpp — the cards themselves: what one is, how it
-// arrives, how long it lives and when it stops being visible. Everything a
-// notification DOES between the wire and the glass is decided here.
+// The cards themselves: what one is, how it arrives, how long it lives and
+// when it stops being visible. Everything a notification DOES between the
+// wire and the glass is decided here.
 //
 // The split from bus.cpp is by ownership, not by layer: bus.cpp owns the
 // connection (the vtable, the signals, the name), parse.cpp owns the
-// untrusted payload, and this unit owns the list. The one thing the model
-// reaches back over the bus for is the outbound half of a card's life —
-// NotificationClosed — which it does through emitClosed and nothing else
-// (the old bell State signal is gone: the shell's bell reads this list
-// directly, in the same .so).
+// untrusted payload, and this unit owns the list. The model reaches back
+// over the bus only for NotificationClosed, through emitClosed.
 //
 // RESIDENCY is the model's central rule: a card's BANNER and the card
 // itself have separate lifetimes. Expiry takes the banner and leaves the
@@ -206,8 +203,7 @@ namespace NAwesome::Notify {
         // A banner must not expire out from under the pointer reading it. The
         // hovered card's clock stops (the sweep and the rearm both skip it),
         // and leaving RESTARTS it rather than resuming the sliver that was
-        // left — Android's heads-up does the same when a touch ends: you get
-        // the whole read window back, not the tail of it.
+        // left: the whole read window comes back, not its tail.
         void holdBanner(uint32_t id) {
             if (heldBanner == id)
                 return;
@@ -265,8 +261,7 @@ namespace NAwesome::Notify {
             return "banners:" + std::to_string(LIVE) + " resident:" + std::to_string(KEPT);
         }
 
-        // notifs is newest-first, so the first visible card is the newest —
-        // the stress gate's single-card batteries make it the top row too
+        // notifs is newest-first, so the first visible card is the newest
         std::string toplineString() {
             for (const auto& N : notifs)
                 if (!N->waiting && !offShade(N))
@@ -354,9 +349,8 @@ namespace NAwesome::Notify {
                 hints.emplace("value", sdbus::Variant{std::clamp(c.value, 0, 100)});
             if (c.urgency != 1)
                 hints.emplace("urgency", sdbus::Variant{c.urgency});
-            // We ARE the in-tree OSD sender: being in-process is the pass
-            // that lets a FRESH band id pin its replace-in-place slot (a
-            // foreign client gets its band id zeroed)
+            // being in-process is the pass that lets a FRESH band id pin its
+            // replace-in-place slot (a foreign client gets its band id zeroed)
             // a capsule below critical draws its glyph, never an icon (and
             // never reaches the shade): no theme lookup for it
             const bool  GLYPH_ONLY = c.glyph != Glyph::eGlyph::NONE && c.urgency < 2;
@@ -378,9 +372,8 @@ namespace NAwesome::Notify {
                 N->orphaned = true;
                 // nobody listens for a reply or an action any more: the field,
                 // the menu's actions and the primary go, and a click is a plain
-                // dismissal (it closed the shade for a signal nobody got).
-                // The app's next instance brings its own when it continues
-                // the card.
+                // dismissal. The app's next instance brings its own when it
+                // continues the card.
                 changed |= std::exchange(N->canReply, false) || !N->actions.empty() || !N->defaultAction.empty();
                 N->actions.clear();
                 N->defaultAction.clear();
@@ -551,14 +544,12 @@ namespace NAwesome::Notify {
 
         // Closing the shade returns what the open parked: an absorbed card
         // gets its banner back, or stays parked under the same per-app cap
-        // (and menu switches) the DND resume applies. Without this, an outside click next to
-        // the panel (the offset strip, the screen edge) closed the shade and
-        // left the whole stack invisible — the notifications sat in the now
-        // closed panel, nowhere on screen. Expiry-parked cards are not
-        // absorbed and stay parked: an expired banner does not re-pop because
-        // the user closed the panel. A close that does not re-pop (an action
-        // leaving) parks them for good: a flag left behind re-popped them at
-        // some later, unrelated close.
+        // (and menu switches) the DND resume applies; otherwise an outside
+        // click next to the panel would leave the whole stack invisible.
+        // Expiry-parked cards are not absorbed and stay parked: an expired
+        // banner does not re-pop because the user closed the panel. A close
+        // that does not re-pop (an action leaving) parks them for good, so no
+        // flag left behind re-pops them at a later, unrelated close.
         void repopAbsorbed(bool repop) {
             const auto NOW     = Time::steadyNow();
             bool       changed = false;
@@ -637,13 +628,12 @@ namespace NAwesome::Notify {
             return suspended ? StateStore::inst().data().options.get(eOption::DND) : 0;
         }
 
-        // The client sent -1: critical always sticks
-        // (a message that demands an answer waits on screen). Everything else
-        // runs a clock and then retreats to the shade — the center is the
-        // safety net now, so a normal banner need not linger. Ephemerals (low
-        // urgency, the transient hint, progress/OSD blips) run the short low
-        // clock; normal urgency runs timeout_normal.
-        // An explicit expire_timeout never lands here.
+        // The client sent -1: critical always sticks (a message that demands
+        // an answer waits on screen). Everything else runs a clock and then
+        // retreats to the shade, the center being the safety net. Ephemerals
+        // (low urgency, the transient hint, progress/OSD blips) run the short
+        // low clock; normal urgency runs timeout_normal. An explicit
+        // expire_timeout never lands here.
         static float defaultTimeout(const SNotif& n) {
             if (n.urgency >= 2)
                 return 0.f;
@@ -831,7 +821,7 @@ namespace NAwesome::Notify {
             n.identityFromDesktop  = false;
             n.identity             = resolveName(n.appIconSource, iconPx, deferred);
             if (n.identity.empty() && !n.desktopEntry.empty()) {
-                // the entry's own Icon= (the F2 index) beats an icon-name
+                // the entry's own Icon= (the .desktop index) beats an icon-name
                 // collision; while the index has not reached the entry the
                 // name stand-in holds, and pollDesktopIndex upgrades it
                 NAwesome::iconDeferred() = false;
@@ -846,15 +836,10 @@ namespace NAwesome::Notify {
             return deferred && n.identity.empty();
         }
 
-        // ---- arrival ----
-
         // Fresh ids count up from a low counter and skip any still in use (a
         // card's, or a chat message's), so they never collide with a
-        // displayed notification. Crucially the counter is NOT dragged up to
-        // a seen replaces_id (as it once was): the OSD scripts pin ids in the
-        // 9990s, and bumping past 9991 handed the next fresh notification
-        // 9992 — the brightness OSD's id — so a keypress hijacked it. Low
-        // fresh ids and the pinned band stay disjoint.
+        // displayed notification. The counter is never dragged up to a seen
+        // replaces_id: low fresh ids and the pinned OSD band stay disjoint.
         static uint32_t freshId() {
             uint32_t id = 0;
             do {
@@ -874,9 +859,9 @@ namespace NAwesome::Notify {
             // actions and activation token go there. A replaces_id or a
             // merge from another client would rebind it (the user's next
             // reply typed into a hijacked chat), so another client's id
-            // starts a fresh card instead (as Plasma does). A card whose
-            // sender left the bus is ownerless: the app's next instance
-            // continues it. In-process posts (sender "") own theirs.
+            // starts a fresh card instead. A card whose sender left the bus
+            // is ownerless: the app's next instance continues it. In-process
+            // posts (sender "") own theirs.
             const auto TAKEABLE = [&sender](const SNotif& N) { return N.sender == sender || N.orphaned; };
             // replaces_id names a card, or one message of a chat card: that
             // message is replaced in place (replaceNid), its card the target
@@ -1028,17 +1013,17 @@ namespace NAwesome::Notify {
             const std::string SENDER_NAME    = SENDER_NAME_HINT ? Parse::oneLine(Parse::sanitizeMarkup(*SENDER_NAME_HINT)) : std::string{};
             const bool        HISTORIC       = HISTORIC_HINT.value_or(false);
 
-            // THE CONVERSATION MERGE (Android's MessagingStyle): every message
-            // of one chat is ONE card, its messages a log. The primary
-            // contract is the sender's stable conversation-id: display text
-            // and category alone are insufficient — two Telegram chats can
-            // share a title, and a browser can reuse visible text for
-            // unrelated site alerts. Without a conversation-id the legacy
-            // contract stands: a fresh Notify whose app + summary matches a
-            // live chat card joins it (the fd.o conversation categories — the
-            // summary IS the sender or the room — and x-canonical-append).
-            // Cards that vanish never merge (a suppressed banner would strand
-            // them), nor does the OSD band.
+            // THE CONVERSATION MERGE: every message of one chat is ONE card,
+            // its messages a log. The primary contract is the sender's stable
+            // conversation-id: display text and category alone are
+            // insufficient — two Telegram chats can share a title, and a
+            // browser can reuse visible text for unrelated site alerts.
+            // Without a conversation-id the legacy contract stands: a fresh
+            // Notify whose app + summary matches a live chat card joins it
+            // (the fd.o conversation categories — the summary IS the sender
+            // or the room — and x-canonical-append). Cards that vanish never
+            // merge (a suppressed banner would strand them), nor does the OSD
+            // band.
             const bool CANONICAL_APPEND = hintFlag(hints, "x-canonical-append").value_or(false);
             // the CLIPPED summary, as stored: the raw one was both unbounded
             // work and never equal past the clip
@@ -1291,11 +1276,11 @@ namespace NAwesome::Notify {
                     } catch (...) {}
                 }
 
-            // The icon anatomy (Android's, per the design contract): the
-            // CONTENT image (image-data / image-path) owns the icon column;
-            // the IDENTITY (app_icon param, else the desktop-entry hint)
-            // rides it as a corner badge — or leads alone when there is no
-            // content. Nothing at all = a text-only card.
+            // The icon anatomy (docs/notify.md): the CONTENT image
+            // (image-data / image-path) owns the icon column; the IDENTITY
+            // (app_icon param, else the desktop-entry hint) rides it as a
+            // corner badge — or leads alone when there is no content.
+            // Nothing at all = a text-only card.
             const int PIXCAP = std::max((int)NAwesome::cfg().getI("plugin:awesome:notify:width") * 2, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon") * 3);
             if (image && !n->hasPixels)
                 takeImageData(*n, std::move(*image), PIXCAP, ICONPX);
@@ -1333,12 +1318,9 @@ namespace NAwesome::Notify {
             n->replySubmitText  = clipUtf8(strHint("x-kde-reply-submit-button-text"), MAX_REPLY_TEXT_BYTES);
 
             // actions arrive as [id0,label0, id1,label1, ...]. Every named
-            // pair becomes a row of the card menu; "default" is the
-            // card's primary and gets NO row on either surface — the spec
-            // defines it as "the default action (usually invoked by clicking
-            // the notification)" and says implementations are free not to
-            // display it, so a body click is what fires it and a row would
-            // only duplicate that.
+            // pair becomes a row of the card menu; "default" is the card's
+            // primary and gets NO row on either surface (the spec lets an
+            // implementation not display it): a body click fires it.
             n->defaultAction.clear();
             n->actions.clear();
             for (size_t i = 0; i + 1 < actions.size(); i += 2) {
@@ -1442,8 +1424,6 @@ namespace NAwesome::Notify {
             return wire;
         }
 
-        // ---- lifecycle ----
-
         void init() {
             Policy::prune();
             expiry = makeShared<CEventLoopTimer>(
@@ -1465,8 +1445,8 @@ namespace NAwesome::Notify {
                         }
                         // into the shade: it still exists (we advertise
                         // persistence), so no NotificationClosed — libnotify
-                        // and GLib forget a closed id, and its actions in the
-                        // shade then reached nobody
+                        // and GLib forget a closed id, and its shade actions
+                        // would reach nobody
                         N->banner = false;
                         changed   = true;
                     }

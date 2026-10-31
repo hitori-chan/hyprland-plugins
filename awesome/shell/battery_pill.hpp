@@ -1,19 +1,20 @@
-// awesome/shell/battery_pill.hpp — the bar's battery glyph: Pixel's
-// expressive battery, transcribed from SystemUI's Compose battery (Android
-// 16 QPR2: BatteryFrame, BatteryGlyph, BatteryMeasurePolicy,
-// UnifiedBattery.kt; Apache-2.0, the paths verbatim). On its 24 x 13
-// viewport: a borderless round-rect body (r 4) as a translucent white
-// track, the level a left-anchored fill clipped to ceil(level * 24 / 100)
-// units, the number in BatteryGlyph's own digits (vector paths, not a
-// font) centred as a row 0.8 apart, and to the right either the cap one
-// unit off or the attribution glyph — the charging bolt, the charge-limit
-// shield, the power-save plus, the unknown question — overlapping the body
-// by a fifth of its width inside a 2-unit ring. Full, the whole body takes
-// the fill. Pure cairo, so the unit harness rasters it.
+// The bar's battery glyph. On its 24 x 13 viewport: a borderless
+// round-rect body (r 4) as a translucent white track, the level a
+// left-anchored fill clipped to ceil(level * 24 / 100) units, the number in
+// BatteryGlyph's own digits (vector paths, not a font) centred as a row 0.8
+// apart, and to the right either the cap one unit off or the attribution
+// glyph — the charging bolt, the charge-limit shield, the power-save plus,
+// the unknown question — overlapping the body by a fifth of its width
+// inside a 2-unit ring. Full, the whole body takes the fill. Pure cairo, so
+// the unit harness rasters it.
+//
+// Transcribed from SystemUI's Compose battery (Android 16 QPR2:
+// BatteryFrame, BatteryGlyph, BatteryMeasurePolicy, UnifiedBattery.kt;
+// Apache-2.0, the paths verbatim).
 //
 // Two departures, both for the bar's glass: the ring is cut out of the body
-// (the phone paints it black over its black status bar; over glass black is
-// a halo), and the digit row starts on a whole device pixel.
+// (painted black, over glass it would be a halo), and the digit row starts
+// on a whole device pixel.
 #pragma once
 
 #include "shell/battery_state.hpp"
@@ -97,7 +98,7 @@ namespace NAwesome::Shell::Battery {
         };
 
         // BatteryGlyph's digits 0-9 (w, h, path), its cap and its attribution
-        // glyphs (the bolt, the defender shield, the power-save plus, the
+        // glyphs (the bolt, the charge-limit shield, the power-save plus, the
         // question), verbatim
         inline constexpr SPathGlyph DIGITS[10] = {
             {7.07, 9.01,

@@ -1,11 +1,7 @@
-// awesome/notify/bus.cpp — the org.freedesktop.Notifications connection:
-// the object, its vtable, the signals we emit and the name we own. It
-// holds no cards; every method here is a thin translation between the wire
-// and model.cpp, and every signal is something the model asked to send.
-//
-// The only D-Bus interface in the plugin: the old private bus shell face
-// is gone — the bell lives in the same .so now and calls the model's
-// functions directly.
+// The org.freedesktop.Notifications connection: the object, its vtable,
+// the signals we emit and the name we own. It holds no cards; every method
+// here is a thin translation between the wire and model.cpp, and every
+// signal is something the model asked to send.
 #include "model.hpp"
 
 #include "../core/activate.hpp"
@@ -29,12 +25,11 @@ namespace NAwesome::Notify::Bus {
     // callbacks: every outbound signal joins ONE ordered queue, sent by one
     // post per drain. Ordered: a card's NotificationClosed must not overtake
     // its ActionInvoked (GLib's GNotification forgets an id on close and
-    // drops the action after it), which two separate posts allowed. Batched:
-    // a Clear all over 400 cards was 400 posts against the link's 256 bound
-    // once, and the tail's closes were dropped. Bounded: past MAX_OUT queued
-    // signals a push is refused — room for a Clear all at max_notifs' ceiling
-    // (512) of chats holding their whole log (a close per message), with the
-    // clicks around it.
+    // drops the action after it). Batched: a Clear all over hundreds of
+    // cards is one post, not one each against the link's post bound.
+    // Bounded: past MAX_OUT queued signals a push is refused — room for a
+    // Clear all at max_notifs' ceiling (512) of chats holding their whole
+    // log (a close per message), with the clicks around it.
     struct SOut {
         enum eKind : uint8_t {
             CLOSED,
@@ -160,16 +155,15 @@ namespace NAwesome::Notify::Bus {
 
     // sdbus-c++'s typed handler reads the hints into Variants, and a Variant
     // copies its value element by element into a message of its own: a
-    // screenshot's image-data held the dispatch 0.2 s (1280x720 RGB) to
-    // 0.65 s (1080p RGBA) before the model saw a byte of it. Read here, the
-    // image header is checked first and its pixels leave the message in one
-    // block; the model's other hints are basic values, cheap as Variants;
-    // every other value is walked past without a copy (skipOne), and so is
-    // every hint past MAX_HINTS kept and every action string past
-    // MAX_ACTION_STRINGS (the model keeps 8 menu rows, the default and the
-    // reply). A walk is linear in elements (~0.2-1 us each): past
-    // MAX_WALKED of them a call is refused, the defined behavior at a bound
-    // only a hostile sender reaches.
+    // screenshot's image-data would hold the dispatch for tenths of a
+    // second. Read here, the image header is checked first and its pixels
+    // leave the message in one block; the model's other hints are basic
+    // values, cheap as Variants; every other value is walked past without a
+    // copy (skipOne), and so is every hint past MAX_HINTS kept and every
+    // action string past MAX_ACTION_STRINGS (the model keeps 8 menu rows,
+    // the default and the reply). A walk is linear in elements (~0.2-1 us
+    // each): past MAX_WALKED of them a call is refused, the defined behavior
+    // at a bound only a hostile sender reaches.
     constexpr size_t MAX_HINTS          = 64;
     constexpr size_t MAX_ACTION_STRINGS = 64;
     constexpr size_t MAX_WALKED         = 1 << 16;

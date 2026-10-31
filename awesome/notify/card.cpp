@@ -1,15 +1,14 @@
-// awesome/notify/card.cpp — ONE notification card, wherever it shows: a
-// banner in the column, a card in the center, alone or in its app's stack.
-// The anatomy is the same everywhere: the icon column (the sender's face
-// wearing the app's badge, or a group chat's initials), the title row
-// (title, the unread count, the meta flush right), the body and the
-// progress track; below, across the card's whole inner width, a banner's
-// hero and an opened reply field. A card is its face, its words and its
-// time at rest, and it grows no buttons under the pointer (the user's hold
-// and right click do that work): the glass lifts, and the sender's actions
-// live in the card menu. A banner and the center
-// card it retreats into must never say different things — so they are one
-// function.
+// ONE notification card, wherever it shows: a banner in the column, a card
+// in the center, alone or in its app's stack. The anatomy is the same
+// everywhere: the icon column (the sender's face wearing the app's badge,
+// or a group chat's initials), the title row (title, the unread count, the
+// meta flush right), the body and the progress track; below, across the
+// card's whole inner width, a banner's hero and an opened reply field. A
+// card is its face, its words and its time at rest, and it grows no buttons
+// under the pointer (the user's hold and right click do that work): the
+// glass lifts, and the sender's actions live in the card menu. A banner and
+// the center card it retreats into must never say different things — so
+// they are one function.
 //
 // Layout requests every texture unconditionally and paints only through
 // the paint context, which no-ops inside a warm (the texture rule, crash
@@ -176,8 +175,7 @@ namespace NAwesome::Notify {
             // line, the progress and an opened reply field first (what the
             // user is doing), then the hero, the images, their alt lines; the
             // body takes what is left. A block that does not fit is dropped
-            // whole, from the end — painted past the glass once, it covered
-            // whatever lay below and took none of its clicks.
+            // whole, from the end, never painted past the glass.
             const double MAXH = std::max((double)cfg().getI("plugin:awesome:notify:max_height"), 60.0);
             double       room = MAXH - 2 * PY - ROWH - (RAWBODY.empty() ? 0 : ROW_GAP + LINEPX / P.scale) - PROGH - (REPLY ? BLOCK_GAP + FIELD_H : 0);
             const auto   take = [&](double h) {

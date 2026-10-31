@@ -1,5 +1,5 @@
-// awesome/test/test_schema.cpp — table integrity, defaults, and the clamps
-// the live loader applies (core/config.cpp reads every value through them).
+// Table integrity, defaults, and the clamps the live loader applies
+// (core/config.cpp reads every value through them).
 #include "../core/schema.hpp"
 
 #include <cmath>
@@ -25,10 +25,9 @@ bool test_schema() {
         for (const auto& B : SPECS)
             if (&A != &B)
                 AW_CHECK(K != B.key);
-        // an alpha-0 color default paints nothing: a six-digit hex in a 32-bit
-        // AARRGGBB field is the trap (the 0xff8a5c incident — the urgent ring
-        // and the battery fills were silently invisible). The glass is the one
-        // deliberate exception: it carries no tint, the blur is the material
+        // an alpha-0 color default paints nothing: a six-digit hex in a
+        // 32-bit AARRGGBB field is the trap. The glass is the one deliberate
+        // exception: it carries no tint, the blur is the material
         if (A.kind == Kind::Color && K != "plugin:awesome:theme:col_glass")
             AW_CHECK((A.cval >> 24) != 0);
         // every default sits inside its own range

@@ -1,5 +1,5 @@
-// awesome/test/test_textcut.cpp — the cut a card's text takes before pango:
-// never inside a tag, an entity or a codepoint, open tags closed.
+// The cut a card's text takes before pango: never inside a tag, an entity
+// or a codepoint, open tags closed.
 #include "../notify/textcut.hpp"
 
 #include "harness.hpp"

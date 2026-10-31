@@ -1,8 +1,7 @@
-// awesome/core/desktopindex.hpp — the .desktop index: ONE scan of the XDG
-// application dirs for the whole plugin. The bar (task and tray icons) and
-// the cards (a sender's desktop-entry hint) map a desktop id or a window
-// class to the entry's Icon=, and the launcher lists the entries; they used
-// to run two scans, two helper processes and two parsers.
+// The .desktop index: ONE scan of the XDG application dirs for the whole
+// plugin. The bar (task and tray icons) and the cards (a sender's
+// desktop-entry hint) map a desktop id or a window class to the entry's
+// Icon=, and the launcher lists the entries.
 //
 // The scan runs in the file-index helper process (core/fileindex.hpp);
 // batches fold in on the event loop, and subscribers hear once per change.
@@ -10,8 +9,9 @@
 // refresh (an applications dir changed since: an app installed or removed)
 // builds the next index aside and swaps it in whole, so a lookup never sees
 // a half-scanned set; a scan cut short (deadline, helper failure) swaps
-// nothing and is retried at the next refresh check. The supervisor owns it: started before the modules
-// init, stopped (subscribers dropped) after they tear down.
+// nothing and is retried at the next refresh check. The supervisor owns it:
+// started before the modules init, stopped (subscribers dropped) after they
+// tear down.
 #pragma once
 
 #include "desktop_exec.hpp"

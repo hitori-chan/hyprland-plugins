@@ -1,7 +1,7 @@
-// awesome/core/theme.hpp — the Frost material at runtime: the color memo,
-// the fixed fills as ready colors, and the compositor gates the glass
-// rides on. The tokens themselves live in tokens.hpp (the schema's
-// defaults name them; theme.lua overrides those through the schema).
+// The Frost material at runtime: the color memo, the fixed fills as ready
+// colors, and the compositor gates the glass rides on. The tokens live in
+// tokens.hpp (the schema's defaults name them; theme.lua overrides those
+// through the schema).
 #pragma once
 
 #include "schema.hpp"

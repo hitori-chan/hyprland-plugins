@@ -1,5 +1,5 @@
-// awesome/core/raster.hpp — pixel work off the compositor thread: scale,
-// crop and unpack on bytes already in memory.
+// Pixel work off the compositor thread: scale, crop and unpack on bytes
+// already in memory.
 //
 // The compositor thread runs on a realtime budget (rtkit's RLIMIT_RTTIME:
 // a CPU burst past 200 ms ends the session), and scaling one screenshot
@@ -8,11 +8,11 @@
 // GL context or compositor state — so teardown can always join it within
 // one job's bounded time. Its done runs on the event loop (an eventfd
 // source); the caller checks that its card is still the one it was for,
-// and uploads in its next warm (the texture rule stays where it was).
+// and uploads in its next warm (invariant 4).
 //
 // The thread starts on demand and exits when the queue runs dry, like the
 // state writer's. A full queue (or no thread to be had) refuses the job:
-// the caller does the work inline, as it always did.
+// the caller does the work inline.
 #pragma once
 
 #include <cairo/cairo.h>

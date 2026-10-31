@@ -1,4 +1,4 @@
-// awesome/core/proc.hpp — the one way the plugin starts a process.
+// The one way the plugin starts a process.
 //
 // The compositor's own process state must never leak into a helper:
 // SIGTERM is blocked and SIGPIPE ignored there, and both survive exec (a
@@ -93,8 +93,7 @@ namespace NAwesome::Proc {
         if (opt.ownGroup)
             flags |= POSIX_SPAWN_SETPGROUP;
 
-        // one setflags call: a second one REPLACES the first's flags (the
-        // old "SETSIGMASK does not work here" note was that bug)
+        // one setflags call: a second one REPLACES the first's flags
         bool ok = posix_spawnattr_setsigmask(&attr, &mask) == 0 && posix_spawnattr_setsigdefault(&attr, &defaults) == 0 &&
             (!opt.ownGroup || posix_spawnattr_setpgroup(&attr, 0) == 0) && posix_spawnattr_setflags(&attr, flags) == 0;
 

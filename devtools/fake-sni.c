@@ -1,4 +1,4 @@
-// fake-sni.c — a StatusNotifierItem that serves a dbusmenu carrying the
+// A StatusNotifierItem that serves a dbusmenu carrying the
 // separator defects real applets ship: nm-applet via appindicator appends a
 // separator after "Edit Connections…" (its About row only exists in the
 // GtkStatusIcon fallback) and GTK menus routinely emit a separator after
@@ -18,7 +18,7 @@
 //   root   : 1 "one" · 2 "two" · 3 SEP · 4 SEP · 5 "three" · 6 "sub"▸ · 7 SEP
 //   sub (6): 8 "sub-one" · 9 "sub-two" · 10 SEP
 //
-// libdbus writer notes (cost hours, do not "simplify" back):
+// libdbus writer notes (do not "simplify" back):
 //  - a plain struct opened with open_container takes contained_signature
 //    NULL — a non-NULL signature there is a builder assertion. So are
 //    a{sv} entries: DBUS_TYPE_DICT_ENTRY with a NULL signature (the older
@@ -36,17 +36,12 @@
 //    directly into the variant iterator. ("(ay)" is a STRUCT with one
 //    array field, not an array — parentheses matter.)
 //  - dbus_message_iter_append_fixed_array(BYTE, ...) SEGVs on this system
-//    (dbus 1.16.2 + glibc AVX512 memmove; same crash path as the 2017
-//    digiKam report) at every size. Bytes are appended one by one with
-//    append_basic instead — slow, but this is a fixture, not a hot path.
+//    (dbus 1.16.2 + glibc AVX512 memmove) at every size. Bytes are appended
+//    one by one with append_basic instead.
 //  - SNI IconPixmap elements are (int, int, byte-array): signature "iiay".
 //  - the main loop uses the canonical vtable + read_write_dispatch pattern;
 //    read_write + pop_message without dispatch is not a supported manual
 //    mode and mangles popped messages.
-//  - the connection from dbus_bus_get is shared: releasing it with
-//    dbus_connection_close() is a libdbus fatal ("must not close shared
-//    connections" -> SIGABRT at every teardown); dbus_connection_unref is
-//    the documented release.
 
 #include <dbus/dbus.h>
 #include <signal.h>
@@ -88,9 +83,7 @@ static const struct Row SUB[] = {
 	{8, "sub-one", 0}, {9, "sub-two", 0}, {10, NULL, 0},
 };
 
-// {key: val} entry in an a{sv}. Must be DBUS_TYPE_DICT_ENTRY with a NULL
-// signature: STRUCT+"{sv}" aborts the builder in nested contexts (the
-// open_container assertion), even though it is the older documented idiom.
+// {key: val} entry in an a{sv} (DICT_ENTRY: see the header notes).
 static void kv(DBusMessageIter *map, const char *key, int variantType, void **val) {
 	DBusMessageIter ent, v;
 	const char *    sig = variantType == DBUS_TYPE_STRING ? "s" : variantType == DBUS_TYPE_BOOLEAN ? "b" : "o";
@@ -102,12 +95,11 @@ static void kv(DBusMessageIter *map, const char *key, int variantType, void **va
 	dbus_message_iter_close_container(map, &ent);
 }
 
-// one child of the children array. the bar (like nm-applet and every other
-// modern dbusmenu host) speaks spec >= 0.5: GetLayout(i, i, as) ->
-// u(ia{sv}av) where the children are an array of VARIANTS, each wrapping a
-// 3-field (id, props, children) struct — NOT the legacy bare-struct
-// (iasvav) shape. The nested children array stays empty: the bar fetches
-// submenu levels with recursive GetLayout calls.
+// One child of the children array. The bar speaks dbusmenu spec >= 0.5:
+// GetLayout(i, i, as) -> u(ia{sv}av), the children an array of VARIANTS,
+// each wrapping a 3-field (id, props, children) struct — NOT the legacy
+// bare-struct (iasvav) shape. The nested children array stays empty: the
+// bar fetches submenu levels with recursive GetLayout calls.
 static void append_row(DBusMessageIter *ch, const struct Row *r) {
 	DBusMessageIter vv, item, props, kids;
 	dbus_message_iter_open_container(ch, DBUS_TYPE_VARIANT, "(ia{sv}av)", &vv);
@@ -201,10 +193,8 @@ static DBusHandlerResult handle_menu(DBusConnection *c, DBusMessage *m, void *) 
 
 // ---- SNI object ------------------------------------------------------------
 
-// One (iiay) pixmap element into `arr` (an array-position iterator), solid
-// magenta.
-// Bytes go in one by one: append_fixed_array(BYTE) is broken here (see
-// the header notes).
+// One solid magenta (iiay) pixmap element into `arr` (an array-position
+// iterator), its bytes one by one (see the header notes).
 static void pixmap_element(DBusMessageIter *arr) {
 	int32_t w = 22, h = 22;
 	uint8_t px[22 * 22 * 4];

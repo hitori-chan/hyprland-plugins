@@ -1,7 +1,6 @@
-// awesome/shell/battery_state.hpp — the battery's display state, pure: Pixel
-// SystemUI's attribution ladder and its colour (charging green, power save
-// yellow, low red), and the note the pill shows under the pointer. Its
-// drawing is shell/battery_pill.hpp.
+// The battery's display state, pure: the attribution ladder and its colour
+// (charging green, power save yellow, low red), and the note the pill shows
+// under the pointer. Its drawing is shell/battery_pill.hpp.
 #pragma once
 
 #include <algorithm>
@@ -39,13 +38,13 @@ namespace NAwesome::Shell::Battery {
 
     // Power Profiles Daemon's explicit user-selected energy-saving profile.
     // ACPI platform_profile is a hardware tuning hint and is intentionally
-    // not an Android Battery Saver signal.
+    // not a power-save signal.
     constexpr bool isPowerSaverProfile(std::string_view profile) {
         return profile == "power-saver";
     }
 
-    // Pixel SystemUI's BatteryInteractor and BatteryViewModel: unknown state
-    // wins the attribution ladder, and the selected attribution owns the color.
+    // The attribution ladder: unknown state wins, and the selected
+    // attribution owns the color.
     constexpr SVisualState visualState(int level, bool unknown, bool powerSave, bool defender, bool charging) {
         eAttribution attribution = eAttribution::None;
         if (unknown)
@@ -89,7 +88,7 @@ namespace NAwesome::Shell::Battery {
         ePower power     = ePower::BATTERY;
         int    minutes   = -1; // BATTERY: to empty; CHARGING: to full; -1 unknown
         int    fullAt    = -1; // CHARGING: the minute of the day it is full at; -1 unknown
-        int    limit     = -1; // the charge limit a defender holds at; -1 unknown
+        int    limit     = -1; // the charge limit the pack holds at; -1 unknown
     };
 
     // "3:12": hours and minutes, capped at 99:59
@@ -104,7 +103,7 @@ namespace NAwesome::Shell::Battery {
         return (M / 60 < 10 ? "0" : "") + std::to_string(M / 60) + (M % 60 < 10 ? ":0" : ":") + std::to_string(M % 60);
     }
 
-    // the ladder's order: unknown, then the defender's hold (its level is
+    // the ladder's order: unknown, then the charge limit's hold (its level is
     // the limit, said once), then the level with power save and the power
     inline std::string noteText(const SNote& n) {
         if (n.unknown || n.level < 0)

@@ -1,6 +1,6 @@
-// awesome/core/glyph_shapes.hpp — the glyphs' SVG sources, kept free of
-// compositor headers so the unit harness parses every one: librsvg refuses
-// a malformed shape whole and the glyph then silently never draws.
+// The glyphs' SVG sources, kept free of compositor headers so the unit
+// harness parses every one: librsvg refuses a malformed shape whole and the
+// glyph then silently never draws.
 #pragma once
 
 #include <array>

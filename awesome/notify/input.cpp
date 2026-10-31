@@ -1,6 +1,5 @@
-// awesome/notify/input.cpp — clicks, the hold, wheel paging, esc and
-// pointer ownership over the cards, the shade and the card menu. The
-// interaction map, exactly:
+// Clicks, the hold, wheel paging, esc and pointer ownership over the cards,
+// the shade and the card menu. The interaction map, exactly:
 //
 //   any card left = act (on the release, over the card it pressed) ·
 //            HOLD left = the card menu (menu.cpp) · right = dismiss ·
@@ -15,11 +14,10 @@
 //            spent on acting rather than on revealing; a card the budget
 //            folded opens instead · a link opens
 //   leaving  anything that RAISES something else closes the center with
-//            it — the primary, an action, a link (invokeLive below has the
-//            AOSP citation). Everything that keeps you here does not: a
-//            dismissal, a fold, DND, Clear all, and a `resident` card's
-//            actions, which is the spec's own way of saying the action does
-//            not take you away.
+//            it — the primary, an action, a link (invokeLive below).
+//            Everything that keeps you here does not: a dismissal, a fold,
+//            DND, Clear all, and a `resident` card's actions, which is the
+//            spec's own way of saying the action does not take you away.
 //   deck     a collapsed stack: left spreads it · right dismisses the
 //            stack · the hold is its top card's menu
 //   shead    an expanded stack's header: Show Less collapses · right
@@ -136,12 +134,10 @@ namespace NAwesome::Notify {
         return h;
     }
 
-    // ---- the hold ----
-    //
-    // A left press on a notification waits: let go and it is a click,
-    // hold HOLD and the card menu opens under the pointer. Drifting past
-    // SLOP keeps the click and drops the hold. The timer runs on the event
-    // loop, never inside an emission; every reset path drops the press.
+    // The hold: a left press on a notification waits; let go and it is a
+    // click, hold HOLD and the card menu opens under the pointer. Drifting
+    // past SLOP keeps the click and drops the hold. The timer runs on the
+    // event loop, never inside an emission; every reset path drops the press.
     static struct {
         SHit     hit;
         Vector2D at;
@@ -168,24 +164,14 @@ namespace NAwesome::Notify {
         }
     }
 
-    // ---- the deferred drain: what each surface DOES ----
-
     // Firing a card's primary (or one of its actions) LEAVES: the sender
     // raises itself over the very shade the click was made in, so the shade
-    // must get out of the way. Android does exactly this —
-    // StatusBarNotificationActivityStarter collapses the shade on a
-    // content-intent click, and handleRemoteViewClick closes it for any
-    // action that starts an activity ("close the shade if it was open and
-    // maybe wait for activity start") — and swaync ships the same as
-    // hide-on-action, default on.
-    //
-    // An action that does NOT start an activity leaves Android's shade
-    // standing. fd.o has no isActivity, but it has `resident`: "the server
-    // will not automatically remove the notification when an action has been
-    // invoked" — the spec's way of saying this action keeps you here. So the
-    // shade goes exactly when the card does. A card with no action at all
-    // launches nothing: that click is a dismissal, and dismissing never
-    // closes the shade, here or on a phone.
+    // gets out of the way. An action that keeps the user here does not:
+    // fd.o has no isActivity, but `resident` ("the server will not
+    // automatically remove the notification when an action has been
+    // invoked") is the spec's way of saying so — the shade goes exactly when
+    // the card does. A card with no action at all launches nothing: that
+    // click is a dismissal, and dismissing never closes the shade.
     void invokeLive(uint32_t id, const std::string& actionOverride, std::optional<uint64_t> rev) {
         std::string action   = actionOverride;
         std::string sender; // the X11 activation lookup, captured before close-on-act
@@ -402,11 +388,11 @@ namespace NAwesome::Notify {
         }
 
         if (!CARD) {
-            // Android closes the shade on an outside tap; the closing click
-            // is swallowed, like the tray menu's. The corner dead-strip
-            // (offset_y, the screen edge) is the most common stray click
-            // next to a conversation — drainHits re-pops the absorbed stack
-            // so the close does not leave the notifications invisible
+            // An outside click closes the shade, swallowed like the tray
+            // menu's. The corner dead-strip (offset_y, the screen edge) is
+            // the most common stray click next to a conversation — drainHits
+            // re-pops the absorbed stack so the close does not leave the
+            // notifications invisible
             if (centerVisible() && BIT) {
                 info.cancelled = true;
                 swallowRelease |= BIT;
@@ -486,9 +472,8 @@ namespace NAwesome::Notify {
         }
     }
 
-    // ---- keys: esc peels the center (tray menu > center > menubar: load
-    //      order puts the shell's menu first, we're next), and the shade drives
-    //      its selection ----
+    // ---- keys: esc peels the center (tray menu > center > menubar), and
+    //      the shade drives its selection ----
 
     // Same shape as the click queue, and for the same reason: an action can
     // make the client focus itself, so nothing runs inside the emission.
@@ -658,8 +643,8 @@ namespace NAwesome::Notify {
     }
 
     // the pipeline's blocked branch: the handlers never fire while the
-    // session is locked or a native capture owns the stream, so the
-    // resets the handlers used to do at their heads happen HERE instead
+    // session is locked or a native capture owns the stream, so their
+    // resets happen here
     void onInputBlocked() {
         const bool LOCK = NAwesome::sessionLocked();
         swallowRelease = 0;

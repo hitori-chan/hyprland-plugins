@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# awesome/gate/launch.sh — start the nested Hyprland dev instance, isolated
-# from the user's session. The gate's harness calls this (harness.sh); it
-# is also the standalone dev launcher.
+# Start the nested Hyprland dev instance, isolated from the user's session.
+# The gate's harness calls this (harness.sh); it is also the standalone dev
+# launcher.
 #
 # Nothing of the live session is used: the nested's parent display is a
 # private headless labwc (host.sh), not the user's compositor — no output,
@@ -26,10 +26,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/memcap.sh" # the run's memory cap: before
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HARNESS_DIR="${HYPR_HARNESS:-$HOME/.local/share/hypr-nested}"
 mkdir -p "$HARNESS_DIR"
-# One run at a time: every entry point shares $HARNESS_DIR (the nested's
-# signature, the host, the system bus) and kills every nested it finds —
-# a second run would tear the first one's nested down mid-battery. The
-# lock fd is closed for the long-lived children (the nested, the host).
+# One run at a time (see gate.sh).
 if [[ -z "${HYPR_HARNESS_LOCKED:-}" ]]; then
 	exec 9>"$HARNESS_DIR/.lock"
 	flock -n 9 || { echo "$(basename "$0"): another gate/probe/dev run holds $HARNESS_DIR/.lock" >&2; exit 2; }
@@ -38,8 +35,7 @@ fi
 CFG="${HYPR_CFG:-$HERE/nested.lua}"
 # $1 (a manual launch) overrides HYPR_BIN; the harness passes HYPR_BIN and no
 # argument. Refusing a missing binary keeps a mistyped path from silently
-# launching the installed one (2026-10-02: manual probes ran the stale
-# installed binary for an hour because this fell back by default).
+# launching the installed one.
 BIN="${1:-${HYPR_BIN:-/usr/local/bin/Hyprland}}"
 [[ -x "$BIN" ]] || { echo "launch: no such binary: $BIN" >&2; exit 1; }
 # the nested's stdout/stderr: the boot lines before the config turns stdout

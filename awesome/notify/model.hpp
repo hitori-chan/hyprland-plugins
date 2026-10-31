@@ -1,13 +1,12 @@
-// awesome/notify/model.hpp — the notify module: the freedesktop notification
-// daemon, the card model, the surfaces (the banners, the center, the
-// inline-reply field), and the input they own.
-//
-// Per-unit docs at the top of each unit:
+// The notify module: the freedesktop notification daemon, the card model,
+// the surfaces (the banners, the center, the inline-reply field), and the
+// input they own. Per-unit docs at the top of each unit:
 //
 //   bus.cpp     the org.freedesktop.Notifications connection
 //   parse.cpp   the untrusted payload: markup, images, appended bodies
 //   model.cpp   the cards: arrival, residency, merging, DND, the expiry
 //   policy.cpp  the card menu's persisted switches: banners, sounds, mutes
+//   quiet.cpp   quiet automatically: fullscreen and sharing hold arrivals
 //   icons.cpp   notification images: content avatars, identity icons,
 //               raw image-data
 //   text.cpp    the pango rasterizer + the keyed text cache + markup
@@ -22,10 +21,6 @@
 //   surface.cpp the canvas layer: warm/draw, damage, ticks, hover
 //   input.cpp   clicks, the hold, wheel paging, keys, pointer ownership
 //   reply.cpp   the inline-reply field: its state and its keys
-//
-// Everything lives in NAwesome::Notify. The only D-Bus in the plugin is
-// this fd.o daemon (plus the system module's logind reads): the old private
-// bus bridge is gone — the shell's bell reads the model directly.
 #pragma once
 
 #include "pixel_model.hpp"
@@ -177,7 +172,7 @@ namespace NAwesome::Notify {
         int                  progress = -1; // 0..100 from the "value" hint, -1 = none
         std::string          image;    // CONTENT source (image-path), resolved file path, "" = none
         std::string          identity; // IDENTITY source (app_icon/desktop-entry), resolved path, "" = none
-        std::string          desktopEntry;     // the raw desktop-entry hint (the F2 index's key)
+        std::string          desktopEntry;     // the raw desktop-entry hint (the .desktop index's key)
         bool                 identityFromDesktop = false; // identity rides the hint: the index may upgrade it
         // Names the theme-walk budget deferred at arrival (core:
         // iconDeferred) are not misses: the warm resolves them again until
@@ -319,10 +314,8 @@ namespace NAwesome::Notify {
                         std::optional<Parse::ImageData> image = std::nullopt, bool osd = false);
 
         // In-process card posting (the system module's feedback: audio,
-        // pad; the shell's battery alerts). The bus face is for
-        // FOREIGN daemons; ours is a function call — no bus, no proxy, no
-        // hint-table ceremony. The id pins the replace-in-place slot (the
-        // OSD band 9990-9999 keeps its old semantics: replace, no history,
+        // pad; the shell's battery alerts): a function call, no bus. The id
+        // pins the replace-in-place slot (the OSD band: replace, no history,
         // no grouping).
         struct SPostCard {
             uint32_t id = 0; // stable replaces-id

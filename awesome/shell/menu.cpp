@@ -1,4 +1,4 @@
-// awesome/shell/menu.cpp — the menu renderer: dbusmenu for tray items, local mode for the client list
+// The menu renderer: dbusmenu for tray items, local mode for the client list
 
 #include "../core/icons.hpp" // iconDeferred: a budget-deferred icon is retried
 #include "../core/glyph.hpp"
@@ -11,8 +11,6 @@
 #include <hyprland/src/managers/input/InputManager.hpp>
 
 namespace NAwesome::Shell {
-
-    // ---- dbusmenu: a native menu renderer for tray items ----
 
     namespace Menu {
         constexpr const char*                 DBUSMENU = "com.canonical.dbusmenu";
@@ -77,7 +75,7 @@ namespace NAwesome::Shell {
             if (!g_pHyprRenderer)
                 return;
             // the rim rides outside L.box and the drop reaches further:
-            // damaging only L.box left both stranded when a panel closed.
+            // damaging only L.box would strand both when a panel closes.
             // Cover them on every panel, old and new.
             const double MARGIN = reach(mon.lock());
 
@@ -144,8 +142,7 @@ namespace NAwesome::Shell {
 
         static void glideTick() {
             // off the strip (or the strip gone with an update): stop for
-            // real, so resting on it again restarts the glide (a stale
-            // direction made hoverIntent skip the restart)
+            // real, so resting on it again restarts the glide
             if (!isOpen || glideDir == 0 || glideLevel >= levels.size() || !levels[glideLevel].overflow ||
                 levels[glideLevel].hover != (glideDir < 0 ? SCROLL_UP : SCROLL_DOWN)) {
                 glideStop();
@@ -211,7 +208,7 @@ namespace NAwesome::Shell {
         // The proxy's destructor sends its RemoveMatch calls: never from the
         // input or render pass that closed the menu — the tray link's own
         // turn drops it (its teardown clears the queue before the
-        // connection; a refused post drops it here, as before).
+        // connection; a refused post drops it here).
         static void releaseProxy() {
             if (!proxy)
                 return;
@@ -354,11 +351,10 @@ namespace NAwesome::Shell {
                         }
                         lvl->load = SLevel::LOAD_DONE;
                         // the hovered row survives the update by id (nm-applet
-                        // re-lays its menu every few seconds: the pill vanished
-                        // under a resting pointer and its cascade never opened);
-                        // a ▴/▾ strip stays hovered. scrollTop stays too: live
-                        // updates must not yank a browsed list to its top. Once
-                        // laid out, the pointer settles it: a re-sorted list
+                        // re-lays its menu every few seconds); a ▴/▾ strip
+                        // stays hovered. scrollTop stays too: live updates
+                        // must not yank a browsed list to its top. Once laid
+                        // out, the pointer settles it: a re-sorted list
                         // (nm-applet's scan) moves the row away from it.
                         const int                    HOVER = lvl->hover;
                         const std::optional<int32_t> HOVER_ID =
@@ -531,8 +527,7 @@ namespace NAwesome::Shell {
         }
 
         // hover (after the popup delay) or a click on a submenu row: cascade
-        // its children out into a new panel beside the parent, like the GTK
-        // menus these were under X11.
+        // its children out into a new panel beside the parent
         void openSub(size_t level, int entryIdx) {
             if (!isOpen || (!isLocal && !proxy) || level >= levels.size())
                 return;
@@ -711,8 +706,8 @@ namespace NAwesome::Shell {
                         }
 
                 // labels share one leading column when any row in this level
-                // has an icon or a check/radio state, ragged otherwise — how
-                // GTK's own menus aligned
+                // has an icon or a check/radio state, ragged otherwise, as
+                // GTK's menus align
                 bool anyIcon = false, anyToggle = false;
                 for (const auto& E : L.entries) {
                     anyIcon   = anyIcon || (E.icon && E.icon->m_texID != 0);
@@ -724,8 +719,7 @@ namespace NAwesome::Shell {
                 const double LX   = COLW > 0 ? 10 + COLW + 8 : 12;
 
                 // a submenu row's chevron sits in a right-hand column of its
-                // own: as the label's tail it was measured out of the panel
-                // and ellipsized away
+                // own: as the label's tail it would be ellipsized away
                 constexpr double ARW = 18;
                 const auto       capPx = [&](const Menu::SEntry& E) { return (int)std::lround((380.0 - LX - 12 - (E.submenu ? ARW : 0)) * PAINT.scale); };
                 // the client list's tags: a right-hand column one size down
@@ -807,8 +801,8 @@ namespace NAwesome::Shell {
                 }
 
                 // taller than the screen (nm-applet's wifi list): clamp and
-                // scroll between chevron strips, as GTK did under X11;
-                // shorter panels shift up instead until they fit
+                // scroll between chevron strips, GTK-style; shorter panels
+                // shift up instead until they fit
                 const double fullH  = Menu::levelHeight(L);
                 const double mh     = std::min(fullH, std::max(1.0, MBOT - MTOP));
                 const bool   SCROLL = mh < fullH;

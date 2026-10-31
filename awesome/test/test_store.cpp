@@ -1,5 +1,5 @@
-// awesome/test/test_store.cpp — admission, recency bounds, the state
-// file's round-trip, hostility, and the load's write block. Temp state lives under /tmp/hypr-awesome-test.
+// Admission, recency bounds, the state file's round-trip, hostility, and
+// the load's write block. Temp state lives under /tmp/hypr-awesome-test.
 #include "../core/state.hpp"
 
 #include <filesystem>

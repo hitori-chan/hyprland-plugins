@@ -1,7 +1,6 @@
-// awesome/notify/policy.cpp — the card menu's persisted switches: an app's
-// banners and sounds, a chat's mute. The rows live in the StateStore (the
-// documented seam for anything persisted); this unit is their one reader
-// and writer.
+// The card menu's persisted switches: an app's banners and sounds, a chat's
+// mute. The rows live in the StateStore (the documented seam for anything
+// persisted); this unit is their one reader and writer.
 #include "model.hpp"
 
 #include "../core/state.hpp"

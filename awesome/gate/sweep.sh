@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# awesome/gate/sweep.sh BASE TIP [WORKERS] — every commit in BASE..TIP
+# sweep.sh BASE TIP [WORKERS] — every commit in BASE..TIP
 # builds (the release variant) and passes `make test`, against the fork
 # headers the gate staged (`gate.sh -s`: $HYPR_GATE_TMP/fork-pkg). Run it
 # before a push, after a history rewrite.

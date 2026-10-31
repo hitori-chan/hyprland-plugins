@@ -1,7 +1,7 @@
-// awesome/core/queries.hpp — the read-side of the compositor: the session
-// lock gate, the native input stack, and the state lookups every module
-// shares. The helpers encode input-ordering regressions (crash classes 3
-// and 7) — treat them as pinned contracts, not candidates for cleanup.
+// The read-side of the compositor: the session lock gate, the native input
+// stack, and the state lookups every module shares. The helpers encode
+// input-ordering regressions (crash classes 3 and 7) — treat them as pinned
+// contracts, not candidates for cleanup.
 #pragma once
 
 #include <hyprland/src/Compositor.hpp>
@@ -49,13 +49,8 @@ namespace NAwesome {
 
     // The compositor-side teardown (invariant 8): CCompositor::cleanup()
     // sets this before it unloads the plugins, and the unload runs in that
-    // half-dead state. Upstream now unloads before it clears the
-    // workspace/window/monitor state; an older order emitted ~CWindow & co.
-    // into our still-loaded listeners while GL resources died, and a
-    // listener warming the bar there SEGV'd on every nested teardown (the
-    // 2026-10-01 "input storm SEGV"). Every event-driven path still no-ops
-    // from the moment this is true; the supervisor gates its state
-    // listeners on it.
+    // half-dead state. Every event-driven path no-ops from the moment this
+    // is true; the supervisor gates its state listeners on it.
     inline bool compositorShuttingDown() {
         return g_pCompositor && g_pCompositor->m_isShuttingDown;
     }
@@ -166,8 +161,8 @@ namespace NAwesome {
 
     // Super/Meta down on ANY keyboard — the modifier every grab chord in the
     // shell is built on. The bind layer matches a mouse bind against every
-    // keyboard's modifiers; the seat's alone missed Super held on a second
-    // keyboard, and the click went on to start the drag it should block.
+    // keyboard's modifiers; the seat's alone would miss Super held on a
+    // second keyboard.
     inline bool superHeld() {
         return g_pInputManager && (g_pInputManager->getModsFromAllKBs() & Input::HL_MODIFIER_META) != Input::HL_MODIFIER_NONE;
     }
@@ -186,12 +181,10 @@ namespace NAwesome {
         return XDG ? XDG->m_toplevel.lock() : nullptr;
     }
 
-    // "Pinned" = the `pin` window rule (all-workspace/ontop). Post backend
-    // split this is a window-state bit (the old per-window bool is gone); the
-    // fork's own isAllowedOverFullscreen() consumes this same bit. This is
-    // NOT the client-told maximize (FSMODE_MAXIMIZED) — a separate concept
-    // that must not skip these loops (it used to get its over-fullscreen
-    // grant cleared, and must keep doing so).
+    // "Pinned" = the `pin` window rule (all-workspace/ontop): a window-state
+    // bit the fork's own isAllowedOverFullscreen() consumes too. Not the
+    // client-told maximize (FSMODE_MAXIMIZED), a separate concept that must
+    // not skip these loops (its over-fullscreen grant gets cleared).
     inline bool isPinned(const PHLWINDOW& w) {
         return w && static_cast<bool>(w->m_state & Desktop::View::WINDOW_STATE_PINNED);
     }
@@ -223,9 +216,7 @@ namespace NAwesome {
     // covers born/client maximize, and a float whose box covers the whole
     // workarea is the windows module's plugin-maximize box (a float sized
     // to the workarea is maximized in all but state) — the geometry is the
-    // one fact both mechanisms share. (The fork no longer lies maximized
-    // at map, so the client state is a true read-back again; the
-    // presentation read stays because it also covers the plugin box.)
+    // one fact both mechanisms share.
     inline bool toldMaximized(const PHLWINDOW& w) {
         if (!w || !w->windowTarget())
             return false;
@@ -249,9 +240,8 @@ namespace NAwesome {
     //
     // Read the backend's hints, not the xdg_toplevel: they are cached past
     // the toplevel's death, and a closing client (GTK, Firefox) destroys
-    // its toplevel BEFORE the window unmaps — the close-time spot read
-    // then saw "no toplevel", took the window for fixed-size and never
-    // remembered where any of those apps closed.
+    // its toplevel BEFORE the window unmaps, where the close-time spot read
+    // needs them.
     inline bool resizable(const PHLWINDOW& w) {
         if (!w || w->backend().isX11())
             return false;

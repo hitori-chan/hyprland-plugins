@@ -1,4 +1,3 @@
-// awesome/test/main.cpp — the runner.
 #include "harness.hpp"
 #include "tests.hpp"
 

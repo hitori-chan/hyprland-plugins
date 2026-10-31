@@ -1,9 +1,9 @@
-// awesome/core/bands.hpp — a band laid across a monitor right under the
-// bar: the shell's launcher strip (awesome's menubar wibox) while it is
-// open. The notify column's cards stack under it (offset_y clears the bar
-// alone), or a banner would cover the strip's matches. The shell publishes
-// the band as the strip opens and shuts; notify reads it in cardsTop and
-// restacks off the hook. Neither module reads the other's state.
+// A band laid across a monitor right under the bar: the shell's launcher
+// strip (awesome's menubar wibox) while it is open. The notify column's
+// cards stack under it (offset_y clears the bar alone), or a banner would
+// cover the strip's matches. The shell publishes the band as the strip opens
+// and shuts; notify reads it in cardsTop and restacks off the hook. Neither
+// module reads the other's state.
 //
 // Main thread only. The shell's teardown shuts the strip (the band goes
 // with it); notify's clears its hook.

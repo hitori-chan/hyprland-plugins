@@ -1,6 +1,5 @@
-// awesome/core/store.hpp — the bounded store types behind the plugin's
-// single persistent state (core/state.hpp owns the file, its format, the
-// load and the save path).
+// The bounded store types behind the plugin's single persistent state
+// (core/state.hpp owns the file, its format, the load and the save path).
 //
 // Every row is admitted or skipped, never fatal — the state is
 // user-facing and a hostile file must not take the session down. Reads
@@ -85,9 +84,7 @@ namespace NAwesome {
         std::string readBoundedFile(const std::filesystem::path& path, size_t maxBytes);
 
         // Iterate rows; the callback owns per-row admission. The line view
-        // is built from the line's own start — advancing `begin` first
-        // hands the callback the NEXT line's start with this line's length
-        // (out of range).
+        // is built from the line's own start, before `begin` advances.
         inline void forRows(const std::string& contents, size_t maxLineBytes, size_t maxRows,
                             const std::function<void(std::string_view)>& fn) {
             size_t begin = 0;
@@ -96,8 +93,8 @@ namespace NAwesome {
                 const auto END  = contents.find('\n', begin);
                 const auto LEN  = (END == std::string::npos ? contents.size() : END) - begin;
                 const auto LINE = std::string_view{contents.data() + begin, LEN};
-                // the NUL check stays inside the line: a search from `begin`
-                // to the file's end per line was O(n^2) on a NUL-free file
+                // the NUL check stays inside the line: a search to the file's
+                // end per line is O(n^2) on a NUL-free file
                 if (LEN <= maxLineBytes && LINE.find('\0') == std::string_view::npos)
                     fn(LINE);
                 if (END == std::string::npos)

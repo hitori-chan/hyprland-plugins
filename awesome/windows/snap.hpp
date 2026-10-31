@@ -1,8 +1,8 @@
-// awesome/windows/snap.hpp — awful.mouse.snap as native plugin code:
-// while a floater is move-dragged its edges pull flush to the screen, the
-// workarea and the other windows (snap_distance px); the cursor at a
-// screen edge arms a half slot — at two edges, that corner's quarter —
-// with an outline preview, committed on drop.
+// awful.mouse.snap as native plugin code: while a floater is move-dragged
+// its edges pull flush to the screen, the workarea and the other windows
+// (snap_distance px); the cursor at a screen edge arms a half slot — at two
+// edges, that corner's quarter — with an outline preview, committed on
+// drop.
 //
 // - client_enabled magnetism: every motion of a floating move-drag pulls
 //   the window's edges flush to the screen box, then the workarea, then
@@ -11,17 +11,16 @@
 //   recomputes position from its begin-anchor + delta on every motion, so
 //   a correction applied AFTER it — in its own motion signal, which fires
 //   once it has placed the window — never accumulates or fights, and lands
-//   in the same frame. (The round-4 "external move mid-drag = jitter"
-//   lesson was about timers racing the controller.)
+//   in the same frame (a timer would race the controller).
 //
 // - edge_enabled aerosnap: the CURSOR within `edge` px of a screen edge
 //   arms that edge's half slot; within `edge` of TWO edges at once, that
 //   corner's quarter — awesome has no wide corner band, a corner is
 //   literally both edges at the same time (detect_screen_edges). The armed
 //   slot is previewed as an outline (awesome shows a placeholder wibox
-//   ring; ours is a frame drawn by the canvas layer — square, the theme
-//   has rounding 0 everywhere) and the drop commits it. Slots are halves
-//   and quarters of the WORKAREA (the old rc placement honored it too).
+//   ring; ours is a frame drawn by the canvas layer at the windows' own
+//   corner radius) and the drop commits it. Slots are halves and quarters
+//   of the WORKAREA.
 //
 // A drag doesn't only end on button release: the keybind layer tears down
 // an active drag on the NEXT input event it sees, whatever it is — any
@@ -127,9 +126,8 @@ namespace NAwesome::Windows::Snap {
             return std::nullopt;
         }
 
-        // the window's own border (a rule can set it per window), as placement
-        // reads it: the global size once made the preview a border larger
-        // on each side than where a window with a border rule landed
+        // the window's own border (a rule can set it per window), as
+        // placement reads it
         inline double borderOf(const PHLWINDOW& w) {
             return w ? std::max(0.0, (double)w->presentation().borderSize()) : 0.0;
         }
@@ -213,10 +211,9 @@ namespace NAwesome::Windows::Snap {
                 // or top against the current opposite edge.
                 if (left && g.x > O.x + O.w && g.x < O.x + O.w + d)
                     considerNearest(L, O.x + O.w, g.x, O, d);
-                // right/bottom: the candidate is the EDGE (O's left/top) against
-                // our edge — a left-position candidate here once set the
-                // width to "neighbour's left minus width minus x", collapsing
-                // the window to its minimum near any neighbour
+                // right/bottom: the candidate is the EDGE (O's left/top)
+                // against our edge, never a left position (that would
+                // collapse the window to its minimum near any neighbour)
                 if (right && g.x + g.w < O.x && g.x + g.w > O.x - d)
                     considerNearest(R, O.x, g.x + g.w, O, d);
                 if (top && g.y > O.y + O.h && g.y < O.y + O.h + d)

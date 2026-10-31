@@ -1,16 +1,15 @@
-// awesome/shell/bell.cpp — the door into the notify column: the
-// notification bell. The monolith has no cross-module bus: it reads the
-// notify MODEL directly and repaints off its badgeChangedHook (fired from
-// the model's single change funnel). A click toggles the center — a
-// function call, not a proxy. The bell has no count: a dot on its shoulder
-// while the center holds a card it has not shown (Model::unseen). Under Do
-// Not Disturb the bell is the moon, dotted while cards wait in the DND
-// queue. A right click opens the notification options, flat: quiet
-// automatically (over a fullscreen app, while sharing the screen), and the
-// apps and chats the card menus silenced, each a click from back on. Do Not
-// Disturb's one home is the center's moon; the bell echoes it. The bell
-// sits on a white pill while the center or its options menu is open. The
-// accent stays text for where you are; the bell's dot is its one mark.
+// The door into the notify column: the notification bell. It reads the
+// notify model directly and repaints off its badgeChangedHook (fired from
+// the model's single change funnel); a click toggles the center. The bell
+// has no count: a dot on its shoulder while the center holds a card it has
+// not shown (Model::unseen). Under Do Not Disturb the bell is the moon,
+// dotted while cards wait in the DND queue. A right click opens the
+// notification options, flat: quiet automatically (over a fullscreen app,
+// while sharing the screen), and the apps and chats the card menus
+// silenced, each a click from back on. Do Not Disturb's one home is the
+// center's moon; the bell echoes it. The bell sits on a white pill while
+// the center or its options menu is open. The accent stays text for where
+// you are; the bell's dot is its one mark.
 
 #include "shell/shell.hpp"
 
@@ -66,8 +65,6 @@ namespace NAwesome::Shell {
             NAwesome::Notify::Model::badgeChangedHook() = {};
         }
     } // namespace Bell
-
-    // ---- the options menu ----
 
     namespace {
         namespace M = NAwesome::Notify::Model;
@@ -129,8 +126,6 @@ namespace NAwesome::Shell {
         }
     } // namespace
 
-    // ---- the widget ----
-
     namespace {
         // the glyph's own 16 px grid: whole pixels at 1x (core/glyph_shapes.hpp)
         constexpr double GLYPH = 16;
@@ -179,11 +174,10 @@ namespace NAwesome::Shell {
                 }
                 if (bit != 1u)
                     return;
-                // the shared click door: deferred (the monolith's center is a
-                // function call, not a proxy round trip); the shade opens on
-                // the clicked bar's monitor — the focus hasn't moved there
-                // yet (the strip swallowed the press before the compositor
-                // saw it)
+                // the shared click door, deferred; the shade opens on the
+                // clicked bar's monitor — the focus hasn't moved there yet
+                // (the strip swallowed the press before the compositor saw
+                // it)
                 NAwesome::Notify::queueCenterToggle(hit.mon.lock());
             }
         };

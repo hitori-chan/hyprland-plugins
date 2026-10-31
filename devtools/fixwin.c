@@ -1,5 +1,5 @@
 #define _GNU_SOURCE
-// fixwin — a fixed-size xdg-toplevel (min == max) for placement tests: the
+// A fixed-size xdg-toplevel (min == max) for placement tests: the
 // dialog/splash shape (a Discord-updater-window stand-in).
 // usage: fixwin <w> <h> [title]
 #include <fcntl.h>

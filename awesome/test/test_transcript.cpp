@@ -1,5 +1,5 @@
-// awesome/test/test_transcript.cpp — a chat card's words: the legacy sender
-// lead, one paragraph per message, the window fitted from the newest end.
+// A chat card's words: the legacy sender lead, one paragraph per message,
+// the window fitted from the newest end.
 #include "../notify/transcript.hpp"
 
 #include "harness.hpp"

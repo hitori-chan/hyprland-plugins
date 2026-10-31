@@ -1,5 +1,5 @@
-# awesome/gate/live.sh — identify the LIVE compositor, read-only. Sourced
-# by launch.sh, stop.sh and harness.sh.
+# Identify the LIVE compositor, read-only. Sourced by launch.sh, stop.sh
+# and harness.sh.
 #
 # The harness never acts on the live session (the nested runs inside a
 # private host, host.sh). It only needs to know which Hyprland process is
@@ -50,8 +50,8 @@ live_read() {
 # A harness nested: a Hyprland that launch.sh started, marked in its
 # environment (AW_GATE_NESTED=1) — identified POSITIVELY, never by
 # exclusion: a live session started as `Hyprland -c ...` without the
-# watchdog launcher once matched "a -c config, no --watchdog-fd", and a
-# sweep would have killed it. Never the live PID either way.
+# watchdog launcher also has "a -c config, no --watchdog-fd". Never the
+# live PID either way.
 is_nested_pid() {
 	[[ -n "$1" && "$1" != "$LIVE_PID" ]] || return 1
 	grep -Fzxq -- "AW_GATE_NESTED=1" "/proc/$1/environ" 2>/dev/null

@@ -1,6 +1,6 @@
-// awesome/notify/transcript.hpp — a chat card's words, pure and testable:
-// the sender a legacy chat client leads its body with, one paragraph per
-// message, and the window a card shows, fitted from the newest end.
+// A chat card's words, pure and testable: the sender a legacy chat client
+// leads its body with, one paragraph per message, and the window a card
+// shows, fitted from the newest end.
 #pragma once
 
 #include "textcut.hpp"

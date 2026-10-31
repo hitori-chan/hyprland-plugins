@@ -1,8 +1,7 @@
-// awesome/core/keys.hpp — what every compositor-drawn prompt that takes the
-// keyboard shares: the launcher, the shade's keys and the reply field. None
-// of them is a client with keyboard focus, so each must find the keyboard
-// that typed a key, step aside for a native exclusive-keyboard layer, and
-// repeat a held key itself.
+// What every compositor-drawn prompt that takes the keyboard shares: the
+// launcher, the shade's keys and the reply field. None of them is a client
+// with keyboard focus, so each must find the keyboard that typed a key, step
+// aside for a native exclusive-keyboard layer, and repeat a held key itself.
 #pragma once
 
 #include "queries.hpp"

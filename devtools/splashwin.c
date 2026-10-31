@@ -1,8 +1,7 @@
 #define _GNU_SOURCE
-// splashwin — the Discord-updater-splash shape for placement tests: a
-// CSD toplevel whose committed buffer is larger than the declared
-// window geometry (a shadow margin on all sides), min pinned to max
-// in the geometry frame.
+// The Discord-updater-splash shape for placement tests: a CSD toplevel
+// whose committed buffer is larger than the declared window geometry (a
+// shadow margin on all sides), min pinned to max in the geometry frame.
 // usage: splashwin <w> <h> [margin] [app-id] [late] [parented] [resz] [vismargin] [pinx] [parentonly] [pgeo] [follow] [unmaxwhenmaxed]
 //   w, h   content size = the declared window geometry, min == max (resz: min only)
 //   margin shadow inset: the buffer is (w + 2m) x (h + 2m)
@@ -15,8 +14,7 @@
 //   pgeo     give the parent an explicit window geometry (0,0,PW,PH)
 //   follow   like a real CSD client: resize the content to the configured
 //            size (content = the configure, buffer = content + 2m) and
-//            recommit — the shape that exposes the box/content frame
-//            mismatch (the content-clip the CSD content-frame fix removes)
+//            recommit — the shape that exposes a box/content frame mismatch
 //   unmaxwhenmaxed  once a configure tells it maximized, ask to unmaximize
 //            1.5 s later — the CSD titlebar restore button (Firefox's
 //            double-click) on a compositor/plugin-maximized window
@@ -173,7 +171,6 @@ static void makeContent(int W, int H) {
     wl_shm_pool_destroy(pool);
     g_w = W;
     g_h = H;
-    // the fd lives with the process; the buffer is the process's
     munmap(px, N);
     close(fd);
 }
@@ -269,8 +266,8 @@ int main(int argc, char **argv) {
         wl_surface_attach(g_psurf, g_pbuf, 0, 0);
         wl_surface_commit(g_psurf);
         wl_display_roundtrip(g_dpy);
-        // like the child's buffer: the fd lives with the process; closing it
-        // while the compositor is still mapping the buffer destroys the surface
+        // the fd lives with the process; closing it while the compositor
+        // is still mapping the buffer destroys the surface
         if (g_pgeo)
             xdg_surface_set_window_geometry(g_pxsd, 0, 0, PW, PH);
     }
@@ -290,7 +287,6 @@ int main(int argc, char **argv) {
     // the CSD content frame: inset from the surface on all sides
     xdg_surface_set_window_geometry(g_xsd, g_m, g_m, g_w, g_h);
 
-    // the fd lives with the process; one fixture window, no reuse
     makeContent(g_w, g_h);
 
     if (!g_late) {
@@ -340,10 +336,9 @@ runloop:
         // the close-order class this fixture exists to reproduce)
         wl_display_roundtrip(g_dpy);
     }
-    // buffers already released by the compositor are gone; the last
-    // attached one (if any) may still be referenced — the process exit
-    // reclaims it, so destroy only if the release listener hasn't run.
-    // (wl_buffer_destroy after release would double-free.)
+    // the child's buffers destroy themselves on release, and the last
+    // attached one may still be referenced: the process exit reclaims it
+    // (wl_buffer_destroy after release would double-free)
     if (g_parented) {
         xdg_toplevel_destroy(g_ptop);
         xdg_surface_destroy(g_pxsd);

@@ -1,4 +1,4 @@
--- nested.lua — a throwaway Hyprland config for the nested dev instance
+-- A throwaway Hyprland config for the nested dev instance
 -- (Hyprland-in-a-window, inside the gate's private headless host — never
 -- the live session). Loads the repo's plugin directly. NO autostart, NO
 -- portal/dbus restarts, NO exec-once. Runs under its own session and

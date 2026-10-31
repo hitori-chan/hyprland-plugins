@@ -1,5 +1,5 @@
-// awesome/core/text.hpp — the one set of font options every plugin text
-// raster is measured and drawn with.
+// The one set of font options every plugin text raster is measured and
+// drawn with.
 #pragma once
 
 #include <cairo/cairo.h>
@@ -7,11 +7,11 @@
 
 namespace NAwesome {
 
-    // Hinted, whole-pixel text. The compositor's renderText sets no options,
-    // so Pango hinted only vertically and placed glyphs at fractional pixels:
-    // stems straddled two pixels and 1x text read soft beside a terminal's.
-    // A layout measured under other options than it is drawn with wraps and
-    // ellipsizes at other widths: every context comes from here.
+    // Hinted, whole-pixel text: the compositor's renderText sets no options,
+    // so Pango would hint only vertically and place glyphs at fractional
+    // pixels (soft 1x text). A layout measured under other options than it
+    // is drawn with wraps and ellipsizes at other widths: every context
+    // comes from here.
     inline const cairo_font_options_t* textFontOptions() {
         static const struct SOptions {
             cairo_font_options_t* o = cairo_font_options_create();
@@ -47,9 +47,7 @@ namespace NAwesome {
         pango_layout_context_changed(layout);
     }
 
-    // ---- the shadow text wears ----
-    //
-    // Text over glass wears none: the glass is dense enough to read on.
+    // Text over glass wears no shadow: the glass is dense enough to read on.
     // Text bare on the desktop (the center's heading, a stack's name)
     // keeps a desktop label's drop. The raster grows by pad() physical
     // px on every side: symmetric, so centering ignores it; every other

@@ -1,4 +1,4 @@
-// awesome/shell.cpp — the shell module: the bar glue.
+// The shell module: the bar glue.
 //
 // init owns the surface units (strip, icons, clock, battery, tray, bell,
 // menubar), the window/view listeners, the minute timer, and the Lua face.
@@ -23,9 +23,9 @@ namespace NAwesome::Shell {
     }
 
     namespace {
-        // The clock/battery minute tick rides the wall clock (a resume
-        // showed the time the laptop went to sleep for up to a minute):
-        // the next minute, re-armed on every wakeup — a clock step's too.
+        // The clock/battery minute tick rides the wall clock
+        // (core/walltimer.hpp): the next minute, re-armed on every wakeup —
+        // a clock step's too.
         CWallTimer minute;
 
         void armMinute() {
@@ -149,9 +149,6 @@ namespace NAwesome::Shell {
         Clock::exit();
         damageBars();
     }
-
-    // ---- the pipeline (the bar claims the strip; notify and windows run
-    // after it, system last) ----
 
     void CModule::onPointerButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
         onMouseButton(e, info);

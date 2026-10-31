@@ -1,4 +1,3 @@
-// awesome/test/test_box.cpp
 #include "../core/box.hpp"
 
 #include "harness.hpp"

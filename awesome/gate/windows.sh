@@ -1,7 +1,6 @@
-# awesome/gate/windows.sh — the windows module's behavior battery: spawn
-# placement, the CSD geometry battery (a real GTK3 client included), and
-# maximize/minimize/restore round-trips. A geometry change runs this file
-# alone (-b windows).
+# The windows module's behavior battery: spawn placement, the CSD geometry
+# battery (a real GTK3 client included), and maximize/minimize/restore
+# round-trips. A geometry change runs this file alone (-b windows).
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh" # until_is
 
 # ---- placement memory ---------------------------------------------------
@@ -98,8 +97,7 @@ chk "pinned CSD: content fills the box, the margin is cropped" csd_cropped "$STA
 close_wait "$(class_addr csdpin)"
 # Input follows the content frame: the client's surface coords start at
 # the margin's outer corner, so a pointer at box-local (x, y) lands at
-# (x + m, y + m) in the client. (A GTK file chooser got every click shifted
-# up-left by its shadow margin when only the drawing cropped it.)
+# (x + m, y + m) in the client.
 PTRLOG="$STATE/csdptr.log"; : >"$PTRLOG"
 dsp "hl.dsp.exec_cmd('env SPLASHWIN_POINTER_LOG=$PTRLOG $REPO/devtools/splashwin 300 200 20 csdptr - - - vismargin')"; settled csdptr
 read -r PX PY _ _ <<<"$(box4 csdptr)"
@@ -186,8 +184,7 @@ print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdfall')
 close_wait "$CF"
 # A small window of a class remembered big keeps its own size: the spot
 # row carries a 700x500 close-box, the respawn asks for 300x200 and gets
-# it, at the remembered position (2026-10-05: the portal file chooser and
-# bleachbit's dialogs were born at the app's remembered main-window size).
+# it, at the remembered position.
 csdsmall_addr() { clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdsmall'), ''))"; }
@@ -205,9 +202,7 @@ close_wait "$(csdsmall_addr)"
 # floating CSD window (its content offset), its GtkMenu (an xdg_popup placed
 # against the window geometry), and the same app over XWayland. Then the
 # positioner: a menu that fits below its button near the bottom edge opens
-# below it, not flipped (2026-10-05: the popup pass drew menus a shadow
-# margin up-left of where input put them — a click on an item hit the one
-# above — and the solver measured the parent from box + margin).
+# below it, not flipped.
 if python3 -c 'import gi; gi.require_version("Gtk", "3.0"); gi.require_version("Gdk", "3.0"); from gi.repository import Gdk, Gtk' 2>/dev/null; then
 	GG_LOG="$STATE/gtkgrid.log" GG_WL="$STATE/gtkgrid.wl"
 	# opposite corners of the grid: an offset or a scale error misses one
@@ -328,10 +323,8 @@ fi
 
 # A real CSD app's close: the client destroys its toplevel BEFORE the
 # window unmaps (splashwin does, like GTK and Firefox). The close must still
-# remember the box — the close-time read once needed the live toplevel and
-# recorded nothing for every such app (2026-10-04: thunar, firefox and the
-# rest reopened centered). The moved spot discriminates: centered is the
-# no-memory default.
+# remember the box. The moved spot discriminates: centered is the no-memory
+# default.
 csdmem_addr() { clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='csdmem'), ''))"; }
@@ -346,9 +339,8 @@ expect "toplevel-first close: the respawn lands at the remembered box" \
 # The client's own unmaximize (its CSD titlebar restore button) on a
 # plugin-maximized window. The compositor drops it (it only honors an
 # unmaximize for a window IT holds maximized); without the plugin's answer
-# the client stays told maximized, saves "maximized" and reopens so
-# (2026-10-04: firefox "always opens maximized"). The fixture asks 1.5 s
-# after it is told maximized.
+# the client stays told maximized, saves "maximized" and reopens so. The
+# fixture asks 1.5 s after it is told maximized.
 dsp "hl.plugin.awesome.maximize()"
 expect_by 1 "client unmaximize: Mod+M maximized the window first" \
 	"any(c['class']=='csdmem' and c['at']==[0,30] and c['size']==[$MON_W,$((MON_H - 30))] for c in cs)"
@@ -429,9 +421,7 @@ chk "5 minimize/restore cycles round-trip" test "$(box)" = "$REF"
 # Mod+U's jump (urgent_or_last: here the last window, the foot on 1)
 # switches the view to the window's workspace through the exact-window
 # focus AND announces it (the workspace history, IPC bars): `workspace
-# previous` returns to where the view was. That focus once switched
-# silently and `previous` went nowhere. (A plain focus-window dispatch
-# switches the workspace itself first: it never took that path.)
+# previous` returns to where the view was.
 FF="$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), ''))")"
@@ -445,15 +435,15 @@ dsp "hl.dsp.focus({workspace=\"1\"})"
 close_wait "$FF"
 
 # ---- minimize: the successor is the exact window -----------------------
-# awesome's autofocus focuses the most recently focused task. The input
-# path at the successor's center focused what lay on top there: a small
-# window over it (hover focus doesn't raise) took the focus instead.
+# awesome's autofocus focuses the most recently focused task; a small window
+# over the successor's center (hover focus doesn't raise) must not take the
+# focus instead.
 # By app id: the shell in a foot rewrites its title at the first prompt.
 active_class() { hq activewindow -j | python3 -c 'import json,sys;print(json.load(sys.stdin).get("class",""))'; }
 w1_count() { clients | python3 -c "import json,sys;print(sum(1 for c in json.load(sys.stdin) if c['class'] in ('w1base','w1over','w1gone','w1prev')))"; }
 hover() { printf 'move %s %s\nsleep 60\n' "$1" "$2" | vp; settle; }
-# the base maps first: the later ones stack over it (four spawned at once
-# arrived in any order, the base over the small window now and then)
+# the base maps first: the later ones stack over it (spawned at once they
+# arrive in any order)
 dsp "hl.dsp.exec_cmd('foot --app-id=w1base --window-size-pixels=600x400')"
 until_is 10 1 w1_count
 dsp "hl.dsp.exec_cmd('foot --app-id=w1over --window-size-pixels=200x120')"
@@ -529,9 +519,7 @@ until_is 5 0 w2_count
 # ---- a switch to a minimized window restores it -------------------------
 # Mod+U (urgent_or_last) or a focus dispatch naming a minimized window is
 # the user's pick: restored and focused, as awesome's jump_to un-minimizes.
-# The compositor's focus once landed on the hidden window and the plugin
-# bounced it: the window stayed minimized. Two restores in one dispatch
-# restore two windows (one re-armed hop once dropped the first).
+# Two restores in one dispatch restore two windows.
 hidden_of() { clients | python3 -c "
 import json,sys
 print(next((int(c['hidden']) for c in json.load(sys.stdin) if c['class'] == sys.argv[1]), -1))" "$1"; }
@@ -615,9 +603,8 @@ snap_drag() { # snap_drag <x> <y> <zone> <alt-first: 0|1>: Alt+drag the window's
 	settle
 }
 # a window that fills its slot is a tile (windows/tile.hpp): square, no
-# drop, opaque edges (awesome's border_normal and a lighter border_focus: a
-# see-through rim showed the wallpaper round every tile and down every
-# seam); corners the nested draws, so the change is seen
+# drop, no border; corners the nested draws (rounding 6 here), so the
+# change is seen
 hq eval "hl.config({ decoration = { rounding = 6 } })" >/dev/null
 dsp "hl.dsp.exec_cmd('foot --app-id=snapw --window-size-pixels=400x300')"
 wait_class snapw
@@ -643,10 +630,9 @@ hq eval "hl.config({ decoration = { rounding = 0 } })" >/dev/null
 
 # ---- the drop shadow: drawn where it reaches ------------------------------
 # A shadow's reach is learned only while a frame draws it: a new window's
-# first frames were damaged without it, and its shadow stayed undrawn
-# until unrelated damage landed there (the fork's "damage the drop shadow
-# where it draws"; seen live as shadows blinking under a typing terminal
-# or a moving pointer). Only the private host shows the presented buffers.
+# first frames are damaged without it, and its shadow must still draw (the
+# fork's "damage the drop shadow where it draws"). Only the private host
+# shows the presented buffers.
 # Sharp, opaque and red over the near-black background; nothing moves
 # meanwhile (a move damages the reach it knows).
 hq eval "hl.config({ decoration = { shadow = { enabled = true, range = 12, sharp = true, color = 0xffff0000 } } })" >/dev/null

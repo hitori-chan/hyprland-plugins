@@ -1,7 +1,6 @@
-// awesome/test/test_glyph.cpp — every glyph's SVG is a document librsvg
-// accepts with the viewBox it declares: a malformed shape (a repeated
-// attribute once hid the reply field's send arrow and the menus' check
-// marks) is refused whole and draws nothing, with no error at the call.
+// Every glyph's SVG is a document librsvg accepts with the viewBox it
+// declares: a malformed shape (a repeated attribute, say) is refused whole
+// and draws nothing, with no error at the call.
 #include "../core/glyph_shapes.hpp"
 
 #include "harness.hpp"

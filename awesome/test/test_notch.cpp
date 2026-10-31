@@ -1,7 +1,7 @@
-// awesome/test/test_notch.cpp — core/notch.hpp: the band's height read from
-// a device tree (the enabled display node's big-endian u32, a disabled one
-// skipped, none on a machine without one) and the notch's geometry: shown
-// only for the 16:10 panel plus exactly the band, centred, in logical px.
+// core/notch.hpp: the band's height read from a device tree (the enabled
+// display node's big-endian u32, a disabled one skipped, none on a machine
+// without one) and the notch's geometry: shown only for the 16:10 panel
+// plus exactly the band, centred, in logical px.
 #include "../core/notch.hpp"
 
 #include "harness.hpp"

@@ -1,4 +1,4 @@
-// vptr — a wlr-virtual-pointer injector. Reads a gesture script on stdin so a
+// A wlr-virtual-pointer injector. Reads a gesture script on stdin so a
 // whole press/move/release lives in one process (the pointer dies with it).
 //   argv: W H   (extent = monitor size in px; default 1280 800)
 //   stdin lines: move X Y | rel DX DY | press BTN | release BTN | scroll AXIS VAL | sleep MS

@@ -1,6 +1,6 @@
-// awesome/notify/paint.cpp — the shared card recipes (progress track, icon
-// column, glass button), the type scale, the motion curves and the damage
-// margin. The paint context itself is the canvas' (core/canvas.hpp).
+// The shared card recipes (progress track, icon column, glass button), the
+// type scale, the motion curves and the damage margin. The paint context
+// itself is the canvas' (core/canvas.hpp).
 #include "ui.hpp"
 
 #include "../core/config.hpp"
@@ -13,16 +13,12 @@ namespace NAwesome::Notify {
         return (m ? std::ceil(m->m_scale) : 1.0) + 1.0 + std::max(blurRadius(), SPaint::frostReach());
     }
 
-    // ---- the radius ----
-
     float rPow() {
         return (float)NAwesome::cfg().getD("plugin:awesome:notify:rounding_power");
     }
     int rCard(double scale) {
         return (int)std::lround(std::max(0, NAwesome::cfg().getI("plugin:awesome:notify:rounding")) * scale);
     }
-
-    // ---- motion ----
 
     float easeOutCubic(float t) {
         const float U = 1 - t;
@@ -47,8 +43,6 @@ namespace NAwesome::Notify {
         return SType{.meta = PX(FS - 1), .title = PX(FS), .body = PX(FS), .small = PX(FS - 2), .action = PX(FS), .heading = PX(FS + 2)};
     }
 
-    // ---- shared card recipes ----
-
     void prepareCard(const SP<SNotif>& n, double scale) {
         if (!NAwesome::Canvas::inst().gate().warming)
             return;
@@ -67,9 +61,9 @@ namespace NAwesome::Notify {
         return !n.heroTex ? n.iconTex : shade ? n.thumbTex : NONE;
     }
 
-    // An icon still decoding reserves its column: the text laid out full
-    // width and re-laid narrower when the decode landed, a visible jump and
-    // every text rastered twice.
+    // An icon still decoding reserves its column: otherwise the text lays
+    // out full width and jumps narrower when the decode lands, every text
+    // rastered twice.
     bool hasLeadIcon(const SNotif& n, bool shade) {
         const bool PENDING = (!n.identity.empty() && !n.identSettled) || (!n.fallbackPick.empty() && !n.identSettled) || (!n.image.empty() && !n.imageSettled) || n.pixelsJob != 0;
         return PENDING || contentFace(n, shade) || (n.identTex && n.identTex->m_texID != 0);
@@ -123,7 +117,7 @@ namespace NAwesome::Notify {
         if (n.identity.empty() || !n.identTex || n.identTex->m_texID == 0)
             return;
         // the white ring cuts the glyph free of a light face and a dark one
-        // alike: glass has no one colour to borrow, as a phone's card does.
+        // alike: glass has no one colour to borrow.
         // One raster at native size (icons.cpp's composeBadge), its corner
         // overhanging the face's by BADGE_OUT.
         if (!n.badgeTex || n.badgeTex->m_texID == 0)

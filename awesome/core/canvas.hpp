@@ -1,14 +1,14 @@
-// awesome/core/canvas.hpp — the compositor-drawing platform: the warm/draw
-// gate (crash class 4), the keyed raster cache, the shared paint context,
-// the layer table, and the one pass element that renders every layer.
+// The compositor-drawing platform: the warm/draw gate (crash class 4), the
+// keyed raster cache, the shared paint context, the layer table, and the
+// one pass element that renders every layer.
 //
-// The texture rule, unchanged: a texture created inside a frame cannot be
-// painted by that same frame — wherever in the frame it was created — and
-// the miss silently swallows everything drawn after it in the element. So
-// textures are built ONLY by a warm pass running from the event loop, one
-// frame ahead; the draw pass paints cache hits and never builds. A draw
-// that finds a texture missing flags the gate, and the pass element backs
-// out to the event loop to warm and repaint.
+// The texture rule: a texture created inside a frame cannot be painted by
+// that same frame — wherever in the frame it was created — and the miss
+// silently swallows everything drawn after it in the element. So textures
+// are built ONLY by a warm pass running from the event loop, one frame
+// ahead; the draw pass paints cache hits and never builds. A draw that
+// finds a texture missing flags the gate, and the pass element backs out
+// to the event loop to warm and repaint.
 //
 // Layers are the modules' drawing units: the shell's strip (and its menu
 // and menubar), the notify popups, the notify shade, the windows snap
@@ -44,8 +44,6 @@ using Render::GL::g_pHyprOpenGL;
 
 namespace NAwesome {
 
-    // ---- the warm/draw state machine ----
-
     class CWarmGate {
       public:
         bool warming  = false; // building a texture is PERMITTED (a warm pass, or a token)
@@ -65,11 +63,10 @@ namespace NAwesome {
         // The warm bracket; begin refuses re-entry and mid-render calls so
         // callers never have to check.
         //
-        // A TOKEN IS NOT RE-ENTRY. It only says "building is allowed here",
-        // and a warm inside one must still run: the shell's tray menu
-        // damages — and so warms — from inside the token its dbusmenu reply
-        // holds, and while that counted as re-entry the warm silently
-        // no-opped. Hence the separate pass flag, and the saved permission.
+        // A token is not re-entry: it only says "building is allowed here",
+        // and a warm inside one must still run (the tray menu warms from
+        // inside its dbusmenu reply's token); hence the separate pass flag
+        // and the saved permission.
         // change: a real change brings this warm (not the stale rewarm), so a
         // texture that failed to build gets its chances again
         bool beginWarm(bool change = true) {
@@ -246,10 +243,9 @@ namespace NAwesome {
         Measure                                  m_measure;
     };
 
-    // ---- the paint context: every surface's one set of primitives ----
-
-    // The shell extends it with its hit cells (Shell::SPaint); the helpers
-    // are no-ops during a warm, so ONE layout serves both modes.
+    // The paint context, every surface's one set of primitives. The shell
+    // extends it with its hit cells (Shell::SPaint); the helpers are no-ops
+    // during a warm, so ONE layout serves both modes.
     struct SPaint {
         PHLMONITOR mon   = nullptr;
         bool       warm  = false;
@@ -344,13 +340,11 @@ namespace NAwesome {
             g_pHyprOpenGL->renderRoundedShadow(*rctx, toPhys(global), round, rp, (int)std::lround(range * scale), gradient(c), alpha, Render::SWindowRenderPresentation{},
                                                clear ? std::optional{toPhys(*clear)} : std::nullopt);
         }
-        // ---- the Frost material: the one recipe every floating surface wears ----
-        //
-        // The blurred glass, then a soft drop around it (the shader fades
+        // The Frost material, the one recipe every floating surface wears:
+        // the blurred glass, then a soft drop around it (the shader fades
         // inside the box it is given, so the box grows by the range and
         // sinks by the offset; the glass's shape stays clear of it), then
-        // the rim: one hairline all round (a light line inside the top edge
-        // doubled it there, a thicker top on every panel).
+        // the rim: one hairline all round.
         enum class eDepth : uint8_t {
             CARD, // cards, the center, capsules
             MENU, // menus and popovers float higher
@@ -425,14 +419,10 @@ namespace NAwesome {
         }
     };
 
-    // ---- layers ----
-
     // Paint order, bottom to top. It must agree with the input pipeline
     // (supervisor: shell, notify, windows): where two layers overlap, the
     // one whose module takes the press first paints on top — an open menu
-    // or the menubar prompt owns every press, so it paints over the cards
-    // (registration order once put the cards over an open menu that still
-    // took their clicks).
+    // or the menubar prompt owns every press, so it paints over the cards.
     enum class eLayerZ : uint8_t {
         BAR,    // the strip
         CARDS,  // notification popups and the shade
@@ -448,8 +438,7 @@ namespace NAwesome {
         // generation-cache tick the generation on a FULL walk and sweep its
         // grace window after it; a scoped walk does neither — the textures it
         // left unenumerated were not unwanted, just out of scope, and ageing
-        // on a scoped warm would evict them (every later scoped warm
-        // rebuilding them: the strip's task-label thrash). Default: none.
+        // on a scoped warm would evict them. Default: none.
         virtual void warmBegin(bool scoped) {}
         virtual void warmEnd(bool scoped) {}
         // Build every texture this monitor's NEXT frame will paint.
@@ -477,8 +466,6 @@ namespace NAwesome {
         }
     };
 
-    // ---- the canvas: layer table, warm, the one pass ----
-
     class Canvas {
       public:
         static Canvas& inst() {
@@ -498,9 +485,8 @@ namespace NAwesome {
 
         // From the event loop: build every texture the NEXT frame will
         // paint, on every monitor (or one). Must run outside the render
-        // cycle — a texture built during a frame cannot be painted by that
-        // same frame, wherever in it it was built. No-ops inside a render so
-        // callers never have to check.
+        // cycle (the texture rule); no-ops inside a render so callers never
+        // have to check.
         //
         // `layer` scopes the walk to one layer (a launcher keystroke has no
         // business re-laying-out the bar or the cards); `force` is the stale
@@ -536,8 +522,7 @@ namespace NAwesome {
         //
         // One element PER LAYER, each with its own box: the renderer drops an
         // element whose box misses the frame's damage, so a card redrawn over
-        // a busy window no longer re-runs the bar's whole layout (one union
-        // element did: ~190 us of a ~300 us draw, every frame). A layer with
+        // a busy window does not re-run the bar's whole layout. A layer with
         // nothing on this monitor adds no element at all.
         //
         // Never into a workspace capture (m_renderingCapture): the stage
@@ -558,13 +543,13 @@ namespace NAwesome {
         // repaints only the damaged part of a glass box (upstream's FIXME in
         // CRenderPass::render): the part's blur then samples the rest of the
         // box as this swapchain buffer kept it, its own old glass, and the
-        // buffers drift apart — the bar shimmered over a terminal taking
-        // typing right below it. So damage that comes within the radius of a
-        // glass layer repaints the whole layer, which the pass grows by the
-        // radius again: every sample is fresh. The frame's damage is the
-        // buffer's (every change since it last presented), so each buffer
-        // repaints its own copy. A grown box can reach another glass layer
-        // (a menu over the bar): repeat until nothing grows.
+        // buffers drift apart (the glass shimmers). So damage that comes
+        // within the radius of a glass layer repaints the whole layer, which
+        // the pass grows by the radius again: every sample is fresh. The
+        // frame's damage is the buffer's (every change since it last
+        // presented), so each buffer repaints its own copy. A grown box can
+        // reach another glass layer (a menu over the bar): repeat until
+        // nothing grows.
         void wholeGlass(PHLMONITOR mon, CRegion& damage) {
             if (!blurOn() || damage.empty())
                 return;

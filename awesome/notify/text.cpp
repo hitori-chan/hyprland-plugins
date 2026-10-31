@@ -1,5 +1,5 @@
-// awesome/notify/text.cpp — the pango rasterizer, the keyed texture cache, and
-// the markup/link/age helpers every drawing unit shares.
+// The pango rasterizer, the keyed texture cache, and the markup/link/age
+// helpers every drawing unit shares.
 //
 // Everything text becomes a texture here, keyed on content + style + width
 // into core/canvas.hpp's cache — see there for why the key needs no
@@ -20,8 +20,6 @@
 #include <format>
 
 namespace NAwesome::Notify {
-
-    // ---- small shared helpers ----
 
     std::string hexOf(const CHyprColor& c) {
         return std::format("#{:02x}{:02x}{:02x}", (int)std::lround(c.r * 255), (int)std::lround(c.g * 255), (int)std::lround(c.b * 255));
@@ -281,10 +279,8 @@ namespace NAwesome::Notify {
         int adv;   // the per-line advance with the requested spacing
     };
     // A plain memo, not the warm-aged raster cache: a metric is a few bytes
-    // and asked for on the draw path too, where nothing ticks a generation
-    // (aged that way, its byte cap filled after a few styles and refused
-    // every new one — two Pango layouts per call from then on). Lookups key
-    // on the stack buffer; past the bound the memo starts over.
+    // and asked for on the draw path too, where nothing ticks a generation.
+    // Lookups key on the stack buffer; past the bound the memo starts over.
     struct SMetricHash {
         using is_transparent = void;
         size_t operator()(std::string_view s) const {
@@ -440,10 +436,7 @@ namespace NAwesome::Notify {
         std::vector<SLinkSpan> linkSpans;
         PangoLayout*           layout = newLayout(text, pt, maxWidthPx, lineSpacing, markup, weight, indentPx, outLinks ? linkCol : nullptr, &linkSpans);
         // the pixel budget is a count of WHOLE lines at this font's real
-        // advance: the old 1.35x-body constant undershot the default font
-        // by ~10%, so a seven-line transcript rendered six (the clip took
-        // the oldest line first, and went unnoticed until the order went
-        // chronological and started clipping the newest)
+        // advance (a constant multiple of the type size drops a line)
         if (maxHeightPx < 0) {
             pango_layout_set_height(layout, maxHeightPx);
             // ONE line means one paragraph: the negative height bounds the
@@ -478,10 +471,8 @@ namespace NAwesome::Notify {
 
         // probe the laid-out layout for each link's hit rects (physical px):
         // one per line the link's text actually occupies, from pango's own
-        // visual ranges (layout-relative, alignment and bidi included). One
-        // box from the link's start to its end once spanned the wrong area
-        // when the link wrapped: the text after it on the first line opened
-        // it, its own second-line part did not.
+        // visual ranges (layout-relative, alignment and bidi included), so a
+        // wrapped link hits where it shows
         if (outLinks && !linkSpans.empty()) {
             PangoLayoutIter* IT = pango_layout_get_iter(layout);
             do {
@@ -524,10 +515,9 @@ namespace NAwesome::Notify {
 
     // ---- the keyed cache ----
 
-    // 24 warms of grace — the shade warms only when its model changes, so
-    // this is a longer wall-clock reprieve than the same number gives the bar
-    // measured in texture bytes (the shell's cache does the same): the byte
-    // cap is what bounds a burst of large rasters, sizeof() never did
+    // 24 warms of grace (the shade warms only when its model changes: a
+    // longer wall-clock reprieve than the bar's), bounded in texture bytes,
+    // which is what bounds a burst of large rasters
     static NAwesome::CGenCache<SCachedText, 24> texCache{64ull << 20, [](const SCachedText& t) {
         return sizeof(SCachedText) + (t.tex ? (size_t)std::max(0.0, t.tex->m_size.x) * (size_t)std::max(0.0, t.tex->m_size.y) * 4 : 0);
     }};

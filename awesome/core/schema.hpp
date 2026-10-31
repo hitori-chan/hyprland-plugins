@@ -1,5 +1,5 @@
-// awesome/core/schema.hpp — the config surface: ONE declarative table for
-// every key the plugin reads, with its kind, default, and sanity range.
+// The config surface: ONE declarative table for every key the plugin
+// reads, with its kind, default, and sanity range.
 //
 // The table is constexpr: a key is checked at COMPILE time (CfgKey) — a
 // typo'd cfg().getI("...") is a build error, never a silent 0 — and a read
@@ -9,9 +9,8 @@
 // config system directly. Defaults are the Frost tokens: an unset shell
 // inherits the whole material.
 //
-// Ranges are soft: wide enough that every value the old plugins accepted
-// stays valid. They exist so a hostile or typo'd value clamps instead of
-// shaping geometry, not to enforce aesthetics. Colors are raw
+// Ranges are soft: they exist so a hostile or typo'd value clamps instead
+// of shaping geometry, not to enforce aesthetics. Colors are raw
 // 0xAARRGGBB; the defaults are core/tokens.hpp's.
 #pragma once
 
@@ -44,10 +43,8 @@ namespace NAwesome {
 
     // Field order: key, desc, kind, ival, dval, sval, cval, imin, imax, dmin, dmax.
     inline constexpr Spec SPECS[] = {
-        // ---- theme: the material every module's surfaces share ----
         {"plugin:awesome:theme:col_glass", "the glass of every surface: the bar, cards, the center, menus, the launcher (a tint over the blur; the default has none)", Kind::Color, 0, 0, {}, Theme::GLASS},
         {"plugin:awesome:theme:col_rim", "the glass rim", Kind::Color, 0, 0, {}, Theme::RIM},
-        // ---- shell ----
         {"plugin:awesome:shell:height", "bar height in logical px (the bar reserves it; a display notch's band makes it taller)", Kind::Int, 28, 0, {}, 0, 16, 64},
         {"plugin:awesome:shell:notch_width", "a display notch's width in logical px (0: estimated from its height)", Kind::Int, 0, 0, {}, 0, 0, 1024},
         {"plugin:awesome:shell:font_size", "text size in logical px (monitor scale applies at raster time)", Kind::Int, 12, 0, {}, 0, 6, 48},
@@ -63,7 +60,6 @@ namespace NAwesome {
         {"plugin:awesome:shell:col_charging", "battery fill charging/defender", Kind::Color, 0, 0, {}, Theme::CHARGING},
         {"plugin:awesome:shell:col_low", "battery low", Kind::Color, 0, 0, {}, Theme::URGENT},
         {"plugin:awesome:shell:col_powersave", "battery fill power save", Kind::Color, 0, 0, {}, Theme::SAVER},
-        // ---- notify ----
         {"plugin:awesome:notify:font", "font family", Kind::String, 0, 0, Theme::FONT},
         {"plugin:awesome:notify:font_size", "body text size in logical px (the type roles derive from it)", Kind::Int, 13, 0, {}, 0, 6, 48},
         {"plugin:awesome:notify:width", "card width in logical px: the banners' and the center's column", Kind::Int, 356, 0, {}, 0, 128, 1024},
@@ -86,7 +82,6 @@ namespace NAwesome {
         {"plugin:awesome:notify:col_urgent", "critical: the meta, its progress, an alarmed capsule", Kind::Color, 0, 0, {}, Theme::URGENT},
         {"plugin:awesome:notify:col_highlight", "the accent: progress, the selection, the reply field", Kind::Color, 0, 0, {}, Theme::ACCENT},
         {"plugin:awesome:notify:col_link", "body hyperlinks", Kind::Color, 0, 0, {}, Theme::LINK},
-        // ---- windows ----
         {"plugin:awesome:windows:edge", "distance from an output edge that arms a snap zone", Kind::Int, 16, 0, {}, 0, 0, 128},
         {"plugin:awesome:windows:snap_distance", "magnetic pull distance", Kind::Int, 8, 0, {}, 0, 0, 128},
         {"plugin:awesome:windows:col_frame", "snap preview outline (its tint is the same colour at 10 %)", Kind::Color, 0, 0, {}, Theme::ACCENT},
@@ -116,7 +111,7 @@ namespace NAwesome {
         return nullptr;
     }
 
-    // ---- what a delivered value becomes (the loader applies these) ----
+    // what a delivered value becomes (the loader applies these)
 
     inline constexpr size_t MAX_STRING_VALUE_BYTES = 4096;
 

@@ -1,9 +1,9 @@
-# awesome/gate/system.sh — the system module's behavior battery: the wpctl
-# process path (volume/mic), the readback caps, the repeat serialization,
-# the backlight (a fake logind and backlight), a headset's own volume (a
-# fake bluetoothd) and the touchpad policy. Nothing reaches the host: the
-# fake wpctl shadows the nested's PATH, and the backlight and headset paths
-# talk to the nested's private system bus.
+# The system module's behavior battery: the wpctl process path
+# (volume/mic), the readback caps, the repeat serialization, the backlight
+# (a fake logind and backlight), a headset's own volume (a fake bluetoothd)
+# and the touchpad policy. Nothing reaches the host: the fake wpctl shadows
+# the nested's PATH, and the backlight and headset paths talk to the
+# nested's private system bus.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 # idle: every wpctl set has run and been read back (a readback's card is
 # posted in the same dispatch that retires it)
@@ -107,8 +107,7 @@ bt_volume 47
 chk "headset: the next real change shows again" until_is 3 "center:0 live:1 dnd:0" st
 nclear
 # PipeWire takes an A2DP headset's level 200 ms after the announcement (the
-# fake's .next file): read inside that, every swipe's capsule showed the
-# swipe before it
+# fake's .next file): a read inside that gets the level before
 printf '0.52\n' > "$STATE/wpctl-level.next"
 bt_volume 66
 chk "headset: the capsule shows the level PipeWire took, not the one before" until_is 3 "Volume 52%" hq awesome capsule

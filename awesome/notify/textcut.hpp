@@ -1,5 +1,5 @@
-// awesome/notify/textcut.hpp — the cuts a card's text takes (before pango,
-// at its byte caps): pure and testable.
+// The cuts a card's text takes (before pango, at its byte caps): pure and
+// testable.
 #pragma once
 
 #include <string>
@@ -10,12 +10,12 @@ namespace NAwesome::Notify {
 
     // The text a layout of `lines` lines can show, with room to spare: pango
     // lays out (and shapes) everything it is given, and an end-ellipsized
-    // last line takes the whole rest of its paragraph, so an 8 KiB body cost
-    // its full length in every raster that showed four lines of it. The cut
-    // falls after maxChars visible characters or maxBreaks + 1 line breaks;
-    // the caller passes twice what its lines hold, so the overflow pango
-    // ellipsizes is still there. Markup is cut between tags and entities,
-    // and the tags still open are closed. Empty: nothing to cut.
+    // last line takes the whole rest of its paragraph, so an 8 KiB body
+    // would cost its full length in every raster that shows a few lines.
+    // The cut falls after maxChars visible characters or maxBreaks + 1 line
+    // breaks; the caller passes twice what its lines hold, so the overflow
+    // pango ellipsizes is still there. Markup is cut between tags and
+    // entities, and the tags still open are closed. Empty: nothing to cut.
     inline std::string cutToLines(const std::string& s, bool markup, size_t maxChars, size_t maxBreaks) {
         if (s.size() <= maxChars)
             return {};
@@ -25,7 +25,7 @@ namespace NAwesome::Notify {
             if (markup && s[i] == '<') {
                 const auto END = s.find('>', i);
                 if (END == std::string::npos)
-                    return {}; // malformed: the parse fallback handles it as before
+                    return {}; // malformed: the parse fallback handles it
                 const std::string_view TAG(s.data() + i + 1, END - i - 1);
                 if (!TAG.empty() && TAG.front() == '/') {
                     if (!open.empty())
@@ -101,9 +101,9 @@ namespace NAwesome::Notify {
     }
 
     // Sanitized markup within maxBytes, its head kept. A byte cut could land
-    // inside a tag or an entity: the parse failed and the plain fallback
-    // leaked the tag's tail (`oreground="#fff">`). The cut falls between
-    // tokens and the tags still open are closed, within the cap.
+    // inside a tag or an entity, and the plain fallback would leak the tag's
+    // tail; the cut falls between tokens and the tags still open are closed,
+    // within the cap.
     inline std::string capMarkupHead(const std::string& s, size_t maxBytes) {
         if (s.size() <= maxBytes)
             return s;
@@ -116,7 +116,7 @@ namespace NAwesome::Notify {
                 break;
         }
         // the tags open at the cut: a second pass up to it (a copy of the
-        // stack at every candidate was quadratic in a deep nest)
+        // stack at every candidate would be quadratic in a deep nest)
         TextCut::SOpen atBest;
         for (size_t j = 0; j < best;)
             TextCut::step(s, j, atBest);

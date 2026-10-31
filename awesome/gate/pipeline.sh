@@ -1,8 +1,8 @@
-# awesome/gate/pipeline.sh — the input pipeline's contract: native input-capture
-# pass-through (the receiver must see all three event classes uncancelled),
-# the real-input storm (a stuck swallow eats the post-storm click at any
-# volume), and the surface-ownership precedence (a bar-owned surface in front
-# of a window does not let the window policy act on its clicks).
+# The input pipeline's contract: native input-capture pass-through (the
+# receiver must see all three event classes uncancelled), the real-input
+# storm (a stuck swallow eats the post-storm click at any volume), and the
+# surface-ownership precedence (a bar-owned surface in front of a window
+# does not let the window policy act on its clicks).
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # ---- native input capture ------------------------------------------------
@@ -86,7 +86,7 @@ expect "post-storm click still raises + focuses (no stuck swallow)" \
 	"cs[-1]['class']=='storma' if cs else False"
 # A pointer unplugged mid-press: the compositor drops its held button with
 # no release event, and the bar's next click must still be its own (a stale
-# count passed it through as part of a grab until the next lock).
+# count would pass it through as part of a grab).
 printf 'move %s %s\nsleep 50\npress 272\nsleep 100\n' "$BAX" "$BAY" | vp
 settle
 printf 'move %s 13\nsleep 50\npress 272\nsleep 40\nrelease 272\nsleep 100\n' "$(tag_cx 2)" | vp

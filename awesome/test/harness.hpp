@@ -1,6 +1,6 @@
-// awesome/test/harness.hpp — the headless test harness. No external
-// dependencies (the build links against distro packages only); one CHECK
-// macro, one failure counter, a per-case table in main.
+// The headless test harness. No external dependencies (the build links
+// against distro packages only); one CHECK macro, one failure counter, a
+// per-case table in main.
 #pragma once
 
 #include <cstdio>

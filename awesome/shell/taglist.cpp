@@ -1,4 +1,4 @@
-// awesome/shell/taglist.cpp — awesome's taglist: the nine kanji tags and their widget
+// Awesome's taglist: the nine kanji tags and their widget
 
 #include "shell/shell.hpp"
 

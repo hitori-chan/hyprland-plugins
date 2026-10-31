@@ -1,5 +1,5 @@
-// awesome/core/busclient.hpp — one sd-bus connection wired into the compositor's
-// event loop, shared by every plugin that talks D-Bus.
+// One sd-bus connection wired into the compositor's event loop, shared by
+// every plugin that talks D-Bus.
 //
 // Event-driven: sd-bus's fd + eventFd live in the wayland event loop as
 // removable sources, its rare internal timeouts ride a normally disarmed
@@ -8,12 +8,12 @@
 // render or input. Input/render send sites use the bounded idle queue below,
 // so message construction is also outside those callbacks.
 //
-// Teardown order is the load-bearing part (the historical SEGV class:
-// sdbus-c++ exceptions in flight while the connection dies unwind through
-// the event loop's C frames): sources out FIRST, then owned proxies/objects
-// (they borrow the connection), then the connection itself. A bus that dies
-// under sync() never tears down inside the failing dispatch — the drop is
-// deferred to the loop, and only the first failing source arms it.
+// Teardown order is load-bearing (sdbus-c++ exceptions in flight while the
+// connection dies unwind through the event loop's C frames): sources out
+// FIRST, then owned proxies/objects (they borrow the connection), then the
+// connection itself. A bus that dies under sync() never tears down inside
+// the failing dispatch — the drop is deferred to the loop, and only the
+// first failing source arms it.
 #pragma once
 
 #include "hop.hpp"
@@ -82,13 +82,10 @@ namespace NAwesome {
         }
 
         // Queue message construction/sending that originates in a render or
-        // input callback. sdbus-c++'s async API does not wait for the reply,
-        // but serialising a message and touching the connection still adds
-        // allocations and can throw on the compositor's hot path. The idle
-        // hop keeps that work on the event loop, after the emission/frame has
-        // returned. A bounded drain prevents a repeat storm from monopolising
-        // the loop; remaining sends continue on the next idle turn.
-        // true when queued: a caller batching its own sends retries a refused one
+        // input callback: serialising a message allocates and can throw, so
+        // it runs on an idle hop after the emission/frame returned; a bounded
+        // drain keeps a repeat storm from monopolising the loop. True when
+        // queued: a caller batching its own sends retries a refused one.
         bool post(std::function<void()> fn) {
             if (!m_conn || m_tearingDown || !fn || tearingDown())
                 return false;

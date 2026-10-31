@@ -1,4 +1,4 @@
-// awesome/system/pad.cpp — the touchpad policy.
+// The touchpad policy.
 //
 // The touchpad turns off while an external (USB/Bluetooth) mouse is
 // present and back on when it's unplugged; XF86TouchpadToggle flips it by
@@ -19,7 +19,7 @@
 //   before an external trackpad, not a name substring; its m_hlName is
 //   what hl.device keys on.
 // - A manual flip holds until the pointer set changes (a hotplug): every
-//   config save reloads, and the automatic pass used to put the mouse
+//   config save reloads, and the automatic pass must not put the mouse
 //   policy back over the user's own choice.
 // - The flip is Config::Lua::mgr()->eval("hl.device({...})") — it writes
 //   the compositor's per-device config store, so nothing fights the next
@@ -79,8 +79,6 @@ namespace NAwesome::System {
         Notify::Model::postCard({.id = ID_TOUCHPAD, .icon = icon, .summary = "Touchpad", .body = body, .expireTimeout = timeoutMs, .glyph = glyph, .alarm = alarm});
     }
 
-    // ---- the device side ----
-
     // escape for a double-quoted Lua string literal
     static std::string luaq(const std::string& s) {
         std::string out;
@@ -131,9 +129,8 @@ namespace NAwesome::System {
     // The state the compositor converges on, as setPointerConfigs applies it:
     // a device config's `enabled` (true when unset), else m_connected for a
     // pointer with no config. hl.device only records the value and schedules
-    // REFRESH_INPUT_DEVICES, so m_connected lags a flip until that refresh:
-    // read alone, it showed the old state after every flip, and a second
-    // flip in that window asked for the state the touchpad was already in.
+    // REFRESH_INPUT_DEVICES, so m_connected lags a flip until that refresh
+    // and alone would read the old state after every flip.
     static std::optional<bool> touchpadEnabled() {
         const auto TOUCHPAD = touchpad();
         if (!TOUCHPAD)
@@ -237,10 +234,9 @@ namespace NAwesome::System {
     // signal arms the settle timer. Rebuilt each re-check — aq() is already
     // dead inside a destroy emission, so handlers must never touch the
     // device. A virtual pointer (remote input, automation, the gate's
-    // clicks) is never a mouse here, so its coming and going is no hotplug:
-    // its teardown used to reset the user's flip 400 ms after the click that
-    // made it. An unproven external pointer is also watched for its first
-    // motion or click (proven ones cost nothing per motion).
+    // clicks) is never a mouse here, so its coming and going is no hotplug.
+    // An unproven external pointer is also watched for its first motion or
+    // click (proven ones cost nothing per motion).
     static void watchPointers() {
         lDestroy.clear();
         lProve.clear();

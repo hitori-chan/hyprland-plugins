@@ -1,4 +1,4 @@
-// sharehold — nested-gate screen share: one wlr-screencopy client that keeps
+// Nested-gate screen share: one wlr-screencopy client that keeps
 // copying the first output until it is killed, the way a screencast holds
 // its session (the compositor keeps one session per client and output).
 //

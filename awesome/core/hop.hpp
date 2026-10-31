@@ -1,4 +1,4 @@
-// awesome/core/hop.hpp — the plugin's deferral path (crash class 6).
+// The plugin's deferral path (crash class 6).
 //
 // Workspace and focus changes never run inside an input emission: they arm
 // a hop, which runs on the next event-loop turn. One mechanism, a registry,
@@ -56,8 +56,7 @@ namespace NAwesome {
         void reset() {
             m_lock.reset();
         }
-        // still true after the callback ran — "was ever armed", the same
-        // once-only signal the raw UP gave via operator bool
+        // still true after the callback ran: "was ever armed"
         bool armed() const {
             return !!m_lock;
         }

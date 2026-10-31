@@ -1,5 +1,5 @@
-// awesome/test/test_wpctl.cpp — the readback parse (the single consumer of
-// `wpctl get-volume` output) and the sinks of `wpctl status`.
+// The readback parse (the single consumer of `wpctl get-volume` output) and
+// the sinks of `wpctl status`.
 #include "../system/wpctl.hpp"
 
 #include "harness.hpp"

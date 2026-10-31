@@ -132,9 +132,8 @@ validated_nested_pid() {
 hq() {
 	validated_nested_pid >/dev/null || return 1
 	# bounded: a nested whose S1 handler blocks (e.g. a commit waiting on a
-	# frame callback that never lands — a starved frame cycle)
-	# must fail the checks, not hang the whole gate for minutes (2026-10-02:
-	# an unbounded 'dsp ... & wait' close storm sat 8 min on this)
+	# frame callback that never lands — a starved frame cycle) must fail the
+	# checks, not hang the whole gate
 	timeout 10 hyprctl -i "$SIG" "$@"
 }
 dsp()     { hq dispatch "$1" >/dev/null 2>&1; }
@@ -232,8 +231,7 @@ launch_warmup() {
 	echo "harness: nested render cycle never warmed (captures starve); aborting" >&2
 	# Post-mortem: is the nested alive, and what did it last log? A live
 	# process with a silent log is a stalled frame cycle; a dead process
-	# means the instance died at boot. (This used to be the only evidence left
-	# to a failed gate run.)
+	# means the instance died at boot.
 	if [[ -n "${SIG:-}" ]]; then
 		local npid
 		npid="$(head -n 1 "$RUNDIR/$SIG/hyprland.lock" 2>/dev/null)"
@@ -283,9 +281,8 @@ capture_nested() { # capture_nested <output>: tolerate a transient screencopy de
 	# The nested renders on damage: grim waits for a frame, so the virtual
 	# pointer jitters (a real 2 px out and back, every 50 ms) until grim
 	# has one. A fresh nested parks its pointer at the output center, so an
-	# absolute move there is no damage and starves the capture (the old
-	# 'move 640 400': a 17-min transparent launch window). Low compression:
-	# the frame lives on tmpfs for a few reads.
+	# absolute move there is no damage and starves the capture. Low
+	# compression: the frame lives on tmpfs for a few reads.
 	for _ in 1 2 3; do
 		timeout 8 env WAYLAND_DISPLAY="$WL" grim -l 1 "$out" >/dev/null 2>&1 &
 		gpid=$!
@@ -347,12 +344,10 @@ battery_end() {
 }
 # A battery must leave the nested client-free: the stress desktop starts
 # empty and every battery closes its own windows. A stray client at a
-# boundary is a leak by definition — the focus battery once left its foot at
-# the bottom-right corner, under the tray menu column, and poisoned every
-# panel-extent capture of the battery after it. Called from the gate
-# loop BEFORE battery_end so the result counts into this battery; lifecycle
-# is exempt (its tail tears the nested down itself, so the query is empty
-# for the wrong reason).
+# boundary is a leak by definition, and it poisons the next battery's
+# captures. Called from the gate loop BEFORE battery_end so the result
+# counts into this battery; lifecycle is exempt (its tail tears the nested
+# down itself, so the query is empty for the wrong reason).
 client_classes() { clients | python3 -c 'import json,sys;print(" ".join(sorted({c["class"] for c in json.load(sys.stdin)})))' 2>/dev/null; }
 assert_desktop_clean() {
 	local who
@@ -411,14 +406,10 @@ kill_nested() { # kill any non-live instance running one of the harness cfgs
 	# By cmdline, not by signature dir: a nested that boots slower than
 	# launch.sh's signature wait outlives a gate that gave up on it — the
 	# dir appears only when the boot completes, so a dir scan misses the
-	# orphan (2026-10-01: two failed gdb launches left zombies hosting
-	# aquamarine windows until a third nested joined and the live session
-	# died with it). The live instance never carries a harness cfg, so the
-	# match is live-safe without the signature compare.
-	# Same rule as stop.sh: any nested-style launch (-c, no --watchdog-fd,
-	# never the live PID) is a harness orphan, even when its cfg is not the
-	# current one (2026-10-02: a /tmp debug-cfg orphan outlived every stop;
-	# its window re-mapped onto the live panel and stole the focus).
+	# orphan. The live instance never carries a harness cfg, so the match is
+	# live-safe without the signature compare. Same rule as stop.sh: any
+	# nested-style launch (-c, no --watchdog-fd, never the live PID) is a
+	# harness orphan, even when its cfg is not the current one.
 	for pid in $(pgrep -x Hyprland 2>/dev/null); do
 		is_nested_pid "$pid" && { kill "$pid" 2>/dev/null; killed="$killed $pid"; }
 	done
@@ -451,10 +442,9 @@ kill_nested() { # kill any non-live instance running one of the harness cfgs
 }
 
 nested_exit_check() { # $1=killed pid, $2=1 if SIGKILL was needed
-	# The gate relaunches its nested without ever asking how the previous
-	# instance died: the teardown SEGV class (use-after-dlclose, fork fix
-	# 377b812e; 100% repro on every relaunch) passed every gate from
-	# 2026-09-04 through 2026-09-25 because nothing looked at the corpse.
+	# The gate relaunches its nested without asking how the previous
+	# instance died, so the exit is checked here: a teardown crash (the
+	# use-after-dlclose class) must fail the gate.
 	# launch.sh's wrapper records the nested's exit status: a SIGTERM stop
 	# is a clean 0, a crash is a signal (a run-time one aborts through the
 	# crash reporter, a teardown one dies by its raw signal). No core dump
@@ -484,10 +474,9 @@ nested_exit_check() { # $1=killed pid, $2=1 if SIGKILL was needed
 
 # Launch readiness: the panel column must be clear before the first
 # measurement, or a short first run at y26 reads as a 13px panel. The fork's
-# 15s no-watchdog toast used to span exactly this column and poisoned every
-# shade measurement until it faded; write_stress_cfg now suppresses it
-# (misc:disable_watchdog_warning), so this normally clears within a couple of
-# frames of launch. Only meaningful directly after launch_nested.
+# no-watchdog toast spans exactly this column; write_stress_cfg suppresses
+# it (misc:disable_watchdog_warning), so this normally clears within a
+# couple of frames of launch. Only meaningful directly after launch_nested.
 wait_launch_toast() {
 	local f="$STATE/toast-check.png"
 	for _ in $(seq 1 40); do
@@ -583,9 +572,8 @@ cleanup_harness_core() {
 		echo "   retained nested evidence under $STATE"
 	else
 		# A crash report under $STATE is the only evidence of HOW the nested
-		# died; the rm below would destroy it (2026-10-01: a red run in the
-		# repeat-backpressure burst left exactly one). $HARNESS survives the
-		# next run's fresh_stress_state.
+		# died; the rm below would destroy it. $HARNESS survives the next
+		# run's fresh_stress_state.
 		local report
 		for report in "$STATE"/cache/hyprland/hyprlandCrashReport*.txt; do
 			[[ -f "$report" ]] || continue
@@ -617,17 +605,16 @@ fresh_stress_state() {
 	rm -rf -- "$STATE"
 	mkdir -p "$AWSTATE" "$STATE/config"
 	# The nested session's own config home: real apps run in it (Thunar,
-	# GTK pickers, Firefox) and wrote their window sizes into the user's
-	# xfconf/dconf (2026-10-04). Fonts stay the user's: text metrics are
-	# part of what the batteries measure.
+	# GTK pickers, Firefox) and must not write their window sizes into the
+	# user's xfconf/dconf. Fonts stay the user's: text metrics are part of
+	# what the batteries measure.
 	[[ -d "${XDG_CONFIG_HOME:-$HOME/.config}/fontconfig" ]] && ln -s "${XDG_CONFIG_HOME:-$HOME/.config}/fontconfig" "$STATE/config/fontconfig"
 	printf 'spot\t100\t100\tfoot\n' > "$AW_STATE"
 }
 
-# The exit trap's name. (The core teardown is called by its own name — a
-# wrapper that re-invoked `cleanup_harness` would resolve to itself at call
-# time and recurse into a stack overflow: the pre-merge harness died with
-# RC=139 on every run's exit trap that way.)
+# The exit trap's name. (The core teardown is called by its own name: a
+# wrapper re-invoking `cleanup_harness` would resolve to itself at call
+# time and recurse.)
 cleanup_harness() {
 	cleanup_harness_core
 }

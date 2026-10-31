@@ -1,4 +1,4 @@
-// cliphold — nested-gate clipboard source that deliberately delays transfer.
+// Nested-gate clipboard source that deliberately delays transfer.
 // It uses wlr-data-control so no surface or keyboard focus is needed.
 //
 //   cliphold DELAY_MS TEXT

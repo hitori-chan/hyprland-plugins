@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# awesome/gate/lib.sh — the shared probe helpers for the batteries. The
-# control verbs are `hyprctl awesome <verb>`; the bell is driven by a REAL
-# pointer over the bell glyph — hover (a no-op) and click are widget
-# events, there is no bus verb for either.
-# Pure definitions only — no side effects, no battery code.
+# The shared probe helpers for the batteries. The control verbs are
+# `hyprctl awesome <verb>`; the bell is driven by a REAL pointer over the
+# bell glyph — hover (a no-op) and click are widget events, there is no bus
+# verb for either. Pure definitions only — no side effects, no battery code.
 
 # ---- geometry (derived from notify/ui.hpp and center.cpp) ------------------
 # the column's right inset, a card's width, its top; the center opens on
@@ -169,7 +168,8 @@ settled() {
 # gone <address>: that window is closed; close_wait closes one and waits
 gone() { ! clients | grep -qF "\"address\": \"$1\","; }
 close_wait() { [[ -n "$1" ]] || return 0; dsp "hl.dsp.window.close({window=\"address:$1\"})"; until_ok 5 gone "$1"; }
-# wait_class <class>: a window of that class (its app id) is mapped
+# has_class <class>: a window of that class (its app id) is mapped;
+# wait_class waits for one
 has_class() { clients | grep -qF "\"class\": \"$1\","; }
 # tile_props <address>: "<rounding> <no_shadow 0|1> <border_size>" as the
 # window draws them (windows/tile.hpp: a snapped or maximized window is
@@ -193,10 +193,10 @@ box4() { clients | python3 -c "
 import json,sys
 c = next((c for c in json.load(sys.stdin) if c['class']==sys.argv[1]), None)
 print(f\"{c['at'][0]} {c['at'][1]} {c['size'][0]} {c['size'][1]}\") if c else print('none')" "$1"; }
-# csd_cropped <frame> <"x y w h">: a splashwin CSD box is its content frame
-# (the 2026-10-04 bug): its maroon fills the box 3 px in from every edge
-# (a 1 px border sits on the edge itself) and never shows 5 px outside it —
-# the buffer's shadow margin is cropped at the box, never padding inside it
+# csd_cropped <frame> <"x y w h">: a splashwin CSD box is its content frame:
+# its maroon fills the box 3 px in from every edge (a 1 px border sits on
+# the edge itself) and never shows 5 px outside it — the buffer's shadow
+# margin is cropped at the box, never padding inside it
 csd_cropped() {
 	[[ "$(python3 - "$1" "$2" <<'PY'
 import sys

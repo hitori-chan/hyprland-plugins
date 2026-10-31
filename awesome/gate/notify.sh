@@ -1,8 +1,8 @@
-# awesome/gate/notify.sh — the notify module's behavior battery: the cap,
-# expiry and residency, coalescing, the conversation merge, topline, overflow
-# paging, the hero preview, the shade's click model, close-on-act,
-# hover-hold, the bell click, keyboard nav, banners-over-fullscreen, repop,
-# DND, the reply protocol, the sound-spawn backpressure, and transient cards.
+# The notify module's behavior battery: the cap, expiry and residency,
+# coalescing, the conversation merge, topline, overflow paging, the hero
+# preview, the shade's click model, close-on-act, hover-hold, the bell
+# click, keyboard nav, banners-over-fullscreen, repop, DND, the reply
+# protocol, the sound-spawn backpressure, and transient cards.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # ---- notification cap ---------------------------------------------------
@@ -54,7 +54,7 @@ nsend -a other elsewhere body
 chk "coalesce: a different app gets its own banner" test "$(bd)" = "banners:5 resident:1"
 nclear
 
-# ---- the conversation merge (Android's MessagingStyle) ------------------
+# ---- the conversation merge ----------------------------------------------
 for m in one two three; do nsend -a tg -c im.received -t 30000 Alice "$m"; done
 chk "merge: 3 messages from one sender collapse to 1 card" test "$(st)" = "center:0 live:1 dnd:0"
 nsend -a tg -c im.received -t 30000 Bob hello
@@ -95,8 +95,8 @@ from PIL import Image
 Image.new("RGB", (1280, 720), (30, 160, 240)).save(sys.argv[1]) # past 512²: scaled on the raster worker
 PY
 # hero_px/hero_span <frame> <y0> <y1>: the band a capture holds its card in
-# (the banner column's top, or the shade's first card under the control
-# center's block); one band per scan keeps each scan short
+# (the banner column's top, or the shade's first card); one band per scan
+# keeps each scan short
 BANNER_BAND="$N_TOP 280" SHADE_BAND="$CARD_Y $((CARD_Y + 240))"
 hero_px() {
 	python3 - "$1" "$MON_W" "$2" "$3" <<'PY'
@@ -171,8 +171,8 @@ chk "hero: an image-data screenshot previews card-wide" test "$(hero_px $STATE/h
 chk "hero: the image-data preview is the capped strip" test "$(hero_span $STATE/hero-4-aw.png $BANNER_BAND)" -ge 150 -a "$(hero_span $STATE/hero-4-aw.png $BANNER_BAND)" -le 166
 nclear
 # a square is a face at any size: Firefox posts a page's icon at its own
-# size (a 512 px app icon, a contact's avatar), and as a hero it was cut
-# into a card-wide strip of its middle
+# size (a 512 px app icon, a contact's avatar), and as a hero it would be
+# cut into a card-wide strip of its middle
 DBUS_SESSION_BUS_ADDRESS="$NBUS" python3 - <<'PY'
 from gi.repository import Gio, GLib
 W = 512
@@ -193,8 +193,7 @@ nclear
 # ---- the Notify reader (notify/bus.cpp) ---------------------------------------
 # The call is read by hand: image-data's pixels leave the message in one
 # block once its header checks out, a fixed-type array under any other key
-# is passed over without a copy. The reply's round trip times the dispatch
-# (the typed read took 0.65 s for a 1080p frame).
+# is passed over without a copy. The reply's round trip times the dispatch.
 notify_raw() { # notify_raw <hint key> <w> <h> <stride|auto> — prints the reply's ms
 	DBUS_SESSION_BUS_ADDRESS="$NBUS" python3 - "$@" <<'PY'
 import sys, time
@@ -374,7 +373,7 @@ hq awesome center >/dev/null
 nclear
 chk "hardening: reset after the shade click battery" test "$(st)" = "center:0 live:0 dnd:0"
 
-# ---- acting CLOSES the shade (Android's collapse-on-click) ------------------
+# ---- acting CLOSES the shade ---------------------------------------------
 nfyact gatechat "open me" 2 default Open 0; sent_wait
 hq awesome center >/dev/null
 chk "close-on-act: the shade is open with the firing card in it" test "$(st)" = "center:1 live:1 dnd:0"
@@ -564,7 +563,7 @@ hq awesome center >/dev/null
 nclear
 
 # a group chat with no picture wears its initials on a flat colour of its
-# own (two senders' faces once stood there)
+# own
 flat_face() { # flat_face <frame>: the face cell is one tint, round, past half full
 	python3 - "$1" $((PANEL_X + 14)) $((CARD_Y + 12)) <<'PY'
 import sys
@@ -708,9 +707,9 @@ chk "menu: slide-release Close All took only that app's cards" until_is 3 "cente
 nclear
 
 # ---- the bell (pointer-driven) ------------------------------------------------
-# The shade opens on a CLICK only: hover is a no-op (the hover-peek was
-# removed by user request, 2026-09-30). The bell is a real widget — the
-# hover and the click are real pointer events over it (lib.sh bell_x).
+# The shade opens on a CLICK only: hover is a no-op. The bell is a real
+# widget — the hover and the click are real pointer events over it (lib.sh
+# bell_x).
 nsend -t 30000 "ring me" body
 chk "bell: a banner is up and the shade is shut" test "$(st)" = "center:0 live:1 dnd:0"
 bell_frame || true
@@ -758,7 +757,8 @@ dsp "hl.dsp.window.close()"; until_is 5 0 pyc "sum(1 for c in cs if c['class'] =
 # the Screen; both off until turned on): banners and sounds hold, the
 # arrival waits in the shade, the banners already up retreat there when
 # the quiet begins (a share's once it held a second: a screenshot never
-# moves them); critical punches through, over a share without its words. The switches are option rows. Menus first: the bar hides over a
+# moves them); critical punches through, over a share without its words.
+# The switches are option rows. Menus first: the bar hides over a
 # fullscreen window, and the capture that measures a menu reads any window.
 opt_row() { grep -a $'\t'"$1"'$' "$AW_STATE" | cut -f2; }
 bell_open; bell_pick 0
@@ -969,9 +969,7 @@ nclear
 # ---- a Telegram group: one card, a notification per message ---------------------
 # Telegram Desktop posts each message on its own and keeps a record per
 # message: a signal goes to the FIRST record holding its id, and a group's
-# reply is sent as a reply to that record's message. One shared id made the
-# card's Reply quote the chat's oldest message, and the banner, which kept
-# the joined text's head, never showed the newest. Each merged message now
+# reply is sent as a reply to that record's message. Each merged message
 # answers for an id of its own, the card acts for the newest, shows what
 # fits from the newest end, and lets the sender close one message alone.
 TGIDS=$STATE/tg-ids TGSIG=$STATE/tg-signals.log
