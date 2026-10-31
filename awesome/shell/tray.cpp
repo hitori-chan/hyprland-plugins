@@ -65,6 +65,7 @@ namespace NAwesome::Shell {
         static std::unique_ptr<sdbus::IObject> watcher;
         static std::unique_ptr<sdbus::IProxy>  busProxy;
         static sdbus::Slot                     itemMatch, menuMatch; // the connection's item/dbusmenu signal matches (onItemSignal)
+        static sdbus::Slot                     ownerMatch;           // NameOwnerChanged: items and hosts leaving the bus
         std::vector<SP<SItem>>                 items;
         static std::unordered_map<std::string, std::string> hosts; // service -> unique owner
         static std::string                                  hostService;
@@ -165,6 +166,7 @@ namespace NAwesome::Shell {
             hostNameOwned = false;
             itemMatch     = {};
             menuMatch     = {};
+            ownerMatch    = {};
             busProxy.reset();
             watcher.reset();
         }
@@ -584,14 +586,22 @@ namespace NAwesome::Shell {
                     .forInterface(WIFACE);
 
                 busProxy = sdbus::createProxy(*bus.conn(), sdbus::ServiceName{"org.freedesktop.DBus"}, sdbus::ObjectPath{"/org/freedesktop/DBus"});
-                busProxy->uponSignal("NameOwnerChanged").onInterface("org.freedesktop.DBus").call([](std::string name, std::string oldOwner, std::string newOwner) {
-                    // A service restart may replace its unique owner without
-                    // first losing the well-known name. Treat both that case
-                    // and a disappearance as a new item owner.
-                    if (!oldOwner.empty() && oldOwner != newOwner)
-                        dropService(name);
-                    dropHostName(name, oldOwner, newOwner);
-                });
+                // (asynchronous: a blocking AddMatch at load is the freeze class)
+                ownerMatch = bus.conn()->addMatchAsync(
+                    "type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged'",
+                    [](sdbus::Message m) {
+                        std::string name, oldOwner, newOwner;
+                        try {
+                            m >> name >> oldOwner >> newOwner;
+                        } catch (...) { return; }
+                        // A service restart may replace its unique owner without
+                        // first losing the well-known name. Treat both that case
+                        // and a disappearance as a new item owner.
+                        if (!oldOwner.empty() && oldOwner != newOwner)
+                            dropService(name);
+                        dropHostName(name, oldOwner, newOwner);
+                    },
+                    [](sdbus::Message) {}, sdbus::return_slot);
 
                 itemMatch = bus.conn()->addMatchAsync("type='signal',interface='org.kde.StatusNotifierItem'", [](sdbus::Message m) { onItemSignal(m); },
                                                       [](sdbus::Message) {}, sdbus::return_slot);

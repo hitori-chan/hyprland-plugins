@@ -10,6 +10,7 @@
 
 #include "../core/activate.hpp"
 #include "../core/busclient.hpp"
+#include "../core/queries.hpp"
 #include "../core/version.hpp"
 
 #include <hyprland/src/protocols/XDGActivation.hpp>
@@ -20,6 +21,7 @@ namespace NAwesome::Notify::Bus {
 
     static std::unique_ptr<sdbus::IObject> obj;
     static std::unique_ptr<sdbus::IProxy>  busProbe; // org.freedesktop.DBus: sender -> pid
+    static sdbus::Slot                     ownerMatch; // NameOwnerChanged: a sender leaving the bus
     static NAwesome::CBusLink           g_bus;
 
     // Model changes can originate in pointer/key drains, expiry timers, or
@@ -369,6 +371,7 @@ namespace NAwesome::Notify::Bus {
         // GetConnectionUnixProcessID would otherwise run its slot deleter
         // against a destroyed connection when the static proxy dies at unload
         g_bus.dropOwned = []() {
+            ownerMatch = {};
             busProbe.reset();
             obj.reset();
         };
@@ -420,11 +423,20 @@ namespace NAwesome::Notify::Bus {
             // a card belongs to its sender's unique name (Model::arrive): one
             // leaving the bus orphans its cards, so the app's next instance
             // may continue them
-            busProbe = sdbus::createProxy(*g_bus.conn(), sdbus::ServiceName{"org.freedesktop.DBus"}, sdbus::ObjectPath{"/org/freedesktop/DBus"});
-            busProbe->uponSignal("NameOwnerChanged").onInterface("org.freedesktop.DBus").call([](std::string name, std::string, std::string newOwner) {
-                if (!name.empty() && name.front() == ':' && newOwner.empty())
-                    Model::senderGone(name);
-            });
+            // (asynchronous: a blocking AddMatch at load is the freeze class)
+            ownerMatch = g_bus.conn()->addMatchAsync(
+                "type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged'",
+                [](sdbus::Message m) {
+                    if (NAwesome::compositorShuttingDown())
+                        return;
+                    std::string name, oldOwner, newOwner;
+                    try {
+                        m >> name >> oldOwner >> newOwner;
+                    } catch (...) { return; }
+                    if (!name.empty() && name.front() == ':' && newOwner.empty())
+                        Model::senderGone(name);
+                },
+                [](sdbus::Message) {}, sdbus::return_slot);
 
             g_bus.sync(); // drain anything queued during setup — the vtable is registered, nothing dispatches early
         } catch (const std::exception& E) {
