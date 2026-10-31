@@ -118,7 +118,7 @@ namespace NAwesome::Shell {
         if (Menubar::isOpen) {
             const auto MBM = Menubar::mon.lock();
             Menubar::close();
-            if (MBM == MON && POS.y >= MON->logicalBox().y + barHeight() && POS.y < MON->logicalBox().y + barHeight() * 2) {
+            if (MBM == MON && POS.y >= MON->logicalBox().y + barHeight(MON) && POS.y < MON->logicalBox().y + barHeight(MON) * 2) {
                 info.cancelled = true;
                 swallowRelease |= BIT;
                 return;
@@ -127,7 +127,7 @@ namespace NAwesome::Shell {
             // with the prompt gone, a press on it (a task's or a tray icon's
             // menu) would open what the hidden bar's warm closes at once.
             // The press closed the launcher; that is all it does.
-            if (MBM == MON && POS.y >= MON->logicalBox().y && POS.y < MON->logicalBox().y + barHeight())
+            if (MBM == MON && POS.y >= MON->logicalBox().y && POS.y < MON->logicalBox().y + barHeight(MON))
                 if (NAwesome::fullscreenOwns(MON)) {
                     info.cancelled = true;
                     swallowRelease |= BIT;
@@ -180,7 +180,7 @@ namespace NAwesome::Shell {
         }
 
         const auto MB = MON->logicalBox();
-        if (POS.y >= MB.y + barHeight()) {
+        if (POS.y >= MB.y + barHeight(MON)) {
             heldButtons++;
             return;
         }
@@ -276,7 +276,7 @@ namespace NAwesome::Shell {
         // native hit-test below walks the windows and layers per event
         const bool MENU_HERE = Menu::isOpen && Menu::mon.lock() == MON;
         const bool PROMPT_HERE = Menubar::isOpen && Menubar::mon.lock() == MON;
-        if (!MENU_HERE && POS.y >= MON->logicalBox().y + barHeight() * (PROMPT_HERE ? 2 : 1))
+        if (!MENU_HERE && POS.y >= MON->logicalBox().y + barHeight(MON) * (PROMPT_HERE ? 2 : 1))
             return;
         if (heldButtons > 0 || NAwesome::nativePointerGrabActive() || NAwesome::nativeLayerOwnsPointer())
             return;
@@ -302,13 +302,13 @@ namespace NAwesome::Shell {
                 return;
             }
         }
-        if (Menubar::isOpen && Menubar::mon.lock() == MON && POS.y < MON->logicalBox().y + barHeight() * 2) {
+        if (Menubar::isOpen && Menubar::mon.lock() == MON && POS.y < MON->logicalBox().y + barHeight(MON) * 2) {
             info.cancelled = true; // the prompt strip swallows scroll, no action
             return;
         }
         if (NAwesome::fullscreenOwns(MON))
             return; // bar hidden, strip belongs to the fullscreen window
-        if (POS.y >= MON->logicalBox().y + barHeight())
+        if (POS.y >= MON->logicalBox().y + barHeight(MON))
             return;
 
         info.cancelled = true;
@@ -359,14 +359,14 @@ namespace NAwesome::Shell {
         // edge test (presses included): the row at top + H is the window's,
         // and with integer edges a floored motion coordinate and an exact
         // press coordinate always fall on the same side.
-        bool over = pos.y < MON->logicalBox().y + barHeight();
+        bool over = pos.y < MON->logicalBox().y + barHeight(MON);
         if (!over && Menu::isOpen && Menu::mon.lock() == MON)
             for (const auto& L : Menu::levels)
                 if (L.box.containsPoint(pos)) {
                     over = true;
                     break;
                 }
-        if (!over && Menubar::isOpen && Menubar::mon.lock() == MON && pos.y < MON->logicalBox().y + barHeight() * 2)
+        if (!over && Menubar::isOpen && Menubar::mon.lock() == MON && pos.y < MON->logicalBox().y + barHeight(MON) * 2)
             over = true; // the prompt strip below the bar is ours too
         if (!over)
             return nullptr;
@@ -400,7 +400,7 @@ namespace NAwesome::Shell {
     // do not react)
     static void barHoverAt(const PHLMONITOR& mon, const Vector2D& pos) {
         SBarHover h;
-        if (const auto IT = hitboxes.find(mon->m_id); IT != hitboxes.end() && pos.y < mon->logicalBox().y + barHeight())
+        if (const auto IT = hitboxes.find(mon->m_id); IT != hitboxes.end() && pos.y < mon->logicalBox().y + barHeight(mon))
             for (const auto& HIT : IT->second | std::views::reverse)
                 if (HIT.box.containsPoint(pos)) {
                     if (HIT.widget == &taglistWidget() || HIT.widget == &tasklistWidget() || HIT.widget == &batteryWidget())

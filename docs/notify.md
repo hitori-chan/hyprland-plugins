@@ -8,7 +8,8 @@ inline reply and sounds. Disable any other daemon
 ## Cards
 
 Cards appear top-right on the focused monitor, newest at the top,
-`offset_y` below the monitor's top and never above the work area. While
+`offset_y` below the monitor's top and at least 12 px under the bar's
+reserved band (a notch's taller bar pushes them down). While
 the launcher's strip is open under the bar on that monitor, the cards,
 the center and the control center sit its height lower, so a banner
 never covers the matches. The

@@ -22,6 +22,29 @@ right one.
   holds still while a window right beneath it repaints.
 - Geometry is monitor-local: fixed widget slots and tray clipping keep
   the task area usable on a narrow output.
+- The bar reserves its own band on every monitor (the fork's plugin
+  reserved type): maximized, snapped and placed windows start below it,
+  with no `reserved_area` in the monitor rule. A rule's own reserved top
+  counts toward the band.
+
+### A display notch
+
+On a laptop panel with a notch (Apple silicon booted with
+`appledrm.show_notch=1`), the bar fills the band beside the notch the
+way a menu bar does: it is as tall as the band (37 px on the 14" and 16"
+M-series panels at scale 2) where that is taller than `height`, and splits
+around the notch. The tags and the tasks end before it, the tray,
+bell, switches, battery and clock start after it, and nothing is drawn
+or clicked under it; the cards sit 12 px under the taller bar.
+
+- The band's height comes from the firmware (the device tree's
+  `apple,notch-height` on the enabled display node); the notch shows
+  when the mode is the 16:10 panel plus exactly that band, on the
+  built-in panel (`eDP`), unrotated.
+- Nothing reports the notch's width: it is estimated from the height,
+  and `notch_width` sets it in logical px.
+- A fullscreen window still covers the whole panel, the notch's corners
+  included (its direct scanout needs the full mode).
 
 ### Workspaces
 

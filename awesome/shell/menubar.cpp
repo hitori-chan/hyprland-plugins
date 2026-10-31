@@ -317,7 +317,7 @@ namespace NAwesome::Shell {
             refilter();
             mon    = M;
             isOpen = true;
-            Bands::publishLauncher({.mon = M->m_id, .h = barHeight()}); // the cards drop under the strip
+            Bands::publishLauncher({.mon = M->m_id, .h = barHeight(M)}); // the cards drop under the strip
             barChanged();
         }
 

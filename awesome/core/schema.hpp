@@ -48,7 +48,8 @@ namespace NAwesome {
         {"plugin:awesome:theme:col_glass", "the glass of every surface: the bar, cards, the center, menus, the launcher (a tint over the blur; the default has none)", Kind::Color, 0, 0, {}, Theme::GLASS},
         {"plugin:awesome:theme:col_rim", "the glass rim", Kind::Color, 0, 0, {}, Theme::RIM},
         // ---- shell ----
-        {"plugin:awesome:shell:height", "bar height in logical px (reserve it: monitor reserved top)", Kind::Int, 28, 0, {}, 0, 16, 64},
+        {"plugin:awesome:shell:height", "bar height in logical px (the bar reserves it; a display notch's band makes it taller)", Kind::Int, 28, 0, {}, 0, 16, 64},
+        {"plugin:awesome:shell:notch_width", "a display notch's width in logical px (0: estimated from its height)", Kind::Int, 0, 0, {}, 0, 0, 1024},
         {"plugin:awesome:shell:font_size", "text size in logical px (monitor scale applies at raster time)", Kind::Int, 12, 0, {}, 0, 6, 48},
         {"plugin:awesome:shell:tray_spacing", "px between tray icons (the right slot's rhythm)", Kind::Int, 15, 0, {}, 0, 0, 64},
         {"plugin:awesome:shell:font", "font family, or a Pango family list (the kanji tags take the first face that has them)", Kind::String, 0, 0, Theme::BAR_FONT},
@@ -69,7 +70,7 @@ namespace NAwesome {
         {"plugin:awesome:notify:max_height", "banner height cap in logical px", Kind::Int, 320, 0, {}, 0, 96, 1024},
         {"plugin:awesome:notify:max_icon", "the card's icon column in logical px", Kind::Int, 36, 0, {}, 0, 16, 256},
         {"plugin:awesome:notify:margin", "inter-card gap in logical px", Kind::Int, 8, 0, {}, 0, 0, 64},
-        {"plugin:awesome:notify:offset_y", "the column's and the capsules' distance from the monitor top", Kind::Int, 40, 0, {}, 0, 0, 512},
+        {"plugin:awesome:notify:offset_y", "the column's and the capsules' distance from the monitor top (at least 12 px under the bar)", Kind::Int, 40, 0, {}, 0, 0, 512},
         {"plugin:awesome:notify:timeout_low", "ephemeral timeout in ms (low urgency, transient, progress cards)", Kind::Int, 4000, 0, {}, 0, 0, 600000},
         {"plugin:awesome:notify:timeout_normal", "normal banner timeout in ms, then it retreats to the shade; 0 = sticky", Kind::Int, 5000, 0, {}, 0, 0, 600000},
         {"plugin:awesome:notify:coalesce_popups", "live popups per app (0 = no cap); same-app extras land silent in the shade", Kind::Int, 3, 0, {}, 0, 0, 9},

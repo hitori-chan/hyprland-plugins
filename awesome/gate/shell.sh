@@ -345,6 +345,37 @@ center_shut() { [[ "$(st)" == "center:0 "* ]]; }
 chk "cells: a click on the clock leaves the center shut" center_shut
 center_shut || hq awesome center >/dev/null
 
+# ---- a display notch: the bar fills the band beside it ----------------------
+# The gate build fakes the panel's firmware (`notch W H`: a notch W x H
+# centred on every monitor; core/notch.hpp reads a real one). The bar grows
+# to the band and reserves it (37: the plugin adds what the rule's 30 does
+# not), the tags and the tasks end before the notch, the right slot starts
+# after it, no cell lies under it; without the notch the rule's 30 is back.
+dsp "hl.dsp.exec_cmd('foot -a notchprobe --window-size-pixels=400x200')"; settled notchprobe
+hq awesome notch 200 37 >/dev/null
+NOTCH_L=$(((MON_W - 200) / 2))
+chk "notch: the bar reserves the band" until_is 3 "0,37,0,0" reserved
+notch_split() {
+	hq awesome cells | python3 -c '
+import sys
+nl, nr, w = map(int, sys.argv[1:4])
+cells = [l.split() for l in sys.stdin.read().splitlines()]
+cells = [(c[0], int(c[1]), int(c[2])) for c in cells if len(c) == 3]
+left = [c for c in cells if c[0] in ("tag", "task")]
+right = [c for c in cells if c[0] in ("tray", "bell", "controls", "battery", "clock")]
+ok = "task" in [c[0] for c in left] and right and right[-1][0] == "clock" and right[-1][2] == w
+ok = ok and all(b <= nl for _, _, b in left) and all(a >= nr for _, a, _ in right)
+print(1 if ok else 0)
+' "$NOTCH_L" "$((NOTCH_L + 200))" "$MON_W"
+}
+chk "notch: the strip splits around it, no cell under it" until_is 3 1 notch_split ||
+	echo "  diag: cells $(hq awesome cells | tr '\n' ';')" >&2
+hq awesome notch >/dev/null
+chk "notch: gone, the rule's band is back" until_is 3 "0,30,0,0" reserved
+close_wait "$(clients | python3 -c "
+import json,sys
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='notchprobe'), ''))")"
+
 # ---- the control center's door: the bar's switches -------------------------
 # Right of the bell (shell/bell.cpp): a click opens the control center on its
 # bar's monitor and sets the glyph on a white pill (24 x 22, the glyph

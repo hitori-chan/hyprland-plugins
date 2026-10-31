@@ -29,6 +29,11 @@ hl.bind("XF86AudioRaiseVolume", function() hl.plugin.awesome.volume_up() end)
 hl.config({ plugin = { awesome = { shell = { terminal = "foot" } } } })
 ```
 
+The bar reserves its own band: a monitor rule needs no `reserved_area`.
+It follows the hardware it runs on: a display notch (an Apple silicon
+laptop's) splits the bar around it, and the battery, the keyboard light,
+the room's light and Bluetooth show only where the machine has them.
+
 Every function, `hyprctl` verb, config key and remembered state is in
 the [reference](docs/reference.md).
 

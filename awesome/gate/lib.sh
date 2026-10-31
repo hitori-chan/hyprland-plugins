@@ -10,7 +10,7 @@
 # its 28 px heading row, then 8 px
 N_EDGE=12
 N_W=356
-N_TOP=40
+N_TOP=42 # 12 under the work area's top: the rule's 30 (nested.lua; notify/ui.hpp cardsTop)
 PANEL_X=$((MON_W - N_EDGE - N_W))
 HEAD_Y=$N_TOP
 CARD_Y=$((HEAD_Y + 28 + 8))

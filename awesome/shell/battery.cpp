@@ -82,7 +82,7 @@ namespace NAwesome::Shell {
     static CBox noteBoxOf(const PHLMONITOR& mon, double w) {
         const auto   MB = mon->logicalBox();
         const double R  = std::min(notePill.x + notePill.w + NOTE_OUT, MB.x + MB.w - 4);
-        return CBox{R - w, MB.y + barHeight() + NOTE_GAP, w, NOTE_H};
+        return CBox{R - w, MB.y + barHeight(mon) + NOTE_GAP, w, NOTE_H};
     }
 
     static void damageNote() {

@@ -83,7 +83,8 @@ The material every module's surfaces share.
 
 | Key | Default | |
 |---|---|---|
-| `height` | 28 | bar height, logical px (reserve it as the monitor's reserved top) |
+| `height` | 28 | bar height, logical px; the bar reserves it (a notch's band makes it taller) |
+| `notch_width` | 0 | a display notch's width, logical px (0: estimated from its height) |
 | `font_size` | 12 | text size, logical px |
 | `tray_spacing` | 15 | px between tray icons |
 | `font` | `Fira Code, IBM Plex Sans JP` | font family or Pango family list (the kanji tags take the first face that has them) |
@@ -108,7 +109,7 @@ The material every module's surfaces share.
 | `max_height` | 320 | banner height cap, logical px |
 | `max_icon` | 36 | the icon column, logical px |
 | `margin` | 8 | gap between cards, logical px |
-| `offset_y` | 40 | the cards' and capsules' distance from the monitor's top |
+| `offset_y` | 40 | the cards' and capsules' distance from the monitor's top, at least 12 px under the bar |
 | `timeout_low` | 4000 | ms for low-urgency, transient and progress cards |
 | `timeout_normal` | 5000 | ms before a banner retreats to the center; 0 = sticky |
 | `coalesce_popups` | 3 | live banners per app (0 = no cap) |

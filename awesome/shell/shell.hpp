@@ -30,6 +30,7 @@
 #include "core/canvas.hpp"
 #include "core/config.hpp"
 #include "core/hop.hpp"
+#include "core/notch.hpp"
 #include "core/queries.hpp"
 #include "core/supervisor.hpp"
 #include "core/text.hpp"
@@ -106,7 +107,15 @@ namespace NAwesome::Shell {
 
     // ---- util ----
 
-    double      barHeight();
+    // the bar's height on a monitor: shell:height, or a display notch's
+    // band where it is taller (core/notch.hpp)
+    double                       barHeight(const PHLMONITOR& mon);
+    std::optional<Notch::SNotch> notchOf(const PHLMONITOR& mon);
+    void                         reserveBars();   // the bar's band, the plugin's reserved type on every monitor
+    void                         unreserveBars(); // teardown: the band goes back
+#ifdef AWESOME_GATE
+    extern std::optional<Notch::SNotch> gateNotch;
+#endif
     void        damageBars(); // covers the menubar's prompt strip while it's open
     void        barChanged(); // warm + damage: the bar's content changed, event loop only
     void        titleChanged(); // a visible title: the strip alone, rate-limited

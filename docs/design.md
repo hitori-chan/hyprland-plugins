@@ -13,8 +13,8 @@ It replaced eight plugins in 2026-09, cut by domain; the commit history
 has the provenance.
 
 **The fork surface it depends on**: `monitor.blockSolitary` (paint over a
-fullscreen window), `reservedChanged` (usable-area changes),
-`fullWindowFocus` keeping the caller's reason and surface across
+fullscreen window), `reservedChanged` (usable-area changes), the
+plugin reserved type (the bar's band), `fullWindowFocus` keeping the caller's reason and surface across
 workspaces, compositor-minted activation tokens, and the born-fullscreen
 float's windowed-size ask. It assumes the fork's compositor fixes: activation as
 urgency, the CSD content frame, the true maximize state, popup positions

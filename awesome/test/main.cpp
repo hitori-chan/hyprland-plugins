@@ -16,6 +16,7 @@ int main() {
         {"glyph", test_glyph},
         {"battery", test_battery},
         {"transcript", test_transcript},
+        {"notch", test_notch},
     };
     for (const auto& C : CASES)
         std::printf("[case] %s\n", C.name), C.fn();

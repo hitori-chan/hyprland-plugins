@@ -88,7 +88,12 @@ namespace NAwesome::Shell {
         supervisor().listen(EV.workspace.removed, [](PHLWORKSPACEREF) { barChanged(); });
         supervisor().listen(EV.workspace.moveToMonitor, [](PHLWORKSPACE, PHLMONITOR) { barChanged(); });
         supervisor().listen(EV.workspace.specialActive, [](PHLWORKSPACE, PHLMONITOR) { barChanged(); }); // its fullscreen hides the bar
-        supervisor().listen(EV.monitor.layoutChanged, []() { barChanged(); });
+        // a mode or scale change can show or hide a notch: the band follows
+        supervisor().listen(EV.monitor.layoutChanged, []() {
+            reserveBars();
+            barChanged();
+        });
+        supervisor().listen(EV.monitor.added, [](PHLMONITOR) { reserveBars(); });
         // An output going away (unplugged, or disabled with the lid shut)
         // takes what was open on it: a menu or a prompt drawn nowhere would
         // keep its bus session and swallow the next press or every key. Its
@@ -114,6 +119,7 @@ namespace NAwesome::Shell {
             if (iconsReload())
                 for (const auto& I : Tray::items)
                     I->dirty = true; // their textures came out of the theme we just dropped
+            reserveBars(); // shell:height, a monitor rule's own reserve
             barChanged();
         });
 
@@ -122,6 +128,7 @@ namespace NAwesome::Shell {
 
         HyprlandAPI::addLuaFunction(supervisor().handle(), "awesome", "menubar", luaMenubar);
 
+        reserveBars();
         damageBars();
     }
 
@@ -129,6 +136,7 @@ namespace NAwesome::Shell {
         // reverse of init; the supervisor has already dropped the listeners
         // and every hop, so the units below only unwind their own state
         minute.stop();
+        unreserveBars();
         Windows::Tasklist::taskChangedHook() = nullptr;
         Menubar::exit();
         Menu::exit();
@@ -174,6 +182,18 @@ namespace NAwesome::Shell {
 #else
         if (verb == "battery-note") // the battery's note as it shows ("" none)
             return Battery::noteDescribe();
+        // `notch W H`: a notch of W x H logical px on every monitor (the
+        // panel's firmware, faked); `notch` alone takes it away
+        if (verb == "notch" || verb.starts_with("notch ")) {
+            double w = 0, h = 0;
+            if (std::sscanf(verb.c_str(), "notch %lf %lf", &w, &h) == 2 && w > 0 && h > 0)
+                gateNotch = Notch::SNotch{.w = w, .h = h};
+            else
+                gateNotch.reset();
+            reserveBars();
+            barChanged();
+            return std::string{"ok"};
+        }
         if (verb != "cells")
             return std::nullopt;
         const auto IT = hitboxes.begin();
