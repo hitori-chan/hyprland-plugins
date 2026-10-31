@@ -5,9 +5,8 @@
 //
 // This unit decides WHAT is shown and WHERE; card.cpp and stack.cpp draw
 // it. The center is the banners' own column under a heading with Clear All
-// on a glass capsule, the bell its door; the control center (controls.cpp)
-// shares the column, one open at a time. It draws no backdrop: the
-// desktop is never darkened.
+// and Do Not Disturb's moon on glass, the bell its door. It draws no
+// backdrop: the desktop is never darkened.
 //
 // RANKING — Android's, without the dividers (labels faded over a bright
 // wallpaper): critical, then conversations, then the rest; newest first
@@ -238,7 +237,6 @@ namespace NAwesome::Notify {
             replyExit(); // a field cannot outlive the panel it was drawn in
             Model::repopAbsorbed(repop); // an explicit close returns the parked stack
         } else {
-            setControls(false);
             // Opening absorbs the popped stack — the banners stand down into
             // parked shade rows; an explicit close re-pops them (the user
             // must not lose sight of what the shade swallowed).
@@ -600,14 +598,35 @@ namespace NAwesome::Notify {
             cards.push_back(pc);
         }
 
-        // ---- the heading's row: "Notifications", Clear All ----
-        // No backdrop darkens the desktop: Clear All sits on
-        // glass of its own (as a stack's Show Less), and the heading bare on
-        // the desktop as its stack headers do, a soft shadow keeping it
-        // legible over any wallpaper or window.
+        // ---- the heading's row: "Notifications", Clear All, the moon ----
+        // No backdrop darkens the desktop: Clear All and the moon sit on
+        // glass of their own (as a stack's Show Less), and the heading bare
+        // on the desktop as its stack headers do, a soft shadow keeping it
+        // legible over any wallpaper or window. The moon holds the row's end
+        // (Clear All comes and goes beside it, the moon never moves): Do Not
+        // Disturb's one home. Off, its glyph on the glass, the accent under
+        // the pointer (both faces warm: a hover only damages); on, the
+        // white disc.
         {
             if (const auto HEAD = cachedText("Notifications", COLTITLE, T.heading, (int)std::lround(W * P.scale), -1, 0, false, 600, nullptr, false, eShadow::DESKTOP))
                 texAt(P, HEAD, X + 4, HY + (HEADER_H - texH(HEAD, P.scale)) / 2);
+
+            const bool DND = s_status.dnd; // the warm's
+            const CBox MOON{X + W - CAP_H, HY + (HEADER_H - CAP_H) / 2, CAP_H, CAP_H};
+            const int  GPX = (int)std::lround(MOON_GLYPH * P.scale);
+            if (DND)
+                P.rect(MOON, COLTITLE, (int)std::lround(CAP_H / 2 * P.scale), 2.f);
+            else
+                P.frost(MOON, COLBG, COLRIM, (int)std::lround(CAP_H / 2 * P.scale), 2.f);
+            const auto REST = Glyph::tex(Glyph::eGlyph::MOON, DND ? tLitInk() : COLTITLE, GPX);
+            const auto LIT  = DND ? REST : Glyph::tex(Glyph::eGlyph::MOON, COLACC, GPX);
+            if (const auto G = hovered.kind == SCard::BTN_DND ? LIT : REST)
+                P.texIn(G, MOON);
+            SCard mc;
+            mc.kind = SCard::BTN_DND;
+            mc.box  = MOON;
+            mc.id   = DND; // what the click saw: on ends it, off opens the durations
+            cards.push_back(mc);
 
             // Clear All, or Undo while what it hid waits on its window;
             // gone with nothing to clear. The pointer turns its word the
@@ -618,7 +637,7 @@ namespace NAwesome::Notify {
                 const auto         CLEAR  = cachedText(WORD, COLTITLE, T.meta, (int)std::lround(W * P.scale), -1, 0, false, 600);
                 const auto         LIT    = cachedText(WORD, COLACC, T.meta, (int)std::lround(W * P.scale), -1, 0, false, 600);
                 const double       CW     = texW(CLEAR, P.scale) + 2 * CAP_PADX;
-                const CBox         CB{X + W - CW, HY + (HEADER_H - CAP_H) / 2, CW, CAP_H};
+                const CBox         CB{MOON.x - HEAD_GAP - CW, HY + (HEADER_H - CAP_H) / 2, CW, CAP_H};
                 P.frost(CB, COLBG, COLRIM, (int)std::lround(CAP_H / 2 * P.scale), 2.f);
                 texCentered(P, hovered.kind == SCard::BTN_CLEAR ? LIT : CLEAR, CB);
                 SCard cc;

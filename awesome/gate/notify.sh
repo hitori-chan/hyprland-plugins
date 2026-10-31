@@ -482,7 +482,7 @@ chk "rank: ...acting on nothing" test "$(st)" = "center:1 live:4 dnd:0"
 
 # Clear All hides the rows for 5 s and reads Undo meanwhile; Undo brings
 # them back; the window's end, or the center's close, closes them
-CLX=$((PANEL_X + N_W - 20)) CLY=$((HEAD_Y + 14))
+CLX=$((PANEL_X + N_W - 52)) CLY=$((HEAD_Y + 14)) # left of the moon
 click $CLX $CLY 272
 chk "undo: Clear All hides every row at once" until_is 3 "- undo |" rows
 chk "undo: ...closing none yet" test "$(st)" = "center:1 live:4 dnd:0"
@@ -496,6 +496,55 @@ click $CLX $CLY 272
 chk "undo: an arrival is hidden by the next Clear All" until_is 3 "- undo |" rows
 hq awesome center >/dev/null
 chk "undo: closing the center closes them at once" until_is 2 "center:0 live:0 dnd:0" st
+
+# ---- the moon: Do Not Disturb's one home (notify/center.cpp) ---------------
+# The heading row's end, with or without cards: off, a click lists the
+# durations 6 px under it, its right edge on the moon's (220 wide, rows 28
+# under 5 px of glass); on, the disc is white and a click ends it
+moon_white() { # moon_white <frame>: near-white pixels in the moon's disc
+	python3 - "$1" "$MOON_X" "$MOON_Y" <<'PY'
+import sys
+from PIL import Image
+px = Image.open(sys.argv[1]).convert('RGB').load()
+x, y = int(sys.argv[2]), int(sys.argv[3])
+print(sum(1 for dy in range(-10, 11) for dx in range(-10, 11) if min(px[x + dx, y + dy]) > 200))
+PY
+}
+moon_off() { (($(moon_white "$1") < 120)); }
+moon_on() { (($(moon_white "$1") > 200)); }
+menu_at() { hq awesome menu-at "$1"; } # menu_at <label prefix>: "x y" of the open menu's row
+dnd_pick() { click $MOON_X $MOON_Y 272; until_ok 3 hq_matches '^For 30' awesome menu; click $(menu_at "$1") 272; }
+dnd_in_hour() { local v; v="$(dndrow)"; [[ "$v" =~ ^[0-9]+$ ]] && ((v - $(date +%s) > 3500 && v - $(date +%s) <= 3600)); }
+dnd_morning() { local v; v="$(dndrow)"; [[ "$v" =~ ^[0-9]+$ ]] && [[ "$(date -d "@$v" +%H:%M)" == 08:00 ]] && ((v - $(date +%s) <= 86400)); }
+hq awesome center >/dev/null
+chk "moon: it holds the heading's end in an empty center" until_is 3 "$MOON_X $MOON_Y" hq awesome dnd-at
+chk "moon: off, its disc is glass" shot_until 3 "$STATE/moon-off.png" moon_off "$STATE/moon-off.png"
+click $MOON_X $MOON_Y 272
+chk "moon: a click lists the durations" until_ok 3 hq_matches '^For 30 Minutes;For 1 Hour;For 3 Hours;Until (Tomorrow \(08:00\)|08:00);Until Turned Off$' awesome menu
+chk "moon: ...under the moon, at its right edge" test "$(menu_at "For 30")" = "$((MON_W - N_EDGE - 110)) $((HEAD_Y + 51))"
+menu_state() { echo "$(st) [$(hq awesome menu)]"; }
+tap esc
+chk "moon: Esc closes the menu, the center stays" until_is 3 "center:1 live:0 dnd:0 []" menu_state
+dnd_pick "For 1 Hour"
+chk "moon: For 1 Hour turns it on" until_is 3 "center:1 live:0 dnd:1" st
+chk "moon: ...until an hour from now, remembered" dnd_in_hour
+chk "moon: ...the status line says until when" until_ok 3 hq_matches '^dnd:until ' awesome center-rows
+chk "moon: on, its disc is white" shot_until 3 "$STATE/moon-on.png" moon_on "$STATE/moon-on.png"
+click $MOON_X $MOON_Y 272
+chk "moon: a click ends it" until_is 3 "center:1 live:0 dnd:0" st
+chk "moon: ...and keeps no row" until_is 3 "" dndrow
+dnd_pick "Until " # the morning's row: "Until 08:00", or tomorrow's
+chk "moon: Until 08:00 ends at the next 08:00" until_ok 3 dnd_morning
+click $MOON_X $MOON_Y 272
+dnd_pick "Until Turned Off"
+chk "moon: Until Turned Off holds it with no end" until_is 3 "-1" dndrow
+hq awesome center >/dev/null
+chk "moon: it holds with the center closed" until_is 3 "center:0 live:0 dnd:1" st
+hq awesome center >/dev/null
+click $MOON_X $MOON_Y 272
+chk "moon: ...until the moon ends it" until_is 3 "" dndrow
+hq awesome center >/dev/null
+until_is 2 "center:0 live:0 dnd:0" st
 
 # a card the center had not shown wears its time in the accent for the
 # visit; seen, it reads plain at the next
@@ -833,7 +882,7 @@ nclear
 # ---- the bell's options: a right click ----------------------------------------
 # One flat menu at the bell (shell/bell.cpp): Quiet Automatically's header
 # and its two switches, a separator, Silenced Apps' header and its rows —
-# "None" here. Do Not Disturb is the control center's alone.
+# "None" here. Do Not Disturb is the center's moon alone.
 bell_open
 chk "bell: a right click opens its options" test $((BRX1 - BRX0)) -ge 190
 chk "bell: the right click left the center shut" test "$(st)" = "center:0 live:0 dnd:0"

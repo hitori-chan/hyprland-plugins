@@ -116,19 +116,14 @@ aq_pinned_libdir() {
 
 # --- the private system bus -------------------------------------------------
 # A dbus-daemon of the nested's own with its fake services
-# (devtools/fakes/fake-sysbus): the plugin's light paths send their real
+# (devtools/fakes/fake-sysbus): the plugin's backlight path sends its real
 # SetBrightness calls, the fake writes a fake backlight class dir
-# ($AW_BACKLIGHT_DIR, read by the plugin) and a fake keyboard LED
-# ($AW_LEDS_DIR), its light sensor reads the room from $AW_ALS_FILE, and
-# the host's lights and sensors never move. Nothing else is on it: the
-# nested's other system-bus clients (power-profiles, apps) find no service
-# and degrade.
+# ($AW_BACKLIGHT_DIR, read by the plugin), and the host's panel never
+# moves. Nothing else is on it: the nested's other system-bus clients
+# (power-profiles, apps) find no service and degrade.
 SYSBUS_DIR="$HARNESS_DIR/sysbus"
 SYSBUS_ADDR="unix:path=$SYSBUS_DIR/bus"
 SYSBUS_BACKLIGHT="${AW_BACKLIGHT_DIR:-$SYSBUS_DIR/backlight}"
-SYSBUS_LEDS="${AW_LEDS_DIR:-$SYSBUS_DIR/leds}"
-SYSBUS_ALS="${AW_ALS_FILE:-$SYSBUS_DIR/als}"
-SYSBUS_RFKILL="$SYSBUS_DIR/rfkill" # the fake's rfkill socket (the gate build reads it, never /dev/rfkill)
 SYSBUS_FAKE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/devtools/fakes/fake-sysbus"
 
 sysbus_alive() {
@@ -142,13 +137,6 @@ sysbus_start() {
 		mkdir -p "$SYSBUS_BACKLIGHT/gate0" && printf '1000\n' >"$SYSBUS_BACKLIGHT/gate0/max_brightness"
 	fi
 	printf '500\n' >"$SYSBUS_BACKLIGHT/gate0/brightness"
-	# the keyboard's, named as the kernel names one (the plugin looks for *kbd_backlight)
-	if [[ ! -e "$SYSBUS_LEDS/gate::kbd_backlight/max_brightness" ]]; then
-		mkdir -p "$SYSBUS_LEDS/gate::kbd_backlight" && printf '200\n' >"$SYSBUS_LEDS/gate::kbd_backlight/max_brightness"
-	fi
-	printf '100\n' >"$SYSBUS_LEDS/gate::kbd_backlight/brightness"
-	# the room: a lit one (lux)
-	printf '300\n' >"$SYSBUS_ALS"
 	sysbus_alive && return 0
 	sysbus_stop
 	mkdir -p "$SYSBUS_DIR"
@@ -171,7 +159,7 @@ sysbus_start() {
 	setsid dbus-daemon --config-file="$SYSBUS_DIR/bus.conf" --nofork --nopidfile >"$SYSBUS_DIR/daemon.log" 2>&1 9>&- &
 	printf '%s\n' "$!" >"$SYSBUS_DIR/daemon.pid"
 	for _ in $(seq 1 30); do [[ -S "$SYSBUS_DIR/bus" ]] && break; sleep 0.1; done
-	DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" AW_BACKLIGHT_DIR="$SYSBUS_BACKLIGHT" AW_LEDS_DIR="$SYSBUS_LEDS" AW_ALS_FILE="$SYSBUS_ALS" AW_LOGIND_LOG="${AW_LOGIND_LOG:-$SYSBUS_DIR/logind.log}" AW_RFKILL="$SYSBUS_RFKILL" \
+	DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" AW_BACKLIGHT_DIR="$SYSBUS_BACKLIGHT" AW_LOGIND_LOG="${AW_LOGIND_LOG:-$SYSBUS_DIR/logind.log}" \
 		setsid python3 "$SYSBUS_FAKE" >"$SYSBUS_DIR/logind.stderr" 2>&1 9>&- &
 	printf '%s\n' "$!" >"$SYSBUS_DIR/logind.pid"
 	for _ in $(seq 1 30); do

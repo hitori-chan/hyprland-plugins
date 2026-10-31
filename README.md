@@ -2,7 +2,7 @@
 
 `awesome`: an AwesomeWM-flavoured desktop shell for Hyprland as one
 native C++26 plugin — a bar and launcher, window policy, a notification
-daemon with a control center, and the system controls.
+daemon, and the volume, brightness and touchpad keys.
 
 It is built against the exact
 [`hitori-chan/Hyprland`](https://github.com/hitori-chan/Hyprland) fork,
@@ -30,9 +30,8 @@ hl.config({ plugin = { awesome = { shell = { terminal = "foot" } } } })
 ```
 
 The bar reserves its own band: a monitor rule needs no `reserved_area`.
-It follows the hardware it runs on: a display notch (an Apple silicon
-laptop's) splits the bar around it, and the battery, the keyboard light,
-the room's light and Bluetooth show only where the machine has them.
+It follows the hardware it runs on: a display notch splits the bar
+around it, and the battery shows only where the machine has one.
 
 Every function, `hyprctl` verb, config key and remembered state is in
 the [reference](docs/reference.md).
@@ -42,8 +41,8 @@ the [reference](docs/reference.md).
 - [Shell](docs/shell.md) — the bar and the launcher
 - [Windows](docs/windows.md) — minimize, maximize, focus, placement, snap
 - [Notifications](docs/notify.md) — cards, conversations, the center,
-  the control center
-- [System](docs/system.md) — lights, sound, Bluetooth, touchpad
+  Do Not Disturb
+- [System](docs/system.md) — brightness, sound, touchpad
 - [Reference](docs/reference.md) — Lua API, `hyprctl`, configuration, state
 - [Design](docs/design.md) — architecture, invariants, performance
 - [Testing](docs/testing.md) — building, unit tests, the nested gate

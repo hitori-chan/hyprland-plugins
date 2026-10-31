@@ -1,45 +1,15 @@
 #!/usr/bin/env python3
 # devtools/fakes/fake-sysbus — the services of the gate's PRIVATE system
 # bus (DBUS_SYSTEM_BUS_ADDRESS), so the battery exercises the plugin's real
-# D-Bus paths without ever touching the host's lights or sensors:
+# D-Bus paths without ever touching the host's lights:
 #
-# - org.freedesktop.login1: the light paths call Session.SetBrightness;
-#   here it writes the fake device under $AW_BACKLIGHT_DIR/<name>/brightness
-#   ("backlight") or $AW_LEDS_DIR/<name>/brightness ("leds", the
-#   keyboard's) and logs the call to $AW_LOGIND_LOG. Any session path
-#   answers (auto, session-N, _3N).
-# - net.hadess.SensorProxy (iio-sensor-proxy): an ambient light sensor in
-#   lux whose reading is the number in $AW_ALS_FILE (no file: no sensor).
-#   LightLevel moves only while a client holds a claim, as the daemon's
-#   does: the file is polled and a change is announced by PropertiesChanged.
-#   ClaimLight / ReleaseLight are logged to $AW_LOGIND_LOG too.
-# - org.bluez (bluetoothd): an ObjectManager at / over one adapter (hci0,
-#   powered) and three devices — "Gate Buds" (headphones, paired, a 80 %
-#   battery), "Gate Mouse" (paired, connected) and "Stranger" (seen, never
-#   paired). Powered is settable (off drops every connection); Connect
-#   connects after 300 ms (NotReady while off), Disconnect after 400 ms;
-#   each is logged to $AW_LOGIND_LOG. The gate's own interface
-#   (org.awesome.Gate at /) emits a headset transport's Volume change, as
-#   bluetoothd does when the headset's own buttons move it, moves a
-#   battery, and fails a device's next Connect with a given error.
-#   Adapter1.RemoveDevice unpairs one (InterfacesRemoved; logged): a later
-#   scan finds it again. StartDiscovery finds the strangers 300 ms later
-#   (InterfacesAdded, an RSSI each): "Gate Speaker" pairs as is, "Gate
-#   Keys" shows a code to type on it (the gate's Typed moves its digits),
-#   "Gate Phone" asks to compare one, a nameless one never names itself.
-#   The gate's Crowd adds that many more ("Gate Crowd 01" on, each a step
-#   farther), or with 0 takes them away, so a scan finds more than the
-#   menu shows at once.
-#   Pairing calls the agent the pairing client registered with
-#   AgentManager1 (logged with its sender); Trusted is settable.
-# - rfkill: a unix socket at $AW_RFKILL speaks /dev/rfkill's events for one
-#   Bluetooth radio (an ADD on connect, a CHANGE per move). A client's
-#   CHANGE_ALL sets the soft block (logged); the gate's Rfkill sets both. A
-#   block powers the adapter off and its PowerState reads off-blocked; a
-#   power-on while blocked is refused, as bluetoothd refuses it.
+# - org.freedesktop.login1: Session.SetBrightness writes the fake device
+#   under $AW_BACKLIGHT_DIR/<name>/brightness and logs the call to
+#   $AW_LOGIND_LOG. Any session path answers (auto, session-N).
+# - org.bluez: owns the name so a headset transport's Volume change comes
+#   from bluetoothd; the gate's EmitVolume (org.awesome.Gate at /) sends one,
+#   as the headset's own buttons do.
 import os
-import socket
-import struct
 import sys
 import warnings
 
@@ -47,7 +17,6 @@ from gi.repository import Gio, GLib
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)  # register_object: fine for a fake
 
-BUS_NAME = "org.freedesktop.login1"
 XML = """
 <node>
   <interface name="org.freedesktop.login1.Session">
@@ -63,28 +32,15 @@ XML = """
       <arg type="o" name="path" direction="out"/>
     </method>
   </interface>
-</node>
-"""
-BACKLIGHT = os.environ.get("AW_BACKLIGHT_DIR", "")
-LEDS = os.environ.get("AW_LEDS_DIR", "")
-LOG = os.environ.get("AW_LOGIND_LOG", "")
-ALS = os.environ.get("AW_ALS_FILE", "")
-NODE = Gio.DBusNodeInfo.new_for_xml(XML)
-SENSOR_XML = """
-<node>
-  <interface name="net.hadess.SensorProxy">
-    <method name="ClaimLight"/>
-    <method name="ReleaseLight"/>
-    <property name="HasAmbientLight" type="b" access="read"/>
-    <property name="LightLevelUnit" type="s" access="read"/>
-    <property name="LightLevel" type="d" access="read"/>
+  <interface name="org.awesome.Gate">
+    <method name="EmitVolume"><arg type="q" name="volume" direction="in"/></method>
   </interface>
 </node>
 """
-SENSOR = Gio.DBusNodeInfo.new_for_xml(SENSOR_XML).interfaces[0]
-SENSOR_PATH = "/net/hadess/SensorProxy"
-claims = set()
-reading = None  # the lux last announced
+NODE = Gio.DBusNodeInfo.new_for_xml(XML)
+BACKLIGHT = os.environ.get("AW_BACKLIGHT_DIR", "")
+LOG = os.environ.get("AW_LOGIND_LOG", "")
+TRANSPORT = "/org/bluez/hci0/dev_00_00_00_00_00_01/sep1/fd0"
 
 
 def log(line):
@@ -96,9 +52,8 @@ def log(line):
 def on_call(conn, sender, path, iface, method, params, invocation):
     if method == "SetBrightness":
         subsystem, name, value = params.unpack()
-        root = {"backlight": BACKLIGHT, "leds": LEDS}.get(subsystem, "")
-        target = os.path.join(root, name, "brightness")
-        if not root or "/" in name or not os.path.exists(target):
+        target = os.path.join(BACKLIGHT, name, "brightness")
+        if subsystem != "backlight" or not BACKLIGHT or "/" in name or not os.path.exists(target):
             invocation.return_dbus_error("org.freedesktop.login1.NoSuchDevice", f"no {subsystem} {name}")
             return
         with open(target, "w") as f:
@@ -107,439 +62,24 @@ def on_call(conn, sender, path, iface, method, params, invocation):
         invocation.return_value(None)
     elif method == "GetSession":
         invocation.return_value(GLib.Variant("(o)", ("/org/freedesktop/login1/session/auto",)))
-    else:
-        invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)
-
-
-def lux():
-    try:
-        with open(ALS) as f:
-            return float(f.read().strip())
-    except (OSError, ValueError):
-        return 0.0
-
-
-def on_sensor_call(conn, sender, path, iface, method, params, invocation):
-    global reading
-    if method == "ClaimLight":
-        claims.add(sender)
-        reading = lux()
-        log("ClaimLight")
-    elif method == "ReleaseLight":
-        claims.discard(sender)
-        log("ReleaseLight")
-    else:
-        invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)
-        return
-    invocation.return_value(None)
-
-
-def on_sensor_get(conn, sender, path, iface, prop):
-    if prop == "HasAmbientLight":
-        return GLib.Variant("b", bool(ALS) and os.path.exists(ALS))
-    if prop == "LightLevelUnit":
-        return GLib.Variant("s", "lux")
-    if prop == "LightLevel":
-        return GLib.Variant("d", reading if reading is not None else 0.0)
-    return None
-
-
-def poll_sensor(conn):
-    global reading
-    if claims and ALS:
-        now = lux()
-        if now != reading:
-            reading = now
-            conn.emit_signal(None, SENSOR_PATH, "org.freedesktop.DBus.Properties", "PropertiesChanged",
-                             GLib.Variant("(sa{sv}as)", ("net.hadess.SensorProxy", {"LightLevel": GLib.Variant("d", now)}, [])))
-    return True
-
-
-BLUEZ_XML = """
-<node>
-  <interface name="org.freedesktop.DBus.ObjectManager">
-    <method name="GetManagedObjects">
-      <arg type="a{oa{sa{sv}}}" name="objects" direction="out"/>
-    </method>
-    <signal name="InterfacesAdded"><arg type="o"/><arg type="a{sa{sv}}"/></signal>
-    <signal name="InterfacesRemoved"><arg type="o"/><arg type="as"/></signal>
-  </interface>
-  <interface name="org.bluez.AgentManager1">
-    <method name="RegisterAgent"><arg type="o" name="agent" direction="in"/><arg type="s" name="capability" direction="in"/></method>
-    <method name="UnregisterAgent"><arg type="o" name="agent" direction="in"/></method>
-    <method name="RequestDefaultAgent"><arg type="o" name="agent" direction="in"/></method>
-  </interface>
-  <interface name="org.awesome.Gate">
-    <method name="Typed"><arg type="s" name="name" direction="in"/><arg type="q" name="entered" direction="in"/></method>
-    <method name="Rfkill"><arg type="b" name="soft" direction="in"/><arg type="b" name="hard" direction="in"/></method>
-    <method name="EmitVolume"><arg type="q" name="volume" direction="in"/></method>
-    <method name="SetBattery"><arg type="s" name="name" direction="in"/><arg type="y" name="percent" direction="in"/></method>
-    <method name="FailNext"><arg type="s" name="name" direction="in"/><arg type="s" name="error" direction="in"/><arg type="s" name="message" direction="in"/></method>
-    <method name="Crowd"><arg type="q" name="count" direction="in"/></method>
-  </interface>
-  <interface name="org.bluez.Adapter1">
-    <method name="RemoveDevice"><arg type="o" name="device" direction="in"/></method>
-    <method name="StartDiscovery"/>
-    <method name="StopDiscovery"/>
-    <property name="Powered" type="b" access="readwrite"/>
-    <property name="Discovering" type="b" access="read"/>
-    <property name="PowerState" type="s" access="read"/>
-    <property name="Alias" type="s" access="read"/>
-  </interface>
-  <interface name="org.bluez.Device1">
-    <method name="Connect"/>
-    <method name="Disconnect"/>
-    <method name="Pair"/>
-    <method name="CancelPairing"/>
-    <property name="Alias" type="s" access="read"/>
-    <property name="Name" type="s" access="read"/>
-    <property name="RSSI" type="n" access="read"/>
-    <property name="Trusted" type="b" access="readwrite"/>
-    <property name="Icon" type="s" access="read"/>
-    <property name="Paired" type="b" access="read"/>
-    <property name="Connected" type="b" access="read"/>
-    <property name="Adapter" type="o" access="read"/>
-  </interface>
-  <interface name="org.bluez.Battery1">
-    <property name="Percentage" type="y" access="read"/>
-  </interface>
-</node>
-"""
-BLUEZ = {i.name: i for i in Gio.DBusNodeInfo.new_for_xml(BLUEZ_XML).interfaces}
-HCI = "/org/bluez/hci0"
-adapter = {"Powered": True, "Alias": "gate", "Discovering": False, "PowerState": "on"}
-RFKILL = os.environ.get("AW_RFKILL", "")
-radio = {"soft": False, "hard": False}
-rfkill_clients = []
-devices = {  # path -> its Device1 values, and Battery1's (None: none)
-    HCI + "/dev_00_00_00_00_00_01": [{"Alias": "Gate Buds", "Icon": "audio-headphones", "Paired": True, "Connected": False}, 80],
-    HCI + "/dev_00_00_00_00_00_02": [{"Alias": "Gate Mouse", "Icon": "input-mouse", "Paired": True, "Connected": True}, None],
-    HCI + "/dev_00_00_00_00_00_03": [{"Alias": "Stranger", "Icon": "phone", "Paired": False, "Connected": False}, None],
-}
-# the strangers a scan finds: path -> [Device1 values, battery, its RSSI, how it pairs]
-strangers = {
-    HCI + "/dev_00_00_00_00_00_11": [{"Alias": "Gate Speaker", "Name": "Gate Speaker", "Icon": "audio-card", "Paired": False, "Connected": False}, None, -40, "just"],
-    HCI + "/dev_00_00_00_00_00_12": [{"Alias": "Gate Keys", "Name": "Gate Keys", "Icon": "input-keyboard", "Paired": False, "Connected": False}, None, -50, "passkey"],
-    HCI + "/dev_00_00_00_00_00_13": [{"Alias": "Gate Phone", "Name": "Gate Phone", "Icon": "phone", "Paired": False, "Connected": False}, None, -60, "confirm"],
-    HCI + "/dev_00_00_00_00_00_14": [{"Alias": "00-00-00-00-00-14", "Icon": "", "Paired": False, "Connected": False}, None, -30, "just"],
-}
-agent = None  # (sender, path) of the client that registered one
-pairing = {}  # path -> the Pair call waiting on the agent
-PASSKEY, COMPARE = 482917, 123456
-SIGS = {"Alias": "s", "Name": "s", "Icon": "s", "Paired": "b", "Connected": "b", "Powered": "b", "Discovering": "b", "RSSI": "n", "Trusted": "b",
-        "PowerState": "s"}
-fail_next = {}  # alias -> (error name, message): its next Connect answers that
-
-
-def changed(conn, path, iface, props):
-    conn.emit_signal(None, path, "org.freedesktop.DBus.Properties", "PropertiesChanged",
-                     GLib.Variant("(sa{sv}as)", (iface, {k: GLib.Variant(SIGS.get(k, "y"), v) for k, v in props.items()}, [])))
-
-
-def set_discovering(conn, on):
-    adapter["Discovering"] = on
-    changed(conn, HCI, "org.bluez.Adapter1", {"Discovering": on})
-
-
-def call_agent(conn, method, args, done=None):
-    if agent is None:
-        return
-    conn.call(agent[0], agent[1], "org.bluez.Agent1", method, args, None, Gio.DBusCallFlags.NONE, 90000, None, done)
-
-
-def paired(conn, path):
-    if path not in pairing:
-        return
-    values = devices[path][0]
-    values["Paired"] = True
-    strangers.pop(path, None)
-    changed(conn, path, "org.bluez.Device1", {"Paired": True})
-    pairing.pop(path).return_value(None)
-
-
-def device_props(path):
-    values, _ = devices[path]
-    out = {k: GLib.Variant(SIGS[k], v) for k, v in values.items()}
-    out["Adapter"] = GLib.Variant("o", HCI)
-    return out
-
-
-def on_bluez_call(conn, sender, path, iface, method, params, invocation):
-    if method == "GetManagedObjects":
-        objs = {HCI: {"org.bluez.Adapter1": {k: GLib.Variant(SIGS.get(k, "s"), v) for k, v in adapter.items()}}}
-        for p, (_, battery) in devices.items():
-            objs[p] = {"org.bluez.Device1": device_props(p)}
-            if battery is not None:
-                objs[p]["org.bluez.Battery1"] = {"Percentage": GLib.Variant("y", battery)}
-        invocation.return_value(GLib.Variant("(a{oa{sa{sv}}})", (objs,)))
     elif method == "EmitVolume":
-        conn.emit_signal(None, HCI + "/dev_00_00_00_00_00_01/sep1/fd0", "org.freedesktop.DBus.Properties", "PropertiesChanged",
+        conn.emit_signal(None, TRANSPORT, "org.freedesktop.DBus.Properties", "PropertiesChanged",
                          GLib.Variant("(sa{sv}as)", ("org.bluez.MediaTransport1", {"Volume": GLib.Variant("q", params.unpack()[0])}, [])))
         invocation.return_value(None)
-    elif method == "SetBattery":
-        name, pct = params.unpack()
-        for p, entry in devices.items():
-            if entry[0]["Alias"] == name:
-                entry[1] = pct
-                changed(conn, p, "org.bluez.Battery1", {"Percentage": pct})
-        invocation.return_value(None)
-    elif method == "RemoveDevice":
-        gone = params.unpack()[0]
-        if gone not in devices:
-            invocation.return_dbus_error("org.bluez.Error.DoesNotExist", "Does Not Exist")
-            return
-        values, battery = devices.pop(gone)
-        log(f"RemoveDevice {values['Alias']}")
-        # forgotten, it is a stranger again: a scan finds it
-        values = dict(values, Paired=False, Connected=False, Name=values["Alias"])
-        values.pop("RSSI", None)
-        strangers[gone] = [values, battery, -70, "just"]
-        ifaces = ["org.bluez.Device1"] + (["org.bluez.Battery1"] if battery is not None else [])
-        conn.emit_signal(None, "/", "org.freedesktop.DBus.ObjectManager", "InterfacesRemoved", GLib.Variant("(oas)", (gone, ifaces)))
-        invocation.return_value(None)
-    elif method == "StartDiscovery":
-        log("StartDiscovery")
-        set_discovering(conn, True)
-
-        def find():
-            if not adapter["Discovering"]:
-                return False
-            for p, (values, battery, rssi, _) in strangers.items():
-                if p in devices:
-                    devices[p][0]["RSSI"] = rssi
-                    changed(conn, p, "org.bluez.Device1", {"RSSI": rssi})
-                    continue
-                values["RSSI"] = rssi
-                devices[p] = [values, battery]
-                props = {"org.bluez.Device1": device_props(p)}
-                if battery is not None:
-                    props["org.bluez.Battery1"] = {"Percentage": GLib.Variant("y", battery)}
-                conn.emit_signal(None, "/", "org.freedesktop.DBus.ObjectManager", "InterfacesAdded", GLib.Variant("(oa{sa{sv}})", (p, props)))
-            return False
-        GLib.timeout_add(300, find)
-        invocation.return_value(None)
-    elif method == "StopDiscovery":
-        log("StopDiscovery")
-        set_discovering(conn, False)
-        for p, (values, _) in devices.items():
-            if values.pop("RSSI", None) is not None:
-                conn.emit_signal(None, p, "org.freedesktop.DBus.Properties", "PropertiesChanged",
-                                 GLib.Variant("(sa{sv}as)", ("org.bluez.Device1", {}, ["RSSI"])))
-        invocation.return_value(None)
-    elif method == "RegisterAgent":
-        global agent
-        path, capability = params.unpack()
-        agent = (sender, path)
-        log(f"RegisterAgent {capability}")
-        log(f"Agent {sender} {path}")
-        invocation.return_value(None)
-    elif method in ("UnregisterAgent", "RequestDefaultAgent"):
-        log(method)
-        invocation.return_value(None)
-    elif method == "Pair":
-        values = devices[path][0]
-        log(f"Pair {values['Alias']}")
-        if values["Alias"] in fail_next:
-            error, message = fail_next.pop(values["Alias"])
-            GLib.timeout_add(300, lambda: invocation.return_dbus_error(error, message) and False)
-            return
-        how = strangers.get(path, [None, None, None, "just"])[3]
-        pairing[path] = invocation
-        if how == "just":
-            GLib.timeout_add(300, lambda: paired(conn, path) and False)
-        elif how == "passkey":
-            call_agent(conn, "DisplayPasskey", GLib.Variant("(ouq)", (path, PASSKEY, 0)))
-        else:
-            def answered(c, res):
-                try:
-                    c.call_finish(res)
-                except GLib.Error:
-                    log("Confirmation no")
-                    if path in pairing:
-                        pairing.pop(path).return_dbus_error("org.bluez.Error.AuthenticationRejected", "Authentication Rejected")
-                    return
-                log("Confirmation yes")
-                paired(conn, path)
-            call_agent(conn, "RequestConfirmation", GLib.Variant("(ou)", (path, COMPARE)), answered)
-    elif method == "CancelPairing":
-        values = devices[path][0]
-        log(f"CancelPairing {values['Alias']}")
-        if path in pairing:
-            call_agent(conn, "Cancel", None)
-            pairing.pop(path).return_dbus_error("org.bluez.Error.AuthenticationCanceled", "Authentication Canceled")
-        invocation.return_value(None)
-    elif method == "Typed":
-        name, entered = params.unpack()
-        for p in list(pairing):
-            if devices[p][0]["Alias"] == name:
-                call_agent(conn, "DisplayPasskey", GLib.Variant("(ouq)", (p, PASSKEY, entered)))
-                if entered >= 6:
-                    paired(conn, p)
-        invocation.return_value(None)
-    elif method == "Rfkill":
-        soft, hard = params.unpack()
-        set_radio(conn, soft, hard)
-        invocation.return_value(None)
-    elif method == "FailNext":
-        name, error, message = params.unpack()
-        fail_next[name] = (error, message)
-        invocation.return_value(None)
-    elif method == "Crowd":
-        (count,) = params.unpack()
-        crowd = [p for p in strangers if p.startswith(HCI + "/dev_00_00_00_00_01_")]
-        for p in crowd:
-            strangers.pop(p)
-            if devices.pop(p, None) is not None:
-                conn.emit_signal(None, "/", "org.freedesktop.DBus.ObjectManager", "InterfacesRemoved", GLib.Variant("(oas)", (p, ["org.bluez.Device1"])))
-        for k in range(1, count + 1):
-            name = f"Gate Crowd {k:02d}"
-            strangers[HCI + f"/dev_00_00_00_00_01_{k:02X}"] = [{"Alias": name, "Name": name, "Icon": "audio-card", "Paired": False, "Connected": False}, None, -70 - k, "just"]
-        invocation.return_value(None)
-    elif method in ("Connect", "Disconnect"):
-        values = devices[path][0]
-        log(f"{method} {values['Alias']}")
-        if method == "Connect" and not adapter["Powered"]:
-            invocation.return_dbus_error("org.bluez.Error.NotReady", "Resource Not Ready")
-            return
-        if method == "Connect" and values["Alias"] in fail_next:
-            error, message = fail_next.pop(values["Alias"])
-
-            def refuse():
-                invocation.return_dbus_error(error, message)
-                return False
-            GLib.timeout_add(300, refuse)
-            return
-
-        def settle():
-            if values["Connected"] != (method == "Connect"):
-                values["Connected"] = method == "Connect"
-                changed(conn, path, "org.bluez.Device1", {"Connected": values["Connected"]})
-            invocation.return_value(None)
-            return False
-        GLib.timeout_add(300 if method == "Connect" else 400, settle)
     else:
         invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)
-
-
-def on_bluez_get(conn, sender, path, iface, prop):
-    if path != HCI and path not in devices:
-        return None  # removed: its object outlives it here
-    if iface == "org.bluez.Adapter1":
-        return GLib.Variant(SIGS.get(prop, "s"), adapter[prop])
-    if iface == "org.bluez.Device1":
-        return device_props(path).get(prop)
-    if iface == "org.bluez.Battery1" and devices[path][1] is not None:
-        return GLib.Variant("y", devices[path][1])
-    return None
-
-
-def rfkill_event(op):  # struct rfkill_event: idx, type (2: Bluetooth), op, soft, hard
-    return struct.pack("=IBBBB", 0, 2, op, int(radio["soft"]), int(radio["hard"]))
-
-
-def set_radio(conn, soft, hard):
-    radio["soft"], radio["hard"] = soft, hard
-    for c in list(rfkill_clients):
-        try:
-            c.send(rfkill_event(2))
-        except OSError:
-            rfkill_clients.remove(c)
-    blocked = soft or hard
-    state = "off-blocked" if blocked else ("on" if adapter["Powered"] else "off")
-    if blocked and adapter["Powered"]:
-        power(conn, False)
-    if adapter["PowerState"] != state:
-        adapter["PowerState"] = state
-        changed(conn, HCI, "org.bluez.Adapter1", {"PowerState": state})
-
-
-def rfkill_start(conn):
-    if not RFKILL:
-        return
-    try:
-        os.unlink(RFKILL)
-    except FileNotFoundError:
-        pass
-    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    srv.bind(RFKILL)
-    srv.listen(4)
-
-    def accepted(fd, cond):
-        c, _ = srv.accept()
-        c.send(rfkill_event(0))
-        rfkill_clients.append(c)
-
-        def wrote(fd2, cond2):
-            data = c.recv(64)
-            if not data:
-                rfkill_clients.remove(c)
-                c.close()
-                return False
-            for off in range(0, len(data) - 7, 8):
-                _, kind, op, soft, _ = struct.unpack("=IBBBB", data[off:off + 8])
-                if op == 3 and kind in (0, 2):  # CHANGE_ALL, all radios or Bluetooth's
-                    log(f"rfkill soft={soft}")
-                    set_radio(conn, bool(soft), radio["hard"])
-            return True
-        GLib.io_add_watch(c.fileno(), GLib.IO_IN | GLib.IO_HUP, wrote)
-        return True
-    GLib.io_add_watch(srv.fileno(), GLib.IO_IN, accepted)
-    rfkill_start.server = srv  # held for the process's life
-
-
-def power(conn, on):
-    adapter["Powered"] = on
-    changed(conn, HCI, "org.bluez.Adapter1", {"Powered": on})
-    state = "on" if on else ("off-blocked" if radio["soft"] or radio["hard"] else "off")
-    if adapter["PowerState"] != state:
-        adapter["PowerState"] = state
-        changed(conn, HCI, "org.bluez.Adapter1", {"PowerState": state})
-    if not on:  # a radio off drops every connection
-        for p, (values, _) in devices.items():
-            if values["Connected"]:
-                values["Connected"] = False
-                changed(conn, p, "org.bluez.Device1", {"Connected": False})
-
-
-def on_bluez_set(conn, sender, path, iface, prop, value):
-    if iface == "org.bluez.Device1" and prop == "Trusted" and path in devices:
-        devices[path][0]["Trusted"] = value.unpack()
-        log(f"Trusted {devices[path][0]['Alias']}")
-        return True
-    if iface != "org.bluez.Adapter1" or prop != "Powered":
-        return False
-    on = value.unpack()
-    log(f"Powered {int(on)}")
-    if on and (radio["soft"] or radio["hard"]):
-        return False  # bluetoothd: "Blocked through rfkill"
-    if adapter["Powered"] != on:
-        power(conn, on)
-    return True
-
-
-def bluez_start(conn):
-    conn.register_object("/", BLUEZ["org.freedesktop.DBus.ObjectManager"], on_bluez_call)
-    conn.register_object("/", BLUEZ["org.awesome.Gate"], on_bluez_call)
-    conn.register_object(HCI, BLUEZ["org.bluez.Adapter1"], on_bluez_call, on_bluez_get, on_bluez_set)
-    conn.register_object("/org/bluez", BLUEZ["org.bluez.AgentManager1"], on_bluez_call)
-    for p in list(devices) + list(strangers):
-        conn.register_object(p, BLUEZ["org.bluez.Device1"], on_bluez_call, on_bluez_get, on_bluez_set)
-    for p, (_, battery) in devices.items():
-        if battery is not None:
-            conn.register_object(p, BLUEZ["org.bluez.Battery1"], on_bluez_call, on_bluez_get, None)
-    Gio.bus_own_name_on_connection(conn, "org.bluez", Gio.BusNameOwnerFlags.NONE, None, None)
 
 
 def main():
     addr = os.environ.get("DBUS_SYSTEM_BUS_ADDRESS")
     if not addr:
         sys.exit("fake-sysbus: DBUS_SYSTEM_BUS_ADDRESS is not set (refusing the real system bus)")
+    session, manager, gate = NODE.interfaces
     conn = Gio.DBusConnection.new_for_address_sync(
         addr, Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION, None, None)
-    conn.register_object("/org/freedesktop/login1", NODE.interfaces[1], on_call)
+    conn.register_object("/org/freedesktop/login1", manager, on_call)
     # the plugin addresses its own session explicitly when its cgroup names
     # one, else "auto": register both shapes it can produce
-    session = NODE.interfaces[0]
     conn.register_object("/org/freedesktop/login1/session/auto", session, on_call)
     for line in open("/proc/self/cgroup"):
         mark = line.rfind("session-")
@@ -547,12 +87,9 @@ def main():
             sid = line.strip()[mark + len("session-"):-len(".scope")]
             if sid.isdigit():
                 conn.register_object(f"/org/freedesktop/login1/session/{sid}", session, on_call)
-    Gio.bus_own_name_on_connection(conn, BUS_NAME, Gio.BusNameOwnerFlags.NONE, None, None)
-    conn.register_object(SENSOR_PATH, SENSOR, on_sensor_call, on_sensor_get, None)
-    Gio.bus_own_name_on_connection(conn, "net.hadess.SensorProxy", Gio.BusNameOwnerFlags.NONE, None, None)
-    bluez_start(conn)
-    rfkill_start(conn)
-    GLib.timeout_add(100, poll_sensor, conn)
+    conn.register_object("/", gate, on_call)
+    for name in ("org.freedesktop.login1", "org.bluez"):
+        Gio.bus_own_name_on_connection(conn, name, Gio.BusNameOwnerFlags.NONE, None, None)
     GLib.MainLoop().run()
 
 

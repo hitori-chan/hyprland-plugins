@@ -91,8 +91,8 @@ the helper lines the time went to.
 
 The nested runs inside a private headless labwc (`gate/host.sh`;
 install labwc once) with its own session bus, a private system bus
-carrying a fake logind, backlight, keyboard LED, light sensor and
-bluetoothd (one adapter, a paired headset and mouse), scratch
+carrying a fake logind, backlight and bluetoothd (a headset's volume
+signal), scratch
 XDG dirs, and aquamarine at the fork's `flake.lock` pin. The live session
 receives nothing: no output, workspace, window, focus, cursor,
 brightness or volume change. The isolation check (structural at each
@@ -102,7 +102,7 @@ launch, observed at the end) fails the gate on any trace.
   address all belong to the nested; fixtures always get the nested's
   `WAYLAND_DISPLAY`.
 - The fakes shadow the host's services (`wpctl`, the sound player,
-  logind, iio-sensor-proxy, BlueZ signals) and never touch live devices.
+  logind, BlueZ signals) and never touch live devices.
 - A "dead" Wayland display is verified with `flock`, never by its lock
   file: those are empty flock files, and removing a live one breaks a
   session.
@@ -140,11 +140,9 @@ All in `awesome/gate/`, runnable from a clone as-is:
 The gate build adds `hyprctl awesome` verbs for the batteries: `cells`
 (the bar's click cells), `battery-note` (the battery's note showing),
 `shown` (the newest card's body as drawn), `center-rows` (the open
-center's status line and rows), `menu` (the open card menu's rows),
-`quiet` (the quiet state), `controls` (the control center's values),
-`controls-tip` (the control center button naming itself), `outputs`
-(the volume's sinks), `bt` (Bluetooth as read; `bt power 0|1`, `bt
-connect|disconnect NAME` drive it), `busy` (the wpctl commands in
+center's status line and rows), `menu` (the open menu's rows),
+`menu-at LABEL` (where a row whose label starts so sits), `dnd-at` (where
+the center's moon sits), `quiet` (the quiet state), `busy` (the wpctl commands in
 flight: a battery's barrier), `pad NAME` (a virtual pointer stands in
 for the touchpad; `pad -` drops it) and `snap-zone` (the armed snap
 zone, "<top|bottom|-> <left|right|->").

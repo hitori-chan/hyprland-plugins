@@ -83,24 +83,5 @@ bool test_textcut() {
         AW_CHECK(capMarkupHead(deep, 100) == want);
     }
 
-    // an output's name cut in the middle, between whole words, the end
-    // kept first; here a room of n code points
-    {
-        using NAwesome::Notify::midCut;
-        const auto ROOM = [](size_t n) {
-            return [n](const std::string& t) { return (size_t)std::ranges::count_if(t, [](unsigned char c) { return (c & 0xC0) != 0x80; }) <= n; };
-        };
-        const std::string HDMI = "Tiger Lake-LP Smart Sound Technology Audio Controller HDMI / DisplayPort 1 Output";
-        const std::string BOTH = "Tiger Lake-LP Smart Sound Technology Audio Controller Speaker + Headphones";
-        AW_CHECK(midCut(std::string{"Speakers"}, ROOM(40)) == "Speakers");
-        AW_CHECK(midCut(HDMI, ROOM(40)) == "Tiger Lake-LP \u2026 DisplayPort 1 Output"); // a bare "/" never borders the cut
-        AW_CHECK(midCut(BOTH, ROOM(40)) == "Tiger Lake-LP \u2026 Speaker + Headphones");
-        AW_CHECK(midCut(BOTH, ROOM(30)) == "Tiger Lake-LP \u2026 Headphones"); // nor a bare "+"
-        AW_CHECK(midCut(HDMI, ROOM(20)) == "Tiger \u2026 1 Output");
-        AW_CHECK(midCut(std::string{"Built-in Audio Analog Stereo"}, ROOM(20)) == "Built-in \u2026 Stereo");
-        // the first and last words alone overflow: by characters
-        AW_CHECK(midCut(HDMI, ROOM(12)) == "Tiger L\u2026tput");
-        AW_CHECK(midCut(std::string{"Supercalifragilistic Expialidocious"}, ROOM(12)) == "Superca\u2026ious");
-    }
     return true;
 }

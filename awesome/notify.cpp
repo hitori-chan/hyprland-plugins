@@ -25,8 +25,7 @@
 
 namespace NAwesome::Notify {
 
-    void queueCenterToggle(PHLMONITOR on);   // defined below; the Lua doors call them first
-    void queueControlsToggle(PHLMONITOR on);
+    void queueCenterToggle(PHLMONITOR on); // defined below; the Lua door calls it first
 
     CModule& module() {
         static CModule M;
@@ -73,16 +72,6 @@ namespace NAwesome::Notify {
             queueCenterToggle(nullptr);
             return 0;
         }
-        // the control center's toggle: its bar glyph, a user bind
-        // (hl.plugin.awesome.control_center()), `hyprctl awesome
-        // controlcenter` — deferred and accumulating as the center's
-        static int            controlsPresses = 0;
-        static PHLMONITORREF  controlsOn;
-        static NAwesome::CHop pendingControls;
-        int                   luaControls(lua_State*) {
-            queueControlsToggle(nullptr);
-            return 0;
-        }
         int luaClearAll(lua_State*) {
             static NAwesome::CHop pendingClear;
             pendingClear.arm([]() { Model::dismissAllLive(); });
@@ -117,21 +106,6 @@ namespace NAwesome::Notify {
         });
     }
 
-    void queueControlsToggle(PHLMONITOR on) {
-        if (!g_pEventLoopManager)
-            return;
-        controlsOn = on;
-        if (++controlsPresses > 1)
-            return;
-        pendingControls.arm([]() {
-            if (!(std::exchange(controlsPresses, 0) & 1))
-                return;
-            if (!controlsVisible())
-                placeCardsOn(controlsOn.lock()); // the clicked glyph's monitor: the banners follow the panel there
-            setControls(!controlsVisible());
-        });
-    }
-
     void CModule::init() {
         Model::init(); // the expiry timer stands before anything can arrive
         Bus::init();
@@ -139,7 +113,6 @@ namespace NAwesome::Notify {
         iconsInit(); // the async decode poll and the .desktop index scan start now
         replyInit();
         inputInit(); // the hold timer
-        controlsInit(); // the levels' hook: a published change repaints the open control center
 
         auto& EV = Event::bus()->m_events;
         // The cards arrive on the FOCUSED monitor and stay there
@@ -174,7 +147,6 @@ namespace NAwesome::Notify {
 
         HANDLE H = supervisor().handle();
         HyprlandAPI::addLuaFunction(H, "awesome", "center", luaCenter); // F12 is the reserved bind
-        HyprlandAPI::addLuaFunction(H, "awesome", "control_center", luaControls);
         HyprlandAPI::addLuaFunction(H, "awesome", "suspend", luaSuspend);
         HyprlandAPI::addLuaFunction(H, "awesome", "clear_all", luaClearAll);
     }
@@ -186,12 +158,9 @@ namespace NAwesome::Notify {
         suspendPresses = 0;
         suspendSet.reset();
         pendingCenter.reset();
-        pendingControls.reset();
-        controlsPresses = 0;
         Bus::exit(); // the connection first: nothing may arrive mid-teardown
         Model::exit(); // then the cards, and their textures with them
         inputExit();
-        controlsExit();
         replyTeardown();
         centerExit();
         iconsExit(); // the decode poll and the index helper out with the plugin
@@ -227,12 +196,6 @@ namespace NAwesome::Notify {
             queueCenterToggle(nullptr);
             return "ok";
         }
-        if (verb == "controlcenter") {
-            queueControlsToggle(nullptr);
-            return "ok";
-        }
-        if (verb == "controlcenter-shown")
-            return controlsVisible() ? "1" : "0";
         if (verb == "state")
             return Model::stateString();
         if (verb == "badge")
@@ -246,24 +209,19 @@ namespace NAwesome::Notify {
                     return N->messages.empty() ? N->body : N->fitMemo.rev == N->rev ? N->fitMemo.body : std::string{};
             return std::string{};
         }
-        if (verb == "menu") // the open card menu's rows ("label;label*;(label)": checked, dim)
+        if (verb == "menu") // the open menu's rows ("label;label")
             return CardMenu::describe();
-        if (verb == "controls-tip") // the control center button whose name shows ("" none)
-            return controlsTip();
-        if (verb == "menu-name") // the whole name a cut output's note shows ("" none)
-            return CardMenu::describeName();
-        if (verb == "controls-bt") // Bluetooth's capsule state ("Didn't Answer!": in red)
-            return controlsBt();
         if (verb == "capsule") { // the live capsule's words ("<summary> <body>"; "" none)
             for (const auto& N : notifs)
                 if (inOsdBand(N->id) && N->banner)
                     return N->summary + " " + N->body;
             return std::string{};
         }
-        if (verb.starts_with("menu-at ")) { // "x y": the middle of the open menu's part whose key starts so ("" none)
-            const auto PREFIX = verb.substr(8);
+        if (verb.starts_with("menu-at ")) // "x y": the middle of the open menu's row whose label starts so ("" none)
+            return CardMenu::rowAt(verb.substr(8));
+        if (verb == "dnd-at") { // "x y": the middle of the open center's moon ("" none)
             for (const auto& C : cards)
-                if (C.kind == SCard::MENU_ITEM && C.group.starts_with(PREFIX))
+                if (C.kind == SCard::BTN_DND)
                     return std::format("{} {}", (int)std::lround(C.box.x + C.box.w / 2), (int)std::lround(C.box.y + C.box.h / 2));
             return std::string{};
         }

@@ -1,18 +1,16 @@
-// awesome/shell/bell.cpp — the two doors into the notify column: the
-// notification bell and the control center's switches. The monolith has no
-// cross-module bus: both read the notify MODEL directly and repaint off its
-// badgeChangedHook (fired from the model's single change funnel). A click
-// toggles its panel — a function call, not a proxy. The bell has no count:
-// a dot on its shoulder while the center holds a card it has not shown
-// (Model::unseen). Under Do Not Disturb the bell is the moon, dotted while
-// cards wait in the DND queue. A right click on the bell opens the
-// notification options, flat: quiet automatically (over a fullscreen app,
-// while sharing the screen), and the apps and chats the card menus
-// silenced, each a click from back on. Do Not Disturb's one home is the
-// control center; the moon echoes it. The control center's glyph is two
-// switches, the lower one on. A door sits on a white pill while its panel
-// is open (the bell's: the center or its options menu), its glyph white.
-// The accent stays text for where you are; the bell's dot is its one mark.
+// awesome/shell/bell.cpp — the door into the notify column: the
+// notification bell. The monolith has no cross-module bus: it reads the
+// notify MODEL directly and repaints off its badgeChangedHook (fired from
+// the model's single change funnel). A click toggles the center — a
+// function call, not a proxy. The bell has no count: a dot on its shoulder
+// while the center holds a card it has not shown (Model::unseen). Under Do
+// Not Disturb the bell is the moon, dotted while cards wait in the DND
+// queue. A right click opens the notification options, flat: quiet
+// automatically (over a fullscreen app, while sharing the screen), and the
+// apps and chats the card menus silenced, each a click from back on. Do Not
+// Disturb's one home is the center's moon; the bell echoes it. The bell
+// sits on a white pill while the center or its options menu is open. The
+// accent stays text for where you are; the bell's dot is its one mark.
 
 #include "shell/shell.hpp"
 
@@ -25,12 +23,11 @@
 
 namespace NAwesome::Shell {
 
-    // what the doors show: the dot, whether DND holds, which panel is open
+    // what the bell shows: the dot, whether DND holds, the center open
     struct SBellState {
-        bool dot      = false;
-        bool dnd      = false;
-        bool open     = false; // the notification center
-        bool controls = false; // the control center
+        bool dot  = false;
+        bool dnd  = false;
+        bool open = false;
         bool operator==(const SBellState&) const = default;
     };
     static SBellState bellState() {
@@ -38,16 +35,15 @@ namespace NAwesome::Shell {
         const bool DND  = M::suspendedNow();
         const bool OPEN = NAwesome::Notify::centerVisible();
         // the open center is the place the dot points at: it never shows over
-        // it; the bell sits on its pill instead, as a door does while its
-        // panel is open
+        // it; the bell sits on its pill instead
         const bool DOT = !OPEN && (M::unseen() || (DND && M::heldCount() > 0));
-        return {DOT, DND, OPEN, NAwesome::Notify::controlsVisible()};
+        return {DOT, DND, OPEN};
     }
 
     namespace Bell {
         // what the bar last warmed for: the funnel fires on every model
         // change (each step of a volume sweep), and only the dot, a DND
-        // flip or a panel opening changes what the doors draw
+        // flip or the center opening changes what the bell draws
         static std::optional<SBellState> shown;
 
         void init() {
@@ -93,7 +89,7 @@ namespace NAwesome::Shell {
             return e;
         }
 
-        // The options, flat (Do Not Disturb is the control center's): the
+        // The options, flat (Do Not Disturb is the center's moon): the
         // two switches that quiet the banners by themselves, checked while
         // on (both start off); then every switch the card menus turned off,
         // a row each — the app's icon, its name, what is off — a click from
@@ -139,7 +135,7 @@ namespace NAwesome::Shell {
         // the glyph's own 16 px grid: whole pixels at 1x (core/glyph_shapes.hpp)
         constexpr double GLYPH = 16;
 
-        // an open door: the pill under the glyph, 4 px past it either side,
+        // the open door: the pill under the glyph, 4 px past it either side,
         // 22 tall on the strip's middle (a rect: nothing to warm)
         void doorPill(const SPaint& P, const CBox& box) {
             constexpr double W = 24, H = 22;
@@ -191,41 +187,10 @@ namespace NAwesome::Shell {
                 NAwesome::Notify::queueCenterToggle(hit.mon.lock());
             }
         };
-
-        class CControlsWidget : public IWidget {
-          public:
-            double fit(const SPaint&, const SFrame&) override {
-                return GLYPH;
-            }
-
-            void draw(const SPaint& P, const SFrame& F, const CBox& box) override {
-                const bool OPEN = NAwesome::Notify::controlsVisible();
-                if (P.fp) // the panel can open without a bar event
-                    *P.fp = *P.fp * 1099511628211ULL + OPEN;
-                if (OPEN)
-                    doorPill(P, box);
-                P.texIn(NAwesome::Glyph::tex(NAwesome::Glyph::eGlyph::CONTROLS, F.fg, (int)std::lround(GLYPH * P.scale)), CBox{box.x, box.y, GLYPH, P.h});
-                SHit h;
-                h.box    = box;
-                h.widget = this;
-                P.hits->push_back(h);
-            }
-
-            void onHit(const SHit& hit, uint32_t bit, bool) override {
-                // the panel opens on the clicked bar's monitor, as the bell's
-                if (bit == 1u)
-                    NAwesome::Notify::queueControlsToggle(hit.mon.lock());
-            }
-        };
     } // namespace
 
     IWidget& bellWidget() {
         static CBellWidget W;
-        return W;
-    }
-
-    IWidget& controlsWidget() {
-        static CControlsWidget W;
         return W;
     }
 

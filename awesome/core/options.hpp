@@ -1,6 +1,6 @@
 // awesome/core/options.hpp — the choices the plugin remembers for the
-// user: what they picked from a menu (Do Not Disturb, quiet automatically,
-// the keyboard light following the room), never what they configured. The
+// user: what they picked from a menu (Do Not Disturb, quiet
+// automatically), never what they configured. The
 // config files stay the user's and read-only to the plugin; no option is
 // both a config key and a remembered choice.
 //
@@ -23,8 +23,6 @@ namespace NAwesome {
         DND,              // 0 off, -1 until turned off, else its end (unix seconds)
         QUIET_FULLSCREEN, // hold banners and sounds over a fullscreen focused window
         QUIET_SHARING,    // ... and while a display, or a region of one, is shared
-        KBD_FOLLOWS_ROOM, // the keyboard light follows the ambient light sensor
-        KBD_LEVEL,        // the keyboard light's percent as the user last chose it (0: never), the room's "on"
         COUNT_,
     };
 
@@ -37,8 +35,6 @@ namespace NAwesome {
         {"dnd", 0, -1, MAX_STORE_TIME - 1},
         {"quiet-fullscreen", 0, 0, 1},
         {"quiet-sharing", 0, 0, 1},
-        {"kbd-follows-room", 0, 0, 1},
-        {"kbd-level", 0, 0, 100},
     }};
 
     // the schema row of an option, and the option a row names

@@ -620,32 +620,8 @@ namespace NAwesome::Notify {
     void textCacheSweep() {
         texCache.sweep();
     }
-    // the bound: a monitor's few outputs at a scale or two; past it the
-    // memo starts over (a lookup's result is used before the next one)
-    static constexpr size_t                         FITTED_MAX = 64;
-    static std::unordered_map<std::string, std::string> fittedMemo;
-
-    const std::string& fittedName(const std::string& name, int maxWpx, int pt, int weight) {
-        static std::string key; // reused: a hit allocates nothing
-        key.assign(name).push_back('\x1f');
-        std::format_to(std::back_inserter(key), "{}|{}|{}", maxWpx, pt, weight);
-        if (const auto IT = fittedMemo.find(key); IT != fittedMemo.end())
-            return IT->second;
-        if (fittedMemo.size() >= FITTED_MAX)
-            fittedMemo.clear();
-        const auto FITS = [&](const std::string& t) {
-            PangoLayout* layout = newLayout(t, pt, 1 << 20, 0, false, weight, 0, nullptr, nullptr);
-            int          W = 0, H = 0;
-            pango_layout_get_pixel_size(layout, &W, &H);
-            g_object_unref(layout);
-            return W <= maxWpx;
-        };
-        return fittedMemo.emplace(key, midCut(name, FITS)).first->second;
-    }
-
     void textCacheClear() {
         texCache.clear();
-        fittedMemo.clear();
         fitGen++;
     }
 

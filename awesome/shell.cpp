@@ -204,7 +204,6 @@ namespace NAwesome::Shell {
                 w == &tasklistWidget()   ? "task" :
                 w == &trayWidget()       ? "tray" :
                 w == &batteryWidget()    ? "battery" :
-                w == &controlsWidget()   ? "controls" :
                 w == &bellWidget()       ? "bell" :
                 w == &clockWidget()      ? "clock" :
                                            "?";

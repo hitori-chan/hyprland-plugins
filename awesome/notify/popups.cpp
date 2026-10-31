@@ -30,7 +30,7 @@ namespace NAwesome::Notify {
         const double W   = std::max((double)cfg().getI("plugin:awesome:notify:width"), 120.0);
         const double GAP = std::max((double)cfg().getI("plugin:awesome:notify:margin"), 0.0);
         const double X   = MB.x + MB.w - EDGE - W;
-        double       y   = MB.y + cardsTop(P.mon) + controlsReach(); // under the open control center
+        double       y   = MB.y + cardsTop(P.mon);
 
         for (const auto& N : notifs) {
             if (N->waiting || !N->banner || isCapsule(N))

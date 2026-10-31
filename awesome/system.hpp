@@ -1,9 +1,8 @@
-// awesome/system.hpp — the system module: audio and the lights (feedback
-// as notify cards, values for the control center), Bluetooth (for the
-// control center) and the touchpad policy.
+// awesome/system.hpp — the system module: the volume, the mic and the
+// display's brightness (their feedback as notify cards) and the touchpad
+// policy.
 #pragma once
 
-#include "core/controls.hpp"
 #include "core/supervisor.hpp"
 
 #include <cstdint>
@@ -32,7 +31,7 @@ namespace NAwesome::System {
     inline constexpr int OSD_TIMEOUT = 1200;
 
     // the actions the Lua face enqueues (audio.cpp drains them on the event
-    // loop; the wpctl four are indexed by it, the light steps go to
+    // loop; the wpctl four are indexed by it, the brightness steps go to
     // light.cpp)
     enum eAction : uint8_t {
         VOL_UP,
@@ -41,13 +40,10 @@ namespace NAwesome::System {
         MIC_MUTE,
         BRI_UP,
         BRI_DOWN,
-        KBD_UP,
-        KBD_DOWN
     };
 
-    // the module's system bus (system.cpp): logind for the lights, the
-    // room's light sensor, BlueZ (the adapter, its devices, a headset's own
-    // volume)
+    // the module's system bus (system.cpp): logind for the backlight, BlueZ
+    // for a headset's own volume
     CBusLink& systemBus();
 
     // the units (audio.cpp, light.cpp, pad.cpp); a BusDropped resets what
@@ -59,37 +55,10 @@ namespace NAwesome::System {
     void lightInit();
     void lightExit();
     void lightBusDropped();
-    void lightKey(Controls::eLevel l, int dir); // a key's ±5 % step, its capsule
-    void lightAsk(Controls::eLevel l, int pct); // the panel's percent
-    void lightRefresh();                        // both lights as sysfs has them
-    void lightFollowRoom(bool on);              // the keyboard light follows the room's, or stops
+    void lightKey(int dir); // a key's ±5 % step, its capsule
     void padInit();
     void padExit();
     void padToggle();
     std::string padState();
     void        padStandIn(const std::string& name); // the gate build's touchpad stand-in; a no-op otherwise
-
-    // the control center's doors (core/controls.hpp), each deferred out of
-    // the caller's emission
-    void setLevel(Controls::eLevel l, int pct);
-    void stepLevel(Controls::eLevel l, int steps); // the keys' steps (the wheel)
-    void setMuted(bool muted);
-    void setOutput(uint32_t id); // the default sink
-    void audioRefresh();  // the volume and the outputs as they are now (the panel opened)
-    // Bluetooth (bluetooth.cpp): the adapter's power, a device's connection
-    void bluetoothInit();
-    void bluetoothExit();
-    void bluetoothBusDropped();
-    void bluetoothRefresh();     // the tree read again (the panel opened)
-    void bluetoothPanelClosed(); // the failures it showed are done
-    void setBluetooth(bool on);
-    void connectDevice(const std::string& id, bool connect);
-    void forgetDevice(const std::string& id);
-    void scanDevices(bool on);
-    void pairDevice(const std::string& id);
-    void answerPairing(bool yes);
-    void bluetoothMenuClosed();
-#ifdef AWESOME_GATE
-    std::string bluetoothState();
-#endif
 }

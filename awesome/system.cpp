@@ -1,9 +1,8 @@
-// awesome/system.cpp — the system module: the one CModule over its four
-// units (audio.cpp — volume/mic; light.cpp — the display's and the
-// keyboard's lights; bluetooth.cpp — the adapter and its devices; pad.cpp
-// — the touchpad policy) and the system bus they share. The feedback bus is the notify model, the Lua face is the
-// flat hl.plugin.awesome.* names, the control center's doors are
-// registered in core/controls.hpp.
+// awesome/system.cpp — the system module: the one CModule over its three
+// units (audio.cpp — volume/mic; light.cpp — the display's backlight;
+// pad.cpp — the touchpad policy) and the system bus they share. The
+// feedback bus is the notify model, the Lua face is the flat
+// hl.plugin.awesome.* names.
 
 #include "system.hpp"
 
@@ -32,7 +31,6 @@ namespace NAwesome::System {
         L.dropOwned = []() {
             lightBusDropped();
             audioBusDropped();
-            bluetoothBusDropped();
         };
         try {
             L.open(true);
@@ -45,8 +43,7 @@ namespace NAwesome::System {
     namespace {
         // The flat face, nil-guarded in the user config like the old
         // namespaces: volume_up, volume_down, mute, mic_mute,
-        // brightness_up, brightness_down, keyboard_light_up,
-        // keyboard_light_down, touchpad_toggle.
+        // brightness_up, brightness_down, touchpad_toggle.
         int luaVolumeUp(lua_State*) {
             enqueueAction(VOL_UP);
             return 0;
@@ -71,14 +68,6 @@ namespace NAwesome::System {
             enqueueAction(BRI_DOWN);
             return 0;
         }
-        int luaKeyboardLightUp(lua_State*) {
-            enqueueAction(KBD_UP);
-            return 0;
-        }
-        int luaKeyboardLightDown(lua_State*) {
-            enqueueAction(KBD_DOWN);
-            return 0;
-        }
         int luaTouchpadToggle(lua_State*) {
             padToggle();
             return 0;
@@ -89,33 +78,7 @@ namespace NAwesome::System {
         systemBusInit(); // before the units that talk on it
         lightInit();
         audioInit();
-        bluetoothInit();
         padInit(); // the settle timer stands before any hotplug can land
-        Controls::doors() = {
-            .setLevel = setLevel,
-            .step     = stepLevel,
-            .setSwitch =
-                [](Controls::eSwitch s, bool on) {
-                    if (s == Controls::eSwitch::ROOM)
-                        lightFollowRoom(on);
-                },
-            .setMuted  = setMuted,
-            .setOutput = setOutput,
-            .refresh =
-                []() {
-                    lightRefresh();
-                    audioRefresh();
-                    bluetoothRefresh();
-                },
-            .setBluetooth  = setBluetooth,
-            .connectDevice = connectDevice,
-            .forgetDevice  = forgetDevice,
-            .panelClosed   = bluetoothPanelClosed,
-            .scan          = scanDevices,
-            .pairDevice    = pairDevice,
-            .answerPairing = answerPairing,
-            .menuClosed    = bluetoothMenuClosed,
-        };
 
         HANDLE H = supervisor().handle();
         HyprlandAPI::addLuaFunction(H, "awesome", "volume_up", luaVolumeUp);
@@ -124,8 +87,6 @@ namespace NAwesome::System {
         HyprlandAPI::addLuaFunction(H, "awesome", "mic_mute", luaMicMute);
         HyprlandAPI::addLuaFunction(H, "awesome", "brightness_up", luaBrightnessUp);
         HyprlandAPI::addLuaFunction(H, "awesome", "brightness_down", luaBrightnessDown);
-        HyprlandAPI::addLuaFunction(H, "awesome", "keyboard_light_up", luaKeyboardLightUp);
-        HyprlandAPI::addLuaFunction(H, "awesome", "keyboard_light_down", luaKeyboardLightDown);
         HyprlandAPI::addLuaFunction(H, "awesome", "touchpad_toggle", luaTouchpadToggle);
     }
 
@@ -136,19 +97,14 @@ namespace NAwesome::System {
         // replies (light), whose in-flight deliveries are voided by the
         // generation bumps inside their exits before the notify model dies
         // a beat later; then the bus (fd sources out BEFORE the connection
-        // dies). The control center's doors close first and its values go
-        // last.
-        Controls::doors() = {};
+        // dies).
         padExit();
-        bluetoothExit();
         audioExit();
         lightExit();
         systemBus().close();
-        Controls::state() = {};
     }
 
-    // `hyprctl awesome <verb>`: the gate's probes for the touchpad policy
-    // and the values the control center shows
+    // `hyprctl awesome <verb>`: the touchpad policy, and the gate's probes
     std::optional<std::string> CModule::handleCtl(const std::string& verb) const {
         if (verb == "pad")
             return padState();
@@ -158,35 +114,8 @@ namespace NAwesome::System {
             padStandIn(NAME == "-" ? "" : NAME);
             return "ok";
         }
-        if (verb == "controls") { // "display:P keyboard:P volume:P[m] room:S" (-1: none)
-            const auto& S = Controls::state();
-            const auto  L = [&](Controls::eLevel l) {
-                const auto& V = S.levels[(size_t)l];
-                return std::to_string(V.pct) + (V.muted ? "m" : "");
-            };
-            return "display:" + L(Controls::eLevel::DISPLAY) + " keyboard:" + L(Controls::eLevel::KEYBOARD) + " volume:" + L(Controls::eLevel::VOLUME) +
-                " room:" + std::to_string(S.switches[(size_t)Controls::eSwitch::ROOM]);
-        }
-        if (verb == "bt") // the published Bluetooth (bluetooth.cpp bluetoothState)
-            return bluetoothState();
-        if (verb.starts_with("bt ")) { // "bt power 0|1", "bt connect|disconnect NAME": the panel's doors, by name
-            const auto& B = Controls::state().bluetooth;
-            if (verb.starts_with("bt power "))
-                setBluetooth(verb.ends_with("1"));
-            else
-                for (const auto& D : B.devices)
-                    if (verb == "bt connect " + D.name || verb == "bt disconnect " + D.name)
-                        connectDevice(D.id, verb.starts_with("bt connect "));
-            return "ok";
-        }
         if (verb == "busy") // the wpctl commands in flight: 0 once every set has been read back
             return std::to_string(Jobs::inst().live(Jobs::CONTROL));
-        if (verb == "outputs") { // "41 *42": the sinks by id, the default starred
-            std::string out;
-            for (const auto& O : Controls::state().outputs)
-                out += (out.empty() ? "" : " ") + std::string{O.current ? "*" : ""} + std::to_string(O.id);
-            return out;
-        }
 #endif
         return std::nullopt;
     }

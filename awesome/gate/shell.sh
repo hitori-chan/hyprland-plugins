@@ -23,7 +23,7 @@ chk "shell: the strip is on screen (clock, bell and viewed tag draw)" strip_draw
 chk "shell: no dot on the bell with nothing to see" test "$(dot_px "$STATE/strip-base.png")" = 0
 # the ends meet the screen's edges as awesome's wibar did: tag 一's flat
 # cell from x 0 (an 8 px inset once stood before it), the clock's ink
-# 8 px off the right; the right slot's glyphs 15 apart (16 px each)
+# 8 px off the right; the right slot's widgets 15 apart
 ink_right() { # ink_right <frame> — the strip's rightmost lit column
 	python3 - "$1" <<'PY'
 import sys
@@ -35,9 +35,10 @@ PY
 }
 chk "shell: tag 一's cell starts at the screen's left edge" test "$(ground_px "$STATE/strip-base.png" 0 2 1 27 12 32)" -ge 40
 EDGE_GAP=$((MON_W - 1 - $(ink_right "$STATE/strip-base.png")))
-BELL_STEP=$(($(ink_x "$STATE/strip-base.png" controls) - $(bell_x "$STATE/strip-base.png")))
-chk "shell: the right slot packs 15 apart, the clock 8 off the edge" test "$EDGE_GAP" -ge 6 -a "$EDGE_GAP" -le 11 -a "$BELL_STEP" -ge 29 -a "$BELL_STEP" -le 33 ||
-	echo "  diag: clock edge gap $EDGE_GAP, bell to switches $BELL_STEP" >&2
+# the bell's cell ends halfway across its 15 px gap to the next widget
+BELL_GAP=$(($(hq awesome cells | awk '$1 == "bell" { print $3; exit }') - $(bell_x "$STATE/strip-base.png") - 8))
+chk "shell: the right slot packs 15 apart, the clock 8 off the edge" test "$EDGE_GAP" -ge 6 -a "$EDGE_GAP" -le 11 -a "$BELL_GAP" -ge 6 -a "$BELL_GAP" -le 9 ||
+	echo "  diag: clock edge gap $EDGE_GAP, bell glyph to its cell's end $BELL_GAP" >&2
 
 # ---- tags: the click switches the viewed workspace -------------------------
 chk "shell: starts on workspace 1" test "$(ws)" = 1
@@ -306,12 +307,12 @@ print(1 if ok else 0)
 }
 cell_mid() { awk -v w="$1" '$1 == w { print int(($2 + $3) / 2); exit }' <<<"$CELLS"; }
 chk "cells: they tile the strip edge to edge, none overlapping" test "$(cells_tile)" = 1
-# the right slot's order: the bell, the switches, the battery (where
-# the host has one), the clock at the edge
-right_order() { awk '$1 ~ /^(bell|controls|battery|clock)$/ { printf "%s ", $1 }' <<<"$CELLS"; }
-RIGHT_WANT="bell controls clock "
-compgen -G "/sys/class/power_supply/BAT*" >/dev/null && RIGHT_WANT="bell controls battery clock "
-chk "cells: the right slot runs bell, switches, battery, clock" test "$(right_order)" = "$RIGHT_WANT"
+# the right slot's order: the bell, the battery (where the host has one),
+# the clock at the edge
+right_order() { awk '$1 ~ /^(bell|battery|clock)$/ { printf "%s ", $1 }' <<<"$CELLS"; }
+RIGHT_WANT="bell clock "
+compgen -G "/sys/class/power_supply/BAT*" >/dev/null && RIGHT_WANT="bell battery clock "
+chk "cells: the right slot runs bell, battery, clock" test "$(right_order)" = "$RIGHT_WANT"
 # the clicks over the bare desktop: a tray menu is measured below the strip,
 # where the probe's window would read as one (the right slot's cells stay)
 CP="$(clients | python3 -c "
@@ -362,7 +363,7 @@ nl, nr, w = map(int, sys.argv[1:4])
 cells = [l.split() for l in sys.stdin.read().splitlines()]
 cells = [(c[0], int(c[1]), int(c[2])) for c in cells if len(c) == 3]
 left = [c for c in cells if c[0] in ("tag", "task")]
-right = [c for c in cells if c[0] in ("tray", "bell", "controls", "battery", "clock")]
+right = [c for c in cells if c[0] in ("tray", "bell", "battery", "clock")]
 ok = "task" in [c[0] for c in left] and right and right[-1][0] == "clock" and right[-1][2] == w
 ok = ok and all(b <= nl for _, _, b in left) and all(a >= nr for _, a, _ in right)
 print(1 if ok else 0)
@@ -376,17 +377,10 @@ close_wait "$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='notchprobe'), ''))")"
 
-# ---- the control center's door: the bar's switches -------------------------
-# Right of the bell (shell/bell.cpp): a click opens the control center on its
-# bar's monitor and sets the glyph on a white pill (24 x 22, the glyph
-# white: no accent); one panel holds the column at a time, the bell taking
-# it back; a click off every surface closes it. The bell's options menu is
-# its door too.
-CCX="$(cell_mid controls)"
-chk "controls: the switches own a cell" test "${CCX:-0}" -gt 0
-cols() { echo "$(st | cut -d' ' -f1) $(hq awesome controlcenter-shown)"; } # "center:<0|1> <control center 0|1>"
-click "${CCX:-0}" 13 272
-chk "controls: a click on the switches opens the control center" until_is 3 "center:0 1" cols
+# ---- the bell's door ----------------------------------------------------------
+# A click opens the center on its bar's monitor and sets the bell on a white
+# pill (24 x 22, the glyph white: no accent); a click off every surface
+# closes it. Its options menu is its door too.
 # the pill's sides past the glyph (x 9..11 off its center), clear of the
 # rounded corners
 door_on() { # door_on <frame> <glyph center x>
@@ -394,15 +388,14 @@ door_on() { # door_on <frame> <glyph center x>
 		$(accent_px "$1" $(($2 - 12)) $(($2 + 12))) == 0))
 }
 door_off() { (($(ground_px "$1" $(($2 - 11)) $(($2 - 9)) 10 18 28 64) == 0)); }
-chk "controls: ...and sets them on a pill" shot_until 3 "$STATE/cc-lit.png" door_on "$STATE/cc-lit.png" "$CCX"
-click "$(cell_mid bell)" 13 272
-chk "controls: the bell takes the column: the center opens, the control center shuts" until_is 3 "center:1 0" cols
-click "${CCX:-0}" 13 272
-chk "controls: ...and the switches take it back" until_is 3 "center:0 1" cols
-outside_click
-chk "controls: a click off every surface closes it" until_is 3 "center:0 0" cols
-chk "controls: ...and the door lets go of the pill" shot_until 3 "$STATE/cc-off.png" door_off "$STATE/cc-off.png" "$CCX"
+shade() { st | cut -d' ' -f1; } # "center:<0|1>"
 BELLX="$(cell_mid bell)"
+click "$BELLX" 13 272
+chk "bell: a click opens the center" until_is 3 center:1 shade
+chk "bell: ...and sets it on a pill" shot_until 3 "$STATE/bell-lit.png" door_on "$STATE/bell-lit.png" "$BELLX"
+outside_click
+chk "bell: a click off every surface closes it" until_is 3 center:0 shade
+chk "bell: ...and lets go of the pill" shot_until 3 "$STATE/bell-off.png" door_off "$STATE/bell-off.png" "$BELLX"
 click "$BELLX" 13 273
 chk "bell: its options menu sets it on a pill" shot_until 3 "$STATE/bell-door.png" door_on "$STATE/bell-door.png" "$BELLX"
 tap esc

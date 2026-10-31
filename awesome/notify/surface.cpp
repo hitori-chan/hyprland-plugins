@@ -88,7 +88,7 @@ namespace NAwesome::Notify {
     // gates on this — the pass element, the scanout inhibit, the age tick —
     // or two resident cards would composite fullscreen video forever.
     static bool anythingToDraw() {
-        if (centerVisible() || controlsVisible() || CardMenu::isOpen())
+        if (centerVisible() || CardMenu::isOpen())
             return true;
         for (const auto& N : notifs)
             if (!N->waiting && N->banner)
@@ -112,15 +112,11 @@ namespace NAwesome::Notify {
 
         // the center and the banners never coexist: opening the center folds
         // the live cards into its column (same textures, different layout).
-        // The control center heads the column with the banners under it.
-        // The capsules (system feedback) show over any of them.
+        // The capsules (system feedback) show over either.
         if (centerVisible())
             renderCenter(P, T);
-        else {
-            if (controlsVisible())
-                renderControls(P, T);
+        else
             renderPopups(P, T);
-        }
         renderCapsules(P, T);
         CardMenu::render(P, T); // last: drawn over its card, hit first
     }
@@ -175,8 +171,6 @@ namespace NAwesome::Notify {
         }
         hovered = h;
         refreshBannerHold(); // reading a banner stops its clock
-        controlsHover();     // a control center button names itself after a rest
-        CardMenu::hoverChanged(); // ... and a cut output's row its whole name
     }
 
     // ---- the tick timers ----
@@ -192,7 +186,7 @@ namespace NAwesome::Notify {
     static void armMotionTick() {
         if (!motionTick)
             return;
-        const bool WANT = animationsOn() && (centerAnimating() || controlsAnimating() || (!centerVisible() && popupsAnimating()));
+        const bool WANT = animationsOn() && (centerAnimating() || (!centerVisible() && popupsAnimating()));
         motionTick->updateTimeout(WANT ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
     }
 

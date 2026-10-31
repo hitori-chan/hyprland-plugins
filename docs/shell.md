@@ -7,7 +7,7 @@ The `shell` module: the bar on every monitor and the launcher.
 A 28 px strip of glass at the top of every monitor, showing that
 monitor's tags and tasks. From left to right: the tags, the tasks
 (splitting the middle, 14 px off either side), then the tray, the bell,
-the control center's switches, the battery and the clock, 15 px apart.
+the battery and the clock, 15 px apart.
 The first tag stands at the screen's left edge, the clock 8 px off the
 right one.
 
@@ -34,7 +34,7 @@ On a laptop panel with a notch (Apple silicon booted with
 way a menu bar does: it is as tall as the band (37 px on the 14" and 16"
 M-series panels at scale 2) where that is taller than `height`, and splits
 around the notch. The tags and the tasks end before it, the tray,
-bell, switches, battery and clock start after it, and nothing is drawn
+bell, battery and clock start after it, and nothing is drawn
 or clicked under it; the cards sit 12 px under the taller bar.
 
 - The band's height comes from the firmware (the device tree's
@@ -120,7 +120,7 @@ A bell, without a count:
   options menu is open.
 
 **Left click** toggles the [center](notify.md#the-center) on the clicked
-bar's monitor (closing the control center). **Right click** opens the
+bar's monitor. **Right click** opens the
 notification options, one flat menu:
 
 - **Quiet Automatically**, a header over its two switches: When an App
@@ -133,15 +133,8 @@ notification options, one flat menu:
   row its right side says so ("Turn On", "Unmute"). "None" when nothing
   is silenced.
 
-Do Not Disturb is not here: its one home is the control center (the bell
-only echoes it as the moon). Every option lives in one menu or panel.
-
-### Control center
-
-Two switches, the lower one on. A **left click**
-toggles the [control center](notify.md#the-control-center) on the
-clicked bar's monitor (closing the center); it sits on a white pill,
-as the bell does, while the panel is open.
+Do Not Disturb is not here: its one home is the center's moon (the bell
+only echoes it). Every option lives in one place.
 
 ### Battery
 

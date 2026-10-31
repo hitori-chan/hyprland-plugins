@@ -5,42 +5,18 @@
 # events, there is no bus verb for either.
 # Pure definitions only — no side effects, no battery code.
 
-# ---- geometry (derived from notify/ui.hpp, center.cpp, controls.cpp) ------
+# ---- geometry (derived from notify/ui.hpp and center.cpp) ------------------
 # the column's right inset, a card's width, its top; the center opens on
-# its 28 px heading row, then 8 px
+# its 28 px heading row (Clear All 8 px left of the moon's 24 px disc at the
+# row's end), then 8 px
 N_EDGE=12
 N_W=356
 N_TOP=42 # 12 under the work area's top: the rule's 30 (nested.lua; notify/ui.hpp cardsTop)
 PANEL_X=$((MON_W - N_EDGE - N_W))
 HEAD_Y=$N_TOP
 CARD_Y=$((HEAD_Y + 28 + 8))
-# The control center, in the same column (notify/controls.cpp): a 64 px
-# module per level, 12 apart (0 display, 1 keyboard, 2 volume: all three in
-# the gate), its section 10 px down (216 tall in all); then the capsule row
-# 12 under the last, 64 tall: Bluetooth left, Do Not Disturb right (the
-# gate has an adapter), 172 px each, 12 apart.
-# A section's title row is centred 10 px down, its slider row 34: the
-# level's glyph 24 px in (the keyboard's and the speaker's are buttons), the
-# track from 42 px in to the module's 16 px padding (298 px). A module's
-# door sits on its title row, 22 tall, its right edge 13 px off the
-# module's: the keyboard's room disc (the gate has a sensor), its centre
-# 24 px in, and the volume's output capsule (the gate has two outputs),
-# 34 wide. A capsule's circle is 32 px into it, its words past 64. Its
-# menus hang 6 px under the row.
-sec_y() { echo $((N_TOP + 10 + $1 * 76)); }
-level_cy() { echo $(($(sec_y "$1") + 34)); }
-head_cy() { echo $(($(sec_y "$1") + 10)); }
-GLYPH_X=$((PANEL_X + 24))
-TRACK_X0=$((PANEL_X + 42))
-track_x() { echo $((TRACK_X0 + 298 * $2 / 100)); } # track_x <level> <percent>
-DISC_CX=$((PANEL_X + N_W - 24))
-CAPS_Y=$((N_TOP + 216 + 12))
-CAPS_CY=$((CAPS_Y + 32))
-BT_DOT_X=$((PANEL_X + 32))
-BT_WORDS_X=$((PANEL_X + 110))
-DND_DOT_X=$((PANEL_X + 184 + 32))
-DND_WORDS_X=$((PANEL_X + 184 + 110))
-MENU_Y=$((CAPS_Y + 64 + 6))
+MOON_X=$((MON_W - N_EDGE - 12))
+MOON_Y=$((HEAD_Y + 14))
 ROWX=$((PANEL_X + 90))
 ROWY=$((CARD_Y + 24))
 POPX=$((MON_W - N_EDGE - N_W / 2))
@@ -102,13 +78,12 @@ PY
 # ---- the bell, pointer-driven ------------------------------------------------
 # The monolith's bell is a no-op on hover and toggles the shade on click;
 # both are REAL pointer events over the widget. The right slot is [tray]
-# [bell][control center][battery][clock], 15 px apart (shell/strip.cpp
+# [bell][battery][clock], 15 px apart (shell/strip.cpp
 # RIGHT_GAP), its cells meeting halfway across the gaps: a widget's glyph is
 # the white ink inside its cell (`hyprctl awesome cells`, the gate's build)
 # — found by pixel, so it proves the glyph draws where a press lands. White
 # ink is every channel past 150, so neither the blue dot nor the accent
-# counts — and so with the panels CLOSED only: an open panel lights its door
-# in the accent.
+# counts — and so with the center CLOSED only.
 ink_x() { # ink_x <frame> <widget> — the widget's ink center x (0 when none)
 	python3 - "$1" "$(hq awesome cells | awk -v w="$2" '$1 == w { print $2 ":" $3; exit }')" <<'PY'
 import sys

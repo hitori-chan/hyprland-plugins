@@ -1,12 +1,9 @@
 // awesome/system/audio.cpp — volume and the mic, and the module's action
-// queue and panel asks (the lights' go on to light.cpp).
+// queue (the brightness steps go on to light.cpp).
 //
 // The cards post straight into the notify model — ids 9993/9995, value
 // hints and replace-in-place semantics are the contract; the OSD band
-// lives in the model, so no OSD hint is needed. The volume and the mic's
-// state are published to the control center (core/controls.hpp) as they
-// are learned; while its panel shows, its sliders are the feedback and no
-// capsule covers them.
+// lives in the model, so no OSD hint is needed.
 //
 // Each audio device runs one wpctl set at a time, then a readback (set ->
 // get -> parse -> card), on the core's Jobs (pidfd-watched, bounded,
@@ -19,7 +16,6 @@
 #include "notify/model.hpp" // NAwesome::Notify::Notify::Model::postCard (the in-process seam)
 
 #include "core/busclient.hpp"
-#include "core/controls.hpp"
 #include "core/hop.hpp"
 #include "core/jobs.hpp"
 #include "system/wpctl.hpp"
@@ -74,10 +70,6 @@ namespace NAwesome::System {
         int         toggles = 0;
         double      level   = -1; // the last readback's volume (1.0 = 100%); < 0: never read
         bool        muted   = false; // the last readback's mute
-        // the panel's absolute asks, run before the keys' (a slider's level
-        // replaces the steps pending)
-        std::optional<double> target; // 1.0 = 100%
-        std::optional<bool>   muteTo;
         Time::steady_tp levelAt; // when it was read: the default device or another mixer may have moved it since
         uint64_t    generation = 0; // a teardown or a newer readback outdates replies
     };
@@ -134,11 +126,7 @@ namespace NAwesome::System {
             d.level          = RB ? RB->value : std::max(d.level, 0.0);
             d.muted          = RB ? RB->muted : d.muted;
             d.levelAt        = Time::steadyNow();
-            if (RB && !d.mic)
-                Controls::publish(Controls::eLevel::VOLUME, {.pct = (int)std::lround(RB->value * 100.0), .muted = RB->muted});
-            // the open panel's slider is the volume's feedback (the mic
-            // has none there: its card shows over the panel)
-            if ((show == eShow::ALWAYS || (show == eShow::CHANGED && MOVED)) && (d.mic || !Controls::panelShowing()))
+            if (show == eShow::ALWAYS || (show == eShow::CHANGED && MOVED))
                 showReadback(d, RB.has_value() ? &*RB : nullptr);
             pump(d);
             if (&d == &sink)
@@ -159,22 +147,16 @@ namespace NAwesome::System {
             return;
         if (d.toggles % 2 == 0)
             d.toggles = 0; // an even count is no change
-        // every kind of ask is a set of its own, in this order: the panel's
-        // mute, its level, a key's mute toggle, the key steps; the rest
-        // wait for the next pump
-        const bool MUTETO = d.muteTo.has_value(), TARGET = !MUTETO && d.target.has_value(), TOGGLE = !MUTETO && !TARGET && d.toggles != 0;
-        if (!MUTETO && !TARGET && !TOGGLE && d.steps > 0 && (d.level < 0 || Time::steadyNow() - d.levelAt > LEVEL_TRUST)) {
+        // a mute toggle and the key steps are sets of their own, in that
+        // order; the steps wait for the next pump
+        const bool TOGGLE = d.toggles != 0;
+        if (!TOGGLE && d.steps > 0 && (d.level < 0 || Time::steadyNow() - d.levelAt > LEVEL_TRUST)) {
             d.busy = true; // the limit below needs the level as it is now: read it first
             return readBack(d, eShow::NEVER);
         }
         std::string amount, limit; // outlive the spawn: the argv is copied there
         std::vector<const char*> argv;
-        if (MUTETO)
-            argv = {"wpctl", "set-mute", d.node, *d.muteTo ? "1" : "0", nullptr};
-        else if (TARGET) {
-            amount = std::format("{:.2f}", std::clamp(*d.target, 0.0, 1.0));
-            argv   = {"wpctl", "set-volume", d.node, amount.c_str(), nullptr};
-        } else if (TOGGLE)
+        if (TOGGLE)
             argv = {"wpctl", "set-mute", d.node, "toggle", nullptr};
         else if (d.steps != 0) {
             amount = std::to_string(std::min(std::abs(d.steps) * 5, 100)) + (d.steps > 0 ? "%+" : "%-");
@@ -199,12 +181,7 @@ namespace NAwesome::System {
             return;
         }
         // in flight now; a refused spawn kept them
-        if (MUTETO)
-            d.muteTo.reset();
-        else if (TARGET)
-            d.target.reset();
-        else
-            (TOGGLE ? d.toggles : d.steps) = 0;
+        (TOGGLE ? d.toggles : d.steps) = 0;
     }
 
     static void wpctlAction(eAction a) {
@@ -286,55 +263,6 @@ namespace NAwesome::System {
         } catch (...) {}
     }
 
-    // ---- the outputs (the volume's menu in the control center) ----
-
-    // `wpctl status` names the sinks and stars the default: read at the
-    // load, when the panel opens and after a pick, one read at a time (an
-    // ask meanwhile reads again when it lands). Its Audio tree follows a row
-    // per client, so the read takes more than a readback's cap.
-    static constexpr size_t STATUS_CAP = 32 * 1024;
-    static bool             outputsBusy = false, outputsAgain = false;
-    static uint64_t         outputsGen = 0, audioEpoch = 0; // the read's; the unit's life (a teardown bumps both)
-
-    static void outputsRead() {
-        if (outputsBusy) {
-            outputsAgain = true;
-            return;
-        }
-        const uint64_t GEN = ++outputsGen;
-        outputsBusy        = Jobs::inst().spawnPiped(
-            Jobs::CONTROL, {"wpctl", "status", nullptr},
-            [GEN](Jobs::SPipedResult R) {
-                if (GEN != outputsGen)
-                    return; // a teardown owns the state now
-                outputsBusy = false;
-                std::vector<Controls::SOutput> outs;
-                for (auto& S : Wpctl::parseSinks(R.out))
-                    outs.push_back({.id = S.id, .name = std::move(S.name), .current = S.current});
-                // a read cut short before the sinks keeps the list it had
-                if (!outs.empty() || !R.truncated)
-                    Controls::publish(std::move(outs));
-                if (std::exchange(outputsAgain, false))
-                    outputsRead();
-            },
-            STATUS_CAP);
-    }
-
-    // the pick: the default moves, then the sink reads back as after a
-    // headset's own change (the volume is now the new sink's) and the list
-    // reads again (its star moved)
-    static void setDefaultOutput(uint32_t id) {
-        const std::string ID    = std::to_string(id); // outlives the spawn: the argv is copied there
-        const uint64_t    EPOCH = audioEpoch;
-        Jobs::inst().spawnChecked(Jobs::CONTROL, {"wpctl", "set-default", ID.c_str(), nullptr}, [EPOCH](int) {
-            if (EPOCH != audioEpoch)
-                return;
-            sink.level = -1; // another sink: the next raise reads its level first
-            headsetMoved();
-            outputsRead();
-        });
-    }
-
     // ---- the action queue (the Lua face's door) ----
 
     // Actions queue and drain from the event loop, never inside the bind's
@@ -345,9 +273,7 @@ namespace NAwesome::System {
     static CHopQueue<uint8_t, MAX_ACTION_QUEUE> queued([](std::vector<uint8_t>& batch) {
         for (const auto A : batch)
             if (A == BRI_UP || A == BRI_DOWN)
-                lightKey(Controls::eLevel::DISPLAY, A == BRI_UP ? 1 : -1);
-            else if (A == KBD_UP || A == KBD_DOWN)
-                lightKey(Controls::eLevel::KEYBOARD, A == KBD_UP ? 1 : -1);
+                lightKey(A == BRI_UP ? 1 : -1);
             else
                 wpctlAction((eAction)A);
     });
@@ -356,101 +282,8 @@ namespace NAwesome::System {
         queued.push(a);
     }
 
-    // ---- the panel's asks (the control center's doors) ----
-
-    // A slider drag asks per motion: only the newest ask per level stands,
-    // applied on the next event-loop turn (out of the input emission, the
-    // D-Bus call and the spawn with it); each device then runs one set at
-    // a time and takes the newest ask when it finishes.
-    static std::array<std::optional<int>, (size_t)Controls::eLevel::COUNT_> levelAsks;
-    static std::optional<bool>                                              muteAsk;
-    static std::optional<uint32_t>                                          outputAsk;
-    static std::array<int, (size_t)Controls::eLevel::COUNT_>                levelSteps{}; // the wheel's, signed
-    static CHop                                                             pendingAsks;
-    static bool                                                             asksArmed = false; // one hop per batch, not one per motion
-
-    static void applyAsks() {
-        asksArmed = false;
-        for (size_t i = 0; i < levelAsks.size(); i++) {
-            const auto PCT = std::exchange(levelAsks[i], std::nullopt);
-            if (!PCT)
-                continue;
-            switch ((Controls::eLevel)i) {
-                case Controls::eLevel::DISPLAY:
-                case Controls::eLevel::KEYBOARD: lightAsk((Controls::eLevel)i, *PCT); break;
-                case Controls::eLevel::VOLUME:
-                    sink.target = *PCT / 100.0;
-                    sink.steps  = 0;
-                    if (sink.muted && *PCT > 0)
-                        sink.muteTo = false; // a slider moved off zero is heard
-                    pump(sink);
-                    break;
-                case Controls::eLevel::COUNT_: break;
-            }
-        }
-        for (size_t i = 0; i < levelSteps.size(); i++) {
-            const int N = std::exchange(levelSteps[i], 0);
-            if (N == 0)
-                continue;
-            if ((Controls::eLevel)i == Controls::eLevel::VOLUME) {
-                sink.steps = std::clamp(sink.steps + N, -20, 20);
-                pump(sink);
-            } else
-                lightKey((Controls::eLevel)i, N);
-        }
-        if (const auto MUTED = std::exchange(muteAsk, std::nullopt)) {
-            sink.muteTo  = *MUTED;
-            sink.toggles = 0;
-            pump(sink);
-        }
-        if (const auto ID = std::exchange(outputAsk, std::nullopt))
-            setDefaultOutput(*ID);
-    }
-
-    static void armAsks() {
-        if (std::exchange(asksArmed, true))
-            return;
-        pendingAsks.arm(applyAsks);
-    }
-
-    void setLevel(Controls::eLevel l, int pct) {
-        if (l >= Controls::eLevel::COUNT_)
-            return;
-        levelAsks[(size_t)l] = std::clamp(pct, 0, 100);
-        armAsks();
-    }
-
-    void stepLevel(Controls::eLevel l, int steps) {
-        if (l >= Controls::eLevel::COUNT_)
-            return;
-        levelSteps[(size_t)l] = std::clamp(levelSteps[(size_t)l] + steps, -20, 20);
-        armAsks();
-    }
-
-    void setMuted(bool muted) {
-        muteAsk = muted;
-        armAsks();
-    }
-
-    void setOutput(uint32_t id) {
-        outputAsk = id;
-        armAsks();
-    }
-
-    // the load, and the panel opening: the volume and the outputs as they
-    // are now, read back quietly (one already reading answers with that),
-    // so the panel opens on what it shows and never grows a row
-    void audioRefresh() {
-        if (!sink.busy) {
-            sink.busy = true;
-            readBack(sink, eShow::NEVER);
-        }
-        outputsRead();
-    }
-
     void audioInit() {
         headsetInit();
-        audioRefresh();
     }
 
     void audioBusDropped() {
@@ -462,15 +295,6 @@ namespace NAwesome::System {
         // go with the loop — in-flight callbacks are generation-checked by
         // the teardown bump below.
         queued.reset();
-        pendingAsks.reset();
-        asksArmed = false;
-        levelAsks.fill(std::nullopt);
-        levelSteps.fill(0);
-        muteAsk.reset();
-        outputAsk.reset();
-        ++outputsGen; // a late status or set-default finds itself outdated
-        ++audioEpoch;
-        outputsBusy = outputsAgain = false;
         if (headsetSettle && g_pEventLoopManager)
             g_pEventLoopManager->removeTimer(headsetSettle);
         headsetSettle.reset();
@@ -482,8 +306,6 @@ namespace NAwesome::System {
             D->toggles = 0;
             D->level   = -1;
             D->muted   = false;
-            D->target.reset();
-            D->muteTo.reset();
         }
     }
 

@@ -515,8 +515,8 @@ launch_nested() {
 	# AW_* hang/flood files, the scratch XDG dirs, the fake backlight).
 	_harness_launch() {
 		PATH="$REPO/devtools/fakes:$PATH" AW_WPCTL_LOG="$STATE/wpctl.log" \
-			AW_WPCTL_HANG_FILE="$STATE/hang-wpctl" AW_WPCTL_FLOOD_FILE="$STATE/flood-wpctl" AW_WPCTL_LEVEL_FILE="$STATE/wpctl-level" AW_WPCTL_MUTES_FILE="$STATE/wpctl-mutes" AW_WPCTL_DEFAULT_FILE="$STATE/wpctl-default" AW_WPCTL_LONG_FILE="$STATE/wpctl-long" AW_SOUND_HANG_FILE="$STATE/hang-sound" \
-			AW_BACKLIGHT_DIR="$STATE/backlight" AW_LEDS_DIR="$STATE/leds" AW_ALS_FILE="$STATE/als" AW_LOGIND_LOG="$STATE/logind.log" \
+			AW_WPCTL_HANG_FILE="$STATE/hang-wpctl" AW_WPCTL_FLOOD_FILE="$STATE/flood-wpctl" AW_WPCTL_LEVEL_FILE="$STATE/wpctl-level" AW_WPCTL_MUTES_FILE="$STATE/wpctl-mutes" AW_SOUND_HANG_FILE="$STATE/hang-sound" \
+			AW_BACKLIGHT_DIR="$STATE/backlight" AW_LOGIND_LOG="$STATE/logind.log" \
 			HYPR_BIN="$BIN" HYPR_CFG="$CFG" XDG_STATE_HOME="$STATE" XDG_CACHE_HOME="$STATE/cache" XDG_CONFIG_HOME="$STATE/config" \
 			bash "$GATE_DIR/launch.sh" >>"$HARNESS/launch.log" 2>&1
 	}

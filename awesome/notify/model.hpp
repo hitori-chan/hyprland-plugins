@@ -524,11 +524,6 @@ namespace NAwesome::Notify {
     // the shade opens on `on` when given (the bell clicked there), else
     // where the cards are
     void queueCenterToggle(PHLMONITOR on = nullptr);
-    // the control center (controls.cpp): the same column, the bar's switch
-    // glyph its door; one panel open at a time
-    bool controlsVisible();
-    void setControls(bool on); // event-loop only
-    void queueControlsToggle(PHLMONITOR on = nullptr);
     // move the cards (and the shade) to this monitor, damaging both spots
     void placeCardsOn(PHLMONITOR mon);
     void centerExit();
@@ -544,14 +539,13 @@ namespace NAwesome::Notify {
             DECK,      // a collapsed stack: its top card and the deck (group = the app key)
             SHEAD,     // an expanded stack's header: Show Less and its close button
             BTN_CLEAR, // the center header's "Clear All": the global sweep
-            PANEL,     // a panel's column (the center, the control center): swallows clicks, owns the wheel
+            BTN_DND,   // the center header's moon: Do Not Disturb's door
+            PANEL,     // the center's column: swallows clicks, owns the wheel
             PAGE_UP,   // the center's paging chips (drawn over the edge cards)
             PAGE_DOWN,
             CAPSULE,   // an OSD capsule: damage and bounds only, never hit
             MENU,      // the card menu's panel: swallows, never acts
             MENU_ITEM, // one of its rows (id = the row's index)
-            CTRL_SWITCH, // a control center button (id = controls.cpp's tile)
-            CTRL_SLIDER, // a control center level's module (id = Controls::eLevel)
             SILENT,      // the center's silent fold: a click spreads it (group = its key)
         };
         eKind       kind = POPUP;
@@ -562,7 +556,6 @@ namespace NAwesome::Notify {
         CBox        less;         // SHEAD: Show Less; w = 0 -> none
         CBox        replyField;   // POPUP/ROW: the armed inline-reply box (swallows, never acts)
         CBox        replySend;    // POPUP/ROW: its send circle
-        CBox        track;        // CTRL_SLIDER: the track a press drags along
         bool        folded = false; // ROW: the budget folded it and the open form shows more (a click unfolds)
         struct SLinkHit {
             CBox        box;
@@ -635,7 +628,5 @@ namespace NAwesome::Notify {
     void refreshPointerOwnership(); // the hovered card vanished under a still pointer
     void inputInit(); // the hold timer
     void inputExit();
-    void controlsInit(); // controls.cpp: the control center's block (its hook, its hold timer)
-    void controlsExit();
 
 } // namespace NAwesome::Notify

@@ -1,8 +1,8 @@
 # Notifications
 
 The `notify` module is the session's `org.freedesktop.Notifications`
-daemon: banners, the center, the control center, chat conversations,
-inline reply and sounds. Disable any other daemon
+daemon: banners, the center, Do Not Disturb, chat conversations, inline
+reply and sounds. Disable any other daemon
 (dunst, mako) before enabling the plugin.
 
 ## Cards
@@ -10,8 +10,8 @@ inline reply and sounds. Disable any other daemon
 Cards appear top-right on the focused monitor, newest at the top,
 `offset_y` below the monitor's top and at least 12 px under the bar's
 reserved band (a notch's taller bar pushes them down). While
-the launcher's strip is open under the bar on that monitor, the cards,
-the center and the control center sit its height lower, so a banner
+the launcher's strip is open under the bar on that monitor, the cards
+and the center sit its height lower, so a banner
 never covers the matches. The
 stack follows a keyboard or workspace focus change, but not one the
 pointer makes, so grazing the next monitor's corner leaves the cards
@@ -69,8 +69,8 @@ pointer; the hold and the right click do that work.
 ### The card menu
 
 The row under the pointer sits on a white pill (16 %), its words in their
-own ink; the control center's menus (Output, Do Not Disturb, Bluetooth)
-are the same panel. The sender's rows first: Reply, then each non-`default` action in the
+own ink; Do Not Disturb's durations are the same panel. The sender's rows
+first: Reply, then each non-`default` action in the
 sender's order. Then the system's switches:
 
 - Mute *chat* for 1 Hour · Mute *chat* Until Tomorrow (the next 08:00;
@@ -138,8 +138,10 @@ closing it (the app comes up) leaves them parked.
 It draws no backdrop: the desktop is never darkened.
 
 "Notifications" heads the column, bare on the desktop with a soft
-shadow, and "Clear All" sits on a glass capsule (gone with nothing to
-clear; its word turns the accent under the pointer). Cards show their
+shadow. The row ends in Do Not Disturb's moon, a 24 px glass disc (its
+glyph turns the accent under the pointer; the disc is white while DND
+holds), and "Clear All" sits on a glass capsule 8 px left of it (gone
+with nothing to clear; its word turns the accent under the pointer). Cards show their
 clock time where banners show an age, and behave as their banner did; a
 card the center had not shown when it opened wears its time in the
 accent for the visit.
@@ -175,112 +177,12 @@ accent for the visit.
   the paging chips above and below the fold page a screenful, like the
   wheel.
 
-## The control center
-
-The bar's switches (right of the bell), `hl.plugin.awesome.control_center()`
-or `hyprctl awesome controlcenter` open it on that bar's monitor, in the
-cards' column; it and the center share the column, one open at a time.
-Banners keep coming, 12 px under it. An outside click, Esc or its
-switches close it. Every control shows only with its hardware, checked
-again whenever the panel opens and as devices come and go.
-
-**The levels**: a glass module per level a device answers for, 12 px
-apart: the **Display** (a backlight), the **Keyboard** light (a
-`*kbd_backlight` LED) and the **Sound**. A module reads its name and
-value ("45%", "Muted") on its title row, the module's own door at that
-row's right end when it has one, over the track's end. Under it the
-slider row: the level's one glyph, then a thin track to the module's
-padding. The glyph steps with the level (to 33 %, to 66 %, past it):
-the sun grows, the keyboard's half sun grows (hollow and rayless while
-off), the speaker gains a wave (crossed while muted or at 0). The white
-knob shows only under the pointer or a drag; at rest the fill's end is
-the value. A light of ten levels or fewer (a ThinkPad's keyboard: off,
-low, high) snaps its knob to them and still reads a percent.
-
-- the keyboard's glyph puts its light out, and back on at the level it
-  last had;
-- the speaker's glyph mutes and unmutes;
-- **Follow the Room**, the keyboard's door: a 22 px disc (lit while on;
-  shown with a light sensor, see
-  [system](system.md#follow-the-room));
-- the **output**, the sound's door: a 22 px capsule, the current
-  output's kind and a chevron (shown with two outputs or more), opens
-  **Output** under it: `wpctl status`'s sinks, the default checked,
-  each with its kind; a pick makes one the default. The menu widens to
-  its names, up to the panel's width (232 to 343 px); a name longer
-  still is cut in the middle between whole words, both ends kept (they
-  tell "…Speaker + Headphones" from "…HDMI / DisplayPort 1 Output"), and
-  resting 500 ms on its row names it whole in a note left of the menu.
-
-| On a level | Action |
-|---|---|
-| press on the track | set the level there (a stepped light: the nearest level), and drag it |
-| press on the name or the value | nothing |
-| wheel | step it as its keys do |
-
-A level past 100 % (set elsewhere) shows its number over a full track. A
-key that moves a level while the control center is open moves its
-slider, and no capsule covers the panel; the microphone's and the
-touchpad's keys keep their capsules (the panel has neither).
-
-**The capsules**, under the modules: **Bluetooth** left (with an adapter;
-see [system](system.md#bluetooth)) and **Do Not Disturb** right, alone
-across without an adapter. A capsule's circle switches it (white with
-the accent deepened for its glyph while on); its words — the name over
-its state and a chevron — open its menu, the state brightening under the
-pointer (the glass never lightens):
-
-- Bluetooth's state is Off, On, the one connected device's name, "2
-  Devices", "Connecting…" or "Disconnecting…"; a refusal in red ("Didn't
-  Answer", "Pairing Lost", "Didn't Connect", "Didn't Turn On") until the
-  panel closes; "Blocked", in red, while a hardware switch holds the
-  radio off (its circle leaves it, and the menu's header says "· Off by
-  its hardware switch"). A soft block (`rfkill block`, airplane mode) the
-  circle lifts, then powers the radio. Its **Devices** menu lists the
-  paired ones ("· Bluetooth is off" in the header while off): the
-  device's kind in a disc, lit while connected, its name, and on the
-  right "Connecting…",
-  "Disconnecting…" or, while connected, its battery ("80%" beside a
-  battery glyph, red at 20 % or less). A refused connect's row says
-  what happened under the name, in red, and no more ("Didn't answer.",
-  "Didn't connect.", "Pairing lost."): its click tries again.
-  A pick disconnects a connected device, else connects it (powering the
-  radio first while off). A right-click on a device asks, in place of
-  its row, "Forget it? Using it again takes pairing it again." —
-  **Forget** (red) unpairs it, **Cancel** keeps it; the menu stays open. A row whose pairing was lost pairs it
-  again: its click forgets the stale keys, scans, and pairs the device
-  once the scan finds it.
-  Under the paired ones, while the radio is on, **Other Devices**: a
-  **Scan** pill (Stop while it runs, eight turning dots beside it) and
-  what the scan found, nearest first, at most 24 ("No Devices Found",
-  dim, once a scan ended with none). Past six and a half rows the found
-  list scrolls in its window, the paired list and Scan staying put: a
-  row the window cuts reads faint (the half row says more lies past
-  it), and the wheel moves it a row. The menu spells out no gestures: a
-  device's right-click is its forget.
-  A found device's pick pairs it, the menu staying open: "Pairing…", or
-  in place of its row the code to type on it ("Type this code on it, then
-  press Return", the digits already typed dimmed) or to compare ("Does it
-  show the same code?" — **Pair** or **Cancel**). A paired device is
-  trusted, then connected; a refused pairing reads "Pairing failed.".
-  The menu closing stops the scan, forgets what it
-  found and cancels a pairing that was asking; one that asks nothing
-  runs on.
-- Do Not Disturb's state is Off, On or "Until 21:30". Its menu: For 30
-  Minutes · For 1 Hour · For 3 Hours · Until Tomorrow (08:00) (after
-  midnight, "Until 08:00": the next 08:00) · Until Turned Off.
-
-**Names**: the small buttons (the keyboard's and the speaker's glyphs,
-the two doors) name themselves after the pointer rests 500 ms on them —
-"Light Off", "Unmute", "Follow the Room", "Output · Speakers" — in a
-dark note to their left, outside the panel for a glyph. The output's
-name past 220 px is cut in the middle, as its menu's rows are.
-A click hides the name until the pointer comes back.
-
 ## Do Not Disturb
 
-From the control center's capsule (its circle, or a duration from its
-words) or `hl.plugin.awesome.suspend([minutes])`. Arrivals collect
+The center's moon: a click lists For 30 Minutes · For 1 Hour · For 3
+Hours · Until Tomorrow (08:00) (after midnight, "Until 08:00": the next
+08:00) · Until Turned Off under it; while DND holds, a click ends it.
+`hl.plugin.awesome.suspend([minutes])` is the bind's way. Arrivals collect
 silently with their timeouts held; turning it off shows the queue
 newest first, on fresh timeouts, under the per-app cap and switches. An
 update to a card already shown changes it in place, silently.

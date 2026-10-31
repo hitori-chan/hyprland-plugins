@@ -100,9 +100,8 @@ bool test_store() {
             AW_CHECK(optionNamed(OPTION_SPECS[i].name) == (eOption)i);
         }
         AW_CHECK(!optionNamed("DND") && !optionNamed(""));
-        AW_CHECK(!O.on(eOption::KBD_FOLLOWS_ROOM)); // the room is opt-in
-        AW_CHECK(O.set(eOption::KBD_FOLLOWS_ROOM, 1) && !O.set(eOption::KBD_FOLLOWS_ROOM, 1) && O.on(eOption::KBD_FOLLOWS_ROOM));
-        AW_CHECK(!O.set(eOption::KBD_LEVEL, 101) && O.set(eOption::KBD_LEVEL, 30) && O.get(eOption::KBD_LEVEL) == 30);
+        AW_CHECK(!O.on(eOption::QUIET_SHARING)); // quiet automatically is opt-in
+        AW_CHECK(O.set(eOption::QUIET_SHARING, 1) && !O.set(eOption::QUIET_SHARING, 1) && O.on(eOption::QUIET_SHARING));
         AW_CHECK(!O.set(eOption::QUIET_FULLSCREEN, 2) && !O.set(eOption::DND, -2) && !O.set(eOption::DND, MAX_STORE_TIME));
         AW_CHECK(O.set(eOption::DND, 1760000000) && O.get(eOption::DND) == 1760000000);
     }
@@ -181,7 +180,7 @@ bool test_store() {
                                           "option\t2\tquiet-sharing\n"             // out of its range
                                           "option\t1\tno-such-option\n"
                                           "option\t-2\tdnd\n"
-                                          "option\t+1\tkbd-follows-room\n"         // only a minus sign
+                                          "option\t+1\tquiet-sharing\n"            // only a minus sign
                                           "option\t1\n"
                                           "no-tab-line\n"
                                           "spot\t1\t2\tnul"} + std::string(1, '\0') + "class\n"));

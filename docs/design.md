@@ -27,18 +27,17 @@ in window-geometry space, the session-lock grab check.
 | `core` | the platform (below) |
 | `shell` | the bar (tags, tasks, tray, bell, battery, clock) and the launcher |
 | `windows` | the window state machine (normal, minimized, maximized: told state, adoption, restore), focus policy, spawn placement, drag snap |
-| `notify` | the fd.o daemon, the card model (conversations, grouping, DND, quiet, the capsule band), banners, the center, the control center, inline reply, sound |
-| `system` | the lights (logind), volume and microphone (wpctl), Bluetooth (BlueZ), the touchpad policy; feedback as notify capsules |
+| `notify` | the fd.o daemon, the card model (conversations, grouping, DND, quiet, the capsule band), banners, the center, inline reply, sound |
+| `system` | the backlight (logind), volume and microphone (wpctl), the touchpad policy; feedback as notify capsules |
 
 - Modules talk through `core` interfaces and direct C++ calls; there is
   no bus between them. The plugin's D-Bus is external only: the fd.o
   daemon (`notify`), the SNI tray and dbusmenu (`shell`), and system-bus
-  clients (logind, BlueZ and iio-sensor-proxy in `system`,
+  clients (logind and a headset's BlueZ transport in `system`,
   power-profiles in the battery).
 - A module never reaches into another's state. The seams live in `core`:
   `shell` asks `windows` to minimize; `system` posts capsules through the
-  notify model API and publishes the control center's values through
-  `core/controls.hpp`; `shell` publishes the open launcher's strip
+  notify model API; `shell` publishes the open launcher's strip
   through `core/bands.hpp`; persisted state goes through `StateStore`.
 - The input order is the registration order in `main.cpp`: `shell` →
   `notify` → `windows` → `system`. The bar claims its strip and menus
@@ -198,12 +197,6 @@ The dir stats that decide a refresh still run on the compositor thread
   written. A change marks the store dirty; the saver coalesces per
   event-loop turn. The config files stay read-only to the plugin, and
   nothing is both a config key and an option.
-- **Controls** (`core/controls.hpp`): the control center's seam. `system`
-  publishes the levels, Follow the Room, the outputs and Bluetooth as it
-  learns them and registers the doors that move them; `notify` draws them
-  and sends the user's moves through the doors. A changed hook repaints
-  the open center; a panel flag tells `system` the center shows the
-  levels, so it posts no level capsule.
 - **Bands** (`core/bands.hpp`): what lies across a monitor under the
   bar. `shell` publishes the launcher's strip as it opens and shuts;
   `notify` stacks its cards under it and restacks off the changed hook.
@@ -302,12 +295,12 @@ schema's defaults name them; the user's `theme.lua` overrides them).
   88 %, meta 78 %, empty 34 %). The accent `#00CCFF` is text: the viewed
   tag and the launcher's pick (each on a flat cell, white 8 %, awesome's
   `bg_focus`), the focused task, a selection. What you act on now sits on a white pill (16 %,
-  radius 6) in its own ink: a menu's row under the pointer, a door (the
-  bell, the control center's switches) while its panel is open. The accent fills only what is live (a caret, the
-  reply's send circle, progress; the snap preview is its 10 % tint) and
-  marks one thing, the bell's dot. A control center control that is on
-  is white, its glyph the accent deepened to read on it (`#0089AD`).
-  Urgent is `#FF6159`, as text.
+  radius 6) in its own ink: a menu's row under the pointer, the bell
+  while the center is open. The accent fills only what is live (a caret,
+  the reply's send circle, progress; the snap preview is its 10 % tint)
+  and marks one thing, the bell's dot. A switch that is on (the center's
+  moon under DND) is white, its glyph dark. Urgent is `#FF6159`, as
+  text.
 - **Radii**: cards 18, menus 12, rows and tags 6, buttons and app icons 9;
   windows keep the user's `decoration:rounding`.
 - **Glyphs** are the boards' own outline icons
@@ -321,7 +314,7 @@ schema's defaults name them; the user's `theme.lua` overrides them).
   what floats over the wallpaper carries its own glass, or a text
   shadow. What the pointer rests on may name itself in a **note**
   (`SPaint::note`: a dark pill, 88 %, a hairline rim and a drop, no
-  glass), after 500 ms: the control center's small buttons, the battery.
+  glass), after 500 ms: the battery.
 
 ## One home per option
 
@@ -330,12 +323,12 @@ state, never control it.
 
 | Option | Its home |
 |---|---|
-| Display, keyboard light, volume, output, Follow the Room | the control center's levels |
-| Bluetooth (the radio, a device's connection) | the control center's capsule |
-| Do Not Disturb (on, a duration) | the control center's capsule (`suspend()` for binds) |
+| Do Not Disturb (on, a duration) | the center's moon (`suspend()` for binds) |
 | Quiet automatically, silenced apps and chats (restore) | the bell's right click |
 | An app's banners and sounds, a chat's mute, Close All | the card menu (hold a card) |
-| The microphone, the touchpad | their keys (a capsule answers) |
+| Volume, the microphone, brightness, the touchpad | their keys (a capsule answers) |
+
+Bluetooth and the keyboard light have no home here: their own tools drive them.
 
 ## shell
 
@@ -414,38 +407,23 @@ it); the card menu is drawn last and hit first on the notify layer.
   which a wlr-screencopy client keeps until it disconnects. Rechecked
   each second while up, and cached for the render so a critical banner's
   hushed layout agrees between warm and draw.
-- **The control block** (`notify/controls.cpp`): the warm snapshots
-  `core/controls.hpp` and the draw paints the snapshot. A dragged slider
-  shows what it asked until the device reports that level (1.5 s at
-  most), so a set in flight never snaps it back. The output's capsule
-  and a capsule's words open the card menu's panel for that control
-  (`CardMenu::openControl`), rebuilt while open so a late read shows; a
-  pick finds its row by key, not index, so a rebuild cannot shift it. A
-  button's name is a note pushed as a capsule card (damage only), its
-  text warmed with the rest.
+- **The moon** (`notify/center.cpp`): drawn as the warm read DND; its
+  hit carries that state, so a click acts on what it showed (ends DND,
+  or opens the durations through `CardMenu::openDnd`). Both faces of its
+  glyph warm together: a hover only damages.
 - **Capsules**: ids 9990–9999 are the plugin's own in-process posts, so
   no client can pin one, take over the volume card or ride the band's
   DND bypass. Fresh client ids come from a low counter outside it.
 
 ## system
 
-- **Lights** (`system/light.cpp`): logind `SetBrightness` for the
-  backlight and the keyboard's LED, `/sys` reads, one write in flight
-  per light with the presses summed into the next.
-- **The keyboard in the dark**: the displays' own `dpmsChanged` (emitted
-  inside `setDPMS`, before the commit), checked once a turn out of the
-  emission. No enabled monitor is no verdict: losing every output is not
-  a wake.
-- **The room**: iio-sensor-proxy (`net.hadess.SensorProxy`), claimed
-  only while followed, read in lux with a margin (20/60 lux) and a 5 s
-  settle. A hand choice holds until the zone changes; the on level is
-  the user's last (`kbd-level`, remembered at logind's ack).
+- **Brightness** (`system/light.cpp`): logind `SetBrightness` for the
+  backlight, `/sys` reads, one write in flight with the presses summed
+  into the next.
 - **Audio** (`system/audio.cpp`): one wpctl set per device then a
-  readback, the asks accumulating meanwhile; the wheel and the keys
-  send relative steps, so a coarse device moves too. Readbacks reject
-  malformed and non-finite output; `wpctl status` is parsed for the sinks
-  (`system/wpctl.hpp`, bounded: 16 sinks, 96-byte names, 32 KiB of
-  output). A headset's own volume (BlueZ's transport `Volume`) reads the
+  readback, the presses accumulating meanwhile as relative steps, so a
+  coarse device moves too. Readbacks reject malformed and non-finite
+  output (`system/wpctl.hpp`). A headset's own volume (BlueZ's transport `Volume`) reads the
   sink back 250 ms after the last announcement, past PipeWire's own
   200 ms wait before it applies one (a read inside it got the level
   before).
@@ -454,12 +432,7 @@ it); the card menu is drawn last and hit first on the notify layer.
   store through `hl.device`, and a touchpad already in the wanted state
   is left alone (`hl.device` re-runs the device setup, a keymap compile).
 - **Feedback**: capsule ids 9991 touchpad, 9992 display, 9993 volume,
-  9994 keyboard light, 9995 microphone; low urgency, a glyph, a value.
-- **The control center**: every value is published into
-  `core/controls.hpp` as it is learned (a readback, logind's ack, a BlueZ
-  signal); the doors take absolute percents, relative steps, Follow the
-  Room, the radio and a device's connection, deferred out of the input
-  emission, newest ask winning.
+  9995 microphone; low urgency, a glyph, a value.
 
 ## Interfaces
 

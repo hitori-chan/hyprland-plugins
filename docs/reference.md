@@ -18,13 +18,11 @@ hl.bind("SUPER + M", function() hl.plugin.awesome.maximize() end)
 | `focus_next()`, `focus_prev()` | cycle the focus in arrival order |
 | `focus_prev_here()` | toggle between the two most recent windows on this workspace |
 | `center()` | toggle the [center](notify.md#the-center) |
-| `control_center()` | toggle the [control center](notify.md#the-control-center) |
-| `suspend([minutes])` | toggle Do Not Disturb; with minutes, hold it that long from now (0 ends it, `math.huge` never does) |
+| `suspend([minutes])` | toggle [Do Not Disturb](notify.md#do-not-disturb); with minutes, hold it that long from now (0 ends it, `math.huge` never does) |
 | `clear_all()` | dismiss every live card |
 | `volume_up()`, `volume_down()`, `mute()` | the default output |
 | `mic_mute()` | the default input |
 | `brightness_up()`, `brightness_down()` | the display's backlight |
-| `keyboard_light_up()`, `keyboard_light_down()` | the keyboard's light |
 | `touchpad_toggle()` | flip the touchpad by hand |
 
 ## hyprctl
@@ -35,8 +33,6 @@ hl.bind("SUPER + M", function() hl.plugin.awesome.maximize() end)
 |---|---|
 | `count` | the number of live cards (a lock screen's bell can read it) |
 | `center` | toggles the center; `ok` |
-| `controlcenter` | toggles the control center; `ok` |
-| `controlcenter-shown` | `1` while the control center is open, else `0` |
 | `state` | `center:0 live:N dnd:0` |
 | `badge` | `banners:N resident:N`: what the center lists |
 | `topline` | the newest card's one-line form |
@@ -49,12 +45,12 @@ capture), `upstream` (cancelled before the plugin) or `-` (passed to the
 compositor). A run of scroll events on one axis is one entry with its
 count. It is the first stop when a click goes missing.
 
-The gate build adds `cells`, `shown`, `menu`, `quiet`, `controls`,
-`outputs`, `busy` and `pad NAME` ([testing](testing.md)).
+The gate build adds `cells`, `shown`, `menu`, `menu-at`, `dnd-at`,
+`quiet`, `busy` and `pad NAME` ([testing](testing.md)).
 
 ## Configuration
 
-41 keys, `plugin:awesome:<group>:<key>` (a module's, or `theme`'s for
+42 keys, `plugin:awesome:<group>:<key>` (a module's, or `theme`'s for
 the material they share), declared in
 [`core/schema.hpp`](../awesome/core/schema.hpp). Out-of-range values
 clamp. In Lua:
@@ -158,8 +154,6 @@ Options ([`core/options.hpp`](../awesome/core/options.hpp)):
 | `dnd` | 0 | Do Not Disturb's end as a unix time; -1 until turned off |
 | `quiet-fullscreen` | 0 | quiet over a fullscreen app |
 | `quiet-sharing` | 0 | quiet while sharing the screen |
-| `kbd-follows-room` | 0 | the keyboard light follows the room |
-| `kbd-level` | 0 | the keyboard light's last chosen level, % (0: none yet, 50 % is used) |
 
 - A label is display text for the bell's Silenced Apps (128 bytes).
 - Each kind is bounded (1024 keys, 50 history queries); at the bound the

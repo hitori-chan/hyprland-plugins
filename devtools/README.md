@@ -57,19 +57,17 @@ make -C devtools HL=/path/to/Hyprland
   instance's PRIVATE session bus (never the live one) and asserts the
   strip, the parse-time separator trim, and the cascade against it.
 - `fakes/wpctl` logs its arguments, models a sink's level, the two
-  nodes' mutes and two sinks' default (`AW_WPCTL_LEVEL_FILE`,
-  `AW_WPCTL_MUTES_FILE`, `AW_WPCTL_DEFAULT_FILE`: what a set, a mute or
-  `set-default` wrote is what the next readback or `status` says; a
-  relative step moves only a level the file keeps), and
-  hangs or floods on demand through `AW_WPCTL_*` marker files (the
-  system battery's process-path and panel checks).
+  nodes' mutes (`AW_WPCTL_LEVEL_FILE`, `AW_WPCTL_MUTES_FILE`: what a
+  set or a mute wrote is what the next readback says; a relative step
+  moves only a level the file keeps), and hangs or floods on demand
+  through `AW_WPCTL_*` marker files (the system battery's process-path
+  checks).
 - `fakes/canberra-gtk-play` records its invocation and hangs on demand
   through `AW_SOUND_HANG_FILE` (the notify battery's sound
   checks).
 - `fakes/fake-sysbus` serves the host's private system bus:
   `org.freedesktop.login1`, whose `SetBrightness` writes a fake
-  backlight under `AW_BACKLIGHT_DIR` (and the keyboard's LED under
-  `AW_LEDS_DIR`), and iio-sensor-proxy's `net.hadess.SensorProxy`, an
-  ambient light sensor reading the lux in `AW_ALS_FILE` while claimed;
-  both log to `AW_LOGIND_LOG` (the system battery's light checks, never
-  the host's lights or sensors).
+  backlight under `AW_BACKLIGHT_DIR` and logs to `AW_LOGIND_LOG`, and
+  `org.bluez`, whose `EmitVolume` (at `/`, `org.awesome.Gate`) sends a
+  headset transport's Volume change (the system battery's backlight and
+  headset checks, never the host's devices).

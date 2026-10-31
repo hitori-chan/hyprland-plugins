@@ -12,8 +12,8 @@
 #     service (portals, dconf) sees the NESTED display, never the host's
 #     or the user's;
 #   * a private system bus with fake services (devtools/fakes/fake-sysbus):
-#     the light paths run their real D-Bus calls against fake lights and a
-#     fake light sensor, never the host's;
+#     the backlight path runs its real D-Bus calls against a fake
+#     backlight, never the host's;
 #   * the caller's XDG_STATE/CACHE/CONFIG_HOME (the harness points them at
 #     its scratch state, so real apps in the nested keep their settings
 #     there, not in the user's xfconf/dconf).
@@ -95,7 +95,7 @@ echo "launch: $BIN -c $CFG (host $HOST_WL, private session + system bus)"
 	ulimit -c unlimited 2>/dev/null
 	exec setsid env -u DISPLAY -u WAYLAND_SOCKET -u HYPRLAND_INSTANCE_SIGNATURE -u XDG_SESSION_ID -u SWAYSOCK \
 		HYPRLAND_NO_RT=1 LIBSEAT_BACKEND=seatd LD_LIBRARY_PATH="$AQ_LIB" DBUS_SYSTEM_BUS_ADDRESS="$SYSBUS_ADDR" \
-		AW_BACKLIGHT_DIR="$SYSBUS_BACKLIGHT" AW_LEDS_DIR="$SYSBUS_LEDS" AW_RFKILL="$SYSBUS_RFKILL" WAYLAND_DISPLAY="$NESTED_WL" AW_GATE_NESTED=1 \
+		AW_BACKLIGHT_DIR="$SYSBUS_BACKLIGHT" WAYLAND_DISPLAY="$NESTED_WL" AW_GATE_NESTED=1 \
 		dbus-run-session -- env WAYLAND_DISPLAY="$HOST_WL" \
 		sh -c '"$0" -c "$1" & p=$!; wait "$p"; echo "$?" >"$2/nested.exit.$p"' "$BIN" "$CFG" "$HARNESS_DIR"
 ) >"$LOG" 2>&1 </dev/null 9>&- &

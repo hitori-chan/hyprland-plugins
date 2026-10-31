@@ -67,7 +67,7 @@ namespace NAwesome::Shell {
     static MONITORID           noteMon   = MONITOR_INVALID;
     static CBox                notePill;  // the pill as last drawn on noteMon, global logical
     static std::string         noteLine;  // the words as the last warm composed them
-    static std::string         noteFont;  // the cards' face: a note reads as the control center's do
+    static std::string         noteFont;  // the cards' face
     constexpr auto             NOTE_DELAY = std::chrono::milliseconds(500);
     constexpr double           NOTE_H = 24, NOTE_PADX = 9, NOTE_GAP = 6, NOTE_OUT = 8, NOTE_MAXW = 360;
 

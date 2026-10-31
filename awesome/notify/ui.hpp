@@ -17,7 +17,6 @@
 
 #include "../core/bands.hpp"
 #include "../core/canvas.hpp"
-#include "../core/controls.hpp"
 #include "../core/glyph.hpp"
 #include "../core/theme.hpp"
 
@@ -83,8 +82,9 @@ namespace NAwesome::Notify {
     }
 
     // the center
-    inline constexpr double HEADER_H = 28, HEADER_GAP = 8; // the heading's row ("Notifications", "Clear All"), then the column's 8 px
+    inline constexpr double HEADER_H = 28, HEADER_GAP = 8; // the heading's row ("Notifications", Clear All, the moon), then the column's 8 px
     inline constexpr double CAP_H = 24, CAP_PADX = 10; // its glass capsules, and a stack's
+    inline constexpr double HEAD_GAP = 8, MOON_GLYPH = 12; // Clear All 8 px left of the moon's 24 px disc, its glyph
     inline constexpr double EMPTY_H = 56;
     inline constexpr double STATUS_H = 36; // the status line under the heading while DND or quiet holds
     inline constexpr double TIER_GAP = 8;  // added between the ranking's groups (critical, chats, apps, silent)
@@ -170,12 +170,6 @@ namespace NAwesome::Notify {
     // the card (SNotif::fitMemo).
     const std::string& fittedTranscript(const SP<SNotif>& n, int pt, int widthPx, int capPx, int indentPx, const CHyprColor* linkCol);
 
-    // A name fitted to maxWpx physical px at pt and weight, as one line of
-    // the notify font lays it out: whole, or cut in the middle between
-    // words (textcut.hpp midCut). Measured without a raster, memoized: an
-    // output's name, laid out every warm and draw.
-    const std::string& fittedName(const std::string& name, int maxWpx, int pt, int weight);
-
     double texH(const SCachedText* e, double scale);
     double texW(const SCachedText* e, double scale);
     void   texAt(const SPaint& P, const SCachedText* e, double x, double y); // the ink's top-left at (x, y)
@@ -256,32 +250,6 @@ namespace NAwesome::Notify {
     bool popupsAnimating(); // any arrival spring still running
     bool centerAnimating(); // the open spring still running
 
-    // ---- controls.cpp: the control center ----
-
-    // its three menus (the card menu's panel, opened under what opened them)
-    enum class ePanelMenu : uint8_t {
-        OUTPUT,    // the output capsule's: the sinks
-        DND,       // Do Not Disturb's words: its durations
-        BLUETOOTH, // Bluetooth's words: the paired devices
-    };
-
-    bool   controlsAnimating(); // its open spring still running
-    double controlsHeight(bool warm); // the warm snapshots the values; both ask the height
-    double controlsReach(); // how far the open panel pushes the banners down (0 shut)
-    void   renderControls(const SPaint& P, const SType& T); // draws the panel, pushes its hits
-    void   controlsDragStart(const SCard& c, const Vector2D& pos); // a left press on a level's track
-    void   controlsDragMove(const Vector2D& pos);
-    bool   controlsDragging();
-    void   controlsDragEnd(); // the release, a lock, the panel closing: the last ask holds
-    void   controlsWheel(Controls::eLevel l, int steps); // 5 % a notch, up raises
-    void   controlsSwitch(uint32_t tile);                // a button's click
-    void   controlsHover();                              // the hover moved: a button's name shows after a rest
-    // a sink's kind by its name (headphones, else a loudspeaker): the disc's
-    // glyph and the output menu's
-    Glyph::eGlyph outputGlyph(const std::string& name);
-    std::string   controlsTip(); // the gate's: the button name showing ("" none; defined in its build only)
-    std::string   controlsBt();  // the gate's: Bluetooth's capsule state ("!" in red)
-
     // ---- input.cpp: acting on a card ----
 
     // fire the card's action (empty: its primary) as the revision `rev` drew
@@ -293,26 +261,16 @@ namespace NAwesome::Notify {
     namespace CardMenu {
         bool     canOpen(uint32_t id); // a notification (never feedback) the user can see
         bool     open(uint32_t id, const Vector2D& at); // the hold: its corner at the pointer
-        // a control center menu, 6 px under `anchor`, its right edge on the
-        // anchor's or its left
-        bool     openControl(ePanelMenu m, const CBox& anchor, bool alignRight);
-        std::optional<ePanelMenu> openControlMenu(); // which one is open, if any
+        bool     openDnd(const CBox& anchor); // Do Not Disturb's durations, 6 px under the moon
         void     close();
         bool     isOpen();
-        uint32_t owner(); // the card it belongs to; 0 = none open
-        // a row's right-click: Bluetooth's device asks to be forgotten
-        void secondary(int index, const std::string& key);
-        void     pick(int index, const std::string& key); // from the click drain; a control's row by its key
+        uint32_t owner();         // the card it belongs to; 0 = none open
+        void     pick(int index); // from the click drain
         void     sync();          // after a model change: its card died -> close
         void     render(const SPaint& P, const SType& T); // its panel, then its rows (hit first)
-        void     init();          // the scan activity's tick, the cut name's rest
         void     exit();          // teardown: forget it, no damage, no warm
-        void     hoverChanged();  // the hover moved (surface.cpp): a cut output's name after a rest
-        // wheel steps (down: positive) over what a scan found: scrolls its
-        // window a row a step; false when pos is not over one that scrolls
-        bool     wheel(const Vector2D& pos, int steps);
-        std::string describe();     // the gate's: the open menu's rows (defined in its build only)
-        std::string describeName(); // the gate's: the whole name a cut row's note shows ("" none)
+        std::string describe();                         // the gate's: the open menu's rows (defined in its build only)
+        std::string rowAt(const std::string& prefix);   // the gate's: "x y" of the row whose label starts so
     }
 
     // the current hover (surface.cpp owns it; setHovered is its door) —
