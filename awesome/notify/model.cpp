@@ -357,7 +357,10 @@ namespace NAwesome::Notify {
             // We ARE the in-tree OSD sender: being in-process is the pass
             // that lets a FRESH band id pin its replace-in-place slot (a
             // foreign client gets its band id zeroed)
-            const auto ID = arrive("osd", c.id, c.icon ? c.icon : "", c.summary ? c.summary : "", c.body ? c.body : "", "", {}, hints, c.expireTimeout, std::nullopt,
+            // a capsule below critical draws its glyph, never an icon (and
+            // never reaches the shade): no theme lookup for it
+            const bool  GLYPH_ONLY = c.glyph != Glyph::eGlyph::NONE && c.urgency < 2;
+            const auto ID = arrive("osd", c.id, c.icon && !GLYPH_ONLY ? c.icon : "", c.summary ? c.summary : "", c.body ? c.body : "", "", {}, hints, c.expireTimeout, std::nullopt,
                                    c.osd || inOsdBand(c.id));
             // the capsule face rides the card; the warm this arrival armed
             // has not run yet
