@@ -50,7 +50,7 @@ namespace NAwesome {
         {"plugin:awesome:shell:font_size", "text size in logical px (monitor scale applies at raster time)", Kind::Int, 12, 0, {}, 0, 6, 48},
         {"plugin:awesome:shell:tray_spacing", "px between tray icons (the right slot's rhythm)", Kind::Int, 15, 0, {}, 0, 0, 64},
         {"plugin:awesome:shell:font", "font family, or a Pango family list (the kanji tags take the first face that has them)", Kind::String, 0, 0, Theme::BAR_FONT},
-        {"plugin:awesome:shell:terminal", "terminal that runs Terminal=true launcher entries", Kind::String, 0, 0, "alacritty"},
+        {"plugin:awesome:shell:terminal", "terminal that runs Terminal=true launcher entries", Kind::String, 0, 0, "foot"},
         {"plugin:awesome:shell:clock_format", "the clock's strftime format, in LC_TIME (an empty or overlong result shows the default)", Kind::String, 0, 0, "%a %b %-d %H:%M"},
         {"plugin:awesome:shell:col_fg", "bar text and glyphs: the clock, the bell, symbolic tray icons, occupied tags", Kind::Color, 0, 0, {}, Theme::TITLE},
         {"plugin:awesome:shell:col_focus", "the launcher's pick and caret, the client list's focused window (text)", Kind::Color, 0, 0, {}, Theme::ACCENT},

@@ -80,7 +80,7 @@ already looks right.
 | `font_size` | 12 | text size, logical px |
 | `tray_spacing` | 15 | px between tray icons |
 | `font` | `Fira Code, IBM Plex Sans JP` | font family or Pango family list (the kanji tags take the first face that has them) |
-| `terminal` | `alacritty` | runs the launcher's `Terminal=true` entries |
+| `terminal` | `foot` | runs the launcher's `Terminal=true` entries |
 | `clock_format` | `%a %b %-d %H:%M` | the clock's `strftime` format in the session's `LC_TIME`, redrawn each minute; an empty or overlong result shows the default |
 | `col_fg` | Frost | bar text and glyphs: the clock, the bell, symbolic tray icons, occupied tags |
 | `col_focus` | Frost | the launcher's pick and caret, the client list's focused window |
