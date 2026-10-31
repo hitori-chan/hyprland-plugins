@@ -10,14 +10,12 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_set>
 #include <vector>
 
 namespace NAwesome::Notify::Pixel {
 
     inline constexpr size_t   MAX_CONVERSATION_MESSAGES           = 32; // the retained log
     inline constexpr size_t   MAX_PRESENTED_CONVERSATION_MESSAGES = 7;  // the stored window: what a card can fit
-    inline constexpr size_t   MAX_CONVERSATION_PARTICIPANTS       = 16;
     inline constexpr uint32_t MAX_UNREAD_COUNT                    = 999;
 
     enum class eMessageMutation : uint8_t {
@@ -47,7 +45,7 @@ namespace NAwesome::Notify::Pixel {
     template <typename T>
     inline eMessageMutation upsertMessage(std::vector<T>& messages, std::string_view messageId, std::string_view text,
                                           const std::optional<std::string_view> senderId = std::nullopt, const std::optional<std::string_view> senderName = std::nullopt,
-                                          const std::optional<std::string_view> senderIcon = std::nullopt, const std::optional<int64_t> timestampMs = std::nullopt,
+                                          const std::optional<int64_t> timestampMs = std::nullopt,
                                           const std::optional<bool> historic = std::nullopt, std::vector<uint32_t>* evicted = nullptr) {
         if (text.empty() && messageId.empty())
             return eMessageMutation::NONE;
@@ -60,8 +58,6 @@ namespace NAwesome::Notify::Pixel {
             message.senderId = *senderId;
         if (senderName)
             message.senderName = *senderName;
-        if (senderIcon)
-            message.senderIcon = *senderIcon;
         if (timestampMs)
             message.timestampMs = *timestampMs;
         if (historic)
@@ -108,17 +104,6 @@ namespace NAwesome::Notify::Pixel {
         if (!historic && mutation == eMessageMutation::INSERTED)
             return std::min(current + 1, MAX_UNREAD_COUNT);
         return current;
-    }
-
-    inline std::string participantKey(std::string_view senderId, std::string_view senderName) {
-        const auto append = [](std::string& out, std::string_view value) {
-            out.append(std::to_string(value.size()));
-            out.push_back(':');
-            out.append(value);
-        };
-        std::string out = senderId.empty() ? "name:" : "id:";
-        append(out, senderId.empty() ? senderName : senderId);
-        return out;
     }
 
     inline std::string firstCodepoint(std::string_view text, size_t at) {
@@ -190,20 +175,6 @@ namespace NAwesome::Notify::Pixel {
 
     inline bool lightAvatarForeground(const SAvatarColor& color) {
         return 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b < 0.50;
-    }
-
-    template <typename T>
-    inline std::vector<size_t> latestDistinctParticipantIndices(const std::vector<T>& messages, size_t limit = MAX_CONVERSATION_PARTICIPANTS) {
-        std::vector<size_t>             out;
-        std::unordered_set<std::string> seen;
-        out.reserve(std::min(limit, messages.size()));
-        for (size_t i = messages.size(); i-- > 0 && out.size() < limit;) {
-            const auto KEY = participantKey(messages[i].senderId, messages[i].senderName);
-            if (KEY == "name:0:" || !seen.insert(KEY).second)
-                continue;
-            out.push_back(i);
-        }
-        return out;
     }
 
 } // namespace NAwesome::Notify::Pixel

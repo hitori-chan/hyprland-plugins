@@ -392,7 +392,7 @@ No `action-icons`: actions are menu rows, and a row is words.
   tried first, then the `x-notify-` alias): `conversation-id`,
   `conversation-title`, `conversation-kind`
   (`one-to-one` / `group` / `call`), `sender-id`, `sender-name`,
-  `sender-icon`, `message-id`, `message-time` (int64 ms; its alias is
+  `message-id`, `message-time` (int64 ms; its alias is
   `x-notify-message-timestamp`), `message-historic` (bool),
   `unread-count` (uint, capped at 999).
 - **Bounds**: a `Notify` the daemon would need more than 65,536 elements

@@ -116,25 +116,18 @@ namespace NAwesome::Notify {
         std::string id;
         std::string senderId;
         std::string senderName;
-        std::string senderIcon;
         std::string text;
         int64_t     timestampMs = 0;
         bool        historic    = false; // backfill: counted, never unread
     };
 
-    // a distinct sender of a conversation; the avatar texture is warm-built
-    // (the texture rule) and owned here so the face pile and the transcript
-    // faces draw from one decode
-    struct SParticipant {
-        std::string  key; // stable: the sender-id, else the name
+    // a pictureless group chat's face: its initials on a colour of its own,
+    // warm-built (the texture rule)
+    struct SChatFace {
+        std::string  key; // the reply target: stable across renames
         std::string  name;
-        std::string  iconSource; // the raw sender-icon
-        std::string  icon;       // resolved path
-        bool         iconRetry = false; // the walk budget deferred iconSource: the warm resolves it again
         SP<ITexture> avatarTex;
         std::string  avatarFor;
-        int          avatarPx = 0;
-        bool         avatarSettled = false;
     };
 
     // a content image scaled for its card, off the compositor thread: the
@@ -178,8 +171,7 @@ namespace NAwesome::Notify {
             uint64_t    rev = ~0ull;
             std::string line;
         } foldMemo; // collapsedLine's, drawn every frame a folded row shows
-        std::vector<SParticipant> participants; // latest distinct senders, bounded
-        SParticipant              chatFace;     // a group chat with no picture of its own: its initials (card.cpp)
+        SChatFace                 chatFace; // a group chat with no picture of its own: its initials (card.cpp)
         uint32_t             unreadCount = 0;
         uint8_t              urgency  = 1;
         int                  progress = -1; // 0..100 from the "value" hint, -1 = none
@@ -476,7 +468,7 @@ namespace NAwesome::Notify {
     // thumbTex, the whole image square-cropped to iconPx).
     void resetFallbackCache(); // forget the fallback_icon_dir listing (a config reload rescans)
     void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx);
-    void ensureAvatarTex(SParticipant& p, int px);
+    void ensureAvatarTex(SChatFace& f, int px);
     std::string resolveDesktopEntryIcon(const std::string& entry, int sizePx);
     // The warm's retry of a card's deferred names (SNotif::namesDeferred);
     // iconNamesDeferred re-warms the cards one walk window later.

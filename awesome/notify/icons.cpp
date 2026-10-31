@@ -710,7 +710,7 @@ namespace NAwesome::Notify {
     }
 
     // one re-warm a walk window after a name the budget deferred (cards,
-    // participants, actions): the warm resolves them again
+    // actions): the warm resolves them again
     static SP<CEventLoopTimer> namesPoll;
     void                       iconNamesDeferred() {
         if (namesPoll && !namesPoll->armed())
@@ -905,48 +905,16 @@ namespace NAwesome::Notify {
         }
     }
 
-    // a facepile avatar: the sender's icon, or a generated initials face
-    // when the sender is faceless — keyed like an identity, failures
-    // remembered
-    void ensureAvatarTex(SParticipant& p, int px) {
-        if (p.icon.empty()) {
-            // the face's tint rides the card's bg (the light/dark split
-            // inside generatedAvatar): the key carries the bg it was rolled
-            // under, so a theme switch re-rolls it — the identity's
-            // fg-carrying key, initials edition. Without it a dark->light
-            // switch kept the dark-tinted face on every faceless sender.
-            const std::string KEY = "__awesome_avatar:\x1f" + p.key + "\x1f" + p.name + "\x1f" + std::string{NAwesome::cfg().getS("plugin:awesome:notify:font")} + "\x1f" + std::to_string(px) + "\x1f" +
-                                    std::to_string(NAwesome::cfg().getColor("plugin:awesome:theme:col_glass"));
-            if (p.avatarFor == KEY)
-                return;
-            p.avatarTex     = generatedAvatar(p.key, p.name, px);
-            p.avatarFor     = KEY;
-            p.avatarPx      = px;
-            p.avatarSettled = p.avatarTex != nullptr;
+    // the initials face. Its tint rides the card's bg (the light/dark split
+    // inside generatedAvatar): the key carries the bg it was rolled under,
+    // so a theme switch re-rolls it.
+    void ensureAvatarTex(SChatFace& f, int px) {
+        const std::string KEY = "__awesome_avatar:\x1f" + f.key + "\x1f" + f.name + "\x1f" + std::string{NAwesome::cfg().getS("plugin:awesome:notify:font")} + "\x1f" + std::to_string(px) + "\x1f" +
+                                std::to_string(NAwesome::cfg().getColor("plugin:awesome:theme:col_glass"));
+        if (f.avatarFor == KEY)
             return;
-        }
-        const auto KEY = p.icon + "\x1f" + std::to_string(px);
-        if (p.avatarFor != KEY || p.avatarPx != px) {
-            p.avatarTex.reset();
-            p.avatarFor     = KEY;
-            p.avatarPx      = px;
-            p.avatarSettled = false;
-        }
-        if (p.avatarSettled)
-            return;
-        const auto TEX = fileTex(p.icon, px, 0, 0, false);
-        if (TEX.settled) {
-            p.avatarTex     = TEX.texture;
-            p.avatarSettled = true;
-            if (!p.avatarTex) {
-                // a dead icon: the sender falls back to the generated face
-                p.icon.clear();
-                p.avatarFor.clear();
-                p.avatarPx = 0;
-                p.avatarSettled = false;
-                ensureAvatarTex(p, px);
-            }
-        }
+        f.avatarTex = generatedAvatar(f.key, f.name, px);
+        f.avatarFor = KEY;
     }
 
     void iconsInit() {

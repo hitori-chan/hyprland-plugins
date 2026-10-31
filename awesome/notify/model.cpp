@@ -404,7 +404,6 @@ namespace NAwesome::Notify {
         }
 
         static std::string buildConversationBody(const SP<SNotif>& n, size_t limit);
-        static void        rebuildConversationParticipants(SNotif& n, int iconPx);
 
         // One message of a chat goes: its line and its share of the count,
         // the card with its last message. No signal: the caller's.
@@ -417,7 +416,6 @@ namespace NAwesome::Notify {
             N->rev         = ++revSerial;
             N->body        = buildConversationBody(N, Pixel::MAX_PRESENTED_CONVERSATION_MESSAGES);
             N->unreadCount = N->unreadCount > GONE ? N->unreadCount - GONE : 0;
-            rebuildConversationParticipants(*N, std::max(8, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon")));
         }
 
         bool closeWire(uint32_t id, uint32_t reason) {
@@ -850,28 +848,6 @@ namespace NAwesome::Notify {
             return deferred && n.identity.empty();
         }
 
-        // the distinct senders of the kept messages, newest first, capped —
-        // their textures ride on the participants, not on the messages
-        static void rebuildConversationParticipants(SNotif& n, int iconPx) {
-            auto previous = std::move(n.participants);
-            n.participants.clear();
-            const auto INDICES = Pixel::latestDistinctParticipantIndices(n.messages);
-            n.participants.reserve(INDICES.size());
-            for (const auto INDEX : INDICES) {
-                const auto& M = n.messages[INDEX];
-                SParticipant P{.key = Pixel::participantKey(M.senderId, M.senderName), .name = M.senderName, .iconSource = M.senderIcon};
-                if (const auto OLD = std::ranges::find_if(previous, [&](const auto& item) { return item.key == P.key && item.name == P.name && item.iconSource == P.iconSource; });
-                    OLD != previous.end())
-                    P = std::move(*OLD);
-                else {
-                    bool deferred = false;
-                    P.icon        = resolveName(P.iconSource, iconPx, deferred);
-                    P.iconRetry   = deferred;
-                }
-                n.participants.push_back(std::move(P));
-            }
-        }
-
         // ---- arrival ----
 
         // Fresh ids count up from a low counter and skip any still in use (a
@@ -1044,7 +1020,6 @@ namespace NAwesome::Notify {
             const auto        CONV_KIND_HINT      = optStrHint("conversation-kind", "x-notify-conversation-kind", MAX_CONV_KIND_BYTES, true);
             const auto        SENDER_ID_HINT      = optStrHint("sender-id", "x-notify-sender-id", MAX_SENDER_ID_BYTES, true);
             const auto        SENDER_NAME_HINT    = optStrHint("sender-name", "x-notify-sender-name", MAX_SENDER_NAME_BYTES);
-            const auto        SENDER_ICON_HINT    = optStrHint("sender-icon", "x-notify-sender-icon", 512, true);
             const auto        MESSAGE_ID_HINT     = optStrHint("message-id", "x-notify-message-id", MAX_MESSAGE_ID_BYTES, true);
             const auto        DECLARED_GROUP_HINT = optStrHint("x-notify-group-key", nullptr, MAX_CONV_ID_BYTES, true);
             const auto        UNREAD_HINT         = optU32Hint("unread-count", "x-notify-unread-count");
@@ -1238,14 +1213,12 @@ namespace NAwesome::Notify {
                         REPLACED->senderName = *name;
                     if (SENDER_ID_HINT)
                         REPLACED->senderId = *SENDER_ID_HINT;
-                    if (SENDER_ICON_HINT)
-                        REPLACED->senderIcon = *SENDER_ICON_HINT;
                     mutation = Pixel::eMessageMutation::REPLACED;
                     wire     = replaceNid;
                 } else {
                     const bool FIRST = n->messages.empty();
                     mutation = Pixel::upsertMessage(n->messages, MESSAGE_ID, text, viewOf(SENDER_ID_HINT), name ? std::optional<std::string_view>{*name} : std::nullopt,
-                                                    viewOf(SENDER_ICON_HINT), MESSAGE_TIME_HINT, HISTORIC_HINT, &evicted);
+                                                    MESSAGE_TIME_HINT, HISTORIC_HINT, &evicted);
                     // a replace of the card's own id, its message gone, keeps it
                     const bool OWN = FIRST || (replacesId == n->id && !hasMessage(*n, n->id));
                     for (auto& M : n->messages)
@@ -1263,13 +1236,10 @@ namespace NAwesome::Notify {
                     if (!hasMessage(*n, NID)) // a shared id lives on in the newer messages
                         Bus::emitClosed(NID, R_EXPIRED);
                 fresh = EXISTING && mutation == Pixel::eMessageMutation::INSERTED && !HISTORIC;
-                rebuildConversationParticipants(*n, ICONPX);
                 n->body        = buildConversationBody(n, Pixel::MAX_PRESENTED_CONVERSATION_MESSAGES);
                 n->unreadCount = Pixel::updatedUnreadCount(n->unreadCount, UNREAD_HINT, HISTORIC, mutation);
-            } else {
+            } else
                 n->unreadCount = 0;
-                n->participants.clear();
-            }
 
             // a chat's new message is news: the card leads the column and the
             // center as a new arrival would (a plain replace, a progress
@@ -1350,7 +1320,7 @@ namespace NAwesome::Notify {
             n->desktopEntry  = DESKTOP;
             n->appIconSource = APPICON;
             n->identityRetry = resolveIdentity(*n, ICONPX);
-            n->namesDeferred = n->identityRetry || !n->imageRetry.empty() || std::ranges::any_of(n->participants, [](const auto& P) { return P.iconRetry; });
+            n->namesDeferred = n->identityRetry || !n->imageRetry.empty();
             if (n->namesDeferred)
                 iconNamesDeferred();
             n->appKey = APPKEY;
@@ -1556,13 +1526,6 @@ namespace NAwesome::Notify {
             n.identityRetry = Model::resolveIdentity(n, ICONPX);
             again |= n.identityRetry;
         }
-        for (auto& P : n.participants)
-            if (P.iconRetry) {
-                bool deferred = false;
-                P.icon        = Model::resolveName(P.iconSource, ICONPX, deferred);
-                P.iconRetry   = deferred;
-                again |= deferred;
-            }
         n.namesDeferred = again;
         if (again)
             iconNamesDeferred();
