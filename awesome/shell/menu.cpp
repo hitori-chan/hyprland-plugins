@@ -63,11 +63,13 @@ namespace NAwesome::Shell {
 
         void damageMenu() {
             // Menu state changed -> new labels/colours -> new textures. Build
-            // them here in the event loop; warmBars() no-ops if a render is on
+            // them here in the event loop; the warm no-ops if a render is on
             // the stack (renderBar closes the menu when a window goes
             // fullscreen), which is exactly when building would break. The warm
-            // also lays the panels out, so the boxes below are current.
-            warmBars(mon.lock());
+            // also lays the panels out, so the boxes below are current. Only
+            // the popup layer: the strip's door changes with the open state,
+            // which barChanged() covers.
+            warmPopups(mon.lock());
             damagePanels();
         }
 

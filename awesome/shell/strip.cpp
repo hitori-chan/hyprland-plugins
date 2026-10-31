@@ -563,6 +563,10 @@ namespace NAwesome::Shell {
         NAwesome::Canvas::inst().warmAll(only);
     }
 
+    void warmPopups(PHLMONITOR only) {
+        NAwesome::Canvas::inst().warmAll(only, &popupLayer());
+    }
+
     // ---- util ----
 
     double barHeight() {

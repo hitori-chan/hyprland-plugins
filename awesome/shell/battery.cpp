@@ -472,7 +472,7 @@ namespace NAwesome::Shell {
                         if (NAwesome::compositorShuttingDown() || NAwesome::sessionLocked() || noteMon == MONITOR_INVALID)
                             return;
                         noteShown = true;
-                        barChanged(); // the popup layer warms the words
+                        warmPopups(); // the popup layer draws the note
                         damageNote();
                     },
                     nullptr);
@@ -570,7 +570,7 @@ namespace NAwesome::Shell {
         void noteChanged() {
             if (!noteShown)
                 return;
-            barChanged();
+            warmPopups();
             damageNote();
         }
 

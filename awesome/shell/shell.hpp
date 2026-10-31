@@ -137,6 +137,7 @@ namespace NAwesome::Shell {
     // would break. A monitor scopes the walk to it; a scoped warm marks what
     // it touches but never advances or evicts the cache generation.
     void warmBars(PHLMONITOR only = nullptr);
+    void warmPopups(PHLMONITOR only = nullptr); // the menus, the launcher's list, the battery note: synchronous
     void promptChanged(); // the launcher's prompt band only (see strip.cpp)
     void menuHoverChanged(); // the open menu's panels only (see strip.cpp)
     // the menu's hover and cascade intent from a pointer position: motion,
