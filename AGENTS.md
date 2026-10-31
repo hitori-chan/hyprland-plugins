@@ -83,7 +83,8 @@ after any history rewrite (it skips build inputs it already verified).
   logind and backlight) and scratch XDG dirs. The harness never sends the
   live session anything — no output, workspace, window, dispatch, focus,
   cursor, brightness or volume change — and reads it only for the
-  isolation check, which fails the gate on any trace.
+  isolation check, which fails the gate when the live outputs change or
+  a nested window shows up there.
 - Run gates and long builds in tmux; temporary artifacts go under
   `/tmp/hypr-gate/` (tmpfs); runtime state under `$HYPR_HARNESS`
   (default `~/.local/share/hypr-nested`). Keep `~` free of scratch files.
@@ -139,8 +140,9 @@ Numbered because source comments cite them; never renumber, append.
    before clearing window/workspace/monitor state; an older order emitted
    `~CWindow` & co. into loaded listeners and SEGV'd on every nested
    teardown). All event-driven work no-ops once `m_isShuttingDown` is set;
-   the supervisor gates every state listener on
-   `NAwesome::compositorShuttingDown()`.
+   the supervisor gates its listeners on
+   `NAwesome::compositorShuttingDown()`, and a per-window or per-device
+   listener only queues work for a hop.
 
 ## Compositor integration
 

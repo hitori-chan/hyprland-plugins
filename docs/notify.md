@@ -2,42 +2,37 @@
 
 The `notify` module is the session's `org.freedesktop.Notifications`
 daemon: banners, the center, Do Not Disturb, chat conversations, inline
-reply and sounds. Disable any other daemon
-(dunst, mako) before enabling the plugin.
+reply and sounds.
 
 ## Cards
 
 Cards appear top-right on the focused monitor, newest at the top,
 `offset_y` below the monitor's top and at least 12 px under the bar's
-reserved band (a notch's taller bar pushes them down). While
-the launcher's strip is open under the bar on that monitor, the cards
-and the center sit its height lower, so a banner
-never covers the matches. The
-stack follows a keyboard or workspace focus change, but not one the
-pointer makes, so grazing the next monitor's corner leaves the cards
-where they are.
+reserved band (a notch's taller bar pushes them down). While the
+launcher's strip is open on that monitor, the cards and the center sit
+its height lower. The stack follows a keyboard or workspace focus
+change, but not one the pointer makes, so grazing the next monitor's
+corner leaves the cards where they are.
 
 One card shape serves every surface (a banner, a center card, a card in
-a stack): 356 px of regular glass with an 18 px superellipse radius, a
-soft drop shadow and a light rim. An open tray menu paints over the
-cards, as it takes the press first.
+a stack): 356 px of glass with an 18 px superellipse radius. An open
+tray menu paints over the cards, as it takes the press first.
 
 The system's own feedback (volume, brightness, microphone, touchpad,
-power plugged) is a **capsule** instead: 256 x 36 at the top center, a
-glyph and a level with its number, or a glyph and words ("Muted" in the
-urgent colour). See [system](system.md#feedback).
+power plugged) is a **capsule** instead, 36 px tall at the top center:
+a glyph, a level track and its number (256 px wide), or a glyph and
+words as wide as they need, up to 256 px ([system](system.md#feedback)).
 
 ### The icon column
 
-The column says both who sent a card and which app carried it, as
-Android's conversation layout does:
+The column says both who sent a card and which app carried it:
 
 - the content image leads as a 36 px face: a circle for a conversation
   (unless the picture came shaped, as Telegram's rounded-square forum
   pictures do), a rounded square otherwise;
 - the app's identity (`app_icon`, `desktop-entry`) rides its
-  bottom-right corner as an 18 px badge on a graphite disc, ringed in
-  white;
+  bottom-right corner as an 18 px badge: a white disc, a colour icon
+  filling it inside a white ring, a symbolic one in graphite ink;
 - a card with no content image leads with its identity and wears no
   badge; a group chat without a picture leads with its initials (the
   first letters of its title's first and last words) on a colour its
@@ -45,7 +40,8 @@ Android's conversation layout does:
 - an iconless card draws a random face from `fallback_icon_dir`, or a
   generic application mark, so no card is faceless.
 
-A picture (at least 256 px each way, a fifth longer one way than the
+A picture (at least 256 px each way, at least half as wide as the
+card's content in device pixels, and a fifth longer one way than the
 other) shows as a hero, card-wide and cover-cropped; in the center it is
 a square thumbnail in the icon column. A square image is a face or an
 icon at any size.
@@ -56,22 +52,20 @@ On every card:
 
 | Input | Action |
 |---|---|
-| left (on release over the same card) | the link under it, or the card's primary (`default`) action; then the card goes unless `resident`. A folded card opens; a stack's deck spreads |
+| left (on release over the same card) | the link under it, or the card's primary (`default`) action, then the card goes unless `resident`; with no primary action, a dismiss. A folded card opens; a stack's deck spreads |
 | left held 450 ms | the card menu, at the pointer |
 | right | dismiss (on a stack's deck or header: the whole stack) |
 | middle | nothing; swallowed, so the window beneath never gets a paste |
 
 The cards own the pointer over them: hover never leaks to the window
 beneath. Hovering lifts the glass and holds the banner's clock (leaving
-restarts it in full). Cards wear no buttons, at rest or under the
-pointer; the hold and the right click do that work.
+restarts it in full). Cards wear no buttons; the hold and the right
+click do that work.
 
 ### The card menu
 
-The row under the pointer sits on a white pill (16 %), its words in their
-own ink; Do Not Disturb's durations are the same panel. The sender's rows
-first: Reply, then each non-`default` action in the
-sender's order. Then the system's switches:
+The sender's rows first: Reply, then each non-`default` action in the
+sender's order (eight at most). Then the system's switches:
 
 - Mute *chat* for 1 Hour · Mute *chat* Until Tomorrow (the next 08:00;
   "Until 08:00" after midnight) — for a conversation; Unmute *chat*
@@ -95,33 +89,34 @@ Apps. Critical cards punch through.
 ## Banners
 
 - **Timeouts**: `expire_timeout` 0 is sticky, a positive value is
-  milliseconds, −1 lets the daemon decide: `timeout_low` (4 s) for low
-  urgency, `transient` and progress cards, `timeout_normal` (5 s) for the
-  rest. A critical card sticks until dismissed.
+  milliseconds, −1 lets the daemon decide: `timeout_low` for low
+  urgency, `transient` and progress cards, `timeout_normal` for the
+  rest.
 - **Residency**: an expired banner retreats into the center and waits
   there until dismissed or acted on. There is no history: a dismissed
   card is gone.
-- **Per-app cap** (`coalesce_popups`, 3): while an app shows that many
+- **Per-app cap** (`coalesce_popups`): while an app shows that many
   banners on their clocks, its next non-critical card lands silently in
   the center. A sticky banner holds no slot, and two chats are two
   cards.
 - **Height** (`max_height`): a banner keeps its header, title, an open
-  reply field, one body line and its progress first, then images, then
-  their alt text; the body takes the rest. A block that does not fit is
-  dropped whole.
+  reply field, one body line and its progress first, then the hero (cut
+  shorter to fit, dropped under 48 px), then images, then their alt
+  text; the body takes the rest. An image or alt line that does not fit
+  is dropped whole.
 - **Transient** cards (a screenshot's preview, an app's own OSD) are
   feedback: a banner while it lasts, then gone, with no center row and
-  no dot. Opening the center ends one. A critical transient card is an
-  ordinary alert.
+  no dot. Opening the center ends one. A critical transient card stays
+  an alert: it never expires and is listed in the center.
 - **Critical** cards say "Critical" in the urgent colour, fill their
   progress in it and never expire.
 - **Overflow**: `max_notifs` caps the model. Past it the oldest
   short-lived card (transient, progress, capsule) goes, else the oldest
   non-critical one, with `NotificationClosed`.
 - **Fullscreen**: with quiet automatically off, banners show over a
-  fullscreen window, as elsewhere. While a card is up there the plugin
-  blocks the monitor's direct scanout so the card composites; scanout
-  resumes once the last card clears. The open launcher does the same.
+  fullscreen window. While a card is up there the plugin blocks the
+  monitor's direct scanout so the card composites; scanout resumes once
+  the last card clears. The open launcher does the same.
 - **Captures**: a monitor capture shows the bar, menus and cards; a
   workspace capture never does.
 - **Session lock**: cards never render above the lock screen; what
@@ -134,17 +129,15 @@ on that bar's monitor. Opening it absorbs the live banners into parked
 rows, and so does what arrives while it shows; an explicit close (an
 outside click, Esc, the bell) pops them back as banners on fresh
 timeouts, under the same per-app cap and switches, while a card's action
-closing it (the app comes up) leaves them parked.
-It draws no backdrop: the desktop is never darkened.
+closing it (the app comes up) leaves them parked. It draws no backdrop.
 
-"Notifications" heads the column, bare on the desktop with a soft
-shadow. The row ends in Do Not Disturb's moon, a 24 px glass disc (its
-glyph turns the accent under the pointer; the disc is white while DND
-holds), and "Clear All" sits on a glass capsule 8 px left of it (gone
-with nothing to clear; its word turns the accent under the pointer). Cards show their
-clock time where banners show an age, and behave as their banner did; a
-card the center had not shown when it opened wears its time in the
-accent for the visit.
+"Notifications" heads the column. The row ends in Do Not Disturb's moon,
+a 24 px glass disc (its glyph turns the accent under the pointer; the
+disc is white while DND holds), and "Clear All" sits on a glass capsule
+8 px left of it (gone with nothing to clear). Cards show their clock
+time where banners show an age, and behave as their banner did; a card
+the center had not shown when it opened wears its time in the accent
+for the visit.
 
 - **The order**: critical, then the conversations, then the rest, newest
   first in each, 16 px apart where a group ends (8 between cards); no
@@ -154,8 +147,7 @@ accent for the visit.
   switch turned back on lifts its cards out). The row shows two of their
   apps' icons and "3 silent from Chat and Games"; a click (or Enter)
   spreads them for the visit, and a reply being typed into one keeps
-  them spread. Quiet automatically holds banners a while and is no
-  silence.
+  them spread.
 - **The status line**: while Do Not Disturb holds, a line under the
   heading says so ("until 22:30" or "until turned off", and how many
   arrivals wait); while quiet automatically holds, "Quiet" and why
@@ -171,21 +163,21 @@ accent for the visit.
   stands over a deck of up to two slivers. A click spreads the stack
   under a header with the app's name and Show Less; right on the deck or
   the header dismisses it whole. A stack holding the armed reply stays
-  spread.
-- `x-notify-group-key` splits an app's stack by thread.
+  spread. `x-notify-group-key` splits an app's stack by thread.
 - A spread stack taller than the page shows what fits and "+N more";
-  the paging chips above and below the fold page a screenful, like the
-  wheel.
+  the paging chips above and below the fold page a screenful, the wheel
+  one item per notch.
 
 ## Do Not Disturb
 
 The center's moon: a click lists For 30 Minutes · For 1 Hour · For 3
-Hours · Until Tomorrow (08:00) (after midnight, "Until 08:00": the next
-08:00) · Until Turned Off under it; while DND holds, a click ends it.
-`hl.plugin.awesome.suspend([minutes])` is the bind's way. Arrivals collect
-silently with their timeouts held; turning it off shows the queue
-newest first, on fresh timeouts, under the per-app cap and switches. An
-update to a card already shown changes it in place, silently.
+Hours · Until Tomorrow (the next 08:00; "Until 08:00" after midnight) ·
+Until Turned Off under it; while DND holds, a click ends it.
+`hl.plugin.awesome.suspend([minutes])` is the bind's way. Arrivals
+collect silently with their timeouts held; turning it off shows the
+queue newest first, on fresh timeouts, under the per-app cap and
+switches. An update to a card already shown changes it in place,
+silently.
 
 DND is remembered across a relog or a plugin update. A timed DND ends at
 a wall-clock time: a laptop asleep past it wakes with DND off and the
@@ -203,7 +195,8 @@ While either holds, banners and sounds hold: an arrival lands in the
 center and the bell dots, and the banners already up retreat there (a
 share's after it has held a second, so a screenshot never moves them).
 Critical cards punch through; over a share they show their face and
-title without their words.
+title without their words. Quiet is no silence: its cards rank as usual
+in the center.
 
 A share counts only while a client is consuming frames (one copied in
 the last half second, or one waiting for a still screen to change): a
@@ -224,8 +217,10 @@ A chat is one card however many `Notify` calls it takes.
   leading bold line, the chat's picture as `image-data`.
 - **One id per message**: each message's `Notify` gets its own id back,
   and the card acts as its newest message (Reply quotes it; Open and Mark
-  as Read act on it). Closing one id takes that message, the card going
-  with its last; dismissing the card closes every id it holds.
+  as Read act on it), because Telegram keeps a record per message and
+  acts on the first record holding a signal's id. Closing one id takes
+  that message, the card going with its last; dismissing the card closes
+  every id it holds.
 - **The transcript**: the body reads oldest to newest. Each message is a
   paragraph (a group's sender in bold, continuation lines hanging
   12 px). The card shows what fits of the seven newest from the newest
@@ -257,11 +252,10 @@ honoured.
 
 ## Sound
 
-`sound-file` and `sound-name` play through `sound_command`
-(`canberra-gtk-play`; empty disables); `suppress-sound` mutes one
-arrival. At most four players run at once, each killed with its process
-group after 30 s, on a budget of their own, so a flood never delays the
-volume keys.
+`sound-file` and `sound-name` play through `sound_command` (empty
+disables); `suppress-sound` mutes one arrival. At most four players run
+at once, each killed with its process group after 30 s, on a budget of
+their own, so a flood never delays the volume keys.
 
 ## Protocol
 
@@ -276,11 +270,12 @@ No `action-icons`: actions are menu rows, and a row is words.
 - **Signals** leave in the order the cards produced them. Actions, the
   activation token and replies go to the notification's sender only;
   `NotificationClosed` is a broadcast. `ActivationToken` precedes each
-  invoke, and the invoke also focuses the sender's window itself.
+  invoke and reply, and an invoke on a card that is not `resident` also
+  focuses the sender's window itself.
 - **Ownership**: a card belongs to the bus name that created it. Another
   client's `replaces_id`, or a merge from it, starts a fresh card. A card
-  whose sender left the bus is ownerless until the app's next instance
-  continues it.
+  whose sender left the bus is ownerless: the next `replaces_id` naming
+  it, or the same app's next merge, takes it over.
 - **Ids**: `replaces_id` updates a card in place, keeping its slot; an
   unknown id creates the card under that id. Ids 9990–9999 are the
   plugin's own capsules, unavailable to clients.
@@ -288,49 +283,49 @@ No `action-icons`: actions are menu rows, and a row is words.
   `image-data` / `image_data` / `icon_data`; `image-path` / `image_path`;
   `desktop-entry`; `resident`; `transient`; `sound-file`, `sound-name`,
   `suppress-sound`; `x-canonical-append`; `x-notify-group-key` (≤512
-  bytes). A boolean may come as a bool, an int, a byte or a string.
-  Unknown hint types are ignored, as are hints and actions past the
-  64th.
+  bytes). A boolean (`resident`, `transient`, `suppress-sound`,
+  `x-canonical-append`) may come as a bool, an int, a byte or a string.
+  Unknown hint types are ignored, as are hints past the 64th and action
+  strings past the 64th.
 - **Conversation hints** (outside the spec's table; the plain name is
   tried first, then the `x-notify-` alias): `conversation-id`,
-  `conversation-title`, `conversation-kind`
-  (`one-to-one` / `group` / `call`), `sender-id`, `sender-name`,
+  `conversation-title`, `conversation-kind` (`one-to-one` or `group`;
+  anything else is ignored), `sender-id`, `sender-name`,
   `message-id`, `message-time` (int64 ms; its alias is
-  `x-notify-message-timestamp`), `message-historic` (bool),
-  `unread-count` (uint, capped at 999).
-- **Bounds**: a `Notify` the daemon would need more than 65,536 elements
-  to read, or a big-endian image past 256 KiB, is refused with a D-Bus
-  error instead of stalling the compositor.
+  `x-notify-message-timestamp`), `message-historic` (a bool, or the
+  string `true`/`false`, `yes`/`no`, `1`/`0`), `unread-count` (uint,
+  capped at 999).
+- **Bounds**: a `Notify` too large to read within the daemon's bounds
+  is refused with a D-Bus error instead of stalling the compositor
+  ([design](design.md#the-notification-bus)).
 
 ### Markup
 
 The body renders Pango's `<b> <i> <u> <span> <br>`; a `<span>` keeps
 only colours, weight, style, underline and strikethrough. Other tags are
 dropped, a stray `<` or `&` stays literal, and malformed markup falls
-back to plain text. The title is plain text ("Mail from Ann <ann@x.org>"
-keeps the address).
+back to plain text. The title is one line: it keeps `<b> <i> <u>
+<span>`, a `<br>` becomes a space, and any other tag stays literal text
+("Mail from Ann <ann@x.org>" keeps the address).
 
 `<a href>` is a link for `http(s)://` and `mailto:` only; a click opens
 it with `xdg-open` and leaves the card up. `<img src>` renders as a
-thumbnail row under the text, or its `alt` text if it fails to load.
+thumbnail row under a banner's text, or its `alt` text if it fails to
+load; a center card shows neither.
 
 ### Images and icons
 
 `image-data` beats `image-path` beats `app_icon` beats `desktop-entry`.
 Each of the last three may be a path, a `file://` URI, or an icon name
-resolved through the GTK icon theme, then hicolor, then
-`/usr/share/pixmaps`. `desktop-entry` also resolves the entry's own
+resolved through the icon themes
+([design](design.md#icons-and-the-desktop-index)). `desktop-entry` also
+resolves the entry's own
 `Icon=` (by desktop id, file name or `StartupWMClass`).
 
 Images decode off the compositor thread with hyprgraphics: PNG, JPEG,
 WebP, BMP and SVG. Large images are scaled down once, at load. A card
 whose icon is still decoding keeps its column reserved, so the text does
-not reflow.
-
-## Limitations
-
-- GIF does not decode (hyprgraphics has no codec); AVIF and JXL are
-  refused.
-- No animated icons (`icon-multi`).
-- Icon lookup is a pragmatic chain, not a full `index.theme` inheritance
-  engine.
+not reflow. GIF does not decode (hyprgraphics has no codec), AVIF and
+JXL are refused, and animated icons (`icon-multi`) are not supported.
+Icon lookup is a pragmatic chain, not a full `index.theme` inheritance
+engine.

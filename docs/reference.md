@@ -2,8 +2,7 @@
 
 ## Lua API
 
-Every function lives under `hl.plugin.awesome`. Bind them as you would
-any Lua function:
+Every function lives under `hl.plugin.awesome`:
 
 ```lua
 hl.bind("SUPER + M", function() hl.plugin.awesome.maximize() end)
@@ -43,10 +42,8 @@ hl.bind("SUPER + M", function() hl.plugin.awesome.maximize() end)
 `trace` names a module, `blocked` (the session lock or an input
 capture), `upstream` (cancelled before the plugin) or `-` (passed to the
 compositor). A run of scroll events on one axis is one entry with its
-count. It is the first stop when a click goes missing.
-
-The gate build adds `cells`, `shown`, `menu`, `menu-at`, `dnd-at`,
-`quiet`, `busy` and `pad NAME` ([testing](testing.md)).
+count. It is the first stop when a click goes missing. The gate build
+adds its own verbs ([testing](testing.md#scripts)).
 
 ## Configuration
 
@@ -67,8 +64,6 @@ Colours marked Frost default to the Frost palette
 already looks right.
 
 ### theme
-
-The material every module's surfaces share.
 
 | Key | Default | |
 |---|---|---|
@@ -134,8 +129,8 @@ The material every module's surfaces share.
 
 What the plugin remembers lives in one file,
 `$XDG_STATE_HOME/hyprland/plugin/awesome/state.tsv`: tab-separated rows,
-the key last. The config files stay yours: the plugin never writes them,
-and nothing is both a config key and a remembered row.
+the key last. The plugin never writes the config files, and nothing is
+both a config key and a remembered row.
 
 | Row | Meaning |
 |---|---|
@@ -158,9 +153,9 @@ Options ([`core/options.hpp`](../awesome/core/options.hpp)):
 - A label is display text for the bell's Silenced Apps (128 bytes).
 - Each kind is bounded (1024 keys, 50 history queries); at the bound the
   least recently remembered row goes, never a new one.
-- Writes are atomic (temp file and rename) and synced on a worker thread,
-  so a slow disk never stalls the compositor. The windows still open at
-  a logout are recorded as closing.
+- Writes are atomic and synced on a worker thread, so a slow disk never
+  stalls the compositor. The windows still open at a logout are
+  recorded as closing.
 - Every row is checked on load and a bad one is skipped. A file that
   exists but cannot be read blocks every write (a notification says so):
   a session that could not see your state never replaces it.

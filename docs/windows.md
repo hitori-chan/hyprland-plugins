@@ -16,9 +16,10 @@ when another window covers its center.
 
 ## Maximize
 
-Maximize is per window and leaves Hyprland's fullscreen slot alone: the
-window fills the current work area and carries the native xdg maximized
-state.
+Maximize is per window. A floating window fills the current work area
+and carries the native xdg maximized state, leaving Hyprland's
+fullscreen slot alone; a tiled window takes the compositor's own
+maximize. The rest of this section is about floating windows.
 
 - A window that the app or the compositor maximized is adopted into the
   same model. A client's own unmaximize (its CSD restore button or a
@@ -26,8 +27,7 @@ state.
 - A maximized window follows workspace, output and reserved-area
   changes, and the pointer follows the window's geometry, so a window
   that grows under a still cursor takes the next click.
-- A maximized window is a tile, as a snapped one is (see Snap): square
-  corners, no drop shadow and no border.
+- A maximized window is a [tile](#snap).
 - A maximized window does not move, as in awesome's
   `mouse.client.move`: a `Mod`+drag is swallowed, and a drag the client
   starts from its own titlebar ends at once.
@@ -41,8 +41,9 @@ state.
 
 ## Click and focus
 
-- A plain left click raises its target. Clicking a maximized window
-  tucks fullscreen-flagged floaters away without rewriting the z-order.
+- A plain left click raises its target. Clicking a fullscreen window
+  tucks the floaters allowed over it back behind it, without rewriting
+  the z-order.
 - Keyboard focus raises; pointer hover does not.
 - A short corpse guard eats presses aimed at a window that has just
   closed or left fullscreen, so the click does not land on the window
@@ -54,10 +55,10 @@ state.
 
 ### Activation: attention, not focus
 
-The mechanism is awesome's `permissions.activate`. The default policy is
-the Windows foreground model: a background app asking to be presented
-gets attention, never the keyboard, so a message arriving in a chat app
-does not steal what you are typing.
+The mechanism is awesome's `permissions.activate`. By default a
+background app asking to be presented gets attention, never the
+keyboard, so a message arriving in a chat app does not steal what you
+are typing.
 
 | Event | Result |
 |---|---|
@@ -87,13 +88,13 @@ upstream Hyprland ignores such asks.
 
 ## Spawn placement
 
-Placement only moves a window; its size is always the client's own (the
-initial configure stays 0x0, so apps restore their own sizes and dialogs
-open at their natural size).
+Placement only moves a floating window; its size is always the client's
+own (the initial configure stays 0x0, so apps restore their own sizes
+and dialogs open at their natural size).
 
 - A window of a class seen before opens where that class's last window
   closed, relative to the monitor it was on, applied on the monitor it
-  opens on.
+  opens on. The close is remembered however the client tears down.
 - Otherwise (no memory, or its spot is taken) a window takes the
   least-overlap position among the workspace's 24 topmost windows,
   starting from, and so preferring, its centered spot: a lone window
@@ -102,11 +103,11 @@ open at their natural size).
   unmaximize restore: the one size the plugin supplies.
 - A fixed-size toplevel (min == max: a dialog, a splash) keeps the
   compositor's centered placement and is never remembered.
-- Client size limits, fullscreen and maximize state, pending requests,
-  window rules, parent-anchored dialogs, X11 geometry and
-  override-redirect surfaces stay authoritative.
-- The close is remembered however the client tears down (GTK and
-  Firefox destroy their toplevel before the window unmaps).
+- A window that chose its spot (X11 geometry, a dialog anchored to its
+  parent) keeps it while it is free.
+- Client size limits, fullscreen and maximize state (a pending request
+  or a rule's grant included) and override-redirect surfaces stay
+  authoritative.
 
 ## Snap
 
@@ -119,17 +120,14 @@ gap between two outputs arms no zone.
 
 A window that fills its slot is a tile: square corners, no drop shadow
 and no border, its surface the whole slot, so halves and quarters meet
-the screen's edges and each other with nothing between. Rounded, they
-left the wallpaper in notches at the corners and at both ends of a seam,
-and the focused one's drop fell across its neighbour; a border of any
-colour framed every tile and doubled every seam (see-through, a line of
-the wallpaper; opaque, a grid no float wears). A slot splits the work
-area on a whole pixel, the right or bottom one taking an odd one, so two
-tiles never leave a half-pixel seam. A drag or a resize lifts it out and
-gives its corners, drop and border back; a client whose limits keep it
-smaller than the slot stays a rounded float. The look sits at the
-layout's override priority, so window rules that set `rounding`,
-`no_shadow` or `border_size` still win. A plugin reload forgets which
-windows were snapped (maximized ones are adopted again).
+the screen's edges and each other with nothing between (rounded corners
+leave the wallpaper showing at the seams, and a border doubles every
+seam). A slot splits the work area on a whole pixel, the right or bottom
+one taking an odd one. A drag or a resize lifts the tile out and gives
+its corners, drop and border back; a client whose limits keep it smaller
+than the slot stays a rounded float. The look sits at the layout's
+override priority, so window rules that set `rounding`, `no_shadow` or
+`border_size` still win. A plugin reload forgets which windows were
+snapped (maximized ones are adopted again).
 
 Turn off Hyprland's own `general:snap` so the two do not compete.
