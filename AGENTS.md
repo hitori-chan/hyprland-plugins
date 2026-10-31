@@ -41,9 +41,17 @@ compositor is built from.
   (`-b all`). `src/version.h` is generated at CMake CONFIGURE time:
   reconfigure (`cmake -S . -B build`) after moving HEAD, or the binary and
   headers carry a stale hash the plugin's load guard rejects.
-- Dependencies come from distro packages at the fork's `flake.lock` pins;
-  the user performs sudo installs and deploys (install + relog, then
-  `hyprpm update`).
+- Dependencies come from distro packages at the fork's `flake.lock` pins,
+  except Aquamarine: `hitori-chan/aquamarine`, whose `main` is the pin
+  plus its own patches (a scanout buffer placed at an offset; the soname
+  `libaquamarine.so.14.fork`, so the compositor never loads the distro
+  library). It installs under `/usr/local`; the fork configures with
+  `PKG_CONFIG_PATH=/usr/local/lib/pkgconfig` and
+  `-DCMAKE_INSTALL_RPATH=/usr/local/lib`. Its patches only append to
+  structs, so a plugin built against the distro's headers (hyprpm) stays
+  layout-compatible. A bump rebases it onto the new pin too.
+- The user performs sudo installs and deploys (Aquamarine, then the
+  fork: install + relog, then `hyprpm update`).
 - Two machines run it: a ThinkPad (x86, this host) and an Apple silicon
   laptop (Asahi; a display notch, scale 2, a P3 panel). Hardware-shaped
   behavior detects the machine at runtime and never hard-codes one

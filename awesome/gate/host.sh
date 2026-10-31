@@ -90,14 +90,14 @@ host_stop() {
 	rm -f "$HOST_DIR/pid" "$HOST_DIR/wl"
 }
 
-# The pinned aquamarine's lib dir (built on first use, cached by rev).
+# The Aquamarine fork's lib dir: its checkout's main (the compositor links
+# that fork), built on first use, cached by rev.
 aq_pinned_libdir() {
 	local rev prefix src
-	rev="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['nodes']['aquamarine']['locked']['rev'])" "${FORK_SRC:-$HOME/repo/Hyprland}/flake.lock" 2>/dev/null)"
-	[[ "$rev" =~ ^[0-9a-f]{40}$ ]] || { echo "host: no aquamarine pin in the fork's flake.lock" >&2; return 1; }
+	rev="$(git -C "$AQ_SRC" rev-parse --verify -q main 2>/dev/null)"
+	[[ "$rev" =~ ^[0-9a-f]{40}$ ]] || { echo "host: no main in the Aquamarine checkout $AQ_SRC" >&2; return 1; }
 	prefix="$HYPR_GATE_TMP/deps/aquamarine-${rev:0:12}"
 	if [[ ! -e "$prefix/lib/libaquamarine.so" ]]; then
-		git -C "$AQ_SRC" cat-file -e "$rev^{commit}" 2>/dev/null || git -C "$AQ_SRC" fetch -q origin 2>/dev/null
 		src="$HYPR_GATE_TMP/deps/aq-src-${rev:0:12}"
 		rm -rf "$src" "$src.build" && mkdir -p "$src" &&
 			git -C "$AQ_SRC" archive "$rev" | tar -x -C "$src" &&

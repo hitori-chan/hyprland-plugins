@@ -90,8 +90,8 @@ A battery waits on what it checks, never on the clock:
 The nested runs inside a private headless labwc (`gate/host.sh`;
 install labwc once) with its own session bus, a private system bus
 carrying a fake logind, backlight and bluetoothd (a headset's volume
-signal), scratch XDG dirs, and aquamarine at the fork's `flake.lock`
-pin. The live session receives nothing: no output, workspace, window,
+signal), scratch XDG dirs, and Aquamarine built from the
+`hitori-chan/aquamarine` checkout's `main`. The live session receives nothing: no output, workspace, window,
 focus, cursor, brightness or volume change. The isolation check fails
 the gate on a trace: at each launch the nested's parent display must be
 the private host, and at the end the live outputs must be unchanged
