@@ -43,6 +43,12 @@ make -C devtools HL=/path/to/Hyprland
   `SPLASHWIN_POINTER_LOG=<path>` it appends `at X Y` (surface-local,
   margin included) on every pointer enter and motion: where a click
   lands in the client's own frame.
+- `fifowin fifo|recreate FRAMES` presents FRAMES SHM frames through
+  fifo-v1 as Mesa's Vulkan WSI does (each update sets and waits on the
+  barrier) and prints `frames elapsed_ms max_wait_ms presented discarded
+  late`. `recreate` replaces the fifo object a third of the way in and
+  lets the frames in flight present before the new one exists, as a
+  swapchain recreate does; a wait over 2 s exits 1 (a held barrier).
 - `gtkgrid.py LOG [wayland|x11] [WAYLAND-TRACE]` is a real GTK3 client
   (PyGObject) as a render-vs-input oracle: a floating CSD window of solid
   color blocks and a menu button whose GtkMenu is an xdg_popup of colored

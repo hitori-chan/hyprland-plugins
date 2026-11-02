@@ -38,6 +38,11 @@ devtools/fixwin
 devtools/fixwin-proto.c
 devtools/fixwin-protocol.h
 devtools/splashwin
+devtools/fifowin
+devtools/fifo-proto.c
+devtools/fifo-proto.h
+devtools/presentation-proto.c
+devtools/presentation-proto.h
 devtools/fake-sni
 
 # Planning, audit, and implementation-report documents (local only,

@@ -7,13 +7,15 @@ CXML   := $(shell pkg-config --variable=pkgdatadir hyprland-protocols)/protocols
 DXML   := $(HL)/protocols/wlr-data-control-unstable-v1.xml
 SXML   := $(HL)/protocols/wlr-screencopy-unstable-v1.xml
 XXML   := /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml
+FXML   := /usr/share/wayland-protocols/staging/fifo/fifo-v1.xml
+PXML   := /usr/share/wayland-protocols/stable/presentation-time/presentation-time.xml
 CFLAGS += -O2 -Wall $(shell pkg-config --cflags wayland-client)
 LDLIBS += $(shell pkg-config --libs wayland-client)
 KLIBS  := $(shell pkg-config --libs xkbcommon)
 EICFLAGS := $(shell pkg-config --cflags libei-1.0)
 EILIBS   := $(shell pkg-config --libs libei-1.0)
 
-all: vptr vkbd input-capture cliphold sharehold fixwin splashwin fake-sni
+all: vptr vkbd input-capture cliphold sharehold fixwin splashwin fifowin fake-sni
 
 vptr: vptr.c vptr-proto.c vptr-proto.h
 	$(CC) $(CFLAGS) vptr.c vptr-proto.c -o $@ $(LDLIBS)
@@ -35,6 +37,9 @@ splashwin: splashwin.c fixwin-protocol.h fixwin-proto.c
 
 fixwin: fixwin.c fixwin-protocol.h fixwin-proto.c
 	$(CC) $(CFLAGS) fixwin.c fixwin-proto.c -o $@ $(LDLIBS)
+
+fifowin: fifowin.c fixwin-protocol.h fixwin-proto.c fifo-proto.h fifo-proto.c presentation-proto.h presentation-proto.c
+	$(CC) $(CFLAGS) fifowin.c fixwin-proto.c fifo-proto.c presentation-proto.c -o $@ $(LDLIBS)
 
 # SNI + dbusmenu fixture over libdbus (not a compositor client): the tray
 # menu battery drives it against the nested instance's private session bus.
@@ -65,8 +70,16 @@ fixwin-protocol.h: $(XXML)
 	wayland-scanner client-header $< $@
 fixwin-proto.c: $(XXML)
 	wayland-scanner private-code $< $@
+fifo-proto.h: $(FXML)
+	wayland-scanner client-header $< $@
+fifo-proto.c: $(FXML)
+	wayland-scanner private-code $< $@
+presentation-proto.h: $(PXML)
+	wayland-scanner client-header $< $@
+presentation-proto.c: $(PXML)
+	wayland-scanner private-code $< $@
 
 clean:
-	rm -f vptr vkbd input-capture cliphold sharehold fixwin splashwin fake-sni vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c sharehold-proto.h sharehold-proto.c fixwin-protocol.h fixwin-proto.c
+	rm -f vptr vkbd input-capture cliphold sharehold fixwin splashwin fifowin fake-sni vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c sharehold-proto.h sharehold-proto.c fixwin-protocol.h fixwin-proto.c fifo-proto.h fifo-proto.c presentation-proto.h presentation-proto.c
 
 .PHONY: all clean
