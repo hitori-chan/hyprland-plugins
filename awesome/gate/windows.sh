@@ -572,6 +572,38 @@ for a in "$W3A" "$W3B" "$W3C" "$W3D"; do
 done
 until_is 5 0 w3_count
 
+# ---- an activation ask on a minimized window -----------------------------
+# With focus_on_activate on (vanilla awesome) an xdg-activation ask restores
+# a minimized window; a suppress_event activate rule keeps it urgency only.
+# The muted window asks first: once the other is restored, a restore queued
+# for it would have run too. A token needs a serial the seat sent the app:
+# a keyboard stays up for the section, so focus sends one.
+kbds() { hq devices -j | python3 -c 'import json,sys;print(len(json.load(sys.stdin)["keyboards"]))'; }
+kbd_more() { (($(kbds) > $1)); }
+hq eval 'hl.config({ misc = { focus_on_activate = true } })' >/dev/null
+hq eval 'hl.window_rule({ match = { class = "askmute" }, suppress_event = "activate" })' >/dev/null
+ask_count() { pyc "sum(1 for c in cs if c['class'] in ('askwin','askmute'))"; }
+ask_state() { echo "$(hidden_of "$1") $(active_class)"; }
+K0="$(kbds)"
+exec {ASKKB}> >(WAYLAND_DISPLAY="$WL" "$REPO/devtools/vkbd" >/dev/null 2>&1)
+until_ok 3 kbd_more "$K0"
+for c in askmute askwin; do
+	exec {fd}> >(WAYLAND_DISPLAY="$WL" "$REPO/devtools/askwin" "$c" >"$STATE/$c.log" 2>&1)
+	printf -v "ASKFD_$c" '%s' "$fd"
+	wait_class "$c"
+	until_is 2 "$c" active_class
+	dsp "hl.plugin.awesome.minimize()"
+	until_is 2 1 hidden_of "$c"
+done
+echo ask >&"$ASKFD_askmute"
+until_ok 3 grep -qx asked "$STATE/askmute.log"
+echo ask >&"$ASKFD_askwin"
+chk "activation: an ask restores a minimized window" until_is 3 "0 askwin" ask_state askwin
+chk "activation: suppress_event activate keeps it minimized" bash -c "grep -qx asked '$STATE/askmute.log' && test '$(hidden_of askmute)' = 1"
+exec {ASKFD_askmute}>&- {ASKFD_askwin}>&- {ASKKB}>&-
+until_is 5 0 ask_count
+hq eval 'hl.config({ misc = { focus_on_activate = false } })' >/dev/null
+
 # ---- snap: an output edge arms its half, two edges a quarter ---------------
 # (windows/snap.hpp) A floating move drag (Alt+drag here, the nested's own
 # bind) whose cursor comes within `edge` (16) of an output edge previews
@@ -590,8 +622,6 @@ x, y, w, h = l, t, m['width'] - l - r, m['height'] - t - b
 part = {'left': (x, y, w // 2, h), 'right': (x + w // 2, y, w - w // 2, h), 'topleft': (x, y, w // 2, h // 2)}[sys.argv[1]]
 print('%d,%d %dx%d' % part)" "$1"
 }
-kbds() { hq devices -j | python3 -c 'import json,sys;print(len(json.load(sys.stdin)["keyboards"]))'; }
-kbd_more() { (($(kbds) > $1)); }
 zone() { hq awesome snap-zone; }
 snap_drag() { # snap_drag <x> <y> <zone> <alt-first: 0|1>: Alt+drag the window's middle to (x, y), its zone armed, drop
 	# one keyboard and one pointer for the whole gesture: a device that

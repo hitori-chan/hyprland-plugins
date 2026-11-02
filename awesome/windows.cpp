@@ -19,6 +19,8 @@
 
 #include <hyprland/src/config/ConfigValue.hpp>
 
+#include <algorithm>
+
 namespace NAwesome::Windows {
 
     CModule& module() {
@@ -124,6 +126,11 @@ namespace NAwesome::Windows {
             // gates like the compositor's own activate().
             static auto FOCUS_ON_ACTIVATE = CConfigValue<Config::INTEGER>("misc:focus_on_activate");
             if (!w || w->backend().isX11() || !w->m_ruleApplicator->focusOnActivate().valueOr(*FOCUS_ON_ACTIVATE) || !w->isHidden() || !Tasklist::isMinimized(w))
+                return;
+            // suppress_event activate|activatefocus keeps an ask urgency only,
+            // as activate() does for a shown window (its private suppression
+            // is read from these rules at map)
+            if (std::ranges::any_of(w->m_ruleApplicator->static_.suppressEvent, [](const std::string& E) { return E == "activate" || E == "activatefocus"; }))
                 return;
             // minimized on a workspace no monitor shows: an ask there is
             // urgency only in both modes, as for a shown window

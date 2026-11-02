@@ -77,7 +77,8 @@ are typing.
 - `focus_on_activate = true` (globally or by window rule) gives vanilla
   awesome: an ask on a visible window focuses it, and a Wayland ask on a
   minimized one restores and focuses it. An ask on another workspace is
-  still urgency only.
+  still urgency only, and so is any ask on a window a `suppress_event
+  activate` (or `activatefocus`) rule covers.
 - A taskbar's minimize and unminimize run through the same state machine
   as a client's own minimize button.
 - Tray and notification clicks focus the app's own window from the
