@@ -119,6 +119,21 @@ print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='foot'), '
 close_wait "$FT"
 chk "shell: the chip leaves with the window" \
 	shot_until 3 "$STATE/strip-task-gone.png" band_under "$STATE/strip-task-gone.png" $((TASKBAND0 + 101))
+# a hovered task that reflows under a still pointer (the task before it
+# closes) is undone where it is drawn now once the pointer leaves
+dsp "hl.dsp.exec_cmd('foot -a hova --window-size-pixels=400x200')"; settled hova
+dsp "hl.dsp.exec_cmd('foot -a hovb --window-size-pixels=400x200')"; settled hovb
+read -r HB0 HB1 <<<"$(hq awesome cells | awk '$1 == "task" { x0 = $2; x1 = $3 } END { print x0, x1 }')"
+printf 'move %d 13\nsleep 60\n' $(((HB0 + HB1) / 2)) | vp
+hovb_lifted() { (($(accent_px "$1" "$HB0" "$HB1") <= 2 && $(lifted_px "$1" "$HB0" "$HB1") > 20)); }
+shot_until 3 "$STATE/strip-reflow-hover.png" hovb_lifted "$STATE/strip-reflow-hover.png"
+close_wait "$(class_addr hova)"
+printf 'move 900 500\nsleep 60\n' | vp
+read -r HA0 _ <<<"$(hq awesome cells | awk '$1 == "task" { print $2, $3; exit }')"
+reflowed_back() { (($(accent_px "$1" "$HA0" "$HB0") > 20 && $(lifted_px "$1" "$HA0" "$HB0") <= 2)); }
+chk "shell: a hover that reflowed is undone where the task went" \
+	shot_until 3 "$STATE/strip-reflow-left.png" reflowed_back "$STATE/strip-reflow-left.png"
+close_wait "$(class_addr hovb)"
 
 # ---- the window list: right-click a task -----------------------------------
 # every window, any tag (shell/menu.cpp): a row reads as its task does

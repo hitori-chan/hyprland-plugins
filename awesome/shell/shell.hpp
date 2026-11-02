@@ -316,6 +316,9 @@ namespace NAwesome::Shell {
         }
     };
     extern SBarHover barHover;
+    // a warm's new layout: the hovered cell may have moved under a still
+    // pointer (a task opened or closed)
+    void followBarHover(const PHLMONITOR& mon, const std::vector<SHit>& hits);
 
     struct IWidget {
         virtual ~IWidget() = default;

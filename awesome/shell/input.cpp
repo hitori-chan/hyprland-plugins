@@ -2,6 +2,7 @@
 
 #include "shell/shell.hpp"
 
+#include <algorithm>
 #include <ranges>
 
 namespace NAwesome::Shell {
@@ -402,6 +403,25 @@ namespace NAwesome::Shell {
                     break;
                 }
         setBarHover(h);
+    }
+
+    void followBarHover(const PHLMONITOR& mon, const std::vector<SHit>& hits) {
+        if (!barHover.widget || barHover.mon != mon->m_id)
+            return;
+        // where the hovered cell went, so leaving it damages where it is drawn
+        const auto IT = std::ranges::find_if(hits, [](const SHit& H) { return H.widget == barHover.widget && H.tag == barHover.tag && H.window.get() == barHover.window; });
+        if (IT == hits.end())
+            setBarHover({});
+        else if (IT->box != barHover.box) {
+            if (g_pHyprRenderer) {
+                g_pHyprRenderer->damageBox(CBox{barHover.box}.expand(1));
+                g_pHyprRenderer->damageBox(CBox{IT->box}.expand(1));
+            }
+            barHover.box = IT->box;
+        }
+        // then the cell under a pointer that did not move
+        if (pointerOwned && !NAwesome::sessionLocked())
+            barHoverAt(mon, g_pInputManager->getMouseCoordsInternal());
     }
 
     void releasePointer() {

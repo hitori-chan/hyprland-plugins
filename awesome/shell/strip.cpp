@@ -316,10 +316,11 @@ namespace NAwesome::Shell {
         }
 
         auto& FP = lastTaskFp[mon->m_id];
-        if (warm)
+        if (warm) {
             FP = frameFp;
-        else if (FP != frameFp) {
-            FP             = frameFp;
+            followBarHover(mon, hits);
+        } else if (FP != frameFp) {
+            FP                  = frameFp;
             warmGate().texStale = true;
         }
 
