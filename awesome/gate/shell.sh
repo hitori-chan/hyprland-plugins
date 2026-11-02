@@ -354,6 +354,14 @@ center_shut() { [[ "$(st)" == "center:0 "* ]]; }
 chk "cells: a click on the clock leaves the center shut" center_shut
 center_shut || hq awesome center >/dev/null
 
+# ---- the bar's band ----------------------------------------------------------
+# The bar reserves its height (the plugin's reserved type) on top of what the
+# monitor rule reserves (30): a taller bar adds the difference at once.
+hq eval "hl.config({ plugin = { awesome = { shell = { height = 40 } } } })" >/dev/null
+chk "band: a taller bar reserves its height" until_is 3 "0,40,0,0" reserved
+hq eval "hl.config({ plugin = { awesome = { shell = { height = 28 } } } })" >/dev/null
+chk "band: the rule's 30 covers the default" until_is 3 "0,30,0,0" reserved
+
 # ---- the bell's door ----------------------------------------------------------
 # A click opens the center on its bar's monitor and sets the bell on a white
 # pill (24 x 22, the glyph white: no accent); a click off every surface

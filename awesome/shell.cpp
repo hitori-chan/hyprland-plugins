@@ -118,14 +118,13 @@ namespace NAwesome::Shell {
             if (iconsReload())
                 for (const auto& I : Tray::items)
                     I->dirty = true; // their textures came out of the theme we just dropped
-            reserveBars(); // shell:height, a monitor rule's own reserve
-            barChanged();
         });
-        // a runtime hl.config and a reload both end here: a new
-        // clock_format shows at once, not at the next minute
+        // a runtime hl.config and a reload both end here: shell:height, a
+        // monitor rule's reserve and clock_format apply at once
         supervisor().listen(EV.config.props_refreshed, [](bool) {
-            if (Clock::refresh())
-                barChanged();
+            Clock::refresh();
+            reserveBars();
+            barChanged();
         });
 
         if (minute.start(onMinute))
