@@ -10,13 +10,14 @@ TXML   := $(HL)/protocols/wlr-foreign-toplevel-management-unstable-v1.xml
 XXML   := /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml
 FXML   := /usr/share/wayland-protocols/staging/fifo/fifo-v1.xml
 PXML   := /usr/share/wayland-protocols/stable/presentation-time/presentation-time.xml
+AXML   := /usr/share/wayland-protocols/staging/xdg-activation/xdg-activation-v1.xml
 CFLAGS += -O2 -Wall $(shell pkg-config --cflags wayland-client)
 LDLIBS += $(shell pkg-config --libs wayland-client)
 KLIBS  := $(shell pkg-config --libs xkbcommon)
 EICFLAGS := $(shell pkg-config --cflags libei-1.0)
 EILIBS   := $(shell pkg-config --libs libei-1.0)
 
-all: vptr vkbd input-capture cliphold sharehold fixwin splashwin fifowin toplevel fsask fake-sni
+all: vptr vkbd input-capture cliphold sharehold fixwin splashwin fifowin toplevel fsask askwin fake-sni
 
 vptr: vptr.c vptr-proto.c vptr-proto.h
 	$(CC) $(CFLAGS) vptr.c vptr-proto.c -o $@ $(LDLIBS)
@@ -44,6 +45,9 @@ fixwin: fixwin.c fixwin-protocol.h fixwin-proto.c
 
 fsask: fsask.c fixwin-protocol.h fixwin-proto.c
 	$(CC) $(CFLAGS) fsask.c fixwin-proto.c -o $@ $(LDLIBS)
+
+askwin: askwin.c fixwin-protocol.h fixwin-proto.c activation-proto.h activation-proto.c
+	$(CC) $(CFLAGS) askwin.c fixwin-proto.c activation-proto.c -o $@ $(LDLIBS)
 
 fifowin: fifowin.c fixwin-protocol.h fixwin-proto.c fifo-proto.h fifo-proto.c presentation-proto.h presentation-proto.c
 	$(CC) $(CFLAGS) fifowin.c fixwin-proto.c fifo-proto.c presentation-proto.c -o $@ $(LDLIBS)
@@ -85,12 +89,16 @@ fifo-proto.h: $(FXML)
 	wayland-scanner client-header $< $@
 fifo-proto.c: $(FXML)
 	wayland-scanner private-code $< $@
+activation-proto.h: $(AXML)
+	wayland-scanner client-header $< $@
+activation-proto.c: $(AXML)
+	wayland-scanner private-code $< $@
 presentation-proto.h: $(PXML)
 	wayland-scanner client-header $< $@
 presentation-proto.c: $(PXML)
 	wayland-scanner private-code $< $@
 
 clean:
-	rm -f vptr vkbd input-capture cliphold sharehold fixwin splashwin fifowin toplevel fsask fake-sni vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c sharehold-proto.h sharehold-proto.c toplevel-proto.h toplevel-proto.c fixwin-protocol.h fixwin-proto.c fifo-proto.h fifo-proto.c presentation-proto.h presentation-proto.c
+	rm -f vptr vkbd input-capture cliphold sharehold fixwin splashwin fifowin toplevel fsask askwin fake-sni vptr-proto.h vptr-proto.c vkbd-proto.h vkbd-proto.c input-capture-proto.h input-capture-proto.c cliphold-proto.h cliphold-proto.c sharehold-proto.h sharehold-proto.c toplevel-proto.h toplevel-proto.c fixwin-protocol.h fixwin-proto.c fifo-proto.h fifo-proto.c presentation-proto.h presentation-proto.c activation-proto.h activation-proto.c
 
 .PHONY: all clean

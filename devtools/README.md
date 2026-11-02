@@ -50,6 +50,10 @@ make -C devtools HL=/path/to/Hyprland
   last state): it asks before its initial commit, follows every
   configure, and prints each as `W H STATE...` (`map` after its first
   buffer) until killed.
+- `askwin APP_ID` maps a window that asks to be activated over
+  xdg-activation (as a browser's "switch to tab" does) on each `ask` line
+  on stdin, with the latest serial the seat sent it, and prints `asked`
+  once the compositor handled it (`rejected` for an empty token).
 - `fifowin fifo|recreate FRAMES` presents FRAMES SHM frames through
   fifo-v1 as Mesa's Vulkan WSI does (each update sets and waits on the
   barrier) and prints `frames elapsed_ms max_wait_ms presented discarded

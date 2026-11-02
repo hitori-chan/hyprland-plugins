@@ -42,6 +42,9 @@ devtools/fixwin-proto.c
 devtools/fixwin-protocol.h
 devtools/splashwin
 devtools/fsask
+devtools/askwin
+devtools/activation-proto.c
+devtools/activation-proto.h
 devtools/fifowin
 devtools/fifo-proto.c
 devtools/fifo-proto.h
