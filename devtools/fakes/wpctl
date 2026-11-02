@@ -26,6 +26,16 @@ level() {
 	[[ -n "$f" && -s "$f" ]] && l="$(<"$f")"
 	printf '%s' "$l"
 }
+# a session locale's decimal separator (AW_WPCTL_DECIMAL_FILE holds one):
+# wpctl prints its numbers in it unless it runs in the C locale
+decimal() {
+	local f="${AW_WPCTL_DECIMAL_FILE:-}"
+	if [[ ${LC_ALL:-} != C && -n "$f" && -s "$f" ]]; then
+		printf '%s' "${1/./$(<"$f")}"
+	else
+		printf '%s' "$1"
+	fi
+}
 muted() { # muted <sink|source>
 	if [[ -n "${AW_WPCTL_MUTES_FILE:-}" && -e "$AW_WPCTL_MUTES_FILE" ]]; then
 		grep -qxF "$1" "$AW_WPCTL_MUTES_FILE"
@@ -79,8 +89,8 @@ get-volume)
 		exit 0
 	fi
 	case "${2:-}" in
-	"@DEFAULT_AUDIO_SINK@") printf 'Volume: %s%s\n' "$(level)" "$(muted sink && printf ' [MUTED]')" ;;
-	"@DEFAULT_AUDIO_SOURCE@") printf 'Volume: 1.00%s\n' "$(muted source && printf ' [MUTED]')" ;;
+	"@DEFAULT_AUDIO_SINK@") printf 'Volume: %s%s\n' "$(decimal "$(level)")" "$(muted sink && printf ' [MUTED]')" ;;
+	"@DEFAULT_AUDIO_SOURCE@") printf 'Volume: %s%s\n' "$(decimal 1.00)" "$(muted source && printf ' [MUTED]')" ;;
 	*) exit 64 ;;
 	esac
 	;;
