@@ -123,18 +123,14 @@ SYSBUS_ADDR="unix:path=$SYSBUS_DIR/bus"
 SYSBUS_BACKLIGHT="${AW_BACKLIGHT_DIR:-$SYSBUS_DIR/backlight}"
 SYSBUS_FAKE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/devtools/fakes/fake-sysbus"
 
-sysbus_alive() {
-	_owns_pid "$SYSBUS_DIR/daemon.pid" cmdline "--config-file=$SYSBUS_DIR/bus.conf" >/dev/null &&
-		_owns_pid "$SYSBUS_DIR/logind.pid" cmdline "$SYSBUS_FAKE" >/dev/null && [[ -S "$SYSBUS_DIR/bus" ]]
-}
-
 sysbus_start() {
 	# the fake device is (re)seeded every launch: the battery steps from 500
 	if [[ ! -e "$SYSBUS_BACKLIGHT/gate0/max_brightness" ]]; then
 		mkdir -p "$SYSBUS_BACKLIGHT/gate0" && printf '1000\n' >"$SYSBUS_BACKLIGHT/gate0/max_brightness"
 	fi
 	printf '500\n' >"$SYSBUS_BACKLIGHT/gate0/brightness"
-	sysbus_alive && return 0
+	# never a running bus: its fakes keep the backlight dir, the log and the
+	# code of the launch that started them
 	sysbus_stop
 	mkdir -p "$SYSBUS_DIR"
 	cat >"$SYSBUS_DIR/bus.conf" <<-EOF
