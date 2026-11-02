@@ -627,6 +627,10 @@ namespace NAwesome::Shell {
           public:
             static constexpr double ICON = ICON_CELL;
 
+            bool shrinks() const override {
+                return true;
+            }
+
             double fit(const SPaint& P, const SFrame&) override {
                 const double SPACING = std::max(0.0, (double)cfg().getI("plugin:awesome:shell:tray_spacing"));
                 int n = 0;

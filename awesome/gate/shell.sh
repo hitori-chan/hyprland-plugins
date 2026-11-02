@@ -331,11 +331,28 @@ clock_w() { hq awesome cells | awk '$1 == "clock" { print $3 - $2; exit }'; }
 CLOCK_W="$(clock_w)"
 clock_narrow() { local w; w="$(clock_w)"; [[ -n "$w" && "$w" -lt $((CLOCK_W / 2)) ]]; }
 clock_wide() { local w; w="$(clock_w)"; [[ -n "$w" && "$w" -ge $((CLOCK_W * 3 / 4)) ]]; }
+clock_wide_big() { local w; w="$(clock_w)"; [[ -n "$w" && "$w" -gt $((CLOCK_W * 3 / 2)) ]]; }
+clock_back() { clock_wide && ! clock_wide_big; }
 hq eval 'hl.config({ plugin = { awesome = { shell = { clock_format = "%Y" } } } })' >/dev/null
 chk "cells: clock_format redraws the clock at once" until_ok 3 clock_narrow
 hq eval 'hl.config({ plugin = { awesome = { shell = { clock_format = "" } } } })' >/dev/null
 chk "cells: an empty clock_format shows the default" until_ok 3 clock_wide
-hq eval 'hl.config({ plugin = { awesome = { shell = { clock_format = "%a %b %-d %H:%M" } } } })' >/dev/null
+# a widget wider than the room left (a clock past the strip's width, as any
+# widget on a narrow output) shows whole or not at all: it never paints over
+# the tags. At the default size even a full clock_format fits the 1280 px
+# strip: a bigger font makes it overflow.
+TAGS_END="$(awk '$1 == "tag" { e = $3 } END { print e }' <<<"$CELLS")"
+hq eval 'hl.config({ plugin = { awesome = { shell = { font_size = 24 } } } })' >/dev/null
+until_ok 3 clock_wide_big
+capture_nested "$STATE/cells-tags.png"
+TAGINK0="$(lit_px "$STATE/cells-tags.png" 0 "$TAGS_END" 0 24)"
+no_clock() { [[ -z "$(clock_w)" ]]; }
+tags_clean() { (($(lit_px "$1" 0 "$TAGS_END" 0 24) <= TAGINK0 + 4)); }
+hq eval "hl.config({ plugin = { awesome = { shell = { clock_format = \"$(printf 'W%.0s' {1..120})\" } } } })" >/dev/null
+chk "cells: a clock wider than the room left yields its cell" until_ok 3 no_clock
+chk "cells: ...and paints nothing over the tags" shot_until 3 "$STATE/cells-wide.png" tags_clean "$STATE/cells-wide.png"
+hq eval 'hl.config({ plugin = { awesome = { shell = { clock_format = "%a %b %-d %H:%M", font_size = 12 } } } })' >/dev/null
+until_ok 3 clock_back
 # the clicks over the bare desktop: a tray menu is measured below the strip,
 # where the probe's window would read as one (the right slot's cells stay)
 CP="$(clients | python3 -c "

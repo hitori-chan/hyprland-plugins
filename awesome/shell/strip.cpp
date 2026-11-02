@@ -263,9 +263,12 @@ namespace NAwesome::Shell {
         for (size_t i = std::size(RIGHT); i-- > 0;) {
             // Keep the right slot inside the space left by the taglist. If a
             // narrow output cannot fit every widget, leftmost right-side
-            // widgets yield first and no cell can overlap the tasklist.
-            const double GAP = first ? 0 : RIGHT_GAP;
-            const double WD  = std::min(RIGHT[i]->fit(P, F), std::max(0.0, right - GAP - x - SLOT_GAP));
+            // widgets yield first and no cell can overlap the tasklist: a
+            // widget that cannot shrink shows whole or not at all.
+            const double GAP  = first ? 0 : RIGHT_GAP;
+            const double FIT  = RIGHT[i]->fit(P, F);
+            const double ROOM = std::max(0.0, right - GAP - x - SLOT_GAP);
+            const double WD   = FIT <= ROOM ? FIT : RIGHT[i]->shrinks() ? ROOM : 0;
             if (WD > 0) {
                 right -= GAP + WD;
                 const CBox   CELL{right, MB.y, WD, H};
@@ -277,6 +280,8 @@ namespace NAwesome::Shell {
                     P.hits->push_back(SHit{.box = CELL, .widget = RIGHT[i]});
                 first = false;
             }
+            if (FIT > ROOM)
+                break;
         }
         // the right slot's cells meet halfway across each gap, the leftmost
         // reaches half a gap out, the rightmost (the clock) the screen's edge

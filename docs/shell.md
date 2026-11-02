@@ -15,8 +15,8 @@ screen's left edge, the clock 8 px off the right one.
   is the first tag, the top-right the clock. A click on the battery or
   the clock does nothing.
 - Geometry is monitor-local. On a narrow output the right slot never
-  crosses the tags: its leftmost widgets yield first, and the tasks take
-  what is left.
+  crosses the tags: its leftmost widgets yield first (the tray drops icons,
+  the others show whole or not at all), and the tasks take what is left.
 - The bar reserves its own band on every monitor (the fork's plugin
   reserved type): maximized, snapped and placed windows start below it,
   with no `reserved_area` in the monitor rule. A rule's own reserved top

@@ -332,6 +332,10 @@ namespace NAwesome::Shell {
         // a click on one of this widget's hits — input.cpp owns swallowing
         // and defers this out of the input emission
         virtual void onHit(const SHit& h, uint32_t bit, bool super) {}
+        // drawn into a cell narrower than its fit (the tray drops icons)
+        virtual bool shrinks() const {
+            return false;
+        }
         // wheel. Step-widgets coalesce notches through input.cpp's single
         // deferred hop (axis events arrive several per dispatch, and a lone
         // overwritten doLaterLock loses steps)...
