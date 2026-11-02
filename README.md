@@ -6,9 +6,7 @@ daemon, and the volume, brightness and touchpad keys.
 
 It is built against the exact
 [`hitori-chan/Hyprland`](https://github.com/hitori-chan/Hyprland) fork,
-not upstream Hyprland, and the compositor links the
-[`hitori-chan/aquamarine`](https://github.com/hitori-chan/aquamarine)
-fork.
+not upstream Hyprland.
 
 ## Install
 
