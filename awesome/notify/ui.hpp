@@ -31,9 +31,8 @@ namespace NAwesome::Notify {
     inline constexpr double EDGE = 12; // the column's right screen inset
 
     // The cards' top below the monitor's top: offset_y, but never closer
-    // than BAR_GAP under the workarea's top — the bar reserves its band (a
-    // notch's taller one too), and a card over it would be drawn where the
-    // strip takes the press. The open launcher's strip pushes them down by
+    // than BAR_GAP under the workarea's top — the bar reserves its band, and
+    // a card over it would be drawn where the strip takes the press. The open launcher's strip pushes them down by
     // its height (core/bands.hpp).
     inline constexpr double BAR_GAP = 12;
     inline double           cardsTop(const PHLMONITOR& mon) {

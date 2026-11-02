@@ -442,19 +442,6 @@ namespace NAwesome::Shell {
         Menu::hoverIntent(pl, pr); // open/close cascades on GTK's popup delay
     }
 
-    // the pointer entering a notch's band under fullscreen brings the bar
-    // back; it stays while the pointer is anywhere on the bar
-    static void trackBand(const PHLMONITOR& at, const Vector2D& pos) {
-        PHLMONITOR in;
-        if (at && at->m_fullscreenInsetTop > 0 && NAwesome::fullscreenOwns(at) &&
-            pos.y < at->logicalBox().y + (bandMon.lock() == at ? barHeight(at) : at->m_fullscreenInsetTop))
-            in = at;
-        if (in == bandMon.lock())
-            return;
-        bandMon = in;
-        barChanged();
-    }
-
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info) {
         const bool GRABBED = heldButtons > 0 || NAwesome::nativePointerGrabActive() || (g_layoutManager && g_layoutManager->dragController()->target());
 
@@ -464,11 +451,8 @@ namespace NAwesome::Shell {
         // the bar's tests walk the monitors and fetch the bar height — and a
         // drag sweeping across the screen emits motion the whole way
         PHLMONITOR MON;
-        if (!GRABBED) {
-            const auto AT = monitorAt(pos);
-            trackBand(AT, pos);
-            MON = barOwnsPoint(AT, pos);
-        }
+        if (!GRABBED)
+            MON = barOwnsPoint(monitorAt(pos), pos);
         if (!MON) {
             releasePointer();
             return;
@@ -497,10 +481,6 @@ namespace NAwesome::Shell {
         scrollAcc.clear();
         scrollQueued = false;
         releasePointer();
-        if (!bandMon.expired()) {
-            bandMon.reset();
-            barChanged();
-        }
         if (Menu::isOpen)
             Menu::close();
         if (Menubar::isOpen)
@@ -515,7 +495,6 @@ namespace NAwesome::Shell {
         hitboxes.clear();
         swallowRelease = 0;
         heldButtons    = 0;
-        bandMon.reset();
         releasePointer();
     }
 

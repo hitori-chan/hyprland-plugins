@@ -88,7 +88,6 @@ namespace NAwesome::Shell {
         supervisor().listen(EV.workspace.removed, [](PHLWORKSPACEREF) { barChanged(); });
         supervisor().listen(EV.workspace.moveToMonitor, [](PHLWORKSPACE, PHLMONITOR) { barChanged(); });
         supervisor().listen(EV.workspace.specialActive, [](PHLWORKSPACE, PHLMONITOR) { barChanged(); }); // its fullscreen hides the bar
-        // a mode or scale change can show or hide a notch: the band follows
         supervisor().listen(EV.monitor.layoutChanged, []() {
             reserveBars();
             barChanged();
@@ -185,18 +184,6 @@ namespace NAwesome::Shell {
 #else
         if (verb == "battery-note") // the battery's note as it shows ("" none)
             return Battery::noteDescribe();
-        // `notch W H`: a notch of W x H logical px on every monitor (the
-        // panel's firmware, faked); `notch` alone takes it away
-        if (verb == "notch" || verb.starts_with("notch ")) {
-            double w = 0, h = 0;
-            if (std::sscanf(verb.c_str(), "notch %lf %lf", &w, &h) == 2 && w > 0 && h > 0)
-                gateNotch = Notch::SNotch{.w = w, .h = h};
-            else
-                gateNotch.reset();
-            reserveBars();
-            barChanged();
-            return std::string{"ok"};
-        }
         if (verb != "cells")
             return std::nullopt;
         const auto IT = hitboxes.begin();

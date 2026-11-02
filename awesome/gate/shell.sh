@@ -354,58 +354,6 @@ center_shut() { [[ "$(st)" == "center:0 "* ]]; }
 chk "cells: a click on the clock leaves the center shut" center_shut
 center_shut || hq awesome center >/dev/null
 
-# ---- a display notch: the bar fills the band beside it ----------------------
-# The gate build fakes the panel's firmware (`notch W H`: a notch W x H
-# centred on every monitor; core/notch.hpp reads a real one). The bar grows
-# to the band and reserves it (37: the plugin adds what the rule's 30 does
-# not), the tags and the tasks end before the notch, the right slot starts
-# after it, no cell lies under it; without the notch the rule's 30 is back.
-dsp "hl.dsp.exec_cmd('foot -a notchprobe --window-size-pixels=400x200')"; settled notchprobe
-hq awesome notch 200 37 >/dev/null
-NOTCH_L=$(((MON_W - 200) / 2))
-chk "notch: the bar reserves the band" until_is 3 "0,37,0,0" reserved
-notch_split() {
-	hq awesome cells | python3 -c '
-import sys
-nl, nr, w = map(int, sys.argv[1:4])
-cells = [l.split() for l in sys.stdin.read().splitlines()]
-cells = [(c[0], int(c[1]), int(c[2])) for c in cells if len(c) == 3]
-left = [c for c in cells if c[0] in ("tag", "task")]
-right = [c for c in cells if c[0] in ("tray", "bell", "battery", "clock")]
-ok = "task" in [c[0] for c in left] and right and right[-1][0] == "clock" and right[-1][2] == w
-ok = ok and all(b <= nl for _, _, b in left) and all(a >= nr for _, a, _ in right)
-print(1 if ok else 0)
-' "$NOTCH_L" "$((NOTCH_L + 200))" "$MON_W"
-}
-chk "notch: the strip splits around it, no cell under it" until_is 3 1 notch_split ||
-	echo "  diag: cells $(hq awesome cells | tr '\n' ';')" >&2
-# A fullscreen window sits below the band (the fork's fullscreen inset),
-# still drawn alone, the band black. The pointer in the band brings the
-# bar back there; leaving it takes the bar away.
-fs_box() { clients | python3 -c "import json,sys; c=next(c for c in json.load(sys.stdin) if c['class']=='notchprobe'); print(*c['at'], *c['size'])"; }
-solitary() { hq monitors -j | python3 -c 'import json,sys; print(0 if json.load(sys.stdin)[0]["solitary"] in ("0", "") else 1)'; }
-band_dark() { (($(lit_px "$1" 0 "$MON_W" 0 37) == 0)); }
-band_bar() { (($(lit_px "$1" 0 "$NOTCH_L" 0 37) > 20)); }
-printf 'move %s %s\nsleep 60\n' "$((MON_W / 2))" "$((MON_H / 2))" | vp # out of the band: a capture's jitter there reveals the bar
-settle
-dsp "hl.dsp.window.fullscreen()"
-chk "notch: fullscreen sits below the band" until_is 3 "0 37 $MON_W $((MON_H - 37))" fs_box
-chk "notch: ...still drawn alone" until_is 3 1 solitary ||
-	echo "  diag: $(hq monitors -j | python3 -c 'import json,sys; print(json.load(sys.stdin)[0].get("solitaryBlockedBy"))')" >&2
-chk "notch: ...over a black band" shot_until 3 "$STATE/notch-fs.png" band_dark "$STATE/notch-fs.png"
-printf 'move %s 10\nsleep 60\n' "$((MON_W - 40))" | vp
-settle
-chk "notch: the pointer in the band brings the bar back" shot_until 3 "$STATE/notch-reveal.png" band_bar "$STATE/notch-reveal.png"
-printf 'move %s %s\nsleep 60\n' "$((MON_W / 2))" "$((MON_H / 2))" | vp
-settle
-chk "notch: leaving the band takes it away" shot_until 3 "$STATE/notch-hide.png" band_dark "$STATE/notch-hide.png"
-dsp "hl.dsp.window.fullscreen()"
-hq awesome notch >/dev/null
-chk "notch: gone, the rule's band is back" until_is 3 "0,30,0,0" reserved
-close_wait "$(clients | python3 -c "
-import json,sys
-print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='notchprobe'), ''))")"
-
 # ---- the bell's door ----------------------------------------------------------
 # A click opens the center on its bar's monitor and sets the bell on a white
 # pill (24 x 22, the glyph white: no accent); a click off every surface

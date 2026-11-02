@@ -45,8 +45,7 @@ namespace NAwesome {
     inline constexpr Spec SPECS[] = {
         {"plugin:awesome:theme:col_glass", "the glass of every surface: the bar, cards, the center, menus, the launcher (a tint over the blur; the default has none)", Kind::Color, 0, 0, {}, Theme::GLASS},
         {"plugin:awesome:theme:col_rim", "the glass rim", Kind::Color, 0, 0, {}, Theme::RIM},
-        {"plugin:awesome:shell:height", "bar height in logical px (the bar reserves it; a display notch's band makes it taller)", Kind::Int, 28, 0, {}, 0, 16, 64},
-        {"plugin:awesome:shell:notch_width", "a display notch's width in logical px (0: estimated from its height)", Kind::Int, 0, 0, {}, 0, 0, 1024},
+        {"plugin:awesome:shell:height", "bar height in logical px (the bar reserves it)", Kind::Int, 28, 0, {}, 0, 16, 64},
         {"plugin:awesome:shell:font_size", "text size in logical px (monitor scale applies at raster time)", Kind::Int, 12, 0, {}, 0, 6, 48},
         {"plugin:awesome:shell:tray_spacing", "px between tray icons (the right slot's rhythm)", Kind::Int, 15, 0, {}, 0, 0, 64},
         {"plugin:awesome:shell:font", "font family, or a Pango family list (the kanji tags take the first face that has them)", Kind::String, 0, 0, Theme::BAR_FONT},

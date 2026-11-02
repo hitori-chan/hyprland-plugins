@@ -32,8 +32,7 @@ hl.config({ plugin = { awesome = { shell = { terminal = "foot" } } } })
 ```
 
 The bar reserves its own band: a monitor rule needs no `reserved_area`.
-It follows the hardware it runs on: a display notch splits the bar
-around it, and the battery shows only where the machine has one.
+The battery shows only where the machine has one.
 
 Every function, `hyprctl` verb, config key and remembered state is in
 the [reference](docs/reference.md).

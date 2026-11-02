@@ -139,20 +139,10 @@ namespace NAwesome::Shell {
     // the texture key, so one window closing re-keys every task label at
     // once. warmBars() runs this same layout from the EVENT LOOP, a frame
     // ahead; by the time draw() runs, everything is a cache hit.
-    // Under a fullscreen window a notch's band stays black (the fork's
-    // fullscreen inset). The pointer in it brings the bar back there, as a
-    // menu bar comes back over fullscreen, and the bar stays while its menu
-    // or the center it opened is up; it covers only the band, never the
-    // window.
-    PHLMONITORREF bandMon;
-    static bool   revealed(const PHLMONITOR& mon) {
-        return mon->m_fullscreenInsetTop > 0 &&
-            (bandMon.lock() == mon || (Menu::isOpen && Menu::mon.lock() == mon) || (NAwesome::Notify::centerVisible() && NAwesome::Notify::cardsMon.lock() == mon));
-    }
     // the bar over a fullscreen window: the open menubar (awesome's ontop
-    // wibox) or the revealed band
+    // wibox)
     bool overFullscreenOn(const PHLMONITOR& mon) {
-        return mon && ((Menubar::isOpen && Menubar::mon.lock() == mon) || revealed(mon));
+        return mon && Menubar::isOpen && Menubar::mon.lock() == mon;
     }
     // otherwise the bar yields the output to a real fullscreen window:
     // renderBar early-returns, so the layer must not claim a live blur of a
@@ -251,20 +241,13 @@ namespace NAwesome::Shell {
         IWidget* const   LEFT[]  = {&taglistWidget()};
         IWidget* const   RIGHT[] = {&trayWidget(), &bellWidget(), &batteryWidget(), &clockWidget()};
 
-        // A display notch splits the strip like the menu bar beside it: the
-        // left slot and the tasklist end before it, the right slot starts
-        // after it, and nothing is placed or hit under it.
-        const auto   NOTCH  = notchOf(mon);
-        const double NOTCHL = NOTCH ? MB.x + NOTCH->x : MB.x + MB.w;
-        const double NOTCHR = NOTCH ? NOTCHL + NOTCH->w : MB.x;
-
         // Fitts: a pointer thrown into a screen corner stops there, so the
         // corners are the bar's easiest targets — the slot at each end owns
         // its edge, never a dead inset. Every hit spans the bar's height.
         const size_t LEFT_HITS = P.hits->size();
         double       x         = MB.x;
         for (auto* const W : LEFT) {
-            const double WD = std::min(W->fit(P, F), std::max(0.0, NOTCHL - x));
+            const double WD = std::min(W->fit(P, F), std::max(0.0, MB.x + MB.w - x));
             if (WD > 0)
                 W->draw(P, F, CBox{x, MB.y, WD, H});
             x += WD;
@@ -276,14 +259,13 @@ namespace NAwesome::Shell {
 
         const size_t RIGHT_HITS = P.hits->size();
         double       right      = MB.x + MB.w - RIGHT_INSET;
-        const double RIGHT_MIN  = std::max(x, NOTCHR); // what the right slot may not cross
         bool         first      = true;
         for (size_t i = std::size(RIGHT); i-- > 0;) {
             // Keep the right slot inside the space left by the taglist. If a
             // narrow output cannot fit every widget, leftmost right-side
             // widgets yield first and no cell can overlap the tasklist.
             const double GAP = first ? 0 : RIGHT_GAP;
-            const double WD  = std::min(RIGHT[i]->fit(P, F), std::max(0.0, right - GAP - RIGHT_MIN - SLOT_GAP));
+            const double WD  = std::min(RIGHT[i]->fit(P, F), std::max(0.0, right - GAP - x - SLOT_GAP));
             if (WD > 0) {
                 right -= GAP + WD;
                 const CBox   CELL{right, MB.y, WD, H};
@@ -318,16 +300,14 @@ namespace NAwesome::Shell {
             R.w     = MB.x + MB.w - R.x;
         }
 
-        // the tasklist splits the whole leftover strip (before a notch), 14
-        // px off each slot; its outer cells reach across those gaps to meet
-        // the slots' cells (and the notch's edge)
+        // the tasklist splits the whole leftover strip, 14 px off each slot;
+        // its outer cells reach across those gaps to meet the slots' cells
         const size_t TASK_HITS = P.hits->size();
-        const double TASK_END  = std::min(right, NOTCHL);
-        if (const double TASKW = std::max(0.0, TASK_END - x - 2 * SLOT_GAP); TASKW > 0)
+        if (const double TASKW = std::max(0.0, right - x - 2 * SLOT_GAP); TASKW > 0)
             tasklistWidget().draw(P, F, CBox{x + SLOT_GAP, MB.y, TASKW, H});
         if (P.hits->size() > TASK_HITS) {
             const double LEFT_EDGE  = RIGHT_HITS > LEFT_HITS ? (*P.hits)[RIGHT_HITS - 1].box.x + (*P.hits)[RIGHT_HITS - 1].box.w : MB.x;
-            const double RIGHT_EDGE = std::min(NOTCHL, TASK_HITS > RIGHT_HITS ? (*P.hits)[RIGHT_HITS].box.x : MB.x + MB.w); // sorted: the slot's leftmost
+            const double RIGHT_EDGE = TASK_HITS > RIGHT_HITS ? (*P.hits)[RIGHT_HITS].box.x : MB.x + MB.w; // sorted: the slot's leftmost
             auto&        FIRST      = (*P.hits)[TASK_HITS].box;
             FIRST.w += FIRST.x - LEFT_EDGE;
             FIRST.x    = LEFT_EDGE;
@@ -570,45 +550,23 @@ namespace NAwesome::Shell {
         NAwesome::Canvas::inst().warmAll(only, &popupLayer());
     }
 
-#ifdef AWESOME_GATE
-    std::optional<Notch::SNotch> gateNotch; // `hyprctl awesome notch W H`: every monitor's
-#endif
-
-    std::optional<Notch::SNotch> notchOf(const PHLMONITOR& mon) {
-#ifdef AWESOME_GATE
-        if (gateNotch && mon)
-            return Notch::SNotch{.x = (mon->logicalBox().w - gateNotch->w) / 2, .w = gateNotch->w, .h = gateNotch->h};
-#endif
-        // the built-in panel only, unrotated; the firmware is read once
-        static const int BAND = Notch::bandHeightPx("/sys/firmware/devicetree/base");
-        if (!BAND || !mon || mon->m_transform != WL_OUTPUT_TRANSFORM_NORMAL || !mon->m_name.starts_with("eDP"))
-            return std::nullopt;
-        return Notch::geometry(BAND, (int)mon->m_pixelSize.x, (int)mon->m_pixelSize.y, mon->m_scale, (double)cfg().getI("plugin:awesome:shell:notch_width"));
-    }
-
-    double barHeight(const PHLMONITOR& mon) {
-        const double H = std::max((double)cfg().getI("plugin:awesome:shell:height"), 8.0);
-        const auto   N = notchOf(mon);
-        return N ? std::max(H, std::ceil(N->h)) : H;
+    double barHeight(const PHLMONITOR&) {
+        return (double)cfg().getI("plugin:awesome:shell:height");
     }
 
     // The bar's band, reserved per monitor as the plugin's own dynamic type
     // (the fork's RESERVED_DYNAMIC_TYPE_PLUGIN): windows and layer surfaces
-    // lay out below it, and a notch's taller band follows. What a monitor
-    // rule already reserves at the top counts toward it. A notch's band is
-    // also the fork's fullscreen inset: fullscreen windows sit below it.
+    // lay out below it. What a monitor rule already reserves at the top
+    // counts toward it.
     void reserveBars() {
         if (!g_pHyprRenderer || NAwesome::compositorShuttingDown())
             return;
         for (const auto& M : State::monitorState()->monitors()) {
             const double BEFORE = M->m_reservedArea.top();
             const double OWN    = std::max(0.0, barHeight(M) - M->m_activeMonitorRule.m_reservedArea.top());
-            const auto   N      = notchOf(M);
-            const double INSET  = N ? std::ceil(N->h) : 0.0;
-            const bool   MOVED  = std::exchange(M->m_fullscreenInsetTop, INSET) != INSET;
             M->m_reservedArea.resetType(Desktop::RESERVED_DYNAMIC_TYPE_PLUGIN);
             M->m_reservedArea.addType(Desktop::RESERVED_DYNAMIC_TYPE_PLUGIN, Vector2D{0.0, OWN}, Vector2D{0.0, 0.0});
-            if (M->m_reservedArea.top() != BEFORE || MOVED)
+            if (M->m_reservedArea.top() != BEFORE)
                 g_pHyprRenderer->arrangeLayersForMonitor(M->m_id);
         }
     }
@@ -618,9 +576,8 @@ namespace NAwesome::Shell {
             return;
         for (const auto& M : State::monitorState()->monitors()) {
             const double BEFORE = M->m_reservedArea.top();
-            const bool   MOVED  = std::exchange(M->m_fullscreenInsetTop, 0.0) != 0.0;
             M->m_reservedArea.resetType(Desktop::RESERVED_DYNAMIC_TYPE_PLUGIN);
-            if (M->m_reservedArea.top() != BEFORE || MOVED)
+            if (M->m_reservedArea.top() != BEFORE)
                 g_pHyprRenderer->arrangeLayersForMonitor(M->m_id);
         }
     }

@@ -8,7 +8,7 @@ reply and sounds.
 
 Cards appear top-right on the focused monitor, newest at the top,
 `offset_y` below the monitor's top and at least 12 px under the bar's
-reserved band (a notch's taller bar pushes them down). While the
+reserved band. While the
 launcher's strip is open on that monitor, the cards and the center sit
 its height lower. The stack follows a keyboard or workspace focus
 change, but not one the pointer makes, so grazing the next monitor's

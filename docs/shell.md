@@ -22,30 +22,6 @@ screen's left edge, the clock 8 px off the right one.
   with no `reserved_area` in the monitor rule. A rule's own reserved top
   counts toward the band.
 
-### A display notch
-
-On a laptop panel with a notch (Apple silicon booted with
-`appledrm.show_notch=1`), the bar fills the band beside the notch: it is
-as tall as the band (37 px on the 14" and 16" M-series panels at scale
-2) where that is taller than `height`, and splits around the notch. The
-tags and the tasks end before it, the tray, bell, battery and clock
-start after it, and no widget is drawn or clicked under it (the glass
-runs on underneath).
-
-- The band's height comes from the firmware (the device tree's
-  `apple,notch-height` on the enabled display node); the notch shows
-  when the mode is the 16:10 panel plus exactly that band, on the
-  built-in panel (`eDP`), unrotated.
-- Nothing reports the notch's width: it follows the height at the
-  measured ratio (374 px on a 74 px band, 187 logical at scale 2), and
-  `notch_width` sets it in logical px.
-- A fullscreen window sits below the band, which stays black. Direct
-  scanout still applies: the display places the window's buffer below
-  the band and leaves the band black itself, so it costs no
-  compositing. The pointer in the band brings the bar back there, and
-  it stays while its menu or the center it opened is up; it covers only
-  the band, never the window.
-
 ### Workspaces
 
 Nine kanji tags (一 to 九) in 26 px cells. The viewed tag stands on

@@ -32,8 +32,8 @@ their symbols. It covers the bounded types, box math, the config schema
 (the clamps, the alpha-0 colour guard), store and option admission,
 wpctl parsing, `Exec=` and launcher quoting, text cutting, the process
 runner under the compositor's signal state, the icon-theme cache reader,
-the glyph shapes, the battery's raster and note, a chat card's
-transcript and the notch geometry.
+the glyph shapes, the battery's raster and note, and a chat card's
+transcript.
 
 ## The gate
 
@@ -142,7 +142,6 @@ The gate build adds `hyprctl awesome` verbs for the batteries:
 |---|---|
 | `cells` | the bar's click cells |
 | `battery-note` | the battery's note as it shows |
-| `notch W H` | a W x H notch on every monitor (`notch` alone removes it) |
 | `shown` | the newest card's body as drawn |
 | `capsule` | the live capsule's words |
 | `center-rows` | the open center's status line and rows |

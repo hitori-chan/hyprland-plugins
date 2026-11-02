@@ -54,7 +54,7 @@ compositor is built from.
 - The user performs sudo installs and deploys (Aquamarine, then the
   fork: install + relog, then `hyprpm update`).
 - Two machines run it: a ThinkPad (x86, this host) and an Apple silicon
-  laptop (Asahi; a display notch, scale 2, a P3 panel). Hardware-shaped
+  laptop (Asahi; scale 1.5, a P3 panel). Hardware-shaped
   behavior detects the machine at runtime and never hard-codes one
   machine's values. The Apple laptop is reached only through its own
   agent session (~/repo/asahilinux), which runs anything there.

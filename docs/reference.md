@@ -47,7 +47,7 @@ adds its own verbs ([testing](testing.md#scripts)).
 
 ## Configuration
 
-46 keys, `plugin:awesome:<group>:<key>` (a module's, or `theme`'s for
+45 keys, `plugin:awesome:<group>:<key>` (a module's, or `theme`'s for
 the material they share), declared in
 [`core/schema.hpp`](../awesome/core/schema.hpp). Out-of-range values
 clamp. In Lua:
@@ -75,8 +75,7 @@ already looks right.
 
 | Key | Default | |
 |---|---|---|
-| `height` | 28 | bar height, logical px; the bar reserves it (a notch's band makes it taller) |
-| `notch_width` | 0 | a display notch's width, logical px (0: estimated from its height) |
+| `height` | 28 | bar height, logical px; the bar reserves it |
 | `font_size` | 12 | text size, logical px |
 | `tray_spacing` | 15 | px between tray icons |
 | `font` | `Fira Code, IBM Plex Sans JP` | font family or Pango family list (the kanji tags take the first face that has them) |
