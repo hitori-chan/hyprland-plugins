@@ -30,6 +30,8 @@ make -C devtools HL=/path/to/Hyprland
   screencast does (a still screen keeps a frame waiting); `-n` stops
   after that many frames and stays connected, as a screenshot tool
   leaves its session.
+- `toplevel APP_ID` activates the first toplevel with that app id over
+  wlr-foreign-toplevel, as a taskbar or a window switcher picks a window.
 - `fixwin WIDTH HEIGHT [TITLE]` maps a fixed-size xdg-toplevel (min ==
   max, the dialog/splash shape) to test placement of windows that refuse
   to resize.

@@ -34,6 +34,9 @@ devtools/cliphold-proto.h
 devtools/sharehold
 devtools/sharehold-proto.c
 devtools/sharehold-proto.h
+devtools/toplevel
+devtools/toplevel-proto.c
+devtools/toplevel-proto.h
 devtools/fixwin
 devtools/fixwin-proto.c
 devtools/fixwin-protocol.h
