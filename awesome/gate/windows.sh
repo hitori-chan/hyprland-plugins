@@ -1,6 +1,7 @@
 # The windows module's behavior battery: spawn placement, the CSD geometry
-# battery (a real GTK3 client included), and maximize/minimize/restore
-# round-trips. A geometry change runs this file alone (-b windows).
+# battery (a real GTK3 client included), maximize/minimize/restore
+# round-trips, and the fork's fifo barrier. A geometry change runs this file
+# alone (-b windows).
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh" # until_is
 
 # ---- placement memory ---------------------------------------------------
@@ -663,6 +664,15 @@ chk "shadow: a new window's shadow reaches all around it" \
 	echo "shadow: at $SX,$SY ${SW}x$SH, $(cat "$STATE/shadow.txt")" >&2
 close_wait "$(class_addr shadowa)"
 hq eval "hl.config({ decoration = { shadow = { enabled = false } } })" >/dev/null
+
+# fifo-v1: Mesa replaces a swapchain's fifo object a roundtrip apart, and a
+# frame presented in between must not leave the new object's frames held on
+# a barrier nothing clears (an ~8 s stall until the not-responding dialog
+# drew a frame)
+chk "fifo: a replaced fifo object holds back no frame" \
+	env WAYLAND_DISPLAY="$WL" timeout 10 "$REPO/devtools/fifowin" recreate 60
+fifowin_gone() { ! has_class fifowin; }
+until_ok 5 fifowin_gone
 
 chk "windows: its foot is closed at the battery's end" \
 	test "$(pyc "sum(1 for c in cs if c['class']=='foot')")" = 0
