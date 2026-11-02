@@ -10,12 +10,16 @@
 //   kill -USR1 <pid>    — ask for attention: Status NeedsAttention and
 //                         NewStatus, with no attention icon of its own (as
 //                         most apps do)
+//   kill -USR2 <pid>    — a row "zero" (id 11) joins the root's top and
+//                         LayoutUpdated says so, as an applet's list reshuffles
+//   stdout              — `event <id>` for every row clicked
 //
 // The icon is a solid 22x22 magenta pixmap (SNI ARGB32, network byte order)
 // so the gate can locate the item in the bar band by color, theme-free.
 //
 // Layout (ids are stable across GetLayout calls):
-//   root   : 1 "one" · 2 "two" · 3 SEP · 4 SEP · 5 "three" · 6 "sub"▸ · 7 SEP
+//   root   : (11 "zero" after USR2) · 1 "one" · 2 "two" · 3 SEP · 4 SEP ·
+//            5 "three" · 6 "sub"▸ · 7 SEP
 //   sub (6): 8 "sub-one" · 9 "sub-two" · 10 SEP
 //
 // libdbus writer notes (do not "simplify" back):
@@ -68,6 +72,13 @@ static void on_attention(int) {
 	attention = 1;
 }
 
+static volatile sig_atomic_t zero = 0; // 1 asked, 2 announced
+static uint32_t              revision = 1;
+
+static void on_zero(int) {
+	zero = 1;
+}
+
 // ---- dbusmenu layout ------------------------------------------------------
 
 struct Row {
@@ -79,6 +90,7 @@ struct Row {
 static const struct Row ROOT[] = {
 	{1, "one", 0}, {2, "two", 0}, {3, NULL, 0}, {4, NULL, 0}, {5, "three", 0}, {6, "sub", 1}, {7, NULL, 0},
 };
+static const struct Row ZERO  = {11, "zero", 0};
 static const struct Row SUB[] = {
 	{8, "sub-one", 0}, {9, "sub-two", 0}, {10, NULL, 0},
 };
@@ -132,8 +144,7 @@ static void reply_layout(DBusConnection *c, DBusMessage *m, int32_t parent) {
 		return;
 	DBusMessageIter it, root, props, kids;
 	dbus_message_iter_init_append(r, &it);
-	uint32_t rev = 1;
-	dbus_message_iter_append_basic(&it, DBUS_TYPE_UINT32, &rev);
+	dbus_message_iter_append_basic(&it, DBUS_TYPE_UINT32, &revision);
 	dbus_message_iter_open_container(&it, DBUS_TYPE_STRUCT, NULL, &root);
 	dbus_message_iter_append_basic(&root, DBUS_TYPE_INT32, &parent);
 	dbus_message_iter_open_container(&root, DBUS_TYPE_ARRAY, "{sv}", &props); // empty props
@@ -141,6 +152,8 @@ static void reply_layout(DBusConnection *c, DBusMessage *m, int32_t parent) {
 	dbus_message_iter_open_container(&root, DBUS_TYPE_ARRAY, "v", &kids);
 	const struct Row *rows = parent == 6 ? SUB : ROOT;
 	const size_t      n    = parent == 6 ? (sizeof(SUB) / sizeof(*SUB)) : (sizeof(ROOT) / sizeof(*ROOT));
+	if (parent == 0 && zero)
+		append_row(&kids, &ZERO);
 	for (size_t i = 0; i < n; i++)
 		append_row(&kids, &rows[i]);
 	dbus_message_iter_close_container(&root, &kids);
@@ -172,11 +185,23 @@ static DBusHandlerResult handle_menu(DBusConnection *c, DBusMessage *m, void *) 
 		return DBUS_HANDLER_RESULT_HANDLED;
 	}
 	if (strcmp(member, "Event") == 0 || strcmp(member, "SendActionForId") == 0) {
+		int32_t         id = 0;
+		const char *    ev = "clicked";
+		DBusMessageIter it;
+		if (dbus_message_iter_init(m, &it)) {
+			dbus_message_iter_get_basic(&it, &id);
+			if (strcmp(member, "Event") == 0 && dbus_message_iter_next(&it) && dbus_message_iter_get_arg_type(&it) == DBUS_TYPE_STRING)
+				dbus_message_iter_get_basic(&it, &ev);
+		}
+		if (strcmp(ev, "clicked") == 0) {
+			printf("event %d\n", id);
+			fflush(stdout);
+		}
 		DBusMessage *r = dbus_message_new_method_return(m); // no reply would hang the host's async call
 		if (r)
 			dbus_connection_send(c, r, nullptr);
 		dbus_message_unref(r);
-		return DBUS_HANDLER_RESULT_HANDLED; // the gate never acts on a row
+		return DBUS_HANDLER_RESULT_HANDLED;
 	}
 	// Properties.Get on the menu object: dbusmenu declares no properties —
 	// the SNI properties live on /StatusNotifierItem (handle_sni). Answer
@@ -398,6 +423,7 @@ int main(void) {
 	signal(SIGTERM, on_signal);
 	signal(SIGINT, on_signal);
 	signal(SIGUSR1, on_attention);
+	signal(SIGUSR2, on_zero);
 	signal(SIGPIPE, SIG_IGN);
 
 	bus = dbus_bus_get(DBUS_BUS_SESSION, nullptr);
@@ -423,6 +449,17 @@ int main(void) {
 		dbus_connection_read_write_dispatch(bus, 200);
 		if (!registered)
 			try_register();
+		if (zero == 1) {
+			zero = 2;
+			revision++;
+			int32_t      parent = 0;
+			DBusMessage *sig    = dbus_message_new_signal("/menu", "com.canonical.dbusmenu", "LayoutUpdated");
+			if (sig) {
+				dbus_message_append_args(sig, DBUS_TYPE_UINT32, &revision, DBUS_TYPE_INT32, &parent, DBUS_TYPE_INVALID);
+				dbus_connection_send(bus, sig, nullptr);
+				dbus_message_unref(sig);
+			}
+		}
 		if (attention == 1) {
 			attention = 2;
 			status    = "NeedsAttention";
