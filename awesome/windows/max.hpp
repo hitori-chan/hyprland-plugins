@@ -251,12 +251,12 @@ namespace NAwesome::Windows {
                 Fullscreen::controller()->setFullscreenMode(W, Fullscreen::FSMODE_NONE, Fullscreen::FSMODE_NONE);
 
                 // Born maximized: the compositor just granted the client the
-                // size choice (m_sizeFromClientSerial armed). If this app's
+                // size choice (the client size grant armed). If this app's
                 // windowed box is remembered, that beats the client's answer
                 // — GTK forgets its normal geometry across restarts.
                 const auto MON = W->m_monitor.lock();
                 const auto B   = windowedOn(W->metadata().appID(), MON);
-                if (B && W->m_sizeFromClientSerial && W->isFloating()) {
+                if (B && W->backend().m_clientSizeGrant.serial && W->isFloating()) {
                     W->cancelClientSize();
                     setGeom(W, boundedRestore(W, *B, MON->logicalBoxMinusReserved()));
                     W->windowTarget()->warpPositionSize();
@@ -317,7 +317,7 @@ namespace NAwesome::Windows {
                 } else {
                     // adopted with no remembered box: the client picks its
                     // size (the 0x0 grant; the commit adoption recenters it)
-                    W->requestClientSize();
+                    W->backend().requestClientSize();
                 }
             } else {
                 const auto BOX = W->windowTarget()->position();
