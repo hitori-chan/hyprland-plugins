@@ -137,6 +137,15 @@ chk "system: the mic readback posts a card" test "$(st)" = "center:0 live:1 dnd:
 dsp "hl.plugin.awesome.mic_mute()"; idle
 hq awesome clear >/dev/null
 
+# wpctl runs in the C locale: a session's own decimal separator (here
+# U+066B, Dari's) never reaches the readback
+printf '\xd9\xab' >"$STATE/wpctl-decimal"
+dsp "hl.plugin.awesome.mute()"; idle
+chk "system: the readback parses under any session locale" test "$(st)" = "center:0 live:1 dnd:0"
+dsp "hl.plugin.awesome.mute()"; idle
+rm -f "$STATE/wpctl-decimal"
+hq awesome clear >/dev/null
+
 # ---- the logind brightness path --------------------------------------------
 # The plugin's real path — sysfs read, logind SetBrightness over the system
 # bus — against the nested's PRIVATE system bus: a fake logind writes the

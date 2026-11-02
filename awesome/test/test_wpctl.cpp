@@ -1,5 +1,4 @@
-// The readback parse (the single consumer of `wpctl get-volume` output) and
-// the sinks of `wpctl status`.
+// The readback parse (the single consumer of `wpctl get-volume` output).
 #include "../system/wpctl.hpp"
 
 #include "harness.hpp"
@@ -32,12 +31,8 @@ bool test_wpctl() {
         AW_CHECK(R->muted);
         AW_CHECK(std::abs(R->value - 0.50) < 1e-9);
     }
-    // the locale decimal comma (one comma, no dot)
-    {
-        const auto R = parseReadback("Volume: 0,85");
-        AW_CHECK(R.has_value());
-        AW_CHECK(std::abs(R->value - 0.85) < 1e-9);
-    }
+    // wpctl runs in the C locale: a locale's decimal comma is not a number
+    AW_CHECK(!parseReadback("Volume: 0,85").has_value());
     // hostility: nothing but a number and the [MUTED] flag is valid
     AW_CHECK(!parseReadback("").has_value());
     AW_CHECK(!parseReadback("Volume:").has_value());
@@ -46,7 +41,6 @@ bool test_wpctl() {
     AW_CHECK(!parseReadback("Volume: 1e400").has_value()); // overflow to inf
     AW_CHECK(!parseReadback("Volume: 0.5 garbage").has_value());
     AW_CHECK(!parseReadback("Volume: 0.5 [MUTED] junk").has_value());
-    AW_CHECK(!parseReadback("Volume: 0,.5").has_value()); // two separators
     AW_CHECK(!parseReadback("No device found").has_value()); // no default sink
     AW_CHECK(!parseReadback("").has_value());
 

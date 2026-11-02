@@ -113,10 +113,11 @@ namespace NAwesome::System {
     static void headsetReadDone();
 
     // the card follows a set; a raise's read of the level ahead of its set
-    // shows nothing (the set's own readback is the card)
+    // shows nothing (the set's own readback is the card). wpctl runs in the
+    // C locale: it prints its numbers in the session's decimal separator.
     static void readBack(SDevice& d, eShow show = eShow::ALWAYS) {
         const uint64_t GEN = ++d.generation;
-        const bool     OK  = Jobs::inst().spawnPiped(Jobs::CONTROL, {"wpctl", "get-volume", d.node, nullptr}, [&d, GEN, show](Jobs::SPipedResult R) {
+        const bool     OK  = Jobs::inst().spawnPiped(Jobs::CONTROL, {"env", "LC_ALL=C", "wpctl", "get-volume", d.node, nullptr}, [&d, GEN, show](Jobs::SPipedResult R) {
             if (GEN != d.generation)
                 return; // a teardown, or a newer set already reads back
             d.busy        = false;
@@ -157,7 +158,7 @@ namespace NAwesome::System {
         std::string amount, limit; // outlive the spawn: the argv is copied there
         std::vector<const char*> argv;
         if (TOGGLE)
-            argv = {"wpctl", "set-mute", d.node, "toggle", nullptr};
+            argv = {"env", "LC_ALL=C", "wpctl", "set-mute", d.node, "toggle", nullptr};
         else if (d.steps != 0) {
             amount = std::to_string(std::min(std::abs(d.steps) * cfg().getI("plugin:awesome:system:volume_step"), 100)) + (d.steps > 0 ? "%+" : "%-");
             if (d.steps > 0) {
@@ -166,9 +167,9 @@ namespace NAwesome::System {
                 // then the current level (+0.005: the readback rounds to 0.01)
                 const double CAP = cfg().getI("plugin:awesome:system:volume_max") / 100.0;
                 limit            = std::format("{:.3f}", d.level > CAP ? d.level + 0.005 : CAP);
-                argv  = {"wpctl", "set-volume", "-l", limit.c_str(), d.node, amount.c_str(), nullptr};
+                argv  = {"env", "LC_ALL=C", "wpctl", "set-volume", "-l", limit.c_str(), d.node, amount.c_str(), nullptr};
             } else
-                argv = {"wpctl", "set-volume", d.node, amount.c_str(), nullptr};
+                argv = {"env", "LC_ALL=C", "wpctl", "set-volume", d.node, amount.c_str(), nullptr};
         }
         if (argv.empty())
             return;
