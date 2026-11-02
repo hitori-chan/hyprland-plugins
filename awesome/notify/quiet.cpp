@@ -54,6 +54,22 @@ namespace NAwesome::Notify::Quiet {
         return false;
     }
 
+#ifdef AWESOME_GATE
+    // the fork's session lifetime, seen from outside: a session not yet
+    // stopped (active), and an output the compositor counts as shared (live:
+    // it keeps the mirror buffer)
+    std::string describeShares() {
+        uint32_t active = 0, live = 0;
+        if (Screenshare::mgr())
+            for (const auto& M : State::monitorState()->monitors())
+                if (M) {
+                    active += Screenshare::mgr()->outputCopyFBState(M).activeSessions;
+                    live += Screenshare::mgr()->isOutputBeingSSd(M) ? 1 : 0;
+                }
+        return std::format("active:{} live:{}", active, live);
+    }
+#endif
+
     eWhy why() {
         if (on(eOption::QUIET_SHARING) && shareLive())
             return eWhy::SHARING;

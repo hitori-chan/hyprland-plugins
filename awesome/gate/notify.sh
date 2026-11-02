@@ -804,7 +804,11 @@ chk "quiet: a one-frame screenshot is copied" share_start "$STATE/shot.log" -n 1
 sleep 1.6
 chk "quiet: the screenshot leaves the banner up" test "$(bd)" = "banners:1 resident:0"
 chk "quiet: ...and is no share once copied" until_is 3 "now:0 hushed:0" hq awesome quiet
+# the fork's sessions: an idle one keeps no mirror buffer, and a session
+# ends with its client
+chk "shares: an idle screenshot client counts as no share" until_is 3 "active:1 live:0" hq awesome shares
 share_stop
+chk "shares: its session ends with the client" until_is 3 "active:0 live:0" hq awesome shares
 # a screencast: copies with damage, so a still screen keeps a frame waiting
 chk "quiet: a screencast is copied" share_start "$STATE/share.log" -d
 chk "quiet: the share sends the banner to the shade" until_is 4 "banners:0 resident:1" bd
@@ -820,6 +824,7 @@ chk "quiet: the open center says why arrivals hold" until_is 3 "quiet:while you 
 hq awesome center >/dev/null
 share_stop
 chk "quiet: the share's end gives the words back" until_is 4 "now:0 hushed:0" hq awesome quiet
+chk "shares: the screencast's session ends with it" until_is 3 "active:0 live:0" hq awesome shares
 nclear
 bell_open; bell_pick 1
 chk "quiet: sharing off, the row goes" until_is 3 "" opt_row quiet-sharing

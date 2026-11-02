@@ -435,6 +435,9 @@ namespace NAwesome::Notify {
         bool hushed();                    // a share is up: a critical banner shows without its words
         void refresh();                   // a share, a fullscreen or the focus moved (deferred out of its emission)
         void exit();
+#ifdef AWESOME_GATE
+        std::string describeShares(); // the compositor's capture state: "active:N live:N"
+#endif
     }
 
     // ---- bus.cpp: the connection ----
