@@ -518,8 +518,9 @@ done
 until_is 5 0 w2_count
 
 # ---- a switch to a minimized window restores it -------------------------
-# Mod+U (urgent_or_last) or a focus dispatch naming a minimized window is
-# the user's pick: restored and focused, as awesome's jump_to un-minimizes.
+# Mod+U (urgent_or_last), a focus dispatch or a taskbar's pick naming a
+# minimized window is the user's: restored and focused, as awesome's jump_to
+# un-minimizes.
 # Two restores in one dispatch restore two windows.
 hidden_of() { clients | python3 -c "
 import json,sys
@@ -545,6 +546,10 @@ dsp "hl.plugin.awesome.minimize()"
 until_is 2 "1 w3c" w3b_state
 dsp "hl.dsp.focus({window=\"address:$W3B\"})"
 chk "jump: a focus dispatch naming a minimized window restores it" until_is 2 "0 w3b" w3b_state
+dsp "hl.plugin.awesome.minimize()"
+until_is 2 "1 w3c" w3b_state
+env WAYLAND_DISPLAY="$WL" "$REPO/devtools/toplevel" w3b
+chk "jump: a taskbar's pick of a minimized window restores it" until_is 2 "0 w3b" w3b_state
 dsp "hl.plugin.awesome.minimize()"
 until_is 2 w3c active_class
 dsp "hl.plugin.awesome.minimize()"

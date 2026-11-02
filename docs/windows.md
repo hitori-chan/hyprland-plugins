@@ -66,7 +66,7 @@ are typing.
 | an app asks for activation (xdg-activation) with `misc:focus_on_activate` off, the fork's default | its task turns urgent; a task click, `Mod+U` or a tray or card click completes it |
 | the focused, visible window asks | nothing (awesome never marks the focused client urgent) |
 | a window on another workspace, or minimized, asks | urgency only: no focus, no workspace switch |
-| a taskbar or window switcher activates a window (wlr-foreign-toplevel) | it is focused wherever it is: the pick is the user's |
+| a taskbar or window switcher activates a window (wlr-foreign-toplevel) | it is focused wherever it is, restored first when minimized: the pick is the user's |
 | an X11 app sends `_NET_ACTIVE_WINDOW` | urgency only, always: X11 cannot authenticate the gesture, and Wine sends it on every internal focus change |
 
 - Focus clears urgency, as in awesome.
