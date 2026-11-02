@@ -1,7 +1,8 @@
 # The windows module's behavior battery: spawn placement, the CSD geometry
 # battery (a real GTK3 client included), maximize/minimize/restore
-# round-trips, a born-fullscreen client's first configure and the fork's fifo
-# barrier. A geometry change runs this file alone (-b windows).
+# round-trips, a born-fullscreen or maximized client's first configure and
+# the fork's fifo barrier. A geometry change runs this file alone
+# (-b windows).
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh" # until_is
 
 # ---- placement memory ---------------------------------------------------
@@ -670,19 +671,24 @@ chk "shadow: a new window's shadow reaches all around it" \
 close_wait "$(class_addr shadowa)"
 hq eval "hl.config({ decoration = { shadow = { enabled = false } } })" >/dev/null
 
-# A client asking fullscreen before its initial commit (a game, a video
-# player's --fs) is told so in its first configure, at the output's size:
-# told windowed, it sizes its first buffers (glmark2 its viewport, for good)
-# for a frame it never shows. Map rules on the ask and takes a refusal back.
-fsask_run() { # the fixture's configures land in $STATE/<app id>.log
-	env WAYLAND_DISPLAY="$WL" "$REPO/devtools/fsask" "$1" >"$STATE/$1.log" 2>/dev/null &
+# A client asking fullscreen or maximized before its initial commit (a game,
+# a video player's --fs, an app restoring its state) is told so in its
+# first configure, at the output's size or its work area: told windowed, it
+# sizes its first buffers (glmark2 its viewport, for good) for a frame it
+# never shows. Map rules on the ask and takes a refusal back.
+fsask_run() { # fsask_run <app id> [maximized]: the configures land in $STATE/<app id>.log
+	env WAYLAND_DISPLAY="$WL" "$REPO/devtools/fsask" "$@" >"$STATE/$1.log" 2>/dev/null &
 	FSASK_PID=$!
 }
 fsask_first() { head -n 1 "$STATE/$1.log"; }
-fsask_state() { # "<mapped> <the last configure tells fullscreen>"
+fsask_state() { # fsask_state <app id> <xdg state>: "<mapped> <the last configure tells it>"
 	local log="$STATE/$1.log"
-	echo "$(grep -c '^map$' "$log") $(grep -v '^map$' "$log" | tail -n 1 | cut -d' ' -f3- | tr ' ' '\n' | grep -c '^2$')"
+	echo "$(grep -c '^map$' "$log") $(grep -v '^map$' "$log" | tail -n 1 | cut -d' ' -f3- | tr ' ' '\n' | grep -c "^$2\$")"
 }
+workarea_wh() { hq monitors -j | python3 -c "
+import json,sys
+m = json.load(sys.stdin)[0]; l, t, r, b = m['reserved']
+print(m['width'] - l - r, m['height'] - t - b)"; }
 fsask_gone() { ! has_class "$1"; }
 fsask_stop() {
 	kill "$FSASK_PID" 2>/dev/null
@@ -691,12 +697,20 @@ fsask_stop() {
 }
 fsask_run fsask
 chk "born fullscreen: the first configure tells it, at the output's size" until_is 3 "$MON_W $MON_H 2" fsask_first fsask
-chk "born fullscreen: it maps told fullscreen" until_is 3 "1 1" fsask_state fsask
+chk "born fullscreen: it maps told fullscreen" until_is 3 "1 1" fsask_state fsask 2
 fsask_stop fsask
 hq eval 'hl.window_rule({ match = { class = "fsdeny" }, suppress_event = "fullscreen" })' >/dev/null
 fsask_run fsdeny
-chk "born fullscreen: a refused ask is taken back at map" until_is 3 "1 0" fsask_state fsdeny
+chk "born fullscreen: a refused ask is taken back at map" until_is 3 "1 0" fsask_state fsdeny 2
 fsask_stop fsdeny
+fsask_run maxask maximized
+chk "born maximized: the first configure tells it, at the work area" until_is 3 "$(workarea_wh) 1" fsask_first maxask
+chk "born maximized: it maps told maximized" until_is 3 "1 1" fsask_state maxask 1
+fsask_stop maxask
+hq eval 'hl.window_rule({ match = { class = "maxdeny" }, suppress_event = "maximize" })' >/dev/null
+fsask_run maxdeny maximized
+chk "born maximized: a refused ask is taken back at map" until_is 3 "1 0" fsask_state maxdeny 1
+fsask_stop maxdeny
 
 # fifo-v1: Mesa replaces a swapchain's fifo object a roundtrip apart, and a
 # frame presented in between must not leave the new object's frames held on
