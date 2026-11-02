@@ -1,5 +1,6 @@
 #include "desktopindex.hpp"
 #include "desktop_exec.hpp"
+#include "jobs.hpp"
 
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
@@ -55,32 +56,6 @@ namespace NAwesome {
             addDir("/var/lib/flatpak/exports/share/applications");
             return dirs;
         }
-
-        // the dirs' mtimes and their subdirs' (the scan recurses: an entry
-        // added under wine/Programs/ changes only its own dir), bounded
-        std::vector<int64_t> stampsOf(const std::vector<std::string>& dirs) {
-            constexpr size_t     MAX_SUBDIRS = 64;
-            std::vector<int64_t> out;
-            out.reserve(dirs.size());
-            const auto STAMP = [&](const std::filesystem::path& p) {
-                std::error_code ec;
-                const auto      T = std::filesystem::last_write_time(p, ec);
-                out.push_back(ec ? 0 : (int64_t)T.time_since_epoch().count());
-            };
-            size_t subdirs = 0;
-            for (const auto& D : dirs) {
-                STAMP(D);
-                std::error_code ec;
-                // increment(ec): the range-for's operator++ throws
-                for (auto it = std::filesystem::recursive_directory_iterator(D, std::filesystem::directory_options::skip_permission_denied, ec);
-                     !ec && it != std::filesystem::recursive_directory_iterator() && subdirs < MAX_SUBDIRS; it.increment(ec))
-                    if (std::error_code dec; it->is_directory(dec)) {
-                        STAMP(it->path());
-                        subdirs++;
-                    }
-            }
-            return out;
-        }
     }
 
     void CDesktopIndex::start() {
@@ -88,7 +63,7 @@ namespace NAwesome {
             return;
         m_poll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { CDesktopIndex::inst().poll(); }, nullptr);
         g_pEventLoopManager->addTimer(m_poll);
-        request(false);
+        probe(false);
     }
 
     void CDesktopIndex::stop() {
@@ -99,22 +74,51 @@ namespace NAwesome {
         m_live     = {};
         m_next     = {};
         m_subs.clear();
-        m_scanning = m_aside = false;
+        m_scanning = m_aside = m_probing = false;
+        ++m_probeGeneration; // a probe still running answers no one
     }
 
     void CDesktopIndex::refreshIfStale() {
-        // not started, or a scan under way (it reads the dirs as they are)
-        if (!m_poll || m_scanning)
+        // not started, or a scan (it reads the dirs as they are) or a probe
+        // under way
+        if (!m_poll || m_scanning || m_probing)
             return;
-        const auto DIRS = applicationDirs();
-        if (DIRS == m_dirs && stampsOf(DIRS) == m_stamps)
-            return;
-        request(true);
+        probe(true);
+    }
+
+    // The dirs' mtimes and their subdirs' (the scan recurses: an entry added
+    // under wine/Programs/ changes only its own dir), the first 128, read by
+    // a helper: a hung mount in XDG_DATA_DIRS stalls it, not the loop, and
+    // its deadline proves nothing changed. The first scan runs whatever the
+    // probe found; a refresh only on a change.
+    void CDesktopIndex::probe(bool aside) {
+        auto                     dirs = applicationDirs();
+        std::vector<const char*> argv = {"sh", "-c", "find -H \"$@\" -type d -printf '%T@ %p\\n' 2>/dev/null | head -n 128", "sh"};
+        for (const auto& D : dirs)
+            argv.push_back(D.c_str());
+        const uint64_t GEN = ++m_probeGeneration;
+        m_probing          = Jobs::inst().spawnPiped(
+            Jobs::CONTROL, std::move(argv),
+            [this, GEN, aside, DIRS = dirs](Jobs::SPipedResult r) {
+                if (GEN != m_probeGeneration)
+                    return;
+                m_probing        = false;
+                const bool KNOWN = !r.truncated;
+                if (aside && (!KNOWN || (DIRS == m_dirs && r.out == m_stamps)))
+                    return;
+                m_dirs   = DIRS;
+                m_stamps = KNOWN ? std::move(r.out) : std::string{};
+                request(aside);
+            },
+            Jobs::MAX_PIPED_CAP);
+        if (!m_probing && !aside) { // no helper: scan unstamped, a refresh rescans
+            m_dirs = std::move(dirs);
+            m_stamps.clear();
+            request(false);
+        }
     }
 
     void CDesktopIndex::request(bool aside) {
-        m_dirs     = applicationDirs();
-        m_stamps   = stampsOf(m_dirs);
         m_aside    = aside;
         // not `(aside ? m_next : m_live) = {}`: GCC 16.2 zero-fills an
         // aggregate assigned {} through a conditional, constructing nothing

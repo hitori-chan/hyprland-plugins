@@ -91,6 +91,7 @@ namespace NAwesome {
             std::unordered_set<std::string>              ids;
         };
 
+        void        probe(bool aside);
         void        request(bool aside);
         void        poll();
         void        notify();
@@ -99,12 +100,12 @@ namespace NAwesome {
         CAsyncFileIndex                       m_index;
         SSet                                  m_live, m_next;
         std::vector<std::string>              m_dirs;
-        std::vector<int64_t>                  m_stamps;
+        std::string                           m_stamps; // the dirs' probe: "<mtime> <dir>" a line
         std::vector<std::function<void()>>    m_subs;
         SP<CEventLoopTimer>                   m_poll;
         std::chrono::steady_clock::time_point m_deadline;
-        uint64_t                              m_generation = 0, m_version = 0;
-        bool                                  m_scanning = false, m_aside = false;
+        uint64_t                              m_generation = 0, m_version = 0, m_probeGeneration = 0;
+        bool                                  m_scanning = false, m_aside = false, m_probing = false;
     };
 
 } // namespace NAwesome
