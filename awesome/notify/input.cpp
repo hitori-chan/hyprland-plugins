@@ -73,7 +73,7 @@ namespace NAwesome::Notify {
         uint32_t     bit;
         uint8_t      part;   // the SHover part codes: 0 body, 1 Show Less, 3 reply field, 4 send
         std::string  href;   // non-empty: a body hyperlink
-        uint64_t     rev     = 0;     // the card's revision at the press: its layout's actions are that revision's
+        uint64_t     rev     = 0;     // the card's actRev at the press: its layout's actions are that revision's
         bool         outside = false; // the click fell outside every surface (closes the shade)
         bool         folded  = false; // a center card the budget folded: the click opens it
         bool operator==(const SHit&) const = default;
@@ -129,7 +129,8 @@ namespace NAwesome::Notify {
             if (const int L = linkAt(c, pos); L >= 0)
                 h.href = c.links[L].href;
         // the revision the press's layout drew, not the model's now: a
-        // replace that landed after the last frame must not take the click
+        // replace that changed the actions after the last frame must not
+        // take the click
         h.rev = c.rev;
         return h;
     }
@@ -178,10 +179,11 @@ namespace NAwesome::Notify {
         bool        resident = false, live = false;
         for (const auto& N : notifs)
             if (N->id == id) {
-                // replaced between the press and this deferred click: the
-                // pressed button belonged to what the card WAS (a reused id
-                // may be another chat now) — fire nothing
-                if (rev && N->rev != *rev)
+                // its actions' target changed between the press and this
+                // deferred click: the pressed button belonged to what the
+                // card WAS (a reused id may be another chat now) — fire
+                // nothing
+                if (rev && N->actRev != *rev)
                     return;
                 if (action.empty())
                     action = N->defaultAction;
@@ -633,7 +635,7 @@ namespace NAwesome::Notify {
         if (!centerSelection(a.id, a.group))
             return;
         // enter acts on what the row drew, like a click: a replace that
-        // landed since the last frame must not take it
+        // changed its actions since the last frame must not take it
         if (a.verb == 2 && a.group.empty())
             if (const auto IT = std::ranges::find_if(cards, [&](const SCard& c) { return c.id == a.id && c.kind == SCard::ROW; }); IT != cards.end())
                 a.rev = IT->rev;

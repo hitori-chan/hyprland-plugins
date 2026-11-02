@@ -65,7 +65,7 @@ namespace NAwesome::Notify::CardMenu {
     static uint32_t           s_owner = 0;
     static bool               s_dnd   = false; // Do Not Disturb's durations, not a card's menu
     static CBox               s_anchor;        // ... under the moon
-    static uint64_t           s_rev = 0;       // the card's revision the menu was opened over
+    static uint64_t           s_rev = 0;       // the card's actRev the menu was opened over
     static std::string        s_app, s_chat;   // the targets, captured at the open
     static std::string        s_appLabel, s_chatLabel; // ... and the names their rows keep
     static Vector2D           s_at;
@@ -155,7 +155,7 @@ namespace NAwesome::Notify::CardMenu {
         s_open      = true;
         s_owner     = id;
         s_dnd       = false;
-        s_rev       = N->rev;
+        s_rev       = N->actRev;
         s_app       = N->appKey;
         s_chat      = Policy::chatKey(*N);
         s_appLabel  = Policy::appLabel(*N);

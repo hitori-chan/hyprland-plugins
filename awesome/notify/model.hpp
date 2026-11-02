@@ -152,8 +152,13 @@ namespace NAwesome::Notify {
         std::vector<SMessage>     messages;     // oldest first, bounded; empty = not a chat
         // renewed by every change to what the card says (an arrival, a
         // message closed), from one model-wide serial: the fitted window's
-        // memo key and a click's proof it saw this content
+        // memo key
         uint64_t                  rev = 0;
+        // the rev at which what the actions act on last changed (the app,
+        // the chat or else the summary, the actions): a click's proof it
+        // saw these actions, so a replace that keeps them (a progress tick)
+        // still takes it
+        uint64_t                  actRev = 0;
         // the window a chat card last showed, fitted from its newest end at
         // one width and line budget (text.cpp's fittedTranscript)
         struct {
@@ -547,7 +552,7 @@ namespace NAwesome::Notify {
         eKind       kind = POPUP;
         CBox        box;
         uint32_t    id   = 0; // live identity
-        uint64_t    rev  = 0; // the card's revision this layout drew: a click acts on what it saw
+        uint64_t    rev  = 0; // the card's actRev this layout drew: a click acts on what it saw
         std::string group;    // DECK/SHEAD, a stacked ROW: the app key
         CBox        less;         // SHEAD: Show Less; w = 0 -> none
         CBox        replyField;   // POPUP/ROW: the armed inline-reply box (swallows, never acts)

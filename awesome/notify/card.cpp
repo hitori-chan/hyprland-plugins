@@ -327,7 +327,7 @@ namespace NAwesome::Notify {
 
         hit.box  = CARD;
         hit.id   = N.id;
-        hit.rev  = N.rev;
+        hit.rev  = N.actRev;
         hit.kind = KIND;
         return H;
     }

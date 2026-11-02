@@ -396,6 +396,14 @@ namespace NAwesome::Notify {
 
         static std::string buildConversationBody(const SP<SNotif>& n, size_t limit);
 
+        // what a card's actions act on (SNotif::actRev)
+        static std::string actionTarget(const SNotif& n) {
+            std::string key = std::format("{}\x1f{}\x1f{}", n.appKey, n.conversationId.empty() ? n.summary : n.conversationId, n.defaultAction);
+            for (const auto& A : n.actions)
+                key += std::format("\x1f{}\x1e{}", A.id, A.label);
+            return key;
+        }
+
         // One message of a chat goes: its line and its share of the count,
         // the card with its last message. No signal: the caller's.
         static void dropMessage(const SP<SNotif>& N, uint32_t nid) {
@@ -1098,6 +1106,7 @@ namespace NAwesome::Notify {
             const bool CONVERSATION = CATEGORY_CONVERSATION || CANONICAL_APPEND || !EFFECTIVE_CONV_ID.empty() || (SAME_CONVERSATION && n->conversation);
             // the chat goes on: its log stays and this message joins it
             const bool KEEP_LOG = EXISTING && continuesChat(*n);
+            const auto ACT_BEFORE = EXISTING ? actionTarget(*n) : std::string{};
             // the arrival below may rewrite messages and kind
             n->rev     = ++revSerial;
             n->seen    = false; // new content: the bell's dot until the center shows it
@@ -1340,6 +1349,8 @@ namespace NAwesome::Notify {
             // its own row too, since it was given a label to show
             if (n->defaultAction.empty() && n->actions.size() == 1)
                 n->defaultAction = n->actions.front().id;
+            if (!EXISTING || actionTarget(*n) != ACT_BEFORE)
+                n->actRev = n->rev;
 
             n->resident    = hintFlag(hints, "resident").value_or(false);
             n->transient   = hintFlag(hints, "transient").value_or(false);

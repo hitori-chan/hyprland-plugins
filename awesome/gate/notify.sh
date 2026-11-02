@@ -432,6 +432,54 @@ chk "actions: the action's row fired it, and the card went" until_is 3 "center:0
 chk "actions: ActionInvoked carried the action's key" grep -q 'STRING "later"' "$INVOKED"
 nfyact_done
 nclear
+# a replace that keeps a card's actions (a progress tick) keeps a click
+# pressed before it; one that changes them takes it. One connection sends
+# them all: ActionInvoked goes to the sender. The press drifts past the
+# hold's slop: the click stays, the menu never opens.
+ACTIDS="$STATE/actkeep.ids"
+: >"$ACTIDS"
+exec {ACTFD}> >(ACTIDS="$ACTIDS" DBUS_SESSION_BUS_ADDRESS="$NBUS" timeout 60 python3 -c '
+import os, sys
+from gi.repository import Gio, GLib
+bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+for line in sys.stdin:
+    rid, summary, body = line.rstrip("\n").split("\t")
+    r = bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "Notify",
+                      GLib.Variant("(susssasa{sv}i)", ("actkeep", int(rid), "", summary, body, ["default", "Open"], {}, 30000)),
+                      None, Gio.DBusCallFlags.NONE, -1, None)
+    with open(os.environ["ACTIDS"], "a") as f:
+        f.write("%d\n" % r.unpack()[0])
+')
+ids_past() { (($(wc -l <"$ACTIDS") > $1)); }
+actkeep() { # actkeep <replaces> <summary> <body>: the id answered
+	local n
+	n=$(wc -l <"$ACTIDS")
+	printf '%s\t%s\t%s\n' "$1" "$2" "$3" >&"$ACTFD"
+	until_ok 3 ids_past "$n"
+	tail -n 1 "$ACTIDS"
+}
+held_replace() { # held_replace <summary> <body>: press the banner, replace it, release
+	local id
+	id="$(actkeep 0 Download 10%)"
+	until_is 3 "10%" hq awesome shown
+	shot_until 3 "$STATE/keep.png" bannered "$STATE/keep.png"
+	printf 'move %s %s\nsleep 40\npress 272\nsleep 40\nmove %s %s\nsleep 40\n' "$HX" "$HY" "$((HX + 10))" "$HY" | vp
+	actkeep "$id" "$1" "$2" >/dev/null
+	until_is 3 "$2" hq awesome shown
+	release_left
+}
+rm -f "$INVOKED"
+bus_watch "$INVOKED" "type='signal',member='ActionInvoked'"
+held_replace Download 50%
+chk "actions: a replace that keeps the actions keeps the click" until_ok 3 grep -q 'STRING "default"' "$INVOKED"
+nclear
+rm -f "$INVOKED"
+bus_watch "$INVOKED" "type='signal',member='ActionInvoked'"
+held_replace Installed done
+settle
+chk "actions: a replace that changes what they act on takes it" bash -c "! grep -q 'STRING \"default\"' '$INVOKED'"
+exec {ACTFD}>&-
+nclear
 
 # ---- the center stacks an app's cards ----------------------------------------
 # Two cards of one app are one stack: collapsed, the newest over its deck
