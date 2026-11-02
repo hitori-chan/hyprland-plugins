@@ -175,7 +175,8 @@ namespace NAwesome::Shell {
 
     // `hyprctl awesome cells` (the gate's build): the first bar's click
     // cells, left to right, one "<widget> <x0> <x1>" a line — the gate's
-    // map of what a press hits; `battery-note`: the battery's note
+    // map of what a press hits; `battery-note`: the battery's note;
+    // `tray-menu`: the open menu's root rows as loaded, their dbusmenu ids
     std::optional<std::string> CModule::handleCtl(const std::string& verb) const {
 #ifndef AWESOME_GATE
         (void)verb;
@@ -183,6 +184,13 @@ namespace NAwesome::Shell {
 #else
         if (verb == "battery-note") // the battery's note as it shows ("" none)
             return Battery::noteDescribe();
+        if (verb == "tray-menu") {
+            std::string out;
+            if (Menu::isOpen && !Menu::levels.empty())
+                for (const auto& E : Menu::levels[0].entries)
+                    out += std::format("{} ", E.id);
+            return out;
+        }
         if (verb != "cells")
             return std::nullopt;
         const auto IT = hitboxes.begin();

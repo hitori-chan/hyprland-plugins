@@ -290,6 +290,27 @@ chk "tray: the menu reopened for esc" shot_until 4 "$STATE/tray-reopen.png" pane
 tap esc
 chk "tray: esc closed the menu" shot_until 3 "$STATE/tray-esc.png" panels_shut "$STATE/tray-esc.png"
 
+# a click activates the row the screen shows: a layout that landed since the
+# last draw (an applet's list reshuffling mid-scan) resolves it by id. The
+# private host stopped, the nested draws one more frame (a capture takes it;
+# one that times out found none) and then nothing: the new root (a "zero"
+# on top) lands unseen and the press falls where "one" was drawn.
+tray_menu() { hq awesome tray-menu | xargs; }
+printf 'move %s %s\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' "$IX" "$IY" | vp
+shot_until 4 "$STATE/tray-shown.png" root_drawn "$STATE/tray-shown.png"
+read -r _ RX0 RX1 RYT _ <<<"$(panel_extent "$STATE/tray-shown.png")"
+until_is 3 "1 2 0 5 6" tray_menu
+HOSTPID="$(_owns_pid "$HOST_DIR/pid" environ "XDG_CONFIG_HOME=$HOST_DIR/xdg")"
+if [[ -n "$HOSTPID" ]]; then
+	kill -STOP "$HOSTPID"
+	WAYLAND_DISPLAY="$WL" timeout 3 grim "$STATE/tray-frozen.png" 2>/dev/null
+	kill -USR2 "$FAKE_PID" 2>/dev/null
+	until_is 3 "11 1 2 0 5 6" tray_menu
+	printf 'move %s %s\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' "$(((RX0 + RX1) / 2))" "$((RYT + 19))" | vp
+	kill -CONT "$HOSTPID"
+fi
+chk "tray: a click activates the row drawn, not one that moved in since" until_ok 3 grep -qx "event 1" "$STATE/fake-sni.log"
+
 # attention with no attention icon of its own (most apps): the plain one
 # stays, not a blank cell
 kill -USR1 "$FAKE_PID" 2>/dev/null

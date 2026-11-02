@@ -440,6 +440,15 @@ namespace NAwesome::Shell {
             bool                              overflow  = false; // set at render: taller than the screen, scrolls
             CBox                              box;               // global logical, set at render
             std::vector<std::pair<CBox, int>> rows;              // row box -> entry index, set at render
+            // the rows on screen (the last draw's, not a warm's), with each
+            // row's dbusmenu id: a press resolves what the user saw, so a
+            // layout that changed since activates that row or nothing
+            struct SShownRow {
+                CBox    box;
+                int     idx = -1;
+                int32_t id  = 0;
+            };
+            std::vector<SShownRow> shown;
         };
 
         extern bool                isOpen;

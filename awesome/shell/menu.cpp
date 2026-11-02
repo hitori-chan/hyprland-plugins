@@ -928,6 +928,11 @@ namespace NAwesome::Shell {
                     arrow(CBox{mx, my0 + PAD, mw, Menu::ARROWH}, Menu::SCROLL_UP, L.scrollTop > 0, G::eGlyph::CHEVRON_UP);
                     arrow(CBox{mx, my0 + mh - PAD - Menu::ARROWH, mw, Menu::ARROWH}, Menu::SCROLL_DOWN, moreBelow, G::eGlyph::CHEVRON_DOWN);
                 }
+                if (!PAINT.warm) {
+                    L.shown.clear();
+                    for (const auto& [B, I] : L.rows)
+                        L.shown.push_back({.box = B, .idx = I, .id = I >= 0 && (size_t)I < L.entries.size() ? L.entries[I].id : 0});
+                }
             }
         }
     }

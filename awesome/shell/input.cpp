@@ -142,9 +142,16 @@ namespace NAwesome::Shell {
                     auto& L = Menu::levels[li];
                     if (!L.box.containsPoint(POS))
                         continue;
-                    for (const auto& [ROW, IDX] : L.rows) {
-                        if (!ROW.containsPoint(POS))
+                    for (const auto& ROW : L.shown) {
+                        if (!ROW.box.containsPoint(POS))
                             continue;
+                        // the row as drawn: a dbusmenu layout that landed
+                        // since resolves by id (a local menu never changes)
+                        int IDX = ROW.idx;
+                        if (IDX >= 0 && !Menu::isLocal) {
+                            const auto IT = std::ranges::find_if(L.entries, [&](const Menu::SEntry& E) { return E.id == ROW.id && !E.separator; });
+                            IDX           = IT == L.entries.end() ? -1 : (int)(IT - L.entries.begin());
+                        }
                         if (IDX == Menu::SCROLL_UP || IDX == Menu::SCROLL_DOWN) { // arrow strip: step like a wheel notch
                             if (BIT == 1u) {
                                 L.scrollTop = std::clamp(L.scrollTop + (IDX == Menu::SCROLL_UP ? -3 : 3), 0, L.maxScroll);
@@ -153,7 +160,7 @@ namespace NAwesome::Shell {
                             }
                             return;
                         }
-                        if ((BIT == 1u || BIT == 2u) && (size_t)IDX < L.entries.size() && L.entries[IDX].enabled && !L.entries[IDX].separator) {
+                        if ((BIT == 1u || BIT == 2u) && IDX >= 0 && (size_t)IDX < L.entries.size() && L.entries[IDX].enabled && !L.entries[IDX].separator) {
                             if (L.entries[IDX].submenu) { // a click cascades too, like GTK
                                 queueHitJob(SHitJob{.kind = SHitJob::MENU_SUBMENU, .subLevel = li, .subIdx = IDX});
                                 return;
