@@ -1,10 +1,11 @@
 #define _GNU_SOURCE
-// A client born fullscreen (a game, a benchmark, a video player's --fs):
-// asks for fullscreen before its initial commit, then maps at whatever
-// size the compositor configures and follows every later configure.
-// Prints one line per xdg_toplevel configure, `W H STATE...`, and `map`
-// once its first buffer is committed, until killed.
-// usage: fsask APP_ID
+// A client born fullscreen (a game, a benchmark, a video player's --fs) or
+// maximized (an app restoring its last state): asks before its initial
+// commit, then maps at whatever size the compositor configures and follows
+// every later configure. Prints one line per xdg_toplevel configure,
+// `W H STATE...`, and `map` once its first buffer is committed, until
+// killed.
+// usage: fsask APP_ID [maximized]
 #include <poll.h>
 #include <stdio.h>
 #include <string.h>
@@ -87,8 +88,8 @@ static struct wl_buffer *solid(int w, int h) {
 }
 
 int main(int argc, char **argv) {
-    if (argc != 2) {
-        fprintf(stderr, "usage: fsask APP_ID\n");
+    if (argc < 2 || argc > 3 || (argc == 3 && strcmp(argv[2], "maximized"))) {
+        fprintf(stderr, "usage: fsask APP_ID [maximized]\n");
         return 2;
     }
     struct wl_display *dpy = wl_display_connect(NULL);
@@ -107,7 +108,10 @@ int main(int argc, char **argv) {
     xdg_surface_add_listener(xs, &xsl, NULL);
     xdg_toplevel_add_listener(top, &topl, NULL);
     xdg_toplevel_set_app_id(top, argv[1]);
-    xdg_toplevel_set_fullscreen(top, NULL);
+    if (argc == 3)
+        xdg_toplevel_set_maximized(top);
+    else
+        xdg_toplevel_set_fullscreen(top, NULL);
     wl_surface_commit(surf);
 
     int mapped = 0;

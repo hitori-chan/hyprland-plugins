@@ -45,8 +45,9 @@ make -C devtools HL=/path/to/Hyprland
   `SPLASHWIN_POINTER_LOG=<path>` it appends `at X Y` (surface-local,
   margin included) on every pointer enter and motion: where a click
   lands in the client's own frame.
-- `fsask APP_ID` maps a toplevel born fullscreen, as a game or a video
-  player's `--fs` does: it asks before its initial commit, follows every
+- `fsask APP_ID [maximized]` maps a toplevel born fullscreen, as a game
+  or a video player's `--fs` does (or maximized, as an app restoring its
+  last state): it asks before its initial commit, follows every
   configure, and prints each as `W H STATE...` (`map` after its first
   buffer) until killed.
 - `fifowin fifo|recreate FRAMES` presents FRAMES SHM frames through
