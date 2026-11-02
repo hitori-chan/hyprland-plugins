@@ -526,11 +526,11 @@ until_is 5 0 w2_count
 hidden_of() { clients | python3 -c "
 import json,sys
 print(next((int(c['hidden']) for c in json.load(sys.stdin) if c['class'] == sys.argv[1]), -1))" "$1"; }
-w3_count() { clients | python3 -c "import json,sys;print(sum(1 for c in json.load(sys.stdin) if c['class'] in ('w3a','w3b','w3c')))"; }
+w3_count() { clients | python3 -c "import json,sys;print(sum(1 for c in json.load(sys.stdin) if c['class'] in ('w3a','w3b','w3c','w3d')))"; }
 w3b_state() { echo "$(hidden_of w3b) $(active_class)"; } # hidden, and who has the focus
 w3_hidden() { echo "$(hidden_of w3b) $(hidden_of w3c)"; }
 # one at a time: the focus history's order is the opening order (Mod+U's
-# "last" is the minimized w3b below whichever end the history counts from)
+# "last", the window focused before this one, is the minimized w3b below)
 for c in w3a w3b w3c; do
 	dsp "hl.dsp.exec_cmd('foot --app-id=$c --window-size-pixels=300x200')"
 	wait_class "$c"
@@ -557,7 +557,17 @@ dsp "hl.plugin.awesome.minimize()"
 until_is 2 "1 1" w3_hidden
 hq eval "hl.plugin.awesome.restore(); hl.plugin.awesome.restore()" >/dev/null 2>&1
 chk "restore: two in one dispatch restore both" until_is 2 "0 0" w3_hidden
-for a in "$W3A" "$W3B" "$W3C"; do
+# with four or more in the history, "last" is still the one focused before
+dsp "hl.dsp.exec_cmd('foot --app-id=w3d --window-size-pixels=300x200')"
+wait_class w3d
+W3D="$(class_addr w3d)"
+for p in "w3b $W3B" "w3a $W3A" "w3d $W3D"; do
+	dsp "hl.dsp.focus({window=\"address:${p#* }\"})"
+	until_is 2 "${p%% *}" active_class
+done
+dsp "hl.dsp.focus({urgent_or_last=true})"
+chk "jump: Mod+U with nothing urgent returns to the window before" until_is 2 w3a active_class
+for a in "$W3A" "$W3B" "$W3C" "$W3D"; do
 	[[ -n "$a" ]] && dsp "hl.dsp.window.close({window=\"address:$a\"})"
 done
 until_is 5 0 w3_count
