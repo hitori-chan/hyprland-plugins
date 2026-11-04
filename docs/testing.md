@@ -45,7 +45,7 @@ make -C awesome gate ARGS="-s ~/repo/Hyprland [-b quick|all|LIST] [-k LIST] [-p 
 ```
 
 - `-s DIR` stages that fork build's headers (and verifies its
-  `version.h`), builds the gate variant against them, and runs
+  `version.h`: HEAD's hash, the system's dependency versions), builds the gate variant against them, and runs
   `DIR/build/Hyprland` (a trailing `BIN` names another compositor). The
   release variant's deploy rehearsal runs in the `all` tier (or with
   `REHEARSE=1`).

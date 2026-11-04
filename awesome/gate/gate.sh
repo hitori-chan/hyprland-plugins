@@ -117,6 +117,17 @@ if [[ -n "$FORK_SRC" ]]; then
 		echo "gate.sh: $FORK_SRC/src/version.h is not HEAD ($_head): reconfigure (cmake -S . -B build) and rebuild" >&2
 		exit 2
 	}
+	# A reconfigure keeps pkg-config's cached versions: after a distro upgrade
+	# the binary reports the old ones and this staged set agrees with it, while
+	# hyprpm's fresh headers fail the load guard. Major.minor, as the guard does.
+	for _dep in aquamarine hyprgraphics hyprutils hyprcursor hyprlang; do
+		_have="$(sed -n "s/^#define ${_dep^^}_VERSION *\"\(.*\)\"/\1/p" "$FORK_SRC/src/version.h")"
+		_want="$(pkg-config --modversion "$_dep" 2>/dev/null)"
+		[[ -n "$_want" && "${_have%.*}" == "${_want%.*}" ]] || {
+			echo "gate.sh: $FORK_SRC/src/version.h says $_dep $_have, the system has $_want: cmake -S . -B build -U '*_dep_*' -U '__pkg_config_checked_*' and rebuild" >&2
+			exit 2
+		}
+	done
 	_pkg="${HYPR_GATE_TMP:-/tmp/hypr-gate}/fork-pkg"
 	rm -rf -- "$_pkg"
 	# install_manifest.txt in a root-owned build dir fails the exit code
@@ -131,7 +142,7 @@ if [[ -n "$FORK_SRC" ]]; then
 	sed -i "s|^prefix=.*|prefix=$_pkg/include|" "$_pkg/share/pkgconfig/hyprland.pc"
 	export PKG_CONFIG_PATH="$_pkg/share/pkgconfig" HYPR_DEPLOY_PKG_CONFIG_PATH="$_pkg/share/pkgconfig"
 	[[ -n "$BIN" ]] || BIN="$FORK_SRC/build/Hyprland"
-	unset _head _pkg
+	unset _head _pkg _dep _have _want
 fi
 [[ -n "$BIN" ]] || BIN=${HYPR_BIN:-/usr/local/bin/Hyprland}
 

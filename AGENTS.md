@@ -40,7 +40,10 @@ compositor is built from.
   obsolete, rebuild, port the plugin to the new ABI, run the full gate
   (`-b all`). `src/version.h` is generated at CMake CONFIGURE time:
   reconfigure (`cmake -S . -B build`) after moving HEAD, or the binary and
-  headers carry a stale hash the plugin's load guard rejects.
+  headers carry a stale hash the plugin's load guard rejects. A reconfigure
+  keeps pkg-config's cached versions: after a distro upgrade of a dependency
+  add `-U '*_dep_*' -U '__pkg_config_checked_*'`, or hyprpm's plugin fails
+  that guard (2026-11-04; the gate refuses such a tree).
 - Dependencies come from distro packages; the gate's nested alone loads
   Aquamarine at the fork's `flake.lock` pin (`gate/host.sh`).
 - The user performs sudo installs and deploys (the fork: install +
