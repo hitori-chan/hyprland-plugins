@@ -1,0 +1,4 @@
+/* Localize the plugin's own namespace symbols (the dlopen collision
+   surface); everything else keeps default visibility so Hyprland's inline
+   globals unify with the compositor's (see awesome/plugin.ver). */
+{ local: *NVClick*; };

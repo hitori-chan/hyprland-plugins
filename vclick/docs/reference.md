@@ -1,0 +1,55 @@
+# Reference
+
+`vclick` clicks or scrolls inside a window without the user's mouse. The
+cursor does not move, its image does not change, the window under the
+mouse hears nothing and keyboard focus stays where it is. It shares no
+code or state with `awesome`; enable it on its own
+(`hyprpm enable vclick`). How it works and its limits:
+[design](design.md).
+
+## hyprctl
+
+```sh
+hyprctl vclick <window> <x> <y> [button [clicks]]
+hyprctl vclick <window> <x> <y> scroll-up|scroll-down|scroll-left|scroll-right [steps]
+```
+
+- `<window>`: a window selector, as `send_shortcut` takes it
+  (`address:0x…`). No spaces.
+- `<x> <y>`: logical pixels from the window's top-left: the pixel of a
+  window capture (`grim -T <stableId>`) at scale 1; divide a capture's
+  pixels by the monitor scale elsewhere. A scroll goes to what is under
+  that point, as the wheel does.
+- `button`: `left` (default), `right`, `middle`, `side`, `extra`, or a
+  Linux code from 272 (`BTN_LEFT`) to 279.
+- `clicks`: 1 (default) to 3; 2 is a double click.
+- `steps`: wheel detents, 1 (default) to 20. `scroll-down` shows what is
+  below (the content moves up), whatever the user's natural-scroll
+  setting.
+
+The answer is `ok`, or one line starting `error:` (`usage:` for a
+malformed request).
+
+```sh
+W=$(hyprctl -j clients | jq -r '.[] | select(.class == "firefox") | .address' | head -1)
+hyprctl vclick address:$W 640 300                  # a link
+hyprctl vclick address:$W 640 300 left 2           # select a word
+hyprctl vclick address:$W 640 500 scroll-down 5    # five wheel steps
+```
+
+## Errors
+
+- `error: bad coordinates`, `error: unknown button`, `error: count must
+  be 1-3`, `error: steps must be 1-20`: a malformed request; the usage
+  follows.
+- `error: busy: …`: the user's mouse is in the same app and holds a
+  button, a pointer constraint or a drag there ([design](design.md#the-same-app));
+  retry later. Input into other apps goes through meanwhile.
+- `error: XWayland windows are not supported`: the compositor's hit test
+  asserts on them.
+- `error: window not found`, `error: the window is not mapped` (hidden
+  or unmapped), `error: <x>,<y> is outside the window (<w>x<h>)` (unless
+  one of its popups is there), `error: the window has no surface`,
+  `error: the app has no pointer`.
+- `error: the session is locked`, `error: the compositor is shutting
+  down`.

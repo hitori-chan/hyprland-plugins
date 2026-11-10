@@ -5,8 +5,11 @@ monolith (modules core, shell, windows, notify, system), its gate in
 `awesome/gate/`, test fixtures in `devtools/`, behavior per module in
 `awesome/docs/` (`shell`, `windows`, `notify`, `system`, `reference`),
 the design contract in `awesome/docs/design.md`, testing in
-`awesome/docs/testing.md`. Each plugin's docs live in its own `docs/`; a
-root `docs/` is for repo-wide docs and tooling only.
+`awesome/docs/testing.md`. Beside it, `vclick/`: a separate single-file
+plugin that clicks or scrolls inside a window without the user's pointer
+(`vclick/docs/`); it shares no code or state with `awesome`, and its
+nested check is `vclick/check.sh`. Each plugin's docs live in its own
+`docs/`; a root `docs/` is for repo-wide docs and tooling only.
 
 This file holds principles and hard lines, not project state. Optimize
 for performance, efficiency, ergonomics, safety and stability; where this
@@ -16,7 +19,8 @@ an incident earns it (one line of why), prune it when the why is gone.
 ## Where state lives
 
 - Plugin version: `awesome/core/version.hpp`, in lockstep with
-  `hyprpm.toml`'s `[awesome]` version (the gate checks it).
+  `hyprpm.toml`'s `[awesome]` version (the gate checks it). vclick's:
+  `NVClick::VERSION` in `vclick/main.cpp`, in lockstep with `[vclick]`.
 - Fork state: `git log` in `~/repo/Hyprland` is the truth for what the
   compositor is built from; every rewrite of its history leaves a pushed
   backup tag (`pre-bump-*`, `pre-rewrite-*`).
@@ -70,6 +74,8 @@ compositor is built from.
   `version.h`): switching header sets or installing a fork rebuilds
   everything by itself; no `make -B`.
 - `make -C awesome test` runs the headless unit cases.
+- `make -C vclick` builds vclick; `make vclick-check` runs its nested
+  check (it takes the gate's lock: never alongside a gate run).
 
 ## The gate
 
@@ -219,8 +225,8 @@ supervisor dispatches in that order, and it must agree with
 ## Git and versions
 
 - One logical change per commit; imperative `scope: summary` subject of
-  about 50 characters; scopes `awesome:`, `devtools:`, `docs:`, `build:`,
-  `all:`. No versions in subjects, no `Co-Authored-By`.
+  about 50 characters; scopes `awesome:`, `vclick:`, `devtools:`, `docs:`,
+  `build:`, `all:`. No versions in subjects, no `Co-Authored-By`.
 - Versions are MAJOR.MINOR.PATCH (redesign / feature / fix), lockstep in
   `version.hpp` and `hyprpm.toml`.
 - Never push a change that has not passed its build and the applicable

@@ -1,4 +1,6 @@
-# One plugin, one load: there is no inter-plugin order to encode.
+# Two independent plugins, each its own load: awesome (the shell) and
+# vclick (clicks without the user's pointer). Neither depends on the
+# other: there is no inter-plugin order to encode.
 # No commit_pins: one Hyprland (the hitori-chan/Hyprland fork), so hyprpm
 # builds the default branch.
 
@@ -12,3 +14,10 @@ version     = "4.2.1"
 authors     = ["hitori"]
 output      = "awesome/awesome.so"
 build       = ["make -C awesome all"]
+
+[vclick]
+description = "click or scroll inside a window without the user's pointer"
+version     = "1.0.0"
+authors     = ["hitori"]
+output      = "vclick/vclick.so"
+build       = ["make -C vclick all"]
