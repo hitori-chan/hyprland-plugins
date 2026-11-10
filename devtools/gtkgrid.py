@@ -2,9 +2,11 @@
 # A real GTK3 client as a render-vs-input oracle: a fixed-size (floating)
 # CSD window of solid color blocks and a menu button whose GtkMenu is an
 # xdg_popup of colored items. Every press prints what GTK thinks it hit, so
-# a click on what is DRAWN must name the same block.
+# a click on what is DRAWN must name the same block; every wheel step the
+# block it scrolled.
 # usage: gtkgrid.py <log> [wayland|x11] [wayland-debug-log]
-#   log lines: READY | HIT <color> | MENU <color> | MENUBUTTON True|False
+#   log lines: READY | HIT <color> | SCROLL <color> up|down|left|right |
+#              MENU <color> | MENUBUTTON True|False
 import os
 import sys
 
@@ -36,8 +38,10 @@ def swatch(name, rgb, w, h, press=True):
     da.set_size_request(w, h)
     da.connect("draw", lambda _w, cr: (cr.set_source_rgb(*rgb), cr.paint(), False)[-1])
     if press:
-        da.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        da.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.SCROLL_MASK)
         da.connect("button-press-event", lambda *_: (say("HIT", name), True)[-1])
+        # discrete steps only (no SMOOTH_SCROLL_MASK): one line per wheel detent
+        da.connect("scroll-event", lambda _w, ev: (say("SCROLL", name, ev.direction.value_nick), True)[-1])
     return da
 
 

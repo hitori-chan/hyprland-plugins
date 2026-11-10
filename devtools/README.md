@@ -63,8 +63,8 @@ make -C devtools HL=/path/to/Hyprland
 - `gtkgrid.py LOG [wayland|x11] [WAYLAND-TRACE]` is a real GTK3 client
   (PyGObject) as a render-vs-input oracle: a floating CSD window of solid
   color blocks and a menu button whose GtkMenu is an xdg_popup of colored
-  items. It logs what GTK hit (`HIT <color>` on a press, `MENU <color>`
-  on an activated item). `findcolors.py PNG NAME=R,G,B...` finds where
+  items. It logs what GTK hit (`HIT <color>` on a press, `SCROLL <color>
+  <direction>` per wheel detent, `MENU <color>` on an activated item). `findcolors.py PNG NAME=R,G,B...` finds where
   each color is drawn in a capture, so a click on what is drawn must
   name the same block.
 
