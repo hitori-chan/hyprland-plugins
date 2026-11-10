@@ -8,8 +8,9 @@ the design contract in `awesome/docs/design.md`, testing in
 `awesome/docs/testing.md`. Beside it, `vclick/`: a separate single-file
 plugin that clicks or scrolls inside a window without the user's pointer
 (`vclick/docs/`); it shares no code or state with `awesome`, and its
-nested check is `vclick/check.sh`. Each plugin's docs live in its own
-`docs/`; a root `docs/` is for repo-wide docs and tooling only.
+nested check is `vclick/check.sh`. Each plugin has its own `README.md`
+and `docs/`; the root `README.md` only lists the plugins and installs
+them, and a root `docs/` is for repo-wide docs and tooling only.
 
 This file holds principles and hard lines, not project state. Optimize
 for performance, efficiency, ergonomics, safety and stability; where this
@@ -234,8 +235,8 @@ supervisor dispatches in that order, and it must agree with
 
 ## Definition of done
 
-1. The docs (each plugin's `docs/`, `README.md`) and `TODO.md` reflect
-   the actual behavior.
+1. The docs (each plugin's `README.md` and `docs/`, the root `README.md`)
+   and `TODO.md` reflect the actual behavior.
 2. Both variants build against the exact target headers and
    `make -C awesome test` is green.
 3. The applicable gate tier ends with `ALL N CHECKS PASSED`, isolation

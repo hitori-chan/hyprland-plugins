@@ -1,10 +1,7 @@
 # Reference
 
-`vclick` clicks or scrolls inside a window without the user's mouse. The
-cursor does not move, its image does not change, the window under the
-mouse hears nothing and keyboard focus stays where it is. It shares no
-code or state with `awesome`; enable it on its own
-(`hyprpm enable vclick`). How it works and its limits:
+The whole command and its answers. Examples are in the
+[README](../README.md); how it works and its limits are in the
 [design](design.md).
 
 ## hyprctl
