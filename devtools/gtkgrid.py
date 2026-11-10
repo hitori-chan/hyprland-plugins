@@ -3,8 +3,10 @@
 # CSD window of solid color blocks and a menu button whose GtkMenu is an
 # xdg_popup of colored items. Every press prints what GTK thinks it hit, so
 # a click on what is DRAWN must name the same block; every wheel step the
-# block it scrolled.
-# usage: gtkgrid.py <log> [wayland|x11] [wayland-debug-log]
+# block it scrolled. With `cursor`, the window asks for a custom cursor
+# image (a 16x16 rose square, hotspot 0,0) through wl_pointer.set_cursor,
+# as a web page's own cursor does, instead of a named shape.
+# usage: gtkgrid.py <log> [wayland|x11] [wayland-debug-log] [cursor]
 #   log lines: READY | HIT <color> | SCROLL <color> up|down|left|right |
 #              MENU <color> | MENUBUTTON True|False
 import os
@@ -21,6 +23,7 @@ import gi  # noqa: E402
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
+import cairo  # noqa: E402
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 GLib.set_prgname("gtkgrid")
@@ -67,6 +70,18 @@ button.connect("toggled", lambda b: say("MENUBUTTON", b.get_active()))
 box.pack_start(button, False, False, 0)
 win.add(box)
 win.connect("destroy", Gtk.main_quit)
+
+
+def custom_cursor(w):
+    img = cairo.ImageSurface(cairo.FORMAT_ARGB32, 16, 16)
+    cr = cairo.Context(img)
+    cr.set_source_rgb(1, 0, .5)
+    cr.paint()
+    w.get_window().set_cursor(Gdk.Cursor.new_from_surface(w.get_display(), img, 0, 0))
+
+
+if "cursor" in sys.argv[4:]:
+    win.connect("realize", custom_cursor)
 win.show_all()
 say("READY")
 Gtk.main()
