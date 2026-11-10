@@ -33,18 +33,18 @@ The bar reserves its own band: a monitor rule needs no `reserved_area`.
 The battery shows only where the machine has one.
 
 Every function, `hyprctl` verb, config key and remembered state is in
-the [reference](docs/reference.md).
+the [reference](awesome/docs/reference.md).
 
 ## Docs
 
-- [Shell](docs/shell.md) — the bar and the launcher
-- [Windows](docs/windows.md) — minimize, maximize, focus, placement, snap
-- [Notifications](docs/notify.md) — cards, conversations, the center,
+- [Shell](awesome/docs/shell.md) — the bar and the launcher
+- [Windows](awesome/docs/windows.md) — minimize, maximize, focus, placement, snap
+- [Notifications](awesome/docs/notify.md) — cards, conversations, the center,
   Do Not Disturb
-- [System](docs/system.md) — brightness, sound, touchpad
-- [Reference](docs/reference.md) — Lua API, `hyprctl`, configuration, state
-- [Design](docs/design.md) — architecture, invariants, performance
-- [Testing](docs/testing.md) — building, unit tests, the nested gate
+- [System](awesome/docs/system.md) — brightness, sound, touchpad
+- [Reference](awesome/docs/reference.md) — Lua API, `hyprctl`, configuration, state
+- [Design](awesome/docs/design.md) — architecture, invariants, performance
+- [Testing](awesome/docs/testing.md) — building, unit tests, the nested gate
 
 ## Development
 

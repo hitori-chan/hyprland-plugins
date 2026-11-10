@@ -1,8 +1,8 @@
 # devtools
 
 The Wayland fixtures and D-Bus fakes the nested gate drives
-([testing](../docs/testing.md)). Sources are tracked; binaries and the
-generated protocol glue are build artifacts.
+([testing](../awesome/docs/testing.md)). Sources are tracked; binaries
+and the generated protocol glue are build artifacts.
 
 Build the helpers from the fork's protocol XML (xdg-shell comes from the
 system's wayland-protocols):

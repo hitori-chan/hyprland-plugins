@@ -5,7 +5,7 @@ How `awesome` is built and why. What it does is in the module docs
 [system](system.md)) and the [reference](reference.md); the behavioral
 contract is those docs plus the gate's `-b all` summary line
 ([testing](testing.md)). The crash-class invariants are numbered in
-[`AGENTS.md`](../AGENTS.md).
+[`AGENTS.md`](../../AGENTS.md).
 
 One C++26 plugin, built against the exact `hitori-chan/Hyprland` commit
 the compositor runs: same process, PluginAPI and fork headers, no FFI.

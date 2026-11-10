@@ -154,4 +154,4 @@ The gate build adds `hyprctl awesome` verbs for the batteries:
 | `snap-zone` | the armed snap zone, `<top\|bottom\|-> <left\|right\|->` |
 
 The Wayland fixtures and D-Bus fakes the batteries drive are in
-[`devtools/`](../devtools/README.md).
+[`devtools/`](../../devtools/README.md).

@@ -49,7 +49,7 @@ adds its own verbs ([testing](testing.md#scripts)).
 
 45 keys, `plugin:awesome:<group>:<key>` (a module's, or `theme`'s for
 the material they share), declared in
-[`core/schema.hpp`](../awesome/core/schema.hpp). Out-of-range values
+[`core/schema.hpp`](../core/schema.hpp). Out-of-range values
 clamp. In Lua:
 
 ```lua
@@ -61,7 +61,7 @@ hl.config({ plugin = { awesome = {
 ```
 
 Colours marked Frost default to the Frost palette
-([`core/tokens.hpp`](../awesome/core/tokens.hpp)), so an empty config
+([`core/tokens.hpp`](../core/tokens.hpp)), so an empty config
 already looks right.
 
 ### theme
@@ -151,7 +151,7 @@ both a config key and a remembered row.
 | `notify-mute <until> <label> <chat>` | a chat muted until a unix time |
 | `option <value> <name>` | a menu choice, written only when off its default |
 
-Options ([`core/options.hpp`](../awesome/core/options.hpp)):
+Options ([`core/options.hpp`](../core/options.hpp)):
 
 | Name | Default | Value |
 |---|---|---|

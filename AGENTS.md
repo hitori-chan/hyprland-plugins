@@ -3,8 +3,10 @@
 One native C++26 Hyprland plugin inspired by AwesomeWM: the `awesome`
 monolith (modules core, shell, windows, notify, system), its gate in
 `awesome/gate/`, test fixtures in `devtools/`, behavior per module in
-`docs/` (`shell`, `windows`, `notify`, `system`, `reference`), the design
-contract in `docs/design.md`, testing in `docs/testing.md`.
+`awesome/docs/` (`shell`, `windows`, `notify`, `system`, `reference`),
+the design contract in `awesome/docs/design.md`, testing in
+`awesome/docs/testing.md`. Each plugin's docs live in its own `docs/`; a
+root `docs/` is for repo-wide docs and tooling only.
 
 This file holds principles and hard lines, not project state. Optimize
 for performance, efficiency, ergonomics, safety and stability; where this
@@ -77,7 +79,7 @@ the release build's deploy rehearsal), and runs the batteries against a
 nested Hyprland. Default tier `quick` (~30 s of checks); `-b windows`
 alone for a geometry/CSD change; `-b all` for a bump or a release. Keep it lean: retire a check once its code is battle-tested,
 gate new behavior with discriminating checks, and wait on state, never
-the clock (`docs/testing.md`, Waiting; `-p` profiles a run).
+the clock (`awesome/docs/testing.md`, Waiting; `-p` profiles a run).
 `bash awesome/gate/sweep.sh origin/main HEAD` builds and unit-tests every
 unpushed commit against the staged headers: run it before a push and
 after any history rewrite (it skips build inputs it already verified).
@@ -151,7 +153,7 @@ Numbered because source comments cite them; never renumber, append.
 ## Compositor integration
 
 - Behavior follows AwesomeWM's vanilla semantics, source-verified
-  (contract: `docs/design.md`), tuned where an X11/vanilla
+  (contract: `awesome/docs/design.md`), tuned where an X11/vanilla
   assumption is broken or unsafe on Wayland; every deviation says why. No
   per-app rules.
 - Use the fork's public APIs and the native renderer/input ownership.
@@ -212,7 +214,7 @@ The pipeline order is a behavior contract (the bar claims its strip and
 menus before window policy; notification input beats the window below):
 shell, notify, windows, system, as `awesome/main.cpp` registers them; the
 supervisor dispatches in that order, and it must agree with
-`docs/design.md`.
+`awesome/docs/design.md`.
 
 ## Git and versions
 
@@ -226,8 +228,8 @@ supervisor dispatches in that order, and it must agree with
 
 ## Definition of done
 
-1. The docs (`docs/`, `README.md`) and `TODO.md` reflect the actual
-   behavior.
+1. The docs (each plugin's `docs/`, `README.md`) and `TODO.md` reflect
+   the actual behavior.
 2. Both variants build against the exact target headers and
    `make -C awesome test` is green.
 3. The applicable gate tier ends with `ALL N CHECKS PASSED`, isolation
