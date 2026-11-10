@@ -28,6 +28,12 @@ bystander. A virtual pointer (`devtools/vptr`) is the user's mouse.
 - Scrolls step exactly (GTK's scroll lines and the protocol's detents);
   the horizontal step is held against the user's own wheel through the
   seat, not against GTK's name for it ([design](design.md)).
+- The pace: the default steps arrive 50 ms apart, `ms 0` in one burst
+  and `ms 200` 200 ms apart (the protocol's own timestamps).
+  - `status` reports a run, and any other request is busy meanwhile.
+  - A run stops, and says why, when its window closes.
+  - A run waits out the user's button in the same app, then finishes.
+  - A run ends with an unload, and the nested stays up.
 - With the user's pointer on B: B hears nothing; the cursor and the
   focus never move.
 - With the user's pointer on A: A's pointer steps out and back in under

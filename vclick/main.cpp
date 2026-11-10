@@ -8,6 +8,8 @@
 // itself: when the user's pointer is in the same client (one Firefox
 // process owns all its windows), it steps out of the user's surface for
 // the input and back in under the user's cursor (docs/design.md).
+// A multi-step scroll is paced: one step per interval on the compositor's
+// event loop, each step checked and sent on its own.
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/state/ViewHitTester.hpp>
 #include <hyprland/src/desktop/state/ViewQuery.hpp>
@@ -16,6 +18,8 @@
 #include <hyprland/src/desktop/view/window/Window.hpp>
 #include <hyprland/src/helpers/time/Time.hpp>
 #include <hyprland/src/managers/SeatManager.hpp>
+#include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
+#include <hyprland/src/managers/eventLoop/EventLoopTimer.hpp>
 #include <hyprland/src/managers/SessionLockManager.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
@@ -28,6 +32,7 @@
 
 #include <cctype>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <expected>
 #include <format>
@@ -40,12 +45,17 @@
 namespace NVClick {
     inline constexpr const char* NAME    = "vclick";
     inline constexpr const char* AUTHOR  = "hitori";
-    inline constexpr const char* VERSION = "1.0.0"; // lockstep with hyprpm.toml's [vclick]
+    inline constexpr const char* VERSION = "1.1.0"; // lockstep with hyprpm.toml's [vclick]
 
     constexpr int              MAX_CLICKS = 3;
     constexpr int              MAX_STEPS  = 20;
-    constexpr std::string_view USAGE      = "usage: vclick <window> <x> <y> [button [clicks 1-3] | scroll-up|scroll-down|scroll-left|scroll-right [steps 1-20]]\n"
-                                            "  button: left (default), right, middle, side, extra, or a code 272-279";
+    constexpr int              STEP_MS    = 50;   // the default pace: a brisk wheel spin
+    constexpr int              MAX_MS     = 1000;
+    constexpr int              BUSY_MS    = 1000; // how long a paced step waits out a busy app
+    constexpr std::string_view USAGE      = "usage: vclick <window> <x> <y> [button [clicks 1-3] | scroll-up|scroll-down|scroll-left|scroll-right [steps 1-20 [ms 0-1000]]]\n"
+                                            "       vclick status\n"
+                                            "  button: left (default), right, middle, side, extra, or a code 272-279\n"
+                                            "  ms: between scroll steps (default 50); 0 sends them all at once";
 
     // One wheel detent as a real mouse wheel sends it (libinput: 15 degrees,
     // value120 120), never scaled by input:scroll_factor: a script's step is
@@ -63,7 +73,8 @@ namespace NVClick {
         Vector2D              pos;
         uint32_t              button = BTN_LEFT; // a click, unless wheel
         std::optional<SWheel> wheel;
-        int                   count = 1; // clicks, or wheel steps
+        int                   count = 1;       // clicks, or wheel steps
+        int                   ms    = STEP_MS; // between wheel steps; 0: all at once
     };
 
     static std::vector<std::string_view> words(std::string_view s) {
@@ -120,10 +131,9 @@ namespace NVClick {
         return std::nullopt;
     }
 
-    // request: the full hyprctl request, "vclick <window> <x> <y> [button|scroll-*] [count]"
-    static std::expected<SAction, std::string> parse(std::string_view request) {
-        const auto W = words(request);
-        if (W.size() < 4 || W.size() > 6 || W[0] != NAME)
+    // W: the request's words, "vclick <window> <x> <y> [button|scroll-*] [count] [ms]"
+    static std::expected<SAction, std::string> parse(const std::vector<std::string_view>& W) {
+        if (W.size() < 4 || W.size() > 7 || W[0] != NAME)
             return std::unexpected(std::string{USAGE});
 
         SAction    c{.selector = std::string{W[1]}};
@@ -148,6 +158,14 @@ namespace NVClick {
             if (!N || *N < 1 || *N > MAX)
                 return std::unexpected(std::format("error: {} must be 1-{}\n{}", c.wheel ? "steps" : "count", MAX, USAGE));
             c.count = *N;
+        }
+        if (W.size() > 6) {
+            if (!c.wheel)
+                return std::unexpected(std::string{USAGE});
+            const auto MS = number<int>(W[6]);
+            if (!MS || *MS < 0 || *MS > MAX_MS)
+                return std::unexpected(std::format("error: ms must be 0-{}\n{}", MAX_MS, USAGE));
+            c.ms = *MS;
         }
         return c;
     }
@@ -275,9 +293,77 @@ namespace NVClick {
         return "ok";
     }
 
+    // A paced scroll: each step after the first is its own act() on the
+    // event loop, checked afresh (the window may close, hide or move, the
+    // user's pointer may come into the app). A busy app is waited out for
+    // up to BUSY_MS; any other error ends the run. One run at a time, and
+    // nothing else meanwhile: what a script scrolls is what it asked for.
+    struct SRun {
+        SAction             step; // count 1
+        int                 total  = 0;
+        int                 done   = 0;
+        int                 waited = 0; // ms spent on a busy app for the next step
+        SP<CEventLoopTimer> timer;
+    };
+    static std::optional<SRun> run;
+    static std::string         lastStop; // why the last run ended early, if it did
+
+    static void endRun() {
+        if (run && run->timer && g_pEventLoopManager)
+            g_pEventLoopManager->removeTimer(run->timer);
+        run.reset();
+    }
+
+    static void tick() {
+        if (!run)
+            return;
+        const auto R = act(run->step);
+        if (R == "ok") {
+            ++run->done;
+            run->waited = 0;
+        } else if (R.starts_with("error: busy") && run->waited + run->step.ms <= BUSY_MS) {
+            run->waited += run->step.ms;
+        } else {
+            lastStop = std::format("the last scroll stopped after {}/{}: {}", run->done, run->total, R);
+            endRun();
+            return;
+        }
+        if (run->done >= run->total) {
+            endRun();
+            return;
+        }
+        run->timer->updateTimeout(std::chrono::milliseconds(run->step.ms));
+    }
+
+    static std::string status() {
+        if (run)
+            return std::format("scrolling {}/{}", run->done, run->total);
+        return lastStop.empty() ? "idle" : "idle; " + lastStop;
+    }
+
     static std::string handle(const std::string& request) {
-        const auto C = parse(request);
-        return C ? act(*C) : C.error();
+        const auto W = words(request);
+        if (W.size() == 2 && W[0] == NAME && W[1] == "status")
+            return status();
+        const auto C = parse(W);
+        if (!C)
+            return C.error();
+        if (run)
+            return std::format("error: busy: still scrolling ({}/{}); retry later", run->done, run->total);
+        if (!C->wheel || C->count == 1 || C->ms == 0)
+            return act(*C);
+
+        // the first step now, so its errors are the reply; the rest paced
+        SAction step = *C;
+        step.count   = 1;
+        const auto R = act(step);
+        if (R != "ok")
+            return R;
+        lastStop.clear();
+        run.emplace(SRun{.step = step, .total = C->count, .done = 1});
+        run->timer = makeShared<CEventLoopTimer>(std::chrono::milliseconds(step.ms), [](SP<CEventLoopTimer>, void*) { tick(); }, nullptr);
+        g_pEventLoopManager->addTimer(run->timer);
+        return "ok";
     }
 }
 
@@ -310,6 +396,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
+    NVClick::endRun(); // a pending step must never call into an unloaded plugin
     if (ctlCmd)
         HyprlandAPI::unregisterHyprCtlCommand(PHANDLE, ctlCmd);
     ctlCmd.reset();

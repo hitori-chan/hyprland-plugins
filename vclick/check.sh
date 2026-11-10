@@ -178,6 +178,17 @@ axes() { # axes <client> <from-line>: "axis:value" per wl_pointer.axis since
 	tail -n +"$(($2 + 1))" "$T/$1.wl" | grep -v ' -> ' | grep -oE 'wl_pointer[#@][0-9]+\.axis\([0-9]+, [0-9]+, -?[0-9.]+' |
 		awk -F'[(, ]+' '{ printf "%s%s:%g", (n++ ? " " : ""), $3, $4 }'
 }
+gaps() { # gaps <client> <from-line>: ms between consecutive wl_pointer.axis events since (their time argument)
+	tail -n +"$(($2 + 1))" "$T/$1.wl" | grep -v ' -> ' | grep -oE 'wl_pointer[#@][0-9]+\.axis\([0-9]+,' | grep -oE '[0-9]+,$' |
+		awk -F, 'NR > 1 { printf "%s%d", (n++ ? " " : ""), $1 - p } { p = $1 }'
+}
+within() { # within <lo> <hi> <gaps...>: every gap in [lo, hi], and at least one
+	local lo=$1 hi=$2 g
+	shift 2
+	(($# > 0)) || return 1
+	for g in "$@"; do ((g >= lo && g <= hi)) || return 1; done
+}
+idle() { [[ "$(vclick status)" == idle* ]]; }
 scrolls() { grep -c "^SCROLL $2 $3\$" "$T/$1.log"; } # scrolls <client> <color> <direction>
 scrolled() { (($(scrolls "$1" "$2" "$3") >= $4)); }
 new_scrolls() { # new_scrolls <client> <from-log-line> <color>: GTK's directions since
@@ -205,6 +216,9 @@ expect "outside the window" "$(vclick "address:$A" 5000 10 | sed 's/ (.*//')" "e
 expect "unknown button" "$(vclick "address:$A" 10 10 thumb | head -1)" "error: unknown button 'thumb'"
 expect "count bound" "$(vclick "address:$A" 10 10 left 4 | head -1)" "error: count must be 1-3"
 expect "steps bound" "$(vclick "address:$A" 10 10 scroll-down 21 | head -1)" "error: steps must be 1-20"
+expect "ms bound" "$(vclick "address:$A" 10 10 scroll-down 2 1001 | head -1)" "error: ms must be 0-1000"
+expect "ms is for a scroll only" "$(vclick "address:$A" 10 10 left 1 50 | head -1 | cut -c1-13)" "usage: vclick"
+expect "status: idle" "$(vclick status)" idle
 
 # --- 2. another app under the user's pointer --------------------------------
 echo "== the user's pointer is on B (another client); A is clicked"
@@ -242,12 +256,44 @@ quiet "$T/a.wl"
 VDIR="$(new_scrolls a "$GL" green)"
 expect "  a scrolled green 1 step, horizontally" "$(sed 's/right/x/; s/left/x/' <<<"$VDIR")" x
 quiet "$T/b.wl"
-expect "A heard one enter, the steps, one leave, per scroll" "$(events a "$AM")" "enter motion axis axis axis leave enter motion axis axis leave enter motion axis leave"
+expect "A heard each step as its own enter, axis, leave (paced)" "$(events a "$AM")" "$(printf 'enter motion axis leave%.0s ' 1 2 3 4 5 6 | sed 's/ $//')"
 expect "  each step one detent (axis:value120)" "$(detents a "$AM")" "0:120 0:120 0:120 0:-120 0:-120 1:120"
 expect "  each step 15 units (axis:value)" "$(axes a "$AM")" "0:15 0:15 0:15 0:-15 0:-15 1:15"
 expect "B heard nothing" "$(events b "$BM")" ""
 expect "the cursor never moved" "$(hq cursorpos)" "$POS"
 expect "the focus never moved" "$(hq activewindow -j | python3 -c 'import json,sys; print(json.load(sys.stdin).get("address"))')" "$ACTIVE"
+G="$(gaps a "$AM")"
+within 48 150 $(cut -d' ' -f1-2 <<<"$G") && ok "  the default pace: 50 ms a step ($G)" || bad "  the default pace: gaps $G, want 2 of 48-150 ms first"
+
+echo "== the pace"
+AM="$(lines "$T/a.wl")" n="$(scrolls a magenta down)"
+expect "ms 0: one burst" "$(vclick "address:$A" $(at magenta) scroll-down 3 0)" ok
+scroll_ok a magenta down "$n" 3
+expect "  one enter, the steps, one leave" "$(events a "$AM")" "enter motion axis axis axis leave"
+G="$(gaps a "$AM")"
+within 0 2 $G && ok "  a millisecond apart ($G)" || bad "  gaps $G, want 0-2 ms"
+AM="$(lines "$T/a.wl")" n="$(scrolls a magenta up)"
+expect "ms 200: a slow run" "$(vclick "address:$A" $(at magenta) scroll-up 4 200)" ok
+expect "  status while it runs" "$(vclick status)" "scrolling 1/4"
+expect "  another scroll meanwhile is busy" "$(vclick "address:$A" $(at magenta) scroll-down | cut -c1-28)" "error: busy: still scrolling"
+expect "  so is a click elsewhere" "$(vclick "address:$B" 10 10 | cut -c1-28)" "error: busy: still scrolling"
+until_ok 3 idle || true
+expect "  status after it" "$(vclick status)" idle
+scroll_ok a magenta up "$n" 4
+G="$(gaps a "$AM")"
+within 195 400 $G && ok "  200 ms apart ($G)" || bad "  gaps $G, want 3 of 195-400 ms"
+
+echo "== a run ends when its window does"
+C="$(open_grid c)" || bad "client C never mapped"
+if [[ -n "$C" ]]; then
+	expect "start a run into C" "$(vclick "address:$C" 50 50 scroll-down 20 200)" ok
+	sleep 0.5
+	pkill -f "gtkgrid.py $T/c.log"
+	until_ok 3 idle || true
+	expect "  the run stopped, and says why" "$(vclick status | sed -E 's#after [0-9]+/20: error: .*#after N/20: error: …#')" "idle; the last scroll stopped after N/20: error: …"
+	gone() { [[ -z "$(field "$C" 1)" ]]; }
+	until_ok 3 gone || true
+fi
 
 AM="$(lines "$T/a.wl")" n="$(hits a HIT green)"
 expect "a double click (count 2)" "$(vclick "address:$A" $(at green) left 2)" ok
@@ -306,6 +352,17 @@ read -r MX MY <<<"$(at magenta)" # B is the same app as A: its blocks sit alike
 expect "B (another app) still clicks" "$(vclick "address:$B" "$MX" "$MY")" ok
 until_ok 3 more b HIT magenta "$n" && ok "B hit magenta" || bad "B never hit magenta"
 ptr "release 272"
+quiet "$T/a.wl"
+n="$(scrolls a yellow down)" m="$(hits a HIT red)"
+AM="$(lines "$T/a.wl")"
+expect "a paced run into A (100 ms)" "$(vclick "address:$A" $(at yellow) scroll-down 3 100)" ok
+ptr "press 272" "sleep 300" "release 272"
+until_ok 3 more a HIT red "$m" || bad "the user's press never reached A"
+until_ok 4 idle || true
+expect "  finishes" "$(vclick status)" idle
+scroll_ok a yellow down "$n" 3
+G="$(gaps a "$AM")"
+(($(tr ' ' '\n' <<<"$G" | sort -n | tail -1) >= 200)) && ok "  a step waited out the user's button ($G)" || bad "  no step waited: gaps $G"
 
 # --- 4. a popup -------------------------------------------------------------
 echo "== a popup: A's menu"
@@ -342,7 +399,13 @@ fi
 
 # --- 5. unload ----------------------------------------------------------------
 echo "== unload"
+n="$(scrolls a magenta down)"
+expect "a run is going" "$(vclick "address:$A" $(at magenta) scroll-down 20 100)" ok
 hq plugin unload "$SO" >/dev/null 2>&1
+sleep 2.5
+quiet "$T/a.wl"
+s=$(($(scrolls a magenta down) - n))
+((s >= 1 && s < 20)) && ok "  it ended with the plugin ($s of 20 steps)" || bad "  $s of 20 steps after the unload"
 expect "unloaded" "$(hq plugin list | grep -c 'Plugin vclick')" 0
 expect "the command is gone" "$(vclick "address:$A" 10 10 | grep -c '^ok$')" 0
 expect "the nested is alive" "$(kill -0 "$NPID" 2>/dev/null && echo yes)" yes

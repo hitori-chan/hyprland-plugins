@@ -11,7 +11,8 @@ code or state with `awesome`; enable it on its own
 
 ```sh
 hyprctl vclick <window> <x> <y> [button [clicks]]
-hyprctl vclick <window> <x> <y> scroll-up|scroll-down|scroll-left|scroll-right [steps]
+hyprctl vclick <window> <x> <y> scroll-up|scroll-down|scroll-left|scroll-right [steps [ms]]
+hyprctl vclick status
 ```
 
 - `<window>`: a window selector, as `send_shortcut` takes it
@@ -26,22 +27,30 @@ hyprctl vclick <window> <x> <y> scroll-up|scroll-down|scroll-left|scroll-right [
 - `steps`: wheel detents, 1 (default) to 20. `scroll-down` shows what is
   below (the content moves up), whatever the user's natural-scroll
   setting.
+- `ms`: the time between steps, 0 to 1000 (default 50). The first step
+  goes at once, and the answer comes with it; the rest follow at that
+  pace ([design](design.md#paced-scrolling)). `0` sends every step in
+  one burst, which many apps speed up.
 
 The answer is `ok`, or one line starting `error:` (`usage:` for a
 malformed request).
 
+`status` answers `scrolling <done>/<steps>` while a paced scroll runs,
+then `idle`. If a scroll stopped early, it answers `idle; the last
+scroll stopped after <done>/<steps>: <error>` until the next paced
+scroll starts. To wait for a scroll to finish:
+
 ```sh
-W=$(hyprctl -j clients | jq -r '.[] | select(.class == "firefox") | .address' | head -1)
-hyprctl vclick address:$W 640 300                  # a link
-hyprctl vclick address:$W 640 300 left 2           # select a word
-hyprctl vclick address:$W 640 500 scroll-down 5    # five wheel steps
+until [[ "$(hyprctl vclick status)" == idle* ]]; do sleep 0.02; done
 ```
 
 ## Errors
 
 - `error: bad coordinates`, `error: unknown button`, `error: count must
-  be 1-3`, `error: steps must be 1-20`: a malformed request; the usage
-  follows.
+  be 1-3`, `error: steps must be 1-20`, `error: ms must be 0-1000`: a
+  malformed request; the usage follows.
+- `error: busy: still scrolling (<done>/<steps>)`: a paced scroll is
+  running. Nothing else is taken until it ends.
 - `error: busy: …`: the user's mouse is in the same app and holds a
   button, a pointer constraint or a drag there ([design](design.md#the-same-app));
   retry later. Input into other apps goes through meanwhile.

@@ -18,7 +18,8 @@ constraints and cursor stay the user's; an app's cursor requests are
 refused unless it holds the real pointer focus, so the target cannot
 change the user's cursor either.
 
-The input goes out in one burst, timestamped a millisecond apart.
+A click goes out in one burst, timestamped a millisecond apart, and so
+does each scroll step.
 
 - A click: press and release, then the leave, so no button stays held in
   the app and a drag or an interactive move cannot start.
@@ -31,6 +32,27 @@ The input goes out in one burst, timestamped a millisecond apart.
   is in motion coordinates: down and right are positive), as a real wheel
   sends them through Hyprland; GTK 3.24 names a discrete +x step "left",
   a real tilt wheel's as much as vclick's.
+
+## Paced scrolling
+
+An app reads the time between wheel steps. A burst of steps looks like a
+fast spin, and many apps scroll further for it. Through a remote desktop
+in Firefox, 20 steps sent at once scrolled about 115 lines, while steps
+10 to 200 ms apart scrolled 2 to 3 lines each. So a scroll of more than one
+step is paced by default: the first step goes with the answer, and each
+further step goes on the compositor's event loop `ms` later.
+
+Each paced step is a whole input of its own (enter, the step, leave),
+checked afresh: the window may have closed, hidden or moved, and the
+user's mouse may have come into the app.
+
+- If the app is busy (the user holds a button there, see below), the
+  step is retried at the same pace for up to 1 s. If it is still busy
+  after that, the run stops.
+- Any other error ends the run, and `status` says why.
+
+One run at a time, and nothing else meanwhile, so a script gets exactly
+the scroll it asked for. Unloading the plugin ends a run.
 
 ## The same app
 
