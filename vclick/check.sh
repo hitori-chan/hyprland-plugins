@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # vclick's nested check: a click lands where a window capture shows it,
-# under a covering window, in a popup, a scroll steps exactly, and the
-# user's pointer never notices. Runs a nested Hyprland in the gate's private host
+# under a covering window, in a popup, a scroll steps exactly, a glide
+# moves at its pace and ends exactly on target, a move holds its hover, the
+# app's cursor image is drawn there, and the user's pointer never notices. Runs a nested Hyprland in the gate's private host
 # (awesome/gate/launch.sh) with only vclick loaded; the live session is
 # never touched.
 #
@@ -99,10 +100,10 @@ for c in json.load(sys.stdin):
     if c["title"] == "gtkgrid":
         print(c["address"], c["stableId"], *c["at"], *c["size"], int(c["floating"]))'
 }
-open_grid() { # open_grid <name>: spawn, wait for READY and the window; prints its address
+open_grid() { # open_grid <name> [cursor]: spawn, wait for READY and the window; prints its address
 	local before
 	before="$(grids | cut -d' ' -f1)"
-	dsp "hl.dsp.exec_cmd('python3 $REPO/devtools/gtkgrid.py $T/$1.log wayland $T/$1.wl')"
+	dsp "hl.dsp.exec_cmd('python3 $REPO/devtools/gtkgrid.py $T/$1.log wayland $T/$1.wl ${2:-}')"
 	until_ok 15 grep -q READY "$T/$1.log" || return 1
 	for _ in $(seq 1 200); do
 		local new
@@ -114,7 +115,7 @@ open_grid() { # open_grid <name>: spawn, wait for READY and the window; prints i
 }
 field() { grids | awk -v a="$1" -v f="$2" '$1 == a { print $f }'; } # field <address> <column>
 
-A="$(open_grid a)" || { echo "check: client A never mapped" >&2; exit 1; }
+A="$(open_grid a cursor)" || { echo "check: client A never mapped" >&2; exit 1; } # A: a custom cursor image, as a web page's
 B="$(open_grid b)" || { echo "check: client B never mapped" >&2; exit 1; }
 [[ "$(field "$A" 7)" == 1 ]] || dsp "hl.dsp.window.float({ action = 'enable', window = 'address:$A' })"
 [[ "$(field "$B" 7)" == 1 ]] || dsp "hl.dsp.window.float({ action = 'enable', window = 'address:$B' })"
@@ -219,6 +220,16 @@ expect "steps bound" "$(vclick "address:$A" 10 10 scroll-down 21 | head -1)" "er
 expect "ms bound" "$(vclick "address:$A" 10 10 scroll-down 2 1001 | head -1)" "error: ms must be 0-1000"
 expect "ms is for a scroll only" "$(vclick "address:$A" 10 10 left 1 50 | head -1 | cut -c1-13)" "usage: vclick"
 expect "status: idle" "$(vclick status)" idle
+expect "glide is the default mode" "$(vclick mode)" glide
+expect "a move takes no count" "$(vclick "address:$A" 10 10 move 2 | head -1 | cut -c1-13)" "usage: vclick"
+expect "a bad mode" "$(vclick mode fly | head -1 | cut -c1-13)" "usage: vclick"
+# the pace for the check: a profile file of its own, never the user's;
+# no overshoot, so a glide's time is Fitts's law exactly
+printf 'overshoot_p=0\n' >"$T/even.profile"
+expect "a profile from a file" "$(vclick profile reload "$T/even.profile" | head -1)" "loaded $T/even.profile"
+expect "  read back" "$(vclick profile | head -1)" "fitts a 50 ms, b 120 ms/bit (W 32 px); bow 0.06 +- 0.04; speed peak at 0.45; overshoot 0% of moves >= 300 px, by 3%; dwell 80 ms; 125 Hz"
+# the exact event sequences below are the jump's; the glide has its own section
+expect "jump mode" "$(vclick mode jump)" jump
 
 # --- 2. another app under the user's pointer --------------------------------
 echo "== the user's pointer is on B (another client); A is clicked"
@@ -397,10 +408,133 @@ else
 	bad "the menu's orange item was never drawn"
 fi
 
-# --- 5. unload ----------------------------------------------------------------
-echo "== unload"
+
+# --- 5. the glide -------------------------------------------------------------
+echo "== glide: the user's pointer is on B; A is clicked and hovered"
+mtimes() { # mtimes <client> <from-line>: the time of each wl_pointer.motion since
+	tail -n +"$(($2 + 1))" "$T/$1.wl" | grep -v ' -> ' | grep -oE 'wl_pointer[#@][0-9]+\.motion\([0-9]+' | grep -oE '[0-9]+$'
+}
+btime() { # btime <client> <from-line>: the time of the first wl_pointer.button since
+	tail -n +"$(($2 + 1))" "$T/$1.wl" | grep -v ' -> ' | grep -oE 'wl_pointer[#@][0-9]+\.button\([0-9]+, [0-9]+' | head -1 | grep -oE '[0-9]+$'
+}
+median_gap() { awk 'NR > 1 { print $1 - p } { p = $1 }' | sort -n | awk '{ g[NR] = $1 } END { print g[int((NR + 1) / 2)] }'; }
+fitts() { python3 -c 'import math, sys; a, b, d = map(float, sys.argv[1:]); print(round(min(max(a + b * math.log2(d / 32 + 1), 40), 1000)))' "$@"; }
+dist() { python3 -c 'import math, sys; x, y, u, v = map(float, sys.argv[1:]); print(math.hypot(u - x, v - y))' "$@"; }
+regex() { [[ "$1" =~ $2 ]]; }
+park "$BX" "$BY"
+quiet "$T/a.wl" && quiet "$T/b.wl"
+expect "glide mode" "$(vclick mode glide)" glide
+POS="$(hq cursorpos)" ACTIVE="$(hq activewindow -j | python3 -c 'import json,sys; print(json.load(sys.stdin).get("address"))')"
+
+AM="$(lines "$T/a.wl")"
+expect "a jump-move to green: its surface coordinates" "$(vclick "address:$A" $(at green) move jump)" ok
+quiet "$T/a.wl"
+GREEN="$(last_xy a enter "$AM")" # the window box's point, plus GTK's shadow margin
+expect "a known start: a jump-move to red, held" "$(vclick "address:$A" $(at red) move jump)" ok
+quiet "$T/a.wl"
+D="$(dist $(at red) $(at green))" MT="$(fitts 50 120 "$D")"
+AM="$(lines "$T/a.wl")" BM="$(lines "$T/b.wl")" n="$(hits a HIT green)"
+expect "a glide click to green ($(printf '%.0f' "$D") px away)" "$(vclick "address:$A" $(at green))" ok
+expect "  status while it moves" "$(vclick status)" moving
+expect "  anything else meanwhile is busy" "$(vclick "address:$B" 10 10 | cut -c1-24)" "error: busy: still movin"
+until_ok 4 idle || true
+until_ok 3 more a HIT green "$n" && ok "  A hit green" || bad "  A never hit green"
+quiet "$T/a.wl"
+EV="$(events a "$AM")"
+regex "$EV" '^motion( motion){8,} button button leave$' && ok "  from the held hover: motions, then the click and the leave ($(wc -w <<<"$EV") events)" || bad "  events: $EV"
+M="$(mtimes a "$AM")"
+GAP="$(head -n -1 <<<"$M" | median_gap)"
+((GAP >= 6 && GAP <= 12)) && ok "  125 motions a second (median gap $GAP ms)" || bad "  median gap $GAP ms, want 6-12"
+SPAN=$(($(tail -2 <<<"$M" | head -1) - $(head -1 <<<"$M")))
+((SPAN >= MT - 10 && SPAN <= MT + 40)) && ok "  Fitts's time: $SPAN ms for $MT ms" || bad "  took $SPAN ms, want $MT ms (-10/+40)"
+DWELL=$(($(btime a "$AM") - $(tail -2 <<<"$M" | head -1)))
+((DWELL >= 50 && DWELL <= 130)) && ok "  a dwell on the target before the click ($DWELL ms)" || bad "  dwell $DWELL ms, want 50-130"
+expect "  the last motion exactly on green" "$(last_xy a motion "$AM")" "$GREEN"
+expect "B heard nothing" "$(events b "$BM")" ""
+expect "the cursor never moved" "$(hq cursorpos)" "$POS"
+expect "the focus never moved" "$(hq activewindow -j | python3 -c 'import json,sys; print(json.load(sys.stdin).get("address"))')" "$ACTIVE"
+expect "A's own cursor image (set_cursor)" "$(vclick cursor "address:$A")" "the app's image, 16x16, hotspot 0,0"
+expect "B's named shape (cursor-shape-v1): the arrow" "$(vclick cursor "address:$B")" "the built-in arrow: the app asked for 'default'"
+
+echo "== a move holds the hover, and the cursor image is drawn there"
+AM="$(lines "$T/a.wl")"
+expect "move to blue" "$(vclick "address:$A" $(at blue) move)" ok
+until_ok 4 idle || true
+read -r QX QY <<<"$(at blue)"
+GX=$(($(field "$A" 3) + QX)) GY=$(($(field "$A" 4) + QY)) # blue, globally
+fullcap "$T/ghost.png" || bad "no capture with the cursor image"
+quiet "$T/a.wl"
+EV="$(events a "$AM")"
+regex "$EV" '^enter( motion){3,}$' && ok "  an enter, motions, and no leave: A keeps the hover" || bad "  events: $EV"
+sleep 2 # past the linger and the fade
+fullcap "$T/noghost.png" || bad "no capture after the fade"
+read -r _ CX CY CN <<<"$(python3 "$REPO/devtools/findcolors.py" "$T/ghost.png" rose=255,0,128)"
+((CN >= 200 && CX >= GX + 5 && CX <= GX + 10 && CY >= GY + 5 && CY <= GY + 10)) && ok "  A's own image drawn at blue ($CN px at $CX,$CY; blue at $GX,$GY)" ||
+	bad "  A's image: $CN px at $CX,$CY, want ~256 at $((GX + 7)),$((GY + 7))"
+expect "  then faded" "$(python3 "$REPO/devtools/findcolors.py" "$T/noghost.png" rose=255,0,128 | cut -d' ' -f4)" 0
+AM="$(lines "$T/a.wl")" n="$(hits a HIT blue)"
+expect "click where the hover is" "$(vclick "address:$A" $(at blue))" ok
+until_ok 4 idle || true
+until_ok 3 more a HIT blue "$n" && ok "  A hit blue" || bad "  A never hit blue"
+quiet "$T/a.wl"
+EV="$(events a "$AM")"
+regex "$EV" '^motion( motion)* button button leave$' && ok "  no second enter: the click came from the hover" || bad "  events: $EV"
+
+expect "move to yellow" "$(vclick "address:$A" $(at yellow) move)" ok
+until_ok 4 idle || true
+quiet "$T/a.wl"
+AM="$(lines "$T/a.wl")"
+park 1200 760 # the user's pointer leaves B for the empty desktop: the seat leaves every app's pointer
+quiet "$T/a.wl"
+expect "  the user's pointer changing surface ends the hover" "$(events a "$AM")" leave
+park "$BX" "$BY"
+expect "move to yellow again" "$(vclick "address:$A" $(at yellow) move)" ok
+until_ok 4 idle || true
+quiet "$T/a.wl"
+AM="$(lines "$T/a.wl")" n="$(hits b HIT magenta)"
+expect "  then click B (another app)" "$(vclick "address:$B" $(at magenta) jump)" ok
+until_ok 3 more b HIT magenta "$n" || bad "B never hit magenta"
+quiet "$T/a.wl"
+expect "  A's hover ended first" "$(events a "$AM")" leave
+
+echo "== the user's pointer comes into A during a glide"
+printf 'fitts_a_ms=400\nfitts_b_ms=400\novershoot_p=0\n' >"$T/slow.profile"
+expect "a slow profile (1 s glides)" "$(vclick profile reload "$T/slow.profile" | head -1)" "loaded $T/slow.profile"
+expect "  a jump-move to green" "$(vclick "address:$A" $(at green) move jump)" ok
+quiet "$T/a.wl"
+n="$(hits a HIT blue)"
+expect "  a glide click to blue" "$(vclick "address:$A" $(at blue))" ok
+sleep 0.3
+park "$((70 + RX))" "$((70 + RY))" # A's red, globally: the spot section 3 proved is A's
+POS="$(hq cursorpos)"
+until_ok 4 idle || true
+until_ok 3 more a HIT blue "$n" && ok "  A still hit blue" || bad "  A never hit blue"
+expect "  the glide handed over to a jump" "$(vclick status)" "idle; the last glide finished as a jump: the user's pointer came into the app"
+expect "  the cursor never moved" "$(hq cursorpos)" "$POS"
+park "$BX" "$BY"
+expect "back to the check's profile" "$(vclick profile reload "$T/even.profile" | head -1)" "loaded $T/even.profile"
+expect "a jump click (jump) in glide mode" "$(vclick "address:$A" $(at magenta) jump)" ok
+
+# --- 6. unload ----------------------------------------------------------------
+echo "== unload during a glide"
+quiet "$T/a.wl"
+expect "a slow profile" "$(vclick profile reload "$T/slow.profile" | head -1)" "loaded $T/slow.profile"
+AM="$(lines "$T/a.wl")"
+expect "a glide is going" "$(vclick "address:$A" $(at green) move)" ok
+sleep 0.3
+hq plugin unload "$SO" >/dev/null 2>&1
+quiet "$T/a.wl"
+E1="$(events a "$AM")"
+sleep 0.5
+expect "  it ended with the plugin: no pointer event after" "$(events a "$AM")" "$E1"
+expect "  and left A's pointer" "$(events a "$AM" | awk '{ print $NF }')" leave
+expect "  the nested is alive" "$(kill -0 "$NPID" 2>/dev/null && echo yes)" yes
+hq plugin load "$SO" >/dev/null 2>&1
+expect "loaded again" "$(hq plugin list | grep -c 'Plugin vclick')" 1
+
+echo "== unload during a paced scroll"
 n="$(scrolls a magenta down)"
-expect "a run is going" "$(vclick "address:$A" $(at magenta) scroll-down 20 100)" ok
+expect "a run is going" "$(vclick "address:$A" $(at magenta) scroll-down 20 100 jump)" ok
 hq plugin unload "$SO" >/dev/null 2>&1
 sleep 2.5
 quiet "$T/a.wl"

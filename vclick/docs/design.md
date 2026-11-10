@@ -16,10 +16,12 @@ leave straight to the target app's own `wl_pointer` objects, all of them
 (an app may bind more than one). The seat's pointer focus, held buttons,
 constraints and cursor stay the user's; an app's cursor requests are
 refused unless it holds the real pointer focus, so the target cannot
-change the user's cursor either.
+change the user's cursor either ([the cursor image](#the-cursor-image)).
 
-A click goes out in one burst, timestamped a millisecond apart, and so
-does each scroll step.
+A jump sends the input in one burst, timestamped a millisecond apart:
+enter, motion, then the clicks or the scroll step. A glide sends the
+same input from the pointer it has already brought there
+([the glide](#the-glide)).
 
 - A click: press and release, then the leave, so no button stays held in
   the app and a drag or an interactive move cannot start.
@@ -33,14 +35,103 @@ does each scroll step.
   sends them through Hyprland; GTK 3.24 names a discrete +x step "left",
   a real tilt wheel's as much as vclick's.
 
+## The glide
+
+A jump puts the app's pointer on the point at once. An app sees that as
+a teleport, and through a remote desktop the remote cursor jumps too. A
+glide moves the pointer there as the user's hand would, then acts:
+
+- The path: a cubic Bézier from where vclick's pointer last was in the
+  window (else its centre) to the point. Its inner control points sit at
+  a third and two thirds of the line, so the progress along it is the
+  speed profile's, and off it sideways, so the path bows like a hand's
+  arc: by `bow_mean` ± `bow_sd` of its length (at most 25%), to a random
+  side, or the other one if the window's edge would cut the bow. The
+  control points are kept inside the window, and the curve stays in
+  their convex hull: so does the whole path.
+- The time: Fitts's law, a + b · log2(D / W + 1) ms, 40 ms to 1 s.
+  vclick can't see the target's size, so W is 32 px.
+- The speed: zero at both ends and bell-shaped, t^α (1 − t)^β with
+  α + β = 4, peaking at `peak` of the move. Centred, that is the
+  minimum-jerk speed of a reaching arm; people peak early.
+- The overshoot: a move of 300 px or more passes the target `overshoot_p`
+  of the time, by about `overshoot` of D (3–40 px), in 85% of its time,
+  then a short straight correction comes back (60–300 ms).
+- The pace: one motion every 1000 / `rate_hz` ms (4–16 ms), on the
+  compositor's event loop. A surface boundary on the way (a subsurface,
+  a popup) is crossed with a leave and an enter, as a real pointer
+  crosses it. The last motion lands exactly on the point.
+- The dwell: the pointer rests on the target for `dwell_ms` ± 30% (at
+  most 400 ms), then the click or scroll goes from there. A move has no
+  dwell.
+
+Each tick is checked afresh. If the window closed or was hidden, the
+session locked or the compositor is shutting down, the glide stops and
+the app's pointer leaves. If the user's pointer came into the app, the
+seat has taken the app's pointer: the glide ends there, a click or
+scroll goes on as a jump ([the same app](#the-same-app)), and a move
+stops. `status` says which.
+
+One glide at a time, and nothing else meanwhile. Unloading the plugin
+ends it, and the app's pointer leaves.
+
+### The user's pace
+
+The defaults are a typical mouse user's. `learn.py record` reads the
+user's own movements: the cursor's position from the compositor's socket
+(about 250 Hz) and the pointer devices' raw events, for the exact time
+of each report and click (never a keyboard; it grabs nothing).
+`learn.py fit` splits them into movements (still, moving, still again)
+and keeps those that end in a click within 1.2 s, Fitts's own case. It
+fits a and b by least squares through the medians of 8 equal-count bands
+of difficulty: medians shrug off a hesitation, where trimming the
+slowest moves would drop mostly the long ones and flatten b. The bow,
+the speed's peak, the overshoot (of moves of 300 px or more) and the
+dwell are the moves' own; the rate is the device's report interval.
+
+## The cursor image
+
+An app sets its cursor image (`wl_pointer.set_cursor`) when its pointer
+enters, and again when it wants another; the compositor refuses it unless
+the app holds the real pointer focus. So the seat never shows a glide's
+image, and the user would see nothing move. vclick hooks the seat
+manager's `onSetCursor` and keeps each app's latest image (the original
+then decides as it always does), and it hears `cursor-shape-v1`'s named
+shapes. It draws that image itself at the app's pointer:
+
+- after the windows are drawn, clipped to the target window;
+- never in a capture (screencopy, `grim -T`), so a window capture shows
+  the app as it is;
+- while an input runs, for 1.2 s after it, then fading over 0.3 s; an
+  animated image keeps going (its frame callbacks).
+
+A named shape, a hidden cursor or none gets a built-in arrow: vclick
+loads no cursor theme. Without the hook (the symbol not found after a
+compositor change), the arrow is all it draws; `cursor` says so.
+
+## The hover
+
+A `move` ends without a leave: the app keeps the hover (a tooltip, a
+menu that opens on hover), and its next input there goes from the
+hover, without a second enter. The hover ends:
+
+- when the user's pointer changes surface: the seat sends every app's
+  pointer a leave;
+- at vclick's next input into another app: it leaves first;
+- when the plugin unloads.
+
+A move into the app under the user's mouse is refused: there the app's
+one pointer is the user's.
+
 ## Paced scrolling
 
 An app reads the time between wheel steps. A burst of steps looks like a
 fast spin, and many apps scroll further for it. Through a remote desktop
 in Firefox, 20 steps sent at once scrolled about 115 lines, while steps
 10 to 200 ms apart scrolled 2 to 3 lines each. So a scroll of more than one
-step is paced by default: the first step goes with the answer, and each
-further step goes on the compositor's event loop `ms` later.
+step is paced by default: the first step goes at once (with the answer,
+or when a glide arrives), and each further step goes on the compositor's
+event loop `ms` later.
 
 Each paced step is a whole input of its own (enter, the step, leave),
 checked afresh: the window may have closed, hidden or moved, and the
@@ -77,10 +168,11 @@ active or a drag is running in that app, vclick answers `error: busy`.
   until it closes (Escape through `send_shortcut`, or a click elsewhere).
 - An app may ask for activation after a click (opening a link in a new
   window); `misc:focus_on_activate` decides, as for any app.
-- No hover and no drag. A hover has to stay, but the seat sends every
-  app's pointer a leave whenever the user's pointer changes surface, and
-  in the user's own app the one pointer is the user's. A drag-and-drop
-  (a tab, a link, a file) is the app's call, and Hyprland then drives it
-  with the user's real mouse: it follows the cursor and drops on the
-  user's next real release.
+- A hover lasts only until the user's pointer changes surface, and is
+  refused in the user's own app ([the hover](#the-hover)).
+- No drag. A drag-and-drop (a tab, a link, a file) is the app's call,
+  and Hyprland then drives it with the user's real mouse: it follows the
+  cursor and drops on the user's next real release.
+- A glide's target is 32 px wide to Fitts's law, whatever its real size:
+  a small button gets a little less time than a hand would take.
 - No XWayland: the compositor's hit test asserts on an X11 window.

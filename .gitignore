@@ -62,3 +62,6 @@ PLAN_*.md
 *[-_]audit*.md
 *[-_]spec*.md
 *[-_]plan*.md
+
+# python bytecode (learn.py, devtools)
+__pycache__/
