@@ -5,10 +5,11 @@
 # a click on what is DRAWN must name the same block; every wheel step the
 # block it scrolled. With `cursor`, the window asks for a custom cursor
 # image (a 16x16 rose square, hotspot 0,0) through wl_pointer.set_cursor,
-# as a web page's own cursor does, instead of a named shape.
+# as a web page's own cursor does, instead of a named shape. Every key the
+# window hears is logged with the modifiers GTK read with it.
 # usage: gtkgrid.py <log> [wayland|x11] [wayland-debug-log] [cursor]
 #   log lines: READY | HIT <color> | SCROLL <color> up|down|left|right |
-#              MENU <color> | MENUBUTTON True|False
+#              MENU <color> | MENUBUTTON True|False | KEY <name> <mods>|-
 import os
 import sys
 
@@ -70,6 +71,17 @@ button.connect("toggled", lambda b: say("MENUBUTTON", b.get_active()))
 box.pack_start(button, False, False, 0)
 win.add(box)
 win.connect("destroy", Gtk.main_quit)
+MODS = [("ctrl", Gdk.ModifierType.CONTROL_MASK), ("shift", Gdk.ModifierType.SHIFT_MASK),
+        ("alt", Gdk.ModifierType.MOD1_MASK), ("super", Gdk.ModifierType.SUPER_MASK)]
+
+
+def key(_w, ev):
+    mods = "+".join(n for n, m in MODS if ev.state & m) or "-"
+    say("KEY", Gdk.keyval_name(ev.keyval), mods)
+    return True  # nothing else in the window acts on it
+
+
+win.connect("key-press-event", key)
 
 
 def custom_cursor(w):
