@@ -4,6 +4,7 @@
 //   command.cpp  the hyprctl command: parse a request, run it, report status
 //   pointer.cpp  the app's own pointer: the target under a point, the input in
 //                one burst (a jump), a paced scroll, the hover a move holds
+//   keyboard.cpp the app's own keyboard: one key, pressed and released
 //   glide.cpp    the way there: one motion per tick along the planned path
 //   path.cpp     the path's math and the user's pace (no compositor)
 //   cursor.cpp   the cursor image drawn at the virtual pointer
@@ -13,6 +14,7 @@
 
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/helpers/memory/Memory.hpp>
+#include <hyprland/src/input/Keys.hpp>
 
 #include <linux/input-event-codes.h>
 #include <wayland-server-core.h>
@@ -37,7 +39,7 @@ namespace VClick {
 
     inline constexpr const char* NAME    = "vclick";
     inline constexpr const char* AUTHOR  = "hitori";
-    inline constexpr const char* VERSION = "2.0.1"; // lockstep with hyprpm.toml's [vclick]
+    inline constexpr const char* VERSION = "2.1.0"; // lockstep with hyprpm.toml's [vclick]
 
     constexpr int MAX_CLICKS = 3;
     constexpr int MAX_STEPS  = 20;
@@ -63,6 +65,13 @@ namespace VClick {
         std::optional<bool>   glide;           // this request's way there; unset: the mode's (mouse glides)
     };
 
+    // one key
+    struct SKey {
+        std::string         selector;
+        uint32_t            code = 0; // evdev
+        Input::ModifierMask mods = Input::HL_MODIFIER_NONE;
+    };
+
     // An input's outcome: nothing, or the reply's error line ("error: ...").
     using Result = std::expected<void, std::string>;
     inline std::unexpected<std::string> fail(std::string line) {
@@ -71,6 +80,9 @@ namespace VClick {
     inline bool busy(const Result& r) {
         return !r && r.error().starts_with("error: busy");
     }
+
+    // why no input may go now (the reply's error line), or nothing
+    std::optional<std::string> blocked();
 
     // why the last glide or paced scroll ended early; status reports it
     void noteStop(std::string why);
@@ -116,6 +128,12 @@ namespace VClick {
 
         std::optional<std::string> scrollStatus(); // "scrolling d/t" while a paced scroll runs
         void                       reset();
+    }
+
+    namespace Keyboard {
+        // <key> [mods]: an xkb key name or code:<n>, mods "ctrl+shift"
+        std::expected<SKey, std::string> parse(std::string_view key, std::string_view mods);
+        Result                           send(const SKey& k);
     }
 
     namespace Glide {

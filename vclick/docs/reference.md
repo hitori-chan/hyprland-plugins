@@ -10,6 +10,7 @@ The whole command and its answers. Examples are in the
 hyprctl vclick click  <window> <x> <y> [button] [double|triple] [glide|jump]
 hyprctl vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [glide|jump]
 hyprctl vclick move   <window> <x> <y> [glide|jump]
+hyprctl vclick key    <window> <key> [mods]
 hyprctl vclick status
 hyprctl vclick where
 hyprctl vclick hide
@@ -45,6 +46,15 @@ The options follow the point, in any order, each at most once.
   `jump`: go at once. A request that names neither goes the mode's way:
   `mouse` glides, `tap` jumps.
 
+- `<key>`: an xkb key name in the active layout, as `send_shortcut`
+  takes it (`Next` is PageDown, `Prior` PageUp; `Return`, `Escape`,
+  `a`, `F5`; any case), or `code:<n>` (an xkb keycode, the evdev code
+  plus 8). One press and its release.
+- `[mods]`: the modifiers held for that key, joined by `+` (or `_`):
+  `ctrl`, `shift`, `alt`, `super` (and `control`, `mod1`-`mod5`, `win`,
+  `logo`, `meta`), any case. `key` takes no other option
+  ([design](design.md#the-keyboard)).
+
 The answer is `ok`, or one line starting `error:` (`usage:` for a
 request that names no verb). A glide answers `ok` as it sets off; the
 click or scroll follows when it arrives, and an error there shows in
@@ -55,6 +65,18 @@ the window's centre. It goes as a jump instead when the user's pointer
 is in the same app (a glide would take the app's pointer from them; a
 `move` is refused then) or when the point is in a popup outside the
 window's box.
+
+## key
+
+`key <window> <key> [mods]` sends that window one key, pressed and
+released, with the modifiers held for it, and answers `ok` once it is
+sent. The app hears an enter, the modifiers, the press, the release, the
+modifiers released and a leave, unless the user's keyboard is in that
+very window: then it hears only the key, between its modifiers. Nothing
+else hears anything, and the keyboard focus stays where it is. It is
+refused while the user's keyboard is in another window of the same app,
+or while they hold a key in that one (`error: busy`). The key goes at
+once, whatever the mode: no glide, no cursor.
 
 ## status
 
@@ -165,6 +187,14 @@ be installed ([design](design.md#the-cursor-image)).
   through meanwhile.
 - `error: busy: the user's pointer is in this app; a move would take it
   from them`: a `move` into the app under the user's mouse.
+- `error: '<key>' is not a key`, `error: '<word>' is not a modifier`: a
+  malformed `key`; the usage follows. `error: no keyboard: the seat has
+  none to take the keymap from`: the compositor has no keyboard.
+- `error: busy: the user's keyboard is in another window of this app;
+  retry later`, `error: busy: the user holds a key in this app; retry
+  later`: a `key` into the app with the user's keyboard
+  ([design](design.md#the-keyboard)).
+- `error: the app has no keyboard (it bound no wl_keyboard)`.
 - `error: XWayland windows are not supported`: the compositor's hit test
   asserts on them.
 - `error: window not found`, `error: the window is not mapped` (hidden

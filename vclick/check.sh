@@ -4,14 +4,16 @@
 # moves at its pace and ends exactly on target, the mouse mode keeps the
 # hover and its cursor at rest (under any window above, and taken by the
 # user's pointer coming into the app), the tap mode leaves and fades, and
-# the user's pointer never notices. Runs a nested Hyprland in the gate's private host
+# the user's pointer never notices; a key reaches its window alone, and the
+# user's keyboard never notices. Runs a nested Hyprland in the gate's private host
 # (awesome/gate/launch.sh) with only vclick loaded; the live session is
 # never touched.
 #
 # usage: make -C vclick && bash vclick/check.sh
 # Two GTK3 clients (devtools/gtkgrid.py, each with a protocol trace):
 # A is the target, B covers A's lower right and is the bystander. A
-# virtual pointer (devtools/vptr) is "the user's" mouse.
+# virtual pointer (devtools/vptr) is "the user's" mouse, a virtual
+# keyboard (devtools/vkbd) their keyboard.
 set -u
 
 source "$(dirname "${BASH_SOURCE[0]}")/../awesome/gate/memcap.sh" # the run's memory cap
@@ -48,7 +50,7 @@ EOF
 
 VP=""
 cleanup() {
-	exec 7>&- 2>/dev/null
+	exec 7>&- 6>&- 2>/dev/null
 	[[ -n "$VP" ]] && kill "$VP" 2>/dev/null
 	bash "$GATE/stop.sh" >/dev/null 2>&1
 }
@@ -93,6 +95,12 @@ park() { # park <x> <y>: the user's pointer to a global spot, settled
 	ptr "move $1 $2"
 	until_ok 3 cursor_at "$1" "$2"
 }
+# the user's keyboard: up before the clients, so they bind a wl_keyboard
+kbds() { hq devices -j | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["keyboards"]))'; }
+kbd_up() { (($(kbds) > 0)); }
+exec 6> >(WAYLAND_DISPLAY="$WL" "$REPO/devtools/vkbd" >/dev/null 2>&1)
+kb() { printf '%s\n' "$@" >&6; }
+until_ok 3 kbd_up || { echo "check: the virtual keyboard never came up" >&2; exit 1; }
 
 # --- the clients ----------------------------------------------------------
 grids() { # address stableId at.x at.y size.x size.y floating, per gtkgrid
@@ -295,6 +303,7 @@ expect "  status while it runs" "$(vclick status)" "scrolling 1/4"
 expect "  another scroll meanwhile is busy" "$(vclick scroll "address:$A" $(at magenta) down | cut -c1-28)" "error: busy: still scrolling"
 expect "  so is a click elsewhere" "$(vclick click "address:$B" 10 10 | cut -c1-28)" "error: busy: still scrolling"
 expect "  and so is hide" "$(vclick hide | cut -c1-28)" "error: busy: still scrolling"
+expect "  and so is a key" "$(vclick key "address:$A" Next | cut -c1-28)" "error: busy: still scrolling"
 until_ok 3 idle || true
 expect "  status after it" "$(vclick status)" idle
 scroll_ok a magenta up "$n" 4
@@ -322,6 +331,57 @@ AM="$(lines "$T/a.wl")"
 expect "a right click" "$(vclick click "address:$A" $(at blue) right)" ok
 quiet "$T/a.wl"
 expect "  is button 273" "$(tail -n +"$((AM + 1))" "$T/a.wl" | grep -v ' -> ' | grep -oE 'wl_pointer[#@][0-9]+\.button\([0-9]+, [0-9]+, [0-9]+' | awk -F', ' '{ print $3 }' | sort -u)" 273
+
+# --- keys -----------------------------------------------------------------------
+echo "== a key into A; the user's keyboard is in B (another client)"
+kevents() { # kevents <client> <from-line>: wl_keyboard events the client received since
+	tail -n +"$(($2 + 1))" "$T/$1.wl" | grep -v ' -> ' | grep -oE 'wl_keyboard[#@][0-9]+\.(enter|leave|key|modifiers)\(' |
+		sed 's/.*\.//; s/($//' | tr '\n' ' ' | sed 's/ $//'
+}
+keys() { grep -c "^KEY $2 $3\$" "$T/$1.log"; } # keys <client> <keyval> <mods|->: GTK's key presses
+keyed() { (($(keys "$1" "$2" "$3") > $4)); }
+active() { hq activewindow -j | python3 -c 'import json,sys; print(json.load(sys.stdin).get("address"))'; }
+active_is() { [[ "$(active)" == "$1" ]]; }
+dsp "hl.dsp.focus({ window = 'address:$B' })"
+until_ok 3 active_is "$B" || bad "B never took the keyboard"
+park "$BX" "$BY" # a focus may warp the cursor
+quiet "$T/a.wl" && quiet "$T/b.wl"
+AM="$(lines "$T/a.wl")" BM="$(lines "$T/b.wl")" n="$(keys a Page_Down -)"
+expect "key Next (PageDown) into A" "$(vclick key "address:$A" Next)" ok
+until_ok 3 keyed a Page_Down - "$n" && ok "  A read Page_Down, no modifier" || bad "  A never read Page_Down ($(tail -2 "$T/a.log" | tr '\n' ' '))"
+quiet "$T/a.wl"
+expect "  A heard an enter, the press and the release, and a leave" "$(kevents a "$AM")" "enter modifiers key key modifiers leave"
+expect "  B, which has the user's keyboard, heard nothing" "$(kevents b "$BM")" ""
+expect "  the keyboard focus never moved" "$(active)" "$B"
+AM="$(lines "$T/a.wl")" n="$(keys a A ctrl+shift)"
+expect "key a with ctrl+shift" "$(vclick key "$A" a ctrl+shift)" ok
+until_ok 3 keyed a A ctrl+shift "$n" && ok "  A read ctrl+shift+A" || bad "  A never read ctrl+shift+A ($(tail -2 "$T/a.log" | tr '\n' ' '))"
+quiet "$T/a.wl"
+expect "  each press has its release: no key stays held" \
+	"$(tail -n +"$((AM + 1))" "$T/a.wl" | grep -v ' -> ' | grep -oE 'wl_keyboard[#@][0-9]+\.key\([0-9]+, [0-9]+, [0-9]+, [0-9]+' | awk -F', ' '{ s[$4]++ } END { print s[1] + 0, s[0] + 0 }')" "1 1"
+expect "an unknown key" "$(vclick key "address:$A" NoSuchKey | head -1)" "error: 'NoSuchKey' is not a key"
+expect "an unknown modifier" "$(vclick key "address:$A" a hyper | head -1)" "error: 'hyper' is not a modifier"
+expect "a key needs its key" "$(vclick key "address:$A" | head -1 | cut -c1-13)" "usage: vclick"
+expect "a key to no window" "$(vclick key address:0x1 Next)" "error: window not found"
+
+echo "== a key into A; the user's keyboard is in A"
+dsp "hl.dsp.focus({ window = 'address:$A' })"
+until_ok 3 active_is "$A" || bad "A never took the keyboard"
+quiet "$T/a.wl"
+AM="$(lines "$T/a.wl")" n="$(keys a Page_Up -)"
+expect "key Prior (PageUp) into A" "$(vclick key "address:$A" Prior)" ok
+until_ok 3 keyed a Page_Up - "$n" && ok "  A read Page_Up" || bad "  A never read Page_Up"
+quiet "$T/a.wl"
+expect "  no enter and no leave around it: the user's focus stays as it was" "$(kevents a "$AM")" "modifiers key key modifiers"
+expect "  the keyboard focus never moved" "$(active)" "$A"
+n="$(keys a a -)"
+kb "press 30" # the user holds a key in A
+until_ok 3 keyed a a - "$n" || bad "the user's key never reached A"
+expect "the user holds a key in A: busy" "$(vclick key "address:$A" Next)" "error: busy: the user holds a key in this app; retry later"
+kb "release 30"
+dsp "hl.dsp.focus({ window = 'address:$B' })"
+until_ok 3 active_is "$B" || bad "B never took the keyboard back"
+park "$BX" "$BY"
 
 # --- 3. the same app under the user's pointer -------------------------------
 echo "== the user's pointer is on A itself; A is clicked elsewhere"

@@ -36,7 +36,8 @@ gate run) and memory cap, with only vclick loaded; the live session is
 never touched. Two GTK3 clients (`devtools/gtkgrid.py`, each with a
 protocol trace): A is the target, B covers A's lower right and is the
 bystander; A sets a custom cursor image (`gtkgrid.py … cursor`). A
-virtual pointer (`devtools/vptr`) is the user's mouse.
+virtual pointer (`devtools/vptr`) is the user's mouse, a virtual
+keyboard (`devtools/vkbd`) their keyboard.
 
 - In the tap mode (its exact event sequences): clicks land where A's
   window capture draws each block, under B and in A's popup menu;
@@ -46,13 +47,19 @@ virtual pointer (`devtools/vptr`) is the user's mouse.
   seat, not against GTK's name for it ([design](design.md)).
 - The pace: the default steps arrive 50 ms apart, `0ms` in one burst
   and `200ms` 200 ms apart (the protocol's own timestamps).
-  - `status` reports a run, and any other request (`hide` too) is busy
-    meanwhile.
+  - `status` reports a run, and any other request (`hide` and `key`
+    too) is busy meanwhile.
   - A run stops, and says why, when its window closes.
   - A run waits out the user's button in the same app, then finishes.
   - A run ends with an unload, and the nested stays up.
 - With the user's pointer on B: B hears nothing; the cursor and the
   focus never move.
+- Keys, with the user's keyboard in B: A reads `Page_Down`, then
+  ctrl+shift+A (GTK's own names), as an enter, the modifiers, one press
+  and its release, the modifiers and a leave; B hears nothing and the
+  focus never moves. With the user's keyboard in A: the key alone, no
+  enter or leave; `error: busy` while the user holds a key there. A bad
+  key or modifier, no window.
 - With the user's pointer on A: A's pointer steps out and back in under
   the cursor, after A moved under a still cursor; the user's own click
   still lands.

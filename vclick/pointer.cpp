@@ -30,6 +30,16 @@
 #include <format>
 #include <utility>
 
+namespace VClick {
+    std::optional<std::string> blocked() {
+        if (g_pCompositor->m_isShuttingDown)
+            return "error: the compositor is shutting down";
+        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+            return "error: the session is locked";
+        return std::nullopt;
+    }
+}
+
 namespace VClick::Pointer {
     // One wheel detent as a real mouse wheel sends it (libinput: 15 degrees,
     // value120 120), never scaled by input:scroll_factor: a script's step is
@@ -99,10 +109,8 @@ namespace VClick::Pointer {
     }
 
     std::expected<STarget, std::string> resolve(std::string_view selector, const Vector2D& pos) {
-        if (g_pCompositor->m_isShuttingDown)
-            return std::unexpected("error: the compositor is shutting down");
-        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
-            return std::unexpected("error: the session is locked");
+        if (const auto WHY = blocked())
+            return std::unexpected(*WHY);
 
         STarget t;
         t.window = windowOf(selector);

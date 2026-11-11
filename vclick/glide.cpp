@@ -10,10 +10,8 @@
 // starts, and in the mouse mode where the cursor rests.
 #include "vclick.hpp"
 
-#include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/view/window/Window.hpp>
 #include <hyprland/src/helpers/time/Time.hpp>
-#include <hyprland/src/managers/SessionLockManager.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopTimer.hpp>
 #include <hyprland/src/protocols/core/Compositor.hpp>
@@ -147,10 +145,8 @@ namespace VClick::Glide {
             return;
         const auto  W = glide->window.lock();
         std::string why;
-        if (g_pCompositor->m_isShuttingDown)
-            why = "the compositor is shutting down";
-        else if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
-            why = "the session is locked";
+        if (const auto WHY = blocked())
+            why = WHY->substr(7); // past "error: "
         else if (!W || !Desktop::View::validMapped(W) || W->isHidden())
             why = "the window closed or was hidden";
         if (!why.empty()) {

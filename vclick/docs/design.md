@@ -197,6 +197,37 @@ That never happens under a press: a leave releases the app's held
 buttons, so while the user holds a button, a pointer constraint is
 active or a drag is running in that app, vclick answers `error: busy`.
 
+## The keyboard
+
+A key through the seat (`send_shortcut`) moves the seat's keyboard focus
+to the window, sends the key, and moves it back. Meanwhile the user's
+own keys follow the focus: a key the user types at that instant goes to
+the target, and their window hears a leave and an enter (a text field
+blurs, a menu closes). vclick's `key` never touches the seat's keyboard
+focus, held keys or modifiers. It finds the client's `wl_keyboard`
+objects (through its `wl_seat` bindings: an app may bind more than one)
+and sends them the key alone:
+
+- An enter on the window's surface, naming no held keys (what the user
+  holds is theirs), the request's modifiers, the press, the release a
+  millisecond later, the modifiers released, and a leave. The layout
+  group and the lock keys are the user's keyboard's, so a key means in
+  the app what it would mean typed. The press and the release go in one
+  burst: no key stays held, and the app's own key repeat never starts.
+- The key code comes from the compositor's own resolver, as
+  `send_shortcut`'s does, in the keymap every client was sent.
+- When the user's keyboard is in the same app, that app has one keyboard
+  focus, theirs. A leave and an enter around the key would blur their
+  window, so the key goes only into the very window they are in, between
+  its modifiers and the user's again, and only while they hold no key or
+  modifier (theirs would join the request's). Into another window of
+  that app (a second browser window, or a menu of the target that has the
+  keyboard), the answer is `error: busy`.
+
+A key is no pointer input: it goes at once in either mode, and no cursor
+shows. Like a click, it waits for nothing and is refused while a glide
+or a paced scroll runs.
+
 ## Limits
 
 - A click that opens a popup with a grab (a context menu, a `<select>`,
@@ -215,4 +246,7 @@ active or a drag is running in that app, vclick answers `error: busy`.
   cursor and drops on the user's next real release.
 - A glide's target is 32 px wide to Fitts's law, whatever its real size:
   a small button gets a little less time than a hand would take.
-- No XWayland: the compositor's hit test asserts on an X11 window.
+- No XWayland: the compositor's hit test asserts on an X11 window, and an
+  X11 client's keys go through XWayland's seat.
+- A key's app sees it focused for that instant: a page may hear a focus
+  and a blur event around the key, as with `send_shortcut`.

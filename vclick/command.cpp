@@ -24,10 +24,13 @@ namespace VClick::Command {
         "usage: vclick click <window> <x> <y> [button] [double|triple] [glide|jump]\n"
         "       vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [glide|jump]\n"
         "       vclick move <window> <x> <y> [glide|jump]\n"
+        "       vclick key <window> <key> [mods]\n"
         "       vclick hide | status | where | mode [mouse|tap] | profile [reload [file]] | image <window>\n"
         "  window: a window selector (address:0x..., class:...), or a bare 0x... address\n"
         "  button: left (default), right, middle, side, extra, or a code 272-279\n"
         "  steps: wheel detents, 1-20 (default 1); <ms>ms: between them, 0ms-1000ms (default 50ms; 0ms: at once)\n"
+        "  key: an xkb key name, as send_shortcut takes it (Next, Prior, Return, a, F5), or code:<n>; pressed and released\n"
+        "  mods: modifiers held for it, joined by + (ctrl, shift, alt, super)\n"
         "  mode mouse: glide there, and stay; the app keeps the hover (the default)\n"
         "  mode tap: go at once, and leave after the input; no cursor stays\n"
         "  glide|jump: this request's way there, whatever the mode";
@@ -255,12 +258,28 @@ namespace VClick::Command {
         return "ok";
     }
 
+    // "vclick key <window> <key> [mods]": one key, pressed and released
+    static std::string key(const std::vector<std::string_view>& w) {
+        if (w.size() < 4 || w.size() > 5)
+            return std::string{USAGE};
+        auto k = Keyboard::parse(w[3], w.size() == 5 ? w[4] : std::string_view{});
+        if (!k)
+            return std::format("{}\n{}", k.error(), USAGE);
+        if (busy())
+            return busyError();
+        k->selector  = selectorOf(w[2]);
+        const auto R = Keyboard::send(*k);
+        return R ? "ok" : R.error();
+    }
+
     std::string handle(const std::string& request) {
         const auto W = words(request);
         if (W.size() < 2 || W[0] != NAME)
             return std::string{USAGE};
         if (isInput(W[1]))
             return input(W);
+        if (W[1] == "key")
+            return key(W);
         if (const auto Q = query(W))
             return *Q;
         return std::string{USAGE};

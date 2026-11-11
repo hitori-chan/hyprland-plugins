@@ -1,8 +1,9 @@
 # vclick
 
 A plugin that clicks, scrolls or hovers inside a window without the
-user's mouse. By default it glides there first, along a curve and at the
-user's own pace. It shares no code or state with `awesome`.
+user's mouse, and sends it keys without the user's keyboard. By default
+it glides there first, along a curve and at the user's own pace. It
+shares no code or state with `awesome`.
 
 ## Enable
 
@@ -21,6 +22,8 @@ hyprctl vclick scroll $W 640 500 down 12         # 12 wheel steps, 50 ms apart
 hyprctl vclick scroll $W 640 500 up 3 200ms      # slower
 hyprctl vclick move   $W 640 300                 # hover there
 hyprctl vclick click  $W 640 300 jump            # click at once, no glide
+hyprctl vclick key    $W Next                    # PageDown, to that window only
+hyprctl vclick key    $W t ctrl+shift            # with modifiers held for it
 hyprctl vclick where                             # address:0x… 640 300
 hyprctl vclick hide                              # take the mouse away
 hyprctl vclick status                            # moving, scrolling 3/12, then idle
@@ -30,7 +33,8 @@ The window is any window selector (`address:0x…`, `class:…`) or a bare
 `0x…` address. The coordinates are pixels of a window capture
 (`grim -T`), measured from the window's top-left corner. The user's
 cursor doesn't move, the window under the mouse hears nothing, and
-keyboard focus stays where it is.
+keyboard focus stays where it is. A key goes to that one window, pressed
+and released, and the window with the user's keyboard hears nothing.
 
 Two modes (`hyprctl vclick mode mouse|tap`):
 
@@ -62,11 +66,11 @@ the glide moves at a typical mouse user's pace.
 
 ## Docs
 
-- [Reference](docs/reference.md): `click`, `scroll`, `move`, `status`,
-  `where`, `hide`, `mode`, `profile`, `image`, the profile file, the
-  errors
+- [Reference](docs/reference.md): `click`, `scroll`, `move`, `key`,
+  `status`, `where`, `hide`, `mode`, `profile`, `image`, the profile
+  file, the errors
 - [Design](docs/design.md): input without the seat, the modes, the
-  glide, the cursor image, the hover, paced scrolling, the same app,
-  limits
+  glide, the cursor image, the hover, paced scrolling, the same app, the
+  keyboard, limits
 - [Testing](docs/testing.md): the build, the path's unit cases, the
   nested check
