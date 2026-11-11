@@ -72,6 +72,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                                                                                       return IPC::Socket1::SResponse{VClick::Command::handle(request.command)};
                                                                                   }});
 
+    VClick::Lua::init(PHANDLE); // the compositor removes the functions on unload
+
     return {VClick::NAME, "click, scroll or move inside a window without the user's pointer", VClick::AUTHOR, VClick::VERSION};
 }
 

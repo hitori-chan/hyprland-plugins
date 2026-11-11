@@ -239,6 +239,12 @@ expect "where: nowhere yet" "$(vclick where)" nowhere
 expect "the mouse is the default mode" "$(vclick mode)" mouse
 expect "a bad mode" "$(vclick mode fly | head -1 | cut -c1-13)" "usage: vclick"
 expect "a bare 0x address is an address" "$(vclick image "$A")" "$(vclick image "address:$A")"
+lua() { hq repl "return $1" 2>&1; }
+expect "lua: a query is its answer" "$(lua 'hl.plugin.vclick.status()')" idle
+expect "lua: an error is nil and its line" "$(lua "hl.plugin.vclick.click('address:0x1', 10, 10)")" $'nil\terror: window not found'
+expect "lua: a malformed call too, without the usage" "$(lua "hl.plugin.vclick.scroll('address:$A', 10, 10, 'down', 21)")" $'nil\terror: \'21\': steps must be 1-20'
+expect "lua: a number where hyprctl takes a word" "$(lua "hl.plugin.vclick.click('address:$A', 5000.5, 10)" | sed 's/ (.*//')" $'nil\terror: 5000.5,10 is outside the window'
+expect "lua: an argument hyprctl could not take" "$(lua "hl.plugin.vclick.click({}, 10, 10)")" $'nil\terror: argument 1 is a table: a string or a number, as hyprctl takes it'
 # the pace for the check: a profile file of its own, never the user's;
 # no overshoot, so a glide's time is Fitts's law exactly
 printf 'overshoot_p=0\n' >"$T/even.profile"
@@ -361,6 +367,12 @@ until_ok 3 keyed a A ctrl+shift "$n" && ok "  A read ctrl+shift+A" || bad "  A n
 quiet "$T/a.wl"
 expect "  each press has its release: no key stays held" \
 	"$(tail -n +"$((AM + 1))" "$T/a.wl" | grep -v ' -> ' | grep -oE 'wl_keyboard[#@][0-9]+\.key\([0-9]+, [0-9]+, [0-9]+, [0-9]+' | awk -F', ' '{ s[$4]++ } END { print s[1] + 0, s[0] + 0 }')" "1 1"
+n="$(keys a Page_Up -)"
+expect "lua: a key is true" "$(lua "hl.plugin.vclick.key('$A', 'Prior')")" true
+until_ok 3 keyed a Page_Up - "$n" && ok "  A read Page_Up" || bad "  A never read Page_Up"
+n="$(hits a HIT red)"
+expect "lua: a click is true" "$(lua "hl.plugin.vclick.click('address:$A', $(at red | tr ' ' ','), 'jump')")" true
+until_ok 3 more a HIT red "$n" && ok "  A hit red" || bad "  A never hit red"
 expect "an unknown key" "$(vclick key "address:$A" NoSuchKey | head -1)" "error: 'NoSuchKey' is not a key"
 expect "an unknown modifier" "$(vclick key "address:$A" a hyper | head -1)" "error: 'hyper' is not a modifier"
 expect "a key needs its key" "$(vclick key "address:$A" | head -1 | cut -c1-13)" "usage: vclick"
@@ -746,6 +758,7 @@ s=$(($(scrolls a magenta down) - n))
 ((s >= 1 && s < 20)) && ok "  it ended with the plugin ($s of 20 steps)" || bad "  $s of 20 steps after the unload"
 expect "unloaded" "$(hq plugin list | grep -c 'Plugin vclick')" 0
 expect "the command is gone" "$(vclick click "address:$A" 10 10 | grep -c '^ok$')" 0
+expect "so are its Lua functions" "$(lua 'hl.plugin.vclick.status()' | cut -c1-6)" "error:"
 expect "the nested is alive" "$(kill -0 "$NPID" 2>/dev/null && echo yes)" yes
 
 echo

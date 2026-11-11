@@ -3,6 +3,7 @@
 //   main.cpp     load and unload: the command, the set_cursor hook, the listeners,
 //                the config value
 //   command.cpp  the hyprctl command: parse a request, run it, report status
+//   lua.cpp      the same verbs as Lua functions
 //   pointer.cpp  the app's own pointer: the target under a point, the input in
 //                one burst (a jump), a paced scroll, the hover a move holds
 //   keyboard.cpp the app's own keyboard: one key, pressed and released
@@ -40,7 +41,7 @@ namespace VClick {
 
     inline constexpr const char* NAME    = "vclick";
     inline constexpr const char* AUTHOR  = "hitori";
-    inline constexpr const char* VERSION = "2.2.0"; // lockstep with hyprpm.toml's [vclick]
+    inline constexpr const char* VERSION = "2.3.0"; // lockstep with hyprpm.toml's [vclick]
 
     constexpr int MAX_CLICKS = 3;
     constexpr int MAX_STEPS  = 20;
@@ -92,6 +93,11 @@ namespace VClick {
 
     namespace Command {
         std::string handle(const std::string& request);
+        std::string run(const std::vector<std::string_view>& words); // "vclick", the verb, its words
+    }
+
+    namespace Lua {
+        void init(void* handle); // hl.plugin.vclick.<verb>(...)
     }
 
     namespace Pointer {

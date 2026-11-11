@@ -273,7 +273,10 @@ namespace VClick::Command {
     }
 
     std::string handle(const std::string& request) {
-        const auto W = words(request);
+        return run(words(request));
+    }
+
+    std::string run(const std::vector<std::string_view>& W) {
         if (W.size() < 2 || W[0] != NAME)
             return std::string{USAGE};
         if (isInput(W[1]))

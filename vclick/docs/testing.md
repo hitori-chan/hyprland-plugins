@@ -97,10 +97,15 @@ keyboard (`devtools/vkbd`) their keyboard.
   never to A; a window capture of A works and shows A as it is drawn.
   Unlocked, a click goes as ever.
 - Unload during a glide (it ends, A's pointer leaves) and during a paced
-  scroll; the nested stays up.
+  scroll; the nested stays up, and the command and the Lua functions are
+  gone.
 - Malformed requests (an unknown or repeated option, a scroll without a
   direction, the bounds), a bare `0x…` address, `where`, `mode`,
   `profile`.
+- The Lua functions: a query is its answer, an error `nil` and its line
+  (a malformed call without the usage), a number where hyprctl takes a
+  word, a table refused; a key and a click answer `true` and land; they
+  are gone with the plugin.
 
 Artifacts (captures, logs, traces) stay in `/tmp/hypr-gate/vclick`. The
 summary line is `== vclick: ALL N CHECKS PASSED ==`.

@@ -29,6 +29,10 @@ hyprctl vclick hide                              # take the mouse away
 hyprctl vclick status                            # moving, scrolling 3/12, then idle
 ```
 
+The same verbs are Lua functions, for a bind or a script
+(`hyprctl repl`): `hl.plugin.vclick.click(W, 640, 300, "jump")` answers
+`true`, or `nil` and the error.
+
 The window is any window selector (`address:0x…`, `class:…`) or a bare
 `0x…` address. The coordinates are pixels of a window capture
 (`grim -T`), measured from the window's top-left corner. The user's
@@ -75,8 +79,8 @@ the glide moves at a typical mouse user's pace.
 ## Docs
 
 - [Reference](docs/reference.md): `click`, `scroll`, `move`, `key`,
-  `status`, `where`, `hide`, `mode`, `profile`, `image`, the profile
-  file, the config, the errors
+  `status`, `where`, `hide`, `mode`, `profile`, `image`, the Lua
+  functions, the profile file, the config, the errors
 - [Design](docs/design.md): input without the seat, the modes, the
   glide, the cursor image, the hover, paced scrolling, the same app, the
   keyboard, under the lockscreen, limits

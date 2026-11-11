@@ -66,6 +66,38 @@ is in the same app (a glide would take the app's pointer from them; a
 `move` is refused then) or when the point is in a popup outside the
 window's box.
 
+## Lua
+
+Every verb is a function under `hl.plugin.vclick`, with the same words
+in the same order (a number where hyprctl takes one) and the same
+checks:
+
+```lua
+hl.plugin.vclick.click(window, x, y, [button], ["double"|"triple"], ["glide"|"jump"])
+hl.plugin.vclick.scroll(window, x, y, "up"|"down"|"left"|"right", [steps], ["<ms>ms"], ["glide"|"jump"])
+hl.plugin.vclick.move(window, x, y, ["glide"|"jump"])
+hl.plugin.vclick.key(window, key, [mods])
+hl.plugin.vclick.hide()
+hl.plugin.vclick.status()      -- "idle", "moving", "scrolling 3/12", ...
+hl.plugin.vclick.where()
+hl.plugin.vclick.mode(["mouse"|"tap"])
+hl.plugin.vclick.profile(["reload", [file]])
+hl.plugin.vclick.image(window)
+```
+
+The answer `ok` comes back as `true`; an error as `nil` and its line
+(`error: …`, or `usage: …` for a call that names too little), so a
+caller can `assert()` it or branch on it; any other answer as its
+string. A table, a boolean or `nil` where a word goes is `error:
+argument <n> is a <type>: a string or a number, as hyprctl takes it`.
+
+```lua
+local ok, err = hl.plugin.vclick.key("address:0x…", "Next")
+if not ok then print(err) end
+```
+
+From a shell: `hyprctl repl 'return hl.plugin.vclick.status()'`.
+
 ## key
 
 `key <window> <key> [mods]` sends that window one key, pressed and
