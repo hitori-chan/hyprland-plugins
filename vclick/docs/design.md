@@ -118,17 +118,21 @@ manager's `onSetCursor` and keeps each app's latest image (the original
 then decides as it always does), and it hears `cursor-shape-v1`'s named
 shapes. It draws that image itself at the app's pointer:
 
-- after the windows are drawn, clipped to the target window;
+- right after the target window's own surfaces, clipped to it: a window
+  above it covers the cursor where it covers the app;
 - never in a capture (screencopy, `grim -T`), so a window capture shows
   the app as it is;
-- never while the user's own pointer is in that app: the app's one
-  pointer is theirs then, and so is the one cursor over it; it shows
-  again as their pointer leaves (the seat's pointer focus change redraws
-  it);
+- never once the user's own pointer has come into that app: the app's
+  one pointer is theirs then, and so is the one cursor over it. The
+  cursor goes (a glide hands over to a jump), and it doesn't come back
+  where it was when their pointer leaves: the app's pointer was last
+  where theirs left the window, so the next input there glides from that
+  spot, and the cursor shows again with it;
 - where the window is drawn, its slide included, so it moves with the
   window during a workspace animation;
 - in the mouse mode, from the input on and then at rest, until the next
-  input moves it, `hide`, the window closing, or the switch to `tap`;
+  input moves it, `hide`, the user's pointer coming into the app, the
+  window closing, or the switch to `tap`;
   in the tap mode, while a glide runs, for 1.2 s after it, then fading
   over 0.3 s. An animated image keeps going (its frame callbacks).
 

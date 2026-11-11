@@ -79,9 +79,10 @@ until [[ "$(hyprctl vclick status)" == idle* ]]; do sleep 0.02; done
 
 ## where
 
-Where the mouse is: `address:0x<window> <x> <y>`, with
-` (hidden: the user's pointer is in the app)` while it is, or
-` (fading)` after a glide in the tap mode; else `nowhere`.
+Where the mouse is: `address:0x<window> <x> <y>`, with ` (fading)`
+after a glide in the tap mode; else `nowhere` (also once the user's
+pointer came into the app: the app's pointer is theirs, and the next
+input there starts where their pointer left the window).
 
 ## hide
 

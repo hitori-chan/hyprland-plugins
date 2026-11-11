@@ -37,7 +37,7 @@ namespace VClick {
 
     inline constexpr const char* NAME    = "vclick";
     inline constexpr const char* AUTHOR  = "hitori";
-    inline constexpr const char* VERSION = "2.0.0"; // lockstep with hyprpm.toml's [vclick]
+    inline constexpr const char* VERSION = "2.0.1"; // lockstep with hyprpm.toml's [vclick]
 
     constexpr int MAX_CLICKS = 3;
     constexpr int MAX_STEPS  = 20;
@@ -138,7 +138,7 @@ namespace VClick {
         void        rest(bool stay);                                // the input ended: stay there (mouse), or linger and fade (tap)
         void        place(const PHLWINDOW& w, const Vector2D& pos); // a jump in the mouse mode: there, and stay
         void        hide();
-        void        userMoved(); // the user's pointer changed surface: the cursor may hide or show again
+        void        userMoved(); // the user's pointer changed surface: into the app it takes the cursor; out, the next input starts where it left
         std::string where();     // "address:0x... x y", or "nowhere"
         std::string describe(std::string_view selector);
         void        reset();

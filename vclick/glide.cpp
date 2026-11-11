@@ -166,6 +166,7 @@ namespace VClick::Glide {
             // which steps out of the user's surface and back in
             const auto A = glide->action;
             end(false);
+            Cursor::userMoved(); // their pointer has the app's now: the cursor goes
             if (A.move) {
                 noteStop("the last move stopped: the user's pointer came into the app");
                 return;
@@ -174,7 +175,7 @@ namespace VClick::Glide {
             if (R) {
                 Pointer::rememberPos(W, A.pos);
                 if (A.stay)
-                    Cursor::place(W, A.pos); // hidden while the user's pointer is in the app
+                    Cursor::place(W, A.pos); // taken: the user's pointer is in the app
             }
             noteStop(R ? "the last glide finished as a jump: the user's pointer came into the app" : "the last glide stopped: " + R.error());
             return;

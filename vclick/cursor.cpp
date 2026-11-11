@@ -3,9 +3,11 @@
 // another; the compositor refuses it unless the app holds the real pointer
 // focus, so the seat never shows a glide's image. vclick keeps each app's
 // latest request (main.cpp hooks the seat manager's set_cursor) and draws
-// that image itself at the virtual pointer: over the window only, never in
-// a capture, and never while the user's own pointer is in that app (the
-// app's one pointer is theirs then). In the mouse mode it stays where the
+// that image itself at the virtual pointer: in the window's own render
+// pass (so a window above it covers it, as it covers the app), never in a
+// capture. The user's own pointer coming into that app takes the app's one
+// pointer: the cursor goes, and the next input starts where their pointer
+// left the window, as one mouse would. In the mouse mode it stays where the
 // last input left it, as a mouse at rest; in the tap mode it shows while a
 // glide runs and LINGER_MS after, then fades. An app that asked for a named
 // shape (cursor-shape-v1), hid its cursor or set none gets a built-in arrow.
@@ -21,6 +23,7 @@
 #include <hyprland/src/protocols/core/Compositor.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/managers/SessionLockManager.hpp>
+#include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/render/pass/TexPassElement.hpp>
 #include <hyprland/src/workspace/HLWorkspace.hpp>
 
@@ -55,6 +58,8 @@ namespace VClick::Cursor {
         Time::steady_tp     fadeAt;         // whole until then, then fading
         CBox                drawn;          // the box last damaged, global logical px
         SP<CEventLoopTimer> timer;          // the fade
+        PHLWINDOWREF        taken;          // the user's pointer is in this window's app: it has the app's pointer
+        bool                frameDrawn = false; // drawn in this frame already (a window can render twice: main and popups)
     } g;
 
     struct SDraw {
@@ -161,6 +166,13 @@ namespace VClick::Cursor {
     }
 
     void place(const PHLWINDOW& w, const Vector2D& pos) {
+        if (Pointer::userIn(Pointer::clientOf(w))) {
+            // the app's pointer is the user's: nothing rests there
+            g.window = w;
+            g.taken  = w;
+            hide();
+            return;
+        }
         prepare();
         show(w, pos);
         rest(true);
@@ -181,7 +193,26 @@ namespace VClick::Cursor {
     }
 
     void userMoved() {
-        if (g.shown && !g_pCompositor->m_isShuttingDown)
+        if (g_pCompositor->m_isShuttingDown)
+            return;
+        if (const auto T = g.taken.lock(); T && !Pointer::userIn(Pointer::clientOf(T))) {
+            // the user's pointer left the app: its pointer was last where
+            // they left the window, so the next input there starts there
+            if (Desktop::View::validMapped(T)) {
+                const auto AT = g_pInputManager->getMouseCoordsInternal() - Pointer::windowPos(T);
+                Pointer::rememberPos(T, Path::clampTo(AT, Pointer::windowSize(T)));
+            }
+            g.taken.reset();
+        }
+        const auto W = g.window.lock();
+        if (W && g.taken.lock() != W && !Glide::active() && Pointer::userIn(Pointer::clientOf(W))) {
+            // the user's pointer came into the app: one pointer, theirs (a
+            // glide hands itself over on its next frame)
+            g.taken = W;
+            hide();
+            return;
+        }
+        if (g.shown)
             damage();
     }
 
@@ -211,13 +242,22 @@ namespace VClick::Cursor {
     }
 
     void render(const Event::SRenderStageEvent& ev) {
-        // the cheap test first: this runs on every frame of every monitor
-        if (!g.shown || ev.stage != RENDER_POST_WINDOWS || !ev.monitor || !ev.context || ev.context->get().m_renderingCapture)
+        // the cheap tests first: this runs for every window of every frame
+        if (ev.stage == RENDER_BEGIN) {
+            g.frameDrawn = false;
             return;
-        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+        }
+        if (!g.shown || g.frameDrawn || ev.stage != RENDER_POST_WINDOW || !ev.monitor || !ev.context)
+            return;
+        const auto& CTX = ev.context->get();
+        if (CTX.m_renderingCapture || CTX.m_renderingSnapshot)
             return;
         const auto W = g.window.lock();
-        if (!W || !Desktop::View::validMapped(W) || !g_pHyprRenderer->shouldRenderWindow(W, ev.monitor))
+        // right after the window's own surfaces: the windows above it come
+        // later in the pass and cover the cursor where they cover the app
+        if (!W || CTX.m_data.currentWindow.lock() != W || !Desktop::View::validMapped(W))
+            return;
+        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
             return;
         if (Pointer::userIn(Pointer::clientOf(W)))
             return; // the app's pointer is the user's: one cursor in it, theirs
@@ -238,7 +278,8 @@ namespace VClick::Cursor {
         data.a       = A;
         data.clipBox = clip.round();
         g_pHyprRenderer->addPassElement(ev.context->get(), makeUnique<CTexPassElement>(std::move(data)));
-        if (IMG.surf && !ev.context->get().m_blockSurfaceFeedback)
+        g.frameDrawn = true;
+        if (IMG.surf && !CTX.m_blockSurfaceFeedback)
             IMG.surf->frame(Time::steadyNow()); // an animated cursor keeps going
     }
 
@@ -247,9 +288,7 @@ namespace VClick::Cursor {
         if (!g.shown || !W || !Desktop::View::validMapped(W))
             return "nowhere";
         auto out = std::format("address:0x{:x} {:g} {:g}", rc<uintptr_t>(W.get()), g.pos.x, g.pos.y);
-        if (Pointer::userIn(Pointer::clientOf(W)))
-            out += " (hidden: the user's pointer is in the app)";
-        else if (!g.pinned && !g.stay)
+        if (!g.pinned && !g.stay)
             out += " (fading)";
         return out;
     }
@@ -274,6 +313,8 @@ namespace VClick::Cursor {
 
     void reset() {
         hide();
+        g.taken.reset();
+        g.frameDrawn = false;
         arrow.reset();
         images.clear();
     }

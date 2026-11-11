@@ -69,12 +69,15 @@ virtual pointer (`devtools/vptr`) is the user's mouse.
     `where` says where, A's own image is drawn there in a screen
     capture, and is still there 2 s later; a click there comes from the
     hover and keeps it;
+  - a jump-move under B (raised above A): B covers the image, as it
+    covers A; A raised again shows it;
   - `hide`: A's pointer leaves, `where` says `nowhere`, the image is
     gone; a jump click enters, clicks, stays, and draws the image there;
-  - the user's pointer in A hides the image (and `where` says so); out
-    again, it is drawn again;
+  - the user's pointer in A takes the image (`where` says `nowhere`); out
+    again, it stays gone, and the next glide enters exactly where their
+    pointer left A;
   - the user's pointer changing surface ends the hover, and so does a
-    click into B, where the mouse then is;
+    click into B, under the user's pointer (`where`: `nowhere`);
   - the user's pointer comes into A during a (slow) glide: it hands over
     to a jump, which still hits, and `status` says so.
 - The tap mode's glide: nothing stays at the switch; the click enters,

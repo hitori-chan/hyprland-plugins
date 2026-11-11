@@ -2,8 +2,9 @@
 # vclick's nested check: a click lands where a window capture shows it,
 # under a covering window, in a popup, a scroll steps exactly, a glide
 # moves at its pace and ends exactly on target, the mouse mode keeps the
-# hover and its cursor at rest (hidden while the user's pointer is in the
-# app), the tap mode leaves and fades, and the user's pointer never notices. Runs a nested Hyprland in the gate's private host
+# hover and its cursor at rest (under any window above, and taken by the
+# user's pointer coming into the app), the tap mode leaves and fades, and
+# the user's pointer never notices. Runs a nested Hyprland in the gate's private host
 # (awesome/gate/launch.sh) with only vclick loaded; the live session is
 # never touched.
 #
@@ -497,6 +498,18 @@ quiet "$T/a.wl"
 EV="$(events a "$AM")"
 regex "$EV" '^motion( motion)* button button$' && ok "  no enter and no leave: the click came from the hover, which stays" || bad "  events: $EV"
 
+read -r CGX CGY <<<"$(global cyan)"
+dsp "hl.dsp.window.alter_zorder({ mode = 'top', window = 'address:$B' })" # the user's click in section 3 raised A
+expect "a jump-move to cyan, under B" "$(vclick move "address:$A" $(at cyan) jump)" ok
+quiet "$T/a.wl"
+expect "  where" "$(vclick where)" "address:$A $(at cyan)"
+fullcap "$T/under.png" || bad "no capture with the cursor under B"
+expect "  B covers it, as it covers A" "$(rose "$T/under.png" "$CGX" "$CGY")" 0
+dsp "hl.dsp.window.alter_zorder({ mode = 'top', window = 'address:$A' })"
+fullcap "$T/over.png" || bad "no capture with A on top again"
+N="$(rose "$T/over.png" "$CGX" "$CGY")"
+((N >= 200)) && ok "  A on top again: drawn there ($N px)" || bad "  A on top again, not drawn: $N px"
+
 AM="$(lines "$T/a.wl")"
 expect "hide" "$(vclick hide)" ok
 quiet "$T/a.wl"
@@ -516,21 +529,25 @@ fullcap "$T/jump.png" || bad "no capture after the jump"
 N="$(rose "$T/jump.png" "$MGX" "$MGY")"
 ((N >= 200)) && ok "  the cursor rests at magenta ($N px)" || bad "  no cursor at magenta: $N px"
 
-echo "== the user's pointer in A hides the cursor; out again, it shows"
+echo "== the user's pointer in A takes the cursor; the next input starts where it left"
 park "$((70 + RX))" "$((70 + RY))" # A's red, globally: the spot section 3 proved is A's
 quiet "$T/a.wl"
-expect "  where says so" "$(vclick where)" "address:$A $(at magenta) (hidden: the user's pointer is in the app)"
+expect "  where: the app's pointer is theirs" "$(vclick where)" nowhere
 fullcap "$T/yield.png" || bad "no capture with the user's pointer in A"
 expect "  not drawn meanwhile" "$(rose "$T/yield.png" "$MGX" "$MGY")" 0
 park "$BX" "$BY"
-expect "  where, after" "$(vclick where)" "address:$A $(at magenta)"
+expect "  where, after it left" "$(vclick where)" nowhere
 fullcap "$T/back.png" || bad "no capture after the user's pointer left A"
-N="$(rose "$T/back.png" "$MGX" "$MGY")"
-((N >= 200)) && ok "  drawn again once it left ($N px)" || bad "  not drawn again: $N px"
-
+expect "  not drawn back at its old spot" "$(rose "$T/back.png" "$MGX" "$MGY")" 0
+# where the user's pointer left A, in A's coordinates, and as A's surface sees it (GREEN: the shadow margin)
+EX=$((BX - $(field "$A" 3))) EY=$((BY - $(field "$A" 4)))
+EX=$((EX < 0 ? 0 : EX >= $(field "$A" 5) ? $(field "$A" 5) - 1 : EX)) EY=$((EY < 0 ? 0 : EY >= $(field "$A" 6) ? $(field "$A" 6) - 1 : EY))
+read -r GRX GRY <<<"$GREEN" && read -r gx gy <<<"$(at green)"
+AM="$(lines "$T/a.wl")"
 expect "move to yellow" "$(vclick move "address:$A" $(at yellow))" ok
 until_ok 4 idle || true
 quiet "$T/a.wl"
+expect "  it entered where the user's pointer left A" "$(last_xy a enter "$AM")" "$((EX + GRX - gx)) $((EY + GRY - gy))"
 AM="$(lines "$T/a.wl")"
 park 1200 760 # the user's pointer leaves B for the empty desktop: the seat leaves every app's pointer
 quiet "$T/a.wl"
@@ -544,7 +561,7 @@ expect "  then click B (another app)" "$(vclick click "address:$B" $(at magenta)
 until_ok 3 more b HIT magenta "$n" || bad "B never hit magenta"
 quiet "$T/a.wl"
 expect "  A's hover ended first" "$(events a "$AM")" leave
-expect "  the cursor went with it (hidden: the user's pointer is on B)" "$(vclick where)" "address:$B $(at magenta) (hidden: the user's pointer is in the app)"
+expect "  B's pointer is the user's: the cursor is theirs there" "$(vclick where)" nowhere
 
 echo "== the user's pointer comes into A during a glide"
 printf 'fitts_a_ms=400\nfitts_b_ms=400\novershoot_p=0\n' >"$T/slow.profile"
