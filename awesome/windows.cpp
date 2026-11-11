@@ -20,6 +20,9 @@
 #include <hyprland/src/config/ConfigValue.hpp>
 
 #include <algorithm>
+#include <cstdint>
+#include <format>
+#include <string_view>
 
 namespace NAwesome::Windows {
 
@@ -224,17 +227,55 @@ namespace NAwesome::Windows {
         Snap::onInputEndingDrag();
     }
 
-    // `hyprctl awesome snap-zone` (the gate's build): the armed snap zone,
-    // "<top|bottom|-> <left|right|->", "" with none
+    namespace {
+        std::string addressOf(const PHLWINDOW& w) {
+            return std::format("0x{:x}", reinterpret_cast<uintptr_t>(w.get())); // hyprctl clients' form
+        }
+
+        // `unminimize <address>`: a script's restore of one window, which
+        // does not move the user. Quiet (Tasklist::restore): shown where it
+        // is, not raised, not focused, no workspace change. Run inline: an
+        // IPC request is no input or focus emission (invariant 6), and the
+        // caller gets the outcome.
+        std::string unminimizeVerb(std::string_view arg) {
+            if (arg.starts_with("address:"))
+                arg.remove_prefix(8);
+            if (arg.empty())
+                return "usage: awesome unminimize <address>";
+            if (sessionLocked())
+                return "locked"; // never un-minimize under the lockscreen
+            for (const auto& W : Desktop::windowState()->windows()) {
+                if (!W || !W->mapped() || addressOf(W) != arg)
+                    continue;
+                if (!Tasklist::isMinimized(W))
+                    return "not minimized";
+                Tasklist::restore(W, true);
+                return Tasklist::isMinimized(W) ? "failed" : "ok";
+            }
+            return "no such window";
+        }
+    }
+
+    // `hyprctl awesome minimized`: the windows this plugin hides, one
+    // address a line, the most recently minimized last; `unminimize
+    // <address>` (above). The gate's build adds `snap-zone`: the armed snap
+    // zone, "<top|bottom|-> <left|right|->", "" with none.
     std::optional<std::string> CModule::handleCtl(const std::string& verb) const {
-#ifndef AWESOME_GATE
-        (void)verb;
-        return std::nullopt;
-#else
-        if (verb != "snap-zone")
-            return std::nullopt;
-        return Snap::zoneDescribe();
+        if (verb == "minimized") {
+            Tasklist::prune();
+            std::string out;
+            for (const auto& M : Tasklist::minStack())
+                if (const auto W = M.w.lock(); W && W->mapped())
+                    out += addressOf(W) + "\n";
+            return out;
+        }
+        if (verb == "unminimize" || verb.starts_with("unminimize "))
+            return unminimizeVerb(verb == "unminimize" ? std::string_view{} : std::string_view{verb}.substr(11));
+#ifdef AWESOME_GATE
+        if (verb == "snap-zone")
+            return Snap::zoneDescribe();
 #endif
+        return std::nullopt;
     }
 
     void CModule::onInputBlocked() {

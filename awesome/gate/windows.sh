@@ -557,6 +557,16 @@ dsp "hl.plugin.awesome.minimize()"
 until_is 2 "1 1" w3_hidden
 hq eval "hl.plugin.awesome.restore(); hl.plugin.awesome.restore()" >/dev/null 2>&1
 chk "restore: two in one dispatch restore both" until_is 2 "0 0" w3_hidden
+# unminimize by address (a script's restore): shown, and the focus stays
+dsp "hl.dsp.focus({window=\"address:$W3B\"})"
+until_is 2 w3b active_class
+dsp "hl.plugin.awesome.minimize()"
+until_is 2 "1 w3c" w3b_state
+chk "minimized: lists the hidden window" until_is 2 "$W3B" hq awesome minimized
+chk "unminimize: answers ok" test "$(hq awesome unminimize "$W3B")" = ok
+chk "unminimize: the window shows and the focus stays where it was" until_is 2 "0 w3c" w3b_state
+chk "unminimize: a shown window is not minimized" test "$(hq awesome unminimize "$W3B")" = "not minimized"
+chk "unminimize: an unknown address is no window" test "$(hq awesome unminimize 0x1)" = "no such window"
 # with four or more in the history, "last" is still the one focused before
 dsp "hl.dsp.exec_cmd('foot --app-id=w3d --window-size-pixels=300x200')"
 wait_class w3d

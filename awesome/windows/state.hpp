@@ -251,7 +251,12 @@ namespace NAwesome::Windows::Tasklist {
             Desktop::focusState()->fullWindowFocus(w, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW, w->wlSurface()->resource());
     }
 
-    inline void restore(PHLWINDOW w) {
+    // `quiet`: the unminimize verb's restore (a script's, not the user's
+    // pick). The window shows again where it is: not raised, not focused,
+    // no workspace change. A held fullscreen is re-entered only on a
+    // workspace no monitor shows: on a shown one it would cover the user's
+    // windows while they keep the focus.
+    inline void restore(PHLWINDOW w, bool quiet = false) {
         if (!w)
             return;
         bool                        tiled = false, found = false;
@@ -273,7 +278,8 @@ namespace NAwesome::Windows::Tasklist {
         if (!w->isHidden()) {
             // the compositor showed it already (see isMinimized): the
             // entry was stale, and a re-slot would add a second target
-            raiseAndFocus(w);
+            if (!quiet)
+                raiseAndFocus(w);
             if (taskChangedHook())
                 taskChangedHook()();
             return;
@@ -292,10 +298,16 @@ namespace NAwesome::Windows::Tasklist {
             setGeom(w, Geometry::boundedRestore(box, NOW->logicalBoxMinusReserved(), w->windowTarget()->minSize(), w->windowTarget()->maxSize()));
             w->windowTarget()->warpPositionSize();
         }
-        raiseAndFocus(w);
+        if (quiet) {
+            // no raise to damage it: a floating window's box repaints here
+            // (minimize's reason, reversed)
+            if (g_pHyprRenderer)
+                g_pHyprRenderer->damageWindow(w, true);
+        } else
+            raiseAndFocus(w);
         // re-enter the fullscreen/maximize the window held when minimized,
         // after focus — the compositor fullscreens the active window.
-        if (fs.internal != Fullscreen::FSMODE_NONE)
+        if (fs.internal != Fullscreen::FSMODE_NONE && (!quiet || !w->m_workspace || !w->m_workspace->visible()))
             Fullscreen::controller()->setFullscreenMode(w, fs.internal, fs.client);
         if (restoredHook())
             restoredHook()();

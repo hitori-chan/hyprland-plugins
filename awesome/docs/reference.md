@@ -37,6 +37,8 @@ hl.bind("SUPER + M", function() hl.plugin.awesome.maximize() end)
 | `topline` | the newest card's one-line form |
 | `clear` | dismisses every card, the parked ones too; `ok` |
 | `pad` | the touchpad: `on`, `off` or `none` |
+| `minimized` | the windows the plugin has minimized, one address (`0x…`, as `hyprctl clients` prints it) a line, the most recent last |
+| `unminimize <address>` | shows that window again where it is, without raising or focusing it and without a workspace change; `ok`, `not minimized`, `no such window` or `locked` |
 | `trace` | the last 32 button, scroll and key events and who took each |
 
 `trace` names a module, `blocked` (the session lock or an input

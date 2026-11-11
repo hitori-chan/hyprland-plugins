@@ -14,6 +14,15 @@ Minimizing the focused window focuses the workspace's most recently
 focused task (awesome's autofocus): that exact window, unraised, even
 when another window covers its center.
 
+A script can show one minimized window again without moving the user:
+`hyprctl awesome unminimize <address>` (an agent that drives a window
+the user minimized, say). The window comes back where it is, unraised
+and unfocused, and the user's focus and workspace stay put. Unlike
+awesome's restore, which is the user's own pick, it is not a jump. A
+fullscreen state held at minimize returns only on a workspace no
+monitor shows: on a shown one it would cover the windows the user is
+working in. `hyprctl awesome minimized` lists what the plugin hides.
+
 ## Maximize
 
 Maximize is per window. A floating window fills the current work area
