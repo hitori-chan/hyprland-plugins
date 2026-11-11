@@ -85,7 +85,7 @@ once, whatever the mode: no glide, no cursor.
 - `idle`, or `idle; <why>` when the last glide or scroll ended early,
   until the next one starts:
   - `the last glide stopped: <why>`: the window closed or was hidden,
-    the session locked, the compositor is shutting down, or an error;
+    the compositor is shutting down, or an error;
     the app's pointer left the window;
   - `the last glide finished as a jump: the user's pointer came into the
     app`;
@@ -201,5 +201,5 @@ be installed ([design](design.md#the-cursor-image)).
   or unmapped), `error: <x>,<y> is outside the window (<w>x<h>)` (unless
   one of its popups is there), `error: the window has no surface`,
   `error: the app has no pointer (it bound no wl_pointer)`.
-- `error: the session is locked`, `error: the compositor is shutting
-  down`.
+- `error: the compositor is shutting down`. The lockscreen refuses
+  nothing ([design](design.md#under-the-lockscreen)).

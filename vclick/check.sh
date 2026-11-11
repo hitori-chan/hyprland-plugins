@@ -3,9 +3,11 @@
 # under a covering window, in a popup, a scroll steps exactly, a glide
 # moves at its pace and ends exactly on target, the mouse mode keeps the
 # hover and its cursor at rest (under any window above, and taken by the
-# user's pointer coming into the app), the tap mode leaves and fades, and
-# the user's pointer never notices; a key reaches its window alone, and the
-# user's keyboard never notices. Runs a nested Hyprland in the gate's private host
+# user's pointer coming into the app), the tap mode leaves and fades, the
+# lockscreen lets it reach its window while the user's input stays the
+# lockscreen's, and the user's pointer never notices; a key reaches its
+# window alone, and the user's keyboard never notices. Runs a nested
+# Hyprland in the gate's private host
 # (awesome/gate/launch.sh) with only vclick loaded; the live session is
 # never touched.
 #
@@ -50,7 +52,7 @@ EOF
 
 VP=""
 cleanup() {
-	exec 7>&- 6>&- 2>/dev/null
+	exec 7>&- 6>&- 5>&- 2>/dev/null
 	[[ -n "$VP" ]] && kill "$VP" 2>/dev/null
 	bash "$GATE/stop.sh" >/dev/null 2>&1
 }
@@ -659,7 +661,65 @@ fullcap "$T/faded.png" || bad "no capture after the fade"
 expect "  then faded" "$(rose "$T/faded.png" "$GGX" "$GGY")" 0
 expect "back to the mouse mode" "$(vclick mode mouse)" mouse
 
-# --- 6. unload ----------------------------------------------------------------
+# --- 6. under the lockscreen ---------------------------------------------------
+echo "== the lockscreen (devtools/vlock): vclick's input reaches A, the user's the lockscreen"
+mkfifo "$T/vl.fifo"
+WAYLAND_DISPLAY="$WL" "$REPO/devtools/vlock" <"$T/vl.fifo" >"$T/vl.log" 2>&1 &
+exec 5>"$T/vl.fifo"
+locked_is() { [[ "$(hq locked)" == "$1" ]]; }
+vl() { grep -c "^$1\$" "$T/vl.log"; } # vl <line>: how often the lock surfaces heard it
+vl_more() { (($(vl "$1") > $2)); }
+expect "a slow profile" "$(vclick profile reload "$T/slow.profile" | head -1)" "loaded $T/slow.profile"
+expect "a glide is going" "$(vclick move "address:$A" $(at green))" ok
+echo lock >&5
+until_ok 5 locked_is true || bad "the nested never locked"
+until_ok 4 idle || true
+expect "  the lock didn't stop it" "$(vclick status)" idle
+expect "  it ended on green" "$(vclick where)" "address:$A $(at green)"
+expect "back to the check's profile" "$(vclick profile reload "$T/even.profile" | head -1)" "loaded $T/even.profile"
+KL="$(vl kleave)" PL="$(vl pleave)"
+n="$(hits a HIT red)"
+expect "a jump click on red" "$(vclick click "address:$A" $(at red) jump)" ok
+until_ok 3 more a HIT red "$n" && ok "  A hit red" || bad "  A never hit red"
+n="$(scrolls a magenta down)"
+expect "a scroll over magenta" "$(vclick scroll "address:$A" $(at magenta) down 2)" ok
+scroll_ok a magenta down "$n" 2
+AM="$(lines "$T/a.wl")" n="$(keys a Page_Down -)"
+expect "a key" "$(vclick key "address:$A" Next)" ok
+until_ok 3 keyed a Page_Down - "$n" && ok "  A read Page_Down" || bad "  A never read Page_Down"
+quiet "$T/a.wl"
+expect "  as an enter, the key and a leave: the lockscreen has the user's keyboard" "$(kevents a "$AM")" "enter modifiers key key modifiers leave"
+n="$(hits a HIT green)"
+expect "a glide click on green (the mouse mode)" "$(vclick click "address:$A" $(at green))" ok
+until_ok 4 idle || true
+until_ok 3 more a HIT green "$n" && ok "  A hit green" || bad "  A never hit green"
+expect "  it went the whole way" "$(vclick status)" idle
+read -r GGX GGY <<<"$(global green)"
+fullcap "$T/lockcur.png" || bad "no capture under the lockscreen"
+expect "  no cursor drawn over the lockscreen" "$(rose "$T/lockcur.png" "$GGX" "$GGY")" 0
+expect "the lock surface kept the keyboard and the pointer" "$(vl kleave) $(vl pleave)" "$KL $PL"
+n="$(keys a a -)" k="$(vl 'key 30')"
+kb "tap 30"
+until_ok 3 vl_more 'key 30' "$k" && ok "the user's own key goes to the lockscreen" || bad "the lockscreen never heard the user's key"
+quiet "$T/a.wl"
+expect "  and A never read it" "$(keys a a -)" "$n"
+read -r RGX RGY <<<"$(global red)"
+park "$RGX" "$RGY"
+n="$(hits a HIT red)" b="$(vl 'button 272')"
+ptr "press 272" "sleep 30" "release 272"
+until_ok 3 vl_more 'button 272' "$b" && ok "the user's own click over A goes to the lockscreen" || bad "the lockscreen never heard the user's click"
+quiet "$T/a.wl"
+expect "  and A never heard it" "$(hits a HIT red)" "$n"
+park "$BX" "$BY"
+wincap "$(field "$A" 2)" "$T/locked.png" && ok "a window capture of A works under the lockscreen" || bad "no window capture of A under the lockscreen"
+expect "  A as it is drawn: red where it was" "$(python3 "$REPO/devtools/findcolors.py" "$T/locked.png" red=255,0,0 | awk '{ print $2, $3 }')" "$(at red)"
+echo unlock >&5
+until_ok 5 locked_is false || bad "the nested never unlocked"
+exec 5>&-
+expect "unlocked: a click goes as ever" "$(vclick click "address:$A" $(at red) jump)" ok
+park "$BX" "$BY"
+
+# --- 7. unload ----------------------------------------------------------------
 echo "== unload during a glide"
 quiet "$T/a.wl"
 expect "a slow profile" "$(vclick profile reload "$T/slow.profile" | head -1)" "loaded $T/slow.profile"

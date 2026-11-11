@@ -89,6 +89,13 @@ keyboard (`devtools/vkbd`) their keyboard.
     to a jump, which still hits, and `status` says so.
 - The tap mode's glide: nothing stays at the switch; the click enters,
   clicks and leaves; the image is drawn as it lands, then fades.
+- The lockscreen (`devtools/vlock`): a glide going when the lock comes
+  goes on to its end; a jump click, a paced scroll, a key (an enter and
+  a leave around it) and a glide click reach A; no cursor is drawn over
+  the lockscreen; the lock surface never loses the keyboard or the
+  pointer; the user's own key and click (over A) go to the lockscreen,
+  never to A; a window capture of A works and shows A as it is drawn.
+  Unlocked, a click goes as ever.
 - Unload during a glide (it ends, A's pointer leaves) and during a paced
   scroll; the nested stays up.
 - Malformed requests (an unknown or repeated option, a scroll without a

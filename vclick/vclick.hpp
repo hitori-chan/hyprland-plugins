@@ -1,6 +1,7 @@
 // What vclick's units share. The units:
 //
-//   main.cpp     load and unload: the command, the set_cursor hook, the listeners
+//   main.cpp     load and unload: the command, the set_cursor hook, the listeners,
+//                the config value
 //   command.cpp  the hyprctl command: parse a request, run it, report status
 //   pointer.cpp  the app's own pointer: the target under a point, the input in
 //                one burst (a jump), a paced scroll, the hover a move holds
@@ -39,7 +40,7 @@ namespace VClick {
 
     inline constexpr const char* NAME    = "vclick";
     inline constexpr const char* AUTHOR  = "hitori";
-    inline constexpr const char* VERSION = "2.1.0"; // lockstep with hyprpm.toml's [vclick]
+    inline constexpr const char* VERSION = "2.2.0"; // lockstep with hyprpm.toml's [vclick]
 
     constexpr int MAX_CLICKS = 3;
     constexpr int MAX_STEPS  = 20;
@@ -81,7 +82,8 @@ namespace VClick {
         return !r && r.error().starts_with("error: busy");
     }
 
-    // why no input may go now (the reply's error line), or nothing
+    // why no input may go now (the reply's error line), or nothing: the
+    // compositor shutting down
     std::optional<std::string> blocked();
 
     // why the last glide or paced scroll ended early; status reports it

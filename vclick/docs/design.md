@@ -84,11 +84,12 @@ glide moves the pointer there as the user's hand would, then acts:
   most 400 ms), then the click or scroll goes from there. A move has no
   dwell.
 
-Each tick is checked afresh. If the window closed or was hidden, the
-session locked or the compositor is shutting down, the glide stops and
-the app's pointer leaves. If the user's pointer came into the app, the
-seat has taken the app's pointer: the glide ends there, a click or
-scroll goes on as a jump ([the same app](#the-same-app)), and a move
+Each tick is checked afresh. If the window closed or was hidden, or the
+compositor is shutting down, the glide stops and the app's pointer
+leaves (the lockscreen is no reason: [under the
+lockscreen](#under-the-lockscreen)). If the user's pointer came into the
+app, the seat has taken the app's pointer: the glide ends there, a click
+or scroll goes on as a jump ([the same app](#the-same-app)), and a move
 stops. `status` says which.
 
 One glide at a time, and nothing else meanwhile. Unloading the plugin
@@ -227,6 +228,32 @@ and sends them the key alone:
 A key is no pointer input: it goes at once in either mode, and no cursor
 shows. Like a click, it waits for nothing and is refused while a glide
 or a paced scroll runs.
+
+## Under the lockscreen
+
+The lockscreen doesn't end vclick: a request goes, and a glide or a
+paced scroll goes on, so a script keeps going while the user is away:
+
+- The input still goes only to the window the request names, through
+  its app's own objects, as ever. A lock surface is no window, so no
+  request can name it, and the seat (the lockscreen's pointer and
+  keyboard focus, its held keys) is never touched. The compositor
+  refuses the target's own attempts to take focus under the lock (a
+  popup's grab, an activation), so nothing moves the user's input off
+  the lockscreen: what they type, their password included, goes to the
+  lockscreen only.
+- A key goes with an enter and a leave: the lockscreen has the user's
+  keyboard, never the target.
+- No cursor is drawn: the windows are not.
+
+Windows are not drawn under the lockscreen, and neither are they sent
+frame callbacks: an app that waits for one to paint (a browser) stops
+painting. A window capture (`grim -T`) still works, and each one makes
+the compositor present a frame: a window on a shown workspace gets its
+frame callbacks after it, and a window on another one gets them from
+the capture itself. So a script that captures the window it drives
+keeps it painting. With the screen off (DPMS) no frame is presented,
+and a capture may wait until the screen is back on.
 
 ## Limits
 

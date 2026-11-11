@@ -17,7 +17,7 @@ build       = ["make -C awesome all"]
 
 [vclick]
 description = "click, scroll or move inside a window without the user's pointer"
-version     = "2.1.0"
+version     = "2.2.0"
 authors     = ["hitori"]
 output      = "vclick/vclick.so"
 build       = ["make -C vclick all"]

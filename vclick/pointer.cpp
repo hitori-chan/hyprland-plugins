@@ -34,8 +34,9 @@ namespace VClick {
     std::optional<std::string> blocked() {
         if (g_pCompositor->m_isShuttingDown)
             return "error: the compositor is shutting down";
-        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
-            return "error: the session is locked";
+        // the lockscreen is no reason: the input goes only to the window it
+        // names (never a lock surface, which resolve refuses), and the seat
+        // stays the lockscreen's (docs/design.md, under the lockscreen)
         return std::nullopt;
     }
 }
@@ -130,7 +131,7 @@ namespace VClick::Pointer {
             return std::unexpected(std::format("error: {:g},{:g} is outside the window ({:g}x{:g})", pos.x, pos.y, SIZE.x, SIZE.y));
 
         t.surf = surfaceAt(t.window, pos, t.local);
-        if (!t.surf)
+        if (!t.surf || (g_pSessionLockManager && g_pSessionLockManager->isSurfaceSessionLock(t.surf)))
             return std::unexpected("error: the window has no surface");
         t.pointers = pointersOf(t.surf->client());
         if (t.pointers.empty())

@@ -47,6 +47,14 @@ Two modes (`hyprctl vclick mode mouse|tap`):
 - `tap` is just the input: it goes at once, and leaves the app's pointer
   after. Nothing stays drawn.
 
+## Under the lockscreen
+
+A script keeps going while the session is locked (reading a window
+while the user is away): clicks, scrolls, moves and keys reach the
+window they name, and only it. The user's own keyboard and mouse still
+go only to the lockscreen, the lockscreen keeps its focus, and no cursor
+is drawn.
+
 ## The user's pace
 
 `learn.py` records the user's own mouse for a while and fits the profile
@@ -68,9 +76,9 @@ the glide moves at a typical mouse user's pace.
 
 - [Reference](docs/reference.md): `click`, `scroll`, `move`, `key`,
   `status`, `where`, `hide`, `mode`, `profile`, `image`, the profile
-  file, the errors
+  file, the config, the errors
 - [Design](docs/design.md): input without the seat, the modes, the
   glide, the cursor image, the hover, paced scrolling, the same app, the
-  keyboard, limits
+  keyboard, under the lockscreen, limits
 - [Testing](docs/testing.md): the build, the path's unit cases, the
   nested check
