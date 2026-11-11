@@ -19,6 +19,13 @@ make -C devtools HL=/path/to/Hyprland
 - `vkbd` reads `tap`, `press`, `release`, `mods`, and `sleep` and
   installs its own xkb keymap. One process owns one chord: its keyboard
   dies with it, so no stuck modifier outlives a test.
+- `vlock` is a session lock client (ext-session-lock-v1): `lock` and
+  `unlock` on stdin; it prints `locked`, `finished` (denied) and
+  `unlocked`, and what its lock surfaces hear (`kenter`, `kleave`, `key
+  CODE`, `penter`, `pleave`, `button CODE`), so a check can hold the
+  user's input to the lockscreen. EOF unlocks. It is not named after a
+  real locker: an idle daemon's `pidof <locker> || lock` must never take
+  it for the user's.
 - `input-capture WIDTH HEIGHT` verifies motion, button, and key delivery
   through the fork's input-capture protocol and EIS.
 - `cliphold DELAY_MS TEXT` owns the nested clipboard and delays or

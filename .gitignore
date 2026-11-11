@@ -25,6 +25,9 @@ devtools/vptr-proto.h
 devtools/vkbd
 devtools/vkbd-proto.c
 devtools/vkbd-proto.h
+devtools/vlock
+devtools/vlock-proto.c
+devtools/vlock-proto.h
 devtools/input-capture
 devtools/input-capture-proto.c
 devtools/input-capture-proto.h
