@@ -7,41 +7,48 @@ The whole command and its answers. Examples are in the
 ## hyprctl
 
 ```sh
-hyprctl vclick <window> <x> <y> [button [clicks]] [glide|jump]
-hyprctl vclick <window> <x> <y> scroll-up|scroll-down|scroll-left|scroll-right [steps [ms]] [glide|jump]
-hyprctl vclick <window> <x> <y> move [glide|jump]
+hyprctl vclick click  <window> <x> <y> [button] [double|triple] [glide|jump]
+hyprctl vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [glide|jump]
+hyprctl vclick move   <window> <x> <y> [glide|jump]
 hyprctl vclick status
-hyprctl vclick mode [glide|jump]
+hyprctl vclick where
+hyprctl vclick hide
+hyprctl vclick mode [mouse|tap]
 hyprctl vclick profile [reload [file]]
-hyprctl vclick cursor <window>
+hyprctl vclick image <window>
 ```
 
+The options follow the point, in any order, each at most once.
+
 - `<window>`: a window selector, as `send_shortcut` takes it
-  (`address:0x…`). No spaces.
+  (`address:0x…`, `class:…`), or a bare `0x…` address. No spaces.
 - `<x> <y>`: logical pixels from the window's top-left: the pixel of a
   window capture (`grim -T <stableId>`) at scale 1; divide a capture's
   pixels by the monitor scale elsewhere. A scroll goes to what is under
   that point, as the wheel does.
 - `button`: `left` (default), `right`, `middle`, `side`, `extra`, or a
   Linux code from 272 (`BTN_LEFT`) to 279.
-- `clicks`: 1 (default) to 3; 2 is a double click.
-- `steps`: wheel detents, 1 (default) to 20. `scroll-down` shows what is
+- `double`, `triple`: two or three clicks in a row.
+- `up`, `down`, `left`, `right`: the wheel's way. `down` shows what is
   below (the content moves up), whatever the user's natural-scroll
   setting.
-- `ms`: the time between steps, 0 to 1000 (default 50). The first step
-  goes at once; the rest follow at that pace
-  ([design](design.md#paced-scrolling)). `0` sends every step in one
+- `steps`: wheel detents, 1 (default) to 20.
+- `<ms>ms`: the time between steps, `0ms` to `1000ms` (default `50ms`).
+  The first step goes at once; the rest follow at that pace
+  ([design](design.md#paced-scrolling)). `0ms` sends every step in one
   burst, which many apps speed up.
-- `move`: go there and stay. The app keeps the hover until the user's
-  pointer changes surface, vclick's next input goes into another app, or
-  the plugin unloads ([design](design.md#the-hover)).
+- `move`: go there, and keep the hover until the user's pointer changes
+  surface, vclick's next input goes into another app, `hide`, or the
+  plugin unloads ([design](design.md#the-hover)).
 - `glide`: go there along a curve at the user's pace, rest on the target
   (the dwell), then click or scroll ([design](design.md#the-glide)).
-  `jump`: go at once. A request that names neither goes the mode's way.
+  `jump`: go at once. A request that names neither goes the mode's way:
+  `mouse` glides, `tap` jumps.
 
 The answer is `ok`, or one line starting `error:` (`usage:` for a
-malformed request). A glide answers `ok` as it sets off; the click or
-scroll follows when it arrives, and an error there shows in `status`.
+request that names no verb). A glide answers `ok` as it sets off; the
+click or scroll follows when it arrives, and an error there shows in
+`status`.
 
 A glide starts where vclick's pointer last was in that window, else at
 the window's centre. It goes as a jump instead when the user's pointer
@@ -70,11 +77,28 @@ Nothing else is taken while a glide or a scroll runs. To wait for one:
 until [[ "$(hyprctl vclick status)" == idle* ]]; do sleep 0.02; done
 ```
 
+## where
+
+Where the mouse is: `address:0x<window> <x> <y>`, with
+` (hidden: the user's pointer is in the app)` while it is, or
+` (fading)` after a glide in the tap mode; else `nowhere`.
+
+## hide
+
+Takes the mouse away: the cursor goes and the app's pointer leaves, as
+a hand lifting off the mouse. `ok`, or `error: busy` while a glide or a
+scroll runs. The next input brings it back.
+
 ## mode
 
-`mode` answers `glide` or `jump`, the way a request goes when it names
-neither; `mode glide|jump` sets it. It is `glide` whenever the plugin
-loads.
+`mode` answers `mouse` or `tap`; `mode mouse|tap` sets it. It is
+`mouse` whenever the plugin loads ([design](design.md#the-modes)).
+
+- `mouse`: a request glides unless it says `jump`; after it, the app's
+  pointer and the cursor stay where it went.
+- `tap`: a request jumps unless it says `glide`; after it, the app's
+  pointer leaves and no cursor stays. Switching to `tap` does `hide`
+  (unless a glide or a scroll runs).
 
 ## profile
 
@@ -108,9 +132,10 @@ a value outside its bounds is clamped.
 | `rate_hz` | motion events a second | 30–1000 | 125 |
 | `moves` | how many moves it was fitted from | | 0 |
 
-## cursor
+## image
 
-`cursor <window>` answers what a glide draws over that window:
+`image <window>` answers what vclick draws as the cursor over that
+window:
 
 - `the app's image, <w>x<h>, hotspot <x>,<y>`: the image the app last
   set (`wl_pointer.set_cursor`);
@@ -124,9 +149,11 @@ be installed ([design](design.md#the-cursor-image)).
 
 ## Errors
 
-- `error: bad coordinates`, `error: unknown button`, `error: count must
-  be 1-3`, `error: steps must be 1-20`, `error: ms must be 0-1000`: a
-  malformed request; the usage follows.
+- `error: bad coordinates '<x> <y>'`, `error: '<word>' is not an
+  option of click|scroll|move`, `error: '<word>': that option is given
+  twice`, `error: a scroll needs its direction: up, down, left or
+  right`, `error: '<n>': steps must be 1-20`, `error: '<n>ms': the pace
+  must be 0ms-1000ms`: a malformed request; the usage follows.
 - `error: busy: still moving; retry later`, `error: busy: still
   scrolling <done>/<steps>; retry later`: a glide or a paced scroll is
   running.

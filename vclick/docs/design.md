@@ -23,8 +23,9 @@ enter, motion, then the clicks or the scroll step. A glide sends the
 same input from the pointer it has already brought there
 ([the glide](#the-glide)).
 
-- A click: press and release, then the leave, so no button stays held in
-  the app and a drag or an interactive move cannot start.
+- A click: press and release, so no button stays held in the app and a
+  drag or an interactive move cannot start. What follows is the mode's
+  ([the modes](#the-modes)): the pointer stays (mouse) or leaves (tap).
 - A scroll: one frame per step, as a wheel sends it: source `wheel`, the
   discrete step (`axis_value120` 120, or `axis_discrete` 1 to an older
   pointer), the relative direction `identical`, then `axis` 15. One step
@@ -34,6 +35,24 @@ same input from the pointer it has already brought there
   is in motion coordinates: down and right are positive), as a real wheel
   sends them through Hyprland; GTK 3.24 names a discrete +x step "left",
   a real tilt wheel's as much as vclick's.
+
+## The modes
+
+- `mouse` (the default) behaves as a mouse: a request glides there
+  unless it says `jump`, the app's pointer stays where the input left it
+  (the app keeps the hover, as under a mouse at rest: a tooltip, a hover
+  menu, and through a remote desktop the remote cursor stays put), and
+  the cursor image stays drawn there ([the cursor
+  image](#the-cursor-image)). The next input into another app leaves
+  this one first, as a mouse leaves a window; `hide` takes the mouse
+  away (a leave, and the cursor goes).
+- `tap` is only the input: a request jumps unless it says `glide`, the
+  app's pointer leaves after it, and no cursor stays (a glide's shows
+  while it moves, then fades). Switching to `tap` ends the mouse's hover
+  and hides its cursor.
+
+A request's `glide` or `jump` picks only the way there; what stays
+after is the mode's.
 
 ## The glide
 
@@ -102,8 +121,19 @@ shapes. It draws that image itself at the app's pointer:
 - after the windows are drawn, clipped to the target window;
 - never in a capture (screencopy, `grim -T`), so a window capture shows
   the app as it is;
-- while an input runs, for 1.2 s after it, then fading over 0.3 s; an
-  animated image keeps going (its frame callbacks).
+- never while the user's own pointer is in that app: the app's one
+  pointer is theirs then, and so is the one cursor over it; it shows
+  again as their pointer leaves (the seat's pointer focus change redraws
+  it);
+- where the window is drawn, its slide included, so it moves with the
+  window during a workspace animation;
+- in the mouse mode, from the input on and then at rest, until the next
+  input moves it, `hide`, the window closing, or the switch to `tap`;
+  in the tap mode, while a glide runs, for 1.2 s after it, then fading
+  over 0.3 s. An animated image keeps going (its frame callbacks).
+
+There is one cursor, as there is one mouse: it is in the window of the
+last input. `where` says where it is.
 
 A named shape, a hidden cursor or none gets a built-in arrow: vclick
 loads no cursor theme. Without the hook (the symbol not found after a
@@ -111,13 +141,15 @@ compositor change), the arrow is all it draws; `cursor` says so.
 
 ## The hover
 
-A `move` ends without a leave: the app keeps the hover (a tooltip, a
-menu that opens on hover), and its next input there goes from the
-hover, without a second enter. The hover ends:
+A `move`, and in the mouse mode every input, ends without a leave: the
+app keeps the hover (a tooltip, a menu that opens on hover), and its
+next input there goes from the hover, without a second enter. The hover
+ends:
 
 - when the user's pointer changes surface: the seat sends every app's
-  pointer a leave;
+  pointer a leave (the cursor stays drawn; the next input enters again);
 - at vclick's next input into another app: it leaves first;
+- at `hide`, and at the switch to the tap mode;
 - when the plugin unloads.
 
 A move into the app under the user's mouse is refused: there the app's
@@ -133,8 +165,9 @@ step is paced by default: the first step goes at once (with the answer,
 or when a glide arrives), and each further step goes on the compositor's
 event loop `ms` later.
 
-Each paced step is a whole input of its own (enter, the step, leave),
-checked afresh: the window may have closed, hidden or moved, and the
+Each paced step is a whole input of its own (enter, the step, and in
+the tap mode the leave; in the mouse mode the pointer stays between
+steps), checked afresh: the window may have closed, hidden or moved, and the
 user's mouse may have come into the app.
 
 - If the app is busy (the user holds a button there, see below), the
@@ -170,6 +203,9 @@ active or a drag is running in that app, vclick answers `error: busy`.
   window); `misc:focus_on_activate` decides, as for any app.
 - A hover lasts only until the user's pointer changes surface, and is
   refused in the user's own app ([the hover](#the-hover)).
+- The mouse is per window, not per screen: a glide starts where vclick's
+  pointer last was in its own window, so going to another window starts
+  from that window's last spot, not from where the cursor was drawn.
 - No drag. A drag-and-drop (a tab, a link, a file) is the app's call,
   and Hyprland then drives it with the user's real mouse: it follows the
   cursor and drops on the user's next real release.

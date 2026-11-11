@@ -6,6 +6,8 @@
 // subsurface, a popup) is crossed with a leave and an enter, as a real
 // pointer crosses it. At the end: the dwell, then the input itself from the
 // pointer already there (Pointer::dispatch), or, for a move, the hover held.
+// Wherever it ends, early or not, is where the next glide in that window
+// starts, and in the mouse mode where the cursor rests.
 #include "vclick.hpp"
 
 #include <hyprland/src/Compositor.hpp>
@@ -52,6 +54,7 @@ namespace VClick::Glide {
         Time::steady_tp                     start;
         bool                                arrived = false;
         WP<CWLSurfaceResource>              cur; // the surface the app's pointer is in
+        Vector2D                            at;  // where it is, in window coords
         std::vector<WP<CWLPointerResource>> pointers;
         wl_client*                          pointersClient = nullptr; // whose pointers those are
         int                                 period         = 8;
@@ -87,7 +90,8 @@ namespace VClick::Glide {
 
     static Result moveTo(const PHLWINDOW& w, const Vector2D& pos) {
         Vector2D   local;
-        const auto SURF = Pointer::surfaceAt(w, Path::clampTo(pos, Pointer::windowSize(w)), local);
+        const auto AT   = Path::clampTo(pos, Pointer::windowSize(w));
+        const auto SURF = Pointer::surfaceAt(w, AT, local);
         if (!SURF)
             return fail("error: the window has no surface");
         const auto PTRS = pointers(SURF->client());
@@ -108,6 +112,7 @@ namespace VClick::Glide {
             p->sendFrame();
         }
         glide->cur = SURF;
+        glide->at  = AT;
         Cursor::moveTo(pos);
         return {};
     }
@@ -126,8 +131,11 @@ namespace VClick::Glide {
                 }
             }
         }
+        if (const auto W = glide->window.lock())
+            Pointer::rememberPos(W, glide->at);
+        const bool STAY = glide->action.stay;
         glide.reset();
-        Cursor::linger();
+        Cursor::rest(STAY);
     }
 
     void stop() {
@@ -163,6 +171,11 @@ namespace VClick::Glide {
                 return;
             }
             const auto R = Pointer::dispatch(A);
+            if (R) {
+                Pointer::rememberPos(W, A.pos);
+                if (A.stay)
+                    Cursor::place(W, A.pos); // hidden while the user's pointer is in the app
+            }
             noteStop(R ? "the last glide finished as a jump: the user's pointer came into the app" : "the last glide stopped: " + R.error());
             return;
         }
@@ -177,7 +190,6 @@ namespace VClick::Glide {
         } else if (EL >= glide->moveMs + glide->dwellMs) {
             const auto A    = glide->action;
             const auto SURF = glide->cur.lock();
-            Pointer::rememberPos(W, A.pos);
             end(false);
             if (A.move) {
                 Pointer::hold(SURF);
@@ -219,6 +231,7 @@ namespace VClick::Glide {
         glide->period  = std::clamp(sc<int>(std::lround(1000.0 / pace.rateHz)), 4, 16);
         glide->start   = Time::steadyNow();
 
+        glide->at      = FROM;
         Cursor::prepare();
         Cursor::show(W, FROM);
         const auto R = moveTo(W, FROM);

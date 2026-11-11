@@ -14,19 +14,32 @@ hyprpm enable vclick
 
 ```sh
 W=$(hyprctl -j clients | jq -r '.[] | select(.class == "firefox") | .address' | head -1)
-hyprctl vclick address:$W 640 300                  # glide there, click a link
-hyprctl vclick address:$W 640 300 left 2           # double-click a word
-hyprctl vclick address:$W 640 500 scroll-down 12   # 12 wheel steps, 50 ms apart
-hyprctl vclick address:$W 640 300 move             # hover there, and stay
-hyprctl vclick address:$W 640 300 jump             # click at once, no glide
-hyprctl vclick status                              # moving, scrolling 3/12, then idle
+hyprctl vclick click  $W 640 300                 # glide there, click a link
+hyprctl vclick click  $W 640 300 double          # double-click a word
+hyprctl vclick click  $W 640 300 right           # a context menu
+hyprctl vclick scroll $W 640 500 down 12         # 12 wheel steps, 50 ms apart
+hyprctl vclick scroll $W 640 500 up 3 200ms      # slower
+hyprctl vclick move   $W 640 300                 # hover there
+hyprctl vclick click  $W 640 300 jump            # click at once, no glide
+hyprctl vclick where                             # address:0x… 640 300
+hyprctl vclick hide                              # take the mouse away
+hyprctl vclick status                            # moving, scrolling 3/12, then idle
 ```
 
-The coordinates are pixels of a window capture (`grim -T`), measured from
-the window's top-left corner. The user's cursor doesn't move, the window
-under the mouse hears nothing, and keyboard focus stays where it is.
-While an input runs, vclick draws the target app's own cursor image over
-the window at its pointer (never in a capture), then fades it out.
+The window is any window selector (`address:0x…`, `class:…`) or a bare
+`0x…` address. The coordinates are pixels of a window capture
+(`grim -T`), measured from the window's top-left corner. The user's
+cursor doesn't move, the window under the mouse hears nothing, and
+keyboard focus stays where it is.
+
+Two modes (`hyprctl vclick mode mouse|tap`):
+
+- `mouse` (the default) is a mouse of its own: it glides there, and
+  stays. The app keeps the hover, and vclick draws the app's own cursor
+  image over the window where it rests (never in a capture, and not
+  while the user's own pointer is in that app).
+- `tap` is just the input: it goes at once, and leaves the app's pointer
+  after. Nothing stays drawn.
 
 ## The user's pace
 
@@ -47,9 +60,11 @@ the glide moves at a typical mouse user's pace.
 
 ## Docs
 
-- [Reference](docs/reference.md): `hyprctl vclick`, `status`, `mode`,
-  `profile`, `cursor`, the profile file, the errors
-- [Design](docs/design.md): input without the seat, the glide, the
-  cursor image, the hover, paced scrolling, the same app, limits
+- [Reference](docs/reference.md): `click`, `scroll`, `move`, `status`,
+  `where`, `hide`, `mode`, `profile`, `image`, the profile file, the
+  errors
+- [Design](docs/design.md): input without the seat, the modes, the
+  glide, the cursor image, the hover, paced scrolling, the same app,
+  limits
 - [Testing](docs/testing.md): the build, the path's unit cases, the
   nested check

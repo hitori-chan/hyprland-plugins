@@ -37,7 +37,7 @@ namespace VClick {
 
     inline constexpr const char* NAME    = "vclick";
     inline constexpr const char* AUTHOR  = "hitori";
-    inline constexpr const char* VERSION = "1.2.0"; // lockstep with hyprpm.toml's [vclick]
+    inline constexpr const char* VERSION = "2.0.0"; // lockstep with hyprpm.toml's [vclick]
 
     constexpr int MAX_CLICKS = 3;
     constexpr int MAX_STEPS  = 20;
@@ -57,9 +57,10 @@ namespace VClick {
         uint32_t              button = BTN_LEFT; // a click, unless wheel or move
         std::optional<SWheel> wheel;
         bool                  move  = false;   // only go there, and stay
+        bool                  stay  = false;   // the mouse mode: the app keeps the hover after the input
         int                   count = 1;       // clicks, or wheel steps
         int                   ms    = STEP_MS; // between wheel steps; 0: all at once
-        std::optional<bool>   glide;           // this request's way there; unset: the mode's
+        std::optional<bool>   glide;           // this request's way there; unset: the mode's (mouse glides)
     };
 
     // An input's outcome: nothing, or the reply's error line ("error: ...").
@@ -131,11 +132,14 @@ namespace VClick {
     namespace Cursor {
         void        remember(wl_client* client, const SP<CWLSurfaceResource>& surf, const Vector2D& hotspot, std::string shape);
         void        render(const Event::SRenderStageEvent& ev);
-        void        prepare();                                     // build the arrow; not inside a render
-        void        show(const PHLWINDOW& w, const Vector2D& pos); // while an input runs
+        void        prepare();                                      // build the arrow; not inside a render
+        void        show(const PHLWINDOW& w, const Vector2D& pos);  // while a glide runs
         void        moveTo(const Vector2D& pos);
-        void        linger(); // after it: stay a moment, then fade
+        void        rest(bool stay);                                // the input ended: stay there (mouse), or linger and fade (tap)
+        void        place(const PHLWINDOW& w, const Vector2D& pos); // a jump in the mouse mode: there, and stay
         void        hide();
+        void        userMoved(); // the user's pointer changed surface: the cursor may hide or show again
+        std::string where();     // "address:0x... x y", or "nowhere"
         std::string describe(std::string_view selector);
         void        reset();
         extern bool appImages; // the set_cursor hook is in

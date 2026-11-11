@@ -5,6 +5,8 @@
 // is the client's pointer itself: when the user's pointer is in the same
 // client (one Firefox process owns all its windows), the input steps out of
 // the user's surface and back in under the user's cursor (docs/design.md).
+// In the mouse mode the app's pointer stays where the input left it (the
+// app keeps the hover, as under a mouse at rest); in the tap mode it leaves.
 #include "vclick.hpp"
 
 #include <hyprland/src/Compositor.hpp>
@@ -163,6 +165,16 @@ namespace VClick::Pointer {
         each(pointersOf(SURF->client()), [](CWLPointerResource& p) { p.sendLeave(); });
     }
 
+    // a hover held in another surface of the same app ends before the
+    // pointer enters this one: a leave, then the enter, as a mouse crosses
+    static void leaveHeldOther(const SP<CWLSurfaceResource>& surf) {
+        const auto HELD = held.lock();
+        if (!HELD || HELD == surf || HELD->client() != surf->client())
+            return;
+        held.reset();
+        each(pointersOf(HELD->client()), [](CWLPointerResource& p) { p.sendLeave(); });
+    }
+
     static std::vector<std::pair<PHLWINDOWREF, Vector2D>> positions;
 
     void rememberPos(const PHLWINDOW& w, const Vector2D& pos) {
@@ -207,6 +219,8 @@ namespace VClick::Pointer {
         auto t = nowMs();
         if (SHARED)
             each(POINTERS, [](CWLPointerResource& p) { p.sendLeave(); });
+        else
+            leaveHeldOther(T->surf);
         // a pointer already in this surface (the end of a glide, a held
         // move) gets no second enter: sendEnter is a no-op there
         each(POINTERS, [&](CWLPointerResource& p) {
@@ -237,6 +251,10 @@ namespace VClick::Pointer {
                 each(POINTERS, [&](CWLPointerResource& p) { p.sendButton(t, c.button, WL_POINTER_BUTTON_STATE_RELEASED); });
             }
         }
+        if (c.stay && !SHARED) {
+            held = T->surf; // the app keeps the hover, as under a mouse at rest
+            return {};
+        }
         each(POINTERS, [](CWLPointerResource& p) { p.sendLeave(); });
         if (SHARED)
             each(POINTERS, [&](CWLPointerResource& p) { p.sendEnter(USER, USERLOCAL); });
@@ -253,6 +271,7 @@ namespace VClick::Pointer {
         if (T->shared)
             return fail("error: busy: the user's pointer is in this app; a move would take it from them");
         const auto t = nowMs();
+        leaveHeldOther(T->surf);
         each(T->pointers, [&](CWLPointerResource& p) {
             p.sendEnter(T->surf, T->local);
             p.sendMotion(t, T->local);

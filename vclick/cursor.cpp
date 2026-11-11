@@ -4,9 +4,11 @@
 // focus, so the seat never shows a glide's image. vclick keeps each app's
 // latest request (main.cpp hooks the seat manager's set_cursor) and draws
 // that image itself at the virtual pointer: over the window only, never in
-// a capture, while an input runs and LINGER_MS after, then fading. An app
-// that asked for a named shape (cursor-shape-v1), hid its cursor or set none
-// gets a built-in arrow.
+// a capture, and never while the user's own pointer is in that app (the
+// app's one pointer is theirs then). In the mouse mode it stays where the
+// last input left it, as a mouse at rest; in the tap mode it shows while a
+// glide runs and LINGER_MS after, then fades. An app that asked for a named
+// shape (cursor-shape-v1), hid its cursor or set none gets a built-in arrow.
 #include "vclick.hpp"
 
 #include <hyprland/src/Compositor.hpp>
@@ -18,7 +20,9 @@
 #include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/protocols/core/Compositor.hpp>
 #include <hyprland/src/render/Renderer.hpp>
+#include <hyprland/src/managers/SessionLockManager.hpp>
 #include <hyprland/src/render/pass/TexPassElement.hpp>
+#include <hyprland/src/workspace/HLWorkspace.hpp>
 
 #include <array>
 #include <chrono>
@@ -47,6 +51,7 @@ namespace VClick::Cursor {
         Vector2D            pos; // window coords
         bool                shown  = false;
         bool                pinned = false; // an input runs: no fade
+        bool                stay   = false; // the mouse mode: at rest, no fade
         Time::steady_tp     fadeAt;         // whole until then, then fading
         CBox                drawn;          // the box last damaged, global logical px
         SP<CEventLoopTimer> timer;          // the fade
@@ -69,12 +74,23 @@ namespace VClick::Cursor {
         return {arrow, {ARROW_W, ARROW_H}, {0, 0}, nullptr};
     }
 
+    // where the window is drawn now: its animated position, and its
+    // workspace's slide (as the renderer places it), so a cursor at rest
+    // moves with the window instead of waiting at its goal
+    static Vector2D origin(const PHLWINDOW& w) {
+        auto       at = w->position(Desktop::View::IGeometric::GEOMETRIC_CURRENT);
+        const auto WS = w->m_workspace;
+        if (WS && WS->m_renderOffset->isBeingAnimated() && !(w->m_state & Desktop::View::WINDOW_STATE_PINNED))
+            at += WS->m_renderOffset->value();
+        return at;
+    }
+
     static std::optional<CBox> box() {
         const auto W = g.window.lock();
         if (!g.shown || !W)
             return std::nullopt;
         const auto IMG = imageFor(W);
-        return CBox{Pointer::windowPos(W) + g.pos - IMG.hotspot, IMG.size};
+        return CBox{origin(W) + g.pos - IMG.hotspot, IMG.size};
     }
 
     static void damage() {
@@ -91,7 +107,7 @@ namespace VClick::Cursor {
     static float alpha() {
         if (!g.shown)
             return 0;
-        if (g.pinned)
+        if (g.pinned || g.stay)
             return 1;
         const double T = std::chrono::duration<double, std::milli>(Time::steadyNow() - g.fadeAt).count();
         return T <= 0 ? 1.F : T >= FADE_MS ? 0.F : sc<float>(1 - T / FADE_MS);
@@ -140,7 +156,14 @@ namespace VClick::Cursor {
         g.pos    = pos;
         g.shown  = true;
         g.pinned = true;
+        g.stay   = false;
         damage();
+    }
+
+    void place(const PHLWINDOW& w, const Vector2D& pos) {
+        prepare();
+        show(w, pos);
+        rest(true);
     }
 
     void moveTo(const Vector2D& pos) {
@@ -151,8 +174,15 @@ namespace VClick::Cursor {
 
     void hide() {
         stopTimer();
-        g.shown = false;
+        g.shown  = false;
+        g.pinned = false;
+        g.stay   = false;
         damage();
+    }
+
+    void userMoved() {
+        if (g.shown && !g_pCompositor->m_isShuttingDown)
+            damage();
     }
 
     static void fadeTick() {
@@ -164,10 +194,16 @@ namespace VClick::Cursor {
         g.timer->updateTimeout(std::chrono::milliseconds(FRAME_MS));
     }
 
-    void linger() {
+    void rest(bool stay) {
         if (!g.shown)
             return;
         g.pinned = false;
+        g.stay   = stay;
+        if (stay) {
+            stopTimer();
+            damage();
+            return;
+        }
         g.fadeAt = Time::steadyNow() + std::chrono::milliseconds(LINGER_MS);
         stopTimer();
         g.timer = makeShared<CEventLoopTimer>(std::chrono::milliseconds(LINGER_MS), [](SP<CEventLoopTimer>, void*) { fadeTick(); }, nullptr);
@@ -178,16 +214,21 @@ namespace VClick::Cursor {
         // the cheap test first: this runs on every frame of every monitor
         if (!g.shown || ev.stage != RENDER_POST_WINDOWS || !ev.monitor || !ev.context || ev.context->get().m_renderingCapture)
             return;
+        if (g_pSessionLockManager && g_pSessionLockManager->isSessionLocked())
+            return;
         const auto W = g.window.lock();
         if (!W || !Desktop::View::validMapped(W) || !g_pHyprRenderer->shouldRenderWindow(W, ev.monitor))
             return;
+        if (Pointer::userIn(Pointer::clientOf(W)))
+            return; // the app's pointer is the user's: one cursor in it, theirs
         const float A   = alpha();
         const auto  IMG = imageFor(W);
         if (A <= 0 || !IMG.tex)
             return;
         const auto MON = ev.monitor;
-        CBox       at{Pointer::windowPos(W) + g.pos - IMG.hotspot - MON->m_position, IMG.size};
-        CBox       clip{Pointer::windowPos(W) - MON->m_position, Pointer::windowSize(W)}; // over the window only
+        const auto AT  = origin(W);
+        CBox       at{AT + g.pos - IMG.hotspot - MON->m_position, IMG.size};
+        CBox       clip{AT - MON->m_position, W->size(Desktop::View::IGeometric::GEOMETRIC_CURRENT)}; // over the window only
         at.scale(MON->m_scale);
         clip.scale(MON->m_scale);
 
@@ -199,6 +240,18 @@ namespace VClick::Cursor {
         g_pHyprRenderer->addPassElement(ev.context->get(), makeUnique<CTexPassElement>(std::move(data)));
         if (IMG.surf && !ev.context->get().m_blockSurfaceFeedback)
             IMG.surf->frame(Time::steadyNow()); // an animated cursor keeps going
+    }
+
+    std::string where() {
+        const auto W = g.window.lock();
+        if (!g.shown || !W || !Desktop::View::validMapped(W))
+            return "nowhere";
+        auto out = std::format("address:0x{:x} {:g} {:g}", rc<uintptr_t>(W.get()), g.pos.x, g.pos.y);
+        if (Pointer::userIn(Pointer::clientOf(W)))
+            out += " (hidden: the user's pointer is in the app)";
+        else if (!g.pinned && !g.stay)
+            out += " (fading)";
+        return out;
     }
 
     std::string describe(std::string_view selector) {

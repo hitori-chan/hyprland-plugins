@@ -21,14 +21,18 @@ namespace VClick {
 
 namespace VClick::Command {
     constexpr std::string_view USAGE =
-        "usage: vclick <window> <x> <y> [button [clicks 1-3] | scroll-up|scroll-down|scroll-left|scroll-right [steps 1-20 [ms 0-1000]] | move] [glide|jump]\n"
-        "       vclick status | mode [glide|jump] | profile [reload [file]] | cursor <window>\n"
+        "usage: vclick click <window> <x> <y> [button] [double|triple] [glide|jump]\n"
+        "       vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [glide|jump]\n"
+        "       vclick move <window> <x> <y> [glide|jump]\n"
+        "       vclick hide | status | where | mode [mouse|tap] | profile [reload [file]] | image <window>\n"
+        "  window: a window selector (address:0x..., class:...), or a bare 0x... address\n"
         "  button: left (default), right, middle, side, extra, or a code 272-279\n"
-        "  ms: between scroll steps (default 50); 0 sends them all at once\n"
-        "  move: go there and stay (a hover)\n"
-        "  glide: go there along a curve, at the user's pace (the default mode); jump: go at once";
+        "  steps: wheel detents, 1-20 (default 1); <ms>ms: between them, 0ms-1000ms (default 50ms; 0ms: at once)\n"
+        "  mode mouse: glide there, and stay; the app keeps the hover (the default)\n"
+        "  mode tap: go at once, and leave after the input; no cursor stays\n"
+        "  glide|jump: this request's way there, whatever the mode";
 
-    static bool glideMode = true; // the way there when a request names none
+    static bool mouseMode = true;
 
     static std::vector<std::string_view> words(std::string_view s) {
         std::vector<std::string_view> out;
@@ -55,6 +59,10 @@ namespace VClick::Command {
         return v;
     }
 
+    static std::string selectorOf(std::string_view s) {
+        return s.starts_with("0x") ? "address:" + std::string{s} : std::string{s};
+    }
+
     static std::optional<uint32_t> buttonCode(std::string_view s) {
         if (s == "left")
             return BTN_LEFT;
@@ -73,66 +81,100 @@ namespace VClick::Command {
     }
 
     static std::optional<SWheel> wheelOf(std::string_view s) {
-        if (s == "scroll-down")
+        if (s == "down")
             return SWheel{WL_POINTER_AXIS_VERTICAL_SCROLL, +1};
-        if (s == "scroll-up")
+        if (s == "up")
             return SWheel{WL_POINTER_AXIS_VERTICAL_SCROLL, -1};
-        if (s == "scroll-right")
+        if (s == "right")
             return SWheel{WL_POINTER_AXIS_HORIZONTAL_SCROLL, +1};
-        if (s == "scroll-left")
+        if (s == "left")
             return SWheel{WL_POINTER_AXIS_HORIZONTAL_SCROLL, -1};
         return std::nullopt;
     }
 
-    // "vclick <window> <x> <y> [button|scroll-*|move] [count] [ms] [glide|jump]"
-    static std::expected<SAction, std::string> parse(std::vector<std::string_view> w) {
-        if (w.size() < 4 || w.size() > 8 || w[0] != NAME)
-            return std::unexpected(std::string{USAGE});
+    static bool isInput(std::string_view verb) {
+        return verb == "click" || verb == "scroll" || verb == "move";
+    }
 
-        SAction c{.selector = std::string{w[1]}};
-        if (w.size() > 4 && (w.back() == "glide" || w.back() == "jump")) {
-            c.glide = w.back() == "glide";
-            w.pop_back();
-        }
-        if (w.size() > 7)
+    // "vclick click|scroll|move <window> <x> <y> [option...]": the options
+    // after the point, in any order, each at most once
+    static std::expected<SAction, std::string> parse(const std::vector<std::string_view>& w) {
+        const auto BAD = [](std::string why) { return std::unexpected(std::format("error: {}\n{}", why, USAGE)); };
+        if (w.size() < 5)
             return std::unexpected(std::string{USAGE});
-        const auto X = number<double>(w[2]);
-        const auto Y = number<double>(w[3]);
+        const auto VERB = w[1];
+
+        SAction    c{.selector = selectorOf(w[2])};
+        const auto X = number<double>(w[3]);
+        const auto Y = number<double>(w[4]);
         if (!X || !Y || !std::isfinite(*X) || !std::isfinite(*Y))
-            return std::unexpected(std::format("error: bad coordinates '{} {}'\n{}", w[2], w[3], USAGE));
-        c.pos = {*X, *Y};
+            return BAD(std::format("bad coordinates '{} {}'", w[3], w[4]));
+        c.pos  = {*X, *Y};
+        c.move = VERB == "move";
 
-        if (w.size() > 4 && w[4] == "move") {
-            if (w.size() > 5)
-                return std::unexpected(std::string{USAGE});
-            c.move = true;
-            return c;
-        }
-        if (w.size() > 4) {
-            c.wheel = wheelOf(w[4]);
-            if (!c.wheel) {
-                const auto B = buttonCode(w[4]);
-                if (!B)
-                    return std::unexpected(std::format("error: unknown button '{}'\n{}", w[4], USAGE));
-                c.button = *B;
+        bool button = false, count = false, steps = false, pace = false;
+        for (size_t i = 5; i < w.size(); ++i) {
+            const auto O    = w[i];
+            const auto TWICE = [&] { return BAD(std::format("'{}': that option is given twice", O)); };
+            if (O == "glide" || O == "jump") {
+                if (c.glide)
+                    return TWICE();
+                c.glide = O == "glide";
+                continue;
             }
+            if (VERB == "click") {
+                if (O == "double" || O == "triple") {
+                    if (std::exchange(count, true))
+                        return TWICE();
+                    c.count = O == "double" ? 2 : 3;
+                    continue;
+                }
+                if (const auto B = buttonCode(O)) {
+                    if (std::exchange(button, true))
+                        return TWICE();
+                    c.button = *B;
+                    continue;
+                }
+            } else if (VERB == "scroll") {
+                if (const auto D = wheelOf(O)) {
+                    if (c.wheel)
+                        return TWICE();
+                    c.wheel = D;
+                    continue;
+                }
+                if (O.ends_with("ms")) {
+                    const auto MS = number<int>(O.substr(0, O.size() - 2));
+                    if (!MS || *MS < 0 || *MS > MAX_MS)
+                        return BAD(std::format("'{}': the pace must be 0ms-{}ms", O, MAX_MS));
+                    if (std::exchange(pace, true))
+                        return TWICE();
+                    c.ms = *MS;
+                    continue;
+                }
+                if (const auto N = number<int>(O)) {
+                    if (*N < 1 || *N > MAX_STEPS)
+                        return BAD(std::format("'{}': steps must be 1-{}", O, MAX_STEPS));
+                    if (std::exchange(steps, true))
+                        return TWICE();
+                    c.count = *N;
+                    continue;
+                }
+            }
+            return BAD(std::format("'{}' is not an option of {}", O, VERB));
         }
-        if (w.size() > 5) {
-            const int  MAX = c.wheel ? MAX_STEPS : MAX_CLICKS;
-            const auto N   = number<int>(w[5]);
-            if (!N || *N < 1 || *N > MAX)
-                return std::unexpected(std::format("error: {} must be 1-{}\n{}", c.wheel ? "steps" : "count", MAX, USAGE));
-            c.count = *N;
-        }
-        if (w.size() > 6) {
-            if (!c.wheel)
-                return std::unexpected(std::string{USAGE});
-            const auto MS = number<int>(w[6]);
-            if (!MS || *MS < 0 || *MS > MAX_MS)
-                return std::unexpected(std::format("error: ms must be 0-{}\n{}", MAX_MS, USAGE));
-            c.ms = *MS;
-        }
+        if (VERB == "scroll" && !c.wheel)
+            return BAD("a scroll needs its direction: up, down, left or right");
         return c;
+    }
+
+    static bool busy() {
+        return Glide::active() || Pointer::scrollStatus();
+    }
+
+    static std::string busyError() {
+        if (Glide::active())
+            return "error: busy: still moving; retry later";
+        return std::format("error: busy: still {}; retry later", *Pointer::scrollStatus());
     }
 
     static std::string status() {
@@ -143,58 +185,84 @@ namespace VClick::Command {
         return lastStop.empty() ? "idle" : "idle; " + lastStop;
     }
 
-    // the commands without a window and point: status, mode, profile, cursor
+    // take the mouse away: the cursor goes, the app's pointer leaves
+    static void away() {
+        Cursor::hide();
+        Pointer::release();
+    }
+
+    // the commands without a point
     static std::optional<std::string> query(const std::vector<std::string_view>& w) {
-        if (w.size() < 2 || w.size() > 4 || w[0] != NAME)
-            return std::nullopt;
-        if (w[1] == "status" && w.size() == 2)
-            return status();
+        if (w.size() == 2) {
+            if (w[1] == "status")
+                return status();
+            if (w[1] == "where")
+                return Cursor::where();
+            if (w[1] == "hide") {
+                if (busy())
+                    return busyError();
+                away();
+                return "ok";
+            }
+        }
         if (w[1] == "mode" && w.size() <= 3) {
             if (w.size() == 3) {
-                if (w[2] != "glide" && w[2] != "jump")
+                if (w[2] != "mouse" && w[2] != "tap")
                     return std::string{USAGE};
-                glideMode = w[2] == "glide";
+                const bool MOUSE = w[2] == "mouse";
+                if (mouseMode && !MOUSE && !busy())
+                    away(); // nothing stays in the tap mode
+                mouseMode = MOUSE;
             }
-            return glideMode ? "glide" : "jump";
+            return mouseMode ? "mouse" : "tap";
         }
-        if (w[1] == "profile") {
+        if (w[1] == "profile" && w.size() <= 4) {
             if (w.size() == 2)
                 return Path::describe(Glide::profile());
             if (w[2] != "reload")
                 return std::string{USAGE};
             return Glide::loadProfile(w.size() == 4 ? std::string{w[3]} : "") + "\n" + Path::describe(Glide::profile());
         }
-        if (w[1] == "cursor" && w.size() == 3)
-            return Cursor::describe(w[2]);
+        if (w[1] == "image" && w.size() == 3)
+            return Cursor::describe(selectorOf(w[2]));
         return std::nullopt;
+    }
+
+    static std::string input(const std::vector<std::string_view>& w) {
+        auto c = parse(w);
+        if (!c)
+            return c.error();
+        if (busy())
+            return busyError();
+        c->stay = mouseMode;
+
+        // a hover held in another app ends here, as a mouse leaves it
+        const auto TW = Pointer::windowOf(c->selector);
+        Pointer::release(Pointer::clientOf(TW));
+
+        if (c->glide.value_or(mouseMode)) {
+            if (const auto R = Glide::start(*c))
+                return *R ? "ok" : R->error();
+        }
+        const auto R = Pointer::dispatch(*c);
+        if (!R)
+            return R.error();
+        if (TW) {
+            Pointer::rememberPos(TW, c->pos);
+            if (mouseMode)
+                Cursor::place(TW, c->pos);
+        }
+        return "ok";
     }
 
     std::string handle(const std::string& request) {
         const auto W = words(request);
+        if (W.size() < 2 || W[0] != NAME)
+            return std::string{USAGE};
+        if (isInput(W[1]))
+            return input(W);
         if (const auto Q = query(W))
             return *Q;
-
-        const auto C = parse(W);
-        if (!C)
-            return C.error();
-        if (Glide::active())
-            return "error: busy: still moving; retry later";
-        if (const auto S = Pointer::scrollStatus())
-            return std::format("error: busy: still {}; retry later", *S);
-
-        // a hover held in another app ends here
-        const auto TW = Pointer::windowOf(C->selector);
-        Pointer::release(Pointer::clientOf(TW));
-
-        if (C->glide.value_or(glideMode)) {
-            if (const auto R = Glide::start(*C))
-                return *R ? "ok" : R->error();
-        }
-        const auto R = Pointer::dispatch(*C);
-        if (!R)
-            return R.error();
-        if (TW)
-            Pointer::rememberPos(TW, C->pos);
-        return "ok";
+        return std::string{USAGE};
     }
 }

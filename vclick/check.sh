@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # vclick's nested check: a click lands where a window capture shows it,
 # under a covering window, in a popup, a scroll steps exactly, a glide
-# moves at its pace and ends exactly on target, a move holds its hover, the
-# app's cursor image is drawn there, and the user's pointer never notices. Runs a nested Hyprland in the gate's private host
+# moves at its pace and ends exactly on target, the mouse mode keeps the
+# hover and its cursor at rest (hidden while the user's pointer is in the
+# app), the tap mode leaves and fades, and the user's pointer never notices. Runs a nested Hyprland in the gate's private host
 # (awesome/gate/launch.sh) with only vclick loaded; the live session is
 # never touched.
 #
@@ -212,24 +213,28 @@ vclick() { hq vclick "$@" 2>&1; }
 echo "== vclick"
 expect "loaded" "$(hq plugin list | grep -c 'Plugin vclick')" 1
 expect "no arguments: usage" "$(vclick | head -1 | cut -c1-13)" "usage: vclick"
-expect "unknown window" "$(vclick address:0x1 10 10)" "error: window not found"
-expect "outside the window" "$(vclick "address:$A" 5000 10 | sed 's/ (.*//')" "error: 5000,10 is outside the window"
-expect "unknown button" "$(vclick "address:$A" 10 10 thumb | head -1)" "error: unknown button 'thumb'"
-expect "count bound" "$(vclick "address:$A" 10 10 left 4 | head -1)" "error: count must be 1-3"
-expect "steps bound" "$(vclick "address:$A" 10 10 scroll-down 21 | head -1)" "error: steps must be 1-20"
-expect "ms bound" "$(vclick "address:$A" 10 10 scroll-down 2 1001 | head -1)" "error: ms must be 0-1000"
-expect "ms is for a scroll only" "$(vclick "address:$A" 10 10 left 1 50 | head -1 | cut -c1-13)" "usage: vclick"
+expect "no verb: usage" "$(vclick "address:$A" 10 10 | head -1 | cut -c1-13)" "usage: vclick"
+expect "unknown window" "$(vclick click address:0x1 10 10)" "error: window not found"
+expect "outside the window" "$(vclick click "address:$A" 5000 10 | sed 's/ (.*//')" "error: 5000,10 is outside the window"
+expect "unknown option" "$(vclick click "address:$A" 10 10 thumb | head -1)" "error: 'thumb' is not an option of click"
+expect "an option twice" "$(vclick click "address:$A" 10 10 right left | head -1)" "error: 'left': that option is given twice"
+expect "a scroll needs a direction" "$(vclick scroll "address:$A" 10 10 3 | head -1)" "error: a scroll needs its direction: up, down, left or right"
+expect "steps bound" "$(vclick scroll "address:$A" 10 10 down 21 | head -1)" "error: '21': steps must be 1-20"
+expect "pace bound" "$(vclick scroll "address:$A" 10 10 down 2 1001ms | head -1)" "error: '1001ms': the pace must be 0ms-1000ms"
+expect "a pace is for a scroll only" "$(vclick click "address:$A" 10 10 50ms | head -1)" "error: '50ms' is not an option of click"
+expect "a move takes no count" "$(vclick move "address:$A" 10 10 2 | head -1)" "error: '2' is not an option of move"
 expect "status: idle" "$(vclick status)" idle
-expect "glide is the default mode" "$(vclick mode)" glide
-expect "a move takes no count" "$(vclick "address:$A" 10 10 move 2 | head -1 | cut -c1-13)" "usage: vclick"
+expect "where: nowhere yet" "$(vclick where)" nowhere
+expect "the mouse is the default mode" "$(vclick mode)" mouse
 expect "a bad mode" "$(vclick mode fly | head -1 | cut -c1-13)" "usage: vclick"
+expect "a bare 0x address is an address" "$(vclick image "$A")" "$(vclick image "address:$A")"
 # the pace for the check: a profile file of its own, never the user's;
 # no overshoot, so a glide's time is Fitts's law exactly
 printf 'overshoot_p=0\n' >"$T/even.profile"
 expect "a profile from a file" "$(vclick profile reload "$T/even.profile" | head -1)" "loaded $T/even.profile"
 expect "  read back" "$(vclick profile | head -1)" "fitts a 50 ms, b 120 ms/bit (W 32 px); bow 0.06 +- 0.04; speed peak at 0.45; overshoot 0% of moves >= 300 px, by 3%; dwell 80 ms; 125 Hz"
-# the exact event sequences below are the jump's; the glide has its own section
-expect "jump mode" "$(vclick mode jump)" jump
+# the exact event sequences below are the tap mode's; the mouse mode has its own section
+expect "the tap mode" "$(vclick mode tap)" tap
 
 # --- 2. another app under the user's pointer --------------------------------
 echo "== the user's pointer is on B (another client); A is clicked"
@@ -240,7 +245,7 @@ POS="$(hq cursorpos)" ACTIVE="$(hq activewindow -j | python3 -c 'import json,sys
 AM="$(lines "$T/a.wl")" BM="$(lines "$T/b.wl")"
 for c in red cyan; do # opposite corners: an offset or a scale error misses one; cyan is under B
 	n="$(hits a HIT "$c")"
-	expect "click $c at $(at "$c")" "$(vclick "address:$A" $(at "$c"))" ok
+	expect "click $c at $(at "$c")" "$(vclick click "address:$A" $(at "$c"))" ok
 	until_ok 3 more a HIT "$c" "$n" && ok "A hit $c" || bad "A never hit $c ($(tail -3 "$T/a.log" | tr '\n' ' '))"
 done
 quiet "$T/a.wl" && quiet "$T/b.wl"
@@ -252,16 +257,16 @@ expect "the focus never moved" "$(hq activewindow -j | python3 -c 'import json,s
 echo "== scroll, the user's pointer still on B"
 AM="$(lines "$T/a.wl")" BM="$(lines "$T/b.wl")"
 n="$(scrolls a magenta down)"
-expect "scroll down 3 steps over magenta" "$(vclick "address:$A" $(at magenta) scroll-down 3)" ok
+expect "scroll down 3 steps over magenta" "$(vclick scroll "address:$A" $(at magenta) down 3)" ok
 scroll_ok a magenta down "$n" 3
 n="$(scrolls a cyan up)"
-expect "scroll up 2 steps over cyan (under B)" "$(vclick "address:$A" $(at cyan) scroll-up 2)" ok
+expect "scroll up 2 steps over cyan (under B)" "$(vclick scroll "address:$A" $(at cyan) up 2)" ok
 scroll_ok a cyan up "$n" 2
 # GTK3 (3.24.52) names a +x wheel step "left", a real wheel's too: the
 # horizontal step is held against the user's own wheel in the next section,
 # not against GTK's name
 GL="$(lines "$T/a.log")"
-expect "scroll right over green" "$(vclick "address:$A" $(at green) scroll-right)" ok
+expect "scroll right over green" "$(vclick scroll "address:$A" $(at green) right)" ok
 until_ok 3 has_new_scroll a "$GL" green || true
 quiet "$T/a.wl"
 VDIR="$(new_scrolls a "$GL" green)"
@@ -278,16 +283,17 @@ within 48 150 $(cut -d' ' -f1-2 <<<"$G") && ok "  the default pace: 50 ms a step
 
 echo "== the pace"
 AM="$(lines "$T/a.wl")" n="$(scrolls a magenta down)"
-expect "ms 0: one burst" "$(vclick "address:$A" $(at magenta) scroll-down 3 0)" ok
+expect "0ms: one burst" "$(vclick scroll "address:$A" $(at magenta) down 3 0ms)" ok
 scroll_ok a magenta down "$n" 3
 expect "  one enter, the steps, one leave" "$(events a "$AM")" "enter motion axis axis axis leave"
 G="$(gaps a "$AM")"
 within 0 2 $G && ok "  a millisecond apart ($G)" || bad "  gaps $G, want 0-2 ms"
 AM="$(lines "$T/a.wl")" n="$(scrolls a magenta up)"
-expect "ms 200: a slow run" "$(vclick "address:$A" $(at magenta) scroll-up 4 200)" ok
+expect "200ms: a slow run" "$(vclick scroll "address:$A" $(at magenta) up 4 200ms)" ok
 expect "  status while it runs" "$(vclick status)" "scrolling 1/4"
-expect "  another scroll meanwhile is busy" "$(vclick "address:$A" $(at magenta) scroll-down | cut -c1-28)" "error: busy: still scrolling"
-expect "  so is a click elsewhere" "$(vclick "address:$B" 10 10 | cut -c1-28)" "error: busy: still scrolling"
+expect "  another scroll meanwhile is busy" "$(vclick scroll "address:$A" $(at magenta) down | cut -c1-28)" "error: busy: still scrolling"
+expect "  so is a click elsewhere" "$(vclick click "address:$B" 10 10 | cut -c1-28)" "error: busy: still scrolling"
+expect "  and so is hide" "$(vclick hide | cut -c1-28)" "error: busy: still scrolling"
 until_ok 3 idle || true
 expect "  status after it" "$(vclick status)" idle
 scroll_ok a magenta up "$n" 4
@@ -297,7 +303,7 @@ within 195 400 $G && ok "  200 ms apart ($G)" || bad "  gaps $G, want 3 of 195-4
 echo "== a run ends when its window does"
 C="$(open_grid c)" || bad "client C never mapped"
 if [[ -n "$C" ]]; then
-	expect "start a run into C" "$(vclick "address:$C" 50 50 scroll-down 20 200)" ok
+	expect "start a run into C" "$(vclick scroll "address:$C" 50 50 down 20 200ms)" ok
 	sleep 0.5
 	pkill -f "gtkgrid.py $T/c.log"
 	until_ok 3 idle || true
@@ -307,12 +313,12 @@ if [[ -n "$C" ]]; then
 fi
 
 AM="$(lines "$T/a.wl")" n="$(hits a HIT green)"
-expect "a double click (count 2)" "$(vclick "address:$A" $(at green) left 2)" ok
+expect "a double click" "$(vclick click "address:$A" $(at green) double)" ok
 until_ok 3 atleast a HIT green $((n + 2)) && ok "A saw both presses" || bad "A saw $(($(hits a HIT green) - n)) presses"
 quiet "$T/a.wl"
 expect "  as one enter, two clicks, one leave" "$(events a "$AM")" "enter motion button button button button leave"
 AM="$(lines "$T/a.wl")"
-expect "a right click" "$(vclick "address:$A" $(at blue) right)" ok
+expect "a right click" "$(vclick click "address:$A" $(at blue) right)" ok
 quiet "$T/a.wl"
 expect "  is button 273" "$(tail -n +"$((AM + 1))" "$T/a.wl" | grep -v ' -> ' | grep -oE 'wl_pointer[#@][0-9]+\.button\([0-9]+, [0-9]+, [0-9]+' | awk -F', ' '{ print $3 }' | sort -u)" 273
 
@@ -331,7 +337,7 @@ moved() { [[ "$(field "$A" 3),$(field "$A" 4)" == "70,70" ]]; }
 until_ok 3 moved || bad "A never moved to 70,70"
 quiet "$T/a.wl"
 POS="$(hq cursorpos)" AM="$(lines "$T/a.wl")" n="$(hits a HIT yellow)"
-expect "click yellow" "$(vclick "address:$A" $(at yellow))" ok
+expect "click yellow" "$(vclick click "address:$A" $(at yellow))" ok
 until_ok 3 more a HIT yellow "$n" && ok "A hit yellow" || bad "A never hit yellow"
 quiet "$T/a.wl"
 expect "A's pointer stepped out and back" "$(events a "$AM" | sed 's/ motion$//')" "leave enter motion button button leave enter"
@@ -346,7 +352,7 @@ until_ok 3 has_new_scroll a "$GL" red || true
 expect "vclick's scroll-right reads in GTK as the user's own +x wheel step" "$VDIR" "$(new_scrolls a "$GL" red)"
 quiet "$T/a.wl"
 AM="$(lines "$T/a.wl")" n="$(scrolls a yellow down)"
-expect "scroll down over yellow" "$(vclick "address:$A" $(at yellow) scroll-down)" ok
+expect "scroll down over yellow" "$(vclick scroll "address:$A" $(at yellow) down)" ok
 scroll_ok a yellow down "$n" 1
 expect "  A's pointer stepped out and back" "$(events a "$AM" | sed 's/ motion$//')" "leave enter motion axis leave enter"
 expect "  back in under the cursor" "$(last_xy a enter "$AM")" "$(fmt_xy $((LX - 10)) $((LY - 10)))"
@@ -357,16 +363,16 @@ quiet "$T/a.wl"
 n="$(hits a HIT red)"
 ptr "press 272"
 until_ok 3 more a HIT red "$n" || bad "the user's press never reached A"
-expect "A is busy while the user's button is down" "$(vclick "address:$A" $(at yellow) | cut -c1-11)" "error: busy"
+expect "A is busy while the user's button is down" "$(vclick click "address:$A" $(at yellow) | cut -c1-11)" "error: busy"
 n="$(hits b HIT magenta)"
 read -r MX MY <<<"$(at magenta)" # B is the same app as A: its blocks sit alike
-expect "B (another app) still clicks" "$(vclick "address:$B" "$MX" "$MY")" ok
+expect "B (another app) still clicks" "$(vclick click "address:$B" "$MX" "$MY")" ok
 until_ok 3 more b HIT magenta "$n" && ok "B hit magenta" || bad "B never hit magenta"
 ptr "release 272"
 quiet "$T/a.wl"
 n="$(scrolls a yellow down)" m="$(hits a HIT red)"
 AM="$(lines "$T/a.wl")"
-expect "a paced run into A (100 ms)" "$(vclick "address:$A" $(at yellow) scroll-down 3 100)" ok
+expect "a paced run into A (100 ms)" "$(vclick scroll "address:$A" $(at yellow) down 3 100ms)" ok
 ptr "press 272" "sleep 300" "release 272"
 until_ok 3 more a HIT red "$m" || bad "the user's press never reached A"
 until_ok 4 idle || true
@@ -378,7 +384,7 @@ G="$(gaps a "$AM")"
 # --- 4. a popup -------------------------------------------------------------
 echo "== a popup: A's menu"
 n="$(hits a MENUBUTTON True)"
-expect "click the menu button" "$(vclick "address:$A" $(at button))" ok
+expect "click the menu button" "$(vclick click "address:$A" $(at button))" ok
 until_ok 3 more a MENUBUTTON True "$n" && ok "the menu opened" || bad "the menu never opened"
 fullcap() { # the whole nested output: the menu may hang below A's box
 	local gpid jpid
@@ -402,7 +408,7 @@ for _ in 1 2 3 4 5; do
 done
 if [[ -n "$ORANGE" ]]; then
 	n="$(hits a MENU orange)"
-	expect "click the menu's orange item at $ORANGE (A-relative)" "$(vclick "address:$A" $ORANGE)" ok
+	expect "click the menu's orange item at $ORANGE (A-relative)" "$(vclick click "address:$A" $ORANGE)" ok
 	until_ok 3 more a MENU orange "$n" && ok "the popup item activated" || bad "the popup item never activated"
 else
 	bad "the menu's orange item was never drawn"
@@ -410,7 +416,7 @@ fi
 
 
 # --- 5. the glide -------------------------------------------------------------
-echo "== glide: the user's pointer is on B; A is clicked and hovered"
+echo "== the mouse mode: the user's pointer is on B; A is clicked and hovered"
 mtimes() { # mtimes <client> <from-line>: the time of each wl_pointer.motion since
 	tail -n +"$(($2 + 1))" "$T/$1.wl" | grep -v ' -> ' | grep -oE 'wl_pointer[#@][0-9]+\.motion\([0-9]+' | grep -oE '[0-9]+$'
 }
@@ -421,27 +427,37 @@ median_gap() { awk 'NR > 1 { print $1 - p } { p = $1 }' | sort -n | awk '{ g[NR]
 fitts() { python3 -c 'import math, sys; a, b, d = map(float, sys.argv[1:]); print(round(min(max(a + b * math.log2(d / 32 + 1), 40), 1000)))' "$@"; }
 dist() { python3 -c 'import math, sys; x, y, u, v = map(float, sys.argv[1:]); print(math.hypot(u - x, v - y))' "$@"; }
 regex() { [[ "$1" =~ $2 ]]; }
+rose() { # rose <png> <x> <y>: rose pixels (A's cursor image) in the 24x24 box from x-4,y-4 (its hotspot is its top-left)
+	python3 -c '
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+x, y = int(sys.argv[2]), int(sys.argv[3])
+near = lambda p: abs(p[0] - 255) < 8 and p[1] < 8 and abs(p[2] - 128) < 8
+print(sum(near(im.getpixel((i, j))) for i in range(max(x - 4, 0), min(x + 20, im.width)) for j in range(max(y - 4, 0), min(y + 20, im.height))))' "$@"
+}
+global() { read -r gx gy <<<"$(at "$1")" && echo "$(($(field "$A" 3) + gx)) $(($(field "$A" 4) + gy))"; } # global <color>: A's block on the screen
 park "$BX" "$BY"
 quiet "$T/a.wl" && quiet "$T/b.wl"
-expect "glide mode" "$(vclick mode glide)" glide
+expect "the mouse mode" "$(vclick mode mouse)" mouse
 POS="$(hq cursorpos)" ACTIVE="$(hq activewindow -j | python3 -c 'import json,sys; print(json.load(sys.stdin).get("address"))')"
 
 AM="$(lines "$T/a.wl")"
-expect "a jump-move to green: its surface coordinates" "$(vclick "address:$A" $(at green) move jump)" ok
+expect "a jump-move to green: its surface coordinates" "$(vclick move "address:$A" $(at green) jump)" ok
 quiet "$T/a.wl"
 GREEN="$(last_xy a enter "$AM")" # the window box's point, plus GTK's shadow margin
-expect "a known start: a jump-move to red, held" "$(vclick "address:$A" $(at red) move jump)" ok
+expect "a known start: a jump-move to red, held" "$(vclick move "address:$A" $(at red) jump)" ok
 quiet "$T/a.wl"
 D="$(dist $(at red) $(at green))" MT="$(fitts 50 120 "$D")"
 AM="$(lines "$T/a.wl")" BM="$(lines "$T/b.wl")" n="$(hits a HIT green)"
-expect "a glide click to green ($(printf '%.0f' "$D") px away)" "$(vclick "address:$A" $(at green))" ok
+expect "a glide click to green ($(printf '%.0f' "$D") px away)" "$(vclick click "address:$A" $(at green))" ok
 expect "  status while it moves" "$(vclick status)" moving
-expect "  anything else meanwhile is busy" "$(vclick "address:$B" 10 10 | cut -c1-24)" "error: busy: still movin"
+expect "  anything else meanwhile is busy" "$(vclick click "address:$B" 10 10 | cut -c1-24)" "error: busy: still movin"
 until_ok 4 idle || true
 until_ok 3 more a HIT green "$n" && ok "  A hit green" || bad "  A never hit green"
 quiet "$T/a.wl"
 EV="$(events a "$AM")"
-regex "$EV" '^motion( motion){8,} button button leave$' && ok "  from the held hover: motions, then the click and the leave ($(wc -w <<<"$EV") events)" || bad "  events: $EV"
+regex "$EV" '^motion( motion){8,} button button$' && ok "  from the held hover: motions, then the click, and no leave ($(wc -w <<<"$EV") events)" || bad "  events: $EV"
 M="$(mtimes a "$AM")"
 GAP="$(head -n -1 <<<"$M" | median_gap)"
 ((GAP >= 6 && GAP <= 12)) && ok "  125 motions a second (median gap $GAP ms)" || bad "  median gap $GAP ms, want 6-12"
@@ -453,34 +469,66 @@ expect "  the last motion exactly on green" "$(last_xy a motion "$AM")" "$GREEN"
 expect "B heard nothing" "$(events b "$BM")" ""
 expect "the cursor never moved" "$(hq cursorpos)" "$POS"
 expect "the focus never moved" "$(hq activewindow -j | python3 -c 'import json,sys; print(json.load(sys.stdin).get("address"))')" "$ACTIVE"
-expect "A's own cursor image (set_cursor)" "$(vclick cursor "address:$A")" "the app's image, 16x16, hotspot 0,0"
-expect "B's named shape (cursor-shape-v1): the arrow" "$(vclick cursor "address:$B")" "the built-in arrow: the app asked for 'default'"
+expect "A's own cursor image (set_cursor)" "$(vclick image "address:$A")" "the app's image, 16x16, hotspot 0,0"
+expect "B's named shape (cursor-shape-v1): the arrow" "$(vclick image "address:$B")" "the built-in arrow: the app asked for 'default'"
 
-echo "== a move holds the hover, and the cursor image is drawn there"
+echo "== the hover and the cursor stay where the input left them"
 AM="$(lines "$T/a.wl")"
-expect "move to blue" "$(vclick "address:$A" $(at blue) move)" ok
+expect "move to blue" "$(vclick move "address:$A" $(at blue))" ok
 until_ok 4 idle || true
-read -r QX QY <<<"$(at blue)"
-GX=$(($(field "$A" 3) + QX)) GY=$(($(field "$A" 4) + QY)) # blue, globally
+read -r GX GY <<<"$(global blue)"
 fullcap "$T/ghost.png" || bad "no capture with the cursor image"
 quiet "$T/a.wl"
 EV="$(events a "$AM")"
-regex "$EV" '^enter( motion){3,}$' && ok "  an enter, motions, and no leave: A keeps the hover" || bad "  events: $EV"
-sleep 2 # past the linger and the fade
-fullcap "$T/noghost.png" || bad "no capture after the fade"
+regex "$EV" '^motion( motion){3,}$' && ok "  motions only: A's pointer was still there after the click" || bad "  events: $EV"
+expect "  where" "$(vclick where)" "address:$A $(at blue)"
 read -r _ CX CY CN <<<"$(python3 "$REPO/devtools/findcolors.py" "$T/ghost.png" rose=255,0,128)"
 ((CN >= 200 && CX >= GX + 5 && CX <= GX + 10 && CY >= GY + 5 && CY <= GY + 10)) && ok "  A's own image drawn at blue ($CN px at $CX,$CY; blue at $GX,$GY)" ||
 	bad "  A's image: $CN px at $CX,$CY, want ~256 at $((GX + 7)),$((GY + 7))"
-expect "  then faded" "$(python3 "$REPO/devtools/findcolors.py" "$T/noghost.png" rose=255,0,128 | cut -d' ' -f4)" 0
+sleep 2 # past the tap mode's linger and fade
+fullcap "$T/rest.png" || bad "no capture of the cursor at rest"
+N="$(rose "$T/rest.png" "$GX" "$GY")"
+((N >= 200)) && ok "  and it stays there, as a mouse at rest ($N px)" || bad "  gone after 2 s: $N px at blue"
 AM="$(lines "$T/a.wl")" n="$(hits a HIT blue)"
-expect "click where the hover is" "$(vclick "address:$A" $(at blue))" ok
+expect "click where the hover is" "$(vclick click "address:$A" $(at blue))" ok
 until_ok 4 idle || true
 until_ok 3 more a HIT blue "$n" && ok "  A hit blue" || bad "  A never hit blue"
 quiet "$T/a.wl"
 EV="$(events a "$AM")"
-regex "$EV" '^motion( motion)* button button leave$' && ok "  no second enter: the click came from the hover" || bad "  events: $EV"
+regex "$EV" '^motion( motion)* button button$' && ok "  no enter and no leave: the click came from the hover, which stays" || bad "  events: $EV"
 
-expect "move to yellow" "$(vclick "address:$A" $(at yellow) move)" ok
+AM="$(lines "$T/a.wl")"
+expect "hide" "$(vclick hide)" ok
+quiet "$T/a.wl"
+expect "  A's pointer left" "$(events a "$AM")" leave
+expect "  where" "$(vclick where)" nowhere
+fullcap "$T/hidden.png" || bad "no capture after hide"
+expect "  the cursor is gone" "$(rose "$T/hidden.png" "$GX" "$GY")" 0
+
+AM="$(lines "$T/a.wl")" n="$(hits a HIT magenta)"
+read -r MGX MGY <<<"$(global magenta)"
+expect "a jump click on magenta" "$(vclick click "address:$A" $(at magenta) jump)" ok
+until_ok 3 more a HIT magenta "$n" && ok "  A hit magenta" || bad "  A never hit magenta"
+quiet "$T/a.wl"
+expect "  an enter and the click, and no leave" "$(events a "$AM")" "enter motion button button"
+expect "  where" "$(vclick where)" "address:$A $(at magenta)"
+fullcap "$T/jump.png" || bad "no capture after the jump"
+N="$(rose "$T/jump.png" "$MGX" "$MGY")"
+((N >= 200)) && ok "  the cursor rests at magenta ($N px)" || bad "  no cursor at magenta: $N px"
+
+echo "== the user's pointer in A hides the cursor; out again, it shows"
+park "$((70 + RX))" "$((70 + RY))" # A's red, globally: the spot section 3 proved is A's
+quiet "$T/a.wl"
+expect "  where says so" "$(vclick where)" "address:$A $(at magenta) (hidden: the user's pointer is in the app)"
+fullcap "$T/yield.png" || bad "no capture with the user's pointer in A"
+expect "  not drawn meanwhile" "$(rose "$T/yield.png" "$MGX" "$MGY")" 0
+park "$BX" "$BY"
+expect "  where, after" "$(vclick where)" "address:$A $(at magenta)"
+fullcap "$T/back.png" || bad "no capture after the user's pointer left A"
+N="$(rose "$T/back.png" "$MGX" "$MGY")"
+((N >= 200)) && ok "  drawn again once it left ($N px)" || bad "  not drawn again: $N px"
+
+expect "move to yellow" "$(vclick move "address:$A" $(at yellow))" ok
 until_ok 4 idle || true
 quiet "$T/a.wl"
 AM="$(lines "$T/a.wl")"
@@ -488,24 +536,25 @@ park 1200 760 # the user's pointer leaves B for the empty desktop: the seat leav
 quiet "$T/a.wl"
 expect "  the user's pointer changing surface ends the hover" "$(events a "$AM")" leave
 park "$BX" "$BY"
-expect "move to yellow again" "$(vclick "address:$A" $(at yellow) move)" ok
+expect "move to yellow again" "$(vclick move "address:$A" $(at yellow))" ok
 until_ok 4 idle || true
 quiet "$T/a.wl"
 AM="$(lines "$T/a.wl")" n="$(hits b HIT magenta)"
-expect "  then click B (another app)" "$(vclick "address:$B" $(at magenta) jump)" ok
+expect "  then click B (another app)" "$(vclick click "address:$B" $(at magenta) jump)" ok
 until_ok 3 more b HIT magenta "$n" || bad "B never hit magenta"
 quiet "$T/a.wl"
 expect "  A's hover ended first" "$(events a "$AM")" leave
+expect "  the cursor went with it (hidden: the user's pointer is on B)" "$(vclick where)" "address:$B $(at magenta) (hidden: the user's pointer is in the app)"
 
 echo "== the user's pointer comes into A during a glide"
 printf 'fitts_a_ms=400\nfitts_b_ms=400\novershoot_p=0\n' >"$T/slow.profile"
 expect "a slow profile (1 s glides)" "$(vclick profile reload "$T/slow.profile" | head -1)" "loaded $T/slow.profile"
-expect "  a jump-move to green" "$(vclick "address:$A" $(at green) move jump)" ok
+expect "  a jump-move to green" "$(vclick move "address:$A" $(at green) jump)" ok
 quiet "$T/a.wl"
 n="$(hits a HIT blue)"
-expect "  a glide click to blue" "$(vclick "address:$A" $(at blue))" ok
+expect "  a glide click to blue" "$(vclick click "address:$A" $(at blue))" ok
 sleep 0.3
-park "$((70 + RX))" "$((70 + RY))" # A's red, globally: the spot section 3 proved is A's
+park "$((70 + RX))" "$((70 + RY))" # A's red, globally
 POS="$(hq cursorpos)"
 until_ok 4 idle || true
 until_ok 3 more a HIT blue "$n" && ok "  A still hit blue" || bad "  A never hit blue"
@@ -513,14 +562,32 @@ expect "  the glide handed over to a jump" "$(vclick status)" "idle; the last gl
 expect "  the cursor never moved" "$(hq cursorpos)" "$POS"
 park "$BX" "$BY"
 expect "back to the check's profile" "$(vclick profile reload "$T/even.profile" | head -1)" "loaded $T/even.profile"
-expect "a jump click (jump) in glide mode" "$(vclick "address:$A" $(at magenta) jump)" ok
+
+echo "== the tap mode: a glide's cursor lingers and fades, and the pointer leaves"
+expect "the tap mode" "$(vclick mode tap)" tap
+expect "  nothing stays" "$(vclick where)" nowhere
+read -r GGX GGY <<<"$(global green)"
+AM="$(lines "$T/a.wl")" n="$(hits a HIT green)"
+expect "a glide click to green" "$(vclick click "address:$A" $(at green) glide)" ok
+until_ok 4 idle || true
+fullcap "$T/linger.png" || bad "no capture as the glide lands"
+until_ok 3 more a HIT green "$n" && ok "  A hit green" || bad "  A never hit green"
+quiet "$T/a.wl"
+EV="$(events a "$AM")"
+regex "$EV" '^enter motion( motion)* button button leave$' && ok "  an enter, motions, the click and the leave" || bad "  events: $EV"
+N="$(rose "$T/linger.png" "$GGX" "$GGY")"
+((N >= 200)) && ok "  the cursor drawn as it lands ($N px)" || bad "  no cursor as it lands: $N px"
+sleep 2 # past the linger and the fade
+fullcap "$T/faded.png" || bad "no capture after the fade"
+expect "  then faded" "$(rose "$T/faded.png" "$GGX" "$GGY")" 0
+expect "back to the mouse mode" "$(vclick mode mouse)" mouse
 
 # --- 6. unload ----------------------------------------------------------------
 echo "== unload during a glide"
 quiet "$T/a.wl"
 expect "a slow profile" "$(vclick profile reload "$T/slow.profile" | head -1)" "loaded $T/slow.profile"
 AM="$(lines "$T/a.wl")"
-expect "a glide is going" "$(vclick "address:$A" $(at green) move)" ok
+expect "a glide is going" "$(vclick move "address:$A" $(at green))" ok
 sleep 0.3
 hq plugin unload "$SO" >/dev/null 2>&1
 quiet "$T/a.wl"
@@ -534,14 +601,14 @@ expect "loaded again" "$(hq plugin list | grep -c 'Plugin vclick')" 1
 
 echo "== unload during a paced scroll"
 n="$(scrolls a magenta down)"
-expect "a run is going" "$(vclick "address:$A" $(at magenta) scroll-down 20 100 jump)" ok
+expect "a run is going" "$(vclick scroll "address:$A" $(at magenta) down 20 100ms jump)" ok
 hq plugin unload "$SO" >/dev/null 2>&1
 sleep 2.5
 quiet "$T/a.wl"
 s=$(($(scrolls a magenta down) - n))
 ((s >= 1 && s < 20)) && ok "  it ended with the plugin ($s of 20 steps)" || bad "  $s of 20 steps after the unload"
 expect "unloaded" "$(hq plugin list | grep -c 'Plugin vclick')" 0
-expect "the command is gone" "$(vclick "address:$A" 10 10 | grep -c '^ok$')" 0
+expect "the command is gone" "$(vclick click "address:$A" 10 10 | grep -c '^ok$')" 0
 expect "the nested is alive" "$(kill -0 "$NPID" 2>/dev/null && echo yes)" yes
 
 echo

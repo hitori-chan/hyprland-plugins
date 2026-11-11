@@ -1,6 +1,6 @@
 // vclick: click, scroll or move inside a window without the user's pointer.
-// Load and unload: the hyprctl command, the set_cursor hook that lets the
-// glide show the app's own cursor image, and the listeners. What each unit
+// Load and unload: the hyprctl command, the set_cursor hook that lets
+// vclick draw the app's own cursor image, and the listeners. What each unit
 // does is in vclick.hpp; how and why in docs/design.md.
 #include "vclick.hpp"
 
@@ -17,7 +17,7 @@ namespace {
     HANDLE                                 PHANDLE = nullptr;
     SP<IPC::Socket1::SCommand>             ctlCmd;
     CFunctionHook*                         setCursorHook = nullptr;
-    Hyprutils::Signal::CHyprSignalListener renderListener, shapeListener;
+    Hyprutils::Signal::CHyprSignalListener renderListener, shapeListener, focusListener;
 
     using FSetCursor = void (*)(CSeatManager*, SP<CWLSeatResource>, uint32_t, SP<CWLSurfaceResource>, const Vector2D&);
 
@@ -36,7 +36,7 @@ namespace {
                 break;
             }
         }
-        // optional: without it the glide draws the built-in arrow
+        // optional: without it vclick draws the built-in arrow
         VClick::Cursor::appImages = setCursorHook && setCursorHook->hook();
     }
 }
@@ -63,6 +63,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
                 VClick::Cursor::remember(ev.pMgr->client(), nullptr, {}, ev.shapeName);
         });
     renderListener = Event::bus()->m_events.render.stage.listen([](const Event::SRenderStageEvent& ev) { VClick::Cursor::render(ev); });
+    // the cursor hides while the user's pointer is in its app: redraw it as that changes
+    focusListener = g_pSeatManager->m_events.pointerFocusChange.listen([] { VClick::Cursor::userMoved(); });
 
     // a prefix command: the handler gets the full request, the command word included
     ctlCmd = HyprlandAPI::registerHyprCtlCommand(PHANDLE, IPC::Socket1::SCommand{.name = VClick::NAME, .match = IPC::Socket1::COMMAND_MATCH_PREFIX,
@@ -78,6 +80,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
     // and the hook first, then every timer (a glide, a scroll, the fade)
     renderListener.reset();
     shapeListener.reset();
+    focusListener.reset();
     if (setCursorHook)
         HyprlandAPI::removeFunctionHook(PHANDLE, setCursorHook);
     setCursorHook = nullptr;
