@@ -22,6 +22,9 @@ awesome's restore, which is the user's own pick, it is not a jump. A
 fullscreen state held at minimize returns only on a workspace no
 monitor shows: on a shown one it would cover the windows the user is
 working in. `hyprctl awesome minimized` lists what the plugin hides.
+From Lua the same are `hl.plugin.awesome.unminimize(address)` and
+`hl.plugin.awesome.minimized()` (an array); the Lua restore runs on the
+next loop turn, as a bind's call may come inside the keyboard emission.
 
 ## Maximize
 

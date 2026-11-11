@@ -14,6 +14,8 @@ hl.bind("SUPER + M", function() hl.plugin.awesome.maximize() end)
 | `maximize()` | toggle the focused window's maximize |
 | `minimize()` | minimize the focused window |
 | `restore()` | restore the most recently minimized window on the focused monitor's workspace |
+| `minimized()` | the windows the plugin has minimized: an array of addresses (`0x…`, as `hyprctl clients` prints them), the most recent last |
+| `unminimize(address)` | shows that window again where it is, without raising or focusing it and without a workspace change, on the next loop turn (a bind runs inside the keyboard emission); `ok` once it is queued, else `not minimized`, `no such window`, `locked` or the usage |
 | `focus_next()`, `focus_prev()` | cycle the focus in arrival order |
 | `focus_prev_here()` | toggle between the two most recent windows on this workspace |
 | `center()` | toggle the [center](notify.md#the-center) |

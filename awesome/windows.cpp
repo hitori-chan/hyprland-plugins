@@ -19,10 +19,14 @@
 
 #include <hyprland/src/config/ConfigValue.hpp>
 
+#include <lua.hpp>
+
 #include <algorithm>
 #include <cstdint>
+#include <expected>
 #include <format>
 #include <string_view>
+#include <vector>
 
 namespace NAwesome::Windows {
 
@@ -49,6 +53,16 @@ namespace NAwesome::Windows {
     static CHopQueue<char, 16> pendingRestoreLast([](std::vector<char>& batch) {
         for (size_t i = 0; i < batch.size() && !sessionLocked(); i++)
             Tasklist::restoreLast();
+    });
+    // the Lua unminimize(address): a call may come from a bind, inside the
+    // keyboard emission, so the restore runs on the next loop turn (and
+    // never under the lockscreen); quiet, as the hyprctl verb's
+    static CHopQueue<PHLWINDOWREF, 16> pendingUnminimize([](std::vector<PHLWINDOWREF>& batch) {
+        if (sessionLocked())
+            return;
+        for (const auto& WR : batch)
+            if (const auto W = WR.lock(); W && W->mapped() && Tasklist::isMinimized(W))
+                Tasklist::restore(W, true);
     });
 
     namespace {
@@ -79,6 +93,77 @@ namespace NAwesome::Windows {
         int luaFocusPrevHere(lua_State*) {
             Click::focusPrevHere();
             return 0;
+        }
+    }
+
+    namespace {
+        std::string addressOf(const PHLWINDOW& w) {
+            return std::format("0x{:x}", reinterpret_cast<uintptr_t>(w.get())); // hyprctl clients' form
+        }
+
+        // the windows this plugin hides, the most recently minimized last
+        std::vector<std::string> minimizedAddresses() {
+            Tasklist::prune();
+            std::vector<std::string> out;
+            for (const auto& M : Tasklist::minStack())
+                if (const auto W = M.w.lock(); W && W->mapped())
+                    out.emplace_back(addressOf(W));
+            return out;
+        }
+
+        // `unminimize <address>`'s target: the window, or why there is none
+        // ("usage: ...", "locked", "not minimized", "no such window")
+        std::expected<PHLWINDOW, std::string> unminimizeTarget(std::string_view arg) {
+            if (arg.starts_with("address:"))
+                arg.remove_prefix(8);
+            if (arg.empty())
+                return std::unexpected("usage: awesome unminimize <address>");
+            if (sessionLocked())
+                return std::unexpected("locked"); // never un-minimize under the lockscreen
+            for (const auto& W : Desktop::windowState()->windows()) {
+                if (!W || !W->mapped() || addressOf(W) != arg)
+                    continue;
+                if (!Tasklist::isMinimized(W))
+                    return std::unexpected("not minimized");
+                return W;
+            }
+            return std::unexpected("no such window");
+        }
+
+        // `unminimize <address>`: a script's restore of one window, which
+        // does not move the user. Quiet (Tasklist::restore): shown where it
+        // is, not raised, not focused, no workspace change. Run inline: an
+        // IPC request is no input or focus emission (invariant 6), and the
+        // caller gets the outcome.
+        std::string unminimizeVerb(std::string_view arg) {
+            const auto W = unminimizeTarget(arg);
+            if (!W)
+                return W.error();
+            Tasklist::restore(*W, true);
+            return Tasklist::isMinimized(*W) ? "failed" : "ok";
+        }
+
+        // hl.plugin.awesome.minimized(): the addresses, as an array
+        int luaMinimized(lua_State* L) {
+            const auto ADDRS = minimizedAddresses();
+            lua_createtable(L, (int)ADDRS.size(), 0);
+            for (size_t i = 0; i < ADDRS.size(); i++) {
+                lua_pushstring(L, ADDRS[i].c_str());
+                lua_rawseti(L, -2, (lua_Integer)i + 1);
+            }
+            return 1;
+        }
+
+        // hl.plugin.awesome.unminimize(address): the verb's outcome strings;
+        // `ok` once the restore is queued (pendingUnminimize)
+        int luaUnminimize(lua_State* L) {
+            const char* ARG = lua_type(L, 1) == LUA_TSTRING ? lua_tostring(L, 1) : "";
+            const auto  W   = unminimizeTarget(ARG);
+            std::string out = !W ? W.error() : pendingUnminimize.push(PHLWINDOWREF{*W}) ? "ok" : "failed";
+            if (out.starts_with("usage:"))
+                out = "usage: hl.plugin.awesome.unminimize(address)";
+            lua_pushstring(L, out.c_str());
+            return 1;
         }
     }
 
@@ -186,6 +271,8 @@ namespace NAwesome::Windows {
         HyprlandAPI::addLuaFunction(H, "awesome", "focus_next", luaFocusNext);
         HyprlandAPI::addLuaFunction(H, "awesome", "focus_prev", luaFocusPrev);
         HyprlandAPI::addLuaFunction(H, "awesome", "focus_prev_here", luaFocusPrevHere);
+        HyprlandAPI::addLuaFunction(H, "awesome", "minimized", luaMinimized);
+        HyprlandAPI::addLuaFunction(H, "awesome", "unminimize", luaUnminimize);
     }
 
     void CModule::teardown() {
@@ -196,6 +283,7 @@ namespace NAwesome::Windows {
         pendingActivates.reset();
         pendingFocusAway.reset();
         pendingRestoreLast.reset();
+        pendingUnminimize.reset();
         restoreMinimizedHook() = nullptr;
         Snap::teardown();
         Place::teardown();
@@ -227,46 +315,15 @@ namespace NAwesome::Windows {
         Snap::onInputEndingDrag();
     }
 
-    namespace {
-        std::string addressOf(const PHLWINDOW& w) {
-            return std::format("0x{:x}", reinterpret_cast<uintptr_t>(w.get())); // hyprctl clients' form
-        }
-
-        // `unminimize <address>`: a script's restore of one window, which
-        // does not move the user. Quiet (Tasklist::restore): shown where it
-        // is, not raised, not focused, no workspace change. Run inline: an
-        // IPC request is no input or focus emission (invariant 6), and the
-        // caller gets the outcome.
-        std::string unminimizeVerb(std::string_view arg) {
-            if (arg.starts_with("address:"))
-                arg.remove_prefix(8);
-            if (arg.empty())
-                return "usage: awesome unminimize <address>";
-            if (sessionLocked())
-                return "locked"; // never un-minimize under the lockscreen
-            for (const auto& W : Desktop::windowState()->windows()) {
-                if (!W || !W->mapped() || addressOf(W) != arg)
-                    continue;
-                if (!Tasklist::isMinimized(W))
-                    return "not minimized";
-                Tasklist::restore(W, true);
-                return Tasklist::isMinimized(W) ? "failed" : "ok";
-            }
-            return "no such window";
-        }
-    }
-
     // `hyprctl awesome minimized`: the windows this plugin hides, one
     // address a line, the most recently minimized last; `unminimize
     // <address>` (above). The gate's build adds `snap-zone`: the armed snap
     // zone, "<top|bottom|-> <left|right|->", "" with none.
     std::optional<std::string> CModule::handleCtl(const std::string& verb) const {
         if (verb == "minimized") {
-            Tasklist::prune();
             std::string out;
-            for (const auto& M : Tasklist::minStack())
-                if (const auto W = M.w.lock(); W && W->mapped())
-                    out += addressOf(W) + "\n";
+            for (const auto& A : minimizedAddresses())
+                out += A + "\n";
             return out;
         }
         if (verb == "unminimize" || verb.starts_with("unminimize "))

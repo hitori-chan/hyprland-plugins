@@ -567,6 +567,16 @@ chk "unminimize: answers ok" test "$(hq awesome unminimize "$W3B")" = ok
 chk "unminimize: the window shows and the focus stays where it was" until_is 2 "0 w3c" w3b_state
 chk "unminimize: a shown window is not minimized" test "$(hq awesome unminimize "$W3B")" = "not minimized"
 chk "unminimize: an unknown address is no window" test "$(hq awesome unminimize 0x1)" = "no such window"
+# the same from Lua (a bind's, a script's): the restore runs on the next loop turn
+dsp "hl.dsp.focus({window=\"address:$W3B\"})"
+until_is 2 w3b active_class
+dsp "hl.plugin.awesome.minimize()"
+until_is 2 "1 w3c" w3b_state
+chk "lua minimized(): an array of the hidden windows" until_is 2 "1 $W3B" hq repl 'local m = hl.plugin.awesome.minimized(); return #m .. " " .. table.concat(m, " ")'
+chk "lua unminimize(): answers ok" test "$(hq repl "return hl.plugin.awesome.unminimize('$W3B')")" = ok
+chk "lua unminimize(): the window shows and the focus stays where it was" until_is 2 "0 w3c" w3b_state
+chk "lua unminimize(): a shown window is not minimized" test "$(hq repl "return hl.plugin.awesome.unminimize('$W3B')")" = "not minimized"
+chk "lua unminimize(): no address answers the usage" test "$(hq repl 'return hl.plugin.awesome.unminimize()')" = "usage: hl.plugin.awesome.unminimize(address)"
 # with four or more in the history, "last" is still the one focused before
 dsp "hl.dsp.exec_cmd('foot --app-id=w3d --window-size-pixels=300x200')"
 wait_class w3d
