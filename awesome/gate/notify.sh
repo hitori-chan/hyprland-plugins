@@ -364,6 +364,12 @@ PB2="$(panel_bottom $STATE/shade-open-aw.png)"
 chk "shade: the opened card shows its whole body" test $(( PB2 - PB1 )) -ge 30
 printf 'move %s %s\nsleep 40\npress 274\nsleep 40\nrelease 274\nsleep 80\n' "$ROWX" "$ROWY" | vp; settle
 chk "shade: middle on a row does nothing" test "$(st)" = "center:1 live:1 dnd:0"
+# a back button over a card must not reach the window beneath it (a
+# browser would navigate back): the card takes it, with no verb
+printf 'move %s %s\nsleep 40\npress 275\nsleep 40\nrelease 275\nsleep 80\n' "$ROWX" "$ROWY" | vp; settle
+side_taken() { hq awesome trace | grep ' button 275 ' | tail -n 2 | grep -c ' by notify$'; }
+chk "shade: a side button on a row is the card's, press and release" test "$(side_taken)" = 2
+chk "shade: a side button on a row does nothing" test "$(st)" = "center:1 live:1 dnd:0"
 click $ROWX $ROWY 272
 chk "shade: left on an actionless BODY dismisses it, shade stays" test "$(st)" = "center:1 live:0 dnd:0"
 nsend -t 30000 "right me" body

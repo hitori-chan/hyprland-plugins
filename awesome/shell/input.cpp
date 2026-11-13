@@ -9,7 +9,7 @@ namespace Awesome::Shell {
 
     std::map<uint64_t, std::vector<SHit>> hitboxes;
     SBarHover                             barHover;
-    static uint32_t                       swallowRelease = 0; // bits: 1 left, 2 right, 4 middle
+    static uint32_t                       swallowRelease = 0; // trackedPointerButtonBit's bits
 
     // What a cell does lives with its widget (IWidget::onHit/onScroll);
     // this unit owns swallowing, the deferral out of the input emission,
@@ -84,8 +84,7 @@ namespace Awesome::Shell {
         if (g_pInputManager && !g_pInputManager->hasHeldButtons())
             heldButtons = 0;
 
-        // Side/extra buttons have no shell action. Pass them through as native
-        // application input instead of making one catch-all swallow bit.
+        // no mouse button: native input
         if (!BIT) {
             heldButtons++;
             return;
@@ -191,6 +190,8 @@ namespace Awesome::Shell {
 
         info.cancelled = true; // the strip is ours: every button, even between hitboxes
         swallowRelease |= BIT;
+        if (BIT & ~Awesome::VERB_BUTTONS)
+            return; // a side button: no verb
 
         const auto IT = hitboxes.find(MON->m_id);
         if (IT == hitboxes.end())

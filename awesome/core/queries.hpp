@@ -258,19 +258,14 @@ namespace Awesome {
         return !(PINNED_X && PINNED_Y);
     }
 
-    // Only buttons with an action in the shell may be swallowed. Other
-    // buttons remain native application input and must never share a mask.
-    inline uint32_t trackedPointerButtonBit(uint32_t button) noexcept {
-        switch (button) {
-            case BTN_LEFT:
-                return 1u;
-            case BTN_RIGHT:
-                return 2u;
-            case BTN_MIDDLE:
-                return 4u;
-            default:
-                return 0u;
-        }
+    // One swallow bit per mouse button, never shared, so a release always
+    // matches its own press: left 1, right 2, middle 4 carry verbs; the side
+    // buttons (BTN_SIDE..BTN_TASK) carry none, and a plugin surface swallows
+    // them all the same so they never reach the window beneath it. Anything
+    // else (0) stays native input.
+    inline constexpr uint32_t VERB_BUTTONS = 7u;
+    inline uint32_t           trackedPointerButtonBit(uint32_t button) noexcept {
+        return button >= BTN_LEFT && button <= BTN_TASK ? 1u << (button - BTN_LEFT) : 0u;
     }
 
 } // namespace Awesome

@@ -59,7 +59,7 @@
 
 namespace Awesome::Notify {
 
-    static uint32_t swallowRelease = 0; // bit 1 = left, 2 = right, 4 = middle
+    static uint32_t swallowRelease = 0; // trackedPointerButtonBit's bits
     static int      heldButtons    = 0; // presses that reached apps: an implicit grab may be live
     static bool     pointerOwned   = false;
     static bool     cursorHand     = false; // the override currently shows the link hand
@@ -334,7 +334,7 @@ namespace Awesome::Notify {
             return;
         }
 
-        const uint32_t BIT = e.button == BTN_LEFT ? 1u : e.button == BTN_RIGHT ? 2u : e.button == BTN_MIDDLE ? 4u : 0u;
+        const uint32_t BIT = Awesome::trackedPointerButtonBit(e.button);
 
         if (e.state == WL_POINTER_BUTTON_STATE_RELEASED) {
             if (BIT && (swallowRelease & BIT)) {
@@ -407,8 +407,8 @@ namespace Awesome::Notify {
 
         info.cancelled = true; // the surface is ours: the press must not reach the window beneath
         swallowRelease |= BIT;
-        if (BIT == 4u)
-            return; // middle: no verb
+        if (BIT & ~3u)
+            return; // middle and the side buttons: no verb
 
         auto h = hitAt(*CARD, COORDS, BIT);
         if (BIT == 1u && holdable(*CARD, h) && holdTimer) {

@@ -56,6 +56,7 @@ On every card:
 | left held 450 ms | the card menu, at the pointer |
 | right | dismiss (on a stack's deck or header: the whole stack) |
 | middle | nothing; swallowed, so the window beneath never gets a paste |
+| side buttons (back, forward) | nothing; swallowed, so the window beneath never navigates |
 
 The cards own the pointer over them: hover never leaks to the window
 beneath. Hovering lifts the glass and holds the banner's clock (leaving

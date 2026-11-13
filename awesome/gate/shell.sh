@@ -59,6 +59,11 @@ chk "shell: a tag not viewed stands on none" test "$(tag_ground "$STATE/strip-ws
 # Fitts: the screen's corner is tag 一's — a click thrown into it views 1
 printf 'move 0 0\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' | vp
 chk "shell: a click in the top-left corner views workspace 1" until_is 3 1 ws
+# a back button on the strip is the strip's (no verb): never the window's
+printf 'move %s 13\nsleep 40\npress 275\nsleep 40\nrelease 275\nsleep 80\n' "$(tag_cx 3)" | vp
+strip_side() { hq awesome trace | grep ' button 275 ' | tail -n 2 | grep -c ' by shell$'; }
+chk "shell: a side button on the strip is the strip's, press and release" until_is 2 2 strip_side
+chk "shell: a side button on a tag does nothing" test "$(ws)" = 1
 
 # ---- tags: hover lifts the text, never a ground ------------------------------
 # an empty tag's dim kanji lights to the bar's text under the pointer, and

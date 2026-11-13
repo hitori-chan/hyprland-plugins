@@ -13,7 +13,8 @@ screen's left edge, the clock 8 px off the right one.
 - Every widget owns its cell and the cells meet across their gaps, so a
   click on the strip never lands between two targets: the top-left pixel
   is the first tag, the top-right the clock. A click on the battery or
-  the clock does nothing.
+  the clock does nothing; the side buttons (back, forward) do nothing
+  anywhere on the strip, and never reach a window beneath it.
 - Geometry is monitor-local. On a narrow output the right slot never
   crosses the tags: its leftmost widgets yield first (the tray drops icons,
   the others show whole or not at all), and the tasks take what is left.
