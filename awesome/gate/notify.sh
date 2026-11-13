@@ -254,18 +254,21 @@ nclear
 # block) is read byte by byte up to 256 KiB, refused past it (a header
 # declaring more before the walk, a lying one at the bound); a walk past
 # its element budget is refused, never a stall
-notify_shape() { # notify_shape wrapped|be-small|be-big|be-lying|walk-past — prints "<ms> ok|err"
+notify_shape() { # notify_shape wrapped|be-small|be-big|be-lying|walk-past|dup-keys|be-many — prints "<ms> ok|err"
 	DBUS_SESSION_BUS_ADDRESS="$NBUS" python3 - "$1" <<'PY'
 import sys, time
 from gi.repository import Gio, GLib
 V, i32, shape = GLib.Variant, GLib.Variant.new_int32, sys.argv[1]
 def ay(n): return V.new_from_bytes(GLib.VariantType.new("ay"), GLib.Bytes.new(bytes((30, 160, 240, 255)) * (n // 4)), True)
 def img(w, n=0): return V.new_tuple(i32(w), i32(w), i32(w * 4), V.new_boolean(True), i32(8), i32(4), ay(n or w * w * 4))
+def entries(pairs): return V.new_array(GLib.VariantType.new("{sv}"), [V.new_dict_entry(V("s", k), V.new_variant(v)) for k, v in pairs])
 hints = {"wrapped": {"x-wrapped": V("v", ay(8 << 20))}, "be-small": {"image-data": img(256)}, "be-big": {"image-data": img(1024)},
          "be-lying": {"image-data": img(16, 1 << 20)},
-         "walk-past": {"x-many": V("as", ["x"] * 100000)}}[shape]
+         "walk-past": {"x-many": V("as", ["x"] * 100000)},
+         "dup-keys": entries([("x-dup", i32(1))] * 100000),
+         "be-many": entries([("image-data", img(200))] * 3)}[shape]
 msg = Gio.DBusMessage.new_method_call("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "Notify")
-msg.set_body(V.new_tuple(V("s", "shapeapp"), V("u", 0), V("s", ""), V("s", "shape"), V("s", shape), V("as", []), V("a{sv}", hints), i32(4000)))
+msg.set_body(V.new_tuple(V("s", "shapeapp"), V("u", 0), V("s", ""), V("s", "shape"), V("s", shape), V("as", []), hints if isinstance(hints, V) else V("a{sv}", hints), i32(4000)))
 if shape.startswith("be-"):
     msg.set_byte_order(Gio.DBusMessageByteOrder.BIG_ENDIAN)
 bus = Gio.bus_get_sync(Gio.BusType.SESSION)
@@ -289,6 +292,12 @@ read -r MS R <<<"$(notify_shape be-lying)"; echo "reader: a 16x16 header over 1 
 chk "reader: and so is one whose header understates it" test "$R" = err -a "${MS:-9999}" -lt 250
 read -r MS R <<<"$(notify_shape walk-past)"; echo "reader: 100k strings answered in ${MS} ms ($R)" >&2
 chk "reader: a hint past the walk budget is refused, not stalled" test "$R" = err -a "${MS:-9999}" -lt 250
+# every entry counts: a repeated key never grows the kept hints, and the
+# big-endian bound is the call's, across its image entries
+read -r MS R <<<"$(notify_shape dup-keys)"; echo "reader: 100k entries of one key answered in ${MS} ms ($R)" >&2
+chk "reader: entries of one repeated key past the budget are refused" test "$R" = err -a "${MS:-9999}" -lt 250
+read -r MS R <<<"$(notify_shape be-many)"; echo "reader: three 160 KB big-endian images answered in ${MS} ms ($R)" >&2
+chk "reader: big-endian images past 256 KiB a call are refused" test "$R" = err -a "${MS:-9999}" -lt 250
 DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user call org.freedesktop.Notifications /org/freedesktop/Notifications \
 	org.freedesktop.Notifications Notify susssasa{sv}i after 0 "" "after" "still serving" 0 0 4000 >/dev/null
 chk "reader: and the daemon still serves" until_is 3 "center:0 live:1 dnd:0" st

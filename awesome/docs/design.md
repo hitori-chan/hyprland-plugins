@@ -244,9 +244,10 @@ bus-originated work, `pollSoon()` dispatch capped at 64 messages and
   at most); everything else is walked past without a copy.
 - sd-bus leaves no container unread and serves no block from a message
   that needs byte-swapping, so a walk is linear in elements and a
-  big-endian image is read byte by byte. Past 65,536 walked elements
-  (~0.2–1 µs each) or 256 KiB of a big-endian image (~26 ms), the call is
-  refused with a D-Bus error. Hints past the 64th and action strings past
+  big-endian image is read byte by byte. Past 65,536 elements read, kept
+  or walked (~0.2–1 µs each; a repeated hint key counts though it is not
+  kept), or 256 KiB of big-endian image bytes across the call (~26 ms),
+  the call is refused with a D-Bus error. Hints past the 64th and action strings past
   the 64th are walked past; the card keeps eight action rows.
 - The daemon's signals leave in order from one queue; actions, tokens
   and replies go to the sender only. The queue holds a Clear All of

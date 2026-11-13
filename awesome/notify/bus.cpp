@@ -162,19 +162,26 @@ namespace Awesome::Notify::Bus {
     // copy (skipOne), and so is every hint past MAX_HINTS kept and every
     // action string past MAX_ACTION_STRINGS (the model keeps 8 menu rows,
     // the default and the reply). A walk is linear in elements (~0.2-1 us
-    // each): past MAX_WALKED of them a call is refused, the defined behavior
-    // at a bound only a hostile sender reaches.
+    // each), and every element read counts, kept or walked (a repeated hint
+    // key never grows the kept set): past MAX_WALKED of them a call is
+    // refused, the defined behavior at a bound only a hostile sender reaches.
     constexpr size_t MAX_HINTS          = 64;
     constexpr size_t MAX_ACTION_STRINGS = 64;
     constexpr size_t MAX_WALKED         = 1 << 16;
     // A big-endian sender's image-data is read byte by byte (~0.1 us
-    // each, ~26 ms at the bound): a header declaring more is refused
-    // before the walk, a walk reaching it is refused at it (a 256x256
-    // RGBA icon fits; 1 MiB walked ~0.1 s against the 150 ms RT budget)
+    // each, ~26 ms at the bound), the bound a call's, across all its image
+    // entries: a header declaring more is refused before the walk, a walk
+    // reaching it is refused at it (a 256x256 RGBA icon fits; 1 MiB walked
+    // ~0.1 s against the 150 ms RT budget)
     constexpr size_t         MAX_SWAPPED_IMAGE_BYTES = 256 << 10;
 
     [[noreturn]] static void refuse(const char* why) {
         throw sdbus::Error{sdbus::Error::Name{"org.freedesktop.DBus.Error.LimitsExceeded"}, why};
+    }
+
+    static void charge(size_t& budget) {
+        if (budget-- == 0)
+            refuse("a Notify value past the size the daemon walks");
     }
 
     // the spec's three names for it, newest first
@@ -200,8 +207,7 @@ namespace Awesome::Notify::Bus {
     // nesting is the signature's, which sd-bus bounds. `budget` counts the
     // elements left to walk this call.
     static void skipOne(sdbus::MethodCall& m, size_t& budget) {
-        if (budget-- == 0)
-            refuse("a Notify value past the size the daemon walks");
+        charge(budget);
         const auto [TYPE, CONTENTS] = m.peekType();
         const auto READ             = [&]<class T>() {
             T v{};
@@ -262,8 +268,9 @@ namespace Awesome::Notify::Bus {
         }
     }
 
-    // at an image entry's variant; nullopt when the header would not unpack
-    static std::optional<Parse::ImageData> readImage(sdbus::MethodCall& m, bool keep) {
+    // at an image entry's variant; nullopt when the header would not unpack.
+    // `swappedLeft`: the call's big-endian bytes still to be walked
+    static std::optional<Parse::ImageData> readImage(sdbus::MethodCall& m, bool keep, size_t& swappedLeft) {
         int32_t              w = 0, h = 0, stride = 0, bps = 0, ch = 0;
         bool                 alpha = false;
         const void*          px    = nullptr;
@@ -276,18 +283,19 @@ namespace Awesome::Notify::Bus {
             m.readArray('y', &px, &bytes);
         } catch (const sdbus::Error&) {
             const size_t DECLARED = w > 0 && h > 0 && stride > 0 && ch > 0 ? (size_t)stride * (h - 1) + (size_t)w * ch : 0;
-            if (DECLARED > MAX_SWAPPED_IMAGE_BYTES)
-                refuse("a big-endian image-data past 256 KiB");
+            if (DECLARED > swappedLeft)
+                refuse("big-endian image-data past 256 KiB a call");
             swapped.reserve(DECLARED);
             m.enterContainer("y");
             while (!m.isAtEnd(false)) {
-                if (swapped.size() >= MAX_SWAPPED_IMAGE_BYTES)
-                    refuse("a big-endian image-data past 256 KiB");
+                if (swapped.size() >= swappedLeft)
+                    refuse("big-endian image-data past 256 KiB a call");
                 uint8_t b = 0;
                 m >> b;
                 swapped.push_back(b);
             }
             m.exitContainer();
+            swappedLeft -= swapped.size();
             px    = swapped.data();
             bytes = swapped.size();
         }
@@ -315,12 +323,14 @@ namespace Awesome::Notify::Bus {
         std::vector<std::string>              actions;
         std::map<std::string, sdbus::Variant> hints;
         std::optional<Parse::ImageData>       image;
-        int                                   imageAt = 3; // the best name read so far
-        size_t                                budget  = MAX_WALKED;
+        int                                   imageAt     = 3; // the best name read so far
+        size_t                                budget      = MAX_WALKED;
+        size_t                                swappedLeft = MAX_SWAPPED_IMAGE_BYTES;
         call >> appName >> replacesId >> appIcon >> summary >> body;
         call.enterContainer("s");
         while (!call.isAtEnd(false))
             if (actions.size() < MAX_ACTION_STRINGS) {
+                charge(budget);
                 std::string a;
                 call >> a;
                 actions.push_back(std::move(a));
@@ -329,12 +339,13 @@ namespace Awesome::Notify::Bus {
         call.exitContainer();
         call.enterContainer("{sv}");
         while (call.enterDictEntry("sv")) {
+            charge(budget);
             std::string key;
             call >> key;
             const auto [TYPE, CONTENTS] = call.peekType();
             const std::string_view SIG{CONTENTS ? CONTENTS : ""};
             if (const int RANK = imageRank(key); RANK >= 0 && SIG == "(iiibiiay)") {
-                if (auto d = readImage(call, RANK < imageAt)) {
+                if (auto d = readImage(call, RANK < imageAt, swappedLeft)) {
                     image   = std::move(d);
                     imageAt = RANK;
                 }
