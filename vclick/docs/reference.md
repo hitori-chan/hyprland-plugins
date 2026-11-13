@@ -50,7 +50,7 @@ The options follow the point, in any order, each at most once.
   plugin unloads ([design](design.md#the-hover)). With a button held, the
   move drags it ([press](#press-and-release)).
 - `glide`: go there along a curve at the user's pace, rest on the target
-  (the dwell), then click, scroll or press ([design](design.md#the-glide)).
+  (the dwell), then the input ([design](design.md#the-glide)).
   `jump`: go at once. A request that names neither goes the mode's way:
   `mouse` glides, `tap` jumps.
 - `size:<px>`: the target's size, 4 to 1000 (default 32): Fitts's W for

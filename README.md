@@ -7,7 +7,7 @@ rather than upstream Hyprland.
 | Plugin | What it does |
 |---|---|
 | [awesome](awesome/README.md) | an AwesomeWM-flavoured shell: bar, launcher, window policy, notifications, system keys |
-| [vclick](vclick/README.md) | click, scroll or hover inside a window without the user's mouse, gliding there at the user's own pace |
+| [vclick](vclick/README.md) | click, scroll, drag or pinch inside a window without the user's mouse, gliding there at the user's own pace |
 
 ## Install
 

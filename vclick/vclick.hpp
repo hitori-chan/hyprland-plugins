@@ -43,7 +43,7 @@ namespace VClick {
 
     inline constexpr const char* NAME    = "vclick";
     inline constexpr const char* AUTHOR  = "hitori";
-    inline constexpr const char* VERSION = "2.3.0"; // lockstep with hyprpm.toml's [vclick]
+    inline constexpr const char* VERSION = "2.4.0"; // lockstep with hyprpm.toml's [vclick]
 
     constexpr int                MAX_CLICKS = 3;
     constexpr int                MAX_STEPS  = 20;

@@ -1,4 +1,4 @@
-# vclick — click, scroll or move inside a window without the user's pointer.
+# vclick — click, scroll, drag or pinch inside a window without the user's pointer.
 #
 # Standalone build: an inherited PKG_CONFIG_PATH wins (hyprpm's header
 # cache), else the installed prefix, which must be the fork's (/usr/local).

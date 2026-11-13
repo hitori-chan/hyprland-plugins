@@ -1,7 +1,7 @@
 # vclick
 
-A plugin that clicks, scrolls or hovers inside a window without the
-user's mouse, and sends it keys without the user's keyboard. By default
+A plugin that clicks, scrolls, hovers, drags or pinches inside a window
+without the user's mouse, and sends it keys without the user's keyboard. By default
 it glides there first, along a curve and at the user's own pace. It
 shares no code or state with `awesome`.
 

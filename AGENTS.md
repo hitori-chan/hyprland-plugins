@@ -6,7 +6,7 @@ monolith (modules core, shell, windows, notify, system), its gate in
 `awesome/docs/` (`shell`, `windows`, `notify`, `system`, `reference`),
 the design contract in `awesome/docs/design.md`, testing in
 `awesome/docs/testing.md`. Beside it, `vclick/`: a separate plugin that
-clicks, scrolls or hovers inside a window without the user's pointer,
+clicks, scrolls, drags or pinches inside a window without the user's pointer,
 gliding there at the user's learned pace (`vclick/vclick.hpp` lists its
 units, `vclick/docs/` its behavior); it shares no code or state with
 `awesome`, and its nested check is `vclick/check.sh`. Each plugin has its own `README.md`

@@ -1,4 +1,4 @@
-// vclick: click, scroll or move inside a window without the user's pointer.
+// vclick: click, scroll, drag or pinch inside a window without the user's pointer.
 // Load and unload: the hyprctl command, the set_cursor hook that lets
 // vclick draw the app's own cursor image, the initiateDrag hook that keeps
 // a held button's drag-and-drop from the user's mouse, and the listeners.
@@ -113,7 +113,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     VClick::Lua::init(PHANDLE); // the compositor removes the functions on unload
 
-    return {VClick::NAME, "click, scroll or move inside a window without the user's pointer", VClick::AUTHOR, VClick::VERSION};
+    return {VClick::NAME, "click, scroll, drag or pinch inside a window without the user's pointer", VClick::AUTHOR, VClick::VERSION};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
