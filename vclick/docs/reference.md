@@ -193,17 +193,18 @@ a value outside its bounds is clamped.
 ## image
 
 `image <window>` answers what vclick draws as the cursor over that
-window:
+window ([design](design.md#the-cursor-image)):
 
 - `the app's image, <w>x<h>, hotspot <x>,<y>`: the image the app last
   set (`wl_pointer.set_cursor`);
-- `the built-in arrow: the app asked for '<shape>'`: a named shape
-  (`cursor-shape-v1`) or `hidden`; vclick draws no themed cursors;
-- `the built-in arrow: the app has set no cursor image yet`;
-- `the built-in arrow: the app's image has no buffer`.
+- `the theme's '<shape>', <w>x<h>, hotspot <x>,<y>`: the shape it named
+  (`cursor-shape-v1`), from the XCursor theme, in logical px;
+- `nothing: the app hid its cursor`;
+- `the built-in arrow: no '<shape>' in the cursor theme`.
 
-` (no set_cursor hook: the arrow only)` follows when the hook could not
-be installed ([design](design.md#the-cursor-image)).
+`; the app has named none yet` follows when the app has asked for no
+cursor (the theme's `default` stands in). ` (no set_cursor hook: no app
+images)` follows when the hook could not be installed.
 
 ## Errors
 

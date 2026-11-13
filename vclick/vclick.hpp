@@ -10,6 +10,7 @@
 //   glide.cpp    the way there: one motion per tick along the planned path
 //   path.cpp     the path's math and the user's pace (no compositor)
 //   cursor.cpp   the cursor image drawn at the virtual pointer
+//   theme.cpp    the cursor theme's shapes, read from XCursor files (no compositor)
 #pragma once
 
 #include "path.hpp"
@@ -159,7 +160,7 @@ namespace VClick {
     namespace Cursor {
         void        remember(wl_client* client, const SP<CWLSurfaceResource>& surf, const Vector2D& hotspot, std::string shape);
         void        render(const Event::SRenderStageEvent& ev);
-        void        prepare();                                      // build the arrow; not inside a render
+        void        prepare(const PHLWINDOW& w);                    // the arrow, the window's app's shape; not inside a render
         void        show(const PHLWINDOW& w, const Vector2D& pos);  // while a glide runs
         void        moveTo(const Vector2D& pos);
         void        rest(bool stay);                                // the input ended: stay there (mouse), or linger and fade (tap)

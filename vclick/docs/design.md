@@ -91,12 +91,21 @@ dwell are the moves' own; the rate is the device's report interval.
 
 ## The cursor image
 
-The compositor refuses an app's `wl_pointer.set_cursor` unless it holds
-the real pointer focus, so the seat never shows a glide. vclick hooks
-the seat manager's `onSetCursor` to keep each app's latest image (the
-original still decides), hears `cursor-shape-v1`'s named shapes, and
-draws the image itself at the app's pointer:
+The compositor refuses an app's cursor (`wl_pointer.set_cursor`, a
+`cursor-shape-v1` shape) unless the app holds the real pointer focus, so
+the seat never shows a glide. vclick hooks the seat manager's
+`onSetCursor` to keep each app's latest image (the original still
+decides), hears its named shapes, and draws the cursor itself at the
+app's pointer:
 
+- the app's own image; or its named shape (`default` until it names one)
+  from the session's XCursor theme (`XCURSOR_THEME`, `XCURSOR_SIZE`,
+  `XCURSOR_PATH`, as the compositor reads them; the theme's `Inherits`,
+  then `default`; an older X name such as `xterm` for a theme without
+  the CSS ones), sharp at the highest output scale; animated shapes
+  animate; or nothing where the app hid its cursor (a remote desktop
+  viewer draws the remote one); the built-in arrow only where the theme
+  has no such shape;
 - right after the target window's surfaces, clipped to it, so a window
   above covers it as it covers the app;
 - never in a capture (screencopy, `grim -T`);
@@ -108,12 +117,12 @@ draws the image itself at the app's pointer:
 - in mouse mode, from the input until the next input, `hide`, the
   user's pointer entering, the window closing or the switch to `tap`; in
   tap mode, during a glide and 1.2 s after, then fading over 0.3 s.
-  Animated images keep going.
 
-One cursor, as one mouse: in the window of the last input (`where`). A
-named shape, a hidden cursor or none gets a built-in arrow (no cursor
-theme is loaded). Without the hook (the symbol gone after a compositor
-change), the arrow is all it draws; `image` says so.
+One cursor, as one mouse: in the window of the last input (`where`).
+A shape is read once (a file, at most 256 px a side and 64 frames) and
+kept until the theme, its size or the scales change. Without the hook
+(the symbol gone after a compositor change), apps' own images are not
+drawn; `image` says so.
 
 ## The hover
 

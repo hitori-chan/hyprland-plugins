@@ -5,9 +5,11 @@
 # a click on what is DRAWN must name the same block; every wheel step the
 # block it scrolled. With `cursor`, the window asks for a custom cursor
 # image (a 16x16 rose square, hotspot 0,0) through wl_pointer.set_cursor,
-# as a web page's own cursor does, instead of a named shape. Every key the
-# window hears is logged with the modifiers GTK read with it.
-# usage: gtkgrid.py <log> [wayland|x11] [wayland-debug-log] [cursor]
+# as a web page's own cursor does, instead of a named shape. With `shapes`,
+# the yellow block names the `text` shape and the red block hides the
+# cursor; the rest keep the window's. Every key the window hears is logged
+# with the modifiers GTK read with it.
+# usage: gtkgrid.py <log> [wayland|x11] [wayland-debug-log] [cursor|shapes]
 #   log lines: READY | HIT <color> | SCROLL <color> up|down|left|right |
 #              MENU <color> | MENUBUTTON True|False | KEY <name> <mods>|-
 import os
@@ -49,13 +51,25 @@ def swatch(name, rgb, w, h, press=True):
     return da
 
 
+SHAPES = {"yellow": "text", "red": None} if "shapes" in sys.argv[4:] else {}
+
+
+def shape(da, name):
+    display = da.get_display()
+    cursor = Gdk.Cursor.new_from_name(display, name) if name else Gdk.Cursor.new_for_display(display, Gdk.CursorType.BLANK_CURSOR)
+    da.get_window().set_cursor(cursor)
+
+
 win = Gtk.Window(title="gtkgrid")
 win.set_resizable(False)
 win.set_titlebar(Gtk.HeaderBar(title="gtkgrid", show_close_button=True))
 box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
 grid = Gtk.Grid(column_spacing=6, row_spacing=6)
 for i, (n, c) in enumerate(BLOCKS):
-    grid.attach(swatch(n, c, 120, 80), i % 3, i // 3, 1, 1)
+    block = swatch(n, c, 120, 80)
+    if n in SHAPES:
+        block.connect("realize", shape, SHAPES[n])
+    grid.attach(block, i % 3, i // 3, 1, 1)
 box.pack_start(grid, False, False, 0)
 menu = Gtk.Menu()
 for n, c in ITEMS:

@@ -57,12 +57,15 @@ make -C devtools HL=/path/to/Hyprland
   late`. `recreate` replaces the fifo object a third of the way in and
   lets the frames in flight present before the new one exists, as a
   swapchain recreate does; a wait over 2 s exits 1 (a held barrier).
-- `gtkgrid.py LOG [wayland|x11] [WAYLAND-TRACE]` is a real GTK3 client
-  (PyGObject) as a render-vs-input oracle: a floating CSD window of solid
-  color blocks and a menu button whose GtkMenu is an xdg_popup of colored
-  items. It logs what GTK hit (`HIT <color>` on a press, `SCROLL <color>
-  <direction>` per wheel detent, `MENU <color>` on an activated item,
-  `KEY <name> <mods>` per key press, its modifiers `ctrl+shift` or `-`).
+- `gtkgrid.py LOG [wayland|x11] [WAYLAND-TRACE] [cursor|shapes]` is a
+  real GTK3 client (PyGObject) as a render-vs-input oracle: a floating
+  CSD window of solid color blocks and a menu button whose GtkMenu is an
+  xdg_popup of colored items. It logs what GTK hit (`HIT <color>` on a
+  press, `SCROLL <color> <direction>` per wheel detent, `MENU <color>` on
+  an activated item, `KEY <name> <mods>` per key press, its modifiers
+  `ctrl+shift` or `-`). `cursor` sets its own cursor image (a 16x16 rose
+  square); `shapes` names `text` over yellow and hides the cursor over
+  red.
   `findcolors.py PNG NAME=R,G,B...` finds where each color is drawn in a
   capture, so a click on what is drawn must name the same block.
 

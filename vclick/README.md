@@ -44,8 +44,8 @@ Two modes (`hyprctl vclick mode mouse|tap`):
 
 - `mouse` (the default) is a mouse of its own: it glides there, and
   stays. The app keeps the hover, and vclick draws the app's own cursor
-  image in the window where it rests: under any window above it, never
-  in a capture. The user's own pointer coming into that app takes it, as
+  (its image, or its shape from the cursor theme) in the window where it
+  rests: under any window above it, never in a capture. The user's own pointer coming into that app takes it, as
   one mouse: the cursor goes, and the next input starts where their
   pointer left the window.
 - `tap` is just the input: it goes at once, and leaves the app's pointer

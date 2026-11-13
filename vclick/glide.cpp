@@ -229,7 +229,7 @@ namespace VClick::Glide {
         glide->start   = Time::steadyNow();
 
         glide->at      = FROM;
-        Cursor::prepare();
+        Cursor::prepare(W);
         Cursor::show(W, FROM);
         const auto R = moveTo(W, FROM);
         if (!R) {

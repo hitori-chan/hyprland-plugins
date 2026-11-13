@@ -40,14 +40,20 @@ $(OBJDIR)/%.o: %.cpp $(STAMP) | $(OBJDIR)
 $(NAME).so: $(OBJS) plugin.ver
 	$(CXX) $(LDFLAGS) $(OBJS) -o $@
 
-# the path's math, headless: no compositor, only hyprutils
+# the units without a compositor, headless: the path's math (only
+# hyprutils) and the cursor theme reader
 TESTDIR := .build-test
-test: $(TESTDIR)/path
+test: $(TESTDIR)/path $(TESTDIR)/theme
 	$(TESTDIR)/path
+	$(TESTDIR)/theme
 
 $(TESTDIR)/path: test/path.cpp path.cpp path.hpp
 	@mkdir -p $(TESTDIR)
 	$(CXX) -std=c++26 -O2 -Wall -I. test/path.cpp path.cpp -o $@ $(shell pkg-config --libs hyprutils)
+
+$(TESTDIR)/theme: test/theme.cpp theme.cpp theme.hpp
+	@mkdir -p $(TESTDIR)
+	$(CXX) -std=c++26 -O2 -Wall -I. test/theme.cpp theme.cpp -o $@
 
 clean:
 	rm -rf $(NAME).so $(OBJDIR) $(TESTDIR)

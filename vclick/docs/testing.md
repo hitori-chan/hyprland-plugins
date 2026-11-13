@@ -13,15 +13,18 @@ header set rebuilds by itself.
 ## Unit cases
 
 ```sh
-make -C vclick test  # headless: path.cpp with only hyprutils
+make -C vclick test  # headless: path.cpp with only hyprutils, theme.cpp alone
 ```
 
 Thousands of planned glides, each held to the design: it starts on its
 start and ends exactly on its target, stays in the window, takes Fitts's
-time (a correction adds at most 300 ms), overshoots and bows within
-bounds (25 %), no tick moves over 3× the average step, and about
-`overshoot_p` of long moves overshoot. Plus the profile parser: values,
-clamps, skipped bad lines, a missing file.
+time for the target's size (a correction adds at most 300 ms),
+overshoots and bows within bounds (25 %), no tick moves over 3× the
+average step, and about `overshoot_p` of long moves overshoot. Plus the
+profile parser: values, clamps, skipped bad lines, a missing file. The
+cursor theme reader: an XCursor file's nearest size, its frames and
+delays, refused bad, truncated and oversized files; a shape found by an
+older X name, through `Inherits` and `default`; the search path.
 
 ## The nested check
 
@@ -57,6 +60,9 @@ It covers, each against the exact protocol events:
   glide starting where it left; hover ending on a surface change or an
   input into B; a slow glide handing over to a jump.
 - **tap mode glide**: nothing stays; the image fades after landing.
+- **the cursor theme** (the check's own, through `XCURSOR_PATH`): B's
+  named shapes drawn from it with their hotspots, its hidden cursor
+  drawn as nothing.
 - **lockscreen** (`devtools/vlock`): a glide, jump click, paced scroll,
   key and glide click reach A; no cursor drawn; the lock surface keeps
   the keyboard and pointer, and the user's own input goes only to it;

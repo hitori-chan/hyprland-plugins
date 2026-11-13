@@ -38,8 +38,27 @@ rm -rf "$T" && mkdir -p "$T"
 SO="$T/vclick-$$.so"
 cp "$HERE/vclick.so" "$SO"
 
+# the cursor theme vclick draws named shapes from: two of its own, never
+# the session's: default (azure, hotspot 2,2) and text (chartreuse, 10,10)
+xcursor() { # xcursor <file> <side> <hot x> <hot y> <r,g,b>: one solid image at nominal size 24
+	python3 - "$@" <<'PY'
+import struct, sys
+path, side, hx, hy = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+r, g, b = map(int, sys.argv[5].split(","))
+px = struct.pack("<I", 0xff000000 | r << 16 | g << 8 | b) * (side * side)
+chunk = struct.pack("<9I", 36, 0xfffd0002, 24, 1, side, side, hx, hy, 0) + px
+open(path, "wb").write(struct.pack("<4I", 0x72756358, 16, 0x10000, 1) + struct.pack("<3I", 0xfffd0002, 24, 28) + chunk)
+PY
+}
+mkdir -p "$T/icons/vtheme/cursors"
+xcursor "$T/icons/vtheme/cursors/default" 20 2 2 0,128,255
+xcursor "$T/icons/vtheme/cursors/text" 20 10 10 128,255,0
+
 MON_W=1280 MON_H=800
 cat >"$T/nested.lua" <<EOF
+hl.env("XCURSOR_PATH", "$T/icons")
+hl.env("XCURSOR_THEME", "vtheme")
+hl.env("XCURSOR_SIZE", "24")
 hl.monitor({ output = "", mode = "${MON_W}x${MON_H}@60", position = "0x0", scale = 1 })
 hl.config({
 	general = { gaps_in = 0, gaps_out = 0, border_size = 1 },
@@ -128,7 +147,7 @@ open_grid() { # open_grid <name> [cursor]: spawn, wait for READY and the window;
 field() { grids | awk -v a="$1" -v f="$2" '$1 == a { print $f }'; } # field <address> <column>
 
 A="$(open_grid a cursor)" || { echo "check: client A never mapped" >&2; exit 1; } # A: a custom cursor image, as a web page's
-B="$(open_grid b)" || { echo "check: client B never mapped" >&2; exit 1; }
+B="$(open_grid b shapes)" || { echo "check: client B never mapped" >&2; exit 1; } # B: text over yellow, no cursor over red
 [[ "$(field "$A" 7)" == 1 ]] || dsp "hl.dsp.window.float({ action = 'enable', window = 'address:$A' })"
 [[ "$(field "$B" 7)" == 1 ]] || dsp "hl.dsp.window.float({ action = 'enable', window = 'address:$B' })"
 dsp "hl.dsp.window.move({ x = 60, y = 60, window = 'address:$A' })"
@@ -546,7 +565,7 @@ expect "B heard nothing" "$(events b "$BM")" ""
 expect "the cursor never moved" "$(hq cursorpos)" "$POS"
 expect "the focus never moved" "$(hq activewindow -j | python3 -c 'import json,sys; print(json.load(sys.stdin).get("address"))')" "$ACTIVE"
 expect "A's own cursor image (set_cursor)" "$(vclick image "address:$A")" "the app's image, 16x16, hotspot 0,0"
-expect "B's named shape (cursor-shape-v1): the arrow" "$(vclick image "address:$B")" "the built-in arrow: the app asked for 'default'"
+expect "B's named shape (cursor-shape-v1): the theme's" "$(vclick image "address:$B")" "the theme's 'default', 20x20, hotspot 2,2"
 D="$(dist $(at green) $(at red))" MT="$(fitts 50 120 "$D" 128)"
 AM="$(lines "$T/a.wl")" n="$(hits a HIT red)"
 expect "a glide click to red, named a 128 px target" "$(vclick click "address:$A" $(at red) size:128)" ok
@@ -682,6 +701,46 @@ sleep 2 # past the linger and the fade
 fullcap "$T/faded.png" || bad "no capture after the fade"
 expect "  then faded" "$(rose "$T/faded.png" "$GGX" "$GGY")" 0
 expect "back to the mouse mode" "$(vclick mode mouse)" mouse
+
+echo "== the cursor theme: B's named shapes, and its hidden cursor"
+tint() { # tint <png> <x> <y> <r,g,b>: pixels of that color in the 36x36 box from x-12,y-12
+	python3 -c '
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+x, y = int(sys.argv[2]), int(sys.argv[3])
+c = tuple(map(int, sys.argv[4].split(",")))
+near = lambda p: all(abs(p[i] - c[i]) < 8 for i in range(3))
+print(sum(near(im.getpixel((i, j))) for i in range(max(x - 12, 0), min(x + 24, im.width)) for j in range(max(y - 12, 0), min(y + 24, im.height))))' "$@"
+}
+bglobal() { read -r gx gy <<<"$(at "$1")" && echo "$(($(field "$B" 3) + gx)) $(($(field "$B" 4) + gy))"; } # B's blocks sit as A's
+image_is() { [[ "$(vclick image "address:$1")" == "$2" ]]; }
+park 1200 760 # the user's pointer on the empty desktop: no app's
+dsp "hl.dsp.window.alter_zorder({ mode = 'top', window = 'address:$B' })"
+read -r BMX BMY <<<"$(bglobal magenta)"
+expect "a jump-move into B, over magenta (the window's shape)" "$(vclick move "address:$B" $(at magenta) jump)" ok
+until_ok 3 image_is "$B" "the theme's 'default', 20x20, hotspot 2,2" || true
+expect "  B's image: the theme's default" "$(vclick image "address:$B")" "the theme's 'default', 20x20, hotspot 2,2"
+fullcap "$T/shape-default.png" || bad "no capture with the theme's default"
+N="$(tint "$T/shape-default.png" "$BMX" "$BMY" 0,128,255)"
+((N >= 360)) && ok "  drawn at magenta ($N px of 400)" || bad "  the theme's default at magenta: $N px of 400"
+read -r BYX BYY <<<"$(bglobal yellow)"
+expect "a move over yellow (text)" "$(vclick move "address:$B" $(at yellow) jump)" ok
+until_ok 3 image_is "$B" "the theme's 'text', 20x20, hotspot 10,10" || true
+expect "  B's image: the theme's text" "$(vclick image "address:$B")" "the theme's 'text', 20x20, hotspot 10,10"
+fullcap "$T/shape-text.png" || bad "no capture with the theme's text"
+N="$(tint "$T/shape-text.png" "$BYX" "$BYY" 128,255,0)"
+((N >= 360)) && ok "  drawn centred on yellow ($N px of 400)" || bad "  the theme's text at yellow: $N px of 400"
+read -r BRX BRY <<<"$(bglobal red)"
+expect "a move over red (hidden)" "$(vclick move "address:$B" $(at red) jump)" ok
+until_ok 3 image_is "$B" "nothing: the app hid its cursor" || true
+expect "  B's image: nothing" "$(vclick image "address:$B")" "nothing: the app hid its cursor"
+expect "  where: the mouse is there all the same" "$(vclick where)" "address:$B $(at red)"
+fullcap "$T/shape-hidden.png" || bad "no capture with the cursor hidden"
+expect "  nothing drawn at red" "$(tint "$T/shape-hidden.png" "$BRX" "$BRY" 0,128,255) $(tint "$T/shape-hidden.png" "$BRX" "$BRY" 128,255,0)" "0 0"
+expect "hide" "$(vclick hide)" ok
+dsp "hl.dsp.window.alter_zorder({ mode = 'top', window = 'address:$A' })"
+park "$BX" "$BY"
 
 # --- 6. under the lockscreen ---------------------------------------------------
 echo "== the lockscreen (devtools/vlock): vclick's input reaches A, the user's the lockscreen"
