@@ -33,11 +33,12 @@ namespace Awesome {
         // pipe before the pipe is cut and it is delivered anyway
         constexpr auto KILL_GRACE = 1s;
 
-        // a SOUND child leads its own group: a sound_command wrapper script
-        // must not leave its player behind
-        void killChild(int pidfd, bool group = false) {
+        // every child leads its own group and dies with it: a sound_command
+        // wrapper must not leave its player behind, nor a helper pipeline
+        // (the app-dir probe's sh | find | head) a find on a hung mount
+        void killChild(int pidfd) {
             if (pidfd >= 0)
-                pidfd_send_signal(pidfd, SIGKILL, nullptr, group ? PIDFD_SIGNAL_PROCESS_GROUP : 0);
+                pidfd_send_signal(pidfd, SIGKILL, nullptr, PIDFD_SIGNAL_PROCESS_GROUP);
         }
     }
 
@@ -98,7 +99,7 @@ namespace Awesome {
         if (argv.back())
             argv.push_back(nullptr);
 
-        const auto CHILD = Proc::spawn(argv.data(), {.stdoutFd = stdoutFd, .ownGroup = cls == OPEN || cls == SOUND, .userFacing = cls == OPEN});
+        const auto CHILD = Proc::spawn(argv.data(), {.stdoutFd = stdoutFd, .ownGroup = true, .userFacing = cls == OPEN});
         if (CHILD.pidfd < 0)
             return FAIL();
 
@@ -112,7 +113,7 @@ namespace Awesome {
             // unwatchable: never leave a helper running unobserved (an
             // OPEN child is the user's app and keeps running)
             if (cls != OPEN)
-                killChild(c->pidfd, cls == SOUND);
+                killChild(c->pidfd);
             auto* raw = c.get();
             m_children.push_back(std::move(c));
             release(raw);
@@ -143,7 +144,7 @@ namespace Awesome {
                     // the cap: stop reading NOW, close the read end, and end
                     // the producer (a closed pipe alone leaves it running)
                     c->truncated = true;
-                    killChild(c->pidfd, c->cls == SOUND);
+                    killChild(c->pidfd);
                     break;
                 }
                 c->out.append(buf, (size_t)N);
@@ -234,7 +235,7 @@ namespace Awesome {
                 continue;
             c->truncated = true;
             if (!c->exited) {
-                killChild(c->pidfd, c->cls == SOUND);
+                killChild(c->pidfd);
                 c->deadline = NOW + KILL_GRACE;
             } else {
                 c->deadline = std::chrono::steady_clock::time_point::max(); // once
@@ -265,7 +266,7 @@ namespace Awesome {
             if (c->outFd >= 0)
                 close(c->outFd);
             if (c->cls != OPEN && !c->exited)
-                killChild(c->pidfd, c->cls == SOUND); // a helper must not outlive the plugin; the user's app may
+                killChild(c->pidfd); // a helper must not outlive the plugin; the user's app may
             Proc::reap(c->pidfd);
             if (c->pidfd >= 0)
                 close(c->pidfd);

@@ -215,9 +215,11 @@ The dir stats that decide a refresh run on the compositor thread.
   mask and default dispositions, stdin and stderr on /dev/null, every fd
   above 2 closed, the exit status read from the pidfd under the
   compositor's `SA_NOCLDWAIT`.
-- **Jobs** run the helpers in class budgets: CONTROL (wpctl: 16, killed
-  after 5 s), SOUND (4, the process group killed after 30 s), OPEN
-  (xdg-open: 32, never killed). A deadline holds until delivery, so a
+- **Jobs** run the helpers in class budgets: CONTROL (wpctl, the battery
+  read, the app-dir probe: 16, killed after 5 s), SOUND (4, killed after
+  30 s), OPEN (xdg-open: 32, never killed). Every helper leads its own
+  process group and is killed with it, so no pipeline stage (a `find` on
+  a hung mount, a wrapper's player) outlives it. A deadline holds until delivery, so a
   grandchild holding the pipe cannot keep a slot; piped output is capped
   per call; callbacks never unwind into the C dispatch. The launcher's
   `Exec=` goes through the compositor's executor (exec rules, activation
