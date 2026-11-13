@@ -5,7 +5,10 @@
 #include "shell/battery_pill.hpp"
 
 #include "core/glyph.hpp"
+#include "core/jobs.hpp"
 #include "notify/model.hpp"
+
+#include <ranges>
 
 namespace Awesome::Shell {
 
@@ -220,21 +223,49 @@ namespace Awesome::Shell {
         std::ranges::sort(batteryDirs); // BAT0 first: a stable read order
     }
 
-    static std::optional<long long> readSysInt(const std::string& path) {
-        std::ifstream f(path);
-        std::string   s;
-        if (!f || !std::getline(f, s))
+    // The packs' readings, path -> first line, as the last read left them.
+    // Only the load reads them inline; every later read is a helper's: pack
+    // attributes evaluate ACPI methods (a ThinkPad's cold capacity read
+    // takes ~7 ms, its charge limit ~1 ms every time) and a busy EC holds
+    // one longer, so the compositor thread never waits on one.
+    static constexpr const char* PACK_FILES[] = {"capacity", "energy_now", "energy_full", "charge_now", "charge_full", "power_now", "current_now", "charge_control_end_threshold",
+                                                 "status"};
+    static std::unordered_map<std::string, std::string> packSample;
+    static bool                                         sampling = false, resampleQueued = false;
+    static uint64_t                                     sampleGeneration = 0;
+
+    static void readPacksInline() {
+        packSample.clear();
+        for (const auto& D : batteryDirs)
+            for (const char* F : PACK_FILES) {
+                std::ifstream f(D + "/" + F);
+                std::string   s;
+                if (f && std::getline(f, s))
+                    packSample[D + "/" + F] = std::move(s);
+            }
+    }
+
+    // the helper's "path:value" lines (grep -H; a sysfs path holds no colon)
+    static void takeSample(std::string_view out) {
+        packSample.clear();
+        for (const auto LINE : std::views::split(out, '\n')) {
+            const std::string_view L{LINE.begin(), LINE.end()};
+            if (const auto C = L.find(':'); C != std::string_view::npos)
+                packSample.emplace(L.substr(0, C), L.substr(C + 1));
+        }
+    }
+
+    static std::optional<long long> sampleInt(const std::string& path) {
+        const auto IT = packSample.find(path);
+        if (IT == packSample.end())
             return std::nullopt;
         try {
-            return std::stoll(s);
+            return std::stoll(IT->second);
         } catch (...) { return std::nullopt; }
     }
-    static std::string readSysLine(const std::string& path) {
-        std::ifstream f(path);
-        std::string   s;
-        if (f)
-            std::getline(f, s);
-        return s;
+    static std::string sampleLine(const std::string& path) {
+        const auto IT = packSample.find(path);
+        return IT == packSample.end() ? std::string{} : IT->second;
     }
 
     // the pill as a texture: battery_pill.hpp rasters it, the renderer
@@ -272,12 +303,12 @@ namespace Awesome::Shell {
                 int       capSum = 0, capN = 0;
                 bool      anyCharging = false, anyDischarging = false, anyHolding = false, allFull = true, anyRead = false;
                 for (const auto& D : batteryDirs) {
-                    if (const auto C = readSysInt(D + "/capacity")) {
+                    if (const auto C = sampleInt(D + "/capacity")) {
                         capSum += (int)std::clamp(*C, 0LL, 100LL);
                         ++capN;
                     }
-                    const auto EN = readSysInt(D + "/energy_now"), EF = readSysInt(D + "/energy_full");
-                    const auto CN = readSysInt(D + "/charge_now"), CF = readSysInt(D + "/charge_full");
+                    const auto EN = sampleInt(D + "/energy_now"), EF = sampleInt(D + "/energy_full");
+                    const auto CN = sampleInt(D + "/charge_now"), CF = sampleInt(D + "/charge_full");
                     allEnergy = allEnergy && EN && EF && *EF > 0;
                     allCharge = allCharge && CN && CF && *CF > 0;
                     if (allEnergy) {
@@ -289,17 +320,17 @@ namespace Awesome::Shell {
                         cFull += *CF;
                     }
                     // a driver may sign the draw by its direction
-                    const auto PN = readSysInt(D + "/power_now"), IN = readSysInt(D + "/current_now");
+                    const auto PN = sampleInt(D + "/power_now"), IN = sampleInt(D + "/current_now");
                     allPower   = allPower && PN;
                     allCurrent = allCurrent && IN;
                     if (allPower)
                         pNow += std::llabs(*PN);
                     if (allCurrent)
                         iNow += std::llabs(*IN);
-                    const auto LIM = readSysInt(D + "/charge_control_end_threshold");
+                    const auto LIM = sampleInt(D + "/charge_control_end_threshold");
                     if (LIM && *LIM > 0 && *LIM < 100)
                         limit = limit < 0 ? (int)*LIM : std::min(limit, (int)*LIM);
-                    const auto S = readSysLine(D + "/status");
+                    const auto S = sampleLine(D + "/status");
                     if (S.empty() || S == "Unknown")
                         continue;
                     anyRead = true;
@@ -448,18 +479,66 @@ namespace Awesome::Shell {
             }
         if (!relevant)
             return 0;
-        if (rescan)
+        if (rescan) {
             findBatteries();
-        if (Battery::refresh())
-            barChanged(); // a uevent lands in the event loop: warm now, no deferral needed
-        Battery::noteChanged();
-        Battery::alerts();
+            ++sampleGeneration; // a helper reading the old packs is stale
+            sampling = resampleQueued = false;
+        }
+        Battery::sample();
         return 0;
     }
 
     namespace Battery {
+        // a sample landed: the gauge, its note and the alerts follow it (in
+        // the event loop: warm now, no deferral needed)
+        static void sampled() {
+            if (refresh())
+                barChanged();
+            noteChanged();
+            alerts();
+        }
+
+        // One helper at a time; a request while one runs folds into one more
+        // after it. A helper that cannot start (the CONTROL budget) or is cut
+        // short leaves the last sample: the next uevent or minute reads again.
+        void sample() {
+            if (batteryDirs.empty()) {
+                packSample.clear();
+                sampled();
+                return;
+            }
+            if (sampling) {
+                resampleQueued = true;
+                return;
+            }
+            std::vector<std::string> paths;
+            paths.reserve(batteryDirs.size() * std::size(PACK_FILES));
+            for (const auto& D : batteryDirs)
+                for (const char* F : PACK_FILES)
+                    paths.push_back(D + "/" + F);
+            std::vector<const char*> argv = {"grep", "-s", "-H", "."};
+            for (const auto& P : paths)
+                argv.push_back(P.c_str());
+            const uint64_t GEN = ++sampleGeneration;
+            sampling           = Awesome::Jobs::inst().spawnPiped(
+                Awesome::Jobs::CONTROL, std::move(argv),
+                [GEN](Awesome::Jobs::SPipedResult r) {
+                    if (GEN != sampleGeneration)
+                        return;
+                    sampling = false;
+                    if (!r.truncated) {
+                        takeSample(r.out);
+                        sampled();
+                    }
+                    if (std::exchange(resampleQueued, false))
+                        sample();
+                },
+                8192);
+        }
+
         void init() {
             findBatteries();
+            readPacksInline(); // the first gauge at load, before the bar's first frame
             refresh();
             if (!hasBattery() || !g_pCompositor)
                 return;
@@ -498,6 +577,9 @@ namespace Awesome::Shell {
         }
 
         void exit() {
+            ++sampleGeneration; // a helper's late result is dropped
+            sampling = resampleQueued = false;
+            packSample.clear();
             if (noteTimer && g_pEventLoopManager)
                 g_pEventLoopManager->removeTimer(noteTimer);
             noteTimer.reset();

@@ -33,11 +33,9 @@ namespace Awesome::Shell {
         }
 
         void onMinute() {
-            const bool CLK = Clock::refresh(), BAT = Battery::refresh();
-            if (CLK || BAT)
+            if (Clock::refresh())
                 barChanged();
-            Battery::noteChanged();
-            Battery::alerts();
+            Battery::sample();
             armMinute();
         }
     } // namespace

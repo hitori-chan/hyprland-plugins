@@ -207,8 +207,9 @@ namespace Awesome::Shell {
     struct SBarHover;
     namespace Battery {
         void init(); // find the gauge, first read, arm the udev watch
-        bool refresh();
-        void alerts(); // edge-triggered plug/low/critical alerts
+        bool refresh(); // the gauge from the last sample -> true when it changed
+        void sample();  // read the packs (a helper): refresh, the note and the alerts follow
+        void alerts();  // edge-triggered plug/low/critical alerts
         void exit();
         // the note: the pill's state in words after the pointer rests on it
         void                hover(const SBarHover& h);            // the bar's hover moved (input.cpp)

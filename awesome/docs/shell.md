@@ -119,8 +119,10 @@ charge limit (a shield), yellow in power save (a plus); an unknown level
 draws a question mark.
 
 It reads the udev battery packs: a dual-pack laptop reads as one, and a
-USB-C port's or a headset's battery is ignored. With no pack it is not
-shown. A change to charging or to discharging posts a capsule; 20 % and
+USB-C port's or a headset's battery is ignored. It reads them at load,
+then through a helper on each pack uevent and every minute: a pack's
+attributes evaluate ACPI methods (milliseconds each on a ThinkPad), so
+the compositor never waits on one. With no pack it is not shown. A change to charging or to discharging posts a capsule; 20 % and
 5 % post the low and critical cards.
 
 Resting the pointer on it for half a second names its state in a dark
