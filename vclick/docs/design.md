@@ -55,7 +55,8 @@ remote cursor jumps too. A glide moves there as a hand would, then acts:
   most 25 %) to a random side, or the other if the window's edge would
   cut it. Control points stay inside the window, so the whole path does.
 - **Time**: Fitts's law, a + b · log2(D / W + 1) ms, 40 ms to 1 s, with
-  W = 32 px (vclick can't see the target's size).
+  W the target's size: 32 px unless the request names it (`size:<px>`;
+  vclick can't see the target).
 - **Speed**: bell-shaped, t^α (1 − t)^β with α + β = 4, peaking at `peak`
   (centred is a reaching arm's minimum jerk; people peak early).
 - **Overshoot**: a move of ≥ 300 px passes the target `overshoot_p` of
@@ -209,8 +210,8 @@ may wait until it is back on.
   that window, not from where the cursor was drawn.
 - No drag: a drag-and-drop is the app's call, and Hyprland drives it
   with the user's real mouse.
-- Fitts's W is 32 px whatever the target: a small button gets a little
-  less time than a hand would take.
+- Fitts's W is 32 px unless the request names the target's size: a small
+  button gets a little less time than a hand would take.
 - No XWayland: the compositor's hit test asserts on X11 windows, and an
   X11 client's keys go through XWayland's seat.
 - A page may see a focus and a blur event around a key, as with

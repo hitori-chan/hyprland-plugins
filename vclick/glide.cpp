@@ -222,7 +222,7 @@ namespace VClick::Glide {
         const auto FROM = Path::clampTo(LAST ? *LAST : SIZE / 2, SIZE);
         std::uniform_real_distribution<double> jitter{0.7, 1.3};
 
-        glide.emplace(SGlide{.action = c, .window = W, .segs = Path::plan(FROM, c.pos, SIZE, pace, rng())});
+        glide.emplace(SGlide{.action = c, .window = W, .segs = Path::plan(FROM, c.pos, SIZE, pace, rng(), {.w = c.size})});
         glide->moveMs  = Path::duration(glide->segs);
         glide->dwellMs = c.move ? 0 : std::clamp(pace.dwellMs * jitter(rng()), 0.0, 400.0);
         glide->period  = std::clamp(sc<int>(std::lround(1000.0 / pace.rateHz)), 4, 16);

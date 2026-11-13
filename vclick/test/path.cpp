@@ -99,6 +99,16 @@ int main() {
         check(std::abs(at - PEAK) < 0.03, what);
     }
 
+    // the target's size is Fitts's W: a wider target is reached sooner
+    {
+        SProfile Q   = P;
+        Q.overshootP = 0;
+        const auto   SMALL = duration(plan({0, 0}, {600, 0}, {1600, 900}, Q, rng));
+        const auto   WIDE  = duration(plan({0, 0}, {600, 0}, {1600, 900}, Q, rng, {.w = 128}));
+        check(std::abs(SMALL - fittsMs(600, Q)) < 1e-6 && std::abs(WIDE - fittsMs(600, Q, 128)) < 1e-6 && WIDE < SMALL - 100,
+              "a target's size is Fitts's W (128 px: sooner than 32 px)");
+    }
+
     // the profile file
     std::istringstream in{"# a comment\nfitts_a_ms=70\nfitts_b_ms = 140 \npeak=0.9\nrate_hz=1000\nnonsense\nbow_mean=x\nmoves=321\n"};
     int                n = 0;

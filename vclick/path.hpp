@@ -19,8 +19,9 @@
 namespace VClick::Path {
     using Hyprutils::Math::Vector2D;
 
-    constexpr double TARGET_W    = 32;   // Fitts's W: vclick cannot see the target's size
-    constexpr double MAX_MOVE_MS = 1000; // one movement, before a correction
+    constexpr double TARGET_W     = 32;   // Fitts's W unless the request names it: vclick cannot see the target
+    constexpr double MIN_TARGET_W = 4, MAX_TARGET_W = 1000;
+    constexpr double MAX_MOVE_MS  = 1000; // one movement, before a correction
 
     // The pace: learn.py fits it from the user's own movements; these
     // defaults are a typical mouse user's.
@@ -42,12 +43,17 @@ namespace VClick::Path {
     };
     constexpr int WARP_N = 128;
 
-    double            fittsMs(double distance, const SProfile& p);
+    // what a movement aims at
+    struct SAim {
+        double w = TARGET_W; // the target's size: Fitts's W
+    };
+
+    double            fittsMs(double distance, const SProfile& p, double w = TARGET_W);
     Vector2D          clampTo(const Vector2D& p, const Vector2D& bounds);
 
     // from and to in a box of size bounds (to inside it); empty when they
     // are under 2 px apart
-    std::vector<SSeg> plan(const Vector2D& from, const Vector2D& to, const Vector2D& bounds, const SProfile& p, std::mt19937& rng);
+    std::vector<SSeg> plan(const Vector2D& from, const Vector2D& to, const Vector2D& bounds, const SProfile& p, std::mt19937& rng, const SAim& aim = {});
     double            duration(const std::vector<SSeg>& segs);
     Vector2D          sample(const std::vector<SSeg>& segs, double ms); // segs not empty; past the end: the target
 

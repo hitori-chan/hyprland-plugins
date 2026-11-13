@@ -11,8 +11,8 @@
 #include <utility>
 
 namespace VClick::Path {
-    double fittsMs(double distance, const SProfile& p) {
-        return p.aMs + p.bMs * std::log2(distance / TARGET_W + 1.0);
+    double fittsMs(double distance, const SProfile& p, double w) {
+        return p.aMs + p.bMs * std::log2(distance / w + 1.0);
     }
 
     Vector2D clampTo(const Vector2D& p, const Vector2D& bounds) {
@@ -44,7 +44,7 @@ namespace VClick::Path {
         return s.progress[I] + (s.progress[I + 1] - s.progress[I]) * (X - I);
     }
 
-    std::vector<SSeg> plan(const Vector2D& from, const Vector2D& to, const Vector2D& bounds, const SProfile& p, std::mt19937& rng) {
+    std::vector<SSeg> plan(const Vector2D& from, const Vector2D& to, const Vector2D& bounds, const SProfile& p, std::mt19937& rng, const SAim& aim) {
         const double D = from.distance(to);
         if (D < 2)
             return {};
@@ -81,10 +81,10 @@ namespace VClick::Path {
 
         const auto        PROGRESS = progressFor(p.peak);
         std::vector<SSeg> segs;
-        segs.push_back({from, clampTo(c.first, bounds), clampTo(c.second, bounds), end, std::clamp(fittsMs(DE, p) * (end == to ? 1.0 : 0.85), 40.0, MAX_MOVE_MS),
+        segs.push_back({from, clampTo(c.first, bounds), clampTo(c.second, bounds), end, std::clamp(fittsMs(DE, p, aim.w) * (end == to ? 1.0 : 0.85), 40.0, MAX_MOVE_MS),
                         PROGRESS});
         if (end != to) // the correction: short and straight
-            segs.push_back({end, end + (to - end) / 3, end + (to - end) * (2.0 / 3), to, std::clamp(fittsMs(end.distance(to), p) * 0.8, 60.0, 300.0), PROGRESS});
+            segs.push_back({end, end + (to - end) / 3, end + (to - end) * (2.0 / 3), to, std::clamp(fittsMs(end.distance(to), p, aim.w) * 0.8, 60.0, 300.0), PROGRESS});
         return segs;
     }
 

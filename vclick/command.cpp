@@ -21,9 +21,9 @@ namespace VClick {
 
 namespace VClick::Command {
     constexpr std::string_view USAGE =
-        "usage: vclick click <window> <x> <y> [button] [double|triple] [glide|jump]\n"
-        "       vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [glide|jump]\n"
-        "       vclick move <window> <x> <y> [glide|jump]\n"
+        "usage: vclick click <window> <x> <y> [button] [double|triple] [glide|jump] [size:<px>]\n"
+        "       vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [glide|jump] [size:<px>]\n"
+        "       vclick move <window> <x> <y> [glide|jump] [size:<px>]\n"
         "       vclick key <window> <key> [mods]\n"
         "       vclick hide | status | where | mode [mouse|tap] | profile [reload [file]] | image <window>\n"
         "  window: a window selector (address:0x..., class:...), or a bare 0x... address\n"
@@ -33,7 +33,8 @@ namespace VClick::Command {
         "  mods: modifiers held for it, joined by + (ctrl, shift, alt, super)\n"
         "  mode mouse: glide there, and stay; the app keeps the hover (the default)\n"
         "  mode tap: go at once, and leave after the input; no cursor stays\n"
-        "  glide|jump: this request's way there, whatever the mode";
+        "  glide|jump: this request's way there, whatever the mode\n"
+        "  size:<px>: the target's size, for the glide's time (default 32)";
 
     static bool mouseMode = true;
 
@@ -115,14 +116,23 @@ namespace VClick::Command {
         c.pos  = {*X, *Y};
         c.move = VERB == "move";
 
-        bool button = false, count = false, steps = false, pace = false;
+        bool button = false, count = false, steps = false, pace = false, size = false;
         for (size_t i = 5; i < w.size(); ++i) {
-            const auto O    = w[i];
+            const auto O     = w[i];
             const auto TWICE = [&] { return BAD(std::format("'{}': that option is given twice", O)); };
             if (O == "glide" || O == "jump") {
                 if (c.glide)
                     return TWICE();
                 c.glide = O == "glide";
+                continue;
+            }
+            if (O.starts_with("size:")) {
+                const auto PX = number<double>(O.substr(5));
+                if (!PX || !(*PX >= Path::MIN_TARGET_W && *PX <= Path::MAX_TARGET_W))
+                    return BAD(std::format("'{}': the target's size must be {:g}-{:g} px", O, Path::MIN_TARGET_W, Path::MAX_TARGET_W));
+                if (std::exchange(size, true))
+                    return TWICE();
+                c.size = *PX;
                 continue;
             }
             if (VERB == "click") {

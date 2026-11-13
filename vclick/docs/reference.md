@@ -7,9 +7,9 @@ The whole command and its answers. Examples are in the
 ## hyprctl
 
 ```sh
-hyprctl vclick click  <window> <x> <y> [button] [double|triple] [glide|jump]
-hyprctl vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [glide|jump]
-hyprctl vclick move   <window> <x> <y> [glide|jump]
+hyprctl vclick click  <window> <x> <y> [button] [double|triple] [glide|jump] [size:<px>]
+hyprctl vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [glide|jump] [size:<px>]
+hyprctl vclick move   <window> <x> <y> [glide|jump] [size:<px>]
 hyprctl vclick key    <window> <key> [mods]
 hyprctl vclick status
 hyprctl vclick where
@@ -45,6 +45,9 @@ The options follow the point, in any order, each at most once.
   (the dwell), then click or scroll ([design](design.md#the-glide)).
   `jump`: go at once. A request that names neither goes the mode's way:
   `mouse` glides, `tap` jumps.
+- `size:<px>`: the target's size, 4 to 1000 (default 32): Fitts's W for
+  the glide's time, so a small button takes a little longer and a wide
+  one less.
 
 - `<key>`: an xkb key name in the active layout, as `send_shortcut`
   takes it (`Next` is PageDown, `Prior` PageUp; `Return`, `Escape`,
@@ -208,7 +211,8 @@ be installed ([design](design.md#the-cursor-image)).
   option of click|scroll|move`, `error: '<word>': that option is given
   twice`, `error: a scroll needs its direction: up, down, left or
   right`, `error: '<n>': steps must be 1-20`, `error: '<n>ms': the pace
-  must be 0ms-1000ms`: a malformed request; the usage follows.
+  must be 0ms-1000ms`, `error: 'size:<n>': the target's size must be
+  4-1000 px`: a malformed request; the usage follows.
 - `error: busy: still moving; retry later`, `error: busy: still
   scrolling <done>/<steps>; retry later`: a glide or a paced scroll is
   running.

@@ -64,6 +64,7 @@ namespace VClick {
         bool                  stay  = false;   // the mouse mode: the app keeps the hover after the input
         int                   count = 1;       // clicks, or wheel steps
         int                   ms    = STEP_MS; // between wheel steps; 0: all at once
+        double                size  = Path::TARGET_W; // the target's size: the glide's Fitts W
         std::optional<bool>   glide;           // this request's way there; unset: the mode's (mouse glides)
     };
 

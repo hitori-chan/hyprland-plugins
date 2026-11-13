@@ -234,6 +234,7 @@ expect "steps bound" "$(vclick scroll "address:$A" 10 10 down 21 | head -1)" "er
 expect "pace bound" "$(vclick scroll "address:$A" 10 10 down 2 1001ms | head -1)" "error: '1001ms': the pace must be 0ms-1000ms"
 expect "a pace is for a scroll only" "$(vclick click "address:$A" 10 10 50ms | head -1)" "error: '50ms' is not an option of click"
 expect "a move takes no count" "$(vclick move "address:$A" 10 10 2 | head -1)" "error: '2' is not an option of move"
+expect "a target's size bound" "$(vclick click "address:$A" 10 10 size:2 | head -1)" "error: 'size:2': the target's size must be 4-1000 px"
 expect "status: idle" "$(vclick status)" idle
 expect "where: nowhere yet" "$(vclick where)" nowhere
 expect "the mouse is the default mode" "$(vclick mode)" mouse
@@ -499,7 +500,7 @@ btime() { # btime <client> <from-line>: the time of the first wl_pointer.button 
 	tail -n +"$(($2 + 1))" "$T/$1.wl" | grep -v ' -> ' | grep -oE 'wl_pointer[#@][0-9]+\.button\([0-9]+, [0-9]+' | head -1 | grep -oE '[0-9]+$'
 }
 median_gap() { awk 'NR > 1 { print $1 - p } { p = $1 }' | sort -n | awk '{ g[NR] = $1 } END { print g[int((NR + 1) / 2)] }'; }
-fitts() { python3 -c 'import math, sys; a, b, d = map(float, sys.argv[1:]); print(round(min(max(a + b * math.log2(d / 32 + 1), 40), 1000)))' "$@"; }
+fitts() { python3 -c 'import math, sys; a, b, d, w = map(float, sys.argv[1:] + ["32"][len(sys.argv) - 4:]); print(round(min(max(a + b * math.log2(d / w + 1), 40), 1000)))' "$@"; } # fitts <a> <b> <d> [w]
 dist() { python3 -c 'import math, sys; x, y, u, v = map(float, sys.argv[1:]); print(math.hypot(u - x, v - y))' "$@"; }
 regex() { [[ "$1" =~ $2 ]]; }
 rose() { # rose <png> <x> <y>: rose pixels (A's cursor image) in the 24x24 box from x-4,y-4 (its hotspot is its top-left)
@@ -546,6 +547,15 @@ expect "the cursor never moved" "$(hq cursorpos)" "$POS"
 expect "the focus never moved" "$(hq activewindow -j | python3 -c 'import json,sys; print(json.load(sys.stdin).get("address"))')" "$ACTIVE"
 expect "A's own cursor image (set_cursor)" "$(vclick image "address:$A")" "the app's image, 16x16, hotspot 0,0"
 expect "B's named shape (cursor-shape-v1): the arrow" "$(vclick image "address:$B")" "the built-in arrow: the app asked for 'default'"
+D="$(dist $(at green) $(at red))" MT="$(fitts 50 120 "$D" 128)"
+AM="$(lines "$T/a.wl")" n="$(hits a HIT red)"
+expect "a glide click to red, named a 128 px target" "$(vclick click "address:$A" $(at red) size:128)" ok
+until_ok 4 idle || true
+until_ok 3 more a HIT red "$n" && ok "  A hit red" || bad "  A never hit red"
+quiet "$T/a.wl"
+M="$(mtimes a "$AM")"
+SPAN=$(($(tail -2 <<<"$M" | head -1) - $(head -1 <<<"$M")))
+((SPAN >= MT - 10 && SPAN <= MT + 40)) && ok "  Fitts's time with W 128: $SPAN ms for $MT ms" || bad "  took $SPAN ms, want $MT ms (-10/+40)"
 
 echo "== the hover and the cursor stay where the input left them"
 AM="$(lines "$T/a.wl")"
