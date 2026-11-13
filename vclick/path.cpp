@@ -52,7 +52,7 @@ namespace VClick::Path {
 
         // the main movement ends on the target, or past it
         Vector2D end = to;
-        if (D >= 300 && p.overshoot > 0 && uni(0, 1) < p.overshootP) {
+        if (aim.overshoot && D >= 300 && p.overshoot > 0 && uni(0, 1) < p.overshootP) {
             const double OVER = std::clamp(D * p.overshoot * uni(0.6, 1.4), 3.0, 40.0);
             end               = clampTo(to + (to - from) / D * OVER, bounds);
             if (end.distance(to) < 2)

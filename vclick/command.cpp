@@ -24,6 +24,7 @@ namespace VClick::Command {
                                                  "       vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [glide|jump] [size:<px>]\n"
                                                  "       vclick move <window> <x> <y> [glide|jump] [size:<px>]\n"
                                                  "       vclick press <window> <x> <y> [button] [glide|jump] [size:<px>]\n"
+                                                 "       vclick drag <window> <x> <y> <x2> <y2> [button] [glide|jump] [size:<px>]\n"
                                                  "       vclick key <window> <key> [mods]\n"
                                                  "       vclick release | hide | status | where | mode [mouse|tap] | profile [reload [file]] | image <window>\n"
                                                  "  window: a window selector (address:0x..., class:...), or a bare 0x... address\n"
@@ -34,6 +35,7 @@ namespace VClick::Command {
                                                  "  mode mouse: glide there, and stay; the app keeps the hover (the default)\n"
                                                  "  mode tap: go at once, and leave after the input; no cursor stays\n"
                                                  "  press: hold the button down; move drags it, release lets go\n"
+                                                 "  drag: press at x y, glide to x2 y2 at the user's pace, let go there\n"
                                                  "  glide|jump: this request's way there, whatever the mode\n"
                                                  "  size:<px>: the target's size, for the glide's time (default 32)";
 
@@ -98,10 +100,10 @@ namespace VClick::Command {
     }
 
     static bool isInput(std::string_view verb) {
-        return verb == "click" || verb == "scroll" || verb == "move" || verb == "press";
+        return verb == "click" || verb == "scroll" || verb == "move" || verb == "press" || verb == "drag";
     }
 
-    // "vclick click|scroll|move|press <window> <x> <y> [option...]": the options
+    // "vclick click|scroll|move|press|drag <window> <x> <y> [<x2> <y2>] [option...]": the options
     // after the point, in any order, each at most once
     static std::expected<SAction, std::string> parse(const std::vector<std::string_view>& w) {
         const auto BAD = [](std::string why) { return std::unexpected(std::format("error: {}\n{}", why, USAGE)); };
@@ -114,11 +116,20 @@ namespace VClick::Command {
         const auto Y = number<double>(w[4]);
         if (!X || !Y || !std::isfinite(*X) || !std::isfinite(*Y))
             return BAD(std::format("bad coordinates '{} {}'", w[3], w[4]));
-        c.pos  = {*X, *Y};
-        c.verb = VERB == "scroll" ? EVerb::SCROLL : VERB == "move" ? EVerb::MOVE : VERB == "press" ? EVerb::PRESS : EVerb::CLICK;
+        c.pos       = {*X, *Y};
+        c.verb      = VERB == "scroll" ? EVerb::SCROLL : VERB == "move" ? EVerb::MOVE : VERB == "press" ? EVerb::PRESS : VERB == "drag" ? EVerb::DRAG : EVerb::CLICK;
+        size_t opts = 5;
+        if (c.verb == EVerb::DRAG) { // drag <window> <x> <y> <x2> <y2>: where it lets go
+            const auto X2 = w.size() > 6 ? number<double>(w[5]) : std::nullopt;
+            const auto Y2 = w.size() > 6 ? number<double>(w[6]) : std::nullopt;
+            if (!X2 || !Y2 || !std::isfinite(*X2) || !std::isfinite(*Y2))
+                return BAD(w.size() > 6 ? std::format("bad coordinates '{} {}'", w[5], w[6]) : "a drag needs where it lets go: <x2> <y2>");
+            c.to = {*X2, *Y2};
+            opts = 7;
+        }
 
         bool button = false, count = false, steps = false, pace = false, size = false;
-        for (size_t i = 5; i < w.size(); ++i) {
+        for (size_t i = opts; i < w.size(); ++i) {
             const auto O     = w[i];
             const auto TWICE = [&] { return BAD(std::format("'{}': that option is given twice", O)); };
             if (O == "glide" || O == "jump") {
@@ -136,7 +147,7 @@ namespace VClick::Command {
                 c.size = *PX;
                 continue;
             }
-            if (VERB == "click" || VERB == "press") {
+            if (VERB == "click" || VERB == "press" || VERB == "drag") {
                 if (VERB == "click" && (O == "double" || O == "triple")) {
                     if (std::exchange(count, true))
                         return TWICE();
@@ -281,8 +292,13 @@ namespace VClick::Command {
             if (TW != Pointer::heldWindow())
                 return std::format("error: busy: holding {} in another window; release it first", Pointer::buttonName(*B));
         }
-        if (c->verb == EVerb::PRESS && !Pointer::dragGuard)
+        if ((c->verb == EVerb::PRESS || c->verb == EVerb::DRAG) && !Pointer::dragGuard)
             return "error: no drag-and-drop guard (the initiateDrag hook is out): a held button could hand a drag to the user's mouse";
+        if (c->verb == EVerb::DRAG && TW) {
+            const auto SIZE = Pointer::windowSize(TW);
+            if (c->to.x < 0 || c->to.y < 0 || c->to.x >= SIZE.x || c->to.y >= SIZE.y)
+                return std::format("error: {:g},{:g} is outside the window ({:g}x{:g})", c->to.x, c->to.y, SIZE.x, SIZE.y);
+        }
 
         // a hover kept in another app ends here, as a mouse leaves it
         Pointer::unhover(Pointer::clientOf(TW));
@@ -294,7 +310,7 @@ namespace VClick::Command {
         const auto R = Pointer::dispatch(*c);
         if (!R)
             return R.error();
-        if (TW) {
+        if (TW && !Glide::active()) { // a drag's way, set off by its press, ends it itself
             Pointer::rememberPos(TW, c->pos);
             if (mouseMode)
                 Cursor::place(TW, c->pos);

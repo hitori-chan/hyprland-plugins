@@ -45,7 +45,8 @@ namespace VClick::Path {
 
     // what a movement aims at
     struct SAim {
-        double w = TARGET_W; // the target's size: Fitts's W
+        double w         = TARGET_W; // the target's size: Fitts's W
+        bool   overshoot = true;     // a long move may pass the target, as the profile says (a drag's never does)
     };
 
     double            fittsMs(double distance, const SProfile& p, double w = TARGET_W);

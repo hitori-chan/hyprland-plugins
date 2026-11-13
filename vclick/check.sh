@@ -829,6 +829,50 @@ regex "$EV" '^(enter )?motion button button leave$' && ok "  A heard the release
 expect "  nothing held" "$(vclick release)" "error: no button is held"
 park "$BX" "$BY"
 
+echo "== drag: a press, a glide at the user's pace, a rest, the release"
+quiet "$T/a.wl"
+expect "a drag needs its end" "$(vclick drag "address:$A" 10 10 | head -1)" "error: a drag needs where it lets go: <x2> <y2>"
+expect "a drag ends in the window" "$(vclick drag "address:$A" 10 10 5000 10 | head -1 | sed 's/ (.*//')" "error: 5000,10 is outside the window"
+park "$BCX" "$BCY"
+btimes() { # btimes <client> <from-line>: the time of each wl_pointer.button since
+	tail -n +"$(($2 + 1))" "$T/$1.wl" | grep -v ' -> ' | grep -oE 'wl_pointer[#@][0-9]+\.button\([0-9]+, [0-9]+' | grep -oE '[0-9]+$'
+}
+AM="$(lines "$T/a.wl")" GL="$(lines "$T/a.log")"
+D="$(dist $(at red) $(at green))" MT="$(fitts 50 120 "$D")"
+expect "drag red to green (mouse mode: a glide there first)" "$(vclick drag "address:$A" $(at red) $(at green))" ok
+expect "  status: moving" "$(vclick status)" moving
+dragging_now() { [[ "$(vclick status)" == dragging ]]; }
+until_ok 3 dragging_now && ok "  then dragging" || bad "  never dragging"
+until_ok 5 idle || true
+expect "  then idle" "$(vclick status)" idle
+until_ok 3 let_go || true
+read -r _ UPW UPX _ <<<"$(tail -n +"$((GL + 1))" "$T/a.log" | grep '^UP ' | tail -1)"
+[[ "$UPW" == red ]] && ((UPX >= 120)) && ok "  GTK: pressed in red, up at green (x $UPX)" || bad "  GTK's release: $UPW at x $UPX, want red at x >= 120"
+quiet "$T/a.wl"
+EV="$(events a "$AM")"
+regex "$EV" '^(enter )?motion( motion)* button( motion){3,} button$' && ok "  the way there, the press, the drag's motions, the release, no leave" || bad "  events: $EV"
+expect "  the release exactly at green" "$(last_xy a motion "$AM")" "$GREEN"
+read -r PT RT <<<"$(btimes a "$AM" | tr '\n' ' ')"
+LT="$(mtimes a "$AM" | tail -1)"
+SPAN=$((LT - PT)) REST=$((RT - LT))
+((SPAN >= MT - 10 && SPAN <= MT + 40)) && ok "  Fitts's time, no overshoot: $SPAN ms for $MT ms" || bad "  the drag took $SPAN ms, want $MT ms (-10/+40)"
+((REST >= 50 && REST <= 130)) && ok "  a rest on the target before letting go ($REST ms)" || bad "  rest $REST ms, want 50-130"
+expect "the tap mode" "$(vclick mode tap)" tap
+AM="$(lines "$T/a.wl")"
+expect "drag blue to red (the tap mode: a jump there)" "$(vclick drag "address:$A" $(at blue) $(at red))" ok
+until_ok 5 idle || true
+quiet "$T/a.wl"
+EV="$(events a "$AM")"
+regex "$EV" '^(leave )?enter motion button( motion){3,} button leave$' && ok "  an enter, the press, the motions, the release, the leave" || bad "  events: $EV"
+expect "back to the mouse mode" "$(vclick mode mouse)" mouse
+GL="$(lines "$T/a.log")"
+expect "drag from yellow (a drag source)" "$(vclick drag "address:$A" $(at yellow) $(at magenta) jump)" ok
+until_ok 5 idle || true
+until_ok 3 dnd_over || true
+expect "  GTK began a drag-and-drop, and it failed" "$(tail -n +"$((GL + 1))" "$T/a.log" | grep -oE '^DRAG(BEGIN|FAILED) yellow' | tr '\n' ' ' | sed 's/ $//')" "DRAGBEGIN yellow DRAGFAILED yellow"
+[[ "$(vclick status)" == "idle; "*drag-and-drop* ]] && ok "  refused, and status says so" || bad "  status: $(vclick status)"
+expect "  nothing held" "$(vclick release)" "error: no button is held"
+
 echo "== a held button in the tap mode; hide lets it go"
 expect "the tap mode" "$(vclick mode tap)" tap
 quiet "$T/a.wl"

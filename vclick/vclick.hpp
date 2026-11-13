@@ -61,6 +61,7 @@ namespace VClick {
         SCROLL,
         MOVE,  // only go there, and stay (with a held button: a drag's way)
         PRESS, // go there and hold a button down
+        DRAG,  // press there, glide to `to`, let go
     };
 
     // one request
@@ -68,7 +69,8 @@ namespace VClick {
         EVerb                 verb = EVerb::CLICK;
         std::string           selector;
         Vector2D              pos;
-        uint32_t              button = BTN_LEFT; // a click's or a press's
+        Vector2D              to;                // where a drag lets go
+        uint32_t              button = BTN_LEFT; // a click's, a press's or a drag's
         std::optional<SWheel> wheel;
         bool                  stay  = false;   // the mouse mode: the app keeps the hover after the input
         int                   count = 1;       // clicks, or wheel steps
@@ -91,6 +93,17 @@ namespace VClick {
     }
     inline bool busy(const Result& r) {
         return !r && r.error().starts_with("error: busy");
+    }
+
+    constexpr const char* verbName(EVerb v) {
+        switch (v) {
+            case EVerb::CLICK: return "click";
+            case EVerb::SCROLL: return "scroll";
+            case EVerb::MOVE: return "move";
+            case EVerb::PRESS: return "press";
+            case EVerb::DRAG: return "drag";
+        }
+        return "";
     }
 
     // why no input may go now (the reply's error line), or nothing: the
@@ -178,6 +191,7 @@ namespace VClick {
         bool                       active();
         void                       stop();     // leaves the app's pointer, if it can
         void                       abandon();  // ends where it is: no leave
+        Result                     travel(const SAction& c); // a drag's way, its button down: no overshoot, a rest, the release
         bool                       dragging(); // a held button moves
 
         const Path::SProfile&      profile();

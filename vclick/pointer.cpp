@@ -387,8 +387,10 @@ namespace VClick::Pointer {
     }
 
     void dropHold(const std::string& why) {
-        if (!held)
+        if (!held) { // let go of under a second ago: the app read the last motion late
+            noteStop("the app began a drag-and-drop as the button went up, which only the user's mouse can drive; refused");
             return;
+        }
         const bool STAY = held->stay;
         Glide::abandon(); // a held move's way ends where it is
         letGoOf();
@@ -513,6 +515,11 @@ namespace VClick::Pointer {
             return held ? heldMotion(c.pos) : moveNow(c);
         if (c.verb == EVerb::PRESS)
             return pressNow(c);
+        if (c.verb == EVerb::DRAG) {
+            if (const auto R = pressNow(c); !R)
+                return R;
+            return Glide::travel(c);
+        }
         if (!c.wheel || c.count == 1 || c.ms == 0)
             return act(c);
 

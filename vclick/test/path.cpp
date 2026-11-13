@@ -109,6 +109,16 @@ int main() {
               "a target's size is Fitts's W (128 px: sooner than 32 px)");
     }
 
+    // a drag's way never overshoots, whatever the profile
+    {
+        SProfile Q   = P;
+        Q.overshootP = 1;
+        bool once    = true;
+        for (int i = 0; i < 200; ++i)
+            once &= plan({0, 0}, {900, 300}, {1600, 900}, Q, rng, {.overshoot = false}).size() == 1;
+        check(once && plan({0, 0}, {900, 300}, {1600, 900}, Q, rng).size() == 2, "no overshoot when the aim forbids it (overshoot_p 1)");
+    }
+
     // the profile file
     std::istringstream in{"# a comment\nfitts_a_ms=70\nfitts_b_ms = 140 \npeak=0.9\nrate_hz=1000\nnonsense\nbow_mean=x\nmoves=321\n"};
     int                n = 0;

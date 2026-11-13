@@ -137,6 +137,9 @@ the user's mouse is refused: that pointer is theirs.
 ## A held button
 
 `press` holds a button down until `release`; a `move` meanwhile drags it.
+`drag` is the three in one: the press, a glide to the end with the
+button down (the user's pace, never past the target: a slider's stop, a
+drop target), the dwell, the release.
 The app hears one press, the motions, and the release: its implicit
 grab, so every motion goes to the surface the press began in, in its
 coordinates, wherever the point is, and no surface is crossed. The seat

@@ -68,6 +68,10 @@ It covers, each against the exact protocol events:
   ending the hold; a GTK drag-and-drop refused (its source cancelled,
   the hold ended, the user's next click offering no drop); tap mode;
   `hide` letting go; unload letting go.
+- **drag**: the end's checks; a drag in mouse mode (`moving`, then
+  `dragging`; Fitts's time, no overshoot, the dwell before the release;
+  GTK's press and release in their blocks); a jump drag in tap mode; a
+  drag from a GTK drag source refused.
 - **the cursor theme** (the check's own, through `XCURSOR_PATH`): B's
   named shapes drawn from it with their hotspots, its hidden cursor
   drawn as nothing.
