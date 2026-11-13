@@ -21,7 +21,7 @@ namespace VClick {
 
 namespace VClick::Command {
     constexpr std::string_view           USAGE = "usage: vclick click <window> <x> <y> [button] [double|triple] [glide|jump] [size:<px>]\n"
-                                                 "       vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [glide|jump] [size:<px>]\n"
+                                                 "       vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [<n>px] [glide|jump] [size:<px>]\n"
                                                  "       vclick move <window> <x> <y> [glide|jump] [size:<px>]\n"
                                                  "       vclick press <window> <x> <y> [button] [glide|jump] [size:<px>]\n"
                                                  "       vclick drag <window> <x> <y> <x2> <y2> [button] [glide|jump] [size:<px>]\n"
@@ -30,6 +30,7 @@ namespace VClick::Command {
                                                  "  window: a window selector (address:0x..., class:...), or a bare 0x... address\n"
                                                  "  button: left (default), right, middle, side, extra, or a code 272-279\n"
                                                  "  steps: wheel detents, 1-20 (default 1); <ms>ms: between them, 0ms-1000ms (default 50ms; 0ms: at once)\n"
+                                                 "  <n>px: instead, a finger's scroll on a touchpad, 1px-10000px, at the user's pace\n"
                                                  "  key: an xkb key name, as send_shortcut takes it (Next, Prior, Return, a, F5), or code:<n>; pressed and released\n"
                                                  "  mods: modifiers held for it, joined by + (ctrl, shift, alt, super)\n"
                                                  "  mode mouse: glide there, and stay; the app keeps the hover (the default)\n"
@@ -39,7 +40,7 @@ namespace VClick::Command {
                                                  "  glide|jump: this request's way there, whatever the mode\n"
                                                  "  size:<px>: the target's size, for the glide's time (default 32)";
 
-    static bool mouseMode = true;
+    static bool                          mouseMode = true;
 
     static std::vector<std::string_view> words(std::string_view s) {
         std::vector<std::string_view> out;
@@ -167,6 +168,15 @@ namespace VClick::Command {
                     c.wheel = D;
                     continue;
                 }
+                if (O.ends_with("px")) {
+                    const auto PX = number<double>(O.substr(0, O.size() - 2));
+                    if (!PX || !(*PX >= 1 && *PX <= MAX_PX))
+                        return BAD(std::format("'{}': a scroll by px must be 1px-{:g}px", O, MAX_PX));
+                    if (c.px > 0)
+                        return TWICE();
+                    c.px = *PX;
+                    continue;
+                }
                 if (O.ends_with("ms")) {
                     const auto MS = number<int>(O.substr(0, O.size() - 2));
                     if (!MS || *MS < 0 || *MS > MAX_MS)
@@ -189,6 +199,8 @@ namespace VClick::Command {
         }
         if (VERB == "scroll" && !c.wheel)
             return BAD("a scroll needs its direction: up, down, left or right");
+        if (c.px > 0 && (steps || pace))
+            return BAD("a scroll by px takes no steps or pace: a finger's goes at the user's");
         return c;
     }
 
@@ -196,6 +208,8 @@ namespace VClick::Command {
     static std::optional<std::string> running() {
         if (Glide::active())
             return Glide::dragging() ? "dragging" : "moving";
+        if (const auto S = Stroke::status())
+            return S;
         return Pointer::scrollStatus();
     }
 

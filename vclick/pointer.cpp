@@ -103,6 +103,25 @@ namespace VClick::Pointer {
         return out;
     }
 
+    std::vector<SP<CWLPointerResource>> CPointers::of(wl_client* client) {
+        std::vector<SP<CWLPointerResource>> out;
+        bool                                fresh = m_client == client;
+        for (const auto& p : m_cached) {
+            const auto P = p.lock();
+            if (!P || !P->good()) {
+                fresh = false;
+                break;
+            }
+            out.emplace_back(P);
+        }
+        if (!fresh || out.empty()) {
+            out = pointersOf(client);
+            m_cached.assign(out.begin(), out.end());
+            m_client = client;
+        }
+        return out;
+    }
+
     bool userIn(wl_client* client) {
         const auto USER = g_pSeatManager->m_state.pointerFocus.lock();
         return USER && USER->client() == client;
@@ -275,13 +294,12 @@ namespace VClick::Pointer {
         return {};
     }
 
-    // a move without a glide: straight there, and stay
-    static Result moveNow(const SAction& c) {
+    std::expected<STarget, std::string> place(const SAction& c) {
         auto T = resolve(c.selector, c.pos);
         if (!T)
-            return fail(T.error());
+            return T;
         if (T->shared)
-            return fail("error: busy: the user's pointer is in this app; a move would take it from them");
+            return std::unexpected(std::format("error: busy: the user's pointer is in this app; a {} would take it from them", c.px > 0 ? "scroll by px" : verbName(c.verb)));
         const auto t = nowMs();
         leaveHeldOther(T->surf);
         each(T->pointers, [&](CWLPointerResource& p) {
@@ -289,7 +307,7 @@ namespace VClick::Pointer {
             p.sendMotion(t, T->local);
         });
         hovered = T->surf;
-        return {};
+        return T;
     }
 
     // --- a held button ---------------------------------------------------------
@@ -435,24 +453,15 @@ namespace VClick::Pointer {
     static Result pressNow(const SAction& c) {
         if (!dragGuard)
             return fail("error: no drag-and-drop guard (the initiateDrag hook is out): a held button could hand a drag to the user's mouse");
-        auto T = resolve(c.selector, c.pos);
+        const auto T = place(c);
         if (!T)
             return fail(T.error());
-        if (T->shared)
-            return fail("error: busy: the user's pointer is in this app; a press would take it from them");
-        auto t = nowMs();
-        leaveHeldOther(T->surf);
-        each(T->pointers, [&](CWLPointerResource& p) {
-            p.sendEnter(T->surf, T->local);
-            p.sendMotion(t, T->local);
-        });
-        ++t;
+        const auto t = nowMs() + 1;
         each(T->pointers, [&](CWLPointerResource& p) {
             p.sendButton(t, c.button, WL_POINTER_BUTTON_STATE_PRESSED);
             g_pSeatManager->clearPointerButtonSerials(p.m_owner.lock(), T->surf, c.button); // no interactive move or resize from it
         });
-        hovered = T->surf;
-        held    = SHeld{.window = T->window, .surf = T->surf, .client = T->surf->client(), .button = c.button, .stay = c.stay};
+        held = SHeld{.window = T->window, .surf = T->surf, .client = T->surf->client(), .button = c.button, .stay = c.stay};
         clearStop();
         if (!c.stay) {
             Cursor::prepare(T->window);
@@ -511,8 +520,13 @@ namespace VClick::Pointer {
     }
 
     Result dispatch(const SAction& c) {
-        if (c.verb == EVerb::MOVE)
-            return held ? heldMotion(c.pos) : moveNow(c);
+        if (c.verb == EVerb::MOVE) {
+            if (held)
+                return heldMotion(c.pos);
+            if (const auto T = place(c); !T)
+                return fail(T.error());
+            return {};
+        }
         if (c.verb == EVerb::PRESS)
             return pressNow(c);
         if (c.verb == EVerb::DRAG) {
@@ -520,6 +534,8 @@ namespace VClick::Pointer {
                 return R;
             return Glide::travel(c);
         }
+        if (c.px > 0)
+            return Stroke::scroll(c);
         if (!c.wheel || c.count == 1 || c.ms == 0)
             return act(c);
 

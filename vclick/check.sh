@@ -34,6 +34,13 @@ export HYPR_HARNESS_LOCKED=1
 T=/tmp/hypr-gate/vclick
 rm -rf "$T" && mkdir -p "$T"
 [[ -f "$HERE/vclick.so" ]] || { echo "check: build first: make -C vclick" >&2; exit 2; }
+# the plugin loads only into the commit its headers name
+BIN="${HYPR_BIN:-/usr/local/bin/Hyprland}"
+WANT=$("$BIN" --version | sed -n 's/.* at commit \([0-9a-f]\{40\}\).*/\1/p')
+grep -aq "${WANT:-unknown}" "$HERE/vclick.so" || {
+	echo "check: vclick.so is not built for $BIN (${WANT:-no commit}): build it against that fork's headers (PKG_CONFIG_PATH)" >&2
+	exit 2
+}
 # the nested maps a copy: a rebuild never overwrites a mapped .so
 SO="$T/vclick-$$.so"
 cp "$HERE/vclick.so" "$SO"
@@ -683,6 +690,63 @@ expect "  the cursor never moved" "$(hq cursorpos)" "$POS"
 park "$BX" "$BY"
 expect "back to the check's profile" "$(vclick profile reload "$T/even.profile" | head -1)" "loaded $T/even.profile"
 
+echo "== a scroll by px: a finger's stroke on a touchpad, at the user's pace"
+axis_sum() { # axis_sum <client> <from-line>: "axis:sum" of the wl_pointer.axis values since
+	tail -n +"$(($2 + 1))" "$T/$1.wl" | grep -v ' -> ' | grep -oE 'wl_pointer[#@][0-9]+\.axis\([0-9]+, [0-9]+, -?[0-9.]+' |
+		awk -F'[(, ]+' '{ s[$3] += $4 } END { for (a in s) printf "%s%s:%.3f", (n++ ? " " : ""), a, s[a] }'
+}
+pevents() { # pevents <client> <from-line> <regex>: how many wl_pointer events matching .<regex> since
+	tail -n +"$(($2 + 1))" "$T/$1.wl" | grep -v ' -> ' | grep -cE "wl_pointer[#@][0-9]+\.$3"
+}
+ptimes() { # ptimes <client> <from-line> <event>: the time of each wl_pointer.<event> since
+	tail -n +"$(($2 + 1))" "$T/$1.wl" | grep -v ' -> ' | grep -oE "wl_pointer[#@][0-9]+\.$3\([0-9]+," | grep -oE '[0-9]+,$' | tr -d ,
+}
+stroking() { [[ "$(vclick status)" =~ ^scrolling\ [1-9][0-9]*/ ]]; }
+expect "px bound" "$(vclick scroll "address:$A" 10 10 down 0px | head -1)" "error: '0px': a scroll by px must be 1px-10000px"
+expect "px takes no steps" "$(vclick scroll "address:$A" 10 10 down 400px 3 | head -1)" "error: a scroll by px takes no steps or pace: a finger's goes at the user's"
+AM="$(lines "$T/a.wl")" BM="$(lines "$T/b.wl")" GL="$(lines "$T/a.log")"
+expect "scroll down 400px over blue" "$(vclick scroll "address:$A" $(at blue) down 400px jump)" ok
+S="$(vclick status)"
+[[ "$S" =~ ^scrolling\ [0-9]+/400\ px$ ]] && ok "  status while it runs: $S" || bad "  status: $S"
+expect "  another input meanwhile is busy" "$(vclick click "address:$B" 10 10 | cut -c1-28)" "error: busy: still scrolling"
+until_ok 3 idle || true
+expect "  status after it" "$(vclick status)" idle
+quiet "$T/a.wl"
+EV="$(events a "$AM")"
+regex "$EV" '^(enter )?motion( axis){20,}$' && ok "  the stroke's axis events, the hover kept (the mouse mode)" || bad "  events: $EV"
+expect "  exactly 400 px down, in wl_fixed" "$(axis_sum a "$AM")" "0:400.000"
+expect "  never back" "$(axes a "$AM" | tr ' ' '\n' | grep -c ':-')" 0
+expect "  each frame from a finger (the stop's too)" "$(pevents a "$AM" 'axis_source\(1\)')" "$(($(pevents a "$AM" 'axis\(') + 1))"
+expect "  no wheel steps" "$(detents a "$AM")" ""
+expect "  one stop" "$(pevents a "$AM" 'axis_stop\(')" 1
+read -r FIRST LAST < <(ptimes a "$AM" axis | sed -n '1p;$p' | tr '\n' ' ')
+STOP="$(ptimes a "$AM" axis_stop)"
+MT="$(fitts 50 120 400)" SPAN=$((LAST - FIRST)) REST=$((STOP - LAST))
+((SPAN >= MT - 30 && SPAN <= MT + 30)) && ok "  Fitts's time: $SPAN ms for $MT ms" || bad "  the stroke took $SPAN ms, want $MT ms (+-30)"
+((REST >= 185 && REST <= 260)) && ok "  the finger rests $REST ms before it lifts: no fling" || bad "  rested $REST ms, want 200"
+D="$(axes a "$AM" | tr ' ' '\n' | cut -d: -f2)"
+awk 'NR == 1 { f = $1 } { l = $1; if ($1 > m) m = $1 } END { exit !(f < m / 4 && l < m / 4) }' <<<"$D" && ok "  slow at both ends, as a finger" || bad "  deltas: $(tr '\n' ' ' <<<"$D")"
+G="$(tail -n +"$((GL + 1))" "$T/a.log")"
+expect "  GTK: a touchpad's smooth scroll, then its stop" "$(awk '{ print $1, $2, $3 }' <<<"$G" | uniq | tr '\n' ' ' | sed 's/ $//')" "SMOOTH blue touchpad STOP blue touchpad"
+expect "  GTK's deltas sum to 400 px (GTK3 reads tenths: 40)" "$(awk '$1 == "SMOOTH" { x += $4; y += $5 } END { printf "%g %g", x, y }' <<<"$G")" "0 40"
+expect "B heard nothing" "$(events b "$BM")" ""
+
+AM="$(lines "$T/a.wl")"
+expect "scroll up 200px over green, gliding there" "$(vclick scroll "address:$A" $(at green) up 200px glide)" ok
+expect "  status: moving" "$(vclick status)" moving
+until_ok 3 stroking && ok "  then scrolling" || bad "  never scrolling"
+until_ok 3 idle || true
+quiet "$T/a.wl"
+expect "  exactly 200 px up" "$(axis_sum a "$AM")" "0:-200.000"
+
+read -r GBX GBY <<<"$(global blue)"
+expect "a long stroke: 5000px" "$(vclick scroll "address:$A" $(at blue) down 5000px jump)" ok
+until_ok 3 stroking || true
+park "$GBX" "$GBY"
+until_ok 3 idle || true
+expect "  the user's pointer came into A: it stopped, and says why" "$(vclick status | sed -E 's#after [0-9]+/#after N/#')" "idle; the last scroll stopped after N/5000 px: the user's pointer came into the app"
+park "$BX" "$BY"
+
 echo "== the tap mode: a glide's cursor lingers and fades, and the pointer leaves"
 expect "the tap mode" "$(vclick mode tap)" tap
 expect "  nothing stays" "$(vclick where)" nowhere
@@ -700,6 +764,13 @@ N="$(rose "$T/linger.png" "$GGX" "$GGY")"
 sleep 2 # past the linger and the fade
 fullcap "$T/faded.png" || bad "no capture after the fade"
 expect "  then faded" "$(rose "$T/faded.png" "$GGX" "$GGY")" 0
+AM="$(lines "$T/a.wl")"
+expect "a stroke: 50px" "$(vclick scroll "address:$A" $(at blue) down 50px)" ok
+until_ok 3 idle || true
+quiet "$T/a.wl"
+EV="$(events a "$AM")"
+regex "$EV" '^enter motion( motion)*( axis)+ leave$' && ok "  the finger lifts, and the pointer leaves" || bad "  events: $EV"
+expect "  50 px" "$(axis_sum a "$AM")" "0:50.000"
 expect "back to the mouse mode" "$(vclick mode mouse)" mouse
 
 echo "== the cursor theme: B's named shapes, and its hidden cursor"

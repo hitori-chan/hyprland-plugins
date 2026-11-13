@@ -128,6 +128,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
     }
     VClick::Pointer::dragGuard = false;
     VClick::Glide::stop();
+    VClick::Stroke::reset();
     VClick::Pointer::reset();
     VClick::Cursor::reset();
     if (ctlCmd)

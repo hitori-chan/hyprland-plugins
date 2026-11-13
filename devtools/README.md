@@ -63,7 +63,9 @@ make -C devtools HL=/path/to/Hyprland
   real GTK3 client (PyGObject) as a render-vs-input oracle: a floating
   CSD window of solid color blocks and a menu button whose GtkMenu is an
   xdg_popup of colored items. It logs what GTK hit (`HIT <color>` on a
-  press, `SCROLL <color> <direction>` per wheel detent, `MENU <color>` on
+  press, `SCROLL <color> <direction>` per wheel detent; the blue block
+  takes smooth scrolls instead, `SMOOTH blue <source> <dx> <dy>` per delta
+  and `STOP blue <source>`, the source as GTK names its device; `MENU <color>` on
   an activated item, `KEY <name> <mods>` per key press, its modifiers
   `ctrl+shift` or `-`). A release logs `UP <color> <x> <y>`: the block
   that had the press (GTK's implicit grab), where it went up relative to

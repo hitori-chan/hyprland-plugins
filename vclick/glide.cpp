@@ -46,48 +46,25 @@ namespace VClick::Glide {
     }
 
     struct SGlide {
-        SAction                             action;
-        PHLWINDOWREF                        window;
-        std::vector<Path::SSeg>             segs;
-        double                              moveMs = 0, dwellMs = 0;
-        Time::steady_tp                     start;
-        bool                                arrived = false;
-        bool                                held    = false; // a button is down the whole way
-        bool                                travel  = false; // a drag's way: the release at the end
-        Vector2D                            target;          // where it ends: the request's point, a drag's end
-        WP<CWLSurfaceResource>              cur; // the surface the app's pointer is in
-        Vector2D                            at;  // where it is, in window coords
-        std::vector<WP<CWLPointerResource>> pointers;
-        wl_client*                          pointersClient = nullptr; // whose pointers those are
-        int                                 period         = 8;
-        SP<CEventLoopTimer>                 timer;
+        SAction                 action;
+        PHLWINDOWREF            window;
+        std::vector<Path::SSeg> segs;
+        double                  moveMs = 0, dwellMs = 0;
+        Time::steady_tp         start;
+        bool                    arrived = false;
+        bool                    held    = false; // a button is down the whole way
+        bool                    travel  = false; // a drag's way: the release at the end
+        Vector2D                target;          // where it ends: the request's point, a drag's end
+        WP<CWLSurfaceResource>  cur;             // the surface the app's pointer is in
+        Vector2D                at;              // where it is, in window coords
+        Pointer::CPointers      pointers;
+        int                     period = 8;
+        SP<CEventLoopTimer>     timer;
     };
     static std::optional<SGlide> glide;
 
     bool active() {
         return glide.has_value();
-    }
-
-    // the app's pointers, looked up again only when the app changes or one
-    // went away: an app may hold thousands of resources, a tick runs 125
-    // times a second
-    static std::vector<SP<CWLPointerResource>> pointers(wl_client* client) {
-        std::vector<SP<CWLPointerResource>> out;
-        bool                                fresh = glide->pointersClient == client;
-        for (const auto& p : glide->pointers) {
-            const auto P = p.lock();
-            if (!P || !P->good()) {
-                fresh = false;
-                break;
-            }
-            out.emplace_back(P);
-        }
-        if (!fresh || out.empty()) {
-            out = Pointer::pointersOf(client);
-            glide->pointers.assign(out.begin(), out.end());
-            glide->pointersClient = client;
-        }
-        return out;
     }
 
     static Result moveTo(const PHLWINDOW& w, const Vector2D& pos) {
@@ -97,7 +74,7 @@ namespace VClick::Glide {
         const auto SURF = Pointer::heldButton() ? Pointer::heldAt(AT, local) : Pointer::surfaceAt(w, AT, local);
         if (!SURF)
             return fail("error: the window has no surface");
-        const auto PTRS = pointers(SURF->client());
+        const auto PTRS = glide->pointers.of(SURF->client());
         if (PTRS.empty())
             return fail("error: the app has no pointer (it bound no wl_pointer)");
 
@@ -127,7 +104,7 @@ namespace VClick::Glide {
             g_pEventLoopManager->removeTimer(glide->timer);
         const auto CUR = glide->cur.lock();
         if (leave && CUR && !Pointer::userIn(CUR->client()) && !Pointer::heldButton()) {
-            for (const auto& p : glide->pointers) {
+            for (const auto& p : glide->pointers.last()) {
                 if (const auto P = p.lock(); P && P->good()) {
                     P->sendLeave();
                     P->sendFrame();
@@ -244,10 +221,10 @@ namespace VClick::Glide {
         if (!T->inbox)
             return std::nullopt;
 
-        const auto W    = T->window;
-        const auto SIZE = Pointer::windowSize(W);
-        const auto LAST = Pointer::lastPos(W);
-        const auto FROM = Path::clampTo(LAST ? *LAST : SIZE / 2, SIZE);
+        const auto                             W    = T->window;
+        const auto                             SIZE = Pointer::windowSize(W);
+        const auto                             LAST = Pointer::lastPos(W);
+        const auto                             FROM = Path::clampTo(LAST ? *LAST : SIZE / 2, SIZE);
         std::uniform_real_distribution<double> jitter{0.7, 1.3};
 
         glide.emplace(SGlide{.action = c, .window = W, .segs = Path::plan(FROM, c.pos, SIZE, pace, rng(), {.w = c.size}), .target = c.pos});
@@ -256,8 +233,8 @@ namespace VClick::Glide {
         glide->period  = std::clamp(sc<int>(std::lround(1000.0 / pace.rateHz)), 4, 16);
         glide->start   = Time::steadyNow();
 
-        glide->at      = FROM;
-        glide->held    = Pointer::heldButton().has_value();
+        glide->at   = FROM;
+        glide->held = Pointer::heldButton().has_value();
         Cursor::prepare(W);
         Cursor::show(W, FROM);
         const auto R = moveTo(W, FROM);

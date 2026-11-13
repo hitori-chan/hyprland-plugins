@@ -20,6 +20,7 @@ hyprctl vclick click  $W 640 300 double          # double-click a word
 hyprctl vclick click  $W 640 300 right           # a context menu
 hyprctl vclick scroll $W 640 500 down 12         # 12 wheel steps, 50 ms apart
 hyprctl vclick scroll $W 640 500 up 3 200ms      # slower
+hyprctl vclick scroll $W 640 500 down 400px      # a finger's on a touchpad, by pixels
 hyprctl vclick move   $W 640 300                 # hover there
 hyprctl vclick press  $W 100 400                 # hold the button down there,
 hyprctl vclick move   $W 500 400                 #   drag it (a slider, a selection),
@@ -86,7 +87,8 @@ the glide moves at a typical mouse user's pace.
   `release`, `drag`, `key`, `status`, `where`, `hide`, `mode`, `profile`,
   `image`, the Lua functions, the profile file, the errors
 - [Design](docs/design.md): input without the seat, the modes, the
-  glide, the cursor image, the hover, a held button, paced scrolling,
-  the same app, the keyboard, under the lockscreen, limits
+  glide, the cursor image, the hover, a held button, paced scrolling, a
+  finger's scroll, the same app, the keyboard, under the lockscreen,
+  limits
 - [Testing](docs/testing.md): the build, the unit cases, the nested
   check

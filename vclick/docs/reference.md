@@ -8,7 +8,7 @@ The whole command and its answers. Examples are in the
 
 ```sh
 hyprctl vclick click  <window> <x> <y> [button] [double|triple] [glide|jump] [size:<px>]
-hyprctl vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [glide|jump] [size:<px>]
+hyprctl vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [<n>px] [glide|jump] [size:<px>]
 hyprctl vclick move   <window> <x> <y> [glide|jump] [size:<px>]
 hyprctl vclick press  <window> <x> <y> [button] [glide|jump] [size:<px>]
 hyprctl vclick release
@@ -41,6 +41,9 @@ The options follow the point, in any order, each at most once.
   The first step goes at once; the rest follow at that pace
   ([design](design.md#paced-scrolling)). `0ms` sends every step in one
   burst, which many apps speed up.
+- `<n>px`: instead of wheel steps, a finger's scroll on a touchpad by
+  that many pixels, `1px` to `10000px`, exactly, at the user's pace; no
+  steps or pace with it ([design](design.md#a-fingers-scroll)).
 - `move`: go there, and keep the hover until the user's pointer changes
   surface, vclick's next input goes into another app, `hide`, or the
   plugin unloads ([design](design.md#the-hover)). With a button held, the
@@ -81,7 +84,7 @@ checks:
 
 ```lua
 hl.plugin.vclick.click(window, x, y, [button], ["double"|"triple"], ["glide"|"jump"])
-hl.plugin.vclick.scroll(window, x, y, "up"|"down"|"left"|"right", [steps], ["<ms>ms"], ["glide"|"jump"])
+hl.plugin.vclick.scroll(window, x, y, "up"|"down"|"left"|"right", [steps], ["<ms>ms"], ["<n>px"], ["glide"|"jump"])
 hl.plugin.vclick.move(window, x, y, ["glide"|"jump"])
 hl.plugin.vclick.press(window, x, y, [button], ["glide"|"jump"])
 hl.plugin.vclick.release()
@@ -161,7 +164,8 @@ changing surface ends it.
 
 - `moving`: a glide runs, its dwell included.
 - `dragging`: a glide runs with a button held.
-- `scrolling <done>/<steps>`: a paced scroll runs.
+- `scrolling <done>/<steps>`: a paced scroll runs; `scrolling
+  <done>/<n> px`: a finger's.
 - `idle`, then `; holding <button>` while one is held, then `; <why>`
   when the last glide, scroll or hold ended early, until the next one
   starts:
@@ -178,7 +182,9 @@ changing surface ends it.
   - `the app began a drag-and-drop as the button went up, ...; refused`;
   - `the last drag's release failed: <error>`;
   - `the last glide's input failed: <error>`;
-  - `the last scroll stopped after <done>/<steps>: <error>`.
+  - `the last scroll stopped after <done>/<steps>: <error>` (or
+    `<done>/<n> px: <why>`: the window closed or was hidden, the user's
+    pointer came into the app).
 
 Nothing else is taken while a glide or a scroll runs. To wait for one:
 
@@ -266,12 +272,14 @@ images)` follows when the hook could not be installed.
   twice`, `error: a scroll needs its direction: up, down, left or
   right`, `error: '<n>': steps must be 1-20`, `error: '<n>ms': the pace
   must be 0ms-1000ms`, `error: 'size:<n>': the target's size must be
-  4-1000 px`, `error: a drag needs where it lets go: <x2> <y2>`: a
+  4-1000 px`, `error: a drag needs where it lets go: <x2> <y2>`,
+  `error: '<n>px': a scroll by px must be 1px-10000px`, `error: a scroll
+  by px takes no steps or pace: a finger's goes at the user's`: a
   malformed request; the usage follows. `error: <x2>,<y2> is outside
   the window (<w>x<h>)`: a drag's end.
 - `error: busy: still moving; retry later`, `error: busy: still
   dragging; retry later`, `error: busy: still scrolling <done>/<steps>;
-  retry later`: a glide or a paced scroll is running.
+  retry later` (or `<done>/<n> px`): a glide or a scroll is running.
 - `error: busy: holding <button>; release it first`, `error: busy:
   holding <button> in another window; release it first`: a request a
   held button doesn't allow. `error: no button is held`: a `release`
@@ -285,8 +293,8 @@ images)` follows when the hook could not be installed.
   ([design](design.md#the-same-app)). Input into other apps goes
   through meanwhile.
 - `error: busy: the user's pointer is in this app; a move would take it
-  from them` (or `a press`, `a drag`): one into the app under the user's
-  mouse.
+  from them` (or `a press`, `a drag`, `a scroll by px`): one into the app
+  under the user's mouse.
 - `error: '<key>' is not a key`, `error: '<word>' is not a modifier`: a
   malformed `key`; the usage follows. `error: no keyboard: the seat has
   none to take the keymap from`: the compositor has no keyboard.

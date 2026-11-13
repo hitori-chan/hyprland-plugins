@@ -182,6 +182,26 @@ stops; any other error ends it, and `status` says why. One run at a time
 and nothing else meanwhile, so a script gets exactly the scroll it asked
 for. Unloading ends a run.
 
+## A finger's scroll
+
+`<n>px` scrolls as a finger on a touchpad does: wl_pointer axis events
+from the finger source, no discrete steps, a frame a tick at the
+profile's rate, then `axis_stop` as the finger lifts. Apps scroll by
+pixels for it, so the distance is exact: each tick sends what the time
+since the start says is done, and the deltas sum to the request in the
+protocol's 1/256 px whatever the timer's jitter. The stroke is straight,
+its speed the glide's bell over Fitts's time for its length (100–1000
+ms). The finger then rests 200 ms before it lifts: a toolkit flings at
+the speed of its last 150 ms of deltas (GTK's), so none follows.
+
+Each tick is checked afresh, as a glide's. The user's mouse coming into
+the app takes its pointer: the stroke stops, and `status` says how far
+it got. The user's pointer changing surface elsewhere makes the seat
+leave the app's pointer; the next tick enters again. A stroke cannot
+step out of the user's surface and back as a wheel step does (every
+frame would), so it is refused into the app under the user's mouse.
+Unloading lifts the finger.
+
 ## The same app
 
 An app has one pointer per `wl_pointer`, not per window. When the user's

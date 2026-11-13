@@ -44,6 +44,12 @@ namespace VClick::Path {
         return s.progress[I] + (s.progress[I + 1] - s.progress[I]) * (X - I);
     }
 
+    // control points on the line, at a third and two thirds: the point moves
+    // along it exactly as the progress says
+    static SSeg straight(const Vector2D& from, const Vector2D& to, double ms, std::vector<double> progress) {
+        return {from, from + (to - from) / 3, from + (to - from) * (2.0 / 3), to, ms, std::move(progress)};
+    }
+
     std::vector<SSeg> plan(const Vector2D& from, const Vector2D& to, const Vector2D& bounds, const SProfile& p, std::mt19937& rng, const SAim& aim) {
         const double D = from.distance(to);
         if (D < 2)
@@ -68,24 +74,23 @@ namespace VClick::Path {
         const Vector2D N   = Vector2D{-(end - from).y, (end - from).x} / DE;
         const double   BOW = std::clamp(std::abs(std::normal_distribution<double>{p.bowMean, p.bowSd}(rng)), 0.0, 0.25);
         const double   H1 = BOW * DE / 0.75 * uni(0.85, 1.15), H2 = BOW * DE / 0.75 * uni(0.85, 1.15);
-        const auto     CONTROLS = [&](double side) {
-            return std::pair{from + (end - from) / 3 + N * (side * H1), from + (end - from) * (2.0 / 3) + N * (side * H2)};
-        };
-        const auto CUT = [&](const std::pair<Vector2D, Vector2D>& c) {
-            return clampTo(c.first, bounds).distance(c.first) + clampTo(c.second, bounds).distance(c.second);
-        };
-        const double SIDE = uni(0, 1) < 0.5 ? -1 : 1;
-        auto         c    = CONTROLS(SIDE);
+        const auto     CONTROLS = [&](double side) { return std::pair{from + (end - from) / 3 + N * (side * H1), from + (end - from) * (2.0 / 3) + N * (side * H2)}; };
+        const auto     CUT      = [&](const std::pair<Vector2D, Vector2D>& c) { return clampTo(c.first, bounds).distance(c.first) + clampTo(c.second, bounds).distance(c.second); };
+        const double   SIDE     = uni(0, 1) < 0.5 ? -1 : 1;
+        auto           c        = CONTROLS(SIDE);
         if (const auto OTHER = CONTROLS(-SIDE); CUT(OTHER) < CUT(c))
             c = OTHER;
 
         const auto        PROGRESS = progressFor(p.peak);
         std::vector<SSeg> segs;
-        segs.push_back({from, clampTo(c.first, bounds), clampTo(c.second, bounds), end, std::clamp(fittsMs(DE, p, aim.w) * (end == to ? 1.0 : 0.85), 40.0, MAX_MOVE_MS),
-                        PROGRESS});
+        segs.push_back({from, clampTo(c.first, bounds), clampTo(c.second, bounds), end, std::clamp(fittsMs(DE, p, aim.w) * (end == to ? 1.0 : 0.85), 40.0, MAX_MOVE_MS), PROGRESS});
         if (end != to) // the correction: short and straight
-            segs.push_back({end, end + (to - end) / 3, end + (to - end) * (2.0 / 3), to, std::clamp(fittsMs(end.distance(to), p, aim.w) * 0.8, 60.0, 300.0), PROGRESS});
+            segs.push_back(straight(end, to, std::clamp(fittsMs(end.distance(to), p, aim.w) * 0.8, 60.0, 300.0), PROGRESS));
         return segs;
+    }
+
+    SSeg stroke(double px, const SProfile& p) {
+        return straight({0, 0}, {1, 0}, std::clamp(fittsMs(px, p), MIN_STROKE_MS, MAX_MOVE_MS), progressFor(p.peak));
     }
 
     double duration(const std::vector<SSeg>& segs) {
@@ -95,10 +100,14 @@ namespace VClick::Path {
         return ms;
     }
 
+    Vector2D along(const SSeg& s, double ms) {
+        return ms < s.ms ? bezier(s, progress(s, ms / s.ms)) : s.p3;
+    }
+
     Vector2D sample(const std::vector<SSeg>& segs, double ms) {
         for (const auto& s : segs) {
             if (ms < s.ms)
-                return bezier(s, progress(s, ms / s.ms));
+                return along(s, ms);
             ms -= s.ms;
         }
         return segs.back().p3;
@@ -138,7 +147,7 @@ namespace VClick::Path {
                 K.remove_suffix(1);
             while (!K.empty() && K.front() == ' ')
                 K.remove_prefix(1);
-            const auto             V = number(std::string_view{line}.substr(EQ + 1));
+            const auto V = number(std::string_view{line}.substr(EQ + 1));
             if (!V)
                 continue;
             const auto SET = [&](double& dst, double lo, double hi) {

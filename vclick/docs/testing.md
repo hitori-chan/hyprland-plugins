@@ -20,8 +20,9 @@ Thousands of planned glides, each held to the design: it starts on its
 start and ends exactly on its target, stays in the window, takes Fitts's
 time for the target's size (a correction adds at most 300 ms),
 overshoots and bows within bounds (25 %), no tick moves over 3× the
-average step, and about `overshoot_p` of long moves overshoot. Plus the
-profile parser: values, clamps, skipped bad lines, a missing file. The
+average step, and about `overshoot_p` of long moves overshoot. A
+finger's stroke: Fitts's time within 100–1000 ms, from none to all of
+the way, never back, slow at both ends. Plus the profile parser: values, clamps, skipped bad lines, a missing file. The
 cursor theme reader: an XCursor file's nearest size, its frames and
 delays, refused bad, truncated and oversized files; a shape found by an
 older X name, through `Inherits` and `default`; the search path.
@@ -32,9 +33,11 @@ older X name, through `Inherits` and `default`; the search path.
 make vclick-check    # or: make -C vclick && bash vclick/check.sh
 ```
 
-A nested Hyprland in the gate's private host (`awesome/gate/launch.sh`),
-under the gate's lock and memory cap (never alongside a gate run), with
-only vclick loaded; the live session is never touched. Two GTK3 clients
+A nested Hyprland (`HYPR_BIN`, default `/usr/local/bin/Hyprland`) in
+the gate's private host (`awesome/gate/launch.sh`), under the gate's
+lock and memory cap (never alongside a gate run), with only vclick
+loaded; the live session is never touched. A `vclick.so` built for
+another commit's headers is refused before the launch. Two GTK3 clients
 (`devtools/gtkgrid.py`, each traced): A is the target with a custom
 cursor image, B covers A's lower right as the bystander. `devtools/vptr`
 and `devtools/vkbd` are the user's mouse and keyboard.
@@ -72,6 +75,11 @@ It covers, each against the exact protocol events:
   `dragging`; Fitts's time, no overshoot, the dwell before the release;
   GTK's press and release in their blocks); a jump drag in tap mode; a
   drag from a GTK drag source refused.
+- **a finger's scroll**: its bounds; a stroke summing to the request
+  exactly, every frame from a finger, no wheel steps, one stop, Fitts's
+  time, slow ends, the rest before the lift; GTK reading a touchpad's
+  smooth scroll and its stop (its blue block); a glide there; the user's
+  pointer stopping it; the tap mode's leave.
 - **the cursor theme** (the check's own, through `XCURSOR_PATH`): B's
   named shapes drawn from it with their hotspots, its hidden cursor
   drawn as nothing.

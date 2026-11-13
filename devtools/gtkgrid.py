@@ -3,7 +3,9 @@
 # CSD window of solid color blocks and a menu button whose GtkMenu is an
 # xdg_popup of colored items. Every press prints what GTK thinks it hit, so
 # a click on what is DRAWN must name the same block; every wheel step the
-# block it scrolled. With `cursor`, the window asks for a custom cursor
+# block it scrolled; the blue block takes smooth scrolls instead, each
+# delta and the stop as GTK reads them, with the device GTK names their
+# source (a touchpad's: touchpad). With `cursor`, the window asks for a custom cursor
 # image (a 16x16 rose square, hotspot 0,0) through wl_pointer.set_cursor,
 # as a web page's own cursor does, instead of a named shape. With `shapes`,
 # the yellow block names the `text` shape and the red block hides the
@@ -13,7 +15,8 @@
 # Every key the window hears is logged with the modifiers GTK read with it.
 # usage: gtkgrid.py <log> [wayland|x11] [wayland-debug-log] [cursor|shapes]
 #   log lines: READY | HIT <color> | UP <color> <x> <y> |
-#              SCROLL <color> up|down|left|right | DRAGBEGIN <color> |
+#              SCROLL <color> up|down|left|right | SMOOTH blue <source> <dx> <dy> |
+#              STOP blue <source> | DRAGBEGIN <color> |
 #              DRAGFAILED <color> <result> | DRAGEND <color> |
 #              MENU <color> | MENUBUTTON True|False | KEY <name> <mods>|-
 import os
@@ -43,6 +46,17 @@ def say(*a):
     print(*a, flush=True)
 
 
+def scrolled(_w, ev, name):
+    if ev.direction != Gdk.ScrollDirection.SMOOTH:
+        say("SCROLL", name, ev.direction.value_nick)
+    elif ev.is_scroll_stop_event():
+        say("STOP", name, ev.get_source_device().get_source().value_nick)
+    else:
+        _, dx, dy = ev.get_scroll_deltas()
+        say("SMOOTH", name, ev.get_source_device().get_source().value_nick, f"{dx:g}", f"{dy:g}")
+    return True
+
+
 def swatch(name, rgb, w, h, press=True):
     da = Gtk.DrawingArea()
     da.set_size_request(w, h)
@@ -55,11 +69,12 @@ def swatch(name, rgb, w, h, press=True):
         da.connect("drag-failed", lambda _w, _c, result: (say("DRAGFAILED", name, result.value_nick), True)[-1])
         da.connect("drag-end", lambda *_: say("DRAGEND", name))
     if press:
-        da.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK | Gdk.EventMask.SCROLL_MASK)
+        # the rest take discrete steps only (no SMOOTH_SCROLL_MASK): one line per wheel detent
+        smooth = Gdk.EventMask.SMOOTH_SCROLL_MASK if name == "blue" else 0
+        da.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK | Gdk.EventMask.SCROLL_MASK | smooth)
         da.connect("button-press-event", lambda *_: (say("HIT", name), True)[-1])
         da.connect("button-release-event", lambda _w, ev: (say("UP", name, int(ev.x), int(ev.y)), True)[-1])
-        # discrete steps only (no SMOOTH_SCROLL_MASK): one line per wheel detent
-        da.connect("scroll-event", lambda _w, ev: (say("SCROLL", name, ev.direction.value_nick), True)[-1])
+        da.connect("scroll-event", scrolled, name)
     return da
 
 

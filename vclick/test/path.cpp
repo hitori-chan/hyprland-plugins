@@ -62,7 +62,7 @@ int main() {
         }
         forward &= farthest <= D + 41;
         // the bow: the largest sideways distance stays under 25% of D (the clamp)
-        const Vector2D U = (TO - FROM) / D;
+        const Vector2D U    = (TO - FROM) / D;
         double         side = 0;
         for (double t = 0; t <= MS; t += 4) {
             const auto Q = sample(SEGS, t) - FROM;
@@ -82,11 +82,11 @@ int main() {
 
     // the speed peaks where the profile says
     for (const double PEAK : {0.35, 0.45, 0.6}) {
-        SProfile Q = P;
+        SProfile Q   = P;
         Q.peak       = PEAK;
         Q.overshootP = 0;
         Q.bowMean = Q.bowSd = 0;
-        const auto SEGS     = plan({0, 0}, {800, 0}, {1600, 900}, Q, rng);
+        const auto   SEGS   = plan({0, 0}, {800, 0}, {1600, 900}, Q, rng);
         const double MS     = duration(SEGS);
         double       best = 0, at = 0;
         for (double t = 1; t < MS; t += 1) {
@@ -101,10 +101,10 @@ int main() {
 
     // the target's size is Fitts's W: a wider target is reached sooner
     {
-        SProfile Q   = P;
-        Q.overshootP = 0;
-        const auto   SMALL = duration(plan({0, 0}, {600, 0}, {1600, 900}, Q, rng));
-        const auto   WIDE  = duration(plan({0, 0}, {600, 0}, {1600, 900}, Q, rng, {.w = 128}));
+        SProfile Q       = P;
+        Q.overshootP     = 0;
+        const auto SMALL = duration(plan({0, 0}, {600, 0}, {1600, 900}, Q, rng));
+        const auto WIDE  = duration(plan({0, 0}, {600, 0}, {1600, 900}, Q, rng, {.w = 128}));
         check(std::abs(SMALL - fittsMs(600, Q)) < 1e-6 && std::abs(WIDE - fittsMs(600, Q, 128)) < 1e-6 && WIDE < SMALL - 100,
               "a target's size is Fitts's W (128 px: sooner than 32 px)");
     }
@@ -117,6 +117,27 @@ int main() {
         for (int i = 0; i < 200; ++i)
             once &= plan({0, 0}, {900, 300}, {1600, 900}, Q, rng, {.overshoot = false}).size() == 1;
         check(once && plan({0, 0}, {900, 300}, {1600, 900}, Q, rng).size() == 2, "no overshoot when the aim forbids it (overshoot_p 1)");
+    }
+
+    // a finger's stroke: Fitts's time within its bounds, from none to all
+    // of the way, never back, the bell's ends slow
+    {
+        check(stroke(1, P).ms == MIN_STROKE_MS && stroke(1e6, P).ms == MAX_MOVE_MS && std::abs(stroke(400, P).ms - fittsMs(400, P)) < 1e-9,
+              "a stroke takes Fitts's time for its length, 100-1000 ms");
+        const auto S       = stroke(400, P);
+        bool       forward = along(S, 0).x == 0 && along(S, S.ms) == Vector2D{1, 0} && along(S, 1e9) == Vector2D{1, 0};
+        double     prev = 0, first = 0, last = 0, peak = 0;
+        for (double t = 8; t < S.ms; t += 8) {
+            const auto Q = along(S, t);
+            forward &= Q.y == 0 && Q.x >= prev;
+            if (!first)
+                first = Q.x - prev;
+            last = Q.x - prev;
+            peak = std::max(peak, Q.x - prev);
+            prev = Q.x;
+        }
+        check(forward, "a stroke goes from none to all of the way, straight, never back");
+        check(first < peak / 4 && last < peak / 4, "  slow at both ends, as a finger's");
     }
 
     // the profile file
