@@ -2,7 +2,7 @@
 #include "tests.hpp"
 
 int main() {
-    const NTest::Case CASES[] = {
+    const Test::Case CASES[] = {
         {"bounded", test_bounded},
         {"box", test_box},
         {"store", test_store},
@@ -18,8 +18,8 @@ int main() {
     };
     for (const auto& C : CASES)
         std::printf("[case] %s\n", C.name), C.fn();
-    if (NTest::fails()) {
-        std::printf("== awesome-test: %d FAILURES ==\n", NTest::fails());
+    if (Test::fails()) {
+        std::printf("== awesome-test: %d FAILURES ==\n", Test::fails());
         return 1;
     }
     std::printf("== awesome-test: ALL %zu CASES PASSED ==\n", sizeof(CASES) / sizeof(CASES[0]));

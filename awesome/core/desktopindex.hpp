@@ -29,7 +29,7 @@
 
 class CEventLoopTimer;
 
-namespace NAwesome {
+namespace Awesome {
 
     inline std::string asciiLower(std::string value) {
         for (auto& c : value)
@@ -108,4 +108,4 @@ namespace NAwesome {
         bool                                  m_scanning = false, m_aside = false, m_probing = false;
     };
 
-} // namespace NAwesome
+} // namespace Awesome

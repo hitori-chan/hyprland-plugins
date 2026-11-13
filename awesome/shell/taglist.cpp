@@ -6,7 +6,7 @@
 
 #include <array>
 
-namespace NAwesome::Shell {
+namespace Awesome::Shell {
 
     static const char* KANJI[9] = {"一", "二", "三", "四", "五", "六", "七", "八", "九"};
 
@@ -34,7 +34,7 @@ namespace NAwesome::Shell {
                 if (F.urgent[i])
                     return hover ? F.urgentHover : F.urgentFg;
                 if (F.windows[i] > 0)
-                    return hover ? NAwesome::tTitle() : F.fg;
+                    return hover ? Awesome::tTitle() : F.fg;
                 return hover ? F.fg : F.empty;
             }
             static SP<ITexture> label(const SPaint& P, const SFrame& F, int i, bool hover) {
@@ -58,7 +58,7 @@ namespace NAwesome::Shell {
                     const CBox CELL{x, box.y + (P.h - CELL_H) / 2, CELL_W, CELL_H};
                     const bool HOVER = barHover.widget == this && barHover.tag == i && barHover.mon == P.mon->m_id;
                     if (viewed(F, i))
-                        P.rect(CBox{x, box.y, CELL_W, P.h}, NAwesome::tCell());
+                        P.rect(CBox{x, box.y, CELL_W, P.h}, Awesome::tCell());
                     P.texIn(label(P, F, i, HOVER), CELL);
 
                     // the hit spans the bar's height and the gap: no dead
@@ -166,4 +166,4 @@ namespace NAwesome::Shell {
         return *N <= 9 ? KANJI[*N - 1] : std::to_string(*N);
     }
 
-} // namespace NAwesome::Shell
+} // namespace Awesome::Shell

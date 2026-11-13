@@ -20,7 +20,7 @@
 #include <cstdint>
 #include <functional>
 
-namespace NAwesome {
+namespace Awesome {
 
 // The windows module's minimize lives in the windows module: it registers
 // how to restore a minimized window here (cleared in its teardown), so an
@@ -64,4 +64,4 @@ inline bool activateAppWindow(uint32_t pid) {
     return true;
 }
 
-} // namespace NAwesome
+} // namespace Awesome

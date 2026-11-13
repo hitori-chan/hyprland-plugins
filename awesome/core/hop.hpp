@@ -20,7 +20,7 @@
 #include <functional>
 #include <vector>
 
-namespace NAwesome {
+namespace Awesome {
 
     inline std::vector<class CHop*>& hopRegistry() {
         static std::vector<CHop*> R;
@@ -120,4 +120,4 @@ namespace NAwesome {
         tearingDown() = false;
     }
 
-} // namespace NAwesome
+} // namespace Awesome

@@ -9,7 +9,7 @@
 #include <functional>
 #include <memory>
 
-namespace NAwesome {
+namespace Awesome {
 
     // Coalesce store writes out of the event that dirtied them: a burst of
     // window closes must be one write, not one per close, and the write
@@ -46,4 +46,4 @@ namespace NAwesome {
         bool                  m_queued = false;
     };
 
-} // namespace NAwesome
+} // namespace Awesome

@@ -17,7 +17,7 @@
 
 #include "ui.hpp"
 
-namespace NAwesome::Notify {
+namespace Awesome::Notify {
 
     namespace {
         // one alt line of a failed body <img>: the text, its raster, its height
@@ -73,7 +73,7 @@ namespace NAwesome::Notify {
         const float  RP    = rPow();
         const int    ROUND = rCard(P.scale);
         const double ICONPX = std::clamp((double)cfg().getI("plugin:awesome:notify:max_icon"), 16.0, 64.0);
-        auto&        GATE   = NAwesome::Canvas::inst().gate();
+        auto&        GATE   = Awesome::Canvas::inst().gate();
 
         // every build gates on the canvas gate, never on P.warm: a measuring
         // pass forces P.warm on to paint nothing, and a build there would be
@@ -342,4 +342,4 @@ namespace NAwesome::Notify {
         return renderCard(MP, T, N, CBox{0, 0, w, 0}, F, scratchCard);
     }
 
-} // namespace NAwesome::Notify
+} // namespace Awesome::Notify

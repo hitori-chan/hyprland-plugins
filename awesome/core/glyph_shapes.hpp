@@ -9,7 +9,7 @@
 #include <string>
 #include <string_view>
 
-namespace NAwesome::Glyph {
+namespace Awesome::Glyph {
 
     enum class eGlyph : uint8_t {
         NONE = 0,
@@ -87,4 +87,4 @@ namespace NAwesome::Glyph {
         return std::format(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {} {}">{}</svg>)", S.w, S.h, S.body);
     }
 
-} // namespace NAwesome::Glyph
+} // namespace Awesome::Glyph

@@ -25,7 +25,7 @@
 #include <string>
 #include <string_view>
 
-namespace NAwesome {
+namespace Awesome {
 
     enum class Kind { Int, Double, String, Color };
 
@@ -130,4 +130,4 @@ namespace NAwesome {
         return s;
     }
 
-} // namespace NAwesome
+} // namespace Awesome

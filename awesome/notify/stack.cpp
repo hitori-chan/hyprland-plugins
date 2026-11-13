@@ -11,7 +11,7 @@
 
 #include "ui.hpp"
 
-namespace NAwesome::Notify {
+namespace Awesome::Notify {
 
     // the deck's own drop, as its board draws it (0 6px 14px)
     static constexpr double DECK_DROP = 14, DECK_SINK = 6;
@@ -143,4 +143,4 @@ namespace NAwesome::Notify {
         texCentered(P, TX, B);
     }
 
-} // namespace NAwesome::Notify
+} // namespace Awesome::Notify

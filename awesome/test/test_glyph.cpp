@@ -7,7 +7,7 @@
 
 #include <librsvg/rsvg.h>
 
-using namespace NAwesome::Glyph;
+using namespace Awesome::Glyph;
 
 bool test_glyph() {
     bool ok = true;

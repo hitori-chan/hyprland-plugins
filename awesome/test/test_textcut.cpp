@@ -9,7 +9,7 @@
 #include <string>
 
 bool test_textcut() {
-    using NAwesome::Notify::cutToLines;
+    using Awesome::Notify::cutToLines;
     constexpr size_t ANY = SIZE_MAX;
 
     // what fits is left alone
@@ -55,7 +55,7 @@ bool test_textcut() {
     // malformed markup is left for the parse fallback
     AW_CHECK(cutToLines("<b" + std::string(500, 'x'), true, 10, ANY).empty());
 
-    using NAwesome::Notify::capMarkupHead;
+    using Awesome::Notify::capMarkupHead;
     // the head cap: within the bytes, never inside a tag or an entity,
     // the open tags closed inside the cap
     AW_CHECK(capMarkupHead("short", 10) == "short");

@@ -10,7 +10,7 @@
 
 #include <hyprland/src/managers/input/InputManager.hpp>
 
-namespace NAwesome::Shell {
+namespace Awesome::Shell {
 
     namespace Menu {
         constexpr const char*                 DBUSMENU = "com.canonical.dbusmenu";
@@ -250,10 +250,10 @@ namespace NAwesome::Shell {
         // navigation, and the prompt and the apps keep theirs; a modified
         // chord (Super+Esc) is a user bind passing through, as in the shade.
         bool onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
-            if (!isOpen || info.cancelled || e.state != WL_KEYBOARD_KEY_STATE_PRESSED || NAwesome::sessionLocked() || NAwesome::nativeInputCaptureActive() ||
-                NAwesome::Keys::exclusiveLayer())
+            if (!isOpen || info.cancelled || e.state != WL_KEYBOARD_KEY_STATE_PRESSED || Awesome::sessionLocked() || Awesome::nativeInputCaptureActive() ||
+                Awesome::Keys::exclusiveLayer())
                 return false;
-            const auto KB = NAwesome::Keys::keyboardFor(e.keycode);
+            const auto KB = Awesome::Keys::keyboardFor(e.keycode);
             if (!KB || !KB->m_xkbState || xkb_state_key_get_one_sym(KB->m_xkbState, e.keycode + 8) != XKB_KEY_Escape)
                 return false;
             for (const char* M : {XKB_MOD_NAME_CTRL, XKB_MOD_NAME_ALT, XKB_MOD_NAME_LOGO})
@@ -405,9 +405,9 @@ namespace NAwesome::Shell {
                                 if (auto it = P.find("icon-name"); it != P.end()) {
                                     iconName = it->second.get<std::string>();
                                     if (iconName.size() <= MAX_LABEL_BYTES) {
-                                        NAwesome::iconDeferred() = false;
+                                        Awesome::iconDeferred() = false;
                                         en.icon                  = namedIcon(iconName);
-                                        deferred                 = !en.icon && NAwesome::iconDeferred();
+                                        deferred                 = !en.icon && Awesome::iconDeferred();
                                     }
                                 }
                                 if (!en.icon && inlineDecodes < MAX_INLINE_DECODES) // nm-applet ships its signal-strength icons inline
@@ -570,8 +570,8 @@ namespace NAwesome::Shell {
             // a minimized target must be un-minimized, not focused while
             // hidden — restore() unhides, re-tiles, raises, focuses and
             // re-enters any fullscreen it held
-            if (NAwesome::Windows::Tasklist::isMinimized(w))
-                NAwesome::Windows::Tasklist::restore(w);
+            if (Awesome::Windows::Tasklist::isMinimized(w))
+                Awesome::Windows::Tasklist::restore(w);
             else {
                 Desktop::windowState()->raise(w);
                 Desktop::focusState()->fullWindowFocus(w, Desktop::FOCUS_REASON_DISPATCH_FOCUSWINDOW, w->wlSurface()->resource());
@@ -588,8 +588,8 @@ namespace NAwesome::Shell {
             for (const auto& W : Desktop::windowState()->windows()) {
                 // minimized windows stay listed (awesome's client_list un-minimizes) —
                 // mirror isTaskOn; only genuinely-hidden (swallowed) ones drop out
-                if (NAwesome::isClient(W) && (!W->isHidden() || NAwesome::Windows::Tasklist::isMinimized(W)))
-                    ws.emplace_back(NAwesome::winOrder().seqOf(W.get()), W);
+                if (Awesome::isClient(W) && (!W->isHidden() || Awesome::Windows::Tasklist::isMinimized(W)))
+                    ws.emplace_back(Awesome::winOrder().seqOf(W.get()), W);
             }
             if (ws.empty())
                 return;
@@ -600,13 +600,13 @@ namespace NAwesome::Shell {
             for (const auto& [SEQ, W] : ws) {
                 std::string lbl;
                 Tasklist::label(W, lbl);
-                NAwesome::iconDeferred() = false;
+                Awesome::iconDeferred() = false;
                 const auto& APP          = W->metadata().appID();
                 auto        ICON         = appIcon(APP);
-                const bool  DEFERRED     = !ICON && NAwesome::iconDeferred();
+                const bool  DEFERRED     = !ICON && Awesome::iconDeferred();
                 // a row reads as its task does: minimized wins over focus
                 // (the focus fallback can rest on a hidden window)
-                const bool MIN = NAwesome::Windows::Tasklist::isMinimized(W);
+                const bool MIN = Awesome::Windows::Tasklist::isMinimized(W);
                 rows.push_back({.display   = std::move(lbl),
                                 .alert     = !MIN && W != FOCUS && (W->m_hints & Desktop::View::WINDOW_HINT_URGENT),
                                 .tag       = tagName(W->m_workspace),
@@ -677,8 +677,8 @@ namespace NAwesome::Shell {
             // the Frost menu: the glass at the menu radius, the row under the
             // pointer on the pill, hairline separators, glyph checks and
             // chevrons — the card menu's look (notify/menu.cpp)
-            namespace Th       = NAwesome::Theme;
-            namespace G        = NAwesome::Glyph;
+            namespace Th       = Awesome::Theme;
+            namespace G        = Awesome::Glyph;
             const int   RPANEL = (int)std::lround(Th::RAD_MENU * PAINT.scale);
             const float RP     = (float)Th::ROUNDING_POWER;
             const int   GLYPHPX = (int)std::lround(14 * PAINT.scale);
@@ -686,7 +686,7 @@ namespace NAwesome::Shell {
             const double ROWH = Menu::ROWH, SEPH = Menu::SEPH, PAD = Menu::PAD;
             // the pill under the row the pointer is on: 4 px off the panel's sides
             constexpr double PILL_INSET = 4;
-            const int        PILL_R     = (int)std::lround(NAwesome::Theme::RAD_ROW * PAINT.scale);
+            const int        PILL_R     = (int)std::lround(Awesome::Theme::RAD_ROW * PAINT.scale);
             const double MTOP = PAINT.mb.y + PAINT.h + Menu::GAP, MBOT = PAINT.mb.y + PAINT.mb.h - 8;
 
             for (size_t li = 0; li < Menu::levels.size(); li++) {
@@ -699,9 +699,9 @@ namespace NAwesome::Shell {
                 if (PAINT.warm)
                     for (auto& E : L.entries)
                         if (!E.icon && !E.iconRetry.empty()) {
-                            NAwesome::iconDeferred() = false;
+                            Awesome::iconDeferred() = false;
                             E.icon                   = E.iconOfApp ? appIcon(E.iconRetry) : namedIcon(E.iconRetry);
-                            if (E.icon || !NAwesome::iconDeferred())
+                            if (E.icon || !Awesome::iconDeferred())
                                 E.iconRetry.clear();
                         }
 
@@ -729,7 +729,7 @@ namespace NAwesome::Shell {
                 const int        TAGPT  = std::max(1, PAINT.pt - (int)std::lround(PAINT.scale));
                 // a section header starts where the leading column does
                 const double     HX     = COLW > 0 ? 10 : 12;
-                const auto       headTex = [&](const Menu::SEntry& E) { return textTex(E.display, NAwesome::tSub(), TAGPT, capPx(E), "", 600); };
+                const auto       headTex = [&](const Menu::SEntry& E) { return textTex(E.display, Awesome::tSub(), TAGPT, capPx(E), "", 600); };
                 // a row's right-hand words: both faces every pass (the warm
                 // builds the lit one too, so the label's room — and so its
                 // raster's key — is the same in the warm and the draw)
@@ -737,7 +737,7 @@ namespace NAwesome::Shell {
                 const auto       detailW = [&](const Menu::SEntry& E) {
                     if (E.detail.empty() && E.hint.empty())
                         return 0.0;
-                    const double D = E.detail.empty() ? 0 : textInkW(textTex(E.detail, NAwesome::tSub(), TAGPT), PAINT.scale);
+                    const double D = E.detail.empty() ? 0 : textInkW(textTex(E.detail, Awesome::tSub(), TAGPT), PAINT.scale);
                     const double H = E.hint.empty() ? 0 : textInkW(textTex(E.hint, COLFG, TAGPT), PAINT.scale);
                     return std::max(D, H) + DETAIL_GAP;
                 };
@@ -810,7 +810,7 @@ namespace NAwesome::Shell {
                 my0                 = std::clamp(my0, MTOP, std::max(MTOP, MBOT - mh));
                 L.box               = CBox{mx, my0, mw, mh};
 
-                PAINT.frost(L.box, COLMENU, COLFRAME, RPANEL, RP, NAwesome::SPaint::eDepth::MENU);
+                PAINT.frost(L.box, COLMENU, COLFRAME, RPANEL, RP, Awesome::SPaint::eDepth::MENU);
 
                 double my    = my0 + PAD;
                 double myEnd = my0 + mh - PAD;
@@ -847,7 +847,7 @@ namespace NAwesome::Shell {
                         break;
                     }
                     if (E.separator) {
-                        PAINT.rect(CBox{mx + 12, my + SEPH / 2, mw - 24, 1.0 / PAINT.scale}, NAwesome::tHairline());
+                        PAINT.rect(CBox{mx + 12, my + SEPH / 2, mw - 24, 1.0 / PAINT.scale}, Awesome::tHairline());
                         my += SEPH;
                         continue;
                     }
@@ -868,7 +868,7 @@ namespace NAwesome::Shell {
                     const bool OPENSUB = li + 1 < Menu::levels.size() && Menu::levels[li + 1].parentIdx == (int)i;
                     const bool LIT     = ((int)i == L.hover || OPENSUB) && E.enabled;
                     if (LIT)
-                        PAINT.rect(CBox{mx + PILL_INSET, my, mw - 2 * PILL_INSET, ROWH}, NAwesome::tPill(), PILL_R, 2.f);
+                        PAINT.rect(CBox{mx + PILL_INSET, my, mw - 2 * PILL_INSET, ROWH}, Awesome::tPill(), PILL_R, 2.f);
                     CHyprColor fg = !E.enabled ? COLEMPTY : E.current ? COLFOCUS : E.alert ? COLURGENT : E.dim && !LIT ? COLEMPTY : COLFG;
 
                     if (E.icon && E.icon->m_texID != 0) {
@@ -901,14 +901,14 @@ namespace NAwesome::Shell {
                         PAINT.texIn(G::tex(G::eGlyph::CHEVRON_RIGHT, fg, GLYPHPX), CBox{mx + mw - 8 - ARW, my, ARW, ROWH});
                     if (DETW > 0) {
                         const bool HINT = LIT && !E.hint.empty();
-                        if (const auto DT = HINT ? textTex(E.hint, COLFG, TAGPT) : E.detail.empty() ? nullptr : textTex(E.detail, NAwesome::tSub(), TAGPT); DT && DT->m_texID != 0) {
+                        if (const auto DT = HINT ? textTex(E.hint, COLFG, TAGPT) : E.detail.empty() ? nullptr : textTex(E.detail, Awesome::tSub(), TAGPT); DT && DT->m_texID != 0) {
                             const double W = textInkW(DT, PAINT.scale);
                             PAINT.texIn(DT, CBox{mx + mw - 12 - W, my, W, ROWH});
                         }
                     }
                     if (!E.tag.empty()) {
                         const bool PLAIN = !LIT && !E.current && !E.alert && !E.dim;
-                        if (const auto TT = textTex(E.tag, PLAIN ? NAwesome::tSub() : fg, TAGPT); TT && TT->m_texID != 0)
+                        if (const auto TT = textTex(E.tag, PLAIN ? Awesome::tSub() : fg, TAGPT); TT && TT->m_texID != 0)
                             PAINT.texIn(TT, CBox{mx + mw - 12 - TAGW + 8, my, TAGW - 8, ROWH});
                     }
                     L.rows.push_back({ROW, (int)i});
@@ -920,7 +920,7 @@ namespace NAwesome::Shell {
                     // a click steps like a wheel notch
                     const auto arrow = [&](const CBox& B, int id, bool on, G::eGlyph glyph) {
                         if (on && L.hover == id)
-                            PAINT.rect(CBox{B.x + PILL_INSET, B.y, B.w - 2 * PILL_INSET, B.h}, NAwesome::tPill(), PILL_R, 2.f);
+                            PAINT.rect(CBox{B.x + PILL_INSET, B.y, B.w - 2 * PILL_INSET, B.h}, Awesome::tPill(), PILL_R, 2.f);
                         const CHyprColor fg = !on ? COLEMPTY : COLFG;
                         PAINT.texIn(G::tex(glyph, fg, GLYPHPX), B);
                         L.rows.push_back({B, id});
@@ -998,4 +998,4 @@ namespace NAwesome::Shell {
             Menu::close();
     }
 
-} // namespace NAwesome::Shell
+} // namespace Awesome::Shell

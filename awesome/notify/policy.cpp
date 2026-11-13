@@ -8,7 +8,7 @@
 #include <cstdio>
 #include <ctime>
 
-namespace NAwesome::Notify::Policy {
+namespace Awesome::Notify::Policy {
 
     static AppState& state() {
         return StateStore::inst().data();
@@ -138,4 +138,4 @@ namespace NAwesome::Notify::Policy {
         return n.urgency < 2 && ((appFlags(n.appKey) & SOUNDS_OFF) || mutedUntil(chatKey(n)) > 0 || Quiet::now());
     }
 
-} // namespace NAwesome::Notify::Policy
+} // namespace Awesome::Notify::Policy

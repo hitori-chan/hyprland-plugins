@@ -14,7 +14,7 @@
 #include <string_view>
 #include <system_error>
 
-namespace NAwesome::System::Wpctl {
+namespace Awesome::System::Wpctl {
 
     struct SReadback {
         double value = 0;
@@ -56,4 +56,4 @@ namespace NAwesome::System::Wpctl {
         return SReadback{number, true};
     }
 
-} // namespace NAwesome::System::Wpctl
+} // namespace Awesome::System::Wpctl

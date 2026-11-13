@@ -41,7 +41,7 @@
 #include <utility>
 #include <vector>
 
-namespace NAwesome::Windows {
+namespace Awesome::Windows {
 
     namespace Click {
         inline void raiseWindow(PHLWINDOW w) {
@@ -361,4 +361,4 @@ namespace NAwesome::Windows {
         }
     } // namespace Click
 
-} // namespace NAwesome::Windows
+} // namespace Awesome::Windows

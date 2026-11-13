@@ -31,7 +31,7 @@
 #include <ctime>
 #include <format>
 
-namespace NAwesome::Notify::CardMenu {
+namespace Awesome::Notify::CardMenu {
 
     enum eVerb : uint8_t {
         SEP = 0,
@@ -323,4 +323,4 @@ namespace NAwesome::Notify::CardMenu {
         }
     }
 
-} // namespace NAwesome::Notify::CardMenu
+} // namespace Awesome::Notify::CardMenu

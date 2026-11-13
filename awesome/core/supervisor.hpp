@@ -31,7 +31,7 @@
 #include <string>
 #include <vector>
 
-namespace NAwesome::detail {
+namespace Awesome::detail {
 
     // mirror of CSignalT's RefArg (a nested alias there): trivially
     // copyable args by value, the rest by const reference
@@ -60,9 +60,9 @@ namespace NAwesome::detail {
         }
     };
 
-} // namespace NAwesome::detail
+} // namespace Awesome::detail
 
-namespace NAwesome {
+namespace Awesome {
 
     struct IModule {
         virtual ~IModule() = default;
@@ -344,4 +344,4 @@ namespace NAwesome {
         return Supervisor::inst();
     }
 
-} // namespace NAwesome
+} // namespace Awesome

@@ -16,7 +16,7 @@
 #include <cstdint>
 #include <unordered_map>
 
-namespace NAwesome {
+namespace Awesome {
 
     // a config color, converted once per value change (main thread only).
     // CHyprColor's uint64 ctor OkLab-converts: constants must never be
@@ -89,4 +89,4 @@ namespace NAwesome {
         return (double)*SIZE * (1 << std::clamp((int)*PASSES, 1, 6));
     }
 
-} // namespace NAwesome
+} // namespace Awesome

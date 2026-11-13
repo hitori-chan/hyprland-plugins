@@ -32,7 +32,7 @@ extern "C" {
 
 extern char** environ;
 
-namespace NAwesome::Proc {
+namespace Awesome::Proc {
 
     struct SOptions {
         int  stdoutFd   = -1;    // dup2'd onto stdout; -1 = /dev/null
@@ -151,4 +151,4 @@ namespace NAwesome::Proc {
         return std::nullopt;
     }
 
-} // namespace NAwesome::Proc
+} // namespace Awesome::Proc

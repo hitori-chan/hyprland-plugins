@@ -25,7 +25,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace NAwesome {
+namespace Awesome {
 
     class CArrivalOrder {
       public:
@@ -101,4 +101,4 @@ namespace NAwesome {
         return O;
     }
 
-} // namespace NAwesome
+} // namespace Awesome

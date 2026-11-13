@@ -29,7 +29,7 @@
 #include <algorithm>
 #include <limits>
 
-namespace NAwesome {
+namespace Awesome {
 
     // Input emissions reach plugins BEFORE the compositor's session-lock
     // checks: every input handler gates on this first — and resets its
@@ -271,4 +271,4 @@ namespace NAwesome {
         }
     }
 
-} // namespace NAwesome
+} // namespace Awesome

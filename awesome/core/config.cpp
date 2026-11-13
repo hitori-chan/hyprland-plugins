@@ -4,7 +4,7 @@
 
 #include <stdexcept>
 
-namespace NAwesome {
+namespace Awesome {
 
     void ConfigRegistry::init(HANDLE handle) {
         m_slots = {};
@@ -61,4 +61,4 @@ namespace NAwesome {
         return std::string{SPECS[key.index].sval};
     }
 
-} // namespace NAwesome
+} // namespace Awesome

@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-namespace NAwesome::DesktopExec {
+namespace Awesome::DesktopExec {
 
     // Localized desktop entries commonly exceed 16 KiB (Firefox and Thunar
     // do), while the asynchronous handoff still needs a firm memory bound.
@@ -481,4 +481,4 @@ namespace NAwesome::DesktopExec {
         return n % 2 == 1;
     }
 
-} // namespace NAwesome::DesktopExec
+} // namespace Awesome::DesktopExec

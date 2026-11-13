@@ -17,7 +17,7 @@
 #include <sstream>
 #include <utility>
 
-namespace NAwesome::Notify {
+namespace Awesome::Notify {
 
     // ---- fallback_icon_dir: iconless cards wear a face (the left identity) ----
     //
@@ -28,7 +28,7 @@ namespace NAwesome::Notify {
     // iconless card wears the generic mark, and the warm the listing
     // triggers re-rolls it. Scanned once per config life (a reload rescans).
 
-    static NAwesome::CAsyncFileIndex     fallbackIndex;
+    static Awesome::CAsyncFileIndex     fallbackIndex;
     static SP<CEventLoopTimer>           fallbackPoll;
     static std::vector<std::string>      fallbackFiles;
     static uint64_t                      fallbackGen = 0;
@@ -54,7 +54,7 @@ namespace NAwesome::Notify {
     static void pollFallback() {
         if (fallbackScan != EFallbackScan::SCANNING)
             return;
-        std::vector<NAwesome::CAsyncFileIndex::SEntry> entries;
+        std::vector<Awesome::CAsyncFileIndex::SEntry> entries;
         const bool COMPLETE = fallbackIndex.poll(fallbackGen, entries, 256);
         for (const auto& E : entries)
             if (!E.directory)
@@ -71,14 +71,14 @@ namespace NAwesome::Notify {
     }
 
     static std::string pickFallback() {
-        const auto DIR = std::string{NAwesome::cfg().getS("plugin:awesome:notify:fallback_icon_dir")};
+        const auto DIR = std::string{Awesome::cfg().getS("plugin:awesome:notify:fallback_icon_dir")};
         if (DIR.empty())
             return "";
         if (fallbackScan == EFallbackScan::NONE) {
             fallbackScan = EFallbackScan::DONE; // without the loop: no faces
             if (!fallbackPoll)
                 return "";
-            NAwesome::CAsyncFileIndex::SRequest request;
+            Awesome::CAsyncFileIndex::SRequest request;
             request.generation = ++fallbackGen;
             request.roots      = {DIR};
             request.extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".avif", ".jxl", ".svg"};
@@ -149,7 +149,7 @@ namespace NAwesome::Notify {
         // /proc/self/fd/N — the inode the core checked, never the path
         // again (a swap after the check cannot reach it) — and reads it off
         // this thread. Closed with the job, once the decode is done.
-        NAwesome::CImageFile                                           file;
+        Awesome::CImageFile                                           file;
         Hyprutils::Memory::CAtomicSharedPointer<Hyprgraphics::CImageResource> resource;
         bool                                                           rejected = false; // too big or not a file: settled null
         bool                                                           readyAtPoll = false;
@@ -203,7 +203,7 @@ namespace NAwesome::Notify {
     // also bounds replaced and deleted cards). An SVG's viewport is the
     // size it rasters at: an icon's, or a hero's box width.
     static SDecodeJob* decodeJobFor(const std::string& source, int svgPx) {
-        const int SVG_PX = NAwesome::isSvgIconPath(source) ? std::clamp(svgPx, 1, 1024) : 0;
+        const int SVG_PX = Awesome::isSvgIconPath(source) ? std::clamp(svgPx, 1, 1024) : 0;
         if (const auto IT = std::ranges::find_if(decodeJobs, [&](const auto& job) { return job.source == source && job.svgPx == SVG_PX; }); IT != decodeJobs.end()) {
             IT->wanted = true;
             return &*IT;
@@ -213,7 +213,7 @@ namespace NAwesome::Notify {
             waitedForDecodeSlot = true; // a landing decode re-warms (the poll), a freed slot too
             return nullptr;
         }
-        auto file = NAwesome::openAdmissibleImage(source);
+        auto file = Awesome::openAdmissibleImage(source);
         if (!file) {
             decodeJobs.push_back(SDecodeJob{.source = source, .rejected = true, .wanted = true});
             return &decodeJobs.back();
@@ -267,7 +267,7 @@ namespace NAwesome::Notify {
     // riding the icon-name stand-in for its desktop entry
     static void onDesktopEntries() {
         bool      identityChanged = false;
-        const int ICONPX          = std::max(8, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon"));
+        const int ICONPX          = std::max(8, (int)Awesome::cfg().getI("plugin:awesome:notify:max_icon"));
         for (const auto& N : notifs) {
             if (!N->identityFromDesktop)
                 continue;
@@ -290,14 +290,14 @@ namespace NAwesome::Notify {
     // the desktop entry's own Icon= (the index's value), resolved to a file.
     // Empty while the index has not reached the entry.
     std::string resolveDesktopEntryIcon(const std::string& entry, int sizePx) {
-        const auto* ICON = NAwesome::CDesktopIndex::inst().findIcon(lowerKey(entry));
+        const auto* ICON = Awesome::CDesktopIndex::inst().findIcon(lowerKey(entry));
         return ICON ? Parse::resolveImage(*ICON, sizePx) : "";
     }
 
     // one deterministic initials face per (identity, name, font, size): the
     // facepile never shows a blank square for a faceless sender
     static SP<ITexture> generatedAvatar(const std::string& identity, const std::string& name, int iconPx) {
-        const auto BG   = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:theme:col_glass"));
+        const auto BG   = Awesome::color(Awesome::cfg().getColor("plugin:awesome:theme:col_glass"));
         const bool DARK = BG.r + BG.g + BG.b < 1.5f;
         const auto TINT = Pixel::avatarColor(identity, DARK);
         const int  PX   = std::clamp(iconPx, 16, 128);
@@ -309,13 +309,13 @@ namespace NAwesome::Notify {
         };
         appendKey(identity);
         appendKey(name);
-        appendKey(std::string{NAwesome::cfg().getS("plugin:awesome:notify:font")});
+        appendKey(std::string{Awesome::cfg().getS("plugin:awesome:notify:font")});
         KEY += std::to_string(PX) + ":" + std::to_string(DARK);
         if (const auto IT = generatedAvatars.find(KEY); IT != generatedAvatars.end()) {
             avatarLru.splice(avatarLru.end(), avatarLru, IT->second.second);
             return IT->second.first;
         }
-        if (!NAwesome::Canvas::inst().gate().mayBuild() || !g_pHyprRenderer)
+        if (!Awesome::Canvas::inst().gate().mayBuild() || !g_pHyprRenderer)
             return {};
 
         auto* SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, PX, PX);
@@ -328,10 +328,10 @@ namespace NAwesome::Notify {
         cairo_set_source_rgb(CR, TINT.r, TINT.g, TINT.b);
         cairo_paint(CR);
         auto*      LAYOUT = pango_cairo_create_layout(CR);
-        NAwesome::applyTextOptions(LAYOUT);
+        Awesome::applyTextOptions(LAYOUT);
         const auto LABEL  = Pixel::initials(name.empty() ? identity : name);
         pango_layout_set_text(LAYOUT, LABEL.c_str(), -1);
-        auto* FONT = pango_font_description_from_string(std::string{NAwesome::cfg().getS("plugin:awesome:notify:font")}.c_str());
+        auto* FONT = pango_font_description_from_string(std::string{Awesome::cfg().getS("plugin:awesome:notify:font")}.c_str());
         pango_font_description_set_size(FONT, std::max(8, (int)std::lround(PX * 0.38)) * PANGO_SCALE);
         pango_font_description_set_weight(FONT, PANGO_WEIGHT_BOLD);
         pango_layout_set_font_description(LAYOUT, FONT);
@@ -396,7 +396,7 @@ namespace NAwesome::Notify {
             s.heroH = std::min((int)std::lround((double)heroWPx * sh / sw), heroHCapPx);
         }
         if (tint)
-            s.ink = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg"));
+            s.ink = Awesome::color(Awesome::cfg().getColor("plugin:awesome:notify:col_fg"));
         return s;
     }
 
@@ -497,7 +497,7 @@ namespace NAwesome::Notify {
     // a pure-shape mark the toolkit repaints with the widget's foreground.
     // Adwaita bakes them near-black: on a dark card fileTex repaints them.
     static bool isSymbolicIconPath(const std::string& path) {
-        return NAwesome::isSvgIconPath(path) && (path.find("-symbolic") != std::string::npos || path.find("/symbolic/") != std::string::npos);
+        return Awesome::isSvgIconPath(path) && (path.find("-symbolic") != std::string::npos || path.find("/symbolic/") != std::string::npos);
     }
 
     struct SFileTexResult {
@@ -518,12 +518,12 @@ namespace NAwesome::Notify {
     // mark (a fixed theme name, not a sender's file).
     static SFileTexResult syncFileTex(const std::string& path, int iconPx, int heroWPx, int heroHCapPx, bool tintSymbolic = false, int badgePx = 0) {
         const int  HINT  = std::max(iconPx, heroWPx);
-        const auto BYTES = NAwesome::readImageFile(path); // one non-blocking open; these bytes are what decodes
+        const auto BYTES = Awesome::readImageFile(path); // one non-blocking open; these bytes are what decodes
         if (!BYTES)
             return {.settled = true};
         // the format named, not sniffed: AUTO loads libmagic's database per
         // image, on this thread
-        const auto FORMAT = NAwesome::isSvgIconPath(path)                                                                          ? Hyprgraphics::IMAGE_FORMAT_SVG :
+        const auto FORMAT = Awesome::isSvgIconPath(path)                                                                          ? Hyprgraphics::IMAGE_FORMAT_SVG :
             BYTES->size() >= 4 && (*BYTES)[0] == 0x89 && (*BYTES)[1] == 'P' && (*BYTES)[2] == 'N' && (*BYTES)[3] == 'G' ? Hyprgraphics::IMAGE_FORMAT_PNG :
             BYTES->size() >= 2 && (*BYTES)[0] == 0xff && (*BYTES)[1] == 0xd8                                              ? Hyprgraphics::IMAGE_FORMAT_JPEG :
                                                                                                                              Hyprgraphics::IMAGE_FORMAT_AUTO;
@@ -586,7 +586,7 @@ namespace NAwesome::Notify {
         auto           OUT    = std::make_shared<SScaledImage>();
         // the work holds the decode alive through the gatherer's atomic
         // pointer and reads its pixels in place; nothing else crosses
-        const bool QUEUED = NAwesome::CRasterWorker::inst().submit([RES = JOB->resource, SRC, SPEC, OUT]() { *OUT = scaleFor(SRC, SPEC); },
+        const bool QUEUED = Awesome::CRasterWorker::inst().submit([RES = JOB->resource, SRC, SPEC, OUT]() { *OUT = scaleFor(SRC, SPEC); },
                                                                    [RES = JOB->resource, OUT, TICKET, SOURCE = JOB->source, SVGPX = JOB->svgPx]() {
                                                                        for (auto& job : decodeJobs)
                                                                            if (job.source == SOURCE && job.svgPx == SVGPX)
@@ -638,8 +638,8 @@ namespace NAwesome::Notify {
     // reload drops them (the theme may have changed).
     static SP<ITexture> genericMarkNow(int px);
     static SP<ITexture> genericMark(int px) {
-        const auto KEY = std::to_string(px) + "|" + std::to_string(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg")) + "|" +
-            std::to_string(NAwesome::cfg().getColor("plugin:awesome:theme:col_rim"));
+        const auto KEY = std::to_string(px) + "|" + std::to_string(Awesome::cfg().getColor("plugin:awesome:notify:col_fg")) + "|" +
+            std::to_string(Awesome::cfg().getColor("plugin:awesome:theme:col_rim"));
         if (const auto IT = genericMarks.find(KEY); IT != genericMarks.end())
             return IT->second;
         auto TEX = genericMarkNow(px);
@@ -657,7 +657,7 @@ namespace NAwesome::Notify {
 
         auto*        SURF = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, px, px);
         auto*        CT   = cairo_create(SURF);
-        const auto   INK  = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg")), PLATE = NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:theme:col_rim"));
+        const auto   INK  = Awesome::color(Awesome::cfg().getColor("plugin:awesome:notify:col_fg")), PLATE = Awesome::color(Awesome::cfg().getColor("plugin:awesome:theme:col_rim"));
         auto         rounded = [&](double x, double y, double w, double h, double r) {
             cairo_new_sub_path(CT);
             cairo_arc(CT, x + w - r, y + r, r, -M_PI_2, 0);
@@ -705,7 +705,7 @@ namespace NAwesome::Notify {
     static SP<CEventLoopTimer> namesPoll;
     void                       iconNamesDeferred() {
         if (namesPoll && !namesPoll->armed())
-            namesPoll->updateTimeout(NAwesome::ICON_WALK_WINDOW + std::chrono::milliseconds(10));
+            namesPoll->updateTimeout(Awesome::ICON_WALK_WINDOW + std::chrono::milliseconds(10));
     }
 
     void ensureIconTex(SNotif& n, int iconPx, int heroWPx, int heroHCapPx) {
@@ -721,7 +721,7 @@ namespace NAwesome::Notify {
             // key carries the fg it was tinted with, so a theme change
             // rebuilds it — the shell's dropStaleTint, per-card edition
             const auto SYM = isSymbolicIconPath(n.identity);
-            const auto KEY = SYM ? n.identity + "\x1f" + std::to_string(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg")) : n.identity;
+            const auto KEY = SYM ? n.identity + "\x1f" + std::to_string(Awesome::cfg().getColor("plugin:awesome:notify:col_fg")) : n.identity;
             if (n.identFor != KEY || n.identIconPx != iconPx) {
                 n.identTex.reset();
                 n.badgeTex.reset();
@@ -753,7 +753,7 @@ namespace NAwesome::Notify {
                 // the generic mark: one neutral face for every iconless
                 // card; the key carries the fg it was drawn in, so a theme
                 // change rebuilds it (the symbolic-identity contract)
-                const auto GENERIC = "__awesome_generic__\x1f" + std::to_string(NAwesome::cfg().getColor("plugin:awesome:notify:col_fg"));
+                const auto GENERIC = "__awesome_generic__\x1f" + std::to_string(Awesome::cfg().getColor("plugin:awesome:notify:col_fg"));
                 if (n.identFor != GENERIC || n.identIconPx != iconPx) {
                     n.identTex.reset();
                     n.badgeTex.reset();
@@ -807,7 +807,7 @@ namespace NAwesome::Notify {
                 auto           SRC    = std::make_shared<SPixels>(std::move(src));
                 auto           OUT    = std::make_shared<SScaledImage>();
                 const uint64_t TICKET = imageJobTicket();
-                const bool     QUEUED = NAwesome::CRasterWorker::inst().submit(
+                const bool     QUEUED = Awesome::CRasterWorker::inst().submit(
                     [SRC, OUT, SPEC]() mutable {
                         *OUT = scaleFor(Raster::view(*SRC), SPEC);
                         SRC.reset();
@@ -857,7 +857,7 @@ namespace NAwesome::Notify {
             // a vector has no size of its own: rastered at the hero width it
             // would always measure hero-worthy, and a theme's SVG named as
             // the image would turn into a card-wide strip
-            const auto TEX = fileTex(n.image, iconPx, NAwesome::isSvgIconPath(n.image) ? 0 : heroWPx, heroHCapPx, false);
+            const auto TEX = fileTex(n.image, iconPx, Awesome::isSvgIconPath(n.image) ? 0 : heroWPx, heroHCapPx, false);
             if (TEX.settled) {
                 n.iconTex      = TEX.texture;
                 n.thumbTex     = TEX.thumb;
@@ -900,8 +900,8 @@ namespace NAwesome::Notify {
     // inside generatedAvatar): the key carries the bg it was rolled under,
     // so a theme switch re-rolls it.
     void ensureAvatarTex(SChatFace& f, int px) {
-        const std::string KEY = "__awesome_avatar:\x1f" + f.key + "\x1f" + f.name + "\x1f" + std::string{NAwesome::cfg().getS("plugin:awesome:notify:font")} + "\x1f" + std::to_string(px) + "\x1f" +
-                                std::to_string(NAwesome::cfg().getColor("plugin:awesome:theme:col_glass"));
+        const std::string KEY = "__awesome_avatar:\x1f" + f.key + "\x1f" + f.name + "\x1f" + std::string{Awesome::cfg().getS("plugin:awesome:notify:font")} + "\x1f" + std::to_string(px) + "\x1f" +
+                                std::to_string(Awesome::cfg().getColor("plugin:awesome:theme:col_glass"));
         if (f.avatarFor == KEY)
             return;
         f.avatarTex = generatedAvatar(f.key, f.name, px);
@@ -921,7 +921,7 @@ namespace NAwesome::Notify {
             fallbackPoll = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { pollFallback(); }, nullptr);
             g_pEventLoopManager->addTimer(fallbackPoll);
         }
-        NAwesome::CDesktopIndex::inst().subscribe(onDesktopEntries);
+        Awesome::CDesktopIndex::inst().subscribe(onDesktopEntries);
     }
 
     void iconsExit() {
@@ -954,4 +954,4 @@ namespace NAwesome::Notify {
         scaleDeferred       = false;
     }
 
-} // namespace NAwesome::Notify
+} // namespace Awesome::Notify

@@ -9,9 +9,9 @@
 #include "core/queries.hpp"
 #include "core/theme.hpp"
 
-namespace NAwesome::Shell {
+namespace Awesome::Shell {
 
-    namespace WT = NAwesome::Windows::Tasklist;
+    namespace WT = Awesome::Windows::Tasklist;
 
     // awesome's tasklist text: state markers, then the title. The stock set
     // is ▪ sticky, ⌃ ontop, ▴ above, ▾ below, + maximized, ⬌/⬍ maximized
@@ -27,7 +27,7 @@ namespace NAwesome::Shell {
     //   ▴/▾/⬌/⬍ have no Hyprland analog.
     void Tasklist::label(const PHLWINDOW& w, std::string& out) {
         out.clear();
-        if (NAwesome::isPinned(w))
+        if (Awesome::isPinned(w))
             out += "⌃";
         // maximized: the configured xdg state where it's honest (floating —
         // the windows module's per-window maximize speaks xdg only), the
@@ -35,8 +35,8 @@ namespace NAwesome::Shell {
         // CSD lie). This runs per task per frame; the chain is a dozen
         // virtual calls.
         bool maximized;
-        if (!w->backend().isX11() && w->isFloating() && NAwesome::xdgToplevel(w))
-            maximized = NAwesome::toldMaximized(w);
+        if (!w->backend().isX11() && w->isFloating() && Awesome::xdgToplevel(w))
+            maximized = Awesome::toldMaximized(w);
         else
             maximized = Fullscreen::controller()->getFullscreenModes(w).internal == Fullscreen::FSMODE_MAXIMIZED;
         if (maximized)
@@ -159,9 +159,9 @@ namespace NAwesome::Shell {
             void onScrollSteps(int steps, PHLMONITOR mon) override {
                 // focus.byidx ±steps, wrapping through this workspace's tasks
                 // (the focusable ones: a minimized row is listed, not walked)
-                const auto TASKS = NAwesome::winOrder().onWorkspace(mon->m_activeWorkspace, [](const PHLWINDOW& w) { return !WT::isMinimized(w); });
+                const auto TASKS = Awesome::winOrder().onWorkspace(mon->m_activeWorkspace, [](const PHLWINDOW& w) { return !WT::isMinimized(w); });
                 const auto FOCUS = Desktop::focusState() ? Desktop::focusState()->window() : nullptr;
-                if (const auto W = NAwesome::CArrivalOrder::step(TASKS, FOCUS, steps))
+                if (const auto W = Awesome::CArrivalOrder::step(TASKS, FOCUS, steps))
                     WT::raiseAndFocus(W);
             }
         };
@@ -172,4 +172,4 @@ namespace NAwesome::Shell {
         return W;
     }
 
-} // namespace NAwesome::Shell
+} // namespace Awesome::Shell

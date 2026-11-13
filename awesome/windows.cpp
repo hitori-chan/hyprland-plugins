@@ -28,7 +28,7 @@
 #include <string_view>
 #include <vector>
 
-namespace NAwesome::Windows {
+namespace Awesome::Windows {
 
     CModule& module() {
         static CModule M;
@@ -341,4 +341,4 @@ namespace NAwesome::Windows {
         Snap::reset();
     }
 
-} // namespace NAwesome::Windows
+} // namespace Awesome::Windows

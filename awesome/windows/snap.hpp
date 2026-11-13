@@ -53,7 +53,7 @@
 #include <tuple>
 #include <vector>
 
-namespace NAwesome::Windows::Snap {
+namespace Awesome::Windows::Snap {
 
     namespace {
         enum eEdgeV {
@@ -543,4 +543,4 @@ namespace NAwesome::Windows::Snap {
         reset();
     }
 
-} // namespace NAwesome::Windows::Snap
+} // namespace Awesome::Windows::Snap

@@ -2,7 +2,7 @@
 
 #include "harness.hpp"
 
-using namespace NAwesome;
+using namespace Awesome;
 
 bool test_bounded() {
     // clipToUtf8Boundary: cut inside a 4-byte sequence drops it whole

@@ -35,7 +35,7 @@
 #include <optional>
 #include <string>
 
-namespace NAwesome::System {
+namespace Awesome::System {
 
     // The OSD pin ids (the model's OSD band 9990-9999 gives them
     // replace-in-place, no history, no grouping).
@@ -311,4 +311,4 @@ namespace NAwesome::System {
         }
     }
 
-} // namespace NAwesome::System
+} // namespace Awesome::System

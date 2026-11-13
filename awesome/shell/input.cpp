@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <ranges>
 
-namespace NAwesome::Shell {
+namespace Awesome::Shell {
 
     std::map<uint64_t, std::vector<SHit>> hitboxes;
     SBarHover                             barHover;
@@ -34,8 +34,8 @@ namespace NAwesome::Shell {
     // a click's action, out of the input emission (a widget's onHit can
     // change workspace or focus); 16 pending is far past a human's clicks
     // per turn
-    static NAwesome::CHopQueue<SHitJob, 16> hitJobs([](std::vector<SHitJob>& batch) {
-        if (NAwesome::sessionLocked())
+    static Awesome::CHopQueue<SHitJob, 16> hitJobs([](std::vector<SHitJob>& batch) {
+        if (Awesome::sessionLocked())
             return; // the lock can engage between the click and this hop
         for (auto& J : batch) {
             switch (J.kind) {
@@ -57,7 +57,7 @@ namespace NAwesome::Shell {
         hitJobs.push(std::move(job));
     }
 
-    using NAwesome::monitorAt; // core/queries.hpp: allocation-free, runs per pointer motion
+    using Awesome::monitorAt; // core/queries.hpp: allocation-free, runs per pointer motion
 
     // Presses that reached apps (nothing swallowed them) — while one is held an
     // implicit grab may be live, and the strip must not steal the pointer from
@@ -68,7 +68,7 @@ namespace NAwesome::Shell {
     // never dispatches here (it calls onInputBlocked instead); the resets
     // live there, crash class 3/7
     void       onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
-        const uint32_t BIT = NAwesome::trackedPointerButtonBit(e.button);
+        const uint32_t BIT = Awesome::trackedPointerButtonBit(e.button);
 
         if (e.state == WL_POINTER_BUTTON_STATE_RELEASED) {
             if (swallowRelease & BIT) {
@@ -93,11 +93,11 @@ namespace NAwesome::Shell {
 
         // An application implicit grab remains authoritative until all of its
         // buttons are released, even if the pointer crosses the strip.
-        if (heldButtons > 0 || NAwesome::nativePointerGrabActive()) {
+        if (heldButtons > 0 || Awesome::nativePointerGrabActive()) {
             heldButtons++;
             return;
         }
-        if (NAwesome::nativeLayerOwnsPointer())
+        if (Awesome::nativeLayerOwnsPointer())
             return;
 
         const auto POS = g_pInputManager->getMouseCoordsInternal();
@@ -125,7 +125,7 @@ namespace NAwesome::Shell {
             // menu) would open what the hidden bar's warm closes at once.
             // The press closed the launcher; that is all it does.
             if (MBM == MON && POS.y >= MON->logicalBox().y && POS.y < MON->logicalBox().y + barHeight(MON))
-                if (NAwesome::fullscreenOwns(MON) && !overFullscreenOn(MON)) {
+                if (Awesome::fullscreenOwns(MON) && !overFullscreenOn(MON)) {
                     info.cancelled = true;
                     swallowRelease |= BIT;
                     return;
@@ -178,7 +178,7 @@ namespace NAwesome::Shell {
 
         // bar hidden under real fullscreen: the strip belongs to the window then
         // (swallowing here would make the top rows of fullscreen apps click-dead)
-        if (!MENUBAR_HERE && NAwesome::fullscreenOwns(MON) && !overFullscreenOn(MON)) {
+        if (!MENUBAR_HERE && Awesome::fullscreenOwns(MON) && !overFullscreenOn(MON)) {
             heldButtons++;
             return;
         }
@@ -198,7 +198,7 @@ namespace NAwesome::Shell {
 
         // topmost first: a cell painted later (the bell's badge over its
         // neighbour) is what the pointer is on
-        const bool SUPER = NAwesome::superHeld();
+        const bool SUPER = Awesome::superHeld();
         for (const auto& HIT : IT->second | std::views::reverse) {
             if (HIT.box.containsPoint(POS)) {
                 SHit hc   = HIT;
@@ -216,7 +216,7 @@ namespace NAwesome::Shell {
 
     // awesome's wibar scroll bindings live with their widgets; the strip
     // swallows every scroll it owns.
-    static NAwesome::CHop         pendingScroll;
+    static Awesome::CHop         pendingScroll;
 
     // Batched notches ACCUMULATE into one deferred hop: axis events can
     // arrive several per dispatch, and overwriting the doLaterLock cancels
@@ -233,7 +233,7 @@ namespace NAwesome::Shell {
         pendingScroll.arm([monRef = PHLMONITORREF{mon}]() {
             scrollQueued   = false;
             const auto MON = monRef.lock();
-            if (NAwesome::sessionLocked() || !MON || !MON->m_enabled) {
+            if (Awesome::sessionLocked() || !MON || !MON->m_enabled) {
                 scrollAcc.clear(); // reset the half-tracked accumulator, act on nothing
                 return;
             }
@@ -281,7 +281,7 @@ namespace NAwesome::Shell {
         const bool PROMPT_HERE = Menubar::isOpen && Menubar::mon.lock() == MON;
         if (!MENU_HERE && POS.y >= MON->logicalBox().y + barHeight(MON) * (PROMPT_HERE ? 2 : 1))
             return;
-        if (heldButtons > 0 || NAwesome::nativePointerGrabActive() || NAwesome::nativeLayerOwnsPointer())
+        if (heldButtons > 0 || Awesome::nativePointerGrabActive() || Awesome::nativeLayerOwnsPointer())
             return;
 
         if (Menu::isOpen && Menu::mon.lock() == MON) {
@@ -309,7 +309,7 @@ namespace NAwesome::Shell {
             info.cancelled = true; // the prompt strip swallows scroll, no action
             return;
         }
-        if (NAwesome::fullscreenOwns(MON) && !overFullscreenOn(MON))
+        if (Awesome::fullscreenOwns(MON) && !overFullscreenOn(MON))
             return; // bar hidden, strip belongs to the fullscreen window
         if (POS.y >= MON->logicalBox().y + barHeight(MON))
             return;
@@ -373,10 +373,10 @@ namespace NAwesome::Shell {
         if (!over)
             return nullptr;
 
-        if (NAwesome::nativeLayerOwnsPointer())
+        if (Awesome::nativeLayerOwnsPointer())
             return nullptr;
 
-        if (NAwesome::fullscreenOwns(MON))
+        if (Awesome::fullscreenOwns(MON))
             return overFullscreenOn(MON) ? MON : nullptr;
         return MON;
     }
@@ -427,7 +427,7 @@ namespace NAwesome::Shell {
             barHover.box = IT->box;
         }
         // then the cell under a pointer that did not move
-        if (pointerOwned && !NAwesome::sessionLocked())
+        if (pointerOwned && !Awesome::sessionLocked())
             barHoverAt(mon, g_pInputManager->getMouseCoordsInternal());
     }
 
@@ -470,7 +470,7 @@ namespace NAwesome::Shell {
     }
 
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info) {
-        const bool GRABBED = heldButtons > 0 || NAwesome::nativePointerGrabActive() || (g_layoutManager && g_layoutManager->dragController()->target());
+        const bool GRABBED = heldButtons > 0 || Awesome::nativePointerGrabActive() || (g_layoutManager && g_layoutManager->dragController()->target());
 
         menuHoverAt(pos);
 
@@ -525,4 +525,4 @@ namespace NAwesome::Shell {
         releasePointer();
     }
 
-} // namespace NAwesome::Shell
+} // namespace Awesome::Shell

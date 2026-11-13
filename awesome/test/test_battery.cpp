@@ -7,7 +7,7 @@
 
 #include "harness.hpp"
 
-using namespace NAwesome::Shell::Battery;
+using namespace Awesome::Shell::Battery;
 
 namespace {
     struct SPx {

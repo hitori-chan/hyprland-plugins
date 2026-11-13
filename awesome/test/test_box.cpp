@@ -2,7 +2,7 @@
 
 #include "harness.hpp"
 
-using namespace NAwesome;
+using namespace Awesome;
 
 bool test_box() {
     AW_CHECK(validBox({0, 0, 100, 50}));

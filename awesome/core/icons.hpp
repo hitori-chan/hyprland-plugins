@@ -32,7 +32,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-namespace NAwesome {
+namespace Awesome {
 
     inline bool iconIdentityPrefixMatch(std::string_view identifier, std::string_view candidate) {
         if (candidate.size() < 3 || candidate.size() >= identifier.size() || !identifier.starts_with(candidate))
@@ -792,4 +792,4 @@ namespace NAwesome {
         return found;
     }
 
-} // namespace NAwesome
+} // namespace Awesome

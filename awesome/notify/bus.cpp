@@ -11,14 +11,14 @@
 
 #include <hyprland/src/protocols/XDGActivation.hpp>
 
-namespace NAwesome::Notify::Bus {
+namespace Awesome::Notify::Bus {
 
     static const sdbus::InterfaceName IFACE{"org.freedesktop.Notifications"};
 
     static std::unique_ptr<sdbus::IObject> obj;
     static std::unique_ptr<sdbus::IProxy>  busProbe; // org.freedesktop.DBus: sender -> pid
     static sdbus::Slot                     ownerMatch; // NameOwnerChanged: a sender leaving the bus
-    static NAwesome::CBusLink           g_bus;
+    static Awesome::CBusLink           g_bus;
 
     // Model changes can originate in pointer/key drains, expiry timers, or
     // D-Bus method handlers. Keep signal construction off all of those
@@ -80,7 +80,7 @@ namespace NAwesome::Notify::Bus {
                 .uponReplyInvoke([](std::optional<sdbus::Error> e, uint32_t pid) {
                     if (e)
                         return; // a unique name that vanished: the app is gone, nothing to focus
-                    NAwesome::activateAppWindow(pid);
+                    Awesome::activateAppWindow(pid);
                 });
         } catch (...) {}
     }
@@ -359,7 +359,7 @@ namespace NAwesome::Notify::Bus {
 
     void init() {
         g_bus.onLost = [](const std::string& err) {
-            HyprlandAPI::addNotification(NAwesome::supervisor().handle(), "[awesome] bus lost, notifications disabled: " + err, CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
+            HyprlandAPI::addNotification(Awesome::supervisor().handle(), "[awesome] bus lost, notifications disabled: " + err, CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
         };
         // everything bound to the connection goes before it: an in-flight
         // GetConnectionUnixProcessID would otherwise run its slot deleter
@@ -396,7 +396,7 @@ namespace NAwesome::Notify::Bus {
                            // user dismissals and expiry are untouched. A
                            // chat's message id takes its line alone.
                            sdbus::registerMethod("CloseNotification").withInputParamNames("id").implementedAs([](uint32_t id) {
-                               if (NAwesome::cfg().getI("plugin:awesome:notify:ignore_dbusclose"))
+                               if (Awesome::cfg().getI("plugin:awesome:notify:ignore_dbusclose"))
                                    return;
                                // spec: an unknown ID is an error, not a silent no-op
                                if (!Model::closeWire(id, Model::R_CLOSED))
@@ -406,7 +406,7 @@ namespace NAwesome::Notify::Bus {
                                return std::vector<std::string>{"actions", "body", "body-markup", "body-hyperlinks", "body-images", "icon-static", "inline-reply", "persistence", "sound"};
                            }),
                            sdbus::registerMethod("GetServerInformation").withOutputParamNames("name", "vendor", "version", "spec_version").implementedAs([]() {
-                               return std::tuple<std::string, std::string, std::string, std::string>{"awesome", "hitori", NAwesome::VERSION, "1.3"};
+                               return std::tuple<std::string, std::string, std::string, std::string>{"awesome", "hitori", Awesome::VERSION, "1.3"};
                            }),
                            sdbus::registerSignal("NotificationClosed").withParameters<uint32_t, uint32_t>("id", "reason"),
                            sdbus::registerSignal("ActionInvoked").withParameters<uint32_t, std::string>("id", "action_key"),
@@ -421,7 +421,7 @@ namespace NAwesome::Notify::Bus {
             ownerMatch = g_bus.conn()->addMatchAsync(
                 "type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged'",
                 [](sdbus::Message m) {
-                    if (NAwesome::compositorShuttingDown())
+                    if (Awesome::compositorShuttingDown())
                         return;
                     std::string name, oldOwner, newOwner;
                     try {
@@ -436,7 +436,7 @@ namespace NAwesome::Notify::Bus {
         } catch (const std::exception& E) {
             // most likely another daemon owns the name (dunst still
             // installed)
-            HyprlandAPI::addNotification(NAwesome::supervisor().handle(), std::string{"[awesome] notifications disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
+            HyprlandAPI::addNotification(Awesome::supervisor().handle(), std::string{"[awesome] notifications disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
             obj.reset();
             g_bus.close();
         }
@@ -448,4 +448,4 @@ namespace NAwesome::Notify::Bus {
         s_outPosted = false;
     }
 
-} // namespace NAwesome::Notify::Bus
+} // namespace Awesome::Notify::Bus

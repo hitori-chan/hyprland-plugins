@@ -13,7 +13,7 @@
 #include <limits>
 #include <unistd.h>
 
-namespace NAwesome::Shell {
+namespace Awesome::Shell {
 
     namespace Tray {
         static const sdbus::InterfaceName      WIFACE{"org.kde.StatusNotifierWatcher"};
@@ -59,7 +59,7 @@ namespace NAwesome::Shell {
             return out;
         }
 
-        NAwesome::CBusLink                  bus; // menu.cpp borrows the connection for its dbusmenu proxies
+        Awesome::CBusLink                  bus; // menu.cpp borrows the connection for its dbusmenu proxies
         static std::unique_ptr<sdbus::IObject> watcher;
         static std::unique_ptr<sdbus::IProxy>  busProxy;
         static sdbus::Slot                     itemMatch, menuMatch; // the connection's item/dbusmenu signal matches (onItemSignal)
@@ -134,7 +134,7 @@ namespace NAwesome::Shell {
                     .uponReplyInvoke([it](std::optional<sdbus::Error> e, uint32_t pid) {
                         if (e || !it->active)
                             return; // the item may have vanished over the round trip
-                        NAwesome::activateAppWindow(pid);
+                        Awesome::activateAppWindow(pid);
                     });
                 pollSoon();
             } catch (...) {} // dying bus: teardown is already pending
@@ -507,7 +507,7 @@ namespace NAwesome::Shell {
 
         void init() {
             bus.onLost = [](const std::string& err) {
-                HyprlandAPI::addNotification(NAwesome::supervisor().handle(), "[awesome] tray bus lost, tray disabled: " + err, CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
+                HyprlandAPI::addNotification(Awesome::supervisor().handle(), "[awesome] tray bus lost, tray disabled: " + err, CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
             };
             bus.dropOwned     = []() { dropOwnedObjects(); };
             bus.afterTeardown = []() { barChanged(); }; // the dead items just left the strip
@@ -609,7 +609,7 @@ namespace NAwesome::Shell {
 
                 bus.sync(); // drain anything queued during setup — the vtable is registered, nothing dispatches early
             } catch (const std::exception& E) {
-                HyprlandAPI::addNotification(NAwesome::supervisor().handle(), std::string{"[awesome] tray disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
+                HyprlandAPI::addNotification(Awesome::supervisor().handle(), std::string{"[awesome] tray disabled: "} + E.what(), CHyprColor{1.0, 0.6, 0.2, 1.0}, 6000);
                 dropOwnedObjects();
                 bus.close();
             }
@@ -668,7 +668,7 @@ namespace NAwesome::Shell {
                             IT->tex = g_pHyprRenderer->createTexture(DRM_FORMAT_ARGB8888, IT->pixels.data(), IT->pw * 4, Vector2D{(double)IT->pw, (double)IT->ph});
                         if ((!IT->tex || IT->tex->m_texID == 0) && (!IT->iconName.empty() || !IT->id.empty())) {
                             IT->tex   = trayIcon(IT->iconName, IT->themePath, IT->id);
-                            IT->dirty = !IT->tex && NAwesome::iconDeferred(); // budget-deferred: the retry warm tries again
+                            IT->dirty = !IT->tex && Awesome::iconDeferred(); // budget-deferred: the retry warm tries again
                         }
                     }
 
@@ -749,7 +749,7 @@ namespace NAwesome::Shell {
                         return;
                     try {
                         Tray::fetchMenuPath(IT, [IT, X, Y, AX, MON, CLICK, AT]() {
-                            if (NAwesome::sessionLocked() || CLICK != Tray::clickSerial || Menu::isOpen ||
+                            if (Awesome::sessionLocked() || CLICK != Tray::clickSerial || Menu::isOpen ||
                                 std::chrono::steady_clock::now() - AT > std::chrono::seconds(1))
                                 return;
                             if (!IT->menuPath.empty()) {
@@ -793,4 +793,4 @@ namespace NAwesome::Shell {
         return W;
     }
 
-} // namespace NAwesome::Shell
+} // namespace Awesome::Shell

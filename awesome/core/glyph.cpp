@@ -13,7 +13,7 @@
 #include <cmath>
 #include <unordered_map>
 
-namespace NAwesome::Glyph {
+namespace Awesome::Glyph {
 
     namespace {
         // a handful of shapes x colours x sizes: past the bound the next
@@ -82,4 +82,4 @@ namespace NAwesome::Glyph {
         cache().clear();
     }
 
-} // namespace NAwesome::Glyph
+} // namespace Awesome::Glyph

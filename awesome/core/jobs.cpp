@@ -12,7 +12,7 @@
 #include <unistd.h>
 #include <wayland-server-core.h>
 
-namespace NAwesome {
+namespace Awesome {
 
     namespace {
         using namespace std::chrono_literals;
@@ -273,4 +273,4 @@ namespace NAwesome {
         m_children.clear();
     }
 
-} // namespace NAwesome
+} // namespace Awesome

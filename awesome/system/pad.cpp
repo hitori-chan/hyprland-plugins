@@ -53,7 +53,7 @@
 #include <utility>
 #include <vector>
 
-namespace NAwesome::System {
+namespace Awesome::System {
 
     inline constexpr uint32_t ID_TOUCHPAD = 9991;
     inline constexpr int      PAD_TIMEOUT = 1500;
@@ -349,4 +349,4 @@ namespace NAwesome::System {
 #endif
     }
 
-} // namespace NAwesome::System
+} // namespace Awesome::System

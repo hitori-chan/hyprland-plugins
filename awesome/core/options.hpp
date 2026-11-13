@@ -16,7 +16,7 @@
 #include <optional>
 #include <string_view>
 
-namespace NAwesome {
+namespace Awesome {
 
     enum class eOption : uint8_t {
         DND,              // 0 off, -1 until turned off, else its end (unix seconds)
@@ -77,4 +77,4 @@ namespace NAwesome {
         std::array<int64_t, OPTION_SPECS.size()> m_values = defaults();
     };
 
-} // namespace NAwesome
+} // namespace Awesome

@@ -4,7 +4,7 @@
 
 #include "core/supervisor.hpp"
 
-namespace NAwesome::Notify {
+namespace Awesome::Notify {
     class CModule : public IModule {
       public:
         const char* name() const override {

@@ -23,7 +23,7 @@
 // skeleton hands a SPaint (and the widgets an SFrame) to everything that
 // draws rather than reaching into internals.
 //
-// Everything lives in NAwesome::Shell so no symbol can collide with
+// Everything lives in Awesome::Shell so no symbol can collide with
 // another module's at dlopen time.
 
 #include "core/busclient.hpp"
@@ -92,7 +92,7 @@
 #include <string>
 #include <vector>
 
-namespace NAwesome::Shell {
+namespace Awesome::Shell {
 
     // the render types are used unqualified in every shell unit
     using Render::ITexture;
@@ -100,8 +100,8 @@ namespace NAwesome::Shell {
 
     // config reads, through the schema:
     // `color(cfg().getColor("plugin:awesome:theme:col_glass"))` et al.
-    using NAwesome::color;
-    using NAwesome::cfg;
+    using Awesome::color;
+    using Awesome::cfg;
 
     double      barHeight(const PHLMONITOR& mon);
     void        reserveBars();   // the bar's band, the plugin's reserved type on every monitor
@@ -118,13 +118,13 @@ namespace NAwesome::Shell {
     bool isTaskOn(const PHLWINDOW& w, const PHLWORKSPACE& ws);
 
     // the texture rule (core/canvas.hpp): the canvas's warm gate
-    inline NAwesome::CWarmGate& warmGate() {
-        return NAwesome::Canvas::inst().gate();
+    inline Awesome::CWarmGate& warmGate() {
+        return Awesome::Canvas::inst().gate();
     }
 
     // resolve-outside-warm permission (see CWarmGate::SToken)
-    struct SWarmToken : NAwesome::CWarmGate::SToken {
-        SWarmToken() : SToken(NAwesome::Canvas::inst().gate()) {}
+    struct SWarmToken : Awesome::CWarmGate::SToken {
+        SWarmToken() : SToken(Awesome::Canvas::inst().gate()) {}
     };
 
     // Build every texture the next frame will paint. Safe to call from
@@ -186,7 +186,7 @@ namespace NAwesome::Shell {
             bool                           dirty = true;
         };
 
-        extern NAwesome::CBusLink bus; // the tray's session-bus link (menu.cpp borrows the connection)
+        extern Awesome::CBusLink bus; // the tray's session-bus link (menu.cpp borrows the connection)
         extern std::vector<SP<SItem>> items;
 
         void pollSoon(); // pull the next DBus poll tick close after a send
@@ -242,7 +242,7 @@ namespace NAwesome::Shell {
     // both modes — the texture rule. The shell adds its hit cells and
     // metrics.
     struct SHit;
-    struct SPaint : NAwesome::SPaint {
+    struct SPaint : Awesome::SPaint {
         std::vector<SHit>* hits = nullptr; // clickable regions, appended as we go
         double             h    = 0;       // bar height
         int                pt   = 0;       // text size in pt, already scaled
@@ -371,7 +371,7 @@ namespace NAwesome::Shell {
         // how far a panel paints past its box: the frost drop, or the blur
         // its glass samples — every damage and bound grows by it
         inline double reach(const PHLMONITOR& m) {
-            return (m ? std::ceil(m->m_scale) : 1.0) + 1.0 + std::max(NAwesome::blurRadius(), NAwesome::SPaint::frostReach(NAwesome::SPaint::eDepth::MENU));
+            return (m ? std::ceil(m->m_scale) : 1.0) + 1.0 + std::max(Awesome::blurRadius(), Awesome::SPaint::frostReach(Awesome::SPaint::eDepth::MENU));
         }
 
         // per-level rows sentinel indices for the scroll arrows of an overflowing panel
@@ -526,4 +526,4 @@ namespace NAwesome::Shell {
     void releasePointer();
     void inputExit();
 
-} // namespace NAwesome::Shell
+} // namespace Awesome::Shell

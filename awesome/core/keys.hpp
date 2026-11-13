@@ -14,7 +14,7 @@
 #include <algorithm>
 #include <chrono>
 
-namespace NAwesome::Keys {
+namespace Awesome::Keys {
 
     // The keyboard that typed this key. The emission carries no device, and
     // the seat's keyboard switches only when a key reaches a client, never
@@ -121,4 +121,4 @@ namespace NAwesome::Keys {
         int                 m_gap = 0; // ms between repeats
     };
 
-} // namespace NAwesome::Keys
+} // namespace Awesome::Keys

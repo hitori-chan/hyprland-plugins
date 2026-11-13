@@ -12,7 +12,7 @@
 #include <sys/eventfd.h>
 #include <unistd.h>
 
-namespace NAwesome {
+namespace Awesome {
 
     namespace Raster {
 
@@ -280,4 +280,4 @@ namespace NAwesome {
         }
     }
 
-} // namespace NAwesome
+} // namespace Awesome

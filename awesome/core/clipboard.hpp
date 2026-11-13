@@ -24,7 +24,7 @@
 #include <unistd.h>
 #include <utility>
 
-namespace NAwesome {
+namespace Awesome {
 
     class CClipboardRead {
       public:
@@ -168,4 +168,4 @@ namespace NAwesome {
         std::function<void(std::string)> m_done;
     };
 
-} // namespace NAwesome
+} // namespace Awesome

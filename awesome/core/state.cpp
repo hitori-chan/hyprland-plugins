@@ -18,7 +18,7 @@
 
 namespace fs = std::filesystem;
 
-namespace NAwesome {
+namespace Awesome {
 
     namespace {
 
@@ -340,4 +340,4 @@ namespace NAwesome {
 
     StateStore::~StateStore() = default;
 
-} // namespace NAwesome
+} // namespace Awesome

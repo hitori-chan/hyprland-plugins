@@ -12,7 +12,7 @@
 #include <cmath>
 #include <limits>
 
-namespace NAwesome::Shell {
+namespace Awesome::Shell {
 
     // Each entry remembers the warm generation that last wanted it. Evicting
     // whatever the CURRENT layout doesn't name would thrash: sloppy focus
@@ -27,7 +27,7 @@ namespace NAwesome::Shell {
         return BYTES >= (long double)std::numeric_limits<size_t>::max() ? std::numeric_limits<size_t>::max() : (size_t)BYTES;
     }
 
-    static NAwesome::CGenCache<SP<ITexture>> texCache{64ull << 20, textureBytes};
+    static Awesome::CGenCache<SP<ITexture>> texCache{64ull << 20, textureBytes};
 
     // per monitor: a fingerprint of the task labels the strip shows — see
     // the tasklist in renderBar
@@ -150,7 +150,7 @@ namespace NAwesome::Shell {
     static bool barHidden(PHLMONITOR mon) {
         if (!mon)
             return true;
-        return NAwesome::fullscreenOwns(mon) && !overFullscreenOn(mon);
+        return Awesome::fullscreenOwns(mon) && !overFullscreenOn(mon);
     }
 
     static void renderBar(PHLMONITOR mon, Render::CRenderContext* rctx) {
@@ -164,7 +164,7 @@ namespace NAwesome::Shell {
         // the strip stays visible while locked (clock/battery/tray), but an
         // open tray menu must not float over the lockscreen — close it here,
         // like the fullscreen path below, so it's gone on unlock
-        if (NAwesome::sessionLocked() && Menu::isOpen && Menu::mon.lock() == mon)
+        if (Awesome::sessionLocked() && Menu::isOpen && Menu::mon.lock() == mon)
             Menu::close();
 
         const auto WS = mon->m_activeWorkspace;
@@ -203,7 +203,7 @@ namespace NAwesome::Shell {
         F.ws = WS;
         tasks.clear();
         for (const auto& W : Desktop::windowState()->windows()) {
-            if (NAwesome::isClient(W) && W->m_workspace && W->m_workspace->m_monitor.lock() == mon) {
+            if (Awesome::isClient(W) && W->m_workspace && W->m_workspace->m_monitor.lock() == mon) {
                 const auto NUM = W->m_workspace->numberedID();
                 if (NUM && *NUM >= 1 && *NUM <= 9) {
                     F.windows[*NUM]++;
@@ -212,7 +212,7 @@ namespace NAwesome::Shell {
                 }
             }
             if (isTaskOn(W, WS))
-                tasks.emplace_back(NAwesome::winOrder().seqOf(W.get()), W);
+                tasks.emplace_back(Awesome::winOrder().seqOf(W.get()), W);
         }
         std::sort(tasks.begin(), tasks.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
         F.tasks   = &tasks;
@@ -341,7 +341,7 @@ namespace NAwesome::Shell {
     }
     // the battery's note: never over a menu, a fullscreen window or the lock
     static bool noteOn(PHLMONITOR mon) {
-        return Battery::noteWanted(mon) && !menusOn(mon) && !barHidden(mon) && !NAwesome::sessionLocked();
+        return Battery::noteWanted(mon) && !menusOn(mon) && !barHidden(mon) && !Awesome::sessionLocked();
     }
     static bool popupsOn(PHLMONITOR mon) {
         return menusOn(mon) || noteOn(mon);
@@ -369,7 +369,7 @@ namespace NAwesome::Shell {
             Battery::renderNote(P);
     }
 
-    class CStripLayer : public NAwesome::ILayer {
+    class CStripLayer : public Awesome::ILayer {
       public:
         const char* name() const override {
             return "shell-strip";
@@ -392,7 +392,7 @@ namespace NAwesome::Shell {
         void warm(PHLMONITOR mon) override {
             renderBar(mon, nullptr);
         }
-        void draw(PHLMONITOR mon, NAwesome::SPaint& P) override {
+        void draw(PHLMONITOR mon, Awesome::SPaint& P) override {
             if (P.rctx)
                 renderBar(mon, P.rctx);
         }
@@ -415,7 +415,7 @@ namespace NAwesome::Shell {
             // draws without blur, so claiming live blur would make
             // the renderer blur and disable occlusion under the strip for a
             // result nobody sees
-            return NAwesome::blurOn() && !barHidden(mon) && color(cfg().getColor("plugin:awesome:theme:col_glass")).a < 1.0;
+            return Awesome::blurOn() && !barHidden(mon) && color(cfg().getColor("plugin:awesome:theme:col_glass")).a < 1.0;
         }
 
         void exit() {
@@ -433,7 +433,7 @@ namespace NAwesome::Shell {
         return L;
     }
 
-    class CPopupLayer : public NAwesome::ILayer {
+    class CPopupLayer : public Awesome::ILayer {
       public:
         const char* name() const override {
             return "shell-popups";
@@ -442,7 +442,7 @@ namespace NAwesome::Shell {
         void warm(PHLMONITOR mon) override {
             renderPopups(mon, nullptr);
         }
-        void draw(PHLMONITOR mon, NAwesome::SPaint& P) override {
+        void draw(PHLMONITOR mon, Awesome::SPaint& P) override {
             if (P.rctx)
                 renderPopups(mon, P.rctx);
         }
@@ -493,7 +493,7 @@ namespace NAwesome::Shell {
         }
         bool needsBlur(PHLMONITOR mon) const override {
             // the menus' glass; the note is no glass
-            return NAwesome::blurOn() && menusOn(mon) && color(cfg().getColor("plugin:awesome:theme:col_glass")).a < 1.0;
+            return Awesome::blurOn() && menusOn(mon) && color(cfg().getColor("plugin:awesome:theme:col_glass")).a < 1.0;
         }
     };
 
@@ -514,7 +514,7 @@ namespace NAwesome::Shell {
     static void                           titleWarm() {
         titleArmed    = false;
         lastTitleWarm = std::chrono::steady_clock::now();
-        NAwesome::Canvas::inst().warmAll(nullptr, &stripLayer());
+        Awesome::Canvas::inst().warmAll(nullptr, &stripLayer());
         damageBars();
     }
 
@@ -531,8 +531,8 @@ namespace NAwesome::Shell {
     }
 
     void stripInit() {
-        NAwesome::Canvas::inst().addLayer(&stripLayer(), NAwesome::eLayerZ::BAR);
-        NAwesome::Canvas::inst().addLayer(&popupLayer(), NAwesome::eLayerZ::POPUPS);
+        Awesome::Canvas::inst().addLayer(&stripLayer(), Awesome::eLayerZ::BAR);
+        Awesome::Canvas::inst().addLayer(&popupLayer(), Awesome::eLayerZ::POPUPS);
         if (g_pEventLoopManager) {
             titleTimer = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { titleWarm(); }, nullptr);
             g_pEventLoopManager->addTimer(titleTimer);
@@ -549,11 +549,11 @@ namespace NAwesome::Shell {
     void warmBars(PHLMONITOR only) {
         // the canvas owns the bracket (and warms every layer, the cards and
         // the snap zone with it)
-        NAwesome::Canvas::inst().warmAll(only);
+        Awesome::Canvas::inst().warmAll(only);
     }
 
     void warmPopups(PHLMONITOR only) {
-        NAwesome::Canvas::inst().warmAll(only, &popupLayer());
+        Awesome::Canvas::inst().warmAll(only, &popupLayer());
     }
 
     double barHeight(const PHLMONITOR&) {
@@ -565,7 +565,7 @@ namespace NAwesome::Shell {
     // lay out below it. What a monitor rule already reserves at the top
     // counts toward it.
     void reserveBars() {
-        if (!g_pHyprRenderer || NAwesome::compositorShuttingDown())
+        if (!g_pHyprRenderer || Awesome::compositorShuttingDown())
             return;
         for (const auto& M : State::monitorState()->monitors()) {
             const double BEFORE = M->m_reservedArea.top();
@@ -578,7 +578,7 @@ namespace NAwesome::Shell {
     }
 
     void unreserveBars() {
-        if (!g_pHyprRenderer || NAwesome::compositorShuttingDown())
+        if (!g_pHyprRenderer || Awesome::compositorShuttingDown())
             return;
         for (const auto& M : State::monitorState()->monitors()) {
             const double BEFORE = M->m_reservedArea.top();
@@ -602,7 +602,7 @@ namespace NAwesome::Shell {
     // events (title, focus, urgency, tray icons) arrived in it. A frame that
     // renders first finds the stale texture and rewarms itself (the canvas
     // gate).
-    static NAwesome::CHop pendingBarChange;
+    static Awesome::CHop pendingBarChange;
     void barChanged() {
         pendingBarChange.arm([]() {
             warmBars();
@@ -612,7 +612,7 @@ namespace NAwesome::Shell {
 
     // The launcher's own changes (a keystroke, a selection, a scan landing):
     // the popup layer on the prompt's monitor and the prompt band only.
-    static NAwesome::CHop pendingPromptChange;
+    static Awesome::CHop pendingPromptChange;
     void promptChanged() {
         pendingPromptChange.arm([]() {
             const auto M = Menubar::mon.lock();
@@ -621,7 +621,7 @@ namespace NAwesome::Shell {
                 damageBars();
                 return;
             }
-            NAwesome::Canvas::inst().warmAll(M, &popupLayer());
+            Awesome::Canvas::inst().warmAll(M, &popupLayer());
             if (g_pHyprRenderer) {
                 const auto MB = M->logicalBox();
                 g_pHyprRenderer->damageBox(CBox{MB.x, MB.y + barHeight(M), MB.w, barHeight(M)});
@@ -632,13 +632,13 @@ namespace NAwesome::Shell {
     // A menu hover moved: the popup layer on the menu's monitor, once per
     // event-loop turn. A hover moves no panel: the boxes and rows the
     // hit-tests read stay as they are.
-    static NAwesome::CHop pendingMenuHover;
+    static Awesome::CHop pendingMenuHover;
     void menuHoverChanged() {
         pendingMenuHover.arm([]() {
             const auto M = Menu::mon.lock();
             if (!M || !Menu::isOpen)
                 return;
-            NAwesome::Canvas::inst().warmAll(M, &popupLayer());
+            Awesome::Canvas::inst().warmAll(M, &popupLayer());
             Menu::damagePanels(); // the ring and a panel the warm resized too
         });
     }
@@ -646,7 +646,7 @@ namespace NAwesome::Shell {
     bool isTaskOn(const PHLWINDOW& w, const PHLWORKSPACE& ws) {
         // minimized windows are hidden but still belong to their tag, like
         // awesome — keep their row; other hidden windows (swallowed) stay out.
-        return NAwesome::isClient(w) && ws && w->m_workspace && w->m_workspace->id() == ws->id() && (!w->isHidden() || NAwesome::Windows::Tasklist::isMinimized(w));
+        return Awesome::isClient(w) && ws && w->m_workspace && w->m_workspace->id() == ws->id() && (!w->isHidden() || Awesome::Windows::Tasklist::isMinimized(w));
     }
 
-} // namespace NAwesome::Shell
+} // namespace Awesome::Shell

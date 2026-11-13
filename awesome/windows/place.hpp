@@ -50,7 +50,7 @@
 #include <string>
 #include <vector>
 
-namespace NAwesome::Windows::Place {
+namespace Awesome::Windows::Place {
 
     namespace {
         // each app's last close position, surviving relogs, relative to the
@@ -376,4 +376,4 @@ namespace NAwesome::Windows::Place {
         places().reset();
     }
 
-} // namespace NAwesome::Windows::Place
+} // namespace Awesome::Windows::Place

@@ -34,7 +34,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace NAwesome {
+namespace Awesome {
 
     class CBusLink {
       public:
@@ -224,4 +224,4 @@ namespace NAwesome {
         bool                                m_tearingDown = false;
     };
 
-} // namespace NAwesome
+} // namespace Awesome

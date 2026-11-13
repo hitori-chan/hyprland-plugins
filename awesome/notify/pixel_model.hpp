@@ -12,7 +12,7 @@
 #include <string_view>
 #include <vector>
 
-namespace NAwesome::Notify::Pixel {
+namespace Awesome::Notify::Pixel {
 
     inline constexpr size_t   MAX_CONVERSATION_MESSAGES           = 32; // the retained log
     inline constexpr size_t   MAX_PRESENTED_CONVERSATION_MESSAGES = 7;  // the stored window: what a card can fit
@@ -177,4 +177,4 @@ namespace NAwesome::Notify::Pixel {
         return 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b < 0.50;
     }
 
-} // namespace NAwesome::Notify::Pixel
+} // namespace Awesome::Notify::Pixel

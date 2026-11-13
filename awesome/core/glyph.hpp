@@ -13,10 +13,10 @@
 
 #include "glyph_shapes.hpp"
 
-namespace NAwesome::Glyph {
+namespace Awesome::Glyph {
 
     // the glyph rastered at w x h physical px (h 0: square), tinted `col`
     SP<Render::ITexture> tex(eGlyph g, const CHyprColor& col, int w, int h = 0);
     void   clear(); // teardown: the textures go before the renderer does
 
-} // namespace NAwesome::Glyph
+} // namespace Awesome::Glyph

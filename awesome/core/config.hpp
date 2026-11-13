@@ -22,7 +22,7 @@ namespace Config::Values {
     class CStringValue;
 }
 
-namespace NAwesome {
+namespace Awesome {
 
     class ConfigRegistry {
       public:
@@ -59,4 +59,4 @@ namespace NAwesome {
         return C;
     }
 
-} // namespace NAwesome
+} // namespace Awesome

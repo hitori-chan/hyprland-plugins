@@ -8,7 +8,7 @@
 
 #include <cstdint>
 
-namespace NAwesome {
+namespace Awesome {
 
     struct Box {
         int x = 0;
@@ -33,4 +33,4 @@ namespace NAwesome {
         return validBoxNumber(b.x) && validBoxNumber(b.y) && validBoxNumber(b.w) && validBoxNumber(b.h) && b.w >= 0 && b.h >= 0;
     }
 
-} // namespace NAwesome
+} // namespace Awesome

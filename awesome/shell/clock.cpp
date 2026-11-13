@@ -8,7 +8,7 @@
 #include <ctime>
 #include <utility>
 
-namespace NAwesome::Shell {
+namespace Awesome::Shell {
 
     static std::string clockText;
     // the user's LC_TIME: the compositor never calls setlocale, so a plain
@@ -69,4 +69,4 @@ namespace NAwesome::Shell {
         return W;
     }
 
-} // namespace NAwesome::Shell
+} // namespace Awesome::Shell

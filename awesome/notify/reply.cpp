@@ -30,14 +30,14 @@
 #include <xkbcommon/xkbcommon-keysyms.h>
 #include <xkbcommon/xkbcommon-names.h>
 
-namespace NAwesome::Notify {
+namespace Awesome::Notify {
 
     static uint32_t    s_id = 0; // the card whose field is armed; 0 = none
     static std::string s_text;
     static std::string s_target; // replyTarget of the card when armed
     // the send changes the model (the card goes): out of the key emission
-    static NAwesome::CHop s_pendingSend;
-    static NAwesome::Keys::CRepeat s_repeat; // a held key types on (core/keys.hpp)
+    static Awesome::CHop s_pendingSend;
+    static Awesome::Keys::CRepeat s_repeat; // a held key types on (core/keys.hpp)
 
     // the card's field can show: it is a banner, or a card of the open center
     static bool onScreen(const SP<SNotif>& n) {
@@ -123,7 +123,7 @@ namespace NAwesome::Notify {
             s_repeat.stop();
             return;
         }
-        replyKey(NAwesome::Keys::keyboardFor(keycode), keycode, /*repeating=*/true);
+        replyKey(Awesome::Keys::keyboardFor(keycode), keycode, /*repeating=*/true);
     }
 
     void replyInit() {
@@ -235,4 +235,4 @@ namespace NAwesome::Notify {
         return true;
     }
 
-} // namespace NAwesome::Notify
+} // namespace Awesome::Notify

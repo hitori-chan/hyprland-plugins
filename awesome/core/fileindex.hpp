@@ -21,7 +21,7 @@
 
 #include "proc.hpp"
 
-namespace NAwesome {
+namespace Awesome {
 
     // A plugin cannot leave a filesystem thread alive across dlclose, and a
     // jthread destructor can wait indefinitely in a hostile mount. Keep the
@@ -553,4 +553,4 @@ printf '%08X%08X%08X%d' 0 0 0 2
         std::deque<SResult>                m_results;
     };
 
-} // namespace NAwesome
+} // namespace Awesome

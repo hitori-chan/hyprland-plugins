@@ -8,11 +8,11 @@
 #include <optional>
 #include <string>
 
-namespace NAwesome {
+namespace Awesome {
     class CBusLink;
 }
 
-namespace NAwesome::System {
+namespace Awesome::System {
     class CModule : public IModule {
       public:
         const char* name() const override {

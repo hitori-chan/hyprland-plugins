@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-namespace NAwesome {
+namespace Awesome {
 
     inline constexpr size_t MAX_STORE_KEY_BYTES = 512;
     inline constexpr size_t MAX_STORE_ENTRIES   = 1024; // per keyed store
@@ -205,4 +205,4 @@ namespace NAwesome {
     // "awesome" collided with real AwesomeWM state.
     std::filesystem::path stateDir();
 
-} // namespace NAwesome
+} // namespace Awesome

@@ -145,10 +145,10 @@ Numbered because source comments cite them; never renumber, append.
    transition (hover damages but does not rewarm).
 5. Never overwrite a mapped `.so` in place.
 6. Defer workspace and focus changes out of input and focus emissions
-   through `NAwesome::CHop`; teardown resets listeners before hops and
+   through `Awesome::CHop`; teardown resets listeners before hops and
    makes newly armed hops no-ops.
 7. Plugin input emissions run before compositor session-lock checks:
-   every input listener checks `NAwesome::sessionLocked()` first and
+   every input listener checks `Awesome::sessionLocked()` first and
    clears swallow masks, held counters, drag state and armed zones there.
 8. Shutdown is a half-dead state: `CCompositor::cleanup()` sets
    `m_isShuttingDown` before it unloads plugins (upstream now unloads them
@@ -156,7 +156,7 @@ Numbered because source comments cite them; never renumber, append.
    `~CWindow` & co. into loaded listeners and SEGV'd on every nested
    teardown). All event-driven work no-ops once `m_isShuttingDown` is set;
    the supervisor gates its listeners on
-   `NAwesome::compositorShuttingDown()`, and a per-window or per-device
+   `Awesome::compositorShuttingDown()`, and a per-window or per-device
    listener only queues work for a hop.
 
 ## Compositor integration
@@ -184,9 +184,11 @@ Numbered because source comments cite them; never renumber, append.
   (spawning: `core/proc.hpp` + `Jobs`; deferral: `CHop`; drawing: the
   canvas; persistence: `StateStore`; pixel work off the compositor
   thread: `CRasterWorker`; time-of-day deadlines: `CWallTimer`).
-- Module symbols live in their namespace (`NAwesome::Shell`, `::Windows`,
-  `::Notify`, `::System`); platform symbols in `NAwesome`; a required
-  global `PHANDLE` is a documented ABI exception.
+- Module symbols live in their namespace (`Awesome::Shell`, `::Windows`,
+  `::Notify`, `::System`); platform symbols in `Awesome`; a required
+  global `PHANDLE` is a documented ABI exception. Namespaces follow
+  upstream's current style, PascalCase with no `N` prefix; types keep
+  upstream's `C`/`S`/`I`/`E` prefixes.
 - D-Bus stays asynchronous and off render/input hot paths
   (`CBusLink::post()`, `pollSoon()`); never drain a connection inline.
 - Bound every externally sized structure (queues, children, payloads,

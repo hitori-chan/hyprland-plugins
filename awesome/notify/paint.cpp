@@ -5,7 +5,7 @@
 
 #include "../core/config.hpp"
 
-namespace NAwesome::Notify {
+namespace Awesome::Notify {
 
     double damageMargin(PHLMONITOR m) {
         // rims ride outside boxes, glass grows by the blur radius, and the
@@ -14,10 +14,10 @@ namespace NAwesome::Notify {
     }
 
     float rPow() {
-        return (float)NAwesome::cfg().getD("plugin:awesome:notify:rounding_power");
+        return (float)Awesome::cfg().getD("plugin:awesome:notify:rounding_power");
     }
     int rCard(double scale) {
-        return (int)std::lround(std::max(0, NAwesome::cfg().getI("plugin:awesome:notify:rounding")) * scale);
+        return (int)std::lround(std::max(0, Awesome::cfg().getI("plugin:awesome:notify:rounding")) * scale);
     }
 
     float easeOutCubic(float t) {
@@ -36,7 +36,7 @@ namespace NAwesome::Notify {
     // ---- the type scale (physical px) ----
 
     SType typeScale(double scale) {
-        const double FS = (double)NAwesome::cfg().getI("plugin:awesome:notify:font_size");
+        const double FS = (double)Awesome::cfg().getI("plugin:awesome:notify:font_size");
         const auto   PX = [&](double logical) { return std::max(1, (int)std::lround(logical * scale)); };
         // off the 13 px base: meta 12, title/body/actions 13, counts 11,
         // the center's heading 15
@@ -44,10 +44,10 @@ namespace NAwesome::Notify {
     }
 
     void prepareCard(const SP<SNotif>& n, double scale) {
-        if (!NAwesome::Canvas::inst().gate().warming)
+        if (!Awesome::Canvas::inst().gate().warming)
             return;
-        const double W    = std::max((double)NAwesome::cfg().getI("plugin:awesome:notify:width"), 120.0);
-        const double ICON = std::clamp((double)NAwesome::cfg().getI("plugin:awesome:notify:max_icon"), 16.0, 64.0);
+        const double W    = std::max((double)Awesome::cfg().getI("plugin:awesome:notify:width"), 120.0);
+        const double ICON = std::clamp((double)Awesome::cfg().getI("plugin:awesome:notify:max_icon"), 16.0, 64.0);
         ensureIconTex(*n, (int)std::lround(ICON * scale), (int)std::lround((W - 2 * PADX) * scale), (int)std::lround(HERO_CAP * scale));
     }
 
@@ -74,7 +74,7 @@ namespace NAwesome::Notify {
         P.rect(CBox{x, y, w, PROGRESS_H}, tTrack(), PR);
         if (pct > 0)
             P.rect(CBox{x, y, std::max(w * pct / 100.0, PROGRESS_H), PROGRESS_H},
-                   critical ? NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_urgent")) : NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:notify:col_highlight")), PR);
+                   critical ? Awesome::color(Awesome::cfg().getColor("plugin:awesome:notify:col_urgent")) : Awesome::color(Awesome::cfg().getColor("plugin:awesome:notify:col_highlight")), PR);
     }
 
     // one icon under two paths (a theme's sizes): libnotify sends its icon
@@ -133,11 +133,11 @@ namespace NAwesome::Notify {
 
     void paintChip(const SPaint& P, const CBox& box, bool hover) {
         const int R = (int)std::lround(std::min(box.w, box.h) / 2 * P.scale);
-        P.glass(box, NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:theme:col_glass")), R, 2.f);
+        P.glass(box, Awesome::color(Awesome::cfg().getColor("plugin:awesome:theme:col_glass")), R, 2.f);
         P.shadow(CBox{box}.expand(CHIP_DROP).translate(Vector2D{0.0, CHIP_SINK}), R, 2.f, (int)CHIP_DROP, tShadow(), box);
         if (hover)
             P.rect(box, tFill(), R, 2.f);
-        P.ring(box, NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:theme:col_rim")), R, 2.f);
+        P.ring(box, Awesome::color(Awesome::cfg().getColor("plugin:awesome:theme:col_rim")), R, 2.f);
     }
 
     // the glass under the pointer: a touch lighter, a touch thicker —
@@ -150,4 +150,4 @@ namespace NAwesome::Notify {
         return CHyprColor{OVER(c.r), OVER(c.g), OVER(c.b), (float)A};
     }
 
-} // namespace NAwesome::Notify
+} // namespace Awesome::Notify

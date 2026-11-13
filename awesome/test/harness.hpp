@@ -5,7 +5,7 @@
 
 #include <cstdio>
 
-namespace NTest {
+namespace Test {
     struct Case {
         const char* name;
         bool (*fn)();
@@ -21,6 +21,6 @@ namespace NTest {
         }
         return ok;
     }
-} // namespace NTest
+} // namespace Test
 
-#define AW_CHECK(expr) NTest::check((expr), #expr, __FILE__, __LINE__)
+#define AW_CHECK(expr) Test::check((expr), #expr, __FILE__, __LINE__)

@@ -21,7 +21,7 @@
 
 #include <unordered_map>
 
-namespace NAwesome::Windows::Tile {
+namespace Awesome::Windows::Tile {
 
     namespace {
         struct STile {
@@ -111,4 +111,4 @@ namespace NAwesome::Windows::Tile {
         tiles().clear();
     }
 
-} // namespace NAwesome::Windows::Tile
+} // namespace Awesome::Windows::Tile

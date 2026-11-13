@@ -5,7 +5,7 @@
 
 #include "core/supervisor.hpp"
 
-namespace NAwesome::Windows {
+namespace Awesome::Windows {
     class CModule : public IModule {
       public:
         const char* name() const override {

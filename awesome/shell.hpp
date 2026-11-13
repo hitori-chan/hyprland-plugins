@@ -4,7 +4,7 @@
 
 #include "core/supervisor.hpp"
 
-namespace NAwesome::Shell {
+namespace Awesome::Shell {
     class CModule : public IModule {
       public:
         const char* name() const override {

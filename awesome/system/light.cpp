@@ -8,7 +8,7 @@
 
 #include "system.hpp"
 
-#include "notify/model.hpp" // NAwesome::Notify::Model::postCard (the in-process seam)
+#include "notify/model.hpp" // Awesome::Notify::Model::postCard (the in-process seam)
 
 #include "core/busclient.hpp"
 #include "core/config.hpp"
@@ -26,7 +26,7 @@
 #include <optional>
 #include <string>
 
-namespace NAwesome::System {
+namespace Awesome::System {
 
     // The OSD pin id (the model's OSD band 9990-9999 gives it
     // replace-in-place, no history, no grouping).
@@ -231,4 +231,4 @@ namespace NAwesome::System {
         light.max = 0;
     }
 
-} // namespace NAwesome::System
+} // namespace Awesome::System

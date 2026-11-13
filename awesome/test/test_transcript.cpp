@@ -8,7 +8,7 @@
 #include <vector>
 
 namespace {
-    using namespace NAwesome::Notify::Transcript;
+    using namespace Awesome::Notify::Transcript;
 
     // a monospace stand-in for pango: `width` characters a line, a
     // LINE_SEP or '\n' starts a line, a paragraph takes one at least

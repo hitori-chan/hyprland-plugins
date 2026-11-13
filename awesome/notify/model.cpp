@@ -25,7 +25,7 @@
 
 #include <ctime>
 
-namespace NAwesome::Notify {
+namespace Awesome::Notify {
 
     std::vector<SP<SNotif>> notifs;
 
@@ -87,7 +87,7 @@ namespace NAwesome::Notify {
         // merged path caps at 8192, so a fresh one earns the same cut,
         // codepoint-safe
         static std::string clipUtf8(std::string s, size_t cap) {
-            s.resize(NAwesome::clipToUtf8Boundary(s, cap));
+            s.resize(Awesome::clipToUtf8Boundary(s, cap));
             return s;
         }
 
@@ -305,7 +305,7 @@ namespace NAwesome::Notify {
         // conversation cards are two chats (one chat is one card), and each
         // chat alerts on its own. 0 lifts the cap.
         static bool appBannersFull(const SP<SNotif>& self) {
-            const int CAP = NAwesome::cfg().getI("plugin:awesome:notify:coalesce_popups");
+            const int CAP = Awesome::cfg().getI("plugin:awesome:notify:coalesce_popups");
             if (CAP <= 0)
                 return false;
             int shown = 0;
@@ -646,8 +646,8 @@ namespace NAwesome::Notify {
             if (n.urgency >= 2)
                 return 0.f;
             if (n.urgency == 0 || n.transient || n.progress >= 0)
-                return (float)NAwesome::cfg().getI("plugin:awesome:notify:timeout_low");
-            return (float)NAwesome::cfg().getI("plugin:awesome:notify:timeout_normal");
+                return (float)Awesome::cfg().getI("plugin:awesome:notify:timeout_low");
+            return (float)Awesome::cfg().getI("plugin:awesome:notify:timeout_normal");
         }
 
         // Cap the stack: the oldest short-lived card goes first (one that
@@ -657,7 +657,7 @@ namespace NAwesome::Notify {
         // its oldest critical. The newest card at begin() always survives
         // (the scan stops short of it).
         static void evictOverflow() {
-            const size_t CAP = (size_t)std::max(1, NAwesome::cfg().getI("plugin:awesome:notify:max_notifs"));
+            const size_t CAP = (size_t)std::max(1, Awesome::cfg().getI("plugin:awesome:notify:max_notifs"));
             while (notifs.size() > CAP) {
                 auto victim = notifs.end() - 1;
                 int  rank   = 2; // 0 short-lived, 1 non-critical, 2 critical: the lowest goes
@@ -734,7 +734,7 @@ namespace NAwesome::Notify {
                 const uint64_t TICKET = imageJobTicket();
                 unpackBytesInFlight += BYTES;
                 auto       HELD   = std::make_shared<SUnpackBytes>(BYTES);
-                const bool QUEUED = NAwesome::CRasterWorker::inst().submit(
+                const bool QUEUED = Awesome::CRasterWorker::inst().submit(
                     [SRC, OUT, capPx]() mutable {
                         OUT->first  = Parse::unpackImageData(*SRC, capPx);
                         OUT->second = Raster::hash(OUT->first);
@@ -815,9 +815,9 @@ namespace NAwesome::Notify {
         // A name resolve whose miss may only be the walk budget's: true when
         // it deferred (the caller keeps the name for the warm's retry).
         static std::string resolveName(const std::string& name, int iconPx, bool& deferred) {
-            NAwesome::iconDeferred() = false;
+            Awesome::iconDeferred() = false;
             auto P = Parse::resolveImage(name, iconPx);
-            deferred |= P.empty() && NAwesome::iconDeferred();
+            deferred |= P.empty() && Awesome::iconDeferred();
             return P;
         }
 
@@ -832,11 +832,11 @@ namespace NAwesome::Notify {
                 // the entry's own Icon= (the .desktop index) beats an icon-name
                 // collision; while the index has not reached the entry the
                 // name stand-in holds, and pollDesktopIndex upgrades it
-                NAwesome::iconDeferred() = false;
+                Awesome::iconDeferred() = false;
                 if (const auto I = resolveDesktopEntryIcon(n.desktopEntry, iconPx); !I.empty())
                     n.identity = I;
                 else {
-                    deferred |= NAwesome::iconDeferred();
+                    deferred |= Awesome::iconDeferred();
                     n.identity            = resolveName(n.desktopEntry, iconPx, deferred);
                     n.identityFromDesktop = true;
                 }
@@ -1142,13 +1142,13 @@ namespace NAwesome::Notify {
             n->summary = Parse::oneLine(Parse::sanitizeMarkup(SUM, false, /*plainText=*/true));
             std::string bodyText = TXT;
             n->bodyImages.clear();
-            for (const auto& P : Parse::extractImages(bodyText, std::max(64, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon") * 2), MAX_BODY_IMAGES))
+            for (const auto& P : Parse::extractImages(bodyText, std::max(64, (int)Awesome::cfg().getI("plugin:awesome:notify:max_icon") * 2), MAX_BODY_IMAGES))
                 n->bodyImages.push_back(SBodyImage{.src = P.src, .alt = P.alt});
             n->body = capMarkup(Parse::sanitizeMarkup(bodyText, /*allowLinks=*/true));
 
             // the chat state: identity, kind, the app's declared group, and
             // the bounded message log the body is rebuilt from
-            const int ICONPX = std::max(8, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon"));
+            const int ICONPX = std::max(8, (int)Awesome::cfg().getI("plugin:awesome:notify:max_icon"));
             n->conversationId = EFFECTIVE_CONV_ID;
             if (CONV_TITLE_HINT)
                 n->conversationTitle = CONV_TITLE_HINT->empty() ? n->summary : Parse::oneLine(Parse::sanitizeMarkup(*CONV_TITLE_HINT, false, /*plainText=*/true));
@@ -1290,7 +1290,7 @@ namespace NAwesome::Notify {
             // (app_icon param, else the desktop-entry hint) rides it as a
             // corner badge — or leads alone when there is no content.
             // Nothing at all = a text-only card.
-            const int PIXCAP = std::max((int)NAwesome::cfg().getI("plugin:awesome:notify:width") * 2, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon") * 3);
+            const int PIXCAP = std::max((int)Awesome::cfg().getI("plugin:awesome:notify:width") * 2, (int)Awesome::cfg().getI("plugin:awesome:notify:max_icon") * 3);
             if (image && !n->hasPixels)
                 takeImageData(*n, std::move(*image), PIXCAP, ICONPX);
             if (!n->pixels.empty())
@@ -1422,12 +1422,12 @@ namespace NAwesome::Notify {
                 soundFile = clipUtf8(std::move(soundFile), MAX_SOURCE_BYTES);
                 soundName = clipUtf8(std::move(soundName), MAX_SOURCE_BYTES);
                 soundFile = Parse::fileUriPath(std::move(soundFile));
-                const std::string CMD{NAwesome::cfg().getS("plugin:awesome:notify:sound_command")};
+                const std::string CMD{Awesome::cfg().getS("plugin:awesome:notify:sound_command")};
                 if (!suppress && !CMD.empty()) {
                     if (!soundFile.empty())
-                        NAwesome::Jobs::inst().spawn(NAwesome::Jobs::SOUND, {CMD.c_str(), "-f", soundFile.c_str(), nullptr});
+                        Awesome::Jobs::inst().spawn(Awesome::Jobs::SOUND, {CMD.c_str(), "-f", soundFile.c_str(), nullptr});
                     else if (!soundName.empty())
-                        NAwesome::Jobs::inst().spawn(NAwesome::Jobs::SOUND, {CMD.c_str(), "-i", soundName.c_str(), nullptr});
+                        Awesome::Jobs::inst().spawn(Awesome::Jobs::SOUND, {CMD.c_str(), "-i", soundName.c_str(), nullptr});
                 }
             }
 
@@ -1474,7 +1474,7 @@ namespace NAwesome::Notify {
             clearWindow = makeShared<CEventLoopTimer>(
                 std::nullopt,
                 [](SP<CEventLoopTimer>, void*) {
-                    if (!NAwesome::compositorShuttingDown())
+                    if (!Awesome::compositorShuttingDown())
                         commitClear();
                 },
                 nullptr);
@@ -1502,7 +1502,7 @@ namespace NAwesome::Notify {
     void retryDeferredNames(SNotif& n) {
         if (!n.namesDeferred)
             return;
-        const int ICONPX = std::max(8, (int)NAwesome::cfg().getI("plugin:awesome:notify:max_icon"));
+        const int ICONPX = std::max(8, (int)Awesome::cfg().getI("plugin:awesome:notify:max_icon"));
         bool      again  = false;
         if (!n.imageRetry.empty()) {
             bool deferred = false;
@@ -1520,4 +1520,4 @@ namespace NAwesome::Notify {
             iconNamesDeferred();
     }
 
-} // namespace NAwesome::Notify
+} // namespace Awesome::Notify

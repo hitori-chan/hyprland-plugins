@@ -10,7 +10,7 @@
 
 #include "harness.hpp"
 
-using namespace NAwesome;
+using namespace Awesome;
 namespace fs = std::filesystem;
 
 static const fs::path TDIR = fs::path{"/tmp/hypr-awesome-test"};

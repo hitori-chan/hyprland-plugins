@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <filesystem>
 
-namespace NAwesome {
+namespace Awesome {
 
     namespace {
         constexpr size_t MAX_DESKTOP_FILES   = 4096;
@@ -217,4 +217,4 @@ namespace NAwesome {
         set.entries.push_back(SDesktopEntry{std::move(*PARSED), std::move(id), file.path.string()});
     }
 
-} // namespace NAwesome
+} // namespace Awesome

@@ -8,7 +8,7 @@
 
 #include "ui.hpp"
 
-namespace NAwesome::Notify {
+namespace Awesome::Notify {
 
     // the OSD band's capsule form: an in-process post that names a glyph
     static bool isCapsule(const SP<SNotif>& n) {
@@ -124,4 +124,4 @@ namespace NAwesome::Notify {
         }
     }
 
-} // namespace NAwesome::Notify
+} // namespace Awesome::Notify

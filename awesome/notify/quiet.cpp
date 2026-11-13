@@ -14,7 +14,7 @@
 #include <hyprland/src/managers/screenshare/ScreenshareManager.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
 
-namespace NAwesome::Notify::Quiet {
+namespace Awesome::Notify::Quiet {
 
     // A share as the cards last rendered it, watched only while its switch
     // is on, and whether it outlasted a poll: the banners already up retreat
@@ -99,7 +99,7 @@ namespace NAwesome::Notify::Quiet {
     }
 
     void refresh() {
-        if (NAwesome::compositorShuttingDown())
+        if (Awesome::compositorShuttingDown())
             return;
         const bool SHARED = on(eOption::QUIET_SHARING) && shareLive();
         if (SHARED != shared) {
@@ -141,4 +141,4 @@ namespace NAwesome::Notify::Quiet {
         shown            = eWhy::NONE;
     }
 
-} // namespace NAwesome::Notify::Quiet
+} // namespace Awesome::Notify::Quiet

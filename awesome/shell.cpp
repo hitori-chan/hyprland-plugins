@@ -15,7 +15,7 @@
 
 #include <ctime>
 
-namespace NAwesome::Shell {
+namespace Awesome::Shell {
 
     CModule& module() {
         static CModule M;
@@ -214,4 +214,4 @@ namespace NAwesome::Shell {
 #endif
     }
 
-} // namespace NAwesome::Shell
+} // namespace Awesome::Shell

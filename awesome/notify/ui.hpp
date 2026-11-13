@@ -19,11 +19,11 @@
 #include "../core/glyph.hpp"
 #include "../core/theme.hpp"
 
-namespace NAwesome::Notify {
+namespace Awesome::Notify {
 
     // the paint context is the canvas' (rect/glass/frost/ring/shadow/tex/
     // texIn/texFit); the warm gate is the canvas'
-    using SPaint = NAwesome::SPaint;
+    using SPaint = Awesome::SPaint;
     struct SCachedText;
 
     // ---- layout constants (logical px; the Frost spec) ----
@@ -36,7 +36,7 @@ namespace NAwesome::Notify {
     // its height (core/bands.hpp).
     inline constexpr double BAR_GAP = 12;
     inline double           cardsTop(const PHLMONITOR& mon) {
-        const double OFF = (double)NAwesome::cfg().getI("plugin:awesome:notify:offset_y");
+        const double OFF = (double)Awesome::cfg().getI("plugin:awesome:notify:offset_y");
         return mon ? std::max(OFF, mon->logicalBoxMinusReserved().y - mon->logicalBox().y + BAR_GAP) + Bands::below(mon->m_id) : OFF;
     }
     // what the monitor reserves at its bottom edge (a dock, a bottom bar):
@@ -271,4 +271,4 @@ namespace NAwesome::Notify {
     // the drawing units read it for fills and reveals
     extern SHover hovered;
 
-} // namespace NAwesome::Notify
+} // namespace Awesome::Notify

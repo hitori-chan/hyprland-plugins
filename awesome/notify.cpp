@@ -20,7 +20,7 @@
 #include <cmath>
 #include <ctime>
 
-namespace NAwesome::Notify {
+namespace Awesome::Notify {
 
     void queueCenterToggle(PHLMONITOR on); // defined below; the Lua door calls it first
 
@@ -36,7 +36,7 @@ namespace NAwesome::Notify {
         // of the bind's input emission (the resume reflows and repaints).
         // Presses ACCUMULATE — two in one dispatch are two toggles, not one
         // — and a timed call replaces whatever was pending before it.
-        static NAwesome::CHop         pendingSuspend;
+        static Awesome::CHop         pendingSuspend;
         static int                    suspendPresses = 0;
         static std::optional<int64_t> suspendSet; // a timed call's setSuspend value, before the presses
         int                           luaSuspend(lua_State* L) {
@@ -64,19 +64,19 @@ namespace NAwesome::Notify {
         // deferred and accumulating like suspend.
         static int               centerPresses = 0;
         static PHLMONITORREF     centerOn; // the latest press's monitor (the bell's)
-        static NAwesome::CHop    pendingCenter;
+        static Awesome::CHop    pendingCenter;
         int                      luaCenter(lua_State*) {
             queueCenterToggle(nullptr);
             return 0;
         }
         int luaClearAll(lua_State*) {
-            static NAwesome::CHop pendingClear;
+            static Awesome::CHop pendingClear;
             pendingClear.arm([]() { Model::dismissAllLive(); });
             return 0;
         }
     }
 
-    static NAwesome::CHop pendingQuiet;
+    static Awesome::CHop pendingQuiet;
 
     // Where the last pointer MOTION landed. A pointer crossing onto another
     // monitor moves first and focuses the monitor after; a keyboard focus
@@ -121,7 +121,7 @@ namespace NAwesome::Notify {
         supervisor().listen(EV.monitor.focused, [](PHLMONITOR mon) {
             if (notifs.empty() && !centerVisible())
                 return;
-            if (mon && NAwesome::monitorContaining(lastMovePos) == mon)
+            if (mon && Awesome::monitorContaining(lastMovePos) == mon)
                 return;
             placeCardsOn(mon);
         });
@@ -136,7 +136,7 @@ namespace NAwesome::Notify {
         supervisor().listen(EV.window.fullscreen, [](PHLWINDOW) { pendingQuiet.arm(Quiet::refresh); });
         supervisor().listen(EV.window.active, [](PHLWINDOW, Desktop::eFocusReason) { pendingQuiet.arm(Quiet::refresh); });
         supervisor().listen(EV.config.reloaded, []() {
-            NAwesome::refreshIconTheme();
+            Awesome::refreshIconTheme();
             resetFallbackCache();
             if (!notifs.empty() || centerVisible())
                 notifChanged(); // a live theme reload re-keys the texture caches
@@ -167,20 +167,20 @@ namespace NAwesome::Notify {
     // The units' free functions share two names with the pipeline members
     // (onKey, onInputBlocked): the qualified calls reach the free ones.
     void CModule::onPointerButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
-        NAwesome::Notify::onMouseButton(e, info);
+        Awesome::Notify::onMouseButton(e, info);
     }
     void CModule::onPointerMove(const Vector2D& pos, Event::SCallbackInfo& info) {
         lastMovePos = pos;
-        NAwesome::Notify::onMouseMove(pos, info);
+        Awesome::Notify::onMouseMove(pos, info);
     }
     void CModule::onPointerAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
-        NAwesome::Notify::onMouseAxis(e, info);
+        Awesome::Notify::onMouseAxis(e, info);
     }
     void CModule::onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
-        NAwesome::Notify::onKey(e, info);
+        Awesome::Notify::onKey(e, info);
     }
     void CModule::onInputBlocked() {
-        NAwesome::Notify::onInputBlocked();
+        Awesome::Notify::onInputBlocked();
     }
 
     std::optional<std::string> CModule::handleCtl(const std::string& verb) const {
@@ -227,11 +227,11 @@ namespace NAwesome::Notify {
             return Quiet::describeShares();
 #endif
         if (verb == "clear") { // the scripted reset
-            static NAwesome::CHop pendingClear;
+            static Awesome::CHop pendingClear;
             pendingClear.arm([]() { Model::dismissAllLive(/*offShadeToo=*/true); });
             return "ok";
         }
         return std::nullopt;
     }
 
-} // namespace NAwesome::Notify
+} // namespace Awesome::Notify

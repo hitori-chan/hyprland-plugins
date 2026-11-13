@@ -42,7 +42,7 @@ using Render::GL::g_pHyprOpenGL;
 #include <utility>
 #include <vector>
 
-namespace NAwesome {
+namespace Awesome {
 
     class CWarmGate {
       public:
@@ -652,4 +652,4 @@ namespace NAwesome {
         };
     };
 
-} // namespace NAwesome
+} // namespace Awesome

@@ -21,7 +21,7 @@
 #include <functional>
 #include <string>
 
-namespace NAwesome {
+namespace Awesome {
 
     class CWallTimer {
       public:
@@ -124,4 +124,4 @@ namespace NAwesome {
         return std::strftime(buf, sizeof buf, FMT, &at) ? buf : "";
     }
 
-} // namespace NAwesome
+} // namespace Awesome

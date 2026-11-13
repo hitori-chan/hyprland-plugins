@@ -69,7 +69,7 @@
 #include "../core/queries.hpp"
 #include "../core/supervisor.hpp"
 
-namespace NAwesome::Notify {
+namespace Awesome::Notify {
 
     // the OSD scripts pin ids here: replace-in-place, never appended, never
     // grouped, never history; fresh ids and recalls never mint into it
@@ -630,4 +630,4 @@ namespace NAwesome::Notify {
     void inputInit(); // the hold timer
     void inputExit();
 
-} // namespace NAwesome::Notify
+} // namespace Awesome::Notify

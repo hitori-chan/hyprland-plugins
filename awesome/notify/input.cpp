@@ -57,7 +57,7 @@
 #include <xkbcommon/xkbcommon-keysyms.h>
 #include <xkbcommon/xkbcommon-names.h>
 
-namespace NAwesome::Notify {
+namespace Awesome::Notify {
 
     static uint32_t swallowRelease = 0; // bit 1 = left, 2 = right, 4 = middle
     static int      heldButtons    = 0; // presses that reached apps: an implicit grab may be live
@@ -82,8 +82,8 @@ namespace NAwesome::Notify {
     static void           releaseLeft(const Vector2D& pos);
     // clicks deferred out of the input emission; 32 pending is far past a
     // human's clicks per turn
-    static NAwesome::CHopQueue<SHit, 32> hits(drainHits);
-    static NAwesome::CHop pendingEsc;
+    static Awesome::CHopQueue<SHit, 32> hits(drainHits);
+    static Awesome::CHop pendingEsc;
 
     // most-specific-first: rows are pushed after the panel they sit on
     static const SCard* cardAt(const Vector2D& pos) {
@@ -247,7 +247,7 @@ namespace NAwesome::Notify {
                     if (replyPart(H))
                         continue;
                     if (!H.href.empty()) { // left on a hyperlink: open it, keep the card up
-                        NAwesome::Jobs::inst().spawn(NAwesome::Jobs::OPEN, {"xdg-open", H.href.c_str(), nullptr});
+                        Awesome::Jobs::inst().spawn(Awesome::Jobs::OPEN, {"xdg-open", H.href.c_str(), nullptr});
                         continue;
                     }
                     invokeLive(H.id, "", H.rev);
@@ -267,7 +267,7 @@ namespace NAwesome::Notify {
                     if (replyPart(H))
                         continue;
                     if (!H.href.empty()) { // a link in the body: open it, keep the card
-                        NAwesome::Jobs::inst().spawn(NAwesome::Jobs::OPEN, {"xdg-open", H.href.c_str(), nullptr});
+                        Awesome::Jobs::inst().spawn(Awesome::Jobs::OPEN, {"xdg-open", H.href.c_str(), nullptr});
                         setCenter(false); // but not the center: a browser is coming up over it
                         continue;
                     }
@@ -328,7 +328,7 @@ namespace NAwesome::Notify {
     void onMouseButton(const IPointer::SButtonEvent& e, Event::SCallbackInfo& info) {
         // emissions precede the compositor's own lock handling: locked input
         // belongs to the lockscreen, and half-tracked state must not survive it
-        if (NAwesome::sessionLocked() || NAwesome::nativeInputCaptureActive()) {
+        if (Awesome::sessionLocked() || Awesome::nativeInputCaptureActive()) {
             swallowRelease = 0;
             heldButtons    = 0;
             return;
@@ -365,13 +365,13 @@ namespace NAwesome::Notify {
         // point, stays authoritative over every drawn surface (the bar's
         // strip does the same): the press goes through, the cards only
         // watch — and an open menu closes, as for any press off it
-        if (heldButtons > 0 || NAwesome::nativePointerGrabActive()) {
+        if (heldButtons > 0 || Awesome::nativePointerGrabActive()) {
             heldButtons++;
             if (MENU)
                 queueHit({.kind = SCard::MENU});
             return;
         }
-        if (NAwesome::nativeLayerOwnsPointer()) {
+        if (Awesome::nativeLayerOwnsPointer()) {
             if (MENU)
                 queueHit({.kind = SCard::MENU});
             return;
@@ -444,7 +444,7 @@ namespace NAwesome::Notify {
     static double scrollAcc = 0;
 
     void          onMouseAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
-        if (NAwesome::sessionLocked() || NAwesome::nativeInputCaptureActive()) {
+        if (Awesome::sessionLocked() || Awesome::nativeInputCaptureActive()) {
             scrollAcc = 0;
             return;
         }
@@ -453,7 +453,7 @@ namespace NAwesome::Notify {
         const bool MENU = CardMenu::isOpen();
         if ((!centerVisible() && !MENU) || cards.empty() || info.cancelled || heldButtons > 0)
             return;
-        if (NAwesome::nativePointerGrabActive() || NAwesome::nativeLayerOwnsPointer())
+        if (Awesome::nativePointerGrabActive() || Awesome::nativeLayerOwnsPointer())
             return;
         const auto CARD = cardAt(g_pInputManager->getMouseCoordsInternal());
         if (!CARD)
@@ -505,10 +505,10 @@ namespace NAwesome::Notify {
     }
 
     // shade key actions, deferred like the clicks
-    static NAwesome::CHopQueue<SKeyAct, 32> keys(drainKeys);
+    static Awesome::CHopQueue<SKeyAct, 32> keys(drainKeys);
 
     void onKey(const IKeyboard::SKeyEvent& e, Event::SCallbackInfo& info) {
-        if (NAwesome::sessionLocked()) {
+        if (Awesome::sessionLocked()) {
             // a lock discards every half-tracked input state (crash class 3):
             // a queued shade action or pending esc must not drain after unlock,
             // and an armed reply field must not keep owning the keyboard with
@@ -524,7 +524,7 @@ namespace NAwesome::Notify {
             return;
         // input-capture-v1 is fed after the plugin emissions: while a client
         // owns the physical stream, the shade must not cancel a key first
-        if (NAwesome::nativeInputCaptureActive())
+        if (Awesome::nativeInputCaptureActive())
             return;
         // releases pass untouched (crash class 3: never cancel key releases)
         if (e.state != WL_KEYBOARD_KEY_STATE_PRESSED)
@@ -532,10 +532,10 @@ namespace NAwesome::Notify {
         // an exclusive-keyboard layer (a launcher a bind opened over the
         // shade) owns typing natively: the shade and its field step aside,
         // the field keeps its text for when the layer goes
-        if (NAwesome::Keys::exclusiveLayer())
+        if (Awesome::Keys::exclusiveLayer())
             return;
         // the keyboard that typed it, with its own layout and modifiers
-        const auto KB = NAwesome::Keys::keyboardFor(e.keycode);
+        const auto KB = Awesome::Keys::keyboardFor(e.keycode);
         if (!KB || !KB->m_xkbState)
             return;
 
@@ -648,7 +648,7 @@ namespace NAwesome::Notify {
     // session is locked or a native capture owns the stream, so their
     // resets happen here
     void onInputBlocked() {
-        const bool LOCK = NAwesome::sessionLocked();
+        const bool LOCK = Awesome::sessionLocked();
         swallowRelease = 0;
         heldButtons    = 0;
         scrollAcc      = 0;
@@ -683,7 +683,7 @@ namespace NAwesome::Notify {
     // Hands off while a button is held or a drag is live — implicit grabs and
     // drags keep flowing, as they would over a real layer-surface daemon.
     void onMouseMove(const Vector2D& pos, Event::SCallbackInfo& info) {
-        if (NAwesome::sessionLocked() || NAwesome::nativeInputCaptureActive()) {
+        if (Awesome::sessionLocked() || Awesome::nativeInputCaptureActive()) {
             setHovered({});
             releasePointer();
             return;
@@ -712,7 +712,7 @@ namespace NAwesome::Notify {
         if (press.live && holdTimer && P.distance(press.at) > SLOP)
             holdTimer->updateTimeout(std::nullopt); // drifted: still a click, never a hold
         const auto CARD = cardAt(P);
-        if (!CARD || heldButtons > 0 || NAwesome::nativePointerGrabActive() || NAwesome::nativeLayerOwnsPointer() ||
+        if (!CARD || heldButtons > 0 || Awesome::nativePointerGrabActive() || Awesome::nativeLayerOwnsPointer() ||
             (g_layoutManager && g_layoutManager->dragController()->target())) {
             setHovered({});
             releasePointer();
@@ -803,4 +803,4 @@ namespace NAwesome::Notify {
         releasePointer();
     }
 
-} // namespace NAwesome::Notify
+} // namespace Awesome::Notify

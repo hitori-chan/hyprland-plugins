@@ -7,7 +7,7 @@
 #include "core/glyph.hpp"
 #include "notify/model.hpp"
 
-namespace NAwesome::Shell {
+namespace Awesome::Shell {
 
     static int         batteryPercent  = -1;    // -1 = unknown level; batteryDirs decides whether the widget exists
     static bool        batteryPlugged  = false; // known external-power status, never inferred from Unknown
@@ -86,7 +86,7 @@ namespace NAwesome::Shell {
 
     static void damageNote() {
         if (const auto M = noteMonitor(); M && g_pHyprRenderer)
-            g_pHyprRenderer->damageBox(noteBoxOf(M, NOTE_MAXW).expand(NAwesome::SPaint::noteReach() + 1));
+            g_pHyprRenderer->damageBox(noteBoxOf(M, NOTE_MAXW).expand(Awesome::SPaint::noteReach() + 1));
     }
 
     static void hideNote() {
@@ -99,7 +99,7 @@ namespace NAwesome::Shell {
 
     // Power Profiles Daemon is the Linux-wide explicit power-save state. It
     // owns a separate system-bus link because tray's link is session-local.
-    static NAwesome::CBusLink         powerProfilesBus;
+    static Awesome::CBusLink         powerProfilesBus;
     static std::unique_ptr<sdbus::IProxy> powerProfilesProxy;
     static sdbus::Slot                    powerProfilesMatch, powerProfilesOwner; // async matches: no round trip at load
     static uint64_t                       powerProfileGeneration = 0;
@@ -369,14 +369,14 @@ namespace NAwesome::Shell {
             // The plug edges are feedback, a capsule (the glyph); low and
             // critical stay notification cards
             const auto NOTIFY = [](uint8_t urgency, int32_t timeoutMs, const char* summary, const std::string& body, bool capsule = false) {
-                NAwesome::Notify::Model::postCard({.id            = 9990,
+                Awesome::Notify::Model::postCard({.id            = 9990,
                                                    .icon          = "battery-symbolic",
                                                    .summary       = summary,
                                                    .body          = body.c_str(),
                                                    .expireTimeout = timeoutMs,
                                                    .urgency       = urgency,
                                                    .osd           = true,
-                                                   .glyph         = capsule ? NAwesome::Glyph::eGlyph::BATTERY : NAwesome::Glyph::eGlyph::NONE}); // id 9990: the alerts' replace-in-place slot, critical stays sticky
+                                                   .glyph         = capsule ? Awesome::Glyph::eGlyph::BATTERY : Awesome::Glyph::eGlyph::NONE}); // id 9990: the alerts' replace-in-place slot, critical stays sticky
             };
 
             // ACPI transitions/resume report transient "Unknown" — it must not
@@ -468,7 +468,7 @@ namespace NAwesome::Shell {
                 noteTimer = makeShared<CEventLoopTimer>(
                     std::nullopt,
                     [](SP<CEventLoopTimer>, void*) {
-                        if (NAwesome::compositorShuttingDown() || NAwesome::sessionLocked() || noteMon == MONITOR_INVALID)
+                        if (Awesome::compositorShuttingDown() || Awesome::sessionLocked() || noteMon == MONITOR_INVALID)
                             return;
                         noteShown = true;
                         warmPopups(); // the popup layer draws the note
@@ -563,7 +563,7 @@ namespace NAwesome::Shell {
         std::optional<CBox> noteReach(const PHLMONITOR& mon) {
             if (!noteWanted(mon))
                 return std::nullopt;
-            return noteBoxOf(mon, NOTE_MAXW).expand(NAwesome::SPaint::noteReach());
+            return noteBoxOf(mon, NOTE_MAXW).expand(Awesome::SPaint::noteReach());
         }
 
         void noteChanged() {
@@ -596,7 +596,7 @@ namespace NAwesome::Shell {
                 }
                 noteFont = std::string{cfg().getS("plugin:awesome:notify:font")};
             }
-            const auto   TEX = textTex(noteLine, NAwesome::tTitle(), P.pt, (int)std::lround((NOTE_MAXW - 2 * NOTE_PADX) * P.scale), noteFont, 500);
+            const auto   TEX = textTex(noteLine, Awesome::tTitle(), P.pt, (int)std::lround((NOTE_MAXW - 2 * NOTE_PADX) * P.scale), noteFont, 500);
             const double W   = textInkW(TEX, P.scale) + 2 * NOTE_PADX;
             const CBox   B   = noteBoxOf(P.mon, W);
             P.note(B);
@@ -665,4 +665,4 @@ namespace NAwesome::Shell {
         return W;
     }
 
-} // namespace NAwesome::Shell
+} // namespace Awesome::Shell

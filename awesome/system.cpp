@@ -10,7 +10,7 @@
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 
-namespace NAwesome::System {
+namespace Awesome::System {
 
     CModule& module() {
         static CModule M;
@@ -119,4 +119,4 @@ namespace NAwesome::System {
         return std::nullopt;
     }
 
-} // namespace NAwesome::System
+} // namespace Awesome::System

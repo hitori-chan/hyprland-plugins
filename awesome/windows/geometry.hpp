@@ -10,7 +10,7 @@
 #include <limits>
 #include <optional>
 
-namespace NAwesome::Windows::Geometry {
+namespace Awesome::Windows::Geometry {
 
     inline constexpr double DEFAULT_MIN_WINDOW_SIZE = 20.0;
 
@@ -88,4 +88,4 @@ namespace NAwesome::Windows::Geometry {
         return {anchoredPosition(slot.x, slot.w, WIDTH, horizontal), anchoredPosition(slot.y, slot.h, HEIGHT, vertical), WIDTH, HEIGHT};
     }
 
-} // namespace NAwesome::Windows::Geometry
+} // namespace Awesome::Windows::Geometry

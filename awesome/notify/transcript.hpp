@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-namespace NAwesome::Notify::Transcript {
+namespace Awesome::Notify::Transcript {
 
     // U+2028 LINE SEPARATOR: a message's own line breaks stay inside its
     // paragraph, so the hanging indent marks every line that continues a
@@ -208,4 +208,4 @@ namespace NAwesome::Notify::Transcript {
         return fits(shown) ? shown : fitTail(paras, fits);
     }
 
-} // namespace NAwesome::Notify::Transcript
+} // namespace Awesome::Notify::Transcript

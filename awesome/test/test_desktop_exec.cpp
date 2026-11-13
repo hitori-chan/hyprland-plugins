@@ -5,7 +5,7 @@
 
 #include "harness.hpp"
 
-namespace DE = NAwesome::DesktopExec;
+namespace DE = Awesome::DesktopExec;
 
 static bool wordsEqual(const std::optional<std::vector<std::string>>& got, std::vector<std::string> want) {
     if (!got)

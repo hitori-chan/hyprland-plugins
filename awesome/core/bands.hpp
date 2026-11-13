@@ -13,7 +13,7 @@
 
 #include <functional>
 
-namespace NAwesome::Bands {
+namespace Awesome::Bands {
 
     struct SBand {
         MONITORID mon = -1;
@@ -46,4 +46,4 @@ namespace NAwesome::Bands {
         return B.mon == mon ? B.h : 0;
     }
 
-} // namespace NAwesome::Bands
+} // namespace Awesome::Bands

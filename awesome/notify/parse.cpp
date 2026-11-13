@@ -11,7 +11,7 @@
 
 #include "../core/icons.hpp"
 
-namespace NAwesome::Notify::Parse {
+namespace Awesome::Notify::Parse {
 
     // We advertise body-markup, so the whitelisted Pango tags pass through
     // live; everything else is neutralized into content. Two client dialects
@@ -216,7 +216,7 @@ namespace NAwesome::Notify::Parse {
             return "";
         if (s.starts_with("file://") || s.starts_with('/'))
             return fileUriPath(std::move(s));
-        return NAwesome::resolveIconName(s, sizePx);
+        return Awesome::resolveIconName(s, sizePx);
     }
 
     // <img src="..."> is not a Pango tag; pull it from the body before the
@@ -340,4 +340,4 @@ namespace NAwesome::Notify::Parse {
         return out;
     }
 
-} // namespace NAwesome::Notify::Parse
+} // namespace Awesome::Notify::Parse

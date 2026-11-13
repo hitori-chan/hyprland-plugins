@@ -7,7 +7,7 @@
 
 #include "harness.hpp"
 
-using namespace NAwesome;
+using namespace Awesome;
 
 // a key compiles only if it is in the table (CfgKey is consteval): a typo
 // in a getter fails the BUILD

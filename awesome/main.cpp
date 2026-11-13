@@ -28,8 +28,8 @@ namespace {
         if (verb.empty())
             return "usage: awesome <count|center|state|badge|topline|clear|trace|…>";
         if (verb == "trace")
-            return NAwesome::supervisor().traceString();
-        const NAwesome::IModule* const MODULES[] = {&NAwesome::Shell::module(), &NAwesome::Notify::module(), &NAwesome::Windows::module(), &NAwesome::System::module()};
+            return Awesome::supervisor().traceString();
+        const Awesome::IModule* const MODULES[] = {&Awesome::Shell::module(), &Awesome::Notify::module(), &Awesome::Windows::module(), &Awesome::System::module()};
         for (const auto* M : MODULES)
             if (const auto R = M->handleCtl(verb))
                 return *R;
@@ -51,25 +51,25 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         throw std::runtime_error("[awesome] version mismatch");
     }
 
-    NAwesome::cfg().init(PHANDLE);
-    NAwesome::supervisor().registerModule(&NAwesome::Shell::module());
-    NAwesome::supervisor().registerModule(&NAwesome::Notify::module());
-    NAwesome::supervisor().registerModule(&NAwesome::Windows::module());
-    NAwesome::supervisor().registerModule(&NAwesome::System::module());
-    NAwesome::supervisor().start(PHANDLE);
+    Awesome::cfg().init(PHANDLE);
+    Awesome::supervisor().registerModule(&Awesome::Shell::module());
+    Awesome::supervisor().registerModule(&Awesome::Notify::module());
+    Awesome::supervisor().registerModule(&Awesome::Windows::module());
+    Awesome::supervisor().registerModule(&Awesome::System::module());
+    Awesome::supervisor().start(PHANDLE);
 
     // the lockscreen bell reads count; the gate reads state
     ctlCmd = HyprlandAPI::registerHyprCtlCommand(PHANDLE, IPC::Socket1::SCommand{.name = "awesome", .match = IPC::Socket1::COMMAND_MATCH_PREFIX,
                                                                                   .handler = [](const IPC::Socket1::SRequest& request) { return IPC::Socket1::SResponse{ctlDispatch(request.command)}; }});
 
-    return {NAwesome::NAME, "the awesome shell, unified", NAwesome::AUTHOR, NAwesome::VERSION};
+    return {Awesome::NAME, "the awesome shell, unified", Awesome::AUTHOR, Awesome::VERSION};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
-    NAwesome::supervisor().stop(); // listeners, hops, then modules in reverse
-    NAwesome::Glyph::clear();      // the glyph textures every module drew from
+    Awesome::supervisor().stop(); // listeners, hops, then modules in reverse
+    Awesome::Glyph::clear();      // the glyph textures every module drew from
     if (ctlCmd)
         HyprlandAPI::unregisterHyprCtlCommand(PHANDLE, ctlCmd);
     ctlCmd.reset();
-    NAwesome::cfg().exit(PHANDLE);
+    Awesome::cfg().exit(PHANDLE);
 }

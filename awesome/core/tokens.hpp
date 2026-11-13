@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace NAwesome::Theme {
+namespace Awesome::Theme {
 
     // The glass (0xAARRGGBB, config default form): one material for the bar,
     // the cards, the center, the capsules, menus and the launcher. No tint:
@@ -66,4 +66,4 @@ namespace NAwesome::Theme {
     // ---- motion (ms) ----
     inline constexpr int MOTION_SPATIAL = 320; // panel open/close, card arrival
 
-} // namespace NAwesome::Theme
+} // namespace Awesome::Theme

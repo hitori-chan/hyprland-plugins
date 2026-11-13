@@ -12,7 +12,7 @@
 #include <filesystem>
 #include <fstream>
 
-using namespace NAwesome;
+using namespace Awesome;
 namespace fs = std::filesystem;
 
 static void touch(const fs::path& p) {

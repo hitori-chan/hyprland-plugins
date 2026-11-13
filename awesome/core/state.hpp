@@ -33,7 +33,7 @@
 #include "persist.hpp"
 #include "store.hpp"
 
-namespace NAwesome {
+namespace Awesome {
 
     struct AppState {
         CRecentMap<Box>               spot; // w, h unused (0): the client picks its size
@@ -81,4 +81,4 @@ namespace NAwesome {
         bool     m_writeBlocked = false;
     };
 
-} // namespace NAwesome
+} // namespace Awesome

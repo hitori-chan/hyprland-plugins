@@ -6,7 +6,7 @@
 #include <string_view>
 #include <vector>
 
-namespace NAwesome::Notify {
+namespace Awesome::Notify {
 
     // The text a layout of `lines` lines can show, with room to spare: pango
     // lays out (and shapes) everything it is given, and an end-ellipsized
@@ -129,4 +129,4 @@ namespace NAwesome::Notify {
         return out;
     }
 
-} // namespace NAwesome::Notify
+} // namespace Awesome::Notify

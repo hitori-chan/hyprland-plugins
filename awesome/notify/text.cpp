@@ -19,7 +19,7 @@
 #include <unordered_map>
 #include <format>
 
-namespace NAwesome::Notify {
+namespace Awesome::Notify {
 
     std::string hexOf(const CHyprColor& c) {
         return std::format("#{:02x}{:02x}{:02x}", (int)std::lround(c.r * 255), (int)std::lround(c.g * 255), (int)std::lround(c.b * 255));
@@ -297,7 +297,7 @@ namespace NAwesome::Notify {
             adv   = IT->second.adv;
             return true;
         }
-        PangoContext* context = NAwesome::newTextContext();
+        PangoContext* context = Awesome::newTextContext();
         const auto    measure = [](const char* text, PangoContext* ctx, const char* fam, int size, int wt, float sp) -> int {
             PangoLayout*          l  = pango_layout_new(ctx);
             PangoFontDescription* f  = pango_font_description_new();
@@ -333,7 +333,7 @@ namespace NAwesome::Notify {
         if (lines <= 0)
             return 0;
         const auto T      = typeScale(scale);
-        const auto FAMILY = NAwesome::cfg().getS("plugin:awesome:notify:font");
+        const auto FAMILY = Awesome::cfg().getS("plugin:awesome:notify:font");
         int LINEH = 0, ADV = 0;
         if (!lineMetric(FAMILY, T.body, 400, 1.1f, LINEH, ADV))
             return (int)std::lround((double)T.body * 1.35 * lines);
@@ -373,8 +373,8 @@ namespace NAwesome::Notify {
     // very layout the raster draws, so the raster never cuts what it kept.
     static PangoLayout* newLayout(const std::string& text, int pt, int maxWidthPx, float lineSpacing, bool markup, int weight, int indentPx, const CHyprColor* linkCol,
                                   std::vector<SLinkSpan>* linkSpans) {
-        const std::string     FAMILY{NAwesome::cfg().getS("plugin:awesome:notify:font")};
-        PangoContext*         context = NAwesome::newTextContext();
+        const std::string     FAMILY{Awesome::cfg().getS("plugin:awesome:notify:font")};
+        PangoContext*         context = Awesome::newTextContext();
         PangoLayout*          layout  = pango_layout_new(context);
         PangoFontDescription* fd      = pango_font_description_new();
         g_object_unref(context);
@@ -422,7 +422,7 @@ namespace NAwesome::Notify {
     static SP<ITexture> buildText(const std::string& fullText, const CHyprColor& col, int pt, int maxWidthPx, int maxHeightPx, float lineSpacing, bool markup, int weight,
                                   const CHyprColor* linkCol = nullptr, std::vector<std::pair<std::string, CBox>>* outLinks = nullptr, bool headCut = false,
                                   eShadow shadow = eShadow::NONE, int* padOut = nullptr, int indentPx = 0) {
-        const std::string FAMILY{NAwesome::cfg().getS("plugin:awesome:notify:font")};
+        const std::string FAMILY{Awesome::cfg().getS("plugin:awesome:notify:font")};
         // the lines this raster shows: a pixel budget's whole lines, or the
         // negative height's lines of one paragraph
         int       LINES  = 1;
@@ -518,7 +518,7 @@ namespace NAwesome::Notify {
     // 24 warms of grace (the shade warms only when its model changes: a
     // longer wall-clock reprieve than the bar's), bounded in texture bytes,
     // which is what bounds a burst of large rasters
-    static NAwesome::CGenCache<SCachedText, 24> texCache{64ull << 20, [](const SCachedText& t) {
+    static Awesome::CGenCache<SCachedText, 24> texCache{64ull << 20, [](const SCachedText& t) {
         return sizeof(SCachedText) + (t.tex ? (size_t)std::max(0.0, t.tex->m_size.x) * (size_t)std::max(0.0, t.tex->m_size.y) * 4 : 0);
     }};
 
@@ -542,7 +542,7 @@ namespace NAwesome::Notify {
 
         if (const auto* HIT = texCache.find(KEY))
             return HIT;
-        if (!NAwesome::Canvas::inst().gate().mayBuild())
+        if (!Awesome::Canvas::inst().gate().mayBuild())
             return nullptr;
 
         SCachedText entry;
@@ -586,7 +586,7 @@ namespace NAwesome::Notify {
             at = NL + 1;
         }
         int        lines  = 0;
-        const int  HEIGHT = heightBudget(std::string{NAwesome::cfg().getS("plugin:awesome:notify:font")}, pt, 400, 1.1f, capPx, lines);
+        const int  HEIGHT = heightBudget(std::string{Awesome::cfg().getS("plugin:awesome:notify:font")}, pt, 400, 1.1f, capPx, lines);
         const auto LINES  = [&](const std::string& s) {
             PangoLayout* L = newLayout(s, pt, widthPx, 1.1f, true, 400, indentPx, linkCol, nullptr);
             const auto   N = (size_t)pango_layout_get_line_count(L);
@@ -615,4 +615,4 @@ namespace NAwesome::Notify {
         fitGen++;
     }
 
-} // namespace NAwesome::Notify
+} // namespace Awesome::Notify

@@ -13,7 +13,7 @@ namespace {
         int pfd[2];
         if (pipe2(pfd, O_CLOEXEC) != 0)
             return {};
-        const auto CHILD = NAwesome::Proc::spawn(argv, {.stdoutFd = pfd[1]});
+        const auto CHILD = Awesome::Proc::spawn(argv, {.stdoutFd = pfd[1]});
         close(pfd[1]);
         std::string out;
         char        buf[256];
@@ -26,10 +26,10 @@ namespace {
             // the pidfd turns readable at exit; under SA_NOCLDWAIT the status
             // is published when the auto-reap completes, a moment later
             std::optional<int> got;
-            for (int i = 0; i < 200 && !(got = NAwesome::Proc::exitStatus(CHILD.pidfd)); i++)
+            for (int i = 0; i < 200 && !(got = Awesome::Proc::exitStatus(CHILD.pidfd)); i++)
                 usleep(5000);
             *status = got.value_or(-12345);
-            NAwesome::Proc::reap(CHILD.pidfd);
+            Awesome::Proc::reap(CHILD.pidfd);
             close(CHILD.pidfd);
         }
         return out;
@@ -70,7 +70,7 @@ bool test_proc() {
         AW_CHECK(dup3(pfd[1], STDIN_FILENO, O_CLOEXEC) == STDIN_FILENO);
         close(pfd[1]);
         const char* ARGV[] = {"sh", "-c", "echo lifted", nullptr};
-        const auto  CHILD  = NAwesome::Proc::spawn(ARGV, {.stdoutFd = STDIN_FILENO});
+        const auto  CHILD  = Awesome::Proc::spawn(ARGV, {.stdoutFd = STDIN_FILENO});
         dup2(SAVED, STDIN_FILENO); // our write end goes: EOF once the child exits
         close(SAVED);
         std::string out;
@@ -79,13 +79,13 @@ bool test_proc() {
             out.append(buf, (size_t)n);
         close(pfd[0]);
         AW_CHECK(out == "lifted\n");
-        NAwesome::Proc::reap(CHILD.pidfd);
+        Awesome::Proc::reap(CHILD.pidfd);
         if (CHILD.pidfd >= 0)
             close(CHILD.pidfd);
     }
     {
         const char* ARGV[] = {"/nonexistent/helper", nullptr};
-        const auto  CHILD  = NAwesome::Proc::spawn(ARGV);
+        const auto  CHILD  = Awesome::Proc::spawn(ARGV);
         AW_CHECK(!CHILD);
     }
 

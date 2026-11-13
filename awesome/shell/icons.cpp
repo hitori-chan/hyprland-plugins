@@ -5,7 +5,7 @@
 
 #include "shell/shell.hpp"
 
-namespace NAwesome::Shell {
+namespace Awesome::Shell {
 
     int iconDevicePx() {
         double scale = 1.0;
@@ -20,9 +20,9 @@ namespace NAwesome::Shell {
     // a 16 px cell, and apps that ship a single 256-1024 px icon must not
     // ride to GL full size
     static SP<ITexture> pngTexture(const std::vector<uint8_t>& data, uint32_t maxDim, int px) {
-        const auto DIMS = NAwesome::rasterDims(data.data(), data.size());
+        const auto DIMS = Awesome::rasterDims(data.data(), data.size());
         if (!DIMS || DIMS->first == 0 || DIMS->second == 0 || DIMS->first > maxDim || DIMS->second > maxDim ||
-            (uint64_t)DIMS->first * DIMS->second > NAwesome::MAX_DECODE_PIXELS)
+            (uint64_t)DIMS->first * DIMS->second > Awesome::MAX_DECODE_PIXELS)
             return nullptr;
 
         struct SCursor {
@@ -87,7 +87,7 @@ namespace NAwesome::Shell {
             used++;
             return true;
         }
-        NAwesome::iconDeferred() = true;
+        Awesome::iconDeferred() = true;
         return false;
     }
 
@@ -109,7 +109,7 @@ namespace NAwesome::Shell {
         }
         if (decodeSpent < DECODE_BUDGET)
             return true;
-        NAwesome::iconDeferred() = true;
+        Awesome::iconDeferred() = true;
         decodeRefused            = true;
         return false;
     }
@@ -125,10 +125,10 @@ namespace NAwesome::Shell {
         // the bytes come from ONE non-blocking open (core/icons.hpp): an
         // absolute SNI IconName reaches here. A bar cell is <=40 px: 1024 a
         // side is room for any app's largest icon, at a bounded decode.
-        const auto BYTES = NAwesome::readImageFile(path);
+        const auto BYTES = Awesome::readImageFile(path);
         if (!BYTES)
             return nullptr;
-        if (const auto DIMS = NAwesome::rasterDims(BYTES->data(), BYTES->size()); DIMS && (uint64_t)DIMS->first * DIMS->second > 256 * 256 && !largeDecodeBudget())
+        if (const auto DIMS = Awesome::rasterDims(BYTES->data(), BYTES->size()); DIMS && (uint64_t)DIMS->first * DIMS->second > 256 * 256 && !largeDecodeBudget())
             return nullptr;
         return pngTexture(*BYTES, 1024, iconDevicePx());
     }
@@ -152,7 +152,7 @@ namespace NAwesome::Shell {
     // at the cell's device size, drawn 1:1. Symbolic icons are a pure alpha
     // shape in some theme-chosen color — repaint them with the bar's fg.
     static SP<ITexture> loadSvg(const std::string& path, bool recolor, const CHyprColor& col) {
-        const auto BYTES = NAwesome::readImageFile(path); // one non-blocking open, size-bounded
+        const auto BYTES = Awesome::readImageFile(path); // one non-blocking open, size-bounded
         if (!BYTES || (BYTES->size() > (64u << 10) && !largeDecodeBudget()))
             return nullptr;
         RsvgHandle* handle = rsvg_handle_new_from_data(BYTES->data(), BYTES->size(), nullptr);
@@ -216,21 +216,21 @@ namespace NAwesome::Shell {
         if (name.empty())
             return "";
         if (name.front() == '/')
-            return NAwesome::admissibleImageFile(name) ? name : "";
-        if (!NAwesome::plausibleIconName(name))
+            return Awesome::admissibleImageFile(name) ? name : "";
+        if (!Awesome::plausibleIconName(name))
             return "";
 
         if (!extraDir.empty())
             for (const auto& N : {name, asciiLower(name)})
                 for (const char* EXT : {".png", ".svg"})
-                    if (const auto P = extraDir + "/" + N + EXT; NAwesome::admissibleImageFile(P))
+                    if (const auto P = extraDir + "/" + N + EXT; Awesome::admissibleImageFile(P))
                         return P;
 
         const int PX = iconDevicePx(); // a theme's own drawing at the cell's size (breeze's 16 px set) beats a scaled one
-        if (auto P = NAwesome::resolveIconName(name, PX); !P.empty())
+        if (auto P = Awesome::resolveIconName(name, PX); !P.empty())
             return P;
         if (const auto LOWER = asciiLower(name); LOWER != name)
-            return NAwesome::resolveIconName(LOWER, PX);
+            return Awesome::resolveIconName(LOWER, PX);
         return "";
     }
 
@@ -238,7 +238,7 @@ namespace NAwesome::Shell {
     // keys each entry by its id, basename and StartupWMClass
     // (core/desktopindex.cpp).
     static std::string desktopIconName(const std::string& identifier) {
-        const auto& INDEX = NAwesome::CDesktopIndex::inst();
+        const auto& INDEX = Awesome::CDesktopIndex::inst();
         const auto  ID    = asciiLower(identifier);
         if (const auto* ICON = INDEX.findIcon(ID))
             return *ICON;
@@ -250,7 +250,7 @@ namespace NAwesome::Shell {
         const std::string* best = nullptr;
         size_t             bestLength = 0;
         for (const auto& [key, icon] : INDEX.icons()) {
-            if (key.size() <= bestLength || !NAwesome::iconIdentityPrefixMatch(ID, key))
+            if (key.size() <= bestLength || !Awesome::iconIdentityPrefixMatch(ID, key))
                 continue;
             best       = &icon;
             bestLength = key.size();
@@ -276,7 +276,7 @@ namespace NAwesome::Shell {
     static SP<CEventLoopTimer> retry;
     template <class MAP>
     static SP<ITexture> remember(MAP& m, const std::string& key, SP<ITexture> tex) {
-        if (!tex && NAwesome::iconDeferred()) {
+        if (!tex && Awesome::iconDeferred()) {
             if (retry && !retry->armed())
                 retry->updateTimeout(decodeRefused ? std::chrono::milliseconds(20) : std::chrono::milliseconds(300));
             decodeRefused = false;
@@ -301,7 +301,7 @@ namespace NAwesome::Shell {
         if (!warmGate().mayBuild()) // the texture rule: only the warm builds
             return nullptr;
 
-        NAwesome::iconDeferred() = false;
+        Awesome::iconDeferred() = false;
         auto path = resolveIconPath(klass);
         if (path.empty())
             path = resolveIconPath(desktopIconName(klass));
@@ -318,7 +318,7 @@ namespace NAwesome::Shell {
         if (!warmGate().mayBuild()) // the texture rule: only the warm builds
             return nullptr;
 
-        NAwesome::iconDeferred() = false;
+        Awesome::iconDeferred() = false;
         const auto path = resolveIconPath(name);
         return remember(namedIconCache, name, path.empty() ? nullptr : loadIcon(path));
     }
@@ -354,7 +354,7 @@ namespace NAwesome::Shell {
         if (!warmGate().mayBuild()) // the texture rule: only the warm builds
             return nullptr;
 
-        NAwesome::iconDeferred() = false;
+        Awesome::iconDeferred() = false;
         auto path = resolveIconPath(name, themePath);
         if (path.empty())
             path = resolveIconPath(desktopIconName(name), themePath);
@@ -372,14 +372,14 @@ namespace NAwesome::Shell {
     // so an icon installed since can still land.
     static uint64_t seenThemeGeneration = 0;
     bool            iconsReload() {
-        NAwesome::refreshIconTheme();
-        if (NAwesome::iconThemeGeneration() == seenThemeGeneration) {
+        Awesome::refreshIconTheme();
+        if (Awesome::iconThemeGeneration() == seenThemeGeneration) {
             std::erase_if(appIconCache, [](const auto& E) { return !E.second; });
             std::erase_if(namedIconCache, [](const auto& E) { return !E.second; });
             std::erase_if(trayIconCache, [](const auto& E) { return !E.second; });
             return false;
         }
-        seenThemeGeneration = NAwesome::iconThemeGeneration();
+        seenThemeGeneration = Awesome::iconThemeGeneration();
         appIconCache.clear();
         namedIconCache.clear();
         trayIconCache.clear();
@@ -387,15 +387,15 @@ namespace NAwesome::Shell {
     }
 
     void iconsInit() {
-        NAwesome::refreshIconTheme();
-        seenThemeGeneration = NAwesome::iconThemeGeneration();
+        Awesome::refreshIconTheme();
+        seenThemeGeneration = Awesome::iconThemeGeneration();
         retry = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { barChanged(); }, nullptr);
         g_pEventLoopManager->addTimer(retry);
         // the shared .desktop index (core) grew: new entries can only fill
         // MISSES (cached nulls) — a resolved icon stays resolved; clearing
         // everything per batch would re-decode every icon while the index
         // loads
-        NAwesome::CDesktopIndex::inst().subscribe([]() {
+        Awesome::CDesktopIndex::inst().subscribe([]() {
             std::erase_if(appIconCache, [](const auto& E) { return !E.second; });
             std::erase_if(trayIconCache, [](const auto& E) { return !E.second; });
             for (const auto& item : Tray::items)
@@ -414,4 +414,4 @@ namespace NAwesome::Shell {
         trayIconCache.clear();
     }
 
-} // namespace NAwesome::Shell
+} // namespace Awesome::Shell

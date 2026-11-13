@@ -26,7 +26,7 @@
 #include <cstdio>
 #include <cstdlib>
 
-namespace NAwesome::Shell::Battery {
+namespace Awesome::Shell::Battery {
 
     // BatteryMeasurePolicy rounds every positive child dimension on its own,
     // by the JVM's round-to-nearest (a .5 tie rounds up)
@@ -392,4 +392,4 @@ namespace NAwesome::Shell::Battery {
         return SURF;
     }
 
-} // namespace NAwesome::Shell::Battery
+} // namespace Awesome::Shell::Battery

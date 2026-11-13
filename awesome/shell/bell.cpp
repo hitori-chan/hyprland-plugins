@@ -20,7 +20,7 @@
 
 #include <optional>
 
-namespace NAwesome::Shell {
+namespace Awesome::Shell {
 
     // what the bell shows: the dot, whether DND holds, the center open
     struct SBellState {
@@ -30,9 +30,9 @@ namespace NAwesome::Shell {
         bool operator==(const SBellState&) const = default;
     };
     static SBellState bellState() {
-        namespace M     = NAwesome::Notify::Model;
+        namespace M     = Awesome::Notify::Model;
         const bool DND  = M::suspendedNow();
-        const bool OPEN = NAwesome::Notify::centerVisible();
+        const bool OPEN = Awesome::Notify::centerVisible();
         // the open center is the place the dot points at: it never shows over
         // it; the bell sits on its pill instead
         const bool DOT = !OPEN && (M::unseen() || (DND && M::heldCount() > 0));
@@ -52,7 +52,7 @@ namespace NAwesome::Shell {
             // dispatched (the bus link opens in the notify module's init,
             // which runs after this module's init returns).
             shown.reset();
-            NAwesome::Notify::Model::badgeChangedHook() = []() {
+            Awesome::Notify::Model::badgeChangedHook() = []() {
                 const auto NOW = bellState();
                 if (NOW == shown)
                     return;
@@ -62,13 +62,13 @@ namespace NAwesome::Shell {
         }
 
         void exit() {
-            NAwesome::Notify::Model::badgeChangedHook() = {};
+            Awesome::Notify::Model::badgeChangedHook() = {};
         }
     } // namespace Bell
 
     namespace {
-        namespace M = NAwesome::Notify::Model;
-        namespace P = NAwesome::Notify::Policy;
+        namespace M = Awesome::Notify::Model;
+        namespace P = Awesome::Notify::Policy;
 
         Menu::SEntry row(std::string label, std::function<void()> action) {
             Menu::SEntry e{.display = std::move(label)};
@@ -92,7 +92,7 @@ namespace NAwesome::Shell {
         // a row each — the app's icon, its name, what is off — a click from
         // back on (the hint says so while lit).
         std::vector<Menu::SEntry> optionRows() {
-            namespace Q = NAwesome::Notify::Quiet;
+            namespace Q = Awesome::Notify::Quiet;
             std::vector<Menu::SEntry> rows;
             rows.push_back(header("Quiet Automatically"));
             for (const auto& [LABEL, OPT] : {std::pair{"When an App Is Fullscreen", eOption::QUIET_FULLSCREEN}, {"While Sharing the Screen", eOption::QUIET_SHARING}}) {
@@ -134,7 +134,7 @@ namespace NAwesome::Shell {
         // 22 tall on the strip's middle (a rect: nothing to warm)
         void doorPill(const SPaint& P, const CBox& box) {
             constexpr double W = 24, H = 22;
-            P.rect(CBox{box.x + (GLYPH - W) / 2, box.y + (P.h - H) / 2, W, H}, NAwesome::tPill(), (int)std::lround(NAwesome::Theme::RAD_ROW * P.scale), 2.f);
+            P.rect(CBox{box.x + (GLYPH - W) / 2, box.y + (P.h - H) / 2, W, H}, Awesome::tPill(), (int)std::lround(Awesome::Theme::RAD_ROW * P.scale), 2.f);
         }
 
         class CBellWidget : public IWidget {
@@ -145,7 +145,7 @@ namespace NAwesome::Shell {
             }
 
             void draw(const SPaint& P, const SFrame& F, const CBox& box) override {
-                using NAwesome::Glyph::eGlyph;
+                using Awesome::Glyph::eGlyph;
                 const auto ST = bellState();
                 // the options menu is a door of its own bar's bell
                 const bool OPEN = ST.open || (Menu::isOpen && Menu::opener == this && Menu::mon.lock() == P.mon);
@@ -156,11 +156,11 @@ namespace NAwesome::Shell {
                 const CBox CELL{box.x, box.y, GLYPH, P.h};
                 if (OPEN)
                     doorPill(P, box);
-                P.texIn(NAwesome::Glyph::tex(BASE, F.fg, PX), CELL);
+                P.texIn(Awesome::Glyph::tex(BASE, F.fg, PX), CELL);
                 // the dot is its own glyph on the same grid, so the two
                 // rasters register to the pixel in the same cell
                 if (ST.dot)
-                    P.texIn(NAwesome::Glyph::tex(eGlyph::BADGE_DOT, color(cfg().getColor("plugin:awesome:shell:col_dot")), PX), CELL);
+                    P.texIn(Awesome::Glyph::tex(eGlyph::BADGE_DOT, color(cfg().getColor("plugin:awesome:shell:col_dot")), PX), CELL);
                 SHit h;
                 h.box    = box;
                 h.widget = this;
@@ -178,7 +178,7 @@ namespace NAwesome::Shell {
                 // clicked bar's monitor — the focus hasn't moved there yet
                 // (the strip swallowed the press before the compositor saw
                 // it)
-                NAwesome::Notify::queueCenterToggle(hit.mon.lock());
+                Awesome::Notify::queueCenterToggle(hit.mon.lock());
             }
         };
     } // namespace
@@ -188,4 +188,4 @@ namespace NAwesome::Shell {
         return W;
     }
 
-} // namespace NAwesome::Shell
+} // namespace Awesome::Shell

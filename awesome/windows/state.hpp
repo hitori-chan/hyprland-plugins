@@ -27,7 +27,7 @@
 #include <utility>
 #include <vector>
 
-namespace NAwesome::Windows {
+namespace Awesome::Windows {
 
     // Every geometry the module sets goes through here: a target can outlive
     // its layout space (a swallowed window keeps its target, its slot is
@@ -40,9 +40,9 @@ namespace NAwesome::Windows {
         return true;
     }
 
-} // namespace NAwesome::Windows
+} // namespace Awesome::Windows
 
-namespace NAwesome::Windows::Tasklist {
+namespace Awesome::Windows::Tasklist {
 
     // The shell repaints its tasklist when the minimized set changes: the
     // shell registers the hook at init (it registers before the windows
@@ -422,4 +422,4 @@ namespace NAwesome::Windows::Tasklist {
         minReqListeners().clear();
     }
 
-} // namespace NAwesome::Windows::Tasklist
+} // namespace Awesome::Windows::Tasklist

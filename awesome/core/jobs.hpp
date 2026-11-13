@@ -18,7 +18,7 @@
 
 class CEventLoopTimer;
 
-namespace NAwesome {
+namespace Awesome {
 
     class Jobs {
       public:
@@ -99,4 +99,4 @@ namespace NAwesome {
         SP<CEventLoopTimer>     m_timer;
     };
 
-} // namespace NAwesome
+} // namespace Awesome

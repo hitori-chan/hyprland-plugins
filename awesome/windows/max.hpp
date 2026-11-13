@@ -39,7 +39,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace NAwesome::Windows {
+namespace Awesome::Windows {
 
     namespace {
         // plugin-maximized windows and their restore geometry, relative to
@@ -607,4 +607,4 @@ namespace NAwesome::Windows {
         }
     } // namespace Max
 
-} // namespace NAwesome::Windows
+} // namespace Awesome::Windows

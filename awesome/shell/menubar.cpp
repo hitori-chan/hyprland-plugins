@@ -16,7 +16,7 @@
 
 #include <hyprland/src/protocols/XDGActivation.hpp>
 
-namespace NAwesome::Shell {
+namespace Awesome::Shell {
 
     namespace Menubar {
         // The stock awesome categories (menubar/menu_gen.lua): an app files
@@ -35,12 +35,12 @@ namespace NAwesome::Shell {
         std::vector<SApp> apps; // from the core's desktop index, sorted by name
         static uint64_t   appsVersion = 0; // the index version apps were built from
         static bool       appsBuilt   = false;
-        static NAwesome::CAsyncFileIndex completionIndex;
+        static Awesome::CAsyncFileIndex completionIndex;
         static SP<CEventLoopTimer>           indexPoll;
-        static NAwesome::Keys::CRepeat       repeat; // the held-key repeat (see onKey)
+        static Awesome::Keys::CRepeat       repeat; // the held-key repeat (see onKey)
         static uint64_t                      completionGeneration = 0;
         static uint64_t                      activationGeneration = 0;
-        static NAwesome::CClipboardRead     clipboard;
+        static Awesome::CClipboardRead     clipboard;
         // the selected row across a rebuild, by identity (its index moves
         // when a refresh lands): an app by desktop id, a category, or the
         // Exec entry — Enter on "Exec:" must not launch the app slid there
@@ -63,12 +63,12 @@ namespace NAwesome::Shell {
         int                              sel = 0, first = 0;
         PHLMONITORREF                    mon;
 
-        static NAwesome::CHop         pendingExec, pendingOpen;
+        static Awesome::CHop         pendingExec, pendingOpen;
 
         // launch counts + prompt history: the core's unified state
         // (core/state.hpp), one shared in-memory copy
-        static NAwesome::CRecentMap<int>& launchCounts = NAwesome::StateStore::inst().data().launches;
-        static NAwesome::ListStore&  history      = NAwesome::StateStore::inst().data().history; // oldest first
+        static Awesome::CRecentMap<int>& launchCounts = Awesome::StateStore::inst().data().launches;
+        static Awesome::ListStore&  history      = Awesome::StateStore::inst().data().history; // oldest first
         static int                  histSel = -1;       // -1 = editing the live query
         static std::string          histLive;           // the live query parked while walking history
         constexpr size_t                  QUERY_MAX   = 4096;
@@ -118,19 +118,19 @@ namespace NAwesome::Shell {
         }
 
         static void saveCounts() {
-            NAwesome::StateStore::inst().dirty(); // coalesced atomic write
+            Awesome::StateStore::inst().dirty(); // coalesced atomic write
         }
 
         static void historyAdd(const std::string& q) {
             if (history.remember(q)) // dedup + most-recent-last + the 50 bound
-                NAwesome::StateStore::inst().dirty();
+                Awesome::StateStore::inst().dirty();
         }
 
         static std::vector<std::string> desktops; // XDG_CURRENT_DESKTOP entries, for OnlyShowIn/NotShowIn
 
         // an index entry the launcher lists: an application, shown here,
         // with something to run
-        static void addApp(const NAwesome::SDesktopEntry& E) {
+        static void addApp(const Awesome::SDesktopEntry& E) {
             if (E.malformed || !E.application || E.hidden || (!E.dbusActivatable && E.exec.empty()))
                 return;
 
@@ -165,11 +165,11 @@ namespace NAwesome::Shell {
 
             std::string plainExec; // the words as typed, unquoted: what a query matches
             if (!E.exec.empty()) {
-                const auto WORDS = NAwesome::DesktopExec::expand(E.exec, app.name, E.path, app.icon);
+                const auto WORDS = Awesome::DesktopExec::expand(E.exec, app.name, E.path, app.icon);
                 if (!WORDS && !app.dbusActivatable)
                     return;
                 if (WORDS) {
-                    app.exec = NAwesome::DesktopExec::shellCommand(*WORDS);
+                    app.exec = Awesome::DesktopExec::shellCommand(*WORDS);
                     for (const auto& W : *WORDS)
                         plainExec.append(plainExec.empty() ? "" : " ").append(W);
                 }
@@ -185,7 +185,7 @@ namespace NAwesome::Shell {
         // apps from the index as it stands (a no-op while it has not
         // changed); the open launcher keeps its selection across a rebuild
         static void buildApps() {
-            const auto& INDEX = NAwesome::CDesktopIndex::inst();
+            const auto& INDEX = Awesome::CDesktopIndex::inst();
             if (appsBuilt && appsVersion == INDEX.version())
                 return;
             appsBuilt   = true;
@@ -303,7 +303,7 @@ namespace NAwesome::Shell {
             Menu::close();
             // an app installed or removed since the last scan rescans
             // (the index swaps the new set in whole when it lands)
-            NAwesome::CDesktopIndex::inst().refreshIfStale();
+            Awesome::CDesktopIndex::inst().refreshIfStale();
             buildApps();
             clipboard.cancel();
             typed.clear();
@@ -352,7 +352,7 @@ namespace NAwesome::Shell {
         static std::string withToken(const std::string& cmd, const std::string& token) {
             if (token.empty())
                 return cmd;
-            const auto Q = NAwesome::DesktopExec::shellQuote(token);
+            const auto Q = Awesome::DesktopExec::shellQuote(token);
             return "export XDG_ACTIVATION_TOKEN=" + Q + " DESKTOP_STARTUP_ID=" + Q + "; " + cmd;
         }
 
@@ -391,7 +391,7 @@ namespace NAwesome::Shell {
             const SApp* APP = S.app >= 0 && S.app < (int)apps.size() ? &apps[S.app] : nullptr;
             if (APP && APP->dbusActivatable && !forceTerminal) {
                 const SApp COPY = *APP;
-                NAwesome::bumpCount(launchCounts, APP->name);
+                Awesome::bumpCount(launchCounts, APP->name);
                 pendingExec.arm([COPY, hist = typed]() {
                     saveCounts();
                     historyAdd(hist);
@@ -409,7 +409,7 @@ namespace NAwesome::Shell {
             // most-launched sorts first next time (in-memory, immediate); raw
             // Exec one-offs are not counted — they'd grow the file unbounded
             if (APP)
-                NAwesome::bumpCount(launchCounts, APP->name);
+                Awesome::bumpCount(launchCounts, APP->name);
             // the disk writes ride the deferred hop with the spawn, off the key emission
             pendingExec.arm([cmd, hist = typed]() {
                 saveCounts();
@@ -471,7 +471,7 @@ namespace NAwesome::Shell {
         static void pollCompletion() {
             if (!compScanning)
                 return;
-            std::vector<NAwesome::CAsyncFileIndex::SEntry> entries;
+            std::vector<Awesome::CAsyncFileIndex::SEntry> entries;
             const bool COMPLETE = completionIndex.poll(completionGeneration, entries, 64);
             for (const auto& entry : entries) {
                 const auto name = entry.path.filename().string();
@@ -479,7 +479,7 @@ namespace NAwesome::Shell {
                     continue;
                 // the prompt runs through /bin/sh -c: a name lands as one
                 // escaped word, or not at all (control/bidi characters)
-                const auto WORD = NAwesome::DesktopExec::shellWord(name);
+                const auto WORD = Awesome::DesktopExec::shellWord(name);
                 if (!WORD)
                     continue;
                 auto candidate = compPrefix + *WORD + (entry.directory ? "/" : "");
@@ -520,7 +520,7 @@ namespace NAwesome::Shell {
             }
 
             // the word under the cursor, an escaped space inside it
-            const auto WORDBREAK = [](size_t i) { return typed[i] == ' ' && !NAwesome::DesktopExec::escapedAt(typed, i); };
+            const auto WORDBREAK = [](size_t i) { return typed[i] == ' ' && !Awesome::DesktopExec::escapedAt(typed, i); };
             size_t     start     = cursor;
             while (start > 0 && !WORDBREAK(start - 1))
                 start--;
@@ -529,21 +529,21 @@ namespace NAwesome::Shell {
                 end++;
             const auto STEM = typed.substr(start, cursor - start); // as typed, escapes and all
 
-            NAwesome::CAsyncFileIndex::SRequest request;
+            Awesome::CAsyncFileIndex::SRequest request;
             request.generation = ++completionGeneration;
             request.maxEntries = 512;
             request.maxVisited = 8192;
             const bool COMMAND = typed.find_first_not_of(' ') >= start;
-            if (COMMAND && NAwesome::DesktopExec::unescapeWord(STEM).find('/') == std::string::npos) { // a bare command word
+            if (COMMAND && Awesome::DesktopExec::unescapeWord(STEM).find('/') == std::string::npos) { // a bare command word
                 const char* PATH = std::getenv("PATH");
                 for (const auto& dir : splitList(PATH ? PATH : "", ':'))
                     request.roots.emplace_back(dir);
-                request.namePrefix = NAwesome::DesktopExec::unescapeWord(STEM);
+                request.namePrefix = Awesome::DesktopExec::unescapeWord(STEM);
                 request.executable = true;
                 compPrefix.clear();
                 compHideDotfiles = false;
             } else { // a filename; the typed form (~ and all) is preserved
-                std::string expanded = NAwesome::DesktopExec::unescapeWord(STEM);
+                std::string expanded = Awesome::DesktopExec::unescapeWord(STEM);
                 if (const char* HOME = std::getenv("HOME"); HOME && expanded.starts_with("~/"))
                     expanded = std::string{HOME} + expanded.substr(1);
                 const auto SLASH = expanded.rfind('/');
@@ -620,7 +620,7 @@ namespace NAwesome::Shell {
             repeat.onKey(e);
             handleKey(e, info);
             if (e.state == WL_KEYBOARD_KEY_STATE_PRESSED && info.cancelled && isOpen) {
-                const auto KB = NAwesome::Keys::keyboardFor(e.keycode);
+                const auto KB = Awesome::Keys::keyboardFor(e.keycode);
                 if (KB && KB->m_xkbState &&
                     !actsOnce(xkb_state_key_get_one_sym(KB->m_xkbState, e.keycode + 8),
                               xkb_state_mod_name_is_active(KB->m_xkbState, XKB_MOD_NAME_CTRL, XKB_STATE_MODS_EFFECTIVE) == 1))
@@ -632,12 +632,12 @@ namespace NAwesome::Shell {
             // emissions precede the compositor's lock handling: a locked
             // session must never feed the prompt (typed keys would collect in
             // `typed` and Return would launch() the line — under a LOCK)
-            if (NAwesome::sessionLocked()) {
+            if (Awesome::sessionLocked()) {
                 if (isOpen)
                     close();
                 return;
             }
-            if (NAwesome::nativeInputCaptureActive())
+            if (Awesome::nativeInputCaptureActive())
                 return;
 
             if (!isOpen)
@@ -657,7 +657,7 @@ namespace NAwesome::Shell {
             // An exclusive-keyboard layer (a launcher or a power menu a Super
             // bind opened over the prompt) owns the keyboard natively: the
             // prompt steps aside instead of eating what is typed into it.
-            if (NAwesome::Keys::exclusiveLayer()) {
+            if (Awesome::Keys::exclusiveLayer()) {
                 close();
                 return;
             }
@@ -670,7 +670,7 @@ namespace NAwesome::Shell {
             if (e.state != WL_KEYBOARD_KEY_STATE_PRESSED)
                 return;
 
-            const auto KB = NAwesome::Keys::keyboardFor(e.keycode);
+            const auto KB = Awesome::Keys::keyboardFor(e.keycode);
             if (!KB || !KB->m_xkbState)
                 return;
 
@@ -713,10 +713,10 @@ namespace NAwesome::Shell {
                             C = ' ';
                     // the line runs through /bin/sh: no control or bidi
                     // character may hide what the prompt shows
-                    text = NAwesome::DesktopExec::typeableText(text);
+                    text = Awesome::DesktopExec::typeableText(text);
                     if (typed.size() >= QUERY_MAX)
                         return;
-                    text.resize(NAwesome::clipToUtf8Boundary(text, QUERY_MAX - typed.size()));
+                    text.resize(Awesome::clipToUtf8Boundary(text, QUERY_MAX - typed.size()));
                     if (text.empty())
                         return;
                     // the scan and the cycle hold byte offsets into the query
@@ -891,14 +891,14 @@ namespace NAwesome::Shell {
             // the bar's own glass, a hairline where it meets the bar
             const double MY = PAINT.mb.y + PAINT.h;
             PAINT.glass(CBox{PAINT.mb.x, MY, PAINT.mb.w, PAINT.h}, COLBG);
-            PAINT.rect(CBox{PAINT.mb.x, MY, PAINT.mb.w, 1.0 / PAINT.scale}, NAwesome::tHairline());
+            PAINT.rect(CBox{PAINT.mb.x, MY, PAINT.mb.w, 1.0 / PAINT.scale}, Awesome::tHairline());
 
             double px = PAINT.mb.x + 8;
 
             // "Run:" (or the drilled-into category), quiet and bold
             static std::string PROMPTBUF; // reused; the strip renders on the main thread only
             PROMPTBUF.assign(Menubar::currentCat >= 0 ? Menubar::CATEGORIES[Menubar::currentCat].name : "Run").append(":");
-            const auto LABEL = textTex(PROMPTBUF, NAwesome::tSub(), PAINT.pt, 0, "", 600);
+            const auto LABEL = textTex(PROMPTBUF, Awesome::tSub(), PAINT.pt, 0, "", 600);
             const double LW  = textInkW(LABEL, PAINT.scale);
             PAINT.texIn(LABEL, CBox{px, MY, LW, PAINT.h});
             px += LW + 8;
@@ -1007,7 +1007,7 @@ namespace NAwesome::Shell {
                     if (PICK) {
                         constexpr double PICK_PAD = 6;
                         const double     HAIR     = 1.0 / PAINT.scale;
-                        PAINT.rect(CBox{px - PICK_PAD, MY + HAIR, W + 2 * PICK_PAD, PAINT.h - HAIR}, NAwesome::tCell());
+                        PAINT.rect(CBox{px - PICK_PAD, MY + HAIR, W + 2 * PICK_PAD, PAINT.h - HAIR}, Awesome::tCell());
                     }
                     if (const auto ITEX = entryIcon(i); ITEX && ITEX->m_texID != 0)
                         PAINT.texFit(ITEX, CBox{px, MY + (PAINT.h - ICON) / 2, ICON, ICON});
@@ -1038,11 +1038,11 @@ namespace NAwesome::Shell {
             g_pEventLoopManager->addTimer(indexPoll);
             // the index changed (its first scan's batches, a refresh landing):
             // an open launcher lists it now, a closed one at its next open
-            NAwesome::CDesktopIndex::inst().subscribe([]() {
+            Awesome::CDesktopIndex::inst().subscribe([]() {
                 // the first scan's batches land once, at its end: rebuilding
                 // the whole list per batch would make a launcher opened at
                 // login quadratic in the entries
-                if (!isOpen || NAwesome::CDesktopIndex::inst().scanning())
+                if (!isOpen || Awesome::CDesktopIndex::inst().scanning())
                     return;
                 buildApps();
                 refilter();
@@ -1084,4 +1084,4 @@ namespace NAwesome::Shell {
         }
     } // namespace Menubar
 
-} // namespace NAwesome::Shell
+} // namespace Awesome::Shell

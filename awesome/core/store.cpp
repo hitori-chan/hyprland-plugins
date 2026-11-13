@@ -10,7 +10,7 @@
 
 namespace fs = std::filesystem;
 
-namespace NAwesome::detail {
+namespace Awesome::detail {
 
     std::string readBoundedFile(const fs::path& path, size_t maxBytes) {
         // open first, then check what was opened: a FIFO swapped in after a
@@ -39,9 +39,9 @@ namespace NAwesome::detail {
         return contents;
     }
 
-} // namespace NAwesome::detail
+} // namespace Awesome::detail
 
-namespace NAwesome {
+namespace Awesome {
 
     std::filesystem::path stateDir() {
         const char* XDG  = std::getenv("XDG_STATE_HOME");
@@ -88,4 +88,4 @@ namespace NAwesome {
         return counts.put(name, C ? std::min(*C + 1, MAX_LAUNCH_COUNT) : 1);
     }
 
-} // namespace NAwesome
+} // namespace Awesome

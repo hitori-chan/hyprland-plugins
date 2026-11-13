@@ -26,7 +26,7 @@
 #include <tuple>
 #include <vector>
 
-namespace NAwesome {
+namespace Awesome {
 
     class CFontWarm {
       public:
@@ -129,4 +129,4 @@ namespace NAwesome {
         size_t              m_next = 0;
     };
 
-} // namespace NAwesome
+} // namespace Awesome

@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <string_view>
 
-namespace NAwesome {
+namespace Awesome {
 
     // Largest prefix of s of at most cap bytes that ends on a codepoint
     // boundary; malformed UTF-8 is kept up to the last lead position, never
@@ -19,4 +19,4 @@ namespace NAwesome {
         return n;
     }
 
-} // namespace NAwesome
+} // namespace Awesome

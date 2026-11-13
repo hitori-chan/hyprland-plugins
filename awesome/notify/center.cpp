@@ -34,7 +34,7 @@
 
 #include "../core/walltimer.hpp"
 
-namespace NAwesome::Notify {
+namespace Awesome::Notify {
 
     // an app's notifications stack as soon as there are two
     inline constexpr size_t AUTOGROUP_AT = 2;
@@ -778,4 +778,4 @@ namespace NAwesome::Notify {
     }
 #endif
 
-} // namespace NAwesome::Notify
+} // namespace Awesome::Notify

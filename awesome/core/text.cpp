@@ -4,7 +4,7 @@
 #include <cmath>
 #include <vector>
 
-namespace NAwesome {
+namespace Awesome {
 
     STextShadow textShadow(eShadow s, int pt) {
         switch (s) {
@@ -60,4 +60,4 @@ namespace NAwesome {
         pango_cairo_show_layout(cr, layout);
     }
 
-} // namespace NAwesome
+} // namespace Awesome

@@ -8,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-namespace NAwesome::Shell::Battery {
+namespace Awesome::Shell::Battery {
 
     enum class eAttribution : uint8_t {
         None = 0,
@@ -129,4 +129,4 @@ namespace NAwesome::Shell::Battery {
         return out;
     }
 
-} // namespace NAwesome::Shell::Battery
+} // namespace Awesome::Shell::Battery

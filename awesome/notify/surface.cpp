@@ -5,7 +5,7 @@
 // rule (crash class 4).
 #include "ui.hpp"
 
-namespace NAwesome::Notify {
+namespace Awesome::Notify {
 
     std::vector<SCard> cards;
     PHLMONITORREF      cardsMon;
@@ -50,7 +50,7 @@ namespace NAwesome::Notify {
     static CBox                lastBox; // last damaged layout, global logical (already expanded)
     static SP<CEventLoopTimer> ageTick; // 30s: re-buckets the age lines
     static SP<CEventLoopTimer> motionTick; // ~16ms while something animates
-    static NAwesome::CHop      pendingWarm;
+    static Awesome::CHop      pendingWarm;
 
     static PHLMONITOR focusedMon() {
         return Desktop::focusState() ? Desktop::focusState()->monitor() : nullptr;
@@ -185,8 +185,8 @@ namespace NAwesome::Notify {
     void warmNotifs() {
         // The canvas bracket runs during its own warmAll; a standalone
         // warm (the age tick, the decode poll) takes the gate itself
-        const bool BRACKET = !NAwesome::Canvas::inst().gate().inPass;
-        if (BRACKET && !NAwesome::Canvas::inst().gate().beginWarm())
+        const bool BRACKET = !Awesome::Canvas::inst().gate().inPass;
+        if (BRACKET && !Awesome::Canvas::inst().gate().beginWarm())
             return;
         const auto MON = anythingToDraw() ? layoutMonitor() : nullptr;
         decodeWarmBegin();
@@ -208,7 +208,7 @@ namespace NAwesome::Notify {
         }
         decodeWarmEnd();
         if (BRACKET)
-            NAwesome::Canvas::inst().gate().endWarm();
+            Awesome::Canvas::inst().gate().endWarm();
     }
 
     void notifChanged() {
@@ -240,7 +240,7 @@ namespace NAwesome::Notify {
         });
     }
 
-    class CSurface : public NAwesome::ILayer {
+    class CSurface : public Awesome::ILayer {
       public:
         static CSurface& inst() {
             static CSurface S;
@@ -258,7 +258,7 @@ namespace NAwesome::Notify {
         // missing) reaches them here. They lay out on their one monitor:
         // warm once, for it.
         void warm(PHLMONITOR mon) override {
-            if (!NAwesome::Canvas::inst().forcedWarm())
+            if (!Awesome::Canvas::inst().forcedWarm())
                 return;
             const auto ON = anythingToDraw() ? layoutMonitor() : nullptr;
             if (!ON || mon == ON)
@@ -268,7 +268,7 @@ namespace NAwesome::Notify {
         void draw(PHLMONITOR mon, SPaint& ctx) override {
             // never above the lockscreen (the pass would leak there; these
             // are the user's notifications)
-            if (NAwesome::sessionLocked())
+            if (Awesome::sessionLocked())
                 return;
             if (!anythingToDraw())
                 return;
@@ -303,7 +303,7 @@ namespace NAwesome::Notify {
             // the glass samples what's beneath, live — only while it paints,
             // and only while it is translucent (an opaque col_glass draws plain)
             return blurOn() && anythingToDraw() && mon && mon == cardsMon.lock() &&
-                NAwesome::color(NAwesome::cfg().getColor("plugin:awesome:theme:col_glass")).a < 1.0;
+                Awesome::color(Awesome::cfg().getColor("plugin:awesome:theme:col_glass")).a < 1.0;
         }
 
         // Notifications are on top: a VISIBLE card (or the open center)
@@ -313,7 +313,7 @@ namespace NAwesome::Notify {
         // the lockscreen. The compositor drops scanout at the next frame
         // and re-engages it once the last card clears.
         bool overFullscreen(PHLMONITOR mon) const override {
-            return anythingToDraw() && mon && mon == cardsMon.lock() && !NAwesome::sessionLocked();
+            return anythingToDraw() && mon && mon == cardsMon.lock() && !Awesome::sessionLocked();
         }
     };
 
@@ -338,7 +338,7 @@ namespace NAwesome::Notify {
         // the launcher's strip opened or shut: the cards restack under it
         Bands::changedHook() = []() { notifChanged(); };
 
-        NAwesome::Canvas::inst().addLayer(&CSurface::inst(), NAwesome::eLayerZ::CARDS);
+        Awesome::Canvas::inst().addLayer(&CSurface::inst(), Awesome::eLayerZ::CARDS);
     }
 
     void surfaceExit() {
@@ -356,10 +356,10 @@ namespace NAwesome::Notify {
         cardsMon.reset();
         layoutMon.reset();
         textCacheClear();
-        auto& G   = NAwesome::Canvas::inst().gate();
+        auto& G   = Awesome::Canvas::inst().gate();
         G.warming      = false;
         G.texStale     = false;
         hovered        = {};
     }
 
-} // namespace NAwesome::Notify
+} // namespace Awesome::Notify

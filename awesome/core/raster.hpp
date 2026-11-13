@@ -26,7 +26,7 @@
 
 struct wl_event_source;
 
-namespace NAwesome {
+namespace Awesome {
 
     // premultiplied ARGB32 in cairo's layout (BGRA bytes on little-endian),
     // stride w * 4: what createTexture(DRM_FORMAT_ARGB8888) uploads as is
@@ -93,4 +93,4 @@ namespace NAwesome {
         wl_event_source* m_source  = nullptr;
     };
 
-} // namespace NAwesome
+} // namespace Awesome

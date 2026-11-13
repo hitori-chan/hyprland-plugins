@@ -4,7 +4,7 @@
 #include "harness.hpp"
 
 bool test_wpctl() {
-    using NAwesome::System::Wpctl::parseReadback;
+    using Awesome::System::Wpctl::parseReadback;
 
     // the common shapes
     {

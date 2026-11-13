@@ -5,7 +5,7 @@
 #include <cairo/cairo.h>
 #include <pango/pangocairo.h>
 
-namespace NAwesome {
+namespace Awesome {
 
     // Hinted, whole-pixel text: the compositor's renderText sets no options,
     // so Pango would hint only vertically and place glyphs at fractional
@@ -73,4 +73,4 @@ namespace NAwesome {
     // the 3-pass box blur over an A8 coverage mask (in place)
     void blurA8(unsigned char* px, int w, int h, int stride, int r);
 
-} // namespace NAwesome
+} // namespace Awesome
