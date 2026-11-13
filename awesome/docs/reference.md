@@ -14,8 +14,8 @@ hl.bind("SUPER + M", function() hl.plugin.awesome.maximize() end)
 | `maximize()` | toggle the focused window's maximize |
 | `minimize()` | minimize the focused window |
 | `restore()` | restore the most recently minimized window on the focused monitor's workspace |
-| `minimized()` | the windows the plugin has minimized: an array of addresses (`0x…`, as `hyprctl clients` prints them), the most recent last |
-| `unminimize(address)` | shows that window again where it is, without raising or focusing it and without a workspace change, on the next loop turn (a bind runs inside the keyboard emission); `ok` once it is queued, else `not minimized`, `no such window`, `locked` or the usage |
+| `minimized()` | the plugin's minimized windows: an array of addresses (`0x…`, as `hyprctl clients` prints them), most recent last |
+| `unminimize(address)` | show that window again where it is, unraised, unfocused, no workspace change, on the next loop turn; `ok` once queued, else `not minimized`, `no such window`, `locked` or the usage |
 | `focus_next()`, `focus_prev()` | cycle the focus in arrival order |
 | `focus_prev_here()` | toggle between the two most recent windows on this workspace |
 | `center()` | toggle the [center](notify.md#the-center) |
@@ -39,22 +39,21 @@ hl.bind("SUPER + M", function() hl.plugin.awesome.maximize() end)
 | `topline` | the newest card's one-line form |
 | `clear` | dismisses every card, the parked ones too; `ok` |
 | `pad` | the touchpad: `on`, `off` or `none` |
-| `minimized` | the windows the plugin has minimized, one address (`0x…`, as `hyprctl clients` prints it) a line, the most recent last |
-| `unminimize <address>` | shows that window again where it is, without raising or focusing it and without a workspace change; `ok`, `not minimized`, `no such window` or `locked` |
+| `minimized` | the plugin's minimized windows, one address a line, most recent last |
+| `unminimize <address>` | as the Lua `unminimize`; `ok`, `not minimized`, `no such window` or `locked` |
 | `trace` | the last 32 button, scroll and key events and who took each |
 
-`trace` names a module, `blocked` (the session lock or an input
-capture), `upstream` (cancelled before the plugin) or `-` (passed to the
-compositor). A run of scroll events on one axis is one entry with its
-count. It is the first stop when a click goes missing. The gate build
-adds its own verbs ([testing](testing.md#scripts)).
+`trace` names a module, `blocked` (session lock or input capture),
+`upstream` (cancelled before the plugin) or `-` (passed on); a run of
+scrolls on one axis is one entry with a count. It is the first stop when
+a click goes missing. The gate build adds verbs
+([testing](testing.md#scripts)).
 
 ## Configuration
 
-45 keys, `plugin:awesome:<group>:<key>` (a module's, or `theme`'s for
-the material they share), declared in
-[`core/schema.hpp`](../core/schema.hpp). Out-of-range values
-clamp. In Lua:
+45 keys, `plugin:awesome:<group>:<key>` (a module, or `theme` for the
+shared material), declared in [`core/schema.hpp`](../core/schema.hpp).
+Out-of-range values clamp. In Lua:
 
 ```lua
 hl.config({ plugin = { awesome = {
@@ -65,8 +64,7 @@ hl.config({ plugin = { awesome = {
 ```
 
 Colours marked Frost default to the Frost palette
-([`core/tokens.hpp`](../core/tokens.hpp)), so an empty config
-already looks right.
+([`core/tokens.hpp`](../core/tokens.hpp)).
 
 ### theme
 
@@ -140,10 +138,9 @@ already looks right.
 
 ## State
 
-What the plugin remembers lives in one file,
-`$XDG_STATE_HOME/hyprland/plugin/awesome/state.tsv`: tab-separated rows,
-the key last. The plugin never writes the config files, and nothing is
-both a config key and a remembered row.
+One file, `$XDG_STATE_HOME/hyprland/plugin/awesome/state.tsv`:
+tab-separated rows, the key last. The plugin never writes config files,
+and nothing is both a config key and a row.
 
 | Row | Meaning |
 |---|---|
@@ -163,12 +160,11 @@ Options ([`core/options.hpp`](../core/options.hpp)):
 | `quiet-fullscreen` | 0 | quiet over a fullscreen app |
 | `quiet-sharing` | 0 | quiet while sharing the screen |
 
-- A label is display text for the bell's Silenced Apps (128 bytes).
+- A label is the bell's display text (128 bytes).
 - Each kind is bounded (1024 keys, 50 history queries); at the bound the
-  least recently remembered row goes, never a new one.
-- Writes are atomic and synced on a worker thread, so a slow disk never
-  stalls the compositor. The windows still open at a logout are
-  recorded as closing.
-- Every row is checked on load and a bad one is skipped. A file that
-  exists but cannot be read blocks every write (a notification says so):
-  a session that could not see your state never replaces it.
+  least recently remembered row goes.
+- Writes are atomic and synced on a worker thread. Windows open at
+  logout are recorded as closing.
+- Bad rows are skipped on load. A file that exists but cannot be read
+  blocks every write (a notification says so), so a session that could
+  not see your state never replaces it.

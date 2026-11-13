@@ -6,23 +6,22 @@
 make -C vclick       # vclick.so, against the installed fork's headers (/usr/local)
 ```
 
-An inherited `PKG_CONFIG_PATH` wins (hyprpm's header cache); the build
+An inherited `PKG_CONFIG_PATH` wins (hyprpm's header cache). The build
 stamps its compiler, flags and the headers' `version.h`, so another
-header set or an installed fork rebuilds by itself.
+header set rebuilds by itself.
 
-## The path's unit cases
+## Unit cases
 
 ```sh
-make -C vclick test  # headless: path.cpp with no compositor, only hyprutils
+make -C vclick test  # headless: path.cpp with only hyprutils
 ```
 
 Thousands of planned glides, each held to the design: it starts on its
-start and ends exactly on its target, stays in the window, takes
-Fitts's time (a correction adds at most 300 ms), never runs past the
-target by more than the overshoot bound or bows more than 25%, no tick
-moves over 3× the average step, and about `overshoot_p` of the long ones
-overshoot. The profile parser: its values, a clamped value, a
-skipped bad one, a missing file.
+start and ends exactly on its target, stays in the window, takes Fitts's
+time (a correction adds at most 300 ms), overshoots and bows within
+bounds (25 %), no tick moves over 3× the average step, and about
+`overshoot_p` of long moves overshoot. Plus the profile parser: values,
+clamps, skipped bad lines, a missing file.
 
 ## The nested check
 
@@ -30,82 +29,42 @@ skipped bad one, a missing file.
 make vclick-check    # or: make -C vclick && bash vclick/check.sh
 ```
 
-It runs a nested Hyprland in the gate's private host
-(`awesome/gate/launch.sh`), under the gate's lock (never alongside a
-gate run) and memory cap, with only vclick loaded; the live session is
-never touched. Two GTK3 clients (`devtools/gtkgrid.py`, each with a
-protocol trace): A is the target, B covers A's lower right and is the
-bystander; A sets a custom cursor image (`gtkgrid.py … cursor`). A
-virtual pointer (`devtools/vptr`) is the user's mouse, a virtual
-keyboard (`devtools/vkbd`) their keyboard.
+A nested Hyprland in the gate's private host (`awesome/gate/launch.sh`),
+under the gate's lock and memory cap (never alongside a gate run), with
+only vclick loaded; the live session is never touched. Two GTK3 clients
+(`devtools/gtkgrid.py`, each traced): A is the target with a custom
+cursor image, B covers A's lower right as the bystander. `devtools/vptr`
+and `devtools/vkbd` are the user's mouse and keyboard.
 
-- In the tap mode (its exact event sequences): clicks land where A's
-  window capture draws each block, under B and in A's popup menu;
-  double and right clicks.
-- Scrolls step exactly (GTK's scroll lines and the protocol's detents);
-  the horizontal step is held against the user's own wheel through the
-  seat, not against GTK's name for it ([design](design.md)).
-- The pace: the default steps arrive 50 ms apart, `0ms` in one burst
-  and `200ms` 200 ms apart (the protocol's own timestamps).
-  - `status` reports a run, and any other request (`hide` and `key`
-    too) is busy meanwhile.
-  - A run stops, and says why, when its window closes.
-  - A run waits out the user's button in the same app, then finishes.
-  - A run ends with an unload, and the nested stays up.
-- With the user's pointer on B: B hears nothing; the cursor and the
-  focus never move.
-- Keys, with the user's keyboard in B: A reads `Page_Down`, then
-  ctrl+shift+A (GTK's own names), as an enter, the modifiers, one press
-  and its release, the modifiers and a leave; B hears nothing and the
-  focus never moves. With the user's keyboard in A: the key alone, no
-  enter or leave; `error: busy` while the user holds a key there. A bad
-  key or modifier, no window.
-- With the user's pointer on A: A's pointer steps out and back in under
-  the cursor, after A moved under a still cursor; the user's own click
-  still lands.
-- With the user's button down in A: `error: busy`, while B still clicks.
-- The mouse mode, with a profile file of the check's own (never the
-  user's) and no overshoot, so a glide's time is Fitts's law exactly:
-  - a click glides from the held hover: motions at the profile's rate,
-    Fitts's time, a dwell, then the click and no leave, the last motion
-    exactly on target; `status` says `moving`, and anything else is busy
-    meanwhile;
-  - B hears nothing; the cursor and the focus never move;
-  - `image` names A's own image (`set_cursor`) and B's named shape;
-  - a move goes from where the click left A's pointer (motions only),
-    `where` says where, A's own image is drawn there in a screen
-    capture, and is still there 2 s later; a click there comes from the
-    hover and keeps it;
-  - a jump-move under B (raised above A): B covers the image, as it
-    covers A; A raised again shows it;
-  - `hide`: A's pointer leaves, `where` says `nowhere`, the image is
-    gone; a jump click enters, clicks, stays, and draws the image there;
-  - the user's pointer in A takes the image (`where` says `nowhere`); out
-    again, it stays gone, and the next glide enters exactly where their
-    pointer left A;
-  - the user's pointer changing surface ends the hover, and so does a
-    click into B, under the user's pointer (`where`: `nowhere`);
-  - the user's pointer comes into A during a (slow) glide: it hands over
-    to a jump, which still hits, and `status` says so.
-- The tap mode's glide: nothing stays at the switch; the click enters,
-  clicks and leaves; the image is drawn as it lands, then fades.
-- The lockscreen (`devtools/vlock`): a glide going when the lock comes
-  goes on to its end; a jump click, a paced scroll, a key (an enter and
-  a leave around it) and a glide click reach A; no cursor is drawn over
-  the lockscreen; the lock surface never loses the keyboard or the
-  pointer; the user's own key and click (over A) go to the lockscreen,
-  never to A; a window capture of A works and shows A as it is drawn.
-  Unlocked, a click goes as ever.
-- Unload during a glide (it ends, A's pointer leaves) and during a paced
-  scroll; the nested stays up, and the command and the Lua functions are
-  gone.
-- Malformed requests (an unknown or repeated option, a scroll without a
-  direction, the bounds), a bare `0x…` address, `where`, `mode`,
-  `profile`.
-- The Lua functions: a query is its answer, an error `nil` and its line
-  (a malformed call without the usage), a number where hyprctl takes a
-  word, a table refused; a key and a click answer `true` and land; they
-  are gone with the plugin.
+It covers, each against the exact protocol events:
 
-Artifacts (captures, logs, traces) stay in `/tmp/hypr-gate/vclick`. The
-summary line is `== vclick: ALL N CHECKS PASSED ==`.
+- **tap mode**: clicks land on what A's window capture draws, under B
+  and in A's popup; double and right clicks.
+- **scrolls**: exact steps and detents, the horizontal sign matched
+  against the user's own wheel; the pace (50 ms default, `0ms` burst,
+  `200ms`), `status` and busy during a run, a run stopping when its
+  window closes, waiting out the user's button, ending at unload.
+- **isolation**: B hears nothing, the user's cursor and focus never move;
+  the same-app step-out and back under a moved window; `error: busy`
+  under the user's held button while B still clicks.
+- **keys**: into A with the keyboard in B (enter, modifiers, press,
+  release, leave), into the user's own window (the key alone), busy
+  while they hold a key, bad keys and modifiers.
+- **mouse mode** (the check's own profile, no overshoot, so the time is
+  Fitts's exactly): glide rate, time, dwell and landing; the held hover
+  and the drawn image (covered by B when raised over A); `image`;
+  `where`; `hide`; the user's pointer taking the image and the next
+  glide starting where it left; hover ending on a surface change or an
+  input into B; a slow glide handing over to a jump.
+- **tap mode glide**: nothing stays; the image fades after landing.
+- **lockscreen** (`devtools/vlock`): a glide, jump click, paced scroll,
+  key and glide click reach A; no cursor drawn; the lock surface keeps
+  the keyboard and pointer, and the user's own input goes only to it;
+  window captures work. Unlocked, input goes as ever.
+- **unload** during a glide and a paced scroll; the nested stays up and
+  the command and Lua functions are gone.
+- **requests**: malformed ones, bare addresses, `where`, `mode`,
+  `profile`, and the Lua functions' answers and refusals.
+
+Artifacts stay in `/tmp/hypr-gate/vclick`. The summary line is
+`== vclick: ALL N CHECKS PASSED ==`.

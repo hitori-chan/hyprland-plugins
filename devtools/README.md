@@ -1,11 +1,9 @@
 # devtools
 
 The Wayland fixtures and D-Bus fakes the nested gate drives
-([testing](../awesome/docs/testing.md)). Sources are tracked; binaries
-and the generated protocol glue are build artifacts.
-
-Build the helpers from the fork's protocol XML (xdg-shell comes from the
-system's wayland-protocols):
+([testing](../awesome/docs/testing.md)). Binaries and generated protocol
+glue are build artifacts, built from the fork's protocol XML
+(xdg-shell from the system's wayland-protocols):
 
 ```sh
 make -C devtools HL=/path/to/Hyprland
@@ -13,35 +11,29 @@ make -C devtools HL=/path/to/Hyprland
 
 ## Wayland fixtures
 
-- `vptr WIDTH HEIGHT` reads virtual pointer commands: `move`, `rel`,
-  `press`, `release`, `scroll`, and `sleep`. One process owns one
-  gesture.
-- `vkbd` reads `tap`, `press`, `release`, `mods`, and `sleep` and
-  installs its own xkb keymap. One process owns one chord: its keyboard
-  dies with it, so no stuck modifier outlives a test.
-- `vlock` is a session lock client (ext-session-lock-v1): `lock` and
-  `unlock` on stdin; it prints `locked`, `finished` (denied) and
-  `unlocked`, and what its lock surfaces hear (`kenter`, `kleave`, `key
-  CODE`, `penter`, `pleave`, `button CODE`), so a check can hold the
-  user's input to the lockscreen. EOF unlocks. It is not named after a
-  real locker: an idle daemon's `pidof <locker> || lock` must never take
-  it for the user's.
-- `input-capture WIDTH HEIGHT` verifies motion, button, and key delivery
+- `vptr WIDTH HEIGHT`: a virtual pointer reading `move`, `rel`,
+  `press`, `release`, `scroll`, `sleep`. One process, one gesture.
+- `vkbd`: a virtual keyboard with its own keymap, reading `tap`,
+  `press`, `release`, `mods`, `sleep`. One process, one chord: its
+  keyboard dies with it, so no stuck modifier outlives a test.
+- `vlock`: an ext-session-lock-v1 client. `lock`/`unlock` on stdin
+  (EOF unlocks); prints `locked`, `finished` (denied), `unlocked` and
+  what its surfaces hear (`kenter`, `kleave`, `key CODE`, `penter`,
+  `pleave`, `button CODE`). Not named after a real locker, so an idle
+  daemon's `pidof <locker> || lock` never takes it for the user's.
+- `input-capture WIDTH HEIGHT`: checks motion, button and key delivery
   through the fork's input-capture protocol and EIS.
-- `cliphold DELAY_MS TEXT` owns the nested clipboard and delays or
-  indefinitely holds a transfer to test cancellation and teardown.
-- `sharehold [-d] [-n FRAMES] [INTERVAL_MS]` holds a screen share of the
-  first output (a wlr-screencopy client copying frames until it is
-  killed) and prints READY at the first copied frame: the notify
-  battery's quiet-while-sharing checks. `-d` copies with damage, as a
-  screencast does (a still screen keeps a frame waiting); `-n` stops
-  after that many frames and stays connected, as a screenshot tool
-  leaves its session.
-- `toplevel APP_ID` activates the first toplevel with that app id over
-  wlr-foreign-toplevel, as a taskbar or a window switcher picks a window.
-- `fixwin WIDTH HEIGHT [TITLE]` maps a fixed-size xdg-toplevel (min ==
-  max, the dialog/splash shape) to test placement of windows that refuse
-  to resize.
+- `cliphold DELAY_MS TEXT`: owns the clipboard and delays or holds a
+  transfer (cancellation and teardown).
+- `sharehold [-d] [-n FRAMES] [INTERVAL_MS]`: a wlr-screencopy share of
+  the first output, printing READY at the first frame. `-d` copies with
+  damage, as a screencast (a still screen keeps a frame waiting); `-n`
+  stops after that many frames and stays connected, as a screenshot
+  tool.
+- `toplevel APP_ID`: activates the first toplevel with that app id over
+  wlr-foreign-toplevel, as a taskbar does.
+- `fixwin WIDTH HEIGHT [TITLE]`: a fixed-size toplevel (min == max, the
+  dialog/splash shape).
 - `splashwin [W H MARGIN ID late parented resz vismargin pinx parentonly
   pgeo follow unmaxwhenmaxed]` maps an updater splash's shape: a CSD
   toplevel whose committed buffer exceeds the declared geometry (a
@@ -52,15 +44,13 @@ make -C devtools HL=/path/to/Hyprland
   `SPLASHWIN_POINTER_LOG=<path>` it appends `at X Y` (surface-local,
   margin included) on every pointer enter and motion: where a click
   lands in the client's own frame.
-- `fsask APP_ID [maximized]` maps a toplevel born fullscreen, as a game
-  or a video player's `--fs` does (or maximized, as an app restoring its
-  last state): it asks before its initial commit, follows every
-  configure, and prints each as `W H STATE...` (`map` after its first
-  buffer) until killed.
-- `askwin APP_ID` maps a window that asks to be activated over
-  xdg-activation (as a browser's "switch to tab" does) on each `ask` line
-  on stdin, with the latest serial the seat sent it, and prints `asked`
-  once the compositor handled it (`rejected` for an empty token).
+- `fsask APP_ID [maximized]`: a toplevel asking fullscreen (or
+  maximized) before its initial commit, as a game's `--fs` does; it
+  follows every configure and prints each as `W H STATE...` (`map` after
+  its first buffer).
+- `askwin APP_ID`: asks for xdg-activation on each `ask` line (with the
+  seat's latest serial), printing `asked` once handled (`rejected` for
+  an empty token).
 - `fifowin fifo|recreate FRAMES` presents FRAMES SHM frames through
   fifo-v1 as Mesa's Vulkan WSI does (each update sets and waits on the
   barrier) and prints `frames elapsed_ms max_wait_ms presented discarded
