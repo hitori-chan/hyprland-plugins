@@ -7,6 +7,9 @@
 // the user's surface and back in under the user's cursor (docs/design.md).
 // In the mouse mode the app's pointer stays where the input left it (the
 // app keeps the hover, as under a mouse at rest); in the tap mode it leaves.
+// A held button (press ... release) is the app's implicit grab: every
+// motion goes to the surface the press began in, and nothing else of the
+// seat's ever learns of it (docs/design.md, a held button).
 #include "vclick.hpp"
 
 #include <hyprland/src/Compositor.hpp>
@@ -148,25 +151,25 @@ namespace VClick::Pointer {
         }
     }
 
-    // --- the hover a move holds ------------------------------------------------
+    // --- the hover a move keeps ------------------------------------------------
     //
     // A move leaves the app's pointer where it went: the app keeps the hover.
     // The seat ends it whenever the user's pointer changes surface (it sends
     // every app's pointer a leave); vclick ends it at its next input into
     // another app, and on unload.
-    static WP<CWLSurfaceResource> held;
+    static WP<CWLSurfaceResource> hovered;
 
-    void hold(const SP<CWLSurfaceResource>& surf) {
-        held = surf;
+    void hover(const SP<CWLSurfaceResource>& surf) {
+        hovered = surf;
     }
 
-    void release(wl_client* keep) {
-        const auto SURF = held.lock();
-        held.reset();
+    void unhover(wl_client* keep) {
+        const auto SURF = hovered.lock();
+        hovered.reset();
         if (!SURF)
             return;
         if (SURF->client() == keep) {
-            held = SURF; // the next input continues in this app
+            hovered = SURF; // the next input continues in this app
             return;
         }
         if (userIn(SURF->client()))
@@ -174,14 +177,14 @@ namespace VClick::Pointer {
         each(pointersOf(SURF->client()), [](CWLPointerResource& p) { p.sendLeave(); });
     }
 
-    // a hover held in another surface of the same app ends before the
+    // a hover kept in another surface of the same app ends before the
     // pointer enters this one: a leave, then the enter, as a mouse crosses
     static void leaveHeldOther(const SP<CWLSurfaceResource>& surf) {
-        const auto HELD = held.lock();
-        if (!HELD || HELD == surf || HELD->client() != surf->client())
+        const auto HOVERED = hovered.lock();
+        if (!HOVERED || HOVERED == surf || HOVERED->client() != surf->client())
             return;
-        held.reset();
-        each(pointersOf(HELD->client()), [](CWLPointerResource& p) { p.sendLeave(); });
+        hovered.reset();
+        each(pointersOf(HOVERED->client()), [](CWLPointerResource& p) { p.sendLeave(); });
     }
 
     static std::vector<std::pair<PHLWINDOWREF, Vector2D>> positions;
@@ -261,14 +264,14 @@ namespace VClick::Pointer {
             }
         }
         if (c.stay && !SHARED) {
-            held = T->surf; // the app keeps the hover, as under a mouse at rest
+            hovered = T->surf; // the app keeps the hover, as under a mouse at rest
             return {};
         }
         each(POINTERS, [](CWLPointerResource& p) { p.sendLeave(); });
         if (SHARED)
             each(POINTERS, [&](CWLPointerResource& p) { p.sendEnter(USER, USERLOCAL); });
-        if (held.lock() == T->surf)
-            held.reset(); // that leave ended it
+        if (hovered.lock() == T->surf)
+            hovered.reset(); // that leave ended it
         return {};
     }
 
@@ -285,7 +288,174 @@ namespace VClick::Pointer {
             p.sendEnter(T->surf, T->local);
             p.sendMotion(t, T->local);
         });
-        held = T->surf;
+        hovered = T->surf;
+        return {};
+    }
+
+    // --- a held button ---------------------------------------------------------
+    //
+    // press ... release: the app hears one press, the motions vclick sends
+    // meanwhile, and the release. Its implicit grab: every motion goes to the
+    // press's surface, in its coordinates, wherever the point is. The press's
+    // serial is struck from the seat's record at once, so the app cannot make
+    // it an interactive move or resize, which the compositor would drive with
+    // the user's real mouse; a drag-and-drop it begins is refused in
+    // main.cpp's hook, for the same reason. A leave releases it (the
+    // compositor sends the release first), and Hyprland leaves every app's
+    // pointer whenever the user's pointer changes surface: that ends it.
+    bool dragGuard = false;
+
+    struct SHeld {
+        PHLWINDOWREF           window;
+        WP<CWLSurfaceResource> surf; // the press's: the implicit grab
+        wl_client*             client = nullptr;
+        uint32_t               button = 0;
+        bool                   stay   = false; // the mode at the press
+    };
+    static std::optional<SHeld> held;
+    static struct {
+        wl_client*      client = nullptr;
+        Time::steady_tp at;
+    } letGo; // where and when vclick last let a button go
+
+    std::optional<uint32_t> heldButton() {
+        return held ? std::optional{held->button} : std::nullopt;
+    }
+
+    PHLWINDOW heldWindow() {
+        return held ? held->window.lock() : nullptr;
+    }
+
+    bool holdsIn(wl_client* client) {
+        if (held && held->client == client)
+            return true;
+        return letGo.client == client && Time::steadyNow() - letGo.at < std::chrono::milliseconds(GRACE_MS);
+    }
+
+    std::string buttonName(uint32_t button) {
+        switch (button) {
+            case BTN_LEFT: return "left";
+            case BTN_RIGHT: return "right";
+            case BTN_MIDDLE: return "middle";
+            case BTN_SIDE: return "side";
+            case BTN_EXTRA: return "extra";
+            default: return std::to_string(button);
+        }
+    }
+
+    // the release, to the press's surface while the app's pointer is still
+    // vclick's (a leave the seat sent has released it already)
+    static void letGoOf() {
+        if (!held)
+            return;
+        if (const auto SURF = held->surf.lock(); SURF && !userIn(SURF->client())) {
+            const auto T = nowMs();
+            each(pointersOf(SURF->client()), [&](CWLPointerResource& p) { p.sendButton(T, held->button, WL_POINTER_BUTTON_STATE_RELEASED); });
+        }
+        letGo = {held->client, Time::steadyNow()};
+        held.reset();
+    }
+
+    void seatMoved() {
+        if (!held || g_pCompositor->m_isShuttingDown)
+            return;
+        const auto SURF = held->surf.lock();
+        // the seat's leave let the button go already; nothing to send
+        letGo = {held->client, Time::steadyNow()};
+        held.reset();
+        hovered.reset();
+        noteStop(std::string{"the hold ended: "} +
+                 (SURF && userIn(SURF->client()) ? "the user's pointer came into the app" : "the user's pointer changed surface, and the seat let the button go"));
+    }
+
+    std::optional<std::string> holdLost() {
+        if (!held)
+            return std::nullopt;
+        const auto  W    = held->window.lock();
+        const auto  SURF = held->surf.lock();
+        std::string why;
+        if (SURF && userIn(SURF->client()))
+            why = "the user's pointer came into the app"; // the seat's leave let it go
+        else if (!SURF || !W || !Desktop::View::validMapped(W) || W->isHidden())
+            why = "the window closed or was hidden";
+        else
+            return std::nullopt;
+        letGoOf();
+        unhover();
+        noteStop("the hold ended: " + why);
+        return why;
+    }
+
+    void dropHold(const std::string& why) {
+        if (!held)
+            return;
+        const bool STAY = held->stay;
+        Glide::abandon(); // a held move's way ends where it is
+        letGoOf();
+        if (!STAY) {
+            unhover();
+            Cursor::rest(false);
+        }
+        noteStop("the hold ended: " + why);
+    }
+
+    // the press's surface, and a window point in its coordinates
+    SP<CWLSurfaceResource> heldAt(const Vector2D& pos, Vector2D& local) {
+        const auto W    = held ? held->window.lock() : nullptr;
+        const auto SURF = held ? held->surf.lock() : nullptr;
+        if (!W || !SURF)
+            return nullptr;
+        const auto HL  = Desktop::View::CWLSurface::fromResource(SURF);
+        const auto BOX = HL ? HL->getSurfaceBoxGlobal() : std::nullopt;
+        local          = BOX ? windowPos(W) + pos - BOX->pos() : pos + W->contentOffset();
+        return SURF;
+    }
+
+    Result heldMotion(const Vector2D& pos) {
+        if (const auto WHY = holdLost())
+            return fail("error: the hold ended: " + *WHY);
+        Vector2D   local;
+        const auto SURF = heldAt(pos, local);
+        if (!SURF)
+            return fail("error: no button is held");
+        const auto T = nowMs();
+        each(pointersOf(SURF->client()), [&](CWLPointerResource& p) { p.sendMotion(T, local); });
+        return {};
+    }
+
+    Result release() {
+        if (holdLost() || !held)
+            return fail("error: no button is held");
+        letGoOf();
+        return {};
+    }
+
+    static Result pressNow(const SAction& c) {
+        if (!dragGuard)
+            return fail("error: no drag-and-drop guard (the initiateDrag hook is out): a held button could hand a drag to the user's mouse");
+        auto T = resolve(c.selector, c.pos);
+        if (!T)
+            return fail(T.error());
+        if (T->shared)
+            return fail("error: busy: the user's pointer is in this app; a press would take it from them");
+        auto t = nowMs();
+        leaveHeldOther(T->surf);
+        each(T->pointers, [&](CWLPointerResource& p) {
+            p.sendEnter(T->surf, T->local);
+            p.sendMotion(t, T->local);
+        });
+        ++t;
+        each(T->pointers, [&](CWLPointerResource& p) {
+            p.sendButton(t, c.button, WL_POINTER_BUTTON_STATE_PRESSED);
+            g_pSeatManager->clearPointerButtonSerials(p.m_owner.lock(), T->surf, c.button); // no interactive move or resize from it
+        });
+        hovered = T->surf;
+        held    = SHeld{.window = T->window, .surf = T->surf, .client = T->surf->client(), .button = c.button, .stay = c.stay};
+        clearStop();
+        if (!c.stay) {
+            Cursor::prepare(T->window);
+            Cursor::show(T->window, c.pos); // the tap mode: shown while the button is down
+        }
         return {};
     }
 
@@ -339,8 +509,10 @@ namespace VClick::Pointer {
     }
 
     Result dispatch(const SAction& c) {
-        if (c.move)
-            return moveNow(c);
+        if (c.verb == EVerb::MOVE)
+            return held ? heldMotion(c.pos) : moveNow(c);
+        if (c.verb == EVerb::PRESS)
+            return pressNow(c);
         if (!c.wheel || c.count == 1 || c.ms == 0)
             return act(c);
 
@@ -358,7 +530,9 @@ namespace VClick::Pointer {
 
     void reset() {
         endRun();
-        release();
+        letGoOf(); // the release, then the leave
+        unhover();
         positions.clear();
+        letGo = {};
     }
 }

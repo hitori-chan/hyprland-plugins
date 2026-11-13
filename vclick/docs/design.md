@@ -19,8 +19,9 @@ A jump sends the input in one burst, a millisecond apart: enter, motion,
 then the clicks or the step. A glide sends the same from the pointer it
 brought there ([the glide](#the-glide)).
 
-- A click is a press and release, so nothing stays held and no drag or
-  interactive move can start. What follows is the mode's.
+- A click is a press and release in one burst, so nothing stays held.
+  A button stays down only between `press` and `release`
+  ([a held button](#a-held-button)). What follows is the mode's.
 - A scroll is one frame per step, as a wheel sends it: source `wheel`,
   `axis_value120` 120 (or `axis_discrete` 1 to an older pointer),
   direction `identical`, then `axis` 15. One step is one detent, never
@@ -133,6 +134,35 @@ app's pointer a leave), at vclick's next input into another app, at
 `hide` or the switch to tap, and at unload. A move into the app under
 the user's mouse is refused: that pointer is theirs.
 
+## A held button
+
+`press` holds a button down until `release`; a `move` meanwhile drags it.
+The app hears one press, the motions, and the release: its implicit
+grab, so every motion goes to the surface the press began in, in its
+coordinates, wherever the point is, and no surface is crossed. The seat
+never learns of it. Two things an app may make of a held button would
+reach the user's real mouse, so neither can start:
+
+- An interactive move or resize (a client-side title bar dragged):
+  Hyprland checks the request's serial against the presses it recorded,
+  and vclick strikes its press from that record at once.
+- A drag-and-drop (a link, a file, a selection dragged out):
+  `wl_data_device.start_drag` takes no checked serial, and Hyprland
+  drives the drag with the user's pointer, dropping where they next let
+  a button go. vclick hooks `initiateDrag`: one from the app holding its
+  button, or let go of within a second (the app may answer the last
+  motion late), is refused: the app hears its source cancelled, and the
+  hold ends. The user's own drag in that app (their button down there)
+  goes through. Without the hook, `press` is refused.
+
+A drag inside the app (a selection, a slider, a scrollbar, a canvas)
+needs neither and goes. A leave releases the app's held buttons (the
+compositor sends the release first), and Hyprland's seat leaves every
+app's pointer whenever the user's pointer changes surface, so that ends
+the hold, as it ends the hover; so does the window closing or hiding. `hide`, the
+switch to `tap` and unloading let go first. In tap mode the cursor shows
+while the button is down and fades after the release.
+
 ## Paced scrolling
 
 Apps read the time between wheel steps and scroll further for a fast
@@ -213,12 +243,14 @@ may wait until it is back on.
   closes (Escape through `send_shortcut`, or a click elsewhere).
 - An app may ask for activation after a click (a link opening a
   window); `misc:focus_on_activate` decides.
-- A hover lasts only until the user's pointer changes surface, and is
+- A hover and a held button last only until the user's pointer changes
+  surface (Hyprland's seat leaves every app's pointer then), and are
   refused in the user's own app.
 - The mouse is per window: a glide starts from vclick's last spot in
   that window, not from where the cursor was drawn.
-- No drag: a drag-and-drop is the app's call, and Hyprland drives it
-  with the user's real mouse.
+- No drag-and-drop, and no moving or resizing a window by its own title
+  bar: Hyprland drives both with the user's real mouse
+  ([a held button](#a-held-button)).
 - Fitts's W is 32 px unless the request names the target's size: a small
   button gets a little less time than a hand would take.
 - No XWayland: the compositor's hit test asserts on X11 windows, and an

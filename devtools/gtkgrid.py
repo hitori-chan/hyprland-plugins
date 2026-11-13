@@ -7,10 +7,14 @@
 # image (a 16x16 rose square, hotspot 0,0) through wl_pointer.set_cursor,
 # as a web page's own cursor does, instead of a named shape. With `shapes`,
 # the yellow block names the `text` shape and the red block hides the
-# cursor; the rest keep the window's. Every key the window hears is logged
-# with the modifiers GTK read with it.
+# cursor; the rest keep the window's. Every release prints the block that
+# had the press (GTK's implicit grab) and where it went up, relative to that
+# block. The yellow block is a drag-and-drop source, as a link or a file is.
+# Every key the window hears is logged with the modifiers GTK read with it.
 # usage: gtkgrid.py <log> [wayland|x11] [wayland-debug-log] [cursor|shapes]
-#   log lines: READY | HIT <color> | SCROLL <color> up|down|left|right |
+#   log lines: READY | HIT <color> | UP <color> <x> <y> |
+#              SCROLL <color> up|down|left|right | DRAGBEGIN <color> |
+#              DRAGFAILED <color> <result> | DRAGEND <color> |
 #              MENU <color> | MENUBUTTON True|False | KEY <name> <mods>|-
 import os
 import sys
@@ -43,9 +47,17 @@ def swatch(name, rgb, w, h, press=True):
     da = Gtk.DrawingArea()
     da.set_size_request(w, h)
     da.connect("draw", lambda _w, cr: (cr.set_source_rgb(*rgb), cr.paint(), False)[-1])
+    if press and name == "yellow":
+        # first, so its press handler runs before the one that logs and stops
+        da.drag_source_set(Gdk.ModifierType.BUTTON1_MASK, [Gtk.TargetEntry.new("text/plain", 0, 0)], Gdk.DragAction.COPY)
+        da.connect("drag-data-get", lambda _w, _c, data, *_: data.set_text(name, -1))
+        da.connect("drag-begin", lambda *_: say("DRAGBEGIN", name))
+        da.connect("drag-failed", lambda _w, _c, result: (say("DRAGFAILED", name, result.value_nick), True)[-1])
+        da.connect("drag-end", lambda *_: say("DRAGEND", name))
     if press:
-        da.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.SCROLL_MASK)
+        da.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK | Gdk.EventMask.SCROLL_MASK)
         da.connect("button-press-event", lambda *_: (say("HIT", name), True)[-1])
+        da.connect("button-release-event", lambda _w, ev: (say("UP", name, int(ev.x), int(ev.y)), True)[-1])
         # discrete steps only (no SMOOTH_SCROLL_MASK): one line per wheel detent
         da.connect("scroll-event", lambda _w, ev: (say("SCROLL", name, ev.direction.value_nick), True)[-1])
     return da

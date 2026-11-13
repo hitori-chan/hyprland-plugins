@@ -60,6 +60,14 @@ It covers, each against the exact protocol events:
   glide starting where it left; hover ending on a surface change or an
   input into B; a slow glide handing over to a jump.
 - **tap mode glide**: nothing stays; the image fades after landing.
+- **a held button**: press, a held glide (`dragging`), release, against
+  the protocol events and GTK's implicit grab (up in the press's block);
+  busy while held; a title bar (`devtools/fixwin` with `drag`) asking
+  `xdg_toplevel.move` with the press's serial and the window staying put
+  while the user's mouse moves; the user's pointer changing surface
+  ending the hold; a GTK drag-and-drop refused (its source cancelled,
+  the hold ended, the user's next click offering no drop); tap mode;
+  `hide` letting go; unload letting go.
 - **the cursor theme** (the check's own, through `XCURSOR_PATH`): B's
   named shapes drawn from it with their hotspots, its hidden cursor
   drawn as nothing.

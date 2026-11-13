@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <format>
 #include <random>
 
 namespace VClick::Glide {
@@ -51,6 +52,7 @@ namespace VClick::Glide {
         double                              moveMs = 0, dwellMs = 0;
         Time::steady_tp                     start;
         bool                                arrived = false;
+        bool                                held    = false; // a button is down the whole way
         WP<CWLSurfaceResource>              cur; // the surface the app's pointer is in
         Vector2D                            at;  // where it is, in window coords
         std::vector<WP<CWLPointerResource>> pointers;
@@ -88,8 +90,9 @@ namespace VClick::Glide {
 
     static Result moveTo(const PHLWINDOW& w, const Vector2D& pos) {
         Vector2D   local;
-        const auto AT   = Path::clampTo(pos, Pointer::windowSize(w));
-        const auto SURF = Pointer::surfaceAt(w, AT, local);
+        const auto AT = Path::clampTo(pos, Pointer::windowSize(w));
+        // a held button is the app's implicit grab: no surface is crossed
+        const auto SURF = Pointer::heldButton() ? Pointer::heldAt(AT, local) : Pointer::surfaceAt(w, AT, local);
         if (!SURF)
             return fail("error: the window has no surface");
         const auto PTRS = pointers(SURF->client());
@@ -121,7 +124,7 @@ namespace VClick::Glide {
         if (glide->timer && g_pEventLoopManager)
             g_pEventLoopManager->removeTimer(glide->timer);
         const auto CUR = glide->cur.lock();
-        if (leave && CUR && !Pointer::userIn(CUR->client())) {
+        if (leave && CUR && !Pointer::userIn(CUR->client()) && !Pointer::heldButton()) {
             for (const auto& p : glide->pointers) {
                 if (const auto P = p.lock(); P && P->good()) {
                     P->sendLeave();
@@ -133,17 +136,29 @@ namespace VClick::Glide {
             Pointer::rememberPos(W, glide->at);
         const bool STAY = glide->action.stay;
         glide.reset();
-        Cursor::rest(STAY);
+        Cursor::rest(STAY || Pointer::heldButton()); // a held button keeps the hand on the mouse
     }
 
     void stop() {
         end(true);
     }
 
+    void abandon() {
+        end(false);
+    }
+
+    bool dragging() {
+        return glide && Pointer::heldButton();
+    }
+
     static void tick() {
         if (!glide)
             return;
-        const auto  W = glide->window.lock();
+        const auto W = glide->window.lock();
+        if (glide->held && (Pointer::holdLost() || !Pointer::heldButton())) { // noted: the window went, the seat let go
+            end(false);
+            return;
+        }
         std::string why;
         if (const auto WHY = blocked())
             why = WHY->substr(7); // past "error: "
@@ -159,12 +174,13 @@ namespace VClick::Glide {
             // the user's pointer came into the app: the seat has already
             // taken its pointer (a leave, then an enter for the user's
             // surface), so no leave; a click or scroll goes on as a jump,
-            // which steps out of the user's surface and back in
+            // which steps out of the user's surface and back in; a move or
+            // a press would take that pointer, so it stops
             const auto A = glide->action;
             end(false);
             Cursor::userMoved(); // their pointer has the app's now: the cursor goes
-            if (A.move) {
-                noteStop("the last move stopped: the user's pointer came into the app");
+            if (A.verb == EVerb::MOVE || A.verb == EVerb::PRESS) {
+                noteStop(std::format("the last {} stopped: the user's pointer came into the app", A.verb == EVerb::MOVE ? "move" : "press"));
                 return;
             }
             const auto R = Pointer::dispatch(A);
@@ -188,8 +204,8 @@ namespace VClick::Glide {
             const auto A    = glide->action;
             const auto SURF = glide->cur.lock();
             end(false);
-            if (A.move) {
-                Pointer::hold(SURF);
+            if (A.verb == EVerb::MOVE) {
+                Pointer::hover(SURF);
                 return;
             }
             if (const auto R = Pointer::dispatch(A); !R)
@@ -209,8 +225,8 @@ namespace VClick::Glide {
         if (!T)
             return fail(T.error());
         if (T->shared) {
-            if (c.move)
-                return fail("error: busy: the user's pointer is in this app; a move would take it from them");
+            if (c.verb == EVerb::MOVE || c.verb == EVerb::PRESS)
+                return fail(std::format("error: busy: the user's pointer is in this app; a {} would take it from them", c.verb == EVerb::MOVE ? "move" : "press"));
             return std::nullopt;
         }
         if (!T->inbox)
@@ -224,11 +240,12 @@ namespace VClick::Glide {
 
         glide.emplace(SGlide{.action = c, .window = W, .segs = Path::plan(FROM, c.pos, SIZE, pace, rng(), {.w = c.size})});
         glide->moveMs  = Path::duration(glide->segs);
-        glide->dwellMs = c.move ? 0 : std::clamp(pace.dwellMs * jitter(rng()), 0.0, 400.0);
+        glide->dwellMs = c.verb == EVerb::MOVE ? 0 : std::clamp(pace.dwellMs * jitter(rng()), 0.0, 400.0);
         glide->period  = std::clamp(sc<int>(std::lround(1000.0 / pace.rateHz)), 4, 16);
         glide->start   = Time::steadyNow();
 
         glide->at      = FROM;
+        glide->held    = Pointer::heldButton().has_value();
         Cursor::prepare(W);
         Cursor::show(W, FROM);
         const auto R = moveTo(W, FROM);
@@ -238,7 +255,8 @@ namespace VClick::Glide {
             return R;
         }
         clearStop();
-        Pointer::hold(nullptr); // the glide has the app's pointer now
+        if (!Pointer::heldButton())
+            Pointer::hover(nullptr); // the glide has the app's pointer now
         glide->timer = makeShared<CEventLoopTimer>(std::chrono::milliseconds(glide->period), [](SP<CEventLoopTimer>, void*) { tick(); }, nullptr);
         g_pEventLoopManager->addTimer(glide->timer);
         return Result{};

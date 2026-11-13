@@ -49,19 +49,27 @@ namespace VClick {
     constexpr int STEP_MS    = 50;   // a scroll's default pace: a brisk wheel spin
     constexpr int MAX_MS     = 1000;
     constexpr int BUSY_MS    = 1000; // how long a paced step waits out a busy app
+    constexpr int                GRACE_MS   = 1000; // a drag-and-drop an app begins this soon after vclick let go is vclick's
 
     struct SWheel {
         wl_pointer_axis axis;
         int             sign; // +1: down / right (the content moves up / left)
     };
 
+    enum class EVerb : uint8_t {
+        CLICK,
+        SCROLL,
+        MOVE,  // only go there, and stay (with a held button: a drag's way)
+        PRESS, // go there and hold a button down
+    };
+
     // one request
     struct SAction {
+        EVerb                 verb = EVerb::CLICK;
         std::string           selector;
         Vector2D              pos;
-        uint32_t              button = BTN_LEFT; // a click, unless wheel or move
+        uint32_t              button = BTN_LEFT; // a click's or a press's
         std::optional<SWheel> wheel;
-        bool                  move  = false;   // only go there, and stay
         bool                  stay  = false;   // the mouse mode: the app keeps the hover after the input
         int                   count = 1;       // clicks, or wheel steps
         int                   ms    = STEP_MS; // between wheel steps; 0: all at once
@@ -128,9 +136,26 @@ namespace VClick {
         // the input at once: a jump, and the end of a glide
         Result                  dispatch(const SAction& c);
 
-        // the hover a move holds: hold, end (unless it is in keep's app)
-        void                    hold(const SP<CWLSurfaceResource>& surf);
-        void                    release(wl_client* keep = nullptr);
+        // the hover a move keeps: keep it, end it (unless it is in keep's app)
+        void hover(const SP<CWLSurfaceResource>& surf);
+        void unhover(wl_client* keep = nullptr);
+
+        // The button vclick holds down (press ... release), one at a time:
+        // the app's implicit grab, so every motion goes to the surface the
+        // press began in. A leave releases it (the compositor sends the
+        // release), and the seat leaves every app's pointer whenever the
+        // user's pointer changes surface: that ends it.
+        extern bool                dragGuard; // main.cpp's initiateDrag hook is in: press may hold
+        std::optional<uint32_t>    heldButton();
+        PHLWINDOW                  heldWindow();
+        Result                     release();                                    // let go where it is
+        Result                     heldMotion(const Vector2D& pos);              // window coords, to the press's surface
+        SP<CWLSurfaceResource>     heldAt(const Vector2D& pos, Vector2D& local); // the press's surface, and pos in its coords
+        std::optional<std::string> holdLost();                                   // why a hold ended by itself (noted), and forgets it
+        void                       seatMoved();                                  // the user's pointer changed surface: the seat let a held button go
+        void                       dropHold(const std::string& why);             // the app began a drag-and-drop: let go, say why
+        bool                       holdsIn(wl_client* client);                   // a held button there, or one let go there under a second ago
+        std::string                buttonName(uint32_t button);
 
         // where the virtual pointer last was in each window
         void                    rememberPos(const PHLWINDOW& w, const Vector2D& pos);
@@ -151,7 +176,9 @@ namespace VClick {
         // app, or the point is in a popup outside the window's box)
         std::optional<Result>      start(const SAction& c);
         bool                       active();
-        void                       stop(); // leaves the app's pointer, if it can
+        void                       stop();     // leaves the app's pointer, if it can
+        void                       abandon();  // ends where it is: no leave
+        bool                       dragging(); // a held button moves
 
         const Path::SProfile&      profile();
         std::string                loadProfile(const std::string& path); // empty: the default path

@@ -10,6 +10,8 @@ The whole command and its answers. Examples are in the
 hyprctl vclick click  <window> <x> <y> [button] [double|triple] [glide|jump] [size:<px>]
 hyprctl vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [glide|jump] [size:<px>]
 hyprctl vclick move   <window> <x> <y> [glide|jump] [size:<px>]
+hyprctl vclick press  <window> <x> <y> [button] [glide|jump] [size:<px>]
+hyprctl vclick release
 hyprctl vclick key    <window> <key> [mods]
 hyprctl vclick status
 hyprctl vclick where
@@ -40,7 +42,8 @@ The options follow the point, in any order, each at most once.
   burst, which many apps speed up.
 - `move`: go there, and keep the hover until the user's pointer changes
   surface, vclick's next input goes into another app, `hide`, or the
-  plugin unloads ([design](design.md#the-hover)).
+  plugin unloads ([design](design.md#the-hover)). With a button held, the
+  move drags it ([press](#press-and-release)).
 - `glide`: go there along a curve at the user's pace, rest on the target
   (the dwell), then click or scroll ([design](design.md#the-glide)).
   `jump`: go at once. A request that names neither goes the mode's way:
@@ -79,6 +82,8 @@ checks:
 hl.plugin.vclick.click(window, x, y, [button], ["double"|"triple"], ["glide"|"jump"])
 hl.plugin.vclick.scroll(window, x, y, "up"|"down"|"left"|"right", [steps], ["<ms>ms"], ["glide"|"jump"])
 hl.plugin.vclick.move(window, x, y, ["glide"|"jump"])
+hl.plugin.vclick.press(window, x, y, [button], ["glide"|"jump"])
+hl.plugin.vclick.release()
 hl.plugin.vclick.key(window, key, [mods])
 hl.plugin.vclick.hide()
 hl.plugin.vclick.status()      -- "idle", "moving", "scrolling 3/12", ...
@@ -113,18 +118,49 @@ refused while the user's keyboard is in another window of the same app,
 or while they hold a key in that one (`error: busy`). The key goes at
 once, whatever the mode: no glide, no cursor.
 
+## press and release
+
+`press <window> <x> <y> [button]` goes there and holds the button down;
+`release` lets it go where the pointer is. Between them, `move` in that
+window drags it (a glide, or a `jump` as one motion), as a hand holding
+the button down: the app's implicit grab, so every motion goes to where
+the press began, wherever the point is. Nothing else is taken while it
+is held (`error: busy: holding <button>; release it first`), except
+`key`, the queries, `hide` and `mode`.
+
+The hold ends by itself, and `status` says why, when:
+
+- the user's pointer changes surface, anywhere: Hyprland's seat leaves
+  every app's pointer then, and a leave lets the button go (so does the
+  user's pointer coming into the app, whose pointer is theirs);
+- the window closes or is hidden;
+- the app begins a drag-and-drop from it: Hyprland would drive that with
+  the user's real mouse, so it is refused (the app hears its drag
+  cancelled; [design](design.md#a-held-button)).
+
+`hide`, the switch to `tap` and unloading let the button go first. The
+app cannot make the press an interactive move or resize of its window
+(a client-side title bar): the compositor would drive those with the
+user's mouse too.
+
 ## status
 
 - `moving`: a glide runs, its dwell included.
+- `dragging`: a glide runs with a button held.
 - `scrolling <done>/<steps>`: a paced scroll runs.
-- `idle`, or `idle; <why>` when the last glide or scroll ended early,
-  until the next one starts:
+- `idle`, then `; holding <button>` while one is held, then `; <why>`
+  when the last glide, scroll or hold ended early, until the next one
+  starts:
   - `the last glide stopped: <why>`: the window closed or was hidden,
     the compositor is shutting down, or an error;
     the app's pointer left the window;
   - `the last glide finished as a jump: the user's pointer came into the
     app`;
-  - `the last move stopped: the user's pointer came into the app`;
+  - `the last move stopped: the user's pointer came into the app` (or
+    `press`);
+  - `the hold ended: <why>`: the user's pointer changed surface or came
+    into the app, the window closed or was hidden, or the app began a
+    drag-and-drop;
   - `the last glide's input failed: <error>`;
   - `the last scroll stopped after <done>/<steps>: <error>`.
 
@@ -143,8 +179,8 @@ input there starts where their pointer left the window).
 
 ## hide
 
-Takes the mouse away: the cursor goes and the app's pointer leaves, as
-a hand lifting off the mouse. `ok`, or `error: busy` while a glide or a
+Takes the mouse away: a held button goes up, the cursor goes and the
+app's pointer leaves, as a hand lifting off the mouse. `ok`, or `error: busy` while a glide or a
 scroll runs. The next input brings it back.
 
 ## mode
@@ -155,8 +191,9 @@ scroll runs. The next input brings it back.
 - `mouse`: a request glides unless it says `jump`; after it, the app's
   pointer and the cursor stay where it went.
 - `tap`: a request jumps unless it says `glide`; after it, the app's
-  pointer leaves and no cursor stays. Switching to `tap` does `hide`
-  (unless a glide or a scroll runs).
+  pointer leaves and no cursor stays (a held button's shows until the
+  release, then fades). Switching to `tap` does `hide` (unless a glide
+  or a scroll runs).
 
 ## profile
 
@@ -209,21 +246,29 @@ images)` follows when the hook could not be installed.
 ## Errors
 
 - `error: bad coordinates '<x> <y>'`, `error: '<word>' is not an
-  option of click|scroll|move`, `error: '<word>': that option is given
+  option of click|scroll|move|press`, `error: '<word>': that option is given
   twice`, `error: a scroll needs its direction: up, down, left or
   right`, `error: '<n>': steps must be 1-20`, `error: '<n>ms': the pace
   must be 0ms-1000ms`, `error: 'size:<n>': the target's size must be
   4-1000 px`: a malformed request; the usage follows.
 - `error: busy: still moving; retry later`, `error: busy: still
-  scrolling <done>/<steps>; retry later`: a glide or a paced scroll is
-  running.
+  dragging; retry later`, `error: busy: still scrolling <done>/<steps>;
+  retry later`: a glide or a paced scroll is running.
+- `error: busy: holding <button>; release it first`, `error: busy:
+  holding <button> in another window; release it first`: a request a
+  held button doesn't allow. `error: no button is held`: a `release`
+  with none.
+- `error: no drag-and-drop guard (the initiateDrag hook is out): a held
+  button could hand a drag to the user's mouse`: a `press` after a
+  compositor change took the hook's symbol away.
 - `error: busy: the user's pointer is pressed, constrained or dragging
   in this app; retry later`: the user's mouse is in the same app and
   holds a button, a pointer constraint or a drag there
   ([design](design.md#the-same-app)). Input into other apps goes
   through meanwhile.
 - `error: busy: the user's pointer is in this app; a move would take it
-  from them`: a `move` into the app under the user's mouse.
+  from them` (or `a press`): a `move` or `press` into the app under the
+  user's mouse.
 - `error: '<key>' is not a key`, `error: '<word>' is not a modifier`: a
   malformed `key`; the usage follows. `error: no keyboard: the seat has
   none to take the keymap from`: the compositor has no keyboard.

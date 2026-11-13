@@ -742,6 +742,112 @@ expect "hide" "$(vclick hide)" ok
 dsp "hl.dsp.window.alter_zorder({ mode = 'top', window = 'address:$A' })"
 park "$BX" "$BY"
 
+echo "== a held button: press, a held move, release"
+quiet "$T/a.wl"
+expect "release with nothing held" "$(vclick release)" "error: no button is held"
+expect "lua: so too" "$(lua 'hl.plugin.vclick.release()')" $'nil\terror: no button is held'
+AM="$(lines "$T/a.wl")" GL="$(lines "$T/a.log")" n="$(hits a HIT red)"
+expect "press on red (a jump)" "$(vclick press "address:$A" $(at red) jump)" ok
+until_ok 3 more a HIT red "$n" && ok "  A heard the press on red" || bad "  A never heard the press"
+expect "  status: holding it" "$(vclick status)" "idle; holding left"
+expect "  a click meanwhile: refused" "$(vclick click "address:$A" $(at green))" "error: busy: holding left; release it first"
+expect "  a move into B: refused" "$(vclick move "address:$B" 10 10)" "error: busy: holding left in another window; release it first"
+expect "a held move to green (a glide)" "$(vclick move "address:$A" $(at green))" ok
+expect "  status while it moves" "$(vclick status)" dragging
+until_ok 4 idle || true
+expect "  where" "$(vclick where)" "address:$A $(at green)"
+expect "release" "$(vclick release)" ok
+let_go() { tail -n +"$((GL + 1))" "$T/a.log" | grep -q '^UP '; }
+until_ok 3 let_go || true
+read -r _ UPW UPX _ <<<"$(tail -n +"$((GL + 1))" "$T/a.log" | grep '^UP ' | tail -1)"
+[[ "$UPW" == red ]] && ((UPX >= 120)) && ok "  GTK: up in red, the press's block, at green past its edge (x $UPX)" || bad "  GTK's release: $UPW at x $UPX, want red at x >= 120"
+quiet "$T/a.wl"
+EV="$(events a "$AM")"
+regex "$EV" '^enter motion button( motion){3,} button$' && ok "  an enter, the press, motions, the release, and no leave between ($(wc -w <<<"$EV") events)" || bad "  events: $EV"
+expect "  the release where green is (A's surface)" "$(last_xy a motion "$AM")" "$GREEN"
+expect "  status: idle" "$(vclick status)" idle
+
+echo "== a held button never moves the window: the app's move request is refused"
+read -r BCX BCY <<<"$(bglobal cyan)" && read -r BGX BGY <<<"$(bglobal magenta)" # inside B, clear of A
+park "$BCX" "$BCY"
+# devtools/fixwin with drag: its own title bar, asking xdg_toplevel.move with
+# the press's serial once dragged 8 px (as GTK's does, which reads its
+# motion only on its frame clock)
+MT="vclick-move-$$"
+dsp "hl.dsp.exec_cmd('$REPO/devtools/fixwin 300 200 $MT drag > $T/fix.log 2>&1')"
+fixwin() { hq clients -j | python3 -c 'import json, sys
+for c in json.load(sys.stdin):
+    if c["class"] == sys.argv[1]: print(c["address"], *c["at"], int(c["floating"]))' "$MT"; }
+fix_up() { [[ -n "$(fixwin)" ]]; }
+until_ok 5 fix_up || bad "the fixture never mapped"
+read -r F _ _ FL <<<"$(fixwin)"
+[[ "$FL" == 1 ]] || dsp "hl.dsp.window.float({ action = 'enable', window = 'address:$F' })"
+dsp "hl.dsp.window.move({ x = 700, y = 420, window = 'address:$F' })"
+fix_at() { [[ "$(fixwin | cut -d' ' -f2-3)" == "$1 $2" ]]; }
+until_ok 3 fix_at 700 420 || bad "the fixture never moved to 700,420"
+park "$BGX" "$BGY" && park "$BCX" "$BCY" # it mapped under the user's pointer: back on B
+expect "press on the fixture's title bar" "$(vclick press "address:$F" 50 50 jump)" ok
+expect "  a held move 100 px right" "$(vclick move "address:$F" 150 90 jump)" ok
+asked() { grep -q '^move ' "$T/fix.log"; }
+until_ok 3 asked && ok "  it asked to be moved" || bad "  it never asked to be moved"
+expect "  with the press's serial" "$(awk '$1 == "move" { print $2 }' "$T/fix.log")" "$(awk '$1 == "press" { print $2 }' "$T/fix.log" | tail -1)"
+park "$BGX" "$BGY" # the user's mouse moves (within B): a move it drove would carry the window along
+expect "release" "$(vclick release)" ok
+expect "  the window never moved" "$(fixwin | cut -d' ' -f2-3)" "700 420"
+pkill -f "fixwin 300 200 $MT"
+fix_gone() { [[ -z "$(fixwin)" ]]; }
+until_ok 3 fix_gone || bad "the fixture never closed"
+
+echo "== a drag-and-drop the app begins from vclick's button is refused"
+quiet "$T/a.wl" && quiet "$T/b.wl"
+GL="$(lines "$T/a.log")" TM="$(lines "$T/a.wl")" BM="$(lines "$T/b.wl")"
+read -r YX YY <<<"$(at yellow)"
+expect "press on yellow (a drag source)" "$(vclick press "address:$A" "$YX" "$YY" jump)" ok
+expect "  a held move 80 px on" "$(vclick move "address:$A" $((YX + 80)) "$YY" jump)" ok
+dnd_over() { tail -n +"$((GL + 1))" "$T/a.log" | grep -q '^DRAGEND yellow'; }
+until_ok 3 dnd_over || true
+expect "  A began one, and it failed" "$(tail -n +"$((GL + 1))" "$T/a.log" | grep -oE '^DRAG(BEGIN|FAILED|END) yellow' | tr '\n' ' ' | sed 's/ $//')" "DRAGBEGIN yellow DRAGFAILED yellow DRAGEND yellow"
+expect "  its source cancelled" "$(tail -n +"$((TM + 1))" "$T/a.wl" | grep -v ' -> ' | grep -c 'wl_data_source#[0-9]*\.cancelled(')" 1
+expect "  the hold ended, and says why" "$(vclick status)" "idle; the hold ended: the app began a drag-and-drop, which only the user's mouse can drive"
+expect "  nothing held" "$(vclick release)" "error: no button is held"
+park "$BCX" "$BCY"
+n="$(hits b HIT cyan)"
+ptr "press 272" "sleep 30" "release 272" # the user's own click, on B: no drop lands there
+until_ok 3 more b HIT cyan "$n" && ok "  the user's click on B is a click" || bad "  the user's click on B went nowhere"
+quiet "$T/b.wl"
+expect "  and B was offered no drop" "$(tail -n +"$((BM + 1))" "$T/b.wl" | grep -v ' -> ' | grep -cE 'wl_data_device#[0-9]+\.(enter|drop)\(')" 0
+
+echo "== the user's pointer changing surface ends a hold (the seat leaves every app's pointer)"
+quiet "$T/a.wl"
+AM="$(lines "$T/a.wl")"
+expect "press on red" "$(vclick press "address:$A" $(at red) jump)" ok
+park 1200 760 # from B to the empty desktop
+expect "  the hold ended, and says why" "$(vclick status)" "idle; the hold ended: the user's pointer changed surface, and the seat let the button go"
+quiet "$T/a.wl"
+EV="$(events a "$AM")"
+regex "$EV" '^(enter )?motion button button leave$' && ok "  A heard the release, then the leave, from the seat" || bad "  events: $EV"
+expect "  nothing held" "$(vclick release)" "error: no button is held"
+park "$BX" "$BY"
+
+echo "== a held button in the tap mode; hide lets it go"
+expect "the tap mode" "$(vclick mode tap)" tap
+quiet "$T/a.wl"
+AM="$(lines "$T/a.wl")"
+expect "press on blue" "$(vclick press "address:$A" $(at blue) jump)" ok
+expect "  where: shown while it is held" "$(vclick where)" "address:$A $(at blue)"
+expect "  release" "$(vclick release)" ok
+quiet "$T/a.wl"
+EV="$(events a "$AM")"
+regex "$EV" '^(leave )?enter motion button button leave$' && ok "  the press, the release, then the leave" || bad "  events: $EV"
+expect "back to the mouse mode" "$(vclick mode mouse)" mouse
+AM="$(lines "$T/a.wl")"
+expect "press on blue" "$(vclick press "address:$A" $(at blue) jump)" ok
+expect "  hide: the button goes up, the pointer leaves" "$(vclick hide)" ok
+quiet "$T/a.wl"
+EV="$(events a "$AM")"
+regex "$EV" '^(enter )?motion button button leave$' && ok "  the release, then the leave" || bad "  events: $EV"
+expect "  nothing held" "$(vclick status)" idle
+
 # --- 6. under the lockscreen ---------------------------------------------------
 echo "== the lockscreen (devtools/vlock): vclick's input reaches A, the user's the lockscreen"
 mkfifo "$T/vl.fifo"
@@ -814,6 +920,16 @@ sleep 0.5
 expect "  it ended with the plugin: no pointer event after" "$(events a "$AM")" "$E1"
 expect "  and left A's pointer" "$(events a "$AM" | awk '{ print $NF }')" leave
 expect "  the nested is alive" "$(kill -0 "$NPID" 2>/dev/null && echo yes)" yes
+hq plugin load "$SO" >/dev/null 2>&1
+expect "loaded again" "$(hq plugin list | grep -c 'Plugin vclick')" 1
+
+echo "== unload while a button is held"
+quiet "$T/a.wl"
+AM="$(lines "$T/a.wl")"
+expect "press on red" "$(vclick press "address:$A" $(at red) jump)" ok
+hq plugin unload "$SO" >/dev/null 2>&1
+quiet "$T/a.wl"
+expect "  the button went up, then A's pointer left" "$(events a "$AM")" "enter motion button button leave"
 hq plugin load "$SO" >/dev/null 2>&1
 expect "loaded again" "$(hq plugin list | grep -c 'Plugin vclick')" 1
 

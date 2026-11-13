@@ -21,6 +21,9 @@ hyprctl vclick click  $W 640 300 right           # a context menu
 hyprctl vclick scroll $W 640 500 down 12         # 12 wheel steps, 50 ms apart
 hyprctl vclick scroll $W 640 500 up 3 200ms      # slower
 hyprctl vclick move   $W 640 300                 # hover there
+hyprctl vclick press  $W 100 400                 # hold the button down there,
+hyprctl vclick move   $W 500 400                 #   drag it (a slider, a selection),
+hyprctl vclick release                           #   and let go
 hyprctl vclick click  $W 640 300 jump            # click at once, no glide
 hyprctl vclick key    $W Next                    # PageDown, to that window only
 hyprctl vclick key    $W t ctrl+shift            # with modifiers held for it
@@ -78,11 +81,11 @@ the glide moves at a typical mouse user's pace.
 
 ## Docs
 
-- [Reference](docs/reference.md): `click`, `scroll`, `move`, `key`,
-  `status`, `where`, `hide`, `mode`, `profile`, `image`, the Lua
-  functions, the profile file, the config, the errors
+- [Reference](docs/reference.md): `click`, `scroll`, `move`, `press`,
+  `release`, `key`, `status`, `where`, `hide`, `mode`, `profile`,
+  `image`, the Lua functions, the profile file, the errors
 - [Design](docs/design.md): input without the seat, the modes, the
-  glide, the cursor image, the hover, paced scrolling, the same app, the
-  keyboard, under the lockscreen, limits
-- [Testing](docs/testing.md): the build, the path's unit cases, the
-  nested check
+  glide, the cursor image, the hover, a held button, paced scrolling,
+  the same app, the keyboard, under the lockscreen, limits
+- [Testing](docs/testing.md): the build, the unit cases, the nested
+  check

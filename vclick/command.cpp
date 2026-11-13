@@ -20,21 +20,22 @@ namespace VClick {
 }
 
 namespace VClick::Command {
-    constexpr std::string_view USAGE =
-        "usage: vclick click <window> <x> <y> [button] [double|triple] [glide|jump] [size:<px>]\n"
-        "       vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [glide|jump] [size:<px>]\n"
-        "       vclick move <window> <x> <y> [glide|jump] [size:<px>]\n"
-        "       vclick key <window> <key> [mods]\n"
-        "       vclick hide | status | where | mode [mouse|tap] | profile [reload [file]] | image <window>\n"
-        "  window: a window selector (address:0x..., class:...), or a bare 0x... address\n"
-        "  button: left (default), right, middle, side, extra, or a code 272-279\n"
-        "  steps: wheel detents, 1-20 (default 1); <ms>ms: between them, 0ms-1000ms (default 50ms; 0ms: at once)\n"
-        "  key: an xkb key name, as send_shortcut takes it (Next, Prior, Return, a, F5), or code:<n>; pressed and released\n"
-        "  mods: modifiers held for it, joined by + (ctrl, shift, alt, super)\n"
-        "  mode mouse: glide there, and stay; the app keeps the hover (the default)\n"
-        "  mode tap: go at once, and leave after the input; no cursor stays\n"
-        "  glide|jump: this request's way there, whatever the mode\n"
-        "  size:<px>: the target's size, for the glide's time (default 32)";
+    constexpr std::string_view           USAGE = "usage: vclick click <window> <x> <y> [button] [double|triple] [glide|jump] [size:<px>]\n"
+                                                 "       vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [glide|jump] [size:<px>]\n"
+                                                 "       vclick move <window> <x> <y> [glide|jump] [size:<px>]\n"
+                                                 "       vclick press <window> <x> <y> [button] [glide|jump] [size:<px>]\n"
+                                                 "       vclick key <window> <key> [mods]\n"
+                                                 "       vclick release | hide | status | where | mode [mouse|tap] | profile [reload [file]] | image <window>\n"
+                                                 "  window: a window selector (address:0x..., class:...), or a bare 0x... address\n"
+                                                 "  button: left (default), right, middle, side, extra, or a code 272-279\n"
+                                                 "  steps: wheel detents, 1-20 (default 1); <ms>ms: between them, 0ms-1000ms (default 50ms; 0ms: at once)\n"
+                                                 "  key: an xkb key name, as send_shortcut takes it (Next, Prior, Return, a, F5), or code:<n>; pressed and released\n"
+                                                 "  mods: modifiers held for it, joined by + (ctrl, shift, alt, super)\n"
+                                                 "  mode mouse: glide there, and stay; the app keeps the hover (the default)\n"
+                                                 "  mode tap: go at once, and leave after the input; no cursor stays\n"
+                                                 "  press: hold the button down; move drags it, release lets go\n"
+                                                 "  glide|jump: this request's way there, whatever the mode\n"
+                                                 "  size:<px>: the target's size, for the glide's time (default 32)";
 
     static bool mouseMode = true;
 
@@ -97,10 +98,10 @@ namespace VClick::Command {
     }
 
     static bool isInput(std::string_view verb) {
-        return verb == "click" || verb == "scroll" || verb == "move";
+        return verb == "click" || verb == "scroll" || verb == "move" || verb == "press";
     }
 
-    // "vclick click|scroll|move <window> <x> <y> [option...]": the options
+    // "vclick click|scroll|move|press <window> <x> <y> [option...]": the options
     // after the point, in any order, each at most once
     static std::expected<SAction, std::string> parse(const std::vector<std::string_view>& w) {
         const auto BAD = [](std::string why) { return std::unexpected(std::format("error: {}\n{}", why, USAGE)); };
@@ -114,7 +115,7 @@ namespace VClick::Command {
         if (!X || !Y || !std::isfinite(*X) || !std::isfinite(*Y))
             return BAD(std::format("bad coordinates '{} {}'", w[3], w[4]));
         c.pos  = {*X, *Y};
-        c.move = VERB == "move";
+        c.verb = VERB == "scroll" ? EVerb::SCROLL : VERB == "move" ? EVerb::MOVE : VERB == "press" ? EVerb::PRESS : EVerb::CLICK;
 
         bool button = false, count = false, steps = false, pace = false, size = false;
         for (size_t i = 5; i < w.size(); ++i) {
@@ -135,8 +136,8 @@ namespace VClick::Command {
                 c.size = *PX;
                 continue;
             }
-            if (VERB == "click") {
-                if (O == "double" || O == "triple") {
+            if (VERB == "click" || VERB == "press") {
+                if (VERB == "click" && (O == "double" || O == "triple")) {
                     if (std::exchange(count, true))
                         return TWICE();
                     c.count = O == "double" ? 2 : 3;
@@ -180,28 +181,39 @@ namespace VClick::Command {
         return c;
     }
 
+    // what runs now, or nothing
+    static std::optional<std::string> running() {
+        if (Glide::active())
+            return Glide::dragging() ? "dragging" : "moving";
+        return Pointer::scrollStatus();
+    }
+
     static bool busy() {
-        return Glide::active() || Pointer::scrollStatus();
+        return running().has_value();
     }
 
     static std::string busyError() {
-        if (Glide::active())
-            return "error: busy: still moving; retry later";
-        return std::format("error: busy: still {}; retry later", *Pointer::scrollStatus());
+        return std::format("error: busy: still {}; retry later", *running());
     }
 
+    // "idle", what runs, then a held button and why the last input ended early
     static std::string status() {
-        if (Glide::active())
-            return "moving";
-        if (const auto S = Pointer::scrollStatus())
-            return *S;
-        return lastStop.empty() ? "idle" : "idle; " + lastStop;
+        if (const auto R = running())
+            return *R;
+        Pointer::holdLost();
+        std::string out = "idle";
+        if (const auto B = Pointer::heldButton())
+            out += "; holding " + Pointer::buttonName(*B);
+        return lastStop.empty() ? out : out + "; " + lastStop;
     }
 
-    // take the mouse away: the cursor goes, the app's pointer leaves
+    // take the mouse away, a hand lifting off it: a held button goes up,
+    // the cursor goes, the app's pointer leaves
     static void away() {
         Cursor::hide();
-        Pointer::release();
+        if (Pointer::heldButton())
+            std::ignore = Pointer::release();
+        Pointer::unhover();
     }
 
     // the commands without a point
@@ -215,6 +227,17 @@ namespace VClick::Command {
                 if (busy())
                     return busyError();
                 away();
+                return "ok";
+            }
+            if (w[1] == "release") {
+                if (busy())
+                    return busyError();
+                if (const auto R = Pointer::release(); !R)
+                    return R.error();
+                if (!mouseMode) { // the tap mode: the pointer leaves after the input
+                    Pointer::unhover();
+                    Cursor::rest(false);
+                }
                 return "ok";
             }
         }
@@ -249,9 +272,20 @@ namespace VClick::Command {
             return busyError();
         c->stay = mouseMode;
 
-        // a hover held in another app ends here, as a mouse leaves it
+        // a held button: the hand moves (in that window) or lets go first
         const auto TW = Pointer::windowOf(c->selector);
-        Pointer::release(Pointer::clientOf(TW));
+        Pointer::holdLost();
+        if (const auto B = Pointer::heldButton()) {
+            if (c->verb != EVerb::MOVE)
+                return std::format("error: busy: holding {}; release it first", Pointer::buttonName(*B));
+            if (TW != Pointer::heldWindow())
+                return std::format("error: busy: holding {} in another window; release it first", Pointer::buttonName(*B));
+        }
+        if (c->verb == EVerb::PRESS && !Pointer::dragGuard)
+            return "error: no drag-and-drop guard (the initiateDrag hook is out): a held button could hand a drag to the user's mouse";
+
+        // a hover kept in another app ends here, as a mouse leaves it
+        Pointer::unhover(Pointer::clientOf(TW));
 
         if (c->glide.value_or(mouseMode)) {
             if (const auto R = Glide::start(*c))
@@ -264,6 +298,8 @@ namespace VClick::Command {
             Pointer::rememberPos(TW, c->pos);
             if (mouseMode)
                 Cursor::place(TW, c->pos);
+            else if (Pointer::heldButton())
+                Cursor::moveTo(c->pos); // the tap mode shows a held button's cursor
         }
         return "ok";
     }

@@ -32,8 +32,10 @@ make -C devtools HL=/path/to/Hyprland
   tool.
 - `toplevel APP_ID`: activates the first toplevel with that app id over
   wlr-foreign-toplevel, as a taskbar does.
-- `fixwin WIDTH HEIGHT [TITLE]`: a fixed-size toplevel (min == max, the
-  dialog/splash shape).
+- `fixwin WIDTH HEIGHT [TITLE] [drag]`: a fixed-size toplevel (min ==
+  max, the dialog/splash shape). With `drag` it is its own title bar: a
+  press dragged 8 px asks `xdg_toplevel.move` with that press's serial;
+  it prints `press SERIAL`, `move SERIAL`, `up`.
 - `splashwin [W H MARGIN ID late parented resz vismargin pinx parentonly
   pgeo follow unmaxwhenmaxed]` maps an updater splash's shape: a CSD
   toplevel whose committed buffer exceeds the declared geometry (a
@@ -63,9 +65,12 @@ make -C devtools HL=/path/to/Hyprland
   xdg_popup of colored items. It logs what GTK hit (`HIT <color>` on a
   press, `SCROLL <color> <direction>` per wheel detent, `MENU <color>` on
   an activated item, `KEY <name> <mods>` per key press, its modifiers
-  `ctrl+shift` or `-`). `cursor` sets its own cursor image (a 16x16 rose
-  square); `shapes` names `text` over yellow and hides the cursor over
-  red.
+  `ctrl+shift` or `-`). A release logs `UP <color> <x> <y>`: the block
+  that had the press (GTK's implicit grab), where it went up relative to
+  it. The yellow block is a drag-and-drop source (`DRAGBEGIN`,
+  `DRAGFAILED <result>`, `DRAGEND`). `cursor` sets its own cursor image
+  (a 16x16 rose square); `shapes` names `text` over yellow and hides the
+  cursor over red.
   `findcolors.py PNG NAME=R,G,B...` finds where each color is drawn in a
   capture, so a click on what is drawn must name the same block.
 

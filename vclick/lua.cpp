@@ -14,7 +14,7 @@
 #include <utility>
 
 namespace VClick::Lua {
-    constexpr std::array<std::string_view, 10> VERBS = {"click", "scroll", "move", "key", "hide", "status", "where", "mode", "profile", "image"};
+    constexpr std::array<std::string_view, 12> VERBS    = {"click", "scroll", "move", "press", "release", "key", "hide", "status", "where", "mode", "profile", "image"};
     constexpr int                              MAX_ARGS = 8; // the longest request: scroll's seven
 
     static int answer(lua_State* L, std::string_view out) {
