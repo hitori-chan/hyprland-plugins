@@ -771,6 +771,18 @@ hq eval 'hl.window_rule({ match = { class = "maxdeny" }, suppress_event = "maxim
 fsask_run maxdeny maximized
 chk "born maximized: a refused ask is taken back at map" until_is 3 "1 0" fsask_state maxdeny 1
 fsask_stop maxdeny
+# A float born fullscreen has no windowed size on record: leaving asks the
+# client (a 0x0 configure; fsask answers 320x240) and adopts its answer,
+# centered where the fullscreen box was
+hq eval 'hl.window_rule({ match = { class = "fsgrant" }, float = true })' >/dev/null
+fsask_run fsgrant
+chk "born fullscreen float: it maps told fullscreen" until_is 3 "1 1" fsask_state fsgrant 2
+dsp "hl.dsp.window.fullscreen({ action = \"unset\", window = \"class:fsgrant\" })"
+fsgrant_asked() { grep -q '^0 0' "$STATE/fsgrant.log"; }
+chk "born fullscreen float: leaving asks the client for its size" until_ok 3 fsgrant_asked
+expect_by 3 "born fullscreen float: it takes the size it chose, centered" \
+	"any(c['class']=='fsgrant' and c['size']==[320,240] and abs(c['at'][0]+160-$MON_W/2)<=1 and abs(c['at'][1]+120-$MON_H/2)<=1 for c in cs)"
+fsask_stop fsgrant
 
 # fifo-v1: Mesa replaces a swapchain's fifo object a roundtrip apart, and a
 # frame presented in between must not leave the new object's frames held on
