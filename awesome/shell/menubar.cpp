@@ -65,6 +65,18 @@ namespace Awesome::Shell {
 
         static Awesome::CHop         pendingExec, pendingOpen;
 
+        // In-flight Activate calls. The module owns each proxy: a reply
+        // callback holding its own proxy is a cycle that outlives an unload
+        // with the call in flight. A proxy goes a loop turn after its reply
+        // (never inside its own callback), the oldest past the bound (its
+        // call abandoned), and all at exit, while the bus still lives.
+        static constexpr size_t                                                 MAX_ACTIVATIONS = 8;
+        static std::vector<std::pair<uint64_t, std::unique_ptr<sdbus::IProxy>>> activations;
+        static uint64_t                                                         activationSeq = 0;
+        static Awesome::CHopQueue<uint64_t, MAX_ACTIVATIONS>                    answered([](std::vector<uint64_t>& done) {
+            std::erase_if(activations, [&](const auto& A) { return std::ranges::contains(done, A.first); });
+        });
+
         // launch counts + prompt history: the core's unified state
         // (core/state.hpp), one shared in-memory copy
         static Awesome::CRecentMap<int>& launchCounts = Awesome::StateStore::inst().data().launches;
@@ -364,9 +376,13 @@ namespace Awesome::Shell {
                     std::ignore = Config::Supplementary::executor()->spawn(withToken(app.exec, TOKEN));
                 return;
             }
+            const uint64_t SEQ = ++activationSeq;
             try {
-                auto P = std::shared_ptr<sdbus::IProxy>(sdbus::createProxy(*Tray::bus.conn(), sdbus::ServiceName{app.desktopId}, *PATH).release());
-                auto DATA = std::map<std::string, sdbus::Variant>{};
+                auto PROXY = sdbus::createProxy(*Tray::bus.conn(), sdbus::ServiceName{app.desktopId}, *PATH);
+                if (activations.size() >= MAX_ACTIVATIONS)
+                    activations.erase(activations.begin());
+                auto& P    = activations.emplace_back(SEQ, std::move(PROXY)).second;
+                auto  DATA = std::map<std::string, sdbus::Variant>{};
                 if (!TOKEN.empty()) {
                     DATA.emplace("activation-token", sdbus::Variant{TOKEN});
                     DATA.emplace("desktop-startup-id", sdbus::Variant{TOKEN});
@@ -375,12 +391,14 @@ namespace Awesome::Shell {
                 P->callMethodAsync("Activate")
                     .onInterface("org.freedesktop.Application")
                     .withArguments(DATA)
-                    .uponReplyInvoke([P, app, GENERATION](std::optional<sdbus::Error> error) {
+                    .uponReplyInvoke([SEQ, app, GENERATION](std::optional<sdbus::Error> error) {
                         if (GENERATION == activationGeneration && error && !app.exec.empty())
                             std::ignore = Config::Supplementary::executor()->spawn(withToken(app.exec, launchToken()));
+                        answered.push(SEQ);
                     });
                 Tray::pollSoon();
             } catch (...) {
+                std::erase_if(activations, [SEQ](const auto& A) { return A.first == SEQ; });
                 if (!app.exec.empty())
                     std::ignore = Config::Supplementary::executor()->spawn(withToken(app.exec, TOKEN));
             }
@@ -1064,6 +1082,8 @@ namespace Awesome::Shell {
 
         void exit() {
             ++activationGeneration;
+            answered.reset();
+            activations.clear(); // before the tray's bus closes
             close();
             clipboard.cancel();
             if (indexPoll && g_pEventLoopManager)
