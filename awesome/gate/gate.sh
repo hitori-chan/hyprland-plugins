@@ -120,7 +120,7 @@ if [[ -n "$FORK_SRC" ]]; then
 	# A reconfigure keeps pkg-config's cached versions: after a distro upgrade
 	# the binary reports the old ones and this staged set agrees with it, while
 	# hyprpm's fresh headers fail the load guard. Major.minor, as the guard does.
-	for _dep in aquamarine hyprgraphics hyprutils hyprcursor hyprlang; do
+	for _dep in aquamarine hyprgraphics hyprutils hyprcursor; do
 		_have="$(sed -n "s/^#define ${_dep^^}_VERSION *\"\(.*\)\"/\1/p" "$FORK_SRC/src/version.h")"
 		_want="$(pkg-config --modversion "$_dep" 2>/dev/null)"
 		[[ -n "$_want" && "${_have%.*}" == "${_want%.*}" ]] || {
