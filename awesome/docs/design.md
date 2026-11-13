@@ -326,7 +326,11 @@ state, never control it.
 ## shell
 
 Tasks are views of `windows` state: minimize, restore and focus are
-requests to `windows`, never state kept in the bar. The bell reads the
+requests to `windows`, never state kept in the bar. The bar yields to
+the *presented* fullscreen (`getPresentedFullscreenModes`), as the
+renderer draws it: upstream's geometry transactions hold the old mode
+until the window's new frame is ready, so the bar neither vanishes
+before the window covers its band nor returns before it leaves. The bell reads the
 notify model directly (the dot, DND, the center) and calls notify's
 center toggle. Its right-click menu is built locally (the client list's
 kind, with header rows and right-hand details) over notify's own doors.

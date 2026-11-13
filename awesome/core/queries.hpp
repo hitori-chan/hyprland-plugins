@@ -200,13 +200,15 @@ namespace Awesome {
 
     // A real fullscreen window owns the monitor, on its workspace or on an
     // open special one (special windows render before the plugin's
-    // post-windows pass, so the bar would paint over them)
+    // post-windows pass, so the bar would paint over them). The presented
+    // mode, as the renderer draws it: a geometry transaction holds the old
+    // one until the window's new frame is ready
     inline bool fullscreenOwns(const PHLMONITOR& mon) {
         if (!mon)
             return false;
         const auto& FS = Fullscreen::controller();
         for (const auto& WS : {mon->m_activeSpecialWorkspace, mon->m_activeWorkspace})
-            if (WS && FS->getFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN)
+            if (WS && FS->getPresentedFullscreenModes(WS).internal == Fullscreen::FSMODE_FULLSCREEN)
                 return true;
         return false;
     }
