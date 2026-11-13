@@ -13,6 +13,7 @@ hyprctl vclick move   <window> <x> <y> [glide|jump] [size:<px>]
 hyprctl vclick press  <window> <x> <y> [button] [glide|jump] [size:<px>]
 hyprctl vclick release
 hyprctl vclick drag   <window> <x> <y> <x2> <y2> [button] [glide|jump] [size:<px>]
+hyprctl vclick pinch  <window> <x> <y> <scale> [<deg>deg] [glide|jump] [size:<px>]
 hyprctl vclick key    <window> <key> [mods]
 hyprctl vclick status
 hyprctl vclick where
@@ -43,7 +44,7 @@ The options follow the point, in any order, each at most once.
   burst, which many apps speed up.
 - `<n>px`: instead of wheel steps, a finger's scroll on a touchpad by
   that many pixels, `1px` to `10000px`, exactly, at the user's pace; no
-  steps or pace with it ([design](design.md#a-fingers-scroll)).
+  steps or pace with it ([design](design.md#a-touchpads-strokes)).
 - `move`: go there, and keep the hover until the user's pointer changes
   surface, vclick's next input goes into another app, `hide`, or the
   plugin unloads ([design](design.md#the-hover)). With a button held, the
@@ -89,6 +90,7 @@ hl.plugin.vclick.move(window, x, y, ["glide"|"jump"])
 hl.plugin.vclick.press(window, x, y, [button], ["glide"|"jump"])
 hl.plugin.vclick.release()
 hl.plugin.vclick.drag(window, x, y, x2, y2, [button], ["glide"|"jump"])
+hl.plugin.vclick.pinch(window, x, y, scale, ["<deg>deg"], ["glide"|"jump"])
 hl.plugin.vclick.key(window, key, [mods])
 hl.plugin.vclick.hide()
 hl.plugin.vclick.status()      -- "idle", "moving", "scrolling 3/12", ...
@@ -160,12 +162,23 @@ hold's limits are the press's ([press and release](#press-and-release)):
 a drag-and-drop the app begins is refused, and the user's pointer
 changing surface ends it.
 
+## pinch
+
+`pinch <window> <x> <y> <scale> [<deg>deg]` goes to `<x> <y>` (a glide
+or a jump, as any request) and pinches there with two fingers on a
+touchpad: they spread to `<scale>` times their distance, `0.1` to `10`
+(`2` zooms in twice, `0.5` out), and turn `<deg>` degrees, `-360` to
+`360`, clockwise positive; at the user's pace, then a rest, then the
+lift ([design](design.md#a-touchpads-strokes)). A pinch needs a scale
+other than 1, or a turn. `status` says `pinching`.
+
 ## status
 
 - `moving`: a glide runs, its dwell included.
 - `dragging`: a glide runs with a button held.
 - `scrolling <done>/<steps>`: a paced scroll runs; `scrolling
   <done>/<n> px`: a finger's.
+- `pinching`: a pinch runs.
 - `idle`, then `; holding <button>` while one is held, then `; <why>`
   when the last glide, scroll or hold ended early, until the next one
   starts:
@@ -184,7 +197,9 @@ changing surface ends it.
   - `the last glide's input failed: <error>`;
   - `the last scroll stopped after <done>/<steps>: <error>` (or
     `<done>/<n> px: <why>`: the window closed or was hidden, the user's
-    pointer came into the app).
+    pointer came into the app);
+  - `the last pinch stopped: <why>`: the same; the app heard it
+    cancelled.
 
 Nothing else is taken while a glide or a scroll runs. To wait for one:
 
@@ -268,18 +283,21 @@ images)` follows when the hook could not be installed.
 ## Errors
 
 - `error: bad coordinates '<x> <y>'`, `error: '<word>' is not an
-  option of click|scroll|move|press|drag`, `error: '<word>': that option is given
+  option of click|scroll|move|press|drag|pinch`, `error: '<word>': that option is given
   twice`, `error: a scroll needs its direction: up, down, left or
   right`, `error: '<n>': steps must be 1-20`, `error: '<n>ms': the pace
   must be 0ms-1000ms`, `error: 'size:<n>': the target's size must be
   4-1000 px`, `error: a drag needs where it lets go: <x2> <y2>`,
   `error: '<n>px': a scroll by px must be 1px-10000px`, `error: a scroll
-  by px takes no steps or pace: a finger's goes at the user's`: a
-  malformed request; the usage follows. `error: <x2>,<y2> is outside
+  by px takes no steps or pace: a finger's goes at the user's`, `error:
+  a pinch needs its scale: 0.1-10 (2: twice as large)`, `error: a pinch
+  needs a scale other than 1, or a turn`, `error: '<n>deg': a turn must
+  be -360deg-360deg`: a malformed request; the usage follows. `error: <x2>,<y2> is outside
   the window (<w>x<h>)`: a drag's end.
 - `error: busy: still moving; retry later`, `error: busy: still
   dragging; retry later`, `error: busy: still scrolling <done>/<steps>;
-  retry later` (or `<done>/<n> px`): a glide or a scroll is running.
+  retry later` (or `<done>/<n> px`), `error: busy: still pinching; retry
+  later`: a glide, a scroll or a pinch is running.
 - `error: busy: holding <button>; release it first`, `error: busy:
   holding <button> in another window; release it first`: a request a
   held button doesn't allow. `error: no button is held`: a `release`
@@ -293,8 +311,9 @@ images)` follows when the hook could not be installed.
   ([design](design.md#the-same-app)). Input into other apps goes
   through meanwhile.
 - `error: busy: the user's pointer is in this app; a move would take it
-  from them` (or `a press`, `a drag`, `a scroll by px`): one into the app
-  under the user's mouse.
+  from them` (or `a press`, `a drag`, `a scroll by px`, `a pinch`): one
+  into the app under the user's mouse. `error: the app takes no pinch (it
+  bound no zwp_pointer_gesture_pinch_v1)`.
 - `error: '<key>' is not a key`, `error: '<word>' is not a modifier`: a
   malformed `key`; the usage follows. `error: no keyboard: the seat has
   none to take the keymap from`: the compositor has no keyboard.

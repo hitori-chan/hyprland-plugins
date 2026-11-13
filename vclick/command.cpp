@@ -25,6 +25,7 @@ namespace VClick::Command {
                                                  "       vclick move <window> <x> <y> [glide|jump] [size:<px>]\n"
                                                  "       vclick press <window> <x> <y> [button] [glide|jump] [size:<px>]\n"
                                                  "       vclick drag <window> <x> <y> <x2> <y2> [button] [glide|jump] [size:<px>]\n"
+                                                 "       vclick pinch <window> <x> <y> <scale> [<deg>deg] [glide|jump] [size:<px>]\n"
                                                  "       vclick key <window> <key> [mods]\n"
                                                  "       vclick release | hide | status | where | mode [mouse|tap] | profile [reload [file]] | image <window>\n"
                                                  "  window: a window selector (address:0x..., class:...), or a bare 0x... address\n"
@@ -37,6 +38,7 @@ namespace VClick::Command {
                                                  "  mode tap: go at once, and leave after the input; no cursor stays\n"
                                                  "  press: hold the button down; move drags it, release lets go\n"
                                                  "  drag: press at x y, glide to x2 y2 at the user's pace, let go there\n"
+                                                 "  pinch: two fingers on a touchpad spread to scale (0.1-10; 2: zoom in twice), turning deg (-360-360, clockwise)\n"
                                                  "  glide|jump: this request's way there, whatever the mode\n"
                                                  "  size:<px>: the target's size, for the glide's time (default 32)";
 
@@ -100,8 +102,11 @@ namespace VClick::Command {
         return std::nullopt;
     }
 
-    static bool isInput(std::string_view verb) {
-        return verb == "click" || verb == "scroll" || verb == "move" || verb == "press" || verb == "drag";
+    static std::optional<EVerb> verbOf(std::string_view verb) {
+        for (const auto V : {EVerb::CLICK, EVerb::SCROLL, EVerb::MOVE, EVerb::PRESS, EVerb::DRAG, EVerb::PINCH})
+            if (verb == verbName(V))
+                return V;
+        return std::nullopt;
     }
 
     // "vclick click|scroll|move|press|drag <window> <x> <y> [<x2> <y2>] [option...]": the options
@@ -118,7 +123,7 @@ namespace VClick::Command {
         if (!X || !Y || !std::isfinite(*X) || !std::isfinite(*Y))
             return BAD(std::format("bad coordinates '{} {}'", w[3], w[4]));
         c.pos       = {*X, *Y};
-        c.verb      = VERB == "scroll" ? EVerb::SCROLL : VERB == "move" ? EVerb::MOVE : VERB == "press" ? EVerb::PRESS : VERB == "drag" ? EVerb::DRAG : EVerb::CLICK;
+        c.verb      = *verbOf(VERB);
         size_t opts = 5;
         if (c.verb == EVerb::DRAG) { // drag <window> <x> <y> <x2> <y2>: where it lets go
             const auto X2 = w.size() > 6 ? number<double>(w[5]) : std::nullopt;
@@ -127,6 +132,12 @@ namespace VClick::Command {
                 return BAD(w.size() > 6 ? std::format("bad coordinates '{} {}'", w[5], w[6]) : "a drag needs where it lets go: <x2> <y2>");
             c.to = {*X2, *Y2};
             opts = 7;
+        } else if (c.verb == EVerb::PINCH) { // pinch <window> <x> <y> <scale>
+            const auto S = w.size() > 5 ? number<double>(w[5]) : std::nullopt;
+            if (!S || !(*S >= MIN_SCALE && *S <= MAX_SCALE))
+                return BAD(std::format("a pinch needs its scale: {:g}-{:g} (2: twice as large)", MIN_SCALE, MAX_SCALE));
+            c.scale = *S;
+            opts    = 6;
         }
 
         bool button = false, count = false, steps = false, pace = false, size = false;
@@ -159,6 +170,16 @@ namespace VClick::Command {
                     if (std::exchange(button, true))
                         return TWICE();
                     c.button = *B;
+                    continue;
+                }
+            } else if (VERB == "pinch") {
+                if (O.ends_with("deg")) {
+                    const auto D = number<double>(O.substr(0, O.size() - 3));
+                    if (!D || !(*D >= -MAX_DEG && *D <= MAX_DEG))
+                        return BAD(std::format("'{}': a turn must be -{:g}deg-{:g}deg", O, MAX_DEG, MAX_DEG));
+                    if (c.deg != 0)
+                        return TWICE();
+                    c.deg = *D;
                     continue;
                 }
             } else if (VERB == "scroll") {
@@ -199,6 +220,8 @@ namespace VClick::Command {
         }
         if (VERB == "scroll" && !c.wheel)
             return BAD("a scroll needs its direction: up, down, left or right");
+        if (c.verb == EVerb::PINCH && c.scale == 1 && c.deg == 0)
+            return BAD("a pinch needs a scale other than 1, or a turn");
         if (c.px > 0 && (steps || pace))
             return BAD("a scroll by px takes no steps or pace: a finger's goes at the user's");
         return c;
@@ -355,7 +378,7 @@ namespace VClick::Command {
     std::string run(const std::vector<std::string_view>& W) {
         if (W.size() < 2 || W[0] != NAME)
             return std::string{USAGE};
-        if (isInput(W[1]))
+        if (verbOf(W[1]))
             return input(W);
         if (W[1] == "key")
             return key(W);

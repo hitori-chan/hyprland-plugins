@@ -14,8 +14,8 @@
 #include <utility>
 
 namespace VClick::Lua {
-    constexpr std::array<std::string_view, 13> VERBS    = {"click", "scroll", "move", "press", "release", "drag", "key", "hide", "status", "where", "mode", "profile", "image"};
-    constexpr int                              MAX_ARGS = 8; // the longest requests: a scroll's and a drag's
+    constexpr std::string_view VERBS[]  = {"click", "scroll", "move", "press", "release", "drag", "pinch", "key", "hide", "status", "where", "mode", "profile", "image"};
+    constexpr int              MAX_ARGS = 8; // the longest requests: a scroll's and a drag's
 
     static int answer(lua_State* L, std::string_view out) {
         if (out == "ok") {
@@ -64,6 +64,6 @@ namespace VClick::Lua {
     }
 
     void init(void* handle) {
-        add(handle, std::make_index_sequence<VERBS.size()>{}); // false without a Lua config: hyprctl still works
+        add(handle, std::make_index_sequence<std::size(VERBS)>{}); // false without a Lua config: hyprctl still works
     }
 }

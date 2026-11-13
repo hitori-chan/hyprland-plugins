@@ -534,6 +534,8 @@ namespace VClick::Pointer {
                 return R;
             return Glide::travel(c);
         }
+        if (c.verb == EVerb::PINCH)
+            return Stroke::pinch(c);
         if (c.px > 0)
             return Stroke::scroll(c);
         if (!c.wheel || c.count == 1 || c.ms == 0)

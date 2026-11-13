@@ -747,6 +747,56 @@ until_ok 3 idle || true
 expect "  the user's pointer came into A: it stopped, and says why" "$(vclick status | sed -E 's#after [0-9]+/#after N/#')" "idle; the last scroll stopped after N/5000 px: the user's pointer came into the app"
 park "$BX" "$BY"
 
+echo "== a pinch: two fingers spread and turn on a touchpad, at the user's pace"
+pinches() { # pinches <client> <from-log-line> <color>: GTK's pinch events since, "phase fingers scale turn" each
+	tail -n +"$(($2 + 1))" "$T/$1.log" | awk -v c="$3" '$1 == "PINCH" && $2 == c { print $3, $4, $5, $6 }'
+}
+gtime() { # gtime <client> <from-line> begin|update|end: the time of each pinch gesture event since
+	local at=1
+	[[ "$3" == update ]] || at=2 # begin and end lead with a serial
+	tail -n +"$(($2 + 1))" "$T/$1.wl" | grep -v ' -> ' | grep -oE "zwp_pointer_gesture_pinch_v1[#@][0-9]+\.$3\([0-9]+(, [0-9]+)?" |
+		sed 's/.*(//' | cut -d, -f"$at" | tr -d ' '
+}
+pinching_now() { [[ "$(vclick status)" == pinching ]]; }
+expect "a pinch needs its scale" "$(vclick pinch "address:$A" 10 10 | head -1)" "error: a pinch needs its scale: 0.1-10 (2: twice as large)"
+expect "a pinch needs a change" "$(vclick pinch "address:$A" 10 10 1 | head -1)" "error: a pinch needs a scale other than 1, or a turn"
+expect "a turn's bound" "$(vclick pinch "address:$A" 10 10 2 400deg | head -1)" "error: '400deg': a turn must be -360deg-360deg"
+AM="$(lines "$T/a.wl")" BM="$(lines "$T/b.wl")" GL="$(lines "$T/a.log")"
+expect "pinch blue: twice as large, a quarter turn" "$(vclick pinch "address:$A" $(at blue) 2 90deg jump)" ok
+expect "  status while it runs" "$(vclick status)" pinching
+until_ok 3 idle || true
+quiet "$T/a.log"
+P="$(pinches a "$GL" blue)"
+expect "  GTK: two fingers' begin, updates and end" "$(awk '{ print $1, $2 }' <<<"$P" | uniq | tr '\n' ' ' | sed 's/ $//')" "begin 2 update 2 end 2"
+expect "  the spread ends exactly at 2" "$(awk '$1 == "update" { s = $3 } END { print s }' <<<"$P")" 2
+awk '$1 == "update" { if ($3 < p) exit 1; p = $3 }' <<<"$P" && ok "  the spread only grows" || bad "  spreads: $(awk '{ print $3 }' <<<"$P" | tr '\n' ' ')"
+expect "  the turns sum to a quarter" "$(awk '$1 == "update" { t += $4 } END { printf "%.2f", t }' <<<"$P")" "90.00"
+read -r FIRST LAST < <(gtime a "$AM" update | sed -n '1p;$p' | tr '\n' ' ')
+BEGIN="$(gtime a "$AM" begin)" END="$(gtime a "$AM" end)"
+MT="$(fitts 50 120 300)" SPAN=$((LAST - BEGIN)) REST=$((END - LAST))
+((SPAN >= MT - 30 && SPAN <= MT + 30)) && ok "  Fitts's time for the fingers' travel: $SPAN ms for $MT ms" || bad "  the pinch took $SPAN ms, want $MT ms (+-30)"
+((REST >= 185 && REST <= 260)) && ok "  the fingers rest $REST ms before they lift" || bad "  rested $REST ms, want 200"
+expect "B heard nothing" "$(tail -n +"$((BM + 1))" "$T/b.wl" | grep -v ' -> ' | grep -cE 'zwp_pointer_gesture_pinch_v1[#@][0-9]+\.')" 0
+
+GL="$(lines "$T/a.log")"
+expect "pinch green: half as large, gliding there" "$(vclick pinch "address:$A" $(at green) 0.5 glide)" ok
+expect "  status: moving" "$(vclick status)" moving
+until_ok 3 pinching_now && ok "  then pinching" || bad "  never pinching"
+until_ok 3 idle || true
+quiet "$T/a.log"
+P="$(pinches a "$GL" green)"
+expect "  the spread ends exactly at 0.5, no turn" "$(awk '$1 == "update" { s = $3; t += $4 } END { printf "%s %.2f", s, t }' <<<"$P")" "0.5 0.00"
+
+GL="$(lines "$T/a.log")"
+expect "a long pinch: ten times as large" "$(vclick pinch "address:$A" $(at blue) 10 jump)" ok
+until_ok 3 pinching_now || true
+park "$GBX" "$GBY"
+until_ok 3 idle || true
+expect "  the user's pointer came into A: it stopped, and says why" "$(vclick status)" "idle; the last pinch stopped: the user's pointer came into the app"
+quiet "$T/a.log"
+expect "  GTK: the pinch cancelled" "$(pinches a "$GL" blue | tail -1 | cut -d' ' -f1)" cancel
+park "$BX" "$BY"
+
 echo "== the tap mode: a glide's cursor lingers and fades, and the pointer leaves"
 expect "the tap mode" "$(vclick mode tap)" tap
 expect "  nothing stays" "$(vclick where)" nowhere

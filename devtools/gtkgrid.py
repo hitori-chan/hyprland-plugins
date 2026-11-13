@@ -5,7 +5,9 @@
 # a click on what is DRAWN must name the same block; every wheel step the
 # block it scrolled; the blue block takes smooth scrolls instead, each
 # delta and the stop as GTK reads them, with the device GTK names their
-# source (a touchpad's: touchpad). With `cursor`, the window asks for a custom cursor
+# source (a touchpad's: touchpad). Every block logs a touchpad pinch: each
+# phase with its fingers, the scale and the turn since the last (degrees).
+# With `cursor`, the window asks for a custom cursor
 # image (a 16x16 rose square, hotspot 0,0) through wl_pointer.set_cursor,
 # as a web page's own cursor does, instead of a named shape. With `shapes`,
 # the yellow block names the `text` shape and the red block hides the
@@ -16,9 +18,11 @@
 # usage: gtkgrid.py <log> [wayland|x11] [wayland-debug-log] [cursor|shapes]
 #   log lines: READY | HIT <color> | UP <color> <x> <y> |
 #              SCROLL <color> up|down|left|right | SMOOTH blue <source> <dx> <dy> |
-#              STOP blue <source> | DRAGBEGIN <color> |
+#              STOP blue <source> | PINCH <color> begin|update|end|cancel <fingers> <scale> <turn> |
+#              DRAGBEGIN <color> |
 #              DRAGFAILED <color> <result> | DRAGEND <color> |
 #              MENU <color> | MENUBUTTON True|False | KEY <name> <mods>|-
+import math
 import os
 import sys
 
@@ -57,6 +61,14 @@ def scrolled(_w, ev, name):
     return True
 
 
+def gesture(_w, ev, name):
+    if ev.type != Gdk.EventType.TOUCHPAD_PINCH:
+        return False
+    p = ev.touchpad_pinch
+    say("PINCH", name, Gdk.TouchpadGesturePhase(p.phase).value_nick, p.n_fingers, f"{p.scale:g}", f"{math.degrees(p.angle_delta):g}")
+    return True
+
+
 def swatch(name, rgb, w, h, press=True):
     da = Gtk.DrawingArea()
     da.set_size_request(w, h)
@@ -71,7 +83,9 @@ def swatch(name, rgb, w, h, press=True):
     if press:
         # the rest take discrete steps only (no SMOOTH_SCROLL_MASK): one line per wheel detent
         smooth = Gdk.EventMask.SMOOTH_SCROLL_MASK if name == "blue" else 0
-        da.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK | Gdk.EventMask.SCROLL_MASK | smooth)
+        da.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK | Gdk.EventMask.SCROLL_MASK | smooth |
+                      Gdk.EventMask.TOUCHPAD_GESTURE_MASK)
+        da.connect("event", gesture, name)
         da.connect("button-press-event", lambda *_: (say("HIT", name), True)[-1])
         da.connect("button-release-event", lambda _w, ev: (say("UP", name, int(ev.x), int(ev.y)), True)[-1])
         da.connect("scroll-event", scrolled, name)

@@ -182,25 +182,34 @@ stops; any other error ends it, and `status` says why. One run at a time
 and nothing else meanwhile, so a script gets exactly the scroll it asked
 for. Unloading ends a run.
 
-## A finger's scroll
+## A touchpad's strokes
 
-`<n>px` scrolls as a finger on a touchpad does: wl_pointer axis events
-from the finger source, no discrete steps, a frame a tick at the
-profile's rate, then `axis_stop` as the finger lifts. Apps scroll by
-pixels for it, so the distance is exact: each tick sends what the time
-since the start says is done, and the deltas sum to the request in the
-protocol's 1/256 px whatever the timer's jitter. The stroke is straight,
-its speed the glide's bell over Fitts's time for its length (100–1000
-ms). The finger then rests 200 ms before it lifts: a toolkit flings at
-the speed of its last 150 ms of deltas (GTK's), so none follows.
+`scroll ... <n>px` and `pinch` move fingers on a touchpad: a frame a
+tick at the profile's rate, the way straight, its speed the glide's bell
+over Fitts's time for the fingers' travel (100–1000 ms). Each tick sends
+what the time since the start says is done, so the request is met
+exactly whatever the timer's jitter. The fingers then rest 200 ms before
+they lift.
+
+- A finger's scroll: wl_pointer axis events from the finger source, no
+  discrete steps, then `axis_stop`. Apps scroll by pixels for it: the
+  deltas sum to the request in the protocol's 1/256 px. The travel is
+  the distance. A toolkit flings at the speed of its last 150 ms of
+  deltas (GTK's): after the rest, none follows.
+- A pinch: two fingers through the pointer-gestures protocol (begin,
+  updates, end) into the app's pinch objects only, centred on the point.
+  The spread grows (or shrinks) evenly to the scale, which the last
+  update names exactly; the turns sum to the request in 1/256°. The
+  travel is 150 px a doubling or a quarter turn. An app with no pinch
+  object (no gestures bound) is refused.
 
 Each tick is checked afresh, as a glide's. The user's mouse coming into
-the app takes its pointer: the stroke stops, and `status` says how far
-it got. The user's pointer changing surface elsewhere makes the seat
-leave the app's pointer; the next tick enters again. A stroke cannot
-step out of the user's surface and back as a wheel step does (every
-frame would), so it is refused into the app under the user's mouse.
-Unloading lifts the finger.
+the app takes its pointer: the stroke stops, a pinch ends cancelled, and
+`status` says why. The user's pointer changing surface elsewhere makes
+the seat leave the app's pointer; the next tick enters again. A stroke
+cannot step out of the user's surface and back as a wheel step does
+(every frame would), so it is refused into the app under the user's
+mouse. Unloading lifts the fingers (a pinch cancelled).
 
 ## The same app
 
@@ -274,6 +283,9 @@ may wait until it is back on.
 - No drag-and-drop, and no moving or resizing a window by its own title
   bar: Hyprland drives both with the user's real mouse
   ([a held button](#a-held-button)).
+- No swipe or hold gestures: a two-finger swipe is a scroll (`<n>px`),
+  and three- and four-finger swipes are mostly bound to the compositor's
+  own gestures.
 - Fitts's W is 32 px unless the request names the target's size: a small
   button gets a little less time than a hand would take.
 - No XWayland: the compositor's hit test asserts on X11 windows, and an

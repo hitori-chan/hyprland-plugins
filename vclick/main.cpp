@@ -101,6 +101,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // the cursor hides while the user's pointer is in its app: redraw it as that changes
     focusListener = g_pSeatManager->m_events.pointerFocusChange.listen([] {
         VClick::Pointer::seatMoved(); // the seat left every app's pointer: a held button went up
+        VClick::Stroke::seatMoved();
         VClick::Cursor::userMoved();
     });
 

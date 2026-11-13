@@ -80,6 +80,10 @@ It covers, each against the exact protocol events:
   time, slow ends, the rest before the lift; GTK reading a touchpad's
   smooth scroll and its stop (its blue block); a glide there; the user's
   pointer stopping it; the tap mode's leave.
+- **pinch**: its bounds; GTK's two-finger begin, updates and end, the
+  spread only growing and ending exactly on the scale, the turns summing
+  to the request, Fitts's time, the rest; nothing to B; a glide there
+  and a pinch out; the user's pointer cancelling it.
 - **the cursor theme** (the check's own, through `XCURSOR_PATH`): B's
   named shapes drawn from it with their hotspots, its hidden cursor
   drawn as nothing.

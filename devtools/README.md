@@ -65,7 +65,9 @@ make -C devtools HL=/path/to/Hyprland
   xdg_popup of colored items. It logs what GTK hit (`HIT <color>` on a
   press, `SCROLL <color> <direction>` per wheel detent; the blue block
   takes smooth scrolls instead, `SMOOTH blue <source> <dx> <dy>` per delta
-  and `STOP blue <source>`, the source as GTK names its device; `MENU <color>` on
+  and `STOP blue <source>`, the source as GTK names its device; `PINCH
+  <color> <phase> <fingers> <scale> <turn>` per touchpad pinch event, the
+  turn since the last in degrees; `MENU <color>` on
   an activated item, `KEY <name> <mods>` per key press, its modifiers
   `ctrl+shift` or `-`). A release logs `UP <color> <x> <y>`: the block
   that had the press (GTK's implicit grab), where it went up relative to

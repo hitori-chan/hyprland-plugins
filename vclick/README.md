@@ -26,6 +26,7 @@ hyprctl vclick press  $W 100 400                 # hold the button down there,
 hyprctl vclick move   $W 500 400                 #   drag it (a slider, a selection),
 hyprctl vclick release                           #   and let go
 hyprctl vclick drag   $W 100 400 500 400         # the same in one request
+hyprctl vclick pinch  $W 640 300 2               # two fingers zoom in twice
 hyprctl vclick click  $W 640 300 jump            # click at once, no glide
 hyprctl vclick key    $W Next                    # PageDown, to that window only
 hyprctl vclick key    $W t ctrl+shift            # with modifiers held for it
@@ -84,11 +85,11 @@ the glide moves at a typical mouse user's pace.
 ## Docs
 
 - [Reference](docs/reference.md): `click`, `scroll`, `move`, `press`,
-  `release`, `drag`, `key`, `status`, `where`, `hide`, `mode`, `profile`,
-  `image`, the Lua functions, the profile file, the errors
+  `release`, `drag`, `pinch`, `key`, `status`, `where`, `hide`, `mode`,
+  `profile`, `image`, the Lua functions, the profile file, the errors
 - [Design](docs/design.md): input without the seat, the modes, the
   glide, the cursor image, the hover, a held button, paced scrolling, a
-  finger's scroll, the same app, the keyboard, under the lockscreen,
+  touchpad's strokes, the same app, the keyboard, under the lockscreen,
   limits
 - [Testing](docs/testing.md): the build, the unit cases, the nested
   check

@@ -8,7 +8,7 @@
 //                one burst (a jump), a paced scroll, the hover a move holds
 //   keyboard.cpp the app's own keyboard: one key, pressed and released
 //   glide.cpp    the way there: one motion per tick along the planned path
-//   stroke.cpp   a finger's stroke over time: a scroll by pixels
+//   stroke.cpp   a hand's stroke on a touchpad, over time: a finger's scroll, a pinch
 //   path.cpp     the path's math and the user's pace (no compositor)
 //   cursor.cpp   the cursor image drawn at the virtual pointer
 //   theme.cpp    the cursor theme's shapes, read from XCursor files (no compositor)
@@ -49,10 +49,11 @@ namespace VClick {
     constexpr int                MAX_STEPS  = 20;
     constexpr int                STEP_MS    = 50; // a scroll's default pace: a brisk wheel spin
     constexpr int                MAX_MS     = 1000;
-    constexpr int                BUSY_MS    = 1000;  // how long a paced step waits out a busy app
-    constexpr double             MAX_PX     = 10000; // a finger's scroll
-    constexpr int                LIFT_MS    = 200;   // a finger rests before it lifts: a toolkit flings at the speed of the last 150 ms
-    constexpr int                GRACE_MS   = 1000;  // a drag-and-drop an app begins this soon after vclick let go is vclick's
+    constexpr int                BUSY_MS    = 1000;                              // how long a paced step waits out a busy app
+    constexpr double             MAX_PX     = 10000;                             // a finger's scroll
+    constexpr double             MIN_SCALE = 0.1, MAX_SCALE = 10, MAX_DEG = 360; // a pinch's
+    constexpr int                LIFT_MS  = 200;                                 // a finger rests before it lifts: a toolkit flings at the speed of the last 150 ms
+    constexpr int                GRACE_MS = 1000;                                // a drag-and-drop an app begins this soon after vclick let go is vclick's
 
     struct SWheel {
         wl_pointer_axis axis;
@@ -65,6 +66,7 @@ namespace VClick {
         MOVE,  // only go there, and stay (with a held button: a drag's way)
         PRESS, // go there and hold a button down
         DRAG,  // press there, glide to `to`, let go
+        PINCH, // two fingers spread to `scale` and turn `deg` there
     };
 
     // one request
@@ -75,12 +77,13 @@ namespace VClick {
         Vector2D              to;                // where a drag lets go
         uint32_t              button = BTN_LEFT; // a click's, a press's or a drag's
         std::optional<SWheel> wheel;
-        bool                  stay  = false;          // the mouse mode: the app keeps the hover after the input
-        int                   count = 1;              // clicks, or wheel steps
-        int                   ms    = STEP_MS;        // between wheel steps; 0: all at once
-        double                px    = 0;              // a finger's scroll, how far; 0: wheel steps
-        double                size  = Path::TARGET_W; // the target's size: the glide's Fitts W
-        std::optional<bool>   glide;                  // this request's way there; unset: the mode's (mouse glides)
+        bool                  stay  = false;         // the mouse mode: the app keeps the hover after the input
+        int                   count = 1;             // clicks, or wheel steps
+        int                   ms    = STEP_MS;       // between wheel steps; 0: all at once
+        double                px    = 0;             // a finger's scroll, how far; 0: wheel steps
+        double                scale = 1, deg = 0;    // a pinch's: the fingers' spread at the end over the start's, the turn clockwise
+        double                size = Path::TARGET_W; // the target's size: the glide's Fitts W
+        std::optional<bool>   glide;                 // this request's way there; unset: the mode's (mouse glides)
     };
 
     // one key
@@ -106,6 +109,7 @@ namespace VClick {
             case EVerb::MOVE: return "move";
             case EVerb::PRESS: return "press";
             case EVerb::DRAG: return "drag";
+            case EVerb::PINCH: return "pinch";
         }
         return "";
     }
@@ -219,11 +223,13 @@ namespace VClick {
         std::string           loadProfile(const std::string& path); // empty: the default path
     }
 
-    // A finger's stroke on a touchpad, over time: a scroll by pixels.
+    // A hand's stroke on a touchpad, over time: a finger's scroll, a pinch.
     namespace Stroke {
         Result                     scroll(const SAction& c); // c.px down the wheel's axis and sign
-        std::optional<std::string> status();                 // "scrolling d/t px" while one runs
-        void                       reset();                  // the finger lifts
+        Result                     pinch(const SAction& c);  // two fingers to c.scale, turning c.deg
+        std::optional<std::string> status();                 // "scrolling d/t px", "pinching" while one runs
+        void                       seatMoved();              // the seat left every app's pointer
+        void                       reset();                  // the fingers lift, a pinch cancelled
     }
 
     namespace Cursor {
