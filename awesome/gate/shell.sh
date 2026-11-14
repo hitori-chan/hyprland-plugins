@@ -445,13 +445,15 @@ tap esc
 chk "bell: ...let go once the menu shuts" shot_until 3 "$STATE/bell-door-off.png" door_off "$STATE/bell-door-off.png" "$BELLX"
 
 # ---- the strip's glass: live over a terminal taking typing -----------------
-# The glass live-blurs what lies under it: the prompt's row right below
-# reaches its blur, and each keystroke moves the strip on. A partial repaint
-# would shimmer (core/canvas.hpp, wholeGlass): the presented frames would
-# alternate between two strips. Only the private host's output shows the
-# presented buffers; at rest it must show the same strip as the nested's own
-# capture (else the host's view moved and the check would measure nothing).
-dsp "hl.dsp.exec_cmd('foot -a glassprobe --window-size-pixels=400x200')"; settled glassprobe
+# The glass live-blurs what lies under it: the terminal's first row right
+# below reaches its blur, and each keystroke moves the strip on (cat: the
+# tty echoes on that row; a shell's prompt can put the input past the
+# reach). A partial repaint would shimmer (core/canvas.hpp, wholeGlass):
+# the presented frames would alternate between two strips. Only the
+# private host's output shows the presented buffers; at rest it must show
+# the same strip as the nested's own capture (else the host's view moved
+# and the check would measure nothing).
+dsp "hl.dsp.exec_cmd('foot -a glassprobe --window-size-pixels=400x200 cat')"; settled glassprobe
 dsp "hl.plugin.awesome.maximize()"; settled glassprobe
 printf 'move %d %d\nsleep 60\n' $((MON_W / 2)) $((MON_H / 2)) | vp
 glass_rest() {
