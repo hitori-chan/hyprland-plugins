@@ -12,6 +12,8 @@
 # once into $HYPR_GATE_TMP/deps: the distro 0.15.1 never flushes the
 # output's first commit to an idle parent (fixed upstream in 7bb8bdf), so
 # under a quiet headless host the configure handshake never starts. The
+# build applies aquamarine-wayland-swapchain.patch (the Wayland output's
+# commit reallocated the swapchain every frame; why in the file). The
 # live session keeps the distro library; only the nested loads the pin.
 
 HYPR_GATE_TMP="${HYPR_GATE_TMP:-/tmp/hypr-gate}"
@@ -19,6 +21,7 @@ HOST_DIR="$HARNESS_DIR/host"
 HOST_BIN="${HYPR_HOST_BIN:-$(command -v labwc 2>/dev/null)}"
 HOST_LIBS="${HYPR_HOST_LIBS:-}" # LD_LIBRARY_PATH for an unpacked labwc (HYPR_HOST_BIN)
 AQ_SRC="${HYPR_AQ_SRC:-$HOME/repo/aquamarine}"
+AQ_PATCH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/aquamarine-wayland-swapchain.patch"
 
 # A recorded pid is ours only while it still runs what WE started: the
 # process's environment or command line carries our private path (a pid
@@ -90,18 +93,28 @@ host_stop() {
 	rm -f "$HOST_DIR/pid" "$HOST_DIR/wl"
 }
 
-# The pinned aquamarine's lib dir (built on first use, cached by rev).
+# The pinned aquamarine's lib dir (built on first use, cached by rev and
+# patch).
 aq_pinned_libdir() {
-	local rev prefix src
+	local rev key prefix src
 	rev="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['nodes']['aquamarine']['locked']['rev'])" "${FORK_SRC:-$HOME/repo/Hyprland}/flake.lock" 2>/dev/null)"
 	[[ "$rev" =~ ^[0-9a-f]{40}$ ]] || { echo "host: no aquamarine pin in the fork's flake.lock" >&2; return 1; }
-	prefix="$HYPR_GATE_TMP/deps/aquamarine-${rev:0:12}"
+	key="$(sha256sum "$AQ_PATCH" | cut -c1-8)" || return 1
+	prefix="$HYPR_GATE_TMP/deps/aquamarine-${rev:0:12}-$key"
 	if [[ ! -e "$prefix/lib/libaquamarine.so" ]]; then
 		git -C "$AQ_SRC" cat-file -e "$rev^{commit}" 2>/dev/null || git -C "$AQ_SRC" fetch -q --all 2>/dev/null
 		src="$HYPR_GATE_TMP/deps/aq-src-${rev:0:12}"
 		rm -rf "$src" "$src.build" && mkdir -p "$src" &&
-			git -C "$AQ_SRC" archive "$rev" | tar -x -C "$src" &&
-			cmake -S "$src" -B "$src.build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" >/dev/null &&
+			git -C "$AQ_SRC" archive "$rev" | tar -x -C "$src" || {
+			echo "host: no aquamarine $rev in $AQ_SRC" >&2
+			return 1
+		}
+		patch -d "$src" -p1 --forward --silent <"$AQ_PATCH" >/dev/null || {
+			echo "host: $(basename "$AQ_PATCH") does not apply to aquamarine $rev: drop it if the pin fixed the Wayland commit" >&2
+			rm -rf "$src"
+			return 1
+		}
+		cmake -S "$src" -B "$src.build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" >/dev/null &&
 			cmake --build "$src.build" -j"${HYPR_HARNESS_JOBS:-1}" >/dev/null && cmake --install "$src.build" >/dev/null || {
 			echo "host: building aquamarine $rev failed" >&2
 			return 1

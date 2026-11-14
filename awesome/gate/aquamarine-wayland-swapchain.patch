@@ -1,0 +1,22 @@
+The nested's Aquamarine (gate/host.sh applies this to the fork's flake.lock
+pin). CWaylandOutput::commit() rebuilt the swapchain options from scratch,
+dropping the consumer's scanout flag that Hyprland's updateSwapchain() sets
+before each state commit: every frame reallocated the swapchain twice, and
+next() handed out blank buffers that claim age 3, so pixels outside a
+frame's damage (a static shadow) presented black. Drop this file once the
+pin carries the fix (the build then fails to apply it).
+
+--- a/src/backend/Wayland.cpp
++++ b/src/backend/Wayland.cpp
+@@ -674,7 +674,10 @@
+         return true;
+     }
+ 
+-    if (!swapchain->reconfigure(SSwapchainOptions{.length = swapchain->currentOptions().length, .size = pixelSize, .format = format})) {
++    auto options   = swapchain->currentOptions();
++    options.size   = pixelSize;
++    options.format = format;
++    if (!swapchain->reconfigure(options)) {
+         backend->backend->log(AQ_LOG_ERROR, std::format("Output {}: pending state rejected: swapchain failed reconfiguring", name));
+         return false;
+     }
