@@ -73,6 +73,8 @@ namespace VClick::Profile {
                 SET(p.underShare, 0, 1);
             else if (K == "correct_size")
                 SET(p.correctSize, 0, 0.15);
+            else if (K == "s_share")
+                SET(p.sShare, 0, 0.6);
             else if (K == "tail_share")
                 SET(p.tailShare, 0, 0.8);
             else if (K == "tail_size")
@@ -113,9 +115,9 @@ namespace VClick::Profile {
     }
 
     std::string describe(const SProfile& p) {
-        return std::format("fitts a {:g} ms, b {:g} ms/bit (W {:g} px); bell {:g} peaking at {:g}; bow {:g} (sigma {:g}); corrected {:g}%, {:g}% from short, by {:g}%; tail {:g}% of the time, {:g}% of the way; "
+        return std::format("fitts a {:g} ms, b {:g} ms/bit (W {:g} px); bell {:g} peaking at {:g}; bow {:g} (sigma {:g}), {:g}% both ways; corrected {:g}%, {:g}% from short, by {:g}%; tail {:g}% of the time, {:g}% of the way; "
                            "rest {:g} ms (sigma {:g}); hold {:g} ms (sigma {:g}), {:g} ms between clicks; drag lead {:g} ms, drop rest {:g} ms; wheel {:g} ms; {:g} Hz\nfrom {}{}",
-                           p.aMs, p.bMs, TARGET_W, p.bell, p.peak, p.bowMedian, p.bowSigma, p.correctP * 100, p.underShare * 100, p.correctSize * 100, p.tailShare * 100, p.tailSize * 100, p.restMs, p.restSigma,
+                           p.aMs, p.bMs, TARGET_W, p.bell, p.peak, p.bowMedian, p.bowSigma, p.sShare * 100, p.correctP * 100, p.underShare * 100, p.correctSize * 100, p.tailShare * 100, p.tailSize * 100, p.restMs, p.restSigma,
                            p.holdMs, p.holdSigma, p.doubleGapMs, p.dragLeadMs, p.dropRestMs, p.wheelMs, p.rateHz, p.source, p.moves ? std::format(" ({} movements)", p.moves) : "");
     }
 }

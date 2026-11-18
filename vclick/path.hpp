@@ -25,6 +25,8 @@ namespace VClick::Path {
 
     constexpr double MIN_TARGET_W = 4, MAX_TARGET_W = 1000;
     constexpr double MAX_MOVE_MS = 1000;    // one movement
+    constexpr double PACE_SD     = 0.10;    // a move's own time, log-normal: not learned, a recording's spread is mostly its targets' sizes
+    constexpr double S_BOW       = 2.4;     // control points on either side bow 0.29 h, not 0.75 h: about the same bow, and within the 25% bound
     constexpr double MIN_CORRECT_PX = 100;  // a shorter move lands in one stroke
     constexpr double CORRECT_SHARE  = 0.9;  // of a corrected move's time, the first stroke's
     constexpr double MIN_MEND_MS    = 40;   // a second stroke is never a twitch

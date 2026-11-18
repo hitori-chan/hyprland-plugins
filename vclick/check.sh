@@ -279,7 +279,7 @@ expect "lua: an argument hyprctl could not take" "$(lua "hl.plugin.vclick.click(
 # no correction, so a glide's time is Fitts's law exactly
 printf 'fitts_a_ms=50\nfitts_b_ms=120\ncorrect_p=0\ntail_share=0\nrest_ms=140\nrest_sigma=0\nhold_ms=90\nhold_sigma=0\ndouble_gap_ms=100\ndrag_lead_ms=120\ndrop_rest_ms=150\n' >"$T/even.profile"
 expect "a profile from a file" "$(vclick profile reload "$T/even.profile" | head -1)" "loaded $T/even.profile"
-expect "  read back" "$(vclick profile | head -1)" "fitts a 50 ms, b 120 ms/bit (W 32 px); bell 4 peaking at 0.45; bow 0.05 (sigma 0.8); corrected 0%, 60% from short, by 5%; tail 0% of the time, 3% of the way; rest 140 ms (sigma 0); hold 90 ms (sigma 0), 100 ms between clicks; drag lead 120 ms, drop rest 150 ms; wheel 50 ms; 125 Hz"
+expect "  read back" "$(vclick profile | head -1)" "fitts a 50 ms, b 120 ms/bit (W 32 px); bell 4 peaking at 0.45; bow 0.05 (sigma 0.8), 15% both ways; corrected 0%, 60% from short, by 5%; tail 0% of the time, 3% of the way; rest 140 ms (sigma 0); hold 90 ms (sigma 0), 100 ms between clicks; drag lead 120 ms, drop rest 150 ms; wheel 50 ms; 125 Hz"
 # the exact event sequences below are performance's; the human mode has its own section
 expect "the performance mode" "$(vclick mode performance)" performance
 
@@ -570,7 +570,7 @@ M="$(mtimes a "$AM")"
 GAP="$(head -n -1 <<<"$M" | median_gap)"
 ((GAP >= 6 && GAP <= 12)) && ok "  125 motions a second (median gap $GAP ms)" || bad "  median gap $GAP ms, want 6-12"
 SPAN=$(($(tail -2 <<<"$M" | head -1) - $(head -1 <<<"$M")))
-((SPAN >= MT - 10 && SPAN <= MT + 40)) && ok "  Fitts's time: $SPAN ms for $MT ms" || bad "  took $SPAN ms, want $MT ms (-10/+40)"
+((SPAN >= MT * 81 / 100 - 10 && SPAN <= MT * 123 / 100 + 40)) && ok "  Fitts's time, as each move draws it: $SPAN ms for $MT ms" || bad "  took $SPAN ms, want $MT ms (x0.81-1.23, -10/+40)"
 DWELL=$(($(btime a "$AM") - $(tail -2 <<<"$M" | head -1)))
 ((DWELL >= 50 && DWELL <= 130)) && ok "  a dwell on the target before the click ($DWELL ms)" || bad "  dwell $DWELL ms, want 50-130"
 expect "  the last motion exactly on green" "$(last_xy a motion "$AM")" "$GREEN"
@@ -587,7 +587,7 @@ until_ok 3 more a HIT red "$n" && ok "  A hit red" || bad "  A never hit red"
 quiet "$T/a.wl"
 M="$(mtimes a "$AM")"
 SPAN=$(($(tail -2 <<<"$M" | head -1) - $(head -1 <<<"$M")))
-((SPAN >= MT - 10 && SPAN <= MT + 40)) && ok "  Fitts's time with W 128: $SPAN ms for $MT ms" || bad "  took $SPAN ms, want $MT ms (-10/+40)"
+((SPAN >= MT * 81 / 100 - 10 && SPAN <= MT * 123 / 100 + 40)) && ok "  Fitts's time with W 128: $SPAN ms for $MT ms" || bad "  took $SPAN ms, want $MT ms (x0.81-1.23, -10/+40)"
 
 echo "== the hover and the cursor stay where the input left them"
 AM="$(lines "$T/a.wl")"
@@ -1067,7 +1067,7 @@ expect "  the release exactly at green" "$(last_xy a motion "$AM")" "$GREEN"
 read -r PT RT <<<"$(btimes a "$AM" | tr '\n' ' ')"
 LT="$(mtimes a "$AM" | tail -1)"
 SPAN=$((LT - PT)) REST=$((RT - LT))
-((SPAN >= MT + 20 && SPAN <= MT + 130)) && ok "  Fitts's time and the lead, no overshoot: $SPAN ms for $MT ms" || bad "  the drag took $SPAN ms, want $MT ms (+20/+130)"
+((SPAN >= MT * 81 / 100 + 20 && SPAN <= MT * 123 / 100 + 130)) && ok "  Fitts's time and the lead, no overshoot: $SPAN ms for $MT ms" || bad "  the drag took $SPAN ms, want $MT ms (x0.81-1.23, +20/+130)"
 LEAD=$(($(mtimes a "$AM" | awk -v p="$PT" '$1 > p' | head -1) - PT))
 ((LEAD >= 40 && LEAD <= 125)) && ok "  the hand waits $LEAD ms after the press" || bad "  $LEAD ms from the press to the first motion, want 40-125"
 ((REST >= 50 && REST <= 130)) && ok "  a rest on the target before letting go ($REST ms)" || bad "  rest $REST ms, want 50-130"

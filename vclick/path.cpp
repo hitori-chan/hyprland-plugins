@@ -55,7 +55,7 @@ namespace VClick::Path {
             return {};
         auto           uni   = [&](double a, double b) { return std::uniform_real_distribution<double>{a, b}(rng); };
         const Vector2D U     = (to - from) / D;
-        const double   FITTS = std::clamp(fittsMs(D, p, aim.w), 40.0, MAX_MOVE_MS);
+        const double   FITTS = std::clamp(fittsMs(D, p, aim.w) * Profile::draw(1.0, PACE_SD, rng), 40.0, MAX_MOVE_MS);
         double         total = FITTS;
 
         // where the first stroke lands, and its share of the time: short of
@@ -90,12 +90,19 @@ namespace VClick::Path {
         const Vector2D N   = Vector2D{-(end - from).y, (end - from).x} / DE;
         const double   BOW = std::clamp(Profile::draw(p.bowMedian, p.bowSigma, rng), 0.0, 0.25);
         const double   H1 = std::min(BOW * uni(0.85, 1.15), 0.25) * DE / 0.75, H2 = std::min(BOW * uni(0.85, 1.15), 0.25) * DE / 0.75;
-        const auto     CONTROLS = [&](double side) { return std::pair{from + (end - from) / 3 + N * (side * H1), from + (end - from) * (2.0 / 3) + N * (side * H2)}; };
+        const auto     CONTROLS = [&](double side, bool both) { // both: it bends both ways, the control points on either side
+            return std::pair{from + (end - from) / 3 + N * (side * H1 * (both ? S_BOW : 1.0)), from + (end - from) * (2.0 / 3) + N * (side * H2 * (both ? -S_BOW : 1.0))};
+        };
         const auto     CUT      = [&](const std::pair<Vector2D, Vector2D>& c) { return clampTo(c.first, bounds).distance(c.first) + clampTo(c.second, bounds).distance(c.second); };
         const double   SIDE     = uni(0, 1) < 0.5 ? -1 : 1;
-        auto           c        = CONTROLS(SIDE);
-        if (const auto OTHER = CONTROLS(-SIDE); CUT(OTHER) < CUT(c))
-            c = OTHER;
+        const auto     PICK     = [&](bool both) {
+            const auto ONE = CONTROLS(SIDE, both), OTHER = CONTROLS(-SIDE, both);
+            return CUT(OTHER) < CUT(ONE) ? OTHER : ONE;
+        };
+        const bool BOTH = D >= MIN_CORRECT_PX && uni(0, 1) < p.sShare;
+        auto       c    = PICK(BOTH);
+        if (BOTH && CUT(c) > 0)
+            c = PICK(false); // the window's edge would cut one of its two bends
 
         const auto        PROGRESS = progressFor(p);
         std::vector<SSeg> segs;

@@ -26,6 +26,7 @@ look for the target. It fits:
   width vclick assumes (32 px), through the medians of 8 bands of D;
 - the bell of the first stroke's speed: how sharply it peaks, and where;
 - the path's bow: the largest sideways distance over the length;
+- how often a move bends both ways;
 - how often a small correction follows the first stroke, which way, how far;
 - a long move's slow end: its share of the time, and of the way;
 - the rest: from arriving within 3 px of the press point to the press;
@@ -341,7 +342,10 @@ def measure(ts, xs, ys):
     px, py = x[pe] - x[on], y[pe] - y[on]
     chord = math.hypot(px, py)
     if chord >= 16:
-        m["bow"] = max(abs(-(x[i] - x[on]) * py + (y[i] - y[on]) * px) / chord for i in range(on, pe + 1)) / chord
+        side = [(-(x[i] - x[on]) * py + (y[i] - y[on]) * px) / chord for i in range(on, pe + 1)]
+        big = max(abs(max(side)), abs(min(side)))
+        m["bow"] = big / chord
+        m["both"] = big >= 0.01 * chord and min(abs(max(side)), abs(min(side))) >= 0.25 * big
     return m
 
 
@@ -484,6 +488,8 @@ def motion(whole, have):
     bows = [m["bow"] for m in whole if "bow" in m and m["d"] >= 100]
     if have(["bow_median", "bow_sigma"], len(bows) >= ENOUGH):
         prof["bow_median"], prof["bow_sigma"] = round(statistics.median(bows), 4), round(log_spread(bows), 3)
+        bent = [m["both"] for m in whole if "both" in m and m["d"] >= 100]
+        prof["s_share"] = round(sum(bent) / len(bent), 3)
 
     far = [m for m in whole if m["d"] >= 100]
     fixed = [m for m in far if m["corrected"]]

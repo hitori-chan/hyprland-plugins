@@ -18,10 +18,11 @@ make -C vclick test  # headless: path, profile and timeline with only hyprutils,
 
 Thousands of planned glides, each held to the design: it starts on its
 start and ends exactly on its target, stays in the window, takes Fitts's
-time for the target's size, a correction's included (at most 40 ms more),
-overshoots and bows within bounds (25 %), no tick moves over 4× the
-average step, about `correct_p` of long moves correct, from short or past
-the target, overlapping the first stroke and ending exactly on the target;
+time for the target's size within two sigma of its own draw, a correction's
+included (at most 40 ms more), overshoots and bows within bounds (25 %), no
+tick moves over 3.5× the first stroke's average step, about `s_share` of the
+moves bend both ways, about `correct_p` of long moves correct, from short or
+past the target, about as the first stroke ends and exactly on the target;
 a long move's slow end leaves the first stroke's speed alone and adds to its
 time; a sharper bell peaks
 higher, and a log-normal draw stays within two sigma. A

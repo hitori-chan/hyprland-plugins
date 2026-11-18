@@ -2,6 +2,9 @@
 // in the window, is timed by Fitts's law, moves forward without jumps, and
 // bows and overshoots as the profile says. `make -C vclick test`.
 #include "path.hpp"
+
+#include <algorithm>
+#include <vector>
 #include "profile.hpp"
 
 #include <cmath>
@@ -50,7 +53,7 @@ int main() {
         }
         // Fitts: the main movement within its clamp of a + b log2(D/W + 1)
         const double FITTS = std::clamp(fittsMs(D, P), 40.0, MAX_MOVE_MS);
-        timed &= MS >= FITTS - 1e-6 && MS <= FITTS + MIN_MEND_MS;
+        timed &= MS >= std::max(FITTS * 0.81, 40.0) - 1e-6 && MS <= std::min(FITTS * 1.23, MAX_MOVE_MS) + MIN_MEND_MS;
         double   farthest = 0;
         Vector2D prev     = FROM;
         // 8 ms ticks, as at 125 Hz
@@ -75,12 +78,12 @@ int main() {
     }
     check(ends, "every path starts on its start and ends exactly on its target");
     check(inside, "every path stays in the window");
-    check(timed, "a path's time is Fitts's law, a correction's included (at most MIN_MEND_MS more)");
+    check(timed, "a path's time is Fitts's law within two PACE_SD, a correction's included (at most MIN_MEND_MS more)");
     check(forward, "no path runs past the target by more than the overshoot bound");
     check(bowed, "no path bows more than 25% of its length sideways");
     char steps[96];
-    std::snprintf(steps, sizeof steps, "no tick moves over 3x the first stroke's average step (worst %.2fx)", maxStep);
-    check(maxStep < 3, steps);
+    std::snprintf(steps, sizeof steps, "no tick moves over 3.5x the first stroke's average step (worst %.2fx)", maxStep);
+    check(maxStep < 3.5, steps);
     check(longs > 500 && over > longs * 0.2 && over < longs * 0.4, "about correct_p (30%) of the long moves overshoot");
 
     // the speed peaks where the profile says
@@ -106,9 +109,15 @@ int main() {
     {
         SProfile Q       = P;
         Q.correctP       = 0;
-        const auto SMALL = duration(plan({0, 0}, {600, 0}, {1600, 900}, Q, rng));
-        const auto WIDE  = duration(plan({0, 0}, {600, 0}, {1600, 900}, Q, rng, {.w = 128}));
-        check(std::abs(SMALL - fittsMs(600, Q)) < 1e-6 && std::abs(WIDE - fittsMs(600, Q, 128)) < 1e-6 && WIDE < SMALL - 50,
+        const auto TYPICAL = [&](double w) {
+            std::vector<double> ms;
+            for (int i = 0; i < 401; ++i)
+                ms.push_back(duration(plan({0, 0}, {600, 0}, {1600, 900}, Q, rng, {.w = w})));
+            std::ranges::nth_element(ms, ms.begin() + 200);
+            return ms[200];
+        };
+        const auto SMALL = TYPICAL(32), WIDE = TYPICAL(128);
+        check(std::abs(SMALL / fittsMs(600, Q) - 1) < 0.03 && std::abs(WIDE / fittsMs(600, Q, 128) - 1) < 0.03 && WIDE < SMALL - 50,
               "a target's size is Fitts's W (128 px: sooner than 32 px)");
     }
 
@@ -154,7 +163,7 @@ int main() {
             double       best = 0;
             for (double t = 1; t < duration(SEGS); t += 1)
                 best = std::max(best, sample(SEGS, t).x - sample(SEGS, t - 1).x);
-            return best;
+            return best * duration(SEGS); // over the move's own time, which varies
         };
         check(PEAK(12) > PEAK(4) * 1.4, "a bell of 12 peaks well above a bell of 4");
     }
@@ -171,7 +180,7 @@ int main() {
         for (int i = 0; i < 300; ++i) {
             Q.underShare = 1;
             auto S       = plan(FROM, TO, {1600, 900}, Q, rng);
-            shortOf &= S.size() == 2 && S[0].p3.x < TO.x && duration(S) >= fittsMs(600, Q) - 1e-6 && duration(S) <= fittsMs(600, Q) + MIN_MEND_MS;
+            shortOf &= S.size() == 2 && S[0].p3.x < TO.x && duration(S) >= fittsMs(600, Q) * 0.81 - 1e-6 && duration(S) <= fittsMs(600, Q) * 1.23 + MIN_MEND_MS;
             overlapped |= S[1].start < S[0].ms - 1;
             exact &= sample(S, duration(S)) == TO && sample(S, duration(S) - 1e-6).distance(TO) < 0.01;
             Q.underShare = 0;
@@ -200,11 +209,12 @@ int main() {
             double     best = 0;
             for (double t = 1; t < duration(S); t += 1)
                 best = std::max(best, sample(S, t).x - sample(S, t - 1).x);
-            return best;
+            return best * S[0].ms; // over the first stroke's own time, which varies
         };
         const double ALONE = PEAK(0), SLOWED = PEAK(0.5);
         check(SLOWED > ALONE * 0.8 && SLOWED < ALONE * 1.1, "a slow end leaves the first stroke's speed alone");
-        check(std::abs(duration(plan({0, 0}, {1000, 0}, {1600, 900}, Q, rng)) - fittsMs(1000, Q) / 0.5) < 1e-6, "  and comes on top of its time");
+        const auto TAILED = plan({0, 0}, {1000, 0}, {1600, 900}, Q, rng);
+        check(std::abs(duration(TAILED) - TAILED[0].ms / 0.5) < 1e-6, "  and comes on top of its time");
         Q.tailShare = 0.5;
         check(tailAt(100, Q) == 0 && tailAt(150, Q) == 0 && tailAt(600, Q) == 0.5 && tailAt(2000, Q) == 0.5, "the slow end grows from 150 to 600 px");
         check(plan({0, 0}, {100, 0}, {1600, 900}, Q, rng).size() == 1 && plan({0, 0}, {1000, 0}, {1600, 900}, Q, rng).size() == 2, "  a short move has none");
@@ -218,6 +228,48 @@ int main() {
             }
         }
         check(inside, "  the sum of two strokes stays in the window");
+    }
+
+    // each move draws its own time
+    {
+        SProfile Q = P;
+        Q.correctP = 0, Q.sShare = 0;
+        double sum = 0, sq = 0, low = 1e9, high = 0;
+        for (int i = 0; i < 4000; ++i) {
+            const double R = duration(plan({0, 0}, {600, 0}, {1600, 900}, Q, rng)) / fittsMs(600, Q);
+            sum += std::log(R), sq += std::log(R) * std::log(R), low = std::min(low, R), high = std::max(high, R);
+        }
+        const double SD = std::sqrt(sq / 4000 - sum / 4000 * (sum / 4000));
+        check(SD > 0.07 && SD < 0.11, "a move's time varies by about PACE_SD");
+        check(low >= 0.81 && high <= 1.23, "  within two sigma");
+    }
+
+    // s_share of the moves from 100 px up bend both ways, as far as a plain bow
+    {
+        SProfile Q   = P;
+        Q.correctP   = 0, Q.tailShare = 0, Q.bowSigma = 0, Q.bowMedian = 0.1, Q.sShare = 0.5;
+        const auto LOBES = [&](const std::vector<SSeg>& S, double D) {
+            double hi = 0, lo = 0;
+            for (double t = 0; t <= duration(S); t += 2) {
+                const double SIDE = (sample(S, t).y - 400) / D;
+                hi = std::max(hi, SIDE), lo = std::min(lo, SIDE);
+            }
+            return std::pair{hi, lo};
+        };
+        int  both = 0;
+        bool even = true, near = true;
+        for (int i = 0; i < 1000; ++i) {
+            const auto [HI, LO] = LOBES(plan({100, 400}, {900, 400}, {1600, 900}, Q, rng), 800);
+            if (std::min(HI, -LO) > 0.02) {
+                ++both;
+                even &= std::max(HI, -LO) > 0.07 && std::max(HI, -LO) < 0.14;
+            }
+            const auto [H2, L2] = LOBES(plan({100, 400}, {180, 400}, {1600, 900}, Q, rng), 80);
+            near &= std::min(H2, -L2) < 0.005;
+        }
+        check(both > 420 && both < 580, "about s_share of the moves bend both ways");
+        check(even, "  as far as a plain bow");
+        check(near, "  and none under 100 px");
     }
 
     // the time the way's end spends near the target, and the rest's draw

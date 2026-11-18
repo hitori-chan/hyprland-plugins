@@ -65,10 +65,14 @@ acts:
   a third and two thirds of the line, so progress follows the speed
   profile, and bow sideways by a log-normal draw around `bow_median`
   (`bow_sigma`, at most 25 % of the length) to a random side, or the
-  other if the window's edge would cut it. Control points stay inside the window, so the whole path does.
+  other if the window's edge would cut it. `s_share` of the moves of
+  ≥ 100 px bend both ways, unless the edge would cut a bend. Control points
+  stay inside the window, so the whole path does.
 - **Time**: Fitts's law, a + b · log2(D / W + 1) ms, 40 ms to 1 s, with
   W the target's size: 32 px unless the request names it (`size:<px>`;
-  vclick can't see the target).
+  vclick can't see the target). Each move draws its own time around it
+  (log-normal, sigma 0.10, within two sigma). That spread is a constant: a
+  recording's is mostly its targets' sizes, which it can't see.
 - **Speed**: bell-shaped, t^α (1 − t)^β with α + β = `bell`, peaking at
   `peak` (a bell of 4, centred, is a reaching arm's minimum jerk).
 - **Corrections**: `correct_p` of the moves of ≥ 100 px land off the
@@ -109,15 +113,15 @@ last rest (150 ms) or button event to the press.
   equal-count difficulty bands, over moves without a separate leg (a
   first stroke ending over 15 % of D away): a recording cannot tell a
   second leg from a pause to look for the target. a and b are for the
-  whole bell, whose tails no recording sees.
-- **Bell**: how sharply the first stroke peaks over its mean, and where,
-  on moves of ≥ 100 px that end in one stroke.
-- **Bow**: the first stroke's median and log-normal spread.
+  first stroke's whole bell: its way over the peak speed, times how far
+  the bell peaks over its mean. The peak is out of a slow end's reach.
+- **Bell**: from the time above half the peak speed against the way over
+  the peak speed, and the share of that time before the peak, on moves of
+  ≥ 100 px.
+- **Bow**: the first stroke's median and log-normal spread, and how many
+  bend both ways.
 - **Corrections**: how often a small one follows, read strictly: too few
   rather than invented.
-- **First stroke**: its bell and time are read around the peak speed, where
-  a slow end can't reach: the time above half the peak, against the way over
-  the peak speed.
 - **Slow end**: on moves of 600 px and more, the time and the way left once
   the speed first sinks under 15 % of its peak, less what a bell's own end
   shows.
