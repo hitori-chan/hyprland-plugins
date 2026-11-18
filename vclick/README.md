@@ -73,7 +73,8 @@ is drawn.
 `learn.py` records the user's own mouse for a while and fits the profile
 the glide moves with: how long a move takes for its distance (Fitts's
 law), how much it curves, how sharply it peaks and where, how often it
-corrects, and how long the pointer rests before a click.
+corrects, how long the pointer rests before a click, how long a click
+holds its button, and a drag's and the wheel's timing.
 
 ```sh
 python3 -I vclick/learn.py record --minutes 30   # use the mouse as usual meanwhile

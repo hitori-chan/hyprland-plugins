@@ -9,7 +9,19 @@ namespace VClick::Timeline {
     // the rest counts from arriving near the point: the way's own end is in it
     static double restAfter(const std::vector<Path::SSeg>& way, const Profile::SProfile& p, std::mt19937& rng) {
         const double REST = Profile::draw(p.restMs, p.restSigma, rng);
-        return std::clamp(way.empty() ? REST : REST - Path::settleMs(way, Profile::NEAR_PX), 0.0, MAX_REST_MS);
+        return std::clamp(REST - Path::settleMs(way, Profile::NEAR_PX), 0.0, MAX_REST_MS);
+    }
+
+    // a hand's click: the button held, then the gap to the next one's press
+    static void clicks(std::vector<SStep>& out, int count, const Profile::SProfile& p, std::mt19937& rng) {
+        for (int i = 0; i < count; ++i) {
+            const double HOLD = std::clamp(Profile::draw(p.holdMs, p.holdSigma, rng), 20.0, MAX_CLICK_MS - 20);
+            out.push_back({.kind = EStep::PRESS});
+            out.push_back({.kind = EStep::HOLD, .ms = HOLD});
+            out.push_back({.kind = EStep::RELEASE});
+            if (i + 1 < count)
+                out.push_back({.kind = EStep::REST, .ms = std::clamp(Profile::draw(p.doubleGapMs, p.holdSigma, rng), 20.0, MAX_CLICK_MS - HOLD)});
+        }
     }
 
     static void walk(std::vector<SStep>& out, EStep kind, std::vector<Path::SSeg> way, const Vector2D& to) {
@@ -27,7 +39,12 @@ namespace VClick::Timeline {
 
         switch (q.verb) {
             case EVerb::MOVE: out.push_back({.kind = q.from ? EStep::HOVER : EStep::PLACE}); break;
-            case EVerb::CLICK: out.push_back({.kind = EStep::BURST}); break;
+            case EVerb::CLICK:
+                if (q.from && q.hold)
+                    clicks(out, q.count, p, rng);
+                else
+                    out.push_back({.kind = EStep::BURST});
+                break;
             case EVerb::PINCH: out.push_back({.kind = EStep::STROKE}); break;
             case EVerb::PRESS: out.push_back({.kind = EStep::PRESS}); break;
             case EVerb::SCROLL:
@@ -49,8 +66,12 @@ namespace VClick::Timeline {
                 if (q.style == EStyle::PERFORMANCE)
                     walk(out, EStep::TRAVEL, {Path::line(q.pos, q.to, FAST_DRAG_MS)}, q.to);
                 else {
-                    walk(out, EStep::TRAVEL, Path::plan(q.pos, q.to, q.bounds, p, rng, {.w = q.size, .overshoot = false}), q.to);
-                    out.push_back({.kind = EStep::REST, .ms = restAfter(out.back().way, p, rng)});
+                    auto         way  = Path::plan(q.pos, q.to, q.bounds, p, rng, {.w = q.size, .overshoot = false});
+                    const double LEAD = Profile::draw(p.dragLeadMs, p.restSigma, rng) - Path::leaveMs(way, Profile::NEAR_PX);
+                    const double DROP = Profile::draw(p.dropRestMs, p.restSigma, rng) - Path::settleMs(way, Profile::NEAR_PX);
+                    out.push_back({.kind = EStep::HOLD, .ms = std::clamp(LEAD, 0.0, MAX_REST_MS)});
+                    walk(out, EStep::TRAVEL, std::move(way), q.to);
+                    out.push_back({.kind = EStep::REST, .ms = std::clamp(DROP, 0.0, MAX_REST_MS)});
                 }
                 out.push_back({.kind = EStep::RELEASE});
                 break;

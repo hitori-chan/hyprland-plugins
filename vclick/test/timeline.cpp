@@ -31,6 +31,7 @@ static const char* name(EStep k) {
         case EStep::PACE: return "pace";
         case EStep::STROKE: return "stroke";
         case EStep::PRESS: return "press";
+        case EStep::HOLD: return "hold";
         case EStep::RELEASE: return "release";
     }
     return "?";
@@ -59,7 +60,10 @@ int main() {
     };
 
     IS({.verb = EVerb::CLICK}, "burst", "a click at once");
-    IS({.verb = EVerb::CLICK, .from = A}, "way rest burst", "a click by a way");
+    IS({.verb = EVerb::CLICK, .from = A}, "way rest burst", "a click by a way, with no guard to hold it: one burst");
+    IS({.verb = EVerb::CLICK, .from = A, .hold = true}, "way rest press hold release", "a hand's click holds its button");
+    IS({.verb = EVerb::CLICK, .from = A, .count = 2, .hold = true}, "way rest press hold release rest press hold release", "a hand's double click");
+    IS({.verb = EVerb::CLICK, .count = 2, .hold = true}, "burst", "at once: one burst");
     IS({.verb = EVerb::MOVE}, "place", "a move at once");
     IS({.verb = EVerb::MOVE, .from = A}, "way hover", "a move by a way has no rest");
     IS({.verb = EVerb::PRESS}, "press", "a press at once");
@@ -71,8 +75,8 @@ int main() {
     IS({.verb = EVerb::SCROLL, .count = 5, .ms = 0}, "burst", "0ms: every step in one burst");
     IS({.verb = EVerb::SCROLL, .count = 3, .ms = 80}, "wheel pace wheel pace wheel", "a paced run");
     IS({.verb = EVerb::SCROLL, .from = A, .count = 2, .ms = 80}, "way rest wheel pace wheel", "a paced run by a way");
-    IS({.verb = EVerb::DRAG}, "press travel rest release", "a drag at once");
-    IS({.verb = EVerb::DRAG, .from = A}, "way rest press travel rest release", "a drag by a way");
+    IS({.verb = EVerb::DRAG}, "press hold travel rest release", "a drag at once");
+    IS({.verb = EVerb::DRAG, .from = A}, "way rest press hold travel rest release", "a drag by a way");
 
     IS({.verb = EVerb::DRAG, .style = EStyle::PERFORMANCE}, "press travel release", "a drag in performance has no rest");
     {
@@ -90,7 +94,7 @@ int main() {
     }
     {
         const auto S = STEPS({.verb = EVerb::DRAG, .to = A});
-        check(S[1].to == A && Path::sample(S[1].way, 1e9) == A && S[1].way.size() == 1, "a drag's way ends on its end, and never passes it");
+        check(S[2].to == A && Path::sample(S[2].way, 1e9) == A && S[2].way.size() == 1, "a drag's way ends on its end, and never passes it");
     }
     {
         bool bounded = true;
@@ -99,6 +103,24 @@ int main() {
             bounded &= S[1].ms >= 0 && S[1].ms <= 600;
         }
         check(bounded, "the rest stays within 0-600 ms");
+    }
+
+    {
+        bool bound = true, held = true;
+        for (int i = 0; i < 2000; ++i) {
+            const auto S = STEPS({.verb = EVerb::CLICK, .from = A, .count = 3, .hold = true});
+            for (size_t n = 3; n + 4 < S.size(); n += 4) // hold, release, gap, press
+                bound &= S[n].ms + S[n + 2].ms <= MAX_CLICK_MS + 1e-9;
+            held &= S[3].ms >= 20;
+        }
+        check(bound, "press to press stays within MAX_CLICK_MS, so apps read a double click");
+        check(held, "a click's hold is at least 20 ms");
+    }
+    {
+        Profile::SProfile Q = P;
+        Q.dragLeadMs = 0, Q.dropRestMs = 0;
+        const auto S = compose({.verb = EVerb::DRAG, .pos = B, .to = A, .bounds = BOX}, Q, rng);
+        check(S[1].ms == 0 && S[3].ms == 0, "the way's own start and end count toward a drag's lead and rest");
     }
 
     std::printf("%s: %d of %d checks passed\n", fail ? "FAIL" : "ok", pass, pass + fail);

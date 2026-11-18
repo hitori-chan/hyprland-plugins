@@ -18,6 +18,10 @@ namespace VClick::Profile {
         double      correctP = 0.05, underShare = 0.6;   // how often a small correction follows, how often from short of the target
         double      correctSize = 0.05;                  // how far off the first stroke lands, of D
         double      restMs = 120, restSigma = 0.6;       // from arriving within NEAR_PX to a click: log-normal
+        double      holdMs = 100, holdSigma = 0.25;      // a click's button held down: log-normal
+        double      doubleGapMs = 120;                   // from a release to the next click's press
+        double      dragLeadMs = 100, dropRestMs = 80;   // a drag: from the press to NEAR_PX away; from NEAR_PX of the drop to the release
+        double      wheelMs = 50;                        // between the steps of a wheel run
         double      rateHz = 125;                        // motion events a second
         int         moves  = 0;                          // how many movements it was fitted from
         std::string source = "the built-in defaults";

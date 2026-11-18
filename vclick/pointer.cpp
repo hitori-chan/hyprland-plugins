@@ -327,6 +327,7 @@ namespace VClick::Pointer {
         wl_client*             client = nullptr;
         uint32_t               button = 0;
         bool                   stay   = false; // the mode at the press
+        bool                   click  = false; // a hand's click: the seat letting go of it only ends it sooner
     };
     static std::optional<SHeld> held;
     static struct {
@@ -377,11 +378,13 @@ namespace VClick::Pointer {
             return;
         const auto SURF = held->surf.lock();
         // the seat's leave let the button go already; nothing to send
-        letGo = {held->client, Time::steadyNow()};
+        letGo            = {held->client, Time::steadyNow()};
+        const bool CLICK = held->click;
         held.reset();
         hovered.reset();
-        noteStop(std::string{"the hold ended: "} +
-                 (SURF && userIn(SURF->client()) ? "the user's pointer came into the app" : "the user's pointer changed surface, and the seat let the button go"));
+        if (!CLICK)
+            noteStop(std::string{"the hold ended: "} +
+                     (SURF && userIn(SURF->client()) ? "the user's pointer came into the app" : "the user's pointer changed surface, and the seat let the button go"));
     }
 
     std::optional<std::string> holdLost() {
@@ -390,15 +393,18 @@ namespace VClick::Pointer {
         const auto  W    = held->window.lock();
         const auto  SURF = held->surf.lock();
         std::string why;
-        if (SURF && userIn(SURF->client()))
-            why = "the user's pointer came into the app"; // the seat's leave let it go
-        else if (!SURF || !W || !Desktop::View::validMapped(W) || W->isHidden())
+        bool        quiet = false;
+        if (SURF && userIn(SURF->client())) {
+            why   = "the user's pointer came into the app"; // the seat's leave let it go
+            quiet = held->click;
+        } else if (!SURF || !W || !Desktop::View::validMapped(W) || W->isHidden())
             why = "the window closed or was hidden";
         else
             return std::nullopt;
         letGoOf();
         unhover();
-        noteStop("the hold ended: " + why);
+        if (!quiet)
+            noteStop("the hold ended: " + why);
         return why;
     }
 
@@ -448,7 +454,7 @@ namespace VClick::Pointer {
         return {};
     }
 
-    Result press(const SAction& c) {
+    Result press(const SAction& c, bool click) {
         if (!dragGuard)
             return fail("error: no drag-and-drop guard (the initiateDrag hook is out): a held button could hand a drag to the user's mouse");
         const auto T = place(c);
@@ -459,7 +465,7 @@ namespace VClick::Pointer {
             p.sendButton(t, c.button, WL_POINTER_BUTTON_STATE_PRESSED);
             g_pSeatManager->clearPointerButtonSerials(p.m_owner.lock(), T->surf, c.button); // no interactive move or resize from it
         });
-        held = SHeld{.window = T->window, .surf = T->surf, .client = T->surf->client(), .button = c.button, .stay = c.stay};
+        held = SHeld{.window = T->window, .surf = T->surf, .client = T->surf->client(), .button = c.button, .stay = c.stay, .click = click};
         clearStop();
         if (!c.stay) {
             Cursor::prepare(T->window);

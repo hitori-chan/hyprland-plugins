@@ -77,6 +77,10 @@ It covers, each against the exact protocol events:
   `dragging`; Fitts's time, no overshoot, the dwell before the release;
   GTK's press and release in their blocks); a drag in the performance mode; a
   drag from a GTK drag source refused.
+- **a hand's click**: the hold, a double click's gap and bound, `clicking`;
+  a popup opened and picked from; the seat ending a hold, the user's
+  pointer taking a double click's second click, the window closing under
+  the button, a title bar clicked and the window staying put, unload.
 - **a finger's scroll**: its bounds; a stroke summing to the request
   exactly, every frame from a finger, no wheel steps, one stop, Fitts's
   time, slow ends, the rest before the lift; GTK reading a touchpad's

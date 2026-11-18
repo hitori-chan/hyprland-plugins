@@ -38,8 +38,10 @@ The options follow the point, in any order, each at most once.
   below (the content moves up), whatever the user's natural-scroll
   setting.
 - `steps`: wheel detents, 1 (default) to 20.
-- `<ms>ms`: the time between steps, `0ms` to `1000ms` (default `50ms`).
-  The first step goes at once; the rest follow at that pace
+- `<ms>ms`: the time between steps, `0ms` to `1000ms` (default `50ms` in
+  `performance`).
+  Without it a human request goes at `wheel_ms`. The first step goes at
+  once; the rest follow at that pace
   ([design](design.md#paced-scrolling)). `0ms` sends every step in one
   burst, which many apps speed up.
 - `<n>px`: instead of wheel steps, a finger's scroll on a touchpad by
@@ -178,6 +180,7 @@ other than 1, or a turn. `status` says `pinching`.
 ## status
 
 - `moving`: a glide runs, its rest included.
+- `clicking`: a human click holds its button, or waits for its next click.
 - `dragging`: a glide runs with a button held.
 - `scrolling <done>/<steps>`: a paced scroll runs; `scrolling
   <done>/<n> px`: a finger's.
@@ -244,7 +247,7 @@ it. It is `human` whenever the plugin loads
 from:
 
 ```
-fitts a 0 ms, b 101 ms/bit (W 32 px); bell 4.5 peaking at 0.48; bow 0.0517 (sigma 0.913); corrected 14.1%, 66.7% from short, by 10.11%; rest 97 ms (sigma 0.875); 129 Hz
+fitts a 0 ms, b 101 ms/bit (W 32 px); bell 4.5 peaking at 0.48; bow 0.0517 (sigma 0.913); corrected 14.1%, 66.7% from short, by 10.11%; rest 97 ms (sigma 0.875); hold 89 ms (sigma 0.219), 106 ms between clicks; drag lead 107 ms, drop rest 65 ms; wheel 50 ms; 129 Hz
 from /home/user/.local/state/vclick/profile (194 movements)
 ```
 
@@ -269,6 +272,10 @@ a value outside its bounds is clamped.
 | `correct_p`, `under_share` | how often a small correction follows a move, and how often from short of the target | 0–1, 0–1 | 0.05, 0.6 |
 | `correct_size` | how far off the first stroke lands, of D | 0–0.15 | 0.05 |
 | `rest_ms`, `rest_sigma` | from arriving within 3 px to a click or scroll (log-normal) | 0–600, 0–1.5 | 120, 0.6 |
+| `hold_ms`, `hold_sigma` | how long a click holds its button (log-normal) | 20–250, 0–1 | 100, 0.25 |
+| `double_gap_ms` | from a click's release to the next one's press | 20–250 | 120 |
+| `drag_lead_ms`, `drop_rest_ms` | a drag: from the press until 3 px away; from 3 px of the drop until the release | 0–400, 0–400 | 100, 80 |
+| `wheel_ms` | between the steps of a wheel run, unless the request names a pace | 10–200 | 50 |
 | `rate_hz` | motion events a second | 30–1000 | 125 |
 | `moves` | how many moves it was fitted from | | 0 |
 

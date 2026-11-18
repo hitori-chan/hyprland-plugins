@@ -12,8 +12,8 @@ record reads two things, and changes nothing:
   Hyprland's socket) at about 250 Hz: where the pointer is on screen,
   after acceleration;
 - the pointer devices' raw events (/dev/input/event*, needs the `input`
-  group), only motion and mouse buttons, never a keyboard: the exact time
-  of each report and of each click.
+  group), only motion, wheels and mouse buttons, never a keyboard: the exact
+  time of each report, each wheel step and each click.
 
 It never grabs a device: every event still reaches the compositor.
 
@@ -28,6 +28,10 @@ look for the target. It fits:
 - the path's bow: the largest sideways distance over the length;
 - how often a small correction follows the first stroke, which way, how far;
 - the rest: from arriving within 3 px of the press point to the press;
+- the button: how long a click holds it, the gap inside a double click, and a
+  drag's lead (press until 3 px away) and rest (3 px from the drop until the
+  release);
+- the wheel's pace: the time between the steps of a spin;
 - the device's report rate.
 
 A value with too few samples is left out of the profile, so vclick's default
@@ -55,7 +59,7 @@ W_DEFAULT = 32.0
 BTN_LEFT = 0x110
 
 EV_SYN, EV_KEY, EV_REL = 0x00, 0x01, 0x02
-REL_X, REL_Y = 0x00, 0x01
+REL_X, REL_Y, REL_HWHEEL, REL_WHEEL = 0x00, 0x01, 0x06, 0x08
 BTN_FIRST, BTN_LAST = 0x110, 0x117  # the BTN_MOUSE block: never a keyboard key
 EVENT = struct.Struct("llHHi")       # struct input_event on 64-bit Linux
 
@@ -165,6 +169,8 @@ def record(a):
                         t = sec + usec / 1e6  # evdev stamps CLOCK_REALTIME
                         if typ == EV_REL and code in (REL_X, REL_Y):
                             f.write(f"{t:.6f},{dev},rel,{'x' if code == REL_X else 'y'},{value}\n")
+                        elif typ == EV_REL and code in (REL_WHEEL, REL_HWHEEL):
+                            f.write(f"{t:.6f},{dev},wheel,{code},{value}\n")
                         elif typ == EV_KEY and BTN_FIRST <= code <= BTN_LAST:
                             f.write(f"{t:.6f},{dev},btn,{code},{value}\n")
                 if not by_fd:
@@ -206,7 +212,7 @@ class Recording:
                     self.t.append(t)
                     self.x.append(x)
                     self.y.append(y)
-        self.buttons, reports = [], set()
+        self.buttons, self.wheel, reports = [], [], set()
         with open(os.path.join(dirpath, "input.csv")) as f:
             for line in f:
                 p = line.strip().split(",")
@@ -215,7 +221,10 @@ class Recording:
                     self.buttons.append((t, int(p[3]), p[4] == "1"))
                 elif p[2] == "rel":
                     reports.add(t)  # one report carries x and y at one time
+                elif p[2] == "wheel":
+                    self.wheel.append(t)
         self.buttons.sort()
+        self.wheel.sort()
         self.reports = sorted(reports)
 
 
@@ -348,6 +357,39 @@ def arrivals(r):
     return out
 
 
+def button_times(r):
+    """The left button's holds, the gaps inside double clicks, and each drag's
+    lead and rest before the release, in ms."""
+    holds, gaps, leads, drops = [], [], [], []
+    at = lambda t: (r.x[max(0, bisect.bisect_right(r.t, t) - 1)], r.y[max(0, bisect.bisect_right(r.t, t) - 1)])
+    down, last = None, None
+    for t, code, pressed in r.buttons:
+        if code != BTN_LEFT:
+            continue
+        if pressed:
+            down = t
+            continue
+        if down is None:
+            continue
+        a, b = at(down), at(t)
+        d = math.dist(a, b)
+        if d < 4:
+            holds.append((t - down) * 1000)
+            if last and down - last[0] < 0.5 and math.dist(last[2], a) < 5:
+                gaps.append((down - last[1]) * 1000)
+            last = (down, t, a)
+        elif d >= TRAVEL:
+            span = range(bisect.bisect_right(r.t, down), bisect.bisect_left(r.t, t))
+            away = [k for k in span if math.dist((r.x[k], r.y[k]), a) > NEAR]
+            short = [k for k in span if math.dist((r.x[k], r.y[k]), b) > NEAR]
+            if away:
+                leads.append((r.t[away[0]] - down) * 1000)
+            if short:
+                drops.append((t - r.t[min(short[-1] + 1, span[-1])]) * 1000)
+        down = None
+    return holds, gaps, leads, drops
+
+
 def percentile(v, p):
     v = sorted(v)
     return v[min(len(v) - 1, int(len(v) * p))]
@@ -400,9 +442,16 @@ def fitts(moves, width):
 def derive(recordings):
     """The profile's values from these recordings, and the keys too few samples left out."""
     moves, rests, gaps = [], [], []
+    holds, double, leads, drops, spins = [], [], [], [], []
     for r in recordings:
         moves += [m for m in (measure(*s) for s in aimed(r)) if m]
         rests += arrivals(r)
+        h, g, l, d = button_times(r)
+        holds += h
+        double += g
+        leads += l
+        drops += d
+        spins += [(b - a) * 1000 for a, b in zip(r.wheel, r.wheel[1:]) if b - a < 0.4]
         gaps += [(b - a) * 1000 for a, b in zip(r.reports, r.reports[1:]) if 0.0002 < b - a < 0.05]
 
     prof, short = {}, []
@@ -436,6 +485,17 @@ def derive(recordings):
 
     if have(["rest_ms", "rest_sigma"], len(rests) >= ENOUGH):
         prof["rest_ms"], prof["rest_sigma"] = round(statistics.median(rests)), round(log_spread(rests), 3)
+
+    if have(["hold_ms", "hold_sigma"], len(holds) >= ENOUGH):
+        prof["hold_ms"], prof["hold_sigma"] = round(statistics.median(holds)), round(log_spread(holds), 3)
+    if have(["double_gap_ms"], len(double) >= 10):
+        prof["double_gap_ms"] = round(statistics.median(double))
+    if have(["drag_lead_ms"], len(leads) >= 10):
+        prof["drag_lead_ms"] = round(statistics.median(leads))
+    if have(["drop_rest_ms"], len(drops) >= 10):
+        prof["drop_rest_ms"] = round(statistics.median(drops))
+    if have(["wheel_ms"], len(spins) >= ENOUGH):
+        prof["wheel_ms"] = round(statistics.median(spins))
 
     if have(["rate_hz"], len(gaps) >= 200):
         bins = {}

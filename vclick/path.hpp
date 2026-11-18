@@ -45,7 +45,8 @@ namespace VClick::Path {
     std::vector<SSeg> plan(const Vector2D& from, const Vector2D& to, const Vector2D& bounds, const SProfile& p, std::mt19937& rng, const SAim& aim = {});
     double            duration(const std::vector<SSeg>& segs);
     Vector2D          sample(const std::vector<SSeg>& segs, double ms); // segs not empty; past the end: the target
-    double            settleMs(const std::vector<SSeg>& segs, double px); // segs not empty: how long the end of the way spends within px of the target
+    double            settleMs(const std::vector<SSeg>& segs, double px); // how long the end of the way spends within px of the target
+    double            leaveMs(const std::vector<SSeg>& segs, double px);  // how long the way takes to get px from its start
     Vector2D          along(const SSeg& s, double ms);                  // one segment's point; past its end: its end
 
     // A finger's stroke on a touchpad: one straight movement, its x the

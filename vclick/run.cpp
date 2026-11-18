@@ -88,8 +88,24 @@ namespace VClick::Run {
             case EStep::WHEEL:
             case EStep::PACE: return std::format("scrolling {}/{}", run->done, run->total);
             case EStep::STROKE: return Stroke::status();
+            case EStep::HOLD:
+                if (run->action.verb == EVerb::CLICK)
+                    return "clicking";
+                return "dragging";
+            case EStep::REST:
+                if (run->action.verb == EVerb::CLICK && run->done > 0)
+                    return "clicking";
+                [[fallthrough]];
             default: return Pointer::heldButton() ? "dragging" : "moving";
         }
+    }
+
+    static void arm(int ms);
+
+    // the next tick, no later than ms from the step's start
+    static void armWithin(double ms) {
+        const double EL = std::chrono::duration<double, std::milli>(Time::steadyNow() - run->since).count();
+        arm(std::clamp(sc<int>(std::ceil(ms - EL)), 1, run->period));
     }
 
     static void arm(int ms) {
@@ -185,6 +201,13 @@ namespace VClick::Run {
         return {};
     }
 
+    // the clicks not yet pressed, as one burst
+    static SAction remaining() {
+        SAction left = run->action;
+        left.count   = std::max(1, run->total - run->done);
+        return left;
+    }
+
     static Result inputFailed(const Result& r) {
         return failed(r, run->walked ? "the last glide's input failed: " : "");
     }
@@ -203,6 +226,7 @@ namespace VClick::Run {
             switch (S.kind) {
                 case EStep::WAY:
                 case EStep::REST: arm(run->period); return {};
+                case EStep::HOLD: armWithin(S.ms); return {};
                 case EStep::TRAVEL: {
                     const auto W = Pointer::heldWindow();
                     if (!W)
@@ -265,17 +289,30 @@ namespace VClick::Run {
                 }
                 case EStep::HOVER: Pointer::hover(run->cur.lock()); break;
                 case EStep::PRESS: {
-                    if (const auto R = Pointer::press(run->action); !R)
-                        return inputFailed(R);
+                    const bool CLICK = run->action.verb == EVerb::CLICK;
+                    if (const auto R = Pointer::press(run->action, CLICK); !R) {
+                        if (!CLICK)
+                            return inputFailed(R);
+                        // it can't hold after all (the user's pointer just came in): at once
+                        const auto LEFT = remaining();
+                        end(false);
+                        if (const auto B = Pointer::burst(LEFT); !B)
+                            noteStop("the last glide's input failed: " + B.error());
+                        return {};
+                    }
+                    if (CLICK)
+                        ++run->done;
+                    run->since = Time::steadyNow();
                     break;
                 }
                 case EStep::RELEASE: {
                     if (const auto R = Pointer::release(); !R)
                         return failed(R, "the last drag's release failed: ");
-                    if (!run->action.stay) {
+                    if (!run->action.stay && run->step + 1 == run->steps.size()) {
                         Pointer::unhover();
                         Cursor::rest(false);
                     }
+                    run->since = Time::steadyNow();
                     break;
                 }
             }
@@ -286,7 +323,16 @@ namespace VClick::Run {
 
     static Timeline::SRequest requestOf(const SAction& c) {
         const auto W = Pointer::windowOf(c.selector);
-        return {.verb = c.verb, .style = *c.style, .pos = c.pos, .to = c.to, .bounds = W ? Pointer::windowSize(W) : Vector2D{}, .size = c.size, .count = c.count, .ms = c.ms, .px = c.px};
+        return {.verb   = c.verb,
+                .style  = *c.style,
+                .pos    = c.pos,
+                .to     = c.to,
+                .bounds = W ? Pointer::windowSize(W) : Vector2D{},
+                .size   = c.size,
+                .count  = c.count,
+                .ms     = c.ms,
+                .px     = c.px,
+                .hold   = Pointer::dragGuard};
     }
 
     // the request's steps, from the first: what takes no time happens here
@@ -318,7 +364,10 @@ namespace VClick::Run {
         return R;
     }
 
-    Result request(const SAction& c) {
+    Result request(const SAction& asked) {
+        SAction c = asked;
+        if (*c.style == EStyle::HUMAN && !c.paced)
+            c.ms = sc<int>(std::lround(pace.wheelMs));
         auto q = requestOf(c);
         if (*c.style == EStyle::PERFORMANCE)
             return begin(c, q, nullptr);
@@ -360,7 +409,7 @@ namespace VClick::Run {
         // leave; a click or scroll goes on at once, which steps out of the
         // user's surface and back in; a move or a press would take that
         // pointer, so it stops
-        const auto A = run->action;
+        const auto A = run->action.verb == EVerb::CLICK ? remaining() : run->action;
         end(false);
         Cursor::userMoved(); // their pointer has the app's now: the cursor goes
         if (A.verb != EVerb::CLICK && A.verb != EVerb::SCROLL) {
@@ -411,6 +460,33 @@ namespace VClick::Run {
                     return;
                 }
                 break;
+            }
+            case EStep::HOLD: {
+                const auto W    = run->window.lock();
+                const auto WHY  = Pointer::holdLost(); // noted, unless the seat only ended a click sooner
+                const bool GONE = !W || !Desktop::View::validMapped(W) || W->isHidden() || blocked();
+                if (WHY || !Pointer::heldButton() || GONE) {
+                    if (run->action.verb != EVerb::CLICK || GONE) {
+                        end(false);
+                        return;
+                    }
+                    // the press and the seat's release were a whole click: the rest go at once
+                    const bool MORE = run->done < run->total;
+                    const auto LEFT = remaining();
+                    end(false);
+                    if (MORE)
+                        if (const auto R = Pointer::burst(LEFT); !R)
+                            noteStop("the last glide's input failed: " + R.error());
+                    return;
+                }
+                const double EL = std::chrono::duration<double, std::milli>(Time::steadyNow() - run->since).count();
+                if (EL >= S.ms) {
+                    ++run->step;
+                    std::ignore = advance();
+                    return;
+                }
+                armWithin(S.ms);
+                return;
             }
             case EStep::STROKE:
                 if (!Stroke::tick()) {

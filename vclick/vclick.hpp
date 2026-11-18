@@ -74,6 +74,7 @@ namespace VClick {
         bool                  stay  = false;         // the human mode: the app keeps the hover after the input
         int                   count = 1;             // clicks, or wheel steps
         int                   ms    = STEP_MS;       // between wheel steps; 0: all at once
+        bool                  paced = false;         // the request named that pace
         double                px    = 0;             // a finger's scroll, how far; 0: wheel steps
         double                scale = 1, deg = 0;    // a pinch's: the fingers' spread at the end over the start's, the turn clockwise
         double                size = Path::TARGET_W; // the target's size: the glide's Fitts W
@@ -164,8 +165,9 @@ namespace VClick {
 
         // the clicks, or the wheel steps, in one burst
         Result burst(const SAction& c);
-        // the button goes down there and stays
-        Result press(const SAction& c);
+        // the button goes down there and stays; click: a hand's click, whose
+        // hold the seat may end sooner, which is no error
+        Result press(const SAction& c, bool click = false);
         // the app's pointer there, and it stays (a move's, a press's, a
         // stroke's start); refused when the user's pointer is in the app
         std::expected<STarget, std::string> place(const SAction& c);

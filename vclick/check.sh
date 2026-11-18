@@ -277,9 +277,9 @@ expect "lua: a number where hyprctl takes a word" "$(lua "hl.plugin.vclick.click
 expect "lua: an argument hyprctl could not take" "$(lua "hl.plugin.vclick.click({}, 10, 10)")" $'nil\terror: argument 1 is a table: a string or a number, as hyprctl takes it'
 # the pace for the check: a profile file of its own, never the user's;
 # no correction, so a glide's time is Fitts's law exactly
-printf 'correct_p=0\nrest_ms=140\nrest_sigma=0\n' >"$T/even.profile"
+printf 'correct_p=0\nrest_ms=140\nrest_sigma=0\nhold_ms=90\nhold_sigma=0\ndouble_gap_ms=100\ndrag_lead_ms=120\ndrop_rest_ms=150\n' >"$T/even.profile"
 expect "a profile from a file" "$(vclick profile reload "$T/even.profile" | head -1)" "loaded $T/even.profile"
-expect "  read back" "$(vclick profile | head -1)" "fitts a 50 ms, b 120 ms/bit (W 32 px); bell 4 peaking at 0.45; bow 0.05 (sigma 0.8); corrected 0%, 60% from short, by 5%; rest 140 ms (sigma 0); 125 Hz"
+expect "  read back" "$(vclick profile | head -1)" "fitts a 50 ms, b 120 ms/bit (W 32 px); bell 4 peaking at 0.45; bow 0.05 (sigma 0.8); corrected 0%, 60% from short, by 5%; rest 140 ms (sigma 0); hold 90 ms (sigma 0), 100 ms between clicks; drag lead 120 ms, drop rest 150 ms; wheel 50 ms; 125 Hz"
 # the exact event sequences below are performance's; the human mode has its own section
 expect "the performance mode" "$(vclick mode performance)" performance
 
@@ -528,6 +528,9 @@ mtimes() { # mtimes <client> <from-line>: the time of each wl_pointer.motion sin
 btime() { # btime <client> <from-line>: the time of the first wl_pointer.button since
 	tail -n +"$(($2 + 1))" "$T/$1.wl" | grep -v ' -> ' | grep -oE 'wl_pointer[#@][0-9]+\.button\([0-9]+, [0-9]+' | head -1 | grep -oE '[0-9]+$'
 }
+btimes() { # btimes <client> <from-line>: the time of each wl_pointer.button since
+	tail -n +"$(($2 + 1))" "$T/$1.wl" | grep -v ' -> ' | grep -oE 'wl_pointer[#@][0-9]+\.button\([0-9]+, [0-9]+' | grep -oE '[0-9]+$'
+}
 median_gap() { awk 'NR > 1 { print $1 - p } { p = $1 }' | sort -n | awk '{ g[NR] = $1 } END { print g[int((NR + 1) / 2)] }'; }
 fitts() { python3 -c 'import math, sys; a, b, d, w = map(float, sys.argv[1:] + ["32"][len(sys.argv) - 4:]); print(round(min(max(a + b * math.log2(d / w + 1), 40), 1000)))' "$@"; } # fitts <a> <b> <d> [w]
 dist() { python3 -c 'import math, sys; x, y, u, v = map(float, sys.argv[1:]); print(math.hypot(u - x, v - y))' "$@"; }
@@ -692,6 +695,81 @@ expect "  the glide handed over, at once" "$(vclick status)" "idle; the last gli
 expect "  the cursor never moved" "$(hq cursorpos)" "$POS"
 park "$BX" "$BY"
 expect "back to the check's profile" "$(vclick profile reload "$T/even.profile" | head -1)" "loaded $T/even.profile"
+
+echo "== a hand's click: the button held down, a double click's gap"
+clicking_now() { [[ "$(vclick status)" == clicking ]]; }
+quiet "$T/a.wl"
+AM="$(lines "$T/a.wl")" n="$(hits a HIT green)"
+expect "a click on green" "$(vclick click "address:$A" $(at green))" ok
+until_ok 4 idle || true
+until_ok 3 more a HIT green "$n" && ok "  A hit green" || bad "  A never hit green"
+quiet "$T/a.wl"
+read -r PT RT <<<"$(btimes a "$AM" | tr '\n' ' ')"
+((RT - PT >= 80 && RT - PT <= 130)) && ok "  the button held $((RT - PT)) ms" || bad "  held $((RT - PT)) ms, want 80-130"
+AM="$(lines "$T/a.wl")" n="$(hits a HIT red)"
+expect "a double click on red" "$(vclick click "address:$A" $(at red) double)" ok
+until_ok 4 clicking_now && ok "  status: clicking" || bad "  never clicking: $(vclick status)"
+until_ok 4 idle || true
+until_ok 3 atleast a HIT red $((n + 2)) && ok "  A saw both presses" || bad "  A saw $(($(hits a HIT red) - n)) presses"
+quiet "$T/a.wl"
+read -r P1 R1 P2 R2 <<<"$(btimes a "$AM" | tr '\n' ' ')"
+((R1 - P1 >= 80 && R1 - P1 <= 130 && R2 - P2 >= 80 && R2 - P2 <= 130)) && ok "  each held about 90 ms ($((R1 - P1)), $((R2 - P2)))" || bad "  held $((R1 - P1)) and $((R2 - P2)) ms"
+((P2 - R1 >= 90 && P2 - R1 <= 145)) && ok "  $((P2 - R1)) ms between them" || bad "  $((P2 - R1)) ms between them, want 90-145"
+((P2 - P1 <= 300)) && ok "  press to press in $((P2 - P1)) ms: a double click" || bad "  press to press in $((P2 - P1)) ms"
+
+echo "== a hand's click opens a popup, and picks from it"
+n="$(hits a MENUBUTTON True)"
+expect "click the menu button" "$(vclick click "address:$A" $(at button))" ok
+until_ok 4 idle || true
+until_ok 3 more a MENUBUTTON True "$n" && ok "  the menu opened" || bad "  the menu never opened"
+if [[ -n "$ORANGE" ]]; then
+	n="$(hits a MENU orange)"
+	expect "click the menu's orange item" "$(vclick click "address:$A" $ORANGE)" ok
+	until_ok 4 idle || true
+	until_ok 3 more a MENU orange "$n" && ok "  the popup kept its grab, and the item activated" || bad "  the popup item never activated"
+fi
+
+echo "== a hand's click, interrupted"
+printf 'correct_p=0\nrest_ms=140\nrest_sigma=0\nhold_ms=250\nhold_sigma=0\ndouble_gap_ms=20\n' >"$T/hold.profile"
+expect "a long hold" "$(vclick profile reload "$T/hold.profile" | head -1)" "loaded $T/hold.profile"
+quiet "$T/a.wl"
+AM="$(lines "$T/a.wl")"
+expect "a click on blue" "$(vclick click "address:$A" $(at blue))" ok
+until_ok 4 clicking_now || bad "  never clicking"
+park 1200 760 # from B to the empty desktop: the seat leaves every app's pointer
+until_ok 4 idle || true
+quiet "$T/a.wl"
+EV="$(events a "$AM")"
+regex "$EV" ' button button leave$' && ok "  the seat let go: a whole click, then the leave" || bad "  events: $EV"
+expect "  no second release" "$(btimes a "$AM" | wc -l)" 2
+expect "  no error to report" "$(vclick status)" idle
+park "$BX" "$BY"
+quiet "$T/a.wl"
+AM="$(lines "$T/a.wl")" n="$(hits a HIT blue)"
+expect "a double click on blue" "$(vclick click "address:$A" $(at blue) double)" ok
+until_ok 4 clicking_now || bad "  never clicking"
+park "$((70 + RX))" "$((70 + RY))" # into A: its pointer is the user's now
+until_ok 4 idle || true
+until_ok 3 atleast a HIT blue $((n + 2)) && ok "  the user's pointer came in: the second click still went" || bad "  A saw $(($(hits a HIT blue) - n)) presses"
+expect "  the cursor stayed the user's" "$(hq cursorpos)" "$((70 + RX)), $((70 + RY))"
+park "$BX" "$BY"
+D2="$(open_grid d)" || bad "client D never mapped"
+if [[ -n "$D2" ]]; then
+	[[ "$(field "$D2" 7)" == 1 ]] || dsp "hl.dsp.window.float({ action = 'enable', window = 'address:$D2' })"
+	dsp "hl.dsp.window.move({ x = 760, y = 480, window = 'address:$D2' })"
+	d_at() { [[ "$(field "$D2" 3),$(field "$D2" 4)" == "760,480" ]]; }
+	until_ok 3 d_at || bad "D never moved to 760,480"
+	park 1250 20 && park "$BX" "$BY"
+	expect "a click into D" "$(vclick click "address:$D2" 50 50)" ok
+	until_ok 4 clicking_now || bad "  never clicking: $(vclick status)"
+	pkill -9 -f "gtkgrid.py $T/d.log"
+	until_ok 4 idle || true
+	expect "  its window closed under the button, and status says so" "$(vclick status)" "idle; the hold ended: the window closed or was hidden"
+	d_gone() { [[ -z "$(field "$D2" 1)" ]]; }
+	until_ok 3 d_gone || bad "D never closed"
+fi
+expect "back to the check's profile" "$(vclick profile reload "$T/even.profile" | head -1)" "loaded $T/even.profile"
+park "$BX" "$BY"
 
 echo "== a scroll by px: a finger's stroke on a touchpad, at the user's pace"
 axis_sum() { # axis_sum <client> <from-line>: "axis:sum" of the wl_pointer.axis values since
@@ -924,6 +1002,13 @@ expect "  with the press's serial" "$(awk '$1 == "move" { print $2 }' "$T/fix.lo
 park "$BGX" "$BGY" # the user's mouse moves (within B): a move it drove would carry the window along
 expect "release" "$(vclick release)" ok
 expect "  the window never moved" "$(fixwin | cut -d' ' -f2-3)" "700 420"
+FP="$(grep -c '^press ' "$T/fix.log")"
+fix_pressed() { (($(grep -c '^press ' "$T/fix.log") > FP)); }
+expect "a hand's click on the title bar" "$(vclick click "address:$F" 60 50)" ok
+until_ok 4 idle || true
+until_ok 3 fix_pressed && ok "  the fixture heard the press" || bad "  the fixture never heard the press"
+park "$BCX" "$BCY" # the user's mouse moves: a move the press began would carry the window along
+expect "  the window never moved" "$(fixwin | cut -d' ' -f2-3)" "700 420"
 pkill -f "fixwin 300 200 $MT"
 fix_gone() { [[ -z "$(fixwin)" ]]; }
 until_ok 3 fix_gone || bad "the fixture never closed"
@@ -964,9 +1049,6 @@ quiet "$T/a.wl"
 expect "a drag needs its end" "$(vclick drag "address:$A" 10 10 | head -1)" "error: a drag needs where it lets go: <x2> <y2>"
 expect "a drag ends in the window" "$(vclick drag "address:$A" 10 10 5000 10 | head -1 | sed 's/ (.*//')" "error: 5000,10 is outside the window"
 park "$BCX" "$BCY"
-btimes() { # btimes <client> <from-line>: the time of each wl_pointer.button since
-	tail -n +"$(($2 + 1))" "$T/$1.wl" | grep -v ' -> ' | grep -oE 'wl_pointer[#@][0-9]+\.button\([0-9]+, [0-9]+' | grep -oE '[0-9]+$'
-}
 AM="$(lines "$T/a.wl")" GL="$(lines "$T/a.log")"
 D="$(dist $(at red) $(at green))" MT="$(fitts 50 120 "$D")"
 expect "drag red to green (mouse mode: a glide there first)" "$(vclick drag "address:$A" $(at red) $(at green))" ok
@@ -985,7 +1067,9 @@ expect "  the release exactly at green" "$(last_xy a motion "$AM")" "$GREEN"
 read -r PT RT <<<"$(btimes a "$AM" | tr '\n' ' ')"
 LT="$(mtimes a "$AM" | tail -1)"
 SPAN=$((LT - PT)) REST=$((RT - LT))
-((SPAN >= MT - 10 && SPAN <= MT + 40)) && ok "  Fitts's time, no overshoot: $SPAN ms for $MT ms" || bad "  the drag took $SPAN ms, want $MT ms (-10/+40)"
+((SPAN >= MT + 20 && SPAN <= MT + 130)) && ok "  Fitts's time and the lead, no overshoot: $SPAN ms for $MT ms" || bad "  the drag took $SPAN ms, want $MT ms (+20/+130)"
+LEAD=$(($(mtimes a "$AM" | awk -v p="$PT" '$1 > p' | head -1) - PT))
+((LEAD >= 40 && LEAD <= 125)) && ok "  the hand waits $LEAD ms after the press" || bad "  $LEAD ms from the press to the first motion, want 40-125"
 ((REST >= 50 && REST <= 130)) && ok "  a rest on the target before letting go ($REST ms)" || bad "  rest $REST ms, want 50-130"
 expect "the performance mode" "$(vclick mode performance)" performance
 AM="$(lines "$T/a.wl")"
@@ -1139,6 +1223,19 @@ expect "press on red" "$(vclick press "address:$A" $(at red) performance)" ok
 hq plugin unload "$SO" >/dev/null 2>&1
 quiet "$T/a.wl"
 expect "  the button went up, then A's pointer left" "$(events a "$AM")" "enter motion button button leave"
+hq plugin load "$SO" >/dev/null 2>&1
+expect "loaded again" "$(hq plugin list | grep -c 'Plugin vclick')" 1
+
+echo "== unload during a hand's click"
+expect "a long hold" "$(vclick profile reload "$T/hold.profile" | head -1)" "loaded $T/hold.profile"
+quiet "$T/a.wl"
+AM="$(lines "$T/a.wl")"
+expect "a click on red" "$(vclick click "address:$A" $(at red))" ok
+until_ok 4 clicking_now || bad "  never clicking"
+hq plugin unload "$SO" >/dev/null 2>&1
+quiet "$T/a.wl"
+EV="$(events a "$AM")"
+regex "$EV" ' button button leave$' && ok "  the button went up, then A's pointer left" || bad "  events: $EV"
 hq plugin load "$SO" >/dev/null 2>&1
 expect "loaded again" "$(hq plugin list | grep -c 'Plugin vclick')" 1
 

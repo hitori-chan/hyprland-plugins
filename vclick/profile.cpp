@@ -77,6 +77,18 @@ namespace VClick::Profile {
                 SET(p.restMs, 0, 600);
             else if (K == "rest_sigma")
                 SET(p.restSigma, 0, 1.5);
+            else if (K == "hold_ms")
+                SET(p.holdMs, 20, 250);
+            else if (K == "hold_sigma")
+                SET(p.holdSigma, 0, 1);
+            else if (K == "double_gap_ms")
+                SET(p.doubleGapMs, 20, 250);
+            else if (K == "drag_lead_ms")
+                SET(p.dragLeadMs, 0, 400);
+            else if (K == "drop_rest_ms")
+                SET(p.dropRestMs, 0, 400);
+            else if (K == "wheel_ms")
+                SET(p.wheelMs, 10, 200);
             else if (K == "rate_hz")
                 SET(p.rateHz, 30, 1000);
             else if (K == "moves")
@@ -98,8 +110,8 @@ namespace VClick::Profile {
 
     std::string describe(const SProfile& p) {
         return std::format("fitts a {:g} ms, b {:g} ms/bit (W {:g} px); bell {:g} peaking at {:g}; bow {:g} (sigma {:g}); corrected {:g}%, {:g}% from short, by {:g}%; "
-                           "rest {:g} ms (sigma {:g}); {:g} Hz\nfrom {}{}",
+                           "rest {:g} ms (sigma {:g}); hold {:g} ms (sigma {:g}), {:g} ms between clicks; drag lead {:g} ms, drop rest {:g} ms; wheel {:g} ms; {:g} Hz\nfrom {}{}",
                            p.aMs, p.bMs, TARGET_W, p.bell, p.peak, p.bowMedian, p.bowSigma, p.correctP * 100, p.underShare * 100, p.correctSize * 100, p.restMs, p.restSigma,
-                           p.rateHz, p.source, p.moves ? std::format(" ({} movements)", p.moves) : "");
+                           p.holdMs, p.holdSigma, p.doubleGapMs, p.dragLeadMs, p.dropRestMs, p.wheelMs, p.rateHz, p.source, p.moves ? std::format(" ({} movements)", p.moves) : "");
     }
 }

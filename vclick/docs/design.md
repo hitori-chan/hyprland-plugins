@@ -19,9 +19,11 @@ In performance the input goes in one burst, a millisecond apart: enter, motion,
 then the clicks or the step. A glide sends the same from the pointer it
 brought there ([the glide](#the-glide)).
 
-- A click is a press and release in one burst, so nothing stays held.
-  A button stays down only between `press` and `release`
-  ([a held button](#a-held-button)). What follows is the mode's.
+- In performance a click is a press and release in one burst, so
+  nothing stays held. A human click holds its button as a hand does
+  ([a hand's click](#a-hands-click)). A button otherwise stays down only
+  between `press` and `release` ([a held button](#a-held-button)). What
+  follows is the mode's.
 - A scroll is one frame per step, as a wheel sends it: source `wheel`,
   `axis_value120` 120 (or `axis_discrete` 1 to an older pointer),
   direction `identical`, then `axis` 15. One step is one detent, never
@@ -107,6 +109,9 @@ last rest (150 ms) or button event to the press.
 - **Corrections**: how often a small one follows, read strictly: too few
   rather than invented.
 - **Rest**: arrival within 3 px of the press point to the press.
+- **Button**: a click's hold, the gap inside a double click, a drag's lead
+  and rest before the release.
+- **Wheel**: the time between the steps of a spin.
 - **Rate**: the device's commonest report interval.
 
 A value with too few samples stays out of the profile, and the default
@@ -157,12 +162,31 @@ app's pointer a leave), at vclick's next input into another app, at
 `hide` or the switch to `performance`, and at unload. A move into the app under
 the user's mouse is refused: that pointer is theirs.
 
+## A hand's click
+
+A human click that comes by a glide presses, holds the button for a draw
+around `hold_ms`, and releases; two or three clicks are `double_gap_ms`
+apart, and press to press never exceeds 280 ms, so apps still read a double
+click. It goes through the same press as `press`, with all of its guards
+([a held button](#a-held-button)). It goes as one burst when it can't hold:
+the user's pointer is in the app, the point is in a popup outside the
+window's box, or the drag-and-drop guard is out.
+
+- The seat letting the button go (the user's pointer changing surface, a
+  popup's grab) ends the click sooner: the press and that release were a
+  whole click, so no second release follows, nothing is reported, and any
+  further clicks go at once.
+- The window closing ends it, and `status` says why. Unloading lets the
+  button go, then leaves.
+
 ## A held button
 
 `press` holds a button down until `release`; a `move` meanwhile drags it.
 `drag` is the three in one: the press, a glide to the end with the
 button down (the user's pace, never past the target: a slider's stop, a
-drop target), the dwell, the release.
+drop target), then the release. In `human` the hand waits `drag_lead_ms`
+after the press and rests `drop_rest_ms` before the release, each counted
+to and from 3 px of the point; in `performance` neither.
 The app hears one press, the motions, and the release: its implicit
 grab, so every motion goes to the surface the press began in, in its
 coordinates, wherever the point is, and no surface is crossed. The seat

@@ -216,7 +216,8 @@ namespace VClick::Command {
                         return BAD(std::format("'{}': the pace must be 0ms-{}ms", O, MAX_MS));
                     if (std::exchange(pace, true))
                         return TWICE();
-                    c.ms = *MS;
+                    c.ms    = *MS;
+                    c.paced = true;
                     continue;
                 }
                 if (const auto N = number<int>(O)) {

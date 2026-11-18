@@ -102,7 +102,19 @@ namespace VClick::Path {
         return ms;
     }
 
+    double leaveMs(const std::vector<SSeg>& segs, double px) {
+        if (segs.empty())
+            return 0;
+        const double MS = duration(segs);
+        for (double t = 0; t < MS; t += 2)
+            if (sample(segs, t).distance(segs.front().p0) > px)
+                return t;
+        return MS;
+    }
+
     double settleMs(const std::vector<SSeg>& segs, double px) {
+        if (segs.empty())
+            return 0;
         const double MS = duration(segs);
         for (double t = MS; t > 0; t -= 2)
             if (sample(segs, t).distance(segs.back().p3) > px)

@@ -30,6 +30,8 @@ namespace VClick::Timeline {
     using Path::Vector2D;
 
     constexpr double FAST_DRAG_MS = 48; // enough motions for an app to read a drag
+    // press to press: apps read two clicks as a double click up to 400-500 ms
+    constexpr double MAX_CLICK_MS = 280;
 
     enum class EStep : uint8_t {
         WAY,     // the pointer goes there, on its way
@@ -42,6 +44,7 @@ namespace VClick::Timeline {
         PACE,    // between two wheel steps, ms long
         STROKE,  // a finger's scroll or a pinch, over time
         PRESS,   // the button goes down
+        HOLD,    // the button stays down, ms long
         RELEASE, // the button goes up
     };
 
@@ -62,6 +65,7 @@ namespace VClick::Timeline {
         int                     count = 1;  // wheel steps
         int                     ms    = 50; // between them
         double                  px    = 0;  // a finger's scroll
+        bool                    hold  = false; // a click may hold its button (the drag-and-drop guard is in)
     };
 
     std::vector<SStep> compose(const SRequest& q, const Profile::SProfile& p, std::mt19937& rng);
