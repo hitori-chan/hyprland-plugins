@@ -34,8 +34,23 @@ _owns_pid() { # _owns_pid <pidfile> <environ|cmdline> <needle>: prints the pid
 	[[ "$p" =~ ^[0-9]+$ ]] && grep -Fzq -- "$3" "/proc/$p/$2" 2>/dev/null && printf '%s\n' "$p"
 }
 
+# labwc carries a file capability (cap_sys_nice), which closes its /proc
+# environ to us: the host is known by its pid and start time.
+_start_time() { # _start_time <pid>: field 22 of its stat
+	local s
+	s="$(cat "/proc/$1/stat" 2>/dev/null)" || return 1
+	set -- ${s##*) }
+	printf '%s\n' "${20:-}"
+}
+
+host_pid() {
+	local p='' t=''
+	read -r p t 2>/dev/null <"$HOST_DIR/pid"
+	[[ "$p" =~ ^[0-9]+$ && -n "$t" && "$(_start_time "$p")" == "$t" ]] && printf '%s\n' "$p"
+}
+
 host_alive() {
-	_owns_pid "$HOST_DIR/pid" environ "XDG_CONFIG_HOME=$HOST_DIR/xdg" >/dev/null &&
+	host_pid >/dev/null &&
 		[[ -S "$XDG_RUNTIME_DIR/$(cat "$HOST_DIR/wl" 2>/dev/null)" ]]
 }
 
@@ -81,13 +96,13 @@ host_start() {
 		kill "$pid" 2>/dev/null
 		return 1
 	fi
-	printf '%s\n' "$pid" >"$HOST_DIR/pid"
+	printf '%s %s\n' "$pid" "$(_start_time "$pid")" >"$HOST_DIR/pid"
 	printf '%s\n' "$wl" >"$HOST_DIR/wl"
 }
 
 host_stop() {
 	local pid
-	if pid="$(_owns_pid "$HOST_DIR/pid" environ "XDG_CONFIG_HOME=$HOST_DIR/xdg")"; then
+	if pid="$(host_pid)"; then
 		kill "$pid" 2>/dev/null
 		for _ in $(seq 1 30); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
 		kill -9 "$pid" 2>/dev/null

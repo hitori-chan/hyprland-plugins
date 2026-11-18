@@ -305,7 +305,7 @@ printf 'move %s %s\nsleep 40\npress 272\nsleep 40\nrelease 272\nsleep 80\n' "$IX
 shot_until 4 "$STATE/tray-shown.png" root_drawn "$STATE/tray-shown.png"
 read -r _ RX0 RX1 RYT _ <<<"$(panel_extent "$STATE/tray-shown.png")"
 until_is 3 "1 2 0 5 6" tray_menu
-HOSTPID="$(_owns_pid "$HOST_DIR/pid" environ "XDG_CONFIG_HOME=$HOST_DIR/xdg")"
+HOSTPID="$(host_pid)"
 if [[ -n "$HOSTPID" ]]; then
 	kill -STOP "$HOSTPID"
 	WAYLAND_DISPLAY="$WL" timeout 3 grim "$STATE/tray-frozen.png" 2>/dev/null
