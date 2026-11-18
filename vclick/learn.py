@@ -26,7 +26,7 @@ look for the target. It fits:
   width vclick assumes (32 px), through the medians of 8 bands of D;
 - the bell of the first stroke's speed: how sharply it peaks, and where;
 - the path's bow: the largest sideways distance over the length;
-- how often a move bends both ways;
+- how often a move bends both ways, and how its bow grows with distance;
 - how often a long move drifts before its stroke, how long and how far;
 - how often a small correction follows the first stroke, which way, how far;
 - a long move's slow end: its share of the time, and of the way;
@@ -199,6 +199,7 @@ SEEN = 0.03     # of the peak speed: where a recorded movement starts and ends
 SLOW = 0.15     # of the peak speed: where a movement's first stroke has ended
 DRIFT = 0.100   # s under SLOW before the stroke: the hand drifted first (recorded: under 20 ms, or over 120)
 DRIFT_FROM = 300.0  # px: the shortest move that drifts
+BOW_AT = 300.0  # px: the distance bow_median holds at
 TAIL_AT = 300.0  # px: the distance tail_p holds at
 
 KERNEL = [math.exp(-0.5 * (i / 3) ** 2) for i in range(-12, 13)]  # sigma 12 ms: about 11 Hz
@@ -569,9 +570,18 @@ def read_motion(whole, have):
             prof["tail_share"] = round(min(max(statistics.median((m["tail_time"] - own_time) / (1 - own_time) for m in slow), 0.0), 0.8), 3)
             prof["tail_size"] = round(min(max(statistics.median(m["tail_left"] for m in slow) - own_way, 0.0), 0.2), 4)
 
-    bows = [m["bow"] for m in whole if "bow" in m and m["d"] >= 100]
-    if have(["bow_median", "bow_sigma"], len(bows) >= ENOUGH):
-        prof["bow_median"], prof["bow_sigma"] = round(statistics.median(bows), 4), round(log_spread(bows), 3)
+    bowed = sorted(((m["d"], m["bow"]) for m in whole if m.get("bow", 0) > 0), key=lambda b: b[0])
+    if have(["bow_median", "bow_sigma", "bow_slope"], len(bowed) >= ENOUGH):
+        # the median bow through 6 equal-count distance bands, on logs
+        bands = [bowed[i * len(bowed) // 6 : (i + 1) * len(bowed) // 6] for i in range(6)]
+        bx = [math.log(statistics.median(b[0] for b in g) / BOW_AT) for g in bands]
+        by = [math.log(statistics.median(b[1] for b in g)) for g in bands]
+        mx, my = statistics.fmean(bx), statistics.fmean(by)
+        sxx = sum((u - mx) ** 2 for u in bx)
+        slope = sum((u - mx) * (w - my) for u, w in zip(bx, by)) / sxx if sxx else 0.0
+        at = math.exp(my - slope * mx)
+        prof["bow_median"], prof["bow_slope"] = round(min(at, 0.25), 4), round(min(max(slope, -0.5), 1.0), 3)
+        prof["bow_sigma"] = round(log_spread([b / (at * (d / BOW_AT) ** slope) for d, b in bowed]), 3)
         bent = [m["both"] for m in whole if "both" in m and m["d"] >= 100]
         prof["s_share"] = round(sum(bent) / len(bent), 3)
 

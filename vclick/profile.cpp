@@ -73,6 +73,8 @@ namespace VClick::Profile {
                 SET(p.underShare, 0, 1);
             else if (K == "correct_size")
                 SET(p.correctSize, 0, 0.15);
+            else if (K == "bow_slope")
+                SET(p.bowSlope, -0.5, 1);
             else if (K == "lead_p")
                 SET(p.leadP, 0, 0.6);
             else if (K == "lead_ms")
@@ -125,9 +127,9 @@ namespace VClick::Profile {
     }
 
     std::string describe(const SProfile& p) {
-        return std::format("stroke a {:g} ms, b {:g} ms/bit (W {:g} px); bell {:g} peaking at {:g}; bow {:g} (sigma {:g}), {:g}% both ways; drift {:g}%, {:g} ms, {:g}% of the way; corrected {:g}%, {:g}% from short, by {:g}%; tail on {:g}% of moves at 300 px ({:+g} a doubling), {:g}% of the time, {:g}% of the way; "
+        return std::format("stroke a {:g} ms, b {:g} ms/bit (W {:g} px); bell {:g} peaking at {:g}; bow {:g} (sigma {:g}, slope {:g}), {:g}% both ways; drift {:g}%, {:g} ms, {:g}% of the way; corrected {:g}%, {:g}% from short, by {:g}%; tail on {:g}% of moves at 300 px ({:+g} a doubling), {:g}% of the time, {:g}% of the way; "
                            "rest {:g} ms (sigma {:g}); hold {:g} ms (sigma {:g}), {:g} ms between clicks; drag lead {:g} ms, drop rest {:g} ms; wheel {:g} ms; {:g} Hz\nfrom {}{}",
-                           p.aMs, p.bMs, TARGET_W, p.bell, p.peak, p.bowMedian, p.bowSigma, p.sShare * 100, p.leadP * 100, p.leadMs, p.leadSize * 100, p.correctP * 100, p.underShare * 100, p.correctSize * 100, p.tailP * 100, p.tailPSlope * 100, p.tailShare * 100, p.tailSize * 100, p.restMs, p.restSigma,
+                           p.aMs, p.bMs, TARGET_W, p.bell, p.peak, p.bowMedian, p.bowSigma, p.bowSlope, p.sShare * 100, p.leadP * 100, p.leadMs, p.leadSize * 100, p.correctP * 100, p.underShare * 100, p.correctSize * 100, p.tailP * 100, p.tailPSlope * 100, p.tailShare * 100, p.tailSize * 100, p.restMs, p.restSigma,
                            p.holdMs, p.holdSigma, p.doubleGapMs, p.dragLeadMs, p.dropRestMs, p.wheelMs, p.rateHz, p.source, p.moves ? std::format(" ({} movements)", p.moves) : "");
     }
 }

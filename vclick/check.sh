@@ -279,7 +279,7 @@ expect "lua: an argument hyprctl could not take" "$(lua "hl.plugin.vclick.click(
 # no correction, so a glide's time is Fitts's law exactly
 printf 'stroke_a_ms=50\nstroke_b_ms=120\ncorrect_p=0\ntail_share=0\nrest_ms=140\nrest_sigma=0\nhold_ms=90\nhold_sigma=0\ndouble_gap_ms=100\ndrag_lead_ms=120\ndrop_rest_ms=150\n' >"$T/even.profile"
 expect "a profile from a file" "$(vclick profile reload "$T/even.profile" | head -1)" "loaded $T/even.profile"
-expect "  read back" "$(vclick profile | head -1)" "stroke a 50 ms, b 120 ms/bit (W 32 px); bell 4 peaking at 0.45; bow 0.05 (sigma 0.8), 15% both ways; drift 0%, 300 ms, 15% of the way; corrected 0%, 60% from short, by 5%; tail on 100% of moves at 300 px (+0 a doubling), 0% of the time, 3% of the way; rest 140 ms (sigma 0); hold 90 ms (sigma 0), 100 ms between clicks; drag lead 120 ms, drop rest 150 ms; wheel 50 ms; 125 Hz"
+expect "  read back" "$(vclick profile | head -1)" "stroke a 50 ms, b 120 ms/bit (W 32 px); bell 4 peaking at 0.45; bow 0.05 (sigma 0.8, slope 0), 15% both ways; drift 0%, 300 ms, 15% of the way; corrected 0%, 60% from short, by 5%; tail on 100% of moves at 300 px (+0 a doubling), 0% of the time, 3% of the way; rest 140 ms (sigma 0); hold 90 ms (sigma 0), 100 ms between clicks; drag lead 120 ms, drop rest 150 ms; wheel 50 ms; 125 Hz"
 # the exact event sequences below are performance's; the human mode has its own section
 expect "the performance mode" "$(vclick mode performance)" performance
 

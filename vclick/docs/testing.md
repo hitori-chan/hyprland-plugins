@@ -25,7 +25,8 @@ moves bend both ways, about `correct_p` of long moves correct, from short or
 past the target, about as the first stroke ends and exactly on the target;
 a slow end leaves the first stroke's speed alone, adds to its time within
 2 s, and comes on `tail_p` of the moves by distance; a drift ends where the
-stroke starts, never under 300 px or on a drag; a sharper bell peaks
+stroke starts, never under 300 px or on a drag; the bow grows by `bow_slope`;
+a sharper bell peaks
 higher, and a log-normal draw stays within two sigma. A
 finger's stroke: Fitts's time within 100–1000 ms, from none to all of
 the way, never back, slow at both ends. Plus the profile parser: values, clamps, skipped bad lines, a missing file. Every

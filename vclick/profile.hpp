@@ -15,6 +15,7 @@ namespace VClick::Profile {
         double      aMs = 50, bMs = 120;                 // Fitts: MT = a + b * log2(D / W + 1)
         double      bell = 4, peak = 0.45;               // the speed t^A (1-t)^B: A + B, and where it peaks, 0-1 of the movement
         double      bowMedian = 0.05, bowSigma = 0.8;    // the largest sideways distance over the length: log-normal
+        double      bowSlope = 0;                        // the bow grows as (D / 300 px) to this power
         double      leadP = 0, leadMs = 300, leadSize = 0.15; // moves from 300 px up that drift first: how many, how long, how far of the way
         double      sShare = 0.15;                       // of the moves from 100 px up, those that bend both ways
         double      correctP = 0.05, underShare = 0.6;   // how often a small correction follows, how often from short of the target

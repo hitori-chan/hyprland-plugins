@@ -105,7 +105,7 @@ namespace VClick::Path {
         // A bow the window's edge would cut takes the other side.
         const double   DE  = from.distance(end);
         const Vector2D N   = Vector2D{-(end - from).y, (end - from).x} / DE;
-        const double   BOW = std::clamp(Profile::draw(p.bowMedian, p.bowSigma, rng), 0.0, 0.25);
+        const double   BOW = std::clamp(Profile::draw(p.bowMedian * std::pow(D / BOW_AT_PX, p.bowSlope), p.bowSigma, rng), 0.0, 0.25);
         const double   H1 = std::min(BOW * uni(0.85, 1.15), 0.25) * DE / 0.75, H2 = std::min(BOW * uni(0.85, 1.15), 0.25) * DE / 0.75;
         const auto     CONTROLS = [&](double side, bool both) { // both: it bends both ways, the control points on either side
             return std::pair{from + (end - from) / 3 + N * (side * H1 * (both ? S_BOW : 1.0)), from + (end - from) * (2.0 / 3) + N * (side * H2 * (both ? -S_BOW : 1.0))};

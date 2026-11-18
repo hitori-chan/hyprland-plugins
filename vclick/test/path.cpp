@@ -257,6 +257,22 @@ int main() {
         check(plan(FROM, TO, {1600, 900}, Q, rng, {.overshoot = false}).size() == 1, "  nor does a drag");
     }
 
+    // the bow grows with the distance as the profile says
+    {
+        SProfile Q = P;
+        Q.correctP = 0, Q.sShare = 0, Q.bowSigma = 0, Q.bowMedian = 0.04, Q.bowSlope = 0.5;
+        const auto BOW = [&](double d) {
+            double most = 0;
+            for (int i = 0; i < 40; ++i) {
+                const auto S = plan(Vector2D{100.0, 400.0}, Vector2D{100.0 + d, 400.0}, {1600, 900}, Q, rng);
+                for (double t = 0; t <= duration(S); t += 2)
+                    most = std::max(most, std::abs(sample(S, t).y - 400) / d);
+            }
+            return most;
+        };
+        check(std::abs(BOW(1200) / BOW(300) - 2) < 0.3, "a bow of slope 0.5 doubles from 300 to 1200 px");
+    }
+
     // each move draws its own time
     {
         SProfile Q = P;

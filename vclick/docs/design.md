@@ -63,8 +63,9 @@ acts:
 - **Path**: a cubic Bézier from where vclick's pointer last was in the
   window (else its centre) to the point. The inner control points sit at
   a third and two thirds of the line, so progress follows the speed
-  profile, and bow sideways by a log-normal draw around `bow_median`
-  (`bow_sigma`, at most 25 % of the length) to a random side, or the
+  profile, and bow sideways by a log-normal draw around `bow_median` at
+  300 px, growing as (D / 300)^`bow_slope` (`bow_sigma`, at most 25 % of
+  the length) to a random side, or the
   other if the window's edge would cut it. `s_share` of the moves of
   ≥ 100 px bend both ways, unless the edge would cut a bend. Control points
   stay inside the window, so the whole path does.
@@ -122,8 +123,8 @@ last rest (150 ms) or button event to the press.
 - **Bell**: from the time above half the peak speed against the way over
   the peak speed, and the share of that time before the peak, on moves of
   ≥ 100 px.
-- **Bow**: the first stroke's median and log-normal spread, and how many
-  bend both ways.
+- **Bow**: the first stroke's median through six distance bands, its
+  growth with distance and log-normal spread, and how many bend both ways.
 - **Drift**: moves of ≥ 300 px that spend over 100 ms under 15 % of the peak
   speed before their stroke (recorded moves spend under 20 ms or over
   120 ms): how many, how long, how far.
