@@ -302,7 +302,8 @@ namespace VClick::Run {
                     }
                     if (CLICK)
                         ++run->done;
-                    run->since = Time::steadyNow();
+                    run->window = Pointer::heldWindow(); // a run that came at once has none yet: its hold checks this one
+                    run->since  = Time::steadyNow();
                     break;
                 }
                 case EStep::RELEASE: {
