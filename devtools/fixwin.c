@@ -4,7 +4,8 @@
 // is its own title bar: a press dragged 8 px asks xdg_toplevel.move with
 // that press's serial, as a client-side title bar does, and it prints
 // `press SERIAL`, `move SERIAL`, `up`.
-// usage: fixwin <w> <h> [title] [drag]
+// With `press`, it asks at the press itself, as some title bars do.
+// usage: fixwin <w> <h> [title] [drag|press]
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,7 +24,7 @@ static struct wl_surface   *g_surf;
 static struct xdg_toplevel *g_top;
 static struct wl_buffer    *g_buf;
 static struct wl_seat      *g_seat;
-static int                  g_w = 310, g_h = 360, g_done, g_drag;
+static int                  g_w = 310, g_h = 360, g_done, g_drag, g_onPress;
 static uint32_t             g_pressSerial;
 static int                  g_pressed, g_asked;
 static double               g_px, g_py, g_x, g_y;
@@ -109,6 +110,11 @@ static void ptr_button(void *d, struct wl_pointer *p, uint32_t serial, uint32_t 
         g_py          = g_y;
     }
     printf(g_pressed ? "press %u\n" : "up\n", serial);
+    if (g_pressed && g_onPress) {
+        g_asked = 1;
+        xdg_toplevel_move(g_top, g_seat, serial);
+        printf("move %u\n", serial);
+    }
     fflush(stdout);
 }
 static void ptr_axis(void *d, struct wl_pointer *p, uint32_t t, uint32_t a, wl_fixed_t v) {
@@ -128,7 +134,8 @@ int main(int argc, char **argv) {
     if (g_h < 1)
         g_h = 1;
     g_title = argc > 3 ? argv[3] : "fixwin";
-    g_drag  = argc > 4 && !strcmp(argv[4], "drag");
+    g_onPress = argc > 4 && !strcmp(argv[4], "press");
+    g_drag    = g_onPress || (argc > 4 && !strcmp(argv[4], "drag"));
 
     g_dpy = wl_display_connect(NULL);
     if (!g_dpy)

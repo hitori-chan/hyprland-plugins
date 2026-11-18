@@ -21,7 +21,8 @@
 #              STOP blue <source> | PINCH <color> begin|update|end|cancel <fingers> <scale> <turn> |
 #              DRAGBEGIN <color> |
 #              DRAGFAILED <color> <result> | DRAGEND <color> |
-#              MENU <color> | MENUBUTTON True|False | KEY <name> <mods>|-
+#              MENU <color> | MENUBUTTON True|False | CONTEXT green | KEY <name> <mods>|-
+#   a right press on green opens a menu there and then, the button still down
 import math
 import os
 import sys
@@ -69,6 +70,14 @@ def gesture(_w, ev, name):
     return True
 
 
+def pressed(_w, ev, name):
+    say("HIT", name)
+    if name == "green" and ev.button == 3:
+        context.popup_at_pointer(ev)
+        say("CONTEXT", name)
+    return True
+
+
 def swatch(name, rgb, w, h, press=True):
     da = Gtk.DrawingArea()
     da.set_size_request(w, h)
@@ -86,7 +95,7 @@ def swatch(name, rgb, w, h, press=True):
         da.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK | Gdk.EventMask.SCROLL_MASK | smooth |
                       Gdk.EventMask.TOUCHPAD_GESTURE_MASK)
         da.connect("event", gesture, name)
-        da.connect("button-press-event", lambda *_: (say("HIT", name), True)[-1])
+        da.connect("button-press-event", pressed, name)
         da.connect("button-release-event", lambda _w, ev: (say("UP", name, int(ev.x), int(ev.y)), True)[-1])
         da.connect("scroll-event", scrolled, name)
     return da
@@ -112,13 +121,21 @@ for i, (n, c) in enumerate(BLOCKS):
         block.connect("realize", shape, SHAPES[n])
     grid.attach(block, i % 3, i // 3, 1, 1)
 box.pack_start(grid, False, False, 0)
-menu = Gtk.Menu()
-for n, c in ITEMS:
-    item = Gtk.MenuItem()
-    item.add(swatch(n, c, 140, 30, press=False))
-    item.connect("activate", lambda _w, n=n: say("MENU", n))
-    menu.append(item)
-menu.show_all()
+
+
+def items():
+    m = Gtk.Menu()
+    for n, c in ITEMS:
+        item = Gtk.MenuItem()
+        item.add(swatch(n, c, 140, 30, press=False))
+        item.connect("activate", lambda _w, n=n: say("MENU", n))
+        m.append(item)
+    m.show_all()
+    return m
+
+
+menu, context = items(), items()
+context.attach_to_widget(win)
 button = Gtk.MenuButton(popup=menu)
 button.remove(button.get_child())
 button.add(swatch("button", (.5, .25, 0), 120, 30, press=False))

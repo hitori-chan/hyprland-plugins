@@ -82,7 +82,9 @@ It covers, each against the exact protocol events:
   GTK's press and release in their blocks); a drag in the performance mode; a
   drag from a GTK drag source refused.
 - **a hand's click**: the hold, a double click's gap and bound, `clicking`;
-  a popup opened and picked from; the seat ending a hold, the user's
+  a popup opened and picked from, also one a right press opens with the
+  button still down; the lockscreen coming up under the button; the seat
+  ending a hold, the user's
   pointer taking a double click's second click, the window closing under
   the button, a title bar clicked and the window staying put, unload.
 - **a finger's scroll**: its bounds; a stroke summing to the request

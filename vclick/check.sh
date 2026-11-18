@@ -727,6 +727,44 @@ if [[ -n "$ORANGE" ]]; then
 	expect "click the menu's orange item" "$(vclick click "address:$A" $ORANGE)" ok
 	until_ok 4 idle || true
 	until_ok 3 more a MENU orange "$n" && ok "  the popup kept its grab, and the item activated" || bad "  the popup item never activated"
+	n="$(hits a MENUBUTTON True)" f="$(hits a MENUBUTTON False)"
+	expect "open the menu again" "$(vclick click "address:$A" $(at button))" ok
+	until_ok 4 idle || true
+	until_ok 3 more a MENUBUTTON True "$n" || bad "  the menu never opened again"
+	read -r OX OY <<<"$ORANGE"
+	quiet "$T/a.wl"
+	AM="$(lines "$T/a.wl")"
+	expect "a drag from the popup: its grab put the user's pointer in the app" "$(vclick drag "address:$A" "$OX" "$OY" $(at red))" "error: busy: the user's pointer is in this app; a drag would take it from them"
+	expect "  no button stays held" "$(vclick release)" "error: no button is held"
+	quiet "$T/a.wl"
+	expect "  nothing was pressed" "$(btimes a "$AM" | wc -l)" 0
+	expect "  the item closes the menu" "$(vclick click "address:$A" $ORANGE)" ok
+	until_ok 4 idle || true
+	until_ok 3 more a MENUBUTTON False "$f" || bad "  the menu never closed"
+fi
+
+echo "== a hand's right click opens a menu on the press, the button still down"
+quiet "$T/a.wl"
+AM="$(lines "$T/a.wl")" n="$(hits a CONTEXT green)"
+expect "a right click on green" "$(vclick click "address:$A" $(at green) right)" ok
+until_ok 4 idle || true
+until_ok 3 more a CONTEXT green "$n" && ok "  the menu opened on the press" || bad "  the menu never opened"
+expect "  no error to report" "$(vclick status)" idle
+quiet "$T/a.wl"
+expect "  one press, one release" "$(btimes a "$AM" | wc -l)" 2
+ITEM=""
+for _ in 1 2 3 4 5; do
+	fullcap "$T/context.png" && ITEM="$(python3 "$REPO/devtools/findcolors.py" "$T/context.png" orange=255,128,0 | awk -v x="$(field "$A" 3)" -v y="$(field "$A" 4)" '$4 > 100 { print $2 - x, $3 - y }')"
+	[[ -n "$ITEM" ]] && break
+	sleep 0.2
+done
+if [[ -n "$ITEM" ]]; then
+	n="$(hits a MENU orange)"
+	expect "click the context menu's orange item" "$(vclick click "address:$A" $ITEM)" ok
+	until_ok 4 idle || true
+	until_ok 3 more a MENU orange "$n" && ok "  the menu kept its grab, and the item activated" || bad "  the context menu's item never activated"
+else
+	bad "the context menu's orange item was never drawn"
 fi
 
 echo "== a hand's click, interrupted"
@@ -1002,16 +1040,34 @@ expect "  with the press's serial" "$(awk '$1 == "move" { print $2 }' "$T/fix.lo
 park "$BGX" "$BGY" # the user's mouse moves (within B): a move it drove would carry the window along
 expect "release" "$(vclick release)" ok
 expect "  the window never moved" "$(fixwin | cut -d' ' -f2-3)" "700 420"
-FP="$(grep -c '^press ' "$T/fix.log")"
-fix_pressed() { (($(grep -c '^press ' "$T/fix.log") > FP)); }
-expect "a hand's click on the title bar" "$(vclick click "address:$F" 60 50)" ok
-until_ok 4 idle || true
-until_ok 3 fix_pressed && ok "  the fixture heard the press" || bad "  the fixture never heard the press"
-park "$BCX" "$BCY" # the user's mouse moves: a move the press began would carry the window along
-expect "  the window never moved" "$(fixwin | cut -d' ' -f2-3)" "700 420"
 pkill -f "fixwin 300 200 $MT"
 fix_gone() { [[ -z "$(fixwin)" ]]; }
 until_ok 3 fix_gone || bad "the fixture never closed"
+
+echo "== a hand's click never moves the window, though the app asks at the press"
+MP="vclick-press-$$"
+dsp "hl.dsp.exec_cmd('$REPO/devtools/fixwin 300 200 $MP press > $T/fixp.log 2>&1')"
+fixp() { hq clients -j | python3 -c 'import json, sys
+for c in json.load(sys.stdin):
+    if c["class"] == sys.argv[1]: print(c["address"], *c["at"], int(c["floating"]))' "$MP"; }
+fixp_up() { [[ -n "$(fixp)" ]]; }
+until_ok 5 fixp_up || bad "the fixture never mapped"
+read -r F _ _ FL <<<"$(fixp)"
+[[ "$FL" == 1 ]] || dsp "hl.dsp.window.float({ action = 'enable', window = 'address:$F' })"
+dsp "hl.dsp.window.move({ x = 700, y = 420, window = 'address:$F' })"
+fixp_at() { [[ "$(fixp | cut -d' ' -f2-3)" == "700 420" ]]; }
+until_ok 3 fixp_at || bad "the fixture never moved to 700,420"
+park "$BGX" "$BGY" && park "$BCX" "$BCY" # it mapped under the user's pointer: back on B
+expect "a hand's click on the title bar" "$(vclick click "address:$F" 60 50)" ok
+until_ok 4 idle || true
+asked_p() { grep -q '^move ' "$T/fixp.log"; }
+until_ok 3 asked_p && ok "  it asked to be moved, at the press" || bad "  it never asked to be moved"
+park "$BGX" "$BGY" # the user's mouse moves: a move the press began would carry the window along
+expect "  the window never moved" "$(fixp | cut -d' ' -f2-3)" "700 420"
+pkill -f "fixwin 300 200 $MP"
+fixp_gone() { [[ -z "$(fixp)" ]]; }
+until_ok 3 fixp_gone || bad "the fixture never closed"
+park "$BCX" "$BCY"
 
 echo "== a drag-and-drop the app begins from vclick's button is refused"
 quiet "$T/a.wl" && quiet "$T/b.wl"
@@ -1193,6 +1249,21 @@ expect "  and A never heard it" "$(hits a HIT red)" "$n"
 park "$BX" "$BY"
 wincap "$(field "$A" 2)" "$T/locked.png" && ok "a window capture of A works under the lockscreen" || bad "no window capture of A under the lockscreen"
 expect "  A as it is drawn: red where it was" "$(python3 "$REPO/devtools/findcolors.py" "$T/locked.png" red=255,0,0 | awk '{ print $2, $3 }')" "$(at red)"
+echo unlock >&5
+until_ok 5 locked_is false || bad "the nested never unlocked"
+expect "a long hold" "$(vclick profile reload "$T/hold.profile" | head -1)" "loaded $T/hold.profile"
+quiet "$T/a.wl"
+AM="$(lines "$T/a.wl")"
+expect "a click on blue" "$(vclick click "address:$A" $(at blue))" ok
+until_ok 4 clicking_now || bad "  never clicking"
+echo lock >&5
+until_ok 5 locked_is true || bad "the nested never locked again"
+until_ok 4 idle || true
+quiet "$T/a.wl"
+expect "  locked under the button: one press, one release" "$(btimes a "$AM" | wc -l)" 2
+expect "  no error to report" "$(vclick status)" idle
+expect "  no button stays held" "$(vclick release)" "error: no button is held"
+expect "back to the check's profile" "$(vclick profile reload "$T/even.profile" | head -1)" "loaded $T/even.profile"
 echo unlock >&5
 until_ok 5 locked_is false || bad "the nested never unlocked"
 exec 5>&-
