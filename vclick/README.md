@@ -73,7 +73,7 @@ is drawn.
 `learn.py` records the user's own mouse for a while and fits the profile
 the glide moves with: how long a move takes for its distance (Fitts's
 law), how much it curves, how sharply it peaks and where, how often it
-corrects, how long the pointer rests before a click, how long a click
+drifts first, ends slowly or corrects, how long the pointer rests before a click, how long a click
 holds its button, and a drag's and the wheel's timing.
 
 ```sh

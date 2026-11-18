@@ -27,6 +27,7 @@ look for the target. It fits:
 - the bell of the first stroke's speed: how sharply it peaks, and where;
 - the path's bow: the largest sideways distance over the length;
 - how often a move bends both ways;
+- how often a long move drifts before its stroke, how long and how far;
 - how often a small correction follows the first stroke, which way, how far;
 - a long move's slow end: its share of the time, and of the way;
 - the rest: from arriving within 3 px of the press point to the press;
@@ -46,6 +47,7 @@ import argparse
 import bisect
 import json
 import math
+import random
 import os
 import select
 import socket
@@ -195,6 +197,9 @@ TRAVEL = 24.0   # px: the shortest movement that says anything
 ENOUGH = 30     # samples a value needs
 SEEN = 0.03     # of the peak speed: where a recorded movement starts and ends
 SLOW = 0.15     # of the peak speed: where a movement's first stroke has ended
+DRIFT = 0.100   # s under SLOW before the stroke: the hand drifted first (recorded: under 20 ms, or over 120)
+DRIFT_FROM = 300.0  # px: the shortest move that drifts
+TAIL_AT = 300.0  # px: the distance tail_p holds at
 
 KERNEL = [math.exp(-0.5 * (i / 3) ** 2) for i in range(-12, 13)]  # sigma 12 ms: about 11 Hz
 KERNEL = [k / sum(KERNEL) for k in KERNEL]
@@ -319,6 +324,12 @@ def measure(ts, xs, ys):
     # the first stroke ends where the speed first sinks under SLOW of its peak
     slow = next((i for i in range(ip, off) if v[i] < SLOW * vmax), off)
     m = {"d": d, "mt": (off - on) * DT}
+    # what comes before the stroke: from the first motion until the speed clears SLOW
+    lo = ip
+    while lo > on and v[lo - 1] >= SLOW * vmax:
+        lo -= 1
+    m["pre"] = (lo - on) * DT
+    m["before"] = ((x[lo] - x[0]) * ux + (y[lo] - y[0]) * uy) / d
     # its shape and time are read around the peak, where a slow end can't reach
     up = next(i for i in range(on, ip + 1) if v[i] >= 0.5 * vmax)
     down = next((i for i in range(ip, off) if v[i] < 0.5 * vmax), off)
@@ -337,6 +348,8 @@ def measure(ts, xs, ys):
     m["left"] = left
 
     # the stroke itself, when nothing follows it
+    m["stroke"] = (slow - on) * DT
+    m["after"] = (off - slow) * DT
     m["tail_time"] = (off - slow) / max(1, off - on)
     m["tail_left"] = math.dist((x[-1], y[-1]), (x[slow], y[slow])) / d
     px, py = x[pe] - x[on], y[pe] - y[on]
@@ -462,28 +475,99 @@ def fitts(moves, sharp):
     mx, my = statistics.fmean(bx), statistics.fmean(by)
     sxx = sum((x - mx) ** 2 for x in bx)
     b = sum((x - mx) * (y - my) for x, y in zip(bx, by)) / sxx if sxx else 0.12
-    b = min(max(b, 0.03), 0.4)
+    b = min(max(b, 0.01), 0.4)
     return min(max(my - b * mx, 0.0), 0.4), b
 
 
+def simulate(th, d, rnd):
+    """One straight move of d px as the planner makes it from these values, read
+    as a recording reads a hand's: whole pixels, a report every 4 ms."""
+    def table(s, p):
+        c = [0.0]
+        for i in range(200):
+            u = (i + 0.5) / 200
+            c.append(c[-1] + u ** (s * p) * (1 - u) ** (s * (1 - p)))
+        return [v / c[-1] for v in c]
+
+    def at(c, u):
+        x = max(min(u, 1.0), 0.0) * 200
+        i = min(int(x), 199)
+        return c[i] + (c[i + 1] - c[i]) * (x - i)
+
+    c = table(th["bell"], th["peak"])
+    pace = math.exp(max(min(rnd.gauss(0, 0.10), 0.20), -0.20))
+    first = max(min((th["stroke_a_ms"] + th["stroke_b_ms"] * math.log2(d / W_DEFAULT + 1)) * pace, 1000), 40) / 1000
+    chance = max(min(th["tail_p"] + th["tail_p_slope"] * math.log2(d / TAIL_AT), 1.0), 0.0)
+    left = d * th["tail_size"] if rnd.random() < chance and d * th["tail_size"] >= 2 else 0.0
+    total, start = first, first
+    if left:
+        start = first * rnd.uniform(0.95, 1.1)
+        total = max(min(first / (1 - th["tail_share"]), 2.0), start + 0.04)
+    ts, xs, t = [], [], 0.0
+    while t < total + 0.012:
+        ts.append(t)
+        xs.append(float(round((d - left) * at(c, t / first) + (left * at(c, (t - start) / (total - start)) if left else 0.0))))
+        t += 0.004
+    return measure(ts, xs, [0.0] * len(ts))
+
+
 def motion(whole, have):
-    """The way a hand moves, from its moves without a separate leg."""
+    """The way a hand moves. A slow end that is short or rare reads smaller than
+    it is, as its last part sinks under what a recording can see: its values are
+    moved until a simulated hand's moves read as the recorded ones do."""
+    direct = read_motion(whole, have)
+    keys = {"tail_p": (0, 1), "tail_p_slope": (-1, 1), "tail_share": (0, 0.8), "tail_size": (0, 0.2)}
+    held = ("stroke_a_ms", "stroke_b_ms", "bell", "peak")
+    if any(k not in direct for k in (*keys, *held)):
+        return direct
+    th = {k: direct[k] for k in (*keys, *held)}
+    rnd = random.Random(7)
+    ds = sorted(m["d"] for m in whole) * 2
+    for _ in range(6):
+        sim = [m for m in (simulate(th, d, rnd) for d in ds) if m and not m["leg"]]
+        got = read_motion(sim, lambda _k, enough: enough)
+        for k, (lo, hi) in keys.items():
+            if k in got:
+                th[k] = min(max(th[k] + 0.7 * (direct[k] - got[k]), lo), hi)
+    return {**direct, **{k: round(th[k], 3) for k in keys}}
+
+
+def read_motion(whole, have):
+    """The values as the moves show them."""
     prof = {}
     strokes = [m for m in whole if "pace" in m and m["d"] >= 100]
     sharp = 1.875
     if have(["bell", "peak"], len(strokes) >= ENOUGH):
         s, p, sharp = bell(statistics.median(m["reach"] for m in strokes), statistics.median(m["lean"] for m in strokes))
         prof["bell"], prof["peak"] = s, p
-    if have(["fitts_a_ms", "fitts_b_ms"], len(whole) >= ENOUGH):
+    if have(["stroke_a_ms", "stroke_b_ms"], len(whole) >= ENOUGH):
         a, b = fitts(whole, sharp)
-        prof["fitts_a_ms"], prof["fitts_b_ms"] = round(a * 1000), round(b * 1000)
+        prof["stroke_a_ms"], prof["stroke_b_ms"] = round(a * 1000), round(b * 1000)
 
-    # what the first stroke's own end shows is no slow end
-    far_moves = [m for m in whole if m["d"] >= 600]
-    if have(["tail_share", "tail_size"], len(far_moves) >= 15):
+    long_moves = [m for m in whole if m["d"] >= DRIFT_FROM]
+    drifts = [m for m in long_moves if m["pre"] >= DRIFT]
+    if have(["lead_p", "lead_ms", "lead_size"], len(long_moves) >= ENOUGH):
+        prof["lead_p"] = round(min(len(drifts) / len(long_moves), 0.6), 3)
+        if drifts:
+            prof["lead_ms"] = round(min(max(statistics.median(m["pre"] for m in drifts) * 1000, 100), 1000))
+            prof["lead_size"] = round(min(max(statistics.median(m["before"] for m in drifts), 0.0), 0.7), 4)
+
+    # a hand's slow end comes on some moves, the more often the longer the move,
+    # and takes about the same share of the time: one shows more than twice what
+    # a bell's own end would
+    settled = [m for m in whole if m["pre"] < DRIFT]
+    if have(["tail_p", "tail_p_slope", "tail_share", "tail_size"], len(settled) >= ENOUGH):
         own_time, own_way = bell_end(prof.get("bell", 4.0), prof.get("peak", 0.45))
-        prof["tail_share"] = round(min(max((statistics.median(m["tail_time"] for m in far_moves) - own_time) / (1 - own_time), 0.0), 0.8), 3)
-        prof["tail_size"] = round(min(max(statistics.median(m["tail_left"] for m in far_moves) - own_way, 0.0), 0.2), 4)
+        own = own_time / (1 - own_time)
+        pts = [(math.log2(m["d"] / TAIL_AT), float(m["after"] > 2 * own * m["stroke"])) for m in settled]
+        mx, my = statistics.fmean(p[0] for p in pts), statistics.fmean(p[1] for p in pts)
+        sxx = sum((p[0] - mx) ** 2 for p in pts)
+        slope = sum((p[0] - mx) * (p[1] - my) for p in pts) / sxx if sxx else 0.0
+        prof["tail_p"], prof["tail_p_slope"] = round(min(max(my - slope * mx, 0.0), 1.0), 3), round(min(max(slope, -1.0), 1.0), 3)
+        slow = [m for m in settled if m["after"] > 2 * own * m["stroke"]]
+        if slow:
+            prof["tail_share"] = round(min(max(statistics.median((m["tail_time"] - own_time) / (1 - own_time) for m in slow), 0.0), 0.8), 3)
+            prof["tail_size"] = round(min(max(statistics.median(m["tail_left"] for m in slow) - own_way, 0.0), 0.2), 4)
 
     bows = [m["bow"] for m in whole if "bow" in m and m["d"] >= 100]
     if have(["bow_median", "bow_sigma"], len(bows) >= ENOUGH):

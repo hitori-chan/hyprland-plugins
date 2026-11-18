@@ -197,8 +197,8 @@ int main() {
         check(near, "a move under 100 px lands in one stroke");
     }
 
-    // a long move's slow end: it peaks higher in the same time, and the
-    // window's edge still holds the sum
+    // a slow end: on top of the stroke's time, on as many moves as the profile
+    // says, and the window's edge still holds the sum
     {
         SProfile Q   = P;
         Q.correctP   = 0;
@@ -215,9 +215,17 @@ int main() {
         check(SLOWED > ALONE * 0.8 && SLOWED < ALONE * 1.1, "a slow end leaves the first stroke's speed alone");
         const auto TAILED = plan({0, 0}, {1000, 0}, {1600, 900}, Q, rng);
         check(std::abs(duration(TAILED) - TAILED[0].ms / 0.5) < 1e-6, "  and comes on top of its time");
-        Q.tailShare = 0.5;
-        check(tailAt(100, Q) == 0 && tailAt(150, Q) == 0 && tailAt(600, Q) == 0.5 && tailAt(2000, Q) == 0.5, "the slow end grows from 150 to 600 px");
-        check(plan({0, 0}, {100, 0}, {1600, 900}, Q, rng).size() == 1 && plan({0, 0}, {1000, 0}, {1600, 900}, Q, rng).size() == 2, "  a short move has none");
+        Q.tailShare = 0.8;
+        Q.aMs = 400, Q.bMs = 400;
+        check(duration(plan({0, 0}, {1000, 0}, {1600, 900}, Q, rng)) <= MAX_WHOLE_MS + 1e-6, "  within MAX_WHOLE_MS");
+        Q.aMs = P.aMs, Q.bMs = P.bMs, Q.tailShare = 0.5;
+        Q.tailP = 0.5, Q.tailPSlope = 0.1;
+        check(std::abs(tailChance(300, Q) - 0.5) < 1e-9 && std::abs(tailChance(600, Q) - 0.6) < 1e-9 && tailChance(1e12, Q) == 1 && tailChance(1e-3, Q) == 0, "how often grows with each doubling of the distance, within 0-1");
+        int slowed = 0;
+        for (int i = 0; i < 2000; ++i)
+            slowed += plan({0, 0}, {300, 0}, {1600, 900}, Q, rng).size() == 2;
+        check(slowed > 850 && slowed < 1150, "  about tail_p of the moves end slowly");
+        Q.tailP = 1, Q.tailPSlope = 0;
         bool inside = true;
         Q.bowMedian = 0.2, Q.correctP = 1, Q.underShare = 0, Q.correctSize = 0.15;
         for (int i = 0; i < 500; ++i) {
@@ -228,6 +236,25 @@ int main() {
             }
         }
         check(inside, "  the sum of two strokes stays in the window");
+    }
+
+    // a long move may drift first: its stroke starts from where it drifted to
+    {
+        SProfile Q = P;
+        Q.correctP = 0, Q.leadP = 1, Q.leadMs = 300, Q.leadSize = 0.2, Q.bowMedian = 0;
+        const Vector2D FROM{100, 100}, TO{1100, 100};
+        bool           drifts = true, exact = true, joined = true;
+        for (int i = 0; i < 300; ++i) {
+            const auto S = plan(FROM, TO, {1600, 900}, Q, rng);
+            drifts &= S.size() >= 2 && S[0].ms >= 210 - 1e-6 && S[0].ms <= 390 + 1e-6 && S[0].p3.x >= 100 + 1000 * 0.12 - 1e-6 && S[0].p3.x <= 100 + 1000 * 0.28 + 1e-6;
+            joined &= S[1].start == S[0].ms && S[1].p0 == S[0].p3;
+            exact &= sample(S, duration(S)) == TO && sample(S, 0).distance(FROM) < 1e-9;
+        }
+        check(drifts, "a drift takes about lead_ms over about lead_size of the way");
+        check(joined, "  and the stroke starts where it ends");
+        check(exact, "  the way still ends exactly on the target");
+        check(plan({100, 100}, {399, 100}, {1600, 900}, Q, rng).size() == 1, "  a move under 300 px never drifts");
+        check(plan(FROM, TO, {1600, 900}, Q, rng, {.overshoot = false}).size() == 1, "  nor does a drag");
     }
 
     // each move draws its own time
@@ -291,7 +318,7 @@ int main() {
     }
 
     // the profile file
-    std::istringstream in{"# a comment\nfitts_a_ms=70\nfitts_b_ms = 140 \npeak=0.9\nrate_hz=1000\nnonsense\nbow_median=x\nmoves=321\n"};
+    std::istringstream in{"# a comment\nstroke_a_ms=70\nstroke_b_ms = 140 \npeak=0.9\nrate_hz=1000\nnonsense\nbow_median=x\nmoves=321\n"};
     int                n = 0;
     const auto         R = VClick::Profile::parse(in, &n);
     check(R.aMs == 70 && R.bMs == 140, "profile: the Fitts constants");
@@ -299,6 +326,9 @@ int main() {
     check(R.rateHz == 1000 && R.moves == 321, "profile: the rate and the count");
     check(R.bowMedian == SProfile{}.bowMedian && n == 4, "profile: a bad value is skipped (4 values taken)");
     check(!VClick::Profile::read("/nonexistent/vclick/profile"), "profile: a missing file is an error");
+    std::istringstream old{"fitts_a_ms=114\nfitts_b_ms=75\n"};
+    const auto         O = VClick::Profile::parse(old, &n);
+    check(O.aMs == SProfile{}.aMs && O.bMs == SProfile{}.bMs, "profile: the old whole-move keys mean nothing now");
 
     std::printf("%s: %d of %d checks passed\n", fail ? "FAIL" : "ok", pass, pass + fail);
     return fail ? 1 : 0;

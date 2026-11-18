@@ -247,7 +247,7 @@ it. It is `human` whenever the plugin loads
 from:
 
 ```
-fitts a 76 ms, b 30 ms/bit (W 32 px); bell 4 peaking at 0.41; bow 0.0517 (sigma 0.913), 20.3% both ways; corrected 14.1%, 66.7% from short, by 10.11%; tail 13.7% of the time, 2.46% of the way; rest 97 ms (sigma 0.875); hold 89 ms (sigma 0.219), 106 ms between clicks; drag lead 107 ms, drop rest 65 ms; wheel 50 ms; 129 Hz
+stroke a 94 ms, b 23 ms/bit (W 32 px); bell 4 peaking at 0.41; bow 0.0517 (sigma 0.913), 20.3% both ways; drift 33.3%, 388 ms, 14.91% of the way; corrected 14.1%, 66.7% from short, by 10.11%; tail on 49.6% of moves at 300 px (+9.4 a doubling), 41.6% of the time, 8.6% of the way; rest 97 ms (sigma 0.875); hold 89 ms (sigma 0.219), 106 ms between clicks; drag lead 107 ms, drop rest 65 ms; wheel 50 ms; 129 Hz
 from /home/user/.local/state/vclick/profile (194 movements)
 ```
 
@@ -265,14 +265,16 @@ a value outside its bounds is clamped.
 
 | Key | Meaning | Bounds | Default |
 |---|---|---|---|
-| `fitts_a_ms`, `fitts_b_ms` | Fitts's law: a first stroke takes a + b · log2(D / 32 + 1) ms | 0–400, 30–400 | 60, 50 |
+| `stroke_a_ms`, `stroke_b_ms` | Fitts's law: a first stroke takes a + b · log2(D / 32 + 1) ms | 0–400, 10–400 | 50, 120 |
 | `bell` | how sharply the speed peaks: t^α (1 − t)^β with α + β = `bell` | 2–24 | 4 |
 | `peak` | where the speed peaks, 0–1 of the move | 0.2–0.7 | 0.45 |
 | `bow_median`, `bow_sigma` | how far a path bows sideways, over its length (log-normal) | 0–0.25, 0–1.5 | 0.05, 0.8 |
+| `lead_p`, `lead_ms`, `lead_size` | how many moves from 300 px up drift before their stroke, how long, and how far of the way | 0–0.6, 100–1000, 0–0.7 | 0, 300, 0.15 |
 | `s_share` | how many of the moves from 100 px up bend both ways | 0–0.6 | 0.15 |
 | `correct_p`, `under_share` | how often a small correction follows a move, and how often from short of the target | 0–1, 0–1 | 0.05, 0.6 |
 | `correct_size` | how far off the first stroke lands, of D | 0–0.15 | 0.05 |
-| `tail_share`, `tail_size` | a long move's slow end, on top of the first stroke: its share of the whole time, and of the way (from 600 px; none up to 150 px) | 0–0.8, 0–0.2 | 0.15, 0.03 |
+| `tail_p`, `tail_p_slope` | how many moves of 300 px end slowly, and how many more with each doubling of the distance | 0–1, −1–1 | 1, 0 |
+| `tail_share`, `tail_size` | a slow end, on top of the first stroke: its share of the whole time, and of the way | 0–0.8, 0–0.2 | 0, 0.03 |
 | `rest_ms`, `rest_sigma` | from arriving within 3 px to a click or scroll (log-normal) | 0–600, 0–1.5 | 120, 0.6 |
 | `hold_ms`, `hold_sigma` | how long a click holds its button (log-normal) | 20–250, 0–1 | 100, 0.25 |
 | `double_gap_ms` | from a click's release to the next one's press | 20–250 | 120 |

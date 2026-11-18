@@ -277,9 +277,9 @@ expect "lua: a number where hyprctl takes a word" "$(lua "hl.plugin.vclick.click
 expect "lua: an argument hyprctl could not take" "$(lua "hl.plugin.vclick.click({}, 10, 10)")" $'nil\terror: argument 1 is a table: a string or a number, as hyprctl takes it'
 # the pace for the check: a profile file of its own, never the user's;
 # no correction, so a glide's time is Fitts's law exactly
-printf 'fitts_a_ms=50\nfitts_b_ms=120\ncorrect_p=0\ntail_share=0\nrest_ms=140\nrest_sigma=0\nhold_ms=90\nhold_sigma=0\ndouble_gap_ms=100\ndrag_lead_ms=120\ndrop_rest_ms=150\n' >"$T/even.profile"
+printf 'stroke_a_ms=50\nstroke_b_ms=120\ncorrect_p=0\ntail_share=0\nrest_ms=140\nrest_sigma=0\nhold_ms=90\nhold_sigma=0\ndouble_gap_ms=100\ndrag_lead_ms=120\ndrop_rest_ms=150\n' >"$T/even.profile"
 expect "a profile from a file" "$(vclick profile reload "$T/even.profile" | head -1)" "loaded $T/even.profile"
-expect "  read back" "$(vclick profile | head -1)" "fitts a 50 ms, b 120 ms/bit (W 32 px); bell 4 peaking at 0.45; bow 0.05 (sigma 0.8), 15% both ways; corrected 0%, 60% from short, by 5%; tail 0% of the time, 3% of the way; rest 140 ms (sigma 0); hold 90 ms (sigma 0), 100 ms between clicks; drag lead 120 ms, drop rest 150 ms; wheel 50 ms; 125 Hz"
+expect "  read back" "$(vclick profile | head -1)" "stroke a 50 ms, b 120 ms/bit (W 32 px); bell 4 peaking at 0.45; bow 0.05 (sigma 0.8), 15% both ways; drift 0%, 300 ms, 15% of the way; corrected 0%, 60% from short, by 5%; tail on 100% of moves at 300 px (+0 a doubling), 0% of the time, 3% of the way; rest 140 ms (sigma 0); hold 90 ms (sigma 0), 100 ms between clicks; drag lead 120 ms, drop rest 150 ms; wheel 50 ms; 125 Hz"
 # the exact event sequences below are performance's; the human mode has its own section
 expect "the performance mode" "$(vclick mode performance)" performance
 
@@ -680,7 +680,7 @@ expect "  A's hover ended first" "$(events a "$AM")" leave
 expect "  B's pointer is the user's: the cursor is theirs there" "$(vclick where)" nowhere
 
 echo "== the user's pointer comes into A during a glide"
-printf 'fitts_a_ms=400\nfitts_b_ms=400\ncorrect_p=0\ntail_share=0\n' >"$T/slow.profile"
+printf 'stroke_a_ms=400\nstroke_b_ms=400\ncorrect_p=0\ntail_share=0\n' >"$T/slow.profile"
 expect "a slow profile (1 s glides)" "$(vclick profile reload "$T/slow.profile" | head -1)" "loaded $T/slow.profile"
 expect "  an instant move to green" "$(vclick move "address:$A" $(at green) performance)" ok
 quiet "$T/a.wl"
@@ -768,7 +768,7 @@ else
 fi
 
 echo "== a hand's click, interrupted"
-printf 'fitts_a_ms=50\nfitts_b_ms=120\ncorrect_p=0\ntail_share=0\nrest_ms=140\nrest_sigma=0\nhold_ms=250\nhold_sigma=0\ndouble_gap_ms=20\n' >"$T/hold.profile"
+printf 'stroke_a_ms=50\nstroke_b_ms=120\ncorrect_p=0\ntail_share=0\nrest_ms=140\nrest_sigma=0\nhold_ms=250\nhold_sigma=0\ndouble_gap_ms=20\n' >"$T/hold.profile"
 expect "a long hold" "$(vclick profile reload "$T/hold.profile" | head -1)" "loaded $T/hold.profile"
 quiet "$T/a.wl"
 AM="$(lines "$T/a.wl")"
@@ -798,11 +798,12 @@ if [[ -n "$D2" ]]; then
 	d_at() { [[ "$(field "$D2" 3),$(field "$D2" 4)" == "760,480" ]]; }
 	until_ok 3 d_at || bad "D never moved to 760,480"
 	park 1250 20 && park "$BX" "$BY"
-	expect "a click into D" "$(vclick click "address:$D2" 50 50)" ok
+	expect "a triple click into D (long enough for the kill to land in it)" "$(vclick click "address:$D2" 50 50 triple)" ok
 	until_ok 4 clicking_now || bad "  never clicking: $(vclick status)"
 	pkill -9 -f "gtkgrid.py $T/d.log"
 	until_ok 4 idle || true
-	expect "  its window closed under the button, and status says so" "$(vclick status)" "idle; the hold ended: the window closed or was hidden"
+	S="$(vclick status)"
+	regex "$S" '^idle; the (hold ended|last glide stopped): the window closed or was hidden$' && ok "  its window closed under the click, and status says so" || bad "  status: $S"
 	d_gone() { [[ -z "$(field "$D2" 1)" ]]; }
 	until_ok 3 d_gone || bad "D never closed"
 fi

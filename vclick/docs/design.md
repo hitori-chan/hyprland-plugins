@@ -68,7 +68,8 @@ acts:
   other if the window's edge would cut it. `s_share` of the moves of
   ≥ 100 px bend both ways, unless the edge would cut a bend. Control points
   stay inside the window, so the whole path does.
-- **Time**: Fitts's law, a + b · log2(D / W + 1) ms, 40 ms to 1 s, with
+- **Time**: the first stroke takes `stroke_a_ms` + `stroke_b_ms` ·
+  log2(D / W + 1) ms (Fitts's law), 40 ms to 1 s, with
   W the target's size: 32 px unless the request names it (`size:<px>`;
   vclick can't see the target). Each move draws its own time around it
   (log-normal, sigma 0.10, within two sigma). That spread is a constant: a
@@ -81,10 +82,13 @@ acts:
   first stroke takes 90 % of the move's time, and a straight second stroke
   of at least 40 ms mends the rest, beginning about as the first stops. The
   two add up, so the sum ends exactly on the target.
-- **Slow end**: a long move is a fast stroke, then a slow approach that
-  comes on top of Fitts's time. Up to 150 px there is none; from 600 px it
-  takes `tail_share` of the whole time for the last `tail_size` of the way;
-  between them it grows on log D.
+- **Slow end**: some moves end in a slow approach on top of the stroke's
+  time: `tail_p` of the moves at 300 px, `tail_p_slope` more with each
+  doubling of D. It takes `tail_share` of the whole time for the last
+  `tail_size` of the way, 2 s at most for the two.
+- **Drift**: `lead_p` of the moves of ≥ 300 px first drift slowly, about
+  `lead_ms` over about `lead_size` of the way, and make their stroke from
+  there. A drag never does.
 - **Pace**: one motion every 1000 / `rate_hz` ms (4–16 ms) on the event
   loop. A surface boundary on the way gets a leave and an enter, as a
   real pointer's does. The last motion lands exactly on the point.
@@ -109,7 +113,7 @@ devices' raw events for exact report and click times (never a keyboard;
 it grabs nothing). `learn.py fit` takes one movement per click, from the
 last rest (150 ms) or button event to the press.
 
-- **Time**: a and b by least squares through the medians of 8
+- **Time**: `stroke_a_ms` and `stroke_b_ms` by least squares through the medians of 8
   equal-count difficulty bands, over moves without a separate leg (a
   first stroke ending over 15 % of D away): a recording cannot tell a
   second leg from a pause to look for the target. a and b are for the
@@ -120,11 +124,16 @@ last rest (150 ms) or button event to the press.
   ≥ 100 px.
 - **Bow**: the first stroke's median and log-normal spread, and how many
   bend both ways.
+- **Drift**: moves of ≥ 300 px that spend over 100 ms under 15 % of the peak
+  speed before their stroke (recorded moves spend under 20 ms or over
+  120 ms): how many, how long, how far.
 - **Corrections**: how often a small one follows, read strictly: too few
   rather than invented.
-- **Slow end**: on moves of 600 px and more, the time and the way left once
-  the speed first sinks under 15 % of its peak, less what a bell's own end
-  shows.
+- **Slow end**: a move has one when more time follows the speed's first
+  sinking under 15 % of its peak than twice a bell's own end would show: how
+  often by distance, and the time and the way left on those moves. A short or
+  rare slow end reads smaller than it is, so these values are moved until a
+  simulated hand's moves read as the recorded ones do.
 - **Rest**: arrival within 3 px of the press point to the press.
 - **Button**: a click's hold, the gap inside a double click, a drag's lead
   and rest before the release.

@@ -23,8 +23,9 @@ included (at most 40 ms more), overshoots and bows within bounds (25 %), no
 tick moves over 3.5× the first stroke's average step, about `s_share` of the
 moves bend both ways, about `correct_p` of long moves correct, from short or
 past the target, about as the first stroke ends and exactly on the target;
-a long move's slow end leaves the first stroke's speed alone and adds to its
-time; a sharper bell peaks
+a slow end leaves the first stroke's speed alone, adds to its time within
+2 s, and comes on `tail_p` of the moves by distance; a drift ends where the
+stroke starts, never under 300 px or on a drag; a sharper bell peaks
 higher, and a log-normal draw stays within two sigma. A
 finger's stroke: Fitts's time within 100–1000 ms, from none to all of
 the way, never back, slow at both ends. Plus the profile parser: values, clamps, skipped bad lines, a missing file. Every
@@ -83,7 +84,7 @@ It covers, each against the exact protocol events:
   drag from a GTK drag source refused.
 - **a hand's click**: the hold, a double click's gap and bound, `clicking`;
   a popup opened and picked from, also one a right press opens with the
-  button still down; the lockscreen coming up under the button; the seat
+  button still down; a title bar that asks to move at the press stays put; the lockscreen coming up under the button; the seat
   ending a hold, the user's
   pointer taking a double click's second click, the window closing under
   the button, a title bar clicked and the window staying put, unload.

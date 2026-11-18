@@ -45,8 +45,8 @@ namespace VClick::Path {
         return {from, from + (to - from) / 3, from + (to - from) * (2.0 / 3), to, ms, std::move(progress)};
     }
 
-    double tailAt(double distance, const SProfile& p) {
-        return p.tailShare * std::clamp(std::log2(std::max(distance, 1.0) / NEAR_TAIL_PX) / std::log2(FAR_TAIL_PX / NEAR_TAIL_PX), 0.0, 1.0);
+    double tailChance(double distance, const SProfile& p) {
+        return std::clamp(p.tailP + p.tailPSlope * std::log2(std::max(distance, 1.0) / TAIL_AT_PX), 0.0, 1.0);
     }
 
     std::vector<SSeg> plan(const Vector2D& from, const Vector2D& to, const Vector2D& bounds, const SProfile& p, std::mt19937& rng, const SAim& aim) {
@@ -55,30 +55,47 @@ namespace VClick::Path {
             return {};
         auto           uni   = [&](double a, double b) { return std::uniform_real_distribution<double>{a, b}(rng); };
         const Vector2D U     = (to - from) / D;
+
+        // a long move may drift a little before its stroke (a drag's hand is
+        // already on its way): the stroke then starts from where it drifted to
+        if (aim.overshoot && D >= MIN_LEAD_PX && p.leadP > 0 && uni(0, 1) < p.leadP) {
+            SProfile     rest = p;
+            rest.leadP        = 0;
+            const auto   AT   = from + U * (D * std::clamp(p.leadSize * uni(0.6, 1.4), 0.0, 0.7));
+            const double MS   = std::clamp(p.leadMs * uni(0.7, 1.3), 100.0, 1000.0);
+            SProfile     slow;
+            slow.bell = 2, slow.peak = 0.5;
+            auto segs = plan(AT, to, bounds, rest, rng, aim);
+            for (auto& s : segs)
+                s.start += MS;
+            auto drift   = straight(from, AT, MS, progressFor(slow));
+            drift.bounds = bounds;
+            segs.insert(segs.begin(), std::move(drift));
+            return segs;
+        }
+
         const double   FITTS = std::clamp(fittsMs(D, p, aim.w) * Profile::draw(1.0, PACE_SD, rng), 40.0, MAX_MOVE_MS);
-        double         total = FITTS;
+        double         first = FITTS, total = FITTS;
 
         // where the first stroke lands, and its share of the time: short of
         // the target or past it, for a correction to mend; else, on a long
         // move, short of it for the slow approach
-        Vector2D end   = to;
-        double   share = 1;
+        Vector2D end = to;
         if (D >= MIN_CORRECT_PX && p.correctSize > 0 && uni(0, 1) < p.correctP) {
             const bool SHORT = uni(0, 1) < p.underShare;
             if (SHORT || aim.overshoot) {
                 const double OFF = std::clamp(D * p.correctSize * uni(0.6, 1.4), 3.0, SHORT ? 100.0 : 40.0);
                 end              = clampTo(to + U * (SHORT ? -OFF : OFF), bounds);
-                share            = CORRECT_SHARE;
+                first            = FITTS * CORRECT_SHARE;
             }
         }
-        if (end == to && p.tailSize > 0 && tailAt(D, p) > 0) {
+        if (end == to && p.tailSize > 0 && p.tailShare > 0 && uni(0, 1) < tailChance(D, p)) {
             end   = to - U * (D * p.tailSize);
-            share = 1 - tailAt(D, p);
-            total = FITTS / share; // the first stroke keeps Fitts's time: the slow end comes on top
+            total = std::min(FITTS / (1 - p.tailShare), MAX_WHOLE_MS); // the first stroke keeps Fitts's time: the slow end comes on top
         }
         if (end.distance(to) < 2) {
             end   = to;
-            share = 1;
+            first = total = FITTS;
         }
 
         // Control points at a third and two thirds of the line keep the
@@ -106,7 +123,7 @@ namespace VClick::Path {
 
         const auto        PROGRESS = progressFor(p);
         std::vector<SSeg> segs;
-        segs.push_back({from, clampTo(c.first, bounds), clampTo(c.second, bounds), end, total * share, PROGRESS});
+        segs.push_back({from, clampTo(c.first, bounds), clampTo(c.second, bounds), end, first, PROGRESS});
         segs[0].bounds = bounds;
         if (end != to) { // about as the first stops: a little before it, or just after
             const double START = segs[0].ms * uni(0.95, 1.1);

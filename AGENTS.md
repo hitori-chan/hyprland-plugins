@@ -76,8 +76,8 @@ compositor is built from.
   `version.h`): switching header sets or installing a fork rebuilds
   everything by itself; no `make -B`.
 - `make -C awesome test` runs the headless unit cases.
-- `make -C vclick` builds vclick, `make -C vclick test` runs the glide
-  path's headless cases; `make vclick-check` runs its nested
+- `make -C vclick` builds vclick, `make -C vclick test` runs its headless
+  cases; `make vclick-check` runs its nested
   check (it takes the gate's lock: never alongside a gate run).
 
 ## The gate
