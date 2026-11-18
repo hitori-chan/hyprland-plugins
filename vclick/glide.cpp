@@ -24,14 +24,14 @@
 #include <random>
 
 namespace VClick::Glide {
-    static Path::SProfile pace;
+    static Profile::SProfile pace;
 
-    const Path::SProfile& profile() {
+    const Profile::SProfile& profile() {
         return pace;
     }
 
     std::string loadProfile(const std::string& path) {
-        const auto P = Path::readProfile(path.empty() ? Path::defaultProfilePath() : path);
+        const auto P = Profile::read(path.empty() ? Profile::defaultPath() : path);
         if (!P) {
             pace = {};
             return P.error() + ": the built-in defaults";

@@ -2,6 +2,7 @@
 // in the window, is timed by Fitts's law, moves forward without jumps, and
 // bows and overshoots as the profile says. `make -C vclick test`.
 #include "path.hpp"
+#include "profile.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -143,12 +144,12 @@ int main() {
     // the profile file
     std::istringstream in{"# a comment\nfitts_a_ms=70\nfitts_b_ms = 140 \npeak=0.9\nrate_hz=1000\nnonsense\nbow_mean=x\nmoves=321\n"};
     int                n = 0;
-    const auto         R = parseProfile(in, &n);
+    const auto         R = VClick::Profile::parse(in, &n);
     check(R.aMs == 70 && R.bMs == 140, "profile: the Fitts constants");
     check(R.peak == 0.7, "profile: an out-of-range peak is clamped (0.9 -> 0.7)");
     check(R.rateHz == 1000 && R.moves == 321, "profile: the rate and the count");
     check(R.bowMean == SProfile{}.bowMean && n == 4, "profile: a bad value is skipped (4 values taken)");
-    check(!readProfile("/nonexistent/vclick/profile"), "profile: a missing file is an error");
+    check(!VClick::Profile::read("/nonexistent/vclick/profile"), "profile: a missing file is an error");
 
     std::printf("%s: %d of %d checks passed\n", fail ? "FAIL" : "ok", pass, pass + fail);
     return fail ? 1 : 0;

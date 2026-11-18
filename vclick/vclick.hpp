@@ -9,7 +9,8 @@
 //   keyboard.cpp the app's own keyboard: one key, pressed and released
 //   glide.cpp    the way there: one motion per tick along the planned path
 //   stroke.cpp   a hand's stroke on a touchpad, over time: a finger's scroll, a pinch
-//   path.cpp     the path's math and the user's pace (no compositor)
+//   path.cpp     the path's math (no compositor)
+//   profile.cpp  the user's pace: the file learn.py writes (no compositor)
 //   cursor.cpp   the cursor image drawn at the virtual pointer
 //   theme.cpp    the cursor theme's shapes, read from XCursor files (no compositor)
 #pragma once
@@ -219,7 +220,7 @@ namespace VClick {
         Result                travel(const SAction& c); // a drag's way, its button down: no overshoot, a rest, the release
         bool                  dragging();               // a held button moves
 
-        const Path::SProfile& profile();
+        const Profile::SProfile& profile();
         std::string           loadProfile(const std::string& path); // empty: the default path
     }
 

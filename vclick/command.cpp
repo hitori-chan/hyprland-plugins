@@ -302,10 +302,10 @@ namespace VClick::Command {
         }
         if (w[1] == "profile" && w.size() <= 4) {
             if (w.size() == 2)
-                return Path::describe(Glide::profile());
+                return Profile::describe(Glide::profile());
             if (w[2] != "reload")
                 return std::string{USAGE};
-            return Glide::loadProfile(w.size() == 4 ? std::string{w[3]} : "") + "\n" + Path::describe(Glide::profile());
+            return Glide::loadProfile(w.size() == 4 ? std::string{w[3]} : "") + "\n" + Profile::describe(Glide::profile());
         }
         if (w[1] == "image" && w.size() == 3)
             return Cursor::describe(selectorOf(w[2]));

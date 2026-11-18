@@ -1,4 +1,4 @@
-// The glide's path, its timing and the user's pace: pure math with no
+// The glide's path and its timing: pure math with no
 // compositor in it, so test/path.cpp checks it headless.
 //
 // A glide is one movement, or two when a long one overshoots: each a cubic
@@ -8,33 +8,21 @@
 // minimum-jerk profile of a reaching arm).
 #pragma once
 
+#include "profile.hpp"
+
 #include <hyprutils/math/Vector2D.hpp>
 
-#include <expected>
-#include <iosfwd>
 #include <random>
-#include <string>
 #include <vector>
 
 namespace VClick::Path {
     using Hyprutils::Math::Vector2D;
 
-    constexpr double TARGET_W     = 32; // Fitts's W unless the request names it: vclick cannot see the target
+    using Profile::SProfile;
+    using Profile::TARGET_W;
+
     constexpr double MIN_TARGET_W = 4, MAX_TARGET_W = 1000;
     constexpr double MAX_MOVE_MS = 1000; // one movement, before a correction
-
-    // The pace: learn.py fits it from the user's own movements; these
-    // defaults are a typical mouse user's.
-    struct SProfile {
-        double      aMs = 50, bMs = 120;                // Fitts: MT = a + b * log2(D / W + 1)
-        double      bowMean = 0.06, bowSd = 0.04;       // the largest sideways distance, over the length
-        double      peak       = 0.45;                  // where the speed peaks, 0-1 of the movement
-        double      overshootP = 0.3, overshoot = 0.03; // of movements >= 300 px: how often, by how much of D
-        double      dwellMs = 80;                       // still on the target before a click
-        double      rateHz  = 125;                      // motion events a second
-        int         moves   = 0;                        // how many movements it was fitted from
-        std::string source  = "the built-in defaults";
-    };
 
     struct SSeg {
         Vector2D            p0, p1, p2, p3;
@@ -64,12 +52,4 @@ namespace VClick::Path {
     // for its length (W 32 px), 100-1000 ms
     constexpr double MIN_STROKE_MS = 100;
     SSeg             stroke(double px, const SProfile& p);
-
-    // $XDG_STATE_HOME/vclick/profile, else ~/.local/state/vclick/profile
-    std::string defaultProfilePath();
-    // key=value lines; unknown keys and bad values are skipped, values
-    // are clamped to sane bounds; values: how many were taken
-    SProfile                             parseProfile(std::istream& in, int* values = nullptr);
-    std::expected<SProfile, std::string> readProfile(const std::string& path);
-    std::string                          describe(const SProfile& p);
 }
