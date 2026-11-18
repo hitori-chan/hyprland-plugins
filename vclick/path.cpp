@@ -88,6 +88,13 @@ namespace VClick::Path {
         return straight({0, 0}, {1, 0}, std::clamp(fittsMs(px, p), MIN_STROKE_MS, MAX_MOVE_MS), progressFor(p));
     }
 
+    SSeg line(const Vector2D& from, const Vector2D& to, double ms) {
+        std::vector<double> even(WARP_N + 1);
+        for (int i = 0; i <= WARP_N; ++i)
+            even[i] = static_cast<double>(i) / WARP_N;
+        return straight(from, to, ms, std::move(even));
+    }
+
     double duration(const std::vector<SSeg>& segs) {
         double ms = 0;
         for (const auto& s : segs)

@@ -46,8 +46,12 @@ namespace VClick::Timeline {
                 // as a hand drags: the user's pace, never past the target (a
                 // drop target, a slider's stop), a rest on it before letting go
                 out.push_back({.kind = EStep::PRESS});
-                walk(out, EStep::TRAVEL, Path::plan(q.pos, q.to, q.bounds, p, rng, {.w = q.size, .overshoot = false}), q.to);
-                out.push_back({.kind = EStep::REST, .ms = restAfter(out.back().way, p, rng)});
+                if (q.style == EStyle::PERFORMANCE)
+                    walk(out, EStep::TRAVEL, {Path::line(q.pos, q.to, FAST_DRAG_MS)}, q.to);
+                else {
+                    walk(out, EStep::TRAVEL, Path::plan(q.pos, q.to, q.bounds, p, rng, {.w = q.size, .overshoot = false}), q.to);
+                    out.push_back({.kind = EStep::REST, .ms = restAfter(out.back().way, p, rng)});
+                }
                 out.push_back({.kind = EStep::RELEASE});
                 break;
             }

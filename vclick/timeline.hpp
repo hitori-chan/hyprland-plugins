@@ -19,10 +19,17 @@ namespace VClick {
         DRAG,  // press there, glide to `to`, let go
         PINCH, // two fingers spread to `scale` and turn `deg` there
     };
+
+    enum class EStyle : uint8_t {
+        HUMAN,       // at the user's own pace
+        PERFORMANCE, // as fast as apps still read it right
+    };
 }
 
 namespace VClick::Timeline {
     using Path::Vector2D;
+
+    constexpr double FAST_DRAG_MS = 48; // enough motions for an app to read a drag
 
     enum class EStep : uint8_t {
         WAY,     // the pointer goes there, on its way
@@ -46,7 +53,8 @@ namespace VClick::Timeline {
     };
 
     struct SRequest {
-        EVerb                   verb = EVerb::CLICK;
+        EVerb                   verb  = EVerb::CLICK;
+        EStyle                  style = EStyle::HUMAN;
         Vector2D                pos, to; // the point; a drag's end
         Vector2D                bounds;  // the window's size
         std::optional<Vector2D> from;    // where a way there starts; none: at once

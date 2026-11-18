@@ -74,6 +74,12 @@ int main() {
     IS({.verb = EVerb::DRAG}, "press travel rest release", "a drag at once");
     IS({.verb = EVerb::DRAG, .from = A}, "way rest press travel rest release", "a drag by a way");
 
+    IS({.verb = EVerb::DRAG, .style = EStyle::PERFORMANCE}, "press travel release", "a drag in performance has no rest");
+    {
+        const auto S = STEPS({.verb = EVerb::DRAG, .style = EStyle::PERFORMANCE, .to = A});
+        check(S[1].ms == FAST_DRAG_MS && Path::sample(S[1].way, 1e9) == A, "a drag in performance goes straight there, FAST_DRAG_MS long");
+        check(Path::sample(S[1].way, FAST_DRAG_MS / 2).distance((B + A) / 2) < 1e-6, "  at one speed");
+    }
     {
         const auto S = STEPS({.verb = EVerb::SCROLL, .count = 3, .ms = 80});
         check(S[1].ms == 80 && S[3].ms == 80, "the pace is the request's");

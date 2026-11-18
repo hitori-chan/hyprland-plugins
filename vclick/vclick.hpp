@@ -54,6 +54,7 @@ namespace VClick {
     constexpr int                BUSY_MS    = 1000;                              // how long a paced step waits out a busy app
     constexpr double             MAX_PX     = 10000;                             // a finger's scroll
     constexpr double             MIN_SCALE = 0.1, MAX_SCALE = 10, MAX_DEG = 360; // a pinch's
+    constexpr double             FAST_STROKE_MS = 32;                            // a finger's way in performance
     constexpr int                LIFT_MS  = 200;                                 // a finger rests before it lifts: a toolkit flings at the speed of the last 150 ms
     constexpr int                GRACE_MS = 1000;                                // a drag-and-drop an app begins this soon after vclick let go is vclick's
 
@@ -70,13 +71,13 @@ namespace VClick {
         Vector2D              to;                // where a drag lets go
         uint32_t              button = BTN_LEFT; // a click's, a press's or a drag's
         std::optional<SWheel> wheel;
-        bool                  stay  = false;         // the mouse mode: the app keeps the hover after the input
+        bool                  stay  = false;         // the human mode: the app keeps the hover after the input
         int                   count = 1;             // clicks, or wheel steps
         int                   ms    = STEP_MS;       // between wheel steps; 0: all at once
         double                px    = 0;             // a finger's scroll, how far; 0: wheel steps
         double                scale = 1, deg = 0;    // a pinch's: the fingers' spread at the end over the start's, the turn clockwise
         double                size = Path::TARGET_W; // the target's size: the glide's Fitts W
-        std::optional<bool>   glide;                 // this request's way there; unset: the mode's (mouse glides)
+        std::optional<EStyle> style;                 // this request's timing; unset until the mode fills it in
     };
 
     // one key
@@ -205,9 +206,9 @@ namespace VClick {
 
     // The one timer: a request's steps, in order.
     namespace Run {
-        // the request: glide says whether it goes by a way there. What takes
-        // no time happens here; its error is the answer
-        Result                     request(const SAction& c, bool glide);
+        // the request, in its style. What takes no time happens here; its
+        // error is the answer
+        Result                     request(const SAction& c);
         void                       tick();
         bool                       active();
         bool                       moving();  // on a way, or resting at the end of one
@@ -236,7 +237,7 @@ namespace VClick {
         void        show(const PHLWINDOW& w, const Vector2D& pos); // while a glide runs
         void        moveTo(const Vector2D& pos);
         void        rest(bool stay);                                // the input ended: stay there (mouse), or linger and fade (tap)
-        void        place(const PHLWINDOW& w, const Vector2D& pos); // a jump in the mouse mode: there, and stay
+        void        place(const PHLWINDOW& w, const Vector2D& pos); // at once in the human mode: there, and stay
         void        hide();
         void        userMoved(); // the user's pointer changed surface: into the app it takes the cursor; out, the next input starts where it left
         std::string where();     // "address:0x... x y", or "nowhere"

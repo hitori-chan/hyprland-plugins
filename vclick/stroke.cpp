@@ -6,7 +6,8 @@
 // fingers' travel (path.cpp); each tick sends what the time since the start
 // says is done, so a scroll's deltas and a pinch's turns sum exactly to the
 // request (wl_fixed, 1/256) and a pinch ends exactly on its scale, whatever
-// the timer's jitter. The fingers then rest (LIFT_MS) before they lift: a
+// the timer's jitter. In performance the way takes FAST_STROKE_MS. The fingers
+// then rest (LIFT_MS; a pinch in performance needs none) before they lift: a
 // toolkit flings a scroll at the speed of its last 150 ms (GTK's), so none
 // follows. Each tick checks afresh, as a glide's: the window may close or
 // hide, and the user's pointer may come into the app, which takes the app's
@@ -37,6 +38,7 @@ namespace VClick::Stroke {
         wl_client*             client = nullptr;
         Vector2D               local;
         Path::SSeg             way;          // x: the share done
+        int                    lift  = LIFT_MS; // the fingers rest this long before they lift
         double                 done  = 0;    // of the way
         int32_t                total = 0;    // a scroll's px or a pinch's turn, in wl_fixed units (1/256), signed
         int32_t                sent  = 0;    // of those
@@ -146,7 +148,7 @@ namespace VClick::Stroke {
         }
 
         const double EL = std::chrono::duration<double, std::milli>(Time::steadyNow() - stroke->start).count();
-        if (EL >= stroke->way.ms + LIFT_MS) {
+        if (EL >= stroke->way.ms + stroke->lift && stroke->done >= 1) {
             end(stroke->action.stay, false);
             return false;
         }
@@ -173,7 +175,15 @@ namespace VClick::Stroke {
     }
 
     static void begin(const SAction& c, const Pointer::STarget& t, double travel, int32_t total) {
-        stroke.emplace(SStroke{.action = c, .window = t.window, .surf = t.surf, .client = t.surf->client(), .local = t.local, .way = Path::stroke(travel, Run::profile()), .total = total});
+        const bool FAST = *c.style == EStyle::PERFORMANCE;
+        stroke.emplace(SStroke{.action = c,
+                               .window = t.window,
+                               .surf   = t.surf,
+                               .client = t.surf->client(),
+                               .local  = t.local,
+                               .way    = FAST ? Path::line({0, 0}, {1, 0}, FAST_STROKE_MS) : Path::stroke(travel, Run::profile()),
+                               .lift   = FAST && c.verb == EVerb::PINCH ? 0 : LIFT_MS, // a scroll's rest stops a toolkit's fling: a pinch has none
+                               .total  = total});
         stroke->start = Time::steadyNow();
         clearStop();
     }

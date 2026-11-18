@@ -6,7 +6,7 @@
 // there, and a click or scroll goes on at once. A surface boundary on the way
 // (a subsurface, a popup) is crossed with a leave and an enter, as a real
 // pointer crosses it. Wherever a way ends, early or not, is where the next
-// one in that window starts, and in the mouse mode where the cursor rests.
+// one in that window starts, and in the human mode where the cursor rests.
 #include "vclick.hpp"
 
 #include <hyprland/src/desktop/view/window/Window.hpp>
@@ -286,7 +286,7 @@ namespace VClick::Run {
 
     static Timeline::SRequest requestOf(const SAction& c) {
         const auto W = Pointer::windowOf(c.selector);
-        return {.verb = c.verb, .pos = c.pos, .to = c.to, .bounds = W ? Pointer::windowSize(W) : Vector2D{}, .size = c.size, .count = c.count, .ms = c.ms, .px = c.px};
+        return {.verb = c.verb, .style = *c.style, .pos = c.pos, .to = c.to, .bounds = W ? Pointer::windowSize(W) : Vector2D{}, .size = c.size, .count = c.count, .ms = c.ms, .px = c.px};
     }
 
     // the request's steps, from the first: what takes no time happens here
@@ -318,9 +318,9 @@ namespace VClick::Run {
         return R;
     }
 
-    Result request(const SAction& c, bool glide) {
+    Result request(const SAction& c) {
         auto q = requestOf(c);
-        if (!glide)
+        if (*c.style == EStyle::PERFORMANCE)
             return begin(c, q, nullptr);
         auto T = Pointer::resolve(c.selector, c.pos);
         if (!T)
@@ -373,7 +373,7 @@ namespace VClick::Run {
             if (A.stay)
                 Cursor::place(w, A.pos); // taken: the user's pointer is in the app
         }
-        noteStop(R ? "the last glide finished as a jump: the user's pointer came into the app" : "the last glide stopped: " + R.error());
+        noteStop(R ? "the last glide finished at once: the user's pointer came into the app" : "the last glide stopped: " + R.error());
         return false;
     }
 

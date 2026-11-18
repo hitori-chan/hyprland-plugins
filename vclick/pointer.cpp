@@ -5,8 +5,8 @@
 // is the client's pointer itself: when the user's pointer is in the same
 // client (one Firefox process owns all its windows), the input steps out of
 // the user's surface and back in under the user's cursor (docs/design.md).
-// In the mouse mode the app's pointer stays where the input left it (the
-// app keeps the hover, as under a mouse at rest); in the tap mode it leaves.
+// In the human mode the app's pointer stays where the input left it (the
+// app keeps the hover, as under a mouse at rest); in performance it leaves.
 // A held button (press ... release) is the app's implicit grab: every
 // motion goes to the surface the press began in, and nothing else of the
 // seat's ever learns of it (docs/design.md, a held button).
@@ -463,7 +463,7 @@ namespace VClick::Pointer {
         clearStop();
         if (!c.stay) {
             Cursor::prepare(T->window);
-            Cursor::show(T->window, c.pos); // the tap mode: shown while the button is down
+            Cursor::show(T->window, c.pos); // performance: shown while the button is down
         }
         return {};
     }

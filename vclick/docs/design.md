@@ -15,7 +15,7 @@ focus, held buttons, constraints and cursor stay the user's; an app's
 cursor requests are refused unless it holds the real pointer focus
 ([the cursor image](#the-cursor-image)).
 
-A jump sends the input in one burst, a millisecond apart: enter, motion,
+In performance the input goes in one burst, a millisecond apart: enter, motion,
 then the clicks or the step. A glide sends the same from the pointer it
 brought there ([the glide](#the-glide)).
 
@@ -32,22 +32,31 @@ brought there ([the glide](#the-glide)).
 
 ## The modes
 
-- `mouse` (default): a request glides unless it says `jump`; the app's
-  pointer stays where the input left it (the app keeps the hover: a
-  tooltip, a hover menu, a remote desktop's cursor), and the cursor image
-  stays drawn there. The next input into another app leaves this one
-  first; `hide` takes the mouse away (a leave, the cursor goes).
-- `tap`: a request jumps unless it says `glide`; the app's pointer leaves
-  after it and no cursor stays (a glide's shows while it moves, then
-  fades). Switching to `tap` ends the hover and hides the cursor.
+- `human` (default): a request goes at the user's own pace, by a glide;
+  the app's pointer stays where the input left it (the app keeps the
+  hover: a tooltip, a hover menu, a remote desktop's cursor), and the
+  cursor image stays drawn there. The next input into another app leaves
+  this one first; `hide` takes the mouse away (a leave, the cursor goes).
+- `performance`: a request goes as fast as apps still read it right; the
+  app's pointer leaves after it and no cursor stays (a glide's shows while
+  it moves, then fades). Switching to it ends the hover and hides the
+  cursor.
 
-`glide` or `jump` picks only the way there; what stays after is the
-mode's.
+`human` or `performance` on a request picks that request's timing; what
+stays after is the mode's. Performance keeps what apps need to read the
+input right:
+
+- wheel steps stay 50 ms apart unless the request says otherwise, as apps
+  scroll further for a fast spin ([paced scrolling](#paced-scrolling));
+- a drag sends its motions over 48 ms, straight to the end, and lets go;
+- a finger's scroll or a pinch takes 32 ms; a scroll's fingers still rest
+  200 ms before they lift, so no fling follows.
 
 ## The glide
 
-A jump teleports the app's pointer, and through a remote desktop the
-remote cursor jumps too. A glide moves there as a hand would, then acts:
+Going at once teleports the app's pointer, and through a remote desktop
+the remote cursor jumps too. A glide moves there as a hand would, then
+acts:
 
 - **Path**: a cubic Bézier from where vclick's pointer last was in the
   window (else its centre) to the point. The inner control points sit at
@@ -75,7 +84,7 @@ compositor is shutting down, the glide stops and the app's pointer
 leaves (the lockscreen is no reason: [under the
 lockscreen](#under-the-lockscreen)). If the user's pointer came into the
 app, the seat has its pointer: the glide ends, a click or scroll goes on
-as a jump ([the same app](#the-same-app)), a move stops; `status` says
+at once ([the same app](#the-same-app)), a move stops; `status` says
 which. One glide at a time and nothing else meanwhile; unloading ends
 it.
 
@@ -128,9 +137,10 @@ app's pointer:
   input glides from where their pointer left the window, and the cursor
   shows again with it;
 - where the window is drawn, so it follows a workspace slide;
-- in mouse mode, from the input until the next input, `hide`, the
-  user's pointer entering, the window closing or the switch to `tap`; in
-  tap mode, during a glide and 1.2 s after, then fading over 0.3 s.
+- in the human mode, from the input until the next input, `hide`, the
+  user's pointer entering, the window closing or the switch to
+  `performance`; in the performance mode, during a glide and 1.2 s after,
+  then fading over 0.3 s.
 
 One cursor, as one mouse: in the window of the last input (`where`).
 A shape is read once (a file, at most 256 px a side and 64 frames) and
@@ -140,11 +150,11 @@ drawn; `image` says so.
 
 ## The hover
 
-A `move`, and in mouse mode every input, ends without a leave: the app
+A `move`, and in the human mode every input, ends without a leave: the app
 keeps the hover, and its next input there needs no second enter. The
 hover ends when the user's pointer changes surface (the seat sends every
 app's pointer a leave), at vclick's next input into another app, at
-`hide` or the switch to tap, and at unload. A move into the app under
+`hide` or the switch to `performance`, and at unload. A move into the app under
 the user's mouse is refused: that pointer is theirs.
 
 ## A held button
@@ -176,7 +186,8 @@ needs neither and goes. A leave releases the app's held buttons (the
 compositor sends the release first), and Hyprland's seat leaves every
 app's pointer whenever the user's pointer changes surface, so that ends
 the hold, as it ends the hover; so does the window closing or hiding. `hide`, the
-switch to `tap` and unloading let go first. In tap mode the cursor shows
+switch to `performance` and unloading let go first. In the performance
+mode the cursor shows
 while the button is down and fades after the release.
 
 ## Paced scrolling
@@ -187,7 +198,7 @@ spin: through a remote desktop in Firefox, 20 steps at once scrolled
 multi-step scroll is paced: the first step goes at once (or when the
 glide arrives), each further one `ms` later on the event loop.
 
-Each step is a whole input (enter, the step, and in tap mode the leave),
+Each step is a whole input (enter, the step, and in performance the leave),
 checked afresh: the window may have closed, hidden or moved, and the
 user's mouse may have come into the app. A busy app (the user holds a
 button there) is retried at the same pace for up to 1 s, then the run

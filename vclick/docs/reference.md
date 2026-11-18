@@ -7,18 +7,18 @@ The whole command and its answers. Examples are in the
 ## hyprctl
 
 ```sh
-hyprctl vclick click  <window> <x> <y> [button] [double|triple] [glide|jump] [size:<px>]
-hyprctl vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [<n>px] [glide|jump] [size:<px>]
-hyprctl vclick move   <window> <x> <y> [glide|jump] [size:<px>]
-hyprctl vclick press  <window> <x> <y> [button] [glide|jump] [size:<px>]
+hyprctl vclick click  <window> <x> <y> [button] [double|triple] [human|performance] [size:<px>]
+hyprctl vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [<n>px] [human|performance] [size:<px>]
+hyprctl vclick move   <window> <x> <y> [human|performance] [size:<px>]
+hyprctl vclick press  <window> <x> <y> [button] [human|performance] [size:<px>]
 hyprctl vclick release
-hyprctl vclick drag   <window> <x> <y> <x2> <y2> [button] [glide|jump] [size:<px>]
-hyprctl vclick pinch  <window> <x> <y> <scale> [<deg>deg] [glide|jump] [size:<px>]
+hyprctl vclick drag   <window> <x> <y> <x2> <y2> [button] [human|performance] [size:<px>]
+hyprctl vclick pinch  <window> <x> <y> <scale> [<deg>deg] [human|performance] [size:<px>]
 hyprctl vclick key    <window> <key> [mods]
 hyprctl vclick status
 hyprctl vclick where
 hyprctl vclick hide
-hyprctl vclick mode [mouse|tap]
+hyprctl vclick mode [human|performance]
 hyprctl vclick profile [reload [file]]
 hyprctl vclick image <window>
 ```
@@ -49,10 +49,11 @@ The options follow the point, in any order, each at most once.
   surface, vclick's next input goes into another app, `hide`, or the
   plugin unloads ([design](design.md#the-hover)). With a button held, the
   move drags it ([press](#press-and-release)).
-- `glide`: go there along a curve at the user's pace, rest on the target,
+- `human`: go there along a curve at the user's pace, rest on the target,
   then the input ([design](design.md#the-glide)).
-  `jump`: go at once. A request that names neither goes the mode's way:
-  `mouse` glides, `tap` jumps.
+  `performance`: as fast as apps still read it right
+  ([design](design.md#the-modes)). A request that names neither goes the
+  mode's way.
 - `size:<px>`: the target's size, 4 to 1000 (default 32): Fitts's W for
   the glide's time, so a small button takes a little longer and a wide
   one less.
@@ -72,7 +73,7 @@ click or scroll follows when it arrives, and an error there shows in
 `status`.
 
 A glide starts where vclick's pointer last was in that window, else at
-the window's centre. It goes as a jump instead when the user's pointer
+the window's centre. It goes at once instead when the user's pointer
 is in the same app (a glide would take the app's pointer from them; a
 `move` is refused then) or when the point is in a popup outside the
 window's box.
@@ -84,18 +85,18 @@ in the same order (a number where hyprctl takes one) and the same
 checks:
 
 ```lua
-hl.plugin.vclick.click(window, x, y, [button], ["double"|"triple"], ["glide"|"jump"])
-hl.plugin.vclick.scroll(window, x, y, "up"|"down"|"left"|"right", [steps], ["<ms>ms"], ["<n>px"], ["glide"|"jump"])
-hl.plugin.vclick.move(window, x, y, ["glide"|"jump"])
-hl.plugin.vclick.press(window, x, y, [button], ["glide"|"jump"])
+hl.plugin.vclick.click(window, x, y, [button], ["double"|"triple"], ["human"|"performance"])
+hl.plugin.vclick.scroll(window, x, y, "up"|"down"|"left"|"right", [steps], ["<ms>ms"], ["<n>px"], ["human"|"performance"])
+hl.plugin.vclick.move(window, x, y, ["human"|"performance"])
+hl.plugin.vclick.press(window, x, y, [button], ["human"|"performance"])
 hl.plugin.vclick.release()
-hl.plugin.vclick.drag(window, x, y, x2, y2, [button], ["glide"|"jump"])
-hl.plugin.vclick.pinch(window, x, y, scale, ["<deg>deg"], ["glide"|"jump"])
+hl.plugin.vclick.drag(window, x, y, x2, y2, [button], ["human"|"performance"])
+hl.plugin.vclick.pinch(window, x, y, scale, ["<deg>deg"], ["human"|"performance"])
 hl.plugin.vclick.key(window, key, [mods])
 hl.plugin.vclick.hide()
 hl.plugin.vclick.status()      -- "idle", "moving", "scrolling 3/12", ...
 hl.plugin.vclick.where()
-hl.plugin.vclick.mode(["mouse"|"tap"])
+hl.plugin.vclick.mode(["human"|"performance"])
 hl.plugin.vclick.profile(["reload", [file]])
 hl.plugin.vclick.image(window)
 ```
@@ -129,7 +130,7 @@ once, whatever the mode: no glide, no cursor.
 
 `press <window> <x> <y> [button]` goes there and holds the button down;
 `release` lets it go where the pointer is. Between them, `move` in that
-window drags it (a glide, or a `jump` as one motion), as a hand holding
+window drags it (a glide, or in `performance` one motion), as a hand holding
 the button down: the app's implicit grab, so every motion goes to where
 the press began, wherever the point is. Nothing else is taken while it
 is held (`error: busy: holding <button>; release it first`), except
@@ -145,7 +146,7 @@ The hold ends by itself, and `status` says why, when:
   the user's real mouse, so it is refused (the app hears its drag
   cancelled; [design](design.md#a-held-button)).
 
-`hide`, the switch to `tap` and unloading let the button go first. The
+`hide`, the switch to `performance` and unloading let the button go first. The
 app cannot make the press an interactive move or resize of its window
 (a client-side title bar): the compositor would drive those with the
 user's mouse too.
@@ -153,10 +154,11 @@ user's mouse too.
 ## drag
 
 `drag <window> <x> <y> <x2> <y2> [button]` is a press, a move and a
-release in one request: it goes to `<x> <y>` (a glide or a jump, as any
-request), presses, glides to `<x2> <y2>` with the button down at the
-user's pace (Fitts's time for the target's size, never past the target),
-rests there, and lets go. `<x2> <y2>` is in the window's box.
+release in one request: it goes to `<x> <y>`, presses, moves to
+`<x2> <y2>` with the button down and lets go. In `human` it glides there
+at the user's pace (Fitts's time for the target's size, never past the
+target) and rests before letting go; in `performance` it goes straight
+there in 48 ms. `<x2> <y2>` is in the window's box.
 `status` says `moving` on the way there, `dragging` after the press. The
 hold's limits are the press's ([press and release](#press-and-release)):
 a drag-and-drop the app begins is refused, and the user's pointer
@@ -164,12 +166,13 @@ changing surface ends it.
 
 ## pinch
 
-`pinch <window> <x> <y> <scale> [<deg>deg]` goes to `<x> <y>` (a glide
-or a jump, as any request) and pinches there with two fingers on a
+`pinch <window> <x> <y> <scale> [<deg>deg]` goes to `<x> <y>` and
+pinches there with two fingers on a
 touchpad: they spread to `<scale>` times their distance, `0.1` to `10`
 (`2` zooms in twice, `0.5` out), and turn `<deg>` degrees, `-360` to
 `360`, clockwise positive; at the user's pace, then a rest, then the
-lift ([design](design.md#a-touchpads-strokes)). A pinch needs a scale
+lift, or in `performance` in 32 ms with no rest
+([design](design.md#a-touchpads-strokes)). A pinch needs a scale
 other than 1, or a turn. `status` says `pinching`.
 
 ## status
@@ -185,7 +188,7 @@ other than 1, or a turn. `status` says `pinching`.
   - `the last glide stopped: <why>`: the window closed or was hidden,
     the compositor is shutting down, or an error;
     the app's pointer left the window;
-  - `the last glide finished as a jump: the user's pointer came into the
+  - `the last glide finished at once: the user's pointer came into the
     app`;
   - `the last move stopped: the user's pointer came into the app` (or
     `press`, `drag`);
@@ -210,7 +213,7 @@ until [[ "$(hyprctl vclick status)" == idle* ]]; do sleep 0.02; done
 ## where
 
 Where the mouse is: `address:0x<window> <x> <y>`, with ` (fading)`
-after a glide in the tap mode; else `nowhere` (also once the user's
+after a glide in the performance mode; else `nowhere` (also once the user's
 pointer came into the app: the app's pointer is theirs, and the next
 input there starts where their pointer left the window).
 
@@ -222,14 +225,17 @@ scroll runs. The next input brings it back.
 
 ## mode
 
-`mode` answers `mouse` or `tap`; `mode mouse|tap` sets it. It is
-`mouse` whenever the plugin loads ([design](design.md#the-modes)).
+`mode` answers `human` or `performance`; `mode human|performance` sets
+it. It is `human` whenever the plugin loads
+([design](design.md#the-modes)).
 
-- `mouse`: a request glides unless it says `jump`; after it, the app's
+- `human`: a request goes at the user's pace unless it says
+  `performance`; after it, the app's
   pointer and the cursor stay where it went.
-- `tap`: a request jumps unless it says `glide`; after it, the app's
+- `performance`: a request goes at once unless it says `human`; after
+  it, the app's
   pointer leaves and no cursor stays (a held button's shows until the
-  release, then fades). Switching to `tap` does `hide` (unless a glide
+  release, then fades). Switching to `performance` does `hide` (unless a glide
   or a scroll runs).
 
 ## profile

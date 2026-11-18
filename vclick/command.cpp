@@ -20,29 +20,41 @@ namespace VClick {
 }
 
 namespace VClick::Command {
-    constexpr std::string_view           USAGE = "usage: vclick click <window> <x> <y> [button] [double|triple] [glide|jump] [size:<px>]\n"
-                                                 "       vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [<n>px] [glide|jump] [size:<px>]\n"
-                                                 "       vclick move <window> <x> <y> [glide|jump] [size:<px>]\n"
-                                                 "       vclick press <window> <x> <y> [button] [glide|jump] [size:<px>]\n"
-                                                 "       vclick drag <window> <x> <y> <x2> <y2> [button] [glide|jump] [size:<px>]\n"
-                                                 "       vclick pinch <window> <x> <y> <scale> [<deg>deg] [glide|jump] [size:<px>]\n"
+    constexpr std::string_view           USAGE = "usage: vclick click <window> <x> <y> [button] [double|triple] [human|performance] [size:<px>]\n"
+                                                 "       vclick scroll <window> <x> <y> up|down|left|right [steps] [<ms>ms] [<n>px] [human|performance] [size:<px>]\n"
+                                                 "       vclick move <window> <x> <y> [human|performance] [size:<px>]\n"
+                                                 "       vclick press <window> <x> <y> [button] [human|performance] [size:<px>]\n"
+                                                 "       vclick drag <window> <x> <y> <x2> <y2> [button] [human|performance] [size:<px>]\n"
+                                                 "       vclick pinch <window> <x> <y> <scale> [<deg>deg] [human|performance] [size:<px>]\n"
                                                  "       vclick key <window> <key> [mods]\n"
-                                                 "       vclick release | hide | status | where | mode [mouse|tap] | profile [reload [file]] | image <window>\n"
+                                                 "       vclick release | hide | status | where | mode [human|performance] | profile [reload [file]] | image <window>\n"
                                                  "  window: a window selector (address:0x..., class:...), or a bare 0x... address\n"
                                                  "  button: left (default), right, middle, side, extra, or a code 272-279\n"
                                                  "  steps: wheel detents, 1-20 (default 1); <ms>ms: between them, 0ms-1000ms (default 50ms; 0ms: at once)\n"
                                                  "  <n>px: instead, a finger's scroll on a touchpad, 1px-10000px, at the user's pace\n"
                                                  "  key: an xkb key name, as send_shortcut takes it (Next, Prior, Return, a, F5), or code:<n>; pressed and released\n"
                                                  "  mods: modifiers held for it, joined by + (ctrl, shift, alt, super)\n"
-                                                 "  mode mouse: glide there, and stay; the app keeps the hover (the default)\n"
-                                                 "  mode tap: go at once, and leave after the input; no cursor stays\n"
+                                                 "  mode human: at the user's own pace, and stay; the app keeps the hover (the default)\n"
+                                                 "  mode performance: as fast as apps still read it, and leave after the input; no cursor stays\n"
                                                  "  press: hold the button down; move drags it, release lets go\n"
-                                                 "  drag: press at x y, glide to x2 y2 at the user's pace, let go there\n"
+                                                 "  drag: press at x y, move to x2 y2, let go there\n"
                                                  "  pinch: two fingers on a touchpad spread to scale (0.1-10; 2: zoom in twice), turning deg (-360-360, clockwise)\n"
-                                                 "  glide|jump: this request's way there, whatever the mode\n"
+                                                 "  human|performance: this request's timing, whatever the mode\n"
                                                  "  size:<px>: the target's size, for the glide's time (default 32)";
 
-    static bool                          mouseMode = true;
+    static EStyle                        mode = EStyle::HUMAN;
+
+    static std::optional<EStyle>         styleOf(std::string_view s) {
+        if (s == "human")
+            return EStyle::HUMAN;
+        if (s == "performance")
+            return EStyle::PERFORMANCE;
+        return std::nullopt;
+    }
+
+    static std::string_view styleName(EStyle s) {
+        return s == EStyle::HUMAN ? "human" : "performance";
+    }
 
     static std::vector<std::string_view> words(std::string_view s) {
         std::vector<std::string_view> out;
@@ -144,10 +156,10 @@ namespace VClick::Command {
         for (size_t i = opts; i < w.size(); ++i) {
             const auto O     = w[i];
             const auto TWICE = [&] { return BAD(std::format("'{}': that option is given twice", O)); };
-            if (O == "glide" || O == "jump") {
-                if (c.glide)
+            if (const auto S = styleOf(O)) {
+                if (c.style)
                     return TWICE();
-                c.glide = O == "glide";
+                c.style = S;
                 continue;
             }
             if (O.starts_with("size:")) {
@@ -278,7 +290,7 @@ namespace VClick::Command {
                     return busyError();
                 if (const auto R = Pointer::release(); !R)
                     return R.error();
-                if (!mouseMode) { // the tap mode: the pointer leaves after the input
+                if (mode == EStyle::PERFORMANCE) { // the pointer leaves after the input
                     Pointer::unhover();
                     Cursor::rest(false);
                 }
@@ -287,14 +299,14 @@ namespace VClick::Command {
         }
         if (w[1] == "mode" && w.size() <= 3) {
             if (w.size() == 3) {
-                if (w[2] != "mouse" && w[2] != "tap")
+                const auto S = styleOf(w[2]);
+                if (!S)
                     return std::string{USAGE};
-                const bool MOUSE = w[2] == "mouse";
-                if (mouseMode && !MOUSE && !busy())
-                    away(); // nothing stays in the tap mode
-                mouseMode = MOUSE;
+                if (mode == EStyle::HUMAN && *S == EStyle::PERFORMANCE && !busy())
+                    away(); // nothing stays in performance
+                mode = *S;
             }
-            return mouseMode ? "mouse" : "tap";
+            return std::string{styleName(mode)};
         }
         if (w[1] == "profile" && w.size() <= 4) {
             if (w.size() == 2)
@@ -314,7 +326,8 @@ namespace VClick::Command {
             return c.error();
         if (busy())
             return busyError();
-        c->stay = mouseMode;
+        c->stay  = mode == EStyle::HUMAN;
+        c->style = c->style.value_or(mode);
 
         // a held button: the hand moves (in that window) or lets go first
         const auto TW = Pointer::windowOf(c->selector);
@@ -336,15 +349,15 @@ namespace VClick::Command {
         // a hover kept in another app ends here, as a mouse leaves it
         Pointer::unhover(Pointer::clientOf(TW));
 
-        const auto R = Run::request(*c, c->glide.value_or(mouseMode));
+        const auto R = Run::request(*c);
         if (!R)
             return R.error();
         if (TW && !Run::moving()) { // a way ends it itself
             Pointer::rememberPos(TW, c->pos);
-            if (mouseMode)
+            if (mode == EStyle::HUMAN)
                 Cursor::place(TW, c->pos);
             else if (Pointer::heldButton())
-                Cursor::moveTo(c->pos); // the tap mode shows a held button's cursor
+                Cursor::moveTo(c->pos); // performance shows a held button's cursor
         }
         return "ok";
     }

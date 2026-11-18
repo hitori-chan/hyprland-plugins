@@ -27,7 +27,7 @@ hyprctl vclick move   $W 500 400                 #   drag it (a slider, a select
 hyprctl vclick release                           #   and let go
 hyprctl vclick drag   $W 100 400 500 400         # the same in one request
 hyprctl vclick pinch  $W 640 300 2               # two fingers zoom in twice
-hyprctl vclick click  $W 640 300 jump            # click at once, no glide
+hyprctl vclick click  $W 640 300 performance     # click at once, no glide
 hyprctl vclick key    $W Next                    # PageDown, to that window only
 hyprctl vclick key    $W t ctrl+shift            # with modifiers held for it
 hyprctl vclick where                             # address:0x… 640 300
@@ -36,7 +36,7 @@ hyprctl vclick status                            # moving, scrolling 3/12, then 
 ```
 
 The same verbs are Lua functions, for a bind or a script
-(`hyprctl repl`): `hl.plugin.vclick.click(W, 640, 300, "jump")` answers
+(`hyprctl repl`): `hl.plugin.vclick.click(W, 640, 300, "performance")` answers
 `true`, or `nil` and the error.
 
 The window is any window selector (`address:0x…`, `class:…`) or a bare
@@ -46,16 +46,19 @@ cursor doesn't move, the window under the mouse hears nothing, and
 keyboard focus stays where it is. A key goes to that one window, pressed
 and released, and the window with the user's keyboard hears nothing.
 
-Two modes (`hyprctl vclick mode mouse|tap`):
+Two modes (`hyprctl vclick mode human|performance`):
 
-- `mouse` (the default) is a mouse of its own: it glides there, and
+- `human` (the default) is a mouse of its own: it glides there, and
   stays. The app keeps the hover, and vclick draws the app's own cursor
   (its image, or its shape from the cursor theme) in the window where it
   rests: under any window above it, never in a capture. The user's own pointer coming into that app takes it, as
   one mouse: the cursor goes, and the next input starts where their
   pointer left the window.
-- `tap` is just the input: it goes at once, and leaves the app's pointer
-  after. Nothing stays drawn.
+- `performance` is just the input, as fast as apps still read it right:
+  it goes at once, and leaves the app's pointer after. Nothing stays
+  drawn.
+
+The word on a request picks that request's timing, whatever the mode.
 
 ## Under the lockscreen
 

@@ -53,4 +53,7 @@ namespace VClick::Path {
     // for its length (W 32 px), 100-1000 ms
     constexpr double MIN_STROKE_MS = 100;
     SSeg             stroke(double px, const SProfile& p);
+
+    // straight, at one speed, ms long
+    SSeg line(const Vector2D& from, const Vector2D& to, double ms);
 }

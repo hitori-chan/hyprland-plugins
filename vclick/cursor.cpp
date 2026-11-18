@@ -11,8 +11,8 @@
 // it covers the app), never in a capture. The user's own pointer coming
 // into that app takes the app's one pointer: the cursor goes, and the next
 // input starts where their pointer left the window, as one mouse would. In
-// the mouse mode it stays where the last input left it, as a mouse at rest;
-// in the tap mode it shows while a glide runs and LINGER_MS after, then
+// the human mode it stays where the last input left it, as a mouse at rest;
+// in the performance mode it shows while a glide runs and LINGER_MS after, then
 // fades.
 #include "vclick.hpp"
 #include "theme.hpp"
@@ -80,7 +80,7 @@ namespace VClick::Cursor {
         Vector2D            pos; // window coords
         bool                shown  = false;
         bool                pinned = false; // an input runs: no fade
-        bool                stay   = false; // the mouse mode: at rest, no fade
+        bool                stay   = false; // the human mode: at rest, no fade
         Time::steady_tp     fadeAt;         // whole until then, then fading
         CBox                drawn;          // the box last damaged, global logical px
         SP<CEventLoopTimer> timer;          // the fade
