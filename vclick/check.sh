@@ -1070,6 +1070,31 @@ fixp_gone() { [[ -z "$(fixp)" ]]; }
 until_ok 3 fixp_gone || bad "the fixture never closed"
 park "$BCX" "$BCY"
 
+echo "== a hand's drag from a popup without a grab, outside the window's box"
+MQ="vclick-popup-$$"
+dsp "hl.dsp.exec_cmd('$REPO/devtools/fixwin 300 200 $MQ popup > $T/fixq.log 2>&1')"
+fixq() { hq clients -j | python3 -c 'import json, sys
+for c in json.load(sys.stdin):
+    if c["class"] == sys.argv[1]: print(c["address"], *c["at"], int(c["floating"]))' "$MQ"; }
+fixq_up() { [[ -n "$(fixq)" ]]; }
+until_ok 5 fixq_up || bad "the fixture never mapped"
+read -r F _ _ FL <<<"$(fixq)"
+[[ "$FL" == 1 ]] || dsp "hl.dsp.window.float({ action = 'enable', window = 'address:$F' })"
+dsp "hl.dsp.window.move({ x = 700, y = 420, window = 'address:$F' })"
+fixq_at() { [[ "$(fixq | cut -d' ' -f2-3)" == "700 420" ]]; }
+until_ok 3 fixq_at || bad "the fixture never moved to 700,420"
+park "$BGX" "$BGY" && park "$BCX" "$BCY" # it mapped under the user's pointer: back on B
+expect "drag from the popup into the window" "$(vclick drag "address:$F" 60 240 60 100)" ok
+until_ok 4 idle || true
+expect "  no button stays held" "$(vclick release)" "error: no button is held"
+fixq_up_log() { grep -q '^up' "$T/fixq.log"; }
+until_ok 3 fixq_up_log && ok "  the popup heard the release" || bad "  the popup never heard the release"
+expect "  one press, one release" "$(grep -c -E '^(press|up)' "$T/fixq.log")" 2
+pkill -f "fixwin 300 200 $MQ"
+fixq_gone() { [[ -z "$(fixq)" ]]; }
+until_ok 3 fixq_gone || bad "the fixture never closed"
+park "$BCX" "$BCY"
+
 echo "== a drag-and-drop the app begins from vclick's button is refused"
 quiet "$T/a.wl" && quiet "$T/b.wl"
 GL="$(lines "$T/a.log")" TM="$(lines "$T/a.wl")" BM="$(lines "$T/b.wl")"

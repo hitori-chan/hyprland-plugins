@@ -32,10 +32,12 @@ make -C devtools HL=/path/to/Hyprland
   tool.
 - `toplevel APP_ID`: activates the first toplevel with that app id over
   wlr-foreign-toplevel, as a taskbar does.
-- `fixwin WIDTH HEIGHT [TITLE] [drag]`: a fixed-size toplevel (min ==
-  max, the dialog/splash shape). With `drag` it is its own title bar: a
-  press dragged 8 px asks `xdg_toplevel.move` with that press's serial;
-  it prints `press SERIAL`, `move SERIAL`, `up`.
+- `fixwin WIDTH HEIGHT [TITLE] [drag|press|popup]`: a fixed-size toplevel
+  (min == max, the dialog/splash shape). With `drag` it is its own title
+  bar: a press dragged 8 px asks `xdg_toplevel.move` with that press's
+  serial; with `press` it asks at the press; it prints `press SERIAL`,
+  `move SERIAL`, `up`. With `popup`, a 200x80 `xdg_popup` without a grab
+  hangs 10 px under the window, 20 px in, and it prints the presses.
 - `splashwin [W H MARGIN ID late parented resz vismargin pinx parentonly
   pgeo follow unmaxwhenmaxed]` maps an updater splash's shape: a CSD
   toplevel whose committed buffer exceeds the declared geometry (a
@@ -62,7 +64,8 @@ make -C devtools HL=/path/to/Hyprland
 - `gtkgrid.py LOG [wayland|x11] [WAYLAND-TRACE] [cursor|shapes]` is a
   real GTK3 client (PyGObject) as a render-vs-input oracle: a floating
   CSD window of solid color blocks and a menu button whose GtkMenu is an
-  xdg_popup of colored items. It logs what GTK hit (`HIT <color>` on a
+  xdg_popup of colored items; a right press on green opens the same items
+  there and then, the button still down (`CONTEXT green`). It logs what GTK hit (`HIT <color>` on a
   press, `SCROLL <color> <direction>` per wheel detent; the blue block
   takes smooth scrolls instead, `SMOOTH blue <source> <dx> <dy>` per delta
   and `STOP blue <source>`, the source as GTK names its device; `PINCH

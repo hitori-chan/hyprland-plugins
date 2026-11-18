@@ -4,8 +4,9 @@
 // is its own title bar: a press dragged 8 px asks xdg_toplevel.move with
 // that press's serial, as a client-side title bar does, and it prints
 // `press SERIAL`, `move SERIAL`, `up`.
-// With `press`, it asks at the press itself, as some title bars do.
-// usage: fixwin <w> <h> [title] [drag|press]
+// With `press`, it asks at the press itself, as some title bars do. With
+// `popup`, an xdg_popup without a grab hangs 10 px under the window, 20 px in.
+// usage: fixwin <w> <h> [title] [drag|press|popup]
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,7 +25,7 @@ static struct wl_surface   *g_surf;
 static struct xdg_toplevel *g_top;
 static struct wl_buffer    *g_buf;
 static struct wl_seat      *g_seat;
-static int                  g_w = 310, g_h = 360, g_done, g_drag, g_onPress;
+static int                  g_w = 310, g_h = 360, g_done, g_drag, g_onPress, g_popup;
 static uint32_t             g_pressSerial;
 static int                  g_pressed, g_asked;
 static double               g_px, g_py, g_x, g_y;
@@ -105,7 +106,7 @@ static void ptr_button(void *d, struct wl_pointer *p, uint32_t serial, uint32_t 
     g_pressed = st == WL_POINTER_BUTTON_STATE_PRESSED;
     if (g_pressed) {
         g_pressSerial = serial;
-        g_asked       = 0;
+        g_asked       = g_popup; // a popup's press never asks to move the window
         g_px          = g_x;
         g_py          = g_y;
     }
@@ -126,6 +127,54 @@ static void ptr_axis(void *d, struct wl_pointer *p, uint32_t t, uint32_t a, wl_f
 }
 static const struct wl_pointer_listener ptrl = { .enter = ptr_enter, .leave = ptr_leave, .motion = ptr_motion, .button = ptr_button, .axis = ptr_axis };
 
+static struct wl_buffer *g_popBuf;
+static void pop_surface_configure(void *d, struct xdg_surface *x, uint32_t serial) {
+    xdg_surface_ack_configure(x, serial);
+    wl_surface_attach(d, g_popBuf, 0, 0);
+    wl_surface_commit(d);
+}
+static const struct xdg_surface_listener popsl = { .configure = pop_surface_configure };
+static void pop_configure(void *d, struct xdg_popup *p, int32_t x, int32_t y, int32_t w, int32_t h) {
+    (void) d;
+    (void) p;
+    (void) x;
+    (void) y;
+    (void) w;
+    (void) h;
+}
+static void pop_done(void *d, struct xdg_popup *p) {
+    (void) d;
+    (void) p;
+}
+static const struct xdg_popup_listener popl = { .configure = pop_configure, .popup_done = pop_done };
+
+// 200x80, no grab: it stays until the window goes
+static void open_popup(struct xdg_surface *parent) {
+    enum { W = 200, H = 80 };
+    int       fd = memfd_create("fixwin-popup", 0);
+    ftruncate(fd, W * H * 4);
+    uint32_t *px = mmap(NULL, W * H * 4, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    for (int i = 0; i < W * H; i++)
+        px[i] = 0xff305040;
+    struct wl_shm_pool *pool = wl_shm_create_pool(g_shm, fd, W * H * 4);
+    g_popBuf                 = wl_shm_pool_create_buffer(pool, 0, W, H, W * 4, WL_SHM_FORMAT_ARGB8888);
+    wl_shm_pool_destroy(pool);
+
+    struct xdg_positioner *pos = xdg_wm_base_create_positioner(g_wm);
+    xdg_positioner_set_size(pos, W, H);
+    xdg_positioner_set_anchor_rect(pos, 0, 0, g_w, g_h);
+    xdg_positioner_set_anchor(pos, XDG_POSITIONER_ANCHOR_BOTTOM_LEFT);
+    xdg_positioner_set_gravity(pos, XDG_POSITIONER_GRAVITY_BOTTOM_RIGHT);
+    xdg_positioner_set_offset(pos, 20, 10);
+
+    struct wl_surface  *surf = wl_compositor_create_surface(g_comp);
+    struct xdg_surface *xs   = xdg_wm_base_get_xdg_surface(g_wm, surf);
+    xdg_surface_add_listener(xs, &popsl, surf);
+    xdg_popup_add_listener(xdg_surface_get_popup(xs, parent, pos), &popl, NULL);
+    xdg_positioner_destroy(pos);
+    wl_surface_commit(surf);
+}
+
 int main(int argc, char **argv) {
     g_w = argc > 1 ? atoi(argv[1]) : 310;
     g_h = argc > 2 ? atoi(argv[2]) : 360;
@@ -135,7 +184,8 @@ int main(int argc, char **argv) {
         g_h = 1;
     g_title = argc > 3 ? argv[3] : "fixwin";
     g_onPress = argc > 4 && !strcmp(argv[4], "press");
-    g_drag    = g_onPress || (argc > 4 && !strcmp(argv[4], "drag"));
+    g_popup   = argc > 4 && !strcmp(argv[4], "popup");
+    g_drag    = g_onPress || g_popup || (argc > 4 && !strcmp(argv[4], "drag"));
 
     g_dpy = wl_display_connect(NULL);
     if (!g_dpy)
@@ -171,6 +221,10 @@ int main(int argc, char **argv) {
 
     wl_surface_attach(g_surf, g_buf, 0, 0);
     wl_surface_commit(g_surf);
+    if (g_popup) {
+        wl_display_roundtrip(g_dpy);
+        open_popup(xsd);
+    }
 
     while (!g_done)
         if (wl_display_dispatch(g_dpy) < 0)
