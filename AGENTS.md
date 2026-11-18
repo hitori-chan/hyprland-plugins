@@ -52,8 +52,9 @@ compositor is built from.
   keeps pkg-config's cached versions: after a distro upgrade of a dependency
   add `-U '*_dep_*' -U '__pkg_config_checked_*'`, or hyprpm's plugin fails
   that guard (2026-11-04; the gate refuses such a tree).
-- Dependencies come from distro packages; the gate's nested alone loads
-  Aquamarine at the fork's `flake.lock` pin (`gate/host.sh`).
+- Dependencies come from distro packages, but Aquamarine: the fork needs
+  `~/repo/PKGBUILDs/aquamarine` (the `flake.lock` pin and its patches), and
+  the gate's nested builds the same (`gate/host.sh`).
 - The user performs sudo installs and deploys (the fork: install +
   relog, then `hyprpm update`).
 - Two machines run it: a ThinkPad (x86, this host) and an Apple silicon
