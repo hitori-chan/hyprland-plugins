@@ -27,6 +27,7 @@ look for the target. It fits:
 - the bell of the first stroke's speed: how sharply it peaks, and where;
 - the path's bow: the largest sideways distance over the length;
 - how often a small correction follows the first stroke, which way, how far;
+- a long move's slow end: its share of the time, and of the way;
 - the rest: from arriving within 3 px of the press point to the press;
 - the button: how long a click holds it, the gap inside a double click, and a
   drag's lead (press until 3 px away) and rest (3 px from the drop until the
@@ -192,6 +193,7 @@ NEAR = 3.0      # px: arrived at the point
 TRAVEL = 24.0   # px: the shortest movement that says anything
 ENOUGH = 30     # samples a value needs
 SEEN = 0.03     # of the peak speed: where a recorded movement starts and ends
+SLOW = 0.15     # of the peak speed: where a movement's first stroke has ended
 
 KERNEL = [math.exp(-0.5 * (i / 3) ** 2) for i in range(-12, 13)]  # sigma 12 ms: about 11 Hz
 KERNEL = [k / sum(KERNEL) for k in KERNEL]
@@ -313,7 +315,17 @@ def measure(ts, xs, ys):
     d = math.dist((x[0], y[0]), (x[-1], y[-1]))
     ux, uy = (x[-1] - x[0]) / d, (y[-1] - y[0]) / d
 
+    # the first stroke ends where the speed first sinks under SLOW of its peak
+    slow = next((i for i in range(ip, off) if v[i] < SLOW * vmax), off)
     m = {"d": d, "mt": (off - on) * DT}
+    # its shape and time are read around the peak, where a slow end can't reach
+    up = next(i for i in range(on, ip + 1) if v[i] >= 0.5 * vmax)
+    down = next((i for i in range(ip, off) if v[i] < 0.5 * vmax), off)
+    way = math.dist((x[on], y[on]), (x[slow], y[slow]))
+    if down > up and way > 0:
+        m["pace"] = way / vmax
+        m["reach"] = (down - up) * DT / m["pace"]
+        m["lean"] = (ip - up) / (down - up)
     pe = first_stroke(v, x, y, ip, off, vmax, 0.5, 0.04)
     m["leg"] = pe != off and math.dist((x[-1], y[-1]), (x[pe], y[pe])) / d > LEG
     # the strict reading finds fewer corrections: better too few than invented
@@ -324,10 +336,8 @@ def measure(ts, xs, ys):
     m["left"] = left
 
     # the stroke itself, when nothing follows it
-    if pe == off and off > on:
-        chord = math.dist((x[on], y[on]), (x[off], y[off]))
-        m["sharp"] = vmax / max(chord / ((off - on) * DT), 1e-6)
-        m["peak"] = (ip - on) / (off - on)
+    m["tail_time"] = (off - slow) / max(1, off - on)
+    m["tail_left"] = math.dist((x[-1], y[-1]), (x[slow], y[slow])) / d
     px, py = x[pe] - x[on], y[pe] - y[on]
     chord = math.hypot(px, py)
     if chord >= 16:
@@ -401,42 +411,88 @@ def log_spread(v):
     return (math.log(percentile(v, 0.84)) - math.log(percentile(v, 0.16))) / 2
 
 
-def bell(sharp, peak):
-    """The speed t^A (1-t)^B whose recorded shape is this: a recording starts
-    and ends where the speed clears its noise, so the tails are out of its
-    sight. Answers A + B, where it peaks, and the share of its time seen."""
+def bell(reach, lean):
+    """The speed t^A (1-t)^B around whose peak the movement looks as measured:
+    `reach` is the time above half the peak speed, against the way over the peak
+    speed; `lean` the share of that time before the peak. Answers A + B, where it
+    peaks, and the peak speed over the mean."""
     N = 200
     us = [(i + 0.5) / N for i in range(N)]
-    best = (math.inf, 4.0, 0.45, 1.0)
+    best = (math.inf, 4.0, 0.45, 1.875)
     for s2 in range(4, 49):
         s = s2 / 2
         for p100 in range(20, 71):
             p = p100 / 100
             f = [u ** (s * p) * (1 - u) ** (s * (1 - p)) for u in us]
             top = max(f)
-            seen = [i for i in range(N) if f[i] >= SEEN * top]
-            on, off = seen[0], seen[-1]
-            width = (off - on + 1) / N
-            mean = sum(f[on:off + 1]) / (off - on + 1)
-            at = (f.index(top) - on) / max(1, off - on)
-            miss = (top / mean / sharp - 1) ** 2 + (at - peak) ** 2
+            ip = f.index(top)
+            hi = next(i for i in range(N) if f[i] >= 0.5 * top)
+            lo = next((i for i in range(ip, N) if f[i] < 0.5 * top), N - 1)
+            sharp = top / (sum(f) / N)
+            miss = ((lo - hi) / N * sharp / reach - 1) ** 2 + ((ip - hi) / max(lo - hi, 1) - lean) ** 2
             if miss < best[0]:
-                best = (miss, s, p, width)
+                best = (miss, s, p, sharp)
     return best[1:]
 
 
-def fitts(moves, width):
-    """MT = a + b * ID through the medians of 8 equal-count ID bands: medians
-    shrug off hesitations. In the time of the whole bell, its unseen tails too."""
-    pts = sorted((math.log2(m["d"] / W_DEFAULT + 1), m["mt"]) for m in moves)
+def bell_end(s, p):
+    """What a bell alone shows after its speed sinks under SLOW of the peak: the
+    share of the seen time, and of the way."""
+    N = 400
+    f = [((i + 0.5) / N) ** (s * p) * (1 - (i + 0.5) / N) ** (s * (1 - p)) for i in range(N)]
+    top = max(f)
+    seen = [i for i in range(N) if f[i] >= SEEN * top]
+    slow = next(i for i in range(f.index(top), N) if f[i] < SLOW * top)
+    return (seen[-1] - slow) / (seen[-1] - seen[0]), sum(f[slow:]) / sum(f)
+
+
+def fitts(moves, sharp):
+    """The first stroke's time = a + b * ID through the medians of 8 equal-count
+    ID bands: medians shrug off hesitations. A bell `sharp` times its mean speed
+    at the peak takes that many times the way over the peak speed; a long move's
+    slow end comes on top."""
+    pts = sorted((math.log2(m["d"] / W_DEFAULT + 1), m["pace"] * sharp) for m in moves if "pace" in m)
     bands = [pts[i * len(pts) // 8 : (i + 1) * len(pts) // 8] for i in range(8)]
     bx = [statistics.median(p[0] for p in g) for g in bands]
     by = [statistics.median(p[1] for p in g) for g in bands]
     mx, my = statistics.fmean(bx), statistics.fmean(by)
     sxx = sum((x - mx) ** 2 for x in bx)
     b = sum((x - mx) * (y - my) for x, y in zip(bx, by)) / sxx if sxx else 0.12
-    b = min(max(b / width, 0.03), 0.4)
-    return min(max((my / width) - b * mx, 0.0), 0.4), b
+    b = min(max(b, 0.03), 0.4)
+    return min(max(my - b * mx, 0.0), 0.4), b
+
+
+def motion(whole, have):
+    """The way a hand moves, from its moves without a separate leg."""
+    prof = {}
+    strokes = [m for m in whole if "pace" in m and m["d"] >= 100]
+    sharp = 1.875
+    if have(["bell", "peak"], len(strokes) >= ENOUGH):
+        s, p, sharp = bell(statistics.median(m["reach"] for m in strokes), statistics.median(m["lean"] for m in strokes))
+        prof["bell"], prof["peak"] = s, p
+    if have(["fitts_a_ms", "fitts_b_ms"], len(whole) >= ENOUGH):
+        a, b = fitts(whole, sharp)
+        prof["fitts_a_ms"], prof["fitts_b_ms"] = round(a * 1000), round(b * 1000)
+
+    # what the first stroke's own end shows is no slow end
+    far_moves = [m for m in whole if m["d"] >= 600]
+    if have(["tail_share", "tail_size"], len(far_moves) >= 15):
+        own_time, own_way = bell_end(prof.get("bell", 4.0), prof.get("peak", 0.45))
+        prof["tail_share"] = round(min(max((statistics.median(m["tail_time"] for m in far_moves) - own_time) / (1 - own_time), 0.0), 0.8), 3)
+        prof["tail_size"] = round(min(max(statistics.median(m["tail_left"] for m in far_moves) - own_way, 0.0), 0.2), 4)
+
+    bows = [m["bow"] for m in whole if "bow" in m and m["d"] >= 100]
+    if have(["bow_median", "bow_sigma"], len(bows) >= ENOUGH):
+        prof["bow_median"], prof["bow_sigma"] = round(statistics.median(bows), 4), round(log_spread(bows), 3)
+
+    far = [m for m in whole if m["d"] >= 100]
+    fixed = [m for m in far if m["corrected"]]
+    if have(["correct_p"], len(far) >= ENOUGH):
+        prof["correct_p"] = round(len(fixed) / len(far), 3)
+    if have(["under_share", "correct_size"], len(fixed) >= 5):
+        prof["under_share"] = round(sum(m["short"] for m in fixed) / len(fixed), 3)
+        prof["correct_size"] = round(statistics.median(m["left"] for m in fixed), 4)
+    return prof
 
 
 def derive(recordings):
@@ -461,27 +517,7 @@ def derive(recordings):
             short.extend(keys)
         return enough
 
-    whole = [m for m in moves if not m["leg"]]
-    strokes = [m for m in whole if "sharp" in m and m["d"] >= 100]
-    width = 1.0
-    if have(["bell", "peak"], len(strokes) >= ENOUGH):
-        s, p, width = bell(statistics.median(m["sharp"] for m in strokes), statistics.median(m["peak"] for m in strokes))
-        prof["bell"], prof["peak"] = s, p
-    if have(["fitts_a_ms", "fitts_b_ms"], len(whole) >= ENOUGH):
-        a, b = fitts(whole, width)
-        prof["fitts_a_ms"], prof["fitts_b_ms"] = round(a * 1000), round(b * 1000)
-
-    bows = [m["bow"] for m in whole if "bow" in m and m["d"] >= 100]
-    if have(["bow_median", "bow_sigma"], len(bows) >= ENOUGH):
-        prof["bow_median"], prof["bow_sigma"] = round(statistics.median(bows), 4), round(log_spread(bows), 3)
-
-    far = [m for m in whole if m["d"] >= 100]
-    fixed = [m for m in far if m["corrected"]]
-    if have(["correct_p"], len(far) >= ENOUGH):
-        prof["correct_p"] = round(len(fixed) / len(far), 3)
-    if have(["under_share", "correct_size"], len(fixed) >= 5):
-        prof["under_share"] = round(sum(m["short"] for m in fixed) / len(fixed), 3)
-        prof["correct_size"] = round(statistics.median(m["left"] for m in fixed), 4)
+    prof.update(motion([m for m in moves if not m["leg"]], have))
 
     if have(["rest_ms", "rest_sigma"], len(rests) >= ENOUGH):
         prof["rest_ms"], prof["rest_sigma"] = round(statistics.median(rests)), round(log_spread(rests), 3)

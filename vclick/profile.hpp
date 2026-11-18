@@ -12,11 +12,12 @@ namespace VClick::Profile {
 
     // these defaults are a typical mouse user's
     struct SProfile {
-        double      aMs = 50, bMs = 120;                 // Fitts: MT = a + b * log2(D / W + 1)
+        double      aMs = 60, bMs = 50;                 // Fitts: MT = a + b * log2(D / W + 1)
         double      bell = 4, peak = 0.45;               // the speed t^A (1-t)^B: A + B, and where it peaks, 0-1 of the movement
         double      bowMedian = 0.05, bowSigma = 0.8;    // the largest sideways distance over the length: log-normal
         double      correctP = 0.05, underShare = 0.6;   // how often a small correction follows, how often from short of the target
         double      correctSize = 0.05;                  // how far off the first stroke lands, of D
+        double      tailShare = 0.15, tailSize = 0.03;   // a long move's slow end: its share of the time, and of the way
         double      restMs = 120, restSigma = 0.6;       // from arriving within NEAR_PX to a click: log-normal
         double      holdMs = 100, holdSigma = 0.25;      // a click's button held down: log-normal
         double      doubleGapMs = 120;                   // from a release to the next click's press

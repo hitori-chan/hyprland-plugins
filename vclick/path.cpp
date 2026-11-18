@@ -45,16 +45,22 @@ namespace VClick::Path {
         return {from, from + (to - from) / 3, from + (to - from) * (2.0 / 3), to, ms, std::move(progress)};
     }
 
+    double tailAt(double distance, const SProfile& p) {
+        return p.tailShare * std::clamp(std::log2(std::max(distance, 1.0) / NEAR_TAIL_PX) / std::log2(FAR_TAIL_PX / NEAR_TAIL_PX), 0.0, 1.0);
+    }
+
     std::vector<SSeg> plan(const Vector2D& from, const Vector2D& to, const Vector2D& bounds, const SProfile& p, std::mt19937& rng, const SAim& aim) {
         const double D = from.distance(to);
         if (D < 2)
             return {};
         auto           uni   = [&](double a, double b) { return std::uniform_real_distribution<double>{a, b}(rng); };
         const Vector2D U     = (to - from) / D;
-        const double   total = std::clamp(fittsMs(D, p, aim.w), 40.0, MAX_MOVE_MS);
+        const double   FITTS = std::clamp(fittsMs(D, p, aim.w), 40.0, MAX_MOVE_MS);
+        double         total = FITTS;
 
         // where the first stroke lands, and its share of the time: short of
-        // the target or past it, for a correction to mend
+        // the target or past it, for a correction to mend; else, on a long
+        // move, short of it for the slow approach
         Vector2D end   = to;
         double   share = 1;
         if (D >= MIN_CORRECT_PX && p.correctSize > 0 && uni(0, 1) < p.correctP) {
@@ -64,6 +70,11 @@ namespace VClick::Path {
                 end              = clampTo(to + U * (SHORT ? -OFF : OFF), bounds);
                 share            = CORRECT_SHARE;
             }
+        }
+        if (end == to && p.tailSize > 0 && tailAt(D, p) > 0) {
+            end   = to - U * (D * p.tailSize);
+            share = 1 - tailAt(D, p);
+            total = FITTS / share; // the first stroke keeps Fitts's time: the slow end comes on top
         }
         if (end.distance(to) < 2) {
             end   = to;

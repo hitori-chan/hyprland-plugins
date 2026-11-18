@@ -24,7 +24,8 @@ static void check(bool ok, const char* what) {
 int main() {
     std::mt19937   rng{12345};
     SProfile       P;
-    P.correctP = 0.3, P.underShare = 0, P.correctSize = 0.03; // every correction overshoots
+    P.correctP = 0.3, P.underShare = 0, P.correctSize = 0.03; // every correction overshoots, and no tail
+    P.tailShare = 0;
     const Vector2D BOX{1555, 830};
 
     check(plan({100, 100}, {101, 100}, BOX, P, rng).empty(), "under 2 px: no glide");
@@ -107,7 +108,7 @@ int main() {
         Q.correctP       = 0;
         const auto SMALL = duration(plan({0, 0}, {600, 0}, {1600, 900}, Q, rng));
         const auto WIDE  = duration(plan({0, 0}, {600, 0}, {1600, 900}, Q, rng, {.w = 128}));
-        check(std::abs(SMALL - fittsMs(600, Q)) < 1e-6 && std::abs(WIDE - fittsMs(600, Q, 128)) < 1e-6 && WIDE < SMALL - 100,
+        check(std::abs(SMALL - fittsMs(600, Q)) < 1e-6 && std::abs(WIDE - fittsMs(600, Q, 128)) < 1e-6 && WIDE < SMALL - 50,
               "a target's size is Fitts's W (128 px: sooner than 32 px)");
     }
 
@@ -124,7 +125,7 @@ int main() {
     // a finger's stroke: Fitts's time within its bounds, from none to all
     // of the way, never back, the bell's ends slow
     {
-        check(stroke(1, P).ms == MIN_STROKE_MS && stroke(1e6, P).ms == MAX_MOVE_MS && std::abs(stroke(400, P).ms - fittsMs(400, P)) < 1e-9,
+        check(stroke(1, P).ms == MIN_STROKE_MS && stroke(1e12, P).ms == MAX_MOVE_MS && std::abs(stroke(400, P).ms - fittsMs(400, P)) < 1e-9,
               "a stroke takes Fitts's time for its length, 100-1000 ms");
         const auto S       = stroke(400, P);
         bool       forward = along(S, 0).x == 0 && along(S, S.ms) == Vector2D{1, 0} && along(S, 1e9) == Vector2D{1, 0};
@@ -187,11 +188,28 @@ int main() {
         check(near, "a move under 100 px lands in one stroke");
     }
 
-    // the window's edge holds the sum of two strokes
+    // a long move's slow end: it peaks higher in the same time, and the
+    // window's edge still holds the sum
     {
         SProfile Q   = P;
-        Q.bowMedian = 0.2, Q.correctP = 1, Q.underShare = 0, Q.correctSize = 0.15;
+        Q.correctP   = 0;
+        Q.bowMedian  = 0;
+        const auto PEAK = [&](double tail) {
+            Q.tailShare = tail, Q.tailSize = 0.05;
+            const auto S    = plan({0, 0}, {1000, 0}, {1600, 900}, Q, rng);
+            double     best = 0;
+            for (double t = 1; t < duration(S); t += 1)
+                best = std::max(best, sample(S, t).x - sample(S, t - 1).x);
+            return best;
+        };
+        const double ALONE = PEAK(0), SLOWED = PEAK(0.5);
+        check(SLOWED > ALONE * 0.8 && SLOWED < ALONE * 1.1, "a slow end leaves the first stroke's speed alone");
+        check(std::abs(duration(plan({0, 0}, {1000, 0}, {1600, 900}, Q, rng)) - fittsMs(1000, Q) / 0.5) < 1e-6, "  and comes on top of its time");
+        Q.tailShare = 0.5;
+        check(tailAt(100, Q) == 0 && tailAt(150, Q) == 0 && tailAt(600, Q) == 0.5 && tailAt(2000, Q) == 0.5, "the slow end grows from 150 to 600 px");
+        check(plan({0, 0}, {100, 0}, {1600, 900}, Q, rng).size() == 1 && plan({0, 0}, {1000, 0}, {1600, 900}, Q, rng).size() == 2, "  a short move has none");
         bool inside = true;
+        Q.bowMedian = 0.2, Q.correctP = 1, Q.underShare = 0, Q.correctSize = 0.15;
         for (int i = 0; i < 500; ++i) {
             const auto S = plan({10, 10}, {1590, 890}, {1600, 900}, Q, rng);
             for (double t = 0; t < duration(S); t += 4) {
@@ -199,7 +217,7 @@ int main() {
                 inside &= AT.x >= 0 && AT.y >= 0 && AT.x <= 1599 && AT.y <= 899;
             }
         }
-        check(inside, "the sum of two strokes stays in the window");
+        check(inside, "  the sum of two strokes stays in the window");
     }
 
     // the time the way's end spends near the target, and the rest's draw

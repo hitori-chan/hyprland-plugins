@@ -1,8 +1,8 @@
 // The glide's path and its timing: pure math with no
 // compositor in it, so test/path.cpp checks it headless.
 //
-// A glide is a first stroke, and sometimes a second about as it ends: a small
-// correction. Their displacements add,
+// A glide is a first stroke, and sometimes a second that overlaps its end:
+// a small correction, or a long move's slow approach. Their displacements add,
 // so the sum ends exactly on the target. The first is a cubic Bézier whose
 // inner control points sit off the straight line (a hand's arc), the whole
 // timed by Fitts's law, each stroke's speed bell-shaped as a hand's: zero at
@@ -28,6 +28,7 @@ namespace VClick::Path {
     constexpr double MIN_CORRECT_PX = 100;  // a shorter move lands in one stroke
     constexpr double CORRECT_SHARE  = 0.9;  // of a corrected move's time, the first stroke's
     constexpr double MIN_MEND_MS    = 40;   // a second stroke is never a twitch
+    constexpr double NEAR_TAIL_PX = 150, FAR_TAIL_PX = 600; // a move's slow end grows between these, on log D
 
     struct SSeg {
         Vector2D            p0, p1, p2, p3;
@@ -45,6 +46,7 @@ namespace VClick::Path {
     };
 
     double   fittsMs(double distance, const SProfile& p, double w = TARGET_W);
+    double   tailAt(double distance, const SProfile& p); // the share of a move's time its slow end takes
     Vector2D clampTo(const Vector2D& p, const Vector2D& bounds);
 
     // from and to in a box of size bounds (to inside it); empty when they

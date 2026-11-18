@@ -77,6 +77,10 @@ acts:
   first stroke takes 90 % of the move's time, and a straight second stroke
   of at least 40 ms mends the rest, beginning about as the first stops. The
   two add up, so the sum ends exactly on the target.
+- **Slow end**: a long move is a fast stroke, then a slow approach that
+  comes on top of Fitts's time. Up to 150 px there is none; from 600 px it
+  takes `tail_share` of the whole time for the last `tail_size` of the way;
+  between them it grows on log D.
 - **Pace**: one motion every 1000 / `rate_hz` ms (4–16 ms) on the event
   loop. A surface boundary on the way gets a leave and an enter, as a
   real pointer's does. The last motion lands exactly on the point.
@@ -111,6 +115,12 @@ last rest (150 ms) or button event to the press.
 - **Bow**: the first stroke's median and log-normal spread.
 - **Corrections**: how often a small one follows, read strictly: too few
   rather than invented.
+- **First stroke**: its bell and time are read around the peak speed, where
+  a slow end can't reach: the time above half the peak, against the way over
+  the peak speed.
+- **Slow end**: on moves of 600 px and more, the time and the way left once
+  the speed first sinks under 15 % of its peak, less what a bell's own end
+  shows.
 - **Rest**: arrival within 3 px of the press point to the press.
 - **Button**: a click's hold, the gap inside a double click, a drag's lead
   and rest before the release.

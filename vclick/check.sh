@@ -277,9 +277,9 @@ expect "lua: a number where hyprctl takes a word" "$(lua "hl.plugin.vclick.click
 expect "lua: an argument hyprctl could not take" "$(lua "hl.plugin.vclick.click({}, 10, 10)")" $'nil\terror: argument 1 is a table: a string or a number, as hyprctl takes it'
 # the pace for the check: a profile file of its own, never the user's;
 # no correction, so a glide's time is Fitts's law exactly
-printf 'correct_p=0\nrest_ms=140\nrest_sigma=0\nhold_ms=90\nhold_sigma=0\ndouble_gap_ms=100\ndrag_lead_ms=120\ndrop_rest_ms=150\n' >"$T/even.profile"
+printf 'fitts_a_ms=50\nfitts_b_ms=120\ncorrect_p=0\ntail_share=0\nrest_ms=140\nrest_sigma=0\nhold_ms=90\nhold_sigma=0\ndouble_gap_ms=100\ndrag_lead_ms=120\ndrop_rest_ms=150\n' >"$T/even.profile"
 expect "a profile from a file" "$(vclick profile reload "$T/even.profile" | head -1)" "loaded $T/even.profile"
-expect "  read back" "$(vclick profile | head -1)" "fitts a 50 ms, b 120 ms/bit (W 32 px); bell 4 peaking at 0.45; bow 0.05 (sigma 0.8); corrected 0%, 60% from short, by 5%; rest 140 ms (sigma 0); hold 90 ms (sigma 0), 100 ms between clicks; drag lead 120 ms, drop rest 150 ms; wheel 50 ms; 125 Hz"
+expect "  read back" "$(vclick profile | head -1)" "fitts a 50 ms, b 120 ms/bit (W 32 px); bell 4 peaking at 0.45; bow 0.05 (sigma 0.8); corrected 0%, 60% from short, by 5%; tail 0% of the time, 3% of the way; rest 140 ms (sigma 0); hold 90 ms (sigma 0), 100 ms between clicks; drag lead 120 ms, drop rest 150 ms; wheel 50 ms; 125 Hz"
 # the exact event sequences below are performance's; the human mode has its own section
 expect "the performance mode" "$(vclick mode performance)" performance
 
@@ -680,7 +680,7 @@ expect "  A's hover ended first" "$(events a "$AM")" leave
 expect "  B's pointer is the user's: the cursor is theirs there" "$(vclick where)" nowhere
 
 echo "== the user's pointer comes into A during a glide"
-printf 'fitts_a_ms=400\nfitts_b_ms=400\ncorrect_p=0\n' >"$T/slow.profile"
+printf 'fitts_a_ms=400\nfitts_b_ms=400\ncorrect_p=0\ntail_share=0\n' >"$T/slow.profile"
 expect "a slow profile (1 s glides)" "$(vclick profile reload "$T/slow.profile" | head -1)" "loaded $T/slow.profile"
 expect "  an instant move to green" "$(vclick move "address:$A" $(at green) performance)" ok
 quiet "$T/a.wl"
@@ -730,7 +730,7 @@ if [[ -n "$ORANGE" ]]; then
 fi
 
 echo "== a hand's click, interrupted"
-printf 'correct_p=0\nrest_ms=140\nrest_sigma=0\nhold_ms=250\nhold_sigma=0\ndouble_gap_ms=20\n' >"$T/hold.profile"
+printf 'fitts_a_ms=50\nfitts_b_ms=120\ncorrect_p=0\ntail_share=0\nrest_ms=140\nrest_sigma=0\nhold_ms=250\nhold_sigma=0\ndouble_gap_ms=20\n' >"$T/hold.profile"
 expect "a long hold" "$(vclick profile reload "$T/hold.profile" | head -1)" "loaded $T/hold.profile"
 quiet "$T/a.wl"
 AM="$(lines "$T/a.wl")"

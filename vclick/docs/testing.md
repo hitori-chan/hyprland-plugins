@@ -22,7 +22,8 @@ time for the target's size, a correction's included (at most 40 ms more),
 overshoots and bows within bounds (25 %), no tick moves over 4× the
 average step, about `correct_p` of long moves correct, from short or past
 the target, overlapping the first stroke and ending exactly on the target;
-a sharper bell peaks
+a long move's slow end leaves the first stroke's speed alone and adds to its
+time; a sharper bell peaks
 higher, and a log-normal draw stays within two sigma. A
 finger's stroke: Fitts's time within 100–1000 ms, from none to all of
 the way, never back, slow at both ends. Plus the profile parser: values, clamps, skipped bad lines, a missing file. Every
