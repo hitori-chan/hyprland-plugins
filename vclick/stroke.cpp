@@ -17,8 +17,6 @@
 #include <hyprland/src/desktop/view/window/Window.hpp>
 #include <hyprland/src/helpers/time/Time.hpp>
 #include <hyprland/src/managers/SeatManager.hpp>
-#include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
-#include <hyprland/src/managers/eventLoop/EventLoopTimer.hpp>
 #include <hyprland/src/protocols/core/Compositor.hpp>
 #include <hyprland/src/protocols/core/Seat.hpp>
 
@@ -45,9 +43,7 @@ namespace VClick::Stroke {
         std::vector<uint32_t>  pinches;      // the app's pinch gesture objects, by id
         bool                   left = false; // the seat left the app's pointer: enter again
         Time::steady_tp        start;
-        int                    period = 8;
         Pointer::CPointers     pointers;
-        SP<CEventLoopTimer>    timer;
     };
     static std::optional<SStroke> stroke;
 
@@ -106,8 +102,6 @@ namespace VClick::Stroke {
     static void end(bool keep, bool cancelled) {
         if (!stroke)
             return;
-        if (stroke->timer && g_pEventLoopManager)
-            g_pEventLoopManager->removeTimer(stroke->timer);
         const auto SURF = stroke->surf.lock();
         if (SURF && !blocked()) {
             const bool MINE = !Pointer::userIn(stroke->client);
@@ -133,9 +127,9 @@ namespace VClick::Stroke {
         stroke.reset();
     }
 
-    static void tick() {
+    bool tick() {
         if (!stroke)
-            return;
+            return false;
         const auto  W    = stroke->window.lock();
         const auto  SURF = stroke->surf.lock();
         std::string why;
@@ -148,13 +142,13 @@ namespace VClick::Stroke {
         if (!why.empty()) {
             noteStop(pinching() ? "the last pinch stopped: " + why : std::format("the last scroll stopped after {}: {}", progress(), why));
             end(false, true);
-            return;
+            return false;
         }
 
         const double EL = std::chrono::duration<double, std::milli>(Time::steadyNow() - stroke->start).count();
         if (EL >= stroke->way.ms + LIFT_MS) {
             end(stroke->action.stay, false);
-            return;
+            return false;
         }
         const double  U   = EL >= stroke->way.ms ? 1.0 : Path::along(stroke->way, EL).x;
         const int32_t NOW = U >= 1 ? stroke->total : sc<int32_t>(std::lround(stroke->total * U));
@@ -175,17 +169,13 @@ namespace VClick::Stroke {
         }
         stroke->sent = NOW;
         stroke->done = U;
-        stroke->timer->updateTimeout(std::chrono::milliseconds(stroke->period));
+        return true;
     }
 
     static void begin(const SAction& c, const Pointer::STarget& t, double travel, int32_t total) {
-        const auto& PACE = Glide::profile();
-        stroke.emplace(SStroke{.action = c, .window = t.window, .surf = t.surf, .client = t.surf->client(), .local = t.local, .way = Path::stroke(travel, PACE), .total = total});
-        stroke->period = std::clamp(sc<int>(std::lround(1000.0 / PACE.rateHz)), 4, 16);
-        stroke->start  = Time::steadyNow();
+        stroke.emplace(SStroke{.action = c, .window = t.window, .surf = t.surf, .client = t.surf->client(), .local = t.local, .way = Path::stroke(travel, Run::profile()), .total = total});
+        stroke->start = Time::steadyNow();
         clearStop();
-        stroke->timer = makeShared<CEventLoopTimer>(std::chrono::milliseconds(stroke->period), [](SP<CEventLoopTimer>, void*) { tick(); }, nullptr);
-        g_pEventLoopManager->addTimer(stroke->timer);
     }
 
     Result scroll(const SAction& c) {

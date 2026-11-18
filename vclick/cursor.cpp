@@ -355,7 +355,7 @@ namespace VClick::Cursor {
             g.taken.reset();
         }
         const auto W = g.window.lock();
-        if (W && g.taken.lock() != W && !Glide::active() && Pointer::userIn(Pointer::clientOf(W))) {
+        if (W && g.taken.lock() != W && !Run::moving() && Pointer::userIn(Pointer::clientOf(W))) {
             // the user's pointer came into the app: one pointer, theirs (a
             // glide hands itself over on its next frame)
             g.taken = W;

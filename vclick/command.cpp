@@ -229,11 +229,7 @@ namespace VClick::Command {
 
     // what runs now, or nothing
     static std::optional<std::string> running() {
-        if (Glide::active())
-            return Glide::dragging() ? "dragging" : "moving";
-        if (const auto S = Stroke::status())
-            return S;
-        return Pointer::scrollStatus();
+        return Run::status();
     }
 
     static bool busy() {
@@ -302,10 +298,10 @@ namespace VClick::Command {
         }
         if (w[1] == "profile" && w.size() <= 4) {
             if (w.size() == 2)
-                return Profile::describe(Glide::profile());
+                return Profile::describe(Run::profile());
             if (w[2] != "reload")
                 return std::string{USAGE};
-            return Glide::loadProfile(w.size() == 4 ? std::string{w[3]} : "") + "\n" + Profile::describe(Glide::profile());
+            return Run::loadProfile(w.size() == 4 ? std::string{w[3]} : "") + "\n" + Profile::describe(Run::profile());
         }
         if (w[1] == "image" && w.size() == 3)
             return Cursor::describe(selectorOf(w[2]));
@@ -340,14 +336,10 @@ namespace VClick::Command {
         // a hover kept in another app ends here, as a mouse leaves it
         Pointer::unhover(Pointer::clientOf(TW));
 
-        if (c->glide.value_or(mouseMode)) {
-            if (const auto R = Glide::start(*c))
-                return *R ? "ok" : R->error();
-        }
-        const auto R = Pointer::dispatch(*c);
+        const auto R = Run::request(*c, c->glide.value_or(mouseMode));
         if (!R)
             return R.error();
-        if (TW && !Glide::active()) { // a drag's way, set off by its press, ends it itself
+        if (TW && !Run::moving()) { // a way ends it itself
             Pointer::rememberPos(TW, c->pos);
             if (mouseMode)
                 Cursor::place(TW, c->pos);

@@ -21,8 +21,6 @@
 #include <hyprland/src/helpers/time/Time.hpp>
 #include <hyprland/src/managers/SeatManager.hpp>
 #include <hyprland/src/managers/SessionLockManager.hpp>
-#include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
-#include <hyprland/src/managers/eventLoop/EventLoopTimer.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/protocols/core/Compositor.hpp>
 #include <hyprland/src/protocols/core/DataDevice.hpp>
@@ -222,7 +220,7 @@ namespace VClick::Pointer {
 
     // --- one burst -------------------------------------------------------------
 
-    static Result act(const SAction& c) {
+    Result burst(const SAction& c) {
         auto T = resolve(c.selector, c.pos);
         if (!T)
             return fail(T.error());
@@ -410,7 +408,7 @@ namespace VClick::Pointer {
             return;
         }
         const bool STAY = held->stay;
-        Glide::abandon(); // a held move's way ends where it is
+        Run::abandon(); // a held move's way ends where it is
         letGoOf();
         if (!STAY) {
             unhover();
@@ -450,7 +448,7 @@ namespace VClick::Pointer {
         return {};
     }
 
-    static Result pressNow(const SAction& c) {
+    Result press(const SAction& c) {
         if (!dragGuard)
             return fail("error: no drag-and-drop guard (the initiateDrag hook is out): a held button could hand a drag to the user's mouse");
         const auto T = place(c);
@@ -470,91 +468,7 @@ namespace VClick::Pointer {
         return {};
     }
 
-    // --- a paced scroll --------------------------------------------------------
-    //
-    // Each step after the first is its own burst on the event loop, checked
-    // afresh (the window may close, hide or move, the user's pointer may
-    // come into the app). A busy app is waited out for up to BUSY_MS; any
-    // other error ends the run. One run at a time, and nothing else
-    // meanwhile: what a script scrolls is what it asked for.
-    struct SRun {
-        SAction             step; // count 1
-        int                 total  = 0;
-        int                 done   = 0;
-        int                 waited = 0; // ms spent on a busy app for the next step
-        SP<CEventLoopTimer> timer;
-    };
-    static std::optional<SRun> run;
-
-    static void endRun() {
-        if (run && run->timer && g_pEventLoopManager)
-            g_pEventLoopManager->removeTimer(run->timer);
-        run.reset();
-    }
-
-    static void tick() {
-        if (!run)
-            return;
-        const auto R = act(run->step);
-        if (R) {
-            ++run->done;
-            run->waited = 0;
-        } else if (busy(R) && run->waited + run->step.ms <= BUSY_MS) {
-            run->waited += run->step.ms;
-        } else {
-            noteStop(std::format("the last scroll stopped after {}/{}: {}", run->done, run->total, R.error()));
-            endRun();
-            return;
-        }
-        if (run->done >= run->total) {
-            endRun();
-            return;
-        }
-        run->timer->updateTimeout(std::chrono::milliseconds(run->step.ms));
-    }
-
-    std::optional<std::string> scrollStatus() {
-        if (!run)
-            return std::nullopt;
-        return std::format("scrolling {}/{}", run->done, run->total);
-    }
-
-    Result dispatch(const SAction& c) {
-        if (c.verb == EVerb::MOVE) {
-            if (held)
-                return heldMotion(c.pos);
-            if (const auto T = place(c); !T)
-                return fail(T.error());
-            return {};
-        }
-        if (c.verb == EVerb::PRESS)
-            return pressNow(c);
-        if (c.verb == EVerb::DRAG) {
-            if (const auto R = pressNow(c); !R)
-                return R;
-            return Glide::travel(c);
-        }
-        if (c.verb == EVerb::PINCH)
-            return Stroke::pinch(c);
-        if (c.px > 0)
-            return Stroke::scroll(c);
-        if (!c.wheel || c.count == 1 || c.ms == 0)
-            return act(c);
-
-        // the first step now, so its errors are the reply; the rest paced
-        SAction step = c;
-        step.count   = 1;
-        if (const auto R = act(step); !R)
-            return R;
-        clearStop();
-        run.emplace(SRun{.step = step, .total = c.count, .done = 1});
-        run->timer = makeShared<CEventLoopTimer>(std::chrono::milliseconds(step.ms), [](SP<CEventLoopTimer>, void*) { tick(); }, nullptr);
-        g_pEventLoopManager->addTimer(run->timer);
-        return {};
-    }
-
     void reset() {
-        endRun();
         letGoOf(); // the release, then the leave
         unhover();
         positions.clear();

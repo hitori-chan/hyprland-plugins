@@ -13,7 +13,7 @@ header set rebuilds by itself.
 ## Unit cases
 
 ```sh
-make -C vclick test  # headless: path.cpp with only hyprutils, theme.cpp alone
+make -C vclick test  # headless: path, profile and timeline with only hyprutils, theme alone
 ```
 
 Thousands of planned glides, each held to the design: it starts on its
@@ -23,7 +23,8 @@ overshoots and bows within bounds (25 %), no tick moves over 3× the
 average step, about `correct_p` of long moves overshoot, a sharper bell
 peaks higher, and a log-normal draw stays within two sigma. A
 finger's stroke: Fitts's time within 100–1000 ms, from none to all of
-the way, never back, slow at both ends. Plus the profile parser: values, clamps, skipped bad lines, a missing file. The
+the way, never back, slow at both ends. Plus the profile parser: values, clamps, skipped bad lines, a missing file. Every
+verb's steps, by a way there and at once, with their bounds. The
 cursor theme reader: an XCursor file's nearest size, its frames and
 delays, refused bad, truncated and oversized files; a shape found by an
 older X name, through `Inherits` and `default`; the search path.

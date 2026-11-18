@@ -5,9 +5,10 @@
 //   command.cpp  the hyprctl command: parse a request, run it, report status
 //   lua.cpp      the same verbs as Lua functions
 //   pointer.cpp  the app's own pointer: the target under a point, the input in
-//                one burst (a jump), a paced scroll, the hover a move holds
+//                one burst, the hover a move holds, a held button
 //   keyboard.cpp the app's own keyboard: one key, pressed and released
-//   glide.cpp    the way there: one motion per tick along the planned path
+//   timeline.cpp what a request does over time, as steps (no compositor)
+//   run.cpp      the one timer: a request's steps, in order
 //   stroke.cpp   a hand's stroke on a touchpad, over time: a finger's scroll, a pinch
 //   path.cpp     the path's math (no compositor)
 //   profile.cpp  the user's pace: the file learn.py writes (no compositor)
@@ -15,7 +16,7 @@
 //   theme.cpp    the cursor theme's shapes, read from XCursor files (no compositor)
 #pragma once
 
-#include "path.hpp"
+#include "timeline.hpp"
 
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/helpers/memory/Memory.hpp>
@@ -59,15 +60,6 @@ namespace VClick {
     struct SWheel {
         wl_pointer_axis axis;
         int             sign; // +1: down / right (the content moves up / left)
-    };
-
-    enum class EVerb : uint8_t {
-        CLICK,
-        SCROLL,
-        MOVE,  // only go there, and stay (with a held button: a drag's way)
-        PRESS, // go there and hold a button down
-        DRAG,  // press there, glide to `to`, let go
-        PINCH, // two fingers spread to `scale` and turn `deg` there
     };
 
     // one request
@@ -169,8 +161,10 @@ namespace VClick {
         bool                                userIn(wl_client* client); // the user's pointer focus is this app's
         uint32_t                            nowMs();
 
-        // the input at once: a jump, and the end of a glide
-        Result dispatch(const SAction& c);
+        // the clicks, or the wheel steps, in one burst
+        Result burst(const SAction& c);
+        // the button goes down there and stays
+        Result press(const SAction& c);
         // the app's pointer there, and it stays (a move's, a press's, a
         // stroke's start); refused when the user's pointer is in the app
         std::expected<STarget, std::string> place(const SAction& c);
@@ -200,7 +194,6 @@ namespace VClick {
         void                       rememberPos(const PHLWINDOW& w, const Vector2D& pos);
         std::optional<Vector2D>    lastPos(const PHLWINDOW& w);
 
-        std::optional<std::string> scrollStatus(); // "scrolling d/t" while a paced scroll runs
         void                       reset();
     }
 
@@ -210,24 +203,27 @@ namespace VClick {
         Result                           send(const SKey& k);
     }
 
-    namespace Glide {
-        // nullopt: this request goes as a jump (the user's pointer is in the
-        // app, or the point is in a popup outside the window's box)
-        std::optional<Result> start(const SAction& c);
-        bool                  active();
-        void                  stop();                   // leaves the app's pointer, if it can
-        void                  abandon();                // ends where it is: no leave
-        Result                travel(const SAction& c); // a drag's way, its button down: no overshoot, a rest, the release
-        bool                  dragging();               // a held button moves
+    // The one timer: a request's steps, in order.
+    namespace Run {
+        // the request: glide says whether it goes by a way there. What takes
+        // no time happens here; its error is the answer
+        Result                     request(const SAction& c, bool glide);
+        void                       tick();
+        bool                       active();
+        bool                       moving();  // on a way, or resting at the end of one
+        std::optional<std::string> status();  // what runs now, in status's words
+        void                       stop();    // leaves the app's pointer, if it can
+        void                       abandon(); // ends where it is: no leave
 
-        const Profile::SProfile& profile();
-        std::string           loadProfile(const std::string& path); // empty: the default path
+        const Profile::SProfile&   profile();
+        std::string                loadProfile(const std::string& path); // empty: the default path
     }
 
     // A hand's stroke on a touchpad, over time: a finger's scroll, a pinch.
     namespace Stroke {
         Result                     scroll(const SAction& c); // c.px down the wheel's axis and sign
         Result                     pinch(const SAction& c);  // two fingers to c.scale, turning c.deg
+        bool                       tick();                   // one frame; false: it is over
         std::optional<std::string> status();                 // "scrolling d/t px", "pinching" while one runs
         void                       seatMoved();              // the seat left every app's pointer
         void                       reset();                  // the fingers lift, a pinch cancelled

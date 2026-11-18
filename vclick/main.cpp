@@ -90,7 +90,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         throw std::runtime_error("[vclick] version mismatch");
     }
 
-    VClick::Glide::loadProfile("");
+    VClick::Run::loadProfile("");
     hookSetCursor();
     if (PROTO::cursorShape)
         shapeListener = PROTO::cursorShape->m_events.setShape.listen([](const CCursorShapeProtocol::SSetShapeEvent& ev) {
@@ -128,7 +128,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
         *h = nullptr;
     }
     VClick::Pointer::dragGuard = false;
-    VClick::Glide::stop();
+    VClick::Run::stop();
     VClick::Stroke::reset();
     VClick::Pointer::reset();
     VClick::Cursor::reset();
