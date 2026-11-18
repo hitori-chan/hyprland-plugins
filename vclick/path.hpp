@@ -4,8 +4,8 @@
 // A glide is one movement, or two when a long one overshoots: each a cubic
 // Bézier whose inner control points sit off the straight line (a hand's
 // arc), timed by Fitts's law, its speed bell-shaped as a hand's: zero at
-// both ends, peaking where the user's does (a beta curve; centred, it is the
-// minimum-jerk profile of a reaching arm).
+// both ends, as sharp as the user's and peaking where theirs does (a beta
+// curve; of 4, centred, it is the minimum-jerk profile of a reaching arm).
 #pragma once
 
 #include "profile.hpp"
@@ -45,6 +45,7 @@ namespace VClick::Path {
     std::vector<SSeg> plan(const Vector2D& from, const Vector2D& to, const Vector2D& bounds, const SProfile& p, std::mt19937& rng, const SAim& aim = {});
     double            duration(const std::vector<SSeg>& segs);
     Vector2D          sample(const std::vector<SSeg>& segs, double ms); // segs not empty; past the end: the target
+    double            settleMs(const std::vector<SSeg>& segs, double px); // segs not empty: how long the end of the way spends within px of the target
     Vector2D          along(const SSeg& s, double ms);                  // one segment's point; past its end: its end
 
     // A finger's stroke on a touchpad: one straight movement, its x the

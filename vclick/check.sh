@@ -273,10 +273,10 @@ expect "lua: a malformed call too, without the usage" "$(lua "hl.plugin.vclick.s
 expect "lua: a number where hyprctl takes a word" "$(lua "hl.plugin.vclick.click('address:$A', 5000.5, 10)" | sed 's/ (.*//')" $'nil\terror: 5000.5,10 is outside the window'
 expect "lua: an argument hyprctl could not take" "$(lua "hl.plugin.vclick.click({}, 10, 10)")" $'nil\terror: argument 1 is a table: a string or a number, as hyprctl takes it'
 # the pace for the check: a profile file of its own, never the user's;
-# no overshoot, so a glide's time is Fitts's law exactly
-printf 'overshoot_p=0\n' >"$T/even.profile"
+# no correction, so a glide's time is Fitts's law exactly
+printf 'correct_p=0\nrest_ms=140\nrest_sigma=0\n' >"$T/even.profile"
 expect "a profile from a file" "$(vclick profile reload "$T/even.profile" | head -1)" "loaded $T/even.profile"
-expect "  read back" "$(vclick profile | head -1)" "fitts a 50 ms, b 120 ms/bit (W 32 px); bow 0.06 +- 0.04; speed peak at 0.45; overshoot 0% of moves >= 300 px, by 3%; dwell 80 ms; 125 Hz"
+expect "  read back" "$(vclick profile | head -1)" "fitts a 50 ms, b 120 ms/bit (W 32 px); bell 4 peaking at 0.45; bow 0.05 (sigma 0.8); corrected 0%, 60% from short, by 5%; rest 140 ms (sigma 0); 125 Hz"
 # the exact event sequences below are the tap mode's; the mouse mode has its own section
 expect "the tap mode" "$(vclick mode tap)" tap
 
@@ -674,7 +674,7 @@ expect "  A's hover ended first" "$(events a "$AM")" leave
 expect "  B's pointer is the user's: the cursor is theirs there" "$(vclick where)" nowhere
 
 echo "== the user's pointer comes into A during a glide"
-printf 'fitts_a_ms=400\nfitts_b_ms=400\novershoot_p=0\n' >"$T/slow.profile"
+printf 'fitts_a_ms=400\nfitts_b_ms=400\ncorrect_p=0\n' >"$T/slow.profile"
 expect "a slow profile (1 s glides)" "$(vclick profile reload "$T/slow.profile" | head -1)" "loaded $T/slow.profile"
 expect "  a jump-move to green" "$(vclick move "address:$A" $(at green) jump)" ok
 quiet "$T/a.wl"

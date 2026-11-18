@@ -17,21 +17,27 @@ record reads two things, and changes nothing:
 
 It never grabs a device: every event still reaches the compositor.
 
-fit splits the recording into movements (a still pointer, a move, still
-again), keeps those that end in a click or a clear stop, and fits:
+fit takes one movement per click: from the last rest or button event to
+the press. Moves with a separate leg (the first stroke stops far short) are
+left out of the time: a recording cannot tell a second leg from a pause to
+look for the target. It fits:
 
 - Fitts's law, MT = a + b * log2(D / W + 1), with W the default target
   width vclick assumes (32 px), through the medians of 8 bands of D;
+- the bell of the first stroke's speed: how sharply it peaks, and where;
 - the path's bow: the largest sideways distance over the length;
-- where the speed peaks in the move (0.5 is symmetric; people peak early);
-- how often and how far a long move overshoots the target;
-- how long the pointer rests on the target before a click;
+- how often a small correction follows the first stroke, which way, how far;
+- the rest: from arriving within 3 px of the press point to the press;
 - the device's report rate.
+
+A value with too few samples is left out of the profile, so vclick's default
+stands for it; fit says which.
 
 The profile is a key=value file vclick reads on load and on
 `hyprctl vclick profile reload`.
 """
 import argparse
+import bisect
 import json
 import math
 import os
@@ -46,6 +52,7 @@ import time
 STATE = os.path.join(os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state")), "vclick")
 PROFILE = os.path.join(STATE, "profile")
 W_DEFAULT = 32.0
+BTN_LEFT = 0x110
 
 EV_SYN, EV_KEY, EV_REL = 0x00, 0x01, 0x02
 REL_X, REL_Y = 0x00, 0x01
@@ -171,141 +178,289 @@ def record(a):
 
 # --- fit --------------------------------------------------------------------------
 
-def load(dirpath):
-    pos = []
-    with open(os.path.join(dirpath, "pos.csv")) as f:
-        for line in f:
-            t, x, y = line.strip().split(",")
-            pos.append((float(t), float(x), float(y)))
-    clicks, reports = [], {}
-    try:
+DT = 0.004      # movements are read on a 4 ms grid
+REST = 0.150    # a pointer still this long has ended a movement
+GAP = 0.040     # only changes are logged: a longer gap is a stillness, past any device's report gap
+LEG = 0.15      # a first stroke ending further than this share of the way off: a separate leg
+NEAR = 3.0      # px: arrived at the point
+TRAVEL = 24.0   # px: the shortest movement that says anything
+ENOUGH = 30     # samples a value needs
+SEEN = 0.03     # of the peak speed: where a recorded movement starts and ends
+
+KERNEL = [math.exp(-0.5 * (i / 3) ** 2) for i in range(-12, 13)]  # sigma 12 ms: about 11 Hz
+KERNEL = [k / sum(KERNEL) for k in KERNEL]
+
+
+class Recording:
+    """One recording's positions (only changes), buttons and device reports,
+    all on the monotonic clock."""
+
+    def __init__(self, dirpath):
         with open(os.path.join(dirpath, "clock.json")) as f:
             offset = json.load(f)["realtime_minus_monotonic"]
-    except (OSError, KeyError, ValueError):
-        # an older recording: the offset now holds unless the machine slept since
-        offset = time.time() - time.monotonic()
-    try:
+        self.t, self.x, self.y = [], [], []
+        with open(os.path.join(dirpath, "pos.csv")) as f:
+            for line in f:
+                t, x, y = map(float, line.strip().split(","))
+                if not self.t or (x, y) != (self.x[-1], self.y[-1]):
+                    self.t.append(t)
+                    self.x.append(x)
+                    self.y.append(y)
+        self.buttons, reports = [], set()
         with open(os.path.join(dirpath, "input.csv")) as f:
             for line in f:
-                parts = line.strip().split(",")
-                t = float(parts[0]) - offset  # to the monotonic clock
-                if parts[2] == "btn" and parts[4] == "1":
-                    clicks.append(t)
-                elif parts[2] == "rel":
-                    reports.setdefault(parts[1], []).append(t)
-    except OSError:
-        pass
-    return pos, sorted(clicks), reports
+                p = line.strip().split(",")
+                t = float(p[0]) - offset
+                if p[2] == "btn":
+                    self.buttons.append((t, int(p[3]), p[4] == "1"))
+                elif p[2] == "rel":
+                    reports.add(t)  # one report carries x and y at one time
+        self.buttons.sort()
+        self.reports = sorted(reports)
 
 
-def segments(pos, still_ms=90, min_d=24.0, max_s=2.5):
-    """Movements between two rests: lists of (t, x, y). The poller writes a
-    position only when it changes (and once a second when it does not), so
-    a rest is a gap of still_ms or more between two samples."""
-    out, cur = [], []
-    for prev, p in zip(pos, pos[1:]):
-        if p[1:] == prev[1:]:
-            continue  # the once-a-second sample of a still pointer
-        if p[0] - prev[0] >= still_ms / 1000:
-            if len(cur) > 2:
-                out.append(cur)
-            cur = [(p[0] - 0.004, *prev[1:])]  # it left the rest one poll before
-        elif not cur:
-            cur = [prev]
-        cur.append(p)
-    if len(cur) > 2:
-        out.append(cur)
-    return [s for s in out
-            if math.dist(s[0][1:], s[-1][1:]) >= min_d and 0.03 < s[-1][0] - s[0][0] <= max_s]
+def aimed(r):
+    """The movement ending in each left press, as (times, xs, ys)."""
+    every = [b[0] for b in r.buttons]
+    for tc, code, down in r.buttons:
+        if code != BTN_LEFT or not down:
+            continue
+        i = bisect.bisect_left(r.t, tc) - 1
+        if i < 3 or tc - r.t[i] > 1.2:
+            continue
+        k = bisect.bisect_left(every, tc)
+        floor = every[k - 1] if k else -math.inf
+        j = i
+        while j > 0 and r.t[j] - r.t[j - 1] < REST and r.t[j - 1] > floor and r.t[i] - r.t[j - 1] <= 2.5:
+            j -= 1
+        if j == 0 or (r.t[j] - r.t[j - 1] < REST and r.t[j - 1] > floor):
+            continue  # never at rest: it wandered
+        ts = [r.t[j] - DT] + r.t[j:i + 1]
+        xs, ys = r.x[j - 1:i + 1], r.y[j - 1:i + 1]
+        steps = [math.dist((xs[n], ys[n]), (xs[n + 1], ys[n + 1])) for n in range(len(xs) - 1)]
+        d = math.dist((xs[0], ys[0]), (xs[-1], ys[-1]))
+        if d < TRAVEL or sum(steps) / d > 2.0:
+            continue
+        # the compositor moved the cursor: a step no device report made
+        if max(steps) > 250 or bisect.bisect(r.reports, ts[-1]) == bisect.bisect(r.reports, ts[0]):
+            continue
+        yield ts, xs, ys
 
 
-def analyse(s):
-    t0, x0, y0 = s[0]
-    t1, x1, y1 = s[-1]
-    d = math.dist((x0, y0), (x1, y1))
-    ux, uy = (x1 - x0) / d, (y1 - y0) / d
-    along = [((x - x0) * ux + (y - y0) * uy) for _, x, y in s]
-    side = [(-(x - x0) * uy + (y - y0) * ux) for _, x, y in s]
-    bow = max(side, key=abs) / d
-    over = max(0.0, max(along) - d)
-    speeds = []
-    for (ta, xa, ya), (tb, xb, yb) in zip(s, s[1:]):
-        if tb > ta:
-            speeds.append(((ta + tb) / 2, math.dist((xa, ya), (xb, yb)) / (tb - ta)))
-    tpeak = max(speeds, key=lambda v: v[1])[0] if speeds else (t0 + t1) / 2
-    return {"t0": t0, "t1": t1, "d": d, "mt": t1 - t0, "bow": bow, "over": over / d,
-            "peak": (tpeak - t0) / (t1 - t0) if t1 > t0 else 0.5}
+def grid(ts, xs, ys):
+    """The positions every 4 ms; a pointer stands still over a gap."""
+    T, X, Y = [ts[0]], [xs[0]], [ys[0]]
+    for k in range(1, len(ts)):
+        if ts[k] - ts[k - 1] > GAP:
+            T.append(ts[k] - DT)
+            X.append(xs[k - 1])
+            Y.append(ys[k - 1])
+        T.append(ts[k])
+        X.append(xs[k])
+        Y.append(ys[k])
+    out_x, out_y, k = [], [], 0
+    for n in range(int((T[-1] - T[0]) / DT) + 1):
+        t = T[0] + n * DT
+        while k + 2 < len(T) and T[k + 1] < t:
+            k += 1
+        u = min(1.0, max(0.0, (t - T[k]) / (T[k + 1] - T[k]))) if T[k + 1] > T[k] else 1.0
+        out_x.append(X[k] + (X[k + 1] - X[k]) * u)
+        out_y.append(Y[k] + (Y[k + 1] - Y[k]) * u)
+    return out_x, out_y
 
 
-def fit(a):
-    dirs = a.dirs or sorted(os.path.join(STATE, "learn", d) for d in os.listdir(os.path.join(STATE, "learn")))
-    moves, clicks, reports = [], [], {}
-    for d in dirs:
-        pos, c, r = load(d)
-        clicks += c
-        for k, v in r.items():
-            reports.setdefault(k, []).extend(v)
-        moves += [m for m in (analyse(s) for s in segments(pos)) if abs(m["bow"]) <= 0.5]
-    if len(moves) < 20:
-        sys.exit(f"learn: only {len(moves)} movements recorded; use the mouse a while longer")
+def smooth(v):
+    pad = [v[0]] * 12 + v + [v[-1]] * 12
+    return [sum(k * pad[i + j] for j, k in enumerate(KERNEL)) for i in range(len(v))]
 
-    # a move that ends in a click within 1.2 s is an aimed move: Fitts's own case
-    clicked = []
-    j = 0
-    for m in moves:
-        while j < len(clicks) and clicks[j] < m["t1"]:
-            j += 1
-        if j < len(clicks) and clicks[j] - m["t1"] <= 1.2:
-            m["dwell"] = clicks[j] - m["t1"]
-            clicked.append(m)
-    aimed = clicked if len(clicked) >= 15 else moves
 
-    # MT = a + b * ID, ID = log2(D / W + 1): least squares through the
-    # medians of 8 equal-count ID bands. The medians shrug off hesitations;
-    # trimming the slowest moves instead would drop mostly the long ones and
-    # flatten b. Keep a, b in sane bounds.
-    pts = sorted((math.log2(m["d"] / W_DEFAULT + 1), m["mt"]) for m in aimed)
-    k = min(8, len(pts) // 2)
-    bands = [pts[i * len(pts) // k : (i + 1) * len(pts) // k] for i in range(k)]
+def first_stroke(v, x, y, ip, off, vmax, dip, rise):
+    """Where the first stroke ends: the first dip after the peak that a later
+    rise follows, with the target still some way off; the end if none does."""
+    rise = max(rise * vmax, 40.0)
+    tail = [0.0] * (off + 2)  # the fastest speed from each sample on
+    for m in range(off, ip, -1):
+        tail[m] = max(v[m], tail[m + 1])
+    for m in range(ip + 1, off):
+        if v[m] < v[m - 1] and v[m] <= v[m + 1] and v[m] <= dip * vmax and tail[m] - v[m] >= rise and math.dist((x[-1], y[-1]), (x[m], y[m])) >= NEAR:
+            return m
+    return off
+
+
+def measure(ts, xs, ys):
+    x, y = grid(ts, xs, ys)
+    if len(x) < 6:
+        return None
+    sx, sy = smooth(x), smooth(y)
+    n = len(x)
+    v = [math.dist((sx[min(i + 1, n - 1)], sy[min(i + 1, n - 1)]), (sx[max(i - 1, 0)], sy[max(i - 1, 0)])) / ((min(i + 1, n - 1) - max(i - 1, 0)) * DT) for i in range(n)]
+    vmax = max(v)
+    floor = max(SEEN * vmax, 20.0)
+    seen = [i for i in range(n) if v[i] >= floor]
+    if len(seen) < 4:
+        return None
+    on, off = seen[0], seen[-1]
+    ip = max(range(on, off + 1), key=v.__getitem__)
+    d = math.dist((x[0], y[0]), (x[-1], y[-1]))
+    ux, uy = (x[-1] - x[0]) / d, (y[-1] - y[0]) / d
+
+    m = {"d": d, "mt": (off - on) * DT}
+    pe = first_stroke(v, x, y, ip, off, vmax, 0.5, 0.04)
+    m["leg"] = pe != off and math.dist((x[-1], y[-1]), (x[pe], y[pe])) / d > LEG
+    # the strict reading finds fewer corrections: better too few than invented
+    strict = first_stroke(v, x, y, ip, off, vmax, 0.25, 0.15)
+    left = math.dist((x[-1], y[-1]), (x[strict], y[strict])) / d
+    m["corrected"] = strict != off and left <= LEG
+    m["short"] = (x[strict] - x[0]) * ux + (y[strict] - y[0]) * uy < d
+    m["left"] = left
+
+    # the stroke itself, when nothing follows it
+    if pe == off and off > on:
+        chord = math.dist((x[on], y[on]), (x[off], y[off]))
+        m["sharp"] = vmax / max(chord / ((off - on) * DT), 1e-6)
+        m["peak"] = (ip - on) / (off - on)
+    px, py = x[pe] - x[on], y[pe] - y[on]
+    chord = math.hypot(px, py)
+    if chord >= 16:
+        m["bow"] = max(abs(-(x[i] - x[on]) * py + (y[i] - y[on]) * px) / chord for i in range(on, pe + 1)) / chord
+    return m
+
+
+def arrivals(r):
+    """From arriving within 3 px of each travelled-to press point to the press, in ms."""
+    every = [b[0] for b in r.buttons]
+    out = []
+    for tc, code, down in r.buttons:
+        if code != BTN_LEFT or not down:
+            continue
+        i = bisect.bisect_left(r.t, tc) - 1
+        if i < 3:
+            continue
+        k = bisect.bisect_left(every, tc)
+        floor = every[k - 1] if k else -math.inf
+        j = i
+        while j >= 0 and r.t[j] > floor and r.t[i] - r.t[j] <= 2.5 and math.dist((r.x[j], r.y[j]), (r.x[i], r.y[i])) <= NEAR:
+            j -= 1
+        if j < 0 or r.t[j] <= floor or r.t[i] - r.t[j] > 2.5:
+            continue  # it never travelled here since the last button
+        if max(math.dist((r.x[n], r.y[n]), (r.x[i], r.y[i])) for n in range(max(0, j - 700), j + 1)) >= TRAVEL:
+            out.append((tc - r.t[j + 1]) * 1000)
+    return out
+
+
+def percentile(v, p):
+    v = sorted(v)
+    return v[min(len(v) - 1, int(len(v) * p))]
+
+
+def log_spread(v):
+    """The sigma of a log-normal, from the middle of the samples: tails shrugged off."""
+    v = [max(x, 1e-3) for x in v]
+    return (math.log(percentile(v, 0.84)) - math.log(percentile(v, 0.16))) / 2
+
+
+def bell(sharp, peak):
+    """The speed t^A (1-t)^B whose recorded shape is this: a recording starts
+    and ends where the speed clears its noise, so the tails are out of its
+    sight. Answers A + B, where it peaks, and the share of its time seen."""
+    N = 200
+    us = [(i + 0.5) / N for i in range(N)]
+    best = (math.inf, 4.0, 0.45, 1.0)
+    for s2 in range(4, 49):
+        s = s2 / 2
+        for p100 in range(20, 71):
+            p = p100 / 100
+            f = [u ** (s * p) * (1 - u) ** (s * (1 - p)) for u in us]
+            top = max(f)
+            seen = [i for i in range(N) if f[i] >= SEEN * top]
+            on, off = seen[0], seen[-1]
+            width = (off - on + 1) / N
+            mean = sum(f[on:off + 1]) / (off - on + 1)
+            at = (f.index(top) - on) / max(1, off - on)
+            miss = (top / mean / sharp - 1) ** 2 + (at - peak) ** 2
+            if miss < best[0]:
+                best = (miss, s, p, width)
+    return best[1:]
+
+
+def fitts(moves, width):
+    """MT = a + b * ID through the medians of 8 equal-count ID bands: medians
+    shrug off hesitations. In the time of the whole bell, its unseen tails too."""
+    pts = sorted((math.log2(m["d"] / W_DEFAULT + 1), m["mt"]) for m in moves)
+    bands = [pts[i * len(pts) // 8 : (i + 1) * len(pts) // 8] for i in range(8)]
     bx = [statistics.median(p[0] for p in g) for g in bands]
     by = [statistics.median(p[1] for p in g) for g in bands]
     mx, my = statistics.fmean(bx), statistics.fmean(by)
     sxx = sum((x - mx) ** 2 for x in bx)
     b = sum((x - mx) * (y - my) for x, y in zip(bx, by)) / sxx if sxx else 0.12
-    b = min(max(b, 0.03), 0.4)
-    a_ = min(max(my - b * mx, 0.0), 0.4)
+    b = min(max(b / width, 0.03), 0.4)
+    return min(max((my / width) - b * mx, 0.0), 0.4), b
 
-    long_moves = [m for m in aimed if m["d"] >= 300]
-    over = [m["over"] for m in long_moves if m["over"] > 0.005]
-    rates = []
-    for v in reports.values():
-        v.sort()
-        # one report carries x and y at one time: intervals between reports;
-        # slow drags stretch them, so the rate is the short end (10th percentile)
-        dts = sorted(b_ - a_ for a_, b_ in zip(v, v[1:]) if 0.0002 < b_ - a_ < 0.02)
-        if len(dts) > 200:
-            rates.append(1 / dts[len(dts) // 10])
 
-    prof = {
-        "fitts_a_ms": round(a_ * 1000),
-        "fitts_b_ms": round(b * 1000),
-        "bow_mean": round(statistics.fmean(abs(m["bow"]) for m in aimed), 4),
-        "bow_sd": round(statistics.pstdev(abs(m["bow"]) for m in aimed), 4),
-        "peak": round(statistics.median(m["peak"] for m in aimed), 3),
-        "overshoot_p": round(len(over) / len(long_moves), 3) if long_moves else 0.0,
-        "overshoot": round(statistics.median(over), 4) if over else 0.0,
-        "dwell_ms": round(statistics.median(m["dwell"] for m in clicked) * 1000) if clicked else 80,
-        "rate_hz": round(max(rates)) if rates else 125,
-        "moves": len(aimed),
-    }
+def derive(recordings):
+    """The profile's values from these recordings, and the keys too few samples left out."""
+    moves, rests, gaps = [], [], []
+    for r in recordings:
+        moves += [m for m in (measure(*s) for s in aimed(r)) if m]
+        rests += arrivals(r)
+        gaps += [(b - a) * 1000 for a, b in zip(r.reports, r.reports[1:]) if 0.0002 < b - a < 0.05]
+
+    prof, short = {}, []
+
+    def have(keys, enough):
+        if not enough:
+            short.extend(keys)
+        return enough
+
+    whole = [m for m in moves if not m["leg"]]
+    strokes = [m for m in whole if "sharp" in m and m["d"] >= 100]
+    width = 1.0
+    if have(["bell", "peak"], len(strokes) >= ENOUGH):
+        s, p, width = bell(statistics.median(m["sharp"] for m in strokes), statistics.median(m["peak"] for m in strokes))
+        prof["bell"], prof["peak"] = s, p
+    if have(["fitts_a_ms", "fitts_b_ms"], len(whole) >= ENOUGH):
+        a, b = fitts(whole, width)
+        prof["fitts_a_ms"], prof["fitts_b_ms"] = round(a * 1000), round(b * 1000)
+
+    bows = [m["bow"] for m in whole if "bow" in m and m["d"] >= 100]
+    if have(["bow_median", "bow_sigma"], len(bows) >= ENOUGH):
+        prof["bow_median"], prof["bow_sigma"] = round(statistics.median(bows), 4), round(log_spread(bows), 3)
+
+    far = [m for m in whole if m["d"] >= 100]
+    fixed = [m for m in far if m["corrected"]]
+    if have(["correct_p"], len(far) >= ENOUGH):
+        prof["correct_p"] = round(len(fixed) / len(far), 3)
+    if have(["under_share", "correct_size"], len(fixed) >= 5):
+        prof["under_share"] = round(sum(m["short"] for m in fixed) / len(fixed), 3)
+        prof["correct_size"] = round(statistics.median(m["left"] for m in fixed), 4)
+
+    if have(["rest_ms", "rest_sigma"], len(rests) >= ENOUGH):
+        prof["rest_ms"], prof["rest_sigma"] = round(statistics.median(rests)), round(log_spread(rests), 3)
+
+    if have(["rate_hz"], len(gaps) >= 200):
+        bins = {}
+        for g in gaps:
+            bins[int(g * 2)] = bins.get(int(g * 2), 0) + 1
+        prof["rate_hz"] = round(1000 / ((max(bins, key=bins.get) + 0.5) / 2))
+    prof["moves"] = len(moves)
+    return prof, short
+
+
+def fit(a):
+    dirs = a.dirs or sorted(os.path.join(STATE, "learn", d) for d in os.listdir(os.path.join(STATE, "learn")))
+    prof, short = derive([Recording(d) for d in dirs])
+    if prof["moves"] < 20:
+        sys.exit(f"learn: only {prof['moves']} movements ending in a click; use the mouse a while longer")
     os.makedirs(os.path.dirname(a.profile), exist_ok=True)
     with open(a.profile, "w") as f:
         f.write("# vclick glide profile, fitted by learn.py from the user's own movements\n")
         for k, v in prof.items():
             f.write(f"{k}={v}\n")
-    print(f"learn: {len(moves)} movements, {len(clicked)} ending in a click; profile: {a.profile}")
+    print(f"learn: {prof['moves']} movements ending in a click; profile: {a.profile}")
     for k, v in prof.items():
         print(f"  {k} = {v}")
+    if short:
+        print(f"  too few samples, vclick's defaults stand: {', '.join(short)}")
 
 
 def show(a):

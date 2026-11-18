@@ -24,6 +24,7 @@ static void check(bool ok, const char* what) {
 int main() {
     std::mt19937   rng{12345};
     SProfile       P;
+    P.correctP = 0.3, P.underShare = 0, P.correctSize = 0.03; // today every correction overshoots, at 300 px and up
     const Vector2D BOX{1555, 830};
 
     check(plan({100, 100}, {101, 100}, BOX, P, rng).empty(), "under 2 px: no glide");
@@ -79,14 +80,14 @@ int main() {
     char steps[96];
     std::snprintf(steps, sizeof steps, "no tick moves over 3x the average step (worst %.2fx)", maxStep);
     check(maxStep < 3, steps);
-    check(longs > 500 && over > longs * 0.2 && over < longs * 0.4, "about overshoot_p (30%) of the long moves overshoot");
+    check(longs > 500 && over > longs * 0.2 && over < longs * 0.4, "about correct_p (30%) of the long moves overshoot");
 
     // the speed peaks where the profile says
     for (const double PEAK : {0.35, 0.45, 0.6}) {
         SProfile Q   = P;
         Q.peak       = PEAK;
-        Q.overshootP = 0;
-        Q.bowMean = Q.bowSd = 0;
+        Q.correctP  = 0;
+        Q.bowMedian = 0;
         const auto   SEGS   = plan({0, 0}, {800, 0}, {1600, 900}, Q, rng);
         const double MS     = duration(SEGS);
         double       best = 0, at = 0;
@@ -103,7 +104,7 @@ int main() {
     // the target's size is Fitts's W: a wider target is reached sooner
     {
         SProfile Q       = P;
-        Q.overshootP     = 0;
+        Q.correctP       = 0;
         const auto SMALL = duration(plan({0, 0}, {600, 0}, {1600, 900}, Q, rng));
         const auto WIDE  = duration(plan({0, 0}, {600, 0}, {1600, 900}, Q, rng, {.w = 128}));
         check(std::abs(SMALL - fittsMs(600, Q)) < 1e-6 && std::abs(WIDE - fittsMs(600, Q, 128)) < 1e-6 && WIDE < SMALL - 100,
@@ -112,12 +113,12 @@ int main() {
 
     // a drag's way never overshoots, whatever the profile
     {
-        SProfile Q   = P;
-        Q.overshootP = 1;
+        SProfile Q = P;
+        Q.correctP = 1;
         bool once    = true;
         for (int i = 0; i < 200; ++i)
             once &= plan({0, 0}, {900, 300}, {1600, 900}, Q, rng, {.overshoot = false}).size() == 1;
-        check(once && plan({0, 0}, {900, 300}, {1600, 900}, Q, rng).size() == 2, "no overshoot when the aim forbids it (overshoot_p 1)");
+        check(once && plan({0, 0}, {900, 300}, {1600, 900}, Q, rng).size() == 2, "no overshoot when the aim forbids it (correct_p 1)");
     }
 
     // a finger's stroke: Fitts's time within its bounds, from none to all
@@ -141,14 +142,48 @@ int main() {
         check(first < peak / 4 && last < peak / 4, "  slow at both ends, as a finger's");
     }
 
+    // a sharper bell peaks higher over the same time
+    {
+        SProfile Q  = P;
+        Q.correctP  = 0;
+        Q.bowMedian = 0;
+        const auto PEAK = [&](double bell) {
+            Q.bell            = bell;
+            const auto   SEGS = plan({0, 0}, {800, 0}, {1600, 900}, Q, rng);
+            double       best = 0;
+            for (double t = 1; t < duration(SEGS); t += 1)
+                best = std::max(best, sample(SEGS, t).x - sample(SEGS, t - 1).x);
+            return best;
+        };
+        check(PEAK(12) > PEAK(4) * 1.4, "a bell of 12 peaks well above a bell of 4");
+    }
+
+    // the time the way's end spends near the target, and the rest's draw
+    {
+        SProfile Q      = P;
+        Q.correctP      = 0;
+        Q.bowMedian     = 0;
+        const auto SEGS = plan({0, 0}, {800, 0}, {1600, 900}, Q, rng);
+        const auto NEAR = settleMs(SEGS, 3);
+        check(NEAR > 0 && NEAR < duration(SEGS) / 2 && sample(SEGS, duration(SEGS) - NEAR - 4).distance({800, 0}) > 3, "settleMs: the end of the way spent within 3 px");
+        bool   bounded = true;
+        int    under   = 0;
+        for (int i = 0; i < 4000; ++i) {
+            const double V = VClick::Profile::draw(100, 0.5, rng);
+            bounded &= V >= 100 * std::exp(-1.0) - 1e-9 && V <= 100 * std::exp(1.0) + 1e-9;
+            under += V < 100;
+        }
+        check(bounded && under > 1800 && under < 2200, "a draw stays within two sigma of its median, half on each side");
+    }
+
     // the profile file
-    std::istringstream in{"# a comment\nfitts_a_ms=70\nfitts_b_ms = 140 \npeak=0.9\nrate_hz=1000\nnonsense\nbow_mean=x\nmoves=321\n"};
+    std::istringstream in{"# a comment\nfitts_a_ms=70\nfitts_b_ms = 140 \npeak=0.9\nrate_hz=1000\nnonsense\nbow_median=x\nmoves=321\n"};
     int                n = 0;
     const auto         R = VClick::Profile::parse(in, &n);
     check(R.aMs == 70 && R.bMs == 140, "profile: the Fitts constants");
     check(R.peak == 0.7, "profile: an out-of-range peak is clamped (0.9 -> 0.7)");
     check(R.rateHz == 1000 && R.moves == 321, "profile: the rate and the count");
-    check(R.bowMean == SProfile{}.bowMean && n == 4, "profile: a bad value is skipped (4 values taken)");
+    check(R.bowMedian == SProfile{}.bowMedian && n == 4, "profile: a bad value is skipped (4 values taken)");
     check(!VClick::Profile::read("/nonexistent/vclick/profile"), "profile: a missing file is an error");
 
     std::printf("%s: %d of %d checks passed\n", fail ? "FAIL" : "ok", pass, pass + fail);

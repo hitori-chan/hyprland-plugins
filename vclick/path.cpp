@@ -18,10 +18,11 @@ namespace VClick::Path {
         return s.p0 * (V * V * V) + s.p1 * (3 * V * V * u) + s.p2 * (3 * V * u * u) + s.p3 * (u * u * u);
     }
 
-    // The speed: t^a (1-t)^b, a + b = 4, peaking at a / 4 = peak; at 0.5 it
-    // is 30 t^2 (1-t)^2, the minimum-jerk speed. Its integral, tabled.
-    static std::vector<double> progressFor(double peak) {
-        const double        A = 4 * peak, B = 4 * (1 - peak);
+    // The speed: t^A (1-t)^B, A + B = bell, peaking at A / bell = peak; a bell
+    // of 4 peaking at 0.5 is 30 t^2 (1-t)^2, the minimum-jerk speed. Its
+    // integral, tabled.
+    static std::vector<double> progressFor(const SProfile& p) {
+        const double        A = p.bell * p.peak, B = p.bell * (1 - p.peak);
         std::vector<double> c(WARP_N + 1, 0.0);
         for (int i = 1; i <= WARP_N; ++i) {
             const double T = (i - 0.5) / WARP_N;
@@ -52,8 +53,8 @@ namespace VClick::Path {
 
         // the main movement ends on the target, or past it
         Vector2D end = to;
-        if (aim.overshoot && D >= 300 && p.overshoot > 0 && uni(0, 1) < p.overshootP) {
-            const double OVER = std::clamp(D * p.overshoot * uni(0.6, 1.4), 3.0, 40.0);
+        if (aim.overshoot && D >= 300 && p.correctSize > 0 && uni(0, 1) < p.correctP * (1 - p.underShare)) {
+            const double OVER = std::clamp(D * p.correctSize * uni(0.6, 1.4), 3.0, 40.0);
             end               = clampTo(to + (to - from) / D * OVER, bounds);
             if (end.distance(to) < 2)
                 end = to;
@@ -66,8 +67,8 @@ namespace VClick::Path {
         // A bow the window's edge would cut takes the other side.
         const double   DE  = from.distance(end);
         const Vector2D N   = Vector2D{-(end - from).y, (end - from).x} / DE;
-        const double   BOW = std::clamp(std::abs(std::normal_distribution<double>{p.bowMean, p.bowSd}(rng)), 0.0, 0.25);
-        const double   H1 = BOW * DE / 0.75 * uni(0.85, 1.15), H2 = BOW * DE / 0.75 * uni(0.85, 1.15);
+        const double   BOW = std::clamp(Profile::draw(p.bowMedian, p.bowSigma, rng), 0.0, 0.25);
+        const double   H1 = std::min(BOW * uni(0.85, 1.15), 0.25) * DE / 0.75, H2 = std::min(BOW * uni(0.85, 1.15), 0.25) * DE / 0.75;
         const auto     CONTROLS = [&](double side) { return std::pair{from + (end - from) / 3 + N * (side * H1), from + (end - from) * (2.0 / 3) + N * (side * H2)}; };
         const auto     CUT      = [&](const std::pair<Vector2D, Vector2D>& c) { return clampTo(c.first, bounds).distance(c.first) + clampTo(c.second, bounds).distance(c.second); };
         const double   SIDE     = uni(0, 1) < 0.5 ? -1 : 1;
@@ -75,7 +76,7 @@ namespace VClick::Path {
         if (const auto OTHER = CONTROLS(-SIDE); CUT(OTHER) < CUT(c))
             c = OTHER;
 
-        const auto        PROGRESS = progressFor(p.peak);
+        const auto        PROGRESS = progressFor(p);
         std::vector<SSeg> segs;
         segs.push_back({from, clampTo(c.first, bounds), clampTo(c.second, bounds), end, std::clamp(fittsMs(DE, p, aim.w) * (end == to ? 1.0 : 0.85), 40.0, MAX_MOVE_MS), PROGRESS});
         if (end != to) // the correction: short and straight
@@ -84,7 +85,7 @@ namespace VClick::Path {
     }
 
     SSeg stroke(double px, const SProfile& p) {
-        return straight({0, 0}, {1, 0}, std::clamp(fittsMs(px, p), MIN_STROKE_MS, MAX_MOVE_MS), progressFor(p.peak));
+        return straight({0, 0}, {1, 0}, std::clamp(fittsMs(px, p), MIN_STROKE_MS, MAX_MOVE_MS), progressFor(p));
     }
 
     double duration(const std::vector<SSeg>& segs) {
@@ -92,6 +93,14 @@ namespace VClick::Path {
         for (const auto& s : segs)
             ms += s.ms;
         return ms;
+    }
+
+    double settleMs(const std::vector<SSeg>& segs, double px) {
+        const double MS = duration(segs);
+        for (double t = MS; t > 0; t -= 2)
+            if (sample(segs, t).distance(segs.back().p3) > px)
+                return MS - t;
+        return MS;
     }
 
     Vector2D along(const SSeg& s, double ms) {

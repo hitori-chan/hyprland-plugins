@@ -20,7 +20,8 @@ Thousands of planned glides, each held to the design: it starts on its
 start and ends exactly on its target, stays in the window, takes Fitts's
 time for the target's size (a correction adds at most 300 ms),
 overshoots and bows within bounds (25 %), no tick moves over 3× the
-average step, and about `overshoot_p` of long moves overshoot. A
+average step, about `correct_p` of long moves overshoot, a sharper bell
+peaks higher, and a log-normal draw stays within two sigma. A
 finger's stroke: Fitts's time within 100–1000 ms, from none to all of
 the way, never back, slow at both ends. Plus the profile parser: values, clamps, skipped bad lines, a missing file. The
 cursor theme reader: an XCursor file's nearest size, its frames and

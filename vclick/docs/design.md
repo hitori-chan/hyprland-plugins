@@ -52,22 +52,23 @@ remote cursor jumps too. A glide moves there as a hand would, then acts:
 - **Path**: a cubic Bézier from where vclick's pointer last was in the
   window (else its centre) to the point. The inner control points sit at
   a third and two thirds of the line, so progress follows the speed
-  profile, and bow sideways by `bow_mean` ± `bow_sd` of the length (at
-  most 25 %) to a random side, or the other if the window's edge would
-  cut it. Control points stay inside the window, so the whole path does.
+  profile, and bow sideways by a log-normal draw around `bow_median`
+  (`bow_sigma`, at most 25 % of the length) to a random side, or the
+  other if the window's edge would cut it. Control points stay inside the window, so the whole path does.
 - **Time**: Fitts's law, a + b · log2(D / W + 1) ms, 40 ms to 1 s, with
   W the target's size: 32 px unless the request names it (`size:<px>`;
   vclick can't see the target).
-- **Speed**: bell-shaped, t^α (1 − t)^β with α + β = 4, peaking at `peak`
-  (centred is a reaching arm's minimum jerk; people peak early).
-- **Overshoot**: a move of ≥ 300 px passes the target `overshoot_p` of
-  the time, by about `overshoot` of D (3–40 px) in 85 % of its time,
-  then corrects straight back (60–300 ms).
+- **Speed**: bell-shaped, t^α (1 − t)^β with α + β = `bell`, peaking at
+  `peak` (a bell of 4, centred, is a reaching arm's minimum jerk).
+- **Overshoot**: a move of ≥ 300 px passes the target `correct_p` ×
+  (1 − `under_share`) of the time, by about `correct_size` of D (3–40 px)
+  in 85 % of its time, then corrects straight back (60–300 ms).
 - **Pace**: one motion every 1000 / `rate_hz` ms (4–16 ms) on the event
   loop. A surface boundary on the way gets a leave and an enter, as a
   real pointer's does. The last motion lands exactly on the point.
-- **Dwell**: a rest of `dwell_ms` ± 30 % (≤ 400 ms) before the click or
-  scroll; a move has none.
+- **Rest**: a log-normal draw around `rest_ms` (`rest_sigma`, within two
+  sigma) from arriving within 3 px of the point to the click or scroll.
+  The way's own end counts toward it. A move has none.
 
 Each tick is checked afresh. If the window closed or was hidden, or the
 compositor is shutting down, the glide stops and the app's pointer
@@ -83,12 +84,24 @@ it.
 The defaults are a typical mouse user's. `learn.py record` reads the
 cursor position from the compositor's socket (~250 Hz) and the pointer
 devices' raw events for exact report and click times (never a keyboard;
-it grabs nothing). `learn.py fit` splits them into movements and keeps
-those ending in a click within 1.2 s, Fitts's own case. It fits a and b
-by least squares through the medians of 8 equal-count difficulty bands
-(medians shrug off a hesitation; trimming slow moves would drop mostly
-long ones and flatten b). Bow, peak, overshoot (moves ≥ 300 px) and
-dwell are the moves' own; the rate is the device's report interval.
+it grabs nothing). `learn.py fit` takes one movement per click, from the
+last rest (150 ms) or button event to the press.
+
+- **Time**: a and b by least squares through the medians of 8
+  equal-count difficulty bands, over moves without a separate leg (a
+  first stroke ending over 15 % of D away): a recording cannot tell a
+  second leg from a pause to look for the target. a and b are for the
+  whole bell, whose tails no recording sees.
+- **Bell**: how sharply the first stroke peaks over its mean, and where,
+  on moves of ≥ 100 px that end in one stroke.
+- **Bow**: the first stroke's median and log-normal spread.
+- **Corrections**: how often a small one follows, read strictly: too few
+  rather than invented.
+- **Rest**: arrival within 3 px of the press point to the press.
+- **Rate**: the device's commonest report interval.
+
+A value with too few samples stays out of the profile, and the default
+stands for it.
 
 ## The cursor image
 

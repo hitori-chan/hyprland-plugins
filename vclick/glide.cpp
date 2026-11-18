@@ -24,6 +24,7 @@
 #include <random>
 
 namespace VClick::Glide {
+    constexpr double         MAX_REST_MS = 600;
     static Profile::SProfile pace;
 
     const Profile::SProfile& profile() {
@@ -43,6 +44,12 @@ namespace VClick::Glide {
     static std::mt19937& rng() {
         static std::mt19937 r{std::random_device{}()};
         return r;
+    }
+
+    // the rest counts from arriving near the point: the way's own end is in it
+    static double restAfter(const std::vector<Path::SSeg>& segs) {
+        const double REST = Profile::draw(pace.restMs, pace.restSigma, rng());
+        return std::clamp(segs.empty() ? REST : REST - Path::settleMs(segs, Profile::NEAR_PX), 0.0, MAX_REST_MS);
     }
 
     struct SGlide {
@@ -225,11 +232,10 @@ namespace VClick::Glide {
         const auto                             SIZE = Pointer::windowSize(W);
         const auto                             LAST = Pointer::lastPos(W);
         const auto                             FROM = Path::clampTo(LAST ? *LAST : SIZE / 2, SIZE);
-        std::uniform_real_distribution<double> jitter{0.7, 1.3};
 
         glide.emplace(SGlide{.action = c, .window = W, .segs = Path::plan(FROM, c.pos, SIZE, pace, rng(), {.w = c.size}), .target = c.pos});
         glide->moveMs  = Path::duration(glide->segs);
-        glide->dwellMs = c.verb == EVerb::MOVE ? 0 : std::clamp(pace.dwellMs * jitter(rng()), 0.0, 400.0);
+        glide->dwellMs = c.verb == EVerb::MOVE ? 0 : restAfter(glide->segs);
         glide->period  = std::clamp(sc<int>(std::lround(1000.0 / pace.rateHz)), 4, 16);
         glide->start   = Time::steadyNow();
 
@@ -255,7 +261,6 @@ namespace VClick::Glide {
         const auto W = Pointer::heldWindow();
         if (!W)
             return fail("error: no button is held");
-        std::uniform_real_distribution<double> jitter{0.7, 1.3};
         // as a hand drags: the user's pace, never past the target (a drop
         // target, a slider's stop), a rest on it before letting go
         glide.emplace(SGlide{.action = c,
@@ -265,7 +270,7 @@ namespace VClick::Glide {
                              .travel = true,
                              .target = c.to});
         glide->moveMs  = Path::duration(glide->segs);
-        glide->dwellMs = std::clamp(pace.dwellMs * jitter(rng()), 0.0, 400.0);
+        glide->dwellMs = restAfter(glide->segs);
         glide->period  = std::clamp(sc<int>(std::lround(1000.0 / pace.rateHz)), 4, 16);
         glide->start   = Time::steadyNow();
         glide->at      = c.pos;

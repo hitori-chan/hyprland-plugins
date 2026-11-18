@@ -49,8 +49,8 @@ The options follow the point, in any order, each at most once.
   surface, vclick's next input goes into another app, `hide`, or the
   plugin unloads ([design](design.md#the-hover)). With a button held, the
   move drags it ([press](#press-and-release)).
-- `glide`: go there along a curve at the user's pace, rest on the target
-  (the dwell), then the input ([design](design.md#the-glide)).
+- `glide`: go there along a curve at the user's pace, rest on the target,
+  then the input ([design](design.md#the-glide)).
   `jump`: go at once. A request that names neither goes the mode's way:
   `mouse` glides, `tap` jumps.
 - `size:<px>`: the target's size, 4 to 1000 (default 32): Fitts's W for
@@ -156,7 +156,7 @@ user's mouse too.
 release in one request: it goes to `<x> <y>` (a glide or a jump, as any
 request), presses, glides to `<x2> <y2>` with the button down at the
 user's pace (Fitts's time for the target's size, never past the target),
-rests there (the dwell), and lets go. `<x2> <y2>` is in the window's box.
+rests there, and lets go. `<x2> <y2>` is in the window's box.
 `status` says `moving` on the way there, `dragging` after the press. The
 hold's limits are the press's ([press and release](#press-and-release)):
 a drag-and-drop the app begins is refused, and the user's pointer
@@ -174,7 +174,7 @@ other than 1, or a turn. `status` says `pinching`.
 
 ## status
 
-- `moving`: a glide runs, its dwell included.
+- `moving`: a glide runs, its rest included.
 - `dragging`: a glide runs with a button held.
 - `scrolling <done>/<steps>`: a paced scroll runs; `scrolling
   <done>/<n> px`: a finger's.
@@ -238,8 +238,8 @@ scroll runs. The next input brings it back.
 from:
 
 ```
-fitts a 114 ms, b 75 ms/bit (W 32 px); bow 0.0821 +- 0.0904; speed peak at 0.319; overshoot 12.3% of moves >= 300 px, by 6.02%; dwell 237 ms; 156 Hz
-from /home/user/.local/state/vclick/profile (400 movements)
+fitts a 0 ms, b 101 ms/bit (W 32 px); bell 4.5 peaking at 0.48; bow 0.0517 (sigma 0.913); corrected 14.1%, 66.7% from short, by 10.11%; rest 97 ms (sigma 0.875); 129 Hz
+from /home/user/.local/state/vclick/profile (194 movements)
 ```
 
 `profile reload [file]` reads the file again (by default
@@ -257,10 +257,12 @@ a value outside its bounds is clamped.
 | Key | Meaning | Bounds | Default |
 |---|---|---|---|
 | `fitts_a_ms`, `fitts_b_ms` | Fitts's law: a move takes a + b · log2(D / 32 + 1) ms | 0–400, 30–400 | 50, 120 |
-| `bow_mean`, `bow_sd` | how far a path bows sideways, over its length | 0–0.25, 0–0.2 | 0.06, 0.04 |
-| `peak` | where the speed peaks, 0–1 of the move | 0.3–0.7 | 0.45 |
-| `overshoot_p`, `overshoot` | how often a move of 300 px or more overshoots, and by how much of D | 0–1, 0–0.15 | 0.3, 0.03 |
-| `dwell_ms` | the rest on the target before a click or scroll | 0–400 | 80 |
+| `bell` | how sharply the speed peaks: t^α (1 − t)^β with α + β = `bell` | 2–24 | 4 |
+| `peak` | where the speed peaks, 0–1 of the move | 0.2–0.7 | 0.45 |
+| `bow_median`, `bow_sigma` | how far a path bows sideways, over its length (log-normal) | 0–0.25, 0–1.5 | 0.05, 0.8 |
+| `correct_p`, `under_share` | how often a small correction follows a move, and how often from short of the target | 0–1, 0–1 | 0.05, 0.6 |
+| `correct_size` | how far off the first stroke lands, of D | 0–0.15 | 0.05 |
+| `rest_ms`, `rest_sigma` | from arriving within 3 px to a click or scroll (log-normal) | 0–600, 0–1.5 | 120, 0.6 |
 | `rate_hz` | motion events a second | 30–1000 | 125 |
 | `moves` | how many moves it was fitted from | | 0 |
 

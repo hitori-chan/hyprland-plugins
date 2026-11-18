@@ -10,6 +10,10 @@
 #include <string_view>
 
 namespace VClick::Profile {
+    double draw(double median, double sigma, std::mt19937& rng) {
+        return median * std::exp(sigma * std::clamp(std::normal_distribution<double>{0, 1}(rng), -2.0, 2.0));
+    }
+
     std::string defaultPath() {
         if (const char* s = std::getenv("XDG_STATE_HOME"); s && *s)
             return std::string{s} + "/vclick/profile";
@@ -55,18 +59,24 @@ namespace VClick::Profile {
                 SET(p.aMs, 0, 400);
             else if (K == "fitts_b_ms")
                 SET(p.bMs, 30, 400);
-            else if (K == "bow_mean")
-                SET(p.bowMean, 0, 0.25);
-            else if (K == "bow_sd")
-                SET(p.bowSd, 0, 0.2);
+            else if (K == "bell")
+                SET(p.bell, 2, 24);
             else if (K == "peak")
-                SET(p.peak, 0.3, 0.7);
-            else if (K == "overshoot_p")
-                SET(p.overshootP, 0, 1);
-            else if (K == "overshoot")
-                SET(p.overshoot, 0, 0.15);
-            else if (K == "dwell_ms")
-                SET(p.dwellMs, 0, 400);
+                SET(p.peak, 0.2, 0.7);
+            else if (K == "bow_median")
+                SET(p.bowMedian, 0, 0.25);
+            else if (K == "bow_sigma")
+                SET(p.bowSigma, 0, 1.5);
+            else if (K == "correct_p")
+                SET(p.correctP, 0, 1);
+            else if (K == "under_share")
+                SET(p.underShare, 0, 1);
+            else if (K == "correct_size")
+                SET(p.correctSize, 0, 0.15);
+            else if (K == "rest_ms")
+                SET(p.restMs, 0, 600);
+            else if (K == "rest_sigma")
+                SET(p.restSigma, 0, 1.5);
             else if (K == "rate_hz")
                 SET(p.rateHz, 30, 1000);
             else if (K == "moves")
@@ -87,9 +97,9 @@ namespace VClick::Profile {
     }
 
     std::string describe(const SProfile& p) {
-        return std::format("fitts a {:g} ms, b {:g} ms/bit (W {:g} px); bow {:g} +- {:g}; speed peak at {:g}; overshoot {:g}% of moves >= 300 px, by {:g}%; "
-                           "dwell {:g} ms; {:g} Hz\nfrom {}{}",
-                           p.aMs, p.bMs, TARGET_W, p.bowMean, p.bowSd, p.peak, p.overshootP * 100, p.overshoot * 100, p.dwellMs, p.rateHz, p.source,
-                           p.moves ? std::format(" ({} movements)", p.moves) : "");
+        return std::format("fitts a {:g} ms, b {:g} ms/bit (W {:g} px); bell {:g} peaking at {:g}; bow {:g} (sigma {:g}); corrected {:g}%, {:g}% from short, by {:g}%; "
+                           "rest {:g} ms (sigma {:g}); {:g} Hz\nfrom {}{}",
+                           p.aMs, p.bMs, TARGET_W, p.bell, p.peak, p.bowMedian, p.bowSigma, p.correctP * 100, p.underShare * 100, p.correctSize * 100, p.restMs, p.restSigma,
+                           p.rateHz, p.source, p.moves ? std::format(" ({} movements)", p.moves) : "");
     }
 }
