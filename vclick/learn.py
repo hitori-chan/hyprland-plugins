@@ -482,7 +482,8 @@ def fitts(moves, sharp):
 
 def simulate(th, d, rnd):
     """One straight move of d px as the planner makes it from these values, read
-    as a recording reads a hand's: whole pixels, a report every 4 ms."""
+    as a recording reads a hand's: whole pixels, a report at 125 Hz, and only the
+    reports that moved the pointer."""
     def table(s, p):
         c = [0.0]
         for i in range(200):
@@ -495,32 +496,44 @@ def simulate(th, d, rnd):
         i = min(int(x), 199)
         return c[i] + (c[i + 1] - c[i]) * (x - i)
 
-    c = table(th["bell"], th["peak"])
+    c, slow = table(th["bell"], th["peak"]), table(2, 0.5)
+    drift, wait = 0.0, 0.0  # the way a drift covers first, and how long it takes
+    if d >= DRIFT_FROM and rnd.random() < th.get("lead_p", 0.0):
+        drift = d * min(th["lead_size"] * rnd.uniform(0.6, 1.4), 0.7)
+        wait = max(min(th["lead_ms"] * rnd.uniform(0.7, 1.3), 1000), 100) / 1000
+    way = d - drift
     pace = math.exp(max(min(rnd.gauss(0, 0.10), 0.20), -0.20))
-    first = max(min((th["stroke_a_ms"] + th["stroke_b_ms"] * math.log2(d / W_DEFAULT + 1)) * pace, 1000), 40) / 1000
-    chance = max(min(th["tail_p"] + th["tail_p_slope"] * math.log2(d / TAIL_AT), 1.0), 0.0)
-    left = d * th["tail_size"] if rnd.random() < chance and d * th["tail_size"] >= 2 else 0.0
+    first = max(min((th["stroke_a_ms"] + th["stroke_b_ms"] * math.log2(way / W_DEFAULT + 1)) * pace, 1000), 40) / 1000
+    chance = max(min(th["tail_p"] + th["tail_p_slope"] * math.log2(way / TAIL_AT), 1.0), 0.0)
+    share = th["tail_share"]
+    left = way * th["tail_size"] if rnd.random() < chance and share > 0 and way * th["tail_size"] >= 2 else 0.0
     total, start = first, first
     if left:
         start = first * rnd.uniform(0.95, 1.1)
-        total = max(min(first / (1 - th["tail_share"]), 2.0), start + 0.04)
+        total = max(min(first / (1 - share), 2.0), start + 0.04)
     ts, xs, t = [], [], 0.0
-    while t < total + 0.012:
-        ts.append(t)
-        xs.append(float(round((d - left) * at(c, t / first) + (left * at(c, (t - start) / (total - start)) if left else 0.0))))
-        t += 0.004
+    while t < wait + total + 0.012:
+        u = t - wait
+        x = drift * at(slow, t / wait) if wait else 0.0
+        x += (way - left) * at(c, u / first) + (left * at(c, (u - start) / (total - start)) if left else 0.0)
+        if not xs or round(x) != xs[-1]:
+            ts.append(t)
+            xs.append(float(round(x)))
+        t += 0.008
     return measure(ts, xs, [0.0] * len(ts))
 
 
 def motion(whole, have):
-    """The way a hand moves. A slow end that is short or rare reads smaller than
-    it is, as its last part sinks under what a recording can see: its values are
-    moved until a simulated hand's moves read as the recorded ones do."""
+    """The way a hand moves. A drift or a slow end that is short or rare reads
+    smaller than it is, as part of it sinks under what a recording can see: their
+    values are moved until a simulated hand's moves read as the recorded ones do."""
     direct = read_motion(whole, have)
     keys = {"tail_p": (0, 1), "tail_p_slope": (-1, 1), "tail_share": (0, 0.8), "tail_size": (0, 0.2)}
     held = ("stroke_a_ms", "stroke_b_ms", "bell", "peak")
     if any(k not in direct for k in (*keys, *held)):
-        return direct
+        return {k: v for k, v in direct.items() if not k.startswith("_")}
+    if all(k in direct for k in ("lead_p", "lead_ms", "lead_size")):
+        keys |= {"lead_p": (0, 0.6), "lead_ms": (100, 1000), "lead_size": (0, 0.7)}
     th = {k: direct[k] for k in (*keys, *held)}
     rnd = random.Random(7)
     ds = sorted(m["d"] for m in whole) * 2
@@ -528,9 +541,13 @@ def motion(whole, have):
         sim = [m for m in (simulate(th, d, rnd) for d in ds) if m and not m["leg"]]
         got = read_motion(sim, lambda _k, enough: enough)
         for k, (lo, hi) in keys.items():
-            if k in got:
+            if k in got and not (k == "tail_share" and "_whole" in direct):
                 th[k] = min(max(th[k] + 0.7 * (direct[k] - got[k]), lo), hi)
-    return {**direct, **{k: round(th[k], 3) for k in keys}}
+        # the share is what makes a long move with a slow end take as long as the recorded ones
+        if "_whole" in direct and "_whole" in got:
+            th["tail_share"] = max(min(th["tail_share"] + 0.7 * (1 - th["tail_share"]) * (direct["_whole"] - got["_whole"]) / direct["_whole"], 0.8), 0.0)
+    public = {k: v for k, v in direct.items() if not k.startswith("_")}
+    return {**public, **{k: round(th[k], 0 if k == "lead_ms" else 3) for k in keys}}
 
 
 def read_motion(whole, have):
@@ -568,6 +585,10 @@ def read_motion(whole, have):
         slow = [m for m in settled if m["after"] > 2 * own * m["stroke"]]
         if slow:
             prof["tail_share"] = round(min(max(statistics.median((m["tail_time"] - own_time) / (1 - own_time) for m in slow), 0.0), 0.8), 3)
+            # how long a long move with one takes: what its share is for
+            taking = [m["mt"] for m in slow if m["d"] >= DRIFT_FROM]
+            if taking:
+                prof["_whole"] = statistics.median(taking)
             prof["tail_size"] = round(min(max(statistics.median(m["tail_left"] for m in slow) - own_way, 0.0), 0.2), 4)
 
     bowed = sorted(((m["d"], m["bow"]) for m in whole if m.get("bow", 0) > 0), key=lambda b: b[0])

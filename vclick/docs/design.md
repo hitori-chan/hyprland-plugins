@@ -132,9 +132,10 @@ last rest (150 ms) or button event to the press.
   rather than invented.
 - **Slow end**: a move has one when more time follows the speed's first
   sinking under 15 % of its peak than twice a bell's own end would show: how
-  often by distance, and the time and the way left on those moves. A short or
-  rare slow end reads smaller than it is, so these values are moved until a
-  simulated hand's moves read as the recorded ones do.
+  often by distance, and the way left on those moves. Its share of the time
+  is what makes a long move with one take as long as the recorded ones. A
+  drift or slow end that is short or rare reads smaller than it is, so these
+  values are moved until a simulated hand's moves read as the recorded ones do.
 - **Rest**: arrival within 3 px of the press point to the press.
 - **Button**: a click's hold, the gap inside a double click, a drag's lead
   and rest before the release.

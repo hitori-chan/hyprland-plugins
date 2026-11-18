@@ -247,7 +247,7 @@ it. It is `human` whenever the plugin loads
 from:
 
 ```
-stroke a 94 ms, b 23 ms/bit (W 32 px); bell 4 peaking at 0.41; bow 0.0526 (sigma 0.757, slope 0.233), 20.3% both ways; drift 33.3%, 388 ms, 14.91% of the way; corrected 14.1%, 66.7% from short, by 10.11%; tail on 49.6% of moves at 300 px (+9.4 a doubling), 41.6% of the time, 8.6% of the way; rest 97 ms (sigma 0.875); hold 89 ms (sigma 0.219), 106 ms between clicks; drag lead 107 ms, drop rest 65 ms; wheel 50 ms; 129 Hz
+stroke a 94 ms, b 23 ms/bit (W 32 px); bell 4 peaking at 0.41; bow 0.0526 (sigma 0.757, slope 0.233), 20.3% both ways; drift 32.1%, 472 ms, 14.9% of the way; corrected 14.1%, 66.7% from short, by 10.11%; tail on 49.3% of moves at 300 px (+12.1 a doubling), 46.7% of the time, 8.8% of the way; rest 97 ms (sigma 0.875); hold 89 ms (sigma 0.219), 106 ms between clicks; drag lead 107 ms, drop rest 65 ms; wheel 50 ms; 129 Hz
 from /home/user/.local/state/vclick/profile (194 movements)
 ```
 
