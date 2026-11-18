@@ -1,9 +1,11 @@
 // The glide's path and its timing: pure math with no
 // compositor in it, so test/path.cpp checks it headless.
 //
-// A glide is one movement, or two when a long one overshoots: each a cubic
-// Bézier whose inner control points sit off the straight line (a hand's
-// arc), timed by Fitts's law, its speed bell-shaped as a hand's: zero at
+// A glide is a first stroke, and sometimes a second about as it ends: a small
+// correction. Their displacements add,
+// so the sum ends exactly on the target. The first is a cubic Bézier whose
+// inner control points sit off the straight line (a hand's arc), the whole
+// timed by Fitts's law, each stroke's speed bell-shaped as a hand's: zero at
 // both ends, as sharp as the user's and peaking where theirs does (a beta
 // curve; of 4, centred, it is the minimum-jerk profile of a reaching arm).
 #pragma once
@@ -22,19 +24,24 @@ namespace VClick::Path {
     using Profile::TARGET_W;
 
     constexpr double MIN_TARGET_W = 4, MAX_TARGET_W = 1000;
-    constexpr double MAX_MOVE_MS = 1000; // one movement, before a correction
+    constexpr double MAX_MOVE_MS = 1000;    // one movement
+    constexpr double MIN_CORRECT_PX = 100;  // a shorter move lands in one stroke
+    constexpr double CORRECT_SHARE  = 0.9;  // of a corrected move's time, the first stroke's
+    constexpr double MIN_MEND_MS    = 40;   // a second stroke is never a twitch
 
     struct SSeg {
         Vector2D            p0, p1, p2, p3;
         double              ms = 0;
         std::vector<double> progress; // the share of the way done, at WARP_N + 1 even times
+        double              start = 0; // when it begins, in the movement's time
+        Vector2D            bounds;    // the first stroke's: the box the sum stays in
     };
     constexpr int WARP_N = 128;
 
     // what a movement aims at
     struct SAim {
         double w         = TARGET_W; // the target's size: Fitts's W
-        bool   overshoot = true;     // a long move may pass the target, as the profile says (a drag's never does)
+        bool   overshoot = true;     // a move may pass the target, as the profile says (a drag's never does)
     };
 
     double   fittsMs(double distance, const SProfile& p, double w = TARGET_W);

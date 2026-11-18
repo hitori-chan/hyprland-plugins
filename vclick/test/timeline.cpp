@@ -94,7 +94,13 @@ int main() {
     }
     {
         const auto S = STEPS({.verb = EVerb::DRAG, .to = A});
-        check(S[2].to == A && Path::sample(S[2].way, 1e9) == A && S[2].way.size() == 1, "a drag's way ends on its end, and never passes it");
+        const Vector2D U        = (A - B) / B.distance(A);
+        bool           short_of = true;
+        for (double t = 0; t < S[2].ms; t += 2) {
+            const Vector2D AT = Path::sample(S[2].way, t) - B;
+            short_of &= AT.x * U.x + AT.y * U.y <= B.distance(A) + 1e-6;
+        }
+        check(S[2].to == A && Path::sample(S[2].way, 1e9) == A && short_of, "a drag's way ends on its end, and never passes it");
     }
     {
         bool bounded = true;

@@ -49,15 +49,25 @@ namespace VClick::Path {
         const double D = from.distance(to);
         if (D < 2)
             return {};
-        auto uni = [&](double a, double b) { return std::uniform_real_distribution<double>{a, b}(rng); };
+        auto           uni   = [&](double a, double b) { return std::uniform_real_distribution<double>{a, b}(rng); };
+        const Vector2D U     = (to - from) / D;
+        const double   total = std::clamp(fittsMs(D, p, aim.w), 40.0, MAX_MOVE_MS);
 
-        // the main movement ends on the target, or past it
-        Vector2D end = to;
-        if (aim.overshoot && D >= 300 && p.correctSize > 0 && uni(0, 1) < p.correctP * (1 - p.underShare)) {
-            const double OVER = std::clamp(D * p.correctSize * uni(0.6, 1.4), 3.0, 40.0);
-            end               = clampTo(to + (to - from) / D * OVER, bounds);
-            if (end.distance(to) < 2)
-                end = to;
+        // where the first stroke lands, and its share of the time: short of
+        // the target or past it, for a correction to mend
+        Vector2D end   = to;
+        double   share = 1;
+        if (D >= MIN_CORRECT_PX && p.correctSize > 0 && uni(0, 1) < p.correctP) {
+            const bool SHORT = uni(0, 1) < p.underShare;
+            if (SHORT || aim.overshoot) {
+                const double OFF = std::clamp(D * p.correctSize * uni(0.6, 1.4), 3.0, SHORT ? 100.0 : 40.0);
+                end              = clampTo(to + U * (SHORT ? -OFF : OFF), bounds);
+                share            = CORRECT_SHARE;
+            }
+        }
+        if (end.distance(to) < 2) {
+            end   = to;
+            share = 1;
         }
 
         // Control points at a third and two thirds of the line keep the
@@ -78,9 +88,14 @@ namespace VClick::Path {
 
         const auto        PROGRESS = progressFor(p);
         std::vector<SSeg> segs;
-        segs.push_back({from, clampTo(c.first, bounds), clampTo(c.second, bounds), end, std::clamp(fittsMs(DE, p, aim.w) * (end == to ? 1.0 : 0.85), 40.0, MAX_MOVE_MS), PROGRESS});
-        if (end != to) // the correction: short and straight
-            segs.push_back(straight(end, to, std::clamp(fittsMs(end.distance(to), p, aim.w) * 0.8, 60.0, 300.0), PROGRESS));
+        segs.push_back({from, clampTo(c.first, bounds), clampTo(c.second, bounds), end, total * share, PROGRESS});
+        segs[0].bounds = bounds;
+        if (end != to) { // about as the first stops: a little before it, or just after
+            const double START = segs[0].ms * uni(0.95, 1.1);
+            auto         mend  = straight(end, to, std::max(total - START, MIN_MEND_MS), PROGRESS);
+            mend.start         = START;
+            segs.push_back(std::move(mend));
+        }
         return segs;
     }
 
@@ -98,7 +113,7 @@ namespace VClick::Path {
     double duration(const std::vector<SSeg>& segs) {
         double ms = 0;
         for (const auto& s : segs)
-            ms += s.ms;
+            ms = std::max(ms, s.start + s.ms);
         return ms;
     }
 
@@ -127,11 +142,13 @@ namespace VClick::Path {
     }
 
     Vector2D sample(const std::vector<SSeg>& segs, double ms) {
-        for (const auto& s : segs) {
-            if (ms < s.ms)
-                return along(s, ms);
-            ms -= s.ms;
-        }
-        return segs.back().p3;
+        if (ms >= duration(segs))
+            return segs.back().p3;
+        if (segs.size() == 1)
+            return along(segs[0], ms); // the control points' hull keeps it in the window
+        Vector2D at = segs.front().p0;
+        for (const auto& s : segs)
+            at = at + (along(s, ms - s.start) - s.p0);
+        return clampTo(at, segs.front().bounds);
     }
 }

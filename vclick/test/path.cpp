@@ -24,7 +24,7 @@ static void check(bool ok, const char* what) {
 int main() {
     std::mt19937   rng{12345};
     SProfile       P;
-    P.correctP = 0.3, P.underShare = 0, P.correctSize = 0.03; // today every correction overshoots, at 300 px and up
+    P.correctP = 0.3, P.underShare = 0, P.correctSize = 0.03; // every correction overshoots
     const Vector2D BOX{1555, 830};
 
     check(plan({100, 100}, {101, 100}, BOX, P, rng).empty(), "under 2 px: no glide");
@@ -43,21 +43,21 @@ int main() {
         const double MS = duration(SEGS);
         ends &= sample(SEGS, MS + 1) == TO && sample(SEGS, 1e9) == TO;
         ends &= sample(SEGS, 0).distance(FROM) < 1e-9;
-        if (D >= 300)
+        if (D >= 300) {
             ++longs;
-        if (SEGS.size() == 2)
-            ++over;
+            over += SEGS.size() == 2;
+        }
         // Fitts: the main movement within its clamp of a + b log2(D/W + 1)
         const double FITTS = std::clamp(fittsMs(D, P), 40.0, MAX_MOVE_MS);
-        timed &= SEGS.size() == 2 ? MS >= FITTS * 0.6 && MS <= FITTS * 1.2 + 300 : std::abs(MS - FITTS) < 1e-6;
+        timed &= MS >= FITTS - 1e-6 && MS <= FITTS + MIN_MEND_MS;
         double   farthest = 0;
         Vector2D prev     = FROM;
         // 8 ms ticks, as at 125 Hz
         for (double t = 0; t <= MS + 8; t += 8) {
             const auto Q = sample(SEGS, t);
             inside &= clampTo(Q, BOX).distance(Q) < 1e-9;
-            // against the average step: a bell's peak is under 2x, a bow and an overshoot add a little
-            maxStep = std::max(maxStep, Q.distance(prev) / (D * 8 / MS));
+            // against the first stroke's average step: a bell's peak is under 2x, a bow adds a little
+            maxStep = std::max(maxStep, Q.distance(prev) / (D * 8 / SEGS[0].ms));
             // the distance still to go never grows much: a forward path, a correction allowed
             farthest = std::max(farthest, FROM.distance(Q));
             prev     = Q;
@@ -74,11 +74,11 @@ int main() {
     }
     check(ends, "every path starts on its start and ends exactly on its target");
     check(inside, "every path stays in the window");
-    check(timed, "a path's time is Fitts's law (a correction adds at most 300 ms)");
+    check(timed, "a path's time is Fitts's law, a correction's included (at most MIN_MEND_MS more)");
     check(forward, "no path runs past the target by more than the overshoot bound");
     check(bowed, "no path bows more than 25% of its length sideways");
     char steps[96];
-    std::snprintf(steps, sizeof steps, "no tick moves over 3x the average step (worst %.2fx)", maxStep);
+    std::snprintf(steps, sizeof steps, "no tick moves over 3x the first stroke's average step (worst %.2fx)", maxStep);
     check(maxStep < 3, steps);
     check(longs > 500 && over > longs * 0.2 && over < longs * 0.4, "about correct_p (30%) of the long moves overshoot");
 
@@ -156,6 +156,50 @@ int main() {
             return best;
         };
         check(PEAK(12) > PEAK(4) * 1.4, "a bell of 12 peaks well above a bell of 4");
+    }
+
+    // a correction: from short of the target or past it, overlapping the
+    // first stroke, and the sum ends exactly on the target
+    {
+        SProfile Q      = P;
+        Q.correctP      = 1;
+        Q.correctSize   = 0.1;
+        Q.bowMedian     = 0;
+        const Vector2D FROM{100, 100}, TO{700, 100};
+        bool           shortOf = true, past = true, exact = true, overlapped = false, near = true;
+        for (int i = 0; i < 300; ++i) {
+            Q.underShare = 1;
+            auto S       = plan(FROM, TO, {1600, 900}, Q, rng);
+            shortOf &= S.size() == 2 && S[0].p3.x < TO.x && duration(S) >= fittsMs(600, Q) - 1e-6 && duration(S) <= fittsMs(600, Q) + MIN_MEND_MS;
+            overlapped |= S[1].start < S[0].ms - 1;
+            exact &= sample(S, duration(S)) == TO && sample(S, duration(S) - 1e-6).distance(TO) < 0.01;
+            Q.underShare = 0;
+            S            = plan(FROM, TO, {1600, 900}, Q, rng);
+            past &= S.size() == 2 && S[0].p3.x > TO.x && S[0].p3.x <= TO.x + 40;
+        }
+        check(shortOf, "a correction from short: the first stroke lands short, in Fitts's time for the whole");
+        check(past, "a correction from past the target: by at most 40 px");
+        check(overlapped, "  it can begin before the first stroke has stopped");
+        check(exact, "  the sum ends exactly on the target");
+        Q.underShare = 1;
+        for (int i = 0; i < 200; ++i)
+            near &= plan({100, 100}, {180, 100}, {1600, 900}, Q, rng).size() == 1;
+        check(near, "a move under 100 px lands in one stroke");
+    }
+
+    // the window's edge holds the sum of two strokes
+    {
+        SProfile Q   = P;
+        Q.bowMedian = 0.2, Q.correctP = 1, Q.underShare = 0, Q.correctSize = 0.15;
+        bool inside = true;
+        for (int i = 0; i < 500; ++i) {
+            const auto S = plan({10, 10}, {1590, 890}, {1600, 900}, Q, rng);
+            for (double t = 0; t < duration(S); t += 4) {
+                const auto AT = sample(S, t);
+                inside &= AT.x >= 0 && AT.y >= 0 && AT.x <= 1599 && AT.y <= 899;
+            }
+        }
+        check(inside, "the sum of two strokes stays in the window");
     }
 
     // the time the way's end spends near the target, and the rest's draw

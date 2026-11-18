@@ -71,9 +71,12 @@ acts:
   vclick can't see the target).
 - **Speed**: bell-shaped, t^α (1 − t)^β with α + β = `bell`, peaking at
   `peak` (a bell of 4, centred, is a reaching arm's minimum jerk).
-- **Overshoot**: a move of ≥ 300 px passes the target `correct_p` ×
-  (1 − `under_share`) of the time, by about `correct_size` of D (3–40 px)
-  in 85 % of its time, then corrects straight back (60–300 ms).
+- **Corrections**: `correct_p` of the moves of ≥ 100 px land off the
+  target by about `correct_size` of D: short of it `under_share` of the
+  time (3–100 px), else past it (3–40 px; a drag never passes it). The
+  first stroke takes 90 % of the move's time, and a straight second stroke
+  of at least 40 ms mends the rest, beginning about as the first stops. The
+  two add up, so the sum ends exactly on the target.
 - **Pace**: one motion every 1000 / `rate_hz` ms (4–16 ms) on the event
   loop. A surface boundary on the way gets a leave and an enter, as a
   real pointer's does. The last motion lands exactly on the point.
