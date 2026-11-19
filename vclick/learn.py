@@ -668,7 +668,7 @@ def fit(a):
     prof, short = derive([Recording(d) for d in dirs])
     if prof["moves"] < 20:
         sys.exit(f"learn: only {prof['moves']} movements ending in a click; use the mouse a while longer")
-    os.makedirs(os.path.dirname(a.profile), exist_ok=True)
+    os.makedirs(os.path.dirname(a.profile) or ".", exist_ok=True)
     with open(a.profile, "w") as f:
         f.write("# vclick glide profile, fitted by learn.py from the user's own movements\n")
         for k, v in prof.items():
