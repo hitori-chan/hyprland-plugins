@@ -123,7 +123,7 @@ In `awesome/gate/`, runnable from a clone:
 | `dev.sh` | one dev-loop iteration: stop, build, launch, open a window, screenshot |
 | `launch.sh`, `stop.sh` | start or tear down the host and the nested |
 | `shot.sh [out.png]` | screenshot the nested, plus a 2x crop of the bar |
-| `sweep.sh BASE TIP [WORKERS]` | build and unit-test every commit in the range against the staged headers; run before a push and after a history rewrite |
+| `sweep.sh BASE TIP [WORKERS]` | build and unit-test both plugins at every commit in the range against the staged headers; run before a push and after a history rewrite |
 
 Gate-build `hyprctl awesome` verbs:
 
