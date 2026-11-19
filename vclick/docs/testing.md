@@ -98,3 +98,17 @@ Each section is judged on the exact protocol events:
 
 Artifacts: `/tmp/hypr-gate/vclick`. The result is the summary line,
 `== vclick: ALL N CHECKS PASSED ==`.
+
+## The learner's fit
+
+```sh
+make -C vclick fit-check   # learn.py on the user's recordings (local, numpy)
+python3 -I -B vclick/test/fit.py heldout REFERENCE.py CANDIDATE.py
+```
+
+`test/fit.py` reads moves with an analyzer of its own, the planner's
+through `test/plan.cpp` and the recording's report gaps, 4 ms poll and
+whole pixels. `table` is the recording against a profile; `plants` fits
+known profiles back; `seeds` refits under other simulation seeds;
+`heldout` fits one half (or recording) and scores the other. The pass
+rules are in its docstring.

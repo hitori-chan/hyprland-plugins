@@ -64,10 +64,20 @@ $(TESTDIR)/theme: test/theme.cpp theme.cpp theme.hpp
 	@mkdir -p $(TESTDIR)
 	$(CXX) -std=c++26 -O2 -Wall -I. test/theme.cpp theme.cpp -o $@
 
+# learn.py against the planner on the user's own recordings (local, numpy)
+fit-check: $(TESTDIR)/plan
+	python3 -I -B test/fit.py plants learn.py
+	python3 -I -B test/fit.py seeds learn.py
+	python3 -I -B test/fit.py heldout learn.py
+
+$(TESTDIR)/plan: test/plan.cpp path.cpp path.hpp profile.cpp profile.hpp
+	@mkdir -p $(TESTDIR)
+	$(CXX) -std=c++26 -O2 -Wall -I. test/plan.cpp path.cpp profile.cpp -o $@ $(shell pkg-config --libs hyprutils)
+
 clean:
 	rm -rf $(NAME).so $(OBJDIR) $(TESTDIR)
 
 -include $(OBJS:.o=.d)
 
 FORCE:
-.PHONY: all test clean FORCE
+.PHONY: all test fit-check clean FORCE
