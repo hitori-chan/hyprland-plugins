@@ -8,15 +8,16 @@ fit-check` builds it); reads the user's recordings, which stay local.
     fit.py plants LEARN [LEARN...]   known profiles through the planner: given back?
     fit.py seeds LEARN [LEARN...]    the recording fitted under other simulation seeds
 
-The first LEARN is the reference. Pass rules, fixed before any learner was
-scored against them:
+The first LEARN is the reference. Pass rules (a key a learner leaves out
+is a miss):
 - heldout: each row's mean error, |log(model / recording)| over both splits
   and 4 planner seeds, at most 0.05 above the reference's, and their sum no
   more than the reference's;
 - plants: on every plant, stroke_a within 10 ms, stroke_b within 20 % (6 ms
   at least), bell 0.75, peak 0.05, tail_p and tail_share 0.10, tail_size
   0.02, lead_p 0.08, lead_ms 80;
-- seeds: each of those keys' spread over 3 seeds within the same bound.
+- seeds: each of those keys' spread over 3 seeds within the same bound,
+  and none left out under some seeds only.
 """
 import importlib.machinery
 import importlib.util
