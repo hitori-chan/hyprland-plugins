@@ -10,6 +10,10 @@ export PKG_CONFIG_PATH
 
 CXX       ?= g++
 CXXFLAGS  ?= -O2
+# a compiler launcher (ccache), set by the harness (awesome/gate/memcap.sh);
+# hyprpm's build stays the plain compiler, and the stamp never sees it
+CCACHE    ?=
+export CCACHE_BASEDIR := $(abspath ..)
 HL_CFLAGS := $(shell pkg-config --cflags $(PKGS))
 CXXFLAGS  += -std=c++26 -Wall -fPIC -fno-gnu-unique -MMD -MP $(HL_CFLAGS)
 LDFLAGS   += -shared -Wl,--version-script=plugin.ver
@@ -34,7 +38,7 @@ $(STAMP): FORCE | $(OBJDIR)
 	@echo '$(STAMP_TEXT)' | cmp -s - $@ || echo '$(STAMP_TEXT)' > $@
 
 $(OBJDIR)/%.o: %.cpp $(STAMP) | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CCACHE) $(CXX) $(CXXFLAGS) -c $< -o $@
 
 # the linker unlinks its output first: a loaded .so keeps its old inode
 $(NAME).so: $(OBJS) plugin.ver
