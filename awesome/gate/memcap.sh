@@ -10,7 +10,9 @@
 #     outgrows its budget is OOM-killed inside the scope, never outside;
 #   * is killed whole (cgroup.kill) by a watchdog when the host itself
 #     runs low, whoever's fault: the session gets the run's memory back.
-#   HYPR_HARNESS_MEM_MAX    the scope's ceiling, MiB (default 3072)
+#   HYPR_HARNESS_MEM_MAX    the scope's ceiling, MiB (default 6144 while
+#                           the host's RAM has it and a floor to spare,
+#                           else 3072: the build's jobs scale with it)
 #   HYPR_HARNESS_MEM_FLOOR  MemAvailable+SwapFree, MiB, below which the
 #                           watchdog kills the run (default 1024)
 #   HYPR_HARNESS_MEM_WAIT   seconds to wait for the budget (default 600)
@@ -18,9 +20,11 @@
 # and CCACHE (ccache, when installed) as the build's compiler launcher.
 
 _mem_left() { awk '/^MemAvailable:/ { a = $2 } /^SwapFree:/ { s = $2 } END { print int((a + s) / 1024) }' /proc/meminfo; }
+_mem_ram() { awk '/^MemAvailable:/ { print int($2 / 1024) }' /proc/meminfo; }
 
 if [[ -z "${HYPR_HARNESS_SCOPE:-}" ]]; then
-	_max=${HYPR_HARNESS_MEM_MAX:-3072} _floor=${HYPR_HARNESS_MEM_FLOOR:-1024}
+	_floor=${HYPR_HARNESS_MEM_FLOOR:-1024}
+	_max=${HYPR_HARNESS_MEM_MAX:-$(($(_mem_ram) >= 6144 + _floor ? 6144 : 3072))}
 	command -v systemd-run >/dev/null || { echo "$(basename "$0"): systemd-run is required (the run's memory cap)" >&2; exit 2; }
 	_need=$((_max + _floor)) _waited=0
 	while (($(_mem_left) < _need)); do

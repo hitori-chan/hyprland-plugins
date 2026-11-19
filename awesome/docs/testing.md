@@ -15,7 +15,7 @@ everything by itself; a staged set is tracked header by header.
 
 The gate variant compiles through a precompiled header (`core/pch.hpp`,
 `-include`d): two thirds the time and ~600 MiB a unit instead of 780, so
-the gate's 3 GiB scope builds four at once. The release stays plain, so
+a 6 GiB scope builds eight at once (a 3 GiB one four). The release stays plain, so
 a missing include still fails there. The gate's entry points use ccache
 when installed (`gate/memcap.sh`); hyprpm's build does not.
 
@@ -97,9 +97,11 @@ unchanged with no nested window there.
 ### Rules
 
 - Every entry point runs in its own memory-capped scope
-  (`gate/memcap.sh`); a hand-run build or test goes through `systemd-run
-  --user --scope -p MemoryMax=1536M -p MemorySwapMax=0`, one at a time. A
-  host OOM can kill the live compositor.
+  (`gate/memcap.sh`: 6 GiB while the host's RAM has it and a floor to
+  spare, else 3 GiB; the build's jobs follow the cap); a hand-run build or
+  test goes through `systemd-run --user --scope -p MemoryMax=1536M -p
+  MemorySwapMax=0`, one at a time. A host OOM can kill the live
+  compositor.
 - One run at a time: gate, probe, dev loop, launch and stop share a lock
   on `$HYPR_HARNESS`.
 - Never rebuild the plugin, edit a gate script or run launch/stop while

@@ -30,7 +30,7 @@ fi
 normalize_target_pkgconfig || exit 1
 # The headless core harness gates with the build: pure logic (stores, schema,
 # boxes, wpctl parsing) that must not regress while the batteries run.
-TEST_OUT="$(make -C "$REPO/awesome" test 2>&1)" || {
+TEST_OUT="$(make -j"$HYPR_HARNESS_JOBS" -C "$REPO/awesome" test 2>&1)" || {
 	echo "awesome headless tests FAILED"
 	grep -E 'FAIL|error' <<<"$TEST_OUT" | head -20
 	exit 1
