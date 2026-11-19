@@ -45,16 +45,15 @@ compositor is built from.
   harness. One logical change per fork commit, with a message that says
   why.
 - A bump: rebase the series onto upstream, drop patches upstream made
-  obsolete, rebuild, port the plugin to the new ABI, run the full gate
-  (`-b all`). `src/version.h` is generated at CMake CONFIGURE time:
-  reconfigure (`cmake -S . -B build`) after moving HEAD, or the binary and
-  headers carry a stale hash the plugin's load guard rejects. A reconfigure
-  keeps pkg-config's cached versions: after a distro upgrade of a dependency
-  add `-U '*_dep_*' -U '__pkg_config_checked_*'`, or hyprpm's plugin fails
-  that guard (2026-11-04; the gate refuses such a tree).
+  obsolete, rebuild (`bash awesome/gate/fork.sh`), port the plugin to the
+  new ABI, run the full gate (`-b all`). `fork.sh` reconfigures first:
+  `src/version.h` is generated at CONFIGURE time, and a reconfigure keeps
+  pkg-config's cached versions unless told otherwise; either stale fails
+  the plugin's load guard (2026-11-04; the gate refuses such a tree).
 - Dependencies come from distro packages, but Aquamarine: the fork needs
-  `~/repo/PKGBUILDs/aquamarine` (the `flake.lock` pin and its patches), and
-  the gate's nested builds the same (`gate/host.sh`).
+  `~/repo/PKGBUILDs/aquamarine` (the `flake.lock` pin and its patches);
+  the gate's nested, `gate/fork.sh` and the gate's staged headers use the
+  same build of it (`gate/host.sh`).
 - The user performs sudo installs and deploys (the fork: install +
   relog, then `hyprpm update`).
 - Two machines run it: a ThinkPad (x86, this host) and an Apple silicon

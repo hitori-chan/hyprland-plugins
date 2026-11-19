@@ -42,8 +42,9 @@ usage() {
 usage: gate.sh [-s FORK-DIR] [-b TIER|LIST] [-k LIST] [-p TRACE] [compositor-bin]
   -s DIR    a built fork checkout (e.g. ~/repo/Hyprland): stage its build's
             header set (cmake --install to $HYPR_GATE_TMP/fork-pkg, .pc
-            prefix normalized, version.h verified) as the target headers,
-            and default the compositor to DIR/build/Hyprland
+            prefix normalized, version.h verified, the pinned aquamarine's
+            .pc beside it) as the target headers, and default the
+            compositor to DIR/build/Hyprland
   -b        tiers:
               quick      the dev-loop smoke battery (DEFAULT)
               all        shell windows notify system pipeline lifecycle,
@@ -140,9 +141,16 @@ if [[ -n "$FORK_SRC" ]]; then
 	# the staged set is ours: point its .pc at itself, so a manual
 	# `PKG_CONFIG_PATH=$_pkg/share/pkgconfig make` builds against it too
 	sed -i "s|^prefix=.*|prefix=$_pkg/include|" "$_pkg/share/pkgconfig/hyprland.pc"
+	# the fork's headers include the Aquamarine package's patched API: the
+	# pin's build (host.sh, the nested's own library) joins the set
+	_aq="$(FORK_SRC="$FORK_SRC" HARNESS_DIR="$HARNESS" bash -c '. "$GATE_DIR/host.sh" && aq_pinned_libdir')" &&
+		cp "$_aq/pkgconfig/aquamarine.pc" "$_pkg/share/pkgconfig/" || {
+		echo "gate.sh: staging the pinned aquamarine into $_pkg failed" >&2
+		exit 2
+	}
 	export PKG_CONFIG_PATH="$_pkg/share/pkgconfig" HYPR_DEPLOY_PKG_CONFIG_PATH="$_pkg/share/pkgconfig"
 	[[ -n "$BIN" ]] || BIN="$FORK_SRC/build/Hyprland"
-	unset _head _pkg _dep _have _want
+	unset _head _pkg _dep _have _want _aq
 fi
 [[ -n "$BIN" ]] || BIN=${HYPR_BIN:-/usr/local/bin/Hyprland}
 

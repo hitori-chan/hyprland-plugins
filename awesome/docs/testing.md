@@ -39,7 +39,8 @@ make -C awesome gate ARGS="-s ~/repo/Hyprland [-b quick|all|LIST] [-k LIST] [-p 
 ```
 
 - `-s DIR` stages that fork build's headers (checking its `version.h`
-  against HEAD and the system's dependency versions), builds the gate
+  against HEAD and the system's dependency versions) with the pinned
+  Aquamarine's (`gate/host.sh`), builds the gate
   variant, and runs `DIR/build/Hyprland` (or `BIN`). The `all` tier, or
   `REHEARSE=1`, adds the release variant's deploy rehearsal.
 - `-b`: `quick` (default, ~30 s), `all`, or a list of `quick`, `shell`,
@@ -124,6 +125,7 @@ In `awesome/gate/`, runnable from a clone:
 | `launch.sh`, `stop.sh` | start or tear down the host and the nested |
 | `shot.sh [out.png]` | screenshot the nested, plus a 2x crop of the bar |
 | `sweep.sh BASE TIP [WORKERS]` | build and unit-test both plugins at every commit in the range against the staged headers; run before a push and after a history rewrite |
+| `fork.sh [DIR]` | build the fork (default `~/repo/Hyprland`) as the gate runs it, reconfigured, against the pinned Aquamarine, then its unit tests |
 
 Gate-build `hyprctl awesome` verbs:
 
