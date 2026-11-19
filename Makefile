@@ -1,8 +1,6 @@
-# Root convenience entry for the dev loop and the gate.
-#
-# `make` builds the plugins; `make test` runs awesome's headless harness;
-# `make gate` runs awesome's nested integration gate (ARGS passes
-# through); `make vclick-check` runs vclick's nested check.
+# `make` builds both plugins, `make test` runs both plugins' unit tests,
+# `make gate` runs awesome's nested gate (ARGS passes through), `make
+# vclick-check` vclick's nested check.
 
 all:
 	$(MAKE) -C awesome
@@ -10,6 +8,7 @@ all:
 
 test:
 	$(MAKE) -C awesome test
+	$(MAKE) -C vclick test
 
 gate:
 	$(MAKE) -C awesome gate ARGS='$(ARGS)'

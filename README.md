@@ -22,7 +22,7 @@ hyprpm enable vclick    # optional, independent of awesome
 
 ```sh
 make                # both plugins
-make test           # awesome's unit tests
+make test           # both plugins' unit tests
 make gate ARGS=…    # awesome's nested gate
 make vclick-check   # vclick's nested check
 ```
