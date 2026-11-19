@@ -1,8 +1,7 @@
 # Reference
 
-The whole command and its answers. Examples are in the
-[README](../README.md); how it works and its limits are in the
-[design](design.md).
+The whole command and its answers. Examples: the [README](../README.md);
+how it works and its limits: the [design](design.md).
 
 ## hyprctl
 
@@ -23,68 +22,52 @@ hyprctl vclick profile [reload [file]]
 hyprctl vclick image <window>
 ```
 
-The options follow the point, in any order, each at most once.
+Options follow the point, in any order, each at most once.
 
-- `<window>`: a window selector, as `send_shortcut` takes it
+- `<window>`: a window selector as `send_shortcut` takes it
   (`address:0x…`, `class:…`), or a bare `0x…` address. No spaces.
-- `<x> <y>`: logical pixels from the window's top-left: the pixel of a
-  window capture (`grim -T <stableId>`) at scale 1; divide a capture's
-  pixels by the monitor scale elsewhere. A scroll goes to what is under
-  that point, as the wheel does.
+- `<x> <y>`: logical pixels from the window's top-left: a window
+  capture's pixel (`grim -T <stableId>`) at scale 1, else a capture's
+  pixels over the monitor scale. A scroll goes to what is under the
+  point, as the wheel does.
 - `button`: `left` (default), `right`, `middle`, `side`, `extra`, or a
-  Linux code from 272 (`BTN_LEFT`) to 279.
+  Linux code 272 (`BTN_LEFT`) to 279.
 - `double`, `triple`: two or three clicks in a row.
 - `up`, `down`, `left`, `right`: the wheel's way. `down` shows what is
-  below (the content moves up), whatever the user's natural-scroll
-  setting.
+  below, whatever the user's natural-scroll setting.
 - `steps`: wheel detents, 1 (default) to 20.
-- `<ms>ms`: the time between steps, `0ms` to `1000ms` (default `50ms` in
-  `performance`).
-  Without it a human request goes at `wheel_ms`. The first step goes at
-  once; the rest follow at that pace
-  ([design](design.md#paced-scrolling)). `0ms` sends every step in one
+- `<ms>ms`: the time between steps, `0ms` to `1000ms`; without it,
+  `wheel_ms` in `human`, `50ms` in `performance`. The first step goes at
+  once ([design](design.md#paced-scrolling)); `0ms` sends all in one
   burst, which many apps speed up.
-- `<n>px`: instead of wheel steps, a finger's scroll on a touchpad by
-  that many pixels, `1px` to `10000px`, exactly, at the user's pace; no
-  steps or pace with it ([design](design.md#a-touchpads-strokes)).
-- `move`: go there, and keep the hover until the user's pointer changes
-  surface, vclick's next input goes into another app, `hide`, or the
-  plugin unloads ([design](design.md#the-hover)). With a button held, the
-  move drags it ([press](#press-and-release)).
-- `human`: go there along a curve at the user's pace, rest on the target,
-  then the input ([design](design.md#the-glide)).
-  `performance`: as fast as apps still read it right
-  ([design](design.md#the-modes)). A request that names neither goes the
-  mode's way.
+- `<n>px`: a finger's scroll on a touchpad instead, `1px` to `10000px`,
+  exact; no steps or pace with it
+  ([design](design.md#a-touchpads-strokes)).
+- `human`: glide there at the user's pace, rest, then the input
+  ([design](design.md#the-glide)). `performance`: as fast as apps still
+  read it right ([design](design.md#the-modes)). Neither: the mode's.
 - `size:<px>`: the target's size, 4 to 1000 (default 32): Fitts's W for
-  the glide's time, so a small button takes a little longer and a wide
-  one less.
+  the glide's time.
+- `<key>`: an xkb key name in the active layout, as `send_shortcut` takes
+  it (`Next` is PageDown, `Prior` PageUp; `Return`, `Escape`, `a`, `F5`;
+  any case), or `code:<n>` (an xkb keycode: evdev plus 8).
+- `[mods]`: modifiers held for the key, joined by `+` or `_`: `ctrl`,
+  `shift`, `alt`, `super` (and `control`, `mod1`–`mod5`, `win`, `logo`,
+  `meta`), any case. `key` takes no other option.
 
-- `<key>`: an xkb key name in the active layout, as `send_shortcut`
-  takes it (`Next` is PageDown, `Prior` PageUp; `Return`, `Escape`,
-  `a`, `F5`; any case), or `code:<n>` (an xkb keycode, the evdev code
-  plus 8). One press and its release.
-- `[mods]`: the modifiers held for that key, joined by `+` (or `_`):
-  `ctrl`, `shift`, `alt`, `super` (and `control`, `mod1`-`mod5`, `win`,
-  `logo`, `meta`), any case. `key` takes no other option
-  ([design](design.md#the-keyboard)).
-
-The answer is `ok`, or one line starting `error:` (`usage:` for a
-request that names no verb). A glide answers `ok` as it sets off; the
-click or scroll follows when it arrives, and an error there shows in
-`status`.
+The answer is `ok`, or one line starting `error:` (`usage:` when no verb
+is named). A glide answers `ok` as it sets off; an error at arrival shows
+in `status`.
 
 A glide starts where vclick's pointer last was in that window, else at
-the window's centre. It goes at once instead when the user's pointer
-is in the same app (a glide would take the app's pointer from them; a
-`move` is refused then) or when the point is in a popup outside the
-window's box.
+its centre. It goes at once instead when the user's pointer is in the
+same app (a `move` is refused then) or the point is in a popup outside
+the window's box.
 
 ## Lua
 
-Every verb is a function under `hl.plugin.vclick`, with the same words
-in the same order (a number where hyprctl takes one) and the same
-checks:
+Every verb is a function under `hl.plugin.vclick`, with the same words in
+the same order (a number where hyprctl takes one) and the same checks:
 
 ```lua
 hl.plugin.vclick.click(window, x, y, [button], ["double"|"triple"], ["human"|"performance"])
@@ -103,11 +86,10 @@ hl.plugin.vclick.profile(["reload", [file]])
 hl.plugin.vclick.image(window)
 ```
 
-The answer `ok` comes back as `true`; an error as `nil` and its line
-(`error: …`, or `usage: …` for a call that names too little), so a
-caller can `assert()` it or branch on it; any other answer as its
-string. A table, a boolean or `nil` where a word goes is `error:
-argument <n> is a <type>: a string or a number, as hyprctl takes it`.
+`ok` returns `true`; an error returns `nil` and its line (`error: …`, or
+`usage: …`); any other answer its string. A table, boolean or `nil` where
+a word goes is `error: argument <n> is a <type>: a string or a number, as
+hyprctl takes it`.
 
 ```lua
 local ok, err = hl.plugin.vclick.key("address:0x…", "Next")
@@ -118,79 +100,63 @@ From a shell: `hyprctl repl 'return hl.plugin.vclick.status()'`.
 
 ## key
 
-`key <window> <key> [mods]` sends that window one key, pressed and
-released, with the modifiers held for it, and answers `ok` once it is
-sent. The app hears an enter, the modifiers, the press, the release, the
-modifiers released and a leave, unless the user's keyboard is in that
-very window: then it hears only the key, between its modifiers. Nothing
-else hears anything, and the keyboard focus stays where it is. It is
-refused while the user's keyboard is in another window of the same app,
-or while they hold a key in that one (`error: busy`). The key goes at
-once, whatever the mode: no glide, no cursor.
+Sends the window one key, pressed and released with its modifiers, and
+answers `ok` once sent: an enter, the modifiers, the press, the release,
+the modifiers released, a leave; only the key, between its modifiers,
+when the user's keyboard is in that very window. The keyboard focus stays
+where it is. `error: busy` while the user's keyboard is in another window
+of the same app or holds a key in that one. No glide, no cursor, either
+mode ([design](design.md#the-keyboard)).
 
 ## press and release
 
-`press <window> <x> <y> [button]` goes there and holds the button down;
-`release` lets it go where the pointer is. Between them, `move` in that
-window drags it (a glide, or in `performance` one motion), as a hand holding
-the button down: the app's implicit grab, so every motion goes to where
-the press began, wherever the point is. Nothing else is taken while it
-is held (`error: busy: holding <button>; release it first`), except
-`key`, the queries, `hide` and `mode`.
+`press` goes there and holds the button; `release` lets it go where the
+pointer is. Between them a `move` in that window drags it (a glide, or
+one motion in `performance`) under the app's implicit grab: every motion
+goes to where the press began. Only `key`, the queries, `hide` and `mode`
+are taken meanwhile (`error: busy: holding <button>; release it first`).
 
 The hold ends by itself, and `status` says why, when:
 
-- the user's pointer changes surface, anywhere: Hyprland's seat leaves
-  every app's pointer then, and a leave lets the button go (so does the
-  user's pointer coming into the app, whose pointer is theirs);
+- the user's pointer changes surface anywhere (the seat leaves every
+  app's pointer, and a leave releases), or comes into the app;
 - the window closes or is hidden;
-- the app begins a drag-and-drop from it: Hyprland would drive that with
-  the user's real mouse, so it is refused (the app hears its drag
-  cancelled; [design](design.md#a-held-button)).
+- the app begins a drag-and-drop from it: refused, the app hears it
+  cancelled ([design](design.md#a-held-button)).
 
-`hide`, the switch to `performance` and unloading let the button go first. The
-app cannot make the press an interactive move or resize of its window
-(a client-side title bar): the compositor would drive those with the
-user's mouse too.
+`hide`, the switch to `performance` and unloading release first. The app
+cannot turn the press into an interactive move or resize.
 
 ## drag
 
-`drag <window> <x> <y> <x2> <y2> [button]` is a press, a move and a
-release in one request: it goes to `<x> <y>`, presses, moves to
-`<x2> <y2>` with the button down and lets go. In `human` it glides there
-at the user's pace (Fitts's time for the target's size, never past the
-target) and rests before letting go; in `performance` it goes straight
-there in 48 ms. `<x2> <y2>` is in the window's box.
-`status` says `moving` on the way there, `dragging` after the press. The
-hold's limits are the press's ([press and release](#press-and-release)):
-a drag-and-drop the app begins is refused, and the user's pointer
-changing surface ends it.
+`drag <window> <x> <y> <x2> <y2> [button]`: press at `<x> <y>`, move to
+`<x2> <y2>` (inside the window's box) with the button down, release. In
+`human` a glide at the user's pace, never past the target, then a rest;
+in `performance` straight there in 48 ms. `status` says `moving`, then
+`dragging` after the press. Its limits are the
+[press's](#press-and-release).
 
 ## pinch
 
-`pinch <window> <x> <y> <scale> [<deg>deg]` goes to `<x> <y>` and
-pinches there with two fingers on a
-touchpad: they spread to `<scale>` times their distance, `0.1` to `10`
-(`2` zooms in twice, `0.5` out), and turn `<deg>` degrees, `-360` to
-`360`, clockwise positive; at the user's pace, then a rest, then the
-lift, or in `performance` in 32 ms with no rest
-([design](design.md#a-touchpads-strokes)). A pinch needs a scale
-other than 1, or a turn. `status` says `pinching`.
+`pinch <window> <x> <y> <scale> [<deg>deg]`: two fingers on a touchpad
+spread to `<scale>` times their distance, `0.1` to `10` (`2` zooms in),
+and turn `<deg>`, `-360` to `360`, clockwise positive; at the user's pace,
+a rest, the lift; in `performance` 32 ms, no rest
+([design](design.md#a-touchpads-strokes)). It needs a scale other than 1,
+or a turn. `status` says `pinching`.
 
 ## status
 
 - `moving`: a glide runs, its rest included.
-- `clicking`: a human click holds its button, or waits for its next click.
+- `clicking`: a human click holds its button or waits for its next click.
 - `dragging`: a glide runs with a button held.
-- `scrolling <done>/<steps>`: a paced scroll runs; `scrolling
-  <done>/<n> px`: a finger's.
+- `scrolling <done>/<steps>`, `scrolling <done>/<n> px`: a paced or a
+  finger's scroll runs.
 - `pinching`: a pinch runs.
 - `idle`, then `; holding <button>` while one is held, then `; <why>`
-  when the last glide, scroll or hold ended early, until the next one
-  starts:
-  - `the last glide stopped: <why>`: the window closed or was hidden,
-    the compositor is shutting down, or an error;
-    the app's pointer left the window;
+  when the last glide, scroll or hold ended early, until the next starts:
+  - `the last glide stopped: <why>`: the window closed or was hidden, the
+    compositor is shutting down, or an error; the app's pointer left;
   - `the last glide finished at once: the user's pointer came into the
     app`;
   - `the last move stopped: the user's pointer came into the app` (or
@@ -201,13 +167,12 @@ other than 1, or a turn. `status` says `pinching`.
   - `the app began a drag-and-drop as the button went up, ...; refused`;
   - `the last drag's release failed: <error>`;
   - `the last glide's input failed: <error>`;
-  - `the last scroll stopped after <done>/<steps>: <error>` (or
-    `<done>/<n> px: <why>`: the window closed or was hidden, the user's
-    pointer came into the app);
-  - `the last pinch stopped: <why>`: the same; the app heard it
-    cancelled.
+  - `the last scroll stopped after <done>/<steps>: <error>` (or `<done>/<n>
+    px: <why>`: the window closed or was hidden, the user's pointer came
+    into the app);
+  - `the last pinch stopped: <why>`: the same; the app heard it cancelled.
 
-Nothing else is taken while a glide or a scroll runs. To wait for one:
+Nothing else is taken while a glide or scroll runs. To wait:
 
 ```sh
 until [[ "$(hyprctl vclick status)" == idle* ]]; do sleep 0.02; done
@@ -215,138 +180,125 @@ until [[ "$(hyprctl vclick status)" == idle* ]]; do sleep 0.02; done
 
 ## where
 
-Where the mouse is: `address:0x<window> <x> <y>`, with ` (fading)`
-after a glide in the performance mode; else `nowhere` (also once the user's
-pointer came into the app: the app's pointer is theirs, and the next
-input there starts where their pointer left the window).
+`address:0x<window> <x> <y>`, with ` (fading)` after a performance glide;
+else `nowhere` (also once the user's pointer came into the app; the next
+input there starts where it left the window).
 
 ## hide
 
-Takes the mouse away: a held button goes up, the cursor goes and the
-app's pointer leaves, as a hand lifting off the mouse. `ok`, or `error: busy` while a glide or a
-scroll runs. The next input brings it back.
+Lifts the hand: a held button goes up, the cursor goes, the app's pointer
+leaves. `ok`, or `error: busy` while a glide or scroll runs. The next
+input brings it back.
 
 ## mode
 
 `mode` answers `human` or `performance`; `mode human|performance` sets
-it. It is `human` whenever the plugin loads
-([design](design.md#the-modes)).
+it; `human` at every load ([design](design.md#the-modes)).
 
-- `human`: a request goes at the user's pace unless it says
-  `performance`; after it, the app's
-  pointer and the cursor stay where it went.
-- `performance`: a request goes at once unless it says `human`; after
-  it, the app's
-  pointer leaves and no cursor stays (a held button's shows until the
-  release, then fades). Switching to `performance` does `hide` (unless a glide
-  or a scroll runs).
+- `human`: requests go at the user's pace unless they say `performance`;
+  the app's pointer and the cursor stay after.
+- `performance`: requests go at once unless they say `human`; the app's
+  pointer leaves after and no cursor stays (a held button's shows until
+  the release, then fades). Switching to it does `hide` unless a glide or
+  scroll runs.
 
 ## profile
 
-`profile` answers the pace the glide moves with, then where it came
-from:
+`profile` answers the glide's pace, then its source:
 
 ```
 stroke a 94 ms, b 23 ms/bit (W 32 px); bell 4 peaking at 0.41; bow 0.0526 (sigma 0.757, slope 0.233), 20.3% both ways; drift 32.1%, 472 ms, 14.9% of the way; corrected 14.1%, 66.7% from short, by 10.11%; tail on 49.3% of moves at 300 px (+12.1 a doubling), 46.7% of the time, 8.8% of the way; rest 97 ms (sigma 0.875); hold 89 ms (sigma 0.219), 106 ms between clicks; drag lead 107 ms, drop rest 65 ms; wheel 50 ms; 129 Hz
 from /home/user/.local/state/vclick/profile (194 movements)
 ```
 
-`profile reload [file]` reads the file again (by default
+`profile reload [file]` rereads the file (default
 `$XDG_STATE_HOME/vclick/profile`, else `~/.local/state/vclick/profile`)
-and answers `loaded <file>`, or `no profile at <file>: the built-in
-defaults`, then the profile. The plugin reads the default file when it
-loads.
+and answers `loaded <file>` or `no profile at <file>: the built-in
+defaults`, then the profile. The default file is read at load.
 
 ### The profile file
 
-`key=value` lines, written by `learn.py fit`; `#` starts a comment. A
-missing key keeps its default; an unknown key or a bad value is skipped;
-a value outside its bounds is clamped.
+`key=value` lines from `learn.py fit`; `#` starts a comment. A missing
+key keeps its default, an unknown key or bad value is skipped, a value
+out of bounds is clamped.
 
 | Key | Meaning | Bounds | Default |
 |---|---|---|---|
-| `stroke_a_ms`, `stroke_b_ms` | Fitts's law: a first stroke takes a + b · log2(D / 32 + 1) ms | 0–400, 10–400 | 50, 120 |
-| `bell` | how sharply the speed peaks: t^α (1 − t)^β with α + β = `bell` | 2–24 | 4 |
-| `peak` | where the speed peaks, 0–1 of the move | 0.2–0.7 | 0.45 |
-| `bow_median`, `bow_sigma` | how far a path of 300 px bows sideways, over its length (log-normal) | 0–0.25, 0–1.5 | 0.05, 0.8 |
+| `stroke_a_ms`, `stroke_b_ms` | Fitts's law: a first stroke takes a + b · log2(D / W + 1) ms | 0–400, 10–400 | 50, 120 |
+| `bell` | speed t^α (1 − t)^β, α + β = `bell` | 2–24 | 4 |
+| `peak` | where the speed peaks, of the move | 0.2–0.7 | 0.45 |
+| `bow_median`, `bow_sigma` | a 300 px path's sideways bow, of its length (log-normal) | 0–0.25, 0–1.5 | 0.05, 0.8 |
 | `bow_slope` | the bow grows as (D / 300 px) to this power | −0.5–1 | 0 |
-| `lead_p`, `lead_ms`, `lead_size` | how many moves from 300 px up drift before their stroke, how long, and how far of the way | 0–0.6, 100–1000, 0–0.7 | 0, 300, 0.15 |
-| `s_share` | how many of the moves from 100 px up bend both ways | 0–0.6 | 0.15 |
-| `correct_p`, `under_share` | how often a small correction follows a move, and how often from short of the target | 0–1, 0–1 | 0.05, 0.6 |
+| `lead_p`, `lead_ms`, `lead_size` | share of moves ≥ 300 px that drift first, how long, how far of the way | 0–0.6, 100–1000, 0–0.7 | 0, 300, 0.15 |
+| `s_share` | share of moves ≥ 100 px that bend both ways | 0–0.6 | 0.15 |
+| `correct_p`, `under_share` | how often a small correction follows, how often from short | 0–1, 0–1 | 0.05, 0.6 |
 | `correct_size` | how far off the first stroke lands, of D | 0–0.15 | 0.05 |
-| `tail_p`, `tail_p_slope` | how many moves of 300 px end slowly, and how many more with each doubling of the distance | 0–1, −1–1 | 1, 0 |
-| `tail_share`, `tail_size` | a slow end, on top of the first stroke: its share of the whole time, and of the way | 0–0.8, 0–0.2 | 0, 0.03 |
-| `rest_ms`, `rest_sigma` | from arriving within 3 px to a click or scroll (log-normal) | 0–600, 0–1.5 | 120, 0.6 |
-| `hold_ms`, `hold_sigma` | how long a click holds its button (log-normal) | 20–250, 0–1 | 100, 0.25 |
-| `double_gap_ms` | from a click's release to the next one's press | 20–250 | 120 |
-| `drag_lead_ms`, `drop_rest_ms` | a drag: from the press until 3 px away; from 3 px of the drop until the release | 0–400, 0–400 | 100, 80 |
-| `wheel_ms` | between the steps of a wheel run, unless the request names a pace | 10–200 | 50 |
+| `tail_p`, `tail_p_slope` | share of 300 px moves that end slowly, change per doubling of D | 0–1, −1–1 | 1, 0 |
+| `tail_share`, `tail_size` | a slow end on top of the stroke: its share of the time, of the way | 0–0.8, 0–0.2 | 0, 0.03 |
+| `rest_ms`, `rest_sigma` | arrival within 3 px to the click or scroll (log-normal) | 0–600, 0–1.5 | 120, 0.6 |
+| `hold_ms`, `hold_sigma` | a click's hold (log-normal) | 20–250, 0–1 | 100, 0.25 |
+| `double_gap_ms` | a click's release to the next press | 20–250 | 120 |
+| `drag_lead_ms`, `drop_rest_ms` | press until 3 px away; within 3 px of the drop until release | 0–400, 0–400 | 100, 80 |
+| `wheel_ms` | between wheel steps unless the request names a pace | 10–200 | 50 |
 | `rate_hz` | motion events a second | 30–1000 | 125 |
-| `moves` | how many moves it was fitted from | | 0 |
+| `moves` | moves fitted from | | 0 |
 
 ## image
 
-`image <window>` answers what vclick draws as the cursor over that
-window ([design](design.md#the-cursor-image)):
+What vclick draws as the cursor over that window
+([design](design.md#the-cursor-image)):
 
-- `the app's image, <w>x<h>, hotspot <x>,<y>`: the image the app last
-  set (`wl_pointer.set_cursor`);
-- `the theme's '<shape>', <w>x<h>, hotspot <x>,<y>`: the shape it named
-  (`cursor-shape-v1`), from the XCursor theme, in logical px;
+- `the app's image, <w>x<h>, hotspot <x>,<y>`: the app's last
+  `wl_pointer.set_cursor`;
+- `the theme's '<shape>', <w>x<h>, hotspot <x>,<y>`: its named
+  `cursor-shape-v1` shape from the XCursor theme, in logical px;
 - `nothing: the app hid its cursor`;
 - `the built-in arrow: no '<shape>' in the cursor theme`.
 
-`; the app has named none yet` follows when the app has asked for no
-cursor (the theme's `default` stands in). ` (no set_cursor hook: no app
-images)` follows when the hook could not be installed.
+Then `; the app has named none yet` when it asked for no cursor (the
+theme's `default` stands in), and ` (no set_cursor hook: no app images)`
+when the hook is out.
 
 ## Errors
 
-- `error: bad coordinates '<x> <y>'`, `error: '<word>' is not an
-  option of click|scroll|move|press|drag|pinch`, `error: '<word>': that option is given
-  twice`, `error: a scroll needs its direction: up, down, left or
-  right`, `error: '<n>': steps must be 1-20`, `error: '<n>ms': the pace
-  must be 0ms-1000ms`, `error: 'size:<n>': the target's size must be
-  4-1000 px`, `error: a drag needs where it lets go: <x2> <y2>`,
-  `error: '<n>px': a scroll by px must be 1px-10000px`, `error: a scroll
-  by px takes no steps or pace: a finger's goes at the user's`, `error:
-  a pinch needs its scale: 0.1-10 (2: twice as large)`, `error: a pinch
-  needs a scale other than 1, or a turn`, `error: '<n>deg': a turn must
-  be -360deg-360deg`: a malformed request; the usage follows. `error: <x2>,<y2> is outside
-  the window (<w>x<h>)`: a drag's end.
-- `error: busy: still moving; retry later`, `error: busy: still
+- Malformed, followed by the usage: `error: bad coordinates '<x> <y>'`,
+  `error: '<word>' is not an option of click|scroll|move|press|drag|pinch`,
+  `error: '<word>': that option is given twice`, `error: a scroll needs
+  its direction: up, down, left or right`, `error: '<n>': steps must be
+  1-20`, `error: '<n>ms': the pace must be 0ms-1000ms`, `error:
+  'size:<n>': the target's size must be 4-1000 px`, `error: a drag needs
+  where it lets go: <x2> <y2>`, `error: '<n>px': a scroll by px must be
+  1px-10000px`, `error: a scroll by px takes no steps or pace: a finger's
+  goes at the user's`, `error: a pinch needs its scale: 0.1-10 (2: twice
+  as large)`, `error: a pinch needs a scale other than 1, or a turn`,
+  `error: '<n>deg': a turn must be -360deg-360deg`. A drag's end outside:
+  `error: <x2>,<y2> is outside the window (<w>x<h>)`.
+- Running: `error: busy: still moving; retry later`, `error: busy: still
   dragging; retry later`, `error: busy: still scrolling <done>/<steps>;
   retry later` (or `<done>/<n> px`), `error: busy: still pinching; retry
-  later`: a glide, a scroll or a pinch is running.
-- `error: busy: holding <button>; release it first`, `error: busy:
-  holding <button> in another window; release it first`: a request a
-  held button doesn't allow. `error: no button is held`: a `release`
-  with none.
+  later`.
+- Held: `error: busy: holding <button>; release it first`, `error: busy:
+  holding <button> in another window; release it first`; `error: no
+  button is held` (a `release` with none).
 - `error: no drag-and-drop guard (the initiateDrag hook is out): a held
-  button could hand a drag to the user's mouse`: a `press` after a
-  compositor change took the hook's symbol away.
-- `error: busy: the user's pointer is pressed, constrained or dragging
-  in this app; retry later`: the user's mouse is in the same app and
-  holds a button, a pointer constraint or a drag there
-  ([design](design.md#the-same-app)). Input into other apps goes
-  through meanwhile.
+  button could hand a drag to the user's mouse`: a `press` without the
+  hook.
+- `error: busy: the user's pointer is pressed, constrained or dragging in
+  this app; retry later` ([design](design.md#the-same-app)); other apps
+  still take input.
 - `error: busy: the user's pointer is in this app; a move would take it
-  from them` (or `a press`, `a drag`, `a scroll by px`, `a pinch`): one
-  into the app under the user's mouse. `error: the app takes no pinch (it
-  bound no zwp_pointer_gesture_pinch_v1)`.
-- `error: '<key>' is not a key`, `error: '<word>' is not a modifier`: a
-  malformed `key`; the usage follows. `error: no keyboard: the seat has
-  none to take the keymap from`: the compositor has no keyboard.
-- `error: busy: the user's keyboard is in another window of this app;
-  retry later`, `error: busy: the user holds a key in this app; retry
-  later`: a `key` into the app with the user's keyboard
-  ([design](design.md#the-keyboard)).
-- `error: the app has no keyboard (it bound no wl_keyboard)`.
-- `error: XWayland windows are not supported`: the compositor's hit test
-  asserts on them.
-- `error: window not found`, `error: the window is not mapped` (hidden
-  or unmapped), `error: <x>,<y> is outside the window (<w>x<h>)` (unless
-  one of its popups is there), `error: the window has no surface`,
-  `error: the app has no pointer (it bound no wl_pointer)`.
+  from them` (or `a press`, `a drag`, `a scroll by px`, `a pinch`).
+  `error: the app takes no pinch (it bound no zwp_pointer_gesture_pinch_v1)`.
+- `key`: `error: '<key>' is not a key`, `error: '<word>' is not a
+  modifier` (the usage follows); `error: no keyboard: the seat has none
+  to take the keymap from`; `error: busy: the user's keyboard is in
+  another window of this app; retry later`, `error: busy: the user holds
+  a key in this app; retry later`; `error: the app has no keyboard (it
+  bound no wl_keyboard)`.
+- `error: XWayland windows are not supported`.
+- `error: window not found`, `error: the window is not mapped`, `error:
+  <x>,<y> is outside the window (<w>x<h>)` (unless a popup is there),
+  `error: the window has no surface`, `error: the app has no pointer (it
+  bound no wl_pointer)`.
 - `error: the compositor is shutting down`. The lockscreen refuses
   nothing ([design](design.md#under-the-lockscreen)).

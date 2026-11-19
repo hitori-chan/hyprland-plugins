@@ -15,30 +15,24 @@ focus, held buttons, constraints and cursor stay the user's; an app's
 cursor requests are refused unless it holds the real pointer focus
 ([the cursor image](#the-cursor-image)).
 
-In performance the input goes in one burst, a millisecond apart: enter, motion,
-then the clicks or the step. A glide sends the same from the pointer it
-brought there ([the glide](#the-glide)).
-
-- In performance a click is a press and release in one burst, so
-  nothing stays held. A human click holds its button as a hand does
-  ([a hand's click](#a-hands-click)). A button otherwise stays down only
-  between `press` and `release` ([a held button](#a-held-button)). What
-  follows is the mode's.
+- A click in `performance` is a press and release in one burst, a
+  millisecond apart, so nothing stays held. A human click holds its
+  button as a hand does ([a hand's click](#a-hands-click)). Otherwise a
+  button stays down only between `press` and `release` ([a held
+  button](#a-held-button)).
 - A scroll is one frame per step, as a wheel sends it: source `wheel`,
   `axis_value120` 120 (or `axis_discrete` 1 to an older pointer),
   direction `identical`, then `axis` 15. One step is one detent, never
   scaled by `input:scroll_factor`, so a script scrolls the same on every
   setup. Signs follow the protocol (down and right are positive), as a
-  real wheel's through Hyprland; GTK 3.24 calls a discrete +x step
-  "left", for a real tilt wheel too.
+  real wheel's through Hyprland; GTK 3.24 calls a discrete +x step "left",
+  for a real tilt wheel too.
 
 ## The modes
 
 - `human` (default): a request goes at the user's own pace, by a glide;
-  the app's pointer stays where the input left it (the app keeps the
-  hover: a tooltip, a hover menu, a remote desktop's cursor), and the
-  cursor image stays drawn there. The next input into another app leaves
-  this one first; `hide` takes the mouse away (a leave, the cursor goes).
+  afterwards the app keeps the hover ([the hover](#the-hover)) and the
+  cursor image stays drawn there.
 - `performance`: a request goes as fast as apps still read it right; the
   app's pointer leaves after it and no cursor stays (a glide's shows while
   it moves, then fades). Switching to it ends the hover and hides the
@@ -48,8 +42,8 @@ brought there ([the glide](#the-glide)).
 stays after is the mode's. Performance keeps what apps need to read the
 input right:
 
-- wheel steps stay 50 ms apart unless the request says otherwise, as apps
-  scroll further for a fast spin ([paced scrolling](#paced-scrolling));
+- wheel steps stay 50 ms apart unless the request says otherwise
+  ([paced scrolling](#paced-scrolling));
 - a drag sends its motions over 48 ms, straight to the end, and lets go;
 - a finger's scroll or a pinch takes 32 ms; a scroll's fingers still rest
   200 ms before they lift, so no fling follows.
@@ -65,28 +59,28 @@ acts:
   a third and two thirds of the line, so progress follows the speed
   profile, and bow sideways by a log-normal draw around `bow_median` at
   300 px, growing as (D / 300)^`bow_slope` (`bow_sigma`, at most 25 % of
-  the length) to a random side, or the
-  other if the window's edge would cut it. `s_share` of the moves of
-  ≥ 100 px bend both ways, unless the edge would cut a bend. Control points
-  stay inside the window, so the whole path does.
+  the length), to a random side, or the other if the window's edge would
+  cut it. `s_share` of the moves of ≥ 100 px bend both ways, unless the
+  edge would cut a bend. Control points stay inside the window, so the
+  whole path does.
 - **Time**: the first stroke takes `stroke_a_ms` + `stroke_b_ms` ·
-  log2(D / W + 1) ms (Fitts's law), 40 ms to 1 s, with
-  W the target's size: 32 px unless the request names it (`size:<px>`;
-  vclick can't see the target). Each move draws its own time around it
-  (log-normal, sigma 0.10, within two sigma). That spread is a constant: a
-  recording's is mostly its targets' sizes, which it can't see.
+  log2(D / W + 1) ms (Fitts's law), 40 ms to 1 s, with W the target's
+  size: 32 px unless the request names it (`size:<px>`; vclick can't see
+  the target). Each move draws its own time around it (log-normal, sigma
+  0.10, within two sigma); the spread is a constant, as a recording's is
+  mostly its targets' sizes, which it can't see.
 - **Speed**: bell-shaped, t^α (1 − t)^β with α + β = `bell`, peaking at
   `peak` (a bell of 4, centred, is a reaching arm's minimum jerk).
 - **Corrections**: `correct_p` of the moves of ≥ 100 px land off the
   target by about `correct_size` of D: short of it `under_share` of the
   time (3–100 px), else past it (3–40 px; a drag never passes it). The
-  first stroke takes 90 % of the move's time, and a straight second stroke
-  of at least 40 ms mends the rest, beginning about as the first stops. The
-  two add up, so the sum ends exactly on the target.
-- **Slow end**: some moves end in a slow approach on top of the stroke's
-  time: `tail_p` of the moves at 300 px, `tail_p_slope` more with each
-  doubling of D. It takes `tail_share` of the whole time for the last
-  `tail_size` of the way, 2 s at most for the two.
+  first stroke takes 90 % of the move's time, and a straight second
+  stroke of at least 40 ms mends the rest, beginning about as the first
+  stops. The two add up, so the sum ends exactly on the target.
+- **Slow end**: `tail_p` of the moves at 300 px end in a slow approach,
+  `tail_p_slope` more with each doubling of D. It adds to the stroke's
+  time, taking `tail_share` of the whole for the last `tail_size` of the
+  way, 2 s at most for the two.
 - **Drift**: `lead_p` of the moves of ≥ 300 px first drift slowly, about
   `lead_ms` over about `lead_size` of the way, and make their stroke from
   there. A drag never does.
@@ -98,13 +92,12 @@ acts:
   The way's own end counts toward it. A move has none.
 
 Each tick is checked afresh. If the window closed or was hidden, or the
-compositor is shutting down, the glide stops and the app's pointer
-leaves (the lockscreen is no reason: [under the
-lockscreen](#under-the-lockscreen)). If the user's pointer came into the
-app, the seat has its pointer: the glide ends, a click or scroll goes on
-at once ([the same app](#the-same-app)), a move stops; `status` says
-which. One glide at a time and nothing else meanwhile; unloading ends
-it.
+compositor is shutting down, the glide stops and the app's pointer leaves
+(the lockscreen is no reason: [under the lockscreen](#under-the-lockscreen)).
+If the user's pointer came into the app, the seat has its pointer: the
+glide ends, a click or scroll goes on at once ([the same
+app](#the-same-app)), a move stops; `status` says which. One glide at a
+time and nothing else meanwhile; unloading ends it.
 
 ### The user's pace
 
@@ -114,28 +107,31 @@ devices' raw events for exact report and click times (never a keyboard;
 it grabs nothing). `learn.py fit` takes one movement per click, from the
 last rest (150 ms) or button event to the press.
 
-- **Time**: `stroke_a_ms` and `stroke_b_ms` by least squares through the medians of 8
-  equal-count difficulty bands, over moves without a separate leg (a
-  first stroke ending over 15 % of D away): a recording cannot tell a
-  second leg from a pause to look for the target. a and b are for the
-  first stroke's whole bell: its way over the peak speed, times how far
-  the bell peaks over its mean. The peak is out of a slow end's reach.
+- **Time**: `stroke_a_ms` and `stroke_b_ms` by least squares through the
+  medians of 8 equal-count difficulty bands, over moves without a
+  separate leg (a first stroke ending over 15 % of D away): a recording
+  cannot tell a second leg from a pause to look for the target. They are
+  for the first stroke's whole bell: its way over the peak speed, times
+  how far the bell peaks over its mean, read around the peak, out of a
+  slow end's reach.
 - **Bell**: from the time above half the peak speed against the way over
   the peak speed, and the share of that time before the peak, on moves of
   ≥ 100 px.
 - **Bow**: the first stroke's median through six distance bands, its
   growth with distance and log-normal spread, and how many bend both ways.
-- **Drift**: moves of ≥ 300 px that spend over 100 ms under 15 % of the peak
-  speed before their stroke (recorded moves spend under 20 ms or over
+- **Drift**: moves of ≥ 300 px that spend over 100 ms under 15 % of the
+  peak speed before their stroke (recorded moves spend under 20 ms or over
   120 ms): how many, how long, how far.
 - **Corrections**: how often a small one follows, read strictly: too few
   rather than invented.
 - **Slow end**: a move has one when more time follows the speed's first
-  sinking under 15 % of its peak than twice a bell's own end would show: how
-  often by distance, and the way left on those moves. Its share of the time
-  is what makes a long move with one take as long as the recorded ones. A
-  drift or slow end that is short or rare reads smaller than it is, so these
-  values are moved until a simulated hand's moves read as the recorded ones do.
+  sinking under 15 % of its peak than twice a bell's own end would show:
+  how often by distance, and the way left on those moves. Its share of
+  the time is set so a long move with one takes as long as the recorded
+  ones.
+- A drift or slow end that is short or rare reads smaller than it is, so
+  these values are moved until a simulated hand's moves read as the
+  recorded ones do.
 - **Rest**: arrival within 3 px of the press point to the press.
 - **Button**: a click's hold, the gap inside a double click, a drag's lead
   and rest before the release.
@@ -157,11 +153,11 @@ app's pointer:
 - the app's own image; or its named shape (`default` until it names one)
   from the session's XCursor theme (`XCURSOR_THEME`, `XCURSOR_SIZE`,
   `XCURSOR_PATH`, as the compositor reads them; the theme's `Inherits`,
-  then `default`; an older X name such as `xterm` for a theme without
-  the CSS ones), sharp at the highest output scale; animated shapes
-  animate; or nothing where the app hid its cursor (a remote desktop
-  viewer draws the remote one); the built-in arrow only where the theme
-  has no such shape;
+  then `default`; an older X name such as `xterm` for a theme without the
+  CSS ones), sharp at the highest output scale; animated shapes animate;
+  or nothing where the app hid its cursor (a remote desktop viewer draws
+  the remote one); the built-in arrow only where the theme has no such
+  shape;
 - right after the target window's surfaces, clipped to it, so a window
   above covers it as it covers the app;
 - never in a capture (screencopy, `grim -T`);
@@ -170,35 +166,36 @@ app's pointer:
   input glides from where their pointer left the window, and the cursor
   shows again with it;
 - where the window is drawn, so it follows a workspace slide;
-- in the human mode, from the input until the next input, `hide`, the
-  user's pointer entering, the window closing or the switch to
-  `performance`; in the performance mode, during a glide and 1.2 s after,
-  then fading over 0.3 s.
+- in `human`, from the input until the next input, `hide`, the user's
+  pointer entering, the window closing or the switch to `performance`; in
+  `performance`, during a glide (or while a button is held) and 1.2 s
+  after, then fading over 0.3 s.
 
-One cursor, as one mouse: in the window of the last input (`where`).
-A shape is read once (a file, at most 256 px a side and 64 frames) and
-kept until the theme, its size or the scales change. Without the hook
-(the symbol gone after a compositor change), apps' own images are not
-drawn; `image` says so.
+One cursor, as one mouse: in the window of the last input (`where`). A
+shape is read once (a file, at most 256 px a side and 64 frames) and kept
+until the theme, its size or the scales change. Without the hook (the
+symbol gone after a compositor change), apps' own images are not drawn;
+`image` says so.
 
 ## The hover
 
-A `move`, and in the human mode every input, ends without a leave: the app
-keeps the hover, and its next input there needs no second enter. The
-hover ends when the user's pointer changes surface (the seat sends every
-app's pointer a leave), at vclick's next input into another app, at
-`hide` or the switch to `performance`, and at unload. A move into the app under
-the user's mouse is refused: that pointer is theirs.
+A `move`, and in `human` every input, ends without a leave: the app keeps
+the hover (a tooltip, a hover menu, a remote desktop's cursor), and its
+next input there needs no second enter. The hover ends when the user's
+pointer changes surface (the seat sends every app's pointer a leave), at
+vclick's next input into another app, at `hide` or the switch to
+`performance`, and at unload. A move into the app under the user's mouse
+is refused: that pointer is theirs.
 
 ## A hand's click
 
 A human click that comes by a glide presses, holds the button for a draw
 around `hold_ms`, and releases; two or three clicks are `double_gap_ms`
-apart, and press to press never exceeds 280 ms, so apps still read a double
-click. It goes through the same press as `press`, with all of its guards
-([a held button](#a-held-button)). It goes as one burst when it can't hold:
-the user's pointer is in the app, the point is in a popup outside the
-window's box, or the drag-and-drop guard is out.
+apart, and press to press never exceeds 280 ms, so apps still read a
+double click. It goes through the same press as `press`, with all of its
+guards ([a held button](#a-held-button)). It goes as one burst when it
+can't hold: the user's pointer is in the app, the point is in a popup
+outside the window's box, or the drag-and-drop guard is out.
 
 - The seat letting the button go (the user's pointer changing surface, a
   popup's grab) ends the click sooner: the press and that release were a
@@ -210,49 +207,48 @@ window's box, or the drag-and-drop guard is out.
 ## A held button
 
 `press` holds a button down until `release`; a `move` meanwhile drags it.
-`drag` is the three in one: the press, a glide to the end with the
-button down (the user's pace, never past the target: a slider's stop, a
-drop target), then the release. In `human` the hand waits `drag_lead_ms`
-after the press and rests `drop_rest_ms` before the release, each counted
-to and from 3 px of the point; in `performance` neither.
-The app hears one press, the motions, and the release: its implicit
-grab, so every motion goes to the surface the press began in, in its
-coordinates, wherever the point is, and no surface is crossed. The seat
-never learns of it. Two things an app may make of a held button would
-reach the user's real mouse, so neither can start:
+`drag` is the three in one: the press, a glide to the end with the button
+down (never past the target: a slider's stop, a drop target), then the
+release. In `human` the hand waits `drag_lead_ms` after the press and
+rests `drop_rest_ms` before the release, each counted to and from 3 px of
+the point; in `performance` neither.
+
+The app hears one press, the motions and the release: its implicit grab,
+so every motion goes to the surface the press began in, in its
+coordinates, wherever the point is. The seat never learns of it. Two
+things an app may make of a held button would reach the user's real
+mouse, so neither can start:
 
 - An interactive move or resize (a client-side title bar dragged):
   Hyprland checks the request's serial against the presses it recorded,
   and vclick strikes its press from that record at once.
 - A drag-and-drop (a link, a file, a selection dragged out):
-  `wl_data_device.start_drag` takes no checked serial, and Hyprland
-  drives the drag with the user's pointer, dropping where they next let
-  a button go. vclick hooks `initiateDrag`: one from the app holding its
-  button, or let go of within a second (the app may answer the last
-  motion late), is refused: the app hears its source cancelled, and the
-  hold ends. The user's own drag in that app (their button down there)
-  goes through. Without the hook, `press` is refused.
+  `wl_data_device.start_drag` takes no checked serial, and Hyprland drives
+  the drag with the user's pointer, dropping where they next let a button
+  go. vclick hooks `initiateDrag`: one from the app holding its button, or
+  let go of within a second (the app may answer the last motion late), is
+  refused: the app hears its source cancelled, and the hold ends. The
+  user's own drag in that app (their button down there) goes through.
+  Without the hook, `press` is refused.
 
 A drag inside the app (a selection, a slider, a scrollbar, a canvas)
-needs neither and goes. A leave releases the app's held buttons (the
-compositor sends the release first), and Hyprland's seat leaves every
-app's pointer whenever the user's pointer changes surface, so that ends
-the hold, as it ends the hover; so does the window closing or hiding. `hide`, the
-switch to `performance` and unloading let go first. In the performance
-mode the cursor shows
-while the button is down and fades after the release.
+needs neither and goes. The hold ends where the hover does: a leave
+releases the app's held buttons (the compositor sends the release first),
+and the seat leaves every app's pointer whenever the user's pointer
+changes surface. The window closing or hiding ends it too; `hide`, the
+switch to `performance` and unloading let go first.
 
 ## Paced scrolling
 
 Apps read the time between wheel steps and scroll further for a fast
-spin: through a remote desktop in Firefox, 20 steps at once scrolled
-~115 lines, while steps 10–200 ms apart scrolled 2–3 lines each. So a
+spin: through a remote desktop in Firefox, 20 steps at once scrolled ~115
+lines, while steps 10–200 ms apart scrolled 2–3 lines each. So a
 multi-step scroll is paced: the first step goes at once (or when the
 glide arrives), each further one `ms` later on the event loop.
 
-Each step is a whole input (enter, the step, and in performance the leave),
-checked afresh: the window may have closed, hidden or moved, and the
-user's mouse may have come into the app. A busy app (the user holds a
+Each step is a whole input (enter, the step, and in `performance` the
+leave), checked afresh: the window may have closed, hidden or moved, and
+the user's mouse may have come into the app. A busy app (the user holds a
 button there) is retried at the same pace for up to 1 s, then the run
 stops; any other error ends it, and `status` says why. One run at a time
 and nothing else meanwhile, so a script gets exactly the scroll it asked
@@ -260,46 +256,46 @@ for. Unloading ends a run.
 
 ## A touchpad's strokes
 
-`scroll ... <n>px` and `pinch` move fingers on a touchpad: a frame a
-tick at the profile's rate, the way straight, its speed the glide's bell
-over Fitts's time for the fingers' travel (100–1000 ms). Each tick sends
-what the time since the start says is done, so the request is met
-exactly whatever the timer's jitter. The fingers then rest 200 ms before
-they lift.
+`scroll ... <n>px` and `pinch` move fingers on a touchpad: a frame a tick
+at the profile's rate, the way straight, its speed the glide's bell over
+Fitts's time for the fingers' travel (100–1000 ms). Each tick sends what
+the time since the start says is done, so the request is met exactly
+whatever the timer's jitter. The fingers then rest 200 ms before they
+lift.
 
-- A finger's scroll: wl_pointer axis events from the finger source, no
+- A finger's scroll: `wl_pointer` axis events from the finger source, no
   discrete steps, then `axis_stop`. Apps scroll by pixels for it: the
-  deltas sum to the request in the protocol's 1/256 px. The travel is
-  the distance. A toolkit flings at the speed of its last 150 ms of
-  deltas (GTK's): after the rest, none follows.
+  deltas sum to the request in the protocol's 1/256 px. The travel is the
+  distance. A toolkit flings at the speed of its last 150 ms of deltas
+  (GTK's): after the rest, none follows.
 - A pinch: two fingers through the pointer-gestures protocol (begin,
   updates, end) into the app's pinch objects only, centred on the point.
-  The spread grows (or shrinks) evenly to the scale, which the last
-  update names exactly; the turns sum to the request in 1/256°. The
-  travel is 150 px a doubling or a quarter turn. An app with no pinch
-  object (no gestures bound) is refused.
+  The spread grows (or shrinks) evenly to the scale, which the last update
+  names exactly; the turns sum to the request in 1/256°. The travel is
+  150 px a doubling or a quarter turn. An app with no pinch object (no
+  gestures bound) is refused.
 
 Each tick is checked afresh, as a glide's. The user's mouse coming into
 the app takes its pointer: the stroke stops, a pinch ends cancelled, and
-`status` says why. The user's pointer changing surface elsewhere makes
-the seat leave the app's pointer; the next tick enters again. A stroke
-cannot step out of the user's surface and back as a wheel step does
-(every frame would), so it is refused into the app under the user's
-mouse. Unloading lifts the fingers (a pinch cancelled).
+`status` says why. The user's pointer changing surface elsewhere makes the
+seat leave the app's pointer; the next tick enters again. A stroke cannot
+step out of the user's surface and back as a wheel step does (every frame
+would), so it is refused into the app under the user's mouse. Unloading
+lifts the fingers (a pinch cancelled).
 
 ## The same app
 
 An app has one pointer per `wl_pointer`, not per window. When the user's
 mouse is in the target's app (one Firefox process owns all its windows),
-their pointer steps out of their surface for the input and back in
-under their cursor: the app sees a quick leave and enter (a hover
-flickers). The way back is measured from the cursor over the surface's
-box, not the seat's last motion, which is stale after an enter without
-one (a window moving under a still cursor, a workspace switch).
+their pointer steps out of their surface for the input and back in under
+their cursor: the app sees a quick leave and enter (a hover flickers). The
+way back is measured from the cursor over the surface's box, not the
+seat's last motion, which is stale after an enter without one (a window
+moving under a still cursor, a workspace switch).
 
 Never under a press: a leave releases the app's held buttons, so while
-the user holds a button, a pointer constraint is active or a drag runs
-in that app, vclick answers `error: busy`.
+the user holds a button, a pointer constraint is active or a drag runs in
+that app, vclick answers `error: busy`.
 
 ## The keyboard
 
@@ -310,24 +306,24 @@ held keys or modifiers: it sends the key to the client's own
 `wl_keyboard` objects (all of them):
 
 - An enter on the window's surface naming no held keys, the request's
-  modifiers, the press, the release 1 ms later, the modifiers released,
-  a leave. The layout group and lock keys are the user's, so a key means
+  modifiers, the press, the release 1 ms later, the modifiers released, a
+  leave. The layout group and lock keys are the user's, so a key means
   what it would typed. Press and release go in one burst: no key stays
   held, and no repeat starts.
-- The key code comes from the compositor's resolver, as
-  `send_shortcut`'s does, in the keymap every client has.
+- The key code comes from the compositor's resolver, as `send_shortcut`'s
+  does, in the keymap every client has.
 - When the user's keyboard is in the same app, that app's one keyboard
   focus is theirs: the key goes only into their very window, between its
   modifiers and theirs, and only while they hold nothing. Into another
   window of that app it answers `error: busy`.
 
-A key is no pointer input: it goes at once in either mode with no
-cursor, and is refused while a glide or paced scroll runs.
+A key is no pointer input: it goes at once in either mode with no cursor,
+and is refused while a glide or paced scroll runs.
 
 ## Under the lockscreen
 
-The lock doesn't stop vclick: requests go, and glides and paced scrolls
-go on, so a script keeps working while the user is away.
+The lock doesn't stop vclick: requests go, and glides and paced scrolls go
+on, so a script keeps working while the user is away.
 
 - Input goes only to the named window through its app's own objects. A
   lock surface is no window, so nothing can name it, and the seat (the
@@ -349,19 +345,17 @@ may wait until it is back on.
 - A click that opens a popup with a grab (a context menu, a `<select>`)
   gets the grab: Hyprland moves keyboard focus into the popup until it
   closes (Escape through `send_shortcut`, or a click elsewhere).
-- An app may ask for activation after a click (a link opening a
-  window); `misc:focus_on_activate` decides.
+- An app may ask for activation after a click (a link opening a window);
+  `misc:focus_on_activate` decides.
 - A hover and a held button last only until the user's pointer changes
-  surface (Hyprland's seat leaves every app's pointer then), and are
-  refused in the user's own app.
-- The mouse is per window: a glide starts from vclick's last spot in
-  that window, not from where the cursor was drawn.
-- No drag-and-drop, and no moving or resizing a window by its own title
-  bar: Hyprland drives both with the user's real mouse
-  ([a held button](#a-held-button)).
-- No swipe or hold gestures: a two-finger swipe is a scroll (`<n>px`),
-  and three- and four-finger swipes are mostly bound to the compositor's
-  own gestures.
+  surface, and are refused in the user's own app.
+- The mouse is per window: a glide starts from vclick's last spot in that
+  window, not from where the cursor was drawn.
+- No drag-and-drop out of the app, and no moving or resizing a window by
+  its own title bar ([a held button](#a-held-button)).
+- No swipe or hold gestures: a two-finger swipe is a scroll (`<n>px`), and
+  three- and four-finger swipes are mostly bound to the compositor's own
+  gestures.
 - Fitts's W is 32 px unless the request names the target's size: a small
   button gets a little less time than a hand would take.
 - No XWayland: the compositor's hit test asserts on X11 windows, and an

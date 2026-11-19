@@ -1,11 +1,9 @@
 # vclick
 
-A plugin that clicks, scrolls, hovers, drags or pinches inside a window
-without the user's mouse, and sends it keys without the user's keyboard. By default
-it glides there first, along a curve and at the user's own pace. It
-shares no code or state with `awesome`.
-
-## Enable
+Clicks, scrolls, hovers, drags or pinches inside a window without the
+user's mouse, and sends it keys without the user's keyboard. By default it
+glides there first, along a curve at the user's own pace. Shares no code
+or state with `awesome`.
 
 ```sh
 hyprpm enable vclick
@@ -15,66 +13,53 @@ hyprpm enable vclick
 
 ```sh
 W=$(hyprctl -j clients | jq -r '.[] | select(.class == "firefox") | .address' | head -1)
-hyprctl vclick click  $W 640 300                 # glide there, click a link
-hyprctl vclick click  $W 640 300 double          # double-click a word
+hyprctl vclick click  $W 640 300                 # glide there, click
+hyprctl vclick click  $W 640 300 double          # double-click
 hyprctl vclick click  $W 640 300 right           # a context menu
-hyprctl vclick scroll $W 640 500 down 12         # 12 wheel steps, 50 ms apart
-hyprctl vclick scroll $W 640 500 up 3 200ms      # slower
-hyprctl vclick scroll $W 640 500 down 400px      # a finger's on a touchpad, by pixels
+hyprctl vclick scroll $W 640 500 down 12         # 12 wheel steps at the user's pace
+hyprctl vclick scroll $W 640 500 up 3 200ms      # 200 ms apart
+hyprctl vclick scroll $W 640 500 down 400px      # a touchpad finger's, by pixels
 hyprctl vclick move   $W 640 300                 # hover there
-hyprctl vclick press  $W 100 400                 # hold the button down there,
-hyprctl vclick move   $W 500 400                 #   drag it (a slider, a selection),
-hyprctl vclick release                           #   and let go
+hyprctl vclick press  $W 100 400                 # hold the button,
+hyprctl vclick move   $W 500 400                 #   drag it,
+hyprctl vclick release                           #   let go
 hyprctl vclick drag   $W 100 400 500 400         # the same in one request
 hyprctl vclick pinch  $W 640 300 2               # two fingers zoom in twice
-hyprctl vclick click  $W 640 300 performance     # click at once, no glide
+hyprctl vclick click  $W 640 300 performance     # at once, no glide
 hyprctl vclick key    $W Next                    # PageDown, to that window only
-hyprctl vclick key    $W t ctrl+shift            # with modifiers held for it
+hyprctl vclick key    $W t ctrl+shift            # with modifiers
 hyprctl vclick where                             # address:0x… 640 300
-hyprctl vclick hide                              # take the mouse away
-hyprctl vclick status                            # moving, scrolling 3/12, then idle
+hyprctl vclick hide                              # lift the mouse
+hyprctl vclick status                            # moving, scrolling 3/12, idle
 ```
 
-The same verbs are Lua functions, for a bind or a script
-(`hyprctl repl`): `hl.plugin.vclick.click(W, 640, 300, "performance")` answers
-`true`, or `nil` and the error.
+The same verbs are Lua functions (`hyprctl repl`):
+`hl.plugin.vclick.click(W, 640, 300, "performance")` returns `true`, or
+`nil` and the error.
 
-The window is any window selector (`address:0x…`, `class:…`) or a bare
-`0x…` address. The coordinates are pixels of a window capture
-(`grim -T`), measured from the window's top-left corner. The user's
-cursor doesn't move, the window under the mouse hears nothing, and
-keyboard focus stays where it is. A key goes to that one window, pressed
-and released, and the window with the user's keyboard hears nothing.
+The window is any selector (`address:0x…`, `class:…`) or a bare `0x…`
+address; coordinates are a window capture's pixels (`grim -T`) from its
+top-left. The user's cursor, keyboard focus and the window under their
+mouse are untouched.
 
-Two modes (`hyprctl vclick mode human|performance`):
+Two modes (`hyprctl vclick mode human|performance`); a word on a request
+picks its timing:
 
-- `human` (the default) is a mouse of its own: it glides there, and
-  stays. The app keeps the hover, and vclick draws the app's own cursor
-  (its image, or its shape from the cursor theme) in the window where it
-  rests: under any window above it, never in a capture. The user's own pointer coming into that app takes it, as
-  one mouse: the cursor goes, and the next input starts where their
-  pointer left the window.
-- `performance` is just the input, as fast as apps still read it right:
-  it goes at once, and leaves the app's pointer after. Nothing stays
-  drawn.
+- `human` (default): a mouse of its own. It glides there and stays: the
+  app keeps the hover, and vclick draws the app's cursor where it rests
+  (under windows above, never in a capture). The user's pointer coming
+  into that app takes it over.
+- `performance`: just the input, as fast as apps still read it right;
+  the app's pointer leaves after, nothing stays drawn.
 
-The word on a request picks that request's timing, whatever the mode.
-
-## Under the lockscreen
-
-A script keeps going while the session is locked (reading a window
-while the user is away): clicks, scrolls, moves and keys reach the
-window they name, and only it. The user's own keyboard and mouse still
-go only to the lockscreen, the lockscreen keeps its focus, and no cursor
-is drawn.
+Under the lockscreen requests still reach the named window, and only it;
+the user's input goes only to the lockscreen, and no cursor is drawn.
 
 ## The user's pace
 
-`learn.py` records the user's own mouse for a while and fits the profile
-the glide moves with: how long a move takes for its distance (Fitts's
-law), how much it curves, how sharply it peaks and where, how often it
-drifts first, ends slowly or corrects, how long the pointer rests before a click, how long a click
-holds its button, and a drag's and the wheel's timing.
+`learn.py` records the user's mouse and fits the profile the glide moves
+with (time by distance, curve, speed profile, drift, slow ends,
+corrections, rest, button and wheel timing):
 
 ```sh
 python3 -I vclick/learn.py record --minutes 30   # use the mouse as usual meanwhile
@@ -82,18 +67,12 @@ python3 -I vclick/learn.py fit                   # writes ~/.local/state/vclick/
 hyprctl vclick profile reload
 ```
 
-`record` needs the `input` group. It reads only pointer devices (motion
-and mouse buttons, never a keyboard) and grabs none. Without a profile
-the glide moves at a typical mouse user's pace.
+`record` needs the `input` group; it reads pointer devices only and grabs
+none. Without a profile, a typical mouse user's pace.
 
 ## Docs
 
-- [Reference](docs/reference.md): `click`, `scroll`, `move`, `press`,
-  `release`, `drag`, `pinch`, `key`, `status`, `where`, `hide`, `mode`,
-  `profile`, `image`, the Lua functions, the profile file, the errors
-- [Design](docs/design.md): input without the seat, the modes, the
-  glide, the cursor image, the hover, a held button, paced scrolling, a
-  touchpad's strokes, the same app, the keyboard, under the lockscreen,
-  limits
-- [Testing](docs/testing.md): the build, the unit cases, the nested
-  check
+- [Reference](docs/reference.md): every verb and answer, Lua, the
+  profile file, the errors.
+- [Design](docs/design.md): how it works and its limits.
+- [Testing](docs/testing.md): build, unit cases, the nested check.
