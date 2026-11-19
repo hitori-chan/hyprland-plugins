@@ -1,8 +1,8 @@
 # hyprland-plugins
 
-Hyprland plugins, built against the
-[`hitori-chan/Hyprland`](https://github.com/hitori-chan/Hyprland) fork
-rather than upstream Hyprland.
+Hyprland plugins for the
+[`hitori-chan/Hyprland`](https://github.com/hitori-chan/Hyprland) fork (not
+upstream Hyprland: they are built against its exact commit).
 
 | Plugin | What it does |
 |---|---|

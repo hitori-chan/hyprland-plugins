@@ -1,130 +1,120 @@
 # hyprland-plugins — working agreement for coding agents
 
-One native C++26 Hyprland plugin inspired by AwesomeWM: the `awesome`
-monolith (modules core, shell, windows, notify, system), its gate in
-`awesome/gate/`, test fixtures in `devtools/`, behavior per module in
-`awesome/docs/` (`shell`, `windows`, `notify`, `system`, `reference`),
-the design contract in `awesome/docs/design.md`, testing in
-`awesome/docs/testing.md`. Beside it, `vclick/`: a separate plugin that
-clicks, scrolls, drags or pinches inside a window without the user's pointer,
-gliding there at the user's learned pace (`vclick/vclick.hpp` lists its
-units, `vclick/docs/` its behavior); it shares no code or state with
-`awesome`, and its nested check is `vclick/check.sh`. Each plugin has its own `README.md`
-and `docs/`; the root `README.md` only lists the plugins and installs
-them, and a root `docs/` is for repo-wide docs and tooling only.
+Two native C++26 Hyprland plugins, sharing no code or state:
 
-This file holds principles and hard lines, not project state. Optimize
-for performance, efficiency, ergonomics, safety and stability; where this
-file is silent, match the codebase and use judgment. Add a rule only when
-an incident earns it (one line of why), prune it when the why is gone.
+- `awesome/`: an AwesomeWM-style monolith (modules core, shell, windows,
+  notify, system). Design contract `awesome/docs/design.md`, behavior per
+  module in `awesome/docs/`, testing `awesome/docs/testing.md`, the gate
+  `awesome/gate/`.
+- `vclick/`: clicks, scrolls, drags or pinches inside a window without the
+  user's pointer, at the user's learned pace. Units in `vclick/vclick.hpp`,
+  behavior in `vclick/docs/`, nested check `vclick/check.sh`.
+
+Test fixtures live in `devtools/`. Each plugin has its own `README.md` and
+`docs/`; the root `README.md` only lists and installs them.
+
+This file holds principles and hard lines, not project state. Optimize for
+performance, efficiency, ergonomics, safety and stability; where it is
+silent, match the codebase. Add a rule only when an incident earns it (one
+line of why); prune it when the why is gone.
 
 ## Where state lives
 
-- Plugin version: `awesome/core/version.hpp`, in lockstep with
-  `hyprpm.toml`'s `[awesome]` version (the gate checks it). vclick's:
-  `VClick::VERSION` in `vclick/vclick.hpp`, in lockstep with `[vclick]`.
-- Fork state: `git log` in `~/repo/Hyprland` is the truth for what the
-  compositor is built from; every rewrite of its history leaves a pushed
-  backup tag (`pre-bump-*`, `pre-rewrite-*`).
-- Open issues: `TODO.md` (local, gitignored); close an item by deleting
-  it. Current phase and plan: `PLAN.md` (local). Provenance of closed work:
-  the commit history.
-- Gate results: the run log's summary line (`== stress: ALL N CHECKS
-  PASSED in Ns ==`), not exit codes.
-- Live plugin load: `hyprctl awesome count` (the plugin logs nothing on a
-  successful load; log greps prove nothing).
+- Versions: `awesome/core/version.hpp` and `VClick::VERSION`
+  (`vclick/vclick.hpp`), each in lockstep with its `hyprpm.toml` section.
+- The fork: `git log` in `~/repo/Hyprland`; every history rewrite leaves a
+  pushed backup tag (`pre-bump-*`, `pre-rewrite-*`).
+- Open issues: `TODO.md` (local; delete an item to close it). A phase's
+  plan: `PLAN.md` (local, never tracked), deleted once the phase is done.
+  Closed work: the commit history.
+- Gate results: the summary line (`== stress: ALL N CHECKS PASSED in Ns
+  ==`), not exit codes.
+- Live plugin load: `hyprctl awesome count` (a good load logs nothing).
 
 ## The fork
 
-The plugin is ABI-locked to the exact `hitori-chan/Hyprland` commit the
+The plugins are ABI-locked to the exact `hitori-chan/Hyprland` commit the
 compositor is built from.
 
-- Keep the patch set minimal and clean: change the fork only when it is
-  the true fix AND cleaner than plugin code. Plugin-only queries,
-  compatibility shims and tooling conveniences live in the plugin or the
-  harness. One logical change per fork commit, with a message that says
-  why.
-- A bump: rebase the series onto upstream, drop patches upstream made
-  obsolete, rebuild (`bash awesome/gate/fork.sh`), port the plugin to the
-  new ABI, run the full gate (`-b all`). `fork.sh` reconfigures first:
-  `src/version.h` is generated at CONFIGURE time, and a reconfigure keeps
-  pkg-config's cached versions unless told otherwise; either stale fails
-  the plugin's load guard (2026-11-04; the gate refuses such a tree).
-- Dependencies come from distro packages, but Aquamarine: the fork needs
-  `~/repo/PKGBUILDs/aquamarine` (the `flake.lock` pin and its patches);
-  the gate's nested, `gate/fork.sh` and the gate's staged headers use the
-  same build of it (`gate/host.sh`).
-- The user performs sudo installs and deploys (the fork: install +
-  relog, then `hyprpm update`).
-- Two machines run it: a ThinkPad (x86, this host) and an Apple silicon
-  laptop (Asahi; scale 1.5, a P3 panel). Hardware-shaped
-  behavior detects the machine at runtime and never hard-codes one
-  machine's values. The Apple laptop is reached only through its own
-  agent session (~/repo/asahilinux), which runs anything there.
+- Change the fork only when it is the true fix and cleaner than plugin
+  code; queries, shims and tooling live in the plugin or the harness. One
+  logical change per fork commit, its message saying why.
+- A bump: rebase onto upstream, drop patches upstream made obsolete,
+  rebuild with `bash awesome/gate/fork.sh`, port the plugins, run `-b all`.
+  `fork.sh` reconfigures first: `src/version.h` and pkg-config's cached
+  dependency versions are fixed at configure time, and either stale fails
+  the plugins' load guard (2026-11-04).
+- Dependencies are distro packages, except Aquamarine:
+  `~/repo/PKGBUILDs/aquamarine` (the `flake.lock` pin and its patches).
+  `fork.sh`, the gate's staged headers and its nested use that build
+  (`gate/host.sh`).
+- The user installs and deploys (the fork: install, relog, then `hyprpm
+  update`).
+- Two machines: a ThinkPad (x86, this host) and an M3 Max laptop (Asahi,
+  scale 1.5, a P3 panel), reached only through its own agent session
+  (`~/repo/asahilinux`). Hardware-shaped behavior detects the machine at
+  runtime, never hard-codes one machine's values.
 
 ## Build
 
-- `make -C awesome` builds the release plugin (what hyprpm ships).
-  `make -C awesome GATE=1` builds `awesome-gate.so`, the gate's variant,
-  through a precompiled header (`core/pch.hpp`); the release stays plain
-  so a missing include still fails there.
-- Test seams are compile-time only: `#ifdef AWESOME_GATE`, never an
+- `make -C awesome`: the release plugin (what hyprpm ships). `make -C
+  awesome GATE=1`: `awesome-gate.so`, the gate's variant, through a
+  precompiled header (`core/pch.hpp`); the release stays plain, so a
+  missing include fails there.
+- Test seams are compile-time only (`#ifdef AWESOME_GATE`), never an
   environment switch in the release binary.
-- Do not add `-fvisibility=hidden`: `awesome/plugin.ver` localizes plugin
-  symbols while Hyprland's inline globals must stay unified for `dlopen`.
-- The build stamps its target (compiler, flags, the headers'
-  `version.h`): switching header sets or installing a fork rebuilds
-  everything by itself; no `make -B`.
-- `make -C awesome test` runs the headless unit cases.
-- `make -C vclick` builds vclick, `make -C vclick test` runs its headless
-  cases; `make vclick-check` runs its nested
-  check (it takes the gate's lock: never alongside a gate run).
+- No `-fvisibility=hidden`: `plugin.ver` localizes plugin symbols, while
+  Hyprland's inline globals must stay unified for `dlopen`.
+- Builds stamp their target (compiler, flags, the headers' `version.h`):
+  another header set rebuilds by itself; no `make -B`.
+- Unit tests: `make test` (both plugins). vclick's nested check: `make
+  vclick-check` (it takes the gate's lock).
 
 ## The gate
 
 `make -C awesome gate ARGS="-s ~/repo/Hyprland [-b quick|all|LIST]"`
-stages the fork build's headers, builds the gate variant (`-b all` adds
-the release build's deploy rehearsal), and runs the batteries against a
-nested Hyprland. Default tier `quick` (~30 s of checks); `-b windows`
-alone for a geometry/CSD change; `-b all` for a bump or a release. Keep it lean: retire a check once its code is battle-tested,
-gate new behavior with discriminating checks, and wait on state, never
-the clock (`awesome/docs/testing.md`, Waiting; `-p` profiles a run).
-`bash awesome/gate/sweep.sh origin/main HEAD` builds and unit-tests both
-plugins at every unpushed commit against the staged headers: run it before
-a push and after any history rewrite (it skips build inputs it already
-verified).
+stages the fork's headers, builds the gate variant and runs the batteries
+in a nested Hyprland: `quick` (default) for the dev loop, a battery list
+for a focused change (`-b windows` for geometry or CSD), `all` for a bump
+or a release (it adds the release build's deploy rehearsal). Before a push
+and after any history rewrite, `bash awesome/gate/sweep.sh origin/main
+HEAD` builds and unit-tests both plugins at every unpushed commit.
 
-- Isolation is absolute: the nested runs inside a private headless labwc
-  (`gate/host.sh`) with its own session bus, its own system bus (a fake
-  logind and backlight) and scratch XDG dirs. The harness never sends the
-  live session anything — no output, workspace, window, dispatch, focus,
-  cursor, brightness or volume change — and reads it only for the
-  isolation check, which fails the gate when the live outputs change or
-  a nested window shows up there.
-- Run gates and long builds in tmux; temporary artifacts go under
-  `/tmp/hypr-gate/` (tmpfs); runtime state under `$HYPR_HARNESS`
-  (default `~/.local/share/hypr-nested`). Keep `~` free of scratch files.
+- Keep it lean: retire battle-tested checks, gate new behavior with a
+  discriminating check, wait on state, never the clock
+  (`awesome/docs/testing.md`, Waiting). `-p` profiles a run.
+- Isolation is absolute: the nested runs in a private headless labwc
+  (`gate/host.sh`) with its own session and system buses (a fake logind
+  and backlight) and scratch XDG dirs. The harness sends the live session
+  nothing — no output, workspace, window, dispatch, focus, cursor,
+  brightness or volume change — and reads it only for the isolation check,
+  which fails when the live outputs change or a nested window shows there.
+- One run at a time, in tmux. Scratch under `/tmp/hypr-gate/` (tmpfs),
+  runtime state under `$HYPR_HARNESS` (default
+  `~/.local/share/hypr-nested`); nothing in `~`.
 - Memory is capped: every entry point runs in its own scope
-  (`gate/memcap.sh`); a hand-run build or test goes through
-  `systemd-run --user --scope -p MemoryMax=1536M -p MemorySwapMax=0`,
-  serial. A host OOM here kills the live compositor (2026-10-26).
-- Never edit gate scripts, rebuild the plugin, or run launch/stop by hand
-  while a gate runs (bash reads battery scripts as it goes; the nested
-  maps the `.so`).
+  (`gate/memcap.sh`); a hand-run build or test goes through `systemd-run
+  --user --scope -p MemoryMax=1536M -p MemorySwapMax=0`, serially. A host
+  OOM kills the live compositor (2026-10-26).
+- While a gate runs, never edit gate scripts, rebuild a plugin or launch
+  or stop by hand: bash reads battery scripts as it goes, and the nested
+  maps the `.so`.
 
 ## Safety — hard lines
 
-- Explicit user instructions override the lines below; the lines bind
-  the agent's own judgment.
+Explicit user instructions override these; they bind the agent's own
+judgment.
+
 - The live session is the user's: no `hyprpm update`/`enable`/`reload`,
   plugin unload, config reload or session exit by the agent, and no
   dispatches into it unless the user asked for live debugging.
 - Never hot-swap a loaded plugin or overwrite a mapped `.so` in place
   (invariants 2 and 5).
 - History: clean beats append-only. Amend, rebase and force-push
-  (`--force-with-lease`) to keep history clean when the user allows it;
-  push a backup tag first and verify the unpushed tail
-  (`git merge-base --is-ancestor`). Preserve the user's worktree changes.
+  (`--force-with-lease`) when the user allows it; push a backup tag first
+  (a purge keeps its backup local: a pushed one keeps what it removes)
+  and verify the unpushed tail (`git merge-base --is-ancestor`). Preserve
+  the user's worktree changes.
 - Keep environment identifiers (SSIDs, hostnames, MACs, user-specific
   socket paths) out of source, docs, tests and commits.
 - Claim a production regression or exploit only with controlled evidence.
@@ -152,30 +142,26 @@ Numbered because source comments cite them; never renumber, append.
    every input listener checks `Awesome::sessionLocked()` first and
    clears swallow masks, held counters, drag state and armed zones there.
 8. Shutdown is a half-dead state: `CCompositor::cleanup()` sets
-   `m_isShuttingDown` before it unloads plugins (upstream now unloads them
-   before clearing window/workspace/monitor state; an older order emitted
-   `~CWindow` & co. into loaded listeners and SEGV'd on every nested
-   teardown). All event-driven work no-ops once `m_isShuttingDown` is set;
-   the supervisor gates its listeners on
+   `m_isShuttingDown` before it unloads plugins. All event-driven work
+   no-ops once it is set: the supervisor gates its listeners on
    `Awesome::compositorShuttingDown()`, and a per-window or per-device
    listener only queues work for a hop.
 
 ## Compositor integration
 
 - Behavior follows AwesomeWM's vanilla semantics, source-verified
-  (contract: `awesome/docs/design.md`), tuned where an X11/vanilla
-  assumption is broken or unsafe on Wayland; every deviation says why. No
-  per-app rules.
-- Use the fork's public APIs and the native renderer/input ownership.
+  (`awesome/docs/design.md`), tuned where an X11 assumption is broken or
+  unsafe on Wayland; every deviation says why. No per-app rules.
+- Use the fork's public APIs and the native renderer and input ownership.
   Read private compositor state only where the target requires it, and
   document the dependency in code.
 - Native layer surfaces, popups, IME surfaces, input-capture sessions,
   seat grabs and implicit pointer grabs stay authoritative: recheck the
-  native hit-test stack before intercepting a press, and pass through an
-  active input-capture session.
-- Scanout: never edit direct-scanout or solitary state from the plugin;
-  a layer that must paint over fullscreen says so (`ILayer::
-  overFullscreen`, answered through `monitor.blockSolitary`).
+  native hit-test stack before intercepting a press, and pass an active
+  input-capture session through.
+- Scanout: never edit direct-scanout or solitary state from the plugin; a
+  layer that must paint over fullscreen says so (`ILayer::overFullscreen`,
+  answered through `monitor.blockSolitary`).
 - Render only after the warm/draw gate, damage and scissor correctly, and
   keep stable geometry for the bar, menus, cards and hit regions.
 
@@ -186,46 +172,44 @@ Numbered because source comments cite them; never renumber, append.
   canvas; persistence: `StateStore`; pixel work off the compositor
   thread: `CRasterWorker`; time-of-day deadlines: `CWallTimer`).
 - Module symbols live in their namespace (`Awesome::Shell`, `::Windows`,
-  `::Notify`, `::System`); platform symbols in `Awesome`; a required
-  global `PHANDLE` is a documented ABI exception. Namespaces follow
-  upstream's current style, PascalCase with no `N` prefix; types keep
-  upstream's `C`/`S`/`I`/`E` prefixes.
-- D-Bus stays asynchronous and off render/input hot paths
+  `::Notify`, `::System`), platform symbols in `Awesome`; the global
+  `PHANDLE` is a documented ABI exception. Namespaces are PascalCase with
+  no `N` prefix; types keep upstream's `C`/`S`/`I`/`E` prefixes.
+- D-Bus stays asynchronous and off render and input hot paths
   (`CBusLink::post()`, `pollSoon()`); never drain a connection inline.
 - Bound every externally sized structure (queues, children, payloads,
   images, textures, caches) and define behavior at the bound.
 - Deferred replies, timers, subprocess callbacks, menu sessions and
-  replaced device/daemon state carry a generation or ownership check;
+  replaced device or daemon state carry a generation or ownership check;
   teardown invalidates late callbacks before releasing their objects.
 - Cross-module state travels through a documented core seam, never
   through another module's private state.
-- Keep input, render and bus callbacks short; per-frame and per-motion
+- Input, render and bus callbacks stay short; per-frame and per-motion
   paths allocate nothing they can cache.
 - Comments only for hard constraints, non-obvious workarounds, magic
   values, cross-file contracts and regression guards.
 
 ## Modules
 
-One plugin, five internal modules, one input pipeline (the supervisor
-dispatches button/move/axis/key to the modules in a fixed order), no
-inter-module bus.
+One plugin, five modules, one input pipeline, no inter-module bus.
 
 - `core`: supervisor, input pipeline, hops, canvas (warm/draw gate),
-  config schema, stores, process runner and jobs, raster worker, fd.o
-  bus client.
-- `shell`: the bar — workspaces, tasks, tray, bell, battery, clock,
-  menubar launcher. Owns bar/menu input.
-- `windows`: the window state machine and all placement —
-  maximize/minimize/restore, click/focus policy, spawn placement, snap.
-- `notify`: the `org.freedesktop.Notifications` daemon — cards,
-  conversations, shade, popups, inline reply, sound.
-- `system`: volume/mic (wpctl), brightness (logind), touchpad policy;
+  config schema, stores, process runner and jobs, raster worker, fd.o bus
+  client.
+- `shell`: the bar (workspaces, tasks, tray, bell, battery, clock,
+  menubar launcher); owns bar and menu input.
+- `windows`: the window state machine and all placement
+  (maximize/minimize/restore, click and focus policy, spawn placement,
+  snap).
+- `notify`: the `org.freedesktop.Notifications` daemon (cards,
+  conversations, shade, popups, inline reply, sound).
+- `system`: volume and mic (wpctl), brightness (logind), touchpad policy;
   every action's feedback is a notify card.
 
-The pipeline order is a behavior contract (the bar claims its strip and
-menus before window policy; notification input beats the window below):
-shell, notify, windows, system, as `awesome/main.cpp` registers them; the
-supervisor dispatches in that order, and it must agree with
+The supervisor dispatches button, move, axis and key in the order
+`awesome/main.cpp` registers the modules — shell, notify, windows, system
+— and that order is a contract (the bar claims its strip and menus before
+window policy; notification input beats the window below), agreeing with
 `awesome/docs/design.md`.
 
 ## Git and versions
@@ -233,8 +217,8 @@ supervisor dispatches in that order, and it must agree with
 - One logical change per commit; imperative `scope: summary` subject of
   about 50 characters; scopes `awesome:`, `vclick:`, `devtools:`, `docs:`,
   `build:`, `all:`. No versions in subjects, no `Co-Authored-By`.
-- Versions are MAJOR.MINOR.PATCH (redesign / feature / fix), lockstep in
-  `version.hpp` and `hyprpm.toml`.
+- Versions are MAJOR.MINOR.PATCH (redesign / feature / fix), in lockstep
+  with `hyprpm.toml`.
 - Never push a change that has not passed its build and the applicable
   gate tier.
 
@@ -242,8 +226,8 @@ supervisor dispatches in that order, and it must agree with
 
 1. The docs (each plugin's `README.md` and `docs/`, the root `README.md`)
    and `TODO.md` reflect the actual behavior.
-2. Both variants build against the exact target headers and
-   `make -C awesome test` is green.
+2. The plugins build against the exact target headers (both `awesome`
+   variants) and `make test` is green.
 3. The applicable gate tier ends with `ALL N CHECKS PASSED`, isolation
    included.
 4. Teardown, reload, session lock, native input precedence, damage, queue
