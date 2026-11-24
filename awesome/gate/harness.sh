@@ -679,7 +679,9 @@ cleanup_harness() {
 write_stress_cfg() {
 	{
 		echo 'hl.config({ ecosystem = { enforce_permissions = true } })'
-		echo 'hl.permission(".*hyprland-plugins/.*", "plugin", "allow")'
+		# this checkout's builds, wherever it lives (a worktree too); a long
+		# Lua string, so only the regex needs escaping (a full match)
+		printf 'hl.permission([[^%s/.*]], "plugin", "allow")\n' "$(printf '%s' "$REPO" | sed 's/[][\.*^$+?(){}|]/\\&/g')"
 		echo 'hl.permission(".*input-capture$", "input-capture", "allow")'
 		echo 'hl.permission(".*vkbd$", "keyboard", "allow")'
 		echo 'hl.permission(".*grim$", "screencopy", "allow")'
