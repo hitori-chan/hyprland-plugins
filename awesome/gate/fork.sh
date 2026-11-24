@@ -15,6 +15,8 @@ AQ="$(aq_pinned_libdir)" || exit 1
 # the system's unpatched headers (another COutputState layout, no error)
 export PKG_CONFIG_PATH="$AQ/pkgconfig" CPATH="${AQ%/lib}/include"
 cd "$FORK_SRC" || exit 2
+# a fresh worktree has none; a bump may move their pins
+git submodule update --init --recursive -q || exit 1
 # its precompiled header: ccache caches units through it only with these
 export CCACHE_SLOPPINESS=pch_defines,time_macros
 # the tests by name, not by a build dir's cache; coverage (upstream's default
