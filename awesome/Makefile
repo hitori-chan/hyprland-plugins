@@ -79,15 +79,16 @@ $(TARGET): $(OBJS) plugin.ver $(LINK_STAMP)
 
 # The gate variant's precompiled header (core/pch.hpp; the release build
 # stays plain): GCC takes $(PCH).gch for the -include'd copy beside it,
-# built with the units' own flags, and ccache caches units through it only
-# with these sloppiness bits
+# built with the units' own flags. ccache caches units through it only
+# with these sloppiness bits, and hashes the .gch, which GCC never builds
+# the same twice: it comes from the cache too
 ifdef PCH
 PCH_FLAGS := -include $(PCH) -Winvalid-pch
 export CCACHE_SLOPPINESS := pch_defines,time_macros
 $(PCH): core/pch.hpp | $(OBJDIR)
 	cp $< $@
 $(PCH).gch: $(PCH) Makefile $(STAMP)
-	$(CXX) $(CXXFLAGS) -x c++-header $< -o $@
+	$(CCACHE) $(CXX) $(CXXFLAGS) -x c++-header $< -o $@
 endif
 
 # one object per unit; -MMD tracks the plugin's own headers, the stamp
