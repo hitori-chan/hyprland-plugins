@@ -52,13 +52,20 @@ namespace Awesome::Shell {
             }
 
             void draw(const SPaint& P, const SFrame& F, const CBox& box) override {
-                if (!F.tasks || F.tasks->empty() || box.w < 40)
+                if (!F.tasks || F.tasks->empty() || box.w <= 0)
                     return;
                 // awesome tasklist behavior: the windows split the WHOLE free
-                // strip between taglist and tray — one window = one huge item
-                constexpr double GAP = 4, ROW_H = 22, PADX = 10, ICON = ICON_CELL, ICON_GAP = 8;
-                const double     N     = (double)F.tasks->size();
-                const double     ITEMW = std::max(1.0, (box.w - GAP * (N - 1)) / N);
+                // strip between taglist and tray — one window = one huge item.
+                // A crowded strip narrows the gaps before the cells, so every
+                // cell stays inside it; a cell without room for a title past
+                // its icon (16 px: a glyph and the ellipsis) is its icon
+                // alone, centered, shrunk to the cell when narrower — no
+                // paint crosses into a neighbour's cell
+                constexpr double GAP = 4, ROW_H = 22, PADX = 10, ICON = ICON_CELL, ICON_GAP = 8, MIN_TITLE = 16;
+                const double     N      = (double)F.tasks->size();
+                const double     G      = std::min(GAP, box.w / (4 * N));
+                const double     ITEMW  = (box.w - G * (N - 1)) / N;
+                const bool       TITLED = ITEMW >= PADX + ICON + ICON_GAP + MIN_TITLE + PADX;
                 // an unfocused task reads quieter than the bar's text: the
                 // board's 62 % from its 86 %
                 const CHyprColor QUIET = F.fg.modifyA(F.fg.a * 0.72f);
@@ -89,37 +96,39 @@ namespace Awesome::Shell {
                     const bool HOVER = barHover.widget == this && barHover.window == W.get() && barHover.mon == P.mon->m_id;
 
                     // [10][icon 16][8][title][10]; a minimized task's icon fades with its text
-                    double tx = x + PADX;
+                    const double S = TITLED ? ICON : std::min(ICON, ITEMW);
+                    const double IX = TITLED ? x + PADX : x + (ITEMW - S) / 2;
                     if (const auto ITEX = appIcon(W->metadata().appID()); ITEX && ITEX->m_texID != 0) {
                         auto PI = P;
                         if (MIN)
                             PI.alpha *= 0.5f;
-                        PI.texFit(ITEX, CBox{tx, CELL.y + (ROW_H - ICON) / 2, ICON, ICON});
+                        PI.texFit(ITEX, CBox{IX, CELL.y + (ROW_H - S) / 2, S, S});
                     }
-                    tx += ICON + ICON_GAP;
 
-                    static std::string LBL; // reused; main thread only
-                    Tasklist::label(W, LBL);
-                    if (P.fp)
-                        *P.fp = *P.fp * 1099511628211ULL + std::hash<std::string>{}(LBL);
-                    const int MAXW =
-                        std::max(1, (int)std::round((ITEMW - (tx - x) - PADX) * P.scale)); // floor >0: a non-positive width disables ellipsization and overflows the cell
-                    const int WEIGHT = FOCUS ? 500 : 400;
-                    if (P.warm)
-                        textTex(LBL, inkOf(!HOVER), P.pt, MAXW, "", WEIGHT);
-                    const auto TEX = textTex(LBL, inkOf(HOVER), P.pt, MAXW, "", WEIGHT);
-                    if (TEX && TEX->m_texID != 0) {
-                        const auto B = P.toPhys(CBox{tx, box.y, 1, P.h});
-                        CBox       b{B.x, B.y + (B.h - TEX->m_size.y) / 2.0, TEX->m_size.x, TEX->m_size.y};
-                        P.texAt(TEX, b.round());
+                    if (TITLED) {
+                        const double       tx = IX + ICON + ICON_GAP;
+                        static std::string LBL; // reused; main thread only
+                        Tasklist::label(W, LBL);
+                        if (P.fp)
+                            *P.fp = *P.fp * 1099511628211ULL + std::hash<std::string>{}(LBL);
+                        const int  MAXW   = (int)std::round((ITEMW - (tx - x) - PADX) * P.scale);
+                        const int  WEIGHT = FOCUS ? 500 : 400;
+                        if (P.warm)
+                            textTex(LBL, inkOf(!HOVER), P.pt, MAXW, "", WEIGHT);
+                        const auto TEX = textTex(LBL, inkOf(HOVER), P.pt, MAXW, "", WEIGHT);
+                        if (TEX && TEX->m_texID != 0) {
+                            const auto B = P.toPhys(CBox{tx, box.y, 1, P.h});
+                            CBox       b{B.x, B.y + (B.h - TEX->m_size.y) / 2.0, TEX->m_size.x, TEX->m_size.y};
+                            P.texAt(TEX, b.round());
+                        }
                     }
 
                     SHit h;
-                    h.box    = CBox{x, box.y, ITEMW + GAP, P.h};
+                    h.box    = CBox{x, box.y, ITEMW + G, P.h};
                     h.widget = this;
                     h.window = W;
                     P.hits->push_back(h);
-                    x += ITEMW + GAP;
+                    x += ITEMW + G;
                 }
             }
 

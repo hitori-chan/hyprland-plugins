@@ -413,6 +413,69 @@ CP="$(clients | python3 -c "
 import json,sys
 print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='cellsprobe'), ''))")"
 close_wait "$CP"
+# a crowded strip (shell/tasklist.cpp): a wide clock leaves the tasks about
+# 120 px and six share it. A cell under 26 px is its icon alone, inside the
+# cell, and a click on a task's icon acts on that task. foot's icon comes
+# through footclient.desktop; the icons are what changed against the empty
+# strip.
+set_clock() { hq eval "hl.config({ plugin = { awesome = { shell = { clock_format = \"$1\" } } } })" >/dev/null; }
+clock_moved() { local a; a="$(clock_w)"; sleep 0.2; [[ -n "$a" && "$a" == "$(clock_w)" && "$a" != "$1" ]]; }
+set_clock "$(printf 'W%.0s' {1..30})"; until_ok 3 clock_moved "$CLOCK_W"; CW30="$(clock_w)"
+set_clock "$(printf 'W%.0s' {1..40})"; until_ok 3 clock_moved "$CW30"; CW40="$(clock_w)"
+# the tasks' strip: from the tags' cell to the right slot's, less its gaps
+read -r TL TR <<<"$(hq awesome cells | awk '$1 == "tag" { l = $3 } ($1 == "tray" || $1 == "bell") && !r { r = $2 } END { print l, r }')"
+NW=$((40 + (TR - TL - 14 - 120) * 10 / (CW40 - CW30 > 0 ? CW40 - CW30 : 10)))
+set_clock "$(printf 'W%.0s' $(seq 1 "$NW"))"; until_ok 3 clock_moved "$CW40"
+printf 'move %s %s\n' $((MON_W / 2)) $((MON_H / 2)) | vp
+capture_nested "$STATE/tasks-empty.png"
+FC=()
+for i in 1 2 3 4 5 6; do
+	dsp "hl.dsp.exec_cmd('foot -a footclient --window-size-pixels=300x150')"; settled footclient "$i"
+	FC+=("$(clients | python3 -c "
+import json,sys
+seen=set(sys.argv[1:])
+print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='footclient' and c['address'] not in seen), ''))" "${FC[@]}")")
+done
+TCELLS="$(hq awesome cells | awk '$1 == "task" { print $2, $3 }')"
+# "<cells> <widest inner cell> <cell>:<icon middle>...": the columns that
+# changed in the band, as runs, each named by the one cell holding it whole
+# (-1: none); the outer cells reach across the slot gaps
+icon_cells() {
+	python3 - "$STATE/tasks-empty.png" "$1" "$TCELLS" <<'PY'
+import sys
+from PIL import Image
+ref = Image.open(sys.argv[1]).convert('RGB').load()
+px = Image.open(sys.argv[2]).convert('RGB').load()
+cells = [tuple(map(int, l.split())) for l in sys.argv[3].splitlines() if l.strip()]
+lo, hi = cells[0][0], cells[-1][1]
+ink = [sum(1 for y in range(4, 24) if max(abs(a - b) for a, b in zip(px[x, y], ref[x, y])) > 12) >= 2 for x in range(lo, hi)]
+runs, x = [], 0
+while x < len(ink):
+    if ink[x]:
+        s = x
+        while x < len(ink) and ink[x]:
+            x += 1
+        runs.append((lo + s, lo + x))
+    x += 1
+owner = [next((i for i, (a, b) in enumerate(cells) if a <= r0 and r1 <= b), -1) for r0, r1 in runs]
+print(len(cells), max(b - a for a, b in cells[1:-1]), ' '.join(f'{i}:{(r0 + r1) // 2}' for i, (r0, r1) in zip(owner, runs)))
+PY
+}
+crowded_ok() {
+	local n w runs
+	read -r n w runs <<<"$(icon_cells "$1")"
+	[[ "$n" == 6 ]] && ((w < 26)) && [[ "$runs" =~ ^0:[0-9]+\ 1:[0-9]+\ 2:[0-9]+\ 3:[0-9]+\ 4:[0-9]+\ 5:[0-9]+$ ]]
+}
+chk "tasks: six in a crowded strip, each icon inside its cell under 26 px" \
+	shot_until 3 "$STATE/tasks-crowded.png" crowded_ok "$STATE/tasks-crowded.png"
+echo "tasks: crowded '$(icon_cells "$STATE/tasks-crowded.png")'" >&2
+ICON2="$(icon_cells "$STATE/tasks-crowded.png" | grep -oE ' 2:[0-9]+' | cut -d: -f2)"
+click "${ICON2:-0}" 13 272
+active_addr() { hq activewindow -j | python3 -c 'import json,sys; print(json.load(sys.stdin).get("address", ""))'; }
+chk "tasks: a click on the third task's icon focuses that window" until_is 3 "${FC[2]}" active_addr
+for a in "${FC[@]}"; do close_wait "$a"; done
+set_clock ""
+until_ok 3 clock_back
 if compgen -G "/sys/class/power_supply/BAT*" >/dev/null; then
 	BATX="$(cell_mid battery)"
 	chk "cells: the battery owns a cell" test -n "$BATX"

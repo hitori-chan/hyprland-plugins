@@ -38,7 +38,9 @@ Hover lifts the text a step.
 
 A 16 px icon and the title per window, in arrival order; ⌃ marks pinned,
 + maximized. Focused is accent text, urgent red, minimized dim with a
-half-strength icon.
+half-strength icon. A crowded strip narrows the 4 px gaps first; a cell
+under 60 px has no room for a title and shows its icon alone, centered,
+shrunk to the cell when narrower.
 
 | Input | Action (awesome's tasklist buttons) |
 |---|---|
