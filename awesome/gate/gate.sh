@@ -104,61 +104,6 @@ while [[ $# -gt 0 ]]; do
 		BIN=$1; shift ;;
 	esac
 done
-# -s: stage the fork build's header set ourselves — one command instead of
-# a hand-run cmake --install, a .pc prefix fix, and two env vars. CMake
-# writes the CONFIGURED prefix into hyprland.pc; the harness normalizes a
-# copy (normalize_target_pkgconfig). version.h is generated at CONFIGURE
-# time only: a build tree configured at another commit carries a stale
-# hash, which the plugin's load guard then rejects — refuse it here.
-if [[ -n "$FORK_SRC" ]]; then
-	FORK_SRC="$(cd "$FORK_SRC" 2>/dev/null && pwd)" || { echo "gate.sh: no such fork dir" >&2; exit 2; }
-	export FORK_SRC # launch.sh builds the nested's Aquamarine from this fork's pin
-	[[ -x "$FORK_SRC/build/Hyprland" ]] || { echo "gate.sh: $FORK_SRC/build/Hyprland is not built" >&2; exit 2; }
-	_head="$(git -C "$FORK_SRC" rev-parse HEAD 2>/dev/null)"
-	grep -q "GIT_COMMIT_HASH *\"$_head\"" "$FORK_SRC/src/version.h" 2>/dev/null || {
-		echo "gate.sh: $FORK_SRC/src/version.h is not HEAD ($_head): reconfigure (cmake -S . -B build) and rebuild" >&2
-		exit 2
-	}
-	# A reconfigure keeps pkg-config's cached versions: after a distro upgrade
-	# the binary reports the old ones and this staged set agrees with it, while
-	# hyprpm's fresh headers fail the load guard. Major.minor, as the guard does.
-	for _dep in aquamarine hyprgraphics hyprutils hyprcursor; do
-		_have="$(sed -n "s/^#define ${_dep^^}_VERSION *\"\(.*\)\"/\1/p" "$FORK_SRC/src/version.h")"
-		_want="$(pkg-config --modversion "$_dep" 2>/dev/null)"
-		[[ -n "$_want" && "${_have%.*}" == "${_want%.*}" ]] || {
-			echo "gate.sh: $FORK_SRC/src/version.h says $_dep $_have, the system has $_want: cmake -S . -B build -U '*_dep_*' -U '__pkg_config_checked_*' and rebuild" >&2
-			exit 2
-		}
-	done
-	_pkg="${HYPR_GATE_TMP:-/tmp/hypr-gate}/fork-pkg"
-	rm -rf -- "$_pkg" "$_pkg.root"
-	# under a DESTDIR: the fork installs its hyprland symlink to an absolute
-	# /usr/local/bin, which --prefix leaves alone (it aborted the install
-	# where that path is not the user's). install_manifest.txt in a
-	# root-owned build dir fails the exit code after every file is in
-	# place: judge the result, not the rc
-	DESTDIR="$_pkg.root" cmake --install "$FORK_SRC/build" --prefix "$_pkg" >/dev/null 2>&1
-	mv -- "$_pkg.root$_pkg" "$_pkg" 2>/dev/null
-	rm -rf -- "$_pkg.root"
-	cmp -s "$FORK_SRC/src/version.h" "$_pkg/include/hyprland/src/version.h" && [[ -f "$_pkg/share/pkgconfig/hyprland.pc" ]] || {
-		echo "gate.sh: staging the fork headers into $_pkg failed" >&2
-		exit 2
-	}
-	# the staged set is ours: point its .pc at itself, so a manual
-	# `PKG_CONFIG_PATH=$_pkg/share/pkgconfig make` builds against it too
-	sed -i "s|^prefix=.*|prefix=$_pkg/include|" "$_pkg/share/pkgconfig/hyprland.pc"
-	# the fork's headers include the Aquamarine package's patched API: the
-	# pin's build (host.sh, the nested's own library) joins the set
-	_aq="$(FORK_SRC="$FORK_SRC" HARNESS_DIR="$HARNESS" bash -c '. "$GATE_DIR/host.sh" && aq_pinned_libdir')" &&
-		cp "$_aq/pkgconfig/aquamarine.pc" "$_pkg/share/pkgconfig/" || {
-		echo "gate.sh: staging the pinned aquamarine into $_pkg failed" >&2
-		exit 2
-	}
-	export PKG_CONFIG_PATH="$_pkg/share/pkgconfig" HYPR_DEPLOY_PKG_CONFIG_PATH="$_pkg/share/pkgconfig"
-	[[ -n "$BIN" ]] || BIN="$FORK_SRC/build/Hyprland"
-	unset _head _pkg _dep _have _want _aq
-fi
-[[ -n "$BIN" ]] || BIN=${HYPR_BIN:-/usr/local/bin/Hyprland}
 
 if [[ -z "$B_SPEC" || "$B_SPEC" == "quick" ]]; then
 	SELECTED=("${QUICK_TIER[@]}")
@@ -207,6 +152,8 @@ HARNESS_CLEANED=0
 
 # shellcheck source=awesome/gate/harness.sh
 source "$GATE_DIR/harness.sh"
+[[ -z "$FORK_SRC" ]] || stage_fork "$FORK_SRC" || exit 2
+[[ -n "$BIN" ]] || BIN=${HYPR_BIN:-/usr/local/bin/Hyprland}
 # Scenario modules execute their checks immediately. Install the cleanup
 # owner before any module can create a compositor or fixture.
 trap cleanup_harness EXIT

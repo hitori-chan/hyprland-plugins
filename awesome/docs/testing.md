@@ -113,7 +113,7 @@ In `awesome/gate/`:
 | Script | Does |
 |---|---|
 | `gate.sh` | the gate (what `make gate` runs) |
-| `probe.sh [-b BIN] BODY.sh` | the preflight, then a one-off body with the harness and `lib.sh` sourced; teardown always runs |
+| `probe.sh [-s FORK] [-b BIN] BODY.sh` | the preflight (`-s` stages a built fork as `gate.sh -s` does), then a one-off body with the harness and `lib.sh` sourced; teardown always runs |
 | `dev.sh` | one dev-loop iteration: stop, build, launch, open a window, screenshot |
 | `launch.sh`, `stop.sh` | start or tear down the host and the nested |
 | `shot.sh [out.png]` | screenshot the nested, plus a 2x crop of the bar |
