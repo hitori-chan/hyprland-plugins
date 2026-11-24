@@ -30,12 +30,19 @@ namespace Awesome::Notify {
         const double GAP = std::max((double)cfg().getI("plugin:awesome:notify:margin"), 0.0);
         const double X   = MB.x + MB.w - EDGE - W;
         double       y   = MB.y + cardsTop(P.mon);
+        // above a dock, which takes the presses there
+        const double BOTTOM = MB.y + MB.h - cardsBottomReserved(P.mon);
 
+        bool first = true;
         for (const auto& N : notifs) {
             if (N->waiting || !N->banner || isCapsule(N))
                 continue; // residency: only banners show here
-            if (y + 2 * PADY > MB.y + MB.h)
-                break; // no room: the tail waits off-screen, timeouts running
+            // a banner shows whole or the tail waits off-screen, timeouts
+            // running; max_height cannot bound it (its title row, a body
+            // line, progress and an open field show past a small cap)
+            if (!first && y + measureCard(P, T, N, W, SCardForm{.where = SCardForm::BANNER}) > BOTTOM)
+                break;
+            first = false;
 
             // per-card arrival motion: fade + an 8 px drop. Keyed on `born`,
             // never `arrived` — a replace refreshes arrived every step and

@@ -87,6 +87,16 @@ chk "overflow: wheeling down keeps every card" test "$(st)" = "center:1 live:15 
 hq awesome center >/dev/null
 nclear
 
+# ---- the banner column keeps to the screen --------------------------------
+# three banners at max_height (320), newest on top: the oldest's top sits
+# on the screen but its body would run off the bottom; it waits instead
+TALL="$(printf 'line %s\n' $(seq 1 30))"
+for i in 1 2 3; do nsend -a tall$i -t 30000 "tall $i" "$TALL"; done
+chk "column: three tall banners up" test "$(bd)" = "banners:3 resident:0"
+col_on_screen() { local b; b="$(panel_bottom "$1")"; ((b > N_TOP + 300 && b < MON_H - 4)); }
+chk "column: the banners end on the screen" shot_until 3 $STATE/column-aw.png col_on_screen $STATE/column-aw.png
+nclear
+
 # ---- the hero: the banner's preview, the shade row's thumbnail -----------
 HEROIMG=$STATE/hero-probe-aw.png
 python3 - "$HEROIMG" <<'PY'

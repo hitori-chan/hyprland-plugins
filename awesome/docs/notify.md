@@ -9,7 +9,9 @@ and sound.
 Cards stack top-right on the focused monitor, newest on top, `offset_y`
 below the top and at least 12 px under the bar. While the launcher is
 open there, cards and center sit its height lower. The stack follows a
-keyboard or workspace focus change, not a pointer one.
+keyboard or workspace focus change, not a pointer one. Banners show whole
+down to the monitor's bottom (above a dock); the rest wait off-screen,
+their timeouts running.
 
 One card shape serves a banner, a center card and a card in a stack:
 356 px of glass, an 18 px superellipse radius. An open tray menu paints
