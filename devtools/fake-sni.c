@@ -6,7 +6,8 @@
 // one mid-list, and repeats the trailing one on the submenu level, so the
 // gate can assert the bar's renderer draws none of them (height, pixels).
 //
-//   fake-sni            — register with the session bus's watcher, serve /menu
+//   fake-sni [NAME]     — register with the session bus's watcher, serve /menu
+//                         (NAME: another bus name, for a second item)
 //   kill -USR1 <pid>    — ask for attention: Status NeedsAttention and
 //                         NewStatus, with no attention icon of its own (as
 //                         most apps do)
@@ -419,7 +420,9 @@ static void try_register(void) {
 		fprintf(stderr, "fake-sni: no watcher on the bus yet\n");
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+	if (argc > 1) // another item beside the first: its own bus name
+		SERVICE = argv[1];
 	signal(SIGTERM, on_signal);
 	signal(SIGINT, on_signal);
 	signal(SIGUSR1, on_attention);

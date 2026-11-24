@@ -80,7 +80,8 @@ make -C devtools HL=/path/to/Hyprland
 
 - `fake-sni`: one StatusNotifierItem and a dbusmenu (a magenta 22x22
   pixmap; root and sub layouts with doubled and trailing separators) on
-  `DBUS_SESSION_BUS_ADDRESS`. `kill -USR1` asks for attention.
+  `DBUS_SESSION_BUS_ADDRESS`; a bus name as its argument makes another
+  item. `kill -USR1` asks for attention.
 - `fakes/wpctl`: logs its arguments to `AW_WPCTL_LOG`, models the sink's
   level and both mutes (`AW_WPCTL_LEVEL_FILE`, `AW_WPCTL_MUTES_FILE`; only
   the plugin's relative steps and toggles), and on demand hangs
