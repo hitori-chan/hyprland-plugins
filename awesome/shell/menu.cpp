@@ -747,16 +747,19 @@ namespace Awesome::Shell {
                     // the widest row as drawn (label, its arrow column), at
                     // most the panel's cap: an app's 4 KiB label would raster
                     // at full length, and the walk stops once a row reaches
-                    // it, or after the first MEASURED rows (each a raster on
-                    // the compositor thread; Silenced Apps can list 2048). The
-                    // columns before it are added per render: an icon landing
-                    // later moves them.
+                    // it. A level past MEASURED rows opens at the cap
+                    // unmeasured: each row is a raster on the compositor
+                    // thread (Silenced Apps can list 2048), and a measure of
+                    // its first rows would crush a wider row further down.
+                    // The columns before it are added per render: an icon
+                    // landing later moves them.
                     double textW = 0;
-                    if (L.width > 0 && L.widthPt == PAINT.pt)
+                    if (L.entries.size() > Menu::MEASURED)
+                        textW = 380.0;
+                    else if (L.width > 0 && L.widthPt == PAINT.pt)
                         textW = L.width;
                     else {
-                        for (size_t i = 0; i < std::min(L.entries.size(), Menu::MEASURED); i++) {
-                            const auto& E = L.entries[i];
+                        for (const auto& E : L.entries) {
                             if (E.separator)
                                 continue;
                             if (E.header) {
@@ -891,11 +894,11 @@ namespace Awesome::Shell {
                         PAINT.texIn(textTex("–", fg, PAINT.pt), CBox{mx + 10, my, COLW, ROWH}); // indeterminate
 
                     // the measure's own raster while the panel holds its widest
-                    // row (a narrow output shrinks it below that); a row past
-                    // the measured ones ellipsizes to the panel
+                    // row (a narrow output shrinks it below that); an
+                    // unmeasured level's rows ellipsize to the panel
                     const double DETW   = detailW(E);
                     const int    ROOMPX = (int)std::round((mw - LX - 12 - TAGW - (E.submenu ? ARW : 0) - DETW) * PAINT.scale);
-                    const auto T      = textTex(E.display, fg, PAINT.pt, L.fixedWidth <= 0 && FITS && i < Menu::MEASURED ? capPx(E) : ROOMPX);
+                    const auto T      = textTex(E.display, fg, PAINT.pt, L.fixedWidth <= 0 && FITS ? capPx(E) : ROOMPX);
                     if (T && T->m_texID != 0) {
                         const auto P = PAINT.toPhys(ROW);
                         CBox       b{P.x + std::round(LX * PAINT.scale), P.y + (P.h - T->m_size.y) / 2.0, T->m_size.x, T->m_size.y};

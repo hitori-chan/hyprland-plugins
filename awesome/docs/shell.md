@@ -73,8 +73,8 @@ Menus (tray, client list, bell) are glass with 28 px rows; the hovered
 row, and the row an open submenu hangs off, sit on the white pill. Check
 and radio items show a check or dot; submenu chevrons get their own
 column. Menus follow live updates (hover kept by id), cascade and scroll;
-a panel's width is measured over its first 64 rows, and a wider row
-further down ellipsizes.
+a panel of more than 64 rows opens at the widest (380 px), unmeasured,
+and its rows ellipsize to it.
 An empty level says "Empty", or "Unavailable" when the app did not
 answer. Esc closes; so does losing the monitor. Icons decode under a
 budget and fill in over a few frames. No keyboard navigation, tooltips

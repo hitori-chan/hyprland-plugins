@@ -880,10 +880,13 @@ pcidb gatechat Alice alice "five"
 chk "silenced: the app banners again" test "$(bd)" = "banners:1 resident:0"
 nclear
 # every row the stores hold is listed (past the 64 the list once stopped
-# at): scrolled to its end, the oldest of 70 seeded apps turns back on. The
-# rows are 28 px under the top strip (shell.hpp: PAD 5, ARROWH 18)
+# at), at the menu's widest (380 px: so long a list is not measured, and
+# no row is sized by others): scrolled to its end, the oldest of 70 seeded
+# apps turns back on. The rows are 28 px under the top strip (shell.hpp:
+# PAD 5, ARROWH 18)
 hq awesome silence-seed 70 0 >/dev/null
 bell_open
+chk "silenced: a list past 64 rows opens at the menu's widest" test $((BRX1 - BRX0 + 1)) -ge 376 -a $((BRX1 - BRX0 + 1)) -le 384
 printf 'move %s %s\nsleep 60\nscroll 0 2000\nsleep 200\n' "$(((BRX0 + BRX1) / 2))" "$(((BRY0 + BRY1) / 2))" | vp
 settle
 SEEN=$(((BRY1 - BRY0 + 1 - 2 * 5 - 2 * 18) / 28))
