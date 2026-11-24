@@ -14,9 +14,9 @@ touches the left edge; the clock sits 8 px off the right.
   The battery and clock ignore clicks. Side buttons (back, forward) do
   nothing on the strip and never reach a window beneath it.
 - Geometry is per monitor. On a narrow output the right slot never
-  crosses the tags: its leftmost widgets yield first (the tray drops
-  icons, the others show whole or not at all), and the tasks take the
-  rest.
+  crosses the tags: its leftmost widgets yield first (the tray narrows
+  and keeps every item, the others show whole or not at all), and the
+  tasks take the rest.
 - The bar reserves its band (the fork's plugin reserved type), so
   maximized, snapped and placed windows start below it without
   `reserved_area`. A monitor rule's reserved top adds to it.
@@ -56,7 +56,8 @@ blocker.
 
 StatusNotifierItem icons, 16 px in their own colours (symbolic ones in
 `col_fg`), `tray_spacing` apart; an item needing attention shows its
-attention icon.
+attention icon. Short of room, the spacing gives way to 4 px, then the
+icons shrink alike: no item is dropped.
 
 - **Left click** activates the item, then raises and focuses the app's
   topmost window itself (an X11 raise arrives as an unauthenticated

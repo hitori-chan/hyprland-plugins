@@ -644,19 +644,32 @@ namespace Awesome::Shell {
                 // laid from the right edge inwards, spaced like awesome's
                 // systray_icon_spacing — the first item keeps the edge
                 const double SPACING = std::max(0.0, (double)cfg().getI("plugin:awesome:shell:tray_spacing"));
-                double       right   = box.x + box.w;
+                const double N       = (double)std::ranges::count_if(Tray::items, [](const auto& IT) { return IT->status != "Passive"; });
+                // A narrow output gives the tray less than its fit (strip.cpp:
+                // it shrinks): every item keeps a cell inside that room. The
+                // spacing gives way first, down to 4 px; then the icons share
+                // what is left, as awesome's systray shrinks its icons to fit.
+                double sp = SPACING, icon = ICON;
+                if (N > 0 && box.w < N * ICON + (N - 1) * SPACING) {
+                    const double MINSP = std::min(SPACING, 4.0), TIGHT = N * ICON + (N - 1) * MINSP;
+                    if (box.w >= TIGHT)
+                        sp = (box.w - N * ICON) / (N - 1); // N > 1: one item's fit is its icon, TIGHT itself
+                    else {
+                        icon = ICON * box.w / TIGHT;
+                        sp   = MINSP * box.w / TIGHT;
+                    }
+                }
+                double right = box.x + box.w;
                 bool   first = true;
                 for (const auto& IT : Tray::items) {
                     if (IT->status == "Passive")
                         continue; // SNI: Passive means don't show the item
                     if (!first)
-                        right -= SPACING;
+                        right -= sp;
                     first = false;
-                    // The right-side slot can be clipped on a narrow output.
-                    // Keep the cell and hitbox wholly inside the width the
-                    // layout assigned to this widget; an SNI item must never
-                    // paint over the tasklist or another right-side widget.
-                    if (right - ICON < box.x)
+                    // an SNI item never paints over the tasklist or another
+                    // right-side widget (the half pixel: the sums above)
+                    if (right - icon < box.x - 0.5)
                         break;
                     // The pixmap is a texture too, so the rule applies: rebuild it on
                     // the warm only. A dirty item reaching a draw keeps its old icon
@@ -672,7 +685,7 @@ namespace Awesome::Shell {
                         }
                     }
 
-                    const CBox ICONBOX{right - ICON, box.y + (P.h - ICON) / 2, ICON, ICON};
+                    const CBox ICONBOX{right - icon, box.y + (P.h - icon) / 2, icon, icon};
                     if (IT->tex && IT->tex->m_texID != 0)
                         // fit, not stretch: a non-square pixmap keeps its proportions
                         P.texFit(IT->tex, ICONBOX);
@@ -680,15 +693,15 @@ namespace Awesome::Shell {
                     // between icons; the outer ones stop at the tray's own
                     // edges, where the strip splits the gaps to its neighbours
                     // evenly
-                    const double HX0 = std::max(box.x, ICONBOX.x - SPACING / 2), HX1 = std::min(box.x + box.w, ICONBOX.x + ICON + SPACING / 2);
+                    const double HX0 = std::max(box.x, ICONBOX.x - sp / 2), HX1 = std::min(box.x + box.w, ICONBOX.x + icon + sp / 2);
                     SHit         h;
                     h.box     = CBox{HX0, box.y, HX1 - HX0, P.h};
                     h.widget  = this;
                     h.tray    = IT;
-                    h.anchorX = ICONBOX.x + ICON / 2.0;
+                    h.anchorX = ICONBOX.x + icon / 2.0;
                     h.mon     = P.mon;
                     P.hits->push_back(h);
-                    right -= ICON;
+                    right -= icon;
                 }
             }
 

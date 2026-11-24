@@ -324,6 +324,34 @@ capture_nested "$STATE/tray-attn.png"
 ICON="$(icon_box "$STATE/tray-attn.png")"
 chk "tray: an attention item without an attention icon keeps its own" bash -c "[[ -n '$ICON' && '${ICON:0:1}' != '0' ]]"
 
+# short of room the tray squeezes, never drops an item (shell/tray.cpp):
+# three items at a spacing the strip cannot hold keep three cells, each
+# icon drawn
+setsid env DBUS_SESSION_BUS_ADDRESS="$NBUS" "$SNIBIN" org.freedesktop.HyprFakeSNI2 >/dev/null 2>&1 </dev/null &
+FAKE2=$!
+setsid env DBUS_SESSION_BUS_ADDRESS="$NBUS" "$SNIBIN" org.freedesktop.HyprFakeSNI3 >/dev/null 2>&1 </dev/null &
+FAKE3=$!
+sni_count() { sni_items | grep -o HyprFakeSNI | wc -l; }
+until_is 10 3 sni_count
+hq eval 'hl.config({ plugin = { awesome = { shell = { tray_spacing = 600 } } } })' >/dev/null
+tray_cells() { hq awesome cells | grep -c '^tray '; }
+# magenta runs across the band: one per drawn icon
+icon_runs() {
+	python3 - "$1" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert('RGB'); px = im.load()
+cols = [sum(1 for y in range(28) if px[x, y][0] > 150 and px[x, y][1] < 90 and px[x, y][2] > 150) >= 3 for x in range(im.size[0])]
+print(sum(1 for x in range(len(cols)) if cols[x] and (x == 0 or not cols[x - 1])))
+PY
+}
+three_icons() { (($(icon_runs "$1") == 3)); }
+chk "tray: three items past the room keep three cells" until_is 3 3 tray_cells
+chk "tray: ...each icon drawn" shot_until 3 "$STATE/tray-squeezed.png" three_icons "$STATE/tray-squeezed.png"
+hq eval 'hl.config({ plugin = { awesome = { shell = { tray_spacing = 15 } } } })' >/dev/null
+kill "$FAKE2" "$FAKE3" 2>/dev/null
+until_is 5 1 tray_cells
+
 # ---- the strip's cells: every widget owns its own ---------------------------
 # A widget with nothing to click still owns its cell (shell/strip.cpp).
 # With a task on the strip, the cells tile it from edge to edge: none
