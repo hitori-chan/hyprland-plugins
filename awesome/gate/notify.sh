@@ -238,10 +238,10 @@ notify_raw icon_data 1280 720 auto >/dev/null
 shot_until 3 $STATE/reader-2-aw.png hero_in $STATE/reader-2-aw.png $BANNER_BAND 8000 999999
 chk "reader: the spec 1.0 name (icon_data) still previews" test "$(hero_px $STATE/reader-2-aw.png $BANNER_BAND)" -gt 8000
 nclear
-notify_raw image-data 1280 720 0 >/dev/null; sleep 1
-capture_nested $STATE/reader-3-aw.png
-chk "reader: a lying header (stride 0) lands the card" test "$(st)" = "center:0 live:1 dnd:0"
-chk "reader: with no preview" test "$(hero_px $STATE/reader-3-aw.png $BANNER_BAND)" -lt 200
+notify_raw image-data 1280 720 0 >/dev/null
+chk "reader: a lying header (stride 0) lands the card" until_is 3 "center:0 live:1 dnd:0" st
+drawn_bare() { (($(panel_bottom "$1") > 0 && $(hero_px "$1" $BANNER_BAND) < 200)); }
+chk "reader: with no preview" shot_until 3 $STATE/reader-3-aw.png drawn_bare $STATE/reader-3-aw.png
 nclear
 # an fd array under a hint (sd-bus reads no fd array as a block): passed
 # over like any other value, the card still lands
