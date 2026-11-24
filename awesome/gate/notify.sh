@@ -461,6 +461,38 @@ chk "actions: the action's row fired it, and the card went" until_is 3 "center:0
 chk "actions: ActionInvoked carried the action's key" grep -q 'STRING "later"' "$INVOKED"
 nfyact_done
 nclear
+# a menu flipped up stays in the work area: over the bar the strip takes
+# the press first. A chat with Reply and eight actions, held low on the
+# center's last card (newer chats of other apps rank above it), with no
+# room for the menu under the pointer nor above it.
+nfyact edgeapp "Edge chat" 18 inline-reply Reply a1 One a2 Two a3 Three a4 Four a5 Five a6 Six a7 Seven a8 Eight \
+	3 desktop-entry s edgeapp category s im.received conversation-id s edge; sent_wait
+hq awesome center >/dev/null
+EB=0 EB_LAST=""
+edge_grown() { local b; b="$(panel_bottom "$1")"; ((b > EB)) && [[ "$b" == "$EB_LAST" ]] && { EB=$b; return 0; }; EB_LAST=$b; return 1; }
+shot_until 3 $STATE/edge.png edge_grown $STATE/edge.png
+NF=0
+for i in 1 2 3 4 5; do
+	((EB >= 390)) && break
+	pcidb edgefill$i "Chat $i" ef$i hello
+	NF=$i
+	shot_until 3 $STATE/edge.png edge_grown $STATE/edge.png
+done
+EY=$((EB - 30)) # inside the last card, clear of its drop
+hold_menu "$POPX" "$EY"
+read -r _ RY0 <<<"$(hq awesome menu-at Reply)"
+read -r _ RY1 <<<"$(hq awesome menu-at Close)"
+# flipped, the menu lies under the pointer: released there, it would pick a row
+printf 'move %s %s\nsleep 40\n' "$((PANEL_X - 200))" "$EY" | vp; release_left
+MH=$((RY1 - RY0 + 28 + 10))
+echo "menu-edge: held at $EY over a column ending at $EB, menu $MH tall from $((RY0 - 19))" >&2
+chk "menu-edge: the menu has room neither under the pointer nor above it" test $((EY + MH)) -gt $((MON_H - 12)) -a $((EY - MH)) -lt $N_TOP
+chk "menu-edge: flipped up, it stays under the bar" test $((RY0 - 19)) -ge $N_TOP
+tap esc
+chk "menu-edge: the hold and the release acted on nothing" until_is 3 "center:1 live:$((NF + 1)) dnd:0" st
+hq awesome center >/dev/null
+nfyact_done
+nclear
 # a replace that keeps a card's actions (a progress tick) keeps a click
 # pressed before it; one that changes them takes it. One connection sends
 # them all: ActionInvoked goes to the sender. The press drifts past the

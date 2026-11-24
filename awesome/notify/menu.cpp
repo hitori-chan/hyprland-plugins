@@ -276,19 +276,21 @@ namespace Awesome::Notify::CardMenu {
         }
         w = std::min(w, WMAX);
 
-        const auto MB = P.mon->logicalBox();
+        // the work area: over the bar its strip takes the press first, over a
+        // dock the dock does
+        const auto WA = P.mon->logicalBoxMinusReserved();
         double     x, y;
         if (s_dnd) {
-            x = std::clamp(s_anchor.x + s_anchor.w - w, MB.x + EDGE, std::max(MB.x + EDGE, MB.x + MB.w - EDGE - w));
+            x = std::clamp(s_anchor.x + s_anchor.w - w, WA.x + EDGE, std::max(WA.x + EDGE, WA.x + WA.w - EDGE - w));
             y = s_anchor.y + s_anchor.h + ANCHOR_GAP;
-            if (y + h > MB.y + MB.h - EDGE) // no room under it: over it
-                y = std::max(MB.y + EDGE, s_anchor.y - ANCHOR_GAP - h);
+            if (y + h > WA.y + WA.h - EDGE) // no room under it: over it
+                y = std::max(WA.y + EDGE, s_anchor.y - ANCHOR_GAP - h);
         } else {
             x = s_at.x, y = s_at.y;
-            if (x + w > MB.x + MB.w - EDGE)
-                x = std::max(MB.x + EDGE, s_at.x - w);
-            if (y + h > MB.y + MB.h - EDGE)
-                y = std::max(MB.y + EDGE, s_at.y - h);
+            if (x + w > WA.x + WA.w - EDGE)
+                x = std::max(WA.x + EDGE, s_at.x - w);
+            if (y + h > WA.y + WA.h - EDGE)
+                y = std::max(WA.y + EDGE, s_at.y - h);
         }
         s_box = CBox{x, y, w, h};
 
