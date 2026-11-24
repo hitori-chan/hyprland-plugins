@@ -112,6 +112,7 @@ done
 # hash, which the plugin's load guard then rejects — refuse it here.
 if [[ -n "$FORK_SRC" ]]; then
 	FORK_SRC="$(cd "$FORK_SRC" 2>/dev/null && pwd)" || { echo "gate.sh: no such fork dir" >&2; exit 2; }
+	export FORK_SRC # launch.sh builds the nested's Aquamarine from this fork's pin
 	[[ -x "$FORK_SRC/build/Hyprland" ]] || { echo "gate.sh: $FORK_SRC/build/Hyprland is not built" >&2; exit 2; }
 	_head="$(git -C "$FORK_SRC" rev-parse HEAD 2>/dev/null)"
 	grep -q "GIT_COMMIT_HASH *\"$_head\"" "$FORK_SRC/src/version.h" 2>/dev/null || {
@@ -130,10 +131,15 @@ if [[ -n "$FORK_SRC" ]]; then
 		}
 	done
 	_pkg="${HYPR_GATE_TMP:-/tmp/hypr-gate}/fork-pkg"
-	rm -rf -- "$_pkg"
-	# install_manifest.txt in a root-owned build dir fails the exit code
-	# after every file is in place: judge the result, not the rc
-	cmake --install "$FORK_SRC/build" --prefix "$_pkg" >/dev/null 2>&1
+	rm -rf -- "$_pkg" "$_pkg.root"
+	# under a DESTDIR: the fork installs its hyprland symlink to an absolute
+	# /usr/local/bin, which --prefix leaves alone (it aborted the install
+	# where that path is not the user's). install_manifest.txt in a
+	# root-owned build dir fails the exit code after every file is in
+	# place: judge the result, not the rc
+	DESTDIR="$_pkg.root" cmake --install "$FORK_SRC/build" --prefix "$_pkg" >/dev/null 2>&1
+	mv -- "$_pkg.root$_pkg" "$_pkg" 2>/dev/null
+	rm -rf -- "$_pkg.root"
 	cmp -s "$FORK_SRC/src/version.h" "$_pkg/include/hyprland/src/version.h" && [[ -f "$_pkg/share/pkgconfig/hyprland.pc" ]] || {
 		echo "gate.sh: staging the fork headers into $_pkg failed" >&2
 		exit 2
