@@ -129,7 +129,8 @@ aq_pinned_libdir() {
 				return 1
 			}
 		done
-		cmake -S "$src" -B "$src.build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" >/dev/null &&
+		cmake -S "$src" -B "$src.build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" \
+			-DCMAKE_CXX_COMPILER_LAUNCHER="${CCACHE:-}" >/dev/null &&
 			cmake --build "$src.build" -j"${HYPR_HARNESS_JOBS:-1}" >/dev/null && cmake --install "$src.build" >/dev/null || {
 			echo "host: building aquamarine $rev failed" >&2
 			return 1
