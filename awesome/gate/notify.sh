@@ -271,12 +271,12 @@ from gi.repository import Gio, GLib
 V, i32, shape = GLib.Variant, GLib.Variant.new_int32, sys.argv[1]
 def ay(n): return V.new_from_bytes(GLib.VariantType.new("ay"), GLib.Bytes.new(bytes((30, 160, 240, 255)) * (n // 4)), True)
 def img(w, n=0): return V.new_tuple(i32(w), i32(w), i32(w * 4), V.new_boolean(True), i32(8), i32(4), ay(n or w * w * 4))
-def entries(pairs): return V.new_array(GLib.VariantType.new("{sv}"), [V.new_dict_entry(V("s", k), V.new_variant(v)) for k, v in pairs])
-hints = {"wrapped": {"x-wrapped": V("v", ay(8 << 20))}, "be-small": {"image-data": img(256)}, "be-big": {"image-data": img(1024)},
-         "be-lying": {"image-data": img(16, 1 << 20)},
-         "walk-past": {"x-many": V("as", ["x"] * 100000)},
-         "dup-keys": entries([("x-dup", i32(1))] * 100000),
-         "be-many": entries([("image-data", img(200))] * 3)}[shape]
+def entries(k, v, n): return V.new_array(GLib.VariantType.new("{sv}"), [V.new_dict_entry(V("s", k), V.new_variant(v))] * n)
+hints = {"wrapped": lambda: {"x-wrapped": V("v", ay(8 << 20))}, "be-small": lambda: {"image-data": img(256)},
+         "be-big": lambda: {"image-data": img(1024)}, "be-lying": lambda: {"image-data": img(16, 1 << 20)},
+         "walk-past": lambda: {"x-many": V.new_strv(["x"] * 100000)},
+         "dup-keys": lambda: entries("x-dup", i32(1), 100000),
+         "be-many": lambda: entries("image-data", img(200), 3)}[shape]()
 msg = Gio.DBusMessage.new_method_call("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "Notify")
 msg.set_body(V.new_tuple(V("s", "shapeapp"), V("u", 0), V("s", ""), V("s", "shape"), V("s", shape), V("as", []), hints if isinstance(hints, V) else V("a{sv}", hints), i32(4000)))
 if shape.startswith("be-"):
