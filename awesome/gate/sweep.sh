@@ -66,14 +66,21 @@ worker() { # worker N "COMMIT PLUGIN KEY"... — in order, incremental, in its o
 	local n=$1
 	shift
 	local wt=$ROOT/sweep-$n out=$ROOT/sweep-w$n.out
-	# a tmp cleaner can take the .git link and leave the tree: rebuild it
-	[[ -e $wt/.git ]] || { rm -rf "$wt" && git -C "$REPO" worktree prune && git -C "$REPO" worktree add -q --detach "$wt" HEAD; }
+	# a tmp cleaner can take the .git link and leave the tree, and a copied
+	# repository brings another checkout's worktree records: rebuild it
+	{ [[ -e $wt/.git ]] && git -C "$wt" rev-parse -q --verify HEAD > /dev/null 2>&1; } ||
+		{ rm -rf "$wt" && git -C "$REPO" worktree prune && git -C "$REPO" worktree add -q --detach "$wt" HEAD; }
 	: > "$out"
 	for job in "$@"; do
 		local c p k subj
 		read -r c p k <<< "$job"
-		git -C "$wt" checkout -q --detach "$c"
-		subj=$(printf '%-8s %s %s' "$p" "${c:0:7}" "$(git -C "$wt" log -1 --format=%s)")
+		subj=$(printf '%-8s %s %s' "$p" "${c:0:7}" "$(git -C "$REPO" log -1 --format=%s "$c")")
+		# forced: a stale index or stray file must never leave the last
+		# commit's tree under this one's name (ignored build output stays)
+		if ! git -C "$wt" checkout -q -f --detach "$c" || ! git -C "$wt" clean -fdq; then
+			echo "$c $p FAIL checkout $subj" >> "$out"
+			continue
+		fi
 		if ! make -C "$wt/$p" -j"$J" -l"$(nproc)" > "$ROOT/sweep-w$n-build.log" 2>&1; then
 			echo "$c $p FAIL build  $subj" >> "$out"
 			continue
