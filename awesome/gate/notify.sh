@@ -330,6 +330,51 @@ chk "stack: the spread stack ends on the screen" test "$(panel_bottom $STATE/sta
 chk "stack: spreading acted on nothing" test "$(st)" = "center:1 live:30 dnd:0"
 on_center_page() { [[ " $(hq awesome center-page) " == *" $1 "* ]]; }
 chk "stack: the page opens on its header" until_ok 3 on_center_page "-build 30+29"
+
+# ---- the page scrolls: a finger carries it, its lift flings it, a notch glides
+# center-scroll: "<px below the head|?> <row>+<px into it> <none|glide|fling>"
+scroll_is() { [[ "$(hq awesome center-scroll)" == $1 ]]; }
+# a motion lasts a few hundred ms: read it back to back, no pause between
+scroll_seen() { local _; for _ in $(seq 1 200); do scroll_is "$1" && return 0; done; return 1; }
+lit_in() { # lit_in <png> <x0> <x1> <y0> <y1>: the box's lit pixels
+	python3 - "$@" <<'PY2'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+px = im.load()
+x0, x1, y0, y1 = map(int, sys.argv[2:6])
+print(sum(1 for y in range(y0, y1) for x in range(x0, x1) if max(px[x, y]) > 5))
+PY2
+}
+chk "scroll: the page opens at the column's head" scroll_is "0 0+0 none"
+# slow travel (no fling): 60 px past the header's 36, the first card cut 24
+printf 'move %s %s\nsleep 60\nfscroll 0 10\nsleep 30\nfscroll 0 20\nsleep 30\nfscroll 0 30\nsleep 150\nfstop 0\nsleep 40\n' "$ROWX" "$ROWY" | vp
+chk "scroll: a finger carries the page 1:1" until_ok 3 scroll_is "60 1+24 none"
+# cut at the page's top: none of it in the heading's gap (left, clear of the
+# heading's words and the page's up chip), its glass under it
+cut_clean() { (($(lit_in "$1" $((PANEL_X + 20)) $((PANEL_X + 120)) $((CARD_Y - 6)) $((CARD_Y - 1))) == 0 && $(lit_in "$1" $((PANEL_X + 20)) $((PANEL_X + 120)) $((CARD_Y + 2)) $((CARD_Y + 10))) > 100)); }
+chk "scroll: a row the page's top cuts shows under it alone" shot_until 3 $STATE/scroll-cut.png cut_clean $STATE/scroll-cut.png
+# the cut row's box reaches the moon's lower half: the moon answers there
+click $MOON_X $((HEAD_Y + 20)) 272
+chk "scroll: the heading answers over a row scrolled under it" until_ok 3 hq_matches '^For 30 Minutes' awesome menu
+tap esc
+chk "scroll: the menu shut, the page held" until_ok 3 scroll_is "60 1+24 none"
+# the nested animates nothing: a notch lands on the next row's top at once
+notch() { printf 'move %s %s\nsleep 60\nscroll 0 15\nsleep 60\n' "$ROWX" "$ROWY" | vp; }
+notch
+chk "scroll: without animations a notch lands on the next row's top" until_ok 3 scroll_is "* 2+0 none"
+hq eval "hl.config({ animations = { enabled = true } })" >/dev/null
+# animated, it glides there: seen on its way, then landed
+notch &
+chk "scroll: a wheel notch glides" scroll_seen "* glide"
+wait $!
+chk "scroll: ...onto the next row's top" until_ok 3 scroll_is "* 3+0 none"
+# a quick swipe lifted mid-travel coasts on, and stops by itself
+printf 'move %s %s\nsleep 60\nfscroll 0 40\nsleep 10\nfscroll 0 40\nsleep 10\nfscroll 0 40\nsleep 10\nfscroll 0 40\nsleep 10\nfstop 0\nsleep 40\n' "$ROWX" "$ROWY" | vp &
+chk "scroll: a lift at speed flings the page" scroll_seen "* fling"
+wait $!
+chk "scroll: the fling comes to rest rows past the finger's travel" until_ok 4 scroll_is "* [1-9][0-9]+* none"
+hq eval "hl.config({ animations = { enabled = false } })" >/dev/null
 wheel 600
 chk "stack: the wheel pages to its oldest card" until_ok 3 on_center_page ".build 1"
 hq awesome center >/dev/null
@@ -490,6 +535,38 @@ chk "menu-edge: the menu has room neither under the pointer nor above it" test $
 chk "menu-edge: flipped up, it stays under the bar" test $((RY0 - 19)) -ge $N_TOP
 tap esc
 chk "menu-edge: the hold and the release acted on nothing" until_is 3 "center:1 live:$((NF + 1)) dnd:0" st
+hq awesome center >/dev/null
+nfyact_done
+nclear
+# ---- a field armed on a row the page cuts comes into view -------------------
+# the chat with a field first, so it ranks last under fourteen newer chats;
+# the finger carries the page until its row shows, cut, at the page's bottom
+nfyact cutapp "Cut chat" 2 inline-reply Reply 3 desktop-entry s cutapp category s im.received conversation-id s cut
+sent_wait
+for i in $(seq 1 14); do pcidb cutfill$i "Fill $i" cf$i hello; done
+hq awesome center >/dev/null
+chk "reveal: fifteen chats wait in the center" until_is 3 "center:1 live:15 dnd:0" st
+cut_last() { [[ "$(hq awesome center-page)" == *"@Cut chat" ]]; }
+finger() { printf 'move %s %s\nsleep 40\nfscroll 0 %s\nsleep 150\nfstop 0\nsleep 20\n' "$ROWX" "$ROWY" "$1" | vp; }
+for _ in $(seq 1 60); do cut_last && break; finger 15; done
+finger 20 # past its first pixels: room to hold it
+chk "reveal: the chat's row shows cut at the page's bottom" cut_last
+px_of() { local p; read -r p _ <<<"$(hq awesome center-scroll)"; echo "$p"; }
+PX0="$(px_of)"
+hold_menu $((PANEL_X + 30)) $((MON_H - 8 - 10))
+read -r RX RY <<<"$(hq awesome menu-at Reply)"
+printf 'move %s %s\nsleep 40\n' "$RX" "$RY" | vp
+release_left
+px_over() { local p; p="$(px_of)"; [[ "$p" =~ ^[0-9]+$ ]] && ((p > $1)); }
+px_under() { local p; p="$(px_of)"; [[ "$p" =~ ^[0-9]+$ ]] && ((p < $1)); }
+px_is() { [[ "$(px_of)" == "$1" ]]; }
+chk "reveal: Reply on the cut row brings it into view" until_ok 3 px_over "$PX0"
+PX1="$(px_of)"
+finger -200
+chk "reveal: a finger still carries the page off the armed row" until_ok 3 px_under "$PX1"
+tap 35
+chk "reveal: a key the field takes brings it back" until_ok 3 px_is "$PX1"
+tap esc
 hq awesome center >/dev/null
 nfyact_done
 nclear

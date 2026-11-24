@@ -247,9 +247,10 @@ namespace Awesome::Notify {
     void renderCapsules(const SPaint& P, const SType& T); // the OSD band, top center
     void renderCenter(const SPaint& P, const SType& T);
     std::string centerDescribe();     // the gate's: the status line and the rows as the last warm built them (defined in its build only)
-    std::string centerPageDescribe(); // the gate's: the rows the last draw placed on the page (ditto)
+    std::string centerPageDescribe();
+    std::string centerScrollDescribe(); // the gate's: the rows the last draw placed on the page (ditto)
     bool popupsAnimating(); // any arrival spring still running
-    bool centerAnimating(); // the open spring still running
+    bool centerAnimating(); // the open spring, a glide or a fling still running
 
     // ---- input.cpp: acting on a card ----
 

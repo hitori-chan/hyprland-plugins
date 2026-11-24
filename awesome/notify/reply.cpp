@@ -87,6 +87,7 @@ namespace Awesome::Notify {
         s_target = replyTarget(*N);
         s_text.clear();
         refreshBannerHold(); // a banner holds its clock while its field is open
+        centerReveal();      // armed on a row the page cuts, the field comes into view
         notifChanged();
     }
 
@@ -98,6 +99,7 @@ namespace Awesome::Notify {
         s_target = target;
         s_text   = text;
         refreshBannerHold();
+        centerReveal();
         notifChanged();
     }
 
@@ -147,9 +149,12 @@ namespace Awesome::Notify {
             return false;
         const xkb_keycode_t keycode = evdev + 8;
         // a key that types (or erases) keeps typing while held
+        // what the field takes brings it back into view (a scroll can leave
+        // it off the page; the keys still go to it), as a caret does
         const auto typed = [&]() {
             if (!repeating)
                 s_repeat.start(KB, evdev);
+            centerReveal();
             notifChanged();
             return true;
         };
@@ -172,6 +177,7 @@ namespace Awesome::Notify {
                 case XKB_KEY_u: // readline's kill-line, the one chord worth keeping
                 case XKB_KEY_U:
                     s_text.clear();
+                    centerReveal();
                     notifChanged();
                     return true;
                 case XKB_KEY_w: // and kill-word, for the same reason
@@ -180,6 +186,7 @@ namespace Awesome::Notify {
                         s_text.pop_back();
                     while (!s_text.empty() && s_text.back() != ' ')
                         s_text.pop_back();
+                    centerReveal();
                     notifChanged();
                     return true;
                 }

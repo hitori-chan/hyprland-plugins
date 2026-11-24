@@ -498,6 +498,7 @@ namespace Awesome::Notify {
 
     void warmNotifs();   // build every texture the next frame will paint; no-ops inside a render
     void damageNotifs(); // damage the previous layout and the fresh one
+    void notifMoved();   // the page moved: damage, and the motion tick while it glides; no warm
 
     // The model changed: rebuild textures and damage, deferred to the event
     // loop; bursts (an OSD volume sweep) coalesce into one warm.
@@ -510,8 +511,11 @@ namespace Awesome::Notify {
     // absorbed stack to banners; an action that closes on its way out (the
     // sender is coming up over them) does not.
     void setCenter(bool on, bool repop = false);
-    void centerPage(int dir); // wheel: >0 towards older rows
-    void centerPageScreen(int dir); // the paging chips: a screenful
+    void centerPage(int dir);       // the wheel: dir rows (>0 towards the older), gliding
+    void centerPageScreen(int dir); // the paging chips: a screenful, gliding
+    void centerScroll(double px, uint32_t ms, bool lift); // a finger: the page follows it, its lift flings
+    void centerScrollHalt();        // a press: the page stops where it shows
+    void centerReveal();            // the keyboard's row (an armed field's, else the selection) into view at the next warm
     void centerToggleGroup(const std::string& appKey);
     void centerDismissStack(const std::string& key);
     void centerToggleRow(uint32_t id);

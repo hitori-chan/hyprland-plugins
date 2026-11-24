@@ -51,6 +51,7 @@
 
 #include "../core/jobs.hpp"
 #include "../core/keys.hpp"
+#include "../core/wheel.hpp"
 
 #include <hyprland/src/pointer/cursor/CursorShapeOverrideController.hpp>
 
@@ -407,6 +408,7 @@ namespace Awesome::Notify {
 
         info.cancelled = true; // the surface is ours: the press must not reach the window beneath
         swallowRelease |= BIT;
+        centerScrollHalt(); // it acts on what it saw: the page stops there
         if (BIT & ~3u)
             return; // middle and the side buttons: no verb
 
@@ -439,13 +441,13 @@ namespace Awesome::Notify {
                 queueHit({.kind = SCard::MENU_ITEM, .id = CARD->id, .bit = 1u});
     }
 
-    // ---- wheel: page the center, only inside the panel box ----
+    // ---- wheel: scroll the center, only inside the panel box ----
 
-    static double scrollAcc = 0;
+    static Wheel::CNotches wheelNotches;
 
     void          onMouseAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
         if (Awesome::sessionLocked() || Awesome::nativeInputCaptureActive()) {
-            scrollAcc = 0;
+            wheelNotches = {};
             return;
         }
         // the cheap tests first: every wheel notch and touchpad frame lands
@@ -466,12 +468,19 @@ namespace Awesome::Notify {
         // card out from under it)
         if (e.axis != WL_POINTER_AXIS_VERTICAL_SCROLL || MENU)
             return;
-        const double DELTA = e.delta != 0.0 ? e.delta : e.deltaDiscrete / 120.0 * 15.0;
-        scrollAcc += DELTA;
-        if (const int STEP = (int)(scrollAcc / 15.0); STEP != 0) {
-            scrollAcc -= STEP * 15.0;
-            centerPage(STEP);
+        // a wheel glides row by row; a finger (a touchpad, a TrackPoint's
+        // scroll) carries the page 1:1 at the user's scroll factor, as a
+        // client's list would, and its lift (delta 0) flings it
+        if (e.source == WL_POINTER_AXIS_SOURCE_WHEEL || e.source == WL_POINTER_AXIS_SOURCE_WHEEL_TILT) {
+            if (const int N = wheelNotches.step(e))
+                centerPage(N);
+            return;
         }
+        static auto  TOUCHPAD = CConfigValue<Config::FLOAT>("input:touchpad:scroll_factor");
+        static auto  OTHER    = CConfigValue<Config::FLOAT>("input:scroll_factor");
+        const bool   FINGER   = e.source == WL_POINTER_AXIS_SOURCE_FINGER;
+        centerScroll(e.delta * (FINGER ? *TOUCHPAD : *OTHER), e.timeMs, FINGER && e.delta == 0.0);
+        refreshPointerOwnership(); // the rows the page moved under a still pointer
     }
 
     // ---- keys: esc peels the center (tray menu > center > menubar), and
@@ -651,7 +660,8 @@ namespace Awesome::Notify {
         const bool LOCK = Awesome::sessionLocked();
         swallowRelease = 0;
         heldButtons    = 0;
-        scrollAcc      = 0;
+        wheelNotches   = {};
+        centerScrollHalt();
         dropPress();
         CardMenu::close(); // half-tracked input state: its press may never come back up
         if (LOCK) {
@@ -799,7 +809,7 @@ namespace Awesome::Notify {
         CardMenu::exit();
         swallowRelease = 0;
         heldButtons    = 0;
-        scrollAcc      = 0;
+        wheelNotches   = {};
         releasePointer();
     }
 

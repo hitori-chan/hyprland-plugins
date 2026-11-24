@@ -34,6 +34,9 @@
 #include "ui.hpp"
 
 #include "../core/walltimer.hpp"
+#include "../core/wheel.hpp"
+
+#include <format>
 
 namespace Awesome::Notify {
 
@@ -41,8 +44,8 @@ namespace Awesome::Notify {
     inline constexpr size_t AUTOGROUP_AT = 2;
 
     static bool                  s_on    = false;
-    static size_t                s_skip  = 0; // wheel paging: top-level items skipped
-    static size_t                s_items = 0; // items the last layout had (clamps paging)
+    static size_t                s_skip  = 0; // the page's top row (s_off px past its top)
+    static size_t                s_items = 0; // rows the last layout had
     static std::set<uint32_t>    s_openedRow, s_foldedRow;     // user overrides of the budget
     static std::set<std::string> s_openedGroup, s_foldedGroup; // ditto, per app key
     static Time::steady_tp       s_openedAt;
@@ -69,6 +72,37 @@ namespace Awesome::Notify {
     // is the last item the placement fitted — the paging keys work off it.
     static int      s_sel     = -1;
     static size_t   s_lastVis = 0;
+    static bool     s_reveal  = false; // the keyboard moved, or a field armed or took a key: the next warm brings its row into view
+
+    // ---- scrolling ----
+    // The page's top is row s_skip, s_off px past that row's top (into the
+    // row or the gap after it). A row keeps its form wherever the page
+    // stands (the budget runs from the column's head), so a scroll only
+    // moves rows: the frames between warms advance the motion and
+    // translate, measuring nothing. The finger moves the page itself, 1:1;
+    // its lift flings it; the wheel, the chips and the keyboard glide it to
+    // a row's top.
+    struct SPos {
+        size_t row = 0;
+        double off = 0;
+    };
+    enum class eMotion : uint8_t {
+        NONE,
+        GLIDE,
+        FLING,
+    };
+    static double          s_off    = 0;
+    static eMotion         s_motion = eMotion::NONE;
+    static SPos            s_glideTo;          // GLIDE: its target
+    static double          s_vel = 0;          // FLING: px/s, toward the older rows
+    static Time::steady_tp s_movedAt;          // the motion's last advance
+    static double          s_pageH = 0, s_gap = 0; // the last layout's page and gap: input moves the page between layouts
+    static Wheel::CFling   s_finger;
+    // The glide closes on its target exponentially (95 % in 3 of its time
+    // constants), the fling coasts v·FLING_TAU, as a list's kinetic scroll
+    // does; a lift slower than FLING_MIN px/s does not fling, and a fling
+    // ends below FLING_STOP.
+    inline constexpr double GLIDE_TAU = 0.05, FLING_TAU = 0.4, FLING_MIN = 150, FLING_STOP = 20, FLING_MAX = 8000;
 
     // the budget's verdict on one card it placed
     struct SPlacedCard {
@@ -88,6 +122,155 @@ namespace Awesome::Notify {
     static std::unordered_map<uint32_t, bool>    s_rowState;
     static std::unordered_map<std::string, bool> s_groupState;
 
+    // ---- the page's geometry, over the rows the last warm measured ----
+
+    // the room above row i: none at the column's head, the gap between
+    // rows, and a wider one where a group of the ranking ends
+    static double leadOf(size_t i) {
+        if (i == 0 || i >= s_disp.size())
+            return 0;
+        return s_gap + (s_disp[i].tier != s_disp[i - 1].tier ? TIER_GAP : 0);
+    }
+    static bool known(size_t i) {
+        return i < s_card.size() && s_card[i].measured;
+    }
+    // row i's top to the next row's top
+    static double spanOf(size_t i) {
+        return s_itemH[i] + leadOf(i + 1);
+    }
+
+    // How far the page at `p` can still move down: to the end stop (the
+    // column's bottom at the page's bottom) when the measured rows reach
+    // the column's end (`end`), else to where they end.
+    static double roomBelow(const SPos& p, bool* end = nullptr) {
+        double y = -p.off;
+        size_t i = p.row;
+        for (; i < s_disp.size() && known(i); i++)
+            y += spanOf(i);
+        if (end)
+            *end = i == s_disp.size();
+        return std::max(0.0, y - s_pageH);
+    }
+
+    // `p` moved d px (down: toward the older rows) through the measured
+    // rows: it stops at the head, the end stop and an unmeasured row
+    static SPos movedBy(SPos p, double d) {
+        if (d > 0) {
+            p.off += std::min(d, roomBelow(p));
+            while (p.row + 1 < s_disp.size() && known(p.row) && p.off >= spanOf(p.row)) {
+                p.off -= spanOf(p.row);
+                ++p.row;
+            }
+        } else if (d < 0) {
+            p.off += d;
+            while (p.off < 0 && p.row > 0 && known(p.row - 1)) {
+                --p.row;
+                p.off += spanOf(p.row);
+            }
+            p.off = std::max(p.off, 0.0);
+        }
+        return p;
+    }
+
+    // b's distance below a, through measured rows (none: one between is not)
+    static std::optional<double> distance(const SPos& a, const SPos& b) {
+        if (b.row < a.row || (b.row == a.row && b.off < a.off)) {
+            const auto D = distance(b, a);
+            return D ? std::optional{-*D} : std::nullopt;
+        }
+        double d = b.off - a.off;
+        for (size_t i = a.row; i < b.row; i++) {
+            if (!known(i))
+                return std::nullopt;
+            d += spanOf(i);
+        }
+        return d;
+    }
+
+    // the page inside its bounds: an offset past its row's span carried
+    // over, and a page past the end stop (rows went) back up to it
+    static SPos clampPos(SPos p) {
+        p.row = s_disp.empty() ? 0 : std::min(p.row, s_disp.size() - 1);
+        p     = movedBy({p.row, 0}, p.off); // its offset held to the end stop
+        bool end = false;
+        roomBelow(p, &end);
+        if (end) { // the column ends above the page's bottom: up to the end stop, the head the limit
+            double y = -p.off;
+            for (size_t i = p.row; i < s_disp.size(); i++)
+                y += spanOf(i);
+            if (y < s_pageH)
+                p = movedBy(p, y - s_pageH);
+        }
+        return p;
+    }
+
+    // how far the page at `p` can move up through measured rows
+    static double roomAbove(const SPos& p) {
+        double up = p.off;
+        for (size_t i = p.row; i-- > 0 && known(i);)
+            up += spanOf(i);
+        return up;
+    }
+
+    // rows the frames ahead may show that no warm measured: within half a
+    // page of the page's edges
+    static bool needsMeasure(const SPos& p) {
+        bool end = false;
+        if (roomBelow(p, &end) < s_pageH / 2 && !end)
+            return true;
+        size_t top = p.row;
+        while (top > 0 && known(top - 1))
+            --top;
+        return top > 0 && roomAbove(p) < s_pageH / 2;
+    }
+
+    static void glideTo(SPos to) {
+        if (s_motion != eMotion::GLIDE)
+            s_movedAt = Time::steadyNow();
+        s_motion  = eMotion::GLIDE;
+        s_glideTo = to;
+        s_vel     = 0;
+    }
+
+    // The draw's advance: where the glide or the fling has the page now.
+    // Time, not frames, moves it; without animations a glide lands at once.
+    // The measured edge holds it, and half a page short of that edge it
+    // asks for the warm that measures on.
+    static void stepMotion() {
+        if (s_motion == eMotion::NONE)
+            return;
+        const auto   NOW = Time::steadyNow();
+        const double DT  = std::chrono::duration<double>(NOW - s_movedAt).count();
+        s_movedAt        = NOW;
+        const SPos AT{s_skip, s_off};
+        SPos       next = AT;
+        bool       end  = false;
+        const double ROOM = roomBelow(AT, &end);
+        if (s_motion == eMotion::GLIDE) {
+            // a target past rows no warm measured: toward the measured edge,
+            // the warms measuring on ahead of the page
+            const auto   D    = distance(AT, s_glideTo);
+            const double DIST = std::min(D ? *D : s_glideTo.row > AT.row ? ROOM : -roomAbove(AT), ROOM); // past the end stop: the end stop
+            const double STEP = animationsOn() && std::abs(DIST) > 0.5 ? DIST * (1.0 - std::exp(-DT / GLIDE_TAU)) : DIST;
+            next              = movedBy(AT, STEP);
+            if (D && (std::abs(*D - STEP) < 0.01 || (end && STEP == DIST))) // there, or held at the end stop
+                s_motion = eMotion::NONE;
+        } else {
+            const double DECAY = std::exp(-DT / FLING_TAU);
+            const double STEP  = s_vel * FLING_TAU * (1.0 - DECAY);
+            s_vel *= DECAY;
+            next = movedBy(AT, STEP);
+            // the head or the end stop ends it; the measured edge only holds it
+            const bool STOPPED = STEP > 0 ? STEP > ROOM && end : next.row == 0 && next.off <= 0;
+            if (std::abs(s_vel) < FLING_STOP || STOPPED)
+                s_motion = eMotion::NONE;
+        }
+        s_skip = next.row;
+        s_off  = next.off;
+        if (needsMeasure(next))
+            notifChanged();
+    }
+
     bool                                         centerVisible() {
         return s_on;
     }
@@ -97,7 +280,10 @@ namespace Awesome::Notify {
         // tick damaging the cards for nothing
         if (s_animating && animT(s_openedAt, Theme::MOTION_SPATIAL) >= 1.f)
             s_animating = false;
-        return s_animating;
+        // likewise a glide or a fling no draw advanced for a while
+        if (s_motion != eMotion::NONE && Time::steadyNow() - s_movedAt > std::chrono::milliseconds(250))
+            s_motion = eMotion::NONE;
+        return s_animating || s_motion != eMotion::NONE;
     }
 
     // Everything one visit accumulates. The close resets it (paging and
@@ -117,6 +303,10 @@ namespace Awesome::Notify {
         s_animating = false;
         s_sel       = -1;
         s_lastVis   = 0;
+        s_reveal    = false;
+        s_off       = 0;
+        s_motion    = eMotion::NONE;
+        s_finger.clear();
         s_disp.clear();
         s_itemH.clear();
         s_card.clear();
@@ -164,14 +354,59 @@ namespace Awesome::Notify {
         notifChanged();
     }
 
+    // Row by row from where the glide was going (else from the page's
+    // top): up from inside a row reaches that row's top first, and a target
+    // past the end stop is the end stop, so the way back starts there.
     void centerPage(int dir) {
-        if (s_items <= 1)
+        if (s_items <= 1 || dir == 0)
             return;
-        s_skip = (size_t)std::clamp((int64_t)s_skip + dir, (int64_t)0, (int64_t)(s_items - 1));
+        const SPos AT{s_skip, s_off};
+        const SPos FROM = s_motion == eMotion::GLIDE ? s_glideTo : AT;
+        const auto ROW  = (int64_t)FROM.row + dir + (dir < 0 && FROM.off > 0.5 ? 1 : 0);
+        SPos       to{(size_t)std::clamp<int64_t>(ROW, 0, (int64_t)s_items - 1), 0};
+        bool       end  = false;
+        const auto ROOM = roomBelow(AT, &end);
+        if (const auto D = distance(AT, to); end && D && *D > ROOM)
+            to = movedBy(AT, ROOM);
+        glideTo(to);
         // a pointer page leaves the keyboard's row behind: the next arrow
         // enters the new page (Enter/Delete must never act off screen)
         s_sel = -1;
-        notifChanged();
+        notifChanged(); // the warm measures what the glide crosses
+    }
+
+    void centerScroll(double px, uint32_t ms, bool lift) {
+        if (s_disp.empty())
+            return;
+        if (lift) {
+            const double V = s_finger.lift(ms);
+            if (animationsOn() && std::abs(V) >= FLING_MIN) {
+                s_motion  = eMotion::FLING;
+                s_vel     = std::clamp(V, -FLING_MAX, FLING_MAX);
+                s_movedAt = Time::steadyNow();
+                notifMoved();
+            }
+            return;
+        }
+        s_motion = eMotion::NONE;
+        s_finger.add(ms, px);
+        const SPos NEXT = movedBy({s_skip, s_off}, px);
+        s_skip          = NEXT.row;
+        s_off           = NEXT.off;
+        s_sel           = -1;
+        if (needsMeasure(NEXT))
+            notifChanged();
+        else
+            notifMoved();
+    }
+
+    void centerReveal() {
+        s_reveal = true;
+    }
+
+    void centerScrollHalt() {
+        s_motion = eMotion::NONE;
+        s_finger.clear();
     }
 
     void centerDeselect() {
@@ -196,12 +431,7 @@ namespace Awesome::Notify {
             s_sel = dir > 0 ? std::min((int)s_skip, LAST) : std::min((int)s_lastVis, LAST);
         else
             s_sel = std::clamp(s_sel + dir, 0, LAST);
-        // page just far enough to keep the selection on screen; the next warm
-        // re-fits the page around the new s_skip
-        if (s_sel < (int)s_skip)
-            s_skip = (size_t)s_sel;
-        else if (s_sel > (int)s_lastVis)
-            s_skip += (size_t)s_sel - s_lastVis;
+        s_reveal = true; // the warm glides it into view, its rows measured
         notifChanged();
     }
 
@@ -365,19 +595,6 @@ namespace Awesome::Notify {
         staged.clear();
     }
 
-    // the room above item i: none at the page's top, the gap between items,
-    // and a wider one where a group of the ranking ends
-    static double leadOf(size_t i, double gap) {
-        if (i == s_skip || i == 0)
-            return 0;
-        return gap + (s_disp[i].tier != s_disp[i - 1].tier ? TIER_GAP : 0);
-    }
-
-    // The expansion budget walks the page from its top row down, opening
-    // what still fits. The top card always opens; a user override wins over
-    // the budget in both directions. Cards past the fold are only measured
-    // FOLDED — their open form would raster text no frame can show.
-
     // one card's verdict: `extra` is what must still fit under it (a deck's
     // depth), `force` the open it must take (an armed field, the user's
     // unfold) or must not (the user's fold)
@@ -398,57 +615,77 @@ namespace Awesome::Notify {
         return c;
     }
 
-    static void runBudget(const SPaint& P, const SType& T, double contentW, double bodyCap, double gap) {
-        double used = 0;
-        for (size_t i = s_skip; i < s_disp.size(); i++) {
-            const auto&  D    = s_disp[i];
-            const double LEAD = leadOf(i, gap);
-            const bool   TOP  = i == s_skip;
-            const double ROOM = bodyCap - used - LEAD;
-            auto&        C    = s_card[i];
-            switch (D.kind) {
-                case SDisp::FOLD: s_itemH[i] = FOLD_H; break;
-                case SDisp::HEAD: s_itemH[i] = SHEAD_H; break;
-                case SDisp::DECK: {
-                    const double DEPTH = deckDepth(D.items.size());
-                    C                  = budgetCard(P, T, D.items.front(), contentW, ROOM, DEPTH, TOP, true);
-                    s_itemH[i]         = C.h + DEPTH;
-                    break;
-                }
-                case SDisp::CARD:
-                case SDisp::MEMBER:
-                    C                               = budgetCard(P, T, D.items.front(), contentW, ROOM, 0, TOP, false);
-                    s_itemH[i]                      = C.h;
-                    s_rowState[D.items.front()->id] = C.open;
-                    break;
-            }
-            C.measured = true;
-            used += LEAD + s_itemH[i];
-            // past the fold: no later card is on this page, and measuring one
-            // would raster its texts and queue an icon decode for content
-            // nothing draws. Unmeasured cards never fit; paging re-runs the
-            // budget from the new top.
-            if (i > s_skip && used > bodyCap) {
-                for (size_t k = i + 1; k < s_disp.size(); k++)
-                    s_itemH[k] = bodyCap + 1;
+    static void measureRow(const SPaint& P, const SType& T, size_t i, double contentW, double room, bool top) {
+        const auto& D = s_disp[i];
+        auto&       C = s_card[i];
+        switch (D.kind) {
+            case SDisp::FOLD: s_itemH[i] = FOLD_H; break;
+            case SDisp::HEAD: s_itemH[i] = SHEAD_H; break;
+            case SDisp::DECK: {
+                const double DEPTH = deckDepth(D.items.size());
+                C                  = budgetCard(P, T, D.items.front(), contentW, room, DEPTH, top, true);
+                s_itemH[i]         = C.h + DEPTH;
                 break;
             }
+            case SDisp::CARD:
+            case SDisp::MEMBER:
+                C                               = budgetCard(P, T, D.items.front(), contentW, room, 0, top, false);
+                s_itemH[i]                      = C.h;
+                s_rowState[D.items.front()->id] = C.open;
+                break;
         }
+        C.measured = true;
     }
 
-    // The last row placed from s_skip down at these heights (the draw's
-    // placement, ahead of it).
-    static size_t lastFit(double bodyCap, double gap) {
+    // The expansion budget walks the column from its head, opening what
+    // its first page fits: the top card always opens, a user override wins
+    // both ways, and every row past the first page comes folded (a click
+    // or Space opens it) — a row's form never hangs on where the page
+    // stands. Measured are the first page and the rows around the page (a
+    // page above it, two below it, and around a glide's target): what the
+    // frames until the next warm can show. Folded rows past them are not
+    // measured — that would raster texts and queue icon decodes for rows
+    // no frame shows.
+    static void runBudget(const SPaint& P, const SType& T, double contentW, double bodyCap) {
         double used = 0;
-        size_t last = s_skip;
-        for (size_t i = s_skip; i < s_itemH.size(); i++) {
-            const double LEAD = leadOf(i, gap);
-            if (i > s_skip && used + LEAD + s_itemH[i] > bodyCap)
-                break;
+        for (size_t i = 0; i < s_disp.size() && used <= bodyCap; i++) {
+            const double LEAD = leadOf(i);
+            measureRow(P, T, i, contentW, bodyCap - used - LEAD, i == 0);
             used += LEAD + s_itemH[i];
-            last = i;
         }
-        return last;
+        const auto AROUND = [&](const SPos& at) {
+            double up = at.off;
+            for (size_t i = std::min(at.row, s_disp.size()); i-- > 0 && up < bodyCap;) {
+                if (!known(i))
+                    measureRow(P, T, i, contentW, -1, false);
+                up += spanOf(i);
+            }
+            double down = -at.off;
+            for (size_t i = at.row; i < s_disp.size() && down < 3 * bodyCap; i++) {
+                if (!known(i))
+                    measureRow(P, T, i, contentW, -1, false);
+                down += spanOf(i);
+            }
+        };
+        AROUND({s_skip, s_off});
+        if (s_motion == eMotion::GLIDE)
+            AROUND(s_glideTo);
+    }
+
+    // a row's identity across a rebuild: its kind and its first card
+    struct SRowKey {
+        SDisp::eKind kind = SDisp::CARD;
+        uint32_t     id   = 0;
+        bool         operator==(const SRowKey&) const = default;
+    };
+    static SRowKey rowKey(size_t i) {
+        return i < s_disp.size() ? SRowKey{s_disp[i].kind, s_disp[i].items.front()->id} : SRowKey{};
+    }
+    static std::optional<size_t> findRow(const SRowKey& key) {
+        for (size_t i = 0; i < s_disp.size(); i++)
+            if (rowKey(i) == key)
+                return i;
+        return std::nullopt;
     }
 
     // The row the keyboard works on: an armed reply field's, else the
@@ -530,7 +767,16 @@ namespace Awesome::Notify {
             uint32_t    selId = 0;
             std::string selGroup;
             const bool  SELECTED = centerSelection(selId, selGroup);
+            // the page keeps its rows across the rebuild: a card landing
+            // above moves neither what it shows nor where a glide goes
+            const auto ANCHOR = rowKey(s_skip), TARGET = rowKey(s_glideTo.row);
             buildDisplay(s_disp);
+            if (const auto AT = findRow(ANCHOR))
+                s_skip = *AT;
+            else
+                s_off = 0;
+            if (const auto TO = findRow(TARGET); TO && s_motion == eMotion::GLIDE)
+                s_glideTo.row = *TO;
             if (SELECTED)
                 for (size_t i = 0; i < s_disp.size(); i++) {
                     const auto& D = s_disp[i];
@@ -542,47 +788,62 @@ namespace Awesome::Notify {
             s_skip = s_disp.empty() ? 0 : std::min(s_skip, s_disp.size() - 1);
             if (s_sel >= (int)s_disp.size())
                 s_sel = s_disp.empty() ? -1 : (int)s_disp.size() - 1;
+            s_gap   = GAP;
+            s_pageH = BODYCAP;
             s_itemH.assign(s_disp.size(), 0.0);
             s_card.assign(s_disp.size(), {});
             s_rowState.clear();
-            runBudget(P, T, W, BODYCAP, GAP);
-            // the keyboard's card stays on the page: a step past the last one
-            // pages by one, and a taller next card (or cards the new top
-            // re-opened) can still leave it below the fold
-            for (const int KEEP = keyboardRow(); KEEP > (int)s_skip && (size_t)KEEP > lastFit(BODYCAP, GAP);) {
-                ++s_skip;
-                s_card.assign(s_disp.size(), {});
-                s_rowState.clear();
-                runBudget(P, T, W, BODYCAP, GAP);
+            runBudget(P, T, W, BODYCAP);
+            const SPos AT = clampPos({s_skip, s_off});
+            s_skip        = AT.row;
+            s_off         = AT.off;
+            if (s_motion == eMotion::GLIDE)
+                s_glideTo = clampPos(s_glideTo);
+            // the keyboard's row into view, by the shortest glide: its top
+            // to the page's top, else its bottom to the page's bottom
+            if (const int K = keyboardRow(); s_reveal && K >= 0 && known((size_t)K)) {
+                const SPos TOP{(size_t)K, 0};
+                if (const auto D = distance(AT, TOP); D && (*D < 0 || *D + s_itemH[K] > BODYCAP))
+                    glideTo(*D < 0 || s_itemH[K] >= BODYCAP ? TOP : movedBy(TOP, s_itemH[K] - BODYCAP));
             }
+            s_reveal = false;
         }
         const auto& disp = s_disp;
         s_items          = disp.size();
         s_skip           = disp.empty() ? 0 : std::min(s_skip, disp.size() - 1);
+        if (!P.warm)
+            stepMotion();
 
-        // place the items that fit
+        // The page's rows: from its top row, s_off above the page, to the
+        // first that starts past its bottom or that no warm has measured.
+        // The offset in whole device pixels: a fractional one would sample
+        // every glyph anew each frame.
         struct SPlaced {
             size_t idx;
-            double lead, h;
+            double y, h;
         };
         static std::vector<SPlaced> placed; // reused
         placed.clear();
-        double usedH = 0;
-        for (size_t i = s_skip; i < disp.size() && i < s_itemH.size(); i++) {
-            const double LEAD = placed.empty() ? 0 : leadOf(i, GAP);
-            if (!placed.empty() && usedH + LEAD + s_itemH[i] > BODYCAP)
+        const double PAGE_END = CY0 + BODYCAP;
+        double       rowY     = CY0 - std::round(s_off * P.scale) / P.scale;
+        for (size_t i = s_skip; i < disp.size() && known(i); i++) {
+            rowY += i > s_skip ? leadOf(i) : 0;
+            if (rowY >= PAGE_END)
                 break;
-            usedH += LEAD + s_itemH[i];
-            placed.push_back({i, LEAD, s_itemH[i]});
+            placed.push_back({i, rowY, s_itemH[i]});
+            rowY += s_itemH[i];
         }
-        s_lastVis = placed.empty() ? s_skip : placed.back().idx;
-        const bool EMPTY = disp.empty();
+        s_lastVis           = placed.empty() ? s_skip : placed.back().idx;
+        const bool   EMPTY  = disp.empty();
+        const bool   CUT_T  = !placed.empty() && placed.front().y < CY0 - 0.01;
+        const bool   CUT_B  = !placed.empty() && placed.back().y + placed.back().h > PAGE_END + 0.01;
+        const double SHOWNH = placed.empty() ? 0 : std::min(PAGE_END, placed.back().y + placed.back().h) - CY0;
 
         // the column swallows its clicks and owns the wheel, gaps included
         {
             SCard pc;
             pc.kind = SCard::PANEL;
-            pc.box  = CBox{X, Y0, W, CY0 - Y0 + (EMPTY ? EMPTY_H : usedH)};
+            pc.box  = CBox{X, Y0, W, CY0 - Y0 + (EMPTY ? EMPTY_H : SHOWNH)};
             cards.push_back(pc);
         }
 
@@ -659,12 +920,18 @@ namespace Awesome::Notify {
             texCentered(P, cachedText("No Notifications", COLSUB, T.body, (int)std::lround(W * P.scale), -1, 0, false, 500), EB);
         }
 
-        double y = CY0;
-        for (const auto& [IDX, LEAD, IH] : placed) {
-            y += LEAD;
+        // A row the page's edge cuts paints inside the page alone and
+        // answers there alone; with none cut the column paints whole (its
+        // drops and rims past the page's box), as at rest.
+        const size_t                 ROW_HITS = cards.size();
+        std::optional<SPaint::CClip> clip;
+        if (CUT_T || CUT_B) {
+            const double REACH = SPaint::frostReach(), TOPY = CUT_T ? CY0 : MB.y, ENDY = CUT_B ? PAGE_END : MB.y + MB.h;
+            clip.emplace(P, CBox{X - REACH, TOPY, W + 2 * REACH, ENDY - TOPY});
+        }
+        for (const auto& [IDX, RY, IH] : placed) {
             const auto& D = disp[IDX];
-            const CBox  ROW{X, y, W, IH};
-            y += IH;
+            const CBox  ROW{X, RY, W, IH};
             // the keyboard's selection: the accent around the whole row, so
             // it never reads as a hover
             const bool SEL = (int)IDX == s_sel;
@@ -699,17 +966,24 @@ namespace Awesome::Notify {
             if (SEL)
                 P.ring(ring, COLACC, rCard(P.scale), RP, 1.5);
         }
+        clip.reset();
+        if (CUT_T || CUT_B)
+            for (size_t k = ROW_HITS; k < cards.size(); k++) {
+                auto&        B  = cards[k].box;
+                const double LO = std::max(B.y, CY0), HI = std::min(B.y + B.h, PAGE_END);
+                B               = HI > LO ? CBox{B.x, LO, B.w, HI - LO} : CBox{};
+            }
 
         // Paging cues: a wheel-scroll is invisible otherwise. An up chevron
         // when cards sit above the fold, a "chevron N" chip when N sit below.
         // Drawn over the edge cards, they take their own clicks (a page, like
         // the wheel) — pushed last, they are hit first.
         if (!EMPTY) {
-            size_t below = 0;
-            for (size_t i = (placed.empty() ? 0 : placed.back().idx + 1); i < disp.size(); i++)
+            size_t below = 0; // the cards not shown whole under the page: a cut row's with them
+            for (size_t i = placed.empty() ? 0 : placed.back().idx + (CUT_B ? 0 : 1); i < disp.size(); i++)
                 below += disp[i].kind == SDisp::HEAD ? 0 : disp[i].items.size(); // its cards count as its rows
             const double CHIP_H = 24;
-            if (s_skip > 0) {
+            if (s_skip > 0 || s_off > 0.5) {
                 const CBox UP{X + (W - 44) / 2, CY0 - CHIP_H / 2, 44, CHIP_H};
                 P.frost(UP, COLBG, COLRIM, (int)std::lround(CHIP_H / 2 * P.scale), 2.f);
                 if (const auto G = Glyph::tex(Glyph::eGlyph::CHEVRON_UP, COLTITLE, (int)std::lround(14 * P.scale)))
@@ -722,7 +996,7 @@ namespace Awesome::Notify {
             if (below > 0) {
                 const auto   NUM = cachedText(std::to_string(below), COLTITLE, T.small, 128, -1, 0, false, 600);
                 const double CW  = 14 + 4 + texW(NUM, P.scale) + 24;
-                const CBox   DN{X + (W - CW) / 2, CY0 + usedH - CHIP_H / 2, CW, CHIP_H};
+                const CBox   DN{X + (W - CW) / 2, std::min(CY0 + SHOWNH - CHIP_H / 2, PAGE_END - CHIP_H), CW, CHIP_H};
                 P.frost(DN, COLBG, COLRIM, (int)std::lround(CHIP_H / 2 * P.scale), 2.f);
                 if (const auto G = Glyph::tex(Glyph::eGlyph::CHEVRON_DOWN, COLTITLE, (int)std::lround(14 * P.scale)))
                     P.texIn(G, CBox{DN.x + 12, DN.y, 14, CHIP_H});
@@ -765,7 +1039,16 @@ namespace Awesome::Notify {
         return out;
     }
 
-    // the rows the last draw placed on the page
+    // "<px> <row>+<px> <motion>": how far the page stands below the
+    // column's head ("?" past rows no warm measured), its top row and how
+    // far into it, and what moves it
+    std::string centerScrollDescribe() {
+        const auto PX = distance({0, 0}, {s_skip, s_off});
+        return std::format("{} {}+{} {}", PX ? std::to_string((int)std::lround(*PX)) : "?", s_skip, (int)std::lround(s_off),
+                           s_motion == eMotion::GLIDE ? "glide" : s_motion == eMotion::FLING ? "fling" : "none");
+    }
+
+    // the rows the last draw placed on the page, whole or in part
     std::string centerPageDescribe() {
         std::string out;
         for (size_t i = s_skip; i <= s_lastVis && i < s_disp.size(); i++)

@@ -290,11 +290,11 @@ namespace Awesome {
                 g_pHyprOpenGL->renderRect(*rctx, B, faded(c), {.round = round, .roundingPower = rp});
         }
         // What follows paints inside `global` alone until the guard goes
-        // (a list scrolled in a window). The renderer's own clip: the render
+        // (the center's scrolled page). The renderer's own clip: the render
         // session's clipBox (CRenderContext::m_data, a field the compositor
         // marks for removal: a dependency on its private state), honoured
-        // by rects without blur, textures, rings and shadows; glass and
-        // frost ignore it. A warm clips nothing.
+        // by rects, glass (its blurred copy draws as a texture), textures,
+        // rings and shadows. A warm clips nothing.
         class CClip {
           public:
             CClip(const SPaint& p, const CBox& global) : m_ctx(p.paints() ? p.rctx : nullptr) {

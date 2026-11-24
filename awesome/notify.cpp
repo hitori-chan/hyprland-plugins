@@ -223,6 +223,8 @@ namespace Awesome::Notify {
             return centerDescribe();
         if (verb == "center-page") // the rows on its page, named as center-rows does
             return centerPageDescribe();
+        if (verb == "center-scroll") // "<px below the head|?> <row>+<px into it> <none|glide|fling>"
+            return centerScrollDescribe();
         if (verb == "quiet") // "now:N hushed:N" — an arrival would hold; a critical banner shows without its words
             return std::format("now:{} hushed:{}", Quiet::now() ? 1 : 0, Quiet::hushed() ? 1 : 0);
         if (verb == "shares") // the compositor's capture sessions: "active:N live:N"

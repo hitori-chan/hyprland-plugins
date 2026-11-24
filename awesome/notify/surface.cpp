@@ -179,7 +179,16 @@ namespace Awesome::Notify {
         if (!motionTick)
             return;
         const bool WANT = animationsOn() && (centerAnimating() || (!centerVisible() && popupsAnimating()));
-        motionTick->updateTimeout(WANT ? std::optional{std::chrono::milliseconds(16)} : std::nullopt);
+        // twice a refresh: every frame of the monitor finds damage waiting,
+        // whatever the timer's phase against its vblank
+        const auto   M  = cardsMon.lock();
+        const double HZ = M && M->m_refreshRate > 1.f ? M->m_refreshRate : 60.0;
+        motionTick->updateTimeout(WANT ? std::optional{std::chrono::duration_cast<Time::steady_dur>(std::chrono::duration<double>(0.5 / HZ))} : std::nullopt);
+    }
+
+    void notifMoved() {
+        damageNotifs();
+        armMotionTick();
     }
 
     void warmNotifs() {
@@ -331,6 +340,8 @@ namespace Awesome::Notify {
             [](SP<CEventLoopTimer>, void*) {
                 if (lastBox.w > 0 && g_pHyprRenderer)
                     g_pHyprRenderer->damageBox(lastBox);
+                if (centerVisible())
+                    refreshPointerOwnership(); // the rows the page moved under a still pointer
                 armMotionTick();
             },
             nullptr);

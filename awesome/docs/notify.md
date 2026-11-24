@@ -135,17 +135,24 @@ center had not shown wears its time in the accent for the visit.
   end, or closing the center, closes them for good (`NotificationClosed`,
   dismissed); arrivals meanwhile show as ever. `clear_all()` and
   `hyprctl awesome clear` sweep at once, without undo.
-- Cards open as the page has room; a folded one shows its title and
-  newest line, and a click (or Space) opens it.
+- Cards open as the column's first page has room; the rest come folded,
+  wherever the page stands. A folded card shows its title and newest
+  line, and a click (or Space) opens it.
 - An app's two or more cards stack: the newest over a deck of up to two
   slivers. A click spreads the stack under a header (the app's name,
   Show Less); right on the deck or header dismisses it whole. A stack
   holding the armed reply stays spread. `x-notify-group-key` splits a
   stack by thread.
-- **Paging**: a column taller than the page pages by rows (a card, a
-  deck, a spread stack's header and each of its cards, the fold): the
-  wheel one a notch, ↑/↓ the selection, the chips (⌃ above, ⌄ and the
-  cards below) a screenful.
+- **Scrolling**: a column taller than the page scrolls; the page's edges
+  cut the rows (a card, a deck, a spread stack's header and each of its
+  cards, the fold), and a cut row answers only where it shows. A
+  touchpad (or a TrackPoint's scroll) carries the page 1:1 at
+  `input:touchpad:scroll_factor` (`input:scroll_factor`) and flings it
+  on a quick lift; the wheel glides a row a notch, ↑/↓ glide the
+  selection into view, the chips (⌃ above, ⌄ and the cards below) a
+  screenful. A press stops the page where it shows; arrivals above
+  leave it on its rows. Without animations a glide lands at once and a
+  lift does not fling.
 
 ## Do Not Disturb
 
