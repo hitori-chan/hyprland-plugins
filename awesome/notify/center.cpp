@@ -12,9 +12,10 @@
 // group, a wider gap where a group ends. An app's cards STACK under their
 // newest once it has two, its chats with the rest — each chat keeps its own
 // card, and the model merges that chat's messages into it. A stack stands
-// where its newest card ranks, collapsed until a click spreads it. The
-// silent cards (low urgency, or silenced by the user) fold into one row at
-// the bottom until a click spreads them.
+// where its newest card ranks, collapsed until a click spreads it into its
+// header and a row per card, so paging reaches every one. The silent cards
+// (low urgency, or silenced by the user) fold into one row at the bottom
+// until a click spreads them.
 //
 // Above the cards, a status line says why arrivals are holding (Do Not
 // Disturb, quiet automatically); Clear All hides the cards for an undo
@@ -71,19 +72,17 @@ namespace Awesome::Notify {
 
     // the budget's verdict on one card it placed
     struct SPlacedCard {
-        double h    = 0;
-        bool   open = false; // drawn open
-        bool   more = false; // its open form shows more than the folded one (a click unfolds)
+        double h        = 0;
+        bool   open     = false; // drawn open
+        bool   more     = false; // its open form shows more than the folded one (a click unfolds)
+        bool   measured = false; // the budget reached it: a draw ahead of its warm has nothing to place
     };
 
     // the warm-measured layout cache (see renderCenter); dropped on close so
     // no strong SNotif refs (and their textures) outlive the visit
     static std::vector<SDisp>                    s_disp;
     static std::vector<double>                   s_itemH;
-    static std::vector<uint8_t>                  s_itemSpread; // a stack shown spread out
-    // per item, the cards it shows: a single's, a collapsed stack's top
-    // card, a spread stack's cards down to the page's fold
-    static std::vector<std::vector<SPlacedCard>> s_cardsOf;
+    static std::vector<SPlacedCard>              s_card; // per item, the card it shows (a deck's: its top card)
     // resolved open state from the last warm, keyed by identity: the click
     // handlers flip THIS, so a toggle means the same thing the eye just saw
     static std::unordered_map<uint32_t, bool>    s_rowState;
@@ -120,8 +119,7 @@ namespace Awesome::Notify {
         s_lastVis   = 0;
         s_disp.clear();
         s_itemH.clear();
-        s_itemSpread.clear();
-        s_cardsOf.clear();
+        s_card.clear();
     }
 
     void centerExit() {
@@ -143,9 +141,14 @@ namespace Awesome::Notify {
         notifChanged();
     }
 
+    // a row that stands for several cards: Enter and Delete act on all
+    static bool isGroup(const SDisp& d) {
+        return d.kind == SDisp::DECK || d.kind == SDisp::HEAD || d.kind == SDisp::FOLD;
+    }
+
     // a stack's right-click or Delete: exactly the cards it drew
     void centerDismissStack(const std::string& key) {
-        if (const auto IT = std::ranges::find_if(s_disp, [&](const SDisp& D) { return !D.fold && D.key == key; }); IT != s_disp.end())
+        if (const auto IT = std::ranges::find_if(s_disp, [&](const SDisp& D) { return (D.kind == SDisp::DECK || D.kind == SDisp::HEAD) && D.key == key; }); IT != s_disp.end())
             Model::dismissCards(IT->items);
     }
 
@@ -210,7 +213,7 @@ namespace Awesome::Notify {
         if (s_sel < 0 || (size_t)s_sel >= s_disp.size())
             return false;
         const auto& D = s_disp[s_sel];
-        group         = D.fold || D.items.size() > 1 ? D.key : "";
+        group         = isGroup(D) ? D.key : "";
         id            = D.items.front()->id;
         return true;
     }
@@ -301,6 +304,7 @@ namespace Awesome::Notify {
                 if (O.count >= AUTOGROUP_AT) {
                     if (O.first != (size_t)-1) {
                         out[O.first].items.push_back(N);
+                        out[O.first].kind = SDisp::DECK;
                         continue;
                     }
                     O.first = out.size();
@@ -314,26 +318,51 @@ namespace Awesome::Notify {
         }
     }
 
+    // spread by a click, or around a field being typed into
+    static bool spread(const std::string& key, const std::vector<SP<SNotif>>& items) {
+        return (s_openedGroup.contains(key) && !s_foldedGroup.contains(key)) || std::ranges::any_of(items, [](const auto& N) { return replyArmedOn(N->id); });
+    }
+
     static void buildDisplay(std::vector<SDisp>& out) {
         out.clear();
+        s_groupState.clear();
         static std::vector<SP<SNotif>> src, quiet; // reused; main thread only
+        static std::vector<SDisp>      staged;     // ditto
+        staged.clear();
         for (const auto& N : notifs)
             if (!N->waiting && !Model::offShade(N))
                 (silent(*N) ? quiet : src).push_back(N);
         // notifs is newest-first; a STABLE sort by tier keeps that inside each
         std::ranges::stable_sort(src, [](const auto& a, const auto& b) { return tier(a) < tier(b); });
-        appendStacked(out, src, false);
+        appendStacked(staged, src, false);
         if (!quiet.empty()) {
-            // spread by a click, or around a field being typed into
-            if (s_openedGroup.contains(SILENT_KEY) || std::ranges::any_of(quiet, [](const auto& N) { return replyArmedOn(N->id); }))
-                appendStacked(out, quiet, true);
-            else
-                out.push_back(SDisp{.items = quiet, .key = SILENT_KEY, .tier = TIER_SILENT, .fold = true});
+            if (spread(SILENT_KEY, quiet))
+                appendStacked(staged, quiet, true);
+            else {
+                staged.push_back(SDisp{.items = quiet, .key = SILENT_KEY, .tier = TIER_SILENT, .kind = SDisp::FOLD});
+                s_groupState[SILENT_KEY] = false;
+            }
+        }
+        for (auto& D : staged) {
+            if (D.kind != SDisp::DECK) {
+                out.push_back(std::move(D));
+                continue;
+            }
+            const bool SPREAD   = spread(D.key, D.items);
+            s_groupState[D.key] = SPREAD;
+            if (!SPREAD) {
+                out.push_back(std::move(D));
+                continue;
+            }
+            out.push_back(SDisp{.items = D.items, .key = D.key, .tier = D.tier, .kind = SDisp::HEAD});
+            for (const auto& N : D.items)
+                out.push_back(SDisp{.items = {N}, .key = D.key, .tier = D.tier, .kind = SDisp::MEMBER});
         }
         // the buffers are reused, their references are not: a dismissed card
         // (and its textures) must not live on until the shade next opens
         src.clear();
         quiet.clear();
+        staged.clear();
     }
 
     // the room above item i: none at the page's top, the gap between items,
@@ -376,48 +405,24 @@ namespace Awesome::Notify {
             const double LEAD = leadOf(i, gap);
             const bool   TOP  = i == s_skip;
             const double ROOM = bodyCap - used - LEAD;
-            auto&        CS   = s_cardsOf[i];
-
-            if (D.fold) {
-                s_itemH[i]          = FOLD_H;
-                s_groupState[D.key] = false;
-            } else if (D.items.size() < 2) {
-                CS.push_back(budgetCard(P, T, D.items.front(), contentW, ROOM, 0, TOP, false));
-                s_itemH[i]                      = CS.back().h;
-                s_rowState[D.items.front()->id] = CS.back().open;
-            } else {
-                // a stack: collapsed unless the user spread it, or a field
-                // being typed into is one of its cards
-                const auto ARMED  = std::ranges::find_if(D.items, [](const auto& N) { return replyArmedOn(N->id); });
-                const bool SPREAD = ARMED != D.items.end() || (s_openedGroup.contains(D.key) && !s_foldedGroup.contains(D.key));
-                if (!SPREAD) {
+            auto&        C    = s_card[i];
+            switch (D.kind) {
+                case SDisp::FOLD: s_itemH[i] = FOLD_H; break;
+                case SDisp::HEAD: s_itemH[i] = SHEAD_H; break;
+                case SDisp::DECK: {
                     const double DEPTH = deckDepth(D.items.size());
-                    CS.push_back(budgetCard(P, T, D.items.front(), contentW, ROOM, DEPTH, TOP, true));
-                    s_itemH[i] = CS.back().h + DEPTH;
-                } else {
-                    // the header, then the cards the page holds, readable
-                    // whole; the rest counted in a tail ("+N more"). One the
-                    // user spread shows its first card even past the fold,
-                    // and the card being replied to is never cut.
-                    const size_t KEEP = ARMED != D.items.end() ? (size_t)(ARMED - D.items.begin()) : 0;
-                    double       h    = SHEAD_H;
-                    for (size_t k = 0; k < D.items.size(); k++) {
-                        const bool   LAST = k + 1 == D.items.size();
-                        const double TAIL = LAST ? 0 : gap + CAP_H;
-                        const auto   C    = budgetCard(P, T, D.items[k], contentW, ROOM - h - gap - TAIL, 0, TOP && k == 0, false);
-                        if (k > KEEP && h + gap + C.h + TAIL > ROOM)
-                            break;
-                        CS.push_back(C);
-                        s_rowState[D.items[k]->id] = C.open;
-                        h += gap + C.h;
-                    }
-                    if (CS.size() < D.items.size())
-                        h += gap + CAP_H;
-                    s_itemH[i] = h;
+                    C                  = budgetCard(P, T, D.items.front(), contentW, ROOM, DEPTH, TOP, true);
+                    s_itemH[i]         = C.h + DEPTH;
+                    break;
                 }
-                s_itemSpread[i]     = SPREAD;
-                s_groupState[D.key] = SPREAD;
+                case SDisp::CARD:
+                case SDisp::MEMBER:
+                    C                               = budgetCard(P, T, D.items.front(), contentW, ROOM, 0, TOP, false);
+                    s_itemH[i]                      = C.h;
+                    s_rowState[D.items.front()->id] = C.open;
+                    break;
             }
+            C.measured = true;
             used += LEAD + s_itemH[i];
             // past the fold: no later card is on this page, and measuring one
             // would raster its texts and queue an icon decode for content
@@ -450,9 +455,8 @@ namespace Awesome::Notify {
     // selection; -1 for none.
     static int keyboardRow() {
         for (size_t i = 0; i < s_disp.size(); i++)
-            for (const auto& N : s_disp[i].items)
-                if (replyArmedOn(N->id))
-                    return (int)i;
+            if (s_disp[i].kind != SDisp::HEAD && std::ranges::any_of(s_disp[i].items, [](const auto& N) { return replyArmedOn(N->id); }))
+                return (int)i;
         return s_sel;
     }
 
@@ -530,7 +534,7 @@ namespace Awesome::Notify {
             if (SELECTED)
                 for (size_t i = 0; i < s_disp.size(); i++) {
                     const auto& D = s_disp[i];
-                    if (selGroup.empty() ? std::ranges::any_of(D.items, [&](const auto& N) { return N->id == selId; }) : (D.fold || D.items.size() > 1) && D.key == selGroup) {
+                    if (selGroup.empty() ? D.kind != SDisp::HEAD && std::ranges::any_of(D.items, [&](const auto& N) { return N->id == selId; }) : isGroup(D) && D.key == selGroup) {
                         s_sel = (int)i;
                         break;
                     }
@@ -539,20 +543,16 @@ namespace Awesome::Notify {
             if (s_sel >= (int)s_disp.size())
                 s_sel = s_disp.empty() ? -1 : (int)s_disp.size() - 1;
             s_itemH.assign(s_disp.size(), 0.0);
-            s_itemSpread.assign(s_disp.size(), 0);
-            s_cardsOf.assign(s_disp.size(), {});
+            s_card.assign(s_disp.size(), {});
             s_rowState.clear();
-            s_groupState.clear();
             runBudget(P, T, W, BODYCAP, GAP);
             // the keyboard's card stays on the page: a step past the last one
             // pages by one, and a taller next card (or cards the new top
             // re-opened) can still leave it below the fold
             for (const int KEEP = keyboardRow(); KEEP > (int)s_skip && (size_t)KEEP > lastFit(BODYCAP, GAP);) {
                 ++s_skip;
-                for (auto& CS : s_cardsOf)
-                    CS.clear();
+                s_card.assign(s_disp.size(), {});
                 s_rowState.clear();
-                s_groupState.clear();
                 runBudget(P, T, W, BODYCAP, GAP);
             }
         }
@@ -663,58 +663,41 @@ namespace Awesome::Notify {
         for (const auto& [IDX, LEAD, IH] : placed) {
             y += LEAD;
             const auto& D = disp[IDX];
-            if (D.fold) {
-                const CBox FB{X, y, W, IH};
-                paintSilentFold(P, T, D, FB);
-                if ((int)IDX == s_sel)
-                    P.ring(FB, COLACC, (int)std::lround(FOLD_H / 2 * P.scale), 2.f, 1.5);
-                y += IH;
-                continue;
-            }
-            if (IDX >= s_cardsOf.size() || s_cardsOf[IDX].empty()) { // a draw ahead of its warm: nothing measured to place
-                y += IH;
-                continue;
-            }
-            const auto& CS = s_cardsOf[IDX];
-            CBox        ring{X, y, W, IH}; // the keyboard's selection goes around this
-            const auto  form = [&](const SP<SNotif>& N, bool open, bool deck) {
-                return SCardForm{.where = SCardForm::CENTER, .open = open, .deck = deck, .fresh = s_fresh.contains(N->id)};
-            };
-            if (D.items.size() < 2) {
-                SCard card = recycledCard();
-                renderCard(P, T, D.items.front(), CBox{X, y, W, 0}, form(D.items.front(), CS.front().open, false), card);
-                card.folded = !CS.front().open && CS.front().more;
-                cards.push_back(std::move(card));
-            } else if (!s_itemSpread[IDX]) {
-                // the deck first: the top card's glass covers all but its edges
-                const double DEPTH = deckDepth(D.items.size());
-                ring.h             = IH - DEPTH;
-                paintDeck(P, ring, D.items.size());
-                SCard card = recycledCard();
-                renderCard(P, T, D.items.front(), CBox{X, y, W, 0}, form(D.items.front(), CS.front().open, true), card);
-                card.box.h += DEPTH; // the deck answers for the stack too
-                card.group = D.key;
-                cards.push_back(std::move(card));
-            } else {
-                paintStackHead(P, T, D, CBox{X, y, W, SHEAD_H});
-                double cy = y + SHEAD_H + GAP;
-                for (size_t k = 0; k < CS.size() && k < D.items.size(); k++) {
-                    SCard card = recycledCard();
-                    renderCard(P, T, D.items[k], CBox{X, cy, W, 0}, form(D.items[k], CS[k].open, false), card);
-                    card.folded = !CS[k].open && CS[k].more;
-                    card.group  = D.key;
-                    cards.push_back(std::move(card));
-                    cy += CS[k].h + GAP;
-                }
-                if (CS.size() < D.items.size())
-                    paintStackTail(P, T, D.items.size() - CS.size(), CBox{X, cy, W, CAP_H});
-            }
-
-            // the keyboard's selection: the accent around the whole item, so
-            // it never reads as a hover
-            if ((int)IDX == s_sel)
-                P.ring(ring, COLACC, rCard(P.scale), RP, 1.5);
+            const CBox  ROW{X, y, W, IH};
             y += IH;
+            // the keyboard's selection: the accent around the whole row, so
+            // it never reads as a hover
+            const bool SEL = (int)IDX == s_sel;
+            if (D.kind == SDisp::FOLD || D.kind == SDisp::HEAD) {
+                if (D.kind == SDisp::FOLD)
+                    paintSilentFold(P, T, D, ROW);
+                else
+                    paintStackHead(P, T, D, ROW);
+                if (SEL)
+                    P.ring(ROW, COLACC, (int)std::lround(IH / 2 * P.scale), 2.f, 1.5);
+                continue;
+            }
+            if (IDX >= s_card.size() || !s_card[IDX].measured) // a draw ahead of its warm: nothing measured to place
+                continue;
+            const auto& C    = s_card[IDX];
+            const auto& N    = D.items.front();
+            const bool  DECK = D.kind == SDisp::DECK;
+            CBox        ring = ROW;
+            if (DECK) { // the deck first: the top card's glass covers all but its edges
+                ring.h -= deckDepth(D.items.size());
+                paintDeck(P, ring, D.items.size());
+            }
+            SCard card = recycledCard();
+            renderCard(P, T, N, CBox{X, ROW.y, W, 0}, SCardForm{.where = SCardForm::CENTER, .open = C.open, .deck = DECK, .fresh = s_fresh.contains(N->id)}, card);
+            if (DECK)
+                card.box.h += deckDepth(D.items.size()); // the deck answers for the stack too
+            else
+                card.folded = !C.open && C.more;
+            if (D.kind != SDisp::CARD)
+                card.group = D.key;
+            cards.push_back(std::move(card));
+            if (SEL)
+                P.ring(ring, COLACC, rCard(P.scale), RP, 1.5);
         }
 
         // Paging cues: a wheel-scroll is invisible otherwise. An up chevron
@@ -724,7 +707,7 @@ namespace Awesome::Notify {
         if (!EMPTY) {
             size_t below = 0;
             for (size_t i = (placed.empty() ? 0 : placed.back().idx + 1); i < disp.size(); i++)
-                below += disp[i].items.size();
+                below += disp[i].kind == SDisp::HEAD ? 0 : disp[i].items.size(); // its cards count as its rows
             const double CHIP_H = 24;
             if (s_skip > 0) {
                 const CBox UP{X + (W - 44) / 2, CY0 - CHIP_H / 2, 44, CHIP_H};
@@ -754,27 +737,40 @@ namespace Awesome::Notify {
     }
 
 #ifdef AWESOME_GATE
-    // the gate's: "<status> [undo] | <rows>" — the status line ("-", or
-    // "dnd:"/"quiet:" and what it says), then each row as its group's mark
-    // (! critical, @ chat, - app, ~ spread silent) and its newest title,
-    // "+N" for a stack, or "silent:N" for the fold
+    // a row as the gate names it: its group's mark (! critical, @ chat,
+    // - app, ~ spread silent) and its newest title, "+N" for a stack (a
+    // spread one's header), "." and the title for a spread stack's card,
+    // "silent:N" for the fold
+    static void describeRow(std::string& out, const SDisp& D) {
+        out += ' ';
+        if (D.kind == SDisp::FOLD) {
+            out += "silent:" + std::to_string(D.items.size());
+            return;
+        }
+        out += D.kind == SDisp::MEMBER ? '.' : "!@-~"[std::min<size_t>(D.tier, 3)];
+        out += D.items.front()->summary;
+        if (D.items.size() > 1)
+            out += "+" + std::to_string(D.items.size() - 1);
+    }
+
+    // "<status> [undo] | <rows>": the status line ("-", or "dnd:"/"quiet:"
+    // and what it says), then every row the last warm built
     std::string centerDescribe() {
         std::string out = !s_status.on ? "-" : (s_status.dnd ? "dnd:" : "quiet:") + s_status.sub;
         if (Model::clearPending())
             out += " undo";
         out += " |";
-        for (const auto& D : s_disp) {
-            out += ' ';
-            if (D.fold) {
-                out += "silent:" + std::to_string(D.items.size());
-                continue;
-            }
-            out += "!@-~"[std::min<size_t>(D.tier, 3)];
-            out += D.items.front()->summary;
-            if (D.items.size() > 1)
-                out += "+" + std::to_string(D.items.size() - 1);
-        }
+        for (const auto& D : s_disp)
+            describeRow(out, D);
         return out;
+    }
+
+    // the rows the last draw placed on the page
+    std::string centerPageDescribe() {
+        std::string out;
+        for (size_t i = s_skip; i <= s_lastVis && i < s_disp.size(); i++)
+            describeRow(out, s_disp[i]);
+        return out.empty() ? out : out.substr(1);
     }
 #endif
 

@@ -140,8 +140,10 @@ center had not shown wears its time in the accent for the visit.
   Show Less); right on the deck or header dismisses it whole. A stack
   holding the armed reply stays spread. `x-notify-group-key` splits a
   stack by thread.
-- A spread stack taller than the page shows what fits and "+N more";
-  paging chips page a screenful, the wheel one item a notch.
+- **Paging**: a column taller than the page pages by rows (a card, a
+  deck, a spread stack's header and each of its cards, the fold): the
+  wheel one a notch, ↑/↓ the selection, the chips (⌃ above, ⌄ and the
+  cards below) a screenful.
 
 ## Do Not Disturb
 

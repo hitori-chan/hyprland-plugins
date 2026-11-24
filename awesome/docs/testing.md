@@ -131,6 +131,7 @@ Gate-build `hyprctl awesome` verbs:
 | `shown` | the newest card's body as drawn |
 | `capsule` | the live capsule's words |
 | `center-rows` | the open center's status line and rows |
+| `center-page` | the rows on the center's page |
 | `menu` | the open card menu's rows |
 | `menu-at LABEL` | where the row whose label starts so sits |
 | `dnd-at` | where the center's moon sits |

@@ -2,9 +2,9 @@
 // a deck of up to two layers, each 12 px narrower a side and 8 px lower
 // than the one above it and a step darker — the depth says there is more,
 // no count does. EXPANDED: the app's name and Show Less above the stack,
-// then every card the page holds as itself (center.cpp lays those out), and
-// "+N more" counting the rest. The silent fold is drawn here too: the
-// ranking's quiet tail folded into one row.
+// then each card as a row of the page (center.cpp pages them like any
+// other). The silent fold is drawn here too: the ranking's quiet tail
+// folded into one row.
 //
 // The texture rule as everywhere: textures are requested unconditionally,
 // painting goes through the paint context, which no-ops inside a warm.
@@ -129,18 +129,6 @@ namespace Awesome::Notify {
         card.box   = row;
         card.group = D.key;
         cards.push_back(std::move(card));
-    }
-
-    void paintStackTail(const SPaint& P, const SType& T, size_t more, const CBox& row) {
-        auto& MB = scratch();
-        MB += "+";
-        MB += std::to_string(more);
-        MB += " more";
-        const auto   TX = cachedText(MB, color(cfg().getColor("plugin:awesome:notify:col_title")), T.meta, (int)std::lround(row.w * P.scale), -1, 0, false, 600);
-        const double W  = texW(TX, P.scale) + 2 * CAP_PADX;
-        const CBox   B{row.x + (row.w - W) / 2, row.y + (row.h - CAP_H) / 2, W, CAP_H};
-        paintChip(P, B, false);
-        texCentered(P, TX, B);
     }
 
 } // namespace Awesome::Notify

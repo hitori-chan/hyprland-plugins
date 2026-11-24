@@ -121,8 +121,8 @@ namespace Awesome::Notify {
     void                paintIconColumn(const SPaint& P, const SNotif& n, const CBox& cell, bool withBadge, float rp, bool shade = false);
     // the app's identity on the corner of a face filling `cell`
     void                paintBadge(const SPaint& P, const SNotif& n, const CBox& cell);
-    // a small control floating on glass (a stack's Show Less, "+N more"):
-    // its own drop, the glass, the rim
+    // a small control floating on glass (a stack's Show Less): its own
+    // drop, the glass, the rim
     void                paintChip(const SPaint& P, const CBox& box, bool hover);
     // the glass under the pointer lifts a step
     CHyprColor          liftedGlass(const CHyprColor& c);
@@ -211,13 +211,21 @@ namespace Awesome::Notify {
 
     // ---- stack.cpp: an app's cards stacked under the newest ----
 
-    // a display item: one card, an app's stack of them (newest first), or
-    // the silent fold
+    // a display item, one row of the page: paging, the wheel and the
+    // keyboard step through these, so every card a spread stack holds is
+    // one of them
     struct SDisp {
+        enum eKind : uint8_t {
+            CARD,
+            DECK,   // a collapsed stack; items: its cards, newest first
+            HEAD,   // a spread stack's header; items: its cards, each a MEMBER row after it
+            MEMBER, // one card of a spread stack
+            FOLD,   // the silent fold; items: every silent card
+        };
         std::vector<SP<SNotif>> items;
         std::string             key;  // the app key (stacks)
         uint8_t                 tier = 0; // its group in the ranking: a wider gap where it changes
-        bool                    fold = false; // the silent fold: its items are every silent card
+        eKind                   kind = CARD;
     };
 
     // the deck's layers under a collapsed stack of `count` cards, and how far
@@ -232,15 +240,14 @@ namespace Awesome::Notify {
     // the silent fold's row: two of its apps' icons, the count and the apps,
     // a chevron; pushes its hit
     void   paintSilentFold(const SPaint& P, const SType& T, const SDisp& D, const CBox& row);
-    // "+N more" under an expanded stack the page cuts
-    void   paintStackTail(const SPaint& P, const SType& T, size_t more, const CBox& row);
 
     // ---- popups.cpp / center.cpp: the surfaces ----
 
     void renderPopups(const SPaint& P, const SType& T);
     void renderCapsules(const SPaint& P, const SType& T); // the OSD band, top center
     void renderCenter(const SPaint& P, const SType& T);
-    std::string centerDescribe(); // the gate's: the status line and the rows as the last warm built them (defined in its build only)
+    std::string centerDescribe();     // the gate's: the status line and the rows as the last warm built them (defined in its build only)
+    std::string centerPageDescribe(); // the gate's: the rows the last draw placed on the page (ditto)
     bool popupsAnimating(); // any arrival spring still running
     bool centerAnimating(); // the open spring still running
 

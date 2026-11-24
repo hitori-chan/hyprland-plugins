@@ -303,9 +303,9 @@ DBUS_SESSION_BUS_ADDRESS="$NBUS" busctl --user call org.freedesktop.Notification
 chk "reader: and the daemon still serves" until_is 3 "center:0 live:1 dnd:0" st
 nclear
 
-# ---- a spread stack keeps to the page ----------------------------------------
-# 30 three-line cards of one app: spread, they would run far past the
-# screen; the page shows the cards that fit and counts the rest
+# ---- a spread stack pages card by card ----------------------------------------
+# 30 three-line cards of one app, the center's only stack: spread, they run
+# far past the screen; the page ends on it, and paging reaches the oldest
 for i in $(seq 1 30); do
 	nbus call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications Notify \
 		susssasa{sv}i bulk 0 "" "build $i" $'step one\nstep two\nstep three' 0 0 30000 >/dev/null
@@ -318,6 +318,10 @@ shot_until 3 $STATE/stack30-aw.png on_page $STATE/stack30-aw.png
 # spread, it runs past mid-screen and still ends on it
 chk "stack: the spread stack ends on the screen" test "$(panel_bottom $STATE/stack30-aw.png)" -gt $((MON_H / 2)) -a "$(panel_bottom $STATE/stack30-aw.png)" -lt $((MON_H - 4))
 chk "stack: spreading acted on nothing" test "$(st)" = "center:1 live:30 dnd:0"
+on_center_page() { [[ " $(hq awesome center-page) " == *" $1 "* ]]; }
+chk "stack: the page opens on its header" until_ok 3 on_center_page "-build 30+29"
+wheel 600
+chk "stack: the wheel pages to its oldest card" until_ok 3 on_center_page ".build 1"
 hq awesome center >/dev/null
 nclear
 
