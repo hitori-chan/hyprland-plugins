@@ -368,6 +368,7 @@ namespace Awesome::Shell {
         // the Frost menu: 5 px of glass around 28 px rows, 9 px separators,
         // 22 px section headers
         inline constexpr double ROWH = 28, SEPH = 9, HEADH = 22, PAD = 5, ARROWH = 18, GAP = 4; // GAP: under the bar
+        inline constexpr size_t MEASURED = 64; // the rows a panel's width is measured over (menu.cpp)
 
         // how far a panel paints past its box: the frost drop, or the blur
         // its glass samples — every damage and bound grows by it
