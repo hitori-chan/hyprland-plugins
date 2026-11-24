@@ -1,5 +1,6 @@
 // Admission, recency bounds, the state file's round-trip, hostility, and
-// the load's write block. Temp state lives under /tmp/hypr-awesome-test.
+// the load's write block. Temp state lives in a private
+// /tmp/hypr-awesome-test-store.* (the sweep runs several harnesses at once).
 #include "../core/state.hpp"
 
 #include <filesystem>
@@ -13,7 +14,7 @@
 using namespace Awesome;
 namespace fs = std::filesystem;
 
-static const fs::path TDIR = fs::path{"/tmp/hypr-awesome-test"};
+static fs::path TDIR;
 
 static bool writeFile(const fs::path& p, const std::string& contents) {
     std::ofstream f(p, std::ios::binary | std::ios::trunc);
@@ -22,9 +23,11 @@ static bool writeFile(const fs::path& p, const std::string& contents) {
 }
 
 bool test_store() {
+    char tmpl[] = "/tmp/hypr-awesome-test-store.XXXXXX";
+    if (!AW_CHECK(mkdtemp(tmpl) != nullptr))
+        return false;
+    TDIR = tmpl;
     std::error_code ec;
-    fs::remove_all(TDIR, ec);
-    fs::create_directories(TDIR, ec);
 
     // ---- keyed admission ----
     {
