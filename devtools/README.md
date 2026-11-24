@@ -12,7 +12,8 @@ make -C devtools HL=/path/to/Hyprland
 ## Wayland fixtures
 
 - `vptr WIDTH HEIGHT`: a virtual pointer reading `move`, `rel`, `press`,
-  `release`, `scroll`, `sleep`. One process, one gesture.
+  `release`, `scroll` (a wheel), `fscroll`/`fstop` (a touchpad's travel
+  and lift), `sleep`. One process, one gesture.
 - `vkbd`: a virtual keyboard with its own keymap, reading `tap`, `press`,
   `release`, `mods`, `sleep`. One process, one chord: its keyboard dies
   with it, so no modifier outlives a test.
