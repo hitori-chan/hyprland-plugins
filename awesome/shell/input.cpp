@@ -1,6 +1,7 @@
 // Clicks, scrolls and pointer ownership over the strip
 
 #include "shell/shell.hpp"
+#include "core/wheel.hpp"
 
 #include <algorithm>
 #include <ranges>
@@ -245,30 +246,7 @@ namespace Awesome::Shell {
         });
     }
 
-    // Whole notches, signed like the axis (negative = up): awesome hears
-    // button 4/5 once per wheel detent and once per 15 units of touchpad
-    // travel (libinput's X11 scroll distance), never once per event. A
-    // high-resolution wheel sends a detent as several partial v120 events
-    // and a touchpad swipe as dozens of small deltas; neither steps per
-    // event. The remainder resets on a direction flip, a source change and
-    // a touchpad's lift (its axis stop: delta 0).
-    static int scrollNotches(const IPointer::SAxisEvent& e) {
-        static double                 acc    = 0; // main thread only
-        static wl_pointer_axis_source source = WL_POINTER_AXIS_SOURCE_WHEEL;
-        if (e.source != source) {
-            source = e.source;
-            acc    = 0;
-        }
-        const bool   WHEEL = e.source == WL_POINTER_AXIS_SOURCE_WHEEL;
-        const double V     = WHEEL ? (e.deltaDiscrete != 0 ? (double)e.deltaDiscrete : e.delta * 8.0) : e.delta;
-        const double UNIT  = WHEEL ? 120.0 : 15.0;
-        if (V == 0.0 || (acc != 0.0 && (acc < 0) != (V < 0)))
-            acc = 0;
-        acc += V;
-        const int N = (int)(acc / UNIT);
-        acc -= N * UNIT;
-        return N;
-    }
+    static Wheel::CNotches notches; // the strip's remainder
 
     void onMouseAxis(const IPointer::SAxisEvent& e, Event::SCallbackInfo& info) {
         const auto POS = g_pInputManager->getMouseCoordsInternal();
@@ -319,7 +297,7 @@ namespace Awesome::Shell {
 
         if (e.axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
             return;
-        const int STEPS = -scrollNotches(e); // wheel up: awesome binds button 4 = next/byidx(1)
+        const int STEPS = -notches.step(e); // wheel up: awesome binds button 4 = next/byidx(1)
         if (STEPS == 0)
             return;
 
