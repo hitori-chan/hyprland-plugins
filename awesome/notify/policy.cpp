@@ -6,6 +6,7 @@
 #include "../core/state.hpp"
 
 #include <cstdio>
+#include <format>
 #include <ctime>
 
 namespace Awesome::Notify::Policy {
@@ -108,11 +109,12 @@ namespace Awesome::Notify::Policy {
         std::vector<SSilenced> out;
         const auto&            APPS  = state().notifyApp;
         const auto&            MUTES = state().notifyMute;
-        for (auto it = APPS.end(); it != APPS.begin() && out.size() < MAX_SILENCED;) {
+        out.reserve(APPS.size() + MUTES.size());
+        for (auto it = APPS.end(); it != APPS.begin();) {
             --it;
             out.push_back({it->first, it->second.label, it->second.value, 0});
         }
-        for (auto it = MUTES.end(); it != MUTES.begin() && out.size() < MAX_SILENCED;) {
+        for (auto it = MUTES.end(); it != MUTES.begin();) {
             --it;
             out.push_back({it->first, it->second.label, 0, it->second.value});
         }
@@ -125,6 +127,22 @@ namespace Awesome::Notify::Policy {
         else
             setAppFlag(s.key, BANNERS_OFF | SOUNDS_OFF, false);
     }
+
+#ifdef AWESOME_GATE
+    void seed(size_t apps, size_t chats) {
+        auto&      S        = state();
+        const auto SEED     = [](std::string_view k) { return k.starts_with("gate-seed-"); };
+        const auto SEEDCHAT = [](std::string_view k) { return k.starts_with("gate-seed\x1f"); };
+        S.notifyApp.eraseIf([&](const std::string& k, const auto&) { return SEED(k); });
+        S.notifyMute.eraseIf([&](const std::string& k, const auto&) { return SEEDCHAT(k); });
+        for (size_t i = 0; i < apps; i++)
+            S.notifyApp.put(std::format("gate-seed-{}", i), {BANNERS_OFF, std::format("Seed {}", i)});
+        for (size_t i = 0; i < chats; i++)
+            S.notifyMute.put(std::format("gate-seed\x1f" "chat-{}", i), {now() + 3600, std::format("Seed chat {}", i)});
+        StateStore::inst().dirty();
+        notifChanged();
+    }
+#endif
 
     bool silenced(const SNotif& n) {
         return n.urgency < 2 && ((appFlags(n.appKey) & BANNERS_OFF) || mutedUntil(chatKey(n)) > 0);

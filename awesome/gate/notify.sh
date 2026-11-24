@@ -879,6 +879,19 @@ chk "silenced: a click in the bell's list turns them back on" until_is 3 0 app_r
 pcidb gatechat Alice alice "five"
 chk "silenced: the app banners again" test "$(bd)" = "banners:1 resident:0"
 nclear
+# every row the stores hold is listed (past the 64 the list once stopped
+# at): scrolled to its end, the oldest of 70 seeded apps turns back on. The
+# rows are 28 px under the top strip (shell.hpp: PAD 5, ARROWH 18)
+hq awesome silence-seed 70 0 >/dev/null
+bell_open
+printf 'move %s %s\nsleep 60\nscroll 0 2000\nsleep 200\n' "$(((BRX0 + BRX1) / 2))" "$(((BRY0 + BRY1) / 2))" | vp
+settle
+SEEN=$(((BRY1 - BRY0 + 1 - 2 * 5 - 2 * 18) / 28))
+click "$(((BRX0 + BRX1) / 2))" "$((BRY0 + 5 + 18 + 28 * (SEEN - 1) + 14))" 272
+chk "silenced: the 70th row, scrolled to, turns its app back on" until_ok 3 bash -c "! grep -aq \$'\\tgate-seed-0\$' '$AW_STATE'"
+chk "silenced: ...and only that one" test "$(app_rows)" = 69
+hq awesome silence-seed 0 0 >/dev/null
+until_is 3 0 app_rows
 # press, hold, slide onto the last row, release: Close All from the app
 # the middle banner is a mailer's whichever way the stack runs
 nsend -a other -t 30000 "stays" body

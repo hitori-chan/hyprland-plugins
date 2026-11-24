@@ -135,6 +135,7 @@ Gate-build `hyprctl awesome` verbs:
 | `menu-at LABEL` | where the row whose label starts so sits |
 | `dnd-at` | where the center's moon sits |
 | `quiet` | the quiet state |
+| `silence-seed APPS CHATS` | that many apps silenced and chats muted (`gate-seed-*`); `0 0` drops them |
 | `busy` | wpctl commands in flight: a battery's barrier |
 | `pad NAME` | a virtual pointer stands in for the touchpad; `pad -` drops it |
 | `snap-zone` | the armed zone, `<top\|bottom\|-> <left\|right\|->` |

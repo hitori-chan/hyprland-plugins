@@ -411,15 +411,20 @@ namespace Awesome::Notify {
         void        prune(); // forget the mutes that ended
 
         // what the bell's Silenced Apps lists: the apps with a switch off,
-        // then the muted chats, each kind newest first (MAX_SILENCED rows)
+        // then the muted chats, each kind newest first; every row the
+        // stores hold (MAX_STORE_ENTRIES each)
         struct SSilenced {
             std::string key, label;
             int         flags = 0; // an app's
             int64_t     until = 0; // a chat's mute end (0: an app)
         };
-        inline constexpr size_t MAX_SILENCED = 64;
-        std::vector<SSilenced>  silenced();
-        void                    restore(const SSilenced& s); // the app's switches back on, or the chat unmuted
+        std::vector<SSilenced> silenced();
+        void                   restore(const SSilenced& s); // the app's switches back on, or the chat unmuted
+#ifdef AWESOME_GATE
+        // APPS apps with their banners off and CHATS chats muted for an
+        // hour, "gate-seed-<i>" (the oldest 0); 0 0 drops every seeded row
+        void seed(size_t apps, size_t chats);
+#endif
     }
 
     // ---- quiet.cpp: quiet automatically ----

@@ -18,6 +18,7 @@
 #include <lua.hpp>
 
 #include <cmath>
+#include <cstdio>
 #include <ctime>
 
 namespace Awesome::Notify {
@@ -229,6 +230,14 @@ namespace Awesome::Notify {
             return std::format("now:{} hushed:{}", Quiet::now() ? 1 : 0, Quiet::hushed() ? 1 : 0);
         if (verb == "shares") // the compositor's capture sessions: "active:N live:N"
             return Quiet::describeShares();
+        if (verb.starts_with("silence-seed ")) { // "APPS CHATS": Policy::seed
+            size_t     apps = 0, chats = 0;
+            const auto ARGS = verb.substr(13);
+            if (std::sscanf(ARGS.c_str(), "%zu %zu", &apps, &chats) != 2 || apps > 4096 || chats > 4096)
+                return std::string{"usage: silence-seed APPS CHATS"};
+            Policy::seed(apps, chats);
+            return std::string{"ok"};
+        }
 #endif
         if (verb == "clear") { // the scripted reset
             static Awesome::CHop pendingClear;
