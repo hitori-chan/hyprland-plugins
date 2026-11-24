@@ -76,9 +76,7 @@ Batteries wait on what they check, never on the clock:
 The nested runs inside a private headless labwc (`gate/host.sh`) with its
 own session bus, a private system bus carrying fake logind, backlight and
 bluetoothd, and scratch XDG dirs. It loads Aquamarine at the fork's
-`flake.lock` pin with the package's patches and
-`gate/aquamarine-wayland-swapchain.patch` (the Wayland output reallocated
-the swapchain every frame, presenting undamaged pixels black).
+`flake.lock` pin with the package's patches.
 
 - The live session receives nothing. The isolation check fails the gate
   unless the nested's parent display is the private host at each launch

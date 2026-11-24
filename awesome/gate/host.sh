@@ -9,13 +9,8 @@
 # a party to any run.
 #
 # The nested also loads aquamarine at the fork's flake.lock pin, built
-# once into $HYPR_GATE_TMP/deps: the distro 0.15.1 never flushes the
-# output's first commit to an idle parent (fixed upstream in 7bb8bdf), so
-# under a quiet headless host the configure handshake never starts. The
-# build applies the aquamarine package's patches (the plane API the fork
-# compiles against) and aquamarine-wayland-swapchain.patch (the Wayland
-# output's commit reallocated the swapchain every frame; why in the file).
-# Only the nested loads this build.
+# once into $HYPR_GATE_TMP/deps with the aquamarine package's patches (the
+# plane API the fork compiles against). Only the nested loads this build.
 
 HYPR_GATE_TMP="${HYPR_GATE_TMP:-/tmp/hypr-gate}"
 HOST_DIR="$HARNESS_DIR/host"
@@ -23,7 +18,6 @@ HOST_BIN="${HYPR_HOST_BIN:-$(command -v labwc 2>/dev/null)}"
 HOST_LIBS="${HYPR_HOST_LIBS:-}" # LD_LIBRARY_PATH for an unpacked labwc (HYPR_HOST_BIN)
 AQ_URL="${HYPR_AQ_URL:-https://github.com/hyprwm/aquamarine}"
 AQ_PKG="${HYPR_AQ_PKG:-$HOME/repo/PKGBUILDs/aquamarine}"
-AQ_PATCH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/aquamarine-wayland-swapchain.patch"
 
 # A recorded pid is ours only while it still runs what WE started: the
 # process's environment or command line carries our private path (a pid
@@ -113,7 +107,7 @@ host_stop() {
 # The pinned aquamarine's lib dir (built on first use, cached by rev and
 # patch).
 aq_pinned_libdir() {
-	local rev key prefix src p patches=("$AQ_PKG"/*.patch "$AQ_PATCH")
+	local rev key prefix src p patches=("$AQ_PKG"/*.patch)
 	rev="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['nodes']['aquamarine']['locked']['rev'])" "${FORK_SRC:-$HOME/repo/Hyprland}/flake.lock" 2>/dev/null)"
 	[[ "$rev" =~ ^[0-9a-f]{40}$ ]] || { echo "host: no aquamarine pin in the fork's flake.lock" >&2; return 1; }
 	[[ -f "${patches[0]}" ]] || { echo "host: no aquamarine package patches in $AQ_PKG" >&2; return 1; }
